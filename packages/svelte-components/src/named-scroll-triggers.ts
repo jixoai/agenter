@@ -535,7 +535,7 @@ export const createEdgeTrigger = (options: {
         const previousAtStart = state.atStart;
         state.distanceToLatestPx = getBottomAnchoredDistanceToLatest(viewport);
         state.distanceToStartPx = getBottomAnchoredDistanceToStart(viewport);
-        state.atLatest = latestSentinelVisible ?? state.distanceToLatestPx <= latestThreshold;
+        state.atLatest = state.distanceToLatestPx <= latestThreshold || latestSentinelVisible === true;
         state.atStart = state.distanceToStartPx <= startThreshold;
         state.enteredLatest = !previousAtLatest && state.atLatest;
         state.leftLatest = previousAtLatest && !state.atLatest;

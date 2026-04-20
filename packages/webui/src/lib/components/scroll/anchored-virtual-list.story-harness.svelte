@@ -146,7 +146,7 @@
   let atLatest = $state(true);
   let atStart = $state(false);
   let lastMutation = $state<{
-    mutation: "append" | "collapse" | "prepend" | "resize" | "reset" | null;
+    mutation: "append" | "appendPreserveAway" | "collapse" | "prepend" | "resize" | "reset" | null;
     terminalState: string | null;
   }>({ mutation: null, terminalState: null });
   let lastCommand = $state<{
@@ -617,6 +617,9 @@
       const currentMiddleSelector = getCurrentMiddleSelector();
       const wasAtLatest = edge.atLatest || edge.leftLatest || previousEdgeAtLatest;
       const wasAtStart = edge.atStart || edge.leftStart || previousEdgeAtStart;
+      const appendedRowAnchors = rowDelta.insertedKeys.map((rowId) => ({
+        selector: `[data-demo-row-id="${rowId}"]`,
+      }));
       previousEdgeAtLatest = edge.atLatest;
       previousEdgeAtStart = edge.atStart;
 
@@ -693,6 +696,24 @@
               });
             },
             { priority: "background", debugLabel: "storybook-append-follow-latest" },
+          );
+        case rowDelta.changed && rowDelta.direction === "append" && !wasAtLatest && appendedRowAnchors.length > 0:
+          return runProgramTx(
+            program,
+            "mutation",
+            "appendPreserveAway",
+            async (tx) => {
+              tx.mutation.append({
+                inserted: appendedRowAnchors,
+              });
+              tx.anchor.preserve();
+              await tx.commit();
+            },
+            {
+              priority: "background",
+              interruptionPolicy: "protected",
+              debugLabel: "storybook-append-preserve-away",
+            },
           );
         case rowDelta.changed && rowDelta.direction === "prepend" && wasAtStart && !userInput.active: {
           const nearestOlderId = rowDelta.insertedKeys.at(-1) ?? rowDelta.anchorKey ?? null;

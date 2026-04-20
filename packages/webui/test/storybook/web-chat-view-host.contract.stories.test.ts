@@ -7,6 +7,14 @@ const TransportAppendWhilePinnedKeepsLatestVisible = getPortableStory(
 	stories,
 	'TransportAppendWhilePinnedKeepsLatestVisible',
 );
+const EmptyTranscriptKeepsLatestAffordanceHidden = getPortableStory(
+	stories,
+	'EmptyTranscriptKeepsLatestAffordanceHidden',
+);
+const ContainedTranscriptKeepsLatestAffordanceHidden = getPortableStory(
+	stories,
+	'ContainedTranscriptKeepsLatestAffordanceHidden',
+);
 const TransportAppendWhileAwayKeepsAffordanceVisible = getPortableStory(
 	stories,
 	'TransportAppendWhileAwayKeepsAffordanceVisible',
@@ -20,6 +28,14 @@ const ScrollToLatestInterruptedByWheelKeepsTranscriptAway = getPortableStory(
 describe('Feature: Storybook DOM contract for web chat view host scroll ownership', () => {
 	test('Scenario: Given the room transcript is pinned to latest When transport appends a newer message Then the host keeps latest visible and the latest affordance stays hidden', async () => {
 		await TransportAppendWhilePinnedKeepsLatestVisible.run();
+	});
+
+	test('Scenario: Given the room transcript is empty When the host surface settles Then Scroll to latest stays hidden because no latest target exists', async () => {
+		await EmptyTranscriptKeepsLatestAffordanceHidden.run();
+	});
+
+	test('Scenario: Given the room transcript fits inside the viewport When the host surface settles Then Scroll to latest stays hidden because the viewport is already contained', async () => {
+		await ContainedTranscriptKeepsLatestAffordanceHidden.run();
 	});
 
 	test('Scenario: Given the room transcript is away from latest When transport appends a newer message Then the host preserves the away viewport until the operator explicitly returns to latest', async () => {

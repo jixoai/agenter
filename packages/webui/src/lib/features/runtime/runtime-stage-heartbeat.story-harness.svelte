@@ -32,6 +32,15 @@
 				groups: HeartbeatGroupItem[];
 		  }
 		| {
+				type: 'hydrate-groups';
+				afterMs: number;
+				groups: HeartbeatGroupItem[];
+				loaded?: boolean;
+				loading?: boolean;
+				refreshing?: boolean;
+				error?: string | null;
+		  }
+		| {
 				type: 'replace-last-group';
 				afterMs: number;
 				group: HeartbeatGroupItem;
@@ -44,10 +53,10 @@
 		attention = null,
 		sessionStatus = 'running',
 		schedulerState = null,
-		loaded = true,
-		loading = false,
-		refreshing = false,
-		error = null,
+		loaded: initialLoaded = true,
+		loading: initialLoading = false,
+		refreshing: initialRefreshing = false,
+		error: initialError = null,
 		compactPending = false,
 		compactDisabled = false,
 		scheduledUpdates = [],
@@ -82,6 +91,10 @@
 	let replaceCount = $state(0);
 	let interactiveSequence = $state(0);
 	let interactiveMutationPending = $state(false);
+	let loadedState = $state(false);
+	let loadingState = $state(false);
+	let refreshingState = $state(false);
+	let errorState = $state<string | null>(null);
 	let scheduledUpdateTimers: number[] = [];
 	const configBinding = createEmptyRuntimeHeartbeatConfigBinding();
 	const cloneGroup = (group: HeartbeatGroupItem): HeartbeatGroupItem => structuredClone(group);
@@ -93,6 +106,10 @@
 		replaceCount = 0;
 		interactiveSequence = 0;
 		interactiveMutationPending = false;
+		loadedState = initialLoaded;
+		loadingState = initialLoading;
+		refreshingState = initialRefreshing;
+		errorState = initialError;
 	};
 	const clearScheduledUpdates = (): void => {
 		if (typeof window === 'undefined') {
@@ -112,13 +129,15 @@
 				.map((update) =>
 					update.type === 'append-groups'
 						? `append:${update.afterMs}:${update.groups.map((group) => group.groupId).join(',')}`
+						: update.type === 'hydrate-groups'
+							? `hydrate:${update.afterMs}:${update.groups.map((group) => group.groupId).join(',')}:${String(update.loaded ?? true)}:${String(update.loading ?? false)}:${String(update.refreshing ?? false)}:${update.error ?? ''}`
 						: `replace-last:${update.afterMs}:${update.group.groupId}`,
 				)
 				.join('|'),
-			String(loaded),
-			String(loading),
-			String(refreshing),
-			error ?? '',
+			String(initialLoaded),
+			String(initialLoading),
+			String(initialRefreshing),
+			initialError ?? '',
 		].join('::'),
 	);
 	let lastFixtureResetKey: string | null = null;
@@ -138,6 +157,13 @@
 				switch (update.type) {
 					case 'append-groups':
 						groups = [...groups, ...update.groups.map(cloneGroup)];
+						return;
+					case 'hydrate-groups':
+						groups = update.groups.map(cloneGroup);
+						loadedState = update.loaded ?? true;
+						loadingState = update.loading ?? false;
+						refreshingState = update.refreshing ?? false;
+						errorState = update.error ?? null;
 						return;
 					case 'replace-last-group':
 						if (groups.length === 0) {
@@ -279,11 +305,11 @@
 		{schedulerState}
 		groupsState={{
 			data: groups,
-			loaded,
-			loading,
-			refreshing,
-			error,
-			refreshedAt: loaded ? Date.now() : null,
+			loaded: loadedState,
+			loading: loadingState,
+			refreshing: refreshingState,
+			error: errorState,
+			refreshedAt: loadedState ? Date.now() : null,
 		}}
 		{modelCalls}
 		{attention}

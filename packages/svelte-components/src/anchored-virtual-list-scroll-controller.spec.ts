@@ -447,7 +447,7 @@ describe("Feature: anchored virtual list scroll controller", () => {
     await expect(transaction.finished).rejects.toBeInstanceOf(AnchoredVirtualListAbortError);
   });
 
-  test("Scenario: Given latest insert-motion facts publish without an active script transaction When the controller reconciles Then one shared terminal writer handles the batch", async () => {
+  test("Scenario: Given latest insert-motion facts publish without an active script transaction When the viewport is already pinned to latest Then the controller does not inject a fallback writer", async () => {
     vi.useFakeTimers();
     const controller = createAnchoredVirtualListScrollController();
     const { adapter, viewport } = createHostAdapter({
@@ -473,18 +473,8 @@ describe("Feature: anchored virtual list scroll controller", () => {
 
     await vi.runAllTimersAsync();
 
-    expect(scrollToPositionSpy).toHaveBeenCalledTimes(1);
-    expect(scrollToPositionSpy).toHaveBeenLastCalledWith(
-      {
-        kind: "position",
-        top: -24,
-        left: 0,
-        reason: "reconcile",
-      },
-      "auto",
-    );
-    expect(scrollToEdgeSpy).toHaveBeenCalledTimes(1);
-    expect(scrollToEdgeSpy).toHaveBeenLastCalledWith("latest", "smooth");
+    expect(scrollToPositionSpy).not.toHaveBeenCalled();
+    expect(scrollToEdgeSpy).not.toHaveBeenCalled();
     expect(viewport.scrollTop).toBe(0);
   });
 

@@ -27,7 +27,7 @@
 		type UserInputTriggerQuery,
 		readScrollTriggerQuery,
 	} from '@agenter/svelte-components';
-	import { tick, onDestroy } from 'svelte';
+	import { tick, onDestroy, untrack } from 'svelte';
 
 	import { Loader } from '$lib/components/ai-elements/loader/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -150,6 +150,8 @@
 	let scrollToLatestButtonRef = $state<HTMLButtonElement | null>(null);
 	let insertMotionByGroupId = $state<Record<string, 'latest' | 'older'>>({});
 	let insertMotionClearHandle = 0;
+	let initialLatestSyncPending = $state(false);
+	let initialLatestSyncHandled = $state(false);
 	let previousGroupIds: string[] = [];
 
 	const groups = $derived(buildHeartbeatDisplayGroups(groupsState.data));
@@ -276,7 +278,26 @@
 		}
 	};
 
-	const resolveGroupSelector = (groupId: string): string => `[data-testid="runtime-heartbeat-group-${groupId}"]`;
+	const escapeSelectorValue = (value: string): string =>
+		typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+			? CSS.escape(value)
+			: value.replace(/["\\]/gu, '\\$&');
+
+	const resolveGroupSelector = (groupId: string): string =>
+		`[data-testid="runtime-heartbeat-group-${escapeSelectorValue(groupId)}"]`;
+
+	$effect(() => {
+		const hasLoadedGroups = groupsState.loaded && groups.length > 0;
+		const coldEmptyState = !groupsState.loaded && groups.length === 0;
+		if (coldEmptyState) {
+			initialLatestSyncPending = false;
+			initialLatestSyncHandled = false;
+			return;
+		}
+		if (hasLoadedGroups && !initialLatestSyncHandled) {
+			initialLatestSyncPending = true;
+		}
+	});
 
 	const runProgramTx = async (
 		program: ScrollProgramController,
@@ -300,106 +321,151 @@
 		if (!controller || !viewport || !latestButton) {
 			return;
 		}
-		const observedDom = {
-			viewport,
-			content: viewport,
-		} satisfies Parameters<ReturnType<typeof createEdgeTrigger>['observe']>[0];
-		const disconnectEdge = createEdgeTrigger({
-			latestThreshold: 48,
-			startThreshold: 72,
-		})
-			.observe(observedDom)
-			.connect(controller, { name: edgeTriggerName });
-		const disconnectUserInput = createUserInputTrigger().observe(observedDom).connect(controller, {
-			name: userInputTriggerName,
-		});
-		const disconnectScrollToLatest = createActionTrigger()
-			.observe({ element: latestButton })
-			.connect(controller, { name: scrollToLatestTriggerName });
-		const disconnectGroupDelta = createCollectionDeltaTrigger({
-			getKeys: () => groups.map((group) => group.groupId),
-		})
-			.observe(observedDom)
-			.connect(controller, { name: groupDeltaTriggerName });
-		const disconnectLatestInsert = createInsertBatchTrigger({
-			motion: 'latest',
-		})
-			.observe(observedDom)
-			.connect(controller, { name: groupInsertLatestTriggerName });
-		const disconnectOlderInsert = createInsertBatchTrigger({
-			motion: 'older',
-		})
-			.observe(observedDom)
-			.connect(controller, { name: groupInsertOlderTriggerName });
-		const disconnectOverflow = createOverflowTrigger().observe(observedDom).connect(controller, {
-			name: overflowTriggerName,
-		});
-		let previousEdgeAtLatest = true;
-		let previousEdgeAtStart = false;
-
-		const uninstallProgram = controller.install((program) => {
-			const edge = readScrollTriggerQuery(program.query, edgeTriggerName, emptyEdgeQuery);
-			const userInput = readScrollTriggerQuery(program.query, userInputTriggerName, emptyUserInputQuery);
-			const scrollToLatest = readScrollTriggerQuery(program.query, scrollToLatestTriggerName, {
-				fired: false,
-				count: 0,
-				sourceElement: null,
-				lastFiredAt: null,
+		return untrack(() => {
+			const observedDom = {
+				viewport,
+				content: viewport,
+			} satisfies Parameters<ReturnType<typeof createEdgeTrigger>['observe']>[0];
+			const disconnectEdge = createEdgeTrigger({
+				latestThreshold: 48,
+				startThreshold: 72,
+			})
+				.observe(observedDom)
+				.connect(controller, { name: edgeTriggerName });
+			const disconnectUserInput = createUserInputTrigger().observe(observedDom).connect(controller, {
+				name: userInputTriggerName,
 			});
-			const groupDelta = readScrollTriggerQuery(program.query, groupDeltaTriggerName, emptyDeltaQuery);
-			const groupInsertLatest = readScrollTriggerQuery(program.query, groupInsertLatestTriggerName, emptyInsertQuery('latest'));
-			const groupInsertOlder = readScrollTriggerQuery(program.query, groupInsertOlderTriggerName, emptyInsertQuery('older'));
-			const overflow = readScrollTriggerQuery(program.query, overflowTriggerName, emptyOverflowQuery);
-			const wasAtLatest = edge.atLatest || edge.leftLatest || previousEdgeAtLatest;
-			const wasAtStart = edge.atStart || edge.leftStart || previousEdgeAtStart;
-			previousEdgeAtLatest = edge.atLatest;
-			previousEdgeAtStart = edge.atStart;
+			const disconnectScrollToLatest = createActionTrigger()
+				.observe({ element: latestButton })
+				.connect(controller, { name: scrollToLatestTriggerName });
+			const disconnectGroupDelta = createCollectionDeltaTrigger({
+				getKeys: () => groups.map((group) => group.groupId),
+			})
+				.observe(observedDom)
+				.connect(controller, { name: groupDeltaTriggerName });
+			const disconnectLatestInsert = createInsertBatchTrigger({
+				motion: 'latest',
+			})
+				.observe(observedDom)
+				.connect(controller, { name: groupInsertLatestTriggerName });
+			const disconnectOlderInsert = createInsertBatchTrigger({
+				motion: 'older',
+			})
+				.observe(observedDom)
+				.connect(controller, { name: groupInsertOlderTriggerName });
+			const disconnectOverflow = createOverflowTrigger().observe(observedDom).connect(controller, {
+				name: overflowTriggerName,
+			});
+			let previousEdgeAtLatest = true;
+			let previousEdgeAtStart = false;
 
-			switch (true) {
-				case scrollToLatest.fired:
-					return runProgramTx(
-						program,
-						async (tx) => {
-							await tx.scroll.pinLatest({
-								behavior: 'smooth',
+			const uninstallProgram = controller.install((program) => {
+				const edge = readScrollTriggerQuery(program.query, edgeTriggerName, emptyEdgeQuery);
+				const userInput = readScrollTriggerQuery(program.query, userInputTriggerName, emptyUserInputQuery);
+				const scrollToLatest = readScrollTriggerQuery(program.query, scrollToLatestTriggerName, {
+					fired: false,
+					count: 0,
+					sourceElement: null,
+					lastFiredAt: null,
+				});
+				const groupDelta = readScrollTriggerQuery(program.query, groupDeltaTriggerName, emptyDeltaQuery);
+				const groupInsertLatest = readScrollTriggerQuery(program.query, groupInsertLatestTriggerName, emptyInsertQuery('latest'));
+				const groupInsertOlder = readScrollTriggerQuery(program.query, groupInsertOlderTriggerName, emptyInsertQuery('older'));
+				const overflow = readScrollTriggerQuery(program.query, overflowTriggerName, emptyOverflowQuery);
+				const shouldSyncInitialLatest = initialLatestSyncPending && groupsState.loaded && groups.length > 0;
+				const wasAtLatest = edge.atLatest || edge.leftLatest || previousEdgeAtLatest;
+				const wasAtStart = edge.atStart || edge.leftStart || previousEdgeAtStart;
+				const appendGroupAnchors = groupDelta.insertedKeys.map((groupId) => ({
+					selector: resolveGroupSelector(groupId),
+				}));
+				previousEdgeAtLatest = edge.atLatest;
+				previousEdgeAtStart = edge.atStart;
+
+				switch (true) {
+					case scrollToLatest.fired:
+						return runProgramTx(
+							program,
+							async (tx) => {
+								await tx.scroll.pinLatest({
+									behavior: 'smooth',
+									debugLabel: 'runtime-heartbeat-scroll-to-latest',
+								});
+							},
+							{
+								priority: 'user-blocking',
 								debugLabel: 'runtime-heartbeat-scroll-to-latest',
-							});
-						},
-						{
-							priority: 'user-blocking',
-							debugLabel: 'runtime-heartbeat-scroll-to-latest',
-						},
-					);
-				case groupDelta.changed && groupDelta.direction === 'replace' && wasAtLatest:
-					return runProgramTx(
-						program,
-						async (tx) => {
-							await tx.scroll.pinLatest({
-								behavior: 'auto',
+							},
+						);
+					case shouldSyncInitialLatest && !userInput.active:
+						initialLatestSyncPending = false;
+						initialLatestSyncHandled = true;
+						return runProgramTx(
+							program,
+							async (tx) => {
+								await tx.scroll.pinLatest({
+									behavior: 'auto',
+									debugLabel: 'runtime-heartbeat-initial-latest-sync',
+								});
+							},
+							{
+								priority: 'background',
+								debugLabel: 'runtime-heartbeat-initial-latest-sync',
+							},
+						);
+					case groupDelta.changed &&
+						groupDelta.direction === 'append' &&
+						!wasAtLatest &&
+						appendGroupAnchors.length > 0:
+						return runProgramTx(
+							program,
+							async (tx) => {
+								tx.mutation.append({
+									inserted: appendGroupAnchors,
+								});
+								tx.anchor.preserve();
+								await tx.commit();
+							},
+							{
+								priority: 'background',
+								interruptionPolicy: 'protected',
+								debugLabel: 'runtime-heartbeat-append-preserve-away',
+							},
+						);
+					case groupDelta.changed &&
+						groupDelta.direction === 'replace' &&
+						!groupInsertLatest.changed &&
+						!groupInsertOlder.changed &&
+						wasAtLatest:
+						return runProgramTx(
+							program,
+							async (tx) => {
+								await tx.scroll.pinLatest({
+									behavior: 'auto',
+									debugLabel: 'runtime-heartbeat-replace-latest',
+								});
+							},
+							{
+								priority: 'background',
 								debugLabel: 'runtime-heartbeat-replace-latest',
-							});
-						},
-						{
-							priority: 'background',
-							debugLabel: 'runtime-heartbeat-replace-latest',
-						},
-					);
-				case overflow.becameOverflowing || overflow.becameContained:
-				case userInput.entered:
-					return;
-			}
-		});
+							},
+						);
+					case overflow.becameOverflowing || overflow.becameContained:
+					case userInput.entered:
+						return;
+				}
+			});
 
-		return () => {
-			disconnectEdge();
-			disconnectUserInput();
-			disconnectScrollToLatest();
-			disconnectGroupDelta();
-			disconnectLatestInsert();
-			disconnectOlderInsert();
-			disconnectOverflow();
-			uninstallProgram();
-		};
+			return () => {
+				disconnectEdge();
+				disconnectUserInput();
+				disconnectScrollToLatest();
+				disconnectGroupDelta();
+				disconnectLatestInsert();
+				disconnectOlderInsert();
+				disconnectOverflow();
+				uninstallProgram();
+			};
+		});
 	});
 
 	$effect(() => {
@@ -484,6 +550,7 @@
 			gap: 12,
 			paddingStart: 12,
 			paddingEnd: 12,
+			useAnimationFrameWithResizeObserver: true,
 		}}
 		>
 		{#snippet renderBefore()}

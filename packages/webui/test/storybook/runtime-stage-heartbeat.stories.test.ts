@@ -9,9 +9,9 @@ const StickyBottomKeepsLatestRowsReachable = getPortableStory(stories, "StickyBo
 const BottomAnchorSurvivesLatestAppend = getPortableStory(stories, "BottomAnchorSurvivesLatestAppend");
 const LatestAppendPlaysInsertMotion = getPortableStory(stories, "LatestAppendPlaysInsertMotion");
 const InteractiveAppendUsesUniqueVisibleLabels = getPortableStory(stories, "InteractiveAppendUsesUniqueVisibleLabels");
-const AppendLatestWhilePinnedPreservesThenReturnsToLatest = getPortableStory(
+const AppendLatestWhilePinnedKeepsViewportStable = getPortableStory(
   stories,
-  "AppendLatestWhilePinnedPreservesThenReturnsToLatest",
+  "AppendLatestWhilePinnedKeepsViewportStable",
 );
 const AppendLatestWhileAwayKeepsViewportAnchored = getPortableStory(
   stories,
@@ -29,6 +29,7 @@ const BottomAnchorSurvivesLatestGrowth = getPortableStory(stories, "BottomAnchor
 const RunningFooterShowsShimmerWithoutUsage = getPortableStory(stories, "RunningFooterShowsShimmerWithoutUsage");
 const RunningDurationTicks = getPortableStory(stories, "RunningDurationTicks");
 const ColdLoadingShowsExplicitState = getPortableStory(stories, "ColdLoadingShowsExplicitState");
+const AsyncInitialLoadPinsLatest = getPortableStory(stories, "AsyncInitialLoadPinsLatest");
 const WarmRefreshKeepsVisibleRows = getPortableStory(stories, "WarmRefreshKeepsVisibleRows");
 const CompactActionForwardsRequest = getPortableStory(stories, "CompactActionForwardsRequest");
 const StreamingToolCallRemainsVisible = getPortableStory(stories, "StreamingToolCallRemainsVisible");
@@ -56,8 +57,8 @@ describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
     await InteractiveAppendUsesUniqueVisibleLabels.run();
   });
 
-  test("Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then the viewport first preserves the old trailing content and then returns to the new latest row", async () => {
-    await AppendLatestWhilePinnedPreservesThenReturnsToLatest.run();
+  test("Scenario: Given the insert-motion playground is pinned to latest When Append latest is clicked Then the viewport stays near latest while the new row animates in", async () => {
+    await AppendLatestWhilePinnedKeepsViewportStable.run();
   });
 
   test("Scenario: Given the Heartbeat viewport is reading older rows When a new latest group arrives Then the viewport preserves the current reading position instead of snapping to latest", async () => {
@@ -90,6 +91,10 @@ describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
 
   test("Scenario: Given grouped Heartbeat history is still cold When the stage opens Then loading stays distinct from the empty ledger state", async () => {
     await ColdLoadingShowsExplicitState.run();
+  });
+
+  test("Scenario: Given Heartbeat history hydrates after the stage shell opens When the first loaded groups arrive Then the viewport restores latest ownership and keeps Scroll to latest hidden", async () => {
+    await AsyncInitialLoadPinsLatest.run();
   });
 
   test("Scenario: Given persisted Heartbeat rows are visible When a refresh begins Then the stage keeps those rows mounted and adds a secondary refresh signal", async () => {

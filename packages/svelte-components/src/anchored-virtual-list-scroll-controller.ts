@@ -82,6 +82,11 @@ type ScriptMutationRecord =
   | { kind: "prepend"; inserted: readonly AnchoredVirtualListMutationAnchor[] }
   | { kind: "resize" | "collapse" | "expand" };
 
+type ScriptVisibleAnchorSnapshot = {
+  key: string | null;
+  top: number | null;
+};
+
 type ScriptTransactionStage = "commit" | "insert-motion";
 
 type ScriptTerminalCommand =
@@ -110,6 +115,7 @@ type ScriptTransactionRecord = {
   mutationRecord: ScriptMutationRecord | null;
   preserveAnchor: boolean;
   insertMotionBatch: BottomAnchoredTimelineInsertMotionBatch | null;
+  visibleAnchor: ScriptVisibleAnchorSnapshot;
 };
 
 type ScriptTransactionProgramContext = {
@@ -220,6 +226,93 @@ const resolveMutationBlockSize = (element: HTMLElement): number => {
   return 0;
 };
 
+const escapeAttributeSelectorValue = (value: string): string =>
+  typeof CSS !== "undefined" && typeof CSS.escape === "function"
+    ? CSS.escape(value)
+    : value.replace(/["\\]/gu, "\\$&");
+
+const INSERT_MOTION_KEY_ATTRIBUTE = "data-insert-motion-key";
+const ANCHORED_ROW_KEY_ATTRIBUTE = "data-anchored-row-key";
+
+const readScriptVisibleAnchorSnapshot = (
+  adapter: AnchoredVirtualListHostAdapter | null,
+): ScriptVisibleAnchorSnapshot => {
+  const viewport = adapter?.getViewport() ?? null;
+  if (viewport instanceof HTMLElement) {
+    const key = viewport.dataset.anchoredVisibleKey?.trim() ?? "";
+    const topText = viewport.dataset.anchoredVisibleTop?.trim() ?? "";
+    const top = Number(topText);
+    if (key.length > 0 && Number.isFinite(top)) {
+      return {
+        key,
+        top,
+      };
+    }
+  }
+
+  const root = adapter?.getContentRoot() ?? viewport ?? null;
+  if (viewport instanceof HTMLElement && root instanceof HTMLElement) {
+    const viewportRect = viewport.getBoundingClientRect();
+    const viewportCenter = viewportRect.top + viewportRect.height / 2;
+    const motionRows = Array.from(root.querySelectorAll<HTMLElement>(`[${INSERT_MOTION_KEY_ATTRIBUTE}]`));
+    const fallbackRows = Array.from(root.querySelectorAll<HTMLElement>(`[${ANCHORED_ROW_KEY_ATTRIBUTE}]`));
+    const rows = (motionRows.length > 0 ? motionRows : fallbackRows).filter((row) => {
+      const rect = row.getBoundingClientRect();
+      return rect.bottom > viewportRect.top + 1 && rect.top < viewportRect.bottom - 1;
+    });
+    let bestKey: string | null = null;
+    let bestTop: number | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const row of rows) {
+      const rowKey =
+        row.getAttribute(INSERT_MOTION_KEY_ATTRIBUTE)?.trim() ??
+        row.getAttribute(ANCHORED_ROW_KEY_ATTRIBUTE)?.trim() ??
+        "";
+      if (rowKey.length === 0) {
+        continue;
+      }
+      const rect = row.getBoundingClientRect();
+      const visibleTop = Math.max(rect.top, viewportRect.top);
+      const visibleBottom = Math.min(rect.bottom, viewportRect.bottom);
+      const visibleCenter = (visibleTop + visibleBottom) / 2;
+      const distance = Math.abs(visibleCenter - viewportCenter);
+      if (distance >= bestDistance) {
+        continue;
+      }
+      bestDistance = distance;
+      bestKey = rowKey;
+      bestTop = rect.top;
+    }
+    if (bestKey !== null && bestTop !== null) {
+      return {
+        key: bestKey,
+        top: bestTop,
+      };
+    }
+  }
+
+  return { key: null, top: null };
+};
+
+const resolveVisibleAnchorElement = (
+  adapter: AnchoredVirtualListHostAdapter | null,
+  visibleAnchor: ScriptVisibleAnchorSnapshot,
+): HTMLElement | null => {
+  if (!visibleAnchor.key) {
+    return null;
+  }
+  const root = adapter?.getContentRoot() ?? adapter?.getViewport() ?? null;
+  if (!(root instanceof HTMLElement)) {
+    return null;
+  }
+  const escapedKey = escapeAttributeSelectorValue(visibleAnchor.key);
+  return (
+    root.querySelector<HTMLElement>(`[data-insert-motion-key="${escapedKey}"]`) ??
+    root.querySelector<HTMLElement>(`[data-anchored-row-key="${escapedKey}"]`) ??
+    null
+  );
+};
+
 const mutationPreserveProgram: ScriptTransactionProgram = async (context, next) => {
   if (context.stage !== "commit") {
     await next();
@@ -238,6 +331,42 @@ const mutationPreserveProgram: ScriptTransactionProgram = async (context, next) 
   }
 
   if (transaction.mutationRecord.kind === "append") {
+    if (transaction.visibleAnchor.key && transaction.visibleAnchor.top !== null) {
+      viewport.dataset.anchoredAppendAnchorStatus = "script-captured";
+      viewport.dataset.anchoredAppendAnchorKey = transaction.visibleAnchor.key;
+      viewport.dataset.anchoredAppendAnchorTop = String(Math.round(transaction.visibleAnchor.top));
+      let foundVisibleAnchor = false;
+      for (let frameIndex = 0; frameIndex < 5; frameIndex += 1) {
+        context.throwIfAborted();
+        const visibleAnchorElement = resolveVisibleAnchorElement(adapter, transaction.visibleAnchor);
+        if (visibleAnchorElement instanceof HTMLElement) {
+          foundVisibleAnchor = true;
+          const drift = visibleAnchorElement.getBoundingClientRect().top - transaction.visibleAnchor.top;
+          viewport.dataset.anchoredAppendAnchorStatus = "script-found";
+          viewport.dataset.anchoredAppendAnchorDrift = String(Math.round(drift));
+          if (Math.abs(drift) <= 0.5) {
+            viewport.dataset.anchoredAppendAnchorStatus = "script-stable";
+            return;
+          }
+          await context.write({
+            kind: "position",
+            top: viewport.scrollTop + drift,
+            left: viewport.scrollLeft,
+            behavior: "auto",
+            reason: "reconcile",
+          });
+        }
+        if (frameIndex < 4) {
+          await waitForAnchoredVirtualListAnimationFrame(transaction.abortController.signal);
+        }
+      }
+      if (foundVisibleAnchor) {
+        viewport.dataset.anchoredAppendAnchorStatus = "script-settled";
+        return;
+      }
+      viewport.dataset.anchoredAppendAnchorStatus = "script-missing";
+    }
+
     const insertedHeight = resolveMutationAnchorElements(adapter, transaction.mutationRecord.inserted).reduce(
       (total, element) => total + resolveMutationBlockSize(element),
       0,
@@ -302,11 +431,6 @@ const resolveInsertMotionRevealPx = (
   insertedHeight: number,
 ): number => Math.min(insertedHeight, Math.min(96, batch.snapshot.clientHeight * 0.2));
 
-const resolveLatestInsertPreservePx = (
-  batch: BottomAnchoredTimelineInsertMotionBatch,
-  insertedHeight: number,
-): number => Math.min(insertedHeight, Math.min(48, batch.snapshot.clientHeight * 0.1));
-
 const waitForAbortablePromise = async <T>(signal: AbortSignal, promise: Promise<T>): Promise<T> => {
   if (signal.aborted) {
     throw signal.reason;
@@ -331,6 +455,13 @@ const waitForAbortablePromise = async <T>(signal: AbortSignal, promise: Promise<
       },
     );
   });
+};
+
+const isWithinScrollEpsilon = (current: number | null | undefined, target: number | null | undefined): boolean => {
+  if (current == null || target == null) {
+    return false;
+  }
+  return Math.abs(current - target) <= 1;
 };
 
 const createInitialState = (): AnchoredVirtualListScrollStateSnapshot => ({
@@ -667,6 +798,7 @@ export const createAnchoredVirtualListScrollController = (
       return false;
     }
     const edgePosition = plan.kind === "edge" ? adapter.resolveEdgePosition?.(plan.edge) : undefined;
+    const currentPosition = adapter.readPosition();
     updateState({
       currentScrollTarget: record.resolvedTarget,
       eventualScrollPosition: resolveAnchoredVirtualListEventualScrollPosition(
@@ -678,9 +810,21 @@ export const createAnchoredVirtualListScrollController = (
     });
     switch (plan.kind) {
       case "edge":
+        if (
+          isWithinScrollEpsilon(currentPosition.top, edgePosition?.top) &&
+          (edgePosition?.left == null || isWithinScrollEpsilon(currentPosition.left, edgePosition.left))
+        ) {
+          return false;
+        }
         adapter.scrollToEdge(plan.edge, plan.behavior);
         return true;
       case "position":
+        if (
+          isWithinScrollEpsilon(currentPosition.top, plan.top) &&
+          isWithinScrollEpsilon(currentPosition.left, plan.left)
+        ) {
+          return false;
+        }
         adapter.scrollToPosition(
           {
             kind: "position",
@@ -1041,13 +1185,14 @@ export const createAnchoredVirtualListScrollController = (
         priority: normalizedOptions.priority,
         interruptionPolicy: normalizedOptions.interruptionPolicy,
         debugLabel: normalizedOptions.debugLabel,
-        startedAt: resolveNow(options),
-        commitPromise: null,
-        settlePromise: null,
-        mutationRecord: null,
-        preserveAnchor: false,
-        insertMotionBatch: null,
-      };
+      startedAt: resolveNow(options),
+      commitPromise: null,
+      settlePromise: null,
+      mutationRecord: null,
+      preserveAnchor: false,
+      insertMotionBatch: null,
+      visibleAnchor: readScriptVisibleAnchorSnapshot(adapter),
+    };
       activeScriptTransaction = scriptRecord;
 
       const throwIfAborted = (): void => {
@@ -1062,7 +1207,10 @@ export const createAnchoredVirtualListScrollController = (
       const commit = async (): Promise<void> => {
         if (!scriptRecord.commitPromise) {
           scriptRecord.commitPromise = (async () => {
-            await waitForAnchoredVirtualListAnimationFrame(scriptRecord.abortController.signal);
+            const shouldDelayCommitUntilNextFrame = !scriptRecord.preserveAnchor || scriptRecord.mutationRecord === null;
+            if (shouldDelayCommitUntilNextFrame) {
+              await waitForAnchoredVirtualListAnimationFrame(scriptRecord.abortController.signal);
+            }
             throwIfAborted();
             await runScriptPrograms(scriptRecord, "commit");
           })();
@@ -1264,29 +1412,7 @@ export const createAnchoredVirtualListScrollController = (
 
       const latestHeight = resolveObservedInsertMotionHeight(adapter, batch, "latest");
       if (latestHeight > 0 && batch.snapshot.atLatest) {
-        const preservePx = resolveLatestInsertPreservePx(batch, latestHeight);
-        const preserveTop = getBottomAnchoredScrollTopFromVirtualOffset(batch.snapshot.virtualOffset + preservePx);
-        applyReconcilePosition(preserveTop);
-        void (async () => {
-          if (preserveTop === 0) {
-            return;
-          }
-          await waitForAnchoredVirtualListDomSettle(adapter?.getViewport() ?? null, new AbortController().signal);
-          await dispatchRequest({
-            intent: "pin",
-            target: {
-              kind: "edge",
-              edge: "latest",
-            },
-            source: "reconcile",
-            priority: "background",
-            behavior: "smooth",
-            settle: "settle",
-            debugLabel: "insert-motion-latest-follow-latest",
-          });
-        })().catch(() => {
-          /* insert-motion reconciliation should not surface as an uncaught promise */
-        });
+        syncEdgeState();
         return;
       }
 

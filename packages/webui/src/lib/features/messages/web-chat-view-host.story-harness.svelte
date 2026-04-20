@@ -16,11 +16,15 @@
 
 	type StoryMessageRecord = Extract<WebChatTransportMessage, { type: 'snapshot' }>['snapshot']['items'][number];
 
-	let { olderPageCount = 6 }: { olderPageCount?: number } = $props();
+	let {
+		olderPageCount = 6,
+		seedMessageCount = 28,
+	}: {
+		olderPageCount?: number;
+		seedMessageCount?: number;
+	} = $props();
 
 	const baseTimestamp = 1_710_000_000_000;
-	const currentSeedCount = 28;
-
 	const channel = {
 		chatId: 'room-story',
 		kind: 'room',
@@ -63,8 +67,11 @@
 		};
 	};
 
-	const createCurrentMessages = (seedOlderPageCount: number): StoryMessageRecord[] =>
-		Array.from({ length: currentSeedCount }, (_, index) => {
+	const createCurrentMessages = (
+		seedOlderPageCount: number,
+		currentMessageCount: number,
+	): StoryMessageRecord[] =>
+		Array.from({ length: currentMessageCount }, (_, index) => {
 			const rowId = seedOlderPageCount + index + 1;
 			if (index === 0) {
 				return createMessage({
@@ -126,11 +133,13 @@
 		private olderPage: StoryMessageRecord[];
 		private readonly roomChannel: WebChatChannel;
 		private readonly seedOlderPageCount: number;
+		private readonly seedCurrentMessageCount: number;
 
-		constructor(roomChannel: WebChatChannel, seedOlderPageCount: number) {
+		constructor(roomChannel: WebChatChannel, seedOlderPageCount: number, currentMessageCount: number) {
 			this.roomChannel = roomChannel;
 			this.seedOlderPageCount = seedOlderPageCount;
-			this.currentMessages = createCurrentMessages(seedOlderPageCount);
+			this.seedCurrentMessageCount = currentMessageCount;
+			this.currentMessages = createCurrentMessages(seedOlderPageCount, currentMessageCount);
 			this.olderPage = createOlderPage(seedOlderPageCount);
 			activeSocket = this;
 			queueMicrotask(() => {
@@ -190,7 +199,7 @@
 
 		pushLatestTransport(content: string): void {
 			const nextRowId =
-				this.currentMessages.at(-1)?.rowId ?? this.seedOlderPageCount + currentSeedCount;
+				this.currentMessages.at(-1)?.rowId ?? this.seedOlderPageCount + this.seedCurrentMessageCount;
 			const nextMessage = createMessage({
 				rowId: nextRowId + 1,
 				from: 'Bootstrap admin',
@@ -249,7 +258,7 @@
 		}
 	}
 
-	const socketFactory: WebChatSocketFactory = () => new StorySocket(channel, olderPageCount);
+	const socketFactory: WebChatSocketFactory = () => new StorySocket(channel, olderPageCount, seedMessageCount);
 
 	const pushTransportLatest = (): void => {
 		const nextCount = transportAppendCount + 1;

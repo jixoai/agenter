@@ -167,6 +167,7 @@
   let latestVisibleMessage: WebChatVisibleMessageFact | null = null;
   let latestVisibleAssistantViewKey: string | null = null;
   let latestTranscriptMessageVisible = $state(false);
+  let transcriptOverflowing = $state(false);
   let latestVisibleMessageEmission = $state<{
     chatId: string | null;
     viewerActorId: string | null;
@@ -275,6 +276,9 @@
   const transcriptPreambleNotice = $derived(!showHeader ? transcriptNotice : null);
   const transcriptContentClass = $derived(
     transcriptMessages.length === 0 ? "chat-scroll-content chat-scroll-content-empty" : "chat-scroll-content",
+  );
+  const showScrollToLatestAffordance = $derived(
+    transcriptMessages.length > 0 && transcriptOverflowing && !latestTranscriptMessageVisible,
   );
   const transcriptVirtual = $derived.by(() => {
     if (transcriptMessages.length === 0) {
@@ -612,6 +616,14 @@
     }
   };
 
+  const escapeSelectorValue = (value: string): string =>
+    typeof CSS !== "undefined" && typeof CSS.escape === "function"
+      ? CSS.escape(value)
+      : value.replace(/["\\]/gu, "\\$&");
+
+  const resolveMessageSelector = (viewKey: string): string =>
+    `[data-view-key="${escapeSelectorValue(viewKey)}"]`;
+
   const runProgramTx = async (
     program: ScrollProgramController,
     effect: Parameters<ScrollProgramController["tx"]>[0],
@@ -684,145 +696,174 @@
     if (!controller || !viewport || !content || !latestButton) {
       return;
     }
+    return untrack(() => {
+      const observedDom = {
+        viewport,
+        content,
+      } satisfies Parameters<ReturnType<typeof createEdgeTrigger>["observe"]>[0];
 
-    const observedDom = {
-      viewport,
-      content,
-    } satisfies Parameters<ReturnType<typeof createEdgeTrigger>["observe"]>[0];
-
-    const disconnectEdge = createEdgeTrigger({
-      latestThreshold: 48,
-      startThreshold: LOAD_MORE_OFFSET,
-    }).observe(observedDom).connect(controller, { name: edgeTriggerName });
-    const disconnectUserInput = createUserInputTrigger().observe(observedDom).connect(controller, {
-      name: userInputTriggerName,
-    });
-    const disconnectReturnToLatest = createActionTrigger().observe({
-      element: latestButton,
-    }).connect(controller, { name: returnToLatestTriggerName });
-    const disconnectSeekHistoryStart =
-      historyStartActionRef instanceof HTMLButtonElement
-        ? createActionTrigger().observe({
-            element: historyStartActionRef,
-          }).connect(controller, { name: seekHistoryStartTriggerName })
-        : () => {};
-    const disconnectTransportDelta = createCollectionDeltaTrigger({
-      getKeys: () => transcriptMessages.map((message) => message.viewKey),
-      directionFilter: ["append", "replace"],
-    }).observe(observedDom).connect(controller, { name: transportDeltaTriggerName });
-    const disconnectOlderPageDelta = createCollectionDeltaTrigger({
-      getKeys: () => transcriptMessages.map((message) => message.viewKey),
-      directionFilter: ["prepend"],
-    }).observe(observedDom).connect(controller, { name: olderPageDeltaTriggerName });
-    const disconnectLatestInsert = createInsertBatchTrigger({
-      motion: "latest",
-    }).observe(observedDom).connect(controller, { name: latestInsertTriggerName });
-    const disconnectOlderInsert = createInsertBatchTrigger({
-      motion: "older",
-    }).observe(observedDom).connect(controller, { name: olderInsertTriggerName });
+      const disconnectEdge = createEdgeTrigger({
+        latestThreshold: 48,
+        startThreshold: LOAD_MORE_OFFSET,
+      }).observe(observedDom).connect(controller, { name: edgeTriggerName });
+      const disconnectUserInput = createUserInputTrigger().observe(observedDom).connect(controller, {
+        name: userInputTriggerName,
+      });
+      const disconnectReturnToLatest = createActionTrigger().observe({
+        element: latestButton,
+      }).connect(controller, { name: returnToLatestTriggerName });
+      const disconnectSeekHistoryStart =
+        historyStartActionRef instanceof HTMLButtonElement
+          ? createActionTrigger().observe({
+              element: historyStartActionRef,
+            }).connect(controller, { name: seekHistoryStartTriggerName })
+          : () => {};
+      const disconnectTransportDelta = createCollectionDeltaTrigger({
+        getKeys: () => transcriptMessages.map((message) => message.viewKey),
+        directionFilter: ["append", "replace"],
+      }).observe(observedDom).connect(controller, { name: transportDeltaTriggerName });
+      const disconnectOlderPageDelta = createCollectionDeltaTrigger({
+        getKeys: () => transcriptMessages.map((message) => message.viewKey),
+        directionFilter: ["prepend"],
+      }).observe(observedDom).connect(controller, { name: olderPageDeltaTriggerName });
+      const disconnectLatestInsert = createInsertBatchTrigger({
+        motion: "latest",
+      }).observe(observedDom).connect(controller, { name: latestInsertTriggerName });
+      const disconnectOlderInsert = createInsertBatchTrigger({
+        motion: "older",
+      }).observe(observedDom).connect(controller, { name: olderInsertTriggerName });
       const disconnectOverflow = createOverflowTrigger().observe(observedDom).connect(controller, {
         name: overflowTriggerName,
+      });
+      const unsubscribeQuery = controller.subscribe((query) => {
+        const overflow = readScrollTriggerQuery(query, overflowTriggerName, emptyOverflowQuery);
+        transcriptOverflowing = overflow.overflowing;
       });
       let previousEdgeAtLatest = true;
       let previousEdgeAtStart = false;
 
       const uninstallProgram = controller.install((program) => {
-      const edge = readScrollTriggerQuery(program.query, edgeTriggerName, emptyEdgeQuery);
-      const userInput = readScrollTriggerQuery(program.query, userInputTriggerName, emptyUserInputQuery);
-      const transportDelta = readScrollTriggerQuery(
-        program.query,
-        transportDeltaTriggerName,
-        emptyCollectionDeltaQuery,
-      );
-      const olderPageDelta = readScrollTriggerQuery(
-        program.query,
-        olderPageDeltaTriggerName,
-        emptyCollectionDeltaQuery,
-      );
-      const latestInsert = readScrollTriggerQuery(program.query, latestInsertTriggerName, emptyInsertBatchQuery);
-      const olderInsert = readScrollTriggerQuery(program.query, olderInsertTriggerName, {
-        ...emptyInsertBatchQuery,
-        motion: "older",
-      });
-      const overflow = readScrollTriggerQuery(program.query, overflowTriggerName, emptyOverflowQuery);
-      const returnToLatest = readScrollTriggerQuery(program.query, returnToLatestTriggerName, {
-        fired: false,
-        count: 0,
-        sourceElement: null,
-        lastFiredAt: null,
-      });
-      const seekHistoryStart = readScrollTriggerQuery(program.query, seekHistoryStartTriggerName, {
-        fired: false,
-        count: 0,
-        sourceElement: null,
-        lastFiredAt: null,
-      });
-      const wasAtLatest = edge.atLatest || edge.leftLatest || previousEdgeAtLatest;
-      const wasAtStart = edge.atStart || edge.leftStart || previousEdgeAtStart;
-      previousEdgeAtLatest = edge.atLatest;
-      previousEdgeAtStart = edge.atStart;
+        const edge = readScrollTriggerQuery(program.query, edgeTriggerName, emptyEdgeQuery);
+        const userInput = readScrollTriggerQuery(program.query, userInputTriggerName, emptyUserInputQuery);
+        const transportDelta = readScrollTriggerQuery(
+          program.query,
+          transportDeltaTriggerName,
+          emptyCollectionDeltaQuery,
+        );
+        const olderPageDelta = readScrollTriggerQuery(
+          program.query,
+          olderPageDeltaTriggerName,
+          emptyCollectionDeltaQuery,
+        );
+        const latestInsert = readScrollTriggerQuery(program.query, latestInsertTriggerName, emptyInsertBatchQuery);
+        const olderInsert = readScrollTriggerQuery(program.query, olderInsertTriggerName, {
+          ...emptyInsertBatchQuery,
+          motion: "older",
+        });
+        const overflow = readScrollTriggerQuery(program.query, overflowTriggerName, emptyOverflowQuery);
+        const returnToLatest = readScrollTriggerQuery(program.query, returnToLatestTriggerName, {
+          fired: false,
+          count: 0,
+          sourceElement: null,
+          lastFiredAt: null,
+        });
+        const seekHistoryStart = readScrollTriggerQuery(program.query, seekHistoryStartTriggerName, {
+          fired: false,
+          count: 0,
+          sourceElement: null,
+          lastFiredAt: null,
+        });
+        const wasAtLatest = edge.atLatest || edge.leftLatest || previousEdgeAtLatest;
+        const wasAtStart = edge.atStart || edge.leftStart || previousEdgeAtStart;
+        const appendMessageAnchors = transportDelta.insertedKeys.map((viewKey) => ({
+          selector: resolveMessageSelector(viewKey),
+        }));
+        previousEdgeAtLatest = edge.atLatest;
+        previousEdgeAtStart = edge.atStart;
 
-      switch (true) {
-        case returnToLatest.fired:
-          return runProgramTx(
-            program,
-            async (tx) => {
-              await tx.scroll.pinLatest({
-                behavior: "smooth",
+        switch (true) {
+          case returnToLatest.fired:
+            return runProgramTx(
+              program,
+              async (tx) => {
+                await tx.scroll.pinLatest({
+                  behavior: "smooth",
+                  debugLabel: "web-chat-scroll-to-latest",
+                });
+              },
+              {
+                priority: "user-blocking",
                 debugLabel: "web-chat-scroll-to-latest",
-              });
-            },
-            {
-              priority: "user-blocking",
-              debugLabel: "web-chat-scroll-to-latest",
-            },
-          );
-        case seekHistoryStart.fired:
-          return runProgramTx(
-            program,
-            async (tx) => {
-              await tx.scroll.seekStart({
-                behavior: "smooth",
+              },
+            );
+          case seekHistoryStart.fired:
+            return runProgramTx(
+              program,
+              async (tx) => {
+                await tx.scroll.seekStart({
+                  behavior: "smooth",
+                  debugLabel: "web-chat-seek-history-start",
+                });
+              },
+              {
+                priority: "user-blocking",
                 debugLabel: "web-chat-seek-history-start",
-              });
-            },
-            {
-              priority: "user-blocking",
-              debugLabel: "web-chat-seek-history-start",
-            },
-          );
-        case transportDelta.changed && transportDelta.direction === "replace" && wasAtLatest:
-          return runProgramTx(
-            program,
-            async (tx) => {
-              await tx.scroll.pinLatest({
-                behavior: "auto",
+              },
+            );
+          case transportDelta.changed &&
+            transportDelta.direction === "append" &&
+            !wasAtLatest &&
+            appendMessageAnchors.length > 0:
+            return runProgramTx(
+              program,
+              async (tx) => {
+                tx.mutation.append({
+                  inserted: appendMessageAnchors,
+                });
+                tx.anchor.preserve();
+                await tx.commit();
+              },
+              {
+                priority: "background",
+                interruptionPolicy: "protected",
+                debugLabel: "web-chat-append-preserve-away",
+              },
+            );
+          case transportDelta.changed && transportDelta.direction === "replace" && wasAtLatest:
+            return runProgramTx(
+              program,
+              async (tx) => {
+                await tx.scroll.pinLatest({
+                  behavior: "auto",
+                  debugLabel: "web-chat-initial-seek-latest",
+                });
+              },
+              {
+                priority: "background",
                 debugLabel: "web-chat-initial-seek-latest",
-              });
-            },
-            {
-              priority: "background",
-              debugLabel: "web-chat-initial-seek-latest",
-            },
-          );
-        case overflow.becameOverflowing || overflow.becameContained:
-        case userInput.entered:
-          return;
-      }
-    });
+              },
+            );
+          case overflow.becameOverflowing || overflow.becameContained:
+          case userInput.entered:
+            return;
+        }
+      });
 
-    return () => {
-      disconnectEdge();
-      disconnectUserInput();
-      disconnectReturnToLatest();
-      disconnectSeekHistoryStart();
-      disconnectTransportDelta();
-      disconnectOlderPageDelta();
-      disconnectLatestInsert();
-      disconnectOlderInsert();
-      disconnectOverflow();
-      uninstallProgram();
-    };
+      return () => {
+        disconnectEdge();
+        disconnectUserInput();
+        disconnectReturnToLatest();
+        disconnectSeekHistoryStart();
+        disconnectTransportDelta();
+        disconnectOlderPageDelta();
+        disconnectLatestInsert();
+        disconnectOlderInsert();
+        disconnectOverflow();
+        unsubscribeQuery();
+        transcriptOverflowing = false;
+        uninstallProgram();
+      };
+    });
   });
 
   $effect(() => {
@@ -1054,15 +1095,15 @@
                 </section>
               {/snippet}
             </AnchoredVirtualList>
-            <div class="chat-scroll-latest" data-visible={!latestTranscriptMessageVisible}>
+            <div class="chat-scroll-latest" data-visible={showScrollToLatestAffordance}>
               <Button
                 bind:ref={scrollToLatestButtonRef}
                 aria-label="Scroll to latest"
-                aria-hidden={latestTranscriptMessageVisible}
+                aria-hidden={!showScrollToLatestAffordance}
                 class="chat-scroll-latest-button"
                 part="scroll-latest"
                 size="icon"
-                tabindex={latestTranscriptMessageVisible ? -1 : undefined}
+                tabindex={showScrollToLatestAffordance ? undefined : -1}
                 title="Scroll to latest"
                 type="button"
                 variant="outline"

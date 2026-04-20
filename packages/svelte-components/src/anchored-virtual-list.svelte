@@ -29,6 +29,9 @@
     top: number;
   };
 
+  const compareKeyArrays = (left: readonly string[], right: readonly string[]): boolean =>
+    left.length === right.length && left.every((value, index) => value === right[index]);
+
   const kernel = createAnchoredVirtualListScrollController();
   const controller = createNamedScrollController({ kernel });
   let timelineRef = $state<BottomAnchoredTimelineHandle | null>(null);
@@ -173,17 +176,12 @@
     }
     const targetWindow = viewport.ownerDocument?.defaultView;
     const ResizeObserverCtor = targetWindow?.ResizeObserver;
-    const syncScrollHeightBaseline = (): void => {
-      previousViewportScrollHeight = viewport.scrollHeight;
-    };
-    syncScrollHeightBaseline();
     syncVisibleAnchorSnapshot();
     if (!ResizeObserverCtor) {
       return;
     }
     const observer = new ResizeObserverCtor(() => {
       queueMicrotask(() => {
-        syncScrollHeightBaseline();
         scheduleVisibleAnchorSnapshotSync();
       });
     });
@@ -202,8 +200,6 @@
   };
 
   let previousCollectionKeys: readonly string[] | null = null;
-  let previousViewportScrollHeight = 0;
-  let pendingAppendPreserveFrame = 0;
   let pendingVisibleAnchorFrame = 0;
   let visibleAnchorSnapshot: VisibleAnchorSnapshot | null = null;
 
@@ -213,13 +209,6 @@
     );
 
   const resolveTargetWindow = (): Window | null => viewportRef?.ownerDocument?.defaultView ?? null;
-
-  const findAnchoredRowByKey = (root: HTMLElement, rowKey: string): HTMLElement | null =>
-    root.querySelector<HTMLElement>(`[${INSERT_MOTION_KEY_ATTRIBUTE}="${rowKey}"]`) ??
-    Array.from(root.querySelectorAll<HTMLElement>(`[${ANCHORED_ROW_KEY_ATTRIBUTE}]`)).find(
-      (row) => row.getAttribute(ANCHORED_ROW_KEY_ATTRIBUTE) === rowKey,
-    ) ??
-    null;
 
   const readVisibleAnchorSnapshot = (): VisibleAnchorSnapshot | null => {
     const viewport = viewportRef;
@@ -316,118 +305,27 @@
     };
   });
 
+  $effect.pre(() => {
+    const nextKeys = resolveCollectionKeys();
+    if (previousCollectionKeys === null || compareKeyArrays(previousCollectionKeys, nextKeys)) {
+      return;
+    }
+    syncVisibleAnchorSnapshot();
+  });
+
   $effect(() => {
     const root = contentRef ?? viewportRef;
-    const viewport = viewportRef;
     const nextKeys = resolveCollectionKeys();
-    const currentViewportScrollHeight = viewport?.scrollHeight ?? previousViewportScrollHeight;
-    const anchorSnapshotBeforeDelta = visibleAnchorSnapshot;
     if (previousCollectionKeys === null) {
       previousCollectionKeys = nextKeys;
-      previousViewportScrollHeight = currentViewportScrollHeight;
       return;
     }
     if (!(root instanceof HTMLElement)) {
       previousCollectionKeys = nextKeys;
-      previousViewportScrollHeight = currentViewportScrollHeight;
       return;
     }
     const delta = resolveCollectionDelta(previousCollectionKeys, nextKeys);
     previousCollectionKeys = nextKeys;
-    const previousScrollHeight = previousViewportScrollHeight;
-    previousViewportScrollHeight = currentViewportScrollHeight;
-    if (viewport && delta.direction === "append" && !atLatest) {
-      const targetWindow = viewport.ownerDocument?.defaultView;
-      viewport.dataset.anchoredAppendAnchorStatus = anchorSnapshotBeforeDelta ? "captured" : "missing";
-      viewport.dataset.anchoredAppendAnchorKey = anchorSnapshotBeforeDelta?.key ?? "";
-      viewport.dataset.anchoredAppendAnchorTop = anchorSnapshotBeforeDelta
-        ? String(Math.round(anchorSnapshotBeforeDelta.top))
-        : "";
-      if (pendingAppendPreserveFrame !== 0) {
-        targetWindow?.cancelAnimationFrame?.(pendingAppendPreserveFrame);
-        pendingAppendPreserveFrame = 0;
-      }
-      const writeViewportTop = (top: number): void => {
-        if (timelineRef) {
-          timelineRef.driver.scrollToPosition(
-            top,
-            viewport.scrollLeft,
-            "auto",
-            null,
-          );
-          return;
-        }
-        viewport.scrollTo({
-          top,
-          left: viewport.scrollLeft,
-          behavior: "auto",
-        });
-      };
-      const applyScrollHeightPreserveDelta = (deltaPx: number): void => {
-        if (Math.abs(deltaPx) <= 0.5) {
-          return;
-        }
-        writeViewportTop(viewport.scrollTop - deltaPx);
-      };
-      const applyAnchorDriftCorrection = (driftPx: number): void => {
-        if (Math.abs(driftPx) <= 0.5) {
-          return;
-        }
-        writeViewportTop(viewport.scrollTop + driftPx);
-      };
-      const readAnchorDrift = (): number | null => {
-        if (!anchorSnapshotBeforeDelta) {
-          return null;
-        }
-        const anchorElement = findAnchoredRowByKey(root, anchorSnapshotBeforeDelta.key);
-        if (!anchorElement) {
-          viewport.dataset.anchoredAppendAnchorStatus = "missing-element";
-          return null;
-        }
-        const drift = anchorElement.getBoundingClientRect().top - anchorSnapshotBeforeDelta.top;
-        viewport.dataset.anchoredAppendAnchorStatus = "drift-ready";
-        viewport.dataset.anchoredAppendAnchorDrift = String(Math.round(drift));
-        return drift;
-      };
-      let observedScrollHeight = viewport.scrollHeight;
-      applyScrollHeightPreserveDelta(Math.max(0, observedScrollHeight - previousScrollHeight));
-      const initialAnchorDrift = readAnchorDrift();
-      if (initialAnchorDrift !== null) {
-        applyAnchorDriftCorrection(initialAnchorDrift);
-      }
-      previousViewportScrollHeight = observedScrollHeight;
-
-      if (targetWindow?.requestAnimationFrame) {
-        let correctionFramesRemaining = 5;
-        const reconcileLateGrowth = (): void => {
-          if (correctionFramesRemaining <= 0) {
-            scheduleVisibleAnchorSnapshotSync();
-            return;
-          }
-          correctionFramesRemaining -= 1;
-          pendingAppendPreserveFrame = targetWindow.requestAnimationFrame(() => {
-            pendingAppendPreserveFrame = 0;
-            const nextObservedScrollHeight = viewport.scrollHeight;
-            const extraDelta = Math.max(0, nextObservedScrollHeight - observedScrollHeight);
-            observedScrollHeight = nextObservedScrollHeight;
-            previousViewportScrollHeight = nextObservedScrollHeight;
-            applyScrollHeightPreserveDelta(extraDelta);
-            const anchorDrift = readAnchorDrift();
-            if (anchorDrift !== null) {
-              applyAnchorDriftCorrection(anchorDrift);
-            }
-            if (extraDelta > 0 || (anchorDrift !== null && Math.abs(anchorDrift) > 0.5)) {
-              reconcileLateGrowth();
-              return;
-            }
-            scheduleVisibleAnchorSnapshotSync();
-          });
-        };
-        reconcileLateGrowth();
-      } else {
-        scheduleVisibleAnchorSnapshotSync();
-      }
-    }
     if (!delta.changed) {
       return;
     }
@@ -449,10 +347,6 @@
   });
 
   onDestroy(() => {
-    if (pendingAppendPreserveFrame !== 0) {
-      viewportRef?.ownerDocument?.defaultView?.cancelAnimationFrame?.(pendingAppendPreserveFrame);
-      pendingAppendPreserveFrame = 0;
-    }
     if (pendingVisibleAnchorFrame !== 0) {
       viewportRef?.ownerDocument?.defaultView?.cancelAnimationFrame?.(pendingVisibleAnchorFrame);
       pendingVisibleAnchorFrame = 0;

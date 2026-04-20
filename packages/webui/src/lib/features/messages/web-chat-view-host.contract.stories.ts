@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/sveltekit';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { getBottomAnchoredDistanceToLatest } from '@agenter/svelte-components';
 
 import type { WebChatVisibleMessageFact } from '@agenter/web-chat-view';
 import Harness from './web-chat-view-host.story-harness.svelte';
@@ -27,6 +28,11 @@ const readHarnessState = (canvas: ReturnType<typeof within>): HarnessState =>
 
 const readLatestAffordance = (canvas: ReturnType<typeof within>): string | null =>
 	canvas.getByTestId('web-chat-story-root').getAttribute('data-debug-latest-affordance');
+
+const expectLatestAffordanceHidden = (canvas: ReturnType<typeof within>): void => {
+	expect(readLatestAffordance(canvas)).toBe('false');
+	expect(canvas.queryByRole('button', { name: 'Scroll to latest' })).toBeNull();
+};
 
 const waitForInitialTransport = async (
 	canvas: ReturnType<typeof within>,
@@ -57,6 +63,53 @@ const waitForAnimationFrame = async (): Promise<void> => {
 	await new Promise<void>((resolve) => {
 		requestAnimationFrame(() => resolve());
 	});
+};
+
+const getVisibleMessageRows = (root: HTMLElement, viewport: HTMLElement): HTMLElement[] => {
+	const viewportRect = viewport.getBoundingClientRect();
+	return Array.from(root.querySelectorAll<HTMLElement>('[data-view-key]')).filter((row) => {
+		const rect = row.getBoundingClientRect();
+		return rect.bottom > viewportRect.top + 8 && rect.top < viewportRect.bottom - 8;
+	});
+};
+
+const readCenteredVisibleMessageViewKey = (root: HTMLElement, viewport: HTMLElement): string | null => {
+	const viewportRect = viewport.getBoundingClientRect();
+	const viewportCenter = viewportRect.top + viewportRect.height / 2;
+	const candidates = getVisibleMessageRows(root, viewport)
+		.map((row) => {
+			const rect = row.getBoundingClientRect();
+			const visibleTop = Math.max(rect.top, viewportRect.top);
+			const visibleBottom = Math.min(rect.bottom, viewportRect.bottom);
+			return {
+				viewKey: row.dataset.viewKey ?? null,
+				centerDistance: Math.abs((visibleTop + visibleBottom) / 2 - viewportCenter),
+			};
+		})
+		.filter((candidate): candidate is { viewKey: string; centerDistance: number } => candidate.viewKey !== null)
+		.sort((left, right) => left.centerDistance - right.centerDistance);
+	return candidates[0]?.viewKey ?? null;
+};
+
+const readMessageRowTop = (root: HTMLElement, viewKey: string): number | null => {
+	const row = root.querySelector<HTMLElement>(`[data-view-key="${viewKey}"]`);
+	return row ? row.getBoundingClientRect().top : null;
+};
+
+const captureMessageRowTopSamples = async (
+	root: HTMLElement,
+	viewKey: string,
+	frameCount = 32,
+): Promise<number[]> => {
+	const samples: number[] = [];
+	for (let frame = 0; frame < frameCount; frame += 1) {
+		const top = readMessageRowTop(root, viewKey);
+		if (top !== null) {
+			samples.push(top);
+		}
+		await waitForAnimationFrame();
+	}
+	return samples;
 };
 
 const meta = {
@@ -109,6 +162,41 @@ export const TransportAppendWhilePinnedKeepsLatestVisible = {
 	},
 } satisfies Story;
 
+export const EmptyTranscriptKeepsLatestAffordanceHidden = {
+	args: {
+		olderPageCount: 0,
+		seedMessageCount: 0,
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await waitFor(() => {
+			const state = readHarnessState(canvas);
+			expect(state.loadedMessageCount).toBe(0);
+			expect(state.viewport?.clientHeight).toBeGreaterThan(0);
+		});
+		expectLatestAffordanceHidden(canvas);
+		expect(containsVisibleTextDeep(canvasElement, 'No messages yet')).toBe(true);
+	},
+} satisfies Story;
+
+export const ContainedTranscriptKeepsLatestAffordanceHidden = {
+	args: {
+		olderPageCount: 0,
+		seedMessageCount: 3,
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await waitFor(() => {
+			const state = readHarnessState(canvas);
+			expect(state.loadedMessageCount).toBe(3);
+			expect(state.viewport?.clientHeight).toBeGreaterThan(0);
+			expect(state.viewport?.scrollHeight).toBeLessThanOrEqual((state.viewport?.clientHeight ?? 0) + 1);
+		});
+		expectLatestAffordanceHidden(canvas);
+		expect(containsVisibleTextDeep(canvasElement, 'Transcript seed #3')).toBe(true);
+	},
+} satisfies Story;
+
 export const TransportAppendWhileAwayKeepsAffordanceVisible = {
 	args: {
 		olderPageCount: 0,
@@ -119,6 +207,7 @@ export const TransportAppendWhileAwayKeepsAffordanceVisible = {
 			pendingOlderCount: 0,
 			latestMessageId: 28,
 		});
+		const viewport = getViewport(canvasElement);
 		await userEvent.click(canvas.getByTestId('web-chat-story-scroll-away'));
 
 		await waitFor(
@@ -127,6 +216,12 @@ export const TransportAppendWhileAwayKeepsAffordanceVisible = {
 			},
 			{ timeout: 3_000 },
 		);
+		const anchoredViewKey = readCenteredVisibleMessageViewKey(canvasElement, viewport);
+		expect(anchoredViewKey).not.toBeNull();
+		const anchoredTopBeforeAppend = anchoredViewKey
+			? readMessageRowTop(canvasElement, anchoredViewKey)
+			: null;
+		expect(anchoredTopBeforeAppend).not.toBeNull();
 
 		await userEvent.click(canvas.getByTestId('web-chat-story-push-latest'));
 
@@ -137,6 +232,14 @@ export const TransportAppendWhileAwayKeepsAffordanceVisible = {
 			expect(state.latestVisibleMessage?.messageId).not.toBe(29);
 			expect(readLatestAffordance(canvas)).toBe('true');
 		});
+		const anchorTopSamples =
+			anchoredViewKey === null ? [] : await captureMessageRowTopSamples(canvasElement, anchoredViewKey);
+		const maxAnchorDrift = anchorTopSamples.length
+			? Math.max(...anchorTopSamples.map((top) => Math.abs(top - (anchoredTopBeforeAppend ?? 0))))
+			: Number.POSITIVE_INFINITY;
+		expect(maxAnchorDrift).toBeLessThanOrEqual(16);
+		expect(getBottomAnchoredDistanceToLatest(viewport)).toBeGreaterThan(48);
+		expect(readMessageRowTop(canvasElement, anchoredViewKey!)).not.toBeNull();
 
 		await userEvent.click(canvas.getByRole('button', { name: 'Scroll to latest' }));
 

@@ -14,6 +14,7 @@
 		tabs,
 		onValueChange,
 		toolbar,
+		bodyMode = 'scroll',
 		bodyClass,
 		chromeClass,
 		class: className,
@@ -24,6 +25,7 @@
 		tabs: WorkbenchTabItem[];
 		onValueChange?: (value: string) => void | Promise<void>;
 		toolbar?: Snippet;
+		bodyMode?: 'scroll' | 'fill';
 		bodyClass?: string;
 		chromeClass?: string;
 		class?: string;
@@ -81,18 +83,28 @@
 		)}
 		data-workbench-window-body
 	>
-		<ScrollView
-			class="workbench-window-scroll"
-			viewportClass="workbench-window-scroll-viewport"
-			contentClass="workbench-window-scroll-content"
-			viewportTestId="workbench-window-body-scroll-viewport"
-		>
-			<div class="workbench-window-content" data-workbench-window-content>
-				{#key value}
-					{@render children?.()}
-				{/key}
+		{#if bodyMode === 'scroll'}
+			<ScrollView
+				class="workbench-window-scroll"
+				viewportClass="workbench-window-scroll-viewport"
+				contentClass="workbench-window-scroll-content"
+				viewportTestId="workbench-window-body-scroll-viewport"
+			>
+				<div class="workbench-window-content" data-workbench-window-content>
+					{#key value}
+						{@render children?.()}
+					{/key}
+				</div>
+			</ScrollView>
+		{:else}
+			<div class="workbench-window-fill" data-workbench-window-fill>
+				<div class="workbench-window-content" data-workbench-window-content>
+					{#key value}
+						{@render children?.()}
+					{/key}
+				</div>
 			</div>
-		</ScrollView>
+		{/if}
 	</ClipSurface>
 </div>
 
@@ -105,6 +117,7 @@
 
 	.workbench-page-toolbar,
 	.workbench-window-body,
+	.workbench-window-fill,
 	.workbench-window-scroll,
 	.workbench-window-scroll-content,
 	.workbench-window-content {
@@ -158,10 +171,12 @@
 	}
 
 	.workbench-window-body,
+	.workbench-window-fill,
 	.workbench-window-scroll {
 		block-size: 100%;
 	}
 
+	.workbench-window-fill,
 	.workbench-window-scroll-content,
 	.workbench-window-content {
 		display: grid;

@@ -648,10 +648,7 @@
     const distanceToLatest = getBottomAnchoredDistanceToLatest(viewport);
     const distanceToStart = getBottomAnchoredDistanceToStart(viewport);
     const withinLatestThreshold = distanceToLatest <= latestThreshold;
-    atLatest =
-      latestSentinelVisible === null
-        ? withinLatestThreshold
-        : latestSentinelVisible && withinLatestThreshold;
+    atLatest = withinLatestThreshold || latestSentinelVisible === true;
     atStart = distanceToStart <= startThreshold;
     if (diagnosticsEnabled && (previousAtLatest !== atLatest || previousAtStart !== atStart)) {
       console.debug("[BottomAnchoredTimeline]", "edge-state", {

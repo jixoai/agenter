@@ -318,8 +318,9 @@
 		value={activeTabValue}
 		{tabs}
 		toolbar={avatarsToolbar}
+		bodyMode="fill"
 	>
-		<div class="min-h-full">{@render children?.()}</div>
+		<div class="h-full min-h-0">{@render children?.()}</div>
 	</WorkbenchWindow>
 </div>
 
