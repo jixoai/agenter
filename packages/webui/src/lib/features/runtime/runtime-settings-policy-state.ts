@@ -3,7 +3,7 @@ import {
   DEFAULT_LOOP_RETRY_POLICY,
   type ResolvedLoopCompactPolicy,
   type ResolvedLoopRetryPolicy,
-} from "@agenter/settings";
+} from "@agenter/settings/runtime-policy";
 import type { ScopedSettingsOutput } from "@agenter/client-sdk";
 import { YAMLMap, isMap, parseDocument } from "yaml";
 

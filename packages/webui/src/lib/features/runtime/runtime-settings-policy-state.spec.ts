@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import type { ScopedSettingsOutput } from "@agenter/client-sdk";
@@ -8,6 +11,11 @@ import {
   readRuntimeSettingsPolicyBinding,
   writeRuntimeSettingsPolicyLayer,
 } from "./runtime-settings-policy-state";
+
+const runtimeSettingsPolicyStateSource = readFileSync(
+  resolve(import.meta.dirname, "runtime-settings-policy-state.ts"),
+  "utf8",
+);
 
 const graph = {
   scope: "workspace",
@@ -82,6 +90,11 @@ const graph = {
 } satisfies ScopedSettingsOutput;
 
 describe("Feature: Runtime settings policy state", () => {
+  test("Scenario: Given runtime policy state runs in the browser When reading the source Then it imports defaults from the browser-safe runtime-policy entry instead of the settings root barrel", () => {
+    expect(runtimeSettingsPolicyStateSource).toContain('from "@agenter/settings/runtime-policy";');
+    expect(runtimeSettingsPolicyStateSource).not.toContain('from "@agenter/settings";');
+  });
+
   test("Scenario: Given runtime policies live under loop and prompt fields live at the root When reading the runtime policy binding Then the editor sees four durable sections instead of provider-coupled heuristics", () => {
     const binding = readRuntimeSettingsPolicyBinding(graph);
 
