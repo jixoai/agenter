@@ -907,6 +907,7 @@ test.describe("Feature: Svelte system surfaces", () => {
     await page.goto(`/messages/room/${encodeURIComponent(chatId)}`, { waitUntil: "domcontentloaded" });
 
     await expect(page.getByText("auth token required", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("Loading channel history...", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("group", { name: "Message composer" })).toHaveCount(0);
     await expectLocatorMissingOrDisabled(page.getByRole("button", { name: "Manage room", exact: true }));
     await expectLocatorMissingOrDisabled(page.getByRole("button", { name: "Add user", exact: true }));

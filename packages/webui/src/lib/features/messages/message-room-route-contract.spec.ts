@@ -78,10 +78,14 @@ describe("Feature: Room route hydration stability contract", () => {
     expect(messageRoomRouteSource).toContain("const authReady = $derived(!controller.initializing);");
     expect(messageRoomRouteSource).toContain("const isAuthenticated = $derived(Boolean(controller.authSession));");
     expect(messageRoomRouteSource).toContain("const authRequired = $derived(authReady && !isAuthenticated);");
+    expect(messageRoomRouteSource).toContain(
+      "const initialRoomSnapshotResolved = $derived(selectedRoomSnapshotState.loaded || authRequired);",
+    );
     expect(messageRoomRouteSource).toContain("if (!isAuthenticated) {\n\t\t\treturn null;");
     expect(messageRoomRouteSource).toContain("if (authRequired) {\n\t\t\treturn {\n\t\t\t\ttone: 'destructive',\n\t\t\t\tmessage: AUTH_REQUIRED_MESSAGE,");
     expect(messageRoomRouteSource).toContain("const ensureAuthenticated = (): void => {");
     expect(messageRoomRouteSource).toContain("if (!isAuthenticated || !chatId || !accessToken) {");
+    expect(messageRoomRouteSource).toContain("initialSnapshotResolved={initialRoomSnapshotResolved}");
     expect(messageRoomRouteSource).toContain("authenticated={isAuthenticated}");
   });
 });

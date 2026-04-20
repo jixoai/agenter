@@ -155,6 +155,7 @@
 	const authReady = $derived(!controller.initializing);
 	const isAuthenticated = $derived(Boolean(controller.authSession));
 	const authRequired = $derived(authReady && !isAuthenticated);
+	const initialRoomSnapshotResolved = $derived(selectedRoomSnapshotState.loaded || authRequired);
 	const currentAuthActorId = $derived.by(() => {
 		const authId = controller.authSession?.claims.authId;
 		return authId ? (`auth:${authId}` as const) : null;
@@ -855,7 +856,7 @@
 	resolveProfileIconUrl={(reference) => controller.runtimeStore.profileIconUrl(reference)}
 	resolveSessionIconUrl={(sessionId) => controller.runtimeStore.sessionIconUrl(sessionId)}
 	initialMessages={selectedRoomSnapshot?.items ?? []}
-	initialSnapshotResolved={selectedRoomSnapshotState.loaded}
+	initialSnapshotResolved={initialRoomSnapshotResolved}
 	roomAssetsState={resolvedRoomAssetsState}
 	routeNotice={chatNotice}
 	readSeatCount={roomReadSeatCount}
