@@ -467,7 +467,7 @@ const callMessageQueryViaCli = async (
 
 const callMessageSendViaCli = async (
   input: Pick<ModelRespondInput, "tools">,
-  payload: { chatId: string; content: string; rootId?: string; from?: string },
+  payload: { chatId: string; content: string; ref?: number; from?: string },
   toolCallId = "call-message-send",
 ) =>
   await callRootWorkspaceBashJson<{
@@ -580,7 +580,6 @@ const createRuntimeLocalHandlers = (input: {
       contextId: request.contextId,
       parentCommitIds: request.parentCommitIds,
       meta: request.meta,
-      egress: request.egress,
       scores: effectiveScores,
       summary: request.summary,
       change: request.change ?? { type: "clean" },
@@ -764,7 +763,7 @@ const createMessageGateway = () => {
   const sent: Array<{
     chatId: string;
     content: string;
-    rootId?: string;
+    ref?: number;
     from?: string;
     createdAt: number;
     updatedAt: number;
@@ -808,7 +807,7 @@ const createMessageGateway = () => {
       rowId: number;
       messageId: number;
       chatId: string;
-      rootId?: string;
+      ref?: number;
       from: string;
       kind: "text";
       content: string;
@@ -928,7 +927,7 @@ const createMessageGateway = () => {
           items,
         };
       },
-      send: async (input: { chatId: string; content: string; rootId?: string; from?: string }) => {
+      send: async (input: { chatId: string; content: string; ref?: number; from?: string }) => {
         const roomHistory = history.get(input.chatId) ?? [];
         const nextMessageId = (roomHistory.at(-1)?.messageId ?? 0) + 1;
         const timestamp = Date.now();
@@ -936,7 +935,7 @@ const createMessageGateway = () => {
           rowId: nextMessageId,
           messageId: nextMessageId,
           chatId: input.chatId,
-          rootId: input.rootId,
+          ref: input.ref,
           from: input.from ?? "default",
           kind: "text" as const,
           content: input.content,
@@ -1818,7 +1817,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(ai.consumePendingCompactRequest()).toBe("attention_retry");
   });
 
-  test("Scenario: Given chat-backed attention When the model clears scores without dispatching a visible reply Then AgenterAI accepts the attention mutation and leaves egress to runtime adapters", async () => {
+  test("Scenario: Given chat-backed attention When the model clears scores without dispatching a visible reply Then AgenterAI accepts the attention mutation and leaves visible chat to runtime message actions", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const message = createMessageGateway();

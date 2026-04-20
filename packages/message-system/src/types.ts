@@ -174,7 +174,7 @@ export interface MessageRecord {
   rowId: number;
   messageId: number;
   chatId: string;
-  rootId?: string;
+  ref?: number;
   senderActorId?: MessageActorId;
   from: string;
   kind: MessageKind;
@@ -246,7 +246,7 @@ export interface MessageCreateInitialUserInput {
 
 export interface MessageAppendInput {
   chatId: string;
-  rootId?: string;
+  ref?: number;
   senderActorId?: MessageActorId;
   from?: string;
   kind?: MessageKind;

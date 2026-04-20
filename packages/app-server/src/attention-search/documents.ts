@@ -7,7 +7,6 @@ export const toAttentionCommitKey = (contextId: string, commitId: string): strin
 export const buildAttentionSearchDocument = (match: AttentionCommitMatch): AttentionSearchDocument => {
   const changeValue = "value" in match.commit.change && typeof match.commit.change.value === "string" ? match.commit.change.value : "";
   const metaJson = JSON.stringify(match.commit.meta);
-  const egressJson = JSON.stringify(match.commit.egress ?? null);
   const activeScores = Object.values(match.context.scoreMap).filter((value) => value >= 1);
   const searchText = [
     match.contextId,
@@ -17,7 +16,6 @@ export const buildAttentionSearchDocument = (match: AttentionCommitMatch): Atten
     match.commit.summary,
     changeValue,
     metaJson,
-    egressJson,
   ]
     .filter((value) => value.length > 0)
     .join("\n");

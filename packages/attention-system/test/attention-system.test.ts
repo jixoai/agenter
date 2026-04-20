@@ -38,7 +38,6 @@ describe("Feature: attention system context scheduling", () => {
     });
     system.commit("ctx-1", {
       meta: { author: "avatar:jane", source: "attention" },
-      egress: { kind: "message_reply", chatId: "chat-kzf" },
       scores: { hash1: 0 },
       summary: "relay finished",
       change: { type: "update", value: "gaubee says fried rice" },
@@ -46,7 +45,7 @@ describe("Feature: attention system context scheduling", () => {
 
     const matches = system.query({ source: "attention", text: "fried", minScore: 0 });
     expect(matches).toHaveLength(1);
-    expect(matches[0]?.commit.egress).toEqual({ kind: "message_reply", chatId: "chat-kzf" });
+    expect(Object.prototype.hasOwnProperty.call(matches[0]?.commit ?? {}, "egress")).toBeFalse();
   });
 
   test("Scenario: Given subscriptions When a commit lands Then listeners receive the commit", () => {

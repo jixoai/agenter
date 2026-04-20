@@ -16,6 +16,7 @@
     WebChatChannel,
     WebChatMessage,
     WebChatMessageAction,
+    WebChatMessageReference,
     WebChatMessageReadProgress,
     WebChatMessageRenderInput,
   } from "./types";
@@ -31,6 +32,7 @@
     channel,
     viewerActorId,
     message,
+    referencedMessage = null,
     resolveActorPresentation,
     resolveMessageActions,
     resolveMessageReadProgress,
@@ -39,6 +41,7 @@
     channel: WebChatChannel;
     viewerActorId: string | null;
     message: WebChatMessage;
+    referencedMessage?: WebChatMessageReference | null;
     resolveActorPresentation?: (
       input: {
         channel: WebChatChannel;
@@ -98,6 +101,21 @@
       hour: "numeric",
       minute: "2-digit",
     }).format(new Date(timestamp));
+  const clipReferencePreview = (value: string, maxChars = 120): string => {
+    const normalized = value.replace(/\s+/gu, " ").trim();
+    if (normalized.length <= maxChars) {
+      return normalized;
+    }
+    return `${normalized.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
+  };
+  const referencedPreviewText = $derived.by(() => {
+    if (!referencedMessage) {
+      return null;
+    }
+    const content = referencedMessage.recalledAt ? "This message was recalled." : referencedMessage.content;
+    const preview = clipReferencePreview(content);
+    return preview.length > 0 ? preview : "[empty message]";
+  });
 
   const buildInteractiveText = (
     fields: Record<string, string>,
@@ -239,6 +257,13 @@
                 </div>
                 <span class="timestamp">{formatTimestamp(message.createdAt)}</span>
               </div>
+
+              {#if referencedMessage && referencedPreviewText}
+                <div class="reference-preview" data-testid="message-ref-preview" part="message-reference">
+                  <span class="reference-label">{referencedMessage.from}</span>
+                  <p>{referencedPreviewText}</p>
+                </div>
+              {/if}
 
               {#if recalled}
                 <div class="recall-block" part="message-recalled">
@@ -452,6 +477,41 @@
   .row.viewer-owned .subtitle,
   .row.viewer-owned .timestamp {
     color: rgba(255, 255, 255, 0.68);
+  }
+
+  .reference-preview {
+    display: grid;
+    gap: 0.18rem;
+    margin-bottom: 0.48rem;
+    padding: 0.5rem 0.62rem;
+    border-radius: 0.82rem;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    background: rgba(148, 163, 184, 0.08);
+  }
+
+  .reference-label {
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: rgba(51, 65, 85, 0.88);
+  }
+
+  .reference-preview p {
+    margin: 0;
+    font-size: 0.74rem;
+    line-height: 1.45;
+    color: rgba(71, 85, 105, 0.92);
+    word-break: break-word;
+  }
+
+  .row.viewer-owned .reference-preview {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .row.viewer-owned .reference-label,
+  .row.viewer-owned .reference-preview p {
+    color: rgba(255, 255, 255, 0.84);
   }
 
   .content {

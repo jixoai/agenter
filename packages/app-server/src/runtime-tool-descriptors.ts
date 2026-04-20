@@ -35,7 +35,7 @@ export interface RuntimeLocalApiHandlers {
   messageSend: (input: {
     chatId: string;
     content: string;
-    rootId?: string;
+    ref?: number;
     from?: string;
     originAckFallback?: string;
   }) => Promise<RuntimeMessageSendResult>;
@@ -139,19 +139,11 @@ const attentionCommitChangeSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-const attentionCommitEgressSchema = z.object({
-  kind: z.literal("message_reply"),
-  chatId: z.string(),
-  rootId: z.string().optional(),
-  from: z.string().optional(),
-});
-
 const attentionCommitSchema = z
   .object({
     contextId: z.string(),
     parentCommitIds: z.array(z.string()).optional(),
     meta: z.record(z.string(), z.unknown()).optional(),
-    egress: attentionCommitEgressSchema.optional(),
     scores: z.record(z.string(), z.number()).optional(),
     summary: z.string(),
     change: attentionCommitChangeSchema.optional(),
@@ -183,7 +175,7 @@ const messageQuerySchema = z.object({
 const messageSendSchema = z.object({
   chatId: z.string(),
   content: z.string(),
-  rootId: z.string().optional(),
+  ref: z.number().int().positive().optional(),
   from: z.string().optional(),
   originAckFallback: z.string().optional(),
 });
@@ -315,7 +307,7 @@ export const runtimeToolDescriptors = [
     namespace: "message",
     name: "read",
     route: "/v1/message/read",
-    description: "Read a room snapshot with optional limit.",
+    description: "Read a room snapshot with optional limit, plus one-hop referencedItems for any visible reply refs.",
     inputSchema: messageReadSchema,
     examples: [
       { kind: "stdin", payload: { chatId: "room-1", limit: 10 } },
@@ -359,15 +351,19 @@ export const runtimeToolDescriptors = [
     namespace: "message",
     name: "send",
     route: "/v1/message/send",
-    description: "Send a durable room message through the runtime message system.",
+    description:
+      "Send a durable room message through the runtime message system. Use ref to reply to an earlier room message, then inspect recentMessages and follow up with message read/edit/recall when the visible outcome needs revision.",
     inputSchema: messageSendSchema,
     examples: [
       {
         kind: "stdin",
         payload: {
           chatId: "room-1",
+          ref: 41,
           content: "我已经完成初版了。\n请直接打开我刚发给你的链接看看。",
         },
+        description:
+          "If recentMessages suggest an accidental duplicate, use `message read` before `message edit` or `message recall` so the revision follows the actual conversation context.",
       },
       {
         kind: "argv",

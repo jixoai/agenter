@@ -102,6 +102,11 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageContent).toContain("message send --compact");
     expect(messageContent).toContain("message edit");
     expect(messageContent).toContain("message recall");
+    expect(messageContent).toContain("include `ref`");
+    expect(messageContent).toContain("`message send` returns `recentMessages`");
+    expect(messageContent).toContain("see `referencedItems`");
+    expect(messageContent).toContain("Similar wording alone is not enough to justify recall");
+    expect(messageContent).toContain("intentional in the room's protocol or request");
     expect(messageContent).toContain("already know its `messageId`");
     expect(messageContent).toContain("should no longer remain visible");
     expect(messageContent).toContain("send a corrected follow-up message instead of guessing");

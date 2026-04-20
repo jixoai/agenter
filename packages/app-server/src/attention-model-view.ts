@@ -96,7 +96,6 @@ const projectAttentionMeta = (meta: AttentionCommitMeta): AttentionCommitMeta =>
 const projectAttentionCommit = (commit: AttentionCommit): AttentionCommit => ({
   ...commit,
   meta: projectAttentionMeta(commit.meta),
-  egress: commit.egress ? { ...commit.egress } : undefined,
   scores: { ...commit.scores },
   change:
     commit.change.type === "clean"

@@ -53,6 +53,7 @@
     WebChatChannel,
     WebChatConnectionState,
     WebChatMessage,
+    WebChatMessageReference,
     WebChatRootProps,
     WebChatSocketFactory,
     WebChatSocketLike,
@@ -241,6 +242,24 @@
       .map((message) => message.viewKey);
   };
   const transcriptMessages = $derived([...messages].sort(compareMessages));
+  const referencedMessageById = $derived.by(() => {
+    const byId = new Map<number, WebChatMessageReference>();
+    for (const message of transcriptMessages) {
+      if (typeof message.messageId !== "number") {
+        continue;
+      }
+      byId.set(message.messageId, {
+        messageId: message.messageId,
+        from: message.from,
+        kind: message.kind,
+        content: message.content,
+        createdAt: message.createdAt,
+        updatedAt: message.updatedAt,
+        recalledAt: message.recalledAt,
+      });
+    }
+    return byId;
+  });
   const effectiveSocketFactory = $derived(socketFactory ?? defaultSocketFactory);
   const effectiveViewerActorId = $derived(resolveViewerActorId(channel, viewerActorId));
   const effectiveChannelPresentation = $derived.by(() => {
@@ -1085,6 +1104,7 @@
                     {channel}
                     viewerActorId={effectiveViewerActorId}
                     {message}
+                    referencedMessage={typeof message.ref === "number" ? referencedMessageById.get(message.ref) ?? null : null}
                     {resolveActorPresentation}
                     {resolveMessageActions}
                     {resolveMessageReadProgress}

@@ -12,7 +12,7 @@ export interface MessageQueryDocument {
   chatTitle: string;
   contextId: string | null;
   messageId: number;
-  rootId: string | null;
+  ref: number | null;
   senderActorId: string | null;
   from: string;
   kind: string;
@@ -32,7 +32,7 @@ export type MessageQueryCandidateFilter =
   | { kind: "chat"; value: string }
   | { kind: "context"; value: string }
   | { kind: "kind"; value: string }
-  | { kind: "root"; value: string }
+  | { kind: "ref"; value: number }
   | { kind: "has"; value: "attachment" | "recalled" }
   | { kind: "is"; value: "recalled" | "visible" | "hidden" }
   | {
@@ -174,8 +174,9 @@ const extractCandidateFilter = (node: SearchSyntaxNode): MessageQueryCandidateFi
   if (field === "kind") {
     return { kind: "kind", value: normalize(node.value) };
   }
-  if (field === "root" || field === "rootid") {
-    return { kind: "root", value: normalize(node.value) };
+  if (field === "ref" || field === "refid") {
+    const parsed = parseInteger(node.value);
+    return parsed === undefined ? null : { kind: "ref", value: parsed };
   }
   if (field === "has") {
     const value = parseHasValue(node.value);
@@ -285,8 +286,9 @@ const evaluateText = (node: SearchSyntaxTextNode, document: MessageQueryDocument
   if (field === "kind") {
     return normalize(document.kind) === normalize(node.value);
   }
-  if (field === "root" || field === "rootid") {
-    return normalize(document.rootId ?? "") === normalize(node.value);
+  if (field === "ref" || field === "refid") {
+    const parsed = parseInteger(node.value);
+    return parsed === undefined ? false : document.ref === parsed;
   }
   if (field === "id" || field === "message" || field === "messageid") {
     return String(document.messageId) === node.value.trim();

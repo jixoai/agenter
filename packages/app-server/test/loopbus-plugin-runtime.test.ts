@@ -56,7 +56,6 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
     system.createContext({ contextId: "ctx-1", owner: "jane" });
     const { context, commit } = system.commit("ctx-1", {
       meta: { author: "avatar:jane", source: "attention" },
-      egress: { kind: "message_reply", chatId: "chat-kzf" },
       scores: { hash1: 0 },
       summary: "reply",
       change: { type: "update", value: "reply", format: "text/plain" },

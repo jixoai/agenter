@@ -3,7 +3,6 @@ import {
 } from "@agenter/attention-system";
 import type {
   AttentionCommit,
-  AttentionCommitEgress,
   AttentionCommitHookResult,
   AttentionCommitMeta,
   AttentionSourceNamespaceRegistration,
@@ -65,7 +64,6 @@ export interface AttentionDraft {
   };
   semanticHash?: string | null;
   versionHint?: string | null;
-  egress?: AttentionCommitEgress;
   supersedeActive?: {
     src: string;
   };

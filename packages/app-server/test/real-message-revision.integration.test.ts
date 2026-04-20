@@ -30,21 +30,28 @@ describe("Feature: real AI message revision", () => {
       try {
         const result = await runRealDraftEditScenario(harness);
         await writeRealMessageRevisionEvidence(result);
+        const visibleAssistantMessages = result.assistantMessages.filter((message) => typeof message.recalledAt !== "number");
+        const recallUsed =
+          result.rootWorkspaceBashCommands.some((command) => command.includes("message recall")) ||
+          result.directMessageMutationTools.includes("message recall");
 
         expect(result.observedPattern).toBe("send+edit");
         expect(result.revisedMessage?.messageId).toBe(result.finalMessage.messageId);
         expect(result.revisedMessage?.updatedAt).toBeGreaterThan(result.revisedMessage?.createdAt ?? 0);
         expect(result.revisedMessage?.recalledAt).toBeUndefined();
         expect(result.finalMessage.content.trim()).toBe(result.expectedFinalText);
+        expect(visibleAssistantMessages).toHaveLength(1);
+        expect(visibleAssistantMessages[0]?.messageId).toBe(result.finalMessage.messageId);
         expect(result.rootWorkspaceBashCommands.some((command) => command.includes("message send"))).toBeTrue();
         expect(
           result.rootWorkspaceBashCommands.some((command) => command.includes("message edit")) ||
             result.directMessageMutationTools.includes("message edit"),
         ).toBeTrue();
-        expect(
-          result.rootWorkspaceBashCommands.some((command) => command.includes("message recall")) ||
-            result.directMessageMutationTools.includes("message recall"),
-        ).toBeFalse();
+        if (recallUsed) {
+          expect(result.recalledMessage).toBeTruthy();
+          expect(result.recalledMessage?.messageId).not.toBe(result.finalMessage.messageId);
+          expect(result.recalledMessage?.content.trim()).not.toBe(result.expectedFinalText);
+        }
         expect(result.settledAttention.active).toHaveLength(0);
       } catch (error) {
         await writeRealMessageRevisionFailureEvidence(harness, {

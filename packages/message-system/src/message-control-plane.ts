@@ -705,7 +705,7 @@ export class MessageControlPlane {
     const visibleAt = input.visibleAt ?? createdAt;
     return this.send({
       chatId: input.chatId,
-      rootId: input.rootId,
+      ref: input.ref,
       senderActorId: sender.senderActorId,
       from: sender.from,
       kind: input.kind,
@@ -768,7 +768,7 @@ export class MessageControlPlane {
     const readMembership = this.createInitialReadMembership(input.chatId, sender.senderActorId);
     return this.send({
       chatId: input.chatId,
-      rootId: input.rootId,
+      ref: input.ref,
       senderActorId: sender.senderActorId,
       from: sender.from,
       kind: "error",
@@ -798,7 +798,7 @@ export class MessageControlPlane {
     const readMembership = this.createInitialReadMembership(input.chatId, sender.senderActorId);
     return this.send({
       chatId: input.chatId,
-      rootId: input.rootId,
+      ref: input.ref,
       senderActorId: sender.senderActorId,
       from: sender.from,
       kind: "interactive",

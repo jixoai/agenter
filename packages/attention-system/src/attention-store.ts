@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { AttentionCommit, AttentionCommitEgress, AttentionContextSnapshot } from "./attention-item";
+import type { AttentionCommit, AttentionContextSnapshot } from "./attention-item";
 import { buildAttentionContextStateFromCommits } from "./attention-context";
 import type { AttentionCommitChange, AttentionSystemSnapshot, LegacyAttentionSnapshot } from "./attention-types";
 
@@ -105,9 +105,6 @@ const sanitizeCommitMeta = (meta: Record<string, unknown>): AttentionCommit["met
   createdAt: typeof meta.createdAt === "string" ? meta.createdAt : undefined,
 });
 
-const cloneEgress = (egress: AttentionCommitEgress | undefined): AttentionCommitEgress | undefined =>
-  egress ? { ...egress } : undefined;
-
 const cloneSnapshot = (snapshot: AttentionSystemSnapshot): AttentionSystemSnapshot => ({
   contexts: snapshot.contexts.map((context) => ({
     ...context,
@@ -119,7 +116,6 @@ const cloneSnapshot = (snapshot: AttentionSystemSnapshot): AttentionSystemSnapsh
         ingressType: commit.ingressType,
         parentCommitIds: [...commit.parentCommitIds],
         meta: sanitizeCommitMeta(metaRecord),
-        egress: cloneEgress(commit.egress),
         scores: { ...commit.scores },
         change: cloneChange(commit.change),
       };
@@ -135,7 +131,6 @@ const toContextSnapshot = (input: { contextId: string; owner: string; commits: A
     ingressType: commit.ingressType,
     parentCommitIds: [...commit.parentCommitIds],
     meta: sanitizeCommitMeta(asUnknownRecord(commit.meta)),
-    egress: cloneEgress(commit.egress),
     scores: { ...commit.scores },
     change: cloneChange(commit.change),
   })),
@@ -245,7 +240,6 @@ const migrateV4ToV5 = (snapshot: PersistedV4): AttentionSystemSnapshot => ({
       ingressType: commit.ingressType ?? "commit",
       parentCommitIds: [...commit.parentCommitIds],
       meta: sanitizeCommitMeta(asUnknownRecord(commit.meta)),
-      egress: cloneEgress(commit.egress),
       scores: { ...commit.scores },
       change: cloneChange(commit.change),
     })),

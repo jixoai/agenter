@@ -645,6 +645,42 @@ describe("Feature: message-chat-control-plane", () => {
     expect(edited.unreadActorIds).toEqual(sent.unreadActorIds);
   });
 
+  test("Scenario: Given a room reply points at another durable room message When the send is authorized Then the durable room fact stores same-room ref instead of runtime residue", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const prompt = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "Can you check the duplicate reply?",
+    });
+
+    const reply = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      ref: prompt.messageId,
+      content: "I am checking it now.",
+    });
+
+    const snapshot = plane.snapshotAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+    });
+    const persisted = snapshot.items.find((item) => item.messageId === reply.messageId);
+
+    expect(reply.ref).toBe(prompt.messageId);
+    expect(persisted?.ref).toBe(prompt.messageId);
+    expect(Object.prototype.hasOwnProperty.call(reply, "rootId")).toBeFalse();
+    expect(Object.prototype.hasOwnProperty.call(persisted ?? {}, "rootId")).toBeFalse();
+  });
+
   test("Scenario: Given a different member tries to edit someone else's durable room message When the edit is authorized Then message-system rejects the mutation", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });

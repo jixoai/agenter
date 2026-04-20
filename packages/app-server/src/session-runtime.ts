@@ -4,7 +4,6 @@ import {
   type AttentionActiveContextMatch,
   type AttentionCommit,
   type AttentionCommitChange,
-  type AttentionCommitEgress,
   type AttentionCommitMatch,
   type AttentionCommitMeta,
   type AttentionCommitRef,
@@ -218,8 +217,6 @@ import { listWorkspaceHiddenPrivatePaths } from "./workspace-system/private-isol
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const DEFAULT_CHAT_OWNER = "agenter";
-const RUNTIME_MESSAGE_DISPATCH_SOURCE = "runtime_dispatch";
-
 const clonePromptWindowMessages = (
   messages: unknown[] | null | undefined,
 ): ReturnType<AgenterAI["inspectDebugState"]>["promptWindow"] =>
@@ -463,17 +460,6 @@ const toModelCallTraceRef = (modelCallId: number): SessionTraceRef =>
 
 const toAttentionHookTraceRef = (hookId: string): SessionTraceRef =>
   createTraceRef("attention.hook", hookId, { label: hookId });
-
-const readMessageReplyEgress = (commit: AttentionCommit): AttentionCommitEgress | null =>
-  commit.egress?.kind === "message_reply" ? commit.egress : null;
-
-const resolveVisibleAttentionReplyContent = (commit: AttentionCommit): string | null => {
-  // Room-visible replies must come from an explicit body, not an internal summary.
-  if (commit.change.type !== "update") {
-    return null;
-  }
-  return commit.change.value.trim().length > 0 ? commit.change.value : null;
-};
 
 const extractKnownTerminalIds = (value: string, terminalIds: Iterable<string>): string[] => {
   const matches: string[] = [];
@@ -786,7 +772,6 @@ const projectAttentionCommitForPrompt = (commit: AttentionCommit): Record<string
     tags: commit.meta.tags,
     createdAt: commit.meta.createdAt,
   },
-  egress: commit.egress ? { ...commit.egress } : undefined,
   scores: { ...commit.scores },
   summary: commit.summary,
   change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
@@ -1058,7 +1043,6 @@ const stableAttentionDraftDigest = (draft: AttentionDraft): string => {
             content: draft.content,
             presentation: draft.presentation ?? null,
             provenance: draft.provenance ?? null,
-            egress: draft.egress ?? null,
           });
   return `${draft.sourceRef.src}:${semanticHint}`;
 };
@@ -1457,6 +1441,7 @@ export class SessionRuntime {
   private readonly loopTraceEntries: SessionDbLoopbusTraceRecord[] = [];
   private readonly terminalActivityByTerminalId = new Map<string, SessionDbTerminalActivityRecord[]>();
   private readonly cycleReplyChatIds = new Map<number, string>();
+  private readonly deliveredRuntimeDispatchChatIds = new Map<number, Set<string>>();
   private pendingCompactRequest: PendingCompactRequest | null = null;
   private abortingActiveCycle = false;
   private loopKernelVersion = 0;
@@ -1904,10 +1889,19 @@ export class SessionRuntime {
 
   private readMessageChannelForTooling(input: { chatId: string; limit?: number }): RuntimeMessageSnapshotView {
     const visibleRooms = this.listVisibleMessageRoomSummaries(input.chatId);
-    return projectRuntimeMessageSnapshot(this.readMessageChannel(input), {
+    const snapshot = this.readMessageChannel(input);
+    return projectRuntimeMessageSnapshot(snapshot, {
       visibleRooms,
       reachableParticipants: this.projectReachableMessageParticipants(visibleRooms),
+      referencedItems: this.resolveReferencedRoomMessages(snapshot),
     });
+  }
+
+  private resolveReferencedRoomMessages(snapshot: MessageSnapshot): MessageRecord[] {
+    const refs = [...new Set(snapshot.items.map((item) => item.ref).filter((value): value is number => value !== undefined))];
+    return refs
+      .map((messageId) => this.messageSystem.getMessage(snapshot.channel.chatId, messageId))
+      .filter((message): message is MessageRecord => message !== undefined);
   }
 
   private resolveMessageSeatLabel(input: { id: string; label?: string }): string {
@@ -2172,7 +2166,7 @@ export class SessionRuntime {
   private async sendMessageTool(input: {
     chatId: string;
     content: string;
-    rootId?: string;
+    ref?: number;
     from?: string;
     originAckFallback?: string;
   }): Promise<RuntimeMessageSendResult> {
@@ -2199,17 +2193,13 @@ export class SessionRuntime {
               : this.getMessageSendOriginAckFallback(),
           from: author,
           cycleId: replyCycleId,
-          metadata: {
-            autoOriginAck: true,
-            relayTargetChatId: input.chatId,
-          },
         });
       }
     }
     return this.deliverRuntimeMessageDispatch({
       chatId: input.chatId,
       content: input.content,
-      rootId: input.rootId,
+      ref: input.ref,
       from: author,
       cycleId: replyCycleId,
     });
@@ -2272,7 +2262,7 @@ export class SessionRuntime {
   private appendActorChannelReply(input: {
     chatId: string;
     content: string;
-    rootId?: string;
+    ref?: number;
     from: string;
     metadata?: Record<string, unknown>;
   }): MessageRecord {
@@ -2281,7 +2271,7 @@ export class SessionRuntime {
       chatId: access.chatId,
       accessToken: access.accessToken,
       senderActorId: this.messageActorId,
-      rootId: input.rootId,
+      ref: input.ref,
       from: input.from,
       content: input.content,
       metadata: input.metadata,
@@ -2307,21 +2297,15 @@ export class SessionRuntime {
       content: this.getMessageSendOriginAckFallback(),
       from: this.getAvatarName(),
       cycleId,
-      metadata: {
-        autoOriginAck: true,
-        autoOriginAckReason: "tool_work_start",
-        toolWorkCommandPreview: command.slice(0, 160),
-      },
     });
   }
 
   private deliverRuntimeMessageDispatch(input: {
     chatId: string;
     content: string;
-    rootId?: string;
+    ref?: number;
     from: string;
     cycleId: number | null;
-    metadata?: Record<string, unknown>;
   }): RuntimeMessageSendResult {
     const redundant = this.findRedundantVisibleReply({
       chatId: input.chatId,
@@ -2329,6 +2313,7 @@ export class SessionRuntime {
       from: input.from,
     });
     if (redundant) {
+      this.markRuntimeDispatchDelivered(input.chatId, input.cycleId);
       return this.buildRuntimeMessageSendResult({
         chatId: input.chatId,
         message: redundant,
@@ -2336,16 +2321,11 @@ export class SessionRuntime {
     }
     const message = this.appendActorChannelReply({
       chatId: input.chatId,
-      rootId: input.rootId ?? (input.cycleId !== null ? String(input.cycleId) : undefined),
+      ref: input.ref,
       from: input.from,
       content: input.content,
-      metadata: {
-        channel: "to_user",
-        source: RUNTIME_MESSAGE_DISPATCH_SOURCE,
-        cycleId: input.cycleId,
-        ...(input.metadata ?? {}),
-      },
     });
+    this.markRuntimeDispatchDelivered(input.chatId, input.cycleId);
     return this.buildRuntimeMessageSendResult({
       chatId: input.chatId,
       message,
@@ -2422,7 +2402,7 @@ export class SessionRuntime {
   async sendRuntimeMessage(input: {
     chatId: string;
     content: string;
-    rootId?: string;
+    ref?: number;
     from?: string;
     originAckFallback?: string;
   }): Promise<RuntimeMessageSendResult> {
@@ -3354,15 +3334,19 @@ export class SessionRuntime {
     if (cycleId === null) {
       return false;
     }
-    return this.messageSystem
-      .queryMessages({ chatId, limit: 12 })
-      .items.some(
-        (message) =>
-          message.metadata &&
-          typeof message.metadata === "object" &&
-          message.metadata.source === RUNTIME_MESSAGE_DISPATCH_SOURCE &&
-          message.metadata.cycleId === cycleId,
-      );
+    return this.deliveredRuntimeDispatchChatIds.get(cycleId)?.has(chatId) ?? false;
+  }
+
+  private markRuntimeDispatchDelivered(chatId: string, cycleId: number | null): void {
+    if (cycleId === null) {
+      return;
+    }
+    const existing = this.deliveredRuntimeDispatchChatIds.get(cycleId);
+    if (existing) {
+      existing.add(chatId);
+      return;
+    }
+    this.deliveredRuntimeDispatchChatIds.set(cycleId, new Set([chatId]));
   }
 
   private getOriginChatIdForCycle(cycleId: number | null): string | null {
@@ -3423,110 +3407,6 @@ export class SessionRuntime {
             allow: message !== undefined,
             reason: message ? "message.available" : "message.missing",
           };
-        },
-        attentionCommitted: async ({ contextId, commit }) => {
-          const replyTarget = readMessageReplyEgress(commit);
-          if (!replyTarget) {
-            return {
-              hookId: "builtin-message-bridge",
-              bridgeId: "message",
-              status: "ignored",
-            };
-          }
-          const chatId = replyTarget.chatId ?? null;
-          if (!chatId) {
-            return {
-              hookId: "builtin-message-bridge",
-              bridgeId: "message",
-              status: "ignored",
-              error: "missing chat target",
-            };
-          }
-          const channel = this.messageSystem.getChannel(chatId);
-          if (!channel) {
-            return {
-              hookId: "builtin-message-bridge",
-              bridgeId: "message",
-              status: "failed",
-              target: { chatId },
-              error: `unknown chat channel: ${chatId}`,
-            };
-          }
-          try {
-            const replyCycleId = this.activeCycleId;
-            if (this.hasDeliveredRuntimeDispatchForCycle(chatId, replyCycleId)) {
-              return {
-                hookId: "builtin-message-bridge",
-                bridgeId: "message",
-                status: "ignored",
-                target: {
-                  chatId,
-                  rootId: replyTarget.rootId ?? (replyCycleId !== null ? String(replyCycleId) : null),
-                },
-                output: {
-                  reason: "duplicate-visible-dispatch",
-                  attentionContextId: contextId,
-                  attentionCommitId: commit.commitId,
-                },
-              };
-            }
-            const replyContent = resolveVisibleAttentionReplyContent(commit);
-            if (!replyContent) {
-              return {
-                hookId: "builtin-message-bridge",
-                bridgeId: "message",
-                status: "ignored",
-                target: {
-                  chatId,
-                  rootId: replyTarget.rootId ?? (replyCycleId !== null ? String(replyCycleId) : null),
-                },
-                output: {
-                  reason: "no-visible-reply-body",
-                  attentionContextId: contextId,
-                  attentionCommitId: commit.commitId,
-                },
-              };
-            }
-            const message = this.appendActorChannelReply({
-              chatId,
-              rootId: replyTarget.rootId ?? (replyCycleId !== null ? String(replyCycleId) : undefined),
-              from: replyTarget.from ?? this.getAvatarName(),
-              content: replyContent,
-              metadata: {
-                channel: "to_user",
-                source: "attention_reply",
-                attentionContextId: contextId,
-                attentionCommitId: commit.commitId,
-                cycleId: replyCycleId,
-              },
-            });
-            return {
-              hookId: "builtin-message-bridge",
-              bridgeId: "message",
-              status: "delivered",
-              target: {
-                chatId,
-                rootId: replyTarget.rootId ?? null,
-              },
-              output: {
-                messageId: message.messageId,
-                rowId: message.rowId,
-                attentionContextId: contextId,
-                attentionCommitId: commit.commitId,
-              },
-            };
-          } catch (error) {
-            return {
-              hookId: "builtin-message-bridge",
-              bridgeId: "message",
-              status: "failed",
-              target: {
-                chatId,
-                rootId: replyTarget.rootId ?? null,
-              },
-              error: error instanceof Error ? error.message : String(error),
-            };
-          }
         },
       },
       {
@@ -3639,7 +3519,6 @@ export class SessionRuntime {
             scores: effectiveScores,
             summary: input.summary,
             change: input.change,
-            egress: input.egress,
           });
           await this.persistAttentionSystem();
           this.attentionFactsVersion += 1;
@@ -4269,7 +4148,6 @@ export class SessionRuntime {
       contextId,
       ingressType: this.resolveAttentionIngressType(contextId),
       meta: this.buildAttentionMeta(draft),
-      egress: draft.egress ? { ...draft.egress } : undefined,
       scores: this.buildAttentionScores(draft),
       summary: presentation.summary,
       change: {
@@ -4989,7 +4867,6 @@ export class SessionRuntime {
               tags: commit.meta.tags,
               createdAt: commit.meta.createdAt,
             },
-            egress: commit.egress ? { ...commit.egress } : undefined,
             scores: { ...commit.scores },
             summary: commit.summary,
             change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
@@ -7756,6 +7633,7 @@ export class SessionRuntime {
     }
     if (this.activeCycle.cycleId !== null) {
       this.cycleReplyChatIds.delete(this.activeCycle.cycleId);
+      this.deliveredRuntimeDispatchChatIds.delete(this.activeCycle.cycleId);
     }
     this.activeCycle.status = status;
     this.activeCycle.liveMessages = [];

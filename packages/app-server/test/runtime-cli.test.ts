@@ -131,7 +131,7 @@ describe("Feature: runtime descriptor CLI", () => {
     const message = createRuntimeCommand(api.baseUrl, "message");
 
     const result = await message.execute(
-      ["send", '{"chatId":"room-1","content":"APP-ACK: 开始构建"}'],
+      ['send', '{"chatId":"room-1","ref":1,"content":"APP-ACK: 开始构建"}'],
       createCommandContext(),
     );
 
@@ -146,6 +146,7 @@ describe("Feature: runtime descriptor CLI", () => {
       }),
       body: {
         chatId: "room-1",
+        ref: 1,
         content: "APP-ACK: 开始构建",
       },
     });
@@ -364,13 +365,17 @@ describe("Feature: runtime descriptor CLI", () => {
     );
     expect(messageHelp.stdout).toContain("Optional positional compact mode");
     expect(messageHelp.stdout).toContain("Availability: Available");
+    expect(messageHelp.stdout).toContain('"ref"');
+    expect(messageHelp.stdout).toContain("If recentMessages suggest an accidental duplicate");
+    expect(messageHelp.stdout).toContain("use `message read` before `message edit` or `message recall`");
 
     expect(attentionHelp.exitCode).toBe(0);
     expect(attentionHelp.stdout).toContain("command: `attention commit`");
     expect(attentionHelp.stdout).toContain("stdin:");
     expect(attentionHelp.stdout).not.toContain("cat <<'EOF'");
     expect(attentionHelp.stdout).toContain('["update", value, format?] | ["diff", value, format?] | ["clean"]');
-    expect(attentionHelp.stdout).toContain('[3] egress?: ["message_reply", chatId, rootId?, from?]');
+    expect(attentionHelp.stdout).not.toContain("message_reply");
+    expect(attentionHelp.stdout).not.toContain("egress");
   });
 
   test("Scenario: Given explicit compact help markers When message send --compact --help runs Then local help still renders without calling the runtime API", async () => {

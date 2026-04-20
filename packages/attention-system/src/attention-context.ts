@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import type {
   AttentionCommit,
-  AttentionCommitEgress,
   AttentionCommitInput,
   AttentionFocusState,
   AttentionCommitMeta,
@@ -41,9 +40,6 @@ const cloneMeta = (meta: AttentionCommitMeta): AttentionCommitMeta => ({
   tags: Array.isArray(meta.tags) ? [...meta.tags] : undefined,
 });
 
-const cloneEgress = (egress: AttentionCommitEgress | undefined): AttentionCommitEgress | undefined =>
-  egress ? { ...egress } : undefined;
-
 const cloneChange = (change: AttentionCommitChange): AttentionCommitChange => ({ ...change });
 const hasNotificationTag = (meta: AttentionCommitMeta): boolean =>
   Array.isArray(meta.tags) && meta.tags.includes("notification");
@@ -52,7 +48,6 @@ const cloneCommit = (commit: AttentionCommit): AttentionCommit => ({
   ...commit,
   parentCommitIds: [...commit.parentCommitIds],
   meta: cloneMeta(commit.meta),
-  egress: cloneEgress(commit.egress),
   scores: { ...commit.scores },
   change: cloneChange(commit.change),
 });
@@ -280,7 +275,6 @@ export class AttentionContext {
         ...(input.meta ?? {}),
         createdAt,
       }),
-      egress: cloneEgress(input.egress),
       scores: normalizeAttentionScores(input.scores ?? {}),
       summary: input.summary.trim(),
       change: cloneChange(input.change),

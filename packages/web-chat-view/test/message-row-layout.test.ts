@@ -11,4 +11,9 @@ describe("Feature: shared message row read-trigger placement", () => {
     expect(messageRowSource).toContain("<MessageReadIndicator progress={messageReadProgress} />");
     expect(messageRowSource).toContain(".message-cluster {");
   });
+
+  test("Scenario: Given a room row with a reply reference When reading the shared source Then the bubble exposes a first-class reference preview surface", () => {
+    expect(messageRowSource).toContain('data-testid="message-ref-preview"');
+    expect(messageRowSource).toContain('part="message-reference"');
+  });
 });

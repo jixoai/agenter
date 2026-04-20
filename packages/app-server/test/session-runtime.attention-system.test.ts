@@ -34,7 +34,7 @@ interface RuntimeMessageSnapshotView {
   ) => {
     items: Array<{
       content: string;
-      rootId?: string;
+      ref?: number;
       metadata?: Record<string, unknown>;
     }>;
   };
@@ -150,6 +150,15 @@ interface RuntimeInternal {
     input: { mode: "auto" | "diff" | "snapshot"; remark: boolean },
   ) => Promise<{ kind: string; representation: string } | { ok: false; reason: string }>;
   readMessageChannelForTooling: (input: { chatId: string; limit?: number }) => {
+    items: Array<{
+      messageId: number;
+      content: string;
+      ref?: number;
+    }>;
+    referencedItems: Array<{
+      messageId: number;
+      content: string;
+    }>;
     directory?: {
       visibleRooms: Array<{
         chatId: string;
@@ -226,7 +235,7 @@ interface RuntimeMessageEgressInternal extends RuntimeInternal {
   sendMessageTool: (input: {
     chatId: string;
     content: string;
-    rootId?: string;
+    ref?: number;
     from?: string;
   }) => Promise<RuntimeMessageSendResult>;
 }
@@ -344,7 +353,6 @@ const appendAttentionCommit = (
   contextId: string,
   input: {
     meta: Partial<AttentionCommitMeta>;
-    egress?: { kind: "message_reply"; chatId: string; rootId?: string; from?: string };
     scores: Record<string, number>;
     title: string;
     detail?: { kind: "replace" | "patch"; value: string; format?: string };
@@ -354,7 +362,6 @@ const appendAttentionCommit = (
   ensureAttentionContext(internal, contextId);
   return internal.attentionSystem.commit(contextId, {
     meta: input.meta,
-    egress: input.egress,
     scores: input.scores,
     summary: input.title,
     change: buildCommitChange(internal, contextId, input),
@@ -978,26 +985,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         contextId: `ctx-${roomId}`,
         owner: "jane",
       });
-      const commit = appendAttentionCommit(janeInternal, `ctx-${roomId}`, {
-        meta: {
-          author: "avatar:jane",
-          source: "attention",
-        },
-        egress: {
-          kind: "message_reply",
-          chatId: roomId,
-          from: "jane",
-        },
-        scores: { "room-reply": 0 },
-        title: "reply",
-        detail: {
-          kind: "replace",
-          value: "hello from jane",
-          format: "text/plain",
-        },
+      await (janeRuntime as unknown as RuntimeMessageEgressInternal).sendMessageTool({
+        chatId: roomId,
+        content: "hello from jane",
+        from: "jane",
       });
-
-      await janeInternal.handleCommittedAttentionCommit(`ctx-${roomId}`, commit, { notifyLoop: false });
 
       const sent = messageSystem.snapshot(roomId, 10).items.find((item) => item.content === "hello from jane");
       expect(sent).toBeDefined();
@@ -2496,7 +2488,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(decision).toEqual({ allow: false, reason: "policy-deferred" });
   });
 
-  test("Scenario: Given attention refs and message egress When trace lookup runs Then causal spans expose model and dispatch links", async () => {
+  test("Scenario: Given attention refs and explicit room dispatch When trace lookup runs Then causal spans expose model links without synthetic bridge spans", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
 
@@ -2558,11 +2550,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         author: "avatar:tester",
         source: "attention",
       },
-      egress: {
-        kind: "message_reply",
-        chatId: PRIMARY_ROOM_ID,
-        from: "tester",
-      },
       scores: { "relay-hash": 0 },
       title: "relay",
       detail: {
@@ -2580,7 +2567,8 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const replyTraceKinds = internal
       .listLoopbusTracesByRef(`${PRIMARY_CONTEXT_ID}:${replyCommit.commitId}`)
       .map((trace) => trace.kind);
-    expect(replyTraceKinds).toContain("attention.hook");
+    expect(replyTraceKinds).not.toContain("attention.hook");
+    expect(replyTraceKinds).toContain("attention.commit");
 
     const modelTraceKinds = internal.listLoopbusTracesByRef(String(modelCallId)).map((trace) => trace.kind);
     expect(modelTraceKinds).toContain("model.call");
@@ -2822,20 +2810,16 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(runtime.snapshot().schedulerState?.lastError).toBe(providerError);
   });
 
-  test("Scenario: Given a message-reply egress attention item When message egress succeeds Then runtime attention state records a delivered channel dispatch using the commit body instead of the internal summary", async () => {
+  test("Scenario: Given an attention commit carries user-visible text When the runtime handles it Then the commit stays internal and no room bridge runs", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
 
     await runtime.start();
+    const beforeMessages = (internal as unknown as RuntimeMessageEgressInternal).messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
     const commit = appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
       meta: {
         author: "avatar:tester",
         source: "attention",
-      },
-      egress: {
-        kind: "message_reply",
-        chatId: PRIMARY_ROOM_ID,
-        from: "tester",
       },
       scores: { "reply-hash": 0 },
       title: "internal planning note",
@@ -2849,18 +2833,80 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, commit, { notifyLoop: false });
 
     const snapshot = runtime.snapshot();
-    expect(snapshot.attention?.hooks.at(-1)?.status).toBe("delivered");
-    expect(snapshot.attention?.hooks.at(-1)?.bridgeId).toBe("message");
-    expect(snapshot.chatMessages.at(-1)?.content).toBe("delivered reply");
-    expect(
-      (internal as unknown as RuntimeMessageEgressInternal).messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items.at(-1)
-        ?.content,
-    ).toBe("delivered reply");
+    const afterMessages = (internal as unknown as RuntimeMessageEgressInternal).messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
+    expect(snapshot.attention?.hooks.at(-1)).toBeUndefined();
+    expect(snapshot.chatMessages).toHaveLength(0);
+    expect(afterMessages).toHaveLength(beforeMessages.length);
 
     await runtime.stop();
   });
 
-  test("Scenario: Given a message-reply clean attention commit When message bridge runs Then the runtime keeps the commit internal and Chat stays quiet", async () => {
+  test("Scenario: Given a room-bound attention commit with visible summary but no explicit message mutation When the runtime handles it Then Chat stays quiet", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    await runtime.start();
+    ensureAttentionContext(internal, PRIMARY_CONTEXT_ID);
+    const beforeMessages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
+    const commit = internal.attentionSystem.commit(PRIMARY_CONTEXT_ID, {
+      meta: {
+        author: "avatar:tester",
+        source: "attention",
+      },
+      scores: { "reply-hash": 1 },
+      summary: "this summary must stay inside attention",
+      change: {
+        type: "update",
+        value: "this summary must stay inside attention",
+        format: "text/plain",
+      },
+    }).commit;
+
+    await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, commit, { notifyLoop: false });
+
+    const afterMessages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
+    expect(afterMessages).toHaveLength(beforeMessages.length);
+    expect(runtime.snapshot().chatMessages).toHaveLength(0);
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given recent room messages reference an older durable room fact When runtime tooling reads the room Then the result carries direct referencedItems sidecar context", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeMessageEgressInternal;
+
+    await runtime.start();
+    const prompt = await internal.sendMessageTool({
+      chatId: PRIMARY_ROOM_ID,
+      content: "Did I already say this once?",
+      from: "tester",
+    });
+    await internal.sendMessageTool({
+      chatId: PRIMARY_ROOM_ID,
+      ref: prompt.messageId,
+      content: "I am replying to that exact question.",
+      from: "tester",
+    });
+
+    const snapshot = internal.readMessageChannelForTooling({
+      chatId: PRIMARY_ROOM_ID,
+      limit: 10,
+    });
+
+    expect(snapshot.items.find((item) => item.content === "I am replying to that exact question.")?.ref).toBe(
+      prompt.messageId,
+    );
+    expect(snapshot.referencedItems).toContainEqual(
+      expect.objectContaining({
+        messageId: prompt.messageId,
+        content: "Did I already say this once?",
+      }),
+    );
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given a clean attention commit When the runtime handles it Then the commit stays internal and Chat stays quiet", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
 
@@ -2871,11 +2917,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         author: "avatar:tester",
         source: "attention",
       },
-      egress: {
-        kind: "message_reply",
-        chatId: PRIMARY_ROOM_ID,
-        from: "tester",
-      },
       scores: { "reply-clean": 0 },
       summary: "this stays inside attention",
       change: { type: "clean" },
@@ -2885,12 +2926,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, commit, { notifyLoop: false });
 
     const snapshot = runtime.snapshot();
-    expect(snapshot.attention?.hooks.at(-1)?.status).toBe("ignored");
-    expect(snapshot.attention?.hooks.at(-1)?.output).toMatchObject({
-      reason: "no-visible-reply-body",
-      attentionContextId: PRIMARY_CONTEXT_ID,
-      attentionCommitId: commit.commitId,
-    });
+    expect(snapshot.attention?.hooks.at(-1)).toBeUndefined();
     expect(snapshot.chatMessages).toHaveLength(beforeCount);
     expect(
       (internal as unknown as RuntimeMessageEgressInternal).messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items.at(-1)
@@ -2900,7 +2936,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.stop();
   });
 
-  test("Scenario: Given a message send dispatch during an active cycle When chat-channel egress persists the assistant reply Then the transport snapshot keeps cycle metadata for Devtools navigation", async () => {
+  test("Scenario: Given a message send dispatch during an active cycle When the assistant replies explicitly Then the room message stays free of cycle residue", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
 
@@ -2931,17 +2967,14 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const message = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items.at(-1);
     expect(message?.content).toBe("Delivered through message send");
-    expect(message?.rootId).toBe(String(cycleId));
-    expect(message?.metadata).toMatchObject({
-      channel: "to_user",
-      source: "runtime_dispatch",
-      cycleId,
-    });
+    expect(message?.ref).toBeUndefined();
+    expect(message?.metadata).toEqual({});
+    expect(Object.prototype.hasOwnProperty.call(message ?? {}, "rootId")).toBeFalse();
 
     await runtime.stop();
   });
 
-  test("Scenario: Given a runtime dispatch already sent a visible reply When a later message-reply egress commit targets the same chat and cycle Then the runtime suppresses the duplicate bridge message", async () => {
+  test("Scenario: Given a runtime dispatch already sent a visible reply When a later attention commit lands Then the runtime does not create a second room message", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
 
@@ -2974,11 +3007,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         author: "avatar:tester",
         source: "attention",
       },
-      egress: {
-        kind: "message_reply",
-        chatId: PRIMARY_ROOM_ID,
-        from: "tester",
-      },
       scores: { "reply-hash": 0 },
       title: "duplicate visible dispatch",
       detail: {
@@ -2994,21 +3022,13 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     expect(afterMessages).toHaveLength(beforeMessages.length);
     expect(afterMessages.at(-1)?.content).toBe("Delivered through message send");
-    expect(runtime.snapshot().attention?.hooks.at(-1)?.status).toBe("ignored");
-    expect(runtime.snapshot().attention?.hooks.at(-1)?.output).toMatchObject({
-      reason: "duplicate-visible-dispatch",
-      attentionContextId: PRIMARY_CONTEXT_ID,
-      attentionCommitId: duplicateCommit.commitId,
-    });
-    expect(afterMessages.at(-1)?.metadata).toMatchObject({
-      source: "runtime_dispatch",
-      cycleId,
-    });
+    expect(runtime.snapshot().attention?.hooks.at(-1)).toBeUndefined();
+    expect(afterMessages.at(-1)?.metadata).toEqual({});
 
     await runtime.stop();
   });
 
-  test("Scenario: Given a message-reply egress clean commit When the runtime bridge observes it Then internal summaries do not become visible room messages", async () => {
+  test("Scenario: Given a clean attention commit When the runtime observes it Then internal summaries do not become visible room messages", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
 
@@ -3022,11 +3042,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         author: "avatar:tester",
         source: "attention",
       },
-      egress: {
-        kind: "message_reply",
-        chatId: PRIMARY_ROOM_ID,
-        from: "tester",
-      },
       scores: { "reply-hash": 0 },
       summary: "internal summary should stay internal",
       change: {
@@ -3038,12 +3053,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const afterMessages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
 
     expect(afterMessages).toHaveLength(beforeMessages.length);
-    expect(runtime.snapshot().attention?.hooks.at(-1)?.status).toBe("ignored");
-    expect(runtime.snapshot().attention?.hooks.at(-1)?.output).toMatchObject({
-      reason: "no-visible-reply-body",
-      attentionContextId: PRIMARY_CONTEXT_ID,
-      attentionCommitId: cleanCommit.commitId,
-    });
+    expect(runtime.snapshot().attention?.hooks.at(-1)).toBeUndefined();
 
     await runtime.stop();
   });
@@ -3160,17 +3170,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(relayDispatch.ok).toBe(true);
     expect(mainMessages).toHaveLength(1);
     expect(mainMessages.at(-1)?.content).toBe("Understood. I'll handle it and report back.");
-    expect(mainMessages.at(-1)?.metadata).toMatchObject({
-      source: "runtime_dispatch",
-      cycleId,
-      autoOriginAck: true,
-      relayTargetChatId: relayChannel.chatId,
-    });
+    expect(mainMessages.at(-1)?.metadata).toEqual({});
     expect(relayMessages.at(-1)?.content).toBe("gaubee，今天中午吃什么？");
-    expect(relayMessages.at(-1)?.metadata).toMatchObject({
-      source: "runtime_dispatch",
-      cycleId,
-    });
+    expect(relayMessages.at(-1)?.metadata).toEqual({});
 
     await runtime.stop();
   });
@@ -3206,17 +3208,12 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(bash.stdout).toBe("ready");
     expect(mainMessages).toHaveLength(1);
     expect(mainMessages.at(-1)?.content).toBe("Understood. I'll handle it and report back.");
-    expect(mainMessages.at(-1)?.metadata).toMatchObject({
-      source: "runtime_dispatch",
-      cycleId,
-      autoOriginAck: true,
-      autoOriginAckReason: "tool_work_start",
-    });
+    expect(mainMessages.at(-1)?.metadata).toEqual({});
 
     await runtime.stop();
   });
 
-  test("Scenario: Given a message-reply egress attention item When message egress fails Then the failure stays in attention state and Chat stays quiet", async () => {
+  test("Scenario: Given an attention commit lands after room identity drifts When the runtime handles it Then Chat still stays quiet because commits no longer bridge into rooms", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
 
@@ -3225,11 +3222,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       meta: {
         author: "avatar:tester",
         source: "attention",
-      },
-      egress: {
-        kind: "message_reply",
-        chatId: "chat-missing",
-        from: "tester",
       },
       scores: { "reply-hash": 0 },
       title: "failed reply",
@@ -3244,10 +3236,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, commit, { notifyLoop: false });
 
     const snapshot = runtime.snapshot();
-    expect(snapshot.attention?.hooks.at(-1)?.status).toBe("failed");
-    expect(snapshot.attention?.hooks.at(-1)?.target).toEqual({
-      chatId: "chat-missing",
-    });
+    expect(snapshot.attention?.hooks.at(-1)).toBeUndefined();
     expect(snapshot.chatMessages).toHaveLength(beforeCount);
 
     await runtime.stop();

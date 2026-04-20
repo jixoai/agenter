@@ -11,22 +11,12 @@ export interface AttentionCommitMeta {
   createdAt?: string;
 }
 
-export interface AttentionMessageReplyEgress {
-  kind: "message_reply";
-  chatId: string;
-  rootId?: string;
-  from?: string;
-}
-
-export type AttentionCommitEgress = AttentionMessageReplyEgress;
-
 export interface AttentionCommit {
   commitId: string;
   contextId: string;
   ingressType: AttentionIngressType;
   parentCommitIds: string[];
   meta: AttentionCommitMeta;
-  egress?: AttentionCommitEgress;
   scores: Record<string, number>;
   summary: string;
   change: AttentionCommitChange;
@@ -56,7 +46,6 @@ export interface AttentionCommitInput {
   ingressType?: AttentionIngressType;
   parentCommitIds?: string[];
   meta?: Partial<AttentionCommitMeta>;
-  egress?: AttentionCommitEgress;
   scores?: Record<string, number>;
   summary: string;
   change: AttentionCommitChange;

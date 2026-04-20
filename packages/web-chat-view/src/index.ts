@@ -14,6 +14,7 @@ export type {
   WebChatMessage,
   WebChatMessageInput,
   WebChatMessageAction,
+  WebChatMessageReference,
   WebChatMessageReadActor,
   WebChatMessageReadProgress,
   WebChatMessageRenderInput,

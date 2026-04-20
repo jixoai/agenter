@@ -72,7 +72,7 @@ describe("Feature: attention store persistence", () => {
     );
   });
 
-  test("Scenario: Given a V4 snapshot When saved and reloaded Then parent commit ids and typed egress survive", async () => {
+  test("Scenario: Given a V4 snapshot When saved and reloaded Then parent commit ids survive without legacy bridge residue", async () => {
     const root = mkdtempSync(join(tmpdir(), "attn-store-v4-"));
     const store = new AttentionStore(root);
     await store.save({
@@ -97,7 +97,6 @@ describe("Feature: attention store persistence", () => {
                 author: "avatar:jane",
                 source: "attention",
               },
-              egress: { kind: "message_reply", chatId: "chat-kzf" },
               scores: { hash1: 0 },
               summary: "reply",
               change: { type: "update", value: "fried rice" },
@@ -110,7 +109,7 @@ describe("Feature: attention store persistence", () => {
 
     const reloaded = await store.load();
     expect(reloaded.contexts[0]?.commits[0]?.parentCommitIds).toEqual(["root-1"]);
-    expect(reloaded.contexts[0]?.commits[0]?.egress).toEqual({ kind: "message_reply", chatId: "chat-kzf" });
+    expect(Object.prototype.hasOwnProperty.call(reloaded.contexts[0]?.commits[0] ?? {}, "egress")).toBeFalse();
     expect(reloaded.contexts[0]?.focusState).toBe("background");
     expect(reloaded.contexts[0]?.consumedPushCommitIds).toEqual(["commit-1"]);
     expect(reloaded.contexts[0]?.commits[0]?.ingressType).toBe("push");

@@ -15,16 +15,23 @@ Quick start:
 5. Run `message query` when you need cross-message lookup, fielded search, or guarded SQL over the rooms you already hold.
 6. For temporary cross-room search, prefer `chatId:"*"` so the runtime resolves only the rooms you already have grants for.
 7. Decide whether the room needs an acknowledgement, a narrow follow-up question, or a final reply.
-8. Send one durable message with the correct room scope and protocol. Through `root_workspace_bash`, prefer `command=message send` plus JSON `stdin`; only use argv JSON for trivial single-line payloads. If `message send --help` marks compact as `Suggested` or `Available`, `message send --compact` is also available for positional payloads.
-9. If your prior room message is invalid or stale and you already know its `messageId`, prefer `message edit` to correct that durable reply in place.
-10. If the earlier durable reply should disappear rather than remain visible with corrected wording, use `message recall` on that `messageId` before sending a replacement.
-11. If you cannot safely edit or recall the earlier durable reply, send a corrected replacement.
-12. If that reply completes the obligation, switch to `attention` and settle the same context.
+8. Send one durable message with the correct room scope and protocol. If you are replying to a specific earlier room message, include `ref`. Through `root_workspace_bash`, prefer `command=message send` plus JSON `stdin`; only use argv JSON for trivial single-line payloads. If `message send --help` marks compact as `Suggested` or `Available`, `message send --compact` is also available for positional payloads.
+9. `message send` returns `recentMessages`. Inspect them immediately as a lightweight post-send sanity check.
+10. If two of your recent messages look similar, run `message read` before changing history so you can also see `referencedItems` and the nearby reply context.
+11. Similar wording alone is not enough to justify recall. Judge the room's actual conversation context first.
+12. If the repetition was intentional in the room's protocol or request, keep both messages.
+13. If your prior room message is invalid or stale and you already know its `messageId`, prefer `message edit` to correct that durable reply in place.
+14. If the earlier durable reply should disappear rather than remain visible with corrected wording, use `message recall` on that `messageId` before sending a replacement.
+15. If you cannot safely edit or recall the earlier durable reply, send a corrected replacement.
+16. If that reply completes the obligation, switch to `attention` and settle the same context.
 
 Key laws:
 - The origin room owns the user-visible conversation.
 - For `message read`, `message query`, `message send`, `message edit`, and `message recall` through `root_workspace_bash`, default to JSON `stdin`; only use argv JSON when the payload is trivially small.
 - If `message read --help`, `message query --help`, `message send --help`, `message edit --help`, or `message recall --help` marks compact as `Suggested` or `Available`, `--compact` is an optional positional mode. If the positional array becomes unclear, switch back to standard object JSON immediately.
+- Use `ref` when the new room message is replying to a specific earlier durable message.
+- `message send` returns `recentMessages`; treat them as a quick self-check, not a replacement for a full room read.
+- `message read` returns the visible `items` plus one-hop `referencedItems`, so you can inspect nearby reply context before deciding whether to revise room history.
 - If the task already gives the exact room `chatId`, that literal room id is enough to send the acknowledgement or final reply; do not rediscover the same room through `message list`.
 - `message query` is message-history lookup, not a generic workspace search tool.
 - `message query` only sees the room scope you already hold. `chatId:"*"` means "all rooms currently granted to me", not "all rooms in the system".
@@ -34,6 +41,7 @@ Key laws:
 - If the earlier message should no longer remain visible in the room, `message recall` is the cleanest withdrawal path for your own earlier message.
 - If you do not have the `messageId`, or the earlier message belongs to someone else, send a corrected follow-up message instead of guessing.
 - Prefer `message edit` when the same room fact should stay visible with corrected content; prefer `message recall` when the prior room fact should be withdrawn before you post a replacement.
+- Similar wording alone is not enough to justify recall; decide from the actual room context and whether the repetition was intentional in the room's protocol or request.
 - If the current room message already fixes the task, URL, or required reply token, the normal next move is acknowledgement or tool work, not another room read.
 - If the room context already exposes `visibleRooms`, those rooms are real durable channels you can use now; a participant missing from the origin room is not automatically unavailable.
 - If the user asks you to ask or relay to another participant and a matching visible room already exists, relay there instead of telling the user that the participant is not here.

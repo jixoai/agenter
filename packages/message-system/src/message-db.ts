@@ -56,8 +56,8 @@ const toJson = (value: unknown): string => JSON.stringify(value ?? null);
 const resolvePageLimit = (limit: number | undefined, max = 500): number => Math.max(1, Math.min(limit ?? 100, max));
 const MESSAGE_CONTROL_DB_BREAKING_RESET_VERSION = 6;
 const MESSAGE_CONTROL_DB_SCHEMA_VERSION = 6;
-const ROOM_MESSAGE_DB_BREAKING_RESET_VERSION = 1;
-const ROOM_MESSAGE_DB_SCHEMA_VERSION = 1;
+const ROOM_MESSAGE_DB_BREAKING_RESET_VERSION = 2;
+const ROOM_MESSAGE_DB_SCHEMA_VERSION = 2;
 const normalizeActorIds = (value: readonly MessageActorId[]): MessageActorId[] =>
   [...new Set(value)].sort((left, right) => left.localeCompare(right));
 const parseActorIds = (value: string | null): MessageActorId[] =>
@@ -134,7 +134,7 @@ const ROOM_MESSAGE_SELECT_SQL = `
 
 type StoredRoomMessageRow = {
   id: number;
-  ref_id: string | null;
+  ref_id: number | null;
   sender_actor_id: string | null;
   from_id: string;
   kind: string | null;
@@ -209,7 +209,7 @@ const mapMessage = (chatId: string, row: StoredRoomMessageRow): MessageRecord =>
   rowId: row.id,
   messageId: row.id,
   chatId,
-  rootId: row.ref_id ?? undefined,
+  ref: row.ref_id ?? undefined,
   senderActorId: (row.sender_actor_id ?? undefined) as MessageActorId | undefined,
   from: row.from_id,
   content: row.content,
@@ -857,6 +857,15 @@ export class MessageDb {
     if (!this.getChannel(input.chatId)) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
+    if (input.ref !== undefined) {
+      const referencedId = normalizeRoomMessageId(input.ref);
+      if (referencedId === null) {
+        throw new Error(`invalid message ref: ${input.ref}`);
+      }
+      if (!this.getMessage(input.chatId, referencedId)) {
+        throw new Error(`unknown message ref: ${input.ref}`);
+      }
+    }
     const createdAt = input.createdAt ?? Date.now();
     const updatedAt = input.updatedAt ?? createdAt;
     const kind = input.kind ?? "text";
@@ -877,7 +886,7 @@ export class MessageDb {
           ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
-          input.rootId ?? null,
+          input.ref ?? null,
           input.senderActorId ?? null,
           from,
           kind,
@@ -1604,7 +1613,7 @@ export class MessageDb {
     roomDb.exec(`
       create table if not exists chat_message (
         id integer primary key autoincrement,
-        ref_id text,
+        ref_id integer,
         sender_actor_id text,
         from_id text not null,
         kind text not null default 'text',

@@ -14,6 +14,8 @@ import type { MessageChannelRecord, MessageRecord } from "./types";
 const resolveOffset = (offset: number | undefined): number => Math.max(0, Math.trunc(offset ?? 0));
 const resolveLimit = (limit: number | undefined, max = 100): number => Math.max(1, Math.min(limit ?? 20, max));
 const toSqliteBoolean = (value: boolean): number => (value ? 1 : 0);
+const MESSAGE_QUERY_DB_BREAKING_RESET_VERSION = 2;
+const MESSAGE_QUERY_DB_SCHEMA_VERSION = 2;
 
 type IndexedMessageRow = {
   doc_id: number;
@@ -22,7 +24,7 @@ type IndexedMessageRow = {
   context_id: string | null;
   room_archived_at: number | null;
   message_id: number;
-  root_id: string | null;
+  ref_id: number | null;
   sender_actor_id: string | null;
   from_id: string;
   kind: string;
@@ -68,7 +70,7 @@ const mapDocument = (row: IndexedMessageRow): MessageQueryDocument => ({
   chatTitle: row.chat_title,
   contextId: row.context_id,
   messageId: row.message_id,
-  rootId: row.root_id,
+  ref: row.ref_id,
   senderActorId: row.sender_actor_id,
   from: row.from_id,
   kind: row.kind,
@@ -91,7 +93,7 @@ const buildSearchText = (channel: MessageChannelRecord, message: MessageRecord):
     message.chatId,
     channel.title,
     channel.contextId ?? "",
-    message.rootId ?? "",
+    message.ref !== undefined ? String(message.ref) : "",
     message.kind,
   ]
     .join("\n")
@@ -129,10 +131,10 @@ const buildCandidateFilterSql = (
       params: [filter.value],
     };
   }
-  if (filter.kind === "root") {
+  if (filter.kind === "ref") {
     return {
-      sql: `(lower(coalesce(doc.root_id, '')) = ? or instr(lower(coalesce(doc.root_id, '')), ?) > 0)`,
-      params: [filter.value, filter.value],
+      sql: `doc.ref_id = ?`,
+      params: [filter.value],
     };
   }
   if (filter.kind === "has") {
@@ -261,7 +263,7 @@ export class MessageQueryIndex {
            set chat_title = ?,
                context_id = ?,
                room_archived_at = ?,
-               root_id = ?,
+               ref_id = ?,
                sender_actor_id = ?,
                from_id = ?,
                kind = ?,
@@ -280,7 +282,7 @@ export class MessageQueryIndex {
           channel.title,
           channel.contextId ?? null,
           channel.archivedAt ?? null,
-          message.rootId ?? null,
+          message.ref ?? null,
           message.senderActorId ?? null,
           message.from,
           message.kind,
@@ -307,7 +309,7 @@ export class MessageQueryIndex {
           context_id,
           room_archived_at,
           message_id,
-          root_id,
+          ref_id,
           sender_actor_id,
           from_id,
           kind,
@@ -328,7 +330,7 @@ export class MessageQueryIndex {
         channel.contextId ?? null,
         channel.archivedAt ?? null,
         message.messageId,
-        message.rootId ?? null,
+        message.ref ?? null,
         message.senderActorId ?? null,
         message.from,
         message.kind,
@@ -484,7 +486,7 @@ export class MessageQueryIndex {
         context_id text,
         room_archived_at integer,
         message_id integer not null,
-        root_id text,
+        ref_id integer,
         sender_actor_id text,
         from_id text not null,
         kind text not null,
@@ -532,7 +534,7 @@ export class MessageQueryIndex {
             context_id,
             room_archived_at,
             message_id,
-            root_id,
+            ref_id,
             sender_actor_id,
             from_id,
             kind,
@@ -558,7 +560,7 @@ export class MessageQueryIndex {
               message.context_id,
               message.room_archived_at,
               message.message_id,
-              message.root_id,
+              message.ref_id,
               message.sender_actor_id,
               message.from_id,
               message.kind,
@@ -599,6 +601,18 @@ export class MessageQueryIndex {
   }
 
   private initializeSchema(): boolean {
+    const userVersionRow = this.db.query(`pragma user_version`).get() as { user_version?: number } | null;
+    const currentSchemaVersion = userVersionRow?.user_version ?? 0;
+    const hasLegacyTables =
+      this.hasTable("room_doc") || this.hasTable("message_doc") || this.hasTable("room_query_state");
+    if (currentSchemaVersion < MESSAGE_QUERY_DB_BREAKING_RESET_VERSION && hasLegacyTables) {
+      this.db.exec(`
+        drop table if exists message_fts;
+        drop table if exists message_doc;
+        drop table if exists room_query_state;
+        drop table if exists room_doc;
+      `);
+    }
     this.db.exec(`
       create table if not exists room_doc (
         chat_id text primary key,
@@ -615,7 +629,7 @@ export class MessageQueryIndex {
         context_id text,
         room_archived_at integer,
         message_id integer not null,
-        root_id text,
+        ref_id integer,
         sender_actor_id text,
         from_id text not null,
         kind text not null,
@@ -651,11 +665,20 @@ export class MessageQueryIndex {
           tokenize = 'unicode61 remove_diacritics 2'
         );
       `);
+      this.db.exec(`pragma user_version = ${MESSAGE_QUERY_DB_SCHEMA_VERSION};`);
       return true;
     } catch {
       this.db.exec(`drop table if exists message_fts;`);
+      this.db.exec(`pragma user_version = ${MESSAGE_QUERY_DB_SCHEMA_VERSION};`);
       return false;
     }
+  }
+
+  private hasTable(name: string): boolean {
+    const row = this.db.query(`select name from sqlite_master where type = 'table' and name = ?`).get(name) as
+      | { name?: string }
+      | null;
+    return row?.name === name;
   }
 
   private syncFtsRow(docId: number, searchText: string): void {

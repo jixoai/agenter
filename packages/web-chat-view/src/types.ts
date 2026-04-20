@@ -7,6 +7,15 @@ import type {
 import type { ScrollController } from "@agenter/svelte-components";
 
 export type WebChatChannel = MessageControlPlaneEntry;
+export interface WebChatMessageReference {
+  messageId?: number;
+  from: string;
+  kind: MessageRecord["kind"];
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  recalledAt?: number;
+}
 export interface WebChatMessage extends Omit<MessageRecord, "messageId"> {
   viewKey: string;
   messageId?: number;

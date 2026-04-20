@@ -213,11 +213,11 @@ const classifyObservedPattern = (input: {
   if (assistantMessages.length === 0) {
     return "unknown";
   }
-  if (usedRecall && recalledMessage) {
-    return assistantMessages.some((message) => message.messageId !== recalledMessage.messageId) ? "send+recall+send" : "unknown";
-  }
   if (usedEdit && revisedMessage) {
     return "send+edit";
+  }
+  if (usedRecall && recalledMessage) {
+    return assistantMessages.some((message) => message.messageId !== recalledMessage.messageId) ? "send+recall+send" : "unknown";
   }
   if (assistantMessages.some((message) => message.content.trim() === expectedFinalText) && assistantMessages.length >= 2) {
     return "send+send";

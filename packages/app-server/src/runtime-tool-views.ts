@@ -139,7 +139,6 @@ export interface RuntimeAttentionActiveView {
     ingressType: AttentionActiveContextMatch["recentCommits"][number]["ingressType"];
     scores: Record<string, number>;
     src?: string;
-    egress?: AttentionActiveContextMatch["recentCommits"][number]["egress"];
     changeType: AttentionActiveContextMatch["recentCommits"][number]["change"]["type"];
   }>;
 }
@@ -216,32 +215,35 @@ export interface RuntimeMessageSendResult {
   recentMessages: RuntimeMessageOverviewItem[];
 }
 
+export interface RuntimeMessageItemView {
+  rowId: number;
+  messageId: number;
+  ref?: number;
+  from: string;
+  kind: "text" | "error" | "interactive";
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  visibleAt?: number;
+  attachments?: Array<{
+    assetId: string;
+    kind: MessageAttachment["kind"];
+    name: string;
+    mimeType: string;
+    sizeBytes: number;
+    url: string;
+  }>;
+  payload?: MessagePayload;
+}
+
 export interface RuntimeMessageSnapshotView {
   channel: RuntimeMessageChannelView;
   directory?: {
     visibleRooms: RuntimeVisibleMessageRoomView[];
     reachableParticipants: RuntimeReachableParticipantView[];
   };
-  items: Array<{
-    rowId: number;
-    messageId: number;
-    rootId?: string;
-    from: string;
-    kind: "text" | "error" | "interactive";
-    content: string;
-    createdAt: number;
-    updatedAt: number;
-    visibleAt?: number;
-    attachments?: Array<{
-      assetId: string;
-      kind: MessageAttachment["kind"];
-      name: string;
-      mimeType: string;
-      sizeBytes: number;
-      url: string;
-    }>;
-    payload?: MessagePayload;
-  }>;
+  items: RuntimeMessageItemView[];
+  referencedItems: RuntimeMessageItemView[];
   nextBefore: MessageSnapshot["nextBefore"];
   hasMoreBefore: boolean;
   headVersion: string;
@@ -282,7 +284,6 @@ export const projectRuntimeAttentionActiveMatch = (match: AttentionActiveContext
     ingressType: commit.ingressType,
     scores: { ...commit.scores },
     src: commit.meta.src,
-    egress: commit.egress ? { ...commit.egress } : undefined,
     changeType: commit.change.type,
   })),
 });
@@ -334,6 +335,7 @@ export const projectRuntimeMessageSnapshot = (
   input?: {
     visibleRooms?: RuntimeVisibleMessageRoomView[];
     reachableParticipants?: RuntimeReachableParticipantView[];
+    referencedItems?: readonly MessageRecord[];
   },
 ): RuntimeMessageSnapshotView => ({
   channel: projectRuntimeMessageChannel(snapshot.channel),
@@ -344,22 +346,25 @@ export const projectRuntimeMessageSnapshot = (
           reachableParticipants: input?.reachableParticipants ?? [],
         }
       : undefined,
-  items: snapshot.items.map((item) => ({
-    rowId: item.rowId,
-    messageId: toRuntimeMessageId(item.messageId),
-    rootId: item.rootId,
-    from: item.from,
-    kind: item.kind,
-    content: item.content,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-    visibleAt: item.visibleAt,
-    attachments: item.attachments?.map(projectRuntimeMessageAttachment),
-    payload: item.payload ? ({ ...item.payload } satisfies MessagePayload) : undefined,
-  })),
+  items: snapshot.items.map(projectRuntimeMessageItem),
+  referencedItems: (input?.referencedItems ?? []).map(projectRuntimeMessageItem),
   nextBefore: snapshot.nextBefore,
   hasMoreBefore: snapshot.hasMoreBefore,
   headVersion: snapshot.headVersion,
+});
+
+const projectRuntimeMessageItem = (item: MessageRecord): RuntimeMessageItemView => ({
+  rowId: item.rowId,
+  messageId: toRuntimeMessageId(item.messageId),
+  ref: item.ref,
+  from: item.from,
+  kind: item.kind,
+  content: item.content,
+  createdAt: item.createdAt,
+  updatedAt: item.updatedAt,
+  visibleAt: item.visibleAt,
+  attachments: item.attachments?.map(projectRuntimeMessageAttachment),
+  payload: item.payload ? ({ ...item.payload } satisfies MessagePayload) : undefined,
 });
 
 export const projectRuntimeMessageOverview = (

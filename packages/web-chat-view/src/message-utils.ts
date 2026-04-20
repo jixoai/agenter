@@ -69,7 +69,7 @@ const messageAuthority = (message: WebChatMessage): number => {
   const metadataSize = Object.keys(message.metadata ?? {}).length;
   return (
     (typeof message.messageId === "number" ? 1_000 : 0) +
-    (message.rootId ? 10 : 0) +
+    (message.ref ? 10 : 0) +
     metadataSize +
     (message.attachments?.length ?? 0)
   );
