@@ -44,6 +44,8 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - 共享 workbench chrome 的 `page_content` body 必须是页面级唯一 scroll owner：`tabs` 与 `page_toolbar` 永远固定在外层 chrome，route-root wrapper 只能用 `min-h-full` 等 stretch 语义填满 body，不能再用 `h-full`、raw clipping 或隐式 overflow 把 shared window body 锁死成不可滚动。
 - bottom-anchored transcript / timeline 的语义滚动法则固定为 `ScrollController + Named Trigger + Query + tx`：feature code 只能通过 installed program 读取 `query.<name>.*` 并在 `tx(...)` 中表达 scroll semantics，不得再持有第二套 `scrollTop` / `request(...)` / local observer graph ownership。
 - Search / FTS index 只能是可重建 projection，不能升级成 durable truth；删除索引后系统仍必须能从事实库或 attention durable state 重建搜索能力。
+- `message query` 是 `message-system` 内部的消息专用查询原语，不引入跨 system 的泛化 search 抽象；它固定使用 `chatId + mode(match|query|sql) + query` contract，并且必须先解析 caller 当前持有的 room scope，再运行 match / FTS / SQL。
+- `message query` 的 `sql` mode 只能运行在预授权房间消息的临时只读投影上，不能直接暴露 raw room SQLite truth、全局 sidecar catalog 或可变连接状态。
 - Attention search 的默认面向未完成工作，但显式 `score/hash` 查询属于历史事实定位：普通文本默认 active-only，`score:` / `hash:` 若未显式提供 `minscore`，默认应包含历史提交。
 - Cancellation、stop、abort、timeout 必须共享同一套显式语义，并持久化为事实。
 - Provider 请求保持纯度。HTTP/model body 只表达真实 provider 参数；调度、cycle、trace identity 等运行事实只能进入 `ai_call.requestBody.meta` 与 runtime publication contract，不能重新落回独立 `session_cycle` 或 session-db telemetry 表。
