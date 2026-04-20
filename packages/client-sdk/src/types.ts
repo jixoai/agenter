@@ -6,11 +6,11 @@ import type {
   AuthDraftEvent as AuthDraftEventContract,
   AuthDraftKind as AuthDraftKindContract,
   AuthKvEvent as AuthKvEventContract,
+  AvatarCreateDraftState as AvatarCreateDraftStateContract,
   JsonValue as JsonValueContract,
   RuntimeEventEnvelope,
   RuntimeSnapshotPayload,
   SessionRuntimeModelDebug,
-  AvatarCreateDraftState as AvatarCreateDraftStateContract,
 } from "@agenter/app-server";
 
 export type RouterOutputs = inferRouterOutputs<AppRouter>;
@@ -68,6 +68,7 @@ export type ChatCyclesOutput = RouterOutputs["chat"]["cycles"];
 export type ChatCycleItem = ChatCyclesOutput["items"][number];
 export type MessageChannelListOutput = RouterOutputs["message"]["listChannels"];
 export type MessageChannelEntry = MessageChannelListOutput["items"][number];
+export type MessageQueryOutput = RouterOutputs["message"]["query"];
 export type MessageSendOutput = RouterOutputs["message"]["send"];
 export type MessageSendSuccessOutput = Extract<MessageSendOutput, { ok: true }>;
 export type MessageChannelGrantsOutput = RouterOutputs["message"]["listChannelGrants"];

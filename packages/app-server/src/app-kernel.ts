@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   accessSync,
   existsSync,
@@ -33,6 +32,8 @@ import {
   type MessageFocusOp,
   type MessageIssuedGrant,
   type MessageIssueGrantInput,
+  type MessageQueryRequest,
+  type MessageQueryResult,
   type MessageRecord,
   type MessageSnapshot,
 } from "@agenter/message-system";
@@ -69,6 +70,8 @@ import {
   type TerminalWriteResult,
 } from "@agenter/terminal-system";
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
+import { appAttentionSourceRegistry } from "./attention-src";
+import { projectAuthActors } from "./auth-actor-catalog";
 import { AuthDraftStore, resolveAuthDraftDbPath } from "./auth-draft-store";
 import type {
   AuthDraftCreateResult,
@@ -91,7 +94,6 @@ import type {
   AuthKvSnapshot,
   JsonValue,
 } from "./auth-kv-types";
-import { projectAuthActors } from "./auth-actor-catalog";
 import { AuthServiceBridge, type AuthServiceBridgeOptions } from "./auth-service-bridge";
 import {
   buildWorkspaceAvatarCatalogEntry,
@@ -129,12 +131,11 @@ import type {
   RuntimeLoopStateLogRecord,
   RuntimeTerminalActivityRecord,
 } from "./runtime-history-records";
+import type { RuntimeMessageSendResult } from "./runtime-tool-views";
 import { SessionCatalog, type SessionMeta } from "./session-catalog";
 import { resolveSessionRoomActorId } from "./session-chat-projection";
 import { resolveSessionConfig } from "./session-config";
 import { resolveWorkspaceAvatarSessionId } from "./session-identity";
-import { appAttentionSourceRegistry } from "./attention-src";
-import type { RuntimeMessageSendResult } from "./runtime-tool-views";
 import {
   isPersistedChatProjectionMessage,
   projectAiCallToChatCycle,
@@ -334,6 +335,8 @@ export type PublicRoomEntry = MessageControlPlaneEntry;
 export type PublicRoomMessageRecord = MessageRecord;
 
 export type PublicRoomSnapshot = MessageSnapshot;
+
+export type PublicRoomMessageQueryResult = MessageQueryResult;
 
 const emptyReversePage = <T>(): ReversePage<T> => ({
   items: [],
@@ -2781,6 +2784,26 @@ export class AppKernel {
         limit: input.limit,
       }),
     );
+  }
+
+  queryGlobalRoomMessages(input: {
+    chatId: MessageQueryRequest["chatId"];
+    mode: MessageQueryRequest["mode"];
+    query: string;
+    offset?: number;
+    limit?: number;
+    actorId?: MessageActorId;
+    superadminActorId?: MessageActorId;
+  }): PublicRoomMessageQueryResult {
+    return this.messageControlPlane.queryAuthorized({
+      chatId: input.chatId,
+      mode: input.mode,
+      query: input.query,
+      offset: input.offset,
+      limit: input.limit,
+      actorId: input.actorId,
+      superadminActorId: input.superadminActorId,
+    });
   }
 
   sendGlobalRoomMessage(input: {

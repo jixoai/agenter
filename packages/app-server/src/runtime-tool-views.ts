@@ -4,6 +4,7 @@ import type {
   MessageControlPlaneEntry,
   MessageKind,
   MessagePayload,
+  MessageQueryResult,
   MessageRecord,
   MessageSnapshot,
 } from "@agenter/message-system";
@@ -245,6 +246,8 @@ export interface RuntimeMessageSnapshotView {
   hasMoreBefore: boolean;
   headVersion: string;
 }
+
+export type RuntimeMessageQueryResult = MessageQueryResult;
 
 export interface RuntimeTerminalView {
   terminalId: string;

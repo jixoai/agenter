@@ -31,6 +31,7 @@ import {
   type MessageInteractivePayload,
   type MessageIssueGrantInput,
   type MessageIssuedGrant,
+  type MessageQueryRequest,
   type MessageRecord,
   type MessageSnapshot,
   type ReverseTimeCursor,
@@ -154,6 +155,7 @@ import {
   projectRuntimeTerminal,
   projectRuntimeWorkspaceSurface,
   type RuntimeMessageChannelView,
+  type RuntimeMessageQueryResult,
   type RuntimeMessageOverviewItem,
   type RuntimeMessageSendResult,
   type RuntimeMessageSnapshotView,
@@ -2366,6 +2368,23 @@ export class SessionRuntime {
     });
   }
 
+  async queryRuntimeMessages(input: {
+    chatId: MessageQueryRequest["chatId"];
+    mode: MessageQueryRequest["mode"];
+    query: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<RuntimeMessageQueryResult> {
+    return this.messageSystem.queryAuthorized({
+      chatId: input.chatId,
+      mode: input.mode,
+      query: input.query,
+      offset: input.offset,
+      limit: input.limit,
+      actorId: this.messageActorId,
+    });
+  }
+
   private listRecentMessageOverview(input: {
     chatId: string;
     accessToken?: string;
@@ -3632,6 +3651,7 @@ export class SessionRuntime {
         },
         messageList: (input) => this.listMessageChannelsForTooling(input),
         messageRead: (input) => this.readMessageChannelForTooling(input),
+        messageQuery: async (input) => await this.queryRuntimeMessages(input),
         messageSend: async (input) => await this.sendRuntimeMessage(input),
         messageEdit: async (input) => await this.editRuntimeMessage(input),
         messageRecall: async (input) => await this.recallRuntimeMessage(input),

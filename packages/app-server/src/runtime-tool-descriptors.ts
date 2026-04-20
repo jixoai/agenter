@@ -3,12 +3,14 @@ import type {
   AttentionCommitToolInput,
   AttentionContextDescriptor,
 } from "@agenter/attention-system";
+import type { MessageQueryRequest } from "@agenter/message-system";
 import type { TerminalProcessProfile } from "@agenter/terminal-system";
 import { toJSONSchema, z, type ZodTypeAny } from "zod";
 
 import type {
   RuntimeAttentionActiveView,
   RuntimeMessageChannelView,
+  RuntimeMessageQueryResult,
   RuntimeMessageSendResult,
   RuntimeMessageSnapshotView,
   RuntimeTerminalView,
@@ -29,6 +31,7 @@ export interface RuntimeLocalApiHandlers {
   attentionCommit: (input: AttentionCommitToolInput & { done?: boolean }) => Promise<AttentionCommit>;
   messageList: (input: { includeArchived?: boolean }) => RuntimeMessageChannelView[];
   messageRead: (input: { chatId: string; limit?: number }) => RuntimeMessageSnapshotView;
+  messageQuery: (input: MessageQueryRequest) => Promise<RuntimeMessageQueryResult>;
   messageSend: (input: {
     chatId: string;
     content: string;
@@ -167,6 +170,14 @@ const messageListSchema = z.object({
 const messageReadSchema = z.object({
   chatId: z.string(),
   limit: z.number().int().min(1).max(200).optional(),
+});
+
+const messageQuerySchema = z.object({
+  chatId: z.union([z.string().min(1), z.array(z.string().min(1)).min(1), z.literal("*")]),
+  mode: z.enum(["match", "query", "sql"]),
+  query: z.string().trim().min(1),
+  offset: z.number().int().min(0).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
 });
 
 const messageSendSchema = z.object({
@@ -312,6 +323,36 @@ export const runtimeToolDescriptors = [
     ],
     handler: async (input, handlers) => ({
       snapshot: handlers.messageRead(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "message",
+    name: "query",
+    route: "/v1/message/query",
+    description:
+      "Search authorized room history with match, structured query, or guarded read-only SQL over the pre-authorized room scope.",
+    inputSchema: messageQuerySchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          chatId: "*",
+          mode: "query",
+          query: "budget incident",
+          limit: 10,
+        },
+      },
+      {
+        kind: "argv",
+        payload: {
+          chatId: "room-1",
+          mode: "sql",
+          query: "select chatId, count(*) as total from messages group by chatId order by total desc limit 5",
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.messageQuery(input),
     }),
   }),
   defineRuntimeToolDescriptor({

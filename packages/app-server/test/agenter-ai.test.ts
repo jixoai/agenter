@@ -5,6 +5,7 @@ import type {
   AttentionContextDescriptor,
 } from "@agenter/attention-system";
 import { AttentionSystem } from "@agenter/attention-system";
+import type { MessageActorId } from "@agenter/message-system";
 import type { TerminalProcessProfile } from "@agenter/terminal-system";
 import { describe, expect, test } from "bun:test";
 
@@ -422,6 +423,48 @@ const callMessageReadViaCli = async (
     toolCallId,
   });
 
+const callMessageQueryViaCli = async (
+  input: Pick<ModelRespondInput, "tools">,
+  payload: {
+    chatId: string | string[] | "*";
+    mode: "match" | "query" | "sql";
+    query: string;
+    offset?: number;
+    limit?: number;
+  },
+  toolCallId = "call-message-query",
+) =>
+  await callRootWorkspaceBashJson<{
+    ok: true;
+    result:
+      | {
+          resultKind: "messages";
+          mode: "match" | "query" | "sql";
+          chatIds: string[];
+          items: Array<{
+            chatId: string;
+            chatTitle?: string;
+            contextId?: string;
+            score?: number;
+            message: {
+              messageId: number;
+              content: string;
+            };
+          }>;
+        }
+      | {
+          resultKind: "sql";
+          mode: "match" | "query" | "sql";
+          chatIds: string[];
+          columns: string[];
+          rows: Array<Record<string, string | number | null>>;
+        };
+  }>(input, {
+    command: "message query",
+    payload,
+    toolCallId,
+  });
+
 const callMessageSendViaCli = async (
   input: Pick<ModelRespondInput, "tools">,
   payload: { chatId: string; content: string; rootId?: string; from?: string },
@@ -549,6 +592,12 @@ const createRuntimeLocalHandlers = (input: {
       throw new Error("message gateway not configured");
     }
     return input.messageGateway.read(request);
+  },
+  messageQuery: async (request) => {
+    if (!input.messageGateway) {
+      throw new Error("message gateway not configured");
+    }
+    return await input.messageGateway.query(request);
   },
   messageSend: async (request) => {
     if (!input.messageGateway) {
@@ -753,6 +802,48 @@ const createMessageGateway = () => {
       focused: false,
     },
   ];
+  const history = new Map<
+    string,
+    Array<{
+      rowId: number;
+      messageId: number;
+      chatId: string;
+      rootId?: string;
+      from: string;
+      kind: "text";
+      content: string;
+      createdAt: number;
+      updatedAt: number;
+      visibleAt: number;
+      recalledAt?: number;
+      readActorIds: MessageActorId[];
+      unreadActorIds: MessageActorId[];
+    }>
+  >([
+    ["chat-main", []],
+    [
+      "room-qa",
+      [
+        {
+          rowId: 1,
+          messageId: 1,
+          chatId: "room-qa",
+          from: "kzf",
+          kind: "text",
+          content: "budget incident alpha",
+          createdAt: Date.now() - 2_000,
+          updatedAt: Date.now() - 2_000,
+          visibleAt: Date.now() - 2_000,
+          readActorIds: [],
+          unreadActorIds: [],
+        },
+      ],
+    ],
+  ]);
+  const listRoomHistory = (chatId: string) => [...(history.get(chatId) ?? [])];
+  const findChannel = (chatId: string) => channels.find((entry) => entry.chatId === chatId);
+  const resolveQueryChatIds = (chatId: string | string[] | "*"): string[] =>
+    chatId === "*" ? channels.map((channel) => channel.chatId) : Array.isArray(chatId) ? [...chatId] : [chatId];
   return {
     sent,
     gateway: {
@@ -773,24 +864,11 @@ const createMessageGateway = () => {
         return channel;
       },
       read: (input: { chatId: string; limit?: number }) => {
-        const channel = channels.find((entry) => entry.chatId === input.chatId);
+        const channel = findChannel(input.chatId);
         if (!channel) {
           throw new Error(`chat not found: ${input.chatId}`);
         }
-        const items = sent
-          .filter((item) => item.chatId === input.chatId)
-          .slice(-(input.limit ?? Number.POSITIVE_INFINITY))
-          .map((item, index) => ({
-            rowId: index + 1,
-            messageId: index + 1,
-            rootId: item.rootId,
-            from: item.from ?? "default",
-            kind: "text" as const,
-            content: item.content,
-            createdAt: item.createdAt,
-            updatedAt: item.updatedAt,
-            visibleAt: item.createdAt,
-          }));
+        const items = listRoomHistory(input.chatId).slice(-(input.limit ?? Number.POSITIVE_INFINITY));
         return {
           channel,
           items,
@@ -799,8 +877,76 @@ const createMessageGateway = () => {
           headVersion: "head-1",
         };
       },
+      query: async (input: {
+        chatId: string | string[] | "*";
+        mode: "match" | "query" | "sql";
+        query: string;
+        offset?: number;
+        limit?: number;
+      }) => {
+        const chatIds = resolveQueryChatIds(input.chatId);
+        const offset = input.offset ?? 0;
+        const limit = input.limit ?? 100;
+        const matchingItems = chatIds
+          .flatMap((chatId) => {
+            const channel = findChannel(chatId);
+            return listRoomHistory(chatId).map((message) => ({
+              chatId,
+              chatTitle: channel?.title,
+              contextId: channel?.contextId,
+              score: 1,
+              message,
+            }));
+          })
+          .filter((entry) => entry.message.content.toLowerCase().includes(input.query.toLowerCase()));
+        if (input.mode === "sql") {
+          const rows = chatIds.map((chatId) => ({
+            chatId,
+            total: listRoomHistory(chatId).length,
+          }));
+          return {
+            resultKind: "sql" as const,
+            mode: input.mode,
+            chatIds,
+            offset,
+            limit,
+            nextOffset: null,
+            hasMore: false,
+            columns: ["chatId", "total"],
+            rows,
+          };
+        }
+        const items = matchingItems.slice(offset, offset + limit);
+        return {
+          resultKind: "messages" as const,
+          mode: input.mode,
+          chatIds,
+          offset,
+          limit,
+          nextOffset: null,
+          hasMore: false,
+          items,
+        };
+      },
       send: async (input: { chatId: string; content: string; rootId?: string; from?: string }) => {
+        const roomHistory = history.get(input.chatId) ?? [];
+        const nextMessageId = (roomHistory.at(-1)?.messageId ?? 0) + 1;
         const timestamp = Date.now();
+        const record = {
+          rowId: nextMessageId,
+          messageId: nextMessageId,
+          chatId: input.chatId,
+          rootId: input.rootId,
+          from: input.from ?? "default",
+          kind: "text" as const,
+          content: input.content,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          visibleAt: timestamp,
+          readActorIds: [],
+          unreadActorIds: [],
+        };
+        history.set(input.chatId, [...roomHistory, record]);
         sent.push({
           ...input,
           createdAt: timestamp,
@@ -808,18 +954,19 @@ const createMessageGateway = () => {
         });
         return {
           ok: true as const,
-          messageId: sent.length,
-          recentMessages: sent.slice(-5).map((item, index, items) => ({
-            messageId: sent.length - items.length + index + 1,
-            from: item.from ?? "default",
+          messageId: nextMessageId,
+          recentMessages: listRoomHistory(input.chatId).slice(-5).map((item) => ({
+            messageId: item.messageId,
+            from: item.from,
             contentPreview: item.content,
-            sendTime: `20260418000000${String(sent.length - items.length + index + 1).padStart(3, "0")}`,
+            sendTime: `20260418000000${String(item.messageId).padStart(3, "0")}`,
           })),
         };
       },
       edit: async (input: { chatId: string; messageId: number; content: string }) => {
-        const record = sent[input.messageId - 1];
-        if (!record || record.chatId !== input.chatId) {
+        const roomHistory = history.get(input.chatId) ?? [];
+        const record = roomHistory.find((entry) => entry.messageId === input.messageId);
+        if (!record) {
           throw new Error(`message not found: ${input.chatId}/${input.messageId}`);
         }
         record.content = input.content;
@@ -827,8 +974,9 @@ const createMessageGateway = () => {
         return { ok: true, messageId: input.messageId, updatedAt: record.updatedAt };
       },
       recall: async (input: { chatId: string; messageId: number }) => {
-        const record = sent[input.messageId - 1];
-        if (!record || record.chatId !== input.chatId) {
+        const roomHistory = history.get(input.chatId) ?? [];
+        const record = roomHistory.find((entry) => entry.messageId === input.messageId);
+        if (!record) {
           throw new Error(`message not found: ${input.chatId}/${input.messageId}`);
         }
         record.recalledAt = Date.now();
@@ -1003,7 +1151,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(toolNames).toEqual(["root_workspace_list", "root_workspace_bash"]);
   });
 
-  test("Scenario: Given a message gateway When tools are exposed Then message list/read/send run through root_workspace_bash", async () => {
+  test("Scenario: Given a message gateway When tools are exposed Then message list/read/query/send run through root_workspace_bash", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const message = createMessageGateway();
@@ -1029,6 +1177,42 @@ describe("Feature: AgenterAI behavior", () => {
       );
       expect(readResult.snapshot.channel.chatId).toBe("room-qa");
       expect(readResult.snapshot.channel.title).toBe("QA Room");
+
+      const queryResult = await callMessageQueryViaCli(
+        input,
+        {
+          chatId: "*",
+          mode: "query",
+          query: "budget incident",
+          limit: 5,
+        },
+        "call-message-query",
+      );
+      expect(queryResult.result.resultKind).toBe("messages");
+      if (queryResult.result.resultKind !== "messages") {
+        throw new Error("expected message query result");
+      }
+      expect(queryResult.result.chatIds).toEqual(["chat-main", "room-qa"]);
+      expect(queryResult.result.items.map((item) => item.chatId)).toEqual(["room-qa"]);
+      expect(queryResult.result.items[0]?.message.content).toBe("budget incident alpha");
+
+      const sqlResult = await callMessageQueryViaCli(
+        input,
+        {
+          chatId: ["room-qa"],
+          mode: "sql",
+          query: "select chatId, count(*) as total from messages group by chatId",
+          limit: 5,
+        },
+        "call-message-query-sql",
+      );
+      expect(sqlResult.result.resultKind).toBe("sql");
+      if (sqlResult.result.resultKind !== "sql") {
+        throw new Error("expected sql query result");
+      }
+      expect(sqlResult.result.chatIds).toEqual(["room-qa"]);
+      expect(sqlResult.result.columns).toEqual(["chatId", "total"]);
+      expect(sqlResult.result.rows).toEqual([{ chatId: "room-qa", total: 1 }]);
 
       const sendResult = await callMessageSendViaCli(
         input,
@@ -2135,6 +2319,16 @@ describe("Feature: AgenterAI behavior", () => {
             nextBefore: null,
             hasMoreBefore: false,
             headVersion: "head-1",
+          }),
+          query: async () => ({
+            resultKind: "messages" as const,
+            mode: "query" as const,
+            chatIds: ["chat-main"],
+            offset: 0,
+            limit: 20,
+            nextOffset: null,
+            hasMore: false,
+            items: [],
           }),
           send: async () => ({ ok: true as const, messageId: 1, recentMessages: [] }),
           edit: async () => ({ ok: true, messageId: 1, updatedAt: Date.now() }),

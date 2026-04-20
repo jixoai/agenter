@@ -11,6 +11,7 @@
     "./types": "./src/types.ts"
   },
   "dependencies": {
-    "@agenter/principal-crypto": "workspace:*"
+    "@agenter/principal-crypto": "workspace:*",
+    "@agenter/search-syntax": "workspace:*"
   }
 }

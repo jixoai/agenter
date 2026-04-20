@@ -84,6 +84,9 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageContent).toContain("do not reread the room first");
     expect(messageContent).toContain("task already shows the exact room `chatId`");
     expect(messageContent).toContain("Run `message list` once only when you truly need a `chatId`");
+    expect(messageContent).toContain("Run `message query`");
+    expect(messageContent).toContain('chatId:"*"');
+    expect(messageContent).toContain('mode:"sql"');
     expect(messageContent).toContain("literal room id is enough");
     expect(messageContent).toContain("necessary room reply has been sent");
     expect(messageContent).toContain("send one short acknowledgement before the deeper tool work starts");
@@ -95,6 +98,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageContent).toContain("deliver that answer back into the origin room");
     expect(messageContent).toContain("Terminal success alone is not the room reply");
     expect(messageContent).toContain("prefer `command=message send` plus JSON `stdin`");
+    expect(messageContent).toContain("message query");
     expect(messageContent).toContain("message send --compact");
     expect(messageContent).toContain("message edit");
     expect(messageContent).toContain("message recall");
@@ -170,6 +174,8 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageAttentionReference).toContain("send the acknowledgement before you disappear into file writes");
     expect(messageAttentionReference).toContain("does not satisfy the origin room's final reply obligation");
     expect(messageAttentionReference).toContain("send the answer back to the origin room");
+    expect(messageAttentionReference).toContain("message query");
+    expect(messageAttentionReference).toContain('chatId:"*"');
     expect(messageAttentionReference).toContain("default to `command=message send` plus JSON `stdin`");
     expect(messageAttentionReference).toContain("message send --compact");
     expect(messageAttentionReference).toContain("keep the promised payload exact");
@@ -178,6 +184,8 @@ describe("Feature: runtime built-in skills", () => {
     const messageRoomReference = readFileSync(join(dirname(message!.path), "references", "room-protocols.md"), "utf8");
     expect(messageRoomReference).toContain("send that acknowledgement before you start the deeper work");
     expect(messageRoomReference).toContain("origin room still owns the final user-visible answer");
+    expect(messageRoomReference).toContain("message query");
+    expect(messageRoomReference).toContain('mode:"sql"');
     expect(messageRoomReference).toContain("prefer `command=message send` plus JSON `stdin`");
     expect(messageRoomReference).toContain("message send --compact");
     expect(messageRoomReference).toContain("send that exact value back instead of a normalized variant");

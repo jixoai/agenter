@@ -5,6 +5,7 @@ Use `message` when the room itself is part of the durable workflow.
 Good defaults:
 
 - read before replying when facts may have changed
+- use `message query` when the answer depends on searching multiple prior messages or multiple already-authorized rooms
 - send one acknowledgement if the work will take time
 - if the work needs multiple steps, send that acknowledgement before you start the deeper work
 - keep acknowledgements short; they should claim ownership, not replay the whole spec
@@ -19,7 +20,10 @@ Good defaults:
 - if the room fixed a concrete URL, path, or token, send that exact value back instead of a normalized variant such as a sibling path
 - if you need to correct yourself, send a new durable replacement instead of treating the earlier message as final truth
 - through `root_workspace_bash`, prefer `command=message send` plus JSON `stdin` for room replies; only use argv JSON when it is trivially short
+- through `root_workspace_bash`, prefer `command=message query` plus JSON `stdin` for room-history search; `chatId:"*"` only expands to rooms you already have
 - if `message send --help` marks compact as `Suggested` or `Available`, `message send --compact` is also available for positional payloads; if the array shape becomes unclear, fall back to object JSON immediately
+- if `message query --help` marks compact as `Suggested` or `Available`, `message query --compact` is also available for positional payloads; if the array shape becomes unclear, fall back to object JSON immediately
+- `message query` `mode:"sql"` is for read-only analysis over the pre-authorized room projection, not for editing or bypassing room scope
 - after the protocol reply is sent, switch back to `attention` and settle the same obligation instead of repeatedly re-reading the room
 
 Protocol discipline:

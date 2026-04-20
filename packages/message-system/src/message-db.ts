@@ -1,36 +1,45 @@
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
-import { Database } from "bun:sqlite";
 import { isPrincipalId } from "@agenter/principal-crypto";
+import { Database } from "bun:sqlite";
 import {
   pruneLegacyMessageControlDbFiles,
+  resolveMessageQueryDbPath,
   ROOM_MESSAGE_DB_DIRNAME,
   ROOM_MESSAGE_DB_PREFIX,
 } from "./message-paths";
+import { MessageQueryIndex } from "./message-query-index";
+import type {
+  MessageQueryHit,
+  MessageQueryMessageResult,
+  MessageQueryMode,
+  MessageQueryResult,
+} from "./message-query-types";
 
 import type {
-  MessageAppendInput,
   MessageActorId,
   MessageActorRoomStateRecord,
   MessageActorStateRecord,
+  MessageAppendInput,
   MessageChannelGrantRecord,
   MessageChannelPatchInput,
-  MessageKind,
-  MessagePayload,
   MessageChannelRecord,
   MessageCreateInput,
   MessageEditInput,
-  MessageRecallInput,
   MessageIssueGrantInput,
+  MessageKind,
   MessageParticipant,
+  MessagePayload,
+  MessageRecallInput,
   MessageRecord,
   ReversePage,
   ReverseTimeCursor,
 } from "./types";
 
 const MESSAGE_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
-const isStoredActorId = (value: string): value is MessageActorId => MESSAGE_ACTOR_ID_PATTERN.test(value) || isPrincipalId(value);
+const isStoredActorId = (value: string): value is MessageActorId =>
+  MESSAGE_ACTOR_ID_PATTERN.test(value) || isPrincipalId(value);
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
   if (!value) {
@@ -256,6 +265,7 @@ export class MessageDb {
   private readonly db: Database;
   private readonly roomDbRoot: string;
   private readonly roomDbs = new Map<string, Database>();
+  private readonly messageQueryIndex: MessageQueryIndex;
 
   constructor(filePath: string) {
     const fullPath = resolve(filePath);
@@ -267,6 +277,7 @@ export class MessageDb {
     this.db.exec(`pragma journal_mode = WAL;`);
     this.roomDbRoot = join(messageRoot, ROOM_MESSAGE_DB_DIRNAME);
     mkdirSync(this.roomDbRoot, { recursive: true });
+    this.messageQueryIndex = new MessageQueryIndex(resolveMessageQueryDbPath(messageRoot));
     this.migrate();
   }
 
@@ -275,6 +286,7 @@ export class MessageDb {
       roomDb.close();
     }
     this.roomDbs.clear();
+    this.messageQueryIndex.close();
     this.db.close();
   }
 
@@ -304,7 +316,9 @@ export class MessageDb {
       this.deleteRoomDb(input.chatId);
       throw error;
     }
-    return this.getChannel(input.chatId, focused)!;
+    const channel = this.getChannel(input.chatId, focused)!;
+    this.syncMessageQueryRoom(channel);
+    return channel;
   }
 
   getChannel(chatId: string, focused = false): MessageChannelRecord | undefined {
@@ -348,13 +362,12 @@ export class MessageDb {
         now,
         chatId,
       );
-    return this.getChannel(chatId, focused)!;
+    const channel = this.getChannel(chatId, focused)!;
+    this.syncMessageQueryRoom(channel);
+    return channel;
   }
 
-  repairMessageActorIds(
-    chatId: string,
-    actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
-  ): { changed: boolean } {
+  repairMessageActorIds(chatId: string, actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>): { changed: boolean } {
     if (actorIdMap.size === 0) {
       return { changed: false };
     }
@@ -475,7 +488,11 @@ export class MessageDb {
       return changed;
     });
 
-    return { changed: repair() };
+    const changed = repair();
+    if (changed) {
+      this.markMessageQueryRoomDirty(chatId, "actor-alias-repair");
+    }
+    return { changed };
   }
 
   archiveChannel(chatId: string, archivedBy: string, focused = false): MessageChannelRecord {
@@ -494,7 +511,9 @@ export class MessageDb {
          where chat_id = ?`,
       )
       .run(now, archivedBy, now, chatId);
-    return this.getChannel(chatId, focused)!;
+    const channel = this.getChannel(chatId, focused)!;
+    this.syncMessageQueryRoom(channel);
+    return channel;
   }
 
   deleteChannel(chatId: string, focused = false): MessageChannelRecord {
@@ -515,10 +534,13 @@ export class MessageDb {
     });
     removeChannel();
     this.deleteRoomDb(chatId);
+    this.messageQueryIndex.deleteRoom(chatId);
     return current;
   }
 
-  issueGrant(input: MessageIssueGrantInput & { chatId: string; accessToken: string; tokenHash: string }): MessageChannelGrantRecord {
+  issueGrant(
+    input: MessageIssueGrantInput & { chatId: string; accessToken: string; tokenHash: string },
+  ): MessageChannelGrantRecord {
     const now = Date.now();
     const grantId = `grant-${crypto.randomUUID()}`;
     this.db
@@ -579,7 +601,11 @@ export class MessageDb {
     return this.getGrantById(chatId, grantId)!;
   }
 
-  findActiveGrantByToken(chatId: string, accessToken: string, tokenHash: string): MessageChannelGrantRecord | undefined {
+  findActiveGrantByToken(
+    chatId: string,
+    accessToken: string,
+    tokenHash: string,
+  ): MessageChannelGrantRecord | undefined {
     const row = this.db
       .query(
         `select grant_id, chat_id, role, label, participant_id, access_token, created_at, revoked_at
@@ -610,14 +636,16 @@ export class MessageDb {
          order by created_at desc, rowid desc
          limit 1`,
       )
-      .get(input.chatId, input.role, input.label ?? null, input.participantId ?? null) as Parameters<typeof mapGrant>[0] | null;
+      .get(input.chatId, input.role, input.label ?? null, input.participantId ?? null) as
+      | Parameters<typeof mapGrant>[0]
+      | null;
     return row ? mapGrant(row) : undefined;
   }
 
   listActiveGrants(chatId: string): MessageChannelGrantRecord[] {
     const rows = this.db
       .query(
-         `select grant_id, chat_id, role, label, participant_id, access_token, created_at, revoked_at
+        `select grant_id, chat_id, role, label, participant_id, access_token, created_at, revoked_at
          from chat_channel_grant
          where chat_id = ? and revoked_at is null
          order by created_at desc, rowid desc`,
@@ -626,7 +654,10 @@ export class MessageDb {
     return rows.map(mapGrant);
   }
 
-  listActorChannelAccess(actorId: string, includeArchived = false): Array<{
+  listActorChannelAccess(
+    actorId: string,
+    includeArchived = false,
+  ): Array<{
     channel: MessageChannelRecord;
     grant: MessageChannelGrantRecord;
   }> {
@@ -830,7 +861,7 @@ export class MessageDb {
     const updatedAt = input.updatedAt ?? createdAt;
     const kind = input.kind ?? "text";
     const visibleAt = input.visibleAt ?? createdAt;
-    const from = input.from ?? (input.senderActorId ? input.senderActorId.split(":").at(-1) ?? "User" : "User");
+    const from = input.from ?? (input.senderActorId ? (input.senderActorId.split(":").at(-1) ?? "User") : "User");
     const readActorIds = normalizeActorIds(input.readActorIds ?? []);
     const unreadActorIds = normalizeActorIds(input.unreadActorIds ?? []);
     const roomDb = this.getRoomDb(input.chatId, true);
@@ -879,7 +910,9 @@ export class MessageDb {
     if (!row) {
       throw new Error("failed to load inserted message");
     }
-    return mapMessage(input.chatId, row);
+    const message = mapMessage(input.chatId, row);
+    this.syncMessageQueryMessage(input.chatId, message);
+    return message;
   }
 
   editMessage(input: MessageEditInput): MessageRecord {
@@ -911,6 +944,7 @@ export class MessageDb {
     if (!refreshed) {
       throw new Error("failed to load updated message");
     }
+    this.syncMessageQueryMessage(input.chatId, refreshed);
     return refreshed;
   }
 
@@ -949,6 +983,7 @@ export class MessageDb {
     if (!refreshed) {
       throw new Error("failed to load recalled message");
     }
+    this.syncMessageQueryMessage(input.chatId, refreshed);
     return refreshed;
   }
 
@@ -961,7 +996,10 @@ export class MessageDb {
     return row ? mapMessage(chatId, row) : undefined;
   }
 
-  pageMessages(chatId: string, input: { before?: ReverseTimeCursor | null; limit?: number }): ReversePage<MessageRecord> {
+  pageMessages(
+    chatId: string,
+    input: { before?: ReverseTimeCursor | null; limit?: number },
+  ): ReversePage<MessageRecord> {
     const safeLimit = resolvePageLimit(input.limit);
     const before = input.before ?? undefined;
     const roomDb = this.getRoomDb(chatId, false);
@@ -1000,6 +1038,32 @@ export class MessageDb {
     };
   }
 
+  queryMessagesByIndex(input: {
+    chatIds: string[];
+    mode: MessageQueryMode;
+    query: string;
+    offset?: number;
+    limit?: number;
+  }): MessageQueryResult {
+    const chatIds = [...new Set(input.chatIds)];
+    this.ensureMessageQueryRoomsReady(chatIds);
+    if (input.mode === "sql") {
+      return this.messageQueryIndex.querySql({
+        chatIds,
+        query: input.query,
+        offset: input.offset,
+        limit: input.limit,
+      });
+    }
+    return this.queryIndexedMessageHits({
+      chatIds,
+      mode: input.mode,
+      query: input.query,
+      offset: input.offset,
+      limit: input.limit,
+    });
+  }
+
   snapshot(chatId: string, focused: boolean, limit = 50): { channel: MessageChannelRecord; items: MessageRecord[] } {
     const channel = this.getChannel(chatId, focused);
     if (!channel) {
@@ -1025,11 +1089,7 @@ export class MessageDb {
     return row ? mapMessage(chatId, row) : undefined;
   }
 
-  markMessagesReadUpTo(input: {
-    chatId: string;
-    actorId: MessageActorId;
-    targetRowId: number;
-  }): { changed: boolean } {
+  markMessagesReadUpTo(input: { chatId: string; actorId: MessageActorId; targetRowId: number }): { changed: boolean } {
     const roomDb = this.getRoomDb(input.chatId, false);
     if (!roomDb) {
       return { changed: false };
@@ -1129,9 +1189,7 @@ export class MessageDb {
           ? Math.max(current.lastActiveAt ?? 0, patch.lastActiveAt)
           : current.lastActiveAt,
       lastLoginAt:
-        patch.lastLoginAt !== undefined
-          ? Math.max(current.lastLoginAt ?? 0, patch.lastLoginAt)
-          : current.lastLoginAt,
+        patch.lastLoginAt !== undefined ? Math.max(current.lastLoginAt ?? 0, patch.lastLoginAt) : current.lastLoginAt,
       online: patch.online ?? current.online,
       metadata: patch.metadata ?? current.metadata ?? {},
     };
@@ -1172,10 +1230,7 @@ export class MessageDb {
     const fallbackLastReadRowId = Math.max(sourceState?.lastReadRowId ?? 0, targetState?.lastReadRowId ?? 0);
     const fallbackLastReadAt = Math.max(sourceState?.lastReadAt ?? 0, targetState?.lastReadAt ?? 0);
     const hasDerivedState =
-      trackedMessages.length > 0 ||
-      unreadMessages.length > 0 ||
-      sourceState !== undefined ||
-      targetState !== undefined;
+      trackedMessages.length > 0 || unreadMessages.length > 0 || sourceState !== undefined || targetState !== undefined;
     if (!hasDerivedState) {
       return null;
     }
@@ -1184,9 +1239,11 @@ export class MessageDb {
       chatId,
       unreadCount: unreadMessages.length,
       lastReadRowId:
-        lastReadMessage?.rowId ?? (messages.length === 0 && fallbackLastReadRowId > 0 ? fallbackLastReadRowId : undefined),
+        lastReadMessage?.rowId ??
+        (messages.length === 0 && fallbackLastReadRowId > 0 ? fallbackLastReadRowId : undefined),
       lastReadAt:
-        (lastReadMessage?.visibleAt ?? lastReadMessage?.createdAt) ??
+        lastReadMessage?.visibleAt ??
+        lastReadMessage?.createdAt ??
         (messages.length === 0 && fallbackLastReadAt > 0 ? fallbackLastReadAt : undefined),
       latestUnreadRowId: latestUnreadMessage?.rowId,
       latestUnreadAt: latestUnreadMessage?.visibleAt ?? latestUnreadMessage?.createdAt,
@@ -1210,6 +1267,73 @@ export class MessageDb {
       )
       .all() as StoredRoomMessageRow[];
     return rows.map((row) => mapMessage(chatId, row));
+  }
+
+  private listAllMessages(chatId: string): MessageRecord[] {
+    const roomDb = this.getRoomDb(chatId, false);
+    if (!roomDb) {
+      return [];
+    }
+    const rows = roomDb
+      .query(
+        `${ROOM_MESSAGE_SELECT_SQL}
+         order by id asc`,
+      )
+      .all() as StoredRoomMessageRow[];
+    return rows.map((row) => mapMessage(chatId, row));
+  }
+
+  private queryIndexedMessageHits(input: {
+    chatIds: string[];
+    mode: Exclude<MessageQueryMode, "sql">;
+    query: string;
+    offset?: number;
+    limit?: number;
+  }): MessageQueryMessageResult {
+    let page = this.messageQueryIndex.queryMessageRefs(input);
+    let items = this.hydrateIndexedMessageHits(page.items);
+    if (items.length !== page.items.length) {
+      const missingChatIds = page.items
+        .filter((hit) => !items.some((item) => item.chatId === hit.chatId && item.message.messageId === hit.messageId))
+        .map((hit) => hit.chatId);
+      for (const chatId of new Set(missingChatIds)) {
+        this.rebuildMessageQueryRoom(chatId);
+      }
+      page = this.messageQueryIndex.queryMessageRefs(input);
+      items = this.hydrateIndexedMessageHits(page.items);
+    }
+    return {
+      resultKind: "messages",
+      ...page,
+      items,
+    };
+  }
+
+  private hydrateIndexedMessageHits(
+    hits: Array<{
+      chatId: string;
+      chatTitle?: string;
+      contextId?: string;
+      messageId: number;
+      score?: number;
+    }>,
+  ): MessageQueryHit[] {
+    const hydrated: MessageQueryHit[] = [];
+    for (const hit of hits) {
+      const message = this.getMessage(hit.chatId, hit.messageId);
+      if (!message) {
+        this.markMessageQueryRoomDirty(hit.chatId, "missing-hit");
+        continue;
+      }
+      hydrated.push({
+        chatId: hit.chatId,
+        chatTitle: hit.chatTitle,
+        contextId: hit.contextId,
+        score: hit.score,
+        message,
+      });
+    }
+    return hydrated;
   }
 
   private hasSameActorRoomState(
@@ -1343,6 +1467,57 @@ export class MessageDb {
     this.db.query(`update chat_channel set updated_at = ? where chat_id = ?`).run(updatedAt, chatId);
   }
 
+  private syncMessageQueryRoom(channel: MessageChannelRecord): void {
+    try {
+      this.messageQueryIndex.upsertRoom(channel);
+    } catch {
+      this.markMessageQueryRoomDirty(channel.chatId, "room-sync");
+    }
+  }
+
+  private syncMessageQueryMessage(chatId: string, message: MessageRecord): void {
+    const channel = this.getChannel(chatId, true);
+    if (!channel) {
+      return;
+    }
+    try {
+      this.messageQueryIndex.upsertRoom(channel);
+      this.messageQueryIndex.upsertMessage(channel, message);
+    } catch {
+      this.markMessageQueryRoomDirty(chatId, "message-sync");
+    }
+  }
+
+  private ensureMessageQueryRoomsReady(chatIds: readonly string[]): void {
+    for (const chatId of chatIds) {
+      if (this.messageQueryIndex.needsRoomSync(chatId)) {
+        this.rebuildMessageQueryRoom(chatId);
+      }
+    }
+  }
+
+  private rebuildMessageQueryRoom(chatId: string): void {
+    const channel = this.getChannel(chatId, true);
+    if (!channel) {
+      this.messageQueryIndex.deleteRoom(chatId);
+      return;
+    }
+    try {
+      this.messageQueryIndex.rebuildRoom(channel, this.listAllMessages(chatId));
+    } catch {
+      this.markMessageQueryRoomDirty(chatId, "room-rebuild");
+      throw new Error(`message query index rebuild failed: ${chatId}`);
+    }
+  }
+
+  private markMessageQueryRoomDirty(chatId: string, reason: string): void {
+    try {
+      this.messageQueryIndex.markRoomDirty(chatId, reason);
+    } catch {
+      // Ignore sidecar write failures to keep durable room truth authoritative.
+    }
+  }
+
   private getRoomDbPath(chatId: string): string {
     return join(this.roomDbRoot, `${ROOM_MESSAGE_DB_PREFIX}${chatId}.db`);
   }
@@ -1466,7 +1641,8 @@ export class MessageDb {
       this.hasTable("actor_room_state");
     const hasLegacyReadStateTable = this.hasTable("chat_read_state");
     const needsBreakingReset =
-      currentSchemaVersion < MESSAGE_CONTROL_DB_BREAKING_RESET_VERSION && (hasLegacyMessageTables || hasLegacyReadStateTable);
+      currentSchemaVersion < MESSAGE_CONTROL_DB_BREAKING_RESET_VERSION &&
+      (hasLegacyMessageTables || hasLegacyReadStateTable);
 
     if (needsBreakingReset) {
       this.clearRoomDbRoot();
@@ -1540,9 +1716,7 @@ export class MessageDb {
     this.db.exec(`drop table if exists chat_message;`);
     this.db.exec(`drop index if exists idx_chat_message_chat_created;`);
 
-    const channelColumns = this.db
-      .query(`pragma table_info(chat_channel)`)
-      .all() as Array<{ name: string }>;
+    const channelColumns = this.db.query(`pragma table_info(chat_channel)`).all() as Array<{ name: string }>;
     const hasArchivedAt = channelColumns.some((column) => column.name === "archived_at");
     if (!hasArchivedAt) {
       this.db.exec(`alter table chat_channel add column archived_at integer;`);
@@ -1552,9 +1726,7 @@ export class MessageDb {
       this.db.exec(`alter table chat_channel add column archived_by text;`);
     }
 
-    const grantColumns = this.db
-      .query(`pragma table_info(chat_channel_grant)`)
-      .all() as Array<{ name: string }>;
+    const grantColumns = this.db.query(`pragma table_info(chat_channel_grant)`).all() as Array<{ name: string }>;
     const hasAccessTokenColumn = grantColumns.some((column) => column.name === "access_token");
     if (!hasAccessTokenColumn) {
       this.db.exec(`alter table chat_channel_grant add column access_token text;`);
@@ -1567,9 +1739,9 @@ export class MessageDb {
   }
 
   private hasTableIn(database: Database, name: string): boolean {
-    const row = database
-      .query(`select 1 from sqlite_master where type = 'table' and name = ? limit 1`)
-      .get(name) as { 1?: number } | null;
+    const row = database.query(`select 1 from sqlite_master where type = 'table' and name = ? limit 1`).get(name) as {
+      1?: number;
+    } | null;
     return row !== null;
   }
 

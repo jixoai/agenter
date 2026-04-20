@@ -33,6 +33,31 @@ export type {
   TaskView,
 } from "@agenter/task-system";
 export { AgentRuntime, type AgentRuntimeConfig, type AgentRuntimeProcessor } from "./agent-runtime";
+export {
+  AgenterAI,
+  type AgentModelCallRecord,
+  type AgentPromptWindowCompactSummary,
+  type AgentRuntimeStats,
+  type AgentToolProvider,
+  type AgentToolProviderContext,
+} from "./agenter-ai";
+export {
+  AppKernel,
+  type AppKernelOptions,
+  type PublicRoomEntry,
+  type PublicRoomMessageQueryResult,
+  type PublicRoomMessageRecord,
+  type PublicRoomReadProgress,
+  type PublicRoomSnapshot,
+  type RuntimeWorkspaceAssetRoots,
+  type WorkspaceListItem,
+  type WorkspaceSessionCounts,
+  type WorkspaceSessionEntry,
+  type WorkspaceSessionPage,
+  type WorkspaceSessionPreview,
+  type WorkspaceSessionTab,
+} from "./app-kernel";
+export { projectAuthActors, type AuthActorProjection } from "./auth-actor-catalog";
 export { AuthDraftStore, resolveAuthDraftDbPath } from "./auth-draft-store";
 export type {
   AuthDraftCreateResult,
@@ -58,30 +83,6 @@ export type {
   JsonPrimitive,
   JsonValue,
 } from "./auth-kv-types";
-export {
-  AgenterAI,
-  type AgentModelCallRecord,
-  type AgentPromptWindowCompactSummary,
-  type AgentRuntimeStats,
-  type AgentToolProvider,
-  type AgentToolProviderContext,
-} from "./agenter-ai";
-export {
-  AppKernel,
-  type AppKernelOptions,
-  type PublicRoomEntry,
-  type PublicRoomMessageRecord,
-  type PublicRoomReadProgress,
-  type PublicRoomSnapshot,
-  type RuntimeWorkspaceAssetRoots,
-  type WorkspaceListItem,
-  type WorkspaceSessionCounts,
-  type WorkspaceSessionEntry,
-  type WorkspaceSessionPage,
-  type WorkspaceSessionPreview,
-  type WorkspaceSessionTab,
-} from "./app-kernel";
-export { projectAuthActors, type AuthActorProjection } from "./auth-actor-catalog";
 export {
   AuthServiceBridge,
   type AuthServiceBridgeOptions,
@@ -160,11 +161,6 @@ export {
 } from "./prompt-docs";
 export { FilePromptStore, type PromptSnapshot, type PromptStore } from "./prompt-store";
 export {
-  createInProcessRootWorkspaceToolProvider,
-  type InProcessRootWorkspaceToolProviderInput,
-  type RootWorkspaceToolListPayload,
-} from "./root-workspace-tool-provider";
-export {
   APP_PROTOCOL_VERSION,
   settingsKindSchema,
   type AnyRuntimeEvent,
@@ -173,6 +169,12 @@ export {
   type RuntimeSnapshotPayload,
   type SettingsKind,
 } from "./realtime-types";
+export {
+  createInProcessRootWorkspaceToolProvider,
+  type InProcessRootWorkspaceToolProviderInput,
+  type RootWorkspaceToolListPayload,
+} from "./root-workspace-tool-provider";
+export type { RuntimeLocalApiHandlers } from "./runtime-tool-descriptors";
 export {
   SemanticJudge,
   SemanticJudgeDecisionError,
@@ -213,7 +215,6 @@ export {
 } from "./session-runtime";
 export { SessionStore } from "./session-store";
 export { SettingsEditor, type EditableKind } from "./settings-editor";
-export type { RuntimeLocalApiHandlers } from "./runtime-tool-descriptors";
 export {
   listScopedSettingsGraph,
   readScopedSettingsLayer,

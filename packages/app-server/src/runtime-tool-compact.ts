@@ -83,7 +83,11 @@ const buildCompactNode = (schema: unknown): CompactNode => {
 
   const oneOf = getArray(schema, "oneOf");
   if (oneOf) {
-    return buildUnionNode(oneOf);
+    try {
+      return buildUnionNode(oneOf);
+    } catch {
+      return { kind: "passthrough" };
+    }
   }
 
   const enumValues = getArray(schema, "enum");

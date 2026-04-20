@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { isPrincipalId } from "@agenter/principal-crypto";
 import { MessageDb } from "./message-db";
 import { resolveDefaultMessageControlDbPath } from "./message-paths";
+import type { MessageAuthorizedQueryInput, MessageQueryResult } from "./message-query-types";
 import type {
   CommitWaitHandle,
   MessageActorId,
@@ -10,10 +11,10 @@ import type {
   MessageAdminWorkItem,
   MessageAppendInput,
   MessageAuthorizedEditInput,
-  MessageAuthorizedRecallInput,
   MessageAuthorizedMarkReadInput,
   MessageAuthorizedPageInput,
   MessageAuthorizedReadInput,
+  MessageAuthorizedRecallInput,
   MessageAuthorizedWriteInput,
   MessageChannelAccessProjection,
   MessageChannelAccessRole,
@@ -22,16 +23,16 @@ import type {
   MessageControlPlaneConfig,
   MessageControlPlaneConfigPatch,
   MessageControlPlaneEntry,
-  MessageCreateInput,
   MessageCreateInitialUserInput,
+  MessageCreateInput,
   MessageEditInput,
-  MessageRecallInput,
-  MessageParticipant,
   MessageFocusOp,
   MessageIssueGrantInput,
   MessageIssuedGrant,
+  MessageParticipant,
   MessageReadProgressProjection,
   MessageReadStateProjection,
+  MessageRecallInput,
   MessageRecord,
   MessageSnapshot,
   MessageTransportClientMessage,
@@ -224,7 +225,9 @@ export class MessageControlPlane {
   private readonly trustedBootstrapTokens = new Map<string, string>();
   private readonly messageListeners = new Set<(payload: { chatId: string; message: MessageRecord }) => void>();
   private readonly channelChangeListeners = new Set<(payload: MessageChannelChangePayload) => void>();
-  private readonly focusListeners = new Set<(payload: { actorId: string; chatIds: string[]; changedChatIds: string[] }) => void>();
+  private readonly focusListeners = new Set<
+    (payload: { actorId: string; chatIds: string[]; changedChatIds: string[] }) => void
+  >();
   private readonly waiters = new Set<Waiter>();
   private readonly unreadWaiters = new Set<UnreadWaiter>();
   private readonly unreadVersionByActor = new Map<MessageActorId, number>();
@@ -363,7 +366,10 @@ export class MessageControlPlane {
   }
 
   getChannel(chatId: string, input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry | undefined {
-    const channel = this.db.getChannel(chatId, this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(chatId));
+    const channel = this.db.getChannel(
+      chatId,
+      this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(chatId),
+    );
     if (!channel) {
       return undefined;
     }
@@ -489,7 +495,9 @@ export class MessageControlPlane {
         break;
     }
     this.focusedChatIdsByActor.set(actorId, current);
-    const changedChatIds = [...new Set([...previous, ...current].filter((chatId) => previous.has(chatId) !== current.has(chatId)))];
+    const changedChatIds = [
+      ...new Set([...previous, ...current].filter((chatId) => previous.has(chatId) !== current.has(chatId))),
+    ];
     if (changedChatIds.length > 0) {
       this.bumpVersion();
       for (const chatId of changedChatIds) {
@@ -512,9 +520,14 @@ export class MessageControlPlane {
     const grants = access.map(({ chatId, accessToken }) => this.requireAccess(chatId, accessToken, "readonly"));
     const actorId = grants[0]?.participantId;
     if (!actorId || !isCanonicalActorId(actorId)) {
-      return this.focus(op, grants.map((grant) => grant.chatId));
+      return this.focus(
+        op,
+        grants.map((grant) => grant.chatId),
+      );
     }
-    const allowedChatIds = grants.map((grant) => grant.chatId).filter((chatId, index, items) => items.indexOf(chatId) === index);
+    const allowedChatIds = grants
+      .map((grant) => grant.chatId)
+      .filter((chatId, index, items) => items.indexOf(chatId) === index);
     return this.focusForActor(actorId as MessageActorId, op, allowedChatIds);
   }
 
@@ -524,6 +537,64 @@ export class MessageControlPlane {
 
   private isBuiltInChannelMetadata(metadata: Record<string, unknown> | undefined): boolean {
     return metadata?.builtIn === true;
+  }
+
+  private resolveAuthorizedQueryChatIds(input: MessageAuthorizedQueryInput): string[] {
+    const requested = input.chatId;
+    if (typeof requested === "string" && requested !== "*") {
+      if (input.accessToken) {
+        this.requireAccess(requested, input.accessToken, "readonly");
+        return [requested];
+      }
+      if (input.actorId && !input.superadminActorId) {
+        const room = this.getChannelForActor(requested, input.actorId, {
+          includeArchived: false,
+          touchPresence: false,
+        });
+        if (!room) {
+          throw new Error("message room credential-invalid");
+        }
+        return [requested];
+      }
+      const room = this.getChannel(requested, { includeArchived: false });
+      if (!room) {
+        throw new Error(`unknown message room: ${requested}`);
+      }
+      return [requested];
+    }
+
+    if (input.accessToken) {
+      throw new Error("message query accessToken only supports a single room");
+    }
+
+    if (input.actorId && !input.superadminActorId) {
+      const allowed = this.listChannelsForActor(input.actorId, {
+        includeArchived: false,
+        touchPresence: false,
+      }).map((channel) => channel.chatId);
+      if (requested === "*") {
+        return allowed;
+      }
+      const wanted = [...new Set(requested)];
+      const allowedSet = new Set(allowed);
+      const denied = wanted.filter((chatId) => !allowedSet.has(chatId));
+      if (denied.length > 0) {
+        throw new Error("message room credential-invalid");
+      }
+      return wanted;
+    }
+
+    const available = this.listChannels({ includeArchived: false }).map((channel) => channel.chatId);
+    if (requested === "*") {
+      return available;
+    }
+    const known = new Set(available);
+    for (const chatId of requested) {
+      if (!known.has(chatId)) {
+        throw new Error(`unknown message room: ${chatId}`);
+      }
+    }
+    return [...new Set(requested)];
   }
 
   private emitChannelChanged(payload: MessageChannelChangePayload): void {
@@ -551,9 +622,7 @@ export class MessageControlPlane {
   send(input: MessageAppendInput): MessageRecord {
     const createdAt = input.createdAt ?? Date.now();
     const visibleAt = input.visibleAt ?? createdAt;
-    const from =
-      input.from?.trim() ||
-      (input.senderActorId ? fallbackActorLabel(input.senderActorId) : "User");
+    const from = input.from?.trim() || (input.senderActorId ? fallbackActorLabel(input.senderActorId) : "User");
     const readMembership =
       input.readActorIds || input.unreadActorIds
         ? {
@@ -659,7 +728,9 @@ export class MessageControlPlane {
       throw new Error(`unknown message: ${input.messageId}`);
     }
     const editorActorId =
-      grant.participantId && isCanonicalActorId(grant.participantId) ? (grant.participantId as MessageActorId) : undefined;
+      grant.participantId && isCanonicalActorId(grant.participantId)
+        ? (grant.participantId as MessageActorId)
+        : undefined;
     if (editorActorId && !this.isTrustedBootstrapGrant(grant) && target.senderActorId !== editorActorId) {
       throw new Error("message edit requires original sender");
     }
@@ -673,7 +744,9 @@ export class MessageControlPlane {
       throw new Error(`unknown message: ${input.messageId}`);
     }
     const recallActorId =
-      grant.participantId && isCanonicalActorId(grant.participantId) ? (grant.participantId as MessageActorId) : undefined;
+      grant.participantId && isCanonicalActorId(grant.participantId)
+        ? (grant.participantId as MessageActorId)
+        : undefined;
     if (recallActorId && !this.isTrustedBootstrapGrant(grant) && target.senderActorId !== recallActorId) {
       throw new Error("message recall requires original sender");
     }
@@ -751,7 +824,11 @@ export class MessageControlPlane {
     return this.sendAuthorized(input);
   }
 
-  queryMessages(input: { chatId: string; before?: ReverseTimeCursor | null; limit?: number }): ReversePage<MessageRecord> {
+  queryMessages(input: {
+    chatId: string;
+    before?: ReverseTimeCursor | null;
+    limit?: number;
+  }): ReversePage<MessageRecord> {
     return this.db.pageMessages(input.chatId, { before: input.before, limit: input.limit });
   }
 
@@ -760,11 +837,24 @@ export class MessageControlPlane {
     return this.queryMessages({ chatId: input.chatId, before: input.before, limit: input.limit });
   }
 
+  queryAuthorized(input: MessageAuthorizedQueryInput): MessageQueryResult {
+    const chatIds = this.resolveAuthorizedQueryChatIds(input);
+    return this.db.queryMessagesByIndex({
+      chatIds,
+      mode: input.mode,
+      query: input.query,
+      offset: input.offset,
+      limit: input.limit,
+    });
+  }
+
   markChannelReadAuthorized(input: MessageAuthorizedMarkReadInput): MessageControlPlaneEntry {
     const grant = this.requireAccess(input.chatId, input.accessToken, "readonly");
     const channel = this.db.getChannel(
       input.chatId,
-      grant.participantId ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId) : false,
+      grant.participantId
+        ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId)
+        : false,
     );
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
@@ -785,7 +875,9 @@ export class MessageControlPlane {
       );
     }
 
-    const target = input.messageId ? this.db.getMessage(input.chatId, input.messageId) : this.db.resolveLatestVisibleMessage(input.chatId);
+    const target = input.messageId
+      ? this.db.getMessage(input.chatId, input.messageId)
+      : this.db.resolveLatestVisibleMessage(input.chatId);
     if (input.messageId && !target) {
       throw new Error(`unknown message: ${input.messageId}`);
     }
@@ -834,7 +926,11 @@ export class MessageControlPlane {
   }
 
   snapshot(chatId: string, limit = 50): MessageSnapshot {
-    const snapshot = this.db.snapshot(chatId, this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(chatId), limit);
+    const snapshot = this.db.snapshot(
+      chatId,
+      this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(chatId),
+      limit,
+    );
     return {
       channel: this.withProjection(
         {
@@ -855,7 +951,9 @@ export class MessageControlPlane {
     const page = this.db.pageMessages(input.chatId, { limit: input.limit });
     const snapshot = this.db.snapshot(
       input.chatId,
-      grant.participantId ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId) : false,
+      grant.participantId
+        ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId)
+        : false,
       input.limit ?? 50,
     );
     return {
@@ -889,7 +987,9 @@ export class MessageControlPlane {
     const channel = this.db.updateChannel(
       input.chatId,
       patch,
-      grant.participantId ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId) : false,
+      grant.participantId
+        ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId)
+        : false,
     );
     this.bumpVersion();
     this.emitChannelChanged({
@@ -992,7 +1092,9 @@ export class MessageControlPlane {
     const channel = this.db.archiveChannel(
       input.chatId,
       input.archivedBy,
-      grant.participantId ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId) : false,
+      grant.participantId
+        ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId)
+        : false,
     );
     for (const focused of this.focusedChatIdsByActor.values()) {
       focused.delete(input.chatId);
@@ -1027,11 +1129,15 @@ export class MessageControlPlane {
     const affectedActorIds = this.db
       .listActiveGrants(input.chatId)
       .flatMap((activeGrant) =>
-        activeGrant.participantId && isCanonicalActorId(activeGrant.participantId) ? [activeGrant.participantId as MessageActorId] : [],
+        activeGrant.participantId && isCanonicalActorId(activeGrant.participantId)
+          ? [activeGrant.participantId as MessageActorId]
+          : [],
       );
     const channel = this.db.deleteChannel(
       input.chatId,
-      grant.participantId ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId) : false,
+      grant.participantId
+        ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId)
+        : false,
     );
     for (const focused of this.focusedChatIdsByActor.values()) {
       focused.delete(input.chatId);
@@ -1058,12 +1164,16 @@ export class MessageControlPlane {
     );
   }
 
-  listChannelGrantsAuthorized(input: MessageAuthorizedReadInput & { superadminActorId?: MessageActorId }): MessageChannelGrantRecord[] {
+  listChannelGrantsAuthorized(
+    input: MessageAuthorizedReadInput & { superadminActorId?: MessageActorId },
+  ): MessageChannelGrantRecord[] {
     this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
     return this.db.listActiveGrants(input.chatId).filter((grant) => !this.isTrustedBootstrapGrant(grant));
   }
 
-  issueChannelGrantAuthorized(input: MessageAuthorizedReadInput & MessageIssueGrantInput & { superadminActorId?: MessageActorId }): MessageIssuedGrant {
+  issueChannelGrantAuthorized(
+    input: MessageAuthorizedReadInput & MessageIssueGrantInput & { superadminActorId?: MessageActorId },
+  ): MessageIssuedGrant {
     this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
     if (!input.participantId || !isCanonicalActorId(input.participantId)) {
       throw new Error("room grant participantId must be a principal id or auth:/session:/system: actor id");
@@ -1097,7 +1207,9 @@ export class MessageControlPlane {
     };
   }
 
-  revokeChannelGrantAuthorized(input: MessageAuthorizedReadInput & { grantId: string; superadminActorId?: MessageActorId }): { ok: boolean } {
+  revokeChannelGrantAuthorized(
+    input: MessageAuthorizedReadInput & { grantId: string; superadminActorId?: MessageActorId },
+  ): { ok: boolean } {
     this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
     const revokedGrant = this.db.getGrantById(input.chatId, input.grantId);
     const ok = this.db.revokeGrant(input.chatId, input.grantId);
@@ -1263,7 +1375,9 @@ export class MessageControlPlane {
     };
   }
 
-  async startTransport(input: { host?: string; port?: number; pathPrefix?: string } = {}): Promise<MessageTransportConfig> {
+  async startTransport(
+    input: { host?: string; port?: number; pathPrefix?: string } = {},
+  ): Promise<MessageTransportConfig> {
     if (this.transportServer) {
       return cloneTransport(this.config.transport);
     }
@@ -1351,7 +1465,13 @@ export class MessageControlPlane {
           const { chatId, accessToken } = socket.data;
           const message = parseClientMessage(typeof raw === "string" ? raw : Buffer.from(raw).toString("utf8"));
           if (!message) {
-            socket.send(JSON.stringify({ type: "error", chatId, message: "invalid transport message" } satisfies MessageTransportServerMessage));
+            socket.send(
+              JSON.stringify({
+                type: "error",
+                chatId,
+                message: "invalid transport message",
+              } satisfies MessageTransportServerMessage),
+            );
             return;
           }
           try {
@@ -1576,9 +1696,8 @@ export class MessageControlPlane {
       totalSeatCount: readSeatCount + unreadSeatCount,
       readSeatCount,
       unreadSeatCount,
-      invalidCredentialSeatCount: readStates.filter(
-        (state) => state.trackedByLatestVisible && state.invalidCredential,
-      ).length,
+      invalidCredentialSeatCount: readStates.filter((state) => state.trackedByLatestVisible && state.invalidCredential)
+        .length,
     };
   }
 
@@ -1592,8 +1711,7 @@ export class MessageControlPlane {
         return Boolean(grant.participantId) && !this.isTrustedBootstrapGrant(grant);
       })
       .map((grant) => grant.participantId);
-    const readActorIds =
-      senderActorId && participantActorIds.includes(senderActorId) ? [senderActorId] : [];
+    const readActorIds = senderActorId && participantActorIds.includes(senderActorId) ? [senderActorId] : [];
     return {
       readActorIds,
       unreadActorIds: participantActorIds.filter((actorId) => !readActorIds.includes(actorId)),
@@ -1673,27 +1791,31 @@ export class MessageControlPlane {
 
     let changed = false;
     for (const [participantId, grants] of grouped) {
-      const preferred = grants.reduce((best, current) => {
-        if (!best) {
-          return current;
-        }
-        const roleDiff = roleRank(current.role) - roleRank(best.role);
-        if (roleDiff !== 0) {
-          return roleDiff > 0 ? current : best;
-        }
-        return current.createdAt >= best.createdAt ? current : best;
-      }, null as MessageChannelGrantRecord | null);
+      const preferred = grants.reduce(
+        (best, current) => {
+          if (!best) {
+            return current;
+          }
+          const roleDiff = roleRank(current.role) - roleRank(best.role);
+          if (roleDiff !== 0) {
+            return roleDiff > 0 ? current : best;
+          }
+          return current.createdAt >= best.createdAt ? current : best;
+        },
+        null as MessageChannelGrantRecord | null,
+      );
       if (!preferred) {
         continue;
       }
       const preferredLabel = preferred.label ?? grants.find((grant) => grant.label)?.label;
-      const redundantGrantIds = grants.filter((grant) => grant.grantId !== preferred.grantId).map((grant) => grant.grantId);
+      const redundantGrantIds = grants
+        .filter((grant) => grant.grantId !== preferred.grantId)
+        .map((grant) => grant.grantId);
       for (const grantId of redundantGrantIds) {
         this.db.revokeGrant(chatId, grantId);
       }
       const needsPreferredUpdate =
-        preferred.participantId !== participantId ||
-        (preferred.label ?? undefined) !== preferredLabel;
+        preferred.participantId !== participantId || (preferred.label ?? undefined) !== preferredLabel;
       if (redundantGrantIds.length === 0 && !needsPreferredUpdate) {
         continue;
       }
@@ -1748,10 +1870,9 @@ export class MessageControlPlane {
       input.senderActorId ??
       (grant.participantId && isCanonicalActorId(grant.participantId) ? grant.participantId : undefined);
     const channel = this.db.getChannel(chatId);
-    const participantLabel =
-      senderActorId
-        ? channel?.participants.find((participant) => participant.id === senderActorId)?.label?.trim()
-        : undefined;
+    const participantLabel = senderActorId
+      ? channel?.participants.find((participant) => participant.id === senderActorId)?.label?.trim()
+      : undefined;
     const from =
       participantLabel ||
       grant.label?.trim() ||
@@ -1830,7 +1951,7 @@ export class MessageControlPlane {
     const current = this.actorPresence.get(actorId);
     this.actorPresence.set(actorId, {
       online: true,
-      expiresAt: actorId.startsWith("auth:") ? now + TRANSIENT_ACTOR_PRESENCE_TTL_MS : current?.expiresAt ?? null,
+      expiresAt: actorId.startsWith("auth:") ? now + TRANSIENT_ACTOR_PRESENCE_TTL_MS : (current?.expiresAt ?? null),
       invalidCredential: current?.invalidCredential ?? false,
     });
     this.db.touchActorState(actorId, {
@@ -1890,7 +2011,9 @@ export class MessageControlPlane {
     const nextMetadata = {
       ...currentMetadata,
       ...(patch.metadata ?? {}),
-      ...(patch.adminGroupCandidateIds ? { [ROOM_ADMIN_GROUP_CANDIDATE_IDS_KEY]: [...patch.adminGroupCandidateIds] } : {}),
+      ...(patch.adminGroupCandidateIds
+        ? { [ROOM_ADMIN_GROUP_CANDIDATE_IDS_KEY]: [...patch.adminGroupCandidateIds] }
+        : {}),
     };
     const synced = this.withAdminState(chatId, nextMetadata);
     return {
@@ -1941,7 +2064,9 @@ export class MessageControlPlane {
     if (!Array.isArray(raw)) {
       return [];
     }
-    return raw.filter((value): value is MessageAdminWorkItem => Boolean(value) && typeof value === "object" && "workId" in value);
+    return raw.filter(
+      (value): value is MessageAdminWorkItem => Boolean(value) && typeof value === "object" && "workId" in value,
+    );
   }
 
   private reassignPendingAdminWork(

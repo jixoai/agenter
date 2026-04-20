@@ -283,6 +283,35 @@ describe("Feature: runtime descriptor CLI", () => {
     });
   });
 
+  test("Scenario: Given compact stdin with a wildcard room scope When message query runs Then the CLI preserves the query contract without collapsing auth scope semantics", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/message/query": {
+        result: {
+          resultKind: "messages",
+          mode: "query",
+          chatIds: ["room-1"],
+          offset: 0,
+          limit: 5,
+          nextOffset: null,
+          hasMore: false,
+          items: [],
+        },
+      },
+    });
+    const message = createRuntimeCommand(api.baseUrl, "message");
+
+    const result = await message.execute(["query", "--compact"], createCommandContext('["*",1,"budget incident",0,5]'));
+
+    expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({
+      chatId: "*",
+      mode: "query",
+      query: "budget incident",
+      offset: 0,
+      limit: 5,
+    });
+  });
+
   test("Scenario: Given empty input list command When workspace list runs Then the CLI sends an empty descriptor payload", async () => {
     const api = await startMockRuntimeApi({
       "/v1/workspace/list": { workspaces: [] },
@@ -379,6 +408,7 @@ describe("Feature: runtime descriptor CLI", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Available subcommands:");
+    expect(result.stdout).toContain("query: Search authorized room history");
     expect(result.stdout).toContain("send: Send a durable room message");
     expect(api.getRequests()).toHaveLength(0);
   });

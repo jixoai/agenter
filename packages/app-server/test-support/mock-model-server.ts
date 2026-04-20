@@ -7,6 +7,8 @@ import { z } from "zod";
 export const MOCK_RELAY_PROMPT = "在吗？kzf 问你中午吃什么？";
 export const MOCK_GAUBEE_REPLY = "中午吃蛋炒饭。";
 export const MOCK_FINAL_ANSWER = "gaubee 说中午吃蛋炒饭。";
+export const MOCK_QUERY_KEYWORD = "budget incident";
+export const MOCK_QUERY_ALLOWED_REPLY = "SEARCH-RESULT: Allowed room -> budget incident alpha";
 export const MOCK_WAITING_SUMMARY = "waiting for gaubee";
 export const MOCK_REPORTED_SUMMARY = `reported to kzf: ${MOCK_FINAL_ANSWER}`;
 export const MOCK_MAIN_RESOLVED_SUMMARY = "relay resolved after gaubee reply";
@@ -143,6 +145,9 @@ const toCliCommandFact = (command: string | null): string | null => {
   }
   if (command === "message list") {
     return "message.list";
+  }
+  if (command.startsWith("message query ")) {
+    return "message.query";
   }
   if (command.startsWith("message send ")) {
     return "message.send";
@@ -562,6 +567,41 @@ const parseMessageSendCommandPayload = (command: string | undefined): { chatId?:
   };
 };
 
+const buildMessageQueryReply = (result: ToolResult | null): string => {
+  const payload =
+    result?.data && typeof result.data === "object" && "result" in result.data
+      ? (result.data as { result?: unknown }).result
+      : null;
+  if (!payload || typeof payload !== "object") {
+    return "SEARCH-RESULT: no authorized matches";
+  }
+  const queryResult = payload as {
+    resultKind?: unknown;
+    items?: Array<{
+      chatId?: unknown;
+      chatTitle?: unknown;
+      message?: {
+        content?: unknown;
+      };
+    }>;
+  };
+  if (queryResult.resultKind !== "messages" || !Array.isArray(queryResult.items) || queryResult.items.length === 0) {
+    return "SEARCH-RESULT: no authorized matches";
+  }
+  const first = queryResult.items[0];
+  const roomLabel =
+    typeof first?.chatTitle === "string"
+      ? first.chatTitle
+      : typeof first?.chatId === "string"
+        ? first.chatId
+        : "unknown-room";
+  const content =
+    first?.message && typeof first.message === "object" && typeof first.message.content === "string"
+      ? first.message.content
+      : "match";
+  return `SEARCH-RESULT: ${roomLabel} -> ${content}`;
+};
+
 const buildSeededRelayFrames = (relay: RelayProgressState | null): AttentionFrame[] => {
   if (!relay?.originContextId || !relay.originHeadCommitId) {
     return [];
@@ -717,6 +757,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
   const latestAttentionMetadata = extractLatestAttentionMetadata(users);
   const channelRows = extractChannelRows(toolResults);
   const latestSentRoomReply = findLatestOperationResult(toolResults, "message.send");
+  const latestMessageQuery = findLatestOperationResult(toolResults, "message.query");
   const latestSentRoomReplyPayload = parseMessageSendCommandPayload(latestSentRoomReply?.command);
   const toolNames = new Set((request.tools ?? []).map((tool) => tool.function.name));
   if (!toolNames.has("root_workspace_bash")) {
@@ -749,6 +790,40 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
         : buildSeededRelayFrames(state.relay);
   if (state.relay?.phase === "reporting") {
     return createResponse(request, { content: "" });
+  }
+  const queryScenario = taskSemanticText.includes(MOCK_QUERY_KEYWORD);
+  if (queryScenario) {
+    if (!hasOperationResult(toolResults, "message.list")) {
+      return createResponse(request, {
+        toolCalls: [buildRootWorkspaceBashToolCall("message list")],
+      });
+    }
+    const primaryRoomChatId = findPrimaryRoomChatId(toolResults, allFrames);
+    if (!latestMessageQuery) {
+      return createResponse(request, {
+        toolCalls: [
+          buildRootWorkspaceBashToolCall(
+            `message query ${escapeShellJson({ chatId: "*", mode: "query", query: MOCK_QUERY_KEYWORD, limit: 5 })}`,
+          ),
+        ],
+      });
+    }
+    if (hasOperationResult(toolResults, "message.send") || !primaryRoomChatId) {
+      return createResponse(request, { content: "" });
+    }
+    const reply = buildMessageQueryReply(latestMessageQuery);
+    return createResponse(request, {
+      toolCalls: [
+        buildRootWorkspaceBashToolCall(`message send ${escapeShellJson({ chatId: primaryRoomChatId, content: reply })}`),
+        ...buildAttentionCommitShellCalls(commitFrames, {
+          summary: "reported authorized message query result",
+          value: reply,
+          stage: "done",
+          done: true,
+          scoreMode: "done",
+        }),
+      ],
+    });
   }
   const primaryRoomChatId = state.relay?.originChatId ?? findPrimaryRoomChatId(toolResults, allFrames);
 

@@ -60,6 +60,13 @@ const channelAccessInput = z.object({
   chatId: z.string().min(1),
   accessToken: z.string().min(1),
 });
+const messageQueryInputSchema = z.object({
+  chatId: z.union([z.string().min(1), z.array(z.string().min(1)).min(1), z.literal("*")]),
+  mode: z.enum(["match", "query", "sql"]),
+  query: z.string().trim().min(1),
+  offset: z.number().int().nonnegative().optional(),
+  limit: z.number().int().positive().max(100).optional(),
+});
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
 const MESSAGE_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
 const TERMINAL_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
@@ -774,6 +781,12 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
+    query: requireAuth.input(messageQueryInputSchema).query(({ ctx, input }) =>
+      ctx.kernel.queryGlobalRoomMessages({
+        ...input,
+        ...resolveMessageCallerScope(ctx.auth),
+      }),
+    ),
     globalSend: requireAuth
       .input(
         z.object({
