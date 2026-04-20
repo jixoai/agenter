@@ -4,12 +4,22 @@
 TBD - created by archiving change session-runtime-attention-message-migration. Update Purpose after archive.
 ## Requirements
 ### Requirement: Session runtime SHALL route chat through attention and message adapters
-Session runtime SHALL ingest room work from actor unread state, convert selected unread room slices into attention, and route committed reply items back into message-system through authorized adapters. For chat-backed work, visible message dispatch alone MUST NOT count as completion; the related attention MUST remain unresolved until the assistant also records settlement. When one task spans an originating room and a secondary relay room, the originating room SHALL remain the owner of completion, and the factual answer MUST remain recoverable after a manual compact cycle.
+Session runtime SHALL continue to ingest unread room work into attention, but room-visible assistant output MUST occur only when the model executes explicit message-system mutations. Attention commits alone SHALL remain internal, and visible room output SHALL still not count as completion until the related attention is settled separately. When one task spans an originating room and a secondary relay room, the originating room SHALL remain the owner of completion, and the factual answer MUST remain recoverable after a manual compact cycle.
 
-#### Scenario: Attention reply is delivered through an authorized message-system write
-- **WHEN** a committed attention item targets a chat channel reply
-- **THEN** session runtime dispatches it through an authorized message-system write for the current actor
-- **THEN** the chat surface only receives message-system output, not raw attention facts
+#### Scenario: Unread room work enters attention without auto-replying
+- **WHEN** the runtime selects unread room work for a new round
+- **THEN** it converts that room work into attention state for the model
+- **THEN** no visible assistant room message is created until the model later performs an explicit message mutation
+
+#### Scenario: Explicit room mutation produces the visible reply
+- **WHEN** the model calls `message send`, `message edit`, or `message recall` for a room-backed task
+- **THEN** the runtime applies that authorized message-system mutation as the only source of visible room transcript change
+- **THEN** the related attention remains unresolved until the model also records the corresponding settlement
+
+#### Scenario: Attention commit alone does not become a room row
+- **WHEN** the model commits attention progress, summary changes, or cleanup without calling a message-system mutation
+- **THEN** the room transcript remains unchanged
+- **THEN** the internal progress stays visible only through attention/runtime inspection surfaces
 
 #### Scenario: Single-room reply stays unresolved until attention settles
 - **WHEN** the assistant sends a user-visible reply into the current room for a chat-backed task

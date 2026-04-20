@@ -119,6 +119,24 @@ The shared transcript SHALL render room-message revision state from the durable 
 - **THEN** the visible transcript row keeps its stable `viewKey`
 - **THEN** the transcript does not duplicate the row just because the lifecycle state changed
 
+### Requirement: Web chat view SHALL render first-class room reply previews
+The shared chat transcript SHALL render room-message references as a first-class preview surface instead of relying on quote-like body text conventions. When a room message carries `ref`, the row SHALL render a compact preview of the referenced durable room message and SHALL keep that preview synchronized with the referenced message's current objective lifecycle state.
+
+#### Scenario: Replying room message renders a compact referenced preview
+- **WHEN** the transcript renders a room message whose `ref` points to another durable room message
+- **THEN** the row shows a compact preview of the referenced message above or alongside the new body
+- **THEN** the preview is driven from structured room message data rather than from manually embedded quote text
+
+#### Scenario: Referenced recalled message stays objective in the preview
+- **WHEN** the referenced room message has been recalled
+- **THEN** the reply preview renders the recalled state instead of stale pre-recall body text
+- **THEN** the referencing room row remains in place with the same `ref`
+
+#### Scenario: Referenced message outside the visible transcript window can still preview
+- **WHEN** the current transcript window contains a room message whose referenced target is not otherwise present in the visible `items`
+- **THEN** the shared chat view can still render that preview from sidecar referenced message data
+- **THEN** the host does not need a second route-local lookup path to make reply previews work
+
 ### Requirement: Web chat view SHALL drive transcript scrolling through named triggers and an installed program
 The shared chat component SHALL delegate transcript scrolling to the shared anchored virtual list scroll contract instead of feature-local raw overflow ownership or generic `ScrollView` semantics, even when delivered as a reusable custom element. Inside host-provided `page_content`, the chat stage SHALL keep `messages_list` as the only transcript scroll owner and `message_toolbar` pinned to the stage bottom. Return-to-latest, transport append follow, older-page reveal, insert-batch affordances, and user-input interruption SHALL be driven through named trigger facts and a shared installed program rather than feature-local imperative request calls. Transcript mutation choreography such as latest follow, older reveal, insert-motion stabilization, and user-input interruption SHALL run entirely through the shared ownership-chain runtime rather than a package-local scroll state machine.
 
@@ -185,4 +203,3 @@ The shared chat package SHALL use `viewKey` as the UI merge and render identity 
 - **WHEN** a host or test fixture creates a local transcript row that has not been assigned a durable room message id
 - **THEN** the row can still render and merge through `viewKey`
 - **THEN** the absence of a numeric durable `messageId` does not break the shared transcript surface
-
