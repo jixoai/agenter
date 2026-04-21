@@ -113,6 +113,82 @@ afterEach(() => {
 });
 
 describe("Feature: runtime skill watcher and config surface", () => {
+  test("Scenario: Given a new runtime skill is upserted When refresh reminders are published Then an added skill reminder commit is emitted", () => {
+    const rootWorkspacePath = createTempRoot();
+    const system = createSystem({ rootWorkspacePath });
+
+    system.refresh({ forceBootstrap: true, publishReminders: false });
+
+    const result = system.upsert({
+      name: "added-skill",
+      content: [
+        "---",
+        "name: added-skill",
+        "description: created during test",
+        "---",
+        "",
+        "# added-skill",
+        "",
+        "Created.",
+        "",
+      ].join("\n"),
+    });
+
+    expect(result.created).toBeTrue();
+    expect(result.changedSkills).toHaveLength(1);
+    expect(result.changedSkills[0]?.kind).toBe("added");
+    expect(result.changedSkills[0]?.name).toBe("added-skill");
+    expect(result.reminderCommits).toHaveLength(1);
+    expect(result.reminderCommits[0]?.summary).toContain("Added runtime skill added-skill");
+  });
+
+  test("Scenario: Given an existing runtime skill is upserted with new content When refresh reminders are published Then an updated skill reminder commit is emitted", () => {
+    const rootWorkspacePath = createTempRoot();
+    writeSkill(rootWorkspacePath, { name: "updated-skill" });
+    const system = createSystem({ rootWorkspacePath });
+
+    system.refresh({ forceBootstrap: true, publishReminders: false });
+
+    const result = system.upsert({
+      name: "updated-skill",
+      content: [
+        "---",
+        "name: updated-skill",
+        "description: updated during test",
+        "---",
+        "",
+        "# updated-skill",
+        "",
+        "Updated body.",
+        "",
+      ].join("\n"),
+    });
+
+    expect(result.created).toBeFalse();
+    expect(result.changedSkills).toHaveLength(1);
+    expect(result.changedSkills[0]?.kind).toBe("updated");
+    expect(result.changedSkills[0]?.name).toBe("updated-skill");
+    expect(result.reminderCommits).toHaveLength(1);
+    expect(result.reminderCommits[0]?.summary).toContain("Updated runtime skill updated-skill");
+  });
+
+  test("Scenario: Given an existing runtime skill is removed When refresh reminders are published Then a removed skill reminder commit is emitted", () => {
+    const rootWorkspacePath = createTempRoot();
+    writeSkill(rootWorkspacePath, { name: "removed-skill" });
+    const system = createSystem({ rootWorkspacePath });
+
+    system.refresh({ forceBootstrap: true, publishReminders: false });
+
+    const result = system.remove({ name: "removed-skill" });
+
+    expect(result.removed).toBeTrue();
+    expect(result.changedSkills).toHaveLength(1);
+    expect(result.changedSkills[0]?.kind).toBe("removed");
+    expect(result.changedSkills[0]?.name).toBe("removed-skill");
+    expect(result.reminderCommits).toHaveLength(1);
+    expect(result.reminderCommits[0]?.summary).toContain("Removed runtime skill removed-skill");
+  });
+
   test("Scenario: Given an unrelated database file in a skill directory When only that file changes Then no skill reminder is emitted", async () => {
     const rootWorkspacePath = createTempRoot();
     const skillDir = writeSkill(rootWorkspacePath, { name: "live-sync" });
