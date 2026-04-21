@@ -25,7 +25,7 @@ The AI-facing shell CLI SHALL accept only canonical JSON payload forms for descr
 - **AND** it forwards the normalized payload to the matching runtime-local API route
 
 #### Scenario: CLI accepts JSON stdin for long payloads
-- **WHEN** the AI calls `root_workspace_bash` with `command=\"message send\"` and a JSON `stdin` payload
+- **WHEN** the AI calls `root_bash` with `command=\"message send\"` and a JSON `stdin` payload
 - **THEN** the CLI parses stdin as the descriptor payload
 - **AND** the runtime handles the same request shape as the argv form
 
@@ -41,7 +41,7 @@ Each descriptor-backed runtime CLI subcommand SHALL expose `--help` output gener
 - **WHEN** the AI runs `terminal write --help`
 - **THEN** the output shows the descriptor description
 - **AND** it includes the JSON input schema for `terminal write`
-- **AND** it includes a preferred `root_workspace_bash.command + stdin` example
+- **AND** it includes a preferred `root_bash.command + stdin` example
 - **AND** any argv example is presented only as the compact form for trivially short payloads
 
 #### Scenario: Help probes return locally without invoking business actions
@@ -75,7 +75,7 @@ Descriptor-backed runtime CLI subcommands SHALL accept an explicit `--compact` m
 - **AND** it forwards the same normalized object payload as the standard object-JSON form
 
 #### Scenario: Compact stdin decodes into the same descriptor payload
-- **WHEN** the AI calls `root_workspace_bash` with `command=\"message read --compact\"` and a compact JSON array in `stdin`
+- **WHEN** the AI calls `root_bash` with `command=\"message read --compact\"` and a compact JSON array in `stdin`
 - **THEN** the CLI decodes the compact array through the same descriptor-derived positional schema
 - **AND** the runtime handles the same request shape as the standard object-JSON form
 

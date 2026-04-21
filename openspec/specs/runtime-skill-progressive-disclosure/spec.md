@@ -36,7 +36,7 @@ Atomic built-in skills SHALL keep their overview body within their own system bo
 - **AND** it does not inline exact-host URL verification or final room-delivery sequencing as part of that atomic skill overview
 
 ### Requirement: Runtime shell guidance SHALL describe external-network verification as a factual capability
-Runtime built-in skill guidance and sibling shell references SHALL state that `root_workspace_bash` can perform outbound network checks for objective fact verification, while keeping the overview concise and overview-first.
+Runtime built-in skill guidance and sibling shell references SHALL state that `root_bash` can perform outbound network checks for objective fact verification, while keeping the overview concise and overview-first.
 
 #### Scenario: AI learns shell networking without reading a scripted playbook
 - **WHEN** the runtime exposes the built-in runtime skill and shell-surface reference

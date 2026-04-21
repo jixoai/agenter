@@ -1,16 +1,16 @@
 # runtime-skills-cli-surface Specification
 
 ## Purpose
-Define the runtime's root-workspace-only tool surface, progressive skill discovery model, and attention-scoped CLI/API laws.
+Define the runtime's explicit workspace tool surface, progressive skill discovery model, and attention-scoped CLI/API laws.
 
 ## Requirements
 
-### Requirement: Runtime SHALL expose only root workspace primitives as model tools
-Each AI model round SHALL receive only root workspace primitives as direct tools. Message, terminal, workspace, and attention system operations SHALL be performed through CLI commands inside root workspace bash execution instead of through direct model tool injection.
+### Requirement: Runtime SHALL expose explicit workspace primitives as model tools
+Each AI model round SHALL receive `workspace_list`, `root_bash`, and `workspace_bash` as the only direct tools. Message, terminal, workspace, and attention system operations SHALL be performed through CLI commands inside `root_bash` instead of through direct model tool injection, while `workspace_bash` stays a pure mounted-workspace shell.
 
-#### Scenario: Model receives only root workspace direct tools
+#### Scenario: Model receives only the explicit workspace direct tools
 - **WHEN** the runtime prepares a model call
-- **THEN** the direct tool list contains `root_workspace_list` and `root_workspace_bash`
+- **THEN** the direct tool list contains `workspace_list`, `root_bash`, and `workspace_bash`
 - **AND** it does not include `attention_*`, `message_*`, or `terminal_*` direct tools
 
 ### Requirement: Runtime SHALL publish an attention-backed skills list for progressive discovery
@@ -44,11 +44,11 @@ Each started runtime SHALL expose a loopback-local API surface for attention, me
 - **THEN** the API rejects the request
 - **AND** the command does not receive protected runtime data
 
-### Requirement: Root workspace bash SHALL expose runtime CLI commands in-shell
-The shell environment behind `root_workspace_bash` SHALL provide CLI commands for `attention`, `message`, `workspace`, `terminal`, `skill`, and `tool`.
+### Requirement: Root bash SHALL expose runtime CLI commands in-shell
+The shell environment behind `root_bash` SHALL provide CLI commands for `attention`, `message`, `workspace`, `terminal`, `skill`, and `tool`.
 
 #### Scenario: Shell exposes CLI commands as normal command names
-- **WHEN** the AI runs `which attention`, `which workspace`, or `which skill` inside `root_workspace_bash`
+- **WHEN** the AI runs `which attention`, `which workspace`, or `which skill` inside `root_bash`
 - **THEN** each command is discoverable and executable from that shell session
 - **AND** each command obeys the same mount and credential boundaries as the runtime
 
@@ -84,25 +84,25 @@ The public `skill` surface SHALL expose `get-config` and `set-config` for per-sk
 - **AND** it verifies the exact promised URL from a fresh root workspace shell check before announcing delivery in the room
 
 ### Requirement: Runtime CLI SHALL accept shell stdin for long-form shell workflows
-The `message`, `terminal`, and `attention commit` CLI commands exposed inside `root_workspace_bash` SHALL accept JSON stdin payloads when the content is more natural to stream than to escape into argv.
+The `message`, `terminal`, and `attention commit` CLI commands exposed inside `root_bash` SHALL accept JSON stdin payloads when the content is more natural to stream than to escape into argv.
 
 #### Scenario: Terminal write accepts piped stdin
-- **WHEN** the AI calls `root_workspace_bash` with `command="terminal write"` and a JSON `stdin` payload
+- **WHEN** the AI calls `root_bash` with `command="terminal write"` and a JSON `stdin` payload
 - **THEN** the piped stdin becomes the validated terminal-write payload
 - **AND** the runtime does not require the same JSON to be repeated inside argv
 
 #### Scenario: Message send accepts piped stdin
-- **WHEN** the AI calls `root_workspace_bash` with `command="message send"` and a JSON `stdin` payload
+- **WHEN** the AI calls `root_bash` with `command="message send"` and a JSON `stdin` payload
 - **THEN** the piped stdin becomes the validated room-message payload
 - **AND** the runtime preserves unix-style shell composition for multi-line message bodies
 
 #### Scenario: Attention commit still accepts JSON stdin for full payload control
-- **WHEN** the AI calls `root_workspace_bash` with `command="attention commit"` and a JSON payload in `stdin`
+- **WHEN** the AI calls `root_bash` with `command="attention commit"` and a JSON payload in `stdin`
 - **THEN** the runtime parses the JSON payload exactly
 - **AND** shell tooling keeps the full JSON escape hatch for long-form settle flows
 
 ### Requirement: Runtime guidance SHALL default descriptor-backed JSON transport to stdin
-Built-in runtime skills, references, and top-level runtime prompts SHALL teach that descriptor-backed runtime-local CLI commands use a minimal `root_workspace_bash.command` plus JSON `stdin` by default, while a single argv JSON payload remains only a compact fallback for trivially short requests. When `--compact` is available, guidance SHALL present it as an optional encoding surface, not as a replacement for standard object JSON.
+Built-in runtime skills, references, and top-level runtime prompts SHALL teach that descriptor-backed runtime-local CLI commands use a minimal `root_bash.command` plus JSON `stdin` by default, while a single argv JSON payload remains only a compact fallback for trivially short requests. When `--compact` is available, guidance SHALL present it as an optional encoding surface, not as a replacement for standard object JSON.
 
 #### Scenario: Message, terminal, and attention guidance prefer stdin-first transport
 - **WHEN** the runtime renders built-in guidance for `message`, `terminal`, `attention`, or the top-level runtime prompt surface

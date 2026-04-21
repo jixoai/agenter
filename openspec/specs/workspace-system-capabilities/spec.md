@@ -81,7 +81,7 @@ WorkspaceSystem SHALL expose non-interactive sandboxed bash execution backed by 
 
 #### Scenario: One-shot bash can verify loopback URLs like a terminal
 - **WHEN** the runtime starts a local HTTP service on `127.0.0.1` through a granted terminal
-- **THEN** `root_workspace_bash` can still verify that URL with one-shot network commands such as `curl`
+- **THEN** `root_bash` can still verify that URL with one-shot network commands such as `curl`
 - **AND** AI does not need to abandon the shell verification step just because the service is local
 
 #### Scenario: Filesystem effects persist while shell session state does not
@@ -105,7 +105,7 @@ WorkspaceSystem SHALL expose non-interactive sandboxed bash execution backed by 
 One-shot workspace bash execution SHALL reject background shell statements instead of pretending to host durable processes. Long-running services and other persistent processes SHALL be created and recovered through TerminalSystem.
 
 #### Scenario: Root workspace bash rejects background service startup
-- **WHEN** the AI runs `node server.js > server.log 2>&1 &` through `root_workspace_bash`
+- **WHEN** the AI runs `node server.js > server.log 2>&1 &` through `root_bash`
 - **THEN** the execution exits non-zero before accepting that background statement as valid delivery flow
 - **AND** stderr tells the caller to create or recover a terminal for long-running work
 
