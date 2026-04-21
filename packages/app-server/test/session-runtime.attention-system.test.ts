@@ -3394,6 +3394,60 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(itemsInput?.text).toContain("references/guide.md");
   });
 
+  test("Scenario: Given root bash mutates a runtime skill When the next rounds are collected Then added updated and removed skill reminders all enter attention input", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+    const skillContent = (body: string): string =>
+      [
+        "---",
+        "name: live-bridge",
+        "description: runtime loop proof",
+        "---",
+        "",
+        "# live-bridge",
+        "",
+        body,
+        "",
+      ].join("\n");
+
+    const upsertAdded = await internal.execRootWorkspaceBash({
+      command: "skill upsert",
+      stdin: JSON.stringify({
+        name: "live-bridge",
+        content: skillContent("Version one."),
+      }),
+    });
+    expect(upsertAdded.exitCode).toBe(0);
+    const addedInputs = await internal.collectLoopInputs();
+    expect(getAttentionProtocolKinds(addedInputs)).toContain("items");
+    expect(getItemsInput(addedInputs)?.text ?? "").toContain("Added runtime skill live-bridge");
+
+    const upsertUpdated = await internal.execRootWorkspaceBash({
+      command: "skill upsert",
+      stdin: JSON.stringify({
+        name: "live-bridge",
+        content: skillContent("Version two."),
+      }),
+    });
+    expect(upsertUpdated.exitCode).toBe(0);
+    const updatedInputs = await internal.collectLoopInputs();
+    expect(getAttentionProtocolKinds(updatedInputs)).toContain("items");
+    expect(getItemsInput(updatedInputs)?.text ?? "").toContain("Updated runtime skill live-bridge");
+
+    const removeResult = await internal.execRootWorkspaceBash({
+      command: "skill remove",
+      stdin: JSON.stringify({
+        name: "live-bridge",
+      }),
+    });
+    expect(removeResult.exitCode).toBe(0);
+    const removedInputs = await internal.collectLoopInputs();
+    expect(getAttentionProtocolKinds(removedInputs)).toContain("items");
+    expect(getItemsInput(removedInputs)?.text ?? "").toContain("Removed runtime skill live-bridge");
+
+    await runtime.stop();
+  });
+
   test("Scenario: Given an attention commit lands after room identity drifts When the runtime handles it Then Chat still stays quiet because commits no longer bridge into rooms", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
