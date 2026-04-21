@@ -6,11 +6,20 @@ import type {
 	RuntimeStore,
 } from '@agenter/client-sdk';
 
+export type AppAuthBootstrapState =
+	| 'connecting'
+	| 'checking-session'
+	| 'auto-login'
+	| 'authenticated'
+	| 'needs-login'
+	| 'error';
+
 export interface AppController {
 	readonly runtimeStore: RuntimeStore;
 	runtimeState: RuntimeClientState;
 	authService: AuthServiceInfoOutput | null;
 	authSession: AuthSessionOutput | null;
+	authBootstrapState: AppAuthBootstrapState;
 	authActors: AuthActorCatalogEntry[];
 	profiles: Array<{
 		reference: string;
@@ -30,6 +39,6 @@ export interface AppController {
 	stop: () => void;
 	refreshBootstrap: () => Promise<void>;
 	authenticateWithPrivateKey: (privateKey: string) => Promise<void>;
-	revealManagedRootKey: () => Promise<string>;
+	storeAutoLoginKey: (privateKey?: string | null) => Promise<void>;
 	signOut: () => Promise<void>;
 }

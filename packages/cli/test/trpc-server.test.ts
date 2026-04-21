@@ -69,6 +69,24 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 12_000): Promise<vo
   throw new Error("timed out waiting for condition");
 };
 
+const createSuperadminClient = async (
+  handle: TrpcServerHandle,
+): Promise<{ client: ReturnType<typeof createAgenterClient>; authToken: string }> => {
+  const client = createAgenterClient({
+    wsUrl: `ws://${handle.host}:${handle.port}/trpc`,
+  });
+  clients.push(client);
+  const autoLogin = await client.trpc.auth.autoLogin.mutate();
+  if (!autoLogin.ok) {
+    throw new Error(`expected daemon auto login to succeed, got ${autoLogin.reason}: ${autoLogin.message}`);
+  }
+  client.setAuthToken(autoLogin.session.token);
+  return {
+    client,
+    authToken: autoLogin.session.token,
+  };
+};
+
 afterEach(async () => {
   while (clients.length > 0) {
     clients.pop()?.close();
@@ -145,13 +163,11 @@ describe("Feature: cli server contracts", () => {
       port: 0,
       globalSessionRoot: join(dir, "sessions"),
       workspacesPath: join(dir, "workspaces.yaml"),
+      homeDir: join(dir, "home"),
     });
     handles.push(handle);
 
-    const client = createAgenterClient({
-      wsUrl: `ws://${handle.host}:${handle.port}/trpc`,
-    });
-    clients.push(client);
+    const { client, authToken } = await createSuperadminClient(handle);
 
     const created = await client.trpc.session.create.mutate({
       cwd: workspace,
@@ -165,6 +181,9 @@ describe("Feature: cli server contracts", () => {
       `http://${handle.host}:${handle.port}/api/sessions/${encodeURIComponent(created.session.id)}/assets`,
       {
         method: "POST",
+        headers: {
+          authorization: `Bearer ${authToken}`,
+        },
         body: form,
       },
     );
@@ -185,7 +204,9 @@ describe("Feature: cli server contracts", () => {
       throw new Error("expected uploaded asset metadata");
     }
 
-    const mediaResponse = await fetch(`http://${handle.host}:${handle.port}${asset.url}`);
+    const mediaUrl = new URL(`http://${handle.host}:${handle.port}${asset.url}`);
+    mediaUrl.searchParams.set("authToken", authToken);
+    const mediaResponse = await fetch(mediaUrl);
     const mediaBytes = new Uint8Array(await mediaResponse.arrayBuffer());
     expect(mediaResponse.status).toBe(200);
     expect(mediaResponse.headers.get("content-type")).toBe("image/png");
@@ -199,8 +220,11 @@ describe("Feature: cli server contracts", () => {
       port: 0,
       globalSessionRoot: join(dir, "sessions"),
       workspacesPath: join(dir, "workspaces.yaml"),
+      homeDir: join(dir, "home"),
     });
     handles.push(handle);
+    const { authToken } = await createSuperadminClient(handle);
+    const allowedOrigin = "http://127.0.0.1:4273";
 
     const response = await fetch(
       `http://${handle.host}:${handle.port}/trpc/runtime.snapshot?batch=1&input=${encodeURIComponent(
@@ -208,7 +232,8 @@ describe("Feature: cli server contracts", () => {
       )}`,
       {
         headers: {
-          origin: "http://127.0.0.1:4273",
+          authorization: `Bearer ${authToken}`,
+          origin: allowedOrigin,
         },
       },
     );
@@ -224,7 +249,7 @@ describe("Feature: cli server contracts", () => {
     }>;
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response.headers.get("access-control-allow-origin")).toBe(allowedOrigin);
     expect(payload[0]?.result?.data?.json?.version).toBe(1);
     expect(Array.isArray(payload[0]?.result?.data?.json?.sessions)).toBe(true);
   });
@@ -236,16 +261,14 @@ describe("Feature: cli server contracts", () => {
       port: 0,
       globalSessionRoot: join(dir, "sessions"),
       workspacesPath: join(dir, "workspaces.yaml"),
+      homeDir: join(dir, "home"),
       profileService: {
         dataDir: join(dir, "profile-service"),
       },
     });
     handles.push(handle);
 
-    const client = createAgenterClient({
-      wsUrl: `ws://${handle.host}:${handle.port}/trpc`,
-    });
-    clients.push(client);
+    const { client } = await createSuperadminClient(handle);
 
     const created = await client.trpc.session.create.mutate({
       cwd: workspace,

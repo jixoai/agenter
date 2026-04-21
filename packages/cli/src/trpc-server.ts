@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join, normalize, resolve } from "node:path";
 import { Readable } from "node:stream";
 
-import { AppKernel, appRouter, createTrpcContext, type AppKernelOptions } from "@agenter/app-server";
+import { AppKernel, appRouter, createTrpcContext, readBearerToken, type AppKernelOptions } from "@agenter/app-server";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -22,6 +22,7 @@ const MIME_BY_EXT: Record<string, string> = {
   ".ico": "image/x-icon",
   ".map": "application/json; charset=utf-8",
 };
+const MEDIA_AUTH_TOKEN_QUERY_KEY = "authToken";
 
 export interface TrpcServerOptions {
   host: string;
@@ -48,8 +49,41 @@ const sendJson = (res: ServerResponse, statusCode: number, body: Record<string, 
 `);
 };
 
-const setCors = (res: ServerResponse): void => {
-  res.setHeader("access-control-allow-origin", "*");
+const normalizeHost = (value: string): string => value.replace(/^\[(.*)\]$/u, "$1").toLowerCase();
+
+const isLoopbackHost = (value: string): boolean => {
+  const normalized = normalizeHost(value);
+  return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1";
+};
+
+const resolveAllowedOrigin = (input: { requestOriginHeader: string | undefined; host: string }): string | null => {
+  const originHeader = input.requestOriginHeader?.trim();
+  if (!originHeader) {
+    return null;
+  }
+  let originUrl: URL;
+  try {
+    originUrl = new URL(originHeader);
+  } catch {
+    return null;
+  }
+  const originHost = normalizeHost(originUrl.hostname);
+  const serverHost = normalizeHost(input.host);
+  if (originHost === serverHost) {
+    return originUrl.origin;
+  }
+  if (isLoopbackHost(originHost) && isLoopbackHost(serverHost)) {
+    return originUrl.origin;
+  }
+  return null;
+};
+
+const setCors = (res: ServerResponse, allowOrigin: string | null): void => {
+  if (!allowOrigin) {
+    return;
+  }
+  res.setHeader("access-control-allow-origin", allowOrigin);
+  res.setHeader("vary", "Origin");
   res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
   res.setHeader("access-control-allow-headers", "content-type,authorization,x-agenter-room-access-token");
 };
@@ -88,6 +122,57 @@ const toWebRequest = (req: IncomingMessage, origin: string): Request => {
 const decodePathMatch = (pathname: string, pattern: RegExp): string[] | null => {
   const match = pathname.match(pattern);
   return match ? match.slice(1).map((value) => decodeURIComponent(value)) : null;
+};
+
+const readRequestHeader = (value: string | string[] | undefined): string | null =>
+  Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+
+const readRequestAuthToken = (req: IncomingMessage, url: URL): string | null => {
+  const headerToken = readBearerToken(readRequestHeader(req.headers.authorization));
+  if (headerToken) {
+    return headerToken;
+  }
+  const queryToken = url.searchParams.get(MEDIA_AUTH_TOKEN_QUERY_KEY)?.trim();
+  return queryToken && queryToken.length > 0 ? queryToken : null;
+};
+
+const authenticateBrowserAuth = async (
+  kernel: AppKernel,
+  req: IncomingMessage,
+  url: URL,
+): Promise<Awaited<ReturnType<AppKernel["authenticateAuthToken"]>>> => {
+  return await kernel.authenticateAuthToken(readRequestAuthToken(req, url));
+};
+
+const requireBrowserAuth = async (
+  kernel: AppKernel,
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+): Promise<Awaited<ReturnType<AppKernel["authenticateAuthToken"]>> | null> => {
+  const auth = await authenticateBrowserAuth(kernel, req, url);
+  if (!auth) {
+    sendJson(res, 401, { ok: false, error: "auth token required" });
+    return null;
+  }
+  return auth;
+};
+
+const requireBrowserSuperadmin = async (
+  kernel: AppKernel,
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+): Promise<Awaited<ReturnType<AppKernel["authenticateAuthToken"]>> | null> => {
+  const auth = await requireBrowserAuth(kernel, req, res, url);
+  if (!auth) {
+    return null;
+  }
+  if (!auth.claims.superadmin) {
+    sendJson(res, 403, { ok: false, error: "superadmin auth required" });
+    return null;
+  }
+  return auth;
 };
 
 const serveStatic = (req: IncomingMessage, res: ServerResponse, staticDir: string): void => {
@@ -153,15 +238,30 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
     const origin = `http://${options.host}:${options.port}`;
     const url = req.url ? new URL(req.url, origin) : null;
     const pathname = url?.pathname ?? "/";
+    const allowedOrigin = resolveAllowedOrigin({
+      requestOriginHeader: readRequestHeader(req.headers.origin) ?? undefined,
+      host: options.host,
+    });
+    const hasOriginHeader = readRequestHeader(req.headers.origin) !== null;
+
+    if (
+      hasOriginHeader &&
+      !allowedOrigin &&
+      (pathname === "/health" || pathname.startsWith("/api/") || pathname.startsWith("/media/") || pathname.startsWith("/trpc"))
+    ) {
+      sendJson(res, 403, { ok: false, error: "origin not allowed" });
+      return;
+    }
 
     if (req.method === "OPTIONS") {
-      setCors(res);
+      setCors(res, allowedOrigin);
       res.statusCode = 204;
       res.end();
       return;
     }
 
     if (pathname === "/health") {
+      setCors(res, allowedOrigin);
       sendJson(res, 200, {
         ok: true,
         port: (server.address() as { port?: number } | null)?.port ?? options.port,
@@ -171,10 +271,13 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
 
     const uploadMatch = decodePathMatch(pathname, /^\/api\/sessions\/([^/]+)\/assets$/);
     if (req.method === "POST" && uploadMatch) {
-      setCors(res);
+      setCors(res, allowedOrigin);
       const [sessionId] = uploadMatch;
       void (async () => {
         try {
+          if (!url || !(await requireBrowserSuperadmin(kernel, req, res, url))) {
+            return;
+          }
           const request = toWebRequest(req, origin);
           const form = await request.formData();
           const files = form.getAll("files").filter(isFileValue);
@@ -204,12 +307,15 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
 
     const roomUploadMatch = decodePathMatch(pathname, /^\/api\/rooms\/([^/]+)\/assets$/);
     if (req.method === "POST" && roomUploadMatch) {
-      setCors(res);
+      setCors(res, allowedOrigin);
       const [chatId] = roomUploadMatch;
       const accessTokenHeader = req.headers["x-agenter-room-access-token"];
       const accessToken = Array.isArray(accessTokenHeader) ? accessTokenHeader[0] : accessTokenHeader;
       void (async () => {
         try {
+          if (!url || !(await requireBrowserAuth(kernel, req, res, url))) {
+            return;
+          }
           const request = toWebRequest(req, origin);
           const form = await request.formData();
           const files = form.getAll("files").filter(isFileValue);
@@ -243,38 +349,48 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
 
     const mediaMatch = decodePathMatch(pathname, /^\/media\/sessions\/([^/]+)\/assets\/([^/]+)$/);
     if (req.method === "GET" && mediaMatch) {
-      setCors(res);
+      setCors(res, allowedOrigin);
       const [sessionId, assetId] = mediaMatch;
-      const media = kernel.getSessionAsset(sessionId, assetId);
-      if (!media) {
-        sendJson(res, 404, { ok: false, error: "asset not found" });
-        return;
-      }
-      res.statusCode = 200;
-      res.setHeader("content-type", media.mimeType);
-      res.setHeader("content-length", String(media.sizeBytes));
-      createReadStream(media.filePath).pipe(res);
+      void (async () => {
+        if (!url || !(await requireBrowserSuperadmin(kernel, req, res, url))) {
+          return;
+        }
+        const media = kernel.getSessionAsset(sessionId, assetId);
+        if (!media) {
+          sendJson(res, 404, { ok: false, error: "asset not found" });
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader("content-type", media.mimeType);
+        res.setHeader("content-length", String(media.sizeBytes));
+        createReadStream(media.filePath).pipe(res);
+      })();
       return;
     }
 
     const roomMediaMatch = decodePathMatch(pathname, /^\/media\/rooms\/([^/]+)\/assets\/([^/]+)$/);
     if (req.method === "GET" && roomMediaMatch) {
-      setCors(res);
+      setCors(res, allowedOrigin);
       const [chatId, assetId] = roomMediaMatch;
-      const media = kernel.getGlobalRoomAsset(chatId, assetId);
-      if (!media) {
-        sendJson(res, 404, { ok: false, error: "asset not found" });
-        return;
-      }
-      res.statusCode = 200;
-      res.setHeader("content-type", media.mimeType);
-      res.setHeader("content-length", String(media.sizeBytes));
-      createReadStream(media.filePath).pipe(res);
+      void (async () => {
+        if (!url || !(await requireBrowserAuth(kernel, req, res, url))) {
+          return;
+        }
+        const media = kernel.getGlobalRoomAsset(chatId, assetId);
+        if (!media) {
+          sendJson(res, 404, { ok: false, error: "asset not found" });
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader("content-type", media.mimeType);
+        res.setHeader("content-length", String(media.sizeBytes));
+        createReadStream(media.filePath).pipe(res);
+      })();
       return;
     }
 
     if (pathname.startsWith("/trpc")) {
-      setCors(res);
+      setCors(res, allowedOrigin);
       const restoreUrl = rewriteTrpcHttpUrl(req);
       try {
         trpcHandler(req, res);
@@ -311,6 +427,14 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
 
   server.on("upgrade", (req, socket, head) => {
     const pathname = req.url ? new URL(req.url, `http://${options.host}:${options.port}`).pathname : "";
+    const allowedOrigin = resolveAllowedOrigin({
+      requestOriginHeader: readRequestHeader(req.headers.origin) ?? undefined,
+      host: options.host,
+    });
+    if (readRequestHeader(req.headers.origin) && !allowedOrigin) {
+      socket.destroy();
+      return;
+    }
     if (!pathname.startsWith("/trpc")) {
       socket.destroy();
       return;

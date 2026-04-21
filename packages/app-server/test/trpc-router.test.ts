@@ -30,16 +30,11 @@ const ROOT_AUTH_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a
 const createRootSuperadminCaller = async (kernel: AppKernel) => {
   const anonymousCaller = appRouter.createCaller(await createTrpcContext(kernel));
   const descriptor = await anonymousCaller.auth.service();
-  const challenge = await anonymousCaller.auth.challengeStart({
-    authId: descriptor.rootAuthId,
-  });
-  const signature = await privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).signMessage({
-    message: challenge.challengeText,
-  });
-  const session = await anonymousCaller.auth.challengeVerify({
-    challengeId: challenge.challengeId,
-    signature,
-  });
+  const autoLogin = await anonymousCaller.auth.autoLogin();
+  if (!autoLogin.ok) {
+    throw new Error(`expected daemon auto login to succeed, got ${autoLogin.reason}: ${autoLogin.message}`);
+  }
+  const session = autoLogin.session;
   const caller = appRouter.createCaller(
     await createTrpcContext({
       kernel,
@@ -64,7 +59,7 @@ describe("Feature: app-server trpc procedures", () => {
       homeDir: join(root, "home"),
     });
     await kernel.start();
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const { caller } = await createRootSuperadminCaller(kernel);
 
     const created = await caller.session.create({
       cwd: root,
@@ -94,11 +89,13 @@ describe("Feature: app-server trpc procedures", () => {
 
   test("Scenario: Given app-server owns a managed local profile-service child When auth bootstrap is requested Then descriptor flags and reveal payload stay aligned", async () => {
     const root = makeTempDir();
+    const homeDir = join(root, "home");
     const expectedAuthId = privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase();
     const kernel = new AppKernel({
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
+      homeDir,
       profileService: {
         rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
       },
@@ -112,14 +109,24 @@ describe("Feature: app-server trpc procedures", () => {
       rootAuthBootstrapMode: "managed_local",
       canRevealRootAuthPrivateKey: true,
       hasManagedRootAuthPrivateKey: true,
+      browserAutoLoginKeyPath: join(homeDir, ".agenter", "local.env"),
+      browserAutoLoginConfigured: false,
+      browserAutoLoginBootstrapAvailable: true,
     });
 
-    const revealed = await caller.auth.bootstrapManagedKey();
-    expect(revealed).toEqual({
-      privateKey: ROOT_AUTH_PRIVATE_KEY,
-      authId: expectedAuthId,
-      rootAuthKeyPath: descriptor.rootAuthKeyPath,
+    const autoLogin = await caller.auth.autoLogin();
+    expect(autoLogin).toMatchObject({
+      ok: true,
+      source: "managed_local",
+      session: {
+        claims: {
+          authId: expectedAuthId,
+          superadmin: true,
+        },
+      },
     });
+    const refreshedDescriptor = await caller.auth.service();
+    expect(refreshedDescriptor.browserAutoLoginConfigured).toBeTrue();
 
     await kernel.stop();
   });
@@ -134,7 +141,7 @@ describe("Feature: app-server trpc procedures", () => {
       homeDir,
     });
     await kernel.start();
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const { caller } = await createRootSuperadminCaller(kernel);
 
     const created = await caller.session.create({
       cwd: root,
@@ -212,13 +219,13 @@ describe("Feature: app-server trpc procedures", () => {
       homeDir: join(root, "home"),
     });
     await kernel.start();
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const { caller, anonymousCaller } = await createRootSuperadminCaller(kernel);
 
     const account = privateKeyToAccount(generatePrivateKey());
     const authId = account.address.toLowerCase();
-    const challenge = await caller.auth.challengeStart({ authId });
+    const challenge = await anonymousCaller.auth.challengeStart({ authId });
     const signature = await account.signMessage({ message: challenge.challengeText });
-    await caller.auth.challengeVerify({
+    await anonymousCaller.auth.challengeVerify({
       challengeId: challenge.challengeId,
       signature,
     });
@@ -253,7 +260,7 @@ describe("Feature: app-server trpc procedures", () => {
       homeDir: join(root, "home"),
     });
     await kernel.start();
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const { caller } = await createRootSuperadminCaller(kernel);
 
     const initialCatalog = await caller.avatar.catalog();
     expect(initialCatalog.items.some((item) => item.nickname === "default")).toBeTrue();
@@ -309,7 +316,7 @@ describe("Feature: app-server trpc procedures", () => {
       workspacesPath: join(root, "workspaces.yaml"),
     });
     await kernel.start();
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const { caller } = await createRootSuperadminCaller(kernel);
 
     const createdA = await caller.session.create({ cwd: workspaceA, name: "A", autoStart: false });
     await caller.session.create({ cwd: workspaceB, name: "B", autoStart: false });
@@ -367,7 +374,7 @@ describe("Feature: app-server trpc procedures", () => {
       workspacesPath: join(root, "workspaces.yaml"),
     });
     await kernel.start();
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const { caller } = await createRootSuperadminCaller(kernel);
 
     const first = await caller.session.create({
       cwd: workspaceA,
@@ -492,7 +499,7 @@ describe("Feature: app-server trpc procedures", () => {
       workspacesPath: join(root, "workspaces.yaml"),
     });
     await kernel.start();
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const { caller } = await createRootSuperadminCaller(kernel);
 
     const created = await caller.session.create({
       cwd: workspace,
@@ -1191,7 +1198,7 @@ describe("Feature: app-server trpc procedures", () => {
       homeDir: join(root, "home"),
     });
     await kernel.start();
-    const caller = appRouter.createCaller(await createTrpcContext(kernel));
+    const { caller } = await createRootSuperadminCaller(kernel);
 
     const created = await caller.session.create({
       cwd: root,

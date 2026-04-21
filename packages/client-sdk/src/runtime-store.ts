@@ -599,10 +599,26 @@ export class RuntimeStore {
   }
 
   private resolveMediaUrl(url: string): string {
-    if (/^https?:\/\//i.test(url)) {
-      return url;
+    const resolvedUrl = /^https?:\/\//i.test(url) ? url : url.startsWith("/") ? this.resolveHttpUrl(url) : url;
+    const authToken = this.client.getAuthToken();
+    if (!authToken) {
+      return resolvedUrl;
     }
-    return url.startsWith("/") ? this.resolveHttpUrl(url) : url;
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(resolvedUrl, this.client.httpUrl);
+    } catch {
+      return resolvedUrl;
+    }
+    const appServerOrigin = new URL(this.client.httpUrl).origin;
+    const isBrowserMediaPath =
+      /^\/media\/sessions\/[^/]+\/assets\/[^/]+$/u.test(parsedUrl.pathname) ||
+      /^\/media\/rooms\/[^/]+\/assets\/[^/]+$/u.test(parsedUrl.pathname);
+    if (parsedUrl.origin !== appServerOrigin || !isBrowserMediaPath || parsedUrl.searchParams.has("authToken")) {
+      return parsedUrl.toString();
+    }
+    parsedUrl.searchParams.set("authToken", authToken);
+    return parsedUrl.toString();
   }
 
   private buildProfileServiceUrl(pathname: string): string | null {
@@ -610,8 +626,8 @@ export class RuntimeStore {
     return endpoint ? `${withTrailingSlashTrimmed(endpoint)}${pathname}` : null;
   }
 
-  private async ensureProfileServiceInfo(): Promise<AuthServiceInfoOutput> {
-    if (this.state.profileService) {
+  private async ensureProfileServiceInfo(force = false): Promise<AuthServiceInfoOutput> {
+    if (!force && this.state.profileService) {
       return this.state.profileService;
     }
     const profileService = await this.client.trpc.auth.service.query();
@@ -640,8 +656,8 @@ export class RuntimeStore {
     return this.client.getAuthToken();
   }
 
-  async getAuthServiceDescriptor(): Promise<AuthServiceInfoOutput> {
-    return await this.ensureProfileServiceInfo();
+  async getAuthServiceDescriptor(input?: { force?: boolean }): Promise<AuthServiceInfoOutput> {
+    return await this.ensureProfileServiceInfo(input?.force);
   }
 
   async listAuthActors() {
@@ -653,8 +669,14 @@ export class RuntimeStore {
     return await this.client.trpc.auth.challengeStart.mutate({ authId });
   }
 
-  async revealManagedRootAuthPrivateKey() {
-    return await this.client.trpc.auth.bootstrapManagedKey.mutate();
+  async autoLogin() {
+    return await this.client.trpc.auth.autoLogin.mutate();
+  }
+
+  async storeAutoLoginKey(input?: { privateKey?: string | null }) {
+    return await this.client.trpc.auth.storeAutoLoginKey.mutate(
+      input?.privateKey?.trim() ? { privateKey: input.privateKey.trim() } : undefined,
+    );
   }
 
   async verifyAuthChallenge(input: { challengeId: string; signature: string }) {
@@ -3334,8 +3356,15 @@ export class RuntimeStore {
     for (const file of files) {
       form.append("files", file, file.name);
     }
+    const authToken = this.client.getAuthToken();
+    if (!authToken) {
+      throw new Error("auth token required");
+    }
     const response = await fetch(this.resolveHttpUrl(`/api/sessions/${encodeURIComponent(sessionId)}/assets`), {
       method: "POST",
+      headers: {
+        authorization: `Bearer ${authToken}`,
+      },
       body: form,
     });
     const payload = (await response.json()) as {
@@ -3357,9 +3386,14 @@ export class RuntimeStore {
     for (const file of files) {
       form.append("files", file, file.name);
     }
+    const authToken = this.client.getAuthToken();
+    if (!authToken) {
+      throw new Error("auth token required");
+    }
     const response = await fetch(this.resolveHttpUrl(`/api/rooms/${encodeURIComponent(chatId)}/assets`), {
       method: "POST",
       headers: {
+        authorization: `Bearer ${authToken}`,
         "x-agenter-room-access-token": accessToken,
       },
       body: form,

@@ -177,6 +177,10 @@ const requireSuperadmin = requireAuth.use(({ ctx, next }) => {
   return next();
 });
 
+const publicProcedure = t.procedure;
+const authProcedure = requireAuth;
+const superadminProcedure = requireSuperadmin;
+
 const resolveTerminalCallerScope = (
   auth: { claims: { authId: string; superadmin: boolean } } | null | undefined,
 ): { actorId?: TerminalActorId; superadminActorId?: TerminalActorId } => {
@@ -199,35 +203,44 @@ const resolveMessageCallerScope = (
 
 export const appRouter = t.router({
   auth: t.router({
-    service: t.procedure.query(async ({ ctx }) => await ctx.kernel.getAuthServiceDescriptor()),
-    actors: t.procedure.query(async ({ ctx }) => ({ items: await ctx.kernel.listAuthActors() })),
-    challengeStart: t.procedure
+    service: publicProcedure.query(async ({ ctx }) => await ctx.kernel.getAuthServiceDescriptor()),
+    actors: superadminProcedure.query(async ({ ctx }) => ({ items: await ctx.kernel.listAuthActors() })),
+    challengeStart: publicProcedure
       .input(authChallengeStartInput)
       .mutation(async ({ ctx, input }) => await ctx.kernel.startAuthChallenge(input.authId)),
-    bootstrapManagedKey: t.procedure.mutation(async ({ ctx }) => await ctx.kernel.revealManagedRootAuthPrivateKey()),
-    challengeVerify: t.procedure
+    autoLogin: publicProcedure.mutation(async ({ ctx }) => await ctx.kernel.autoLoginBrowserAuth()),
+    storeAutoLoginKey: publicProcedure
+      .input(
+        z
+          .object({
+            privateKey: z.string().trim().min(1).optional(),
+          })
+          .optional(),
+      )
+      .mutation(async ({ ctx, input }) => await ctx.kernel.storeBrowserAutoLoginKey(input)),
+    challengeVerify: publicProcedure
       .input(authChallengeVerifyInput)
       .mutation(
         async ({ ctx, input }) =>
           await ctx.kernel.verifyAuthChallenge({ ...input, token: ctx.auth?.token ?? undefined }),
       ),
-    session: requireAuth.query(({ ctx }) => ctx.auth),
-    superadminStatus: requireSuperadmin.query(({ ctx }) => ({
+    session: authProcedure.query(({ ctx }) => ctx.auth),
+    superadminStatus: superadminProcedure.query(({ ctx }) => ({
       ok: true,
       claims: ctx.auth.claims,
     })),
   }),
   kv: t.router({
-    snapshot: requireAuth.input(authKvSnapshotInputSchema).query(({ ctx, input }) => {
+    snapshot: authProcedure.input(authKvSnapshotInputSchema).query(({ ctx, input }) => {
       return ctx.kernel.snapshotAuthKv(ctx.auth.claims.authId, input);
     }),
-    set: requireAuth.input(authKvSetInputSchema).mutation(({ ctx, input }) => {
+    set: authProcedure.input(authKvSetInputSchema).mutation(({ ctx, input }) => {
       return ctx.kernel.setAuthKv(ctx.auth.claims.authId, input);
     }),
-    delete: requireAuth.input(authKvDeleteInputSchema).mutation(({ ctx, input }) => {
+    delete: authProcedure.input(authKvDeleteInputSchema).mutation(({ ctx, input }) => {
       return ctx.kernel.deleteAuthKv(ctx.auth.claims.authId, input);
     }),
-    events: requireAuth.input(authKvEventsInputSchema).subscription(({ ctx, input }) => {
+    events: authProcedure.input(authKvEventsInputSchema).subscription(({ ctx, input }) => {
       return observable<AuthKvEvent>((emit) => {
         let cursor = input?.afterEventId ?? 0;
         const filter = input ? { keys: input.keys, prefix: input.prefix } : undefined;
@@ -252,22 +265,22 @@ export const appRouter = t.router({
     }),
   }),
   drafts: t.router({
-    list: requireAuth.input(authDraftListInputSchema).query(({ ctx, input }) => {
+    list: authProcedure.input(authDraftListInputSchema).query(({ ctx, input }) => {
       return ctx.kernel.listAuthDrafts(ctx.auth.claims.authId, input);
     }),
-    get: requireAuth.input(authDraftGetInputSchema).query(({ ctx, input }) => {
+    get: authProcedure.input(authDraftGetInputSchema).query(({ ctx, input }) => {
       return ctx.kernel.getAuthDraft(ctx.auth.claims.authId, input.draftId);
     }),
-    create: requireAuth.input(authDraftCreateInputSchema).mutation(({ ctx, input }) => {
+    create: authProcedure.input(authDraftCreateInputSchema).mutation(({ ctx, input }) => {
       return ctx.kernel.createAuthDraft(ctx.auth.claims.authId, input);
     }),
-    save: requireAuth.input(authDraftSaveInputSchema).mutation(({ ctx, input }) => {
+    save: authProcedure.input(authDraftSaveInputSchema).mutation(({ ctx, input }) => {
       return ctx.kernel.saveAuthDraft(ctx.auth.claims.authId, input);
     }),
-    delete: requireAuth.input(authDraftDeleteInputSchema).mutation(({ ctx, input }) => {
+    delete: authProcedure.input(authDraftDeleteInputSchema).mutation(({ ctx, input }) => {
       return ctx.kernel.deleteAuthDraft(ctx.auth.claims.authId, input);
     }),
-    events: requireAuth.input(authDraftEventsInputSchema).subscription(({ ctx, input }) => {
+    events: authProcedure.input(authDraftEventsInputSchema).subscription(({ ctx, input }) => {
       return observable<AuthDraftEvent>((emit) => {
         let cursor = input?.afterEventId ?? 0;
         const filter = input ? { kind: input.kind, draftIds: input.draftIds } : undefined;
@@ -301,10 +314,10 @@ export const appRouter = t.router({
     }),
   }),
   avatar: t.router({
-    catalog: t.procedure.query(async ({ ctx }) => ({
+    catalog: superadminProcedure.query(async ({ ctx }) => ({
       items: await ctx.kernel.listGlobalAvatarCatalog(),
     })),
-    create: t.procedure
+    create: superadminProcedure
       .input(
         z.object({
           nickname: z.string().trim().min(1).max(64),
@@ -317,8 +330,8 @@ export const appRouter = t.router({
       })),
   }),
   session: t.router({
-    list: t.procedure.query(({ ctx }) => ({ sessions: ctx.kernel.listSessions() })),
-    create: t.procedure
+    list: superadminProcedure.query(({ ctx }) => ({ sessions: ctx.kernel.listSessions() })),
+    create: superadminProcedure
       .input(
         z.object({
           cwd: z.string().min(1),
@@ -331,7 +344,7 @@ export const appRouter = t.router({
         const session = await ctx.kernel.createSession(input);
         return { session };
       }),
-    update: t.procedure
+    update: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -344,30 +357,30 @@ export const appRouter = t.router({
         });
         return { session };
       }),
-    delete: t.procedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
+    delete: superadminProcedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
       return await ctx.kernel.deleteSession(input.sessionId);
     }),
-    start: t.procedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
+    start: superadminProcedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
       const session = await ctx.kernel.startSession(input.sessionId);
       return { session };
     }),
-    stop: t.procedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
+    stop: superadminProcedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
       const session = await ctx.kernel.stopSession(input.sessionId);
       return { session };
     }),
-    abort: t.procedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
+    abort: superadminProcedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
       const session = await ctx.kernel.abortSession(input.sessionId);
       return { session };
     }),
-    archive: t.procedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
+    archive: superadminProcedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
       const session = await ctx.kernel.archiveSession(input.sessionId);
       return { session };
     }),
-    restore: t.procedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
+    restore: superadminProcedure.input(sessionIdInput).mutation(async ({ ctx, input }) => {
       const session = await ctx.kernel.restoreSession(input.sessionId);
       return { session };
     }),
-    focusTerminal: t.procedure
+    focusTerminal: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -375,7 +388,7 @@ export const appRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => await ctx.kernel.focusTerminal(input.sessionId, input.terminalId)),
-    cycles: t.procedure
+    cycles: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -383,7 +396,7 @@ export const appRouter = t.router({
         }),
       )
       .query(({ ctx, input }) => ({ items: ctx.kernel.listCurrentBranchCycles(input.sessionId, input.limit ?? 200) })),
-    rollback: t.procedure
+    rollback: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -393,7 +406,7 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ctx.kernel.rollbackSessionCycle(input.sessionId, input.cycleId)),
   }),
   chat: t.router({
-    send: t.procedure
+    send: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -405,19 +418,19 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) =>
         ctx.kernel.sendChat(input.sessionId, input.text, input.assetIds ?? [], input.clientMessageId),
       ),
-    list: t.procedure
+    list: superadminProcedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
         ctx.kernel.pageChatMessages(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
       ),
-    cycles: t.procedure
+    cycles: superadminProcedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
         ctx.kernel.pageChatCycles(input.sessionId, { before: input.before, limit: input.limit ?? 120 }),
       ),
   }),
   message: t.router({
-    listChannels: t.procedure
+    listChannels: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -427,7 +440,7 @@ export const appRouter = t.router({
       .query(({ ctx, input }) => ({
         items: ctx.kernel.listMessageChannels(input.sessionId, { includeArchived: input.includeArchived }),
       })),
-    createChannel: t.procedure
+    createChannel: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -461,7 +474,7 @@ export const appRouter = t.router({
           focus: input.focus,
         }),
       })),
-    focus: t.procedure
+    focus: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -476,7 +489,7 @@ export const appRouter = t.router({
           channels: input.channels,
         }),
       })),
-    send: t.procedure
+    send: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -497,7 +510,7 @@ export const appRouter = t.router({
           clientMessageId: input.clientMessageId,
         }),
       ),
-    edit: t.procedure
+    edit: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -516,7 +529,7 @@ export const appRouter = t.router({
           text: input.text,
         }),
       ),
-    recall: t.procedure
+    recall: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -533,7 +546,7 @@ export const appRouter = t.router({
           messageId: input.messageId,
         }),
       ),
-    sendError: t.procedure
+    sendError: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -554,7 +567,7 @@ export const appRouter = t.router({
           clientMessageId: input.clientMessageId,
         }),
       ),
-    sendInteractive: t.procedure
+    sendInteractive: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -575,7 +588,7 @@ export const appRouter = t.router({
           clientMessageId: input.clientMessageId,
         }),
       ),
-    updateChannel: t.procedure
+    updateChannel: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -598,7 +611,7 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ({
         channel: ctx.kernel.updateMessageChannel(input),
       })),
-    archiveChannel: t.procedure
+    archiveChannel: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -610,7 +623,7 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ({
         channel: ctx.kernel.archiveMessageChannel(input),
       })),
-    deleteChannel: t.procedure
+    deleteChannel: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -621,7 +634,7 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ({
         channel: ctx.kernel.deleteMessageChannel(input),
       })),
-    listChannelGrants: t.procedure
+    listChannelGrants: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -632,7 +645,7 @@ export const appRouter = t.router({
       .query(({ ctx, input }) => ({
         items: ctx.kernel.listMessageChannelGrants(input),
       })),
-    issueChannelGrant: t.procedure
+    issueChannelGrant: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -651,7 +664,7 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ({
         grant: ctx.kernel.issueMessageChannelGrant(input),
       })),
-    revokeChannelGrant: t.procedure
+    revokeChannelGrant: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -661,7 +674,7 @@ export const appRouter = t.router({
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.revokeMessageChannelGrant(input)),
-    globalList: requireAuth
+    globalList: authProcedure
       .input(
         z.object({
           includeArchived: z.boolean().optional(),
@@ -673,7 +686,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalCreate: requireAuth
+    globalCreate: authProcedure
       .input(
         z.object({
           chatId: z.string().trim().min(1).optional(),
@@ -718,7 +731,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalFocus: requireAuth
+    globalFocus: authProcedure
       .input(
         z.object({
           op: z.enum(["add", "remove", "replace", "clear"]),
@@ -738,7 +751,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    globalSnapshot: requireAuth
+    globalSnapshot: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -752,7 +765,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    globalMarkRead: requireAuth
+    globalMarkRead: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -766,7 +779,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalPage: requireAuth
+    globalPage: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -781,13 +794,13 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    query: requireAuth.input(messageQueryInputSchema).query(({ ctx, input }) =>
+    query: authProcedure.input(messageQueryInputSchema).query(({ ctx, input }) =>
       ctx.kernel.queryGlobalRoomMessages({
         ...input,
         ...resolveMessageCallerScope(ctx.auth),
       }),
     ),
-    globalSend: requireAuth
+    globalSend: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -804,7 +817,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    globalEdit: requireAuth
+    globalEdit: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -819,7 +832,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    globalRecall: requireAuth
+    globalRecall: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -833,7 +846,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
-    globalUpdate: requireAuth
+    globalUpdate: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -859,7 +872,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalArchive: requireAuth
+    globalArchive: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -873,7 +886,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalDelete: requireAuth
+    globalDelete: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -886,7 +899,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalListGrants: requireAuth
+    globalListGrants: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -899,7 +912,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalListAssets: requireAuth
+    globalListAssets: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -912,7 +925,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalIssueGrant: requireAuth
+    globalIssueGrant: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -933,7 +946,7 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       })),
-    globalRevokeGrant: requireAuth
+    globalRevokeGrant: authProcedure
       .input(
         z.object({
           chatId: z.string().min(1),
@@ -949,10 +962,10 @@ export const appRouter = t.router({
       ),
   }),
   terminal: t.router({
-    list: t.procedure
+    list: superadminProcedure
       .input(sessionIdInput)
       .query(({ ctx, input }) => ({ items: ctx.kernel.listTerminals(input.sessionId) })),
-    create: t.procedure
+    create: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -967,7 +980,7 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => ({
         result: await ctx.kernel.createTerminal(input),
       })),
-    focus: t.procedure
+    focus: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -976,7 +989,7 @@ export const appRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => await ctx.kernel.focusTerminals(input)),
-    delete: t.procedure
+    delete: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -984,10 +997,10 @@ export const appRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => await ctx.kernel.deleteTerminal(input)),
-    globalList: requireAuth.query(({ ctx }) => ({
+    globalList: authProcedure.query(({ ctx }) => ({
       items: ctx.kernel.listGlobalTerminals(resolveTerminalCallerScope(ctx.auth)),
     })),
-    globalCreate: requireAuth
+    globalCreate: authProcedure
       .input(
         z.object({
           terminalId: z.string().min(1).optional(),
@@ -1004,7 +1017,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       })),
-    globalFocus: requireAuth
+    globalFocus: authProcedure
       .input(
         z.object({
           op: z.enum(["add", "remove", "replace", "clear"]),
@@ -1018,7 +1031,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
-    globalDelete: requireAuth
+    globalDelete: authProcedure
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1031,7 +1044,7 @@ export const appRouter = t.router({
             ...resolveTerminalCallerScope(ctx.auth),
           }),
       ),
-    activityPage: requireAuth
+    activityPage: authProcedure
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1047,7 +1060,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
-    read: requireAuth
+    read: authProcedure
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1063,7 +1076,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
-    write: requireAuth
+    write: authProcedure
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1093,7 +1106,7 @@ export const appRouter = t.router({
             ...resolveTerminalCallerScope(ctx.auth),
           }),
       ),
-    listGrants: requireAuth
+    listGrants: authProcedure
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1105,7 +1118,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       })),
-    issueGrant: requireAuth
+    issueGrant: authProcedure
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1126,7 +1139,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       })),
-    revokeGrant: requireAuth
+    revokeGrant: authProcedure
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1139,7 +1152,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
-    listApprovalRequests: requireAuth
+    listApprovalRequests: authProcedure
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1154,7 +1167,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       })),
-    approveRequest: requireAuth
+    approveRequest: authProcedure
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1168,7 +1181,7 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
-    denyRequest: requireAuth
+    denyRequest: authProcedure
       .input(
         z.object({
           terminalId: z.string().min(1),
@@ -1183,7 +1196,7 @@ export const appRouter = t.router({
       ),
   }),
   draft: t.router({
-    resolve: t.procedure
+    resolve: superadminProcedure
       .input(
         z.object({
           cwd: z.string().min(1),
@@ -1194,8 +1207,8 @@ export const appRouter = t.router({
   }),
   settings: t.router({
     global: t.router({
-      read: t.procedure.query(async ({ ctx }) => await ctx.kernel.readGlobalSettings()),
-      save: t.procedure
+      read: superadminProcedure.query(async ({ ctx }) => await ctx.kernel.readGlobalSettings()),
+      save: superadminProcedure
         .input(
           z.object({
             content: z.string(),
@@ -1205,7 +1218,7 @@ export const appRouter = t.router({
         .mutation(async ({ ctx, input }) => await ctx.kernel.saveGlobalSettings(input)),
     }),
     scope: t.router({
-      list: t.procedure
+      list: superadminProcedure
         .input(
           z.object({
             scope: z.enum(["workspace", "global"]),
@@ -1214,7 +1227,7 @@ export const appRouter = t.router({
           }),
         )
         .query(async ({ ctx, input }) => await ctx.kernel.listSettingsScope(input)),
-      read: t.procedure
+      read: superadminProcedure
         .input(
           z.object({
             scope: z.enum(["workspace", "global"]),
@@ -1224,7 +1237,7 @@ export const appRouter = t.router({
           }),
         )
         .query(async ({ ctx, input }) => await ctx.kernel.readSettingsScopeLayer(input)),
-      save: t.procedure
+      save: superadminProcedure
         .input(
           z.object({
             scope: z.enum(["workspace", "global"]),
@@ -1237,7 +1250,7 @@ export const appRouter = t.router({
         )
         .mutation(async ({ ctx, input }) => await ctx.kernel.saveSettingsScopeLayer(input)),
     }),
-    read: t.procedure
+    read: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -1247,7 +1260,7 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => {
         return await ctx.kernel.readSettings(input);
       }),
-    save: t.procedure
+    save: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -1260,14 +1273,14 @@ export const appRouter = t.router({
         return await ctx.kernel.saveSettings(input);
       }),
     layers: t.router({
-      list: t.procedure
+      list: superadminProcedure
         .input(
           z.object({
             workspacePath: z.string().min(1),
           }),
         )
         .query(async ({ ctx, input }) => ctx.kernel.listSettingsLayers(input.workspacePath)),
-      read: t.procedure
+      read: superadminProcedure
         .input(
           z.object({
             workspacePath: z.string().min(1),
@@ -1275,7 +1288,7 @@ export const appRouter = t.router({
           }),
         )
         .query(async ({ ctx, input }) => ctx.kernel.readSettingsLayer(input)),
-      save: t.procedure
+      save: superadminProcedure
         .input(
           z.object({
             workspacePath: z.string().min(1),
@@ -1288,16 +1301,16 @@ export const appRouter = t.router({
     }),
   }),
   profile: t.router({
-    service: t.procedure.query(async ({ ctx }) => await ctx.kernel.getProfileServiceDescriptor()),
-    list: t.procedure.query(async ({ ctx }) => ({ items: await ctx.kernel.listProfiles() })),
-    get: t.procedure
+    service: superadminProcedure.query(async ({ ctx }) => await ctx.kernel.getProfileServiceDescriptor()),
+    list: superadminProcedure.query(async ({ ctx }) => ({ items: await ctx.kernel.listProfiles() })),
+    get: superadminProcedure
       .input(
         z.object({
           reference: z.string().trim().min(1),
         }),
       )
       .query(async ({ ctx, input }) => await ctx.kernel.getProfile(input.reference)),
-    update: requireAuth
+    update: superadminProcedure
       .input(
         z.object({
           reference: z.string().trim().min(1),
@@ -1313,14 +1326,14 @@ export const appRouter = t.router({
           }),
       ),
     auth: t.router({
-      emailStart: t.procedure
+      emailStart: publicProcedure
         .input(
           z.object({
             email: z.string().email(),
           }),
         )
         .mutation(async ({ ctx, input }) => await ctx.kernel.startProfileEmailChallenge(input.email)),
-      emailVerify: t.procedure
+      emailVerify: publicProcedure
         .input(
           z.object({
             email: z.string().email(),
@@ -1335,8 +1348,8 @@ export const appRouter = t.router({
     }),
   }),
   notification: t.router({
-    snapshot: t.procedure.query(async ({ ctx }) => await ctx.kernel.getNotificationSnapshot()),
-    setChatVisibility: t.procedure
+    snapshot: superadminProcedure.query(async ({ ctx }) => await ctx.kernel.getNotificationSnapshot()),
+    setChatVisibility: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -1346,7 +1359,7 @@ export const appRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => await ctx.kernel.setChatVisibility(input)),
-    setTerminalVisibility: t.procedure
+    setTerminalVisibility: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -1356,7 +1369,7 @@ export const appRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => await ctx.kernel.setTerminalVisibility(input)),
-    consume: t.procedure
+    consume: superadminProcedure
       .input(
         z
           .object({
@@ -1373,14 +1386,14 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.kernel.consumeNotifications(input)),
   }),
   task: t.router({
-    list: t.procedure
+    list: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
         }),
       )
       .query(({ ctx, input }) => ctx.kernel.listTasks(input.sessionId)),
-    triggerManual: t.procedure
+    triggerManual: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -1394,7 +1407,7 @@ export const appRouter = t.router({
           id: input.id,
         }),
       ),
-    emitEvent: t.procedure
+    emitEvent: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -1411,11 +1424,11 @@ export const appRouter = t.router({
       ),
   }),
   runtime: t.router({
-    snapshot: t.procedure.query(({ ctx }) => ctx.kernel.getSnapshot()),
-    attentionState: t.procedure
+    snapshot: superadminProcedure.query(({ ctx }) => ctx.kernel.getSnapshot()),
+    attentionState: superadminProcedure
       .input(sessionIdInput)
       .query(async ({ ctx, input }) => await ctx.kernel.inspectAttentionState(input.sessionId)),
-    attentionQuery: t.procedure
+    attentionQuery: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -1431,20 +1444,20 @@ export const appRouter = t.router({
           limit: input.limit,
         }),
       })),
-    requestCompact: t.procedure
+    requestCompact: superadminProcedure
       .input(sessionIdInput)
       .mutation(({ ctx, input }) => ctx.kernel.requestRuntimeCompact(input.sessionId)),
-    schedulerLogs: t.procedure
+    schedulerLogs: superadminProcedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
         ctx.kernel.pageSchedulerLogs(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
       ),
-    observabilityTraces: t.procedure
+    observabilityTraces: superadminProcedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
         ctx.kernel.pageObservabilityTraces(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
       ),
-    observabilityTraceLookup: t.procedure
+    observabilityTraceLookup: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -1455,22 +1468,22 @@ export const appRouter = t.router({
       .query(({ ctx, input }) => ({
         items: ctx.kernel.listObservabilityTracesByRef(input.sessionId, input.ref, input.limit ?? 200),
       })),
-    heartbeatPartsPage: t.procedure
+    heartbeatPartsPage: superadminProcedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
         ctx.kernel.pageHeartbeatParts(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
       ),
-    heartbeatGroupsPage: t.procedure
+    heartbeatGroupsPage: superadminProcedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
         ctx.kernel.pageHeartbeatGroups(input.sessionId, { before: input.before, limit: input.limit ?? 5 }),
       ),
-    modelCallsPage: t.procedure
+    modelCallsPage: superadminProcedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
         ctx.kernel.pageModelCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
       ),
-    usageAnalytics: t.procedure.input(usageAnalyticsInput).query(({ ctx, input }) =>
+    usageAnalytics: superadminProcedure.input(usageAnalyticsInput).query(({ ctx, input }) =>
       ctx.kernel.queryUsageAnalytics(input.sessionId, {
         sinceMs: input.sinceMs,
         untilMs: input.untilMs,
@@ -1478,17 +1491,17 @@ export const appRouter = t.router({
         filters: input.filters,
       }),
     ),
-    requestAuxPage: t.procedure
+    requestAuxPage: superadminProcedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
         ctx.kernel.pageRequestAuxMessages(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
       ),
-    apiCallsPage: t.procedure
+    apiCallsPage: superadminProcedure
       .input(reversePageInput)
       .query(({ ctx, input }) =>
         ctx.kernel.pageApiCalls(input.sessionId, { before: input.before, limit: input.limit ?? 200 }),
       ),
-    terminalActivityPage: t.procedure
+    terminalActivityPage: superadminProcedure
       .input(
         reversePageInput.extend({
           terminalId: z.string().min(1),
@@ -1500,7 +1513,7 @@ export const appRouter = t.router({
           limit: input.limit ?? 120,
         }),
       ),
-    events: t.procedure
+    events: superadminProcedure
       .input(
         z
           .object({
@@ -1526,7 +1539,7 @@ export const appRouter = t.router({
           return unsubscribe;
         });
       }),
-    apiCalls: t.procedure
+    apiCalls: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
@@ -1601,7 +1614,7 @@ export const appRouter = t.router({
       }),
   }),
   workspace: t.router({
-    recent: t.procedure
+    recent: superadminProcedure
       .input(
         z
           .object({
@@ -1612,10 +1625,10 @@ export const appRouter = t.router({
       .query(({ ctx, input }) => ({
         items: ctx.kernel.listRecentWorkspaces(input?.limit ?? 8),
       })),
-    listAll: t.procedure.query(({ ctx }) => ({
+    listAll: superadminProcedure.query(({ ctx }) => ({
       items: ctx.kernel.listAllWorkspaces(),
     })),
-    listSessions: t.procedure
+    listSessions: superadminProcedure
       .input(
         z.object({
           path: z.string().min(1),
@@ -1625,7 +1638,7 @@ export const appRouter = t.router({
         }),
       )
       .query(({ ctx, input }) => ctx.kernel.listWorkspaceSessions(input)),
-    avatarCatalog: t.procedure
+    avatarCatalog: superadminProcedure
       .input(
         z.object({
           workspacePath: z.string().min(1),
@@ -1634,7 +1647,7 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => ({
         items: await ctx.kernel.listWorkspaceAvatarCatalog(input.workspacePath),
       })),
-    forkAvatar: t.procedure
+    forkAvatar: superadminProcedure
       .input(
         z.object({
           workspacePath: z.string().min(1),
@@ -1644,7 +1657,7 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => ({
         avatar: await ctx.kernel.forkWorkspaceAvatar(input),
       })),
-    copyAvatar: t.procedure
+    copyAvatar: superadminProcedure
       .input(
         z.object({
           workspacePath: z.string().min(1),
@@ -1655,7 +1668,7 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => ({
         avatar: await ctx.kernel.copyWorkspaceAvatar(input),
       })),
-    welcomeSnapshot: t.procedure
+    welcomeSnapshot: superadminProcedure
       .input(
         z.object({
           workspacePath: z.string().min(1),
@@ -1672,7 +1685,7 @@ export const appRouter = t.router({
           superadminTerminalActorId: terminalScope.superadminActorId,
         });
       }),
-    saveAvatarRoomSeat: t.procedure
+    saveAvatarRoomSeat: superadminProcedure
       .input(
         z.object({
           workspacePath: z.string().min(1),
@@ -1684,7 +1697,7 @@ export const appRouter = t.router({
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.saveWorkspaceAvatarRoomSeat(input)),
-    saveAvatarTerminalSeat: t.procedure
+    saveAvatarTerminalSeat: superadminProcedure
       .input(
         z.object({
           workspacePath: z.string().min(1),
@@ -1696,7 +1709,7 @@ export const appRouter = t.router({
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.saveWorkspaceAvatarTerminalSeat(input)),
-    searchPaths: t.procedure
+    searchPaths: superadminProcedure
       .input(
         z.object({
           cwd: z.string().min(1),
@@ -1707,7 +1720,7 @@ export const appRouter = t.router({
       .query(({ ctx, input }) => ({
         items: ctx.kernel.searchWorkspacePaths(input),
       })),
-    runtimeMounts: t.procedure
+    runtimeMounts: superadminProcedure
       .input(
         z.object({
           runtimeId: z.string().min(1),
@@ -1716,7 +1729,7 @@ export const appRouter = t.router({
       .query(({ ctx, input }) => ({
         items: ctx.kernel.listRuntimeWorkspaceMounts(input.runtimeId),
       })),
-    runtimeGrants: t.procedure
+    runtimeGrants: superadminProcedure
       .input(
         z.object({
           runtimeId: z.string().min(1),
@@ -1726,7 +1739,7 @@ export const appRouter = t.router({
       .query(({ ctx, input }) => ({
         items: ctx.kernel.listRuntimeWorkspaceGrants(input),
       })),
-    grantRuntime: t.procedure
+    grantRuntime: superadminProcedure
       .input(
         z.object({
           runtimeId: z.string().min(1),
@@ -1737,7 +1750,7 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ({
         items: ctx.kernel.grantRuntimeWorkspace(input),
       })),
-    detachRuntime: t.procedure
+    detachRuntime: superadminProcedure
       .input(
         z.object({
           runtimeId: z.string().min(1),
@@ -1745,7 +1758,7 @@ export const appRouter = t.router({
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.detachRuntimeWorkspace(input)),
-    assetRoots: t.procedure
+    assetRoots: superadminProcedure
       .input(
         z.object({
           workspacePath: z.string().min(1),
@@ -1753,7 +1766,7 @@ export const appRouter = t.router({
         }),
       )
       .query(({ ctx, input }) => ctx.kernel.getRuntimeWorkspaceAssetRoots(input)),
-    workbenchTree: t.procedure
+    workbenchTree: superadminProcedure
       .input(
         z.object({
           workspacePath: z.string().min(1),
@@ -1765,7 +1778,7 @@ export const appRouter = t.router({
         }),
       )
       .query(({ ctx, input }) => ctx.kernel.listWorkspaceWorkbenchTree(input)),
-    workbenchPreview: t.procedure
+    workbenchPreview: superadminProcedure
       .input(
         z.object({
           workspacePath: z.string().min(1),
@@ -1781,7 +1794,7 @@ export const appRouter = t.router({
         }),
       )
       .query(({ ctx, input }) => ctx.kernel.readWorkspaceWorkbenchPreview(input)),
-    createPrivateAsset: t.procedure
+    createPrivateAsset: superadminProcedure
       .input(
         z.object({
           workspacePath: z.string().min(1),
@@ -1792,7 +1805,7 @@ export const appRouter = t.router({
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.createWorkspacePrivateAsset(input)),
-    exec: t.procedure
+    exec: superadminProcedure
       .input(
         z.object({
           runtimeId: z.string().min(1),
@@ -1805,7 +1818,7 @@ export const appRouter = t.router({
         }),
       )
       .mutation(async ({ ctx, input }) => await ctx.kernel.execRuntimeWorkspace(input)),
-    toggleFavorite: t.procedure
+    toggleFavorite: superadminProcedure
       .input(
         z.object({
           path: z.string().min(1),
@@ -1814,24 +1827,24 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ({
         item: ctx.kernel.toggleWorkspaceFavorite(input.path),
       })),
-    toggleSessionFavorite: t.procedure
+    toggleSessionFavorite: superadminProcedure
       .input(
         z.object({
           sessionId: z.string().min(1),
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.toggleSessionFavorite(input.sessionId)),
-    delete: t.procedure
+    delete: superadminProcedure
       .input(
         z.object({
           path: z.string().min(1),
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.removeWorkspace(input.path)),
-    cleanMissing: t.procedure.mutation(({ ctx }) => ctx.kernel.removeMissingWorkspaces()),
+    cleanMissing: superadminProcedure.mutation(({ ctx }) => ctx.kernel.removeMissingWorkspaces()),
   }),
   fs: t.router({
-    listDirectories: t.procedure
+    listDirectories: superadminProcedure
       .input(
         z
           .object({
@@ -1846,7 +1859,7 @@ export const appRouter = t.router({
           includeHidden: input?.includeHidden,
         }),
       })),
-    validateDirectory: t.procedure
+    validateDirectory: superadminProcedure
       .input(
         z.object({
           path: z.string().min(1),

@@ -1,4 +1,5 @@
 const AUTH_SESSION_STORAGE_KEY = 'agenter:webui:auth-session';
+const AUTH_SKIP_AUTO_LOGIN_ONCE_KEY = 'agenter:webui:skip-auto-login-once';
 
 interface StoredAuthSessionRecord {
 	token?: unknown;
@@ -35,4 +36,22 @@ export const writeStoredAuthToken = (token: string | null | undefined): void => 
 			token: normalized,
 		}),
 	);
+};
+
+export const markSkipAutoLoginOnce = (): void => {
+	if (typeof window === 'undefined') {
+		return;
+	}
+	window.sessionStorage.setItem(AUTH_SKIP_AUTO_LOGIN_ONCE_KEY, '1');
+};
+
+export const consumeSkipAutoLoginOnce = (): boolean => {
+	if (typeof window === 'undefined') {
+		return false;
+	}
+	const shouldSkip = window.sessionStorage.getItem(AUTH_SKIP_AUTO_LOGIN_ONCE_KEY) === '1';
+	if (shouldSkip) {
+		window.sessionStorage.removeItem(AUTH_SKIP_AUTO_LOGIN_ONCE_KEY);
+	}
+	return shouldSkip;
 };

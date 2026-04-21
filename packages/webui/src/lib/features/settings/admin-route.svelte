@@ -1,5 +1,4 @@
 <script lang="ts">
-	import BadgeCheckIcon from '@lucide/svelte/icons/badge-check';
 	import { Scaffold, SplitView } from '@agenter/svelte-components';
 	import KeyRoundIcon from '@lucide/svelte/icons/key-round';
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
@@ -134,34 +133,37 @@
 								root auth id: {controller.authService?.rootAuthId ?? 'unavailable'}
 							</div>
 							<div class="break-all rounded-xl border bg-card px-3 py-2">
-								key path: {controller.authService?.rootAuthKeyPath ?? '~/.agenter/profile-service/root-auth.key'}
+								auto login: {controller.authService?.browserAutoLoginKeyPath ?? '~/.agenter/local.env'}
+							</div>
+							<div class="break-all rounded-xl border bg-card px-3 py-2">
+								daemon auto login: {controller.authService?.browserAutoLoginConfigured ? 'configured' : 'not configured'}
 							</div>
 						</div>
 
 						<label class="grid gap-2 text-sm font-medium">
-							<span>Root private key</span>
+							<span>Root private key for daemon auto login</span>
 							<PasswordInput bind:value={privateKeyDraft} placeholder="0x-prefixed private key" />
 						</label>
 
 						<div class="grid gap-2 sm:flex sm:flex-wrap">
+							{#if controller.authService?.browserAutoLoginBootstrapAvailable}
+								<Button
+									variant="secondary"
+									class="w-full sm:w-auto"
+									onclick={() => void controller.storeAutoLoginKey()}
+									disabled={controller.authBusy}
+								>
+									<KeyRoundIcon class="size-4" />
+									{controller.authBusy ? 'Configuring…' : 'Bootstrap daemon auto login'}
+								</Button>
+							{/if}
 							<Button
-								variant="secondary"
 								class="w-full sm:w-auto"
-								onclick={async () => {
-									privateKeyDraft = await controller.revealManagedRootKey();
-								}}
-								disabled={controller.authBusy || !controller.authService?.canRevealRootAuthPrivateKey}
-							>
-								<KeyRoundIcon class="size-4" />
-								Use backend-managed key
-							</Button>
-							<Button
-								class="w-full sm:w-auto"
-								onclick={() => void controller.authenticateWithPrivateKey(privateKeyDraft)}
+								onclick={() => void controller.storeAutoLoginKey(privateKeyDraft)}
 								disabled={controller.authBusy || !normalizePrivateKey(privateKeyDraft)}
 							>
-								<BadgeCheckIcon class="size-4" />
-								Sign challenge
+								<KeyRoundIcon class="size-4" />
+								{controller.authBusy ? 'Configuring…' : 'Store key for daemon auto login'}
 							</Button>
 							<Button
 								variant="outline"
@@ -173,6 +175,10 @@
 								Sign out
 							</Button>
 						</div>
+						<p class="text-xs text-muted-foreground">
+							The browser session uses a short-lived token. Daemon auto login persists the root key machine-locally so
+							future launches can authenticate before the protected shell hydrates.
+						</p>
 					</Scaffold.ScrollBody>
 				</Scaffold.Root>
 			</SplitView.Sidebar>

@@ -38,7 +38,7 @@ import {
   type MessageSnapshot,
 } from "@agenter/message-system";
 import { isPrincipalId } from "@agenter/principal-crypto";
-import type { ProfileMetadata, ProfileProjection } from "@agenter/profile-service";
+import type { AuthSessionProjection, ProfileMetadata, ProfileProjection } from "@agenter/profile-service";
 import {
   buildAvatarIconUrl,
   formatAvatarDisplayName,
@@ -187,6 +187,8 @@ import {
   type WorkspaceWorkbenchMode,
 } from "./workspace-workbench";
 import { WorkspacesStore, type WorkspaceEntry } from "./workspaces-store";
+import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
+import { privateKeyToAccount } from "viem/accounts";
 
 const now = (): number => Date.now();
 const clonePromptWindowMessages = (
@@ -199,6 +201,7 @@ const AVATAR_CATALOG_INVALIDATION_DEBOUNCE_MS = 120;
 const MESSAGE_ROOM_INVALIDATION_DEBOUNCE_MS = 80;
 const TERMINAL_SURFACE_INVALIDATION_DEBOUNCE_MS = 80;
 const INTERNAL_FAILURE_PREFIXES = ["agenter-ai call failed:", "agenter-ai 调用失败:", "agenter-ai 调用失败："];
+const AUTO_LOGIN_PRIVATE_KEY_ENV_NAME = "AGENTER_ROOT_AUTH_PRIVATE_KEY";
 
 const hashNumericLabel = (value: string): string => {
   let hash = 0;
@@ -230,6 +233,14 @@ const parseGitOwnerFromUrl = (raw: string): string | null => {
 
 const isInternalFailurePreviewText = (content: string): boolean =>
   INTERNAL_FAILURE_PREFIXES.some((prefix) => content.trim().startsWith(prefix));
+
+const toHexPrivateKey = (value: string): `0x${string}` => {
+  const normalized = value.trim();
+  if (!/^0x[0-9a-fA-F]+$/u.test(normalized)) {
+    throw new Error("root auth private key must be a 0x-prefixed hex string");
+  }
+  return normalized as `0x${string}`;
+};
 
 const isBuiltInMessageRoomMetadata = (metadata: Record<string, unknown> | undefined): boolean =>
   metadata?.builtIn === true;
@@ -3707,11 +3718,15 @@ export class AppKernel {
   }
 
   async getAuthServiceDescriptor() {
-    return await this.authService.describe();
-  }
-
-  async revealManagedRootAuthPrivateKey() {
-    return await this.authService.revealRootAuthPrivateKey();
+    const descriptor = await this.authService.describe();
+    const homeDir = this.getHomeDir();
+    return {
+      ...descriptor,
+      browserAutoLoginKeyPath: resolveLocalEnvPath(homeDir),
+      browserAutoLoginConfigured: readLocalEnvValue(homeDir, AUTO_LOGIN_PRIVATE_KEY_ENV_NAME) !== null,
+      browserAutoLoginBootstrapAvailable:
+        descriptor.rootAuthBootstrapMode === "managed_local" && descriptor.canRevealRootAuthPrivateKey,
+    };
   }
 
   async startAuthChallenge(authId: string) {
@@ -3727,6 +3742,105 @@ export class AppKernel {
       return null;
     }
     return await this.authService.authenticateAuthToken(token);
+  }
+
+  private async validateRootAuthPrivateKey(privateKey: string): Promise<{ descriptor: Awaited<ReturnType<typeof this.authService.describe>>; authId: string; privateKey: `0x${string}` }> {
+    const descriptor = await this.authService.describe();
+    const normalizedPrivateKey = toHexPrivateKey(privateKey);
+    const authId = privateKeyToAccount(normalizedPrivateKey).address.toLowerCase();
+    if (authId !== descriptor.rootAuthId.toLowerCase()) {
+      throw new Error(`root auth private key does not match configured root auth id: ${descriptor.rootAuthId}`);
+    }
+    return {
+      descriptor,
+      authId,
+      privateKey: normalizedPrivateKey,
+    };
+  }
+
+  private async resolveBrowserAutoLoginPrivateKey(): Promise<{ authId: string; privateKey: `0x${string}`; source: "local_env" | "managed_local" }> {
+    const homeDir = this.getHomeDir();
+    const storedPrivateKey = readLocalEnvValue(homeDir, AUTO_LOGIN_PRIVATE_KEY_ENV_NAME);
+    if (storedPrivateKey) {
+      try {
+        const validated = await this.validateRootAuthPrivateKey(storedPrivateKey);
+        return {
+          authId: validated.authId,
+          privateKey: validated.privateKey,
+          source: "local_env",
+        };
+      } catch {
+        // Fall through so managed-local bootstrap can repair stale or invalid local.env state.
+      }
+    }
+
+    const descriptor = await this.authService.describe();
+    if (descriptor.rootAuthBootstrapMode !== "managed_local" || !descriptor.canRevealRootAuthPrivateKey) {
+      throw new Error("daemon auto login is not configured");
+    }
+
+    const revealed = await this.authService.revealRootAuthPrivateKey();
+    const validated = await this.validateRootAuthPrivateKey(revealed.privateKey);
+    writeLocalEnvValue(homeDir, AUTO_LOGIN_PRIVATE_KEY_ENV_NAME, validated.privateKey);
+    return {
+      authId: validated.authId,
+      privateKey: validated.privateKey,
+      source: "managed_local",
+    };
+  }
+
+  async autoLoginBrowserAuth(): Promise<
+    | { ok: true; session: AuthSessionProjection; source: "local_env" | "managed_local" }
+    | { ok: false; reason: "unavailable" | "failed"; message: string }
+  > {
+    try {
+      const resolved = await this.resolveBrowserAutoLoginPrivateKey();
+      const challenge = await this.authService.startAuthChallenge(resolved.authId);
+      const signature = await privateKeyToAccount(resolved.privateKey).signMessage({
+        message: challenge.challengeText,
+      });
+      return {
+        ok: true,
+        session: await this.authService.verifyAuthChallenge({
+          challengeId: challenge.challengeId,
+          signature,
+        }),
+        source: resolved.source,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        reason: message === "daemon auto login is not configured" ? "unavailable" : "failed",
+        message,
+      };
+    }
+  }
+
+  async storeBrowserAutoLoginKey(input?: { privateKey?: string | null }): Promise<{
+    ok: true;
+    authId: string;
+    source: "provided" | "managed_local";
+    localEnvPath: string;
+  }> {
+    const providedPrivateKey = input?.privateKey?.trim();
+    if (providedPrivateKey) {
+      const validated = await this.validateRootAuthPrivateKey(providedPrivateKey);
+      return {
+        ok: true,
+        authId: validated.authId,
+        source: "provided",
+        localEnvPath: writeLocalEnvValue(this.getHomeDir(), AUTO_LOGIN_PRIVATE_KEY_ENV_NAME, validated.privateKey),
+      };
+    }
+
+    const resolved = await this.resolveBrowserAutoLoginPrivateKey();
+    return {
+      ok: true,
+      authId: resolved.authId,
+      source: "managed_local",
+      localEnvPath: writeLocalEnvValue(this.getHomeDir(), AUTO_LOGIN_PRIVATE_KEY_ENV_NAME, resolved.privateKey),
+    };
   }
 
   snapshotAuthKv(authId: string, filter?: AuthKvFilter): AuthKvSnapshot {

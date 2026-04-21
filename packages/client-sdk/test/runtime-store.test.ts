@@ -354,7 +354,58 @@ const createMockClient = (input: {
   ) => { unsubscribe: () => void };
   createSessionResult?: RuntimeSnapshot["sessions"][number];
   workspaceRecentQuery?: () => Promise<{ items: string[] }>;
-  profileServiceQuery?: () => Promise<{ endpoint: string }>;
+  profileServiceQuery?: () => Promise<{
+    endpoint: string;
+    authMode: "wallet_challenge_jwt";
+    rootAuthId: string;
+    rootIdentifier: {
+      kind: string;
+      value: string;
+    };
+    rootAuthKeyPath: string;
+    jwtTtlSeconds: number;
+    rootAuthBootstrapMode: "managed_local" | "external";
+    canRevealRootAuthPrivateKey: boolean;
+    hasManagedRootAuthPrivateKey: boolean;
+    browserAutoLoginKeyPath: string;
+    browserAutoLoginConfigured: boolean;
+    browserAutoLoginBootstrapAvailable: boolean;
+  }>;
+  authAutoLoginMutate?: () => Promise<
+    | {
+        ok: true;
+        session: {
+          token: string;
+          issuedAt: string;
+          expiresAt: string;
+          claims: {
+            authId: string;
+            profileId: string;
+            admin: boolean;
+            superadmin: boolean;
+          };
+          profile: {
+            profileId: string;
+            identifiers: Array<{ kind: string; value: string }>;
+            metadata: Record<string, unknown>;
+            iconUrl: string;
+            isVirtual: boolean;
+          };
+        };
+        source: "local_env" | "managed_local";
+      }
+    | {
+        ok: false;
+        reason: "unavailable" | "failed";
+        message: string;
+      }
+  >;
+  authStoreAutoLoginKeyMutate?: (input?: { privateKey?: string }) => Promise<{
+    ok: true;
+    authId: string;
+    source: "provided" | "managed_local";
+    localEnvPath: string;
+  }>;
   workspaceListAllQuery?: () => Promise<{
     items: Array<{
       path: string;
@@ -927,6 +978,9 @@ const createMockClient = (input: {
                   rootAuthBootstrapMode: "managed_local",
                   canRevealRootAuthPrivateKey: true,
                   hasManagedRootAuthPrivateKey: true,
+                  browserAutoLoginKeyPath: "~/.agenter/local.env",
+                  browserAutoLoginConfigured: false,
+                  browserAutoLoginBootstrapAvailable: true,
                 },
         },
         actors: {
@@ -940,12 +994,26 @@ const createMockClient = (input: {
             expiresAt: new Date().toISOString(),
           }),
         },
-        bootstrapManagedKey: {
-          mutate: async () => ({
-            privateKey: "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1",
-            authId: "wallet_evm:0x0000000000000000000000000000000000000001",
-            rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
-          }),
+        autoLogin: {
+          mutate: async () =>
+            input.authAutoLoginMutate
+              ? await input.authAutoLoginMutate()
+              : {
+                  ok: false,
+                  reason: "unavailable",
+                  message: "daemon auto login is not configured",
+                },
+        },
+        storeAutoLoginKey: {
+          mutate: async (payload?: { privateKey?: string }) =>
+            input.authStoreAutoLoginKeyMutate
+              ? await input.authStoreAutoLoginKeyMutate(payload)
+              : {
+                  ok: true,
+                  authId: "wallet_evm:0x0000000000000000000000000000000000000001",
+                  source: payload?.privateKey ? "provided" : "managed_local",
+                  localEnvPath: "~/.agenter/local.env",
+                },
         },
         challengeVerify: {
           mutate: async (payload: { challengeId: string; signature: string }) => ({
@@ -1726,6 +1794,9 @@ const createMockClient = (input: {
                   rootAuthBootstrapMode: "managed_local",
                   canRevealRootAuthPrivateKey: true,
                   hasManagedRootAuthPrivateKey: true,
+                  browserAutoLoginKeyPath: "~/.agenter/local.env",
+                  browserAutoLoginConfigured: false,
+                  browserAutoLoginBootstrapAvailable: true,
                 },
         },
         list: {
@@ -4666,8 +4737,11 @@ describe("Feature: runtime store synchronization", () => {
   test("Scenario: Given uploaded session assets When sending chat Then resolved asset urls and optimistic attachment parts stay aligned", async () => {
     const originalFetch = globalThis.fetch;
     const sentPayloads: Array<{ sessionId: string; text: string; assetIds: string[]; clientMessageId: string }> = [];
-    globalThis.fetch = (async (input) => {
+    globalThis.fetch = (async (input, init) => {
       expect(input).toBe("http://127.0.0.1:3000/api/sessions/i-1/assets");
+      expect(init?.headers).toEqual({
+        authorization: "Bearer browser-auth-token",
+      });
       return new Response(
         JSON.stringify({
           ok: true,
@@ -4700,6 +4774,7 @@ describe("Feature: runtime store synchronization", () => {
 
     try {
       await store.connect();
+      client.setAuthToken("browser-auth-token");
       const uploaded = await store.uploadSessionAssets("i-1", [
         new File(["hello"], "notes.txt", { type: "text/plain" }),
       ]);
@@ -4711,7 +4786,7 @@ describe("Feature: runtime store synchronization", () => {
           mimeType: "text/plain",
           name: "notes.txt",
           sizeBytes: 5,
-          url: "http://127.0.0.1:3000/media/sessions/i-1/assets/asset-1",
+          url: "http://127.0.0.1:3000/media/sessions/i-1/assets/asset-1?authToken=browser-auth-token",
         },
       ]);
 
@@ -4738,13 +4813,80 @@ describe("Feature: runtime store synchronization", () => {
           mimeType: "text/plain",
           name: "notes.txt",
           sizeBytes: 5,
-          url: "http://127.0.0.1:3000/media/sessions/i-1/assets/asset-1",
+          url: "http://127.0.0.1:3000/media/sessions/i-1/assets/asset-1?authToken=browser-auth-token",
         },
       ]);
     } finally {
       globalThis.fetch = originalFetch;
       store.disconnect();
     }
+  });
+
+  test("Scenario: Given daemon-managed browser auth helpers When the runtime store proxies the bootstrap contract Then auto-login and local-env key storage pass through without legacy key-reveal behavior", async () => {
+    const storedKeyPayloads: Array<{ privateKey?: string } | undefined> = [];
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(703),
+      authAutoLoginMutate: async () => ({
+        ok: true,
+        source: "managed_local",
+        session: {
+          token: "auto-login-token",
+          issuedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          claims: {
+            authId: "wallet_evm:0x0000000000000000000000000000000000000001",
+            profileId: "profile-1",
+            admin: true,
+            superadmin: true,
+          },
+          profile: {
+            profileId: "profile-1",
+            identifiers: [{ kind: "wallet_evm", value: "0x0000000000000000000000000000000000000001" }],
+            metadata: { displayName: "Owner" },
+            iconUrl: "http://127.0.0.1:4591/media/profiles/profile-1/icon",
+            isVirtual: false,
+          },
+        },
+      }),
+      authStoreAutoLoginKeyMutate: async (payload) => {
+        storedKeyPayloads.push(payload);
+        return {
+          ok: true,
+          authId: "wallet_evm:0x0000000000000000000000000000000000000001",
+          source: payload?.privateKey ? "provided" : "managed_local",
+          localEnvPath: "~/.agenter/local.env",
+        };
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+
+    await expect(store.autoLogin()).resolves.toMatchObject({
+      ok: true,
+      source: "managed_local",
+      session: {
+        token: "auto-login-token",
+        claims: {
+          superadmin: true,
+        },
+      },
+    });
+    await expect(store.storeAutoLoginKey({ privateKey: " 0xabc123 " })).resolves.toEqual({
+      ok: true,
+      authId: "wallet_evm:0x0000000000000000000000000000000000000001",
+      source: "provided",
+      localEnvPath: "~/.agenter/local.env",
+    });
+    await expect(store.storeAutoLoginKey()).resolves.toEqual({
+      ok: true,
+      authId: "wallet_evm:0x0000000000000000000000000000000000000001",
+      source: "managed_local",
+      localEnvPath: "~/.agenter/local.env",
+    });
+    expect(storedKeyPayloads).toEqual([{ privateKey: "0xabc123" }, undefined]);
+
+    store.disconnect();
   });
 
   test("Scenario: Given profile-service endpoint discovery When building icon and WebAuthn URLs Then runtime store targets the independent service", async () => {
@@ -4763,6 +4905,9 @@ describe("Feature: runtime store synchronization", () => {
         rootAuthBootstrapMode: "managed_local",
         canRevealRootAuthPrivateKey: true,
         hasManagedRootAuthPrivateKey: true,
+        browserAutoLoginKeyPath: "~/.agenter/local.env",
+        browserAutoLoginConfigured: false,
+        browserAutoLoginBootstrapAvailable: true,
       }),
     });
     const store = new RuntimeStore(client);

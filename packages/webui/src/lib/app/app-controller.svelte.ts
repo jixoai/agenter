@@ -1,7 +1,12 @@
 import { createAgenterClient, createRuntimeStore, type RuntimeStore } from '@agenter/client-sdk';
 
 import { resolveWalletAuthIdentity, signWalletAuthChallenge } from './private-key-auth';
-import { readStoredAuthToken, writeStoredAuthToken } from './auth-session-storage';
+import {
+	consumeSkipAutoLoginOnce,
+	markSkipAutoLoginOnce,
+	readStoredAuthToken,
+	writeStoredAuthToken,
+} from './auth-session-storage';
 import { resolveAgenterWsUrl } from './ws-url';
 import type { AppController } from './types';
 
@@ -67,6 +72,7 @@ export const createAppController = (): AppController => {
 	});
 	const runtimeStore = createRuntimeStore(client);
 	let started = false;
+	let runtimeConnected = false;
 	let unsubscribeRuntime: (() => void) | null = null;
 
 	const controller = $state<AppController>({
@@ -74,17 +80,18 @@ export const createAppController = (): AppController => {
 		runtimeState: runtimeClone(runtimeStore),
 		authService: null,
 		authSession: null,
+		authBootstrapState: 'connecting',
 		authActors: [],
 		profiles: [],
 		initializing: true,
 		refreshing: false,
 		authBusy: false,
-		statusText: 'Connecting to agenter runtime…',
+		statusText: 'Connecting to agenter auth…',
 		start: async () => {},
 		stop: () => {},
 		refreshBootstrap: async () => {},
 		authenticateWithPrivateKey: async () => {},
-		revealManagedRootKey: async () => '',
+		storeAutoLoginKey: async () => {},
 		signOut: async () => {},
 	});
 
@@ -92,32 +99,89 @@ export const createAppController = (): AppController => {
 		controller.runtimeState = runtimeClone(runtimeStore);
 	};
 
-	const refreshAuthState = async (): Promise<void> => {
-		controller.authService = await runtimeStore.getAuthServiceDescriptor();
-		const session = await runtimeStore.getAuthSession();
-		controller.authSession = session;
-		if (!session) {
-			runtimeStore.clearAuthToken();
-			writeStoredAuthToken(null);
+	const resetUnauthenticatedState = (statusText: string): void => {
+		controller.authSession = null;
+		controller.authActors = [];
+		controller.profiles = [];
+		controller.authBootstrapState = 'needs-login';
+		controller.statusText = statusText;
+		controller.initializing = false;
+		syncRuntimeState();
+	};
+
+	const ensureRuntimeSubscription = (): void => {
+		if (unsubscribeRuntime) {
+			return;
 		}
+		unsubscribeRuntime = runtimeStore.subscribe(() => {
+			syncRuntimeState();
+		});
+	};
+
+	const ensureRuntimeConnection = async (): Promise<void> => {
+		if (runtimeConnected) {
+			return;
+		}
+		ensureRuntimeSubscription();
+		runtimeConnected = true;
+		await runtimeStore.connect();
+		syncRuntimeState();
+	};
+
+	const hydrateAuthenticatedState = async (): Promise<void> => {
+		await ensureRuntimeConnection();
+		controller.authActors = await runtimeStore.listAuthActors();
+		controller.profiles = (await runtimeStore.listProfiles()).items.map(toProfileReference);
+		await runtimeStore.listAllWorkspaces();
+		await runtimeStore.listRecentWorkspaces(32);
+		syncRuntimeState();
+	};
+
+	const applyAuthenticatedSession = async (session: NonNullable<AppController['authSession']>): Promise<void> => {
+		controller.authSession = session;
+		controller.authBootstrapState = 'authenticated';
+		await hydrateAuthenticatedState();
+		controller.initializing = false;
+		controller.statusText = `Connected as ${session.profile.metadata.displayName ?? session.profile.metadata.nickname ?? session.claims.authId}`;
 	};
 
 	const refreshBootstrap = async (): Promise<void> => {
 		controller.refreshing = true;
-		controller.statusText = 'Refreshing runtime, auth, profiles, and workspace catalog…';
 		try {
-			await refreshAuthState();
-			controller.authActors = await runtimeStore.listAuthActors();
-			controller.profiles = (await runtimeStore.listProfiles()).items.map(toProfileReference);
-			await runtimeStore.listAllWorkspaces();
-			await runtimeStore.listRecentWorkspaces(32);
-			syncRuntimeState();
-			controller.statusText = controller.authSession
-				? `Connected as ${controller.authSession.profile.metadata.displayName ?? controller.authSession.profile.metadata.nickname ?? controller.authSession.claims.authId}`
-				: 'Connected. Superadmin key is not bound in this browser yet.';
+			controller.authService = await runtimeStore.getAuthServiceDescriptor({ force: true });
+			controller.authBootstrapState = 'checking-session';
+			controller.statusText = 'Checking browser auth session…';
+			const storedSession = await runtimeStore.getAuthSession();
+			if (storedSession) {
+				await applyAuthenticatedSession(storedSession);
+				return;
+			}
+
+			runtimeStore.clearAuthToken();
+			writeStoredAuthToken(null);
+			controller.authSession = null;
+
+			if (!consumeSkipAutoLoginOnce()) {
+				controller.authBootstrapState = 'auto-login';
+				controller.statusText = 'Attempting daemon auto login…';
+				const autoLogin = await runtimeStore.autoLogin();
+				if (autoLogin.ok) {
+					runtimeStore.setAuthToken(autoLogin.session.token);
+					writeStoredAuthToken(autoLogin.session.token);
+					await applyAuthenticatedSession(autoLogin.session);
+					return;
+				}
+				resetUnauthenticatedState(autoLogin.message || 'Sign in to continue.');
+				return;
+			}
+
+			resetUnauthenticatedState('Sign in to continue.');
+		} catch (error) {
+			controller.authBootstrapState = 'error';
+			controller.initializing = false;
+			controller.statusText = error instanceof Error ? error.message : String(error);
 		} finally {
 			controller.refreshing = false;
-			controller.initializing = false;
 		}
 	};
 
@@ -126,16 +190,12 @@ export const createAppController = (): AppController => {
 			return;
 		}
 		started = true;
-		unsubscribeRuntime = runtimeStore.subscribe(() => {
-			syncRuntimeState();
-		});
-		await runtimeStore.connect();
-		syncRuntimeState();
 		await refreshBootstrap();
 	};
 
 	const stop = (): void => {
 		started = false;
+		runtimeConnected = false;
 		unsubscribeRuntime?.();
 		unsubscribeRuntime = null;
 		runtimeStore.disconnect();
@@ -145,7 +205,7 @@ export const createAppController = (): AppController => {
 		controller.authBusy = true;
 		controller.statusText = 'Signing wallet challenge…';
 		try {
-			controller.authService = await runtimeStore.getAuthServiceDescriptor();
+			controller.authService = await runtimeStore.getAuthServiceDescriptor({ force: true });
 			const identity = resolveWalletAuthIdentity(privateKey);
 			const descriptor = await runtimeStore.startAuthChallenge(identity.authId);
 			const signedChallenge = await signWalletAuthChallenge(privateKey, descriptor.challengeText);
@@ -155,19 +215,29 @@ export const createAppController = (): AppController => {
 			});
 			runtimeStore.setAuthToken(verified.token);
 			writeStoredAuthToken(verified.token);
-			await refreshBootstrap();
+			await applyAuthenticatedSession(verified);
+		} catch (error) {
+			resetUnauthenticatedState(error instanceof Error ? error.message : String(error));
 		} finally {
 			controller.authBusy = false;
 		}
 	};
 
-	const revealManagedRootKey = async (): Promise<string> => {
+	const storeAutoLoginKey = async (privateKey?: string | null): Promise<void> => {
 		controller.authBusy = true;
-		controller.statusText = 'Requesting backend-managed root private key…';
+		controller.statusText = 'Configuring daemon auto login…';
 		try {
-			const revealed = await runtimeStore.revealManagedRootAuthPrivateKey();
-			controller.statusText = `Loaded backend-managed root key for ${revealed.authId}`;
-			return revealed.privateKey;
+			await runtimeStore.storeAutoLoginKey({
+				privateKey: privateKey?.trim() ? privateKey.trim() : undefined,
+			});
+			controller.authService = await runtimeStore.getAuthServiceDescriptor({ force: true });
+			if (!controller.authSession) {
+				await refreshBootstrap();
+				return;
+			}
+			controller.statusText = 'Daemon auto login is configured for this machine.';
+		} catch (error) {
+			controller.statusText = error instanceof Error ? error.message : String(error);
 		} finally {
 			controller.authBusy = false;
 		}
@@ -176,6 +246,11 @@ export const createAppController = (): AppController => {
 	const signOut = async (): Promise<void> => {
 		runtimeStore.clearAuthToken();
 		writeStoredAuthToken(null);
+		markSkipAutoLoginOnce();
+		if (typeof window !== 'undefined') {
+			window.location.reload();
+			return;
+		}
 		await refreshBootstrap();
 	};
 
@@ -183,7 +258,7 @@ export const createAppController = (): AppController => {
 	controller.stop = stop;
 	controller.refreshBootstrap = refreshBootstrap;
 	controller.authenticateWithPrivateKey = authenticateWithPrivateKey;
-	controller.revealManagedRootKey = revealManagedRootKey;
+	controller.storeAutoLoginKey = storeAutoLoginKey;
 	controller.signOut = signOut;
 
 	return controller;
