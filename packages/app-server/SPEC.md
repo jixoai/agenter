@@ -58,17 +58,21 @@
 - semantic judge 如果出现 empty / malformed / disagreeing outputs，必须暴露 per-attempt diagnostics；单次低 token judge 的脆弱输出不能直接成为最终验收真相。
 - real-AI integration tests 对 meaning-level 行为必须优先使用 semantic-judge-backed checks 或结构化行为提取；只有 deliberate protocol literal 才允许继续使用 exact-string assertions。
 - runtime model call 只暴露两个 direct tools：`root_workspace_list` 与 `root_workspace_bash`。message / workspace / terminal / attention 的操作都必须通过 root workspace shell 中的 CLI 命令完成。
-- runtime `systemPrompt` 只保留稳定 attention law 与 `skills.list`；`SYSTEMS_GUIDE` 一类 provider-owned bootstrap guide 必须保持为空。
+- runtime `systemPrompt` 只保留稳定 attention law 与共享身份槽位；runtime-generated `skills.list` 必须通过 attention-backed readonly slot 注入，而不是重新拼回 `systemPrompt`；`SYSTEMS_GUIDE` 一类 provider-owned bootstrap guide 必须保持为空。
 - runtime 必须为 root workspace shell 注入 loopback-local API 环境：CLI 通过 runtime-local base URL + avatar private key 访问 attention / message / workspace / terminal contract。private key 就是 runtime identity。
 - runtime-local shell/API 必须由共享 tool descriptor registry 驱动：route、description、`inputSchema`、`--help` 和 canonical JSON examples 不能各写一份。
 - descriptor-backed runtime CLI 是 JSON-only contract：只接受空输入、单个 JSON argv、或 JSON stdin；不再提供 positional / natural-flag façade 兼容。
-- runtime-facing prompt / skill / error guidance 必须保持 stateless：当命令参数不匹配时，只能客观说明当前 contract、并引导 AI 使用 `<command> --help` 或 `ccski info <skill>` 获取详情；不得暗示“旧语法”“之前的规则”或“记忆残留”。
+- runtime-facing prompt / skill / error guidance 必须保持 stateless：当命令参数不匹配时，只能客观说明当前 contract、并引导 AI 使用 `<command> --help` 或 `skill info <skill>` 获取详情；不得暗示“旧语法”“之前的规则”或“记忆残留”。
 - runtime built-in skills 必须由 owning package 在 `skills/**/SKILL.md` 中维护，并通过 app-server build step 聚合成 generated catalog；runtime 不得再把这些 built-ins materialize 到 `<rootWorkspace>/skills`。
-- runtime built-in `SKILL.md` 必须保持 concise overview-first，并把 deeper material 下沉到同目录 `references/*.md`；全局 prompt 与 `skills.list` 必须把 `skills.list -> ccski info <skill> -> 只读所需 reference file` 作为 canonical discovery path。
+- runtime skill system 的 durable truth 是可见 skill 的 on-disk files，而不是 prompt glue：shared / global / avatar skills 直接读盘；indexed built-in skills 在 source path 存在时也必须优先读当前磁盘文件，generated catalog 只负责 discovery baseline。
+- runtime built-in `SKILL.md` 必须保持 concise overview-first，并把 deeper material 下沉到同目录 `references/*.md`；attention-backed runtime skill snapshot 与全局提示必须把 `skills.list -> skill info <skill> -> 只读所需 reference file` 作为 canonical discovery path。
+- `ccski.config.json` 是 skill watcher 的唯一扩展入口：默认 live truth 只包含 `SKILL.md + ccski.config.json`，额外 watched files 只能来自 config `files[]` 声明；未声明 sibling file 的 churn 不得升级成 skill change。
+- watcher 事件只是 dirtiness hint；runtime 必须在下一次模型输入收集边界重新读盘并按 skill 聚合 attention reminder，空闲时再由 debounce fallback 触发同样的刷新。
+- `skill get-config/set-config` 是受控 metadata surface：它只能暴露 config JSON、path metadata 与 resolved watch targets；built-in `set-config` 只有在 runtime 已拥有对应 package source path 的 workspace `rw` authority 时才允许写入。
 - 外部事实型任务的人格偏好必须落在 `AGENTER.mdx`：当事实依赖当前世界或外部网络且可能变化时，Avatar 先做简短确认，再通过 shell 或其它可观察工具查证，最后只回复查证后的结果；这里表达的是 general shell-first bias，不得把某个天气/搜索 recipe 写成唯一 workflow。
 - runtime shell guidance 必须把 `root_workspace_bash` 的 outbound network verification 明确成客观能力边界，而不是在 runtime skills 里塞满固定查询脚本。
 - system-owned skill 必须只解释本 system 的义务语义与操作风格，尤其是如何理解和处理该 system 提交的 attention items；例如 message skill 应该教 AI 何时确认、何时回复、何时不要刷屏，而不是代替 terminal / workspace / network 系统承载底层可靠性细节。
-- `ccski list/info/search` 必须把 built-in catalog 视为最低优先级 baseline，再叠加 `~/.agents/skills`、`~/.agenter/skills`、`<rootWorkspace>/skills` 的 on-disk skills；同名时由 on-disk skill 覆盖 built-in。
+- `skill list/info/search` 必须把 built-in catalog 视为最低优先级 baseline，再叠加 `~/.agents/skills`、`~/.agenter/skills`、`<rootWorkspace>/skills` 的 on-disk skills；同名时由 on-disk skill 覆盖 built-in。
 - real-provider 的外部事实验收必须使用测试专用 Avatar + 专用 `AGENTER.mdx`，并在失败时输出 durable diagnostics：room truth、recent model calls、tool trace，以及 Avatar / prompt source identity。
 
 ## 5. Reactive Contract

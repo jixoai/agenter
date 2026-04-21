@@ -13,8 +13,8 @@ Each AI model round SHALL receive only root workspace primitives as direct tools
 - **THEN** the direct tool list contains `root_workspace_list` and `root_workspace_bash`
 - **AND** it does not include `attention_*`, `message_*`, or `terminal_*` direct tools
 
-### Requirement: Runtime SHALL publish a skills list for progressive discovery
-Each AI model round SHALL include a lightweight `skills.list` summary built from runtime-visible skill sources. The list SHALL include discovery metadata only, while detailed instructions and examples remain available through CLI-driven expansion.
+### Requirement: Runtime SHALL publish an attention-backed skills list for progressive discovery
+Each AI model round SHALL include a lightweight attention-backed `skills.list` summary built from runtime-visible skill sources. The summary SHALL live in the runtime skill context's readonly slot, include discovery metadata only, and leave detailed instructions and examples available through CLI-driven expansion.
 
 #### Scenario: Skills list reflects runtime-visible sources only
 - **WHEN** the runtime builds `skills.list` for avatar `principal-123`
@@ -45,12 +45,31 @@ Each started runtime SHALL expose a loopback-local API surface for attention, me
 - **AND** the command does not receive protected runtime data
 
 ### Requirement: Root workspace bash SHALL expose runtime CLI commands in-shell
-The shell environment behind `root_workspace_bash` SHALL provide CLI commands for `attention`, `message`, `workspace`, `terminal`, `ccski`, and `tool`.
+The shell environment behind `root_workspace_bash` SHALL provide CLI commands for `attention`, `message`, `workspace`, `terminal`, `skill`, and `tool`.
 
 #### Scenario: Shell exposes CLI commands as normal command names
-- **WHEN** the AI runs `which attention`, `which workspace`, or `which ccski` inside `root_workspace_bash`
+- **WHEN** the AI runs `which attention`, `which workspace`, or `which skill` inside `root_workspace_bash`
 - **THEN** each command is discoverable and executable from that shell session
 - **AND** each command obeys the same mount and credential boundaries as the runtime
+
+### Requirement: Skill CLI SHALL expose controlled config inspection and replacement
+The public `skill` surface SHALL expose `get-config` and `set-config` for per-skill watcher metadata, without becoming a general-purpose file read/write surface for arbitrary skill-directory files.
+
+#### Scenario: Get-config returns watcher metadata instead of arbitrary sibling file contents
+- **WHEN** the AI runs `skill get-config` for a visible skill
+- **THEN** the runtime returns skill identity, `skillDir`, `skillPath`, `configPath`, config existence, parsed config, and resolved watch targets
+- **AND** it does not return arbitrary undeclared sibling file contents
+
+#### Scenario: Set-config replaces the whole config object and refreshes watcher topology
+- **WHEN** the AI runs `skill set-config` with a new config object
+- **THEN** the runtime replaces the entire `ccski.config.json` payload
+- **AND** it recalculates the watched-file topology immediately
+
+#### Scenario: Built-in config writes require pre-existing workspace authority
+- **GIVEN** a visible built-in skill resolves to a package-owned source path
+- **WHEN** the AI runs `skill set-config` for that built-in skill
+- **THEN** the write succeeds only if the runtime already has `rw` workspace authority covering that config path
+- **AND** the `skill` surface itself does not grant any new filesystem authority
 
 #### Scenario: Collaboration skill teaches role and correction law
 - **GIVEN** an avatar is collaborating with other avatars in a shared room

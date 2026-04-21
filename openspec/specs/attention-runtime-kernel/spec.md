@@ -74,11 +74,12 @@ As long as one or more attention items still have `score >= 1`, the runtime SHAL
 - **THEN** raw plain-text output from that round does not become a user-visible Chat reply unless a message egress adapter later dispatches a committed attention outcome
 
 ### Requirement: Runtime SHALL keep system prompt provider-agnostic and stable
-The runtime kernel SHALL assemble the model `systemPrompt` only from stable attention law, shared identity slots, and the runtime-generated `skills.list`. Tool providers and system adapters SHALL NOT inject provider-owned system guides into `systemPrompt`, and dynamic system details SHALL NOT be serialized into bootstrap help blocks.
+The runtime kernel SHALL assemble the model `systemPrompt` only from stable attention law and shared identity slots. The runtime-generated `skills.list` SHALL travel through the attention-backed bootstrap context as a readonly slot instead of being concatenated into `systemPrompt`. Tool providers and system adapters SHALL NOT inject provider-owned system guides into `systemPrompt`, and dynamic system details SHALL NOT be serialized into bootstrap help blocks.
 
-#### Scenario: Skills list replaces injected system guides
+#### Scenario: Skills list moves to the attention bootstrap context
 - **WHEN** a model call is prepared with active message, terminal, workspace, and future systems
-- **THEN** the outbound `systemPrompt` includes stable prompt law plus `skills.list`
+- **THEN** the outbound `systemPrompt` includes only stable prompt law plus shared identity slots
+- **AND** the readonly attention context slot for `skills.list` carries the runtime-generated skill snapshot
 - **AND** it does not embed provider-owned message, terminal, task, or workspace guide sections
 
 #### Scenario: Active providers do not inject system guides into system prompt
@@ -123,7 +124,7 @@ The runtime kernel SHALL provide the current avatar identity to shared prompt do
 - **AND** the prompt assembly does not leave unresolved `AVATAR_NAME` placeholders in the final `systemPrompt`
 
 ### Requirement: Runtime guidance SHALL teach ordinary-user delivery and resource recovery
-The runtime SHALL provide shared prompt law plus dynamic system guides that are strong enough for ordinary-user requests. Those guides SHALL help the model translate vague intent into delivery work, recover missing runtime resources through tools, and coordinate clearly in shared rooms without needing scripted user instructions.
+The runtime SHALL provide shared prompt law plus attention-backed dynamic system guidance that is strong enough for ordinary-user requests. That guidance SHALL help the model translate vague intent into delivery work, recover missing runtime resources through tools, and coordinate clearly in shared rooms without needing scripted user instructions.
 
 #### Scenario: Message guidance keeps replies plain and outcome-oriented for non-technical users
 - **WHEN** a user asks for software help in ordinary language

@@ -20,11 +20,11 @@ Each built-in skill MAY expose deeper guidance through sibling `references/*.md`
 - **AND** those reference files remain under the same skill directory as the owning `SKILL.md`
 
 ### Requirement: Global runtime prompts SHALL teach real-path skill expansion
-The global runtime prompts SHALL teach AI to expand skill detail progressively by using `skills.list`, then `ccski info <skill>`, then reading only the needed sibling reference files from the real filesystem path returned by `ccski info`.
+The global runtime prompts and attention-backed runtime skill snapshot SHALL teach AI to expand skill detail progressively by using `skills.list`, then `skill info <skill>`, then reading only the needed sibling reference files from the real filesystem path returned by `skill info`.
 
 #### Scenario: AI learns to expand one reference file on demand
 - **WHEN** the runtime prompt explains how to use skills
-- **THEN** it states that `ccski info <skill>` returns the real `SKILL.md` path
+- **THEN** it states that `skill info <skill>` returns the real `SKILL.md` path
 - **AND** it instructs the model to inspect only the needed `references/*.md` files via shell from that path when more detail is required
 
 ### Requirement: Atomic built-in skills SHALL avoid cross-system delivery workaround detail in their overview body
@@ -50,4 +50,3 @@ Runtime guidance SHALL keep persona and thinking-style bias in `AGENTER.mdx`, wh
 - **WHEN** the system teaches Avatar behavior for external-fact tasks
 - **THEN** the personality bias lives in `AGENTER.mdx`
 - **AND** runtime skill docs focus on how the shell surface works and how to expand deeper references when needed
-

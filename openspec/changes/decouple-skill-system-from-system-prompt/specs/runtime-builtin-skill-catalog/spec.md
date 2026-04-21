@@ -1,28 +1,7 @@
-# runtime-builtin-skill-catalog Specification
-
-## Purpose
-Define package-owned runtime skill sources, generated runtime catalogs, and override precedence for built-in skills.
-
-## Requirements
-
-### Requirement: Runtime built-in skills SHALL be authored in package-owned skill source directories
-The system SHALL store each runtime built-in skill in the owning package under `skills/**/SKILL.md`, instead of centralizing the full skill body in `app-server` runtime code.
-
-#### Scenario: Terminal skill is owned by terminal-system
-- **WHEN** the runtime exposes the built-in `agenter-terminal` skill
-- **THEN** its source of truth lives under `packages/terminal-system/skills/**/SKILL.md`
-- **AND** `app-server` does not hand-write a second full copy of that skill body in runtime code
-
-### Requirement: Build tooling SHALL aggregate package-owned skill sources into one runtime catalog
-The system SHALL aggregate package-owned skill sources into a generated runtime catalog that app-server can load directly at runtime.
-
-#### Scenario: Generated catalog includes package-owned skill metadata and body templates
-- **WHEN** the runtime skill catalog builder scans package skill sources
-- **THEN** it produces one generated catalog entry per built-in skill
-- **AND** each entry contains the skill name, summary, source path, owning package metadata, and body template needed for runtime rendering
+## MODIFIED Requirements
 
 ### Requirement: Runtime SHALL render built-in skills from the generated catalog without writing them into root workspace storage
-The runtime SHALL expose built-in skills through `skill list/info/search` from the generated catalog, and SHALL not materialize those built-ins into `<rootWorkspace>/skills`.
+The runtime SHALL expose built-in skills through the dedicated `skill list/info/search` surface from the generated catalog, and SHALL not materialize those built-ins into `<rootWorkspace>/skills`.
 
 #### Scenario: Built-in skills are discoverable without root workspace writes
 - **WHEN** a runtime boots and the model calls `skill list`
@@ -38,7 +17,7 @@ The runtime SHALL expand only bounded runtime slots inside built-in skill templa
 - **AND** descriptor-backed example sections are expanded from the current runtime tool descriptors instead of hard-coded duplicate example strings
 
 ### Requirement: Existing built-in skill source paths SHALL stay live as runtime truth
-For built-in skills already indexed by the generated catalog, the runtime SHALL prefer the current on-disk `SKILL.md` and sibling config file at that source path when those files exist, so edits to existing built-in skill sources can refresh without reintroducing prompt-bound glue.
+For built-in skills already indexed by the generated catalog, the runtime SHALL prefer the current on-disk `SKILL.md` and sibling config file at that source path when those files exist, so edits to existing built-in skill sources can refresh without a prompt-bound compatibility path.
 
 #### Scenario: Existing built-in skill source edits are visible without workspace materialization
 - **WHEN** a package-owned built-in skill source file changes on disk

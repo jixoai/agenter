@@ -4,12 +4,17 @@
 Define the shared descriptor registry that drives runtime-local API routes, shell CLI parsing, and schema-backed help for runtime commands.
 ## Requirements
 ### Requirement: Runtime SHALL define shell/API tool surfaces from a shared descriptor registry
-The runtime SHALL define `attention`, `message`, `workspace`, and `terminal` shell/API operations from one shared descriptor registry that owns command name, description, input schema, route, and execution mapping.
+The runtime SHALL define `attention`, `message`, `workspace`, `terminal`, and descriptor-backed `skill` shell/API operations from one shared descriptor registry that owns command name, description, input schema, route, and execution mapping.
 
 #### Scenario: CLI and local API dispatch the same descriptor
 - **WHEN** the runtime exposes `terminal write`
 - **THEN** the loopback-local API route, shell CLI subcommand, and `--help` output are all derived from the same descriptor entry
 - **AND** the system does not maintain a second hand-written parser or route mapping for that operation
+
+#### Scenario: Skill config mutation uses the same descriptor contract
+- **WHEN** the runtime exposes `skill set-config`
+- **THEN** the loopback-local API route, shell CLI subcommand, and `--help` output are all derived from the same descriptor entry
+- **AND** the runtime does not maintain a second hand-written parser for the same config payload
 
 ### Requirement: Runtime CLI SHALL accept only canonical JSON payload forms
 The AI-facing shell CLI SHALL accept only canonical JSON payload forms for descriptor-backed subcommands: empty input when the schema allows `{}`, one JSON argv payload, or JSON stdin payload. When `--compact` is present, the payload source SHALL be a compact JSON array derived from the descriptor schema instead of an object JSON payload.
@@ -50,7 +55,7 @@ Built-in runtime skills SHALL teach descriptor-backed CLI usage using only canon
 #### Scenario: Built-in skills stop teaching natural flag forms
 - **WHEN** the runtime renders built-in skill content for `agenter-message` or `agenter-terminal`
 - **THEN** the examples use JSON argv or JSON stdin payloads
-- **AND** the content points the model to `message send --help`, `terminal write --help`, or `ccski info` for discovery
+- **AND** the content points the model to `message send --help`, `terminal write --help`, or `skill info` for discovery
 - **AND** it does not teach `--room`, `--content`, `--input`, or positional payload syntax as valid command forms
 
 ### Requirement: Runtime CLI SHALL preserve UTF-8 JSON payload fidelity
