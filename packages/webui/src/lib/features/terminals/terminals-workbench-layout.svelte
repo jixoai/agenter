@@ -1,12 +1,13 @@
 <script lang="ts">
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
 	import { goto } from '$app/navigation';
 
 	import { page } from '$app/state';
 	import type { Snippet } from 'svelte';
 
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { getAppControllerContext } from '$lib/app/controller-context';
+	import WorkbenchToolbarStatus from '$lib/features/navigation/workbench-toolbar-status.svelte';
 	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
 	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
@@ -117,20 +118,55 @@
 			},
 		] satisfies WorkbenchTabItem[];
 	});
+	const terminalToolbarSubtitle = 'Resume an existing terminal tab or open a new shared terminal.';
 </script>
 
-{#snippet terminalsToolbarMeta(_toolbarState: WorkbenchToolbarRenderState)}
-	<Badge variant="outline" class="bg-background/70">{visibleTerminals.length} open tabs</Badge>
-	<Badge variant="outline" class="bg-background/70">
-		{controller.runtimeState.globalTerminals.data.length} total terminals
-	</Badge>
-	{#if dismissedTerminalIds.length > 0}
-		<Badge variant="outline" class="bg-background/70">{dismissedTerminalIds.length} hidden tabs</Badge>
-	{/if}
+{#snippet terminalsToolbarIdentityLeading(_toolbarState: WorkbenchToolbarRenderState)}
+	<SquareTerminalIcon class="size-4 text-muted-foreground" />
+{/snippet}
+
+{#snippet terminalsToolbarIdentityTitle(_toolbarState: WorkbenchToolbarRenderState)}
+	<span class="truncate">Shared terminals</span>
+{/snippet}
+
+{#snippet terminalsToolbarIdentitySubtitle(_toolbarState: WorkbenchToolbarRenderState)}
+	<span class="truncate">{terminalToolbarSubtitle}</span>
+{/snippet}
+
+{#snippet terminalsToolbarStatus(toolbarState: WorkbenchToolbarRenderState)}
+	<div
+		class:justify-start={toolbarState.placement === 'overflow'}
+		class="flex min-w-0 flex-wrap items-center gap-1"
+	>
+		<WorkbenchToolbarStatus
+			placement={toolbarState.placement}
+			label={`${visibleTerminals.length} open tabs`}
+			title={`${visibleTerminals.length} visible terminal tabs`}
+		/>
+		<WorkbenchToolbarStatus
+			placement={toolbarState.placement}
+			label={`${controller.runtimeState.globalTerminals.data.length} total`}
+			title={`${controller.runtimeState.globalTerminals.data.length} total terminals`}
+			tone="accent"
+		/>
+		{#if dismissedTerminalIds.length > 0}
+			<WorkbenchToolbarStatus
+				placement={toolbarState.placement}
+				label={`${dismissedTerminalIds.length} hidden`}
+				title={`${dismissedTerminalIds.length} hidden terminal tabs`}
+			/>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet terminalsToolbar()}
-	<WorkbenchToolbar meta={terminalsToolbarMeta} />
+	<WorkbenchToolbar
+		identityLeading={terminalsToolbarIdentityLeading}
+		identityTitle={terminalsToolbarIdentityTitle}
+		identitySubtitle={terminalsToolbarIdentitySubtitle}
+		status={terminalsToolbarStatus}
+		overflowLabel="Open terminal toolbar details"
+	/>
 {/snippet}
 
 <div class="h-full" data-testid="terminals-workbench">

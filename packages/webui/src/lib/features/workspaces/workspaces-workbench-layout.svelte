@@ -5,8 +5,8 @@
 	import { page } from '$app/state';
 	import type { Snippet } from 'svelte';
 
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { getAppControllerContext } from '$lib/app/controller-context';
+	import WorkbenchToolbarStatus from '$lib/features/navigation/workbench-toolbar-status.svelte';
 	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
 	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
@@ -128,17 +128,48 @@
 	});
 
 	const activeTabValue = $derived(activeWorkspacePath ?? 'catalog');
+	const workspaceToolbarSubtitle = 'Choose one durable workspace root or resume an opened detail tab.';
 </script>
 
-{#snippet workspacesToolbarMeta(_toolbarState: WorkbenchToolbarRenderState)}
-	<Badge variant="outline" class="bg-background/70">{controller.runtimeState.workspaces.length} workspaces</Badge>
-	<Badge variant="outline" class="bg-background/70">
-		{controller.runtimeState.workspaces.filter((entry) => entry.favorite).length} favorites
-	</Badge>
+{#snippet workspacesToolbarIdentityLeading(_toolbarState: WorkbenchToolbarRenderState)}
+	<FolderKanbanIcon class="size-4 text-muted-foreground" />
+{/snippet}
+
+{#snippet workspacesToolbarIdentityTitle(_toolbarState: WorkbenchToolbarRenderState)}
+	<span class="truncate">Workspace roots</span>
+{/snippet}
+
+{#snippet workspacesToolbarIdentitySubtitle(_toolbarState: WorkbenchToolbarRenderState)}
+	<span class="truncate">{workspaceToolbarSubtitle}</span>
+{/snippet}
+
+{#snippet workspacesToolbarStatus(toolbarState: WorkbenchToolbarRenderState)}
+	<div
+		class:justify-start={toolbarState.placement === 'overflow'}
+		class="flex min-w-0 flex-wrap items-center gap-1"
+	>
+		<WorkbenchToolbarStatus
+			placement={toolbarState.placement}
+			label={`${controller.runtimeState.workspaces.length} roots`}
+			title={`${controller.runtimeState.workspaces.length} workspace roots`}
+		/>
+		<WorkbenchToolbarStatus
+			placement={toolbarState.placement}
+			label={`${controller.runtimeState.workspaces.filter((entry) => entry.favorite).length} favorites`}
+			title={`${controller.runtimeState.workspaces.filter((entry) => entry.favorite).length} favorite roots`}
+			tone="accent"
+		/>
+	</div>
 {/snippet}
 
 {#snippet workspacesToolbar()}
-	<WorkbenchToolbar meta={workspacesToolbarMeta} />
+	<WorkbenchToolbar
+		identityLeading={workspacesToolbarIdentityLeading}
+		identityTitle={workspacesToolbarIdentityTitle}
+		identitySubtitle={workspacesToolbarIdentitySubtitle}
+		status={workspacesToolbarStatus}
+		overflowLabel="Open workspace toolbar details"
+	/>
 {/snippet}
 
 <div class="h-full" data-testid="workspaces-workbench">
