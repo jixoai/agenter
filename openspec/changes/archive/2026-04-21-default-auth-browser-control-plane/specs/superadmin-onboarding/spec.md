@@ -1,9 +1,6 @@
 # superadmin-onboarding Specification
 
-## Purpose
-Define the first-run browser auth bootstrap flow that verifies stored sessions, attempts daemon auto login, and falls back to explicit superadmin onboarding before global admin UX proceeds.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Startup without a valid auth session SHALL enter explicit superadmin onboarding
 
@@ -25,19 +22,6 @@ When the application has no valid stored auth session, the client SHALL verify a
 - **THEN** the client attempts daemon-mediated automatic login before falling back to onboarding
 - **THEN** the app does not remain in a broken half-authenticated state
 
-### Requirement: Onboarding SHALL support manual private-key authentication and daemon-managed auto-login bootstrap
-The onboarding flow SHALL support binding an existing private key for immediate login, and it SHALL also expose a daemon-managed auto-login bootstrap action that stores local machine auth material without revealing raw root private key bytes to the browser.
-
-#### Scenario: User imports an existing root private key
-- **WHEN** the user pastes a valid root private key into onboarding
-- **THEN** the app can request a challenge, sign it, and bind a superadmin auth session
-- **THEN** onboarding exits into the normal workbench
-
-#### Scenario: User enables daemon-managed auto login without browser key reveal
-- **WHEN** the user clicks the onboarding action to store or bootstrap daemon-managed auto login
-- **THEN** the frontend calls the daemon bootstrap action instead of requesting raw private key material
-- **THEN** future automatic login can succeed without filling a revealed root private key into the browser input
-
 ### Requirement: Onboarding SHALL disclose root-auth bootstrap state
 
 The bootstrap contract SHALL disclose whether the daemon can automatically sign in the browser, whether machine-local auto-login key storage is available, and whether the backing auth authority is managed-local or external, without forcing the browser to guess.
@@ -52,10 +36,8 @@ The bootstrap contract SHALL disclose whether the daemon can automatically sign 
 - **THEN** onboarding reports that limitation explicitly
 - **THEN** the user is guided toward manual private-key import or the external bootstrap path instead of a broken daemon-managed button
 
-### Requirement: Superadmin onboarding SHALL keep the key-auth flow visible and operable on compact screens
-The WebUI SHALL render root-auth onboarding inside a dialog that keeps identity context, key entry, and authenticate actions visible without overlapping or losing scroll ownership on compact and desktop viewports.
+## REMOVED Requirements
 
-#### Scenario: Onboarding dialog derives from dialog scaffold law
-- **WHEN** the root-auth onboarding dialog content exceeds the available viewport
-- **THEN** the dialog chrome stays fixed through a shared dialog scaffold primitive
-- **THEN** only the dialog body scrolls while the authenticate actions remain available
+### Requirement: Onboarding SHALL support both import and backend generation/reveal
+**Reason**: Browser-facing raw managed-root-key reveal is removed from the normal control-plane contract so the browser no longer receives long-lived root private key material.
+**Migration**: Use manual private-key import for immediate authentication, or invoke the daemon-managed auto-login bootstrap action that stores the local key for future automatic sign-in without revealing it to the browser.

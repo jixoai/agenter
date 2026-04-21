@@ -88,7 +88,10 @@
 - `drafts.delete({ draftId, baseVersion? })` 只删除 durable draft resource，不表达 device-local tab close；删除缺失 draft 必须幂等成功且不产生 event。
 - `drafts.events({ afterEventId?, kind?, draftIds? })` 是 actor-private draft replay/subscription 面；draft lifecycle 的 live sync 与 resume 一律通过该 plane，而不是通过 runtime snapshot。
 - authenticated websocket subscription 必须接受 bearer token 的两条等价入口：标准 `Authorization` header，或 websocket `connectionParams.authorization`。
+- browser-facing daemon control plane 默认先走 browser auth boundary：router procedure 必须显式分成 `public`、`auth`、`superadmin` 三类；除登录/bootstrap allowlist 外，浏览器不可再匿名访问 machine-local control plane。
+- 匿名 browser allowlist 只允许 auth bootstrap surface：`auth.service`、`auth.challengeStart`、`auth.challengeVerify`、daemon-mediated `auth.autoLogin`、daemon-managed `auth.storeAutoLoginKey`；这些 surface 只返回 bootstrap 所需事实，不再把 raw root private key 暴露给浏览器。
 - 浏览器侧的 global message / terminal control plane 必须先通过 authenticated operator 边界，再进入 room/terminal capability 解析；`accessToken` 只表达 room/terminal seat capability，不能充当匿名浏览器身份。
+- browser-facing asset HTTP transport 必须服从同一 auth law：session asset upload/download 需要 superadmin browser auth，room asset upload/download 需要 authenticated browser auth；media GET 允许 `Authorization` bearer 或 browser-safe `authToken` query，用于 image/video/link surface 渲染，但不能恢复匿名访问。
 - `runtime.attention` 是运行态 attention 投影事件，不保证 stopped session 仍然持续发事件。
 - `notification.updated` 是 shell unread/projection 事件；它可以由 runtime attention 更新触发，也可以由 stopped-session persisted mutation 触发。
 - `session.updated` 进入 `stopped` 后，消费者必须接受：

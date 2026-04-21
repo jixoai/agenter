@@ -1,7 +1,7 @@
-## Purpose
+# session-image-assets Specification
 
-Define the per-session image asset lifecycle and retrieval contract for multimodal chat.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: Session image uploads SHALL be validated and persisted per session
 The system SHALL accept supported session asset uploads for a specific session only through an authenticated browser authority context, reject unsupported uploads, persist accepted files under that session, and return attachment metadata that can be referenced by chat messages. Supported kinds for this capability are `image`, `video`, and `file`.
 
@@ -18,20 +18,6 @@ The system SHALL accept supported session asset uploads for a specific session o
 - **WHEN** an authenticated browser caller uploads a file whose asset kind is not supported by the session asset contract
 - **THEN** the system rejects the upload and does not create attachment records
 
-### Requirement: Chat messages SHALL persist attachment references
-The system SHALL allow a user chat message to reference previously uploaded session asset identifiers, and those references SHALL be stored with the message block so they can be listed again later.
-
-#### Scenario: Chat send stores attachment references
-- **WHEN** the client sends a chat message with one or more uploaded session asset identifiers
-- **THEN** the stored chat message includes those attachment references and exposes them when chat messages are listed
-
-### Requirement: Quick Start SHALL preserve image context on first send
-The system SHALL allow Quick Start to create a session, upload pending session assets into that session, and submit the first message with those attachment references as one user flow.
-
-#### Scenario: Quick Start with pending assets creates a session-backed first message
-- **WHEN** the user starts a new session from Quick Start with pending attachments
-- **THEN** the system creates the session first, uploads the pending assets into that session, and stores the first chat message with the resulting attachment references
-
 ### Requirement: Stored session images SHALL be retrievable for chat rendering
 The system SHALL expose stored session assets through a retrievable media endpoint so the WebUI can render thumbnails, previews, and file metadata for persisted chat attachments, and that endpoint SHALL require authenticated browser authority.
 
@@ -43,14 +29,3 @@ The system SHALL expose stored session assets through a retrievable media endpoi
 - **WHEN** a browser caller requests a persisted session asset URL without authenticated browser authority
 - **THEN** the media endpoint rejects the request with an authorization failure
 - **THEN** persisted session attachments are not anonymously retrievable from the browser control plane
-
-### Requirement: Image asset lifecycle SHALL follow the session lifecycle
-The system SHALL treat session assets as session-owned records so archive and delete operations keep asset state consistent with the session.
-
-#### Scenario: Archiving keeps session assets with the archived session
-- **WHEN** a session with uploaded assets is archived
-- **THEN** the archived session still retains its asset files and attachment references
-
-#### Scenario: Deleting removes session assets with the session
-- **WHEN** a session with uploaded assets is permanently deleted
-- **THEN** the system removes the session's asset files and attachment references with it
