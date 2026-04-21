@@ -1,24 +1,26 @@
 <script lang="ts">
 	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right';
 	import BotIcon from '@lucide/svelte/icons/bot';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { ScrollView } from '@agenter/svelte-components';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
+	import { onMount } from 'svelte';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
-	import HelpHint from '$lib/components/web-components/help-hint.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
-	import { buildAvatarNewHref } from '$lib/features/avatars/avatar-workbench-location';
-	import { buildWorkspaceIndexHref } from '$lib/features/workspaces/workspace-location';
+	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
+	import { cn } from '$lib/utils.js';
+	import { buildAvatarCatalogHref, buildAvatarNewHref } from './avatar-workbench-location';
 	import { createAvatarCreateDraft } from './avatar-create-draft-resource';
+	import { buildWorkspaceIndexHref } from '$lib/features/workspaces/workspace-location';
 
 	const controller = getAppControllerContext();
 	type AvatarCatalogEntry = (typeof controller.runtimeState.globalAvatarCatalog.data)[number];
@@ -32,7 +34,9 @@
 	let copyNickname = $state('');
 	let copyBusy = $state(false);
 	let copyError = $state<string | null>(null);
-	let detailsOpen = $state(false);
+	let detailCompact = $state(false);
+	let detailOpen = $state(false);
+	let routeSyncReady = $state(false);
 
 	const catalogState = $derived(controller.runtimeState.globalAvatarCatalog);
 	const avatars = $derived(catalogState.data);
@@ -41,7 +45,9 @@
 		avatars.find((entry) => entry.nickname === selectedAvatar) ?? avatars[0] ?? null,
 	);
 	const selectedSession = $derived(
-		selectedEntry ? controller.runtimeState.sessions.find((session) => session.id === selectedEntry.runtimeId) ?? null : null,
+		selectedEntry
+			? controller.runtimeState.sessions.find((session) => session.id === selectedEntry.runtimeId) ?? null
+			: null,
 	);
 	const selectedStatusLabel = $derived(selectedSession?.status ?? 'stopped');
 	const selectedSessionActive = $derived(
@@ -58,7 +64,8 @@
 		return selectedSessionActive ? 'Open attention' : 'Start avatar';
 	});
 	const copyNicknameConflict = $derived(
-		copyNickname.trim().length > 0 && avatars.some((avatar) => avatar.nickname === copyNickname.trim().toLowerCase()),
+		copyNickname.trim().length > 0 &&
+			avatars.some((avatar) => avatar.nickname === copyNickname.trim().toLowerCase()),
 	);
 
 	$effect(() => {
@@ -78,11 +85,24 @@
 		}
 	});
 
-	$effect(() => {
-		if (!selectedEntry) {
+	const syncRoute = (): void => {
+		if (!routeSyncReady) {
 			return;
 		}
-		detailsOpen = false;
+		const nextHref = buildAvatarCatalogHref({ avatar: selectedEntry?.nickname ?? selectedAvatar });
+		const currentHref = `${page.url.pathname}${page.url.search}`;
+		if (nextHref === currentHref) {
+			return;
+		}
+		replaceState(nextHref, page.state);
+	};
+
+	$effect(() => {
+		syncRoute();
+	});
+
+	onMount(() => {
+		routeSyncReady = true;
 	});
 
 	const compactRuntimeId = (runtimeId: string): string => {
@@ -92,6 +112,13 @@
 
 	const formatStatusLabel = (status: string): string => {
 		return status.length > 0 ? `${status.slice(0, 1).toUpperCase()}${status.slice(1)}` : status;
+	};
+
+	const selectAvatar = (nickname: string): void => {
+		selectedAvatar = nickname;
+		if (detailCompact) {
+			detailOpen = true;
+		}
 	};
 
 	const openAvatarDraft = async (): Promise<void> => {
@@ -159,6 +186,9 @@
 				displayName: nickname,
 			});
 			selectedAvatar = created.nickname;
+			if (detailCompact) {
+				detailOpen = true;
+			}
 			copyDialogOpen = false;
 			copyNickname = '';
 		} catch (error) {
@@ -177,251 +207,283 @@
 
 {#snippet avatarCatalogEntry(entry: AvatarCatalogEntry)}
 	{@const isSelected = selectedEntry?.runtimeId === entry.runtimeId}
-	<div
-		class={`avatar-catalog-entry transition-colors ${
-			isSelected ? 'bg-[color-mix(in_srgb,var(--accent),transparent_72%)]' : 'hover:bg-muted/20'
-		}`}
+	<button
+		type="button"
+		class={cn(
+			'grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-3 py-3 text-left transition-colors md:px-4 md:py-3.5',
+			isSelected ? 'bg-accent/45' : 'hover:bg-muted/24',
+		)}
+		aria-pressed={isSelected}
+		onclick={() => {
+			selectAvatar(entry.nickname);
+		}}
 	>
-		<button
-			type="button"
-			class="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-2.5 px-2 py-2 text-left md:px-3 md:py-2.5"
-			aria-pressed={isSelected}
-			onclick={() => {
-				selectedAvatar = entry.nickname;
-			}}
-		>
-			<ProfileAvatar label={entry.nickname} class="size-8 rounded-lg border-border/65 bg-background/65" />
-			<div class="grid min-w-0 gap-0.5">
-				<div class="truncate text-[13px] font-semibold leading-tight md:text-sm">{entry.nickname}</div>
-				<div class="truncate text-[10px] leading-4 text-muted-foreground md:text-[11px]">
-					{compactRuntimeId(entry.runtimeId)}
-				</div>
+		<ProfileAvatar label={entry.nickname} class="size-9 rounded-xl border-border/65 bg-background/70" />
+		<div class="grid min-w-0 gap-0.5">
+			<div class="truncate text-sm font-semibold">{entry.nickname}</div>
+			<div class="flex flex-wrap items-center gap-x-1.5 text-[11px] leading-4 text-muted-foreground">
+				<span>{compactRuntimeId(entry.runtimeId)}</span>
+				{#if entry.defaultAvatar}
+					<span aria-hidden="true">·</span>
+					<span>Default</span>
+				{/if}
 			</div>
-		</button>
-	</div>
+		</div>
+	</button>
 {/snippet}
 
 <div
-	class="avatar-catalog-layout grid gap-3 p-2 md:mx-auto md:w-full md:max-w-[66rem] md:grid-cols-[15rem_minmax(0,1fr)] md:justify-center md:items-start md:gap-6 md:p-4 lg:max-w-[70rem] lg:grid-cols-[16rem_minmax(0,1fr)] lg:p-5"
-	style="min-block-size: 0;"
+	class="h-full min-w-0 w-full px-2 pb-2 pt-2 md:p-5"
 	data-testid="avatar-catalog-route"
 >
-	<section class="avatar-catalog-layout__rail grid gap-2.5 md:self-start">
-		<div class="grid gap-1 pb-1">
-			<h2 class="text-base font-semibold">My avatars</h2>
-			<p class="text-xs text-muted-foreground">{catalogCountLabel}</p>
-		</div>
-
-		{#if avatars.length === 0}
-			<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-				{catalogState.error ?? 'No avatars are available yet.'}
-			</div>
-		{:else}
-			<div class="avatar-catalog-list grid gap-0 md:hidden">
-				{#each avatars as entry (entry.runtimeId)}
-					{@render avatarCatalogEntry(entry)}
-				{/each}
-			</div>
-			<div class="avatar-catalog-list hidden md:block">
-				<ScrollView class="max-h-52" contentClass="grid gap-0 pr-1">
-					{#each avatars as entry (entry.runtimeId)}
-						{@render avatarCatalogEntry(entry)}
-					{/each}
-				</ScrollView>
-			</div>
-		{/if}
-	</section>
-
-	<section class="avatar-catalog-layout__lens grid gap-4 pt-4 md:min-w-0 md:pt-0">
-		<div class="grid gap-1 pb-1">
-			<div class="flex items-center gap-2">
-				<h2 class="text-base font-semibold">Selected avatar</h2>
-				<HelpHint
-					textContext="The selected-avatar lens stays bound to one installed avatar identity. It opens the canonical runtime first, while workspace entry remains a secondary handoff."
-				>
-					<p>Use the selected-avatar lens to open the canonical avatar runtime first. Workspace navigation remains a secondary handoff from the same identity.</p>
-				</HelpHint>
-			</div>
-		</div>
-
-		{#if !selectedEntry}
-			<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-				Select one avatar to inspect its runtime identity.
-			</div>
-		{:else}
-			{#if runtimeError}
-				<NoticeBanner tone="warning" title="Avatar runtime failed" message={runtimeError} />
-			{/if}
-			{#if draftError}
-				<NoticeBanner tone="warning" title="Avatar draft failed" message={draftError} />
-			{/if}
-			<div class="avatar-runtime-lens__hero grid gap-3 pb-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-4 md:pb-3">
-				<div class="flex items-start gap-3">
-					<ProfileAvatar
-						label={selectedEntry.nickname}
-						class="size-12 rounded-xl border-border/65 bg-background/70 md:size-14"
-					/>
-					<div class="grid min-w-0 gap-1.5">
+	<WorkbenchPageContent
+		class="h-full min-w-0 w-full"
+		detailLayout="split-detail"
+		bind:detailCompact
+		bind:detailOpen
+		detailRatioPersistence="avatars:catalog-detail"
+		detailLeftMin={280}
+		detailRightMin={360}
+		detailDefaultRatio={0.34}
+	>
+		{#snippet main()}
+			<Card.Root class="h-full gap-0 rounded-none border-0 bg-transparent py-0 shadow-none">
+				<Card.Header class="gap-2 border-b px-3 py-3.5 md:px-5 md:py-4.5">
+					<div class="flex items-start justify-between gap-3">
 						<div class="grid gap-1">
-							<div class="grid min-w-0 gap-0.5 md:flex md:flex-wrap md:items-baseline md:gap-x-2 md:gap-y-1">
-								<h1 class="truncate text-lg font-semibold md:text-xl">{selectedEntry.nickname}</h1>
-								<div class="flex flex-wrap items-center gap-x-1.5 text-[11px] font-medium text-muted-foreground md:text-xs">
-									<span>{formatStatusLabel(selectedStatusLabel)}</span>
-									{#if selectedEntry.defaultAvatar}
-										<span aria-hidden="true">·</span>
-										<span>Default</span>
-									{/if}
-								</div>
-							</div>
+							<Card.Title>My avatars</Card.Title>
+							<Card.Description class="max-w-[28rem] text-xs leading-5 md:text-sm">
+								{catalogCountLabel}. Select one installed avatar to inspect its runtime identity and operational handoffs.
+							</Card.Description>
 						</div>
-					</div>
-				</div>
 
-				<div class="grid grid-cols-2 gap-1.5 md:flex md:flex-wrap md:justify-end">
-					<Button
-						variant="outline"
-						size="sm"
-						class="w-full md:w-auto"
-						onclick={() => void openAvatarRuntime({ autoStart: false, tab: 'heartbeat' })}
-						disabled={runtimeBusy}
-					>
-						<BotIcon class="size-4" />
-						Open avatar
-					</Button>
-					<Button
-						size="sm"
-						class="w-full md:w-auto"
-						onclick={() => void openAvatarRuntime({ autoStart: true, tab: 'attention' })}
-						disabled={runtimeBusy}
-					>
-						<PlayIcon class="size-4" />
-						{primaryActionLabel}
-					</Button>
-				</div>
-			</div>
-
-			<div class="avatar-runtime-overview grid gap-0 md:grid-cols-[minmax(0,1fr)_12rem] md:gap-4">
-				<div class="avatar-runtime-primary-fact grid gap-1.5 py-2.5 md:gap-1 md:py-3">
-					<div class="avatar-runtime-fact-label avatar-runtime-fact-label--primary">Canonical runtime</div>
-					<div class="avatar-runtime-fact-value avatar-runtime-fact-value--primary break-all">{selectedEntry.runtimeId}</div>
-				</div>
-				<div class="avatar-runtime-origin-fact avatar-runtime-fact-row grid gap-1 py-2.5 md:py-3">
-					<div class="avatar-runtime-fact-label">Origin</div>
-					<div class="avatar-runtime-fact-value avatar-runtime-fact-value--supporting">{selectedOriginLabel}</div>
-				</div>
-			</div>
-
-			<div class="avatar-runtime-secondary-actions flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] font-medium text-muted-foreground">
-				<button
-					type="button"
-					class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-					disabled={draftBusy}
-					onclick={() => void openAvatarDraft()}
-				>
-					<PlusIcon class="size-3.5" />
-					{draftBusy ? 'Creating draft…' : 'Create draft from this avatar'}
-				</button>
-				<button
-					type="button"
-					class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-					onclick={() => void goto(buildWorkspaceIndexHref({ avatar: selectedEntry.nickname }))}
-				>
-					<ArrowUpRightIcon class="size-3.5" />
-					Open workspaces
-				</button>
-			</div>
-
-			<div class="avatar-runtime-details-desktop hidden md:grid md:gap-0">
-				<div class="avatar-runtime-details-desktop__label flex items-center gap-3 py-3">
-					<div class="text-sm font-medium text-muted-foreground">Runtime details</div>
-					<button
-						type="button"
-						class="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-						onclick={() => {
-							openCopyAvatarDialog();
-						}}
-					>
-						Copy avatar
-					</button>
-				</div>
-				<div class="avatar-runtime-facts avatar-runtime-details grid gap-0">
-					{#if workspaceSlotMatchesRoot}
-						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
-							<div class="avatar-runtime-fact-label">Runtime home</div>
-							<div
-								class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all md:min-w-0 md:truncate md:whitespace-nowrap"
-								title={selectedEntry.globalPath}
+						{#if detailCompact && selectedEntry}
+							<Button
+								variant="outline"
+								size="sm"
+								class="shrink-0"
+								onclick={() => {
+									detailOpen = true;
+								}}
 							>
-								{selectedEntry.globalPath}
+								<PanelRightOpenIcon class="size-4" />
+								<span class="hidden sm:inline">Open detail</span>
+							</Button>
+						{/if}
+					</div>
+				</Card.Header>
+
+				<Card.Content class="h-full p-0">
+					{#if avatars.length === 0}
+						<div class="grid h-full place-items-center p-6">
+							<div class="grid max-w-sm gap-2 text-center">
+								<div class="text-sm font-semibold">No avatars yet</div>
+								<div class="text-sm text-muted-foreground">
+									{catalogState.error ?? 'Install or create one avatar to start a runtime lens.'}
+								</div>
 							</div>
 						</div>
 					{:else}
-						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
-							<div class="avatar-runtime-fact-label">Root workspace</div>
-							<div
-								class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all md:min-w-0 md:truncate md:whitespace-nowrap"
-								title={selectedEntry.globalPath}
-							>
-								{selectedEntry.globalPath}
-							</div>
-						</div>
-						<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
-							<div class="avatar-runtime-fact-label">Workspace slot</div>
-							<div
-								class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all md:min-w-0 md:truncate md:whitespace-nowrap"
-								title={selectedEntry.workspacePrivatePath}
-							>
-								{selectedEntry.workspacePrivatePath}
-							</div>
-						</div>
+						<ScrollView class="h-full" contentClass="divide-y divide-border/50">
+							{#each avatars as entry (entry.runtimeId)}
+								{@render avatarCatalogEntry(entry)}
+							{/each}
+						</ScrollView>
 					{/if}
-				</div>
-			</div>
+				</Card.Content>
+			</Card.Root>
+		{/snippet}
 
-			<Collapsible.Root bind:open={detailsOpen} class="md:hidden">
-				<div class="avatar-runtime-facts avatar-runtime-details grid gap-0">
-					<Collapsible.Trigger class="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-						<span>Runtime details</span>
-						<ChevronDownIcon class={`size-4 transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
-					</Collapsible.Trigger>
-					<Collapsible.Content class="grid gap-0 pb-1">
-						{#if workspaceSlotMatchesRoot}
-							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3">
-								<div class="avatar-runtime-fact-label">Runtime home</div>
-								<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
-									{selectedEntry.globalPath}
-								</div>
+		{#snippet drawer()}
+			<Card.Root class="h-full gap-0 rounded-none border-0 bg-transparent py-0 shadow-none">
+				{#if !selectedEntry}
+					<Card.Content class="grid h-full place-items-center p-6">
+						<div class="grid max-w-sm gap-2 text-center">
+							<div class="text-sm font-semibold">Select an avatar</div>
+							<div class="text-sm text-muted-foreground">
+								Choose one installed avatar from the list to inspect its runtime identity.
 							</div>
-						{:else}
-							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3">
-								<div class="avatar-runtime-fact-label">Root workspace</div>
-								<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
-									{selectedEntry.globalPath}
-								</div>
-							</div>
-							<div class="avatar-runtime-facts__block avatar-runtime-fact-row grid gap-1 py-3">
-								<div class="avatar-runtime-fact-label">Workspace slot</div>
-								<div class="avatar-runtime-fact-value avatar-runtime-fact-value--path break-all">
-									{selectedEntry.workspacePrivatePath}
-								</div>
-							</div>
-						{/if}
-						<div class="avatar-runtime-facts__block avatar-runtime-details__actions flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
-							<button
-								type="button"
-								class="inline-flex items-center gap-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
-								onclick={() => {
-									openCopyAvatarDialog();
-								}}
-							>
-								Copy avatar
-							</button>
 						</div>
-					</Collapsible.Content>
-				</div>
-			</Collapsible.Root>
-		{/if}
-	</section>
+					</Card.Content>
+				{:else}
+					<Card.Header class="gap-4 border-b px-4 py-4 md:px-5 md:py-5">
+						<div class="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+							<span>Selected avatar</span>
+						</div>
+
+						<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+							<div class="flex items-start gap-3">
+								<ProfileAvatar
+									label={selectedEntry.nickname}
+									class="size-12 rounded-xl border-border/65 bg-background/70 md:size-14"
+								/>
+
+								<div class="grid min-w-0 gap-1">
+									<div class="grid min-w-0 gap-0.5 md:flex md:flex-wrap md:items-baseline md:gap-x-2 md:gap-y-1">
+										<h1 class="truncate text-lg font-semibold md:text-xl">{selectedEntry.nickname}</h1>
+										<div class="flex flex-wrap items-center gap-x-1.5 text-[11px] font-medium text-muted-foreground md:text-xs">
+											<span>{formatStatusLabel(selectedStatusLabel)}</span>
+											{#if selectedEntry.defaultAvatar}
+												<span aria-hidden="true">·</span>
+												<span>Default</span>
+											{/if}
+										</div>
+									</div>
+									<div class="text-[11px] leading-4 text-muted-foreground md:text-xs">
+										Runtime {compactRuntimeId(selectedEntry.runtimeId)}
+									</div>
+								</div>
+							</div>
+
+							<div class="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:justify-end">
+								<Button
+									variant="outline"
+									size="sm"
+									class="w-full sm:w-auto"
+									onclick={() => void openAvatarRuntime({ autoStart: false, tab: 'heartbeat' })}
+									disabled={runtimeBusy}
+								>
+									<BotIcon class="size-4" />
+									Open avatar
+								</Button>
+								<Button
+									size="sm"
+									class="w-full sm:w-auto"
+									onclick={() => void openAvatarRuntime({ autoStart: true, tab: 'attention' })}
+									disabled={runtimeBusy}
+								>
+									<PlayIcon class="size-4" />
+									{primaryActionLabel}
+								</Button>
+							</div>
+						</div>
+					</Card.Header>
+
+					<Card.Content class="h-full p-0">
+						<ScrollView class="h-full" contentClass="grid gap-0">
+							{#if runtimeError}
+								<div class="border-b px-4 py-4 md:px-5">
+									<NoticeBanner tone="warning" title="Avatar runtime failed" message={runtimeError} />
+								</div>
+							{/if}
+
+							{#if draftError}
+								<div class="border-b px-4 py-4 md:px-5">
+									<NoticeBanner tone="warning" title="Avatar draft failed" message={draftError} />
+								</div>
+							{/if}
+
+							<section class="grid gap-4 border-b px-4 py-4 md:px-5">
+								<div class="grid gap-1.5">
+									<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+										Canonical runtime
+									</div>
+									<div class="break-all text-sm font-semibold leading-6 md:text-[15px]">
+										{selectedEntry.runtimeId}
+									</div>
+								</div>
+
+								<div class="grid gap-4 sm:grid-cols-2">
+									<div class="grid gap-1">
+										<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+											Origin
+										</div>
+										<div class="text-sm font-medium text-foreground/80">{selectedOriginLabel}</div>
+									</div>
+
+									<div class="grid gap-1">
+										<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+											Catalog state
+										</div>
+										<div class="text-sm font-medium text-foreground/80">
+											{selectedEntry.defaultAvatar ? 'Default avatar' : 'Installed avatar'}
+										</div>
+									</div>
+								</div>
+							</section>
+
+							<section class="grid gap-2 border-b px-4 py-4 md:px-5">
+								<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+									Actions
+								</div>
+								<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-muted-foreground">
+									<button
+										type="button"
+										class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+										disabled={draftBusy}
+										onclick={() => void openAvatarDraft()}
+									>
+										<PlusIcon class="size-3.5" />
+										{draftBusy ? 'Creating draft…' : 'Create draft from this avatar'}
+									</button>
+									<button
+										type="button"
+										class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+										onclick={() => void goto(buildWorkspaceIndexHref({ avatar: selectedEntry.nickname }))}
+									>
+										<ArrowUpRightIcon class="size-3.5" />
+										Open workspaces
+									</button>
+									<button
+										type="button"
+										class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+										onclick={() => {
+											openCopyAvatarDialog();
+										}}
+									>
+										Copy avatar
+									</button>
+								</div>
+							</section>
+
+							<section class="grid gap-3 px-4 py-4 md:px-5">
+								<div class="text-sm font-medium text-muted-foreground">Runtime details</div>
+
+								<div class="grid gap-0 divide-y divide-border/50">
+									{#if workspaceSlotMatchesRoot}
+										<div class="grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
+											<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+												Runtime home
+											</div>
+											<div
+												class="break-all font-mono text-xs leading-5 text-foreground/80 md:min-w-0 md:truncate md:whitespace-nowrap"
+												title={selectedEntry.globalPath}
+											>
+												{selectedEntry.globalPath}
+											</div>
+										</div>
+									{:else}
+										<div class="grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
+											<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+												Root workspace
+											</div>
+											<div
+												class="break-all font-mono text-xs leading-5 text-foreground/80 md:min-w-0 md:truncate md:whitespace-nowrap"
+												title={selectedEntry.globalPath}
+											>
+												{selectedEntry.globalPath}
+											</div>
+										</div>
+										<div class="grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
+											<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+												Workspace slot
+											</div>
+											<div
+												class="break-all font-mono text-xs leading-5 text-foreground/80 md:min-w-0 md:truncate md:whitespace-nowrap"
+												title={selectedEntry.workspacePrivatePath}
+											>
+												{selectedEntry.workspacePrivatePath}
+											</div>
+										</div>
+									{/if}
+								</div>
+							</section>
+						</ScrollView>
+					</Card.Content>
+				{/if}
+			</Card.Root>
+		{/snippet}
+	</WorkbenchPageContent>
 </div>
 
 <Dialog.Root bind:open={copyDialogOpen}>
@@ -478,181 +540,3 @@
 		</form>
 	</Dialog.Content>
 </Dialog.Root>
-
-<style>
-	.avatar-catalog-layout__rail,
-	.avatar-catalog-layout__lens,
-	.avatar-catalog-list,
-	.avatar-catalog-entry,
-	.avatar-runtime-lens__hero,
-	.avatar-runtime-overview,
-	.avatar-runtime-primary-fact,
-	.avatar-runtime-origin-fact,
-	.avatar-runtime-facts,
-	.avatar-runtime-facts__block {
-		position: relative;
-	}
-
-	.avatar-catalog-layout__lens::before {
-		content: '';
-		position: absolute;
-		inset-inline: 0;
-		inset-block-start: 0;
-		block-size: 1px;
-		background: linear-gradient(
-			90deg,
-			transparent 0%,
-			color-mix(in srgb, var(--border), transparent 18%) 18%,
-			color-mix(in srgb, var(--border), transparent 68%) 100%
-		);
-	}
-
-	.avatar-catalog-list::before,
-	.avatar-catalog-list::after {
-		content: '';
-		position: absolute;
-		inset-inline: 0.65rem;
-		block-size: 1px;
-		background: color-mix(in srgb, var(--border), transparent 28%);
-	}
-
-	.avatar-catalog-list::before {
-		inset-block-start: 0;
-	}
-
-	.avatar-catalog-list::after {
-		inset-block-end: 0;
-	}
-
-	.avatar-catalog-entry + .avatar-catalog-entry::before {
-		content: '';
-		position: absolute;
-		inset-block-start: 0;
-		inset-inline-start: 3.15rem;
-		inset-inline-end: 0.65rem;
-		block-size: 1px;
-		background: color-mix(in srgb, var(--border), transparent 36%);
-	}
-
-	.avatar-runtime-overview::before,
-	.avatar-runtime-facts::before,
-	.avatar-runtime-facts__block + .avatar-runtime-facts__block::before {
-		content: '';
-		position: absolute;
-		inset-inline-start: 0.75rem;
-		inset-inline-end: 0;
-		inset-block-start: 0;
-		block-size: 1px;
-		background: linear-gradient(
-			90deg,
-			color-mix(in srgb, var(--border), transparent 14%) 0%,
-			color-mix(in srgb, var(--border), transparent 44%) 72%,
-			transparent 100%
-		);
-	}
-
-	.avatar-runtime-secondary-actions {
-		padding-block: 0.1rem 0.35rem;
-	}
-
-	.avatar-runtime-fact-label {
-		font-size: 0.75rem;
-		line-height: 1rem;
-		font-weight: 500;
-		letter-spacing: 0.18em;
-		text-transform: uppercase;
-		color: var(--muted-foreground);
-	}
-
-	.avatar-runtime-fact-label--primary {
-		font-size: 0.78rem;
-		font-weight: 600;
-		letter-spacing: 0.02em;
-		text-transform: none;
-	}
-
-	.avatar-runtime-fact-value {
-		font-size: 13px;
-		line-height: 1.25rem;
-		font-weight: 600;
-	}
-
-	.avatar-runtime-fact-value--primary {
-		font-size: 0.95rem;
-		line-height: 1.4rem;
-	}
-
-	.avatar-runtime-fact-value--supporting {
-		font-size: 0.84rem;
-		line-height: 1.32rem;
-		font-weight: 500;
-		color: color-mix(in srgb, var(--foreground), transparent 14%);
-	}
-
-	.avatar-runtime-fact-value--path {
-		font-family: var(--font-mono);
-		font-size: 0.76rem;
-		line-height: 1.24rem;
-		font-weight: 500;
-		letter-spacing: -0.01em;
-		color: color-mix(in srgb, var(--foreground), transparent 18%);
-	}
-
-	@media (min-width: 768px) {
-		.avatar-catalog-layout__rail {
-			padding-inline-end: 0.25rem;
-		}
-
-		.avatar-catalog-layout__rail::after {
-			content: '';
-			position: absolute;
-			inset-block: 0.5rem 0.25rem;
-			inset-inline-end: -0.625rem;
-			inline-size: 1px;
-			background: linear-gradient(
-				180deg,
-				transparent 0%,
-				color-mix(in srgb, var(--border), transparent 20%) 14%,
-				color-mix(in srgb, var(--border), transparent 56%) 86%,
-				transparent 100%
-			);
-		}
-
-		.avatar-catalog-layout__lens::before {
-			display: none;
-		}
-
-		.avatar-runtime-primary-fact {
-			padding-inline-start: 4.25rem;
-		}
-
-		.avatar-runtime-overview::before {
-			inset-inline-start: 4.25rem;
-		}
-
-		.avatar-runtime-secondary-actions {
-			padding-inline-start: 4.25rem;
-			padding-block: 0.05rem 0.45rem;
-		}
-
-		.avatar-runtime-facts::before,
-		.avatar-runtime-facts__block + .avatar-runtime-facts__block::before {
-			inset-inline-start: 8rem;
-			inset-inline-end: 0;
-		}
-
-		.avatar-runtime-fact-label--primary {
-			padding-block-start: 0.12rem;
-		}
-
-		.avatar-catalog-entry + .avatar-catalog-entry::before {
-			inset-inline-start: 3.75rem;
-			inset-inline-end: 0.9rem;
-		}
-
-		.avatar-catalog-list::before,
-		.avatar-catalog-list::after {
-			inset-inline: 0.9rem;
-		}
-	}
-</style>
