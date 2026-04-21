@@ -284,7 +284,7 @@ type CompactCycleTrigger =
   | "external_continuation_limit"
   | "timeout"
   | "error";
-type AttentionInputProtocolKind = "context" | "items";
+type AttentionInputProtocolKind = "summary" | "context" | "items";
 interface AttentionCommitRefEnvelope {
   contextId: string;
   commitId: string;
@@ -304,7 +304,7 @@ const COMPACT_CYCLE_TRIGGER_VALUES = new Set<CompactCycleTrigger>([
   "timeout",
   "error",
 ]);
-const ATTENTION_INPUT_PROTOCOL_KINDS = new Set<AttentionInputProtocolKind>(["context", "items"]);
+const ATTENTION_INPUT_PROTOCOL_KINDS = new Set<AttentionInputProtocolKind>(["summary", "context", "items"]);
 const COMPACT_CYCLE_INPUT_NAME = "CompactCycle";
 const MAX_ATTENTION_PROTOCOL_COMMITS = 24;
 
@@ -3811,11 +3811,11 @@ export class SessionRuntime {
     return latestSource ?? "attention";
   }
 
-  private buildAttentionContextBootstrapInput(
+  private collectAttentionBootstrapState(
     active: readonly AttentionActiveContextMatch[],
     selected: readonly AttentionActiveContextMatch[],
     bootstrapSnapshots: readonly AttentionActiveContextMatch[] = [],
-  ): LoopBusInput | null {
+  ) {
     const primary = selected[0];
     if (!primary) {
       return null;
@@ -3840,16 +3840,87 @@ export class SessionRuntime {
       owner: match.context.owner,
       updatedAt: match.context.updatedAt,
     }));
+    const selectedContextIds = [...selected, ...bootstrapSnapshots]
+      .map((match) => match.contextId)
+      .filter((value, index, all) => all.indexOf(value) === index);
+    const channel = this.resolveMessageChannelForContext(primary.contextId);
+    const chatId = channel?.chatId ?? this.resolveMessageChatIdForContext(primary.contextId);
+    const attentionContextIds = [...metadata.map((item) => item.contextId)];
+
+    return {
+      primary,
+      metadata,
+      selectedContextIds,
+      channel,
+      chatId,
+      attentionContextIds,
+    };
+  }
+
+  private buildAttentionSummaryInput(
+    active: readonly AttentionActiveContextMatch[],
+    selected: readonly AttentionActiveContextMatch[],
+    bootstrapSnapshots: readonly AttentionActiveContextMatch[] = [],
+  ): LoopBusInput | null {
+    const state = this.collectAttentionBootstrapState(active, selected, bootstrapSnapshots);
+    if (!state) {
+      return null;
+    }
+    const bootstrapContextIds = bootstrapSnapshots.map((match) => match.contextId);
+    const activeSystems = [...new Set(state.metadata.map((item) => item.source))];
+    const text = [
+      "## PreAICallContext Summary",
+      "",
+      mdFence(
+        "yaml+context-summary",
+        toYaml({
+          primaryContextId: state.primary.contextId,
+          selectedContextIds: state.selectedContextIds,
+          activeContextCount: active.length,
+          activeSystems,
+          ...(bootstrapContextIds.length > 0 ? { bootstrapContextIds } : {}),
+          ...(state.chatId ? { chatId: state.chatId } : {}),
+        }),
+      ),
+    ].join("\n");
+
+    return {
+      name: `AttentionSummary-${state.primary.contextId}`,
+      role: "user",
+      type: "text",
+      source: "attention",
+      text,
+      meta: {
+        attentionContextId: state.primary.contextId,
+        attentionContextIds: serializeAttentionContextIds(state.attentionContextIds) ?? null,
+        attentionCommitRefs: null,
+        attentionHeadCommitId: state.primary.context.headCommitId,
+        owner: state.primary.context.owner,
+        createdAt: state.primary.context.updatedAt,
+        attentionProtocolKind: "summary",
+        ...(state.channel ? { chatFocused: state.channel.focused } : {}),
+        ...(state.chatId ? { chatId: state.chatId } : {}),
+      },
+    };
+  }
+
+  private buildAttentionContextBootstrapInput(
+    active: readonly AttentionActiveContextMatch[],
+    selected: readonly AttentionActiveContextMatch[],
+    bootstrapSnapshots: readonly AttentionActiveContextMatch[] = [],
+  ): LoopBusInput | null {
+    const state = this.collectAttentionBootstrapState(active, selected, bootstrapSnapshots);
+    if (!state) {
+      return null;
+    }
     const text = [
       "## AttentionContexts.metadata",
       "",
       toYaml({
-        primaryContextId: primary.contextId,
-        selectedContextIds: [...selected, ...bootstrapSnapshots]
-          .map((match) => match.contextId)
-          .filter((value, index, all) => all.indexOf(value) === index),
+        primaryContextId: state.primary.contextId,
+        selectedContextIds: state.selectedContextIds,
         activeContextCount: active.length,
-        items: metadata,
+        items: state.metadata,
       }),
     ].join("\n");
     const renderedSnapshots = bootstrapSnapshots
@@ -3862,26 +3933,22 @@ export class SessionRuntime {
         ].join("\n"),
       );
 
-    const channel = this.resolveMessageChannelForContext(primary.contextId);
-    const chatId = channel?.chatId ?? this.resolveMessageChatIdForContext(primary.contextId);
-    const attentionContextIds = [...metadata.map((item) => item.contextId)];
-
     return {
-      name: `AttentionContext-${primary.contextId}`,
+      name: `AttentionContext-${state.primary.contextId}`,
       role: "user",
       type: "text",
       source: "attention",
       text: [text, ...renderedSnapshots].filter((part) => part.length > 0).join("\n\n"),
       meta: {
-        attentionContextId: primary.contextId,
-        attentionContextIds: serializeAttentionContextIds(attentionContextIds) ?? null,
+        attentionContextId: state.primary.contextId,
+        attentionContextIds: serializeAttentionContextIds(state.attentionContextIds) ?? null,
         attentionCommitRefs: null,
-        attentionHeadCommitId: primary.context.headCommitId,
-        owner: primary.context.owner,
-        createdAt: primary.context.updatedAt,
+        attentionHeadCommitId: state.primary.context.headCommitId,
+        owner: state.primary.context.owner,
+        createdAt: state.primary.context.updatedAt,
         attentionProtocolKind: "context",
-        ...(channel ? { chatFocused: channel.focused } : {}),
-        ...(chatId ? { chatId } : {}),
+        ...(state.channel ? { chatFocused: state.channel.focused } : {}),
+        ...(state.chatId ? { chatId: state.chatId } : {}),
       },
     };
   }
@@ -7426,6 +7493,14 @@ export class SessionRuntime {
     }
 
     const outputs: LoopBusInput[] = [];
+    const summaryInput = this.buildAttentionSummaryInput(
+      active,
+      selected.length > 0 ? selected : bootstrapSnapshots ? [bootstrapSnapshots] : [],
+      bootstrapSnapshots ? [bootstrapSnapshots] : [],
+    );
+    if (summaryInput) {
+      outputs.push(summaryInput);
+    }
     const bootstrapInput = this.buildAttentionContextBootstrapInput(
       active,
       selected.length > 0 ? selected : bootstrapSnapshots ? [bootstrapSnapshots] : [],

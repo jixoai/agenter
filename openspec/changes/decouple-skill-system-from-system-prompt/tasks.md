@@ -20,6 +20,7 @@
 
 - [x] 4.1 Update and pass targeted attention-system, runtime skill, runtime CLI, and prompt assembly tests for the new contracts.
 - [x] 4.2 Update durable specs or package-level SPEC references touched by the breaking cleanup and confirm the OpenSpec tasks are complete.
+- [x] 4.3 Reconcile real `ai_call.requestBody` evidence with the bootstrap contract by restoring `summary -> context -> items` ordering and updating the durable bootstrap spec.
 
 ## 5. Live Skill Watch / Config
 
