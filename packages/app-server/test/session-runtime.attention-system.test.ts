@@ -282,9 +282,6 @@ const getActiveItems = (internal: RuntimeInternal) =>
 const getAttentionContextSnapshot = (internal: RuntimeInternal, contextId: string) =>
   internal.attentionSystem.snapshot().contexts.find((context) => context.contextId === contextId) ?? null;
 
-const getSummaryInput = (inputs: LoopBusInput[] | undefined): LoopBusInput | undefined =>
-  inputs?.find((item) => item.meta?.attentionProtocolKind === "summary");
-
 const getBootstrapInput = (inputs: LoopBusInput[] | undefined): LoopBusInput | undefined =>
   inputs?.find((item) => item.meta?.attentionProtocolKind === "context");
 
@@ -463,27 +460,18 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const firstRound = await internal.collectLoopInputs();
     expect(firstRound?.some((item) => item.source === "chat" && item.text === "Please continue the task")).toBe(false);
-    expect(getAttentionProtocolKinds(firstRound)).toEqual(["summary", "context", "items"]);
-    const summaryInput = getSummaryInput(firstRound);
+    expect(getAttentionProtocolKinds(firstRound)).toEqual(["context", "items"]);
     const contextInput = getBootstrapInput(firstRound);
     const itemsInput = getItemsInput(firstRound);
-    expect(summaryInput).toBeDefined();
     expect(contextInput).toBeDefined();
     expect(itemsInput).toBeDefined();
     if (!contextInput) {
       return;
     }
 
-    expect(summaryInput?.text).toContain("## PreAICallContext Summary");
-    expect(summaryInput?.text).toContain(`primaryContextId: ${PRIMARY_CONTEXT_ID}`);
-    expect(summaryInput?.text).toContain(`chatId: ${PRIMARY_ROOM_ID}`);
-    expect(summaryInput?.text).not.toContain("Please continue the task");
-    expect(summaryInput?.meta?.attentionContextId).toBe(PRIMARY_CONTEXT_ID);
-    expect(summaryInput?.meta?.attentionContextIds).toBe(JSON.stringify([PRIMARY_CONTEXT_ID]));
-    expect(summaryInput?.meta?.chatId).toBe(PRIMARY_ROOM_ID);
-    expect(summaryInput?.meta?.chatFocused).toBe(true);
     expect(contextInput.text).toContain("## AttentionContexts.metadata");
     expect(contextInput.text).not.toContain("## Systems Descriptions");
+    expect(contextInput.text).not.toContain("## PreAICallContext Summary");
     expect(contextInput.text).not.toContain("## Attention Items");
     expect(contextInput.text).not.toContain("Please continue the task");
     expect(contextInput.meta?.attentionContextId).toBe(PRIMARY_CONTEXT_ID);
@@ -509,24 +497,19 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const interleaved = await internal.collectInterleavedAgentInputs();
     expect(interleaved?.some((item) => item.source === "chat")).toBe(false);
-    expect(getAttentionProtocolKinds(interleaved)).toEqual(["summary", "context", "items"]);
-    const summaryInput = getSummaryInput(interleaved);
+    expect(getAttentionProtocolKinds(interleaved)).toEqual(["context", "items"]);
     const contextInput = getBootstrapInput(interleaved);
     const itemsInput = getItemsInput(interleaved);
-    expect(summaryInput).toBeDefined();
     expect(contextInput).toBeDefined();
     expect(itemsInput).toBeDefined();
     if (!contextInput) {
       return;
     }
 
-    expect(summaryInput?.text).toContain("## PreAICallContext Summary");
-    expect(summaryInput?.text).toContain(`primaryContextId: ${PRIMARY_CONTEXT_ID}`);
-    expect(summaryInput?.text).toContain(`chatId: ${PRIMARY_ROOM_ID}`);
-    expect(summaryInput?.text).not.toContain("再补充一个条件");
     expect(contextInput.meta?.attentionContextId).toBe(PRIMARY_CONTEXT_ID);
     expect(contextInput.meta?.chatId).toBe(PRIMARY_ROOM_ID);
     expect(contextInput.text).toContain("## AttentionContexts.metadata");
+    expect(contextInput.text).not.toContain("## PreAICallContext Summary");
     expect(contextInput.text).not.toContain("再补充一个条件");
     expect(itemsInput?.text).toContain("再补充一个条件");
     expect(await stringifyAttentionQuery(runtime, "再补充一个条件")).toContain("再补充一个条件");
@@ -1538,11 +1521,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     runtime.pushUserChat("Reply with exactly FOCUS-CHAT-FIRST");
 
     const firstRound = await internal.collectLoopInputs();
-    expect(getAttentionProtocolKinds(firstRound)).toEqual(["summary", "context", "items"]);
+    expect(getAttentionProtocolKinds(firstRound)).toEqual(["context", "items"]);
     expect([...new Set(firstRound?.map((item) => item.meta?.attentionContextId) ?? [])]).toEqual([PRIMARY_CONTEXT_ID]);
 
     const secondRound = await internal.collectLoopInputs();
-    expect(getAttentionProtocolKinds(secondRound)).toEqual(["summary", "context", "items"]);
+    expect(getAttentionProtocolKinds(secondRound)).toEqual(["context", "items"]);
     expect([...new Set(secondRound?.map((item) => item.meta?.attentionContextId) ?? [])]).toEqual([
       "ctx-terminal-iflow",
     ]);

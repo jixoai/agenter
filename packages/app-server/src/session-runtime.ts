@@ -284,7 +284,7 @@ type CompactCycleTrigger =
   | "external_continuation_limit"
   | "timeout"
   | "error";
-type AttentionInputProtocolKind = "summary" | "context" | "items";
+type AttentionInputProtocolKind = "context" | "items";
 interface AttentionCommitRefEnvelope {
   contextId: string;
   commitId: string;
@@ -304,7 +304,7 @@ const COMPACT_CYCLE_TRIGGER_VALUES = new Set<CompactCycleTrigger>([
   "timeout",
   "error",
 ]);
-const ATTENTION_INPUT_PROTOCOL_KINDS = new Set<AttentionInputProtocolKind>(["summary", "context", "items"]);
+const ATTENTION_INPUT_PROTOCOL_KINDS = new Set<AttentionInputProtocolKind>(["context", "items"]);
 const COMPACT_CYCLE_INPUT_NAME = "CompactCycle";
 const MAX_ATTENTION_PROTOCOL_COMMITS = 24;
 
@@ -3854,53 +3854,6 @@ export class SessionRuntime {
       channel,
       chatId,
       attentionContextIds,
-    };
-  }
-
-  private buildAttentionSummaryInput(
-    active: readonly AttentionActiveContextMatch[],
-    selected: readonly AttentionActiveContextMatch[],
-    bootstrapSnapshots: readonly AttentionActiveContextMatch[] = [],
-  ): LoopBusInput | null {
-    const state = this.collectAttentionBootstrapState(active, selected, bootstrapSnapshots);
-    if (!state) {
-      return null;
-    }
-    const bootstrapContextIds = bootstrapSnapshots.map((match) => match.contextId);
-    const activeSystems = [...new Set(state.metadata.map((item) => item.source))];
-    const text = [
-      "## PreAICallContext Summary",
-      "",
-      mdFence(
-        "yaml+context-summary",
-        toYaml({
-          primaryContextId: state.primary.contextId,
-          selectedContextIds: state.selectedContextIds,
-          activeContextCount: active.length,
-          activeSystems,
-          ...(bootstrapContextIds.length > 0 ? { bootstrapContextIds } : {}),
-          ...(state.chatId ? { chatId: state.chatId } : {}),
-        }),
-      ),
-    ].join("\n");
-
-    return {
-      name: `AttentionSummary-${state.primary.contextId}`,
-      role: "user",
-      type: "text",
-      source: "attention",
-      text,
-      meta: {
-        attentionContextId: state.primary.contextId,
-        attentionContextIds: serializeAttentionContextIds(state.attentionContextIds) ?? null,
-        attentionCommitRefs: null,
-        attentionHeadCommitId: state.primary.context.headCommitId,
-        owner: state.primary.context.owner,
-        createdAt: state.primary.context.updatedAt,
-        attentionProtocolKind: "summary",
-        ...(state.channel ? { chatFocused: state.channel.focused } : {}),
-        ...(state.chatId ? { chatId: state.chatId } : {}),
-      },
     };
   }
 
@@ -7493,14 +7446,6 @@ export class SessionRuntime {
     }
 
     const outputs: LoopBusInput[] = [];
-    const summaryInput = this.buildAttentionSummaryInput(
-      active,
-      selected.length > 0 ? selected : bootstrapSnapshots ? [bootstrapSnapshots] : [],
-      bootstrapSnapshots ? [bootstrapSnapshots] : [],
-    );
-    if (summaryInput) {
-      outputs.push(summaryInput);
-    }
     const bootstrapInput = this.buildAttentionContextBootstrapInput(
       active,
       selected.length > 0 ? selected : bootstrapSnapshots ? [bootstrapSnapshots] : [],
