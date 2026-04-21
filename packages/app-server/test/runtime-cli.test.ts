@@ -335,7 +335,7 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("Write text into a terminal and optionally submit it.");
     expect(result.stdout).toContain('"terminalId"');
     expect(result.stdout).toContain('"text"');
-    expect(result.stdout).toContain("Preferred default through `root_workspace_bash`");
+    expect(result.stdout).toContain("Preferred default through `root_bash`");
     expect(result.stdout).toContain("command: `terminal write`");
     expect(result.stdout).toContain("stdin:");
     expect(result.stdout).toContain("Single argv JSON fallback for trivial payloads");
@@ -348,7 +348,7 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(api.getRequests()).toHaveLength(0);
   });
 
-  test("Scenario: Given descriptor help probes When stdin examples are rendered Then help prefers root_workspace_bash command plus stdin over heredoc shell snippets", async () => {
+  test("Scenario: Given descriptor help probes When stdin examples are rendered Then help prefers root_bash command plus stdin over heredoc shell snippets", async () => {
     const api = await startMockRuntimeApi();
     const message = createRuntimeCommand(api.baseUrl, "message");
     const attention = createRuntimeCommand(api.baseUrl, "attention");
@@ -357,10 +357,10 @@ describe("Feature: runtime descriptor CLI", () => {
     const attentionHelp = await attention.execute(["commit", "--help"], createCommandContext());
 
     expect(messageHelp.exitCode).toBe(0);
-    expect(messageHelp.stdout).toContain("Preferred default through `root_workspace_bash`");
+    expect(messageHelp.stdout).toContain("Preferred default through `root_bash`");
     expect(messageHelp.stdout).toContain("command: `message send`");
     expect(messageHelp.stdout).not.toContain("cat <<'EOF'");
-    expect(messageHelp.stdout.indexOf("Preferred default through `root_workspace_bash`")).toBeLessThan(
+    expect(messageHelp.stdout.indexOf("Preferred default through `root_bash`")).toBeLessThan(
       messageHelp.stdout.indexOf("Single argv JSON fallback for trivial payloads"),
     );
     expect(messageHelp.stdout).toContain("Optional positional compact mode");

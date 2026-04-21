@@ -3,7 +3,7 @@
 Use this note when you are orienting inside a fresh runtime.
 
 Recommended order:
-1. `root_workspace_list`
+1. `workspace_list`
 2. `skill list`
 3. `skill info <skill>`
 4. `skill get-config <skill>` when you need to inspect live watch targets

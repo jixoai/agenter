@@ -78,7 +78,7 @@ const buildAssistantEntry = (groupIndex: number, createdAt: number, variant: num
           },
           invocationId: `perf-invocation-${groupIndex}`,
           startedAt: createdAt + 300,
-          tool: "root_workspace_bash",
+          tool: "root_bash",
         },
         role: "assistant",
         roundIndex: groupIndex,
@@ -102,7 +102,7 @@ const buildAssistantEntry = (groupIndex: number, createdAt: number, variant: num
           output: {
             stdout: `trace sample ${groupIndex}`,
           },
-          tool: "root_workspace_bash",
+          tool: "root_bash",
         },
         role: "assistant",
         roundIndex: groupIndex,

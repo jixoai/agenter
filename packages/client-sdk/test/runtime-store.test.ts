@@ -189,7 +189,6 @@ const createSnapshot = (
         refCount: 0,
       },
       attentionApi: null,
-      rootWorkspace: null,
       terminals: [
         {
           terminalId: "main",
@@ -3942,7 +3941,7 @@ describe("Feature: runtime store synchronization", () => {
                     partType: "tool_call",
                     payload: {
                       invocationId: "call-attention-commit",
-                      tool: "root_workspace_bash",
+                      tool: "root_bash",
                       input: {
                         command: 'attention commit \'{"contextId":"ctx-room"}\'',
                       },
@@ -3978,7 +3977,7 @@ describe("Feature: runtime store synchronization", () => {
                   partType: "tool_call",
                   payload: {
                     invocationId: "call-attention-commit",
-                    tool: "root_workspace_bash",
+                    tool: "root_bash",
                     input: "",
                   },
                   text: "",
@@ -4032,7 +4031,7 @@ describe("Feature: runtime store synchronization", () => {
           kind: "tool_call",
           data: {
             toolCallId: "call-attention-commit",
-            toolName: "root_workspace_bash",
+            toolName: "root_bash",
             input: {
               command: 'attention commit \'{"contextId":"ctx-room"}\'',
             },
@@ -4148,7 +4147,7 @@ describe("Feature: runtime store synchronization", () => {
           partType: "tool_call",
           payload: {
             invocationId: "call-attention-commit",
-            tool: "root_workspace_bash",
+            tool: "root_bash",
             input: {
               command: 'attention commit --compact \'["ctx-1",[],"Settled."]\'',
             },
@@ -4225,7 +4224,7 @@ describe("Feature: runtime store synchronization", () => {
                   mimeType: null,
                   payload: {
                     invocationId: "call-attention-commit",
-                    tool: "root_workspace_bash",
+                    tool: "root_bash",
                     input: {
                       command: 'attention commit --compact \'["ctx-1",[],"Settled."]\'',
                     },
@@ -4247,7 +4246,7 @@ describe("Feature: runtime store synchronization", () => {
                   mimeType: null,
                   payload: {
                     invocationId: "call-attention-commit",
-                    tool: "root_workspace_bash",
+                    tool: "root_bash",
                     output: { ok: true },
                     error: null,
                   },

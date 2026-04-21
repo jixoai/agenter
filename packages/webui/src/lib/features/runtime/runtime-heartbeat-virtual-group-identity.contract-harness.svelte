@@ -38,8 +38,9 @@
         mimeType: null,
         payload: {
           invocationId: `virtual-contract-${id}`,
-          tool: "root_workspace_bash",
+          tool: "root_bash",
           input: {
+            workspaceAlias: "root",
             command: `printf '%s\n' 'virtual contract ${id}'`,
             stdin: JSON.stringify({ contract: "runtime-heartbeat-virtual", id }, null, 2),
           },

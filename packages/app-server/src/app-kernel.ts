@@ -1607,18 +1607,32 @@ export class AppKernel {
     mount: WorkspaceMountRecord;
     workspaceRoot: string;
     grants: WorkspaceGrantRecord[];
+    defaultCwd: string;
   }> {
     return this.workspaceSystem
       .listRuntimeMounts(runtimeId)
       .map((mount) => ({
         mount,
         workspaceRoot: toWorkspaceCwd(mount.workspacePath),
+        defaultCwd:
+          this.workspaceSystem.getRuntimeWorkspaceExecProfile({
+            runtimeId,
+            workspacePath: mount.workspacePath,
+          })?.cwd ?? toWorkspaceCwd(mount.workspacePath),
         grants: this.workspaceSystem.listRuntimeWorkspaceGrants({
           runtimeId,
           workspacePath: mount.workspacePath,
         }),
       }))
       .filter((entry) => entry.grants.length > 0);
+  }
+
+  private setRuntimeWorkspaceAlias(input: {
+    runtimeId: string;
+    runtimeWorkspaceId: number;
+    alias: string;
+  }): WorkspaceMountRecord | null {
+    return this.workspaceSystem.setRuntimeWorkspaceAlias(input);
   }
 
   private resolveRuntimeTerminalCwd(input: {
@@ -2377,6 +2391,12 @@ export class AppKernel {
       rootWorkspacePath,
       usageAnalyticsRoot: resolveGlobalAvatarCanonicalRoot(meta.avatarPrincipalId, this.getHomeDir()),
       listRuntimeWorkspaceAuthorities: () => this.listRuntimeWorkspaceAuthorities(meta.id),
+      setRuntimeWorkspaceAlias: (input) =>
+        this.setRuntimeWorkspaceAlias({
+          runtimeId: meta.id,
+          runtimeWorkspaceId: input.runtimeWorkspaceId,
+          alias: input.alias,
+        }),
       messageSystem: this.messageControlPlane,
       messageActorId: this.resolveSessionMessageActorId(meta),
       terminalSystem: this.terminalControlPlane,
@@ -3744,7 +3764,9 @@ export class AppKernel {
     return await this.authService.authenticateAuthToken(token);
   }
 
-  private async validateRootAuthPrivateKey(privateKey: string): Promise<{ descriptor: Awaited<ReturnType<typeof this.authService.describe>>; authId: string; privateKey: `0x${string}` }> {
+  private async validateRootAuthPrivateKey(
+    privateKey: string,
+  ): Promise<{ descriptor: Awaited<ReturnType<AuthServiceBridge["describe"]>>; authId: string; privateKey: `0x${string}` }> {
     const descriptor = await this.authService.describe();
     const normalizedPrivateKey = toHexPrivateKey(privateKey);
     const authId = privateKeyToAccount(normalizedPrivateKey).address.toLowerCase();

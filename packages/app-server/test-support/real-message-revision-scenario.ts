@@ -172,7 +172,7 @@ const extractRootWorkspaceBashCommands = (
   recentModelCalls.flatMap((call) =>
     call.toolTrace.flatMap((entry) => {
       if (
-        entry.tool !== "root_workspace_bash" ||
+        entry.tool !== "root_bash" ||
         !entry.input ||
         typeof entry.input !== "object" ||
         typeof (entry.input as { command?: unknown }).command !== "string"

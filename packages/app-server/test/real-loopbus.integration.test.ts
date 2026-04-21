@@ -124,7 +124,7 @@ describe("Feature: real AI loopbus convergence", () => {
         expect(result.reply.content).toBe("COMPACT-OK");
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.some((call) => call.outcome === "done")).toBe(true);
-        expect(result.toolTraceTools).toContain("root_workspace_bash");
+        expect(result.toolTraceTools).toContain("root_bash");
         expect(result.rootWorkspaceBashCommands).toContain("message send --help");
         expect(result.rootWorkspaceBashCommands.some((command) => command.startsWith("message send --compact "))).toBe(
           true,
@@ -242,7 +242,7 @@ describe("Feature: real AI loopbus convergence", () => {
         ).toBe(true);
         expect(result.reply.timestamp).toBeGreaterThan(result.acknowledgement.timestamp);
         expect(result.settledAttention.active).toHaveLength(0);
-        expect(result.toolTraceTools).toContain("root_workspace_bash");
+        expect(result.toolTraceTools).toContain("root_bash");
         expect(harness.avatarNickname).toBe(REAL_EXTERNAL_FACT_AVATAR_PROFILE.nickname);
         expect(harness.avatarPromptPath).toBeTruthy();
       } finally {
@@ -319,7 +319,7 @@ describe("Feature: real AI loopbus convergence", () => {
           }),
         ).toBe(true);
         expect(result.activeAfterRelay.active.length).toBeGreaterThan(0);
-        expect(result.toolTraceTools).toContain("root_workspace_bash");
+        expect(result.toolTraceTools).toContain("root_bash");
       } finally {
         await harness.stop();
       }

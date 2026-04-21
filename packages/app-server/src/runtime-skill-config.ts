@@ -71,7 +71,7 @@ const parseConfigJson = (raw: string): RuntimeSkillConfig => normalizeConfigFile
 
 const hashContent = (value: string): string => createHash("sha1").update(value).digest("hex");
 
-const readFileFingerprint = (path: string): string => hashContent(readFileSync(path));
+const readFileFingerprint = (path: string): string => hashContent(readFileSync(path, "utf8"));
 
 const walkFiles = (root: string, depth = 0, maxDepth = Number.POSITIVE_INFINITY): string[] => {
   if (depth > maxDepth || !existsSync(root)) {

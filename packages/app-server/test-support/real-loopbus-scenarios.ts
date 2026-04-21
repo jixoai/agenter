@@ -212,7 +212,7 @@ const extractRootWorkspaceBashCommands = (call: { response?: unknown }): string[
     if (
       !entry ||
       typeof entry !== "object" ||
-      entry.tool !== "root_workspace_bash" ||
+      entry.tool !== "root_bash" ||
       !("input" in entry) ||
       !entry.input ||
       typeof entry.input !== "object" ||
@@ -356,8 +356,8 @@ export const runRealCliCompactScenario = async (harness: RealKernelHarness): Pro
     const prompt = [
       "请完成一个最小的 CLI compact 验证。",
       `目标房间 chatId: ${primaryRoomId}`,
-      "必须先通过 root_workspace_bash 执行一次 `message send --help`。",
-      "然后必须通过 root_workspace_bash 使用 `message send --compact` 向目标房间发送一条用户可见消息。",
+      "必须先通过 root_bash 执行一次 `message send --help`。",
+      "然后必须通过 root_bash 使用 `message send --compact` 向目标房间发送一条用户可见消息。",
       "最终发送的消息内容必须精确等于：COMPACT-OK",
       "不要使用普通 object JSON message send，也不要发送额外的最终结果文本。",
       "完成后把相关 attention score 收敛到 0。",
@@ -681,7 +681,7 @@ export const runRealInterleavedCanInputScenario = async (
   const initialPrompt = [
     "我们正在验证你是否能在工具阶段接收新的输入。",
     `1. 先立刻在 ${primaryRoomId} 回复一条简短确认消息，表示你会继续执行并稍后回报。`,
-    "2. 然后必须使用 root_workspace_bash 执行这个命令：bash -lc 'sleep 5; echo TOOL-PHASE-DONE'。",
+    "2. 然后必须使用 root_bash 执行这个命令：bash -lc 'sleep 5; echo TOOL-PHASE-DONE'。",
     "3. 在终端命令运行期间，我可能会再发一条以“补充要求:”开头的新消息。你必须在最终结果里处理这条补充要求。",
     `4. 最终只在 ${primaryRoomId} 回复一条中文结果消息，并且必须包含 TOOL-PHASE-DONE 与补充要求里的关键短语。`,
     "5. 禁止跳过 shell 执行，禁止凭空回答，完成后收敛 attention。",

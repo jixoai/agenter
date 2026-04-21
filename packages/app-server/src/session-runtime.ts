@@ -164,7 +164,6 @@ import {
   type RuntimeVisibleMessageRoomView,
   type RuntimeWorkspaceSurface,
 } from "./runtime-tool-views";
-import { listRuntimeToolFiles } from "./runtime-tools";
 import { createSpanId, createTraceEvent, createTraceId, createTraceRef } from "./runtime-trace";
 import { buildSessionAssetRelativePath, resolveSessionAssetKind, toChatSessionAsset } from "./session-assets";
 import { resolveSessionRoomActorId } from "./session-chat-projection";
@@ -210,12 +209,12 @@ import {
 } from "./workspace-settings";
 import {
   executeRootWorkspaceBash,
+  executeWorkspaceBash,
   type RootWorkspaceBashExecResult,
   type RootWorkspaceMountInput,
   type WorkspaceGrantRecord,
   type WorkspaceMountRecord,
 } from "./workspace-system";
-import { listWorkspaceHiddenPrivatePaths } from "./workspace-system/private-isolation";
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const DEFAULT_CHAT_OWNER = "agenter";
@@ -1201,11 +1200,11 @@ export interface SessionRuntimeAttentionApiSurface {
   principalId: string;
 }
 
-export interface SessionRuntimeRootWorkspaceSurface {
-  path: string;
-  commandNames: string[];
-  toolNames: string[];
-  skillRoots: string[];
+interface SessionRuntimeWorkspaceAuthority {
+  mount: WorkspaceMountRecord;
+  workspaceRoot: string;
+  grants: WorkspaceGrantRecord[];
+  defaultCwd: string;
 }
 
 export type ModelCallDeltaKind = "assistant_draft" | "tool_call" | "tool_result" | "run_finished";
@@ -1293,7 +1292,6 @@ export interface SessionRuntimeSnapshot {
     refCount: number;
   };
   attentionApi: SessionRuntimeAttentionApiSurface | null;
-  rootWorkspace: SessionRuntimeRootWorkspaceSurface | null;
   modelCapabilities: ModelCapabilities;
   activeCycle: ChatCycle | null;
 }
@@ -1322,11 +1320,14 @@ export interface SessionRuntimeOptions {
     | Promise<{ ok: true; cwd: string } | { ok: false; message: string }>
     | { ok: true; cwd: string }
     | { ok: false; message: string };
-  listRuntimeWorkspaceAuthorities?: () => Array<{
-    mount: WorkspaceMountRecord;
-    workspaceRoot: string;
-    grants: WorkspaceGrantRecord[];
-  }>;
+  listRuntimeWorkspaceAuthorities?: () => Array<SessionRuntimeWorkspaceAuthority>;
+  setRuntimeWorkspaceAlias?: (input: {
+    runtimeWorkspaceId: number;
+    alias: string;
+  }) =>
+    | Promise<WorkspaceMountRecord | null>
+    | WorkspaceMountRecord
+    | null;
   allocateRoomId?: (input: { kind: MessageChannelKind; title?: string }) => Promise<string>;
   logger?: {
     log: (line: {
@@ -1539,12 +1540,16 @@ export class SessionRuntime {
     return this.options.rootWorkspacePath ?? this.options.cwd;
   }
 
-  private listWorkspaceAuthorities(): Array<{
-    mount: WorkspaceMountRecord;
-    workspaceRoot: string;
-    grants: WorkspaceGrantRecord[];
-  }> {
+  private listWorkspaceAuthorities(): SessionRuntimeWorkspaceAuthority[] {
     return this.options.listRuntimeWorkspaceAuthorities?.() ?? [];
+  }
+
+  private listMountedWorkspaceAuthorities(): SessionRuntimeWorkspaceAuthority[] {
+    return this.listWorkspaceAuthorities().filter((entry) => entry.mount.kind === "workspace");
+  }
+
+  private findMountedWorkspaceAuthority(runtimeWorkspaceId: number): SessionRuntimeWorkspaceAuthority | null {
+    return this.listMountedWorkspaceAuthorities().find((entry) => entry.mount.runtimeWorkspaceId === runtimeWorkspaceId) ?? null;
   }
 
   private getRootWorkspaceSkillRoots(): string[] {
@@ -1552,13 +1557,6 @@ export class SessionRuntime {
       homeDir: this.getHomeDir(),
       rootWorkspacePath: this.getRootWorkspacePath(),
       principalId: this.options.avatarPrincipalId,
-    });
-  }
-
-  private getRootWorkspaceToolFiles(): string[] {
-    return listRuntimeToolFiles({
-      homeDir: this.getHomeDir(),
-      rootWorkspacePath: this.getRootWorkspacePath(),
     });
   }
 
@@ -3506,25 +3504,33 @@ export class SessionRuntime {
   }
 
   private deriveProjectionStageFromToolTrace(trace: readonly AgentToolTraceEntry[]): TaskStage {
-    if (trace.some((entry) => entry.tool === "root_workspace_bash")) {
+    if (trace.some((entry) => entry.tool === "root_bash" || entry.tool === "workspace_bash")) {
       return "act";
     }
-    if (trace.some((entry) => entry.tool === "root_workspace_list")) {
+    if (trace.some((entry) => entry.tool === "workspace_list")) {
       return "observe";
     }
     return "decide";
   }
 
   private createAgentToolProviders(): AgentToolProvider[] {
-    return [this.createRootWorkspaceToolProvider()];
+    return [this.createWorkspaceToolProvider()];
   }
 
-  private listRootWorkspaceToolCommands(): string[] {
-    return ["attention", "message", "workspace", "terminal", "skill", "tool"];
+  private projectDirectWorkspaceList(): Array<{
+    id: number;
+    cwd: string;
+    alias: string;
+  }> {
+    return this.listMountedWorkspaceAuthorities().map((entry) => ({
+      id: entry.mount.runtimeWorkspaceId,
+      cwd: entry.defaultCwd,
+      alias: entry.mount.alias,
+    }));
   }
 
   private projectRuntimeWorkspaceList(): RuntimeWorkspaceSurface[] {
-    return this.listWorkspaceAuthorities().map((entry) => projectRuntimeWorkspaceSurface(entry));
+    return this.listMountedWorkspaceAuthorities().map((entry) => projectRuntimeWorkspaceSurface(entry));
   }
 
   private async ensureRuntimeLocalApiStarted(): Promise<void> {
@@ -3581,6 +3587,25 @@ export class SessionRuntime {
         messageEdit: async (input) => await this.editRuntimeMessage(input),
         messageRecall: async (input) => await this.recallRuntimeMessage(input),
         workspaceList: () => this.projectRuntimeWorkspaceList(),
+        workspaceSetAlias: async (input) => {
+          const updated = await this.options.setRuntimeWorkspaceAlias?.({
+            runtimeWorkspaceId: input.workspaceId,
+            alias: input.alias,
+          });
+          if (!updated || updated.kind !== "workspace") {
+            throw new Error(`workspace not found: ${input.workspaceId}`);
+          }
+          return {
+            workspace: projectRuntimeWorkspaceSurface({
+              mount: updated,
+              defaultCwd:
+                this.findMountedWorkspaceAuthority(updated.runtimeWorkspaceId)?.defaultCwd ??
+                this.listWorkspaceAuthorities().find((entry) => entry.mount.mountId === updated.mountId)?.defaultCwd ??
+                updated.workspacePath,
+              grants: this.listWorkspaceAuthorities().find((entry) => entry.mount.mountId === updated.mountId)?.grants ?? [],
+            }),
+          };
+        },
         terminalList: () => this.listRuntimeTerminals().map(projectRuntimeTerminal),
         terminalCreate: async (input) => {
           const result = await this.createRuntimeTerminal(input);
@@ -3667,22 +3692,7 @@ export class SessionRuntime {
         ...(input.env ?? {}),
       },
       stdin: input.stdin,
-      mounts: [
-        ...this.getRootWorkspaceSkillMounts(),
-        ...this.listWorkspaceAuthorities().map((entry) => {
-          const mode: RootWorkspaceMountInput["mode"] = entry.grants.some((grant) => grant.mode === "rw") ? "rw" : "ro";
-          const avatar = this.options.avatar ?? this.config?.avatar.nickname ?? "default";
-          return {
-            path: entry.mount.workspacePath,
-            mode,
-            grants: entry.grants,
-            hiddenPaths: listWorkspaceHiddenPrivatePaths({
-              workspacePath: entry.mount.workspacePath,
-              avatar,
-            }),
-          };
-        }),
-      ],
+      mounts: [...this.getRootWorkspaceSkillMounts()],
       customCommands: createRuntimeShellCommands({
         baseUrl: this.runtimeLocalApi.baseUrl,
         privateKey: this.options.avatarPrivateKey,
@@ -3693,9 +3703,37 @@ export class SessionRuntime {
     });
   }
 
-  private createRootWorkspaceToolProvider(): AgentToolProvider {
+  private async execWorkspaceBash(input: {
+    workspaceId: number;
+    command: string;
+    cwd?: string;
+    env?: Record<string, string>;
+    stdin?: string;
+  }): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    cwd: string;
+  }> {
+    const authority = this.findMountedWorkspaceAuthority(input.workspaceId);
+    if (!authority) {
+      throw new Error(`workspace not found: ${input.workspaceId}`);
+    }
+    const avatar = this.options.avatar ?? this.config?.avatar.nickname ?? "default";
+    return await executeWorkspaceBash({
+      workspacePath: authority.mount.workspacePath,
+      avatar,
+      command: input.command,
+      cwd: input.cwd ?? authority.defaultCwd,
+      env: input.env,
+      stdin: input.stdin,
+      grants: authority.grants,
+    });
+  }
+
+  private createWorkspaceToolProvider(): AgentToolProvider {
     return {
-      name: "root-workspace",
+      name: "workspace-shell",
       createTools: ({ traceTool }) => {
         const traceWithContext = <TInput, TOutput>(
           toolName: string,
@@ -3705,36 +3743,28 @@ export class SessionRuntime {
         ): Promise<TOutput> => traceTool(toolName, input, handler, { invocationId: context?.toolCallId });
 
         const listTool = toolDefinition({
-          name: "root_workspace_list",
-          description: "List the fixed avatar root workspace, mounted workspaces, grants, and shell commands.",
-          outputSchema: z.record(z.string(), z.unknown()),
+          name: "workspace_list",
+          description: "List mounted project workspaces currently held by this runtime.",
+          outputSchema: z.array(
+            z.object({
+              id: z.number(),
+              cwd: z.string(),
+              alias: z.string(),
+            }),
+          ),
         }).server(async (_rawInput, context) =>
           traceWithContext(
-            "root_workspace_list",
+            "workspace_list",
             {},
-            async () => ({
-              rootWorkspace: {
-                path: this.getRootWorkspacePath(),
-                commandNames: this.listRootWorkspaceToolCommands(),
-                toolNames: this.getRootWorkspaceToolFiles(),
-                skillRoots: this.getRootWorkspaceSkillRoots(),
-              },
-              attentionApi: this.runtimeLocalApi
-                ? {
-                    baseUrl: this.runtimeLocalApi.baseUrl,
-                    principalId: this.options.avatarPrincipalId ?? null,
-                  }
-                : null,
-              workspaces: this.projectRuntimeWorkspaceList(),
-            }),
+            async () => this.projectDirectWorkspaceList(),
             context,
           ),
         );
 
-        const bashTool = toolDefinition({
-          name: "root_workspace_bash",
+        const rootBashTool = toolDefinition({
+          name: "root_bash",
           description:
-            "Execute bash inside the fixed avatar root workspace with real absolute paths and in-shell CLI commands.",
+            "Execute one-shot bash inside the avatar root workspace with runtime-local system CLI access.",
           inputSchema: z.object({
             command: z.string(),
             cwd: z.string().optional(),
@@ -3757,14 +3787,55 @@ export class SessionRuntime {
             })
             .parse(rawInput);
           return traceWithContext(
-            "root_workspace_bash",
-            parsed,
+            "root_bash",
+            {
+              workspaceAlias: "root",
+              ...parsed,
+            },
             async () => await this.execRootWorkspaceBash(parsed),
             context,
           );
         });
 
-        return [listTool, bashTool];
+        const workspaceBashTool = toolDefinition({
+          name: "workspace_bash",
+          description: "Execute one-shot bash inside one mounted project workspace selected by workspaceId.",
+          inputSchema: z.object({
+            workspaceId: z.number().int().positive(),
+            command: z.string(),
+            cwd: z.string().optional(),
+            env: z.record(z.string(), z.string()).optional(),
+            stdin: z.string().optional(),
+          }),
+          outputSchema: z.object({
+            stdout: z.string(),
+            stderr: z.string(),
+            exitCode: z.number(),
+            cwd: z.string(),
+          }),
+        }).server(async (rawInput, context) => {
+          const parsed = z
+            .object({
+              workspaceId: z.number().int().positive(),
+              command: z.string(),
+              cwd: z.string().optional(),
+              env: z.record(z.string(), z.string()).optional(),
+              stdin: z.string().optional(),
+            })
+            .parse(rawInput);
+          const authority = this.findMountedWorkspaceAuthority(parsed.workspaceId);
+          return traceWithContext(
+            "workspace_bash",
+            {
+              ...parsed,
+              workspaceAlias: authority?.mount.alias ?? null,
+            },
+            async () => await this.execWorkspaceBash(parsed),
+            context,
+          );
+        });
+
+        return [listTool, rootBashTool, workspaceBashTool];
       },
     };
   }
@@ -6501,14 +6572,6 @@ export class SessionRuntime {
         ? {
             baseUrl: this.runtimeLocalApi.baseUrl,
             principalId: this.options.avatarPrincipalId ?? "",
-          }
-        : null,
-      rootWorkspace: this.options.rootWorkspacePath
-        ? {
-            path: this.getRootWorkspacePath(),
-            commandNames: this.listRootWorkspaceToolCommands(),
-            toolNames: this.getRootWorkspaceToolFiles(),
-            skillRoots: this.getRootWorkspaceSkillRoots(),
           }
         : null,
       modelCapabilities: this.config

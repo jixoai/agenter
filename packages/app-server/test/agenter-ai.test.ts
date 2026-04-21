@@ -26,9 +26,8 @@ import type { ModelClient } from "../src/model-client";
 import type { PromptDocRecord } from "../src/prompt-docs";
 import { FilePromptStore } from "../src/prompt-store";
 import {
-  createInProcessRootWorkspaceToolProvider,
-  type RootWorkspaceToolListPayload,
-} from "../src/root-workspace-tool-provider";
+  createInProcessWorkspaceToolProvider,
+} from "../src/workspace-tool-provider";
 import type { RuntimeLocalApiHandlers } from "../src/runtime-tool-descriptors";
 import { projectRuntimeAttentionActiveMatch } from "../src/runtime-tool-views";
 import type { AppServerLogger } from "../src/types";
@@ -260,6 +259,11 @@ type AttentionGatewayLike = ReturnType<typeof createAttentionGateway>["gateway"]
 type MessageGatewayLike = ReturnType<typeof createMessageGateway>["gateway"];
 
 const ROOT_WORKSPACE_PATH = "/runtime/test-root";
+type WorkspaceListPayload = Array<{
+  id: number;
+  cwd: string;
+  alias: string;
+}>;
 
 const createToolContext = (toolCallId: string) => ({
   toolCallId,
@@ -280,13 +284,13 @@ const findExecutableTool = (
   return tool;
 };
 
-const findRootWorkspaceListTool = (input: Pick<ModelRespondInput, "tools">) =>
-  findExecutableTool(input.tools, "root_workspace_list");
+const findWorkspaceListTool = (input: Pick<ModelRespondInput, "tools">) =>
+  findExecutableTool(input.tools, "workspace_list");
 
-const findRootWorkspaceBashTool = (input: Pick<ModelRespondInput, "tools">) =>
-  findExecutableTool(input.tools, "root_workspace_bash");
+const findRootBashTool = (input: Pick<ModelRespondInput, "tools">) =>
+  findExecutableTool(input.tools, "root_bash");
 
-const buildRootWorkspaceBashInput = (command: string, payload?: unknown, cwd?: string) =>
+const buildRootBashInput = (command: string, payload?: unknown, cwd?: string) =>
   ({
     command,
     ...(cwd ? { cwd } : {}),
@@ -297,29 +301,29 @@ const buildRootWorkspaceBashInput = (command: string, payload?: unknown, cwd?: s
     stdin?: string;
   };
 
-const stringifyRootWorkspaceBashArgs = (command: string, payload?: unknown, cwd?: string): string =>
-  JSON.stringify(buildRootWorkspaceBashInput(command, payload, cwd));
+const stringifyRootBashArgs = (command: string, payload?: unknown, cwd?: string): string =>
+  JSON.stringify(buildRootBashInput(command, payload, cwd));
 
-const parseRootWorkspaceBashStdout = <T>(output: { stdout: string; stderr: string; exitCode: number }): T => {
+const parseRootBashStdout = <T>(output: { stdout: string; stderr: string; exitCode: number }): T => {
   expect(output.exitCode).toBe(0);
   expect(output.stderr).toBe("");
   return JSON.parse(output.stdout) as T;
 };
 
-const buildRootWorkspaceBashSuccessResult = (payload: unknown, cwd = ROOT_WORKSPACE_PATH) => ({
+const buildRootBashSuccessResult = (payload: unknown, cwd = ROOT_WORKSPACE_PATH) => ({
   stdout: `${JSON.stringify(payload)}\n`,
   stderr: "",
   exitCode: 0,
   cwd,
 });
 
-const callRootWorkspaceList = async (
+const callWorkspaceList = async (
   input: Pick<ModelRespondInput, "tools">,
-  toolCallId = "call-root_workspace_list",
-): Promise<RootWorkspaceToolListPayload> =>
-  (await findRootWorkspaceListTool(input).execute!({}, createToolContext(toolCallId))) as RootWorkspaceToolListPayload;
+  toolCallId = "call-workspace_list",
+): Promise<WorkspaceListPayload> =>
+  (await findWorkspaceListTool(input).execute!({}, createToolContext(toolCallId))) as WorkspaceListPayload;
 
-const callRootWorkspaceBashJson = async <T>(
+const callRootBashJson = async <T>(
   input: Pick<ModelRespondInput, "tools">,
   args: {
     command: string;
@@ -328,8 +332,8 @@ const callRootWorkspaceBashJson = async <T>(
     cwd?: string;
   },
 ): Promise<T> => {
-  const output = (await findRootWorkspaceBashTool(input).execute!(
-    buildRootWorkspaceBashInput(args.command, args.payload, args.cwd),
+  const output = (await findRootBashTool(input).execute!(
+    buildRootBashInput(args.command, args.payload, args.cwd),
     createToolContext(args.toolCallId),
   )) as {
     stdout: string;
@@ -338,7 +342,7 @@ const callRootWorkspaceBashJson = async <T>(
     cwd: string;
   };
   expect(output.cwd).toBe(args.cwd ?? ROOT_WORKSPACE_PATH);
-  return parseRootWorkspaceBashStdout<T>(output);
+  return parseRootBashStdout<T>(output);
 };
 
 const callAttentionQueryViaCli = async (
@@ -346,7 +350,7 @@ const callAttentionQueryViaCli = async (
   payload: { query: string; offset?: number; limit?: number },
   toolCallId = "call-attention-query",
 ) =>
-  await callRootWorkspaceBashJson<{
+  await callRootBashJson<{
     ok: true;
     items: Array<ReturnType<typeof projectAttentionCommitMatchForModel>>;
   }>(input, {
@@ -360,7 +364,7 @@ const callAttentionCommitViaCli = async (
   payload: Record<string, unknown>,
   toolCallId = "call-attention-commit",
 ) =>
-  await callRootWorkspaceBashJson<{
+  await callRootBashJson<{
     ok: true;
     commit: {
       commitId: string;
@@ -388,7 +392,7 @@ const callMessageListViaCli = async (
   payload?: { includeArchived?: boolean; limit?: number },
   toolCallId = "call-message-list",
 ) =>
-  await callRootWorkspaceBashJson<{
+  await callRootBashJson<{
     ok: true;
     channels: Array<{
       chatId: string;
@@ -406,7 +410,7 @@ const callMessageReadViaCli = async (
   payload: { chatId: string; limit?: number },
   toolCallId = "call-message-read",
 ) =>
-  await callRootWorkspaceBashJson<{
+  await callRootBashJson<{
     ok: true;
     snapshot: {
       channel: {
@@ -435,7 +439,7 @@ const callMessageQueryViaCli = async (
   },
   toolCallId = "call-message-query",
 ) =>
-  await callRootWorkspaceBashJson<{
+  await callRootBashJson<{
     ok: true;
     result:
       | {
@@ -471,7 +475,7 @@ const callMessageSendViaCli = async (
   payload: { chatId: string; content: string; ref?: number; from?: string },
   toolCallId = "call-message-send",
 ) =>
-  await callRootWorkspaceBashJson<{
+  await callRootBashJson<{
     ok: true;
     result: {
       ok: true;
@@ -492,7 +496,7 @@ const callMessageSendViaCli = async (
   });
 
 const callTerminalListViaCli = async (input: Pick<ModelRespondInput, "tools">, toolCallId = "call-terminal-list") =>
-  await callRootWorkspaceBashJson<{ ok: true; terminals: unknown[] }>(input, {
+  await callRootBashJson<{ ok: true; terminals: unknown[] }>(input, {
     command: "terminal list",
     toolCallId,
   });
@@ -502,7 +506,7 @@ const callTerminalCreateViaCli = async (
   payload: Record<string, unknown>,
   toolCallId = "call-terminal-create",
 ) =>
-  await callRootWorkspaceBashJson<{
+  await callRootBashJson<{
     ok: true;
     result: {
       ok: boolean;
@@ -519,7 +523,7 @@ const callTerminalReadViaCli = async (
   payload: { terminalId: string; mode?: "auto" | "diff" | "snapshot" },
   toolCallId = "call-terminal-read",
 ) =>
-  await callRootWorkspaceBashJson<{
+  await callRootBashJson<{
     ok: true;
     result: Record<string, unknown>;
   }>(input, {
@@ -533,7 +537,7 @@ const callTerminalWriteViaCli = async (
   payload: { terminalId: string; text: string; submit?: boolean; submitKey?: "enter" | "linefeed" },
   toolCallId = "call-terminal-write",
 ) =>
-  await callRootWorkspaceBashJson<{
+  await callRootBashJson<{
     ok: true;
     result: {
       ok: boolean;
@@ -618,6 +622,18 @@ const createRuntimeLocalHandlers = (input: {
     return await input.messageGateway.recall(request);
   },
   workspaceList: () => [],
+  workspaceSetAlias: async ({ workspaceId, alias }) => ({
+    workspace: {
+      workspaceId,
+      alias,
+      cwd: `/workspace/${workspaceId}`,
+      mount: {
+        workspacePath: `/workspace/${workspaceId}`,
+        kind: "project",
+      },
+      grants: [],
+    },
+  }),
   terminalList: () => input.terminalGateway?.list() ?? [],
   terminalCreate: async (request) => {
     if (!input.terminalGateway) {
@@ -662,18 +678,10 @@ const createToolProviders = (
     return [];
   }
   return [
-    createInProcessRootWorkspaceToolProvider({
+    createInProcessWorkspaceToolProvider({
       handlers: createRuntimeLocalHandlers(input),
-      list: () => ({
-        rootWorkspace: {
-          path: ROOT_WORKSPACE_PATH,
-          commandNames: ["attention", "message", "workspace", "terminal"],
-          toolNames: [],
-          skillRoots: [],
-        },
-        attentionApi: null,
-        workspaces: [],
-      }),
+      workspaceList: () => [],
+      rootWorkspacePath: ROOT_WORKSPACE_PATH,
     }),
   ];
 };
@@ -1100,15 +1108,14 @@ const createAttentionBootstrapMessages = (input: {
 ];
 
 describe("Feature: AgenterAI behavior", () => {
-  test("Scenario: Given runtime root tools When terminal CLI is needed Then AgenterAI only exposes root_workspace tools and terminal subcommands execute through bash", async () => {
+  test("Scenario: Given runtime root tools When terminal CLI is needed Then AgenterAI exposes workspace_list plus root_bash/workspace_bash and terminal subcommands execute through root_bash", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     let toolNames: string[] = [];
 
     const modelClient = createModelClient(async (input) => {
       toolNames = input.tools.map((tool) => tool.name);
-      const root = await callRootWorkspaceList(input);
-      expect(root.rootWorkspace.commandNames).toEqual(["attention", "message", "workspace", "terminal"]);
+      expect(await callWorkspaceList(input)).toEqual([]);
 
       const createResult = await callTerminalCreateViaCli(
         input,
@@ -1148,10 +1155,10 @@ describe("Feature: AgenterAI behavior", () => {
 
     await ai.send([createUserMessage("inspect the terminal surface")]);
 
-    expect(toolNames).toEqual(["root_workspace_list", "root_workspace_bash"]);
+    expect(toolNames).toEqual(["workspace_list", "root_bash", "workspace_bash"]);
   });
 
-  test("Scenario: Given a message gateway When tools are exposed Then message list/read/query/send run through root_workspace_bash", async () => {
+  test("Scenario: Given a message gateway When tools are exposed Then message list/read/query/send run through root_bash", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const message = createMessageGateway();
@@ -1251,7 +1258,7 @@ describe("Feature: AgenterAI behavior", () => {
 
     await ai.send([createUserMessage("dispatch a message")]);
 
-    expect(toolNames).toEqual(["root_workspace_list", "root_workspace_bash"]);
+    expect(toolNames).toEqual(["workspace_list", "root_bash", "workspace_bash"]);
     expect(message.sent).toHaveLength(1);
     expect(message.sent[0]).toMatchObject({
       chatId: "chat-main",
@@ -2068,7 +2075,7 @@ describe("Feature: AgenterAI behavior", () => {
         await input.onUpdate?.({
           kind: "tool_call",
           toolCallId: "call-attention-commit-stable",
-          toolName: "root_workspace_bash",
+          toolName: "root_bash",
           argsText: "",
           timestamp: Date.now(),
         });
@@ -2120,7 +2127,7 @@ describe("Feature: AgenterAI behavior", () => {
         typeof update.argsText === "string" &&
         update.argsText.length > 0,
     );
-    expect(hydratedCallUpdate?.toolName).toBe("root_workspace_bash");
+    expect(hydratedCallUpdate?.toolName).toBe("root_bash");
     expect(hydratedCallUpdate?.input).toMatchObject({
       command: "attention commit",
     });
@@ -2345,7 +2352,7 @@ describe("Feature: AgenterAI behavior", () => {
     const userReplay = extractUserReplay(seenInputs[1]);
     const roles = extractReplayRoles(seenInputs[1]);
     expect(replay.some((item) => item.includes("yaml+attention_items"))).toBeTrue();
-    expect(replay.some((item) => item.includes("tool: root_workspace_bash"))).toBeTrue();
+    expect(replay.some((item) => item.includes("tool: root_bash"))).toBeTrue();
     expect(replay.some((item) => item.includes('command: "message send"'))).toBeTrue();
     expect(replay.some((item) => item.includes('command: "attention commit"'))).toBeTrue();
     expect(userReplay.some((item) => item.includes("ctx-main unresolved"))).toBeTrue();
@@ -2525,7 +2532,7 @@ describe("Feature: AgenterAI behavior", () => {
 
     const replay = extractAssistantReplay(seenInputs[1]);
     expect(replay.some((item) => item.includes("Decision: report result"))).toBeFalse();
-    expect(replay.some((item) => item.includes("tool: root_workspace_bash"))).toBeTrue();
+    expect(replay.some((item) => item.includes("tool: root_bash"))).toBeTrue();
     expect(replay.some((item) => item.includes('command: "terminal read"'))).toBeTrue();
     expect(replay.some((item) => item.includes('command: "attention commit"'))).toBeTrue();
   });
@@ -2661,18 +2668,18 @@ describe("Feature: AgenterAI behavior", () => {
           await input.onUpdate?.({
             kind: "tool_call",
             toolCallId: "call-message-send-interleaved",
-            toolName: "root_workspace_bash",
-            argsText: stringifyRootWorkspaceBashArgs("message send", cliPayload),
-            input: buildRootWorkspaceBashInput("message send", cliPayload),
+            toolName: "root_bash",
+            argsText: stringifyRootBashArgs("message send", cliPayload),
+            input: buildRootBashInput("message send", cliPayload),
             timestamp: Date.now(),
           });
           await callMessageSendViaCli(input, cliPayload, "call-message-send-interleaved");
           await input.onUpdate?.({
             kind: "tool_result",
             toolCallId: "call-message-send-interleaved",
-            toolName: "root_workspace_bash",
+            toolName: "root_bash",
             ok: true,
-            result: buildRootWorkspaceBashSuccessResult({
+            result: buildRootBashSuccessResult({
               ok: true,
               result: { ok: true, messageId: 1, recentMessages: [] },
             }),
@@ -2731,7 +2738,7 @@ describe("Feature: AgenterAI behavior", () => {
     });
     const assistantReplay = extractAssistantReplay(seenInputs[1]);
     const userReplay = extractUserReplay(seenInputs[1]);
-    expect(assistantReplay.some((item) => item.includes("tool: root_workspace_bash"))).toBeTrue();
+    expect(assistantReplay.some((item) => item.includes("tool: root_bash"))).toBeTrue();
     expect(assistantReplay.some((item) => item.includes('command: "message send"'))).toBeTrue();
     expect(userReplay.some((item) => item.includes("summary: 新消息补充条件"))).toBeTrue();
   });
@@ -2763,18 +2770,18 @@ describe("Feature: AgenterAI behavior", () => {
           await input.onUpdate?.({
             kind: "tool_call",
             toolCallId: "call-message-send-1",
-            toolName: "root_workspace_bash",
-            argsText: stringifyRootWorkspaceBashArgs("message send", cliPayload),
-            input: buildRootWorkspaceBashInput("message send", cliPayload),
+            toolName: "root_bash",
+            argsText: stringifyRootBashArgs("message send", cliPayload),
+            input: buildRootBashInput("message send", cliPayload),
             timestamp: Date.now(),
           });
           await callMessageSendViaCli(input, cliPayload, "call-message-send-1");
           await input.onUpdate?.({
             kind: "tool_result",
             toolCallId: "call-message-send-1",
-            toolName: "root_workspace_bash",
+            toolName: "root_bash",
             ok: true,
-            result: buildRootWorkspaceBashSuccessResult({
+            result: buildRootBashSuccessResult({
               ok: true,
               result: { ok: true, messageId: 1, recentMessages: [] },
             }),
@@ -2794,18 +2801,18 @@ describe("Feature: AgenterAI behavior", () => {
           await input.onUpdate?.({
             kind: "tool_call",
             toolCallId: "call-message-send-2",
-            toolName: "root_workspace_bash",
-            argsText: stringifyRootWorkspaceBashArgs("message send", cliPayload),
-            input: buildRootWorkspaceBashInput("message send", cliPayload),
+            toolName: "root_bash",
+            argsText: stringifyRootBashArgs("message send", cliPayload),
+            input: buildRootBashInput("message send", cliPayload),
             timestamp: Date.now(),
           });
           await callMessageSendViaCli(input, cliPayload, "call-message-send-2");
           await input.onUpdate?.({
             kind: "tool_result",
             toolCallId: "call-message-send-2",
-            toolName: "root_workspace_bash",
+            toolName: "root_bash",
             ok: true,
-            result: buildRootWorkspaceBashSuccessResult({
+            result: buildRootBashSuccessResult({
               ok: true,
               result: { ok: true, messageId: 2, recentMessages: [] },
             }),
@@ -2869,7 +2876,7 @@ describe("Feature: AgenterAI behavior", () => {
     const secondRoundUserReplay = extractUserReplay(seenInputs[1]);
     expect(secondRoundUserReplay.some((item) => item.includes("第二阶段补充要求"))).toBeTrue();
     const thirdRoundAssistantReplay = extractAssistantReplay(seenInputs[2]);
-    expect(thirdRoundAssistantReplay.some((item) => item.includes("tool: root_workspace_bash"))).toBeTrue();
+    expect(thirdRoundAssistantReplay.some((item) => item.includes("tool: root_bash"))).toBeTrue();
     expect(thirdRoundAssistantReplay.some((item) => item.includes('command: "message send"'))).toBeTrue();
     expect(thirdRoundAssistantReplay.some((item) => item.includes("处理中-2"))).toBeTrue();
   });
@@ -3579,7 +3586,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(compactReplay).toContain("answer directly instead of reopening finished relay or lookup work");
   });
 
-  test("Scenario: Given the settled answer only exists in root_workspace_bash message-send trace When compact runs Then AgenterAI still preserves the delivered origin-room answer", async () => {
+  test("Scenario: Given the settled answer only exists in root_bash message-send trace When compact runs Then AgenterAI still preserves the delivered origin-room answer", async () => {
     const chat = createAttentionGateway();
     const promptWindowStore = createPromptWindowStoreSpy([
       {
@@ -3593,8 +3600,8 @@ describe("Feature: AgenterAI behavior", () => {
             type: "text",
             content: [
               "```yaml",
-              "invocationId: root_workspace_bash:relay",
-              "tool: root_workspace_bash",
+              "invocationId: root_bash:relay",
+              "tool: root_bash",
               "status: success",
               "startedAt: 2026-04-12T00:00:00.000Z",
               "finishedAt: 2026-04-12T00:00:01.000Z",
@@ -3618,8 +3625,8 @@ describe("Feature: AgenterAI behavior", () => {
             type: "text",
             content: [
               "```yaml",
-              "invocationId: root_workspace_bash:origin",
-              "tool: root_workspace_bash",
+              "invocationId: root_bash:origin",
+              "tool: root_bash",
               "status: success",
               "startedAt: 2026-04-12T00:00:02.000Z",
               "finishedAt: 2026-04-12T00:00:03.000Z",

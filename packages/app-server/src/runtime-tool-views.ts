@@ -147,6 +147,9 @@ export interface RuntimeAttentionActiveView {
 }
 
 export interface RuntimeWorkspaceSurface {
+  workspaceId: number;
+  alias: string;
+  cwd: string;
   mount: {
     workspacePath: string;
     kind: WorkspaceMountRecord["kind"];
@@ -341,8 +344,12 @@ export const projectRuntimeAttentionActiveMatch = (match: AttentionActiveContext
 
 export const projectRuntimeWorkspaceSurface = (input: {
   mount: WorkspaceMountRecord;
+  defaultCwd: string;
   grants: WorkspaceGrantRecord[];
 }): RuntimeWorkspaceSurface => ({
+  workspaceId: input.mount.runtimeWorkspaceId,
+  alias: input.mount.alias,
+  cwd: input.defaultCwd,
   mount: {
     workspacePath: input.mount.workspacePath,
     kind: input.mount.kind,

@@ -417,7 +417,7 @@ const extractToolResults = (messages: readonly ChatMessage[]): ToolResult[] => {
     for (const call of message.tool_calls ?? []) {
       const parsedArgs = safeJsonParse(call.function.arguments);
       const shellCommand =
-        call.function.name === "root_workspace_bash" && parsedArgs && typeof parsedArgs === "object"
+        call.function.name === "root_bash" && parsedArgs && typeof parsedArgs === "object"
           ? parseRootWorkspaceShellCommand((parsedArgs as { command?: unknown }).command as string | undefined)
           : null;
       callMetaById.set(call.id, {
@@ -433,7 +433,7 @@ const extractToolResults = (messages: readonly ChatMessage[]): ToolResult[] => {
       continue;
     }
     const content = message.content ?? "";
-    const commandFact = callMeta.name === "root_workspace_bash" ? toCliCommandFact(callMeta.command) : null;
+    const commandFact = callMeta.name === "root_bash" ? toCliCommandFact(callMeta.command) : null;
     results.push({
       callId: message.tool_call_id,
       operation: commandFact ?? callMeta.name,
@@ -633,11 +633,11 @@ const buildScores = (scores: Record<string, number> | undefined, mode: "wait" | 
   );
 };
 
-const buildRootWorkspaceBashToolCall = (command: string): ChatToolCall => ({
+const buildRootBashToolCall = (command: string): ChatToolCall => ({
   id: randomUUID(),
   type: "function",
   function: {
-    name: "root_workspace_bash",
+    name: "root_bash",
     arguments: JSON.stringify({ command }),
   },
 });
@@ -677,7 +677,7 @@ const buildAttentionCommitShellCalls = (
         done: input.done,
         stage: input.stage,
       };
-      return buildRootWorkspaceBashToolCall(`attention commit ${escapeShellJson(payload)}`);
+      return buildRootBashToolCall(`attention commit ${escapeShellJson(payload)}`);
     })
     .filter((call): call is ChatToolCall => call !== null);
 
@@ -760,8 +760,8 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
   const latestMessageQuery = findLatestOperationResult(toolResults, "message.query");
   const latestSentRoomReplyPayload = parseMessageSendCommandPayload(latestSentRoomReply?.command);
   const toolNames = new Set((request.tools ?? []).map((tool) => tool.function.name));
-  if (!toolNames.has("root_workspace_bash")) {
-    throw new Error("mock-model-server expects CLI-only runtime tools with root_workspace_bash");
+  if (!toolNames.has("root_bash")) {
+    throw new Error("mock-model-server expects CLI-only runtime tools with root_bash");
   }
   if (
     state.relay?.phase === "reporting" &&
@@ -795,14 +795,14 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
   if (queryScenario) {
     if (!hasOperationResult(toolResults, "message.list")) {
       return createResponse(request, {
-        toolCalls: [buildRootWorkspaceBashToolCall("message list")],
+        toolCalls: [buildRootBashToolCall("message list")],
       });
     }
     const primaryRoomChatId = findPrimaryRoomChatId(toolResults, allFrames);
     if (!latestMessageQuery) {
       return createResponse(request, {
         toolCalls: [
-          buildRootWorkspaceBashToolCall(
+          buildRootBashToolCall(
             `message query ${escapeShellJson({ chatId: "*", mode: "query", query: MOCK_QUERY_KEYWORD, limit: 5 })}`,
           ),
         ],
@@ -814,7 +814,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
     const reply = buildMessageQueryReply(latestMessageQuery);
     return createResponse(request, {
       toolCalls: [
-        buildRootWorkspaceBashToolCall(`message send ${escapeShellJson({ chatId: primaryRoomChatId, content: reply })}`),
+        buildRootBashToolCall(`message send ${escapeShellJson({ chatId: primaryRoomChatId, content: reply })}`),
         ...buildAttentionCommitShellCalls(commitFrames, {
           summary: "reported authorized message query result",
           value: reply,
@@ -843,7 +843,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
     }
     return createResponse(request, {
       toolCalls: [
-        buildRootWorkspaceBashToolCall(
+        buildRootBashToolCall(
           `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
         ),
         ...buildAttentionCommitShellCalls(commitFrames, {
@@ -870,7 +870,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
       state.relay.phase = "reporting";
       return createResponse(request, {
         toolCalls: [
-          buildRootWorkspaceBashToolCall(
+          buildRootBashToolCall(
             `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
           ),
           ...buildAttentionCommitShellCalls(commitFrames, {
@@ -885,7 +885,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
     }
     if (!hasOperationResult(toolResults, "message.list")) {
       return createResponse(request, {
-        toolCalls: [buildRootWorkspaceBashToolCall("message list")],
+        toolCalls: [buildRootBashToolCall("message list")],
       });
     }
     if (!hasOperationResult(toolResults, "attention.commit") && commitFrames.length > 0) {
@@ -906,7 +906,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
     if (state.relay?.phase === "reported" && primaryRoomChatId && !hasOperationResult(toolResults, "message.send")) {
       return createResponse(request, {
         toolCalls: [
-          buildRootWorkspaceBashToolCall(
+          buildRootBashToolCall(
             `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
           ),
           ...buildAttentionCommitShellCalls(commitFrames, {
@@ -924,7 +924,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
     }
     return createResponse(request, {
       toolCalls: [
-        buildRootWorkspaceBashToolCall(
+        buildRootBashToolCall(
           `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
         ),
         ...buildAttentionCommitShellCalls(commitFrames, {
@@ -952,7 +952,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
       : state.relay;
     return createResponse(request, {
       toolCalls: [
-        buildRootWorkspaceBashToolCall(
+        buildRootBashToolCall(
           `message send ${escapeShellJson({ chatId: primaryRoomChatId, content: MOCK_FINAL_ANSWER })}`,
         ),
         ...buildAttentionCommitShellCalls(commitFrames, {
@@ -1014,7 +1014,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
       : state.relay;
       return createResponse(request, {
         toolCalls: [
-          buildRootWorkspaceBashToolCall(
+          buildRootBashToolCall(
             `message send ${escapeShellJson({ chatId: gaubeeChatId, content: MOCK_RELAY_PROMPT })}`,
           ),
           ...buildAttentionCommitShellCalls(commitFrames, {
@@ -1030,7 +1030,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
 
     if (!hasOperationResult(toolResults, "message.list")) {
       return createResponse(request, {
-        toolCalls: [buildRootWorkspaceBashToolCall("message list")],
+        toolCalls: [buildRootBashToolCall("message list")],
       });
     }
   }

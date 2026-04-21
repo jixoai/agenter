@@ -21,8 +21,8 @@ Good habits:
 - do not spam: do not narrate every command, retry, or internal thought into the room
 - do not skip the necessary reply: successful tools do not replace the room message the user is waiting for
 - if you need evidence from prior room history, prefer one `message query` over repeated `message read` paging when the answer is really a search problem
-- through `root_workspace_bash`, default to `command=message send` plus JSON `stdin`; only use argv JSON for a trivial single-line payload
-- through `root_workspace_bash`, default to `command=message query` plus JSON `stdin` for room-history search; only use argv JSON for a trivial single-line payload
+- through `root_bash`, default to `command=message send` plus JSON `stdin`; only use argv JSON for a trivial single-line payload
+- through `root_bash`, default to `command=message query` plus JSON `stdin` for room-history search; only use argv JSON for a trivial single-line payload
 - if `message send --help` marks compact as `Suggested` or `Available`, `message send --compact` is also available for positional payloads; if the array shape becomes unclear, fall back to object JSON immediately
 - if `message query --help` marks compact as `Suggested` or `Available`, `message query --compact` is also available for positional payloads; if the array shape becomes unclear, fall back to object JSON immediately
 - `chatId:"*"` only searches rooms already granted to you. It is the right temporary cross-room lookup primitive when you do not know which visible room holds the fact yet.
@@ -48,11 +48,11 @@ Settlement checklist:
 Typical closing sequence:
 
 ```text
-root_workspace_bash.command: message send
-root_workspace_bash.stdin: {"chatId":"room-1","content":"APP-UPDATED: http://127.0.0.1:4173/"}
+root_bash.command: message send
+root_bash.stdin: {"chatId":"room-1","content":"APP-UPDATED: http://127.0.0.1:4173/"}
 
-root_workspace_bash.command: attention list
+root_bash.command: attention list
 
-root_workspace_bash.command: attention commit
-root_workspace_bash.stdin: {"contextId":"ctx-room-1","summary":"Sent the required APP-UPDATED reply after verification.","done":true}
+root_bash.command: attention commit
+root_bash.stdin: {"contextId":"ctx-room-1","summary":"Sent the required APP-UPDATED reply after verification.","done":true}
 ```

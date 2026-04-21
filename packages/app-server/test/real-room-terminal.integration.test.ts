@@ -58,7 +58,7 @@ describe("Feature: real AI room terminal delivery", () => {
         expect(result.updatedBody).toContain("FEEDBACK-APPLIED");
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.length).toBeGreaterThan(0);
-        expect(result.toolTraceTools).toContain("root_workspace_bash");
+        expect(result.toolTraceTools).toContain("root_bash");
       } finally {
         await harness.stop();
       }

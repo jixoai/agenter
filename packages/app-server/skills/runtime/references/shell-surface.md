@@ -1,11 +1,12 @@
 # Runtime shell surface
 
-The runtime gives you two direct tools:
+The runtime gives you three direct tools:
 
-- `root_workspace_list`: inspect mounted paths, grants, shell commands, and runtime facts
-- `root_workspace_bash`: execute one-shot shell commands inside the avatar root workspace
+- `workspace_list`: inspect mounted project workspaces as `{ id, cwd, alias }`
+- `root_bash`: execute one-shot shell commands inside the avatar root workspace
+- `workspace_bash`: execute one-shot shell commands inside one mounted project workspace selected by `workspaceId`
 
-Use shell CLI commands inside `root_workspace_bash` for system work:
+Use shell CLI commands inside `root_bash` for system work:
 
 - `attention`
 - `message`
@@ -16,13 +17,14 @@ Use shell CLI commands inside `root_workspace_bash` for system work:
 
 Boundary:
 
-- One-shot checks, inspection, short scripts, and outbound-network verification of current or external facts belong in `root_workspace_bash`.
+- One-shot checks, inspection, short scripts, and outbound-network verification of current or external facts belong in `root_bash`.
 - Durable processes and interactive recovery belong in `terminal`.
-- For runtime-local CLI commands that accept JSON, default to `root_workspace_bash.command=<bare action>` plus JSON `stdin`.
+- Pure workspace file/command work can run through `workspace_bash`, but runtime-local system CLI stays behind `root_bash`.
+- For runtime-local CLI commands that accept JSON, default to `root_bash.command=<bare action>` plus JSON `stdin`.
 - Use a single argv JSON payload only when it is trivially short, single-line, and clearly cheaper in tokens.
 - If `<command> --help` marks compact as `Suggested` or `Available`, `--compact` exposes the same request as a schema-derived positional array. If the positional array becomes unclear, fall back immediately to standard object JSON.
 - If the answer depends on a changing external fact, prefer one-shot shell verification over guessing from memory.
-- `root_workspace_bash` can verify an already-running URL with one-shot commands such as `curl`, but it does not own the listener behind that URL.
+- `root_bash` can verify an already-running URL with one-shot commands such as `curl`, but it does not own the listener behind that URL.
 - A target URL mentioned in the request or room is still just a target until that exact root URL or required path actually responds. Do not repeat it back as "ready" before the durable process is up and the one-shot HTTP check succeeds.
 - `terminal read` snapshots, "the process is still running", and successful `terminal write` calls are not that HTTP proof; use the one-shot shell to hit the exact promised URL or path directly.
 - Once that exact HTTP verification succeeds, the next move is usually the required durable reply, not more terminal churn.

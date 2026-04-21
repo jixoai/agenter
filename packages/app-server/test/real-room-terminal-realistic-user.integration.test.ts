@@ -71,7 +71,7 @@ describe("Feature: real AI realistic novice-user delivery", () => {
         ).toBe(true);
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.length).toBeGreaterThan(0);
-        expect(result.toolTraceTools).toContain("root_workspace_bash");
+        expect(result.toolTraceTools).toContain("root_bash");
       } finally {
         await harness.stop();
       }

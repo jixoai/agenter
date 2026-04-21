@@ -136,13 +136,13 @@ describe("Feature: runtime built-in skills", () => {
     expect(terminalContent).not.toContain("127.0.0.1");
 
     const runtimeContent = readRuntimeSkillContent(runtime!);
-    expect(runtimeContent).toContain("root_workspace_list");
+    expect(runtimeContent).toContain("workspace_list");
     expect(runtimeContent).toContain("skill info <skill>");
     expect(runtimeContent).toContain("make one real command for that target before browsing deeper docs");
     expect(runtimeContent).toContain("~/tools");
     expect(runtimeContent).toContain("outbound network access");
     expect(runtimeContent).toContain("objective verification of current or external facts");
-    expect(runtimeContent).toContain("A local delivery URL may be verified from `root_workspace_bash`");
+    expect(runtimeContent).toContain("A local delivery URL may be verified from `root_bash`");
     expect(runtimeContent).toContain("default to `command=<bare action>` plus JSON `stdin`");
     expect(runtimeContent).toContain("marks compact as `Suggested` or `Available`");
     expect(runtimeContent).toContain("not enough to prove a local delivery URL is ready");

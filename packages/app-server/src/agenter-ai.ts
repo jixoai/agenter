@@ -558,7 +558,7 @@ const extractMessageSendContentFromToolTrace = (content: string): string | null 
     return null;
   }
   const toolName = extractYamlTopLevelScalar(content, "tool");
-  if (toolName !== "root_workspace_bash") {
+  if (toolName !== "root_bash") {
     return null;
   }
   const command = extractYamlNestedScalar(content, "input", "command");
@@ -619,7 +619,7 @@ const parseAttentionCommitInputFromCommand = (command: string): Record<string, u
 };
 
 const extractAttentionCommitInputFromToolTrace = (trace: AgentToolTraceEntry): Record<string, unknown> | null => {
-  if (trace.tool !== "root_workspace_bash" || !isRecord(trace.input)) {
+  if (trace.tool !== "root_bash" || !isRecord(trace.input)) {
     return null;
   }
   const stdin = trace.input.stdin;
@@ -638,7 +638,7 @@ const extractAttentionCommitInputFromToolTrace = (trace: AgentToolTraceEntry): R
 };
 
 const extractAttentionCommitOutput = (trace: AgentToolTraceEntry): Record<string, unknown> | null => {
-  if (trace.tool !== "root_workspace_bash" || !isRecord(trace.output)) {
+  if (trace.tool !== "root_bash" || !isRecord(trace.output)) {
     return null;
   }
   const stdout = trace.output.stdout;

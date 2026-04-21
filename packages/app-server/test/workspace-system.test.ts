@@ -656,7 +656,7 @@ describe("Feature: workspace system kernel integration", () => {
     });
     expect(catReference.exitCode).toBe(0);
     expect(catReference.stdout).toContain("# Runtime shell surface");
-    expect(catReference.stdout).toContain("root_workspace_bash");
+    expect(catReference.stdout).toContain("root_bash");
 
     await kernel.stop();
   });

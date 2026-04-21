@@ -53,6 +53,9 @@ export interface RuntimeLocalApiHandlers {
     messageId: number;
   }) => Promise<{ ok: boolean; messageId: number; updatedAt: number; recalledAt: number }>;
   workspaceList: () => Array<RuntimeWorkspaceSurface>;
+  workspaceSetAlias: (input: { workspaceId: number; alias: string }) => Promise<{
+    workspace: RuntimeWorkspaceSurface;
+  }>;
   terminalList: () => RuntimeTerminalView[];
   terminalCreate: (input: {
     terminalId?: string;
@@ -248,6 +251,11 @@ const terminalFocusSchema = z.object({
 
 const terminalKillSchema = z.object({
   terminalId: z.string(),
+});
+
+const workspaceSetAliasSchema = z.object({
+  workspaceId: z.number().int().positive(),
+  alias: z.string().trim().min(1),
 });
 
 const skillSearchSchema = z.object({
@@ -503,11 +511,22 @@ export const runtimeToolDescriptors = [
     namespace: "workspace",
     name: "list",
     route: "/v1/workspace/list",
-    description: "List the real mounted workspaces and grants available to this runtime.",
+    description: "List mounted project workspaces currently available to this runtime.",
     inputSchema: emptyObjectSchema,
     examples: [{ kind: "none" }],
     handler: async (_input, handlers) => ({
       workspaces: handlers.workspaceList(),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "workspace",
+    name: "set-alias",
+    route: "/v1/workspace/set-alias",
+    description: "Rename one mounted project workspace by its runtime-local workspaceId.",
+    inputSchema: workspaceSetAliasSchema,
+    examples: [{ kind: "stdin", payload: { workspaceId: 1, alias: "frontend" } }],
+    handler: async (input, handlers) => ({
+      result: await handlers.workspaceSetAlias(input),
     }),
   }),
   defineRuntimeToolDescriptor({
@@ -863,7 +882,7 @@ const renderExampleCommand = (descriptor: RuntimeToolDescriptor, example: Runtim
   }
   const payloadLines = JSON.stringify(example.payload, null, 2).split("\n").map((line) => `    ${line}`);
   return [
-    `- Preferred default through \`root_workspace_bash\`${example.description ? ` ${example.description}` : ""}`,
+    `- Preferred default through \`root_bash\`${example.description ? ` ${example.description}` : ""}`,
     `  command: \`${commandLabel}\``,
     "  stdin:",
     ...payloadLines,

@@ -79,8 +79,8 @@ describe("Feature: real AI realistic project-room collaboration", () => {
         expect(result.userAcceptanceMessage.senderActorId).toBe(harness.userActorId);
         expect(result.backendAttention.active).toHaveLength(0);
         expect(result.frontendAttention.active).toHaveLength(0);
-        expect(result.backendModelCalls.some((call) => call.tools.includes("root_workspace_bash"))).toBe(true);
-        expect(result.frontendModelCalls.some((call) => call.tools.includes("root_workspace_bash"))).toBe(true);
+        expect(result.backendModelCalls.some((call) => call.tools.includes("root_bash"))).toBe(true);
+        expect(result.frontendModelCalls.some((call) => call.tools.includes("root_bash"))).toBe(true);
       } finally {
         await harness.stop();
       }

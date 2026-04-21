@@ -202,7 +202,7 @@ const renderBuiltinRuntimeSkillContent = (
       }
       return [
         line
-          .replaceAll("{{runtime.root_workspace_path}}", input.rootWorkspacePath)
+          .replaceAll("{{runtime.root_path}}", input.rootWorkspacePath)
           .replaceAll("{{runtime.principal_id}}", principalId),
       ];
     })

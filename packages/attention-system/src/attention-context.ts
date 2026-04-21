@@ -482,8 +482,9 @@ export class AttentionContext {
     if (input.source) {
       matches = matches.filter((commit) => commit.meta.source === input.source);
     }
-    if (input.text) {
-      matches = matches.filter((commit) => matchesText(commit, input.text));
+    const text = input.text;
+    if (text) {
+      matches = matches.filter((commit) => matchesText(commit, text));
     }
 
     const commitOrderIndex = new Map(this.commitOrder.map((commitId, index) => [commitId, index]));

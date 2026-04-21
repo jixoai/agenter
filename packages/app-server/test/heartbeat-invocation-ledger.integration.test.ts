@@ -16,7 +16,7 @@ import { MOCK_FINAL_ANSWER, MOCK_GAUBEE_REPLY, MOCK_RELAY_PROMPT } from "../test
 
 describe("Feature: invocation-first heartbeat ledger cold restore", () => {
   test(
-    "Scenario: Given a mock relay run with root_workspace_bash When the invocation finishes and the kernel cold restarts Then the same heartbeat_part row keeps both params and result",
+    "Scenario: Given a mock relay run with root_bash When the invocation finishes and the kernel cold restarts Then the same heartbeat_part row keeps both params and result",
     async () => {
       const harness = await createMockKernelHarness({ sessionName: "heartbeat-invocation-ledger" });
       let restarted: AppKernel | null = null;
@@ -49,7 +49,7 @@ describe("Feature: invocation-first heartbeat ledger cold restore", () => {
             partType: "tool_call",
             isComplete: false,
             payload: {
-              tool: "root_workspace_bash",
+              tool: "root_bash",
             },
           },
         ]);
@@ -93,14 +93,14 @@ describe("Feature: invocation-first heartbeat ledger cold restore", () => {
             partType: "tool_call",
             isComplete: true,
             payload: {
-              tool: "root_workspace_bash",
+              tool: "root_bash",
             },
           },
           {
             partType: "tool_result",
             isComplete: true,
             payload: {
-              tool: "root_workspace_bash",
+              tool: "root_bash",
               error: null,
             },
           },
@@ -129,14 +129,14 @@ describe("Feature: invocation-first heartbeat ledger cold restore", () => {
             partType: "tool_call",
             isComplete: true,
             payload: {
-              tool: "root_workspace_bash",
+              tool: "root_bash",
             },
           },
           {
             partType: "tool_result",
             isComplete: true,
             payload: {
-              tool: "root_workspace_bash",
+              tool: "root_bash",
               error: null,
             },
           },

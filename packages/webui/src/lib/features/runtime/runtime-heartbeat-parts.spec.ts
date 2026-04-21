@@ -109,7 +109,7 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
             content: [
               "```yaml",
               'invocationId: "tool-1"',
-              "tool: root_workspace_bash",
+              "tool: root_bash",
               "status: success",
               "input:",
               '  command: "echo hi"',
@@ -134,7 +134,7 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
       {
         kind: "tool",
         key: "tool-1",
-        tool: "root_workspace_bash",
+        tool: "root_bash",
         state: "output-available",
         input: {
           command: "echo hi",
@@ -204,6 +204,15 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
     ).toBe(
       'attention commit \'{"contextId":"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16","parentCommitIds":["commit-abc"],"done":true}\'',
     );
+  });
+
+  test("Scenario: Given a traced workspace alias and command When the collapsed preview is built Then the header prefixes the command with the workspace alias snapshot", () => {
+    expect(
+      getHeartbeatToolPreview({
+        workspaceAlias: "root",
+        command: "message send",
+      }),
+    ).toBe("root · message send");
   });
 
   test("Scenario: Given a tool result arrives after an unrelated text part When display blocks are built Then the invocation still renders as one stable tool block anchored at the original tool call", () => {
@@ -528,7 +537,7 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
       messageId: "request_aux:tools:compact",
       scope: "request_aux",
       role: "system",
-      text: '[{"name":"root_workspace_bash"}]',
+      text: '[{"name":"root_bash"}]',
       parts: [
         {
           partId: 802,
@@ -541,7 +550,7 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
           role: "system",
           partType: "tools",
           mimeType: null,
-          payload: [{ name: "root_workspace_bash" }],
+          payload: [{ name: "root_bash" }],
           createdAt: baseEntry.createdAt + 1,
           updatedAt: baseEntry.updatedAt + 1,
           isComplete: true,

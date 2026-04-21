@@ -6021,7 +6021,6 @@ export class RuntimeStore {
           refCount: 0,
         },
         attentionApi: null,
-        rootWorkspace: null,
         modelCapabilities: DEFAULT_MODEL_CAPABILITIES,
         activeCycle: null,
       };

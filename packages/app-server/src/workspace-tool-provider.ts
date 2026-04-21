@@ -8,25 +8,24 @@ import {
   type RuntimeLocalApiHandlers,
   type RuntimeToolNamespace,
 } from "./runtime-tool-descriptors";
-import type { RuntimeWorkspaceSurface } from "./runtime-tool-views";
 
-export type RootWorkspaceToolListPayload = Record<string, unknown> & {
-  rootWorkspace: {
-    path: string;
-    commandNames: string[];
-    toolNames: string[];
-    skillRoots: string[];
-  };
-  attentionApi: {
-    baseUrl: string;
-    principalId: string | null;
-  } | null;
-  workspaces: RuntimeWorkspaceSurface[];
-};
-
-export interface InProcessRootWorkspaceToolProviderInput {
+export interface InProcessWorkspaceToolProviderInput {
   handlers: RuntimeLocalApiHandlers;
-  list: () => RootWorkspaceToolListPayload;
+  workspaceList: () => Array<{
+    id: number;
+    cwd: string;
+    alias: string;
+  }>;
+  rootWorkspacePath: string;
+  workspaceBash?: (input: {
+    workspaceId: number;
+    command: string;
+    cwd?: string;
+    env?: Record<string, string>;
+    stdin?: string;
+  }) =>
+    | Promise<{ stdout: string; stderr: string; exitCode: number; cwd: string }>
+    | { stdout: string; stderr: string; exitCode: number; cwd: string };
 }
 
 const isHelpArg = (value: string): boolean => value === "--help";
@@ -107,9 +106,9 @@ const splitShellWords = (value: string): string[] => {
 };
 
 const isRuntimeNamespace = (value: string): value is RuntimeToolNamespace =>
-  value === "attention" || value === "message" || value === "workspace" || value === "terminal";
+  value === "attention" || value === "message" || value === "workspace" || value === "terminal" || value === "skill";
 
-const executeInProcessRootWorkspaceCommand = async (input: {
+const executeInProcessRootBashCommand = async (input: {
   command: string;
   stdin?: string;
   cwd?: string;
@@ -120,10 +119,10 @@ const executeInProcessRootWorkspaceCommand = async (input: {
     const tokens = splitShellWords(input.command.trim());
     const [namespaceName, toolName, ...rest] = tokens;
     if (!namespaceName || !toolName) {
-      throw new Error("root_workspace_bash requires a runtime CLI command");
+      throw new Error("root_bash requires a runtime CLI command");
     }
     if (!isRuntimeNamespace(namespaceName)) {
-      throw new Error(`unsupported root workspace command: ${namespaceName}`);
+      throw new Error(`unsupported root_bash command: ${namespaceName}`);
     }
     const descriptor = getRuntimeToolDescriptor(namespaceName, toolName);
     if (!descriptor) {
@@ -131,7 +130,7 @@ const executeInProcessRootWorkspaceCommand = async (input: {
     }
     const { helpRequested, compactMode, payloadArgs } = parseRuntimeSubcommandArgs(rest);
     if (helpRequested) {
-      throw new Error("in-process root workspace helper does not support --help");
+      throw new Error("in-process root_bash helper does not support --help");
     }
     const body = parseRuntimeToolCliInput(descriptor, payloadArgs, input.stdin ?? "", compactMode ? "compact" : "object");
     const result = await descriptor.handler(body, input.handlers);
@@ -151,10 +150,10 @@ const executeInProcessRootWorkspaceCommand = async (input: {
   }
 };
 
-export const createInProcessRootWorkspaceToolProvider = (
-  input: InProcessRootWorkspaceToolProviderInput,
+export const createInProcessWorkspaceToolProvider = (
+  input: InProcessWorkspaceToolProviderInput,
 ): AgentToolProvider => ({
-  name: "root-workspace",
+  name: "workspace-shell",
   createTools: ({ traceTool }) => {
     const traceWithContext = <TInput, TOutput>(
       toolName: string,
@@ -163,22 +162,28 @@ export const createInProcessRootWorkspaceToolProvider = (
       context?: { toolCallId?: string },
     ): Promise<TOutput> => traceTool(toolName, toolInput, handler, { invocationId: context?.toolCallId });
 
-    const listTool = toolDefinition({
-      name: "root_workspace_list",
-      description: "List the fixed avatar root workspace, mounted workspaces, grants, and shell commands.",
-      outputSchema: z.record(z.string(), z.unknown()),
+    const workspaceListTool = toolDefinition({
+      name: "workspace_list",
+      description: "List mounted project workspaces currently held by this runtime.",
+      outputSchema: z.array(
+        z.object({
+          id: z.number(),
+          cwd: z.string(),
+          alias: z.string(),
+        }),
+      ),
     }).server(async (_rawInput, context) =>
       traceWithContext(
-        "root_workspace_list",
+        "workspace_list",
         {},
-        async () => input.list(),
+        async () => input.workspaceList(),
         context,
       ),
     );
 
-    const bashTool = toolDefinition({
-      name: "root_workspace_bash",
-      description: "Execute runtime CLI commands inside the fixed avatar root workspace.",
+    const rootBashTool = toolDefinition({
+      name: "root_bash",
+      description: "Execute runtime CLI commands inside the avatar root workspace.",
       inputSchema: z.object({
         command: z.string(),
         cwd: z.string().optional(),
@@ -201,20 +206,66 @@ export const createInProcessRootWorkspaceToolProvider = (
         })
         .parse(rawInput);
       return await traceWithContext(
-        "root_workspace_bash",
-        parsed,
+        "root_bash",
+        {
+          workspaceAlias: "root",
+          ...parsed,
+        },
         async () =>
-          await executeInProcessRootWorkspaceCommand({
+          await executeInProcessRootBashCommand({
             command: parsed.command,
             stdin: parsed.stdin,
             cwd: parsed.cwd,
             handlers: input.handlers,
-            rootWorkspacePath: input.list().rootWorkspace.path,
+            rootWorkspacePath: input.rootWorkspacePath,
           }),
         context,
       );
     });
 
-    return [listTool, bashTool];
+    const workspaceBashTool = toolDefinition({
+      name: "workspace_bash",
+      description: "Execute one-shot bash inside a mounted project workspace selected by workspaceId.",
+      inputSchema: z.object({
+        workspaceId: z.number().int().positive(),
+        command: z.string(),
+        cwd: z.string().optional(),
+        env: z.record(z.string(), z.string()).optional(),
+        stdin: z.string().optional(),
+      }),
+      outputSchema: z.object({
+        stdout: z.string(),
+        stderr: z.string(),
+        exitCode: z.number(),
+        cwd: z.string(),
+      }),
+    }).server(async (rawInput, context) => {
+      const parsed = z
+        .object({
+          workspaceId: z.number().int().positive(),
+          command: z.string(),
+          cwd: z.string().optional(),
+          env: z.record(z.string(), z.string()).optional(),
+          stdin: z.string().optional(),
+        })
+        .parse(rawInput);
+      const workspace = input.workspaceList().find((entry) => entry.id === parsed.workspaceId) ?? null;
+      return await traceWithContext(
+        "workspace_bash",
+        {
+          ...parsed,
+          workspaceAlias: workspace?.alias ?? null,
+        },
+        async () => {
+          if (!input.workspaceBash) {
+            throw new Error("in-process workspace_bash helper is not configured");
+          }
+          return await input.workspaceBash(parsed);
+        },
+        context,
+      );
+    });
+
+    return [workspaceListTool, rootBashTool, workspaceBashTool];
   },
 });

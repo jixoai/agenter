@@ -201,8 +201,9 @@ const initialEntries = [
         mimeType: null,
         payload: {
           invocationId: "tool-call-1",
-          tool: "root_workspace_bash",
+          tool: "root_bash",
           input: {
+            workspaceAlias: "root",
             command:
               'attention commit \'{"contextId":"ctx-0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16","parentCommitIds":["commit-ca846a55-7bb0-402f-a85f-89e14ca618c7"],"egress":{"kind":"room_reply_sent","chatId":"0x9d78659d03f3afe8b4bd2b2f48d939cee3d90d16","done":true}}\'',
           },
@@ -548,8 +549,9 @@ const createToolCallEntryFixture = (input: {
       mimeType: null,
       payload: {
         invocationId: input.invocationId,
-        tool: "root_workspace_bash",
+        tool: "root_bash",
         input: {
+          workspaceAlias: "root",
           command: input.command,
           stdin: input.stdin,
         },
@@ -934,8 +936,9 @@ const streamingToolEntries = [
         mimeType: null,
         payload: {
           invocationId: "tool-call-streaming",
-          tool: "root_workspace_bash",
+          tool: "root_bash",
           input: {
+            workspaceAlias: "root",
             command: 'message send --compact \'["room-main","COMPACT-OK"]\'',
           },
           startedAt: baseTimestamp + 55_000,
@@ -1357,7 +1360,7 @@ export const LayoutActionSwitchesGroupPresentation = {
     const systemPromptEntry = canvas.getByTestId("runtime-heartbeat-entry-21");
     const streamingAssistantEntry = canvas.getByTestId("runtime-heartbeat-entry-25");
     const compactToolDetails = Array.from(callGroup.querySelectorAll("details")).find((details) =>
-      details.textContent?.includes("root_workspace_bash"),
+      details.textContent?.includes("root_bash"),
     );
     const compactToolSummary = compactToolDetails?.querySelector("summary");
 
@@ -1366,7 +1369,7 @@ export const LayoutActionSwitchesGroupPresentation = {
       "You are a Linux expert. Prefer bash and skills before asking for help.",
     );
     expect(callGroup.textContent).not.toContain('{"invocationId":"tool-call-1"');
-    await expect(streamingAssistantEntry).toHaveTextContent("root_workspace_bash");
+    await expect(streamingAssistantEntry).toHaveTextContent("root_bash");
     await expect(streamingAssistantEntry).toHaveTextContent("attention commit");
     await waitFor(() => {
       expect(canvas.getByTestId("runtime-heartbeat-entry-time-25").textContent ?? "").toMatch(
@@ -2430,7 +2433,7 @@ export const StreamingToolCallRemainsVisible = {
     const canvas = within(canvasElement);
     const entry = canvas.getByTestId("runtime-heartbeat-entry-26");
     await expect(entry).toBeInTheDocument();
-    await expect(entry).toHaveTextContent("root_workspace_bash");
+    await expect(entry).toHaveTextContent("root_bash");
     await expect(entry).toHaveTextContent("Running");
     await expect(entry).toHaveTextContent("message send --compact");
     await expect(entry).toHaveTextContent("Parameters");

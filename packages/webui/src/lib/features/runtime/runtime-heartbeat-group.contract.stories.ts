@@ -41,8 +41,9 @@ const contractGroup = {
           mimeType: null,
           payload: {
             invocationId: "contract-tool-call",
-            tool: "root_workspace_bash",
+            tool: "root_bash",
             input: {
+              workspaceAlias: "root",
               command: 'echo "contract harness";',
               stdin: JSON.stringify({ mode: "contract-harness" }, null, 2),
             },

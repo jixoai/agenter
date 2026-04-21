@@ -61,7 +61,7 @@ describe("Feature: mock-loopbus message query", () => {
             if (
               !entry ||
               typeof entry !== "object" ||
-              entry.tool !== "root_workspace_bash" ||
+              entry.tool !== "root_bash" ||
               !("input" in entry) ||
               !entry.input ||
               typeof entry.input !== "object" ||

@@ -170,10 +170,9 @@ export {
   type SettingsKind,
 } from "./realtime-types";
 export {
-  createInProcessRootWorkspaceToolProvider,
-  type InProcessRootWorkspaceToolProviderInput,
-  type RootWorkspaceToolListPayload,
-} from "./root-workspace-tool-provider";
+  createInProcessWorkspaceToolProvider,
+  type InProcessWorkspaceToolProviderInput,
+} from "./workspace-tool-provider";
 export type { RuntimeLocalApiHandlers } from "./runtime-tool-descriptors";
 export {
   SemanticJudge,

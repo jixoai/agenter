@@ -13,6 +13,8 @@ export interface WorkspaceMountRecord {
   mountId: string;
   runtimeId: string;
   workspaceId: string;
+  runtimeWorkspaceId: number;
+  alias: string;
   workspacePath: string;
   kind: WorkspaceMountKind;
   createdAt: string;
@@ -53,7 +55,7 @@ export interface WorkspaceAssetRoots {
 }
 
 export interface WorkspaceSystemSnapshot {
-  version: 2;
+  version: 3;
   workspaces: WorkspaceRecord[];
   mounts: WorkspaceMountRecord[];
   grants: WorkspaceGrantRecord[];

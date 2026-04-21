@@ -23,7 +23,7 @@ Key laws:
 - When the task already names the workspace and delivery target, the normal next move is to create or recover the terminal, not to browse unrelated room or attention detail first.
 - If a one-shot shell hits binding or sandbox errors while you are trying to make a service reachable, stop and switch to `terminal`.
 - When more than one workspace is mounted, choose an explicit absolute `cwd`.
-- `terminal create`, `terminal write`, and `terminal read` are JSON-first commands. Through `root_workspace_bash`, default to `command=<bare terminal action>` plus JSON `stdin`.
+- `terminal create`, `terminal write`, and `terminal read` are JSON-first commands. Through `root_bash`, default to `command=<bare terminal action>` plus JSON `stdin`.
 - Only use a single argv JSON payload when it is trivially short and clearly cheaper in tokens than a separate `stdin` field.
 - If `terminal create --help`, `terminal write --help`, or `terminal read --help` marks compact as `Suggested` or `Available`, the matching command also accepts `--compact` positional arrays. If the positional array becomes unclear, go straight back to standard object JSON.
 

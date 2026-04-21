@@ -239,7 +239,7 @@ describe("Feature: session runtime live cycle projection", () => {
       internal.handleAssistantStreamUpdate({
         kind: "tool_call",
         toolCallId: "tool-bash-21",
-        toolName: "root_workspace_bash",
+        toolName: "root_bash",
         argsText: "",
         timestamp: 22,
       });
@@ -254,7 +254,7 @@ describe("Feature: session runtime live cycle projection", () => {
         partType: "tool_call",
         payload: {
           invocationId: "tool-bash-21",
-          tool: "root_workspace_bash",
+          tool: "root_bash",
           input: "",
           startedAt: 22,
         },
@@ -266,7 +266,7 @@ describe("Feature: session runtime live cycle projection", () => {
       internal.handleAssistantStreamUpdate({
         kind: "tool_call",
         toolCallId: "tool-bash-21",
-        toolName: "root_workspace_bash",
+        toolName: "root_bash",
         argsText: "{\"command\":\"curl -s https://news.ycombinator.com/\"}",
         input: {
           command: "curl -s https://news.ycombinator.com/",
@@ -287,7 +287,7 @@ describe("Feature: session runtime live cycle projection", () => {
         partType: "tool_call",
         payload: {
           invocationId: "tool-bash-21",
-          tool: "root_workspace_bash",
+          tool: "root_bash",
           input: {
             command: "curl -s https://news.ycombinator.com/",
           },
@@ -299,7 +299,7 @@ describe("Feature: session runtime live cycle projection", () => {
       internal.handleAssistantStreamUpdate({
         kind: "tool_result",
         toolCallId: "tool-bash-21",
-        toolName: "root_workspace_bash",
+        toolName: "root_bash",
         ok: true,
         result: {
           stdout: "",
@@ -322,7 +322,7 @@ describe("Feature: session runtime live cycle projection", () => {
         partType: "tool_call",
         payload: {
           invocationId: "tool-bash-21",
-          tool: "root_workspace_bash",
+          tool: "root_bash",
           input: {
             command: "curl -s https://news.ycombinator.com/",
           },
@@ -335,7 +335,7 @@ describe("Feature: session runtime live cycle projection", () => {
         partType: "tool_result",
         payload: {
           invocationId: "tool-bash-21",
-          tool: "root_workspace_bash",
+          tool: "root_bash",
           output: {
             stdout: "",
             stderr: "",
@@ -465,7 +465,7 @@ describe("Feature: session runtime live cycle projection", () => {
       internal.handleAssistantStreamUpdate({
         kind: "tool_call",
         toolCallId: "tool-room-41",
-        toolName: "root_workspace_bash",
+        toolName: "root_bash",
         argsText: "{\"command\":\"pwd\"}",
         input: { command: "pwd" },
         timestamp: 43,
@@ -473,7 +473,7 @@ describe("Feature: session runtime live cycle projection", () => {
       internal.handleAssistantStreamUpdate({
         kind: "tool_result",
         toolCallId: "tool-room-41",
-        toolName: "root_workspace_bash",
+        toolName: "root_bash",
         ok: true,
         result: { stdout: "/repo/agenter\n", exitCode: 0 },
         timestamp: 44,

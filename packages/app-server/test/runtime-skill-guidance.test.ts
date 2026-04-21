@@ -98,7 +98,7 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(enResponse).toContain("use that literal `chatId` directly");
     expect(enResponse).toContain("read only the specific reference files you need");
     expect(enResponse).toContain("the environment's durable delivery action");
-    expect(enResponse).toContain("minimal `root_workspace_bash.command`");
+    expect(enResponse).toContain("minimal `root_bash.command`");
     expect(enResponse).toContain("JSON payload in `stdin`");
     expect(enResponse).toContain("marks compact as `Suggested` or `Available`");
     expect(enResponse).not.toContain("message CLI");
@@ -112,7 +112,7 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(zhResponse).toContain("直接把这个字面量 `chatId` 用在 `message send`");
     expect(zhResponse).toContain("只读取你当前需要的那几个 reference 文件");
     expect(zhResponse).toContain("当前环境里的耐久交付动作");
-    expect(zhResponse).toContain("最小的 `root_workspace_bash.command`");
+    expect(zhResponse).toContain("最小的 `root_bash.command`");
     expect(zhResponse).toContain("JSON payload 放进 `stdin`");
     expect(zhResponse).toContain("把 compact 标成 `Suggested` 或 `Available`");
     expect(zhResponse).not.toContain("message` CLI");

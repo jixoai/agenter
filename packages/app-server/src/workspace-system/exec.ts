@@ -34,11 +34,10 @@ export interface WorkspaceBashExecResult {
 
 interface WorkspaceToolBinding {
   commandName: string;
-  virtualPath: string;
+  absolutePath: string;
   shell: "bash" | "sh" | "python3" | "js-exec";
 }
 
-const VIRTUAL_WORKSPACE_ROOT = "/workspace";
 const WORKSPACE_SYSTEM_GRANT_KINDS: WorkspaceAssetKind[] = ["skills", "memory", "tools", "archive"];
 
 const ensureReadableDirectory = (path: string): boolean => {
@@ -75,7 +74,7 @@ const scanToolBindings = (input: { workspacePath: string; avatar: string }): Wor
             : "bash";
       bindings.push({
         commandName: resolveWorkspaceToolCommandName(entry.name),
-        virtualPath: join(VIRTUAL_WORKSPACE_ROOT, relative(input.workspacePath, filePath)),
+        absolutePath: resolve(filePath),
         shell,
       });
     }
@@ -105,7 +104,7 @@ const createBashFs = (input: { workspacePath: string; avatar: string; grants: Wo
   });
   const fs = new MountableFs({ base: new InMemoryFs() });
   fs.mount(
-    VIRTUAL_WORKSPACE_ROOT,
+    input.workspacePath,
     new OverlayRuleFs({
       root: input.workspacePath,
       config: {
@@ -123,7 +122,7 @@ const createBashFs = (input: { workspacePath: string; avatar: string; grants: Wo
 
 export const executeWorkspaceBash = async (input: WorkspaceBashExecInput): Promise<WorkspaceBashExecResult> => {
   const workspacePath = resolve(input.workspacePath);
-  const cwd = input.cwd ?? VIRTUAL_WORKSPACE_ROOT;
+  const cwd = input.cwd ? resolve(input.cwd) : workspacePath;
   const processViolation = getOneShotShellProcessViolation(input.command);
   if (processViolation) {
     return {
@@ -156,7 +155,7 @@ export const executeWorkspaceBash = async (input: WorkspaceBashExecInput): Promi
         return await exec(
           buildRuntimeToolExecCommand({
             runner: binding.shell,
-            filePath: binding.virtualPath,
+            filePath: binding.absolutePath,
             args,
           }),
           {

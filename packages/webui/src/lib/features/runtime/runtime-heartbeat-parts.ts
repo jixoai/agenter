@@ -161,11 +161,18 @@ export const getHeartbeatToolPreview = (input: unknown): string | null => {
   if (!record) {
     return null;
   }
+  const workspaceAlias =
+    typeof record.workspaceAlias === "string" && record.workspaceAlias.trim().length > 0
+      ? normalizeToolPreview(record.workspaceAlias)
+      : null;
   const commandCandidate =
     typeof record.command === "string" ? record.command : typeof record.cmd === "string" ? record.cmd : null;
   if (commandCandidate) {
     const summary = normalizeToolPreview(commandCandidate);
-    return summary.length > 0 ? summary : null;
+    if (summary.length === 0) {
+      return null;
+    }
+    return workspaceAlias ? `${workspaceAlias} · ${summary}` : summary;
   }
   for (const [key, value] of Object.entries(record)) {
     if (typeof value === "string" && value.trim().length > 0) {

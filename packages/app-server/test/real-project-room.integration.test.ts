@@ -82,8 +82,8 @@ describe("Feature: real AI multi-avatar project room collaboration", () => {
         );
         expect(Array.isArray(result.backendAttention.active)).toBe(true);
         expect(Array.isArray(result.frontendAttention.active)).toBe(true);
-        expect(result.backendModelCalls.some((call) => call.tools.includes("root_workspace_bash"))).toBe(true);
-        expect(result.frontendModelCalls.some((call) => call.tools.includes("root_workspace_bash"))).toBe(true);
+        expect(result.backendModelCalls.some((call) => call.tools.includes("root_bash"))).toBe(true);
+        expect(result.frontendModelCalls.some((call) => call.tools.includes("root_bash"))).toBe(true);
       } finally {
         await harness.stop();
       }

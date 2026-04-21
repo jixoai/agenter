@@ -65,7 +65,7 @@ describe("Feature: Heartbeat response message part ordering", () => {
       updatedAt: 1_050,
       invocation: {
         invocationId: "tool-2",
-        tool: "root_workspace_bash",
+        tool: "root_bash",
         input: "",
         startedAt: 1_020,
         finishedAt: 1_020,
@@ -78,7 +78,7 @@ describe("Feature: Heartbeat response message part ordering", () => {
         partType: "tool_call",
         payload: {
           invocationId: "tool-2",
-          tool: "root_workspace_bash",
+          tool: "root_bash",
           input: "",
           startedAt: 1_020,
         },
@@ -94,7 +94,7 @@ describe("Feature: Heartbeat response message part ordering", () => {
       updatedAt: 1_500,
       invocation: {
         invocationId: "tool-3",
-        tool: "root_workspace_bash",
+        tool: "root_bash",
         input: { command: "pwd" },
         output: { stdout: "/repo/agenter\n", exitCode: 0 },
         startedAt: 1_200,
@@ -107,7 +107,7 @@ describe("Feature: Heartbeat response message part ordering", () => {
         partType: "tool_call",
         payload: {
           invocationId: "tool-3",
-          tool: "root_workspace_bash",
+          tool: "root_bash",
           input: { command: "pwd" },
           startedAt: 1_200,
         },
@@ -117,7 +117,7 @@ describe("Feature: Heartbeat response message part ordering", () => {
         partType: "tool_result",
         payload: {
           invocationId: "tool-3",
-          tool: "root_workspace_bash",
+          tool: "root_bash",
           output: { stdout: "/repo/agenter\n", exitCode: 0 },
           error: null,
           finishedAt: 1_500,

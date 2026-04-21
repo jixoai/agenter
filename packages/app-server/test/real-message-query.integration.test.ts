@@ -23,7 +23,7 @@ const extractRootWorkspaceBashRuns = (
   diagnostics.recentModelCalls.flatMap((call) =>
     call.toolTrace.flatMap((entry) => {
       if (
-        entry.tool !== "root_workspace_bash" ||
+        entry.tool !== "root_bash" ||
         !entry.input ||
         typeof entry.input !== "object" ||
         typeof (entry.input as { command?: unknown }).command !== "string"
@@ -118,8 +118,8 @@ describe("Feature: real AI message query", () => {
           harness.session.id,
           [
             "请完成一次真实的授权跨房间消息搜索验证。",
-            "必须先通过 root_workspace_bash 执行一次 `message query --help`。",
-            "然后必须再次通过 root_workspace_bash 执行一次真正成功的 `message query`。",
+            "必须先通过 root_bash 执行一次 `message query --help`。",
+            "然后必须再次通过 root_bash 执行一次真正成功的 `message query`。",
             "不要使用 `--compact`。",
             `真正执行查询时，请使用 command=message query，并把标准 object JSON 放在 stdin：{"chatId":"*","mode":"query","query":"${REAL_QUERY_KEYWORD}","limit":5}`,
             `如果查到有权限房间中的命中结果，就只向 ${primaryRoomId} 发送最终结果。`,
@@ -175,7 +175,7 @@ describe("Feature: real AI message query", () => {
         expect(settled.diagnostics.recentModelCalls.length).toBeGreaterThan(0);
         expect(settled.diagnostics.recentModelCalls.some((call) => call.outcome === "done")).toBe(true);
         expect(settled.diagnostics.recentModelCalls.flatMap((call) => call.toolTraceTools)).toContain(
-          "root_workspace_bash",
+          "root_bash",
         );
         expect(messageQueryRuns.length).toBeGreaterThan(0);
         expect(messageQueryRuns.some((run) => run.command === "message query --help")).toBe(true);

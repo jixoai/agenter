@@ -22,7 +22,7 @@ const COMMON_RUNTIME_LAW = [
   "- For standard room, attention, terminal, or workspace flows, do not open skill files first. Try the direct command or one `--help` call before any `cat .../SKILL.md` detour.",
   "- Do not open runtime `SKILL.md` files or run `skill info` before your first concrete system command unless a real command already failed because syntax was unclear.",
   "- Expand skills progressively: `skill list`, then `skill info <skill>`, then read only the needed file.",
-  "- Inside `root_workspace_bash`, do not rely on host-only absolute paths like `/tmp`, `/usr/bin`, `/bin`, or `/usr/local/bin`. Stay inside granted workspace paths and system CLI outputs.",
+  "- Inside `root_bash`, do not rely on host-only absolute paths like `/tmp`, `/usr/bin`, `/bin`, or `/usr/local/bin`. Stay inside granted workspace paths and system CLI outputs.",
   "- After one schema mistake, stop exploring. Re-read the exact required fields and issue the correct JSON command immediately.",
 ] as const;
 

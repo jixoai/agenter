@@ -20,6 +20,6 @@ Rules:
 - `terminal read` output, a running prompt, or "no crash yet" do not replace that HTTP verification; use a separate exact-path check
 - if one-shot bash reports binding, sandbox, or permission errors while you are trying to make a URL reachable, treat that as evidence you picked the wrong execution surface
 - use `terminal create --help`, `terminal write --help`, and `terminal read --help` for the exact JSON contract
-- through `root_workspace_bash`, keep the command itself minimal and carry terminal JSON in `stdin` by default
+- through `root_bash`, keep the command itself minimal and carry terminal JSON in `stdin` by default
 - use a single argv JSON payload only when it is trivially short and clearly cheaper in tokens
 - if those help surfaces mark compact as `Suggested` or `Available`, the matching command also accepts `--compact` positional arrays; if the array becomes unclear, fall back to standard object JSON

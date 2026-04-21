@@ -52,7 +52,7 @@ describe("Feature: real AI room terminal cold restart recovery", () => {
         expect(result.resumedBody).toContain("FEEDBACK-APPLIED");
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCallsAfterRestart.length).toBeGreaterThan(0);
-        expect(result.toolTraceToolsAfterRestart).toContain("root_workspace_bash");
+        expect(result.toolTraceToolsAfterRestart).toContain("root_bash");
       } finally {
         await harness.stop();
       }
