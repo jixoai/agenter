@@ -87,6 +87,27 @@ Workspaces
 - toolbar 的作用是组织页面身份、局部动作、视角切换与模式切换，不是堆文案说明。
 - 当 compact right detail 打开时，toolbar 只允许被共享 shell 临时接管为 `close-only` affordance；这是一种 view visibility contract，不是把 detail surface 自己再复制一套 header/actions 进 toolbar。
 
+### 4.2.1 Shared Page Toolbar Law
+
+- `page-toolbar` 必须被视为共享平台原语，而不是每个 route 自造一套 header DOM。
+- `chrome-window` / `chrome-page-toolbar` 永远只有一个 toolbar owner；禁止 local toolbar、portal toolbar、detail takeover 同时叠两套页面 header。
+- 默认术语固定为：
+  - `chrome-tabs`：窗口级 tabs
+  - `page-tabs`：toolbar 内的页面局部 tabs
+  - `page-anchor`：toolbar 左侧永远留在主界面的核心区域
+  - `page-content`：URL 驱动的主体内容区
+- `page-anchor` 的切换规则固定：
+  - 有 `page-tabs` 时，`page-anchor = page-tabs`
+  - 无 `page-tabs` 时，`page-anchor = identity`
+- tabs 是唯一允许横向滚动的 toolbar 区域；`chrome-tabs` 和 `page-tabs` 都可以滚动，但都不得被塞进 overflow panel。
+- toolbar 左侧和右侧的职责固定：
+  - 左侧：`page-anchor + identity`
+  - 右侧：`actions + status + overflow-trigger`
+- `overflow-trigger` 只在存在真实 omitted content 时出现；不能因为 breakpoint 命中就机械显示一个点不开的“更多”按钮。
+- overflow 是锚定 toolbar 的浮层面板，不是 `DropdownMenu` 语义，也不是会挤压 `page-content` 的 inline section。
+- overflow panel 里只重排那些被折叠出去的内容；已经常驻主界面的 `page-anchor` 不得再重复投影进面板。
+- toolbar host 不得使用 `overflow: hidden` / `overflow: clip` 裁掉共享 overflow panel；页面裁剪、滚动和浮层层级必须分开建模。
+
 ## 5) Page Content 心智模型
 
 - `page-content` 应被当作一个嵌入在 chrome-window 里的独立窗口内容区来设计。
@@ -147,6 +168,20 @@ Workspaces
   - 模式切换
   - 局部语义过滤
 
+### 7.0.1 Structured Toolbar Template
+
+- 默认 template 是一个共享两行 grid，而不是每页自由拼 flex：
+  - 第一行：`page-anchor icon title ... actions`
+  - 第二行：`page-anchor icon subtitle ... status`
+- `actions` 是微动作，不是普通大按钮列；inline 态必须极度克制，只有进入 overflow panel 才恢复成常规按钮语义。
+- `status` 应被视为克制信号，而不是第二套 action row；优先挂在 identity title 的 inline-end，或在确有必要时占用右侧次级位置。
+- 有 `page-tabs` 的页面中，collapse 顺序固定是：
+  - `status/actions`
+  - `subtitle`
+  - `identity`
+- 无 `page-tabs` 的页面中，`identity` 必须常驻主界面，允许截断，但不得整体消失或迁入 overflow panel。
+- 页面如果只需要 `page-tabs + actions`，应直接省略 `identity/status`，而不是再补一套重复的标题条。
+
 ### 7.1 Toolbar 右侧动作
 
 - 右侧动作应默认出现在 **第一行**。
@@ -178,6 +213,7 @@ Workspaces
   - `prev / next / cancel` 三个紧凑动作
 - find control 的视觉位置应与原搜索 icon 的点击位置连续，接近浏览器原生页内查找的心智模型。
 - 页面级搜索的结果高亮应被视为内容层投影，而不是新的列表筛选 UI；高亮、跳转与取消应围绕当前页面内容工作。
+- 当页面目前无法做到“从搜索 icon 就地展开”的完整 find experience 时，仍应先把 query input、match count、`prev / next / cancel` 组织在共享 `page-toolbar` 右侧 action cluster 中，而不是退回 route-local header。
 
 ## 8) 视觉收口纪律
 
