@@ -98,7 +98,7 @@ The runtime kernel SHALL assemble the model `systemPrompt` only from stable atte
 - **AND** it is not stored as a synthetic assistant or user replay message inside bounded prompt history
 
 ### Requirement: Runtime SHALL treat attention metadata as the only bootstrap truth
-The runtime SHALL bootstrap model rounds with `ContextSummary` and minimal `AttentionContexts.metadata` only. Rich system descriptions, source-specific summaries, and detailed attention bodies SHALL be fetched on demand through CLI/API surfaces instead of being pre-injected into the model input.
+The runtime SHALL bootstrap model rounds with minimal `AttentionContexts.metadata` only. Rich system descriptions, source-specific summaries, and detailed attention bodies SHALL be fetched on demand through CLI/API surfaces instead of being pre-injected into the model input. Compact summary, when present, remains prompt-window memory rather than a bootstrap document.
 
 #### Scenario: Bootstrap input only carries minimal attention metadata
 - **WHEN** the runtime prepares the current round inputs

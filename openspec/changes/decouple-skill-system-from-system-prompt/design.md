@@ -92,13 +92,12 @@ Why not keep auto-reinjection:
 - it preserves the law that facts/reminders flow through items, not through repeating full snapshots
 - it matches the current user expectation that contexts are baseline surfaces and items are the active facts
 
-The provider-visible bootstrap stays three-stage and minimal:
+The provider-visible bootstrap stays two-stage and minimal:
 
-- `summary`: `## PreAICallContext Summary`
 - `context`: `## AttentionContexts.metadata` plus rendered readonly snapshots such as `ctx-skill-system`
 - `items`: unresolved attention deltas only
 
-This keeps round-level bootstrap facts explicit without reintroducing provider-owned system guide blocks or duplicating attention-item content in the bootstrap surface.
+Compact summary is a different layer: when it exists, it stays in prompt-window memory as the compressed continuation of earlier work. The runtime must not synthesize a second bootstrap-only summary document, because that would duplicate facts the AI can already derive from `systemPrompt + attention`.
 
 ### 5. `skill` becomes the public runtime surface; `ccski` becomes internal plumbing
 

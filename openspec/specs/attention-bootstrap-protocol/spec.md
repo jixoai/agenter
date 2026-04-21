@@ -4,21 +4,20 @@ Define the prompt-side bootstrap contract that sits between attention-system, Lo
 
 ## Requirements
 
-### Requirement: Attention bootstrap SHALL use a three-stage `summary` + `context` + `items` protocol
-The first attention-native model inputs for a round SHALL be split into a bootstrap `summary` document, a bootstrap `context` document, and a delta `items` payload. `summary` SHALL carry only the minimal pre-call round summary. `context` SHALL carry only `AttentionContexts.metadata` plus rendered bootstrap-visible attention context snapshots. `items` SHALL carry only unresolved attention deltas.
+### Requirement: Attention bootstrap SHALL use a two-stage `context` + `items` protocol
+The first attention-native model inputs for a round SHALL be split into a bootstrap `context` document and a delta `items` payload. `context` SHALL carry only `AttentionContexts.metadata` plus rendered bootstrap-visible attention context snapshots. `items` SHALL carry only unresolved attention deltas. If a compact summary exists, it SHALL remain an ordinary prompt-window replay message rather than a separate bootstrap input.
 
-#### Scenario: Bootstrap summary and context are emitted before delta items
+#### Scenario: Bootstrap context is emitted before delta items
 - **WHEN** runtime collects model inputs for a round with active attention
-- **THEN** it emits one bootstrap input whose protocol kind is `summary`
-- **AND** it emits one bootstrap input whose protocol kind is `context`
-- **AND** those inputs appear in `summary -> context -> items` order for the same round
+- **THEN** it emits one bootstrap input whose protocol kind is `context`
+- **AND** that input appears before any `items` input for the same round
 
-#### Scenario: Bootstrap summary and context stay minimal
-- **WHEN** runtime assembles the bootstrap `summary` and `context`
-- **THEN** the summary text contains `## PreAICallContext Summary`
-- **AND** the context text contains `## AttentionContexts.metadata`
+#### Scenario: Bootstrap context stays minimal
+- **WHEN** runtime assembles the bootstrap `context`
+- **THEN** the context text contains `## AttentionContexts.metadata`
 - **AND** bootstrap-visible rendered snapshots appear only as `## AttentionContext.<contextId>` sections in the context input
-- **AND** neither bootstrap input contains `## Systems Descriptions` or grouped long-guide sections
+- **AND** the bootstrap does not synthesize a separate `## PreAICallContext Summary` input
+- **AND** the bootstrap input does not contain `## Systems Descriptions` or grouped long-guide sections
 
 #### Scenario: Delta items stay fact-only
 - **WHEN** runtime serializes unresolved attention into the `items` payload
@@ -27,16 +26,16 @@ The first attention-native model inputs for a round SHALL be split into a bootst
 - **AND** the runtime does not pre-bake related-query expansions into that payload
 
 ### Requirement: Bootstrap SHALL include only selected or explicitly bootstrapped system surfaces
-Runtime bootstrap SHALL surface only systems that participate in the current round or are explicitly published as bootstrap-visible attention contexts. Those systems SHALL appear through minimal summary facts and rendered context snapshots, not through provider-owned system guide strings.
+Runtime bootstrap SHALL surface only systems that participate in the current round or are explicitly published as bootstrap-visible attention contexts. Those systems SHALL appear through minimal context metadata and rendered context snapshots, not through provider-owned system guide strings.
 
 #### Scenario: Inactive systems stay out of the bootstrap
 - **WHEN** a system has neither selected attention nor a bootstrap-visible context for the current round
-- **THEN** that system does not appear in the bootstrap summary `activeSystems`
+- **THEN** that system does not appear in the bootstrap metadata set
 - **AND** no rendered `## AttentionContext.<contextId>` snapshot is emitted for it
 
-#### Scenario: Active or bootstrapped systems surface through summary and snapshots
+#### Scenario: Active or bootstrapped systems surface through metadata and snapshots
 - **WHEN** message attention is active and the canonical skill snapshot is bootstrap-visible for the current round
-- **THEN** the bootstrap summary lists `message` and `skill` in `activeSystems`
+- **THEN** the bootstrap context metadata lists both the message context and `ctx-skill-system`
 - **AND** the bootstrap context includes `## AttentionContext.ctx-skill-system`
 - **AND** the runtime does not duplicate the same skill snapshot in `systemPrompt`
 
