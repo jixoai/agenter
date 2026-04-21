@@ -1,3 +1,4 @@
+import type { WorkbenchPageTabBadgeTone } from "$lib/features/navigation/workbench-page-tabs.types";
 import { describeCompactWorkspace } from "$lib/features/workspaces/workspace-sorting";
 import type { RuntimeChatCycle, RuntimeClientState, SessionEntry } from "@agenter/client-sdk";
 
@@ -24,7 +25,7 @@ export interface RuntimeTabItem {
   id: RuntimeTabId;
   label: string;
   badgeLabel?: string;
-  badgeClassName?: string;
+  badgeTone?: WorkbenchPageTabBadgeTone;
   badgeAnimated?: boolean;
 }
 
@@ -85,17 +86,20 @@ export const resolveRuntimeStatusTone = (status: SessionEntry["status"]): string
   }
 };
 
-export const resolveCycleBadgeClassName = (cycle: RuntimeChatCycle | null, active: boolean): string | undefined => {
+export const resolveCycleBadgeTone = (
+  cycle: RuntimeChatCycle | null,
+  active: boolean,
+): WorkbenchPageTabBadgeTone | undefined => {
   if (!cycle) {
     return undefined;
   }
   if (cycle.status === "error") {
-    return "bg-rose-500 text-white";
+    return "critical";
   }
   if (cycle.kind === "compact") {
-    return active ? "bg-amber-500 text-white" : "bg-amber-400 text-black";
+    return "warning";
   }
-  return active ? "bg-teal-600 text-white" : "bg-emerald-500 text-white";
+  return active ? "accent" : "positive";
 };
 
 export const buildRuntimeTabs = (input: {
@@ -108,7 +112,7 @@ export const buildRuntimeTabs = (input: {
       id: "heartbeat",
       label: "Heartbeat",
       badgeLabel: cycle ? (cycle.cycleId === null ? "P" : String(cycle.cycleId)) : undefined,
-      badgeClassName: resolveCycleBadgeClassName(cycle, Boolean(input.activeCycle)),
+      badgeTone: resolveCycleBadgeTone(cycle, Boolean(input.activeCycle)),
       badgeAnimated: Boolean(input.activeCycle),
     },
     { id: "attention", label: "Attention" },

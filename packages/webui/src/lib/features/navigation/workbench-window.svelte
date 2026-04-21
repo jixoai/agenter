@@ -33,6 +33,18 @@
 	} = $props();
 
 	const pageToolbarRegistry = setWorkbenchPageToolbarRegistry();
+	const pageToolbarOwner = $derived.by(() => {
+		if (pageToolbarRegistry.takeover) {
+			return 'takeover';
+		}
+		if (pageToolbarRegistry.portalOwnerCount > 0) {
+			return 'page';
+		}
+		if (toolbar) {
+			return 'local';
+		}
+		return 'none';
+	});
 </script>
 
 <div
@@ -51,8 +63,7 @@
 	<section
 		class="workbench-page-toolbar border-x border-b border-border/65 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card),white_14%)_0%,color-mix(in_srgb,var(--card),white_5%)_58%,color-mix(in_srgb,var(--background),transparent_8%)_100%)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--background),white_56%),0_22px_44px_-40px_color-mix(in_srgb,var(--foreground),transparent_16%)]"
 		data-workbench-page-toolbar
-		data-has-local-toolbar={toolbar && !pageToolbarRegistry.takeover ? 'true' : 'false'}
-		data-has-takeover={pageToolbarRegistry.takeover ? 'true' : 'false'}
+		data-toolbar-owner={pageToolbarOwner}
 	>
 		{#if pageToolbarRegistry.takeover}
 			<div class="workbench-page-toolbar-takeover">
@@ -67,7 +78,7 @@
 				</Button>
 			</div>
 		{:else}
-			{#if toolbar}
+			{#if pageToolbarOwner === 'local' && toolbar}
 				<div class="workbench-page-toolbar-local">
 					{@render toolbar()}
 				</div>
@@ -110,6 +121,7 @@
 
 <style>
 	.workbench-window {
+		inline-size: 100%;
 		min-block-size: 0;
 		min-inline-size: 0;
 		grid-template-rows: auto auto minmax(0, 1fr);
@@ -126,26 +138,19 @@
 	}
 
 	.workbench-page-toolbar {
-		--workbench-page-toolbar-rows: 1;
-		block-size: calc(var(--workbench-page-toolbar-rows) * 48px);
-		display: grid;
-		grid-auto-rows: minmax(0, 1fr);
+		block-size: 48px;
 		container-type: inline-size;
 		container-name: workbench-page-toolbar;
-		overflow: clip;
+		overflow: visible;
 		position: relative;
 		z-index: 1;
 	}
 
-	.workbench-page-toolbar[data-has-local-toolbar='true']:has(.workbench-page-toolbar-host:not(:empty)) {
-		--workbench-page-toolbar-rows: 2;
-	}
-
-	.workbench-page-toolbar[data-has-local-toolbar='false'][data-has-takeover='false']:has(.workbench-page-toolbar-host:empty) {
+	.workbench-page-toolbar[data-toolbar-owner='none'] {
 		display: none;
 	}
 
-	.workbench-page-toolbar[data-has-takeover='true'] {
+	.workbench-page-toolbar[data-toolbar-owner='takeover'] {
 		z-index: 60;
 	}
 
@@ -153,6 +158,7 @@
 	.workbench-page-toolbar-host {
 		display: block;
 		block-size: 100%;
+		inline-size: 100%;
 		min-inline-size: 0;
 	}
 

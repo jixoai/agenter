@@ -101,6 +101,7 @@
 		roomSeatStates.map((state) => ({
 			value: state.actorId,
 			label: describeSeatOption(state),
+			iconUrl: state.iconUrl,
 		})),
 	);
 	const selectedViewerOptionLabel = $derived(
@@ -116,6 +117,13 @@
 			return selectedViewerOptionLabel;
 		}
 		return seat.label;
+	});
+	const selectedViewerToolbarSubtitle = $derived.by(() => {
+		const seat = selectedViewerSeat;
+		if (!seat) {
+			return canSelectViewer ? 'Choose the active room user.' : 'No granted room user yet.';
+		}
+		return [seat.role, seat.currentAdmin ? 'current admin' : null].filter(Boolean).join(' · ');
 	});
 	const roomSeatMap = $derived(new Map(roomSeatStates.map((state) => [state.actorId, state])));
 	const channelPresentation = $derived(
@@ -154,6 +162,7 @@
 				selectedViewerActorId,
 				viewerItems,
 				selectedViewerLabel: selectedViewerToolbarLabel,
+				selectedViewerSubtitle: selectedViewerToolbarSubtitle,
 				canSelectViewer,
 				activeMode: bodyMode,
 				canSearch: Boolean(selectedRoom),

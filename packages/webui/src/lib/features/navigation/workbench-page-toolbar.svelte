@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { onMount, untrack, type Snippet } from 'svelte';
 
 	import { getWorkbenchPageToolbarRegistry } from './workbench-page-toolbar-context.svelte';
 
@@ -11,6 +11,7 @@
 
 	const registry = getWorkbenchPageToolbarRegistry();
 	let host = $state<HTMLElement | null>(null);
+	let releasePortalOwner: (() => void) | null = null;
 
 	const portal = (node: HTMLElement, target: HTMLElement | null) => {
 		if (target) {
@@ -32,6 +33,17 @@
 	$effect(() => {
 		host = registry?.host ?? null;
 	});
+
+	onMount(() => {
+		if (!registry || !children) {
+			return;
+		}
+		releasePortalOwner = untrack(() => registry.registerPortalOwner());
+		return () => {
+			untrack(() => releasePortalOwner?.());
+			releasePortalOwner = null;
+		};
+	});
 </script>
 
 {#if host && children}
@@ -41,3 +53,11 @@
 	</div>
 {/if}
 {/if}
+
+<style>
+	.workbench-page-toolbar-portal {
+		block-size: 100%;
+		inline-size: 100%;
+		min-inline-size: 0;
+	}
+</style>

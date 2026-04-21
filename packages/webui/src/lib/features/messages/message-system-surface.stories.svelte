@@ -20,6 +20,28 @@
 		return within(toolbar!);
 	};
 
+	const getRoomToolbarButton = async (
+		toolbar: ReturnType<typeof within>,
+		name: 'Add user' | 'Manage room' | 'Search messages',
+	): Promise<HTMLButtonElement> => {
+		const inlineButton = toolbar.queryByRole('button', { name });
+		if (inlineButton instanceof HTMLButtonElement) {
+			return inlineButton;
+		}
+
+		const overflowTrigger = toolbar.queryByRole('button', { name: 'Open room toolbar details' });
+		expect(overflowTrigger).not.toBeNull();
+		if (overflowTrigger instanceof HTMLButtonElement && overflowTrigger.getAttribute('aria-expanded') !== 'true') {
+			await userEvent.click(overflowTrigger);
+		}
+
+		return waitFor(() => {
+			const overflowButton = toolbar.getByRole('button', { name });
+			expect(overflowButton).toBeInstanceOf(HTMLButtonElement);
+			return overflowButton as HTMLButtonElement;
+		});
+	};
+
 	const expectInsideToolbarBand = (toolbarElement: HTMLElement, nodes: readonly HTMLElement[]): void => {
 		const toolbarRect = toolbarElement.getBoundingClientRect();
 		const epsilon = 1;
@@ -100,8 +122,8 @@
 		await waitFor(() => {
 			expect(containsVisibleTextDeep(canvasElement, 'Ops bridge')).toBe(true);
 		});
-		await expect(toolbar.getByRole('button', { name: 'Manage room' })).toBeInTheDocument();
-		await expect(toolbar.getByRole('button', { name: 'Search messages' })).toBeInTheDocument();
+		await expect(await getRoomToolbarButton(toolbar, 'Manage room')).toBeInTheDocument();
+		await expect(await getRoomToolbarButton(toolbar, 'Search messages')).toBeInTheDocument();
 		await expect(toolbar.getByRole('tab', { name: 'chat' })).toHaveAttribute('aria-selected', 'true');
 		await expect(toolbar.getByRole('tab', { name: 'assets' })).toBeInTheDocument();
 		await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
@@ -116,7 +138,7 @@
 			await expect(canvas.getByTestId('room-seat-auth:wallet_evm')).toBeInTheDocument();
 		});
 		expect(canvas.queryByTestId('room-seat-system:trusted-bootstrap')).toBeNull();
-		await expect(toolbar.getByRole('button', { name: 'Add user' })).toBeInTheDocument();
+		await expect(await getRoomToolbarButton(toolbar, 'Add user')).toBeInTheDocument();
 		await openAddUserForm(canvas);
 		await userEvent.click(canvas.getByRole('button', { name: 'Close' }));
 		await waitFor(() => {
@@ -150,7 +172,7 @@
 	play={async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
 		const toolbar = getRoomToolbar(canvasElement);
-		await userEvent.click(toolbar.getByRole('button', { name: 'Add user' }));
+		await userEvent.click(await getRoomToolbarButton(toolbar, 'Add user'));
 		await waitFor(async () => {
 			await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
 			await expect(canvas.getByLabelText('User')).toBeInTheDocument();
@@ -168,7 +190,7 @@
 		const canvas = within(canvasElement);
 		const toolbar = getRoomToolbar(canvasElement);
 
-		await userEvent.click(toolbar.getByRole('button', { name: 'Manage room' }));
+		await userEvent.click(await getRoomToolbarButton(toolbar, 'Manage room'));
 		await waitFor(async () => {
 			await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
 		});
@@ -181,7 +203,7 @@
 			expect(document.body.style.pointerEvents).not.toBe('none');
 		});
 
-		await userEvent.click(toolbar.getByRole('button', { name: 'Manage room' }));
+		await userEvent.click(await getRoomToolbarButton(toolbar, 'Manage room'));
 		await waitFor(async () => {
 			await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
 			await expect(canvas.getByTestId('room-manage-nav-overview')).toHaveAttribute('aria-pressed', 'true');
@@ -197,7 +219,7 @@
 	play={async ({ canvasElement }) => {
 		const toolbar = getRoomToolbar(canvasElement);
 
-		await userEvent.click(toolbar.getByRole('button', { name: 'Search messages' }));
+		await userEvent.click(await getRoomToolbarButton(toolbar, 'Search messages'));
 		await waitFor(async () => {
 			const dialog = screen.getByTestId('room-search-dialog');
 			await expect(dialog).toBeInTheDocument();
@@ -212,7 +234,7 @@
 			expect(document.body.style.pointerEvents).not.toBe('none');
 		});
 
-		await userEvent.click(toolbar.getByRole('button', { name: 'Search messages' }));
+		await userEvent.click(await getRoomToolbarButton(toolbar, 'Search messages'));
 		await waitFor(async () => {
 			const dialog = screen.getByTestId('room-search-dialog');
 			await expect(dialog).toBeInTheDocument();

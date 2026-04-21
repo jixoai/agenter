@@ -1,9 +1,16 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
+	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
+	import SearchIcon from '@lucide/svelte/icons/search';
+
+	import { Input } from '$lib/components/ui/input/index.js';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
+	import WorkbenchPageTabs from '$lib/features/navigation/workbench-page-tabs.svelte';
+	import type { WorkbenchPageTabItem } from '$lib/features/navigation/workbench-page-tabs.types';
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
+	import WorkbenchToolbarAction from '$lib/features/navigation/workbench-toolbar-action.svelte';
+	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
+	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 	import { cn } from '$lib/utils.js';
 
 	import WorkspaceContentHeader from './workspace-content-header.svelte';
@@ -52,6 +59,11 @@
 			],
 		},
 	} satisfies WorkspaceTreePages;
+	const workspaceModeTabItems = [
+		{ value: 'explorer', label: 'explorer', title: 'Explorer' },
+		{ value: 'rules', label: 'rules', title: 'Rules' },
+		{ value: 'private', label: 'private', title: 'Private assets' },
+	] as const satisfies WorkbenchPageTabItem[];
 
 	let mode = $state<WorkspaceMode>('explorer');
 	let selectedAvatar = $state('default');
@@ -59,6 +71,7 @@
 	let selectedPath = $state<string | null>('/README.md');
 	let detailCompact = $state(false);
 	let detailOpen = $state(false);
+	let searchQuery = $state('');
 
 	const selectedWorkspace = $derived(workspaces[0] ?? null);
 	const selectedAvatarEntry = $derived(avatars.find((avatar) => avatar.nickname === selectedAvatar) ?? avatars[0] ?? null);
@@ -81,24 +94,82 @@
 	};
 </script>
 
+{#snippet workspaceShellToolbarPageTabs(toolbarState: WorkbenchToolbarRenderState)}
+	<WorkbenchPageTabs
+		ariaLabel="Workspace modes"
+		value={mode}
+		items={workspaceModeTabItems}
+		toolbarState={toolbarState}
+		onValueChange={(value) => {
+			mode = value as WorkspaceMode;
+		}}
+	/>
+{/snippet}
+
+{#snippet workspaceShellToolbarActions(toolbarState: WorkbenchToolbarRenderState)}
+	<div
+		class={cn(
+			'flex min-w-0 items-center gap-1 md:gap-1.5',
+			toolbarState.placement === 'overflow' && 'grid justify-items-start gap-2',
+		)}
+	>
+		<WorkbenchToolbarAction
+			placement={toolbarState.placement}
+			label="Manage"
+			title="Manage workspace mounts"
+			inlineLabel
+			onclick={() => undefined}
+		/>
+
+		{#if detailCompact}
+			<WorkbenchToolbarAction
+				placement={toolbarState.placement}
+				label="Open detail panel"
+				title="Open detail panel"
+				onclick={() => {
+					detailOpen = true;
+				}}
+			>
+				<PanelRightOpenIcon class="size-4" />
+			</WorkbenchToolbarAction>
+		{/if}
+
+		<div
+			class={cn(
+				'min-w-0 border border-border/60 bg-background/70',
+				toolbarState.placement === 'overflow'
+					? 'grid w-full max-w-[18rem] gap-2 rounded-2xl px-3 py-2'
+					: 'flex h-6 min-w-[11rem] max-w-[15rem] items-center gap-1 rounded-full px-1.5 md:min-w-[12rem] md:max-w-[17rem]',
+			)}
+		>
+			<SearchIcon class="size-3.5 shrink-0 text-muted-foreground" />
+			<Input
+				bind:value={searchQuery}
+				class={cn(
+					'h-auto border-0 bg-transparent p-0 shadow-none focus-visible:ring-0',
+					toolbarState.placement === 'overflow'
+						? 'w-full min-w-[14rem] text-sm'
+						: 'min-w-0 flex-1 text-[11px] md:text-xs',
+				)}
+				placeholder={mode === 'rules' ? 'Search rules' : 'Search loaded tree'}
+			/>
+		</div>
+	</div>
+{/snippet}
+
 <div
 	class={cn('grid grid-rows-[auto_auto_minmax(0,1fr)] gap-3 rounded-[1.1rem] border p-3', frameClass)}
 	data-testid="workspace-shell-story"
 >
-	<div class="flex flex-wrap items-center gap-1.5">
-		{#each ['explorer', 'rules', 'private'] as modeOption}
-			<Button
-				size="sm"
-				variant={mode === modeOption ? 'secondary' : 'ghost'}
-				data-testid={`workspace-mode-${modeOption}`}
-				onclick={() => {
-					mode = modeOption as WorkspaceMode;
-				}}
-			>
-				{modeOption}
-			</Button>
-		{/each}
-		<Badge variant="outline" class="h-5 px-1.5 text-[10px]">{selectedWorkspace?.path}</Badge>
+	<div
+		class="rounded-[0.95rem] border border-border/60 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background),white_12%)_0%,color-mix(in_srgb,var(--card),var(--background)_74%)_100%)]"
+		data-workbench-page-toolbar
+	>
+		<WorkbenchToolbar
+			pageTabs={workspaceShellToolbarPageTabs}
+			actions={workspaceShellToolbarActions}
+			overflowLabel="Open workspace toolbar details"
+		/>
 	</div>
 
 	<WorkspaceContentHeader

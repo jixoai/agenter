@@ -4,6 +4,10 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 const messageSystemSurfaceSource = readFileSync(resolve(import.meta.dirname, "message-system-surface.svelte"), "utf8");
+const roomPageToolbarContentSource = readFileSync(
+  resolve(import.meta.dirname, "room-page-toolbar-content.svelte"),
+  "utf8",
+);
 const messageRoomManageDialogSource = readFileSync(
   resolve(import.meta.dirname, "message-room-manage-dialog.svelte"),
   "utf8",
@@ -26,6 +30,10 @@ describe("Feature: Messages workbench mount contract", () => {
     expect(messageSystemSurfaceSource).toContain("<WorkbenchPageToolbar>");
     expect(messageSystemSurfaceSource).toContain("<RoomPageToolbarContent {...roomToolbarProps} />");
     expect(messageSystemSurfaceSource).not.toContain("component={RoomPageToolbarContent}");
+    expect(roomPageToolbarContentSource).toContain("<WorkbenchToolbar");
+    expect(roomPageToolbarContentSource).toContain("pageTabs={roomToolbarPageTabs}");
+    expect(roomPageToolbarContentSource).toContain("identityTitle={roomToolbarIdentityTitle}");
+    expect(roomPageToolbarContentSource).toContain("actions={roomToolbarActions}");
   });
 
   test("Scenario: Given room management is dialog-driven When reading the room surface source Then the parent binds the dialog open state instead of leaving reopen behavior trapped in child-only state", () => {
@@ -38,11 +46,15 @@ describe("Feature: Messages workbench mount contract", () => {
     expect(roomMessageSearchDialogSource).toContain("preventScroll={false}");
   });
 
-  test("Scenario: Given the messages workbench owns a fixed page toolbar region When reading the layout source Then the host remains mounted with the shared 48px container contract", () => {
+  test("Scenario: Given the messages workbench owns a fixed page toolbar region When reading the layout source Then the host remains mounted with the shared 48px container contract and does not clip floated overflow panels", () => {
     expect(messagesWorkbenchLayoutSource).toContain("bind:this={pageToolbarRegistry.host}");
     expect(messagesWorkbenchLayoutSource).toContain('class="messages-workbench-window__toolbar-host"');
     expect(messagesWorkbenchLayoutSource).toContain("block-size: 48px;");
     expect(messagesWorkbenchLayoutSource).toContain("container-type: inline-size;");
+    expect(messagesWorkbenchLayoutSource).toContain("overflow: visible;");
+    expect(messagesWorkbenchLayoutSource).toContain("position: relative;");
+    expect(messagesWorkbenchLayoutSource).toContain("z-index: 1;");
+    expect(messagesWorkbenchLayoutSource).not.toContain("overflow: clip;");
   });
 
   test("Scenario: Given the room transcript is stable again When reading the chat root source Then the footer renders the composer instead of the debug placeholder", () => {

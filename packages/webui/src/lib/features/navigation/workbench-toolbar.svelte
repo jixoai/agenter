@@ -3,8 +3,12 @@
 	import type { Snippet } from 'svelte';
 
 	import { cn } from '$lib/utils.js';
+
+	import WorkbenchToolbarStructured from './workbench-toolbar-structured.svelte';
 	import type {
+		WorkbenchToolbarAnchorKind,
 		WorkbenchToolbarBreakpoint,
+		WorkbenchToolbarCollapseStage,
 		WorkbenchToolbarDensity,
 		WorkbenchToolbarRenderState,
 	} from './workbench-toolbar.types';
@@ -29,39 +33,138 @@
 		return 'relaxed';
 	};
 
+	const resolveStructuredStage = (width: number, hasPageTabs: boolean): WorkbenchToolbarCollapseStage => {
+		if (!hasPageTabs) {
+			return width < 760 ? 'overflow-secondary' : 'wide';
+		}
+		if (width < 520) {
+			return 'overflow-identity';
+		}
+		if (width < 700) {
+			return 'overflow-subtitle';
+		}
+		if (width < 940) {
+			return 'overflow-secondary';
+		}
+		return 'wide';
+	};
+
+	const buildToolbarVisibility = ({
+		stage,
+		hasPageTabs,
+		hasIdentity,
+		hasIdentitySubtitle,
+		hasActions,
+		hasStatus,
+	}: {
+		stage: WorkbenchToolbarCollapseStage;
+		hasPageTabs: boolean;
+		hasIdentity: boolean;
+		hasIdentitySubtitle: boolean;
+		hasActions: boolean;
+		hasStatus: boolean;
+	}) => {
+		const showInlineIdentity = !hasPageTabs || stage !== 'overflow-identity';
+		const showInlineSubtitle = !hasPageTabs || stage === 'wide' || stage === 'overflow-secondary';
+		const showInlineActions = stage === 'wide' || (stage === 'overflow-secondary' && !hasStatus);
+		const showInlineStatus = stage === 'wide' || (stage === 'overflow-secondary' && !hasActions);
+		const hiddenIdentity =
+			hasPageTabs && hasIdentity && (!showInlineIdentity || (hasIdentitySubtitle && !showInlineSubtitle));
+		const hiddenActions = hasActions && !showInlineActions;
+		const hiddenStatus = hasStatus && !showInlineStatus;
+
+		return {
+			showInlineIdentity,
+			showInlineSubtitle,
+			showInlineActions,
+			showInlineStatus,
+			showOverflowTrigger: hiddenIdentity || hiddenActions || hiddenStatus,
+		};
+	};
+
 	let {
 		class: className,
 		content,
+		pageTabs,
+		identityLeading,
+		identityTitle,
+		identitySubtitle,
 		navigation,
 		primary,
 		meta,
 		actions,
+		status,
+		overflowLabel,
 	}: {
 		class?: string;
 		content?: Snippet<[WorkbenchToolbarRenderState]>;
+		pageTabs?: Snippet<[WorkbenchToolbarRenderState]>;
+		identityLeading?: Snippet<[WorkbenchToolbarRenderState]>;
+		identityTitle?: Snippet<[WorkbenchToolbarRenderState]>;
+		identitySubtitle?: Snippet<[WorkbenchToolbarRenderState]>;
 		navigation?: Snippet<[WorkbenchToolbarRenderState]>;
 		primary?: Snippet<[WorkbenchToolbarRenderState]>;
 		meta?: Snippet<[WorkbenchToolbarRenderState]>;
 		actions?: Snippet<[WorkbenchToolbarRenderState]>;
+		status?: Snippet<[WorkbenchToolbarRenderState]>;
+		overflowLabel?: string;
 	} = $props();
 
 	let rootRef = $state<HTMLElement | null>(null);
 	let width = $state(0);
 
+	const hasStructuredIdentity = $derived(Boolean(identityLeading || identityTitle || identitySubtitle));
+	const hasStructuredLayout = $derived(Boolean(!content && (pageTabs || hasStructuredIdentity || status)));
+	const usesCompatibilityLayout = $derived(
+		Boolean(!content && !hasStructuredLayout && (navigation || primary || meta || actions)),
+	);
+	const hasPageTabs = $derived(Boolean(pageTabs));
+	const anchorKind = $derived.by(() => {
+		if (hasPageTabs) {
+			return 'page-tabs';
+		}
+		if (hasStructuredIdentity) {
+			return 'identity';
+		}
+		return 'none';
+	}) satisfies WorkbenchToolbarAnchorKind;
 	const breakpoint = $derived(resolveBreakpoint(width));
 	const density = $derived(resolveDensity(breakpoint));
-	const toolbarState = $derived.by(
+	const collapseStage = $derived(resolveStructuredStage(width, hasPageTabs));
+	const structuredVisibility = $derived(
+		buildToolbarVisibility({
+			stage: collapseStage,
+			hasPageTabs,
+			hasIdentity: hasStructuredIdentity,
+			hasIdentitySubtitle: Boolean(identitySubtitle),
+			hasActions: Boolean(actions),
+			hasStatus: Boolean(status),
+		}),
+	);
+
+	const inlineToolbarState = $derived.by(
 		() =>
 			({
 				width,
 				breakpoint,
 				density,
+				placement: 'inline',
+				anchorKind,
+				collapseStage,
+				hasPageTabs,
 				isNarrow: breakpoint === 'narrow',
 				isCompact: breakpoint !== 'wide',
 				isWide: breakpoint === 'wide',
+				...structuredVisibility,
 			}) satisfies WorkbenchToolbarRenderState,
 	);
-	const usesCompatibilityLayout = $derived(Boolean(!content && (navigation || primary || meta || actions)));
+	const overflowToolbarState = $derived.by(
+		() =>
+			({
+				...inlineToolbarState,
+				placement: 'overflow',
+			}) satisfies WorkbenchToolbarRenderState,
+	);
 
 	onMount(() => {
 		if (!rootRef || typeof ResizeObserver === 'undefined') {
@@ -103,11 +206,24 @@
 	data-workbench-toolbar
 	data-workbench-toolbar-breakpoint={breakpoint}
 	data-workbench-toolbar-density={density}
+	data-workbench-toolbar-layout={content ? 'content' : hasStructuredLayout ? 'structured' : usesCompatibilityLayout ? 'compat' : 'empty'}
 >
 	{#if content}
 		<div class="workbench-toolbar__content" data-workbench-toolbar-region="content">
-			{@render content(toolbarState)}
+			{@render content(inlineToolbarState)}
 		</div>
+	{:else if hasStructuredLayout}
+		<WorkbenchToolbarStructured
+			inlineState={inlineToolbarState}
+			overflowState={overflowToolbarState}
+			{pageTabs}
+			{identityLeading}
+			{identityTitle}
+			{identitySubtitle}
+			{actions}
+			{status}
+			{overflowLabel}
+		/>
 	{:else if usesCompatibilityLayout}
 		<div class="workbench-toolbar__compat" data-workbench-toolbar-region="compat">
 			{#if navigation || primary || actions}
@@ -119,17 +235,17 @@
 				>
 					{#if navigation}
 						<div class="workbench-toolbar__navigation" data-workbench-toolbar-region="navigation">
-							{@render navigation(toolbarState)}
+							{@render navigation(inlineToolbarState)}
 						</div>
 					{/if}
 					{#if primary}
 						<div class="workbench-toolbar__primary" data-workbench-toolbar-region="primary">
-							{@render primary(toolbarState)}
+							{@render primary(inlineToolbarState)}
 						</div>
 					{/if}
 					{#if actions}
 						<div class="workbench-toolbar__actions" data-workbench-toolbar-region="actions">
-							{@render actions(toolbarState)}
+							{@render actions(inlineToolbarState)}
 						</div>
 					{/if}
 				</div>
@@ -137,7 +253,7 @@
 
 			{#if meta}
 				<div class="workbench-toolbar__meta" data-workbench-toolbar-region="meta">
-					{@render meta(toolbarState)}
+					{@render meta(inlineToolbarState)}
 				</div>
 			{/if}
 		</div>
@@ -156,7 +272,8 @@
 	.workbench-toolbar {
 		container-type: inline-size;
 		inline-size: 100%;
-		overflow: hidden;
+		overflow: visible;
+		position: relative;
 	}
 
 	.workbench-toolbar__content {

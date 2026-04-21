@@ -19,8 +19,13 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
+	import WorkbenchPageTabs from '$lib/features/navigation/workbench-page-tabs.svelte';
+	import type { WorkbenchPageTabItem } from '$lib/features/navigation/workbench-page-tabs.types';
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
 	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
+	import WorkbenchToolbarAction from '$lib/features/navigation/workbench-toolbar-action.svelte';
+	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
+	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 	import { cn } from '$lib/utils.js';
 	import WorkspaceManageDialog from '$lib/features/workspaces/workspace-manage-dialog.svelte';
 	import WorkspaceTree from '$lib/features/workspaces/workspace-tree.svelte';
@@ -94,6 +99,12 @@
 	let manageDialogError = $state<string | null>(null);
 	let manageRows = $state<WorkspaceManageAvatarRow[]>([]);
 	let manageRequestVersion = 0;
+
+	const workspaceModeTabItems = [
+		{ value: 'explorer', label: 'explorer', title: 'Explorer' },
+		{ value: 'rules', label: 'rules', title: 'Rules' },
+		{ value: 'private', label: 'private', title: 'Private assets' },
+	] as const satisfies WorkbenchPageTabItem[];
 
 	const sortedWorkspaces = $derived(
 		sortWorkspacesForCatalog(controller.runtimeState.workspaces, controller.runtimeState.recentWorkspaces),
@@ -666,86 +677,114 @@
 	});
 </script>
 
-<WorkbenchPageToolbar>
-	<div class="flex h-full items-center justify-end gap-2.5 px-3 md:gap-3 md:px-4">
-		<div class="hidden min-w-0 flex-1 md:block">
-			<div class="truncate text-sm font-semibold">{selectedWorkspace ? describeCompactWorkspace(selectedWorkspace.path) : 'Workspaces'}</div>
-		</div>
-		<Button
-			variant="outline"
-			size="sm"
-			class="rounded-full"
-			data-testid="workspace-manage-trigger"
+{#snippet workspaceRouteToolbarPageTabs(toolbarState: WorkbenchToolbarRenderState)}
+	<WorkbenchPageTabs
+		ariaLabel="Workspace modes"
+		value={mode}
+		items={workspaceModeTabItems}
+		toolbarState={toolbarState}
+		onValueChange={(value) => {
+			mode = value as WorkspaceMode;
+		}}
+	/>
+{/snippet}
+
+{#snippet workspaceRouteToolbarActions(toolbarState: WorkbenchToolbarRenderState)}
+	<div
+		class={cn(
+			'flex min-w-0 items-center gap-1 md:gap-1.5',
+			toolbarState.placement === 'overflow' && 'grid justify-items-start gap-2',
+		)}
+		aria-label="Workspace toolbar actions"
+	>
+		<WorkbenchToolbarAction
+			placement={toolbarState.placement}
+			label="Manage"
+			title="Manage workspace mounts"
+			inlineLabel
 			onclick={() => void openManageDialog()}
+		/>
+
+		{#if detailCompact}
+			<WorkbenchToolbarAction
+				placement={toolbarState.placement}
+				label="Open detail panel"
+				title="Open detail panel"
+				onclick={() => {
+					detailOpen = true;
+				}}
+			>
+				<PanelRightOpenIcon class="size-4" />
+			</WorkbenchToolbarAction>
+		{/if}
+
+		<div
+			class={cn(
+				'min-w-0 border border-border/60 bg-background/70',
+				toolbarState.placement === 'overflow'
+					? 'grid w-full max-w-[18rem] gap-2 rounded-2xl px-3 py-2'
+					: 'flex h-6 min-w-[11rem] max-w-[15rem] items-center gap-1 rounded-full px-1.5 md:min-w-[12rem] md:max-w-[17rem]',
+			)}
 		>
-			Manage
-		</Button>
-		<div class="flex items-center gap-1 rounded-full border bg-background/70 p-1">
-			{#each ['explorer', 'rules', 'private'] as modeOption}
-				<button
-					type="button"
+			<div class="flex min-w-0 items-center gap-1.5">
+				<SearchIcon class="size-3.5 shrink-0 text-muted-foreground" />
+				<Input
+					bind:value={searchQuery}
 					class={cn(
-						buttonVariants({
-							size: 'sm',
-							variant: mode === modeOption ? 'secondary' : 'ghost',
-						}),
-						'rounded-full',
+						'h-auto border-0 bg-transparent p-0 shadow-none focus-visible:ring-0',
+						toolbarState.placement === 'overflow'
+							? 'w-full min-w-[14rem] text-sm'
+							: 'min-w-0 flex-1 text-[11px] md:text-xs',
 					)}
-					onclick={() => {
-						mode = modeOption as WorkspaceMode;
-					}}
-				>
-					{modeOption}
-				</button>
-				{/each}
-		</div>
-		<Button
-			variant="ghost"
-			size="icon-sm"
-			class={cn('rounded-full', detailCompact ? 'inline-flex' : 'hidden')}
-			aria-label="Open detail panel"
-			title="Open detail panel"
-			onclick={() => {
-				detailOpen = true;
-			}}
-		>
-			<PanelRightOpenIcon class="size-4" />
-		</Button>
-		<div class="hidden items-center gap-2 md:flex">
-			<SearchIcon class="size-4 text-muted-foreground" />
-			<Input
-				bind:value={searchQuery}
-				class="h-8 w-44 bg-background/70"
-				placeholder={mode === 'rules' ? 'Search rules' : 'Search loaded tree'}
-			/>
+					placeholder={mode === 'rules' ? 'Search rules' : 'Search loaded tree'}
+				/>
+			</div>
+
 			{#if activeMatchIds.length > 0}
-				<Badge variant="outline" class="bg-background/70">
-					{activeMatchIndex + 1}/{activeMatchIds.length}
-				</Badge>
-				<button
-					type="button"
-					class={buttonVariants({ size: 'icon-sm', variant: 'ghost' })}
-					onclick={() => void jumpToActiveMatch(-1)}
+				<div
+					class={cn(
+						'flex min-w-0 items-center gap-1',
+						toolbarState.placement === 'overflow' && 'flex-wrap gap-2',
+					)}
 				>
-					<ArrowUpIcon class="size-4" />
-				</button>
-				<button
-					type="button"
-					class={buttonVariants({ size: 'icon-sm', variant: 'ghost' })}
-					onclick={() => void jumpToActiveMatch(1)}
-				>
-					<ArrowDownIcon class="size-4" />
-				</button>
-				<button
-					type="button"
-					class={buttonVariants({ size: 'sm', variant: 'ghost' })}
-					onclick={clearSearch}
-				>
-					Cancel
-				</button>
+					<Badge variant="outline" class="bg-background/70">
+						{activeMatchIndex + 1}/{activeMatchIds.length}
+					</Badge>
+					<WorkbenchToolbarAction
+						placement={toolbarState.placement}
+						label="Previous match"
+						title="Previous match"
+						onclick={() => void jumpToActiveMatch(-1)}
+					>
+						<ArrowUpIcon class="size-4" />
+					</WorkbenchToolbarAction>
+					<WorkbenchToolbarAction
+						placement={toolbarState.placement}
+						label="Next match"
+						title="Next match"
+						onclick={() => void jumpToActiveMatch(1)}
+					>
+						<ArrowDownIcon class="size-4" />
+					</WorkbenchToolbarAction>
+					<WorkbenchToolbarAction
+						placement={toolbarState.placement}
+						label="Cancel"
+						title="Clear search"
+						inlineLabel
+						onclick={clearSearch}
+					/>
+				</div>
 			{/if}
 		</div>
 	</div>
+{/snippet}
+
+<WorkbenchPageToolbar>
+	<WorkbenchToolbar
+		pageTabs={workspaceRouteToolbarPageTabs}
+		actions={workspaceRouteToolbarActions}
+		overflowLabel="Open workspace toolbar details"
+	/>
 </WorkbenchPageToolbar>
 
 <div

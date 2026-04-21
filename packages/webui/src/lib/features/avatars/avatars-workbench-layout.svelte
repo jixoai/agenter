@@ -5,11 +5,7 @@
 	import { page } from '$app/state';
 	import type { Snippet } from 'svelte';
 
-	import { Button } from '$lib/components/ui/button/index.js';
 	import { getAppControllerContext } from '$lib/app/controller-context';
-	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
-	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
-	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
 	import WorkbenchWindow from '$lib/features/navigation/workbench-window.svelte';
 	import {
@@ -32,7 +28,6 @@
 	import {
 		AVATAR_CREATE_TABS_CHANGE_EVENT,
 		readAvatarCreateTabs,
-		removeAvatarCreateTab,
 		upsertAvatarCreateTab,
 		type AvatarCreateTabEntry,
 	} from './avatar-create-tabs-state';
@@ -49,7 +44,7 @@
 	let avatarSessionTabIds = $state<string[]>(readAvatarSessionTabIds());
 	let avatarCreateTabs = $state<AvatarCreateTabEntry[]>(readAvatarCreateTabs());
 	let dismissedSessionIds = $state<string[]>(readDismissedWorkbenchTabIds('avatars-runtime'));
-	let toolbarDraftBusy = $state(false);
+	let createTabBusy = $state(false);
 
 	const activeSessionId = $derived(extractRuntimeSessionId(page.url.pathname));
 	const activeDraftId = $derived.by(() => {
@@ -141,35 +136,34 @@
 		});
 	};
 
-	const closeCreateTab = async (draftId: string): Promise<void> => {
-		const dynamicTabs = [
-			...avatarCreateTabs.map((tab) => ({
-				id: `new:${tab.draftId}`,
-				href: tab.href,
-			})),
-			...runtimeItems.map((item) => ({
-				id: item.sessionId,
-				href: item.href,
-			})),
-		];
-		const nextTab = resolveAdjacentWorkbenchTab(dynamicTabs, (tab) => tab.id, `new:${draftId}`);
-		if (activeDraftId !== draftId) {
-			avatarCreateTabs = removeAvatarCreateTab(avatarCreateTabs, draftId);
-			return;
+	const activeCreateTab = $derived.by((): AvatarCreateTabEntry | null => {
+		if (!activeDraftId) {
+			return null;
 		}
-		await goto(nextTab?.href ?? buildAvatarCatalogHref(), {
-			replaceState: true,
-			noScroll: true,
-			keepFocus: true,
-		});
-		avatarCreateTabs = removeAvatarCreateTab(avatarCreateTabs, draftId);
-	};
+		return (
+			avatarCreateTabs.find((tab) => tab.draftId === activeDraftId) ?? {
+				draftId: activeDraftId,
+				href: activeDraftHref ?? buildAvatarNewHref({ draftId: activeDraftId }),
+				draftNickname: '',
+				sourceAvatarNickname: '',
+			}
+		);
+	});
+	const createTabEntry = $derived(activeCreateTab ?? avatarCreateTabs.at(-1) ?? null);
 
-	const openToolbarDraft = async (): Promise<void> => {
-		if (toolbarDraftBusy) {
+	const openCreateTab = async (): Promise<void> => {
+		const existingHref = createTabEntry?.href;
+		if (existingHref) {
+			await goto(existingHref, {
+				keepFocus: true,
+				noScroll: true,
+			});
 			return;
 		}
-		toolbarDraftBusy = true;
+		if (createTabBusy) {
+			return;
+		}
+		createTabBusy = true;
 		try {
 			const created = await createAvatarCreateDraft(controller.runtimeStore);
 			await goto(buildAvatarNewHref({ draftId: created.resource.draftId }), {
@@ -177,9 +171,9 @@
 				noScroll: true,
 			});
 		} catch {
-			// Ignore toolbar draft failures here; route-level draft UI surfaces the durable error states.
+			// Ignore create-tab bootstrap failures here; the route surfaces durable draft errors after navigation succeeds.
 		} finally {
-			toolbarDraftBusy = false;
+			createTabBusy = false;
 		}
 	};
 
@@ -193,31 +187,22 @@
 				title: 'My avatars',
 				description: 'Operate installed avatars, open runtime shells, and manage addable avatar drafts.',
 			},
+			{
+				id: 'create',
+				href: createTabEntry?.href,
+				label: 'Add avatar',
+				icon: PlusIcon,
+				title: 'Add avatar',
+				description: createTabEntry
+					? createTabEntry.sourceAvatarNickname
+						? `Resume draft from ${createTabEntry.sourceAvatarNickname}`
+						: createTabEntry.draftNickname.length > 0
+							? `Resume draft: ${createTabEntry.draftNickname}`
+							: `Resume avatar draft · ${createTabEntry.draftId}`
+					: 'Create a new avatar draft.',
+				loading: createTabBusy,
+			},
 		] satisfies WorkbenchTabItem[];
-
-		const createTabs = avatarCreateTabs.map((entry) => ({
-			id: `new:${entry.draftId}`,
-			href: entry.href,
-			label: entry.draftNickname.length > 0 ? entry.draftNickname : 'New avatar',
-			icon: PlusIcon,
-			title: entry.draftNickname.length > 0 ? `New avatar · ${entry.draftNickname}` : `New avatar draft · ${entry.draftId}`,
-			description: entry.sourceAvatarNickname ? `Template source: ${entry.sourceAvatarNickname}` : 'Avatar creation draft',
-			closable: true,
-			onClose: () => void closeCreateTab(entry.draftId),
-			menuItems: [
-				{
-					id: `copy:${entry.draftId}`,
-					label: 'Copy draft id',
-					onSelect: () => void copyToClipboard(entry.draftId),
-				},
-				{
-					id: `close:${entry.draftId}`,
-					label: 'Close tab',
-					danger: true,
-					onSelect: () => void closeCreateTab(entry.draftId),
-				},
-			],
-		})) satisfies WorkbenchTabItem[];
 
 		const runtimeTabs = runtimeItems.map((item) => ({
 			id: item.sessionId,
@@ -245,165 +230,35 @@
 			],
 		})) satisfies WorkbenchTabItem[];
 
-		return [...fixedTabs, ...createTabs, ...runtimeTabs];
+		return [...fixedTabs, ...runtimeTabs];
 	});
 
-	const activeTabValue = $derived(activeDraftId ? `new:${activeDraftId}` : activeSessionId ?? 'catalog');
-	const activeTabItem = $derived.by((): WorkbenchTabItem | null => tabs.find((tab) => tab.id === activeTabValue) ?? tabs[0] ?? null);
-	const activeToolbarAvatarLabel = $derived(
-		activeTabItem && 'avatarLabel' in activeTabItem ? activeTabItem.avatarLabel : null,
-	);
-	const activeToolbarAvatarUrl = $derived(
-		activeTabItem && 'avatarUrl' in activeTabItem ? activeTabItem.avatarUrl : null,
-	);
-	const activeToolbarIcon = $derived(
-		activeTabItem && 'icon' in activeTabItem ? activeTabItem.icon : null,
-	);
-	const activeToolbarSubtitle = $derived.by(() => {
-		if (!activeTabItem || activeTabItem.id === 'catalog') {
-			return null;
+	const activeTabValue = $derived(activeDraftId ? 'create' : activeSessionId ?? 'catalog');
+
+	const handleWorkbenchValueChange = async (value: string): Promise<void> => {
+		if (value === 'create') {
+			await openCreateTab();
+			return;
 		}
-		return activeTabItem.title ?? activeTabItem.description ?? null;
-	});
-	const ActiveToolbarIcon = $derived(activeToolbarIcon ?? BotIcon);
+		const nextTab = tabs.find((tab) => tab.id === value);
+		if (!nextTab?.href) {
+			return;
+		}
+		await goto(nextTab.href, {
+			noScroll: true,
+			keepFocus: true,
+		});
+	};
 </script>
-
-{#snippet avatarsToolbarContent(toolbarState: WorkbenchToolbarRenderState)}
-	<div class="avatar-page-toolbar" data-testid="avatar-workbench-toolbar" data-toolbar-breakpoint={toolbarState.breakpoint}>
-		<div class="avatar-page-toolbar__identity" title={activeTabItem?.title ?? activeTabItem?.label ?? 'My avatars'}>
-			{#if activeToolbarAvatarLabel}
-				<ProfileAvatar
-					label={activeToolbarAvatarLabel}
-					src={activeToolbarAvatarUrl}
-					class="avatar-page-toolbar__avatar"
-				/>
-			{:else}
-				<div class="avatar-page-toolbar__icon">
-					<ActiveToolbarIcon class="size-4" />
-				</div>
-			{/if}
-			<div class="avatar-page-toolbar__title">
-				<span class="truncate font-semibold">{activeTabItem?.label ?? 'My avatars'}</span>
-				{#if !toolbarState.isNarrow && activeToolbarSubtitle}
-					<span class="truncate text-xs text-muted-foreground">
-						{activeToolbarSubtitle}
-					</span>
-				{/if}
-			</div>
-		</div>
-
-		<div class="avatar-page-toolbar__actions">
-			<Button
-				size={toolbarState.isNarrow ? 'icon-sm' : 'sm'}
-				variant="outline"
-				disabled={toolbarDraftBusy}
-				onclick={() => void openToolbarDraft()}
-			>
-				<PlusIcon class="size-4" />
-				{#if !toolbarState.isNarrow}
-					<span>{toolbarDraftBusy ? 'Creating…' : 'New avatar'}</span>
-				{/if}
-			</Button>
-		</div>
-	</div>
-{/snippet}
-
-{#snippet avatarsToolbar()}
-	<WorkbenchToolbar content={avatarsToolbarContent} />
-{/snippet}
 
 <div class="h-full" data-testid="avatars-workbench">
 	<WorkbenchWindow
 		ariaLabel="Avatar workbench tabs"
 		value={activeTabValue}
 		{tabs}
-		toolbar={avatarsToolbar}
+		onValueChange={handleWorkbenchValueChange}
 		bodyMode="fill"
 	>
 		<div class="h-full min-h-0">{@render children?.()}</div>
 	</WorkbenchWindow>
 </div>
-
-<style>
-	.avatar-page-toolbar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.65rem;
-		block-size: 100%;
-		min-block-size: 0;
-		min-inline-size: 0;
-		padding-inline: 0.55rem;
-	}
-
-	.avatar-page-toolbar__identity,
-	.avatar-page-toolbar__actions {
-		min-inline-size: 0;
-	}
-
-	.avatar-page-toolbar__identity {
-		display: flex;
-		align-items: center;
-		gap: 0.55rem;
-		min-inline-size: 0;
-		flex: 1 1 auto;
-	}
-
-	.avatar-page-toolbar__icon {
-		display: inline-flex;
-		block-size: 1.6rem;
-		inline-size: 1.6rem;
-		flex: none;
-		align-items: center;
-		justify-content: center;
-		border-radius: 0.8rem;
-		border: 1px solid color-mix(in srgb, var(--border), transparent 20%);
-		background: color-mix(in srgb, var(--background), transparent 12%);
-		box-shadow: inset 0 1px 0 color-mix(in srgb, var(--background), white 78%);
-	}
-
-	:global(.avatar-page-toolbar__avatar) {
-		block-size: 1.6rem;
-		inline-size: 1.6rem;
-		border-radius: 0.8rem;
-		border-color: color-mix(in srgb, var(--border), transparent 20%);
-		background: color-mix(in srgb, var(--background), transparent 12%);
-		box-shadow: inset 0 1px 0 color-mix(in srgb, var(--background), white 78%);
-	}
-
-	.avatar-page-toolbar__title {
-		display: grid;
-		min-inline-size: 0;
-		gap: 0.12rem;
-		font-size: 0.8rem;
-		line-height: 1.05;
-	}
-
-	.avatar-page-toolbar__actions {
-		display: flex;
-		flex: none;
-		align-items: center;
-		justify-content: flex-end;
-	}
-
-	@container workbench-page-toolbar (max-width: 44rem) {
-		.avatar-page-toolbar {
-			gap: 0.45rem;
-			padding-inline: 0.45rem;
-		}
-
-		.avatar-page-toolbar__identity {
-			max-inline-size: 12rem;
-		}
-
-		.avatar-page-toolbar__icon,
-		:global(.avatar-page-toolbar__avatar) {
-			block-size: 1.45rem;
-			inline-size: 1.45rem;
-		}
-
-		.avatar-page-toolbar__title {
-			font-size: 0.76rem;
-		}
-	}
-</style>

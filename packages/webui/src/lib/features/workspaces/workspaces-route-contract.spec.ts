@@ -6,6 +6,15 @@ import { describe, expect, test } from "vitest";
 const workspacesRouteSource = readFileSync(resolve(import.meta.dirname, "workspaces-route.svelte"), "utf8");
 
 describe("Feature: Workspaces route search and rules contract", () => {
+  test("Scenario: Given the workspace detail route now follows the shared page-toolbar law When reading the route source Then page-tabs and right-side actions are composed through the shared primitive instead of a bespoke flex header", () => {
+    expect(workspacesRouteSource).toContain("WorkbenchPageTabs");
+    expect(workspacesRouteSource).toContain("WorkbenchToolbarAction");
+    expect(workspacesRouteSource).toContain("<WorkbenchToolbar");
+    expect(workspacesRouteSource).toContain("pageTabs={workspaceRouteToolbarPageTabs}");
+    expect(workspacesRouteSource).toContain("actions={workspaceRouteToolbarActions}");
+    expect(workspacesRouteSource).toContain('overflowLabel="Open workspace toolbar details"');
+  });
+
   test("Scenario: Given workspace modes own page-local search When reading the route source Then search keeps prev-next-cancel inside the shared toolbar", () => {
     expect(workspacesRouteSource).toContain("collectWorkspaceRuleMatchIds");
     expect(workspacesRouteSource).toContain("jumpToActiveMatch");

@@ -21,20 +21,20 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const ModeSwitchingKeepsSharedShell = {
-	name: 'Scenario: Given workspace mode pills When switching between Explorer Rules and Private Then the shared shell swaps page bodies without losing header chrome',
+	name: 'Scenario: Given workspace page-tabs When switching between explorer rules and private Then the shared shell swaps page bodies without losing header chrome',
 	args: {
 		initialMode: 'explorer',
 	},
 	play: async ({ canvasElement }) => {
 		const canvas = getCanvas(canvasElement);
 
-		await userEvent.click(canvas.getByTestId('workspace-mode-rules'));
+		await userEvent.click(canvas.getByRole('tab', { name: 'rules' }));
 		await expect(canvas.getByText('Rule priority follows row order.')).toBeInTheDocument();
 
-		await userEvent.click(canvas.getByTestId('workspace-mode-private'));
+		await userEvent.click(canvas.getByRole('tab', { name: 'private' }));
 		await expect(canvas.getByText('Private assets reuse the same tree mental model.')).toBeInTheDocument();
 
-		await userEvent.click(canvas.getByTestId('workspace-mode-explorer'));
+		await userEvent.click(canvas.getByRole('tab', { name: 'explorer' }));
 		await expect(canvas.getByText('Explorer preview')).toBeInTheDocument();
 	},
 } satisfies Story;

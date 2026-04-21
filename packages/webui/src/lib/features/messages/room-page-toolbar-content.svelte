@@ -1,357 +1,239 @@
 <script lang="ts">
-  import SearchIcon from "@lucide/svelte/icons/search";
-  import Settings2Icon from "@lucide/svelte/icons/settings-2";
-  import UserPlusIcon from "@lucide/svelte/icons/user-plus";
+	import SearchIcon from '@lucide/svelte/icons/search';
+	import Settings2Icon from '@lucide/svelte/icons/settings-2';
+	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
 
-  import ProfileAvatar from "$lib/components/profile-avatar.svelte";
-  import { buttonVariants } from "$lib/components/ui/button/index.js";
-  import * as Select from "$lib/components/ui/select/index.js";
-  import { cn } from "$lib/utils.js";
+	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
+	import WorkbenchPageTabs from '$lib/features/navigation/workbench-page-tabs.svelte';
+	import type { WorkbenchPageTabItem } from '$lib/features/navigation/workbench-page-tabs.types';
+	import WorkbenchToolbarAction from '$lib/features/navigation/workbench-toolbar-action.svelte';
+	import * as Select from '$lib/components/ui/select/index.js';
+	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
+	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
+	import { cn } from '$lib/utils.js';
 
-  import type { MessageSystemRoomSeatState } from "./message-system-surface.types";
+	import type { MessageSystemRoomSeatState } from './message-system-surface.types';
 
-  type RoomBodyMode = "chat" | "assets";
-  type ViewerOption = {
-    value: string;
-    label: string;
-  };
+	type RoomBodyMode = 'chat' | 'assets';
+	type ViewerOption = {
+		value: string;
+		label: string;
+		iconUrl?: string | null;
+	};
 
-  let {
-    selectedViewer,
-    selectedViewerActorId,
-    viewerItems,
-    selectedViewerLabel,
-    canSelectViewer,
-    activeMode,
-    canSearch = true,
-    actionsDisabled = false,
-    onSelectViewer,
-    onSelectMode,
-    onSearchClick,
-    onAddUserClick,
-    onManageClick,
-  }: {
-    selectedViewer: MessageSystemRoomSeatState | null;
-    selectedViewerActorId: string | null;
-    viewerItems: ViewerOption[];
-    selectedViewerLabel: string;
-    canSelectViewer: boolean;
-    activeMode: RoomBodyMode;
-    canSearch?: boolean;
-    actionsDisabled?: boolean;
-    onSelectViewer: (actorId: string) => void;
-    onSelectMode: (mode: RoomBodyMode) => void;
-    onSearchClick: () => void;
-    onAddUserClick: () => void;
-    onManageClick: () => void;
-  } = $props();
+	const roomModes = [
+		{ value: 'chat', label: 'Chat' },
+		{ value: 'assets', label: 'Assets' },
+	] as const satisfies WorkbenchPageTabItem[];
 
-  const viewerAvatarLabel = $derived(selectedViewer?.label ?? selectedViewerLabel ?? "Room user");
+	let {
+		selectedViewer,
+		selectedViewerActorId,
+		viewerItems,
+		selectedViewerLabel,
+		selectedViewerSubtitle,
+		canSelectViewer,
+		activeMode,
+		canSearch = true,
+		actionsDisabled = false,
+		onSelectViewer,
+		onSelectMode,
+		onSearchClick,
+		onAddUserClick,
+		onManageClick,
+	}: {
+		selectedViewer: MessageSystemRoomSeatState | null;
+		selectedViewerActorId: string | null;
+		viewerItems: ViewerOption[];
+		selectedViewerLabel: string;
+		selectedViewerSubtitle?: string;
+		canSelectViewer: boolean;
+		activeMode: RoomBodyMode;
+		canSearch?: boolean;
+		actionsDisabled?: boolean;
+		onSelectViewer: (actorId: string) => void;
+		onSelectMode: (mode: RoomBodyMode) => void;
+		onSearchClick: () => void;
+		onAddUserClick: () => void;
+		onManageClick: () => void;
+	} = $props();
+
+	const viewerAvatarLabel = $derived(selectedViewer?.label ?? selectedViewerLabel ?? 'Room user');
 </script>
 
-<div
-  class="room-page-toolbar"
-  data-room-toolbar-mode={activeMode}
->
-  <div class="room-page-toolbar__identity">
-    <div class="room-page-toolbar__avatar">
-      <ProfileAvatar
-        label={viewerAvatarLabel}
-        src={selectedViewer?.iconUrl ?? null}
-        class="room-page-toolbar__avatar-image"
-      />
-    </div>
+{#snippet roomToolbarPageTabs(_toolbarState: WorkbenchToolbarRenderState)}
+	<WorkbenchPageTabs
+		ariaLabel="Room sections"
+		value={activeMode}
+		items={roomModes}
+		toolbarState={_toolbarState}
+		onValueChange={(value) => {
+			onSelectMode(value as RoomBodyMode);
+		}}
+	/>
+{/snippet}
 
-    <div class="room-page-toolbar__viewer">
-      {#if canSelectViewer}
-        <Select.Root
-          type="single"
-          items={viewerItems}
-          value={selectedViewerActorId ?? undefined}
-          onValueChange={(value) => {
-            onSelectViewer(value);
-          }}
-        >
-          <Select.Trigger
-            size="sm"
-            aria-label="View room as user"
-            class="room-page-toolbar__viewer-trigger"
-            title={selectedViewerLabel}
-          >
-            <span class="truncate">{selectedViewerLabel}</span>
-          </Select.Trigger>
-          <Select.Content>
-            {#each viewerItems as item (item.value)}
-              <Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
-            {/each}
-          </Select.Content>
-        </Select.Root>
-      {:else}
-        <div class="room-page-toolbar__viewer-fallback" title={selectedViewerLabel}>
-          <span class="truncate">{selectedViewerLabel}</span>
-        </div>
-      {/if}
-    </div>
-  </div>
+{#snippet roomToolbarIdentityLeading(_toolbarState: WorkbenchToolbarRenderState)}
+	<ProfileAvatar label={viewerAvatarLabel} src={selectedViewer?.iconUrl ?? null} class="room-page-toolbar__avatar-image" />
+{/snippet}
 
-  <div class="room-page-toolbar__secondary">
-    <div class="room-page-toolbar__actions" aria-label="Room actions">
-      <button
-        type="button"
-        class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
-        aria-label="Search messages"
-        title="Search messages"
-        disabled={!canSearch}
-        onclick={onSearchClick}
-      >
-        <SearchIcon class="size-4" />
-      </button>
-      <button
-        type="button"
-        class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
-        aria-label="Add user"
-        title="Add user"
-        disabled={actionsDisabled}
-        onclick={onAddUserClick}
-      >
-        <UserPlusIcon class="size-4" />
-      </button>
-      <button
-        type="button"
-        class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "room-page-toolbar__action")}
-        aria-label="Manage room"
-        title="Manage room"
-        disabled={actionsDisabled}
-        onclick={onManageClick}
-      >
-        <Settings2Icon class="size-4" />
-      </button>
-    </div>
+{#snippet roomToolbarIdentityTitle(_toolbarState: WorkbenchToolbarRenderState)}
+	{#if canSelectViewer}
+		<Select.Root
+			type="single"
+			items={viewerItems}
+			value={selectedViewerActorId ?? undefined}
+			onValueChange={(value) => {
+				onSelectViewer(value);
+			}}
+		>
+			<Select.Trigger
+				size="sm"
+				aria-label="View room as user"
+				class="room-page-toolbar__viewer-trigger"
+				title={selectedViewerLabel}
+			>
+				<span class="truncate">{selectedViewerLabel}</span>
+			</Select.Trigger>
+			<Select.Content>
+				{#each viewerItems as item (item.value)}
+					<Select.Item value={item.value} label={item.label}>
+						<div class="room-page-toolbar__viewer-option">
+							<ProfileAvatar
+								label={item.label}
+								src={item.iconUrl ?? null}
+								class="room-page-toolbar__viewer-option-avatar"
+							/>
+							<span class="truncate">{item.label}</span>
+						</div>
+					</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+	{:else}
+		<div class="truncate" title={selectedViewerLabel}>
+			{selectedViewerLabel}
+		</div>
+	{/if}
+{/snippet}
 
-    <div class="room-page-toolbar__modes" role="tablist" aria-label="Room content mode">
-      {#each ["chat", "assets"] as mode (mode)}
-        <button
-          type="button"
-          class="room-page-toolbar__mode-chip"
-          data-active={activeMode === mode ? "true" : "false"}
-          role="tab"
-          aria-selected={activeMode === mode}
-          onclick={() => {
-            onSelectMode(mode as RoomBodyMode);
-          }}
-        >
-          {mode}
-        </button>
-      {/each}
-    </div>
-  </div>
-</div>
+{#snippet roomToolbarIdentitySubtitle(_toolbarState: WorkbenchToolbarRenderState)}
+	<span class="truncate">{selectedViewerSubtitle}</span>
+{/snippet}
+
+{#snippet roomToolbarActions(toolbarState: WorkbenchToolbarRenderState)}
+	<div
+		class={cn(
+			'flex min-w-0 items-center gap-1',
+			toolbarState.placement === 'overflow' && 'grid gap-2',
+		)}
+		aria-label="Room actions"
+	>
+		<WorkbenchToolbarAction
+			type="button"
+			placement={toolbarState.placement}
+			label="Search messages"
+			title="Search messages"
+			disabled={!canSearch}
+			onclick={onSearchClick}
+		>
+			<SearchIcon class="size-4" />
+		</WorkbenchToolbarAction>
+		<WorkbenchToolbarAction
+			type="button"
+			placement={toolbarState.placement}
+			label="Add user"
+			title="Add user"
+			disabled={actionsDisabled}
+			onclick={onAddUserClick}
+		>
+			<UserPlusIcon class="size-4" />
+		</WorkbenchToolbarAction>
+		<WorkbenchToolbarAction
+			type="button"
+			placement={toolbarState.placement}
+			label="Manage room"
+			title="Manage room"
+			disabled={actionsDisabled}
+			onclick={onManageClick}
+		>
+			<Settings2Icon class="size-4" />
+		</WorkbenchToolbarAction>
+	</div>
+{/snippet}
+
+<WorkbenchToolbar
+	pageTabs={roomToolbarPageTabs}
+	identityLeading={roomToolbarIdentityLeading}
+	identityTitle={roomToolbarIdentityTitle}
+	identitySubtitle={roomToolbarIdentitySubtitle}
+	actions={roomToolbarActions}
+	overflowLabel="Open room toolbar details"
+/>
 
 <style>
-  .room-page-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem;
-    block-size: 100%;
-    min-block-size: 0;
-    min-inline-size: 0;
-    padding-inline: 0.7rem;
-    padding-block: 0.2rem;
-    overflow: clip;
-  }
+	:global(.room-page-toolbar__avatar-image) {
+		block-size: 1.7rem;
+		inline-size: 1.7rem;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--background), transparent 12%);
+		box-shadow: none;
+	}
 
-  .room-page-toolbar__identity,
-  .room-page-toolbar__viewer,
-  .room-page-toolbar__secondary,
-  .room-page-toolbar__actions,
-  .room-page-toolbar__modes {
-    min-inline-size: 0;
-  }
+	:global(.room-page-toolbar__viewer-trigger),
+	:global(.room-page-toolbar__viewer-trigger[data-slot='select-trigger']) {
+		block-size: 1.2rem;
+		min-block-size: 1.2rem;
+		inline-size: fit-content;
+		max-inline-size: 100%;
+		min-inline-size: 0;
+		justify-content: flex-start;
+		gap: 0.14rem;
+		border: 0;
+		background: transparent;
+		padding: 0;
+		color: var(--foreground);
+		font-size: 0.82rem;
+		font-weight: 600;
+		line-height: 1;
+		box-shadow: none;
+	}
 
-  .room-page-toolbar__identity {
-    flex: 1 1 auto;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    overflow: hidden;
-  }
+	:global(.room-page-toolbar__viewer-trigger > svg) {
+		inline-size: 0.72rem;
+		block-size: 0.72rem;
+		opacity: 0.5;
+	}
 
-  .room-page-toolbar__avatar {
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
+	:global(.room-page-toolbar__viewer-trigger > .truncate) {
+		max-inline-size: 100%;
+	}
 
-  :global(.room-page-toolbar__avatar-image) {
-    block-size: 1.75rem;
-    inline-size: 1.75rem;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--background), transparent 12%);
-    box-shadow: none;
-  }
+	:global(.room-page-toolbar__viewer-option) {
+		display: inline-flex;
+		min-inline-size: 0;
+		align-items: center;
+		gap: 0.5rem;
+	}
 
-  .room-page-toolbar__viewer {
-    flex: 1 1 auto;
-    overflow: hidden;
-  }
+	:global(.room-page-toolbar__viewer-option-avatar) {
+		block-size: 1.2rem;
+		inline-size: 1.2rem;
+		border-radius: 999px;
+		border-color: color-mix(in srgb, var(--border), transparent 18%);
+		background: color-mix(in srgb, var(--background), transparent 8%);
+		box-shadow: none;
+	}
 
-  :global(.room-page-toolbar__viewer-trigger),
-  .room-page-toolbar__viewer-fallback {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    inline-size: 100%;
-    min-inline-size: 0;
-    max-inline-size: 100%;
-    min-block-size: 1.15rem;
-    block-size: 1.15rem;
-    border-radius: 999px;
-    border: 0;
-    background: transparent;
-    padding: 0;
-    color: var(--foreground);
-    font-size: 0.76rem;
-    font-weight: 600;
-    line-height: 1;
-    white-space: nowrap;
-    box-shadow: none;
-  }
+	@container workbench-page-toolbar (max-width: 44rem) {
+		:global(.room-page-toolbar__avatar-image) {
+			block-size: 1.55rem;
+			inline-size: 1.55rem;
+		}
 
-  :global(.room-page-toolbar__viewer-trigger[data-slot="select-trigger"]) {
-    height: 1.15rem;
-    min-height: 1.15rem;
-    width: 100%;
-    min-width: 0;
-    gap: 0.25rem;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  :global(.room-page-toolbar__viewer-trigger[data-slot="select-trigger"] > svg) {
-    inline-size: 0.8rem;
-    block-size: 0.8rem;
-    opacity: 0.5;
-  }
-
-  .room-page-toolbar__viewer-fallback {
-    min-block-size: 1.15rem;
-  }
-
-  .room-page-toolbar__secondary {
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.35rem;
-  }
-
-  .room-page-toolbar__actions {
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.15rem;
-  }
-
-  :global(.room-page-toolbar__action) {
-    block-size: 1.55rem;
-    inline-size: 1.55rem;
-    border-radius: 999px;
-    border: 0;
-    color: color-mix(in srgb, var(--foreground), transparent 36%);
-  }
-
-  :global(.room-page-toolbar__action:hover:not(:disabled)),
-  :global(.room-page-toolbar__action:focus-visible:not(:disabled)) {
-    background: color-mix(in srgb, var(--foreground), transparent 94%);
-    color: var(--foreground);
-  }
-
-  .room-page-toolbar__modes {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 0.22rem;
-    min-block-size: 0;
-    white-space: nowrap;
-  }
-
-  .room-page-toolbar__mode-chip {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-block-size: 1.45rem;
-    border-radius: 999px;
-    border: 0;
-    background: transparent;
-    padding-inline: 0.44rem;
-    color: color-mix(in srgb, var(--foreground), transparent 34%);
-    font-size: 0.64rem;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-    text-transform: capitalize;
-    transition:
-      background-color 120ms ease,
-      border-color 120ms ease,
-      color 120ms ease;
-  }
-
-  .room-page-toolbar__mode-chip[data-active="true"] {
-    background: color-mix(in srgb, var(--foreground), transparent 92%);
-    color: var(--foreground);
-  }
-
-  @container (max-width: 43.999rem) {
-    .room-page-toolbar {
-      padding-inline: 0.55rem;
-    }
-
-    :global(.room-page-toolbar__avatar-image) {
-      block-size: 1.6rem;
-      inline-size: 1.6rem;
-    }
-
-    :global(.room-page-toolbar__viewer-trigger),
-    .room-page-toolbar__viewer-fallback {
-      font-size: 0.72rem;
-    }
-
-    .room-page-toolbar__secondary {
-      gap: 0.25rem;
-    }
-
-    :global(.room-page-toolbar__action) {
-      block-size: 1.45rem;
-      inline-size: 1.45rem;
-    }
-
-    .room-page-toolbar__mode-chip {
-      min-block-size: 1.35rem;
-      padding-inline: 0.38rem;
-      font-size: 0.61rem;
-    }
-  }
-
-  @container (max-width: 31.999rem) {
-    .room-page-toolbar {
-      gap: 0.45rem;
-      padding-inline: 0.48rem;
-    }
-
-    .room-page-toolbar__identity {
-      gap: 0.4rem;
-    }
-
-    .room-page-toolbar__modes {
-      gap: 0.18rem;
-    }
-
-    .room-page-toolbar__mode-chip {
-      padding-inline: 0.34rem;
-    }
-  }
+		:global(.room-page-toolbar__viewer-trigger),
+		:global(.room-page-toolbar__viewer-trigger[data-slot='select-trigger']) {
+			font-size: 0.76rem;
+		}
+	}
 </style>

@@ -19,7 +19,7 @@
 			id: 'heartbeat',
 			label: 'Heartbeat',
 			badgeLabel: '12',
-			badgeClassName: 'bg-teal-600 text-white',
+			badgeTone: 'accent',
 			badgeAnimated: true,
 		},
 		{ id: 'attention', label: 'Attention' },
@@ -28,7 +28,7 @@
 		id: RuntimeTabId;
 		label: string;
 		badgeLabel?: string;
-		badgeClassName?: string;
+		badgeTone?: 'neutral' | 'accent' | 'positive' | 'warning' | 'critical';
 		badgeAnimated?: boolean;
 	}>;
 
@@ -46,6 +46,28 @@
 	}}
 >
 	<div class="w-full max-w-3xl rounded-2xl border p-3">
-		<RuntimeTabBar sessionId="session-alpha" activeTab="attention" {tabs} {onNavigate} />
+		<RuntimeTabBar
+			sessionId="session-alpha"
+			activeTab="attention"
+			{tabs}
+			toolbarState={{
+				width: 960,
+				breakpoint: 'wide',
+				density: 'relaxed',
+				placement: 'inline',
+				anchorKind: 'page-tabs',
+				collapseStage: 'wide',
+				hasPageTabs: true,
+				isNarrow: false,
+				isCompact: false,
+				isWide: true,
+				showInlineActions: true,
+				showInlineStatus: true,
+				showInlineSubtitle: true,
+				showInlineIdentity: true,
+				showOverflowTrigger: false,
+			}}
+			{onNavigate}
+		/>
 	</div>
 </Story>

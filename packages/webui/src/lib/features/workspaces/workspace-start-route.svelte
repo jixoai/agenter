@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right';
+	import FolderRootIcon from '@lucide/svelte/icons/folder-root';
 	import LayoutListIcon from '@lucide/svelte/icons/layout-list';
 	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 	import SearchIcon from '@lucide/svelte/icons/search';
@@ -12,9 +13,14 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button, buttonVariants } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
+	import WorkbenchToolbarAction from '$lib/features/navigation/workbench-toolbar-action.svelte';
+	import WorkbenchToolbarToggle from '$lib/features/navigation/workbench-toolbar-toggle.svelte';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
 	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
+	import WorkbenchToolbarStatus from '$lib/features/navigation/workbench-toolbar-status.svelte';
+	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
+	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 	import { cn } from '$lib/utils.js';
 
 	import { buildWorkspaceDetailHref, readWorkspaceAvatar } from './workspace-location';
@@ -93,35 +99,64 @@
 			detailOpen = true;
 		}
 	};
+
+	const workspaceStartSubtitle = 'Choose one durable workspace root and open its dedicated detail surface.';
 </script>
 
-	<WorkbenchPageToolbar>
-		<div class="flex h-full items-center justify-between gap-3 px-3 md:px-4">
-			<div class="min-w-0">
-				<div class="flex min-w-0 items-center gap-2">
-				<div class="truncate text-sm font-semibold leading-tight">
-					<span class="sm:hidden">Roots</span>
-					<span class="hidden sm:inline">Workspace roots</span>
-				</div>
-				<HelpHint textContext="The Workspaces start page chooses one durable root at a time. Each root opens a dedicated single-root detail surface instead of swapping unrelated roots inline.">
-					<p>Choose one durable workspace resource. Each root opens a dedicated single-root detail surface.</p>
-				</HelpHint>
-				<Badge variant="outline" class="hidden h-5 px-1.5 text-[10px] font-normal md:inline-flex">
-					{filteredWorkspaces.length} roots
-				</Badge>
-				{#if requestedAvatar}
-					<Badge variant="outline" class="hidden h-5 px-1.5 text-[10px] font-normal md:inline-flex">
-						@{requestedAvatar}
-					</Badge>
-				{/if}
-			</div>
-		</div>
-			<div class="flex items-center gap-1.5 md:gap-2">
-			<Button
-				variant="ghost"
-				size="icon"
-				class={cn('size-8 rounded-full', detailCompact ? 'inline-flex' : 'hidden')}
-				aria-label="Open detail panel"
+{#snippet workspaceStartToolbarIdentityLeading(_toolbarState: WorkbenchToolbarRenderState)}
+	<FolderRootIcon class="size-4 text-muted-foreground" />
+{/snippet}
+
+{#snippet workspaceStartToolbarIdentityTitle(_toolbarState: WorkbenchToolbarRenderState)}
+	<span class="inline-flex min-w-0 items-center gap-2">
+		<span class="truncate">
+			<span class="sm:hidden">Roots</span>
+			<span class="hidden sm:inline">Workspace roots</span>
+		</span>
+		<HelpHint textContext="The Workspaces start page chooses one durable root at a time. Each root opens a dedicated single-root detail surface instead of swapping unrelated roots inline.">
+			<p>Choose one durable workspace resource. Each root opens a dedicated single-root detail surface.</p>
+		</HelpHint>
+	</span>
+{/snippet}
+
+{#snippet workspaceStartToolbarIdentitySubtitle(_toolbarState: WorkbenchToolbarRenderState)}
+	<span class="truncate">{workspaceStartSubtitle}</span>
+{/snippet}
+
+{#snippet workspaceStartToolbarStatus(toolbarState: WorkbenchToolbarRenderState)}
+	<div
+		class={cn(
+			'flex min-w-0 flex-wrap items-center gap-1',
+			toolbarState.placement === 'overflow' ? 'justify-start' : 'justify-end',
+		)}
+	>
+		<WorkbenchToolbarStatus
+			placement={toolbarState.placement}
+			label={`${filteredWorkspaces.length} roots`}
+			title={`${filteredWorkspaces.length} roots`}
+		/>
+		{#if requestedAvatar}
+			<WorkbenchToolbarStatus
+				placement={toolbarState.placement}
+				label={`@${requestedAvatar}`}
+				title={`Avatar filter: ${requestedAvatar}`}
+				tone="accent"
+			/>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet workspaceStartToolbarActions(toolbarState: WorkbenchToolbarRenderState)}
+	<div
+		class={cn(
+			'flex min-w-0 items-center gap-1 md:gap-1.5',
+			toolbarState.placement === 'overflow' && 'grid gap-2',
+		)}
+	>
+		{#if detailCompact}
+			<WorkbenchToolbarAction
+				placement={toolbarState.placement}
+				label="Open detail panel"
 				title="Open detail panel"
 				disabled={!selectedWorkspace}
 				onclick={() => {
@@ -129,30 +164,56 @@
 				}}
 			>
 				<PanelRightOpenIcon class="size-4" />
-			</Button>
-			<Button
-				variant="ghost"
-				size="icon"
-				class={cn('size-8', compactMode && 'bg-accent text-accent-foreground')}
-				aria-label={compactMode ? 'Switch to comfortable view' : 'Switch to compact view'}
-				title={compactMode ? 'Switch to comfortable view' : 'Switch to compact view'}
-				onclick={() => {
-					compactMode = !compactMode;
-				}}
-			>
-				<LayoutListIcon class="size-4" />
-			</Button>
-				<div class="hidden h-4 w-px bg-border/60 sm:block"></div>
-				<SearchIcon class="hidden size-3.5 text-muted-foreground sm:block" />
-				<Input
-					bind:value={searchQuery}
-					onkeydown={handleSearchKeyDown}
-					class="h-8 w-24 bg-background/70 text-xs sm:w-32 md:w-56 md:text-sm"
-					placeholder="Search roots"
-				/>
-			</div>
+			</WorkbenchToolbarAction>
+		{/if}
+
+		<WorkbenchToolbarToggle
+			placement={toolbarState.placement}
+			label="Compact view"
+			title={compactMode ? 'Switch to comfortable view' : 'Switch to compact view'}
+			pressed={compactMode}
+			inlineTone="active"
+			onPressedChange={(pressed) => {
+				compactMode = pressed;
+			}}
+		>
+			<LayoutListIcon class="size-4" />
+		</WorkbenchToolbarToggle>
+
+		<div
+			class={cn(
+				'flex min-w-0 items-center gap-1.5 rounded-full border border-border/60 bg-background/70 px-2.5',
+				toolbarState.placement === 'overflow'
+					? 'h-9 rounded-xl px-3'
+					: 'h-6 gap-1 px-1.5',
+			)}
+		>
+			<SearchIcon class="size-3.5 shrink-0 text-muted-foreground" />
+			<Input
+				bind:value={searchQuery}
+				onkeydown={handleSearchKeyDown}
+				class={cn(
+					'h-auto border-0 bg-transparent p-0 shadow-none focus-visible:ring-0',
+					toolbarState.placement === 'overflow'
+						? 'w-full min-w-[14rem] text-sm'
+						: 'w-20 text-[11px] sm:w-28 md:w-44 md:text-xs',
+				)}
+				placeholder="Search roots"
+			/>
 		</div>
-	</WorkbenchPageToolbar>
+	</div>
+{/snippet}
+
+<WorkbenchPageToolbar>
+	<WorkbenchToolbar
+		identityLeading={workspaceStartToolbarIdentityLeading}
+		identityTitle={workspaceStartToolbarIdentityTitle}
+		identitySubtitle={workspaceStartToolbarIdentitySubtitle}
+		status={workspaceStartToolbarStatus}
+		actions={workspaceStartToolbarActions}
+		overflowLabel="Open workspace toolbar details"
+	/>
+</WorkbenchPageToolbar>
 
 <div class="h-full" data-testid="workspace-start-route">
 	<WorkbenchPageContent

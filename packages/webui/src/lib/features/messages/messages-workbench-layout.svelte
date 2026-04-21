@@ -248,7 +248,9 @@
 		block-size: 48px;
 		container-type: inline-size;
 		container-name: workbench-page-toolbar;
-		overflow: clip;
+		overflow: visible;
+		position: relative;
+		z-index: 1;
 	}
 
 	.messages-workbench-window__toolbar:has(.messages-workbench-window__toolbar-host:empty) {

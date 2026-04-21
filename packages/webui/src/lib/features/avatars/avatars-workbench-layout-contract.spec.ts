@@ -9,22 +9,20 @@ const avatarsWorkbenchLayoutSource = readFileSync(
 );
 
 describe("Feature: Avatar workbench toolbar density contract", () => {
-  test("Scenario: Given avatar workbench should align with the shared toolbar language When reading the source Then identity and action share the existing workbench-toolbar content pattern instead of a route-specific chrome invention", () => {
-    expect(avatarsWorkbenchLayoutSource).not.toContain("import { Badge }");
-    expect(avatarsWorkbenchLayoutSource).not.toContain("avatarsToolbarMeta");
-    expect(avatarsWorkbenchLayoutSource).toContain("const activeTabItem = $derived");
-    expect(avatarsWorkbenchLayoutSource).toContain("const activeToolbarSubtitle = $derived.by(() => {");
-    expect(avatarsWorkbenchLayoutSource).toContain("activeTabItem.id === 'catalog'");
+  test("Scenario: Given runtime routes already own the page-toolbar When reading the avatar workbench source Then the outer shell keeps only fixed collection tabs and does not revive a second header row", () => {
     expect(avatarsWorkbenchLayoutSource).toContain("createAvatarCreateDraft");
+    expect(avatarsWorkbenchLayoutSource).toContain("id: 'catalog'");
     expect(avatarsWorkbenchLayoutSource).toContain("label: 'My avatars'");
-    expect(avatarsWorkbenchLayoutSource).toContain("title: 'My avatars'");
-    expect(avatarsWorkbenchLayoutSource).toContain("<WorkbenchToolbar content={avatarsToolbarContent} />");
-    expect(avatarsWorkbenchLayoutSource).toContain('data-testid="avatar-workbench-toolbar"');
-    expect(avatarsWorkbenchLayoutSource).toContain("avatar-page-toolbar__identity");
-    expect(avatarsWorkbenchLayoutSource).toContain("ProfileAvatar");
-    expect(avatarsWorkbenchLayoutSource).toContain("New avatar");
-    expect(avatarsWorkbenchLayoutSource).toContain("{activeTabItem?.label ?? 'My avatars'}");
-    expect(avatarsWorkbenchLayoutSource).toContain("{#if !toolbarState.isNarrow && activeToolbarSubtitle}");
-    expect(avatarsWorkbenchLayoutSource).not.toContain('<Badge variant="outline" class="bg-background/70">');
+    expect(avatarsWorkbenchLayoutSource).toContain("id: 'create'");
+    expect(avatarsWorkbenchLayoutSource).toContain("label: 'Add avatar'");
+    expect(avatarsWorkbenchLayoutSource).toContain("const openCreateTab = async");
+    expect(avatarsWorkbenchLayoutSource).toContain(
+      "const activeTabValue = $derived(activeDraftId ? 'create' : activeSessionId ?? 'catalog');",
+    );
+    expect(avatarsWorkbenchLayoutSource).toContain("onValueChange={handleWorkbenchValueChange}");
+    expect(avatarsWorkbenchLayoutSource).not.toContain("toolbar={avatarsToolbar}");
+    expect(avatarsWorkbenchLayoutSource).not.toContain("<WorkbenchToolbar");
+    expect(avatarsWorkbenchLayoutSource).not.toContain('data-testid="avatar-workbench-toolbar"');
+    expect(avatarsWorkbenchLayoutSource).not.toContain("New avatar");
   });
 });
