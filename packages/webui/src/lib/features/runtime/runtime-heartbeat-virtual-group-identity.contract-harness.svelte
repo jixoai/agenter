@@ -111,7 +111,7 @@
     </div>
   </div>
 
-  <div class="h-[420px] min-h-0 rounded-[1.2rem] border border-border/60 bg-card/60">
+  <div class="h-[420px] rounded-[1.2rem] border border-border/60 bg-card/60">
     {#if mode === "direct"}
       <AnchoredVirtualList
         class="h-full"

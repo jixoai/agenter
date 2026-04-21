@@ -129,7 +129,7 @@
 			</header>
 
 			<div
-				class="min-h-0 overflow-hidden bg-[linear-gradient(180deg,#1c1c1e,#171719)]"
+				class="overflow-hidden bg-[linear-gradient(180deg,#1c1c1e,#171719)]"
 				style={windowBodyStyle}
 			>
 				<TerminalViewport

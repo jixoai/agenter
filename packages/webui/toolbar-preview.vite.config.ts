@@ -24,6 +24,7 @@ export default defineConfig({
 		},
 	},
 	optimizeDeps: {
+		include: ['@agenter/terminal-view', 'lit/decorators.js'],
 		exclude: ['@agenter/svelte-components', '@lucide/svelte', 'bits-ui', 'events', 'shadcn-svelte'],
 	},
 });

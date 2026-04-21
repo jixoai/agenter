@@ -74,7 +74,7 @@
 		class={cn(
 			placement === 'overflow'
 				? 'h-8 w-auto justify-start self-start rounded-full border border-border/70 bg-background/82 px-2.5 text-xs text-muted-foreground shadow-none data-[state=on]:border-border data-[state=on]:bg-accent data-[state=on]:text-foreground'
-				: 'h-6 min-h-0 gap-1 rounded-full px-1.5 text-[11px] leading-none shadow-none [&_svg]:size-3.5',
+				: 'h-6 gap-1 rounded-full px-1.5 text-[11px] leading-none shadow-none [&_svg]:size-3.5',
 			placement === 'inline' && inlineToneClass,
 		)}
 	>

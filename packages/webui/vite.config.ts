@@ -39,12 +39,14 @@ const codemirrorDedupe = [
 
 const optimizeDepsInclude = [
   ...codemirrorDedupe,
+  '@agenter/terminal-view',
   '@lezer/highlight',
   '@tanstack/svelte-virtual',
   'clsx',
   'highlight.js',
   'idb-keyval',
   'lit',
+  'lit/decorators.js',
   'lit/directives/style-map.js',
   'lit/directives/unsafe-html.js',
   'lit/static-html.js',
@@ -56,7 +58,6 @@ const optimizeDepsInclude = [
 
 const appSvelteDependencyExcludes = [
   '@agenter/svelte-components',
-  '@agenter/terminal-view',
   '@agenter/web-chat-view',
   '@agenter/web-components',
   '@lucide/svelte',

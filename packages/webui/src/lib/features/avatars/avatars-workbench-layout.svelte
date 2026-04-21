@@ -259,6 +259,6 @@
 		onValueChange={handleWorkbenchValueChange}
 		bodyMode="fill"
 	>
-		<div class="h-full min-h-0">{@render children?.()}</div>
+		<div class="h-full">{@render children?.()}</div>
 	</WorkbenchWindow>
 </div>

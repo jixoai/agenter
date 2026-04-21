@@ -53,7 +53,7 @@
 		placement === 'overflow'
 			? 'h-8 w-auto justify-start self-start justify-self-start rounded-full px-2.5 text-xs'
 			: cn(
-					'h-6 min-h-0 rounded-full px-0 py-0 text-[11px] leading-none shadow-none ring-0 transition-colors [&_svg]:size-3.5',
+					'h-6 rounded-full px-0 py-0 text-[11px] leading-none shadow-none ring-0 transition-colors [&_svg]:size-3.5',
 					inlineLabel ? 'gap-1 px-1.5 has-[>svg]:px-1.25' : 'size-6 min-w-6 gap-0',
 					inlineToneClass,
 				),
