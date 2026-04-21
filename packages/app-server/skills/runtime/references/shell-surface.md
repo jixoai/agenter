@@ -11,7 +11,7 @@ Use shell CLI commands inside `root_workspace_bash` for system work:
 - `message`
 - `workspace`
 - `terminal`
-- `ccski`
+- `skill`
 - `tool`
 
 Boundary:

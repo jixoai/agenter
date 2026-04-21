@@ -12,7 +12,11 @@ import type {
   RuntimeMessageChannelView,
   RuntimeMessageQueryResult,
   RuntimeMessageSendResult,
+  RuntimeSkillConfigInfoView,
+  RuntimeSkillInfoView,
+  RuntimeSkillMutationView,
   RuntimeMessageSnapshotView,
+  RuntimeSkillView,
   RuntimeTerminalView,
   RuntimeWorkspaceSurface,
 } from "./runtime-tool-views";
@@ -74,9 +78,33 @@ export interface RuntimeLocalApiHandlers {
     terminalIds: string[];
   }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
   terminalKill: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
+  skillList: () => RuntimeSkillView[];
+  skillSearch: (input: { query?: string }) => RuntimeSkillView[];
+  skillInfo: (input: { name: string; rootKind?: "builtin" | "shared" | "global" | "avatar" }) => Promise<RuntimeSkillInfoView> | RuntimeSkillInfoView;
+  skillGetConfig: (input: {
+    name: string;
+    rootKind?: "builtin" | "shared" | "global" | "avatar";
+  }) => Promise<RuntimeSkillConfigInfoView> | RuntimeSkillConfigInfoView;
+  skillUpsert: (input: {
+    name: string;
+    content: string;
+    rootKind?: "shared" | "global" | "avatar";
+  }) => Promise<RuntimeSkillMutationView> | RuntimeSkillMutationView;
+  skillSetConfig: (input: {
+    name: string;
+    config: {
+      files?: string[];
+    };
+    rootKind?: "builtin" | "shared" | "global" | "avatar";
+  }) => Promise<RuntimeSkillMutationView> | RuntimeSkillMutationView;
+  skillRemove: (input: {
+    name: string;
+    rootKind?: "shared" | "global" | "avatar";
+  }) => Promise<RuntimeSkillMutationView> | RuntimeSkillMutationView;
+  skillRefresh: () => Promise<RuntimeSkillMutationView> | RuntimeSkillMutationView;
 }
 
-export type RuntimeToolNamespace = "attention" | "message" | "workspace" | "terminal";
+export type RuntimeToolNamespace = "attention" | "message" | "workspace" | "terminal" | "skill";
 
 type RuntimeToolResult = Record<string, unknown>;
 
@@ -220,6 +248,46 @@ const terminalFocusSchema = z.object({
 
 const terminalKillSchema = z.object({
   terminalId: z.string(),
+});
+
+const skillSearchSchema = z.object({
+  query: z.string().optional(),
+});
+
+const skillVisibleRootKindSchema = z.enum(["builtin", "shared", "global", "avatar"]);
+
+const skillInfoSchema = z.object({
+  name: z.string().trim().min(1),
+  rootKind: skillVisibleRootKindSchema.optional(),
+});
+
+const skillRootKindSchema = z.enum(["shared", "global", "avatar"]);
+const skillConfigSchema = z
+  .object({
+    files: z.array(z.string().trim().min(1)).optional(),
+  })
+  .strict();
+
+const skillGetConfigSchema = z.object({
+  name: z.string().trim().min(1),
+  rootKind: skillVisibleRootKindSchema.optional(),
+});
+
+const skillUpsertSchema = z.object({
+  name: z.string().trim().min(1),
+  content: z.string().min(1),
+  rootKind: skillRootKindSchema.optional(),
+});
+
+const skillSetConfigSchema = z.object({
+  name: z.string().trim().min(1),
+  config: skillConfigSchema,
+  rootKind: skillVisibleRootKindSchema.optional(),
+});
+
+const skillRemoveSchema = z.object({
+  name: z.string().trim().min(1),
+  rootKind: skillRootKindSchema.optional(),
 });
 
 const defineRuntimeToolDescriptor = <TInput extends ZodTypeAny>(
@@ -440,6 +508,119 @@ export const runtimeToolDescriptors = [
     examples: [{ kind: "none" }],
     handler: async (_input, handlers) => ({
       workspaces: handlers.workspaceList(),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "skill",
+    name: "list",
+    route: "/v1/skill/list",
+    description: "List runtime-visible skills from built-in and writable on-disk roots.",
+    inputSchema: emptyObjectSchema,
+    examples: [{ kind: "none" }],
+    handler: async (_input, handlers) => ({
+      skills: handlers.skillList(),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "skill",
+    name: "search",
+    route: "/v1/skill/search",
+    description: "Search runtime-visible skills by name, summary, or path.",
+    inputSchema: skillSearchSchema,
+    examples: [{ kind: "stdin", payload: { query: "terminal" } }, { kind: "argv", payload: { query: "message" } }],
+    handler: async (input, handlers) => ({
+      skills: handlers.skillSearch(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "skill",
+    name: "info",
+    route: "/v1/skill/info",
+    description: "Read one runtime-visible skill and return its rendered content plus real filesystem path.",
+    inputSchema: skillInfoSchema,
+    examples: [
+      { kind: "stdin", payload: { name: "agenter-runtime" } },
+      { kind: "argv", payload: { name: "agenter-terminal" } },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.skillInfo(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "skill",
+    name: "get-config",
+    route: "/v1/skill/get-config",
+    description: "Read one skill's watcher config, config path, and resolved watch targets without reading arbitrary sibling files.",
+    inputSchema: skillGetConfigSchema,
+    examples: [{ kind: "stdin", payload: { name: "agenter-runtime", rootKind: "builtin" } }],
+    handler: async (input, handlers) => ({
+      result: await handlers.skillGetConfig(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "skill",
+    name: "upsert",
+    route: "/v1/skill/upsert",
+    description: "Create or replace one writable runtime skill under the selected writable root.",
+    inputSchema: skillUpsertSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          name: "workspace-debug",
+          rootKind: "avatar",
+          content:
+            "---\\nname: workspace-debug\\ndescription: Local runtime skill\\n---\\n\\n# workspace-debug\\n\\nKeep this short.\\n",
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.skillUpsert(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "skill",
+    name: "set-config",
+    route: "/v1/skill/set-config",
+    description:
+      "Replace one skill's ccski.config.json so the runtime recalculates the watched-file topology without exposing arbitrary file writes.",
+    inputSchema: skillSetConfigSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          name: "agenter-runtime",
+          rootKind: "builtin",
+          config: {
+            files: ["references/*.md"],
+          },
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.skillSetConfig(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "skill",
+    name: "remove",
+    route: "/v1/skill/remove",
+    description: "Delete one writable runtime skill. Built-in catalog entries remain read-only.",
+    inputSchema: skillRemoveSchema,
+    examples: [{ kind: "stdin", payload: { name: "workspace-debug", rootKind: "avatar" } }],
+    handler: async (input, handlers) => ({
+      result: await handlers.skillRemove(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "skill",
+    name: "refresh",
+    route: "/v1/skill/refresh",
+    description: "Refresh the canonical runtime skill snapshot from current on-disk truths.",
+    inputSchema: emptyObjectSchema,
+    examples: [{ kind: "none" }],
+    handler: async (_input, handlers) => ({
+      result: await handlers.skillRefresh(),
     }),
   }),
   defineRuntimeToolDescriptor({

@@ -1,5 +1,14 @@
 export { AttentionStore } from "./attention-store";
 export {
+  DEFAULT_ATTENTION_CONTEXT_TEMPLATE,
+  deriveAttentionContextContent,
+  getAttentionContextTemplateSlot,
+  initializeAttentionContextSlots,
+  listAttentionContextTemplateSlots,
+  normalizeAttentionContextTemplate,
+  type AttentionContextTemplateSlot,
+} from "./attention-context-template";
+export {
   AttentionSourceRegistry,
   parseAttentionSourceNamespace,
   type AttentionSourceNamespaceRegistration,

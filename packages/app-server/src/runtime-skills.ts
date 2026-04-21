@@ -1,10 +1,11 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runtimeBuiltinSkillCatalog } from "./generated/runtime-skill-catalog.generated";
 import type { RuntimeBuiltinSkillCatalogEntry } from "./runtime-skill-catalog-builder";
+import { RUNTIME_SKILL_CONFIG_BASENAME } from "./runtime-skill-config";
 import {
   normalizeRuntimeSkillName,
   parseRuntimeSkillFrontmatter,
@@ -19,8 +20,7 @@ export const RUNTIME_PRIVATE_KEY_ENV = "AGENTER_AVATAR_PRIVATE_KEY";
 export const RUNTIME_ROOT_WORKSPACE_ENV = "AGENTER_ROOT_WORKSPACE";
 
 const DEFAULT_REPO_ROOT = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
-const BUILTIN_RUNTIME_SKILL_CACHE_DIRNAME = ".runtime-skills";
-const RUNTIME_TOOL_NAMESPACES = new Set(["attention", "message", "workspace", "terminal"] as const);
+const RUNTIME_TOOL_NAMESPACES = new Set(["attention", "message", "workspace", "terminal", "skill"] as const);
 const EXAMPLE_SLOT_PATTERN = /^(\s*)\{\{examples:([a-z]+)\.([a-z]+)\}\}\s*$/u;
 
 export interface RuntimeSkillRoot {
@@ -28,12 +28,19 @@ export interface RuntimeSkillRoot {
   path: string;
 }
 
+export type RuntimeSkillWritableRootKind = RuntimeSkillRoot["kind"];
+export type RuntimeSkillRootKind = RuntimeSkillWritableRootKind | "builtin";
+
 export interface RuntimeSkillRecord {
   name: string;
   summary: string;
   path: string;
+  skillDir: string;
+  configPath: string;
+  configExists: boolean;
   root: string;
-  rootKind: RuntimeSkillRoot["kind"] | "builtin";
+  rootKind: RuntimeSkillRootKind;
+  writable: boolean;
   packageName?: string;
   content?: string;
 }
@@ -72,6 +79,29 @@ const collectSkillFiles = (root: string, depth = 0): string[] => {
   return output;
 };
 
+const toRuntimeSkillRecord = (
+  input: {
+    name: string;
+    summary: string;
+    path: string;
+    root: string;
+    rootKind: RuntimeSkillRootKind;
+    writable: boolean;
+    packageName?: string;
+    content?: string;
+  },
+): RuntimeSkillRecord => {
+  const skillDir = resolve(dirname(input.path));
+  const configPath = resolve(skillDir, RUNTIME_SKILL_CONFIG_BASENAME);
+  return {
+    ...input,
+    path: resolve(input.path),
+    skillDir,
+    configPath,
+    configExists: existsSync(configPath),
+  };
+};
+
 const readSkillRecord = (filePath: string, root: RuntimeSkillRoot): RuntimeSkillRecord | null => {
   try {
     const content = readFileSync(filePath, "utf8");
@@ -81,13 +111,14 @@ const readSkillRecord = (filePath: string, root: RuntimeSkillRoot): RuntimeSkill
     if (!name) {
       return null;
     }
-    return {
+    return toRuntimeSkillRecord({
       name,
       summary: frontmatter.description?.trim() || pickRuntimeSkillBodySummary(content),
       path: resolve(filePath),
       root: resolve(root.path),
       rootKind: root.kind,
-    };
+      writable: true,
+    });
   } catch {
     return null;
   }
@@ -114,44 +145,50 @@ export const resolveRuntimeSkillRoots = (input: {
   ];
 };
 
+export const resolveRuntimeSkillRootByKind = (
+  input: RuntimeSkillLookupInput,
+  kind: RuntimeSkillWritableRootKind,
+): RuntimeSkillRoot => {
+  const match = resolveRuntimeSkillRoots(input).find((root) => root.kind === kind);
+  if (!match) {
+    throw new Error(`runtime skill root not found for kind: ${kind}`);
+  }
+  return match;
+};
+
+const listBuiltinRuntimeSkillMountRoots = (input: Pick<RuntimeSkillLookupInput, "repoRoot">): string[] => {
+  const repoRoot = resolve(input.repoRoot ?? DEFAULT_REPO_ROOT);
+  const roots = new Set<string>();
+  for (const entry of runtimeBuiltinSkillCatalog) {
+    roots.add(resolve(repoRoot, dirname(entry.sourcePath)));
+  }
+  return [...roots].sort((left, right) => left.localeCompare(right));
+};
+
 export const listRuntimeSkillMountRoots = (input: RuntimeSkillLookupInput): string[] => {
   const roots = new Set<string>();
   for (const root of resolveRuntimeSkillRoots(input)) {
     roots.add(resolve(root.path));
   }
+  for (const root of listBuiltinRuntimeSkillMountRoots(input)) {
+    roots.add(root);
+  }
   return [...roots].sort((left, right) => left.localeCompare(right));
 };
 
-const copyRuntimeSkillAncillaryFiles = (sourceDir: string, targetDir: string): void => {
-  mkdirSync(targetDir, { recursive: true });
-  for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
-    if (entry.name === "SKILL.md") {
-      continue;
-    }
-    const sourcePath = join(sourceDir, entry.name);
-    const targetPath = join(targetDir, entry.name);
-    if (entry.isDirectory()) {
-      copyRuntimeSkillAncillaryFiles(sourcePath, targetPath);
-      continue;
-    }
-    if (entry.isFile()) {
-      mkdirSync(dirname(targetPath), { recursive: true });
-      copyFileSync(sourcePath, targetPath);
-    }
-  }
-};
-
-const asRuntimeToolNamespace = (value: string): "attention" | "message" | "workspace" | "terminal" | null =>
-  RUNTIME_TOOL_NAMESPACES.has(value as "attention" | "message" | "workspace" | "terminal")
-    ? (value as "attention" | "message" | "workspace" | "terminal")
+const asRuntimeToolNamespace = (
+  value: string,
+): "attention" | "message" | "workspace" | "terminal" | "skill" | null =>
+  RUNTIME_TOOL_NAMESPACES.has(value as "attention" | "message" | "workspace" | "terminal" | "skill")
+    ? (value as "attention" | "message" | "workspace" | "terminal" | "skill")
     : null;
 
 const renderBuiltinRuntimeSkillContent = (
-  entry: RuntimeBuiltinSkillCatalogEntry,
+  template: string,
   input: RuntimeSkillLookupInput,
 ): string => {
   const principalId = input.principalId ?? "unknown-principal";
-  return entry.template
+  return template
     .split(/\r?\n/u)
     .flatMap((line) => {
       const match = line.match(EXAMPLE_SLOT_PATTERN);
@@ -172,44 +209,60 @@ const renderBuiltinRuntimeSkillContent = (
     .join("\n");
 };
 
+const readBuiltinSkillTemplate = (
+  entry: RuntimeBuiltinSkillCatalogEntry,
+  repoRoot: string,
+): { template: string; sourcePath: string } => {
+  const sourcePath = resolve(repoRoot, entry.sourcePath);
+  if (existsSync(sourcePath)) {
+    return {
+      template: readFileSync(sourcePath, "utf8"),
+      sourcePath,
+    };
+  }
+  return {
+    template: entry.template,
+    sourcePath,
+  };
+};
+
 const listBuiltinRuntimeSkills = (input: RuntimeSkillLookupInput): RuntimeSkillRecord[] => {
   const repoRoot = resolve(input.repoRoot ?? DEFAULT_REPO_ROOT);
   return runtimeBuiltinSkillCatalog.map((entry) => {
-    const renderedSkill = renderBuiltinRuntimeSkillContent(entry, input);
-    const sourcePath = resolve(repoRoot, entry.sourcePath);
-    const sourceDir = dirname(sourcePath);
-    const cacheRoot = resolve(input.rootWorkspacePath, BUILTIN_RUNTIME_SKILL_CACHE_DIRNAME, entry.name);
-    mkdirSync(cacheRoot, { recursive: true });
-    writeFileSync(join(cacheRoot, "SKILL.md"), renderedSkill, "utf8");
-    copyRuntimeSkillAncillaryFiles(sourceDir, cacheRoot);
-    return {
+    const { template, sourcePath } = readBuiltinSkillTemplate(entry, repoRoot);
+    const frontmatter = parseRuntimeSkillFrontmatter(template);
+    return toRuntimeSkillRecord({
       name: entry.name,
-      summary: entry.summary,
-      path: join(cacheRoot, "SKILL.md"),
-      root: cacheRoot,
+      summary: frontmatter.description?.trim() || entry.summary,
+      path: sourcePath,
+      root: dirname(sourcePath),
       rootKind: "builtin",
+      writable: false,
       packageName: entry.packageName,
-      content: renderedSkill,
-    };
+      content: renderBuiltinRuntimeSkillContent(template, input),
+    });
   });
 };
 
-export const listRuntimeSkills = (input: RuntimeSkillLookupInput): RuntimeSkillRecord[] => {
-  const roots = resolveRuntimeSkillRoots(input);
-  const skills = new Map<string, RuntimeSkillRecord>();
-  for (const skill of listBuiltinRuntimeSkills(input)) {
-    skills.set(skill.name, skill);
-  }
-  for (const root of roots) {
+const listRawRuntimeSkills = (input: RuntimeSkillLookupInput): RuntimeSkillRecord[] => {
+  const skills: RuntimeSkillRecord[] = [...listBuiltinRuntimeSkills(input)];
+  for (const root of resolveRuntimeSkillRoots(input)) {
     for (const filePath of collectSkillFiles(root.path)) {
       const record = readSkillRecord(filePath, root);
-      if (!record) {
-        continue;
+      if (record) {
+        skills.push(record);
       }
-      skills.set(record.name, record);
     }
   }
-  return [...skills.values()].sort((left, right) => left.name.localeCompare(right.name));
+  return skills.sort((left, right) => left.name.localeCompare(right.name) || left.path.localeCompare(right.path));
+};
+
+export const listRuntimeSkills = (input: RuntimeSkillLookupInput): RuntimeSkillRecord[] => {
+  const visible = new Map<string, RuntimeSkillRecord>();
+  for (const skill of listRawRuntimeSkills(input)) {
+    visible.set(skill.name, skill);
+  }
+  return [...visible.values()].sort((left, right) => left.name.localeCompare(right.name));
 };
 
 export const findRuntimeSkill = (
@@ -229,15 +282,118 @@ export const findRuntimeSkill = (
   );
 };
 
+export const getRuntimeSkillByName = (
+  input: RuntimeSkillLookupInput & {
+    name: string;
+    rootKind?: RuntimeSkillRootKind;
+  },
+): RuntimeSkillRecord | null => {
+  const normalizedName = normalizeRuntimeSkillName(input.name);
+  if (!normalizedName) {
+    return null;
+  }
+  const source = input.rootKind ? listRawRuntimeSkills(input) : listRuntimeSkills(input);
+  return source.find((skill) => skill.name === normalizedName && (input.rootKind ? skill.rootKind === input.rootKind : true)) ?? null;
+};
+
 export const readRuntimeSkillContent = (skill: RuntimeSkillRecord | string): string =>
   typeof skill === "string" ? readFileSync(skill, "utf8") : skill.content ?? readFileSync(skill.path, "utf8");
 
-export const buildRuntimeSkillsList = (skills: readonly RuntimeSkillRecord[]): string => {
+export const upsertRuntimeSkillFile = (
+  input: RuntimeSkillLookupInput & {
+    name: string;
+    content: string;
+    rootKind?: RuntimeSkillWritableRootKind;
+  },
+): RuntimeSkillRecord => {
+  const normalizedName = normalizeRuntimeSkillName(input.name);
+  if (!normalizedName) {
+    throw new Error(`invalid skill name: ${input.name}`);
+  }
+  const frontmatter = parseRuntimeSkillFrontmatter(input.content);
+  const frontmatterName = frontmatter.name ? normalizeRuntimeSkillName(frontmatter.name) : normalizedName;
+  if (!frontmatterName || frontmatterName !== normalizedName) {
+    throw new Error(`skill content name does not match requested name: ${input.name}`);
+  }
+
+  const root = resolveRuntimeSkillRootByKind(input, input.rootKind ?? "avatar");
+  const skillDir = join(root.path, normalizedName);
+  const skillPath = join(skillDir, "SKILL.md");
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(skillPath, input.content.endsWith("\n") ? input.content : `${input.content}\n`, "utf8");
+
+  const record = readSkillRecord(skillPath, root);
+  if (!record) {
+    throw new Error(`failed to read runtime skill after write: ${skillPath}`);
+  }
+  return record;
+};
+
+const findRuntimeSkillRecordInRoot = (
+  root: RuntimeSkillRoot,
+  name: string,
+): RuntimeSkillRecord | null => {
+  const normalizedName = normalizeRuntimeSkillName(name);
+  if (!normalizedName) {
+    return null;
+  }
+  for (const filePath of collectSkillFiles(root.path)) {
+    const record = readSkillRecord(filePath, root);
+    if (record?.name === normalizedName) {
+      return record;
+    }
+  }
+  return null;
+};
+
+export const removeRuntimeSkillFile = (
+  input: RuntimeSkillLookupInput & {
+    name: string;
+    rootKind?: RuntimeSkillWritableRootKind;
+  },
+): { removed: boolean; path: string | null; rootKind: RuntimeSkillWritableRootKind | null } => {
+  const normalizedName = normalizeRuntimeSkillName(input.name);
+  if (!normalizedName) {
+    return {
+      removed: false,
+      path: null,
+      rootKind: input.rootKind ?? null,
+    };
+  }
+
+  const roots =
+    input.rootKind !== undefined
+      ? [resolveRuntimeSkillRootByKind(input, input.rootKind)]
+      : (["avatar", "global", "shared"] as const).map((kind) => resolveRuntimeSkillRootByKind(input, kind));
+
+  for (const root of roots) {
+    const record = findRuntimeSkillRecordInRoot(root, normalizedName);
+    if (!record) {
+      continue;
+    }
+    rmSync(dirname(record.path), { recursive: true, force: true });
+    return {
+      removed: true,
+      path: record.path,
+      rootKind: root.kind,
+    };
+  }
+
+  return {
+    removed: false,
+    path: null,
+    rootKind: input.rootKind ?? null,
+  };
+};
+
+export const buildRuntimeSkillsList = (
+  skills: readonly Pick<RuntimeSkillRecord, "name" | "summary" | "path">[],
+): string => {
   const lines = [
     "## skills.list",
     "",
-    "Use `ccski info <skill>` to expand a skill when you need detailed instructions.",
-    "`ccski info` shows the real filesystem path to that skill's `SKILL.md`.",
+    "Use `skill info <skill>` to expand a skill when you need detailed instructions.",
+    "`skill info` shows the real filesystem path to that skill's `SKILL.md`.",
     "If the skill lists sibling `references/*.md` files, inspect only the specific files you need via shell instead of loading the whole references tree.",
     "",
   ];

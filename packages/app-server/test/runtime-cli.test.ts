@@ -451,42 +451,184 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("Available files: none");
   });
 
-  test("Scenario: Given built-in skills When ccski list runs Then the shell output teaches progressive discovery through real paths and references", async () => {
-    const api = await startMockRuntimeApi();
-    const ccski = createRuntimeCommand(api.baseUrl, "ccski", {
+  test("Scenario: Given built-in skills When skill list runs Then the shell output teaches progressive discovery through real paths and references through the local API", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/skill/list": {
+        skills: [
+          {
+            name: "agenter-runtime",
+            summary: "runtime shell guidance",
+            path: "/repo/packages/app-server/skills/runtime/SKILL.md",
+            root: "/repo/packages/app-server/skills/runtime",
+            rootKind: "builtin",
+            writable: false,
+            packageName: "@agenter/app-server",
+          },
+        ],
+      },
+    });
+    const skill = createRuntimeCommand(api.baseUrl, "skill", {
       rootWorkspacePath: createTempRoot(),
       homeDir: createTempRoot(),
     });
 
-    const result = await ccski.execute(["list"], createCommandContext());
+    const result = await skill.execute(["list"], createCommandContext());
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("Use `ccski info <skill>`");
+    expect(result.stdout).toContain("Use `skill info <skill>`");
     expect(result.stdout).toContain("real filesystem path");
     expect(result.stdout).toContain("references/*.md");
     expect(result.stdout).toContain("agenter-runtime");
-    expect(api.getRequests()).toHaveLength(0);
+    expect(api.getLastRequest()?.url).toBe("/v1/skill/list");
   });
 
-  test("Scenario: Given ccski info for a built-in skill When the shell command runs Then the real SKILL path and reference index are rendered without materializing built-ins into workspace storage", async () => {
-    const api = await startMockRuntimeApi();
+  test("Scenario: Given skill info for a built-in skill When the shell command runs Then the real SKILL path and reference index are rendered without materializing built-ins into workspace storage", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/skill/info": {
+        result: {
+          skill: {
+            name: "agenter-runtime",
+            summary: "runtime shell guidance",
+            path: "/repo/packages/app-server/skills/runtime/SKILL.md",
+            root: "/repo/packages/app-server/skills/runtime",
+            rootKind: "builtin",
+            writable: false,
+            packageName: "@agenter/app-server",
+          },
+          content: [
+            "# agenter-runtime",
+            "",
+            "References:",
+            "- `references/discovery.md`",
+            "- `references/shell-surface.md`",
+          ].join("\n"),
+        },
+      },
+    });
     const rootWorkspacePath = createTempRoot();
-    const ccski = createRuntimeCommand(api.baseUrl, "ccski", {
+    const skill = createRuntimeCommand(api.baseUrl, "skill", {
       rootWorkspacePath,
       homeDir: createTempRoot(),
     });
 
-    const result = await ccski.execute(["info", "agenter-runtime"], createCommandContext());
+    const result = await skill.execute(["info", "agenter-runtime"], createCommandContext());
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(`# agenter-runtime`);
     expect(result.stdout).toContain("Path:");
-    expect(result.stdout).toContain(`${rootWorkspacePath}/.runtime-skills/agenter-runtime/SKILL.md`);
+    expect(result.stdout).toContain("/repo/packages/app-server/skills/runtime/SKILL.md");
     expect(result.stdout).toContain("References:");
     expect(result.stdout).toContain("references/discovery.md");
     expect(result.stdout).toContain("references/shell-surface.md");
     expect(existsSync(join(rootWorkspacePath, "skills", "agenter-runtime", "SKILL.md"))).toBeFalse();
-    expect(api.getRequests()).toHaveLength(0);
+    expect(api.getLastRequest()?.url).toBe("/v1/skill/info");
+  });
+
+  test("Scenario: Given skill get-config for a built-in skill When the shell command runs Then watcher metadata is rendered without exposing arbitrary sibling contents", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/skill/get-config": {
+        result: {
+          skill: {
+            name: "agenter-runtime",
+            summary: "runtime shell guidance",
+            path: "/repo/packages/app-server/skills/runtime/SKILL.md",
+            root: "/repo/packages/app-server/skills/runtime",
+            rootKind: "builtin",
+            writable: false,
+            packageName: "@agenter/app-server",
+          },
+          writable: false,
+          skillDir: "/repo/packages/app-server/skills/runtime",
+          skillPath: "/repo/packages/app-server/skills/runtime/SKILL.md",
+          configPath: "/repo/packages/app-server/skills/runtime/ccski.config.json",
+          configExists: true,
+          config: {
+            files: ["references/*.md"],
+          },
+          configError: null,
+          resolvedWatchTargets: [
+            "/repo/packages/app-server/skills/runtime/SKILL.md",
+            "/repo/packages/app-server/skills/runtime/ccski.config.json",
+            "/repo/packages/app-server/skills/runtime/references/discovery.md",
+          ],
+        },
+      },
+    });
+    const skill = createRuntimeCommand(api.baseUrl, "skill", {
+      rootWorkspacePath: createTempRoot(),
+      homeDir: createTempRoot(),
+    });
+
+    const result = await skill.execute(["get-config", "agenter-runtime", "builtin"], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Config path:");
+    expect(result.stdout).toContain("Resolved watch targets:");
+    expect(result.stdout).toContain("references/*.md");
+    expect(result.stdout).toContain("ccski.config.json");
+    expect(api.getLastRequest()?.body).toEqual({
+      name: "agenter-runtime",
+      rootKind: "builtin",
+    });
+  });
+
+  test("Scenario: Given JSON stdin When skill set-config runs Then the CLI posts the full replacement config payload", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/skill/set-config": {
+        result: {
+          contextId: "ctx-skill-system",
+          skills: [],
+          snapshot: "## skills.list",
+          changedSkills: [
+            {
+              name: "agenter-runtime",
+              kind: "updated",
+              rootKind: "builtin",
+              changedFiles: ["/repo/packages/app-server/skills/runtime/ccski.config.json"],
+            },
+          ],
+          systemCommitId: null,
+          reminderCommitId: "commit-1",
+          reminderCommitIds: ["commit-1"],
+          bootstrapPending: true,
+          skill: {
+            name: "agenter-runtime",
+            summary: "runtime shell guidance",
+            path: "/repo/packages/app-server/skills/runtime/SKILL.md",
+            root: "/repo/packages/app-server/skills/runtime",
+            rootKind: "builtin",
+            writable: false,
+            packageName: "@agenter/app-server",
+          },
+        },
+      },
+    });
+    const skill = createRuntimeCommand(api.baseUrl, "skill", {
+      rootWorkspacePath: createTempRoot(),
+      homeDir: createTempRoot(),
+    });
+
+    const result = await skill.execute(
+      ["set-config"],
+      createCommandContext(
+        JSON.stringify({
+          name: "agenter-runtime",
+          rootKind: "builtin",
+          config: {
+            files: ["references/*.md"],
+          },
+        }),
+      ),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({
+      name: "agenter-runtime",
+      rootKind: "builtin",
+      config: {
+        files: ["references/*.md"],
+      },
+    });
   });
 
   test("Scenario: Given runtime shell bootstrap When commands are created Then the built-in helper directory stays empty by default", async () => {

@@ -17,6 +17,7 @@ import { SessionDb } from "@agenter/session-system";
 import { TerminalControlPlane, type TerminalActorId } from "@agenter/terminal-system";
 import type { LoopBusInput } from "../src/loop-bus";
 import { LoopBusPluginRuntime, type AttentionDraft, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
+import type { RuntimeSkillSystem } from "../src/runtime-skill-system";
 import type { RuntimeMessageSendResult } from "../src/runtime-tool-views";
 import {
   formatMessageAttentionSrc,
@@ -2153,7 +2154,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       version: number;
       contexts: Array<{ commits: Array<{ summary: string }> }>;
     };
-    expect(migrated.version).toBe(7);
+    expect(migrated.version).toBe(8);
     expect(migrated.contexts[0]?.commits[0]?.summary).toBe("legacy attention");
   });
 
@@ -3341,6 +3342,54 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(mainMessages.at(-1)?.metadata).toEqual({});
 
     await runtime.stop();
+  });
+
+  test("Scenario: Given a watched skill file changes before the next round When collectLoopInputs runs Then the runtime flushes one aggregated skill reminder at that collection boundary", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      ensureRuntimeSkillSystem: () => RuntimeSkillSystem;
+      handleRuntimeSkillRefreshResult: (
+        result: ReturnType<RuntimeSkillSystem["refresh"]>,
+        input: { notifyLoop: boolean },
+      ) => Promise<void>;
+    };
+    const rootWorkspacePath = (Reflect.get(runtime, "options") as { rootWorkspacePath: string }).rootWorkspacePath;
+    const skillDir = join(rootWorkspacePath, "skills", "live-sync");
+    await mkdir(join(skillDir, "references"), { recursive: true });
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      [
+        "---",
+        "name: live-sync",
+        "description: live runtime skill",
+        "---",
+        "",
+        "# live-sync",
+        "",
+        "Keep this short.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(join(skillDir, "ccski.config.json"), `${JSON.stringify({ files: ["references/*.md"] }, null, 2)}\n`, "utf8");
+    const referencePath = join(skillDir, "references", "guide.md");
+    await writeFile(referencePath, "reference-v1\n", "utf8");
+
+    const skillSystem = internal.ensureRuntimeSkillSystem();
+    await internal.handleRuntimeSkillRefreshResult(
+      skillSystem.refresh({ forceBootstrap: true, publishReminders: false }),
+      { notifyLoop: false },
+    );
+    await internal.collectLoopInputs();
+
+    await writeFile(referencePath, "reference-v2\n", "utf8");
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    const inputs = await internal.collectLoopInputs();
+    const itemsInput = getItemsInput(inputs);
+    expect(itemsInput).toBeDefined();
+    expect(itemsInput?.text).toContain("Updated runtime skill live-sync");
+    expect(itemsInput?.text).toContain("references/guide.md");
   });
 
   test("Scenario: Given an attention commit lands after room identity drifts When the runtime handles it Then Chat still stays quiet because commits no longer bridge into rooms", async () => {

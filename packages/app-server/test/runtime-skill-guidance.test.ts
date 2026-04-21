@@ -57,7 +57,7 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     const zhResponse = readRepoFile("packages/i18n-zh-Hans/prompts/RESPONSE_CONTRACT.mdx");
 
     expect(enSystem).toContain("skills.list");
-    expect(enSystem).toContain("ccski info <skill>");
+    expect(enSystem).toContain("skill info <skill>");
     expect(enSystem).toContain("take one real command for that target first");
     expect(enSystem).toContain("real filesystem path");
     expect(enSystem).toContain("references/*.md");
@@ -74,7 +74,7 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(enSystem).not.toContain("terminal create /absolute/project/path");
 
     expect(zhSystem).toContain("skills.list");
-    expect(zhSystem).toContain("ccski info <skill>");
+    expect(zhSystem).toContain("skill info <skill>");
     expect(zhSystem).toContain("先对那个目标执行一次真实命令");
     expect(zhSystem).toContain("真实 `SKILL.md` 文件路径");
     expect(zhSystem).toContain("references/*.md");
@@ -91,7 +91,7 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(zhSystem).not.toContain("terminal create /绝对项目路径");
 
     expect(enResponse).toContain("<command> --help");
-    expect(enResponse).toContain("ccski info <skill>");
+    expect(enResponse).toContain("skill info <skill>");
     expect(enResponse).toContain("prefer one direct command for that target before browsing skills");
     expect(enResponse).toContain("Default user-visible durable replies");
     expect(enResponse).toContain("do not open any `SKILL.md`");
@@ -105,7 +105,7 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(enResponse).not.toContain("terminal CLI");
 
     expect(zhResponse).toContain("<command> --help");
-    expect(zhResponse).toContain("ccski info <skill>");
+    expect(zhResponse).toContain("skill info <skill>");
     expect(zhResponse).toContain("优先先对那个目标执行一次直接命令");
     expect(zhResponse).toContain("跟随请求方所使用的语言");
     expect(zhResponse).toContain("不要先打开任何 `SKILL.md`");

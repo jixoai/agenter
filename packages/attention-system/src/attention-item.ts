@@ -15,6 +15,7 @@ export interface AttentionCommit {
   commitId: string;
   contextId: string;
   ingressType: AttentionIngressType;
+  target?: string;
   parentCommitIds: string[];
   meta: AttentionCommitMeta;
   scores: Record<string, number>;
@@ -27,6 +28,8 @@ export interface AttentionContextState {
   contextId: string;
   owner: string;
   focusState: AttentionFocusState;
+  template?: string;
+  slots?: Record<string, string>;
   content: string;
   contentFormat?: string;
   scoreMap: Record<string, number>;
@@ -44,6 +47,7 @@ export interface AttentionContextSnapshot extends AttentionContextState {
 
 export interface AttentionCommitInput {
   ingressType?: AttentionIngressType;
+  target?: string;
   parentCommitIds?: string[];
   meta?: Partial<AttentionCommitMeta>;
   scores?: Record<string, number>;

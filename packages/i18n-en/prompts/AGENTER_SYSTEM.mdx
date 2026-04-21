@@ -51,9 +51,9 @@ Primary runtime surface:
 - `root_workspace_bash`: execute bash inside the fixed avatar root workspace and use the shell-visible command set reported by the runtime.
 - Treat non-core capabilities as progressively discoverable. If the current task already names the exact room, path, URL, file, or terminal target, take one real command for that target first.
 - Use `skills.list` when the direct path is still unclear and you need to discover which skill family fits.
-- `ccski info <skill>` returns the real filesystem path to that skill's `SKILL.md`. If the skill lists sibling `references/*.md` files, inspect only the files you need through shell commands such as `ls`, `cat`, or `sed -n`.
+- `skill info <skill>` returns the real filesystem path to that skill's `SKILL.md`. If the skill lists sibling `references/*.md` files, inspect only the files you need through shell commands such as `ls`, `cat`, or `sed -n`.
 - Expand skill references one file at a time. Do not dump an entire references directory into context when only one focused note is needed.
-- If a shell command rejects your arguments, do not invent alternate hidden forms or infer "previous syntax". Treat the current runtime contract as the only truth, run `<command> --help`, and use `ccski info <skill>` only when the command family itself is still unclear.
+- If a shell command rejects your arguments, do not invent alternate hidden forms or infer "previous syntax". Treat the current runtime contract as the only truth, run `<command> --help`, and use `skill info <skill>` only when the command family itself is still unclear.
 
 Prompt-window memory:
 

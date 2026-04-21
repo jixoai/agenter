@@ -15,9 +15,12 @@ describe("Feature: attention context commit log", () => {
 
     expect(commit.contextId).toBe("ctx-1");
     expect(commit.ingressType).toBe("commit");
+    expect(commit.target).toBe("default");
     expect(commit.parentCommitIds).toEqual([]);
     expect(commit.scores).toEqual({ hash1: 100, hash2: 40 });
     expect(commit.change.type).toBe("update");
+    expect(snapshot.template).toBe('<Slot name="default"/>');
+    expect(snapshot.slots).toEqual({ default: "帮我问一下中午吃什么" });
     expect(snapshot.content).toBe("帮我问一下中午吃什么");
     expect(snapshot.focusState).toBe("focused");
     expect(snapshot.consumedPushCommitIds).toEqual([]);
@@ -88,6 +91,7 @@ describe("Feature: attention context commit log", () => {
     });
 
     expect(snapshot.content).toBe("hi\nworld");
+    expect(snapshot.slots).toEqual({ default: "hi\nworld" });
   });
 
   test("Scenario: Given a clean commit When committed Then context content is cleared", () => {
@@ -100,6 +104,89 @@ describe("Feature: attention context commit log", () => {
     });
 
     expect(snapshot.content).toBe("");
+    expect(snapshot.slots).toEqual({ default: "" });
+  });
+
+  test("Scenario: Given a custom slot template When a targeted commit lands Then only the targeted slot changes", () => {
+    const context = new AttentionContext({
+      contextId: "ctx-1",
+      owner: "avatar:jane",
+      template: '<Slot name="skills-list" readonly/>\n<Slot name="default"/>',
+      slots: {
+        "skills-list": "## skills.list\n- agenter-runtime",
+        default: "notes",
+      },
+    });
+
+    const { context: snapshot } = context.commit({
+      target: "default",
+      summary: "update notes",
+      scores: { hash1: 1 },
+      change: { type: "update", value: "updated notes" },
+    });
+
+    expect(snapshot.content).toBe("## skills.list\n- agenter-runtime\nupdated notes");
+    expect(snapshot.slots).toEqual({
+      "skills-list": "## skills.list\n- agenter-runtime",
+      default: "updated notes",
+    });
+  });
+
+  test("Scenario: Given an unknown slot target When committed Then the commit is rejected", () => {
+    const context = new AttentionContext({ contextId: "ctx-1", owner: "avatar:jane" });
+
+    expect(() =>
+      context.commit({
+        target: "skills-list",
+        summary: "bad target",
+        scores: { hash1: 1 },
+        change: { type: "update", value: "value" },
+      }),
+    ).toThrow('attention slot "skills-list" not found');
+  });
+
+  test("Scenario: Given a readonly slot When an ordinary commit targets it Then the commit is rejected", () => {
+    const context = new AttentionContext({
+      contextId: "ctx-1",
+      owner: "avatar:jane",
+      template: '<Slot name="skills-list" readonly/>\n<Slot name="default"/>',
+      slots: {
+        "skills-list": "## skills.list\n- agenter-runtime",
+        default: "",
+      },
+    });
+
+    expect(() =>
+      context.commit({
+        target: "skills-list",
+        summary: "bad readonly write",
+        scores: { hash1: 1 },
+        change: { type: "update", value: "new list" },
+      }),
+    ).toThrow('attention slot "skills-list" is readonly');
+  });
+
+  test("Scenario: Given a readonly slot When the runtime uses commitSystem Then the slot is updated", () => {
+    const context = new AttentionContext({
+      contextId: "ctx-1",
+      owner: "avatar:jane",
+      template: '<Slot name="skills-list" readonly/>\n<Slot name="default"/>',
+      slots: {
+        "skills-list": "## skills.list\n- agenter-runtime",
+        default: "",
+      },
+    });
+
+    const { commit, context: snapshot } = context.commitSystem({
+      target: "skills-list",
+      summary: "refresh skills",
+      scores: {},
+      change: { type: "update", value: "## skills.list\n- agenter-runtime\n- agenter-message" },
+    });
+
+    expect(commit.target).toBe("skills-list");
+    expect(snapshot.slots?.["skills-list"]).toBe("## skills.list\n- agenter-runtime\n- agenter-message");
+    expect(snapshot.content).toContain("- agenter-message");
   });
 
   test("Scenario: Given a background push When focus changes and pushes are consumed Then background debt stays active until the push is explicitly consumed", () => {

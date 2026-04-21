@@ -132,9 +132,9 @@ export const runRealRoomTerminalRealisticUserScenario = async (
       "如果这个链接暂时还打不开，你就继续处理，直到我能打开它为止。",
       "我不懂技术，你直接做好并把能打开的那个链接发我就行，不要只说你在处理中。",
       "你给我的用户可见回复请保持简短中文。",
-      "不要先打开任何 `.runtime-skills/*/SKILL.md`，也不要先用 ccski info 浏览技能说明；先做直接命令。",
+      "不要先打开任何 runtime skill 的 `SKILL.md`，也不要先用 skill info 浏览技能说明；先做直接命令。",
       `当前房间 chatId 就是 ${primaryRoomId}；如果需要发确认或交付消息，直接用这个 chatId，不要先跑 message list/read。`,
-      "如果某个命令格式不确定，先直接看该命令的 --help；只有在连命令族都不清楚时才考虑 ccski info。",
+      "如果某个命令格式不确定，先直接看该命令的 --help；只有在连命令族都不清楚时才考虑 skill info。",
     ].join("\n");
     const sent = await harness.kernel.sendChat(harness.session.id, prompt);
     if (!sent.ok) {

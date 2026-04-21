@@ -111,6 +111,8 @@ describe("Feature: attention store persistence", () => {
     expect(reloaded.contexts[0]?.commits[0]?.parentCommitIds).toEqual(["root-1"]);
     expect(Object.prototype.hasOwnProperty.call(reloaded.contexts[0]?.commits[0] ?? {}, "egress")).toBeFalse();
     expect(reloaded.contexts[0]?.focusState).toBe("background");
+    expect(reloaded.contexts[0]?.template).toBe('<Slot name="default"/>');
+    expect(reloaded.contexts[0]?.slots).toEqual({ default: "fried rice" });
     expect(reloaded.contexts[0]?.consumedPushCommitIds).toEqual(["commit-1"]);
     expect(reloaded.contexts[0]?.commits[0]?.ingressType).toBe("push");
   });

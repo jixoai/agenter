@@ -12,13 +12,13 @@ import {
   renderRuntimeToolHelp,
   type RuntimeToolNamespace,
 } from "./runtime-tool-descriptors";
-import {
-  buildRuntimeSkillsList,
-  findRuntimeSkill,
-  listRuntimeSkills,
-  readRuntimeSkillContent,
-  type RuntimeSkillRecord,
-} from "./runtime-skills";
+import { buildRuntimeSkillsList } from "./runtime-skills";
+import type {
+  RuntimeSkillConfigInfoView,
+  RuntimeSkillInfoView,
+  RuntimeSkillMutationView,
+  RuntimeSkillView,
+} from "./runtime-tool-views";
 import {
   getBuiltinRuntimeToolDescriptor,
   listRuntimeToolFiles,
@@ -29,6 +29,7 @@ import {
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 const isHelpArg = (value: string): boolean => value === "--help";
 const isCompactArg = (value: string): boolean => value === "--compact";
+
 const parseRuntimeSubcommandArgs = (args: readonly string[]) => {
   let helpRequested = false;
   let compactMode = false;
@@ -46,6 +47,7 @@ const parseRuntimeSubcommandArgs = (args: readonly string[]) => {
   }
   return { helpRequested, compactMode, payloadArgs };
 };
+
 const renderToolNamespaceHelp = (toolFiles: readonly string[]): string =>
   [
     "tool <file>",
@@ -65,6 +67,78 @@ const renderToolNamespaceHelp = (toolFiles: readonly string[]): string =>
     toolFiles.length > 0 ? `Available files: ${toolFiles.join(", ")}` : "Available files: none",
     "",
   ].join("\n");
+
+const renderSkillNamespaceHelp = (): string =>
+  [
+    "skill",
+    "",
+    "Description: Discover or mutate runtime-visible skills.",
+    "",
+    "Quick start:",
+    "- `skill list`",
+    "- `skill search terminal`",
+    "- `skill info agenter-runtime`",
+    "- `skill get-config agenter-runtime builtin`",
+    "- `skill upsert --help`",
+    "- `skill set-config --help`",
+    "- `skill remove --help`",
+    "- `skill refresh`",
+    "",
+    "Use `skill <subcommand> --help` to inspect exact usage.",
+    "",
+  ].join("\n");
+
+const renderSkillSubcommandHelp = (subcommand: string): string | null => {
+  if (subcommand === "list") {
+    return ["skill list [--json]", "", "List runtime-visible skills.", ""].join("\n");
+  }
+  if (subcommand === "search") {
+    return ["skill search <query> [--json]", "", "Search runtime-visible skills by free-text query.", ""].join(
+      "\n",
+    );
+  }
+  if (subcommand === "info") {
+    return [
+      "skill info <skill-name> [root-kind] [--json]",
+      "",
+      "Read one runtime-visible skill and print its rendered content plus the real filesystem path.",
+      "",
+    ].join("\n");
+  }
+  if (subcommand === "get-config") {
+    return [
+      "skill get-config <skill-name> [root-kind] [--json]",
+      "",
+      "Read one skill's ccski.config.json metadata, config path, and resolved watch targets.",
+      "",
+    ].join("\n");
+  }
+  return null;
+};
+
+const renderSkillInfo = (result: RuntimeSkillInfoView): string =>
+  [`# ${result.skill.name}`, "", `Path: ${result.skill.path}`, "", result.content].join("\n");
+
+const renderSkillConfigInfo = (result: RuntimeSkillConfigInfoView): string =>
+  [
+    `# ${result.skill.name}`,
+    "",
+    `Root kind: ${result.skill.rootKind}`,
+    `Writable: ${result.writable ? "yes" : "no"}`,
+    `Skill dir: ${result.skillDir}`,
+    `Skill path: ${result.skillPath}`,
+    `Config path: ${result.configPath}`,
+    `Config exists: ${result.configExists ? "yes" : "no"}`,
+    "",
+    "Config:",
+    JSON.stringify(result.config ?? {}, null, 2),
+    result.configError ? `\nConfig error: ${result.configError}` : "",
+    "",
+    "Resolved watch targets:",
+    ...(result.resolvedWatchTargets.length > 0 ? result.resolvedWatchTargets.map((item) => `- ${item}`) : ["- none"]),
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
 
 const callRuntimeApi = async <TResult>(input: {
   baseUrl: string;
@@ -110,11 +184,6 @@ const resolveToolRunner = (filePath: string): "bash" | "sh" | "python3" | "js-ex
   return "bash";
 };
 
-const findSkillByName = (skills: readonly RuntimeSkillRecord[], name: string): RuntimeSkillRecord | null => {
-  const normalized = name.trim().toLowerCase();
-  return skills.find((skill) => skill.name === normalized || skill.path === name.trim()) ?? null;
-};
-
 const createRuntimeNamespaceCommand = (input: {
   namespace: RuntimeToolNamespace;
   baseUrl: string;
@@ -146,10 +215,148 @@ const createRuntimeNamespaceCommand = (input: {
           exitCode: 0,
         };
       }
-      const body = parseRuntimeToolCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object");
+      const body = parseRuntimeToolCliInput(
+        descriptor,
+        payloadArgs.filter((item) => item !== "--json"),
+        ctx.stdin,
+        compactMode ? "compact" : "object",
+      );
       return {
         stdout: json(
           await callRuntimeApi({
+            baseUrl: input.baseUrl,
+            privateKey: input.privateKey,
+            route: descriptor.route,
+            body,
+          }),
+        ),
+        stderr: "",
+        exitCode: 0,
+      };
+    } catch (error) {
+      return {
+        stdout: "",
+        stderr: `${error instanceof Error ? error.message : String(error)}\n`,
+        exitCode: 1,
+      };
+    }
+  });
+
+const createSkillCommand = (input: {
+  baseUrl: string;
+  privateKey: string;
+}) =>
+  defineCommand("skill", async (args, ctx) => {
+    try {
+      const [subcommand = "list", ...rest] = args;
+      if (!subcommand || isHelpArg(subcommand)) {
+        return {
+          stdout: renderSkillNamespaceHelp(),
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+
+      const descriptor = getRuntimeToolDescriptor("skill", subcommand);
+      const { helpRequested, compactMode, payloadArgs } = parseRuntimeSubcommandArgs(rest);
+      const jsonMode = rest.includes("--json");
+      const normalizedRest = rest.filter((item) => item !== "--json" && item !== "--compact" && item !== "--help");
+
+      if (helpRequested) {
+        const customHelp = renderSkillSubcommandHelp(subcommand);
+        if (customHelp) {
+          return {
+            stdout: customHelp,
+            stderr: "",
+            exitCode: 0,
+          };
+        }
+        if (descriptor) {
+          return {
+            stdout: renderRuntimeToolHelp(descriptor),
+            stderr: "",
+            exitCode: 0,
+          };
+        }
+      }
+
+      if (subcommand === "list") {
+        const payload = await callRuntimeApi<{ skills: RuntimeSkillView[] }>({
+          baseUrl: input.baseUrl,
+          privateKey: input.privateKey,
+          route: "/v1/skill/list",
+        });
+        return {
+          stdout: jsonMode ? json(payload.skills) : `${buildRuntimeSkillsList(payload.skills)}\n`,
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+
+      if (subcommand === "search") {
+        const payload = await callRuntimeApi<{ skills: RuntimeSkillView[] }>({
+          baseUrl: input.baseUrl,
+          privateKey: input.privateKey,
+          route: "/v1/skill/search",
+          body: {
+            query: normalizedRest.join(" "),
+          },
+        });
+        return {
+          stdout: jsonMode ? json(payload.skills) : `${buildRuntimeSkillsList(payload.skills)}\n`,
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+
+      if (subcommand === "info") {
+        const [name, rootKind] = normalizedRest;
+        if (!name) {
+          throw new Error("skill info requires <skill-name>");
+        }
+        const payload = await callRuntimeApi<{ result: RuntimeSkillInfoView }>({
+          baseUrl: input.baseUrl,
+          privateKey: input.privateKey,
+          route: "/v1/skill/info",
+          body: rootKind ? { name, rootKind } : { name },
+        });
+        return {
+          stdout: jsonMode ? json(payload.result) : renderSkillInfo(payload.result),
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+
+      if (subcommand === "get-config") {
+        const [name, rootKind] = normalizedRest;
+        if (!name) {
+          throw new Error("skill get-config requires <skill-name>");
+        }
+        const payload = await callRuntimeApi<{ result: RuntimeSkillConfigInfoView }>({
+          baseUrl: input.baseUrl,
+          privateKey: input.privateKey,
+          route: "/v1/skill/get-config",
+          body: rootKind ? { name, rootKind } : { name },
+        });
+        return {
+          stdout: jsonMode ? json(payload.result) : `${renderSkillConfigInfo(payload.result)}\n`,
+          stderr: "",
+          exitCode: 0,
+        };
+      }
+
+      if (!descriptor) {
+        return {
+          stdout: "",
+          stderr: `unknown skill subcommand: ${subcommand}\n`,
+          exitCode: 1,
+        };
+      }
+
+      const body = parseRuntimeToolCliInput(descriptor, payloadArgs, ctx.stdin, compactMode ? "compact" : "object");
+      return {
+        stdout: json(
+          await callRuntimeApi<{ result: RuntimeSkillMutationView }>({
             baseUrl: input.baseUrl,
             privateKey: input.privateKey,
             route: descriptor.route,
@@ -186,73 +393,9 @@ export const createRuntimeShellCommands = (input: {
       privateKey: input.privateKey,
     }),
   );
-
-  const ccski = defineCommand("ccski", async (args) => {
-    try {
-      const [subcommand = "list", ...rest] = args;
-      const skills = listRuntimeSkills({
-        homeDir: input.homeDir,
-        rootWorkspacePath: input.rootWorkspacePath,
-        principalId: input.principalId,
-      });
-      const jsonMode = rest.includes("--json");
-      const normalizedRest = rest.filter((item) => item !== "--json");
-      if (subcommand === "list") {
-        if (jsonMode) {
-          return { stdout: json(skills), stderr: "", exitCode: 0 };
-        }
-        return {
-          stdout: `${buildRuntimeSkillsList(skills)}\n`,
-          stderr: "",
-          exitCode: 0,
-        };
-      }
-      if (subcommand === "search") {
-        const query = normalizedRest.join(" ");
-        const matched = findRuntimeSkill({
-          homeDir: input.homeDir,
-          rootWorkspacePath: input.rootWorkspacePath,
-          principalId: input.principalId,
-          query,
-        });
-        if (jsonMode) {
-          return { stdout: json(matched), stderr: "", exitCode: 0 };
-        }
-        return {
-          stdout: `${buildRuntimeSkillsList(matched)}\n`,
-          stderr: "",
-          exitCode: 0,
-        };
-      }
-      if (subcommand === "info") {
-        const name = normalizedRest[0];
-        if (!name) {
-          throw new Error("ccski info requires <skill-name>");
-        }
-        const skill = findSkillByName(skills, name);
-        if (!skill) {
-          throw new Error(`skill not found: ${name}`);
-        }
-        if (jsonMode) {
-          return {
-            stdout: json({
-              ...skill,
-              content: readRuntimeSkillContent(skill),
-            }),
-            stderr: "",
-            exitCode: 0,
-          };
-        }
-        return {
-          stdout: [`# ${skill.name}`, "", `Path: ${skill.path}`, "", readRuntimeSkillContent(skill)].join("\n"),
-          stderr: "",
-          exitCode: 0,
-        };
-      }
-      return { stdout: "", stderr: `unknown ccski subcommand: ${subcommand}\n`, exitCode: 1 };
-    } catch (error) {
-      return { stdout: "", stderr: `${error instanceof Error ? error.message : String(error)}\n`, exitCode: 1 };
-    }
+  const skill = createSkillCommand({
+    baseUrl: input.baseUrl,
+    privateKey: input.privateKey,
   });
 
   const tool = defineCommand("tool", async (args, ctx) => {
@@ -300,13 +443,12 @@ export const createRuntimeShellCommands = (input: {
     }
   });
 
-  return [...runtimeNamespaces, ccski, tool];
+  return [...runtimeNamespaces, skill, tool];
 };
 
 export const listRuntimeShellCommandNames = (): string[] => [
   ...new Set([
     ...listRuntimeToolDescriptors().map((descriptor) => descriptor.namespace),
-    "ccski",
     "tool",
   ]),
 ];

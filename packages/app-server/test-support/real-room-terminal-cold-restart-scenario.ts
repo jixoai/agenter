@@ -192,7 +192,7 @@ export const runRealRoomTerminalColdRestartScenario = async (
       `然后在该目录里创建一个最小静态网页，页面必须同时包含这些精确字符串：${REAL_ROOM_APP_V1_MARKERS.join(", ")}。`,
       `不要改写这些标记，不要替换成其它示例里的字符串；只能使用 ${REAL_ROOM_APP_V1_MARKERS.join(", ")}。`,
       `如果当前没有 terminal，就先执行 terminal create --help，然后用 JSON 形式创建，例如 terminal create '{"cwd":"${harness.workspacePath}","focus":true}'；如果已有 terminal，就先 terminal list / terminal read 恢复并复用。`,
-      "如果忘了 terminal CLI 的格式，先在 shell 里执行 ccski info agenter-terminal；如果忘了 terminal write 的字段名，先看 terminal write --help，字段名是 text。",
+      "如果忘了 terminal CLI 的格式，先在 shell 里执行 skill info agenter-terminal；如果忘了 terminal write 的字段名，先看 terminal write --help，字段名是 text。",
       `在回复链接前，必须先通过 root_workspace_bash 用 curl 自行验证 ${initialDeliveryUrl} 可访问。`,
       `验证通过后，给我一条带有精确 URL ${initialDeliveryUrl} 的交付消息，并明确说明第一页已经可以打开。`,
       "除最初的简短确认和最终那条带链接的交付消息外，不要发送额外聊天文本。",

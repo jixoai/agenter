@@ -613,7 +613,7 @@ describe("Feature: workspace system kernel integration", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given ccski info exposes a built-in skill path When root workspace bash reads that path and a sibling reference Then the same package-owned skill files are shell-readable", async () => {
+  test("Scenario: Given skill info exposes a built-in skill path When root workspace bash reads that path and a sibling reference Then the same package-owned skill files are shell-readable", async () => {
     const root = createTempRoot();
     const workspace = join(root, "workspace-a");
     mkdirSync(workspace, { recursive: true });
@@ -633,14 +633,14 @@ describe("Feature: workspace system kernel integration", () => {
     });
 
     const info = await execRootWorkspaceBash(kernel, session.id, {
-      command: "ccski info agenter-runtime",
+      command: "skill info agenter-runtime",
     });
     expect(info.exitCode).toBe(0);
     const match = info.stdout.match(/^Path: (.+)$/m);
     expect(match).toBeTruthy();
     const skillPath = match?.[1]?.trim();
     if (!skillPath) {
-      throw new Error("expected ccski info to include a skill path");
+      throw new Error("expected skill info to include a skill path");
     }
     const referencePath = join(dirname(skillPath), "references", "shell-surface.md");
 
@@ -649,7 +649,7 @@ describe("Feature: workspace system kernel integration", () => {
     });
     expect(catSkill.exitCode).toBe(0);
     expect(catSkill.stdout).toContain("# agenter-runtime");
-    expect(catSkill.stdout).toContain("ccski info <skill>");
+    expect(catSkill.stdout).toContain("skill info <skill>");
 
     const catReference = await execRootWorkspaceBash(kernel, session.id, {
       command: `cat ${JSON.stringify(referencePath)}`,
@@ -691,7 +691,7 @@ describe("Feature: workspace system kernel integration", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given a runtime-created terminal When it runs tool and ccski commands Then the terminal shell inherits the runtime CLI surface", async () => {
+  test("Scenario: Given a runtime-created terminal When it runs tool and skill commands Then the terminal shell inherits the runtime CLI surface", async () => {
     const root = createTempRoot();
     const workspace = join(root, "workspace-a");
     mkdirSync(workspace, { recursive: true });
@@ -740,7 +740,7 @@ describe("Feature: workspace system kernel integration", () => {
       command: "terminal write",
       stdin: JSON.stringify({
         terminalId,
-        text: "command -v tool | xargs basename && command -v ccski | xargs basename",
+        text: "command -v tool | xargs basename && command -v skill | xargs basename",
         submit: true,
       }),
     });
@@ -782,7 +782,7 @@ describe("Feature: workspace system kernel integration", () => {
           if (content.length > 0) {
             observedOutput = `${observedOutput}\n${content}`.trim();
           }
-          return observedOutput.includes("tool") && observedOutput.includes("ccski") ? observedOutput : null;
+          return observedOutput.includes("tool") && observedOutput.includes("skill") ? observedOutput : null;
         },
         {
           label: "runtime terminal cli surface",
@@ -803,7 +803,7 @@ describe("Feature: workspace system kernel integration", () => {
     }
 
     expect(terminalOutput).toContain("tool");
-    expect(terminalOutput).toContain("ccski");
+    expect(terminalOutput).toContain("skill");
 
     await kernel.stop();
   }, 20_000);

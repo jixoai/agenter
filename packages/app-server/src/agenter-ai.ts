@@ -85,7 +85,6 @@ interface AgentDeps {
   initialPromptWindowState?: AgentPromptWindowStateRecord;
   avatarName?: string;
   locale?: string;
-  skillsList?: string;
   attentionGateway: AttentionGateway;
   toolProviders?: AgentToolProvider[];
   resolveImageAttachment?: (
@@ -1223,16 +1222,13 @@ export class AgenterAI {
     const agenterSystem = await promptStore.buildMd(promptDocs.AGENTER_SYSTEM, {
       slots: sharedPromptSlots,
     });
-    const agenterSystemWithSkills = [agenterSystem.trim(), this.deps.skillsList?.trim() ?? ""]
-      .filter((part) => part.length > 0)
-      .join("\n\n");
     const agenter = await promptStore.buildMd(promptDocs.AGENTER, {
       slots: sharedPromptSlots,
     });
     const contract = await promptStore.buildMd(promptDocs.RESPONSE_CONTRACT);
     const systemPrompt = await promptStore.buildMd(promptDocs.SYSTEM_TEMPLATE, {
       slots: {
-        AGENTER_SYSTEM: agenterSystemWithSkills,
+        AGENTER_SYSTEM: agenterSystem,
         SYSTEMS_GUIDE: "",
         AGENTER: agenter,
         RESPONSE_CONTRACT: contract,

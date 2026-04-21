@@ -73,7 +73,13 @@ interface PersistedV7 {
   contexts: AttentionContextSnapshot[];
 }
 
+interface PersistedV8 {
+  version: 8;
+  contexts: AttentionContextSnapshot[];
+}
+
 type PersistedAny =
+  | PersistedV8
   | PersistedV2
   | PersistedV3
   | PersistedV4
@@ -108,12 +114,15 @@ const sanitizeCommitMeta = (meta: Record<string, unknown>): AttentionCommit["met
 const cloneSnapshot = (snapshot: AttentionSystemSnapshot): AttentionSystemSnapshot => ({
   contexts: snapshot.contexts.map((context) => ({
     ...context,
+    template: context.template,
+    slots: { ...(context.slots ?? {}) },
     scoreMap: { ...context.scoreMap },
     commits: context.commits.map((commit) => {
       const metaRecord = asUnknownRecord(commit.meta);
       return {
         ...commit,
         ingressType: commit.ingressType,
+        target: commit.target,
         parentCommitIds: [...commit.parentCommitIds],
         meta: sanitizeCommitMeta(metaRecord),
         scores: { ...commit.scores },
@@ -129,6 +138,7 @@ const toContextSnapshot = (input: { contextId: string; owner: string; commits: A
   commits: input.commits.map((commit) => ({
     ...commit,
     ingressType: commit.ingressType,
+    target: commit.target,
     parentCommitIds: [...commit.parentCommitIds],
     meta: sanitizeCommitMeta(asUnknownRecord(commit.meta)),
     scores: { ...commit.scores },
@@ -230,6 +240,9 @@ const isV6 = (parsed: PersistedAny): parsed is PersistedV6 =>
 const isV7 = (parsed: PersistedAny): parsed is PersistedV7 =>
   typeof parsed === "object" && parsed !== null && "version" in parsed && parsed.version === 7 && "contexts" in parsed;
 
+const isV8 = (parsed: PersistedAny): parsed is PersistedV8 =>
+  typeof parsed === "object" && parsed !== null && "version" in parsed && parsed.version === 8 && "contexts" in parsed;
+
 const migrateV4ToV5 = (snapshot: PersistedV4): AttentionSystemSnapshot => ({
   contexts: snapshot.contexts.map((context) => ({
     ...context,
@@ -246,6 +259,37 @@ const migrateV4ToV5 = (snapshot: PersistedV4): AttentionSystemSnapshot => ({
   })),
 });
 
+const migrateContextSnapshotToV8 = (context: AttentionContextSnapshot): AttentionContextSnapshot => {
+  const commits = context.commits.map((commit) => ({
+    ...commit,
+    ingressType: commit.ingressType ?? "commit",
+    target: commit.target,
+    parentCommitIds: [...commit.parentCommitIds],
+    meta: sanitizeCommitMeta(asUnknownRecord(commit.meta)),
+    scores: { ...commit.scores },
+    change: cloneChange(commit.change),
+  }));
+  return {
+    ...buildAttentionContextStateFromCommits({
+      contextId: context.contextId,
+      owner: context.owner,
+      commits,
+      focusState: context.focusState,
+      template: context.template,
+      slots: context.slots,
+      content: context.content,
+      contentFormat: context.contentFormat,
+      scoreMap: context.scoreMap,
+      consumedPushCommitIds: context.consumedPushCommitIds,
+      createdAt: context.createdAt,
+      updatedAt: context.updatedAt,
+    }),
+    commits,
+    commitCount: commits.length,
+    commitsTruncated: false,
+  };
+};
+
 export class AttentionStore {
   private writeQueue = Promise.resolve();
 
@@ -258,26 +302,29 @@ export class AttentionStore {
   async load(): Promise<AttentionSystemSnapshot> {
     try {
       const parsed = JSON.parse(await readFile(this.getStatePath(), "utf8")) as PersistedAny;
+      if (isV8(parsed)) {
+        return cloneSnapshot({ contexts: parsed.contexts.map(migrateContextSnapshotToV8) });
+      }
       if (isV7(parsed)) {
-        return cloneSnapshot({ contexts: parsed.contexts });
+        return cloneSnapshot({ contexts: parsed.contexts.map(migrateContextSnapshotToV8) });
       }
       if (isV6(parsed)) {
-        return cloneSnapshot({ contexts: parsed.contexts });
+        return cloneSnapshot({ contexts: parsed.contexts.map(migrateContextSnapshotToV8) });
       }
       if (isV5(parsed)) {
-        return cloneSnapshot({ contexts: parsed.contexts });
+        return cloneSnapshot({ contexts: parsed.contexts.map(migrateContextSnapshotToV8) });
       }
       if (isV4(parsed)) {
-        return migrateV4ToV5(parsed);
+        return cloneSnapshot({ contexts: migrateV4ToV5(parsed).contexts.map(migrateContextSnapshotToV8) });
       }
       if (isV3(parsed)) {
-        return migrateV3ToV4(parsed);
+        return cloneSnapshot({ contexts: migrateV3ToV4(parsed).contexts.map(migrateContextSnapshotToV8) });
       }
       if (isV2(parsed)) {
-        return migrateV2ToV4(parsed);
+        return cloneSnapshot({ contexts: migrateV2ToV4(parsed).contexts.map(migrateContextSnapshotToV8) });
       }
       if (isV1(parsed)) {
-        return migrateV1ToV4(parsed);
+        return cloneSnapshot({ contexts: migrateV1ToV4(parsed).contexts.map(migrateContextSnapshotToV8) });
       }
       return cloneSnapshot(DEFAULT_SNAPSHOT);
     } catch {
@@ -286,7 +333,7 @@ export class AttentionStore {
   }
 
   async save(snapshot: AttentionSystemSnapshot): Promise<void> {
-    const payload = JSON.stringify({ version: 7, contexts: snapshot.contexts } satisfies PersistedV7, null, 2);
+    const payload = JSON.stringify({ version: 8, contexts: snapshot.contexts } satisfies PersistedV8, null, 2);
     this.writeQueue = this.writeQueue.then(async () => {
       await mkdir(this.rootDir, { recursive: true });
       const statePath = this.getStatePath();

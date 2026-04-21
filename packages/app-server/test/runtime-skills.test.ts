@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   buildRuntimeSkillsList,
@@ -11,6 +12,7 @@ import {
 } from "../src/runtime-skills";
 
 const tempDirs: string[] = [];
+const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 
 const createTempRoot = (): string => {
   const root = mkdtempSync(join(tmpdir(), "agenter-runtime-skills-"));
@@ -44,11 +46,11 @@ describe("Feature: runtime built-in skills", () => {
     expect(runtime).toBeTruthy();
     expect(collaboration?.summary).toContain("shared room");
     expect(attention?.summary).toContain("attention debt");
-    expect(collaboration?.path).toContain(join(rootWorkspacePath, ".runtime-skills"));
-    expect(attention?.path).toContain(join(rootWorkspacePath, ".runtime-skills"));
+    expect(collaboration?.path).toBe(join(repoRoot, "packages", "app-server", "skills", "collaboration", "SKILL.md"));
+    expect(attention?.path).toBe(join(repoRoot, "packages", "attention-system", "skills", "attention", "SKILL.md"));
     const skillsList = buildRuntimeSkillsList(skills);
     expect(skillsList).toContain("agenter-collaboration");
-    expect(skillsList).toContain("Use `ccski info <skill>`");
+    expect(skillsList).toContain("Use `skill info <skill>`");
     expect(skillsList).toContain("real filesystem path");
     expect(skillsList).toContain("references/*.md");
     expect(existsSync(join(rootWorkspacePath, "skills", "agenter-collaboration", "SKILL.md"))).toBeFalse();
@@ -135,7 +137,7 @@ describe("Feature: runtime built-in skills", () => {
 
     const runtimeContent = readRuntimeSkillContent(runtime!);
     expect(runtimeContent).toContain("root_workspace_list");
-    expect(runtimeContent).toContain("ccski info <skill>");
+    expect(runtimeContent).toContain("skill info <skill>");
     expect(runtimeContent).toContain("make one real command for that target before browsing deeper docs");
     expect(runtimeContent).toContain("~/tools");
     expect(runtimeContent).toContain("outbound network access");
@@ -204,7 +206,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(collaborationReference).toContain("do not keep the room busy with status chatter");
   });
 
-  test("Scenario: Given runtime skill mount roots When they are resolved Then only shell-visible user skill roots are mounted and built-ins stay inside the avatar root cache", () => {
+  test("Scenario: Given runtime skill mount roots When they are resolved Then shell-visible mounts include writable roots plus package-owned built-in sources", () => {
     const rootWorkspacePath = createTempRoot();
     const homeDir = createTempRoot();
     const roots = listRuntimeSkillMountRoots({
@@ -216,6 +218,8 @@ describe("Feature: runtime built-in skills", () => {
     expect(roots).toContain(join(homeDir, ".agents", "skills"));
     expect(roots).toContain(join(homeDir, ".agenter", "skills"));
     expect(roots).toContain(join(rootWorkspacePath, "skills"));
+    expect(roots).toContain(join(repoRoot, "packages", "app-server", "skills", "runtime"));
+    expect(roots).toContain(join(repoRoot, "packages", "attention-system", "skills", "attention"));
     expect(roots.some((path) => path.includes(".runtime-skills"))).toBeFalse();
   });
 

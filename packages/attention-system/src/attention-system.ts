@@ -25,6 +25,8 @@ export class AttentionSystem {
     contextId?: string;
     owner: string;
     focusState?: AttentionFocusState;
+    template?: string;
+    slots?: Record<string, string>;
     content?: string;
     contentFormat?: string;
     scoreMap?: Record<string, number>;
@@ -34,14 +36,16 @@ export class AttentionSystem {
       throw new Error(`attention context "${contextId}" already exists`);
     }
     return this.bindContext(
-      new AttentionContext({
-        contextId,
-        owner: input.owner,
-        focusState: input.focusState,
-        content: input.content,
-        contentFormat: input.contentFormat,
-        scoreMap: input.scoreMap,
-      }),
+        new AttentionContext({
+          contextId,
+          owner: input.owner,
+          focusState: input.focusState,
+          template: input.template,
+          slots: input.slots,
+          content: input.content,
+          contentFormat: input.contentFormat,
+          scoreMap: input.scoreMap,
+        }),
     );
   }
 
@@ -80,6 +84,10 @@ export class AttentionSystem {
 
   commit(contextId: string, input: AttentionCommitInput): { context: AttentionContextState; commit: AttentionCommit } {
     return this.requireContext(contextId).commit(input);
+  }
+
+  commitSystem(contextId: string, input: AttentionCommitInput): { context: AttentionContextState; commit: AttentionCommit } {
+    return this.requireContext(contextId).commitSystem(input);
   }
 
   listActiveContexts(input: { minScore?: number; commitLimit?: number } = {}): AttentionActiveContextMatch[] {

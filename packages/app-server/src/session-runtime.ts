@@ -141,16 +141,18 @@ import {
   RUNTIME_PRINCIPAL_ID_ENV,
   RUNTIME_PRIVATE_KEY_ENV,
   RUNTIME_ROOT_WORKSPACE_ENV,
-  buildRuntimeSkillsList,
   listRuntimeSkillMountRoots,
-  listRuntimeSkills,
-  type RuntimeSkillRecord,
 } from "./runtime-skills";
+import { RuntimeSkillSystem } from "./runtime-skill-system";
 import {
   projectRuntimeAttentionActiveMatch,
   projectRuntimeMessageChannel,
   projectRuntimeMessageOverview,
   projectRuntimeMessageSnapshot,
+  projectRuntimeSkill,
+  projectRuntimeSkillConfigInfo,
+  projectRuntimeSkillInfo,
+  projectRuntimeSkillMutation,
   projectRuntimeTerminal,
   projectRuntimeWorkspaceSurface,
   type RuntimeMessageChannelView,
@@ -1322,6 +1324,7 @@ export interface SessionRuntimeOptions {
     | { ok: false; message: string };
   listRuntimeWorkspaceAuthorities?: () => Array<{
     mount: WorkspaceMountRecord;
+    workspaceRoot: string;
     grants: WorkspaceGrantRecord[];
   }>;
   allocateRoomId?: (input: { kind: MessageChannelKind; title?: string }) => Promise<string>;
@@ -1405,8 +1408,7 @@ export class SessionRuntime {
   private readonly terminalSystemCleanup: Array<() => void> = [];
   private agent: AgenterAI | null = null;
   private runtimeLocalApi: RuntimeLocalApiHandle | null = null;
-  private runtimeSkills: RuntimeSkillRecord[] = [];
-  private runtimeSkillsList = "";
+  private runtimeSkillSystem: RuntimeSkillSystem | null = null;
   private readonly terminalControlPlane: TerminalControlPlane;
   private terminals = new Map<string, ManagedTerminal>();
   private runtime: AgentRuntime | null = null;
@@ -1539,6 +1541,7 @@ export class SessionRuntime {
 
   private listWorkspaceAuthorities(): Array<{
     mount: WorkspaceMountRecord;
+    workspaceRoot: string;
     grants: WorkspaceGrantRecord[];
   }> {
     return this.options.listRuntimeWorkspaceAuthorities?.() ?? [];
@@ -1557,6 +1560,31 @@ export class SessionRuntime {
       homeDir: this.getHomeDir(),
       rootWorkspacePath: this.getRootWorkspacePath(),
     });
+  }
+
+  private ensureRuntimeSkillSystem(): RuntimeSkillSystem {
+    if (this.runtimeSkillSystem) {
+      return this.runtimeSkillSystem;
+    }
+    this.runtimeSkillSystem = new RuntimeSkillSystem({
+      attentionSystem: this.attentionSystem,
+      owner: this.getAvatarName(),
+      focusState: "background",
+      homeDir: this.getHomeDir(),
+      rootWorkspacePath: this.getRootWorkspacePath(),
+      principalId: this.options.avatarPrincipalId,
+      listWorkspaceAuthorities: () =>
+        this.listWorkspaceAuthorities().map((authority) => ({
+          workspaceRoot: authority.workspaceRoot,
+          grants: authority.grants,
+        })),
+      onIdleFlush: async (result) => {
+        await this.handleRuntimeSkillRefreshResult(result, {
+          notifyLoop: true,
+        });
+      },
+    });
+    return this.runtimeSkillSystem;
   }
 
   private getRootWorkspaceSkillMounts(): RootWorkspaceMountInput[] {
@@ -3492,7 +3520,7 @@ export class SessionRuntime {
   }
 
   private listRootWorkspaceToolCommands(): string[] {
-    return ["attention", "message", "workspace", "terminal", "ccski", "tool"];
+    return ["attention", "message", "workspace", "terminal", "skill", "tool"];
   }
 
   private projectRuntimeWorkspaceList(): RuntimeWorkspaceSurface[] {
@@ -3506,6 +3534,7 @@ export class SessionRuntime {
     if (!this.options.avatarPrivateKey) {
       throw new Error("runtime avatar private key missing");
     }
+    const runtimeSkillSystem = this.ensureRuntimeSkillSystem();
     this.runtimeLocalApi = await startRuntimeLocalApi({
       expectedPrincipalId: this.options.avatarPrincipalId,
       handlers: {
@@ -3561,6 +3590,54 @@ export class SessionRuntime {
         terminalWrite: async (input) => await this.writeRuntimeTerminal(input),
         terminalFocus: async (input) => await this.focusRuntimeTerminals(input),
         terminalKill: async (input) => await this.deleteRuntimeTerminal(input.terminalId),
+        skillList: () => runtimeSkillSystem.list().map(projectRuntimeSkill),
+        skillSearch: (input) => runtimeSkillSystem.search(input.query ?? "").map(projectRuntimeSkill),
+        skillInfo: async (input) => {
+          const info = runtimeSkillSystem.info(input.name, input.rootKind);
+          if (!info) {
+            throw new Error(`skill not found: ${input.name}`);
+          }
+          return projectRuntimeSkillInfo(info);
+        },
+        skillGetConfig: async (input) => {
+          const info = runtimeSkillSystem.getConfig(input);
+          if (!info) {
+            throw new Error(`skill not found: ${input.name}`);
+          }
+          return projectRuntimeSkillConfigInfo(info);
+        },
+        skillUpsert: async (input) => {
+          const result = runtimeSkillSystem.upsert(input);
+          await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: true });
+          return projectRuntimeSkillMutation({
+            ...result,
+            skill: result.skill,
+            created: result.created,
+          });
+        },
+        skillSetConfig: async (input) => {
+          const result = runtimeSkillSystem.setConfig(input);
+          await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: true });
+          return projectRuntimeSkillMutation({
+            ...result,
+            skill: result.skill,
+          });
+        },
+        skillRemove: async (input) => {
+          const result = runtimeSkillSystem.remove(input);
+          await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: true });
+          return projectRuntimeSkillMutation({
+            ...result,
+            removed: result.removed,
+            removedPath: result.removedPath,
+            removedRootKind: result.removedRootKind,
+          });
+        },
+        skillRefresh: async () => {
+          const result = runtimeSkillSystem.refresh({ forceBootstrap: true, publishReminders: false });
+          await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: false });
+          return projectRuntimeSkillMutation(result);
+        },
       },
     });
   }
@@ -3737,12 +3814,24 @@ export class SessionRuntime {
   private buildAttentionContextBootstrapInput(
     active: readonly AttentionActiveContextMatch[],
     selected: readonly AttentionActiveContextMatch[],
+    bootstrapSnapshots: readonly AttentionActiveContextMatch[] = [],
   ): LoopBusInput | null {
     const primary = selected[0];
     if (!primary) {
       return null;
     }
-    const metadata = active.map((match) => ({
+    const metadataSource = [
+      ...selected,
+      ...bootstrapSnapshots.filter(
+        (snapshot) => !selected.some((match) => match.contextId === snapshot.contextId),
+      ),
+      ...active.filter(
+        (match) =>
+          !selected.some((selectedMatch) => selectedMatch.contextId === match.contextId) &&
+          !bootstrapSnapshots.some((snapshot) => snapshot.contextId === match.contextId),
+      ),
+    ];
+    const metadata = metadataSource.map((match) => ({
       contextId: match.contextId,
       source: this.resolveAttentionSourceSystemId(match),
       focusState: match.context.focusState,
@@ -3756,22 +3845,33 @@ export class SessionRuntime {
       "",
       toYaml({
         primaryContextId: primary.contextId,
-        selectedContextIds: selected.map((match) => match.contextId),
+        selectedContextIds: [...selected, ...bootstrapSnapshots]
+          .map((match) => match.contextId)
+          .filter((value, index, all) => all.indexOf(value) === index),
         activeContextCount: active.length,
         items: metadata,
       }),
     ].join("\n");
+    const renderedSnapshots = bootstrapSnapshots
+      .filter((match) => match.context.content.trim().length > 0)
+      .map((match) =>
+        [
+          `## AttentionContext.${match.contextId}`,
+          "",
+          mdFence("md+attention-context", match.context.content),
+        ].join("\n"),
+      );
 
     const channel = this.resolveMessageChannelForContext(primary.contextId);
     const chatId = channel?.chatId ?? this.resolveMessageChatIdForContext(primary.contextId);
-    const attentionContextIds = metadata.map((item) => item.contextId);
+    const attentionContextIds = [...metadata.map((item) => item.contextId)];
 
     return {
       name: `AttentionContext-${primary.contextId}`,
       role: "user",
       type: "text",
       source: "attention",
-      text,
+      text: [text, ...renderedSnapshots].filter((part) => part.length > 0).join("\n\n"),
       meta: {
         attentionContextId: primary.contextId,
         attentionContextIds: serializeAttentionContextIds(attentionContextIds) ?? null,
@@ -4347,6 +4447,32 @@ export class SessionRuntime {
     for (const result of hookResults ?? []) {
       this.recordAttentionHook(contextId, commit.commitId, result);
     }
+  }
+
+  private async handleRuntimeSkillRefreshResult(
+    result: ReturnType<RuntimeSkillSystem["refresh"]>,
+    input: { notifyLoop: boolean },
+  ): Promise<void> {
+    if (result.systemCommit) {
+      await this.handleCommittedAttentionCommit(result.contextId, result.systemCommit, {
+        notifyLoop: false,
+      });
+    }
+    for (const reminderCommit of result.reminderCommits) {
+      await this.handleCommittedAttentionCommit(result.contextId, reminderCommit, {
+        notifyLoop: input.notifyLoop,
+      });
+    }
+  }
+
+  private async flushPendingRuntimeSkillChanges(): Promise<void> {
+    const result = this.runtimeSkillSystem?.flushPendingChanges();
+    if (!result) {
+      return;
+    }
+    await this.handleRuntimeSkillRefreshResult(result, {
+      notifyLoop: false,
+    });
   }
 
   private async commitAttentionDrafts(drafts: AttentionDraft[]): Promise<boolean> {
@@ -5131,12 +5257,30 @@ export class SessionRuntime {
 
     const promptStore = this.createPromptStore(this.config);
     await promptStore.reload();
-    this.runtimeSkills = listRuntimeSkills({
+    this.runtimeSkillSystem = new RuntimeSkillSystem({
+      attentionSystem: this.attentionSystem,
+      owner: this.getAvatarName(),
+      focusState: "background",
       homeDir: this.getHomeDir(),
       rootWorkspacePath: this.getRootWorkspacePath(),
       principalId: this.options.avatarPrincipalId,
+      listWorkspaceAuthorities: () =>
+        this.listWorkspaceAuthorities().map((authority) => ({
+          workspaceRoot: authority.workspaceRoot,
+          grants: authority.grants,
+        })),
+      onIdleFlush: async (result) => {
+        await this.handleRuntimeSkillRefreshResult(result, {
+          notifyLoop: true,
+        });
+      },
     });
-    this.runtimeSkillsList = buildRuntimeSkillsList(this.runtimeSkills);
+    await this.handleRuntimeSkillRefreshResult(
+      this.runtimeSkillSystem.refresh({ forceBootstrap: true, publishReminders: false }),
+      {
+        notifyLoop: false,
+      },
+    );
 
     const modelClient = this.createModelClient(this.config);
 
@@ -5218,7 +5362,6 @@ export class SessionRuntime {
       },
       logger: this.options.logger ?? { log: () => {} },
       locale: this.config.lang,
-      skillsList: this.runtimeSkillsList,
       compactPolicy: this.config.loop.compactPolicy,
       toolProviders: this.createAgentToolProviders(),
       attentionGateway: {
@@ -5388,6 +5531,8 @@ export class SessionRuntime {
     if (status === "stopped") {
       this.messageSystem.setActorPresence(this.messageActorId, false);
       this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
+      this.runtimeSkillSystem?.clearPendingBootstrap();
+      this.runtimeSkillSystem?.dispose();
     }
     this.sessionStore?.setLifecycle({ status });
   }
@@ -5398,6 +5543,7 @@ export class SessionRuntime {
     }
     this.messageSystem.setActorPresence(this.messageActorId, true);
     this.terminalControlPlane.setActorPresence(this.terminalActorId, true);
+    this.runtimeSkillSystem?.markBootstrapPending();
     this.runtime?.resume();
     this.sessionStore?.setLifecycle({ status: "running" });
   }
@@ -5426,8 +5572,8 @@ export class SessionRuntime {
     this.loopPluginRuntime = null;
     await this.runtimeLocalApi?.stop().catch(() => {});
     this.runtimeLocalApi = null;
-    this.runtimeSkills = [];
-    this.runtimeSkillsList = "";
+    this.runtimeSkillSystem?.dispose();
+    this.runtimeSkillSystem = null;
     this.messageSystem.setActorPresence(this.messageActorId, false);
     this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
     this.sessionStore?.setLifecycle({ status: "stopped" });
@@ -7090,6 +7236,7 @@ export class SessionRuntime {
   }
 
   private async collectLoopInputs(): Promise<LoopBusInput[] | undefined> {
+    await this.flushPendingRuntimeSkillChanges();
     await this.pollTaskSources("watch");
     await this.pollTaskEventInbox();
     this.collectUnreadRoomIngress();
@@ -7202,6 +7349,7 @@ export class SessionRuntime {
   }
 
   private async collectInterleavedAgentInputs(): Promise<LoopBusInput[] | undefined> {
+    await this.flushPendingRuntimeSkillChanges();
     this.collectUnreadRoomIngress();
     const consumedUserInputs = this.drainInterleavedInboundQueue();
     const pluginChanged = await this.flushPluginAttentionDrafts();
@@ -7253,12 +7401,15 @@ export class SessionRuntime {
     const forceCollect = this.attentionForceCollect;
     this.attentionForceCollect = false;
     const active = this.attentionSystem.listActiveContexts();
+    const bootstrapSnapshots = this.runtimeSkillSystem?.consumeBootstrapContext();
     if (active.length === 0) {
-      this.dirtyAttentionContextIds.clear();
-      this.dirtyAttentionContextOrder.clear();
-      this.attentionContainment.clear();
-      this.resetAttentionDebtBackoff();
-      return undefined;
+      if (!bootstrapSnapshots) {
+        this.dirtyAttentionContextIds.clear();
+        this.dirtyAttentionContextOrder.clear();
+        this.attentionContainment.clear();
+        this.resetAttentionDebtBackoff();
+        return undefined;
+      }
     }
     this.pruneDirtyAttentionContextIds();
     this.pruneAttentionContainment(active);
@@ -7266,7 +7417,7 @@ export class SessionRuntime {
     const selected = forceCollect
       ? this.selectAttentionDebtContexts(active)
       : this.selectDirtyAttentionContexts(active);
-    if (selected.length === 0) {
+    if (selected.length === 0 && !bootstrapSnapshots) {
       return undefined;
     }
 
@@ -7275,7 +7426,11 @@ export class SessionRuntime {
     }
 
     const outputs: LoopBusInput[] = [];
-    const bootstrapInput = this.buildAttentionContextBootstrapInput(active, selected);
+    const bootstrapInput = this.buildAttentionContextBootstrapInput(
+      active,
+      selected.length > 0 ? selected : bootstrapSnapshots ? [bootstrapSnapshots] : [],
+      bootstrapSnapshots ? [bootstrapSnapshots] : [],
+    );
     if (bootstrapInput) {
       outputs.push(bootstrapInput);
       this.attentionFactsSentVersion = this.attentionFactsVersion;

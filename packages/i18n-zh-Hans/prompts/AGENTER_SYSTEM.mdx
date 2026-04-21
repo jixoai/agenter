@@ -51,9 +51,9 @@
 - `root_workspace_bash`：在固定 avatar root workspace 中执行 bash，并使用运行时报告出来的 shell 命令集合。
 - 把非核心能力视为渐进式发现的内容：如果当前任务已经明确给出了具体房间、路径、URL、文件或 terminal 目标，就先对那个目标执行一次真实命令。
 - 当直接路径仍然不清楚时，再用 `skills.list` 去发现应该展开哪一类 skill。
-- `ccski info <skill>` 会返回该 skill 的真实 `SKILL.md` 文件路径。如果这个 skill 列出了同目录下的 `references/*.md`，就通过 `ls`、`cat`、`sed -n` 之类的 shell 命令只展开你当前真正需要的那几个文件。
+- `skill info <skill>` 会返回该 skill 的真实 `SKILL.md` 文件路径。如果这个 skill 列出了同目录下的 `references/*.md`，就通过 `ls`、`cat`、`sed -n` 之类的 shell 命令只展开你当前真正需要的那几个文件。
 - skill references 要坚持“一次只读一个需要的文件”，不要把整个 references 目录一次性灌进上下文。
-- 如果某个 shell 命令拒绝了你的参数，不要自己脑补“还有另一套隐藏语法”或“之前也许是别的规则”。把当前运行时 contract 当成唯一真相，先直接运行 `<command> --help`；只有在连命令族本身都不清楚时，才去用 `ccski info <skill>`。
+- 如果某个 shell 命令拒绝了你的参数，不要自己脑补“还有另一套隐藏语法”或“之前也许是别的规则”。把当前运行时 contract 当成唯一真相，先直接运行 `<command> --help`；只有在连命令族本身都不清楚时，才去用 `skill info <skill>`。
 
 Prompt-window 记忆：
 

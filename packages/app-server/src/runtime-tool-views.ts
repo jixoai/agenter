@@ -11,6 +11,9 @@ import type {
 import type { TerminalControlPlaneEntry } from "@agenter/terminal-system";
 
 import { summarizeMessageChannelPresence } from "./message-channel-presence";
+import type { RuntimeSkillConfig } from "./runtime-skill-config";
+import type { RuntimeSkillConfigInfo, RuntimeSkillInfo, RuntimeSkillRefreshResult } from "./runtime-skill-system";
+import type { RuntimeSkillRecord } from "./runtime-skills";
 import type { WorkspaceGrantRecord, WorkspaceMountRecord } from "./workspace-system";
 
 const clipPreview = (value: string, maxChars = 240): string | undefined => {
@@ -265,6 +268,54 @@ export interface RuntimeTerminalView {
   rendererEngine?: TerminalControlPlaneEntry["rendererEngine"];
 }
 
+export interface RuntimeSkillView {
+  name: string;
+  summary: string;
+  path: string;
+  root: string;
+  rootKind: RuntimeSkillRecord["rootKind"];
+  writable: boolean;
+  packageName?: string;
+}
+
+export interface RuntimeSkillInfoView {
+  skill: RuntimeSkillView;
+  content: string;
+}
+
+export interface RuntimeSkillConfigInfoView {
+  skill: RuntimeSkillView;
+  writable: boolean;
+  skillDir: string;
+  skillPath: string;
+  configPath: string;
+  configExists: boolean;
+  config: RuntimeSkillConfig | null;
+  configError: string | null;
+  resolvedWatchTargets: string[];
+}
+
+export interface RuntimeSkillMutationView {
+  contextId: string;
+  skills: RuntimeSkillView[];
+  snapshot: string;
+  changedSkills: Array<{
+    name: string;
+    kind: "added" | "updated" | "removed";
+    rootKind: RuntimeSkillRecord["rootKind"] | null;
+    changedFiles: string[];
+  }>;
+  systemCommitId: string | null;
+  reminderCommitId: string | null;
+  reminderCommitIds: string[];
+  bootstrapPending: boolean;
+  created?: boolean;
+  removed?: boolean;
+  removedPath?: string | null;
+  removedRootKind?: "shared" | "global" | "avatar" | null;
+  skill?: RuntimeSkillView;
+}
+
 export const projectRuntimeAttentionActiveMatch = (match: AttentionActiveContextMatch): RuntimeAttentionActiveView => ({
   contextId: match.contextId,
   context: {
@@ -395,4 +446,60 @@ export const projectRuntimeTerminal = (terminal: TerminalControlPlaneEntry): Run
   icon: terminal.icon,
   title: terminal.title,
   rendererEngine: terminal.rendererEngine,
+});
+
+export const projectRuntimeSkill = (skill: RuntimeSkillRecord): RuntimeSkillView => ({
+  name: skill.name,
+  summary: skill.summary,
+  path: skill.path,
+  root: skill.root,
+  rootKind: skill.rootKind,
+  writable: skill.writable,
+  packageName: skill.packageName,
+});
+
+export const projectRuntimeSkillInfo = (input: RuntimeSkillInfo): RuntimeSkillInfoView => ({
+  skill: projectRuntimeSkill(input.skill),
+  content: input.content,
+});
+
+export const projectRuntimeSkillConfigInfo = (input: RuntimeSkillConfigInfo): RuntimeSkillConfigInfoView => ({
+  skill: projectRuntimeSkill(input.skill),
+  writable: input.writable,
+  skillDir: input.skillDir,
+  skillPath: input.skillPath,
+  configPath: input.configPath,
+  configExists: input.configExists,
+  config: input.config,
+  configError: input.configError,
+  resolvedWatchTargets: [...input.resolvedWatchTargets],
+});
+
+export const projectRuntimeSkillMutation = (
+  input: RuntimeSkillRefreshResult & {
+    created?: boolean;
+    removed?: boolean;
+    removedPath?: string | null;
+    removedRootKind?: "shared" | "global" | "avatar" | null;
+    skill?: RuntimeSkillRecord;
+  },
+): RuntimeSkillMutationView => ({
+  contextId: input.contextId,
+  skills: input.skills.map(projectRuntimeSkill),
+  snapshot: input.snapshot,
+  changedSkills: input.changedSkills.map((change) => ({
+    name: change.name,
+    kind: change.kind,
+    rootKind: change.rootKind,
+    changedFiles: [...change.changedFiles],
+  })),
+  systemCommitId: input.systemCommit?.commitId ?? null,
+  reminderCommitId: input.reminderCommit?.commitId ?? null,
+  reminderCommitIds: input.reminderCommits.map((commit) => commit.commitId),
+  bootstrapPending: input.bootstrapPending,
+  created: input.created,
+  removed: input.removed,
+  removedPath: input.removedPath,
+  removedRootKind: input.removedRootKind,
+  skill: input.skill ? projectRuntimeSkill(input.skill) : undefined,
 });

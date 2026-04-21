@@ -81,6 +81,7 @@ const createRootWorkspaceFs = (input: RootWorkspaceBashExecInput): MountableFs =
           ? new ReadWriteFs({ root: mount.path })
           : new OverlayFs({
               root: mount.path,
+              mountPoint: "/",
               readOnly: true,
             }),
     );

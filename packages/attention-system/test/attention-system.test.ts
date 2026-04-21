@@ -162,5 +162,7 @@ describe("Feature: attention system context scheduling", () => {
     ]);
     expect(restored.query({ hash: "hash1" })[0]?.commit.commitId).toBe(commit.commitId);
     expect(restored.getContext("ctx-1")?.getState().focusState).toBe("focused");
+    expect(restored.getContext("ctx-1")?.getState().template).toBe('<Slot name="default"/>');
+    expect(restored.getContext("ctx-1")?.getState().slots).toEqual({ default: "hello" });
   });
 });

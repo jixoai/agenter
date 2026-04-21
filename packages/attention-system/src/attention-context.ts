@@ -3,15 +3,22 @@ import { randomUUID } from "node:crypto";
 import type {
   AttentionCommit,
   AttentionCommitInput,
-  AttentionFocusState,
   AttentionCommitMeta,
   AttentionContextSnapshot,
   AttentionContextState,
+  AttentionFocusState,
 } from "./attention-item";
+import {
+  deriveAttentionContextContent,
+  getAttentionContextTemplateSlot,
+  initializeAttentionContextSlots,
+  normalizeAttentionContextTemplate,
+} from "./attention-context-template";
 import type { AttentionCommitChange, AttentionCommitMatch, AttentionQueryInput } from "./attention-types";
 
 const MAX_SCORE = 100;
 const MIN_SCORE = 0;
+const DEFAULT_ATTENTION_COMMIT_TARGET = "default";
 
 const nowIso = (): string => new Date().toISOString();
 const generateCommitId = (): string => `commit-${randomUUID()}`;
@@ -35,6 +42,11 @@ export const normalizeAttentionScores = (scores: Record<string, number>): Record
   return next;
 };
 
+const resolveAttentionCommitTarget = (target?: string): string => {
+  const normalized = target?.trim();
+  return normalized && normalized.length > 0 ? normalized : DEFAULT_ATTENTION_COMMIT_TARGET;
+};
+
 const cloneMeta = (meta: AttentionCommitMeta): AttentionCommitMeta => ({
   ...meta,
   tags: Array.isArray(meta.tags) ? [...meta.tags] : undefined,
@@ -46,6 +58,7 @@ const hasNotificationTag = (meta: AttentionCommitMeta): boolean =>
 
 const cloneCommit = (commit: AttentionCommit): AttentionCommit => ({
   ...commit,
+  target: commit.target,
   parentCommitIds: [...commit.parentCommitIds],
   meta: cloneMeta(commit.meta),
   scores: { ...commit.scores },
@@ -54,6 +67,8 @@ const cloneCommit = (commit: AttentionCommit): AttentionCommit => ({
 
 const cloneState = (state: AttentionContextState): AttentionContextState => ({
   ...state,
+  template: normalizeAttentionContextTemplate(state.template),
+  slots: { ...(state.slots ?? {}) },
   scoreMap: { ...state.scoreMap },
   consumedPushCommitIds: [...state.consumedPushCommitIds],
 });
@@ -106,27 +121,75 @@ const applyUnifiedDiff = (base: string, diffText: string): string => {
   return result.join("\n");
 };
 
+const buildAttentionContextState = (input: {
+  contextId: string;
+  owner: string;
+  focusState?: AttentionFocusState;
+  template?: string;
+  slots?: Record<string, string>;
+  content?: string;
+  contentFormat?: string;
+  scoreMap?: Record<string, number>;
+  consumedPushCommitIds?: string[];
+  headCommitId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}): AttentionContextState => {
+  const createdAt = input.createdAt ?? nowIso();
+  const template = normalizeAttentionContextTemplate(input.template);
+  const slots = initializeAttentionContextSlots({
+    template,
+    slots: input.slots,
+    legacyContent: input.content,
+  });
+  return {
+    contextId: input.contextId,
+    owner: input.owner,
+    focusState: input.focusState ?? "focused",
+    template,
+    slots,
+    content: deriveAttentionContextContent(template, slots),
+    contentFormat: input.contentFormat,
+    scoreMap: normalizeAttentionScores(input.scoreMap ?? {}),
+    consumedPushCommitIds: [...(input.consumedPushCommitIds ?? [])],
+    headCommitId: input.headCommitId ?? null,
+    createdAt,
+    updatedAt: input.updatedAt ?? createdAt,
+  };
+};
+
 export const applyAttentionChange = (
   state: AttentionContextState,
   change: AttentionCommitChange,
+  input: {
+    target?: string;
+    allowReadonly?: boolean;
+  } = {},
 ): AttentionContextState => {
-  if (change.type === "update") {
-    return {
-      ...state,
-      content: change.value,
-      contentFormat: change.format ?? state.contentFormat,
-    };
+  const target = resolveAttentionCommitTarget(input.target);
+  const template = normalizeAttentionContextTemplate(state.template);
+  const slot = getAttentionContextTemplateSlot(template, target);
+  if (!slot) {
+    throw new Error(`attention slot "${target}" not found`);
   }
-  if (change.type === "diff") {
-    return {
-      ...state,
-      content: applyUnifiedDiff(state.content, change.value),
-      contentFormat: change.format ?? state.contentFormat,
-    };
+  if (slot.readonly && input.allowReadonly !== true) {
+    throw new Error(`attention slot "${target}" is readonly`);
   }
+
+  const currentValue = state.slots?.[target] ?? "";
+  const nextValue =
+    change.type === "update" ? change.value : change.type === "diff" ? applyUnifiedDiff(currentValue, change.value) : "";
+  const nextSlots = {
+    ...(state.slots ?? {}),
+    [target]: nextValue,
+  };
+
   return {
     ...state,
-    content: "",
+    template,
+    slots: nextSlots,
+    content: deriveAttentionContextContent(template, nextSlots),
+    contentFormat: change.type === "clean" ? state.contentFormat : change.format ?? state.contentFormat,
   };
 };
 
@@ -160,6 +223,8 @@ export interface AttentionContextConfig {
   contextId: string;
   owner: string;
   focusState?: AttentionFocusState;
+  template?: string;
+  slots?: Record<string, string>;
   content?: string;
   contentFormat?: string;
   scoreMap?: Record<string, number>;
@@ -173,6 +238,8 @@ export const buildAttentionContextStateFromCommits = (input: {
   owner: string;
   commits: AttentionCommit[];
   focusState?: AttentionFocusState;
+  template?: string;
+  slots?: Record<string, string>;
   createdAt?: string;
   updatedAt?: string;
   content?: string;
@@ -181,21 +248,25 @@ export const buildAttentionContextStateFromCommits = (input: {
   consumedPushCommitIds?: string[];
 }): AttentionContextState => {
   const createdAt = input.createdAt ?? input.commits[0]?.createdAt ?? nowIso();
-  let state: AttentionContextState = {
+  let state = buildAttentionContextState({
     contextId: input.contextId,
     owner: input.owner,
-    focusState: input.focusState ?? "focused",
-    content: input.content ?? "",
+    focusState: input.focusState,
+    template: input.template,
+    slots: input.slots,
+    content: input.content,
     contentFormat: input.contentFormat,
-    scoreMap: normalizeAttentionScores(input.scoreMap ?? {}),
-    consumedPushCommitIds: [...(input.consumedPushCommitIds ?? [])],
-    headCommitId: null,
+    scoreMap: input.scoreMap,
+    consumedPushCommitIds: input.consumedPushCommitIds,
     createdAt,
     updatedAt: input.updatedAt ?? createdAt,
-  };
+  });
 
   for (const commit of input.commits) {
-    state = applyAttentionChange(state, commit.change);
+    state = applyAttentionChange(state, commit.change, {
+      target: commit.target,
+      allowReadonly: true,
+    });
     state = {
       ...state,
       scoreMap: {
@@ -223,85 +294,48 @@ export class AttentionContext {
     this.owner = snapshot?.owner ?? config.owner;
 
     if (snapshot) {
-      this.state = cloneState({
-        contextId: snapshot.contextId,
-        owner: snapshot.owner,
-        focusState: snapshot.focusState,
-        content: snapshot.content,
-        contentFormat: snapshot.contentFormat,
-        scoreMap: snapshot.scoreMap,
-        consumedPushCommitIds: snapshot.consumedPushCommitIds,
-        headCommitId: snapshot.headCommitId,
-        createdAt: snapshot.createdAt,
-        updatedAt: snapshot.updatedAt,
-      });
       for (const commit of snapshot.commits) {
         this.commits.set(commit.commitId, cloneCommit(commit));
         this.commitOrder.push(commit.commitId);
       }
+      this.state = buildAttentionContextStateFromCommits({
+        contextId: snapshot.contextId,
+        owner: snapshot.owner,
+        commits: snapshot.commits,
+        focusState: snapshot.focusState,
+        template: snapshot.template,
+        slots: snapshot.slots,
+        content: snapshot.content,
+        contentFormat: snapshot.contentFormat,
+        scoreMap: snapshot.scoreMap,
+        consumedPushCommitIds: snapshot.consumedPushCommitIds,
+        createdAt: snapshot.createdAt,
+        updatedAt: snapshot.updatedAt,
+      });
       return;
     }
 
-    const createdAt = config.createdAt ?? nowIso();
-    this.state = {
+    this.state = buildAttentionContextState({
       contextId: this.contextId,
       owner: this.owner,
-      focusState: config.focusState ?? "focused",
-      content: config.content ?? "",
+      focusState: config.focusState,
+      template: config.template,
+      slots: config.slots,
+      content: config.content,
       contentFormat: config.contentFormat,
-      scoreMap: normalizeAttentionScores(config.scoreMap ?? {}),
-      consumedPushCommitIds: [...(config.consumedPushCommitIds ?? [])],
-      headCommitId: null,
-      createdAt,
-      updatedAt: config.updatedAt ?? createdAt,
-    };
+      scoreMap: config.scoreMap,
+      consumedPushCommitIds: config.consumedPushCommitIds,
+      createdAt: config.createdAt,
+      updatedAt: config.updatedAt,
+    });
   }
 
   commit(input: AttentionCommitInput): { context: AttentionContextState; commit: AttentionCommit } {
-    const createdAt = nowIso();
-    const commit: AttentionCommit = {
-      commitId: generateCommitId(),
-      contextId: this.contextId,
-      ingressType: input.ingressType ?? "commit",
-      parentCommitIds: input.parentCommitIds?.length
-        ? [...input.parentCommitIds]
-        : this.state.headCommitId
-          ? [this.state.headCommitId]
-          : [],
-      meta: cloneMeta({
-        author: typeof input.meta?.author === "string" && input.meta.author.length > 0 ? input.meta.author : this.owner,
-        source:
-          typeof input.meta?.source === "string" && input.meta.source.length > 0 ? input.meta.source : "attention",
-        ...(input.meta ?? {}),
-        createdAt,
-      }),
-      scores: normalizeAttentionScores(input.scores ?? {}),
-      summary: input.summary.trim(),
-      change: cloneChange(input.change),
-      createdAt,
-    };
+    return this.commitWithPolicy(input, { allowReadonly: false });
+  }
 
-    let nextState = cloneState(this.state);
-    nextState = applyAttentionChange(nextState, commit.change);
-    nextState = {
-      ...nextState,
-      scoreMap: {
-        ...nextState.scoreMap,
-        ...commit.scores,
-      },
-      headCommitId: commit.commitId,
-      updatedAt: createdAt,
-    };
-
-    this.state = nextState;
-    this.commits.set(commit.commitId, commit);
-    this.commitOrder.push(commit.commitId);
-    this.emit(commit);
-
-    return {
-      context: this.getState(),
-      commit: cloneCommit(commit),
-    };
+  commitSystem(input: AttentionCommitInput): { context: AttentionContextState; commit: AttentionCommit } {
+    return this.commitWithPolicy(input, { allowReadonly: true });
   }
 
   setFocusState(focusState: AttentionFocusState): AttentionContextState {
@@ -398,21 +432,23 @@ export class AttentionContext {
     }
     const consumedPushCommitIds = new Set(this.state.consumedPushCommitIds);
     return Object.fromEntries(
-      [...latestByHash.entries()].filter(([, value]) => {
-        if (value.score < Math.max(0, Math.trunc(minScore))) {
-          return false;
-        }
-        if (value.ingressType === "commit") {
-          return true;
-        }
-        if (consumedPushCommitIds.has(value.commitId)) {
-          return false;
-        }
-        if (value.notification) {
-          return true;
-        }
-        return this.state.focusState !== "muted";
-      }).map(([hash, value]) => [hash, value.score]),
+      [...latestByHash.entries()]
+        .filter(([, value]) => {
+          if (value.score < Math.max(0, Math.trunc(minScore))) {
+            return false;
+          }
+          if (value.ingressType === "commit") {
+            return true;
+          }
+          if (consumedPushCommitIds.has(value.commitId)) {
+            return false;
+          }
+          if (value.notification) {
+            return true;
+          }
+          return this.state.focusState !== "muted";
+        })
+        .map(([hash, value]) => [hash, value.score]),
     );
   }
 
@@ -446,9 +482,8 @@ export class AttentionContext {
     if (input.source) {
       matches = matches.filter((commit) => commit.meta.source === input.source);
     }
-    const queryText = input.text;
-    if (queryText) {
-      matches = matches.filter((commit) => matchesText(commit, queryText));
+    if (input.text) {
+      matches = matches.filter((commit) => matchesText(commit, input.text));
     }
 
     const commitOrderIndex = new Map(this.commitOrder.map((commitId, index) => [commitId, index]));
@@ -484,6 +519,62 @@ export class AttentionContext {
       commits,
       commitCount: commits.length,
       commitsTruncated: false,
+    };
+  }
+
+  private commitWithPolicy(
+    input: AttentionCommitInput,
+    options: {
+      allowReadonly: boolean;
+    },
+  ): { context: AttentionContextState; commit: AttentionCommit } {
+    const createdAt = nowIso();
+    const commit: AttentionCommit = {
+      commitId: generateCommitId(),
+      contextId: this.contextId,
+      ingressType: input.ingressType ?? "commit",
+      target: resolveAttentionCommitTarget(input.target),
+      parentCommitIds: input.parentCommitIds?.length
+        ? [...input.parentCommitIds]
+        : this.state.headCommitId
+          ? [this.state.headCommitId]
+          : [],
+      meta: cloneMeta({
+        author: typeof input.meta?.author === "string" && input.meta.author.length > 0 ? input.meta.author : this.owner,
+        source:
+          typeof input.meta?.source === "string" && input.meta.source.length > 0 ? input.meta.source : "attention",
+        ...(input.meta ?? {}),
+        createdAt,
+      }),
+      scores: normalizeAttentionScores(input.scores ?? {}),
+      summary: input.summary.trim(),
+      change: cloneChange(input.change),
+      createdAt,
+    };
+
+    let nextState = cloneState(this.state);
+    nextState = applyAttentionChange(nextState, commit.change, {
+      target: commit.target,
+      allowReadonly: options.allowReadonly,
+    });
+    nextState = {
+      ...nextState,
+      scoreMap: {
+        ...nextState.scoreMap,
+        ...commit.scores,
+      },
+      headCommitId: commit.commitId,
+      updatedAt: createdAt,
+    };
+
+    this.state = nextState;
+    this.commits.set(commit.commitId, commit);
+    this.commitOrder.push(commit.commitId);
+    this.emit(commit);
+
+    return {
+      context: this.getState(),
+      commit: cloneCommit(commit),
     };
   }
 
