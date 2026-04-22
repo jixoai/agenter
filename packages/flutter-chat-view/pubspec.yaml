@@ -1,0 +1,30 @@
+name: flutter_chat_view
+description: Flutter chat view for Agenter message channels with a standalone Web demo.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.11.0 <4.0.0"
+  flutter: ">=3.41.0"
+
+dependencies:
+  characters: ^1.4.1
+  cross_file: ^0.3.5+2
+  file_picker: ^11.0.2
+  flutter:
+    sdk: flutter
+  http: ^1.5.0
+  http_parser: ^4.1.2
+  intl: ^0.20.2
+  markdown: ^7.3.1
+  visibility_detector: ^0.4.0+2
+  web_socket_channel: ^3.0.3
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+  stream_channel: ^2.1.4
+
+flutter:
+  uses-material-design: true
