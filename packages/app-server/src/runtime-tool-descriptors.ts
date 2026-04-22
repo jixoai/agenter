@@ -138,6 +138,7 @@ export interface RuntimeToolDescriptor<TInput extends ZodTypeAny = ZodTypeAny> {
   name: string;
   route: `/${string}`;
   description: string;
+  helpNotes?: readonly string[];
   inputSchema: TInput;
   examples: readonly RuntimeToolExample[];
   handler: (input: z.output<TInput>, handlers: RuntimeLocalApiHandlers) => Promise<RuntimeToolResult> | RuntimeToolResult;
@@ -686,6 +687,11 @@ export const runtimeToolDescriptors = [
     name: "write",
     route: "/v1/terminal/write",
     description: "Write text into a terminal and optionally submit it.",
+    helpNotes: [
+      "A successful `terminal write` only confirms input delivery. Read the terminal again or inspect the resulting file/process state before assuming the command succeeded.",
+      "If the JSON fields or positional compact layout are still unclear after this help, run `skill info agenter-terminal` and expand only the reference file you need.",
+      "For multi-line writes, nested JSON, or heredoc-heavy payloads, the next file to open is `references/file-writing.md` from that skill directory.",
+    ],
     inputSchema: terminalWriteSchema,
     examples: [
       {
@@ -931,6 +937,13 @@ export const renderRuntimeToolHelp = (descriptor: RuntimeToolDescriptor): string
     "- Optional trailing fields may be omitted; skipped interior optional fields use `null`.",
     "- Field indexes:",
     ...renderRuntimeToolCompactFieldGuide(compactSurface).map((line) => `  ${line}`),
+    ...(descriptor.helpNotes && descriptor.helpNotes.length > 0
+      ? [
+          "",
+          "Operator notes:",
+          ...descriptor.helpNotes.map((note) => `- ${note}`),
+        ]
+      : []),
     "",
     "Only canonical JSON input is accepted. Default to JSON stdin; use one JSON argv payload only when it is trivially short, and use `--compact` only when you intentionally want positional encoding.",
   ];

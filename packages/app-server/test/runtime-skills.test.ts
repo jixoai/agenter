@@ -130,6 +130,9 @@ describe("Feature: runtime built-in skills", () => {
     expect(terminalContent).toContain("the normal next move is to create or recover the terminal");
     expect(terminalContent).toContain("default to `command=<bare terminal action>` plus JSON `stdin`");
     expect(terminalContent).toContain("accepts `--compact` positional arrays");
+    expect(terminalContent).toContain("run `terminal write --help` before you guess");
+    expect(terminalContent).toContain("run `skill info agenter-terminal`");
+    expect(terminalContent).toContain("references/file-writing.md");
     expect(terminalContent).toContain("References:");
     expect(terminalContent).toContain("references/terminal-lifecycle.md");
     expect(terminalContent).toContain("references/file-writing.md");
@@ -161,6 +164,14 @@ describe("Feature: runtime built-in skills", () => {
     expect(terminalLifecycleReference).toContain("carry terminal JSON in `stdin` by default");
     expect(terminalLifecycleReference).toContain("accepts `--compact` positional arrays");
 
+    const terminalFileWritingReference = readFileSync(
+      join(dirname(terminal!.path), "references", "file-writing.md"),
+      "utf8",
+    );
+    expect(terminalFileWritingReference).toContain("field names but not the quoting strategy");
+    expect(terminalFileWritingReference).toContain("through `skill info agenter-terminal`");
+    expect(terminalFileWritingReference).toContain("command=terminal write");
+
     const runtimeShellReference = readFileSync(join(dirname(runtime!.path), "references", "shell-surface.md"), "utf8");
     expect(runtimeShellReference).toContain("outbound-network verification of current or external facts");
     expect(runtimeShellReference).toContain("prefer one-shot shell verification over guessing from memory");
@@ -173,6 +184,12 @@ describe("Feature: runtime built-in skills", () => {
       "`http://127.0.0.1:54230/` and `http://127.0.0.1:54230/index.html` are different contracts",
     );
     expect(runtimeShellReference).toContain("Do not use one-shot bash to launch ad-hoc socket or HTTP listeners");
+
+    const runtimeDiscoveryReference = readFileSync(join(dirname(runtime!.path), "references", "discovery.md"), "utf8");
+    expect(runtimeDiscoveryReference).toContain("Terminal-specific escalation:");
+    expect(runtimeDiscoveryReference).toContain("terminal write --help");
+    expect(runtimeDiscoveryReference).toContain("skill info agenter-terminal");
+    expect(runtimeDiscoveryReference).toContain("references/file-writing.md");
 
     const messageAttentionReference = readFileSync(
       join(dirname(message!.path), "references", "chat-attention-items.md"),

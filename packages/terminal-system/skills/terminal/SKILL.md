@@ -10,8 +10,9 @@ Use this skill when work needs a durable process, an interactive shell, or recov
 Quick start:
 1. Run `terminal list` when you need to recover or reuse an existing process owner.
 2. Run `terminal create` when no suitable terminal exists yet.
-3. Run `terminal write`.
-4. Run `terminal read` only to inspect or recover terminal state.
+3. If the exact write payload is unclear, run `terminal write --help` first.
+4. Run `terminal write`.
+5. Run `terminal read` only to inspect or recover terminal state.
 
 Key laws:
 - A runtime does not start with a terminal by default.
@@ -26,6 +27,9 @@ Key laws:
 - `terminal create`, `terminal write`, and `terminal read` are JSON-first commands. Through `root_bash`, default to `command=<bare terminal action>` plus JSON `stdin`.
 - Only use a single argv JSON payload when it is trivially short and clearly cheaper in tokens than a separate `stdin` field.
 - If `terminal create --help`, `terminal write --help`, or `terminal read --help` marks compact as `Suggested` or `Available`, the matching command also accepts `--compact` positional arrays. If the positional array becomes unclear, go straight back to standard object JSON.
+- If `terminal write` field names, submit behavior, or compact layout are unclear, run `terminal write --help` before you guess.
+- If `terminal write --help` still is not enough, run `skill info agenter-terminal`, derive the real skill directory, and read only the reference file you need.
+- For multi-line writes, nested JSON, or heredoc-heavy payloads, the next file to open is `references/file-writing.md`.
 
 References:
 - `references/terminal-lifecycle.md`: create/list/read/write/kill strategy and recovery patterns

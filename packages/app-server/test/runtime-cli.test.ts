@@ -343,6 +343,10 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("Availability: Suggested");
     expect(result.stdout).toContain('[0] terminalId: string');
     expect(result.stdout).toContain('[1] text: string');
+    expect(result.stdout).toContain("Operator notes:");
+    expect(result.stdout).toContain("only confirms input delivery");
+    expect(result.stdout).toContain("skill info agenter-terminal");
+    expect(result.stdout).toContain("references/file-writing.md");
     expect(result.stdout).not.toContain("cat <<'EOF'");
     expect(result.stdout).toContain("Default to JSON stdin");
     expect(api.getRequests()).toHaveLength(0);

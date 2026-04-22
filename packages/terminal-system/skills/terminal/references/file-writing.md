@@ -2,6 +2,8 @@
 
 When you need to send a large multi-line command or a whole-file rewrite through terminal input:
 
+- if `terminal write --help` gave you the field names but not the quoting strategy, this file is the next stop
+- if you reached this file through `skill info agenter-terminal`, stay in this file unless you specifically need lifecycle or recovery guidance
 - prefer one complete command block
 - through `root_bash`, default to `command=terminal write` plus JSON `stdin`
 - only use argv JSON for `terminal write` when the payload is trivially short

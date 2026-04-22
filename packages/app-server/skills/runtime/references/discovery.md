@@ -9,6 +9,11 @@ Recommended order:
 4. `skill get-config <skill>` when you need to inspect live watch targets
 5. `<command> --help` for the exact CLI contract
 
+Terminal-specific escalation:
+- if you only forgot `terminal write` field names or compact indexes, start with `terminal write --help`
+- if the terminal write syntax is still unclear after that help, run `skill info agenter-terminal`
+- from the real skill path, open `references/file-writing.md` for multi-line or heavy-quoting patterns
+
 How to expand a skill:
 1. `skill info <skill>` prints the real `SKILL.md` path.
 2. Derive the skill directory from that path.
@@ -20,8 +25,7 @@ Example:
 ```bash
 skill_path="$(skill info agenter-terminal | sed -n 's/^Path: //p')"
 skill_dir="$(dirname "$skill_path")"
-ls "$skill_dir/references"
-cat "$skill_dir/references/terminal-lifecycle.md"
+cat "$skill_dir/references/file-writing.md"
 ```
 
 Do not dump an entire references directory into context if you only need one file.

@@ -45,6 +45,9 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(terminal?.template).not.toContain("127.0.0.1");
     expect(terminal?.template).not.toContain("APP-URL:");
     expect(terminal?.template).not.toContain("localhost");
+    expect(terminal?.template).toContain("run `terminal write --help` before you guess");
+    expect(terminal?.template).toContain("run `skill info agenter-terminal`");
+    expect(terminal?.template).toContain("references/file-writing.md");
 
     expect(attention?.template).not.toContain("owning-room");
     expect(attention?.template).not.toContain("room reply");
