@@ -1082,6 +1082,15 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(allowedMixed.ok).toBeTrue();
 
+    const rejectedMixed = await caller.terminal.input({
+      terminalId,
+      accessToken: issued.grant.accessToken,
+      text: "<raw>a<raw>b</raw>c</raw>",
+      returnRead: false,
+    });
+    expect(rejectedMixed.ok).toBeFalse();
+    expect(rejectedMixed.message).toContain("failed before reaching the PTY");
+
     const activity = await caller.terminal.activityPage({
       terminalId,
       limit: 20,
@@ -1090,7 +1099,7 @@ describe("Feature: app-server trpc procedures", () => {
     expect(
       activity.items.some((item) => item.kind === "terminal_write" && item.actorId === "session:avatar-pair"),
     ).toBeTrue();
-    expect(activity.items.some((item) => item.kind === "terminal_write" && item.title === "Terminal input")).toBeTrue();
+    expect(activity.items.filter((item) => item.kind === "terminal_write" && item.title === "Terminal input")).toHaveLength(1);
 
     const focused = await caller.terminal.globalFocus({
       op: "clear",

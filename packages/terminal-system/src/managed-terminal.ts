@@ -1,5 +1,5 @@
 import { AgenticTerminal } from "./agentic-terminal";
-import type { RenderResult, RichLine, TerminalDirtySliceResult, TerminalStatus } from "./types";
+import type { RenderResult, RichLine, TerminalDirtySliceResult, TerminalPendingInputResult, TerminalStatus } from "./types";
 
 export interface ManagedTerminalConfig {
   terminalId: string;
@@ -229,18 +229,18 @@ export class ManagedTerminal {
     void this.terminal.resize(this.cols, this.rows);
   }
 
-  async write(input: string): Promise<void> {
+  async write(input: string): Promise<TerminalPendingInputResult> {
     if (!this.terminal) {
       throw new Error(`terminal ${this.config.terminalId} is not running`);
     }
-    await this.terminal.write(input);
+    return await this.terminal.write(input);
   }
 
-  async input(mixedInput: string): Promise<void> {
+  async input(mixedInput: string): Promise<TerminalPendingInputResult> {
     if (!this.terminal) {
       throw new Error(`terminal ${this.config.terminalId} is not running`);
     }
-    await this.terminal.input(mixedInput);
+    return await this.terminal.input(mixedInput);
   }
 
   writeRaw(input: string): void {

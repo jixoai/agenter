@@ -216,6 +216,39 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
+  test("Scenario: Given mixed terminal input is rejected by terminal-core When the control plane applies it Then the caller sees failure truth and no synthetic write fact", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "mixed-failure",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+
+    const result = await plane.input({
+      terminalId: created.terminalId,
+      text: "<raw>a<raw>b</raw>c</raw>",
+      actorId: "session:admin",
+      returnRead: {
+        debounceMs: 150,
+      },
+      readMode: "snapshot",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("failed before reaching the PTY");
+    expect(result.read).toBeUndefined();
+
+    const events = plane.pageEventsAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      limit: 10,
+    }).items;
+    expect(events).toHaveLength(0);
+
+    await plane.dispose();
+  });
+
   test("Scenario: Given terminal output exceeds viewport rows When requesting the runtime snapshot Then the control plane preserves the whole scrollback for frontend restore", async () => {
     const plane = createPlane();
     const created = await plane.create({ terminalId: "scrollback" });

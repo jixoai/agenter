@@ -140,6 +140,19 @@ const matchSelfClosingTagAt = (
 const isRawOpenAt = (mixed: string, cursor: number): boolean =>
   mixed.slice(cursor, cursor + RAW_OPEN_TAG.length).toLowerCase() === RAW_OPEN_TAG;
 
+const resolveRawCloseIndex = (mixed: string, contentStart: number): number => {
+  const rawContent = mixed.slice(contentStart);
+  const nextOpenOffset = rawContent.toLowerCase().indexOf(RAW_OPEN_TAG);
+  const closeOffset = rawContent.toLowerCase().indexOf(RAW_CLOSE_TAG);
+  if (closeOffset < 0) {
+    throw new Error("mixed input raw block is missing </raw>");
+  }
+  if (nextOpenOffset >= 0 && nextOpenOffset < closeOffset) {
+    throw new Error("mixed input raw block cannot nest <raw>");
+  }
+  return contentStart + closeOffset;
+};
+
 const findNextRecognizedTagStart = (mixed: string, cursor: number): number => {
   for (let index = cursor; index < mixed.length; index += 1) {
     if (mixed[index] !== "<") {
@@ -159,10 +172,7 @@ export const parseMixedInput = (mixed: string): MixedAction[] => {
   while (cursor < mixed.length) {
     if (isRawOpenAt(mixed, cursor)) {
       const contentStart = cursor + RAW_OPEN_TAG.length;
-      const closeIndex = mixed.toLowerCase().indexOf(RAW_CLOSE_TAG, contentStart);
-      if (closeIndex < 0) {
-        throw new Error("mixed input raw block is missing </raw>");
-      }
+      const closeIndex = resolveRawCloseIndex(mixed, contentStart);
       const decoded = decodeRawText(mixed.slice(contentStart, closeIndex));
       if (decoded.length > 0) {
         actions.push({ type: "text", data: decoded });

@@ -27,6 +27,10 @@ describe("Feature: mixed terminal input parsing", () => {
     expect(() => parseMixedInput("<raw>unterminated")).toThrow("mixed input raw block is missing </raw>");
   });
 
+  test("Scenario: Given nested raw blocks When parsing mixed input Then terminal-core rejects the payload instead of partially consuming it", () => {
+    expect(() => parseMixedInput("<raw>a<raw>b</raw>c</raw>")).toThrow("mixed input raw block cannot nest <raw>");
+  });
+
   test("Scenario: Given mixed terminal input When replaying the actions Then writes and waits run sequentially", async () => {
     const writes: string[] = [];
     const waits: number[] = [];

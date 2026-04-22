@@ -140,6 +140,26 @@ test("AgenticTerminal consumes raw pending files from input/pending", async () =
   rmSync(workspace, { recursive: true, force: true });
 });
 
+test("AgenticTerminal rejects nested raw blocks in mixed pending files", async () => {
+  const terminal = new AgenticTerminal("cat", [], {
+    debounceMs: 20,
+    throttleMs: 120,
+    cols: 60,
+    rows: 8,
+  });
+
+  terminal.start();
+  const workspace = terminal.workspace;
+  const pending = join(workspace, "input", "pending", "001.mixed.txt");
+  writeFileSync(pending, "<raw>a<raw>b</raw>c</raw>", "utf8");
+
+  await waitUntil(() => existsSync(join(workspace, "input", "failed", "001.mixed.txt.failed")), 1200);
+  expect(existsSync(join(workspace, "input", "done", "001.mixed.txt.done"))).toBe(false);
+
+  await terminal.destroy(true);
+  rmSync(workspace, { recursive: true, force: true });
+});
+
 test("AgenticTerminal writes plain log lines when logStyle=plain", async () => {
   const terminal = new AgenticTerminal("sh", ["-lc", "printf '\\033[31mred\\033[0m <x>\\n'"], {
     debounceMs: 20,

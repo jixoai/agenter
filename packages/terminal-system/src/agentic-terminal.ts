@@ -253,18 +253,18 @@ export class AgenticTerminal {
    * Enqueue raw automation input through the pending inbox.
    * Raw mode is literal PTY input, so callers must include any `\r`, `\n`, or control bytes explicitly.
    */
-  public async write(rawInput: string): Promise<void> {
+  public async write(rawInput: string): Promise<TerminalPendingInputResult> {
     this.ensureStarted();
-    await this.enqueuePendingInput(rawInput, { mode: "raw", wait: true });
+    return await this.enqueuePendingInput(rawInput, { mode: "raw", wait: true });
   }
 
   /**
    * Enqueue mixed automation input through the pending inbox.
    * Mixed mode supports `<key .../>`, `<wait .../>`, and `<raw>...</raw>`.
    */
-  public async input(mixedInput: string): Promise<void> {
+  public async input(mixedInput: string): Promise<TerminalPendingInputResult> {
     this.ensureStarted();
-    await this.enqueuePendingInput(mixedInput, { mode: "mixed", wait: true });
+    return await this.enqueuePendingInput(mixedInput, { mode: "mixed", wait: true });
   }
 
   /**

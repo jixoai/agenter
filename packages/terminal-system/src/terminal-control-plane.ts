@@ -874,6 +874,10 @@ export class TerminalControlPlane {
     superadminActorId?: TerminalActorId;
     createApprovalRequest?: boolean;
   }): Promise<TerminalWriteResult> {
+    const failureMessage = (reason?: string): string => {
+      const suffix = reason ? ` (${reason})` : "";
+      return `${input.title} failed before reaching the PTY${suffix}`;
+    };
     const entry = this.ensureManagedEntry(input.terminalId);
     if (!entry.terminal.isRunning()) {
       entry.terminal.start();
@@ -906,10 +910,13 @@ export class TerminalControlPlane {
       return { ok: false, message, approvalRequest: request };
     }
 
-    if (input.mode === "raw") {
-      await entry.terminal.write(input.text);
-    } else {
-      await entry.terminal.input(input.text);
+    const pendingResult =
+      input.mode === "raw" ? await entry.terminal.write(input.text) : await entry.terminal.input(input.text);
+    if (!pendingResult.ok) {
+      return {
+        ok: false,
+        message: failureMessage(pendingResult.reason),
+      };
     }
     const writeEvent = this.db.appendEvent({
       terminalId: input.terminalId,

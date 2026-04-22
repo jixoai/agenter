@@ -11,6 +11,7 @@ Rules:
 - If you need literal `<...>` text inside mixed mode, wrap that region in `<raw>...</raw>`.
 - `<raw>...</raw>` only decodes fixed HTML entities: `&lt;`, `&gt;`, `&amp;`, `&quot;`, `&#39;`.
 - A missing `</raw>` is a hard parse error.
+- Nested `<raw>` is also a hard parse error. If you need literal `<raw>` text, encode it as `&lt;raw&gt;`.
 
 Choose raw mode when:
 
