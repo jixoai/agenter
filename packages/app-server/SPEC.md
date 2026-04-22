@@ -64,6 +64,7 @@
 - runtime-local terminal contract 固定拆成两个命令：
   - `terminal write` = raw mode，只接收 literal text，并要求调用方自己编码 Enter / control chars
   - `terminal input` = mixed mode，支持 `<key .../>`、`<wait .../>`、`<raw>...</raw>`
+- runtime / global terminal `write` / `input` 必须忠实投影 terminal-core 的 pending 结果；如果 pending unit 被拒绝，不得回传伪造的 `written` success。
 - runtime / global terminal approval 请求必须把 `requestedInput.mode` 作为 durable fact 持久化；不得再靠 `submit`、`submitKey` 之类旧字段推断真实语义。
 - descriptor-backed runtime CLI 是 JSON-only contract：只接受空输入、单个 JSON argv、或 JSON stdin；不再提供 positional / natural-flag façade 兼容。
 - runtime-facing prompt / skill / error guidance 必须保持 stateless：当命令参数不匹配时，只能客观说明当前 contract、并引导 AI 使用 `<command> --help` 或 `skill info <skill>` 获取详情；不得暗示“旧语法”“之前的规则”或“记忆残留”。

@@ -16,6 +16,11 @@ The runtime SHALL define `attention`, `message`, `workspace`, `terminal`, and de
 - **THEN** the loopback-local API route, shell CLI subcommand, and `--help` output are all derived from the same descriptor entry
 - **AND** the system does not maintain a second hand-written parser or route mapping for that operation
 
+#### Scenario: CLI and local API preserve terminal input failure truth
+- **WHEN** terminal-core rejects a pending-backed `terminal write` or `terminal input` payload
+- **THEN** the shared descriptor surface reports that failure truth back to the caller
+- **AND** it does not synthesize a successful `written` result for input that never reached the PTY
+
 #### Scenario: Skill config mutation uses the same descriptor contract
 - **WHEN** the runtime exposes `skill set-config`
 - **THEN** the loopback-local API route, shell CLI subcommand, and `--help` output are all derived from the same descriptor entry

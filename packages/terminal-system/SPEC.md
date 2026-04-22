@@ -357,6 +357,7 @@ git-log 约束：
 
 - `write()` 是 automation raw API，必须通过 pending `.raw.txt` 落盘后再消费
 - `input()` 是 automation mixed API，必须通过 pending `.mixed.txt` 落盘后再消费
+- pending 处理失败必须向 automation caller 回传失败；不能把没有真正写入 PTY 的输入伪装成 success
 - `writeRaw()` 只保留给 ATI-CLI / ATI-TUI 这类真人交互 forwarding；它不是 automation durable truth
 - mixed DSL 允许 `<key .../>`、`<wait .../>`、`<raw>...</raw>`
 - `<raw>...</raw>` 内只解码固定 HTML entities：`&lt;`、`&gt;`、`&amp;`、`&quot;`、`&#39;`

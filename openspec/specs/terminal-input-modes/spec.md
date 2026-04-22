@@ -28,6 +28,12 @@ Automation-facing terminal input SHALL use the pending inbox as its authoritativ
 - **THEN** terminal-core does not treat that file as a valid automation input unit
 - **AND** only `.raw.txt` and `.mixed.txt` are authoritative pending suffixes
 
+#### Scenario: Pending processing failures surface back to automation callers
+
+- **WHEN** terminal-core rejects a raw or mixed pending input unit during authoritative processing
+- **THEN** the automation-facing caller observes that pending failure instead of a synthetic success
+- **AND** higher layers do not append a success write fact for input that never reached the PTY
+
 ### Requirement: Mixed input SHALL support raw literal blocks
 
 Mixed input SHALL support `<raw>...</raw>` blocks so callers can emit tag-like text without invoking mixed control actions.
