@@ -223,7 +223,7 @@ export {
   type ScopedSettingsLayerSnapshot,
   type SettingsScope,
 } from "./settings-scope";
-export { createTrpcContext, type TrpcContext } from "./trpc/context";
+export { createTrpcContext, readBearerToken, type TrpcContext } from "./trpc/context";
 export { appRouter, type AppRouter } from "./trpc/router";
 export type {
   AppServerLogger,

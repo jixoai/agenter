@@ -12,7 +12,7 @@ export interface CreateTrpcContextInput {
   authorizationHeader?: string | null;
 }
 
-const readBearerToken = (value: string | null | undefined): string | null => {
+export const readBearerToken = (value: string | null | undefined): string | null => {
   if (!value) {
     return null;
   }
