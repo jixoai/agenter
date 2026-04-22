@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ScrollView } from '@agenter/svelte-components';
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban';
 	import MailPlusIcon from '@lucide/svelte/icons/mail-plus';
 	import type { Component } from 'svelte';
@@ -26,9 +27,11 @@
 	let {
 		compactSplitDetailDemo = false,
 		overflowBodyDemo = false,
+		fillNestedScrollDemo = false,
 	}: {
 		compactSplitDetailDemo?: boolean;
 		overflowBodyDemo?: boolean;
+		fillNestedScrollDemo?: boolean;
 	} = $props();
 
 	let activeTabId = $state('workspace');
@@ -79,7 +82,13 @@
 
 <Tooltip.Provider delayDuration={0}>
 	<div class={compactSplitDetailDemo ? 'h-[42rem] w-full max-w-[40rem] p-4' : 'h-[42rem] w-full max-w-5xl p-4'}>
-		<WorkbenchWindow ariaLabel="Workbench window story" value={activeTabId} {tabs} {toolbar}>
+		<WorkbenchWindow
+			ariaLabel="Workbench window story"
+			value={activeTabId}
+			{tabs}
+			{toolbar}
+			bodyMode={fillNestedScrollDemo ? 'fill' : 'scroll'}
+		>
 			{#if compactSplitDetailDemo}
 				<WorkbenchPageToolbar>
 					<div class="flex h-full items-center justify-between gap-3 px-3">
@@ -167,6 +176,26 @@
 						{/each}
 					</div>
 				</WorkbenchScaffold>
+			{:else if fillNestedScrollDemo}
+				<div class="h-full" data-testid="workbench-window-fill-demo-route">
+					<ScrollView
+						class="h-full"
+						viewportTestId="workbench-window-fill-nested-scroll-viewport"
+						contentClass="grid gap-4 px-5 py-6 md:px-7"
+					>
+						{#each Array.from({ length: 18 }, (_, index) => index + 1) as sectionId}
+							<div
+								class="grid gap-2 rounded-[1rem] border border-border/60 bg-background/55 p-5"
+								data-testid={`workbench-window-fill-card-${sectionId}`}
+							>
+								<div class="text-sm font-semibold text-foreground">Fill Section {sectionId}</div>
+								<p class="text-sm leading-6 text-muted-foreground">
+									This route intentionally wraps its own scroll owner in a plain h-full shell so fill-mode can prove it preserves nested scroll ownership.
+								</p>
+							</div>
+						{/each}
+					</ScrollView>
+				</div>
 			{:else}
 				<WorkbenchScaffold tone="page" data-testid="workbench-window-story-page">
 					{#snippet header()}

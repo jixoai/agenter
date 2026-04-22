@@ -101,7 +101,10 @@
 				contentClass="workbench-window-scroll-content"
 				viewportTestId="workbench-window-body-scroll-viewport"
 			>
-				<div class="workbench-window-content" data-workbench-window-content>
+				<div
+					class="workbench-window-content workbench-window-content--scroll"
+					data-workbench-window-content
+				>
 					{#key value}
 						{@render children?.()}
 					{/key}
@@ -109,7 +112,10 @@
 			</ScrollView>
 		{:else}
 			<div class="workbench-window-fill" data-workbench-window-fill>
-				<div class="workbench-window-content" data-workbench-window-content>
+				<div
+					class="workbench-window-content workbench-window-content--fill"
+					data-workbench-window-content
+				>
 					{#key value}
 						{@render children?.()}
 					{/key}
@@ -187,5 +193,9 @@
 	.workbench-window-content {
 		display: grid;
 		min-block-size: 100%;
+	}
+
+	.workbench-window-content--fill {
+		grid-template-rows: minmax(0, 1fr);
 	}
 </style>

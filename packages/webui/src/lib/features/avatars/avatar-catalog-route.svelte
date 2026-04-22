@@ -16,6 +16,7 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
+	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 	import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';
 	import { cn } from '$lib/utils.js';
 	import { buildAvatarCatalogHref, buildAvatarNewHref } from './avatar-workbench-location';
@@ -233,11 +234,11 @@
 {/snippet}
 
 <div
-	class="h-full min-w-0 w-full px-2 pb-2 pt-2 md:p-5"
+	class="h-full min-w-0"
 	data-testid="avatar-catalog-route"
 >
 	<WorkbenchPageContent
-		class="h-full min-w-0 w-full"
+		class="h-full min-w-0"
 		detailLayout="split-detail"
 		bind:detailCompact
 		bind:detailOpen
@@ -295,193 +296,159 @@
 		{/snippet}
 
 		{#snippet drawer()}
-			<Card.Root class="h-full gap-0 rounded-none border-0 bg-transparent py-0 shadow-none">
-				{#if !selectedEntry}
-					<Card.Content class="grid h-full place-items-center p-6">
-						<div class="grid max-w-sm gap-2 text-center">
-							<div class="text-sm font-semibold">Select an avatar</div>
-							<div class="text-sm text-muted-foreground">
-								Choose one installed avatar from the list to inspect its runtime identity.
-							</div>
-						</div>
-					</Card.Content>
+			{#snippet avatarDrawerSummary()}
+				{#if selectedEntry}
+					<div><span class="font-medium text-foreground">Status:</span> {formatStatusLabel(selectedStatusLabel)}</div>
+					<div><span class="font-medium text-foreground">Catalog:</span> {selectedEntry.defaultAvatar ? 'Default avatar' : 'Installed avatar'}</div>
+					<div><span class="font-medium text-foreground">Runtime:</span> {compactRuntimeId(selectedEntry.runtimeId)}</div>
 				{:else}
-					<Card.Header class="gap-4 border-b px-4 py-4 md:px-5 md:py-5">
-						<div class="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-							<span>Selected avatar</span>
-						</div>
-
-						<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-							<div class="flex items-start gap-3">
-								<ProfileAvatar
-									label={selectedEntry.nickname}
-									class="size-12 rounded-xl border-border/65 bg-background/70 md:size-14"
-								/>
-
-								<div class="grid min-w-0 gap-1">
-									<div class="grid min-w-0 gap-0.5 md:flex md:flex-wrap md:items-baseline md:gap-x-2 md:gap-y-1">
-										<h1 class="truncate text-lg font-semibold md:text-xl">{selectedEntry.nickname}</h1>
-										<div class="flex flex-wrap items-center gap-x-1.5 text-[11px] font-medium text-muted-foreground md:text-xs">
-											<span>{formatStatusLabel(selectedStatusLabel)}</span>
-											{#if selectedEntry.defaultAvatar}
-												<span aria-hidden="true">·</span>
-												<span>Default</span>
-											{/if}
-										</div>
-									</div>
-									<div class="text-[11px] leading-4 text-muted-foreground md:text-xs">
-										Runtime {compactRuntimeId(selectedEntry.runtimeId)}
-									</div>
-								</div>
-							</div>
-
-							<div class="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap sm:justify-end">
-								<Button
-									variant="outline"
-									size="sm"
-									class="w-full sm:w-auto"
-									onclick={() => void openAvatarRuntime({ autoStart: false, tab: 'heartbeat' })}
-									disabled={runtimeBusy}
-								>
-									<BotIcon class="size-4" />
-									Open avatar
-								</Button>
-								<Button
-									size="sm"
-									class="w-full sm:w-auto"
-									onclick={() => void openAvatarRuntime({ autoStart: true, tab: 'attention' })}
-									disabled={runtimeBusy}
-								>
-									<PlayIcon class="size-4" />
-									{primaryActionLabel}
-								</Button>
-							</div>
-						</div>
-					</Card.Header>
-
-					<Card.Content class="h-full p-0">
-						<ScrollView class="h-full" contentClass="grid gap-0">
-							{#if runtimeError}
-								<div class="border-b px-4 py-4 md:px-5">
-									<NoticeBanner tone="warning" title="Avatar runtime failed" message={runtimeError} />
-								</div>
-							{/if}
-
-							{#if draftError}
-								<div class="border-b px-4 py-4 md:px-5">
-									<NoticeBanner tone="warning" title="Avatar draft failed" message={draftError} />
-								</div>
-							{/if}
-
-							<section class="grid gap-4 border-b px-4 py-4 md:px-5">
-								<div class="grid gap-1.5">
-									<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-										Canonical runtime
-									</div>
-									<div class="break-all text-sm font-semibold leading-6 md:text-[15px]">
-										{selectedEntry.runtimeId}
-									</div>
-								</div>
-
-								<div class="grid gap-4 sm:grid-cols-2">
-									<div class="grid gap-1">
-										<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-											Origin
-										</div>
-										<div class="text-sm font-medium text-foreground/80">{selectedOriginLabel}</div>
-									</div>
-
-									<div class="grid gap-1">
-										<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-											Catalog state
-										</div>
-										<div class="text-sm font-medium text-foreground/80">
-											{selectedEntry.defaultAvatar ? 'Default avatar' : 'Installed avatar'}
-										</div>
-									</div>
-								</div>
-							</section>
-
-							<section class="grid gap-2 border-b px-4 py-4 md:px-5">
-								<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-									Actions
-								</div>
-								<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-muted-foreground">
-									<button
-										type="button"
-										class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-										disabled={draftBusy}
-										onclick={() => void openAvatarDraft()}
-									>
-										<PlusIcon class="size-3.5" />
-										{draftBusy ? 'Creating draft…' : 'Create draft from this avatar'}
-									</button>
-									<button
-										type="button"
-										class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-										onclick={() => void goto(buildWorkspaceIndexHref({ avatar: selectedEntry.nickname }))}
-									>
-										<ArrowUpRightIcon class="size-3.5" />
-										Open workspaces
-									</button>
-									<button
-										type="button"
-										class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
-										onclick={() => {
-											openCopyAvatarDialog();
-										}}
-									>
-										Copy avatar
-									</button>
-								</div>
-							</section>
-
-							<section class="grid gap-3 px-4 py-4 md:px-5">
-								<div class="text-sm font-medium text-muted-foreground">Runtime details</div>
-
-								<div class="grid gap-0 divide-y divide-border/50">
-									{#if workspaceSlotMatchesRoot}
-										<div class="grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
-											<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-												Runtime home
-											</div>
-											<div
-												class="break-all font-mono text-xs leading-5 text-foreground/80 md:min-w-0 md:truncate md:whitespace-nowrap"
-												title={selectedEntry.globalPath}
-											>
-												{selectedEntry.globalPath}
-											</div>
-										</div>
-									{:else}
-										<div class="grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
-											<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-												Root workspace
-											</div>
-											<div
-												class="break-all font-mono text-xs leading-5 text-foreground/80 md:min-w-0 md:truncate md:whitespace-nowrap"
-												title={selectedEntry.globalPath}
-											>
-												{selectedEntry.globalPath}
-											</div>
-										</div>
-										<div class="grid gap-1 py-3 md:grid-cols-[7.25rem_minmax(0,1fr)] md:items-start md:gap-4">
-											<div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-												Workspace slot
-											</div>
-											<div
-												class="break-all font-mono text-xs leading-5 text-foreground/80 md:min-w-0 md:truncate md:whitespace-nowrap"
-												title={selectedEntry.workspacePrivatePath}
-											>
-												{selectedEntry.workspacePrivatePath}
-											</div>
-										</div>
-									{/if}
-								</div>
-							</section>
-						</ScrollView>
-					</Card.Content>
+					<div>Select one avatar to preview it here.</div>
 				{/if}
-			</Card.Root>
+			{/snippet}
+
+			<WorkbenchDetailDrawer
+				tone={detailCompact ? 'page' : 'pane'}
+				title={selectedEntry ? selectedEntry.nickname : 'Selected avatar'}
+				description="Preview before runtime entry."
+				summary={avatarDrawerSummary}
+			>
+				{#if !selectedEntry}
+					<div class="text-sm text-muted-foreground">Select one installed avatar from the list to inspect its runtime identity.</div>
+				{:else}
+					{#if runtimeError}
+						<NoticeBanner tone="warning" title="Avatar runtime failed" message={runtimeError} />
+					{/if}
+
+					{#if draftError}
+						<NoticeBanner tone="warning" title="Avatar draft failed" message={draftError} />
+					{/if}
+
+					<div class="grid gap-4">
+						<div class="flex items-start gap-3">
+							<ProfileAvatar
+								label={selectedEntry.nickname}
+								class="size-12 rounded-xl border-border/65 bg-background/70 md:size-14"
+							/>
+							<div class="grid min-w-0 gap-1">
+								<div class="grid min-w-0 gap-0.5 md:flex md:flex-wrap md:items-baseline md:gap-x-2 md:gap-y-1">
+									<h2 class="truncate text-lg font-semibold md:text-xl">{selectedEntry.nickname}</h2>
+									<div class="flex flex-wrap items-center gap-x-1.5 text-[11px] font-medium text-muted-foreground md:text-xs">
+										<span>{formatStatusLabel(selectedStatusLabel)}</span>
+										{#if selectedEntry.defaultAvatar}
+											<span aria-hidden="true">·</span>
+											<span>Default</span>
+										{/if}
+									</div>
+								</div>
+								<div class="text-[11px] leading-4 text-muted-foreground md:text-xs">
+									Runtime {compactRuntimeId(selectedEntry.runtimeId)}
+								</div>
+							</div>
+						</div>
+
+						<div class="grid gap-2 sm:grid-cols-2">
+							<Button
+								variant="outline"
+								class="w-full"
+								onclick={() => void openAvatarRuntime({ autoStart: false, tab: 'heartbeat' })}
+								disabled={runtimeBusy}
+							>
+								<BotIcon class="size-4" />
+								Open avatar
+							</Button>
+							<Button
+								class="w-full"
+								onclick={() => void openAvatarRuntime({ autoStart: true, tab: 'attention' })}
+								disabled={runtimeBusy}
+							>
+								<PlayIcon class="size-4" />
+								{primaryActionLabel}
+							</Button>
+						</div>
+
+						<div class="grid gap-3 rounded-[0.9rem] bg-muted/24 px-4 py-4">
+							<div class="grid gap-1.5">
+								<div class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Canonical runtime</div>
+								<div class="break-all text-sm font-semibold leading-6 md:text-[15px]">
+									{selectedEntry.runtimeId}
+								</div>
+							</div>
+
+							<div class="grid gap-3 sm:grid-cols-2">
+								<div class="grid gap-1">
+									<div class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Origin</div>
+									<div class="text-sm font-medium text-foreground/80">{selectedOriginLabel}</div>
+								</div>
+								<div class="grid gap-1">
+									<div class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Catalog state</div>
+									<div class="text-sm font-medium text-foreground/80">
+										{selectedEntry.defaultAvatar ? 'Default avatar' : 'Installed avatar'}
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="grid gap-2.5 rounded-[0.9rem] border border-border/50 px-4 py-4">
+							<div class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Actions</div>
+							<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-muted-foreground">
+								<button
+									type="button"
+									class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+									disabled={draftBusy}
+									onclick={() => void openAvatarDraft()}
+								>
+									<PlusIcon class="size-3.5" />
+									{draftBusy ? 'Creating draft…' : 'Create draft from this avatar'}
+								</button>
+								<button
+									type="button"
+									class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+									onclick={() => void goto(buildWorkspaceIndexHref({ avatar: selectedEntry.nickname }))}
+								>
+									<ArrowUpRightIcon class="size-3.5" />
+									Open workspaces
+								</button>
+								<button
+									type="button"
+									class="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+									onclick={openCopyAvatarDialog}
+								>
+									Copy avatar
+								</button>
+							</div>
+						</div>
+
+						<div class="grid gap-0 rounded-[0.9rem] border border-border/50">
+							<div class="border-b border-border/50 px-4 py-3 text-sm font-medium text-muted-foreground">
+								Runtime details
+							</div>
+							<div class="grid gap-0 divide-y divide-border/50 px-4">
+								{#if workspaceSlotMatchesRoot}
+									<div class="grid gap-1 py-3">
+										<div class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Runtime home</div>
+										<div class="break-all font-mono text-xs leading-5 text-foreground/80">
+											{selectedEntry.globalPath}
+										</div>
+									</div>
+								{:else}
+									<div class="grid gap-1 py-3">
+										<div class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Root workspace</div>
+										<div class="break-all font-mono text-xs leading-5 text-foreground/80">
+											{selectedEntry.globalPath}
+										</div>
+									</div>
+									<div class="grid gap-1 py-3">
+										<div class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Workspace slot</div>
+										<div class="break-all font-mono text-xs leading-5 text-foreground/80">
+											{selectedEntry.workspacePrivatePath}
+										</div>
+									</div>
+								{/if}
+							</div>
+						</div>
+					</div>
+				{/if}
+			</WorkbenchDetailDrawer>
 		{/snippet}
 	</WorkbenchPageContent>
 </div>

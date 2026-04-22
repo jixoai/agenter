@@ -10,6 +10,9 @@ describe("Feature: Avatar catalog shared list-detail contract", () => {
     expect(avatarCatalogRouteSource).toContain(
       "import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';",
     );
+    expect(avatarCatalogRouteSource).toContain(
+      "import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';",
+    );
     expect(avatarCatalogRouteSource).toContain('detailLayout="split-detail"');
     expect(avatarCatalogRouteSource).toContain("bind:detailCompact");
     expect(avatarCatalogRouteSource).toContain("bind:detailOpen");
@@ -17,6 +20,12 @@ describe("Feature: Avatar catalog shared list-detail contract", () => {
     expect(avatarCatalogRouteSource).not.toContain('class="avatar-catalog-layout grid');
     expect(avatarCatalogRouteSource).not.toContain("avatar-catalog-layout__rail");
     expect(avatarCatalogRouteSource).not.toContain("avatar-catalog-layout__lens");
+  });
+
+  test("Scenario: Given shared split-detail owns the available canvas When reviewing the route wrapper Then avatar-catalog-route stays a neutral host instead of shrinking page-content with route-level padding", () => {
+    expect(avatarCatalogRouteSource).toContain('class="h-full min-w-0"');
+    expect(avatarCatalogRouteSource).toContain('data-testid="avatar-catalog-route"');
+    expect(avatarCatalogRouteSource).not.toContain("px-2 pb-2 pt-2 md:p-5");
   });
 
   test("Scenario: Given compact list-detail needs the same ownership law as workspaces When an avatar row is selected Then the route opens the shared detail drawer instead of stacking a second inline detail column", () => {
@@ -54,11 +63,15 @@ describe("Feature: Avatar catalog shared list-detail contract", () => {
   });
 
   test("Scenario: Given the detail pane is now a real drawer surface When reading the source Then selected avatar actions and runtime facts live inside one dedicated detail panel", () => {
-    expect(avatarCatalogRouteSource).toContain("<span>Selected avatar</span>");
+    expect(avatarCatalogRouteSource).toContain("<WorkbenchDetailDrawer");
+    expect(avatarCatalogRouteSource).toContain('description="Preview before runtime entry."');
     expect(avatarCatalogRouteSource).toContain("Canonical runtime");
     expect(avatarCatalogRouteSource).toContain("Catalog state");
     expect(avatarCatalogRouteSource).toContain("Actions");
     expect(avatarCatalogRouteSource).toContain("Runtime details");
+    expect(avatarCatalogRouteSource).toContain("Status:");
+    expect(avatarCatalogRouteSource).toContain("Catalog:");
+    expect(avatarCatalogRouteSource).toContain("Runtime:");
     expect(avatarCatalogRouteSource).toContain("Create draft from this avatar");
     expect(avatarCatalogRouteSource).toContain("Open workspaces");
     expect(avatarCatalogRouteSource).toContain("Copy avatar");

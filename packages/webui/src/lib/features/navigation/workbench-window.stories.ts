@@ -77,3 +77,19 @@ export const BodyScrollOwnsOverflowingPageContent = {
 		expect(bodyScrollViewport.scrollHeight).toBeGreaterThan(bodyScrollViewport.clientHeight);
 	},
 } satisfies Story;
+
+export const FillBodyPreservesNestedScrollOwnership = {
+	name: 'Scenario: Given fill-mode route content wraps its own scroll owner When the shared workbench body renders Then the nested viewport stays bounded instead of stretching to content height',
+	args: {
+		fillNestedScrollDemo: true,
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const nestedViewport = canvas.getByTestId('workbench-window-fill-nested-scroll-viewport');
+
+		await expect(canvas.getByTestId('workbench-window-fill-demo-route')).toBeInTheDocument();
+		await expect(canvas.getByTestId('workbench-window-fill-card-18')).toBeInTheDocument();
+		expect(getComputedStyle(nestedViewport).overflowY).not.toBe('hidden');
+		expect(nestedViewport.scrollHeight).toBeGreaterThan(nestedViewport.clientHeight);
+	},
+} satisfies Story;
