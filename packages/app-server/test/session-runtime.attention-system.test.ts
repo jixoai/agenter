@@ -2559,6 +2559,61 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(terminalActivityView.pageTerminalActivity("main", { limit: 10 }).items).toEqual([]);
   });
 
+  test("Scenario: Given an explicit runtime terminal read When tooling requests a snapshot Then terminal activity records the read by default", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    internal.config = {
+      terminals: {
+        main: {
+          terminalId: "main",
+          cwd: "/tmp",
+          command: ["bash"],
+          commandLabel: "bash",
+          gitLog: false,
+        },
+      },
+    };
+    internal.terminals.set("main", {
+      isRunning: () => true,
+      getSnapshot: () => ({
+        seq: 4,
+        cols: 80,
+        rows: 24,
+        cursor: { x: 0, y: 1 },
+        lines: ["echo ready", "line 2"],
+      }),
+      getStatus: () => "IDLE",
+      sliceDirty: async () => ({
+        ok: true,
+        changed: false,
+        fromHash: null,
+        toHash: null,
+        diff: "",
+        bytes: 0,
+      }),
+    });
+
+    const payload = await runtime.readRuntimeTerminal({
+      terminalId: "main",
+      mode: "snapshot",
+    });
+    const readPayload = payload as {
+      kind: string;
+      snapshot?: { lines?: string[] };
+      recordedActivity?: boolean;
+    };
+    const terminalActivityView = internal as RuntimeInternal & {
+      pageTerminalActivity: (terminalId: string, input?: { limit?: number }) => { items: Array<{ kind?: string }> };
+    };
+
+    expect(readPayload.kind).toBe("terminal-snapshot");
+    expect(readPayload.snapshot?.lines).toEqual(["echo ready", "line 2"]);
+    expect(readPayload.recordedActivity).toBeTrue();
+    expect(terminalActivityView.pageTerminalActivity("main", { limit: 10 }).items).toHaveLength(1);
+    expect(terminalActivityView.pageTerminalActivity("main", { limit: 10 }).items[0]?.kind).toBe("terminal_read");
+  });
+
   test("Scenario: Given source-driven drafts When a cycle policy hook defers Then terminal history still commits while cycle start stays deferred", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;

@@ -738,7 +738,7 @@ export class TerminalControlPlane {
       terminalId,
       mode,
       remark: options.remark ?? false,
-      recordActivity: options.recordActivity ?? false,
+      recordActivity: options.recordActivity ?? true,
     });
   }
 
@@ -773,11 +773,11 @@ export class TerminalControlPlane {
         );
         const shouldUseDiff = mode === "diff" || JSON.stringify(diffPayload).length <= JSON.stringify(snapshotPayload).length;
         if (shouldUseDiff) {
-          return this.finalizeReadResult(diffPayload, actorId, input.recordActivity ?? false);
+          return this.finalizeReadResult(diffPayload, actorId, input.recordActivity ?? true);
         }
       }
     }
-    return this.finalizeReadResult(snapshotPayload, actorId, input.recordActivity ?? false);
+    return this.finalizeReadResult(snapshotPayload, actorId, input.recordActivity ?? true);
   }
 
   async snapshot(terminalId: string, options: { remark?: boolean; recordActivity?: boolean } = {}): Promise<TerminalReadResult> {

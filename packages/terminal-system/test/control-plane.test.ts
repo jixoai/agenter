@@ -271,7 +271,7 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
-  test("Scenario: Given pure reads and explicit observations When inspection runs Then activity history only records explicit observations", async () => {
+  test("Scenario: Given explicit terminal reads When inspection runs Then activity history records reads by default and only explicit opt-out stays silent", async () => {
     const plane = createPlane();
     plane.setActorPresence("session:owner", true);
     const created = await plane.create({
@@ -285,27 +285,27 @@ describe("Feature: terminal control plane", () => {
       actorId: "session:owner",
       mode: "snapshot",
     });
+    const initialItems = plane.pageEventsAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      limit: 10,
+    }).items;
+    expect(initialItems).toHaveLength(1);
+    expect(initialItems[0]?.kind).toBe("terminal_read");
+
+    await plane.readAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      mode: "snapshot",
+      recordActivity: false,
+    });
     expect(
       plane.pageEventsAuthorized({
         terminalId: created.terminalId,
         actorId: "session:owner",
         limit: 10,
       }).items,
-    ).toHaveLength(0);
-
-    await plane.readAuthorized({
-      terminalId: created.terminalId,
-      actorId: "session:owner",
-      mode: "snapshot",
-      recordActivity: true,
-    });
-    const items = plane.pageEventsAuthorized({
-      terminalId: created.terminalId,
-      actorId: "session:owner",
-      limit: 10,
-    }).items;
-    expect(items).toHaveLength(1);
-    expect(items[0]?.kind).toBe("terminal_read");
+    ).toHaveLength(1);
 
     await plane.dispose();
   });

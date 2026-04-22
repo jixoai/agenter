@@ -2704,7 +2704,7 @@ export class SessionRuntime {
     return await this.readTerminalRepresentation(input.terminalId, {
       mode: input.mode ?? "auto",
       remark: false,
-      recordActivity: input.recordActivity ?? false,
+      recordActivity: input.recordActivity ?? true,
     });
   }
 
