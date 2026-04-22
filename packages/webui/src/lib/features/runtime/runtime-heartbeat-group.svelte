@@ -30,6 +30,7 @@
 
 <div
 	class="grid min-w-0 gap-2.5"
+	data-heartbeat-group-key={group.groupId}
 	data-layout-mode={layoutMode}
 	data-testid={`runtime-heartbeat-group-${group.id}`}
 >

@@ -284,7 +284,7 @@
 			: value.replace(/["\\]/gu, '\\$&');
 
 	const resolveGroupSelector = (groupId: string): string =>
-		`[data-testid="runtime-heartbeat-group-${escapeSelectorValue(groupId)}"]`;
+		`[data-heartbeat-group-key="${escapeSelectorValue(groupId)}"]`;
 
 	$effect(() => {
 		const hasLoadedGroups = groupsState.loaded && groups.length > 0;
