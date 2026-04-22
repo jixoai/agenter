@@ -79,10 +79,10 @@ Actors with the `requester` role SHALL NOT write directly to the PTY. Instead, e
 ### Requirement: Approved requests SHALL mint timeboxed write leases
 When an admin approves a requester write flow, the control plane SHALL mint a timeboxed write lease with an explicit expiry, and every terminal input path, including transport input and raw writes, SHALL enforce that lease before reaching the PTY.
 
-#### Scenario: Approved lease unlocks raw and submitted writes
+#### Scenario: Approved lease unlocks raw and mixed terminal input
 - **WHEN** an admin approves a requester's write request for a `30m`, `2h`, or `24h` duration
 - **THEN** the control plane grants a write lease valid until the computed expiry
-- **THEN** both submitted input and raw terminal writes are accepted until that lease expires
+- **THEN** both raw terminal writes and mixed terminal input are accepted until that lease expires
 
 #### Scenario: Expired lease blocks further writes
 - **WHEN** a previously approved write lease has passed its expiry time

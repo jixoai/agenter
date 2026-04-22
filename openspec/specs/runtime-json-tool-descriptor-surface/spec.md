@@ -11,6 +11,11 @@ The runtime SHALL define `attention`, `message`, `workspace`, `terminal`, and de
 - **THEN** the loopback-local API route, shell CLI subcommand, and `--help` output are all derived from the same descriptor entry
 - **AND** the system does not maintain a second hand-written parser or route mapping for that operation
 
+#### Scenario: CLI and local API dispatch the mixed terminal input descriptor
+- **WHEN** the runtime exposes `terminal input`
+- **THEN** the loopback-local API route, shell CLI subcommand, and `--help` output are all derived from the same descriptor entry
+- **AND** the system does not maintain a second hand-written parser or route mapping for that operation
+
 #### Scenario: Skill config mutation uses the same descriptor contract
 - **WHEN** the runtime exposes `skill set-config`
 - **THEN** the loopback-local API route, shell CLI subcommand, and `--help` output are all derived from the same descriptor entry
@@ -20,7 +25,12 @@ The runtime SHALL define `attention`, `message`, `workspace`, `terminal`, and de
 The AI-facing shell CLI SHALL accept only canonical JSON payload forms for descriptor-backed subcommands: empty input when the schema allows `{}`, one JSON argv payload, or JSON stdin payload. When `--compact` is present, the payload source SHALL be a compact JSON array derived from the descriptor schema instead of an object JSON payload.
 
 #### Scenario: CLI accepts a single JSON argv payload
-- **WHEN** the AI runs `terminal write '{\"terminalId\":\"term-1\",\"text\":\"npm run dev\",\"submit\":true}'`
+- **WHEN** the AI runs `terminal write '{\"terminalId\":\"term-1\",\"text\":\"npm run dev\\r\"}'`
+- **THEN** the CLI validates that JSON against the shared descriptor schema
+- **AND** it forwards the normalized payload to the matching runtime-local API route
+
+#### Scenario: CLI accepts a mixed terminal input payload
+- **WHEN** the AI runs `terminal input '{\"terminalId\":\"term-1\",\"text\":\"npm run dev<key data=\\\"enter\\\"/>\"}'`
 - **THEN** the CLI validates that JSON against the shared descriptor schema
 - **AND** it forwards the normalized payload to the matching runtime-local API route
 
@@ -37,12 +47,19 @@ The AI-facing shell CLI SHALL accept only canonical JSON payload forms for descr
 ### Requirement: Runtime CLI help SHALL be generated from descriptor description and input schema
 Each descriptor-backed runtime CLI subcommand SHALL expose `--help` output generated from the shared descriptor description, input schema, and canonical examples.
 
-#### Scenario: Help reveals schema-backed terminal write usage
+#### Scenario: Help reveals schema-backed terminal write raw usage
 - **WHEN** the AI runs `terminal write --help`
 - **THEN** the output shows the descriptor description
 - **AND** it includes the JSON input schema for `terminal write`
 - **AND** it includes a preferred `root_bash.command + stdin` example
+- **AND** it explains that `terminal write` is raw mode without implicit submit
 - **AND** any argv example is presented only as the compact form for trivially short payloads
+
+#### Scenario: Help reveals schema-backed mixed terminal input usage
+- **WHEN** the AI runs `terminal input --help`
+- **THEN** the output shows the descriptor description
+- **AND** it includes the JSON input schema for `terminal input`
+- **AND** it points the caller to skill material for the mixed DSL, including raw literal blocks
 
 #### Scenario: Help probes return locally without invoking business actions
 - **WHEN** the AI runs commands such as `message --help` or `terminal write --help`
@@ -55,7 +72,7 @@ Built-in runtime skills SHALL teach descriptor-backed CLI usage using only canon
 #### Scenario: Built-in skills stop teaching natural flag forms
 - **WHEN** the runtime renders built-in skill content for `agenter-message` or `agenter-terminal`
 - **THEN** the examples use JSON argv or JSON stdin payloads
-- **AND** the content points the model to `message send --help`, `terminal write --help`, or `skill info` for discovery
+- **AND** the content points the model to `message send --help`, `terminal write --help`, `terminal input --help`, or `skill info` for discovery
 - **AND** it does not teach `--room`, `--content`, `--input`, or positional payload syntax as valid command forms
 
 ### Requirement: Runtime CLI SHALL preserve UTF-8 JSON payload fidelity

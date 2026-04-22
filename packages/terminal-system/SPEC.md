@@ -40,7 +40,8 @@
 - `output/latest.log.html`
 - `output/{start}~{end}.log.html`
 - `input/ai-input.log`
-- `input/pending/*.xml|*.txt`
+- `input/pending/*.raw.txt`
+- `input/pending/*.mixed.txt`
 - `input/done/*.done`
 - `input/failed/*.failed`
 - `debug/ati-cli.ndjson`
@@ -60,7 +61,12 @@
 - 必须维护“文件链”（仅维护文件关系，不缓存文件内容）：
   - `archive[0] -> archive[1] -> ... -> latest.log.html`
   - 任何分页、恢复、重写都必须基于链路更新，避免产生多余文件
-  - 同名归档文件只能在链上存在一次（幂等）
+- 同名归档文件只能在链上存在一次（幂等）
+- automation-facing terminal input 的 durable truth 只能来自 `input/pending/*`
+- pending 文件后缀是输入模式真源：
+  - `.raw.txt` 表示 literal raw bytes
+  - `.mixed.txt` 表示 mixed DSL
+- 未声明为这两种后缀的文件不得被当作 authoritative terminal input
 
 统一 YAML 头注释约束：
 
@@ -337,7 +343,8 @@ git-log 约束：
 
 - `AgenticTerminal`
   - `start()`
-  - `writeMixed()`
+  - `write()`
+  - `input()`
   - `writeRaw()`
   - `forceCommit()`
   - `destroy()`
@@ -345,6 +352,14 @@ git-log 约束：
   - `onExit()`
   - `onStructured()`
   - `getLatestStructured()`
+
+输入法则：
+
+- `write()` 是 automation raw API，必须通过 pending `.raw.txt` 落盘后再消费
+- `input()` 是 automation mixed API，必须通过 pending `.mixed.txt` 落盘后再消费
+- `writeRaw()` 只保留给 ATI-CLI / ATI-TUI 这类真人交互 forwarding；它不是 automation durable truth
+- mixed DSL 允许 `<key .../>`、`<wait .../>`、`<raw>...</raw>`
+- `<raw>...</raw>` 内只解码固定 HTML entities：`&lt;`、`&gt;`、`&amp;`、`&quot;`、`&#39;`
 
 文件链读取 API（面向 demo/工具）：
 

@@ -29,3 +29,4 @@ Any terminal input sent through websocket transport SHALL respect the same grant
 - **WHEN** a requester has a valid active write lease for that terminal
 - **THEN** transport input is accepted until the lease expires
 - **THEN** expiry immediately restores transport-side rejection for further input
+- **AND** transport remains a collaboration-governed raw forwarding path rather than a bypass around the raw/mixed terminal authority model
