@@ -77,6 +77,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Context compact 是强制的内核能力；它只重写 bounded `promptWindow`，可以丢弃已完成噪音，但不得丢弃未完成 attention debt 或 durable facts。
 - 用户可见回复与内部推进必须分离：attention/internal activity 不自动等于 user-visible reply。
 - `session.stop` 的 durable 语义是“runtime 脱离 kernel ownership”；之后的 `session.start` 必须从 persisted session/attention facts 重建 runtime，而不是恢复隐藏的 paused in-memory runtime。
+- client-side stopped/paused session projection 必须保留最近一次已加载的 inspection truth（如 Heartbeat、observability、model calls、request aux、terminal snapshot/read）；runtime 缺席只表示 live ownership 消失，不得把这些 surface 退回空白 loading。
 - 真正的冷重启恢复必须经得起 real-provider 验收：在 room 可见交付之后，经过 `session.stop -> kernel restart -> session.start`，同一 session 仍能继续完成后续反馈。
 
 ## 5. 产品表面长期法则
