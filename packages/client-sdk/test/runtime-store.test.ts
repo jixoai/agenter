@@ -938,6 +938,21 @@ const createMockClient = (input: {
       model?: string;
     };
   }) => Promise<unknown>;
+  schedulerLogsQuery?: (input: {
+    sessionId: string;
+    before?: { beforeTimeMs: number; beforeId: number };
+    limit?: number;
+  }) => Promise<ReversePageResult<unknown>>;
+  observabilityTracesQuery?: (input: {
+    sessionId: string;
+    before?: { beforeTimeMs: number; beforeId: number };
+    limit?: number;
+  }) => Promise<ReversePageResult<unknown>>;
+  modelCallsPageQuery?: (input: {
+    sessionId: string;
+    before?: { beforeTimeMs: number; beforeId: number };
+    limit?: number;
+  }) => Promise<ReversePageResult<unknown>>;
   requestAuxPageQuery?: (input: {
     sessionId: string;
     before?: { beforeTimeMs: number; beforeId: number };
@@ -950,6 +965,11 @@ const createMockClient = (input: {
   }) => Promise<ReversePageResult<unknown>>;
   requestCompactMutate?: (input: { sessionId: string }) => Promise<{ ok: boolean }>;
   heartbeatPartsPageQuery?: (input: {
+    sessionId: string;
+    before?: { beforeTimeMs: number; beforeId: number };
+    limit?: number;
+  }) => Promise<ReversePageResult<unknown>>;
+  apiCallsPageQuery?: (input: {
     sessionId: string;
     before?: { beforeTimeMs: number; beforeId: number };
     limit?: number;
@@ -1131,13 +1151,34 @@ const createMockClient = (input: {
           },
         },
         schedulerLogs: {
-          query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
+          query: async (payload: {
+            sessionId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.schedulerLogsQuery
+              ? await input.schedulerLogsQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
         },
         observabilityTraces: {
-          query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
+          query: async (payload: {
+            sessionId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.observabilityTracesQuery
+              ? await input.observabilityTracesQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
         },
         modelCallsPage: {
-          query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
+          query: async (payload: {
+            sessionId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.modelCallsPageQuery
+              ? await input.modelCallsPageQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
         },
         heartbeatGroupsPage: {
           query: async (payload: {
@@ -1170,7 +1211,14 @@ const createMockClient = (input: {
               : { items: [], nextBefore: null, hasMoreBefore: false },
         },
         apiCallsPage: {
-          query: async () => ({ items: [], nextBefore: null, hasMoreBefore: false }),
+          query: async (payload: {
+            sessionId: string;
+            before?: { beforeTimeMs: number; beforeId: number };
+            limit?: number;
+          }) =>
+            input.apiCallsPageQuery
+              ? await input.apiCallsPageQuery(payload)
+              : { items: [], nextBefore: null, hasMoreBefore: false },
         },
         terminalActivityPage: {
           query: async (payload: {
@@ -1277,12 +1325,7 @@ const createMockClient = (input: {
               : { ok: true, messageId: payload.messageId, updatedAt: Date.now() },
         },
         recall: {
-          mutate: async (payload: {
-            sessionId: string;
-            chatId: string;
-            accessToken: string;
-            messageId: number;
-          }) =>
+          mutate: async (payload: { sessionId: string; chatId: string; accessToken: string; messageId: number }) =>
             input.messageRecallMutate
               ? await input.messageRecallMutate(payload)
               : { ok: true, messageId: payload.messageId, updatedAt: Date.now(), recalledAt: Date.now() },
@@ -1390,22 +1433,13 @@ const createMockClient = (input: {
           }) => (input.messageGlobalSendMutate ? await input.messageGlobalSendMutate(payload) : { ok: true }),
         },
         globalEdit: {
-          mutate: async (payload: {
-            chatId: string;
-            accessToken?: string;
-            messageId: number;
-            text: string;
-          }) =>
+          mutate: async (payload: { chatId: string; accessToken?: string; messageId: number; text: string }) =>
             input.messageGlobalEditMutate
               ? await input.messageGlobalEditMutate(payload)
               : { ok: true, messageId: payload.messageId, updatedAt: Date.now() },
         },
         globalRecall: {
-          mutate: async (payload: {
-            chatId: string;
-            accessToken?: string;
-            messageId: number;
-          }) =>
+          mutate: async (payload: { chatId: string; accessToken?: string; messageId: number }) =>
             input.messageGlobalRecallMutate
               ? await input.messageGlobalRecallMutate(payload)
               : { ok: true, messageId: payload.messageId, updatedAt: Date.now(), recalledAt: Date.now() },
@@ -1880,12 +1914,7 @@ const createMockClient = (input: {
               : emptyNotificationSnapshot(),
         },
         consume: {
-          mutate: async (payload: {
-            sessionId: string;
-            chatId?: string;
-            terminalId?: string;
-            upToSrc?: string;
-          }) =>
+          mutate: async (payload: { sessionId: string; chatId?: string; terminalId?: string; upToSrc?: string }) =>
             input.consumeNotificationsMutate
               ? await input.consumeNotificationsMutate(payload)
               : emptyNotificationSnapshot(),
@@ -4040,15 +4069,13 @@ describe("Feature: runtime store synchronization", () => {
       },
     });
 
-    await waitFor(
-      () => {
-        const payload = store
-          .getState()
-          .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:52")?.items[0]
-          ?.parts[0]?.payload;
-        return payload !== undefined && JSON.stringify(payload).includes("attention commit");
-      },
-    );
+    await waitFor(() => {
+      const payload = store
+        .getState()
+        .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:52")?.items[0]
+        ?.parts[0]?.payload;
+      return payload !== undefined && JSON.stringify(payload).includes("attention commit");
+    });
 
     expect(store.getState().heartbeatGroupsBySession["i-1"]?.data).toEqual([
       expect.objectContaining({
@@ -4079,9 +4106,7 @@ describe("Feature: runtime store synchronization", () => {
   test("Scenario: Given a running Heartbeat tool row arrives before grouped refresh resolves When the store receives the objective heartbeatPart event Then the running command is visible immediately", async () => {
     let onData: ((event: unknown) => void) | undefined;
     let heartbeatPageQueryCount = 0;
-    let resolveRefresh:
-      | ((value: ReversePageResult<HeartbeatGroupItem>) => void)
-      | undefined;
+    let resolveRefresh: ((value: ReversePageResult<HeartbeatGroupItem>) => void) | undefined;
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(930),
       onSubscribe: (handlers) => {
@@ -4161,7 +4186,9 @@ describe("Feature: runtime store synchronization", () => {
       const group = store
         .getState()
         .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:53");
-      const toolEntry = group?.items.find((item) => item.messageId === "heartbeat-part:ai-call:53:tool:call-attention-commit");
+      const toolEntry = group?.items.find(
+        (item) => item.messageId === "heartbeat-part:ai-call:53:tool:call-attention-commit",
+      );
       const toolPayload = toolEntry?.parts[0]?.payload as { input?: { command?: string } } | undefined;
       return toolPayload?.input?.command === 'attention commit --compact \'["ctx-1",[],"Settled."]\'';
     });
@@ -4267,8 +4294,10 @@ describe("Feature: runtime store synchronization", () => {
       const group = store
         .getState()
         .heartbeatGroupsBySession["i-1"]?.data.find((item) => item.groupId === "heartbeat-group:call:53");
-      return group?.items.find((item) => item.messageId === "heartbeat-part:ai-call:53:tool:call-attention-commit")
-        ?.parts.length === 2;
+      return (
+        group?.items.find((item) => item.messageId === "heartbeat-part:ai-call:53:tool:call-attention-commit")?.parts
+          .length === 2
+      );
     });
 
     store.disconnect();
@@ -4349,9 +4378,9 @@ describe("Feature: runtime store synchronization", () => {
       expect(
         store
           .getState()
-          .heartbeatGroupsBySession["i-1"]?.data[0]?.items.some(
-            (item) => item.messageId === "heartbeat-part:assistant:burst" && item.text === "refresh-2",
-          ),
+          .heartbeatGroupsBySession[
+            "i-1"
+          ]?.data[0]?.items.some((item) => item.messageId === "heartbeat-part:assistant:burst" && item.text === "refresh-2"),
       ).toBe(true);
     } finally {
       clearInterval(interval);
@@ -4363,8 +4392,7 @@ describe("Feature: runtime store synchronization", () => {
   test("Scenario: Given unread notifications When visibility and consume updates arrive Then store keeps unread state in sync", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const visibilityInputs: Array<{ sessionId: string; chatId?: string; visible: boolean; focused: boolean }> = [];
-    const consumeInputs: Array<{ sessionId: string; chatId?: string; terminalId?: string; upToSrc?: string }> =
-      [];
+    const consumeInputs: Array<{ sessionId: string; chatId?: string; terminalId?: string; upToSrc?: string }> = [];
     const client = createMockClient({
       snapshotQuery: async () => createSnapshot(800),
       notificationSnapshotQuery: async () => ({
@@ -5056,8 +5084,13 @@ describe("Feature: runtime store synchronization", () => {
     await store.stopSession("i-1");
 
     expect(store.getState().runtimes["i-1"]?.started).toBe(true);
-    expect(store.getState().runtimes["i-1"]?.terminals).toEqual([]);
-    expect(store.getState().terminalSnapshotsBySession["i-1"]).toEqual({});
+    expect(store.getState().runtimes["i-1"]?.terminals).toMatchObject([
+      {
+        terminalId: "main",
+        status: "IDLE",
+      },
+    ]);
+    expect(store.getState().terminalSnapshotsBySession["i-1"]).toHaveProperty("main");
     expect(store.getState().chatCyclesBySession["i-1"]?.map((cycle) => cycle.id)).toEqual(["cycle:11"]);
     const storedAttention = store.getState().attentionBySession?.["i-1"];
     const runtimeAttention = store.getState().runtimes["i-1"]?.attention;
@@ -5065,6 +5098,372 @@ describe("Feature: runtime store synchronization", () => {
     expect(runtimeAttention).toBeDefined();
     expect(storedAttention?.snapshot.contexts[0]?.contextId).toBe("ctx-chat-kzf");
     expect(runtimeAttention?.snapshot.contexts[0]?.contextId).toBe("ctx-chat-kzf");
+    store.disconnect();
+  });
+
+  test("Scenario: Given Heartbeat inspection facts are already mounted When stopSession soft-refreshes a detached runtime Then the cached inspection lists stay visible until refresh settles", async () => {
+    let snapshotCalls = 0;
+    const pausedSession = {
+      ...createSnapshot(0).sessions[0],
+      status: "paused" as const,
+    };
+    const persistedAttention: RuntimeAttentionState = {
+      snapshot: {
+        contexts: [
+          createAttentionContext({
+            contextId: "ctx-runtime-proof",
+            owner: "avatar:jane",
+            content: "keep inspection truth visible",
+            contentFormat: "markdown",
+            scoreMap: { d4e5f6: 40 },
+            commit: createAttentionCommit({
+              commitId: "commit-keep-proof",
+              contextId: "ctx-runtime-proof",
+              author: "user:kzf",
+              source: "message",
+              summary: "Preserve runtime inspection truth",
+              value: "keep inspection truth visible",
+              scores: { d4e5f6: 40 },
+              format: "markdown",
+            }),
+          }),
+        ],
+      },
+      active: [],
+      cycleFrames: [],
+      hooks: [],
+    };
+    const logsDeferred = createDeferred<ReversePageResult<unknown>>();
+    const tracesDeferred = createDeferred<ReversePageResult<unknown>>();
+    const heartbeatDeferred = createDeferred<ReversePageResult<unknown>>();
+    const modelCallsDeferred = createDeferred<ReversePageResult<unknown>>();
+    const requestAuxDeferred = createDeferred<ReversePageResult<unknown>>();
+    const apiCallsDeferred = createDeferred<ReversePageResult<unknown>>();
+    const client = createMockClient({
+      snapshotQuery: async () => {
+        snapshotCalls += 1;
+        if (snapshotCalls === 1) {
+          return createSnapshot(820);
+        }
+        return {
+          ...createSnapshot(821),
+          sessions: [pausedSession],
+          runtimes: {},
+        };
+      },
+      attentionStateQuery: async () => persistedAttention,
+      schedulerLogsQuery: async () => await logsDeferred.promise,
+      observabilityTracesQuery: async () => await tracesDeferred.promise,
+      heartbeatGroupsPageQuery: async () => await heartbeatDeferred.promise,
+      modelCallsPageQuery: async () => await modelCallsDeferred.promise,
+      requestAuxPageQuery: async () => await requestAuxDeferred.promise,
+      apiCallsPageQuery: async () => await apiCallsDeferred.promise,
+    });
+    client.trpc.session.stop.mutate = async () => ({ session: pausedSession });
+
+    const store = new RuntimeStore(client);
+    await store.connect();
+
+    const retainedHeartbeat = createHeartbeatGroup({
+      id: 11,
+      groupId: "heartbeat-group:call:11",
+      aiCallId: 11,
+      createdAt: 1700000000100,
+      updatedAt: 1700000000200,
+      items: [
+        createHeartbeatEntry({
+          id: 101,
+          messageId: "hb-101",
+          aiCallId: 11,
+          createdAt: 1700000000100,
+          updatedAt: 1700000000200,
+          payload: "running call",
+        }),
+      ],
+    });
+    const retainedModelCall = createModelCallItem({
+      id: 31,
+      cycleId: 9,
+      status: "done",
+      provider: "openai",
+      model: "gpt-5",
+      createdAt: 1700000000300,
+      updatedAt: 1700000000400,
+      response: { usage: { outputTokens: 12 } },
+    });
+    const retainedTrace = createTraceEntry({
+      id: 41,
+      cycleId: 9,
+      startedAt: 1700000000500,
+      endedAt: 1700000000600,
+    });
+    const retainedSchedulerLog = {
+      id: 51,
+      timestamp: 1700000000700,
+      stateVersion: 4,
+      event: "runtime.waiting",
+      prevHash: null,
+      stateHash: "state-hash-51",
+      patch: [],
+    };
+
+    const state = store.getState();
+    state.heartbeatGroupsBySession["i-1"] = {
+      data: [retainedHeartbeat],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: 1700000000800,
+    };
+    state.modelCallsBySession["i-1"] = [retainedModelCall];
+    state.requestAuxBySession["i-1"] = [{ id: 61, kind: "systemPrompt" }];
+    state.apiCallsBySession["i-1"] = [{ id: 71, label: "runtime.snapshot" }];
+    state.schedulerLogsBySession["i-1"] = [retainedSchedulerLog];
+    state.observabilityTracesBySession["i-1"] = [retainedTrace];
+    state.terminalReadsBySession["i-1"] = {
+      main: {
+        seq: 1,
+        mode: "snapshot",
+        text: "ready",
+      },
+    };
+    state.runtimes["i-1"]!.terminalReads = state.terminalReadsBySession["i-1"];
+    state.runtimes["i-1"]!.attention = persistedAttention;
+
+    const stopPromise = store.stopSession("i-1");
+    await Promise.resolve();
+
+    expect(store.getState().heartbeatGroupsBySession["i-1"].loaded).toBe(true);
+    expect(store.getState().heartbeatGroupsBySession["i-1"].data).toEqual([retainedHeartbeat]);
+    expect(store.getState().schedulerLogsBySession["i-1"]).toEqual([retainedSchedulerLog]);
+    expect(store.getState().observabilityTracesBySession["i-1"]).toEqual([retainedTrace]);
+    expect(store.getState().modelCallsBySession["i-1"].map((item) => item.id)).toEqual([31]);
+    expect(store.getState().requestAuxBySession["i-1"]).toEqual([{ id: 61, kind: "systemPrompt" }]);
+    expect(store.getState().apiCallsBySession["i-1"]).toEqual([{ id: 71, label: "runtime.snapshot" }]);
+    expect(store.getState().terminalReadsBySession["i-1"]).toEqual({
+      main: {
+        seq: 1,
+        mode: "snapshot",
+        text: "ready",
+      },
+    });
+
+    logsDeferred.resolve({
+      items: [
+        retainedSchedulerLog,
+        {
+          id: 52,
+          timestamp: 1700000000900,
+          stateVersion: 5,
+          event: "runtime.paused",
+          prevHash: "state-hash-51",
+          stateHash: "state-hash-52",
+          patch: [],
+        },
+      ],
+      nextBefore: null,
+      hasMoreBefore: false,
+    });
+    tracesDeferred.resolve({
+      items: [retainedTrace],
+      nextBefore: null,
+      hasMoreBefore: false,
+    });
+    heartbeatDeferred.resolve({
+      items: [retainedHeartbeat],
+      nextBefore: null,
+      hasMoreBefore: false,
+    });
+    modelCallsDeferred.resolve({
+      items: [
+        retainedModelCall,
+        createModelCallItem({
+          id: 32,
+          cycleId: 9,
+          status: "done",
+          provider: "openai",
+          model: "gpt-5",
+          createdAt: 1700000001000,
+          updatedAt: 1700000001100,
+          response: { usage: { outputTokens: 7 } },
+        }),
+      ],
+      nextBefore: null,
+      hasMoreBefore: false,
+    });
+    requestAuxDeferred.resolve({
+      items: [{ id: 61, kind: "systemPrompt" }],
+      nextBefore: null,
+      hasMoreBefore: false,
+    });
+    apiCallsDeferred.resolve({
+      items: [{ id: 71, label: "runtime.snapshot" }],
+      nextBefore: null,
+      hasMoreBefore: false,
+    });
+
+    await stopPromise;
+
+    expect(store.getState().runtimes["i-1"]?.started).toBe(true);
+    expect(store.getState().heartbeatGroupsBySession["i-1"]).toMatchObject({
+      loaded: true,
+      refreshing: false,
+      data: [retainedHeartbeat],
+    });
+    expect(store.getState().schedulerLogsBySession["i-1"].map((entry) => entry.id)).toEqual([51, 52]);
+    expect(store.getState().observabilityTracesBySession["i-1"].map((entry) => entry.id)).toEqual([41]);
+    expect(store.getState().modelCallsBySession["i-1"].map((entry) => entry.id)).toEqual([31, 32]);
+    expect(store.getState().requestAuxBySession["i-1"]).toEqual([{ id: 61, kind: "systemPrompt" }]);
+    expect(store.getState().apiCallsBySession["i-1"]).toEqual([{ id: 71, label: "runtime.snapshot" }]);
+    store.disconnect();
+  });
+
+  test("Scenario: Given a stopped session already has inspection facts When connectOnce rebuilds from a snapshot without a live runtime Then the cached lists remain projected", async () => {
+    let snapshotCalls = 0;
+    const stoppedSession = {
+      ...createSnapshot(0).sessions[0],
+      status: "stopped" as const,
+    };
+    const persistedAttention: RuntimeAttentionState = {
+      snapshot: {
+        contexts: [
+          createAttentionContext({
+            contextId: "ctx-reconnect-proof",
+            owner: "avatar:jane",
+            content: "reconnect must preserve inspection facts",
+            contentFormat: "markdown",
+            scoreMap: { z9y8x7: 12 },
+            commit: createAttentionCommit({
+              commitId: "commit-reconnect-proof",
+              contextId: "ctx-reconnect-proof",
+              author: "user:kzf",
+              source: "message",
+              summary: "Reconnect projection proof",
+              value: "reconnect must preserve inspection facts",
+              scores: { z9y8x7: 12 },
+              format: "markdown",
+            }),
+          }),
+        ],
+      },
+      active: [],
+      cycleFrames: [],
+      hooks: [],
+    };
+    const client = createMockClient({
+      snapshotQuery: async () => {
+        snapshotCalls += 1;
+        if (snapshotCalls === 1) {
+          return createSnapshot(830);
+        }
+        return {
+          ...createSnapshot(831),
+          sessions: [stoppedSession],
+          runtimes: {},
+        };
+      },
+      attentionStateQuery: async () => persistedAttention,
+    });
+
+    const store = new RuntimeStore(client);
+    const internal = store as unknown as { connectOnce: () => Promise<void> };
+    await store.connect();
+
+    const retainedHeartbeat = createHeartbeatGroup({
+      id: 21,
+      groupId: "heartbeat-group:call:21",
+      aiCallId: 21,
+      createdAt: 1700000002100,
+      updatedAt: 1700000002200,
+      items: [
+        createHeartbeatEntry({
+          id: 201,
+          messageId: "hb-201",
+          aiCallId: 21,
+          createdAt: 1700000002100,
+          updatedAt: 1700000002200,
+          payload: "retained after reconnect",
+        }),
+      ],
+    });
+    const retainedModelCall = createModelCallItem({
+      id: 81,
+      cycleId: 17,
+      status: "done",
+      provider: "openai",
+      model: "gpt-5",
+      createdAt: 1700000002300,
+      updatedAt: 1700000002400,
+      response: { usage: { outputTokens: 4 } },
+    });
+    const retainedTrace = createTraceEntry({
+      id: 91,
+      cycleId: 17,
+      startedAt: 1700000002500,
+      endedAt: 1700000002600,
+    });
+    const retainedSchedulerLog = {
+      id: 101,
+      timestamp: 1700000002700,
+      stateVersion: 7,
+      event: "runtime.idle",
+      prevHash: null,
+      stateHash: "state-hash-101",
+      patch: [],
+    };
+
+    const state = store.getState();
+    state.heartbeatGroupsBySession["i-1"] = {
+      data: [retainedHeartbeat],
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: 1700000002800,
+    };
+    state.modelCallsBySession["i-1"] = [retainedModelCall];
+    state.schedulerLogsBySession["i-1"] = [retainedSchedulerLog];
+    state.observabilityTracesBySession["i-1"] = [retainedTrace];
+    state.terminalReadsBySession["i-1"] = {
+      main: {
+        seq: 7,
+        mode: "snapshot",
+        text: "still here",
+      },
+    };
+    state.attentionBySession = {
+      ...(state.attentionBySession ?? {}),
+      "i-1": persistedAttention,
+    };
+    state.runtimes["i-1"]!.terminalReads = state.terminalReadsBySession["i-1"];
+
+    await internal.connectOnce();
+
+    expect(store.getState().sessions[0]?.status).toBe("stopped");
+    expect(store.getState().heartbeatGroupsBySession["i-1"]).toMatchObject({
+      loaded: true,
+      data: [retainedHeartbeat],
+    });
+    expect(store.getState().modelCallsBySession["i-1"].map((entry) => entry.id)).toEqual([81]);
+    expect(store.getState().schedulerLogsBySession["i-1"].map((entry) => entry.id)).toEqual([101]);
+    expect(store.getState().observabilityTracesBySession["i-1"].map((entry) => entry.id)).toEqual([91]);
+    expect(store.getState().terminalReadsBySession["i-1"]).toEqual({
+      main: {
+        seq: 7,
+        mode: "snapshot",
+        text: "still here",
+      },
+    });
+    expect(store.getState().runtimes["i-1"]?.started).toBe(false);
+    expect(store.getState().runtimes["i-1"]?.terminalReads).toEqual({
+      main: {
+        seq: 7,
+        mode: "snapshot",
+        text: "still here",
+      },
+    });
+    expect(store.getState().attentionBySession?.["i-1"]?.snapshot.contexts[0]?.contextId).toBe("ctx-reconnect-proof");
     store.disconnect();
   });
 

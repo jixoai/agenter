@@ -9,12 +9,12 @@ import type {
   AuthDraftKind,
   AuthDraftSaveOutput,
   AuthDraftSnapshotOutput,
-  AuthServiceInfoOutput,
-  AuthSessionOutput,
   AuthKvDeleteOutput,
   AuthKvEvent,
   AuthKvSetOutput,
   AuthKvSnapshotOutput,
+  AuthServiceInfoOutput,
+  AuthSessionOutput,
   AvatarCreateDraftState,
   CachedResourceState,
   ChatCycleItem,
@@ -397,10 +397,7 @@ const pickNewerHeartbeatPartItem = (current: HeartbeatPartItem, incoming: Heartb
   return incoming;
 };
 
-const mergeHeartbeatPartItems = (
-  current: HeartbeatPartItem[],
-  incoming: HeartbeatPartItem[],
-): HeartbeatPartItem[] => {
+const mergeHeartbeatPartItems = (current: HeartbeatPartItem[], incoming: HeartbeatPartItem[]): HeartbeatPartItem[] => {
   const entries = new Map<string, HeartbeatPartItem>();
   for (const item of current) {
     entries.set(item.messageId, item);
@@ -694,10 +691,7 @@ export class RuntimeStore {
     }
   }
 
-  async listAuthDrafts(input?: {
-    kind?: AuthDraftKind;
-    draftIds?: string[];
-  }): Promise<AuthDraftSnapshotOutput> {
+  async listAuthDrafts(input?: { kind?: AuthDraftKind; draftIds?: string[] }): Promise<AuthDraftSnapshotOutput> {
     return await this.client.trpc.drafts.list.query(input);
   }
 
@@ -721,10 +715,7 @@ export class RuntimeStore {
     return await this.client.trpc.drafts.save.mutate(input);
   }
 
-  async deleteAuthDraft(input: {
-    draftId: string;
-    baseVersion?: number;
-  }): Promise<AuthDraftDeleteOutput> {
+  async deleteAuthDraft(input: { draftId: string; baseVersion?: number }): Promise<AuthDraftDeleteOutput> {
     return await this.client.trpc.drafts.delete.mutate(input);
   }
 
@@ -744,25 +735,15 @@ export class RuntimeStore {
     return this.client.trpc.drafts.events.subscribe(input, handlers);
   }
 
-  async snapshotAuthKv(input?: {
-    keys?: string[];
-    prefix?: string;
-  }): Promise<AuthKvSnapshotOutput> {
+  async snapshotAuthKv(input?: { keys?: string[]; prefix?: string }): Promise<AuthKvSnapshotOutput> {
     return await this.client.trpc.kv.snapshot.query(input);
   }
 
-  async setAuthKv(input: {
-    key: string;
-    value: JsonValue;
-    baseVersion?: number | null;
-  }): Promise<AuthKvSetOutput> {
+  async setAuthKv(input: { key: string; value: JsonValue; baseVersion?: number | null }): Promise<AuthKvSetOutput> {
     return await this.client.trpc.kv.set.mutate(input);
   }
 
-  async deleteAuthKv(input: {
-    key: string;
-    baseVersion?: number | null;
-  }): Promise<AuthKvDeleteOutput> {
+  async deleteAuthKv(input: { key: string; baseVersion?: number | null }): Promise<AuthKvDeleteOutput> {
     return await this.client.trpc.kv.delete.mutate(input);
   }
 
@@ -2442,9 +2423,7 @@ export class RuntimeStore {
     const groupId = `heartbeat-group:${kind}:${aiCallId}`;
     const existing =
       resource.data.find((group) => group.groupId === groupId) ??
-      resource.data.find(
-        (group) => group.aiCallId === aiCallId && (group.kind === "call" || group.kind === "compact"),
-      );
+      resource.data.find((group) => group.aiCallId === aiCallId && (group.kind === "call" || group.kind === "compact"));
     const items = mergeHeartbeatPartItems(existing?.items ?? [], [entry]);
     const updatedAt = items.reduce((latest, item) => Math.max(latest, item.updatedAt), existing?.updatedAt ?? 0);
     const nextGroup: HeartbeatGroupItem = {
@@ -2526,6 +2505,23 @@ export class RuntimeStore {
       activeCycle: runtime.activeCycle ? this.normalizeRuntimeChatCycle(runtime.activeCycle) : null,
       attention: runtime.attention ? cloneRuntimeAttentionState(runtime.attention) : createEmptyAttentionState(),
       modelCapabilities: runtime.modelCapabilities ?? DEFAULT_MODEL_CAPABILITIES,
+    };
+  }
+
+  private toDetachedSchedulerState(
+    schedulerState: RuntimeSnapshotEntry["schedulerState"],
+    status?: "stopped" | "paused" | "starting" | "running" | "error",
+  ): RuntimeSnapshotEntry["schedulerState"] {
+    if (!schedulerState || status !== "paused") {
+      return null;
+    }
+    return {
+      ...schedulerState,
+      runtimeStatus: "paused",
+      waitingReason: null,
+      nextAutoWakeAt: null,
+      backoffMs: 0,
+      blockedReason: null,
     };
   }
 
@@ -2772,84 +2768,113 @@ export class RuntimeStore {
           this.normalizeRuntimeEntry(runtime),
         ]),
       );
+      const sessions = sortSessions(snapshot.sessions);
+      const sessionIds = sessions.map((session) => session.id);
       this.state = {
         ...previousState,
-        sessions: sortSessions(snapshot.sessions),
+        sessions,
         runtimes,
         profileService: profileService ?? previousState.profileService ?? null,
         lastEventId: snapshot.lastEventId,
         recentWorkspaces: recentWorkspaces.items,
         activityBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.activityState ?? "idle"]),
+          sessionIds.map((sessionId) => [
+            sessionId,
+            runtimes[sessionId]?.activityState ?? previousState.activityBySession[sessionId] ?? "idle",
+          ]),
         ),
         terminalSnapshotsBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.terminalSnapshots ?? {}]),
+          sessionIds.map((sessionId) => [
+            sessionId,
+            runtimes[sessionId]?.terminalSnapshots ?? previousState.terminalSnapshotsBySession[sessionId] ?? {},
+          ]),
         ),
         terminalReadsBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.terminalReads ?? {}]),
+          sessionIds.map((sessionId) => [
+            sessionId,
+            runtimes[sessionId]?.terminalReads ?? previousState.terminalReadsBySession[sessionId] ?? {},
+          ]),
         ),
         chatsBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.chatMessages ?? []]),
+          sessionIds.map((sessionId) => [
+            sessionId,
+            runtimes[sessionId]
+              ? this.mergeChatMessages(
+                  previousState.chatsBySession[sessionId] ?? [],
+                  runtimes[sessionId].chatMessages ?? [],
+                )
+              : (previousState.chatsBySession[sessionId] ?? []),
+          ]),
         ),
         messageChannelsBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId, runtime]) => [
+          sessionIds.map((sessionId) => [
             sessionId,
-            runtime.messageChannels
-              ? createHydratedCachedResourceState(runtime.messageChannels)
+            runtimes[sessionId]?.messageChannels
+              ? createHydratedCachedResourceState(runtimes[sessionId].messageChannels)
               : (previousState.messageChannelsBySession[sessionId] ??
                 createCachedResourceState<MessageChannelEntry[]>([])),
           ]),
         ),
         chatCyclesBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId, runtime]) => [
+          sessionIds.map((sessionId) => [
             sessionId,
-            runtime.activeCycle ? [runtime.activeCycle] : [],
+            runtimes[sessionId]?.activeCycle
+              ? this.mergeChatCycles(previousState.chatCyclesBySession[sessionId] ?? [], [
+                  runtimes[sessionId].activeCycle,
+                ])
+              : (previousState.chatCyclesBySession[sessionId] ?? []),
           ]),
         ),
         attentionBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId, runtime]) => [
+          sessionIds.map((sessionId) => [
             sessionId,
-            runtime.attention ?? createEmptyAttentionState(),
+            runtimes[sessionId]?.attention ??
+              previousState.attentionBySession?.[sessionId] ??
+              createEmptyAttentionState(),
           ]),
         ),
         tasksBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.tasks ?? []]),
+          sessionIds.map((sessionId) => [
+            sessionId,
+            runtimes[sessionId]?.tasks ?? previousState.tasksBySession[sessionId] ?? [],
+          ]),
         ),
         schedulerLogsBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId]) => [
-            sessionId,
-            previousState.schedulerLogsBySession[sessionId] ?? [],
-          ]),
+          sessionIds.map((sessionId) => [sessionId, previousState.schedulerLogsBySession[sessionId] ?? []]),
         ),
         observabilityTracesBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId]) => [
-            sessionId,
-            previousState.observabilityTracesBySession[sessionId] ?? [],
-          ]),
+          sessionIds.map((sessionId) => [sessionId, previousState.observabilityTracesBySession[sessionId] ?? []]),
         ),
         apiCallsBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId]) => [sessionId, previousState.apiCallsBySession[sessionId] ?? []]),
+          sessionIds.map((sessionId) => [sessionId, previousState.apiCallsBySession[sessionId] ?? []]),
         ),
         heartbeatGroupsBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId]) => [
+          sessionIds.map((sessionId) => [
             sessionId,
             previousState.heartbeatGroupsBySession[sessionId] ?? createCachedResourceState<HeartbeatGroupItem[]>([]),
           ]),
         ),
         modelCallsBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId]) => [
-            sessionId,
-            previousState.modelCallsBySession[sessionId] ?? [],
-          ]),
+          sessionIds.map((sessionId) => [sessionId, previousState.modelCallsBySession[sessionId] ?? []]),
+        ),
+        requestAuxBySession: Object.fromEntries(
+          sessionIds.map((sessionId) => [sessionId, previousState.requestAuxBySession[sessionId] ?? []]),
         ),
         modelCallDeltasBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId]) => [
-            sessionId,
-            previousState.modelCallDeltasBySession?.[sessionId] ?? [],
-          ]),
+          sessionIds.map((sessionId) => [sessionId, previousState.modelCallDeltasBySession?.[sessionId] ?? []]),
+        ),
+        terminalActivityBySession: Object.fromEntries(
+          sessionIds.map((sessionId) => [sessionId, previousState.terminalActivityBySession[sessionId] ?? {}]),
         ),
         apiCallRecordingBySession: Object.fromEntries(
-          Object.entries(runtimes).map(([sessionId, runtime]) => [sessionId, runtime.apiCallRecording]),
+          sessionIds.map((sessionId) => [
+            sessionId,
+            runtimes[sessionId]?.apiCallRecording ??
+              previousState.apiCallRecordingBySession[sessionId] ?? {
+                enabled: false,
+                refCount: 0,
+              },
+          ]),
         ),
         workspaces: previousState.workspaces,
         globalAvatarCatalog: previousState.globalAvatarCatalog,
@@ -2866,7 +2891,11 @@ export class RuntimeStore {
         unreadByBucket: previousState.unreadByBucket,
       };
       this.setConnectionStatus("connected");
-      for (const session of this.state.sessions) {
+      for (const session of sessions) {
+        if (!runtimes[session.id] && (session.status === "stopped" || session.status === "paused")) {
+          this.clearRuntimeState(session.id, session.status, this.state.attentionBySession?.[session.id]);
+          continue;
+        }
         this.ensureRuntimeScaffold(session.id, session.status);
       }
 
@@ -6059,29 +6088,53 @@ export class RuntimeStore {
     attention?: RuntimeAttentionState,
   ): void {
     this.state.attentionBySession ??= {};
+    const previousRuntime = this.state.runtimes[sessionId];
+    const nextAttention =
+      attention ??
+      this.state.attentionBySession[sessionId] ??
+      previousRuntime?.attention ??
+      createEmptyAttentionState();
+    const retainedTerminalSnapshots =
+      this.state.terminalSnapshotsBySession[sessionId] ?? previousRuntime?.terminalSnapshots ?? {};
+    const retainedTerminalReads = this.state.terminalReadsBySession[sessionId] ?? previousRuntime?.terminalReads ?? {};
+    const retainedTasks = this.state.tasksBySession[sessionId] ?? previousRuntime?.tasks ?? [];
     delete this.state.runtimes[sessionId];
     this.state.activityBySession[sessionId] = "idle";
-    this.state.terminalSnapshotsBySession[sessionId] = {};
-    this.state.terminalReadsBySession[sessionId] = {};
+    this.state.terminalSnapshotsBySession[sessionId] = retainedTerminalSnapshots;
+    this.state.terminalReadsBySession[sessionId] = retainedTerminalReads;
     this.state.messageChannelsBySession[sessionId] =
       this.state.messageChannelsBySession[sessionId] ?? createCachedResourceState<MessageChannelEntry[]>([]);
-    this.state.attentionBySession[sessionId] =
-      attention ?? this.state.attentionBySession[sessionId] ?? createEmptyAttentionState();
-    this.state.tasksBySession[sessionId] = [];
-    this.state.heartbeatGroupsBySession[sessionId] = createCachedResourceState<HeartbeatGroupItem[]>([]);
+    this.state.attentionBySession[sessionId] = nextAttention;
+    this.state.tasksBySession[sessionId] = retainedTasks;
     this.state.apiCallRecordingBySession[sessionId] = {
       enabled: false,
       refCount: 0,
     };
     if (status) {
       this.ensureRuntimeScaffold(sessionId, status);
-      this.state.runtimes[sessionId]!.started = status === "paused";
-      this.state.runtimes[sessionId]!.activityState = "idle";
-      this.state.runtimes[sessionId]!.activeCycle = null;
-      this.state.runtimes[sessionId]!.attention = this.state.attentionBySession[sessionId];
-      this.state.runtimes[sessionId]!.terminals = [];
-      this.state.runtimes[sessionId]!.terminalReads = {};
-      this.state.runtimes[sessionId]!.terminalSnapshots = {};
+      const detachedRuntime = this.state.runtimes[sessionId]!;
+      detachedRuntime.started = status === "paused";
+      detachedRuntime.activityState = "idle";
+      detachedRuntime.schedulerPhase = "waiting_commits";
+      detachedRuntime.stage = "idle";
+      detachedRuntime.activeCycle = null;
+      detachedRuntime.attention = this.state.attentionBySession[sessionId];
+      detachedRuntime.terminals = previousRuntime?.terminals ?? detachedRuntime.terminals;
+      detachedRuntime.terminalReads = retainedTerminalReads;
+      detachedRuntime.terminalSnapshots = retainedTerminalSnapshots;
+      detachedRuntime.tasks = retainedTasks;
+      detachedRuntime.chatMessages =
+        this.state.chatsBySession[sessionId] ?? previousRuntime?.chatMessages ?? detachedRuntime.chatMessages;
+      detachedRuntime.focusedTerminalId = previousRuntime?.focusedTerminalId ?? detachedRuntime.focusedTerminalId;
+      detachedRuntime.focusedTerminalIds = previousRuntime?.focusedTerminalIds ?? detachedRuntime.focusedTerminalIds;
+      detachedRuntime.schedulerState = this.toDetachedSchedulerState(previousRuntime?.schedulerState ?? null, status);
+      detachedRuntime.schedulerSignals = previousRuntime?.schedulerSignals ?? detachedRuntime.schedulerSignals;
+      detachedRuntime.apiCallRecording = {
+        enabled: false,
+        refCount: 0,
+      };
+      detachedRuntime.attentionApi = previousRuntime?.attentionApi ?? detachedRuntime.attentionApi;
+      detachedRuntime.modelCapabilities = previousRuntime?.modelCapabilities ?? detachedRuntime.modelCapabilities;
     }
   }
 
@@ -6211,7 +6264,7 @@ export class RuntimeStore {
       this.state.schedulerLogsBySession[sessionId] = this.applyLruEntries(
         this.schedulerLogsAccessBySession,
         sessionId,
-        [],
+        this.state.schedulerLogsBySession[sessionId] ?? [],
         logs.value.items,
         LOOPBUS_LRU_LIMIT,
       );
@@ -6222,7 +6275,7 @@ export class RuntimeStore {
       this.state.observabilityTracesBySession[sessionId] = this.applyLruEntries(
         this.observabilityTracesAccessBySession,
         sessionId,
-        [],
+        this.state.observabilityTracesBySession[sessionId] ?? [],
         traces.value.items,
         LOOPBUS_LRU_LIMIT,
       );
@@ -6233,7 +6286,7 @@ export class RuntimeStore {
       this.state.modelCallsBySession[sessionId] = this.applyLruEntries(
         this.modelCallsAccessBySession,
         sessionId,
-        [],
+        this.state.modelCallsBySession[sessionId] ?? [],
         modelCalls.value.items,
         LOOPBUS_LRU_LIMIT,
       );
@@ -6244,7 +6297,7 @@ export class RuntimeStore {
       this.state.requestAuxBySession[sessionId] = this.applyLruEntries(
         this.requestAuxAccessBySession,
         sessionId,
-        [],
+        this.state.requestAuxBySession[sessionId] ?? [],
         requestAux.value.items,
         LOOPBUS_LRU_LIMIT,
       );
@@ -6255,7 +6308,7 @@ export class RuntimeStore {
       this.state.apiCallsBySession[sessionId] = this.applyLruEntries(
         this.apiCallsAccessBySession,
         sessionId,
-        [],
+        this.state.apiCallsBySession[sessionId] ?? [],
         apiCalls.value.items,
         LOOPBUS_LRU_LIMIT,
       );
@@ -6271,7 +6324,11 @@ export class RuntimeStore {
     const next = this.state.sessions.filter((item) => item.id !== session.id);
     next.push(session);
     this.state.sessions = sortSessions(next);
-    this.ensureRuntimeScaffold(session.id, session.status);
+    if (session.status === "stopped" || session.status === "paused") {
+      this.clearRuntimeState(session.id, session.status, this.state.attentionBySession?.[session.id]);
+    } else {
+      this.ensureRuntimeScaffold(session.id, session.status);
+    }
     this.emit();
   }
 }

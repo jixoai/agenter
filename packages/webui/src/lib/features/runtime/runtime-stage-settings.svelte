@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { RuntimeSnapshotEntry, SessionEntry } from '@agenter/client-sdk';
+	import type { SessionEntry } from '@agenter/client-sdk';
 	import type { SettingsLayerFile } from '$lib/features/settings/settings-graph-types';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
@@ -15,10 +15,8 @@
 
 	let {
 		session,
-		runtime,
 	}: {
 		session: SessionEntry;
-		runtime: RuntimeSnapshotEntry | null;
 	} = $props();
 
 	let loading = $state(false);
@@ -31,6 +29,7 @@
 
 	let graphLoadToken = 0;
 	let layerLoadToken = 0;
+	let settingsSessionId = $state<string | null>(null);
 
 	const runtimeLabel = $derived(session.avatar || session.name);
 	const runtimePolicyBinding = $derived(readRuntimeSettingsPolicyBinding(settingsGraph));
@@ -162,8 +161,12 @@
 	};
 
 	$effect(() => {
-		void runtime;
-		void loadSettingsGraph(selectedLayerId);
+		const nextSessionId = session.id;
+		if (settingsSessionId === nextSessionId) {
+			return;
+		}
+		settingsSessionId = nextSessionId;
+		void loadSettingsGraph(null);
 	});
 </script>
 

@@ -117,7 +117,7 @@
 				{onConsumeNotification}
 			/>
 		{:else}
-			<RuntimeStageSettings {session} {runtime} />
+			<RuntimeStageSettings {session} />
 		{/if}
 	</Scaffold.Body>
 </Scaffold.Root>
