@@ -13,12 +13,12 @@ The backend real-provider validation suite SHALL run shell-first external-fact s
 - **AND** the scenario does not depend on shared default Avatar prompt drift
 
 ### Requirement: Real-provider external-fact validation SHALL prove shell-first behavior before semantic success
-The external-fact scenario SHALL prove that the Avatar acknowledges the request, uses `root_workspace_bash` during objective fact gathering, then returns a semantically correct answer and settles attention.
+The external-fact scenario SHALL prove that the Avatar acknowledges the request, uses `root_bash` during objective fact gathering, then returns a semantically correct answer and settles attention.
 
 #### Scenario: Weather-style external fact task converges through shell-first verification
 - **WHEN** the user asks a test Avatar for a current or forecast external fact that cannot be answered safely from memory
 - **THEN** the scenario observes a short acknowledgement
-- **AND** recent model-call tool traces include `root_workspace_bash`
+- **AND** recent model-call tool traces include `root_bash`
 - **AND** the final answer passes semantic validation for the requested fact
 - **AND** attention settles after the reply
 
@@ -29,4 +29,3 @@ When a real-provider external-fact scenario times out or fails, the suite SHALL 
 - **WHEN** an external-fact scenario stalls or times out
 - **THEN** the failing run reports room truth messages, recent model calls, tool trace evidence, and the test Avatar / prompt source identity
 - **AND** the output is sufficient to debug whether the failure came from persona shaping, shell usage, or provider/runtime behavior
-
