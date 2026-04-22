@@ -46,10 +46,7 @@ const resolvePreferredSeatLabel = (
   return normalizeLabel(existingLabel) ?? normalizeLabel(incomingLabel) ?? actorId;
 };
 
-const upsertSeat = (
-  roster: Map<string, MutableMessageSeatEntry>,
-  input: MutableMessageSeatEntry,
-): void => {
+const upsertSeat = (roster: Map<string, MutableMessageSeatEntry>, input: MutableMessageSeatEntry): void => {
   const existing = roster.get(input.actorId);
   roster.set(input.actorId, {
     actorId: input.actorId,
@@ -67,7 +64,7 @@ export const listMessageSeatEntries = (channel: MessageControlPlaneEntry): Messa
       label: participant.label,
     });
   }
-  for (const state of channel.readStates ?? []) {
+  for (const state of channel.seatStates ?? []) {
     upsertSeat(roster, {
       actorId: state.actorId,
       label: state.label,

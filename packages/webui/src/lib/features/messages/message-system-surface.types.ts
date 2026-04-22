@@ -26,8 +26,6 @@ export interface MessageSystemRoomSeatState extends ActorDirectoryEntry {
   online: boolean;
   focused: boolean;
   invalidCredential: boolean;
-  trackedByLatestVisible: boolean;
-  hasReadLatestVisible: boolean;
   accessToken?: string;
   grantId?: string;
 }
@@ -75,8 +73,6 @@ export interface MessageSystemSurfaceProps {
   initialSnapshotResolved: boolean;
   roomAssetsState: CachedResourceState<MessageSystemRoomAssetItem[]>;
   routeNotice: WebChatNotice | null;
-  readSeatCount: number;
-  readSeatTotal: number;
   selectedCallerToken: string | null;
   selectedViewerActorId: string | null;
   selectableActors: ActorDirectoryEntry[];

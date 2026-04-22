@@ -289,13 +289,6 @@ const normalizeOptionalAccessToken = (value: string | null | undefined): string 
 const buildGlobalRoomReadInflightKey = (input: { chatId: string; accessToken?: string; messageId?: number }): string =>
   [input.chatId, input.accessToken ?? "", input.messageId === undefined ? "" : String(input.messageId)].join("\u0000");
 
-const sameActorIdSet = (left: readonly string[] | undefined, right: readonly string[] | undefined): boolean => {
-  if ((left?.length ?? 0) !== (right?.length ?? 0)) {
-    return false;
-  }
-  return (left ?? []).every((actorId, index) => actorId === right?.[index]);
-};
-
 const mergeGlobalTerminalEntry = (
   current: GlobalTerminalEntry | undefined,
   incoming: GlobalTerminalEntry,
@@ -1256,59 +1249,6 @@ export class RuntimeStore {
     return this.state.globalRooms.data.find((room) => room.chatId === chatId) ?? null;
   }
 
-  private reconcileLatestVisibleRoomMessageReadState(
-    entry: Pick<GlobalRoomEntry, "chatId" | "readProgress" | "readStates">,
-  ): void {
-    const latestVisibleMessageId = entry.readProgress?.latestVisibleMessageId;
-    const latestVisibleMessageRowId = entry.readProgress?.latestVisibleMessageRowId ?? 0;
-    const trackedStates = (entry.readStates ?? []).filter((state) => state.trackedByLatestVisible);
-    if (!latestVisibleMessageId || latestVisibleMessageRowId <= 0 || trackedStates.length === 0) {
-      return;
-    }
-
-    const readActorIds = trackedStates.filter((state) => state.hasReadLatestVisible).map((state) => state.actorId);
-    const unreadActorIds = trackedStates.filter((state) => !state.hasReadLatestVisible).map((state) => state.actorId);
-
-    this.setGlobalRoomSnapshotState(entry.chatId, (resource) => {
-      const snapshot = resource.data;
-      if (!resource.loaded || !snapshot) {
-        return resource;
-      }
-
-      let changed = false;
-      const items = snapshot.items.map((item) => {
-        const matchesLatestVisible =
-          item.messageId === latestVisibleMessageId || item.rowId === latestVisibleMessageRowId;
-        if (!matchesLatestVisible) {
-          return item;
-        }
-        if (sameActorIdSet(item.readActorIds, readActorIds) && sameActorIdSet(item.unreadActorIds, unreadActorIds)) {
-          return item;
-        }
-        changed = true;
-        return {
-          ...item,
-          readActorIds: [...readActorIds],
-          unreadActorIds: [...unreadActorIds],
-        };
-      });
-
-      if (!changed) {
-        return resource;
-      }
-
-      return {
-        ...resource,
-        data: {
-          ...snapshot,
-          items,
-        },
-        error: null,
-        refreshedAt: Date.now(),
-      };
-    });
-  }
-
   private reconcileGlobalRoomEntry(entry: GlobalRoomEntry): void {
     this.setGlobalRoomsState((resource) => {
       const nextData = resource.data.filter((candidate) => candidate.chatId !== entry.chatId);
@@ -1323,7 +1263,6 @@ export class RuntimeStore {
         refreshedAt: Date.now(),
       };
     });
-    this.reconcileLatestVisibleRoomMessageReadState(entry);
     this.setGlobalRoomSnapshotState(entry.chatId, (resource) => {
       if (!resource.loaded || !resource.data) {
         return resource;
@@ -1447,9 +1386,6 @@ export class RuntimeStore {
           error: null,
           refreshedAt: Date.now(),
         }));
-        for (const room of data) {
-          this.reconcileLatestVisibleRoomMessageReadState(room);
-        }
         this.emit();
         return data;
       })
@@ -3984,21 +3920,29 @@ export class RuntimeStore {
         ...input,
         accessToken,
       });
+      const shouldRefreshSnapshot = this.shouldRefreshGlobalRoomSnapshot(input.chatId);
       this.reconcileGlobalRoomEntry(output.channel);
-      this.setGlobalRoomSnapshotState(input.chatId, (resource) => {
-        if (!resource.loaded || !resource.data) {
-          return resource;
-        }
-        return {
-          ...resource,
-          data: {
-            ...resource.data,
-            channel: output.channel,
-          },
-          error: null,
-          refreshedAt: Date.now(),
-        };
-      });
+      if (shouldRefreshSnapshot) {
+        await this.refreshGlobalRoomSnapshotInternal(input.chatId, {
+          accessToken,
+          force: true,
+        });
+      } else {
+        this.setGlobalRoomSnapshotState(input.chatId, (resource) => {
+          if (!resource.loaded || !resource.data) {
+            return resource;
+          }
+          return {
+            ...resource,
+            data: {
+              ...resource.data,
+              channel: output.channel,
+            },
+            error: null,
+            refreshedAt: Date.now(),
+          };
+        });
+      }
       this.emit();
       return output.channel;
     })().finally(() => {

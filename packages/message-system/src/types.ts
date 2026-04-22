@@ -115,7 +115,7 @@ export interface MessageChannelAccessProjection {
   transportUrl?: string;
 }
 
-export interface MessageReadStateProjection {
+export interface MessageSeatStateProjection {
   actorId: MessageActorId;
   role: MessageChannelAccessRole;
   label?: string;
@@ -123,18 +123,6 @@ export interface MessageReadStateProjection {
   online: boolean;
   focused: boolean;
   invalidCredential: boolean;
-  trackedByLatestVisible: boolean;
-  hasReadLatestVisible: boolean;
-}
-
-export interface MessageReadProgressProjection {
-  latestVisibleMessageId?: number;
-  latestVisibleMessageRowId?: number;
-  latestVisibleAt?: number;
-  totalSeatCount: number;
-  readSeatCount: number;
-  unreadSeatCount: number;
-  invalidCredentialSeatCount: number;
 }
 
 export interface MessageChannelGrantRecord {
@@ -203,11 +191,11 @@ export interface ReversePage<T> {
 }
 
 export interface MessageControlPlaneEntry extends MessageChannelRecord, MessageChannelAccessProjection {
-  readProgress?: MessageReadProgressProjection;
-  readStates?: MessageReadStateProjection[];
+  seatStates?: MessageSeatStateProjection[];
 }
 
-export interface MessageIssuedGrant extends Omit<MessageChannelGrantRecord, "accessToken">, MessageChannelAccessProjection {}
+export interface MessageIssuedGrant
+  extends Omit<MessageChannelGrantRecord, "accessToken">, MessageChannelAccessProjection {}
 
 export interface MessageSnapshot {
   channel: MessageControlPlaneEntry;

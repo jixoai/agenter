@@ -47,7 +47,6 @@ export {
   type PublicRoomEntry,
   type PublicRoomMessageQueryResult,
   type PublicRoomMessageRecord,
-  type PublicRoomReadProgress,
   type PublicRoomSnapshot,
   type RuntimeWorkspaceAssetRoots,
   type WorkspaceListItem,
@@ -169,10 +168,6 @@ export {
   type RuntimeSnapshotPayload,
   type SettingsKind,
 } from "./realtime-types";
-export {
-  createInProcessWorkspaceToolProvider,
-  type InProcessWorkspaceToolProviderInput,
-} from "./workspace-tool-provider";
 export type { RuntimeLocalApiHandlers } from "./runtime-tool-descriptors";
 export {
   SemanticJudge,
@@ -270,4 +265,8 @@ export {
   type WorkspaceRecord,
   type WorkspaceSystemSnapshot,
 } from "./workspace-system";
+export {
+  createInProcessWorkspaceToolProvider,
+  type InProcessWorkspaceToolProviderInput,
+} from "./workspace-tool-provider";
 export { WorkspacesStore } from "./workspaces-store";

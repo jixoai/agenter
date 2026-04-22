@@ -30,10 +30,9 @@ import type {
   MessageIssueGrantInput,
   MessageIssuedGrant,
   MessageParticipant,
-  MessageReadProgressProjection,
-  MessageReadStateProjection,
   MessageRecallInput,
   MessageRecord,
+  MessageSeatStateProjection,
   MessageSnapshot,
   MessageTransportClientMessage,
   MessageTransportConfig,
@@ -1358,18 +1357,20 @@ export class MessageControlPlane {
 
   getTransportEndpoint(chatId: string, accessToken?: string): MessageTransportEndpoint | null {
     const transport = this.config.transport;
-    if (!transport?.port) {
+    const livePort = this.transportServer ? Number.parseInt(this.transportServer.url.port, 10) : Number.NaN;
+    const port = Number.isFinite(livePort) && livePort > 0 ? livePort : transport?.port;
+    if (!port) {
       return null;
     }
-    const host = transport.host ?? "127.0.0.1";
+    const host = transport?.host ?? this.transportServer?.url.hostname ?? "127.0.0.1";
     const path = `${(transport.pathPrefix ?? "/room").replace(/\/$/, "")}/${encodeURIComponent(chatId)}`;
-    const url = new URL(`ws://${host}:${transport.port}${path}`);
+    const url = new URL(`ws://${host}:${port}${path}`);
     if (accessToken) {
       url.searchParams.set("token", accessToken);
     }
     return {
       host,
-      port: transport.port,
+      port,
       path,
       url: url.toString(),
     };
@@ -1522,10 +1523,11 @@ export class MessageControlPlane {
       },
     });
 
+    const livePort = Number.parseInt(this.transportServer.url.port, 10);
     this.config.transport = {
       host,
       pathPrefix,
-      port: this.transportServer.port ?? requestedPort ?? null,
+      port: Number.isFinite(livePort) && livePort > 0 ? livePort : (this.transportServer.port ?? requestedPort ?? null),
     };
     return cloneTransport(this.config.transport);
   }
@@ -1615,24 +1617,19 @@ export class MessageControlPlane {
   }
 
   private withProjection(
-    channel: Omit<MessageControlPlaneEntry, keyof MessageChannelAccessProjection | "readProgress" | "readStates">,
+    channel: Omit<MessageControlPlaneEntry, keyof MessageChannelAccessProjection | "seatStates">,
     projection: MessageChannelAccessProjection,
   ): MessageControlPlaneEntry {
-    const latestVisibleMessage = this.db.resolveLatestVisibleMessage(channel.chatId);
-    const readStates = this.listReadStateProjections(channel.chatId, latestVisibleMessage);
     return {
       ...channel,
       ...projection,
-      readProgress: this.createReadProgress(latestVisibleMessage, readStates),
-      readStates,
+      seatStates: this.listSeatStateProjections(channel.chatId),
     };
   }
 
-  private listReadStateProjections(chatId: string, latestVisibleMessage?: MessageRecord): MessageReadStateProjection[] {
+  private listSeatStateProjections(chatId: string): MessageSeatStateProjection[] {
     const currentAdminId = this.resolveCurrentAdminActorId(chatId);
     const focusedByActor = new Map<string, boolean>();
-    const latestReadActorIds = new Set(latestVisibleMessage?.readActorIds ?? []);
-    const latestUnreadActorIds = new Set(latestVisibleMessage?.unreadActorIds ?? []);
     for (const [actorId, focusedIds] of this.focusedChatIdsByActor.entries()) {
       if (focusedIds.has(chatId)) {
         focusedByActor.set(actorId, true);
@@ -1645,8 +1642,6 @@ export class MessageControlPlane {
       })
       .map((grant) => {
         const presence = this.actorPresence.get(grant.participantId);
-        const trackedByLatestVisible =
-          latestReadActorIds.has(grant.participantId) || latestUnreadActorIds.has(grant.participantId);
         return {
           actorId: grant.participantId,
           role: grant.role,
@@ -1655,9 +1650,7 @@ export class MessageControlPlane {
           online: presence?.online ?? false,
           focused: focusedByActor.get(grant.participantId) ?? false,
           invalidCredential: presence?.invalidCredential ?? false,
-          trackedByLatestVisible,
-          hasReadLatestVisible: latestVisibleMessage ? latestReadActorIds.has(grant.participantId) : false,
-        } satisfies MessageReadStateProjection;
+        } satisfies MessageSeatStateProjection;
       });
     return entries.sort((left, right) => {
       if (left.currentAdmin !== right.currentAdmin) {
@@ -1669,36 +1662,6 @@ export class MessageControlPlane {
       }
       return left.actorId.localeCompare(right.actorId);
     });
-  }
-
-  private createReadProgress(
-    latestVisibleMessage: MessageRecord | undefined,
-    readStates: MessageReadStateProjection[],
-  ): MessageReadProgressProjection {
-    if (!latestVisibleMessage) {
-      return {
-        totalSeatCount: 0,
-        readSeatCount: 0,
-        unreadSeatCount: 0,
-        invalidCredentialSeatCount: 0,
-      };
-    }
-    const readSeatCount = latestVisibleMessage.readActorIds.filter(
-      (actorId) => actorId !== TRUSTED_BOOTSTRAP_PARTICIPANT_ID,
-    ).length;
-    const unreadSeatCount = latestVisibleMessage.unreadActorIds.filter(
-      (actorId) => actorId !== TRUSTED_BOOTSTRAP_PARTICIPANT_ID,
-    ).length;
-    return {
-      latestVisibleMessageId: latestVisibleMessage.messageId,
-      latestVisibleMessageRowId: latestVisibleMessage.rowId,
-      latestVisibleAt: latestVisibleMessage.visibleAt ?? latestVisibleMessage.createdAt,
-      totalSeatCount: readSeatCount + unreadSeatCount,
-      readSeatCount,
-      unreadSeatCount,
-      invalidCredentialSeatCount: readStates.filter((state) => state.trackedByLatestVisible && state.invalidCredential)
-        .length,
-    };
   }
 
   private createInitialReadMembership(

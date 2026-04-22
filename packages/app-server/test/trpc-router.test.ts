@@ -706,12 +706,7 @@ describe("Feature: app-server trpc procedures", () => {
       accessToken: relay.grant.accessToken,
       messageId: sentMessage?.messageId,
     });
-    expect(relayRead.channel.readProgress).toMatchObject({
-      latestVisibleMessageId: sentMessage?.messageId,
-      totalSeatCount: 2,
-      readSeatCount: 2,
-      unreadSeatCount: 0,
-    });
+    expect(Object.prototype.hasOwnProperty.call(relayRead.channel, "readProgress")).toBeFalse();
 
     const page = await caller.message.globalPage({
       chatId: room.chatId,
@@ -832,7 +827,7 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given seat-backed room reads When seat token and superadmin both mark the same room Then durable read progress only advances for real room seats", async () => {
+  test("Scenario: Given seat-backed room reads When seat token and superadmin both mark the same room Then durable message arrays only advance for real room seats", async () => {
     const root = makeTempDir();
     const kernel = new AppKernel({
       globalSessionRoot: join(root, "sessions"),
@@ -892,49 +887,60 @@ describe("Feature: app-server trpc procedures", () => {
       accessToken: relay.grant.accessToken,
       messageId: latestMessageId,
     });
-    expect(relayRead.channel.readProgress).toMatchObject({
-      latestVisibleMessageId: latestMessageId,
-      totalSeatCount: 3,
-      readSeatCount: 1,
-      unreadSeatCount: 2,
+    const relayReadState = relayRead.channel.seatStates?.find((state) => state.actorId === "session:relay");
+    const relaySnapshot = await superadminCaller.message.globalSnapshot({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
     });
-    const relayReadState = relayRead.channel.readStates?.find((state) => state.actorId === "session:relay");
+    const relayMessage = relaySnapshot.items.find((item) => item.messageId === latestMessageId);
     expect(relayReadState).toMatchObject({
       actorId: "session:relay",
-      trackedByLatestVisible: true,
-      hasReadLatestVisible: true,
+      role: "member",
     });
+    expect(relayMessage?.readActorIds).toContain("session:relay");
+    expect(relayMessage?.unreadActorIds).not.toContain("session:relay");
+    expect(Object.prototype.hasOwnProperty.call(relayRead.channel, "readProgress")).toBeFalse();
 
     const superadminRead = await superadminCaller.message.globalMarkRead({
       chatId: room.chatId,
       messageId: latestMessageId,
     });
-    expect(superadminRead.channel.readProgress?.readSeatCount).toBe(1);
     expect(
-      superadminRead.channel.readStates?.find((state) => state.actorId === `auth:${descriptor.rootAuthId}`),
+      superadminRead.channel.seatStates?.find((state) => state.actorId === `auth:${descriptor.rootAuthId}`),
     ).toMatchObject({
       actorId: `auth:${descriptor.rootAuthId}`,
-      trackedByLatestVisible: true,
-      hasReadLatestVisible: false,
+      role: "admin",
     });
+    const superadminSnapshot = await superadminCaller.message.globalSnapshot({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+    });
+    const superadminMessage = superadminSnapshot.items.find((item) => item.messageId === latestMessageId);
+    expect(superadminMessage?.readActorIds).toEqual(["session:relay"]);
+    expect(superadminMessage?.unreadActorIds.sort()).toEqual([`auth:${descriptor.rootAuthId}`, "auth:viewer"]);
+    expect(Object.prototype.hasOwnProperty.call(superadminRead.channel, "readProgress")).toBeFalse();
 
     const viewerRead = await superadminCaller.message.globalMarkRead({
       chatId: room.chatId,
       accessToken: viewer.grant.accessToken,
       messageId: latestMessageId,
     });
-    expect(viewerRead.channel.readProgress).toMatchObject({
-      latestVisibleMessageId: latestMessageId,
-      totalSeatCount: 3,
-      readSeatCount: 2,
-      unreadSeatCount: 1,
+    const viewerReadState = viewerRead.channel.seatStates?.find((state) => state.actorId === "auth:viewer");
+    const viewerSnapshot = await superadminCaller.message.globalSnapshot({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
     });
-    const viewerReadState = viewerRead.channel.readStates?.find((state) => state.actorId === "auth:viewer");
+    const viewerMessage = viewerSnapshot.items.find((item) => item.messageId === latestMessageId);
     expect(viewerReadState).toMatchObject({
       actorId: "auth:viewer",
-      trackedByLatestVisible: true,
-      hasReadLatestVisible: true,
+      role: "readonly",
     });
+    expect(viewerMessage?.readActorIds.sort()).toEqual(["auth:viewer", "session:relay"]);
+    expect(viewerMessage?.unreadActorIds).toEqual([`auth:${descriptor.rootAuthId}`]);
+    expect(Object.prototype.hasOwnProperty.call(viewerRead.channel, "readProgress")).toBeFalse();
 
     await kernel.stop();
   });

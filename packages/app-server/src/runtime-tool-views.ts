@@ -170,15 +170,6 @@ export interface RuntimeMessageChannelView {
     id: string;
     label?: string;
   }>;
-  readProgress?: {
-    latestVisibleMessageId?: number;
-    latestVisibleMessageRowId?: number;
-    latestVisibleAt?: number;
-    totalSeatCount: number;
-    readSeatCount: number;
-    unreadSeatCount: number;
-    invalidCredentialSeatCount: number;
-  };
   presence?: {
     totalSeatCount: number;
     participantLabels: string[];
@@ -373,14 +364,6 @@ export const projectRuntimeMessageChannel = (channel: MessageControlPlaneEntry):
       id: participant.id,
       label: participant.label,
     })),
-    readProgress: channel.readProgress
-      ? {
-          ...channel.readProgress,
-          latestVisibleMessageId: channel.readProgress.latestVisibleMessageId
-            ? toRuntimeMessageId(channel.readProgress.latestVisibleMessageId)
-            : undefined,
-        }
-      : undefined,
     presence,
     focused: channel.focused,
     archivedAt: channel.archivedAt,

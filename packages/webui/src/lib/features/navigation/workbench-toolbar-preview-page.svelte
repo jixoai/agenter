@@ -24,8 +24,6 @@
 			online: true,
 			focused: true,
 			invalidCredential: false,
-			trackedByLatestVisible: true,
-			hasReadLatestVisible: true,
 		},
 		{
 			actorId: 'auth:observer',
@@ -38,8 +36,6 @@
 			online: true,
 			focused: false,
 			invalidCredential: false,
-			trackedByLatestVisible: true,
-			hasReadLatestVisible: false,
 		},
 	] as const satisfies MessageSystemRoomSeatState[];
 

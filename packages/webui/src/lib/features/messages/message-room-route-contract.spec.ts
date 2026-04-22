@@ -15,14 +15,14 @@ describe("Feature: Room route hydration stability contract", () => {
     );
     expect(messageRoomRouteSource).toContain("const chatId = selectedRoomChatId;");
     expect(messageRoomRouteSource).toContain("const accessToken = selectedRoomAccessToken;");
-    expect(messageRoomRouteSource).toContain('.hydrateGlobalRoomSnapshot({');
-    expect(messageRoomRouteSource).toContain('.hydrateGlobalRoomGrants({');
-    expect(messageRoomRouteSource).toContain('.hydrateGlobalRoomAssets({');
+    expect(messageRoomRouteSource).toContain(".hydrateGlobalRoomSnapshot({");
+    expect(messageRoomRouteSource).toContain(".hydrateGlobalRoomGrants({");
+    expect(messageRoomRouteSource).toContain(".hydrateGlobalRoomAssets({");
     expect(messageRoomRouteSource).toContain("accessToken,");
     expect(messageRoomRouteSource).toContain("limit: 120,");
   });
 
-  test("Scenario: Given the viewer changes while the transcript stays on the same latest message When reading the route source Then the route caches that visibility fact and replays read-ack work for the new viewer", () => {
+  test("Scenario: Given the viewer changes while the transcript stays on the same latest message When reading the route source Then the route caches that visibility fact and replays read-ack work from the warm snapshot", () => {
     expect(messageRoomRouteSource).toContain(
       "let latestVisibleMessageByRoomId = $state<Record<string, WebChatVisibleMessageFact | null>>({});",
     );
@@ -34,9 +34,8 @@ describe("Feature: Room route hydration stability contract", () => {
     );
     expect(messageRoomRouteSource).toContain("const resolveLatestReplayVisibleMessage = (");
     expect(messageRoomRouteSource).toContain("const selectedViewerAccessToken = $derived.by(() => {");
-    expect(messageRoomRouteSource).toContain("const messageId = room.readProgress?.latestVisibleMessageId;");
-    expect(messageRoomRouteSource).toContain("const rowId = room.readProgress?.latestVisibleMessageRowId;");
-    expect(messageRoomRouteSource).toContain("viewKey: String(messageId),");
+    expect(messageRoomRouteSource).toContain("const latestMessage = selectedRoomSnapshot?.items.at(-1) ?? null;");
+    expect(messageRoomRouteSource).toContain("viewKey: String(latestMessage.messageId),");
     expect(messageRoomRouteSource).toContain("[room.chatId]: visibleMessage,");
     expect(messageRoomRouteSource).toContain("if (!room || !viewerActorId || !viewerAccessToken) {");
     expect(messageRoomRouteSource).toContain("void handleLatestVisibleMessageIdChange(latestVisibleMessage);");
@@ -82,7 +81,9 @@ describe("Feature: Room route hydration stability contract", () => {
       "const initialRoomSnapshotResolved = $derived(selectedRoomSnapshotState.loaded || authRequired);",
     );
     expect(messageRoomRouteSource).toContain("if (!isAuthenticated) {\n\t\t\treturn null;");
-    expect(messageRoomRouteSource).toContain("if (authRequired) {\n\t\t\treturn {\n\t\t\t\ttone: 'destructive',\n\t\t\t\tmessage: AUTH_REQUIRED_MESSAGE,");
+    expect(messageRoomRouteSource).toContain(
+      "if (authRequired) {\n\t\t\treturn {\n\t\t\t\ttone: 'destructive',\n\t\t\t\tmessage: AUTH_REQUIRED_MESSAGE,",
+    );
     expect(messageRoomRouteSource).toContain("const ensureAuthenticated = (): void => {");
     expect(messageRoomRouteSource).toContain("if (!isAuthenticated || !chatId || !accessToken) {");
     expect(messageRoomRouteSource).toContain("initialSnapshotResolved={initialRoomSnapshotResolved}");

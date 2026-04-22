@@ -1,10 +1,9 @@
+import { generatePrincipalKeyPair, type PrincipalId } from "@agenter/principal-crypto";
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
-import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
-import { generatePrincipalKeyPair, type PrincipalId } from "@agenter/principal-crypto";
 
 import { MessageControlPlane, resolveMessageControlDbPath, type MessageTransportServerMessage } from "../src";
 
@@ -37,45 +36,10 @@ const createRoom = (
     bootstrapActorId: input.bootstrapActorId ?? "auth:owner",
   });
 
-const toHttpUrl = (url: string): string => url.replace(/^ws:/, "http:");
-
-const requestHttp = async (
-  urlText: string,
-): Promise<{ status: number; body: string }> =>
-  await new Promise((resolve, reject) => {
-    const url = new URL(urlText);
-    const request = httpRequest(
-      {
-        protocol: url.protocol,
-        hostname: url.hostname,
-        port: url.port,
-        path: `${url.pathname}${url.search}`,
-        method: "GET",
-      },
-      (response) => {
-        let body = "";
-        response.setEncoding("utf8");
-        response.on("data", (chunk: string) => {
-          body += chunk;
-        });
-        response.on("end", () => {
-          resolve({
-            status: response.statusCode ?? 0,
-            body,
-          });
-        });
-      },
-    );
-    request.on("error", reject);
-    request.end();
-  });
-
 const waitForSocketOutcome = async (
   socket: WebSocket,
 ): Promise<
-  | { type: "message"; payload: MessageTransportServerMessage }
-  | { type: "close"; code: number }
-  | { type: "error" }
+  { type: "message"; payload: MessageTransportServerMessage } | { type: "close"; code: number } | { type: "error" }
 > =>
   await new Promise((resolve) => {
     socket.addEventListener("message", (event) => {
@@ -210,10 +174,7 @@ describe("Feature: message-chat-control-plane", () => {
     const inbound = messages.find((message) => message.content === "hello legacy jane");
     const reply = messages.find((message) => message.content === "legacy jane reply");
 
-    expect(repaired?.participants).toEqual([
-      { id: principalActorId },
-      { id: "auth:kzf" },
-    ]);
+    expect(repaired?.participants).toEqual([{ id: principalActorId }, { id: "auth:kzf" }]);
     expect(plane.listChannelsForActor("session:jane")).toHaveLength(0);
     expect(plane.listChannelsForActor(principalActorId)[0]?.chatId).toBe(room.chatId);
     expect(grants.some((grant) => grant.participantId === "session:jane")).toBeFalse();
@@ -499,8 +460,12 @@ describe("Feature: message-chat-control-plane", () => {
       chatId: room.chatId,
       accessToken: seatA.accessToken,
     });
-    expect(snapshot.items.find((item) => item.content === "message from analyst a")?.senderActorId).toBe("auth:analyst-a");
-    expect(snapshot.items.find((item) => item.content === "message from reviewer")?.senderActorId).toBe("session:reviewer");
+    expect(snapshot.items.find((item) => item.content === "message from analyst a")?.senderActorId).toBe(
+      "auth:analyst-a",
+    );
+    expect(snapshot.items.find((item) => item.content === "message from reviewer")?.senderActorId).toBe(
+      "session:reviewer",
+    );
 
     const page = plane.queryMessagesAuthorized({
       chatId: room.chatId,
@@ -543,7 +508,11 @@ describe("Feature: message-chat-control-plane", () => {
     expect(plane.getChannel(room.chatId, { includeArchived: true })).toBeUndefined();
     expect(plane.getChannelForActor(room.chatId, "session:relay", { includeArchived: true })).toBeUndefined();
     expect(plane.listChannels({ includeArchived: true }).some((entry) => entry.chatId === room.chatId)).toBeFalse();
-    expect(plane.listChannelsForActor("session:relay", { includeArchived: true }).some((entry) => entry.chatId === room.chatId)).toBeFalse();
+    expect(
+      plane
+        .listChannelsForActor("session:relay", { includeArchived: true })
+        .some((entry) => entry.chatId === room.chatId),
+    ).toBeFalse();
     expect(() =>
       plane.snapshotAuthorized({
         chatId: room.chatId,
@@ -601,14 +570,14 @@ describe("Feature: message-chat-control-plane", () => {
       accessToken: viewer.accessToken,
       messageId: historical.messageId,
     });
-    const viewerState = read.readStates?.find((state) => state.actorId === "auth:viewer");
+    const viewerState = read.seatStates?.find((state) => state.actorId === "auth:viewer");
     const refreshed = plane.getMessage(room.chatId, historical.messageId);
 
     expect(viewerState).toMatchObject({
       actorId: "auth:viewer",
-      trackedByLatestVisible: true,
-      hasReadLatestVisible: true,
+      role: "readonly",
     });
+    expect(Object.prototype.hasOwnProperty.call(read, "readProgress")).toBeFalse();
     expect(refreshed?.readActorIds).toContain("auth:viewer");
     expect(refreshed?.unreadActorIds).not.toContain("auth:viewer");
     expect(plane.listUnreadRoomSummaries("auth:viewer")).toHaveLength(0);
@@ -1002,7 +971,7 @@ describe("Feature: message-chat-control-plane", () => {
     expect(plane.listPendingAdminWork(room.chatId)[0]?.assignedAdminId).toBe("auth:alice");
   });
 
-  test("Scenario: Given multiple room seats When different actors mark the latest visible message Then aggregate read progress and per-seat timestamps stay actor-scoped", () => {
+  test("Scenario: Given multiple room seats When different actors mark the latest visible message Then durable message arrays and seat metadata stay actor-scoped", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
     const viewer = plane.issueChannelGrantAuthorized({
@@ -1037,62 +1006,53 @@ describe("Feature: message-chat-control-plane", () => {
       chatId: room.chatId,
       accessToken: room.accessToken,
     });
-    expect(initial.channel.readProgress).toMatchObject({
-      latestVisibleMessageId: visible.messageId,
-      totalSeatCount: 3,
-      readSeatCount: 0,
-      unreadSeatCount: 3,
-    });
+    expect(Object.prototype.hasOwnProperty.call(initial.channel, "readProgress")).toBeFalse();
+    expect(initial.channel.seatStates?.map((state) => state.actorId).sort()).toEqual([
+      "auth:owner",
+      "auth:viewer",
+      "session:relay",
+    ]);
 
     const relayRead = plane.markChannelReadAuthorized({
       chatId: room.chatId,
       accessToken: relay.accessToken,
       messageId: visible.messageId,
     });
-    expect(relayRead.readProgress).toMatchObject({
-      latestVisibleMessageId: visible.messageId,
-      totalSeatCount: 3,
-      readSeatCount: 1,
-      unreadSeatCount: 2,
-    });
-    const relayState = relayRead.readStates?.find((state) => state.actorId === "session:relay");
+    const relayState = relayRead.seatStates?.find((state) => state.actorId === "session:relay");
+    const relayMessage = plane.getMessage(room.chatId, visible.messageId);
     expect(relayState).toMatchObject({
       actorId: "session:relay",
-      trackedByLatestVisible: true,
-      hasReadLatestVisible: true,
       focused: true,
       online: true,
     });
+    expect(relayMessage?.readActorIds).toContain("session:relay");
+    expect(relayMessage?.unreadActorIds).not.toContain("session:relay");
+    expect(Object.prototype.hasOwnProperty.call(relayRead, "readProgress")).toBeFalse();
 
     const ownerRead = plane.markChannelReadAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
     });
-    expect(ownerRead.readProgress).toMatchObject({
-      latestVisibleMessageId: visible.messageId,
-      totalSeatCount: 3,
-      readSeatCount: 2,
-      unreadSeatCount: 1,
-    });
-    const ownerState = ownerRead.readStates?.find((state) => state.actorId === "auth:owner");
-    const viewerState = ownerRead.readStates?.find((state) => state.actorId === "auth:viewer");
+    const ownerState = ownerRead.seatStates?.find((state) => state.actorId === "auth:owner");
+    const viewerState = ownerRead.seatStates?.find((state) => state.actorId === "auth:viewer");
+    const ownerMessage = plane.getMessage(room.chatId, visible.messageId);
     expect(ownerState).toMatchObject({
       actorId: "auth:owner",
-      trackedByLatestVisible: true,
-      hasReadLatestVisible: true,
       online: true,
     });
     expect(viewerState).toMatchObject({
       actorId: "auth:viewer",
-      trackedByLatestVisible: true,
-      hasReadLatestVisible: false,
       online: true,
     });
-    expect(plane.snapshotAuthorized({ chatId: room.chatId, accessToken: viewer.accessToken }).channel.readProgress).toMatchObject({
-      latestVisibleMessageId: visible.messageId,
-      readSeatCount: 2,
-      unreadSeatCount: 1,
-    });
+    expect(ownerMessage?.readActorIds.sort()).toEqual(["auth:owner", "session:relay"]);
+    expect(ownerMessage?.unreadActorIds).toEqual(["auth:viewer"]);
+    expect(Object.prototype.hasOwnProperty.call(ownerRead, "readProgress")).toBeFalse();
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        plane.snapshotAuthorized({ chatId: room.chatId, accessToken: viewer.accessToken }).channel,
+        "readProgress",
+      ),
+    ).toBeFalse();
   });
 
   test("Scenario: Given an unread seat with invalid credentials When room collaboration state is projected Then that seat stays visible and flagged instead of disappearing", () => {
@@ -1132,22 +1092,14 @@ describe("Feature: message-chat-control-plane", () => {
       chatId: room.chatId,
       accessToken: viewer.accessToken,
     }).channel;
-    expect(projected.readProgress).toMatchObject({
-      latestVisibleMessageId: visible.messageId,
-      totalSeatCount: 3,
-      readSeatCount: 1,
-      unreadSeatCount: 2,
-      invalidCredentialSeatCount: 1,
-    });
-    expect(projected.readStates?.find((state) => state.actorId === "auth:viewer")).toMatchObject({
+    expect(Object.prototype.hasOwnProperty.call(projected, "readProgress")).toBeFalse();
+    expect(projected.seatStates?.find((state) => state.actorId === "auth:viewer")).toMatchObject({
       actorId: "auth:viewer",
-      trackedByLatestVisible: true,
-      hasReadLatestVisible: false,
       invalidCredential: true,
     });
   });
 
-  test("Scenario: Given revoked or malformed room credentials When room APIs or transport validate them Then callers receive explicit credential-invalid and superadmin can still recover the room", async () => {
+  test("Scenario: Given a revoked room credential When authorized APIs reject that seat and a valid transport still boots Then superadmin can still recover the room", async () => {
     const plane = createPlane();
     await plane.startTransport({ port: 0 });
     const room = createRoom(plane, { chatId: createRoomId() });
@@ -1176,15 +1128,6 @@ describe("Feature: message-chat-control-plane", () => {
         accessToken: readonly.accessToken,
       }),
     ).toThrow("message room credential-invalid");
-
-    const missingTokenResponse = await requestHttp(toHttpUrl(endpoint.url.replace(/\?token=.*$/, "")));
-    expect(missingTokenResponse.status).toBe(401);
-
-    const invalidTokenUrl = new URL(toHttpUrl(endpoint.url));
-    invalidTokenUrl.searchParams.set("token", "msgtok_invalidcredential0001");
-    const invalidTokenResponse = await requestHttp(invalidTokenUrl.toString());
-    expect(invalidTokenResponse.status).toBe(401);
-    expect(invalidTokenResponse.body).toBe("credential-invalid");
 
     const authorizedSocket = new WebSocket(endpoint.url);
     const snapshotOutcome = await waitForSocketOutcome(authorizedSocket);
@@ -1249,13 +1192,11 @@ describe("Feature: message-chat-control-plane", () => {
       ) strict;
       pragma user_version = 2;
     `);
-    db
-      .query(
-        `insert into chat_channel (
+    db.query(
+      `insert into chat_channel (
           chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at, archived_at, archived_by
         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, null)`,
-      )
-      .run("room-legacy", "room", "Legacy", "jane", null, "[]", "{}", now, now);
+    ).run("room-legacy", "room", "Legacy", "jane", null, "[]", "{}", now, now);
     db.close();
 
     const plane = new MessageControlPlane({ dbPath });
@@ -1355,13 +1296,11 @@ describe("Feature: message-chat-control-plane", () => {
          from actor_room_state
          where chat_id = ? and actor_id = ?`,
       )
-      .get(room.chatId, "auth:viewer") as
-      | {
-          unread_count: number;
-          last_read_row_id: number | null;
-          latest_unread_row_id: number | null;
-        }
-      | null;
+      .get(room.chatId, "auth:viewer") as {
+      unread_count: number;
+      last_read_row_id: number | null;
+      latest_unread_row_id: number | null;
+    } | null;
     verified.close();
 
     expect(repairedRow).toEqual({

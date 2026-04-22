@@ -69,6 +69,7 @@ import {
   type TerminalReadResult,
   type TerminalWriteResult,
 } from "@agenter/terminal-system";
+import { privateKeyToAccount } from "viem/accounts";
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
 import { appAttentionSourceRegistry } from "./attention-src";
 import { projectAuthActors } from "./auth-actor-catalog";
@@ -116,6 +117,7 @@ import { type ChatCycle } from "./chat-cycles";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
 import { projectHeartbeatGroups, type RuntimeHeartbeatGroupRecord } from "./heartbeat-groups";
 import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
+import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
@@ -187,8 +189,6 @@ import {
   type WorkspaceWorkbenchMode,
 } from "./workspace-workbench";
 import { WorkspacesStore, type WorkspaceEntry } from "./workspaces-store";
-import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
-import { privateKeyToAccount } from "viem/accounts";
 
 const now = (): number => Date.now();
 const clonePromptWindowMessages = (
@@ -339,8 +339,6 @@ type PersistedChatMessage = ChatMessage & {
   messageId: string;
 };
 
-export type PublicRoomReadProgress = NonNullable<MessageControlPlaneEntry["readProgress"]>;
-
 export type PublicRoomEntry = MessageControlPlaneEntry;
 
 export type PublicRoomMessageRecord = MessageRecord;
@@ -363,15 +361,7 @@ const toPersistedChatMessage = (sessionId: string, message: SessionMessageRecord
 
 const toPublicRoomMessageId = (messageId: number): number => messageId;
 
-const projectPublicRoomEntry = (channel: MessageControlPlaneEntry): PublicRoomEntry => ({
-  ...channel,
-  readProgress: channel.readProgress
-    ? {
-        ...channel.readProgress,
-        latestVisibleMessageId: channel.readProgress.latestVisibleMessageId,
-      }
-    : undefined,
-});
+const projectPublicRoomEntry = (channel: MessageControlPlaneEntry): PublicRoomEntry => ({ ...channel });
 
 const projectPublicRoomMessage = (message: MessageRecord): PublicRoomMessageRecord => ({
   ...message,
@@ -3766,7 +3756,11 @@ export class AppKernel {
 
   private async validateRootAuthPrivateKey(
     privateKey: string,
-  ): Promise<{ descriptor: Awaited<ReturnType<AuthServiceBridge["describe"]>>; authId: string; privateKey: `0x${string}` }> {
+  ): Promise<{
+    descriptor: Awaited<ReturnType<AuthServiceBridge["describe"]>>;
+    authId: string;
+    privateKey: `0x${string}`;
+  }> {
     const descriptor = await this.authService.describe();
     const normalizedPrivateKey = toHexPrivateKey(privateKey);
     const authId = privateKeyToAccount(normalizedPrivateKey).address.toLowerCase();
@@ -3780,7 +3774,11 @@ export class AppKernel {
     };
   }
 
-  private async resolveBrowserAutoLoginPrivateKey(): Promise<{ authId: string; privateKey: `0x${string}`; source: "local_env" | "managed_local" }> {
+  private async resolveBrowserAutoLoginPrivateKey(): Promise<{
+    authId: string;
+    privateKey: `0x${string}`;
+    source: "local_env" | "managed_local";
+  }> {
     const homeDir = this.getHomeDir();
     const storedPrivateKey = readLocalEnvValue(homeDir, AUTO_LOGIN_PRIVATE_KEY_ENV_NAME);
     if (storedPrivateKey) {

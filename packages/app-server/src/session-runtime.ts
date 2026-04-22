@@ -88,6 +88,20 @@ import {
 import { AttentionHashAliasRegistry, AttentionHashAliasStore } from "./attention-hash-alias-registry";
 import { projectAttentionCommitMatchForModel } from "./attention-model-view";
 import {
+  MESSAGE_ATTENTION_NAMESPACE,
+  TASK_ATTENTION_NAMESPACE,
+  TERMINAL_ATTENTION_NAMESPACE,
+  appAttentionSourceRegistry,
+  formatMessageAttentionSrc,
+  formatTaskAttentionSrc,
+  formatTerminalAttentionSrc,
+  parseMessageAttentionSrc,
+  parseTaskAttentionSrc,
+  parseTerminalAttentionSrc,
+  type MessageAttentionSrc,
+  type TerminalAttentionSrc,
+} from "./attention-src";
+import {
   collectClientMessageIds,
   detectChatCycleKind,
   toChatCycleId,
@@ -135,6 +149,7 @@ import type {
 } from "./runtime-history-records";
 import { startRuntimeLocalApi, type RuntimeLocalApiHandle } from "./runtime-local-api";
 import { buildRuntimeTerminalEnvironment } from "./runtime-shell-bin";
+import { RuntimeSkillSystem } from "./runtime-skill-system";
 import {
   RUNTIME_API_BASE_URL_ENV,
   RUNTIME_HOME_DIR_ENV,
@@ -143,7 +158,6 @@ import {
   RUNTIME_ROOT_WORKSPACE_ENV,
   listRuntimeSkillMountRoots,
 } from "./runtime-skills";
-import { RuntimeSkillSystem } from "./runtime-skill-system";
 import {
   projectRuntimeAttentionActiveMatch,
   projectRuntimeMessageChannel,
@@ -156,8 +170,8 @@ import {
   projectRuntimeTerminal,
   projectRuntimeWorkspaceSurface,
   type RuntimeMessageChannelView,
-  type RuntimeMessageQueryResult,
   type RuntimeMessageOverviewItem,
+  type RuntimeMessageQueryResult,
   type RuntimeMessageSendResult,
   type RuntimeMessageSnapshotView,
   type RuntimeReachableParticipantView,
@@ -179,20 +193,6 @@ import {
   toAttentionFocusStateFromVisibility,
   type SessionNotificationSnapshot,
 } from "./session-notifications";
-import {
-  appAttentionSourceRegistry,
-  formatMessageAttentionSrc,
-  formatTaskAttentionSrc,
-  formatTerminalAttentionSrc,
-  parseMessageAttentionSrc,
-  parseTaskAttentionSrc,
-  parseTerminalAttentionSrc,
-  MESSAGE_ATTENTION_NAMESPACE,
-  TASK_ATTENTION_NAMESPACE,
-  TERMINAL_ATTENTION_NAMESPACE,
-  type MessageAttentionSrc,
-  type TerminalAttentionSrc,
-} from "./attention-src";
 import { SessionStore } from "./session-store";
 import { SettingsEditor, type EditableKind } from "./settings-editor";
 import { buildTerminalSemanticFingerprint, buildTerminalViewFingerprint } from "./terminal-snapshot-fingerprint";
@@ -1064,8 +1064,7 @@ const stableAttentionDraftDigest = (draft: AttentionDraft): string => {
   return `${draft.sourceRef.src}:${semanticHint}`;
 };
 
-const buildAttentionScoreSubjectSeed = (draft: AttentionDraft): string =>
-  `subject:${draft.sourceRef.src}`;
+const buildAttentionScoreSubjectSeed = (draft: AttentionDraft): string => `subject:${draft.sourceRef.src}`;
 
 const buildAttentionScoreSemanticSeed = (draft: AttentionDraft): string | null => {
   const semanticHash = typeof draft.semanticHash === "string" ? draft.semanticHash.trim() : "";
@@ -1324,10 +1323,7 @@ export interface SessionRuntimeOptions {
   setRuntimeWorkspaceAlias?: (input: {
     runtimeWorkspaceId: number;
     alias: string;
-  }) =>
-    | Promise<WorkspaceMountRecord | null>
-    | WorkspaceMountRecord
-    | null;
+  }) => Promise<WorkspaceMountRecord | null> | WorkspaceMountRecord | null;
   allocateRoomId?: (input: { kind: MessageChannelKind; title?: string }) => Promise<string>;
   logger?: {
     log: (line: {
@@ -1549,7 +1545,10 @@ export class SessionRuntime {
   }
 
   private findMountedWorkspaceAuthority(runtimeWorkspaceId: number): SessionRuntimeWorkspaceAuthority | null {
-    return this.listMountedWorkspaceAuthorities().find((entry) => entry.mount.runtimeWorkspaceId === runtimeWorkspaceId) ?? null;
+    return (
+      this.listMountedWorkspaceAuthorities().find((entry) => entry.mount.runtimeWorkspaceId === runtimeWorkspaceId) ??
+      null
+    );
   }
 
   private getRootWorkspaceSkillRoots(): string[] {
@@ -1882,19 +1881,14 @@ export class SessionRuntime {
         channel.metadata && typeof channel.metadata === "object"
           ? ({ ...(channel.metadata as Record<string, unknown>) } satisfies Record<string, unknown>)
           : {},
-      readProgress: channel.readProgress
-        ? {
-            ...channel.readProgress,
-          }
-        : undefined,
-      readStates: channel.readStates?.map((state) => ({
+      seatStates: channel.seatStates?.map((state) => ({
         actorId: state.actorId,
         label: state.label,
         role: state.role,
         currentAdmin: state.currentAdmin,
         online: state.online,
         focused: state.focused,
-        hasReadLatestVisible: state.hasReadLatestVisible,
+        invalidCredential: state.invalidCredential,
       })),
       presence: this.projectMessagePresenceSummary(channel),
       focused: channel.focused,
@@ -1941,7 +1935,9 @@ export class SessionRuntime {
   }
 
   private resolveReferencedRoomMessages(snapshot: MessageSnapshot): MessageRecord[] {
-    const refs = [...new Set(snapshot.items.map((item) => item.ref).filter((value): value is number => value !== undefined))];
+    const refs = [
+      ...new Set(snapshot.items.map((item) => item.ref).filter((value): value is number => value !== undefined)),
+    ];
     return refs
       .map((messageId) => this.messageSystem.getMessage(snapshot.channel.chatId, messageId))
       .filter((message): message is MessageRecord => message !== undefined);
@@ -3602,7 +3598,8 @@ export class SessionRuntime {
                 this.findMountedWorkspaceAuthority(updated.runtimeWorkspaceId)?.defaultCwd ??
                 this.listWorkspaceAuthorities().find((entry) => entry.mount.mountId === updated.mountId)?.defaultCwd ??
                 updated.workspacePath,
-              grants: this.listWorkspaceAuthorities().find((entry) => entry.mount.mountId === updated.mountId)?.grants ?? [],
+              grants:
+                this.listWorkspaceAuthorities().find((entry) => entry.mount.mountId === updated.mountId)?.grants ?? [],
             }),
           };
         },
@@ -3753,18 +3750,12 @@ export class SessionRuntime {
             }),
           ),
         }).server(async (_rawInput, context) =>
-          traceWithContext(
-            "workspace_list",
-            {},
-            async () => this.projectDirectWorkspaceList(),
-            context,
-          ),
+          traceWithContext("workspace_list", {}, async () => this.projectDirectWorkspaceList(), context),
         );
 
         const rootBashTool = toolDefinition({
           name: "root_bash",
-          description:
-            "Execute one-shot bash inside the avatar root workspace with runtime-local system CLI access.",
+          description: "Execute one-shot bash inside the avatar root workspace with runtime-local system CLI access.",
           inputSchema: z.object({
             command: z.string(),
             cwd: z.string().optional(),
@@ -3855,7 +3846,10 @@ export class SessionRuntime {
   }
 
   private isTaskAttentionContext(match: AttentionActiveContextMatch): boolean {
-    return match.contextId.startsWith("ctx-task-") || match.recentCommits.some((commit) => parseTaskSourceSrc(commit.meta.src ?? "") !== null);
+    return (
+      match.contextId.startsWith("ctx-task-") ||
+      match.recentCommits.some((commit) => parseTaskSourceSrc(commit.meta.src ?? "") !== null)
+    );
   }
 
   private isWorkspaceAttentionContext(match: AttentionActiveContextMatch): boolean {
@@ -3893,9 +3887,7 @@ export class SessionRuntime {
     }
     const metadataSource = [
       ...selected,
-      ...bootstrapSnapshots.filter(
-        (snapshot) => !selected.some((match) => match.contextId === snapshot.contextId),
-      ),
+      ...bootstrapSnapshots.filter((snapshot) => !selected.some((match) => match.contextId === snapshot.contextId)),
       ...active.filter(
         (match) =>
           !selected.some((selectedMatch) => selectedMatch.contextId === match.contextId) &&
@@ -3950,11 +3942,9 @@ export class SessionRuntime {
     const renderedSnapshots = bootstrapSnapshots
       .filter((match) => match.context.content.trim().length > 0)
       .map((match) =>
-        [
-          `## AttentionContext.${match.contextId}`,
-          "",
-          mdFence("md+attention-context", match.context.content),
-        ].join("\n"),
+        [`## AttentionContext.${match.contextId}`, "", mdFence("md+attention-context", match.context.content)].join(
+          "\n",
+        ),
       );
 
     return {
@@ -4254,7 +4244,8 @@ export class SessionRuntime {
   }
 
   private resolveAttentionContextId(draft: AttentionDraft): string {
-    const explicitMessageSource = typeof draft.provenance?.src === "string" ? parseMessageSourceSrc(draft.provenance.src) : null;
+    const explicitMessageSource =
+      typeof draft.provenance?.src === "string" ? parseMessageSourceSrc(draft.provenance.src) : null;
     if (explicitMessageSource) {
       return this.ensureAttentionContextForChannel(explicitMessageSource.chatId).contextId;
     }
@@ -6825,10 +6816,7 @@ export class SessionRuntime {
   private getAttentionContainmentBackoffMs(retryCount: number): number {
     const policy = this.getAttentionRetryPolicy();
     const steps = Math.max(0, retryCount - 1);
-    return Math.min(
-      policy.maxBackoffMs,
-      Math.round(policy.initialBackoffMs * policy.multiplier ** steps),
-    );
+    return Math.min(policy.maxBackoffMs, Math.round(policy.initialBackoffMs * policy.multiplier ** steps));
   }
 
   private pruneAttentionContainment(active: AttentionActiveContextMatch[]): void {
@@ -8335,17 +8323,17 @@ export class SessionRuntime {
       ? "idle"
       : waitingReason === "attention_blocked"
         ? "blocked"
-      : waitingReason === "attention_backoff"
-        ? "backoff"
-        : paused
-          ? "paused"
-          : input.phase !== "waiting_commits"
-            ? "running"
-            : waitingReason === "attention_debt"
-              ? "waiting"
-              : waitingReason === "ready_now"
-                ? "running"
-                : "idle";
+        : waitingReason === "attention_backoff"
+          ? "backoff"
+          : paused
+            ? "paused"
+            : input.phase !== "waiting_commits"
+              ? "running"
+              : waitingReason === "attention_debt"
+                ? "waiting"
+                : waitingReason === "ready_now"
+                  ? "running"
+                  : "idle";
     const next: LoopBusKernelState = {
       ...previous,
       phase: input.phase,

@@ -201,16 +201,6 @@
 								<div class="mt-3 flex flex-wrap gap-1.5">
 									<Badge
 										class="rounded-full text-[11px]"
-										variant={state.hasReadLatestVisible ? 'secondary' : 'outline'}
-									>
-										{state.trackedByLatestVisible
-											? state.hasReadLatestVisible
-												? 'Read'
-												: 'Unread'
-											: 'Joined later'}
-									</Badge>
-									<Badge
-										class="rounded-full text-[11px]"
 										variant={state.focused ? 'default' : 'outline'}
 									>
 										{state.focused ? 'Focused' : 'Unfocused'}

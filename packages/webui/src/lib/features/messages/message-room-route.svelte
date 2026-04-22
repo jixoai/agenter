@@ -27,7 +27,6 @@
 	import {
 		maybeStartRoomReadAck,
 		resolveRoomReadAckKey,
-		resolveRoomReadAckProjectionFloor,
 		resolveRoomReadAckServerFloor,
 		settleRoomReadAckFailure,
 		settleRoomReadAckSuccess,
@@ -90,8 +89,6 @@
 		online: boolean;
 		focused: boolean;
 		invalidCredential: boolean;
-		trackedByLatestVisible: boolean;
-		hasReadLatestVisible: boolean;
 		accessToken?: string;
 		grantId?: string;
 	};
@@ -262,8 +259,6 @@
 				online: false,
 				focused: room.focused,
 				invalidCredential: false,
-				trackedByLatestVisible: false,
-				hasReadLatestVisible: false,
 				accessToken: room.accessToken,
 			});
 		}
@@ -281,8 +276,6 @@
 				online: false,
 				focused: room.focused,
 				invalidCredential: false,
-				trackedByLatestVisible: false,
-				hasReadLatestVisible: false,
 				accessToken: room.accessToken,
 			});
 		}
@@ -299,14 +292,12 @@
 				online: false,
 				focused: false,
 				invalidCredential: !grant.accessToken,
-				trackedByLatestVisible: false,
-				hasReadLatestVisible: false,
 				accessToken: grant.accessToken,
 				grantId: grant.grantId,
 			});
 		}
 
-		for (const state of room.readStates ?? []) {
+		for (const state of room.seatStates ?? []) {
 			if (isSystemActorId(state.actorId)) {
 				continue;
 			}
@@ -318,8 +309,6 @@
 				online: state.online,
 				focused: state.focused,
 				invalidCredential: state.invalidCredential,
-				trackedByLatestVisible: state.trackedByLatestVisible,
-				hasReadLatestVisible: state.hasReadLatestVisible,
 			});
 		}
 
@@ -409,14 +398,6 @@
 			data,
 		} satisfies CachedResourceState<MessageSystemRoomAssetItem[]>;
 	});
-	const roomReadSeatCount = $derived(
-		selectedRoomProjection?.readProgress?.readSeatCount ??
-			resolvedRoomSeatStates.filter((state) => state.trackedByLatestVisible && state.hasReadLatestVisible).length,
-	);
-	const roomReadTotalSeatCount = $derived(
-		selectedRoomProjection?.readProgress?.totalSeatCount ??
-			resolvedRoomSeatStates.filter((state) => state.trackedByLatestVisible).length,
-	);
 	const chatNotice = $derived.by(() => {
 		if (routeNotice) {
 			return routeNotice;
@@ -488,15 +469,14 @@
 		if (trackedVisibleMessage) {
 			return trackedVisibleMessage;
 		}
-		const messageId = room.readProgress?.latestVisibleMessageId;
-		const rowId = room.readProgress?.latestVisibleMessageRowId;
-		if (!messageId || !rowId || rowId <= 0) {
+		const latestMessage = selectedRoomSnapshot?.items.at(-1) ?? null;
+		if (!latestMessage || latestMessage.rowId <= 0 || latestMessage.messageId <= 0) {
 			return null;
 		}
 		return {
-			viewKey: String(messageId),
-			messageId,
-			rowId,
+			viewKey: String(latestMessage.messageId),
+			messageId: latestMessage.messageId,
+			rowId: latestMessage.rowId,
 		};
 	};
 
@@ -634,9 +614,6 @@
 			}
 		}
 		const viewerActorId = selectedViewerActorId;
-		const viewerSeat = viewerActorId
-			? resolvedRoomSeatStates.find((state) => state.actorId === viewerActorId)
-			: null;
 		const accessToken = selectedViewerAccessToken;
 		if (!isAuthenticated || !room || !accessToken || !viewerActorId) {
 			return;
@@ -652,10 +629,7 @@
 			return;
 		}
 		const markKey = resolveRoomReadAckKey(room.chatId, viewerActorId);
-		const serverFloor = Math.max(
-			resolveRoomReadAckServerFloor(selectedRoomSnapshot?.items ?? [], viewerActorId),
-			resolveRoomReadAckProjectionFloor(room.readProgress, resolvedRoomSeatStates, viewerActorId),
-		);
+		const serverFloor = resolveRoomReadAckServerFloor(selectedRoomSnapshot?.items ?? [], viewerActorId);
 		const currentAckState = syncRoomReadAckState(
 			latestMarkedReadBySeat[markKey],
 			serverFloor,
@@ -859,8 +833,6 @@
 	initialSnapshotResolved={initialRoomSnapshotResolved}
 	roomAssetsState={resolvedRoomAssetsState}
 	routeNotice={chatNotice}
-	readSeatCount={roomReadSeatCount}
-	readSeatTotal={roomReadTotalSeatCount}
 	{selectedCallerToken}
 	{selectedViewerActorId}
 	{selectableActors}

@@ -3,9 +3,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { isPrincipalId } from "@agenter/principal-crypto";
-import type { TerminalStatus } from "./types";
 import { ManagedTerminal, type ManagedTerminalConfig, type ManagedTerminalSnapshot } from "./managed-terminal";
-import { TerminalDb } from "./terminal-db";
 import type {
   TerminalAccessProjection,
   TerminalActorId,
@@ -27,7 +25,6 @@ import type {
   TerminalReadProjection,
   TerminalReadResult,
   TerminalRecord,
-  TerminalRendererEngine,
   TerminalReverseCursor,
   TerminalReversePage,
   TerminalSeatProjection,
@@ -40,6 +37,8 @@ import type {
   TerminalWriteLeaseRecord,
   TerminalWriteResult,
 } from "./terminal-control-plane.types";
+import { TerminalDb } from "./terminal-db";
+import type { TerminalStatus } from "./types";
 
 interface ManagedEntry {
   record: TerminalRecord;
@@ -262,7 +261,9 @@ export class TerminalControlPlane {
   private readonly focusedTerminalIdsByActor = new Map<string, Set<string>>();
   private readonly actorPresence = new Map<string, ActorPresence>();
   private readonly changeListeners = new Set<(payload: TerminalChangePayload) => void>();
-  private readonly snapshotListeners = new Set<(payload: { terminalId: string; snapshot: ManagedTerminalSnapshot }) => void>();
+  private readonly snapshotListeners = new Set<
+    (payload: { terminalId: string; snapshot: ManagedTerminalSnapshot }) => void
+  >();
   private readonly statusListeners = new Set<
     (payload: { terminalId: string; running: boolean; status: TerminalStatus }) => void
   >();
@@ -320,7 +321,9 @@ export class TerminalControlPlane {
     };
   }
 
-  onApprovalRequest(listener: (payload: { terminalId: string; request: TerminalApprovalRequestRecord }) => void): () => void {
+  onApprovalRequest(
+    listener: (payload: { terminalId: string; request: TerminalApprovalRequestRecord }) => void,
+  ): () => void {
     this.approvalRequestListeners.add(listener);
     return () => {
       this.approvalRequestListeners.delete(listener);
@@ -349,7 +352,12 @@ export class TerminalControlPlane {
     const ttlMs = typeof input === "boolean" ? undefined : input.ttlMs;
     this.actorPresence.set(actorId, {
       online: true,
-      expiresAt: typeof ttlMs === "number" && ttlMs > 0 ? Date.now() + ttlMs : actorId.startsWith("auth:") ? Date.now() + TRANSIENT_ACTOR_PRESENCE_TTL_MS : current?.expiresAt ?? null,
+      expiresAt:
+        typeof ttlMs === "number" && ttlMs > 0
+          ? Date.now() + ttlMs
+          : actorId.startsWith("auth:")
+            ? Date.now() + TRANSIENT_ACTOR_PRESENCE_TTL_MS
+            : (current?.expiresAt ?? null),
       invalidCredential: current?.invalidCredential ?? false,
     });
     this.syncAdminAssignments();
@@ -415,7 +423,12 @@ export class TerminalControlPlane {
     const bootstrapActorId = input.bootstrapActorId ?? TRUSTED_BOOTSTRAP_PARTICIPANT_ID;
     const bootstrapRole = input.bootstrapRole ?? "admin";
     const created = this.createRecord(input);
-    const access = this.ensureActorAccess(created.terminalId, bootstrapActorId, bootstrapRole, input.bootstrapAccessToken);
+    const access = this.ensureActorAccess(
+      created.terminalId,
+      bootstrapActorId,
+      bootstrapRole,
+      input.bootstrapAccessToken,
+    );
     const adminGroup = input.adminGroupCandidateIds ?? [bootstrapActorId];
     this.db.setAdminGroup(created.terminalId, adminGroup);
     this.syncAdminAssignments(created.terminalId);
@@ -497,7 +510,9 @@ export class TerminalControlPlane {
   focusForActor(actorId: TerminalActorId, op: TerminalFocusOp = "replace", terminalIds: string[] = []): string[] {
     this.assertActorId(actorId);
     const validIds = terminalIds.filter((terminalId) =>
-      actorId === TRUSTED_BOOTSTRAP_PARTICIPANT_ID ? this.has(terminalId) : Boolean(this.getGrantForActor(terminalId, actorId)),
+      actorId === TRUSTED_BOOTSTRAP_PARTICIPANT_ID
+        ? this.has(terminalId)
+        : Boolean(this.getGrantForActor(terminalId, actorId)),
     );
     const previous = new Set(this.getFocusedTerminalIds(actorId));
     const current = new Set(previous);
@@ -559,25 +574,29 @@ export class TerminalControlPlane {
 
   getTransportEndpoint(terminalId: string, accessToken?: string): TerminalTransportEndpoint | null {
     const transport = this.getConfig().transport;
-    if (!transport?.port) {
+    const livePort = this.transportServer ? Number.parseInt(this.transportServer.url.port, 10) : Number.NaN;
+    const port = Number.isFinite(livePort) && livePort > 0 ? livePort : transport?.port;
+    if (!port) {
       return null;
     }
     const resolvedAccessToken = accessToken ?? this.getTrustedBootstrapAccess(terminalId)?.accessToken;
     if (!resolvedAccessToken) {
       return null;
     }
-    const host = transport.host ?? "127.0.0.1";
+    const host = transport.host ?? this.transportServer?.url.hostname ?? "127.0.0.1";
     const path = toTransportPath(transport.pathPrefix ?? "/pty", terminalId);
-    const baseUrl = `ws://${host}:${transport.port}${path}`;
+    const baseUrl = `ws://${host}:${port}${path}`;
     return {
       host,
-      port: transport.port,
+      port,
       path,
       url: appendTokenToUrl(baseUrl, resolvedAccessToken),
     };
   }
 
-  async startTransport(input: { host?: string; port?: number; pathPrefix?: string } = {}): Promise<TerminalTransportConfig> {
+  async startTransport(
+    input: { host?: string; port?: number; pathPrefix?: string } = {},
+  ): Promise<TerminalTransportConfig> {
     if (this.transportServer) {
       return cloneTransportConfig(this.config.transport);
     }
@@ -640,12 +659,25 @@ export class TerminalControlPlane {
           );
           cleanup.push(
             entry.terminal.onOutput((data) => {
-              socket.send(JSON.stringify({ type: "output", terminalId: record.terminalId, data } satisfies TerminalTransportServerMessage));
+              socket.send(
+                JSON.stringify({
+                  type: "output",
+                  terminalId: record.terminalId,
+                  data,
+                } satisfies TerminalTransportServerMessage),
+              );
             }),
           );
           cleanup.push(
             entry.terminal.onStatus((running, status) => {
-              socket.send(JSON.stringify({ type: "status", terminalId: record.terminalId, running, status } satisfies TerminalTransportServerMessage));
+              socket.send(
+                JSON.stringify({
+                  type: "status",
+                  terminalId: record.terminalId,
+                  running,
+                  status,
+                } satisfies TerminalTransportServerMessage),
+              );
               if (!running) {
                 socket.close(1000, "terminal-stopped");
               }
@@ -669,7 +701,13 @@ export class TerminalControlPlane {
           const text = typeof message === "string" ? message : Buffer.from(message).toString("utf8");
           const parsed = parseClientTransportMessage(text);
           if (!parsed) {
-            socket.send(JSON.stringify({ type: "error", terminalId, message: "invalid transport message" } satisfies TerminalTransportServerMessage));
+            socket.send(
+              JSON.stringify({
+                type: "error",
+                terminalId,
+                message: "invalid transport message",
+              } satisfies TerminalTransportServerMessage),
+            );
             return;
           }
           try {
@@ -706,12 +744,14 @@ export class TerminalControlPlane {
       },
     });
 
+    const livePort = Number.parseInt(this.transportServer.url.port, 10);
     this.config = {
       ...this.config,
       transport: {
         host,
         pathPrefix,
-        port: this.transportServer.port ?? requestedPort ?? null,
+        port:
+          Number.isFinite(livePort) && livePort > 0 ? livePort : (this.transportServer.port ?? requestedPort ?? null),
       },
     };
     return cloneTransportConfig(this.config.transport);
@@ -771,7 +811,8 @@ export class TerminalControlPlane {
           },
           projection,
         );
-        const shouldUseDiff = mode === "diff" || JSON.stringify(diffPayload).length <= JSON.stringify(snapshotPayload).length;
+        const shouldUseDiff =
+          mode === "diff" || JSON.stringify(diffPayload).length <= JSON.stringify(snapshotPayload).length;
         if (shouldUseDiff) {
           return this.finalizeReadResult(diffPayload, actorId, input.recordActivity ?? true);
         }
@@ -780,7 +821,10 @@ export class TerminalControlPlane {
     return this.finalizeReadResult(snapshotPayload, actorId, input.recordActivity ?? true);
   }
 
-  async snapshot(terminalId: string, options: { remark?: boolean; recordActivity?: boolean } = {}): Promise<TerminalReadResult> {
+  async snapshot(
+    terminalId: string,
+    options: { remark?: boolean; recordActivity?: boolean } = {},
+  ): Promise<TerminalReadResult> {
     return await this.read(terminalId, "snapshot", options);
   }
 
@@ -930,17 +974,25 @@ export class TerminalControlPlane {
 
   setConfig(patch: TerminalControlPlaneConfigPatch): TerminalControlPlaneConfig {
     this.config = {
-      defaults: patch.defaults ? mergeProfile(this.config.defaults, patch.defaults) : cloneProfile(this.config.defaults),
+      defaults: patch.defaults
+        ? mergeProfile(this.config.defaults, patch.defaults)
+        : cloneProfile(this.config.defaults),
       processProfiles: {
         ...(this.config.processProfiles ?? {}),
         ...Object.fromEntries(
-          Object.entries(patch.processProfiles ?? {}).map(([key, value]) => [key, mergeProfile(this.config.processProfiles?.[key], value)]),
+          Object.entries(patch.processProfiles ?? {}).map(([key, value]) => [
+            key,
+            mergeProfile(this.config.processProfiles?.[key], value),
+          ]),
         ),
       },
       terminalProfiles: {
         ...(this.config.terminalProfiles ?? {}),
         ...Object.fromEntries(
-          Object.entries(patch.terminalProfiles ?? {}).map(([key, value]) => [key, mergeProfile(this.config.terminalProfiles?.[key], value)]),
+          Object.entries(patch.terminalProfiles ?? {}).map(([key, value]) => [
+            key,
+            mergeProfile(this.config.terminalProfiles?.[key], value),
+          ]),
         ),
       },
       transport: {
@@ -954,7 +1006,12 @@ export class TerminalControlPlane {
   }
 
   updateTerminalAuthorized(
-    input: { terminalId: string; accessToken?: string; actorId?: TerminalActorId; superadminActorId?: TerminalActorId } & TerminalPatchInput,
+    input: {
+      terminalId: string;
+      accessToken?: string;
+      actorId?: TerminalActorId;
+      superadminActorId?: TerminalActorId;
+    } & TerminalPatchInput,
   ): TerminalControlPlaneEntry {
     this.requireAdministrativeAuthority(input.terminalId, {
       accessToken: input.accessToken,
@@ -995,10 +1052,21 @@ export class TerminalControlPlane {
   }
 
   issueGrantAuthorized(
-    input: { terminalId: string; accessToken?: string; actorId?: TerminalActorId; superadminActorId?: TerminalActorId } & TerminalIssueGrantInput,
+    input: {
+      terminalId: string;
+      accessToken?: string;
+      actorId?: TerminalActorId;
+      superadminActorId?: TerminalActorId;
+    } & TerminalIssueGrantInput,
   ): TerminalIssuedGrant {
     this.requireAdministrativeAuthority(input.terminalId, input);
-    const access = this.ensureActorAccess(input.terminalId, input.participantId, input.role, input.accessTokenHint, input.label);
+    const access = this.ensureActorAccess(
+      input.terminalId,
+      input.participantId,
+      input.role,
+      input.accessTokenHint,
+      input.label,
+    );
     if (input.adminCandidateRank === null) {
       const nextCandidates = this.db
         .listAdminCandidates(input.terminalId)
@@ -1058,14 +1126,18 @@ export class TerminalControlPlane {
     return { ok };
   }
 
-  listApprovalRequests(input: {
-    terminalId?: string;
-    assignedAdminId?: TerminalActorId;
-    participantId?: TerminalActorId;
-    statuses?: Array<TerminalApprovalRequestRecord["status"]>;
-  } = {}): TerminalApprovalRequestRecord[] {
+  listApprovalRequests(
+    input: {
+      terminalId?: string;
+      assignedAdminId?: TerminalActorId;
+      participantId?: TerminalActorId;
+      statuses?: Array<TerminalApprovalRequestRecord["status"]>;
+    } = {},
+  ): TerminalApprovalRequestRecord[] {
     this.expireApprovalsAndLeases();
-    const terminalIds = input.terminalId ? [input.terminalId] : this.db.listTerminals().map((record) => record.terminalId);
+    const terminalIds = input.terminalId
+      ? [input.terminalId]
+      : this.db.listTerminals().map((record) => record.terminalId);
     return terminalIds.flatMap((terminalId) =>
       this.db.listApprovalRequests(terminalId, {
         assignedAdminId: input.assignedAdminId,
@@ -1171,7 +1243,9 @@ export class TerminalControlPlane {
       input.profile,
       { command: input.command, cwd: input.cwd },
     );
-    const command = profile.command ? [...profile.command] : [...(this.options.defaultShellCommand ?? defaultShellCommand())];
+    const command = profile.command
+      ? [...profile.command]
+      : [...(this.options.defaultShellCommand ?? defaultShellCommand())];
     const cwd = resolve(profile.cwd ?? homedir());
     return this.db.createTerminal({
       terminalId,
@@ -1199,7 +1273,10 @@ export class TerminalControlPlane {
       rows: record.profile.rows ?? 30,
       gitLog: toManagedGitLogMode(record.profile.gitLog),
       logStyle: record.profile.logStyle ?? "rich",
-      outputRoot: join(this.options.outputRoot ?? join(homedir(), ".agenter", ".terminal", "output"), record.terminalId),
+      outputRoot: join(
+        this.options.outputRoot ?? join(homedir(), ".agenter", ".terminal", "output"),
+        record.terminalId,
+      ),
     };
     const terminal = new ManagedTerminal(managedConfig);
     const next: ManagedEntry = { record, terminal };
@@ -1242,7 +1319,9 @@ export class TerminalControlPlane {
       title: record.profile.title,
       shortcuts: cloneShortcuts(record.profile.shortcuts),
       rendererEngine: record.profile.rendererEngine ?? "xterm",
-      transportUrl: access?.accessToken ? this.getTransportEndpoint(record.terminalId, access.accessToken)?.url : undefined,
+      transportUrl: access?.accessToken
+        ? this.getTransportEndpoint(record.terminalId, access.accessToken)?.url
+        : undefined,
       currentAdminId: this.resolveCurrentAdminActorId(record.terminalId),
       approvalTimeoutMs: this.config.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
       pendingRequestCount: this.db.listPendingApprovalRequests(record.terminalId).length,
@@ -1367,7 +1446,9 @@ export class TerminalControlPlane {
     const current = this.actorPresence.get(actorId);
     this.actorPresence.set(actorId, {
       online: true,
-      expiresAt: actorId.startsWith("auth:") ? Date.now() + TRANSIENT_ACTOR_PRESENCE_TTL_MS : current?.expiresAt ?? null,
+      expiresAt: actorId.startsWith("auth:")
+        ? Date.now() + TRANSIENT_ACTOR_PRESENCE_TTL_MS
+        : (current?.expiresAt ?? null),
       invalidCredential: current?.invalidCredential ?? false,
     });
   }
@@ -1454,7 +1535,9 @@ export class TerminalControlPlane {
     participantId: TerminalActorId,
     priority: number,
   ): TerminalAdminCandidateRecord[] {
-    const candidates = this.db.listAdminCandidates(terminalId).filter((candidate) => candidate.participantId !== participantId);
+    const candidates = this.db
+      .listAdminCandidates(terminalId)
+      .filter((candidate) => candidate.participantId !== participantId);
     candidates.push({
       terminalId,
       participantId,
@@ -1503,7 +1586,13 @@ export class TerminalControlPlane {
   }
 
   private issueTrustedBootstrapAccess(terminalId: string): TerminalAccessProjection {
-    return this.ensureActorAccess(terminalId, TRUSTED_BOOTSTRAP_PARTICIPANT_ID, "admin", undefined, TRUSTED_BOOTSTRAP_LABEL);
+    return this.ensureActorAccess(
+      terminalId,
+      TRUSTED_BOOTSTRAP_PARTICIPANT_ID,
+      "admin",
+      undefined,
+      TRUSTED_BOOTSTRAP_LABEL,
+    );
   }
 
   private getTrustedBootstrapAccess(terminalId: string): TerminalAccessProjection | undefined {
@@ -1532,7 +1621,9 @@ export class TerminalControlPlane {
       accessToken: grant.accessToken ?? "",
       participantId: grant.participantId,
       currentAdmin: currentAdminId === grant.participantId,
-      adminCandidateRank: grant.participantId ? this.readAdminCandidateRank(terminalId, grant.participantId) : undefined,
+      adminCandidateRank: grant.participantId
+        ? this.readAdminCandidateRank(terminalId, grant.participantId)
+        : undefined,
       leaseId: lease?.leaseId,
       leaseExpiresAt: lease?.expiresAt,
     };
@@ -1747,7 +1838,11 @@ export class TerminalControlPlane {
     };
   }
 
-  private finalizeReadResult(payload: TerminalReadResult, actorId: TerminalActorId | undefined, recordActivity: boolean): TerminalReadResult {
+  private finalizeReadResult(
+    payload: TerminalReadResult,
+    actorId: TerminalActorId | undefined,
+    recordActivity: boolean,
+  ): TerminalReadResult {
     if (!recordActivity) {
       return {
         ...payload,

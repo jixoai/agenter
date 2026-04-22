@@ -37,8 +37,6 @@
 		title: string;
 		participants: GlobalRoomEntry['participants'];
 		updatedAt: number;
-		readSeatCount: number;
-		totalSeatCount: number;
 	}): GlobalRoomEntry => ({
 		chatId: input.chatId,
 		kind: 'room',
@@ -53,15 +51,6 @@
 		participantId: 'system:trusted-bootstrap',
 		currentAdmin: true,
 		transportUrl: undefined,
-		readProgress: {
-			latestVisibleMessageId: undefined,
-			latestVisibleMessageRowId: undefined,
-			latestVisibleAt: undefined,
-			totalSeatCount: input.totalSeatCount,
-			readSeatCount: input.readSeatCount,
-			unreadSeatCount: Math.max(input.totalSeatCount - input.readSeatCount, 0),
-			invalidCredentialSeatCount: 0,
-		},
 	});
 
 	const actorCatalog: ActorDirectoryEntry[] = [
@@ -140,8 +129,6 @@
 				online: true,
 				focused: true,
 				invalidCredential: false,
-				trackedByLatestVisible: true,
-				hasReadLatestVisible: true,
 				accessToken: `token:${initialRoomId}:analyst`,
 				grantId: `${initialRoomId}:grant:analyst`,
 			},
@@ -167,8 +154,6 @@
 					{ id: 'auth:analyst', label: 'Analyst' },
 				],
 				updatedAt: 1_710_000_000_000,
-				readSeatCount: 1,
-				totalSeatCount: 1,
 			}),
 		],
 		loaded: true,
@@ -204,10 +189,6 @@
 			refreshedAt: Date.now(),
 		}) satisfies CachedResourceState<(typeof initialRoomAssets)[typeof initialRoomId]>,
 	);
-	const readSeatCount = $derived(
-		roomSeatStates.filter((seat) => seat.trackedByLatestVisible && seat.hasReadLatestVisible).length,
-	);
-	const readSeatTotal = $derived(roomSeatStates.filter((seat) => seat.trackedByLatestVisible).length);
 	const sendAsOptions = $derived.by(() => {
 		const room = selectedRoom;
 		if (!room) {
@@ -254,47 +235,12 @@
 		};
 	};
 
-	const filterTrackedActorIds = (actorIds: readonly string[]): RoomActorId[] =>
-		normalizeRoomActorIds(actorIds).filter((actorId) => !actorId.startsWith('system:'));
-
-	const syncRoomProgress = (chatId: string): void => {
+	const syncRoomMetadata = (chatId: string): void => {
 		const messages = roomMessagesById[chatId] ?? [];
 		const latestMessage = messages.at(-1);
-		const latestReadActorIds = new Set(filterTrackedActorIds(latestMessage?.readActorIds ?? []));
-		const latestUnreadActorIds = new Set(filterTrackedActorIds(latestMessage?.unreadActorIds ?? []));
-		const seats = (roomSeatsById[chatId] ?? []).map((seat) => {
-			const seatActorId = isRoomActorId(seat.actorId) ? seat.actorId : null;
-			const trackedByLatestVisible =
-				seatActorId !== null &&
-				(latestReadActorIds.has(seatActorId) || latestUnreadActorIds.has(seatActorId));
-			return {
-				...seat,
-				trackedByLatestVisible,
-				hasReadLatestVisible: trackedByLatestVisible && seatActorId !== null && latestReadActorIds.has(seatActorId),
-			};
-		});
-		roomSeatsById = {
-			...roomSeatsById,
-			[chatId]: seats,
-		};
-		const totalSeatCount = seats.filter((seat) => seat.trackedByLatestVisible).length;
-		const readSeatCount = seats.filter(
-			(seat) => seat.trackedByLatestVisible && seat.hasReadLatestVisible,
-		).length;
 		updateRoomEntry(chatId, (room) => ({
 			...room,
 			updatedAt: latestMessage?.updatedAt ?? room.updatedAt,
-			readProgress: {
-				latestVisibleMessageId: latestMessage?.messageId,
-				latestVisibleMessageRowId: latestMessage?.rowId,
-				latestVisibleAt: latestMessage?.visibleAt,
-				totalSeatCount,
-				readSeatCount,
-				unreadSeatCount: Math.max(totalSeatCount - readSeatCount, 0),
-				invalidCredentialSeatCount: seats.filter(
-					(seat) => seat.trackedByLatestVisible && seat.invalidCredential,
-				).length,
-			},
 		}));
 	};
 
@@ -355,8 +301,6 @@
 					online: false,
 					focused: false,
 					invalidCredential: false,
-					trackedByLatestVisible: false,
-					hasReadLatestVisible: false,
 					accessToken: `token:${room.chatId}:${input.participantId}`,
 					grantId,
 				},
@@ -368,7 +312,7 @@
 				? entry.participants
 				: [...entry.participants, { id: input.participantId, label: actor.label }],
 		}));
-		syncRoomProgress(room.chatId);
+		syncRoomMetadata(room.chatId);
 	};
 
 	const handleToggleSeatFocus = async (input: {
@@ -402,7 +346,7 @@
 			...roomSeatsById,
 			[room.chatId]: (roomSeatsById[room.chatId] ?? []).filter((seat) => seat.grantId !== input.grantId),
 		};
-		syncRoomProgress(room.chatId);
+		syncRoomMetadata(room.chatId);
 	};
 
 	const handleSendMessage = async (input: { text: string; assets: File[] }): Promise<void> => {
@@ -451,7 +395,7 @@
 				},
 			],
 		};
-		syncRoomProgress(room.chatId);
+		syncRoomMetadata(room.chatId);
 	};
 
 	const handleLatestVisibleMessageIdChange = async (
@@ -515,8 +459,6 @@
 				initialSnapshotResolved={true}
 				{roomAssetsState}
 				{routeNotice}
-				{readSeatCount}
-				{readSeatTotal}
 				{selectedCallerToken}
 				{selectedViewerActorId}
 				selectableActors={actorCatalog}

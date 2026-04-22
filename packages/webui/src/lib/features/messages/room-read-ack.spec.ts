@@ -4,7 +4,6 @@ import {
   EMPTY_ROOM_READ_ACK_STATE,
   maybeStartRoomReadAck,
   resolveRoomReadAckKey,
-  resolveRoomReadAckProjectionFloor,
   resolveRoomReadAckServerFloor,
   settleRoomReadAckFailure,
   settleRoomReadAckSuccess,
@@ -73,24 +72,6 @@ describe("Feature: room read acknowledgement remains monotonic", () => {
         "session:jane",
       ),
     ).toBe(7);
-  });
-
-  test("Scenario: Given the latest visible row is already projected as read for the viewer When the snapshot lags behind Then the projection floor still suppresses another mark-read request", () => {
-    expect(
-      resolveRoomReadAckProjectionFloor(
-        {
-          latestVisibleMessageRowId: 12,
-        },
-        [
-          {
-            actorId: "session:jane",
-            trackedByLatestVisible: true,
-            hasReadLatestVisible: true,
-          },
-        ],
-        "session:jane",
-      ),
-    ).toBe(12);
   });
 
   test("Scenario: Given a pending local ack below the durable server floor When syncing state Then the already-read floor wins and stale pending work clears", () => {

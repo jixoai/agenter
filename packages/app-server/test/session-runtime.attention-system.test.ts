@@ -15,16 +15,16 @@ import {
 import { MessageControlPlane, resolveMessageControlDbPath, type MessageActorId } from "@agenter/message-system";
 import { SessionDb } from "@agenter/session-system";
 import { TerminalControlPlane, type TerminalActorId } from "@agenter/terminal-system";
-import type { LoopBusInput } from "../src/loop-bus";
-import { LoopBusPluginRuntime, type AttentionDraft, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
-import type { RuntimeSkillSystem } from "../src/runtime-skill-system";
-import type { RuntimeMessageSendResult } from "../src/runtime-tool-views";
 import {
   formatMessageAttentionSrc,
   formatTerminalAttentionSrc,
   parseMessageAttentionSrc,
   parseTerminalAttentionSrc,
 } from "../src/attention-src";
+import type { LoopBusInput } from "../src/loop-bus";
+import { LoopBusPluginRuntime, type AttentionDraft, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
+import type { RuntimeSkillSystem } from "../src/runtime-skill-system";
+import type { RuntimeMessageSendResult } from "../src/runtime-tool-views";
 import { resolveSessionRoomActorId } from "../src/session-chat-projection";
 import { SessionRuntime } from "../src/session-runtime";
 
@@ -286,8 +286,9 @@ const getBootstrapInput = (inputs: LoopBusInput[] | undefined): LoopBusInput | u
   inputs?.find((item) => item.meta?.attentionProtocolKind === "context");
 
 const getAttentionProtocolKinds = (inputs: LoopBusInput[] | undefined): string[] =>
-  (inputs?.map((item) => item.meta?.attentionProtocolKind).filter((value): value is string => typeof value === "string") ??
-    []);
+  inputs
+    ?.map((item) => item.meta?.attentionProtocolKind)
+    .filter((value): value is string => typeof value === "string") ?? [];
 
 const createMessageSrc = (chatId: string, messageId: number) => formatMessageAttentionSrc({ chatId, messageId });
 
@@ -641,7 +642,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       roomLifecycleSrc,
       roomLifecycleSrc,
     ]);
-    expect(lifecycleCommits.every((commit) => parseMessageAttentionSrc(commit.meta.src ?? "")?.messageId === undefined)).toBeTrue();
+    expect(
+      lifecycleCommits.every((commit) => parseMessageAttentionSrc(commit.meta.src ?? "")?.messageId === undefined),
+    ).toBeTrue();
     expect(roomContext?.commits.some((commit) => commit.summary === `Created room ${room.chatId}`)).toBeTrue();
     expect(roomContext?.commits.some((commit) => commit.summary === `Updated chat channel ${room.chatId}`)).toBeTrue();
     expect(roomContext?.commits.some((commit) => commit.summary === `Archived chat channel ${room.chatId}`)).toBeTrue();
@@ -769,7 +772,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(attentionInput).toBeDefined();
       expect(attentionInput?.meta?.chatId).toBe(room.chatId);
       expect(attentionInput?.text).not.toContain("hello before jane starts");
-      expect(await stringifyAttentionQuery(janeRuntime, "hello before jane starts")).toContain("hello before jane starts");
+      expect(await stringifyAttentionQuery(janeRuntime, "hello before jane starts")).toContain(
+        "hello before jane starts",
+      );
 
       const loaded = messageSystem.getMessage(room.chatId, sent.messageId);
       expect(loaded?.readActorIds).not.toContain("session:jane");
@@ -938,7 +943,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given a runtime avatar replies into a shared room When a peer collects unread work Then read membership only advances on model dispatch", async () => {
+  test("Scenario: Given a real model dispatch reads a shared-room prompt When the peer runtime starts handling the AI call Then message-level read truth advances without any room-progress projection", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-runtime-reply-"));
     const messageSystem = new MessageControlPlane({
       dbPath: resolveMessageControlDbPath(root),
@@ -1030,6 +1035,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       const afterDispatch = sent ? messageSystem.getMessage(roomId, sent.messageId) : undefined;
       expect(afterDispatch?.readActorIds).toEqual(expect.arrayContaining(["session:jane", "session:jj"]));
       expect(afterDispatch?.unreadActorIds).not.toContain("session:jj");
+      const snapshotRow = sent
+        ? messageSystem.snapshot(roomId, 10).items.find((item) => item.messageId === sent.messageId)
+        : undefined;
+      expect(snapshotRow?.readActorIds).toEqual(expect.arrayContaining(["session:jane", "session:jj"]));
+      expect(snapshotRow && Object.prototype.hasOwnProperty.call(snapshotRow, "readProgress")).toBeFalse();
     } finally {
       messageSystem.close();
     }
@@ -1227,7 +1237,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       });
 
       const inputs = await jjInternal.collectLoopInputs();
-      const chatInput = inputs?.find((item) => item.source === "chat" && item.text === "我先去把接口跑起来，稍后把结果发到群里。");
+      const chatInput = inputs?.find(
+        (item) => item.source === "chat" && item.text === "我先去把接口跑起来，稍后把结果发到群里。",
+      );
       expect(chatInput).toBeDefined();
       expect(chatInput?.meta?.chatAudience).toBe("group");
       expect(chatInput?.meta?.chatMessagePerspective).toBe("other");
@@ -1352,8 +1364,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(runtime.snapshot().focusedTerminalIds).toEqual(focusedBefore);
       expect(internal.focusedTerminalIds).toEqual(focusedBefore);
       expect(
-        terminalControlPlane.listForActor("session:observer", { touchPresence: false }).find((item) => item.terminalId === "shared-focus")
-          ?.focused,
+        terminalControlPlane
+          .listForActor("session:observer", { touchPresence: false })
+          .find((item) => item.terminalId === "shared-focus")?.focused,
       ).toBeTrue();
     } finally {
       await runtime.stop();
@@ -1411,7 +1424,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       });
 
       const activeTerminalItems = getActiveItems(internal).filter((item) => isTerminalMeta(item.meta));
-      expect(activeTerminalItems.some((item) => item.title === "Terminal bg-ready is ready for your input.")).toBeTrue();
+      expect(
+        activeTerminalItems.some((item) => item.title === "Terminal bg-ready is ready for your input."),
+      ).toBeTrue();
     } finally {
       await runtime.stop();
     }
@@ -3003,7 +3018,10 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const internal = runtime as unknown as RuntimeInternal;
 
     await runtime.start();
-    const beforeMessages = (internal as unknown as RuntimeMessageEgressInternal).messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
+    const beforeMessages = (internal as unknown as RuntimeMessageEgressInternal).messageSystem.snapshot(
+      PRIMARY_ROOM_ID,
+      10,
+    ).items;
     const commit = appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
       meta: {
         author: "avatar:tester",
@@ -3021,7 +3039,10 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, commit, { notifyLoop: false });
 
     const snapshot = runtime.snapshot();
-    const afterMessages = (internal as unknown as RuntimeMessageEgressInternal).messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
+    const afterMessages = (internal as unknown as RuntimeMessageEgressInternal).messageSystem.snapshot(
+      PRIMARY_ROOM_ID,
+      10,
+    ).items;
     expect(snapshot.attention?.hooks.at(-1)).toBeUndefined();
     expect(snapshot.chatMessages).toHaveLength(0);
     expect(afterMessages).toHaveLength(beforeMessages.length);
@@ -3428,7 +3449,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       ].join("\n"),
       "utf8",
     );
-    await writeFile(join(skillDir, "ccski.config.json"), `${JSON.stringify({ files: ["references/*.md"] }, null, 2)}\n`, "utf8");
+    await writeFile(
+      join(skillDir, "ccski.config.json"),
+      `${JSON.stringify({ files: ["references/*.md"] }, null, 2)}\n`,
+      "utf8",
+    );
     const referencePath = join(skillDir, "references", "guide.md");
     await writeFile(referencePath, "reference-v1\n", "utf8");
 
@@ -3453,17 +3478,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
     const skillContent = (body: string): string =>
-      [
-        "---",
-        "name: live-bridge",
-        "description: runtime loop proof",
-        "---",
-        "",
-        "# live-bridge",
-        "",
-        body,
-        "",
-      ].join("\n");
+      ["---", "name: live-bridge", "description: runtime loop proof", "---", "", "# live-bridge", "", body, ""].join(
+        "\n",
+      );
 
     const upsertAdded = await internal.execRootWorkspaceBash({
       command: "skill upsert",

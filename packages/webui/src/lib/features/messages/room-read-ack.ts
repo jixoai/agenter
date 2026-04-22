@@ -8,16 +8,6 @@ export interface RoomReadAckMessageLike {
   readActorIds?: readonly string[];
 }
 
-export interface RoomReadAckProgressLike {
-  latestVisibleMessageRowId?: number;
-}
-
-export interface RoomReadAckSeatLike {
-  actorId: string;
-  trackedByLatestVisible: boolean;
-  hasReadLatestVisible: boolean;
-}
-
 export const EMPTY_ROOM_READ_ACK_STATE: RoomReadAckState = {
   ackedRowId: 0,
   pendingRowId: null,
@@ -25,10 +15,7 @@ export const EMPTY_ROOM_READ_ACK_STATE: RoomReadAckState = {
 
 export const resolveRoomReadAckKey = (chatId: string, actorId: string): string => `${chatId}:${actorId}`;
 
-export const resolveRoomReadAckServerFloor = (
-  messages: readonly RoomReadAckMessageLike[],
-  actorId: string,
-): number => {
+export const resolveRoomReadAckServerFloor = (messages: readonly RoomReadAckMessageLike[], actorId: string): number => {
   let latestReadRowId = 0;
   for (const message of messages) {
     if (!message.readActorIds?.includes(actorId)) {
@@ -39,22 +26,6 @@ export const resolveRoomReadAckServerFloor = (
   return latestReadRowId;
 };
 
-export const resolveRoomReadAckProjectionFloor = (
-  readProgress: RoomReadAckProgressLike | null | undefined,
-  roomSeatStates: readonly RoomReadAckSeatLike[],
-  actorId: string,
-): number => {
-  const latestVisibleRowId = readProgress?.latestVisibleMessageRowId ?? 0;
-  if (latestVisibleRowId <= 0) {
-    return 0;
-  }
-  const viewerSeat = roomSeatStates.find((seat) => seat.actorId === actorId) ?? null;
-  if (!viewerSeat?.trackedByLatestVisible || !viewerSeat.hasReadLatestVisible) {
-    return 0;
-  }
-  return latestVisibleRowId;
-};
-
 export const syncRoomReadAckState = (
   state: RoomReadAckState | undefined,
   serverAckedRowId: number,
@@ -63,8 +34,7 @@ export const syncRoomReadAckState = (
   const ackedRowId = Math.max(current.ackedRowId, serverAckedRowId);
   return {
     ackedRowId,
-    pendingRowId:
-      current.pendingRowId !== null && current.pendingRowId > ackedRowId ? current.pendingRowId : null,
+    pendingRowId: current.pendingRowId !== null && current.pendingRowId > ackedRowId ? current.pendingRowId : null,
   };
 };
 

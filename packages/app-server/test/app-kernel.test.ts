@@ -7,8 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { MessageDb } from "../../message-system/src/message-db";
-import { formatMessageAttentionSrc } from "../src/attention-src";
 import { AppKernel } from "../src";
+import { formatMessageAttentionSrc } from "../src/attention-src";
 
 const tempDirs: string[] = [];
 
@@ -649,7 +649,9 @@ describe("Feature: app kernel event replay", () => {
     const unreadSnapshot = await kernel.getNotificationSnapshot();
     expect(unreadSnapshot.unreadBySession[session.id]).toBe(1);
     expect(unreadSnapshot.unreadByBucket[session.id]?.[`msg:${sessionMeta.primaryRoomId}`]).toBe(1);
-    expect(unreadSnapshot.items[0]?.src).toBe(formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }));
+    expect(unreadSnapshot.items[0]?.src).toBe(
+      formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }),
+    );
 
     const consumedSnapshot = await kernel.consumeNotifications({
       sessionId: session.id,
@@ -1143,11 +1145,10 @@ describe("Feature: app kernel event replay", () => {
       accessToken: issued.accessToken,
       messageId: memberMessage?.messageId,
     });
-    expect(readProjection.readProgress).toMatchObject({
-      latestVisibleMessageId: memberMessage?.messageId,
-      totalSeatCount: 1,
-      readSeatCount: 1,
-      unreadSeatCount: 0,
+    expect(Object.prototype.hasOwnProperty.call(readProjection, "readProgress")).toBeFalse();
+    expect(readProjection.seatStates?.find((state) => state.actorId === "session:avatar-pair")).toMatchObject({
+      actorId: "session:avatar-pair",
+      role: "member",
     });
 
     const page = kernel.pageGlobalRoomMessages({

@@ -76,13 +76,7 @@ describe("Feature: runtime tool public views", () => {
         accessToken: "msgtok-secret",
         currentAdmin: true,
         transportUrl: "http://127.0.0.1/message/room-1",
-        readProgress: {
-          totalSeatCount: 1,
-          readSeatCount: 1,
-          unreadSeatCount: 0,
-          invalidCredentialSeatCount: 0,
-        },
-        readStates: [
+        seatStates: [
           {
             actorId: "session:user",
             role: "member",
@@ -90,8 +84,6 @@ describe("Feature: runtime tool public views", () => {
             online: true,
             focused: true,
             invalidCredential: false,
-            trackedByLatestVisible: true,
-            hasReadLatestVisible: true,
           },
         ],
       },
@@ -203,7 +195,8 @@ describe("Feature: runtime tool public views", () => {
     expect(projectedSnapshotWithDirectory.directory?.reachableParticipants[0]?.label).toBe("gaubee");
     expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.channel, "owner")).toBeFalse();
     expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.channel, "metadata")).toBeFalse();
-    expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.channel, "readStates")).toBeFalse();
+    expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.channel, "seatStates")).toBeFalse();
+    expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.channel, "readProgress")).toBeFalse();
     expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.items[0] ?? {}, "readActorIds")).toBeFalse();
     expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.items[0] ?? {}, "unreadActorIds")).toBeFalse();
     expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.items[0] ?? {}, "metadata")).toBeFalse();

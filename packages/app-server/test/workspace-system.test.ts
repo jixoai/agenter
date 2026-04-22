@@ -7,8 +7,8 @@ import { basename, dirname, join } from "node:path";
 import type { AttentionSystem } from "@agenter/attention-system";
 
 import { AppKernel } from "../src";
-import { executeRootWorkspaceBash } from "../src/workspace-system/root-exec";
 import { resolveWorkspaceAvatarCanonicalRoot } from "../src/workspace-system/paths";
+import { executeRootWorkspaceBash } from "../src/workspace-system/root-exec";
 import { waitForRealValue } from "../test-support/real-kernel-harness";
 
 const getRuntime = (kernel: AppKernel, sessionId: string) => {
@@ -496,7 +496,7 @@ describe("Feature: workspace system kernel integration", () => {
         };
         owner?: unknown;
         metadata?: unknown;
-        readStates?: unknown;
+        seatStates?: unknown;
       }>;
     };
     const listedRoom = listedPayload.channels?.find((channel) => channel.chatId === primaryRoom.chatId);
@@ -504,7 +504,7 @@ describe("Feature: workspace system kernel integration", () => {
     expect(listedRoom?.presence?.totalSeatCount).toBeGreaterThan(0);
     expect(listedRoom?.owner).toBeUndefined();
     expect(listedRoom?.metadata).toBeUndefined();
-    expect(listedRoom?.readStates).toBeUndefined();
+    expect(listedRoom?.seatStates).toBeUndefined();
 
     const read = await execRootWorkspaceBash(kernel, session.id, {
       command: "message read",
@@ -521,7 +521,7 @@ describe("Feature: workspace system kernel integration", () => {
           presence?: { totalSeatCount: number };
           owner?: unknown;
           metadata?: unknown;
-          readStates?: unknown;
+          seatStates?: unknown;
         };
         items?: Array<{
           content: string;
@@ -535,7 +535,7 @@ describe("Feature: workspace system kernel integration", () => {
     expect(readPayload.snapshot?.channel?.presence?.totalSeatCount).toBeGreaterThan(0);
     expect(readPayload.snapshot?.channel?.owner).toBeUndefined();
     expect(readPayload.snapshot?.channel?.metadata).toBeUndefined();
-    expect(readPayload.snapshot?.channel?.readStates).toBeUndefined();
+    expect(readPayload.snapshot?.channel?.seatStates).toBeUndefined();
     expect(readPayload.snapshot?.items?.some((item) => item.content === "通过 stdin 发送房间消息")).toBeTrue();
     const deliveredItem = readPayload.snapshot?.items?.find((item) => item.content === "通过 stdin 发送房间消息");
     expect(deliveredItem?.readActorIds).toBeUndefined();

@@ -479,16 +479,7 @@ const createMockClient = (input: {
       accessToken: string;
       participantId?: string;
       transportUrl?: string;
-      readProgress?: {
-        latestVisibleMessageId?: number;
-        latestVisibleMessageRowId?: number;
-        latestVisibleAt?: number;
-        totalSeatCount: number;
-        readSeatCount: number;
-        unreadSeatCount: number;
-        invalidCredentialSeatCount: number;
-      };
-      readStates?: Array<{
+      seatStates?: Array<{
         actorId: string;
         role: "admin" | "member" | "readonly";
         label?: string;
@@ -496,8 +487,6 @@ const createMockClient = (input: {
         online: boolean;
         focused: boolean;
         invalidCredential: boolean;
-        trackedByLatestVisible: boolean;
-        hasReadLatestVisible: boolean;
       }>;
     };
   }>;
@@ -8113,7 +8102,7 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
-  test("Scenario: Given room-local read state and session unread notifications When runtime store marks a global room read Then durable room truth stays separate from unread badges", async () => {
+  test("Scenario: Given room-local read state and session unread notifications When runtime store marks a global room read Then room snapshots keep message-level truth separate from unread badges", async () => {
     const requests: {
       markRead?: { chatId: string; accessToken?: string; messageId?: number };
     } = {};
@@ -8133,16 +8122,7 @@ describe("Feature: runtime store synchronization", () => {
       accessToken: "msgtok_member",
       participantId: "session:relay",
       transportUrl: "ws://127.0.0.1:7777/room/room-ops?token=msgtok_member",
-      readProgress: {
-        latestVisibleMessageId: 12,
-        latestVisibleMessageRowId: 12,
-        latestVisibleAt: 12,
-        totalSeatCount: 2,
-        readSeatCount: 1,
-        unreadSeatCount: 1,
-        invalidCredentialSeatCount: 0,
-      },
-      readStates: [
+      seatStates: [
         {
           actorId: "session:relay",
           role: "member" as const,
@@ -8151,8 +8131,6 @@ describe("Feature: runtime store synchronization", () => {
           online: true,
           focused: true,
           invalidCredential: false,
-          trackedByLatestVisible: true,
-          hasReadLatestVisible: true,
         },
         {
           actorId: "auth:viewer",
@@ -8162,8 +8140,6 @@ describe("Feature: runtime store synchronization", () => {
           online: true,
           focused: false,
           invalidCredential: false,
-          trackedByLatestVisible: true,
-          hasReadLatestVisible: false,
         },
       ],
     };
@@ -8181,6 +8157,7 @@ describe("Feature: runtime store synchronization", () => {
       readActorIds: [],
       unreadActorIds: ["session:relay", "auth:viewer"],
     };
+    let latestVisibleMessage = staleLatestVisibleMessage;
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(0),
@@ -8206,13 +8183,18 @@ describe("Feature: runtime store synchronization", () => {
         }),
         messageGlobalSnapshotQuery: async () => ({
           channel: room,
-          items: [staleLatestVisibleMessage],
+          items: [latestVisibleMessage],
           nextBefore: null,
           hasMoreBefore: false,
           headVersion: "1",
         }),
         messageGlobalMarkReadMutate: async (input) => {
           requests.markRead = input;
+          latestVisibleMessage = {
+            ...staleLatestVisibleMessage,
+            readActorIds: ["session:relay"],
+            unreadActorIds: ["auth:viewer"],
+          };
           return { channel: room };
         },
       }),
@@ -8237,15 +8219,10 @@ describe("Feature: runtime store synchronization", () => {
       accessToken: room.accessToken,
       messageId: 12,
     });
-    expect(readChannel.readProgress).toMatchObject({
-      latestVisibleMessageId: 12,
-      readSeatCount: 1,
-      unreadSeatCount: 1,
-    });
-    expect(readChannel.readStates?.find((state) => state.actorId === "session:relay")).toMatchObject({
+    expect(Object.prototype.hasOwnProperty.call(readChannel, "readProgress")).toBeFalse();
+    expect(readChannel.seatStates?.find((state) => state.actorId === "session:relay")).toMatchObject({
       actorId: "session:relay",
-      trackedByLatestVisible: true,
-      hasReadLatestVisible: true,
+      role: "member",
     });
     expect(store.getState().globalRoomSnapshotsById[room.chatId]?.data?.items[0]).toMatchObject({
       messageId: 12,

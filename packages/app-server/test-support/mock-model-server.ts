@@ -163,7 +163,8 @@ const parseShellToolPayload = (content: string): unknown => {
   if (!outer || typeof outer !== "object") {
     return outer;
   }
-  const stdout = typeof (outer as { stdout?: unknown }).stdout === "string" ? (outer as { stdout: string }).stdout : null;
+  const stdout =
+    typeof (outer as { stdout?: unknown }).stdout === "string" ? (outer as { stdout: string }).stdout : null;
   if (!stdout) {
     return outer;
   }
@@ -215,10 +216,7 @@ const extractLatestAttentionMetadata = (
 
 const attentionFencePattern = /```yaml\+attention_items\s*([\s\S]*?)```/g;
 
-const normalizeAttentionCommit = (
-  item: Record<string, unknown>,
-  fallbackContextId: string,
-): AttentionCommit => ({
+const normalizeAttentionCommit = (item: Record<string, unknown>, fallbackContextId: string): AttentionCommit => ({
   contextId: typeof item.contextId === "string" ? item.contextId : fallbackContextId,
   commitId: typeof item.commitId === "string" ? item.commitId : undefined,
   scores:
@@ -523,29 +521,23 @@ const findPrimaryRoomChatId = (results: readonly ToolResult[], frames: readonly 
   return frame ? frame.contextId.slice(4) : null;
 };
 
-const extractChannelRows = (results: readonly ToolResult[]): Map<string, number> => {
+const extractSnapshotRows = (results: readonly ToolResult[]): Map<string, number> => {
   const rows = new Map<string, number>();
-  const channelList = findLatestOperationResult(results, "message.list");
-  if (!channelList || !channelList.data || typeof channelList.data !== "object") {
-    return rows;
-  }
-  const channels = (channelList.data as { channels?: unknown }).channels;
-  if (!Array.isArray(channels)) {
-    return rows;
-  }
-  for (const channel of channels) {
-    if (!channel || typeof channel !== "object") {
+  for (const result of results) {
+    if (result.operation !== "message.read" || !result.data || typeof result.data !== "object") {
       continue;
     }
-    const record = channel as {
+    const snapshot = (result.data as { snapshot?: unknown }).snapshot;
+    if (!snapshot || typeof snapshot !== "object") {
+      continue;
+    }
+    const record = snapshot as {
       chatId?: unknown;
-      readProgress?: { latestVisibleMessageRowId?: unknown };
+      items?: Array<{ rowId?: unknown }>;
     };
-    if (
-      typeof record.chatId === "string" &&
-      typeof record.readProgress?.latestVisibleMessageRowId === "number"
-    ) {
-      rows.set(record.chatId, record.readProgress.latestVisibleMessageRowId);
+    const latestRowId = record.items?.at(-1)?.rowId;
+    if (typeof record.chatId === "string" && typeof latestRowId === "number") {
+      rows.set(record.chatId, latestRowId);
     }
   }
   return rows;
@@ -719,19 +711,22 @@ const decideSummary = (request: ChatCompletionRequest, state: MockModelServerSta
       decisions: hasLunchConclusion ? ["gaubee said lunch is egg fried rice"] : [],
       keyFiles: [],
       keyFacts: hasLunchConclusion ? [MOCK_GAUBEE_REPLY, MOCK_FINAL_ANSWER] : [],
-      readyReplies: hasLunchConclusion && primaryRoomChatId
-        ? [
-            {
-              channelId: primaryRoomChatId,
-              topic: "gaubee lunch answer",
-              triggerPhrases: ["gaubee在吗？问他中午吃什么？", "中午吃什么"],
-              reply: MOCK_FINAL_ANSWER,
-              reuseWhen: "Send directly when the primary room asks the same lunch question again after compact.",
-            },
-          ]
-        : [],
+      readyReplies:
+        hasLunchConclusion && primaryRoomChatId
+          ? [
+              {
+                channelId: primaryRoomChatId,
+                topic: "gaubee lunch answer",
+                triggerPhrases: ["gaubee在吗？问他中午吃什么？", "中午吃什么"],
+                reply: MOCK_FINAL_ANSWER,
+                reuseWhen: "Send directly when the primary room asks the same lunch question again after compact.",
+              },
+            ]
+          : [],
       unresolvedWork: hasLunchConclusion ? [] : ["still waiting for gaubee lunch answer"],
-      nextSteps: hasLunchConclusion ? ["answer future lunch follow-ups from compact memory"] : ["wait for gaubee reply"],
+      nextSteps: hasLunchConclusion
+        ? ["answer future lunch follow-ups from compact memory"]
+        : ["wait for gaubee reply"],
     }),
   });
 };
@@ -748,14 +743,16 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
     directCurrentSemanticText.includes(MOCK_WAITING_SUMMARY)
       ? directCurrentSemanticText
       : allSemanticText;
-  const currentFrames = pickCurrentFrames(mergeAttentionFrames(extractAttentionFrames(users), extractAttentionSystemFrames(users)));
+  const currentFrames = pickCurrentFrames(
+    mergeAttentionFrames(extractAttentionFrames(users), extractAttentionSystemFrames(users)),
+  );
   const allFrames = pickCurrentFrames(
     mergeAttentionFrames(extractAttentionFrames(request.messages), extractAttentionSystemFrames(request.messages)),
   );
   const toolResults = extractToolResults(afterUsers);
   const assistantHistory = listAssistantTexts(request.messages).join("\n");
   const latestAttentionMetadata = extractLatestAttentionMetadata(users);
-  const channelRows = extractChannelRows(toolResults);
+  const snapshotRows = extractSnapshotRows(toolResults);
   const latestSentRoomReply = findLatestOperationResult(toolResults, "message.send");
   const latestMessageQuery = findLatestOperationResult(toolResults, "message.query");
   const latestSentRoomReplyPayload = parseMessageSendCommandPayload(latestSentRoomReply?.command);
@@ -783,11 +780,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
     state.relay.phase = "reported";
   }
   const commitFrames =
-    currentFrames.length > 0
-      ? currentFrames
-      : allFrames.length > 0
-        ? allFrames
-        : buildSeededRelayFrames(state.relay);
+    currentFrames.length > 0 ? currentFrames : allFrames.length > 0 ? allFrames : buildSeededRelayFrames(state.relay);
   if (state.relay?.phase === "reporting") {
     return createResponse(request, { content: "" });
   }
@@ -861,7 +854,7 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
   }
 
   if (state.relay?.phase === "awaiting_reply") {
-    const observedTargetRowId = channelRows.get(state.relay.targetChatId);
+    const observedTargetRowId = snapshotRows.get(state.relay.targetChatId);
     if (
       typeof observedTargetRowId === "number" &&
       observedTargetRowId > state.relay.expectedTargetRowIdAfterRelay &&
@@ -883,9 +876,11 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
         ],
       });
     }
-    if (!hasOperationResult(toolResults, "message.list")) {
+    if (typeof observedTargetRowId !== "number") {
       return createResponse(request, {
-        toolCalls: [buildRootBashToolCall("message list")],
+        toolCalls: [
+          buildRootBashToolCall(`message read ${escapeShellJson({ chatId: state.relay.targetChatId, limit: 1 })}`),
+        ],
       });
     }
     if (!hasOperationResult(toolResults, "attention.commit") && commitFrames.length > 0) {
@@ -999,19 +994,26 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
 
     const gaubeeChatId = findGaubeeChatId(toolResults);
     if (gaubeeChatId) {
-      const originFrame = commitFrames.find((frame) => frame.contextId === `ctx-${primaryRoomChatId}`) ?? commitFrames[0];
+      const knownTargetRowId = snapshotRows.get(gaubeeChatId);
+      if (typeof knownTargetRowId !== "number") {
+        return createResponse(request, {
+          toolCalls: [buildRootBashToolCall(`message read ${escapeShellJson({ chatId: gaubeeChatId, limit: 1 })}`)],
+        });
+      }
+      const originFrame =
+        commitFrames.find((frame) => frame.contextId === `ctx-${primaryRoomChatId}`) ?? commitFrames[0];
       const originCommit = originFrame?.commits.at(-1);
       state.relay = primaryRoomChatId
         ? {
             originChatId: primaryRoomChatId,
             targetChatId: gaubeeChatId,
-            expectedTargetRowIdAfterRelay: (channelRows.get(gaubeeChatId) ?? 0) + 1,
+            expectedTargetRowIdAfterRelay: knownTargetRowId + 1,
             originContextId: originFrame?.contextId ?? latestAttentionMetadata.contextId,
             originHeadCommitId: originCommit?.commitId ?? latestAttentionMetadata.headCommitId,
             originScores: originCommit?.scores,
             phase: "awaiting_reply",
-        }
-      : state.relay;
+          }
+        : state.relay;
       return createResponse(request, {
         toolCalls: [
           buildRootBashToolCall(
