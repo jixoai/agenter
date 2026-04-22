@@ -247,9 +247,9 @@
 				kind: 'terminal_write',
 				cycleId: null,
 				actorId: 'system:trusted-terminal-bootstrap',
-				title: 'Terminal write + submit',
+				title: 'Terminal write',
 				content: 'echo bootstrap',
-				detail: { submit: true, submitKey: 'enter' },
+				detail: { mode: 'raw' },
 			},
 		],
 	});
@@ -299,9 +299,9 @@
 					kind: 'terminal_write',
 					cycleId: null,
 					actorId: 'system:trusted-terminal-bootstrap',
-					title: 'Terminal write + submit',
+					title: 'Terminal write',
 					content: 'echo bootstrap',
-					detail: { submit: true, submitKey: 'enter' },
+					detail: { mode: 'raw' },
 				},
 			],
 		};
@@ -613,9 +613,8 @@
 						assignedAdminId: 'system:trusted-terminal-bootstrap',
 						status: 'pending',
 						requestedInput: {
+							mode: 'raw',
 							text: input.text,
-							submit: true,
-							submitKey: 'enter',
 						},
 						createdAt: Date.now(),
 						expiresAt: Date.now() + 90_000,
@@ -639,12 +638,9 @@
 			kind: 'terminal_write',
 			cycleId: null,
 			actorId: caller.participantId ?? 'system:trusted-terminal-bootstrap',
-			title: 'Terminal write + submit',
+			title: 'Terminal write',
 			content: input.text,
-			detail: {
-				submit: true,
-				submitKey: 'enter',
-			},
+			detail: { mode: 'raw' },
 		});
 		appendViewportTranscript(terminal.terminalId, input.text);
 		routeNotice = null;

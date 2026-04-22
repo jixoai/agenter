@@ -1,14 +1,26 @@
 import { mkdirSync, readdirSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 
+import type { TerminalPendingInputMode } from "./types";
+
 interface InputInboxOptions {
   inputDir: string;
   pollMs?: number;
-  onMixedInput: (input: string, sourceFile: string) => Promise<void>;
+  onInput: (input: string, sourceFile: string, mode: TerminalPendingInputMode) => Promise<void>;
   onError?: (error: Error, sourceFile: string) => void;
 }
 
-const isInputFile = (name: string): boolean => name.endsWith(".xml") || name.endsWith(".txt");
+const resolvePendingInputMode = (name: string): TerminalPendingInputMode | null => {
+  if (name.endsWith(".mixed.txt")) {
+    return "mixed";
+  }
+  if (name.endsWith(".raw.txt")) {
+    return "raw";
+  }
+  return null;
+};
+
+const isInputFile = (name: string): boolean => resolvePendingInputMode(name) !== null;
 
 export class InputInbox {
   private readonly pendingDir: string;
@@ -81,8 +93,12 @@ export class InputInbox {
       const src = join(this.pendingDir, name);
       this.queue = this.queue.then(async () => {
         try {
+          const mode = resolvePendingInputMode(name);
+          if (!mode) {
+            throw new Error(`unsupported pending input suffix: ${name}`);
+          }
           const raw = readFileSync(src, "utf8");
-          await this.options.onMixedInput(raw, name);
+          await this.options.onInput(raw, name, mode);
           renameSync(src, join(this.doneDir, `${name}.done`));
         } catch (cause) {
           const error = cause instanceof Error ? cause : new Error(String(cause));

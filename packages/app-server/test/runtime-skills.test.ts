@@ -128,13 +128,17 @@ describe("Feature: runtime built-in skills", () => {
     );
     expect(terminalContent).toContain("do not prove the promised URL or API path actually responds");
     expect(terminalContent).toContain("the normal next move is to create or recover the terminal");
+    expect(terminalContent).toContain("Decide whether the next payload is `raw` or `mixed`.");
     expect(terminalContent).toContain("default to `command=<bare terminal action>` plus JSON `stdin`");
     expect(terminalContent).toContain("accepts `--compact` positional arrays");
-    expect(terminalContent).toContain("run `terminal write --help` before you guess");
+    expect(terminalContent).toContain("`terminal input` is mixed mode.");
+    expect(terminalContent).toContain("run `terminal write --help` or `terminal input --help` first");
     expect(terminalContent).toContain("run `skill info agenter-terminal`");
+    expect(terminalContent).toContain("references/input-modes.md");
     expect(terminalContent).toContain("references/file-writing.md");
     expect(terminalContent).toContain("References:");
     expect(terminalContent).toContain("references/terminal-lifecycle.md");
+    expect(terminalContent).toContain("references/input-modes.md");
     expect(terminalContent).toContain("references/file-writing.md");
     expect(terminalContent).not.toContain("127.0.0.1");
 
@@ -163,6 +167,16 @@ describe("Feature: runtime built-in skills", () => {
     expect(terminalLifecycleReference).toContain("do not replace that HTTP verification");
     expect(terminalLifecycleReference).toContain("carry terminal JSON in `stdin` by default");
     expect(terminalLifecycleReference).toContain("accepts `--compact` positional arrays");
+    expect(terminalLifecycleReference).toContain("terminal input");
+
+    const terminalInputModesReference = readFileSync(
+      join(dirname(terminal!.path), "references", "input-modes.md"),
+      "utf8",
+    );
+    expect(terminalInputModesReference).toContain("`terminal write` is raw mode.");
+    expect(terminalInputModesReference).toContain("`terminal input` is mixed mode.");
+    expect(terminalInputModesReference).toContain("<raw>...</raw>");
+    expect(terminalInputModesReference).toContain("missing `</raw>` is a hard parse error");
 
     const terminalFileWritingReference = readFileSync(
       join(dirname(terminal!.path), "references", "file-writing.md"),
@@ -171,6 +185,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(terminalFileWritingReference).toContain("field names but not the quoting strategy");
     expect(terminalFileWritingReference).toContain("through `skill info agenter-terminal`");
     expect(terminalFileWritingReference).toContain("command=terminal write");
+    expect(terminalFileWritingReference).toContain("command=terminal input");
 
     const runtimeShellReference = readFileSync(join(dirname(runtime!.path), "references", "shell-surface.md"), "utf8");
     expect(runtimeShellReference).toContain("outbound-network verification of current or external facts");
@@ -188,7 +203,9 @@ describe("Feature: runtime built-in skills", () => {
     const runtimeDiscoveryReference = readFileSync(join(dirname(runtime!.path), "references", "discovery.md"), "utf8");
     expect(runtimeDiscoveryReference).toContain("Terminal-specific escalation:");
     expect(runtimeDiscoveryReference).toContain("terminal write --help");
+    expect(runtimeDiscoveryReference).toContain("terminal input --help");
     expect(runtimeDiscoveryReference).toContain("skill info agenter-terminal");
+    expect(runtimeDiscoveryReference).toContain("references/input-modes.md");
     expect(runtimeDiscoveryReference).toContain("references/file-writing.md");
 
     const messageAttentionReference = readFileSync(

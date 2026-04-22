@@ -872,9 +872,15 @@ const createMockClient = (input: {
     terminalId: string;
     accessToken?: string;
     text: string;
-    submit?: boolean;
-    submitKey?: "enter" | "linefeed";
-    submitGapMs?: number;
+    createApprovalRequest?: boolean;
+    readMode?: "auto" | "diff" | "snapshot";
+    readRecordActivity?: boolean;
+    returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+  }) => Promise<unknown>;
+  terminalGlobalInputMutate?: (input: {
+    terminalId: string;
+    accessToken?: string;
+    text: string;
     createApprovalRequest?: boolean;
     readMode?: "auto" | "diff" | "snapshot";
     readRecordActivity?: boolean;
@@ -1590,9 +1596,6 @@ const createMockClient = (input: {
             terminalId: string;
             accessToken?: string;
             text: string;
-            submit?: boolean;
-            submitKey?: "enter" | "linefeed";
-            submitGapMs?: number;
             createApprovalRequest?: boolean;
             readMode?: "auto" | "diff" | "snapshot";
             readRecordActivity?: boolean;
@@ -1600,6 +1603,20 @@ const createMockClient = (input: {
           }) =>
             input.terminalGlobalWriteMutate
               ? await input.terminalGlobalWriteMutate(payload)
+              : { ok: true, message: "written" },
+        },
+        input: {
+          mutate: async (payload: {
+            terminalId: string;
+            accessToken?: string;
+            text: string;
+            createApprovalRequest?: boolean;
+            readMode?: "auto" | "diff" | "snapshot";
+            readRecordActivity?: boolean;
+            returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+          }) =>
+            input.terminalGlobalInputMutate
+              ? await input.terminalGlobalInputMutate(payload)
               : { ok: true, message: "written" },
         },
         listGrants: {
@@ -7028,9 +7045,8 @@ describe("Feature: runtime store synchronization", () => {
                 assignedAdminId: "system:trusted-terminal-bootstrap",
                 status: "pending" as const,
                 requestedInput: {
+                  mode: "raw" as const,
                   text: `echo approval-${approvalCounts[input.terminalId]}`,
-                  submit: true,
-                  submitKey: "enter" as const,
                 },
                 createdAt: approvalCounts[input.terminalId],
                 expiresAt: approvalCounts[input.terminalId] + 90_000,
@@ -7051,7 +7067,7 @@ describe("Feature: runtime store synchronization", () => {
                 actorId: "system:trusted-terminal-bootstrap",
                 title: "Terminal write",
                 content: `echo ${input.terminalId}-${activityCounts[input.terminalId]}`,
-                detail: { submit: true, submitKey: "enter" },
+                detail: { mode: "raw" },
               },
             ],
             nextBefore: null,
@@ -7235,9 +7251,8 @@ describe("Feature: runtime store synchronization", () => {
       assignedAdminId: "system:trusted-terminal-bootstrap",
       status: "pending" as const,
       requestedInput: {
+        mode: "raw" as const,
         text: "echo pending",
-        submit: true,
-        submitKey: "enter" as const,
       },
       createdAt: 3,
       expiresAt: 93_000,
@@ -7249,8 +7264,8 @@ describe("Feature: runtime store synchronization", () => {
       assignedAdminId: "system:trusted-terminal-bootstrap",
       status: "pending" as const,
       requestedInput: {
+        mode: "mixed" as const,
         text: "echo deny",
-        submit: false,
       },
       createdAt: 4,
       expiresAt: 94_000,
@@ -7331,7 +7346,6 @@ describe("Feature: runtime store synchronization", () => {
             terminalId: input.terminalId,
             accessToken: input.accessToken,
             text: input.text,
-            submit: input.submit,
             createApprovalRequest: input.createApprovalRequest,
             returnRead: input.returnRead,
           };
@@ -7415,9 +7429,9 @@ describe("Feature: runtime store synchronization", () => {
                 kind: "terminal_write" as const,
                 cycleId: null,
                 actorId: "system:trusted-terminal-bootstrap",
-                title: "Terminal write + submit",
+                title: "Terminal write",
                 content: "echo live",
-                detail: { submit: true, submitKey: "enter" },
+                detail: { mode: "raw" },
               },
               {
                 id: 11,
@@ -7483,7 +7497,6 @@ describe("Feature: runtime store synchronization", () => {
         terminalId: terminal.terminalId,
         accessToken: "termtok_requester",
         text: "echo requester",
-        submit: true,
         createApprovalRequest: true,
         returnRead: false,
       }),
@@ -7581,7 +7594,6 @@ describe("Feature: runtime store synchronization", () => {
       terminalId: terminal.terminalId,
       accessToken: "termtok_requester",
       text: "echo requester",
-      submit: true,
       createApprovalRequest: true,
       returnRead: false,
     });
@@ -7624,6 +7636,64 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given a retained global terminal activity slice When mixed terminal input succeeds Then runtime store projects a mixed-mode terminal fact", async () => {
+    const terminalId = "term-mixed-input";
+    let captured:
+      | {
+          terminalId: string;
+          accessToken?: string;
+          text: string;
+          createApprovalRequest?: boolean;
+          returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+        }
+      | null = null;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        terminalGlobalInputMutate: async (input) => {
+          captured = {
+            terminalId: input.terminalId,
+            accessToken: input.accessToken,
+            text: input.text,
+            createApprovalRequest: input.createApprovalRequest,
+            returnRead: input.returnRead,
+          };
+          return { ok: true, message: "input accepted", eventId: 41 };
+        },
+      }),
+    );
+
+    const releaseActivity = store.retainGlobalTerminalActivity(terminalId);
+    await store.hydrateGlobalTerminalActivity({ terminalId });
+
+    const output = await store.inputGlobalTerminal({
+      terminalId,
+      accessToken: "token-requester",
+      text: '<raw>echo mixed</raw><key data="enter"/>',
+      createApprovalRequest: true,
+      returnRead: false,
+    });
+
+    expect(output).toEqual({ ok: true, message: "input accepted", eventId: 41 });
+    expect(captured).toEqual({
+      terminalId,
+      accessToken: "token-requester",
+      text: '<raw>echo mixed</raw><key data="enter"/>',
+      createApprovalRequest: true,
+      returnRead: false,
+    });
+    expect(store.getState().globalTerminalActivityById[terminalId]?.data[0]).toMatchObject({
+      id: 41,
+      terminalId,
+      kind: "terminal_write",
+      title: "Terminal input",
+      detail: { mode: "mixed" },
+    });
+
+    releaseActivity();
+    store.disconnect();
+  });
+
   test("Scenario: Given watched global terminal slices When direct terminal tool calls resolve Then runtime store eagerly rehydrates the affected terminal resources", async () => {
     const terminalId = "term-live-refresh";
     let terminalListCalls = 0;
@@ -7636,9 +7706,8 @@ describe("Feature: runtime store synchronization", () => {
       assignedAdminId: "system:trusted-terminal-bootstrap",
       status: "pending" as const,
       requestedInput: {
+        mode: "raw" as const,
         text: "echo pending refresh",
-        submit: true,
-        submitKey: "enter" as const,
       },
       createdAt: 10,
       expiresAt: 90_010,
@@ -7925,7 +7994,7 @@ describe("Feature: runtime store synchronization", () => {
       actorId: "system:trusted-terminal-bootstrap",
       title: "Terminal write",
       content: "echo stale",
-      detail: { submit: true },
+      detail: { mode: "raw" },
     };
     const freshRead = {
       id: 2,

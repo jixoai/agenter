@@ -73,8 +73,10 @@ export interface RuntimeLocalApiHandlers {
   terminalWrite: (input: {
     terminalId: string;
     text: string;
-    submit?: boolean;
-    submitKey?: "enter" | "linefeed";
+  }) => Promise<{ ok: boolean; message: string }>;
+  terminalInput: (input: {
+    terminalId: string;
+    text: string;
   }) => Promise<{ ok: boolean; message: string }>;
   terminalFocus: (input: {
     op: "add" | "remove" | "replace" | "clear";
@@ -241,8 +243,11 @@ const terminalReadSchema = z.object({
 const terminalWriteSchema = z.object({
   terminalId: z.string(),
   text: z.string(),
-  submit: z.boolean().optional(),
-  submitKey: z.enum(["enter", "linefeed"]).optional(),
+});
+
+const terminalInputSchema = z.object({
+  terminalId: z.string(),
+  text: z.string(),
 });
 
 const terminalFocusSchema = z.object({
@@ -686,11 +691,13 @@ export const runtimeToolDescriptors = [
     namespace: "terminal",
     name: "write",
     route: "/v1/terminal/write",
-    description: "Write text into a terminal and optionally submit it.",
+    description:
+      "Write literal raw input bytes into a terminal. Include your own newline or control characters explicitly, and use `terminal input` when you need mixed DSL actions.",
     helpNotes: [
       "A successful `terminal write` only confirms input delivery. Read the terminal again or inspect the resulting file/process state before assuming the command succeeded.",
+      "`terminal write` is raw mode. If you need `<key .../>`, `<wait .../>`, or `<raw>...</raw>`, switch to `terminal input` instead of guessing.",
       "If the JSON fields or positional compact layout are still unclear after this help, run `skill info agenter-terminal` and expand only the reference file you need.",
-      "For multi-line writes, nested JSON, or heredoc-heavy payloads, the next file to open is `references/file-writing.md` from that skill directory.",
+      "For raw vs mixed strategy, open `references/input-modes.md` from that skill directory before sending a risky payload.",
     ],
     inputSchema: terminalWriteSchema,
     examples: [
@@ -698,21 +705,51 @@ export const runtimeToolDescriptors = [
         kind: "stdin",
         payload: {
           terminalId: "term-1",
-          text: "python3 -m http.server 4173 --bind 127.0.0.1",
-          submit: true,
+          text: "python3 -m http.server 4173 --bind 127.0.0.1\\r",
         },
       },
       {
         kind: "argv",
         payload: {
           terminalId: "term-1",
-          text: "npm run dev",
-          submit: true,
+          text: "npm run dev\\r",
         },
       },
     ],
     handler: async (input, handlers) => ({
       result: await handlers.terminalWrite(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "terminal",
+    name: "input",
+    route: "/v1/terminal/input",
+    description:
+      "Write mixed terminal input through the pending queue. Mixed mode supports `<key .../>`, `<wait .../>`, and `<raw>...</raw>` blocks.",
+    helpNotes: [
+      "A successful `terminal input` only confirms that the mixed payload was accepted and applied. Read the terminal or inspect resulting files before assuming the process state.",
+      "`terminal input` is mixed mode. Use it when you need semantic key presses, waits, or literal `<...>` text wrapped in `<raw>...</raw>`.",
+      "If mixed syntax is unclear, run `skill info agenter-terminal` and read `references/input-modes.md` before guessing.",
+    ],
+    inputSchema: terminalInputSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          terminalId: "term-1",
+          text: "<raw>npm run dev</raw><key data=\"enter\"/>",
+        },
+      },
+      {
+        kind: "argv",
+        payload: {
+          terminalId: "term-1",
+          text: "<raw>git status</raw><key data=\"enter\"/><wait ms=\"300\"/>",
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.terminalInput(input),
     }),
   }),
   defineRuntimeToolDescriptor({

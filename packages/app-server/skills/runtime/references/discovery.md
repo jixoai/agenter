@@ -10,9 +10,10 @@ Recommended order:
 5. `<command> --help` for the exact CLI contract
 
 Terminal-specific escalation:
-- if you only forgot `terminal write` field names or compact indexes, start with `terminal write --help`
-- if the terminal write syntax is still unclear after that help, run `skill info agenter-terminal`
-- from the real skill path, open `references/file-writing.md` for multi-line or heavy-quoting patterns
+- if you only forgot raw `terminal write` field names or compact indexes, start with `terminal write --help`
+- if you need mixed syntax such as `<key .../>`, `<wait .../>`, or `<raw>...</raw>`, start with `terminal input --help`
+- if raw vs mixed is still unclear after help, run `skill info agenter-terminal`
+- from the real skill path, open `references/input-modes.md` first, then `references/file-writing.md` for multi-line or heavy-quoting patterns
 
 How to expand a skill:
 1. `skill info <skill>` prints the real `SKILL.md` path.
@@ -25,7 +26,7 @@ Example:
 ```bash
 skill_path="$(skill info agenter-terminal | sed -n 's/^Path: //p')"
 skill_dir="$(dirname "$skill_path")"
-cat "$skill_dir/references/file-writing.md"
+cat "$skill_dir/references/input-modes.md"
 ```
 
 Do not dump an entire references directory into context if you only need one file.

@@ -332,7 +332,7 @@ describe("Feature: runtime descriptor CLI", () => {
     const result = await terminal.execute(["write", "--help"], createCommandContext());
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("Write text into a terminal and optionally submit it.");
+    expect(result.stdout).toContain("Write literal raw input bytes into a terminal.");
     expect(result.stdout).toContain('"terminalId"');
     expect(result.stdout).toContain('"text"');
     expect(result.stdout).toContain("Preferred default through `root_bash`");
@@ -345,10 +345,31 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain('[1] text: string');
     expect(result.stdout).toContain("Operator notes:");
     expect(result.stdout).toContain("only confirms input delivery");
+    expect(result.stdout).toContain("`terminal write` is raw mode");
+    expect(result.stdout).toContain("terminal input");
     expect(result.stdout).toContain("skill info agenter-terminal");
-    expect(result.stdout).toContain("references/file-writing.md");
+    expect(result.stdout).toContain("references/input-modes.md");
     expect(result.stdout).not.toContain("cat <<'EOF'");
     expect(result.stdout).toContain("Default to JSON stdin");
+    expect(api.getRequests()).toHaveLength(0);
+  });
+
+  test("Scenario: Given descriptor help probe When terminal input --help runs Then the mixed-mode contract is returned locally", async () => {
+    const api = await startMockRuntimeApi();
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const result = await terminal.execute(["input", "--help"], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Write mixed terminal input through the pending queue.");
+    expect(result.stdout).toContain('"terminalId"');
+    expect(result.stdout).toContain('"text"');
+    expect(result.stdout).toContain("command: `terminal input`");
+    expect(result.stdout).toContain("<key .../>");
+    expect(result.stdout).toContain("<wait .../>");
+    expect(result.stdout).toContain("<raw>...</raw>");
+    expect(result.stdout).toContain("skill info agenter-terminal");
+    expect(result.stdout).toContain("references/input-modes.md");
     expect(api.getRequests()).toHaveLength(0);
   });
 

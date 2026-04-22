@@ -170,7 +170,6 @@ describe("Feature: terminal control plane", () => {
     const result = await plane.write({
       terminalId: created.terminalId,
       text: "hello control plane",
-      submit: false,
       returnRead: {
         debounceMs: 150,
       },
@@ -185,6 +184,38 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
+  test("Scenario: Given mixed terminal input When the control plane applies it Then the returned approval and activity facts keep the mixed mode", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "mixed-input",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+
+    const result = await plane.input({
+      terminalId: created.terminalId,
+      text: '<raw>hello mixed</raw><key data="enter"/>',
+      actorId: "session:admin",
+      returnRead: {
+        debounceMs: 150,
+      },
+      readMode: "snapshot",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.read?.snapshot?.lines.join("\n")).toContain("hello mixed");
+
+    const events = plane.pageEventsAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      limit: 10,
+    }).items;
+    expect(events[0]?.payload.detail).toEqual({ mode: "mixed" });
+
+    await plane.dispose();
+  });
+
   test("Scenario: Given terminal output exceeds viewport rows When requesting the runtime snapshot Then the control plane preserves the whole scrollback for frontend restore", async () => {
     const plane = createPlane();
     const created = await plane.create({ terminalId: "scrollback" });
@@ -193,7 +224,6 @@ describe("Feature: terminal control plane", () => {
     await plane.write({
       terminalId: created.terminalId,
       text: `${output}\n`,
-      submit: false,
     });
     await Bun.sleep(200);
 
@@ -320,7 +350,6 @@ describe("Feature: terminal control plane", () => {
     await plane.write({
       terminalId: created.terminalId,
       text: "pwd\n",
-      submit: false,
     });
     await Bun.sleep(120);
 
@@ -423,7 +452,6 @@ describe("Feature: terminal control plane", () => {
     await plane.write({
       terminalId: created.terminalId,
       text: "snapshot after connect\n",
-      submit: false,
     });
     await Bun.sleep(150);
 
@@ -465,7 +493,6 @@ describe("Feature: terminal control plane", () => {
     const readonlyWrite = await plane.write({
       terminalId: created.terminalId,
       text: "blocked",
-      submit: false,
       actorId: "session:readonly",
     });
     expect(readonlyWrite.ok).toBe(false);
@@ -474,11 +501,14 @@ describe("Feature: terminal control plane", () => {
     const pending = await plane.write({
       terminalId: created.terminalId,
       text: "needs-lease",
-      submit: false,
       actorId: "session:requester",
     });
     expect(pending.ok).toBe(false);
     expect(pending.approvalRequest?.assignedAdminId).toBe("session:admin");
+    expect(pending.approvalRequest?.requestedInput).toEqual({
+      mode: "raw",
+      text: "needs-lease",
+    });
 
     const requestId = pending.approvalRequest?.requestId;
     if (!requestId) {
@@ -496,7 +526,6 @@ describe("Feature: terminal control plane", () => {
     const approved = await plane.write({
       terminalId: created.terminalId,
       text: "needs-lease",
-      submit: false,
       actorId: "session:requester",
       accessToken: requester.accessToken,
     });
@@ -531,7 +560,6 @@ describe("Feature: terminal control plane", () => {
     const initialRequest = await plane.write({
       terminalId: created.terminalId,
       text: "handoff",
-      submit: false,
       actorId: "session:charlie",
     });
     expect(initialRequest.approvalRequest?.assignedAdminId).toBe("session:alpha");
@@ -550,7 +578,6 @@ describe("Feature: terminal control plane", () => {
     const bravoWrite = await plane.write({
       terminalId: created.terminalId,
       text: "still blocked",
-      submit: false,
       actorId: "session:bravo",
     });
     expect(bravoWrite.ok).toBe(false);
@@ -590,14 +617,12 @@ describe("Feature: terminal control plane", () => {
     const pendingA = await plane.write({
       terminalId: created.terminalId,
       text: "approved request",
-      submit: false,
       actorId: "session:requester-a",
       createApprovalRequest: true,
     });
     const pendingB = await plane.write({
       terminalId: created.terminalId,
       text: "denied request",
-      submit: false,
       actorId: "session:requester-b",
       createApprovalRequest: true,
     });
@@ -715,14 +740,12 @@ describe("Feature: terminal control plane", () => {
     await plane.write({
       terminalId: created.terminalId,
       text: "first event\n",
-      submit: false,
       actorId: "session:admin",
     });
     await Bun.sleep(80);
     await plane.write({
       terminalId: created.terminalId,
       text: "second event\n",
-      submit: false,
       actorId: "session:admin",
     });
     await Bun.sleep(80);

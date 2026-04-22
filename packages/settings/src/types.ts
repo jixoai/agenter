@@ -72,7 +72,6 @@ export interface SettingsGraph {
 export interface TerminalPresetSettings {
   command: string[];
   cwd?: string;
-  submitGapMs?: number;
   helpSource?: string;
 }
 
@@ -91,7 +90,6 @@ export interface AgentSettings {
 export interface TerminalSettings {
   terminalId?: string;
   command?: string[];
-  submitGapMs?: number;
   outputRoot?: string;
   gitLog?: false | "normal" | "verbose";
   presets?: Record<string, TerminalPresetSettings>;

@@ -93,7 +93,8 @@ ati [options] [command] [args]
 - `output/latest.log.html`
 - `output/{start}~{end}.log.html`
 - `input/ai-input.log`
-- `input/pending/*.xml|*.txt`
+- `input/pending/*.raw.txt`
+- `input/pending/*.mixed.txt`
 - `input/done/*.done`
 - `input/failed/*.failed`
 - `debug/ati-cli.ndjson`（CLI 关键事件）

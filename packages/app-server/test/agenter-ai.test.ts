@@ -210,8 +210,7 @@ const createModelClient = (
 };
 
 const createTerminalGateway = () => {
-  const writeCalls: Array<{ terminalId: string; text: string; submit?: boolean; submitKey?: "enter" | "linefeed" }> =
-    [];
+  const writeCalls: Array<{ terminalId: string; text: string }> = [];
   return {
     writeCalls,
     gateway: {
@@ -230,12 +229,7 @@ const createTerminalGateway = () => {
         message: "focused",
         focusedTerminalIds: ["iflow"],
       }),
-      write: async (input: {
-        terminalId: string;
-        text: string;
-        submit?: boolean;
-        submitKey?: "enter" | "linefeed";
-      }) => {
+      write: async (input: { terminalId: string; text: string }) => {
         writeCalls.push(input);
         return { ok: true, message: "written" };
       },
@@ -534,7 +528,7 @@ const callTerminalReadViaCli = async (
 
 const callTerminalWriteViaCli = async (
   input: Pick<ModelRespondInput, "tools">,
-  payload: { terminalId: string; text: string; submit?: boolean; submitKey?: "enter" | "linefeed" },
+  payload: { terminalId: string; text: string },
   toolCallId = "call-terminal-write",
 ) =>
   await callRootBashJson<{
@@ -3346,20 +3340,13 @@ describe("Feature: AgenterAI behavior", () => {
     const writeCalls: Array<{
       terminalId: string;
       text: string;
-      submit?: boolean;
-      submitKey?: "enter" | "linefeed";
     }> = [];
     const terminal: TerminalGatewayLike = {
       list: () => [],
       create: async () => ({ ok: true, message: "created" }),
       kill: async () => ({ ok: true, message: "stopped" }),
       focus: async () => ({ ok: true, message: "focused", focusedTerminalIds: ["iflow"] }),
-      write: async (input: {
-        terminalId: string;
-        text: string;
-        submit?: boolean;
-        submitKey?: "enter" | "linefeed";
-      }) => {
+      write: async (input: { terminalId: string; text: string }) => {
         writeCalls.push(input);
         await new Promise((resolve) => setTimeout(resolve, 40));
         return { ok: true, message: "written" };
@@ -3380,8 +3367,7 @@ describe("Feature: AgenterAI behavior", () => {
         input,
         {
           terminalId: "iflow",
-          text: "echo still-running",
-          submit: true,
+          text: "echo still-running\r",
         },
         "call-terminal-write",
       );
@@ -3416,8 +3402,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(writeCalls).toEqual([
       {
         terminalId: "iflow",
-        text: "echo still-running",
-        submit: true,
+        text: "echo still-running\r",
       },
     ]);
     expect(lifecycle).toHaveLength(2);

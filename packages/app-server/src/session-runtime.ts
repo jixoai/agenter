@@ -210,6 +210,7 @@ import {
 import {
   executeRootWorkspaceBash,
   executeWorkspaceBash,
+  listWorkspaceHiddenPrivatePaths,
   type RootWorkspaceBashExecResult,
   type RootWorkspaceMountInput,
   type WorkspaceGrantRecord,
@@ -1584,9 +1585,10 @@ export class SessionRuntime {
     return this.runtimeSkillSystem;
   }
 
-  private getRootWorkspaceSkillMounts(): RootWorkspaceMountInput[] {
+  private getRootWorkspaceMounts(): RootWorkspaceMountInput[] {
     const rootWorkspacePath = resolve(this.getRootWorkspacePath());
-    return this.getRootWorkspaceSkillRoots()
+    const avatar = this.getAvatarName();
+    const skillMounts = this.getRootWorkspaceSkillRoots()
       .map((path) => resolve(path))
       .filter((path) => {
         if (path === rootWorkspacePath) {
@@ -1595,10 +1597,26 @@ export class SessionRuntime {
         const rel = relative(rootWorkspacePath, path);
         return rel.startsWith("..") || rel === "";
       })
-      .map((path) => ({
-        path,
-        mode: "ro" as const,
-      }));
+      .map(
+        (path) =>
+          ({
+            path,
+            mode: "ro" as const,
+          }) satisfies RootWorkspaceMountInput,
+      );
+    const workspaceMounts = this.listMountedWorkspaceAuthorities().map(
+      (authority) =>
+        ({
+          path: authority.mount.workspacePath,
+          mode: "rw" as const,
+          grants: authority.grants,
+          hiddenPaths: listWorkspaceHiddenPrivatePaths({
+            workspacePath: authority.mount.workspacePath,
+            avatar,
+          }),
+        }) satisfies RootWorkspaceMountInput,
+    );
+    return [...workspaceMounts, ...skillMounts];
   }
 
   private createMessageSourceRef(input: { chatId: string; messageId: number }): LoopMessageSourceRef {
@@ -2707,14 +2725,11 @@ export class SessionRuntime {
   async writeRuntimeTerminal(input: {
     terminalId: string;
     text: string;
-    submit?: boolean;
-    submitKey?: "enter" | "linefeed";
   }): Promise<{ ok: boolean; message: string }> {
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(input.terminalId)) {
       return { ok: false, message: `unknown terminal: ${input.terminalId}` };
     }
-    const submitGapMs = this.config?.terminals[input.terminalId]?.submitGapMs ?? 80;
     try {
       if (this.config?.terminals[input.terminalId]?.gitLog && !controlPlane.isRunning(input.terminalId)) {
         controlPlane.start(input.terminalId);
@@ -2723,9 +2738,6 @@ export class SessionRuntime {
       const result = await controlPlane.write({
         terminalId: input.terminalId,
         text: input.text,
-        submit: input.submit,
-        submitKey: input.submitKey,
-        submitGapMs,
         actorId: this.terminalActorId,
       });
       if (result.ok) {
@@ -2733,13 +2745,12 @@ export class SessionRuntime {
           terminalId: input.terminalId,
           kind: "terminal_write",
           cycleId: this.activeCycleId,
-          title: input.submit || input.submitKey ? "Terminal write + submit" : "Terminal write",
+          title: "Terminal write",
           content: result.eventId ? "" : input.text,
           detail: result.eventId
             ? this.createTerminalActivityRefDetail(input.terminalId, result.eventId, "terminal_write")
             : {
-                submit: input.submit,
-                submitKey: input.submitKey ?? null,
+                mode: "raw",
               },
         });
       }
@@ -2747,6 +2758,46 @@ export class SessionRuntime {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.emit("error", { message: `terminal write failed (${input.terminalId}): ${message}` });
+      return { ok: false, message };
+    }
+  }
+
+  async inputRuntimeTerminal(input: {
+    terminalId: string;
+    text: string;
+  }): Promise<{ ok: boolean; message: string }> {
+    const controlPlane = this.requireTerminalControlPlane();
+    if (!controlPlane.has(input.terminalId)) {
+      return { ok: false, message: `unknown terminal: ${input.terminalId}` };
+    }
+    try {
+      if (this.config?.terminals[input.terminalId]?.gitLog && !controlPlane.isRunning(input.terminalId)) {
+        controlPlane.start(input.terminalId);
+        await controlPlane.markDirty(input.terminalId);
+      }
+      const result = await controlPlane.input({
+        terminalId: input.terminalId,
+        text: input.text,
+        actorId: this.terminalActorId,
+      });
+      if (result.ok) {
+        this.appendTerminalActivity({
+          terminalId: input.terminalId,
+          kind: "terminal_write",
+          cycleId: this.activeCycleId,
+          title: "Terminal input",
+          content: result.eventId ? "" : input.text,
+          detail: result.eventId
+            ? this.createTerminalActivityRefDetail(input.terminalId, result.eventId, "terminal_write")
+            : {
+                mode: "mixed",
+              },
+        });
+      }
+      return { ok: result.ok, message: result.message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emit("error", { message: `terminal input failed (${input.terminalId}): ${message}` });
       return { ok: false, message };
     }
   }
@@ -3610,6 +3661,7 @@ export class SessionRuntime {
         },
         terminalRead: async (input) => await this.readRuntimeTerminal(input),
         terminalWrite: async (input) => await this.writeRuntimeTerminal(input),
+        terminalInput: async (input) => await this.inputRuntimeTerminal(input),
         terminalFocus: async (input) => await this.focusRuntimeTerminals(input),
         terminalKill: async (input) => await this.deleteRuntimeTerminal(input.terminalId),
         skillList: () => runtimeSkillSystem.list().map(projectRuntimeSkill),
@@ -3689,7 +3741,7 @@ export class SessionRuntime {
         ...(input.env ?? {}),
       },
       stdin: input.stdin,
-      mounts: [...this.getRootWorkspaceSkillMounts()],
+      mounts: [...this.getRootWorkspaceMounts()],
       customCommands: createRuntimeShellCommands({
         baseUrl: this.runtimeLocalApi.baseUrl,
         privateKey: this.options.avatarPrivateKey,

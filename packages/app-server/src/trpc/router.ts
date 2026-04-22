@@ -1082,9 +1082,6 @@ export const appRouter = t.router({
           terminalId: z.string().min(1),
           accessToken: z.string().min(1).optional(),
           text: z.string(),
-          submit: z.boolean().optional(),
-          submitKey: z.enum(["enter", "linefeed"]).optional(),
-          submitGapMs: z.number().int().nonnegative().optional(),
           createApprovalRequest: z.boolean().optional(),
           readMode: z.enum(["auto", "diff", "snapshot"]).optional(),
           readRecordActivity: z.boolean().optional(),
@@ -1102,6 +1099,33 @@ export const appRouter = t.router({
       .mutation(
         async ({ ctx, input }) =>
           await ctx.kernel.writeGlobalTerminal({
+            ...input,
+            ...resolveTerminalCallerScope(ctx.auth),
+          }),
+      ),
+    input: authProcedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+          accessToken: z.string().min(1).optional(),
+          text: z.string(),
+          createApprovalRequest: z.boolean().optional(),
+          readMode: z.enum(["auto", "diff", "snapshot"]).optional(),
+          readRecordActivity: z.boolean().optional(),
+          returnRead: z
+            .union([
+              z.boolean(),
+              z.object({
+                throttleMs: z.number().int().nonnegative().optional(),
+                debounceMs: z.number().int().nonnegative().optional(),
+              }),
+            ])
+            .optional(),
+        }),
+      )
+      .mutation(
+        async ({ ctx, input }) =>
+          await ctx.kernel.inputGlobalTerminal({
             ...input,
             ...resolveTerminalCallerScope(ctx.auth),
           }),

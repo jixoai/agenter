@@ -4388,9 +4388,6 @@ export class RuntimeStore {
     terminalId: string;
     accessToken?: string;
     text: string;
-    submit?: boolean;
-    submitKey?: "enter" | "linefeed";
-    submitGapMs?: number;
     createApprovalRequest?: boolean;
     readMode?: "auto" | "diff" | "snapshot";
     readRecordActivity?: boolean;
@@ -4406,11 +4403,10 @@ export class RuntimeStore {
             kind: "terminal_write",
             cycleId: null,
             actorId: undefined,
-            title: input.submit || input.submitKey ? "Terminal write + submit" : "Terminal write",
+            title: "Terminal write",
             content: input.text,
             detail: {
-              submit: input.submit,
-              submitKey: input.submitKey ?? null,
+              mode: "raw",
             },
           } satisfies TerminalActivityItem)
         : null;
@@ -4446,6 +4442,71 @@ export class RuntimeStore {
     });
     if (writeFact) {
       this.projectTerminalActivityFact(writeFact);
+    }
+    if (readFact) {
+      this.projectTerminalActivityFact(readFact);
+    }
+    return output;
+  }
+
+  async inputGlobalTerminal(input: {
+    terminalId: string;
+    accessToken?: string;
+    text: string;
+    createApprovalRequest?: boolean;
+    readMode?: "auto" | "diff" | "snapshot";
+    readRecordActivity?: boolean;
+    returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+  }) {
+    const output = await this.client.trpc.terminal.input.mutate(input);
+    const inputFact =
+      this.shouldRefreshGlobalTerminalActivity(input.terminalId) && typeof output.eventId === "number"
+        ? ({
+            id: output.eventId,
+            terminalId: input.terminalId,
+            createdAt: Date.now(),
+            kind: "terminal_write",
+            cycleId: null,
+            actorId: undefined,
+            title: "Terminal input",
+            content: input.text,
+            detail: {
+              mode: "mixed",
+            },
+          } satisfies TerminalActivityItem)
+        : null;
+    const readFact =
+      this.shouldRefreshGlobalTerminalActivity(input.terminalId) &&
+      output.read &&
+      typeof output.read === "object" &&
+      typeof output.read.eventId === "number"
+        ? ({
+            id: output.read.eventId,
+            terminalId: output.read.terminalId,
+            createdAt: Date.now(),
+            kind: "terminal_read",
+            cycleId: null,
+            actorId: undefined,
+            title: "Terminal read",
+            content: JSON.stringify(output.read),
+            detail: output.read,
+          } satisfies TerminalActivityItem)
+        : null;
+    if (inputFact) {
+      this.projectTerminalActivityFact(inputFact);
+    }
+    if (readFact) {
+      this.projectTerminalActivityFact(readFact);
+    }
+    await this.refreshGlobalTerminalSurface({
+      terminalIds: [input.terminalId],
+      activity: true,
+      approvals: true,
+      catalog: true,
+      force: true,
+    });
+    if (inputFact) {
+      this.projectTerminalActivityFact(inputFact);
     }
     if (readFact) {
       this.projectTerminalActivityFact(readFact);

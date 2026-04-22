@@ -9,6 +9,7 @@ import type {
   TerminalActorId,
   TerminalAdminCandidateRecord,
   TerminalApprovalRequestRecord,
+  TerminalAutomationInputMode,
   TerminalControlPlaneConfig,
   TerminalControlPlaneConfigPatch,
   TerminalControlPlaneEntry,
@@ -19,6 +20,7 @@ import type {
   TerminalGrantRole,
   TerminalIssueGrantInput,
   TerminalIssuedGrant,
+  TerminalInputInput,
   TerminalPatchInput,
   TerminalProcessProfile,
   TerminalReadMode,
@@ -715,7 +717,6 @@ export class TerminalControlPlane {
               const result = await this.write({
                 terminalId,
                 text: parsed.data,
-                submit: false,
                 accessToken: socket.data.accessToken,
                 actorId: socket.data.actorId ?? undefined,
               });
@@ -829,6 +830,50 @@ export class TerminalControlPlane {
   }
 
   async write(input: TerminalWriteInput): Promise<TerminalWriteResult> {
+    return await this.enqueueAutomationInput({
+      terminalId: input.terminalId,
+      text: input.text,
+      mode: "raw",
+      title: "Terminal write",
+      actorId: input.actorId,
+      accessToken: input.accessToken,
+      superadminActorId: input.superadminActorId,
+      createApprovalRequest: input.createApprovalRequest,
+      returnRead: input.returnRead,
+      readMode: input.readMode,
+      readRecordActivity: input.readRecordActivity,
+    });
+  }
+
+  async input(input: TerminalInputInput): Promise<TerminalWriteResult> {
+    return await this.enqueueAutomationInput({
+      terminalId: input.terminalId,
+      text: input.text,
+      mode: "mixed",
+      title: "Terminal input",
+      actorId: input.actorId,
+      accessToken: input.accessToken,
+      superadminActorId: input.superadminActorId,
+      createApprovalRequest: input.createApprovalRequest,
+      returnRead: input.returnRead,
+      readMode: input.readMode,
+      readRecordActivity: input.readRecordActivity,
+    });
+  }
+
+  private async enqueueAutomationInput(input: {
+    terminalId: string;
+    text: string;
+    mode: TerminalAutomationInputMode;
+    title: string;
+    returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+    readRecordActivity?: boolean;
+    readMode?: TerminalReadMode;
+    actorId?: TerminalActorId;
+    accessToken?: string;
+    superadminActorId?: TerminalActorId;
+    createApprovalRequest?: boolean;
+  }): Promise<TerminalWriteResult> {
     const entry = this.ensureManagedEntry(input.terminalId);
     if (!entry.terminal.isRunning()) {
       entry.terminal.start();
@@ -854,25 +899,27 @@ export class TerminalControlPlane {
         terminalId: input.terminalId,
         actorId: approvalActorId,
         requestedInput: {
+          mode: input.mode,
           text: input.text,
-          submit: input.submit,
-          submitKey: input.submitKey,
         },
       });
       return { ok: false, message, approvalRequest: request };
     }
 
-    await entry.terminal.write(input.text, input.submit ?? true, input.submitKey ?? "enter", input.submitGapMs ?? 80);
+    if (input.mode === "raw") {
+      await entry.terminal.write(input.text);
+    } else {
+      await entry.terminal.input(input.text);
+    }
     const writeEvent = this.db.appendEvent({
       terminalId: input.terminalId,
       kind: "terminal_write",
       payload: {
-        title: input.submit || input.submitKey ? "Terminal write + submit" : "Terminal write",
+        title: input.title,
         content: input.text,
         actorId: this.resolveEventActorId(input),
         detail: {
-          submit: input.submit,
-          submitKey: input.submitKey ?? null,
+          mode: input.mode,
         },
       },
     });

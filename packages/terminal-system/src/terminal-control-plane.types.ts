@@ -9,6 +9,7 @@ export type TerminalApprovalStatus = "pending" | "approved" | "denied" | "expire
 export type TerminalRendererEngine = "xterm";
 export type TerminalActorId = PrincipalId | `${"auth" | "session" | "system"}:${string}`;
 export type TerminalEventKind = "terminal_read" | "terminal_write";
+export type TerminalAutomationInputMode = "raw" | "mixed";
 
 export interface TerminalReverseCursor {
   beforeTimeMs: number;
@@ -77,9 +78,18 @@ export interface TerminalCreateInput {
 export interface TerminalWriteInput {
   terminalId: string;
   text: string;
-  submit?: boolean;
-  submitKey?: "enter" | "linefeed";
-  submitGapMs?: number;
+  returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+  readRecordActivity?: boolean;
+  readMode?: TerminalReadMode;
+  actorId?: TerminalActorId;
+  accessToken?: string;
+  superadminActorId?: TerminalActorId;
+  createApprovalRequest?: boolean;
+}
+
+export interface TerminalInputInput {
+  terminalId: string;
+  text: string;
   returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
   readRecordActivity?: boolean;
   readMode?: TerminalReadMode;
@@ -188,9 +198,8 @@ export interface TerminalApprovalRequestRecord {
   expiresAt: number;
   status: TerminalApprovalStatus;
   requestedInput?: {
+    mode: TerminalAutomationInputMode;
     text: string;
-    submit?: boolean;
-    submitKey?: "enter" | "linefeed";
   };
   decidedAt?: number;
   decidedBy?: TerminalActorId;

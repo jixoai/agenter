@@ -229,23 +229,18 @@ export class ManagedTerminal {
     void this.terminal.resize(this.cols, this.rows);
   }
 
-  async write(
-    input: string,
-    submit = true,
-    submitKey: "enter" | "linefeed" = "enter",
-    submitGapMs = 80,
-  ): Promise<void> {
+  async write(input: string): Promise<void> {
     if (!this.terminal) {
       throw new Error(`terminal ${this.config.terminalId} is not running`);
     }
-    if (!submit) {
-      await this.terminal.enqueuePendingInput(input, { wait: true });
-      return;
-    }
+    await this.terminal.write(input);
+  }
 
-    const enterKey = submitKey === "linefeed" ? "linefeed" : "enter";
-    const mixed = `${input}<wait ms=\"${submitGapMs}\"/><key data=\"${enterKey}\"/>`;
-    await this.terminal.enqueuePendingInput(mixed, { wait: true });
+  async input(mixedInput: string): Promise<void> {
+    if (!this.terminal) {
+      throw new Error(`terminal ${this.config.terminalId} is not running`);
+    }
+    await this.terminal.input(mixedInput);
   }
 
   writeRaw(input: string): void {

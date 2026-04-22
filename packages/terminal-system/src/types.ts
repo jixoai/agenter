@@ -106,8 +106,10 @@ export interface TerminalDirtySliceOptions {
   pollMs?: number;
 }
 
+export type TerminalPendingInputMode = "raw" | "mixed";
+
 export interface TerminalPendingInputOptions {
-  extension?: "xml" | "txt";
+  mode: TerminalPendingInputMode;
   wait?: boolean;
   timeoutMs?: number;
   pollMs?: number;

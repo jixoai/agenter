@@ -19,6 +19,7 @@ import type {
   TerminalDirtyMarkResult,
   TerminalDirtySliceOptions,
   TerminalDirtySliceResult,
+  TerminalPendingInputMode,
   TerminalPendingInputOptions,
   TerminalPendingInputResult,
   TerminalProfile,
@@ -181,8 +182,12 @@ export class AgenticTerminal {
     this.appliedSize = { cols: this.profile.cols, rows: this.profile.rows };
     this.inbox = new InputInbox({
       inputDir,
-      onMixedInput: async (mixed, sourceFile) => {
-        await this.enqueueMixedInput(mixed, `file:${sourceFile}`);
+      onInput: async (input, sourceFile, mode) => {
+        if (mode === "raw") {
+          await this.enqueueRawInput(input, `file:${sourceFile}`);
+          return;
+        }
+        await this.enqueueMixedInput(input, `file:${sourceFile}`);
       },
       onError: (error, sourceFile) => {
         this.appendInputLog(`ERROR ${sourceFile}: ${error.message}`, "file:error");
@@ -245,35 +250,45 @@ export class AgenticTerminal {
   }
 
   /**
-   * Parse XML-like mixed input and execute sequentially in PTY.
-   * Example: `echo hello<key data="enter"/>`.
+   * Enqueue raw automation input through the pending inbox.
+   * Raw mode is literal PTY input, so callers must include any `\r`, `\n`, or control bytes explicitly.
    */
-  public async writeMixed(mixedInput: string): Promise<void> {
+  public async write(rawInput: string): Promise<void> {
     this.ensureStarted();
-    await this.enqueueMixedInput(mixedInput, "api");
+    await this.enqueuePendingInput(rawInput, { mode: "raw", wait: true });
   }
 
   /**
-   * Enqueue mixed input through `input/pending`, then wait for `done/failed`.
-   * This keeps one consistent input path for automation and manual workflows.
+   * Enqueue mixed automation input through the pending inbox.
+   * Mixed mode supports `<key .../>`, `<wait .../>`, and `<raw>...</raw>`.
+   */
+  public async input(mixedInput: string): Promise<void> {
+    this.ensureStarted();
+    await this.enqueuePendingInput(mixedInput, { mode: "mixed", wait: true });
+  }
+
+  /**
+   * Enqueue automation input through `input/pending`, then optionally wait for `done/failed`.
+   * `wait` only controls pending completion for the caller; it does not affect mixed DSL
+   * actions such as `<wait ms="300"/>` inside the file content itself.
    */
   public async enqueuePendingInput(
-    mixedInput: string,
-    options: TerminalPendingInputOptions = {},
+    input: string,
+    options: TerminalPendingInputOptions,
   ): Promise<TerminalPendingInputResult> {
     this.ensureStarted();
-    const extension = options.extension ?? "txt";
+    const mode: TerminalPendingInputMode = options.mode;
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const file = `${id}.${extension}`;
+    const file = `${id}.${mode}.txt`;
     const pendingPath = join(this.workspace, "input", "pending", file);
     const doneFile = `${file}.done`;
     const failedFile = `${file}.failed`;
     const donePath = join(this.workspace, "input", "done", doneFile);
     const failedPath = join(this.workspace, "input", "failed", failedFile);
 
-    writeFileSync(pendingPath, mixedInput, "utf8");
-    this.appendInputLog(mixedInput, `queue:${file}`);
-    this.debug("input.enqueue", { id, file, extension });
+    writeFileSync(pendingPath, input, "utf8");
+    this.appendInputLog(input, `queue:${file}`);
+    this.debug("input.enqueue", { id, file, mode });
     this.inbox?.poke();
 
     const wait = options.wait ?? true;
@@ -301,7 +316,8 @@ export class AgenticTerminal {
   }
 
   /**
-   * Write raw input directly to PTY (no XML/mixed parsing), useful for interactive forwarding.
+   * Write raw input directly to PTY with no pending-file durability.
+   * This is reserved for interactive forwarding such as ATI-CLI / ATI-TUI stdin bridges.
    */
   public writeRaw(input: string): void {
     this.ensureStarted();
@@ -815,6 +831,14 @@ export class AgenticTerminal {
         },
         wait: (ms) => Bun.sleep(ms),
       });
+    });
+    return this.writeQueue;
+  }
+
+  private enqueueRawInput(rawInput: string, source: string): Promise<void> {
+    this.writeQueue = this.writeQueue.then(async () => {
+      this.appendInputLog(rawInput, source);
+      this.pty?.write(rawInput);
     });
     return this.writeQueue;
   }

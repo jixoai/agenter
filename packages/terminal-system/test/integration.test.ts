@@ -88,7 +88,7 @@ test("AgenticTerminal exposes structured snapshots", async () => {
   rmSync(workspace, { recursive: true, force: true });
 });
 
-test("AgenticTerminal consumes mixed input files from input/pending", async () => {
+test("AgenticTerminal consumes mixed pending files from input/pending", async () => {
   const terminal = new AgenticTerminal("cat", [], {
     debounceMs: 20,
     throttleMs: 120,
@@ -98,7 +98,7 @@ test("AgenticTerminal consumes mixed input files from input/pending", async () =
 
   terminal.start();
   const workspace = terminal.workspace;
-  const pending = join(workspace, "input", "pending", "001.xml");
+  const pending = join(workspace, "input", "pending", "001.mixed.txt");
   writeFileSync(pending, `hello<key data="enter"/>`, "utf8");
 
   await Bun.sleep(350);
@@ -106,11 +106,35 @@ test("AgenticTerminal consumes mixed input files from input/pending", async () =
 
   const latest = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
   expect(latest.toLowerCase()).toContain("hello");
-  expect(existsSync(join(workspace, "input", "done", "001.xml.done"))).toBe(true);
+  expect(existsSync(join(workspace, "input", "done", "001.mixed.txt.done"))).toBe(true);
 
   await Bun.sleep(2200);
   const latestAfterIdle = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
   expect(latestAfterIdle).toContain('status: "IDLE"');
+
+  await terminal.destroy(true);
+  rmSync(workspace, { recursive: true, force: true });
+});
+
+test("AgenticTerminal consumes raw pending files from input/pending", async () => {
+  const terminal = new AgenticTerminal("cat", [], {
+    debounceMs: 20,
+    throttleMs: 120,
+    cols: 60,
+    rows: 8,
+  });
+
+  terminal.start();
+  const workspace = terminal.workspace;
+  const pending = join(workspace, "input", "pending", "001.raw.txt");
+  writeFileSync(pending, "hello raw\r", "utf8");
+
+  await Bun.sleep(350);
+  await terminal.forceCommit();
+
+  const latest = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
+  expect(latest.toLowerCase()).toContain("hello raw");
+  expect(existsSync(join(workspace, "input", "done", "001.raw.txt.done"))).toBe(true);
 
   await terminal.destroy(true);
   rmSync(workspace, { recursive: true, force: true });

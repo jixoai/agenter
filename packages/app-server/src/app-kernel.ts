@@ -3216,9 +3216,6 @@ export class AppKernel {
   async writeGlobalTerminal(input: {
     terminalId: string;
     text: string;
-    submit?: boolean;
-    submitKey?: "enter" | "linefeed";
-    submitGapMs?: number;
     returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
     readRecordActivity?: boolean;
     readMode?: TerminalReadMode;
@@ -3231,9 +3228,35 @@ export class AppKernel {
     return await this.terminalControlPlane.write({
       terminalId: input.terminalId,
       text: input.text,
-      submit: input.submit,
-      submitKey: input.submitKey,
-      submitGapMs: input.submitGapMs,
+      returnRead: input.returnRead,
+      readRecordActivity: input.readRecordActivity,
+      readMode: input.readMode,
+      createApprovalRequest: input.createApprovalRequest,
+      accessToken: access.accessToken,
+      ...(access.accessToken
+        ? {}
+        : {
+            actorId: input.actorId,
+            superadminActorId: input.superadminActorId,
+          }),
+    });
+  }
+
+  async inputGlobalTerminal(input: {
+    terminalId: string;
+    text: string;
+    returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+    readRecordActivity?: boolean;
+    readMode?: TerminalReadMode;
+    createApprovalRequest?: boolean;
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): Promise<TerminalWriteResult> {
+    const access = this.resolveGlobalTerminalAccess(input);
+    return await this.terminalControlPlane.input({
+      terminalId: input.terminalId,
+      text: input.text,
       returnRead: input.returnRead,
       readRecordActivity: input.readRecordActivity,
       readMode: input.readMode,

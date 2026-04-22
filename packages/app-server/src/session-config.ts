@@ -20,7 +20,6 @@ export interface SessionTerminalConfig {
   command: string[];
   commandLabel: string;
   cwd: string;
-  submitGapMs?: number;
   outputRoot?: string;
   gitLog?: false | "normal" | "verbose";
   helpSource?: string;
@@ -150,7 +149,6 @@ const buildPresetFromLegacy = (
   terminalId: string,
   command: string[],
   terminalSettings: {
-    submitGapMs?: number;
     helpSources?: Record<string, string>;
   },
 ): Record<string, TerminalPresetSettings> => {
@@ -159,7 +157,6 @@ const buildPresetFromLegacy = (
   return {
     [terminalId]: {
       command,
-      submitGapMs: terminalSettings.submitGapMs,
       helpSource,
     },
   };
@@ -211,7 +208,6 @@ export const resolveSessionConfig = async (
         command,
         commandLabel: command.join(" "),
         cwd: preset.cwd ? toAbsolute(preset.cwd, cwd) : agentCwd,
-        submitGapMs: preset.submitGapMs,
         outputRoot: terminalSettings.outputRoot,
         gitLog: terminalSettings.gitLog,
         helpSource:

@@ -1032,12 +1032,15 @@ describe("Feature: app-server trpc procedures", () => {
     const blocked = await terminalSystem.write({
       terminalId,
       text: "pending approval",
-      submit: false,
       actorId: "session:avatar-pair",
       accessToken: issued.grant.accessToken,
     });
     expect(blocked.ok).toBeFalse();
     expect(blocked.approvalRequest?.terminalId).toBe(terminalId);
+    expect(blocked.approvalRequest?.requestedInput).toEqual({
+      mode: "raw",
+      text: "pending approval",
+    });
 
     const approvals = await caller.terminal.listApprovalRequests({
       terminalId,
@@ -1067,10 +1070,17 @@ describe("Feature: app-server trpc procedures", () => {
       terminalId,
       accessToken: issued.grant.accessToken,
       text: "approved write",
-      submit: false,
       returnRead: false,
     });
     expect(allowed.ok).toBeTrue();
+
+    const allowedMixed = await caller.terminal.input({
+      terminalId,
+      accessToken: issued.grant.accessToken,
+      text: '<raw>approved mixed</raw><key data="enter"/>',
+      returnRead: false,
+    });
+    expect(allowedMixed.ok).toBeTrue();
 
     const activity = await caller.terminal.activityPage({
       terminalId,
@@ -1080,6 +1090,7 @@ describe("Feature: app-server trpc procedures", () => {
     expect(
       activity.items.some((item) => item.kind === "terminal_write" && item.actorId === "session:avatar-pair"),
     ).toBeTrue();
+    expect(activity.items.some((item) => item.kind === "terminal_write" && item.title === "Terminal input")).toBeTrue();
 
     const focused = await caller.terminal.globalFocus({
       op: "clear",

@@ -36,7 +36,6 @@ export const settingsSchema = z.object({
     .object({
       terminalId: z.string().min(1).describe("Terminal preset id used as default shell target.").optional(),
       command: z.array(z.string().min(1)).min(1).describe("Command array used to boot the primary terminal.").optional(),
-      submitGapMs: z.number().int().nonnegative().describe("Delay between terminal submit chunks in milliseconds.").optional(),
       outputRoot: z.string().min(1).describe("Output directory for terminal artifacts and logs.").optional(),
       gitLog: z
         .union([z.literal(false), z.literal("normal"), z.literal("verbose")])
@@ -48,7 +47,6 @@ export const settingsSchema = z.object({
           z.object({
             command: z.array(z.string().min(1)).min(1).describe("Command array for this terminal preset."),
             cwd: z.string().min(1).describe("Working directory for this preset.").optional(),
-            submitGapMs: z.number().int().nonnegative().describe("Per-preset submit delay in milliseconds.").optional(),
             helpSource: z.string().min(1).describe("Help markdown source for this preset.").optional(),
           }),
         )

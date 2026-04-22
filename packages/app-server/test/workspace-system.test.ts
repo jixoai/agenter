@@ -468,8 +468,7 @@ describe("Feature: workspace system kernel integration", () => {
       command: "terminal write",
       stdin: JSON.stringify({
         terminalId,
-        text: "echo stdin-ok",
-        submit: true,
+        text: "echo stdin-ok\r",
       }),
     });
     expect(wrote.exitCode).toBe(0);
@@ -740,8 +739,7 @@ describe("Feature: workspace system kernel integration", () => {
       command: "terminal write",
       stdin: JSON.stringify({
         terminalId,
-        text: "command -v tool | xargs basename && command -v skill | xargs basename",
-        submit: true,
+        text: "command -v tool | xargs basename && command -v skill | xargs basename\r",
       }),
     });
     expect(wrote.exitCode).toBe(0);

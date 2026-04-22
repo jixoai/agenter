@@ -3,8 +3,10 @@ export type MixedAction =
   | { type: "key"; data: string; ctrl: boolean; times: number }
   | { type: "wait"; ms: number };
 
-const TAG_PATTERN = /<(key|wait)\s+([^>]*?)\/>/gi;
+const SELF_CLOSING_TAG_PATTERN = /<(key|wait)\s+([^>]*?)\/>/iy;
 const ATTR_PATTERN = /([a-zA-Z][a-zA-Z0-9_-]*)=(["'])(.*?)\2/g;
+const RAW_OPEN_TAG = "<raw>";
+const RAW_CLOSE_TAG = "</raw>";
 
 const NAMED_KEY_MAP: Record<string, string> = {
   enter: "\r",
@@ -93,46 +95,96 @@ export const keyToSequence = (data: string, ctrl: boolean): string => {
   return data;
 };
 
+const decodeRawText = (value: string): string =>
+  value
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'")
+    .replaceAll("&amp;", "&");
+
+const matchSelfClosingTagAt = (
+  mixed: string,
+  cursor: number,
+): { nextCursor: number; action: MixedAction } | null => {
+  SELF_CLOSING_TAG_PATTERN.lastIndex = cursor;
+  const match = SELF_CLOSING_TAG_PATTERN.exec(mixed);
+  if (!match) {
+    SELF_CLOSING_TAG_PATTERN.lastIndex = 0;
+    return null;
+  }
+  const nextCursor = SELF_CLOSING_TAG_PATTERN.lastIndex;
+  SELF_CLOSING_TAG_PATTERN.lastIndex = 0;
+  const tag = match[1].toLowerCase();
+  const attrs = parseAttributes(match[2]);
+  if (tag === "wait") {
+    return {
+      nextCursor,
+      action: {
+        type: "wait",
+        ms: Math.max(0, parseIntOr(attrs.ms, 0)),
+      },
+    };
+  }
+  return {
+    nextCursor,
+    action: {
+      type: "key",
+      data: attrs.data ?? "",
+      ctrl: parseBool(attrs.ctrl),
+      times: Math.max(1, parseIntOr(attrs.times, 1)),
+    },
+  };
+};
+
+const isRawOpenAt = (mixed: string, cursor: number): boolean =>
+  mixed.slice(cursor, cursor + RAW_OPEN_TAG.length).toLowerCase() === RAW_OPEN_TAG;
+
+const findNextRecognizedTagStart = (mixed: string, cursor: number): number => {
+  for (let index = cursor; index < mixed.length; index += 1) {
+    if (mixed[index] !== "<") {
+      continue;
+    }
+    if (isRawOpenAt(mixed, index) || matchSelfClosingTagAt(mixed, index)) {
+      return index;
+    }
+  }
+  return -1;
+};
+
 export const parseMixedInput = (mixed: string): MixedAction[] => {
   const actions: MixedAction[] = [];
   let cursor = 0;
-  let match: RegExpExecArray | null = TAG_PATTERN.exec(mixed);
 
-  while (match) {
-    const full = match[0];
-    const tag = match[1].toLowerCase();
-    const attrsRaw = match[2];
-    const start = match.index;
-
-    if (start > cursor) {
-      const text = mixed.slice(cursor, start);
-      if (text.length > 0) {
-        actions.push({ type: "text", data: text });
+  while (cursor < mixed.length) {
+    if (isRawOpenAt(mixed, cursor)) {
+      const contentStart = cursor + RAW_OPEN_TAG.length;
+      const closeIndex = mixed.toLowerCase().indexOf(RAW_CLOSE_TAG, contentStart);
+      if (closeIndex < 0) {
+        throw new Error("mixed input raw block is missing </raw>");
       }
+      const decoded = decodeRawText(mixed.slice(contentStart, closeIndex));
+      if (decoded.length > 0) {
+        actions.push({ type: "text", data: decoded });
+      }
+      cursor = closeIndex + RAW_CLOSE_TAG.length;
+      continue;
     }
 
-    const attrs = parseAttributes(attrsRaw);
-    if (tag === "wait") {
-      actions.push({
-        type: "wait",
-        ms: Math.max(0, parseIntOr(attrs.ms, 0)),
-      });
-    } else if (tag === "key") {
-      actions.push({
-        type: "key",
-        data: attrs.data ?? "",
-        ctrl: parseBool(attrs.ctrl),
-        times: Math.max(1, parseIntOr(attrs.times, 1)),
-      });
+    const tagMatch = matchSelfClosingTagAt(mixed, cursor);
+    if (tagMatch) {
+      actions.push(tagMatch.action);
+      cursor = tagMatch.nextCursor;
+      continue;
     }
 
-    cursor = start + full.length;
-    match = TAG_PATTERN.exec(mixed);
-  }
-  TAG_PATTERN.lastIndex = 0;
-
-  if (cursor < mixed.length) {
-    actions.push({ type: "text", data: mixed.slice(cursor) });
+    const nextTagStart = findNextRecognizedTagStart(mixed, cursor + 1);
+    const textEnd = nextTagStart >= 0 ? nextTagStart : mixed.length;
+    const text = mixed.slice(cursor, textEnd);
+    if (text.length > 0) {
+      actions.push({ type: "text", data: text });
+    }
+    cursor = textEnd;
   }
 
   return actions;

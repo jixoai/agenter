@@ -103,20 +103,21 @@ const createBashFs = (input: { workspacePath: string; avatar: string; grants: Wo
     });
   });
   const fs = new MountableFs({ base: new InMemoryFs() });
-  fs.mount(
-    input.workspacePath,
+  const hiddenPaths = listWorkspaceHiddenPrivatePaths({
+    workspacePath: input.workspacePath,
+    avatar: input.avatar,
+  });
+  const createOverlay = () =>
     new OverlayRuleFs({
       root: input.workspacePath,
       config: {
         rules: input.grants,
         extraRules: systemGrantPatterns,
-        hiddenPaths: listWorkspaceHiddenPrivatePaths({
-          workspacePath: input.workspacePath,
-          avatar: input.avatar,
-        }),
+        hiddenPaths,
       },
-    }),
-  );
+    });
+  fs.mount(input.workspacePath, createOverlay());
+  fs.mount("/workspace", createOverlay());
   return fs;
 };
 

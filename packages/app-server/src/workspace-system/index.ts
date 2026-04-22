@@ -23,6 +23,7 @@ export {
   resolveWorkspaceSystemRoot,
   resolveWorkspaceToolCommandName,
 } from "./paths";
+export { listWorkspaceHiddenPrivatePaths } from "./private-isolation";
 export {
   executeRootWorkspaceBash,
   type RootWorkspaceBashExecInput,
