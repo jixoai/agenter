@@ -360,6 +360,7 @@ git-log 约束：
 - `writeRaw()` 只保留给 ATI-CLI / ATI-TUI 这类真人交互 forwarding；它不是 automation durable truth
 - mixed DSL 允许 `<key .../>`、`<wait .../>`、`<raw>...</raw>`
 - `<raw>...</raw>` 内只解码固定 HTML entities：`&lt;`、`&gt;`、`&amp;`、`&quot;`、`&#39;`
+- nested `<raw>` 属于非法 mixed payload，terminal-core 必须拒绝，不能半截吞掉 outer raw block
 
 文件链读取 API（面向 demo/工具）：
 

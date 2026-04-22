@@ -50,6 +50,12 @@ Mixed input SHALL support `<raw>...</raw>` blocks so callers can emit tag-like t
 - **THEN** terminal-core rejects that pending input unit
 - **AND** the file is moved into `input/failed`
 
+#### Scenario: Nested raw blocks are rejected instead of being partially consumed
+
+- **WHEN** a mixed pending file places another `<raw>` inside an open `<raw>...</raw>` block
+- **THEN** terminal-core rejects that pending input unit
+- **AND** it does not partially consume the outer raw block or leak a stray `</raw>` into terminal output
+
 ### Requirement: Interactive raw forwarding SHALL remain a separate live path
 
 terminal-core MAY retain a direct raw forwarding API for live human interaction, but that path SHALL remain distinct from automation pending truth.
