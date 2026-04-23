@@ -119,6 +119,24 @@ The shared transcript SHALL render room-message revision state from the durable 
 - **THEN** the visible transcript row keeps its stable `viewKey`
 - **THEN** the transcript does not duplicate the row just because the lifecycle state changed
 
+### Requirement: Web chat view SHALL keep hybrid markdown preview source-faithful
+The shared transcript SHALL keep message Markdown source in the underlying CodeMirror document while projecting structural Markdown blocks into preview widgets. GFM tables SHALL render as preview tables, fenced code SHALL use dedicated block-code chrome instead of inline-code styling, and selecting a projected structural block SHALL reveal the raw Markdown source so copy stays source-faithful.
+
+#### Scenario: GFM table renders as a preview table
+- **WHEN** a room message contains GitHub-flavored Markdown table syntax
+- **THEN** the transcript renders that table as a preview table instead of literal pipe-delimited paragraph text
+- **THEN** the table stays inside the message bubble with its own local horizontal overflow handling
+
+#### Scenario: Fenced code keeps block-code chrome separate from inline code
+- **WHEN** a room message contains fenced code with or without an explicit language label
+- **THEN** the transcript renders the fenced block with block-code chrome and mono content
+- **THEN** the block does not inherit inline-code capsule styling
+
+#### Scenario: Selecting a projected structural block reveals raw markdown
+- **WHEN** the operator selects a projected table or fenced code block in the transcript
+- **THEN** the structural preview widget is replaced by raw Markdown source from the underlying document
+- **THEN** copying that selection preserves the raw Markdown instead of rendered preview text
+
 ### Requirement: Web chat view SHALL render first-class room reply previews
 The shared chat transcript SHALL render room-message references as a first-class preview surface instead of relying on quote-like body text conventions. When a room message carries `ref`, the row SHALL render a compact preview of the referenced durable room message and SHALL keep that preview synchronized with the referenced message's current objective lifecycle state.
 
