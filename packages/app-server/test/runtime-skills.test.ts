@@ -188,6 +188,10 @@ describe("Feature: runtime built-in skills", () => {
     expect(terminalFileWritingReference).toContain("through `skill info agenter-terminal`");
     expect(terminalFileWritingReference).toContain("command=terminal write");
     expect(terminalFileWritingReference).toContain("command=terminal input");
+    expect(terminalFileWritingReference).toContain("cat > proof.txt");
+    expect(terminalFileWritingReference).toContain('<key data="d" ctrl="true"/>');
+
+    expect(terminalLifecycleReference).toContain("cat > file");
 
     const runtimeShellReference = readFileSync(join(dirname(runtime!.path), "references", "shell-surface.md"), "utf8");
     expect(runtimeShellReference).toContain("outbound-network verification of current or external facts");

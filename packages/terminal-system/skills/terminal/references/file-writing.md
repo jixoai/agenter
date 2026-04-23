@@ -32,4 +32,23 @@ root_bash.command: terminal input
 root_bash.stdin: {"terminalId":"term-1","text":"<raw>cat <<'FILE' > public/index.html\n...\nFILE</raw><key data=\"enter\"/>"}
 ```
 
+When the target program is already waiting on stdin, start it with raw bytes first, then feed the content with mixed input:
+
+```text
+root_bash.command: terminal write
+root_bash.stdin: {"terminalId":"term-1","text":"cat > proof.txt\r"}
+```
+
+```text
+root_bash.command: terminal input
+root_bash.stdin: {"terminalId":"term-1","text":"<raw>&lt;key data=\"enter\"/&gt;\ndone\n</raw><key data=\"d\" ctrl=\"true\"/>"}
+```
+
+Notes for interactive stdin programs:
+
+- Keep the whole literal tag-like line inside one `<raw>...</raw>` block.
+- Do not write `data="C-d"`; EOF is `<key data="d" ctrl="true"/>`.
+- Newlines inside `<raw>` are literal file content. Do not add an extra `<key data="enter"/>` unless you really want an extra blank line.
+- If the first attempt produced the wrong file shape, restart the writer process and rewrite the full content instead of blindly appending more input.
+
 After writing, inspect the resulting file or process state instead of assuming the input landed correctly.
