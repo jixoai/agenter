@@ -729,6 +729,7 @@ export const runtimeToolDescriptors = [
     helpNotes: [
       "A successful `terminal input` only confirms that the mixed payload was accepted and applied. Read the terminal or inspect resulting files before assuming the process state.",
       "`terminal input` is mixed mode. Use it when you need semantic key presses, waits, or literal `<...>` text wrapped in `<raw>...</raw>`.",
+      "If you need a literal line such as `<key data=\"enter\"/>`, keep that line inside one `<raw>...</raw>` block. Ctrl combos use `ctrl=\"true\"`, for example `<key data=\"d\" ctrl=\"true\"/>` for EOF.",
       "If mixed syntax is unclear, run `skill info agenter-terminal` and read `references/input-modes.md` before guessing.",
     ],
     inputSchema: terminalInputSchema,
@@ -744,7 +745,7 @@ export const runtimeToolDescriptors = [
         kind: "argv",
         payload: {
           terminalId: "term-1",
-          text: "<raw>git status</raw><key data=\"enter\"/><wait ms=\"300\"/>",
+          text: "<raw><key data=\"enter\"/>\ndone\n</raw><key data=\"d\" ctrl=\"true\"/>",
         },
       },
     ],

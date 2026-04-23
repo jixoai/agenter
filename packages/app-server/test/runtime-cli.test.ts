@@ -368,6 +368,8 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("<key .../>");
     expect(result.stdout).toContain("<wait .../>");
     expect(result.stdout).toContain("<raw>...</raw>");
+    expect(result.stdout).toContain('ctrl="true"');
+    expect(result.stdout).toContain('<key data="d" ctrl="true"/>');
     expect(result.stdout).toContain("skill info agenter-terminal");
     expect(result.stdout).toContain("references/input-modes.md");
     expect(api.getRequests()).toHaveLength(0);

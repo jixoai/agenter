@@ -177,6 +177,8 @@ describe("Feature: runtime built-in skills", () => {
     expect(terminalInputModesReference).toContain("`terminal input` is mixed mode.");
     expect(terminalInputModesReference).toContain("<raw>...</raw>");
     expect(terminalInputModesReference).toContain("missing `</raw>` is a hard parse error");
+    expect(terminalInputModesReference).toContain('ctrl="true"');
+    expect(terminalInputModesReference).toContain('<key data="d" ctrl="true"/>');
 
     const terminalFileWritingReference = readFileSync(
       join(dirname(terminal!.path), "references", "file-writing.md"),

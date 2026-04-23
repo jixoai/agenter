@@ -21,6 +21,7 @@ Key laws:
 - If work needs a port listener, local web server, watch mode, REPL, or retryable boot sequence, start it in `terminal`.
 - `terminal write` is raw mode. It sends literal bytes and never invents Enter, waits, or special keys for you.
 - `terminal input` is mixed mode. Use it for `<key .../>`, `<wait .../>`, or literal `<...>` text wrapped in `<raw>...</raw>`.
+- In mixed mode, literal tag-like lines must stay inside `<raw>...</raw>`, and Ctrl combos use `ctrl="true"` such as `<key data="d" ctrl="true"/>`.
 - `terminal write` and `terminal input` only prove that input delivery succeeded; they do not prove the process succeeded.
 - After starting a listener in `terminal`, inspect its real state and verify the exact promised URL or path before you tell a room or user that it is ready.
 - `terminal read` snapshots and "the process is still running" only describe terminal state; they do not prove the promised URL or API path actually responds.
