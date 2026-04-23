@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { markdown } from "@codemirror/lang-markdown";
+  import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
   import { EditorState, type Extension } from "@codemirror/state";
   import { languages } from "@codemirror/language-data";
   import { EditorView } from "@codemirror/view";
@@ -20,7 +20,10 @@
     EditorState.readOnly.of(true),
     EditorView.editable.of(false),
     EditorView.lineWrapping,
-    markdown({ codeLanguages: languages }),
+    markdown({
+      base: markdownLanguage,
+      codeLanguages: languages,
+    }),
     messageMarkdownPreview(),
     EditorView.theme({
       "&": {

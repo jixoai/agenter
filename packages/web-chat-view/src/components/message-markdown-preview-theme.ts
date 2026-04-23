@@ -1,0 +1,170 @@
+import { HighlightStyle } from "@codemirror/language";
+import { EditorView } from "@codemirror/view";
+import { tags as t } from "@lezer/highlight";
+
+export const markdownHighlightStyle = HighlightStyle.define([
+  { tag: t.heading1, color: "var(--md-heading)", fontWeight: "700", fontSize: "1.18em", lineHeight: "1.35" },
+  { tag: t.heading2, color: "var(--md-heading)", fontWeight: "700", fontSize: "1.12em", lineHeight: "1.35" },
+  { tag: t.heading3, color: "var(--md-heading)", fontWeight: "700", fontSize: "1.06em", lineHeight: "1.35" },
+  { tag: [t.heading4, t.heading5], color: "var(--md-heading)", fontWeight: "700" },
+  { tag: t.heading6, color: "var(--md-quote)", fontWeight: "700" },
+  { tag: t.strong, fontWeight: "700" },
+  { tag: t.emphasis, fontStyle: "italic" },
+  { tag: t.link, color: "var(--md-link)", textDecoration: "underline" },
+  { tag: t.quote, color: "var(--md-quote)", fontStyle: "italic" },
+  { tag: t.strikethrough, textDecoration: "line-through" },
+  { tag: [t.keyword, t.controlKeyword, t.operatorKeyword, t.modifier], color: "var(--md-keyword)", fontWeight: "600" },
+  { tag: [t.string, t.special(t.string), t.regexp], color: "var(--md-string)" },
+  { tag: [t.number, t.integer, t.float, t.bool, t.null, t.atom], color: "var(--md-number)" },
+  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: "var(--md-comment)", fontStyle: "italic" },
+  { tag: [t.typeName, t.className, t.namespace, t.labelName], color: "var(--md-type)", fontWeight: "600" },
+  {
+    tag: [t.function(t.variableName), t.function(t.propertyName), t.definition(t.variableName)],
+    color: "var(--md-function)",
+  },
+  { tag: [t.propertyName, t.attributeName], color: "var(--md-property)" },
+  { tag: [t.operator, t.punctuation, t.separator, t.brace, t.squareBracket, t.paren], color: "var(--md-operator)" },
+  { tag: [t.meta, t.processingInstruction], color: "var(--md-comment)" },
+]);
+
+export const markdownPreviewTheme = EditorView.baseTheme({
+  ".cm-md-hidden": { display: "none" },
+  ".cm-line": { position: "relative" },
+  ".cm-md-inlinecode": {
+    backgroundColor: "var(--md-inline-code-bg)",
+    border: "1px solid var(--md-inline-code-border)",
+    borderRadius: "6px",
+    color: "var(--md-inline-code)",
+    fontFamily: "var(--font-mono)",
+    padding: "1px 4px",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+  },
+  ".cm-md-link": { color: "var(--md-link)", textDecoration: "underline", cursor: "pointer" },
+  ".cm-md-image": { display: "inline-block" },
+  ".cm-md-olist": {
+    color: "var(--md-quote)",
+    fontVariantNumeric: "tabular-nums",
+    paddingRight: "0.35em",
+  },
+  ".cm-md-olist.cm-md-olist-faded": { color: "var(--md-comment)" },
+  ".cm-md-faded": { color: "var(--md-comment)", opacity: 0.7 },
+  ".cm-md-task": {
+    background: "color-mix(in srgb, white 80%, transparent)",
+    border: "1px solid var(--md-code-border)",
+    borderRadius: "3px",
+    display: "inline-block",
+    height: "0.95em",
+    marginRight: "0.35em",
+    width: "0.95em",
+  },
+  ".cm-md-task-checked": {
+    background: "color-mix(in srgb, var(--md-link) 35%, transparent)",
+    borderColor: "color-mix(in srgb, var(--md-link) 60%, transparent)",
+    position: "relative",
+  },
+  ".cm-md-task-checked::after": {
+    borderBottom: "2px solid white",
+    borderRight: "2px solid white",
+    content: '""',
+    inset: "0.6px 3px 2.4px 3px",
+    opacity: 0.9,
+    position: "absolute",
+    transform: "rotate(35deg)",
+  },
+  ".cm-md-task-faded": { opacity: 0.55 },
+  ".cm-md-ulmark": { color: "var(--md-heading)", fontWeight: 700, paddingRight: "0.2em" },
+  ".cm-md-blockquote-line": {
+    borderLeft: "3px solid color-mix(in srgb, var(--md-quote) 45%, transparent)",
+    paddingLeft: "12px",
+  },
+  ".cm-md-structural-block": {
+    cursor: "text",
+    display: "block",
+    marginBottom: "8px",
+    maxWidth: "100%",
+  },
+  ".cm-md-structural-table-scroll": {
+    maxWidth: "100%",
+    overflowX: "auto",
+    scrollbarWidth: "thin",
+  },
+  ".cm-md-structural-table": {
+    borderCollapse: "collapse",
+    fontSize: "0.95em",
+    minWidth: "100%",
+    width: "max-content",
+  },
+  ".cm-md-structural-table th": {
+    backgroundColor: "color-mix(in srgb, var(--md-code-bg) 72%, transparent)",
+    fontWeight: "700",
+  },
+  ".cm-md-structural-table th, .cm-md-structural-table td": {
+    border: "1px solid color-mix(in srgb, currentColor 12%, transparent)",
+    padding: "0.45rem 0.55rem",
+    textAlign: "left",
+    verticalAlign: "top",
+    whiteSpace: "nowrap",
+  },
+  ".cm-md-structural-codeblock": {
+    backgroundColor: "var(--md-code-bg)",
+    borderRadius: "0.9rem",
+    boxShadow: "inset 0 0 0 1px color-mix(in srgb, currentColor 12%, transparent)",
+    maxWidth: "100%",
+    overflow: "hidden",
+  },
+  ".cm-md-structural-codeheader": {
+    borderBottom: "1px solid color-mix(in srgb, currentColor 10%, transparent)",
+    color: "var(--md-code-label)",
+    fontFamily: "var(--font-mono)",
+    fontSize: "0.68rem",
+    fontWeight: "700",
+    letterSpacing: "0.08em",
+    padding: "0.45rem 0.75rem",
+    textTransform: "uppercase",
+  },
+  ".cm-md-structural-code-scroll": {
+    maxWidth: "100%",
+    overflowX: "auto",
+    scrollbarWidth: "thin",
+  },
+  ".cm-md-structural-code-scroll pre": {
+    margin: "0",
+    padding: "0.75rem",
+  },
+  ".cm-md-structural-code": {
+    color: "var(--md-code-text)",
+    display: "block",
+    fontFamily: "var(--font-mono)",
+    fontSize: "0.82em",
+    lineHeight: "1.65",
+    whiteSpace: "pre",
+  },
+  ".cm-md-structural-codeblock .hljs-keyword, .cm-md-structural-codeblock .hljs-selector-tag, .cm-md-structural-codeblock .hljs-meta":
+    {
+      color: "var(--md-keyword)",
+    },
+  ".cm-md-structural-codeblock .hljs-string, .cm-md-structural-codeblock .hljs-template-tag, .cm-md-structural-codeblock .hljs-template-variable":
+    {
+      color: "var(--md-string)",
+    },
+  ".cm-md-structural-codeblock .hljs-number, .cm-md-structural-codeblock .hljs-literal": {
+    color: "var(--md-number)",
+  },
+  ".cm-md-structural-codeblock .hljs-comment, .cm-md-structural-codeblock .hljs-quote": {
+    color: "var(--md-comment)",
+    fontStyle: "italic",
+  },
+  ".cm-md-structural-codeblock .hljs-type, .cm-md-structural-codeblock .hljs-title.class_": {
+    color: "var(--md-type)",
+  },
+  ".cm-md-structural-codeblock .hljs-title.function_, .cm-md-structural-codeblock .hljs-function .hljs-title": {
+    color: "var(--md-function)",
+  },
+  ".cm-md-structural-codeblock .hljs-property, .cm-md-structural-codeblock .hljs-attr": {
+    color: "var(--md-property)",
+  },
+  ".cm-md-structural-codeblock .hljs-operator, .cm-md-structural-codeblock .hljs-punctuation": {
+    color: "var(--md-operator)",
+  },
+});
