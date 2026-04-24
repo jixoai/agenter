@@ -324,6 +324,58 @@ describe("Feature: app kernel event replay", () => {
     expect(terminalResult.terminal?.snapshot?.cols).toBeGreaterThan(0);
   });
 
+  test("Scenario: Given a stopped global terminal boots through transport When live snapshot and status updates arrive Then app-kernel does not escalate them into catalogChanged invalidations", async () => {
+    const kernel = createKernel();
+    await kernel.start();
+
+    const terminalResult = await kernel.createGlobalTerminal({
+      terminalId: "transport-boot-without-catalog-storm",
+      cwd: process.cwd(),
+      command: ["sh", "-lc", "printf first-frame; sleep 0.05; printf second-frame"],
+      focus: false,
+    });
+    const transportUrl = terminalResult.terminal?.transportUrl;
+    if (!transportUrl) {
+      throw new Error("expected global terminal transport url");
+    }
+
+    // Let the create-time catalog invalidation flush before we observe the
+    // runtime boot path for this transport session.
+    await Bun.sleep(160);
+
+    const surfaceEvents: Array<{ payload?: { catalogChanged?: boolean } }> = [];
+    const unsubscribe = kernel.onEvent((event) => {
+      if (event.type === "terminal.surface.updated") {
+        surfaceEvents.push(event);
+      }
+    });
+
+    const socket = new WebSocket(transportUrl);
+    const messages: Array<{ type?: string; data?: string }> = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    const closed = new Promise<void>((resolve) => {
+      socket.addEventListener("close", () => resolve(), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      messages.push(JSON.parse(String(event.data)) as { type?: string; data?: string });
+    });
+
+    await opened;
+    await closed;
+    await Bun.sleep(160);
+
+    unsubscribe();
+
+    expect(messages.some((message) => message.type === "snapshot")).toBeTrue();
+    expect(messages.some((message) => message.type === "output" && message.data?.includes("first-frame"))).toBeTrue();
+    expect(surfaceEvents.some((event) => event.payload?.catalogChanged)).toBeFalse();
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given a room message is sent before a stopped avatar session starts When the kernel starts that session Then startup replay loads the unread room message for that avatar principal", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
     tempDirs.push(root);

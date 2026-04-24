@@ -980,9 +980,13 @@ export class AppKernel {
           case "deleted":
           case "focus":
           case "presence":
+            this.queueTerminalSurfaceInvalidation({ catalogChanged: true });
+            return;
           case "snapshot":
           case "status":
-            this.queueTerminalSurfaceInvalidation({ catalogChanged: true });
+            // Live transport output already projects terminal state. Treating
+            // every render tick as a catalog mutation causes the browser to
+            // refetch terminal.globalList on each snapshot/status change.
             return;
           case "activity":
             this.queueTerminalSurfaceInvalidation({

@@ -647,16 +647,35 @@ export class TerminalControlPlane {
           }
           const entry = this.ensureManagedEntry(record.terminalId);
           const cleanup: Array<() => void> = [];
+          let lastSentGeometry: { cols: number; rows: number } | null = null;
+          let mirrorLiveSnapshots = false;
+          const sendSnapshot = (snapshot: ManagedTerminalSnapshot): void => {
+            lastSentGeometry = {
+              cols: snapshot.cols,
+              rows: snapshot.rows,
+            };
+            socket.send(
+              JSON.stringify({
+                type: "snapshot",
+                terminalId: record.terminalId,
+                snapshot,
+                status: entry.terminal.getStatus(),
+              } satisfies TerminalTransportServerMessage),
+            );
+          };
           cleanup.push(
             entry.terminal.onSnapshot((snapshot) => {
-              socket.send(
-                JSON.stringify({
-                  type: "snapshot",
-                  terminalId: record.terminalId,
-                  snapshot,
-                  status: entry.terminal.getStatus(),
-                } satisfies TerminalTransportServerMessage),
-              );
+              if (!mirrorLiveSnapshots) {
+                return;
+              }
+              if (
+                lastSentGeometry &&
+                lastSentGeometry.cols === snapshot.cols &&
+                lastSentGeometry.rows === snapshot.rows
+              ) {
+                return;
+              }
+              sendSnapshot(snapshot);
             }),
           );
           cleanup.push(
@@ -689,14 +708,8 @@ export class TerminalControlPlane {
           if (!entry.terminal.isRunning()) {
             entry.terminal.start();
           }
-          socket.send(
-            JSON.stringify({
-              type: "snapshot",
-              terminalId: record.terminalId,
-              snapshot: entry.terminal.getSnapshot(),
-              status: entry.terminal.getStatus(),
-            } satisfies TerminalTransportServerMessage),
-          );
+          sendSnapshot(entry.terminal.getSnapshot());
+          mirrorLiveSnapshots = true;
         },
         message: async (socket, message) => {
           const terminalId = socket.data.terminalId;

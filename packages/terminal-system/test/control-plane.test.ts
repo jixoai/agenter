@@ -460,7 +460,7 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
-  test("Scenario: Given a transport client is attached When terminal state changes after connect Then websocket subscribers receive fresh snapshot frames without requiring an explicit read", async () => {
+  test("Scenario: Given a transport client is attached When terminal output changes without a geometry change Then websocket subscribers keep the bootstrap snapshot and stream output instead of receiving a fresh full snapshot every tick", async () => {
     const plane = createPlane();
     const created = await plane.create({ terminalId: "stream-snapshot-updates" });
     const transport = await plane.startTransport({ port: 0 });
@@ -480,7 +480,9 @@ describe("Feature: terminal control plane", () => {
     });
 
     await opened;
+    await Bun.sleep(80);
     const initialSnapshotCount = messages.filter((message) => message.type === "snapshot").length;
+    expect(initialSnapshotCount).toBeGreaterThan(0);
 
     await plane.write({
       terminalId: created.terminalId,
@@ -492,8 +494,7 @@ describe("Feature: terminal control plane", () => {
       (message): message is Extract<TerminalTransportServerMessage, { type: "snapshot" }> => message.type === "snapshot",
     );
 
-    expect(snapshotMessages.length).toBeGreaterThan(initialSnapshotCount);
-    expect(snapshotMessages.some((message) => message.snapshot.lines.join("\n").includes("snapshot after connect"))).toBe(true);
+    expect(snapshotMessages.length).toBe(initialSnapshotCount);
     expect(messages.some((message) => message.type === "output" && message.data.includes("snapshot after connect"))).toBe(true);
 
     socket.close();

@@ -491,8 +491,35 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(terminal?.options.scrollback).toBe(10_000);
     expect(shadowRoot.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toContain("width:1260px");
 
+    let redundantSnapshotUpdates = 0;
+    const originalRequestUpdate = element.requestUpdate.bind(element);
+    element.requestUpdate = ((...args) => {
+      redundantSnapshotUpdates += 1;
+      return originalRequestUpdate(...args);
+    }) as typeof element.requestUpdate;
+
+    socket?.message(
+      JSON.stringify({
+        type: "snapshot",
+        terminalId: "iflow",
+        status: "BUSY",
+        snapshot: {
+          seq: 3,
+          cols: 140,
+          rows: 40,
+          lines: ["redundant full snapshot"],
+          cursor: { x: 0, y: 0 },
+        },
+      }),
+    );
+    await element.updateComplete;
+    await element.updateComplete;
+    expect(redundantSnapshotUpdates).toBe(0);
+    expect(terminal?.resetCount).toBe(1);
+    expect(terminal?.writes).not.toContain("redundant full snapshot");
+
     element.snapshot = {
-      seq: 3,
+      seq: 4,
       cols: 60,
       rows: 12,
       lines: ["stale prop snapshot"],

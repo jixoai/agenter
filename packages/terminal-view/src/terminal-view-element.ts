@@ -592,13 +592,15 @@ export class TerminalViewElement extends LitElement {
     try {
       const message = JSON.parse(raw) as TerminalViewServerMessage;
       if (message.type === "snapshot") {
-        this.snapshot = message.snapshot;
         const geometryChanged =
           this.terminal === null ||
           this.terminal.cols !== message.snapshot.cols ||
           this.terminal.rows !== message.snapshot.rows;
         if (!this.liveSnapshotHydrated || geometryChanged) {
+          this.snapshot = message.snapshot;
           this.liveSnapshotHydrated = this.hydrateSnapshot(message.snapshot, "transport") || this.liveSnapshotHydrated;
+        } else {
+          this.hydratedSnapshotSeq = Math.max(this.hydratedSnapshotSeq, message.snapshot.seq);
         }
         return;
       }
