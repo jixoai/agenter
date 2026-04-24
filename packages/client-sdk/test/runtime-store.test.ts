@@ -11,6 +11,7 @@ import type {
   HeartbeatGroupItem,
   HeartbeatPartItem,
   ModelCallItem,
+  RuntimeAttentionDeliveryState,
   RuntimeAttentionState,
   RuntimeSnapshot,
   SessionEntry,
@@ -132,6 +133,7 @@ const createSnapshot = (
   input: {
     messageChannels?: RuntimeSnapshot["runtimes"][string]["messageChannels"];
     attention?: RuntimeSnapshot["runtimes"][string]["attention"];
+    attentionDelivery?: RuntimeAttentionDeliveryState;
     schedulerState?: RuntimeSnapshot["runtimes"][string]["schedulerState"];
   } = {},
 ): RuntimeSnapshot => ({
@@ -178,6 +180,11 @@ const createSnapshot = (
       tasks: [],
       schedulerState: input.schedulerState ?? null,
       attention: input.attention,
+      attentionDelivery: input.attentionDelivery ?? {
+        projections: [],
+        dispatches: [],
+        receipts: [],
+      },
       schedulerSignals: {
         user: { version: 0, timestamp: null },
         terminal: { version: 0, timestamp: null },
@@ -304,6 +311,14 @@ const createModelCallItem = (input: {
   updatedAt: input.updatedAt ?? input.createdAt,
   completedAt: input.completedAt ?? null,
   isComplete: input.isComplete ?? input.status !== "running",
+});
+
+const createAttentionDeliveryState = (
+  overrides: Partial<RuntimeAttentionDeliveryState> = {},
+): RuntimeAttentionDeliveryState => ({
+  projections: overrides.projections ? structuredClone(overrides.projections) : [],
+  dispatches: overrides.dispatches ? structuredClone(overrides.dispatches) : [],
+  receipts: overrides.receipts ? structuredClone(overrides.receipts) : [],
 });
 
 const emitSubscriptionEvent = (handlers: SubscriptionHandlers | null, event: unknown) => {
@@ -915,6 +930,15 @@ const createMockClient = (input: {
     limit?: number;
   }) => Promise<ReversePageResult<unknown>>;
   attentionStateQuery?: (input: { sessionId: string }) => Promise<unknown>;
+  attentionDeliveryStateQuery?: (input: { sessionId: string }) => Promise<unknown>;
+  attentionDeliveryTimelineQuery?: (input: {
+    sessionId: string;
+    contextId?: string;
+    commitId?: string;
+    cycleId?: number;
+    sessionModelCallId?: number;
+    limit?: number;
+  }) => Promise<unknown>;
   attentionQueryQuery?: (input: {
     sessionId: string;
     query?: string;
@@ -1097,6 +1121,25 @@ const createMockClient = (input: {
             input.attentionStateQuery
               ? await input.attentionStateQuery(payload)
               : { snapshot: { contexts: [] }, active: [], cycleFrames: [], egress: [] },
+        },
+        attentionDeliveryState: {
+          query: async (payload: { sessionId: string }) =>
+            input.attentionDeliveryStateQuery
+              ? await input.attentionDeliveryStateQuery(payload)
+              : { projections: [], dispatches: [], receipts: [] },
+        },
+        attentionDeliveryTimeline: {
+          query: async (payload: {
+            sessionId: string;
+            contextId?: string;
+            commitId?: string;
+            cycleId?: number;
+            sessionModelCallId?: number;
+            limit?: number;
+          }) =>
+            input.attentionDeliveryTimelineQuery
+              ? await input.attentionDeliveryTimelineQuery(payload)
+              : { projections: [], dispatches: [], receipts: [] },
         },
         attentionQuery: {
           query: async (payload: { sessionId: string; query?: string; offset?: number; limit?: number }) =>
@@ -2807,6 +2850,492 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given runtime snapshot already contains attention delivery facts When the store connects Then delivery state hydrates separately from attention truth", async () => {
+    const delivery = createAttentionDeliveryState({
+      projections: [
+        {
+          contextId: "ctx-room-main",
+          commitId: "commit-1",
+          state: "dispatching",
+          attemptCount: 1,
+          latestDispatchId: "dispatch-1",
+          latestReceiptId: null,
+          agentCallId: "agent-call-1",
+          sessionModelCallId: null,
+          firstAcceptedAt: null,
+          latestReceiptAt: null,
+          latestError: null,
+        },
+      ],
+      dispatches: [
+        {
+          dispatchId: "dispatch-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-1",
+          cycleId: 7,
+          attemptIndex: 1,
+          agentCallId: "agent-call-1",
+          sessionModelCallId: null,
+          createdAt: 1700000000000,
+        },
+      ],
+    });
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(320, { attentionDelivery: delivery }),
+      }),
+    );
+
+    await store.connect();
+
+    expect(store.getState().runtimes["i-1"]?.attentionDelivery).toEqual(delivery);
+    expect(store.getState().attentionDeliveryBySession["i-1"]).toEqual(delivery);
+    expect(store.getState().attentionBySession["i-1"]?.snapshot.contexts).toEqual([]);
+    store.disconnect();
+  });
+
+  test("Scenario: Given a dispatch is visible before the ai_call row binds When running modelCall events arrive Then delivery stays dispatching instead of becoming accepted", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(330),
+        onSubscribe: (handlers) => {
+          onData = handlers.onData;
+        },
+      }),
+    );
+
+    await store.connect();
+
+    onData?.({
+      version: 1,
+      eventId: 331,
+      timestamp: Date.now(),
+      type: "runtime.attentionDispatch",
+      sessionId: "i-1",
+      payload: {
+        dispatch: {
+          dispatchId: "dispatch-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-1",
+          cycleId: 7,
+          attemptIndex: 1,
+          agentCallId: "agent-call-1",
+          sessionModelCallId: null,
+          createdAt: 1700000000000,
+        },
+        projection: {
+          contextId: "ctx-room-main",
+          commitId: "commit-1",
+          state: "dispatching",
+          attemptCount: 1,
+          latestDispatchId: "dispatch-1",
+          latestReceiptId: null,
+          agentCallId: "agent-call-1",
+          sessionModelCallId: null,
+          firstAcceptedAt: null,
+          latestReceiptAt: null,
+          latestError: null,
+        },
+      },
+    });
+
+    onData?.({
+      version: 1,
+      eventId: 332,
+      timestamp: Date.now(),
+      type: "runtime.modelCall",
+      sessionId: "i-1",
+      payload: {
+        entry: createModelCallItem({
+          id: 77,
+          cycleId: 7,
+          status: "running",
+          provider: "openai",
+          model: "gpt-5.4",
+          createdAt: 1700000000010,
+        }),
+      },
+    });
+
+    onData?.({
+      version: 1,
+      eventId: 333,
+      timestamp: Date.now(),
+      type: "runtime.attentionDispatch",
+      sessionId: "i-1",
+      payload: {
+        dispatch: {
+          dispatchId: "dispatch-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-1",
+          cycleId: 7,
+          attemptIndex: 1,
+          agentCallId: "agent-call-1",
+          sessionModelCallId: 77,
+          createdAt: 1700000000000,
+        },
+        projection: {
+          contextId: "ctx-room-main",
+          commitId: "commit-1",
+          state: "dispatching",
+          attemptCount: 1,
+          latestDispatchId: "dispatch-1",
+          latestReceiptId: null,
+          agentCallId: "agent-call-1",
+          sessionModelCallId: 77,
+          firstAcceptedAt: null,
+          latestReceiptAt: null,
+          latestError: null,
+        },
+      },
+    });
+
+    const delivery = store.getState().attentionDeliveryBySession["i-1"];
+    expect(delivery?.projections).toEqual([
+      expect.objectContaining({
+        state: "dispatching",
+        sessionModelCallId: 77,
+        firstAcceptedAt: null,
+      }),
+    ]);
+    expect(delivery?.dispatches).toEqual([
+      expect.objectContaining({
+        dispatchId: "dispatch-1",
+        sessionModelCallId: 77,
+      }),
+    ]);
+    expect(delivery?.receipts).toEqual([]);
+    store.disconnect();
+  });
+
+  test("Scenario: Given the first delivery receipt is a provider error When runtime receipt events arrive Then the store keeps errored truth without synthesizing accepted", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(340),
+        onSubscribe: (handlers) => {
+          onData = handlers.onData;
+        },
+      }),
+    );
+
+    await store.connect();
+
+    onData?.({
+      version: 1,
+      eventId: 341,
+      timestamp: Date.now(),
+      type: "runtime.attentionDispatch",
+      sessionId: "i-1",
+      payload: {
+        dispatch: {
+          dispatchId: "dispatch-err-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-err-1",
+          cycleId: 8,
+          attemptIndex: 1,
+          agentCallId: "agent-call-err-1",
+          sessionModelCallId: 88,
+          createdAt: 1700000001000,
+        },
+        projection: {
+          contextId: "ctx-room-main",
+          commitId: "commit-err-1",
+          state: "dispatching",
+          attemptCount: 1,
+          latestDispatchId: "dispatch-err-1",
+          latestReceiptId: null,
+          agentCallId: "agent-call-err-1",
+          sessionModelCallId: 88,
+          firstAcceptedAt: null,
+          latestReceiptAt: null,
+          latestError: null,
+        },
+      },
+    });
+
+    onData?.({
+      version: 1,
+      eventId: 342,
+      timestamp: Date.now(),
+      type: "runtime.attentionReceipt",
+      sessionId: "i-1",
+      payload: {
+        dispatch: {
+          dispatchId: "dispatch-err-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-err-1",
+          cycleId: 8,
+          attemptIndex: 1,
+          agentCallId: "agent-call-err-1",
+          sessionModelCallId: 88,
+          createdAt: 1700000001000,
+        },
+        receipt: {
+          receiptId: "receipt-err-1",
+          dispatchId: "dispatch-err-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-err-1",
+          cycleId: 8,
+          attemptIndex: 1,
+          agentCallId: "agent-call-err-1",
+          sessionModelCallId: 88,
+          status: "errored",
+          providerEventKind: "run_error",
+          timestamp: 1700000001010,
+          errorCode: "provider.unavailable",
+          errorMessage: "upstream rejected the first frame",
+        },
+        projection: {
+          contextId: "ctx-room-main",
+          commitId: "commit-err-1",
+          state: "errored",
+          attemptCount: 1,
+          latestDispatchId: "dispatch-err-1",
+          latestReceiptId: "receipt-err-1",
+          agentCallId: "agent-call-err-1",
+          sessionModelCallId: 88,
+          firstAcceptedAt: null,
+          latestReceiptAt: 1700000001010,
+          latestError: {
+            code: "provider.unavailable",
+            message: "upstream rejected the first frame",
+          },
+        },
+      },
+    });
+
+    const delivery = store.getState().attentionDeliveryBySession["i-1"];
+    expect(delivery?.projections).toEqual([
+      expect.objectContaining({
+        state: "errored",
+        latestReceiptId: "receipt-err-1",
+        firstAcceptedAt: null,
+      }),
+    ]);
+    expect(delivery?.receipts.map((receipt) => receipt.status)).toEqual(["errored"]);
+    expect(delivery?.receipts.some((receipt) => receipt.status === "accepted")).toBe(false);
+    store.disconnect();
+  });
+
+  test("Scenario: Given accepted and completed delivery receipts stream in order When the store applies them Then attempt history stays separate from the model lifecycle row", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(350),
+        onSubscribe: (handlers) => {
+          onData = handlers.onData;
+        },
+      }),
+    );
+
+    await store.connect();
+
+    onData?.({
+      version: 1,
+      eventId: 351,
+      timestamp: Date.now(),
+      type: "runtime.attentionDispatch",
+      sessionId: "i-1",
+      payload: {
+        dispatch: {
+          dispatchId: "dispatch-ok-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-ok-1",
+          cycleId: 9,
+          attemptIndex: 2,
+          agentCallId: "agent-call-ok-2",
+          sessionModelCallId: 99,
+          createdAt: 1700000002000,
+        },
+        projection: {
+          contextId: "ctx-room-main",
+          commitId: "commit-ok-1",
+          state: "dispatching",
+          attemptCount: 2,
+          latestDispatchId: "dispatch-ok-1",
+          latestReceiptId: null,
+          agentCallId: "agent-call-ok-2",
+          sessionModelCallId: 99,
+          firstAcceptedAt: null,
+          latestReceiptAt: null,
+          latestError: null,
+        },
+      },
+    });
+
+    onData?.({
+      version: 1,
+      eventId: 352,
+      timestamp: Date.now(),
+      type: "runtime.attentionReceipt",
+      sessionId: "i-1",
+      payload: {
+        dispatch: {
+          dispatchId: "dispatch-ok-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-ok-1",
+          cycleId: 9,
+          attemptIndex: 2,
+          agentCallId: "agent-call-ok-2",
+          sessionModelCallId: 99,
+          createdAt: 1700000002000,
+        },
+        receipt: {
+          receiptId: "receipt-ok-1",
+          dispatchId: "dispatch-ok-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-ok-1",
+          cycleId: 9,
+          attemptIndex: 2,
+          agentCallId: "agent-call-ok-2",
+          sessionModelCallId: 99,
+          status: "accepted",
+          providerEventKind: "text_delta",
+          timestamp: 1700000002010,
+        },
+        projection: {
+          contextId: "ctx-room-main",
+          commitId: "commit-ok-1",
+          state: "accepted",
+          attemptCount: 2,
+          latestDispatchId: "dispatch-ok-1",
+          latestReceiptId: "receipt-ok-1",
+          agentCallId: "agent-call-ok-2",
+          sessionModelCallId: 99,
+          firstAcceptedAt: 1700000002010,
+          latestReceiptAt: 1700000002010,
+          latestError: null,
+        },
+      },
+    });
+
+    onData?.({
+      version: 1,
+      eventId: 353,
+      timestamp: Date.now(),
+      type: "runtime.attentionReceipt",
+      sessionId: "i-1",
+      payload: {
+        dispatch: {
+          dispatchId: "dispatch-ok-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-ok-1",
+          cycleId: 9,
+          attemptIndex: 2,
+          agentCallId: "agent-call-ok-2",
+          sessionModelCallId: 99,
+          createdAt: 1700000002000,
+        },
+        receipt: {
+          receiptId: "receipt-ok-2",
+          dispatchId: "dispatch-ok-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-ok-1",
+          cycleId: 9,
+          attemptIndex: 2,
+          agentCallId: "agent-call-ok-2",
+          sessionModelCallId: 99,
+          status: "completed",
+          providerEventKind: "run_finished",
+          timestamp: 1700000002020,
+          finishReason: "stop",
+        },
+        projection: {
+          contextId: "ctx-room-main",
+          commitId: "commit-ok-1",
+          state: "completed",
+          attemptCount: 2,
+          latestDispatchId: "dispatch-ok-1",
+          latestReceiptId: "receipt-ok-2",
+          agentCallId: "agent-call-ok-2",
+          sessionModelCallId: 99,
+          firstAcceptedAt: 1700000002010,
+          latestReceiptAt: 1700000002020,
+          latestError: null,
+        },
+      },
+    });
+
+    const delivery = store.getState().attentionDeliveryBySession["i-1"];
+    expect(delivery?.projections).toEqual([
+      expect.objectContaining({
+        state: "completed",
+        attemptCount: 2,
+        firstAcceptedAt: 1700000002010,
+      }),
+    ]);
+    expect(delivery?.receipts.map((receipt) => receipt.status)).toEqual(["accepted", "completed"]);
+    expect(store.getState().modelCallsBySession["i-1"]).toEqual([]);
+    store.disconnect();
+  });
+
+  test("Scenario: Given delivery inspection APIs exist When the runtime store queries them Then the request goes through dedicated delivery endpoints", async () => {
+    const delivery = createAttentionDeliveryState({
+      projections: [
+        {
+          contextId: "ctx-room-main",
+          commitId: "commit-1",
+          state: "dispatching",
+          attemptCount: 1,
+          latestDispatchId: "dispatch-1",
+          latestReceiptId: null,
+          agentCallId: "agent-call-1",
+          sessionModelCallId: null,
+          firstAcceptedAt: null,
+          latestReceiptAt: null,
+          latestError: null,
+        },
+      ],
+    });
+    const deliveryStateCalls: Array<{ sessionId: string }> = [];
+    const deliveryTimelineCalls: Array<{
+      sessionId: string;
+      contextId?: string;
+      commitId?: string;
+      cycleId?: number;
+      sessionModelCallId?: number;
+      limit?: number;
+    }> = [];
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(360),
+        attentionDeliveryStateQuery: async (input) => {
+          deliveryStateCalls.push(input);
+          return delivery;
+        },
+        attentionDeliveryTimelineQuery: async (input) => {
+          deliveryTimelineCalls.push(input);
+          return delivery;
+        },
+      }),
+    );
+
+    await store.connect();
+
+    await expect(store.inspectAttentionDeliveryState("i-1")).resolves.toEqual(delivery);
+    await expect(
+      store.queryAttentionDeliveryTimeline({
+        sessionId: "i-1",
+        contextId: "ctx-room-main",
+        commitId: "commit-1",
+        limit: 10,
+      }),
+    ).resolves.toEqual(delivery);
+
+    expect(deliveryStateCalls).toEqual([{ sessionId: "i-1" }]);
+    expect(deliveryTimelineCalls).toEqual([
+      {
+        sessionId: "i-1",
+        contextId: "ctx-room-main",
+        commitId: "commit-1",
+        limit: 10,
+      },
+    ]);
+    store.disconnect();
+  });
+
   test("Scenario: Given model-call delta events When duplicate ids and incremental deltas arrive Then the store merges by id while preserving ordered timeline", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const client = createMockClient({
@@ -3549,6 +4078,107 @@ describe("Feature: runtime store synchronization", () => {
     await waitFor(() => store.getState().requestAuxBySession["i-1"]?.some((item) => item.id === 4) === true);
     expect(store.getState().requestAuxBySession["i-1"]?.map((item) => item.id)).toEqual([1, 2, 3, 4]);
     expect(requestAuxCalls.length).toBeGreaterThanOrEqual(3);
+    store.disconnect();
+  });
+
+  test("Scenario: Given bootstrap connect is still hydrating When runtime shell hydrates one session Then runtime snapshot is single-flight instead of being queried twice", async () => {
+    let snapshotCalls = 0;
+    const snapshotDeferred = createDeferred<ReturnType<typeof createSnapshot>>();
+    const client = createMockClient({
+      snapshotQuery: async () => {
+        snapshotCalls += 1;
+        return await snapshotDeferred.promise;
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    const connectPromise = store.connect();
+    await Promise.resolve();
+
+    const hydratePromise = store.hydrateSessionArtifacts("i-1");
+    await Promise.resolve();
+
+    expect(snapshotCalls).toBe(1);
+
+    snapshotDeferred.resolve(createSnapshot(755));
+    await connectPromise;
+    await hydratePromise;
+
+    expect(store.getState().sessions.some((session) => session.id === "i-1")).toBe(true);
+    store.disconnect();
+  });
+
+  test("Scenario: Given Heartbeat shell hydration When the runtime shell only needs runtime facts Then chat history is not fetched during hydrateSessionArtifacts", async () => {
+    let chatListCalls = 0;
+    let chatCyclesCalls = 0;
+    let channelCalls = 0;
+    let notificationCalls = 0;
+    let schedulerLogCalls = 0;
+    let traceCalls = 0;
+    let requestAuxCalls = 0;
+    let apiCallsCalls = 0;
+    const modelCallLimits: number[] = [];
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(756),
+      chatListQuery: async () => {
+        chatListCalls += 1;
+        return { items: [], nextBefore: null, hasMoreBefore: false };
+      },
+      chatCyclesQuery: async () => {
+        chatCyclesCalls += 1;
+        return { items: [], nextBefore: null, hasMoreBefore: false };
+      },
+      messageListChannelsQuery: async () => {
+        channelCalls += 1;
+        return { items: [] };
+      },
+      notificationSnapshotQuery: async () => {
+        notificationCalls += 1;
+        return {
+          items: [],
+          unreadBySession: {},
+          unreadByBucket: {},
+        };
+      },
+      schedulerLogsQuery: async () => {
+        schedulerLogCalls += 1;
+        return { items: [], nextBefore: null, hasMoreBefore: false };
+      },
+      observabilityTracesQuery: async () => {
+        traceCalls += 1;
+        return { items: [], nextBefore: null, hasMoreBefore: false };
+      },
+      requestAuxPageQuery: async () => {
+        requestAuxCalls += 1;
+        return { items: [], nextBefore: null, hasMoreBefore: false };
+      },
+      apiCallsPageQuery: async () => {
+        apiCallsCalls += 1;
+        return { items: [], nextBefore: null, hasMoreBefore: false };
+      },
+      modelCallsPageQuery: async (input) => {
+        modelCallLimits.push(input.limit ?? 0);
+        return { items: [], nextBefore: null, hasMoreBefore: false };
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    await store.hydrateSessionArtifacts("i-1", {
+      includeChatHistory: false,
+      observabilityMode: "heartbeat",
+    });
+
+    expect(chatListCalls).toBe(0);
+    expect(chatCyclesCalls).toBe(0);
+    expect(channelCalls).toBe(1);
+    expect(notificationCalls).toBe(1);
+    expect(schedulerLogCalls).toBe(0);
+    expect(traceCalls).toBe(0);
+    expect(requestAuxCalls).toBe(0);
+    expect(apiCallsCalls).toBe(0);
+    expect(modelCallLimits).toEqual([12]);
+    expect(store.getState().sessions.some((session) => session.id === "i-1")).toBe(true);
     store.disconnect();
   });
 
@@ -4392,6 +5022,27 @@ describe("Feature: runtime store synchronization", () => {
       clearInterval(interval);
     }
 
+    store.disconnect();
+  });
+
+  test("Scenario: Given grouped Heartbeat hydration fails When session artifacts are hydrated Then the resource settles to an explicit error instead of staying forever loading", async () => {
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(981),
+      heartbeatGroupsPageQuery: async () => {
+        throw new Error("heartbeat groups exploded");
+      },
+    });
+    const store = new RuntimeStore(client);
+
+    await store.connect();
+    await store.hydrateSessionArtifacts("i-1");
+
+    expect(store.getState().heartbeatGroupsBySession["i-1"]).toMatchObject({
+      loaded: false,
+      loading: false,
+      refreshing: false,
+      error: "heartbeat groups exploded",
+    });
     store.disconnect();
   });
 
@@ -7638,15 +8289,13 @@ describe("Feature: runtime store synchronization", () => {
 
   test("Scenario: Given a retained global terminal activity slice When mixed terminal input succeeds Then runtime store projects a mixed-mode terminal fact", async () => {
     const terminalId = "term-mixed-input";
-    let captured:
-      | {
-          terminalId: string;
-          accessToken?: string;
-          text: string;
-          createApprovalRequest?: boolean;
-          returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
-        }
-      | null = null;
+    let captured: {
+      terminalId: string;
+      accessToken?: string;
+      text: string;
+      createApprovalRequest?: boolean;
+      returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+    } | null = null;
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(0),

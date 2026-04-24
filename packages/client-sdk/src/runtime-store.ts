@@ -42,6 +42,7 @@ import type {
   MessageSendSuccessOutput,
   ModelCallItem,
   NotificationSnapshotOutput,
+  RuntimeAttentionDeliveryState,
   RuntimeAttentionState,
   RuntimeChatCycle,
   RuntimeChatMessage,
@@ -81,6 +82,7 @@ const createInitialState = (): RuntimeClientState => ({
   messageChannelsBySession: {},
   chatCyclesBySession: {},
   attentionBySession: {},
+  attentionDeliveryBySession: {},
   tasksBySession: {},
   recentWorkspaces: [],
   workspaces: [],
@@ -166,6 +168,12 @@ const createEmptyAttentionState = (): RuntimeAttentionState => ({
   hooks: [],
 });
 
+const createEmptyAttentionDeliveryState = (): RuntimeAttentionDeliveryState => ({
+  projections: [],
+  dispatches: [],
+  receipts: [],
+});
+
 const cloneRuntimeAttentionState = (attention: RuntimeAttentionState): RuntimeAttentionState => ({
   snapshot: {
     contexts: attention.snapshot.contexts.map((context) => ({
@@ -205,6 +213,95 @@ const cloneRuntimeAttentionState = (attention: RuntimeAttentionState): RuntimeAt
     output: record.output ? { ...record.output } : undefined,
   })),
 });
+
+const cloneRuntimeAttentionDeliveryState = (
+  delivery: RuntimeAttentionDeliveryState,
+): RuntimeAttentionDeliveryState => ({
+  projections: delivery.projections.map((projection) => ({
+    ...projection,
+    latestError: projection.latestError ? { ...projection.latestError } : null,
+  })),
+  dispatches: delivery.dispatches.map((dispatch) => ({ ...dispatch })),
+  receipts: delivery.receipts.map((receipt) => ({
+    ...receipt,
+    usage: receipt.usage ? { ...receipt.usage } : undefined,
+    meta: receipt.meta ? structuredClone(receipt.meta) : undefined,
+  })),
+});
+
+const upsertAttentionDeliveryProjection = (
+  projections: RuntimeAttentionDeliveryState["projections"],
+  incoming: RuntimeAttentionDeliveryState["projections"][number],
+): RuntimeAttentionDeliveryState["projections"] => {
+  const next = projections.filter(
+    (projection) => projection.contextId !== incoming.contextId || projection.commitId !== incoming.commitId,
+  );
+  next.push({
+    ...incoming,
+    latestError: incoming.latestError ? { ...incoming.latestError } : null,
+  });
+  return next;
+};
+
+const upsertAttentionDeliveryDispatch = (
+  dispatches: RuntimeAttentionDeliveryState["dispatches"],
+  incoming: RuntimeAttentionDeliveryState["dispatches"][number],
+): RuntimeAttentionDeliveryState["dispatches"] => {
+  const next = dispatches.filter((dispatch) => dispatch.dispatchId !== incoming.dispatchId);
+  next.push({ ...incoming });
+  next.sort(
+    (left, right) =>
+      left.createdAt - right.createdAt ||
+      left.attemptIndex - right.attemptIndex ||
+      left.dispatchId.localeCompare(right.dispatchId),
+  );
+  return next;
+};
+
+const upsertAttentionDeliveryReceipt = (
+  receipts: RuntimeAttentionDeliveryState["receipts"],
+  incoming: RuntimeAttentionDeliveryState["receipts"][number],
+): RuntimeAttentionDeliveryState["receipts"] => {
+  const next = receipts.filter((receipt) => receipt.receiptId !== incoming.receiptId);
+  next.push({
+    ...incoming,
+    usage: incoming.usage ? { ...incoming.usage } : undefined,
+    meta: incoming.meta ? structuredClone(incoming.meta) : undefined,
+  });
+  next.sort((left, right) => left.timestamp - right.timestamp || left.receiptId.localeCompare(right.receiptId));
+  return next;
+};
+
+const patchRuntimeAttentionDeliveryState = (
+  current: RuntimeAttentionDeliveryState,
+  input: {
+    dispatch?: RuntimeAttentionDeliveryState["dispatches"][number];
+    receipt?: RuntimeAttentionDeliveryState["receipts"][number];
+    projection?: RuntimeAttentionDeliveryState["projections"][number] | null;
+  },
+): RuntimeAttentionDeliveryState => {
+  const next = cloneRuntimeAttentionDeliveryState(current);
+  if (input.dispatch) {
+    next.dispatches = upsertAttentionDeliveryDispatch(next.dispatches, input.dispatch);
+    if (input.dispatch.sessionModelCallId !== null) {
+      next.receipts = next.receipts.map((receipt) =>
+        receipt.dispatchId === input.dispatch!.dispatchId
+          ? {
+              ...receipt,
+              sessionModelCallId: input.dispatch!.sessionModelCallId,
+            }
+          : receipt,
+      );
+    }
+  }
+  if (input.receipt) {
+    next.receipts = upsertAttentionDeliveryReceipt(next.receipts, input.receipt);
+  }
+  if (input.projection) {
+    next.projections = upsertAttentionDeliveryProjection(next.projections, input.projection);
+  }
+  return next;
+};
 
 const createCachedResourceState = <T>(data: T): CachedResourceState<T> => ({
   data,
@@ -529,6 +626,7 @@ export class RuntimeStore {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private connecting = false;
+  private connectTask: Promise<void> | null = null;
   private shouldReconnect = false;
   private readonly sessionResourceHandles = new Map<string, SessionResourceHandle>();
   private readonly messageChannelRefreshTasks = new WeakMap<SessionResourceHandle, Promise<MessageChannelEntry[]>>();
@@ -2440,6 +2538,9 @@ export class RuntimeStore {
       chatMessages: runtime.chatMessages.map((message) => this.normalizeRuntimeChatMessage(message)),
       activeCycle: runtime.activeCycle ? this.normalizeRuntimeChatCycle(runtime.activeCycle) : null,
       attention: runtime.attention ? cloneRuntimeAttentionState(runtime.attention) : createEmptyAttentionState(),
+      attentionDelivery: runtime.attentionDelivery
+        ? cloneRuntimeAttentionDeliveryState(runtime.attentionDelivery)
+        : createEmptyAttentionDeliveryState(),
       modelCapabilities: runtime.modelCapabilities ?? DEFAULT_MODEL_CAPABILITIES,
     };
   }
@@ -2674,7 +2775,8 @@ export class RuntimeStore {
   }
 
   private async connectOnce(): Promise<void> {
-    if (this.connecting) {
+    if (this.connectTask) {
+      await this.connectTask;
       return;
     }
     if (this.getBrowserOnlineState() === false) {
@@ -2682,267 +2784,279 @@ export class RuntimeStore {
       this.emit();
       return;
     }
-    this.connecting = true;
-    if (this.state.connectionStatus !== "connected") {
-      const nextStatus =
-        this.reconnectAttempt > 0 || this.state.connectionStatus === "reconnecting" ? "reconnecting" : "connecting";
-      this.setConnectionStatus(nextStatus);
-      this.emit();
-    }
-
-    try {
-      const connectSequence = ++this.connectSequence;
-      const previousState = this.state;
-      const [snapshot, recentWorkspaces, profileService] = await Promise.all([
-        this.client.trpc.runtime.snapshot.query(),
-        this.client.trpc.workspace.recent.query({ limit: 8 }),
-        this.client.trpc.auth.service.query().catch(() => previousState.profileService),
-      ]);
-      const runtimes = Object.fromEntries(
-        Object.entries(snapshot.runtimes).map(([sessionId, runtime]) => [
-          sessionId,
-          this.normalizeRuntimeEntry(runtime),
-        ]),
-      );
-      const sessions = sortSessions(snapshot.sessions);
-      const sessionIds = sessions.map((session) => session.id);
-      this.state = {
-        ...previousState,
-        sessions,
-        runtimes,
-        profileService: profileService ?? previousState.profileService ?? null,
-        lastEventId: snapshot.lastEventId,
-        recentWorkspaces: recentWorkspaces.items,
-        activityBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [
-            sessionId,
-            runtimes[sessionId]?.activityState ?? previousState.activityBySession[sessionId] ?? "idle",
-          ]),
-        ),
-        terminalSnapshotsBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [
-            sessionId,
-            runtimes[sessionId]?.terminalSnapshots ?? previousState.terminalSnapshotsBySession[sessionId] ?? {},
-          ]),
-        ),
-        terminalReadsBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [
-            sessionId,
-            runtimes[sessionId]?.terminalReads ?? previousState.terminalReadsBySession[sessionId] ?? {},
-          ]),
-        ),
-        chatsBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [
-            sessionId,
-            runtimes[sessionId]
-              ? this.mergeChatMessages(
-                  previousState.chatsBySession[sessionId] ?? [],
-                  runtimes[sessionId].chatMessages ?? [],
-                )
-              : (previousState.chatsBySession[sessionId] ?? []),
-          ]),
-        ),
-        messageChannelsBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [
-            sessionId,
-            runtimes[sessionId]?.messageChannels
-              ? createHydratedCachedResourceState(runtimes[sessionId].messageChannels)
-              : (previousState.messageChannelsBySession[sessionId] ??
-                createCachedResourceState<MessageChannelEntry[]>([])),
-          ]),
-        ),
-        chatCyclesBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [
-            sessionId,
-            runtimes[sessionId]?.activeCycle
-              ? this.mergeChatCycles(previousState.chatCyclesBySession[sessionId] ?? [], [
-                  runtimes[sessionId].activeCycle,
-                ])
-              : (previousState.chatCyclesBySession[sessionId] ?? []),
-          ]),
-        ),
-        attentionBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [
-            sessionId,
-            runtimes[sessionId]?.attention ??
-              previousState.attentionBySession?.[sessionId] ??
-              createEmptyAttentionState(),
-          ]),
-        ),
-        tasksBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [
-            sessionId,
-            runtimes[sessionId]?.tasks ?? previousState.tasksBySession[sessionId] ?? [],
-          ]),
-        ),
-        schedulerLogsBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [sessionId, previousState.schedulerLogsBySession[sessionId] ?? []]),
-        ),
-        observabilityTracesBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [sessionId, previousState.observabilityTracesBySession[sessionId] ?? []]),
-        ),
-        apiCallsBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [sessionId, previousState.apiCallsBySession[sessionId] ?? []]),
-        ),
-        heartbeatGroupsBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [
-            sessionId,
-            previousState.heartbeatGroupsBySession[sessionId] ?? createCachedResourceState<HeartbeatGroupItem[]>([]),
-          ]),
-        ),
-        modelCallsBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [sessionId, previousState.modelCallsBySession[sessionId] ?? []]),
-        ),
-        requestAuxBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [sessionId, previousState.requestAuxBySession[sessionId] ?? []]),
-        ),
-        modelCallDeltasBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [sessionId, previousState.modelCallDeltasBySession?.[sessionId] ?? []]),
-        ),
-        terminalActivityBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [sessionId, previousState.terminalActivityBySession[sessionId] ?? {}]),
-        ),
-        apiCallRecordingBySession: Object.fromEntries(
-          sessionIds.map((sessionId) => [
-            sessionId,
-            runtimes[sessionId]?.apiCallRecording ??
-              previousState.apiCallRecordingBySession[sessionId] ?? {
-                enabled: false,
-                refCount: 0,
-              },
-          ]),
-        ),
-        workspaces: previousState.workspaces,
-        globalAvatarCatalog: previousState.globalAvatarCatalog,
-        workspaceAvatarCatalogByPath: previousState.workspaceAvatarCatalogByPath,
-        globalRooms: previousState.globalRooms,
-        globalRoomSnapshotsById: previousState.globalRoomSnapshotsById,
-        globalRoomGrantsById: previousState.globalRoomGrantsById,
-        globalTerminals: previousState.globalTerminals,
-        globalTerminalGrantsById: previousState.globalTerminalGrantsById,
-        globalTerminalApprovalsById: previousState.globalTerminalApprovalsById,
-        globalTerminalActivityById: previousState.globalTerminalActivityById,
-        notifications: previousState.notifications,
-        unreadBySession: previousState.unreadBySession,
-        unreadByBucket: previousState.unreadByBucket,
-      };
-      this.setConnectionStatus("connected");
-      for (const session of sessions) {
-        if (!runtimes[session.id] && (session.status === "stopped" || session.status === "paused")) {
-          this.clearRuntimeState(session.id, session.status, this.state.attentionBySession?.[session.id]);
-          continue;
-        }
-        this.ensureRuntimeScaffold(session.id, session.status);
+    this.connectTask = (async () => {
+      this.connecting = true;
+      if (this.state.connectionStatus !== "connected") {
+        const nextStatus =
+          this.reconnectAttempt > 0 || this.state.connectionStatus === "reconnecting" ? "reconnecting" : "connecting";
+        this.setConnectionStatus(nextStatus);
+        this.emit();
       }
 
-      this.reconnectAttempt = 0;
-      this.clearReconnectTimer();
-
-      this.eventSub?.unsubscribe();
-      this.eventSub = this.subscribeRuntimeEvents(snapshot.lastEventId);
-      this.restoreRetainedApiCallStreams();
-      this.emit();
-      if (previousState.globalAvatarCatalog.loaded || this.globalAvatarCatalogWatchCount > 0) {
-        void this.hydrateGlobalAvatarCatalog({ force: true });
-      }
-      for (const [workspacePath, resource] of Object.entries(previousState.workspaceAvatarCatalogByPath)) {
-        if (!resource.loaded && !this.workspaceAvatarCatalogWatchCountByPath.has(workspacePath)) {
-          continue;
-        }
-        void this.hydrateWorkspaceAvatarCatalog(workspacePath, { force: true });
-      }
-      if (previousState.globalRooms.loaded || this.globalRoomsWatchCount > 0) {
-        void this.hydrateGlobalRooms({ force: true });
-      }
-      for (const [chatId, resource] of Object.entries(previousState.globalRoomSnapshotsById)) {
-        if (!resource.loaded && !this.globalRoomSnapshotWatchCountById.has(chatId)) {
-          continue;
-        }
-        void this.hydrateGlobalRoomSnapshot({ chatId, force: true });
-      }
-      for (const [chatId, resource] of Object.entries(previousState.globalRoomGrantsById)) {
-        if (!resource.loaded && !this.globalRoomGrantWatchCountById.has(chatId)) {
-          continue;
-        }
-        void this.hydrateGlobalRoomGrants({ chatId, force: true });
-      }
-      if (previousState.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
-        void this.hydrateGlobalTerminals({ force: true });
-      }
-      for (const [terminalId, resource] of Object.entries(previousState.globalTerminalGrantsById)) {
-        if (!resource.loaded && !this.globalTerminalGrantWatchCountById.has(terminalId)) {
-          continue;
-        }
-        void this.hydrateGlobalTerminalGrants({ terminalId, force: true });
-      }
-      for (const [terminalId, resource] of Object.entries(previousState.globalTerminalApprovalsById)) {
-        if (!resource.loaded && !this.globalTerminalApprovalWatchCountById.has(terminalId)) {
-          continue;
-        }
-        void this.hydrateGlobalTerminalApprovals({ terminalId, force: true });
-      }
-      for (const [terminalId, resource] of Object.entries(previousState.globalTerminalActivityById)) {
-        if (!resource.loaded && !this.globalTerminalActivityWatchCountById.has(terminalId)) {
-          continue;
-        }
-        void this.hydrateGlobalTerminalActivity({ terminalId, force: true });
-      }
-
-      const scheduleSecondaryChrome = (run: () => void) => {
-        setTimeout(() => {
-          if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
-            return;
+      try {
+        const connectSequence = ++this.connectSequence;
+        const previousState = this.state;
+        const [snapshot, recentWorkspaces, profileService] = await Promise.all([
+          this.client.trpc.runtime.snapshot.query(),
+          this.client.trpc.workspace.recent.query({ limit: 8 }),
+          this.client.trpc.auth.service.query().catch(() => previousState.profileService),
+        ]);
+        const runtimes = Object.fromEntries(
+          Object.entries(snapshot.runtimes).map(([sessionId, runtime]) => [
+            sessionId,
+            this.normalizeRuntimeEntry(runtime),
+          ]),
+        );
+        const sessions = sortSessions(snapshot.sessions);
+        const sessionIds = sessions.map((session) => session.id);
+        this.state = {
+          ...previousState,
+          sessions,
+          runtimes,
+          profileService: profileService ?? previousState.profileService ?? null,
+          lastEventId: snapshot.lastEventId,
+          recentWorkspaces: recentWorkspaces.items,
+          activityBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              runtimes[sessionId]?.activityState ?? previousState.activityBySession[sessionId] ?? "idle",
+            ]),
+          ),
+          terminalSnapshotsBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              runtimes[sessionId]?.terminalSnapshots ?? previousState.terminalSnapshotsBySession[sessionId] ?? {},
+            ]),
+          ),
+          terminalReadsBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              runtimes[sessionId]?.terminalReads ?? previousState.terminalReadsBySession[sessionId] ?? {},
+            ]),
+          ),
+          chatsBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              runtimes[sessionId]
+                ? this.mergeChatMessages(
+                    previousState.chatsBySession[sessionId] ?? [],
+                    runtimes[sessionId].chatMessages ?? [],
+                  )
+                : (previousState.chatsBySession[sessionId] ?? []),
+            ]),
+          ),
+          messageChannelsBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              runtimes[sessionId]?.messageChannels
+                ? createHydratedCachedResourceState(runtimes[sessionId].messageChannels)
+                : (previousState.messageChannelsBySession[sessionId] ??
+                  createCachedResourceState<MessageChannelEntry[]>([])),
+            ]),
+          ),
+          chatCyclesBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              runtimes[sessionId]?.activeCycle
+                ? this.mergeChatCycles(previousState.chatCyclesBySession[sessionId] ?? [], [
+                    runtimes[sessionId].activeCycle,
+                  ])
+                : (previousState.chatCyclesBySession[sessionId] ?? []),
+            ]),
+          ),
+          attentionBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              runtimes[sessionId]?.attention ??
+                previousState.attentionBySession?.[sessionId] ??
+                createEmptyAttentionState(),
+            ]),
+          ),
+          attentionDeliveryBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              runtimes[sessionId]?.attentionDelivery ??
+                previousState.attentionDeliveryBySession?.[sessionId] ??
+                createEmptyAttentionDeliveryState(),
+            ]),
+          ),
+          tasksBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              runtimes[sessionId]?.tasks ?? previousState.tasksBySession[sessionId] ?? [],
+            ]),
+          ),
+          schedulerLogsBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [sessionId, previousState.schedulerLogsBySession[sessionId] ?? []]),
+          ),
+          observabilityTracesBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [sessionId, previousState.observabilityTracesBySession[sessionId] ?? []]),
+          ),
+          apiCallsBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [sessionId, previousState.apiCallsBySession[sessionId] ?? []]),
+          ),
+          heartbeatGroupsBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              previousState.heartbeatGroupsBySession[sessionId] ?? createCachedResourceState<HeartbeatGroupItem[]>([]),
+            ]),
+          ),
+          modelCallsBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [sessionId, previousState.modelCallsBySession[sessionId] ?? []]),
+          ),
+          requestAuxBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [sessionId, previousState.requestAuxBySession[sessionId] ?? []]),
+          ),
+          modelCallDeltasBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [sessionId, previousState.modelCallDeltasBySession?.[sessionId] ?? []]),
+          ),
+          terminalActivityBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [sessionId, previousState.terminalActivityBySession[sessionId] ?? {}]),
+          ),
+          apiCallRecordingBySession: Object.fromEntries(
+            sessionIds.map((sessionId) => [
+              sessionId,
+              runtimes[sessionId]?.apiCallRecording ??
+                previousState.apiCallRecordingBySession[sessionId] ?? {
+                  enabled: false,
+                  refCount: 0,
+                },
+            ]),
+          ),
+          workspaces: previousState.workspaces,
+          globalAvatarCatalog: previousState.globalAvatarCatalog,
+          workspaceAvatarCatalogByPath: previousState.workspaceAvatarCatalogByPath,
+          globalRooms: previousState.globalRooms,
+          globalRoomSnapshotsById: previousState.globalRoomSnapshotsById,
+          globalRoomGrantsById: previousState.globalRoomGrantsById,
+          globalTerminals: previousState.globalTerminals,
+          globalTerminalGrantsById: previousState.globalTerminalGrantsById,
+          globalTerminalApprovalsById: previousState.globalTerminalApprovalsById,
+          globalTerminalActivityById: previousState.globalTerminalActivityById,
+          notifications: previousState.notifications,
+          unreadBySession: previousState.unreadBySession,
+          unreadByBucket: previousState.unreadByBucket,
+        };
+        this.setConnectionStatus("connected");
+        for (const session of sessions) {
+          if (!runtimes[session.id] && (session.status === "stopped" || session.status === "paused")) {
+            this.clearRuntimeState(session.id, session.status, this.state.attentionBySession?.[session.id]);
+            continue;
           }
-          run();
-        }, 0);
-      };
+          this.ensureRuntimeScaffold(session.id, session.status);
+        }
 
-      scheduleSecondaryChrome(() => {
-        void this.client.trpc.workspace.listAll
-          .query()
-          .then((workspaces) => {
+        this.reconnectAttempt = 0;
+        this.clearReconnectTimer();
+
+        this.eventSub?.unsubscribe();
+        this.eventSub = this.subscribeRuntimeEvents(snapshot.lastEventId);
+        this.restoreRetainedApiCallStreams();
+        this.emit();
+        if (previousState.globalAvatarCatalog.loaded || this.globalAvatarCatalogWatchCount > 0) {
+          void this.hydrateGlobalAvatarCatalog({ force: true });
+        }
+        for (const [workspacePath, resource] of Object.entries(previousState.workspaceAvatarCatalogByPath)) {
+          if (!resource.loaded && !this.workspaceAvatarCatalogWatchCountByPath.has(workspacePath)) {
+            continue;
+          }
+          void this.hydrateWorkspaceAvatarCatalog(workspacePath, { force: true });
+        }
+        if (previousState.globalRooms.loaded || this.globalRoomsWatchCount > 0) {
+          void this.hydrateGlobalRooms({ force: true });
+        }
+        for (const [chatId, resource] of Object.entries(previousState.globalRoomSnapshotsById)) {
+          if (!resource.loaded && !this.globalRoomSnapshotWatchCountById.has(chatId)) {
+            continue;
+          }
+          void this.hydrateGlobalRoomSnapshot({ chatId, force: true });
+        }
+        for (const [chatId, resource] of Object.entries(previousState.globalRoomGrantsById)) {
+          if (!resource.loaded && !this.globalRoomGrantWatchCountById.has(chatId)) {
+            continue;
+          }
+          void this.hydrateGlobalRoomGrants({ chatId, force: true });
+        }
+        if (previousState.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
+          void this.hydrateGlobalTerminals({ force: true });
+        }
+        for (const [terminalId, resource] of Object.entries(previousState.globalTerminalGrantsById)) {
+          if (!resource.loaded && !this.globalTerminalGrantWatchCountById.has(terminalId)) {
+            continue;
+          }
+          void this.hydrateGlobalTerminalGrants({ terminalId, force: true });
+        }
+        for (const [terminalId, resource] of Object.entries(previousState.globalTerminalApprovalsById)) {
+          if (!resource.loaded && !this.globalTerminalApprovalWatchCountById.has(terminalId)) {
+            continue;
+          }
+          void this.hydrateGlobalTerminalApprovals({ terminalId, force: true });
+        }
+        for (const [terminalId, resource] of Object.entries(previousState.globalTerminalActivityById)) {
+          if (!resource.loaded && !this.globalTerminalActivityWatchCountById.has(terminalId)) {
+            continue;
+          }
+          void this.hydrateGlobalTerminalActivity({ terminalId, force: true });
+        }
+
+        const scheduleSecondaryChrome = (run: () => void) => {
+          setTimeout(() => {
             if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
               return;
             }
-            this.state.workspaces = workspaces.items;
-            this.emit();
-          })
-          .catch(() => {
-            // Keep the last known workspace chrome until the next refresh succeeds.
-          });
-      });
+            run();
+          }, 0);
+        };
 
-      scheduleSecondaryChrome(() => {
-        void this.client.trpc.workspace.recent
-          .query({ limit: 8 })
-          .then((recent) => {
-            if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
-              return;
-            }
-            this.state.recentWorkspaces = recent.items;
-            this.emit();
-          })
-          .catch(() => {
-            // Keep the last known recent workspace chrome until the next refresh succeeds.
-          });
-      });
+        scheduleSecondaryChrome(() => {
+          void this.client.trpc.workspace.listAll
+            .query()
+            .then((workspaces) => {
+              if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
+                return;
+              }
+              this.state.workspaces = workspaces.items;
+              this.emit();
+            })
+            .catch(() => {
+              // Keep the last known workspace chrome until the next refresh succeeds.
+            });
+        });
 
-      scheduleSecondaryChrome(() => {
-        void this.refreshNotifications()
-          .then(() => {
-            if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
-              return;
-            }
-          })
-          .catch(() => {
-            // Keep the last known notification snapshot until the next refresh succeeds.
-          });
-      });
-    } catch {
-      this.handleTransportLoss("error");
-    } finally {
-      this.connecting = false;
-    }
+        scheduleSecondaryChrome(() => {
+          void this.client.trpc.workspace.recent
+            .query({ limit: 8 })
+            .then((recent) => {
+              if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
+                return;
+              }
+              this.state.recentWorkspaces = recent.items;
+              this.emit();
+            })
+            .catch(() => {
+              // Keep the last known recent workspace chrome until the next refresh succeeds.
+            });
+        });
+
+        scheduleSecondaryChrome(() => {
+          void this.refreshNotifications()
+            .then(() => {
+              if (connectSequence !== this.connectSequence || this.state.connectionStatus !== "connected") {
+                return;
+              }
+            })
+            .catch(() => {
+              // Keep the last known notification snapshot until the next refresh succeeds.
+            });
+        });
+      } catch {
+        this.handleTransportLoss("error");
+      } finally {
+        this.connecting = false;
+        this.connectTask = null;
+      }
+    })();
+    await this.connectTask;
   }
 
   private handleTransportLoss(_reason: "close" | "error" | "offline"): void {
@@ -3022,6 +3136,7 @@ export class RuntimeStore {
     delete this.state.messageChannelsBySession[sessionId];
     delete this.state.chatCyclesBySession[sessionId];
     delete this.state.attentionBySession[sessionId];
+    delete this.state.attentionDeliveryBySession[sessionId];
     delete this.state.tasksBySession[sessionId];
     delete this.state.schedulerLogsBySession[sessionId];
     delete this.state.observabilityTracesBySession[sessionId];
@@ -3073,6 +3188,7 @@ export class RuntimeStore {
     delete this.state.terminalReadsBySession[sessionId];
     delete this.state.messageChannelsBySession[sessionId];
     delete this.state.attentionBySession[sessionId];
+    delete this.state.attentionDeliveryBySession[sessionId];
     this.releaseSessionResourceHandle(sessionId);
     await this.listAllWorkspaces();
   }
@@ -3287,6 +3403,21 @@ export class RuntimeStore {
 
   async inspectAttentionState(sessionId: string): Promise<RuntimeAttentionState> {
     return await this.client.trpc.runtime.attentionState.query({ sessionId });
+  }
+
+  async inspectAttentionDeliveryState(sessionId: string): Promise<RuntimeAttentionDeliveryState> {
+    return await this.client.trpc.runtime.attentionDeliveryState.query({ sessionId });
+  }
+
+  async queryAttentionDeliveryTimeline(input: {
+    sessionId: string;
+    contextId?: string;
+    commitId?: string;
+    cycleId?: number;
+    sessionModelCallId?: number;
+    limit?: number;
+  }): Promise<RuntimeAttentionDeliveryState> {
+    return await this.client.trpc.runtime.attentionDeliveryTimeline.query(input);
   }
 
   async queryAttention(input: {
@@ -5000,17 +5131,41 @@ export class RuntimeStore {
     return await task;
   }
 
-  async hydrateSessionArtifacts(sessionId: string): Promise<void> {
-    await this.hydrateRuntime(sessionId);
-    const session = this.state.sessions.find((entry) => entry.id === sessionId);
+  async hydrateSessionArtifacts(
+    sessionId: string,
+    input?: { includeChatHistory?: boolean; observabilityMode?: "full" | "heartbeat" },
+  ): Promise<void> {
+    if (this.connectTask) {
+      await this.connectTask;
+    }
+
+    let session = this.state.sessions.find((entry) => entry.id === sessionId);
+    if (!session) {
+      await this.hydrateRuntime(sessionId, input?.observabilityMode);
+      session = this.state.sessions.find((entry) => entry.id === sessionId);
+    } else if (session.status === "stopped" || session.status === "paused") {
+      const [persistedAttention, persistedAttentionDelivery] = await Promise.all([
+        this.inspectAttentionState(sessionId),
+        this.inspectAttentionDeliveryState(sessionId),
+      ]);
+      this.clearRuntimeState(sessionId, session.status, persistedAttention, persistedAttentionDelivery);
+      this.emit();
+      await this.hydrateObservabilityArtifacts(sessionId, input?.observabilityMode);
+    } else if (this.state.runtimes[sessionId]) {
+      await this.hydrateObservabilityArtifacts(sessionId, input?.observabilityMode);
+    } else {
+      await this.hydrateRuntime(sessionId, input?.observabilityMode);
+      session = this.state.sessions.find((entry) => entry.id === sessionId);
+    }
+
     if (!session) {
       return;
     }
-    await Promise.all([
-      this.hydrateSessionHistory(sessionId),
-      this.ensureMessageChannels(sessionId),
-      this.refreshNotifications(),
-    ]);
+    const tasks = [this.ensureMessageChannels(sessionId), this.refreshNotifications()];
+    if (input?.includeChatHistory !== false) {
+      tasks.unshift(this.hydrateSessionHistory(sessionId));
+    }
+    await Promise.all(tasks);
   }
 
   async loadMoreChatMessagesBefore(sessionId: string, limit = 120): Promise<{ items: number; hasMore: boolean }> {
@@ -5727,6 +5882,8 @@ export class RuntimeStore {
       event.type === "runtime.apiCall" ||
       event.type === "runtime.apiRecording" ||
       event.type === "runtime.attention" ||
+      event.type === "runtime.attentionDispatch" ||
+      event.type === "runtime.attentionReceipt" ||
       event.type === "runtime.cycle.updated"
     ) {
       const sessionId = event.sessionId;
@@ -5977,6 +6134,40 @@ export class RuntimeStore {
         runtime.attention = payload;
         this.state.attentionBySession ??= {};
         this.state.attentionBySession[sessionId] = payload;
+      } else if (event.type === "runtime.attentionDispatch") {
+        const payload = event.payload as {
+          dispatch: RuntimeAttentionDeliveryState["dispatches"][number];
+          projection: RuntimeAttentionDeliveryState["projections"][number] | null;
+        };
+        const nextDelivery = patchRuntimeAttentionDeliveryState(
+          this.state.attentionDeliveryBySession[sessionId] ??
+            runtime.attentionDelivery ??
+            createEmptyAttentionDeliveryState(),
+          {
+            dispatch: payload.dispatch,
+            projection: payload.projection,
+          },
+        );
+        runtime.attentionDelivery = nextDelivery;
+        this.state.attentionDeliveryBySession[sessionId] = nextDelivery;
+      } else if (event.type === "runtime.attentionReceipt") {
+        const payload = event.payload as {
+          dispatch: RuntimeAttentionDeliveryState["dispatches"][number];
+          receipt: RuntimeAttentionDeliveryState["receipts"][number];
+          projection: RuntimeAttentionDeliveryState["projections"][number] | null;
+        };
+        const nextDelivery = patchRuntimeAttentionDeliveryState(
+          this.state.attentionDeliveryBySession[sessionId] ??
+            runtime.attentionDelivery ??
+            createEmptyAttentionDeliveryState(),
+          {
+            dispatch: payload.dispatch,
+            receipt: payload.receipt,
+            projection: payload.projection,
+          },
+        );
+        runtime.attentionDelivery = nextDelivery;
+        this.state.attentionDeliveryBySession[sessionId] = nextDelivery;
       } else if (event.type === "runtime.cycle.updated") {
         const payload = event.payload as { cycle: RuntimeChatCycle | null };
         if (!payload.cycle) {
@@ -6044,6 +6235,7 @@ export class RuntimeStore {
         attention: {
           ...createEmptyAttentionState(),
         },
+        attentionDelivery: createEmptyAttentionDeliveryState(),
         schedulerSignals: {
           user: { version: 0, timestamp: null },
           terminal: { version: 0, timestamp: null },
@@ -6070,6 +6262,10 @@ export class RuntimeStore {
       this.state.attentionBySession[sessionId] ??
       this.state.runtimes[sessionId]?.attention ??
       createEmptyAttentionState();
+    this.state.attentionDeliveryBySession[sessionId] =
+      this.state.attentionDeliveryBySession[sessionId] ??
+      this.state.runtimes[sessionId]?.attentionDelivery ??
+      createEmptyAttentionDeliveryState();
     this.state.tasksBySession[sessionId] = this.state.tasksBySession[sessionId] ?? [];
     this.state.schedulerLogsBySession[sessionId] = this.state.schedulerLogsBySession[sessionId] ?? [];
     this.state.observabilityTracesBySession[sessionId] = this.state.observabilityTracesBySession[sessionId] ?? [];
@@ -6091,6 +6287,7 @@ export class RuntimeStore {
     sessionId: string,
     status?: "stopped" | "paused" | "starting" | "running" | "error",
     attention?: RuntimeAttentionState,
+    attentionDelivery?: RuntimeAttentionDeliveryState,
   ): void {
     this.state.attentionBySession ??= {};
     const previousRuntime = this.state.runtimes[sessionId];
@@ -6099,6 +6296,11 @@ export class RuntimeStore {
       this.state.attentionBySession[sessionId] ??
       previousRuntime?.attention ??
       createEmptyAttentionState();
+    const nextAttentionDelivery =
+      attentionDelivery ??
+      this.state.attentionDeliveryBySession[sessionId] ??
+      previousRuntime?.attentionDelivery ??
+      createEmptyAttentionDeliveryState();
     const retainedTerminalSnapshots =
       this.state.terminalSnapshotsBySession[sessionId] ?? previousRuntime?.terminalSnapshots ?? {};
     const retainedTerminalReads = this.state.terminalReadsBySession[sessionId] ?? previousRuntime?.terminalReads ?? {};
@@ -6110,6 +6312,7 @@ export class RuntimeStore {
     this.state.messageChannelsBySession[sessionId] =
       this.state.messageChannelsBySession[sessionId] ?? createCachedResourceState<MessageChannelEntry[]>([]);
     this.state.attentionBySession[sessionId] = nextAttention;
+    this.state.attentionDeliveryBySession[sessionId] = nextAttentionDelivery;
     this.state.tasksBySession[sessionId] = retainedTasks;
     this.state.apiCallRecordingBySession[sessionId] = {
       enabled: false,
@@ -6124,6 +6327,7 @@ export class RuntimeStore {
       detachedRuntime.stage = "idle";
       detachedRuntime.activeCycle = null;
       detachedRuntime.attention = this.state.attentionBySession[sessionId];
+      detachedRuntime.attentionDelivery = this.state.attentionDeliveryBySession[sessionId];
       detachedRuntime.terminals = previousRuntime?.terminals ?? detachedRuntime.terminals;
       detachedRuntime.terminalReads = retainedTerminalReads;
       detachedRuntime.terminalSnapshots = retainedTerminalSnapshots;
@@ -6203,7 +6407,7 @@ export class RuntimeStore {
     this.apiCallStreams.delete(sessionId);
   }
 
-  private async hydrateRuntime(sessionId: string): Promise<void> {
+  private async hydrateRuntime(sessionId: string, observabilityMode: "full" | "heartbeat" = "full"): Promise<void> {
     const snapshot = await this.client.trpc.runtime.snapshot.query();
     const sessionsById = new Map(this.state.sessions.map((session) => [session.id, session]));
     for (const session of snapshot.sessions) {
@@ -6221,7 +6425,7 @@ export class RuntimeStore {
       this.clearRuntimeState(sessionId, session?.status, persistedAttention);
       this.state.lastEventId = Math.max(this.state.lastEventId, snapshot.lastEventId);
       this.emit();
-      await this.hydrateObservabilityArtifacts(sessionId);
+      await this.hydrateObservabilityArtifacts(sessionId, observabilityMode);
       return;
     }
     const normalizedRuntime = this.normalizeRuntimeEntry(runtime);
@@ -6240,6 +6444,8 @@ export class RuntimeStore {
       ? this.mergeChatCycles(this.state.chatCyclesBySession[sessionId] ?? [], [normalizedRuntime.activeCycle])
       : (this.state.chatCyclesBySession[sessionId] ?? []);
     this.state.attentionBySession[sessionId] = normalizedRuntime.attention ?? createEmptyAttentionState();
+    this.state.attentionDeliveryBySession[sessionId] =
+      normalizedRuntime.attentionDelivery ?? createEmptyAttentionDeliveryState();
     this.state.tasksBySession[sessionId] = normalizedRuntime.tasks ?? [];
     this.state.schedulerLogsBySession[sessionId] = this.state.schedulerLogsBySession[sessionId] ?? [];
     this.state.observabilityTracesBySession[sessionId] = this.state.observabilityTracesBySession[sessionId] ?? [];
@@ -6251,21 +6457,24 @@ export class RuntimeStore {
     this.state.apiCallRecordingBySession[sessionId] = runtime.apiCallRecording;
     this.state.lastEventId = Math.max(this.state.lastEventId, snapshot.lastEventId);
     this.emit();
-    await this.hydrateObservabilityArtifacts(sessionId);
+    await this.hydrateObservabilityArtifacts(sessionId, observabilityMode);
   }
 
-  private async hydrateObservabilityArtifacts(sessionId: string): Promise<void> {
+  private async hydrateObservabilityArtifacts(sessionId: string, mode: "full" | "heartbeat" = "full"): Promise<void> {
+    const heartbeatOnly = mode === "heartbeat";
     const [logs, traces, , modelCalls, requestAux, apiCalls] = await Promise.allSettled([
-      this.client.trpc.runtime.schedulerLogs.query({ sessionId, limit: 200 }),
-      this.client.trpc.runtime.observabilityTraces.query({ sessionId, limit: 200 }),
+      heartbeatOnly ? Promise.resolve(null) : this.client.trpc.runtime.schedulerLogs.query({ sessionId, limit: 200 }),
+      heartbeatOnly
+        ? Promise.resolve(null)
+        : this.client.trpc.runtime.observabilityTraces.query({ sessionId, limit: 200 }),
       this.loadHeartbeatGroups(sessionId, HEARTBEAT_GROUP_PAGE_LIMIT),
-      this.client.trpc.runtime.modelCallsPage.query({ sessionId, limit: 200 }),
-      this.client.trpc.runtime.requestAuxPage.query({ sessionId, limit: 200 }),
-      this.client.trpc.runtime.apiCallsPage.query({ sessionId, limit: 200 }),
+      this.client.trpc.runtime.modelCallsPage.query({ sessionId, limit: heartbeatOnly ? 12 : 200 }),
+      heartbeatOnly ? Promise.resolve(null) : this.client.trpc.runtime.requestAuxPage.query({ sessionId, limit: 200 }),
+      heartbeatOnly ? Promise.resolve(null) : this.client.trpc.runtime.apiCallsPage.query({ sessionId, limit: 200 }),
     ]);
 
     let shouldEmit = false;
-    if (logs.status === "fulfilled") {
+    if (!heartbeatOnly && logs.status === "fulfilled" && logs.value) {
       this.state.schedulerLogsBySession[sessionId] = this.applyLruEntries(
         this.schedulerLogsAccessBySession,
         sessionId,
@@ -6276,7 +6485,7 @@ export class RuntimeStore {
       this.updateBeforeCursor(this.schedulerLogsBeforeCursorBySession, sessionId, logs.value.nextBefore);
       shouldEmit = true;
     }
-    if (traces.status === "fulfilled") {
+    if (!heartbeatOnly && traces.status === "fulfilled" && traces.value) {
       this.state.observabilityTracesBySession[sessionId] = this.applyLruEntries(
         this.observabilityTracesAccessBySession,
         sessionId,
@@ -6298,7 +6507,7 @@ export class RuntimeStore {
       this.updateBeforeCursor(this.modelCallsBeforeCursorBySession, sessionId, modelCalls.value.nextBefore);
       shouldEmit = true;
     }
-    if (requestAux.status === "fulfilled") {
+    if (!heartbeatOnly && requestAux.status === "fulfilled" && requestAux.value) {
       this.state.requestAuxBySession[sessionId] = this.applyLruEntries(
         this.requestAuxAccessBySession,
         sessionId,
@@ -6309,7 +6518,7 @@ export class RuntimeStore {
       this.updateBeforeCursor(this.requestAuxBeforeCursorBySession, sessionId, requestAux.value.nextBefore);
       shouldEmit = true;
     }
-    if (apiCalls.status === "fulfilled") {
+    if (!heartbeatOnly && apiCalls.status === "fulfilled" && apiCalls.value) {
       this.state.apiCallsBySession[sessionId] = this.applyLruEntries(
         this.apiCallsAccessBySession,
         sessionId,

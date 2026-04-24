@@ -202,7 +202,10 @@
 		shellHydrating = true;
 		shellHydrationError = null;
 		void controller.runtimeStore
-			.hydrateSessionArtifacts(requestedSessionId)
+			.hydrateSessionArtifacts(requestedSessionId, {
+				includeChatHistory: false,
+				observabilityMode: 'heartbeat',
+			})
 			.catch((error) => {
 				if (version !== shellHydrationVersion) {
 					return;

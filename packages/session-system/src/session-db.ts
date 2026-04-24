@@ -3,7 +3,6 @@ import { dirname, resolve } from "node:path";
 
 import { Database } from "bun:sqlite";
 
-import { PROMPT_WINDOW_STATE_PART_TYPE } from "./types";
 import type {
   ReversePage,
   ReverseTimeCursor,
@@ -12,6 +11,12 @@ import type {
   SessionAiCallUpdate,
   SessionAssetInsert,
   SessionAssetRecord,
+  SessionAttentionDispatchInsert,
+  SessionAttentionDispatchRecord,
+  SessionAttentionReceiptInsert,
+  SessionAttentionReceiptProviderEventKind,
+  SessionAttentionReceiptRecord,
+  SessionAttentionReceiptStatus,
   SessionHeadRecord,
   SessionMessagePartRecord,
   SessionMessageRecord,
@@ -19,8 +24,9 @@ import type {
   SessionMessageUpsertInput,
   SessionPromptWindowRecord,
 } from "./types";
+import { PROMPT_WINDOW_STATE_PART_TYPE } from "./types";
 
-const SESSION_DB_SCHEMA_VERSION = 1;
+const SESSION_DB_SCHEMA_VERSION = 2;
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
   if (!value) {
@@ -37,17 +43,9 @@ const toJson = (value: unknown): string => JSON.stringify(value ?? null);
 
 const resolvePageLimit = (limit: number | undefined, max = 1_000): number => Math.max(1, Math.min(limit ?? 200, max));
 
-const isBeforeCursor = (
-  input: { createdAt: number; id: number },
-  before: ReverseTimeCursor | undefined,
-): boolean =>
-  before === undefined ||
-  input.createdAt < before.beforeTimeMs ||
-  (input.createdAt === before.beforeTimeMs && input.id < before.beforeId);
-
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-interface StoredMessageEnvelope {
+interface StoredMessageHeadRow {
   id: number;
   message_id: string;
   window_id: string | null;
@@ -81,13 +79,11 @@ export class SessionDb {
          from session_head
          where id = 1`,
       )
-      .get() as
-      | {
-          current_round_index: number;
-          current_prompt_window_id: string | null;
-          updated_at: number;
-        }
-      | null;
+      .get() as {
+      current_round_index: number;
+      current_prompt_window_id: string | null;
+      updated_at: number;
+    } | null;
     return {
       currentRoundIndex: row?.current_round_index ?? 0,
       currentPromptWindowId: row?.current_prompt_window_id ?? null,
@@ -258,7 +254,7 @@ export class SessionDb {
         } else {
           this.db
             .query(
-               `insert into message_part (
+              `insert into message_part (
                  part_index,
                  message_id,
                  window_id,
@@ -367,6 +363,51 @@ export class SessionDb {
     };
   }
 
+  listMessagesByIds(messageIds: readonly string[]): SessionMessageRecord[] {
+    return messageIds
+      .map((messageId) => this.getMessageById(messageId))
+      .filter((message): message is SessionMessageRecord => message !== null);
+  }
+
+  listMessagesByScopesAndAiCallIds(
+    scopes: readonly SessionMessageScope[],
+    aiCallIds: readonly number[],
+  ): SessionMessageRecord[] {
+    if (scopes.length === 0 || aiCallIds.length === 0) {
+      return [];
+    }
+    return this.queryMessageHeadRowsByScopes(scopes, {
+      aiCallIds,
+      order: "asc",
+    })
+      .map((row) => this.getMessageById(row.message_id))
+      .filter((message): message is SessionMessageRecord => message !== null);
+  }
+
+  listMessagesByScopesWithNullAiCallInRange(
+    scopes: readonly SessionMessageScope[],
+    input?: {
+      afterCreatedAt?: number;
+      afterInclusive?: boolean;
+      beforeCreatedAt?: number;
+      beforeInclusive?: boolean;
+    },
+  ): SessionMessageRecord[] {
+    if (scopes.length === 0) {
+      return [];
+    }
+    return this.queryMessageHeadRowsByScopes(scopes, {
+      onlyNullAiCall: true,
+      afterCreatedAt: input?.afterCreatedAt,
+      afterInclusive: input?.afterInclusive,
+      beforeCreatedAt: input?.beforeCreatedAt,
+      beforeInclusive: input?.beforeInclusive,
+      order: "asc",
+    })
+      .map((row) => this.getMessageById(row.message_id))
+      .filter((message): message is SessionMessageRecord => message !== null);
+  }
+
   listMessagesByScope(
     scope: SessionMessageScope,
     input?: { windowId?: string | null; before?: ReverseTimeCursor; limit?: number },
@@ -378,15 +419,14 @@ export class SessionDb {
     scopes: readonly SessionMessageScope[],
     input?: { windowId?: string | null; before?: ReverseTimeCursor; limit?: number },
   ): SessionMessageRecord[] {
-    const limit = resolvePageLimit(input?.limit);
-    const before = input?.before;
-    const rows = this.queryMessageEnvelopesByScopes(scopes, input?.windowId ?? undefined);
-    const filteredDescending = rows
-      .sort((left, right) => (left.created_at === right.created_at ? right.id - left.id : right.created_at - left.created_at))
-      .filter((row) => isBeforeCursor({ createdAt: row.created_at, id: row.id }, before))
-      .slice(0, limit)
-      .reverse();
-    return filteredDescending
+    const rowsDescending = this.queryMessageHeadRowsByScopes(scopes, {
+      windowId: input?.windowId ?? undefined,
+      before: input?.before,
+      limit: input?.limit,
+      order: "desc",
+    });
+    return rowsDescending
+      .reverse()
       .map((row) => this.getMessageById(row.message_id))
       .filter((row): row is SessionMessageRecord => row !== null);
   }
@@ -403,20 +443,19 @@ export class SessionDb {
     input?: { windowId?: string | null; before?: ReverseTimeCursor; limit?: number },
   ): ReversePage<SessionMessageRecord> {
     const limit = resolvePageLimit(input?.limit);
-    const before = input?.before;
-    const envelopesDescending = this.queryMessageEnvelopesByScopes(scopes, input?.windowId ?? undefined).sort(
-      (left, right) => (left.created_at === right.created_at ? right.id - left.id : right.created_at - left.created_at),
-    );
-    const filteredDescending = envelopesDescending.filter((row) =>
-      isBeforeCursor({ createdAt: row.created_at, id: row.id }, before),
-    );
-    const pageDescending = filteredDescending.slice(0, limit);
+    const rowsDescending = this.queryMessageHeadRowsByScopes(scopes, {
+      windowId: input?.windowId ?? undefined,
+      before: input?.before,
+      limit: limit + 1,
+      order: "desc",
+    });
+    const hasMoreBefore = rowsDescending.length > limit;
+    const pageDescending = rowsDescending.slice(0, limit);
     const itemsDescending = pageDescending
       .map((row) => this.getMessageById(row.message_id))
       .filter((row): row is SessionMessageRecord => row !== null)
       .reverse();
-    const nextCursorSource =
-      filteredDescending.length > pageDescending.length ? pageDescending.at(-1) ?? null : null;
+    const nextCursorSource = hasMoreBefore ? (pageDescending.at(-1) ?? null) : null;
     return {
       items: itemsDescending,
       nextBefore: nextCursorSource
@@ -425,7 +464,7 @@ export class SessionDb {
             beforeId: nextCursorSource.id,
           }
         : null,
-      hasMoreBefore: filteredDescending.length > pageDescending.length,
+      hasMoreBefore,
     };
   }
 
@@ -471,7 +510,7 @@ export class SessionDb {
         createdAt,
         updatedAt,
         input.completedAt ?? null,
-        input.isComplete ?? false ? 1 : 0,
+        (input.isComplete ?? false) ? 1 : 0,
       );
     const record = this.getAiCallById(Number(result.lastInsertRowid));
     if (!record) {
@@ -489,28 +528,26 @@ export class SessionDb {
          from ai_call
          where id = ?`,
       )
-      .get(id) as
-      | {
-          id: number;
-          round_index: number;
-          kind: string;
-          status: SessionAiCallRecord["status"];
-          provider: string;
-          model: string;
-          request_url: string;
-          request_body_json: string;
-          response_body_json: string | null;
-          error_json: string | null;
-          outcome_json: string | null;
-          request_message_ids_json: string;
-          response_message_ids_json: string;
-          auxiliary_message_ids_json: string;
-          created_at: number;
-          updated_at: number;
-          completed_at: number | null;
-          is_complete: number;
-        }
-      | null;
+      .get(id) as {
+      id: number;
+      round_index: number;
+      kind: string;
+      status: SessionAiCallRecord["status"];
+      provider: string;
+      model: string;
+      request_url: string;
+      request_body_json: string;
+      response_body_json: string | null;
+      error_json: string | null;
+      outcome_json: string | null;
+      request_message_ids_json: string;
+      response_message_ids_json: string;
+      auxiliary_message_ids_json: string;
+      created_at: number;
+      updated_at: number;
+      completed_at: number | null;
+      is_complete: number;
+    } | null;
     if (!row) {
       return null;
     }
@@ -620,18 +657,27 @@ export class SessionDb {
 
   pageAiCalls(input?: { before?: ReverseTimeCursor; limit?: number }): ReversePage<SessionAiCallRecord> {
     const limit = resolvePageLimit(input?.limit);
-    const before = input?.before;
-    const rowsDescending = (this.db
-      .query(`select id, created_at from ai_call order by created_at desc, id desc`)
-      .all() as Array<{ id: number; created_at: number }>).filter((row) =>
-      isBeforeCursor({ createdAt: row.created_at, id: row.id }, before),
-    );
+    const params: number[] = [];
+    const whereClause = input?.before ? `(created_at < ? or (created_at = ? and id < ?))` : null;
+    if (input?.before) {
+      params.push(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId);
+    }
+    const rowsDescending = this.db
+      .query(
+        `select id, created_at
+         from ai_call
+         ${whereClause ? `where ${whereClause}` : ""}
+         order by created_at desc, id desc
+         limit ?`,
+      )
+      .all(...params, limit + 1) as Array<{ id: number; created_at: number }>;
+    const hasMoreBefore = rowsDescending.length > limit;
     const pageDescending = rowsDescending.slice(0, limit);
     const itemsDescending = pageDescending
       .map((row) => this.getAiCallById(row.id))
       .filter((row): row is SessionAiCallRecord => row !== null)
       .reverse();
-    const nextCursorSource = rowsDescending.length > pageDescending.length ? pageDescending.at(-1) ?? null : null;
+    const nextCursorSource = hasMoreBefore ? (pageDescending.at(-1) ?? null) : null;
     return {
       items: itemsDescending,
       nextBefore: nextCursorSource
@@ -640,12 +686,295 @@ export class SessionDb {
             beforeId: nextCursorSource.id,
           }
         : null,
-      hasMoreBefore: rowsDescending.length > pageDescending.length,
+      hasMoreBefore,
     };
   }
 
   pruneAiCallsBeforeRound(minRoundIndex: number): void {
     this.db.query(`delete from ai_call where round_index < ?`).run(minRoundIndex);
+  }
+
+  appendAttentionDispatch(input: SessionAttentionDispatchInsert): SessionAttentionDispatchRecord {
+    const createdAt = input.createdAt ?? Date.now();
+    const updatedAt = input.updatedAt ?? createdAt;
+    this.db
+      .query(
+        `insert into attention_dispatch (
+           dispatch_id,
+           context_id,
+           commit_id,
+           cycle_id,
+           attempt_index,
+           agent_call_id,
+           session_model_call_id,
+           created_at,
+           updated_at
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.dispatchId,
+        input.contextId,
+        input.commitId,
+        input.cycleId,
+        input.attemptIndex,
+        input.agentCallId,
+        input.sessionModelCallId ?? null,
+        createdAt,
+        updatedAt,
+      );
+    const record = this.getAttentionDispatchByDispatchId(input.dispatchId);
+    if (!record) {
+      throw new Error(`failed to load inserted attention_dispatch ${input.dispatchId}`);
+    }
+    return record;
+  }
+
+  getAttentionDispatchByDispatchId(dispatchId: string): SessionAttentionDispatchRecord | null {
+    const row = this.db
+      .query(
+        `select id, dispatch_id, context_id, commit_id, cycle_id, attempt_index, agent_call_id,
+                session_model_call_id, created_at, updated_at
+         from attention_dispatch
+         where dispatch_id = ?`,
+      )
+      .get(dispatchId) as {
+      id: number;
+      dispatch_id: string;
+      context_id: string;
+      commit_id: string;
+      cycle_id: number;
+      attempt_index: number;
+      agent_call_id: string;
+      session_model_call_id: number | null;
+      created_at: number;
+      updated_at: number;
+    } | null;
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      dispatchId: row.dispatch_id,
+      contextId: row.context_id,
+      commitId: row.commit_id,
+      cycleId: row.cycle_id,
+      attemptIndex: row.attempt_index,
+      agentCallId: row.agent_call_id,
+      sessionModelCallId: row.session_model_call_id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  bindAttentionDispatchModelCall(
+    dispatchId: string,
+    sessionModelCallId: number,
+    updatedAt = Date.now(),
+  ): SessionAttentionDispatchRecord {
+    const current = this.getAttentionDispatchByDispatchId(dispatchId);
+    if (!current) {
+      throw new Error(`attention_dispatch not found: ${dispatchId}`);
+    }
+    this.db.exec("begin immediate");
+    try {
+      this.db
+        .query(
+          `update attention_dispatch
+           set session_model_call_id = ?, updated_at = ?
+           where dispatch_id = ?`,
+        )
+        .run(sessionModelCallId, updatedAt, dispatchId);
+      this.db
+        .query(
+          `update attention_receipt
+           set session_model_call_id = ?
+           where dispatch_id = ?`,
+        )
+        .run(sessionModelCallId, dispatchId);
+      this.db.exec("commit");
+    } catch (error) {
+      this.db.exec("rollback");
+      throw error;
+    }
+    const record = this.getAttentionDispatchByDispatchId(dispatchId);
+    if (!record) {
+      throw new Error(`failed to load updated attention_dispatch ${dispatchId}`);
+    }
+    return record;
+  }
+
+  listAttentionDispatches(input?: {
+    contextId?: string;
+    commitId?: string;
+    cycleId?: number;
+    sessionModelCallId?: number;
+    agentCallId?: string;
+  }): SessionAttentionDispatchRecord[] {
+    const rows = this.db
+      .query(
+        `select dispatch_id
+         from attention_dispatch
+         where (? is null or context_id = ?)
+           and (? is null or commit_id = ?)
+           and (? is null or cycle_id = ?)
+           and (? is null or session_model_call_id = ?)
+           and (? is null or agent_call_id = ?)
+         order by created_at asc, attempt_index asc, id asc`,
+      )
+      .all(
+        input?.contextId ?? null,
+        input?.contextId ?? null,
+        input?.commitId ?? null,
+        input?.commitId ?? null,
+        input?.cycleId ?? null,
+        input?.cycleId ?? null,
+        input?.sessionModelCallId ?? null,
+        input?.sessionModelCallId ?? null,
+        input?.agentCallId ?? null,
+        input?.agentCallId ?? null,
+      ) as Array<{ dispatch_id: string }>;
+    return rows
+      .map((row) => this.getAttentionDispatchByDispatchId(row.dispatch_id))
+      .filter((row): row is SessionAttentionDispatchRecord => row !== null);
+  }
+
+  appendAttentionReceipt(input: SessionAttentionReceiptInsert): SessionAttentionReceiptRecord {
+    const timestamp = input.timestamp ?? Date.now();
+    this.db
+      .query(
+        `insert into attention_receipt (
+           receipt_id,
+           dispatch_id,
+           context_id,
+           commit_id,
+           cycle_id,
+           attempt_index,
+           agent_call_id,
+           session_model_call_id,
+           status,
+           provider_event_kind,
+           timestamp,
+           finish_reason,
+           usage_json,
+           error_code,
+           error_message,
+           meta_json
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.receiptId,
+        input.dispatchId,
+        input.contextId,
+        input.commitId,
+        input.cycleId,
+        input.attemptIndex,
+        input.agentCallId,
+        input.sessionModelCallId ?? null,
+        input.status,
+        input.providerEventKind,
+        timestamp,
+        input.finishReason ?? null,
+        input.usage === undefined ? null : toJson(input.usage),
+        input.errorCode ?? null,
+        input.errorMessage ?? null,
+        input.meta === undefined ? null : toJson(input.meta),
+      );
+    const record = this.getAttentionReceiptByReceiptId(input.receiptId);
+    if (!record) {
+      throw new Error(`failed to load inserted attention_receipt ${input.receiptId}`);
+    }
+    return record;
+  }
+
+  getAttentionReceiptByReceiptId(receiptId: string): SessionAttentionReceiptRecord | null {
+    const row = this.db
+      .query(
+        `select id, receipt_id, dispatch_id, context_id, commit_id, cycle_id, attempt_index, agent_call_id,
+                session_model_call_id, status, provider_event_kind, timestamp, finish_reason, usage_json,
+                error_code, error_message, meta_json
+         from attention_receipt
+         where receipt_id = ?`,
+      )
+      .get(receiptId) as {
+      id: number;
+      receipt_id: string;
+      dispatch_id: string;
+      context_id: string;
+      commit_id: string;
+      cycle_id: number;
+      attempt_index: number;
+      agent_call_id: string;
+      session_model_call_id: number | null;
+      status: SessionAttentionReceiptStatus;
+      provider_event_kind: SessionAttentionReceiptProviderEventKind;
+      timestamp: number;
+      finish_reason: string | null;
+      usage_json: string | null;
+      error_code: string | null;
+      error_message: string | null;
+      meta_json: string | null;
+    } | null;
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      receiptId: row.receipt_id,
+      dispatchId: row.dispatch_id,
+      contextId: row.context_id,
+      commitId: row.commit_id,
+      cycleId: row.cycle_id,
+      attemptIndex: row.attempt_index,
+      agentCallId: row.agent_call_id,
+      sessionModelCallId: row.session_model_call_id,
+      status: row.status,
+      providerEventKind: row.provider_event_kind,
+      timestamp: row.timestamp,
+      finishReason: row.finish_reason,
+      usage: row.usage_json === null ? undefined : parseJson(row.usage_json, undefined),
+      errorCode: row.error_code ?? undefined,
+      errorMessage: row.error_message ?? undefined,
+      meta: row.meta_json === null ? undefined : parseJson(row.meta_json, undefined),
+    };
+  }
+
+  listAttentionReceipts(input?: {
+    contextId?: string;
+    commitId?: string;
+    cycleId?: number;
+    sessionModelCallId?: number;
+    dispatchId?: string;
+    agentCallId?: string;
+  }): SessionAttentionReceiptRecord[] {
+    const rows = this.db
+      .query(
+        `select receipt_id
+         from attention_receipt
+         where (? is null or context_id = ?)
+           and (? is null or commit_id = ?)
+           and (? is null or cycle_id = ?)
+           and (? is null or session_model_call_id = ?)
+           and (? is null or dispatch_id = ?)
+           and (? is null or agent_call_id = ?)
+         order by timestamp asc, id asc`,
+      )
+      .all(
+        input?.contextId ?? null,
+        input?.contextId ?? null,
+        input?.commitId ?? null,
+        input?.commitId ?? null,
+        input?.cycleId ?? null,
+        input?.cycleId ?? null,
+        input?.sessionModelCallId ?? null,
+        input?.sessionModelCallId ?? null,
+        input?.dispatchId ?? null,
+        input?.dispatchId ?? null,
+        input?.agentCallId ?? null,
+        input?.agentCallId ?? null,
+      ) as Array<{ receipt_id: string }>;
+    return rows
+      .map((row) => this.getAttentionReceiptByReceiptId(row.receipt_id))
+      .filter((row): row is SessionAttentionReceiptRecord => row !== null);
   }
 
   appendAsset(input: SessionAssetInsert): SessionAssetRecord {
@@ -677,17 +1006,15 @@ export class SessionDb {
          from session_asset
          where id = ?`,
       )
-      .get(id) as
-      | {
-          id: string;
-          kind: SessionAssetRecord["kind"];
-          created_at: number;
-          name: string;
-          mime_type: string;
-          size_bytes: number;
-          relative_path: string;
-        }
-      | null;
+      .get(id) as {
+      id: string;
+      kind: SessionAssetRecord["kind"];
+      created_at: number;
+      name: string;
+      mime_type: string;
+      size_bytes: number;
+      relative_path: string;
+    } | null;
     if (!row) {
       return null;
     }
@@ -719,36 +1046,72 @@ export class SessionDb {
     return row ? this.getMessageById(row.message_id) : null;
   }
 
-  private queryMessageEnvelopes(scope: SessionMessageScope, windowId?: string): StoredMessageEnvelope[] {
-    return this.queryMessageEnvelopesByScopes([scope], windowId);
-  }
-
-  private queryMessageEnvelopesByScopes(
+  private queryMessageHeadRowsByScopes(
     scopes: readonly SessionMessageScope[],
-    windowId?: string,
-  ): StoredMessageEnvelope[] {
+    input?: {
+      windowId?: string;
+      aiCallIds?: readonly number[];
+      onlyNullAiCall?: boolean;
+      before?: ReverseTimeCursor;
+      afterCreatedAt?: number;
+      afterInclusive?: boolean;
+      beforeCreatedAt?: number;
+      beforeInclusive?: boolean;
+      limit?: number;
+      order?: "asc" | "desc";
+    },
+  ): StoredMessageHeadRow[] {
     if (scopes.length === 0) {
       return [];
     }
     const scopePlaceholders = scopes.map(() => "?").join(", ");
-    const rows = this.db
-      .query(
-        `select min(part_id) as id,
-                message_id,
-                window_id,
-                ai_call_id,
-                round_index,
-                scope,
-                role,
-                min(created_at) as created_at,
-                max(updated_at) as updated_at
-         from message_part
-         where scope in (${scopePlaceholders})
-           and (? is null or window_id = ?)
-         group by message_id, window_id, ai_call_id, round_index, scope, role`,
-      )
-      .all(...scopes, windowId ?? null, windowId ?? null) as StoredMessageEnvelope[];
-    return rows;
+    const whereClauses = [`scope in (${scopePlaceholders})`, `part_index = 0`];
+    const params: Array<number | string> = [...scopes];
+    if (input?.windowId) {
+      whereClauses.push(`window_id = ?`);
+      params.push(input.windowId);
+    }
+    if (input?.aiCallIds && input.aiCallIds.length > 0) {
+      const aiCallPlaceholders = input.aiCallIds.map(() => "?").join(", ");
+      whereClauses.push(`ai_call_id in (${aiCallPlaceholders})`);
+      params.push(...input.aiCallIds);
+    } else if (input?.onlyNullAiCall) {
+      whereClauses.push(`ai_call_id is null`);
+    }
+    if (input?.afterCreatedAt !== undefined) {
+      whereClauses.push(`created_at ${input.afterInclusive ? ">=" : ">"} ?`);
+      params.push(input.afterCreatedAt);
+    }
+    if (input?.beforeCreatedAt !== undefined) {
+      whereClauses.push(`created_at ${input.beforeInclusive ? "<=" : "<"} ?`);
+      params.push(input.beforeCreatedAt);
+    }
+    if (input?.before) {
+      whereClauses.push(`(created_at < ? or (created_at = ? and part_id < ?))`);
+      params.push(input.before.beforeTimeMs, input.before.beforeTimeMs, input.before.beforeId);
+    }
+    const direction = input?.order === "asc" ? "asc" : "desc";
+    const sql = [
+      `select part_id as id,`,
+      `       message_id,`,
+      `       window_id,`,
+      `       ai_call_id,`,
+      `       round_index,`,
+      `       scope,`,
+      `       role,`,
+      `       created_at,`,
+      `       updated_at`,
+      `from message_part`,
+      `where ${whereClauses.join(" and ")}`,
+      `order by created_at ${direction}, part_id ${direction}`,
+      input?.limit ? "limit ?" : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    if (input?.limit) {
+      params.push(resolvePageLimit(input.limit));
+    }
+    return this.db.query(sql).all(...params) as StoredMessageHeadRow[];
   }
 
   private partPayloadToText(payload: unknown): string {
@@ -796,90 +1159,128 @@ export class SessionDb {
   private migrate(): void {
     const currentVersion =
       (this.db.query(`pragma user_version`).get() as { user_version?: number } | null)?.user_version ?? 0;
-    if (currentVersion !== SESSION_DB_SCHEMA_VERSION) {
+    if (currentVersion < 1) {
       this.db.exec(`
-        drop table if exists session_head;
-        drop table if exists message_part;
-        drop table if exists ai_call;
-        drop table if exists session_asset;
-        drop table if exists session_cycle;
-        drop table if exists prompt_window_state;
-        drop table if exists model_call;
-        drop table if exists api_call;
-        drop table if exists session_block;
-        drop table if exists loopbus_state_log;
-        drop table if exists loopbus_trace;
-        drop table if exists terminal_activity;
+        create table if not exists session_head (
+          id integer primary key check (id = 1),
+          current_round_index integer not null default 0,
+          current_prompt_window_id text,
+          updated_at integer not null
+        );
+
+        create table if not exists message_part (
+          part_id integer primary key autoincrement,
+          part_index integer not null,
+          message_id text not null,
+          window_id text,
+          ai_call_id integer,
+          round_index integer not null,
+          scope text not null,
+          role text not null,
+          part_type text not null,
+          mime_type text,
+          payload_json text not null,
+          created_at integer not null,
+          updated_at integer not null,
+          is_complete integer not null default 0
+        );
+        create unique index if not exists idx_message_part_message_index
+          on message_part(message_id, part_index);
+        create index if not exists idx_message_part_scope_created
+          on message_part(scope, created_at desc, part_id desc);
+        create index if not exists idx_message_part_window
+          on message_part(window_id, created_at asc, part_id asc);
+        create index if not exists idx_message_part_ai_call
+          on message_part(ai_call_id, part_id asc);
+
+        create table if not exists ai_call (
+          id integer primary key autoincrement,
+          round_index integer not null,
+          kind text not null,
+          status text not null,
+          provider text not null,
+          model text not null,
+          request_url text not null,
+          request_body_json text not null,
+          response_body_json text,
+          error_json text,
+          outcome_json text,
+          request_message_ids_json text not null,
+          response_message_ids_json text not null,
+          auxiliary_message_ids_json text not null,
+          created_at integer not null,
+          updated_at integer not null,
+          completed_at integer,
+          is_complete integer not null default 0
+        );
+        create index if not exists idx_ai_call_created
+          on ai_call(created_at desc, id desc);
+        create index if not exists idx_ai_call_round
+          on ai_call(round_index desc, id desc);
+
+        create table if not exists session_asset (
+          id text primary key,
+          kind text not null,
+          created_at integer not null,
+          name text not null,
+          mime_type text not null,
+          size_bytes integer not null,
+          relative_path text not null
+        );
       `);
     }
-    this.db.exec(`
-      create table if not exists session_head (
-        id integer primary key check (id = 1),
-        current_round_index integer not null default 0,
-        current_prompt_window_id text,
-        updated_at integer not null
-      );
+    if (currentVersion < 2) {
+      this.db.exec(`
+        create table if not exists attention_dispatch (
+          id integer primary key autoincrement,
+          dispatch_id text not null unique,
+          context_id text not null,
+          commit_id text not null,
+          cycle_id integer not null,
+          attempt_index integer not null,
+          agent_call_id text not null,
+          session_model_call_id integer,
+          created_at integer not null,
+          updated_at integer not null
+        );
+        create index if not exists idx_attention_dispatch_context_commit
+          on attention_dispatch(context_id, commit_id, created_at asc, id asc);
+        create index if not exists idx_attention_dispatch_cycle
+          on attention_dispatch(cycle_id, created_at asc, id asc);
+        create index if not exists idx_attention_dispatch_model_call
+          on attention_dispatch(session_model_call_id, created_at asc, id asc);
+        create index if not exists idx_attention_dispatch_agent_call
+          on attention_dispatch(agent_call_id, created_at asc, id asc);
 
-      create table if not exists message_part (
-        part_id integer primary key autoincrement,
-        part_index integer not null,
-        message_id text not null,
-        window_id text,
-        ai_call_id integer,
-        round_index integer not null,
-        scope text not null,
-        role text not null,
-        part_type text not null,
-        mime_type text,
-        payload_json text not null,
-        created_at integer not null,
-        updated_at integer not null,
-        is_complete integer not null default 0
-      );
-      create unique index if not exists idx_message_part_message_index
-        on message_part(message_id, part_index);
-      create index if not exists idx_message_part_scope_created
-        on message_part(scope, created_at desc, part_id desc);
-      create index if not exists idx_message_part_window
-        on message_part(window_id, created_at asc, part_id asc);
-      create index if not exists idx_message_part_ai_call
-        on message_part(ai_call_id, part_id asc);
-
-      create table if not exists ai_call (
-        id integer primary key autoincrement,
-        round_index integer not null,
-        kind text not null,
-        status text not null,
-        provider text not null,
-        model text not null,
-        request_url text not null,
-        request_body_json text not null,
-        response_body_json text,
-        error_json text,
-        outcome_json text,
-        request_message_ids_json text not null,
-        response_message_ids_json text not null,
-        auxiliary_message_ids_json text not null,
-        created_at integer not null,
-        updated_at integer not null,
-        completed_at integer,
-        is_complete integer not null default 0
-      );
-      create index if not exists idx_ai_call_created
-        on ai_call(created_at desc, id desc);
-      create index if not exists idx_ai_call_round
-        on ai_call(round_index desc, id desc);
-
-      create table if not exists session_asset (
-        id text primary key,
-        kind text not null,
-        created_at integer not null,
-        name text not null,
-        mime_type text not null,
-        size_bytes integer not null,
-        relative_path text not null
-      );
-    `);
+        create table if not exists attention_receipt (
+          id integer primary key autoincrement,
+          receipt_id text not null unique,
+          dispatch_id text not null,
+          context_id text not null,
+          commit_id text not null,
+          cycle_id integer not null,
+          attempt_index integer not null,
+          agent_call_id text not null,
+          session_model_call_id integer,
+          status text not null,
+          provider_event_kind text not null,
+          timestamp integer not null,
+          finish_reason text,
+          usage_json text,
+          error_code text,
+          error_message text,
+          meta_json text
+        );
+        create index if not exists idx_attention_receipt_dispatch
+          on attention_receipt(dispatch_id, timestamp asc, id asc);
+        create index if not exists idx_attention_receipt_context_commit
+          on attention_receipt(context_id, commit_id, timestamp asc, id asc);
+        create index if not exists idx_attention_receipt_cycle
+          on attention_receipt(cycle_id, timestamp asc, id asc);
+        create index if not exists idx_attention_receipt_model_call
+          on attention_receipt(session_model_call_id, timestamp asc, id asc);
+      `);
+    }
     this.db.exec(`pragma user_version = ${SESSION_DB_SCHEMA_VERSION}`);
   }
 }

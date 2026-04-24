@@ -23,6 +23,51 @@ afterEach(() => {
 });
 
 describe("Feature: session-system AI-call ledger persistence", () => {
+  test("Scenario: Given attention delivery facts When dispatches bind to ai_call rows later Then attempts and receipts stay durable without rewriting commit truth", () => {
+    const db = createDb();
+    try {
+      const dispatch = db.appendAttentionDispatch({
+        dispatchId: "dispatch-1",
+        contextId: "ctx-room",
+        commitId: "commit-1",
+        cycleId: 7,
+        attemptIndex: 1,
+        agentCallId: "agent-call-1",
+        createdAt: 100,
+      });
+
+      const receipt = db.appendAttentionReceipt({
+        receiptId: "receipt-1",
+        dispatchId: dispatch.dispatchId,
+        contextId: dispatch.contextId,
+        commitId: dispatch.commitId,
+        cycleId: dispatch.cycleId,
+        attemptIndex: dispatch.attemptIndex,
+        agentCallId: dispatch.agentCallId,
+        status: "accepted",
+        providerEventKind: "text_delta",
+        timestamp: 120,
+      });
+
+      db.bindAttentionDispatchModelCall(dispatch.dispatchId, 42, 140);
+
+      expect(db.getAttentionDispatchByDispatchId(dispatch.dispatchId)).toMatchObject({
+        dispatchId: "dispatch-1",
+        sessionModelCallId: 42,
+        updatedAt: 140,
+      });
+      expect(db.getAttentionReceiptByReceiptId(receipt.receiptId)).toMatchObject({
+        receiptId: "receipt-1",
+        sessionModelCallId: 42,
+        status: "accepted",
+      });
+      expect(db.listAttentionDispatches({ contextId: "ctx-room", commitId: "commit-1" })).toHaveLength(1);
+      expect(db.listAttentionReceipts({ dispatchId: "dispatch-1" })).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  });
+
   test("Scenario: Given a streamed heartbeat message When the same logical message is updated Then part ids stay stable and content advances", () => {
     const db = createDb();
     try {
@@ -198,6 +243,116 @@ describe("Feature: session-system AI-call ledger persistence", () => {
       ]);
       expect(page.items.map((row) => row.scope)).toEqual(["heartbeat_part", "request_aux", "heartbeat_part"]);
       expect(page.hasMoreBefore).toBeFalse();
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given multi-scope message pages with a reverse cursor When requesting the next page Then the cursor continues from the oldest returned head row", () => {
+    const db = createDb();
+    try {
+      db.upsertMessage({
+        messageId: "heartbeat-request-1",
+        roundIndex: 0,
+        scope: "heartbeat_part",
+        role: "user",
+        createdAt: 100,
+        updatedAt: 100,
+        parts: [{ partType: "text", payload: { type: "text", content: "context" }, isComplete: true }],
+      });
+      db.upsertMessage({
+        messageId: "request-aux-config-1",
+        roundIndex: 0,
+        scope: "request_aux",
+        role: "config",
+        createdAt: 110,
+        updatedAt: 110,
+        parts: [{ partType: "config", payload: { temperature: 0.2 }, isComplete: true }],
+      });
+      db.upsertMessage({
+        messageId: "heartbeat-response-1",
+        roundIndex: 0,
+        scope: "heartbeat_part",
+        role: "assistant",
+        createdAt: 120,
+        updatedAt: 120,
+        parts: [{ partType: "text", payload: { type: "text", content: "reply" }, isComplete: true }],
+      });
+
+      const latest = db.pageMessagesByScopes(["heartbeat_part", "request_aux"], { limit: 2 });
+
+      expect(latest.items.map((row) => row.messageId)).toEqual(["request-aux-config-1", "heartbeat-response-1"]);
+      expect(latest.nextBefore).toEqual({
+        beforeTimeMs: 110,
+        beforeId: latest.items[0]!.id,
+      });
+      expect(latest.hasMoreBefore).toBeTrue();
+
+      const older = db.pageMessagesByScopes(["heartbeat_part", "request_aux"], {
+        before: latest.nextBefore ?? undefined,
+        limit: 2,
+      });
+
+      expect(older.items.map((row) => row.messageId)).toEqual(["heartbeat-request-1"]);
+      expect(older.hasMoreBefore).toBeFalse();
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given deep AI-call history When paging with reverse cursors Then each page stays bounded and stable across equal timestamps", () => {
+    const db = createDb();
+    try {
+      db.appendAiCall({
+        roundIndex: 0,
+        kind: "attention",
+        provider: "deepseek",
+        model: "deepseek-chat",
+        requestUrl: "http://localhost/v1/chat/completions",
+        requestBody: { order: 1 },
+        createdAt: 100,
+      });
+      db.appendAiCall({
+        roundIndex: 0,
+        kind: "attention",
+        provider: "deepseek",
+        model: "deepseek-chat",
+        requestUrl: "http://localhost/v1/chat/completions",
+        requestBody: { order: 2 },
+        createdAt: 100,
+      });
+      db.appendAiCall({
+        roundIndex: 1,
+        kind: "compact",
+        provider: "deepseek",
+        model: "deepseek-chat",
+        requestUrl: "http://localhost/v1/chat/completions",
+        requestBody: { order: 3 },
+        createdAt: 120,
+      });
+      db.appendAiCall({
+        roundIndex: 2,
+        kind: "attention",
+        provider: "deepseek",
+        model: "deepseek-chat",
+        requestUrl: "http://localhost/v1/chat/completions",
+        requestBody: { order: 4 },
+        createdAt: 140,
+      });
+
+      const latest = db.pageAiCalls({ limit: 2 });
+
+      expect(latest.items.map((row) => row.requestBody)).toEqual([{ order: 3 }, { order: 4 }]);
+      expect(latest.nextBefore).toEqual({
+        beforeTimeMs: 120,
+        beforeId: latest.items[0]!.id,
+      });
+      expect(latest.hasMoreBefore).toBeTrue();
+
+      const older = db.pageAiCalls({ before: latest.nextBefore ?? undefined, limit: 2 });
+
+      expect(older.items.map((row) => row.requestBody)).toEqual([{ order: 1 }, { order: 2 }]);
+      expect(older.hasMoreBefore).toBeFalse();
     } finally {
       db.close();
     }
