@@ -64,6 +64,7 @@
 - runtime `systemPrompt` 只保留稳定 attention law 与共享身份槽位；runtime-generated `skills.list` 必须通过 attention-backed readonly slot 注入，而不是重新拼回 `systemPrompt`；`SYSTEMS_GUIDE` 一类 provider-owned bootstrap guide 必须保持为空。
 - runtime 必须为 root workspace shell 注入 loopback-local API 环境：CLI 通过 runtime-local base URL + avatar private key 访问 attention / message / workspace / terminal contract。private key 就是 runtime identity。
 - shared terminal 不是 root-workspace shell：runtime-created 与 recovery-created terminal 默认都保持 real-home collaboration semantics，不得因为 `cwd` 在 avatar root workspace 就注入 root-workspace-exclusive env/CLI。
+- `terminal.surface.updated` 的 `catalogChanged` 只允许表达 catalog-facing mutation（如 created/updated/deleted/focus/presence）；terminal `snapshot/status` 这类 live render ticks 必须留在 render/resource 层，不能升级成 browser `terminal.globalList` refetch 信号。
 - runtime-local shell/API 必须由共享 tool descriptor registry 驱动：route、description、`inputSchema`、`--help` 和 canonical JSON examples 不能各写一份。
 - runtime-local terminal contract 固定拆成两个命令：
   - `terminal write` = raw mode，只接收 literal text，并要求调用方自己编码 Enter / control chars

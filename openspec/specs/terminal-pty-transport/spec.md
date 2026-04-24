@@ -5,7 +5,7 @@ Define websocket PTY transport publication and collaboration-safe input handling
 ## Requirements
 
 ### Requirement: Terminal-system SHALL publish PTY websocket transport endpoints
-The terminal system SHALL expose websocket PTY transport endpoints for globally durable terminal ids, with endpoint discovery available from terminal config and terminal listing APIs. Transport input SHALL be governed by terminal grants and active write leases rather than treated as a raw bypass path.
+The terminal system SHALL expose websocket PTY transport endpoints for globally durable terminal ids, with endpoint discovery available from terminal config and terminal listing APIs. Transport input SHALL be governed by terminal grants and active write leases rather than treated as a raw bypass path. Transport bootstrap SHALL send one renderable snapshot, after which live output/status become the primary stream; same-geometry live snapshots SHALL NOT be mirrored on every render tick.
 
 #### Scenario: Discover websocket transport details
 - **WHEN** a caller requests terminal-system config or terminal listing data
@@ -16,6 +16,16 @@ The terminal system SHALL expose websocket PTY transport endpoints for globally 
 - **WHEN** a renderer connects to the PTY websocket endpoint for a running global terminal
 - **THEN** the websocket streams PTY output for that terminal
 - **THEN** the connection closes or errors cleanly when the terminal is killed
+
+#### Scenario: Connect to a stopped terminal endpoint with bootstrap snapshot
+- **WHEN** a renderer connects to the PTY websocket endpoint for a stopped global terminal
+- **THEN** the transport sends one bootstrap snapshot sufficient for immediate viewport hydration
+- **AND** later live output/status continue from that bootstrap without mirroring a full snapshot on every render tick
+
+#### Scenario: Live output does not mirror redundant same-geometry snapshots
+- **WHEN** terminal output changes after websocket bootstrap while the terminal geometry is unchanged
+- **THEN** the transport continues to stream output/status without sending another full snapshot for each render tick
+- **AND** websocket consumers do not receive a same-geometry snapshot flood
 
 ### Requirement: Terminal transport input SHALL respect collaboration policy
 Any terminal input sent through websocket transport SHALL respect the same grant and write-lease policy as direct terminal write APIs.

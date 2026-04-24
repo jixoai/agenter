@@ -292,6 +292,10 @@ git-log 约束：
 - session stop / delete 不得删除 global terminal truth、grant 或 activity history。
 - `terminal_read` / `terminal_snapshot` 默认是纯 inspection 原语：读取 terminal 状态不会自动追加 `terminal_read` activity，只有显式 observation recording 才允许把 read 落成 durable history。
 - actor-facing terminal surface projection 必须把 catalog metadata、seat/access projection、approval counters、transport endpoint 与 renderable snapshot truth 聚合成一个 authoritative model；WebUI/client 不得再自行拼接 `access + grants + actors + snapshot` 来还原 terminal truth。
+- terminal websocket transport 的 contract 固定为“bootstrap snapshot + live output/status”：
+  - connect 时允许发送一份 renderable snapshot 作为 viewport hydration baseline
+  - live 阶段的主 truth 是 output/status，而不是每个 render tick 都镜像一份 full snapshot
+  - geometry 未变化时，不得持续推送冗余 full snapshot
 - terminal listing / transport contract 必须显式携带：
   - global terminal id
   - title

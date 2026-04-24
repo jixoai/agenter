@@ -24,12 +24,17 @@ The component SHALL connect to the terminal-system websocket PTY transport contr
 - **THEN** live PTY output takes over without clearing the already rendered viewport
 
 ### Requirement: Terminal-view SHALL preserve stable live rendering
-The terminal renderer SHALL preserve ANSI rendering fidelity and stable fit-driven resizing while live transport is active.
+The terminal renderer SHALL preserve ANSI rendering fidelity and stable fit-driven resizing while live transport is active. Once live transport has hydrated the viewport, redundant same-geometry fallback snapshots SHALL NOT trigger another reactive rehydration cycle.
 
 #### Scenario: Live transport does not jitter under fallback updates
 - **WHEN** live websocket transport is connected and fallback snapshots continue to update
 - **THEN** the renderer does not reset backwards or visibly jitter
 - **THEN** fallback hydration only applies when live transport is unavailable or behind
+
+#### Scenario: Redundant live snapshots do not retrigger fallback hydration
+- **WHEN** live websocket transport is already connected and a new snapshot arrives with the same terminal geometry
+- **THEN** the component does not reset or rehydrate the viewport from that redundant snapshot
+- **AND** live output remains the primary render source
 
 ### Requirement: Terminal-view SHALL support terminal-local presentation controls
 The integrated terminal viewport SHALL expose terminal-local presentation controls including `fit` and `cover`, while leaving non-terminal product chrome to the host.
@@ -46,4 +51,3 @@ The standalone `terminal-view` component SHALL own terminal renderer lifecycle, 
 - **WHEN** a host embeds `terminal-view`
 - **THEN** the component renders the terminal viewport without product-level title or footer chrome
 - **THEN** the host remains responsible for surrounding shell visuals and metadata placement
-
