@@ -22,6 +22,7 @@
   - avatar-private asset roots
   - non-interactive workspace exec
 - root workspace bash 与 workspace bash 必须共享同一套 overlay-rule filesystem authority；ordered glob grants、dynamic rule refresh 与 avatar-private sibling isolation 都在这层执行，不能由上层 route 或 shell surface 各自猜测。
+- shell profile law 必须显式区分 fixed `root-workspace` 与 mounted `public-workspace`：`root_bash` 允许 rewrite `HOME` 并携带 avatar-private runtime CLI/env；`workspace_bash` 只保留 public-workspace collaboration semantics，不得继承 root-workspace-exclusive env/CLI。
 - Workspace asset roots 分为：
   - public: `<workspace>/.agenter/workspace/{skills,memory,tools,archive}`
   - private: `<workspace>/.agenter/avatars/by-principal/<principalId>/{skills,memory,tools,archive}`
@@ -45,6 +46,8 @@
 - `session.db/ai_call` 只保留近轮次的可恢复运行事实；跨轮次、长时间窗口的 token usage 统计必须投影到 avatar-root 下独立的 analytics DB，不能把价格估算或当前 settings 伪装成 durable truth。
 - analytics durable truth 只记录客观 token facts（如 input/output/total/cached/reasoning/uncached 以及 provider snapshot）；价格、缓存命中推断和计费估算都属于上层派生视图，不得回写成历史真相。
 - runtime Heartbeat inspection 固定读取一条 merged message-parts stream：`scope=heartbeat_part` 持久化 AI-visible request/response 与 compact boundary，`scope=request_aux` 持久化去重后的 `systemPrompt / tools / config`；app-server 必须通过统一 page API 与 realtime event 发布这条流，不能要求客户端再拼 chat / request-aux / model-call 三套时间线。
+- session-db 的 reverse page helpers（尤其是 `ai_call` 与 message-head 分页）必须在 SQL 边界先应用 `before + limit`，禁止再出现 `select all -> JS sort/filter/slice` 这类假分页。
+- Heartbeat 路由的 cold-start data plane 只允许请求 Heartbeat 自身的 grouped inspection facts 与最小 model-call context；scheduler logs、trace timeline、API call timeline、request-aux raw page、chat transcript 这类重型历史必须保持按需加载，不能再作为 Heartbeat 路由的隐式预取。
 - fresh session 的空 prompt window 也必须在 ledger 中拥有可解析的 durable fact；不能只在 `session_head.current_prompt_window_id` 中留下一个没有对应 `message_part` 实体的悬空 id。
 - LoopBus transport metadata 只允许表达调度、协议、refs、compact/wake/debug 之类 orchestration facts，不得成为 AI-visible payload 的隐藏通道。
 - built-in LoopBus source ref/read result contract 必须保持 protocol-native `src` typed：message namespace 同时支持 room-scope `msg:<chatId>` 与 row-scope `msg:<chatId>/<messageId>`，其中真正可读的 room message source ref 仍使用 row-scope；terminal 用 `tty:<terminalId>/<eventId?>`，task 用 `task:<subjectId>`；不得重新引入 `LoopSourceRef.meta` 或 `LoopSourceReadResult.meta` 这类开放逃逸口。
@@ -60,6 +63,7 @@
 - runtime model call 只暴露三个 direct tools：`workspace_list`、`root_bash`、`workspace_bash`。message / workspace / terminal / attention 的操作都必须通过 `root_bash` 中的 runtime-local CLI 命令或 `workspace_bash` 的纯工作区 shell 完成。
 - runtime `systemPrompt` 只保留稳定 attention law 与共享身份槽位；runtime-generated `skills.list` 必须通过 attention-backed readonly slot 注入，而不是重新拼回 `systemPrompt`；`SYSTEMS_GUIDE` 一类 provider-owned bootstrap guide 必须保持为空。
 - runtime 必须为 root workspace shell 注入 loopback-local API 环境：CLI 通过 runtime-local base URL + avatar private key 访问 attention / message / workspace / terminal contract。private key 就是 runtime identity。
+- shared terminal 不是 root-workspace shell：runtime-created 与 recovery-created terminal 默认都保持 real-home collaboration semantics，不得因为 `cwd` 在 avatar root workspace 就注入 root-workspace-exclusive env/CLI。
 - runtime-local shell/API 必须由共享 tool descriptor registry 驱动：route、description、`inputSchema`、`--help` 和 canonical JSON examples 不能各写一份。
 - runtime-local terminal contract 固定拆成两个命令：
   - `terminal write` = raw mode，只接收 literal text，并要求调用方自己编码 Enter / control chars
