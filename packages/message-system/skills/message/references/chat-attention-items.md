@@ -16,6 +16,7 @@ Good habits:
 - reply in time: send one short acknowledgement early when work will take time, then send the needed final reply as soon as the evidence is ready
 - keep acknowledgements tiny: one or two short sentences is usually enough
 - if the request needs multiple steps, send the acknowledgement before you disappear into file writes, terminal work, or retries
+- if that acknowledgement or follow-up question may need a later silence check, you may set `followUpAfterMs` on `message send`; expiry creates internal attention, not an automatic room ping
 - follow chat etiquette: keep durable room messages concise, human-readable, and scoped to what the room needs
 - do not dump your whole plan back into the room: long numbered restatements and checklist echoes are usually wasted tokens, not better coordination
 - do not spam: do not narrate every command, retry, or internal thought into the room

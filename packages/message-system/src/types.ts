@@ -174,6 +174,10 @@ export interface MessageRecord {
   recalledByActorId?: MessageActorId;
   readActorIds: MessageActorId[];
   unreadActorIds: MessageActorId[];
+  /**
+   * Durable shared room truth only.
+   * Sender-private reminder or scheduler state must not be serialized here.
+   */
   metadata?: Record<string, unknown>;
   attachments?: MessageAttachment[];
   payload?: MessagePayload;
@@ -244,6 +248,10 @@ export interface MessageAppendInput {
   visibleAt?: number;
   readActorIds?: MessageActorId[];
   unreadActorIds?: MessageActorId[];
+  /**
+   * Durable shared room truth only.
+   * Runtime-private follow-up reminders stay outside room message storage.
+   */
   metadata?: Record<string, unknown>;
   attachments?: MessageAttachment[];
   payload?: MessagePayload;

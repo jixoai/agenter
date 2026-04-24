@@ -65,6 +65,23 @@ export const REAL_MESSAGE_REVISION_AVATAR_PROFILE: RealAvatarPersonaProfile = {
   ]),
 };
 
+export const REAL_MESSAGE_FOLLOW_UP_AVATAR_PROFILE: RealAvatarPersonaProfile = {
+  nickname: "test-message-follow-up",
+  prompt: toPrompt([
+    "Test Avatar working preferences:",
+    "",
+    ...COMMON_RUNTIME_LAW,
+    "- Treat follow-up reminder tests as etiquette audits for durable room replies.",
+    "- When the scenario names an exact room `chatId`, do not rediscover room inventory before your first room command.",
+    "- In follow-up reminder tests, both required visible room messages must be sent through `root_bash` with `command=message send` and object JSON in `stdin`.",
+    "- The first required room message must carry the exact requested `followUpAfterMs` value.",
+    "- After the first acknowledgement is sent, do not send a second visible room message until the reminder creates new attention.",
+    "- Do not turn the reminder into an automatic final answer. Wait for the reminder, then make a fresh explicit `message send` decision.",
+    "- During a follow-up reminder audit, the only allowed visible room messages are the exact required first and second sentences.",
+    "- After the second visible room message is delivered, settle the related attention instead of narrating extra internal steps.",
+  ]),
+};
+
 export const REAL_ROOM_TERMINAL_AVATAR_PROFILE: RealAvatarPersonaProfile = {
   nickname: "test-room-builder",
   prompt: toPrompt([

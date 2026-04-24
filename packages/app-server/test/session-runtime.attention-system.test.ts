@@ -238,6 +238,7 @@ interface RuntimeMessageEgressInternal extends RuntimeInternal {
     content: string;
     ref?: number;
     from?: string;
+    followUpAfterMs?: number;
   }) => Promise<RuntimeMessageSendResult>;
 }
 
@@ -3292,6 +3293,72 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.stop();
   });
 
+  test("Scenario: Given a sent acknowledgement arms follow-up reminder When the delay expires and no newer room message exists Then the runtime creates attention without auto-sending another room message", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeMessageEgressInternal;
+
+    await runtime.start();
+    const first = await internal.sendMessageTool({
+      chatId: PRIMARY_ROOM_ID,
+      content: "先等等，我确认一下。",
+      from: "tester",
+      followUpAfterMs: 25,
+    });
+
+    await Bun.sleep(40);
+
+    const wake = await internal.waitForAnyInput();
+    const batch = await internal.collectLoopInputs();
+    const messages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
+    const activeItems = getActiveItems(internal);
+
+    expect(wake).toBe("attention");
+    expect(messages.filter((message) => message.content === "先等等，我确认一下。")).toHaveLength(1);
+    expect(messages).toHaveLength(1);
+    expect(activeItems.some((item) => item.title.includes("Re-evaluate room follow-up"))).toBeTrue();
+    expect(activeItems.some((item) => parseMessageAttentionSrc(item.meta.src ?? "")?.messageId === first.messageId)).toBeTrue();
+    expect(getBootstrapInput(batch)).toBeDefined();
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given a newer visible room message lands before reminder expiry When the original delay passes Then the stale follow-up reminder does not create new attention", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeMessageEgressInternal;
+
+    await runtime.start();
+    await internal.sendMessageTool({
+      chatId: PRIMARY_ROOM_ID,
+      content: "你住哪里？",
+      from: "tester",
+      followUpAfterMs: 25,
+    });
+    await internal.sendMessageTool({
+      chatId: PRIMARY_ROOM_ID,
+      content: "我先按福州给你看。",
+      from: "tester",
+    });
+
+    await Bun.sleep(40);
+
+    const waitPromise = internal.waitForAnyInput();
+    const winner = await Promise.race([
+      waitPromise,
+      Bun.sleep(80).then(() => "timeout" as const),
+    ]);
+    const messages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
+    const activeItems = getActiveItems(internal);
+
+    expect(winner).toBe("timeout");
+    expect(messages).toHaveLength(2);
+    expect(activeItems.some((item) => item.title.includes("Re-evaluate room follow-up"))).toBeFalse();
+
+    internal.notifyInput("attention");
+    await waitPromise;
+
+    await runtime.stop();
+  });
+
   test("Scenario: Given a durable prompt window already exists When the runtime cold starts Then inspectModelDebug restores that exact current window from session.db", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-session-runtime-prompt-window-"));
     const sessionRoot = join(root, "session");
@@ -3418,6 +3485,46 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(mainMessages).toHaveLength(1);
     expect(mainMessages.at(-1)?.content).toBe("Understood. I'll handle it and report back.");
     expect(mainMessages.at(-1)?.metadata).toEqual({});
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given root workspace bash sends a room reply itself When message send targets the origin room Then runtime does not prepend an extra auto-acknowledgement", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    await runtime.start();
+    await runtime.pause();
+    await internal.persistCycle({
+      wakeSource: "user",
+      inputs: [
+        {
+          source: "attention",
+          role: "user",
+          type: "text",
+          name: `Attention-${PRIMARY_CONTEXT_ID}`,
+          text: "先问我住哪里。",
+          meta: {
+            attentionContextId: PRIMARY_CONTEXT_ID,
+            chatId: PRIMARY_ROOM_ID,
+          },
+        },
+      ],
+    });
+
+    const bash = await internal.execRootWorkspaceBash({
+      command: "message send",
+      stdin: JSON.stringify({
+        chatId: PRIMARY_ROOM_ID,
+        content: "你住哪里？",
+      }),
+    });
+
+    const mainMessages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
+    expect(bash.exitCode).toBe(0);
+    expect(mainMessages).toHaveLength(1);
+    expect(mainMessages.at(-1)?.content).toBe("你住哪里？");
+    expect(mainMessages.at(-1)?.content).not.toBe("Understood. I'll handle it and report back.");
 
     await runtime.stop();
   });

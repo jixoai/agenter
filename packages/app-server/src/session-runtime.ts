@@ -135,6 +135,10 @@ import {
 } from "./loopbus-plugin-runtime";
 import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
 import { listMessageSeatEntries, summarizeMessageChannelPresence } from "./message-channel-presence";
+import {
+  MessageFollowUpReminderScheduler,
+  type MessageFollowUpReminder,
+} from "./message-follow-up-reminders";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import { ModelClient, type AssistantStreamUpdate } from "./model-client";
@@ -742,6 +746,37 @@ const buildTaskAttentionPresentation = (
       detailKind: "replace",
     };
   }
+};
+
+const buildMessageFollowUpReminderPresentation = (input: {
+  chatId: string;
+  anchorMessageId: number;
+  dueAt: number;
+  messageContent: string;
+}): {
+  title: string;
+  detailValue: string;
+  detailFormat: string;
+  detailKind: "replace";
+} => {
+  const trimmedContent = input.messageContent.trim();
+  const titleSuffix = trimmedContent.length > 0 ? truncateAttentionTitle(trimmedContent) : `message ${input.anchorMessageId}`;
+  const metaYaml = toYaml({
+    kind: "message-follow-up-reminder",
+    chatId: input.chatId,
+    anchorMessageId: input.anchorMessageId,
+    dueAt: new Date(input.dueAt).toISOString(),
+  });
+  const body =
+    trimmedContent.length > 0
+      ? mdFence("text", truncateAttentionDetail(input.messageContent, MAX_TASK_ATTENTION_DETAIL_CHARS))
+      : "_empty room message_";
+  return {
+    title: `Re-evaluate room follow-up: ${titleSuffix}`,
+    detailValue: [mdFence("yaml", metaYaml), body].join("\n\n"),
+    detailFormat: "text/markdown",
+    detailKind: "replace",
+  };
 };
 
 type TerminalReadPayload = ControlPlaneTerminalReadResult | { ok: false; reason: string };
@@ -1381,6 +1416,7 @@ export class SessionRuntime {
   private readonly taskEngine = new TaskEngine();
   private readonly taskSourceMtime = new Map<string, number>();
   private readonly taskAttentionDraftQueue: AttentionDraft[] = [];
+  private readonly messageFollowUpReminders = new MessageFollowUpReminderScheduler();
   private taskSources: TaskSourceResolved[] = [];
 
   private config: ResolvedSessionConfig | null = null;
@@ -2226,6 +2262,7 @@ export class SessionRuntime {
     ref?: number;
     from?: string;
     originAckFallback?: string;
+    followUpAfterMs?: number;
   }): Promise<RuntimeMessageSendResult> {
     const channel = this.getActorRoom(input.chatId) ?? this.messageSystem.getChannel(input.chatId);
     if (!channel) {
@@ -2253,13 +2290,21 @@ export class SessionRuntime {
         });
       }
     }
-    return this.deliverRuntimeMessageDispatch({
+    const result = this.deliverRuntimeMessageDispatch({
       chatId: input.chatId,
       content: input.content,
       ref: input.ref,
       from: author,
       cycleId: replyCycleId,
     });
+    if (typeof input.followUpAfterMs === "number" && Number.isInteger(input.followUpAfterMs) && input.followUpAfterMs > 0) {
+      this.armMessageFollowUpReminder({
+        chatId: input.chatId,
+        anchorMessageId: result.messageId,
+        followUpAfterMs: input.followUpAfterMs,
+      });
+    }
+    return result;
   }
 
   private async editMessageTool(input: {
@@ -2339,10 +2384,41 @@ export class SessionRuntime {
     return this.config?.lang === "zh-Hans" ? "收到，我先处理一下。" : "Understood. I'll handle it and report back.";
   }
 
+  private armMessageFollowUpReminder(input: {
+    chatId: string;
+    anchorMessageId: number;
+    followUpAfterMs: number;
+  }): void {
+    this.messageFollowUpReminders.arm({
+      chatId: input.chatId,
+      anchorMessageId: input.anchorMessageId,
+      senderActorId: this.messageActorId,
+      dueAt: Date.now() + input.followUpAfterMs,
+    });
+  }
+
+  private isVisibleRoomMutationCommand(command: string): boolean {
+    const tokens = command
+      .trim()
+      .split(/\s+/u)
+      .filter((token) => token.length > 0);
+    if (tokens[0] !== "message") {
+      return false;
+    }
+    if (tokens.includes("--help")) {
+      return false;
+    }
+    return tokens[1] === "send" || tokens[1] === "edit" || tokens[1] === "recall";
+  }
+
   private maybeAutoAcknowledgeOriginRoomForToolWork(command: string): void {
     const cycleId = this.activeCycleId;
     const originChatId = this.getOriginChatIdForCycle(cycleId);
-    if (!originChatId || this.hasDeliveredRuntimeDispatchForCycle(originChatId, cycleId)) {
+    if (
+      !originChatId ||
+      this.hasDeliveredRuntimeDispatchForCycle(originChatId, cycleId) ||
+      this.isVisibleRoomMutationCommand(command)
+    ) {
       return;
     }
     const originChannel = this.getActorRoom(originChatId) ?? this.messageSystem.getChannel(originChatId);
@@ -2440,6 +2516,70 @@ export class SessionRuntime {
     return projectRuntimeMessageOverview(this.readMessageChannel(input).items, input.limit);
   }
 
+  private getLatestVisibleMessageForRoom(chatId: string): MessageRecord | undefined {
+    return this.messageSystem.queryMessages({
+      chatId,
+      limit: 1,
+    }).items.at(-1);
+  }
+
+  private buildMessageFollowUpReminderDraft(reminder: MessageFollowUpReminder): AttentionDraft | null {
+    const anchorMessage = this.getLatestVisibleMessageForRoom(reminder.chatId);
+    if (!anchorMessage || anchorMessage.messageId !== reminder.anchorMessageId) {
+      return null;
+    }
+    const presentation = buildMessageFollowUpReminderPresentation({
+      chatId: reminder.chatId,
+      anchorMessageId: reminder.anchorMessageId,
+      dueAt: reminder.dueAt,
+      messageContent: anchorMessage.content,
+    });
+    return {
+      sourceRef: this.createMessageSourceRef({
+        chatId: reminder.chatId,
+        messageId: reminder.anchorMessageId,
+      }),
+      content: JSON.stringify({
+        kind: "message-follow-up-reminder",
+        chatId: reminder.chatId,
+        anchorMessageId: reminder.anchorMessageId,
+        dueAt: reminder.dueAt,
+      }),
+      from: this.getAvatarName(),
+      score: 100,
+      provenance: {
+        author: this.getAvatarName(),
+        source: "message",
+        src: formatMessageAttentionSrc({
+          chatId: reminder.chatId,
+          messageId: reminder.anchorMessageId,
+        }),
+        tags: ["message", "follow_up_reminder"],
+      },
+      presentation: {
+        summary: presentation.title,
+        body: presentation.detailValue,
+        bodyFormat: presentation.detailFormat,
+        changeType: "update",
+      },
+    };
+  }
+
+  private async pollMessageFollowUpReminders(now = Date.now()): Promise<void> {
+    const due = this.messageFollowUpReminders.consumeDue({
+      now,
+      isAnchorStillLatest: (reminder) => this.getLatestVisibleMessageForRoom(reminder.chatId)?.messageId === reminder.anchorMessageId,
+    });
+    if (due.fired.length === 0) {
+      return;
+    }
+    const drafts = due.fired.flatMap((reminder) => {
+      const draft = this.buildMessageFollowUpReminderDraft(reminder);
+      return draft ? [draft] : [];
+    });
+    await this.commitAttentionDrafts(drafts);
+  }
+
   private buildRuntimeMessageSendResult(input: {
     chatId: string;
     message: MessageRecord;
@@ -2462,6 +2602,7 @@ export class SessionRuntime {
     ref?: number;
     from?: string;
     originAckFallback?: string;
+    followUpAfterMs?: number;
   }): Promise<RuntimeMessageSendResult> {
     return await this.sendMessageTool(input);
   }
@@ -3287,6 +3428,7 @@ export class SessionRuntime {
   private bindMessageSystem(): void {
     this.messageSystemCleanup.push(
       this.messageSystem.onMessage(({ chatId, message }) => {
+        this.messageFollowUpReminders.suppressSuperseded(chatId, message.messageId);
         const actorRoom = this.getActorRoom(chatId, {
           includeArchived: true,
           touchPresence: false,
@@ -5715,6 +5857,7 @@ export class SessionRuntime {
 
     this.terminals.clear();
     this.taskAttentionDraftQueue.length = 0;
+    this.messageFollowUpReminders.clear();
     this.inboundMessageQueue.length = 0;
     this.pendingUnreadMessageIds.clear();
     this.stagedUnreadReadAcks = [];
@@ -7113,6 +7256,7 @@ export class SessionRuntime {
     if (!this.started) {
       return "stopped";
     }
+    const nextMessageFollowUpWakeAt = this.messageFollowUpReminders.nextDueAt();
     const activeAttention = this.attentionSystem.listActiveContexts();
     if (activeAttention.length > 0) {
       const containment = this.summarizeAttentionContainment(activeAttention);
@@ -7144,8 +7288,14 @@ export class SessionRuntime {
     if (this.hasPendingAttentionInputs()) {
       return "ready_now";
     }
+    if (nextMessageFollowUpWakeAt !== null && nextMessageFollowUpWakeAt <= Date.now()) {
+      return "ready_now";
+    }
     if (activeAttention.length > 0) {
       return "attention_debt";
+    }
+    if (nextMessageFollowUpWakeAt !== null) {
+      return "message_follow_up_timer";
     }
     if (this.hasTimeBasedTask()) {
       return "task_timer";
@@ -7161,6 +7311,7 @@ export class SessionRuntime {
     const loopPaused = this.isLoopPaused();
     const hasPendingAttention = this.hasPendingAttentionInputs();
     const now = Date.now();
+    const nextMessageFollowUpWakeAt = this.messageFollowUpReminders.nextDueAt();
     const retryPolicy = this.getAttentionRetryPolicy();
     const hasDueAttentionContainmentWake = this.attentionSystem.listActiveContexts().some((match) => {
       const entry = this.attentionContainment.get(match.contextId);
@@ -7206,6 +7357,11 @@ export class SessionRuntime {
       this.loopKernelLastWakeCause = "task_input";
       this.resetAttentionDebtBackoff();
       return "task";
+    }
+    if (nextMessageFollowUpWakeAt !== null && nextMessageFollowUpWakeAt <= now) {
+      this.loopKernelLastWakeCause = "message_follow_up";
+      this.resetAttentionDebtBackoff();
+      return "attention";
     }
     if (hasPendingAttention) {
       this.loopKernelLastWakeCause = "attention_signal";
@@ -7283,6 +7439,7 @@ export class SessionRuntime {
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attentionDebtTimer: ReturnType<typeof setTimeout> | null = null;
+    let messageFollowUpTimer: ReturnType<typeof setTimeout> | null = null;
     const activeAttention = this.attentionSystem.listActiveContexts();
     const attentionContainment = this.summarizeAttentionContainment(activeAttention);
     this.attentionDebtNextWakeAt = null;
@@ -7321,6 +7478,17 @@ export class SessionRuntime {
         }),
       );
     }
+    if (nextMessageFollowUpWakeAt !== null) {
+      const waitMs = Math.max(0, nextMessageFollowUpWakeAt - now);
+      promises.push(
+        new Promise<{ kind: LoopInputKind }>((resolve) => {
+          messageFollowUpTimer = setTimeout(() => {
+            this.loopKernelLastWakeCause = "message_follow_up";
+            resolve({ kind: "attention" });
+          }, waitMs);
+        }),
+      );
+    }
 
     const winner = await Promise.race(promises);
     if (timer) {
@@ -7328,6 +7496,9 @@ export class SessionRuntime {
     }
     if (attentionDebtTimer) {
       clearTimeout(attentionDebtTimer);
+    }
+    if (messageFollowUpTimer) {
+      clearTimeout(messageFollowUpTimer);
     }
     this.attentionDebtNextWakeAt = null;
     if (winner.kind === "attention" && this.attentionForceCollect) {
@@ -7362,6 +7533,7 @@ export class SessionRuntime {
     await this.flushPendingRuntimeSkillChanges();
     await this.pollTaskSources("watch");
     await this.pollTaskEventInbox();
+    await this.pollMessageFollowUpReminders();
     this.collectUnreadRoomIngress();
     await this.flushPluginAttentionDrafts();
     const triggered = this.taskEngine.pollTime();
@@ -7473,6 +7645,7 @@ export class SessionRuntime {
 
   private async collectInterleavedAgentInputs(): Promise<LoopBusInput[] | undefined> {
     await this.flushPendingRuntimeSkillChanges();
+    await this.pollMessageFollowUpReminders();
     this.collectUnreadRoomIngress();
     const consumedUserInputs = this.drainInterleavedInboundQueue();
     const pluginChanged = await this.flushPluginAttentionDrafts();
@@ -8365,11 +8538,14 @@ export class SessionRuntime {
     const attentionDebt = this.buildAttentionDebtState();
     const attentionContainment = this.summarizeAttentionContainment(this.attentionSystem.listActiveContexts());
     const waitingReason = this.resolveLoopWaitingReason(input.phase, paused);
+    const nextMessageFollowUpWakeAt = this.messageFollowUpReminders.nextDueAt();
     const nextAutoWakeAt =
       waitingReason === "attention_debt"
         ? (this.attentionDebtNextWakeAt ?? Date.now() + this.attentionDebtBackoffMs)
         : waitingReason === "attention_backoff"
           ? attentionContainment.nextWakeAt
+          : waitingReason === "message_follow_up_timer"
+            ? nextMessageFollowUpWakeAt
           : null;
     const runtimeStatus: LoopBusKernelState["runtimeStatus"] = !this.started
       ? "idle"
@@ -8409,6 +8585,8 @@ export class SessionRuntime {
       backoffMs:
         waitingReason === "attention_debt"
           ? this.attentionDebtBackoffMs
+          : waitingReason === "message_follow_up_timer" && nextAutoWakeAt !== null
+            ? Math.max(0, nextAutoWakeAt - Date.now())
           : waitingReason === "attention_backoff" && nextAutoWakeAt !== null
             ? Math.max(0, nextAutoWakeAt - Date.now())
             : null,

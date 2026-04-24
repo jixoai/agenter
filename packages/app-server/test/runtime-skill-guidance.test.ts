@@ -37,6 +37,9 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(message?.template).toContain("see `referencedItems`");
     expect(message?.template).toContain("include `ref`");
     expect(message?.template).toContain("Similar wording alone is not enough to justify recall");
+    expect(message?.template).toContain("followUpAfterMs");
+    expect(message?.template).toContain("one-shot reminder");
+    expect(message?.template).toContain("never auto-sends another room reply");
 
     expect(message?.template).not.toContain("127.0.0.1");
     expect(message?.template).not.toContain("APP-URL:");

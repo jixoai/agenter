@@ -131,7 +131,7 @@ describe("Feature: runtime descriptor CLI", () => {
     const message = createRuntimeCommand(api.baseUrl, "message");
 
     const result = await message.execute(
-      ['send', '{"chatId":"room-1","ref":1,"content":"APP-ACK: 开始构建"}'],
+      ['send', '{"chatId":"room-1","ref":1,"content":"APP-ACK: 开始构建","followUpAfterMs":30000}'],
       createCommandContext(),
     );
 
@@ -148,8 +148,23 @@ describe("Feature: runtime descriptor CLI", () => {
         chatId: "room-1",
         ref: 1,
         content: "APP-ACK: 开始构建",
+        followUpAfterMs: 30000,
       },
     });
+  });
+
+  test("Scenario: Given a non-positive follow-up reminder When message send runs Then descriptor validation rejects the payload before the runtime API call", async () => {
+    const api = await startMockRuntimeApi();
+    const message = createRuntimeCommand(api.baseUrl, "message");
+
+    const result = await message.execute(
+      ['send', '{"chatId":"room-1","content":"APP-ACK: 开始构建","followUpAfterMs":0}'],
+      createCommandContext(),
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("followUpAfterMs");
+    expect(api.getRequests()).toHaveLength(0);
   });
 
   test("Scenario: Given JSON stdin When message edit runs Then the CLI posts the validated edit payload to the runtime API", async () => {
@@ -393,8 +408,11 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(messageHelp.stdout).toContain("Optional positional compact mode");
     expect(messageHelp.stdout).toContain("Availability: Available");
     expect(messageHelp.stdout).toContain('"ref"');
+    expect(messageHelp.stdout).toContain('"followUpAfterMs"');
     expect(messageHelp.stdout).toContain("If recentMessages suggest an accidental duplicate");
     expect(messageHelp.stdout).toContain("use `message read` before `message edit` or `message recall`");
+    expect(messageHelp.stdout).toContain("followUpAfterMs is optional etiquette support");
+    expect(messageHelp.stdout).toContain("creates attention only");
 
     expect(attentionHelp.exitCode).toBe(0);
     expect(attentionHelp.stdout).toContain("command: `attention commit`");

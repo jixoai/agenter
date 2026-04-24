@@ -42,6 +42,7 @@ export interface RuntimeLocalApiHandlers {
     ref?: number;
     from?: string;
     originAckFallback?: string;
+    followUpAfterMs?: number;
   }) => Promise<RuntimeMessageSendResult>;
   messageEdit: (input: {
     chatId: string;
@@ -212,6 +213,14 @@ const messageSendSchema = z.object({
   ref: z.number().int().positive().optional(),
   from: z.string().optional(),
   originAckFallback: z.string().optional(),
+  followUpAfterMs: z
+    .number()
+    .int()
+    .positive()
+    .describe(
+      "Optional one-shot follow-up reminder in milliseconds. If this sent message is still the latest visible room message when the delay expires, the runtime creates attention instead of auto-sending a room reply.",
+    )
+    .optional(),
 });
 
 const messageEditSchema = z.object({
@@ -434,8 +443,13 @@ export const runtimeToolDescriptors = [
     name: "send",
     route: "/v1/message/send",
     description:
-      "Send a durable room message through the runtime message system. Use ref to reply to an earlier room message, then inspect recentMessages and follow up with message read/edit/recall when the visible outcome needs revision.",
+      "Send a durable room message through the runtime message system. Use ref to reply to an earlier room message, optionally use followUpAfterMs for one-shot attention-only re-evaluation, then inspect recentMessages and follow up with message read/edit/recall when the visible outcome needs revision.",
     inputSchema: messageSendSchema,
+    helpNotes: [
+      "followUpAfterMs is optional etiquette support for long-running acknowledgements or unanswered follow-up questions.",
+      "When followUpAfterMs expires, the runtime creates attention only if this message is still the latest visible room message.",
+      "followUpAfterMs never auto-sends a room reply and does not become durable room metadata.",
+    ],
     examples: [
       {
         kind: "stdin",
@@ -443,9 +457,10 @@ export const runtimeToolDescriptors = [
           chatId: "room-1",
           ref: 41,
           content: "我已经完成初版了。\n请直接打开我刚发给你的链接看看。",
+          followUpAfterMs: 30000,
         },
         description:
-          "If recentMessages suggest an accidental duplicate, use `message read` before `message edit` or `message recall` so the revision follows the actual conversation context.",
+          "If recentMessages suggest an accidental duplicate, use `message read` before `message edit` or `message recall` so the revision follows the actual conversation context. `followUpAfterMs` creates later attention only; it does not auto-send another room message.",
       },
       {
         kind: "argv",

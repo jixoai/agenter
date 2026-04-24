@@ -15,7 +15,7 @@ Quick start:
 5. Run `message query` when you need cross-message lookup, fielded search, or guarded SQL over the rooms you already hold.
 6. For temporary cross-room search, prefer `chatId:"*"` so the runtime resolves only the rooms you already have grants for.
 7. Decide whether the room needs an acknowledgement, a narrow follow-up question, or a final reply.
-8. Send one durable message with the correct room scope and protocol. If you are replying to a specific earlier room message, include `ref`. Through `root_bash`, prefer `command=message send` plus JSON `stdin`; only use argv JSON for trivial single-line payloads. If `message send --help` marks compact as `Suggested` or `Available`, `message send --compact` is also available for positional payloads.
+8. Send one durable message with the correct room scope and protocol. If you are replying to a specific earlier room message, include `ref`. If this acknowledgement or follow-up question may need a later silence check, you may add one-shot `followUpAfterMs`. Through `root_bash`, prefer `command=message send` plus JSON `stdin`; only use argv JSON for trivial single-line payloads. If `message send --help` marks compact as `Suggested` or `Available`, `message send --compact` is also available for positional payloads.
 9. `message send` returns `recentMessages`. Inspect them immediately as a lightweight post-send sanity check.
 10. If two of your recent messages look similar, run `message read` before changing history so you can also see `referencedItems` and the nearby reply context.
 11. Similar wording alone is not enough to justify recall. Judge the room's actual conversation context first.
@@ -30,6 +30,8 @@ Key laws:
 - For `message read`, `message query`, `message send`, `message edit`, and `message recall` through `root_bash`, default to JSON `stdin`; only use argv JSON when the payload is trivially small.
 - If `message read --help`, `message query --help`, `message send --help`, `message edit --help`, or `message recall --help` marks compact as `Suggested` or `Available`, `--compact` is an optional positional mode. If the positional array becomes unclear, switch back to standard object JSON immediately.
 - Use `ref` when the new room message is replying to a specific earlier durable message.
+- `followUpAfterMs` is an optional one-shot reminder for yourself, not shared room truth. Use it when you want the runtime to create later attention if this message is still the latest visible room fact after a delay.
+- `followUpAfterMs` never auto-sends another room reply. It only asks you to re-decide later whether another visible room message is needed.
 - `message send` returns `recentMessages`; treat them as a quick self-check, not a replacement for a full room read.
 - `message read` returns the visible `items` plus one-hop `referencedItems`, so you can inspect nearby reply context before deciding whether to revise room history.
 - If the task already gives the exact room `chatId`, that literal room id is enough to send the acknowledgement or final reply; do not rediscover the same room through `message list`.
