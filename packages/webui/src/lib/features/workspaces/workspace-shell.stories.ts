@@ -84,6 +84,26 @@ export const TreeDisclosureStaysInSurface = {
 	},
 } satisfies Story;
 
+export const RootWorkspaceSemanticsStayVisible = {
+	name: 'Scenario: Given a root-workspace header When the shared shell renders on desktop Then env and CLI semantics stay explicit without implying a no-sharing rule',
+	args: {
+		initialMode: 'explorer',
+		surfaceKind: 'root-workspace',
+		surfaceSummary: 'Avatar-private env and runtime CLI live here by default. Sharing still depends on mounts and grants.',
+	},
+	play: async ({ canvasElement }) => {
+		const contentHeader = getContentHeader(canvasElement);
+
+		await expect(contentHeader.getByTestId('workspace-surface-kind')).toHaveTextContent('Root workspace');
+		await expect(contentHeader.getByTestId('workspace-surface-profile')).toHaveTextContent(
+			'Root-exclusive env + CLI',
+		);
+		await expect(contentHeader.getByTestId('workspace-surface-summary')).toHaveTextContent(
+			'Sharing still depends on mounts and grants.',
+		);
+	},
+} satisfies Story;
+
 export const CompactShellPreservesPrimaryViewport = {
 	name: 'Scenario: Given a compact workspace shell When the shared header and bottom dock render Then the tree keeps the dominant viewport budget',
 	args: {
@@ -98,8 +118,29 @@ export const CompactShellPreservesPrimaryViewport = {
 		await waitFor(() => {
 			const headerRect = contentHeader.getBoundingClientRect();
 			const treeRect = treeViewport.getBoundingClientRect();
-			expect(Math.round(headerRect.height)).toBeLessThanOrEqual(120);
+			expect(Math.round(headerRect.height)).toBeLessThanOrEqual(184);
 			expect(Math.round(treeRect.height)).toBeGreaterThanOrEqual(260);
 		});
+	},
+} satisfies Story;
+
+export const CompactPublicWorkspaceSemanticsStayVisible = {
+	name: 'Scenario: Given a public-workspace header When the compact shell renders Then collaboration semantics stay visible in the mobile chrome',
+	args: {
+		initialMode: 'explorer',
+		frameClass: 'h-[58rem] w-[390px] max-w-full',
+		surfaceKind: 'public-workspace',
+		surfaceSummary: 'Collaboration surface. Root-exclusive env and CLI stay out by default.',
+	},
+	play: async ({ canvasElement }) => {
+		const contentHeader = getContentHeader(canvasElement);
+
+		await expect(contentHeader.getByTestId('workspace-surface-kind')).toHaveTextContent('Public workspace');
+		await expect(contentHeader.getByTestId('workspace-surface-profile')).toHaveTextContent(
+			'Collaboration env surface',
+		);
+		await expect(contentHeader.getByTestId('workspace-surface-summary')).toHaveTextContent(
+			'Root-exclusive env and CLI stay out by default.',
+		);
 	},
 } satisfies Story;

@@ -18,6 +18,13 @@ describe("Feature: Shared page-toolbar primitive contract", () => {
     expect(workbenchToolbarSource).toContain("showOverflowTrigger");
   });
 
+  test("Scenario: Given a toolbar has both actions and status When collapse reaches overflow-secondary Then inline actions keep priority while status may move into overflow", () => {
+    expect(workbenchToolbarSource).toContain("const showInlineActions = stage === 'wide' || stage === 'overflow-secondary';");
+    expect(workbenchToolbarSource).toContain(
+      "const showInlineStatus = stage === 'wide' || (stage === 'overflow-secondary' && !hasActions);",
+    );
+  });
+
   test("Scenario: Given page-tabs and identity collapse differently When reading the structured toolbar source Then overflow remains a floating panel that never duplicates the page-anchor", () => {
     expect(workbenchToolbarStructuredSource).toContain("data-workbench-toolbar-anchor={inlineState.anchorKind}");
     expect(workbenchToolbarStructuredSource).toContain('data-workbench-toolbar-region="page-tabs"');

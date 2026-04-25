@@ -24,6 +24,7 @@
 		class: className,
 		style,
 		compact = $bindable(false),
+		detailVisible = true,
 		ratioPersistence = null,
 		leftMin = 380,
 		rightMin = 280,
@@ -34,6 +35,7 @@
 		...restProps
 	}: WithElementRef<HTMLAttributes<HTMLDivElement>, HTMLDivElement> & {
 		compact?: boolean;
+		detailVisible?: boolean;
 		ratioPersistence?: WorkbenchSplitDetailRatioPersistence;
 		leftMin?: number;
 		rightMin?: number;
@@ -70,9 +72,11 @@
 			.filter(Boolean)
 			.join(";"),
 	);
+	const hasMeasuredLayout = $derived(measuredWidth > 0);
 
 	setWorkbenchSplitDetailContext({
 		compact: () => compact,
+		detailVisible: () => detailVisible,
 		ratio: () => currentRatio,
 	});
 
@@ -179,6 +183,9 @@
 	});
 
 	$effect(() => {
+		if (!hasMeasuredLayout) {
+			return;
+		}
 		compact = layout.compact;
 	});
 
@@ -271,6 +278,7 @@
 	data-layout-role="workbench-split-detail-root"
 	data-slot="workbench-split-detail-root"
 	data-compact={compact ? "true" : "false"}
+	data-detail-visible={detailVisible ? "true" : "false"}
 	data-dragging={dragging ? "true" : "false"}
 	class={cn("workbench-split-detail-root", className)}
 	style={rootStyle}
@@ -291,11 +299,17 @@
 	}
 
 	:where([data-layout-role="workbench-split-detail-root"][data-compact="false"]) {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr);
+	}
+
+	:where(
+			[data-layout-role="workbench-split-detail-root"][data-compact="false"][data-detail-visible="true"]
+		) {
 		grid-template-columns:
 			minmax(0, var(--workbench-split-detail-left, 1fr))
 			minmax(0, var(--workbench-split-detail-handle, 12px))
 			minmax(0, 1fr);
-		grid-template-rows: minmax(0, 1fr);
 	}
 
 	:where([data-layout-role="workbench-split-detail-root"][data-compact="true"]) {

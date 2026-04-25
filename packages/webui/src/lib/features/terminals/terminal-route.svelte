@@ -38,6 +38,7 @@ import type {
 
 	const controller = getAppControllerContext();
 	const AUTH_REQUIRED_MESSAGE = 'auth token required';
+	const GLOBAL_TERMINAL_ACTIVITY_LIMIT = 20;
 
 	const emptyTerminalGrantState: CachedResourceState<GlobalTerminalGrantEntry[]> = {
 		data: [],
@@ -411,7 +412,7 @@ import type {
 			.hydrateGlobalTerminalApprovals({ terminalId: currentTerminalId })
 			.catch(() => undefined);
 		void controller.runtimeStore
-			.hydrateGlobalTerminalActivity({ terminalId: currentTerminalId, limit: 120 })
+			.hydrateGlobalTerminalActivity({ terminalId: currentTerminalId, limit: GLOBAL_TERMINAL_ACTIVITY_LIMIT })
 			.catch(() => undefined);
 		return () => {
 			releaseActivity();

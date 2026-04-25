@@ -9,10 +9,9 @@ const layoutPrimitiveFiles = [
   "src/layout/scaffold/scaffold-root.svelte",
   "src/layout/scaffold/scaffold-body.svelte",
   "src/layout/scaffold/scaffold-scroll-body.svelte",
-  "src/layout/split-view/split-view-root.svelte",
-  "src/layout/split-view/split-view-sidebar.svelte",
-  "src/layout/split-view/split-view-content.svelte",
-  "src/layout/split-view/split-view-detail.svelte",
+  "src/layout/sidebar-scaffold/sidebar-scaffold-root.svelte",
+  "src/layout/sidebar-scaffold/sidebar-scaffold-sidebar.svelte",
+  "src/layout/sidebar-scaffold/sidebar-scaffold-content.svelte",
   "src/layout/workbench-split-detail/workbench-split-detail-root.svelte",
   "src/layout/workbench-split-detail/workbench-split-detail-main.svelte",
   "src/layout/workbench-split-detail/workbench-split-detail-handle.svelte",
@@ -52,14 +51,16 @@ describe("Feature: svelte-components layout foundation", () => {
     }
   });
 
-  test("Scenario: Given split-view variants When reviewing source Then responsive columns are owned by package-local media rules", () => {
-    const splitViewSource = readFileSync(resolve(packageRoot, "src/layout/split-view/split-view-root.svelte"), "utf8");
+  test("Scenario: Given sidebar scaffold When reviewing source Then responsive columns are owned by package-local media rules", () => {
+    const sidebarScaffoldSource = readFileSync(
+      resolve(packageRoot, "src/layout/sidebar-scaffold/sidebar-scaffold-root.svelte"),
+      "utf8",
+    );
 
-    expect(splitViewSource).toContain("@media (min-width: 768px)");
-    expect(splitViewSource).toContain("@media (min-width: 1024px)");
-    expect(splitViewSource).toContain('data-variant="sidebar-content-detail"');
-    expect(splitViewSource).not.toContain("md:grid-cols");
-    expect(splitViewSource).not.toContain("xl:grid-cols");
+    expect(sidebarScaffoldSource).toContain("@media (min-width: 768px)");
+    expect(sidebarScaffoldSource).toContain('data-layout-role="sidebar-scaffold-root"');
+    expect(sidebarScaffoldSource).not.toContain("md:grid-cols");
+    expect(sidebarScaffoldSource).not.toContain("xl:grid-cols");
   });
 
   test("Scenario: Given shared layout primitives When reading style selectors Then Tailwind utility display overrides remain available", () => {
@@ -77,7 +78,8 @@ describe("Feature: svelte-components layout foundation", () => {
     expect(source).toContain("export { default as ScrollView }");
     expect(source).toContain("export * as Scaffold");
     expect(source).toContain("export * as DialogScaffold");
-    expect(source).toContain("export * as SplitView");
+    expect(source).toContain("export * as SidebarScaffold");
+    expect(source).not.toContain("export * as Spli" + "tView");
     expect(source).toContain("export * as WorkbenchSplitDetail");
     expect(source).toContain("export { default as ClipSurface }");
   });

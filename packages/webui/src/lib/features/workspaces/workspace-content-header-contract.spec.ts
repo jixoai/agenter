@@ -9,6 +9,18 @@ const workspaceContentHeaderSource = readFileSync(
 );
 
 describe("Feature: Workspace content header mobile density contract", () => {
+  test("Scenario: Given root-workspace and public-workspace semantics must stay visible When reading the header source Then it renders explicit env and CLI badges plus one factual summary line", () => {
+    expect(workspaceContentHeaderSource).toContain("surfaceKind: 'root-workspace' | 'public-workspace'");
+    expect(workspaceContentHeaderSource).toContain("surfaceSummary: string");
+    expect(workspaceContentHeaderSource).toContain("workspace-surface-kind");
+    expect(workspaceContentHeaderSource).toContain("workspace-surface-profile");
+    expect(workspaceContentHeaderSource).toContain("workspace-surface-summary");
+    expect(workspaceContentHeaderSource).toContain("Root workspace");
+    expect(workspaceContentHeaderSource).toContain("Public workspace");
+    expect(workspaceContentHeaderSource).toContain("Root-exclusive env + CLI");
+    expect(workspaceContentHeaderSource).toContain("Collaboration env surface");
+  });
+
   test("Scenario: Given a narrow workspace shell When reading the header source Then the mobile layout keeps one compact workspace label while the full path moves to the title affordance", () => {
     expect(workspaceContentHeaderSource).toContain("describeCompactWorkspace");
     expect(workspaceContentHeaderSource).toContain("objectiveCompactLabel");

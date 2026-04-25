@@ -1,36 +1,75 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-import { describe, expect, test } from 'vitest';
-
-import {
-	TERMINAL_USERS_PANE_COMPACT_WIDTH,
-	resolveTerminalUsersPaneLayout,
-} from './terminal-system-surface-layout';
+import { describe, expect, test } from "vitest";
 
 const terminalSystemSurfaceSource = readFileSync(
-	resolve(import.meta.dirname, 'terminal-system-surface.svelte'),
-	'utf8',
+  resolve(import.meta.dirname, "terminal-system-surface.svelte"),
+  "utf8",
 );
+const terminalPageToolbarSource = readFileSync(
+  resolve(import.meta.dirname, "terminal-page-toolbar-content.svelte"),
+  "utf8",
+);
+const terminalUsersDialogSource = readFileSync(resolve(import.meta.dirname, "terminal-users-dialog.svelte"), "utf8");
 
-describe('Feature: Terminal users pane responsive grant layout', () => {
-	test('Scenario: Given a narrow collaboration rail When resolving the users pane layout Then the stacked grant controls are used', () => {
-		expect(TERMINAL_USERS_PANE_COMPACT_WIDTH).toBe(480);
-		expect(resolveTerminalUsersPaneLayout(344)).toBe('compact');
-		expect(resolveTerminalUsersPaneLayout(479)).toBe('compact');
-		expect(resolveTerminalUsersPaneLayout(480)).toBe('wide');
-		expect(resolveTerminalUsersPaneLayout(640)).toBe('wide');
-	});
+describe("Feature: Terminal surface layout ownership contract", () => {
+  test("Scenario: Given the terminal route owns page-toolbar identity When reading the surface source Then it portals route-local toolbar content instead of reviving static shell copy", () => {
+    expect(terminalSystemSurfaceSource).toContain(
+      "import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';",
+    );
+    expect(terminalSystemSurfaceSource).toContain(
+      "import WorkbenchPageContent from '$lib/features/navigation/workbench-page-content.svelte';",
+    );
+    expect(terminalSystemSurfaceSource).toContain("<WorkbenchPageToolbar>");
+    expect(terminalSystemSurfaceSource).toContain("<TerminalPageToolbarContent");
+  });
 
-	test('Scenario: Given the terminal users pane source When reading the responsive law Then local pane width drives the fallback instead of viewport matchMedia', () => {
-		expect(terminalSystemSurfaceSource).toContain(
-			"import { resolveTerminalUsersPaneLayout } from './terminal-system-surface-layout';",
-		);
-		expect(terminalSystemSurfaceSource).toContain('let usersPanelRef = $state<HTMLElement | null>(null);');
-		expect(terminalSystemSurfaceSource).toContain(
-			"const usersPaneCompact = $derived(resolveTerminalUsersPaneLayout(usersPanelWidth) === 'compact');",
-		);
-		expect(terminalSystemSurfaceSource).toContain('new ResizeObserver((entries) => {');
-		expect(terminalSystemSurfaceSource).not.toContain("window.matchMedia('(max-width: 1023.98px)')");
-	});
+  test("Scenario: Given the terminal detail rail is now actions-only When reading the source Then the rail owns a full-height actions scroll surface instead of a second local tabs stack", () => {
+    expect(terminalSystemSurfaceSource).toContain('bodyClass="h-full"');
+    expect(terminalSystemSurfaceSource).toContain('data-terminal-detail-panel-view="actions"');
+    expect(terminalSystemSurfaceSource).toContain('class="grid h-full grid-rows-[minmax(0,1fr)]"');
+    expect(terminalSystemSurfaceSource).not.toContain("Actions + Users");
+    expect(terminalSystemSurfaceSource).not.toContain('<Tabs.List class="mx-4 mt-4 grid grid-cols-2">');
+  });
+
+  test("Scenario: Given the terminal action composer should not revive a second footer card When reading the source Then the stage pane uses InputGroup bodies and keeps read parameters above the actor row", () => {
+    expect(terminalSystemSurfaceSource).toContain('<InputGroup.Root layout="block" data-testid="terminal-write-input-group">');
+    expect(terminalSystemSurfaceSource).toContain('<InputGroup.Root layout="block" data-testid="terminal-read-input-group">');
+    expect(terminalSystemSurfaceSource).toContain('data-testid="terminal-read-parameter-panel"');
+    expect(terminalSystemSurfaceSource).toContain('data-testid="terminal-actions-panel"');
+    expect(terminalSystemSurfaceSource).not.toContain('{#snippet footer()}');
+  });
+
+  test("Scenario: Given compact terminal detail should follow the shared sheet law When reading the source Then the surface delegates compact fallback to WorkbenchPageContent instead of stacking the actions rail below the stage", () => {
+    expect(terminalSystemSurfaceSource).toContain('<WorkbenchPageContent');
+    expect(terminalSystemSurfaceSource).toContain('detailLayout="split-detail"');
+    expect(terminalSystemSurfaceSource).toContain('bind:detailOpen={actionsDetailOpen}');
+    expect(terminalSystemSurfaceSource).toContain('bind:detailCompact={detailRailCompact}');
+    expect(terminalSystemSurfaceSource).toContain("data-terminal-detail-layout={detailRailCompact ? 'sheet' : 'split'}");
+    expect(terminalSystemSurfaceSource).not.toContain("'stacked'");
+  });
+
+  test("Scenario: Given seat management moved out of the right rail When reading the source Then the surface opens a dedicated users dialog instead of inline users-pane width choreography", () => {
+    expect(terminalSystemSurfaceSource).toContain("let usersDialogOpen = $state(false);");
+    expect(terminalSystemSurfaceSource).toContain("<TerminalUsersDialog");
+    expect(terminalSystemSurfaceSource).not.toContain("resolveTerminalUsersPaneLayout");
+    expect(terminalUsersDialogSource).toContain('data-testid="terminal-users-dialog"');
+    expect(terminalUsersDialogSource).toContain("<ActorSelect");
+    expect(terminalUsersDialogSource).toContain("data-testid={`terminal-seat-actions-${seat.actorId}`}");
+  });
+
+  test("Scenario: Given the terminal page-toolbar owns runtime status When reading the toolbar source Then the status slot derives from authoritative terminal facts", () => {
+    expect(terminalPageToolbarSource).toContain(
+      "import WorkbenchToolbarStatus from '$lib/features/navigation/workbench-toolbar-status.svelte';",
+    );
+    expect(terminalPageToolbarSource).toContain("{#snippet terminalToolbarStatus(toolbarState: WorkbenchToolbarRenderState)}");
+    expect(terminalPageToolbarSource).toContain("selectedTerminal.running");
+    expect(terminalPageToolbarSource).toContain("selectedTerminal.status === 'BUSY' ? 'Busy' : 'Idle'");
+    expect(terminalPageToolbarSource).toContain("status={terminalToolbarStatus}");
+    expect(terminalPageToolbarSource).toContain("actionsOpen: boolean;");
+    expect(terminalPageToolbarSource).toContain("usersOpen: boolean;");
+    expect(terminalPageToolbarSource).toContain("pressed={actionsOpen}");
+    expect(terminalPageToolbarSource).not.toContain("activeDetailView");
+  });
 });

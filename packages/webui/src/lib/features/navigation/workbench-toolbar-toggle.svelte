@@ -16,6 +16,7 @@
 		disabled = false,
 		inlineTone = 'neutral',
 		class: className,
+		onclick,
 		onPressedChange,
 		children,
 	}: {
@@ -26,6 +27,7 @@
 		disabled?: boolean;
 		inlineTone?: WorkbenchToolbarToggleInlineTone;
 		class?: string;
+		onclick?: ((event: MouseEvent) => void) | null;
 		onPressedChange?: ((pressed: boolean) => void) | null;
 		children?: Snippet;
 	} = $props();
@@ -71,6 +73,7 @@
 >
 	<ToggleGroup.Item
 		value="on"
+		{onclick}
 		class={cn(
 			placement === 'overflow'
 				? 'h-8 w-auto justify-start self-start rounded-full border border-border/70 bg-background/82 px-2.5 text-xs text-muted-foreground shadow-none data-[state=on]:border-border data-[state=on]:bg-accent data-[state=on]:text-foreground'

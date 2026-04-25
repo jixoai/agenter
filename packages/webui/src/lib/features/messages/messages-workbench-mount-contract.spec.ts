@@ -30,10 +30,12 @@ describe("Feature: Messages workbench mount contract", () => {
     expect(messageSystemSurfaceSource).toContain("<WorkbenchPageToolbar>");
     expect(messageSystemSurfaceSource).toContain("<RoomPageToolbarContent {...roomToolbarProps} />");
     expect(messageSystemSurfaceSource).not.toContain("component={RoomPageToolbarContent}");
+    expect(roomPageToolbarContentSource).toContain("<ActorSelect");
     expect(roomPageToolbarContentSource).toContain("<WorkbenchToolbar");
     expect(roomPageToolbarContentSource).toContain("pageTabs={roomToolbarPageTabs}");
     expect(roomPageToolbarContentSource).toContain("identityTitle={roomToolbarIdentityTitle}");
     expect(roomPageToolbarContentSource).toContain("actions={roomToolbarActions}");
+    expect(roomPageToolbarContentSource).not.toContain("<Select.Root");
   });
 
   test("Scenario: Given room management is dialog-driven When reading the room surface source Then the parent binds the dialog open state instead of leaving reopen behavior trapped in child-only state", () => {

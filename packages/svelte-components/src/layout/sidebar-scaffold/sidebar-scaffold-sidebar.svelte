@@ -16,16 +16,16 @@
 
 <aside
 	bind:this={ref}
-	data-layout-role="split-view-sidebar"
-	data-slot="split-view-sidebar"
-	class={cn("split-view-sidebar", className)}
+	data-layout-role="sidebar-scaffold-sidebar"
+	data-slot="sidebar-scaffold-sidebar"
+	class={cn("sidebar-scaffold-sidebar", className)}
 	{...restProps}
 >
 	{@render children?.()}
 </aside>
 
 <style>
-	:where([data-layout-role="split-view-sidebar"]) {
+	:where([data-layout-role="sidebar-scaffold-sidebar"]) {
 		display: grid;
 		min-block-size: 0;
 		min-inline-size: 0;

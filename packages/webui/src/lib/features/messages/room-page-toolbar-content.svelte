@@ -3,11 +3,12 @@
 	import Settings2Icon from '@lucide/svelte/icons/settings-2';
 	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
 
+	import ActorSelect from '$lib/features/collaboration/actor-select.svelte';
+	import type { ActorSelectItem } from '$lib/features/collaboration/actor-select.types';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import WorkbenchPageTabs from '$lib/features/navigation/workbench-page-tabs.svelte';
 	import type { WorkbenchPageTabItem } from '$lib/features/navigation/workbench-page-tabs.types';
 	import WorkbenchToolbarAction from '$lib/features/navigation/workbench-toolbar-action.svelte';
-	import * as Select from '$lib/components/ui/select/index.js';
 	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
 	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 	import { cn } from '$lib/utils.js';
@@ -18,6 +19,7 @@
 	type ViewerOption = {
 		value: string;
 		label: string;
+		subtitle?: string;
 		iconUrl?: string | null;
 	};
 
@@ -59,6 +61,17 @@
 	} = $props();
 
 	const viewerAvatarLabel = $derived(selectedViewer?.label ?? selectedViewerLabel ?? 'Room user');
+	const selectedViewerItem = $derived.by(() => {
+		if (!selectedViewer && !selectedViewerLabel) {
+			return null;
+		}
+		return {
+			value: selectedViewerActorId ?? selectedViewer?.actorId ?? 'room-viewer',
+			label: selectedViewerLabel,
+			subtitle: selectedViewerSubtitle,
+			iconUrl: selectedViewer?.iconUrl ?? null,
+		} satisfies ActorSelectItem;
+	});
 </script>
 
 {#snippet roomToolbarPageTabs(_toolbarState: WorkbenchToolbarRenderState)}
@@ -73,52 +86,32 @@
 	/>
 {/snippet}
 
-{#snippet roomToolbarIdentityLeading(_toolbarState: WorkbenchToolbarRenderState)}
-	<ProfileAvatar label={viewerAvatarLabel} src={selectedViewer?.iconUrl ?? null} class="room-page-toolbar__avatar-image" />
-{/snippet}
-
 {#snippet roomToolbarIdentityTitle(_toolbarState: WorkbenchToolbarRenderState)}
 	{#if canSelectViewer}
-		<Select.Root
-			type="single"
+		<ActorSelect
+			chrome="borderless"
+			density="compact"
+			ariaLabel="View room as user"
 			items={viewerItems}
-			value={selectedViewerActorId ?? undefined}
+			value={selectedViewerActorId}
+			selectedItem={selectedViewerItem}
+			showTriggerSubtitle={false}
+			showMenuSubtitle={false}
 			onValueChange={(value) => {
 				onSelectViewer(value);
 			}}
-		>
-			<Select.Trigger
-				size="sm"
-				aria-label="View room as user"
-				class="room-page-toolbar__viewer-trigger"
-				title={selectedViewerLabel}
-			>
-				<span class="truncate">{selectedViewerLabel}</span>
-			</Select.Trigger>
-			<Select.Content>
-				{#each viewerItems as item (item.value)}
-					<Select.Item value={item.value} label={item.label}>
-						<div class="room-page-toolbar__viewer-option">
-							<ProfileAvatar
-								label={item.label}
-								src={item.iconUrl ?? null}
-								class="room-page-toolbar__viewer-option-avatar"
-							/>
-							<span class="truncate">{item.label}</span>
-						</div>
-					</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
+		/>
 	{:else}
-		<div class="truncate" title={selectedViewerLabel}>
-			{selectedViewerLabel}
+		<div class="room-page-toolbar__viewer-static" title={selectedViewerLabel}>
+			<ProfileAvatar label={viewerAvatarLabel} src={selectedViewer?.iconUrl ?? null} class="room-page-toolbar__avatar-image" />
+			<div class="grid min-w-0 text-left leading-tight">
+				<div class="truncate text-[0.82rem] font-semibold text-foreground">{selectedViewerLabel}</div>
+				{#if selectedViewerSubtitle}
+					<div class="truncate text-[0.68rem] text-muted-foreground">{selectedViewerSubtitle}</div>
+				{/if}
+			</div>
 		</div>
 	{/if}
-{/snippet}
-
-{#snippet roomToolbarIdentitySubtitle(_toolbarState: WorkbenchToolbarRenderState)}
-	<span class="truncate">{selectedViewerSubtitle}</span>
 {/snippet}
 
 {#snippet roomToolbarActions(toolbarState: WorkbenchToolbarRenderState)}
@@ -164,9 +157,7 @@
 
 <WorkbenchToolbar
 	pageTabs={roomToolbarPageTabs}
-	identityLeading={roomToolbarIdentityLeading}
 	identityTitle={roomToolbarIdentityTitle}
-	identitySubtitle={roomToolbarIdentitySubtitle}
 	actions={roomToolbarActions}
 	overflowLabel="Open room toolbar details"
 />
@@ -180,60 +171,18 @@
 		box-shadow: none;
 	}
 
-	:global(.room-page-toolbar__viewer-trigger),
-	:global(.room-page-toolbar__viewer-trigger[data-slot='select-trigger']) {
-		block-size: 1.2rem;
-		min-block-size: 1.2rem;
-		inline-size: fit-content;
-		max-inline-size: 100%;
-		min-inline-size: 0;
-		justify-content: flex-start;
-		gap: 0.14rem;
-		border: 0;
-		background: transparent;
-		padding: 0;
-		color: var(--foreground);
-		font-size: 0.82rem;
-		font-weight: 600;
-		line-height: 1;
-		box-shadow: none;
-	}
-
-	:global(.room-page-toolbar__viewer-trigger > svg) {
-		inline-size: 0.72rem;
-		block-size: 0.72rem;
-		opacity: 0.5;
-	}
-
-	:global(.room-page-toolbar__viewer-trigger > .truncate) {
-		max-inline-size: 100%;
-	}
-
-	:global(.room-page-toolbar__viewer-option) {
+	.room-page-toolbar__viewer-static {
 		display: inline-flex;
-		min-inline-size: 0;
 		align-items: center;
 		gap: 0.5rem;
-	}
-
-	:global(.room-page-toolbar__viewer-option-avatar) {
-		block-size: 1.2rem;
-		inline-size: 1.2rem;
-		border-radius: 999px;
-		border-color: color-mix(in srgb, var(--border), transparent 18%);
-		background: color-mix(in srgb, var(--background), transparent 8%);
-		box-shadow: none;
+		max-inline-size: 100%;
+		min-inline-size: 0;
 	}
 
 	@container workbench-page-toolbar (max-width: 44rem) {
 		:global(.room-page-toolbar__avatar-image) {
 			block-size: 1.55rem;
 			inline-size: 1.55rem;
-		}
-
-		:global(.room-page-toolbar__viewer-trigger),
-		:global(.room-page-toolbar__viewer-trigger[data-slot='select-trigger']) {
-			font-size: 0.76rem;
 		}
 	}
 </style>

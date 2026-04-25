@@ -1,4 +1,9 @@
-import type { ModelCallItem, RuntimeAttentionState, RuntimeChatCycle } from "@agenter/client-sdk";
+import type {
+  ModelCallItem,
+  RuntimeAttentionDeliveryState,
+  RuntimeAttentionState,
+  RuntimeChatCycle,
+} from "@agenter/client-sdk";
 import { describe, expect, test } from "vitest";
 
 import { buildRuntimeCycleDetailModel, buildRuntimeCycleTimelineItems } from "./runtime-cycle-inspector-state";
@@ -140,6 +145,88 @@ const modelCall: ModelCallItem = {
   outcome: { code: "done" },
 };
 
+const attentionDelivery: RuntimeAttentionDeliveryState = {
+  projections: [
+    {
+      contextId: "ctx-room",
+      commitId: "commit-2",
+      state: "completed",
+      attemptCount: 2,
+      latestDispatchId: "dispatch-2",
+      latestReceiptId: "receipt-3",
+      agentCallId: "agent-call-2",
+      sessionModelCallId: 55,
+      firstAcceptedAt: 1711929624000,
+      latestReceiptAt: 1711929630000,
+      latestError: null,
+    },
+  ],
+  dispatches: [
+    {
+      dispatchId: "dispatch-1",
+      contextId: "ctx-room",
+      commitId: "commit-2",
+      cycleId: 11,
+      attemptIndex: 1,
+      agentCallId: "agent-call-1",
+      sessionModelCallId: 41,
+      createdAt: 1711929611000,
+    },
+    {
+      dispatchId: "dispatch-2",
+      contextId: "ctx-room",
+      commitId: "commit-2",
+      cycleId: 12,
+      attemptIndex: 2,
+      agentCallId: "agent-call-2",
+      sessionModelCallId: 55,
+      createdAt: 1711929621000,
+    },
+  ],
+  receipts: [
+    {
+      receiptId: "receipt-1",
+      dispatchId: "dispatch-1",
+      contextId: "ctx-room",
+      commitId: "commit-2",
+      cycleId: 11,
+      attemptIndex: 1,
+      agentCallId: "agent-call-1",
+      sessionModelCallId: 41,
+      status: "errored",
+      providerEventKind: "run_error",
+      timestamp: 1711929612000,
+      errorMessage: "provider rejected attempt 1",
+    },
+    {
+      receiptId: "receipt-2",
+      dispatchId: "dispatch-2",
+      contextId: "ctx-room",
+      commitId: "commit-2",
+      cycleId: 12,
+      attemptIndex: 2,
+      agentCallId: "agent-call-2",
+      sessionModelCallId: 55,
+      status: "accepted",
+      providerEventKind: "text_delta",
+      timestamp: 1711929624000,
+    },
+    {
+      receiptId: "receipt-3",
+      dispatchId: "dispatch-2",
+      contextId: "ctx-room",
+      commitId: "commit-2",
+      cycleId: 12,
+      attemptIndex: 2,
+      agentCallId: "agent-call-2",
+      sessionModelCallId: 55,
+      status: "completed",
+      providerEventKind: "run_finished",
+      timestamp: 1711929630000,
+    },
+  ],
+};
+
 const olderCycle: RuntimeChatCycle = {
   id: "cycle:11",
   cycleId: 11,
@@ -199,6 +286,7 @@ describe("Feature: Runtime cycle inspector state", () => {
       cycles: [olderCycle, cycle],
       activeCycle: olderCycle,
       attention,
+      attentionDelivery,
       modelCalls: [modelCall],
       traces: [],
     });
@@ -212,6 +300,7 @@ describe("Feature: Runtime cycle inspector state", () => {
     const detail = buildRuntimeCycleDetailModel({
       cycle,
       attention,
+      attentionDelivery,
       modelCalls: [modelCall],
       traces: [],
     });
@@ -219,8 +308,16 @@ describe("Feature: Runtime cycle inspector state", () => {
     expect(detail.summary.headline).toBe("Delivered room answer");
     expect(detail.metrics.contextCount).toBe(1);
     expect(detail.metrics.deliveredCount).toBe(1);
+    expect(detail.metrics.attemptCount).toBe(2);
+    expect(detail.metrics.receiptCount).toBe(3);
     expect(detail.producedCommits[0]?.title).toBe("Delivered room answer");
     expect(detail.inputCommits[0]?.title).toBe("Incoming room update");
+    expect(detail.deliveryDispatches.map((dispatch) => dispatch.dispatchId)).toEqual(["dispatch-1", "dispatch-2"]);
+    expect(detail.deliveryReceipts.map((receipt) => receipt.receiptId)).toEqual([
+      "receipt-1",
+      "receipt-2",
+      "receipt-3",
+    ]);
     expect(detail.modelCalls[0]?.id).toBe(55);
     expect(detail.modelConfig.systemPrompt).toBe("You are helpful.");
     expect(detail.modelConfig.requestTools).toEqual([{ name: "deliver_message" }]);

@@ -71,6 +71,10 @@ export class HelpHintElement extends LitElement {
       z-index: 0;
     }
 
+    :host([open]) {
+      z-index: 80;
+    }
+
     .trigger {
       display: inline-flex;
       align-items: center;

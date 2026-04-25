@@ -274,7 +274,7 @@
 
 <div
 	bind:this={rootRef}
-	class="grid h-[48rem] min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4 rounded-[1.35rem] border border-border/70 bg-background p-4"
+	class="grid h-[48rem] grid-rows-[auto_minmax(0,1fr)] gap-4 rounded-[1.35rem] border border-border/70 bg-background p-4"
 	data-testid="runtime-heartbeat-page-drift-demo"
 >
 	<section class="grid gap-2 rounded-2xl border border-border/70 bg-background/85 px-3 py-3 shadow-sm">

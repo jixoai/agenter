@@ -1,7 +1,7 @@
 <script lang="ts">
 	import XIcon from '@lucide/svelte/icons/x';
 	import type { GlobalRoomEntry } from '@agenter/client-sdk';
-	import { Scaffold, SplitView } from '@agenter/svelte-components';
+	import { Scaffold, SidebarScaffold } from '@agenter/svelte-components';
 	import { onMount } from 'svelte';
 
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -138,13 +138,12 @@
 				</Dialog.Description>
 			</Dialog.Header>
 
-			<SplitView.Root
-				variant="sidebar-content"
+			<SidebarScaffold.Root
 				padding="none"
 				class="h-full gap-0 sm:h-[min(88vh,56rem)]"
 				data-testid="room-manage-shell"
 			>
-				<SplitView.Sidebar class="border-b md:border-r md:border-b-0" data-testid="room-manage-rail">
+				<SidebarScaffold.Sidebar class="border-b md:border-r md:border-b-0" data-testid="room-manage-rail">
 					{#if compactViewport}
 						<div class="grid gap-3 px-4 py-4">
 							<div class="grid gap-2">
@@ -202,9 +201,9 @@
 							</Scaffold.ScrollBody>
 						</Scaffold.Root>
 					{/if}
-				</SplitView.Sidebar>
+				</SidebarScaffold.Sidebar>
 
-				<SplitView.Content class="h-full" data-testid="room-manage-stage">
+				<SidebarScaffold.Content class="h-full" data-testid="room-manage-stage">
 					<Scaffold.Root class="h-full">
 						<Scaffold.Header class="flex justify-end px-4 pt-4 sm:px-6">
 							<Dialog.Close
@@ -255,8 +254,8 @@
 						{/if}
 						</Scaffold.ScrollBody>
 					</Scaffold.Root>
-				</SplitView.Content>
-			</SplitView.Root>
+				</SidebarScaffold.Content>
+			</SidebarScaffold.Root>
 		{:else}
 			<div class="p-6 text-sm text-muted-foreground">Select a room first.</div>
 		{/if}

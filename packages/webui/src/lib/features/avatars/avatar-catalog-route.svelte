@@ -36,7 +36,7 @@
 	let copyBusy = $state(false);
 	let copyError = $state<string | null>(null);
 	let detailCompact = $state(false);
-	let detailOpen = $state(false);
+	let detailOpen = $state(true);
 	let routeSyncReady = $state(false);
 
 	const catalogState = $derived(controller.runtimeState.globalAvatarCatalog);
@@ -117,9 +117,7 @@
 
 	const selectAvatar = (nickname: string): void => {
 		selectedAvatar = nickname;
-		if (detailCompact) {
-			detailOpen = true;
-		}
+		detailOpen = true;
 	};
 
 	const openAvatarDraft = async (): Promise<void> => {
@@ -187,9 +185,7 @@
 				displayName: nickname,
 			});
 			selectedAvatar = created.nickname;
-			if (detailCompact) {
-				detailOpen = true;
-			}
+			detailOpen = true;
 			copyDialogOpen = false;
 			copyNickname = '';
 		} catch (error) {

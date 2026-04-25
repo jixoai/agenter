@@ -93,6 +93,38 @@ describe("Feature: web-components foundation", () => {
     expect(shadowText).toContain("terminal.read");
   });
 
+  test("Scenario: Given YAML-highlighted structured facts When the JSON viewer renders mapping lines Then token fragments stay inside one line container without whitespace text nodes", async () => {
+    defineJsonViewer();
+
+    const previousMode = getGlobalJsonViewerModeSnapshot();
+    setGlobalJsonViewerMode("highlight-yaml");
+    try {
+      const element = document.createElement(JSON_VIEWER_TAG) as HTMLElement & {
+        value: unknown;
+        updateComplete?: Promise<unknown>;
+        shadowRoot: ShadowRoot | null;
+      };
+      element.value = {
+        source: "terminal-read-activity",
+        representation: "snapshot",
+      };
+      document.body.append(element);
+
+      await element.updateComplete;
+
+      const line = element.shadowRoot?.querySelector<HTMLElement>(".line");
+      expect(line).not.toBeNull();
+      expect(line?.textContent?.replace(/\s+/gu, " ").trim()).toContain("source");
+      expect(line?.children.length).toBeGreaterThan(2);
+      const whitespaceTextNodes = Array.from(line?.childNodes ?? []).filter(
+        (node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim().length === 0,
+      );
+      expect(whitespaceTextNodes).toHaveLength(0);
+    } finally {
+      setGlobalJsonViewerMode(previousMode);
+    }
+  });
+
   test("Scenario: Given help-hint host theming When the Lit atom renders and opens Then css-part slots and host-reflected presentation facts stay available to outer clients", async () => {
     defineHelpHint();
 
@@ -129,6 +161,9 @@ describe("Feature: web-components foundation", () => {
 
     expect(element.getAttribute("data-presentation")).toBe("active-open");
     expect(element.hasAttribute("open")).toBe(true);
+    const helpHintDefinition = customElements.get(HELP_HINT_TAG) as { styles?: unknown } | undefined;
+    expect(String(helpHintDefinition?.styles ?? "")).toContain(":host([open])");
+    expect(String(helpHintDefinition?.styles ?? "")).toContain("z-index: 80");
   });
 
   test("Scenario: Given a fresh help hint without onboarding opt-in When it first renders Then it stays closed until explicit user intent", async () => {

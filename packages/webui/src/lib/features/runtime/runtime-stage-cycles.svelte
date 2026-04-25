@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type {
+		RuntimeAttentionDeliveryState,
 		ModelCallItem,
 		ObservabilityTraceItem,
 		RuntimeAttentionState,
@@ -27,6 +28,7 @@
 		activeCycle,
 		latestCycle,
 		attention = null,
+		attentionDelivery = null,
 		modelCalls = [],
 		traces = [],
 	}: {
@@ -34,6 +36,7 @@
 		activeCycle: RuntimeChatCycle | null;
 		latestCycle: RuntimeChatCycle | null;
 		attention?: RuntimeAttentionState | null;
+		attentionDelivery?: RuntimeAttentionDeliveryState | null;
 		modelCalls?: ModelCallItem[];
 		traces?: ObservabilityTraceItem[];
 	} = $props();
@@ -52,6 +55,7 @@
 			cycles,
 			activeCycle,
 			attention,
+			attentionDelivery,
 			modelCalls,
 			traces,
 		}),
@@ -81,6 +85,7 @@
 			? buildRuntimeCycleDetailModel({
 					cycle: selectedTimelineItem.cycle,
 					attention: attention ?? EMPTY_RUNTIME_ATTENTION_STATE,
+					attentionDelivery,
 					modelCalls,
 					traces,
 				})
@@ -203,9 +208,16 @@
 									</dd>
 								</div>
 								<div class="grid gap-1 rounded-xl border border-border/70 bg-muted/15 px-3 py-2">
-									<dt class="uppercase tracking-[0.16em]">Hooks</dt>
+									<dt class="uppercase tracking-[0.16em]">Delivery</dt>
 									<dd class="font-medium text-foreground">
-										{selectedCycleDetail.metrics.deliveredCount} delivered
+										{selectedCycleDetail.metrics.attemptCount} attempts
+										<span class="text-muted-foreground"> · {selectedCycleDetail.metrics.receiptCount} receipts</span>
+									</dd>
+								</div>
+								<div class="grid gap-1 rounded-xl border border-border/70 bg-muted/15 px-3 py-2">
+									<dt class="uppercase tracking-[0.16em]">Receipts</dt>
+									<dd class="font-medium text-foreground">
+										{selectedCycleDetail.metrics.deliveredCount} accepted
 										{#if selectedCycleDetail.metrics.failedCount > 0}
 											<span class="text-muted-foreground"> · {selectedCycleDetail.metrics.failedCount} failed</span>
 										{/if}
@@ -243,7 +255,7 @@
 								</section>
 							{/if}
 
-							<div class="grid gap-4 xl:grid-cols-2">
+							<div class="grid gap-4 xl:grid-cols-4">
 								<section class="grid gap-2 rounded-2xl border border-border/70 bg-muted/15 px-4 py-3">
 									<div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
 										Hook outcomes
@@ -266,6 +278,77 @@
 													</div>
 													{#if hook.error}
 														<div class="text-xs text-destructive">{hook.error}</div>
+													{/if}
+												</Item.Root>
+											{/each}
+										</div>
+									{/if}
+								</section>
+
+								<section class="grid gap-2 rounded-2xl border border-border/70 bg-muted/15 px-4 py-3">
+									<div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+										Delivery attempts
+									</div>
+									{#if selectedCycleDetail.deliveryDispatches.length === 0}
+										<div class="text-sm text-muted-foreground">
+											No delivery attempt was recorded for this cycle's commit set.
+										</div>
+									{:else}
+										<div class="grid gap-2">
+											{#each selectedCycleDetail.deliveryDispatches as dispatch (dispatch.dispatchId)}
+												<Item.Root size="sm" variant="muted" class="grid gap-1.5">
+													<div class="flex flex-wrap items-center gap-2">
+														<div class="text-sm font-medium">{dispatch.commitId}</div>
+														<Badge variant="outline" class="rounded-full text-[11px]">
+															attempt {dispatch.attemptIndex}
+														</Badge>
+													</div>
+													<div class="text-xs text-muted-foreground">
+														agentCall {dispatch.agentCallId}
+														{#if dispatch.sessionModelCallId !== null}
+															<span> · ai_call #{dispatch.sessionModelCallId}</span>
+														{/if}
+													</div>
+												</Item.Root>
+											{/each}
+										</div>
+									{/if}
+								</section>
+
+								<section class="grid gap-2 rounded-2xl border border-border/70 bg-muted/15 px-4 py-3">
+									<div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+										Delivery receipts
+									</div>
+									{#if selectedCycleDetail.deliveryReceipts.length === 0}
+										<div class="text-sm text-muted-foreground">
+											No delivery receipt was recorded for this cycle's commit set.
+										</div>
+									{:else}
+										<div class="grid gap-2">
+											{#each selectedCycleDetail.deliveryReceipts as receipt (receipt.receiptId)}
+												<Item.Root size="sm" variant="muted" class="grid gap-2">
+													<div class="flex flex-wrap items-center gap-2">
+														<div class="text-sm font-medium">{receipt.providerEventKind}</div>
+														<Badge
+															variant={receipt.status === 'errored'
+																? 'destructive'
+																: receipt.status === 'accepted' || receipt.status === 'completed'
+																	? 'secondary'
+																	: 'outline'}
+														>
+															{receipt.status}
+														</Badge>
+														<Badge variant="outline" class="rounded-full text-[11px]">
+															attempt {receipt.attemptIndex}
+														</Badge>
+													</div>
+													<div class="text-xs text-muted-foreground">
+														{receipt.commitId} · {formatRuntimeTimestamp(receipt.timestamp)}
+													</div>
+													{#if receipt.errorMessage}
+														<div class="text-xs text-destructive">
+															{receipt.errorCode ? `${receipt.errorCode}: ` : ''}{receipt.errorMessage}
+														</div>
 													{/if}
 												</Item.Root>
 											{/each}

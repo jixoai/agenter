@@ -1,6 +1,11 @@
 <script lang="ts">
 	import ArrowUpRightIcon from '@lucide/svelte/icons/arrow-up-right';
-	import type { MessageChannelEntry, RuntimeSnapshotEntry, SessionNotificationItem } from '@agenter/client-sdk';
+	import type {
+		MessageChannelEntry,
+		RuntimeAttentionDeliveryState,
+		RuntimeSnapshotEntry,
+		SessionNotificationItem,
+	} from '@agenter/client-sdk';
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -49,6 +54,7 @@
 	} = $props();
 
 	const attention = $derived(runtime?.attention ?? null);
+	const attentionDelivery = $derived(runtime?.attentionDelivery ?? null);
 	const contextItems = $derived(
 		buildRuntimeAttentionContextItems({
 			attention,
@@ -113,6 +119,56 @@
 	const selectedHooks = $derived(
 		selectedContextId ? filteredHooks.filter((hook) => hook.contextId === selectedContextId).slice(0, 4) : [],
 	);
+	const selectedDeliveryProjections = $derived.by(() => {
+		if (!selectedContextId) {
+			return [] as RuntimeAttentionDeliveryState['projections'];
+		}
+		return [...(attentionDelivery?.projections ?? [])]
+			.filter((projection) => projection.contextId === selectedContextId)
+			.sort((left, right) => {
+				const leftTime = left.latestReceiptAt ?? 0;
+				const rightTime = right.latestReceiptAt ?? 0;
+				return (
+					rightTime - leftTime ||
+					right.attemptCount - left.attemptCount ||
+					right.commitId.localeCompare(left.commitId)
+				);
+			});
+	});
+	const selectedPrimaryDeliveryProjection = $derived.by(() => {
+		const headCommitId = selectedContext?.recentCommits[0]?.commitId ?? null;
+		if (!headCommitId) {
+			return selectedDeliveryProjections[0] ?? null;
+		}
+		return (
+			selectedDeliveryProjections.find((projection) => projection.commitId === headCommitId) ??
+			selectedDeliveryProjections[0] ??
+			null
+		);
+	});
+	const selectedDeliveryDispatches = $derived.by(() => {
+		if (!selectedContextId) {
+			return [] as RuntimeAttentionDeliveryState['dispatches'];
+		}
+		return [...(attentionDelivery?.dispatches ?? [])]
+			.filter((dispatch) => dispatch.contextId === selectedContextId)
+			.sort(
+				(left, right) =>
+					right.createdAt - left.createdAt ||
+					right.attemptIndex - left.attemptIndex ||
+					right.dispatchId.localeCompare(left.dispatchId),
+			)
+			.slice(0, 6);
+	});
+	const selectedDeliveryReceipts = $derived.by(() => {
+		if (!selectedContextId) {
+			return [] as RuntimeAttentionDeliveryState['receipts'];
+		}
+		return [...(attentionDelivery?.receipts ?? [])]
+			.filter((receipt) => receipt.contextId === selectedContextId)
+			.sort((left, right) => right.timestamp - left.timestamp || right.receiptId.localeCompare(left.receiptId))
+			.slice(0, 8);
+	});
 	const focusedStackItems = $derived(
 		activeContextItems.filter((item) => item.contextId !== selectedContextId),
 	);
@@ -122,6 +178,18 @@
 
 	const formatScore = (value: number): string => {
 		return Number.isInteger(value) ? String(value) : value.toFixed(1);
+	};
+
+	const getDeliveryVariant = (
+		status: RuntimeAttentionDeliveryState['receipts'][number]['status'] | RuntimeAttentionDeliveryState['projections'][number]['state'],
+	): 'outline' | 'secondary' | 'destructive' => {
+		if (status === 'errored') {
+			return 'destructive';
+		}
+		if (status === 'accepted' || status === 'completed') {
+			return 'secondary';
+		}
+		return 'outline';
 	};
 
 	const openContext = async (): Promise<void> => {
@@ -389,6 +457,116 @@
 					{/if}
 				</Card.Content>
 			</Card.Root>
+
+			<Card.Root data-testid="runtime-attention-delivery-ledger">
+				<Card.Header class="border-b">
+					<Card.Title>Delivery ledger</Card.Title>
+					<Card.Description>
+						Hook outcomes stay separate. This section only shows dispatch attempts and stream receipts.
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="grid gap-4 pt-6">
+					{#if selectedContext}
+						<div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+							<section class="grid gap-2 rounded-2xl border px-4 py-3">
+								<div class="flex flex-wrap items-center gap-2">
+									<div class="text-sm font-semibold">Current projection</div>
+									{#if selectedPrimaryDeliveryProjection}
+										<Badge variant={getDeliveryVariant(selectedPrimaryDeliveryProjection.state)}>
+											{selectedPrimaryDeliveryProjection.state}
+										</Badge>
+									{/if}
+								</div>
+								{#if selectedPrimaryDeliveryProjection}
+									<div class="text-sm text-muted-foreground">
+										Commit {selectedPrimaryDeliveryProjection.commitId} · attempts {selectedPrimaryDeliveryProjection.attemptCount}
+									</div>
+									<div class="text-xs text-muted-foreground">
+										agentCall {selectedPrimaryDeliveryProjection.agentCallId ?? 'pending'}
+										{#if selectedPrimaryDeliveryProjection.sessionModelCallId !== null}
+											<span> · ai_call #{selectedPrimaryDeliveryProjection.sessionModelCallId}</span>
+										{/if}
+									</div>
+									{#if selectedPrimaryDeliveryProjection.latestError}
+										<div class="text-xs text-destructive">
+											{selectedPrimaryDeliveryProjection.latestError.code
+												? `${selectedPrimaryDeliveryProjection.latestError.code}: `
+												: ''}{selectedPrimaryDeliveryProjection.latestError.message}
+										</div>
+									{/if}
+								{:else}
+									<div class="text-sm text-muted-foreground">
+										This context has not produced any dispatch attempt yet, so delivery remains pending outside the queue.
+									</div>
+								{/if}
+							</section>
+
+							<section class="grid gap-2 rounded-2xl border px-4 py-3">
+								<div class="text-sm font-semibold">Recent attempts</div>
+								{#if selectedDeliveryDispatches.length > 0}
+									<div class="grid gap-2">
+										{#each selectedDeliveryDispatches as dispatch (dispatch.dispatchId)}
+											<div class="rounded-xl border bg-card/70 px-3 py-2">
+												<div class="flex flex-wrap items-center gap-2">
+													<div class="text-sm font-medium">{dispatch.commitId}</div>
+													<Badge variant="outline">attempt {dispatch.attemptIndex}</Badge>
+													{#if dispatch.sessionModelCallId !== null}
+														<Badge variant="outline">ai_call #{dispatch.sessionModelCallId}</Badge>
+													{/if}
+												</div>
+												<div class="mt-1 text-xs text-muted-foreground">
+													agentCall {dispatch.agentCallId} · {formatRuntimeTimestamp(dispatch.createdAt)}
+												</div>
+											</div>
+										{/each}
+									</div>
+								{:else}
+									<div class="text-sm text-muted-foreground">No dispatch attempts were recorded for the selected context yet.</div>
+								{/if}
+							</section>
+						</div>
+
+						<section class="grid gap-2">
+							<div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+								Receipt history
+							</div>
+							{#if selectedDeliveryReceipts.length > 0}
+								<div class="grid gap-2">
+									{#each selectedDeliveryReceipts as receipt (receipt.receiptId)}
+										<div class="rounded-2xl border px-4 py-3">
+											<div class="flex flex-wrap items-center gap-2">
+												<div class="text-sm font-semibold">{receipt.commitId}</div>
+												<Badge variant={getDeliveryVariant(receipt.status)}>{receipt.status}</Badge>
+												<Badge variant="outline">{receipt.providerEventKind}</Badge>
+												<Badge variant="outline">attempt {receipt.attemptIndex}</Badge>
+											</div>
+											<div class="mt-1 text-xs text-muted-foreground">
+												{formatRuntimeTimestamp(receipt.timestamp)}
+												{#if receipt.sessionModelCallId !== null}
+													<span> · ai_call #{receipt.sessionModelCallId}</span>
+												{/if}
+											</div>
+											{#if receipt.errorMessage}
+												<div class="mt-1 text-xs text-destructive">
+													{receipt.errorCode ? `${receipt.errorCode}: ` : ''}{receipt.errorMessage}
+												</div>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							{:else}
+								<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+									No stream receipt has been recorded for the selected context yet.
+								</div>
+							{/if}
+						</section>
+					{:else}
+						<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+							Select one attention context first, then inspect its dispatch attempts and receipt history here.
+						</div>
+					{/if}
+				</Card.Content>
+			</Card.Root>
 		</div>
 	{/snippet}
 
@@ -474,7 +652,24 @@
 
 			<section class="grid gap-2 border-t border-border/55 pt-4">
 				<h4 class="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Delivery contract</h4>
-				{#if selectedQueue}
+				{#if selectedPrimaryDeliveryProjection}
+					<div class="flex flex-wrap items-center gap-2">
+						<div class="text-sm font-medium">{selectedPrimaryDeliveryProjection.commitId}</div>
+						<Badge variant={getDeliveryVariant(selectedPrimaryDeliveryProjection.state)}>
+							{selectedPrimaryDeliveryProjection.state}
+						</Badge>
+					</div>
+					<div class="text-sm text-muted-foreground">
+						attempts {selectedPrimaryDeliveryProjection.attemptCount} · agentCall {selectedPrimaryDeliveryProjection.agentCallId ?? 'pending'}
+					</div>
+					{#if selectedPrimaryDeliveryProjection.latestError}
+						<div class="text-sm text-destructive">
+							{selectedPrimaryDeliveryProjection.latestError.code
+								? `${selectedPrimaryDeliveryProjection.latestError.code}: `
+								: ''}{selectedPrimaryDeliveryProjection.latestError.message}
+						</div>
+					{/if}
+				{:else if selectedQueue}
 					<div class="text-sm font-medium">{selectedQueue.sourceType} · {selectedQueue.sourceId}</div>
 					<div class="text-sm text-muted-foreground">{selectedQueue.content || 'Notification summary unavailable.'}</div>
 					<div class="text-sm text-muted-foreground">
@@ -489,7 +684,7 @@
 			</section>
 
 			<section class="grid gap-2 border-t border-border/55 pt-4">
-				<h4 class="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Linked runtime sources</h4>
+				<h4 class="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Hook outcomes</h4>
 				{#if selectedHooks.length > 0}
 					{#each selectedHooks as hook (hook.id)}
 						<div class="grid gap-1 rounded-xl border px-3 py-2">
@@ -508,7 +703,26 @@
 						</div>
 					{/each}
 				{:else}
-					<div class="text-sm text-muted-foreground">No hook deliveries are attached to the current selection.</div>
+					<div class="text-sm text-muted-foreground">No hook outcome is attached to the current selection.</div>
+				{/if}
+			</section>
+
+			<section class="grid gap-2 border-t border-border/55 pt-4">
+				<h4 class="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Recent receipts</h4>
+				{#if selectedDeliveryReceipts.length > 0}
+					{#each selectedDeliveryReceipts.slice(0, 4) as receipt (receipt.receiptId)}
+						<div class="grid gap-1 rounded-xl border px-3 py-2">
+							<div class="flex flex-wrap items-center gap-2">
+								<div class="text-sm font-medium">{receipt.providerEventKind}</div>
+								<Badge variant={getDeliveryVariant(receipt.status)}>{receipt.status}</Badge>
+							</div>
+							<div class="text-xs text-muted-foreground">
+								{receipt.commitId} · attempt {receipt.attemptIndex} · {formatRuntimeTimestamp(receipt.timestamp)}
+							</div>
+						</div>
+					{/each}
+				{:else}
+					<div class="text-sm text-muted-foreground">No delivery receipt is attached to the current selection.</div>
 				{/if}
 			</section>
 		</WorkbenchDetailDrawer>

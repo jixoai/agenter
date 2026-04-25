@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SplitView } from '@agenter/svelte-components';
+	import { SidebarScaffold } from '@agenter/svelte-components';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 
@@ -162,8 +162,8 @@
 	});
 </script>
 
-<SplitView.Root variant="sidebar-content" data-testid="workspace-settings-route">
-	<SplitView.Sidebar>
+<SidebarScaffold.Root data-testid="workspace-settings-route">
+	<SidebarScaffold.Sidebar>
 		<WorkbenchScaffold tone="pane" body="scroll" contentClass="divide-y px-0 py-0">
 			{#snippet header()}
 				<h1 class="text-base font-semibold">Workspaces</h1>
@@ -192,9 +192,9 @@
 				{/each}
 			{/if}
 		</WorkbenchScaffold>
-	</SplitView.Sidebar>
+	</SidebarScaffold.Sidebar>
 
-	<SplitView.Content>
+	<SidebarScaffold.Content>
 		<div class="grid h-full">
 			<WorkspaceSettingsPanel
 				disabled={saving}
@@ -242,5 +242,5 @@
 				onSaveLayer={() => void saveLayer()}
 			/>
 		</div>
-	</SplitView.Content>
-</SplitView.Root>
+	</SidebarScaffold.Content>
+</SidebarScaffold.Root>

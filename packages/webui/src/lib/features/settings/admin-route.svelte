@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Scaffold, SplitView } from '@agenter/svelte-components';
+	import { Scaffold, SidebarScaffold } from '@agenter/svelte-components';
 	import KeyRoundIcon from '@lucide/svelte/icons/key-round';
 	import LogOutIcon from '@lucide/svelte/icons/log-out';
 	import SaveIcon from '@lucide/svelte/icons/save';
@@ -101,8 +101,8 @@
 	</Scaffold.Header>
 
 	<Scaffold.Body>
-		<SplitView.Root variant="sidebar-content">
-			<SplitView.Sidebar>
+		<SidebarScaffold.Root>
+			<SidebarScaffold.Sidebar>
 				<Scaffold.Root class="rounded-xl border bg-card text-card-foreground shadow-sm">
 					<Scaffold.Header class="grid gap-2 border-b px-6 py-4">
 						<h2 class="text-base font-semibold">Superadmin session</h2>
@@ -181,9 +181,9 @@
 						</p>
 					</Scaffold.ScrollBody>
 				</Scaffold.Root>
-			</SplitView.Sidebar>
+			</SidebarScaffold.Sidebar>
 
-			<SplitView.Content>
+			<SidebarScaffold.Content>
 				<Scaffold.Root class="rounded-xl border bg-card text-card-foreground shadow-sm">
 					<Scaffold.Header class="grid gap-2 border-b px-6 py-4">
 						<h2 class="text-base font-semibold">Profile metadata</h2>
@@ -251,7 +251,7 @@
 						{/if}
 					</Scaffold.ScrollBody>
 				</Scaffold.Root>
-			</SplitView.Content>
-		</SplitView.Root>
+			</SidebarScaffold.Content>
+		</SidebarScaffold.Root>
 	</Scaffold.Body>
 </Scaffold.Root>

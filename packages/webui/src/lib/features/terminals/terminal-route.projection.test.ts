@@ -91,18 +91,24 @@ describe('Feature: terminal route projection helpers', () => {
 				participantId: 'system:trusted-terminal-bootstrap',
 				role: 'admin',
 				label: 'Bootstrap admin',
+				subtitle: 'system:trusted-terminal-bootstrap',
+				iconUrl: null,
 			},
 			{
 				accessToken: 'token:reviewer',
 				participantId: 'session:reviewer',
 				role: 'writer',
 				label: 'Reviewer Session',
+				subtitle: 'session:reviewer',
+				iconUrl: null,
 			},
 			{
 				accessToken: 'token:observer',
 				participantId: 'auth:observer',
 				role: 'readonly',
 				label: 'Observer',
+				subtitle: 'auth:observer',
+				iconUrl: null,
 			},
 		]);
 	});
@@ -209,6 +215,8 @@ describe('Feature: terminal route projection helpers', () => {
 				participantId: 'auth:guest',
 				role: 'readonly',
 				label: 'guest',
+				subtitle: 'auth:guest',
+				iconUrl: null,
 			},
 		]);
 		expect(

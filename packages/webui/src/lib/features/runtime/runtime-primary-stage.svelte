@@ -91,6 +91,7 @@
 				groupsState={heartbeatGroups}
 				modelCalls={modelCalls}
 				attention={runtime?.attention ?? null}
+				attentionDelivery={runtime?.attentionDelivery ?? null}
 				compactPending={heartbeatCompactPending}
 				compactDisabled={heartbeatCompactDisabled}
 				onRequestCompact={onRequestHeartbeatCompact}

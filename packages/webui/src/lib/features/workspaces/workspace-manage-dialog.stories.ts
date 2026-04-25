@@ -24,7 +24,7 @@ export const MountUnmountAndLensSelection = {
 		await expect(canvas.getByTestId('workspace-manage-dialog')).toBeInTheDocument();
 
 		await userEvent.click(canvas.getByTestId('workspace-manage-mount-reviewer'));
-		await expect(canvas.getByTestId('workspace-manage-row-reviewer')).toHaveTextContent('Mounted');
+		await expect(canvas.getByTestId('workspace-manage-row-reviewer')).toHaveTextContent('Public workspace');
 		await expect(canvas.getByTestId('workspace-manage-row-reviewer')).toHaveTextContent(
 			'Mounted without rules yet',
 		);

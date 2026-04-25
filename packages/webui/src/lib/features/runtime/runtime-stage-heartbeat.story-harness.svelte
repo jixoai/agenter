@@ -3,6 +3,7 @@
 		RuntimeSchedulerState,
 		HeartbeatGroupItem,
 		ModelCallItem,
+		RuntimeAttentionDeliveryState,
 		RuntimeAttentionState,
 		SessionEntry,
 	} from '@agenter/client-sdk';
@@ -51,6 +52,7 @@
 		olderGroups = [],
 		modelCalls = [],
 		attention = null,
+		attentionDelivery = null,
 		sessionStatus = 'running',
 		schedulerState = null,
 		loaded: initialLoaded = true,
@@ -69,6 +71,7 @@
 		olderGroups?: HeartbeatGroupItem[];
 		modelCalls?: ModelCallItem[];
 		attention?: RuntimeAttentionState | null;
+		attentionDelivery?: RuntimeAttentionDeliveryState | null;
 		sessionStatus?: SessionEntry['status'];
 		schedulerState?: RuntimeSchedulerState | null;
 		loaded?: boolean;
@@ -313,6 +316,7 @@
 		}}
 		{modelCalls}
 		{attention}
+		{attentionDelivery}
 		{compactPending}
 		{compactDisabled}
 		{onRequestCompact}

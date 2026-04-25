@@ -1,7 +1,7 @@
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
 
-	import { DialogScaffold, Scaffold, SplitView } from '@agenter/svelte-components';
+	import { DialogScaffold, Scaffold, SidebarScaffold } from '@agenter/svelte-components';
 
 	const { Story } = defineMeta({
 		title: 'Primitives/Layout/Scaffold Family',
@@ -82,17 +82,17 @@
 </Story>
 
 <Story
-	name="Split view keeps compact stack and desktop split"
+	name="Sidebar scaffold keeps compact stack and desktop split"
 	asChild
 	play={async ({ canvasElement }) => {
-		const splitRoot = canvasElement.querySelector<HTMLElement>('[data-slot="split-view-root"]');
-		await expect(splitRoot?.dataset.variant).toBe('sidebar-content');
+		const splitRoot = canvasElement.querySelector<HTMLElement>('[data-slot="sidebar-scaffold-root"]');
+		await expect(splitRoot?.dataset.padding).toBe('none');
 		await expect(canvasElement.textContent).toContain('Room 12');
 	}}
 >
 	<div class="h-[36rem] rounded-2xl border">
-		<SplitView.Root variant="sidebar-content" padding="none">
-			<SplitView.Sidebar class="border-b md:border-r md:border-b-0">
+		<SidebarScaffold.Root padding="none">
+			<SidebarScaffold.Sidebar class="border-b md:border-r md:border-b-0">
 				<Scaffold.Root class="h-full">
 					<Scaffold.Header class="border-b px-4 py-3">
 						<div class="text-sm font-semibold">Rooms</div>
@@ -103,8 +103,8 @@
 						{/each}
 					</Scaffold.ScrollBody>
 				</Scaffold.Root>
-			</SplitView.Sidebar>
-			<SplitView.Content>
+			</SidebarScaffold.Sidebar>
+			<SidebarScaffold.Content>
 				<Scaffold.Root class="h-full">
 					<Scaffold.Header class="border-b px-4 py-3">
 						<div class="text-sm font-semibold">Transcript</div>
@@ -115,7 +115,7 @@
 						{/each}
 					</Scaffold.ScrollBody>
 				</Scaffold.Root>
-			</SplitView.Content>
-		</SplitView.Root>
+			</SidebarScaffold.Content>
+		</SidebarScaffold.Root>
 	</div>
 </Story>

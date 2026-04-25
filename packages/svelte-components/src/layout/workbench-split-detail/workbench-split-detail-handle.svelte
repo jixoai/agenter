@@ -17,6 +17,7 @@
 
 	const context = getWorkbenchSplitDetailContext();
 	const compact = $derived(context?.compact() ?? false);
+	const detailVisible = $derived(context?.detailVisible() ?? true);
 	const ratio = $derived(context?.ratio() ?? 0.5);
 </script>
 
@@ -29,7 +30,7 @@
 	aria-valuemin={0}
 	aria-valuemax={100}
 	aria-valuenow={Math.round(ratio * 100)}
-	disabled={compact}
+	disabled={compact || !detailVisible}
 	title={title}
 	data-layout-role="workbench-split-detail-handle"
 	data-slot="workbench-split-detail-handle"

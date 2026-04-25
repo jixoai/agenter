@@ -38,6 +38,7 @@ const createRuntimeState = (sessions: SessionEntry[], unreadBySession: Record<st
   messageChannelsBySession: {},
   chatCyclesBySession: {},
   attentionBySession: {},
+  attentionDeliveryBySession: {},
   tasksBySession: {},
   recentWorkspaces: [],
   workspaces: [],

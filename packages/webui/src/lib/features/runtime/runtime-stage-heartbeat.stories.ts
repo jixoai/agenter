@@ -9,11 +9,12 @@ import type { Meta, StoryObj } from "@storybook/sveltekit";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
 import type {
-  HeartbeatGroupItem,
-  HeartbeatPartItem,
-  ModelCallItem,
-  RuntimeAttentionState,
-  RuntimeSchedulerState,
+	HeartbeatGroupItem,
+	HeartbeatPartItem,
+	ModelCallItem,
+	RuntimeAttentionDeliveryState,
+	RuntimeAttentionState,
+	RuntimeSchedulerState,
 } from "@agenter/client-sdk";
 
 import RuntimeStageHeartbeatStoryHarness from "./runtime-stage-heartbeat.story-harness.svelte";
@@ -1142,6 +1143,159 @@ const attentionState = {
   cycleFrames: [],
   hooks: [],
 } satisfies RuntimeAttentionState;
+
+const dispatchingDeliveryState = {
+	projections: [
+		{
+			contextId: 'ctx-room-main',
+			commitId: 'commit-room-main-1',
+			state: 'dispatching',
+			attemptCount: 1,
+			latestDispatchId: 'dispatch-room-main-1',
+			latestReceiptId: null,
+			agentCallId: 'agent-call-41',
+			sessionModelCallId: 42,
+			firstAcceptedAt: null,
+			latestReceiptAt: null,
+			latestError: null,
+		},
+	],
+	dispatches: [
+		{
+			dispatchId: 'dispatch-room-main-1',
+			contextId: 'ctx-room-main',
+			commitId: 'commit-room-main-1',
+			cycleId: 9,
+			attemptIndex: 1,
+			agentCallId: 'agent-call-41',
+			sessionModelCallId: 42,
+			createdAt: baseTimestamp + 44_500,
+		},
+	],
+	receipts: [],
+} satisfies RuntimeAttentionDeliveryState;
+
+const firstErrorDeliveryState = {
+	projections: [
+		{
+			contextId: 'ctx-room-main',
+			commitId: 'commit-room-main-err',
+			state: 'errored',
+			attemptCount: 1,
+			latestDispatchId: 'dispatch-room-main-err-1',
+			latestReceiptId: 'receipt-room-main-err-1',
+			agentCallId: 'agent-call-err-1',
+			sessionModelCallId: 43,
+			firstAcceptedAt: null,
+			latestReceiptAt: baseTimestamp + 61_000,
+			latestError: {
+				code: 'provider.unavailable',
+				message: 'provider rejected the first frame',
+			},
+		},
+	],
+	dispatches: [
+		{
+			dispatchId: 'dispatch-room-main-err-1',
+			contextId: 'ctx-room-main',
+			commitId: 'commit-room-main-err',
+			cycleId: 10,
+			attemptIndex: 1,
+			agentCallId: 'agent-call-err-1',
+			sessionModelCallId: 43,
+			createdAt: baseTimestamp + 60_000,
+		},
+	],
+	receipts: [
+		{
+			receiptId: 'receipt-room-main-err-1',
+			dispatchId: 'dispatch-room-main-err-1',
+			contextId: 'ctx-room-main',
+			commitId: 'commit-room-main-err',
+			cycleId: 10,
+			attemptIndex: 1,
+			agentCallId: 'agent-call-err-1',
+			sessionModelCallId: 43,
+			status: 'errored',
+			providerEventKind: 'run_error',
+			timestamp: baseTimestamp + 61_000,
+			errorCode: 'provider.unavailable',
+			errorMessage: 'provider rejected the first frame',
+		},
+	],
+} satisfies RuntimeAttentionDeliveryState;
+
+const retryHistoryDeliveryState = {
+	projections: [
+		{
+			contextId: 'ctx-room-main',
+			commitId: 'commit-room-main-retry',
+			state: 'accepted',
+			attemptCount: 2,
+			latestDispatchId: 'dispatch-room-main-retry-2',
+			latestReceiptId: 'receipt-room-main-retry-2',
+			agentCallId: 'agent-call-retry-2',
+			sessionModelCallId: 55,
+			firstAcceptedAt: baseTimestamp + 72_000,
+			latestReceiptAt: baseTimestamp + 72_000,
+			latestError: {
+				code: 'provider.unavailable',
+				message: 'attempt 1 failed before SSE',
+			},
+		},
+	],
+	dispatches: [
+		{
+			dispatchId: 'dispatch-room-main-retry-1',
+			contextId: 'ctx-room-main',
+			commitId: 'commit-room-main-retry',
+			cycleId: 11,
+			attemptIndex: 1,
+			agentCallId: 'agent-call-retry-1',
+			sessionModelCallId: 54,
+			createdAt: baseTimestamp + 70_000,
+		},
+		{
+			dispatchId: 'dispatch-room-main-retry-2',
+			contextId: 'ctx-room-main',
+			commitId: 'commit-room-main-retry',
+			cycleId: 12,
+			attemptIndex: 2,
+			agentCallId: 'agent-call-retry-2',
+			sessionModelCallId: 55,
+			createdAt: baseTimestamp + 71_000,
+		},
+	],
+	receipts: [
+		{
+			receiptId: 'receipt-room-main-retry-1',
+			dispatchId: 'dispatch-room-main-retry-1',
+			contextId: 'ctx-room-main',
+			commitId: 'commit-room-main-retry',
+			cycleId: 11,
+			attemptIndex: 1,
+			agentCallId: 'agent-call-retry-1',
+			sessionModelCallId: 54,
+			status: 'errored',
+			providerEventKind: 'run_error',
+			timestamp: baseTimestamp + 70_500,
+			errorMessage: 'attempt 1 failed before SSE',
+		},
+		{
+			receiptId: 'receipt-room-main-retry-2',
+			dispatchId: 'dispatch-room-main-retry-2',
+			contextId: 'ctx-room-main',
+			commitId: 'commit-room-main-retry',
+			cycleId: 12,
+			attemptIndex: 2,
+			agentCallId: 'agent-call-retry-2',
+			sessionModelCallId: 55,
+			status: 'accepted',
+			providerEventKind: 'text_delta',
+			timestamp: baseTimestamp + 72_000,
+		},
+	],
+} satisfies RuntimeAttentionDeliveryState;
 
 const createSchedulerState = (overrides?: Partial<RuntimeSchedulerState>): RuntimeSchedulerState => ({
   schemaVersion: 2,
@@ -2277,6 +2431,86 @@ export const RunningFooterShowsShimmerWithoutUsage = {
     await expect(context).toHaveAttribute("data-context-state", "unavailable");
     await expect(context).toHaveTextContent("—");
     await expect(within(context).getByRole("button", { name: /Model context usage/ })).toBeDisabled();
+  },
+} satisfies Story;
+
+export const MessageReadDoesNotImplyAccepted = {
+  name: "Scenario: Given a room message is already read and ai_call is running When delivery has no receipt yet Then Heartbeat keeps the attempt in dispatching instead of accepted",
+  args: {
+    initialGroups,
+    olderGroups: [],
+    modelCalls: streamingModelCalls,
+    attention: attentionState,
+    attentionDelivery: dispatchingDeliveryState,
+    schedulerState: runningSchedulerState,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const summary = canvas.getByTestId("runtime-heartbeat-delivery-summary");
+
+    await expect(summary).toBeInTheDocument();
+    await expect(summary).toHaveTextContent("Attention delivery");
+    await expect(summary).toHaveTextContent("separate from read + running");
+    await expect(summary).toHaveTextContent("Message read-state and ai_call running stay observable");
+    await expect(summary).toHaveTextContent("dispatching 1");
+    await expect(summary).toHaveTextContent("accepted 0");
+    await expect(summary).toHaveTextContent("attempt 1");
+    await expect(summary).toHaveTextContent("ai_call #42");
+    await expect(summary).toHaveTextContent("dispatching");
+  },
+} satisfies Story;
+
+export const FirstReceiptErrorStaysErrored = {
+  name: "Scenario: Given the first delivery receipt is a provider error When Heartbeat renders the delivery ledger Then the attempt stays errored without any accepted badge",
+  args: {
+    initialGroups,
+    olderGroups: [],
+    modelCalls: [],
+    attention: attentionState,
+    attentionDelivery: firstErrorDeliveryState,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "blocked",
+      phase: "waiting_commits",
+      lastError: "provider rejected the first frame",
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const summary = canvas.getByTestId("runtime-heartbeat-delivery-summary");
+
+    await expect(summary).toHaveTextContent("errored 1");
+    await expect(summary).toHaveTextContent("accepted 0");
+    await expect(summary).toHaveTextContent("run_error");
+    await expect(summary).toHaveTextContent("attempt 1");
+    await expect(summary).toHaveTextContent("errored");
+  },
+} satisfies Story;
+
+export const RetryHistoryKeepsAttemptLedger = {
+  name: "Scenario: Given the same attention commit retries after an earlier provider failure When Heartbeat renders the delivery ledger Then both attempts remain inspectable in order",
+  args: {
+    initialGroups,
+    olderGroups: [],
+    modelCalls: settledModelCalls,
+    attention: attentionState,
+    attentionDelivery: retryHistoryDeliveryState,
+    schedulerState: createSchedulerState({
+      runtimeStatus: "waiting",
+      waitingReason: "attention_debt",
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const summary = canvas.getByTestId("runtime-heartbeat-delivery-summary");
+
+    await expect(summary).toHaveTextContent("accepted 1");
+    await expect(summary).toHaveTextContent("errored 0");
+    await expect(summary).toHaveTextContent("attempt 1");
+    await expect(summary).toHaveTextContent("attempt 2");
+    await expect(summary).toHaveTextContent("run_error");
+    await expect(summary).toHaveTextContent("text_delta");
+    await expect(summary).toHaveTextContent("ai_call #54");
+    await expect(summary).toHaveTextContent("ai_call #55");
   },
 } satisfies Story;
 

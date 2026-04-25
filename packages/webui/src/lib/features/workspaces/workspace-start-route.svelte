@@ -36,7 +36,7 @@
 	let selectedWorkspacePath = $state('');
 	let compactMode = $state(false);
 	let detailCompact = $state(false);
-	let detailOpen = $state(false);
+	let detailOpen = $state(true);
 
 	const requestedAvatar = $derived(readWorkspaceAvatar(page.url.searchParams));
 	const sortedWorkspaces = $derived(
@@ -94,10 +94,8 @@
 		}
 	};
 
-	const openDetailIfCompact = (): void => {
-		if (detailCompact) {
-			detailOpen = true;
-		}
+	const revealDetail = (): void => {
+		detailOpen = true;
 	};
 
 	const workspaceStartSubtitle = 'Choose one durable workspace root and open its dedicated detail surface.';
@@ -255,7 +253,7 @@
 										ondblclick={() => void openWorkspace(workspace.path)}
 									onclick={() => {
 										selectedWorkspacePath = workspace.path;
-										openDetailIfCompact();
+										revealDetail();
 									}}
 									onkeydown={(e) => e.key === 'Enter' && void openWorkspace(workspace.path)}
 									>

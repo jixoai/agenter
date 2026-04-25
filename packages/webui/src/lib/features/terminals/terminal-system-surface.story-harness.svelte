@@ -8,7 +8,10 @@
 	} from '@agenter/client-sdk';
 
 	import type { ActorDirectoryEntry } from '$lib/features/collaboration/actor-directory';
+	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
+	import WorkbenchWindow from '$lib/features/navigation/workbench-window.svelte';
 	import TerminalViewHost from '$lib/components/terminal-view-host.svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import TerminalSystemSurface from './terminal-system-surface.svelte';
 
 	import type {
@@ -82,14 +85,16 @@
 		pendingRequestCount: number;
 		snapshotCols: number;
 		snapshotRows: number;
+		running: boolean;
+		status: 'IDLE' | 'BUSY';
 	}): GlobalTerminalEntry => ({
 		terminalId: input.terminalId,
 		processKind: 'shell',
 		command: ['/bin/bash'],
 		cwd: input.cwd,
 		workspace: null,
-		running: true,
-		status: 'IDLE',
+		running: input.running,
+		status: input.status,
 		seq: 1,
 		snapshot: buildTerminalSnapshot(input.cwd, undefined, 1, {
 			cols: input.snapshotCols,
@@ -209,6 +214,8 @@
 		surfaceHeightPx = 864,
 		snapshotCols = 80,
 		snapshotRows = 24,
+		terminalRunning = true,
+		terminalStatus = 'IDLE',
 		includeBootstrapSeat = true,
 		initialGrantedSeats = [],
 	}: {
@@ -218,6 +225,8 @@
 		surfaceHeightPx?: number;
 		snapshotCols?: number;
 		snapshotRows?: number;
+		terminalRunning?: boolean;
+		terminalStatus?: 'IDLE' | 'BUSY';
 		includeBootstrapSeat?: boolean;
 		initialGrantedSeats?: StorySeatGrantSeed[];
 	} = $props();
@@ -276,6 +285,8 @@
 					pendingRequestCount: 0,
 					snapshotCols,
 					snapshotRows,
+					running: terminalRunning,
+					status: terminalStatus,
 				}),
 			],
 			loaded: true,
@@ -313,6 +324,18 @@
 	});
 
 	const selectedTerminal = $derived(terminalsState.data.find((terminal) => terminal.terminalId === selectedTerminalId) ?? null);
+	const storyTabs = $derived.by(
+		() =>
+			[
+				{
+					id: selectedTerminal?.terminalId ?? initialTerminalId,
+					href: '#',
+					label: selectedTerminal?.title ?? selectedTerminal?.terminalId ?? 'Shared terminal',
+					title: selectedTerminal?.terminalId ?? 'Shared terminal',
+					description: selectedTerminal?.cwd ?? '/repo/ops',
+				},
+			] satisfies WorkbenchTabItem[],
+	);
 	const terminalGrantsState = $derived<CachedResourceState<GlobalTerminalGrantEntry[]>>({
 		data: terminalGrantsById[selectedTerminalId] ?? [],
 		loaded: true,
@@ -349,15 +372,20 @@
 				participantId: terminal.access?.participantId,
 				role: terminal.access?.role ?? 'admin',
 				label: 'Bootstrap admin',
+				subtitle: terminal.access?.participantId ?? 'system:trusted-terminal-bootstrap',
 			},
 			...(terminalGrantsById[terminal.terminalId] ?? [])
 				.filter((grant) => Boolean(grant.accessToken))
-				.map((grant) => ({
-					accessToken: grant.accessToken ?? '',
-					participantId: grant.participantId,
-					role: grant.role,
-					label: grant.label ?? terminalFallbackActor(grant.participantId ?? '')?.label ?? grant.participantId ?? grant.grantId,
-				})),
+				.map((grant) => {
+					const actor = terminalFallbackActor(grant.participantId ?? '');
+					return {
+						accessToken: grant.accessToken ?? '',
+						participantId: grant.participantId,
+						role: grant.role,
+						label: grant.label ?? actor?.label ?? grant.participantId ?? grant.grantId,
+						subtitle: actor?.subtitle ?? grant.participantId ?? grant.grantId,
+					};
+				}),
 		].filter((option) => option.accessToken);
 	});
 	const selectedCallerToken = $derived(
@@ -679,29 +707,39 @@
 	};
 </script>
 
-<div
-	class="bg-background"
-	style={`width:${surfaceWidthPx}px;min-width:${surfaceWidthPx}px;height:${surfaceHeightPx}px;min-height:${surfaceHeightPx}px;`}
->
-	<TerminalSystemSurface
-		{selectedTerminal}
-		terminalViewportComponent={TerminalViewHost}
-		{terminalGrantsState}
-		{terminalApprovalsState}
-		{terminalActivityState}
-		{routeNotice}
-		selectableActors={actorCatalog}
-		{callAsOptions}
-		{selectedCallerToken}
-		{seatStates}
-		onChangeCallerToken={handleChangeCallerToken}
-		onDeleteTerminal={handleDeleteTerminal}
-		onGrantSeat={handleGrantSeat}
-		onToggleSeatFocus={handleToggleSeatFocus}
-		onRevokeSeat={handleRevokeSeat}
-		onApproveRequest={handleApproveRequest}
-		onDenyRequest={handleDenyRequest}
-		onWriteToolCall={handleWriteToolCall}
-		onReadToolCall={handleReadToolCall}
-	/>
-</div>
+<Tooltip.Provider delayDuration={0}>
+	<div
+		class="bg-background"
+		style={`width:${surfaceWidthPx}px;min-width:${surfaceWidthPx}px;height:${surfaceHeightPx}px;min-height:${surfaceHeightPx}px;`}
+	>
+		<WorkbenchWindow
+			ariaLabel="Terminal story tabs"
+			value={selectedTerminal?.terminalId ?? initialTerminalId}
+			tabs={storyTabs}
+			bodyMode="fill"
+			bodyClass="rounded-none border-0 bg-transparent shadow-none"
+		>
+			<TerminalSystemSurface
+				{selectedTerminal}
+				terminalViewportComponent={TerminalViewHost}
+				{terminalGrantsState}
+				{terminalApprovalsState}
+				{terminalActivityState}
+				{routeNotice}
+				selectableActors={actorCatalog}
+				{callAsOptions}
+				{selectedCallerToken}
+				{seatStates}
+				onChangeCallerToken={handleChangeCallerToken}
+				onDeleteTerminal={handleDeleteTerminal}
+				onGrantSeat={handleGrantSeat}
+				onToggleSeatFocus={handleToggleSeatFocus}
+				onRevokeSeat={handleRevokeSeat}
+				onApproveRequest={handleApproveRequest}
+				onDenyRequest={handleDenyRequest}
+				onWriteToolCall={handleWriteToolCall}
+				onReadToolCall={handleReadToolCall}
+			/>
+		</WorkbenchWindow>
+	</div>
+</Tooltip.Provider>

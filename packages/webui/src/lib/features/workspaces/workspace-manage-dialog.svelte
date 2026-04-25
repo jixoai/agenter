@@ -132,11 +132,11 @@
 										{/if}
 										{#if row.mountKind === 'avatar-root'}
 											<Badge variant="outline" class="rounded-full text-[10px] uppercase tracking-[0.16em]">
-												Fixed root
+												Root workspace
 											</Badge>
 										{:else if row.mountKind === 'workspace'}
 											<Badge variant="secondary" class="rounded-full text-[10px] uppercase tracking-[0.16em]">
-												Mounted
+												Public workspace
 											</Badge>
 										{:else}
 											<Badge variant="outline" class="rounded-full text-[10px] uppercase tracking-[0.16em]">

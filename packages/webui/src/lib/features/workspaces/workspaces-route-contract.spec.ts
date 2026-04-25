@@ -6,6 +6,17 @@ import { describe, expect, test } from "vitest";
 const workspacesRouteSource = readFileSync(resolve(import.meta.dirname, "workspaces-route.svelte"), "utf8");
 
 describe("Feature: Workspaces route search and rules contract", () => {
+  test("Scenario: Given the page now distinguishes root-workspace from public-workspace When reading the route source Then mount-kind drives explicit surface labels instead of ownership-only copy", () => {
+    expect(workspacesRouteSource).toContain("let currentMount = $state<RuntimeWorkspaceMountEntry | null>(null);");
+    expect(workspacesRouteSource).toContain("listRuntimeWorkspaceMounts(runtimeId)");
+    expect(workspacesRouteSource).toContain("currentSurfaceKind");
+    expect(workspacesRouteSource).toContain("currentSurfaceSummary");
+    expect(workspacesRouteSource).toContain("root-workspace");
+    expect(workspacesRouteSource).toContain("public-workspace");
+    expect(workspacesRouteSource).toContain("Root-exclusive env and CLI stay out by default.");
+    expect(workspacesRouteSource).toContain("Sharing still depends on mounts and grants.");
+  });
+
   test("Scenario: Given the workspace detail route now follows the shared page-toolbar law When reading the route source Then page-tabs and right-side actions are composed through the shared primitive instead of a bespoke flex header", () => {
     expect(workspacesRouteSource).toContain("WorkbenchPageTabs");
     expect(workspacesRouteSource).toContain("WorkbenchToolbarAction");

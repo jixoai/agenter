@@ -36,7 +36,7 @@
 
 	let activeTabId = $state('workspace');
 	let detailCompact = $state(false);
-	let detailOpen = $state(false);
+	let detailOpen = $state(true);
 	let selectedDetailId = $state('alpha');
 	const tabSeeds: StoryTabSeed[] = [
 		{
@@ -61,9 +61,7 @@
 
 	const selectDetail = (detailId: string): void => {
 		selectedDetailId = detailId;
-		if (detailCompact) {
-			detailOpen = true;
-		}
+		detailOpen = true;
 	};
 </script>
 

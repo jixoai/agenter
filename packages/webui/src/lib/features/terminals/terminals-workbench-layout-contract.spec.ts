@@ -9,12 +9,11 @@ const terminalsWorkbenchLayoutSource = readFileSync(
 );
 
 describe("Feature: Terminals shell toolbar contract", () => {
-  test("Scenario: Given the terminals shell summary toolbar follows the shared page-toolbar law When reading the source Then the shell binds identity and status through the shared primitive instead of the legacy meta compat slot", () => {
-    expect(terminalsWorkbenchLayoutSource).toContain("WorkbenchToolbarStatus");
-    expect(terminalsWorkbenchLayoutSource).toContain("identityLeading={terminalsToolbarIdentityLeading}");
-    expect(terminalsWorkbenchLayoutSource).toContain("identityTitle={terminalsToolbarIdentityTitle}");
-    expect(terminalsWorkbenchLayoutSource).toContain("identitySubtitle={terminalsToolbarIdentitySubtitle}");
-    expect(terminalsWorkbenchLayoutSource).toContain("status={terminalsToolbarStatus}");
-    expect(terminalsWorkbenchLayoutSource).not.toContain("meta={terminalsToolbarMeta}");
+  test("Scenario: Given selected terminal identity now belongs to the route page-toolbar When reading the shell source Then the outer workbench window stays a neutral host without reviving static Shared terminals copy", () => {
+    expect(terminalsWorkbenchLayoutSource).toContain('bodyMode="fill"');
+    expect(terminalsWorkbenchLayoutSource).toContain('bodyClass="rounded-none border-0 bg-transparent shadow-none"');
+    expect(terminalsWorkbenchLayoutSource).not.toContain("Shared terminals");
+    expect(terminalsWorkbenchLayoutSource).not.toContain("WorkbenchToolbarStatus");
+    expect(terminalsWorkbenchLayoutSource).not.toContain("toolbar={terminalsToolbar}");
   });
 });

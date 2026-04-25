@@ -30,7 +30,6 @@ describe("Feature: Avatar catalog shared list-detail contract", () => {
 
   test("Scenario: Given compact list-detail needs the same ownership law as workspaces When an avatar row is selected Then the route opens the shared detail drawer instead of stacking a second inline detail column", () => {
     expect(avatarCatalogRouteSource).toContain("const selectAvatar = (nickname: string): void => {");
-    expect(avatarCatalogRouteSource).toContain("if (detailCompact) {");
     expect(avatarCatalogRouteSource).toContain("detailOpen = true;");
     expect(avatarCatalogRouteSource).toContain('<PanelRightOpenIcon class="size-4" />');
     expect(avatarCatalogRouteSource).toContain("Open detail");

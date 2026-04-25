@@ -7,6 +7,10 @@ const workbenchPageContentSource = readFileSync(
   resolve(import.meta.dirname, "workbench-page-content.svelte"),
   "utf8",
 );
+const workbenchSplitDetailHostSource = readFileSync(
+  resolve(import.meta.dirname, "workbench-split-detail-host.svelte"),
+  "utf8",
+);
 
 describe("Feature: Workbench page content responsive contract", () => {
   test("Scenario: Given desktop page content When reading the shared layout source Then the drawer can span beside both main and bottom regions", () => {
@@ -24,12 +28,15 @@ describe("Feature: Workbench page content responsive contract", () => {
 
   test("Scenario: Given split-detail adopters When reading the shared page-content source Then compact fallback comes from the shared split primitive instead of viewport matchMedia", () => {
     expect(workbenchPageContentSource).toContain("detailLayout = 'static'");
-    expect(workbenchPageContentSource).toContain("WorkbenchSplitDetail.Root");
-    expect(workbenchPageContentSource).toContain("bind:compact={detailCompact}");
-    expect(workbenchPageContentSource).toContain("showDefaultClose={false}");
-    expect(workbenchPageContentSource).toContain("workbench-page-content__detail-sheet-layer");
-    expect(workbenchPageContentSource).toContain("portalProps={detailSheetHost ? { to: detailSheetHost } : undefined}");
-    expect(workbenchPageContentSource).toContain("workbench-page-content__detail-sheet-overlay");
+    expect(workbenchPageContentSource).toContain("WorkbenchSplitDetailHost");
+    expect(workbenchSplitDetailHostSource).toContain("bind:compact={detailCompact}");
+    expect(workbenchSplitDetailHostSource).toContain("detailVisible={!detailCompact && detailOpen}");
+    expect(workbenchSplitDetailHostSource).toContain("detailCompact && !lastCompact");
+    expect(workbenchSplitDetailHostSource).toContain("{#if detailCompact && detailOpen}");
+    expect(workbenchSplitDetailHostSource).toContain("showDefaultClose={false}");
+    expect(workbenchSplitDetailHostSource).toContain("workbench-page-content__detail-sheet-layer");
+    expect(workbenchSplitDetailHostSource).toContain("portalProps={detailSheetHost ? { to: detailSheetHost } : undefined}");
+    expect(workbenchSplitDetailHostSource).toContain("workbench-page-content__detail-sheet-overlay");
     expect(workbenchPageContentSource).not.toContain("matchMedia(");
   });
 });

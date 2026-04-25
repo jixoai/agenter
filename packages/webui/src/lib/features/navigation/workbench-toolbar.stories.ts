@@ -80,7 +80,7 @@ export const WideIdentityKeepsAnchorInline = {
 } satisfies Story;
 
 export const MediumPageTabsMovesSecondaryIntoOverflow = {
-  name: "Scenario: Given a medium page-tabs toolbar When width tightens Then actions and status move into the floating overflow panel while page-tabs keep their inline anchor",
+  name: "Scenario: Given a medium page-tabs toolbar When width tightens Then inline actions stay prioritized while status moves into the floating overflow panel",
   args: {
     variant: "page-tabs",
     frameWidth: "52rem",
@@ -99,13 +99,13 @@ export const MediumPageTabsMovesSecondaryIntoOverflow = {
 
     expect(toolbar.querySelector('[data-workbench-toolbar-region="page-tabs"]')).not.toBeNull();
     expect(toolbar.querySelector('[data-workbench-toolbar-region="identity-inline"]')).not.toBeNull();
-    expect(toolbar.querySelector('[data-workbench-toolbar-region="actions-inline"]')).toBeNull();
+    expect(toolbar.querySelector('[data-workbench-toolbar-region="actions-inline"]')).not.toBeNull();
     expect(toolbar.querySelector('[data-workbench-toolbar-region="status-inline"]')).toBeNull();
 
     const trigger = within(toolbar).getByRole("button", { name: "Open page toolbar details" });
     await userEvent.click(trigger);
     expect(toolbar.querySelector('[data-workbench-toolbar-region="overflow-panel"]')).not.toBeNull();
-    expect(toolbar.querySelector('[data-workbench-toolbar-region="overflow-actions"]')).not.toBeNull();
+    expect(toolbar.querySelector('[data-workbench-toolbar-region="overflow-actions"]')).toBeNull();
     expect(toolbar.querySelector('[data-workbench-toolbar-region="overflow-status"]')).not.toBeNull();
   },
 } satisfies Story;
@@ -201,7 +201,7 @@ export const NarrowPageTabsLeavesOnlyAnchorAndOverflow = {
 } satisfies Story;
 
 export const NarrowIdentityKeepsIdentityInline = {
-  name: "Scenario: Given a narrow toolbar without page-tabs When width tightens Then identity stays inline while actions and status move into the floating overflow panel",
+  name: "Scenario: Given a narrow toolbar without page-tabs When width tightens Then identity and actions stay inline while status alone moves into the floating overflow panel",
   args: {
     variant: "identity",
     frameWidth: "33rem",
@@ -220,7 +220,7 @@ export const NarrowIdentityKeepsIdentityInline = {
     });
 
     expect(toolbar.querySelector('[data-workbench-toolbar-region="identity-inline"]')).not.toBeNull();
-    expect(toolbar.querySelector('[data-workbench-toolbar-region="actions-inline"]')).toBeNull();
+    expect(toolbar.querySelector('[data-workbench-toolbar-region="actions-inline"]')).not.toBeNull();
     expect(toolbar.querySelector('[data-workbench-toolbar-region="status-inline"]')).toBeNull();
 
     const trigger = within(toolbar).getByRole("button", { name: "Open workspace toolbar details" });
@@ -229,7 +229,7 @@ export const NarrowIdentityKeepsIdentityInline = {
     const bodyTopAfter = Math.round(body.getBoundingClientRect().top);
     expect(Math.abs(bodyTopAfter - bodyTopBefore)).toBeLessThanOrEqual(1);
     expect(toolbar.querySelector('[data-workbench-toolbar-region="overflow-identity"]')).toBeNull();
-    expect(toolbar.querySelector('[data-workbench-toolbar-region="overflow-actions"]')).not.toBeNull();
+    expect(toolbar.querySelector('[data-workbench-toolbar-region="overflow-actions"]')).toBeNull();
     expect(toolbar.querySelector('[data-workbench-toolbar-region="overflow-status"]')).not.toBeNull();
   },
 } satisfies Story;

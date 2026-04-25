@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { ScrollView, WorkbenchSplitDetail } from '@agenter/svelte-components';
+	import { ScrollView } from '@agenter/svelte-components';
 
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import * as Sheet from '$lib/components/ui/sheet/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
+	import WorkbenchSplitDetailHost from '$lib/features/navigation/workbench-split-detail-host.svelte';
 
 	import { toPrettyJson, tryParseJson } from './settings-json-pointer';
 	import SettingsSchemaView from './settings-schema-view.svelte';
@@ -50,7 +50,7 @@
 	let effectiveViewMode = $state<'source' | 'view'>('view');
 	let layerViewMode = $state<'source' | 'view'>('source');
 	let detailCompact = $state(false);
-	let detailOpen = $state(false);
+	let detailOpen = $state(true);
 	let focusedLayerPointer = $state<string | null>(null);
 
 	const selectedLayer = $derived(layers.find((layer) => layer.layerId === selectedLayerId) ?? null);
@@ -61,9 +61,7 @@
 		focusedLayerPointer = null;
 		onSelectLayer(layerId);
 		onLoadLayer(layerId);
-		if (detailCompact) {
-			detailOpen = true;
-		}
+		detailOpen = true;
 	};
 
 	const jumpToLayer = (target: SettingsPointerJumpTarget): void => {
@@ -79,15 +77,11 @@
 	$effect(() => {
 		if (activeTab !== 'layers') {
 			detailOpen = false;
+			return;
 		}
-	});
-
-	let lastCompact = $state(false);
-	$effect(() => {
-		if (detailCompact && !lastCompact) {
-			detailOpen = false;
+		if (!detailCompact) {
+			detailOpen = true;
 		}
-		lastCompact = detailCompact;
 	});
 </script>
 
@@ -240,31 +234,24 @@
 			</section>
 		{/snippet}
 
-		<WorkbenchSplitDetail.Root
-			bind:compact={detailCompact}
-			ratioPersistence="workspace-settings:layers"
-			class="h-full"
+		<WorkbenchSplitDetailHost
+			bind:detailCompact
+			bind:detailOpen
+			detailRatioPersistence="workspace-settings:layers"
+			gridClass="h-full"
+			mainClass="h-full"
+			drawerClass="h-full"
+			detailSheetClass="w-[min(40rem,calc(100vw-1rem))] p-4"
 		>
-			<WorkbenchSplitDetail.Main class="h-full">
+			{#snippet main()}
 				{@render layerCatalog()}
-			</WorkbenchSplitDetail.Main>
+			{/snippet}
 
-			{#if !detailCompact}
-				<WorkbenchSplitDetail.Handle />
-				<WorkbenchSplitDetail.Detail class="h-full">
+			{#snippet drawer()}
+				<div class="grid h-full min-h-[45dvh]">
 					{@render layerDetailBody()}
-				</WorkbenchSplitDetail.Detail>
-			{/if}
-		</WorkbenchSplitDetail.Root>
-
-		{#if detailCompact}
-			<Sheet.Root bind:open={detailOpen}>
-				<Sheet.Content side="right" class="w-[min(40rem,calc(100vw-1rem))] p-4">
-					<div class="grid h-full min-h-[45dvh]">
-						{@render layerDetailBody()}
-					</div>
-				</Sheet.Content>
-			</Sheet.Root>
-		{/if}
+				</div>
+			{/snippet}
+		</WorkbenchSplitDetailHost>
 	{/if}
 </WorkbenchScaffold>

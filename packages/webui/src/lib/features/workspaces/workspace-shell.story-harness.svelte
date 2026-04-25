@@ -24,9 +24,13 @@
 	let {
 		initialMode = 'explorer',
 		frameClass = 'h-[58rem] w-[72rem] max-w-none',
+		surfaceKind = 'public-workspace',
+		surfaceSummary = 'Collaboration surface. Root-exclusive env and CLI stay out by default.',
 	}: {
 		initialMode?: WorkspaceMode;
 		frameClass?: string;
+		surfaceKind?: 'root-workspace' | 'public-workspace';
+		surfaceSummary?: string;
 	} = $props();
 
 	const workspaces = [
@@ -70,7 +74,7 @@
 	let expandedPaths = $state<Set<string>>(new Set(['/']));
 	let selectedPath = $state<string | null>('/README.md');
 	let detailCompact = $state(false);
-	let detailOpen = $state(false);
+	let detailOpen = $state(true);
 	let searchQuery = $state('');
 
 	const selectedWorkspace = $derived(workspaces[0] ?? null);
@@ -87,10 +91,8 @@
 		mode = initialMode;
 	});
 
-	const openDetailIfCompact = (): void => {
-		if (detailCompact) {
-			detailOpen = true;
-		}
+	const revealDetail = (): void => {
+		detailOpen = true;
 	};
 </script>
 
@@ -177,6 +179,8 @@
 		{selectedWorkspace}
 		selectedAvatar={selectedAvatar}
 		{selectedAvatarEntry}
+		{surfaceKind}
+		{surfaceSummary}
 		avatars={avatars}
 		onAvatarChange={(avatar) => {
 			selectedAvatar = avatar;
@@ -212,7 +216,7 @@
 							viewportTestId="workspace-shell-story-tree"
 							onSelect={(path) => {
 								selectedPath = path;
-								openDetailIfCompact();
+								revealDetail();
 							}}
 							onToggleDirectory={(path) => {
 								const next = new Set(expandedPaths);

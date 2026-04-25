@@ -1,4 +1,4 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, type TemplateResult } from "lit";
 import { stringify as stringifyYaml } from "yaml";
 
 import { defineElement } from "./custom-element";
@@ -40,6 +40,21 @@ interface ParsedYamlMappingLine {
   value: string;
 }
 
+const pushIndentFragment = (fragments: TemplateResult[], indent: string): void => {
+  if (indent.length > 0) {
+    fragments.push(html`<span class="indent">${indent}</span>`);
+  }
+};
+
+const pushFragment = (fragments: TemplateResult[], fragment: TemplateResult | null): void => {
+  if (fragment) {
+    fragments.push(fragment);
+  }
+};
+
+const renderLine = (index: number, fragments: TemplateResult[], className = "line") =>
+  html`<div class=${className} part=${JSON_VIEWER_PARTS.line} data-line=${index}>${fragments}</div>`;
+
 const splitTrailingComma = (value: string): { value: string; comma: string } => {
   return value.endsWith(",") ? { value: value.slice(0, -1), comma: "," } : { value, comma: "" };
 };
@@ -71,25 +86,25 @@ const renderJsonLine = (line: string, index: number) => {
   if (keyMatch) {
     const [, indent, key, separator, remainder] = keyMatch;
     const { value, comma } = splitTrailingComma(remainder);
-    return html`
-      <div class="line" part=${JSON_VIEWER_PARTS.line} data-line=${index}>
-        <span>${indent}</span>
-        <span class=${JSON_KEY_CLASS_NAME}>"${key}"</span>
-        <span class=${JSON_PUNCTUATION_CLASS_NAME}>${separator}</span>
-        ${renderScalarFragment(value)}
-        ${comma ? html`<span class=${JSON_PUNCTUATION_CLASS_NAME}>${comma}</span>` : null}
-      </div>
-    `;
+    const fragments: TemplateResult[] = [];
+    pushIndentFragment(fragments, indent);
+    fragments.push(html`<span class=${JSON_KEY_CLASS_NAME}>"${key}"</span>`);
+    fragments.push(html`<span class=${JSON_PUNCTUATION_CLASS_NAME}>${separator}</span>`);
+    pushFragment(fragments, renderScalarFragment(value));
+    if (comma) {
+      fragments.push(html`<span class=${JSON_PUNCTUATION_CLASS_NAME}>${comma}</span>`);
+    }
+    return renderLine(index, fragments);
   }
   const [, indent, remainder] = line.match(/^(\s*)(.*)$/) ?? ["", "", line];
   const { value, comma } = splitTrailingComma(remainder);
-  return html`
-    <div class="line" part=${JSON_VIEWER_PARTS.line} data-line=${index}>
-      <span>${indent}</span>
-      ${renderScalarFragment(value)}
-      ${comma ? html`<span class=${JSON_PUNCTUATION_CLASS_NAME}>${comma}</span>` : null}
-    </div>
-  `;
+  const fragments: TemplateResult[] = [];
+  pushIndentFragment(fragments, indent);
+  pushFragment(fragments, renderScalarFragment(value));
+  if (comma) {
+    fragments.push(html`<span class=${JSON_PUNCTUATION_CLASS_NAME}>${comma}</span>`);
+  }
+  return renderLine(index, fragments);
 };
 
 const parseYamlMappingLine = (line: string): ParsedYamlMappingLine | null => {
@@ -162,26 +177,24 @@ const parseYamlMappingLine = (line: string): ParsedYamlMappingLine | null => {
 const renderYamlLine = (line: string, index: number) => {
   const keyMatch = parseYamlMappingLine(line);
   if (keyMatch) {
-    return html`
-      <div class="line" part=${JSON_VIEWER_PARTS.line} data-line=${index}>
-        <span>${keyMatch.indent}</span>
-        ${keyMatch.dash ? html`<span class=${JSON_PUNCTUATION_CLASS_NAME}>${keyMatch.dash}</span>` : null}
-        <span class=${JSON_KEY_CLASS_NAME}>${keyMatch.key}</span>
-        <span class=${JSON_PUNCTUATION_CLASS_NAME}>${keyMatch.separator}</span>
-        ${renderScalarFragment(keyMatch.value, true)}
-      </div>
-    `;
+    const fragments: TemplateResult[] = [];
+    pushIndentFragment(fragments, keyMatch.indent);
+    if (keyMatch.dash) {
+      fragments.push(html`<span class=${JSON_PUNCTUATION_CLASS_NAME}>${keyMatch.dash}</span>`);
+    }
+    fragments.push(html`<span class=${JSON_KEY_CLASS_NAME}>${keyMatch.key}</span>`);
+    fragments.push(html`<span class=${JSON_PUNCTUATION_CLASS_NAME}>${keyMatch.separator}</span>`);
+    pushFragment(fragments, renderScalarFragment(keyMatch.value, true));
+    return renderLine(index, fragments);
   }
   const listScalarMatch = line.match(/^(\s*)(-\s+)(.*)$/);
   if (listScalarMatch) {
     const [, indent, dash, remainder] = listScalarMatch;
-    return html`
-      <div class="line" part=${JSON_VIEWER_PARTS.line} data-line=${index}>
-        <span>${indent}</span>
-        <span class=${JSON_PUNCTUATION_CLASS_NAME}>${dash}</span>
-        ${renderScalarFragment(remainder, true)}
-      </div>
-    `;
+    const fragments: TemplateResult[] = [];
+    pushIndentFragment(fragments, indent);
+    fragments.push(html`<span class=${JSON_PUNCTUATION_CLASS_NAME}>${dash}</span>`);
+    pushFragment(fragments, renderScalarFragment(remainder, true));
+    return renderLine(index, fragments);
   }
   return html`<div class="line text" part=${JSON_VIEWER_PARTS.line} data-line=${index}>${line}</div>`;
 };
@@ -323,8 +336,13 @@ export class JsonViewerElement extends LitElement {
     }
 
     .line {
+      display: block;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+
+    .indent {
+      white-space: pre;
     }
 
     .punctuation {

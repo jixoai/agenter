@@ -24,6 +24,13 @@ const SnapshotHydratesViewportBeforeTransportReconnect = getPortableStory(
 	stories,
 	'SnapshotHydratesViewportBeforeTransportReconnect',
 );
+const ToolbarStatusReflectsBusyRuntimeFacts = getPortableStory(stories, 'ToolbarStatusReflectsBusyRuntimeFacts');
+const WideSurfaceUsesResizableDetailSplit = getPortableStory(stories, 'WideSurfaceUsesResizableDetailSplit');
+const CompactSurfaceKeepsDetailReachable = getPortableStory(stories, 'CompactSurfaceKeepsDetailReachable');
+const ReadActionStructuredPreviewStaysCompact = getPortableStory(
+	stories,
+	'ReadActionStructuredPreviewStaysCompact',
+);
 const WindowChromeTogglesProjectionMode = getPortableStory(stories, 'WindowChromeTogglesProjectionMode');
 const WindowCloseRequiresConfirmation = getPortableStory(stories, 'WindowCloseRequiresConfirmation');
 
@@ -62,6 +69,22 @@ describe('Feature: Storybook DOM contract for terminal system surface', () => {
 
 	test('Scenario: Given durable snapshot truth When the terminal route hydrates before transport reconnect Then the viewport renders without product chrome and stays readable', async () => {
 		await SnapshotHydratesViewportBeforeTransportReconnect.run();
+	});
+
+	test('Scenario: Given a running busy terminal When the selected route renders Then the page-toolbar status reflects authoritative runtime facts', async () => {
+		await ToolbarStatusReflectsBusyRuntimeFacts.run();
+	});
+
+	test('Scenario: Given a wide terminal surface When the shared split-detail shell renders Then the activity rail stays in a persistent resizable right pane', async () => {
+		await WideSurfaceUsesResizableDetailSplit.run();
+	});
+
+	test('Scenario: Given a narrow terminal surface When the shared split-detail shell collapses Then the actions rail opens through the shared right sheet instead of stacking below the stage', async () => {
+		await CompactSurfaceKeepsDetailReachable.run();
+	});
+
+	test('Scenario: Given a terminal read action When the shared tool invocation card renders YAML previews Then the read parameter panel stays above a compact actor row and each mapping line stays compact', async () => {
+		await ReadActionStructuredPreviewStaysCompact.run();
 	});
 
 	test('Scenario: Given a terminal window chrome When the maximize control toggles Then the projection switches between fit and cover inside the shared scroll container', async () => {

@@ -6,7 +6,12 @@ import { getPortableStory } from './portable-stories';
 const ModeSwitchingKeepsSharedShell = getPortableStory(stories, 'ModeSwitchingKeepsSharedShell');
 const AvatarLensKeepsRootContext = getPortableStory(stories, 'AvatarLensKeepsRootContext');
 const TreeDisclosureStaysInSurface = getPortableStory(stories, 'TreeDisclosureStaysInSurface');
+const RootWorkspaceSemanticsStayVisible = getPortableStory(stories, 'RootWorkspaceSemanticsStayVisible');
 const CompactShellPreservesPrimaryViewport = getPortableStory(stories, 'CompactShellPreservesPrimaryViewport');
+const CompactPublicWorkspaceSemanticsStayVisible = getPortableStory(
+	stories,
+	'CompactPublicWorkspaceSemanticsStayVisible',
+);
 
 describe('Feature: Storybook DOM contract for workspace shell', () => {
 	test('Scenario: Given workspace mode switching When Explorer Rules and Private swap Then the shared shell keeps one stable header and body contract', async () => {
@@ -21,7 +26,15 @@ describe('Feature: Storybook DOM contract for workspace shell', () => {
 		await TreeDisclosureStaysInSurface.run();
 	});
 
+	test('Scenario: Given a root-workspace header When the desktop shell renders Then env and CLI semantics stay explicit without claiming root cannot be shared', async () => {
+		await RootWorkspaceSemanticsStayVisible.run();
+	});
+
 	test('Scenario: Given a compact workspace shell When shared header and bottom dock render Then the tree keeps the dominant viewport budget', async () => {
 		await CompactShellPreservesPrimaryViewport.run();
+	});
+
+	test('Scenario: Given a public-workspace header When the compact shell renders Then collaboration semantics stay visible in the mobile chrome', async () => {
+		await CompactPublicWorkspaceSemanticsStayVisible.run();
 	});
 });

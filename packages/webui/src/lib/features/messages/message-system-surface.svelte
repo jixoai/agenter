@@ -101,6 +101,7 @@
 		roomSeatStates.map((state) => ({
 			value: state.actorId,
 			label: describeSeatOption(state),
+			subtitle: state.subtitle ?? state.actorId,
 			iconUrl: state.iconUrl,
 		})),
 	);

@@ -66,7 +66,7 @@
 	}) => {
 		const showInlineIdentity = !hasPageTabs || stage !== 'overflow-identity';
 		const showInlineSubtitle = !hasPageTabs || stage === 'wide' || stage === 'overflow-secondary';
-		const showInlineActions = stage === 'wide' || (stage === 'overflow-secondary' && !hasStatus);
+		const showInlineActions = stage === 'wide' || stage === 'overflow-secondary';
 		const showInlineStatus = stage === 'wide' || (stage === 'overflow-secondary' && !hasActions);
 		const hiddenIdentity =
 			hasPageTabs && hasIdentity && (!showInlineIdentity || (hasIdentitySubtitle && !showInlineSubtitle));

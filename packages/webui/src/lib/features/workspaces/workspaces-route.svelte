@@ -75,7 +75,7 @@
 	let activeMatchIndex = $state(0);
 	let routeSyncReady = $state(false);
 	let detailCompact = $state(false);
-	let detailOpen = $state(false);
+	let detailOpen = $state(true);
 
 	let explorerPages = $state<WorkspaceTreePages>({});
 	let privatePages = $state<WorkspaceTreePages>({});
@@ -86,6 +86,7 @@
 	let preview = $state<Awaited<ReturnType<typeof controller.runtimeStore.readWorkspaceWorkbenchPreview>> | null>(null);
 	let previewLoading = $state(false);
 	let assetRoots = $state<Awaited<ReturnType<typeof controller.runtimeStore.getRuntimeWorkspaceAssetRoots>> | null>(null);
+	let currentMount = $state<RuntimeWorkspaceMountEntry | null>(null);
 	let rules = $state<WorkspaceRuleDraft[]>([]);
 	let selectedRuleId = $state<string | null>(null);
 	let rulesDirty = $state(false);
@@ -166,29 +167,37 @@
 	const matchedRuleIdSet = $derived(new Set(collectWorkspaceRuleMatchIds(rules, searchQuery)));
 	const manageCatalogSignature = $derived(avatarOptions.map((entry) => entry.runtimeId).join('|'));
 	const hideCompactContentHeader = $derived(detailCompact && detailOpen);
+	const currentSurfaceKind = $derived(
+		currentMount?.kind === 'avatar-root' ? 'root-workspace' : 'public-workspace',
+	);
+	const currentSurfaceSummary = $derived(
+		currentMount?.kind === 'avatar-root'
+			? 'Avatar-private env and runtime CLI live here by default. Sharing still depends on mounts and grants.'
+			: 'Collaboration surface. Root-exclusive env and CLI stay out by default.',
+	);
 
 	const describeWorkspaceMountAccess = (
 		mount: RuntimeWorkspaceMountEntry | null,
 		grants: RuntimeWorkspaceGrantEntry[],
 	): string => {
 		if (!mount) {
-			return 'Not mounted yet';
+			return 'Public workspace · not mounted yet';
 		}
 		if (mount.kind === 'avatar-root') {
-			return 'Fixed root workspace';
+			return 'Root workspace · avatar-private env and runtime CLI by default';
 		}
 		if (grants.length === 0) {
-			return 'Mounted without rules yet';
+			return 'Public workspace · collaboration surface without rules yet';
 		}
 		const hasRootGrant = grants.some((grant) => grant.pattern === '/');
 		const hasWriteGrant = grants.some((grant) => grant.mode === 'rw');
 		if (hasRootGrant && hasWriteGrant) {
-			return `${grants.length} rules · root writable access`;
+			return `Public workspace · ${grants.length} rules · root writable access`;
 		}
 		if (hasRootGrant) {
-			return `${grants.length} rules · root read only access`;
+			return `Public workspace · ${grants.length} rules · root read only access`;
 		}
-		return `${grants.length} rules · ${hasWriteGrant ? 'scoped writable paths' : 'read only paths'}`;
+		return `Public workspace · ${grants.length} rules · ${hasWriteGrant ? 'scoped writable paths' : 'read only paths'}`;
 	};
 
 	const listAncestorPaths = (path: string): string[] => {
@@ -208,10 +217,8 @@
 		activeMatchIndex = 0;
 	};
 
-	const openDetailIfCompact = (): void => {
-		if (detailCompact) {
-			detailOpen = true;
-		}
+	const revealDetail = (): void => {
+		detailOpen = true;
 	};
 
 	const getPreviewEmptyStateTitle = (
@@ -335,9 +342,10 @@
 
 	const refreshWorkbenchContext = async (): Promise<void> => {
 		if (!selectedWorkspace || !selectedAvatarEntry || !runtimeId) {
+			currentMount = null;
 			return;
 		}
-		const [nextGrants, nextRoots] = await Promise.all([
+		const [nextGrants, nextRoots, mounts] = await Promise.all([
 			controller.runtimeStore.listRuntimeWorkspaceGrants({
 				runtimeId,
 				workspacePath: selectedWorkspace.path,
@@ -346,7 +354,12 @@
 				workspacePath: selectedWorkspace.path,
 				avatar: selectedAvatarEntry.nickname,
 			}),
+			controller.runtimeStore.listRuntimeWorkspaceMounts(runtimeId),
 		]);
+		currentMount =
+			mounts.find((item) => item.workspacePath === selectedWorkspace.path && item.kind === 'avatar-root') ??
+			mounts.find((item) => item.workspacePath === selectedWorkspace.path) ??
+			null;
 		const nextRules = buildRuleDrafts(nextGrants);
 		rules = nextRules;
 		selectedRuleId = nextRules[0]?.id ?? null;
@@ -600,7 +613,7 @@
 			await revealTreePath('private', nextTarget);
 			selectedPrivatePath = nextTarget;
 			await loadPreview('private', nextTarget);
-			openDetailIfCompact();
+			revealDetail();
 			await scrollActiveMatchIntoView(nextTarget);
 			return;
 		}
@@ -608,12 +621,12 @@
 			await revealTreePath('explorer', nextTarget);
 			selectedExplorerPath = nextTarget;
 			await loadPreview('explorer', nextTarget);
-			openDetailIfCompact();
+			revealDetail();
 			await scrollActiveMatchIntoView(nextTarget);
 			return;
 		}
 		selectedRuleId = nextTarget;
-		openDetailIfCompact();
+		revealDetail();
 		await scrollActiveMatchIntoView(nextTarget);
 	};
 
@@ -818,6 +831,8 @@
 			{selectedWorkspace}
 			selectedAvatar={selectedAvatar}
 			{selectedAvatarEntry}
+			surfaceKind={currentSurfaceKind}
+			surfaceSummary={currentSurfaceSummary}
 			avatars={avatarOptions}
 			onAvatarChange={(avatar) => {
 				selectedAvatar = avatar;
@@ -879,7 +894,7 @@
 										)}
 									onclick={() => {
 										selectedRuleId = rule.id;
-										openDetailIfCompact();
+										revealDetail();
 									}}
 									>
 										<div class="min-w-0">
@@ -909,12 +924,12 @@
 								if (mode === 'private') {
 									selectedPrivatePath = path;
 									await loadPreview('private', path);
-									openDetailIfCompact();
+									revealDetail();
 									return;
 								}
 								selectedExplorerPath = path;
 								await loadPreview('explorer', path);
-								openDetailIfCompact();
+								revealDetail();
 							}}
 							onToggleDirectory={async (path) => {
 								await toggleExpandedPath(mode === 'private' ? 'private' : 'explorer', path);

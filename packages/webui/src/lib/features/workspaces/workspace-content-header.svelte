@@ -22,6 +22,8 @@
 		selectedWorkspace,
 		selectedAvatar,
 		selectedAvatarEntry,
+		surfaceKind,
+		surfaceSummary,
 		avatars,
 		onAvatarChange,
 	}: {
@@ -29,6 +31,8 @@
 		selectedWorkspace: WorkspaceOption | null;
 		selectedAvatar: string;
 		selectedAvatarEntry: AvatarOption | null;
+		surfaceKind: 'root-workspace' | 'public-workspace';
+		surfaceSummary: string;
 		avatars: AvatarOption[];
 		onAvatarChange: (avatar: string) => void;
 	} = $props();
@@ -48,6 +52,15 @@
 			: selectedWorkspace
 				? describeCompactWorkspace(selectedWorkspace.path)
 				: 'Workspace root',
+	);
+	const surfaceKindLabel = $derived(surfaceKind === 'root-workspace' ? 'Root workspace' : 'Public workspace');
+	const surfaceKindClassName = $derived(
+		surfaceKind === 'root-workspace'
+			? 'border-amber-200 bg-amber-50 text-amber-700'
+			: 'border-sky-200 bg-sky-50 text-sky-700',
+	);
+	const surfaceProfileLabel = $derived(
+		surfaceKind === 'root-workspace' ? 'Root-exclusive env + CLI' : 'Collaboration env surface',
 	);
 </script>
 
@@ -107,6 +120,16 @@
 					</div>
 				</div>
 				<div class="flex flex-wrap items-center gap-1.5">
+					<Badge
+						variant="outline"
+						class={`h-5 px-1.5 text-[10px] ${surfaceKindClassName}`}
+						data-testid="workspace-surface-kind"
+					>
+						{surfaceKindLabel}
+					</Badge>
+					<Badge variant="outline" class="h-5 px-1.5 text-[10px]" data-testid="workspace-surface-profile">
+						{surfaceProfileLabel}
+					</Badge>
 					<Badge variant="outline" class="h-5 border-emerald-200 bg-emerald-50 px-1.5 text-[10px] text-emerald-700">
 						Persistent
 					</Badge>
@@ -116,6 +139,9 @@
 					{#if selectedWorkspace?.path === '~/'}
 						<Badge variant="outline" class="h-5 px-1.5 text-[10px]">Global</Badge>
 					{/if}
+				</div>
+				<div class="text-[11px] leading-snug text-muted-foreground" data-testid="workspace-surface-summary">
+					{surfaceSummary}
 				</div>
 			</div>
 		</div>

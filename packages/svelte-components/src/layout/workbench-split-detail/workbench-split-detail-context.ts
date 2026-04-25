@@ -2,6 +2,7 @@ import { getContext, setContext } from "svelte";
 
 export interface WorkbenchSplitDetailContext {
 	compact: () => boolean;
+	detailVisible: () => boolean;
 	ratio: () => number;
 }
 

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/sveltekit';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 
 import Harness from './workbench-window.story-harness.svelte';
 
@@ -53,12 +53,18 @@ export const CompactDetailTakeoverRestoresRouteToolbar = {
 			return;
 		}
 
+		await waitFor(() => {
+			expect(document.body.style.pointerEvents).not.toBe('none');
+		});
 		await expect(within(toolbar).getByText('Route toolbar')).toBeInTheDocument();
 		await userEvent.click(canvas.getByRole('button', { name: 'Open beta' }));
 		await expect(within(toolbar).getByRole('button', { name: 'Close detail' })).toBeInTheDocument();
 		await expect(within(toolbar).queryByText('Route toolbar')).not.toBeInTheDocument();
 		await userEvent.click(within(toolbar).getByRole('button', { name: 'Close detail' }));
 		await expect(within(toolbar).getByText('Route toolbar')).toBeInTheDocument();
+		await waitFor(() => {
+			expect(document.body.style.pointerEvents).not.toBe('none');
+		});
 	},
 } satisfies Story;
 

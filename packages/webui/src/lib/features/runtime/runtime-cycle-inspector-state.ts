@@ -1,6 +1,7 @@
 import type {
   ModelCallItem,
   ObservabilityTraceItem,
+  RuntimeAttentionDeliveryState,
   RuntimeAttentionState,
   RuntimeChatCycle,
 } from "@agenter/client-sdk";
@@ -12,6 +13,9 @@ type AttentionCommitView = AttentionContextView["commits"][number];
 type AttentionCycleFrameView = RuntimeAttentionState["cycleFrames"][number];
 type AttentionHookView = RuntimeAttentionState["hooks"][number];
 type AttentionCommitRefView = AttentionCycleFrameView["inputCommitRefs"][number];
+type AttentionDeliveryProjectionView = RuntimeAttentionDeliveryState["projections"][number];
+type AttentionDeliveryDispatchView = RuntimeAttentionDeliveryState["dispatches"][number];
+type AttentionDeliveryReceiptView = RuntimeAttentionDeliveryState["receipts"][number];
 
 type BadgeVariant = "outline" | "secondary" | "destructive";
 
@@ -72,6 +76,9 @@ export interface RuntimeCycleDetailModel {
   activeContexts: RuntimeCycleResolvedContextView[];
   producedCommits: RuntimeCycleResolvedCommitView[];
   hooks: AttentionHookView[];
+  deliveryProjections: AttentionDeliveryProjectionView[];
+  deliveryDispatches: AttentionDeliveryDispatchView[];
+  deliveryReceipts: AttentionDeliveryReceiptView[];
   modelCalls: ModelCallItem[];
   primaryModelCall: ModelCallItem | null;
   traces: ObservabilityTraceItem[];
@@ -94,6 +101,8 @@ export interface RuntimeCycleDetailModel {
     inputCommitCount: number;
     producedCommitCount: number;
     remainingActiveCount: number;
+    attemptCount: number;
+    receiptCount: number;
     deliveredCount: number;
     failedCount: number;
     traceCount: number;
@@ -106,6 +115,12 @@ export const EMPTY_RUNTIME_ATTENTION_STATE: RuntimeAttentionState = {
   active: [],
   cycleFrames: [],
   hooks: [],
+};
+
+export const EMPTY_RUNTIME_ATTENTION_DELIVERY_STATE: RuntimeAttentionDeliveryState = {
+  projections: [],
+  dispatches: [],
+  receipts: [],
 };
 
 type LooseRecord = Record<string, unknown>;
@@ -304,6 +319,36 @@ const buildCycleAttentionDetail = (input: {
   };
 };
 
+const buildCycleDeliveryDetail = (input: {
+  cycle: RuntimeChatCycle;
+  attention: RuntimeAttentionState;
+  delivery: RuntimeAttentionDeliveryState;
+}) => {
+  const cycleId = input.cycle.cycleId ?? null;
+  const frame =
+    cycleId === null ? null : (input.attention.cycleFrames.find((entry) => entry.cycleId === cycleId) ?? null);
+  const commitKeys = new Set<string>();
+  for (const ref of frame?.inputCommitRefs ?? []) {
+    commitKeys.add(buildCommitKey(ref.contextId, ref.commitId));
+  }
+  for (const ref of frame?.producedCommitRefs ?? []) {
+    commitKeys.add(buildCommitKey(ref.contextId, ref.commitId));
+  }
+  const deliveryProjections = input.delivery.projections.filter((projection) =>
+    commitKeys.has(buildCommitKey(projection.contextId, projection.commitId)),
+  );
+  const deliveryDispatches = input.delivery.dispatches.filter((dispatch) =>
+    commitKeys.has(buildCommitKey(dispatch.contextId, dispatch.commitId)),
+  );
+  const dispatchIdSet = new Set(deliveryDispatches.map((dispatch) => dispatch.dispatchId));
+  const deliveryReceipts = input.delivery.receipts.filter((receipt) => dispatchIdSet.has(receipt.dispatchId));
+  return {
+    deliveryProjections,
+    deliveryDispatches,
+    deliveryReceipts,
+  };
+};
+
 const buildFallbackHeadline = (
   cycle: RuntimeChatCycle,
   detail: ReturnType<typeof buildCycleAttentionDetail>,
@@ -330,6 +375,7 @@ const buildFallbackHeadline = (
 export const buildRuntimeCycleTimelineSummary = (input: {
   cycle: RuntimeChatCycle;
   attention?: RuntimeAttentionState | null;
+  attentionDelivery?: RuntimeAttentionDeliveryState | null;
   modelCalls?: ModelCallItem[];
   traces?: ObservabilityTraceItem[];
 }): RuntimeCycleTimelineSummary => {
@@ -338,6 +384,11 @@ export const buildRuntimeCycleTimelineSummary = (input: {
     attention: input.attention ?? EMPTY_RUNTIME_ATTENTION_STATE,
     modelCalls: input.modelCalls ?? [],
     traces: input.traces ?? [],
+  });
+  const delivery = buildCycleDeliveryDetail({
+    cycle: input.cycle,
+    attention: input.attention ?? EMPTY_RUNTIME_ATTENTION_STATE,
+    delivery: input.attentionDelivery ?? EMPTY_RUNTIME_ATTENTION_DELIVERY_STATE,
   });
   const contextIds = new Set<string>();
   for (const context of detail.inputContexts) {
@@ -349,8 +400,10 @@ export const buildRuntimeCycleTimelineSummary = (input: {
   for (const commit of [...detail.inputCommits, ...detail.producedCommits]) {
     contextIds.add(commit.contextId);
   }
-  const deliveredCount = detail.hooks.filter((record) => record.status === "delivered").length;
-  const failedCount = detail.hooks.filter((record) => record.status === "failed").length;
+  const deliveredCount = delivery.deliveryReceipts.filter((record) => record.status === "accepted").length;
+  const failedCount = delivery.deliveryReceipts.filter(
+    (record) => record.status === "errored" || record.status === "aborted",
+  ).length;
   const headline =
     (input.cycle.kind === "compact" ? null : detail.producedCommits[0]?.title) ??
     detail.activeContexts[0]?.title ??
@@ -367,6 +420,7 @@ export const buildRuntimeCycleTimelineSummary = (input: {
     detail.inputCommits.length > 0 ? `${detail.inputCommits.length} inputs` : null,
     detail.producedCommits.length > 0 ? `${detail.producedCommits.length} commits` : null,
     detail.activeContexts.length > 0 ? `${detail.activeContexts.length} active` : "resolved",
+    delivery.deliveryDispatches.length > 0 ? `${delivery.deliveryDispatches.length} attempts` : null,
     deliveredCount > 0 ? `${deliveredCount} delivered` : null,
     failedCount > 0 ? `${failedCount} failed` : null,
   ].filter((part): part is string => part !== null);
@@ -381,6 +435,7 @@ export const buildRuntimeCycleTimelineItems = (input: {
   cycles: RuntimeChatCycle[];
   activeCycle: RuntimeChatCycle | null;
   attention?: RuntimeAttentionState | null;
+  attentionDelivery?: RuntimeAttentionDeliveryState | null;
   modelCalls?: ModelCallItem[];
   traces?: ObservabilityTraceItem[];
 }): RuntimeCycleTimelineItem[] => {
@@ -389,6 +444,7 @@ export const buildRuntimeCycleTimelineItems = (input: {
     const summary = buildRuntimeCycleTimelineSummary({
       cycle,
       attention: input.attention,
+      attentionDelivery: input.attentionDelivery,
       modelCalls: input.modelCalls,
       traces: input.traces,
     });
@@ -410,6 +466,7 @@ export const buildRuntimeCycleTimelineItems = (input: {
 export const buildRuntimeCycleDetailModel = (input: {
   cycle: RuntimeChatCycle;
   attention?: RuntimeAttentionState | null;
+  attentionDelivery?: RuntimeAttentionDeliveryState | null;
   modelCalls?: ModelCallItem[];
   traces?: ObservabilityTraceItem[];
 }): RuntimeCycleDetailModel => {
@@ -420,11 +477,18 @@ export const buildRuntimeCycleDetailModel = (input: {
     modelCalls: input.modelCalls ?? [],
     traces: input.traces ?? [],
   });
+  const delivery = buildCycleDeliveryDetail({
+    cycle: input.cycle,
+    attention,
+    delivery: input.attentionDelivery ?? EMPTY_RUNTIME_ATTENTION_DELIVERY_STATE,
+  });
   const primaryModelCall = findCycleModelCall(input.cycle, detail.modelCalls);
   const requestRecord = asRecord(primaryModelCall?.request);
   const summary = buildRuntimeCycleTimelineSummary(input);
-  const deliveredCount = detail.hooks.filter((record) => record.status === "delivered").length;
-  const failedCount = detail.hooks.filter((record) => record.status === "failed").length;
+  const deliveredCount = delivery.deliveryReceipts.filter((record) => record.status === "accepted").length;
+  const failedCount = delivery.deliveryReceipts.filter(
+    (record) => record.status === "errored" || record.status === "aborted",
+  ).length;
   const contextIds = new Set<string>();
   for (const context of detail.inputContexts) {
     contextIds.add(context.contextId);
@@ -451,6 +515,9 @@ export const buildRuntimeCycleDetailModel = (input: {
     activeContexts: detail.activeContexts,
     producedCommits: detail.producedCommits,
     hooks: detail.hooks,
+    deliveryProjections: delivery.deliveryProjections,
+    deliveryDispatches: delivery.deliveryDispatches,
+    deliveryReceipts: delivery.deliveryReceipts,
     modelCalls: detail.modelCalls,
     primaryModelCall,
     traces: detail.traces,
@@ -473,6 +540,8 @@ export const buildRuntimeCycleDetailModel = (input: {
       inputCommitCount: detail.inputCommits.length,
       producedCommitCount: detail.producedCommits.length,
       remainingActiveCount: detail.activeContexts.length,
+      attemptCount: delivery.deliveryDispatches.length,
+      receiptCount: delivery.deliveryReceipts.length,
       deliveredCount,
       failedCount,
       traceCount: detail.traces.length,

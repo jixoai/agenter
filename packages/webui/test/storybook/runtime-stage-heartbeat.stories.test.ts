@@ -47,6 +47,9 @@ const LatestGrowthPreservesExistingGroupDomIdentity = getPortableStory(
   "LatestGrowthPreservesExistingGroupDomIdentity",
 );
 const RunningFooterShowsShimmerWithoutUsage = getPortableStory(stories, "RunningFooterShowsShimmerWithoutUsage");
+const MessageReadDoesNotImplyAccepted = getPortableStory(stories, "MessageReadDoesNotImplyAccepted");
+const FirstReceiptErrorStaysErrored = getPortableStory(stories, "FirstReceiptErrorStaysErrored");
+const RetryHistoryKeepsAttemptLedger = getPortableStory(stories, "RetryHistoryKeepsAttemptLedger");
 const RunningDurationTicks = getPortableStory(stories, "RunningDurationTicks");
 const ColdLoadingShowsExplicitState = getPortableStory(stories, "ColdLoadingShowsExplicitState");
 const AsyncInitialLoadPinsLatest = getPortableStory(stories, "AsyncInitialLoadPinsLatest");
@@ -123,6 +126,18 @@ describe("Feature: Storybook DOM contract for runtime heartbeat stage", () => {
 
   test("Scenario: Given a running AI call without usage When the Heartbeat footer renders Then the shimmer stays active and context falls back to disabled", async () => {
     await RunningFooterShowsShimmerWithoutUsage.run();
+  });
+
+  test("Scenario: Given a room message is already read and ai_call is running When delivery has no receipt yet Then Heartbeat keeps the attempt in dispatching instead of accepted", async () => {
+    await MessageReadDoesNotImplyAccepted.run();
+  });
+
+  test("Scenario: Given the first delivery receipt is a provider error When Heartbeat renders the delivery ledger Then the attempt stays errored without any accepted badge", async () => {
+    await FirstReceiptErrorStaysErrored.run();
+  });
+
+  test("Scenario: Given the same attention commit retries after an earlier provider failure When Heartbeat renders the delivery ledger Then both attempts remain inspectable in order", async () => {
+    await RetryHistoryKeepsAttemptLedger.run();
   });
 
   test("Scenario: Given a running Heartbeat group header When wall-clock time advances Then the elapsed duration label updates without new Heartbeat rows", async () => {

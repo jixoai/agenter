@@ -16,16 +16,16 @@
 
 <div
 	bind:this={ref}
-	data-layout-role="split-view-content"
-	data-slot="split-view-content"
-	class={cn("split-view-content", className)}
+	data-layout-role="sidebar-scaffold-content"
+	data-slot="sidebar-scaffold-content"
+	class={cn("sidebar-scaffold-content", className)}
 	{...restProps}
 >
 	{@render children?.()}
 </div>
 
 <style>
-	:where([data-layout-role="split-view-content"]) {
+	:where([data-layout-role="sidebar-scaffold-content"]) {
 		display: grid;
 		min-block-size: 0;
 		min-inline-size: 0;

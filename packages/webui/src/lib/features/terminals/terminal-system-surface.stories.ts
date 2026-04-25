@@ -36,16 +36,106 @@ const writeDraft = async (canvasElement: HTMLElement, text: string) => {
   };
 };
 
-const openUsersTab = async (canvasElement: HTMLElement) => {
+const resolveToolbarOverflowPanel = async (canvasElement: HTMLElement): Promise<HTMLElement> => {
+  const panel = canvasElement.querySelector<HTMLElement>('[data-workbench-toolbar-region="overflow-panel"]');
+  if (panel) {
+    return panel;
+  }
   const canvas = within(canvasElement);
-  const usersTab = canvas.getByRole("tab", { name: "Users" });
-  await userEvent.click(usersTab);
-  await waitFor(() => {
-    expect(usersTab).toHaveAttribute("aria-selected", "true");
-    const grantTrigger = canvas.getByLabelText("Grant actor");
-    expect(grantTrigger.closest("[inert]")).toBeNull();
+  await userEvent.click(canvas.getByRole("button", { name: "Open terminal toolbar details" }));
+  return waitFor(() => {
+    const nextPanel = canvasElement.querySelector<HTMLElement>('[data-workbench-toolbar-region="overflow-panel"]');
+    expect(nextPanel).not.toBeNull();
+    return nextPanel!;
   });
+};
+
+const findToolbarActionButton = async (canvasElement: HTMLElement, name: string): Promise<HTMLElement> => {
+  const canvas = within(canvasElement);
+  const inlineButton = canvas.queryByRole("button", { name });
+  if (inlineButton) {
+    return inlineButton;
+  }
+  const overflowPanel = await resolveToolbarOverflowPanel(canvasElement);
+  return within(overflowPanel).getByRole("button", { name });
+};
+
+const findToolbarActionsToggle = async (canvasElement: HTMLElement): Promise<HTMLElement> => {
+  const canvas = within(canvasElement);
+  const inlineToggle =
+    canvas.queryByRole("radio", { name: "Actions" }) ??
+    canvas.queryByRole("button", { name: "Actions" });
+  if (inlineToggle) {
+    return inlineToggle;
+  }
+  const overflowPanel = await resolveToolbarOverflowPanel(canvasElement);
+  return (
+    within(overflowPanel).queryByRole("radio", { name: "Actions" }) ??
+    within(overflowPanel).getByRole("button", { name: "Actions" })
+  );
+};
+
+const openUsersDialog = async (canvasElement: HTMLElement) => {
+  await userEvent.click(await findToolbarActionButton(canvasElement, "Users"));
+  const body = within(canvasElement.ownerDocument.body);
+  await waitFor(() => {
+    expect(body.getByTestId("terminal-users-dialog")).toBeInTheDocument();
+    expect(body.getByTestId("terminal-seat-grant")).toBeInTheDocument();
+  });
+  return body;
+};
+
+const triggerReadAction = async (canvasElement: HTMLElement) => {
+  const canvas = within(canvasElement);
+  const readTab = canvas.getByRole("tab", { name: "Read" });
+  readTab.focus();
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(readTab).toHaveAttribute("aria-selected", "true");
+  });
+  const submit = canvas.getByRole("button", { name: "Call read" });
+  await waitFor(() => {
+    expect(submit).not.toBeDisabled();
+  });
+  await userEvent.click(submit);
   return canvas;
+};
+
+const openActionsDetail = async (canvasElement: HTMLElement) => {
+  await userEvent.click(await findToolbarActionsToggle(canvasElement));
+  await waitFor(() => {
+    expect(canvasElement.querySelector('[data-terminal-detail-panel-view="actions"]')).not.toBeNull();
+  });
+  return within(canvasElement);
+};
+
+const findInvocationCard = async (canvasElement: HTMLElement, toolName: string): Promise<HTMLElement> =>
+  waitFor(() => {
+    const cards = Array.from(
+      canvasElement.querySelectorAll<HTMLElement>('[data-testid^="terminal-action-card-"]'),
+    );
+    const match = cards.find((card) => card.textContent?.includes(toolName));
+    expect(match).toBeDefined();
+    return match!;
+  });
+
+const findSplitRoot = async (canvasElement: HTMLElement): Promise<HTMLElement> =>
+  waitFor(() => {
+    const root = canvasElement.querySelector<HTMLElement>('[data-layout-role="workbench-split-detail-root"]');
+    expect(root).not.toBeNull();
+    return root!;
+  });
+
+const assertStructuredValuePreviewLine = (viewer: HTMLElement, expectedText: string): void => {
+  const preview = viewer.querySelector("pre");
+  expect(preview).not.toBeNull();
+  const lines = (preview?.textContent ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const line = lines.find((candidate) => candidate.startsWith(`${expectedText}:`));
+  expect(line).toBeDefined();
+  expect(line).toContain(expectedText);
 };
 
 export const WriteSuccessClearsDraft = {
@@ -55,105 +145,114 @@ export const WriteSuccessClearsDraft = {
   },
   play: async ({ canvasElement }) => {
     const { canvas, draft } = await writeDraft(canvasElement, "echo shipped");
+    await expect(canvas.getByTestId("terminal-actions-panel")).toBeInTheDocument();
+    await expect(canvas.getByTestId("terminal-write-input-group")).toBeInTheDocument();
     await expect(draft).toHaveValue("");
     await expect(canvas.getByText("Absolute cwd: /repo/ops")).toBeInTheDocument();
   },
 } satisfies Story;
 
 export const UsersPaneWideActionsStayBehaviorallyAligned = {
-  name: "Scenario: Given a wide users pane with an existing grant When focus and revoke actions run Then the shared seat behavior model stays consistent",
+  name: "Scenario: Given a wide terminal route When the users dialog updates focus and revoke actions Then the shared seat behavior model stays consistent",
   args: {
     surfaceWidthPx: 1280,
     initialGrantedSeats: [{ participantId: "auth:observer", role: "readonly" }],
   },
   play: async ({ canvasElement }) => {
-    const canvas = await openUsersTab(canvasElement);
-    canvas.getByTestId("terminal-seat-focus-session:reviewer").click();
+    const dialog = await openUsersDialog(canvasElement);
+    await userEvent.click(dialog.getByTestId("terminal-seat-actions-session:reviewer"));
+    await userEvent.click(dialog.getByTestId("terminal-seat-focus-session:reviewer"));
     await waitFor(() => {
-      expect(canvas.getByTestId("terminal-seat-focus-session:reviewer")).toHaveTextContent("Unfocus");
+      expect(within(dialog.getByTestId("terminal-seat-session:reviewer")).getByText("Focused")).toBeInTheDocument();
     });
-    await expect(canvas.getByTestId("terminal-seat-auth:observer")).toBeInTheDocument();
-    canvas.getByTestId("terminal-seat-revoke-auth:observer").click();
+    await expect(dialog.getByTestId("terminal-seat-auth:observer")).toBeInTheDocument();
+    await userEvent.click(dialog.getByTestId("terminal-seat-actions-auth:observer"));
+    await userEvent.click(dialog.getByTestId("terminal-seat-revoke-auth:observer"));
     await waitFor(() => {
-      expect(canvas.queryByTestId("terminal-seat-auth:observer")).not.toBeInTheDocument();
+      expect(dialog.queryByTestId("terminal-seat-auth:observer")).not.toBeInTheDocument();
     });
   },
 } satisfies Story;
 
 export const UsersPaneCompactActionsStayBehaviorallyAligned = {
-  name: "Scenario: Given a compact users pane When focus actions run Then the shared seat behavior model stays consistent",
+  name: "Scenario: Given a compact terminal toolbar When opening Users Then the settings dialog still keeps seat management reachable",
   args: {
     surfaceWidthPx: 720,
   },
   play: async ({ canvasElement }) => {
-    const canvas = await openUsersTab(canvasElement);
+    const dialog = await openUsersDialog(canvasElement);
     await waitFor(() => {
-      expect(canvas.getByText("Grant access")).toBeInTheDocument();
+      expect(dialog.getByTestId("terminal-seat-grant")).toBeInTheDocument();
     });
-    canvas.getByTestId("terminal-seat-focus-session:reviewer").click();
+    await userEvent.click(dialog.getByTestId("terminal-seat-actions-session:reviewer"));
+    await userEvent.click(dialog.getByTestId("terminal-seat-focus-session:reviewer"));
     await waitFor(() => {
-      expect(canvas.getByTestId("terminal-seat-focus-session:reviewer")).toHaveTextContent("Unfocus");
+      expect(within(dialog.getByTestId("terminal-seat-session:reviewer")).getByText("Focused")).toBeInTheDocument();
     });
   },
 } satisfies Story;
 
 export const ApprovalLifecycleStaysInUsersPane = {
-  name: "Scenario: Given a pending write approval When the users pane approves it Then the requester lease surfaces without rebuilding local seat truth",
+  name: "Scenario: Given a pending write approval When the users dialog approves it Then the requester lease surfaces without rebuilding local seat truth",
   args: {
     writeBehavior: "approval",
     initialCallerToken: "token:term-story:reviewer",
   },
   play: async ({ canvasElement }) => {
-    const { canvas } = await writeDraft(canvasElement, "echo awaiting approval");
-    await openUsersTab(canvasElement);
+    await writeDraft(canvasElement, "echo awaiting approval");
+    const dialog = await openUsersDialog(canvasElement);
     const approveButton = await waitFor(() => {
-      const button = canvasElement.querySelector<HTMLElement>('[data-testid^="terminal-approval-approve-"]');
+      const button = canvasElement.ownerDocument.body.querySelector<HTMLElement>(
+        '[data-testid^="terminal-approval-approve-"]',
+      );
       expect(button).not.toBeNull();
       return button!;
     });
-    approveButton.click();
+    await userEvent.click(approveButton);
     await waitFor(() => {
       expect(
-        within(canvas.getByTestId("terminal-seat-session:reviewer")).getByText(/Lease until/u),
+        within(dialog.getByTestId("terminal-seat-session:reviewer")).getByText(/Lease until/u),
       ).toBeInTheDocument();
     });
   },
 } satisfies Story;
 
 export const DeniedApprovalLeavesSeatWithoutLease = {
-  name: "Scenario: Given a pending write approval When the users pane denies it Then the requester seat stays lease-free and the denial remains visible",
+  name: "Scenario: Given a pending write approval When the users dialog denies it Then the requester seat stays lease-free and the denial remains visible",
   args: {
     writeBehavior: "approval",
     initialCallerToken: "token:term-story:reviewer",
   },
   play: async ({ canvasElement }) => {
-    const { canvas } = await writeDraft(canvasElement, "echo denied approval");
-    await openUsersTab(canvasElement);
+    await writeDraft(canvasElement, "echo denied approval");
+    const dialog = await openUsersDialog(canvasElement);
     const denyButton = await waitFor(() => {
-      const button = canvasElement.querySelector<HTMLElement>('[data-testid^="terminal-approval-deny-"]');
+      const button = canvasElement.ownerDocument.body.querySelector<HTMLElement>(
+        '[data-testid^="terminal-approval-deny-"]',
+      );
       expect(button).not.toBeNull();
       return button!;
     });
-    denyButton.click();
+    await userEvent.click(denyButton);
     await waitFor(() => {
-      expect(canvas.getByText(/Denied approval-/u)).toBeInTheDocument();
+      expect(within(canvasElement).getByText(/Denied approval-/u)).toBeInTheDocument();
     });
-    expect(within(canvas.getByTestId("terminal-seat-session:reviewer")).queryByText(/Lease until/u)).toBeNull();
+    expect(within(dialog.getByTestId("terminal-seat-session:reviewer")).queryByText(/Lease until/u)).toBeNull();
   },
 } satisfies Story;
 
 export const AuthoritativeProjectionOmitsBootstrapSeat = {
-  name: "Scenario: Given a terminal surface projection without a system actor seat When the users pane renders Then the route does not fabricate a bootstrap seat row",
+  name: "Scenario: Given a terminal surface projection without a system actor seat When the users dialog renders Then the route does not fabricate a bootstrap seat row",
   args: {
     includeBootstrapSeat: false,
   },
   play: async ({ canvasElement }) => {
-    const canvas = await openUsersTab(canvasElement);
+    const dialog = await openUsersDialog(canvasElement);
     await waitFor(() => {
-      expect(canvas.getByTestId("terminal-seat-session:reviewer")).toBeInTheDocument();
+      expect(dialog.getByTestId("terminal-seat-session:reviewer")).toBeInTheDocument();
     });
-    expect(canvas.queryByTestId("terminal-seat-system:trusted-terminal-bootstrap")).toBeNull();
-    expect(canvas.queryByText("System seat")).toBeNull();
+    expect(dialog.queryByTestId("terminal-seat-system:trusted-terminal-bootstrap")).toBeNull();
+    expect(dialog.queryByText("System seat")).toBeNull();
   },
 } satisfies Story;
 
@@ -178,6 +277,94 @@ export const SnapshotHydratesViewportBeforeTransportReconnect = {
       /width:\d+px;height:\d+px/u,
     );
     await expect(within(canvasElement).getByText("Absolute cwd: /repo/ops")).toBeInTheDocument();
+  },
+} satisfies Story;
+
+export const ToolbarStatusReflectsBusyRuntimeFacts = {
+  name: "Scenario: Given a running busy terminal When the selected route renders Then the page-toolbar status reflects authoritative runtime facts",
+  args: {
+    surfaceWidthPx: 1280,
+    terminalRunning: true,
+    terminalStatus: "BUSY",
+  },
+  play: async ({ canvasElement }) => {
+    await waitFor(() => {
+      const statuses = Array.from(
+        canvasElement.querySelectorAll<HTMLElement>("[data-workbench-toolbar-status]"),
+      );
+      expect(statuses).toHaveLength(2);
+      const running = statuses.find((item) => item.textContent?.trim() === "Running");
+      const busy = statuses.find((item) => item.textContent?.trim() === "Busy");
+      expect(running?.dataset.workbenchToolbarStatusTone).toBe("positive");
+      expect(busy?.dataset.workbenchToolbarStatusTone).toBe("accent");
+    });
+  },
+} satisfies Story;
+
+export const WideSurfaceUsesResizableDetailSplit = {
+  name: "Scenario: Given a wide terminal surface When the shared split-detail shell renders Then the activity rail stays in a persistent resizable right pane",
+  args: {
+    surfaceWidthPx: 1280,
+  },
+  play: async ({ canvasElement }) => {
+    const splitRoot = await findSplitRoot(canvasElement);
+    await waitFor(() => {
+      expect(splitRoot.dataset.compact).toBe("false");
+    });
+    await expect(within(canvasElement).getByRole("separator", { name: "Resize detail panel" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        canvasElement.querySelector('[data-terminal-detail-panel-view="actions"]'),
+      ).not.toBeNull();
+    });
+  },
+} satisfies Story;
+
+export const CompactSurfaceKeepsDetailReachable = {
+  name: "Scenario: Given a narrow terminal surface When the shared split-detail shell collapses Then the actions rail opens through the shared right sheet instead of stacking below the stage",
+  args: {
+    surfaceWidthPx: 560,
+    surfaceHeightPx: 780,
+  },
+  play: async ({ canvasElement }) => {
+    const splitRoot = await findSplitRoot(canvasElement);
+    await waitFor(() => {
+      expect(splitRoot.dataset.compact).toBe("true");
+      expect(canvasElement.querySelector('[data-terminal-detail-layout="sheet"]')).not.toBeNull();
+    });
+    expect(canvasElement.querySelector('[data-layout-role="workbench-split-detail-handle"]')).toBeNull();
+    await expect(within(canvasElement).getByTestId("terminal-stage-pane")).toBeInTheDocument();
+    expect(canvasElement.querySelector('[data-terminal-detail-panel-view="actions"]')).toBeNull();
+    await openActionsDetail(canvasElement);
+  },
+} satisfies Story;
+
+export const ReadActionStructuredPreviewStaysCompact = {
+  name: "Scenario: Given a terminal read action When the shared tool invocation card renders YAML previews Then the read parameter panel stays above a compact actor row and each mapping line stays compact",
+  args: {
+    surfaceWidthPx: 1280,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = await triggerReadAction(canvasElement);
+    const readGroup = canvas.getByTestId("terminal-read-input-group");
+    await expect(readGroup).toBeInTheDocument();
+    await expect(canvas.getByTestId("terminal-read-parameter-panel")).toBeInTheDocument();
+    await expect(canvas.getByTestId("terminal-read-parameter-mode")).toBeInTheDocument();
+    const actorTrigger = within(readGroup).getByRole("button", { name: "Call tool as" });
+    expect(actorTrigger.textContent ?? "").toContain("Bootstrap admin");
+    expect(actorTrigger.textContent ?? "").not.toContain("system:trusted-terminal-bootstrap");
+    await userEvent.click(actorTrigger);
+    await waitFor(() => {
+      expect(within(canvasElement.ownerDocument.body).getByText("/repo/reviewer")).toBeInTheDocument();
+    });
+    await userEvent.keyboard("{Escape}");
+    const card = await findInvocationCard(canvasElement, "terminal.read");
+    expect(card.querySelector("agenter-tool-invocation-card")).toBeNull();
+    const viewers = Array.from(card.querySelectorAll<HTMLElement>('[data-testid="structured-value-viewer"]'));
+    expect(viewers).toHaveLength(2);
+    expect(card.querySelector('[aria-label="Structured value options"]')).toBeNull();
+    assertStructuredValuePreviewLine(viewers[0]!, "mode");
+    assertStructuredValuePreviewLine(viewers[1]!, "representation");
   },
 } satisfies Story;
 
@@ -209,12 +396,12 @@ export const WindowChromeTogglesProjectionMode = {
       expect(
         terminalView?.shadowRoot?.querySelector('[data-terminal-view-root="true"]')?.getAttribute("data-viewport-mode"),
       ).toBe("cover");
-      expect(
-        terminalView?.shadowRoot?.querySelector('[data-terminal-stage]')?.getAttribute("style"),
-      ).toContain("align-items:flex-start");
-      expect(
-        terminalView?.shadowRoot?.querySelector('[data-terminal-stage]')?.getAttribute("style"),
-      ).toContain("justify-content:flex-start");
+      expect(terminalView?.shadowRoot?.querySelector("[data-terminal-stage]")?.getAttribute("style")).toContain(
+        "align-items:flex-start",
+      );
+      expect(terminalView?.shadowRoot?.querySelector("[data-terminal-stage]")?.getAttribute("style")).toContain(
+        "justify-content:flex-start",
+      );
       expect(getComputedStyle(scrollViewport).overflowX).not.toBe("hidden");
       expect(scrollViewport.scrollWidth).toBeGreaterThan(scrollViewport.clientWidth);
     });
