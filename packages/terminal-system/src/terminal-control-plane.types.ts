@@ -1,6 +1,7 @@
 import type { PrincipalId } from "@agenter/principal-crypto";
 import type { ManagedTerminalSnapshot } from "./managed-terminal";
 import type { TerminalDirtySliceResult, TerminalGitLogMode, TerminalLogStyle, TerminalStatus } from "./types";
+import type { TerminalLifecycleState, TerminalObservedIdentity, TerminalProcessPhase } from "./terminal-runtime-truth";
 
 export type TerminalFocusOp = "add" | "remove" | "replace" | "clear";
 export type TerminalReadMode = "auto" | "diff" | "snapshot";
@@ -116,7 +117,11 @@ export interface TerminalReadResult {
   diff?: string;
   bytes?: number;
   status: "IDLE" | "BUSY";
+  processPhase: TerminalProcessPhase;
   title?: string;
+  configuredTitle?: string;
+  currentTitle?: string;
+  currentPath?: string;
   running?: boolean;
 }
 
@@ -250,15 +255,14 @@ export interface TerminalControlPlaneEntry {
   terminalId: string;
   processKind: string;
   command: string[];
-  cwd: string;
+  launchCwd: string;
   workspace: string | null;
-  running: boolean;
   status: "IDLE" | "BUSY";
   seq: number;
   snapshot?: ManagedTerminalSnapshot;
   focused: boolean;
   icon?: string;
-  title?: string;
+  configuredTitle?: string;
   shortcuts?: TerminalShortcutMap;
   rendererEngine?: TerminalRendererEngine;
   transportUrl?: string;
@@ -268,6 +272,8 @@ export interface TerminalControlPlaneEntry {
   access?: TerminalAccessProjection;
   actors?: TerminalSeatProjection[];
 }
+
+export interface TerminalControlPlaneEntry extends TerminalObservedIdentity, TerminalLifecycleState {}
 
 export interface TerminalPatchInput {
   title?: string;
@@ -282,12 +288,14 @@ export interface TerminalRecord {
   terminalId: string;
   processKind: string;
   command: string[];
-  cwd: string;
+  launchCwd: string;
   profile: TerminalProcessProfile;
   metadata: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
 }
+
+export interface TerminalRecord extends TerminalLifecycleState {}
 
 export interface TerminalAdminCandidateRecord {
   terminalId: string;
@@ -312,7 +320,11 @@ export interface TerminalPolicyDecision {
 
 export interface TerminalReadProjection {
   status: TerminalStatus;
+  processPhase: TerminalProcessPhase;
   title?: string;
+  configuredTitle?: string;
+  currentTitle?: string;
+  currentPath?: string;
   running: boolean;
 }
 

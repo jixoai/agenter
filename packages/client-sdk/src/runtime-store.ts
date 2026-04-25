@@ -366,8 +366,8 @@ const sortGlobalRoomAssets = (items: GlobalRoomAssetEntry[]): GlobalRoomAssetEnt
 
 const withTrailingSlashTrimmed = (value: string): string => value.replace(/\/$/, "");
 
-const hasRenderableTerminalCwd = (value: string | undefined): boolean =>
-  typeof value === "string" && value.trim().length > 0 && value.trim() !== ".";
+const hasOwnProjectionField = <K extends PropertyKey>(value: object, key: K): value is Record<K, unknown> =>
+  Object.prototype.hasOwnProperty.call(value, key);
 
 const mergeTerminalSnapshot = (
   current: GlobalTerminalEntry["snapshot"],
@@ -398,13 +398,15 @@ const mergeGlobalTerminalEntry = (
   return {
     ...current,
     ...incoming,
-    cwd: hasRenderableTerminalCwd(incoming.cwd) ? incoming.cwd : current.cwd,
     snapshot: mergeTerminalSnapshot(current.snapshot, incoming.snapshot),
     rendererEngine: incoming.rendererEngine ?? current.rendererEngine,
-    transportUrl: incoming.transportUrl ?? current.transportUrl,
-    title: incoming.title ?? current.title,
-    icon: incoming.icon ?? current.icon,
-    shortcuts: incoming.shortcuts ?? current.shortcuts,
+    launchCwd: incoming.launchCwd,
+    configuredTitle: hasOwnProjectionField(incoming, "configuredTitle") ? incoming.configuredTitle : current.configuredTitle,
+    currentTitle: hasOwnProjectionField(incoming, "currentTitle") ? incoming.currentTitle : current.currentTitle,
+    currentPath: hasOwnProjectionField(incoming, "currentPath") ? incoming.currentPath : current.currentPath,
+    transportUrl: hasOwnProjectionField(incoming, "transportUrl") ? incoming.transportUrl : current.transportUrl,
+    icon: hasOwnProjectionField(incoming, "icon") ? incoming.icon : current.icon,
+    shortcuts: hasOwnProjectionField(incoming, "shortcuts") ? incoming.shortcuts : current.shortcuts,
     currentAdminId: incoming.currentAdminId ?? current.currentAdminId,
     approvalTimeoutMs: incoming.approvalTimeoutMs ?? current.approvalTimeoutMs,
     pendingRequestCount: incoming.pendingRequestCount ?? current.pendingRequestCount,
@@ -4442,14 +4444,16 @@ export class RuntimeStore {
       terminalId: string;
       processKind: string;
       command: string[];
-      cwd: string;
+      launchCwd: string;
       workspace: string | null;
-      running: boolean;
       status: "IDLE" | "BUSY";
+      processPhase: "not_started" | "running" | "stopped";
       seq: number;
       focused: boolean;
       icon?: string;
-      title?: string;
+      configuredTitle?: string;
+      currentTitle?: string;
+      currentPath?: string;
       shortcuts?: Record<string, string>;
       transportUrl?: string;
     }>
@@ -4536,12 +4540,35 @@ export class RuntimeStore {
       title?: string;
       shortcuts?: Record<string, string>;
     };
+    start?: boolean;
     focus?: boolean;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
     const output = await this.client.trpc.terminal.globalCreate.mutate(input);
     if (output.result.terminal) {
       this.reconcileGlobalTerminalEntry(output.result.terminal);
       this.emit();
+    }
+    return output.result;
+  }
+
+  async bootstrapGlobalTerminal(input: {
+    terminalId: string;
+  }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
+    const output = await this.client.trpc.terminal.globalBootstrap.mutate(input);
+    if (output.result.terminal) {
+      this.reconcileGlobalTerminalEntry(output.result.terminal);
+      this.emit();
+    }
+    return output.result;
+  }
+
+  async stopGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string }> {
+    const output = await this.client.trpc.terminal.globalStop.mutate(input);
+    if (output.result.ok) {
+      this.invalidateGlobalTerminalSurface({
+        catalog: true,
+        force: true,
+      });
     }
     return output.result;
   }
@@ -6039,12 +6066,16 @@ export class RuntimeStore {
         runtime.focusedTerminalIds = focused.focusedTerminalIds;
         runtime.focusedTerminalId = focused.focusedTerminalId;
       } else if (event.type === "terminal.status") {
-        const payload = event.payload as { terminalId: string; running: boolean; status: "IDLE" | "BUSY" };
+        const payload = event.payload as {
+          terminalId: string;
+          processPhase: "running" | "stopped";
+          status: "IDLE" | "BUSY";
+        };
         runtime.terminals = runtime.terminals.map((item) =>
           item.terminalId === payload.terminalId
             ? {
                 ...item,
-                running: payload.running,
+                processPhase: payload.processPhase,
                 status: payload.status,
               }
             : item,

@@ -126,8 +126,8 @@ const channels = [
 const terminals = [
   {
     terminalId: "terminal-1",
-    title: "Main shell",
-    cwd: "/repo/app",
+    configuredTitle: "Main shell",
+    currentTitle: undefined,
   } satisfies RuntimeContextTerminal,
 ] as const;
 

@@ -252,13 +252,21 @@ export interface RuntimeTerminalView {
   terminalId: string;
   processKind: string;
   command: string[];
-  cwd: string;
+  launchCwd: string;
   workspace: string | null;
-  running: boolean;
   status: "IDLE" | "BUSY";
+  processPhase: TerminalControlPlaneEntry["processPhase"];
   focused: boolean;
   icon?: string;
-  title?: string;
+  configuredTitle?: string;
+  currentTitle?: string;
+  currentPath?: string;
+  lastStopReason?: TerminalControlPlaneEntry["lastStopReason"];
+  lastExitCode?: TerminalControlPlaneEntry["lastExitCode"];
+  lastExitSignal?: TerminalControlPlaneEntry["lastExitSignal"];
+  lastStoppedAt?: TerminalControlPlaneEntry["lastStoppedAt"];
+  shortcuts?: TerminalControlPlaneEntry["shortcuts"];
+  transportUrl?: string;
   rendererEngine?: TerminalControlPlaneEntry["rendererEngine"];
 }
 
@@ -428,13 +436,21 @@ export const projectRuntimeTerminal = (terminal: TerminalControlPlaneEntry): Run
   terminalId: terminal.terminalId,
   processKind: terminal.processKind,
   command: [...terminal.command],
-  cwd: terminal.cwd,
+  launchCwd: terminal.launchCwd,
   workspace: terminal.workspace,
-  running: terminal.running,
   status: terminal.status,
+  processPhase: terminal.processPhase,
   focused: terminal.focused,
   icon: terminal.icon,
-  title: terminal.title,
+  configuredTitle: terminal.configuredTitle,
+  currentTitle: terminal.currentTitle,
+  currentPath: terminal.currentPath,
+  lastStopReason: terminal.lastStopReason,
+  lastExitCode: terminal.lastExitCode,
+  lastExitSignal: terminal.lastExitSignal,
+  lastStoppedAt: terminal.lastStoppedAt,
+  shortcuts: terminal.shortcuts,
+  transportUrl: terminal.transportUrl,
   rendererEngine: terminal.rendererEngine,
 });
 

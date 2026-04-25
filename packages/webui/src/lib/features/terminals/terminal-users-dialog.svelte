@@ -16,6 +16,7 @@
 	import * as Item from '$lib/components/ui/item/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
+	import { resolveTerminalIdentitySubtitle, resolveTerminalInstanceName } from './terminal-display';
 
 	import type {
 		TerminalSystemApprovalDecisionInput,
@@ -157,10 +158,10 @@
 						Terminal access
 					</div>
 					<div class="break-all text-base font-semibold text-foreground">
-						{selectedTerminal?.title || selectedTerminal?.terminalId || 'Select a terminal'}
+						{resolveTerminalInstanceName(selectedTerminal)}
 					</div>
 					<div class="break-all text-sm text-muted-foreground">
-						{selectedTerminal ? `${selectedTerminal.terminalId} · ${selectedTerminal.cwd}` : 'No terminal selected.'}
+						{selectedTerminal ? resolveTerminalIdentitySubtitle(selectedTerminal) || selectedTerminal.terminalId : 'No terminal selected.'}
 					</div>
 				</div>
 				<Dialog.Close

@@ -94,6 +94,8 @@ export interface TerminalSystemSurfaceProps {
   selectedCallerToken: string | null;
   seatStates: TerminalSystemSeatState[];
   onChangeCallerToken: (accessToken: string) => void;
+  onBootstrapTerminal: () => Promise<void>;
+  onStopTerminal: () => Promise<void>;
   onDeleteTerminal: () => Promise<void>;
   onGrantSeat: (input: TerminalSystemGrantSeatInput) => Promise<void>;
   onToggleSeatFocus: (input: TerminalSystemSeatFocusInput) => Promise<void>;

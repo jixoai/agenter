@@ -530,6 +530,7 @@ const buildTerminalDiffPayload = (
     diff: string;
     bytes: number;
     status: "IDLE" | "BUSY";
+    processPhase: ControlPlaneTerminalReadResult["processPhase"];
   },
 ): ControlPlaneTerminalReadResult => ({
   kind: "terminal-diff",
@@ -539,6 +540,7 @@ const buildTerminalDiffPayload = (
   toHash: input.toHash,
   bytes: input.bytes,
   status: input.status,
+  processPhase: input.processPhase,
   diff: input.diff,
 });
 
@@ -550,6 +552,7 @@ const serializeTerminalDiff = (
     diff: string;
     bytes: number;
     status: "IDLE" | "BUSY";
+    processPhase: ControlPlaneTerminalReadResult["processPhase"];
   },
 ): string => JSON.stringify(buildTerminalDiffPayload(terminalId, input));
 
@@ -565,6 +568,7 @@ const buildTerminalSnapshotPayload = (
   terminalId: string,
   snapshot: ManagedTerminalSnapshot,
   status: "IDLE" | "BUSY",
+  processPhase: ControlPlaneTerminalReadResult["processPhase"],
 ): ControlPlaneTerminalReadResult => ({
   kind: "terminal-snapshot",
   representation: "snapshot" as const,
@@ -576,6 +580,7 @@ const buildTerminalSnapshotPayload = (
   tail: snapshot.lines.slice(-20).join("\n"),
   snapshot,
   status,
+  processPhase,
 });
 
 const truncateTerminalAttentionDetail = (value: string): string => {
@@ -1303,7 +1308,11 @@ export interface RuntimeEventMap {
   chat: ChatMessage;
   terminalSnapshot: { terminalId: string; snapshot: ManagedTerminalSnapshot };
   terminalRead: { terminalId: string; result: ControlPlaneTerminalReadResult };
-  terminalStatus: { terminalId: string; running: boolean; status: "IDLE" | "BUSY" };
+  terminalStatus: {
+    terminalId: string;
+    processPhase: "running" | "stopped";
+    status: "IDLE" | "BUSY";
+  };
   focusedTerminal: { terminalIds: string[]; terminalId: string | null };
   taskUpdated: { task: TaskView };
   taskDeleted: { key: string };
@@ -1363,12 +1372,18 @@ export interface SessionRuntimeSnapshot {
   terminalReads: Record<string, ControlPlaneTerminalReadResult>;
   terminals: Array<{
     terminalId: string;
-    running: boolean;
     status: "IDLE" | "BUSY";
+    processPhase: "not_started" | "running" | "stopped";
     seq: number;
-    cwd: string;
+    launchCwd: string;
     icon?: string;
-    title?: string;
+    configuredTitle?: string;
+    currentTitle?: string;
+    currentPath?: string;
+    lastStopReason?: "killed" | "exited" | "startup_failed" | null;
+    lastExitCode?: number | null;
+    lastExitSignal?: string | null;
+    lastStoppedAt?: number | null;
     shortcuts?: Record<string, string>;
     transportUrl?: string;
   }>;
@@ -1465,7 +1480,10 @@ export class SessionRuntime {
   private readonly terminalLatestSeq: Record<string, number> = {};
   private readonly terminalViewFingerprint: Record<string, string> = {};
   private readonly terminalSemanticFingerprint: Record<string, string> = {};
-  private readonly terminalStatusById = new Map<string, { running: boolean; status: "IDLE" | "BUSY" }>();
+  private readonly terminalStatusById = new Map<
+    string,
+    { processPhase: "running" | "stopped"; status: "IDLE" | "BUSY" }
+  >();
   private readonly taskEngine = new TaskEngine();
   private readonly taskSourceMtime = new Map<string, number>();
   private readonly taskAttentionDraftQueue: AttentionDraft[] = [];
@@ -3063,10 +3081,6 @@ export class SessionRuntime {
       return { ok: false, message: `unknown terminal: ${input.terminalId}` };
     }
     try {
-      if (this.config?.terminals[input.terminalId]?.gitLog && !controlPlane.isRunning(input.terminalId)) {
-        controlPlane.start(input.terminalId);
-        await controlPlane.markDirty(input.terminalId);
-      }
       const result = await controlPlane.write({
         terminalId: input.terminalId,
         text: input.text,
@@ -3100,10 +3114,6 @@ export class SessionRuntime {
       return { ok: false, message: `unknown terminal: ${input.terminalId}` };
     }
     try {
-      if (this.config?.terminals[input.terminalId]?.gitLog && !controlPlane.isRunning(input.terminalId)) {
-        controlPlane.start(input.terminalId);
-        await controlPlane.markDirty(input.terminalId);
-      }
       const result = await controlPlane.input({
         terminalId: input.terminalId,
         text: input.text,
@@ -3152,7 +3162,7 @@ export class SessionRuntime {
         if (!created.ok) {
           return created;
         }
-        controlPlane.start(targetTerminalId);
+        controlPlane.bootstrap(targetTerminalId);
         if (this.config.terminals[targetTerminalId]?.gitLog) {
           await controlPlane.markDirty(targetTerminalId);
         }
@@ -3261,7 +3271,7 @@ export class SessionRuntime {
 
   async deleteRuntimeTerminal(terminalId: string): Promise<{ ok: boolean; message: string }> {
     const controlPlane = this.requireTerminalControlPlane();
-    const result = await controlPlane.killAuthorized({
+    const result = await controlPlane.deleteAuthorized({
       terminalId,
       actorId: this.terminalActorId,
     });
@@ -3289,6 +3299,18 @@ export class SessionRuntime {
       event: "terminal_delete",
       summary: `Deleted terminal ${terminalId}`,
     });
+    return result;
+  }
+
+  async stopRuntimeTerminal(terminalId: string): Promise<{ ok: boolean; message: string }> {
+    const controlPlane = this.requireTerminalControlPlane();
+    const result = await controlPlane.stopAuthorized({
+      terminalId,
+      actorId: this.terminalActorId,
+    });
+    if (!result.ok) {
+      return result;
+    }
     return result;
   }
 
@@ -3822,13 +3844,20 @@ export class SessionRuntime {
         terminalList: () => this.listRuntimeTerminals().map(projectRuntimeTerminal),
         terminalCreate: async (input) => {
           const result = await this.createRuntimeTerminal(input);
-          return result.terminal ? { ...result, terminal: projectRuntimeTerminal(result.terminal) } : result;
+          if (!result.terminal) {
+            return { ok: result.ok, message: result.message };
+          }
+          return {
+            ok: result.ok,
+            message: result.message,
+            terminal: projectRuntimeTerminal(result.terminal),
+          };
         },
         terminalRead: async (input) => await this.readRuntimeTerminal(input),
         terminalWrite: async (input) => await this.writeRuntimeTerminal(input),
         terminalInput: async (input) => await this.inputRuntimeTerminal(input),
         terminalFocus: async (input) => await this.focusRuntimeTerminals(input),
-        terminalKill: async (input) => await this.deleteRuntimeTerminal(input.terminalId),
+        terminalKill: async (input) => await this.stopRuntimeTerminal(input.terminalId),
         skillList: () => runtimeSkillSystem.list().map(projectRuntimeSkill),
         skillSearch: (input) => runtimeSkillSystem.search(input.query ?? "").map(projectRuntimeSkill),
         skillInfo: async (input) => {
@@ -7046,14 +7075,21 @@ export class SessionRuntime {
     const terminals = [...planeEntries.values()].map((planeEntry) => {
       const managed = this.terminals.get(planeEntry.terminalId);
       const snapshot = managed?.getSnapshot();
+      const statusEntry = this.terminalStatusById.get(planeEntry.terminalId);
       return {
         terminalId: planeEntry.terminalId,
-        running: managed?.isRunning() ?? planeEntry.running,
-        status: managed?.getStatus() ?? planeEntry.status,
+        status: statusEntry?.status ?? managed?.getStatus() ?? planeEntry.status,
+        processPhase: statusEntry?.processPhase ?? planeEntry.processPhase,
         seq: snapshot?.seq ?? 0,
-        cwd: planeEntry.cwd,
+        launchCwd: planeEntry.launchCwd,
         icon: planeEntry?.icon,
-        title: planeEntry?.title,
+        configuredTitle: planeEntry?.configuredTitle,
+        currentTitle: planeEntry?.currentTitle,
+        currentPath: planeEntry?.currentPath,
+        lastStopReason: planeEntry?.lastStopReason,
+        lastExitCode: planeEntry?.lastExitCode,
+        lastExitSignal: planeEntry?.lastExitSignal,
+        lastStoppedAt: planeEntry?.lastStoppedAt,
         shortcuts: planeEntry?.shortcuts,
         transportUrl: planeEntry?.transportUrl,
       };
@@ -7127,7 +7163,12 @@ export class SessionRuntime {
         return { ok: false, reason: `unknown terminal: ${terminalId}` };
       }
 
-      const snapshotPayload = buildTerminalSnapshotPayload(terminalId, terminal.getSnapshot(), terminal.getStatus());
+      const snapshotPayload = buildTerminalSnapshotPayload(
+        terminalId,
+        terminal.getSnapshot(),
+        terminal.getStatus(),
+        terminal.isRunning() ? "running" : "stopped",
+      );
       const snapshotJson = JSON.stringify(snapshotPayload);
 
       if (config.gitLog && input.mode !== "snapshot") {
@@ -7142,6 +7183,7 @@ export class SessionRuntime {
             diff: slice.diff,
             bytes: slice.bytes,
             status: terminal.getStatus(),
+            processPhase: terminal.isRunning() ? "running" : "stopped",
           });
           const shouldUseDiff =
             input.mode === "diff" ||
@@ -7259,8 +7301,9 @@ export class SessionRuntime {
 
     terminal.onStatus((running, status) => {
       const previous = this.terminalStatusById.get(terminalId);
-      this.terminalStatusById.set(terminalId, { running, status });
-      this.emit("terminalStatus", { terminalId, running, status });
+      const processPhase = running ? "running" : "stopped";
+      this.terminalStatusById.set(terminalId, { processPhase, status });
+      this.emit("terminalStatus", { terminalId, processPhase, status });
       this.terminalKernelAdapter.handleStatusChange({
         terminalId,
         previousStatus: previous?.status ?? null,

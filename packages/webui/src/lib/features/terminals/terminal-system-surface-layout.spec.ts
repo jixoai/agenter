@@ -11,6 +11,14 @@ const terminalPageToolbarSource = readFileSync(
   resolve(import.meta.dirname, "terminal-page-toolbar-content.svelte"),
   "utf8",
 );
+const terminalWindowSurfaceSource = readFileSync(
+  resolve(import.meta.dirname, "terminal-window-surface.svelte"),
+  "utf8",
+);
+const terminalsWorkbenchLayoutSource = readFileSync(
+  resolve(import.meta.dirname, "terminals-workbench-layout.svelte"),
+  "utf8",
+);
 const terminalUsersDialogSource = readFileSync(resolve(import.meta.dirname, "terminal-users-dialog.svelte"), "utf8");
 
 describe("Feature: Terminal surface layout ownership contract", () => {
@@ -64,12 +72,19 @@ describe("Feature: Terminal surface layout ownership contract", () => {
       "import WorkbenchToolbarStatus from '$lib/features/navigation/workbench-toolbar-status.svelte';",
     );
     expect(terminalPageToolbarSource).toContain("{#snippet terminalToolbarStatus(toolbarState: WorkbenchToolbarRenderState)}");
-    expect(terminalPageToolbarSource).toContain("selectedTerminal.running");
-    expect(terminalPageToolbarSource).toContain("selectedTerminal.status === 'BUSY' ? 'Busy' : 'Idle'");
+    expect(terminalPageToolbarSource).toContain("resolveTerminalLifecycleFacts(selectedTerminal)");
+    expect(terminalPageToolbarSource).toContain("{#each terminalStatusFacts as fact (fact.label)}");
     expect(terminalPageToolbarSource).toContain("status={terminalToolbarStatus}");
     expect(terminalPageToolbarSource).toContain("actionsOpen: boolean;");
     expect(terminalPageToolbarSource).toContain("usersOpen: boolean;");
     expect(terminalPageToolbarSource).toContain("pressed={actionsOpen}");
     expect(terminalPageToolbarSource).not.toContain("activeDetailView");
+  });
+
+  test("Scenario: Given terminal instance identity and PTY window title diverge When reading the source Then tabs and toolbar keep the instance name while the window title uses the observed PTY title", () => {
+    expect(terminalPageToolbarSource).toContain("resolveTerminalInstanceName(selectedTerminal)");
+    expect(terminalsWorkbenchLayoutSource).toContain("label: resolveTerminalInstanceName(terminal)");
+    expect(terminalWindowSurfaceSource).toContain("resolveTerminalWindowTitle(terminal)");
+    expect(terminalWindowSurfaceSource).not.toContain("resolveTerminalInstanceName(terminal)");
   });
 });

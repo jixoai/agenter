@@ -74,7 +74,7 @@ const resolveCommand = (command: string, env: Record<string, string>): string =>
 export class Pty {
   private proc: Bun.Subprocess | null = null;
   private onData: ((chunk: Uint8Array) => void) | null = null;
-  private onExit: ((code: number | null) => void) | null = null;
+  private onExit: ((code: number | null, signal: number | string | null) => void) | null = null;
 
   constructor(
     private readonly command: string,
@@ -90,7 +90,7 @@ export class Pty {
     this.onData = cb;
   }
 
-  setOnExit(cb: (code: number | null) => void): void {
+  setOnExit(cb: (code: number | null, signal: number | string | null) => void): void {
     this.onExit = cb;
   }
 
@@ -117,9 +117,9 @@ export class Pty {
             // stream closed
           },
         },
-        onExit: (_subprocess, code, _signal, _error) => {
+        onExit: (_subprocess, code, signal, _error) => {
           this.proc = null;
-          this.onExit?.(code);
+          this.onExit?.(code, signal);
         },
       });
     } catch (error) {

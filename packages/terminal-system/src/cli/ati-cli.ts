@@ -308,8 +308,8 @@ const runTerminalSession = async (input: RunArgs): Promise<number> => {
     if (!terminal) {
       return;
     }
-    stopExit = terminal.onExit((code) => {
-      void finalize(code ?? 0);
+    stopExit = terminal.onExit((info) => {
+      void finalize(info.code ?? 0);
     });
     stopRender = terminal.onRender((render) => {
       if (!terminal) {

@@ -3,7 +3,11 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { isPrincipalId } from "@agenter/principal-crypto";
-import { ManagedTerminal, type ManagedTerminalConfig, type ManagedTerminalSnapshot } from "./managed-terminal";
+import {
+  ManagedTerminal,
+  type ManagedTerminalConfig,
+  type ManagedTerminalSnapshot,
+} from "./managed-terminal";
 import type {
   TerminalAccessProjection,
   TerminalActorId,
@@ -40,6 +44,7 @@ import type {
   TerminalWriteResult,
 } from "./terminal-control-plane.types";
 import { TerminalDb } from "./terminal-db";
+import type { TerminalObservedIdentity } from "./terminal-runtime-truth";
 import type { TerminalStatus } from "./types";
 
 interface ManagedEntry {
@@ -65,6 +70,8 @@ type TerminalChangeReason =
   | "created"
   | "updated"
   | "deleted"
+  | "identity"
+  | "lifecycle"
   | "activity"
   | "grant-issued"
   | "grant-revoked"
@@ -188,7 +195,11 @@ const buildSnapshotPayload = (
   tail: snapshot.lines.slice(-20).join("\n"),
   snapshot,
   status: projection.status,
+  processPhase: projection.processPhase,
   title: projection.title,
+  configuredTitle: projection.configuredTitle,
+  currentTitle: projection.currentTitle,
+  currentPath: projection.currentPath,
   running: projection.running,
 });
 
@@ -210,9 +221,19 @@ const buildDiffPayload = (
   diff: input.diff,
   bytes: input.bytes,
   status: projection.status,
+  processPhase: projection.processPhase,
   title: projection.title,
+  configuredTitle: projection.configuredTitle,
+  currentTitle: projection.currentTitle,
+  currentPath: projection.currentPath,
   running: projection.running,
 });
+
+const resolveDisplayTitle = (
+  terminalId: string,
+  configuredTitle: string | undefined,
+  observedIdentity: TerminalObservedIdentity,
+): string => observedIdentity.currentTitle ?? configuredTitle ?? terminalId;
 
 const toManagedGitLogMode = (value: TerminalProcessProfile["gitLog"]): false | "normal" | "verbose" => {
   if (value === "normal" || value === "verbose") {
@@ -298,6 +319,7 @@ export class TerminalControlPlane {
       approvalTimeoutMs: options.initialConfig?.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
     };
     this.db = new TerminalDb(options.dbPath ?? join(homedir(), ".agenter", ".terminal", "terminal.db"));
+    this.normalizeRecoveredLifecycle();
   }
 
   onSnapshot(listener: (payload: { terminalId: string; snapshot: ManagedTerminalSnapshot }) => void): () => void {
@@ -435,7 +457,7 @@ export class TerminalControlPlane {
     this.db.setAdminGroup(created.terminalId, adminGroup);
     this.syncAdminAssignments(created.terminalId);
     if (input.start !== false) {
-      this.start(created.terminalId);
+      this.bootstrap(created.terminalId);
     }
     this.emitChange({
       terminalId: created.terminalId,
@@ -464,7 +486,7 @@ export class TerminalControlPlane {
     });
   }
 
-  start(terminalId: string): TerminalControlPlaneEntry {
+  bootstrap(terminalId: string): TerminalControlPlaneEntry {
     const entry = this.ensureManagedEntry(terminalId);
     if (!entry.terminal.isRunning()) {
       entry.terminal.start();
@@ -475,12 +497,44 @@ export class TerminalControlPlane {
     });
   }
 
-  async kill(terminalId: string): Promise<{ ok: boolean; message: string }> {
+  bootstrapAuthorized(input: {
+    terminalId: string;
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): TerminalControlPlaneEntry {
+    this.requireAdministrativeAuthority(input.terminalId, input);
+    return this.bootstrap(input.terminalId);
+  }
+
+  async stop(terminalId: string): Promise<{ ok: boolean; message: string }> {
     const entry = this.entries.get(terminalId);
-    if (entry) {
-      await entry.terminal.stop();
-      this.entries.delete(terminalId);
+    const record = this.db.getTerminal(terminalId);
+    if (!record) {
+      return { ok: false, message: `unknown terminal: ${terminalId}` };
     }
+    if (entry?.terminal.isRunning()) {
+      await entry.terminal.stop();
+    }
+    return { ok: true, message: "terminal PTY stopped" };
+  }
+
+  async stopAuthorized(input: {
+    terminalId: string;
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): Promise<{ ok: boolean; message: string }> {
+    this.requireAdministrativeAuthority(input.terminalId, input);
+    return await this.stop(input.terminalId);
+  }
+
+  async deleteTerminal(terminalId: string): Promise<{ ok: boolean; message: string }> {
+    const entry = this.entries.get(terminalId);
+    if (entry?.terminal.isRunning()) {
+      await entry.terminal.stop();
+    }
+    this.entries.delete(terminalId);
     const existed = this.db.removeTerminal(terminalId);
     if (!existed) {
       return { ok: false, message: `unknown terminal: ${terminalId}` };
@@ -492,17 +546,17 @@ export class TerminalControlPlane {
       this.emitFocus(actorId as TerminalActorId);
     }
     this.emitChange({ terminalId, reason: "deleted" });
-    return { ok: true, message: "terminal stopped" };
+    return { ok: true, message: "terminal deleted" };
   }
 
-  async killAuthorized(input: {
+  async deleteAuthorized(input: {
     terminalId: string;
     accessToken?: string;
     actorId?: TerminalActorId;
     superadminActorId?: TerminalActorId;
   }): Promise<{ ok: boolean; message: string }> {
     this.requireAdministrativeAuthority(input.terminalId, input);
-    return await this.kill(input.terminalId);
+    return await this.deleteTerminal(input.terminalId);
   }
 
   focus(op: TerminalFocusOp = "replace", terminalIds: string[] = []): string[] {
@@ -575,6 +629,9 @@ export class TerminalControlPlane {
   }
 
   getTransportEndpoint(terminalId: string, accessToken?: string): TerminalTransportEndpoint | null {
+    if (!this.entries.get(terminalId)?.terminal.isRunning()) {
+      return null;
+    }
     const transport = this.getConfig().transport;
     const livePort = this.transportServer ? Number.parseInt(this.transportServer.url.port, 10) : Number.NaN;
     const port = Number.isFinite(livePort) && livePort > 0 ? livePort : transport?.port;
@@ -626,6 +683,9 @@ export class TerminalControlPlane {
           grant = this.requireAccess(terminalId, accessToken, "readonly");
         } catch {
           return new Response("credential-invalid", { status: 401 });
+        }
+        if (!this.entries.get(terminalId)?.terminal.isRunning()) {
+          return new Response("terminal-not-running", { status: 409 });
         }
         const upgraded = serverInstance.upgrade(request, {
           data: {
@@ -706,7 +766,8 @@ export class TerminalControlPlane {
           );
           socket.data.cleanup = cleanup;
           if (!entry.terminal.isRunning()) {
-            entry.terminal.start();
+            socket.close(4409, "terminal-not-running");
+            return;
           }
           sendSnapshot(entry.terminal.getSnapshot());
           mirrorLiveSnapshots = true;
@@ -893,7 +954,10 @@ export class TerminalControlPlane {
     };
     const entry = this.ensureManagedEntry(input.terminalId);
     if (!entry.terminal.isRunning()) {
-      entry.terminal.start();
+      return {
+        ok: false,
+        message: `${input.title} requires a running terminal PTY`,
+      };
     }
     const decision = this.authorizeWrite({
       terminalId: input.terminalId,
@@ -1318,9 +1382,14 @@ export class TerminalControlPlane {
       terminalId,
       processKind,
       command,
-      cwd,
+      launchCwd: cwd,
       profile,
       metadata: {},
+      processPhase: "not_started",
+      lastStopReason: null,
+      lastExitCode: null,
+      lastExitSignal: null,
+      lastStoppedAt: null,
     });
   }
 
@@ -1330,7 +1399,7 @@ export class TerminalControlPlane {
       return existing;
     }
     const record = this.requireRecord(terminalId);
-    const normalizedCwd = resolve(record.cwd);
+    const normalizedCwd = resolve(record.launchCwd);
     const managedConfig: ManagedTerminalConfig = {
       terminalId: record.terminalId,
       command: [...record.command],
@@ -1357,6 +1426,13 @@ export class TerminalControlPlane {
       this.emitSnapshot({ terminalId: entry.record.terminalId, snapshot });
       this.emitChange({ terminalId: entry.record.terminalId, reason: "snapshot" });
     });
+    entry.terminal.onObservedIdentity(() => {
+      this.emitChange({ terminalId: entry.record.terminalId, reason: "identity" });
+    });
+    entry.terminal.onLifecycle((event) => {
+      entry.record = this.db.updateLifecycle(entry.record.terminalId, event);
+      this.emitChange({ terminalId: entry.record.terminalId, reason: "lifecycle" });
+    });
     entry.terminal.onStatus((running, status) => {
       this.emitStatus({ terminalId: entry.record.terminalId, running, status });
       this.emitChange({ terminalId: entry.record.terminalId, reason: "status" });
@@ -1369,24 +1445,31 @@ export class TerminalControlPlane {
   ): TerminalControlPlaneEntry {
     const entry = this.entries.get(record.terminalId);
     const snapshot = entry?.terminal.getSnapshot();
+    const observedIdentity = entry?.terminal.getObservedIdentity() ?? {};
     const access = input.access ?? undefined;
-    const normalizedCwd = resolve(record.cwd);
     return {
       terminalId: record.terminalId,
       processKind: record.processKind,
       command: [...record.command],
-      cwd: normalizedCwd,
+      launchCwd: resolve(record.launchCwd),
       workspace: entry?.terminal.getWorkspace() ?? null,
-      running: entry?.terminal.isRunning() ?? false,
       status: entry?.terminal.getStatus() ?? "IDLE",
       seq: snapshot?.seq ?? 0,
       snapshot,
       focused: input.focused,
       icon: record.profile.icon,
-      title: record.profile.title,
+      configuredTitle: record.profile.title,
+      currentPath: observedIdentity.currentPath,
+      currentTitle: observedIdentity.currentTitle,
+      processPhase: entry?.terminal.isRunning() ? "running" : record.processPhase,
+      lastStopReason: record.lastStopReason,
+      lastExitCode: record.lastExitCode,
+      lastExitSignal: record.lastExitSignal,
+      lastStoppedAt: record.lastStoppedAt,
       shortcuts: cloneShortcuts(record.profile.shortcuts),
       rendererEngine: record.profile.rendererEngine ?? "xterm",
-      transportUrl: access?.accessToken
+      transportUrl:
+        access?.accessToken && (entry?.terminal.isRunning() ?? false)
         ? this.getTransportEndpoint(record.terminalId, access.accessToken)?.url
         : undefined,
       currentAdminId: this.resolveCurrentAdminActorId(record.terminalId),
@@ -1449,9 +1532,14 @@ export class TerminalControlPlane {
   }
 
   private describeReadProjection(record: TerminalRecord, terminal: ManagedTerminal): TerminalReadProjection {
+    const observedIdentity = terminal.getObservedIdentity();
     return {
       status: terminal.getStatus(),
-      title: record.profile.title ?? record.terminalId,
+      processPhase: terminal.isRunning() ? "running" : record.processPhase,
+      title: resolveDisplayTitle(record.terminalId, record.profile.title, observedIdentity),
+      configuredTitle: record.profile.title,
+      currentTitle: observedIdentity.currentTitle,
+      currentPath: observedIdentity.currentPath,
       running: terminal.isRunning(),
     };
   }
@@ -1489,6 +1577,21 @@ export class TerminalControlPlane {
   private emitChange(payload: TerminalChangePayload): void {
     for (const listener of this.changeListeners) {
       listener(payload);
+    }
+  }
+
+  private normalizeRecoveredLifecycle(): void {
+    for (const record of this.db.listTerminals()) {
+      if (record.processPhase !== "running") {
+        continue;
+      }
+      this.db.updateLifecycle(record.terminalId, {
+        processPhase: "stopped",
+        lastStopReason: record.lastStopReason ?? "killed",
+        lastExitCode: record.lastExitCode ?? null,
+        lastExitSignal: record.lastExitSignal ?? null,
+        lastStoppedAt: record.lastStoppedAt ?? Date.now(),
+      });
     }
   }
 

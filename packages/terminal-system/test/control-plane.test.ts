@@ -55,8 +55,8 @@ describe("Feature: terminal control plane", () => {
     const created = await plane.create();
 
     expect(created.processKind).toBe("shell");
-    expect(created.running).toBe(true);
-    expect(created.title).toBe("Shell");
+    expect(created.processPhase).toBe("running");
+    expect(created.configuredTitle).toBe("Shell");
     expect(created.icon).toBe("terminal");
     expect(created.shortcuts).toEqual({ submit: "enter" });
     expect(plane.list()).toHaveLength(1);
@@ -373,7 +373,7 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
-  test("Scenario: Given a relative cwd and live output When listing terminals Then the control plane exposes an absolute cwd and inline snapshot for global restore", async () => {
+  test("Scenario: Given a relative cwd and live output When listing terminals Then the control plane exposes an absolute launch cwd and inline snapshot for global restore", async () => {
     const plane = createPlane();
     const created = await plane.create({
       terminalId: "relative-cwd",
@@ -388,14 +388,14 @@ describe("Feature: terminal control plane", () => {
 
     const listed = plane.list().find((entry) => entry.terminalId === created.terminalId);
 
-    expect(listed?.cwd).toBe(resolve("."));
+    expect(listed?.launchCwd).toBe(resolve("."));
     expect(listed?.snapshot?.seq).toBeGreaterThan(0);
     expect(listed?.snapshot?.lines.join("\n")).toContain("pwd");
 
     await plane.dispose();
   });
 
-  test("Scenario: Given config updates When reading config and killing terminals Then profile overrides are preserved and killed terminals disappear from list", async () => {
+  test("Scenario: Given config updates When reading config and stopping then deleting terminals Then profile overrides are preserved while runtime stop stays separate from catalog delete", async () => {
     const plane = createPlane();
     const config = plane.setConfig({
       processProfiles: {
@@ -419,13 +419,16 @@ describe("Feature: terminal control plane", () => {
 
     await plane.create({ terminalId: "demo" });
     expect(plane.list()).toHaveLength(1);
-    await expect(plane.kill("demo")).resolves.toEqual({ ok: true, message: "terminal stopped" });
+    await expect(plane.stop("demo")).resolves.toEqual({ ok: true, message: "terminal PTY stopped" });
+    expect(plane.list().find((entry) => entry.terminalId === "demo")?.processPhase).toBe("stopped");
+    expect(plane.list()).toHaveLength(1);
+    await expect(plane.deleteTerminal("demo")).resolves.toEqual({ ok: true, message: "terminal deleted" });
     expect(plane.list()).toHaveLength(0);
 
     await plane.dispose();
   });
 
-  test("Scenario: Given websocket transport is started When a client connects and the terminal is killed Then endpoint discovery output streaming and lifecycle shutdown stay coherent", async () => {
+  test("Scenario: Given websocket transport is started When a client connects and the terminal is stopped Then endpoint discovery output streaming and lifecycle shutdown stay coherent", async () => {
     const plane = createPlane();
     const created = await plane.create({ terminalId: "stream" });
     const transport = await plane.startTransport({ port: 0 });
@@ -454,8 +457,9 @@ describe("Feature: terminal control plane", () => {
     const closed = new Promise<void>((resolve) => {
       socket.addEventListener("close", () => resolve(), { once: true });
     });
-    await plane.kill(created.terminalId);
+    await plane.stop(created.terminalId);
     await closed;
+    expect(plane.getTransportEndpoint(created.terminalId)).toBeNull();
     plane.stopTransport();
     await plane.dispose();
   });
@@ -625,6 +629,77 @@ describe("Feature: terminal control plane", () => {
     expect(preempted[0]?.assignedAdminId).toBe("session:alpha");
 
     await plane.dispose();
+  });
+
+  test("Scenario: Given admin group candidates are updated When persisted Then the canonical table owns the truth without a metadata mirror", async () => {
+    const outputRoot = mkdtempSync(join(tmpdir(), "ati-control-plane-"));
+    workspaces.push(outputRoot);
+    const dbPath = join(outputRoot, "terminal.db");
+    const plane = new TerminalControlPlane({
+      dbPath,
+      outputRoot,
+      defaultShellCommand: ["sh", "-lc", "cat"],
+      initialConfig: {
+        defaults: {
+          cols: 80,
+          rows: 20,
+        },
+        transport: {
+          port: null,
+        },
+      },
+    });
+    plane.setActorPresence("session:alpha", true);
+    const created = await plane.create({
+      terminalId: "admin-table-only",
+      bootstrapActorId: "session:alpha",
+      bootstrapRole: "admin",
+      start: false,
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:alpha",
+      participantId: "session:bravo",
+      role: "readonly",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:alpha",
+      participantId: "session:charlie",
+      role: "requester",
+    });
+
+    plane.updateTerminalAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:alpha",
+      adminGroupCandidateIds: ["session:alpha", "session:bravo", "session:charlie"],
+    });
+
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      const candidates = db
+        .query(
+          `select participant_id
+           from terminal_admin_candidate
+           where terminal_id = ?
+           order by priority asc`,
+        )
+        .all(created.terminalId) as Array<{ participant_id: string }>;
+      const terminalRow = db
+        .query(`select metadata_json from terminal_catalog where terminal_id = ?`)
+        .get(created.terminalId) as { metadata_json: string | null } | null;
+      const metadata = JSON.parse(terminalRow?.metadata_json ?? "{}") as Record<string, unknown>;
+
+      expect(candidates.map((candidate) => candidate.participant_id)).toEqual([
+        "session:alpha",
+        "session:bravo",
+        "session:charlie",
+      ]);
+      expect(Object.prototype.hasOwnProperty.call(metadata, "adminGroupCandidateIds")).toBe(false);
+    } finally {
+      db.close();
+      await plane.dispose();
+    }
   });
 
   test("Scenario: Given approved and denied requests When approval history is queried by status Then durable state transitions remain visible", async () => {
@@ -804,12 +879,13 @@ describe("Feature: terminal control plane", () => {
     expect(secondPage.items.at(-1)?.createdAt).toBeLessThanOrEqual(firstPage.items[0]!.createdAt);
 
     await expect(
-      plane.killAuthorized({
+      plane.stopAuthorized({
         terminalId: created.terminalId,
         actorId: "session:admin",
       }),
-    ).resolves.toEqual({ ok: true, message: "terminal stopped" });
-    expect(plane.list()).toHaveLength(0);
+    ).resolves.toEqual({ ok: true, message: "terminal PTY stopped" });
+    expect(plane.list().find((entry) => entry.terminalId === created.terminalId)?.processPhase).toBe("stopped");
+    expect(plane.list()).toHaveLength(1);
 
     await plane.dispose();
   });

@@ -8,6 +8,7 @@
 	import type { GlobalTerminalEntry } from '@agenter/client-sdk';
 
 	import type { TerminalViewportComponent } from './terminal-system-surface.types';
+	import { resolveTerminalTransportLabel, resolveTerminalWindowTitle } from './terminal-display';
 
 	let {
 		terminal,
@@ -28,7 +29,7 @@
 	const TerminalViewport = $derived(terminalViewportComponent);
 	const viewportCols = $derived(terminal.snapshot?.cols ?? 80);
 	const viewportRows = $derived(terminal.snapshot?.rows ?? 24);
-	const terminalTitle = $derived(terminal.title?.trim().length ? terminal.title : terminal.terminalId);
+	const terminalTitle = $derived(resolveTerminalWindowTitle(terminal));
 	const terminalGeometry = $derived.by(() => {
 		const cols = viewportCols;
 		const rows = viewportRows;
@@ -37,7 +38,7 @@
 		}
 		return 'geometry pending';
 	});
-	const mirrorModeLabel = $derived(terminal.transportUrl ? 'Live mirror' : 'Snapshot mirror');
+	const mirrorModeLabel = $derived(resolveTerminalTransportLabel(terminal));
 	const viewportModeLabel = $derived(viewportMode === 'cover' ? 'Cover projection' : 'Fit projection');
 	const viewportToggleLabel = $derived(
 		viewportMode === 'cover' ? 'Minimize terminal window to fit projection' : 'Maximize terminal window to cover projection',

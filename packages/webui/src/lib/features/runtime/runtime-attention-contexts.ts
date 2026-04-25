@@ -5,8 +5,8 @@ type RuntimeAttentionActiveMatch = RuntimeAttentionState["active"][number];
 
 export interface RuntimeContextTerminal {
   terminalId: string;
-  title?: string;
-  cwd: string;
+  configuredTitle?: string;
+  currentTitle?: string;
 }
 
 export interface RuntimeContextJumpTarget {
@@ -126,7 +126,7 @@ const resolveTerminalJumpTarget = (
     return {
       kind: "terminal",
       targetId: terminal.terminalId,
-      label: terminal.title || terminal.terminalId,
+      label: terminal.currentTitle || terminal.configuredTitle || terminal.terminalId,
       actionLabel: "Jump",
     };
   }

@@ -203,6 +203,40 @@ import type {
 		}
 	};
 
+	const handleBootstrapTerminal = async (): Promise<void> => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		try {
+			ensureAuthenticated();
+			await controller.runtimeStore.bootstrapGlobalTerminal({
+				terminalId: terminal.terminalId,
+			});
+			routeNotice = null;
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'terminal bootstrap failed');
+			throw error;
+		}
+	};
+
+	const handleStopTerminal = async (): Promise<void> => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		try {
+			ensureAuthenticated();
+			await controller.runtimeStore.stopGlobalTerminal({
+				terminalId: terminal.terminalId,
+			});
+			routeNotice = null;
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'terminal stop failed');
+			throw error;
+		}
+	};
+
 	const handleChangeCallerToken = (accessToken: string): void => {
 		const terminal = selectedTerminal;
 		if (!terminal) {
@@ -434,6 +468,8 @@ import type {
 	{selectedCallerToken}
 	seatStates={terminalSeatStates}
 	onChangeCallerToken={handleChangeCallerToken}
+	onBootstrapTerminal={handleBootstrapTerminal}
+	onStopTerminal={handleStopTerminal}
 	onDeleteTerminal={handleDeleteTerminal}
 	onGrantSeat={handleGrantSeat}
 	onToggleSeatFocus={handleToggleSeatFocus}

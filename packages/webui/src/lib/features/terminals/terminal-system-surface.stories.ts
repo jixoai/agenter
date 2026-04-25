@@ -21,7 +21,7 @@ const writeDraft = async (canvasElement: HTMLElement, text: string) => {
   const draft = canvas.getByTestId("terminal-write-draft");
   const submit = canvas.getByTestId("terminal-write-submit");
   await waitFor(() => {
-    expect(canvas.getByText("Absolute cwd: /repo/ops")).toBeInTheDocument();
+    expect(canvas.getByText("Launch cwd: /repo/ops")).toBeInTheDocument();
     expect(draft).not.toBeDisabled();
   });
   await userEvent.clear(draft);
@@ -148,7 +148,7 @@ export const WriteSuccessClearsDraft = {
     await expect(canvas.getByTestId("terminal-actions-panel")).toBeInTheDocument();
     await expect(canvas.getByTestId("terminal-write-input-group")).toBeInTheDocument();
     await expect(draft).toHaveValue("");
-    await expect(canvas.getByText("Absolute cwd: /repo/ops")).toBeInTheDocument();
+    await expect(canvas.getByText("Launch cwd: /repo/ops")).toBeInTheDocument();
   },
 } satisfies Story;
 
@@ -276,7 +276,7 @@ export const SnapshotHydratesViewportBeforeTransportReconnect = {
     expect(terminalView?.shadowRoot?.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toMatch(
       /width:\d+px;height:\d+px/u,
     );
-    await expect(within(canvasElement).getByText("Absolute cwd: /repo/ops")).toBeInTheDocument();
+    await expect(within(canvasElement).getByText("Launch cwd: /repo/ops")).toBeInTheDocument();
   },
 } satisfies Story;
 
@@ -430,7 +430,7 @@ export const StagePaneBodyOwnsScrollWhenProjectionOverflows = {
       expect(getComputedStyle(stageScrollViewport!).overflowY).not.toBe("hidden");
       expect(stageScrollViewport!.scrollHeight).toBeGreaterThan(stageScrollViewport!.clientHeight);
     });
-    await expect(canvas.getByText("Absolute cwd: /repo/ops")).toBeInTheDocument();
+    await expect(canvas.getByText("Launch cwd: /repo/ops")).toBeInTheDocument();
     await expect(canvas.getByRole("tab", { name: "Write" })).toBeInTheDocument();
   },
 } satisfies Story;

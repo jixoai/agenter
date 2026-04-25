@@ -15,6 +15,11 @@
 		resolveAdjacentWorkbenchTab,
 		restoreWorkbenchTabId,
 	} from '$lib/features/navigation/workbench-tab-state';
+	import {
+		resolveTerminalIdentitySubtitle,
+		resolveTerminalInstanceName,
+		resolveTerminalLifecycleFacts,
+	} from './terminal-display';
 
 	let {
 		children,
@@ -77,9 +82,11 @@
 		const terminalTabs = visibleTerminals.map((terminal) => ({
 			id: terminal.terminalId,
 			href: `/terminals/${encodeURIComponent(terminal.terminalId)}`,
-			label: terminal.title || terminal.terminalId,
-			title: terminal.cwd,
-			description: terminal.cwd,
+			label: resolveTerminalInstanceName(terminal),
+			title: resolveTerminalLifecycleFacts(terminal)
+				.map((fact) => fact.label)
+				.join(' · '),
+			description: resolveTerminalIdentitySubtitle(terminal),
 			closable: true,
 			onClose: () => void closeTerminalTab(terminal.terminalId),
 			menuItems: [
@@ -89,9 +96,9 @@
 					onSelect: () => void copyToClipboard(terminal.terminalId),
 				},
 				{
-					id: `copy-cwd:${terminal.terminalId}`,
-					label: 'Copy cwd',
-					onSelect: () => void copyToClipboard(terminal.cwd),
+					id: `copy-path:${terminal.terminalId}`,
+					label: terminal.currentPath ? 'Copy current path' : 'Copy launch cwd',
+					onSelect: () => void copyToClipboard(terminal.currentPath ?? terminal.launchCwd),
 				},
 				{
 					id: `close:${terminal.terminalId}`,

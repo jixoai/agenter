@@ -9,6 +9,7 @@ const { Terminal } = require("@xterm/headless") as { Terminal: HeadlessTerminalC
 
 export class XtermBridge {
   private readonly terminal: InstanceType<HeadlessTerminalCtor>;
+  private readonly titleListeners: Array<(title: string) => void> = [];
 
   constructor(cols: number = DEFAULTS.cols, rows: number = DEFAULTS.rows) {
     this.terminal = new Terminal({
@@ -16,6 +17,11 @@ export class XtermBridge {
       rows,
       allowProposedApi: true,
       scrollback: DEFAULTS.scrollback,
+    });
+    this.terminal.onTitleChange((title) => {
+      for (const listener of this.titleListeners) {
+        listener(title);
+      }
     });
   }
 
@@ -64,7 +70,18 @@ export class XtermBridge {
     return this.buffer.baseY;
   }
 
+  onTitleChange(listener: (title: string) => void): () => void {
+    this.titleListeners.push(listener);
+    return () => {
+      const index = this.titleListeners.indexOf(listener);
+      if (index >= 0) {
+        this.titleListeners.splice(index, 1);
+      }
+    };
+  }
+
   dispose(): void {
     this.terminal.dispose();
+    this.titleListeners.length = 0;
   }
 }

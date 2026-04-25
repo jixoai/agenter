@@ -14,6 +14,10 @@ import * as Card from '$lib/components/ui/card/index.js';
 	} = $props();
 
 	const terminals = $derived(runtime?.terminals ?? []);
+	const resolveTerminalTitle = (terminal: RuntimeSnapshotEntry['terminals'][number]): string =>
+		terminal.currentTitle || terminal.configuredTitle || terminal.terminalId;
+	const resolveTerminalPath = (terminal: RuntimeSnapshotEntry['terminals'][number]): string =>
+		terminal.currentPath || terminal.launchCwd;
 </script>
 
 <div class="grid auto-rows-max gap-4" data-testid="runtime-systems-stage">
@@ -55,12 +59,14 @@ import * as Card from '$lib/components/ui/card/index.js';
 					{#each terminals as terminal (terminal.terminalId)}
 						<div class="rounded-xl border px-4 py-3">
 							<div class="flex flex-wrap items-center justify-between gap-2">
-								<div class="text-sm font-semibold">{terminal.title || terminal.terminalId}</div>
-								<span class="text-xs text-muted-foreground">{terminal.status}</span>
+								<div class="text-sm font-semibold">{resolveTerminalTitle(terminal)}</div>
+								<span class="text-xs text-muted-foreground">
+									{terminal.processPhase === 'running' ? terminal.status : terminal.processPhase}
+								</span>
 							</div>
 							<div class="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
 								<SquareTerminalIcon class="size-3" />
-								<span class="break-all">{terminal.cwd}</span>
+								<span class="break-all">{resolveTerminalPath(terminal)}</span>
 							</div>
 						</div>
 					{/each}

@@ -29,6 +29,13 @@ import type {
 import { DEFAULTS } from "./types";
 import { createWorkspace, destroyWorkspace } from "./workspace";
 import { XtermBridge } from "./xterm-bridge";
+import { TerminalObservedIdentityTracker } from "./terminal-observed-identity";
+import type { TerminalObservedIdentity } from "./terminal-runtime-truth";
+
+export interface AgenticTerminalExitInfo {
+  code: number | null;
+  signal: number | string | null;
+}
 
 const resolveMaxLinesPerFile = (profile: TerminalProfile): number => {
   if (profile.maxLinesPerFile !== undefined) {
@@ -83,16 +90,20 @@ export class AgenticTerminal {
   private resizeQueue: Promise<void> = Promise.resolve();
   private appliedSize: { cols: number; rows: number } | null = null;
   private readonly outputListeners: Array<(chunk: string) => void> = [];
-  private readonly exitListeners: Array<(code: number | null) => void> = [];
+  private readonly exitListeners: Array<(info: AgenticTerminalExitInfo) => void> = [];
+  private readonly statusListeners: Array<(status: TerminalStatus) => void> = [];
+  private readonly observedIdentityListeners: Array<(identity: TerminalObservedIdentity) => void> = [];
   private readonly renderListeners: Array<(render: ReturnType<typeof renderSemanticBuffer>) => void> = [];
   private readonly structuredListeners: Array<(snapshot: TerminalStructuredSnapshot) => void> = [];
   private readonly outputDecoder = new TextDecoder();
   private readonly gitDecoder = new TextDecoder();
+  private readonly observedIdentityTracker = new TerminalObservedIdentityTracker();
   private renderSerial = 0;
   private structuredSerial = 0;
   private debugLogPath = "";
   private gitLogger: TerminalGitLogger | null = null;
   private dirtyMarkHash: string | null = null;
+  private observedIdentity: TerminalObservedIdentity = {};
   private lastRender: RenderResult = {
     lines: [],
     plainLines: [],
@@ -129,6 +140,7 @@ export class AgenticTerminal {
       return;
     }
     this.destroyed = false;
+    this.resetObservedIdentity();
 
     this.workspace = createWorkspace({
       outputRoot: this.profile.outputRoot,
@@ -163,6 +175,9 @@ export class AgenticTerminal {
     }
 
     this.xterm = new XtermBridge(this.profile.cols, this.profile.rows);
+    this.xterm.onTitleChange((title) => {
+      this.applyObservedIdentity(this.observedIdentityTracker.applyTitle(title));
+    });
     const initialRender = this.buildRenderFromXterm(this.xterm);
     this.emitRender(initialRender);
     this.pager = new HtmlPaginationStore(this.workspace, this.profile.maxLinesPerFile);
@@ -197,6 +212,7 @@ export class AgenticTerminal {
     this.pty.setOnData((chunk) => {
       this.markBusy();
       const textChunk = this.outputDecoder.decode(chunk, { stream: true });
+      this.applyObservedIdentity(this.observedIdentityTracker.consume(textChunk));
       for (const listener of this.outputListeners) {
         listener(textChunk);
       }
@@ -223,11 +239,11 @@ export class AgenticTerminal {
       });
     });
 
-    this.pty.setOnExit((code) => {
+    this.pty.setOnExit((code, signal) => {
       this.markIdle();
-      this.debug("pty.exit", { code });
+      this.debug("pty.exit", { code, signal });
       for (const listener of this.exitListeners) {
-        listener(code);
+        listener({ code, signal });
       }
       void this.committer?.forceCommit().catch(() => {
         // ignore async commit errors after process exit
@@ -334,12 +350,32 @@ export class AgenticTerminal {
     };
   }
 
-  public onExit(listener: (code: number | null) => void): () => void {
+  public onExit(listener: (info: AgenticTerminalExitInfo) => void): () => void {
     this.exitListeners.push(listener);
     return () => {
       const index = this.exitListeners.indexOf(listener);
       if (index >= 0) {
         this.exitListeners.splice(index, 1);
+      }
+    };
+  }
+
+  public onStatus(listener: (status: TerminalStatus) => void): () => void {
+    this.statusListeners.push(listener);
+    return () => {
+      const index = this.statusListeners.indexOf(listener);
+      if (index >= 0) {
+        this.statusListeners.splice(index, 1);
+      }
+    };
+  }
+
+  public onObservedIdentity(listener: (identity: TerminalObservedIdentity) => void): () => void {
+    this.observedIdentityListeners.push(listener);
+    return () => {
+      const index = this.observedIdentityListeners.indexOf(listener);
+      if (index >= 0) {
+        this.observedIdentityListeners.splice(index, 1);
       }
     };
   }
@@ -370,6 +406,10 @@ export class AgenticTerminal {
 
   public getLatestStructured(): TerminalStructuredSnapshot {
     return this.lastStructured;
+  }
+
+  public getObservedIdentity(): TerminalObservedIdentity {
+    return { ...this.observedIdentity };
   }
 
   /** Force a filesystem commit regardless of debounce state. */
@@ -589,12 +629,15 @@ export class AgenticTerminal {
     this.pager = null;
     this.outputListeners.length = 0;
     this.exitListeners.length = 0;
+    this.statusListeners.length = 0;
+    this.observedIdentityListeners.length = 0;
     this.renderListeners.length = 0;
     this.structuredListeners.length = 0;
     this.appliedSize = null;
     this.dirtyMarkHash = null;
     this.started = false;
     this.status = "IDLE";
+    this.resetObservedIdentity();
 
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
@@ -630,6 +673,7 @@ export class AgenticTerminal {
     this.status = "IDLE";
     this.appliedSize = null;
     this.dirtyMarkHash = null;
+    this.resetObservedIdentity();
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
@@ -643,10 +687,14 @@ export class AgenticTerminal {
   }
 
   private markBusy(): void {
+    const changed = this.status !== "BUSY";
     if (this.status !== "BUSY") {
       this.debug("status", { from: this.status, to: "BUSY" });
     }
     this.status = "BUSY";
+    if (changed) {
+      this.emitStatus();
+    }
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
     }
@@ -800,10 +848,14 @@ export class AgenticTerminal {
   }
 
   private markIdle(): void {
+    const changed = this.status !== "IDLE";
     if (this.status !== "IDLE") {
       this.debug("status", { from: this.status, to: "IDLE" });
     }
     this.status = "IDLE";
+    if (changed) {
+      this.emitStatus();
+    }
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
@@ -858,6 +910,35 @@ export class AgenticTerminal {
       ...compact,
       lines: serializeRenderLinesForLog(compact, this.profile.logStyle),
     };
+  }
+
+  private emitStatus(): void {
+    for (const listener of this.statusListeners) {
+      listener(this.status);
+    }
+  }
+
+  private applyObservedIdentity(next: TerminalObservedIdentity | null): void {
+    if (!next) {
+      return;
+    }
+    const currentPath = next.currentPath;
+    const currentTitle = next.currentTitle;
+    if (this.observedIdentity.currentPath === currentPath && this.observedIdentity.currentTitle === currentTitle) {
+      return;
+    }
+    this.observedIdentity = {
+      currentPath,
+      currentTitle,
+    };
+    for (const listener of this.observedIdentityListeners) {
+      listener({ ...this.observedIdentity });
+    }
+  }
+
+  private resetObservedIdentity(): void {
+    this.observedIdentityTracker.clear();
+    this.observedIdentity = {};
   }
 
   private buildRenderFromXterm(xterm: XtermBridge): RenderResult {

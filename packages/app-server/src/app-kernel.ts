@@ -1068,6 +1068,8 @@ export class AppKernel {
           case "created":
           case "updated":
           case "deleted":
+          case "identity":
+          case "lifecycle":
           case "focus":
           case "presence":
             this.queueTerminalSurfaceInvalidation({ catalogChanged: true });
@@ -3134,6 +3136,7 @@ export class AppKernel {
     command?: string[];
     cwd?: string;
     profile?: TerminalProcessProfile;
+    start?: boolean;
     focus?: boolean;
     actorId?: TerminalActorId;
     superadminActorId?: TerminalActorId;
@@ -3146,6 +3149,7 @@ export class AppKernel {
             command: input.command,
             cwd: input.cwd,
             profile: input.profile,
+            start: input.start,
           })
         : await this.terminalControlPlane.create({
             terminalId: input.terminalId,
@@ -3153,6 +3157,7 @@ export class AppKernel {
             command: input.command,
             cwd: input.cwd,
             profile: input.profile,
+            start: input.start,
           });
 
     if (input.actorId && !input.superadminActorId) {
@@ -3202,12 +3207,33 @@ export class AppKernel {
     };
   }
 
+  bootstrapGlobalTerminal(input: {
+    terminalId: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): { ok: boolean; message: string; terminal?: TerminalControlPlaneEntry } {
+    const terminal = this.terminalControlPlane.bootstrapAuthorized(input);
+    return {
+      ok: true,
+      message: "terminal PTY bootstrapped",
+      terminal,
+    };
+  }
+
+  async stopGlobalTerminal(input: {
+    terminalId: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): Promise<{ ok: boolean; message: string }> {
+    return await this.terminalControlPlane.stopAuthorized(input);
+  }
+
   async deleteGlobalTerminal(input: {
     terminalId: string;
     actorId?: TerminalActorId;
     superadminActorId?: TerminalActorId;
   }): Promise<{ ok: boolean; message: string }> {
-    return await this.terminalControlPlane.killAuthorized(input);
+    return await this.terminalControlPlane.deleteAuthorized(input);
   }
 
   listGlobalTerminalGrants(input: {

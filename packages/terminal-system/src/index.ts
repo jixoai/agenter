@@ -2,6 +2,7 @@ export { AgenticTerminal } from "./agentic-terminal";
 export {
   ManagedTerminal,
   type ManagedTerminalConfig,
+  type ManagedTerminalLifecycleEvent,
   type ManagedTerminalSnapshot,
 } from "./managed-terminal";
 export { keyToSequence, parseMixedInput, runMixedInput } from "./input-parser";
@@ -55,6 +56,12 @@ export type {
   TerminalWriteLeaseRecord,
   TerminalWriteResult,
 } from "./terminal-control-plane.types";
+export type {
+  TerminalLifecycleState,
+  TerminalObservedIdentity,
+  TerminalProcessPhase,
+  TerminalStopReason,
+} from "./terminal-runtime-truth";
 export type {
   PageMeta,
   RenderResult,

@@ -1,5 +1,6 @@
 import { AgenticTerminal } from "./agentic-terminal";
 import type { RenderResult, RichLine, TerminalDirtySliceResult, TerminalPendingInputResult, TerminalStatus } from "./types";
+import type { TerminalLifecycleState, TerminalObservedIdentity } from "./terminal-runtime-truth";
 
 export interface ManagedTerminalConfig {
   terminalId: string;
@@ -24,6 +25,8 @@ export interface ManagedTerminalSnapshot {
   cursorVisible?: boolean;
 }
 
+export interface ManagedTerminalLifecycleEvent extends TerminalLifecycleState {}
+
 interface CommitWaitHandle<T = unknown> {
   promise: Promise<T>;
   reject: (reason: unknown) => void;
@@ -47,13 +50,17 @@ const normalizeSeqHash = (value?: string | null): number => {
 export class ManagedTerminal {
   private terminal: AgenticTerminal | null = null;
   private running = false;
+  private stopping = false;
   private seq = 0;
   private cols: number;
   private rows: number;
+  private observedIdentity: TerminalObservedIdentity = {};
   private snapshot: ManagedTerminalSnapshot;
   private readonly snapshotListeners: Array<(snapshot: ManagedTerminalSnapshot) => void> = [];
   private readonly statusListeners: Array<(running: boolean, status: TerminalStatus) => void> = [];
   private readonly outputListeners: Array<(chunk: string) => void> = [];
+  private readonly lifecycleListeners: Array<(event: ManagedTerminalLifecycleEvent) => void> = [];
+  private readonly identityListeners: Array<(identity: TerminalObservedIdentity) => void> = [];
   private readonly commitWaiters = new Set<TerminalCommitWaiter>();
 
   constructor(private readonly config: ManagedTerminalConfig) {
@@ -101,6 +108,26 @@ export class ManagedTerminal {
     };
   }
 
+  onLifecycle(listener: (event: ManagedTerminalLifecycleEvent) => void): () => void {
+    this.lifecycleListeners.push(listener);
+    return () => {
+      const index = this.lifecycleListeners.indexOf(listener);
+      if (index >= 0) {
+        this.lifecycleListeners.splice(index, 1);
+      }
+    };
+  }
+
+  onObservedIdentity(listener: (identity: TerminalObservedIdentity) => void): () => void {
+    this.identityListeners.push(listener);
+    return () => {
+      const index = this.identityListeners.indexOf(listener);
+      if (index >= 0) {
+        this.identityListeners.splice(index, 1);
+      }
+    };
+  }
+
   start(): void {
     if (this.running) {
       return;
@@ -108,6 +135,11 @@ export class ManagedTerminal {
     if (this.config.command.length === 0) {
       throw new Error(`terminal ${this.config.terminalId} command is empty`);
     }
+    if (this.terminal) {
+      void this.terminal.destroy(true).catch(() => undefined);
+      this.terminal = null;
+    }
+    this.clearObservedIdentity();
 
     const [program, ...args] = this.config.command;
     this.terminal = new AgenticTerminal(program, args, {
@@ -129,9 +161,33 @@ export class ManagedTerminal {
       this.emitOutput(chunk);
     });
 
-    this.terminal.onExit(() => {
+    this.terminal.onStatus(() => {
+      if (this.running) {
+        this.emitStatus();
+      }
+    });
+
+    this.terminal.onObservedIdentity((identity) => {
+      this.setObservedIdentity(identity);
+    });
+
+    this.terminal.onExit((info) => {
+      if (this.stopping) {
+        return;
+      }
+      const previousTerminal = this.terminal;
       this.running = false;
+      this.terminal = null;
+      this.clearObservedIdentity();
+      this.emitLifecycle({
+        processPhase: "stopped",
+        lastStopReason: info.signal ? "killed" : "exited",
+        lastExitCode: info.code,
+        lastExitSignal: info.signal === null ? null : String(info.signal),
+        lastStoppedAt: Date.now(),
+      });
       this.emitStatus();
+      void previousTerminal?.destroy(true).catch(() => undefined);
     });
 
     try {
@@ -140,6 +196,13 @@ export class ManagedTerminal {
       this.running = false;
       void this.terminal.destroy(true).catch(() => {});
       this.terminal = null;
+      this.emitLifecycle({
+        processPhase: "stopped",
+        lastStopReason: "startup_failed",
+        lastExitCode: null,
+        lastExitSignal: null,
+        lastStoppedAt: Date.now(),
+      });
       this.emitStatus();
       throw error;
     }
@@ -147,6 +210,13 @@ export class ManagedTerminal {
     this.running = true;
     this.snapshot = this.toSnapshot(this.terminal.getLatestRender());
     this.emitSnapshot();
+    this.emitLifecycle({
+      processPhase: "running",
+      lastStopReason: null,
+      lastExitCode: null,
+      lastExitSignal: null,
+      lastStoppedAt: null,
+    });
     this.emitStatus();
   }
 
@@ -156,9 +226,23 @@ export class ManagedTerminal {
       this.emitStatus();
       return;
     }
-    await this.terminal.destroy(true);
+    const current = this.terminal;
+    this.stopping = true;
+    try {
+      await current.destroy(true);
+    } finally {
+      this.stopping = false;
+    }
     this.terminal = null;
     this.running = false;
+    this.clearObservedIdentity();
+    this.emitLifecycle({
+      processPhase: "stopped",
+      lastStopReason: "killed",
+      lastExitCode: null,
+      lastExitSignal: "SIGTERM",
+      lastStoppedAt: Date.now(),
+    });
     this.emitStatus();
   }
 
@@ -172,6 +256,10 @@ export class ManagedTerminal {
 
   getStatus(): TerminalStatus {
     return this.terminal?.getStatus() ?? "IDLE";
+  }
+
+  getObservedIdentity(): TerminalObservedIdentity {
+    return { ...this.observedIdentity };
   }
 
   getHeadHash(): string | null {
@@ -310,6 +398,37 @@ export class ManagedTerminal {
   private emitOutput(chunk: string): void {
     for (const listener of this.outputListeners) {
       listener(chunk);
+    }
+  }
+
+  private emitLifecycle(event: ManagedTerminalLifecycleEvent): void {
+    for (const listener of this.lifecycleListeners) {
+      listener(event);
+    }
+  }
+
+  private setObservedIdentity(identity: TerminalObservedIdentity): void {
+    const nextPath = identity.currentPath;
+    const nextTitle = identity.currentTitle;
+    if (this.observedIdentity.currentPath === nextPath && this.observedIdentity.currentTitle === nextTitle) {
+      return;
+    }
+    this.observedIdentity = {
+      currentPath: nextPath,
+      currentTitle: nextTitle,
+    };
+    for (const listener of this.identityListeners) {
+      listener({ ...this.observedIdentity });
+    }
+  }
+
+  private clearObservedIdentity(): void {
+    if (!this.observedIdentity.currentPath && !this.observedIdentity.currentTitle) {
+      return;
+    }
+    this.observedIdentity = {};
+    for (const listener of this.identityListeners) {
+      listener({});
     }
   }
 

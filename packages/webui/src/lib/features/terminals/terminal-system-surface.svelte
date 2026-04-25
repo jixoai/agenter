@@ -23,7 +23,13 @@
 	import TerminalPageToolbarContent from './terminal-page-toolbar-content.svelte';
 	import TerminalUsersDialog from './terminal-users-dialog.svelte';
 	import TerminalWindowSurface from './terminal-window-surface.svelte';
-	import type { TerminalSystemSurfaceProps } from './terminal-system-surface.types';
+	import {
+		isTerminalRunning,
+		resolveTerminalIdentitySubtitle,
+		resolveTerminalInstanceName,
+		resolveTerminalTransportLabel,
+	} from './terminal-display';
+	import type { TerminalSystemNotice, TerminalSystemSurfaceProps } from './terminal-system-surface.types';
 
 	let {
 		selectedTerminal,
@@ -36,6 +42,8 @@
 		selectedCallerToken,
 		seatStates,
 		onChangeCallerToken,
+		onBootstrapTerminal,
+		onStopTerminal,
 		onDeleteTerminal,
 		onGrantSeat,
 		onToggleSeatFocus,
@@ -47,6 +55,7 @@
 	}: TerminalSystemSurfaceProps = $props();
 
 	let deleteBusy = $state(false);
+	let lifecycleBusy = $state(false);
 	let deleteDialogOpen = $state(false);
 	let actionToolTab: 'write' | 'read' = $state('write');
 	let actionsDetailOpen = $state(true);
@@ -150,6 +159,11 @@
 		}
 	};
 
+	const describeTerminalError = (error: unknown, fallback: string): TerminalSystemNotice => ({
+		tone: 'destructive',
+		message: error instanceof Error ? error.message : fallback,
+	});
+
 	const handleDeleteTerminal = async (): Promise<void> => {
 		if (!selectedTerminal || deleteBusy) {
 			return;
@@ -160,6 +174,36 @@
 			deleteDialogOpen = false;
 		} finally {
 			deleteBusy = false;
+		}
+	};
+
+	const handleBootstrapTerminal = async (): Promise<void> => {
+		if (!selectedTerminal || lifecycleBusy) {
+			return;
+		}
+		lifecycleBusy = true;
+		try {
+			await onBootstrapTerminal();
+			routeNotice = null;
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'terminal bootstrap failed');
+		} finally {
+			lifecycleBusy = false;
+		}
+	};
+
+	const handleStopTerminal = async (): Promise<void> => {
+		if (!selectedTerminal || lifecycleBusy) {
+			return;
+		}
+		lifecycleBusy = true;
+		try {
+			await onStopTerminal();
+			routeNotice = null;
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'terminal stop failed');
+		} finally {
+			lifecycleBusy = false;
 		}
 	};
 
@@ -334,6 +378,7 @@
 			{selectedTerminal}
 			actionsOpen={actionsDetailOpen}
 			usersOpen={usersDialogOpen}
+			{lifecycleBusy}
 			onToggleActions={() => {
 				usersDialogOpen = false;
 				actionsDetailOpen = !actionsDetailOpen;
@@ -341,6 +386,8 @@
 			onOpenUsers={() => {
 				usersDialogOpen = true;
 			}}
+			onBootstrapTerminal={() => void handleBootstrapTerminal()}
+			onStopTerminal={() => void handleStopTerminal()}
 		/>
 	</WorkbenchPageToolbar>
 {/if}
@@ -394,7 +441,8 @@
 		<InputGroup.Textarea
 			bind:value={writeText}
 			class="min-h-28 resize-none px-4 py-3 text-sm"
-			placeholder="Type terminal input…"
+			placeholder={selectedTerminal && !isTerminalRunning(selectedTerminal) ? 'Bootstrap the PTY before writing…' : 'Type terminal input…'}
+			disabled={!selectedTerminal || !isTerminalRunning(selectedTerminal)}
 			data-testid="terminal-write-draft"
 		/>
 		<InputGroup.Addon
@@ -407,7 +455,7 @@
 			<Button
 				data-testid="terminal-write-submit"
 				class="w-full sm:w-auto"
-				disabled={!selectedTerminal || !effectiveCallerToken || !writeText.trim() || writeBusy}
+				disabled={!selectedTerminal || !isTerminalRunning(selectedTerminal) || !effectiveCallerToken || !writeText.trim() || writeBusy}
 				onclick={() => void handleWriteToolCall()}
 			>
 				<SendHorizontalIcon class="size-4" />
@@ -446,7 +494,7 @@
 			<Button
 				data-testid="terminal-read-submit"
 				class="w-full sm:w-auto"
-				disabled={!selectedTerminal || !effectiveCallerToken || readBusy}
+				disabled={!selectedTerminal || !isTerminalRunning(selectedTerminal) || !effectiveCallerToken || readBusy}
 				onclick={() => void handleReadToolCall()}
 			>
 				<FileClockIcon class="size-4" />
@@ -482,7 +530,7 @@
 				{#if routeNotice}
 					<NoticeBanner tone={routeNotice.tone} message={routeNotice.message} />
 				{/if}
-				<div class="grid gap-4">
+					<div class="grid gap-4">
 					<TerminalWindowSurface
 						terminal={selectedTerminal}
 						terminalViewportComponent={TerminalViewport}
@@ -492,11 +540,14 @@
 						onToggleViewportMode={handleToggleViewportMode}
 					/>
 					<div class="grid gap-2 text-xs text-muted-foreground">
-						<div>Absolute cwd: {selectedTerminal.cwd}</div>
+						<div>Launch cwd: {selectedTerminal.launchCwd}</div>
+						<div>
+							Observed path: {selectedTerminal.currentPath ?? 'not currently observed'}
+						</div>
 						<div>
 							Projection mode: {selectedViewportMode === 'cover' ? 'cover window' : 'fit window'}
 						</div>
-						<div>Transport: {selectedTerminal.transportUrl ? 'live websocket mirror' : 'snapshot only'}</div>
+						<div>Transport: {resolveTerminalTransportLabel(selectedTerminal)}</div>
 					</div>
 				</div>
 				{@render terminalActionsPanel()}
@@ -522,7 +573,10 @@
 					This closes the shared terminal window and removes its catalog entry.
 					{#if selectedTerminal}
 						<span class="mt-2 block rounded-[0.85rem] border border-white/70 bg-white/75 px-3 py-2 text-xs text-slate-500 shadow-[0_1px_0_rgba(255,255,255,0.65)_inset]">
-							{selectedTerminal.terminalId} · {selectedTerminal.cwd}
+							{resolveTerminalInstanceName(selectedTerminal)}
+							{#if resolveTerminalIdentitySubtitle(selectedTerminal)}
+								· {resolveTerminalIdentitySubtitle(selectedTerminal)}
+							{/if}
 						</span>
 					{/if}
 				</Dialog.Description>

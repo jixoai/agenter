@@ -1008,11 +1008,36 @@ export const appRouter = t.router({
           command: z.array(z.string().min(1)).min(1).optional(),
           cwd: z.string().min(1).optional(),
           profile: terminalProcessProfileSchema.optional(),
+          start: z.boolean().optional(),
           focus: z.boolean().optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => ({
         result: await ctx.kernel.createGlobalTerminal({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      })),
+    globalBootstrap: authProcedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        result: ctx.kernel.bootstrapGlobalTerminal({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      })),
+    globalStop: authProcedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => ({
+        result: await ctx.kernel.stopGlobalTerminal({
           ...input,
           ...resolveTerminalCallerScope(ctx.auth),
         }),

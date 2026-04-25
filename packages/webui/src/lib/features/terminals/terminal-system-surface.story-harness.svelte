@@ -13,6 +13,10 @@
 	import TerminalViewHost from '$lib/components/terminal-view-host.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import TerminalSystemSurface from './terminal-system-surface.svelte';
+	import {
+		resolveTerminalIdentitySubtitle,
+		resolveTerminalInstanceName,
+	} from './terminal-display';
 
 	import type {
 		TerminalSystemCallAsOption,
@@ -91,10 +95,10 @@
 		terminalId: input.terminalId,
 		processKind: 'shell',
 		command: ['/bin/bash'],
-		cwd: input.cwd,
+		launchCwd: input.cwd,
 		workspace: null,
-		running: input.running,
 		status: input.status,
+		processPhase: input.running ? 'running' : 'stopped',
 		seq: 1,
 		snapshot: buildTerminalSnapshot(input.cwd, undefined, 1, {
 			cols: input.snapshotCols,
@@ -102,7 +106,9 @@
 		}),
 		focused: false,
 		icon: undefined,
-		title: input.title,
+		configuredTitle: input.title,
+		currentTitle: input.running ? input.title : undefined,
+		currentPath: input.running ? input.cwd : undefined,
 		shortcuts: undefined,
 		rendererEngine: 'xterm',
 		transportUrl: undefined,
@@ -330,9 +336,9 @@
 				{
 					id: selectedTerminal?.terminalId ?? initialTerminalId,
 					href: '#',
-					label: selectedTerminal?.title ?? selectedTerminal?.terminalId ?? 'Shared terminal',
+					label: resolveTerminalInstanceName(selectedTerminal),
 					title: selectedTerminal?.terminalId ?? 'Shared terminal',
-					description: selectedTerminal?.cwd ?? '/repo/ops',
+					description: resolveTerminalIdentitySubtitle(selectedTerminal) || '/repo/ops',
 				},
 			] satisfies WorkbenchTabItem[],
 	);
@@ -402,8 +408,9 @@
 
 	const appendViewportTranscript = (terminalId: string, inputText: string): void => {
 		updateTerminalEntry(terminalId, (terminal) => {
-			const prompt = buildTerminalPrompt(terminal.cwd);
-			const currentSnapshot = terminal.snapshot ?? buildTerminalSnapshot(terminal.cwd);
+			const terminalPath = terminal.currentPath ?? terminal.launchCwd;
+			const prompt = buildTerminalPrompt(terminalPath);
+			const currentSnapshot = terminal.snapshot ?? buildTerminalSnapshot(terminalPath);
 			const existingLines = currentSnapshot.lines.filter((line) => line.length > 0);
 			const outputLine = inputText.startsWith('echo ') ? inputText.slice(5).trim() : `ran: ${inputText}`;
 			const nextLines = [...existingLines, `${prompt} ${inputText}`, outputLine, prompt];
@@ -411,12 +418,47 @@
 			return {
 				...terminal,
 				seq: nextSeq,
-				snapshot: buildTerminalSnapshot(terminal.cwd, nextLines, nextSeq, {
+				snapshot: buildTerminalSnapshot(terminalPath, nextLines, nextSeq, {
 					cols: currentSnapshot.cols,
 					rows: currentSnapshot.rows,
 				}),
 			};
 		});
+	};
+
+	const handleBootstrapTerminal = async (): Promise<void> => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		updateTerminalEntry(terminal.terminalId, (entry) => ({
+			...entry,
+			processPhase: 'running',
+			status: 'IDLE',
+			currentTitle: entry.currentTitle ?? entry.configuredTitle,
+			currentPath: entry.currentPath ?? entry.launchCwd,
+			transportUrl: undefined,
+		}));
+		routeNotice = null;
+	};
+
+	const handleStopTerminal = async (): Promise<void> => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		updateTerminalEntry(terminal.terminalId, (entry) => ({
+			...entry,
+			processPhase: 'stopped',
+			status: 'IDLE',
+			currentTitle: undefined,
+			currentPath: undefined,
+			transportUrl: undefined,
+			lastStopReason: 'killed',
+			lastExitSignal: 'SIGTERM',
+			lastStoppedAt: Date.now(),
+		}));
+		routeNotice = null;
 	};
 
 	const syncSeatFacts = (terminalId: string): void => {
@@ -731,6 +773,8 @@
 				{selectedCallerToken}
 				{seatStates}
 				onChangeCallerToken={handleChangeCallerToken}
+				onBootstrapTerminal={handleBootstrapTerminal}
+				onStopTerminal={handleStopTerminal}
 				onDeleteTerminal={handleDeleteTerminal}
 				onGrantSeat={handleGrantSeat}
 				onToggleSeatFocus={handleToggleSeatFocus}

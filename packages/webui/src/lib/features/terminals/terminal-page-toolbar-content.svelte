@@ -1,5 +1,7 @@
 <script lang="ts">
 	import ListTodoIcon from '@lucide/svelte/icons/list-todo';
+	import PlayIcon from '@lucide/svelte/icons/play';
+	import PowerIcon from '@lucide/svelte/icons/power';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
 	import UsersIcon from '@lucide/svelte/icons/users';
 	import type { GlobalTerminalEntry } from '@agenter/client-sdk';
@@ -11,39 +13,35 @@
 	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
 	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 	import { cn } from '$lib/utils.js';
+	import {
+		isTerminalRunning,
+		resolveTerminalIdentitySubtitle,
+		resolveTerminalInstanceName,
+		resolveTerminalLifecycleFacts,
+	} from './terminal-display';
 
 	let {
 		selectedTerminal,
 		actionsOpen,
 		usersOpen,
+		lifecycleBusy = false,
 		onToggleActions,
 		onOpenUsers,
+		onStopTerminal,
+		onBootstrapTerminal,
 	}: {
 		selectedTerminal: GlobalTerminalEntry | null;
 		actionsOpen: boolean;
 		usersOpen: boolean;
+		lifecycleBusy?: boolean;
 		onToggleActions: () => void;
 		onOpenUsers: () => void;
+		onStopTerminal: () => void;
+		onBootstrapTerminal: () => void;
 	} = $props();
 
-	const terminalTitle = $derived.by(() => {
-		if (!selectedTerminal) {
-			return 'Shared terminal';
-		}
-		const title = selectedTerminal.title?.trim();
-		return title && title !== selectedTerminal.terminalId ? title : selectedTerminal.terminalId;
-	});
-
-	const terminalSubtitle = $derived.by(() => {
-		if (!selectedTerminal) {
-			return 'Select an active terminal tab.';
-		}
-		const title = selectedTerminal.title?.trim();
-		if (title && title !== selectedTerminal.terminalId) {
-			return `${selectedTerminal.terminalId} · ${selectedTerminal.cwd}`;
-		}
-		return selectedTerminal.cwd;
-	});
+	const terminalTitle = $derived(resolveTerminalInstanceName(selectedTerminal));
+	const terminalSubtitle = $derived(resolveTerminalIdentitySubtitle(selectedTerminal));
 
 	type TerminalToolbarStatusFact = {
 		label: string;
@@ -52,43 +50,10 @@
 		caps?: boolean;
 	};
 
-	const terminalStatusFacts = $derived.by(() => {
-		if (!selectedTerminal) {
-			return [
-				{
-					label: 'No terminal',
-					title: 'No shared terminal is selected.',
-					tone: 'neutral',
-					caps: true,
-				},
-			] satisfies TerminalToolbarStatusFact[];
-		}
-
-		const facts: TerminalToolbarStatusFact[] = [
-			{
-				label: selectedTerminal.running ? 'Running' : 'Stopped',
-				title: selectedTerminal.running ? 'PTY is currently running.' : 'PTY is currently stopped.',
-				tone: selectedTerminal.running ? 'positive' : 'warning',
-				caps: true,
-			},
-		];
-
-		if (selectedTerminal.running) {
-			facts.push({
-				label: selectedTerminal.status === 'BUSY' ? 'Busy' : 'Idle',
-				title:
-					selectedTerminal.status === 'BUSY'
-						? 'Terminal is processing active work.'
-						: 'Terminal is waiting for the next interaction.',
-				tone: selectedTerminal.status === 'BUSY' ? 'accent' : 'neutral',
-			});
-		}
-
-		return facts;
-	});
+	const terminalStatusFacts = $derived(resolveTerminalLifecycleFacts(selectedTerminal) satisfies TerminalToolbarStatusFact[]);
 
 	const terminalHelpText =
-		'Shared terminals reopen durable tabs for long-lived shell sessions. Actions stays in-page; Users opens a dedicated management dialog.';
+		'Shared terminals reopen durable tabs for long-lived shell sessions. Bootstrap/Kill PTY controls runtime lifecycle; Delete terminal remains a separate destructive action in the terminal window.';
 </script>
 
 {#snippet terminalToolbarIdentityLeading(_toolbarState: WorkbenchToolbarRenderState)}
@@ -100,7 +65,9 @@
 {/snippet}
 
 {#snippet terminalToolbarIdentitySubtitle(_toolbarState: WorkbenchToolbarRenderState)}
-	<span class="truncate">{terminalSubtitle}</span>
+	{#if terminalSubtitle}
+		<span class="truncate">{terminalSubtitle}</span>
+	{/if}
 {/snippet}
 
 {#snippet terminalToolbarStatus(toolbarState: WorkbenchToolbarRenderState)}
@@ -130,6 +97,23 @@
 		)}
 		aria-label="Terminal detail view actions"
 	>
+		{#if selectedTerminal}
+			<WorkbenchToolbarAction
+				type="button"
+				placement={toolbarState.placement}
+				label={isTerminalRunning(selectedTerminal) ? 'Kill PTY' : 'Bootstrap PTY'}
+				title={isTerminalRunning(selectedTerminal) ? 'Stop the live PTY while preserving the terminal.' : 'Start the PTY for this provisioned terminal.'}
+				inlineLabel
+				disabled={lifecycleBusy}
+				onclick={isTerminalRunning(selectedTerminal) ? onStopTerminal : onBootstrapTerminal}
+			>
+				{#if isTerminalRunning(selectedTerminal)}
+					<PowerIcon class="size-4" />
+				{:else}
+					<PlayIcon class="size-4" />
+				{/if}
+			</WorkbenchToolbarAction>
+		{/if}
 		<WorkbenchToolbarToggle
 			placement={toolbarState.placement}
 			label="Actions"
