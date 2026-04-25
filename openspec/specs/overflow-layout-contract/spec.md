@@ -50,8 +50,8 @@ Each major WebUI application surface SHALL provide exactly one deliberate primar
 - **THEN** `Body` or `ScrollBody` still binds to the dedicated stretch row instead of auto-flowing into the first available row
 - **THEN** transcript, terminal, and dialog stages keep their dominant viewport height without local `min-h-0` rescue patches
 
-#### Scenario: Shared split variants do not depend on consumer Tailwind generation
-- **WHEN** a consumer route imports `SplitView` from `@agenter/svelte-components`
+#### Scenario: Shared sidebar scaffold does not depend on consumer Tailwind generation
+- **WHEN** a consumer route imports `SidebarScaffold` from `@agenter/svelte-components`
 - **THEN** the responsive column and row law is owned by package-local CSS/media rules
 - **THEN** first-level routes do not silently collapse into one stacked column because the consuming app failed to generate a shared utility class
 

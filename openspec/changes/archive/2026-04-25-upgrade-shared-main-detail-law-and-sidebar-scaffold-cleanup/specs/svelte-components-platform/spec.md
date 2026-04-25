@@ -1,10 +1,7 @@
-# svelte-components-platform Specification
+## MODIFIED Requirements
 
-## Purpose
-Define the shared Svelte structural package that owns durable scroll ownership and scaffold-family layout law across reusable Svelte clients.
-## Requirements
-### Requirement: Shared Svelte structural primitives SHALL live in @agenter/svelte-components
-The repository SHALL expose `@agenter/svelte-components` as the shared Svelte structural package for durable scroll ownership and scaffold-family layout law. Shared Svelte consumers SHALL import structural primitives from that package instead of reaching into product-local `webui` source. That package SHALL expose `ScrollView` for standard surfaces, the anchored virtual list scroll platform for WebChat-like virtual long lists, and the shared scaffold family through `Scaffold`, `DialogScaffold`, and `SidebarScaffold`. The anchored virtual list platform exported from this package SHALL own the full transaction runtime, ownership chain, and terminal viewport writer rather than leaving render-layer or consumer-layer code to complete scroll choreography privately.
+### Requirement: Shared structural package SHALL live in @agenter/svelte-components
+The repository SHALL expose `@agenter/svelte-components` as the shared Svelte structural package for durable scroll ownership and scaffold-family layout law. Shared Svelte consumers SHALL import structural primitives from that package instead of reaching into product-local `webui` source. That package SHALL expose `ScrollView` for standard surfaces, the anchored virtual list scroll platform for WebChat-like virtual long lists, and the shared scaffold family through `Scaffold`, `DialogScaffold`, and `SidebarScaffold`.
 
 #### Scenario: Shared Svelte consumer resolves one structural package
 - **WHEN** a shared Svelte package such as `web-chat-view` needs transcript scrolling or shell layout primitives
@@ -44,16 +41,3 @@ The repository SHALL expose `@agenter/svelte-components` as the shared Svelte st
 - **WHEN** engineers consume the split-detail primitive
 - **THEN** the package also exports the ratio-source contract needed for string-key or custom-provider persistence
 - **THEN** routes can customize storage behavior without forking the primitive itself
-
-### Requirement: Shared structural package SHALL provide the default global ratio source
-`@agenter/svelte-components` SHALL provide the default global ratio source used by string-key split-detail layouts. That default source SHALL persist ratio values through IndexedDB and synchronize updates across windows through `BroadcastChannel`.
-
-#### Scenario: Default ratio source survives reload
-- **WHEN** the operator reloads a route that uses a string-key split-detail layout
-- **THEN** the default ratio source restores the last persisted ratio from IndexedDB
-- **THEN** the route does not fall back to feature-local hard-coded drawer widths
-
-#### Scenario: Default ratio source synchronizes across windows
-- **WHEN** one browser window updates the ratio for a shared string key
-- **THEN** another window listening to that same key receives the updated ratio through the default shared source
-- **THEN** the synchronization path does not require route-local BroadcastChannel wiring

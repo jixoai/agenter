@@ -20,7 +20,7 @@
 
 ## 3. Scaffold family contract
 
-- `Scaffold` / `DialogScaffold` / `SplitView` 负责结构与 sizing，不负责业务数据。
+- `Scaffold` / `DialogScaffold` / `SidebarScaffold` 负责结构与 sizing，不负责业务数据。
 - 这些 primitives 的内部 shrink/stretch law 必须绑定到不可被外部 slot 覆盖的内部 hook，而不是把 `data-slot` 当作内部样式真源。
 - `DialogScaffold` 只表达 dialog 内部布局，不包含 dialog open/close 状态机，也不绑定某个 UI 框架的 close affordance。
 
