@@ -30,6 +30,7 @@
 - **BREAKING** Remove implicit terminal auto-start from transport open, read-adjacent hydration, and automation write paths.
 - Publish authoritative runtime identity and lifecycle through terminal projections so client/WebUI stop treating `cwd/title/running/status` as one flat truth blob.
 - Update terminal page-toolbar, titlebar, tab labels, transport affordances, and action composers to consume the new runtime truth directly.
+- Extend the runtime terminal CLI and built-in terminal skill so shell-facing lifecycle verbs and status guidance match the new `bootstrap / stop / delete` law instead of the legacy `kill` wording.
 - Add layered BDD coverage plus real browser / real AI walkthrough acceptance for stopped, running, exited, killed, and startup-failed terminals.
 
 ## Capabilities
@@ -41,6 +42,8 @@
 - `runtime-terminal-contract`: runtime/client projections expose launch truth, observed identity, and process lifecycle as separate facts.
 - `terminal-surface-projection`: one authoritative projection carries the new lifecycle and observed identity model for clients.
 - `terminal-system-surface`: toolbar/titlebar/status/actions render from runtime truth rather than fixed catalog `cwd/title` fallback.
+- `runtime-json-tool-descriptor-surface`: runtime terminal CLI exposes explicit lifecycle verbs and status inspection that match the new terminal truth model.
+- `runtime-skills-cli-surface`: built-in terminal skill and references teach create/recover/bootstrap/stop plus lifecycle-aware inspection instead of legacy `kill` semantics.
 
 ## Impact
 
@@ -49,8 +52,11 @@
 - `openspec/specs/runtime-terminal-contract/spec.md`
 - `openspec/specs/terminal-surface-projection/spec.md`
 - `openspec/specs/terminal-system-surface/spec.md`
+- `openspec/specs/runtime-json-tool-descriptor-surface/spec.md`
+- `openspec/specs/runtime-skills-cli-surface/spec.md`
 - `packages/terminal-system/src/*`
 - `packages/app-server/src/*`
+- `packages/terminal-system/skills/terminal/*`
 - `packages/client-sdk/src/*`
 - `packages/webui/src/lib/features/terminals/*`
 - targeted BDD tests and real browser / real AI walkthrough evidence

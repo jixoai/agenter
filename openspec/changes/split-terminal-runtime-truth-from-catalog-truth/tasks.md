@@ -15,6 +15,8 @@
 
 - [x] 3.1 Publish lifecycle and observed identity through app-server terminal projections and realtime invalidation.
 - [x] 3.2 Update TRPC and client-sdk types/merge logic so transport removal, lifecycle transitions, and observed identity updates are preserved instead of merged away.
+- [ ] 3.3 Expose runtime terminal lifecycle through descriptor-backed CLI commands with explicit `bootstrap` and `stop` verbs plus lifecycle-aware list projections.
+- [ ] 3.4 Sync built-in terminal skill and lifecycle references so shell guidance teaches status inspection, bootstrap, and stop using the new lifecycle law.
 
 ## 4. WebUI Surface
 
@@ -28,3 +30,4 @@
 - [x] 5.2 Run OpenSpec validation for the new change.
 - [x] 5.3 Run targeted package test suites for `@agenter/terminal-system`, `@agenter/app-server`, `@agenter/client-sdk`, and `@agenter/webui`.
 - [x] 5.4 Run a real browser walkthrough on desktop and `iPhone 14`, plus a real AI terminal walkthrough, and record the self-review/changelog under `.chat/`.
+- [ ] 5.5 Add targeted runtime CLI / built-in skill regression coverage for explicit `terminal bootstrap`, `terminal stop`, lifecycle-aware `terminal list`, and the split instance-name vs PTY-title display law.

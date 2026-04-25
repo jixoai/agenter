@@ -7,9 +7,15 @@ The WebUI SHALL expose a dedicated terminal-system route that lists global termi
 #### Scenario: Selected terminal page owns the page-toolbar
 
 - **WHEN** the operator opens a concrete shared terminal route
-- **THEN** the toolbar identity resolves from `observed title ?? configured title ?? terminal id`
+- **THEN** the toolbar identity resolves from `configured title ?? terminal id`
 - **AND** the toolbar second line prefers runtime observed current path instead of fixed launch cwd
 - **AND** if no runtime path is available, the route falls back to terminal id or nothing rather than pretending launch cwd is current path
+
+#### Scenario: Terminal window titlebar may follow observed PTY title independently
+
+- **WHEN** the selected terminal emits an observed PTY title different from its configured terminal instance name
+- **THEN** tabs, toolbar, and dialog identity keep using the terminal instance name
+- **AND** the inner terminal window titlebar may separately resolve `observed title ?? configured title ?? terminal id`
 
 #### Scenario: Toolbar status reflects lifecycle plus activity
 

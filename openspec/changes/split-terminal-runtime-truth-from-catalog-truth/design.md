@@ -141,10 +141,11 @@ Observed identity can stay runtime-managed initially, but lifecycle truth must s
 
 WebUI will resolve display text and status from the new projection through one shared helper:
 
-- primary title: `currentTitle ?? configuredTitle ?? terminalId`
+- shared identity title for tabs / toolbar / dialogs: `configuredTitle ?? terminalId`
+- terminal window titlebar: `currentTitle ?? configuredTitle ?? terminalId`
 - secondary line:
   - running + currentPath => `currentPath`
-  - otherwise if primary title is not terminal id => `terminalId`
+  - otherwise if shared identity title is not terminal id => `terminalId`
   - otherwise nothing
 - status chips:
   - `Provisioned` for `not_started`
@@ -156,6 +157,25 @@ WebUI will resolve display text and status from the new projection through one s
   - destructive action stays separate as `Delete terminal`
 
 This logic belongs in one shared display/projection helper so tab labels, titlebar, toolbar, and action panels stop drifting.
+
+### 8. Runtime terminal CLI and skill must mirror lifecycle truth
+
+The runtime-local `terminal` shell surface cannot stay on the legacy `kill` vocabulary once the underlying law has moved to `bootstrap / stop / delete`.
+
+Runtime terminal CLI will therefore:
+
+- expose `terminal list` as the status inspection surface for `processPhase`, observed identity, and stop facts
+- expose `terminal bootstrap` as the explicit way to start a `not_started` or `stopped` runtime terminal
+- expose `terminal stop` as the explicit PTY stop verb
+- stop teaching `terminal kill` as the canonical lifecycle action
+
+Built-in terminal skill guidance will therefore:
+
+- teach operators to inspect `terminal list` before guessing lifecycle from stale output
+- distinguish `create or recover`, `bootstrap`, `read`, `write/input`, and `stop`
+- explain that stopped terminals keep their durable identity while read/write remain disabled until bootstrap
+
+This keeps shell-facing guidance aligned with the same lifecycle truth already used by terminal-system and WebUI, instead of leaving a legacy exception at the CLI boundary.
 
 ## Rejected Alternatives
 
@@ -198,10 +218,17 @@ The platform already owns terminal observation. Reconstructing identity in the p
 
 - prove toolbar/titlebar/tab labels resolve from runtime display law
 - prove second line does not show fixed launch cwd once runtime path is absent or stale
+- prove tabs / toolbar stay on terminal instance name while the terminal window titlebar can follow the observed PTY title
 - prove stopped terminals show `Bootstrap PTY` and disabled write/read affordances
 - prove delete navigates away, but stop keeps the route alive
 
-### 4. Real walkthrough
+### 4. Runtime CLI / skill BDD
+
+- prove runtime terminal CLI exposes explicit `bootstrap` and `stop` lifecycle verbs
+- prove shell help and generated skill guidance stop teaching legacy `terminal kill` as the primary lifecycle action
+- prove built-in terminal skill and lifecycle reference teach status inspection through `terminal list`
+
+### 5. Real walkthrough
 
 - real browser walkthrough for desktop + `iPhone 14`
 - real AI walkthrough proving:
