@@ -9,6 +9,7 @@
 	import MessageSystemSurface from './message-system-surface.svelte';
 
 	import type {
+		MessageSystemManageSection,
 		MessageSystemRoomAssetItem,
 		MessageSystemRoomSeatState,
 		MessageSystemSendAsOption,
@@ -20,7 +21,7 @@
 		surfaceClass = 'h-[52rem] w-full min-w-0 bg-background',
 	}: {
 		disableManageDialogPortal?: boolean;
-		initialManageDialogSection?: 'overview' | 'users' | 'permissions' | null;
+		initialManageDialogSection?: MessageSystemManageSection | null;
 		surfaceClass?: string;
 	} = $props();
 
@@ -50,7 +51,7 @@
 		accessToken: `token:${input.chatId}:admin`,
 		participantId: 'system:trusted-bootstrap',
 		currentAdmin: true,
-		transportUrl: undefined,
+		transportUrl: `ws://127.0.0.1:4581/room/${input.chatId}?token=token:${input.chatId}:admin`,
 	});
 
 	const actorCatalog: ActorDirectoryEntry[] = [
@@ -427,7 +428,7 @@
 						},
 			),
 		};
-		syncRoomProgress(room.chatId);
+		syncRoomMetadata(room.chatId);
 	};
 
 	const handleViewerActorIdChange = (actorId: string): void => {

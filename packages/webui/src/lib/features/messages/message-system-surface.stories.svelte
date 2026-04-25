@@ -214,6 +214,35 @@
 </Story>
 
 <Story
+	name="Scenario: Given room management Share section When opened Then room websocket links and user tokens can be copied"
+	asChild
+	play={async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		let share = canvas;
+
+		await waitFor(async () => {
+			const shareSection = canvas.getByTestId('room-manage-share-section');
+			await expect(shareSection).toBeInTheDocument();
+			share = within(shareSection);
+		});
+		await expect(share.getByText('Ops bridge')).toBeInTheDocument();
+		await expect(share.getByText('room-ops')).toBeInTheDocument();
+		await expect(share.getByDisplayValue('ws://127.0.0.1:4581/room/room-ops')).toBeInTheDocument();
+		await expect(share.getByText('auth:analyst')).toBeInTheDocument();
+		await expect(share.getByDisplayValue('token:room-ops:analyst')).toBeInTheDocument();
+		await expect(share.getByRole('button', { name: 'Copy room websocket base URL' })).toBeInTheDocument();
+		await expect(share.getByRole('button', { name: 'Copy token for Analyst' })).toBeInTheDocument();
+		await userEvent.click(share.getByRole('button', { name: 'Show WebSocket URL for Analyst' }));
+		await expect(
+			share.getByDisplayValue('ws://127.0.0.1:4581/room/room-ops?token=token%3Aroom-ops%3Aanalyst'),
+		).toBeVisible();
+		await expect(share.getByRole('button', { name: 'Copy websocket URL for Analyst' })).toBeInTheDocument();
+	}}
+>
+	<Harness disableManageDialogPortal initialManageDialogSection="share" />
+</Story>
+
+<Story
 	name="Scenario: Given room search was dismissed When the operator presses search again Then the search dialog reopens without leaving the page inert"
 	asChild
 	play={async ({ canvasElement }) => {

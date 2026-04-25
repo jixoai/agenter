@@ -15,6 +15,10 @@ const reopenSearchStory = getPortableStory(
   stories,
   "Scenario: Given room search was dismissed When the operator presses search again Then the search dialog reopens without leaving the page inert",
 );
+const shareStory = getPortableStory(
+  stories,
+  "Scenario: Given room management Share section When opened Then room websocket links and user tokens can be copied",
+);
 
 describe("Feature: Storybook DOM contract for message system surface", () => {
   test("Scenario: Given the room toolbar add-user action When it is pressed Then room management lands on Users Add", async () => {
@@ -27,5 +31,9 @@ describe("Feature: Storybook DOM contract for message system surface", () => {
 
   test("Scenario: Given room search was dismissed When the operator presses search again Then the search dialog reopens without leaving the page inert", async () => {
     await reopenSearchStory.run();
+  });
+
+  test("Scenario: Given room management Share section When opened Then room websocket links and user tokens can be copied", async () => {
+    await shareStory.run();
   });
 });

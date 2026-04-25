@@ -9,6 +9,7 @@
 
 	import MessageRoomManagePermissions from './message-room-manage-access.svelte';
 	import MessageRoomManageOverview from './message-room-manage-overview.svelte';
+	import MessageRoomManageShare from './message-room-manage-share.svelte';
 	import MessageRoomManageUsers from './message-room-manage-users.svelte';
 	import type {
 		MessageSystemGrantRole,
@@ -94,6 +95,10 @@
 			id: 'permissions',
 			label: 'Permissions',
 		},
+		{
+			id: 'share',
+			label: 'Share',
+		},
 	];
 	let compactViewport = $state(false);
 
@@ -129,7 +134,7 @@
 			<Dialog.Header class="sr-only">
 				<Dialog.Title>Manage room</Dialog.Title>
 				<Dialog.Description>
-					Manage overview, users, and permissions for {selectedRoom.title || selectedRoom.chatId}.
+					Manage overview, users, permissions, and sharing for {selectedRoom.title || selectedRoom.chatId}.
 				</Dialog.Description>
 			</Dialog.Header>
 
@@ -239,12 +244,14 @@
 								onGrantRoleChange={onGrantRoleChange}
 								onGrantSeat={onGrantSeat}
 							/>
-						{:else}
+						{:else if section === 'permissions'}
 							<MessageRoomManagePermissions
 								{roomSeatStates}
 								onNavigateToUsers={onNavigateToUsers}
 								onUpdateSeatRole={onUpdateSeatRole}
 							/>
+						{:else if section === 'share'}
+							<MessageRoomManageShare {selectedRoom} {roomSeatStates} />
 						{/if}
 						</Scaffold.ScrollBody>
 					</Scaffold.Root>

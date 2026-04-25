@@ -11,7 +11,7 @@ import type { WebChatComposerSubmitPayload, WebChatNotice, WebChatVisibleMessage
 import type { ActorDirectoryEntry } from "$lib/features/collaboration/actor-directory";
 
 export type MessageSystemGrantRole = "admin" | "member" | "readonly";
-export type MessageSystemManageSection = "overview" | "users" | "permissions";
+export type MessageSystemManageSection = "overview" | "users" | "permissions" | "share";
 
 export interface MessageSystemSendAsOption {
   accessToken: string;
