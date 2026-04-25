@@ -159,6 +159,91 @@ export interface SessionAiCallUpdate {
   isComplete?: boolean;
 }
 
+export type SessionAttentionReceiptStatus = "accepted" | "errored" | "aborted" | "completed";
+
+export type SessionAttentionReceiptProviderEventKind =
+  | "text_delta"
+  | "thinking_delta"
+  | "tool_call_start"
+  | "tool_call_args"
+  | "tool_call_end"
+  | "run_finished"
+  | "run_error"
+  | "transport_error"
+  | "abort";
+
+export interface SessionAttentionDispatchRecord {
+  id: number;
+  dispatchId: string;
+  contextId: string;
+  commitId: string;
+  cycleId: number;
+  attemptIndex: number;
+  agentCallId: string;
+  sessionModelCallId: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SessionAttentionDispatchInsert {
+  dispatchId: string;
+  contextId: string;
+  commitId: string;
+  cycleId: number;
+  attemptIndex: number;
+  agentCallId: string;
+  sessionModelCallId?: number | null;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface SessionAttentionReceiptRecord {
+  id: number;
+  receiptId: string;
+  dispatchId: string;
+  contextId: string;
+  commitId: string;
+  cycleId: number;
+  attemptIndex: number;
+  agentCallId: string;
+  sessionModelCallId: number | null;
+  status: SessionAttentionReceiptStatus;
+  providerEventKind: SessionAttentionReceiptProviderEventKind;
+  timestamp: number;
+  finishReason?: string | null;
+  usage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  };
+  errorCode?: string;
+  errorMessage?: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface SessionAttentionReceiptInsert {
+  receiptId: string;
+  dispatchId: string;
+  contextId: string;
+  commitId: string;
+  cycleId: number;
+  attemptIndex: number;
+  agentCallId: string;
+  sessionModelCallId?: number | null;
+  status: SessionAttentionReceiptStatus;
+  providerEventKind: SessionAttentionReceiptProviderEventKind;
+  timestamp?: number;
+  finishReason?: string | null;
+  usage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  };
+  errorCode?: string;
+  errorMessage?: string;
+  meta?: Record<string, unknown>;
+}
+
 export type SessionAssetKind = "image" | "video" | "file";
 
 export interface SessionAssetRecord {

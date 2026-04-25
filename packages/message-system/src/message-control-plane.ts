@@ -1363,7 +1363,7 @@ export class MessageControlPlane {
       return null;
     }
     const host = transport?.host ?? this.transportServer?.url.hostname ?? "127.0.0.1";
-    const path = `${(transport.pathPrefix ?? "/room").replace(/\/$/, "")}/${encodeURIComponent(chatId)}`;
+    const path = `${(transport?.pathPrefix ?? "/room").replace(/\/$/, "")}/${encodeURIComponent(chatId)}`;
     const url = new URL(`ws://${host}:${port}${path}`);
     if (accessToken) {
       url.searchParams.set("token", accessToken);

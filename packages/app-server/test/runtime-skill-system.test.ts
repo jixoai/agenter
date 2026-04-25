@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { AttentionSystem } from "@agenter/attention-system";
 import { RuntimeSkillSystem, type RuntimeSkillRefreshResult } from "../src/runtime-skill-system";
 import type { WorkspaceGrantRecord } from "../src/workspace-system";
 
@@ -87,9 +86,7 @@ const createSystem = (input: {
   listWorkspaceAuthorities?: () => Array<{ workspaceRoot: string; grants: WorkspaceGrantRecord[] }>;
 }): RuntimeSkillSystem => {
   const system = new RuntimeSkillSystem({
-    attentionSystem: new AttentionSystem(),
     owner: "tester",
-    focusState: "background",
     rootWorkspacePath: input.rootWorkspacePath,
     homeDir: input.homeDir ?? input.rootWorkspacePath,
     repoRoot: input.repoRoot,
@@ -138,8 +135,8 @@ describe("Feature: runtime skill watcher and config surface", () => {
     expect(result.changedSkills).toHaveLength(1);
     expect(result.changedSkills[0]?.kind).toBe("added");
     expect(result.changedSkills[0]?.name).toBe("added-skill");
-    expect(result.reminderCommits).toHaveLength(1);
-    expect(result.reminderCommits[0]?.summary).toContain("Added runtime skill added-skill");
+    expect(result.reminderIngresses).toHaveLength(1);
+    expect(result.reminderIngresses[0]?.summary).toContain("Added runtime skill added-skill");
   });
 
   test("Scenario: Given an existing runtime skill is upserted with new content When refresh reminders are published Then an updated skill reminder commit is emitted", () => {
@@ -168,8 +165,8 @@ describe("Feature: runtime skill watcher and config surface", () => {
     expect(result.changedSkills).toHaveLength(1);
     expect(result.changedSkills[0]?.kind).toBe("updated");
     expect(result.changedSkills[0]?.name).toBe("updated-skill");
-    expect(result.reminderCommits).toHaveLength(1);
-    expect(result.reminderCommits[0]?.summary).toContain("Updated runtime skill updated-skill");
+    expect(result.reminderIngresses).toHaveLength(1);
+    expect(result.reminderIngresses[0]?.summary).toContain("Updated runtime skill updated-skill");
   });
 
   test("Scenario: Given an existing runtime skill is removed When refresh reminders are published Then a removed skill reminder commit is emitted", () => {
@@ -185,8 +182,8 @@ describe("Feature: runtime skill watcher and config surface", () => {
     expect(result.changedSkills).toHaveLength(1);
     expect(result.changedSkills[0]?.kind).toBe("removed");
     expect(result.changedSkills[0]?.name).toBe("removed-skill");
-    expect(result.reminderCommits).toHaveLength(1);
-    expect(result.reminderCommits[0]?.summary).toContain("Removed runtime skill removed-skill");
+    expect(result.reminderIngresses).toHaveLength(1);
+    expect(result.reminderIngresses[0]?.summary).toContain("Removed runtime skill removed-skill");
   });
 
   test("Scenario: Given an unrelated database file in a skill directory When only that file changes Then no skill reminder is emitted", async () => {
@@ -201,7 +198,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     await sleep(120);
     const result = system.flushPendingChanges();
     expect(result?.changedSkills ?? []).toHaveLength(0);
-    expect(result?.reminderCommits ?? []).toHaveLength(0);
+    expect(result?.reminderIngresses ?? []).toHaveLength(0);
   });
 
   test("Scenario: Given set-config changes the declared files When old and new targets change Then only the new targets trigger reminders", async () => {
@@ -239,7 +236,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     const newTargetResult = await waitForDirtyFlush(system);
     expect(newTargetResult.changedSkills).toHaveLength(1);
     expect(newTargetResult.changedSkills[0]?.changedFiles).toContain(notesPath);
-    expect(newTargetResult.reminderCommits).toHaveLength(1);
+    expect(newTargetResult.reminderIngresses).toHaveLength(1);
   });
 
   test("Scenario: Given a declared watched file changes while the runtime is idle When debounce expires Then idle flush publishes the aggregated reminder", async () => {

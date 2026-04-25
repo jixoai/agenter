@@ -13,8 +13,10 @@ Quick start:
 3. Choose an explicit absolute `cwd` when starting terminal work.
 
 Key laws:
-- The avatar root workspace is always mounted.
+- The avatar root workspace is always mounted as the fixed root-workspace surface.
 - Project access still depends on explicit workspace mounts and grants.
+- Mounted project workspaces use public-workspace shell semantics even when they expose both shared and avatar-private files.
+- Public-workspace shells do not inherit root-workspace-exclusive env/CLI by default.
 - Real filesystem paths are the source of truth.
 
 References:

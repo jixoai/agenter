@@ -4,6 +4,7 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { privateKeyToAccount } from "viem/accounts";
+import { parse as parseYaml } from "yaml";
 
 import {
   AttentionSystem,
@@ -23,6 +24,7 @@ import {
 } from "../src/attention-src";
 import type { LoopBusInput } from "../src/loop-bus";
 import { LoopBusPluginRuntime, type AttentionDraft, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
+import type { AssistantDeliveryEvent, AssistantStreamUpdate } from "../src/model-client";
 import type { RuntimeSkillSystem } from "../src/runtime-skill-system";
 import type { RuntimeMessageSendResult } from "../src/runtime-tool-views";
 import { resolveSessionRoomActorId } from "../src/session-chat-projection";
@@ -58,7 +60,7 @@ interface RuntimeInternal {
   collectLoopInputs: () => Promise<LoopBusInput[] | undefined>;
   collectInterleavedAgentInputs: () => Promise<LoopBusInput[] | undefined>;
   collectAttentionInputs: () => LoopBusInput[] | undefined;
-  collectUnreadRoomIngress: () => void;
+  collectUnreadRoomIngress: () => Promise<number>;
   waitForAnyInput: () => Promise<"user" | "terminal" | "task" | "attention">;
   notifyInput: (kind: "user" | "terminal" | "task" | "attention") => void;
   loopPluginRuntime: LoopBusPluginRuntime | null;
@@ -308,6 +310,69 @@ const getItemsInput = (inputs: LoopBusInput[] | undefined): LoopBusInput | undef
 
 const stringifyAttentionQuery = async (runtime: SessionRuntime, query: string): Promise<string> =>
   JSON.stringify(await runtime.queryAttention({ query }));
+
+const parseMessageSocialContext = (
+  detail: string | undefined,
+): {
+  channel?: {
+    audience?: string | null;
+    participants?: string[];
+    otherParticipants?: string[];
+  };
+  perspective?: {
+    latestMessage?: string | null;
+    senderLabel?: string | null;
+    selfLabel?: string | null;
+    turnState?: string | null;
+  };
+  obligation?: {
+    kind?: string | null;
+  };
+  presence?: {
+    online?: string[];
+    offline?: string[];
+  };
+  visibleRooms?: Array<{
+    chatId: string;
+    title: string;
+    participantLabels: string[];
+    focused: boolean;
+  }>;
+} | null => {
+  if (!detail) {
+    return null;
+  }
+  const match = detail.match(/^```yaml\n([\s\S]*?)\n```/);
+  if (!match?.[1]) {
+    return null;
+  }
+  return parseYaml(match[1]) as {
+    channel?: {
+      audience?: string | null;
+      participants?: string[];
+      otherParticipants?: string[];
+    };
+    perspective?: {
+      latestMessage?: string | null;
+      senderLabel?: string | null;
+      selfLabel?: string | null;
+      turnState?: string | null;
+    };
+    obligation?: {
+      kind?: string | null;
+    };
+    presence?: {
+      online?: string[];
+      offline?: string[];
+    };
+    visibleRooms?: Array<{
+      chatId: string;
+      title: string;
+      participantLabels: string[];
+      focused: boolean;
+    }>;
+  };
+};
 
 const ensureAttentionContext = (internal: RuntimeInternal, contextId: string): void => {
   if (internal.attentionSystem.getContext(contextId)) {
@@ -1046,7 +1111,407 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given a shared-room unread message When collectLoopInputs returns raw chat input Then the loop meta carries participant presence and latest-message perspective", async () => {
+  test("Scenario: Given a delivery dispatch exists before the ai_call row binds When the model call is only running with no SSE yet Then delivery stays dispatching while ai_call binding becomes visible", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    ensureAttentionContext(internal, PRIMARY_CONTEXT_ID);
+    const chatCommit = appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
+      meta: {
+        author: "User",
+        source: "message",
+        src: createMessageSrc(PRIMARY_ROOM_ID, 11),
+      },
+      scores: { hash_delivery_running: 100 },
+      title: "Need delivery dispatch evidence",
+    });
+    await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, chatCommit, { notifyLoop: false });
+    const inputs = await internal.collectLoopInputs();
+    if (!inputs) {
+      throw new Error("expected collected inputs");
+    }
+
+    await runtime.start();
+    try {
+      await runtime.pause();
+      await internal.persistCycle({ wakeSource: "user", inputs });
+
+      await internal.handleModelCall({
+        id: "call-delivery-running",
+        timestamp: 100,
+        status: "running",
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: "Need delivery dispatch evidence" }] },
+      });
+
+      const modelCallId = internal.pageModelCalls().items[0]?.id;
+      const delivery = runtime.queryAttentionDeliveryTimeline({
+        contextId: PRIMARY_CONTEXT_ID,
+        commitId: chatCommit.commitId,
+      });
+
+      expect(modelCallId).toBeGreaterThan(0);
+      expect(delivery.projections).toEqual([
+        expect.objectContaining({
+          contextId: PRIMARY_CONTEXT_ID,
+          commitId: chatCommit.commitId,
+          state: "dispatching",
+          attemptCount: 1,
+          sessionModelCallId: modelCallId,
+          firstAcceptedAt: null,
+        }),
+      ]);
+      expect(delivery.dispatches).toEqual([
+        expect.objectContaining({
+          contextId: PRIMARY_CONTEXT_ID,
+          commitId: chatCommit.commitId,
+          attemptIndex: 1,
+          sessionModelCallId: modelCallId,
+        }),
+      ]);
+      expect(delivery.receipts).toEqual([]);
+      expect(internal.pageModelCalls().items[0]?.status).toBe("running");
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given the first model stream fact is an error When delivery receipts are projected Then the attempt is errored and never marked accepted", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      handleAssistantDeliveryEvent: (input: AssistantDeliveryEvent) => Promise<void>;
+    };
+
+    ensureAttentionContext(internal, PRIMARY_CONTEXT_ID);
+    const chatCommit = appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
+      meta: {
+        author: "User",
+        source: "message",
+        src: createMessageSrc(PRIMARY_ROOM_ID, 12),
+      },
+      scores: { hash_delivery_error: 100 },
+      title: "Need first-frame error evidence",
+    });
+    await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, chatCommit, { notifyLoop: false });
+    const inputs = await internal.collectLoopInputs();
+    if (!inputs) {
+      throw new Error("expected collected inputs");
+    }
+
+    await runtime.start();
+    try {
+      await runtime.pause();
+      await internal.persistCycle({ wakeSource: "user", inputs });
+
+      await internal.handleModelCall({
+        id: "call-delivery-error",
+        timestamp: 200,
+        status: "running",
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: "Need first-frame error evidence" }] },
+      });
+
+      const modelCallId = internal.pageModelCalls().items[0]?.id;
+      await internal.handleAssistantDeliveryEvent({
+        kind: "receipt",
+        attemptIndex: 1,
+        status: "errored",
+        providerEventKind: "run_error",
+        timestamp: 210,
+        errorCode: "provider.unavailable",
+        errorMessage: "provider rejected the first frame",
+      });
+      await internal.handleModelCall({
+        id: "call-delivery-error",
+        timestamp: 210,
+        completedAt: 210,
+        status: "error",
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: "Need first-frame error evidence" }] },
+        error: {
+          message: "provider rejected the first frame",
+          details: {
+            deliveryError: {
+              providerEventKind: "run_error",
+              errorCode: "provider.unavailable",
+              errorMessage: "provider rejected the first frame",
+            },
+          },
+        },
+        outcome: {
+          code: "error",
+          reason: "provider.unavailable",
+          message: "provider rejected the first frame",
+          retryable: true,
+        },
+      });
+
+      const delivery = runtime.queryAttentionDeliveryTimeline({
+        contextId: PRIMARY_CONTEXT_ID,
+        commitId: chatCommit.commitId,
+      });
+
+      expect(delivery.projections).toEqual([
+        expect.objectContaining({
+          contextId: PRIMARY_CONTEXT_ID,
+          commitId: chatCommit.commitId,
+          state: "errored",
+          attemptCount: 1,
+          sessionModelCallId: modelCallId,
+          firstAcceptedAt: null,
+        }),
+      ]);
+      expect(delivery.dispatches).toEqual([
+        expect.objectContaining({
+          attemptIndex: 1,
+          sessionModelCallId: modelCallId,
+        }),
+      ]);
+      expect(delivery.receipts).toEqual([
+        expect.objectContaining({
+          status: "errored",
+          providerEventKind: "run_error",
+          errorCode: "provider.unavailable",
+          errorMessage: "provider rejected the first frame",
+        }),
+      ]);
+      expect(delivery.receipts.some((receipt) => receipt.status === "accepted")).toBeFalse();
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given the same attention commit retries after an earlier provider failure When the next stream yields a valid SSE Then delivery history keeps both attempts and promotes only the latest one", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      handleAssistantDeliveryEvent: (input: AssistantDeliveryEvent) => Promise<void>;
+      handleAssistantStreamUpdate: (input: AssistantStreamUpdate) => Promise<void>;
+    };
+
+    ensureAttentionContext(internal, PRIMARY_CONTEXT_ID);
+    const chatCommit = appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
+      meta: {
+        author: "User",
+        source: "message",
+        src: createMessageSrc(PRIMARY_ROOM_ID, 13),
+      },
+      scores: { hash_delivery_retry: 100 },
+      title: "Need retry delivery evidence",
+    });
+    await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, chatCommit, { notifyLoop: false });
+    const firstBatch = await internal.collectLoopInputs();
+    const attentionInput = getBootstrapInput(firstBatch);
+    if (!firstBatch || !attentionInput) {
+      throw new Error("expected collected attention batch");
+    }
+
+    await runtime.start();
+    try {
+      await runtime.pause();
+      await internal.persistCycle({ wakeSource: "user", inputs: firstBatch });
+      await internal.handleModelCall({
+        id: "call-delivery-retry-1",
+        timestamp: 300,
+        status: "running",
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: attentionInput.text }] },
+      });
+      await internal.handleAssistantDeliveryEvent({
+        kind: "receipt",
+        attemptIndex: 1,
+        status: "errored",
+        providerEventKind: "run_error",
+        timestamp: 310,
+        errorCode: "provider.unavailable",
+        errorMessage: "attempt 1 failed before SSE",
+      });
+      await internal.handleModelCall({
+        id: "call-delivery-retry-1",
+        timestamp: 310,
+        completedAt: 310,
+        status: "error",
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: attentionInput.text }] },
+        error: {
+          message: "attempt 1 failed before SSE",
+          details: {
+            deliveryError: {
+              providerEventKind: "run_error",
+              errorCode: "provider.unavailable",
+              errorMessage: "attempt 1 failed before SSE",
+            },
+          },
+        },
+        outcome: {
+          code: "error",
+          reason: "provider.unavailable",
+          message: "attempt 1 failed before SSE",
+          retryable: true,
+        },
+      });
+
+      const firstContainment = internal.attentionContainment.get(PRIMARY_CONTEXT_ID);
+      expect(firstContainment?.retryCount).toBe(1);
+      if (!firstContainment) {
+        throw new Error("expected containment state after retryable delivery error");
+      }
+      firstContainment.nextWakeAt = Date.now() - 1;
+      expect(await internal.waitForAnyInput()).toBe("attention");
+
+      await internal.persistCycle({
+        wakeSource: "attention",
+        inputs: firstBatch,
+      });
+      await internal.handleModelCall({
+        id: "call-delivery-retry-2",
+        timestamp: 400,
+        status: "running",
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: attentionInput.text }] },
+      });
+      await internal.handleAssistantDeliveryEvent({
+        kind: "receipt",
+        attemptIndex: 1,
+        status: "accepted",
+        providerEventKind: "text_delta",
+        timestamp: 410,
+      });
+      await internal.handleAssistantStreamUpdate({
+        kind: "draft",
+        content: "retry accepted",
+        delta: "retry accepted",
+        timestamp: 410,
+      });
+
+      const delivery = runtime.queryAttentionDeliveryTimeline({
+        contextId: PRIMARY_CONTEXT_ID,
+        commitId: chatCommit.commitId,
+      });
+
+      expect(delivery.projections).toEqual([
+        expect.objectContaining({
+          contextId: PRIMARY_CONTEXT_ID,
+          commitId: chatCommit.commitId,
+          state: "accepted",
+          attemptCount: 2,
+        }),
+      ]);
+      expect(delivery.dispatches.map((dispatch) => dispatch.attemptIndex)).toEqual([1, 2]);
+      expect(delivery.receipts.map((receipt) => `${receipt.attemptIndex}:${receipt.status}`)).toEqual([
+        "1:errored",
+        "2:accepted",
+      ]);
+      expect(delivery.receipts[0]?.providerEventKind).toBe("run_error");
+      expect(delivery.receipts[1]?.providerEventKind).toBe("text_delta");
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given one model call retries inside the same provider run When ModelClient starts a second attempt Then delivery ledger keeps both attempts under the same ai_call binding", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      handleAssistantDeliveryEvent: (input: AssistantDeliveryEvent) => Promise<void>;
+    };
+
+    ensureAttentionContext(internal, PRIMARY_CONTEXT_ID);
+    const chatCommit = appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
+      meta: {
+        author: "User",
+        source: "message",
+        src: createMessageSrc(PRIMARY_ROOM_ID, 14),
+      },
+      scores: { hash_delivery_internal_retry: 100 },
+      title: "Need provider internal retry evidence",
+    });
+    await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, chatCommit, { notifyLoop: false });
+    const inputs = await internal.collectLoopInputs();
+    const attentionInput = getBootstrapInput(inputs);
+    if (!inputs || !attentionInput) {
+      throw new Error("expected collected attention batch");
+    }
+
+    await runtime.start();
+    try {
+      await runtime.pause();
+      await internal.persistCycle({ wakeSource: "user", inputs });
+      await internal.handleModelCall({
+        id: "call-delivery-internal-retry",
+        timestamp: 500,
+        status: "running",
+        provider: "openai",
+        model: "gpt-5.4",
+        request: { messages: [{ role: "user", content: attentionInput.text }] },
+      });
+
+      const modelCallId = internal.pageModelCalls().items[0]?.id;
+      await internal.handleAssistantDeliveryEvent({
+        kind: "receipt",
+        attemptIndex: 1,
+        status: "errored",
+        providerEventKind: "transport_error",
+        timestamp: 510,
+        errorMessage: "attempt 1 transport error",
+      });
+      await internal.handleAssistantDeliveryEvent({
+        kind: "attempt_started",
+        attemptIndex: 2,
+        timestamp: 520,
+      });
+      await internal.handleAssistantDeliveryEvent({
+        kind: "receipt",
+        attemptIndex: 2,
+        status: "accepted",
+        providerEventKind: "tool_call_start",
+        timestamp: 530,
+      });
+      await internal.handleAssistantDeliveryEvent({
+        kind: "receipt",
+        attemptIndex: 2,
+        status: "completed",
+        providerEventKind: "run_finished",
+        timestamp: 540,
+        finishReason: "tool_calls",
+      });
+
+      const delivery = runtime.queryAttentionDeliveryTimeline({
+        contextId: PRIMARY_CONTEXT_ID,
+        commitId: chatCommit.commitId,
+      });
+
+      expect(delivery.projections).toEqual([
+        expect.objectContaining({
+          contextId: PRIMARY_CONTEXT_ID,
+          commitId: chatCommit.commitId,
+          state: "completed",
+          attemptCount: 2,
+          sessionModelCallId: modelCallId,
+        }),
+      ]);
+      expect(delivery.dispatches.map((dispatch) => `${dispatch.attemptIndex}:${dispatch.sessionModelCallId}`)).toEqual([
+        `1:${modelCallId}`,
+        `2:${modelCallId}`,
+      ]);
+      expect(delivery.receipts.map((receipt) => `${receipt.attemptIndex}:${receipt.status}`)).toEqual([
+        "1:errored",
+        "2:accepted",
+        "2:completed",
+      ]);
+      expect(delivery.receipts[0]?.providerEventKind).toBe("transport_error");
+      expect(delivery.receipts[1]?.providerEventKind).toBe("tool_call_start");
+      expect(delivery.receipts[2]?.providerEventKind).toBe("run_finished");
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given a shared-room unread message When collectLoopInputs commits attention ingress Then the message envelope keeps participant presence and latest-message perspective", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-social-meta-"));
     const messageSystem = new MessageControlPlane({
       dbPath: resolveMessageControlDbPath(root),
@@ -1114,29 +1579,31 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       });
 
       const inputs = await janeInternal.collectLoopInputs();
-      const chatInput = inputs?.find((item) => item.source === "chat" && item.text === "status update");
-      expect(chatInput).toBeDefined();
-      expect(chatInput?.meta?.chatAudience).toBe("group");
-      expect(chatInput?.meta?.chatMessagePerspective).toBe("other");
-      expect(chatInput?.meta?.chatSenderLabel).toBe("kzf");
-      expect(chatInput?.meta?.chatSelfLabel).toBe("Jane");
-      expect(chatInput?.meta?.chatParticipantLabels).toBe(JSON.stringify(["kzf", "Jane", "JJ"]));
-      expect(chatInput?.meta?.chatOtherParticipantLabels).toBe(JSON.stringify(["kzf", "JJ"]));
-      expect(chatInput?.meta?.chatOnlineParticipantLabels).toBe(JSON.stringify(["kzf", "Jane"]));
-      expect(chatInput?.meta?.chatOfflineParticipantLabels).toBe(JSON.stringify(["JJ"]));
-      expect(chatInput?.meta?.chatTurnState).toBe("your_turn");
-      expect(chatInput?.meta?.chatObligationKind).toBe("room_reply_pending");
-      expect(chatInput?.meta?.chatVisibleRoomCount).toBe(1);
-      expect(chatInput?.meta?.chatVisibleRoomSummaries).toBe(
-        JSON.stringify([
-          {
-            chatId: relayRoom.chatId,
-            title: "gaubee",
-            participantLabels: ["Jane", "gaubee"],
-            focused: false,
-          },
-        ]),
+      expect(getBootstrapInput(inputs)).toBeDefined();
+      const socialContext = parseMessageSocialContext(
+        getActiveItems(janeInternal).find((item) => item.detail?.value.includes("status update"))?.detail?.value,
       );
+      expect(socialContext?.channel?.audience).toBe("group");
+      expect(socialContext?.channel?.participants).toEqual(["kzf", "Jane", "JJ"]);
+      expect(socialContext?.channel?.otherParticipants).toEqual(["kzf", "JJ"]);
+      expect(socialContext?.perspective?.latestMessage).toBe("other");
+      expect(socialContext?.perspective?.senderLabel).toBe("kzf");
+      expect(socialContext?.perspective?.selfLabel).toBe("Jane");
+      expect(socialContext?.perspective?.turnState).toBe("your_turn");
+      expect(socialContext?.obligation?.kind).toBe("room_reply_pending");
+      expect(socialContext?.presence?.online).toEqual(["kzf", "Jane"]);
+      expect(socialContext?.presence?.offline).toEqual(["JJ"]);
+      expect((socialContext?.visibleRooms ?? []).map((room) => ({
+        title: room.title,
+        participantLabels: room.participantLabels,
+        focused: room.focused,
+      }))).toEqual([
+        {
+          title: "gaubee",
+          participantLabels: ["Jane", "gaubee"],
+          focused: false,
+        },
+      ]);
 
       const projected = janeInternal.readMessageChannelForTooling({
         chatId: room.chatId,
@@ -1179,7 +1646,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given a shared-room peer status update When collectLoopInputs returns raw chat input Then the loop meta keeps the message visible without auto-claiming a reply turn", async () => {
+  test("Scenario: Given a shared-room peer status update When collectLoopInputs commits attention ingress Then the message envelope stays visible without auto-claiming a reply turn", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-peer-meta-"));
     const messageSystem = new MessageControlPlane({
       dbPath: resolveMessageControlDbPath(root),
@@ -1238,16 +1705,26 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       });
 
       const inputs = await jjInternal.collectLoopInputs();
-      const chatInput = inputs?.find(
-        (item) => item.source === "chat" && item.text === "我先去把接口跑起来，稍后把结果发到群里。",
+      expect(getBootstrapInput(inputs)).toBeDefined();
+      const socialContext = parseMessageSocialContext(
+        getActiveItems(jjInternal)
+          .find((item) => item.detail?.value.includes("我先去把接口跑起来，稍后把结果发到群里。"))
+          ?.detail?.value,
       );
-      expect(chatInput).toBeDefined();
-      expect(chatInput?.meta?.chatAudience).toBe("group");
-      expect(chatInput?.meta?.chatMessagePerspective).toBe("other");
-      expect(chatInput?.meta?.chatSenderLabel).toBe("Jane");
-      expect(chatInput?.meta?.chatSelfLabel).toBe("JJ");
-      expect(chatInput?.meta?.chatTurnState).toBe("waiting");
-      expect(chatInput?.meta?.chatObligationKind).toBe("self_update");
+      expect(socialContext).toMatchObject({
+        channel: {
+          audience: "group",
+        },
+        perspective: {
+          latestMessage: "other",
+          senderLabel: "Jane",
+          selfLabel: "JJ",
+          turnState: "waiting",
+        },
+        obligation: {
+          kind: "self_update",
+        },
+      });
     } finally {
       messageSystem.close();
     }
@@ -1403,26 +1880,27 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a background terminal becomes ready When runtime records the explicit ready event Then the context remains actionable debt", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal & {
-      commitLifecycleAttentionItem: (input: {
-        src: string;
+      enqueueTerminalLifecycleAttentionCommit: (input: {
+        terminalId: string;
         contextId: string;
         event: string;
         summary: string;
         payload?: Record<string, unknown>;
         score?: number;
         ingressType?: "commit" | "push";
-      }) => Promise<void>;
+      }) => void;
     };
 
     await runtime.start();
     try {
-      await internal.commitLifecycleAttentionItem({
-        src: "tty:bg-ready",
+      internal.enqueueTerminalLifecycleAttentionCommit({
+        terminalId: "bg-ready",
         contextId: "ctx-terminal-bg-ready",
         event: "terminal_idle_ready",
         summary: "Terminal bg-ready is ready for your input.",
         score: 100,
       });
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       const activeTerminalItems = getActiveItems(internal).filter((item) => isTerminalMeta(item.meta));
       expect(
@@ -2176,17 +2654,16 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(migrated.contexts[0]?.commits[0]?.summary).toBe("legacy attention");
   });
 
-  test("Scenario: Given a plugin runtime-backed user message When attention drafts flush Then the message is committed before cycle gating", async () => {
+  test("Scenario: Given a plugin runtime-backed user message When room ingress drains through the message adapter Then the message is committed before cycle gating", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
 
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     runtime.pushUserChat("plugin-backed message");
-    internal.collectUnreadRoomIngress();
-
-    internal.collectUnreadRoomIngress();
+    await internal.collectUnreadRoomIngress();
+    await internal.collectUnreadRoomIngress();
     const changed = await internal.flushPluginAttentionDrafts();
-    expect(changed).toBe(true);
+    expect(changed).toBe(false);
     const facts = getActiveItems(internal);
     expect(facts).toHaveLength(1);
     expect(facts[0]?.title).toBe("plugin-backed message");
@@ -2228,8 +2705,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       }),
     });
     internal.focusedTerminalIds = ["iflow"];
-    internal.terminalDirtyState.iflow = true;
-    internal.terminalLatestSeq.iflow = 7;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     internal.loopPluginRuntime.invalidate({
       src: createTerminalSrc("iflow", 7),
@@ -2290,8 +2765,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       }),
     });
     internal.focusedTerminalIds = ["iflow"];
-    internal.terminalDirtyState.iflow = true;
-    internal.terminalLatestSeq.iflow = 8;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     internal.loopPluginRuntime.invalidate({
       src: createTerminalSrc("iflow", 8),
@@ -2339,8 +2812,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       }),
     });
     internal.focusedTerminalIds = ["iflow"];
-    internal.terminalDirtyState.iflow = true;
-    internal.terminalLatestSeq.iflow = 12;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
     internal.loopPluginRuntime.invalidate({
       src: createTerminalSrc("iflow", 12),
@@ -2399,8 +2870,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       }),
     });
     internal.focusedTerminalIds = ["iflow"];
-    internal.terminalDirtyState.iflow = true;
-    internal.terminalLatestSeq.iflow = 8;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
     internal.loopPluginRuntime.invalidate({
@@ -2412,7 +2881,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(internal.attentionSystem.query({ minScore: 0, text: "Terminal iflow" })).toHaveLength(1);
     expect(getActiveItems(internal)).toHaveLength(0);
 
-    internal.terminalDirtyState.iflow = true;
     internal.loopPluginRuntime.invalidate({
       src: createTerminalSrc("iflow", 8),
       reason: "semantic-change",
@@ -2464,8 +2932,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       }),
     });
     internal.focusedTerminalIds = ["iflow"];
-    internal.terminalDirtyState.iflow = true;
-    internal.terminalLatestSeq.iflow = 8;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
     internal.terminalSemanticFingerprint.iflow = "semantic-a";
@@ -2483,8 +2949,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       seq: 9,
       lines: ["echo changed"],
     };
-    internal.terminalDirtyState.iflow = true;
-    internal.terminalLatestSeq.iflow = 9;
     internal.terminalSemanticFingerprint.iflow = "semantic-b";
     internal.terminalViewFingerprint.iflow = "view-b";
     internal.loopPluginRuntime.invalidate({
@@ -3536,7 +4000,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       handleRuntimeSkillRefreshResult: (
         result: ReturnType<RuntimeSkillSystem["refresh"]>,
         input: { notifyLoop: boolean },
-      ) => Promise<void>;
+      ) => Promise<unknown>;
     };
     const rootWorkspacePath = (Reflect.get(runtime, "options") as { rootWorkspacePath: string }).rootWorkspacePath;
     const skillDir = join(rootWorkspacePath, "skills", "live-sync");

@@ -25,8 +25,10 @@ export {
 } from "./paths";
 export { listWorkspaceHiddenPrivatePaths } from "./private-isolation";
 export {
-  executeRootWorkspaceBash,
-  type RootWorkspaceBashExecInput,
+  createRootWorkspaceShellWorld,
+  RootWorkspaceShellWorld,
+  type RootWorkspaceShellExecInput,
+  type RootWorkspaceShellWorldOptions,
   type RootWorkspaceBashExecResult,
   type RootWorkspaceMountInput,
 } from "./root-exec";

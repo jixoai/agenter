@@ -7,6 +7,7 @@
     "build:skills": "bun run ./scripts/build-runtime-skill-catalog.ts",
     "test": "bun test",
     "test:real": "bun test test/real-loopbus.integration.test.ts",
+    "test:real:archive-gate": "bun run ./scripts/run-real-archive-gate.ts",
     "story:real": "bun run ./scripts/run-real-loopbus-story.ts",
     "verify:workspace-attention": "bun run ./scripts/verify-workspace-attention-harness.ts"
   },
@@ -20,6 +21,7 @@
     "@agenter/i18n-en": "workspace:*",
     "@agenter/i18n-zh-hans": "workspace:*",
     "@agenter/just-bash-overlay-rule-fs": "workspace:*",
+    "@agenter/loopbus-kernel": "workspace:*",
     "@agenter/mdx2md": "workspace:*",
     "@agenter/message-system": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",

@@ -37,6 +37,7 @@ import {
   type MessageRecord,
   type MessageSnapshot,
 } from "@agenter/message-system";
+import { LoopBusKernel } from "@agenter/loopbus-kernel";
 import { isPrincipalId } from "@agenter/principal-crypto";
 import type { AuthSessionProjection, ProfileMetadata, ProfileProjection } from "@agenter/profile-service";
 import {
@@ -115,7 +116,8 @@ import {
 } from "./avatar-seat-store";
 import { type ChatCycle } from "./chat-cycles";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
-import { projectHeartbeatGroups, type RuntimeHeartbeatGroupRecord } from "./heartbeat-groups";
+import type { RuntimeHeartbeatGroupRecord } from "./heartbeat-groups";
+import { pageHeartbeatGroupsFromDb } from "./heartbeat-groups-page";
 import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
 import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
@@ -273,6 +275,99 @@ const isTerminalEventRefDetail = (
   );
 };
 
+const TERMINAL_ACTIVITY_PREVIEW_MAX_CHARS = 4_000;
+
+const isTerminalReadResultLike = (value: unknown): value is TerminalReadResult => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Partial<TerminalReadResult>;
+  return record.representation === "snapshot" || record.representation === "diff";
+};
+
+const trimTerminalActivityPreview = (
+  raw: string | undefined,
+): {
+  preview: string;
+  truncated: boolean;
+} => {
+  const normalized = raw?.trimEnd() ?? "";
+  if (normalized.length <= TERMINAL_ACTIVITY_PREVIEW_MAX_CHARS) {
+    return {
+      preview: normalized,
+      truncated: false,
+    };
+  }
+  return {
+    preview: `${normalized.slice(0, TERMINAL_ACTIVITY_PREVIEW_MAX_CHARS)}\n…`,
+    truncated: true,
+  };
+};
+
+const summarizeTerminalReadActivity = (
+  eventId: number,
+  terminalId: string,
+  payload: TerminalReadResult,
+): Pick<RuntimeTerminalActivityRecord, "content" | "detail"> => {
+  if (payload.representation === "diff") {
+    const diffPreview = trimTerminalActivityPreview(payload.diff);
+    const summaryLabel =
+      diffPreview.preview ||
+      [payload.title ?? "Terminal read", payload.bytes ? `${payload.bytes} bytes` : null].filter(Boolean).join(" · ");
+    return {
+      content: summaryLabel,
+      detail: {
+        source: "terminal-read-activity",
+        eventId,
+        terminalId,
+        representation: payload.representation,
+        status: payload.status,
+        title: payload.title,
+        running: payload.running ?? false,
+        fromHash: payload.fromHash ?? null,
+        toHash: payload.toHash ?? null,
+        bytes: payload.bytes ?? null,
+        preview: summaryLabel,
+        truncated: diffPreview.truncated,
+      },
+    };
+  }
+
+  const snapshot = payload.snapshot;
+  const lineCount = snapshot?.lines.length ?? null;
+  const cols = payload.cols ?? snapshot?.cols ?? null;
+  const rows = payload.rows ?? snapshot?.rows ?? null;
+  const tailPreview = trimTerminalActivityPreview(payload.tail ?? snapshot?.lines.slice(-20).join("\n"));
+  const summaryLabel =
+    tailPreview.preview ||
+    [
+      payload.title ?? "Terminal read",
+      cols && rows ? `${cols}x${rows}` : null,
+      lineCount !== null ? `${lineCount} lines` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  return {
+    content: summaryLabel,
+    detail: {
+      source: "terminal-read-activity",
+      eventId,
+      terminalId,
+      representation: payload.representation,
+      status: payload.status,
+      title: payload.title,
+      running: payload.running ?? false,
+      seq: payload.seq ?? snapshot?.seq ?? null,
+      cols,
+      rows,
+      cursor: payload.cursor ?? snapshot?.cursor ?? null,
+      lineCount,
+      preview: summaryLabel,
+      truncated: tailPreview.truncated,
+    },
+  };
+};
+
 const projectTerminalEventToActivityRecord = (event: {
   eventId: number;
   terminalId: string;
@@ -284,17 +379,23 @@ const projectTerminalEventToActivityRecord = (event: {
     actorId?: string;
     detail?: unknown;
   };
-}): RuntimeTerminalActivityRecord => ({
-  id: event.eventId,
-  terminalId: event.terminalId,
-  createdAt: event.createdAt,
-  kind: event.kind,
-  cycleId: null,
-  actorId: event.payload.actorId,
-  title: event.payload.title,
-  content: event.payload.content,
-  detail: event.payload.detail,
-});
+}): RuntimeTerminalActivityRecord => {
+  const projectedRead =
+    event.kind === "terminal_read" && isTerminalReadResultLike(event.payload.detail)
+      ? summarizeTerminalReadActivity(event.eventId, event.terminalId, event.payload.detail)
+      : null;
+  return {
+    id: event.eventId,
+    terminalId: event.terminalId,
+    createdAt: event.createdAt,
+    kind: event.kind,
+    cycleId: null,
+    actorId: event.payload.actorId,
+    title: event.payload.title,
+    content: projectedRead?.content ?? event.payload.content,
+    detail: projectedRead?.detail ?? event.payload.detail,
+  };
+};
 
 const resolveWorkspaceGroup = (workspacePath: string): string => {
   const gitConfigPath = join(workspacePath, ".git", "config");
@@ -399,23 +500,6 @@ const readAllHeartbeatMessages = (db: SessionDb): SessionMessageRecord[] => {
 const readAllPersistedChatMessages = (db: SessionDb): SessionMessageRecord[] =>
   readAllHeartbeatMessages(db).filter(isPersistedChatProjectionMessage);
 
-const readAllHeartbeatInspectionMessages = (db: SessionDb): SessionMessageRecord[] => {
-  const pages: SessionMessageRecord[][] = [];
-  let before: ReverseTimeCursor | undefined;
-  while (true) {
-    const page = db.pageMessagesByScopes(HEARTBEAT_INSPECTION_SCOPES, { before, limit: 1_000 });
-    if (page.items.length === 0) {
-      break;
-    }
-    pages.push(page.items);
-    if (!page.hasMoreBefore || !page.nextBefore) {
-      break;
-    }
-    before = page.nextBefore;
-  }
-  return pages.reverse().flat();
-};
-
 const pagePersistedMessages = <T extends { id: number }>(
   items: readonly T[],
   input: { before?: ReverseTimeCursor; limit?: number } | undefined,
@@ -466,6 +550,12 @@ const readAllAiCalls = (db: SessionDb): SessionAiCallRecord[] => {
     before = page.nextBefore;
   }
   return pages.reverse().flat();
+};
+
+const projectChatCyclesFromCalls = (db: SessionDb, calls: readonly SessionAiCallRecord[]): ChatCycle[] => {
+  const responseMessageIds = [...new Set(calls.flatMap((call) => call.responseMessageIds))];
+  const messageById = new Map(db.listMessagesByIds(responseMessageIds).map((message) => [message.messageId, message]));
+  return calls.map((call) => projectAiCallToChatCycle({ call, messageById }));
 };
 
 const createWorkspaceSessionCounts = (): WorkspaceSessionCounts => ({
@@ -4251,6 +4341,45 @@ export class AppKernel {
     return await this.readPersistedAttentionState(session);
   }
 
+  async inspectAttentionDeliveryState(
+    sessionId: string,
+  ): Promise<ReturnType<SessionRuntime["inspectAttentionDeliveryState"]>> {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      return runtime.inspectAttentionDeliveryState();
+    }
+
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+
+    return await this.readPersistedAttentionDeliveryState(session);
+  }
+
+  async queryAttentionDeliveryTimeline(
+    sessionId: string,
+    input: {
+      contextId?: string;
+      commitId?: string;
+      cycleId?: number;
+      sessionModelCallId?: number;
+      limit?: number;
+    },
+  ): Promise<ReturnType<SessionRuntime["queryAttentionDeliveryTimeline"]>> {
+    const runtime = this.runtimes.get(sessionId);
+    if (runtime) {
+      return runtime.queryAttentionDeliveryTimeline(input);
+    }
+
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+
+    return await this.readPersistedAttentionDeliveryState(session, input);
+  }
+
   requestRuntimeCompact(sessionId: string): { ok: boolean } {
     const runtime = this.runtimes.get(sessionId);
     if (!runtime) {
@@ -4605,6 +4734,106 @@ export class AppKernel {
     };
   }
 
+  private async readPersistedAttentionDeliveryState(
+    session: SessionMeta,
+    input: {
+      contextId?: string;
+      commitId?: string;
+      cycleId?: number;
+      sessionModelCallId?: number;
+      limit?: number;
+    } = {},
+  ): Promise<ReturnType<SessionRuntime["queryAttentionDeliveryTimeline"]>> {
+    const attentionStore = new AttentionStore(join(session.sessionRoot, "attention-system"));
+    const attentionSnapshot = await attentionStore.load();
+    const kernel = new LoopBusKernel();
+    const commitRefs = attentionSnapshot.contexts.flatMap((context) =>
+      context.commits.map((commit) => ({
+        contextId: context.contextId,
+        commitId: commit.commitId,
+        createdAt: Date.parse(commit.createdAt) || Date.now(),
+      })),
+    );
+
+    const dbPath = join(session.sessionRoot, "session.db");
+    const dispatches =
+      existsSync(dbPath)
+        ? (() => {
+            const db = new SessionDb(dbPath);
+            try {
+              return db.listAttentionDispatches({
+                contextId: input.contextId,
+                commitId: input.commitId,
+                cycleId: input.cycleId,
+                sessionModelCallId: input.sessionModelCallId,
+              });
+            } finally {
+              db.close();
+            }
+          })()
+        : [];
+    const receipts =
+      existsSync(dbPath)
+        ? (() => {
+            const db = new SessionDb(dbPath);
+            try {
+              return db.listAttentionReceipts({
+                contextId: input.contextId,
+                commitId: input.commitId,
+                cycleId: input.cycleId,
+                sessionModelCallId: input.sessionModelCallId,
+              });
+            } finally {
+              db.close();
+            }
+          })()
+        : [];
+
+    kernel.restoreTimeline({
+      commitRefs,
+      dispatches: dispatches.map((dispatch) => ({
+        dispatchId: dispatch.dispatchId,
+        contextId: dispatch.contextId,
+        commitId: dispatch.commitId,
+        cycleId: dispatch.cycleId,
+        attemptIndex: dispatch.attemptIndex,
+        agentCallId: dispatch.agentCallId,
+        sessionModelCallId: dispatch.sessionModelCallId,
+        createdAt: dispatch.createdAt,
+      })),
+      receipts: receipts.map((receipt) => ({
+        receiptId: receipt.receiptId,
+        dispatchId: receipt.dispatchId,
+        contextId: receipt.contextId,
+        commitId: receipt.commitId,
+        cycleId: receipt.cycleId,
+        attemptIndex: receipt.attemptIndex,
+        agentCallId: receipt.agentCallId,
+        sessionModelCallId: receipt.sessionModelCallId,
+        status: receipt.status,
+        providerEventKind: receipt.providerEventKind,
+        timestamp: receipt.timestamp,
+        finishReason: receipt.finishReason,
+        usage: receipt.usage ? { ...receipt.usage } : undefined,
+        errorCode: receipt.errorCode,
+        errorMessage: receipt.errorMessage,
+        meta: receipt.meta ? structuredClone(receipt.meta) : undefined,
+      })),
+    });
+
+    const timeline = kernel.queryAttentionDeliveryTimeline(input);
+    const projections =
+      input.contextId && input.commitId
+        ? [kernel.getDeliveryProjection({ contextId: input.contextId, commitId: input.commitId })]
+        : kernel.listDeliveryProjections();
+
+    return {
+      projections: projections.filter((projection) => projection !== null),
+      dispatches: timeline.dispatches,
+      receipts: timeline.receipts,
+    };
+  }
+
   private async buildSessionNotificationSnapshot(session: SessionMeta): Promise<SessionNotificationSnapshot> {
     const runtime = this.runtimes.get(session.id);
     if (runtime) {
@@ -4839,8 +5068,7 @@ export class AppKernel {
     }
     const db = new SessionDb(dbPath);
     try {
-      const messageById = new Map(readAllHeartbeatMessages(db).map((message) => [message.messageId, message]));
-      return db.listAiCalls(limit).map((call) => projectAiCallToChatCycle({ call, messageById }));
+      return projectChatCyclesFromCalls(db, db.listAiCalls(limit));
     } finally {
       db.close();
     }
@@ -4858,9 +5086,8 @@ export class AppKernel {
     const db = new SessionDb(dbPath);
     try {
       const page = db.pageAiCalls(input);
-      const messageById = new Map(readAllHeartbeatMessages(db).map((message) => [message.messageId, message]));
       return {
-        items: page.items.map((call) => projectAiCallToChatCycle({ call, messageById })),
+        items: projectChatCyclesFromCalls(db, page.items),
         nextBefore: page.nextBefore,
         hasMoreBefore: page.hasMoreBefore,
       };
@@ -4881,11 +5108,29 @@ export class AppKernel {
     }
     const db = new SessionDb(dbPath);
     try {
-      const messageById = new Map(readAllHeartbeatMessages(db).map((message) => [message.messageId, message]));
-      return readAllAiCalls(db)
-        .map((call) => projectAiCallToChatCycle({ call, messageById }))
-        .filter((cycle) => cycle.cycleId !== null && cycle.cycleId < beforeCycleId)
-        .slice(-limit);
+      const cycles: ChatCycle[] = [];
+      const batchSize = Math.max(limit * 2, 50);
+      let beforeAiCallId: number | null = null;
+      while (cycles.length < limit) {
+        const calls: SessionAiCallRecord[] =
+          beforeAiCallId === null ? db.listAiCalls(batchSize) : db.listAiCallsBefore(beforeAiCallId, batchSize);
+        if (calls.length === 0) {
+          break;
+        }
+        const projected = projectChatCyclesFromCalls(db, calls).filter(
+          (cycle) => cycle.cycleId !== null && cycle.cycleId < beforeCycleId,
+        );
+        cycles.unshift(...projected);
+        const oldestAiCallId = calls[0]?.id ?? null;
+        if (oldestAiCallId === null) {
+          break;
+        }
+        beforeAiCallId = oldestAiCallId;
+        if (calls.length < batchSize || oldestAiCallId <= 0) {
+          break;
+        }
+      }
+      return cycles.slice(-limit);
     } finally {
       db.close();
     }
@@ -4972,11 +5217,7 @@ export class AppKernel {
     }
     const db = new SessionDb(dbPath);
     try {
-      const groups = projectHeartbeatGroups({
-        aiCalls: readAllAiCalls(db),
-        inspectionMessages: readAllHeartbeatInspectionMessages(db),
-      });
-      return pagePersistedMessages(groups, input, (group) => group.createdAt);
+      return pageHeartbeatGroupsFromDb(db, input);
     } finally {
       db.close();
     }
@@ -5093,6 +5334,12 @@ export class AppKernel {
         void this.getNotificationSnapshot().then((snapshot) => {
           this.emit("notification.updated", { snapshot }, sessionId, event.timestamp);
         });
+        return;
+      case "attentionDispatch":
+        this.emit("runtime.attentionDispatch", event.payload, sessionId, event.timestamp);
+        return;
+      case "attentionReceipt":
+        this.emit("runtime.attentionReceipt", event.payload, sessionId, event.timestamp);
         return;
       case "cycleUpdated":
         this.emit("runtime.cycle.updated", event.payload, sessionId, event.timestamp);

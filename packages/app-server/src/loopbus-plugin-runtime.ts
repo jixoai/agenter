@@ -83,6 +83,45 @@ export interface AttentionCommittedInput {
   commit: AttentionCommit;
 }
 
+export interface AttentionDispatchedInput {
+  contextId: string;
+  context: AttentionContextState;
+  commit: AttentionCommit;
+  dispatch: {
+    dispatchId: string;
+    cycleId: number;
+    attemptIndex: number;
+    agentCallId: string;
+    sessionModelCallId: number | null;
+    createdAt: number;
+  };
+}
+
+export interface AttentionReceiptInput {
+  contextId: string;
+  context: AttentionContextState;
+  commit: AttentionCommit;
+  dispatch: AttentionDispatchedInput["dispatch"];
+  receipt: {
+    receiptId: string;
+    status: "accepted" | "errored" | "aborted" | "completed";
+    providerEventKind:
+      | "text_delta"
+      | "thinking_delta"
+      | "tool_call_start"
+      | "tool_call_args"
+      | "tool_call_end"
+      | "run_finished"
+      | "run_error"
+      | "transport_error"
+      | "abort";
+    timestamp: number;
+    finishReason?: string | null;
+    errorCode?: string;
+    errorMessage?: string;
+  };
+}
+
 export interface LoopBusPluginApi {
   expose: <T>(id: string, value: T) => void;
   useExposed: <T>(id: string) => T | undefined;
@@ -94,6 +133,11 @@ export interface LoopBusPluginApi {
 export interface LoopBusHookContext {
   ref?: LoopSourceRef;
   contextId?: string;
+  commitId?: string;
+  dispatchId?: string;
+  cycleId?: number;
+  agentCallId?: string;
+  sessionModelCallId?: number | null;
   signal?: AbortSignal;
 }
 
@@ -146,6 +190,26 @@ export type AttentionCommittedHook = (
   | null
   | undefined;
 
+export type AttentionDispatchedHook = (
+  input: AttentionDispatchedInput,
+  context: LoopBusHookContext,
+) =>
+  | Promise<AttentionCommitHookResult | AttentionCommitHookResult[] | null | undefined>
+  | AttentionCommitHookResult
+  | AttentionCommitHookResult[]
+  | null
+  | undefined;
+
+export type AttentionReceiptHook = (
+  input: AttentionReceiptInput,
+  context: LoopBusHookContext,
+) =>
+  | Promise<AttentionCommitHookResult | AttentionCommitHookResult[] | null | undefined>
+  | AttentionCommitHookResult
+  | AttentionCommitHookResult[]
+  | null
+  | undefined;
+
 export type CycleShouldStartResult =
   | boolean
   | {
@@ -183,6 +247,8 @@ export interface LoopBusPlugin {
   attentionShouldLoad?: LoopBusHook<AttentionShouldLoadHook>;
   attentionTransform?: LoopBusHook<AttentionTransformHook>;
   attentionCommitted?: LoopBusHook<AttentionCommittedHook>;
+  attentionDispatched?: LoopBusHook<AttentionDispatchedHook>;
+  attentionReceipt?: LoopBusHook<AttentionReceiptHook>;
   cycleShouldStart?: LoopBusHook<CycleShouldStartHook>;
   cycleWillCallModel?: LoopBusHook<CycleWillCallModelHook>;
   cycleDidCallModel?: LoopBusHook<CycleDidCallModelHook>;
@@ -242,6 +308,8 @@ export class LoopBusPluginRuntime {
   private readonly attentionShouldLoadHooks: RegisteredHook<AttentionShouldLoadHook>[] = [];
   private readonly attentionTransformHooks: RegisteredHook<AttentionTransformHook>[] = [];
   private readonly attentionCommittedHooks: RegisteredHook<AttentionCommittedHook>[] = [];
+  private readonly attentionDispatchedHooks: RegisteredHook<AttentionDispatchedHook>[] = [];
+  private readonly attentionReceiptHooks: RegisteredHook<AttentionReceiptHook>[] = [];
   private readonly cycleShouldStartHooks: RegisteredHook<CycleShouldStartHook>[] = [];
   private readonly cycleWillCallModelHooks: RegisteredHook<CycleWillCallModelHook>[] = [];
   private readonly cycleDidCallModelHooks: RegisteredHook<CycleDidCallModelHook>[] = [];
@@ -316,6 +384,20 @@ export class LoopBusPluginRuntime {
     return await this.runCollect(this.attentionCommittedHooks, input, context);
   }
 
+  async notifyAttentionDispatched(
+    input: AttentionDispatchedInput,
+    context: LoopBusHookContext = {},
+  ): Promise<AttentionCommitHookResult[]> {
+    return await this.runCollect(this.attentionDispatchedHooks, input, context);
+  }
+
+  async notifyAttentionReceipt(
+    input: AttentionReceiptInput,
+    context: LoopBusHookContext = {},
+  ): Promise<AttentionCommitHookResult[]> {
+    return await this.runCollect(this.attentionReceiptHooks, input, context);
+  }
+
   async shouldStartCycle(drafts: AttentionDraft[]): Promise<CycleShouldStartResult> {
     const first = await this.runFirst(this.cycleShouldStartHooks, { drafts }, {});
     if (first === null || first === undefined) {
@@ -347,6 +429,8 @@ export class LoopBusPluginRuntime {
     this.registerHook(plugin.name, plugin.attentionShouldLoad, this.attentionShouldLoadHooks);
     this.registerHook(plugin.name, plugin.attentionTransform, this.attentionTransformHooks);
     this.registerHook(plugin.name, plugin.attentionCommitted, this.attentionCommittedHooks);
+    this.registerHook(plugin.name, plugin.attentionDispatched, this.attentionDispatchedHooks);
+    this.registerHook(plugin.name, plugin.attentionReceipt, this.attentionReceiptHooks);
     this.registerHook(plugin.name, plugin.cycleShouldStart, this.cycleShouldStartHooks);
     this.registerHook(plugin.name, plugin.cycleWillCallModel, this.cycleWillCallModelHooks);
     this.registerHook(plugin.name, plugin.cycleDidCallModel, this.cycleDidCallModelHooks);

@@ -1,5 +1,3 @@
-import type { AttentionActiveContextMatch, AttentionCommit, AttentionFocusState } from "@agenter/attention-system";
-import { AttentionSystem, normalizeAttentionContextTemplate } from "@agenter/attention-system";
 import { existsSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 
@@ -27,13 +25,13 @@ import {
   type RuntimeSkillRootKind,
   type RuntimeSkillWritableRootKind,
 } from "./runtime-skills";
+import type { RuntimeSystemIngressEnvelope } from "./runtime-system-kernel-adapters/types";
 import { resolveWorkspaceGrantModeFromAbsolutePath, type WorkspaceGrantRecord } from "./workspace-system";
 
 export const RUNTIME_SKILL_CONTEXT_ID = "ctx-skill-system";
 export const RUNTIME_SKILL_CONTEXT_TEMPLATE = "<Slot name=\"skills-list\" readonly/>\n<Slot name=\"default\"/>";
-const RUNTIME_SKILL_CONTEXT_TEMPLATE_NORMALIZED = normalizeAttentionContextTemplate(RUNTIME_SKILL_CONTEXT_TEMPLATE);
-const RUNTIME_SKILL_SNAPSHOT_TARGET = "skills-list";
-const RUNTIME_SKILL_DEFAULT_TARGET = "default";
+export const RUNTIME_SKILL_SNAPSHOT_TARGET = "skills-list";
+export const RUNTIME_SKILL_DEFAULT_TARGET = "default";
 const RUNTIME_SKILL_REMINDER_SCORE_KEY = "runtime-skill-system";
 const DEFAULT_SKILL_WATCH_DEBOUNCE_MS = 800;
 const DEFAULT_SKILL_WATCH_POLL_MS = 2_000;
@@ -93,9 +91,8 @@ export interface RuntimeSkillRefreshResult {
   skills: RuntimeSkillRecord[];
   snapshot: string;
   changedSkills: RuntimeSkillChange[];
-  systemCommit: AttentionCommit | null;
-  reminderCommit: AttentionCommit | null;
-  reminderCommits: AttentionCommit[];
+  systemIngress: RuntimeSystemIngressEnvelope | null;
+  reminderIngresses: RuntimeSystemIngressEnvelope[];
   bootstrapPending: boolean;
 }
 
@@ -197,6 +194,8 @@ export class RuntimeSkillSystem {
   private skills: RuntimeSkillRecord[] = [];
   private trackedSkills = new Map<string, RuntimeSkillTrackedState>();
   private pendingBootstrap = false;
+  private initialized = false;
+  private publishedSnapshot = "";
   private rootDirty = false;
   private dirtySkillNames = new Set<string>();
   private watchers = new Map<string, FSWatcher>();
@@ -206,9 +205,7 @@ export class RuntimeSkillSystem {
 
   constructor(
     private readonly input: RuntimeSkillLookupInput & {
-      attentionSystem: AttentionSystem;
       owner: string;
-      focusState?: AttentionFocusState;
       watchDebounceMs?: number;
       watchPollMs?: number;
       unrefTimers?: boolean;
@@ -415,30 +412,6 @@ export class RuntimeSkillSystem {
     };
   }
 
-  consumeBootstrapContext(): AttentionActiveContextMatch | null {
-    if (!this.pendingBootstrap) {
-      return null;
-    }
-    this.pendingBootstrap = false;
-    const context = this.input.attentionSystem.getContext(RUNTIME_SKILL_CONTEXT_ID);
-    if (!context) {
-      return null;
-    }
-    return {
-      contextId: RUNTIME_SKILL_CONTEXT_ID,
-      context: context.getState(),
-      recentCommits: context.listRecentCommits(),
-    };
-  }
-
-  markBootstrapPending(): void {
-    this.pendingBootstrap = true;
-  }
-
-  clearPendingBootstrap(): void {
-    this.pendingBootstrap = false;
-  }
-
   dispose(): void {
     this.disposed = true;
     this.clearIdleFlushTimer();
@@ -459,74 +432,79 @@ export class RuntimeSkillSystem {
   }
 
   private ensureTrackedState(): void {
-    if (this.skills.length > 0 || this.trackedSkills.size > 0) {
+    if (this.initialized) {
       return;
     }
-    this.refresh({
-      publishReminders: false,
-      forceBootstrap: false,
-    });
+    const skills = listRuntimeSkills(this.input);
+    const tracked = this.buildTrackedSkills(skills);
+    this.skills = skills;
+    this.trackedSkills = tracked;
+    this.initialized = true;
+    this.syncWatchers(tracked);
   }
 
   private refreshInternal(input: {
     forceBootstrap: boolean;
     publishReminders: boolean;
   }): RuntimeSkillRefreshResult {
-    const context = this.ensureContext();
     const previousTracked = this.trackedSkills;
     const skills = listRuntimeSkills(this.input);
     const tracked = this.buildTrackedSkills(skills);
     const snapshot = buildRuntimeSkillsList(skills);
-    const currentSnapshot = context.getState().slots?.[RUNTIME_SKILL_SNAPSHOT_TARGET] ?? "";
 
     this.skills = skills;
     this.trackedSkills = tracked;
+    this.initialized = true;
     this.rootDirty = false;
     this.dirtySkillNames.clear();
 
-    let systemCommit: AttentionCommit | null = null;
-    if (currentSnapshot !== snapshot) {
-      const result = this.input.attentionSystem.commitSystem(RUNTIME_SKILL_CONTEXT_ID, {
-        target: RUNTIME_SKILL_SNAPSHOT_TARGET,
-        meta: {
-          author: this.input.owner,
-          source: "skill",
-        },
-        scores: {},
+    let systemIngress: RuntimeSystemIngressEnvelope | null = null;
+    if (this.publishedSnapshot !== snapshot) {
+      systemIngress = {
+        system: "skill",
+        sourceId: "skill:runtime:snapshot",
+        contextKey: RUNTIME_SKILL_CONTEXT_ID,
+        kind: "runtime_skill_snapshot",
         summary: "Refreshed runtime skill snapshot.",
-        change: {
-          type: "update",
-          value: snapshot,
-          format: "text/markdown",
-        },
-      });
-      systemCommit = result.commit;
+        content: snapshot,
+        format: "text/markdown",
+        score: 0,
+        tags: ["skill", "snapshot"],
+        createdAt: Date.now(),
+        author: this.input.owner,
+        target: RUNTIME_SKILL_SNAPSHOT_TARGET,
+        commitMode: "system",
+      };
+      this.publishedSnapshot = snapshot;
       this.pendingBootstrap = true;
     } else if (input.forceBootstrap) {
       this.pendingBootstrap = true;
     }
 
     const changedSkills = input.publishReminders ? this.diffTrackedSkills(previousTracked, tracked) : [];
-    const reminderCommits = changedSkills.map((change) =>
-      this.input.attentionSystem.commit(RUNTIME_SKILL_CONTEXT_ID, {
-        target: RUNTIME_SKILL_DEFAULT_TARGET,
-        meta: {
-          author: this.input.owner,
-          source: "skill",
-          tags: ["notification", "skill-change", change.kind],
-        },
-        scores: {
-          [RUNTIME_SKILL_REMINDER_SCORE_KEY]: 100,
-        },
-        summary: summarizeRuntimeSkillChange(change),
-        change: {
-          type: "diff",
-          value: "",
-          format: "text/plain",
-        },
-      }).commit,
-    );
-    if (reminderCommits.length > 0) {
+    const reminderIngresses = changedSkills.map((change, index) => ({
+      system: "skill",
+      sourceId: `skill:runtime:change:${change.kind}:${change.name}:${Date.now()}:${index}`,
+      contextKey: RUNTIME_SKILL_CONTEXT_ID,
+      kind: "runtime_skill_change",
+      summary: summarizeRuntimeSkillChange(change),
+      content: "",
+      format: "text/plain",
+      score: 100,
+      tags: ["notification", "skill-change", change.kind],
+      createdAt: Date.now(),
+      author: this.input.owner,
+      target: RUNTIME_SKILL_DEFAULT_TARGET,
+      commitMode: "commit" as const,
+      changeType: "diff" as const,
+      meta: {
+        name: change.name,
+        rootKind: change.rootKind,
+        changedFiles: [...change.changedFiles],
+        scoreKey: RUNTIME_SKILL_REMINDER_SCORE_KEY,
+      },
+    }));
+    if (reminderIngresses.length > 0) {
       this.pendingBootstrap = true;
     }
 
@@ -537,9 +515,8 @@ export class RuntimeSkillSystem {
       skills,
       snapshot,
       changedSkills,
-      systemCommit,
-      reminderCommit: reminderCommits[0] ?? null,
-      reminderCommits,
+      systemIngress,
+      reminderIngresses,
       bootstrapPending: this.pendingBootstrap,
     };
   }
@@ -756,7 +733,7 @@ export class RuntimeSkillSystem {
         return;
       }
       const result = this.flushPendingChanges();
-      if (!result || (result.systemCommit === null && result.reminderCommits.length === 0)) {
+      if (!result || (result.systemIngress === null && result.reminderIngresses.length === 0)) {
         return;
       }
       void Promise.resolve(this.input.onIdleFlush?.(result)).catch(() => {
@@ -789,37 +766,5 @@ export class RuntimeSkillSystem {
           grants: authority.grants,
         }) === "rw",
     );
-  }
-
-  private ensureContext() {
-    const existing = this.input.attentionSystem.getContext(RUNTIME_SKILL_CONTEXT_ID);
-    if (existing) {
-      const state = existing.getState();
-      if (normalizeAttentionContextTemplate(state.template) === RUNTIME_SKILL_CONTEXT_TEMPLATE_NORMALIZED) {
-        return existing;
-      }
-      const preservedDefault = state.slots?.[RUNTIME_SKILL_DEFAULT_TARGET] ?? state.content ?? "";
-      this.input.attentionSystem.removeContext(RUNTIME_SKILL_CONTEXT_ID);
-      return this.input.attentionSystem.createContext({
-        contextId: RUNTIME_SKILL_CONTEXT_ID,
-        owner: this.input.owner,
-        focusState: this.input.focusState ?? "background",
-        template: RUNTIME_SKILL_CONTEXT_TEMPLATE,
-        slots: {
-          default: preservedDefault,
-          [RUNTIME_SKILL_SNAPSHOT_TARGET]: "",
-        },
-      });
-    }
-    return this.input.attentionSystem.createContext({
-      contextId: RUNTIME_SKILL_CONTEXT_ID,
-      owner: this.input.owner,
-      focusState: this.input.focusState ?? "background",
-      template: RUNTIME_SKILL_CONTEXT_TEMPLATE,
-      slots: {
-        default: "",
-        [RUNTIME_SKILL_SNAPSHOT_TARGET]: "",
-      },
-    });
   }
 }

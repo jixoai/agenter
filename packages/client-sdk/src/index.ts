@@ -76,6 +76,7 @@ export type {
   ProfileServiceInfoOutput,
   RequestAuxItem,
   RequestAuxPageOutput,
+  RuntimeAttentionDeliveryState,
   RuntimeAttentionState,
   RuntimeChatCycle,
   RuntimeChatMessage,

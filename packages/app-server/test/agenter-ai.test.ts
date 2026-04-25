@@ -22,7 +22,7 @@ import { buildAttentionSearchDocument } from "../src/attention-search/documents"
 import { compileAttentionSearch } from "../src/attention-search/query";
 import type { AttentionSearchRequest } from "../src/attention-search/types";
 import { type LoopBusMessage } from "../src/loop-bus";
-import type { ModelClient } from "../src/model-client";
+import { ModelDecisionError, type AssistantDeliveryEvent, type ModelClient } from "../src/model-client";
 import type { PromptDocRecord } from "../src/prompt-docs";
 import { FilePromptStore } from "../src/prompt-store";
 import {
@@ -552,6 +552,16 @@ const createRuntimeLocalHandlers = (input: {
   attentionActive: () => (input.attentionGateway?.listActive() ?? []).map(projectRuntimeAttentionActiveMatch),
   attentionQuery: async (request) =>
     input.attentionGateway ? (await input.attentionGateway.query(request)).map(projectAttentionCommitMatchForModel) : [],
+  attentionDeliveryState: () => ({
+    projections: [],
+    dispatches: [],
+    receipts: [],
+  }),
+  attentionDeliveryTimeline: async () => ({
+    projections: [],
+    dispatches: [],
+    receipts: [],
+  }),
   attentionCommit: async (request) => {
     if (!input.attentionGateway) {
       throw new Error("attention gateway not configured");
@@ -1418,6 +1428,149 @@ describe("Feature: AgenterAI behavior", () => {
     expect(capturedPrompt).not.toContain("## Legacy Guide");
     expect(capturedPrompt).not.toContain("## Terminal System");
     expect(capturedPrompt).not.toContain("SYSTEMS_GUIDE");
+  });
+
+  test("Scenario: Given ModelClient emits delivery events When a round runs Then AgenterAI forwards the delivery facts unchanged to the host observer", async () => {
+    const forwardedEvents: AssistantDeliveryEvent[] = [];
+    const chat = createAttentionGateway();
+    const modelClient = createModelClient(async (input) => {
+      await input.onDeliveryEvent?.({
+        kind: "attempt_started",
+        attemptIndex: 1,
+        timestamp: 101,
+      });
+      await input.onDeliveryEvent?.({
+        kind: "receipt",
+        attemptIndex: 1,
+        status: "accepted",
+        providerEventKind: "text_delta",
+        timestamp: 102,
+      });
+      await input.onDeliveryEvent?.({
+        kind: "receipt",
+        attemptIndex: 1,
+        status: "completed",
+        providerEventKind: "run_finished",
+        timestamp: 103,
+        finishReason: "stop",
+      });
+      return {
+        thinking: "",
+        text: "forwarded",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway }),
+      attentionGateway: chat.gateway,
+      onAssistantDelivery: (event) => {
+        forwardedEvents.push(event);
+      },
+    });
+
+    await ai.send([createUserMessage("forward delivery facts")]);
+
+    expect(forwardedEvents).toEqual([
+      {
+        kind: "attempt_started",
+        attemptIndex: 1,
+        timestamp: 101,
+      },
+      {
+        kind: "receipt",
+        attemptIndex: 1,
+        status: "accepted",
+        providerEventKind: "text_delta",
+        timestamp: 102,
+      },
+      {
+        kind: "receipt",
+        attemptIndex: 1,
+        status: "completed",
+        providerEventKind: "run_finished",
+        timestamp: 103,
+        finishReason: "stop",
+      },
+    ]);
+  });
+
+  test("Scenario: Given ModelClient cannot call the provider because credentials are missing When a round runs Then AgenterAI forwards the transport failure and persists an error model-call instead of fallback success", async () => {
+    const forwardedEvents: AssistantDeliveryEvent[] = [];
+    const lifecycle: Array<{
+      status: "running" | "done" | "error" | "cancelled";
+      error?: { message: string; details?: unknown };
+    }> = [];
+    const chat = createAttentionGateway();
+    const errorMessage = "Missing DEEPSEEK_API_KEY";
+    const deliveryError = {
+      providerEventKind: "transport_error" as const,
+      errorMessage,
+    };
+    const modelClient = createModelClient(async (input) => {
+      await input.onDeliveryEvent?.({
+        kind: "attempt_started",
+        attemptIndex: 1,
+        timestamp: 201,
+      });
+      await input.onDeliveryEvent?.({
+        kind: "receipt",
+        attemptIndex: 1,
+        status: "errored",
+        providerEventKind: "transport_error",
+        timestamp: 201,
+        errorMessage,
+      });
+      throw new ModelDecisionError(errorMessage, { deliveryError });
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway }),
+      attentionGateway: chat.gateway,
+      onAssistantDelivery: (event) => {
+        forwardedEvents.push(event);
+      },
+      onModelCall: (record) => {
+        lifecycle.push({
+          status: record.status,
+          error: record.error,
+        });
+      },
+    });
+
+    const response = await ai.send([createUserMessage("forward missing credential failure")]);
+
+    expect(response).toBeUndefined();
+    expect(forwardedEvents).toEqual([
+      {
+        kind: "attempt_started",
+        attemptIndex: 1,
+        timestamp: 201,
+      },
+      {
+        kind: "receipt",
+        attemptIndex: 1,
+        status: "errored",
+        providerEventKind: "transport_error",
+        timestamp: 201,
+        errorMessage,
+      },
+    ]);
+    expect(lifecycle.map((entry) => entry.status)).toEqual(["running", "error"]);
+    expect(lifecycle[1]?.error).toMatchObject({
+      name: "ModelDecisionError",
+      message: errorMessage,
+      details: {
+        retried: true,
+        deliveryError,
+      },
+    });
   });
 
   test("Scenario: Given terminal help payload When raw terminal context reaches AgenterAI Then the core preserves the source payload without terminal-specific rendering", async () => {

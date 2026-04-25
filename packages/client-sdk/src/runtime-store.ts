@@ -151,6 +151,8 @@ const HEARTBEAT_GROUP_PAGE_LIMIT = 5;
 const HEARTBEAT_GROUP_LRU_LIMIT = HEARTBEAT_GROUP_PAGE_LIMIT * 3;
 const MODEL_CALL_DELTA_LRU_LIMIT = 400;
 const DEFAULT_MESSAGE_CHAT_ID = "room-main";
+const DEFAULT_GLOBAL_TERMINAL_ACTIVITY_LIMIT = 20;
+const TERMINAL_ACTIVITY_PREVIEW_MAX_CHARS = 4_000;
 const DEFAULT_MODEL_CAPABILITIES = {
   streaming: false,
   tools: false,
@@ -452,6 +454,120 @@ const mergeTerminalActivityItems = (
     return left.id - right.id;
   });
   return merged.length > limit ? merged.slice(-limit) : merged;
+};
+
+const isTerminalReadResultLike = (
+  value: unknown,
+): value is {
+  representation: "snapshot" | "diff";
+  terminalId: string;
+  eventId?: number;
+  seq?: number;
+  cols?: number;
+  rows?: number;
+  cursor?: { x: number; y: number };
+  tail?: string;
+  snapshot?: {
+    seq?: number;
+    cols?: number;
+    rows?: number;
+    cursor?: { x: number; y: number };
+    lines?: string[];
+  };
+  fromHash?: string | null;
+  toHash?: string | null;
+  diff?: string;
+  bytes?: number;
+  status?: "IDLE" | "BUSY";
+  title?: string;
+  running?: boolean;
+} => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as { representation?: unknown };
+  return record.representation === "snapshot" || record.representation === "diff";
+};
+
+const trimTerminalActivityPreview = (
+  raw: string | undefined,
+): {
+  preview: string;
+  truncated: boolean;
+} => {
+  const normalized = raw?.trimEnd() ?? "";
+  if (normalized.length <= TERMINAL_ACTIVITY_PREVIEW_MAX_CHARS) {
+    return {
+      preview: normalized,
+      truncated: false,
+    };
+  }
+  return {
+    preview: `${normalized.slice(0, TERMINAL_ACTIVITY_PREVIEW_MAX_CHARS)}\n…`,
+    truncated: true,
+  };
+};
+
+const projectTerminalReadActivitySummary = (
+  output: unknown,
+): Pick<TerminalActivityItem, "content" | "detail"> | null => {
+  if (!isTerminalReadResultLike(output)) {
+    return null;
+  }
+
+  if (output.representation === "diff") {
+    const diffPreview = trimTerminalActivityPreview(output.diff);
+    const preview =
+      diffPreview.preview ||
+      [output.title ?? "Terminal read", output.bytes ? `${output.bytes} bytes` : null].filter(Boolean).join(" · ");
+    return {
+      content: preview,
+      detail: {
+        source: "terminal-read-activity",
+        eventId: output.eventId ?? null,
+        terminalId: output.terminalId,
+        representation: output.representation,
+        status: output.status ?? null,
+        title: output.title,
+        running: output.running ?? false,
+        fromHash: output.fromHash ?? null,
+        toHash: output.toHash ?? null,
+        bytes: output.bytes ?? null,
+        preview,
+        truncated: diffPreview.truncated,
+      },
+    };
+  }
+
+  const snapshot = output.snapshot;
+  const cols = output.cols ?? snapshot?.cols ?? null;
+  const rows = output.rows ?? snapshot?.rows ?? null;
+  const lineCount = snapshot?.lines?.length ?? null;
+  const tailPreview = trimTerminalActivityPreview(output.tail ?? snapshot?.lines?.slice(-20).join("\n"));
+  const preview =
+    tailPreview.preview ||
+    [output.title ?? "Terminal read", cols && rows ? `${cols}x${rows}` : null, lineCount !== null ? `${lineCount} lines` : null]
+      .filter(Boolean)
+      .join(" · ");
+  return {
+    content: preview,
+    detail: {
+      source: "terminal-read-activity",
+      eventId: output.eventId ?? null,
+      terminalId: output.terminalId,
+      representation: output.representation,
+      status: output.status ?? null,
+      title: output.title,
+      running: output.running ?? false,
+      seq: output.seq ?? snapshot?.seq ?? null,
+      cols,
+      rows,
+      cursor: output.cursor ?? snapshot?.cursor ?? null,
+      lineCount,
+      preview,
+      truncated: tailPreview.truncated,
+    },
+  };
 };
 
 const pickNewerHeartbeatGroup = (current: HeartbeatGroupItem, incoming: HeartbeatGroupItem): HeartbeatGroupItem => {
@@ -2198,7 +2314,7 @@ export class RuntimeStore {
     input: { limit?: number; force?: boolean } = {},
   ): Promise<TerminalActivityItem[]> {
     const current = this.ensureGlobalTerminalActivityState(terminalId);
-    const limit = input.limit ?? 120;
+    const limit = input.limit ?? DEFAULT_GLOBAL_TERMINAL_ACTIVITY_LIMIT;
     if (!input.force && current.loaded && !current.refreshing && !current.loading) {
       return current.data;
     }
@@ -4487,6 +4603,7 @@ export class RuntimeStore {
     recordActivity?: boolean;
   }) {
     const output = await this.client.trpc.terminal.read.query(input);
+    const readSummary = projectTerminalReadActivitySummary(output);
     const readFact =
       this.shouldRefreshGlobalTerminalActivity(input.terminalId) && typeof output.eventId === "number"
         ? ({
@@ -4497,8 +4614,8 @@ export class RuntimeStore {
             cycleId: null,
             actorId: undefined,
             title: "Terminal read",
-            content: JSON.stringify(output),
-            detail: output,
+            content: readSummary?.content ?? "Terminal read",
+            detail: readSummary?.detail ?? { representation: output.representation },
           } satisfies TerminalActivityItem)
         : null;
     if (readFact) {
@@ -4525,6 +4642,7 @@ export class RuntimeStore {
     returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
   }) {
     const output = await this.client.trpc.terminal.write.mutate(input);
+    const readSummary = projectTerminalReadActivitySummary(output.read);
     const writeFact =
       this.shouldRefreshGlobalTerminalActivity(input.terminalId) && typeof output.eventId === "number"
         ? ({
@@ -4554,8 +4672,8 @@ export class RuntimeStore {
             cycleId: null,
             actorId: undefined,
             title: "Terminal read",
-            content: JSON.stringify(output.read),
-            detail: output.read,
+            content: readSummary?.content ?? "Terminal read",
+            detail: readSummary?.detail ?? { representation: output.read.representation },
           } satisfies TerminalActivityItem)
         : null;
     if (writeFact) {
@@ -4590,6 +4708,7 @@ export class RuntimeStore {
     returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
   }) {
     const output = await this.client.trpc.terminal.input.mutate(input);
+    const readSummary = projectTerminalReadActivitySummary(output.read);
     const inputFact =
       this.shouldRefreshGlobalTerminalActivity(input.terminalId) && typeof output.eventId === "number"
         ? ({
@@ -4619,8 +4738,8 @@ export class RuntimeStore {
             cycleId: null,
             actorId: undefined,
             title: "Terminal read",
-            content: JSON.stringify(output.read),
-            detail: output.read,
+            content: readSummary?.content ?? "Terminal read",
+            detail: readSummary?.detail ?? { representation: output.read.representation },
           } satisfies TerminalActivityItem)
         : null;
     if (inputFact) {
@@ -4808,7 +4927,7 @@ export class RuntimeStore {
   async loadGlobalTerminalActivity(
     terminalId: string,
     before?: HistoryPageCursor | null,
-    limit = 120,
+    limit = DEFAULT_GLOBAL_TERMINAL_ACTIVITY_LIMIT,
   ): Promise<{
     items: TerminalActivityItem[];
     hasMore: boolean;
@@ -5161,7 +5280,7 @@ export class RuntimeStore {
     if (!session) {
       return;
     }
-    const tasks = [this.ensureMessageChannels(sessionId), this.refreshNotifications()];
+    const tasks: Promise<unknown>[] = [this.ensureMessageChannels(sessionId), this.refreshNotifications()];
     if (input?.includeChatHistory !== false) {
       tasks.unshift(this.hydrateSessionHistory(sessionId));
     }

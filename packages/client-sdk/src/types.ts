@@ -152,6 +152,7 @@ export type RuntimeEvent = RuntimeEventEnvelope;
 export type RuntimeSnapshot = RuntimeSnapshotPayload;
 export type RuntimeSnapshotEntry = RuntimeSnapshot["runtimes"][string];
 export type RuntimeAttentionState = NonNullable<RuntimeSnapshotEntry["attention"]>;
+export type RuntimeAttentionDeliveryState = RuntimeSnapshotEntry["attentionDelivery"];
 export type RuntimeSchedulerState = NonNullable<RuntimeSnapshotEntry["schedulerState"]>;
 export type RuntimeChatMessage = RuntimeSnapshotEntry["chatMessages"][number];
 export type RuntimeChatCycle = ChatCycleItem;
@@ -204,6 +205,7 @@ export interface RuntimeClientState {
   messageChannelsBySession: Record<string, CachedResourceState<MessageChannelEntry[]>>;
   chatCyclesBySession: Record<string, RuntimeChatCycle[]>;
   attentionBySession?: Record<string, RuntimeAttentionState>;
+  attentionDeliveryBySession: Record<string, RuntimeAttentionDeliveryState>;
   tasksBySession: Record<string, RuntimeSnapshotEntry["tasks"]>;
   recentWorkspaces: string[];
   workspaces: WorkspaceEntry[];

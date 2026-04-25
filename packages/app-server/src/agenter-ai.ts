@@ -13,7 +13,12 @@ import { z } from "zod";
 import type { AttentionSearchRequest } from "./attention-search";
 import type { ChatCycleCompactTrigger } from "./chat-cycles";
 import type { LoopBusInput, LoopBusMessage } from "./loop-bus";
-import type { AssistantStreamUpdate, ModelClient, TextOnlyModelMessage } from "./model-client";
+import type {
+  AssistantDeliveryEvent,
+  AssistantStreamUpdate,
+  ModelClient,
+  TextOnlyModelMessage,
+} from "./model-client";
 import { ModelDecisionError } from "./model-client";
 import type { PromptStore } from "./prompt-store";
 import { createRuntimeText } from "./runtime-text";
@@ -92,6 +97,7 @@ interface AgentDeps {
   ) => Promise<ResolvedImageAttachmentSource | null> | ResolvedImageAttachmentSource | null;
   collectInterleavedInputs?: () => Promise<LoopBusInput[] | undefined> | LoopBusInput[] | undefined;
   onAssistantStream?: (update: AssistantStreamUpdate) => Promise<void> | void;
+  onAssistantDelivery?: (event: AssistantDeliveryEvent) => Promise<void> | void;
   onModelCall?: (record: AgentModelCallRecord) => Promise<void> | void;
 }
 
@@ -1301,6 +1307,9 @@ export class AgenterAI {
                 await collectInterleavedMessages();
               }
             },
+            onDeliveryEvent: async (event) => {
+              await this.deps.onAssistantDelivery?.(event);
+            },
           }),
       });
 
@@ -1445,7 +1454,10 @@ export class AgenterAI {
       const details = aborted
         ? { canceled: true }
         : error instanceof ModelDecisionError
-          ? { retried: true }
+          ? {
+              retried: true,
+              ...(error.deliveryError ? { deliveryError: { ...error.deliveryError } } : {}),
+            }
           : timeout
             ? { timeout: true }
             : contextOverflow

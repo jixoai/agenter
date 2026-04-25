@@ -1164,6 +1164,60 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
+  test(
+    "Scenario: Given durable terminal read history When terminal activity page is queried Then read rows stay summarized instead of replaying full snapshots",
+    async () => {
+      const root = makeTempDir();
+      const kernel = new AppKernel({
+        globalSessionRoot: join(root, "sessions"),
+        archiveSessionRoot: join(root, "archive", "sessions"),
+        workspacesPath: join(root, "workspaces.yaml"),
+        profileService: {
+          rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+        },
+      });
+      await kernel.start();
+      const { caller, session } = await createRootSuperadminCaller(kernel);
+
+      const created = await caller.terminal.globalCreate({
+        terminalId: "activity-summary",
+      });
+      const terminalId = created.result.terminal?.terminalId;
+      if (!terminalId) {
+        throw new Error("expected activity summary terminal id");
+      }
+      const terminalSystem = Reflect.get(kernel, "terminalControlPlane") as TerminalControlPlane;
+      const recordedRead = await terminalSystem.readAuthorized({
+        terminalId,
+        mode: "snapshot",
+        superadminActorId: session.claims.authId,
+      });
+
+      expect(recordedRead.eventId).toBeDefined();
+      const activity = await caller.terminal.activityPage({
+        terminalId,
+        limit: 20,
+      });
+      const readItem = activity.items.find((item) => item.kind === "terminal_read");
+      expect(readItem).toBeDefined();
+      expect(readItem?.detail).toMatchObject({
+        source: "terminal-read-activity",
+        eventId: recordedRead.eventId,
+        terminalId,
+        representation: "snapshot",
+      });
+      expect(
+        readItem?.detail && typeof readItem.detail === "object" && !Array.isArray(readItem.detail)
+          ? "snapshot" in readItem.detail
+          : false,
+      ).toBeFalse();
+      expect((readItem?.content.length ?? 0) < JSON.stringify(recordedRead).length).toBeTrue();
+
+      await kernel.stop();
+    },
+    { timeout: 20_000 },
+  );
+
   test("Scenario: Given root auth identity When bearer JWT reaches the router Then superadmin-only procedures resolve through TRPC auth context", async () => {
     const root = makeTempDir();
     const kernel = new AppKernel({

@@ -132,7 +132,12 @@ const executeInProcessRootBashCommand = async (input: {
     if (helpRequested) {
       throw new Error("in-process root_bash helper does not support --help");
     }
-    const body = parseRuntimeToolCliInput(descriptor, payloadArgs, input.stdin ?? "", compactMode ? "compact" : "object");
+    const body = parseRuntimeToolCliInput(
+      descriptor,
+      payloadArgs,
+      input.stdin ?? "",
+      compactMode ? "compact" : "object",
+    );
     const result = await descriptor.handler(body, input.handlers);
     return {
       stdout: `${JSON.stringify({ ok: true, ...result }, null, 2)}\n`,
@@ -173,17 +178,13 @@ export const createInProcessWorkspaceToolProvider = (
         }),
       ),
     }).server(async (_rawInput, context) =>
-      traceWithContext(
-        "workspace_list",
-        {},
-        async () => input.workspaceList(),
-        context,
-      ),
+      traceWithContext("workspace_list", {}, async () => input.workspaceList(), context),
     );
 
     const rootBashTool = toolDefinition({
       name: "root_bash",
-      description: "Execute runtime CLI commands inside the avatar root workspace.",
+      description:
+        "Execute runtime CLI commands inside the fixed root-workspace surface with root-exclusive runtime env/CLI semantics.",
       inputSchema: z.object({
         command: z.string(),
         cwd: z.string().optional(),
@@ -225,7 +226,8 @@ export const createInProcessWorkspaceToolProvider = (
 
     const workspaceBashTool = toolDefinition({
       name: "workspace_bash",
-      description: "Execute one-shot bash inside a mounted project workspace selected by workspaceId.",
+      description:
+        "Execute one-shot bash inside a mounted public-workspace selected by workspaceId without root-workspace-exclusive CLI/env.",
       inputSchema: z.object({
         workspaceId: z.number().int().positive(),
         command: z.string(),

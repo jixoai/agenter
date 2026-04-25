@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { InMemoryFs } from "just-bash";
 
 import { createRuntimeShellCommands } from "../src/runtime-cli";
-import { executeRootWorkspaceBash } from "../src/workspace-system/root-exec";
+import { createRootWorkspaceShellWorld } from "../src/workspace-system/root-exec";
 
 const openServers: Server[] = [];
 const tempDirs: string[] = [];
@@ -235,8 +235,16 @@ describe("Feature: runtime descriptor CLI", () => {
     });
     const rootWorkspacePath = createTempRoot();
 
-    const result = await executeRootWorkspaceBash({
+    const rootWorld = createRootWorkspaceShellWorld({
       rootWorkspacePath,
+      customCommands: createRuntimeShellCommands({
+        baseUrl: api.baseUrl,
+        privateKey: "test-private-key",
+        rootWorkspacePath,
+        homeDir: rootWorkspacePath,
+      }),
+    });
+    const result = await rootWorld.exec({
       command: [
         "cat << 'PAYLOAD' > msg_payload.json",
         '{"chatId":"room-1","content":"你好！有什么可以帮你的吗？😊"}',
@@ -244,12 +252,6 @@ describe("Feature: runtime descriptor CLI", () => {
         'message send "$(cat msg_payload.json)"',
       ].join("\n"),
       mounts: [],
-      customCommands: createRuntimeShellCommands({
-        baseUrl: api.baseUrl,
-        privateKey: "test-private-key",
-        rootWorkspacePath,
-        homeDir: rootWorkspacePath,
-      }),
     });
 
     expect(result.exitCode).toBe(0);

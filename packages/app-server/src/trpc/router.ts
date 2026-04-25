@@ -1056,7 +1056,7 @@ export const appRouter = t.router({
         ctx.kernel.pageGlobalTerminalActivity({
           terminalId: input.terminalId,
           before: input.before,
-          limit: input.limit ?? 120,
+          limit: input.limit ?? 20,
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
@@ -1452,6 +1452,24 @@ export const appRouter = t.router({
     attentionState: superadminProcedure
       .input(sessionIdInput)
       .query(async ({ ctx, input }) => await ctx.kernel.inspectAttentionState(input.sessionId)),
+    attentionDeliveryState: superadminProcedure
+      .input(sessionIdInput)
+      .query(async ({ ctx, input }) => await ctx.kernel.inspectAttentionDeliveryState(input.sessionId)),
+    attentionDeliveryTimeline: superadminProcedure
+      .input(
+        z.object({
+          sessionId: z.string().min(1),
+          contextId: z.string().trim().min(1).optional(),
+          commitId: z.string().trim().min(1).optional(),
+          cycleId: z.number().int().positive().optional(),
+          sessionModelCallId: z.number().int().positive().optional(),
+          limit: z.number().int().min(1).max(500).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        const { sessionId, ...query } = input;
+        return await ctx.kernel.queryAttentionDeliveryTimeline(sessionId, query);
+      }),
     attentionQuery: superadminProcedure
       .input(
         z.object({

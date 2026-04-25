@@ -31,6 +31,14 @@ import {
 export interface RuntimeLocalApiHandlers {
   attentionList: () => AttentionContextDescriptor[];
   attentionActive: () => RuntimeAttentionActiveView[];
+  attentionDeliveryState: () => Promise<unknown> | unknown;
+  attentionDeliveryTimeline: (input: {
+    contextId?: string;
+    commitId?: string;
+    cycleId?: number;
+    sessionModelCallId?: number;
+    limit?: number;
+  }) => Promise<unknown> | unknown;
   attentionQuery: (input: { query: string; offset?: number; limit?: number }) => Promise<unknown>;
   attentionCommit: (input: AttentionCommitToolInput & { done?: boolean }) => Promise<AttentionCommit>;
   messageList: (input: { includeArchived?: boolean }) => RuntimeMessageChannelView[];
@@ -156,6 +164,14 @@ const attentionQuerySchema = z.object({
   query: z.string(),
   offset: z.number().int().min(0).optional(),
   limit: z.number().int().min(1).max(200).optional(),
+});
+
+const attentionDeliveryTimelineSchema = z.object({
+  contextId: z.string().trim().min(1).optional(),
+  commitId: z.string().trim().min(1).optional(),
+  cycleId: z.number().int().positive().optional(),
+  sessionModelCallId: z.number().int().positive().optional(),
+  limit: z.number().int().min(1).max(500).optional(),
 });
 
 const attentionCommitChangeSchema = z.discriminatedUnion("type", [
@@ -342,6 +358,43 @@ export const runtimeToolDescriptors = [
     ],
     handler: async (input, handlers) => ({
       items: await handlers.attentionQuery(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "attention",
+    name: "delivery-state",
+    route: "/v1/attention/delivery-state",
+    description: "Inspect delivery projections, attempts, and receipts without inferring acceptance from ai_call or read state.",
+    inputSchema: emptyObjectSchema,
+    examples: [{ kind: "none" }],
+    handler: async (_input, handlers) => ({
+      delivery: await handlers.attentionDeliveryState(),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "attention",
+    name: "delivery-timeline",
+    route: "/v1/attention/delivery-timeline",
+    description: "Query delivery attempts and receipts for one attention commit, cycle, or model call.",
+    inputSchema: attentionDeliveryTimelineSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          contextId: "ctx-chat-main",
+          commitId: "commit-123",
+        },
+      },
+      {
+        kind: "argv",
+        payload: {
+          cycleId: 42,
+          limit: 20,
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      delivery: await handlers.attentionDeliveryTimeline(input),
     }),
   }),
   defineRuntimeToolDescriptor({

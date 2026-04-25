@@ -12,7 +12,6 @@ import {
 
 const RUNTIME_BIN_DIRNAME = ".runtime-bin";
 const RUNTIME_SHELL_ENTRY_PATH = fileURLToPath(new URL("./runtime-shell-entry.ts", import.meta.url));
-const DEFAULT_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 const RUNTIME_SHELL_COMMANDS = ["attention", "message", "workspace", "terminal", "skill", "tool"] as const;
 
 const shellQuote = (value: string): string => {
@@ -68,7 +67,10 @@ export const materializeRuntimeShellBin = (rootWorkspacePath: string): string =>
   return binDir;
 };
 
-export const buildRuntimeTerminalEnvironment = (input: {
+/**
+ * Root-workspace is the only shell surface that carries avatar-private runtime CLI/env by default.
+ */
+export const buildRootWorkspaceShellEnvironment = (input: {
   rootWorkspacePath: string;
   homeDir: string;
   apiBaseUrl: string;
@@ -76,12 +78,9 @@ export const buildRuntimeTerminalEnvironment = (input: {
   principalId?: string;
   env?: Record<string, string>;
 }): Record<string, string> => {
-  const binDir = materializeRuntimeShellBin(input.rootWorkspacePath);
-  const inheritedPath = input.env?.PATH ?? process.env.PATH ?? DEFAULT_PATH;
   return {
     ...(input.env ?? {}),
     HOME: input.rootWorkspacePath,
-    PATH: `${binDir}:${inheritedPath}`,
     [RUNTIME_API_BASE_URL_ENV]: input.apiBaseUrl,
     [RUNTIME_HOME_DIR_ENV]: input.homeDir,
     [RUNTIME_PRINCIPAL_ID_ENV]: input.principalId ?? "",
@@ -89,3 +88,21 @@ export const buildRuntimeTerminalEnvironment = (input: {
     [RUNTIME_ROOT_WORKSPACE_ENV]: input.rootWorkspacePath,
   };
 };
+
+/**
+ * Public-workspace shells are collaboration surfaces. They keep caller-provided env only.
+ */
+export const buildPublicWorkspaceShellEnvironment = (input: {
+  env?: Record<string, string>;
+}): Record<string, string> => ({
+  ...(input.env ?? {}),
+});
+
+/**
+ * Shared terminals follow public-workspace collaboration semantics instead of root-workspace semantics.
+ */
+export const buildSharedTerminalEnvironment = (input: {
+  env?: Record<string, string>;
+}): Record<string, string> => ({
+  ...(input.env ?? {}),
+});

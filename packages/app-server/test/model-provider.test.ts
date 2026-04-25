@@ -45,7 +45,7 @@ describe("Feature: canonical model provider routing", () => {
     expect(meta.capabilities.imageInput).toBe(true);
   });
 
-  test("Scenario: Given a provider without a token When responding Then the missing credential hint follows the canonical provider metadata", async () => {
+  test("Scenario: Given a provider without a token When responding Then the client raises a transport delivery error with the canonical credential hint", async () => {
     const client = new ModelClient({
       providerId: "deepseek-main",
       apiStandard: "openai-chat",
@@ -55,14 +55,21 @@ describe("Feature: canonical model provider routing", () => {
       maxRetries: 1,
     });
 
-    const response = await client.respondWithMeta({
-      systemPrompt: "You are helpful.",
-      messages: [],
-      tools: [],
-    });
-
     expect(resolveApiEnvHint({ apiStandard: "openai-chat", vendor: "deepseek" })).toBe("DEEPSEEK_API_KEY");
-    expect(response.text).toContain("DEEPSEEK_API_KEY");
+    await expect(
+      client.respondWithMeta({
+        systemPrompt: "You are helpful.",
+        messages: [],
+        tools: [],
+      }),
+    ).rejects.toMatchObject({
+      name: "ModelDecisionError",
+      message: expect.stringContaining("DEEPSEEK_API_KEY"),
+      deliveryError: {
+        providerEventKind: "transport_error",
+        errorMessage: expect.stringContaining("DEEPSEEK_API_KEY"),
+      },
+    });
   });
 
   test("Scenario: Given the provider returns RUN_ERROR When responding Then the client throws a model decision error instead of silently returning no-progress", async () => {

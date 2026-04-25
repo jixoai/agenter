@@ -3,12 +3,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { AttentionSystem } from "@agenter/attention-system";
 
 import { AppKernel } from "../src";
+import { resolveRuntimeShellBinDir } from "../src/runtime-shell-bin";
 import { resolveWorkspaceAvatarCanonicalRoot } from "../src/workspace-system/paths";
-import { executeRootWorkspaceBash } from "../src/workspace-system/root-exec";
+import { createRootWorkspaceShellWorld, type RootWorkspaceMountInput } from "../src/workspace-system/root-exec";
 import { waitForRealValue } from "../test-support/real-kernel-harness";
 
 const getRuntime = (kernel: AppKernel, sessionId: string) => {
@@ -39,15 +41,243 @@ const execRootWorkspaceBash = async (
   },
 ) => await getRuntime(kernel, sessionId).execRootWorkspaceBash(input);
 
+const execWorkspaceBash = async (
+  kernel: AppKernel,
+  sessionId: string,
+  input: {
+    workspaceId: number;
+    command: string;
+    cwd?: string;
+    env?: Record<string, string>;
+    stdin?: string;
+  },
+) => {
+  const runtime = getRuntime(kernel, sessionId) as Record<string, unknown>;
+  const method = Reflect.get(runtime, "execWorkspaceBash");
+  if (typeof method !== "function") {
+    throw new Error("runtime workspace bash is unavailable");
+  }
+  return (await Reflect.apply(method, runtime, [input])) as {
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    cwd: string;
+  };
+};
+
 const getRuntimeAttentionSystem = (kernel: AppKernel, sessionId: string): AttentionSystem =>
   getRuntime(kernel, sessionId).attentionSystem;
 
+const getRuntimeRootWorkspacePath = (kernel: AppKernel, sessionId: string): string => {
+  const mount = kernel.listRuntimeWorkspaceMounts(sessionId).find((entry) => entry.kind === "avatar-root");
+  if (!mount) {
+    throw new Error(`missing avatar-root mount for ${sessionId}`);
+  }
+  return mount.workspacePath;
+};
+
+const getConfiguredTerminalIds = (kernel: AppKernel, sessionId: string): string[] => {
+  const runtime = getRuntime(kernel, sessionId) as Record<string, unknown>;
+  const config = Reflect.get(runtime, "config") as { terminals?: Record<string, unknown> } | null | undefined;
+  return Object.keys(config?.terminals ?? {});
+};
+
+const collectMarkedValues = (text: string): Record<string, string> => {
+  const values: Record<string, string> = {};
+  for (const match of text.matchAll(/^__AGT_([A-Z_]+)__=([^\r\n]*)$/gmu)) {
+    values[match[1]] = (match[2] ?? "").trimEnd();
+  }
+  return values;
+};
+
+const buildEnvDumpCommand = (): string =>
+  [
+    `marker_prefix=__AGT`,
+    `printf '%s_HOME__=%s\\n' "$marker_prefix" "$HOME"`,
+    `printf '%s_ROOT__=%s\\n' "$marker_prefix" "\${AGENTER_ROOT_WORKSPACE-}"`,
+    `printf '%s_HOME_DIR__=%s\\n' "$marker_prefix" "\${AGENTER_HOME_DIR-}"`,
+    `printf '%s_PRIVATE__=%s\\n' "$marker_prefix" "\${AGENTER_AVATAR_PRIVATE_KEY-}"`,
+    `printf '%s_PATH__=%s\\n' "$marker_prefix" "$PATH"`,
+    `printf '%s_DONE__=1\\n' "$marker_prefix"`,
+  ].join("; ");
+
+const buildEnvDumpWrites = (): Array<{
+  key: "HOME" | "ROOT" | "HOME_DIR" | "PRIVATE" | "PATH" | "DONE";
+  text: string;
+}> => [
+  { key: "HOME", text: `printf '__AGT_HOME__=%s\\n' "$HOME"\r` },
+  { key: "ROOT", text: "printf '__AGT_ROOT__=%s\\n' \"${AGENTER_ROOT_WORKSPACE-}\"\r" },
+  { key: "HOME_DIR", text: "printf '__AGT_HOME_DIR__=%s\\n' \"${AGENTER_HOME_DIR-}\"\r" },
+  { key: "PRIVATE", text: "printf '__AGT_PRIVATE__=%s\\n' \"${AGENTER_AVATAR_PRIVATE_KEY-}\"\r" },
+  { key: "PATH", text: `printf '__AGT_PATH__=%s\\n' "$PATH"\r` },
+  { key: "DONE", text: "printf '__AGT_DONE__=1\\n'\r" },
+];
+
+const waitForTerminalSurface = async (kernel: AppKernel, sessionId: string, terminalId: string): Promise<void> => {
+  await waitForRealValue(
+    async () => {
+      const read = await execRootWorkspaceBash(kernel, sessionId, {
+        command: "terminal read",
+        stdin: JSON.stringify({
+          terminalId,
+          mode: "snapshot",
+        }),
+      });
+      if (read.exitCode !== 0) {
+        return null;
+      }
+      const payload = JSON.parse(read.stdout) as {
+        result?:
+          | {
+              kind?: "terminal-snapshot";
+              tail?: string;
+              snapshot?: {
+                lines?: string[];
+              };
+            }
+          | {
+              kind?: "terminal-diff";
+              diff?: string;
+            };
+      };
+      const result = payload.result;
+      if (!result) {
+        return null;
+      }
+      const visibleText =
+        result.kind === "terminal-snapshot"
+          ? (result.snapshot?.lines?.join("\n") ?? result.tail ?? "")
+          : result.kind === "terminal-diff"
+            ? (result.diff ?? "")
+            : "";
+      return visibleText.length > 0 ? true : null;
+    },
+    {
+      label: `terminal surface ${terminalId}`,
+      timeoutMs: 15_000,
+    },
+  );
+};
+
+const readTerminalSnapshotText = async (
+  kernel: AppKernel,
+  sessionId: string,
+  terminalId: string,
+): Promise<string | null> => {
+  const read = await execRootWorkspaceBash(kernel, sessionId, {
+    command: "terminal read",
+    stdin: JSON.stringify({
+      terminalId,
+      mode: "snapshot",
+    }),
+  });
+  if (read.exitCode !== 0) {
+    return null;
+  }
+  const payload = JSON.parse(read.stdout) as {
+    result?:
+      | {
+          kind?: "terminal-snapshot";
+          tail?: string;
+          snapshot?: {
+            lines?: string[];
+          };
+        }
+      | {
+          kind?: "terminal-diff";
+          diff?: string;
+        };
+  };
+  const result = payload.result;
+  return result?.kind === "terminal-snapshot"
+    ? (result.snapshot?.lines?.join("\n") ?? result.tail ?? "")
+    : result?.kind === "terminal-diff"
+      ? (result.diff ?? "")
+      : null;
+};
+
+const waitForTerminalMarkerValue = async (
+  kernel: AppKernel,
+  sessionId: string,
+  terminalId: string,
+  key: "HOME" | "ROOT" | "HOME_DIR" | "PRIVATE" | "PATH" | "DONE",
+): Promise<string> =>
+  await waitForRealValue(
+    async () => {
+      const text = await readTerminalSnapshotText(kernel, sessionId, terminalId);
+      if (!text) {
+        return null;
+      }
+      const match = text.match(new RegExp(`^__AGT_${key}__=([^\\r\\n]*)$`, "mu"));
+      return match?.[1]?.trimEnd() ?? null;
+    },
+    {
+      label: `terminal marker ${terminalId}:${key}`,
+      timeoutMs: 15_000,
+    },
+  );
+
+const collectTerminalEnvValues = async (
+  kernel: AppKernel,
+  sessionId: string,
+  terminalId: string,
+): Promise<Record<string, string>> => {
+  const values: Record<string, string> = {};
+  for (const { key, text } of buildEnvDumpWrites()) {
+    const wrote = await execRootWorkspaceBash(kernel, sessionId, {
+      command: "terminal write",
+      stdin: JSON.stringify({
+        terminalId,
+        text,
+      }),
+    });
+    if (wrote.exitCode !== 0) {
+      throw new Error(`terminal write failed: ${JSON.stringify(wrote)}`);
+    }
+    values[key] = await waitForTerminalMarkerValue(kernel, sessionId, terminalId, key);
+  }
+  return values;
+};
+
 const tempDirs: string[] = [];
+const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 
 const createTempRoot = (): string => {
   const root = mkdtempSync(join(tmpdir(), "agenter-workspace-system-"));
   tempDirs.push(root);
   return root;
+};
+
+const createGrantRecord = (workspacePath: string, pattern: string, mode: "ro" | "rw", ruleIndex = 0) => ({
+  grantId: `grant-${ruleIndex}`,
+  mountId: `mount-${ruleIndex}`,
+  workspacePath,
+  pattern,
+  ruleIndex,
+  mode,
+  createdAt: new Date(ruleIndex).toISOString(),
+});
+
+const executeTemporaryRootWorkspaceShell = async (input: {
+  rootWorkspacePath: string;
+  command: string;
+  cwd?: string;
+  env?: Record<string, string>;
+  stdin?: string;
+  mounts: RootWorkspaceMountInput[];
+  customCommands?: Parameters<typeof createRootWorkspaceShellWorld>[0]["customCommands"];
+}) => {
+  const rootWorld = createRootWorkspaceShellWorld({
+    rootWorkspacePath: input.rootWorkspacePath,
+    customCommands: input.customCommands,
+  });
+  return await rootWorld.exec({
+    command: input.command,
+    cwd: input.cwd,
+    env: input.env,
+    stdin: input.stdin,
+    mounts: input.mounts,
+  });
 };
 
 afterEach(() => {
@@ -612,6 +842,96 @@ describe("Feature: workspace system kernel integration", () => {
     await kernel.stop();
   });
 
+  test("Scenario: Given root_bash stays on the root-workspace profile When HOME is overridden by the caller Then the shell still resolves HOME to the avatar root workspace", async () => {
+    const root = createTempRoot();
+    const workspace = join(root, "workspace-a");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+    try {
+      const session = await kernel.createSession({
+        cwd: workspace,
+        avatar: "architect",
+        autoStart: true,
+      });
+      const rootWorkspacePath = getRuntimeRootWorkspacePath(kernel, session.id);
+      const result = await execRootWorkspaceBash(kernel, session.id, {
+        command: buildEnvDumpCommand(),
+        env: {
+          HOME: "/tmp/not-the-root-workspace",
+          PATH: "/tmp/root-shell-path",
+        },
+      });
+      expect(result.exitCode).toBe(0);
+      const values = collectMarkedValues(result.stdout);
+      expect(values.HOME).toBe(rootWorkspacePath);
+      expect(values.ROOT).toBe(rootWorkspacePath);
+      expect(values.PATH).toBe("/tmp/root-shell-path");
+    } finally {
+      await kernel.stop();
+    }
+  });
+
+  test("Scenario: Given workspace_bash is a public-workspace shell When it inherits caller env Then it stays pass-through and never gains root-workspace-exclusive env or CLI", async () => {
+    const root = createTempRoot();
+    const workspace = join(root, "workspace-a");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+    try {
+      const session = await kernel.createSession({
+        cwd: workspace,
+        avatar: "architect",
+        autoStart: true,
+      });
+      kernel.grantRuntimeWorkspace({
+        runtimeId: session.id,
+        workspacePath: workspace,
+        grants: [{ pattern: "/", mode: "rw" }],
+      });
+
+      const workspaceMount = kernel
+        .listRuntimeWorkspaceMounts(session.id)
+        .find((entry) => entry.workspacePath === workspace && entry.kind === "workspace");
+      if (!workspaceMount) {
+        throw new Error("expected mounted workspace");
+      }
+
+      const rootWorkspacePath = getRuntimeRootWorkspacePath(kernel, session.id);
+      const runtimeBinDir = resolveRuntimeShellBinDir(rootWorkspacePath);
+      const result = await execWorkspaceBash(kernel, session.id, {
+        workspaceId: workspaceMount.runtimeWorkspaceId,
+        command: buildEnvDumpCommand(),
+        env: {
+          HOME: "/tmp/public-workspace-home",
+          PATH: "/tmp/public-workspace-path",
+        },
+      });
+      expect(result.exitCode).toBe(0);
+      const values = collectMarkedValues(result.stdout);
+      expect(values.HOME).toBe("/tmp/public-workspace-home");
+      expect(values.ROOT).toBe("");
+      expect(values.HOME_DIR).toBe("");
+      expect(values.PRIVATE).toBe("");
+      expect(values.PATH).toBe("/tmp/public-workspace-path");
+      expect(values.PATH.includes(runtimeBinDir)).toBeFalse();
+    } finally {
+      await kernel.stop();
+    }
+  });
+
   test("Scenario: Given skill info exposes a built-in skill path When root workspace bash reads that path and a sibling reference Then the same package-owned skill files are shell-readable", async () => {
     const root = createTempRoot();
     const workspace = join(root, "workspace-a");
@@ -690,7 +1010,7 @@ describe("Feature: workspace system kernel integration", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given a runtime-created terminal When it runs tool and skill commands Then the terminal shell inherits the runtime CLI surface", async () => {
+  test("Scenario: Given a shared terminal is created through the runtime CLI When its shell prints env markers Then the terminal keeps collaborative HOME semantics instead of root-workspace env or CLI", async () => {
     const root = createTempRoot();
     const workspace = join(root, "workspace-a");
     mkdirSync(workspace, { recursive: true });
@@ -702,108 +1022,159 @@ describe("Feature: workspace system kernel integration", () => {
       workspacesPath: join(root, "workspaces.yaml"),
     });
     await kernel.start();
-
-    const session = await kernel.createSession({
-      cwd: workspace,
-      avatar: "architect",
-      autoStart: true,
-    });
-    kernel.grantRuntimeWorkspace({
-      runtimeId: session.id,
-      workspacePath: workspace,
-      grants: [{ pattern: "/", mode: "rw" }],
-    });
-
-    const created = await execRootWorkspaceBash(kernel, session.id, {
-      command: "terminal create",
-      stdin: JSON.stringify({
-        cwd: workspace,
-        focus: true,
-        profile: {
-          gitLog: "normal",
-        },
-      }),
-    });
-    expect(created.exitCode).toBe(0);
-    const createdPayload = JSON.parse(created.stdout) as {
-      result?: {
-        terminal?: { terminalId?: string };
-      };
-    };
-    const terminalId = createdPayload.result?.terminal?.terminalId;
-    if (!terminalId) {
-      throw new Error("expected terminalId from terminal create");
-    }
-
-    const wrote = await execRootWorkspaceBash(kernel, session.id, {
-      command: "terminal write",
-      stdin: JSON.stringify({
-        terminalId,
-        text: "command -v tool | xargs basename && command -v skill | xargs basename\r",
-      }),
-    });
-    expect(wrote.exitCode).toBe(0);
-
-    let terminalOutput: string;
-    let observedOutput = "";
     try {
-      terminalOutput = await waitForRealValue(
-        async () => {
-          const read = await execRootWorkspaceBash(kernel, session.id, {
-            command: "terminal read",
-            stdin: JSON.stringify({
-              terminalId,
-              mode: "diff",
-            }),
-          });
-          if (read.exitCode !== 0) {
-            return null;
-          }
-          const payload = JSON.parse(read.stdout) as {
-            result?:
-              | {
-                  kind?: "terminal-diff";
-                  diff?: string;
-                }
-              | {
-                  kind?: "terminal-snapshot";
-                  tail?: string;
-                };
-          };
-          const readResult = payload.result;
-          const content =
-            readResult?.kind === "terminal-diff"
-              ? (readResult.diff ?? "")
-              : readResult?.kind === "terminal-snapshot"
-                ? (readResult.tail ?? "")
-                : "";
-          if (content.length > 0) {
-            observedOutput = `${observedOutput}\n${content}`.trim();
-          }
-          return observedOutput.includes("tool") && observedOutput.includes("skill") ? observedOutput : null;
-        },
-        {
-          label: "runtime terminal cli surface",
-          timeoutMs: 15_000,
-        },
-      );
-    } catch (error) {
-      const read = await execRootWorkspaceBash(kernel, session.id, {
-        command: "terminal read",
+      const session = await kernel.createSession({
+        cwd: workspace,
+        avatar: "architect",
+        autoStart: true,
+      });
+      kernel.grantRuntimeWorkspace({
+        runtimeId: session.id,
+        workspacePath: workspace,
+        grants: [{ pattern: "/", mode: "rw" }],
+      });
+      const rootWorkspacePath = getRuntimeRootWorkspacePath(kernel, session.id);
+      const runtimeBinDir = resolveRuntimeShellBinDir(rootWorkspacePath);
+
+      const created = await execRootWorkspaceBash(kernel, session.id, {
+        command: "terminal create",
         stdin: JSON.stringify({
-          terminalId,
-          mode: "diff",
+          cwd: workspace,
+          focus: true,
+          profile: {
+            gitLog: "normal",
+          },
         }),
       });
-      throw new Error(
-        `runtime terminal cli surface failed: ${error instanceof Error ? error.message : String(error)}\nobserved:\n${observedOutput}\nlatest:\n${read.stdout}`,
-      );
+      expect(created.exitCode).toBe(0);
+      const createdPayload = JSON.parse(created.stdout) as {
+        result?: {
+          terminal?: { terminalId?: string };
+        };
+      };
+      const terminalId = createdPayload.result?.terminal?.terminalId;
+      if (!terminalId) {
+        throw new Error("expected terminalId from terminal create");
+      }
+      await waitForTerminalSurface(kernel, session.id, terminalId);
+
+      const values = await collectTerminalEnvValues(kernel, session.id, terminalId);
+      expect(values.HOME).not.toBe(rootWorkspacePath);
+      if (process.env.HOME) {
+        expect(values.HOME).toBe(process.env.HOME);
+      }
+      expect(values.ROOT).toBe("");
+      expect(values.HOME_DIR).toBe("");
+      expect(values.PRIVATE).toBe("");
+      expect(values.PATH.includes(runtimeBinDir)).toBeFalse();
+    } finally {
+      await kernel.stop();
     }
+  }, 20_000);
 
-    expect(terminalOutput).toContain("tool");
-    expect(terminalOutput).toContain("skill");
+  test("Scenario: Given a configured terminal is recovered through the runtime When it starts from the shared profile path Then root-workspace env and CLI still stay out", async () => {
+    const root = createTempRoot();
+    const workspace = join(root, "workspace-a");
+    mkdirSync(workspace, { recursive: true });
 
-    await kernel.stop();
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+    try {
+      const session = await kernel.createSession({
+        cwd: workspace,
+        avatar: "architect",
+        autoStart: true,
+      });
+      kernel.grantRuntimeWorkspace({
+        runtimeId: session.id,
+        workspacePath: workspace,
+        grants: [{ pattern: "/", mode: "rw" }],
+      });
+      const configuredTerminalId = getConfiguredTerminalIds(kernel, session.id)[0];
+      if (!configuredTerminalId) {
+        throw new Error("expected a configured terminal id");
+      }
+      const rootWorkspacePath = getRuntimeRootWorkspacePath(kernel, session.id);
+      const runtimeBinDir = resolveRuntimeShellBinDir(rootWorkspacePath);
+
+      const recovered = await kernel.createTerminal({
+        sessionId: session.id,
+        terminalId: configuredTerminalId,
+        focus: false,
+      });
+      expect(recovered.ok).toBeTrue();
+
+      const values = await collectTerminalEnvValues(kernel, session.id, configuredTerminalId);
+      expect(values.HOME).not.toBe(rootWorkspacePath);
+      if (process.env.HOME) {
+        expect(values.HOME).toBe(process.env.HOME);
+      }
+      expect(values.ROOT).toBe("");
+      expect(values.HOME_DIR).toBe("");
+      expect(values.PRIVATE).toBe("");
+      expect(values.PATH.includes(runtimeBinDir)).toBeFalse();
+    } finally {
+      await kernel.stop();
+    }
+  }, 20_000);
+
+  test("Scenario: Given a shared terminal starts inside the avatar root cwd When its shell prints env markers Then the terminal still keeps collaboration semantics instead of root-workspace HOME", async () => {
+    const root = createTempRoot();
+    const workspace = join(root, "workspace-a");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+    try {
+      const session = await kernel.createSession({
+        cwd: workspace,
+        avatar: "architect",
+        autoStart: true,
+      });
+      const rootWorkspacePath = getRuntimeRootWorkspacePath(kernel, session.id);
+      const runtimeBinDir = resolveRuntimeShellBinDir(rootWorkspacePath);
+
+      const created = await execRootWorkspaceBash(kernel, session.id, {
+        command: "terminal create",
+        stdin: JSON.stringify({
+          cwd: rootWorkspacePath,
+          focus: false,
+        }),
+      });
+      expect(created.exitCode).toBe(0);
+      const createdPayload = JSON.parse(created.stdout) as {
+        result?: {
+          terminal?: { terminalId?: string };
+        };
+      };
+      const terminalId = createdPayload.result?.terminal?.terminalId;
+      if (!terminalId) {
+        throw new Error("expected terminalId from terminal create");
+      }
+      await waitForTerminalSurface(kernel, session.id, terminalId);
+
+      const values = await collectTerminalEnvValues(kernel, session.id, terminalId);
+      expect(values.HOME).not.toBe(rootWorkspacePath);
+      if (process.env.HOME) {
+        expect(values.HOME).toBe(process.env.HOME);
+      }
+      expect(values.ROOT).toBe("");
+      expect(values.HOME_DIR).toBe("");
+      expect(values.PRIVATE).toBe("");
+      expect(values.PATH.includes(runtimeBinDir)).toBeFalse();
+    } finally {
+      await kernel.stop();
+    }
   }, 20_000);
 
   test("Scenario: Given active attention When JSON attention commit marks done Then runtime clears the current context debt", async () => {
@@ -954,7 +1325,7 @@ describe("Feature: workspace system kernel integration", () => {
       grants: [{ pattern: "/", mode: "rw" }],
     });
 
-    const rootResponse = await executeRootWorkspaceBash({
+    const rootResponse = await executeTemporaryRootWorkspaceShell({
       rootWorkspacePath: rootWorkspace,
       command: "sleep 5 &",
       mounts: [],
@@ -974,6 +1345,207 @@ describe("Feature: workspace system kernel integration", () => {
     expect(workspaceResponse.stderr).toContain("terminal");
 
     await kernel.stop();
+  });
+
+  test("Scenario: Given duplicate root workspace mounts resolve to one path When root exec builds the shell Then the shared mount is merged instead of rejected", async () => {
+    const root = createTempRoot();
+    const rootWorkspace = join(root, "avatar-root");
+    const sharedMount = join(root, "shared");
+    mkdirSync(rootWorkspace, { recursive: true });
+    mkdirSync(sharedMount, { recursive: true });
+
+    const response = await executeTemporaryRootWorkspaceShell({
+      rootWorkspacePath: rootWorkspace,
+      command: `cd ${JSON.stringify(sharedMount)} && printf "merged-ok"`,
+      mounts: [
+        { path: sharedMount, mode: "ro" },
+        { path: sharedMount, mode: "rw" },
+      ],
+    });
+
+    expect(response.exitCode).toBe(0);
+    expect(response.stdout).toContain("merged-ok");
+  });
+
+  test("Scenario: Given root exec receives nested mount roots When one mount lives inside another Then it fails fast with a clear overlap error", async () => {
+    const root = createTempRoot();
+    const rootWorkspace = join(root, "avatar-root");
+    mkdirSync(rootWorkspace, { recursive: true });
+    const nestedSkillRoot = join(repoRoot, "packages", "app-server", "skills", "collaboration");
+
+    const response = await executeTemporaryRootWorkspaceShell({
+      rootWorkspacePath: rootWorkspace,
+      command: 'printf "never-runs"',
+      mounts: [
+        { path: repoRoot, mode: "ro" },
+        { path: nestedSkillRoot, mode: "ro" },
+      ],
+    });
+
+    expect(response.exitCode).toBe(1);
+    expect(response.stderr).toContain("root workspace mount overlap");
+    expect(response.stderr).toContain(nestedSkillRoot);
+    expect(response.stderr).toContain(repoRoot);
+  });
+
+  test("Scenario: Given one durable root shell world When later execs run Then filesystem state persists while shell env and cwd reset", async () => {
+    const root = createTempRoot();
+    const rootWorkspace = join(root, "avatar-root");
+    mkdirSync(rootWorkspace, { recursive: true });
+
+    const rootWorld = createRootWorkspaceShellWorld({
+      rootWorkspacePath: rootWorkspace,
+    });
+
+    const first = await rootWorld.exec({
+      command: ['printf "persisted" > keep.txt', "export HELLO=world", "cd /"].join("; "),
+      mounts: [],
+    });
+    expect(first.exitCode).toBe(0);
+
+    const second = await rootWorld.exec({
+      command: ['printf "__AGT_PWD__=%s\\n" "$(pwd)"', 'printf "__AGT_HELLO__=%s\\n" "${HELLO-}"', "cat keep.txt"].join(
+        "; ",
+      ),
+      mounts: [],
+    });
+
+    expect(second.exitCode).toBe(0);
+    const values = collectMarkedValues(second.stdout);
+    expect(values.PWD).toBe(rootWorkspace);
+    expect(values.HELLO).toBe("");
+    expect(second.stdout).toContain("persisted");
+  });
+
+  test("Scenario: Given one durable root shell world When mount rules and hidden paths change Then later execs see the refreshed authority without rebuilding the shell host", async () => {
+    const root = createTempRoot();
+    const rootWorkspace = join(root, "avatar-root");
+    const workspace = join(root, "workspace-a");
+    mkdirSync(rootWorkspace, { recursive: true });
+    mkdirSync(join(workspace, "notes"), { recursive: true });
+    writeFileSync(join(workspace, "notes", "todo.md"), "ship\n", "utf8");
+
+    const todoPath = join(workspace, "notes", "todo.md");
+    const rootWorld = createRootWorkspaceShellWorld({
+      rootWorkspacePath: rootWorkspace,
+    });
+
+    const readable = await rootWorld.exec({
+      command: `cat ${JSON.stringify(todoPath)}`,
+      mounts: [
+        {
+          path: workspace,
+          mode: "rw",
+          grants: [createGrantRecord(workspace, "/notes/**", "ro")],
+        },
+      ],
+    });
+    expect(readable.exitCode).toBe(0);
+    expect(readable.stdout.trim()).toBe("ship");
+
+    const hidden = await rootWorld.exec({
+      command: `cat ${JSON.stringify(todoPath)} || true`,
+      mounts: [
+        {
+          path: workspace,
+          mode: "rw",
+          grants: [createGrantRecord(workspace, "/notes/**", "ro")],
+          hiddenPaths: ["/notes"],
+        },
+      ],
+    });
+    expect(hidden.exitCode).toBe(0);
+    expect(hidden.stdout.trim()).toBe("");
+    expect(hidden.stderr).toContain("No such file or directory");
+
+    const unmounted = await rootWorld.exec({
+      command: `cat ${JSON.stringify(todoPath)} || true`,
+      mounts: [],
+    });
+    expect(unmounted.exitCode).toBe(0);
+    expect(unmounted.stdout.trim()).toBe("");
+    expect(unmounted.stderr).toContain("No such file or directory");
+  });
+
+  test("Scenario: Given concurrent root shell calls with different mount sets When the durable world refreshes per call Then serialized execution prevents mount-state corruption", async () => {
+    const root = createTempRoot();
+    const rootWorkspace = join(root, "avatar-root");
+    const workspaceA = join(root, "workspace-a");
+    const workspaceB = join(root, "workspace-b");
+    mkdirSync(rootWorkspace, { recursive: true });
+    mkdirSync(workspaceA, { recursive: true });
+    mkdirSync(workspaceB, { recursive: true });
+    writeFileSync(join(workspaceA, "a.txt"), "alpha\n", "utf8");
+    writeFileSync(join(workspaceB, "b.txt"), "beta\n", "utf8");
+
+    const rootWorld = createRootWorkspaceShellWorld({
+      rootWorkspacePath: rootWorkspace,
+    });
+
+    const [resultA, resultB] = await Promise.all([
+      rootWorld.exec({
+        command: `sleep 0.05; cat ${JSON.stringify(join(workspaceA, "a.txt"))}`,
+        mounts: [
+          {
+            path: workspaceA,
+            mode: "rw",
+            grants: [createGrantRecord(workspaceA, "/", "ro")],
+          },
+        ],
+      }),
+      rootWorld.exec({
+        command: `cat ${JSON.stringify(join(workspaceB, "b.txt"))}`,
+        mounts: [
+          {
+            path: workspaceB,
+            mode: "rw",
+            grants: [createGrantRecord(workspaceB, "/", "ro")],
+          },
+        ],
+      }),
+    ]);
+
+    expect(resultA.exitCode).toBe(0);
+    expect(resultA.stdout.trim()).toBe("alpha");
+    expect(resultB.exitCode).toBe(0);
+    expect(resultB.stdout.trim()).toBe("beta");
+  });
+
+  test("Scenario: Given a mounted workspace already covers the repo subtree When root_bash runs Then nested builtin skill mounts are filtered before shell setup", async () => {
+    const root = createTempRoot();
+    const scratch = join(root, "scratch");
+    mkdirSync(scratch, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    try {
+      const session = await kernel.createSession({
+        cwd: scratch,
+        avatar: "architect",
+        autoStart: true,
+      });
+      kernel.grantRuntimeWorkspace({
+        runtimeId: session.id,
+        workspacePath: repoRoot,
+        grants: [{ pattern: "/", mode: "ro" }],
+      });
+
+      const response = await execRootWorkspaceBash(kernel, session.id, {
+        command: 'printf "root-bash-ok"',
+      });
+
+      expect(response.exitCode).toBe(0);
+      expect(response.stdout).toContain("root-bash-ok");
+      expect(response.stderr).toBe("");
+    } finally {
+      await kernel.stop();
+    }
   });
 
   test("Scenario: Given root workspace bash verifies a local URL When the runtime serves loopback HTTP Then one-shot bash networking can reach 127.0.0.1", async () => {
@@ -996,7 +1568,7 @@ describe("Feature: workspace system kernel integration", () => {
     }
 
     try {
-      const response = await executeRootWorkspaceBash({
+      const response = await executeTemporaryRootWorkspaceShell({
         rootWorkspacePath: rootWorkspace,
         command: `curl -s http://127.0.0.1:${port}/`,
         mounts: [],
@@ -1017,7 +1589,7 @@ describe("Feature: workspace system kernel integration", () => {
     const rootWorkspace = join(root, "avatar-root");
     mkdirSync(rootWorkspace, { recursive: true });
 
-    const response = await executeRootWorkspaceBash({
+    const response = await executeTemporaryRootWorkspaceShell({
       rootWorkspacePath: rootWorkspace,
       command: 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:65500/',
       mounts: [],

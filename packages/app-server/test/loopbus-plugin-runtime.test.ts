@@ -108,6 +108,104 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
     ]);
   });
 
+  test("Scenario: Given dispatch and receipt hooks When runtime notifies delivery lifecycle Then hook results stay stage-specific", async () => {
+    const runtime = new LoopBusPluginRuntime([
+      {
+        name: "delivery-observer",
+        attentionDispatched: async () => ({
+          hookId: "dispatch-hook",
+          bridgeId: "message",
+          status: "delivered",
+          target: { phase: "dispatch" },
+        }),
+        attentionReceipt: async ({ receipt }) => ({
+          hookId: "receipt-hook",
+          bridgeId: "message",
+          status: receipt.status === "accepted" ? "delivered" : "ignored",
+          target: { phase: "receipt", status: receipt.status },
+        }),
+      },
+    ]);
+
+    const system = new AttentionSystem();
+    system.createContext({ contextId: "ctx-1", owner: "jane" });
+    const { context, commit } = system.commit("ctx-1", {
+      meta: { author: "avatar:jane", source: "attention" },
+      scores: { hash1: 100 },
+      summary: "reply",
+      change: { type: "update", value: "reply", format: "text/plain" },
+    });
+
+    const dispatchResults = await runtime.notifyAttentionDispatched(
+      {
+        contextId: "ctx-1",
+        context,
+        commit,
+        dispatch: {
+          dispatchId: "dispatch-1",
+          cycleId: 7,
+          attemptIndex: 1,
+          agentCallId: "agent-call-1",
+          sessionModelCallId: null,
+          createdAt: 100,
+        },
+      },
+      {
+        contextId: "ctx-1",
+        commitId: commit.commitId,
+        dispatchId: "dispatch-1",
+        cycleId: 7,
+        agentCallId: "agent-call-1",
+      },
+    );
+    const receiptResults = await runtime.notifyAttentionReceipt(
+      {
+        contextId: "ctx-1",
+        context,
+        commit,
+        dispatch: {
+          dispatchId: "dispatch-1",
+          cycleId: 7,
+          attemptIndex: 1,
+          agentCallId: "agent-call-1",
+          sessionModelCallId: 41,
+          createdAt: 100,
+        },
+        receipt: {
+          receiptId: "receipt-1",
+          status: "accepted",
+          providerEventKind: "text_delta",
+          timestamp: 120,
+        },
+      },
+      {
+        contextId: "ctx-1",
+        commitId: commit.commitId,
+        dispatchId: "dispatch-1",
+        cycleId: 7,
+        agentCallId: "agent-call-1",
+        sessionModelCallId: 41,
+      },
+    );
+
+    expect(dispatchResults).toEqual([
+      {
+        hookId: "dispatch-hook",
+        bridgeId: "message",
+        status: "delivered",
+        target: { phase: "dispatch" },
+      },
+    ]);
+    expect(receiptResults).toEqual([
+      {
+        hookId: "receipt-hook",
+        bridgeId: "message",
+        status: "delivered",
+        target: { phase: "receipt", status: "accepted" },
+      },
+    ]);
+  });
+
   test("Scenario: Given an attentionShouldLoad denial When drafts are read Then the ref stays invalidated until a later round allows it", async () => {
     let allow = false;
     const messages = new Map<string, string>([["chat-1:1", "hello"]]);

@@ -467,6 +467,9 @@ export const projectRuntimeSkillConfigInfo = (input: RuntimeSkillConfigInfo): Ru
 
 export const projectRuntimeSkillMutation = (
   input: RuntimeSkillRefreshResult & {
+    systemCommitId: string | null;
+    reminderCommitId: string | null;
+    reminderCommitIds: string[];
     created?: boolean;
     removed?: boolean;
     removedPath?: string | null;
@@ -483,9 +486,9 @@ export const projectRuntimeSkillMutation = (
     rootKind: change.rootKind,
     changedFiles: [...change.changedFiles],
   })),
-  systemCommitId: input.systemCommit?.commitId ?? null,
-  reminderCommitId: input.reminderCommit?.commitId ?? null,
-  reminderCommitIds: input.reminderCommits.map((commit) => commit.commitId),
+  systemCommitId: input.systemCommitId,
+  reminderCommitId: input.reminderCommitId,
+  reminderCommitIds: input.reminderCommitIds,
   bootstrapPending: input.bootstrapPending,
   created: input.created,
   removed: input.removed,

@@ -18,6 +18,8 @@ Quick start:
 Key laws:
 - A runtime does not start with a terminal by default.
 - Long-lived and interactive work belongs in terminals, not one-shot bash.
+- `terminal` is a collaborative process surface, not a root-workspace shell.
+- Shared terminals keep real-home semantics and do not inherit root-workspace-exclusive env/CLI by default, even when `cwd` starts inside the avatar root workspace.
 - If work needs a port listener, local web server, watch mode, REPL, or retryable boot sequence, start it in `terminal`.
 - `terminal write` is raw mode. It sends literal bytes and never invents Enter, waits, or special keys for you.
 - `terminal input` is mixed mode. Use it for `<key .../>`, `<wait .../>`, or literal `<...>` text wrapped in `<raw>...</raw>`.

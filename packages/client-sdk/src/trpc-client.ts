@@ -55,6 +55,10 @@ export const createAgenterClient = (options: AgenterClientOptions): AgenterClien
       const authorization = readAuthorizationHeader();
       return authorization ? { authorization } : {};
     },
+    lazy: {
+      enabled: true,
+      closeMs: 0,
+    },
     onOpen: () => {
       options.onOpen?.();
       emitTransport({ type: "open" });
@@ -104,7 +108,12 @@ export const createAgenterClient = (options: AgenterClientOptions): AgenterClien
     httpUrl,
     setAuthToken: (token) => {
       const normalized = token?.trim() ?? "";
-      authToken = normalized.length > 0 ? normalized : null;
+      const nextAuthToken = normalized.length > 0 ? normalized : null;
+      const authChanged = authToken !== nextAuthToken;
+      authToken = nextAuthToken;
+      if (authChanged && wsClient.connection) {
+        void wsClient.close();
+      }
     },
     getAuthToken: () => authToken,
     subscribeTransport: (listener) => {

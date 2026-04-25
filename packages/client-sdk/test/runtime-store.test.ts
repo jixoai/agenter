@@ -6583,6 +6583,28 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given global terminal activity hydrates without an explicit limit When the shared actions rail is queried Then the store uses the compact 20-row default", async () => {
+    const requests: Array<number | undefined> = [];
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(980),
+        terminalActivityPageQuery: async (input) => {
+          requests.push(input.limit);
+          return {
+            items: [],
+            nextBefore: null,
+            hasMoreBefore: false,
+          };
+        },
+      }),
+    );
+
+    await store.hydrateGlobalTerminalActivity({ terminalId: "term-default-limit" });
+
+    expect(requests).toEqual([20]);
+    store.disconnect();
+  });
+
   test("Scenario: Given runtime snapshot already contains focused chat-channel descriptors When the store hydrates a started session Then chat bootstrap does not need a second list call", async () => {
     let listChannelsCalls = 0;
     const channel = {
@@ -8552,6 +8574,13 @@ describe("Feature: runtime store synchronization", () => {
         representation: "snapshot",
       },
     });
+    expect(
+      store.getState().globalTerminalActivityById[terminalId]?.data[0]?.detail &&
+        typeof store.getState().globalTerminalActivityById[terminalId]?.data[0]?.detail === "object" &&
+        !Array.isArray(store.getState().globalTerminalActivityById[terminalId]?.data[0]?.detail)
+        ? "snapshot" in store.getState().globalTerminalActivityById[terminalId]!.data[0]!.detail
+        : false,
+    ).toBeFalse();
 
     releaseActivity();
     store.disconnect();

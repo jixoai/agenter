@@ -585,8 +585,8 @@ export class TerminalControlPlane {
     if (!resolvedAccessToken) {
       return null;
     }
-    const host = transport.host ?? this.transportServer?.url.hostname ?? "127.0.0.1";
-    const path = toTransportPath(transport.pathPrefix ?? "/pty", terminalId);
+    const host = transport?.host ?? this.transportServer?.url.hostname ?? "127.0.0.1";
+    const path = toTransportPath(transport?.pathPrefix ?? "/pty", terminalId);
     const baseUrl = `ws://${host}:${port}${path}`;
     return {
       host,

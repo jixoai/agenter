@@ -125,7 +125,9 @@ export {
 export {
   LoopBusPluginRuntime,
   type AttentionCommittedHook,
+  type AttentionDispatchedHook,
   type AttentionDraft,
+  type AttentionReceiptHook,
   type AttentionTransformHook,
   type AttentionWillLoadHook,
   type CycleShouldStartHook,
@@ -145,8 +147,32 @@ export {
   type LoopTaskSourceRef,
   type LoopTerminalSourceRef,
 } from "./loopbus-plugin-runtime";
+export { RuntimeKernelHost } from "./runtime-kernel-host";
+export { RuntimeMessageKernelAdapter, type RuntimeMessageKernelAdapterOptions } from "./runtime-system-kernel-adapters/message-adapter";
+export {
+  RuntimeSkillKernelAdapter,
+  type RuntimeSkillKernelApplyResult,
+} from "./runtime-system-kernel-adapters/skill-adapter";
+export {
+  RuntimeTerminalKernelAdapter,
+  type RuntimeTerminalFocusTransitionInput,
+  type RuntimeTerminalLifecycleIngressInput,
+} from "./runtime-system-kernel-adapters/terminal-adapter";
+export type {
+  RuntimeIngressCommitResult,
+  RuntimeSystemIngressEnvelope,
+  RuntimeSystemKernelAdapter,
+  RuntimeSystemKernelHost,
+} from "./runtime-system-kernel-adapters/types";
 export { resolveModelCapabilities } from "./model-capabilities";
-export { ModelClient, ModelDecisionError, type AssistantStreamUpdate, type TextOnlyModelMessage } from "./model-client";
+export {
+  ModelClient,
+  type AssistantDeliveryEvent,
+  ModelDecisionError,
+  type AssistantStreamUpdate,
+  type ModelDecisionDeliveryError,
+  type TextOnlyModelMessage,
+} from "./model-client";
 export { canCallModel as canCallConfiguredModel, resolveApiEnvHint, type ModelProviderConfig } from "./model-provider";
 export { PromptBuilder, type PromptBuildContext } from "./prompt-builder";
 export {
@@ -203,6 +229,7 @@ export {
   SessionRuntime,
   type RuntimeEvent,
   type RuntimeEventMap,
+  type SessionRuntimeAttentionDeliveryState,
   type SessionRuntimeAttentionState,
   type SessionRuntimeModelDebug,
   type SessionRuntimeSnapshot,

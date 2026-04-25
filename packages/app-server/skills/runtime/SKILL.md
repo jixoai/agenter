@@ -19,13 +19,14 @@ Quick start:
 Key laws:
 
 - The only direct model tools are `workspace_list`, `root_bash`, and `workspace_bash`.
-- `workspace_list` shows mounted project workspaces as `{ id, cwd, alias }`; root stays special and is reached through `root_bash`.
-- `root_bash` is a one-shot shell for root control-plane work, not a durable process owner.
-- `workspace_bash` is a pure mounted-workspace shell selected by `workspaceId`; it does not carry the root runtime-local control plane.
+- `workspace_list` shows mounted project workspaces as `{ id, cwd, alias }`; the fixed root-workspace stays special and is reached through `root_bash`.
+- `root_bash` is the fixed root-workspace shell: it rewrites `HOME` to the avatar root workspace and carries avatar-private runtime CLI/env by default.
+- `workspace_bash` is a pure public-workspace shell selected by `workspaceId`; it does not carry root-workspace-exclusive CLI/env or synthesize root-style `HOME`.
 - `root_bash` also accepts optional `stdin`; for runtime-local CLI commands that take JSON payloads, default to `command=<bare action>` plus JSON `stdin`.
 - Use a single argv JSON payload only when it is trivially short, single-line, and clearly cheaper in tokens than opening a separate `stdin` field.
 - If `<command> --help` marks compact as `Suggested` or `Available`, `--compact` is also available as an optional positional array mode. If the array shape becomes unclear, fall back immediately to standard object JSON.
 - `root_bash` can use outbound network access for objective verification of current or external facts.
+- `terminal` is a collaborative process surface, not a root-workspace shell; it keeps shared-terminal semantics and does not inherit root-workspace-exclusive env/CLI by default.
 - Long-lived or interactive work belongs in `terminal`.
 - A local delivery URL may be verified from `root_bash`, but the process that owns that URL still belongs in `terminal`.
 - A `terminal read` snapshot or a still-running process is not enough to prove a local delivery URL is ready; use a fresh exact-path HTTP check from the one-shot shell.

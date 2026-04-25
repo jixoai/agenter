@@ -12,6 +12,10 @@ import { createAnthropicChat } from "@tanstack/ai-anthropic";
 import { createGeminiChat } from "@tanstack/ai-gemini";
 import { createOllamaChat } from "@tanstack/ai-ollama";
 import { createOpenaiChat } from "@tanstack/ai-openai";
+import type {
+  AttentionReceiptProviderEventKind,
+  AttentionReceiptStatus,
+} from "@agenter/loopbus-kernel";
 import { OpenAICompatChatTextAdapter } from "./deepseek-adapter";
 import {
   canCallModel,
@@ -26,10 +30,20 @@ import { OpenAICompletionTextAdapter } from "./openai-completion-adapter";
 import { createRuntimeText } from "./runtime-text";
 import { TextBackedSummarizeAdapter } from "./text-summarize-adapter";
 import type { ModelCapabilities } from "./types";
+
+export interface ModelDecisionDeliveryError {
+  providerEventKind: "run_error" | "transport_error";
+  errorCode?: string;
+  errorMessage: string;
+}
+
 export class ModelDecisionError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
+  readonly deliveryError?: ModelDecisionDeliveryError;
+
+  constructor(message: string, options?: { cause?: unknown; deliveryError?: ModelDecisionDeliveryError }) {
     super(message, options);
     this.name = "ModelDecisionError";
+    this.deliveryError = options?.deliveryError;
   }
 }
 
@@ -86,6 +100,24 @@ export type AssistantStreamUpdate =
       timestamp: number;
     };
 
+export type AssistantDeliveryEvent =
+  | {
+      kind: "attempt_started";
+      attemptIndex: number;
+      timestamp: number;
+    }
+  | {
+      kind: "receipt";
+      attemptIndex: number;
+      status: AttentionReceiptStatus;
+      providerEventKind: AttentionReceiptProviderEventKind;
+      timestamp: number;
+      finishReason?: "stop" | "length" | "content_filter" | "tool_calls" | null;
+      usage?: DecisionUsage;
+      errorCode?: string;
+      errorMessage?: string;
+    };
+
 export type TextOnlyModelMessage = ModelMessage;
 
 interface RespondInput {
@@ -96,6 +128,7 @@ interface RespondInput {
   temperature?: number;
   maxTokens?: number;
   onUpdate?: (update: AssistantStreamUpdate) => void | Promise<void>;
+  onDeliveryEvent?: (event: AssistantDeliveryEvent) => void | Promise<void>;
   shouldYieldAfterToolPhase?: () => boolean;
 }
 
@@ -134,6 +167,18 @@ const isToolCallEndChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, {
 
 const isRunErrorChunk = (chunk: StreamChunk): chunk is Extract<StreamChunk, { type: "RUN_ERROR" }> =>
   chunk.type === "RUN_ERROR";
+
+const toTransportDeliveryError = (message: string): ModelDecisionDeliveryError => ({
+  providerEventKind: "transport_error",
+  errorMessage: message,
+});
+
+const isAbortError = (error: unknown): boolean =>
+  error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error
+      ? error.name === "AbortError" || error.message === "This operation was aborted"
+      : false;
 
 export class ModelClient {
   private readonly textAdapter: AnyTextAdapter;
@@ -182,25 +227,69 @@ export class ModelClient {
 
   async respondWithMeta(input: RespondInput): Promise<AssistantTurn> {
     if (!canCallModel(this.config)) {
-      return {
-        thinking: "",
-        text: this.runtimeText.t("model.missing_api_key", { env: resolveApiEnvHint(this.config) }),
-        finishReason: "stop",
-      };
+      const timestamp = Date.now();
+      const errorMessage = this.runtimeText.t("model.missing_api_key", { env: resolveApiEnvHint(this.config) });
+      await input.onDeliveryEvent?.({
+        kind: "attempt_started",
+        attemptIndex: 1,
+        timestamp,
+      });
+      await input.onDeliveryEvent?.({
+        kind: "receipt",
+        attemptIndex: 1,
+        status: "errored",
+        providerEventKind: "transport_error",
+        timestamp,
+        errorMessage,
+      });
+      throw new ModelDecisionError(errorMessage, {
+        deliveryError: toTransportDeliveryError(errorMessage),
+      });
     }
 
     const maxAttempts = Math.max(1, this.config.maxRetries + 1);
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const attemptStartedAt = Date.now();
+      await input.onDeliveryEvent?.({
+        kind: "attempt_started",
+        attemptIndex: attempt,
+        timestamp: attemptStartedAt,
+      });
+      let terminalReceiptEmitted = false;
+      const emitTerminalReceipt = async (event: Extract<AssistantDeliveryEvent, { kind: "receipt" }>): Promise<void> => {
+        terminalReceiptEmitted = true;
+        await input.onDeliveryEvent?.(event);
+      };
       try {
         let text = "";
         let thinking = "";
         let usage: DecisionUsage | undefined;
         let finishReason: AssistantTurn["finishReason"];
         let yieldedAfterToolPhase = false;
+        let acceptedEmitted = false;
         const toolCalls = new Map<string, { toolName: string; argsText: string }>();
         const defaultLoopStrategy = maxIterations(5);
         const effectiveMaxTokens = input.maxTokens ?? this.config.maxToken;
+        const emitAcceptedReceipt = async (
+          providerEventKind: Extract<
+            AttentionReceiptProviderEventKind,
+            "text_delta" | "thinking_delta" | "tool_call_start"
+          >,
+          timestamp: number,
+        ): Promise<void> => {
+          if (acceptedEmitted) {
+            return;
+          }
+          acceptedEmitted = true;
+          await input.onDeliveryEvent?.({
+            kind: "receipt",
+            attemptIndex: attempt,
+            status: "accepted",
+            providerEventKind,
+            timestamp,
+          });
+        };
 
         for await (const chunk of chat({
           adapter: this.textAdapter,
@@ -225,6 +314,7 @@ export class ModelClient {
         })) {
           if (isTextChunk(chunk)) {
             text = appendChunk(text, chunk.delta);
+            await emitAcceptedReceipt("text_delta", chunk.timestamp);
             await input.onUpdate?.({
               kind: "draft",
               delta: chunk.delta,
@@ -235,6 +325,7 @@ export class ModelClient {
           }
           if (isThinkingChunk(chunk)) {
             thinking = appendChunk(thinking, chunk.delta);
+            await emitAcceptedReceipt("thinking_delta", chunk.timestamp);
             await input.onUpdate?.({
               kind: "thinking",
               delta: chunk.delta,
@@ -245,6 +336,7 @@ export class ModelClient {
           }
           if (isToolCallStartChunk(chunk)) {
             toolCalls.set(chunk.toolCallId, { toolName: chunk.toolName, argsText: "" });
+            await emitAcceptedReceipt("tool_call_start", chunk.timestamp);
             await input.onUpdate?.({
               kind: "tool_call",
               toolCallId: chunk.toolCallId,
@@ -303,12 +395,53 @@ export class ModelClient {
               finishReason,
               timestamp: chunk.timestamp,
             });
+            await emitTerminalReceipt({
+              kind: "receipt",
+              attemptIndex: attempt,
+              status: "completed",
+              providerEventKind: "run_finished",
+              timestamp: chunk.timestamp,
+              finishReason,
+              usage,
+            });
             continue;
           }
           if (isRunErrorChunk(chunk)) {
-            const code = chunk.error.code ? ` [${chunk.error.code}]` : "";
-            throw new Error(`${chunk.error.message}${code}`);
+            await emitTerminalReceipt({
+              kind: "receipt",
+              attemptIndex: attempt,
+              status: "errored",
+              providerEventKind: "run_error",
+              timestamp: chunk.timestamp,
+              errorCode: chunk.error.code ?? undefined,
+              errorMessage: chunk.error.message,
+            });
+            throw new ModelDecisionError(
+              `${chunk.error.message}${chunk.error.code ? ` [${chunk.error.code}]` : ""}`,
+              {
+                deliveryError: {
+                  providerEventKind: "run_error",
+                  errorCode: chunk.error.code ?? undefined,
+                  errorMessage: chunk.error.message,
+                },
+              },
+            );
           }
+        }
+
+        if (!terminalReceiptEmitted) {
+          const errorMessage = "model stream ended without a terminal receipt";
+          await emitTerminalReceipt({
+            kind: "receipt",
+            attemptIndex: attempt,
+            status: "errored",
+            providerEventKind: "transport_error",
+            timestamp: Date.now(),
+            errorMessage,
+          });
+          throw new ModelDecisionError(errorMessage, {
+            deliveryError: toTransportDeliveryError(errorMessage),
+          });
         }
 
         return {
@@ -320,17 +453,48 @@ export class ModelClient {
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const deliveryError =
+          error instanceof ModelDecisionError ? error.deliveryError : toTransportDeliveryError(message);
+        if (isAbortError(error)) {
+          if (!terminalReceiptEmitted) {
+            await emitTerminalReceipt({
+              kind: "receipt",
+              attemptIndex: attempt,
+              status: "aborted",
+              providerEventKind: "abort",
+              timestamp: Date.now(),
+              errorMessage: message,
+            });
+          }
+          throw error;
+        }
+        if (!terminalReceiptEmitted) {
+          await emitTerminalReceipt({
+            kind: "receipt",
+            attemptIndex: attempt,
+            status: "errored",
+            providerEventKind: deliveryError?.providerEventKind ?? "transport_error",
+            timestamp: Date.now(),
+            errorCode: deliveryError?.errorCode,
+            errorMessage: deliveryError?.errorMessage ?? message,
+          });
+        }
         if (attempt >= maxAttempts || !this.isRetryable(message)) {
           throw new ModelDecisionError(
             `${this.config.apiStandard} response failed after ${attempt} attempt(s): ${message}`,
-            { cause: error },
+            { cause: error, deliveryError },
           );
         }
         await Bun.sleep(Math.min(2_000, 300 * 2 ** (attempt - 1)));
       }
     }
 
-    throw new ModelDecisionError(`${this.config.apiStandard} response failed: retries exhausted`);
+    throw new ModelDecisionError(`${this.config.apiStandard} response failed: retries exhausted`, {
+      deliveryError: {
+        providerEventKind: "transport_error",
+        errorMessage: `${this.config.apiStandard} response failed: retries exhausted`,
+      },
+    });
   }
 
   private buildModelOptions(maxTokens: number | undefined): Record<string, unknown> | undefined {

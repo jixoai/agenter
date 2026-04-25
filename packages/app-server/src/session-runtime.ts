@@ -4,6 +4,7 @@ import {
   type AttentionActiveContextMatch,
   type AttentionCommit,
   type AttentionCommitChange,
+  type AttentionCommitHookResult,
   type AttentionCommitMatch,
   type AttentionCommitMeta,
   type AttentionCommitRef,
@@ -16,6 +17,7 @@ import {
   type AttentionHookRecord,
   type AttentionProtocolMode,
   type AttentionSystemSnapshot,
+  normalizeAttentionContextTemplate,
 } from "@agenter/attention-system";
 import {
   MessageControlPlane,
@@ -37,6 +39,8 @@ import {
 } from "@agenter/message-system";
 import {
   SessionDb,
+  type SessionAttentionDispatchRecord,
+  type SessionAttentionReceiptRecord,
   type SessionAiCallRecord,
   type SessionAssetRecord,
   type SessionCollectedInput,
@@ -67,6 +71,13 @@ import {
   type TerminalControlPlaneEntry,
   type TerminalProcessProfile,
 } from "@agenter/terminal-system";
+import type {
+  AttentionCommitRefRecord as DeliveryCommitRefRecord,
+  AttentionDeliveryProjection,
+  AttentionDispatchRecord,
+  AttentionReceiptProviderEventKind,
+  AttentionReceiptRecord,
+} from "@agenter/loopbus-kernel";
 import { toolDefinition } from "@tanstack/ai";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
@@ -124,7 +135,9 @@ import type { LoopBusKernelSnapshot, LoopBusKernelState } from "./loopbus-kernel
 import { createInitialLoopKernelState, createLoopStatePatch, hashLoopState } from "./loopbus-kernel";
 import {
   LoopBusPluginRuntime,
+  type AttentionDispatchedInput,
   type AttentionDraft,
+  type AttentionReceiptInput,
   type LoopBusPlugin,
   type LoopMessageSourceRef,
   type LoopSourceReadRequest,
@@ -141,7 +154,7 @@ import {
 } from "./message-follow-up-reminders";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
-import { ModelClient, type AssistantStreamUpdate } from "./model-client";
+import { ModelClient, type AssistantDeliveryEvent, type AssistantStreamUpdate } from "./model-client";
 import { FilePromptStore } from "./prompt-store";
 import { buildProviderSnapshot, normalizeTokenUsage, readProviderSnapshotFromRequestBody } from "./provider-snapshot";
 import { createRuntimeShellCommands } from "./runtime-cli";
@@ -152,16 +165,30 @@ import type {
   RuntimeTerminalActivityRecord,
 } from "./runtime-history-records";
 import { startRuntimeLocalApi, type RuntimeLocalApiHandle } from "./runtime-local-api";
-import { buildRuntimeTerminalEnvironment } from "./runtime-shell-bin";
-import { RuntimeSkillSystem } from "./runtime-skill-system";
 import {
-  RUNTIME_API_BASE_URL_ENV,
-  RUNTIME_HOME_DIR_ENV,
-  RUNTIME_PRINCIPAL_ID_ENV,
-  RUNTIME_PRIVATE_KEY_ENV,
-  RUNTIME_ROOT_WORKSPACE_ENV,
-  listRuntimeSkillMountRoots,
-} from "./runtime-skills";
+  buildPublicWorkspaceShellEnvironment,
+  buildRootWorkspaceShellEnvironment,
+  buildSharedTerminalEnvironment,
+} from "./runtime-shell-bin";
+import {
+  RUNTIME_SKILL_CONTEXT_ID,
+  RUNTIME_SKILL_CONTEXT_TEMPLATE,
+  RUNTIME_SKILL_DEFAULT_TARGET,
+  RUNTIME_SKILL_SNAPSHOT_TARGET,
+  RuntimeSkillSystem,
+} from "./runtime-skill-system";
+import { listRuntimeSkillMountRoots } from "./runtime-skills";
+import { RuntimeKernelHost } from "./runtime-kernel-host";
+import { RuntimeMessageKernelAdapter } from "./runtime-system-kernel-adapters/message-adapter";
+import {
+  RuntimeSkillKernelAdapter,
+  type RuntimeSkillKernelApplyResult,
+} from "./runtime-system-kernel-adapters/skill-adapter";
+import { RuntimeTerminalKernelAdapter } from "./runtime-system-kernel-adapters/terminal-adapter";
+import type {
+  RuntimeIngressCommitResult,
+  RuntimeSystemIngressEnvelope,
+} from "./runtime-system-kernel-adapters/types";
 import {
   projectRuntimeAttentionActiveMatch,
   projectRuntimeMessageChannel,
@@ -212,7 +239,8 @@ import {
   type SettingsLayersResult,
 } from "./workspace-settings";
 import {
-  executeRootWorkspaceBash,
+  RootWorkspaceShellWorld,
+  createRootWorkspaceShellWorld,
   executeWorkspaceBash,
   listWorkspaceHiddenPrivatePaths,
   type RootWorkspaceBashExecResult,
@@ -983,13 +1011,6 @@ const IGNORE_WAIT = Symbol("ignore-wait");
 const DEFAULT_MAX_FOCUSED_ROOM_COUNT = 3;
 const DEFAULT_MAX_BATCH_READ_ROOM_MESSAGE_COUNT = 20;
 
-interface PendingUnreadReadAck {
-  chatId: string;
-  accessToken: string;
-  targetMessageId: number;
-  selectedMessageIds: number[];
-}
-
 const MESSAGE_SRC_NAMESPACE = MESSAGE_ATTENTION_NAMESPACE;
 const TERMINAL_SRC_NAMESPACE = TERMINAL_ATTENTION_NAMESPACE;
 const TASK_SRC_NAMESPACE = TASK_ATTENTION_NAMESPACE;
@@ -1223,11 +1244,32 @@ const cloneAttentionHookRecord = (record: AttentionHookRecord): AttentionHookRec
   output: record.output ? { ...record.output } : undefined,
 });
 
+const cloneAttentionDeliveryProjection = (projection: AttentionDeliveryProjection): AttentionDeliveryProjection => ({
+  ...projection,
+  latestError: projection.latestError ? { ...projection.latestError } : null,
+});
+
+const cloneAttentionDispatchRecord = (dispatch: AttentionDispatchRecord): AttentionDispatchRecord => ({
+  ...dispatch,
+});
+
+const cloneAttentionReceiptRecord = (receipt: AttentionReceiptRecord): AttentionReceiptRecord => ({
+  ...receipt,
+  usage: receipt.usage ? { ...receipt.usage } : undefined,
+  meta: receipt.meta ? structuredClone(receipt.meta) : undefined,
+});
+
 export interface SessionRuntimeAttentionState {
   snapshot: AttentionSystemSnapshot;
   active: AttentionActiveContextMatch[];
   cycleFrames: AttentionCycleFrame[];
   hooks: AttentionHookRecord[];
+}
+
+export interface SessionRuntimeAttentionDeliveryState {
+  projections: AttentionDeliveryProjection[];
+  dispatches: AttentionDispatchRecord[];
+  receipts: AttentionReceiptRecord[];
 }
 
 export interface SessionRuntimeAttentionApiSurface {
@@ -1280,6 +1322,18 @@ export interface RuntimeEventMap {
   heartbeatPart: { entry: SessionMessageRecord };
   modelCall: { entry: SessionModelCallRecord };
   modelCallDelta: { entry: SessionModelCallDeltaRecord };
+  attentionDispatch: {
+    reason: "created" | "bound";
+    commitRef: DeliveryCommitRefRecord;
+    dispatch: AttentionDispatchRecord;
+    projection: AttentionDeliveryProjection | null;
+  };
+  attentionReceipt: {
+    commitRef: DeliveryCommitRefRecord;
+    dispatch: AttentionDispatchRecord;
+    receipt: AttentionReceiptRecord;
+    projection: AttentionDeliveryProjection | null;
+  };
   apiCall: { entry: SessionDbApiCallRecord };
   apiRecording: { enabled: boolean; refCount: number };
   cycleUpdated: { cycle: ChatCycle | null };
@@ -1321,6 +1375,7 @@ export interface SessionRuntimeSnapshot {
   tasks: TaskView[];
   schedulerState: LoopBusKernelState | null;
   attention?: SessionRuntimeAttentionState;
+  attentionDelivery: SessionRuntimeAttentionDeliveryState;
   schedulerSignals: Record<LoopInputKind, { version: number; timestamp: number | null }>;
   apiCallRecording: {
     enabled: boolean;
@@ -1405,10 +1460,8 @@ export interface SessionRuntimeModelDebug {
 
 export class SessionRuntime {
   private readonly listeners: Array<(event: RuntimeEvent) => void> = [];
-  private readonly dirtyQueue = new Set<string>();
   private readonly terminalSnapshots: Record<string, ManagedTerminalSnapshot> = {};
   private readonly terminalReads: Record<string, ControlPlaneTerminalReadResult> = {};
-  private readonly terminalDirtyState: Record<string, boolean> = {};
   private readonly terminalLatestSeq: Record<string, number> = {};
   private readonly terminalViewFingerprint: Record<string, string> = {};
   private readonly terminalSemanticFingerprint: Record<string, string> = {};
@@ -1437,12 +1490,16 @@ export class SessionRuntime {
   private readonly terminalActorId: TerminalActorId;
   private readonly primaryRoomId: string;
   private readonly inboundMessageQueue: LoopBusInput[] = [];
-  private readonly pendingUnreadMessageIds = new Set<number>();
+  private readonly runtimeKernelHost: RuntimeKernelHost;
+  private readonly messageKernelAdapter: RuntimeMessageKernelAdapter;
+  private readonly terminalKernelAdapter: RuntimeTerminalKernelAdapter;
+  private readonly skillKernelAdapter: RuntimeSkillKernelAdapter;
   private readonly messageSystemCleanup: Array<() => void> = [];
   private readonly terminalSystemCleanup: Array<() => void> = [];
   private agent: AgenterAI | null = null;
   private runtimeLocalApi: RuntimeLocalApiHandle | null = null;
   private runtimeSkillSystem: RuntimeSkillSystem | null = null;
+  private rootWorkspaceShellWorld: RootWorkspaceShellWorld | null = null;
   private readonly terminalControlPlane: TerminalControlPlane;
   private terminals = new Map<string, ManagedTerminal>();
   private runtime: AgentRuntime | null = null;
@@ -1460,6 +1517,7 @@ export class SessionRuntime {
   private loopKernelSnapshot: LoopBusKernelSnapshot | null = null;
   private activeCycleId: number | null = null;
   private activeModelCallId: number | null = null;
+  private activeAgentCallId: string | null = null;
   private activeModelResponseDraft: {
     assistant?: {
       thinking?: string;
@@ -1495,6 +1553,7 @@ export class SessionRuntime {
   private readonly terminalActivityByTerminalId = new Map<string, SessionDbTerminalActivityRecord[]>();
   private readonly cycleReplyChatIds = new Map<number, string>();
   private readonly deliveredRuntimeDispatchChatIds = new Map<number, Set<string>>();
+  private readonly deliveryDispatchIdsByAgentCallAttempt = new Map<string, Map<number, string[]>>();
   private pendingCompactRequest: PendingCompactRequest | null = null;
   private abortingActiveCycle = false;
   private loopKernelVersion = 0;
@@ -1538,9 +1597,6 @@ export class SessionRuntime {
   private readonly attentionContainment = new Map<string, AttentionContainmentEntry>();
   private lastAttentionProgressAt: number | null = null;
   private loopPluginRuntime: LoopBusPluginRuntime | null = null;
-  private stagedUnreadReadAcks: PendingUnreadReadAck[] = [];
-  private activeCycleUnreadReadAcks: PendingUnreadReadAck[] = [];
-  private activeCycleUnreadReadCommitted = false;
 
   constructor(private readonly options: SessionRuntimeOptions) {
     this.messageActorId = options.messageActorId ?? resolveSessionRoomActorId(options.sessionId);
@@ -1562,6 +1618,93 @@ export class SessionRuntime {
       });
       this.ownsMessageSystem = true;
     }
+    this.runtimeKernelHost = new RuntimeKernelHost({
+      commitIngress: async (envelope, input) =>
+        await this.commitRuntimeSystemIngress(envelope, {
+          notifyLoop: input.notifyLoop,
+        }),
+      getAttentionCommit: (input) => this.attentionSystem.getContext(input.contextId)?.getCommit(input.commitId) ?? null,
+      getAttentionContextState: (contextId) => this.attentionSystem.getContext(contextId)?.getState() ?? null,
+      notifyAttentionDispatched: async (input) => await this.notifyAttentionDispatchedHooks(input),
+      notifyAttentionReceipt: async (input) => await this.notifyAttentionReceiptHooks(input),
+      recordAttentionHook: (contextId, commitId, result) => {
+        this.recordAttentionHook(contextId, commitId, result);
+      },
+      recordDispatch: (dispatch) => {
+        this.recordAttentionDispatch(dispatch);
+      },
+      recordReceipt: (receipt) => {
+        this.recordAttentionReceipt(receipt);
+      },
+      publishAttentionDispatch: ({ reason, commitRef, dispatch, projection }) => {
+        this.publishAttentionDispatch({ reason, commitRef, dispatch, projection });
+      },
+      publishAttentionReceipt: ({ commitRef, dispatch, receipt, projection }) => {
+        this.publishAttentionReceipt({ commitRef, dispatch, receipt, projection });
+      },
+      signalIngress: () => {
+        this.notifyInput("attention");
+      },
+      onAdapterError: ({ adapterName, phase, error }) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.emit("error", {
+          message: `${adapterName} adapter ${phase} failed: ${message}`,
+        });
+      },
+    });
+    this.messageKernelAdapter = new RuntimeMessageKernelAdapter({
+      messageSystem: this.messageSystem,
+      messageActorId: this.messageActorId,
+      isLoopPaused: () => this.isLoopPaused(),
+      getMaxFocusedRoomCount: () => this.getMaxFocusedRoomCount(),
+      getMaxBatchReadRoomMessageCount: () => this.getMaxBatchReadRoomMessageCount(),
+      getActorRoom: (chatId, input) => this.getActorRoom(chatId, input),
+      isUnreadInboundMessage: (message) => this.isUnreadInboundMessage(message),
+      buildMessageIngressEnvelope: ({ message, channel }) => this.buildMessageSystemIngressEnvelope(message, channel),
+      onCompactMessage: (message) => {
+        this.inboundMessageQueue.push(this.toLoopInputFromMessage(message));
+      },
+      queueCompactCycle: (trigger) => {
+        this.queueCompactCycle(trigger);
+      },
+      onError: (message) => {
+        this.emit("error", { message });
+      },
+    });
+    this.terminalKernelAdapter = new RuntimeTerminalKernelAdapter({
+      isLoopPaused: () => this.isLoopPaused(),
+      listFocusedTerminalIds: () => this.focusedTerminalIds,
+      isTerminalRunning: (terminalId) => this.terminals.get(terminalId)?.isRunning() ?? false,
+      getTerminalStatus: (terminalId) => this.terminalStatusById.get(terminalId)?.status ?? null,
+      getTerminalContextId: (terminalId) =>
+        terminalId === "control-plane"
+          ? this.getTerminalControlPlaneAttentionContextId()
+          : this.getTerminalAttentionContextId(terminalId),
+      readTerminalIngress: async (terminalId) => await this.buildTerminalSystemIngressEnvelope(terminalId),
+      buildLifecycleIngressEnvelope: (input) =>
+        this.buildLifecycleIngressEnvelope({
+          system: "terminal",
+          src: formatTerminalSourceSrc({ terminalId: input.terminalId }),
+          contextId: input.contextId,
+          event: input.event,
+          summary: input.summary,
+          payload: input.payload,
+          score: input.score,
+          ingressType: input.ingressType,
+        }),
+      onTerminalActivitySignal: () => {
+        this.notifyInput("terminal");
+      },
+    });
+    this.skillKernelAdapter = new RuntimeSkillKernelAdapter({
+      ensureAttentionContext: () => {
+        this.ensureRuntimeSkillAttentionContext();
+      },
+      getBootstrapContext: () => this.getAttentionContextMatch(RUNTIME_SKILL_CONTEXT_ID),
+    });
+    this.runtimeKernelHost.mountAdapter(this.messageKernelAdapter);
+    this.runtimeKernelHost.mountAdapter(this.terminalKernelAdapter);
+    this.runtimeKernelHost.mountAdapter(this.skillKernelAdapter);
     this.bindMessageSystem();
   }
 
@@ -1601,9 +1744,7 @@ export class SessionRuntime {
       return this.runtimeSkillSystem;
     }
     this.runtimeSkillSystem = new RuntimeSkillSystem({
-      attentionSystem: this.attentionSystem,
       owner: this.getAvatarName(),
-      focusState: "background",
       homeDir: this.getHomeDir(),
       rootWorkspacePath: this.getRootWorkspacePath(),
       principalId: this.options.avatarPrincipalId,
@@ -1621,25 +1762,55 @@ export class SessionRuntime {
     return this.runtimeSkillSystem;
   }
 
+  private ensureRuntimeSkillAttentionContext(): void {
+    const existing = this.attentionSystem.getContext(RUNTIME_SKILL_CONTEXT_ID);
+    const normalizedTemplate = normalizeAttentionContextTemplate(RUNTIME_SKILL_CONTEXT_TEMPLATE);
+    if (existing) {
+      const state = existing.getState();
+      if (normalizeAttentionContextTemplate(state.template) === normalizedTemplate) {
+        return;
+      }
+      const preservedDefault = state.slots?.[RUNTIME_SKILL_DEFAULT_TARGET] ?? state.content ?? "";
+      this.attentionSystem.removeContext(RUNTIME_SKILL_CONTEXT_ID);
+      this.attentionSystem.createContext({
+        contextId: RUNTIME_SKILL_CONTEXT_ID,
+        owner: this.getAvatarName(),
+        focusState: "background",
+        template: RUNTIME_SKILL_CONTEXT_TEMPLATE,
+        slots: {
+          [RUNTIME_SKILL_DEFAULT_TARGET]: preservedDefault,
+          [RUNTIME_SKILL_SNAPSHOT_TARGET]: "",
+        },
+      });
+      return;
+    }
+    this.attentionSystem.createContext({
+      contextId: RUNTIME_SKILL_CONTEXT_ID,
+      owner: this.getAvatarName(),
+      focusState: "background",
+      template: RUNTIME_SKILL_CONTEXT_TEMPLATE,
+      slots: {
+        [RUNTIME_SKILL_DEFAULT_TARGET]: "",
+        [RUNTIME_SKILL_SNAPSHOT_TARGET]: "",
+      },
+    });
+  }
+
+  private getAttentionContextMatch(contextId: string): AttentionActiveContextMatch | null {
+    const context = this.attentionSystem.getContext(contextId);
+    if (!context) {
+      return null;
+    }
+    return {
+      contextId,
+      context: context.getState(),
+      recentCommits: context.listRecentCommits(),
+    };
+  }
+
   private getRootWorkspaceMounts(): RootWorkspaceMountInput[] {
     const rootWorkspacePath = resolve(this.getRootWorkspacePath());
     const avatar = this.getAvatarName();
-    const skillMounts = this.getRootWorkspaceSkillRoots()
-      .map((path) => resolve(path))
-      .filter((path) => {
-        if (path === rootWorkspacePath) {
-          return false;
-        }
-        const rel = relative(rootWorkspacePath, path);
-        return rel.startsWith("..") || rel === "";
-      })
-      .map(
-        (path) =>
-          ({
-            path,
-            mode: "ro" as const,
-          }) satisfies RootWorkspaceMountInput,
-      );
     const workspaceMounts = this.listMountedWorkspaceAuthorities().map(
       (authority) =>
         ({
@@ -1652,7 +1823,58 @@ export class SessionRuntime {
           }),
         }) satisfies RootWorkspaceMountInput,
     );
+    const authoritativeRoots = new Set<string>([
+      rootWorkspacePath,
+      ...workspaceMounts.map((mount) => resolve(mount.path)),
+    ]);
+    // Skill roots remain separate readonly mounts only when they add authority
+    // outside the fixed root-workspace or already-mounted public workspaces.
+    // This avoids nested mount conflicts and keeps the durable world topology
+    // stable across skill refreshes.
+    const skillMounts = this.getRootWorkspaceSkillRoots()
+      .map((path) => resolve(path))
+      .filter((path) => {
+        for (const authorityPath of authoritativeRoots) {
+          const rel = relative(authorityPath, path);
+          if (rel === "" || (!rel.startsWith("..") && rel !== ".")) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .map(
+        (path) =>
+          ({
+            path,
+            mode: "ro" as const,
+          }) satisfies RootWorkspaceMountInput,
+      );
     return [...workspaceMounts, ...skillMounts];
+  }
+
+  /**
+   * Root-workspace is a durable shell world owned by the runtime. Public
+   * workspaces and shared terminals deliberately keep separate collaboration
+   * semantics instead of inheriting this root-exclusive env/CLI profile.
+   */
+  private getOrCreateRootWorkspaceShellWorld(): RootWorkspaceShellWorld {
+    if (this.rootWorkspaceShellWorld) {
+      return this.rootWorkspaceShellWorld;
+    }
+    if (!this.runtimeLocalApi || !this.options.avatarPrivateKey) {
+      throw new Error("runtime local api unavailable");
+    }
+    this.rootWorkspaceShellWorld = createRootWorkspaceShellWorld({
+      rootWorkspacePath: this.getRootWorkspacePath(),
+      customCommands: createRuntimeShellCommands({
+        baseUrl: this.runtimeLocalApi.baseUrl,
+        privateKey: this.options.avatarPrivateKey,
+        homeDir: this.getHomeDir(),
+        rootWorkspacePath: this.getRootWorkspacePath(),
+        principalId: this.options.avatarPrincipalId,
+      }),
+    });
+    return this.rootWorkspaceShellWorld;
   }
 
   private createMessageSourceRef(input: { chatId: string; messageId: number }): LoopMessageSourceRef {
@@ -1782,42 +2004,13 @@ export class SessionRuntime {
   private recordTerminalFocusTransitions(input: {
     before: readonly string[];
     after: readonly string[];
-    op: TerminalFocusOp;
+    op: string;
   }): void {
-    const beforeSet = new Set(input.before);
-    const afterSet = new Set(input.after);
-    for (const terminalId of input.after) {
-      if (beforeSet.has(terminalId)) {
-        continue;
-      }
-      this.enqueueTerminalLifecycleAttentionCommit({
-        terminalId,
-        contextId: this.getTerminalAttentionContextId(terminalId),
-        event: "terminal_focus",
-        summary: `Focused terminal ${terminalId}`,
-        payload: {
-          op: input.op,
-          focused: true,
-          focusedTerminalIds: [...input.after],
-        },
-      });
-    }
-    for (const terminalId of input.before) {
-      if (afterSet.has(terminalId)) {
-        continue;
-      }
-      this.enqueueTerminalLifecycleAttentionCommit({
-        terminalId,
-        contextId: this.getTerminalAttentionContextId(terminalId),
-        event: "terminal_unfocus",
-        summary: `Unfocused terminal ${terminalId}`,
-        payload: {
-          op: input.op,
-          focused: false,
-          focusedTerminalIds: [...input.after],
-        },
-      });
-    }
+    this.terminalKernelAdapter.recordFocusTransitions({
+      before: input.before,
+      after: input.after,
+      op: input.op,
+    });
   }
 
   private async updateTerminalControlPlaneConfig(
@@ -2523,11 +2716,16 @@ export class SessionRuntime {
     }).items.at(-1);
   }
 
-  private buildMessageFollowUpReminderDraft(reminder: MessageFollowUpReminder): AttentionDraft | null {
+  private buildMessageFollowUpReminderIngress(reminder: MessageFollowUpReminder): RuntimeSystemIngressEnvelope | null {
     const anchorMessage = this.getLatestVisibleMessageForRoom(reminder.chatId);
     if (!anchorMessage || anchorMessage.messageId !== reminder.anchorMessageId) {
       return null;
     }
+    const channel =
+      this.getActorRoom(reminder.chatId, {
+        includeArchived: true,
+        touchPresence: false,
+      }) ?? this.messageSystem.getChannel(reminder.chatId, { includeArchived: true });
     const presentation = buildMessageFollowUpReminderPresentation({
       chatId: reminder.chatId,
       anchorMessageId: reminder.anchorMessageId,
@@ -2535,32 +2733,24 @@ export class SessionRuntime {
       messageContent: anchorMessage.content,
     });
     return {
-      sourceRef: this.createMessageSourceRef({
+      system: "message",
+      sourceId: formatMessageAttentionSrc({
         chatId: reminder.chatId,
         messageId: reminder.anchorMessageId,
       }),
-      content: JSON.stringify({
-        kind: "message-follow-up-reminder",
+      contextKey: channel?.contextId ?? this.getDefaultAttentionContextId(reminder.chatId),
+      kind: "follow_up_reminder",
+      summary: presentation.title,
+      content: presentation.detailValue,
+      format: presentation.detailFormat,
+      score: 100,
+      tags: ["message", "follow_up_reminder"],
+      createdAt: reminder.dueAt,
+      author: this.getAvatarName(),
+      meta: {
         chatId: reminder.chatId,
         anchorMessageId: reminder.anchorMessageId,
         dueAt: reminder.dueAt,
-      }),
-      from: this.getAvatarName(),
-      score: 100,
-      provenance: {
-        author: this.getAvatarName(),
-        source: "message",
-        src: formatMessageAttentionSrc({
-          chatId: reminder.chatId,
-          messageId: reminder.anchorMessageId,
-        }),
-        tags: ["message", "follow_up_reminder"],
-      },
-      presentation: {
-        summary: presentation.title,
-        body: presentation.detailValue,
-        bodyFormat: presentation.detailFormat,
-        changeType: "update",
       },
     };
   }
@@ -2573,11 +2763,15 @@ export class SessionRuntime {
     if (due.fired.length === 0) {
       return;
     }
-    const drafts = due.fired.flatMap((reminder) => {
-      const draft = this.buildMessageFollowUpReminderDraft(reminder);
-      return draft ? [draft] : [];
-    });
-    await this.commitAttentionDrafts(drafts);
+    for (const reminder of due.fired) {
+      const envelope = this.buildMessageFollowUpReminderIngress(reminder);
+      if (!envelope) {
+        continue;
+      }
+      await this.runtimeKernelHost.commitIngress(envelope, {
+        notifyLoop: false,
+      });
+    }
   }
 
   private buildRuntimeMessageSendResult(input: {
@@ -2863,10 +3057,7 @@ export class SessionRuntime {
     });
   }
 
-  async writeRuntimeTerminal(input: {
-    terminalId: string;
-    text: string;
-  }): Promise<{ ok: boolean; message: string }> {
+  async writeRuntimeTerminal(input: { terminalId: string; text: string }): Promise<{ ok: boolean; message: string }> {
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(input.terminalId)) {
       return { ok: false, message: `unknown terminal: ${input.terminalId}` };
@@ -2903,10 +3094,7 @@ export class SessionRuntime {
     }
   }
 
-  async inputRuntimeTerminal(input: {
-    terminalId: string;
-    text: string;
-  }): Promise<{ ok: boolean; message: string }> {
+  async inputRuntimeTerminal(input: { terminalId: string; text: string }): Promise<{ ok: boolean; message: string }> {
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(input.terminalId)) {
       return { ok: false, message: `unknown terminal: ${input.terminalId}` };
@@ -2968,7 +3156,6 @@ export class SessionRuntime {
         if (this.config.terminals[targetTerminalId]?.gitLog) {
           await controlPlane.markDirty(targetTerminalId);
         }
-        this.terminalDirtyState[targetTerminalId] = false;
         createdTerminalId = targetTerminalId;
       } else {
         const cwdResolution = await this.resolveRuntimeTerminalCwd({ cwd: input.cwd });
@@ -2982,12 +3169,7 @@ export class SessionRuntime {
           cwd: cwdResolution.cwd,
           profile: {
             ...(input.profile ?? {}),
-            env: buildRuntimeTerminalEnvironment({
-              rootWorkspacePath: this.getRootWorkspacePath(),
-              homeDir: this.getHomeDir(),
-              apiBaseUrl: this.runtimeLocalApi.baseUrl,
-              privateKey: this.options.avatarPrivateKey,
-              principalId: this.options.avatarPrincipalId,
+            env: buildSharedTerminalEnvironment({
               env: input.profile?.env,
             }),
           },
@@ -2996,7 +3178,6 @@ export class SessionRuntime {
         if (managed) {
           this.attachRuntimeTerminal(created.terminalId, managed);
         }
-        this.terminalDirtyState[created.terminalId] = false;
         createdTerminalId = created.terminalId;
       }
 
@@ -3088,11 +3269,10 @@ export class SessionRuntime {
       return result;
     }
     this.terminals.delete(terminalId);
-    delete this.terminalDirtyState[terminalId];
     delete this.terminalLatestSeq[terminalId];
     delete this.terminalSnapshots[terminalId];
     delete this.terminalReads[terminalId];
-    this.dirtyQueue.delete(terminalId);
+    this.terminalKernelAdapter.markTerminalConsumed(terminalId);
     if (this.config?.terminals[terminalId]) {
       delete this.config.terminals[terminalId];
       this.config.bootTerminals = this.config.bootTerminals.filter((entry) => entry.terminalId !== terminalId);
@@ -3146,211 +3326,62 @@ export class SessionRuntime {
   }
 
   private hasUnreadRoomWork(): boolean {
-    return this.messageSystem.getActorUnreadState(this.messageActorId).unreadTotal > this.pendingUnreadMessageIds.size;
+    return this.messageKernelAdapter.hasUnreadWork();
   }
 
-  private stageUnreadReadAck(ack: PendingUnreadReadAck): void {
-    const existing = this.stagedUnreadReadAcks.find((candidate) => candidate.chatId === ack.chatId);
-    if (!existing) {
-      this.stagedUnreadReadAcks.push({
-        ...ack,
-        selectedMessageIds: [...ack.selectedMessageIds],
-      });
-      return;
-    }
-    existing.accessToken = ack.accessToken;
-    existing.targetMessageId = ack.targetMessageId;
-    existing.selectedMessageIds = [...new Set([...existing.selectedMessageIds, ...ack.selectedMessageIds])];
+  private async collectUnreadRoomIngress(): Promise<number> {
+    return await this.runtimeKernelHost.drainIngress();
   }
 
-  private releaseUnreadReadAcks(acks: readonly PendingUnreadReadAck[]): void {
-    for (const ack of acks) {
-      for (const messageId of ack.selectedMessageIds) {
-        this.pendingUnreadMessageIds.delete(messageId);
-      }
-    }
-  }
-
-  private clearActiveCycleUnreadReadAcks(): void {
-    if (!this.activeCycleUnreadReadCommitted) {
-      this.releaseUnreadReadAcks(this.activeCycleUnreadReadAcks);
-    }
-    this.activeCycleUnreadReadAcks = [];
-    this.activeCycleUnreadReadCommitted = false;
-  }
-
-  private consumeStagedUnreadReadAcks(): PendingUnreadReadAck[] {
-    const staged = this.stagedUnreadReadAcks.map((ack) => ({
-      ...ack,
-      selectedMessageIds: [...ack.selectedMessageIds],
-    }));
-    this.stagedUnreadReadAcks = [];
-    return staged;
-  }
-
-  private buildUnreadReadAck(
-    channel: Pick<MessageControlPlaneEntry, "chatId" | "accessToken">,
-    messages: readonly MessageRecord[],
-    targetMessageId = messages[messages.length - 1]?.messageId,
-  ): PendingUnreadReadAck | null {
-    if (!channel.accessToken || !targetMessageId || messages.length === 0) {
+  private buildMessageSystemIngressEnvelope(
+    message: MessageRecord,
+    channel: MessageControlPlaneEntry & { accessToken: string },
+  ): RuntimeSystemIngressEnvelope | null {
+    const trimmedContent = message.content.trim();
+    if (trimmedContent.length === 0 || trimmedContent === "/compact") {
       return null;
     }
+    const existingMeta =
+      message.metadata && typeof message.metadata === "object"
+        ? { ...(message.metadata as Record<string, string | number | boolean | null>) }
+        : {};
+    const socialMeta = this.buildMessageLoopMeta(message, channel, existingMeta);
+    const attachments =
+      message.attachments?.map((attachment) => ({
+        assetId: attachment.assetId,
+        kind: attachment.kind,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        url: attachment.url,
+      })) ?? [];
+    const envelopeMeta = {
+      ...socialMeta,
+      chatId: message.chatId,
+      chatTitle: channel.title,
+      chatKind: channel.kind,
+      chatContextId: channel.contextId ?? this.getDefaultAttentionContextId(channel.chatId),
+      chatFocused: channel.focused,
+      messageId: message.messageId,
+      visibleAt: message.visibleAt ?? message.createdAt,
+    } satisfies Record<string, unknown>;
     return {
-      chatId: channel.chatId,
-      accessToken: channel.accessToken,
-      targetMessageId,
-      selectedMessageIds: messages.map((message) => message.messageId),
-    };
-  }
-
-  private reserveUnreadMessages(
-    channel: Pick<MessageControlPlaneEntry, "chatId" | "accessToken">,
-    messages: readonly MessageRecord[],
-    targetMessageId = messages[messages.length - 1]?.messageId,
-  ): void {
-    const ack = this.buildUnreadReadAck(channel, messages, targetMessageId);
-    if (!ack) {
-      return;
-    }
-    for (const messageId of ack.selectedMessageIds) {
-      this.pendingUnreadMessageIds.add(messageId);
-    }
-    this.stageUnreadReadAck(ack);
-  }
-
-  private invalidatePluginForMessage(message: MessageRecord): void {
-    if (!this.loopPluginRuntime) {
-      return;
-    }
-    this.loopPluginRuntime.invalidate(
-      this.createMessageSourceRef({
+      system: "message",
+      sourceId: formatMessageSourceSrc({
         chatId: message.chatId,
         messageId: message.messageId,
       }),
-    );
-  }
-
-  private collectUnreadMessagesForRoom(chatId: string, limit: number): MessageRecord[] {
-    const selected: MessageRecord[] = [];
-    let before: ReverseTimeCursor | null = null;
-    do {
-      const page = this.messageSystem.queryMessages({
-        chatId,
-        before,
-        limit: Math.max(limit * 3, 64),
-      });
-      selected.push(
-        ...page.items.filter(
-          (message) => this.isUnreadInboundMessage(message) && !this.pendingUnreadMessageIds.has(message.messageId),
-        ),
-      );
-      before = page.nextBefore;
-      if (selected.length >= limit) {
-        break;
-      }
-    } while (before);
-    return selected.slice(0, limit).reverse();
-  }
-
-  private collectUnreadRoomIngress(): void {
-    if (this.isLoopPaused()) {
-      return;
-    }
-    const roomLimit = this.getMaxFocusedRoomCount();
-    const messageLimit = this.getMaxBatchReadRoomMessageCount();
-    if (roomLimit <= 0 || messageLimit <= 0) {
-      return;
-    }
-
-    const roomSelections = this.messageSystem
-      .listUnreadRoomSummaries(this.messageActorId)
-      .map((summary) => ({
-        summary,
-        channel: this.getActorRoom(summary.chatId, {
-          includeArchived: true,
-          touchPresence: false,
-        }),
-      }))
-      .filter(
-        (
-          item,
-        ): item is {
-          summary: ReturnType<MessageControlPlane["listUnreadRoomSummaries"]>[number];
-          channel: MessageControlPlaneEntry & { accessToken: string };
-        } => item.channel?.accessToken !== undefined,
-      )
-      .sort((left, right) => {
-        if (left.channel.focused !== right.channel.focused) {
-          return left.channel.focused ? -1 : 1;
-        }
-        if ((left.summary.latestUnreadAt ?? 0) !== (right.summary.latestUnreadAt ?? 0)) {
-          return (right.summary.latestUnreadAt ?? 0) - (left.summary.latestUnreadAt ?? 0);
-        }
-        if (left.summary.unreadCount !== right.summary.unreadCount) {
-          return right.summary.unreadCount - left.summary.unreadCount;
-        }
-        return left.summary.chatId.localeCompare(right.summary.chatId);
-      })
-      .slice(0, roomLimit)
-      .map((item) => ({
-        channel: item.channel,
-        messages: this.collectUnreadMessagesForRoom(item.channel.chatId, messageLimit),
-      }))
-      .filter((item) => item.messages.length > 0);
-
-    if (roomSelections.length === 0) {
-      return;
-    }
-
-    const compactSelections = roomSelections
-      .map((item) => ({
-        channel: item.channel,
-        compactMessages: item.messages.filter((message) => message.content.trim() === "/compact"),
-      }))
-      .filter((item) => item.compactMessages.length > 0);
-    if (compactSelections.length > 0) {
-      for (const selection of compactSelections) {
-        const targetMessageId = selection.compactMessages[selection.compactMessages.length - 1]?.messageId;
-        this.reserveUnreadMessages(selection.channel, selection.compactMessages, targetMessageId);
-      }
-      this.queueCompactCycle("manual");
-      return;
-    }
-
-    for (const selection of roomSelections) {
-      this.reserveUnreadMessages(selection.channel, selection.messages);
-      for (const message of selection.messages) {
-        if (this.loopPluginRuntime) {
-          this.invalidatePluginForMessage(message);
-          continue;
-        }
-        this.inboundMessageQueue.push(this.toLoopInputFromMessage(message));
-      }
-    }
-  }
-
-  private commitActiveCycleUnreadReadAcks(): void {
-    if (this.activeCycleUnreadReadCommitted || this.activeCycleUnreadReadAcks.length === 0) {
-      return;
-    }
-    const acks = [...this.activeCycleUnreadReadAcks];
-    this.activeCycleUnreadReadCommitted = true;
-    this.releaseUnreadReadAcks(acks);
-    for (const ack of acks) {
-      try {
-        this.messageSystem.markChannelReadAuthorized({
-          chatId: ack.chatId,
-          accessToken: ack.accessToken,
-          messageId: ack.targetMessageId,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.emit("error", {
-          message: `message unread ack failed (${ack.chatId}): ${message}`,
-        });
-      }
-    }
+      contextKey: channel.contextId ?? this.getDefaultAttentionContextId(channel.chatId),
+      kind: "room_ingress",
+      summary: truncateAttentionTitle(trimmedContent),
+      content: this.buildMessageModelEnvelope(message.content, envelopeMeta, attachments),
+      format: "text/markdown",
+      score: 100,
+      tags: ["message", "room_ingress"],
+      createdAt: message.updatedAt ?? message.createdAt,
+      author: message.from,
+      meta: envelopeMeta,
+    };
   }
 
   private toLoopInputFromMessage(message: MessageRecord): LoopBusInput {
@@ -3458,8 +3489,14 @@ export class SessionRuntime {
         if (next.join("\u0000") === this.focusedTerminalIds.join("\u0000")) {
           return;
         }
+        const previous = [...this.focusedTerminalIds];
         this.focusedTerminalIds = next;
         this.emitFocusedTerminal();
+        this.recordTerminalFocusTransitions({
+          before: previous,
+          after: next,
+          op: "sync",
+        });
         this.invalidateFocusedTerminals("focus-sync");
       }),
     );
@@ -3486,24 +3523,8 @@ export class SessionRuntime {
             leaseId: request.leaseId ?? null,
           },
         });
-        this.notifyInput("attention");
       }),
     );
-  }
-
-  private createTerminalSourceRef(
-    terminalId: string,
-    reason: string,
-    versionHint?: string | number,
-  ): LoopTerminalSourceRef {
-    return {
-      src: formatTerminalSourceSrc({
-        terminalId,
-        eventId: typeof versionHint === "number" ? versionHint : undefined,
-      }),
-      reason,
-      versionHint,
-    };
   }
 
   private createTerminalActivityRefDetail(
@@ -3735,6 +3756,8 @@ export class SessionRuntime {
       handlers: {
         attentionList: () => this.attentionSystem.listContexts(),
         attentionActive: () => this.attentionSystem.listActiveContexts().map(projectRuntimeAttentionActiveMatch),
+        attentionDeliveryState: () => this.inspectAttentionDeliveryState(),
+        attentionDeliveryTimeline: (input) => this.queryAttentionDeliveryTimeline(input),
         attentionQuery: async (input) => (await this.queryAttention(input)).map(projectAttentionCommitMatchForModel),
         attentionCommit: async (input) => {
           const existing = this.attentionSystem.getContext(input.contextId);
@@ -3824,26 +3847,29 @@ export class SessionRuntime {
         },
         skillUpsert: async (input) => {
           const result = runtimeSkillSystem.upsert(input);
-          await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: true });
+          const applied = await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: true });
           return projectRuntimeSkillMutation({
             ...result,
+            ...applied,
             skill: result.skill,
             created: result.created,
           });
         },
         skillSetConfig: async (input) => {
           const result = runtimeSkillSystem.setConfig(input);
-          await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: true });
+          const applied = await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: true });
           return projectRuntimeSkillMutation({
             ...result,
+            ...applied,
             skill: result.skill,
           });
         },
         skillRemove: async (input) => {
           const result = runtimeSkillSystem.remove(input);
-          await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: true });
+          const applied = await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: true });
           return projectRuntimeSkillMutation({
             ...result,
+            ...applied,
             removed: result.removed,
             removedPath: result.removedPath,
             removedRootKind: result.removedRootKind,
@@ -3851,8 +3877,11 @@ export class SessionRuntime {
         },
         skillRefresh: async () => {
           const result = runtimeSkillSystem.refresh({ forceBootstrap: true, publishReminders: false });
-          await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: false });
-          return projectRuntimeSkillMutation(result);
+          const applied = await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: false });
+          return projectRuntimeSkillMutation({
+            ...result,
+            ...applied,
+          });
         },
       },
     });
@@ -3869,28 +3898,19 @@ export class SessionRuntime {
     if (!this.runtimeLocalApi || !this.options.avatarPrivateKey) {
       throw new Error("runtime local api unavailable");
     }
-    return await executeRootWorkspaceBash({
-      rootWorkspacePath: this.getRootWorkspacePath(),
+    return await this.getOrCreateRootWorkspaceShellWorld().exec({
       command: input.command,
       cwd: input.cwd,
-      env: {
-        HOME: this.getRootWorkspacePath(),
-        [RUNTIME_API_BASE_URL_ENV]: this.runtimeLocalApi.baseUrl,
-        [RUNTIME_HOME_DIR_ENV]: this.getHomeDir(),
-        [RUNTIME_PRINCIPAL_ID_ENV]: this.options.avatarPrincipalId ?? "",
-        [RUNTIME_PRIVATE_KEY_ENV]: this.options.avatarPrivateKey,
-        [RUNTIME_ROOT_WORKSPACE_ENV]: this.getRootWorkspacePath(),
-        ...(input.env ?? {}),
-      },
+      env: buildRootWorkspaceShellEnvironment({
+        rootWorkspacePath: this.getRootWorkspacePath(),
+        homeDir: this.getHomeDir(),
+        apiBaseUrl: this.runtimeLocalApi.baseUrl,
+        privateKey: this.options.avatarPrivateKey,
+        principalId: this.options.avatarPrincipalId,
+        env: input.env,
+      }),
       stdin: input.stdin,
       mounts: [...this.getRootWorkspaceMounts()],
-      customCommands: createRuntimeShellCommands({
-        baseUrl: this.runtimeLocalApi.baseUrl,
-        privateKey: this.options.avatarPrivateKey,
-        homeDir: this.getHomeDir(),
-        rootWorkspacePath: this.getRootWorkspacePath(),
-        principalId: this.options.avatarPrincipalId,
-      }),
     });
   }
 
@@ -3916,7 +3936,9 @@ export class SessionRuntime {
       avatar,
       command: input.command,
       cwd: input.cwd ?? authority.defaultCwd,
-      env: input.env,
+      env: buildPublicWorkspaceShellEnvironment({
+        env: input.env,
+      }),
       stdin: input.stdin,
       grants: authority.grants,
     });
@@ -3949,7 +3971,8 @@ export class SessionRuntime {
 
         const rootBashTool = toolDefinition({
           name: "root_bash",
-          description: "Execute one-shot bash inside the avatar root workspace with runtime-local system CLI access.",
+          description:
+            "Execute one-shot bash inside the fixed root-workspace with avatar-private runtime CLI/env access.",
           inputSchema: z.object({
             command: z.string(),
             cwd: z.string().optional(),
@@ -3984,7 +4007,8 @@ export class SessionRuntime {
 
         const workspaceBashTool = toolDefinition({
           name: "workspace_bash",
-          description: "Execute one-shot bash inside one mounted project workspace selected by workspaceId.",
+          description:
+            "Execute one-shot bash inside one mounted public-workspace selected by workspaceId without root-workspace-exclusive CLI/env.",
           inputSchema: z.object({
             workspaceId: z.number().int().positive(),
             command: z.string(),
@@ -4382,6 +4406,48 @@ export class SessionRuntime {
     ];
   }
 
+  private async buildTerminalSystemIngressEnvelope(terminalId: string): Promise<RuntimeSystemIngressEnvelope | null> {
+    const payload = await this.readTerminalRepresentation(terminalId, {
+      mode: "auto",
+      remark: true,
+    });
+    if ("ok" in payload) {
+      return null;
+    }
+    const content = JSON.stringify(payload);
+    if (!hasMeaningfulTerminalAttentionPayload(content)) {
+      return null;
+    }
+    const presentation = buildTerminalAttentionPresentation(content, terminalId);
+    const sourceId = formatTerminalSourceSrc({ terminalId });
+    return {
+      system: "terminal",
+      sourceId,
+      contextKey: this.getTerminalAttentionContextId(terminalId),
+      kind: payload.kind === "terminal-diff" ? "terminal_diff" : "terminal_snapshot",
+      summary: presentation.title,
+      content: presentation.detailValue,
+      format: presentation.detailFormat,
+      changeType: presentation.detailKind === "patch" ? "diff" : "update",
+      score: PASSIVE_TERMINAL_OBSERVATION_SCORE,
+      tags: ["terminal", payload.kind === "terminal-diff" ? "diff" : "snapshot"],
+      createdAt: Date.now(),
+      author: `terminal:${terminalId}`,
+      supersedeActiveSrc: sourceId,
+      meta: {
+        terminalId,
+        kind: payload.kind,
+        fromHash: "fromHash" in payload ? payload.fromHash ?? null : null,
+        toHash:
+          "toHash" in payload
+            ? payload.toHash ?? null
+            : "seq" in payload && typeof payload.seq === "number"
+              ? String(payload.seq)
+              : null,
+      },
+    };
+  }
+
   private emitFocusedTerminal(): void {
     this.emit("focusedTerminal", {
       terminalIds: [...this.focusedTerminalIds],
@@ -4408,24 +4474,8 @@ export class SessionRuntime {
   }
 
   private invalidateFocusedTerminals(reason: string): void {
-    let invalidated = false;
-    for (const terminalId of this.focusedTerminalIds) {
-      if (!this.terminalDirtyState[terminalId]) {
-        continue;
-      }
-      const terminal = this.terminals.get(terminalId);
-      if (!terminal?.isRunning()) {
-        continue;
-      }
-      this.dirtyQueue.add(terminalId);
-      this.loopPluginRuntime?.invalidate(
-        this.createTerminalSourceRef(terminalId, reason, this.terminalLatestSeq[terminalId]),
-      );
-      invalidated = true;
-    }
-    if (invalidated) {
-      this.notifyInput("terminal");
-    }
+    void reason;
+    this.terminalKernelAdapter.syncFocusedDirtyTerminals();
   }
 
   private updateFocusedTerminals(op: TerminalFocusOp, terminalIds: string[] = []): string[] {
@@ -4499,8 +4549,11 @@ export class SessionRuntime {
     return Object.fromEntries([...tokens].map((token) => [token, score]));
   }
 
-  private buildAttentionCommitInput(draft: AttentionDraft): AttentionCommitToolInput {
-    const contextId = this.resolveAttentionContextId(draft);
+  private buildAttentionCommitInput(
+    draft: AttentionDraft,
+    input: { contextIdOverride?: string; target?: string } = {},
+  ): AttentionCommitToolInput {
+    const contextId = input.contextIdOverride ?? this.resolveAttentionContextId(draft);
     const normalizedContent = draft.content.trim();
     const terminalSource = parseTerminalSourceSrc(draft.sourceRef.src);
     const taskSubjectId = parseTaskSourceSrc(draft.sourceRef.src);
@@ -4539,6 +4592,7 @@ export class SessionRuntime {
             };
     return {
       contextId,
+      target: input.target,
       ingressType: this.resolveAttentionIngressType(contextId),
       meta: this.buildAttentionMeta(draft),
       scores: this.buildAttentionScores(draft),
@@ -4567,32 +4621,8 @@ export class SessionRuntime {
     return Object.fromEntries(activeScores.map(([key]) => [key, 0]));
   }
 
-  private enqueueLifecycleAttentionCommit(input: Parameters<SessionRuntime["commitLifecycleAttentionItem"]>[0]): void {
-    void this.commitLifecycleAttentionItem(input).catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      this.emit("error", { message: `lifecycle attention commit failed: ${message}` });
-    });
-  }
-
-  private enqueueRoomLifecycleAttentionCommit(
-    input: Omit<Parameters<SessionRuntime["commitLifecycleAttentionItem"]>[0], "src"> & { chatId: string },
-  ): void {
-    this.enqueueLifecycleAttentionCommit({
-      ...input,
-      src: formatMessageAttentionSrc({ chatId: input.chatId }),
-    });
-  }
-
-  private enqueueTerminalLifecycleAttentionCommit(
-    input: Omit<Parameters<SessionRuntime["commitLifecycleAttentionItem"]>[0], "src"> & { terminalId: string },
-  ): void {
-    this.enqueueLifecycleAttentionCommit({
-      ...input,
-      src: formatTerminalSourceSrc({ terminalId: input.terminalId }),
-    });
-  }
-
-  private async commitLifecycleAttentionItem(input: {
+  private buildLifecycleIngressEnvelope(input: {
+    system: RuntimeSystemIngressEnvelope["system"];
     src: string;
     contextId: string;
     event: string;
@@ -4600,18 +4630,8 @@ export class SessionRuntime {
     payload?: Record<string, unknown>;
     score?: number;
     ingressType?: "commit" | "push";
-  }): Promise<void> {
-    const context = this.attentionSystem.getContext(input.contextId);
-    if (!context) {
-      this.attentionSystem.createContext({
-        contextId: input.contextId,
-        owner: this.getAvatarName(),
-      });
-    }
+  }): RuntimeSystemIngressEnvelope {
     const bridgeId = resolveLifecycleBridgeId(input.src);
-    const scoreToken = this.attentionHashAliases.ensureTokenForDigest(
-      buildAttentionScoreDigest(`lifecycle:${input.src}:${input.event}`),
-    );
     const score = Math.max(
       0,
       Math.trunc(
@@ -4623,24 +4643,60 @@ export class SessionRuntime {
       ),
     );
     const detail = buildLifecycleAttentionDetail(input.src, bridgeId, input.event, input.payload);
-    const commit = this.attentionSystem.commit(input.contextId, {
-      ingressType: input.ingressType ?? "commit",
-      meta: {
-        author: this.getAvatarName(),
-        source: "lifecycle",
-        src: input.src,
-        tags: ["lifecycle", input.event],
-        createdAt: new Date().toISOString(),
-      },
-      scores: { [scoreToken]: score },
+    return {
+      system: input.system,
+      sourceId: input.src,
+      contextKey: input.contextId,
+      kind: input.event,
       summary: input.summary,
-      change: {
-        type: "update",
-        value: mdFence("yaml", detail),
-        format: "text/markdown",
-      },
-    }).commit;
-    await this.handleCommittedAttentionCommit(input.contextId, commit, { notifyLoop: true });
+      content: mdFence("yaml", detail),
+      format: "text/markdown",
+      score,
+      tags: [input.system, "lifecycle", input.event],
+      createdAt: Date.now(),
+      author: this.getAvatarName(),
+      ingressType: input.ingressType,
+      meta: input.payload,
+    };
+  }
+
+  private enqueueRoomLifecycleAttentionCommit(
+    input: {
+      chatId: string;
+      contextId: string;
+      event: string;
+      summary: string;
+      payload?: Record<string, unknown>;
+      score?: number;
+      ingressType?: "commit" | "push";
+    },
+  ): void {
+    this.messageKernelAdapter.commitLifecycleIngress(
+      this.buildLifecycleIngressEnvelope({
+        system: "message",
+        src: formatMessageAttentionSrc({ chatId: input.chatId }),
+        contextId: input.contextId,
+        event: input.event,
+        summary: input.summary,
+        payload: input.payload,
+        score: input.score,
+        ingressType: input.ingressType,
+      }),
+    );
+  }
+
+  private enqueueTerminalLifecycleAttentionCommit(
+    input: {
+      terminalId: string;
+      contextId: string;
+      event: string;
+      summary: string;
+      payload?: Record<string, unknown>;
+      score?: number;
+      ingressType?: "commit" | "push";
+    },
+  ): void {
+    this.terminalKernelAdapter.commitLifecycleIngress(input);
   }
 
   private buildContextPreservingChange(contextId: string): AttentionCommitChange {
@@ -4725,20 +4781,35 @@ export class SessionRuntime {
     }
   }
 
+  private async notifyAttentionDispatchedHooks(input: AttentionDispatchedInput): Promise<AttentionCommitHookResult[]> {
+    const results = await this.loopPluginRuntime?.notifyAttentionDispatched(input, {
+      contextId: input.contextId,
+      commitId: input.commit.commitId,
+      dispatchId: input.dispatch.dispatchId,
+      cycleId: input.dispatch.cycleId,
+      agentCallId: input.dispatch.agentCallId,
+      sessionModelCallId: input.dispatch.sessionModelCallId,
+    });
+    return results ?? [];
+  }
+
+  private async notifyAttentionReceiptHooks(input: AttentionReceiptInput): Promise<AttentionCommitHookResult[]> {
+    const results = await this.loopPluginRuntime?.notifyAttentionReceipt(input, {
+      contextId: input.contextId,
+      commitId: input.commit.commitId,
+      dispatchId: input.dispatch.dispatchId,
+      cycleId: input.dispatch.cycleId,
+      agentCallId: input.dispatch.agentCallId,
+      sessionModelCallId: input.dispatch.sessionModelCallId,
+    });
+    return results ?? [];
+  }
+
   private async handleRuntimeSkillRefreshResult(
     result: ReturnType<RuntimeSkillSystem["refresh"]>,
     input: { notifyLoop: boolean },
-  ): Promise<void> {
-    if (result.systemCommit) {
-      await this.handleCommittedAttentionCommit(result.contextId, result.systemCommit, {
-        notifyLoop: false,
-      });
-    }
-    for (const reminderCommit of result.reminderCommits) {
-      await this.handleCommittedAttentionCommit(result.contextId, reminderCommit, {
-        notifyLoop: input.notifyLoop,
-      });
-    }
+  ): Promise<RuntimeSkillKernelApplyResult> {
+    return await this.skillKernelAdapter.applyRefreshResult(result, input);
   }
 
   private async flushPendingRuntimeSkillChanges(): Promise<void> {
@@ -4751,31 +4822,118 @@ export class SessionRuntime {
     });
   }
 
+  private toAttentionDraftFromRuntimeSystemIngress(envelope: RuntimeSystemIngressEnvelope): AttentionDraft {
+    return {
+      sourceRef: {
+        src: envelope.sourceId,
+        reason: envelope.kind,
+      },
+      content: envelope.content,
+      from: envelope.author,
+      score: envelope.score,
+      provenance: {
+        author: envelope.author,
+        source: envelope.system,
+        src: envelope.sourceId,
+        tags: envelope.tags,
+        createdAt: new Date(envelope.createdAt).toISOString(),
+      },
+      presentation: {
+        summary: envelope.summary,
+        body: envelope.content,
+        bodyFormat: envelope.format,
+        changeType: envelope.changeType ?? "update",
+      },
+      ...(envelope.supersedeActiveSrc
+        ? {
+            supersedeActive: {
+              src: envelope.supersedeActiveSrc,
+            },
+          }
+        : {}),
+    };
+  }
+
+  private async commitAttentionDraft(
+    draft: AttentionDraft,
+    input: {
+      notifyLoop: boolean;
+      contextIdOverride?: string;
+      recordSourceReadTrace?: boolean;
+      target?: string;
+      commitMode?: RuntimeSystemIngressEnvelope["commitMode"];
+    },
+  ): Promise<{ changed: boolean; result: RuntimeIngressCommitResult | null }> {
+    const digest = stableAttentionDraftDigest(draft);
+    const sourceKey = draft.sourceRef.src;
+    if (this.attentionSourceDigests.get(sourceKey) === digest) {
+      return {
+        changed: false,
+        result: null,
+      };
+    }
+    this.attentionSourceDigests.set(sourceKey, digest);
+    const contextId = input.contextIdOverride ?? this.resolveAttentionContextId(draft);
+    if (!this.attentionSystem.getContext(contextId)) {
+      this.attentionSystem.createContext({
+        contextId,
+        owner: draft.from,
+      });
+    }
+    this.supersedeAttentionDraftItems(draft, contextId);
+    const commitInput = this.buildAttentionCommitInput(draft, {
+      contextIdOverride: contextId,
+      target: input.target,
+    });
+    const commitAction = input.commitMode === "system" ? this.attentionSystem.commitSystem.bind(this.attentionSystem) : this.attentionSystem.commit.bind(this.attentionSystem);
+    const { commit } = commitAction(contextId, {
+      target: commitInput.target,
+      parentCommitIds: commitInput.parentCommitIds,
+      meta: commitInput.meta,
+      scores: commitInput.scores,
+      summary: commitInput.summary,
+      change: commitInput.change,
+    });
+    if (input.recordSourceReadTrace ?? false) {
+      this.recordDraftSourceReadTrace(draft, contextId, commit.commitId);
+    }
+    await this.handleCommittedAttentionCommit(contextId, commit, {
+      notifyLoop: input.notifyLoop,
+    });
+    return {
+      changed: true,
+      result: {
+        contextId,
+        commit,
+      },
+    };
+  }
+
+  private async commitRuntimeSystemIngress(
+    envelope: RuntimeSystemIngressEnvelope,
+    input: { notifyLoop: boolean },
+  ): Promise<RuntimeIngressCommitResult | null> {
+    const { result } = await this.commitAttentionDraft(this.toAttentionDraftFromRuntimeSystemIngress(envelope), {
+      notifyLoop: input.notifyLoop,
+      contextIdOverride: envelope.contextKey,
+      recordSourceReadTrace: false,
+      target: envelope.target,
+      commitMode: envelope.commitMode,
+    });
+    return result;
+  }
+
   private async commitAttentionDrafts(drafts: AttentionDraft[]): Promise<boolean> {
     if (drafts.length === 0) {
       return false;
     }
     let changed = false;
     for (const draft of drafts) {
-      const digest = stableAttentionDraftDigest(draft);
-      const sourceKey = draft.sourceRef.src;
-      if (this.attentionSourceDigests.get(sourceKey) === digest) {
-        continue;
-      }
-      this.attentionSourceDigests.set(sourceKey, digest);
-      const contextId = this.resolveAttentionContextId(draft);
-      this.supersedeAttentionDraftItems(draft, contextId);
-      const commitInput = this.buildAttentionCommitInput(draft);
-      const { commit } = this.attentionSystem.commit(contextId, {
-        parentCommitIds: commitInput.parentCommitIds,
-        meta: commitInput.meta,
-        scores: commitInput.scores,
-        summary: commitInput.summary,
-        change: commitInput.change,
+      const result = await this.commitAttentionDraft(draft, {
+        notifyLoop: false,
+        recordSourceReadTrace: true,
       });
-      this.recordDraftSourceReadTrace(draft, commitInput.contextId, commit.commitId);
-      await this.handleCommittedAttentionCommit(commitInput.contextId, commit, { notifyLoop: false });
-      changed = true;
+      changed ||= result.changed;
     }
     return changed;
   }
@@ -4806,8 +4964,165 @@ export class SessionRuntime {
     return createRuntimeAttentionPreview(this.buildAttentionRuntimeState());
   }
 
+  private buildAttentionDeliveryRuntimeState(): SessionRuntimeAttentionDeliveryState {
+    const timeline = this.runtimeKernelHost.queryAttentionDeliveryTimeline({});
+    return {
+      projections: this.runtimeKernelHost.listDeliveryProjections().map(cloneAttentionDeliveryProjection),
+      dispatches: timeline.dispatches.map(cloneAttentionDispatchRecord),
+      receipts: timeline.receipts.map(cloneAttentionReceiptRecord),
+    };
+  }
+
   private emitAttentionState(): void {
     this.emit("attentionUpdated", this.buildAttentionRuntimePreviewState());
+  }
+
+  private emitAttentionDispatch(input: RuntimeEventMap["attentionDispatch"]): void {
+    this.emit("attentionDispatch", {
+      reason: input.reason,
+      commitRef: {
+        contextId: input.commitRef.contextId,
+        commitId: input.commitRef.commitId,
+        createdAt: input.commitRef.createdAt,
+      },
+      dispatch: cloneAttentionDispatchRecord(input.dispatch),
+      projection: input.projection ? cloneAttentionDeliveryProjection(input.projection) : null,
+    });
+  }
+
+  private emitAttentionReceipt(input: RuntimeEventMap["attentionReceipt"]): void {
+    this.emit("attentionReceipt", {
+      commitRef: {
+        contextId: input.commitRef.contextId,
+        commitId: input.commitRef.commitId,
+        createdAt: input.commitRef.createdAt,
+      },
+      dispatch: cloneAttentionDispatchRecord(input.dispatch),
+      receipt: cloneAttentionReceiptRecord(input.receipt),
+      projection: input.projection ? cloneAttentionDeliveryProjection(input.projection) : null,
+    });
+  }
+
+  private restoreAttentionDeliveryState(): void {
+    if (!this.sessionDb) {
+      return;
+    }
+    const commitRefs = this.attentionSystem
+      .snapshot()
+      .contexts.flatMap((context) =>
+        context.commits.map((commit) => ({
+          contextId: context.contextId,
+          commitId: commit.commitId,
+          createdAt: Date.parse(commit.createdAt) || Date.now(),
+        })),
+      );
+    const dispatches = this.sessionDb.listAttentionDispatches().map((dispatch) => this.toKernelDispatchRecord(dispatch));
+    const receipts = this.sessionDb.listAttentionReceipts().map((receipt) => this.toKernelReceiptRecord(receipt));
+    this.runtimeKernelHost.restoreTimeline({
+      commitRefs,
+      dispatches,
+      receipts,
+    });
+  }
+
+  private toKernelDispatchRecord(record: SessionAttentionDispatchRecord): AttentionDispatchRecord {
+    return {
+      dispatchId: record.dispatchId,
+      contextId: record.contextId,
+      commitId: record.commitId,
+      cycleId: record.cycleId,
+      attemptIndex: record.attemptIndex,
+      agentCallId: record.agentCallId,
+      sessionModelCallId: record.sessionModelCallId,
+      createdAt: record.createdAt,
+    };
+  }
+
+  private toKernelReceiptRecord(record: SessionAttentionReceiptRecord): AttentionReceiptRecord {
+    return {
+      receiptId: record.receiptId,
+      dispatchId: record.dispatchId,
+      contextId: record.contextId,
+      commitId: record.commitId,
+      cycleId: record.cycleId,
+      attemptIndex: record.attemptIndex,
+      agentCallId: record.agentCallId,
+      sessionModelCallId: record.sessionModelCallId,
+      status: record.status,
+      providerEventKind: record.providerEventKind,
+      timestamp: record.timestamp,
+      finishReason: record.finishReason,
+      usage: record.usage ? { ...record.usage } : undefined,
+      errorCode: record.errorCode,
+      errorMessage: record.errorMessage,
+      meta: record.meta ? structuredClone(record.meta) : undefined,
+    };
+  }
+
+  private recordAttentionDispatch(dispatch: AttentionDispatchRecord): void {
+    if (!this.sessionDb) {
+      return;
+    }
+    const existing = this.sessionDb.getAttentionDispatchByDispatchId(dispatch.dispatchId);
+    if (!existing) {
+      this.sessionDb.appendAttentionDispatch({
+        dispatchId: dispatch.dispatchId,
+        contextId: dispatch.contextId,
+        commitId: dispatch.commitId,
+        cycleId: dispatch.cycleId,
+        attemptIndex: dispatch.attemptIndex,
+        agentCallId: dispatch.agentCallId,
+        sessionModelCallId: dispatch.sessionModelCallId,
+        createdAt: dispatch.createdAt,
+        updatedAt: dispatch.createdAt,
+      });
+      return;
+    }
+    if (dispatch.sessionModelCallId !== null && existing.sessionModelCallId !== dispatch.sessionModelCallId) {
+      this.sessionDb.bindAttentionDispatchModelCall(dispatch.dispatchId, dispatch.sessionModelCallId, Date.now());
+    }
+  }
+
+  private recordAttentionReceipt(receipt: AttentionReceiptRecord): void {
+    if (!this.sessionDb || this.sessionDb.getAttentionReceiptByReceiptId(receipt.receiptId)) {
+      return;
+    }
+    this.sessionDb.appendAttentionReceipt({
+      receiptId: receipt.receiptId,
+      dispatchId: receipt.dispatchId,
+      contextId: receipt.contextId,
+      commitId: receipt.commitId,
+      cycleId: receipt.cycleId,
+      attemptIndex: receipt.attemptIndex,
+      agentCallId: receipt.agentCallId,
+      sessionModelCallId: receipt.sessionModelCallId,
+      status: receipt.status,
+      providerEventKind: receipt.providerEventKind,
+      timestamp: receipt.timestamp,
+      finishReason: receipt.finishReason,
+      usage: receipt.usage ? { ...receipt.usage } : undefined,
+      errorCode: receipt.errorCode,
+      errorMessage: receipt.errorMessage,
+      meta: receipt.meta ? structuredClone(receipt.meta) : undefined,
+    });
+  }
+
+  private publishAttentionDispatch(input: {
+    reason: "created" | "bound";
+    commitRef: DeliveryCommitRefRecord;
+    dispatch: AttentionDispatchRecord;
+    projection: AttentionDeliveryProjection | null;
+  }): void {
+    this.emitAttentionDispatch(input);
+  }
+
+  private publishAttentionReceipt(input: {
+    commitRef: DeliveryCommitRefRecord;
+    dispatch: AttentionDispatchRecord;
+    receipt: AttentionReceiptRecord;
+    projection: AttentionDeliveryProjection | null;
+  }): void {
+    this.emitAttentionReceipt(input);
   }
 
   private buildCycleTraceRefs(cycleId: number): SessionTraceRef[] {
@@ -5498,6 +5813,7 @@ export class SessionRuntime {
     this.attentionSystem = AttentionSystem.fromSnapshot(this.mergeBootAttentionSnapshot(persistedAttentionSnapshot));
     this.attentionSearchEngine = new AttentionSearchEngine(join(this.options.sessionRoot, "attention-search.duckdb"));
     await this.persistAttentionSystem();
+    await this.runtimeKernelHost.bootstrap();
     if (this.attentionSystem.listActiveContexts().length > 0) {
       this.attentionFactsVersion += 1;
       this.resetAttentionDebtBackoff();
@@ -5533,24 +5849,7 @@ export class SessionRuntime {
 
     const promptStore = this.createPromptStore(this.config);
     await promptStore.reload();
-    this.runtimeSkillSystem = new RuntimeSkillSystem({
-      attentionSystem: this.attentionSystem,
-      owner: this.getAvatarName(),
-      focusState: "background",
-      homeDir: this.getHomeDir(),
-      rootWorkspacePath: this.getRootWorkspacePath(),
-      principalId: this.options.avatarPrincipalId,
-      listWorkspaceAuthorities: () =>
-        this.listWorkspaceAuthorities().map((authority) => ({
-          workspaceRoot: authority.workspaceRoot,
-          grants: authority.grants,
-        })),
-      onIdleFlush: async (result) => {
-        await this.handleRuntimeSkillRefreshResult(result, {
-          notifyLoop: true,
-        });
-      },
-    });
+    this.runtimeSkillSystem = this.ensureRuntimeSkillSystem();
     await this.handleRuntimeSkillRefreshResult(
       this.runtimeSkillSystem.refresh({ forceBootstrap: true, publishReminders: false }),
       {
@@ -5585,6 +5884,7 @@ export class SessionRuntime {
       ? new UsageAnalyticsDb(resolveUsageAnalyticsDbPathFromAvatarRoot(this.options.usageAnalyticsRoot))
       : null;
     const currentPromptWindowState = this.ensurePromptWindowStateInitialized();
+    this.restoreAttentionDeliveryState();
     this.restoreAttentionRuntimeHistory();
     const restoredChat = readAllMessagesByScope(this.sessionDb, HEARTBEAT_MESSAGE_PART_SCOPE).filter(
       isPersistedChatProjectionMessage,
@@ -5630,8 +5930,11 @@ export class SessionRuntime {
       avatarName: this.getAvatarName(),
       resolveImageAttachment: async (attachment) => this.readImageAttachmentSource(attachment.assetId),
       collectInterleavedInputs: async () => await this.collectInterleavedAgentInputs(),
-      onAssistantStream: (stream) => {
-        this.handleAssistantStreamUpdate(stream);
+      onAssistantStream: async (stream) => {
+        await this.handleAssistantStreamUpdate(stream);
+      },
+      onAssistantDelivery: async (event) => {
+        await this.handleAssistantDeliveryEvent(event);
       },
       onModelCall: async (record) => {
         await this.handleModelCall(record);
@@ -5807,7 +6110,7 @@ export class SessionRuntime {
     if (status === "stopped") {
       this.messageSystem.setActorPresence(this.messageActorId, false);
       this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
-      this.runtimeSkillSystem?.clearPendingBootstrap();
+      this.skillKernelAdapter.clearPendingBootstrap();
       this.runtimeSkillSystem?.dispose();
     }
     this.sessionStore?.setLifecycle({ status });
@@ -5819,7 +6122,7 @@ export class SessionRuntime {
     }
     this.messageSystem.setActorPresence(this.messageActorId, true);
     this.terminalControlPlane.setActorPresence(this.terminalActorId, true);
-    this.runtimeSkillSystem?.markBootstrapPending();
+    this.skillKernelAdapter.markBootstrapPending();
     this.runtime?.resume();
     this.sessionStore?.setLifecycle({ status: "running" });
   }
@@ -5846,10 +6149,13 @@ export class SessionRuntime {
     this.runtime = null;
     this.agent = null;
     this.loopPluginRuntime = null;
+    this.runtimeKernelHost.dispose();
     await this.runtimeLocalApi?.stop().catch(() => {});
     this.runtimeLocalApi = null;
     this.runtimeSkillSystem?.dispose();
     this.runtimeSkillSystem = null;
+    this.skillKernelAdapter.reset();
+    this.rootWorkspaceShellWorld = null;
     this.messageSystem.setActorPresence(this.messageActorId, false);
     this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
     this.sessionStore?.setLifecycle({ status: "stopped" });
@@ -5859,10 +6165,8 @@ export class SessionRuntime {
     this.taskAttentionDraftQueue.length = 0;
     this.messageFollowUpReminders.clear();
     this.inboundMessageQueue.length = 0;
-    this.pendingUnreadMessageIds.clear();
-    this.stagedUnreadReadAcks = [];
-    this.activeCycleUnreadReadAcks = [];
-    this.activeCycleUnreadReadCommitted = false;
+    this.messageKernelAdapter.reset();
+    this.terminalKernelAdapter.reset();
     this.taskSourceMtime.clear();
     this.taskSources = [];
     for (const terminalId of Object.keys(this.terminalSnapshots)) {
@@ -6161,6 +6465,36 @@ export class SessionRuntime {
 
   inspectAttentionState(): SessionRuntimeAttentionState {
     return this.buildAttentionRuntimeState();
+  }
+
+  inspectAttentionDeliveryState(): SessionRuntimeAttentionDeliveryState {
+    return this.buildAttentionDeliveryRuntimeState();
+  }
+
+  queryAttentionDeliveryTimeline(input: {
+    contextId?: string;
+    commitId?: string;
+    cycleId?: number;
+    sessionModelCallId?: number;
+    limit?: number;
+  }): SessionRuntimeAttentionDeliveryState {
+    const timeline = this.runtimeKernelHost.queryAttentionDeliveryTimeline(input);
+    const projectionInput =
+      input.contextId && input.commitId
+        ? [
+            this.runtimeKernelHost.getDeliveryProjection({
+              contextId: input.contextId,
+              commitId: input.commitId,
+            }),
+          ]
+        : this.runtimeKernelHost.listDeliveryProjections();
+    return {
+      projections: projectionInput
+        .filter((projection): projection is AttentionDeliveryProjection => projection !== null)
+        .map(cloneAttentionDeliveryProjection),
+      dispatches: timeline.dispatches.map(cloneAttentionDispatchRecord),
+      receipts: timeline.receipts.map(cloneAttentionReceiptRecord),
+    };
   }
 
   inspectNotificationState(): SessionNotificationSnapshot {
@@ -6664,7 +6998,7 @@ export class SessionRuntime {
     }
 
     if (isCompactCommand) {
-      this.reserveUnreadMessages(channel, [message]);
+      this.messageKernelAdapter.reserveUnreadMessages(channel, [message]);
       return;
     }
 
@@ -6744,6 +7078,7 @@ export class SessionRuntime {
       tasks: this.taskEngine.list(),
       schedulerState: this.loopKernelSnapshot?.state ?? null,
       attention: this.buildAttentionRuntimePreviewState(),
+      attentionDelivery: this.buildAttentionDeliveryRuntimeState(),
       schedulerSignals: {
         user: { version: this.inputSignalVersion.user, timestamp: this.inputSignalAt.user },
         terminal: { version: this.inputSignalVersion.terminal, timestamp: this.inputSignalAt.terminal },
@@ -6813,8 +7148,7 @@ export class SessionRuntime {
             (input.mode === "auto" && JSON.stringify(diffPayload).length <= snapshotJson.length);
           if (shouldUseDiff) {
             if (input.remark) {
-              this.terminalDirtyState[terminalId] = false;
-              this.dirtyQueue.delete(terminalId);
+              this.terminalKernelAdapter.markTerminalConsumed(terminalId);
             }
             return this.publishTerminalReadPayload(terminalId, diffPayload, recordActivity);
           }
@@ -6822,8 +7156,7 @@ export class SessionRuntime {
       }
 
       if (input.remark) {
-        this.terminalDirtyState[terminalId] = false;
-        this.dirtyQueue.delete(terminalId);
+        this.terminalKernelAdapter.markTerminalConsumed(terminalId);
       }
       return this.publishTerminalReadPayload(terminalId, snapshotPayload, recordActivity);
     }
@@ -6835,8 +7168,7 @@ export class SessionRuntime {
       actorId: this.terminalActorId,
     });
     if (input.remark) {
-      this.terminalDirtyState[terminalId] = false;
-      this.dirtyQueue.delete(terminalId);
+      this.terminalKernelAdapter.markTerminalConsumed(terminalId);
     }
     return this.publishTerminalReadPayload(terminalId, payload, recordActivity);
   }
@@ -6890,13 +7222,7 @@ export class SessionRuntime {
           rows: 24,
           gitLog: config.gitLog,
           logStyle: "rich",
-          env: buildRuntimeTerminalEnvironment({
-            rootWorkspacePath: this.getRootWorkspacePath(),
-            homeDir: this.getHomeDir(),
-            apiBaseUrl: this.runtimeLocalApi.baseUrl,
-            privateKey: this.options.avatarPrivateKey,
-            principalId: this.options.avatarPrincipalId,
-          }),
+          env: buildSharedTerminalEnvironment({}),
         },
         start: false,
       });
@@ -6924,12 +7250,7 @@ export class SessionRuntime {
       this.terminalSnapshots[terminalId] = snapshot;
       this.terminalLatestSeq[terminalId] = snapshot.seq;
       if (semanticChanged) {
-        this.terminalDirtyState[terminalId] = true;
-        if (this.focusedTerminalIds.includes(terminalId)) {
-          this.dirtyQueue.add(terminalId);
-          this.loopPluginRuntime?.invalidate(this.createTerminalSourceRef(terminalId, "semantic-change", snapshot.seq));
-          this.notifyInput("terminal");
-        }
+        this.terminalKernelAdapter.markTerminalDirty(terminalId);
       }
       if (viewChanged) {
         this.emit("terminalSnapshot", { terminalId, snapshot });
@@ -6940,25 +7261,12 @@ export class SessionRuntime {
       const previous = this.terminalStatusById.get(terminalId);
       this.terminalStatusById.set(terminalId, { running, status });
       this.emit("terminalStatus", { terminalId, running, status });
-      if (
-        previous?.status === "BUSY" &&
-        status === "IDLE" &&
-        running &&
-        !this.focusedTerminalIds.includes(terminalId)
-      ) {
-        this.enqueueTerminalLifecycleAttentionCommit({
-          terminalId,
-          contextId: this.getTerminalAttentionContextId(terminalId),
-          event: "terminal_idle_ready",
-          summary: `Terminal ${terminalId} is ready for your input.`,
-          ingressType: "push",
-          payload: {
-            running,
-            status,
-          },
-          score: 100,
-        });
-      }
+      this.terminalKernelAdapter.handleStatusChange({
+        terminalId,
+        previousStatus: previous?.status ?? null,
+        running,
+        status,
+      });
     });
 
     this.terminals.set(terminalId, terminal);
@@ -7282,7 +7590,7 @@ export class SessionRuntime {
     if (this.inputSignals.task.current() > this.inputSignalCursor.task) {
       return "ready_now";
     }
-    if (this.focusedTerminalIds.some((terminalId) => this.terminalDirtyState[terminalId])) {
+    if (this.terminalKernelAdapter.hasFocusedDirtyWork()) {
       return "ready_now";
     }
     if (this.hasPendingAttentionInputs()) {
@@ -7338,7 +7646,7 @@ export class SessionRuntime {
       this.resetAttentionDebtBackoff();
       return "user";
     }
-    if (!loopPaused && this.focusedTerminalIds.some((terminalId) => this.terminalDirtyState[terminalId])) {
+    if (!loopPaused && this.terminalKernelAdapter.hasFocusedDirtyWork()) {
       this.loopKernelLastWakeCause = "terminal_activity";
       this.resetAttentionDebtBackoff();
       return "terminal";
@@ -7533,8 +7841,8 @@ export class SessionRuntime {
     await this.flushPendingRuntimeSkillChanges();
     await this.pollTaskSources("watch");
     await this.pollTaskEventInbox();
+    await this.collectUnreadRoomIngress();
     await this.pollMessageFollowUpReminders();
-    this.collectUnreadRoomIngress();
     await this.flushPluginAttentionDrafts();
     const triggered = this.taskEngine.pollTime();
     if (triggered.affected.length > 0) {
@@ -7611,10 +7919,6 @@ export class SessionRuntime {
     if (pendingTaskDrafts.length > 0) {
       await this.commitAttentionDrafts(pendingTaskDrafts);
     }
-    const terminalInputs = this.loopPluginRuntime ? undefined : await this.collectTerminalInputs();
-    if (terminalInputs) {
-      outputs.push(...terminalInputs);
-    }
     const attentionInputs = this.collectAttentionInputs();
     if (attentionInputs) {
       outputs.push(...attentionInputs);
@@ -7645,8 +7949,8 @@ export class SessionRuntime {
 
   private async collectInterleavedAgentInputs(): Promise<LoopBusInput[] | undefined> {
     await this.flushPendingRuntimeSkillChanges();
+    await this.collectUnreadRoomIngress();
     await this.pollMessageFollowUpReminders();
-    this.collectUnreadRoomIngress();
     const consumedUserInputs = this.drainInterleavedInboundQueue();
     const pluginChanged = await this.flushPluginAttentionDrafts();
     const pendingTaskDrafts = this.collectPendingTaskAttentionDrafts();
@@ -7697,7 +8001,7 @@ export class SessionRuntime {
     const forceCollect = this.attentionForceCollect;
     this.attentionForceCollect = false;
     const active = this.attentionSystem.listActiveContexts();
-    const bootstrapSnapshots = this.runtimeSkillSystem?.consumeBootstrapContext();
+    const bootstrapSnapshots = this.skillKernelAdapter.consumeBootstrapContext();
     if (active.length === 0) {
       if (!bootstrapSnapshots) {
         this.dirtyAttentionContextIds.clear();
@@ -7827,78 +8131,6 @@ export class SessionRuntime {
         src: formatTaskSourceSrc("heartbeat"),
       },
     };
-  }
-
-  private async collectTerminalInputs(): Promise<LoopBusInput[] | undefined> {
-    const pendingIds = [...this.dirtyQueue.values()];
-    if (pendingIds.length === 0) {
-      return undefined;
-    }
-    this.dirtyQueue.clear();
-
-    const outputs: LoopBusInput[] = [];
-    for (const terminalId of pendingIds) {
-      const terminal = this.terminals.get(terminalId);
-      const config = this.config?.terminals[terminalId];
-      if (!terminal || !config) {
-        continue;
-      }
-      const status = terminal.getStatus();
-      if (status === "BUSY") {
-        this.dirtyQueue.add(terminalId);
-        continue;
-      }
-
-      const focused = this.focusedTerminalIds.includes(terminalId);
-      const seq = this.terminalLatestSeq[terminalId] ?? 0;
-
-      if (!focused) {
-        this.dirtyQueue.add(terminalId);
-        continue;
-      }
-
-      if (!config.gitLog) {
-        const snapshot = terminal.getSnapshot();
-        this.terminalDirtyState[terminalId] = false;
-        outputs.push({
-          name: `Terminal-${terminalId}`,
-          role: "user",
-          type: "text",
-          source: "terminal",
-          text: JSON.stringify(buildTerminalSnapshotPayload(terminalId, snapshot, terminal.getStatus())),
-          meta: { terminalId, seq: snapshot.seq, focused: true },
-        });
-        continue;
-      }
-
-      const slice = await terminal.sliceDirty({ remark: true });
-      if (!slice.ok || !slice.changed || slice.fromHash === slice.toHash) {
-        this.terminalDirtyState[terminalId] = false;
-        continue;
-      }
-      outputs.push({
-        name: `Terminal-${terminalId}`,
-        role: "user",
-        type: "text",
-        source: "terminal",
-        text: serializeTerminalDiff(terminalId, {
-          fromHash: slice.fromHash,
-          toHash: slice.toHash,
-          diff: slice.diff,
-          bytes: slice.bytes,
-          status,
-        }),
-        meta: {
-          terminalId,
-          focused: true,
-          fromHash: slice.fromHash ?? "none",
-          toHash: slice.toHash ?? "none",
-          bytes: slice.bytes,
-        },
-      });
-    }
-
-    return outputs.length > 0 ? outputs : undefined;
   }
 
   private async pollTaskSources(source: "boot" | "watch"): Promise<void> {
@@ -8107,7 +8339,7 @@ export class SessionRuntime {
     if (!this.activeCycle) {
       return;
     }
-    this.clearActiveCycleUnreadReadAcks();
+    this.messageKernelAdapter.finalizeCycle();
     this.setProjectionStage(status === "error" ? "error" : "idle");
     if (status === "error" && this.activeCycle.liveMessages.length > 0) {
       const cancelledAt = Date.now();
@@ -8461,8 +8693,7 @@ export class SessionRuntime {
       hookIds: [],
     };
     this.attentionCycleFrames.set(cycle.id, attentionCycleFrame);
-    this.activeCycleUnreadReadAcks = this.consumeStagedUnreadReadAcks();
-    this.activeCycleUnreadReadCommitted = false;
+    this.messageKernelAdapter.beginCycle();
     this.flushPendingTraceSpans(cycle.id);
     this.persistAttentionCycleState(cycle.id);
     this.emitAttentionState();
@@ -8493,6 +8724,7 @@ export class SessionRuntime {
     }
     this.activeCycleId = cycle.id;
     this.activeModelCallId = null;
+    this.activeAgentCallId = null;
     this.createActiveCycle({
       cycleId: cycle.id,
       seq: cycle.seq,
@@ -8650,6 +8882,125 @@ export class SessionRuntime {
       data: input.data,
     };
     this.emit("modelCallDelta", { entry });
+  }
+
+  private getActiveCycleInputCommitRefs(cycleId: number | null): DeliveryCommitRefRecord[] {
+    if (cycleId === null) {
+      return [];
+    }
+    const frame = this.attentionCycleFrames.get(cycleId);
+    if (!frame) {
+      return [];
+    }
+    return frame.inputCommitRefs.map((ref) => ({
+      contextId: ref.contextId,
+      commitId: ref.commitId,
+      createdAt: frame.createdAt,
+    }));
+  }
+
+  private async beginAttentionDeliveryAttempt(input: {
+    agentCallId: string;
+    attemptIndex: number;
+    cycleId: number | null;
+    timestamp: number;
+    sessionModelCallId: number | null;
+  }): Promise<string[]> {
+    const commitRefs = this.getActiveCycleInputCommitRefs(input.cycleId);
+    if (commitRefs.length === 0 || input.cycleId === null) {
+      return [];
+    }
+    const dispatchIds: string[] = [];
+    for (const commitRef of commitRefs) {
+      const result = await this.runtimeKernelHost.createDispatch({
+        contextId: commitRef.contextId,
+        commitId: commitRef.commitId,
+        cycleId: input.cycleId,
+        agentCallId: input.agentCallId,
+        sessionModelCallId: input.sessionModelCallId,
+        createdAt: input.timestamp,
+      });
+      dispatchIds.push(result.dispatch.dispatchId);
+    }
+    const attempts = this.deliveryDispatchIdsByAgentCallAttempt.get(input.agentCallId) ?? new Map<number, string[]>();
+    attempts.set(input.attemptIndex, dispatchIds);
+    this.deliveryDispatchIdsByAgentCallAttempt.set(input.agentCallId, attempts);
+    return dispatchIds;
+  }
+
+  private listAttentionDispatchIdsForAttempt(agentCallId: string, attemptIndex: number): string[] {
+    return this.deliveryDispatchIdsByAgentCallAttempt.get(agentCallId)?.get(attemptIndex) ?? [];
+  }
+
+  private bindAttentionDispatchesForAttempt(input: {
+    agentCallId: string;
+    attemptIndex: number;
+    sessionModelCallId: number;
+  }): void {
+    const dispatchIds = this.listAttentionDispatchIdsForAttempt(input.agentCallId, input.attemptIndex);
+    for (const dispatchId of dispatchIds) {
+      this.runtimeKernelHost.bindDispatchModelCall({
+        dispatchId,
+        sessionModelCallId: input.sessionModelCallId,
+      });
+    }
+  }
+
+  private async appendAttentionReceiptForAttempt(input: {
+    agentCallId: string;
+    attemptIndex: number;
+    status: AttentionReceiptRecord["status"];
+    providerEventKind: AttentionReceiptProviderEventKind;
+    timestamp: number;
+    finishReason?: string | null;
+    usage?: AttentionReceiptRecord["usage"];
+    errorCode?: string;
+    errorMessage?: string;
+  }): Promise<void> {
+    const dispatchIds = this.listAttentionDispatchIdsForAttempt(input.agentCallId, input.attemptIndex);
+    for (const dispatchId of dispatchIds) {
+      await this.runtimeKernelHost.appendReceipt({
+        dispatchId,
+        status: input.status,
+        providerEventKind: input.providerEventKind,
+        timestamp: input.timestamp,
+        finishReason: input.finishReason,
+        usage: input.usage,
+        errorCode: input.errorCode,
+        errorMessage: input.errorMessage,
+      });
+    }
+  }
+
+  private async handleAssistantDeliveryEvent(event: AssistantDeliveryEvent): Promise<void> {
+    const agentCallId = this.activeAgentCallId;
+    if (!agentCallId) {
+      return;
+    }
+    if (event.kind === "attempt_started") {
+      if (this.listAttentionDispatchIdsForAttempt(agentCallId, event.attemptIndex).length > 0) {
+        return;
+      }
+      await this.beginAttentionDeliveryAttempt({
+        agentCallId,
+        attemptIndex: event.attemptIndex,
+        cycleId: this.activeCycleId,
+        timestamp: event.timestamp,
+        sessionModelCallId: this.activeModelCallId,
+      });
+      return;
+    }
+    await this.appendAttentionReceiptForAttempt({
+      agentCallId,
+      attemptIndex: event.attemptIndex,
+      status: event.status,
+      providerEventKind: event.providerEventKind,
+      timestamp: event.timestamp,
+      finishReason: event.finishReason,
+      usage: event.usage,
+      errorCode: event.errorCode,
+      errorMessage: event.errorMessage,
+    });
   }
 
   private buildPersistedModelConfigPayload(
@@ -9338,7 +9689,7 @@ export class SessionRuntime {
     }
   }
 
-  private handleAssistantStreamUpdate(input: AssistantStreamUpdate): void {
+  private async handleAssistantStreamUpdate(input: AssistantStreamUpdate): Promise<void> {
     if (!this.activeCycle) {
       return;
     }
@@ -9547,7 +9898,7 @@ export class SessionRuntime {
 
   private async handleModelCall(record: AgentModelCallRecord): Promise<void> {
     if (record.status === "running") {
-      this.commitActiveCycleUnreadReadAcks();
+      await this.messageKernelAdapter.commitActiveCycleReadAcks();
       this.activeModelResponseDraft = this.createEmptyActiveModelResponseDraft();
     }
     if (!this.sessionDb || this.activeCycleId === null) {
@@ -9562,9 +9913,20 @@ export class SessionRuntime {
             spanId: traceRow.spanId,
             parentSpanId: traceRow.parentSpanId ?? null,
           };
+    const attemptOneDispatchIds =
+      record.status === "running"
+        ? await this.beginAttentionDeliveryAttempt({
+            agentCallId: record.id,
+            attemptIndex: 1,
+            cycleId: this.activeCycleId,
+            timestamp: record.timestamp,
+            sessionModelCallId: null,
+          })
+        : [];
     const normalizedRequest = this.normalizePersistedModelRequest(record.request);
     const requestMeta = {
       ...(normalizedRequest.meta ?? {}),
+      agentCallId: record.id,
       cycleId: this.activeCycleId,
       wakeSource: this.activeCycle?.wakeSource ?? null,
       collectedInputs: this.activeCycle ? structuredClone(this.activeCycle.inputs) : [],
@@ -9675,6 +10037,16 @@ export class SessionRuntime {
             isComplete: true,
           }),
     });
+    if (record.status === "running") {
+      if (attemptOneDispatchIds.length > 0) {
+        this.bindAttentionDispatchesForAttempt({
+          agentCallId: record.id,
+          attemptIndex: 1,
+          sessionModelCallId: linkedModelCall.id,
+        });
+      }
+      this.activeAgentCallId = record.id;
+    }
     if (traceRow) {
       this.upsertTraceRow({
         cycleId: traceRow.cycleId,
@@ -9811,6 +10183,10 @@ export class SessionRuntime {
       }
     }
     if (record.status !== "running") {
+      if (this.activeAgentCallId === record.id) {
+        this.activeAgentCallId = null;
+      }
+      this.deliveryDispatchIdsByAgentCallAttempt.delete(record.id);
       this.activeModelCallId = null;
       this.activeModelResponseDraft = null;
     }

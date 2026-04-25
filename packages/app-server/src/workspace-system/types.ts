@@ -1,5 +1,9 @@
 export type WorkspaceAssetKind = "skills" | "memory" | "tools" | "archive";
 export type WorkspaceGrantMode = "ro" | "rw";
+/**
+ * Storage keeps the historical `"workspace"` identifier, but shell/UI semantics
+ * should read it as the collaboration-oriented public-workspace surface.
+ */
 export type WorkspaceMountKind = "avatar-root" | "workspace";
 
 export interface WorkspaceRecord {
