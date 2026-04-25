@@ -1,8 +1,5 @@
-# attention-commit-hooks Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change message-hook-attention-bridge-vnext. Update Purpose after archive.
-## Requirements
 ### Requirement: Attention lifecycle hooks SHALL return observable results
 Every successful attention lifecycle transition that exposes hooks to the model or inspection surfaces MUST return the results of the hooks that ran for that lifecycle stage. The runtime SHALL distinguish commit, dispatch, and receipt stages explicitly, and `attentionCommitted` results MUST NOT be reused as AI delivery truth.
 
