@@ -28,6 +28,8 @@
 - recalled message 的可见文本必须是 objective recalled state，而不是旧正文残留。
 - chat stage 必须允许 host shell 拥有外层 chrome；package 不再强占页面级 header。
 - transcript 需要保留产品级 affordance，例如时间分隔、message selection、return-to-latest，而不把这些行为留给宿主用胶水补丁实现。
+- 进入非空 transcript 时必须一次性贴底显示最新消息；只有 operator 仍接近最新边缘时，新消息才允许自动跟随到最新。
+- 当 operator 向上滚动接近 transcript 顶部且 `hasMoreBefore` 为真时，stage 必须通过 `ChatViewController.requestOlderPage` 发起 canonical `page` action，并在 older page 合并后保持当前阅读锚点。
 - return-to-latest 必须是 lifecycle-safe 的 transcript affordance；点击、重复点击、viewport 变化或动画期间 dispose 都不能触发 Flutter render tree 断言。
 - transcript row selection semantics 必须由稳定 row atom 显式声明，虚拟列表内的 gesture recognizer 不得额外生成会随滚动销毁的语义节点。
 - transcript 与 Web demo shell 禁止挂载 `SelectableRegion` / `HtmlElementView` / Flutter Web platform view；消息复制能力由稳定 message action 承担，不能依赖浏览器嵌入式选择区域。

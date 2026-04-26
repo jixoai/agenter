@@ -44,6 +44,7 @@ class ChatSurfaceTokens {
     required this.compactLatestControlBottomInset,
     required this.latestVisibilityDistance,
     required this.latestAutoFollowDistance,
+    required this.olderPageTriggerDistance,
     required this.latestScrollDuration,
   });
 
@@ -89,6 +90,7 @@ class ChatSurfaceTokens {
   final double compactLatestControlBottomInset;
   final double latestVisibilityDistance;
   final double latestAutoFollowDistance;
+  final double olderPageTriggerDistance;
   final Duration latestScrollDuration;
 
   static const defaults = ChatSurfaceTokens(
@@ -134,6 +136,7 @@ class ChatSurfaceTokens {
     compactLatestControlBottomInset: 96,
     latestVisibilityDistance: 240,
     latestAutoFollowDistance: 120,
+    olderPageTriggerDistance: 96,
     latestScrollDuration: Duration(milliseconds: 220),
   );
 }

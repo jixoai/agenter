@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import '../controller/chat_view_controller.dart';
 import '../l10n/chat_view_localizations.dart';
 import '../model/chat_models.dart';
+import '../model/chat_view_state.dart';
 import '../plugin/composer_plugin.dart';
 import 'chat_composer.dart';
 import 'chat_stage_controls.dart';
@@ -37,6 +38,10 @@ class _FlutterChatViewState extends State<FlutterChatView> {
   ChatMessage? _editingMessage;
   bool _showReturnToLatest = false;
   bool _scrollingToLatest = false;
+  bool _initialLatestAnchorApplied = false;
+  bool _initialLatestAnchorScheduled = false;
+  bool _olderAnchorRestoreScheduled = false;
+  _OlderPageAnchor? _pendingOlderPageAnchor;
 
   @override
   void initState() {
@@ -51,6 +56,7 @@ class _FlutterChatViewState extends State<FlutterChatView> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_handleControllerChanged);
       widget.controller.addListener(_handleControllerChanged);
+      _resetTranscriptAnchors();
     }
   }
 
@@ -63,9 +69,14 @@ class _FlutterChatViewState extends State<FlutterChatView> {
   }
 
   void _handleControllerChanged() {
+    final state = widget.controller.state;
+    if (!_initialLatestAnchorApplied || _pendingOlderPageAnchor != null) {
+      return;
+    }
     final distanceToLatest = _distanceToLatest();
     if (distanceToLatest == null ||
-        distanceToLatest >= chatTokens(context).latestAutoFollowDistance) {
+        distanceToLatest >= chatTokens(context).latestAutoFollowDistance ||
+        state.loadingMore) {
       return;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -93,6 +104,19 @@ class _FlutterChatViewState extends State<FlutterChatView> {
         _showReturnToLatest = nextShow;
       });
     }
+    _refreshPendingOlderPageAnchor();
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    final isUserUpdate = switch (notification) {
+      ScrollUpdateNotification(dragDetails: final details) => details != null,
+      OverscrollNotification(dragDetails: final details) => details != null,
+      _ => false,
+    };
+    if (notification.metrics.axis == Axis.vertical && isUserUpdate) {
+      _requestOlderPageIfNeeded();
+    }
+    return false;
   }
 
   Future<void> _jumpToLatest() async {
@@ -115,6 +139,131 @@ class _FlutterChatViewState extends State<FlutterChatView> {
       0,
       double.infinity,
     );
+  }
+
+  void _scheduleTranscriptAnchors(ChatViewState state) {
+    _scheduleInitialLatestAnchorIfNeeded(state);
+    _scheduleOlderPageAnchorRestoreIfNeeded(state);
+  }
+
+  void _scheduleInitialLatestAnchorIfNeeded(ChatViewState state) {
+    if (_initialLatestAnchorApplied ||
+        _initialLatestAnchorScheduled ||
+        state.messages.isEmpty) {
+      return;
+    }
+    _initialLatestAnchorScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initialLatestAnchorScheduled = false;
+      if (!mounted ||
+          _initialLatestAnchorApplied ||
+          widget.controller.state.messages.isEmpty) {
+        return;
+      }
+      _initialLatestAnchorApplied = _jumpToLatestEdge();
+    });
+  }
+
+  void _scheduleOlderPageAnchorRestoreIfNeeded(ChatViewState state) {
+    if (_pendingOlderPageAnchor == null ||
+        _olderAnchorRestoreScheduled ||
+        state.loadingMore) {
+      return;
+    }
+    _olderAnchorRestoreScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _olderAnchorRestoreScheduled = false;
+      final anchor = _pendingOlderPageAnchor;
+      if (!mounted || anchor == null) {
+        return;
+      }
+      _pendingOlderPageAnchor = null;
+      if (!_scrollController.hasClients) {
+        return;
+      }
+      final position = _scrollController.position;
+      if (!position.hasContentDimensions) {
+        return;
+      }
+      final insertedExtent = position.maxScrollExtent - anchor.maxScrollExtent;
+      final target = (anchor.pixels + insertedExtent).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      position.jumpTo(target.toDouble());
+      _handleScrollChanged();
+    });
+  }
+
+  bool _jumpToLatestEdge() {
+    if (!_scrollController.hasClients) {
+      return false;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return false;
+    }
+    position.jumpTo(position.maxScrollExtent);
+    _handleScrollChanged();
+    return true;
+  }
+
+  void _requestOlderPageIfNeeded() {
+    if (!_initialLatestAnchorApplied || _pendingOlderPageAnchor != null) {
+      return;
+    }
+    final state = widget.controller.state;
+    if (!state.hasMoreBefore || state.loadingMore) {
+      return;
+    }
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions ||
+        position.pixels > chatTokens(context).olderPageTriggerDistance) {
+      return;
+    }
+    _pendingOlderPageAnchor = _OlderPageAnchor(
+      pixels: position.pixels
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble(),
+      maxScrollExtent: position.maxScrollExtent,
+    );
+    unawaited(
+      widget.controller.requestOlderPage().catchError((Object _) {
+        if (mounted) {
+          _pendingOlderPageAnchor = null;
+        }
+      }),
+    );
+  }
+
+  void _refreshPendingOlderPageAnchor() {
+    if (_pendingOlderPageAnchor == null ||
+        !widget.controller.state.loadingMore ||
+        !_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if (!position.hasContentDimensions) {
+      return;
+    }
+    _pendingOlderPageAnchor = _OlderPageAnchor(
+      pixels: position.pixels
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble(),
+      maxScrollExtent: position.maxScrollExtent,
+    );
+  }
+
+  void _resetTranscriptAnchors() {
+    _initialLatestAnchorApplied = false;
+    _initialLatestAnchorScheduled = false;
+    _olderAnchorRestoreScheduled = false;
+    _pendingOlderPageAnchor = null;
+    _showReturnToLatest = false;
+    _scrollingToLatest = false;
   }
 
   Future<void> _scrollToLatest({
@@ -169,6 +318,7 @@ class _FlutterChatViewState extends State<FlutterChatView> {
       builder: (context, child) {
         final l10n = ChatViewLocalizations.of(context);
         final state = widget.controller.state;
+        _scheduleTranscriptAnchors(state);
         final compact = MediaQuery.sizeOf(context).width < 720;
         return Stack(
           children: [
@@ -194,15 +344,18 @@ class _FlutterChatViewState extends State<FlutterChatView> {
                     ),
                   ),
                 Expanded(
-                  child: ChatTranscriptViewport(
-                    controller: widget.controller,
-                    state: state,
-                    scrollController: _scrollController,
-                    compact: compact,
-                    selectedMessageViewKey: widget.selectedMessageViewKey,
-                    onMessageSelected: widget.onMessageSelected,
-                    editingMessageChanged: (value) =>
-                        setState(() => _editingMessage = value),
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _handleScrollNotification,
+                    child: ChatTranscriptViewport(
+                      controller: widget.controller,
+                      state: state,
+                      scrollController: _scrollController,
+                      compact: compact,
+                      selectedMessageViewKey: widget.selectedMessageViewKey,
+                      onMessageSelected: widget.onMessageSelected,
+                      editingMessageChanged: (value) =>
+                          setState(() => _editingMessage = value),
+                    ),
                   ),
                 ),
                 Padding(
@@ -233,4 +386,11 @@ class _FlutterChatViewState extends State<FlutterChatView> {
       },
     );
   }
+}
+
+class _OlderPageAnchor {
+  const _OlderPageAnchor({required this.pixels, required this.maxScrollExtent});
+
+  final double pixels;
+  final double maxScrollExtent;
 }
