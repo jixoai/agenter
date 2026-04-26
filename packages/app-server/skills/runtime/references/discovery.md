@@ -10,6 +10,9 @@ Recommended order:
 5. `<command> --help` for the exact CLI contract
 
 Terminal-specific escalation:
+- if lifecycle is unclear, start with `terminal list`
+- if `terminal list` shows `processPhase` as `not_started` or `stopped`, read `terminal bootstrap --help` before trying `terminal read` or `terminal write`
+- if you need to halt a PTY without deleting its durable identity, read `terminal stop --help`
 - if you only forgot raw `terminal write` field names or compact indexes, start with `terminal write --help`
 - if you need mixed syntax such as `<key .../>`, `<wait .../>`, or `<raw>...</raw>`, start with `terminal input --help`
 - if raw vs mixed is still unclear after help, run `skill info agenter-terminal`

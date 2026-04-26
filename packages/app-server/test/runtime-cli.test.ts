@@ -215,15 +215,57 @@ describe("Feature: runtime descriptor CLI", () => {
     });
   });
 
-  test("Scenario: Given explicit compact argv When terminal kill runs Then the CLI decodes the positional payload back into the descriptor object", async () => {
+  test("Scenario: Given explicit compact argv When terminal stop runs Then the CLI decodes the positional payload back into the descriptor object", async () => {
     const api = await startMockRuntimeApi({
-      "/v1/terminal/kill": { result: { ok: true, message: "killed" } },
+      "/v1/terminal/stop": { result: { ok: true, message: "stopped" } },
     });
     const terminal = createRuntimeCommand(api.baseUrl, "terminal");
 
-    const result = await terminal.execute(["kill", "--compact", '["term-1"]'], createCommandContext());
+    const result = await terminal.execute(["stop", "--compact", '["term-1"]'], createCommandContext());
 
     expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({
+      terminalId: "term-1",
+    });
+  });
+
+  test("Scenario: Given JSON stdin When terminal bootstrap runs Then the CLI posts the explicit lifecycle payload to the runtime API", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/terminal/bootstrap": {
+        result: {
+          ok: true,
+          message: "terminal bootstrapped",
+          terminal: {
+            terminalId: "term-1",
+            processKind: "shell",
+            command: ["bash"],
+            launchCwd: "/repo",
+            workspace: null,
+            status: "IDLE",
+            processPhase: "running",
+            focused: true,
+            configuredTitle: "Chess Dev",
+            currentTitle: "npm run dev",
+            currentPath: "/repo/apps/web",
+            transportUrl: "ws://127.0.0.1:4000/term-1",
+          },
+        },
+      },
+    });
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const result = await terminal.execute(
+      ["bootstrap"],
+      createCommandContext(
+        JSON.stringify({
+          terminalId: "term-1",
+        }),
+      ),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('"processPhase": "running"');
+    expect(result.stdout).toContain('"currentPath": "/repo/apps/web"');
     expect(api.getLastRequest()?.body).toEqual({
       terminalId: "term-1",
     });
@@ -339,6 +381,41 @@ describe("Feature: runtime descriptor CLI", () => {
     const result = await workspace.execute(["list"], createCommandContext());
 
     expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({});
+  });
+
+  test("Scenario: Given lifecycle-aware terminal list When the CLI runs Then observed identity and stop facts are preserved in the returned projection", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/terminal/list": {
+        terminals: [
+          {
+            terminalId: "term-1",
+            processKind: "shell",
+            command: ["bash"],
+            launchCwd: "/repo",
+            workspace: null,
+            status: "IDLE",
+            processPhase: "stopped",
+            focused: false,
+            configuredTitle: "Chess Dev",
+            currentTitle: "vite preview",
+            currentPath: "/repo/apps/web",
+            lastStopReason: "killed",
+            lastExitCode: 130,
+            lastStoppedAt: "2026-04-26T10:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const result = await terminal.execute(["list"], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('"processPhase": "stopped"');
+    expect(result.stdout).toContain('"currentTitle": "vite preview"');
+    expect(result.stdout).toContain('"currentPath": "/repo/apps/web"');
+    expect(result.stdout).toContain('"lastStopReason": "killed"');
     expect(api.getLastRequest()?.body).toEqual({});
   });
 
@@ -473,6 +550,20 @@ describe("Feature: runtime descriptor CLI", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("unknown message subcommand: -h");
+    expect(api.getRequests()).toHaveLength(0);
+  });
+
+  test("Scenario: Given namespace help probe When terminal --help runs Then bootstrap and stop are listed as canonical lifecycle subcommands", async () => {
+    const api = await startMockRuntimeApi();
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const result = await terminal.execute(["--help"], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("list: List terminals visible to this runtime, including lifecycle");
+    expect(result.stdout).toContain("bootstrap: Bootstrap a provisioned or stopped runtime terminal by id.");
+    expect(result.stdout).toContain("stop: Stop a running runtime terminal PTY by id while preserving durable terminal identity.");
+    expect(result.stdout).not.toContain("kill: Kill a runtime terminal by id.");
     expect(api.getRequests()).toHaveLength(0);
   });
 

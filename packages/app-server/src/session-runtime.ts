@@ -3237,6 +3237,32 @@ export class SessionRuntime {
     }
   }
 
+  async bootstrapRuntimeTerminal(terminalId: string): Promise<{
+    ok: boolean;
+    message: string;
+    terminal?: TerminalControlPlaneEntry;
+  }> {
+    const controlPlane = this.requireTerminalControlPlane();
+    try {
+      const terminal = controlPlane.bootstrapAuthorized({
+        terminalId,
+        actorId: this.terminalActorId,
+      });
+      const managed = controlPlane.getManagedTerminal(terminalId);
+      if (managed) {
+        this.attachRuntimeTerminal(terminalId, managed);
+      }
+      return {
+        ok: true,
+        message: "terminal bootstrapped",
+        terminal,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, message };
+    }
+  }
+
   async focusRuntimeTerminals(input: { op: TerminalFocusOp; terminalIds: string[] }): Promise<{
     ok: boolean;
     message: string;
@@ -3302,7 +3328,11 @@ export class SessionRuntime {
     return result;
   }
 
-  async stopRuntimeTerminal(terminalId: string): Promise<{ ok: boolean; message: string }> {
+  async stopRuntimeTerminal(terminalId: string): Promise<{
+    ok: boolean;
+    message: string;
+    terminal?: TerminalControlPlaneEntry;
+  }> {
     const controlPlane = this.requireTerminalControlPlane();
     const result = await controlPlane.stopAuthorized({
       terminalId,
@@ -3311,7 +3341,11 @@ export class SessionRuntime {
     if (!result.ok) {
       return result;
     }
-    return result;
+    const terminal = controlPlane.listForActor(this.terminalActorId).find((item) => item.terminalId === terminalId);
+    return {
+      ...result,
+      ...(terminal ? { terminal } : {}),
+    };
   }
 
   private resolveMessageRole(message: MessageRecord): ChatMessage["role"] {
@@ -3857,7 +3891,28 @@ export class SessionRuntime {
         terminalWrite: async (input) => await this.writeRuntimeTerminal(input),
         terminalInput: async (input) => await this.inputRuntimeTerminal(input),
         terminalFocus: async (input) => await this.focusRuntimeTerminals(input),
-        terminalKill: async (input) => await this.stopRuntimeTerminal(input.terminalId),
+        terminalBootstrap: async (input) => {
+          const result = await this.bootstrapRuntimeTerminal(input.terminalId);
+          if (!result.terminal) {
+            return { ok: result.ok, message: result.message };
+          }
+          return {
+            ok: result.ok,
+            message: result.message,
+            terminal: projectRuntimeTerminal(result.terminal),
+          };
+        },
+        terminalStop: async (input) => {
+          const result = await this.stopRuntimeTerminal(input.terminalId);
+          if (!result.terminal) {
+            return { ok: result.ok, message: result.message };
+          }
+          return {
+            ok: result.ok,
+            message: result.message,
+            terminal: projectRuntimeTerminal(result.terminal),
+          };
+        },
         skillList: () => runtimeSkillSystem.list().map(projectRuntimeSkill),
         skillSearch: (input) => runtimeSkillSystem.search(input.query ?? "").map(projectRuntimeSkill),
         skillInfo: async (input) => {

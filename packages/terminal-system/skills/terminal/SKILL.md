@@ -8,24 +8,29 @@ description: Create, recover, and drive durable terminal sessions. Use this when
 Use this skill when work needs a durable process, an interactive shell, or recoverable terminal context.
 
 Quick start:
-1. Run `terminal list` when you need to recover or reuse an existing process owner.
-2. Run `terminal create` when no suitable terminal exists yet.
-3. Decide whether the next payload is `raw` or `mixed`.
-4. If the exact payload shape is unclear, run `terminal write --help` or `terminal input --help` first.
-5. Run `terminal write` for literal raw bytes, or `terminal input` for mixed DSL.
-6. Run `terminal read` only to inspect or recover terminal state.
+1. Run `terminal list` first to inspect `processPhase`, `currentPath`, `currentTitle`, and prior stop facts before guessing lifecycle from stale output.
+2. Run `terminal create` when no suitable terminal exists yet, or recover the terminal id you want from `terminal list`.
+3. If `processPhase` is `not_started` or `stopped`, run `terminal bootstrap` before expecting read/write to work.
+4. Decide whether the next payload is `raw` or `mixed`.
+5. If the exact payload shape is unclear, run `terminal write --help` or `terminal input --help` first.
+6. Run `terminal write` for literal raw bytes, or `terminal input` for mixed DSL.
+7. Run `terminal read` only to inspect or recover terminal state.
+8. Run `terminal stop` when you want to halt the PTY but keep the durable terminal identity for later bootstrap.
 
 Key laws:
 - A runtime does not start with a terminal by default.
 - Long-lived and interactive work belongs in terminals, not one-shot bash.
 - `terminal` is a collaborative process surface, not a root-workspace shell.
 - Shared terminals keep real-home semantics and do not inherit root-workspace-exclusive env/CLI by default, even when `cwd` starts inside the avatar root workspace.
+- `terminal list` is the lifecycle and observed-identity inspection surface. Read `processPhase`, `currentPath`, `currentTitle`, and stop facts there before inferring state from raw output.
+- Stopped or provisioned terminals do not auto-start when you read or write. Use `terminal bootstrap` explicitly.
 - If work needs a port listener, local web server, watch mode, REPL, or retryable boot sequence, start it in `terminal`.
 - `terminal write` is raw mode. It sends literal bytes and never invents Enter, waits, or special keys for you.
 - `terminal input` is mixed mode. Use it for `<key .../>`, `<wait .../>`, or literal `<...>` text wrapped in `<raw>...</raw>`.
 - In mixed mode, literal tag-like lines must stay inside `<raw>...</raw>`, and Ctrl combos use `ctrl="true"` such as `<key data="d" ctrl="true"/>`.
 - Interactive stdin programs usually split into two phases: start the program with `terminal write`, then feed content and special keys with `terminal input`.
 - `terminal write` and `terminal input` only prove that input delivery succeeded; they do not prove the process succeeded.
+- `terminal stop` halts the PTY while preserving the durable terminal record. Deletion is a different lifecycle action owned elsewhere.
 - After starting a listener in `terminal`, inspect its real state and verify the exact promised URL or path before you tell a room or user that it is ready.
 - `terminal read` snapshots and "the process is still running" only describe terminal state; they do not prove the promised URL or API path actually responds.
 - When the task already names the workspace and delivery target, the normal next move is to create or recover the terminal, not to browse unrelated room or attention detail first.
@@ -39,6 +44,6 @@ Key laws:
 - For multi-line writes, nested JSON, or heredoc-heavy payloads, the next file to open is `references/file-writing.md`.
 
 References:
-- `references/terminal-lifecycle.md`: create/list/read/write/kill strategy and recovery patterns
+- `references/terminal-lifecycle.md`: create/recover/bootstrap/read/write/stop strategy and recovery patterns
 - `references/input-modes.md`: when to use raw vs mixed, and how `<raw>...</raw>` works
 - `references/file-writing.md`: safe patterns for sending multi-line file writes through terminal raw/mixed input

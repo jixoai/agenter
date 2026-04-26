@@ -91,7 +91,16 @@ export interface RuntimeLocalApiHandlers {
     op: "add" | "remove" | "replace" | "clear";
     terminalIds: string[];
   }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
-  terminalKill: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
+  terminalBootstrap: (input: { terminalId: string }) => Promise<{
+    ok: boolean;
+    message: string;
+    terminal?: RuntimeTerminalView;
+  }>;
+  terminalStop: (input: { terminalId: string }) => Promise<{
+    ok: boolean;
+    message: string;
+    terminal?: RuntimeTerminalView;
+  }>;
   skillList: () => RuntimeSkillView[];
   skillSearch: (input: { query?: string }) => RuntimeSkillView[];
   skillInfo: (input: { name: string; rootKind?: "builtin" | "shared" | "global" | "avatar" }) => Promise<RuntimeSkillInfoView> | RuntimeSkillInfoView;
@@ -280,7 +289,7 @@ const terminalFocusSchema = z.object({
   terminalIds: z.array(z.string()),
 });
 
-const terminalKillSchema = z.object({
+const terminalLifecycleMutationSchema = z.object({
   terminalId: z.string(),
 });
 
@@ -720,7 +729,8 @@ export const runtimeToolDescriptors = [
     namespace: "terminal",
     name: "list",
     route: "/v1/terminal/list",
-    description: "List terminals currently visible to this runtime.",
+    description:
+      "List terminals visible to this runtime, including lifecycle, observed identity, and stop facts.",
     inputSchema: emptyObjectSchema,
     examples: [{ kind: "none" }],
     handler: async (_input, handlers) => ({
@@ -746,6 +756,10 @@ export const runtimeToolDescriptors = [
     name: "read",
     route: "/v1/terminal/read",
     description: "Read terminal output using auto, diff, or snapshot mode.",
+    helpNotes: [
+      "`terminal read` is inspection only. It does not bootstrap stopped terminals for you.",
+      "If `terminal list` shows `processPhase` as `not_started` or `stopped`, run `terminal bootstrap` before expecting read/write to work.",
+    ],
     inputSchema: terminalReadSchema,
     examples: [
       { kind: "stdin", payload: { terminalId: "term-1", mode: "auto" } },
@@ -837,16 +851,38 @@ export const runtimeToolDescriptors = [
   }),
   defineRuntimeToolDescriptor({
     namespace: "terminal",
-    name: "kill",
-    route: "/v1/terminal/kill",
-    description: "Kill a runtime terminal by id.",
-    inputSchema: terminalKillSchema,
+    name: "bootstrap",
+    route: "/v1/terminal/bootstrap",
+    description: "Bootstrap a provisioned or stopped runtime terminal by id.",
+    helpNotes: [
+      "Use `terminal list` first when you need to inspect `processPhase`, `currentPath`, `currentTitle`, or prior stop facts.",
+      "`terminal bootstrap` starts the PTY from durable launch truth. It is the explicit lifecycle edge for `not_started` and `stopped` terminals.",
+    ],
+    inputSchema: terminalLifecycleMutationSchema,
     examples: [
       { kind: "stdin", payload: { terminalId: "term-1" } },
       { kind: "argv", payload: { terminalId: "term-1" } },
     ],
     handler: async (input, handlers) => ({
-      result: await handlers.terminalKill(input),
+      result: await handlers.terminalBootstrap(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "terminal",
+    name: "stop",
+    route: "/v1/terminal/stop",
+    description: "Stop a running runtime terminal PTY by id while preserving durable terminal identity.",
+    helpNotes: [
+      "`terminal stop` halts the PTY but does not delete the terminal catalog entry.",
+      "After stop, use `terminal list` to inspect `processPhase` and stop facts. Use `terminal bootstrap` when you want to start that same terminal again.",
+    ],
+    inputSchema: terminalLifecycleMutationSchema,
+    examples: [
+      { kind: "stdin", payload: { terminalId: "term-1" } },
+      { kind: "argv", payload: { terminalId: "term-1" } },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.terminalStop(input),
     }),
   }),
 ] as const satisfies readonly RuntimeToolDescriptor[];

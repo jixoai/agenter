@@ -223,13 +223,18 @@ const createTerminalGateway = () => {
         profile?: TerminalProcessProfile;
         focus?: boolean;
       }) => ({ ok: true, message: "created" }),
-      kill: async (_input: { terminalId: string }) => ({ ok: true, message: "stopped" }),
+      bootstrap: async (_input: { terminalId: string }) => ({ ok: true, message: "bootstrapped" }),
+      stop: async (_input: { terminalId: string }) => ({ ok: true, message: "stopped" }),
       focus: async (_input: { op?: "add" | "remove" | "replace" | "clear"; terminalIds?: string[] }) => ({
         ok: true,
         message: "focused",
         focusedTerminalIds: ["iflow"],
       }),
       write: async (input: { terminalId: string; text: string }) => {
+        writeCalls.push(input);
+        return { ok: true, message: "written" };
+      },
+      input: async (input: { terminalId: string; text: string }) => {
         writeCalls.push(input);
         return { ok: true, message: "written" };
       },
@@ -657,17 +662,29 @@ const createRuntimeLocalHandlers = (input: {
     }
     return await input.terminalGateway.write(request);
   },
+  terminalInput: async (request) => {
+    if (!input.terminalGateway) {
+      throw new Error("terminal gateway not configured");
+    }
+    return await input.terminalGateway.input(request);
+  },
   terminalFocus: async (request) => {
     if (!input.terminalGateway) {
       throw new Error("terminal gateway not configured");
     }
     return await input.terminalGateway.focus(request);
   },
-  terminalKill: async (request) => {
+  terminalBootstrap: async (request) => {
     if (!input.terminalGateway) {
       throw new Error("terminal gateway not configured");
     }
-    return await input.terminalGateway.kill(request);
+    return await input.terminalGateway.bootstrap(request);
+  },
+  terminalStop: async (request) => {
+    if (!input.terminalGateway) {
+      throw new Error("terminal gateway not configured");
+    }
+    return await input.terminalGateway.stop(request);
   },
 });
 

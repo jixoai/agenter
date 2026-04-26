@@ -123,6 +123,9 @@ describe("Feature: runtime built-in skills", () => {
 
     const terminalContent = readRuntimeSkillContent(terminal!);
     expect(terminalContent).toContain("A runtime does not start with a terminal by default.");
+    expect(terminalContent).toContain("Run `terminal list` first to inspect `processPhase`, `currentPath`, `currentTitle`");
+    expect(terminalContent).toContain("run `terminal bootstrap` before expecting read/write to work");
+    expect(terminalContent).toContain("Run `terminal stop` when you want to halt the PTY");
     expect(terminalContent).toContain(
       "If work needs a port listener, local web server, watch mode, REPL, or retryable boot sequence",
     );
@@ -143,6 +146,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(terminalContent).toContain("references/terminal-lifecycle.md");
     expect(terminalContent).toContain("references/input-modes.md");
     expect(terminalContent).toContain("references/file-writing.md");
+    expect(terminalContent).not.toContain("create/list/read/write/kill");
     expect(terminalContent).not.toContain("127.0.0.1");
 
     const runtimeContent = readRuntimeSkillContent(runtime!);
@@ -166,11 +170,15 @@ describe("Feature: runtime built-in skills", () => {
       "utf8",
     );
     expect(terminalLifecycleReference).toContain("anything that binds a port or serves HTTP belongs in a terminal");
+    expect(terminalLifecycleReference).toContain("use `terminal list` to inspect `processPhase`, `currentPath`, `currentTitle`, and stop facts");
+    expect(terminalLifecycleReference).toContain("run `terminal bootstrap`");
+    expect(terminalLifecycleReference).toContain("`terminal stop` halts the PTY while preserving the terminal record");
     expect(terminalLifecycleReference).toContain("ad-hoc listener experiments such as `python -m http.server`");
     expect(terminalLifecycleReference).toContain("do not replace that HTTP verification");
     expect(terminalLifecycleReference).toContain("carry terminal JSON in `stdin` by default");
     expect(terminalLifecycleReference).toContain("accepts `--compact` positional arrays");
     expect(terminalLifecycleReference).toContain("terminal input");
+    expect(terminalLifecycleReference).not.toContain("kill strategy");
 
     const terminalInputModesReference = readFileSync(
       join(dirname(terminal!.path), "references", "input-modes.md"),
@@ -211,6 +219,9 @@ describe("Feature: runtime built-in skills", () => {
 
     const runtimeDiscoveryReference = readFileSync(join(dirname(runtime!.path), "references", "discovery.md"), "utf8");
     expect(runtimeDiscoveryReference).toContain("Terminal-specific escalation:");
+    expect(runtimeDiscoveryReference).toContain("start with `terminal list`");
+    expect(runtimeDiscoveryReference).toContain("read `terminal bootstrap --help`");
+    expect(runtimeDiscoveryReference).toContain("read `terminal stop --help`");
     expect(runtimeDiscoveryReference).toContain("terminal write --help");
     expect(runtimeDiscoveryReference).toContain("terminal input --help");
     expect(runtimeDiscoveryReference).toContain("skill info agenter-terminal");
