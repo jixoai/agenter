@@ -12,6 +12,7 @@ import type { ActorDirectoryEntry } from "$lib/features/collaboration/actor-dire
 
 export type TerminalSystemGrantRole = "admin" | "writer" | "requester" | "readonly";
 export type TerminalSystemReadMode = "auto" | "diff" | "snapshot";
+export type TerminalLifecycleIntent = "bootstrap" | "stop";
 
 export interface TerminalSystemNotice {
   tone: "default" | "warning" | "destructive";

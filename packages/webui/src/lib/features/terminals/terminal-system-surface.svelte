@@ -29,7 +29,11 @@
 		resolveTerminalInstanceName,
 		resolveTerminalTransportLabel,
 	} from './terminal-display';
-	import type { TerminalSystemNotice, TerminalSystemSurfaceProps } from './terminal-system-surface.types';
+	import type {
+		TerminalLifecycleIntent,
+		TerminalSystemNotice,
+		TerminalSystemSurfaceProps,
+	} from './terminal-system-surface.types';
 
 	let {
 		selectedTerminal,
@@ -56,6 +60,7 @@
 
 	let deleteBusy = $state(false);
 	let lifecycleBusy = $state(false);
+	let lifecycleIntent = $state<TerminalLifecycleIntent | null>(null);
 	let deleteDialogOpen = $state(false);
 	let actionToolTab: 'write' | 'read' = $state('write');
 	let actionsDetailOpen = $state(true);
@@ -182,6 +187,7 @@
 			return;
 		}
 		lifecycleBusy = true;
+		lifecycleIntent = 'bootstrap';
 		try {
 			await onBootstrapTerminal();
 			routeNotice = null;
@@ -189,6 +195,7 @@
 			routeNotice = describeTerminalError(error, 'terminal bootstrap failed');
 		} finally {
 			lifecycleBusy = false;
+			lifecycleIntent = null;
 		}
 	};
 
@@ -197,6 +204,7 @@
 			return;
 		}
 		lifecycleBusy = true;
+		lifecycleIntent = 'stop';
 		try {
 			await onStopTerminal();
 			routeNotice = null;
@@ -204,6 +212,7 @@
 			routeNotice = describeTerminalError(error, 'terminal stop failed');
 		} finally {
 			lifecycleBusy = false;
+			lifecycleIntent = null;
 		}
 	};
 
@@ -363,6 +372,8 @@
 			lastSelectedTerminalId = nextTerminalId;
 			return;
 		}
+		lifecycleBusy = false;
+		lifecycleIntent = null;
 		deleteDialogOpen = false;
 		usersDialogOpen = false;
 		if (lastSelectedTerminalId !== null) {
@@ -379,6 +390,7 @@
 			actionsOpen={actionsDetailOpen}
 			usersOpen={usersDialogOpen}
 			{lifecycleBusy}
+			{lifecycleIntent}
 			onToggleActions={() => {
 				usersDialogOpen = false;
 				actionsDetailOpen = !actionsDetailOpen;

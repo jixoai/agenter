@@ -81,6 +81,16 @@ describe("Feature: Terminal surface layout ownership contract", () => {
     expect(terminalPageToolbarSource).not.toContain("activeDetailView");
   });
 
+  test("Scenario: Given terminal lifecycle actions run from the shared toolbar When reading the source Then the action button exposes explicit bootstrapping and killing pending labels instead of a silent disabled state", () => {
+    expect(terminalSystemSurfaceSource).toContain("let lifecycleIntent = $state<TerminalLifecycleIntent | null>(null);");
+    expect(terminalSystemSurfaceSource).toContain("lifecycleIntent = 'bootstrap';");
+    expect(terminalSystemSurfaceSource).toContain("lifecycleIntent = 'stop';");
+    expect(terminalPageToolbarSource).toContain("lifecycleIntent?: TerminalLifecycleIntent | null;");
+    expect(terminalPageToolbarSource).toContain("return 'Bootstrapping PTY…';");
+    expect(terminalPageToolbarSource).toContain("return 'Killing PTY…';");
+    expect(terminalPageToolbarSource).toContain("disabled={lifecycleBusy}");
+  });
+
   test("Scenario: Given terminal instance identity and PTY window title diverge When reading the source Then tabs and toolbar keep the instance name while the window title uses the observed PTY title", () => {
     expect(terminalPageToolbarSource).toContain("resolveTerminalInstanceName(selectedTerminal)");
     expect(terminalsWorkbenchLayoutSource).toContain("label: resolveTerminalInstanceName(terminal)");

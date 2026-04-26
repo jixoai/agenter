@@ -23,6 +23,8 @@
 		activeTab,
 		tabs,
 		isRunning,
+		runtimeActionPending = false,
+		runtimeActionIntent = null,
 		onToggleRuntime,
 	}: {
 		sessionId: string;
@@ -34,9 +36,22 @@
 		activeTab: RuntimeTabId;
 		tabs: RuntimeTabItem[];
 		isRunning: boolean;
+		runtimeActionPending?: boolean;
+		runtimeActionIntent?: 'start' | 'stop' | null;
 		onToggleRuntime: () => void | Promise<void>;
 	} = $props();
 
+	const runtimeActionLabel = $derived.by(() => {
+		if (runtimeActionPending && runtimeActionIntent === 'start') {
+			return 'Starting runtime…';
+		}
+		if (runtimeActionPending && runtimeActionIntent === 'stop') {
+			return 'Stopping runtime…';
+		}
+		return isRunning ? 'Stop runtime' : 'Start runtime';
+	});
+
+	const runtimeActionTitle = $derived(runtimeActionLabel);
 </script>
 
 {#snippet runtimeToolbarPageTabs(toolbarState: WorkbenchToolbarRenderState)}
@@ -93,10 +108,11 @@
 	<div class={cn('flex min-w-0 items-center gap-1', toolbarState.placement === 'overflow' && 'grid gap-2')}>
 		<WorkbenchToolbarAction
 			placement={toolbarState.placement}
-			label={isRunning ? 'Stop runtime' : 'Start runtime'}
-			title={isRunning ? 'Stop runtime' : 'Start runtime'}
+			label={runtimeActionLabel}
+			title={runtimeActionTitle}
 			inlineTone={isRunning ? 'critical' : 'active'}
 			overflowVariant={isRunning ? 'destructive' : 'default'}
+			disabled={runtimeActionPending}
 			onclick={() => void onToggleRuntime()}
 		>
 			{#if isRunning}

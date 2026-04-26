@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
+	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import type { SettingsLayerFile } from '$lib/features/settings/settings-graph-types';
 	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
@@ -37,6 +38,10 @@
 	let shellHydrationVersion = 0;
 	let shellHydrating = $state(true);
 	let shellHydrationError = $state<string | null>(null);
+	let runtimeToggleSessionId = $state<string | null>(null);
+	let runtimeTogglePending = $state(false);
+	let runtimeToggleIntent = $state<'start' | 'stop' | null>(null);
+	let runtimeToggleError = $state<string | null>(null);
 	let heartbeatConfigLoading = $state(false);
 	let heartbeatConfigSaving = $state(false);
 	let heartbeatConfigError = $state<string | null>(null);
@@ -74,6 +79,23 @@
 	const sessionIconUrl = $derived(session ? controller.runtimeStore.sessionIconUrl(session.id) : null);
 	const unreadCount = $derived(controller.runtimeState.unreadBySession[sessionId] ?? 0);
 	const isRunning = $derived(session?.status === 'running' || session?.status === 'starting');
+	const runtimeRouteNotice = $derived.by(() => {
+		if (runtimeToggleError) {
+			return {
+				tone: 'warning' as const,
+				title: 'Runtime action failed',
+				message: runtimeToggleError,
+			};
+		}
+		if (session?.status === 'error' && session.lastError) {
+			return {
+				tone: 'warning' as const,
+				title: 'Runtime failed',
+				message: session.lastError,
+			};
+		}
+		return null;
+	});
 	const heartbeatConfigBinding = $derived(readRuntimeHeartbeatConfigBinding(heartbeatConfigGraph, heartbeatConfigLayerFile));
 	const heartbeatSchedulerState = $derived(runtime?.schedulerState ?? null);
 	const heartbeatCompactDisabled = $derived(session?.status !== 'running' || runtime?.activeCycle?.kind === 'compact');
@@ -92,14 +114,25 @@
 	};
 
 	const toggleRuntime = async (): Promise<void> => {
-		if (!session) {
+		if (!session || runtimeTogglePending) {
 			return;
 		}
-		if (session.status === 'running' || session.status === 'starting') {
-			await controller.runtimeStore.stopSession(session.id);
-			return;
+		const intent = session.status === 'running' || session.status === 'starting' ? 'stop' : 'start';
+		runtimeTogglePending = true;
+		runtimeToggleIntent = intent;
+		runtimeToggleError = null;
+		try {
+			if (intent === 'stop') {
+				await controller.runtimeStore.stopSession(session.id);
+			} else {
+				await controller.runtimeStore.startSession(session.id);
+			}
+		} catch (error) {
+			runtimeToggleError = error instanceof Error ? error.message : 'Failed to change runtime state.';
+		} finally {
+			runtimeTogglePending = false;
+			runtimeToggleIntent = null;
 		}
-		await controller.runtimeStore.startSession(session.id);
 	};
 
 	const loadHeartbeatConfig = async (preserveLayerId?: string | null): Promise<void> => {
@@ -197,6 +230,16 @@
 	};
 
 	$effect(() => {
+		if (runtimeToggleSessionId === sessionId) {
+			return;
+		}
+		runtimeToggleSessionId = sessionId;
+		runtimeTogglePending = false;
+		runtimeToggleIntent = null;
+		runtimeToggleError = null;
+	});
+
+	$effect(() => {
 		const requestedSessionId = sessionId;
 		const version = ++shellHydrationVersion;
 		shellHydrating = true;
@@ -262,6 +305,8 @@
 			{activeTab}
 			{tabs}
 			{isRunning}
+			runtimeActionPending={runtimeTogglePending}
+			runtimeActionIntent={runtimeToggleIntent}
 			onToggleRuntime={toggleRuntime}
 		/>
 	</WorkbenchPageToolbar>
@@ -289,53 +334,65 @@
 	</div>
 {:else}
 	<WorkbenchScaffold tone="page" body="body" bodyClass="h-full" data-testid="runtime-shell">
-		<RuntimePrimaryStage
-			tab={activeTab}
-			{session}
-			{runtime}
-			{channels}
-			{notifications}
-			{heartbeatGroups}
-			{modelCalls}
-			heartbeatSchedulerState={heartbeatSchedulerState}
-			heartbeatConfigBinding={heartbeatConfigBinding}
-			heartbeatConfigLoading={heartbeatConfigLoading}
-			heartbeatConfigSaving={heartbeatConfigSaving}
-			heartbeatConfigError={heartbeatConfigError}
-			heartbeatCompactPending={heartbeatCompactPending}
-			heartbeatCompactDisabled={heartbeatCompactDisabled}
-			{sessionIconUrl}
-			avatarLabel={session.avatar || session.name}
-			onOpenRoom={(chatId) => void openRoom(chatId)}
-			onOpenTerminal={(terminalId) => void openTerminal(terminalId)}
-			onSetRoomVisibility={async (chatId, focused) => {
-				await controller.runtimeStore.setChatVisibility({
-					sessionId: session.id,
-					chatId,
-					visible: true,
-					focused,
-				});
-			}}
-			onSetTerminalVisibility={async (terminalId, focused) => {
-				await controller.runtimeStore.setTerminalVisibility({
-					sessionId: session.id,
-					terminalId,
-					visible: true,
-					focused,
-				});
-			}}
-			onConsumeNotification={async (input) => {
-				await controller.runtimeStore.consumeNotifications({
-					sessionId: session.id,
-					chatId: input.chatId,
-					terminalId: input.terminalId,
-					upToSrc: input.upToSrc ?? null,
-				});
-			}}
-			onLoadOlderHeartbeat={() => controller.runtimeStore.loadMoreHeartbeatInspection(session.id)}
-			onRequestHeartbeatCompact={() => void requestHeartbeatCompact()}
-			onRefreshHeartbeatConfig={() => void loadHeartbeatConfig(heartbeatConfigBinding.editableLayerId)}
-			onSaveHeartbeatConfig={saveHeartbeatConfig}
-		/>
+		<div class="flex h-full min-h-0 flex-col gap-3">
+			{#if runtimeRouteNotice}
+				<NoticeBanner
+					tone={runtimeRouteNotice.tone}
+					title={runtimeRouteNotice.title}
+					message={runtimeRouteNotice.message}
+				/>
+			{/if}
+
+			<div class="min-h-0 flex-1">
+				<RuntimePrimaryStage
+					tab={activeTab}
+					{session}
+					{runtime}
+					{channels}
+					{notifications}
+					{heartbeatGroups}
+					{modelCalls}
+					heartbeatSchedulerState={heartbeatSchedulerState}
+					heartbeatConfigBinding={heartbeatConfigBinding}
+					heartbeatConfigLoading={heartbeatConfigLoading}
+					heartbeatConfigSaving={heartbeatConfigSaving}
+					heartbeatConfigError={heartbeatConfigError}
+					heartbeatCompactPending={heartbeatCompactPending}
+					heartbeatCompactDisabled={heartbeatCompactDisabled}
+					{sessionIconUrl}
+					avatarLabel={session.avatar || session.name}
+					onOpenRoom={(chatId) => void openRoom(chatId)}
+					onOpenTerminal={(terminalId) => void openTerminal(terminalId)}
+					onSetRoomVisibility={async (chatId, focused) => {
+						await controller.runtimeStore.setChatVisibility({
+							sessionId: session.id,
+							chatId,
+							visible: true,
+							focused,
+						});
+					}}
+					onSetTerminalVisibility={async (terminalId, focused) => {
+						await controller.runtimeStore.setTerminalVisibility({
+							sessionId: session.id,
+							terminalId,
+							visible: true,
+							focused,
+						});
+					}}
+					onConsumeNotification={async (input) => {
+						await controller.runtimeStore.consumeNotifications({
+							sessionId: session.id,
+							chatId: input.chatId,
+							terminalId: input.terminalId,
+							upToSrc: input.upToSrc ?? null,
+						});
+					}}
+					onLoadOlderHeartbeat={() => controller.runtimeStore.loadMoreHeartbeatInspection(session.id)}
+					onRequestHeartbeatCompact={() => void requestHeartbeatCompact()}
+					onRefreshHeartbeatConfig={() => void loadHeartbeatConfig(heartbeatConfigBinding.editableLayerId)}
+					onSaveHeartbeatConfig={saveHeartbeatConfig}
+				/>
+			</div>
+		</div>
 	</WorkbenchScaffold>
 {/if}

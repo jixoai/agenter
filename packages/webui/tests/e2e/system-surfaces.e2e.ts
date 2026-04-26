@@ -504,10 +504,13 @@ const expectTerminalViewText = async (page: Page, text: string): Promise<void> =
 const stopRuntimeIfRunning = async (page: Page): Promise<void> => {
   const stopButton = page.getByRole("button", { name: /^(Stop|Stop runtime)$/u }).first();
   const startButton = page.getByRole("button", { name: /^(Start|Start avatar|Start runtime)$/u }).first();
+  const overflowTrigger = page.getByRole("button", { name: "Open runtime toolbar details", exact: true }).first();
   const settled = await expect
     .poll(
       async () =>
-        (await stopButton.isVisible().catch(() => false)) || (await startButton.isVisible().catch(() => false)),
+        (await stopButton.isVisible().catch(() => false))
+        || (await startButton.isVisible().catch(() => false))
+        || (await overflowTrigger.isVisible().catch(() => false)),
       { timeout: 15_000 },
     )
     .toBeTruthy()
@@ -517,6 +520,13 @@ const stopRuntimeIfRunning = async (page: Page): Promise<void> => {
     return;
   }
   for (let attempt = 0; attempt < 25; attempt += 1) {
+    if (
+      !(await stopButton.isVisible().catch(() => false))
+      && !(await startButton.isVisible().catch(() => false))
+      && (await overflowTrigger.isVisible().catch(() => false))
+    ) {
+      await clickStable(overflowTrigger);
+    }
     if (await stopButton.isVisible().catch(() => false)) {
       await clickStable(stopButton);
       await expect
@@ -530,6 +540,50 @@ const stopRuntimeIfRunning = async (page: Page): Promise<void> => {
     await page.waitForTimeout(200);
   }
   await expect.poll(async () => await startButton.isVisible().catch(() => false), { timeout: 15_000 }).toBeTruthy();
+};
+
+const startRuntimeIfStopped = async (page: Page): Promise<void> => {
+  const stopButton = page.getByRole("button", { name: /^(Stop|Stop runtime)$/u }).first();
+  const startButton = page.getByRole("button", { name: /^(Start|Start runtime)$/u }).first();
+  const overflowTrigger = page.getByRole("button", { name: "Open runtime toolbar details", exact: true }).first();
+  const settled = await expect
+    .poll(
+      async () =>
+        (await stopButton.isVisible().catch(() => false))
+        || (await startButton.isVisible().catch(() => false))
+        || (await overflowTrigger.isVisible().catch(() => false)),
+      { timeout: 15_000 },
+    )
+    .toBeTruthy()
+    .then(() => true)
+    .catch(() => false);
+  if (!settled) {
+    return;
+  }
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    if (
+      !(await stopButton.isVisible().catch(() => false))
+      && !(await startButton.isVisible().catch(() => false))
+      && (await overflowTrigger.isVisible().catch(() => false))
+    ) {
+      await clickStable(overflowTrigger);
+    }
+    if (await startButton.isVisible().catch(() => false)) {
+      await clickStable(startButton);
+      await expect
+        .poll(async () => await stopButton.isVisible().catch(() => false), { timeout: 30_000 })
+        .toBeTruthy();
+      return;
+    }
+    if (await stopButton.isVisible().catch(() => false)) {
+      return;
+    }
+    if (attempt === 24) {
+      break;
+    }
+    await page.waitForTimeout(200);
+  }
+  await expect.poll(async () => await stopButton.isVisible().catch(() => false), { timeout: 30_000 }).toBeTruthy();
 };
 
 const readAuthToken = async (page: Page): Promise<string> => {
@@ -851,7 +905,7 @@ const selectAvatarCatalogEntry = async (page: Page, avatarName: string): Promise
   const avatarCatalogRoute = page.getByTestId("avatar-catalog-route");
   const avatarButton = avatarCatalogRoute.locator("button", { hasText: avatarName }).first();
   const selectedAvatarButton = avatarCatalogRoute.locator('button[aria-pressed="true"]', { hasText: avatarName }).first();
-  const detailHeading = page.getByRole("heading", { name: avatarName, exact: true });
+  const detailHeading = page.getByRole("heading", { name: avatarName, exact: true }).last();
   const closeDetailButton = page.getByRole("button", { name: "Close detail", exact: true });
 
   if (await detailHeading.isVisible().catch(() => false)) {
@@ -1292,6 +1346,30 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(page.getByText(/Inspect effective settings, per-layer sources, and provenance/i)).toBeVisible({
       timeout: 15_000,
     });
+  });
+
+  test("Scenario: Given a stopped Heartbeat runtime route When the operator reloads and starts from the toolbar Then the runtime returns to running without leaving Heartbeat", async ({
+    page,
+  }) => {
+    await navigateToSystem(page, "Avatars");
+    await expect(page.getByTestId("avatar-catalog-route")).toBeVisible({ timeout: 15_000 });
+    await selectAvatarCatalogEntry(page, "default");
+    await clickStable(page.getByRole("button", { name: "Open avatar", exact: true }));
+    await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/heartbeat$/, { timeout: 30_000 });
+
+    const runtimeUrl = page.url();
+    const sessionId = decodeURIComponent(new URL(runtimeUrl).pathname.split("/")[3] ?? "");
+    expect(sessionId).not.toBe("");
+
+    await stopSessionViaApi(page, sessionId);
+    await page.goto(runtimeUrl, { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/heartbeat$/, { timeout: 30_000 });
+    await expect(page.getByTestId("runtime-primary-stage")).toBeVisible({ timeout: 15_000 });
+
+    await startRuntimeIfStopped(page);
+    await expect(page).toHaveURL(new RegExp(`^${escapeRegExp(runtimeUrl)}$`), { timeout: 30_000 });
+
+    await stopRuntimeIfRunning(page);
   });
 
   test("Scenario: Given an authenticated superadmin When creating a global terminal and issuing write plus read tool calls Then the terminal-system action log survives refresh", async ({

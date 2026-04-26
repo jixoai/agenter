@@ -19,12 +19,14 @@
 		resolveTerminalInstanceName,
 		resolveTerminalLifecycleFacts,
 	} from './terminal-display';
+	import type { TerminalLifecycleIntent } from './terminal-system-surface.types';
 
 	let {
 		selectedTerminal,
 		actionsOpen,
 		usersOpen,
 		lifecycleBusy = false,
+		lifecycleIntent = null,
 		onToggleActions,
 		onOpenUsers,
 		onStopTerminal,
@@ -34,6 +36,7 @@
 		actionsOpen: boolean;
 		usersOpen: boolean;
 		lifecycleBusy?: boolean;
+		lifecycleIntent?: TerminalLifecycleIntent | null;
 		onToggleActions: () => void;
 		onOpenUsers: () => void;
 		onStopTerminal: () => void;
@@ -51,6 +54,29 @@
 	};
 
 	const terminalStatusFacts = $derived(resolveTerminalLifecycleFacts(selectedTerminal) satisfies TerminalToolbarStatusFact[]);
+	const lifecycleAction = $derived<TerminalLifecycleIntent>(
+		lifecycleIntent ?? (selectedTerminal && isTerminalRunning(selectedTerminal) ? 'stop' : 'bootstrap'),
+	);
+	const lifecycleActionLabel = $derived.by(() => {
+		if (lifecycleBusy && lifecycleAction === 'bootstrap') {
+			return 'Bootstrapping PTY…';
+		}
+		if (lifecycleBusy && lifecycleAction === 'stop') {
+			return 'Killing PTY…';
+		}
+		return lifecycleAction === 'stop' ? 'Kill PTY' : 'Bootstrap PTY';
+	});
+	const lifecycleActionTitle = $derived.by(() => {
+		if (lifecycleBusy && lifecycleAction === 'bootstrap') {
+			return 'Starting the PTY for this provisioned terminal.';
+		}
+		if (lifecycleBusy && lifecycleAction === 'stop') {
+			return 'Stopping the live PTY while preserving the terminal.';
+		}
+		return lifecycleAction === 'stop'
+			? 'Stop the live PTY while preserving the terminal.'
+			: 'Start the PTY for this provisioned terminal.';
+	});
 
 	const terminalHelpText =
 		'Shared terminals reopen durable tabs for long-lived shell sessions. Bootstrap/Kill PTY controls runtime lifecycle; Delete terminal remains a separate destructive action in the terminal window.';
@@ -101,13 +127,13 @@
 			<WorkbenchToolbarAction
 				type="button"
 				placement={toolbarState.placement}
-				label={isTerminalRunning(selectedTerminal) ? 'Kill PTY' : 'Bootstrap PTY'}
-				title={isTerminalRunning(selectedTerminal) ? 'Stop the live PTY while preserving the terminal.' : 'Start the PTY for this provisioned terminal.'}
+				label={lifecycleActionLabel}
+				title={lifecycleActionTitle}
 				inlineLabel
 				disabled={lifecycleBusy}
-				onclick={isTerminalRunning(selectedTerminal) ? onStopTerminal : onBootstrapTerminal}
+				onclick={lifecycleAction === 'stop' ? onStopTerminal : onBootstrapTerminal}
 			>
-				{#if isTerminalRunning(selectedTerminal)}
+				{#if lifecycleAction === 'stop'}
 					<PowerIcon class="size-4" />
 				{:else}
 					<PlayIcon class="size-4" />
