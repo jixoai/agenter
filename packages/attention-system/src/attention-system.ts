@@ -17,6 +17,13 @@ import { AttentionContext } from "./attention-context";
 
 const generateContextId = (): string => `ctx-${randomUUID()}`;
 
+/**
+ * AttentionSystem is the Context + Items information carrier.
+ *
+ * Context is the current cognitive snapshot. Commits/items are objective or
+ * subjective facts that influence that snapshot; unresolved scores are only
+ * the scheduling pressure built on top of that carrier, not the whole model.
+ */
 export class AttentionSystem {
   private readonly contexts = new Map<string, AttentionContext>();
   private readonly commitListeners = new Set<(contextId: string, context: AttentionContextState, commit: AttentionCommit) => void>();

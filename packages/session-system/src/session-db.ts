@@ -57,6 +57,13 @@ interface StoredMessageHeadRow {
   updated_at: number;
 }
 
+/**
+ * SessionDb is the AI-call historian.
+ *
+ * It records objective facts around provider calls, message parts, dispatches,
+ * and receipts for inspection and reconstruction. Room, terminal, workspace,
+ * and attention business truth still belongs to their owning systems.
+ */
 export class SessionDb {
   private readonly db: Database;
 
