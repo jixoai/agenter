@@ -19,12 +19,11 @@ Native attention queries SHALL exclude zero-score items unless callers explicitl
 - **THEN** `query` and `getActive` omit that item by default
 - **THEN** the same item is returned when `minScore = 0`
 
-### Requirement: Attention commits SHALL separate provenance from egress intent
-Attention commits SHALL keep provenance metadata and egress intent as separate durable fields. Provenance metadata is a closed, durable description of origin; egress intent is a typed routing contract for external adapters. Protocol-native source identity SHALL be stored as `src` instead of the shared `systemId` / `subjectId` / `channelId` tuple.
+### Requirement: Attention commits SHALL separate provenance from visible system mutations
+Attention commits SHALL keep provenance metadata as a closed, durable description of origin while keeping AI-visible content in summary and body/change fields. Visible effects in other systems SHALL be performed through explicit system mutations, not hidden routing fields on the attention commit. Protocol-native source identity SHALL be stored as `src` instead of the shared `systemId` / `subjectId` / `channelId` tuple.
 
-#### Scenario: Provenance remains stable while routing evolves
-- **WHEN** a commit is persisted with origin facts plus message reply intent
+#### Scenario: Provenance remains stable while visible routing stays explicit
+- **WHEN** a commit is persisted with origin facts for a room-backed obligation
 - **THEN** its provenance metadata records origin fields such as author, source, and protocol-native `src`
 - **AND** a source such as `msg:13` or `msg:13/155` remains durable without reconstructing legacy tuple fields
-- **AND** its reply routing survives in a typed egress field instead of being merged into metadata
-
+- **AND** any later room-visible reply or correction happens through explicit message-system mutations instead of a routing field on the commit

@@ -5,7 +5,7 @@ Define the durable styling contract for Lit-based shared web-components so downs
 ## Requirements
 
 ### Requirement: Lit web-components SHALL expose stable styling slots through css-part
-Framework-agnostic Lit atoms in `@agenter/web-components` SHALL expose stable visual slots through `css-part` whenever their visible surfaces need downstream theming. Product clients such as the Svelte WebUI MAY style those slots through `::part(...)` or Tailwind part selectors, but they MUST NOT depend on shadow-private class names. Svelte structural primitives such as `ScrollView`, `Scaffold`, `DialogScaffold`, and `SplitView` SHALL NOT be implemented in `@agenter/web-components`; they belong to `@agenter/svelte-components`.
+Framework-agnostic Lit atoms in `@agenter/web-components` SHALL expose stable visual slots through `css-part` whenever their visible surfaces need downstream theming. Product clients such as the Svelte WebUI MAY style those slots through `::part(...)` or Tailwind part selectors, but they MUST NOT depend on shadow-private class names. Svelte structural primitives such as `ScrollView`, `Scaffold`, `DialogScaffold`, and `SidebarScaffold` SHALL NOT be implemented in `@agenter/web-components`; they belong to `@agenter/svelte-components`.
 
 #### Scenario: Product skin styles a Lit atom without shadow-private selectors
 - **WHEN** a client needs to theme a Lit atom implemented in `@agenter/web-components`

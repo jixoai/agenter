@@ -34,8 +34,9 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - WorkspaceSystem 是独立平台系统，拥有 workspace mount、path grant、public assets、avatar-private assets 与 non-interactive workspace exec；workspace 不拥有 room 或 terminal truth。
 - Workspace path grant 的 durable law 是“workspace-root-relative ordered glob rules”: 规则默认拒绝、last-match-wins，并由共享的 overlay-rule filesystem evaluator 驱动 workspace bash、root workspace bash、terminal cwd 校验与 workbench explorer/preview。
 - Avatar private runtime home 是固定原语：每个 runtime 都必须拥有一个按 principal address 定位的 root workspace，dynamic workspace mounts 只是在此基础上的额外授权。
+- shell surface 必须显式区分 `root-workspace` 与 `public-workspace` 语义：只有 fixed root-workspace 可以默认携带 avatar-private env / runtime CLI 并 rewrite `HOME`；mounted public-workspace 与 shared terminal 默认都保持 collaboration semantics，不得继承 root-workspace-exclusive env/CLI。
 - AttentionContext 拥有 durable focus state（`focused | background | muted`）与 ingress semantics（`commit | push`）；`focused` 与 `background` 的未清 score 都可以继续激活 LoopBus，`muted` 默认不激活，notification-class push 可以忽略 focus 抑制强制唤醒；notification 仍然只是 attention push 的投影，不得再引入第二套 unread truth。
-- Attention durable fact 必须显式分层为 provenance / body / egress 三个平面：`meta` 只描述来源，`summary + change` 承载 AI 可见内容，外部路由意图走 typed `egress`；不得再把 reply target、私有 blob、快捷动作塞回 metadata。
+- Attention durable fact 必须显式分层为 provenance / body 两个平面：`meta` 只描述来源，`summary + change` 承载 AI 可见内容；可见外部效果必须走显式 system mutation 或 dispatch/receipt 事实，不得再把 reply target、私有 blob、快捷动作塞回 metadata。
 - LoopBus / source adapter 的 transport metadata 只允许承载调度、协议、持久化回溯所需的 facts；AI 需要理解的内容必须进 attention body 或 typed tool/query，不能靠 hidden metadata side channel。
 - LoopBus built-in source ref / read result contract 必须保持 protocol-native `src` law：message / terminal / task 都通过各自 namespace 的 typed `src` 寻址；message namespace 至少支持 room-scope `msg:<chatId>` 与 row-scope `msg:<chatId>/<messageId>`，其中可读的 room message source ref 仍使用 row-scope 形态；不得重新打开 `meta` 逃逸口。
 - WebUI actor-private preference persistence 属于独立的 auth-scoped KV plane，而不是 settings graph、runtime snapshot 或 runtime event stream 的附属字段；后端只理解 opaque key + `keys[] | prefix` filter，不理解 avatar/workspace 等业务 scope。
@@ -84,13 +85,14 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 
 - 一级导航固定为 `Avatars`、`Workspaces`、`Messages`、`Terminals`。
 - 三个一级 workbench 统一渲染为共享 browser-style workbench window：上层是 tabs，下层是响应式 toolbar，body 也属于同一窗口外轮廓。页面级标题、metadata、局部 actions 与 body 边界都必须挂载到这套共享 chrome 中，而不是在 route 内再手搓第二层 header 或独立外壳。
-- 进入这套 window 之后，route 根 surface 只能使用共享的 integrated `page/pane` 法则：`page` 负责窗口内整页，`pane` 负责 split-view 次级面板。禁止在 primary workbench route 内再包一层 detached outer card。
+- 进入这套 window 之后，route 根 surface 只能使用共享的 integrated `page/pane` 法则：`page` 负责窗口内整页，`pane` 负责次级面板。禁止在 primary workbench route 内再包一层 detached outer card。
 - 共享 workbench window body 负责页面级滚动；如果 route 内还需要独立 stage/pane 滚动，必须显式声明次级 `ScrollView`，而不是靠 route 根容器的固定高度或隐藏裁剪去“碰巧可用”。
 - 当 route 需要 `main + right detail` 关系时，必须复用共享 split-detail law：desktop 以 ratio-driven resize handle 持久化，compact 以 container-width collapse 进入 right-sheet；禁止再用 route-local `detailMode + matchMedia + fixed drawer width` 自行拼装。
 - compact right detail 打开时，`page-toolbar` 只允许接管为 close-only view affordance；detail-local 的 save / reload / apply / create 等功能动作继续留在 page content，通常留在 left-side `bottom-area`。
 - WebUI 的 redirect-only route entry（如 `/`、`/avatars`、`/avatars/runtime/{sessionId}`）必须通过 route-layer canonical redirect 在 feature 渲染前收敛；禁止再用 mount-time `goto()` 或 feature glue 补入口跳转。
 - `Avatars` 是统一的全局 avatar catalog workbench；运行中的 avatar session 以动态 runtime tabs 追加在同一层，不再复用旧的 workspace/history/settings 子页心智。
 - `Workspaces` 是独立的全局 WorkspaceSystem workbench；每个 workspace 只对应一个目录根，并通过共享 content header 暴露 `View as` avatar lens 与 `Explorer / Rules / Private` 三个 peer modes。
+- Workspace workbench 必须显式展示 `root-workspace` vs `public-workspace` 的 env/CLI 语义差异，但不得把这种差异表述成“root-workspace 不可共享”的所有权禁令。
 - workspace detail 可以从 `/workspaces` 自己打开 workspace-centric 的管理对话框来做 Avatar mount / unmount；这类控制面不再回流到 Avatar detail。
 - `Messages` 是 `message-system` 的全局 workbench；每个 room 对应一个 tab，并固定保留一个 `new room` tab。`room` 是当前聊天 channel 的承载概念，不能把 `room` 与 `chat`、`message-system` 混为一个概念。
 - `Terminals` 是 `terminal-system` 的全局 workbench；每个 terminal 对应一个 tab，并固定保留一个 `new terminal` tab。创建成功后，workbench 必须自动聚焦到新 terminal 的 canonical route。terminal surface 内右侧固定表达 `Actions + Users` 两类事实，focus 永远属于 seat，而不是 terminal 对象本身。

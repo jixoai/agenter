@@ -32,6 +32,7 @@ The WebUI SHALL expose a dedicated terminal-system route that lists global termi
 - **THEN** the route injects terminal-local toolbar content through the shared `WorkbenchPageToolbar` host instead of relying on static shell subtitle copy
 - **THEN** the toolbar identity reflects the active terminal facts such as the terminal label and cwd
 - **THEN** the toolbar status reflects authoritative runtime facts such as `running/stopped` and `busy/idle`
+- **THEN** toolbar lifecycle actions surface explicit pending copy such as `Bootstrapping PTY…` or `Killing PTY…` while the action is locked
 - **THEN** explanatory product copy is available through help affordance instead of occupying the primary identity row
 - **THEN** the help popup remains readable above compact shell chrome instead of rendering underneath navigation layers
 

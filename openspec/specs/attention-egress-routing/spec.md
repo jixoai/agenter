@@ -1,4 +1,4 @@
-# attention-egress-routing Specification
+# attention-explicit-system-mutations Specification
 
 ## Purpose
 TBD - created by archiving change attention-kernel-runtime-vnext. Update Purpose after archive.
@@ -18,4 +18,3 @@ Committed attention items SHALL remain internal attention facts. The public atte
 - **WHEN** an engineer needs to understand why the assistant repeated or reprocessed work
 - **THEN** the system exposes that causal trail through attention history and related runtime traces
 - **AND** the room message schema does not need a hidden runtime anchor field to support that investigation
-

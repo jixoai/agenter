@@ -29,7 +29,7 @@ The WebUI SHALL render the top edge of `Avatars`, `Messages`, `Workspaces`, and 
 - **THEN** the result reads as one switched window surface rather than detached tab chrome above a separate page card
 
 #### Scenario: Route roots inside the window do not recreate detached outer cards
-- **WHEN** a primary workbench route renders a transcript, creation flow, history index, or split-view interior inside the shared workbench window
+- **WHEN** a primary workbench route renders a transcript, creation flow, history index, or secondary-pane interior inside the shared workbench window
 - **THEN** the route mounts its root surface through the shared integrated page/pane scaffold
 - **THEN** the route does not add a second detached outer card around the entire page body
 

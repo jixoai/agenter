@@ -36,7 +36,7 @@
 - running session 的 attention/notification projection 读取 live runtime。
 - stopped 或 cold session 的 attention/notification projection 读取 `sessionRoot/attention-system` 下的 persisted facts。
 - notification 不是独立 registry；它只是 unconsumed attention push 的投影。
-- attention commit 对外必须遵守三分法：`meta` 只暴露 provenance，`summary + change` 承载 AI/inspection 可读主体，`egress` 承载 typed routing intent；调用方不得再依赖开放 metadata bag。
+- attention commit 对外必须遵守二分法：`meta` 只暴露 provenance，`summary + change` 承载 AI/inspection 可读主体；可见外部效果必须走显式 system mutation 或 dispatch/receipt 事实，调用方不得再依赖开放 metadata bag。
 - `notification.snapshot`、`notification.setChatVisibility`、`notification.setTerminalVisibility`、`notification.consume` 都必须遵守同一条法则：有 runtime 读 runtime，无 runtime 读 persisted attention。
 - `session.stop` 与 `session.abort` 都必须让 runtime 从 kernel ownership 中消失；`snapshot.runtimes[sessionId]` 对 stopped session 返回空是正确行为，不是数据丢失。
 

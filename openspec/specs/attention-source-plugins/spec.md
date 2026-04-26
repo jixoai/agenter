@@ -40,7 +40,7 @@ The runtime SHALL decide whether to schedule model work only after attention dra
 - **THEN** the model call is delayed until the policy allows it
 
 ### Requirement: Source adapters SHALL emit typed attention draft fields
-Source adapters SHALL provide typed draft presentation, provenance, semantic identity, and egress intent fields instead of relying on open metadata bags for model-facing information.
+Source adapters SHALL provide typed draft presentation, provenance, and semantic identity fields instead of relying on open metadata bags for model-facing information. If a source expects a visible effect in another system, that expectation SHALL be represented as model-visible attention content plus system skill guidance, and the effect SHALL still require an explicit system mutation.
 
 #### Scenario: Message source builds a presentation body from message truth
 - **WHEN** a message source is resolved into attention
@@ -56,4 +56,3 @@ Source adapters SHALL provide typed draft presentation, provenance, semantic ide
 - **WHEN** a task source emits attention about a changed task file or heartbeat
 - **THEN** any AI-visible source/path/file facts are represented in the draft content or presentation body
 - **AND** the source ref itself remains limited to typed scheduler coordinates
-

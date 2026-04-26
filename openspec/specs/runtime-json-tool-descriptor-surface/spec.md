@@ -154,7 +154,7 @@ Descriptor-backed message tools SHALL expose the reply-reference contract and th
 ### Requirement: Attention commit descriptor SHALL not expose room-message routing fields
 The descriptor-backed `attention commit` command SHALL keep attention payloads internal. Its public schema and generated help MUST NOT expose room-message routing fields such as `message_reply`, `chatId`, or room-level reply-reference routing.
 
-#### Scenario: Attention commit help omits room egress schema
+#### Scenario: Attention commit help omits hidden room routing schema
 - **WHEN** the AI runs `attention commit --help`
-- **THEN** the generated schema omits any room-message egress field
+- **THEN** the generated schema omits any hidden room-message routing field
 - **AND** the help no longer suggests that attention commit itself can send a visible room reply

@@ -14,7 +14,7 @@ The runtime SHALL record execution as trace spans, events, and links keyed by st
 #### Scenario: Model work links to the causing attention items
 - **WHEN** a cycle starts model work from one or more committed attention items
 - **THEN** the runtime records a model-call trace span linked to the selected item refs and cycle-frame ref
-- **THEN** downstream tool calls and egress dispatch spans can link back to that same causal chain
+- **THEN** downstream tool calls, delivery dispatch spans, and explicit system-mutation spans can link back to that same causal chain
 
 ### Requirement: Trace spans SHALL encode terminal outcomes and causal links
 Trace data SHALL distinguish successful completion, recoverable error, explicit stop, explicit abort, and downstream dispatch failure without relying on textual inference.
@@ -28,4 +28,3 @@ Trace data SHALL distinguish successful completion, recoverable error, explicit 
 - **WHEN** the runtime aborts and destroys owned systems
 - **THEN** the active span records an abort-oriented terminal outcome
 - **THEN** later inspection can distinguish teardown from a normal stop or timeout
-

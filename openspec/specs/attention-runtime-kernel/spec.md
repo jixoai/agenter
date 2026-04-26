@@ -76,7 +76,7 @@ As long as one or more attention items still have `score >= 1`, the runtime SHAL
 #### Scenario: Plain-text-only debt rounds do not fake completion
 - **WHEN** a model round was triggered only by unresolved attention debt and it emits no attention append/patch mutation
 - **THEN** the runtime does not treat that round as semantic completion for the unresolved item
-- **THEN** raw plain-text output from that round does not become a user-visible Chat reply unless a message egress adapter later dispatches a committed attention outcome
+- **THEN** raw plain-text output from that round does not become a user-visible Chat reply unless the assistant performs an explicit room mutation such as `message send`, `message edit`, or `message recall`
 
 ### Requirement: Runtime SHALL keep system prompt provider-agnostic and stable
 The runtime kernel SHALL assemble the model `systemPrompt` only from stable attention law and shared identity slots. The runtime-generated `skills.list` SHALL travel through the attention-backed bootstrap context as a readonly slot instead of being concatenated into `systemPrompt`. Tool providers and system adapters SHALL NOT inject provider-owned system guides into `systemPrompt`, and dynamic system details SHALL NOT be serialized into bootstrap help blocks.

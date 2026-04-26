@@ -120,7 +120,7 @@ The shared transcript SHALL render room-message revision state from the durable 
 - **THEN** the transcript does not duplicate the row just because the lifecycle state changed
 
 ### Requirement: Web chat view SHALL keep hybrid markdown preview source-faithful
-The shared transcript SHALL keep message Markdown source in the underlying CodeMirror document while projecting structural Markdown blocks into preview widgets. GFM tables SHALL render as preview tables, fenced code SHALL use dedicated block-code chrome instead of inline-code styling, and selecting a projected structural block SHALL reveal the raw Markdown source so copy stays source-faithful.
+The shared transcript SHALL keep message Markdown source in the underlying CodeMirror document while projecting structural Markdown blocks into source-owned preview overlays. GFM tables SHALL render as preview tables, fenced code SHALL use dedicated block-code chrome instead of inline-code styling, focusing a structural preview SHALL reveal the raw Markdown source without waiting for a drag selection, and structural preview code rows SHALL keep the same line-height law as raw mode instead of stretching to fill the overlay card.
 
 #### Scenario: GFM table renders as a preview table
 - **WHEN** a room message contains GitHub-flavored Markdown table syntax
@@ -132,10 +132,25 @@ The shared transcript SHALL keep message Markdown source in the underlying CodeM
 - **THEN** the transcript renders the fenced block with block-code chrome and mono content
 - **THEN** the block does not inherit inline-code capsule styling
 
-#### Scenario: Selecting a projected structural block reveals raw markdown
-- **WHEN** the operator selects a projected table or fenced code block in the transcript
-- **THEN** the structural preview widget is replaced by raw Markdown source from the underlying document
+#### Scenario: Focusing a structural preview reveals raw markdown immediately
+- **WHEN** the operator focuses a projected table or fenced code block in the transcript
+- **THEN** the structural preview reveals raw Markdown source from the underlying document
+- **THEN** the operator does not need to start a drag selection before raw source becomes visible
+
+#### Scenario: Non-empty structural selection soft-reveals raw markdown
+- **WHEN** the operator creates a non-empty selection intersecting a projected table or fenced code block in the transcript
+- **THEN** the structural preview overlay soft-reveals raw Markdown source from the underlying document
 - **THEN** copying that selection preserves the raw Markdown instead of rendered preview text
+
+#### Scenario: Structural preview keeps source-owned height budget
+- **WHEN** a room message renders the same structural Markdown block in preview mode and in raw source mode
+- **THEN** the block keeps the same outer flow height budget in both modes
+- **THEN** the structural preview does not re-layout the transcript around a taller replacement widget
+
+#### Scenario: Structural preview code rows keep raw line-height
+- **WHEN** a fenced code block renders in preview mode
+- **THEN** each preview code row uses the same line-height baseline as raw mode
+- **THEN** the preview does not stretch code rows merely to fill the measured overlay height
 
 ### Requirement: Web chat view SHALL render first-class room reply previews
 The shared chat transcript SHALL render room-message references as a first-class preview surface instead of relying on quote-like body text conventions. When a room message carries `ref`, the row SHALL render a compact preview of the referenced durable room message and SHALL keep that preview synchronized with the referenced message's current objective lifecycle state.

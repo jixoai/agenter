@@ -17,7 +17,7 @@ The runtime SHALL publish trace snapshots for hydration and incremental trace ev
 - **THEN** the published contract does not require reconstructing private backend state from raw logs
 
 ### Requirement: Trace publication SHALL support lookup by stable refs
-Trace consumers SHALL be able to locate trace history from attention refs, cycle-frame refs, model-call refs, and egress refs.
+Trace consumers SHALL be able to locate trace history from attention refs, cycle-frame refs, model-call refs, delivery refs, and explicit system-mutation refs.
 
 #### Scenario: Inspect trace from an attention item
 - **WHEN** a consumer requests trace details for an attention item reference
@@ -28,4 +28,3 @@ Trace consumers SHALL be able to locate trace history from attention refs, cycle
 - **WHEN** a consumer requests trace details for a model-call reference
 - **THEN** the runtime can return the causal span chain leading into and out of that model call
 - **THEN** linked attention items and cycle frames remain discoverable from that trace payload
-

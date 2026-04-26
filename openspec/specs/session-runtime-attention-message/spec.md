@@ -42,7 +42,7 @@ Session runtime SHALL continue to ingest unread room work into attention, but ro
 - **AND** the assistant does not need a fresh relay through the `gaubee` room to answer that follow-up
 
 #### Scenario: Cycle ingress starts from actor unread room state
-- **WHEN** a runtime is about to start a new cycle or attach new attention during tool egress
+- **WHEN** a runtime is about to start a new cycle or attach new attention during tool side effects
 - **THEN** it first queries actor unread room state instead of scanning message rows for AI queue markers
 - **THEN** it converts the selected unread room slices into attention-items for that round
 
