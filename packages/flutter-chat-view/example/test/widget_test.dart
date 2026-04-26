@@ -243,6 +243,8 @@ void main() {
 
         expect(find.bySemanticsLabel('New profile'), findsOneWidget);
         expect(find.bySemanticsLabel('Show details'), findsOneWidget);
+        expect(find.byTooltip('New profile'), findsOneWidget);
+        expect(find.byTooltip('Show details'), findsOneWidget);
         expect(find.widgetWithText(CupertinoButton, 'Connect'), findsOneWidget);
         expect(
           tester.getSize(

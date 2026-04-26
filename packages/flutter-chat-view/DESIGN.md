@@ -253,6 +253,7 @@ host shell 固定分四层：
 
 - icon-only action 必须保留至少 `44x44` 的命中区域，并提供明确语义标签。
 - icon-only action 在 Web 语义树里只能暴露一个带本地化 label 的 button；primitive 必须排除内部 icon/按钮导致的 unlabeled duplicate semantics。
+- icon-only action 必须复用同一份本地化 label 提供 tooltip / long-press help；tooltip 只负责可见帮助，不得生成第二个语义 button。
 - compact 模式优先折叠次级动作和长原始值；不要把 room title、overflow action、share URL 挤在同一个首屏 surface。
 - 长 URL、token、share link 默认不直接占据主信息位；优先提供 copy action，让原始值退到次级细节。
 
@@ -306,6 +307,7 @@ host shell 固定分四层：
 - Top navigation and bottom tab surfaces own their safe-area and separator behavior. Content panels must not add extra bottom padding to simulate tab spacing.
 - All icon-only controls must use `AppleIconButton` or an equivalent primitive with at least a 44pt hit target and a semantics label.
 - `AppleIconButton` owns icon-only semantics: one localized button label, no unlabeled duplicate button node, and child icon semantics excluded.
+- `AppleIconButton` owns icon-only discoverability: tooltip / long-press help derives from the same localized label and is excluded from semantics.
 - `CompactRouteSheet` owns compact secondary/tertiary route detents. Feature code selects semantic detents (`page`, `inspector`) and must not pass ad-hoc popup heights.
 - Product-shell colors must resolve through `CupertinoDynamicColor` or Apple platform tokens. Fixed raw colors are allowed only inside token definitions.
 - Liquid Glass is modeled as a progressive material primitive on Web: blur/alpha when available, dynamic solid fallback when unavailable. Do not name feature code after unreproducible private system effects.

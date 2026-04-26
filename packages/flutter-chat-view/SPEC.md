@@ -52,6 +52,6 @@
 - compact active conversation 必须是 conversation-first route：底部归 transcript/composer，不允许持久 profile/chat/details bottom nav。
 - profile directory、room facts、participants、selected-message facts 必须通过二级/三级 route surface、sheet、popover/menu 或 persistent inspector projection 进入，而不是作为 compact peer tabs。
 - compact 二级/三级 route sheet 必须通过语义 detent 表达：profile directory 使用 page detent，room/message inspector 使用 inspector detent；feature code 不允许传散落的 raw height。
-- icon-only product-shell action 必须由统一 primitive 暴露单一带本地化 label 的语义 button，并保留至少 `44x44` 命中区域，不能在 Web 语义树里产生额外 unlabeled duplicate button。
+- icon-only product-shell action 必须由统一 primitive 暴露单一带本地化 label 的语义 button，并保留至少 `44x44` 命中区域，不能在 Web 语义树里产生额外 unlabeled duplicate button；同一 label 还必须提供 tooltip / long-press help，但 tooltip 不得生成第二个语义 button。
 - example 壳层必须默认携带本地化、基础无障碍语义与键盘捷径，不把这些能力延后到 native phase 才补。
 - 后续 Android、iOS、macOS 只应复用本 package 的规则内核，不应复制 Web demo glue。
