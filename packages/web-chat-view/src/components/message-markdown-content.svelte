@@ -68,6 +68,7 @@
         fontFamily: "var(--font-sans)",
         fontSize: "13px",
         lineHeight: "1.6",
+        "--md-source-line-height": "calc(13px * 1.6)",
         caretColor: "transparent",
         color: "inherit",
         overflowWrap: "anywhere",

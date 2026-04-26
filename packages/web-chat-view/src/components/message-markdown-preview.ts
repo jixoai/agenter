@@ -1,12 +1,18 @@
 import { syntaxHighlighting, syntaxTree } from "@codemirror/language";
-import { StateField, type EditorState, type Extension } from "@codemirror/state";
+import { StateField, type ChangeDesc, type EditorState, type Extension } from "@codemirror/state";
 import type { DecorationSet } from "@codemirror/view";
 import { Decoration, EditorView } from "@codemirror/view";
 import type { SyntaxNodeRef } from "@lezer/common";
 
 import { collectMarkdownStructuralProjectionState, type MarkdownProjectionRange } from "./message-markdown-hybrid-projection";
 import { markdownHighlightStyle, markdownPreviewTheme } from "./message-markdown-preview-theme";
-import { bulletDecoration, orderedDecoration, structuralDecoration, taskMarkerDecoration } from "./message-markdown-preview-widgets";
+import {
+  bulletDecoration,
+  orderedDecoration,
+  revealStructuralSourceEffect,
+  structuralOverlayDecoration,
+  taskMarkerDecoration,
+} from "./message-markdown-preview-widgets";
 
 const HIDDEN_TOKENS = ["HeaderMark", "EmphasisMark", "LinkMark", "URL", "HardBreak", "QuoteMark"];
 
@@ -17,6 +23,7 @@ const imageDecoration = Decoration.mark({ class: "cm-md-image" });
 const fadedDecoration = Decoration.mark({ class: "cm-md-faded" });
 const taskFadedDecoration = Decoration.mark({ class: "cm-md-task-faded" });
 const inlineCodeDecoration = Decoration.mark({ class: "cm-md-inlinecode" });
+const structuralSourceHiddenDecoration = Decoration.mark({ class: "cm-md-structural-source-hidden" });
 
 const normalizeDecorationRange = (docLength: number, from: number, to: number): { from: number; to: number } | null => {
   const start = Math.max(0, Math.min(from, docLength));
@@ -29,6 +36,28 @@ const normalizeDecorationRange = (docLength: number, from: number, to: number): 
 
 const rangeContains = (ranges: readonly MarkdownProjectionRange[], from: number, to: number): boolean =>
   ranges.some((range) => from >= range.from && to <= range.to);
+
+const rangeIntersects = (left: MarkdownProjectionRange, right: MarkdownProjectionRange): boolean => {
+  if (left.from === left.to) {
+    return left.from >= right.from && left.from < right.to;
+  }
+  if (right.from === right.to) {
+    return right.from >= left.from && right.from < left.to;
+  }
+  return left.from < right.to && left.to > right.from;
+};
+
+const mapProjectionRange = (
+  range: MarkdownProjectionRange,
+  changes: ChangeDesc,
+): MarkdownProjectionRange | null => {
+  const from = changes.mapPos(range.from, 1);
+  const to = changes.mapPos(range.to, -1);
+  if (to <= from) {
+    return null;
+  }
+  return { from, to };
+};
 
 const buildInlineDecorations = (
   state: EditorState,
@@ -174,17 +203,26 @@ const buildInlineDecorations = (
 };
 
 const buildDecorationSet = (state: EditorState): DecorationSet => {
+  const revealRanges = state.field(structuralRevealStateField);
   const structuralState = collectMarkdownStructuralProjectionState(state, {
-    selectionRanges: state.selection.ranges.map((range) => ({
-      from: range.from,
-      to: range.to,
-    })),
+    selectionRanges: state.selection.ranges
+      .filter((range) => range.from !== range.to)
+      .map((range) => ({
+        from: range.from,
+        to: range.to,
+      })),
+    revealRanges,
   });
   const widgets: Array<{ from: number; to: number; decoration: Decoration }> = [
     ...structuralState.projected.map((projection) => ({
       from: projection.from,
+      to: projection.from,
+      decoration: structuralOverlayDecoration(projection),
+    })),
+    ...structuralState.projected.map((projection) => ({
+      from: projection.from,
       to: projection.to,
-      decoration: structuralDecoration(projection),
+      decoration: structuralSourceHiddenDecoration,
     })),
     ...buildInlineDecorations(
       state,
@@ -204,10 +242,40 @@ const buildDecorationSet = (state: EditorState): DecorationSet => {
   );
 };
 
+const structuralRevealStateField = StateField.define<readonly MarkdownProjectionRange[]>({
+  create: () => [],
+  update: (value, transaction) => {
+    let next = transaction.docChanged
+      ? value.flatMap((range) => {
+          const mapped = mapProjectionRange(range, transaction.changes);
+          return mapped ? [mapped] : [];
+        })
+      : [...value];
+
+    for (const effect of transaction.effects) {
+      if (!effect.is(revealStructuralSourceEffect)) {
+        continue;
+      }
+      next = effect.value ? [effect.value] : [];
+    }
+
+    if (!transaction.selection) {
+      return next;
+    }
+
+    const selectionRanges = transaction.state.selection.ranges.map((range) => ({
+      from: range.from,
+      to: range.to,
+    }));
+
+    return next.filter((range) => selectionRanges.some((selectionRange) => rangeIntersects(selectionRange, range)));
+  },
+});
+
 const markdownPreviewStateField = StateField.define<DecorationSet>({
   create: (state) => buildDecorationSet(state),
   update: (value, transaction) => {
-    if (transaction.docChanged || transaction.selection) {
+    if (transaction.docChanged || transaction.selection || transaction.effects.some((effect) => effect.is(revealStructuralSourceEffect))) {
       return buildDecorationSet(transaction.state);
     }
     return value;
@@ -216,6 +284,7 @@ const markdownPreviewStateField = StateField.define<DecorationSet>({
 });
 
 export const messageMarkdownPreview = (): Extension => [
+  structuralRevealStateField,
   markdownPreviewStateField,
   syntaxHighlighting(markdownHighlightStyle),
   markdownPreviewTheme,

@@ -8,22 +8,30 @@ export interface MarkdownProjectionRange {
   to: number;
 }
 
+interface MarkdownStructuralProjectionBase {
+  from: number;
+  to: number;
+  sourceLineFrom: number;
+  sourceLineTo: number;
+  sourceLineCount: number;
+}
+
 export interface MarkdownTableRowProjection {
   kind: "header" | "body";
   cells: readonly string[];
 }
 
-export interface MarkdownTableProjection {
+export interface MarkdownTableProjection extends MarkdownStructuralProjectionBase {
   kind: "table";
-  from: number;
-  to: number;
+  bodyRowCount: number;
+  headerRowCount: number;
   rows: readonly MarkdownTableRowProjection[];
 }
 
-export interface MarkdownFencedCodeProjection {
+export interface MarkdownFencedCodeProjection extends MarkdownStructuralProjectionBase {
   kind: "fenced-code";
-  from: number;
-  to: number;
+  codeLineCount: number;
+  hasLanguage: boolean;
   rawInfo: string;
   language: string;
   code: string;
@@ -39,6 +47,7 @@ export interface MarkdownStructuralProjectionState {
 interface CollectMarkdownStructuralProjectionInput {
   visibleRanges?: readonly MarkdownProjectionRange[];
   selectionRanges?: readonly MarkdownProjectionRange[];
+  revealRanges?: readonly MarkdownProjectionRange[];
 }
 
 const defaultVisibleRanges = (state: EditorState): readonly MarkdownProjectionRange[] => [
@@ -49,11 +58,18 @@ const normalizeSelectionRanges = (
   state: EditorState,
   selectionRanges?: readonly MarkdownProjectionRange[],
 ): readonly MarkdownProjectionRange[] =>
+  // 2026-04-23 user guidance: do not let CodeMirror's default collapsed selection
+  // auto-reveal structural raw source on mount. "Focus current line reveals raw"
+  // is carried by an explicit structural-focus reveal range, not by every caret.
   (selectionRanges ??
     state.selection.ranges.map((range) => ({
       from: range.from,
       to: range.to,
     }))).filter((range) => range.from !== range.to);
+
+const normalizeRevealRanges = (
+  revealRanges?: readonly MarkdownProjectionRange[],
+): readonly MarkdownProjectionRange[] => revealRanges ?? [];
 
 const rangeIntersects = (left: MarkdownProjectionRange, right: MarkdownProjectionRange): boolean => {
   if (left.from === left.to) {
@@ -84,6 +100,20 @@ const pushUniqueRange = (
 };
 
 const readNodeText = (state: EditorState, node: SyntaxNode): string => state.doc.sliceString(node.from, node.to);
+
+const readNodeLineGeometry = (
+  state: EditorState,
+  node: SyntaxNodeRef,
+): Pick<MarkdownStructuralProjectionBase, "sourceLineCount" | "sourceLineFrom" | "sourceLineTo"> => {
+  const sourceLineFrom = state.doc.lineAt(node.from).number;
+  const sourceLineTo = state.doc.lineAt(Math.max(node.from, node.to - 1)).number;
+
+  return {
+    sourceLineCount: sourceLineTo - sourceLineFrom + 1,
+    sourceLineFrom,
+    sourceLineTo,
+  };
+};
 
 const readTableCellText = (state: EditorState, node: SyntaxNode): string =>
   readNodeText(state, node)
@@ -123,10 +153,15 @@ const buildTableProjection = (state: EditorState, node: SyntaxNodeRef): Markdown
     return null;
   }
 
+  const headerRowCount = rows.filter((row) => row.kind === "header").length;
+
   return {
     kind: "table",
     from: node.from,
     to: node.to,
+    ...readNodeLineGeometry(state, node),
+    bodyRowCount: rows.length - headerRowCount,
+    headerRowCount,
     rows,
   };
 };
@@ -135,14 +170,18 @@ const buildFencedCodeProjection = (state: EditorState, node: SyntaxNodeRef): Mar
   const infoNode = node.node.getChild("CodeInfo");
   const textNode = node.node.getChild("CodeText");
   const rawInfo = infoNode ? state.doc.sliceString(infoNode.from, infoNode.to).trim() : "";
+  const code = textNode ? state.doc.sliceString(textNode.from, textNode.to) : "";
 
   return {
     kind: "fenced-code",
     from: node.from,
     to: node.to,
+    ...readNodeLineGeometry(state, node),
+    code,
+    codeLineCount: code.length === 0 ? 0 : code.split(/\r?\n/u).length,
+    hasLanguage: rawInfo.length > 0,
     rawInfo,
     language: normalizeMarkdownCodeLanguage(rawInfo),
-    code: textNode ? state.doc.sliceString(textNode.from, textNode.to) : "",
   };
 };
 
@@ -152,6 +191,7 @@ export const collectMarkdownStructuralProjectionState = (
 ): MarkdownStructuralProjectionState => {
   const visibleRanges = input.visibleRanges ?? defaultVisibleRanges(state);
   const selectionRanges = normalizeSelectionRanges(state, input.selectionRanges);
+  const revealRanges = normalizeRevealRanges(input.revealRanges);
   const projected: MarkdownStructuralProjection[] = [];
   const revealedRanges: MarkdownProjectionRange[] = [];
   const projectedKeys = new Set<string>();
@@ -167,7 +207,7 @@ export const collectMarkdownStructuralProjectionState = (
         }
 
         const candidateRange = { from: node.from, to: node.to };
-        if (overlapsSelection(selectionRanges, candidateRange)) {
+        if (overlapsSelection(selectionRanges, candidateRange) || overlapsSelection(revealRanges, candidateRange)) {
           pushUniqueRange(revealedRanges, revealedKeys, candidateRange);
           return false;
         }

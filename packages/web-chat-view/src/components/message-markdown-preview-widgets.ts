@@ -1,7 +1,10 @@
 import hljs from "highlight.js";
-import { Decoration, EditorView, WidgetType } from "@codemirror/view";
+import { StateEffect } from "@codemirror/state";
+import { Decoration, type EditorView, WidgetType } from "@codemirror/view";
 
-import type { MarkdownFencedCodeProjection, MarkdownStructuralProjection, MarkdownTableProjection } from "./message-markdown-hybrid-projection";
+import type { MarkdownFencedCodeProjection, MarkdownProjectionRange, MarkdownStructuralProjection, MarkdownTableProjection } from "./message-markdown-hybrid-projection";
+
+export const revealStructuralSourceEffect = StateEffect.define<MarkdownProjectionRange | null>();
 
 class OrderedListNumberWidget extends WidgetType {
   constructor(
@@ -57,24 +60,89 @@ class TaskCheckboxWidget extends WidgetType {
   }
 }
 
-const createProjectionSelectionHandler =
-  (view: EditorView, projection: MarkdownStructuralProjection) =>
-  (event: Event): void => {
-    if (event instanceof MouseEvent && event.button !== 0) {
-      return;
+const overlayResizeObservers = new WeakMap<HTMLElement, ResizeObserver>();
+
+const resolveStructuralFocusPos = (
+  view: EditorView,
+  projection: MarkdownStructuralProjection,
+  event: MouseEvent | TouchEvent,
+): number => {
+  const point =
+    event instanceof MouseEvent
+      ? { x: event.clientX, y: event.clientY }
+      : event.touches[0]
+        ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
+        : null;
+  let pos: number | null = null;
+  if (point) {
+    try {
+      pos = view.posAtCoords(point, false);
+    } catch {
+      pos = null;
     }
+  }
+
+  if (typeof pos === "number" && pos >= projection.from && pos <= projection.to) {
+    return pos;
+  }
+
+  return projection.from;
+};
+
+const focusStructuralSource =
+  (view: EditorView, projection: MarkdownStructuralProjection) =>
+  (event: MouseEvent | TouchEvent): void => {
+    // 2026-04-23 user guidance: focusing a structural preview must already reveal raw source.
+    // Requiring a drag to start selection broke the intended inspect/copy workflow.
+    const anchor = resolveStructuralFocusPos(view, projection, event);
     event.preventDefault();
     view.focus();
     view.dispatch({
-      selection: {
-        anchor: projection.from,
-        head: projection.to,
-      },
+      effects: revealStructuralSourceEffect.of({
+        from: projection.from,
+        to: projection.to,
+      }),
+      selection: { anchor, head: anchor },
       scrollIntoView: true,
     });
   };
 
+const applyStructuralGeometry = (root: HTMLElement, projection: MarkdownStructuralProjection): void => {
+  root.style.setProperty("--md-structural-line-count", String(projection.sourceLineCount));
+  root.style.setProperty("--md-structural-height", `calc(var(--md-source-line-height) * ${projection.sourceLineCount})`);
+
+  if (projection.kind === "table") {
+    root.style.setProperty(
+      "--md-structural-table-row-count",
+      String(Math.max(1, projection.headerRowCount + projection.bodyRowCount)),
+    );
+    return;
+  }
+
+  root.style.setProperty("--md-structural-code-line-count", String(Math.max(1, projection.codeLineCount)));
+};
+
+const syncMeasuredStructuralGeometry = (
+  root: HTMLElement,
+  view: EditorView,
+  projection: MarkdownStructuralProjection,
+): void => {
+  view.requestMeasure({
+    read: (measuredView) => {
+      const start = measuredView.lineBlockAt(projection.from);
+      const end = measuredView.lineBlockAt(Math.max(projection.from, projection.to - 1));
+      return Math.max(start.height, end.bottom - start.top);
+    },
+    write: (height) => {
+      root.style.setProperty("--md-structural-height", `${Math.max(height, 1)}px`);
+    },
+  });
+};
+
 const renderTableProjection = (projection: MarkdownTableProjection): HTMLElement => {
+  const overlay = document.createElement("div");
+  overlay.className = "cm-md-structural-overlay-surface cm-md-structural-table-surface";
+
   const scroll = document.createElement("div");
   scroll.className = "cm-md-structural-table-scroll";
   scroll.dataset.markdownOverflow = "x";
@@ -115,17 +183,23 @@ const renderTableProjection = (projection: MarkdownTableProjection): HTMLElement
   }
 
   scroll.append(table);
-  return scroll;
+  overlay.append(scroll);
+  return overlay;
 };
 
 const renderCodeBlockProjection = (projection: MarkdownFencedCodeProjection): HTMLElement => {
+  const overlay = document.createElement("div");
+  overlay.className = `cm-md-structural-overlay-surface cm-md-structural-code-surface${
+    projection.hasLanguage ? " cm-md-structural-code-surface-labeled" : ""
+  }`;
+
   const block = document.createElement("div");
   block.className = "cm-md-structural-codeblock";
 
-  if (projection.language.length > 0) {
+  if (projection.hasLanguage) {
     const header = document.createElement("div");
     header.className = "cm-md-structural-codeheader";
-    header.textContent = projection.language;
+    header.textContent = projection.language.length > 0 ? projection.language : projection.rawInfo;
     block.append(header);
   }
 
@@ -150,40 +224,64 @@ const renderCodeBlockProjection = (projection: MarkdownFencedCodeProjection): HT
   pre.append(code);
   scroll.append(pre);
   block.append(scroll);
-  return block;
+  overlay.append(block);
+  return overlay;
 };
 
-class StructuralProjectionWidget extends WidgetType {
+class StructuralProjectionOverlayWidget extends WidgetType {
   private readonly key: string;
 
   constructor(private readonly projection: MarkdownStructuralProjection) {
     super();
     this.key =
       projection.kind === "table"
-        ? `table:${projection.from}:${projection.to}:${projection.rows
+        ? `table:${projection.from}:${projection.to}:${projection.sourceLineCount}:${projection.rows
             .map((row) => `${row.kind}:${row.cells.join("\u241f")}`)
             .join("\u241e")}`
-        : `fenced-code:${projection.from}:${projection.to}:${projection.language}:${projection.code}`;
+        : `fenced-code:${projection.from}:${projection.to}:${projection.sourceLineCount}:${projection.language}:${projection.code}`;
   }
 
-  override eq(other: StructuralProjectionWidget): boolean {
+  override eq(other: StructuralProjectionOverlayWidget): boolean {
     return this.key === other.key;
   }
 
+  override ignoreEvent(): boolean {
+    return true;
+  }
+
   override toDOM(view: EditorView): HTMLElement {
-    const root = document.createElement("div");
-    root.className = `cm-md-structural-block cm-md-structural-${this.projection.kind}`;
+    const root = document.createElement("span");
+    root.className = `cm-md-structural-overlay cm-md-structural-${this.projection.kind}`;
     root.dataset.markdownStructural = this.projection.kind;
-    root.addEventListener("mousedown", createProjectionSelectionHandler(view, this.projection));
-    root.addEventListener("touchstart", createProjectionSelectionHandler(view, this.projection), { passive: false });
+    applyStructuralGeometry(root, this.projection);
+    syncMeasuredStructuralGeometry(root, view, this.projection);
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => {
+        syncMeasuredStructuralGeometry(root, view, this.projection);
+      });
+      observer.observe(view.scrollDOM);
+      overlayResizeObservers.set(root, observer);
+    }
 
     if (this.projection.kind === "table") {
-      root.append(renderTableProjection(this.projection));
+      const table = renderTableProjection(this.projection);
+      table.addEventListener("mousedown", focusStructuralSource(view, this.projection));
+      table.addEventListener("touchstart", focusStructuralSource(view, this.projection), { passive: false });
+      root.append(table);
       return root;
     }
 
-    root.append(renderCodeBlockProjection(this.projection));
+    const codeBlock = renderCodeBlockProjection(this.projection);
+    codeBlock.addEventListener("mousedown", focusStructuralSource(view, this.projection));
+    codeBlock.addEventListener("touchstart", focusStructuralSource(view, this.projection), { passive: false });
+    root.append(codeBlock);
     return root;
+  }
+
+  override destroy(dom: HTMLElement): void {
+    overlayResizeObservers.get(dom)?.disconnect();
+    overlayResizeObservers.delete(dom);
   }
 }
 
@@ -205,9 +303,8 @@ export const taskMarkerDecoration = (checked: boolean) =>
     widget: new TaskCheckboxWidget(checked),
   });
 
-export const structuralDecoration = (projection: MarkdownStructuralProjection) =>
-  Decoration.replace({
-    block: true,
-    inclusive: false,
-    widget: new StructuralProjectionWidget(projection),
+export const structuralOverlayDecoration = (projection: MarkdownStructuralProjection) =>
+  Decoration.widget({
+    side: -1,
+    widget: new StructuralProjectionOverlayWidget(projection),
   });

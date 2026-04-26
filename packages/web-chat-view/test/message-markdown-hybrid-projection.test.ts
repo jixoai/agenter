@@ -7,9 +7,15 @@ import { collectMarkdownStructuralProjectionState } from "../src/components/mess
 
 const readProjectionState = (
   value: string,
-  selection?: {
-    anchor: number;
-    head?: number;
+  options?: {
+    selection?: {
+      anchor: number;
+      head?: number;
+    };
+    revealRanges?: readonly {
+      from: number;
+      to: number;
+    }[];
   },
 ) => {
   const target = document.createElement("div");
@@ -30,6 +36,7 @@ const readProjectionState = (
     throw new Error("Expected CodeMirror view instance");
   }
 
+  const selection = options?.selection;
   if (selection) {
     flushSync(() => {
       view.dispatch({
@@ -43,7 +50,9 @@ const readProjectionState = (
 
   return {
     component,
-    projectionState: collectMarkdownStructuralProjectionState(view.state),
+    projectionState: collectMarkdownStructuralProjectionState(view.state, {
+      revealRanges: options?.revealRanges,
+    }),
     target,
   };
 };
@@ -60,6 +69,7 @@ describe("Feature: Hybrid markdown projection", () => {
       expect(harness.projectionState.projected).toHaveLength(1);
       expect(harness.projectionState.projected[0]).toMatchObject({
         kind: "table",
+        sourceLineCount: 4,
         rows: [
           { kind: "header", cells: ["Name", "Role"] },
           { kind: "body", cells: ["QAQ", "owner"] },
@@ -78,8 +88,10 @@ describe("Feature: Hybrid markdown projection", () => {
       expect(harness.projectionState.projected).toHaveLength(1);
       expect(harness.projectionState.projected[0]).toMatchObject({
         kind: "fenced-code",
+        codeLineCount: 1,
         language: "",
         rawInfo: "",
+        sourceLineCount: 3,
         code: "plain text",
       });
     } finally {
@@ -87,9 +99,39 @@ describe("Feature: Hybrid markdown projection", () => {
     }
   });
 
-  test("Scenario: Given a selected structural markdown block When projection descriptors are built Then the collector reveals raw source instead of keeping the widget projection", () => {
+  test("Scenario: Given a structural block When only a collapsed selection exists Then the collector keeps the preview projection until structural focus is explicit", () => {
+    const harness = readProjectionState("```\nplain text\n```", {
+      selection: { anchor: 0 },
+    });
+
+    try {
+      expect(harness.projectionState.projected).toHaveLength(1);
+      expect(harness.projectionState.revealedRanges).toEqual([]);
+    } finally {
+      unmount(harness.component);
+    }
+  });
+
+  test("Scenario: Given a structural block When structural focus explicitly targets it Then the collector reveals raw source without requiring a drag selection", () => {
+    const value = "```\nplain text\n```";
+    const harness = readProjectionState(value, {
+      selection: { anchor: 0 },
+      revealRanges: [{ from: 0, to: value.length }],
+    });
+
+    try {
+      expect(harness.projectionState.projected).toHaveLength(0);
+      expect(harness.projectionState.revealedRanges).toEqual([{ from: 0, to: value.length }]);
+    } finally {
+      unmount(harness.component);
+    }
+  });
+
+  test("Scenario: Given a structural block When a non-empty selection intersects it Then the collector reveals raw source instead of keeping the overlay projection", () => {
     const value = `| a | b |\n| - | - |\n| 1 | 2 |`;
-    const harness = readProjectionState(value, { anchor: 0, head: value.length });
+    const harness = readProjectionState(value, {
+      selection: { anchor: 0, head: value.length },
+    });
 
     try {
       expect(harness.projectionState.projected).toHaveLength(0);
