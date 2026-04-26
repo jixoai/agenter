@@ -12,7 +12,6 @@ ProductShellLayout resolveProductShellLayout(double width) {
 
 extension ProductShellLayoutX on ProductShellLayout {
   bool get isCompact => this == ProductShellLayout.compact;
-  bool get showsBottomNavigation => this == ProductShellLayout.compact;
   bool get showsStackedDetails => this == ProductShellLayout.standard;
   bool get showsInlineDetails => this == ProductShellLayout.expanded;
 }

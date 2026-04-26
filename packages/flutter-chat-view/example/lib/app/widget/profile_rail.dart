@@ -3,9 +3,10 @@ import 'package:flutter/cupertino.dart';
 import '../l10n/product_shell_localizations.dart';
 import '../model/connection_profile.dart';
 import '../model/product_shell_notice.dart';
-import 'ios26_icon_button.dart';
-import 'ios26_surfaces.dart';
-import 'ios26_theme_extension.dart';
+import 'apple_icon_button.dart';
+import 'apple_surfaces.dart';
+import 'apple_platform_theme.dart';
+import 'apple_sections.dart';
 
 class ProfileRail extends StatelessWidget {
   const ProfileRail({
@@ -36,14 +37,12 @@ class ProfileRail extends StatelessWidget {
     final l10n = ProductShellLocalizations.of(context);
     return Column(
       children: [
-        CupertinoListSection.insetGrouped(
-          margin: EdgeInsets.zero,
-          backgroundColor: CupertinoColors.transparent,
+        AppleSection(
           children: [
             CupertinoListTile.notched(
               title: Text(
                 l10n.profilesTitle,
-                style: context.iosEmphasisTextStyle,
+                style: context.appleEmphasisTextStyle,
               ),
               subtitle: Text(l10n.profilesSubtitle),
             ),
@@ -51,8 +50,8 @@ class ProfileRail extends StatelessWidget {
               CupertinoListTile.notched(
                 title: Text(
                   l10n.notice(notice),
-                  style: context.iosCaptionTextStyle.copyWith(
-                    color: resolveIosColor(context, CupertinoColors.label),
+                  style: context.appleCaptionTextStyle.copyWith(
+                    color: resolveAppleColor(context, CupertinoColors.label),
                   ),
                 ),
                 leading: Icon(
@@ -63,7 +62,7 @@ class ProfileRail extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(height: 12),
+        const ApplePanelGap(),
         Expanded(
           child: profiles.isEmpty
               ? _EmptyProfiles(
@@ -71,14 +70,12 @@ class ProfileRail extends StatelessWidget {
                   onImportProfile: onImportProfile,
                   showActions: showEmptyActions,
                 )
-              : Ios26Scrollbar(
+              : AppleScrollbar(
                   builder: (context, scrollController) => ListView(
                     controller: scrollController,
                     padding: EdgeInsets.zero,
                     children: [
-                      CupertinoListSection.insetGrouped(
-                        margin: EdgeInsets.zero,
-                        backgroundColor: CupertinoColors.transparent,
+                      AppleSection(
                         children: profiles
                             .map(
                               (profile) => _ProfileTile(
@@ -117,17 +114,12 @@ class _EmptyProfiles extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
-        child: CupertinoListSection.insetGrouped(
-          margin: EdgeInsets.zero,
-          backgroundColor: CupertinoColors.transparent,
+        child: AppleSection(
           children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                showActions ? 22 : 18,
-                20,
-                showActions ? 18 : 16,
-              ),
+            AppleSectionBody(
+              padding: showActions
+                  ? appleTokens(context).emptyStatePadding
+                  : appleTokens(context).sectionBodyPadding,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -136,32 +128,30 @@ class _EmptyProfiles extends StatelessWidget {
                     size: showActions ? 34 : 28,
                     color: CupertinoTheme.of(context).primaryColor,
                   ),
-                  SizedBox(height: showActions ? 10 : 8),
+                  SizedBox(height: appleTokens(context).controlGap),
                   Text(
                     l10n.emptyProfilesTitle,
                     textAlign: TextAlign.center,
-                    style: context.iosEmphasisTextStyle,
+                    style: context.appleEmphasisTextStyle,
                   ),
-                  const SizedBox(height: 8),
+                  SizedBox(height: appleTokens(context).controlGap),
                   Text(
                     showActions
                         ? l10n.emptyProfilesBody
                         : l10n.profilesEmptyFollowStageHint,
                     textAlign: TextAlign.center,
                     style: showActions
-                        ? context.iosCaptionTextStyle
-                        : context.iosFootnoteTextStyle,
+                        ? context.appleCaptionTextStyle
+                        : context.appleFootnoteTextStyle,
                   ),
                   if (showActions) ...[
-                    const SizedBox(height: 16),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    SizedBox(height: appleTokens(context).sectionGap),
+                    AppleActionGroup(
                       children: [
                         CupertinoButton.filled(
                           onPressed: onCreateProfile,
                           child: Text(l10n.newProfile),
                         ),
-                        const SizedBox(height: 8),
                         CupertinoButton(
                           onPressed: onImportProfile,
                           child: Text(l10n.importUrlAndToken),
@@ -232,19 +222,19 @@ class _ProfileTile extends StatelessWidget {
     return CupertinoListTile.notched(
       backgroundColor: active
           ? primary.withValues(alpha: 0.08)
-          : resolveIosColor(
+          : resolveAppleColor(
               context,
               CupertinoColors.secondarySystemGroupedBackground,
             ),
-      title: Text(profile.displayName, style: context.iosEmphasisTextStyle),
-      subtitle: Text(profile.hostLabel, style: context.iosCaptionTextStyle),
+      title: Text(profile.displayName, style: context.appleEmphasisTextStyle),
+      subtitle: Text(profile.hostLabel, style: context.appleCaptionTextStyle),
       additionalInfo: active
           ? Text(
               l10n.activeProfilePill,
-              style: context.iosFootnoteTextStyle.copyWith(color: primary),
+              style: context.appleFootnoteTextStyle.copyWith(color: primary),
             )
           : null,
-      trailing: Ios26IconButton(
+      trailing: AppleIconButton(
         icon: CupertinoIcons.ellipsis_circle,
         label: l10n.profileActions,
         onPressed: () => _showActions(context),

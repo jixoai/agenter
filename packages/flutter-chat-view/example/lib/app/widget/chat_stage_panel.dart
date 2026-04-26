@@ -4,8 +4,10 @@ import 'package:flutter_chat_view/flutter_chat_view.dart';
 import '../l10n/product_shell_localizations.dart';
 import '../model/connection_profile.dart';
 import '../model/product_shell_layout.dart';
-import 'ios26_icon_button.dart';
-import 'ios26_theme_extension.dart';
+import 'apple_icon_button.dart';
+import 'apple_platform_theme.dart';
+import 'apple_sections.dart';
+import 'apple_surfaces.dart';
 
 List<ChatComposerPlugin> buildProductShellComposerPlugins(
   BuildContext context,
@@ -140,23 +142,21 @@ class ChatStagePanel extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            CupertinoListSection.insetGrouped(
-              margin: EdgeInsets.zero,
-              backgroundColor: CupertinoColors.transparent,
+            AppleSection(
               children: [
                 CupertinoListTile.notched(
                   title: Text(
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: context.iosSectionTextStyle,
+                    style: context.appleSectionTextStyle,
                   ),
                   subtitle: Text(
                     subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  trailing: Ios26IconButton(
+                  trailing: AppleIconButton(
                     icon: CupertinoIcons.ellipsis_circle,
                     label: l10n.profileActions,
                     onPressed: () => _showStageActions(context),
@@ -177,7 +177,7 @@ class ChatStagePanel extends StatelessWidget {
                     activeProfile.accessToken == null
                         ? l10n.noUploadToken
                         : l10n.uploadReady,
-                    style: context.iosFootnoteTextStyle,
+                    style: context.appleFootnoteTextStyle,
                   ),
                   trailing: showDetailsAction
                       ? const Icon(CupertinoIcons.chevron_forward, size: 18)
@@ -186,22 +186,17 @@ class ChatStagePanel extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const ApplePanelGap(),
             Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: ColoredBox(
-                  color: CupertinoDynamicColor.resolve(
-                    CupertinoColors.secondarySystemGroupedBackground,
-                    context,
-                  ),
-                  child: FlutterChatView(
-                    controller: chatController,
-                    plugins: buildProductShellComposerPlugins(context),
-                    compactComposerLayout: layout.isCompact,
-                    selectedMessageViewKey: selectedMessageViewKey,
-                    onMessageSelected: onSelectMessage,
-                  ),
+              child: AppleMaterialSurface(
+                role: AppleSurfaceRole.content,
+                clip: true,
+                child: FlutterChatView(
+                  controller: chatController,
+                  plugins: buildProductShellComposerPlugins(context),
+                  compactComposerLayout: layout.isCompact,
+                  selectedMessageViewKey: selectedMessageViewKey,
+                  onMessageSelected: onSelectMessage,
                 ),
               ),
             ),
@@ -224,64 +219,20 @@ class _StageEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = ProductShellLocalizations.of(context);
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
-        child: CupertinoListSection.insetGrouped(
-          margin: EdgeInsets.zero,
-          backgroundColor: CupertinoColors.transparent,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    CupertinoIcons.chat_bubble_2,
-                    size: 34,
-                    color: CupertinoTheme.of(context).primaryColor,
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    l10n.conversationStageTitle,
-                    style: context.iosTitleTextStyle,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    l10n.conversationStageBody,
-                    textAlign: TextAlign.center,
-                    style: context.iosCaptionTextStyle,
-                  ),
-                  const SizedBox(height: 16),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 320),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        CupertinoButton.filled(
-                          onPressed: onCreateProfile,
-                          child: Text(l10n.newProfile),
-                        ),
-                        const SizedBox(height: 8),
-                        CupertinoButton(
-                          onPressed: onImportProfile,
-                          child: Text(l10n.importUrlAndToken),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    l10n.sharedLinkContract,
-                    textAlign: TextAlign.center,
-                    style: context.iosFootnoteTextStyle,
-                  ),
-                ],
-              ),
-            ),
-          ],
+    return AppleContentUnavailable(
+      icon: CupertinoIcons.chat_bubble_2,
+      title: l10n.conversationStageTitle,
+      message: l10n.conversationStageBody,
+      primaryAction: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 220),
+        child: CupertinoButton.filled(
+          onPressed: onCreateProfile,
+          child: Text(l10n.newProfile),
         ),
+      ),
+      secondaryAction: CupertinoButton(
+        onPressed: onImportProfile,
+        child: Text(l10n.importUrlAndToken),
       ),
     );
   }
@@ -304,14 +255,12 @@ class _ProfileReadyState extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
-        child: CupertinoListSection.insetGrouped(
-          margin: EdgeInsets.zero,
-          backgroundColor: CupertinoColors.transparent,
+        child: AppleSection(
           children: [
             CupertinoListTile.notched(
               title: Text(
                 profile.displayName,
-                style: context.iosEmphasisTextStyle,
+                style: context.appleEmphasisTextStyle,
               ),
               subtitle: Text(profile.hostLabel),
             ),
@@ -319,8 +268,8 @@ class _ProfileReadyState extends StatelessWidget {
               title: Text(l10n.profileImported),
               subtitle: Text(l10n.shellSubtitle),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            AppleSectionBody(
+              padding: appleTokens(context).sectionActionPadding,
               child: Wrap(
                 spacing: 12,
                 runSpacing: 12,

@@ -1,14 +1,15 @@
 import 'package:flutter/cupertino.dart';
 
-class Ios26IconButton extends StatelessWidget {
-  const Ios26IconButton({
+import 'apple_platform_theme.dart';
+
+class AppleIconButton extends StatelessWidget {
+  const AppleIconButton({
     super.key,
     required this.icon,
     required this.label,
     required this.onPressed,
     this.color,
     this.size = 22,
-    this.minimumSize = const Size.square(44),
   });
 
   final IconData icon;
@@ -16,21 +17,25 @@ class Ios26IconButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Color? color;
   final double size;
-  final Size minimumSize;
 
   @override
   Widget build(BuildContext context) {
+    final tokens = appleTokens(context);
     final resolvedColor = color ?? CupertinoTheme.of(context).primaryColor;
     return Semantics(
+      container: true,
       button: true,
       enabled: onPressed != null,
       label: label,
-      child: CupertinoButton(
-        padding: EdgeInsets.zero,
-        minimumSize: minimumSize,
-        alignment: Alignment.center,
-        onPressed: onPressed,
-        child: Icon(icon, size: size, color: resolvedColor),
+      onTap: onPressed,
+      child: ExcludeSemantics(
+        child: CupertinoButton(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.square(tokens.minimumHitSize),
+          alignment: Alignment.center,
+          onPressed: onPressed,
+          child: Icon(icon, size: size, color: resolvedColor),
+        ),
       ),
     );
   }

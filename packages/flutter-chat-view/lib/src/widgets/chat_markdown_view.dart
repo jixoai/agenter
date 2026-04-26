@@ -34,32 +34,29 @@ class ChatMarkdownView extends StatelessWidget {
           codeNode?.textContent.trimRight() ?? node.textContent.trimRight();
       return Container(
         width: double.infinity,
-        margin: const EdgeInsets.only(top: 8),
-        padding: const EdgeInsets.all(12),
+        margin: EdgeInsets.only(top: chatTokens(context).inlineGap),
+        padding: chatTokens(context).blockPadding,
         decoration: BoxDecoration(
           color: resolveChatColor(
             context,
             CupertinoColors.tertiarySystemGroupedBackground,
           ),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(chatTokens(context).blockRadius),
         ),
-        child: SelectableRegion(
-          selectionControls: cupertinoTextSelectionHandleControls,
-          child: Text(
-            text,
-            style: chatTextStyle(
-              context,
-              fontSize: 13,
-              color: resolveChatColor(context, CupertinoColors.label),
-            ).copyWith(fontFamily: 'monospace'),
-          ),
+        child: Text(
+          text,
+          style: chatTextStyle(
+            context,
+            fontSize: 13,
+            color: resolveChatColor(context, CupertinoColors.label),
+          ).copyWith(fontFamily: 'monospace'),
         ),
       );
     }
     if (node is md.Element && node.tag == 'blockquote') {
       return Container(
-        margin: const EdgeInsets.only(top: 8),
-        padding: const EdgeInsets.only(left: 12),
+        margin: EdgeInsets.only(top: chatTokens(context).inlineGap),
+        padding: EdgeInsets.only(left: chatTokens(context).blockPadding.left),
         decoration: BoxDecoration(
           border: Border(
             left: BorderSide(
@@ -72,7 +69,7 @@ class ChatMarkdownView extends StatelessWidget {
       );
     }
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: EdgeInsets.only(top: chatTokens(context).inlineGap),
       child: _renderInline(
         context,
         node is md.Element
@@ -89,11 +86,8 @@ class ChatMarkdownView extends StatelessWidget {
       color: resolveChatColor(context, CupertinoColors.label),
       height: 1.38,
     );
-    return SelectableRegion(
-      selectionControls: cupertinoTextSelectionHandleControls,
-      child: Text.rich(
-        TextSpan(style: base, children: _spansForNodes(context, nodes, base)),
-      ),
+    return Text.rich(
+      TextSpan(style: base, children: _spansForNodes(context, nodes, base)),
     );
   }
 

@@ -4,8 +4,9 @@ import 'package:flutter_chat_view/flutter_chat_view.dart';
 
 import '../l10n/product_shell_localizations.dart';
 import '../model/connection_profile.dart';
-import 'ios26_surfaces.dart';
-import 'ios26_theme_extension.dart';
+import 'apple_surfaces.dart';
+import 'apple_platform_theme.dart';
+import 'apple_sections.dart';
 
 class DetailRail extends StatelessWidget {
   const DetailRail({
@@ -40,7 +41,7 @@ class DetailRail extends StatelessWidget {
       animation: chatController,
       builder: (context, child) {
         final state = chatController.state;
-        return Ios26Scrollbar(
+        return AppleScrollbar(
           builder: (context, scrollController) => ListView(
             controller: scrollController,
             padding: EdgeInsets.zero,
@@ -85,33 +86,30 @@ class _EmptyDetailRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = ProductShellLocalizations.of(context);
-    return Ios26Scrollbar(
+    return AppleScrollbar(
       builder: (context, scrollController) => ListView(
         controller: scrollController,
         padding: EdgeInsets.zero,
         children: [
-          CupertinoListSection.insetGrouped(
-            margin: EdgeInsets.zero,
-            backgroundColor: CupertinoColors.transparent,
+          AppleSection(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
+              AppleSectionBody(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       l10n.roomDetailEmpty,
-                      style: context.iosCaptionTextStyle.copyWith(
+                      style: context.appleCaptionTextStyle.copyWith(
                         color: CupertinoDynamicColor.resolve(
                           CupertinoColors.label,
                           context,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    SizedBox(height: appleTokens(context).controlGap),
                     Text(
                       l10n.roomDetailPassiveHint,
-                      style: context.iosFootnoteTextStyle,
+                      style: context.appleFootnoteTextStyle,
                     ),
                   ],
                 ),
@@ -136,19 +134,17 @@ class _ProfileOverview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = ProductShellLocalizations.of(context);
-    return Ios26Scrollbar(
+    return AppleScrollbar(
       builder: (context, scrollController) => ListView(
         controller: scrollController,
         padding: EdgeInsets.zero,
         children: [
-          CupertinoListSection.insetGrouped(
-            margin: EdgeInsets.zero,
-            backgroundColor: CupertinoColors.transparent,
+          AppleSection(
             children: [
               CupertinoListTile.notched(
                 title: Text(
                   profile.displayName,
-                  style: context.iosEmphasisTextStyle,
+                  style: context.appleEmphasisTextStyle,
                 ),
                 subtitle: Text(profile.hostLabel),
               ),
@@ -181,12 +177,10 @@ class _RoomSection extends StatelessWidget {
     final l10n = ProductShellLocalizations.of(context);
     final roomTitle = state.channel?.displayTitle ?? profile.displayName;
     final roomSubtitle = state.channel?.chatId ?? profile.hostLabel;
-    return CupertinoListSection.insetGrouped(
-      margin: EdgeInsets.zero,
-      backgroundColor: CupertinoColors.transparent,
+    return AppleSection(
       children: [
         CupertinoListTile.notched(
-          title: Text(roomTitle, style: context.iosEmphasisTextStyle),
+          title: Text(roomTitle, style: context.appleEmphasisTextStyle),
           subtitle: Text(roomSubtitle),
         ),
         CupertinoListTile.notched(
@@ -199,7 +193,7 @@ class _RoomSection extends StatelessWidget {
           ),
           additionalInfo: Text(
             profile.accessToken == null ? l10n.noUploadToken : l10n.uploadReady,
-            style: context.iosFootnoteTextStyle,
+            style: context.appleFootnoteTextStyle,
           ),
         ),
         CupertinoListTile.notched(
@@ -220,16 +214,13 @@ class _ParticipantsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = ProductShellLocalizations.of(context);
-    return CupertinoListSection.insetGrouped(
-      margin: EdgeInsets.zero,
-      backgroundColor: CupertinoColors.transparent,
+    return AppleSection(
       children: participants.isEmpty
           ? <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+              AppleSectionBody(
                 child: Text(
                   l10n.participantsEmptyBody,
-                  style: context.iosCaptionTextStyle,
+                  style: context.appleCaptionTextStyle,
                 ),
               ),
             ]
@@ -253,15 +244,12 @@ class _NoSelectedMessageSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = ProductShellLocalizations.of(context);
-    return CupertinoListSection.insetGrouped(
-      margin: EdgeInsets.zero,
-      backgroundColor: CupertinoColors.transparent,
+    return AppleSection(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+        AppleSectionBody(
           child: Text(
             l10n.selectedMessageEmptyBody,
-            style: context.iosCaptionTextStyle,
+            style: context.appleCaptionTextStyle,
           ),
         ),
       ],
@@ -289,9 +277,7 @@ class _SelectedMessageSection extends StatelessWidget {
       if (message.isEdited) chatL10n.edited,
       if (message.isRecalled) chatL10n.recalled,
     ];
-    return CupertinoListSection.insetGrouped(
-      margin: EdgeInsets.zero,
-      backgroundColor: CupertinoColors.transparent,
+    return AppleSection(
       children: [
         CupertinoListTile.notched(
           title: Text(message.from),
@@ -304,10 +290,24 @@ class _SelectedMessageSection extends StatelessWidget {
             child: Text(l10n.clear),
           ),
         ),
-        _SelectableDetailBlock(
+        _SelectedMessageTextBlock(
           text: message.isRecalled
               ? chatL10n.recalledMessageText
               : message.displayText,
+        ),
+        CupertinoListTile.notched(
+          title: Text(chatL10n.copyText),
+          trailing: const Icon(CupertinoIcons.doc_on_clipboard),
+          onTap: () async {
+            final text = message.isRecalled
+                ? chatL10n.recalledMessageText
+                : message.displayText;
+            await Clipboard.setData(ClipboardData(text: text));
+            if (!context.mounted) {
+              return;
+            }
+            await showAppleToast(context, l10n.selectedMessageCopied);
+          },
         ),
         CupertinoListTile.notched(
           title: Text(l10n.messageFactsLabel),
@@ -336,7 +336,7 @@ class _SelectedMessageSection extends StatelessWidget {
                 if (!context.mounted) {
                   return;
                 }
-                await showIos26Toast(context, l10n.copyAssetUrlFeedback);
+                await showAppleToast(context, l10n.copyAssetUrlFeedback);
               },
             ),
           ),
@@ -351,42 +351,22 @@ class _DetailSectionLabel extends StatelessWidget {
   final String title;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
-      child: Text(
-        title,
-        style: context.iosFootnoteTextStyle.copyWith(
-          fontWeight: FontWeight.w600,
-          color: CupertinoDynamicColor.resolve(
-            CupertinoColors.secondaryLabel,
-            context,
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AppleSectionLabel(title: title);
 }
 
-class _SelectableDetailBlock extends StatelessWidget {
-  const _SelectableDetailBlock({required this.text});
+class _SelectedMessageTextBlock extends StatelessWidget {
+  const _SelectedMessageTextBlock({required this.text});
 
   final String text;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
-      child: SelectableRegion(
-        selectionControls: cupertinoTextSelectionHandleControls,
-        child: Text(
-          text,
-          style: context.iosCaptionTextStyle.copyWith(
-            color: CupertinoDynamicColor.resolve(
-              CupertinoColors.label,
-              context,
-            ),
-          ),
+    return AppleSectionBody(
+      padding: appleTokens(context).sectionActionPadding,
+      child: Text(
+        text,
+        style: context.appleCaptionTextStyle.copyWith(
+          color: CupertinoDynamicColor.resolve(CupertinoColors.label, context),
         ),
       ),
     );

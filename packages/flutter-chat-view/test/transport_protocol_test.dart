@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_chat_view/src/model/chat_models.dart';
+import 'package:flutter_chat_view/src/model/transport_codec.dart';
 import 'package:flutter_chat_view/src/model/transport_protocol.dart';
 
 void main() {
@@ -77,6 +78,32 @@ void main() {
         final delta = event as ChatMessagesEvent;
         expect(delta.items.single.isRecalled, isTrue);
         expect(delta.items.single.content, 'stale body');
+      },
+    );
+  });
+
+  group('Feature: transport codec containment', () {
+    test(
+      'Scenario: Given malformed websocket payload When decoding through the codec Then a protocol codec exception is raised',
+      () {
+        const codec = ChatTransportCodec();
+
+        expect(
+          () => codec.decodeEvent(<String, Object?>{'type': 'snapshot'}),
+          throwsA(isA<ChatTransportCodecException>()),
+        );
+      },
+    );
+
+    test(
+      'Scenario: Given an unsupported event type When decoding through the codec Then the unsupported event remains a protocol error',
+      () {
+        const codec = ChatTransportCodec();
+
+        expect(
+          () => codec.decodeEvent('{"type":"unknown"}'),
+          throwsA(isA<ChatTransportCodecException>()),
+        );
       },
     );
   });

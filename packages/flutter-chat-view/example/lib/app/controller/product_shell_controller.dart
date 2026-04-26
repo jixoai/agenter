@@ -7,7 +7,12 @@ import '../model/connection_profile.dart';
 import '../model/product_shell_notice.dart';
 import '../store/connection_profile_store.dart';
 
-enum ProductShellTab { profiles, conversation, details }
+enum ProductShellRouteDepth {
+  conversation,
+  profileDirectory,
+  roomInspector,
+  messageInspector,
+}
 
 class ProductShellController extends ChangeNotifier {
   ProductShellController({required this.store, this.connectOnActivate = true});
@@ -20,13 +25,13 @@ class ProductShellController extends ChangeNotifier {
   String? _activeProfileId;
   String? _selectedMessageViewKey;
   ProductShellNotice? _surfaceNotice;
-  ProductShellTab _compactTab = ProductShellTab.conversation;
+  ProductShellRouteDepth _routeDepth = ProductShellRouteDepth.conversation;
   ChatViewController? _chatController;
 
   bool get bootstrapping => _bootstrapping;
   List<ConnectionProfile> get profiles => _profiles;
   String? get activeProfileId => _activeProfileId;
-  ProductShellTab get compactTab => _compactTab;
+  ProductShellRouteDepth get routeDepth => _routeDepth;
   ChatViewController? get chatController => _chatController;
   ProductShellNotice? get surfaceNotice => _surfaceNotice;
 
@@ -122,7 +127,7 @@ class ProductShellController extends ChangeNotifier {
     _profiles = nextProfiles;
     _activeProfileId = nextProfile.id;
     _selectedMessageViewKey = null;
-    _compactTab = ProductShellTab.conversation;
+    _routeDepth = ProductShellRouteDepth.conversation;
     _surfaceNotice = ProductShellNotice(
       replaced
           ? ProductShellNoticeKind.profileUpdated
@@ -162,7 +167,7 @@ class ProductShellController extends ChangeNotifier {
     }
     _activeProfileId = profile.id;
     _selectedMessageViewKey = null;
-    _compactTab = ProductShellTab.conversation;
+    _routeDepth = ProductShellRouteDepth.conversation;
     notifyListeners();
     if (persist) {
       await _persist();
@@ -189,12 +194,31 @@ class ProductShellController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setCompactTab(ProductShellTab tab) {
-    if (_compactTab == tab) {
+  void openConversation() {
+    if (_routeDepth == ProductShellRouteDepth.conversation) {
       return;
     }
-    _compactTab = tab;
+    _routeDepth = ProductShellRouteDepth.conversation;
     notifyListeners();
+  }
+
+  void openProfileDirectory() {
+    _openRouteDepth(ProductShellRouteDepth.profileDirectory);
+  }
+
+  void openRoomInspector() {
+    _openRouteDepth(ProductShellRouteDepth.roomInspector);
+  }
+
+  void openMessageInspector(ChatMessage message) {
+    final previousKey = _selectedMessageViewKey;
+    _selectedMessageViewKey = message.viewKey;
+    if (_routeDepth == ProductShellRouteDepth.messageInspector &&
+        previousKey != message.viewKey) {
+      notifyListeners();
+      return;
+    }
+    _openRouteDepth(ProductShellRouteDepth.messageInspector);
   }
 
   void selectMessage(ChatMessage? message) {
@@ -203,6 +227,14 @@ class ProductShellController extends ChangeNotifier {
       return;
     }
     _selectedMessageViewKey = nextKey;
+    notifyListeners();
+  }
+
+  void _openRouteDepth(ProductShellRouteDepth depth) {
+    if (_routeDepth == depth) {
+      return;
+    }
+    _routeDepth = depth;
     notifyListeners();
   }
 

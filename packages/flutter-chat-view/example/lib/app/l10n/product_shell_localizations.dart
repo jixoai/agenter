@@ -32,6 +32,7 @@ class ProductShellLocalizations {
       ? '这会从独立产品壳中移除已保存的房间目标。'
       : 'This removes the saved room target from the standalone shell.';
   String get cancel => _isZhHans ? '取消' : 'Cancel';
+  String get close => _isZhHans ? '关闭' : 'Close';
   String get delete => _isZhHans ? '删除' : 'Delete';
   String get shareLinkCopied => _isZhHans ? '分享链接已复制。' : 'Share link copied.';
   String get shellEyebrow => _isZhHans ? 'Cupertino 壳层' : 'Cupertino shell';
@@ -85,13 +86,14 @@ class ProductShellLocalizations {
   String get clear => _isZhHans ? '清除' : 'Clear';
   String get attachments => _isZhHans ? '附件' : 'Attachments';
   String get copyAssetUrl => _isZhHans ? '复制资源 URL' : 'Copy asset URL';
+  String get selectedMessageCopied =>
+      _isZhHans ? '消息文本已复制。' : 'Message text copied.';
   String get profileImported => _isZhHans ? '配置已导入' : 'Profile imported';
   String get connect => _isZhHans ? '连接' : 'Connect';
-  String get conversationStageTitle =>
-      _isZhHans ? '会话优先的房间主舞台' : 'Conversation-first room stage';
+  String get conversationStageTitle => _isZhHans ? '未打开房间' : 'No Room Open';
   String get conversationStageBody => _isZhHans
-      ? '选择或创建一个连接配置来打开房间。主舞台只保留给当前会话。'
-      : 'Choose or create a connection profile to open a room. The main stage stays reserved for the active conversation instead of a permanent credential form.';
+      ? '创建或导入连接配置后，就可以开始当前房间会话。'
+      : 'Create or import a connection profile to start the room conversation.';
   String get sharedLinkContract => _isZhHans
       ? '带 ?url=<transport>&token=<accessToken> 的链接会自动导入房间配置。'
       : 'Open a link with ?url=<transport>&token=<accessToken> to import a room profile automatically.';

@@ -1,19 +1,27 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../model/chat_message_merge.dart';
 import '../model/chat_models.dart';
 import '../model/chat_view_state.dart';
+import '../model/transport_codec.dart';
 import '../model/transport_protocol.dart';
+import '../transport/room_asset_uploader.dart';
+import '../transport/room_transport.dart';
 import '../util/transport_urls.dart';
 
-typedef WebSocketChannelFactory = WebSocketChannel Function(Uri uri);
+export '../transport/room_asset_uploader.dart'
+    show HttpRoomAssetUploader, RoomAssetUploader;
+export '../transport/room_transport.dart'
+    show
+        RoomTransportClient,
+        RoomTransportSession,
+        WebSocketChannelFactory,
+        WebSocketRoomTransportClient;
+
 typedef ScreenshotCaptureDelegate = Future<XFile> Function();
 
 class ChatViewController extends ChangeNotifier {
@@ -21,21 +29,32 @@ class ChatViewController extends ChangeNotifier {
     required this.transportUrl,
     this.accessToken,
     this.httpClient,
-    this.socketFactory,
+    WebSocketChannelFactory? socketFactory,
+    RoomTransportClient? transportClient,
+    RoomAssetUploader? assetUploader,
     this.screenshotCapture,
     this.connectionTimeout = const Duration(seconds: 8),
-  }) : _state = const ChatViewState.initial();
+    this.codec = const ChatTransportCodec(),
+  }) : _transportClient =
+           transportClient ??
+           WebSocketRoomTransportClient(socketFactory: socketFactory),
+       _assetUploader =
+           assetUploader ?? HttpRoomAssetUploader(httpClient: httpClient),
+       _state = const ChatViewState.initial();
 
   final String transportUrl;
   final String? accessToken;
   final http.Client? httpClient;
-  final WebSocketChannelFactory? socketFactory;
   final ScreenshotCaptureDelegate? screenshotCapture;
   final Duration connectionTimeout;
+  final ChatTransportCodec codec;
+
+  final RoomTransportClient _transportClient;
+  final RoomAssetUploader _assetUploader;
 
   ChatViewState _state;
-  WebSocketChannel? _channel;
-  StreamSubscription<Object?>? _subscription;
+  RoomTransportSession? _session;
+  StreamSubscription<ChatTransportEvent>? _subscription;
 
   ChatViewState get state => _state;
   Uri get resolvedTransportUri =>
@@ -54,14 +73,12 @@ class ChatViewController extends ChangeNotifier {
         errorMessage: null,
       ),
     );
-    final channel = (socketFactory ?? WebSocketChannel.connect)(
-      resolvedTransportUri,
-    );
-    _channel = channel;
-    _subscription = channel.stream.listen(
-      _handleRawTransportEvent,
+    final session = _transportClient.connect(resolvedTransportUri);
+    _session = session;
+    _subscription = session.events.listen(
+      _handleTransportEvent,
       onError: (Object error, StackTrace stackTrace) {
-        _channel = null;
+        _session = null;
         _subscription = null;
         _setState(
           _state.copyWith(
@@ -74,7 +91,7 @@ class ChatViewController extends ChangeNotifier {
         );
       },
       onDone: () {
-        _channel = null;
+        _session = null;
         _subscription = null;
         _setState(
           _state.copyWith(
@@ -88,7 +105,7 @@ class ChatViewController extends ChangeNotifier {
       cancelOnError: false,
     );
     try {
-      await channel.ready.timeout(
+      await session.ready.timeout(
         connectionTimeout,
         onTimeout: () {
           throw TimeoutException(
@@ -129,7 +146,7 @@ class ChatViewController extends ChangeNotifier {
     if (_state.loadingMore || !_state.hasMoreBefore) {
       return;
     }
-    _sendFrame(encodePageFrame(before: _state.nextBefore, limit: limit));
+    _sendFrame(codec.encodePage(before: _state.nextBefore, limit: limit));
     _setState(_state.copyWith(loadingMore: true));
   }
 
@@ -148,7 +165,7 @@ class ChatViewController extends ChangeNotifier {
           ? const <ChatAttachment>[]
           : await uploadAttachments(attachments);
       _sendFrame(
-        encodeSendFrame(text: normalized, attachments: uploaded, ref: ref),
+        codec.encodeSend(text: normalized, attachments: uploaded, ref: ref),
       );
       _setState(_state.copyWith(sending: false));
     } catch (error) {
@@ -163,18 +180,18 @@ class ChatViewController extends ChangeNotifier {
     required int messageId,
     required String text,
   }) async {
-    _sendFrame(encodeEditFrame(messageId: messageId, text: text.trim()));
+    _sendFrame(codec.encodeEdit(messageId: messageId, text: text.trim()));
   }
 
   Future<void> recallMessage(int messageId) async {
-    _sendFrame(encodeRecallFrame(messageId: messageId));
+    _sendFrame(codec.encodeRecall(messageId: messageId));
   }
 
   Future<void> updateFocus(bool focused) async {
-    if (_channel == null) {
+    if (_session == null) {
       return;
     }
-    _sendFrame(encodeFocusFrame(focused));
+    _sendFrame(codec.encodeFocus(focused));
     _setState(_state.copyWith(focused: focused));
   }
 
@@ -183,62 +200,12 @@ class ChatViewController extends ChangeNotifier {
     if (token == null || token.isEmpty) {
       throw StateError('room asset upload requires access token');
     }
-    final client = httpClient ?? http.Client();
-    try {
-      final request = http.MultipartRequest(
-        'POST',
-        resolvedHttpBaseUri.resolve(
-          '/api/rooms/${Uri.encodeComponent(chatId)}/assets',
-        ),
-      );
-      request.headers['x-agenter-room-access-token'] = token;
-      for (final file in files) {
-        final bytes = await file.readAsBytes();
-        final mimeType = file.mimeType;
-        request.files.add(
-          http.MultipartFile.fromBytes(
-            'files',
-            bytes,
-            filename: file.name,
-            contentType: MediaType.parse(
-              mimeType == null || mimeType.isEmpty
-                  ? 'application/octet-stream'
-                  : mimeType,
-            ),
-          ),
-        );
-      }
-      final streamed = await client.send(request);
-      final response = await http.Response.fromStream(streamed);
-      final payload = jsonDecode(response.body);
-      if (payload is! Map<String, Object?> ||
-          response.statusCode < 200 ||
-          response.statusCode >= 300) {
-        throw StateError('room asset upload failed (${response.statusCode})');
-      }
-      if ((payload['ok'] as bool?) != true) {
-        throw StateError(
-          payload['error'] as String? ?? 'room asset upload failed',
-        );
-      }
-      return (payload['items'] as List? ?? const <Object?>[])
-          .map((entry) => Map<String, Object?>.from(entry as Map))
-          .map(
-            (entry) => ChatAttachment(
-              assetId: entry['assetId'] as String,
-              kind: parseAttachmentKind(entry['kind'] as String),
-              name: entry['name'] as String,
-              mimeType: entry['mimeType'] as String,
-              sizeBytes: (entry['sizeBytes'] as num).toInt(),
-              url: entry['url'] as String,
-            ),
-          )
-          .toList(growable: false);
-    } finally {
-      if (httpClient == null) {
-        client.close();
-      }
-    }
+    return _assetUploader.upload(
+      httpBaseUri: resolvedHttpBaseUri,
+      chatId: chatId,
+      accessToken: token,
+      files: files,
+    );
   }
 
   void setMessageVisibility(ChatMessage message, double visibleFraction) {
@@ -260,13 +227,7 @@ class ChatViewController extends ChangeNotifier {
     );
   }
 
-  void _handleRawTransportEvent(Object? raw) {
-    final rawText = switch (raw) {
-      String value => value,
-      List<int> value => utf8.decode(value),
-      _ => throw const FormatException('unsupported websocket payload'),
-    };
-    final event = parseTransportEvent(rawText);
+  void _handleTransportEvent(ChatTransportEvent event) {
     switch (event) {
       case ChatSnapshotEvent():
         _setState(
@@ -315,18 +276,18 @@ class ChatViewController extends ChangeNotifier {
   }
 
   void _sendFrame(String frame) {
-    final channel = _channel;
-    if (channel == null) {
+    final session = _session;
+    if (session == null) {
       throw StateError('transport is not connected');
     }
-    channel.sink.add(frame);
+    session.send(frame);
   }
 
   Future<void> _closeTransport() async {
     await _subscription?.cancel();
     _subscription = null;
-    await _channel?.sink.close();
-    _channel = null;
+    await _session?.close();
+    _session = null;
   }
 
   void _setState(ChatViewState nextState) {

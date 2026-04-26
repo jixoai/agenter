@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../l10n/product_shell_localizations.dart';
 import '../model/connection_profile.dart';
-import 'ios26_theme_extension.dart';
+import 'apple_platform_theme.dart';
 
 Future<ConnectionProfileDraft?> showConnectionProfileSheet(
   BuildContext context, {
@@ -120,7 +120,7 @@ class _ConnectionProfileSheetState extends State<ConnectionProfileSheet> {
                         width: 42,
                         height: 5,
                         decoration: BoxDecoration(
-                          color: resolveIosColor(
+                          color: resolveAppleColor(
                             context,
                             CupertinoColors.systemGrey3,
                           ),
@@ -137,7 +137,7 @@ class _ConnectionProfileSheetState extends State<ConnectionProfileSheet> {
                             : isEditing
                             ? l10n.roomProfileDialogTitle
                             : l10n.newProfileDialogTitle,
-                        style: context.iosTitleTextStyle,
+                        style: context.appleTitleTextStyle,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -147,7 +147,7 @@ class _ConnectionProfileSheetState extends State<ConnectionProfileSheet> {
                         widget.importMode
                             ? l10n.importDialogBody
                             : l10n.profileDialogBody,
-                        style: context.iosCaptionTextStyle,
+                        style: context.appleCaptionTextStyle,
                       ),
                     ),
                     const SizedBox(height: 14),

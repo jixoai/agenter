@@ -28,6 +28,9 @@
 - recalled message 的可见文本必须是 objective recalled state，而不是旧正文残留。
 - chat stage 必须允许 host shell 拥有外层 chrome；package 不再强占页面级 header。
 - transcript 需要保留产品级 affordance，例如时间分隔、message selection、return-to-latest，而不把这些行为留给宿主用胶水补丁实现。
+- return-to-latest 必须是 lifecycle-safe 的 transcript affordance；点击、重复点击、viewport 变化或动画期间 dispose 都不能触发 Flutter render tree 断言。
+- transcript row selection semantics 必须由稳定 row atom 显式声明，虚拟列表内的 gesture recognizer 不得额外生成会随滚动销毁的语义节点。
+- transcript 与 Web demo shell 禁止挂载 `SelectableRegion` / `HtmlElementView` / Flutter Web platform view；消息复制能力由稳定 message action 承担，不能依赖浏览器嵌入式选择区域。
 
 ## 5. Extension contract
 
@@ -46,5 +49,9 @@
 - phase 1 的 operator-facing delivery 是 `packages/flutter-chat-view/example` 独立产品壳。
 - 这个阶段禁止把产品壳直接嵌进 `packages/webui`。
 - example 壳层必须遵守三态布局法则：`compact < 720`、`standard 720-1099`、`expanded >= 1100`。
+- compact active conversation 必须是 conversation-first route：底部归 transcript/composer，不允许持久 profile/chat/details bottom nav。
+- profile directory、room facts、participants、selected-message facts 必须通过二级/三级 route surface、sheet、popover/menu 或 persistent inspector projection 进入，而不是作为 compact peer tabs。
+- compact 二级/三级 route sheet 必须通过语义 detent 表达：profile directory 使用 page detent，room/message inspector 使用 inspector detent；feature code 不允许传散落的 raw height。
+- icon-only product-shell action 必须由统一 primitive 暴露单一带本地化 label 的语义 button，并保留至少 `44x44` 命中区域，不能在 Web 语义树里产生额外 unlabeled duplicate button。
 - example 壳层必须默认携带本地化、基础无障碍语义与键盘捷径，不把这些能力延后到 native phase 才补。
 - 后续 Android、iOS、macOS 只应复用本 package 的规则内核，不应复制 Web demo glue。

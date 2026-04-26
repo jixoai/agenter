@@ -7,7 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import '../controller/product_shell_controller.dart';
 import '../l10n/product_shell_localizations.dart';
 import '../store/connection_profile_store.dart';
-import 'ios26_theme.dart';
+import 'apple_platform_theme.dart';
 import 'product_shell_page.dart';
 
 class ProductShellApp extends StatefulWidget {
@@ -51,7 +51,7 @@ class _ProductShellAppState extends State<ProductShellApp> {
       onGenerateTitle: (context) =>
           ProductShellLocalizations.of(context).appTitle,
       debugShowCheckedModeBanner: false,
-      theme: buildIos26Theme(),
+      theme: buildApplePlatformTheme(),
       localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
         ProductShellLocalizations.delegate,
         ChatViewLocalizations.delegate,

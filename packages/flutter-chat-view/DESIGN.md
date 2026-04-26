@@ -166,14 +166,16 @@ host shell 固定分四层：
 ### 6.2 Current layout contract
 
 - `compact < 720`
-  - 单主舞台
-  - `CupertinoTabBar` 承担 profile / conversation / details 切换
-  - 不允许为了塞下三栏而压坏 transcript 可读性
+  - conversation-first 单主舞台
+  - active chat 底部只归 transcript / composer / safe-area，不再出现持久 bottom nav
+  - profile directory 通过 leading navigation action、pushed page 或 Cupertino sheet 进入
+  - room facts、participants、selected message facts 通过 inspector route / sheet 进入
+  - 不允许为了塞下三栏或三 tab 而压坏 transcript 可读性
 
 - `standard 720-1099`
   - 左侧 profile rail
   - 右侧 conversation stage
-  - details 下沉为下方 stacked section
+  - details 通过 transient inspector surface 进入，不能抢占 conversation measure
 
 - `expanded >= 1100`
   - profile / conversation / details 三栏并置
@@ -221,9 +223,12 @@ host shell 固定分四层：
 
 ### 7.1 Navigation
 
-- app-level 导航归 `CupertinoNavigationBar` / `CupertinoTabBar`。
-- 页面内二级动作归 `CupertinoListTile.trailing`、navigation trailing 或 action sheet。
-- 详情切换在 compact 模式必须有显式入口，不能依赖 hover 或隐性点击热区。
+- app-level 导航优先归 `CupertinoNavigationBar`；`CupertinoTabBar` 只允许用于真正同级的顶层 app areas。
+- active compact conversation 不允许出现持久 bottom nav；底部必须保留给 composer。
+- 页面内二级动作归 `CupertinoListTile.trailing`、navigation trailing、inspector sheet、popover/menu 或 action sheet。
+- profile directory、room details、selected-message facts 在 compact 模式必须有显式入口，不能依赖 hover 或隐性点击热区。
+- compact route sheet 必须选择语义 detent，而不是传 raw height：profile directory 是 `page` detent，room inspector 与 selected-message inspector 是 `inspector` detent。
+- route sheet primitive 负责 viewport width、bottom alignment、navigation title/close、safe-area padding；`ProfileRail` / `DetailRail` 只负责内容与滚动，不接管 sheet 约束。
 
 ### 7.2 Forms and dialogs
 
@@ -247,6 +252,7 @@ host shell 固定分四层：
 ### 7.5 Accessibility and density
 
 - icon-only action 必须保留至少 `44x44` 的命中区域，并提供明确语义标签。
+- icon-only action 在 Web 语义树里只能暴露一个带本地化 label 的 button；primitive 必须排除内部 icon/按钮导致的 unlabeled duplicate semantics。
 - compact 模式优先折叠次级动作和长原始值；不要把 room title、overflow action、share URL 挤在同一个首屏 surface。
 - 长 URL、token、share link 默认不直接占据主信息位；优先提供 copy action，让原始值退到次级细节。
 
@@ -287,3 +293,109 @@ host shell 固定分四层：
   - https://docs.flutter.dev/platform-integration/ios/ios-latest
 - Flutter adaptive / responsive best practices:
   - https://docs.flutter.cn/ui/adaptive-responsive/best-practices/
+
+## 11. Apple Platform Law
+
+- The Flutter product shell follows Apple platform semantics, not a generic web-card aesthetic. Use Cupertino navigation, tab, list, sheet, and dynamic color primitives before custom layout.
+- `AppleMaterialSurface` is the only product-shell primitive that may combine background, border, blur, radius, and clipping for app-level sidebar/content/inspector/bar surfaces.
+- Apple spacing is a rhythm law, not an individual style. Shell margins, column gaps, surface radii, and compact edge-to-edge behavior must come from `ApplePlatformTokens` / `appleShellMargins`, not feature-local `EdgeInsets` guesses.
+- Compact iPhone layouts are edge-to-edge under Cupertino navigation and tab bars. Do not wrap the active route in a large rounded card; use grouped backgrounds inside content only when the content semantics require grouping.
+- Regular and expanded layouts default to iPad-style split view: app-level sidebar/content/inspector surfaces are edge-to-edge and separated by thin system dividers. Rounded corners belong to contained semantic groups, sheets, notices, and controls—not to every major route panel.
+- Business widgets must not hand-roll `background + radius + border/shadow` for app-level chrome; add or extend an Apple primitive instead.
+- `AppleContentUnavailable` is the default empty-state primitive for profile, room, and conversation absence. Empty states must be quiet, short, and task-oriented rather than marketing hero sections.
+- Top navigation and bottom tab surfaces own their safe-area and separator behavior. Content panels must not add extra bottom padding to simulate tab spacing.
+- All icon-only controls must use `AppleIconButton` or an equivalent primitive with at least a 44pt hit target and a semantics label.
+- `AppleIconButton` owns icon-only semantics: one localized button label, no unlabeled duplicate button node, and child icon semantics excluded.
+- `CompactRouteSheet` owns compact secondary/tertiary route detents. Feature code selects semantic detents (`page`, `inspector`) and must not pass ad-hoc popup heights.
+- Product-shell colors must resolve through `CupertinoDynamicColor` or Apple platform tokens. Fixed raw colors are allowed only inside token definitions.
+- Liquid Glass is modeled as a progressive material primitive on Web: blur/alpha when available, dynamic solid fallback when unavailable. Do not name feature code after unreproducible private system effects.
+- Version-branded visual shims such as `ios26_*` are not allowed in the example shell. If a visual rule is durable, name it by semantic role (`Apple*`, stage, section, transcript) rather than by a speculative OS version.
+
+## 12. AI Prompt: Native Apple Review Loop
+
+Use this prompt when an AI agent reviews or changes Flutter Chat View UI. The goal is to force first-principles Apple platform reasoning instead of local style tweaking.
+
+```text
+You are reviewing `packages/flutter-chat-view` as an Apple platform interface designer and Flutter architect.
+
+Do not start by changing colors, border radius, or padding. First identify the semantic layer:
+1. App shell: navigation bars, tab bars, dual-pane columns, safe areas.
+2. Route surface: conversation stage, profile rail, detail rail.
+3. Section rhythm: grouped list sections, section labels, body padding, control gaps.
+4. Content atoms: message rows, composer, attachments, metadata, buttons.
+
+Apply these laws:
+- iPhone compact layouts are edge-to-edge under `CupertinoNavigationBar`; active conversation owns the bottom edge with transcript/composer, not a persistent bottom nav.
+- iPad/desktop layouts read as split view: app-level panels are separated by thin system dividers, not floating dashboard cards.
+- Major app-level backgrounds/radius/borders go through `AppleMaterialSurface`; feature code must not hand-roll `background + radius + border`.
+- Section spacing goes through `AppleSection`, `AppleSectionBody`, `AppleSectionLabel`, `ApplePanelGap`, `AppleActionGroup`, and `ApplePlatformTokens`; feature code must not invent one-off `EdgeInsets.fromLTRB(...)` values for section rhythm.
+- Compact profile/details/message surfaces go through `CompactRouteSheet` with semantic detents. Do not use one-off modal heights or content-driven popup sizing for route surfaces.
+- Icon-only actions go through `AppleIconButton`; verify browser snapshots do not show unlabeled duplicate buttons.
+- Rounded corners belong to contained semantic groups, sheets, notices, controls, and message bubbles—not to every route panel.
+- Empty states should be quiet, centered, task-oriented, and short; do not use marketing hero layouts inside a utility chat app.
+- One region owns each fact and each action. Do not repeat connection status, share actions, or profile actions across adjacent surfaces unless compact navigation makes it necessary.
+- Validate desktop and iPhone 14. Desktop must not look like web dashboard cards; mobile must not show a floating card around the route.
+
+Review checklist before reporting done:
+- Are shell margins, column gaps, section gaps, body padding, and radii read from `ApplePlatformTokens` or Apple primitives?
+- Are all app-level surfaces expressed with `AppleMaterialSurface` or native Cupertino bars/tabs?
+- Are section groups expressed with `AppleSection*` primitives?
+- Did widget tests lock compact edge-to-edge and desktop dual-pane rhythm?
+- Did wasm web evidence include both `main.dart.wasm` and `skwasm.wasm`?
+```
+
+## 13. AI Prompt: Implementation Guardrails
+
+```text
+When implementing Flutter Chat View UI changes:
+- Treat visual rhythm as platform law, not local style. Add a primitive/token if a new spacing pattern is needed.
+- Do not introduce `if (isIOSLikeSpecialCase)` style branches. Use layout size classes and semantic surface roles.
+- Prefer Cupertino widgets before custom Flutter containers.
+- Keep transport, upload, controller, rendering, and shell visual primitives orthogonal.
+- Add or update BDD-style widget tests for any new durable visual law.
+- Run `flutter analyze`, package `flutter test`, example `flutter test`, then wasm browser walkthrough.
+```
+
+## 14. Chat Content Rhythm Law
+
+- Chat content has its own rhythm law separate from product-shell chrome. `ChatSurfaceTokens` is the single source for message max width, bubble radius, message padding, block gap, block padding, composer padding, action hit size, inline gaps, pill padding, transcript padding, notice rhythm, empty-state rhythm, and return-to-latest motion thresholds.
+- `FlutterChatView`, `ChatMessageTile`, `ChatComposer*`, `ChatMarkdownView`, attachments, and interactive/error/reply blocks must read rhythm from `chatTokens(context)` or helpers such as `chatComposerOuterPadding`.
+- Feature code must not introduce one-off `EdgeInsets.fromLTRB(...)`, bubble radii, pill padding, or composer action sizes. If a new content pattern needs spacing, extend `ChatSurfaceTokens` first.
+- Message bubbles remain contained content atoms. They can be rounded, but their radius must be quieter than app-level cards and consistent across text, replies, errors, attachments, and interactive forms.
+- Composer is a control surface: it owns its action hit targets and field padding, while the parent stage owns only outer placement.
+- Markdown/code/blockquote spacing is a projection of message rhythm. Renderer logic must not invent separate visual spacing unrelated to `ChatSurfaceTokens`.
+
+## 15. Transcript Motion & Stage Notice Law
+
+- Transcript scroll is a lifecycle-sensitive platform law. Feature widgets must not call `ScrollController.animateTo` directly from transient gestures unless the call is guarded by `hasClients`, `hasContentDimensions`, `mounted`, and post-frame timing where needed.
+- Return-to-latest is a persistent stage affordance, not a conditional subtree. Keep the control mounted and toggle `Opacity`, `IgnorePointer`, and semantics exposure instead of removing it during the same gesture that starts scroll motion.
+- Stage notices, time dividers, loading affordances, empty transcript copy, and return-to-latest controls are transcript chrome. Their padding, radius, gaps, icon sizes, and thresholds must come from `ChatSurfaceTokens`.
+- Visibility telemetry is not allowed to create rebuild storms. If a scroll or visibility primitive emits high-frequency facts, it must be throttled, coalesced, or kept out of product-shell rebuild paths unless a durable user-visible fact changed.
+- Scroll commands must be idempotent. Repeated taps, controller updates, viewport changes, or disposal during animation must converge without render assertions or unhandled futures.
+- Virtualized transcript rows must not let `GestureDetector` own semantics while rows are being created and disposed during scroll. Put explicit `Semantics(onTap: ...)` on the stable row atom and set gesture recognizers to exclude their generated semantics.
+- Transcript and Web demo shell surfaces must not mount `SelectableRegion`, `HtmlElementView`, or any other Flutter Web platform view. On Web these create `_PlatformViewPlaceholderBox` post-frame layout callbacks that can outlive disposed rows during scroll animations. Message copying must be provided by stable message actions instead.
+
+### AI Prompt Addendum: Chat Content Review
+
+```text
+When reviewing chat content UI, inspect these before changing pixels:
+1. Is this app shell, section rhythm, or chat content rhythm?
+2. If it is chat content, does the value come from `ChatSurfaceTokens`?
+3. Are message bubbles, markdown blocks, reply previews, attachments, read receipts, and composer controls using the same block gap/inline gap/padding vocabulary?
+4. Did tests cover the durable token contract instead of private implementation details?
+
+Do not patch individual `Padding`, `BorderRadius`, or `SizedBox` values inside chat widgets. Promote durable values to `ChatSurfaceTokens`, then consume them from every related atom.
+```
+
+### AI Prompt Addendum: Transcript Motion Review
+
+```text
+When reviewing transcript scrolling or "latest" behavior:
+1. Identify whether the change affects transcript content, stage chrome, or shell chrome.
+2. Do not remove a pressed overlay control in the same frame that its gesture starts an animation; keep the affordance mounted and hide it semantically.
+3. Guard every scroll command with mounted/client/content-dimension checks and tolerate disposal during animation.
+4. Route padding, icon gap, bottom inset, visibility thresholds, and animation duration through `ChatSurfaceTokens`.
+5. For selectable transcript rows, keep semantics explicit and disable generated gesture semantics in virtualized row gesture recognizers.
+6. Do not place `SelectableRegion` inside message rows, detail rails, or Web shell surfaces; if text copy is required, expose it through a stable message action.
+7. Add a BDD widget test with semantics enabled that taps return-to-latest after the transcript is scrolled away from the bottom and asserts no Flutter exception is reported.
+```

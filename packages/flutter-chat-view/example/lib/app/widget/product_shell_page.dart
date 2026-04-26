@@ -1,16 +1,17 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_chat_view/flutter_chat_view.dart';
 
 import '../controller/product_shell_controller.dart';
 import '../l10n/product_shell_localizations.dart';
 import '../model/connection_profile.dart';
 import '../model/product_shell_layout.dart';
-import 'chat_stage_panel.dart';
 import 'connection_profile_sheet.dart';
-import 'detail_rail.dart';
-import 'ios26_icon_button.dart';
-import 'ios26_surfaces.dart';
-import 'profile_rail.dart';
+import 'apple_icon_button.dart';
+import 'apple_platform_theme.dart';
+import 'apple_surfaces.dart';
+import 'product_shell_route_layout.dart';
+import 'product_shell_route_sheets.dart';
 
 class ProductShellPage extends StatelessWidget {
   const ProductShellPage({super.key, required this.controller});
@@ -35,20 +36,23 @@ class ProductShellPage extends StatelessWidget {
                   LogicalKeyboardKey.digit1,
                   alt: true,
                 ): () =>
-                    controller.setCompactTab(ProductShellTab.profiles),
+                    _showProfileDirectory(context),
                 const SingleActivator(
                   LogicalKeyboardKey.digit2,
                   alt: true,
-                ): () =>
-                    controller.setCompactTab(ProductShellTab.conversation),
+                ): () {
+                  controller.openConversation();
+                  Navigator.of(context).maybePop();
+                },
                 const SingleActivator(
                   LogicalKeyboardKey.digit3,
                   alt: true,
                 ): () =>
-                    controller.setCompactTab(ProductShellTab.details),
+                    _showRoomInspector(context),
                 const SingleActivator(LogicalKeyboardKey.escape): () {
                   controller.selectMessage(null);
-                  controller.setCompactTab(ProductShellTab.conversation);
+                  controller.openConversation();
+                  Navigator.of(context).maybePop();
                 },
                 if (controller.activeProfile != null)
                   const SingleActivator(
@@ -65,59 +69,63 @@ class ProductShellPage extends StatelessWidget {
                     backgroundColor: CupertinoTheme.of(
                       context,
                     ).barBackgroundColor.withValues(alpha: 0.92),
+                    leading: layout.isCompact
+                        ? AppleIconButton(
+                            icon: CupertinoIcons.square_grid_2x2,
+                            label: l10n.profilesTab,
+                            onPressed: () => _showProfileDirectory(context),
+                          )
+                        : null,
                     middle: Text(l10n.appTitle),
-                    trailing: Ios26IconButton(
-                      icon: CupertinoIcons.add_circled,
-                      label: l10n.newProfile,
-                      onPressed: () => _showCreateActions(context),
-                      size: 28,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (layout.isCompact &&
+                            controller.activeProfile != null)
+                          AppleIconButton(
+                            icon: CupertinoIcons.info_circle,
+                            label: l10n.showDetails,
+                            onPressed: () => _showRoomInspector(context),
+                          ),
+                        AppleIconButton(
+                          icon: CupertinoIcons.add_circled,
+                          label: l10n.newProfile,
+                          onPressed: () => _showCreateActions(context),
+                          size: 28,
+                        ),
+                      ],
                     ),
                   ),
                   child: SafeArea(
-                    top: false,
+                    top: true,
                     bottom: false,
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        layout.showsBottomNavigation ? 28 : 34,
-                        16,
-                        layout.showsBottomNavigation ? 8 : 16,
-                      ),
-                      child: Column(
-                        children: [
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.topCenter,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: _contentMaxWidth(layout),
-                                ),
-                                child: switch (layout) {
-                                  ProductShellLayout.compact =>
-                                    _buildCompactLayout(context),
-                                  ProductShellLayout.standard =>
-                                    _buildStandardLayout(context),
-                                  ProductShellLayout.expanded =>
-                                    _buildExpandedLayout(context),
-                                },
-                              ),
-                            ),
+                      padding: appleShellMargins(context),
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: _contentMaxWidth(layout),
                           ),
-                          if (layout.showsBottomNavigation) ...[
-                            SafeArea(
-                              top: false,
-                              left: false,
-                              right: false,
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 12),
-                                child: _CompactNavigationBar(
-                                  selectedTab: controller.compactTab,
-                                  onSelected: controller.setCompactTab,
+                          child: ProductShellRouteLayout(
+                            controller: controller,
+                            layout: layout,
+                            onEditProfile: ({initialProfile}) =>
+                                _showProfileEditor(
+                                  context,
+                                  initialProfile: initialProfile,
                                 ),
-                              ),
-                            ),
-                          ],
-                        ],
+                            onImportProfile: () =>
+                                _showImportProfileSheet(context),
+                            onDeleteProfile: (profileId) =>
+                                _confirmDeleteProfile(context, profileId),
+                            onCopyShareLink: () => _copyShareLink(context),
+                            onShowRoomInspector: () =>
+                                _showRoomInspector(context),
+                            onShowMessageInspector: (message) =>
+                                _showMessageInspector(context, message),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -130,189 +138,41 @@ class ProductShellPage extends StatelessWidget {
     );
   }
 
-  Widget _buildExpandedLayout(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final profileWidth = (constraints.maxWidth * 0.21).clamp(276.0, 312.0);
-        final detailWidth = (constraints.maxWidth * 0.22).clamp(292.0, 332.0);
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              width: profileWidth,
-              child: ProfileRail(
-                profiles: controller.profiles,
-                activeProfileId: controller.activeProfileId,
-                surfaceNotice: controller.surfaceNotice,
-                onCreateProfile: () => _showProfileEditor(context),
-                onImportProfile: () => _showImportProfileSheet(context),
-                showEmptyActions: false,
-                onActivateProfile: controller.activateProfile,
-                onEditProfile: (profile) =>
-                    _showProfileEditor(context, initialProfile: profile),
-                onDeleteProfile: (profileId) =>
-                    _confirmDeleteProfile(context, profileId),
-              ),
-            ),
-            const SizedBox(width: 20),
-            Expanded(
-              flex: 3,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 940),
-                  child: ChatStagePanel(
-                    activeProfile: controller.activeProfile,
-                    chatController: controller.chatController,
-                    layout: ProductShellLayout.expanded,
-                    selectedMessageViewKey: controller.selectedMessage?.viewKey,
-                    onSelectMessage: controller.selectMessage,
-                    onCreateProfile: () => _showProfileEditor(context),
-                    onImportProfile: () => _showImportProfileSheet(context),
-                    onEditProfile: () => _showProfileEditor(
-                      context,
-                      initialProfile: controller.activeProfile,
-                    ),
-                    onReconnect: controller.reconnectActiveProfile,
-                    onDisconnect: controller.disconnectActiveProfile,
-                    onShowDetails: () {},
-                    showDetailsAction: false,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 20),
-            SizedBox(
-              width: detailWidth,
-              child: DetailRail(
-                activeProfile: controller.activeProfile,
-                chatController: controller.chatController,
-                selectedMessage: controller.selectedMessage,
-                onCopyShareLink: () => _copyShareLink(context),
-                onClearSelectedMessage: () => controller.selectMessage(null),
-              ),
-            ),
-          ],
-        );
-      },
+  Future<void> _showProfileDirectory(BuildContext context) async {
+    controller.openProfileDirectory();
+    await showProductShellProfileDirectorySheet(
+      context,
+      controller: controller,
+      onCreateProfile: () => _showProfileEditor(context),
+      onImportProfile: () => _showImportProfileSheet(context),
+      onEditProfile: (profile) =>
+          _showProfileEditor(context, initialProfile: profile),
+      onDeleteProfile: _confirmDeleteProfile,
     );
+    controller.openConversation();
   }
 
-  Widget _buildStandardLayout(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final railWidth = (constraints.maxWidth * 0.31).clamp(272.0, 308.0);
-        final detailHeight = (constraints.maxHeight * 0.31).clamp(228.0, 292.0);
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              width: railWidth,
-              child: ProfileRail(
-                profiles: controller.profiles,
-                activeProfileId: controller.activeProfileId,
-                surfaceNotice: controller.surfaceNotice,
-                onCreateProfile: () => _showProfileEditor(context),
-                onImportProfile: () => _showImportProfileSheet(context),
-                showEmptyActions: false,
-                onActivateProfile: controller.activateProfile,
-                onEditProfile: (profile) =>
-                    _showProfileEditor(context, initialProfile: profile),
-                onDeleteProfile: (profileId) =>
-                    _confirmDeleteProfile(context, profileId),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: ChatStagePanel(
-                      activeProfile: controller.activeProfile,
-                      chatController: controller.chatController,
-                      layout: ProductShellLayout.standard,
-                      selectedMessageViewKey:
-                          controller.selectedMessage?.viewKey,
-                      onSelectMessage: controller.selectMessage,
-                      onCreateProfile: () => _showProfileEditor(context),
-                      onImportProfile: () => _showImportProfileSheet(context),
-                      onEditProfile: () => _showProfileEditor(
-                        context,
-                        initialProfile: controller.activeProfile,
-                      ),
-                      onReconnect: controller.reconnectActiveProfile,
-                      onDisconnect: controller.disconnectActiveProfile,
-                      onShowDetails: () {},
-                      showDetailsAction: false,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: detailHeight,
-                    child: DetailRail(
-                      activeProfile: controller.activeProfile,
-                      chatController: controller.chatController,
-                      selectedMessage: controller.selectedMessage,
-                      onCopyShareLink: () => _copyShareLink(context),
-                      onClearSelectedMessage: () =>
-                          controller.selectMessage(null),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
+  Future<void> _showRoomInspector(BuildContext context) async {
+    controller.openRoomInspector();
+    await showProductShellRoomInspectorSheet(
+      context,
+      controller: controller,
+      onCopyShareLink: _copyShareLink,
     );
+    controller.openConversation();
   }
 
-  Widget _buildCompactLayout(BuildContext context) {
-    final pages = <Widget>[
-      ProfileRail(
-        profiles: controller.profiles,
-        activeProfileId: controller.activeProfileId,
-        surfaceNotice: controller.surfaceNotice,
-        onCreateProfile: () => _showProfileEditor(context),
-        onImportProfile: () => _showImportProfileSheet(context),
-        onActivateProfile: (profileId) async {
-          await controller.activateProfile(profileId);
-          controller.setCompactTab(ProductShellTab.conversation);
-        },
-        onEditProfile: (profile) =>
-            _showProfileEditor(context, initialProfile: profile),
-        onDeleteProfile: (profileId) =>
-            _confirmDeleteProfile(context, profileId),
-      ),
-      ChatStagePanel(
-        activeProfile: controller.activeProfile,
-        chatController: controller.chatController,
-        layout: ProductShellLayout.compact,
-        selectedMessageViewKey: controller.selectedMessage?.viewKey,
-        onSelectMessage: (message) {
-          controller.selectMessage(message);
-          controller.setCompactTab(ProductShellTab.details);
-        },
-        onCreateProfile: () => _showProfileEditor(context),
-        onImportProfile: () => _showImportProfileSheet(context),
-        onEditProfile: () => _showProfileEditor(
-          context,
-          initialProfile: controller.activeProfile,
-        ),
-        onReconnect: controller.reconnectActiveProfile,
-        onDisconnect: controller.disconnectActiveProfile,
-        onShowDetails: () => controller.setCompactTab(ProductShellTab.details),
-        showDetailsAction: true,
-      ),
-      DetailRail(
-        activeProfile: controller.activeProfile,
-        chatController: controller.chatController,
-        selectedMessage: controller.selectedMessage,
-        onCopyShareLink: () => _copyShareLink(context),
-        onClearSelectedMessage: () => controller.selectMessage(null),
-      ),
-    ];
-    return IndexedStack(index: controller.compactTab.index, children: pages);
+  Future<void> _showMessageInspector(
+    BuildContext context,
+    ChatMessage message,
+  ) async {
+    controller.openMessageInspector(message);
+    await showProductShellMessageInspectorSheet(
+      context,
+      controller: controller,
+      onCopyShareLink: _copyShareLink,
+    );
+    controller.openConversation();
   }
 
   Future<void> _showCreateActions(BuildContext context) async {
@@ -405,7 +265,7 @@ class ProductShellPage extends StatelessWidget {
     if (!context.mounted) {
       return;
     }
-    await showIos26Toast(context, l10n.shareLinkCopied);
+    await showAppleToast(context, l10n.shareLinkCopied);
   }
 }
 
@@ -426,39 +286,6 @@ class _BootstrappingShell extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _CompactNavigationBar extends StatelessWidget {
-  const _CompactNavigationBar({
-    required this.selectedTab,
-    required this.onSelected,
-  });
-
-  final ProductShellTab selectedTab;
-  final ValueChanged<ProductShellTab> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = ProductShellLocalizations.of(context);
-    return CupertinoTabBar(
-      currentIndex: selectedTab.index,
-      onTap: (index) => onSelected(ProductShellTab.values[index]),
-      items: <BottomNavigationBarItem>[
-        BottomNavigationBarItem(
-          icon: const Icon(CupertinoIcons.square_grid_2x2),
-          label: l10n.profilesTab,
-        ),
-        BottomNavigationBarItem(
-          icon: const Icon(CupertinoIcons.chat_bubble_2),
-          label: l10n.chatTab,
-        ),
-        BottomNavigationBarItem(
-          icon: const Icon(CupertinoIcons.info_circle),
-          label: l10n.detailsTab,
-        ),
-      ],
     );
   }
 }
