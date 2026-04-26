@@ -10,4 +10,4 @@
 - [x] 2.2 Add widget test for upward scroll auto-requesting older history.
 - [x] 2.3 Sync `packages/flutter-chat-view/SPEC.md` and `openspec/specs/flutter-chat-view/spec.md`.
 - [x] 2.4 Run Flutter package and example validation.
-- [ ] 2.5 Commit spec, implementation, and archive separately.
+- [x] 2.5 Commit spec, implementation, and archive separately.
