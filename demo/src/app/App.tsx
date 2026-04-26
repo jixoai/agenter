@@ -735,16 +735,49 @@ export const App = ({ runtimeConfig }: AppProps) => {
       terminalId,
       processKind: "shell",
       command: [...(profile?.command ?? terminal.command)],
-      cwd: profile?.cwd ?? terminal.cwd,
+      launchCwd: profile?.cwd ?? terminal.cwd,
       workspace: adapter.getWorkspace(),
-      running: adapter.isRunning(),
       status: adapter.getStatus(),
       seq: snapshot.seq,
       focused: focusedTerminalIdsRef.current.includes(terminalId),
       icon: profile?.icon,
-      title: profile?.title ?? terminal.commandLabel,
+      configuredTitle: profile?.title ?? terminal.commandLabel,
       shortcuts: profile?.shortcuts ? { ...profile.shortcuts } : undefined,
+      processPhase: adapter.isRunning() ? "running" : "stopped",
+      currentTitle: adapter.isRunning() ? profile?.title ?? terminal.commandLabel : undefined,
+      currentPath: adapter.isRunning() ? profile?.cwd ?? terminal.cwd : undefined,
+      lastStopReason: null,
+      lastExitCode: null,
+      lastExitSignal: null,
+      lastStoppedAt: null,
       transportUrl: undefined,
+    };
+  };
+
+  const projectRuntimeTerminalSurface = (terminalId: string) => {
+    const entry = describeTerminalEntry(terminalId);
+    if (!entry) {
+      return undefined;
+    }
+    return {
+      terminalId: entry.terminalId,
+      processKind: entry.processKind,
+      command: entry.command,
+      launchCwd: entry.launchCwd,
+      workspace: entry.workspace,
+      status: entry.status,
+      processPhase: entry.processPhase,
+      focused: entry.focused,
+      icon: entry.icon,
+      configuredTitle: entry.configuredTitle,
+      currentTitle: entry.currentTitle,
+      currentPath: entry.currentPath,
+      lastStopReason: entry.lastStopReason,
+      lastExitCode: entry.lastExitCode,
+      lastExitSignal: entry.lastExitSignal,
+      lastStoppedAt: entry.lastStoppedAt,
+      shortcuts: entry.shortcuts,
+      transportUrl: entry.transportUrl,
     };
   };
 
@@ -785,15 +818,16 @@ export const App = ({ runtimeConfig }: AppProps) => {
           const entry = describeTerminalEntry(terminal.terminalId);
           return {
             terminalId: terminal.terminalId,
-            running: entry?.running ?? false,
-            cwd: entry?.cwd ?? terminal.cwd,
+            processPhase: entry?.processPhase ?? "stopped",
+            currentPath: entry?.currentPath,
             cols: terminalSizeRef.current.cols,
             rows: terminalSizeRef.current.rows,
             focused: entry?.focused ?? false,
             dirty: terminalDirtyStateRef.current[terminal.terminalId] ?? false,
             latestSeq: terminalLatestSeqRef.current[terminal.terminalId],
             icon: entry?.icon,
-            title: entry?.title,
+            configuredTitle: entry?.configuredTitle,
+            currentTitle: entry?.currentTitle,
             shortcuts: entry?.shortcuts,
             transportUrl: entry?.transportUrl,
           };
@@ -817,7 +851,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
         return {
           ok: true,
           message: started.message,
-          terminal: started.terminal ?? undefined,
+          terminal: projectRuntimeTerminalSurface(terminalId),
         };
       },
       focus: async ({
@@ -856,7 +890,15 @@ export const App = ({ runtimeConfig }: AppProps) => {
           focusedTerminalIds: [...resolved],
         };
       },
-      kill: async ({ terminalId }: { terminalId: string }) => {
+      bootstrap: async ({ terminalId }: { terminalId: string }) => {
+        const started = await startConfiguredTerminal(terminalId);
+        return {
+          ok: started.ok,
+          message: started.message,
+          terminal: started.ok ? projectRuntimeTerminalSurface(terminalId) : undefined,
+        };
+      },
+      stop: async ({ terminalId }: { terminalId: string }) => {
         const adapter = getAdapter(terminalId);
         if (!adapter) {
           return { ok: false, message: `unknown terminal: ${terminalId}` };
@@ -889,10 +931,7 @@ export const App = ({ runtimeConfig }: AppProps) => {
         }
         adapter.resize(terminalSizeRef.current.cols, terminalSizeRef.current.rows);
         if (!adapter.isRunning()) {
-          adapter.start();
-          if (terminal.gitLog) {
-            await adapter.markDirty();
-          }
+          return { ok: false, message: `terminal is not running: ${terminalId}` };
         }
         await dispatchToTerminal(adapter, {
           taskId: "tool-terminal-write",
@@ -1151,13 +1190,20 @@ export const App = ({ runtimeConfig }: AppProps) => {
           terminalId: terminal.terminalId,
           processKind: "shell",
           command: runtimeConfig.terminals[terminal.terminalId]?.command ?? [],
-          cwd: terminal.cwd,
+          launchCwd: runtimeConfig.terminals[terminal.terminalId]?.cwd ?? runtimeConfig.agentCwd,
           workspace: runtimeConfig.agentCwd,
-          running: terminal.running,
-          status: terminal.running ? "BUSY" : "IDLE",
+          status: terminal.processPhase === "running" ? "BUSY" : "IDLE",
+          processPhase: terminal.processPhase,
           focused: terminal.focused,
           icon: terminal.icon,
-          title: terminal.title,
+          configuredTitle: terminal.configuredTitle,
+          currentTitle: terminal.currentTitle,
+          currentPath: terminal.currentPath,
+          lastStopReason: null,
+          lastExitCode: null,
+          lastExitSignal: null,
+          lastStoppedAt: null,
+          transportUrl: terminal.processPhase === "running" ? terminal.transportUrl : undefined,
         })),
       terminalCreate: async (input) => await terminalGateway.create(input),
       terminalRead: async (input) => await terminalGateway.read(input),
@@ -1165,8 +1211,13 @@ export const App = ({ runtimeConfig }: AppProps) => {
         const result = await terminalGateway.write({
           terminalId: input.terminalId,
           text: input.text,
-          submit: input.submit,
-          submitKey: input.submitKey,
+        });
+        return { ok: result.ok, message: result.message };
+      },
+      terminalInput: async (input) => {
+        const result = await terminalGateway.write({
+          terminalId: input.terminalId,
+          text: input.text,
         });
         return { ok: result.ok, message: result.message };
       },
@@ -1175,7 +1226,8 @@ export const App = ({ runtimeConfig }: AppProps) => {
           op: input.op,
           terminalIds: input.terminalIds,
         }),
-      terminalKill: async (input) => await terminalGateway.kill(input),
+      terminalBootstrap: async (input) => await terminalGateway.bootstrap(input),
+      terminalStop: async (input) => await terminalGateway.stop(input),
     }),
     [attentionGateway, runtimeConfig.agentCwd, runtimeConfig.terminals, terminalGateway],
   );
