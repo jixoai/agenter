@@ -90,7 +90,7 @@ const focusLatestParticipantTerminal = async (
 ): Promise<void> => {
   const sessionId = participant === "backend" ? harness.backendSession.id : harness.frontendSession.id;
   const terminals = harness.kernel.listTerminals(sessionId);
-  const terminal = terminals.find((entry) => entry.running) ?? terminals.at(-1);
+  const terminal = terminals.find((entry) => entry.processPhase === "running") ?? terminals.at(-1);
   if (!terminal || terminal.focused) {
     return;
   }
@@ -812,18 +812,18 @@ const collectDiagnostics = async (
     })),
     backendTerminals: harness.kernel.listTerminals(harness.backendSession.id).map((terminal) => ({
       terminalId: terminal.terminalId,
-      running: terminal.running,
-      cwd: terminal.cwd,
+      running: terminal.processPhase === "running",
+      cwd: terminal.launchCwd,
       focused: terminal.focused,
-      title: terminal.title,
+      title: terminal.currentTitle ?? terminal.configuredTitle ?? terminal.terminalId,
     })),
     backendTerminalReads,
     frontendTerminals: harness.kernel.listTerminals(harness.frontendSession.id).map((terminal) => ({
       terminalId: terminal.terminalId,
-      running: terminal.running,
-      cwd: terminal.cwd,
+      running: terminal.processPhase === "running",
+      cwd: terminal.launchCwd,
       focused: terminal.focused,
-      title: terminal.title,
+      title: terminal.currentTitle ?? terminal.configuredTitle ?? terminal.terminalId,
     })),
     frontendTerminalReads,
     backendModelCalls: backendModelCalls.map((call) => ({

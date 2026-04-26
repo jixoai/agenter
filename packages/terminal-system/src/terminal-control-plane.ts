@@ -6,6 +6,7 @@ import { isPrincipalId } from "@agenter/principal-crypto";
 import {
   ManagedTerminal,
   type ManagedTerminalConfig,
+  type ManagedTerminalConfigPatch,
   type ManagedTerminalSnapshot,
 } from "./managed-terminal";
 import type {
@@ -17,6 +18,8 @@ import type {
   TerminalControlPlaneConfig,
   TerminalControlPlaneConfigPatch,
   TerminalControlPlaneEntry,
+  TerminalConfigMutationResult,
+  TerminalConfigView,
   TerminalCreateInput,
   TerminalEventRecord,
   TerminalFocusOp,
@@ -44,7 +47,7 @@ import type {
   TerminalWriteResult,
 } from "./terminal-control-plane.types";
 import { TerminalDb } from "./terminal-db";
-import type { TerminalObservedIdentity } from "./terminal-runtime-truth";
+import type { TerminalLifecycleTransition, TerminalObservedIdentity } from "./terminal-runtime-truth";
 import type { TerminalStatus } from "./types";
 
 interface ManagedEntry {
@@ -72,6 +75,7 @@ type TerminalChangeReason =
   | "deleted"
   | "identity"
   | "lifecycle"
+  | "transition"
   | "activity"
   | "grant-issued"
   | "grant-revoked"
@@ -116,6 +120,7 @@ const roleRank = (role: TerminalGrantRole): number => {
 
 const cloneShortcuts = (input?: TerminalShortcutMap): TerminalShortcutMap | undefined =>
   input ? { ...input } : undefined;
+const cloneMetadata = (input?: Record<string, unknown>): Record<string, unknown> => ({ ...(input ?? {}) });
 
 const cloneProfile = (input?: TerminalProcessProfile): TerminalProcessProfile => ({
   command: input?.command ? [...input.command] : undefined,
@@ -196,6 +201,7 @@ const buildSnapshotPayload = (
   snapshot,
   status: projection.status,
   processPhase: projection.processPhase,
+  lifecycleTransition: projection.lifecycleTransition ?? null,
   title: projection.title,
   configuredTitle: projection.configuredTitle,
   currentTitle: projection.currentTitle,
@@ -222,6 +228,7 @@ const buildDiffPayload = (
   bytes: input.bytes,
   status: projection.status,
   processPhase: projection.processPhase,
+  lifecycleTransition: projection.lifecycleTransition ?? null,
   title: projection.title,
   configuredTitle: projection.configuredTitle,
   currentTitle: projection.currentTitle,
@@ -296,6 +303,7 @@ export class TerminalControlPlane {
   private readonly approvalRequestListeners = new Set<
     (payload: { terminalId: string; request: TerminalApprovalRequestRecord }) => void
   >();
+  private readonly lifecycleTransitions = new Map<string, TerminalLifecycleTransition>();
   private config: TerminalControlPlaneConfig;
   private transportServer: Bun.Server<TerminalTransportSocketData> | null = null;
 
@@ -487,9 +495,15 @@ export class TerminalControlPlane {
   }
 
   bootstrap(terminalId: string): TerminalControlPlaneEntry {
+    this.assertLifecycleTransitionIdle(terminalId, "bootstrap");
     const entry = this.ensureManagedEntry(terminalId);
-    if (!entry.terminal.isRunning()) {
-      entry.terminal.start();
+    this.setLifecycleTransition(terminalId, "bootstrapping");
+    try {
+      if (!entry.terminal.isRunning()) {
+        entry.terminal.start();
+      }
+    } finally {
+      this.clearLifecycleTransition(terminalId, "bootstrapping");
     }
     return this.describeEntry(entry.record, {
       focused: this.getFocusedTerminalIds(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).includes(terminalId),
@@ -508,13 +522,19 @@ export class TerminalControlPlane {
   }
 
   async stop(terminalId: string): Promise<{ ok: boolean; message: string }> {
+    this.assertLifecycleTransitionIdle(terminalId, "stop");
     const entry = this.entries.get(terminalId);
     const record = this.db.getTerminal(terminalId);
     if (!record) {
       return { ok: false, message: `unknown terminal: ${terminalId}` };
     }
     if (entry?.terminal.isRunning()) {
-      await entry.terminal.stop();
+      this.setLifecycleTransition(terminalId, "killing");
+      try {
+        await entry.terminal.stop();
+      } finally {
+        this.clearLifecycleTransition(terminalId, "killing");
+      }
     }
     return { ok: true, message: "terminal PTY stopped" };
   }
@@ -530,10 +550,17 @@ export class TerminalControlPlane {
   }
 
   async deleteTerminal(terminalId: string): Promise<{ ok: boolean; message: string }> {
+    this.assertLifecycleTransitionIdle(terminalId, "delete");
     const entry = this.entries.get(terminalId);
     if (entry?.terminal.isRunning()) {
-      await entry.terminal.stop();
+      this.setLifecycleTransition(terminalId, "killing");
+      try {
+        await entry.terminal.stop();
+      } finally {
+        this.clearLifecycleTransition(terminalId, "killing");
+      }
     }
+    this.lifecycleTransitions.delete(terminalId);
     this.entries.delete(terminalId);
     const existed = this.db.removeTerminal(terminalId);
     if (!existed) {
@@ -952,6 +979,13 @@ export class TerminalControlPlane {
       const suffix = reason ? ` (${reason})` : "";
       return `${input.title} failed before reaching the PTY${suffix}`;
     };
+    const transition = this.getLifecycleTransition(input.terminalId);
+    if (transition) {
+      return {
+        ok: false,
+        message: `${input.title} requires the terminal lifecycle transition to settle first (${transition})`,
+      };
+    }
     const entry = this.ensureManagedEntry(input.terminalId);
     if (!entry.terminal.isRunning()) {
       return {
@@ -1089,6 +1123,20 @@ export class TerminalControlPlane {
     return this.entries.get(terminalId)?.terminal.isRunning() ?? false;
   }
 
+  getTerminalConfig(terminalId: string): TerminalConfigView {
+    return this.describeTerminalConfig(this.requireRecord(terminalId));
+  }
+
+  getTerminalConfigAuthorized(input: {
+    terminalId: string;
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): TerminalConfigView {
+    this.requireAdministrativeAuthority(input.terminalId, input);
+    return this.getTerminalConfig(input.terminalId);
+  }
+
   getConfig(): TerminalControlPlaneConfig {
     return {
       defaults: cloneProfile(this.config.defaults),
@@ -1149,20 +1197,7 @@ export class TerminalControlPlane {
       actorId: input.actorId,
       superadminActorId: input.superadminActorId,
     });
-    if (input.adminGroupCandidateIds) {
-      input.adminGroupCandidateIds.forEach((actorId) => {
-        if (!this.getGrantForActor(input.terminalId, actorId)) {
-          throw new Error(`admin candidate requires an active terminal grant: ${actorId}`);
-        }
-      });
-      this.db.setAdminGroup(input.terminalId, input.adminGroupCandidateIds);
-      this.syncAdminAssignments(input.terminalId);
-    }
-    const record = this.db.updateTerminal(input.terminalId, input);
-    const managed = this.entries.get(input.terminalId);
-    if (managed) {
-      managed.record = record;
-    }
+    const { record } = this.applyTerminalConfigPatch(input.terminalId, input);
     this.emitChange({ terminalId: input.terminalId, reason: "updated", actorId: input.actorId });
     return this.describeEntry(record, {
       focused: this.getFocusedTerminalIds(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).includes(input.terminalId),
@@ -1170,6 +1205,28 @@ export class TerminalControlPlane {
         ? this.createAccessProjection(input.terminalId, this.requireGrantForActor(input.terminalId, input.actorId))
         : this.getTrustedBootstrapAccess(input.terminalId),
     });
+  }
+
+  setTerminalConfigAuthorized(
+    input: {
+      terminalId: string;
+      accessToken?: string;
+      actorId?: TerminalActorId;
+      superadminActorId?: TerminalActorId;
+    } & TerminalPatchInput,
+  ): TerminalConfigMutationResult {
+    this.requireAdministrativeAuthority(input.terminalId, {
+      accessToken: input.accessToken,
+      actorId: input.actorId,
+      superadminActorId: input.superadminActorId,
+    });
+    const result = this.applyTerminalConfigPatch(input.terminalId, input);
+    this.emitChange({ terminalId: input.terminalId, reason: "updated", actorId: input.actorId });
+    return {
+      config: this.describeTerminalConfig(result.record),
+      appliedLiveFields: result.appliedLiveFields,
+      nextBootstrapFields: result.nextBootstrapFields,
+    };
   }
 
   listGrantsAuthorized(input: {
@@ -1439,6 +1496,81 @@ export class TerminalControlPlane {
     });
   }
 
+  private applyTerminalConfigPatch(
+    terminalId: string,
+    input: TerminalPatchInput,
+  ): { record: TerminalRecord; appliedLiveFields: string[]; nextBootstrapFields: string[] } {
+    this.assertLifecycleTransitionIdle(terminalId, "set-config");
+    if (input.adminGroupCandidateIds) {
+      input.adminGroupCandidateIds.forEach((actorId) => {
+        if (!this.getGrantForActor(terminalId, actorId)) {
+          throw new Error(`admin candidate requires an active terminal grant: ${actorId}`);
+        }
+      });
+      this.db.setAdminGroup(terminalId, input.adminGroupCandidateIds);
+      this.syncAdminAssignments(terminalId);
+    }
+    const record = this.db.updateTerminal(terminalId, input);
+    const managed = this.entries.get(terminalId);
+    const appliedLiveFields: string[] = [];
+    const nextBootstrapFields: string[] = [];
+    if (managed) {
+      managed.record = record;
+      const reconfigurePatch: ManagedTerminalConfigPatch = {};
+      if (input.command) {
+        reconfigurePatch.command = [...record.command];
+        if (managed.terminal.isRunning()) {
+          nextBootstrapFields.push("command");
+        }
+      }
+      if (input.launchCwd !== undefined) {
+        reconfigurePatch.cwd = resolve(record.launchCwd);
+        if (managed.terminal.isRunning()) {
+          nextBootstrapFields.push("launchCwd");
+        }
+      }
+      if (input.env !== undefined) {
+        reconfigurePatch.env = record.profile.env ? { ...record.profile.env } : {};
+        if (managed.terminal.isRunning()) {
+          nextBootstrapFields.push("env");
+        }
+      }
+      if (input.processKind !== undefined && managed.terminal.isRunning()) {
+        nextBootstrapFields.push("processKind");
+      }
+      if (input.gitLog !== undefined) {
+        reconfigurePatch.gitLog = toManagedGitLogMode(record.profile.gitLog);
+        if (managed.terminal.isRunning()) {
+          nextBootstrapFields.push("gitLog");
+        }
+      }
+      if (input.logStyle !== undefined) {
+        reconfigurePatch.logStyle = record.profile.logStyle ?? "rich";
+        if (managed.terminal.isRunning()) {
+          nextBootstrapFields.push("logStyle");
+        }
+      }
+      if (input.cols !== undefined) {
+        reconfigurePatch.cols = record.profile.cols ?? managed.terminal.getSnapshot().cols;
+        if (managed.terminal.isRunning()) {
+          appliedLiveFields.push("cols");
+        } else {
+          nextBootstrapFields.push("cols");
+        }
+      }
+      if (input.rows !== undefined) {
+        reconfigurePatch.rows = record.profile.rows ?? managed.terminal.getSnapshot().rows;
+        if (managed.terminal.isRunning()) {
+          appliedLiveFields.push("rows");
+        } else {
+          nextBootstrapFields.push("rows");
+        }
+      }
+      managed.terminal.reconfigure(reconfigurePatch);
+    }
+    return { record, appliedLiveFields, nextBootstrapFields };
+  }
+
   private describeEntry(
     record: TerminalRecord,
     input: { focused: boolean; access?: TerminalAccessProjection | null },
@@ -1454,6 +1586,7 @@ export class TerminalControlPlane {
       launchCwd: resolve(record.launchCwd),
       workspace: entry?.terminal.getWorkspace() ?? null,
       status: entry?.terminal.getStatus() ?? "IDLE",
+      lifecycleTransition: this.getLifecycleTransition(record.terminalId),
       seq: snapshot?.seq ?? 0,
       snapshot,
       focused: input.focused,
@@ -1536,11 +1669,25 @@ export class TerminalControlPlane {
     return {
       status: terminal.getStatus(),
       processPhase: terminal.isRunning() ? "running" : record.processPhase,
+      lifecycleTransition: this.getLifecycleTransition(record.terminalId),
       title: resolveDisplayTitle(record.terminalId, record.profile.title, observedIdentity),
       configuredTitle: record.profile.title,
       currentTitle: observedIdentity.currentTitle,
       currentPath: observedIdentity.currentPath,
       running: terminal.isRunning(),
+    };
+  }
+
+  private describeTerminalConfig(record: TerminalRecord): TerminalConfigView {
+    return {
+      terminalId: record.terminalId,
+      processKind: record.processKind,
+      command: [...record.command],
+      launchCwd: resolve(record.launchCwd),
+      profile: cloneProfile(record.profile),
+      metadata: cloneMetadata(record.metadata),
+      processPhase: record.processPhase,
+      lifecycleTransition: this.getLifecycleTransition(record.terminalId),
     };
   }
 
@@ -1578,6 +1725,38 @@ export class TerminalControlPlane {
     for (const listener of this.changeListeners) {
       listener(payload);
     }
+  }
+
+  private getLifecycleTransition(terminalId: string): TerminalLifecycleTransition | null {
+    return this.lifecycleTransitions.get(terminalId) ?? null;
+  }
+
+  private setLifecycleTransition(terminalId: string, transition: TerminalLifecycleTransition): void {
+    if (this.lifecycleTransitions.get(terminalId) === transition) {
+      return;
+    }
+    this.lifecycleTransitions.set(terminalId, transition);
+    this.emitChange({ terminalId, reason: "transition" });
+  }
+
+  private clearLifecycleTransition(terminalId: string, transition?: TerminalLifecycleTransition): void {
+    const current = this.lifecycleTransitions.get(terminalId);
+    if (!current) {
+      return;
+    }
+    if (transition && transition !== current) {
+      return;
+    }
+    this.lifecycleTransitions.delete(terminalId);
+    this.emitChange({ terminalId, reason: "transition" });
+  }
+
+  private assertLifecycleTransitionIdle(terminalId: string, action: string): void {
+    const transition = this.getLifecycleTransition(terminalId);
+    if (!transition) {
+      return;
+    }
+    throw new Error(`terminal ${terminalId} is already ${transition}; wait before ${action}`);
   }
 
   private normalizeRecoveredLifecycle(): void {

@@ -1,7 +1,12 @@
 import type { PrincipalId } from "@agenter/principal-crypto";
 import type { ManagedTerminalSnapshot } from "./managed-terminal";
 import type { TerminalDirtySliceResult, TerminalGitLogMode, TerminalLogStyle, TerminalStatus } from "./types";
-import type { TerminalLifecycleState, TerminalObservedIdentity, TerminalProcessPhase } from "./terminal-runtime-truth";
+import type {
+  TerminalLifecycleState,
+  TerminalLifecycleTransition,
+  TerminalObservedIdentity,
+  TerminalProcessPhase,
+} from "./terminal-runtime-truth";
 
 export type TerminalFocusOp = "add" | "remove" | "replace" | "clear";
 export type TerminalReadMode = "auto" | "diff" | "snapshot";
@@ -118,6 +123,7 @@ export interface TerminalReadResult {
   bytes?: number;
   status: "IDLE" | "BUSY";
   processPhase: TerminalProcessPhase;
+  lifecycleTransition?: TerminalLifecycleTransition | null;
   title?: string;
   configuredTitle?: string;
   currentTitle?: string;
@@ -258,6 +264,7 @@ export interface TerminalControlPlaneEntry {
   launchCwd: string;
   workspace: string | null;
   status: "IDLE" | "BUSY";
+  lifecycleTransition?: TerminalLifecycleTransition | null;
   seq: number;
   snapshot?: ManagedTerminalSnapshot;
   focused: boolean;
@@ -276,12 +283,37 @@ export interface TerminalControlPlaneEntry {
 export interface TerminalControlPlaneEntry extends TerminalObservedIdentity, TerminalLifecycleState {}
 
 export interface TerminalPatchInput {
+  processKind?: string;
+  command?: string[];
+  launchCwd?: string;
+  env?: Record<string, string>;
+  cols?: number;
+  rows?: number;
+  gitLog?: false | TerminalGitLogMode;
+  logStyle?: TerminalLogStyle;
   title?: string;
   icon?: string;
   shortcuts?: TerminalShortcutMap;
   rendererEngine?: TerminalRendererEngine;
   adminGroupCandidateIds?: TerminalActorId[];
   metadata?: Record<string, unknown>;
+}
+
+export interface TerminalConfigView {
+  terminalId: string;
+  processKind: string;
+  command: string[];
+  launchCwd: string;
+  profile: TerminalProcessProfile;
+  metadata: Record<string, unknown>;
+  processPhase: TerminalProcessPhase;
+  lifecycleTransition?: TerminalLifecycleTransition | null;
+}
+
+export interface TerminalConfigMutationResult {
+  config: TerminalConfigView;
+  appliedLiveFields: string[];
+  nextBootstrapFields: string[];
 }
 
 export interface TerminalRecord {
@@ -321,6 +353,7 @@ export interface TerminalPolicyDecision {
 export interface TerminalReadProjection {
   status: TerminalStatus;
   processPhase: TerminalProcessPhase;
+  lifecycleTransition?: TerminalLifecycleTransition | null;
   title?: string;
   configuredTitle?: string;
   currentTitle?: string;

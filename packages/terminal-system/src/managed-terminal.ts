@@ -14,6 +14,17 @@ export interface ManagedTerminalConfig {
   logStyle?: "rich" | "plain";
 }
 
+export interface ManagedTerminalConfigPatch {
+  command?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  cols?: number;
+  rows?: number;
+  outputRoot?: string;
+  gitLog?: false | "normal" | "verbose";
+  logStyle?: "rich" | "plain";
+}
+
 export interface ManagedTerminalSnapshot {
   seq: number;
   timestamp: number;
@@ -262,6 +273,38 @@ export class ManagedTerminal {
     return { ...this.observedIdentity };
   }
 
+  reconfigure(patch: ManagedTerminalConfigPatch): void {
+    if (patch.command) {
+      this.config.command = [...patch.command];
+    }
+    if (patch.cwd !== undefined) {
+      this.config.cwd = patch.cwd;
+    }
+    if (patch.env !== undefined) {
+      this.config.env = { ...patch.env };
+    }
+    if (patch.outputRoot !== undefined) {
+      this.config.outputRoot = patch.outputRoot;
+    }
+    if (patch.gitLog !== undefined) {
+      this.config.gitLog = patch.gitLog;
+    }
+    if (patch.logStyle !== undefined) {
+      this.config.logStyle = patch.logStyle;
+    }
+    const colsChanged = typeof patch.cols === "number" && Number.isFinite(patch.cols) && patch.cols > 0;
+    const rowsChanged = typeof patch.rows === "number" && Number.isFinite(patch.rows) && patch.rows > 0;
+    if (colsChanged) {
+      this.config.cols = Math.floor(patch.cols!);
+    }
+    if (rowsChanged) {
+      this.config.rows = Math.floor(patch.rows!);
+    }
+    if (colsChanged || rowsChanged) {
+      this.resize(this.config.cols, this.config.rows);
+    }
+  }
+
   getHeadHash(): string | null {
     return String(this.snapshot.seq);
   }
@@ -309,8 +352,14 @@ export class ManagedTerminal {
   }
 
   resize(cols: number, rows: number): void {
-    this.cols = Math.max(8, cols);
-    this.rows = Math.max(4, rows);
+    const nextCols = Math.max(8, cols);
+    const nextRows = Math.max(4, rows);
+    const geometryChanged = nextCols !== this.cols || nextRows !== this.rows;
+    this.cols = nextCols;
+    this.rows = nextRows;
+    if (geometryChanged) {
+      this.publishGeometrySnapshot();
+    }
     if (!this.terminal) {
       return;
     }
@@ -430,6 +479,22 @@ export class ManagedTerminal {
     for (const listener of this.identityListeners) {
       listener({});
     }
+  }
+
+  private publishGeometrySnapshot(): void {
+    this.seq += 1;
+    this.snapshot = {
+      ...this.snapshot,
+      seq: this.seq,
+      timestamp: Date.now(),
+      cols: this.cols,
+      rows: this.rows,
+      cursor: {
+        x: Math.max(0, Math.min(this.snapshot.cursor.x, Math.max(0, this.cols - 1))),
+        y: Math.max(0, Math.min(this.snapshot.cursor.y, Math.max(0, this.rows - 1))),
+      },
+    };
+    this.emitSnapshot();
   }
 
   private toSnapshot(render: RenderResult): ManagedTerminalSnapshot {

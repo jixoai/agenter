@@ -6,12 +6,15 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 import { resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
 import type { MessageControlPlane } from "@agenter/message-system";
-import type { TerminalControlPlane } from "@agenter/terminal-system";
+import type { TerminalActorId, TerminalControlPlane } from "@agenter/terminal-system";
 import { AppKernel, SessionDb, appRouter, createTrpcContext } from "../src";
 import { UsageAnalyticsDb } from "../src/usage-analytics-db";
 import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "../src/usage-analytics-paths";
 
 const tempDirs: string[] = [];
+const settleFilesystem = async (): Promise<void> => {
+  await new Promise<void>((resolve) => setTimeout(resolve, 25));
+};
 
 const makeTempDir = (): string => {
   const dir = mkdtempSync(join(tmpdir(), "agenter-trpc-router-"));
@@ -19,7 +22,8 @@ const makeTempDir = (): string => {
   return dir;
 };
 
-afterEach(() => {
+afterEach(async () => {
+  await settleFilesystem();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -1190,7 +1194,7 @@ describe("Feature: app-server trpc procedures", () => {
       const recordedRead = await terminalSystem.readAuthorized({
         terminalId,
         mode: "snapshot",
-        superadminActorId: session.claims.authId,
+        superadminActorId: session.claims.authId as TerminalActorId,
       });
 
       expect(recordedRead.eventId).toBeDefined();

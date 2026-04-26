@@ -17,6 +17,8 @@ import type {
   RuntimeSkillMutationView,
   RuntimeMessageSnapshotView,
   RuntimeSkillView,
+  RuntimeTerminalConfigMutationView,
+  RuntimeTerminalConfigView,
   RuntimeTerminalView,
   RuntimeWorkspaceSurface,
 } from "./runtime-tool-views";
@@ -74,6 +76,23 @@ export interface RuntimeLocalApiHandlers {
     profile?: TerminalProcessProfile;
     focus?: boolean;
   }) => Promise<{ ok: boolean; message: string; terminal?: RuntimeTerminalView }>;
+  terminalGetConfig: (input: { terminalId: string }) => Promise<RuntimeTerminalConfigView> | RuntimeTerminalConfigView;
+  terminalSetConfig: (input: {
+    terminalId: string;
+    processKind?: string;
+    command?: string[];
+    launchCwd?: string;
+    env?: Record<string, string>;
+    cols?: number;
+    rows?: number;
+    gitLog?: false | "normal" | "verbose";
+    logStyle?: "rich" | "plain";
+    title?: string;
+    icon?: string;
+    shortcuts?: Record<string, string>;
+    rendererEngine?: "xterm";
+    metadata?: Record<string, unknown>;
+  }) => Promise<RuntimeTerminalConfigMutationView> | RuntimeTerminalConfigMutationView;
   terminalRead: (input: {
     terminalId: string;
     mode?: "auto" | "diff" | "snapshot";
@@ -266,6 +285,27 @@ const terminalCreateSchema = z.object({
   cwd: z.string().optional(),
   profile: z.record(z.string(), z.unknown()).optional(),
   focus: z.boolean().optional(),
+});
+
+const terminalGetConfigSchema = z.object({
+  terminalId: z.string(),
+});
+
+const terminalSetConfigSchema = z.object({
+  terminalId: z.string(),
+  processKind: z.string().optional(),
+  command: z.array(z.string()).optional(),
+  launchCwd: z.string().optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  cols: z.number().int().positive().optional(),
+  rows: z.number().int().positive().optional(),
+  gitLog: z.union([z.literal(false), z.enum(["normal", "verbose"])]).optional(),
+  logStyle: z.enum(["rich", "plain"]).optional(),
+  title: z.string().optional(),
+  icon: z.string().optional(),
+  shortcuts: z.record(z.string(), z.string()).optional(),
+  rendererEngine: z.literal("xterm").optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const terminalReadSchema = z.object({
@@ -742,6 +782,10 @@ export const runtimeToolDescriptors = [
     name: "create",
     route: "/v1/terminal/create",
     description: "Create or recover a runtime terminal. Prefer an explicit absolute cwd when continuity matters.",
+    helpNotes: [
+      "Public `terminal create` auto-bootstraps new terminals by default.",
+      "If a create result still shows `lifecycleTransition = bootstrapping`, wait and reread `terminal list` instead of stacking a redundant second bootstrap.",
+    ],
     inputSchema: terminalCreateSchema,
     examples: [
       { kind: "stdin", payload: { cwd: "/absolute/project/path", focus: true } },
@@ -749,6 +793,46 @@ export const runtimeToolDescriptors = [
     ],
     handler: async (input, handlers) => ({
       result: await handlers.terminalCreate(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "terminal",
+    name: "get-config",
+    route: "/v1/terminal/get-config",
+    description: "Read one terminal's durable launch/config truth plus minimal lifecycle summary.",
+    helpNotes: [
+      "Use `terminal get-config` when you need the durable launch command, launch cwd, title, geometry, or metadata.",
+      "`terminal get-config` does not replace `terminal list`; `terminal list` remains the lifecycle and observed-identity inspection surface.",
+    ],
+    inputSchema: terminalGetConfigSchema,
+    examples: [{ kind: "stdin", payload: { terminalId: "term-1" } }],
+    handler: async (input, handlers) => ({
+      result: await handlers.terminalGetConfig(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "terminal",
+    name: "set-config",
+    route: "/v1/terminal/set-config",
+    description: "Patch one terminal's durable launch/config truth without recreating the terminal id.",
+    helpNotes: [
+      "If `lifecycleTransition` is `bootstrapping` or `killing`, wait and reread `terminal list` before sending another lifecycle or config mutation.",
+      "Geometry fields such as `cols` and `rows` may apply to a running PTY immediately. Launch-affecting fields such as `command`, `launchCwd`, or `env` update durable truth and take effect on the next bootstrap.",
+    ],
+    inputSchema: terminalSetConfigSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          terminalId: "term-1",
+          title: "Ops shell",
+          launchCwd: "/repo/ops",
+          command: ["/bin/bash", "-lc", "npm run dev"],
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.terminalSetConfig(input),
     }),
   }),
   defineRuntimeToolDescriptor({
@@ -857,6 +941,7 @@ export const runtimeToolDescriptors = [
     helpNotes: [
       "Use `terminal list` first when you need to inspect `processPhase`, `currentPath`, `currentTitle`, or prior stop facts.",
       "`terminal bootstrap` starts the PTY from durable launch truth. It is the explicit lifecycle edge for `not_started` and `stopped` terminals.",
+      "If `lifecycleTransition` is already `bootstrapping` or `killing`, wait and reread `terminal list` instead of stacking another lifecycle mutation.",
     ],
     inputSchema: terminalLifecycleMutationSchema,
     examples: [
@@ -875,6 +960,7 @@ export const runtimeToolDescriptors = [
     helpNotes: [
       "`terminal stop` halts the PTY but does not delete the terminal catalog entry.",
       "After stop, use `terminal list` to inspect `processPhase` and stop facts. Use `terminal bootstrap` when you want to start that same terminal again.",
+      "If `lifecycleTransition` is already `bootstrapping` or `killing`, wait and reread `terminal list` instead of stacking another lifecycle mutation.",
     ],
     inputSchema: terminalLifecycleMutationSchema,
     examples: [

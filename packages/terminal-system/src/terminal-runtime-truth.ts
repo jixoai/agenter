@@ -1,5 +1,6 @@
 export type TerminalProcessPhase = "not_started" | "running" | "stopped";
 export type TerminalStopReason = "killed" | "exited" | "startup_failed";
+export type TerminalLifecycleTransition = "bootstrapping" | "killing";
 
 export interface TerminalObservedIdentity {
   currentPath?: string;

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { MessageDb } from "../../message-system/src/message-db";
-import { AppKernel } from "../src";
+import { AppKernel, type AnyRuntimeEvent } from "../src";
 import { formatMessageAttentionSrc } from "../src/attention-src";
 
 const tempDirs: string[] = [];
@@ -319,7 +319,7 @@ describe("Feature: app kernel event replay", () => {
     expect(room.transportUrl).toContain("/room/");
     expect(terminalResult.terminal?.transportUrl).toContain("ws://127.0.0.1:");
     expect(terminalResult.terminal?.transportUrl).toContain("/pty/");
-    expect(terminalResult.terminal?.cwd).toBe(resolve("."));
+    expect(terminalResult.terminal?.launchCwd).toBe(resolve("."));
     expect(terminalResult.terminal?.snapshot?.rows).toBeGreaterThan(0);
     expect(terminalResult.terminal?.snapshot?.cols).toBeGreaterThan(0);
   });
@@ -331,19 +331,27 @@ describe("Feature: app kernel event replay", () => {
     const terminalResult = await kernel.createGlobalTerminal({
       terminalId: "transport-boot-without-catalog-storm",
       cwd: process.cwd(),
-      command: ["sh", "-lc", "printf first-frame; sleep 0.05; printf second-frame"],
+      command: ["sh", "-lc", "sleep 0.35; printf first-frame; sleep 0.25; printf second-frame; sleep 0.25"],
+      start: false,
       focus: false,
     });
-    const transportUrl = terminalResult.terminal?.transportUrl;
-    if (!transportUrl) {
-      throw new Error("expected global terminal transport url");
-    }
+    expect(terminalResult.terminal?.processPhase).toBe("not_started");
 
     // Let the create-time catalog invalidation flush before we observe the
     // runtime boot path for this transport session.
     await Bun.sleep(160);
 
-    const surfaceEvents: Array<{ payload?: { catalogChanged?: boolean } }> = [];
+    const bootstrapped = kernel.bootstrapGlobalTerminal({
+      terminalId: "transport-boot-without-catalog-storm",
+    });
+    const transportUrl = bootstrapped.terminal?.transportUrl;
+    if (!transportUrl || !bootstrapped.terminal) {
+      throw new Error("expected global terminal transport url after bootstrap");
+    }
+
+    await Bun.sleep(220);
+
+    const surfaceEvents: AnyRuntimeEvent[] = [];
     const unsubscribe = kernel.onEvent((event) => {
       if (event.type === "terminal.surface.updated") {
         surfaceEvents.push(event);
@@ -359,19 +367,36 @@ describe("Feature: app kernel event replay", () => {
     const closed = new Promise<void>((resolve) => {
       socket.addEventListener("close", () => resolve(), { once: true });
     });
+    const secondFrame = new Promise<void>((resolve) => {
+      socket.addEventListener("message", (event) => {
+        const message = JSON.parse(String(event.data)) as { type?: string; data?: string };
+        if (message.type === "output" && message.data?.includes("second-frame")) {
+          resolve();
+        }
+      });
+    });
     socket.addEventListener("message", (event) => {
       messages.push(JSON.parse(String(event.data)) as { type?: string; data?: string });
     });
 
     await opened;
+    await secondFrame;
+    socket.close();
     await closed;
-    await Bun.sleep(160);
+    await Bun.sleep(80);
 
     unsubscribe();
 
     expect(messages.some((message) => message.type === "snapshot")).toBeTrue();
     expect(messages.some((message) => message.type === "output" && message.data?.includes("first-frame"))).toBeTrue();
-    expect(surfaceEvents.some((event) => event.payload?.catalogChanged)).toBeFalse();
+    expect(
+      surfaceEvents.some((event) => {
+        if (!event.payload || typeof event.payload !== "object" || Array.isArray(event.payload)) {
+          return false;
+        }
+        return Boolean((event.payload as { catalogChanged?: boolean }).catalogChanged);
+      }),
+    ).toBeFalse();
 
     await kernel.stop();
   });

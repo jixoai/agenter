@@ -146,11 +146,20 @@ const toCliCommandFact = (command: string | null): string | null => {
   if (command === "message list") {
     return "message.list";
   }
+  if (command.startsWith("message read ")) {
+    return "message.read";
+  }
   if (command.startsWith("message query ")) {
     return "message.query";
   }
   if (command.startsWith("message send ")) {
     return "message.send";
+  }
+  if (command.startsWith("message edit ")) {
+    return "message.edit";
+  }
+  if (command.startsWith("message recall ")) {
+    return "message.recall";
   }
   if (command.startsWith("attention commit ")) {
     return "attention.commit";
@@ -533,11 +542,20 @@ const extractSnapshotRows = (results: readonly ToolResult[]): Map<string, number
     }
     const record = snapshot as {
       chatId?: unknown;
+      channel?: {
+        chatId?: unknown;
+      };
       items?: Array<{ rowId?: unknown }>;
     };
     const latestRowId = record.items?.at(-1)?.rowId;
-    if (typeof record.chatId === "string" && typeof latestRowId === "number") {
-      rows.set(record.chatId, latestRowId);
+    const chatId =
+      typeof record.chatId === "string"
+        ? record.chatId
+        : typeof record.channel?.chatId === "string"
+          ? record.channel.chatId
+          : null;
+    if (chatId && typeof latestRowId === "number") {
+      rows.set(chatId, latestRowId);
     }
   }
   return rows;
@@ -994,15 +1012,10 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
 
     const gaubeeChatId = findGaubeeChatId(toolResults);
     if (gaubeeChatId) {
-      const knownTargetRowId = snapshotRows.get(gaubeeChatId);
-      if (typeof knownTargetRowId !== "number") {
-        return createResponse(request, {
-          toolCalls: [buildRootBashToolCall(`message read ${escapeShellJson({ chatId: gaubeeChatId, limit: 1 })}`)],
-        });
-      }
       const originFrame =
         commitFrames.find((frame) => frame.contextId === `ctx-${primaryRoomChatId}`) ?? commitFrames[0];
       const originCommit = originFrame?.commits.at(-1);
+      const knownTargetRowId = snapshotRows.get(gaubeeChatId) ?? 0;
       state.relay = primaryRoomChatId
         ? {
             originChatId: primaryRoomChatId,

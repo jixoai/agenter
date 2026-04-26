@@ -8,7 +8,7 @@ import type {
   MessageRecord,
   MessageSnapshot,
 } from "@agenter/message-system";
-import type { TerminalControlPlaneEntry } from "@agenter/terminal-system";
+import type { TerminalConfigMutationResult, TerminalConfigView, TerminalControlPlaneEntry } from "@agenter/terminal-system";
 
 import { summarizeMessageChannelPresence } from "./message-channel-presence";
 import type { RuntimeSkillConfig } from "./runtime-skill-config";
@@ -256,6 +256,7 @@ export interface RuntimeTerminalView {
   workspace: string | null;
   status: "IDLE" | "BUSY";
   processPhase: TerminalControlPlaneEntry["processPhase"];
+  lifecycleTransition?: TerminalControlPlaneEntry["lifecycleTransition"];
   focused: boolean;
   icon?: string;
   configuredTitle?: string;
@@ -269,6 +270,10 @@ export interface RuntimeTerminalView {
   transportUrl?: string;
   rendererEngine?: TerminalControlPlaneEntry["rendererEngine"];
 }
+
+export interface RuntimeTerminalConfigView extends TerminalConfigView {}
+
+export interface RuntimeTerminalConfigMutationView extends TerminalConfigMutationResult {}
 
 export interface RuntimeSkillView {
   name: string;
@@ -440,6 +445,7 @@ export const projectRuntimeTerminal = (terminal: TerminalControlPlaneEntry): Run
   workspace: terminal.workspace,
   status: terminal.status,
   processPhase: terminal.processPhase,
+  lifecycleTransition: terminal.lifecycleTransition,
   focused: terminal.focused,
   icon: terminal.icon,
   configuredTitle: terminal.configuredTitle,
@@ -452,6 +458,30 @@ export const projectRuntimeTerminal = (terminal: TerminalControlPlaneEntry): Run
   shortcuts: terminal.shortcuts,
   transportUrl: terminal.transportUrl,
   rendererEngine: terminal.rendererEngine,
+});
+
+export const projectRuntimeTerminalConfig = (config: TerminalConfigView): RuntimeTerminalConfigView => ({
+  terminalId: config.terminalId,
+  processKind: config.processKind,
+  command: [...config.command],
+  launchCwd: config.launchCwd,
+  profile: {
+    ...config.profile,
+    command: config.profile.command ? [...config.profile.command] : undefined,
+    env: config.profile.env ? { ...config.profile.env } : undefined,
+    shortcuts: config.profile.shortcuts ? { ...config.profile.shortcuts } : undefined,
+  },
+  metadata: { ...config.metadata },
+  processPhase: config.processPhase,
+  lifecycleTransition: config.lifecycleTransition ?? null,
+});
+
+export const projectRuntimeTerminalConfigMutation = (
+  result: TerminalConfigMutationResult,
+): RuntimeTerminalConfigMutationView => ({
+  config: projectRuntimeTerminalConfig(result.config),
+  appliedLiveFields: [...result.appliedLiveFields],
+  nextBootstrapFields: [...result.nextBootstrapFields],
 });
 
 export const projectRuntimeSkill = (skill: RuntimeSkillRecord): RuntimeSkillView => ({

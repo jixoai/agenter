@@ -396,6 +396,7 @@ describe("Feature: runtime descriptor CLI", () => {
             workspace: null,
             status: "IDLE",
             processPhase: "stopped",
+            lifecycleTransition: null,
             focused: false,
             configuredTitle: "Chess Dev",
             currentTitle: "vite preview",
@@ -417,6 +418,99 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain('"currentPath": "/repo/apps/web"');
     expect(result.stdout).toContain('"lastStopReason": "killed"');
     expect(api.getLastRequest()?.body).toEqual({});
+  });
+
+  test("Scenario: Given JSON stdin When terminal get-config runs Then the CLI requests durable launch truth without guessing from runtime observations", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/terminal/get-config": {
+        result: {
+          terminalId: "term-1",
+          processKind: "shell",
+          command: ["/bin/bash", "-lc", "npm run dev"],
+          launchCwd: "/repo/apps/web",
+          profile: {
+            title: "Web dev",
+            cols: 120,
+            rows: 36,
+          },
+          metadata: {
+            owner: "frontend",
+          },
+          processPhase: "running",
+          lifecycleTransition: "bootstrapping",
+        },
+      },
+    });
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const result = await terminal.execute(
+      ["get-config"],
+      createCommandContext(
+        JSON.stringify({
+          terminalId: "term-1",
+        }),
+      ),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('"launchCwd": "/repo/apps/web"');
+    expect(result.stdout).toContain('"lifecycleTransition": "bootstrapping"');
+    expect(result.stdout).not.toContain('"currentPath"');
+    expect(api.getLastRequest()?.body).toEqual({
+      terminalId: "term-1",
+    });
+  });
+
+  test("Scenario: Given JSON stdin When terminal set-config runs Then the CLI posts a patch payload and renders live-vs-next-bootstrap results", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/terminal/set-config": {
+        result: {
+          config: {
+            terminalId: "term-1",
+            processKind: "shell",
+            command: ["/bin/bash", "-lc", "npm run dev"],
+            launchCwd: "/repo/apps/web",
+            profile: {
+              title: "Web dev",
+              cols: 132,
+              rows: 40,
+            },
+            metadata: {
+              owner: "frontend",
+            },
+            processPhase: "running",
+            lifecycleTransition: null,
+          },
+          appliedLiveFields: ["cols", "rows"],
+          nextBootstrapFields: ["command", "launchCwd"],
+        },
+      },
+    });
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const result = await terminal.execute(
+      ["set-config"],
+      createCommandContext(
+        JSON.stringify({
+          terminalId: "term-1",
+          command: ["/bin/bash", "-lc", "npm run dev"],
+          launchCwd: "/repo/apps/web",
+          cols: 132,
+          rows: 40,
+        }),
+      ),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('"appliedLiveFields"');
+    expect(result.stdout).toContain('"nextBootstrapFields"');
+    expect(api.getLastRequest()?.body).toEqual({
+      terminalId: "term-1",
+      command: ["/bin/bash", "-lc", "npm run dev"],
+      launchCwd: "/repo/apps/web",
+      cols: 132,
+      rows: 40,
+    });
   });
 
   test("Scenario: Given descriptor help probe When terminal write --help runs Then schema-backed help is returned locally", async () => {
@@ -466,6 +560,30 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain('<key data="d" ctrl="true"/>');
     expect(result.stdout).toContain("skill info agenter-terminal");
     expect(result.stdout).toContain("references/input-modes.md");
+    expect(api.getRequests()).toHaveLength(0);
+  });
+
+  test("Scenario: Given descriptor lifecycle help probes When terminal create bootstrap and set-config help run Then the CLI teaches auto-bootstrap transition waiting and config patch law locally", async () => {
+    const api = await startMockRuntimeApi();
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const createHelp = await terminal.execute(["create", "--help"], createCommandContext());
+    const bootstrapHelp = await terminal.execute(["bootstrap", "--help"], createCommandContext());
+    const setConfigHelp = await terminal.execute(["set-config", "--help"], createCommandContext());
+
+    expect(createHelp.exitCode).toBe(0);
+    expect(createHelp.stdout).toContain("auto-bootstraps new terminals by default");
+    expect(createHelp.stdout).toContain("lifecycleTransition = bootstrapping");
+
+    expect(bootstrapHelp.exitCode).toBe(0);
+    expect(bootstrapHelp.stdout).toContain("wait and reread `terminal list`");
+    expect(bootstrapHelp.stdout).toContain("bootstrapping");
+    expect(bootstrapHelp.stdout).toContain("killing");
+
+    expect(setConfigHelp.exitCode).toBe(0);
+    expect(setConfigHelp.stdout).toContain('"launchCwd"');
+    expect(setConfigHelp.stdout).toContain("Geometry fields such as `cols` and `rows` may apply");
+    expect(setConfigHelp.stdout).toContain("next bootstrap");
     expect(api.getRequests()).toHaveLength(0);
   });
 
@@ -561,6 +679,8 @@ describe("Feature: runtime descriptor CLI", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("list: List terminals visible to this runtime, including lifecycle");
+    expect(result.stdout).toContain("get-config: Read one terminal's durable launch/config truth");
+    expect(result.stdout).toContain("set-config: Patch one terminal's durable launch/config truth");
     expect(result.stdout).toContain("bootstrap: Bootstrap a provisioned or stopped runtime terminal by id.");
     expect(result.stdout).toContain("stop: Stop a running runtime terminal PTY by id while preserving durable terminal identity.");
     expect(result.stdout).not.toContain("kill: Kill a runtime terminal by id.");

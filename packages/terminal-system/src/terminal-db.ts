@@ -272,7 +272,7 @@ export class TerminalDb {
 
   updateTerminal(
     terminalId: string,
-    patch: TerminalPatchInput & { launchCwd?: string; command?: string[]; processKind?: string },
+    patch: TerminalPatchInput,
   ): TerminalRecord {
     const current = this.getTerminal(terminalId);
     if (!current) {
@@ -281,6 +281,11 @@ export class TerminalDb {
     const now = Date.now();
     const nextProfile = {
       ...current.profile,
+      ...(patch.env !== undefined ? { env: patch.env } : {}),
+      ...(patch.cols !== undefined ? { cols: patch.cols } : {}),
+      ...(patch.rows !== undefined ? { rows: patch.rows } : {}),
+      ...(patch.gitLog !== undefined ? { gitLog: patch.gitLog } : {}),
+      ...(patch.logStyle !== undefined ? { logStyle: patch.logStyle } : {}),
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.icon !== undefined ? { icon: patch.icon } : {}),
       ...(patch.shortcuts !== undefined ? { shortcuts: patch.shortcuts } : {}),

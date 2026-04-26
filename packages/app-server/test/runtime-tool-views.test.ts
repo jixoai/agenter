@@ -111,13 +111,16 @@ describe("Feature: runtime tool public views", () => {
       terminalId: "term-1",
       processKind: "shell",
       command: ["bash"],
-      cwd: "/tmp/workspace",
+      launchCwd: "/tmp/workspace",
       workspace: "/tmp/workspace",
-      running: true,
       status: "IDLE",
+      processPhase: "running",
+      lifecycleTransition: null,
       seq: 7,
       focused: true,
-      title: "workspace",
+      configuredTitle: "workspace",
+      currentTitle: "workspace",
+      currentPath: "/tmp/workspace",
       icon: ">_",
       rendererEngine: "xterm",
       transportUrl: "ws://127.0.0.1/terminal/term-1",
@@ -169,11 +172,14 @@ describe("Feature: runtime tool public views", () => {
         mountId: "mount-1",
         runtimeId: "runtime-1",
         workspaceId: "workspace-1",
+        runtimeWorkspaceId: 1,
+        alias: "workspace-1",
         workspacePath: "/tmp/workspace",
         kind: "workspace",
         createdAt: "2026-04-11T00:00:00.000Z",
         updatedAt: "2026-04-11T00:00:00.000Z",
       },
+      defaultCwd: "/tmp/workspace",
       grants: [
         {
           grantId: "grant-1",
@@ -202,8 +208,8 @@ describe("Feature: runtime tool public views", () => {
     expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.items[0] ?? {}, "metadata")).toBeFalse();
 
     expect(projectedTerminal.terminalId).toBe("term-1");
-    expect(projectedTerminal.cwd).toBe("/tmp/workspace");
-    expect(Object.prototype.hasOwnProperty.call(projectedTerminal, "transportUrl")).toBeFalse();
+    expect(projectedTerminal.launchCwd).toBe("/tmp/workspace");
+    expect(projectedTerminal.transportUrl).toBe("ws://127.0.0.1/terminal/term-1");
     expect(Object.prototype.hasOwnProperty.call(projectedTerminal, "access")).toBeFalse();
     expect(Object.prototype.hasOwnProperty.call(projectedTerminal, "actors")).toBeFalse();
 

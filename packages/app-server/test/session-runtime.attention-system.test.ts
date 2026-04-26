@@ -1808,6 +1808,70 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
+  test("Scenario: Given a terminal kill transition When runtime snapshots and attention are inspected Then transition truth stays observable without creating new terminal debt", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    await runtime.start();
+    try {
+      const created = await runtime.createRuntimeTerminal({
+        terminalId: "transition-no-attention",
+        processKind: "shell",
+        focus: false,
+      });
+      expect(created.ok).toBeTrue();
+
+      const terminalControlPlane = Reflect.get(runtime, "terminalControlPlane") as TerminalControlPlane;
+      const terminalContextId = "ctx-terminal-transition-no-attention";
+      const beforeSnapshot = getAttentionContextSnapshot(internal, terminalContextId);
+      const beforeCommitCount = beforeSnapshot?.commits.length ?? 0;
+      const beforeActiveTitles = getActiveItems(internal)
+        .filter((item) => isTerminalMeta(item.meta, "transition-no-attention"))
+        .map((item) => item.title);
+
+      const managed = terminalControlPlane.getManagedTerminal("transition-no-attention");
+      if (!managed) {
+        throw new Error("expected managed terminal");
+      }
+      const originalStop = managed.stop.bind(managed);
+      managed.stop = async () => {
+        await Bun.sleep(40);
+        await originalStop();
+      };
+
+      const stopPromise = runtime.stopRuntimeTerminal("transition-no-attention");
+      await Bun.sleep(5);
+
+      const duringStop = runtime.snapshot().terminals.find((item) => item.terminalId === "transition-no-attention");
+      expect(duringStop?.lifecycleTransition).toBe("killing");
+      expect(
+        getActiveItems(internal)
+          .filter((item) => isTerminalMeta(item.meta, "transition-no-attention"))
+          .map((item) => item.title),
+      ).toEqual(beforeActiveTitles);
+
+      const stopped = await stopPromise;
+      expect(stopped.ok).toBeTrue();
+      expect(runtime.snapshot().terminals.find((item) => item.terminalId === "transition-no-attention")?.processPhase).toBe(
+        "stopped",
+      );
+
+      const afterStopSnapshot = getAttentionContextSnapshot(internal, terminalContextId);
+      expect(afterStopSnapshot?.commits.length ?? 0).toBe(beforeCommitCount);
+
+      const bootstrapped = await runtime.bootstrapRuntimeTerminal("transition-no-attention");
+      expect(bootstrapped.ok).toBeTrue();
+
+      const afterBootstrapSnapshot = getAttentionContextSnapshot(internal, terminalContextId);
+      expect(afterBootstrapSnapshot?.commits.length ?? 0).toBe(beforeCommitCount);
+      expect(
+        runtime.snapshot().terminals.find((item) => item.terminalId === "transition-no-attention")?.lifecycleTransition,
+      ).toBeNull();
+    } finally {
+      await runtime.stop();
+    }
+  });
+
   test("Scenario: Given another actor focuses a shared terminal When this runtime did not focus it Then the runtime keeps its own focused set unchanged", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;

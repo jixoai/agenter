@@ -124,7 +124,11 @@ describe("Feature: runtime built-in skills", () => {
     const terminalContent = readRuntimeSkillContent(terminal!);
     expect(terminalContent).toContain("A runtime does not start with a terminal by default.");
     expect(terminalContent).toContain("Run `terminal list` first to inspect `processPhase`, `currentPath`, `currentTitle`");
+    expect(terminalContent).toContain("Public `terminal create` auto-bootstraps by default");
+    expect(terminalContent).toContain("`terminal get-config`");
     expect(terminalContent).toContain("run `terminal bootstrap` before expecting read/write to work");
+    expect(terminalContent).toContain("`lifecycleTransition` is a coordination lock");
+    expect(terminalContent).toContain("`terminal set-config`");
     expect(terminalContent).toContain("Run `terminal stop` when you want to halt the PTY");
     expect(terminalContent).toContain(
       "If work needs a port listener, local web server, watch mode, REPL, or retryable boot sequence",
@@ -140,10 +144,12 @@ describe("Feature: runtime built-in skills", () => {
     expect(terminalContent).toContain("`terminal input` is mixed mode.");
     expect(terminalContent).toContain("run `terminal write --help` or `terminal input --help` first");
     expect(terminalContent).toContain("run `skill info agenter-terminal`");
+    expect(terminalContent).toContain("references/terminal-config.md");
     expect(terminalContent).toContain("references/input-modes.md");
     expect(terminalContent).toContain("references/file-writing.md");
     expect(terminalContent).toContain("References:");
     expect(terminalContent).toContain("references/terminal-lifecycle.md");
+    expect(terminalContent).toContain("references/terminal-config.md");
     expect(terminalContent).toContain("references/input-modes.md");
     expect(terminalContent).toContain("references/file-writing.md");
     expect(terminalContent).not.toContain("create/list/read/write/kill");
@@ -171,14 +177,27 @@ describe("Feature: runtime built-in skills", () => {
     );
     expect(terminalLifecycleReference).toContain("anything that binds a port or serves HTTP belongs in a terminal");
     expect(terminalLifecycleReference).toContain("use `terminal list` to inspect `processPhase`, `currentPath`, `currentTitle`, and stop facts");
+    expect(terminalLifecycleReference).toContain("auto-bootstraps new terminals by default");
+    expect(terminalLifecycleReference).toContain("`lifecycleTransition` is `bootstrapping` or `killing`");
     expect(terminalLifecycleReference).toContain("run `terminal bootstrap`");
     expect(terminalLifecycleReference).toContain("`terminal stop` halts the PTY while preserving the terminal record");
+    expect(terminalLifecycleReference).toContain("switch to `terminal get-config`");
     expect(terminalLifecycleReference).toContain("ad-hoc listener experiments such as `python -m http.server`");
     expect(terminalLifecycleReference).toContain("do not replace that HTTP verification");
     expect(terminalLifecycleReference).toContain("carry terminal JSON in `stdin` by default");
     expect(terminalLifecycleReference).toContain("accepts `--compact` positional arrays");
     expect(terminalLifecycleReference).toContain("terminal input");
     expect(terminalLifecycleReference).not.toContain("kill strategy");
+
+    const terminalConfigReference = readFileSync(
+      join(dirname(terminal!.path), "references", "terminal-config.md"),
+      "utf8",
+    );
+    expect(terminalConfigReference).toContain("`terminal get-config`");
+    expect(terminalConfigReference).toContain("`terminal set-config`");
+    expect(terminalConfigReference).toContain("patch semantics");
+    expect(terminalConfigReference).toContain("`cols` and `rows` may resize a running PTY immediately");
+    expect(terminalConfigReference).toContain("next bootstrap");
 
     const terminalInputModesReference = readFileSync(
       join(dirname(terminal!.path), "references", "input-modes.md"),

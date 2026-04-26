@@ -69,6 +69,7 @@ import {
   type TerminalControlPlaneConfig,
   type TerminalControlPlaneConfigPatch,
   type TerminalControlPlaneEntry,
+  type TerminalPatchInput,
   type TerminalProcessProfile,
 } from "@agenter/terminal-system";
 import type {
@@ -199,6 +200,8 @@ import {
   projectRuntimeSkillInfo,
   projectRuntimeSkillMutation,
   projectRuntimeTerminal,
+  projectRuntimeTerminalConfig,
+  projectRuntimeTerminalConfigMutation,
   projectRuntimeWorkspaceSurface,
   type RuntimeMessageChannelView,
   type RuntimeMessageOverviewItem,
@@ -1310,7 +1313,8 @@ export interface RuntimeEventMap {
   terminalRead: { terminalId: string; result: ControlPlaneTerminalReadResult };
   terminalStatus: {
     terminalId: string;
-    processPhase: "running" | "stopped";
+    processPhase: "not_started" | "running" | "stopped";
+    lifecycleTransition: "bootstrapping" | "killing" | null;
     status: "IDLE" | "BUSY";
   };
   focusedTerminal: { terminalIds: string[]; terminalId: string | null };
@@ -1374,6 +1378,7 @@ export interface SessionRuntimeSnapshot {
     terminalId: string;
     status: "IDLE" | "BUSY";
     processPhase: "not_started" | "running" | "stopped";
+    lifecycleTransition: "bootstrapping" | "killing" | null;
     seq: number;
     launchCwd: string;
     icon?: string;
@@ -1482,7 +1487,11 @@ export class SessionRuntime {
   private readonly terminalSemanticFingerprint: Record<string, string> = {};
   private readonly terminalStatusById = new Map<
     string,
-    { processPhase: "running" | "stopped"; status: "IDLE" | "BUSY" }
+    {
+      processPhase: "not_started" | "running" | "stopped";
+      lifecycleTransition: "bootstrapping" | "killing" | null;
+      status: "IDLE" | "BUSY";
+    }
   >();
   private readonly taskEngine = new TaskEngine();
   private readonly taskSourceMtime = new Map<string, number>();
@@ -3063,6 +3072,20 @@ export class SessionRuntime {
     return this.requireTerminalControlPlane().listForActor(this.terminalActorId);
   }
 
+  getRuntimeTerminalConfig(terminalId: string) {
+    return this.requireTerminalControlPlane().getTerminalConfigAuthorized({
+      terminalId,
+      actorId: this.terminalActorId,
+    });
+  }
+
+  setRuntimeTerminalConfig(input: { terminalId: string } & TerminalPatchInput) {
+    return this.requireTerminalControlPlane().setTerminalConfigAuthorized({
+      ...input,
+      actorId: this.terminalActorId,
+    });
+  }
+
   async readRuntimeTerminal(input: {
     terminalId: string;
     mode?: TerminalReadMode;
@@ -3557,6 +3580,22 @@ export class SessionRuntime {
       }),
     );
     this.terminalSystemCleanup.push(
+      this.terminalControlPlane.onChanged(({ terminalId, reason }) => {
+        switch (reason) {
+          case "created":
+          case "updated":
+          case "deleted":
+          case "lifecycle":
+          case "transition":
+          case "status":
+            this.syncRuntimeTerminalStatus(terminalId);
+            return;
+          default:
+            return;
+        }
+      }),
+    );
+    this.terminalSystemCleanup.push(
       this.terminalControlPlane.onApprovalRequest(({ terminalId, request }) => {
         const isAdminWork = request.assignedAdminId === this.terminalActorId && request.status === "pending";
         const isRequesterUpdate = request.participantId === this.terminalActorId && request.status !== "pending";
@@ -3887,6 +3926,9 @@ export class SessionRuntime {
             terminal: projectRuntimeTerminal(result.terminal),
           };
         },
+        terminalGetConfig: async (input) => projectRuntimeTerminalConfig(this.getRuntimeTerminalConfig(input.terminalId)),
+        terminalSetConfig: async (input) =>
+          projectRuntimeTerminalConfigMutation(this.setRuntimeTerminalConfig(input)),
         terminalRead: async (input) => await this.readRuntimeTerminal(input),
         terminalWrite: async (input) => await this.writeRuntimeTerminal(input),
         terminalInput: async (input) => await this.inputRuntimeTerminal(input),
@@ -7135,6 +7177,7 @@ export class SessionRuntime {
         terminalId: planeEntry.terminalId,
         status: statusEntry?.status ?? managed?.getStatus() ?? planeEntry.status,
         processPhase: statusEntry?.processPhase ?? planeEntry.processPhase,
+        lifecycleTransition: statusEntry?.lifecycleTransition ?? planeEntry.lifecycleTransition ?? null,
         seq: snapshot?.seq ?? 0,
         launchCwd: planeEntry.launchCwd,
         icon: planeEntry?.icon,
@@ -7334,6 +7377,7 @@ export class SessionRuntime {
 
   private attachRuntimeTerminal(terminalId: string, terminal: ManagedTerminal): void {
     if (this.terminals.has(terminalId)) {
+      this.syncRuntimeTerminalStatus(terminalId);
       return;
     }
     terminal.onSnapshot((snapshot) => {
@@ -7356,9 +7400,12 @@ export class SessionRuntime {
 
     terminal.onStatus((running, status) => {
       const previous = this.terminalStatusById.get(terminalId);
-      const processPhase = running ? "running" : "stopped";
-      this.terminalStatusById.set(terminalId, { processPhase, status });
-      this.emit("terminalStatus", { terminalId, processPhase, status });
+      this.syncRuntimeTerminalStatus(terminalId, {
+        fallback: {
+          processPhase: running ? "running" : "stopped",
+          status,
+        },
+      });
       this.terminalKernelAdapter.handleStatusChange({
         terminalId,
         previousStatus: previous?.status ?? null,
@@ -7368,6 +7415,48 @@ export class SessionRuntime {
     });
 
     this.terminals.set(terminalId, terminal);
+    this.syncRuntimeTerminalStatus(terminalId);
+  }
+
+  private syncRuntimeTerminalStatus(
+    terminalId: string,
+    input: {
+      fallback?: {
+        processPhase: "not_started" | "running" | "stopped";
+        status: "IDLE" | "BUSY";
+      };
+    } = {},
+  ): void {
+    const planeEntry = this.terminalControlPlane
+      .listForActor(this.terminalActorId, { touchPresence: false })
+      .find((entry) => entry.terminalId === terminalId);
+    if (!planeEntry) {
+      this.terminalStatusById.delete(terminalId);
+      return;
+    }
+    const managed = this.terminals.get(terminalId);
+    const next = {
+      processPhase: managed?.isRunning()
+        ? "running"
+        : (input.fallback?.processPhase ?? planeEntry.processPhase),
+      lifecycleTransition: planeEntry.lifecycleTransition ?? null,
+      status: input.fallback?.status ?? managed?.getStatus() ?? planeEntry.status,
+    } as const;
+    const previous = this.terminalStatusById.get(terminalId);
+    if (
+      previous?.processPhase === next.processPhase &&
+      previous?.lifecycleTransition === next.lifecycleTransition &&
+      previous?.status === next.status
+    ) {
+      return;
+    }
+    this.terminalStatusById.set(terminalId, next);
+    this.emit("terminalStatus", {
+      terminalId,
+      processPhase: next.processPhase,
+      lifecycleTransition: next.lifecycleTransition,
+      status: next.status,
+    });
   }
 
   private requireTerminalControlPlane(): TerminalControlPlane {

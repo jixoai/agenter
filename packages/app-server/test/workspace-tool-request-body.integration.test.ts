@@ -60,18 +60,19 @@ describe("Feature: workspace direct tool request-body contract", () => {
     "Scenario: Given persisted ai_call facts When a mock loop completes Then requestBody keeps only workspace_list root_bash workspace_bash and tool traces keep the new shell names",
     async () => {
       const harness = await createMockKernelHarness({ sessionName: "workspace-tool-request-body" });
-      const db = new SessionDb(join(harness.session.sessionRoot, "session.db"));
+      let db: SessionDb | null = null;
 
       try {
         const relayChannel = await createGaubeeRoom(harness);
         await runTwoRoomRelayScenario(harness, relayChannel);
+        db = new SessionDb(join(harness.session.sessionRoot, "session.db"));
 
         const persistedCalls = db.listAiCalls(8);
         expect(persistedCalls.length).toBeGreaterThan(0);
 
         for (const call of persistedCalls) {
           const toolNames = readDirectToolNames(call.requestBody);
-          expect(toolNames).toEqual(EXPECTED_DIRECT_TOOL_NAMES);
+          expect(toolNames).toEqual([...EXPECTED_DIRECT_TOOL_NAMES]);
           expect(toolNames.some((name) => /^(attention_|message_|terminal_|skill_|tool_)/u.test(name))).toBeFalse();
         }
 
@@ -85,7 +86,7 @@ describe("Feature: workspace direct tool request-body contract", () => {
         expect(debug.recentModelCalls).toHaveLength(persistedCalls.length);
         expect(debug.recentModelCalls.at(-1)?.request).toEqual(persistedCalls.at(-1)?.requestBody);
       } finally {
-        db.close();
+        db?.close();
         await harness.stop();
       }
     },

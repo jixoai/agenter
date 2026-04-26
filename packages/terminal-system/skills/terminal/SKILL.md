@@ -9,13 +9,16 @@ Use this skill when work needs a durable process, an interactive shell, or recov
 
 Quick start:
 1. Run `terminal list` first to inspect `processPhase`, `currentPath`, `currentTitle`, and prior stop facts before guessing lifecycle from stale output.
-2. Run `terminal create` when no suitable terminal exists yet, or recover the terminal id you want from `terminal list`.
-3. If `processPhase` is `not_started` or `stopped`, run `terminal bootstrap` before expecting read/write to work.
-4. Decide whether the next payload is `raw` or `mixed`.
-5. If the exact payload shape is unclear, run `terminal write --help` or `terminal input --help` first.
-6. Run `terminal write` for literal raw bytes, or `terminal input` for mixed DSL.
-7. Run `terminal read` only to inspect or recover terminal state.
-8. Run `terminal stop` when you want to halt the PTY but keep the durable terminal identity for later bootstrap.
+2. Run `terminal create` when no suitable terminal exists yet. Public `terminal create` auto-bootstraps by default, so a fresh terminal may briefly show `lifecycleTransition = bootstrapping` before it settles into `processPhase = running`.
+3. If you need the durable launch command, launch cwd, geometry, or metadata, run `terminal get-config` instead of inferring config from observed runtime output.
+4. If `terminal list` shows `processPhase` as `not_started` or `stopped`, run `terminal bootstrap` before expecting read/write to work.
+5. If `terminal list` or `terminal get-config` shows `lifecycleTransition = bootstrapping` or `killing`, wait and reread instead of stacking another lifecycle or config mutation.
+6. Decide whether the next payload is `raw` or `mixed`.
+7. If the exact payload shape is unclear, run `terminal write --help` or `terminal input --help` first.
+8. Run `terminal write` for literal raw bytes, or `terminal input` for mixed DSL.
+9. Run `terminal read` only to inspect or recover terminal state.
+10. Run `terminal set-config` when the durable terminal identity is correct but launch truth needs to change for the next bootstrap.
+11. Run `terminal stop` when you want to halt the PTY but keep the durable terminal identity for later bootstrap.
 
 Key laws:
 - A runtime does not start with a terminal by default.
@@ -23,7 +26,12 @@ Key laws:
 - `terminal` is a collaborative process surface, not a root-workspace shell.
 - Shared terminals keep real-home semantics and do not inherit root-workspace-exclusive env/CLI by default, even when `cwd` starts inside the avatar root workspace.
 - `terminal list` is the lifecycle and observed-identity inspection surface. Read `processPhase`, `currentPath`, `currentTitle`, and stop facts there before inferring state from raw output.
+- `terminal create` auto-bootstraps by default. A newly created terminal may briefly expose `lifecycleTransition = bootstrapping`; wait and reread instead of firing a redundant second bootstrap.
 - Stopped or provisioned terminals do not auto-start when you read or write. Use `terminal bootstrap` explicitly.
+- `lifecycleTransition` is a coordination lock, not a work item. If it is `bootstrapping` or `killing`, wait and reread `terminal list` or `terminal get-config` before sending another lifecycle or config mutation.
+- `terminal get-config` is the durable launch/config inspection surface. Use it for `command`, `launchCwd`, geometry, metadata, and other next-bootstrap truth.
+- `terminal set-config` patches durable launch/config truth without changing the terminal id.
+- For running PTYs, `cols` and `rows` may apply live immediately. Launch-affecting fields such as `command`, `launchCwd`, `env`, `processKind`, `gitLog`, and `logStyle` update durable truth first and take effect on the next bootstrap.
 - If work needs a port listener, local web server, watch mode, REPL, or retryable boot sequence, start it in `terminal`.
 - `terminal write` is raw mode. It sends literal bytes and never invents Enter, waits, or special keys for you.
 - `terminal input` is mixed mode. Use it for `<key .../>`, `<wait .../>`, or literal `<...>` text wrapped in `<raw>...</raw>`.
@@ -41,9 +49,11 @@ Key laws:
 - If `terminal create --help`, `terminal write --help`, `terminal input --help`, or `terminal read --help` marks compact as `Suggested` or `Available`, the matching command also accepts `--compact` positional arrays. If the positional array becomes unclear, go straight back to standard object JSON.
 - If raw vs mixed choice is unclear, read `references/input-modes.md` before guessing.
 - If `terminal write --help` or `terminal input --help` still is not enough, run `skill info agenter-terminal`, derive the real skill directory, and read only the reference file you need.
+- If the durable launch truth is unclear, read `references/terminal-config.md` before guessing.
 - For multi-line writes, nested JSON, or heredoc-heavy payloads, the next file to open is `references/file-writing.md`.
 
 References:
 - `references/terminal-lifecycle.md`: create/recover/bootstrap/read/write/stop strategy and recovery patterns
+- `references/terminal-config.md`: durable launch/config inspection and mutation rules
 - `references/input-modes.md`: when to use raw vs mixed, and how `<raw>...</raw>` works
 - `references/file-writing.md`: safe patterns for sending multi-line file writes through terminal raw/mixed input

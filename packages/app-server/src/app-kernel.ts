@@ -1070,6 +1070,7 @@ export class AppKernel {
           case "deleted":
           case "identity":
           case "lifecycle":
+          case "transition":
           case "focus":
           case "presence":
             this.queueTerminalSurfaceInvalidation({ catalogChanged: true });

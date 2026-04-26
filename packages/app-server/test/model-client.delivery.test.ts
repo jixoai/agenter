@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 
 import { describe, expect, test } from "bun:test";
 
@@ -15,7 +15,7 @@ type MockResponsePlan =
       contentType?: string;
     };
 
-const readBody = async (request: Parameters<Parameters<typeof createServer>[0]>[0]): Promise<string> => {
+const readBody = async (request: IncomingMessage): Promise<string> => {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));

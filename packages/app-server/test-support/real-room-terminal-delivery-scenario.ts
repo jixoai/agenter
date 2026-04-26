@@ -340,10 +340,10 @@ const collectRealRoomTerminalDeliveryDiagnostics = async (
     lastFetchObservation: state.lastFetchObservation,
     terminals: harness.kernel.listTerminals(harness.session.id).map((terminal) => ({
       terminalId: terminal.terminalId,
-      running: terminal.running,
-      cwd: terminal.cwd,
+      running: terminal.processPhase === "running",
+      cwd: terminal.launchCwd,
       focused: terminal.focused,
-      title: terminal.title,
+      title: terminal.currentTitle ?? terminal.configuredTitle ?? terminal.terminalId,
     })),
     activeContexts: attention.active.map((match) => ({
       contextId: match.contextId,

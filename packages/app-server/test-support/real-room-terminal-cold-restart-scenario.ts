@@ -56,10 +56,10 @@ const projectWorkspaceMounts = (harness: RealKernelHarness) =>
 const projectTerminals = (harness: RealKernelHarness) =>
   harness.kernel.listTerminals(harness.session.id).map((terminal) => ({
     terminalId: terminal.terminalId,
-    running: terminal.running,
-    cwd: terminal.cwd,
+    running: terminal.processPhase === "running",
+    cwd: terminal.launchCwd,
     focused: terminal.focused,
-    title: terminal.title,
+    title: terminal.currentTitle ?? terminal.configuredTitle ?? terminal.terminalId,
   }));
 
 export interface RealRoomTerminalColdRestartDiagnostics {

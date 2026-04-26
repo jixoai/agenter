@@ -548,6 +548,42 @@ const callTerminalWriteViaCli = async (
     toolCallId,
   });
 
+const buildMockSkillView = (name: string) => ({
+  name,
+  summary: "",
+  path: `/mock-skills/${name}/SKILL.md`,
+  root: "/mock-skills",
+  rootKind: "avatar" as const,
+  writable: true,
+});
+
+const buildMockSkillMutation = () => ({
+  contextId: "mock-skill-context",
+  skills: [],
+  snapshot: "",
+  changedSkills: [],
+  systemCommitId: null,
+  reminderCommitId: null,
+  reminderCommitIds: [],
+  bootstrapPending: false,
+});
+
+const buildMockTerminalConfig = (terminalId: string) => ({
+  terminalId,
+  processKind: "shell",
+  command: ["bash"],
+  launchCwd: ROOT_WORKSPACE_PATH,
+  profile: {
+    cols: 120,
+    rows: 40,
+    logStyle: "plain" as const,
+    gitLog: false as const,
+  },
+  metadata: {},
+  processPhase: "running" as const,
+  lifecycleTransition: null,
+});
+
 const createRuntimeLocalHandlers = (input: {
   attentionGateway?: AttentionGatewayLike;
   terminalGateway?: TerminalGatewayLike;
@@ -604,7 +640,10 @@ const createRuntimeLocalHandlers = (input: {
     if (!input.messageGateway) {
       throw new Error("message gateway not configured");
     }
-    return input.messageGateway.read(request);
+    return {
+      ...input.messageGateway.read(request),
+      referencedItems: [],
+    };
   },
   messageQuery: async (request) => {
     if (!input.messageGateway) {
@@ -638,12 +677,24 @@ const createRuntimeLocalHandlers = (input: {
       cwd: `/workspace/${workspaceId}`,
       mount: {
         workspacePath: `/workspace/${workspaceId}`,
-        kind: "project",
+        kind: "workspace",
       },
       grants: [],
     },
   }),
   terminalList: () => input.terminalGateway?.list() ?? [],
+  terminalGetConfig: ({ terminalId }) => buildMockTerminalConfig(terminalId),
+  terminalSetConfig: async ({ terminalId, ...patch }) => ({
+    config: {
+      ...buildMockTerminalConfig(terminalId),
+      ...(patch.processKind ? { processKind: patch.processKind } : {}),
+      ...(patch.command ? { command: [...patch.command] } : {}),
+      ...(patch.launchCwd ? { launchCwd: patch.launchCwd } : {}),
+      ...(patch.metadata ? { metadata: patch.metadata } : {}),
+    },
+    appliedLiveFields: [],
+    nextBootstrapFields: Object.keys(patch).filter((field) => field !== "terminalId"),
+  }),
   terminalCreate: async (request) => {
     if (!input.terminalGateway) {
       throw new Error("terminal gateway not configured");
@@ -686,6 +737,27 @@ const createRuntimeLocalHandlers = (input: {
     }
     return await input.terminalGateway.stop(request);
   },
+  skillList: () => [],
+  skillSearch: () => [],
+  skillInfo: async ({ name }) => ({
+    skill: buildMockSkillView(name),
+    content: "",
+  }),
+  skillGetConfig: async ({ name }) => ({
+    skill: buildMockSkillView(name),
+    writable: true,
+    skillDir: `/mock-skills/${name}`,
+    skillPath: `/mock-skills/${name}/SKILL.md`,
+    configPath: `/mock-skills/${name}/skill.config.json`,
+    configExists: false,
+    config: null,
+    configError: null,
+    resolvedWatchTargets: [],
+  }),
+  skillUpsert: async () => buildMockSkillMutation(),
+  skillSetConfig: async () => buildMockSkillMutation(),
+  skillRemove: async () => buildMockSkillMutation(),
+  skillRefresh: async () => buildMockSkillMutation(),
 });
 
 const createToolProviders = (
@@ -3514,13 +3586,15 @@ describe("Feature: AgenterAI behavior", () => {
     const terminal: TerminalGatewayLike = {
       list: () => [],
       create: async () => ({ ok: true, message: "created" }),
-      kill: async () => ({ ok: true, message: "stopped" }),
+      bootstrap: async () => ({ ok: true, message: "bootstrapped" }),
+      stop: async () => ({ ok: true, message: "stopped" }),
       focus: async () => ({ ok: true, message: "focused", focusedTerminalIds: ["iflow"] }),
       write: async (input: { terminalId: string; text: string }) => {
         writeCalls.push(input);
         await new Promise((resolve) => setTimeout(resolve, 40));
         return { ok: true, message: "written" };
       },
+      input: async (_input) => ({ ok: true, message: "written" }),
       read: async (_input) => ({ ok: true }),
       snapshot: async (_input) => ({ ok: true }),
       getConfig: async () => ({ transport: { port: 4100 } }),

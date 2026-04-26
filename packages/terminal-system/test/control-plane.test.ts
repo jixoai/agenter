@@ -184,6 +184,87 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
+  test("Scenario: Given create auto-bootstrap and stop When control-plane listeners observe lifecycle truth Then transient transitions stay separate from durable processPhase", async () => {
+    const plane = createPlane();
+    const observed: Array<{
+      reason: string;
+      processPhase: string;
+      lifecycleTransition: string | null;
+    }> = [];
+    plane.onChanged(({ terminalId, reason }) => {
+      if (terminalId !== "transition-law" || (reason !== "transition" && reason !== "lifecycle")) {
+        return;
+      }
+      const entry = plane.list().find((item) => item.terminalId === terminalId);
+      if (!entry) {
+        return;
+      }
+      observed.push({
+        reason,
+        processPhase: entry.processPhase,
+        lifecycleTransition: entry.lifecycleTransition ?? null,
+      });
+    });
+
+    const created = await plane.create({ terminalId: "transition-law" });
+    await plane.stop(created.terminalId);
+
+    expect(
+      observed.some(
+        (item) =>
+          item.reason === "transition" &&
+          item.processPhase === "not_started" &&
+          item.lifecycleTransition === "bootstrapping",
+      ),
+    ).toBe(true);
+    expect(
+      observed.some(
+        (item) =>
+          item.reason === "transition" &&
+          item.processPhase === "running" &&
+          item.lifecycleTransition === "killing",
+      ),
+    ).toBe(true);
+    expect(plane.list().find((item) => item.terminalId === created.terminalId)?.lifecycleTransition).toBeNull();
+    expect(plane.list().find((item) => item.terminalId === created.terminalId)?.processPhase).toBe("stopped");
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a kill transition is in flight When another lifecycle or config mutation arrives Then the control plane rejects the overlap", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:owner", true);
+    const created = await plane.create({
+      terminalId: "transition-conflict",
+      bootstrapActorId: "session:owner",
+      bootstrapRole: "admin",
+    });
+    const managed = plane.getManagedTerminal(created.terminalId);
+    if (!managed) {
+      throw new Error("expected managed terminal");
+    }
+    const originalStop = managed.stop.bind(managed);
+    managed.stop = async () => {
+      await Bun.sleep(40);
+      await originalStop();
+    };
+
+    const stopPromise = plane.stop(created.terminalId);
+    await Bun.sleep(5);
+
+    expect(() =>
+      plane.setTerminalConfigAuthorized({
+        terminalId: created.terminalId,
+        actorId: "session:owner",
+        title: "Blocked during kill",
+      }),
+    ).toThrow("already killing");
+    expect(() => plane.bootstrap(created.terminalId)).toThrow("already killing");
+
+    await stopPromise;
+    await plane.dispose();
+  });
+
   test("Scenario: Given mixed terminal input When the control plane applies it Then the returned approval and activity facts keep the mixed mode", async () => {
     const plane = createPlane();
     plane.setActorPresence("session:admin", true);
@@ -424,6 +505,71 @@ describe("Feature: terminal control plane", () => {
     expect(plane.list()).toHaveLength(1);
     await expect(plane.deleteTerminal("demo")).resolves.toEqual({ ok: true, message: "terminal deleted" });
     expect(plane.list()).toHaveLength(0);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given durable config inspection and mutation When geometry and launch truth change Then live fields apply now and launch fields apply on next bootstrap", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:owner", true);
+    const nextCwd = mkdtempSync(join(tmpdir(), "ati-control-plane-next-cwd-"));
+    workspaces.push(nextCwd);
+    const created = await plane.create({
+      terminalId: "config-surface",
+      bootstrapActorId: "session:owner",
+      bootstrapRole: "admin",
+    });
+
+    const initialConfig = plane.getTerminalConfigAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+    });
+    expect(initialConfig.processPhase).toBe("running");
+    expect(initialConfig.launchCwd).toBe(created.launchCwd);
+    expect(Object.prototype.hasOwnProperty.call(initialConfig, "currentPath")).toBe(false);
+
+    const mutation = plane.setTerminalConfigAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      command: ["sh", "-lc", "pwd; cat"],
+      launchCwd: nextCwd,
+      cols: 100,
+      rows: 28,
+      title: "Ops shell",
+      metadata: {
+        owner: "ops",
+      },
+    });
+
+    expect(mutation.appliedLiveFields).toEqual(expect.arrayContaining(["cols", "rows"]));
+    expect(mutation.nextBootstrapFields).toEqual(expect.arrayContaining(["command", "launchCwd"]));
+    expect(mutation.config.profile.title).toBe("Ops shell");
+    expect(mutation.config.metadata).toEqual({ owner: "ops" });
+
+    const liveRead = await plane.write({
+      terminalId: created.terminalId,
+      text: "geometry refresh\n",
+      actorId: "session:owner",
+      returnRead: {
+        debounceMs: 120,
+      },
+      readMode: "snapshot",
+    });
+    expect(liveRead.ok).toBe(true);
+    expect(liveRead.read?.snapshot?.cols).toBe(100);
+    expect(liveRead.read?.snapshot?.rows).toBe(28);
+
+    await plane.stopAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+    });
+    plane.bootstrapAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+    });
+    await Bun.sleep(120);
+    const restarted = await plane.snapshot(created.terminalId);
+    expect(restarted.snapshot?.lines.join("\n")).toContain(nextCwd);
 
     await plane.dispose();
   });

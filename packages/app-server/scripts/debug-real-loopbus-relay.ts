@@ -155,7 +155,7 @@ const main = async (): Promise<void> => {
               summary: commit.summary,
               src: commit.meta.src,
               scores: commit.scores,
-              egress: commit.egress,
+              target: commit.target ?? null,
               createdAt: commit.createdAt,
             })),
           })),

@@ -97,10 +97,10 @@ const collectDiagnostics = async (
     })),
     terminals: harness.kernel.listTerminals(harness.session.id).map((terminal) => ({
       terminalId: terminal.terminalId,
-      running: terminal.running,
-      cwd: terminal.cwd,
+      running: terminal.processPhase === "running",
+      cwd: terminal.launchCwd,
       focused: terminal.focused,
-      title: terminal.title,
+      title: terminal.currentTitle ?? terminal.configuredTitle ?? terminal.terminalId,
     })),
     recentModelCalls: projectModelCallDiagnostics(recentModelCalls),
   };

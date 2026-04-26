@@ -71,7 +71,6 @@ export const resolveRealSemanticJudgeAvailability = async (input: {
     temperature: loaded.settings.ai?.temperature ?? 0,
     maxRetries: provider.maxRetries ?? 0,
     maxToken: loaded.settings.ai?.maxToken,
-    compactThreshold: provider.compactThreshold,
     topK: loaded.settings.ai?.topK,
     thinking: loaded.settings.ai?.thinking,
   };

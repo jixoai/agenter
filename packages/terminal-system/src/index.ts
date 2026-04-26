@@ -27,6 +27,8 @@ export type {
   TerminalControlPlaneConfig,
   TerminalControlPlaneConfigPatch,
   TerminalControlPlaneEntry,
+  TerminalConfigMutationResult,
+  TerminalConfigView,
   TerminalCreateInput,
   TerminalEventKind,
   TerminalEventPayload,
@@ -58,6 +60,7 @@ export type {
 } from "./terminal-control-plane.types";
 export type {
   TerminalLifecycleState,
+  TerminalLifecycleTransition,
   TerminalObservedIdentity,
   TerminalProcessPhase,
   TerminalStopReason,

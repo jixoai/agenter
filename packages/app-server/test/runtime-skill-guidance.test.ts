@@ -49,10 +49,15 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(terminal?.template).not.toContain("APP-URL:");
     expect(terminal?.template).not.toContain("localhost");
     expect(terminal?.template).toContain("Run `terminal list` first to inspect `processPhase`, `currentPath`, `currentTitle`");
+    expect(terminal?.template).toContain("`terminal create` auto-bootstraps by default");
+    expect(terminal?.template).toContain("`terminal get-config`");
     expect(terminal?.template).toContain("run `terminal bootstrap` before expecting read/write to work");
+    expect(terminal?.template).toContain("`lifecycleTransition` is a coordination lock");
+    expect(terminal?.template).toContain("`terminal set-config`");
     expect(terminal?.template).toContain("Run `terminal stop` when you want to halt the PTY");
     expect(terminal?.template).toContain("run `terminal write --help` or `terminal input --help` first");
     expect(terminal?.template).toContain("run `skill info agenter-terminal`");
+    expect(terminal?.template).toContain("references/terminal-config.md");
     expect(terminal?.template).toContain("references/input-modes.md");
     expect(terminal?.template).toContain("references/file-writing.md");
     expect(terminal?.template).not.toContain("create/list/read/write/kill");

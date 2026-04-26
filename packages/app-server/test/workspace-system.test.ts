@@ -578,7 +578,7 @@ describe("Feature: workspace system kernel integration", () => {
       focus: false,
     });
     expect(avatarRootTerminal.ok).toBeTrue();
-    expect(avatarRootTerminal.terminal?.cwd).toContain(join(".agenter", "avatars", "by-principal"));
+    expect(avatarRootTerminal.terminal?.launchCwd).toContain(join(".agenter", "avatars", "by-principal"));
 
     kernel.grantRuntimeWorkspace({
       runtimeId: session.id,
@@ -601,7 +601,7 @@ describe("Feature: workspace system kernel integration", () => {
       focus: false,
     });
     expect(workspaceARoot.ok).toBeTrue();
-    expect(workspaceARoot.terminal?.cwd).toBe(workspaceA);
+    expect(workspaceARoot.terminal?.launchCwd).toBe(workspaceA);
 
     const outsideGrant = await kernel.createTerminal({
       sessionId: session.id,
@@ -633,7 +633,7 @@ describe("Feature: workspace system kernel integration", () => {
       focus: false,
     });
     expect(explicitRoot.ok).toBeTrue();
-    expect(explicitRoot.terminal?.cwd).toBe(workspaceB);
+    expect(explicitRoot.terminal?.launchCwd).toBe(workspaceB);
 
     await kernel.stop();
   });
@@ -673,7 +673,7 @@ describe("Feature: workspace system kernel integration", () => {
         ok: boolean;
         terminal?: {
           terminalId: string;
-          cwd?: string;
+          launchCwd?: string;
           snapshot?: unknown;
           access?: unknown;
           actors?: unknown;
@@ -682,7 +682,7 @@ describe("Feature: workspace system kernel integration", () => {
       };
     };
     expect(createdPayload.result?.ok).toBeTrue();
-    expect(createdPayload.result?.terminal?.cwd).toBe(workspace);
+    expect(createdPayload.result?.terminal?.launchCwd).toBe(workspace);
     expect(createdPayload.result?.terminal?.snapshot).toBeUndefined();
     expect(createdPayload.result?.terminal?.access).toBeUndefined();
     expect(createdPayload.result?.terminal?.actors).toBeUndefined();
