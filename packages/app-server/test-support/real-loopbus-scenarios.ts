@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import type { MessageControlPlane, MessageControlPlaneEntry, MessageRecord } from "@agenter/message-system";
 
 import type { ChatCycle, ChatMessage, SessionRuntimeAttentionState } from "../src";
@@ -397,6 +400,106 @@ export const runRealCliCompactScenario = async (harness: RealKernelHarness): Pro
       error,
       extra: {
         primaryRoomId,
+      },
+    });
+  }
+};
+
+export interface RealTerminalSkillLearningScenarioResult {
+  reply: ChatMessage;
+  proofText: string;
+  settledAttention: SessionRuntimeAttentionState;
+  recentModelCalls: Array<{
+    id: number;
+    cycleId: number | null;
+    status: "running" | "done" | "error" | "cancelled";
+    outcome: string | null;
+  }>;
+  toolTraceTools: string[];
+  rootWorkspaceBashCommands: string[];
+}
+
+export const runRealTerminalSkillLearningScenario = async (
+  harness: RealKernelHarness,
+): Promise<RealTerminalSkillLearningScenarioResult> => {
+  const timeoutMs = 300_000;
+  const primaryRoomId = getPrimaryRoomId(harness);
+  const proofFileName = "terminal-skill-proof.txt";
+  const expectedToken = "TERMINAL-SKILL-OK";
+  const startAt = Date.now();
+
+  try {
+    const prompt = [
+      "这是一个 terminal skill 学习验收。",
+      `目标房间 chatId: ${primaryRoomId}`,
+      "不要发送中间确认，也不要发送额外总结。",
+      "必须先通过 root_bash 执行 `skill info agenter-terminal`。",
+      "如果还需要补充细节，可以继续从这个 skill 的真实路径读取 terminal lifecycle reference，或者查看 terminal 命令的 --help。",
+      "然后你必须自己推导并完成以下步骤：",
+      "1. 使用 terminalId `skill-terminal` 创建或恢复一个 terminal。",
+      "2. 至少执行一次 `terminal list` 检查 lifecycle。",
+      "3. 显式执行一次 `terminal stop`，再显式执行一次 `terminal bootstrap`。",
+      `4. 只通过 terminal CLI 在当前 granted workspace 写入文件 ${proofFileName}，文件内容必须精确等于 ${expectedToken}。`,
+      `5. 通过 root_bash 执行 \`cat ${proofFileName}\` 验证文件内容。`,
+      `6. 只向 ${primaryRoomId} 发送一条最终用户可见消息，内容必须精确等于：${expectedToken}`,
+      "7. 完成后把 attention 收敛到 0。",
+      "禁止使用 root_bash 或 workspace_bash 直接写 proof 文件。",
+    ].join("\n");
+    const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+    if (!sent.ok) {
+      throw new Error(`failed to send terminal skill prompt: ${sent.reason ?? "unknown"}`);
+    }
+
+    const reply = await waitForAssistantMessage(harness, {
+      label: "terminal skill final reply on primary room",
+      predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === expectedToken,
+      timeoutMs,
+    });
+
+    const proofText = await waitForRealValue(
+      async () => {
+        try {
+          const content = await readFile(join(harness.workspacePath, proofFileName), "utf8");
+          const trimmed = content.trim();
+          return trimmed === expectedToken ? trimmed : null;
+        } catch {
+          return null;
+        }
+      },
+      {
+        label: "terminal skill proof file",
+        timeoutMs,
+      },
+    );
+
+    const settledAttention = await waitForAttentionSettled(harness, timeoutMs);
+    const modelCallRecords = await waitForModelCallsAfter(harness, {
+      afterTimestamp: startAt,
+      label: "terminal skill model call completion",
+      timeoutMs,
+    });
+
+    return {
+      reply,
+      proofText,
+      settledAttention,
+      recentModelCalls: modelCallRecords.map((call) => ({
+        id: call.id,
+        cycleId: call.cycleId,
+        status: call.status,
+        outcome: readModelOutcomeCode(call),
+      })),
+      toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
+      rootWorkspaceBashCommands: modelCallRecords.flatMap(extractRootWorkspaceBashCommands),
+    };
+  } catch (error) {
+    throw await buildRealScenarioDiagnosticError(harness, {
+      label: "real-terminal-skill-learning-scenario",
+      error,
+      extra: {
+        primaryRoomId,
+        proofFileName,
+        expectedToken,
       },
     });
   }
