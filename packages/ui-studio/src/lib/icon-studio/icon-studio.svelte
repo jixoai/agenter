@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Scaffold, SplitView } from '@agenter/svelte-components';
+	import { Scaffold, SidebarScaffold } from '@agenter/svelte-components';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import MoonStarIcon from '@lucide/svelte/icons/moon-star';
 	import PaletteIcon from '@lucide/svelte/icons/palette';
@@ -287,8 +287,8 @@
 	</Scaffold.Header>
 
 	<Scaffold.Body>
-		<SplitView.Root variant="sidebar-content">
-			<SplitView.Sidebar class="border-b md:border-r md:border-b-0">
+		<SidebarScaffold.Root>
+			<SidebarScaffold.Sidebar class="border-b md:border-r md:border-b-0">
 				<Scaffold.Root class="h-full rounded-xl border bg-card text-card-foreground shadow-sm">
 					<Scaffold.Header class="grid gap-2 border-b px-5 py-4">
 						<h2 class="text-base font-semibold">Composer</h2>
@@ -376,9 +376,9 @@
 						{/each}
 					</Scaffold.ScrollBody>
 				</Scaffold.Root>
-			</SplitView.Sidebar>
+			</SidebarScaffold.Sidebar>
 
-			<SplitView.Content>
+			<SidebarScaffold.Content>
 				<Scaffold.Root class="h-full rounded-xl border bg-card text-card-foreground shadow-sm">
 					<Scaffold.Header class="grid gap-2 border-b px-5 py-4">
 						<div class="flex flex-wrap items-center justify-between gap-3">
@@ -438,7 +438,7 @@
 						</div>
 					</Scaffold.ScrollBody>
 				</Scaffold.Root>
-			</SplitView.Content>
-		</SplitView.Root>
+			</SidebarScaffold.Content>
+		</SidebarScaffold.Root>
 	</Scaffold.Body>
 </Scaffold.Root>
