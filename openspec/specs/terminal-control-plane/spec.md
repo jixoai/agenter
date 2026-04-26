@@ -49,17 +49,17 @@ The terminal control plane SHALL expose `terminal_read` and `terminal_snapshot` 
 - **THEN** catalog access state changes only through explicit grant or lifecycle operations
 
 ### Requirement: Terminal control plane SHALL own terminal lifecycle operations
-The terminal control plane SHALL expose lifecycle operations for listing, creating, attaching, and killing globally durable terminal instances through one canonical API family independent of session startup order.
+The terminal control plane SHALL expose lifecycle operations for listing, creating, bootstrapping, stopping, and deleting globally durable terminal instances through one canonical API family independent of session startup order.
 
 #### Scenario: Create a global shell terminal without first booting a session
 - **WHEN** an authorized caller invokes terminal create without an explicit process descriptor
 - **THEN** the control plane creates a terminal using the default shell profile in the global terminal catalog
 - **THEN** the response returns the terminal id and applied process profile metadata
 
-#### Scenario: Kill a global terminal
-- **WHEN** a caller with sufficient rights invokes terminal kill for an existing terminal id
-- **THEN** the process is stopped and removed from the active global terminal list
-- **THEN** later reads for that terminal id fail with a terminal-not-found style error
+#### Scenario: Stop preserves a global terminal's durable identity
+- **WHEN** a caller with sufficient rights invokes terminal stop for an existing running terminal id
+- **THEN** the PTY is stopped without deleting the terminal's durable catalog entry
+- **THEN** later reads still resolve the same terminal id as a stopped terminal until an explicit bootstrap or delete occurs
 
 ### Requirement: Terminal control plane SHALL define operating-system execution semantics through skills and attention
 The terminal control plane SHALL express terminal-side obligations through durable terminal facts and attention items, and the owning terminal skill guidance SHALL describe terminal as the assistant's operating-system workbench. That guidance SHALL prioritize terminal-backed inspection and execution when work depends on external facts, commands, files, processes, or network state.
@@ -99,4 +99,3 @@ Terminal inspection MUST NOT append activity history by default. Activity record
 - **WHEN** a caller reads a terminal with activity recording enabled
 - **THEN** a `terminal_read` activity event is appended
 - **THEN** the appended event preserves the chosen representation metadata
-
