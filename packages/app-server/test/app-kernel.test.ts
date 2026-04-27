@@ -1,5 +1,9 @@
 import { AttentionStore, AttentionSystem } from "@agenter/attention-system";
-import { MessageControlPlane, resolveMessageControlDbPath } from "@agenter/message-system";
+import {
+  MessageControlPlane,
+  resolveMessageControlDbPath,
+  type MessageTransportServerMessage,
+} from "@agenter/message-system";
 import { SessionDb } from "@agenter/session-system";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -22,6 +26,37 @@ const createKernel = (): AppKernel => {
     workspacesPath: join(dir, "workspaces.yaml"),
   });
 };
+
+const waitForRoomTransportMessage = async (socket: WebSocket): Promise<MessageTransportServerMessage> =>
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("room-transport-message-timeout"));
+    }, 2_000);
+
+    const cleanup = (): void => {
+      clearTimeout(timeout);
+      socket.removeEventListener("message", onMessage);
+      socket.removeEventListener("close", onClose);
+      socket.removeEventListener("error", onError);
+    };
+    const onMessage = (event: MessageEvent): void => {
+      cleanup();
+      resolve(JSON.parse(String(event.data)) as MessageTransportServerMessage);
+    };
+    const onClose = (): void => {
+      cleanup();
+      reject(new Error("room-transport-closed-before-message"));
+    };
+    const onError = (): void => {
+      cleanup();
+      reject(new Error("room-transport-open-failed"));
+    };
+
+    socket.addEventListener("message", onMessage);
+    socket.addEventListener("close", onClose);
+    socket.addEventListener("error", onError);
+  });
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -317,6 +352,13 @@ describe("Feature: app kernel event replay", () => {
     expect(room.chatId).toMatch(/^0x[0-9a-f]{40}$/);
     expect(room.transportUrl).toContain("ws://127.0.0.1:");
     expect(room.transportUrl).toContain("/room/");
+    const socket = new WebSocket(room.transportUrl);
+    const roomTransportMessage = await waitForRoomTransportMessage(socket);
+    socket.close();
+    expect(roomTransportMessage.type).toBe("snapshot");
+    if (roomTransportMessage.type === "snapshot") {
+      expect(roomTransportMessage.snapshot.channel.chatId).toBe(room.chatId);
+    }
     expect(terminalResult.terminal?.transportUrl).toContain("ws://127.0.0.1:");
     expect(terminalResult.terminal?.transportUrl).toContain("/pty/");
     expect(terminalResult.terminal?.launchCwd).toBe(resolve("."));
