@@ -60,9 +60,19 @@ export const startRuntimeLocalApi = async (input: {
         writeJson(response, 404, { ok: false, error: "not found" });
         return;
       }
+      const abortController = new AbortController();
+      const abortIfResponseDidNotFinish = (): void => {
+        if (!response.writableEnded) {
+          abortController.abort();
+        }
+      };
+      request.once("aborted", abortIfResponseDidNotFinish);
+      response.once("close", abortIfResponseDidNotFinish);
       const rawBody = await readJsonBody(request);
       const parsedBody = descriptor.inputSchema.parse(rawBody);
-      const result = await descriptor.handler(parsedBody, input.handlers);
+      const result = await descriptor.handler(parsedBody, input.handlers, {
+        signal: abortController.signal,
+      });
       writeJson(response, 200, { ok: true, ...result });
     } catch (error) {
       writeJson(response, 400, {

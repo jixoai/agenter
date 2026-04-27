@@ -15,6 +15,12 @@ import type {
   TerminalAdminCandidateRecord,
   TerminalApprovalRequestRecord,
   TerminalAutomationInputMode,
+  TerminalAwaitInput,
+  TerminalAwaitMatchEvidence,
+  TerminalAwaitMatchOptions,
+  TerminalAwaitOutcome,
+  TerminalAwaitResult,
+  TerminalAwaitUntil,
   TerminalControlPlaneConfig,
   TerminalControlPlaneConfigPatch,
   TerminalControlPlaneEntry,
@@ -104,6 +110,13 @@ const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
 const LEGACY_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
 const DEFAULT_APPROVAL_TIMEOUT_MS = 90_000;
 const TRANSIENT_ACTOR_PRESENCE_TTL_MS = 90_000;
+const DEFAULT_AWAIT_TIMEOUT_MS = 30_000;
+const MAX_AWAIT_TIMEOUT_MS = 600_000;
+const DEFAULT_AWAIT_IDLE_MS = 250;
+const MAX_AWAIT_IDLE_MS = 30_000;
+const DEFAULT_AWAIT_VIEW_LINES = 80;
+const MAX_AWAIT_VIEW_LINES = 500;
+const MAX_AWAIT_CONTEXT_LINES = 10;
 
 const createId = (): string => `term-${randomUUID()}`;
 const defaultShellCommand = (): string[] => [process.env.SHELL || "/bin/bash"];
@@ -255,6 +268,90 @@ const attachReadCursor = (
     fromHash: payload.fromHash ?? readCursor.fromHash,
     toHash: payload.toHash ?? readCursor.toHash,
     readCursor,
+  };
+};
+
+const normalizePositiveInt = (value: number | undefined, fallback: number, max: number): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(Math.max(0, Math.floor(value)), max);
+};
+
+const normalizeAwaitUntil = (input: TerminalAwaitInput): TerminalAwaitUntil => {
+  if (input.wait?.until) {
+    return input.wait.until;
+  }
+  return input.match ? "match" : "changed";
+};
+
+const resolveAwaitViewLines = (input: TerminalAwaitInput): number =>
+  Math.max(1, normalizePositiveInt(input.view?.lines, DEFAULT_AWAIT_VIEW_LINES, MAX_AWAIT_VIEW_LINES));
+
+const resolveAwaitEvidenceLines = (lines: readonly string[], viewLines: number): string[] => {
+  let end = lines.length;
+  while (end > 0 && (lines[end - 1] ?? "").trim().length === 0) {
+    end -= 1;
+  }
+  const source = end > 0 ? lines.slice(0, end) : lines;
+  return source.slice(-viewLines);
+};
+
+const createLiteralMatch = (
+  line: string,
+  pattern: string,
+  caseInsensitive: boolean,
+): { index: number; text: string } | null => {
+  const normalizedLine = caseInsensitive ? line.toLocaleLowerCase() : line;
+  const normalizedPattern = caseInsensitive ? pattern.toLocaleLowerCase() : pattern;
+  const index = normalizedLine.indexOf(normalizedPattern);
+  if (index < 0) {
+    return null;
+  }
+  return {
+    index,
+    text: line.slice(index, index + pattern.length),
+  };
+};
+
+const createRegexMatcher = (input: TerminalAwaitMatchOptions): RegExp => {
+  const flags = input.caseInsensitive ? "iu" : "u";
+  return new RegExp(input.pattern, flags);
+};
+
+const matchSnapshotLines = (
+  lines: readonly string[],
+  input: TerminalAwaitMatchOptions | undefined,
+): { matched: boolean; matches: TerminalAwaitMatchEvidence[] } | undefined => {
+  if (!input) {
+    return undefined;
+  }
+  const contextLines = normalizePositiveInt(input.contextLines, 2, MAX_AWAIT_CONTEXT_LINES);
+  const matches: TerminalAwaitMatchEvidence[] = [];
+  const regex = input.regex ? createRegexMatcher(input) : null;
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const text = lines[lineIndex] ?? "";
+    const match = regex
+      ? (() => {
+          const found = regex.exec(text);
+          return found ? { index: found.index, text: found[0] ?? "" } : null;
+        })()
+      : createLiteralMatch(text, input.pattern, input.caseInsensitive ?? false);
+    if (!match) {
+      continue;
+    }
+    const contextStart = Math.max(0, lineIndex - contextLines);
+    const contextEnd = Math.min(lines.length, lineIndex + contextLines + 1);
+    matches.push({
+      lineIndex,
+      text,
+      matchedText: match.text,
+      contextLines: lines.slice(contextStart, contextEnd),
+    });
+  }
+  return {
+    matched: matches.length > 0,
+    matches,
   };
 };
 
@@ -987,6 +1084,201 @@ export class TerminalControlPlane {
       snapshotPayload = attachReadCursor(snapshotPayload, readCursor);
     }
     return this.finalizeReadResult(snapshotPayload, actorId, input.recordActivity ?? true);
+  }
+
+  async awaitAuthorized(input: TerminalAwaitInput): Promise<TerminalAwaitResult> {
+    this.authorizeRead(input);
+    const actorId = this.resolveEventActorId(input);
+    const entry = this.ensureManagedEntry(input.terminalId);
+    const startedAt = Date.now();
+    const until = normalizeAwaitUntil(input);
+    const timeoutMs = normalizePositiveInt(input.wait?.timeoutMs, DEFAULT_AWAIT_TIMEOUT_MS, MAX_AWAIT_TIMEOUT_MS);
+    const idleMs = normalizePositiveInt(input.wait?.idleMs, DEFAULT_AWAIT_IDLE_MS, MAX_AWAIT_IDLE_MS);
+    const fromHash = input.wait?.fromHash ?? entry.terminal.getHeadHash();
+    const fromSeq = Number.parseInt(fromHash ?? "0", 10);
+    const afterSeq = Number.isFinite(fromSeq) ? fromSeq : 0;
+    if ((until === "match" || until === "absent") && !input.match) {
+      throw new Error(`terminal await until=${until} requires match.pattern`);
+    }
+    if (input.match?.regex) {
+      createRegexMatcher(input.match);
+    }
+
+    let lastSnapshot = entry.terminal.getSnapshot();
+    if (!entry.terminal.isRunning()) {
+      return this.finalizeAwaitResult(
+        this.buildAwaitResult({
+          entry,
+          input,
+          snapshot: lastSnapshot,
+          outcome: "stopped",
+          startedAt,
+          fromHash,
+        }),
+        actorId,
+        input.recordActivity ?? true,
+      );
+    }
+
+    return await new Promise<TerminalAwaitResult>((resolve) => {
+      let settled = false;
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+      const cleanupFns: Array<() => void> = [];
+      let commitWaiter: {
+        promise: Promise<{ toHash: string | null }>;
+        reject: (reason: unknown) => void;
+      } | null = null;
+
+      const clearIdleTimer = (): void => {
+        if (idleTimer !== null) {
+          clearTimeout(idleTimer);
+          idleTimer = null;
+        }
+      };
+
+      const cleanup = (): void => {
+        clearIdleTimer();
+        if (timeoutTimer !== null) {
+          clearTimeout(timeoutTimer);
+          timeoutTimer = null;
+        }
+        if (commitWaiter) {
+          commitWaiter.reject(new Error("terminal await settled"));
+          commitWaiter = null;
+        }
+        for (const fn of cleanupFns.splice(0)) {
+          fn();
+        }
+      };
+
+      const finish = (outcome: TerminalAwaitOutcome, snapshot: ManagedTerminalSnapshot = lastSnapshot): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        const result = this.finalizeAwaitResult(
+          this.buildAwaitResult({
+            entry,
+            input,
+            snapshot,
+            outcome,
+            startedAt,
+            fromHash,
+          }),
+          actorId,
+          input.recordActivity ?? true,
+        );
+        resolve(result);
+      };
+
+      const evaluate = (snapshot: ManagedTerminalSnapshot): TerminalAwaitOutcome | null => {
+        if (!entry.terminal.isRunning()) {
+          return "stopped";
+        }
+        if (until === "changed") {
+          return snapshot.seq > afterSeq ? "changed" : null;
+        }
+        if (until === "idle") {
+          return entry.terminal.getStatus() === "IDLE" ? "idle" : null;
+        }
+        if (!input.match) {
+          return null;
+        }
+        const matched = matchSnapshotLines(snapshot.lines, input.match)?.matched ?? false;
+        if (until === "match") {
+          return matched ? "matched" : null;
+        }
+        return matched ? null : "absent";
+      };
+
+      const scheduleStableFinish = (outcome: TerminalAwaitOutcome, snapshot: ManagedTerminalSnapshot): void => {
+        clearIdleTimer();
+        if (idleMs === 0 || outcome === "stopped" || outcome === "cancelled" || outcome === "timeout") {
+          finish(outcome, snapshot);
+          return;
+        }
+        idleTimer = setTimeout(() => {
+          idleTimer = null;
+          const latest = lastSnapshot;
+          const latestOutcome = evaluate(latest);
+          if (latestOutcome === outcome || outcome === "changed") {
+            finish(outcome, latest);
+          }
+        }, idleMs);
+      };
+
+      const observeSnapshot = (snapshot: ManagedTerminalSnapshot): void => {
+        if (settled) {
+          return;
+        }
+        lastSnapshot = snapshot;
+        const outcome = evaluate(snapshot);
+        if (outcome) {
+          scheduleStableFinish(outcome, snapshot);
+          return;
+        }
+        clearIdleTimer();
+      };
+
+      cleanupFns.push(
+        entry.terminal.onSnapshot((snapshot) => {
+          observeSnapshot(snapshot);
+        }),
+      );
+      cleanupFns.push(
+        entry.terminal.onStatus((running, status) => {
+          if (settled) {
+            return;
+          }
+          if (!running) {
+            finish("stopped", lastSnapshot);
+            return;
+          }
+          if (status === "BUSY" && until === "idle") {
+            clearIdleTimer();
+            return;
+          }
+          if (status === "IDLE") {
+            observeSnapshot(entry.terminal.getSnapshot());
+          }
+        }),
+      );
+
+      if (until === "changed") {
+        commitWaiter = entry.terminal.waitCommitted({ fromHash });
+        commitWaiter.promise
+          .then(() => {
+            if (settled) {
+              return;
+            }
+            lastSnapshot = entry.terminal.getSnapshot();
+            scheduleStableFinish("changed", lastSnapshot);
+          })
+          .catch(() => {
+            if (!settled) {
+              finish(entry.terminal.isRunning() ? "cancelled" : "stopped", lastSnapshot);
+            }
+          });
+      }
+
+      if (input.signal) {
+        const abort = (): void => finish("cancelled", lastSnapshot);
+        if (input.signal.aborted) {
+          abort();
+          return;
+        }
+        input.signal.addEventListener("abort", abort, { once: true });
+        cleanupFns.push(() => input.signal?.removeEventListener("abort", abort));
+      }
+
+      timeoutTimer = setTimeout(() => {
+        finish("timeout", lastSnapshot);
+      }, timeoutMs);
+
+      observeSnapshot(lastSnapshot);
+    });
   }
 
   async snapshot(
@@ -2294,6 +2586,94 @@ export class TerminalControlPlane {
       eventId: event.eventId,
       recordedActivity: true,
     };
+  }
+
+  private buildAwaitResult(input: {
+    entry: ManagedEntry;
+    input: TerminalAwaitInput;
+    snapshot: ManagedTerminalSnapshot;
+    outcome: TerminalAwaitOutcome;
+    startedAt: number;
+    fromHash: string | null;
+  }): TerminalAwaitResult {
+    const projection = this.describeReadProjection(input.entry.record, input.entry.terminal);
+    const viewLines = resolveAwaitViewLines(input.input);
+    const lines = resolveAwaitEvidenceLines(input.snapshot.lines, viewLines);
+    const match = matchSnapshotLines(input.snapshot.lines, input.input.match);
+    return {
+      kind: "terminal-await",
+      terminalId: input.input.terminalId,
+      outcome: input.outcome,
+      waitedMs: Math.max(0, Date.now() - input.startedAt),
+      fromHash: input.fromHash,
+      toHash: String(input.snapshot.seq),
+      seq: input.snapshot.seq,
+      cols: input.snapshot.cols,
+      rows: input.snapshot.rows,
+      cursor: input.snapshot.cursor,
+      snapshot: {
+        seq: input.snapshot.seq,
+        timestamp: input.snapshot.timestamp,
+        cols: input.snapshot.cols,
+        rows: input.snapshot.rows,
+        cursor: input.snapshot.cursor,
+        lines,
+      },
+      match: input.input.match
+        ? {
+            matched: match?.matched ?? false,
+            pattern: input.input.match.pattern,
+            regex: input.input.match.regex ?? false,
+            caseInsensitive: input.input.match.caseInsensitive ?? false,
+            matches: match?.matches ?? [],
+          }
+        : undefined,
+      status: projection.status,
+      processPhase: projection.processPhase,
+      lifecycleTransition: projection.lifecycleTransition ?? null,
+      title: projection.title,
+      configuredTitle: projection.configuredTitle,
+      currentTitle: projection.currentTitle,
+      currentPath: projection.currentPath,
+      running: projection.running,
+    };
+  }
+
+  private attachAwaitEvent(payload: TerminalAwaitResult, actorId?: TerminalActorId): TerminalAwaitResult {
+    const event = this.db.appendEvent({
+      terminalId: payload.terminalId,
+      kind: "terminal_read",
+      payload: {
+        title: "Terminal await",
+        content: JSON.stringify(payload),
+        actorId,
+        detail: payload,
+      },
+    });
+    this.emitChange({
+      terminalId: payload.terminalId,
+      reason: "activity",
+      actorId,
+    });
+    return {
+      ...payload,
+      eventId: event.eventId,
+      recordedActivity: true,
+    };
+  }
+
+  private finalizeAwaitResult(
+    payload: TerminalAwaitResult,
+    actorId: TerminalActorId | undefined,
+    recordActivity: boolean,
+  ): TerminalAwaitResult {
+    if (!recordActivity) {
+      return {
+        ...payload,
+        recordedActivity: false,
+      };
+    }
+    return this.attachAwaitEvent(payload, actorId);
   }
 
   private finalizeReadResult(

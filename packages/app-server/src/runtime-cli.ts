@@ -145,6 +145,7 @@ const callRuntimeApi = async <TResult>(input: {
   privateKey: string;
   route: string;
   body?: unknown;
+  signal?: AbortSignal;
 }): Promise<TResult> => {
   const response = await fetch(`${input.baseUrl}${input.route}`, {
     method: "POST",
@@ -153,6 +154,7 @@ const callRuntimeApi = async <TResult>(input: {
       "x-agenter-principal-key": input.privateKey,
     },
     body: JSON.stringify(input.body ?? {}),
+    signal: input.signal,
   });
   const payload = (await response.json()) as { ok: boolean; error?: string } & Record<string, unknown>;
   if (!response.ok || payload.ok !== true) {
@@ -228,6 +230,7 @@ const createRuntimeNamespaceCommand = (input: {
             privateKey: input.privateKey,
             route: descriptor.route,
             body,
+            signal: ctx.signal,
           }),
         ),
         stderr: "",

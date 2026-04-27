@@ -16,9 +16,10 @@ Quick start:
 6. Decide whether the next payload is `raw` or `mixed`.
 7. If the exact payload shape is unclear, run `terminal write --help` or `terminal input --help` first.
 8. Run `terminal write` for literal raw bytes, or `terminal input` for mixed DSL.
-9. Run `terminal read` only to inspect or recover terminal state.
-10. Run `terminal set-config` when the durable terminal identity is correct but launch truth needs to change for the next bootstrap.
-11. Run `terminal stop` when you want to halt the PTY but keep the durable terminal identity for later bootstrap.
+9. Run `terminal await` when you need to wait for bounded evidence such as output change, idle state, or a deterministic text match.
+10. Run `terminal read` only for immediate inspection or recovery of current terminal state.
+11. Run `terminal set-config` when the durable terminal identity is correct but launch truth needs to change for the next bootstrap.
+12. Run `terminal stop` when you want to halt the PTY but keep the durable terminal identity for later bootstrap.
 
 Key laws:
 - A runtime does not start with a terminal by default.
@@ -30,6 +31,9 @@ Key laws:
 - Stopped or provisioned terminals do not auto-start when you read or write. Use `terminal bootstrap` explicitly.
 - `terminal read` consumes this actor's read cursor. Other actors keep independent cursors on the same shared terminal output.
 - Use `terminal read` deliberately: `remark:false` inspects without advancing your cursor, while normal reads advance only your actor's cursor.
+- `terminal await` is the bounded observation primitive. Use it instead of reconstructing waits with shell `sleep`, repeated `terminal read`, and `grep`.
+- `terminal await` returns clean bounded snapshot lines and match context from the terminal canvas. Those lines are evidence of the stable screen state, not raw ANSI bytes or PTY transition chunks.
+- Prefer `terminal await`'s command-level `wait.timeoutMs` for post-mortem evidence. Shell-level `timeout` may still cancel the command, but it can prevent the JSON result from reaching you.
 - `lifecycleTransition` is a coordination lock, not a work item. If it is `bootstrapping` or `killing`, wait and reread `terminal list` or `terminal get-config` before sending another lifecycle or config mutation.
 - `terminal get-config` is the durable launch/config inspection surface. Use it for `command`, `launchCwd`, geometry, metadata, and other next-bootstrap truth.
 - `terminal set-config` patches durable launch/config truth without changing the terminal id.
@@ -46,16 +50,16 @@ Key laws:
 - When the task already names the workspace and delivery target, the normal next move is to create or recover the terminal, not to browse unrelated room or attention detail first.
 - If a one-shot shell hits binding or sandbox errors while you are trying to make a service reachable, stop and switch to `terminal`.
 - When more than one workspace is mounted, choose an explicit absolute `cwd`.
-- `terminal create`, `terminal write`, and `terminal read` are JSON-first commands. Through `root_bash`, default to `command=<bare terminal action>` plus JSON `stdin`.
+- `terminal create`, `terminal write`, `terminal await`, and `terminal read` are JSON-first commands. Through `root_bash`, default to `command=<bare terminal action>` plus JSON `stdin`.
 - Only use a single argv JSON payload when it is trivially short and clearly cheaper in tokens than a separate `stdin` field.
-- If `terminal create --help`, `terminal write --help`, `terminal input --help`, or `terminal read --help` marks compact as `Suggested` or `Available`, the matching command also accepts `--compact` positional arrays. If the positional array becomes unclear, go straight back to standard object JSON.
+- If `terminal create --help`, `terminal write --help`, `terminal input --help`, `terminal await --help`, or `terminal read --help` marks compact as `Suggested` or `Available`, the matching command also accepts `--compact` positional arrays. If the positional array becomes unclear, go straight back to standard object JSON.
 - If raw vs mixed choice is unclear, read `references/input-modes.md` before guessing.
 - If `terminal write --help` or `terminal input --help` still is not enough, run `skill info agenter-terminal`, derive the real skill directory, and read only the reference file you need.
 - If the durable launch truth is unclear, read `references/terminal-config.md` before guessing.
 - For multi-line writes, nested JSON, or heredoc-heavy payloads, the next file to open is `references/file-writing.md`.
 
 References:
-- `references/terminal-lifecycle.md`: create/recover/bootstrap/read/write/stop strategy and recovery patterns
+- `references/terminal-lifecycle.md`: create/recover/bootstrap/await/read/write/stop strategy and recovery patterns
 - `references/terminal-config.md`: durable launch/config inspection and mutation rules
 - `references/input-modes.md`: when to use raw vs mixed, and how `<raw>...</raw>` works
 - `references/file-writing.md`: safe patterns for sending multi-line file writes through terminal raw/mixed input

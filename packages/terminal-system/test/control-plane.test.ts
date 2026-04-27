@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { TerminalControlPlane, type TerminalTransportServerMessage } from "../src";
+import { TerminalControlPlane, type ManagedTerminal, type TerminalTransportServerMessage } from "../src";
 
 const workspaces: string[] = [];
 
@@ -450,6 +450,207 @@ describe("Feature: terminal control plane", () => {
         limit: 10,
       }).items,
     ).toHaveLength(1);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given terminal await match absent idle changed timeout and stopped flows When awaiting snapshots Then bounded evidence is returned", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "await-flows" });
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "ready line\n",
+    });
+    await Bun.sleep(120);
+
+    const matched = await plane.awaitAuthorized({
+      terminalId: created.terminalId,
+      wait: { until: "match", timeoutMs: 1_000, idleMs: 0 },
+      match: { pattern: "ready", contextLines: 1 },
+      view: { lines: 5 },
+      recordActivity: false,
+    });
+    expect(matched.outcome).toBe("matched");
+    expect(matched.snapshot.lines.join("\n")).toContain("ready line");
+    expect(matched.match?.matches[0]?.text).toContain("ready line");
+
+    const absent = await plane.awaitAuthorized({
+      terminalId: created.terminalId,
+      wait: { until: "absent", timeoutMs: 1_000, idleMs: 0 },
+      match: { pattern: "Loading forever" },
+      recordActivity: false,
+    });
+    expect(absent.outcome).toBe("absent");
+
+    const idle = await plane.awaitAuthorized({
+      terminalId: created.terminalId,
+      wait: { until: "idle", timeoutMs: 3_000, idleMs: 0 },
+      recordActivity: false,
+    });
+    expect(idle.outcome).toBe("idle");
+    expect(idle.status).toBe("IDLE");
+
+    const changedPromise = plane.awaitAuthorized({
+      terminalId: created.terminalId,
+      wait: {
+        until: "changed",
+        fromHash: plane.getHeadHash(created.terminalId),
+        timeoutMs: 2_000,
+        idleMs: 0,
+      },
+      view: { lines: 5 },
+      recordActivity: false,
+    });
+    await Bun.sleep(20);
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "changed line\n",
+    });
+    const changed = await changedPromise;
+    expect(changed.outcome).toBe("changed");
+    expect(changed.snapshot.lines.join("\n")).toContain("changed line");
+
+    const timeout = await plane.awaitAuthorized({
+      terminalId: created.terminalId,
+      wait: { until: "match", timeoutMs: 25, idleMs: 0 },
+      match: { pattern: "never appears" },
+      recordActivity: false,
+    });
+    expect(timeout.outcome).toBe("timeout");
+    expect(timeout.snapshot.lines.join("\n")).toContain("ready line");
+
+    const stoppedPromise = plane.awaitAuthorized({
+      terminalId: created.terminalId,
+      wait: { until: "match", timeoutMs: 2_000, idleMs: 0 },
+      match: { pattern: "still waiting" },
+      recordActivity: false,
+    });
+    await Bun.sleep(20);
+    await plane.stop(created.terminalId);
+    const stopped = await stoppedPromise;
+    expect(stopped.outcome).toBe("stopped");
+    expect(stopped.running).toBe(false);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given terminal await activity controls When await records and then probes silently Then only the explicit observation is persisted", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:owner", true);
+    const created = await plane.create({
+      terminalId: "await-activity",
+      bootstrapActorId: "session:owner",
+      bootstrapRole: "admin",
+    });
+
+    await plane.write({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      text: "await activity line\n",
+    });
+    await Bun.sleep(120);
+
+    const recorded = await plane.awaitAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      wait: { until: "match", timeoutMs: 1_000, idleMs: 0 },
+      match: { pattern: "await activity" },
+    });
+
+    expect(recorded.eventId).toBeDefined();
+    expect(recorded.recordedActivity).toBe(true);
+    const initialItems = plane.pageEventsAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      limit: 10,
+    }).items;
+    expect(initialItems.some((item) => item.payload.title === "Terminal await")).toBe(true);
+
+    await plane.awaitAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      wait: { until: "match", timeoutMs: 1_000, idleMs: 0 },
+      match: { pattern: "await activity" },
+      recordActivity: false,
+    });
+    const afterProbeItems = plane.pageEventsAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:owner",
+      limit: 10,
+    }).items;
+    expect(afterProbeItems).toHaveLength(initialItems.length);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given terminal await cancellation When the abort signal fires Then waiters listeners and timers are released", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "await-cancel" });
+    const managed = plane.getManagedTerminal(created.terminalId);
+    if (!managed) {
+      throw new Error("expected managed terminal");
+    }
+
+    let activeSnapshotListeners = 0;
+    let activeStatusListeners = 0;
+    let activeCommitWaiters = 0;
+    const originalOnSnapshot = managed.onSnapshot.bind(managed);
+    const originalOnStatus = managed.onStatus.bind(managed);
+    const originalWaitCommitted = managed.waitCommitted.bind(managed);
+
+    managed.onSnapshot = ((listener) => {
+      activeSnapshotListeners += 1;
+      const release = originalOnSnapshot(listener);
+      return () => {
+        activeSnapshotListeners -= 1;
+        release();
+      };
+    }) satisfies ManagedTerminal["onSnapshot"];
+    managed.onStatus = ((listener) => {
+      activeStatusListeners += 1;
+      const release = originalOnStatus(listener);
+      return () => {
+        activeStatusListeners -= 1;
+        release();
+      };
+    }) satisfies ManagedTerminal["onStatus"];
+    managed.waitCommitted = ((input) => {
+      activeCommitWaiters += 1;
+      const handle = originalWaitCommitted(input);
+      return {
+        promise: handle.promise,
+        reject: (reason) => {
+          activeCommitWaiters -= 1;
+          handle.reject(reason);
+        },
+      };
+    }) satisfies ManagedTerminal["waitCommitted"];
+
+    const abort = new AbortController();
+    const waiting = plane.awaitAuthorized({
+      terminalId: created.terminalId,
+      wait: {
+        until: "changed",
+        fromHash: plane.getHeadHash(created.terminalId),
+        timeoutMs: 5_000,
+        idleMs: 0,
+      },
+      signal: abort.signal,
+      recordActivity: false,
+    });
+    await Bun.sleep(20);
+    expect(activeSnapshotListeners).toBe(1);
+    expect(activeStatusListeners).toBe(1);
+    expect(activeCommitWaiters).toBe(1);
+
+    abort.abort();
+    const result = await waiting;
+
+    expect(result.outcome).toBe("cancelled");
+    expect(activeSnapshotListeners).toBe(0);
+    expect(activeStatusListeners).toBe(0);
+    expect(activeCommitWaiters).toBe(0);
 
     await plane.dispose();
   });

@@ -239,6 +239,11 @@ const createTerminalGateway = () => {
         return { ok: true, message: "written" };
       },
       read: async (_input: { terminalId: string; mode?: "auto" | "diff" | "snapshot" }) => ({ ok: true }),
+      await: async (_input: { terminalId: string }) => ({
+        kind: "terminal-await",
+        terminalId: "iflow",
+        outcome: "matched",
+      }),
       snapshot: async (_input: { terminalId: string }) => ({ ok: true }),
       getConfig: async () => ({ transport: { port: 4100 } }),
       setConfig: async (_input: {
@@ -706,6 +711,12 @@ const createRuntimeLocalHandlers = (input: {
       throw new Error("terminal gateway not configured");
     }
     return await input.terminalGateway.read(request);
+  },
+  terminalAwait: async (request) => {
+    if (!input.terminalGateway) {
+      throw new Error("terminal gateway not configured");
+    }
+    return await input.terminalGateway.await(request);
   },
   terminalWrite: async (request) => {
     if (!input.terminalGateway) {
@@ -3695,6 +3706,7 @@ describe("Feature: AgenterAI behavior", () => {
       },
       input: async (_input) => ({ ok: true, message: "written" }),
       read: async (_input) => ({ ok: true }),
+      await: async (_input) => ({ kind: "terminal-await", terminalId: "iflow", outcome: "matched" }),
       snapshot: async (_input) => ({ ok: true }),
       getConfig: async () => ({ transport: { port: 4100 } }),
       setConfig: async (_input) => ({ transport: { port: 4100 } }),

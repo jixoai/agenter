@@ -97,11 +97,12 @@ const createRuntimeCommand = (
   return command;
 };
 
-const createCommandContext = (stdin = "") => ({
+const createCommandContext = (stdin = "", signal?: AbortSignal) => ({
   fs: new InMemoryFs(),
   cwd: "/",
   env: new Map(),
   stdin,
+  signal,
 });
 
 describe("Feature: runtime descriptor CLI", () => {
@@ -304,6 +305,69 @@ describe("Feature: runtime descriptor CLI", () => {
       terminalId: "term-1",
       mode: "auto",
       remark: false,
+      recordActivity: false,
+    });
+  });
+
+  test("Scenario: Given JSON stdin When terminal await runs Then the CLI posts the bounded observation payload", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/terminal/await": {
+        result: {
+          kind: "terminal-await",
+          terminalId: "term-1",
+          outcome: "matched",
+          snapshot: {
+            lines: ["ready"],
+          },
+        },
+      },
+    });
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const result = await terminal.execute(
+      ["await"],
+      createCommandContext(
+        JSON.stringify({
+          terminalId: "term-1",
+          wait: {
+            until: "match",
+            timeoutMs: 60_000,
+            idleMs: 1_000,
+          },
+          match: {
+            pattern: "ready|error",
+            regex: true,
+            caseInsensitive: true,
+            contextLines: 2,
+          },
+          view: {
+            type: "tail",
+            lines: 80,
+          },
+          recordActivity: false,
+        }),
+      ),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('"outcome": "matched"');
+    expect(api.getLastRequest()?.body).toEqual({
+      terminalId: "term-1",
+      wait: {
+        until: "match",
+        timeoutMs: 60_000,
+        idleMs: 1_000,
+      },
+      match: {
+        pattern: "ready|error",
+        regex: true,
+        caseInsensitive: true,
+        contextLines: 2,
+      },
+      view: {
+        type: "tail",
+        lines: 80,
+      },
       recordActivity: false,
     });
   });
@@ -643,6 +707,69 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("[2] recordActivity?: boolean");
     expect(result.stdout).toContain("[3] remark?: boolean");
     expect(api.getRequests()).toHaveLength(0);
+  });
+
+  test("Scenario: Given descriptor help probe When terminal await --help runs Then schema-backed bounded observation help is returned locally", async () => {
+    const api = await startMockRuntimeApi();
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const awaitHelp = await terminal.execute(["await", "--help"], createCommandContext());
+    const readHelp = await terminal.execute(["read", "--help"], createCommandContext());
+
+    expect(awaitHelp.exitCode).toBe(0);
+    expect(awaitHelp.stdout).toContain("Wait for bounded terminal evidence");
+    expect(awaitHelp.stdout).toContain('"wait"');
+    expect(awaitHelp.stdout).toContain('"match"');
+    expect(awaitHelp.stdout).toContain('"view"');
+    expect(awaitHelp.stdout).toContain('"timeoutMs"');
+    expect(awaitHelp.stdout).toContain('"idleMs"');
+    expect(awaitHelp.stdout).toContain("stable clean snapshot lines");
+    expect(awaitHelp.stdout).toContain("Shell-level timeout may cancel");
+    expect(readHelp.stdout).not.toContain('"wait"');
+    expect(readHelp.stdout).not.toContain('"timeoutMs"');
+    expect(api.getRequests()).toHaveLength(0);
+  });
+
+  test("Scenario: Given a shell abort signal When terminal await is in flight Then the CLI cancels the runtime request", async () => {
+    let requestClosed = false;
+    const server = createServer((request, _response) => {
+      request.resume();
+      request.once("close", () => {
+        requestClosed = true;
+      });
+    });
+    openServers.push(server);
+    await new Promise<void>((resolveReady, rejectReady) => {
+      server.once("error", rejectReady);
+      server.listen(0, "127.0.0.1", () => resolveReady());
+    });
+    const address = server.address();
+    if (!address || typeof address !== "object") {
+      throw new Error("expected mock runtime api address");
+    }
+    const terminal = createRuntimeCommand(`http://127.0.0.1:${address.port}`, "terminal");
+    const abort = new AbortController();
+
+    const pending = terminal.execute(
+      ["await"],
+      createCommandContext(
+        JSON.stringify({
+          terminalId: "term-1",
+          wait: {
+            until: "changed",
+            timeoutMs: 60_000,
+          },
+        }),
+        abort.signal,
+      ),
+    );
+    await Bun.sleep(20);
+    abort.abort();
+    const result = await pending;
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr.toLowerCase()).toContain("abort");
+    expect(requestClosed).toBe(true);
   });
 
   test("Scenario: Given descriptor lifecycle help probes When terminal create bootstrap and set-config help run Then the CLI teaches auto-bootstrap transition waiting and config patch law locally", async () => {

@@ -10,8 +10,9 @@ Typical flow:
 4. If `processPhase` is `not_started` or `stopped`, run `terminal bootstrap`
 5. Decide whether the next payload is raw or mixed
 6. Run `terminal write` or `terminal input` with JSON `stdin`
-7. Run `terminal read` with JSON `stdin`
-8. Run `terminal stop` when you want to halt the PTY without deleting that terminal's durable identity
+7. Run `terminal await` with JSON `stdin` when you need bounded wait-for-evidence.
+8. Run `terminal read` with JSON `stdin` when you need immediate inspection.
+9. Run `terminal stop` when you want to halt the PTY without deleting that terminal's durable identity
 
 Rules:
 
@@ -21,6 +22,10 @@ Rules:
 - if `lifecycleTransition` is `bootstrapping` or `killing`, wait and reread instead of stacking another lifecycle mutation
 - `terminal read`, `terminal write`, and `terminal input` do not auto-start stopped terminals; use `terminal bootstrap` explicitly
 - use `terminal read` after launching a process to inspect its actual state
+- use `terminal await` instead of shell `sleep`, repeated `terminal read`, and `grep` when the next step depends on output change, idle state, or deterministic text evidence
+- `terminal await` matches stable clean snapshot lines from the terminal canvas, not raw ANSI bytes or append-only PTY chunks
+- `terminal await` returns bounded snapshot lines and match context, so do not immediately run a second read just to see the same evidence
+- prefer `terminal await`'s command-level `wait.timeoutMs`; external shell `timeout` can still cancel the command before post-mortem JSON is delivered
 - `terminal read` consumes only your actor read cursor; other actors keep independent read progress for the same shared terminal output
 - use `remark:false` only when you need non-consuming inspection, not when you are claiming that you handled the current output
 - `terminal stop` halts the PTY while preserving the terminal record for later bootstrap

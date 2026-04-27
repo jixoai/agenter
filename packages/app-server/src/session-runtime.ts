@@ -64,6 +64,8 @@ import {
 } from "@agenter/task-system";
 import {
   TerminalControlPlane,
+  type TerminalAwaitInput,
+  type TerminalAwaitResult as ControlPlaneTerminalAwaitResult,
   type TerminalReadResult as ControlPlaneTerminalReadResult,
   type TerminalActorId,
   type TerminalControlPlaneConfig,
@@ -3114,6 +3116,32 @@ export class SessionRuntime {
     });
   }
 
+  async awaitRuntimeTerminal(
+    input: Omit<TerminalAwaitInput, "actorId" | "accessToken" | "superadminActorId">,
+  ): Promise<ControlPlaneTerminalAwaitResult> {
+    const controlPlane = this.requireTerminalControlPlane();
+    if (!controlPlane.has(input.terminalId)) {
+      throw new Error(`unknown terminal: ${input.terminalId}`);
+    }
+    const result = await controlPlane.awaitAuthorized({
+      ...input,
+      actorId: this.terminalActorId,
+    });
+    if (result.recordedActivity) {
+      this.appendTerminalActivity({
+        terminalId: input.terminalId,
+        kind: "terminal_read",
+        cycleId: this.activeCycleId,
+        title: "Terminal await",
+        content: result.eventId ? "" : JSON.stringify(result),
+        detail: result.eventId
+          ? this.createTerminalActivityRefDetail(input.terminalId, result.eventId, "terminal_read")
+          : result,
+      });
+    }
+    return result;
+  }
+
   async writeRuntimeTerminal(input: { terminalId: string; text: string }): Promise<{ ok: boolean; message: string }> {
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(input.terminalId)) {
@@ -3947,6 +3975,11 @@ export class SessionRuntime {
         terminalSetConfig: async (input) =>
           projectRuntimeTerminalConfigMutation(this.setRuntimeTerminalConfig(input)),
         terminalRead: async (input) => await this.readRuntimeTerminal(input),
+        terminalAwait: async (input, context) =>
+          await this.awaitRuntimeTerminal({
+            ...input,
+            signal: context?.signal,
+          }),
         terminalWrite: async (input) => await this.writeRuntimeTerminal(input),
         terminalInput: async (input) => await this.inputRuntimeTerminal(input),
         terminalFocus: async (input) => await this.focusRuntimeTerminals(input),

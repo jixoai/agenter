@@ -99,6 +99,29 @@ export interface RuntimeLocalApiHandlers {
     recordActivity?: boolean;
     remark?: boolean;
   }) => Promise<unknown>;
+  terminalAwait: (
+    input: {
+      terminalId: string;
+      wait?: {
+        until?: "changed" | "idle" | "match" | "absent";
+        fromHash?: string | null;
+        timeoutMs?: number;
+        idleMs?: number;
+      };
+      match?: {
+        pattern: string;
+        regex?: boolean;
+        caseInsensitive?: boolean;
+        contextLines?: number;
+      };
+      view?: {
+        type?: "tail";
+        lines?: number;
+      };
+      recordActivity?: boolean;
+    },
+    context?: RuntimeToolHandlerContext,
+  ) => Promise<unknown>;
   terminalWrite: (input: {
     terminalId: string;
     text: string;
@@ -151,6 +174,10 @@ export type RuntimeToolNamespace = "attention" | "message" | "workspace" | "term
 
 type RuntimeToolResult = Record<string, unknown>;
 
+export interface RuntimeToolHandlerContext {
+  signal?: AbortSignal;
+}
+
 type RuntimeToolExample =
   | {
       kind: "none";
@@ -181,7 +208,11 @@ export interface RuntimeToolDescriptor<TInput extends ZodTypeAny = ZodTypeAny> {
   helpNotes?: readonly string[];
   inputSchema: TInput;
   examples: readonly RuntimeToolExample[];
-  handler: (input: z.output<TInput>, handlers: RuntimeLocalApiHandlers) => Promise<RuntimeToolResult> | RuntimeToolResult;
+  handler: (
+    input: z.output<TInput>,
+    handlers: RuntimeLocalApiHandlers,
+    context?: RuntimeToolHandlerContext,
+  ) => Promise<RuntimeToolResult> | RuntimeToolResult;
 }
 
 export type RuntimeToolCliInputMode = "object" | "compact";
@@ -314,6 +345,33 @@ const terminalReadSchema = z.object({
   mode: z.enum(["auto", "diff", "snapshot"]).optional(),
   recordActivity: z.boolean().optional(),
   remark: z.boolean().optional(),
+});
+
+const terminalAwaitSchema = z.object({
+  terminalId: z.string(),
+  wait: z
+    .object({
+      until: z.enum(["changed", "idle", "match", "absent"]).optional(),
+      fromHash: z.string().nullable().optional(),
+      timeoutMs: z.number().int().min(0).max(600_000).optional(),
+      idleMs: z.number().int().min(0).max(30_000).optional(),
+    })
+    .optional(),
+  match: z
+    .object({
+      pattern: z.string().min(1),
+      regex: z.boolean().optional(),
+      caseInsensitive: z.boolean().optional(),
+      contextLines: z.number().int().min(0).max(10).optional(),
+    })
+    .optional(),
+  view: z
+    .object({
+      type: z.literal("tail").optional(),
+      lines: z.number().int().min(1).max(500).optional(),
+    })
+    .optional(),
+  recordActivity: z.boolean().optional(),
 });
 
 const terminalWriteSchema = z.object({
@@ -861,6 +919,46 @@ export const runtimeToolDescriptors = [
     ],
     handler: async (input, handlers) => ({
       result: await handlers.terminalRead(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "terminal",
+    name: "await",
+    route: "/v1/terminal/await",
+    description:
+      "Wait for bounded terminal evidence over stable clean snapshot lines, then return structured post-mortem evidence.",
+    helpNotes: [
+      "`terminal await` is for long-running bounded observation. Use `terminal read` only for immediate inspection.",
+      "Matching is evaluated against stable clean snapshot lines from the terminal canvas, not raw ANSI or PTY bytes.",
+      "Use command-level `wait.timeoutMs` so timeout returns post-mortem evidence. Shell-level timeout may cancel the command before JSON can be delivered.",
+      "Set `recordActivity:false` for pure probes that should not append terminal activity.",
+    ],
+    inputSchema: terminalAwaitSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          terminalId: "term-1",
+          wait: {
+            until: "match",
+            timeoutMs: 60_000,
+            idleMs: 1_000,
+          },
+          match: {
+            pattern: "ready|error|permission",
+            regex: true,
+            caseInsensitive: true,
+            contextLines: 2,
+          },
+          view: {
+            type: "tail",
+            lines: 80,
+          },
+        },
+      },
+    ],
+    handler: async (input, handlers, context) => ({
+      result: await handlers.terminalAwait(input, context),
     }),
   }),
   defineRuntimeToolDescriptor({

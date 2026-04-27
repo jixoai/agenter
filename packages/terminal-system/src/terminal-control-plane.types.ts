@@ -10,6 +10,8 @@ import type {
 
 export type TerminalFocusOp = "add" | "remove" | "replace" | "clear";
 export type TerminalReadMode = "auto" | "diff" | "snapshot";
+export type TerminalAwaitUntil = "changed" | "idle" | "match" | "absent";
+export type TerminalAwaitOutcome = "changed" | "idle" | "matched" | "absent" | "timeout" | "stopped" | "cancelled";
 export type TerminalGrantRole = "admin" | "writer" | "requester" | "readonly";
 export type TerminalApprovalStatus = "pending" | "approved" | "denied" | "expired";
 export type TerminalRendererEngine = "xterm";
@@ -135,6 +137,82 @@ export interface TerminalReadResult {
     toHash: string | null;
     consumed: boolean;
   };
+}
+
+export interface TerminalAwaitWaitOptions {
+  until?: TerminalAwaitUntil;
+  fromHash?: string | null;
+  timeoutMs?: number;
+  idleMs?: number;
+}
+
+export interface TerminalAwaitMatchOptions {
+  pattern: string;
+  regex?: boolean;
+  caseInsensitive?: boolean;
+  contextLines?: number;
+}
+
+export interface TerminalAwaitViewOptions {
+  type?: "tail";
+  lines?: number;
+}
+
+export interface TerminalAwaitInput {
+  terminalId: string;
+  wait?: TerminalAwaitWaitOptions;
+  match?: TerminalAwaitMatchOptions;
+  view?: TerminalAwaitViewOptions;
+  recordActivity?: boolean;
+  actorId?: TerminalActorId;
+  accessToken?: string;
+  superadminActorId?: TerminalActorId;
+  signal?: AbortSignal;
+}
+
+export interface TerminalAwaitMatchEvidence {
+  lineIndex: number;
+  text: string;
+  matchedText: string;
+  contextLines: string[];
+}
+
+export interface TerminalAwaitResult {
+  kind: "terminal-await";
+  terminalId: string;
+  outcome: TerminalAwaitOutcome;
+  eventId?: number;
+  recordedActivity?: boolean;
+  waitedMs: number;
+  fromHash: string | null;
+  toHash: string | null;
+  seq: number;
+  cols: number;
+  rows: number;
+  cursor: { x: number; y: number };
+  snapshot: {
+    seq: number;
+    timestamp: number;
+    cols: number;
+    rows: number;
+    cursor: { x: number; y: number };
+    lines: string[];
+  };
+  match?: {
+    matched: boolean;
+    pattern?: string;
+    regex?: boolean;
+    caseInsensitive?: boolean;
+    matches: TerminalAwaitMatchEvidence[];
+  };
+  status: "IDLE" | "BUSY";
+  processPhase: TerminalProcessPhase;
+  lifecycleTransition?: TerminalLifecycleTransition | null;
+  title?: string;
+  configuredTitle?: string;
+  currentTitle?: string;
+  currentPath?: string;
+  running?: boolean;
 }
 
 export interface TerminalTransportEndpoint {
