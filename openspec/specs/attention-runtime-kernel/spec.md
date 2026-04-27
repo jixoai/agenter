@@ -39,6 +39,13 @@ The runtime SHALL host a standalone LoopBus kernel that normalizes adapter-suppl
 - **THEN** the kernel treats that round as valid progress even if the processor returns no `toUser`, `terminal`, or `tools` payloads
 - **AND** projection layers derive user-visible updates from persisted facts instead of core response outputs
 
+#### Scenario: Tool-result boundaries commit interleaved inputs through one API
+- **WHEN** a provider tool-result boundary creates an opportunity to include newly arrived user, message, terminal, task, or plugin facts in the same model loop
+- **THEN** hooks receive an explicit context with a commit API such as `ctx.commitAttentionItems()`
+- **AND** hooks do not return model messages or attention payloads as a side channel
+- **AND** the commit API drains source adapters, commits AttentionSystem items, updates source consume/read-ack truth, records trace facts, and stages the model-facing projection as one boundary
+- **AND** the synchronous provider loop strategy only consumes the staged projection for the next continuation request
+
 ### Requirement: Systems SHALL reinforce expected follow-up behavior through committed attention items
 When a system observes a new fact or a missing follow-up that the AI must still handle, that system SHALL express the obligation through committed attention items instead of adding source-specific hidden branches to the runtime core. The owning system's skill guidance SHALL explain how the AI should interpret and resolve those items.
 

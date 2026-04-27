@@ -39,6 +39,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Attention durable fact 必须显式分层为 provenance / body 两个平面：`meta` 只描述来源，`summary + change` 承载 AI 可见内容；可见外部效果必须走显式 system mutation 或 dispatch/receipt 事实，不得再把 reply target、私有 blob、快捷动作塞回 metadata。
 - LoopBus / source adapter 的 transport metadata 只允许承载调度、协议、持久化回溯所需的 facts；AI 需要理解的内容必须进 attention body 或 typed tool/query，不能靠 hidden metadata side channel。
 - LoopBus built-in source ref / read result contract 必须保持 protocol-native `src` law：message / terminal / task 都通过各自 namespace 的 typed `src` 寻址；message namespace 至少支持 room-scope `msg:<chatId>` 与 row-scope `msg:<chatId>/<messageId>`，其中可读的 room message source ref 仍使用 row-scope 形态；不得重新打开 `meta` 逃逸口。
+- 同轮 tool-result 边界的追加输入必须通过统一 attention commit API 完成：hook 只暴露“现在可 commit”的时机与 `ctx.commit...()` 能力，不得通过 hook return、provider adapter 私有字段或其它额外渠道把 user/attention payload 直接塞进模型请求；MessageRoom read ack、Terminal/Task consume 标记、trace 与 projection 必须和该 commit 同步发生。
 - WebUI actor-private preference persistence 属于独立的 auth-scoped KV plane，而不是 settings graph、runtime snapshot 或 runtime event stream 的附属字段；后端只理解 opaque key + `keys[] | prefix` filter，不理解 avatar/workspace 等业务 scope。
 - WebUI 中需要 resume / discard / complete lifecycle 的长寿命 create/edit draft 不得退化成 opaque KV；它们必须升级为 auth-scoped typed draft resources，并与 device-local workbench tabs 解耦。
 - WebUI 的用户可见滚动所有权必须统一委托给共享 scroll primitive：标准 surface 走 `ScrollView`，bottom-anchored conversation / timeline surface 走 `BottomAnchoredTimeline`；feature code 不得再直接以 raw `overflow-auto/scroll` 充当主滚动 owner。
@@ -50,6 +51,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Attention search 的默认面向未完成工作，但显式 `score/hash` 查询属于历史事实定位：普通文本默认 active-only，`score:` / `hash:` 若未显式提供 `minscore`，默认应包含历史提交。
 - Cancellation、stop、abort、timeout 必须共享同一套显式语义，并持久化为事实。
 - Provider 请求保持纯度。HTTP/model body 只表达真实 provider 参数；调度、cycle、trace identity 等运行事实只能进入 `ai_call.requestBody.meta` 与 runtime publication contract，不能重新落回独立 `session_cycle` 或 session-db telemetry 表。
+- provider continuation 可以在 TanStack/adapter 的同步 loop strategy 中追加已提交 attention projection，但该 strategy 只能消费已经由统一 commit API 产出的 projection，不能在同步 provider loop 内执行 source drain、read ack 或 attention commit。
 - LoopBus 的模型表面必须保持极小：稳定 attention law、attention-backed `skills.list` 摘要、以及 `workspace_list` / `root_bash` / `workspace_bash` 三个显式 workspace 原语。message / workspace / terminal / future systems 的操作统一经由 runtime-local CLI/API 自助发现，不再直接注入成 model tools。
 - runtime-local CLI/API 的 tool surface 必须遵守单一信源：`attention` / `message` / `workspace` / `terminal` 的 route、description、`inputSchema`、`--help` 与 canonical examples 都由共享 descriptor registry 派生；AI-facing shell 不再接受 positional/natural-form 参数，只接受空输入、单个 JSON argv 或 JSON stdin，且当前唯一的特殊非 JSON 标记就是 `--help`。
 - skill system 也是 attention-first 平台原子：它的 durable truth 来自 on-disk skill files，默认 live truth 只观察 `SKILL.md + ccski.config.json`，额外 watched files 只能由 skill 自己声明；skill 变更通过 attention reminder 发布，而不是重新回流到 prompt glue。

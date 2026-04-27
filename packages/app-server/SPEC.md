@@ -52,6 +52,8 @@
 - LoopBus transport metadata 只允许表达调度、协议、refs、compact/wake/debug 之类 orchestration facts，不得成为 AI-visible payload 的隐藏通道。
 - built-in LoopBus source ref/read result contract 必须保持 protocol-native `src` typed：message namespace 同时支持 room-scope `msg:<chatId>` 与 row-scope `msg:<chatId>/<messageId>`，其中真正可读的 room message source ref 仍使用 row-scope；terminal 用 `tty:<terminalId>/<eventId?>`，task 用 `task:<subjectId>`；不得重新引入 `LoopSourceRef.meta` 或 `LoopSourceReadResult.meta` 这类开放逃逸口。
 - source adapter 如果需要给模型更多上下文，必须在 `AttentionDraft.presentation` 或最终 `summary + change` 中补足，而不是把信息塞进 source ref/read result metadata。
+- tool-result 边界的 interleaved attention 提交必须走同一个 runtime commit API：`onCanCommitAttentionItems(ctx)` 只能调用 `ctx.commitAttentionItems()` 这类直接接口，不能通过 return payload 绕开 runtime；MessageRoom unread read ack、adapter consume 标记、AttentionSystem commit、projection staging 与 trace/ledger 更新属于同一次提交边界。
+- ModelClient 的 provider loop strategy 只允许同步消费已经 staged 的 committed attention projection，并把它追加到下一次 continuation request；它不得直接 drain MessageRoom/Terminal/Task，也不得执行 attention commit 或 read ack。
 - message attention body 必须直接携带 room social envelope、latest-message perspective、以及附件 facts；terminal / task 也必须各自通过自己的 presentation builder 提供足够的 AI-visible detail。
 - focused terminal source observations 默认只保留为 queryable attention history；只有显式 scored 的 terminal event（例如 background `terminal_idle_ready`）才继续形成 unresolved debt。
 - real-provider backend 验收至少要能证明：同一 session 在 room-visible 交付之后，经过 `session.stop -> kernel cold restart -> session.start` 仍能靠磁盘事实继续工作，而不是依赖残留内存对象。

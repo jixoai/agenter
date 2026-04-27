@@ -71,6 +71,12 @@ The session durable store SHALL persist every model invocation as one `ai_call` 
 - **THEN** the runtime updates the same `ai_call` row in place with the latest `response_body`
 - **THEN** the row is marked complete only when the provider stream or terminal outcome finishes
 
+#### Scenario: Continuation request body records committed interleaved projection
+- **WHEN** a provider loop appends committed attention projection at a tool-result continuation boundary
+- **THEN** the final `ai_call.requestBody.messages` reflects the provider-visible continuation messages
+- **AND** the runtime does not preserve the earlier running request snapshot as the completed request body
+- **AND** scheduling, source-drain, read-ack, and trace facts remain outside the provider HTTP body except for explicit runtime metadata fields
+
 ### Requirement: AI-call retention SHALL keep only the current and previous prompt-window rounds
 
 The `ai_call` ledger SHALL retain only the current prompt-window round and the immediately previous round. Older `ai_call` rows SHALL be pruned when compaction rotates the bounded prompt-window memory.
@@ -167,4 +173,3 @@ Runtime settings saves that change effective model knobs SHALL create one durabl
 - **WHEN** a later AI call starts after that config fact was persisted
 - **THEN** the new `ai_call` links the durable config fact through `auxiliaryMessageIds`
 - **AND** query-time Heartbeat grouping can project that fact into the next `before-call` group without rewriting the stored row
-
