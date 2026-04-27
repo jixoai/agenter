@@ -3,14 +3,15 @@ import { describe, expect, test } from "vitest";
 import type { HeartbeatGroupItem, HeartbeatPartItem } from "@agenter/client-sdk";
 
 import {
-  buildHeartbeatDisplayGroups,
   buildHeartbeatDisplayBlocks,
+  buildHeartbeatDisplayGroups,
   buildHeartbeatSubjectSections,
   getHeartbeatRowMeta,
-  type HeartbeatSubjectSection,
   getHeartbeatSectionTimeMeta,
   getHeartbeatToolPreview,
+  type HeartbeatSubjectSection,
 } from "./runtime-heartbeat-parts";
+import { getHeartbeatToolVisualHint } from "./runtime-heartbeat-tool-visual-hints";
 
 const baseEntry: HeartbeatPartItem = {
   id: 1,
@@ -215,6 +216,220 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
     ).toBe("root · message send");
   });
 
+  test("Scenario: Given a shell command starts with sleep When tool visual hints are projected Then the hint captures only the sleep window", () => {
+    expect(
+      getHeartbeatToolVisualHint({
+        tool: "root_bash",
+        input: {
+          command: "sleep 5 && curl -s -o /dev/null http://127.0.0.1:8091/index.html",
+        },
+        startedAt: baseEntry.createdAt,
+      }),
+    ).toEqual({
+      kind: "shell-sleep",
+      startedAt: baseEntry.createdAt,
+      durationMs: 5_000,
+    });
+
+    expect(
+      getHeartbeatToolVisualHint({
+        tool: "root_bash",
+        input: { command: "sleep 0.5m; echo done" },
+        startedAt: baseEntry.createdAt,
+      }),
+    ).toEqual({
+      kind: "shell-sleep",
+      startedAt: baseEntry.createdAt,
+      durationMs: 30_000,
+    });
+  });
+
+  test("Scenario: Given sleep is not the leading shell command When tool visual hints are projected Then no visual hint is inferred", () => {
+    expect(
+      getHeartbeatToolVisualHint({
+        tool: "root_bash",
+        input: { command: "echo sleep 5" },
+        startedAt: baseEntry.createdAt,
+      }),
+    ).toBeNull();
+    expect(
+      getHeartbeatToolVisualHint({
+        tool: "root_bash",
+        input: { command: 'bash -lc "sleep 5"' },
+        startedAt: baseEntry.createdAt,
+      }),
+    ).toBeNull();
+  });
+
+  test("Scenario: Given a shell command starts with timeout When tool visual hints are projected Then the hint captures only the timeout budget", () => {
+    expect(
+      getHeartbeatToolVisualHint({
+        tool: "root_bash",
+        input: {
+          command: "timeout 30s curl -s -o /dev/null http://127.0.0.1:8091/index.html",
+        },
+        startedAt: baseEntry.createdAt,
+      }),
+    ).toEqual({
+      kind: "shell-timeout",
+      startedAt: baseEntry.createdAt,
+      durationMs: 30_000,
+    });
+
+    expect(
+      getHeartbeatToolVisualHint({
+        tool: "root_bash",
+        input: {
+          command: "timeout --foreground -k 5s 0.5m pnpm test",
+        },
+        startedAt: baseEntry.createdAt,
+      }),
+    ).toEqual({
+      kind: "shell-timeout",
+      startedAt: baseEntry.createdAt,
+      durationMs: 30_000,
+    });
+
+    expect(
+      getHeartbeatToolVisualHint({
+        tool: "root_bash",
+        input: {
+          command: "timeout --kill-after 5s --signal TERM 30s pnpm test",
+        },
+        startedAt: baseEntry.createdAt,
+      }),
+    ).toEqual({
+      kind: "shell-timeout",
+      startedAt: baseEntry.createdAt,
+      durationMs: 30_000,
+    });
+  });
+
+  test("Scenario: Given timeout is not the leading shell command When tool visual hints are projected Then no visual hint is inferred", () => {
+    expect(
+      getHeartbeatToolVisualHint({
+        tool: "root_bash",
+        input: { command: "echo timeout 30s" },
+        startedAt: baseEntry.createdAt,
+      }),
+    ).toBeNull();
+    expect(
+      getHeartbeatToolVisualHint({
+        tool: "root_bash",
+        input: { command: "timeout 30s" },
+        startedAt: baseEntry.createdAt,
+      }),
+    ).toBeNull();
+  });
+
+  test("Scenario: Given a running sleep tool call has a start timestamp When display blocks are built Then the tool block carries a visual sleep progress hint", () => {
+    const startedAt = baseEntry.createdAt + 250;
+    const entry = {
+      ...baseEntry,
+      isComplete: false,
+      parts: [
+        {
+          partId: 191,
+          partIndex: 0,
+          messageId: baseEntry.messageId,
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "assistant",
+          partType: "tool_call",
+          mimeType: null,
+          payload: {
+            invocationId: "root-sleep-1",
+            tool: "root_bash",
+            input: {
+              workspaceAlias: "root",
+              command: "sleep 5 && curl -s -o /dev/null http://127.0.0.1:8091/index.html",
+            },
+            startedAt,
+          },
+          createdAt: baseEntry.createdAt,
+          updatedAt: baseEntry.updatedAt,
+          isComplete: false,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    expect(buildHeartbeatDisplayBlocks(entry)).toEqual([
+      {
+        kind: "tool",
+        key: "root-sleep-1",
+        tool: "root_bash",
+        state: "input-available",
+        input: {
+          workspaceAlias: "root",
+          command: "sleep 5 && curl -s -o /dev/null http://127.0.0.1:8091/index.html",
+        },
+        output: undefined,
+        errorText: null,
+        visualHint: {
+          kind: "shell-sleep",
+          startedAt,
+          durationMs: 5_000,
+        },
+      },
+    ]);
+  });
+
+  test("Scenario: Given a running timeout tool call has a start timestamp When display blocks are built Then the tool block carries a visual timeout progress hint", () => {
+    const startedAt = baseEntry.createdAt + 500;
+    const entry = {
+      ...baseEntry,
+      isComplete: false,
+      parts: [
+        {
+          partId: 192,
+          partIndex: 0,
+          messageId: baseEntry.messageId,
+          windowId: null,
+          aiCallId: baseEntry.aiCallId,
+          roundIndex: baseEntry.roundIndex,
+          scope: baseEntry.scope,
+          role: "assistant",
+          partType: "tool_call",
+          mimeType: null,
+          payload: {
+            invocationId: "root-timeout-1",
+            tool: "root_bash",
+            input: {
+              workspaceAlias: "root",
+              command: "timeout 30s curl -s -o /dev/null http://127.0.0.1:8091/index.html",
+            },
+            startedAt,
+          },
+          createdAt: baseEntry.createdAt,
+          updatedAt: baseEntry.updatedAt,
+          isComplete: false,
+        },
+      ],
+    } satisfies HeartbeatPartItem;
+
+    expect(buildHeartbeatDisplayBlocks(entry)).toEqual([
+      {
+        kind: "tool",
+        key: "root-timeout-1",
+        tool: "root_bash",
+        state: "input-available",
+        input: {
+          workspaceAlias: "root",
+          command: "timeout 30s curl -s -o /dev/null http://127.0.0.1:8091/index.html",
+        },
+        output: undefined,
+        errorText: null,
+        visualHint: {
+          kind: "shell-timeout",
+          startedAt,
+          durationMs: 30_000,
+        },
+      },
+    ]);
+  });
+
   test("Scenario: Given a tool result arrives after an unrelated text part When display blocks are built Then the invocation still renders as one stable tool block anchored at the original tool call", () => {
     const entry = {
       ...baseEntry,
@@ -359,7 +574,7 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
           payload: {
             invocationId: "workspace-bash-3b",
             tool: "workspace.bash",
-            input: { command: "attention commit --compact '[\"ctx-1\",[],\"Settled.\"]'" },
+            input: { command: 'attention commit --compact \'["ctx-1",[],"Settled."]\'' },
           },
           createdAt: baseEntry.createdAt,
           updatedAt: baseEntry.updatedAt,
@@ -374,7 +589,7 @@ describe("Feature: Runtime Heartbeat display block parsing", () => {
         key: "workspace-bash-3b",
         tool: "workspace.bash",
         state: "input-available",
-        input: { command: "attention commit --compact '[\"ctx-1\",[],\"Settled.\"]'" },
+        input: { command: 'attention commit --compact \'["ctx-1",[],"Settled."]\'' },
         output: undefined,
         errorText: null,
       },

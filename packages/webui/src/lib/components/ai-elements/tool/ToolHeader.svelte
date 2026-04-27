@@ -14,11 +14,13 @@
 		type,
 		state,
 		preview = null,
+		statusDetail = null,
 		class: className = '',
 	}: {
 		type: string;
 		state: ToolUiState;
 		preview?: string | null;
+		statusDetail?: string | null;
 		class?: string;
 	} = $props();
 
@@ -56,6 +58,9 @@
 					/>
 					{status.label}
 				</Badge>
+				{#if statusDetail}
+					<span class="text-[10px] leading-4 text-muted-foreground">{statusDetail}</span>
+				{/if}
 			</div>
 			{#if preview}
 				<div class="truncate font-mono text-[11px] text-muted-foreground">{preview}</div>

@@ -2,11 +2,14 @@ import type { MessageFrom } from "$lib/components/ai-elements/message/index.js";
 import type { ToolUiState } from "$lib/components/ai-elements/tool/tool.types.js";
 import type { HeartbeatGroupItem, HeartbeatPartItem } from "@agenter/client-sdk";
 
+import { getHeartbeatToolVisualHint, type HeartbeatToolVisualHint } from "./runtime-heartbeat-tool-visual-hints";
+
 type HeartbeatPart = HeartbeatPartItem["parts"][number];
 type ToolCallPayload = {
   invocationId?: string;
   tool?: string;
   input?: unknown;
+  startedAt?: unknown;
 };
 type ToolResultPayload = {
   invocationId?: string;
@@ -140,6 +143,19 @@ export const getHeartbeatRowMeta = (entry: HeartbeatPartItem): string[] => {
 };
 
 const normalizeToolPreview = (value: string): string => value.replace(/\s+/g, " ").trim();
+
+const readTimestampMs = (value: unknown, fallback: number): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return fallback;
+};
 
 const sortHeartbeatItemsAscending = (items: ReadonlyArray<HeartbeatPartItem>): HeartbeatPartItem[] =>
   [...items].sort((left, right) => {
@@ -434,6 +450,7 @@ export type HeartbeatDisplayBlock =
       input: unknown;
       output?: unknown;
       errorText?: string | null;
+      visualHint?: HeartbeatToolVisualHint;
     };
 
 export type HeartbeatSubjectSectionBlock = {
@@ -574,16 +591,26 @@ const parseHeartbeatToolTracePart = (part: HeartbeatPart): ParsedToolTrace | nul
           : part.isComplete
             ? "input-available"
             : "input-streaming";
-
-  return {
+  const input = record.input ?? null;
+  const visualHint = getHeartbeatToolVisualHint({
+    tool: record.tool,
+    input,
+    startedAt: readTimestampMs(record.startedAt, part.createdAt),
+  });
+  const toolTrace: ParsedToolTrace = {
     kind: "tool",
     key: typeof record.invocationId === "string" ? record.invocationId : `text-tool:${part.partId}`,
     tool: record.tool,
     state,
-    input: record.input ?? null,
+    input,
     output: record.output,
     errorText,
   };
+  if (visualHint) {
+    toolTrace.visualHint = visualHint;
+  }
+
+  return toolTrace;
 };
 
 const readHeartbeatSubjectNameFromPayload = (payload: unknown): string | null => {
@@ -696,9 +723,16 @@ const buildHeartbeatDisplayTokens = (partRefs: readonly HeartbeatPartRef[]): Hea
               return candidate;
             })();
       const resultPayload = (pairedResultPart?.part.payload ?? {}) as ToolResultPayload;
+      const input = callPayload.input ?? null;
+      const tool = callPayload.tool ?? "tool";
+      const visualHint = getHeartbeatToolVisualHint({
+        tool,
+        input,
+        startedAt: readTimestampMs(callPayload.startedAt, part.createdAt),
+      });
       const state: ToolUiState =
         pairedResultPart === undefined
-          ? hasMeaningfulToolInput(callPayload.input)
+          ? hasMeaningfulToolInput(input)
             ? "input-available"
             : part.isComplete
               ? "input-available"
@@ -706,17 +740,21 @@ const buildHeartbeatDisplayTokens = (partRefs: readonly HeartbeatPartRef[]): Hea
           : resultPayload.error
             ? "output-error"
             : "output-available";
+      const content: Extract<HeartbeatDisplayBlock, { kind: "tool" }> = {
+        kind: "tool",
+        key: invocationId ?? `${partRef.entry.id}:${part.partId}`,
+        tool,
+        state,
+        input,
+        output: resultPayload.output,
+        errorText: resultPayload.error ?? null,
+      };
+      if (visualHint) {
+        content.visualHint = visualHint;
+      }
       pushToken({
         partRef,
-        content: {
-          kind: "tool",
-          key: invocationId ?? `${partRef.entry.id}:${part.partId}`,
-          tool: callPayload.tool ?? "tool",
-          state,
-          input: callPayload.input ?? null,
-          output: resultPayload.output,
-          errorText: resultPayload.error ?? null,
-        },
+        content,
         sourceEntries: pairedResultPart ? [partRef.entry, pairedResultPart.entry] : [partRef.entry],
       });
       continue;

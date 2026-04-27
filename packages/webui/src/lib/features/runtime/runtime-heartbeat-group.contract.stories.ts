@@ -58,6 +58,53 @@ const contractGroup = {
   ],
 } satisfies HeartbeatGroupItem;
 
+const buildRunningTimedContractGroup = (input: {
+  id: number;
+  invocationId: string;
+  command: string;
+}): HeartbeatGroupItem => {
+  const startedAt = Date.now() - 30_000;
+  return {
+    ...contractGroup,
+    id: input.id,
+    groupId: `heartbeat-group:contract:${input.id}`,
+    aiCallId: input.id,
+    createdAt: startedAt,
+    updatedAt: startedAt + 30_000,
+    items: [
+      {
+        ...contractGroup.items[0],
+        id: input.id,
+        messageId: `heartbeat-part:contract:${input.id}`,
+        aiCallId: input.id,
+        createdAt: startedAt,
+        updatedAt: startedAt + 30_000,
+        text: input.command,
+        parts: [
+          {
+            ...contractGroup.items[0].parts[0],
+            partId: input.id,
+            messageId: `heartbeat-part:contract:${input.id}`,
+            aiCallId: input.id,
+            payload: {
+              invocationId: input.invocationId,
+              tool: "root_bash",
+              input: {
+                workspaceAlias: "root",
+                command: input.command,
+              },
+              startedAt,
+            },
+            createdAt: startedAt,
+            updatedAt: startedAt,
+            isComplete: false,
+          },
+        ],
+      },
+    ],
+  };
+};
+
 const readGroupNode = (root: HTMLElement): HTMLElement =>
   root.querySelector<HTMLElement>('[data-testid="runtime-heartbeat-group-2048"]') ??
   (() => {
@@ -127,5 +174,47 @@ export const EquivalentGroupRefreshKeepsSectionDomIdentity = {
     expect(readGroupNode(canvasElement).isSameNode(groupBefore)).toBe(true);
     expect(readSectionNode(canvasElement).isSameNode(sectionBefore)).toBe(true);
     expect(readEntryNode(canvasElement).isSameNode(entryBefore)).toBe(true);
+  },
+} satisfies Story;
+
+export const RunningSleepToolShowsProgressLayer = {
+  name: "Scenario: Given a running sleep tool call When rendering Heartbeat Then the tool card shows a sleep progress layer",
+  args: {
+    group: buildRunningTimedContractGroup({
+      id: 2049,
+      invocationId: "contract-sleep-tool-call",
+      command: "sleep 120 && curl -s -o /dev/null http://127.0.0.1:8091/index.html",
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const entry = canvas.getByTestId("runtime-heartbeat-entry-2049");
+    const progress = canvas.getByTestId("runtime-heartbeat-tool-time-progress-contract-sleep-tool-call");
+
+    await expect(entry).toHaveTextContent("root_bash");
+    await expect(entry).toHaveTextContent(/sleep \d/mu);
+    await expect(progress).toHaveAttribute("data-timing-progress-state", "running");
+    await expect(progress).toHaveAttribute("data-timing-hint-kind", "shell-sleep");
+  },
+} satisfies Story;
+
+export const RunningTimeoutToolShowsProgressLayer = {
+  name: "Scenario: Given a running timeout tool call When rendering Heartbeat Then the tool card shows a timeout progress layer",
+  args: {
+    group: buildRunningTimedContractGroup({
+      id: 2050,
+      invocationId: "contract-timeout-tool-call",
+      command: "timeout 120s curl -s -o /dev/null http://127.0.0.1:8091/index.html",
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const entry = canvas.getByTestId("runtime-heartbeat-entry-2050");
+    const progress = canvas.getByTestId("runtime-heartbeat-tool-time-progress-contract-timeout-tool-call");
+
+    await expect(entry).toHaveTextContent("root_bash");
+    await expect(entry).toHaveTextContent(/timeout \d/mu);
+    await expect(progress).toHaveAttribute("data-timing-progress-state", "running");
+    await expect(progress).toHaveAttribute("data-timing-hint-kind", "shell-timeout");
   },
 } satisfies Story;
