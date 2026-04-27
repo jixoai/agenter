@@ -66,6 +66,13 @@ Each descriptor-backed runtime CLI subcommand SHALL expose `--help` output gener
 - **AND** it includes the JSON input schema for `terminal input`
 - **AND** it points the caller to skill material for the mixed DSL, including raw literal blocks
 
+#### Scenario: Help reveals schema-backed terminal read cursor controls
+- **WHEN** the AI runs `terminal read --help`
+- **THEN** the output includes the JSON input schema for `terminal read`
+- **AND** it documents `remark` as the read cursor consumption control
+- **AND** it documents `recordActivity` as the independent activity history control
+- **AND** the help returns locally without invoking a runtime-local API request
+
 #### Scenario: Help probes return locally without invoking business actions
 - **WHEN** the AI runs commands such as `message --help` or `terminal write --help`
 - **THEN** the shell returns help locally with exit code `0`
@@ -108,6 +115,11 @@ The compact positional encoding SHALL be derived from the descriptor schema and 
 - **WHEN** a compact payload skips only trailing optional fields
 - **THEN** those trailing positions may be omitted
 - **AND** if a later field is still present, the skipped interior optional field is represented as `null`
+
+#### Scenario: Terminal read compact positions preserve existing activity control
+- **WHEN** a compact `terminal read` payload uses `[terminalId, mode, false]`
+- **THEN** the third position continues to decode as `recordActivity = false`
+- **AND** newly added cursor controls do not reinterpret that legacy compact payload as `remark = false`
 
 #### Scenario: Enum fields encode by declared ordinal
 - **WHEN** a compact payload contains a descriptor enum field

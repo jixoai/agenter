@@ -290,7 +290,10 @@ git-log 约束：
 
 - session runtime 只允许保存 terminal refs、focus bindings、activity refs、approval subscription 等 projection facts。
 - session stop / delete 不得删除 global terminal truth、grant 或 activity history。
-- `terminal_read` / `terminal_snapshot` 默认是纯 inspection 原语：读取 terminal 状态不会自动追加 `terminal_read` activity，只有显式 observation recording 才允许把 read 落成 durable history。
+- terminal 输出是共享物理事实；`terminal_read` 的 git-log/diff 进度是 actor-scoped read cursor，不允许落在 terminal 单例上。
+- accessToken 读 terminal 时，read cursor 必须归属 token grant 的 participant actor，不允许退化成匿名或 terminal-global cursor。
+- `remark:true` 表示消费当前 actor 的 read cursor；其它 actor 再读同一个 terminal 时必须仍能从自己的 cursor 看到同一批 diff。
+- `remark:false` 表示不推进 read cursor；activity history 是否记录由 `recordActivity` 单独控制，不能与 cursor consumption 混成一个开关。
 - actor-facing terminal surface projection 必须把 catalog metadata、seat/access projection、approval counters、transport endpoint 与 renderable snapshot truth 聚合成一个 authoritative model；WebUI/client 不得再自行拼接 `access + grants + actors + snapshot` 来还原 terminal truth。
 - terminal websocket transport 的 contract 固定为“bootstrap snapshot + live output/status”：
   - connect 时允许发送一份 renderable snapshot 作为 viewport hydration baseline

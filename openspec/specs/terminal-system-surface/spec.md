@@ -66,6 +66,7 @@ The WebUI SHALL expose a dedicated terminal-system route that lists global termi
 - **THEN** read-mode parameter fields live in the upper parameter panel so future read options can extend there without changing the bottom action row grammar
 - **THEN** the actor selector renders as a compact single-line affordance inside the composer addon row
 - **THEN** the submit action lives in that same addon row instead of drifting into a separate footer band
+- **THEN** read submissions send the selected actor's terminal access token and `remark = true` so UI reads consume only that actor's read cursor
 
 #### Scenario: Terminal action cards stay compact while reusing the shared structured viewer
 - **WHEN** a structured terminal fact renders in the narrow `Actions` rail
