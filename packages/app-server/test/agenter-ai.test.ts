@@ -2944,7 +2944,7 @@ describe("Feature: AgenterAI behavior", () => {
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       toolProviders: createToolProviders({ messageGateway: message.gateway }),
       attentionGateway: createAttentionGateway().gateway,
-      collectInterleavedInputs: async () => {
+      commitAttentionItems: async () => {
         if (interleavedCollected) {
           return undefined;
         }
@@ -2977,6 +2977,105 @@ describe("Feature: AgenterAI behavior", () => {
     expect(assistantReplay.some((item) => item.includes("tool: root_bash"))).toBeTrue();
     expect(assistantReplay.some((item) => item.includes('command: "message send"'))).toBeTrue();
     expect(userReplay.some((item) => item.includes("summary: 新消息补充条件"))).toBeTrue();
+  });
+
+  test("Scenario: Given a tool-result boundary When the hook commits attention items twice Then AgenterAI projects them once into the current loop", async () => {
+    const message = createMessageGateway();
+    const seenInputs: ModelRespondInput[] = [];
+    const modelCalls: AgentModelCallRecord[] = [];
+    let commitAttempts = 0;
+
+    const modelClient = createModelClient(async (input) => {
+      seenInputs.push(input);
+      const cliPayload = { chatId: "chat-main", content: "正在处理中" };
+      await input.onUpdate?.({
+        kind: "tool_call",
+        toolCallId: "call-message-send-on-can-commit",
+        toolName: "root_bash",
+        argsText: stringifyRootBashArgs("message send", cliPayload),
+        input: buildRootBashInput("message send", cliPayload),
+        timestamp: Date.now(),
+      });
+      await callMessageSendViaCli(input, cliPayload, "call-message-send-on-can-commit");
+      await input.onUpdate?.({
+        kind: "tool_result",
+        toolCallId: "call-message-send-on-can-commit",
+        toolName: "root_bash",
+        ok: true,
+        result: buildRootBashSuccessResult({
+          ok: true,
+          result: { ok: true, messageId: 1, recentMessages: [] },
+        }),
+        timestamp: Date.now(),
+      });
+
+      expect(input.shouldYieldAfterToolPhase?.()).toBeTrue();
+      const committedMessages =
+        input.consumeCommittedAttentionMessages?.({
+          iterationCount: 0,
+          messages: input.messages,
+          finishReason: "tool_calls",
+        }) ?? [];
+      input.messages.push(...committedMessages);
+      expect(input.shouldYieldAfterToolPhase?.()).toBeFalse();
+
+      return {
+        thinking: "",
+        text: "done in same loop",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ messageGateway: message.gateway }),
+      attentionGateway: createAttentionGateway().gateway,
+      onModelCall: (record) => {
+        modelCalls.push(record);
+      },
+      onCanCommitAttentionItems: async (context) => {
+        await context.commitAttentionItems();
+        await context.commitAttentionItems();
+      },
+      commitAttentionItems: async () => {
+        commitAttempts += 1;
+        return [
+          createAttentionItemsMessage("contextId: ctx-main\nsummary: 同轮补充条件", {
+            id: "m-attention-on-can-commit",
+            contextId: "ctx-main",
+            headCommitId: "commit-on-can-commit-1",
+            commitIds: ["commit-on-can-commit-1"],
+            meta: {
+              chatId: "chat-main",
+              chatFocused: true,
+            },
+          }),
+        ];
+      },
+    });
+
+    await ai.send([createUserMessage("先发一条确认消息")]);
+
+    expect(commitAttempts).toBe(2);
+    expect(seenInputs).toHaveLength(1);
+    expect(message.sent).toHaveLength(1);
+    expect(message.sent[0]).toMatchObject({
+      chatId: "chat-main",
+      content: "正在处理中",
+    });
+    const userReplay = extractUserReplay(seenInputs[0]);
+    expect(userReplay.filter((item) => item.includes("summary: 同轮补充条件"))).toHaveLength(1);
+    const completedModelCall = modelCalls.find((record) => record.status === "done");
+    if (!completedModelCall) {
+      throw new Error("expected completed model call");
+    }
+    expect(
+      extractUserReplay(completedModelCall.request.messages).filter((item) =>
+        item.includes("summary: 同轮补充条件"),
+      ),
+    ).toHaveLength(1);
   });
 
   test("Scenario: Given an interleaved continuation When a later tool phase finishes without new input Then AgenterAI still reissues the next model request until the tool result is resolved into a final answer", async () => {
@@ -3077,7 +3176,7 @@ describe("Feature: AgenterAI behavior", () => {
       promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
       toolProviders: createToolProviders({ messageGateway: message.gateway }),
       attentionGateway: createAttentionGateway().gateway,
-      collectInterleavedInputs: async () => {
+      commitAttentionItems: async () => {
         if (interleavedCollected) {
           return undefined;
         }

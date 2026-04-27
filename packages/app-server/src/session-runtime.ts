@@ -6055,7 +6055,10 @@ export class SessionRuntime {
       initialPromptWindowState: currentPromptWindowState,
       avatarName: this.getAvatarName(),
       resolveImageAttachment: async (attachment) => this.readImageAttachmentSource(attachment.assetId),
-      collectInterleavedInputs: async () => await this.collectInterleavedAgentInputs(),
+      commitAttentionItems: async () => await this.commitInterleavedAttentionItems(),
+      onCanCommitAttentionItems: async (context) => {
+        await context.commitAttentionItems();
+      },
       onAssistantStream: async (stream) => {
         await this.handleAssistantStreamUpdate(stream);
       },
@@ -8134,7 +8137,7 @@ export class SessionRuntime {
     return consumed;
   }
 
-  private async collectInterleavedAgentInputs(): Promise<LoopBusInput[] | undefined> {
+  private async commitInterleavedAttentionItems(): Promise<LoopBusInput[] | undefined> {
     await this.flushPendingRuntimeSkillChanges();
     await this.collectUnreadRoomIngress();
     await this.pollMessageFollowUpReminders();
@@ -8143,6 +8146,7 @@ export class SessionRuntime {
     const pendingTaskDrafts = this.collectPendingTaskAttentionDrafts();
     const taskChanged = pendingTaskDrafts.length > 0 ? await this.commitAttentionDrafts(pendingTaskDrafts) : false;
     const attentionInputs = this.collectAttentionInputs();
+    await this.messageKernelAdapter.commitStagedReadAcks();
 
     const observedKinds: LoopInputKind[] = [];
     if (consumedUserInputs) {
@@ -10154,10 +10158,6 @@ export class SessionRuntime {
       outcome: record.outcome ?? null,
     });
     const existingModelCallId = this.activeModelCallId ?? null;
-    const persistedRequestBody =
-      existingModelCallId === null
-        ? requestBody
-        : (this.sessionDb.getAiCallById(existingModelCallId)?.requestBody ?? requestBody);
     const modelCall =
       record.status === "running" || existingModelCallId === null
         ? this.sessionDb.appendAiCall({
@@ -10169,7 +10169,7 @@ export class SessionRuntime {
             provider: record.provider,
             model: record.model,
             requestUrl: this.config?.ai.baseUrl ?? "",
-            requestBody: persistedRequestBody,
+            requestBody,
             responseBody,
             error: record.error,
             outcome: record.outcome,
@@ -10185,7 +10185,7 @@ export class SessionRuntime {
             provider: record.provider,
             model: record.model,
             requestUrl: this.config?.ai.baseUrl ?? "",
-            requestBody: persistedRequestBody,
+            requestBody,
             responseBody,
             error: record.error,
             outcome: record.outcome,

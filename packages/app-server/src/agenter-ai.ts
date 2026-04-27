@@ -16,6 +16,7 @@ import type { LoopBusInput, LoopBusMessage } from "./loop-bus";
 import type {
   AssistantDeliveryEvent,
   AssistantStreamUpdate,
+  ConsumeCommittedAttentionMessagesInput,
   ModelClient,
   TextOnlyModelMessage,
 } from "./model-client";
@@ -95,10 +96,16 @@ interface AgentDeps {
   resolveImageAttachment?: (
     attachment: ChatSessionAsset,
   ) => Promise<ResolvedImageAttachmentSource | null> | ResolvedImageAttachmentSource | null;
-  collectInterleavedInputs?: () => Promise<LoopBusInput[] | undefined> | LoopBusInput[] | undefined;
+  onCanCommitAttentionItems?: (context: CanCommitAttentionItemsContext) => Promise<void> | void;
+  commitAttentionItems?: () => Promise<LoopBusInput[] | undefined> | LoopBusInput[] | undefined;
   onAssistantStream?: (update: AssistantStreamUpdate) => Promise<void> | void;
   onAssistantDelivery?: (event: AssistantDeliveryEvent) => Promise<void> | void;
   onModelCall?: (record: AgentModelCallRecord) => Promise<void> | void;
+}
+
+export interface CanCommitAttentionItemsContext {
+  reason: "tool-result-boundary";
+  commitAttentionItems: () => Promise<LoopBusInput[] | undefined>;
 }
 
 export interface AgentModelCallRecord {
@@ -1166,8 +1173,9 @@ export class AgenterAI {
     finishReason: string | null | undefined;
     roundMessages: readonly LoopBusMessage[];
     interleavedMessages: readonly LoopBusMessage[];
+    unprojectedInterleavedMessageCount?: number;
   }): boolean {
-    if (input.interleavedMessages.length > 0) {
+    if ((input.unprojectedInterleavedMessageCount ?? input.interleavedMessages.length) > 0) {
       return true;
     }
     if (input.finishReason !== "tool_calls") {
@@ -1274,9 +1282,18 @@ export class AgenterAI {
 
     const interleavedMessages: LoopBusMessage[] = [];
     const seenInterleavedIds = new Set<string>();
+    const pendingInterleavedModelMessages: TextOnlyModelMessage[] = [];
+    let committedModelLoopMessages: TextOnlyModelMessage[] | null = null;
+    let projectedInterleavedModelMessageCount = 0;
     let shouldYieldAfterToolPhase = false;
-    const collectInterleavedMessages = async (): Promise<void> => {
-      const nextInputs = await this.deps.collectInterleavedInputs?.();
+    const readCommittedRequestRecord = (): AgentModelCallRecord["request"] =>
+      committedModelLoopMessages === null
+        ? requestRecord
+        : {
+            ...requestRecord,
+            messages: structuredClone(committedModelLoopMessages),
+          };
+    const stageCommittedAttentionInputs = async (nextInputs: LoopBusInput[] | undefined): Promise<void> => {
       const nextMessages = normalizeLoopInputs(nextInputs);
       if (nextMessages.length === 0) {
         return;
@@ -1287,8 +1304,28 @@ export class AgenterAI {
         }
         seenInterleavedIds.add(message.id);
         interleavedMessages.push(message);
+        pendingInterleavedModelMessages.push({
+          role: "user",
+          content: await this.formatUserMessage(message),
+        });
       }
-      shouldYieldAfterToolPhase = interleavedMessages.length > 0;
+      shouldYieldAfterToolPhase = pendingInterleavedModelMessages.length > 0;
+    };
+    const commitAttentionItems = async (): Promise<LoopBusInput[] | undefined> => {
+      const nextInputs = await this.deps.commitAttentionItems?.();
+      await stageCommittedAttentionInputs(nextInputs);
+      return nextInputs;
+    };
+    const commitAttentionAtToolResultBoundary = async (): Promise<void> => {
+      if (this.deps.onCanCommitAttentionItems) {
+        await this.deps.onCanCommitAttentionItems({
+          reason: "tool-result-boundary",
+          commitAttentionItems,
+        });
+      } else {
+        await commitAttentionItems();
+      }
+      shouldYieldAfterToolPhase = pendingInterleavedModelMessages.length > 0;
     };
 
     try {
@@ -1300,11 +1337,24 @@ export class AgenterAI {
             messages: promptWindowSnapshot,
             tools,
             abortController,
+            consumeCommittedAttentionMessages: (commitInput: ConsumeCommittedAttentionMessagesInput) => {
+              if (pendingInterleavedModelMessages.length === 0) {
+                return undefined;
+              }
+              const messages = pendingInterleavedModelMessages.splice(
+                0,
+                pendingInterleavedModelMessages.length,
+              );
+              committedModelLoopMessages = structuredClone([...commitInput.messages, ...messages]);
+              projectedInterleavedModelMessageCount += messages.length;
+              shouldYieldAfterToolPhase = pendingInterleavedModelMessages.length > 0;
+              return messages;
+            },
             shouldYieldAfterToolPhase: () => shouldYieldAfterToolPhase,
             onUpdate: async (update) => {
               await this.deps.onAssistantStream?.(update);
               if (update.kind === "tool_result") {
-                await collectInterleavedMessages();
+                await commitAttentionAtToolResultBoundary();
               }
             },
             onDeliveryEvent: async (event) => {
@@ -1313,7 +1363,7 @@ export class AgenterAI {
           }),
       });
 
-        this.stats.apiCalls += 1;
+      this.stats.apiCalls += 1;
       if (response.usage?.promptTokens !== undefined) {
         this.stats.lastPromptTokens = response.usage.promptTokens;
         this.stats.totalPromptTokens = (this.stats.totalPromptTokens ?? 0) + response.usage.promptTokens;
@@ -1346,6 +1396,7 @@ export class AgenterAI {
         const message = "attention round made no progress";
         await this.persistModelCall({
           ...callRecordBase,
+          request: readCommittedRequestRecord(),
           status: "error",
           completedAt,
           outcome: {
@@ -1391,6 +1442,7 @@ export class AgenterAI {
       });
       await this.persistModelCall({
         ...callRecordBase,
+        request: readCommittedRequestRecord(),
         status: "done",
         completedAt,
         outcome: {
@@ -1405,6 +1457,8 @@ export class AgenterAI {
             promptWindowText: normalizedResponseText.length > 0 && toolTrace.length === 0 && !attentionRound,
             yieldedAfterToolPhase: response.yieldedAfterToolPhase ?? false,
             interleavedInputCount: interleavedMessages.length,
+            projectedInterleavedInputCount: projectedInterleavedModelMessageCount,
+            unprojectedInterleavedInputCount: pendingInterleavedModelMessages.length,
             nextPromptWindowStateId,
           },
           usage: response.usage,
@@ -1422,6 +1476,7 @@ export class AgenterAI {
           finishReason: response.finishReason ?? null,
           roundMessages,
           interleavedMessages,
+          unprojectedInterleavedMessageCount: pendingInterleavedModelMessages.length,
         }),
         interleavedMessages,
       };
@@ -1465,6 +1520,7 @@ export class AgenterAI {
               : undefined;
       await this.persistModelCall({
         ...callRecordBase,
+        request: readCommittedRequestRecord(),
         status: aborted ? "cancelled" : "error",
         completedAt: Date.now(),
         outcome,

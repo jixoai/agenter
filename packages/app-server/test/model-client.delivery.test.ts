@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage } from "node:http";
 
+import { toolDefinition } from "@tanstack/ai";
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 
 import { ModelClient, ModelDecisionError, type AssistantDeliveryEvent } from "../src";
 
@@ -44,6 +46,51 @@ const buildCompletion = (content: string) => ({
     total_tokens: 10,
   },
 });
+
+const buildToolCallCompletion = () => ({
+  id: "mock-tool-call",
+  object: "chat.completion",
+  created: Math.floor(Date.now() / 1_000),
+  model: "mock-loopbus",
+  choices: [
+    {
+      index: 0,
+      finish_reason: "tool_calls",
+      message: {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "call_probe_1",
+            type: "function",
+            function: {
+              name: "probe_tool",
+              arguments: JSON.stringify({ value: "from-model" }),
+            },
+          },
+        ],
+      },
+    },
+  ],
+  usage: {
+    prompt_tokens: 11,
+    completion_tokens: 4,
+    total_tokens: 15,
+  },
+});
+
+const parseRequestMessages = (body: string): Array<Record<string, unknown>> => {
+  const parsed = JSON.parse(body) as { messages?: unknown };
+  if (!Array.isArray(parsed.messages)) {
+    throw new Error("expected messages array");
+  }
+  return parsed.messages.map((message) => {
+    if (!message || typeof message !== "object" || Array.isArray(message)) {
+      throw new Error("expected message object");
+    }
+    return message as Record<string, unknown>;
+  });
+};
 
 const startOpenAICompatServer = async (plans: readonly MockResponsePlan[]) => {
   const requests: string[] = [];
@@ -104,6 +151,21 @@ const createClient = (baseUrl: string, maxRetries: number) =>
     maxRetries,
   });
 
+const probeTool = toolDefinition({
+  name: "probe_tool",
+  description: "Return a deterministic probe result.",
+  inputSchema: z.object({
+    value: z.string(),
+  }),
+  outputSchema: z.object({
+    ok: z.boolean(),
+    value: z.string(),
+  }),
+}).server((input) => ({
+  ok: true,
+  value: input.value,
+}));
+
 describe("Feature: ModelClient delivery receipts", () => {
   test("Scenario: Given the provider cannot be called because credentials are missing When a round starts Then ModelClient emits one transport error receipt and throws instead of returning fallback assistant text", async () => {
     const deliveryEvents: AssistantDeliveryEvent[] = [];
@@ -141,6 +203,50 @@ describe("Feature: ModelClient delivery receipts", () => {
           : `${event.attemptIndex}:${event.status}:${event.providerEventKind}`,
       ),
     ).toEqual(["start:1", "1:errored:transport_error"]);
+  });
+
+  test("Scenario: Given staged committed attention after a tool call When the provider loop continues Then the next HTTP request contains tool result plus staged user message", async () => {
+    const server = await startOpenAICompatServer([
+      { kind: "json", body: buildToolCallCompletion() },
+      { kind: "json", body: buildCompletion("final after staged attention") },
+    ]);
+    let consumeCount = 0;
+    let yieldCheckCount = 0;
+
+    try {
+      const client = createClient(server.baseUrl, 0);
+      const response = await client.respondWithMeta({
+        systemPrompt: "You are helpful.",
+        messages: [{ role: "user", content: "initial user request" }],
+        tools: [probeTool],
+        consumeCommittedAttentionMessages: ({ finishReason, messages }) => {
+          consumeCount += 1;
+          expect(finishReason).toBe("tool_calls");
+          expect(messages.some((message) => message.role === "tool")).toBeTrue();
+          return [{ role: "user", content: "STAGED-ATTENTION-MESSAGE" }];
+        },
+        shouldYieldAfterToolPhase: () => {
+          yieldCheckCount += 1;
+          return true;
+        },
+      });
+
+      expect(response.text).toBe("final after staged attention");
+      expect(response.yieldedAfterToolPhase).toBe(false);
+      expect(consumeCount).toBe(1);
+      expect(yieldCheckCount).toBe(0);
+      expect(server.requests).toHaveLength(2);
+
+      const secondMessages = parseRequestMessages(server.requests[1] ?? "");
+      const toolMessageIndex = secondMessages.findIndex((message) => message.role === "tool");
+      const stagedMessageIndex = secondMessages.findIndex(
+        (message) => message.role === "user" && message.content === "STAGED-ATTENTION-MESSAGE",
+      );
+      expect(toolMessageIndex).toBeGreaterThan(-1);
+      expect(stagedMessageIndex).toBeGreaterThan(toolMessageIndex);
+    } finally {
+      await server.stop();
+    }
   });
 
   test("Scenario: Given the first provider attempt collapses before any usable reply When the retry succeeds Then ModelClient keeps one errored attempt followed by accepted and completed receipts", async () => {

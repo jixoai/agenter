@@ -120,6 +120,12 @@ export type AssistantDeliveryEvent =
 
 export type TextOnlyModelMessage = ModelMessage;
 
+export interface ConsumeCommittedAttentionMessagesInput {
+  iterationCount: number;
+  messages: TextOnlyModelMessage[];
+  finishReason: string | null;
+}
+
 interface RespondInput {
   systemPrompt: string;
   messages: TextOnlyModelMessage[];
@@ -129,6 +135,7 @@ interface RespondInput {
   maxTokens?: number;
   onUpdate?: (update: AssistantStreamUpdate) => void | Promise<void>;
   onDeliveryEvent?: (event: AssistantDeliveryEvent) => void | Promise<void>;
+  consumeCommittedAttentionMessages?: (input: ConsumeCommittedAttentionMessagesInput) => TextOnlyModelMessage[] | undefined;
   shouldYieldAfterToolPhase?: () => boolean;
 }
 
@@ -303,6 +310,17 @@ export class ModelClient {
           agentLoopStrategy: (state) => {
             if (!defaultLoopStrategy(state)) {
               return false;
+            }
+            if (state.finishReason === "tool_calls") {
+              const committedAttentionMessages = input.consumeCommittedAttentionMessages?.({
+                iterationCount: state.iterationCount,
+                messages: state.messages,
+                finishReason: state.finishReason,
+              });
+              if (committedAttentionMessages && committedAttentionMessages.length > 0) {
+                state.messages.push(...committedAttentionMessages);
+                return true;
+              }
             }
             if (state.finishReason === "tool_calls" && input.shouldYieldAfterToolPhase?.()) {
               yieldedAfterToolPhase = true;

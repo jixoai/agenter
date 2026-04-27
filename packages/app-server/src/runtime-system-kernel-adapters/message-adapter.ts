@@ -93,19 +93,15 @@ export class RuntimeMessageKernelAdapter implements RuntimeSystemKernelAdapter {
     }
     const acks = [...this.activeCycleUnreadReadAcks];
     this.activeCycleUnreadReadCommitted = true;
-    this.releaseUnreadReadAcks(acks);
-    for (const ack of acks) {
-      try {
-        this.options.messageSystem.markChannelReadAuthorized({
-          chatId: ack.chatId,
-          accessToken: ack.accessToken,
-          messageId: ack.targetMessageId,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.options.onError(`message unread ack failed (${ack.chatId}): ${message}`);
-      }
+    await this.commitReadAcks(acks);
+  }
+
+  async commitStagedReadAcks(): Promise<void> {
+    const acks = this.consumeStagedUnreadReadAcks();
+    if (acks.length === 0) {
+      return;
     }
+    await this.commitReadAcks(acks);
   }
 
   commitLifecycleIngress(envelope: RuntimeSystemIngressEnvelope): void {
@@ -277,6 +273,22 @@ export class RuntimeMessageKernelAdapter implements RuntimeSystemKernelAdapter {
     for (const ack of acks) {
       for (const messageId of ack.selectedMessageIds) {
         this.pendingUnreadMessageIds.delete(messageId);
+      }
+    }
+  }
+
+  private async commitReadAcks(acks: readonly PendingUnreadReadAck[]): Promise<void> {
+    this.releaseUnreadReadAcks(acks);
+    for (const ack of acks) {
+      try {
+        this.options.messageSystem.markChannelReadAuthorized({
+          chatId: ack.chatId,
+          accessToken: ack.accessToken,
+          messageId: ack.targetMessageId,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.options.onError(`message unread ack failed (${ack.chatId}): ${message}`);
       }
     }
   }

@@ -58,7 +58,7 @@ interface RuntimeInternal {
     }) => unknown;
   };
   collectLoopInputs: () => Promise<LoopBusInput[] | undefined>;
-  collectInterleavedAgentInputs: () => Promise<LoopBusInput[] | undefined>;
+  commitInterleavedAttentionItems: () => Promise<LoopBusInput[] | undefined>;
   collectAttentionInputs: () => LoopBusInput[] | undefined;
   collectUnreadRoomIngress: () => Promise<number>;
   waitForAnyInput: () => Promise<"user" | "terminal" | "task" | "attention">;
@@ -555,14 +555,14 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(secondRound).toBeUndefined();
   });
 
-  test("Scenario: Given plugin-backed user chat arrives during a model tool phase When interleaved agent inputs are collected Then only attention-native payload is returned for the next model request", async () => {
+  test("Scenario: Given plugin-backed user chat arrives during a model tool phase When interleaved attention items commit Then only attention-native payload is returned for the next model request", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
 
     runtime.pushUserChat("再补充一个条件");
 
-    const interleaved = await internal.collectInterleavedAgentInputs();
+    const interleaved = await internal.commitInterleavedAttentionItems();
     expect(interleaved?.some((item) => item.source === "chat")).toBe(false);
     expect(getAttentionProtocolKinds(interleaved)).toEqual(["context", "items"]);
     const contextInput = getBootstrapInput(interleaved);
@@ -581,7 +581,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(itemsInput?.text).toContain("再补充一个条件");
     expect(await stringifyAttentionQuery(runtime, "再补充一个条件")).toContain("再补充一个条件");
 
-    const nextRound = await internal.collectInterleavedAgentInputs();
+    const nextRound = await internal.commitInterleavedAttentionItems();
     expect(nextRound).toBeUndefined();
   });
 
@@ -1111,6 +1111,79 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
+  test("Scenario: Given a room message arrives during an active model tool phase When interleaved attention items commit Then MessageRoom read truth commits through the same API", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-room-interleaved-read-"));
+    const messageSystem = new MessageControlPlane({
+      dbPath: resolveMessageControlDbPath(root),
+    });
+
+    try {
+      const roomId = createPrincipalId(904);
+      const room = messageSystem.createChannel({
+        chatId: roomId,
+        kind: "room",
+        owner: "ops",
+        contextId: `ctx-${roomId}`,
+        initialUsers: [
+          {
+            actorId: "auth:kzf",
+            label: "kzf",
+            role: "member",
+            focused: true,
+          },
+          {
+            actorId: "session:jane",
+            label: "Jane",
+            role: "member",
+            focused: true,
+          },
+        ],
+      });
+      const janeRuntime = createSharedRoomRuntime({
+        root,
+        sessionId: "jane",
+        sessionName: "jane",
+        messageSystem,
+      });
+      const janeInternal = janeRuntime as unknown as RuntimeInternal;
+      janeInternal.loopPluginRuntime = await janeInternal.createLoopPluginRuntime();
+
+      await janeInternal.handleModelCall({
+        id: "call-jane-active-tool-phase",
+        timestamp: 100,
+        status: "running",
+        provider: "mock",
+        model: "mock-loop",
+        request: { messages: [{ role: "user", content: "initial" }] },
+      });
+
+      const kzfRoom = messageSystem.getChannelForActor(room.chatId, "auth:kzf", {
+        includeArchived: true,
+        touchPresence: false,
+      });
+      const sent = messageSystem.sendAuthorized({
+        chatId: room.chatId,
+        accessToken: kzfRoom?.accessToken ?? "",
+        senderActorId: "auth:kzf",
+        from: "kzf",
+        content: "interleaved requirement while tool is running",
+      });
+      expect(sent.unreadActorIds).toContain("session:jane");
+
+      const interleaved = await janeInternal.commitInterleavedAttentionItems();
+      expect(getAttentionProtocolKinds(interleaved)).toEqual(["context", "items"]);
+      expect(await stringifyAttentionQuery(janeRuntime, "interleaved requirement while tool is running")).toContain(
+        "interleaved requirement while tool is running",
+      );
+
+      const afterCommit = messageSystem.getMessage(room.chatId, sent.messageId);
+      expect(afterCommit?.readActorIds).toContain("session:jane");
+      expect(afterCommit?.unreadActorIds).not.toContain("session:jane");
+    } finally {
+      messageSystem.close();
+    }
+  });
+
   test("Scenario: Given a delivery dispatch exists before the ai_call row binds When the model call is only running with no SSE yet Then delivery stays dispatching while ai_call binding becomes visible", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
@@ -1173,6 +1246,77 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(delivery.receipts).toEqual([]);
       expect(internal.pageModelCalls().items[0]?.status).toBe("running");
     } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given a model call advances from running to committed continuation When the final lifecycle persists Then requestBody stores the committed request messages", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+    const sessionRoot = (Reflect.get(runtime, "options") as { sessionRoot: string }).sessionRoot;
+    let db: SessionDb | null = null;
+
+    const initialMessages = [{ role: "user", content: "initial attention input" }];
+    const committedMessages = [
+      ...initialMessages,
+      { role: "assistant", content: "tool call placeholder" },
+      { role: "user", content: "tool_result\nsummary: 同轮补充条件" },
+    ];
+    const requestBase = {
+      systemPrompt: "system",
+      promptWindowStateId: "prompt-state-1",
+      roundIndex: 0,
+      messages: initialMessages,
+      tools: [{ name: "root_bash" }],
+      meta: { test: "committed-request-body" },
+    };
+
+    await runtime.start();
+    try {
+      await runtime.pause();
+      await internal.persistCycle({ wakeSource: "user", inputs: [] });
+      await internal.handleModelCall({
+        id: "call-committed-request-body",
+        timestamp: 500,
+        status: "running",
+        provider: "mock",
+        model: "mock-loop",
+        request: requestBase,
+      });
+      await internal.handleModelCall({
+        id: "call-committed-request-body",
+        timestamp: 550,
+        completedAt: 560,
+        status: "done",
+        provider: "mock",
+        model: "mock-loop",
+        request: {
+          ...requestBase,
+          messages: committedMessages,
+        },
+        outcome: { code: "done" },
+        response: {
+          decision: { kind: "model" },
+          assistant: {
+            text: "done",
+            finishReason: "stop",
+          },
+        },
+      });
+
+      db = new SessionDb(join(sessionRoot, "session.db"));
+      const persistedCall = db.listAiCalls(4).find((call) => call.provider === "mock" && call.model === "mock-loop");
+      expect(JSON.stringify(persistedCall?.requestBody)).toContain("summary: 同轮补充条件");
+      expect(
+        persistedCall?.requestBody &&
+          typeof persistedCall.requestBody === "object" &&
+          "messages" in persistedCall.requestBody &&
+          Array.isArray(persistedCall.requestBody.messages)
+          ? persistedCall.requestBody.messages.length
+          : 0,
+      ).toBe(committedMessages.length);
+    } finally {
+      db?.close();
       await runtime.stop();
     }
   });
