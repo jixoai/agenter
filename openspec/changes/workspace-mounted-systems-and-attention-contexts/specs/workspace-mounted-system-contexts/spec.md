@@ -1,6 +1,6 @@
 # workspace-mounted-system-contexts Specification
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Mounted workspaces SHALL be able to instantiate System adapters from file-backed settings
 Mounted workspaces SHALL be able to declare System instances from workspace-local settings files such as `settings.local.json`, rather than relying only on root-owned runtime injection.
