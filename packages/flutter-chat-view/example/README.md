@@ -9,8 +9,15 @@ The current shell visual law follows an iOS 26 inspired Liquid Glass hierarchy: 
 ## Run locally
 
 ```bash
-cd packages/flutter-chat-view/example
-flutter run -d chrome
+bun run flutter-chat-view:web
+```
+
+The launcher defaults to Flutter Web Wasm mode on port `4291`.
+Use `--port` or `PORT` to choose another port:
+
+```bash
+bun run flutter-chat-view:web -- --port 4300
+PORT=4300 bun run flutter-chat-view:web
 ```
 
 ## Connection model

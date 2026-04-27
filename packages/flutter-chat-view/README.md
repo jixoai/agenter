@@ -43,9 +43,11 @@ The package does not invent a second transport protocol. It follows the same roo
 Run the standalone demo:
 
 ```bash
-cd packages/flutter-chat-view/example
-flutter run -d chrome
+bun run flutter-chat-view:web
 ```
+
+The launcher defaults to Flutter Web Wasm mode on port `4291`.
+Use `bun run flutter-chat-view:web -- --port 4300` or `PORT=4300 bun run flutter-chat-view:web` to customize the port.
 
 The shell persists connection profiles locally, supports `?url=...&token=...` import links, and keeps room configuration in a secondary workflow instead of the primary conversation canvas.
 It now follows a three-state Web shell law:
