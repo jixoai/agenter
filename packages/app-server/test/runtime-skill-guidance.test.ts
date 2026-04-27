@@ -54,6 +54,9 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(terminal?.template).toContain("run `terminal bootstrap` before expecting read/write to work");
     expect(terminal?.template).toContain("`terminal read` consumes this actor's read cursor");
     expect(terminal?.template).toContain("`remark:false` inspects without advancing your cursor");
+    expect(terminal?.template).toContain("`terminal await` is the bounded observation primitive");
+    expect(terminal?.template).toContain("clean bounded snapshot lines and match context");
+    expect(terminal?.template).toContain("Shell-level `timeout` may still cancel the command");
     expect(terminal?.template).toContain("`lifecycleTransition` is a coordination lock");
     expect(terminal?.template).toContain("`terminal set-config`");
     expect(terminal?.template).toContain("Run `terminal stop` when you want to halt the PTY");
