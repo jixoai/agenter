@@ -163,18 +163,24 @@ path_overlaps_feature() {
 }
 
 DIRTY_ALL=()
-DIRTY_ALL+=("${DIRTY_TRACKED[@]}")
-DIRTY_ALL+=("${DIRTY_UNTRACKED[@]}")
+if [ "${#DIRTY_TRACKED[@]}" -gt 0 ]; then
+	DIRTY_ALL+=("${DIRTY_TRACKED[@]}")
+fi
+if [ "${#DIRTY_UNTRACKED[@]}" -gt 0 ]; then
+	DIRTY_ALL+=("${DIRTY_UNTRACKED[@]}")
+fi
 
 RESTORE_PATHS=()
 SKIPPED_PATHS=()
-for path in "${DIRTY_ALL[@]}"; do
-	if path_overlaps_feature "$path"; then
-		SKIPPED_PATHS+=("$path")
-	else
-		RESTORE_PATHS+=("$path")
-	fi
-done
+if [ "${#DIRTY_ALL[@]}" -gt 0 ]; then
+	for path in "${DIRTY_ALL[@]}"; do
+		if path_overlaps_feature "$path"; then
+			SKIPPED_PATHS+=("$path")
+		else
+			RESTORE_PATHS+=("$path")
+		fi
+	done
+fi
 
 emit_report() {
 	local report
@@ -264,19 +270,21 @@ if [ "$FEATURE_HEAD" != "$TARGET_HEAD" ]; then
 fi
 
 restore_path=""
-for restore_path in "${RESTORE_PATHS[@]}"; do
-	if path_in_array "$restore_path" "${DIRTY_DELETED[@]}"; then
+if [ "${#RESTORE_PATHS[@]}" -gt 0 ]; then
+	for restore_path in "${RESTORE_PATHS[@]}"; do
+		if [ "${#DIRTY_DELETED[@]}" -gt 0 ] && path_in_array "$restore_path" "${DIRTY_DELETED[@]}"; then
+			rm -rf "$CURRENT_ROOT/$restore_path"
+			continue
+		fi
+
+		if [ ! -e "$BACKUP_DIR/$restore_path" ]; then
+			continue
+		fi
+
 		rm -rf "$CURRENT_ROOT/$restore_path"
-		continue
-	fi
-
-	if [ ! -e "$BACKUP_DIR/$restore_path" ]; then
-		continue
-	fi
-
-	rm -rf "$CURRENT_ROOT/$restore_path"
-	mkdir -p "$CURRENT_ROOT/$(dirname "$restore_path")"
-	cp -R "$BACKUP_DIR/$restore_path" "$CURRENT_ROOT/$restore_path"
-done
+		mkdir -p "$CURRENT_ROOT/$(dirname "$restore_path")"
+		cp -R "$BACKUP_DIR/$restore_path" "$CURRENT_ROOT/$restore_path"
+	done
+fi
 
 emit_report "PASS"
