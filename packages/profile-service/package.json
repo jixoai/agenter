@@ -30,6 +30,7 @@
     "@types/bun": "latest",
     "@simplewebauthn/browser": "^13.3.0",
     "svelte": "^5.55.2",
+    "typescript": "latest",
     "vite": "^8.0.3"
   }
 }

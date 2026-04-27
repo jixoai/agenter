@@ -197,6 +197,7 @@
       "devDependencies": {
         "@types/bun": "latest",
         "@types/yargs": "^17.0.35",
+        "typescript": "latest",
       },
     },
     "packages/profile-service": {
@@ -220,6 +221,7 @@
         "@sveltejs/vite-plugin-svelte": "^7.0.0",
         "@types/bun": "latest",
         "svelte": "^5.55.2",
+        "typescript": "latest",
         "vite": "^8.0.3",
       },
     },
