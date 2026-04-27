@@ -41,6 +41,7 @@ export type {
   TerminalIssuedGrant,
   TerminalPatchInput,
   TerminalProcessProfile,
+  TerminalReadCursorRecord,
   TerminalReadMode,
   TerminalReadProjection,
   TerminalReadResult,

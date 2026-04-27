@@ -13,4 +13,10 @@ describe('Feature: Terminal route activity hydration contract', () => {
 		);
 		expect(terminalRouteSource).not.toContain('.hydrateGlobalTerminalActivity({ terminalId: currentTerminalId, limit: 120 })');
 	});
+
+	test('Scenario: Given an actor-backed terminal read When the route submits the read Then the selected actor cursor is consumed explicitly', () => {
+		expect(terminalRouteSource).toContain('await controller.runtimeStore.readGlobalTerminal({');
+		expect(terminalRouteSource).toContain('accessToken,');
+		expect(terminalRouteSource).toContain('remark: true,');
+	});
 });

@@ -102,7 +102,6 @@ export class AgenticTerminal {
   private structuredSerial = 0;
   private debugLogPath = "";
   private gitLogger: TerminalGitLogger | null = null;
-  private dirtyMarkHash: string | null = null;
   private observedIdentity: TerminalObservedIdentity = {};
   private lastRender: RenderResult = {
     lines: [],
@@ -254,7 +253,6 @@ export class AgenticTerminal {
       this.pty.start();
       this.inbox.start();
       this.started = true;
-      this.dirtyMarkHash = null;
       this.markBusy();
       this.markIdle();
     } catch (error) {
@@ -429,7 +427,6 @@ export class AgenticTerminal {
     if (!head.ok) {
       return { ok: false, hash: null, reason: head.error };
     }
-    this.dirtyMarkHash = head.hash;
     this.debug("dirty.mark", { hash: head.hash });
     return { ok: true, hash: head.hash };
   }
@@ -634,7 +631,6 @@ export class AgenticTerminal {
     this.renderListeners.length = 0;
     this.structuredListeners.length = 0;
     this.appliedSize = null;
-    this.dirtyMarkHash = null;
     this.started = false;
     this.status = "IDLE";
     this.resetObservedIdentity();
@@ -672,7 +668,6 @@ export class AgenticTerminal {
     this.started = false;
     this.status = "IDLE";
     this.appliedSize = null;
-    this.dirtyMarkHash = null;
     this.resetObservedIdentity();
     if (this.idleTimer !== null) {
       clearTimeout(this.idleTimer);
@@ -704,12 +699,12 @@ export class AgenticTerminal {
   }
 
   private async sliceDirtyOnce(options: TerminalDirtySliceOptions): Promise<TerminalDirtySliceResult> {
-    const remark = options.remark ?? true;
+    const requestedFromHash = options.fromHash ?? null;
     if (!this.isGitLogEnabled()) {
       return {
         ok: false,
         changed: false,
-        fromHash: null,
+        fromHash: requestedFromHash,
         toHash: null,
         diff: "",
         bytes: 0,
@@ -723,7 +718,7 @@ export class AgenticTerminal {
       return {
         ok: false,
         changed: false,
-        fromHash: this.dirtyMarkHash,
+        fromHash: requestedFromHash,
         toHash: null,
         diff: "",
         bytes: 0,
@@ -731,8 +726,7 @@ export class AgenticTerminal {
       };
     }
 
-    if (!this.dirtyMarkHash) {
-      this.dirtyMarkHash = baseHead.hash;
+    if (!requestedFromHash) {
       return {
         ok: true,
         changed: false,
@@ -743,7 +737,7 @@ export class AgenticTerminal {
       };
     }
 
-    const fromHash = this.dirtyMarkHash;
+    const fromHash = requestedFromHash;
     let toHash = baseHead.hash;
     const dirtyStatus = this.runGitCommand(["status", "--porcelain", "--", "output"]);
     if (!dirtyStatus.ok) {
@@ -799,9 +793,6 @@ export class AgenticTerminal {
     }
 
     if (fromHash === toHash) {
-      if (remark) {
-        this.dirtyMarkHash = toHash;
-      }
       return {
         ok: true,
         changed: false,
@@ -831,12 +822,9 @@ export class AgenticTerminal {
         reason: diffResult.stderr || diffResult.stdout || `git-diff-exit-${diffResult.code}`,
       };
     }
-    if (remark) {
-      this.dirtyMarkHash = toHash;
-    }
     const diff = diffResult.stdout;
     const changed = diff.length > 0;
-    this.debug("dirty.slice", { fromHash, toHash, bytes: diff.length, changed, remark });
+    this.debug("dirty.slice", { fromHash, toHash, bytes: diff.length, changed });
     return {
       ok: true,
       changed,

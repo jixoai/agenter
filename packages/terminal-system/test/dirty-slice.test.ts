@@ -16,7 +16,7 @@ const waitUntil = async (predicate: () => boolean, timeoutMs = 5000): Promise<vo
   }
 };
 
-test("markDirty + sliceDirty(wait) advances mark hash", async () => {
+test("Scenario: Given a caller-owned mark hash When sliceDirty waits Then it reads from that cursor", async () => {
   const outputRoot = mkdtempSync(join(tmpdir(), "ati-dirty-slice-"));
   const terminal = new AgenticTerminal(
     "node",
@@ -38,7 +38,12 @@ test("markDirty + sliceDirty(wait) advances mark hash", async () => {
   expect(mark.hash).not.toBeNull();
 
   terminal.writeRaw("ping\n");
-  const sliced = await terminal.sliceDirty({ wait: true, timeoutMs: 5000, pollMs: 100, remark: true });
+  const sliced = await terminal.sliceDirty({
+    fromHash: mark.hash,
+    wait: true,
+    timeoutMs: 5000,
+    pollMs: 100,
+  });
   expect(sliced.ok).toBe(true);
   expect(sliced.changed).toBe(true);
   expect(sliced.fromHash).not.toBeNull();
@@ -46,7 +51,7 @@ test("markDirty + sliceDirty(wait) advances mark hash", async () => {
   expect(sliced.fromHash).not.toBe(sliced.toHash);
   expect(sliced.diff.length).toBeGreaterThan(0);
 
-  const next = await terminal.sliceDirty({ remark: true });
+  const next = await terminal.sliceDirty({ fromHash: sliced.toHash });
   expect(next.ok).toBe(true);
   expect(next.fromHash).toBe(sliced.toHash);
 

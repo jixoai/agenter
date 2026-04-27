@@ -129,6 +129,12 @@ export interface TerminalReadResult {
   currentTitle?: string;
   currentPath?: string;
   running?: boolean;
+  readCursor?: {
+    readerActorId: TerminalActorId;
+    fromHash: string | null;
+    toHash: string | null;
+    consumed: boolean;
+  };
 }
 
 export interface TerminalTransportEndpoint {
@@ -226,6 +232,13 @@ export interface TerminalWriteLeaseRecord {
   createdAt: number;
   expiresAt: number;
   revokedAt?: number;
+}
+
+export interface TerminalReadCursorRecord {
+  terminalId: string;
+  readerActorId: TerminalActorId;
+  cursorHash: string | null;
+  updatedAt: number;
 }
 
 export interface TerminalEventPayload {

@@ -350,9 +350,13 @@ describe("Feature: app kernel event replay", () => {
     });
 
     expect(room.chatId).toMatch(/^0x[0-9a-f]{40}$/);
-    expect(room.transportUrl).toContain("ws://127.0.0.1:");
-    expect(room.transportUrl).toContain("/room/");
-    const socket = new WebSocket(room.transportUrl);
+    const roomTransportUrl = room.transportUrl;
+    expect(roomTransportUrl).toContain("ws://127.0.0.1:");
+    expect(roomTransportUrl).toContain("/room/");
+    if (!roomTransportUrl) {
+      throw new Error("expected room transport URL");
+    }
+    const socket = new WebSocket(roomTransportUrl);
     const roomTransportMessage = await waitForRoomTransportMessage(socket);
     socket.close();
     expect(roomTransportMessage.type).toBe("snapshot");

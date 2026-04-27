@@ -204,7 +204,7 @@ interface RuntimeInternal {
         lines: string[];
       };
       getStatus: () => "IDLE" | "BUSY";
-      sliceDirty: (input: { remark?: boolean; wait?: boolean }) => Promise<{
+      sliceDirty: (input: { fromHash?: string | null; wait?: boolean }) => Promise<{
         ok: boolean;
         changed: boolean;
         fromHash: string | null;

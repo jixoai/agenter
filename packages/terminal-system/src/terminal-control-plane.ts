@@ -91,6 +91,13 @@ interface TerminalChangePayload {
   actorId?: TerminalActorId;
 }
 
+interface TerminalReadCursorProjection {
+  readerActorId: TerminalActorId;
+  fromHash: string | null;
+  toHash: string | null;
+  consumed: boolean;
+}
+
 const TRUSTED_BOOTSTRAP_LABEL = "Trusted terminal bootstrap";
 const TRUSTED_BOOTSTRAP_PARTICIPANT_ID = "system:trusted-terminal-bootstrap" as const satisfies TerminalActorId;
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
@@ -235,6 +242,21 @@ const buildDiffPayload = (
   currentPath: projection.currentPath,
   running: projection.running,
 });
+
+const attachReadCursor = (
+  payload: TerminalReadResult,
+  readCursor: TerminalReadCursorProjection | null,
+): TerminalReadResult => {
+  if (!readCursor) {
+    return payload;
+  }
+  return {
+    ...payload,
+    fromHash: payload.fromHash ?? readCursor.fromHash,
+    toHash: payload.toHash ?? readCursor.toHash,
+    readCursor,
+  };
+};
 
 const resolveDisplayTitle = (
   terminalId: string,
@@ -566,6 +588,7 @@ export class TerminalControlPlane {
     if (!existed) {
       return { ok: false, message: `unknown terminal: ${terminalId}` };
     }
+    this.db.deleteReadCursors(terminalId);
     for (const [actorId, focused] of this.focusedTerminalIdsByActor.entries()) {
       if (!focused.delete(terminalId)) {
         continue;
@@ -895,13 +918,18 @@ export class TerminalControlPlane {
   }): Promise<TerminalReadResult> {
     this.authorizeRead(input);
     const actorId = this.resolveEventActorId(input);
+    const readerActorId = this.resolveReadCursorActorId(input);
+    const consumeReadCursor = input.remark ?? false;
     const entry = this.ensureManagedEntry(input.terminalId);
     const mode = input.mode ?? "auto";
     const snapshot = await entry.terminal.read();
     const projection = this.describeReadProjection(entry.record, entry.terminal);
-    const snapshotPayload = buildSnapshotPayload(input.terminalId, snapshot, projection);
+    let snapshotPayload = buildSnapshotPayload(input.terminalId, snapshot, projection);
     if (entry.record.profile.gitLog && mode !== "snapshot") {
-      const diff = await entry.terminal.sliceDirty({ remark: input.remark ?? false, wait: false });
+      const cursorHash = readerActorId
+        ? (this.db.getReadCursor(input.terminalId, readerActorId)?.cursorHash ?? null)
+        : null;
+      const diff = await entry.terminal.sliceDirty({ fromHash: cursorHash, wait: false });
       if (diff.ok && diff.changed && diff.fromHash !== diff.toHash) {
         const diffPayload = buildDiffPayload(
           input.terminalId,
@@ -913,12 +941,50 @@ export class TerminalControlPlane {
           },
           projection,
         );
+        const readCursor = readerActorId
+          ? {
+              readerActorId,
+              fromHash: diff.fromHash,
+              toHash: diff.toHash,
+              consumed: consumeReadCursor,
+            }
+          : null;
         const shouldUseDiff =
           mode === "diff" || JSON.stringify(diffPayload).length <= JSON.stringify(snapshotPayload).length;
         if (shouldUseDiff) {
-          return this.finalizeReadResult(diffPayload, actorId, input.recordActivity ?? true);
+          this.commitReadCursor(input.terminalId, readCursor);
+          return this.finalizeReadResult(
+            attachReadCursor(diffPayload, readCursor),
+            actorId,
+            input.recordActivity ?? true,
+          );
         }
       }
+      const readCursor = readerActorId
+        ? {
+            readerActorId,
+            fromHash: diff.ok ? diff.fromHash : cursorHash,
+            toHash: diff.ok ? diff.toHash : cursorHash,
+            consumed: consumeReadCursor,
+          }
+        : null;
+      this.commitReadCursor(input.terminalId, readCursor);
+      snapshotPayload = attachReadCursor(snapshotPayload, readCursor);
+    } else if (entry.record.profile.gitLog && mode === "snapshot") {
+      const cursorHash = readerActorId
+        ? (this.db.getReadCursor(input.terminalId, readerActorId)?.cursorHash ?? null)
+        : null;
+      const mark = consumeReadCursor ? await entry.terminal.markDirty() : null;
+      const readCursor = readerActorId
+        ? {
+            readerActorId,
+            fromHash: cursorHash,
+            toHash: mark?.ok ? mark.hash : cursorHash,
+            consumed: consumeReadCursor,
+          }
+        : null;
+      this.commitReadCursor(input.terminalId, readCursor);
+      snapshotPayload = attachReadCursor(snapshotPayload, readCursor);
     }
     return this.finalizeReadResult(snapshotPayload, actorId, input.recordActivity ?? true);
   }
@@ -1106,8 +1172,19 @@ export class TerminalControlPlane {
     return this.ensureManagedEntry(terminalId).terminal.getHeadHash();
   }
 
-  async markDirty(terminalId: string): Promise<{ ok: boolean; hash: string | null; reason?: string }> {
-    return await this.ensureManagedEntry(terminalId).terminal.markDirty();
+  async markDirty(
+    terminalId: string,
+    actorId?: TerminalActorId,
+  ): Promise<{ ok: boolean; hash: string | null; reason?: string }> {
+    const mark = await this.ensureManagedEntry(terminalId).terminal.markDirty();
+    if (mark.ok && actorId) {
+      this.db.upsertReadCursor({
+        terminalId,
+        readerActorId: actorId,
+        cursorHash: mark.hash,
+      });
+    }
+    return mark;
   }
 
   getSnapshot(terminalId: string): ManagedTerminalSnapshot {
@@ -2046,6 +2123,38 @@ export class TerminalControlPlane {
       terminalId: input.terminalId,
       accessToken: input.accessToken,
     }).participantId;
+  }
+
+  private resolveReadCursorActorId(input: {
+    terminalId: string;
+    actorId?: TerminalActorId;
+    accessToken?: string;
+    superadminActorId?: TerminalActorId;
+  }): TerminalActorId | undefined {
+    if (input.superadminActorId) {
+      return input.superadminActorId;
+    }
+    if (input.actorId) {
+      return input.actorId;
+    }
+    if (input.accessToken) {
+      return this.resolveGrant({
+        terminalId: input.terminalId,
+        accessToken: input.accessToken,
+      }).participantId;
+    }
+    return this.getTrustedBootstrapGrant(input.terminalId)?.participantId;
+  }
+
+  private commitReadCursor(terminalId: string, cursor: TerminalReadCursorProjection | null): void {
+    if (!cursor?.consumed || !cursor.toHash) {
+      return;
+    }
+    this.db.upsertReadCursor({
+      terminalId,
+      readerActorId: cursor.readerActorId,
+      cursorHash: cursor.toHash,
+    });
   }
 
   private authorizeRead(input: {

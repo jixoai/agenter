@@ -483,6 +483,12 @@ const isTerminalReadResultLike = (
   status?: "IDLE" | "BUSY";
   title?: string;
   running?: boolean;
+  readCursor?: {
+    readerActorId: GlobalTerminalActorId;
+    fromHash: string | null;
+    toHash: string | null;
+    consumed: boolean;
+  };
 } => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -534,6 +540,7 @@ const projectTerminalReadActivitySummary = (
         running: output.running ?? false,
         fromHash: output.fromHash ?? null,
         toHash: output.toHash ?? null,
+        readCursor: output.readCursor ?? null,
         bytes: output.bytes ?? null,
         preview,
         truncated: diffPreview.truncated,
@@ -565,6 +572,7 @@ const projectTerminalReadActivitySummary = (
       cols,
       rows,
       cursor: output.cursor ?? snapshot?.cursor ?? null,
+      readCursor: output.readCursor ?? null,
       lineCount,
       preview,
       truncated: tailPreview.truncated,
@@ -4639,7 +4647,7 @@ export class RuntimeStore {
             createdAt: Date.now(),
             kind: "terminal_read",
             cycleId: null,
-            actorId: undefined,
+            actorId: output.readCursor?.readerActorId,
             title: "Terminal read",
             content: readSummary?.content ?? "Terminal read",
             detail: readSummary?.detail ?? { representation: output.representation },
@@ -4697,7 +4705,7 @@ export class RuntimeStore {
             createdAt: Date.now(),
             kind: "terminal_read",
             cycleId: null,
-            actorId: undefined,
+            actorId: output.read.readCursor?.readerActorId,
             title: "Terminal read",
             content: readSummary?.content ?? "Terminal read",
             detail: readSummary?.detail ?? { representation: output.read.representation },
@@ -4763,7 +4771,7 @@ export class RuntimeStore {
             createdAt: Date.now(),
             kind: "terminal_read",
             cycleId: null,
-            actorId: undefined,
+            actorId: output.read.readCursor?.readerActorId,
             title: "Terminal read",
             content: readSummary?.content ?? "Terminal read",
             detail: readSummary?.detail ?? { representation: output.read.representation },

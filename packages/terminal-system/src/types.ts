@@ -100,7 +100,7 @@ export interface TerminalDirtySliceResult {
 }
 
 export interface TerminalDirtySliceOptions {
-  remark?: boolean;
+  fromHash?: string | null;
   wait?: boolean;
   timeoutMs?: number;
   pollMs?: number;

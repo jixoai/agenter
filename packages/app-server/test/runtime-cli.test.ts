@@ -271,6 +271,64 @@ describe("Feature: runtime descriptor CLI", () => {
     });
   });
 
+  test("Scenario: Given JSON stdin When terminal read runs without consumption Then the CLI preserves cursor and activity flags", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/terminal/read": {
+        result: {
+          representation: "diff",
+          readCursor: {
+            terminalId: "term-1",
+            readerActorId: "session-actor",
+            consumed: false,
+          },
+          recordedActivity: false,
+        },
+      },
+    });
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const result = await terminal.execute(
+      ["read"],
+      createCommandContext(
+        JSON.stringify({
+          terminalId: "term-1",
+          mode: "auto",
+          remark: false,
+          recordActivity: false,
+        }),
+      ),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({
+      terminalId: "term-1",
+      mode: "auto",
+      remark: false,
+      recordActivity: false,
+    });
+  });
+
+  test("Scenario: Given legacy compact terminal read input When the CLI decodes it Then recordActivity keeps its positional slot", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/terminal/read": {
+        result: {
+          representation: "diff",
+          recordedActivity: false,
+        },
+      },
+    });
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const result = await terminal.execute(["read", "--compact", '["term-1",0,false]'], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({
+      terminalId: "term-1",
+      mode: "auto",
+      recordActivity: false,
+    });
+  });
+
   test("Scenario: Given root workspace bash expands a UTF-8 JSON payload When message send forwards the heredoc argv Then the runtime API preserves the original Unicode content", async () => {
     const api = await startMockRuntimeApi({
       "/v1/message/send": { result: { ok: true, messageId: 1, recentMessages: [] } },
@@ -560,6 +618,30 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain('<key data="d" ctrl="true"/>');
     expect(result.stdout).toContain("skill info agenter-terminal");
     expect(result.stdout).toContain("references/input-modes.md");
+    expect(api.getRequests()).toHaveLength(0);
+  });
+
+  test("Scenario: Given descriptor help probe When terminal read --help runs Then cursor consumption controls are documented locally", async () => {
+    const api = await startMockRuntimeApi();
+    const terminal = createRuntimeCommand(api.baseUrl, "terminal");
+
+    const result = await terminal.execute(["read", "--help"], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Read terminal output using auto, diff, or snapshot mode.");
+    expect(result.stdout).toContain('"terminalId"');
+    expect(result.stdout).toContain('"mode"');
+    expect(result.stdout).toContain('"remark"');
+    expect(result.stdout).toContain('"recordActivity"');
+    expect(result.stdout).toContain("consumes this session actor's read cursor");
+    expect(result.stdout).toContain("Other actors keep their own cursor");
+    expect(result.stdout).toContain("`remark:false` performs non-consuming inspection");
+    expect(result.stdout).toContain("does not advance this actor's read cursor");
+    expect(result.stdout).toContain("`recordActivity:false` suppresses activity history");
+    expect(result.stdout).toContain("independent from cursor consumption");
+    expect(result.stdout).toContain("Availability: Suggested");
+    expect(result.stdout).toContain("[2] recordActivity?: boolean");
+    expect(result.stdout).toContain("[3] remark?: boolean");
     expect(api.getRequests()).toHaveLength(0);
   });
 

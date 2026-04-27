@@ -416,6 +416,7 @@ import type {
 				terminalId: terminal.terminalId,
 				accessToken,
 				mode: input.mode,
+				remark: true,
 			});
 			routeNotice = null;
 		} catch (error) {

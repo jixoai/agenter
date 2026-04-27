@@ -28,6 +28,8 @@ Key laws:
 - `terminal list` is the lifecycle and observed-identity inspection surface. Read `processPhase`, `currentPath`, `currentTitle`, and stop facts there before inferring state from raw output.
 - `terminal create` auto-bootstraps by default. A newly created terminal may briefly expose `lifecycleTransition = bootstrapping`; wait and reread instead of firing a redundant second bootstrap.
 - Stopped or provisioned terminals do not auto-start when you read or write. Use `terminal bootstrap` explicitly.
+- `terminal read` consumes this actor's read cursor. Other actors keep independent cursors on the same shared terminal output.
+- Use `terminal read` deliberately: `remark:false` inspects without advancing your cursor, while normal reads advance only your actor's cursor.
 - `lifecycleTransition` is a coordination lock, not a work item. If it is `bootstrapping` or `killing`, wait and reread `terminal list` or `terminal get-config` before sending another lifecycle or config mutation.
 - `terminal get-config` is the durable launch/config inspection surface. Use it for `command`, `launchCwd`, geometry, metadata, and other next-bootstrap truth.
 - `terminal set-config` patches durable launch/config truth without changing the terminal id.

@@ -97,6 +97,7 @@ export interface RuntimeLocalApiHandlers {
     terminalId: string;
     mode?: "auto" | "diff" | "snapshot";
     recordActivity?: boolean;
+    remark?: boolean;
   }) => Promise<unknown>;
   terminalWrite: (input: {
     terminalId: string;
@@ -312,6 +313,7 @@ const terminalReadSchema = z.object({
   terminalId: z.string(),
   mode: z.enum(["auto", "diff", "snapshot"]).optional(),
   recordActivity: z.boolean().optional(),
+  remark: z.boolean().optional(),
 });
 
 const terminalWriteSchema = z.object({
@@ -841,12 +843,20 @@ export const runtimeToolDescriptors = [
     route: "/v1/terminal/read",
     description: "Read terminal output using auto, diff, or snapshot mode.",
     helpNotes: [
-      "`terminal read` is inspection only. It does not bootstrap stopped terminals for you.",
+      "`terminal read` consumes this session actor's read cursor. Other actors keep their own cursor.",
+      "`remark:false` performs non-consuming inspection and does not advance this actor's read cursor.",
+      "`recordActivity:false` suppresses activity history; it is independent from cursor consumption.",
+      "It does not bootstrap stopped terminals for you.",
       "If `terminal list` shows `processPhase` as `not_started` or `stopped`, run `terminal bootstrap` before expecting read/write to work.",
     ],
     inputSchema: terminalReadSchema,
     examples: [
       { kind: "stdin", payload: { terminalId: "term-1", mode: "auto" } },
+      {
+        kind: "stdin",
+        payload: { terminalId: "term-1", mode: "auto", remark: false, recordActivity: false },
+        description: "for non-consuming inspection without activity history",
+      },
       { kind: "argv", payload: { terminalId: "term-1", mode: "auto" } },
     ],
     handler: async (input, handlers) => ({

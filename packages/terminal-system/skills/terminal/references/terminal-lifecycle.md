@@ -21,6 +21,8 @@ Rules:
 - if `lifecycleTransition` is `bootstrapping` or `killing`, wait and reread instead of stacking another lifecycle mutation
 - `terminal read`, `terminal write`, and `terminal input` do not auto-start stopped terminals; use `terminal bootstrap` explicitly
 - use `terminal read` after launching a process to inspect its actual state
+- `terminal read` consumes only your actor read cursor; other actors keep independent read progress for the same shared terminal output
+- use `remark:false` only when you need non-consuming inspection, not when you are claiming that you handled the current output
 - `terminal stop` halts the PTY while preserving the terminal record for later bootstrap
 - if you need durable launch truth instead of observed runtime truth, switch to `terminal get-config`
 - keep long-lived or interactive processes in terminals instead of one-shot bash

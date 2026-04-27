@@ -8545,6 +8545,12 @@ describe("Feature: runtime store synchronization", () => {
           status: "IDLE",
           title: "Stale page terminal",
           running: true,
+          readCursor: {
+            readerActorId: "auth:reader",
+            fromHash: "before-read",
+            toHash: "after-read",
+            consumed: true,
+          },
         }),
         terminalActivityPageQuery: async () => {
           activityCalls += 1;
@@ -8574,10 +8580,17 @@ describe("Feature: runtime store synchronization", () => {
       terminalId,
       kind: "terminal_read",
       title: "Terminal read",
+      actorId: "auth:reader",
       detail: {
         eventId: readActivity.id,
         terminalId,
         representation: "snapshot",
+        readCursor: {
+          readerActorId: "auth:reader",
+          fromHash: "before-read",
+          toHash: "after-read",
+          consumed: true,
+        },
       },
     });
     expect(

@@ -18,6 +18,7 @@ import type {
   TerminalIssueGrantInput,
   TerminalPatchInput,
   TerminalRecord,
+  TerminalReadCursorRecord,
   TerminalWriteLeaseRecord,
 } from "./terminal-control-plane.types";
 import type { TerminalLifecycleState } from "./terminal-runtime-truth";
@@ -199,6 +200,18 @@ const mapEvent = (row: {
   kind: row.kind === "terminal_write" ? "terminal_write" : "terminal_read",
   createdAt: row.created_at,
   payload: parseJson<TerminalEventPayload>(row.payload_json, { title: row.kind, content: "" }),
+});
+
+const mapReadCursor = (row: {
+  terminal_id: string;
+  reader_actor_id: string;
+  cursor_hash: string | null;
+  updated_at: number;
+}): TerminalReadCursorRecord => ({
+  terminalId: row.terminal_id,
+  readerActorId: row.reader_actor_id as TerminalReadCursorRecord["readerActorId"],
+  cursorHash: row.cursor_hash ?? null,
+  updatedAt: row.updated_at,
 });
 
 export class TerminalDb {
@@ -671,6 +684,40 @@ export class TerminalDb {
     return this.getEvent(Number(result.lastInsertRowid))!;
   }
 
+  getReadCursor(terminalId: string, readerActorId: string): TerminalReadCursorRecord | undefined {
+    const row = this.db
+      .query(
+        `select terminal_id, reader_actor_id, cursor_hash, updated_at
+         from terminal_read_cursor
+         where terminal_id = ? and reader_actor_id = ?`,
+      )
+      .get(terminalId, readerActorId) as Parameters<typeof mapReadCursor>[0] | null;
+    return row ? mapReadCursor(row) : undefined;
+  }
+
+  upsertReadCursor(input: {
+    terminalId: string;
+    readerActorId: string;
+    cursorHash: string | null;
+    updatedAt?: number;
+  }): TerminalReadCursorRecord {
+    const updatedAt = input.updatedAt ?? Date.now();
+    this.db
+      .query(
+        `insert into terminal_read_cursor (
+          terminal_id, reader_actor_id, cursor_hash, updated_at
+        ) values (?, ?, ?, ?)
+        on conflict(terminal_id, reader_actor_id)
+        do update set cursor_hash = excluded.cursor_hash, updated_at = excluded.updated_at`,
+      )
+      .run(input.terminalId, input.readerActorId, input.cursorHash, updatedAt);
+    return this.getReadCursor(input.terminalId, input.readerActorId)!;
+  }
+
+  deleteReadCursors(terminalId: string): void {
+    this.db.query(`delete from terminal_read_cursor where terminal_id = ?`).run(terminalId);
+  }
+
   getEvent(eventId: number): TerminalEventRecord | undefined {
     const row = this.db
       .query(
@@ -793,12 +840,20 @@ export class TerminalDb {
         created_at integer not null,
         payload_json text
       );
+      create table if not exists terminal_read_cursor (
+        terminal_id text not null,
+        reader_actor_id text not null,
+        cursor_hash text,
+        updated_at integer not null,
+        primary key (terminal_id, reader_actor_id)
+      );
       create index if not exists idx_terminal_catalog_updated on terminal_catalog(updated_at desc, terminal_id asc);
       create index if not exists idx_terminal_grant_terminal_participant on terminal_grant(terminal_id, participant_id, created_at desc, grant_id desc);
       create index if not exists idx_terminal_grant_token on terminal_grant(terminal_id, token_hash, created_at desc, grant_id desc);
       create index if not exists idx_terminal_request_terminal_status on terminal_approval_request(terminal_id, status, created_at asc, request_id asc);
       create index if not exists idx_terminal_lease_terminal_participant on terminal_write_lease(terminal_id, participant_id, expires_at desc, lease_id desc);
       create index if not exists idx_terminal_event_terminal_created on terminal_event(terminal_id, created_at desc, event_id desc);
+      create index if not exists idx_terminal_read_cursor_terminal on terminal_read_cursor(terminal_id, updated_at desc);
     `);
     this.ensureCatalogColumns();
   }

@@ -476,6 +476,149 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
+  test("Scenario: Given two actor seats share one terminal When each consumes terminal diff Then each seat keeps an independent read cursor", async () => {
+    const plane = createPlane();
+    const owner = "session:owner" as const;
+    const reviewer = "session:reviewer" as const;
+    plane.setActorPresence(owner, true);
+    plane.setActorPresence(reviewer, true);
+    const created = await plane.create({
+      terminalId: "actor-read-cursor",
+      bootstrapActorId: owner,
+      bootstrapRole: "admin",
+      profile: {
+        gitLog: "normal",
+      },
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: owner,
+      participantId: reviewer,
+      role: "readonly",
+    });
+    const ownerMark = await plane.markDirty(created.terminalId, owner);
+    const reviewerMark = await plane.markDirty(created.terminalId, reviewer);
+
+    await plane.write({
+      terminalId: created.terminalId,
+      actorId: owner,
+      text: "cursor-line\n",
+    });
+    await Bun.sleep(200);
+
+    const ownerRead = await plane.readAuthorized({
+      terminalId: created.terminalId,
+      actorId: owner,
+      mode: "diff",
+      remark: true,
+      recordActivity: false,
+    });
+    const reviewerRead = await plane.readAuthorized({
+      terminalId: created.terminalId,
+      actorId: reviewer,
+      mode: "diff",
+      remark: true,
+      recordActivity: false,
+    });
+
+    expect(ownerRead.representation).toBe("diff");
+    expect(reviewerRead.representation).toBe("diff");
+    expect(ownerRead.diff).toContain("cursor-line");
+    expect(reviewerRead.diff).toContain("cursor-line");
+    expect(ownerRead.readCursor).toMatchObject({
+      readerActorId: owner,
+      fromHash: ownerMark.hash,
+      consumed: true,
+    });
+    expect(reviewerRead.readCursor).toMatchObject({
+      readerActorId: reviewer,
+      fromHash: reviewerMark.hash,
+      consumed: true,
+    });
+
+    const ownerNext = await plane.readAuthorized({
+      terminalId: created.terminalId,
+      actorId: owner,
+      mode: "diff",
+      remark: false,
+      recordActivity: false,
+    });
+    expect(ownerNext.readCursor?.fromHash).toBe(ownerRead.readCursor?.toHash);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a seat token reads without remark When it later consumes Then the actor cursor advances only on consumption", async () => {
+    const plane = createPlane();
+    const owner = "session:owner" as const;
+    const reviewer = "session:reviewer" as const;
+    plane.setActorPresence(owner, true);
+    plane.setActorPresence(reviewer, true);
+    const created = await plane.create({
+      terminalId: "token-read-cursor",
+      bootstrapActorId: owner,
+      bootstrapRole: "admin",
+      profile: {
+        gitLog: "normal",
+      },
+    });
+    const grant = plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: owner,
+      participantId: reviewer,
+      role: "readonly",
+    });
+    const reviewerMark = await plane.markDirty(created.terminalId, reviewer);
+
+    await plane.write({
+      terminalId: created.terminalId,
+      actorId: owner,
+      text: "token-cursor-line\n",
+    });
+    await Bun.sleep(200);
+
+    const inspection = await plane.readAuthorized({
+      terminalId: created.terminalId,
+      accessToken: grant.accessToken,
+      mode: "diff",
+      remark: false,
+      recordActivity: false,
+    });
+    expect(inspection.representation).toBe("diff");
+    expect(inspection.diff).toContain("token-cursor-line");
+    expect(inspection.readCursor).toMatchObject({
+      readerActorId: reviewer,
+      fromHash: reviewerMark.hash,
+      consumed: false,
+    });
+
+    const consumed = await plane.readAuthorized({
+      terminalId: created.terminalId,
+      accessToken: grant.accessToken,
+      mode: "diff",
+      remark: true,
+      recordActivity: false,
+    });
+    expect(consumed.representation).toBe("diff");
+    expect(consumed.diff).toContain("token-cursor-line");
+    expect(consumed.readCursor).toMatchObject({
+      readerActorId: reviewer,
+      fromHash: reviewerMark.hash,
+      consumed: true,
+    });
+
+    const next = await plane.readAuthorized({
+      terminalId: created.terminalId,
+      accessToken: grant.accessToken,
+      mode: "diff",
+      remark: false,
+      recordActivity: false,
+    });
+    expect(next.readCursor?.fromHash).toBe(consumed.readCursor?.toHash);
+
+    await plane.dispose();
+  });
+
   test("Scenario: Given config updates When reading config and stopping then deleting terminals Then profile overrides are preserved while runtime stop stays separate from catalog delete", async () => {
     const plane = createPlane();
     const config = plane.setConfig({

@@ -586,6 +586,21 @@ const buildTerminalSnapshotPayload = (
   processPhase,
 });
 
+const attachTerminalReadCursor = (
+  payload: ControlPlaneTerminalReadResult,
+  readCursor: ControlPlaneTerminalReadResult["readCursor"] | null,
+): ControlPlaneTerminalReadResult => {
+  if (!readCursor) {
+    return payload;
+  }
+  return {
+    ...payload,
+    fromHash: payload.fromHash ?? readCursor.fromHash,
+    toHash: payload.toHash ?? readCursor.toHash,
+    readCursor,
+  };
+};
+
 const truncateTerminalAttentionDetail = (value: string): string => {
   return truncateAttentionDetail(value, MAX_TERMINAL_ATTENTION_DETAIL_CHARS);
 };
@@ -1482,6 +1497,7 @@ export class SessionRuntime {
   private readonly listeners: Array<(event: RuntimeEvent) => void> = [];
   private readonly terminalSnapshots: Record<string, ManagedTerminalSnapshot> = {};
   private readonly terminalReads: Record<string, ControlPlaneTerminalReadResult> = {};
+  private readonly terminalReadCursorHashById: Record<string, string | null> = {};
   private readonly terminalLatestSeq: Record<string, number> = {};
   private readonly terminalViewFingerprint: Record<string, string> = {};
   private readonly terminalSemanticFingerprint: Record<string, string> = {};
@@ -3093,7 +3109,7 @@ export class SessionRuntime {
   }): Promise<TerminalReadPayload> {
     return await this.readTerminalRepresentation(input.terminalId, {
       mode: input.mode ?? "auto",
-      remark: false,
+      remark: true,
       recordActivity: input.recordActivity ?? true,
     });
   }
@@ -3187,7 +3203,7 @@ export class SessionRuntime {
         }
         controlPlane.bootstrap(targetTerminalId);
         if (this.config.terminals[targetTerminalId]?.gitLog) {
-          await controlPlane.markDirty(targetTerminalId);
+          await controlPlane.markDirty(targetTerminalId, this.terminalActorId);
         }
         createdTerminalId = targetTerminalId;
       } else {
@@ -3331,6 +3347,7 @@ export class SessionRuntime {
     delete this.terminalLatestSeq[terminalId];
     delete this.terminalSnapshots[terminalId];
     delete this.terminalReads[terminalId];
+    delete this.terminalReadCursorHashById[terminalId];
     this.terminalKernelAdapter.markTerminalConsumed(terminalId);
     if (this.config?.terminals[terminalId]) {
       delete this.config.terminals[terminalId];
@@ -6212,7 +6229,10 @@ export class SessionRuntime {
       try {
         terminal.start();
         if (this.config.terminals[boot.terminalId]?.gitLog) {
-          await terminal.markDirty();
+          const mark = await terminal.markDirty();
+          if (mark.ok) {
+            this.terminalReadCursorHashById[boot.terminalId] = mark.hash;
+          }
         }
         this.notifyInput("terminal");
       } catch (error) {
@@ -6303,6 +6323,9 @@ export class SessionRuntime {
     }
     for (const terminalId of Object.keys(this.terminalReads)) {
       delete this.terminalReads[terminalId];
+    }
+    for (const terminalId of Object.keys(this.terminalReadCursorHashById)) {
+      delete this.terminalReadCursorHashById[terminalId];
     }
     for (const terminalId of Object.keys(this.terminalViewFingerprint)) {
       delete this.terminalViewFingerprint[terminalId];
@@ -7264,17 +7287,18 @@ export class SessionRuntime {
         return { ok: false, reason: `unknown terminal: ${terminalId}` };
       }
 
-      const snapshotPayload = buildTerminalSnapshotPayload(
+      let snapshotPayload = buildTerminalSnapshotPayload(
         terminalId,
         terminal.getSnapshot(),
         terminal.getStatus(),
         terminal.isRunning() ? "running" : "stopped",
       );
       const snapshotJson = JSON.stringify(snapshotPayload);
+      const cursorHash = this.terminalReadCursorHashById[terminalId] ?? null;
 
       if (config.gitLog && input.mode !== "snapshot") {
         const slice = await terminal.sliceDirty({
-          remark: input.remark,
+          fromHash: cursorHash,
           wait: false,
         });
         if (slice.ok && slice.changed && slice.fromHash !== slice.toHash) {
@@ -7289,13 +7313,46 @@ export class SessionRuntime {
           const shouldUseDiff =
             input.mode === "diff" ||
             (input.mode === "auto" && JSON.stringify(diffPayload).length <= snapshotJson.length);
+          const readCursor: ControlPlaneTerminalReadResult["readCursor"] = {
+            readerActorId: this.terminalActorId,
+            fromHash: slice.fromHash,
+            toHash: slice.toHash,
+            consumed: input.remark,
+          };
           if (shouldUseDiff) {
             if (input.remark) {
+              this.terminalReadCursorHashById[terminalId] = slice.toHash;
               this.terminalKernelAdapter.markTerminalConsumed(terminalId);
             }
-            return this.publishTerminalReadPayload(terminalId, diffPayload, recordActivity);
+            return this.publishTerminalReadPayload(
+              terminalId,
+              attachTerminalReadCursor(diffPayload, readCursor),
+              recordActivity,
+            );
           }
         }
+        const readCursor: ControlPlaneTerminalReadResult["readCursor"] = {
+          readerActorId: this.terminalActorId,
+          fromHash: slice.ok ? slice.fromHash : cursorHash,
+          toHash: slice.ok ? slice.toHash : cursorHash,
+          consumed: input.remark,
+        };
+        if (input.remark && slice.ok) {
+          this.terminalReadCursorHashById[terminalId] = slice.toHash;
+        }
+        snapshotPayload = attachTerminalReadCursor(snapshotPayload, readCursor);
+      } else if (config.gitLog && input.mode === "snapshot") {
+        const mark = input.remark ? await terminal.markDirty() : null;
+        const readCursor: ControlPlaneTerminalReadResult["readCursor"] = {
+          readerActorId: this.terminalActorId,
+          fromHash: cursorHash,
+          toHash: mark?.ok ? mark.hash : cursorHash,
+          consumed: input.remark,
+        };
+        if (mark?.ok) {
+          this.terminalReadCursorHashById[terminalId] = mark.hash;
+        }
+        snapshotPayload = attachTerminalReadCursor(snapshotPayload, readCursor);
       }
 
       if (input.remark) {

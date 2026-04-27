@@ -1,5 +1,5 @@
 import { AgenticTerminal } from "./agentic-terminal";
-import type { RenderResult, RichLine, TerminalDirtySliceResult, TerminalPendingInputResult, TerminalStatus } from "./types";
+import type { RenderResult, RichLine, TerminalDirtySliceOptions, TerminalDirtySliceResult, TerminalPendingInputResult, TerminalStatus } from "./types";
 import type { TerminalLifecycleState, TerminalObservedIdentity } from "./terminal-runtime-truth";
 
 export interface ManagedTerminalConfig {
@@ -401,9 +401,7 @@ export class ManagedTerminal {
     return this.terminal.markDirty();
   }
 
-  async sliceDirty(
-    options: { remark?: boolean; wait?: boolean; timeoutMs?: number; pollMs?: number } = {},
-  ): Promise<TerminalDirtySliceResult> {
+  async sliceDirty(options: TerminalDirtySliceOptions = {}): Promise<TerminalDirtySliceResult> {
     if (!this.terminal) {
       return {
         ok: false,
