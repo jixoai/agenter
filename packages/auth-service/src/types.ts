@@ -138,7 +138,7 @@ export interface AvatarIconSeed {
   classify: AvatarClassify | null;
 }
 
-export interface ProfileServiceOptions {
+export interface AuthServiceOptions {
   dataDir?: string;
   publicBaseUrl?: string;
   host?: string;
@@ -153,11 +153,15 @@ export interface ProfileServiceOptions {
   onEmailChallengeIssued?: (event: EmailChallengeIssuedEvent) => void | Promise<void>;
 }
 
-export interface ProfileServiceHandle {
+export type ProfileServiceOptions = AuthServiceOptions;
+
+export interface AuthServiceHandle {
   host: string;
   port: number;
   stop: () => Promise<void>;
 }
+
+export type ProfileServiceHandle = AuthServiceHandle;
 
 export interface EmailChallengeIssuedEvent {
   challengeId: string;

@@ -66,7 +66,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `@agenter/web-chat-view` 是 room transcript 的共享 transport surface，必须保持对 `@agenter/webui` 的包级正交；operator route 消费它，而不是重新发明一套 route-local transcript renderer。
 - `Heartbeat` 与 `@agenter/web-chat-view` 这类 latest-anchored transcript surface 的 durable law 是“chronological storage, reverse-flow view boundary”: store / transport 仍保持时间正序 truth，reverse 映射只允许发生在共享 timeline primitive 边界，不得泄漏回 durable merge / pagination contract。
 - Auth identity 与 Avatar/business role 永远分层：auth 只表达“谁可以认证并持有授权声明”，Avatar 只表达 workspace/session 的业务角色与提示词行为。
-- `profile-service` 是 durable profile identity、proof-bearing auth 与 icon/media fallback 的 canonical owner；`app-server` 只负责 child-runtime 生命周期与 endpoint 发现，`client-sdk`、`webui` 必须直连该 service 的公开接口，不能重新引入第二套本地 authority。
+- `auth-service` 是 durable auth identity、profile projection、proof-bearing auth 与 icon/media fallback 的 canonical owner；`profile-service` 只保留为兼容别名。`app-server` 只负责 child-runtime 生命周期与 endpoint 发现，`client-sdk`、`webui` 必须直连该 service 的公开接口，不能重新引入第二套本地 authority。
 - room / terminal seat credential 属于 Avatar seat 的本地状态，而不是 workspace root state；它们必须落在目标 Avatar 自己的 `settings.local.json` 中。
 - `app-server` 是 WorkspaceSystem、AvatarRuntime lifecycle 与 attention-derived notification projection 的组合根，但它不能偷当 room/terminal durable truth owner。
 - runtime shell surface 采用“固定原语 + 渐进发现”法则：模型先看到 root workspace 与 skills 索引，需要细节时再通过 `skill` 和各 system CLI 展开，而不是把 system guide 预注入到 bootstrap prompt。
@@ -113,7 +113,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `Terminals` 是 app-level global workbench，不是 session-private surface；session route 只允许链接或投影该工作台，不能重新定义第二套 terminal truth。
 - Devtools 是技术事实的独立检查面板，不把技术结构反向污染主聊天流。
 - regular workspace 与 global workspace 共用同一套 settings API shape：shared defaults 落到 `settings.json`，machine-local secret 落到 workspace/global `settings.local.json`，Avatar seat 的 room / terminal credential 落到 avatar-local `settings.local.json`。
-- Session / room / profile-avatar icon 必须通过 profile-service 的 typed semantic URL family 消费；owner type 不能混入无类型 bucket。fallback 由服务端统一解析（uploaded asset > eligible external fallback > deterministic renderer），默认读返回服务端光栅化结果，前端不得再承担 fallback rasterization authority。
+- Session / room / profile-avatar icon 必须通过 auth-service 的 typed semantic URL family 消费；`profile` 在这里是 media owner 类型，不是服务包名。owner type 不能混入无类型 bucket。fallback 由服务端统一解析（uploaded asset > eligible external fallback > deterministic renderer），默认读返回服务端光栅化结果，前端不得再承担 fallback rasterization authority。
 - 应用级品牌图标的 canonical source 固定在仓库根 `assets/source/master`；Web favicon、PWA、Apple、Android、macOS 等派生资产必须由统一脚本从该主源生成，`packages/webui/static` 只承载运行时消费副本，不得成为第二真源。
 - 桌面端与移动端都是一等验收对象；能力必须双端可达，但导航结构可以不同。
 

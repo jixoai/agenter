@@ -5325,7 +5325,7 @@ async function startAuthentication(options) {
     };
 }
 
-const AUTH_MESSAGE_SOURCE = "agenter-profile-service";
+const AUTH_MESSAGE_SOURCE = "agenter-auth-service";
 const resolveOpenerOrigin = () => {
   const openerOrigin = new URLSearchParams(window.location.search).get("openerOrigin")?.trim();
   if (openerOrigin) {

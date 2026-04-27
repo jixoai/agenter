@@ -1,1 +1,1 @@
-export { runProfileCli } from "./run-cli";
+export * from "@agenter/auth-cli";

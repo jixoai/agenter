@@ -1,0 +1,36 @@
+{
+  "name": "@agenter/auth-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:native": "cargo build --release --manifest-path native/resvg_bridge/Cargo.toml",
+    "build:webauthn-ui": "node ./scripts/build-webauthn-ui.mjs",
+    "test": "bun run build:native && bun test",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agenter/avatar": "workspace:*",
+    "@agenter/principal-crypto": "workspace:*",
+    "@duckdb/node-api": "^1.5.1-r.1",
+    "@hono/node-server": "^1.19.11",
+    "@simplewebauthn/server": "^13.3.0",
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
+    "hono": "^4.12.9",
+    "tweetnacl": "^1.0.3",
+    "viem": "^2.47.6",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@types/bun": "latest",
+    "@simplewebauthn/browser": "^13.3.0",
+    "svelte": "^5.55.2",
+    "typescript": "latest",
+    "vite": "^8.0.3"
+  }
+}

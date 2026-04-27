@@ -30,14 +30,23 @@ const printJson = (value: unknown): void => {
 };
 
 const resolveToken = (args: { token?: string | null }, argvToken: string | null): string => {
-  const token = args.token?.trim() ?? argvToken?.trim() ?? process.env.PROFILE_SERVICE_TOKEN?.trim() ?? "";
+  const token =
+    args.token?.trim() ??
+    argvToken?.trim() ??
+    process.env.AUTH_SERVICE_TOKEN?.trim() ??
+    process.env.PROFILE_SERVICE_TOKEN?.trim() ??
+    "";
   if (token.length === 0) {
-    throw new Error("token is required; pass --token or set PROFILE_SERVICE_TOKEN");
+    throw new Error("token is required; pass --token or set AUTH_SERVICE_TOKEN");
   }
   return token;
 };
 
-const withAuthHeaders = (args: { token?: string | null }, argvToken: string | null, headers: HeadersInit = {}): HeadersInit => ({
+const withAuthHeaders = (
+  args: { token?: string | null },
+  argvToken: string | null,
+  headers: HeadersInit = {},
+): HeadersInit => ({
   ...headers,
   authorization: `Bearer ${resolveToken(args, argvToken)}`,
 });
@@ -45,7 +54,9 @@ const withAuthHeaders = (args: { token?: string | null }, argvToken: string | nu
 const readJsonResponse = async <T>(response: Response): Promise<T> => {
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(body.length > 0 ? `request failed (${response.status}): ${body}` : `request failed (${response.status})`);
+    throw new Error(
+      body.length > 0 ? `request failed (${response.status}): ${body}` : `request failed (${response.status})`,
+    );
   }
   return (await response.json()) as T;
 };
@@ -73,31 +84,31 @@ const parseExtraJson = (value: string | undefined): Record<string, unknown> | un
 
 const toOwnedArrayBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 
-export const runProfileCli = async (argvInput = process.argv): Promise<void> => {
+export const runAuthCli = async (argvInput = process.argv): Promise<void> => {
   const rawArgs = argvInput.slice(2);
   const argvToken = readCliOption(rawArgs, "--token");
 
   await yargs(rawArgs)
-    .scriptName("profile-cli")
+    .scriptName("auth-cli")
     .option("endpoint", {
       type: "string",
       default: DEFAULT_ENDPOINT,
-      describe: "profile-service endpoint",
+      describe: "auth-service endpoint",
     })
     .option("token", {
       type: "string",
-      describe: "profile auth token",
+      describe: "auth-service bearer token",
     })
     .command(
       "doctor",
-      "check profile-service connectivity",
+      "check auth-service connectivity",
       (builder) => builder,
       async (args) => {
         const response = await fetch(`${String(args.endpoint)}/health`);
         if (!response.ok) {
-          throw new Error(`profile-service health failed (${response.status})`);
+          throw new Error(`auth-service health failed (${response.status})`);
         }
-        console.log(`profile-service healthy at ${String(args.endpoint)}`);
+        console.log(`auth-service healthy at ${String(args.endpoint)}`);
       },
     )
     .command(
@@ -145,11 +156,14 @@ export const runProfileCli = async (argvInput = process.argv): Promise<void> => 
           address: args.address,
           extra: parseExtraJson(args.extraJson),
         };
-        const response = await fetch(`${String(args.endpoint)}/profiles/${encodeURIComponent(String(args.reference))}`, {
-          method: "PATCH",
-          headers: withAuthHeaders(args, argvToken, jsonHeaders),
-          body: JSON.stringify(payload),
-        });
+        const response = await fetch(
+          `${String(args.endpoint)}/profiles/${encodeURIComponent(String(args.reference))}`,
+          {
+            method: "PATCH",
+            headers: withAuthHeaders(args, argvToken, jsonHeaders),
+            body: JSON.stringify(payload),
+          },
+        );
         printJson(await readJsonResponse(response));
       },
     )
@@ -169,11 +183,14 @@ export const runProfileCli = async (argvInput = process.argv): Promise<void> => 
           .option("token", { type: "string" }),
       async (args) => {
         const icon = await readIconFile(String(args.file));
-        const response = await fetch(`${String(args.endpoint)}/profiles/${encodeURIComponent(String(args.reference))}/icon`, {
-          method: "POST",
-          headers: withAuthHeaders(args, argvToken, { "content-type": icon.mimeType }),
-          body: new Blob([toOwnedArrayBuffer(icon.bytes)], { type: icon.mimeType }),
-        });
+        const response = await fetch(
+          `${String(args.endpoint)}/profiles/${encodeURIComponent(String(args.reference))}/icon`,
+          {
+            method: "POST",
+            headers: withAuthHeaders(args, argvToken, { "content-type": icon.mimeType }),
+            body: new Blob([toOwnedArrayBuffer(icon.bytes)], { type: icon.mimeType }),
+          },
+        );
         printJson(await readJsonResponse(response));
       },
     )
@@ -192,11 +209,14 @@ export const runProfileCli = async (argvInput = process.argv): Promise<void> => 
           }),
       async (args) => {
         const icon = await readIconFile(String(args.file));
-        const response = await fetch(`${String(args.endpoint)}/sessions/${encodeURIComponent(String(args.sessionId))}/icon`, {
-          method: "POST",
-          headers: { "content-type": icon.mimeType },
-          body: new Blob([toOwnedArrayBuffer(icon.bytes)], { type: icon.mimeType }),
-        });
+        const response = await fetch(
+          `${String(args.endpoint)}/sessions/${encodeURIComponent(String(args.sessionId))}/icon`,
+          {
+            method: "POST",
+            headers: { "content-type": icon.mimeType },
+            body: new Blob([toOwnedArrayBuffer(icon.bytes)], { type: icon.mimeType }),
+          },
+        );
         printJson(await readJsonResponse(response));
       },
     )
@@ -290,3 +310,5 @@ export const runProfileCli = async (argvInput = process.argv): Promise<void> => 
     .help()
     .parseAsync();
 };
+
+export const runProfileCli = runAuthCli;

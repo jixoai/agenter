@@ -14,11 +14,10 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
-    "yargs": "^17.7.2"
+    "@agenter/auth-cli": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/yargs": "^17.0.35",
     "typescript": "latest"
   }
 }

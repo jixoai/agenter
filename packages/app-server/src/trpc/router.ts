@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import type { MessageActorId } from "@agenter/message-system";
 import { isPrincipalId } from "@agenter/principal-crypto";
-import { AVATAR_CLASSIFY_VALUES } from "@agenter/profile-service";
+import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
 import type { TerminalActorId } from "@agenter/terminal-system";
 import {
   authDraftCreateInputSchema,
@@ -1350,7 +1350,7 @@ export const appRouter = t.router({
     }),
   }),
   profile: t.router({
-    service: superadminProcedure.query(async ({ ctx }) => await ctx.kernel.getProfileServiceDescriptor()),
+    service: superadminProcedure.query(async ({ ctx }) => await ctx.kernel.getAuthServiceDescriptor()),
     list: superadminProcedure.query(async ({ ctx }) => ({ items: await ctx.kernel.listProfiles() })),
     get: superadminProcedure
       .input(

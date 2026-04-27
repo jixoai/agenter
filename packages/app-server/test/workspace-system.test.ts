@@ -280,7 +280,8 @@ const executeTemporaryRootWorkspaceShell = async (input: {
   });
 };
 
-afterEach(() => {
+afterEach(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 100));
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -686,13 +687,13 @@ describe("Feature: workspace system kernel integration", () => {
     expect(createdPayload.result?.terminal?.snapshot).toBeUndefined();
     expect(createdPayload.result?.terminal?.access).toBeUndefined();
     expect(createdPayload.result?.terminal?.actors).toBeUndefined();
-    expect(createdPayload.result?.terminal?.transportUrl).toBeUndefined();
 
     const terminalId = createdPayload.result?.terminal?.terminalId;
     expect(typeof terminalId).toBe("string");
     if (!terminalId) {
       throw new Error("expected terminal create to return terminalId");
     }
+    expect(createdPayload.result?.terminal?.transportUrl).toContain(`/pty/${terminalId}?token=`);
 
     const wrote = await execRootWorkspaceBash(kernel, session.id, {
       command: "terminal write",

@@ -8,7 +8,7 @@ import {
   resolveGlobalAvatarNicknamesRoot,
   resolveGlobalAvatarRoot,
 } from "@agenter/avatar";
-import type { AvatarClassify } from "@agenter/profile-service";
+import type { AvatarClassify } from "@agenter/auth-service";
 
 import { resolveAvatarRuntimeId } from "./avatar-runtime-id";
 import { ensureAvatarSeatPrincipal } from "./avatar-seat-store";

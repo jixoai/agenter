@@ -1,8 +1,12 @@
 export {
-  ProfileServiceBridge as AuthServiceBridge,
-  type AuthServiceDescriptor,
-  type ProfileServiceBridgeOptions as AuthServiceBridgeOptions,
-  type ProfileServiceMedia as AuthServiceMedia,
+  AuthServiceBridge,
+  ProfileServiceBridge,
   type AuthChallengeStartResult,
   type AuthChallengeVerifyResult,
-} from "./profile-service-bridge";
+  type AuthServiceBridgeOptions,
+  type AuthServiceDescriptor,
+  type AuthServiceMedia,
+  type ProfileServiceBridgeOptions,
+  type ProfileServiceDescriptor,
+  type ProfileServiceMedia,
+} from "./auth-service-bridge-impl";

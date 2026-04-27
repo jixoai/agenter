@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { toJSONSchema, z } from "zod";
 
-import { runtimeToolDescriptors } from "../src/runtime-tool-descriptors";
 import {
   buildRuntimeToolCompactSurface,
   decodeRuntimeToolCompactPayload,
   encodeRuntimeToolCompactPayload,
   renderRuntimeToolCompactFieldGuide,
 } from "../src/runtime-tool-compact";
+import { runtimeToolDescriptors } from "../src/runtime-tool-descriptors";
 
 const getDescriptor = (key: string) => {
   const descriptor = runtimeToolDescriptors.find((item) => `${item.namespace}:${item.name}` === key);
@@ -51,19 +51,10 @@ describe("Feature: runtime compact descriptor codec", () => {
           format: "text/plain",
         },
       }),
-    ).toEqual([
-      "ctx-chat-main",
-      null,
-      null,
-      null,
-      null,
-      "done",
-      ["update", "APP-URL: http://127.0.0.1:4173/", "text/plain"],
-    ]);
+    ).toEqual(["ctx-chat-main", null, null, null, "done", ["update", "APP-URL: http://127.0.0.1:4173/", "text/plain"]]);
     expect(
       decodeRuntimeToolCompactPayload(surface, [
         "ctx-chat-main",
-        null,
         null,
         null,
         null,
@@ -80,7 +71,7 @@ describe("Feature: runtime compact descriptor codec", () => {
       },
     });
     expect(renderRuntimeToolCompactFieldGuide(surface)).toContain(
-      '- [6] change?: ["update", value, format?] | ["diff", value, format?] | ["clean"]',
+      '- [5] change?: ["update", value, format?] | ["diff", value, format?] | ["clean"]',
     );
   });
 

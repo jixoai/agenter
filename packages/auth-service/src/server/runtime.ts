@@ -1,19 +1,21 @@
 import { createHash } from "node:crypto";
 
-import { resolveProfileServiceConfig } from "../config";
 import { resolveRootAuthMaterial } from "../auth/root-auth";
+import { resolveAuthServiceConfig } from "../config";
 import { ProfileService } from "../service/profile-service";
 import { openProfileDatabase } from "../store/database";
 import { ProfileStore } from "../store/profile-store";
-import type { ProfileServiceOptions } from "../types";
-import { createProfileServiceApp } from "./app";
+import type { AuthServiceOptions, ProfileServiceOptions } from "../types";
+import { createAuthServiceApp } from "./app";
 
-export interface ProfileServiceRuntime {
-  app: ReturnType<typeof createProfileServiceApp>;
+export interface AuthServiceRuntime {
+  app: ReturnType<typeof createAuthServiceApp>;
   close: () => Promise<void>;
   host: string;
   port: number;
 }
+
+export type ProfileServiceRuntime = AuthServiceRuntime;
 
 const defaultEmailChallengeLogger = async (event: {
   email: string;
@@ -22,21 +24,21 @@ const defaultEmailChallengeLogger = async (event: {
   expiresAt: string;
 }): Promise<void> => {
   console.log(
-    `[profile-service] email verification code email=${event.email} code=${event.code} challengeId=${event.challengeId} expiresAt=${event.expiresAt}`,
+    `[auth-service] email verification code email=${event.email} code=${event.code} challengeId=${event.challengeId} expiresAt=${event.expiresAt}`,
   );
 };
 
-export const createProfileServiceRuntime = async (
-  options: ProfileServiceOptions = {},
-): Promise<ProfileServiceRuntime> => {
-  const config = resolveProfileServiceConfig(options);
+const MANAGED_PRINCIPAL_ID_DOMAIN = "profile-service-managed-principal";
+
+export const createAuthServiceRuntime = async (options: AuthServiceOptions = {}): Promise<AuthServiceRuntime> => {
+  const config = resolveAuthServiceConfig(options);
   const rootAuth = resolveRootAuthMaterial({
     dataDir: config.dataDir,
     privateKey: options.rootAuthPrivateKey,
   });
   const database = await openProfileDatabase(config.dbPath);
   const managedPrincipalSecret = createHash("sha256")
-    .update(`profile-service-managed-principal:${rootAuth.privateKey}`)
+    .update(`${MANAGED_PRINCIPAL_ID_DOMAIN}:${rootAuth.privateKey}`)
     .digest("hex");
   const store = new ProfileStore(database.connection, config.publicBaseUrl, managedPrincipalSecret);
   await store.initialize();
@@ -61,7 +63,7 @@ export const createProfileServiceRuntime = async (
       onEmailChallengeIssued: options.onEmailChallengeIssued ?? defaultEmailChallengeLogger,
     },
   );
-  const app = createProfileServiceApp({
+  const app = createAuthServiceApp({
     service,
     publicBaseUrl: config.publicBaseUrl,
     resvgLibraryPath: config.resvgLibraryPath,
@@ -76,3 +78,6 @@ export const createProfileServiceRuntime = async (
     port: config.port,
   };
 };
+
+export const createProfileServiceRuntime: (options?: ProfileServiceOptions) => Promise<ProfileServiceRuntime> =
+  createAuthServiceRuntime;

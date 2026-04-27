@@ -1,8 +1,11 @@
 {
-  "name": "@agenter/profile-service",
+  "name": "@agenter/auth-cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "auth-cli": "./src/bin/auth-cli.ts"
+  },
   "exports": {
     ".": "./src/index.ts"
   },
@@ -11,10 +14,11 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
-    "@agenter/auth-service": "workspace:*"
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/yargs": "^17.0.35",
     "typescript": "latest"
   }
 }

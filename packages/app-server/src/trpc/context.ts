@@ -1,4 +1,4 @@
-import type { AuthSessionProjection } from "@agenter/profile-service";
+import type { AuthSessionProjection } from "@agenter/auth-service";
 
 import type { AppKernel } from "../app-kernel";
 

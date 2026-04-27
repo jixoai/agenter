@@ -91,7 +91,7 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given app-server owns a managed local profile-service child When auth bootstrap is requested Then descriptor flags and reveal payload stay aligned", async () => {
+  test("Scenario: Given app-server owns a managed local auth-service child When auth bootstrap is requested Then descriptor flags and reveal payload stay aligned", async () => {
     const root = makeTempDir();
     const homeDir = join(root, "home");
     const expectedAuthId = privateKeyToAccount(ROOT_AUTH_PRIVATE_KEY).address.toLowerCase();
@@ -100,7 +100,7 @@ describe("Feature: app-server trpc procedures", () => {
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
       homeDir,
-      profileService: {
+      authService: {
         rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
       },
     });
@@ -606,7 +606,7 @@ describe("Feature: app-server trpc procedures", () => {
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
-      profileService: {
+      authService: {
         rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
       },
     });
@@ -794,7 +794,7 @@ describe("Feature: app-server trpc procedures", () => {
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
-      profileService: {
+      authService: {
         rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
       },
     });
@@ -837,7 +837,7 @@ describe("Feature: app-server trpc procedures", () => {
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
-      profileService: {
+      authService: {
         rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
       },
     });
@@ -955,7 +955,7 @@ describe("Feature: app-server trpc procedures", () => {
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
-      profileService: {
+      authService: {
         rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
       },
     });
@@ -1003,7 +1003,7 @@ describe("Feature: app-server trpc procedures", () => {
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
-      profileService: {
+      authService: {
         rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
       },
     });
@@ -1126,7 +1126,7 @@ describe("Feature: app-server trpc procedures", () => {
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
-      profileService: {
+      authService: {
         rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
       },
     });
@@ -1176,7 +1176,7 @@ describe("Feature: app-server trpc procedures", () => {
         globalSessionRoot: join(root, "sessions"),
         archiveSessionRoot: join(root, "archive", "sessions"),
         workspacesPath: join(root, "workspaces.yaml"),
-        profileService: {
+        authService: {
           rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
         },
       });
@@ -1228,7 +1228,7 @@ describe("Feature: app-server trpc procedures", () => {
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
-      profileService: {
+      authService: {
         rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
       },
     });

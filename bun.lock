@@ -45,6 +45,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@agenter/attention-system": "workspace:*",
+        "@agenter/auth-service": "workspace:*",
         "@agenter/avatar": "workspace:*",
         "@agenter/i18n-core": "workspace:*",
         "@agenter/i18n-en": "workspace:*",
@@ -53,7 +54,6 @@
         "@agenter/mdx2md": "workspace:*",
         "@agenter/message-system": "workspace:*",
         "@agenter/principal-crypto": "workspace:*",
-        "@agenter/profile-service": "workspace:*",
         "@agenter/search-syntax": "workspace:*",
         "@agenter/session-system": "workspace:*",
         "@agenter/settings": "workspace:*",
@@ -75,6 +75,7 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "typescript": "latest",
         "viem": "^2.47.6",
         "yaml": "^2.8.2",
       },
@@ -86,6 +87,46 @@
     "packages/attention-system": {
       "name": "@agenter/attention-system",
       "version": "0.0.0",
+    },
+    "packages/auth-cli": {
+      "name": "@agenter/auth-cli",
+      "version": "0.0.0",
+      "bin": {
+        "auth-cli": "./src/bin/auth-cli.ts",
+      },
+      "dependencies": {
+        "yargs": "^17.7.2",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@types/yargs": "^17.0.35",
+        "typescript": "latest",
+      },
+    },
+    "packages/auth-service": {
+      "name": "@agenter/auth-service",
+      "version": "0.0.0",
+      "dependencies": {
+        "@agenter/avatar": "workspace:*",
+        "@agenter/principal-crypto": "workspace:*",
+        "@duckdb/node-api": "^1.5.1-r.1",
+        "@hono/node-server": "^1.19.11",
+        "@simplewebauthn/server": "^13.3.0",
+        "@solana/web3.js": "^1.98.4",
+        "bs58": "^6.0.0",
+        "hono": "^4.12.9",
+        "tweetnacl": "^1.0.3",
+        "viem": "^2.47.6",
+        "zod": "^4.0.0",
+      },
+      "devDependencies": {
+        "@simplewebauthn/browser": "^13.3.0",
+        "@sveltejs/vite-plugin-svelte": "^7.0.0",
+        "@types/bun": "latest",
+        "svelte": "^5.55.2",
+        "typescript": "latest",
+        "vite": "^8.0.3",
+      },
     },
     "packages/avatar": {
       "name": "@agenter/avatar",
@@ -192,11 +233,10 @@
         "profile-cli": "./src/bin/profile-cli.ts",
       },
       "dependencies": {
-        "yargs": "^17.7.2",
+        "@agenter/auth-cli": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "@types/yargs": "^17.0.35",
         "typescript": "latest",
       },
     },
@@ -204,25 +244,11 @@
       "name": "@agenter/profile-service",
       "version": "0.0.0",
       "dependencies": {
-        "@agenter/avatar": "workspace:*",
-        "@agenter/principal-crypto": "workspace:*",
-        "@duckdb/node-api": "^1.5.1-r.1",
-        "@hono/node-server": "^1.19.11",
-        "@simplewebauthn/server": "^13.3.0",
-        "@solana/web3.js": "^1.98.4",
-        "bs58": "^6.0.0",
-        "hono": "^4.12.9",
-        "tweetnacl": "^1.0.3",
-        "viem": "^2.47.6",
-        "zod": "^4.0.0",
+        "@agenter/auth-service": "workspace:*",
       },
       "devDependencies": {
-        "@simplewebauthn/browser": "^13.3.0",
-        "@sveltejs/vite-plugin-svelte": "^7.0.0",
         "@types/bun": "latest",
-        "svelte": "^5.55.2",
         "typescript": "latest",
-        "vite": "^8.0.3",
       },
     },
     "packages/search-syntax": {
@@ -552,6 +578,10 @@
     "@agenter/app-server": ["@agenter/app-server@workspace:packages/app-server"],
 
     "@agenter/attention-system": ["@agenter/attention-system@workspace:packages/attention-system"],
+
+    "@agenter/auth-cli": ["@agenter/auth-cli@workspace:packages/auth-cli"],
+
+    "@agenter/auth-service": ["@agenter/auth-service@workspace:packages/auth-service"],
 
     "@agenter/avatar": ["@agenter/avatar@workspace:packages/avatar"],
 

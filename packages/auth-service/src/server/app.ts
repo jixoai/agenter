@@ -273,6 +273,8 @@ export interface CreateProfileServiceAppOptions {
   webauthnUiDir?: string;
 }
 
+export type CreateAuthServiceAppOptions = CreateProfileServiceAppOptions;
+
 export const createProfileServiceApp = ({
   service,
   publicBaseUrl,
@@ -566,3 +568,5 @@ export const createProfileServiceApp = ({
 
   return app;
 };
+
+export const createAuthServiceApp = createProfileServiceApp;

@@ -5391,7 +5391,7 @@ function warnOnBrokenImplementation(methodName, cause) {
     console.warn(`The browser extension that intercepted this WebAuthn API call incorrectly implemented ${methodName}. You should report this error to them.\n`, cause);
 }
 
-const AUTH_MESSAGE_SOURCE = "agenter-profile-service";
+const AUTH_MESSAGE_SOURCE = "agenter-auth-service";
 const resolveOpenerOrigin = () => {
   const openerOrigin = new URLSearchParams(window.location.search).get("openerOrigin")?.trim();
   if (openerOrigin) {

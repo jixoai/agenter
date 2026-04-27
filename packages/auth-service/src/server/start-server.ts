@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createServer as createNetServer } from "node:net";
-import type { ProfileServiceHandle, ProfileServiceOptions } from "../types";
-import { createProfileServiceRuntime } from "./runtime";
+import type { AuthServiceHandle, AuthServiceOptions, ProfileServiceHandle, ProfileServiceOptions } from "../types";
+import { createAuthServiceRuntime } from "./runtime";
 
 const resolveEphemeralPort = async (host: string): Promise<number> =>
   await new Promise<number>((resolve, reject) => {
@@ -23,9 +23,9 @@ const resolveEphemeralPort = async (host: string): Promise<number> =>
     });
   });
 
-export const startProfileServiceServer = async (options: ProfileServiceOptions = {}): Promise<ProfileServiceHandle> => {
+export const startAuthServiceServer = async (options: AuthServiceOptions = {}): Promise<AuthServiceHandle> => {
   const host = options.host ?? "127.0.0.1";
-  const runtime = await createProfileServiceRuntime({
+  const runtime = await createAuthServiceRuntime({
     ...options,
     host,
     port: options.port === 0 ? await resolveEphemeralPort(host) : options.port,
@@ -61,3 +61,6 @@ export const startProfileServiceServer = async (options: ProfileServiceOptions =
     },
   };
 };
+
+export const startProfileServiceServer: (options?: ProfileServiceOptions) => Promise<ProfileServiceHandle> =
+  startAuthServiceServer;

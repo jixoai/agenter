@@ -3,7 +3,7 @@ export interface AuthSuccessPayload {
   token: string;
 }
 
-export const AUTH_MESSAGE_SOURCE = "agenter-profile-service";
+export const AUTH_MESSAGE_SOURCE = "agenter-auth-service";
 
 const resolveOpenerOrigin = (): string | null => {
   const openerOrigin = new URLSearchParams(window.location.search).get("openerOrigin")?.trim();

@@ -1,13 +1,13 @@
-import type { ProfileServiceHandle } from "@agenter/profile-service";
+import type { AuthServiceHandle } from "@agenter/auth-service";
 import { describe, expect, test } from "bun:test";
-import type { AuthServiceDescriptor } from "../src/profile-service-bridge";
-import { ProfileServiceBridge } from "../src/profile-service-bridge";
+import type { AuthServiceDescriptor } from "../src/auth-service-bridge";
+import { AuthServiceBridge } from "../src/auth-service-bridge";
 
-class TestProfileServiceBridge extends ProfileServiceBridge {
+class TestAuthServiceBridge extends AuthServiceBridge {
   startCount = 0;
   stopCount = 0;
 
-  protected override async startChildHandle(): Promise<ProfileServiceHandle> {
+  protected override async startChildHandle(): Promise<AuthServiceHandle> {
     this.startCount += 1;
     await Bun.sleep(20);
     return {
@@ -21,9 +21,9 @@ class TestProfileServiceBridge extends ProfileServiceBridge {
 
 }
 
-describe("Feature: profile-service bridge startup", () => {
-  test("Scenario: Given concurrent profile-service requests When the child runtime is still booting Then the bridge starts only one child handle", async () => {
-    const bridge = new TestProfileServiceBridge();
+describe("Feature: auth-service bridge startup", () => {
+  test("Scenario: Given concurrent auth-service requests When the child runtime is still booting Then the bridge starts only one child handle", async () => {
+    const bridge = new TestAuthServiceBridge();
 
     const [baseUrl, secondBaseUrl] = await Promise.all([
       bridge.getBaseUrl(),
@@ -39,7 +39,7 @@ describe("Feature: profile-service bridge startup", () => {
   });
 
   test("Scenario: Given a local child auth service When the bridge describes and reveals bootstrap state Then managed-local flags and key reveal stay available", async () => {
-    const bridge = new TestProfileServiceBridge();
+    const bridge = new TestAuthServiceBridge();
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input) => {
       const url = String(input);
@@ -52,7 +52,7 @@ describe("Feature: profile-service bridge startup", () => {
               kind: "wallet_evm",
               value: "0x0000000000000000000000000000000000000001",
             },
-            rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
+            rootAuthKeyPath: "~/.agenter/auth-service/root-auth.key",
             jwtTtlSeconds: 3600,
             rootAuthBootstrapMode: "managed_local",
             canRevealRootAuthPrivateKey: true,
@@ -66,7 +66,7 @@ describe("Feature: profile-service bridge startup", () => {
           JSON.stringify({
             privateKey: "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1",
             authId: "wallet_evm:0x0000000000000000000000000000000000000001",
-            rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
+            rootAuthKeyPath: "~/.agenter/auth-service/root-auth.key",
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
@@ -92,7 +92,7 @@ describe("Feature: profile-service bridge startup", () => {
   });
 
   test("Scenario: Given an external auth service endpoint When the bridge describes bootstrap state Then reveal is disabled and external flags are projected", async () => {
-    const bridge = new ProfileServiceBridge({
+    const bridge = new AuthServiceBridge({
       endpoint: "http://auth.example.test",
     });
     const originalFetch = globalThis.fetch;
@@ -109,7 +109,7 @@ describe("Feature: profile-service bridge startup", () => {
             kind: "wallet_evm",
             value: "0x0000000000000000000000000000000000000001",
           },
-          rootAuthKeyPath: "~/.agenter/profile-service/root-auth.key",
+          rootAuthKeyPath: "~/.agenter/auth-service/root-auth.key",
           jwtTtlSeconds: 3600,
           rootAuthBootstrapMode: "managed_local",
           canRevealRootAuthPrivateKey: true,

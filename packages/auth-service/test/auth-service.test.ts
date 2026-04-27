@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { startProfileServiceServer } from "../src/server/start-server";
+import { startAuthServiceServer } from "../src/server/start-server";
 
 interface TestHandle {
   stop: () => Promise<void>;
@@ -26,8 +26,8 @@ const startServer = async (
     rootAuthPrivateKey?: string;
   } = {},
 ) => {
-  const handle = await startProfileServiceServer({
-    dataDir: mkdtempSync(join(tmpdir(), "profile-service-test-")),
+  const handle = await startAuthServiceServer({
+    dataDir: mkdtempSync(join(tmpdir(), "auth-service-test-")),
     onEmailChallengeIssued: async (event) => {
       emailCodes.set(event.email, event.code);
     },
@@ -44,7 +44,7 @@ afterEach(async () => {
   }
 });
 
-describe("Feature: profile-service control plane", () => {
+describe("Feature: auth-service control plane", () => {
   test("Scenario: Given the service boots When health is requested Then it reports ok", async () => {
     const { handle } = await startServer(4599);
     const response = await fetch(`http://${handle.host}:${handle.port}/health`);
@@ -104,7 +104,7 @@ describe("Feature: profile-service control plane", () => {
     expect(revealed.rootAuthKeyPath.endsWith("/root-auth.key")).toBeTrue();
   });
 
-  test("Scenario: Given profile-service fresh start When the reveal endpoint is requested Then the generated managed key matches the published auth descriptor", async () => {
+  test("Scenario: Given auth-service fresh start When the reveal endpoint is requested Then the generated managed key matches the published auth descriptor", async () => {
     const { handle } = await startServer(4607);
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
@@ -561,7 +561,7 @@ describe("Feature: profile-service control plane", () => {
     };
     expect(optionsPayload.ticketId).toBe(emailVerified.registrationTicket);
     expect(optionsPayload.options.challenge).toBeTruthy();
-    expect(optionsPayload.options.rp.name).toContain("profile-service");
+    expect(optionsPayload.options.rp.name).toContain("auth-service");
   });
 
   test("Scenario: Given wallet and email identifiers When email OTP is verified with a wallet bearer token Then both identifiers share one profile and icon", async () => {

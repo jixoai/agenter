@@ -1,5 +1,5 @@
 import { normalizePrincipalId } from "@agenter/principal-crypto";
-import type { ProfileIdentifier, ProfileProjection } from "@agenter/profile-service";
+import type { ProfileIdentifier, ProfileProjection } from "@agenter/auth-service";
 
 export interface AuthActorProjection {
   actorId: `auth:${string}`;

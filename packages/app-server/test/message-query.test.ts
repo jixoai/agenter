@@ -53,7 +53,7 @@ describe("Feature: app-server message query", () => {
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
       homeDir: join(root, "home"),
-      profileService: {
+      authService: {
         rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
       },
     });

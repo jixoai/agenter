@@ -39,7 +39,7 @@ import {
 } from "@agenter/message-system";
 import { LoopBusKernel } from "@agenter/loopbus-kernel";
 import { isPrincipalId } from "@agenter/principal-crypto";
-import type { AuthSessionProjection, ProfileMetadata, ProfileProjection } from "@agenter/profile-service";
+import type { AuthSessionProjection, ProfileMetadata, ProfileProjection } from "@agenter/auth-service";
 import {
   buildAvatarIconUrl,
   formatAvatarDisplayName,
@@ -49,7 +49,7 @@ import {
   type AvatarClassify,
   type AvatarPrincipalMetadata,
   type PrincipalProjection,
-} from "@agenter/profile-service";
+} from "@agenter/auth-service";
 import {
   SessionDb,
   type ReversePage,
@@ -631,6 +631,8 @@ export interface AppKernelOptions {
   workspaceSystemStatePath?: string;
   homeDir?: string;
   initialWorkspace?: string;
+  authService?: AuthServiceBridgeOptions;
+  /** @deprecated Use authService. */
   profileService?: AuthServiceBridgeOptions;
   logger?: {
     log: (line: {
@@ -746,6 +748,12 @@ const resolveWelcomeAccessState = <TAccessRole extends string>(
   };
 };
 
+const resolveDefaultAuthServiceDataDir = (stateRoot: string): string => {
+  const canonical = join(stateRoot, "auth-service");
+  const legacy = join(stateRoot, "profile-service");
+  return !existsSync(canonical) && existsSync(legacy) ? legacy : canonical;
+};
+
 export class AppKernel {
   private readonly sessions: SessionCatalog;
   private readonly workspaces: WorkspacesStore;
@@ -802,9 +810,11 @@ export class AppKernel {
     });
     this.authDraftStore = new AuthDraftStore(resolveAuthDraftDbPath(homeDir));
     this.authKvStore = new AuthKvStore(resolveAuthKvDbPath(homeDir));
+    const authServiceOptions = options.authService ?? options.profileService;
+    const stateRoot = join(this.sessions.getGlobalRoot(), "..");
     this.authService = new AuthServiceBridge({
-      ...options.profileService,
-      dataDir: options.profileService?.dataDir ?? join(this.sessions.getGlobalRoot(), "..", "profile-service"),
+      ...authServiceOptions,
+      dataDir: authServiceOptions?.dataDir ?? resolveDefaultAuthServiceDataDir(stateRoot),
     });
   }
 

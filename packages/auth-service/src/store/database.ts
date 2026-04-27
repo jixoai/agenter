@@ -51,7 +51,7 @@ export const openProfileDatabaseWithDeps = async (
       throw error;
     }
     deps.warn(
-      `[profile-service] recovered stale duckdb wal by moving ${walPath} to ${backupPath}; uncheckpointed changes in the wal were preserved in the backup file`,
+      `[auth-service] recovered stale duckdb wal by moving ${walPath} to ${backupPath}; uncheckpointed changes in the wal were preserved in the backup file`,
     );
     opened = await deps.open(dbPath);
   }

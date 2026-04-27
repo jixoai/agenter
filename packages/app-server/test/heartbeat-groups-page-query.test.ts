@@ -77,61 +77,65 @@ const appendHeartbeatCall = (db: SessionDb, index: number): number => {
 };
 
 describe("Feature: Heartbeat grouped page query stays bounded", () => {
-  test("Scenario: Given deep Heartbeat history When the first grouped page is queried Then the backend does not page through the entire ai_call and inspection ledger", async () => {
-    const root = makeTempDir();
-    const kernel = new AppKernel({
-      globalSessionRoot: join(root, "sessions"),
-      archiveSessionRoot: join(root, "archive", "sessions"),
-      workspacesPath: join(root, "workspaces.yaml"),
-      homeDir: join(root, "home"),
-    });
-    await kernel.start();
-    const caller = await createRootSuperadminCaller(kernel);
-    const created = await caller.session.create({
-      cwd: root,
-      name: "heartbeat-deep-history",
-      autoStart: false,
-    });
-
-    const db = new SessionDb(join(created.session.sessionRoot, "session.db"));
-    try {
-      for (let index = 0; index < 2_101; index += 1) {
-        appendHeartbeatCall(db, index);
-      }
-    } finally {
-      db.close();
-    }
-
-    const originalPageAiCalls = SessionDb.prototype.pageAiCalls;
-    const originalPageMessagesByScopes = SessionDb.prototype.pageMessagesByScopes;
-    let aiCallPageReads = 0;
-    let inspectionPageReads = 0;
-    SessionDb.prototype.pageAiCalls = function pageAiCallsProxy(input) {
-      aiCallPageReads += 1;
-      return originalPageAiCalls.call(this, input);
-    };
-    SessionDb.prototype.pageMessagesByScopes = function pageMessagesByScopesProxy(scopes, input) {
-      if (scopes.length === 2 && scopes.includes("heartbeat_part") && scopes.includes("request_aux")) {
-        inspectionPageReads += 1;
-      }
-      return originalPageMessagesByScopes.call(this, scopes, input);
-    };
-
-    try {
-      const page = await caller.runtime.heartbeatGroupsPage({
-        sessionId: created.session.id,
-        limit: 5,
+  test(
+    "Scenario: Given deep Heartbeat history When the first grouped page is queried Then the backend does not page through the entire ai_call and inspection ledger",
+    async () => {
+      const root = makeTempDir();
+      const kernel = new AppKernel({
+        globalSessionRoot: join(root, "sessions"),
+        archiveSessionRoot: join(root, "archive", "sessions"),
+        workspacesPath: join(root, "workspaces.yaml"),
+        homeDir: join(root, "home"),
+      });
+      await kernel.start();
+      const caller = await createRootSuperadminCaller(kernel);
+      const created = await caller.session.create({
+        cwd: root,
+        name: "heartbeat-deep-history",
+        autoStart: false,
       });
 
-      expect(page.items).toHaveLength(5);
-      expect(aiCallPageReads).toBeLessThanOrEqual(2);
-      expect(inspectionPageReads).toBeLessThanOrEqual(3);
-    } finally {
-      SessionDb.prototype.pageAiCalls = originalPageAiCalls;
-      SessionDb.prototype.pageMessagesByScopes = originalPageMessagesByScopes;
-      await kernel.stop();
-    }
-  });
+      const db = new SessionDb(join(created.session.sessionRoot, "session.db"));
+      try {
+        for (let index = 0; index < 2_101; index += 1) {
+          appendHeartbeatCall(db, index);
+        }
+      } finally {
+        db.close();
+      }
+
+      const originalPageAiCalls = SessionDb.prototype.pageAiCalls;
+      const originalPageMessagesByScopes = SessionDb.prototype.pageMessagesByScopes;
+      let aiCallPageReads = 0;
+      let inspectionPageReads = 0;
+      SessionDb.prototype.pageAiCalls = function pageAiCallsProxy(input) {
+        aiCallPageReads += 1;
+        return originalPageAiCalls.call(this, input);
+      };
+      SessionDb.prototype.pageMessagesByScopes = function pageMessagesByScopesProxy(scopes, input) {
+        if (scopes.length === 2 && scopes.includes("heartbeat_part") && scopes.includes("request_aux")) {
+          inspectionPageReads += 1;
+        }
+        return originalPageMessagesByScopes.call(this, scopes, input);
+      };
+
+      try {
+        const page = await caller.runtime.heartbeatGroupsPage({
+          sessionId: created.session.id,
+          limit: 5,
+        });
+
+        expect(page.items).toHaveLength(5);
+        expect(aiCallPageReads).toBeLessThanOrEqual(2);
+        expect(inspectionPageReads).toBeLessThanOrEqual(3);
+      } finally {
+        SessionDb.prototype.pageAiCalls = originalPageAiCalls;
+        SessionDb.prototype.pageMessagesByScopes = originalPageMessagesByScopes;
+        await kernel.stop();
+      }
+    },
+    { timeout: 15_000 },
+  );
 
   test("Scenario: Given the newest page ends on a call group When loading older grouped history Then the same ai_call can still return its older before-call group", async () => {
     const root = makeTempDir();

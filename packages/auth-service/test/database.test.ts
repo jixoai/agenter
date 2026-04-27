@@ -11,10 +11,10 @@ import {
 
 const createTempDir = (): string => mkdtempSync(join(tmpdir(), "profile-database-test-"));
 
-describe("Feature: profile-service duckdb recovery", () => {
+describe("Feature: auth-service duckdb recovery", () => {
   test("Scenario: Given a stale wal file When backup is requested Then the wal is moved aside instead of being deleted", async () => {
     const dir = createTempDir();
-    const walPath = join(dir, "profile-service.duckdb.wal");
+    const walPath = join(dir, "auth-service.duckdb.wal");
     writeFileSync(walPath, "stale wal");
 
     const backupPath = await backupProfileDatabaseWal(walPath);
@@ -26,7 +26,7 @@ describe("Feature: profile-service duckdb recovery", () => {
 
   test("Scenario: Given duckdb fails on wal replay When the wal is recoverable Then open retries after backing it up", async () => {
     const dir = createTempDir();
-    const dbPath = join(dir, "profile-service.duckdb");
+    const dbPath = join(dir, "auth-service.duckdb");
     const walPath = `${dbPath}.wal`;
     writeFileSync(walPath, "stale wal");
 

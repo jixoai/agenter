@@ -8,6 +8,7 @@
     "test": "bun test",
     "test:real": "bun test test/real-loopbus.integration.test.ts",
     "test:real:archive-gate": "bun run ./scripts/run-real-archive-gate.ts",
+    "typecheck": "bunx tsc --noEmit",
     "story:real": "bun run ./scripts/run-real-loopbus-story.ts",
     "verify:workspace-attention": "bun run ./scripts/verify-workspace-attention-harness.ts"
   },
@@ -25,7 +26,7 @@
     "@agenter/mdx2md": "workspace:*",
     "@agenter/message-system": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",
-    "@agenter/profile-service": "workspace:*",
+    "@agenter/auth-service": "workspace:*",
     "@agenter/search-syntax": "workspace:*",
     "@agenter/session-system": "workspace:*",
     "@agenter/settings": "workspace:*",
@@ -47,6 +48,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "typescript": "latest",
     "viem": "^2.47.6",
     "yaml": "^2.8.2"
   },
