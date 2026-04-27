@@ -7,7 +7,6 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "bunx tsc --noEmit -p tsconfig.json",
     "test": "pnpm run test:unit && pnpm run test:dom",
     "e2e": "bun ./test/e2e/run.ts",
     "storybook": "storybook dev --ci --no-open --port 6006",

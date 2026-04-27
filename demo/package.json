@@ -12,8 +12,7 @@
     "start:iflow-devtools": "bun run src/index.iflow-devtools.tsx",
     "diagnose:terminal-crash": "bun run scripts/repro-iflow-crash.ts",
     "diagnose:iflow-crash": "bun run scripts/repro-iflow-crash.ts",
-    "test": "bun test",
-    "typecheck": "bunx tsc --noEmit"
+    "test": "bun test"
   },
   "dependencies": {
     "@agenter/app-server": "workspace:*",
