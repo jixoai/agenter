@@ -30,6 +30,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Room 文本消息对人类 transcript 默认立即可见；`attentionState=queued` 只表示它仍欠 AI/automation attention，不再表示“先隐藏，等 attention 后再显示”。
 - Room 级 read progress / read receipt 的 durable truth 属于全局 `message-system`，并以消息级冻结成员数组 `readActorIds` / `unreadActorIds` 维护，而不是退化成 session unread badge 或可变 seat cursor。
 - Terminal truth、grant、approval、lease、activity history 的 durable truth 属于全局 `terminal-system`；session 只保留 terminal binding、focus refs、approval subscription 与推理所需 projection facts，不复制 terminal history 当作自己的真源。
+- Terminal 长时观察必须通过独立的 `terminal await` 原语表达；它等待 TerminalSystem 拥有的稳定 snapshot / status / commit truth，返回 bounded clean lines 与 post-mortem evidence，不把等待、匹配或 debounce 语义塞进 `terminal read`。
 - Terminal focus truth 属于 actor-scoped seat state；inspection tab、UI 选中态、以及别的 actor 的 focus 都不能被错误投影成当前 session actor 的 terminal attention 输入。
 - WorkspaceSystem 是独立平台系统，拥有 workspace mount、path grant、public assets、avatar-private assets 与 non-interactive workspace exec；workspace 不拥有 room 或 terminal truth。
 - Workspace path grant 的 durable law 是“workspace-root-relative ordered glob rules”: 规则默认拒绝、last-match-wins，并由共享的 overlay-rule filesystem evaluator 驱动 workspace bash、root workspace bash、terminal cwd 校验与 workbench explorer/preview。
@@ -54,6 +55,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - provider continuation 可以在 TanStack/adapter 的同步 loop strategy 中追加已提交 attention projection，但该 strategy 只能消费已经由统一 commit API 产出的 projection，不能在同步 provider loop 内执行 source drain、read ack 或 attention commit。
 - LoopBus 的模型表面必须保持极小：稳定 attention law、attention-backed `skills.list` 摘要、以及 `workspace_list` / `root_bash` / `workspace_bash` 三个显式 workspace 原语。message / workspace / terminal / future systems 的操作统一经由 runtime-local CLI/API 自助发现，不再直接注入成 model tools。
 - runtime-local CLI/API 的 tool surface 必须遵守单一信源：`attention` / `message` / `workspace` / `terminal` 的 route、description、`inputSchema`、`--help` 与 canonical examples 都由共享 descriptor registry 派生；AI-facing shell 不再接受 positional/natural-form 参数，只接受空输入、单个 JSON argv 或 JSON stdin，且当前唯一的特殊非 JSON 标记就是 `--help`。
+- runtime-local CLI/API 的长时命令必须共享 cancellation law：shell/process abort、HTTP request abort 与 system 内部 wait resources 必须串联到同一个 `AbortSignal` 语义；当外部 `timeout` 杀掉 CLI 时，server-side waiter/listener/timer 仍然必须释放。
 - skill system 也是 attention-first 平台原子：它的 durable truth 来自 on-disk skill files，默认 live truth 只观察 `SKILL.md + ccski.config.json`，额外 watched files 只能由 skill 自己声明；skill 变更通过 attention reminder 发布，而不是重新回流到 prompt glue。
 
 ## 3. 正交设计边界

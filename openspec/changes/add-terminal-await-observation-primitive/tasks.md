@@ -1,7 +1,7 @@
 ## 1. OpenSpec Truth
 
 - [x] 1.1 Validate delta specs for terminal control-plane, runtime terminal contract, runtime JSON descriptor surface, and runtime skills.
-- [ ] 1.2 Before archiving, sync the durable terminal await law into the relevant long-lived `SPEC.md` files.
+- [x] 1.2 Before archiving, sync the durable terminal await law into the relevant long-lived `SPEC.md` files.
 
 ## 2. Terminal Control Plane
 

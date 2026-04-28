@@ -311,6 +311,15 @@ git-log 约束：
   - terminal-local toolbar 承载 focus / viewport / access / approval 操作
   - AvatarGroup 用 badge color 表示 offline / online / focused，用 border color 表示 `readonly / requester / writer / admin`
   - 当授予第二个 `writer` 时，UI 必须先给出 downgrade prompt，允许把旧 writer 降级成 requester
+
+### 7.5 Await Observation
+
+- `terminal await` 是独立于 `terminal read` 的 bounded observation 原语；`read` 只负责 immediate inspection，不承载等待、匹配或稳定窗口语义。
+- await 只能观察 TerminalSystem 拥有的物理事实：headless snapshot lines、status、running state、cursor/geometry 与 commit cursor；不得硬编码 Claude、Codex、iflow 或其它上层程序语义。
+- await 的 deterministic match / absent 判断必须作用在稳定后的 clean snapshot lines 上，而不是 raw PTY bytes、ANSI transition chunks 或 append-only log 假象。
+- await 结果必须返回结构化 outcome：`changed | idle | matched | absent | timeout | stopped | cancelled`，并携带 bounded tail lines、match context、cursor、rows/cols、status/running 与 from/to cursor metadata。
+- command-level timeout 是正常 outcome，必须返回最后可见 post-mortem evidence；外部 shell-level timeout 可能中断 JSON 返回，但 server-side waiter、listener、timer 与 fallback handle 仍然必须释放。
+- await 默认记录 terminal observation activity；调用方可以用 `recordActivity:false` 做纯探测，且该开关不得影响 returned evidence。
 - commit message 必须结构化，标题格式：
   - `ati(log): <event> <mode>`
 - commit 正文至少包含：
