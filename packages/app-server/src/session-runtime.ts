@@ -1,6 +1,7 @@
 import {
   AttentionStore,
   AttentionSystem,
+  normalizeAttentionContextTemplate,
   type AttentionActiveContextMatch,
   type AttentionCommit,
   type AttentionCommitChange,
@@ -17,8 +18,14 @@ import {
   type AttentionHookRecord,
   type AttentionProtocolMode,
   type AttentionSystemSnapshot,
-  normalizeAttentionContextTemplate,
 } from "@agenter/attention-system";
+import type {
+  AttentionDeliveryProjection,
+  AttentionDispatchRecord,
+  AttentionReceiptProviderEventKind,
+  AttentionReceiptRecord,
+  AttentionCommitRefRecord as DeliveryCommitRefRecord,
+} from "@agenter/loopbus-kernel";
 import {
   MessageControlPlane,
   resolveMessageControlDbPath,
@@ -35,14 +42,13 @@ import {
   type MessageQueryRequest,
   type MessageRecord,
   type MessageSnapshot,
-  type ReverseTimeCursor,
 } from "@agenter/message-system";
 import {
   SessionDb,
-  type SessionAttentionDispatchRecord,
-  type SessionAttentionReceiptRecord,
   type SessionAiCallRecord,
   type SessionAssetRecord,
+  type SessionAttentionDispatchRecord,
+  type SessionAttentionReceiptRecord,
   type SessionCollectedInput,
   type SessionCollectedInputPart,
   type ReversePage as SessionDbReversePage,
@@ -64,23 +70,16 @@ import {
 } from "@agenter/task-system";
 import {
   TerminalControlPlane,
-  type TerminalAwaitInput,
   type TerminalAwaitResult as ControlPlaneTerminalAwaitResult,
   type TerminalReadResult as ControlPlaneTerminalReadResult,
   type TerminalActorId,
+  type TerminalAwaitInput,
   type TerminalControlPlaneConfig,
   type TerminalControlPlaneConfigPatch,
   type TerminalControlPlaneEntry,
   type TerminalPatchInput,
   type TerminalProcessProfile,
 } from "@agenter/terminal-system";
-import type {
-  AttentionCommitRefRecord as DeliveryCommitRefRecord,
-  AttentionDeliveryProjection,
-  AttentionDispatchRecord,
-  AttentionReceiptProviderEventKind,
-  AttentionReceiptRecord,
-} from "@agenter/loopbus-kernel";
 import { toolDefinition } from "@tanstack/ai";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
@@ -151,10 +150,7 @@ import {
 } from "./loopbus-plugin-runtime";
 import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
 import { listMessageSeatEntries, summarizeMessageChannelPresence } from "./message-channel-presence";
-import {
-  MessageFollowUpReminderScheduler,
-  type MessageFollowUpReminder,
-} from "./message-follow-up-reminders";
+import { MessageFollowUpReminderScheduler, type MessageFollowUpReminder } from "./message-follow-up-reminders";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import { ModelClient, type AssistantDeliveryEvent, type AssistantStreamUpdate } from "./model-client";
@@ -167,6 +163,7 @@ import type {
   RuntimeLoopTraceRecord,
   RuntimeTerminalActivityRecord,
 } from "./runtime-history-records";
+import { RuntimeKernelHost } from "./runtime-kernel-host";
 import { startRuntimeLocalApi, type RuntimeLocalApiHandle } from "./runtime-local-api";
 import {
   buildPublicWorkspaceShellEnvironment,
@@ -181,17 +178,13 @@ import {
   RuntimeSkillSystem,
 } from "./runtime-skill-system";
 import { listRuntimeSkillMountRoots } from "./runtime-skills";
-import { RuntimeKernelHost } from "./runtime-kernel-host";
 import { RuntimeMessageKernelAdapter } from "./runtime-system-kernel-adapters/message-adapter";
 import {
   RuntimeSkillKernelAdapter,
   type RuntimeSkillKernelApplyResult,
 } from "./runtime-system-kernel-adapters/skill-adapter";
 import { RuntimeTerminalKernelAdapter } from "./runtime-system-kernel-adapters/terminal-adapter";
-import type {
-  RuntimeIngressCommitResult,
-  RuntimeSystemIngressEnvelope,
-} from "./runtime-system-kernel-adapters/types";
+import type { RuntimeIngressCommitResult, RuntimeSystemIngressEnvelope } from "./runtime-system-kernel-adapters/types";
 import {
   projectRuntimeAttentionActiveMatch,
   projectRuntimeMessageChannel,
@@ -343,7 +336,6 @@ const COMPACT_CYCLE_TRIGGER_VALUES = new Set<CompactCycleTrigger>([
 ]);
 const ATTENTION_INPUT_PROTOCOL_KINDS = new Set<AttentionInputProtocolKind>(["context", "items"]);
 const COMPACT_CYCLE_INPUT_NAME = "CompactCycle";
-const MAX_ATTENTION_PROTOCOL_COMMITS = 24;
 
 const parseCompactCycleTrigger = (value: unknown): CompactCycleTrigger | null => {
   if (typeof value !== "string") {
@@ -813,7 +805,8 @@ const buildMessageFollowUpReminderPresentation = (input: {
   detailKind: "replace";
 } => {
   const trimmedContent = input.messageContent.trim();
-  const titleSuffix = trimmedContent.length > 0 ? truncateAttentionTitle(trimmedContent) : `message ${input.anchorMessageId}`;
+  const titleSuffix =
+    trimmedContent.length > 0 ? truncateAttentionTitle(trimmedContent) : `message ${input.anchorMessageId}`;
   const metaYaml = toYaml({
     kind: "message-follow-up-reminder",
     chatId: input.chatId,
@@ -1621,6 +1614,7 @@ export class SessionRuntime {
   private attentionDebtNextWakeAt: number | null = null;
   private attentionForceCollect = false;
   private readonly dirtyAttentionContextIds = new Set<string>();
+  private readonly dirtyAttentionCommitIdsByContext = new Map<string, Set<string>>();
   private readonly dirtyAttentionContextOrder = new Map<string, number>();
   private nextAttentionDirtyOrder = 0;
   private readonly attentionSourceDigests = new Map<string, string>();
@@ -1668,7 +1662,8 @@ export class SessionRuntime {
         await this.commitRuntimeSystemIngress(envelope, {
           notifyLoop: input.notifyLoop,
         }),
-      getAttentionCommit: (input) => this.attentionSystem.getContext(input.contextId)?.getCommit(input.commitId) ?? null,
+      getAttentionCommit: (input) =>
+        this.attentionSystem.getContext(input.contextId)?.getCommit(input.commitId) ?? null,
       getAttentionContextState: (contextId) => this.attentionSystem.getContext(contextId)?.getState() ?? null,
       notifyAttentionDispatched: async (input) => await this.notifyAttentionDispatchedHooks(input),
       notifyAttentionReceipt: async (input) => await this.notifyAttentionReceiptHooks(input),
@@ -2536,7 +2531,11 @@ export class SessionRuntime {
       from: author,
       cycleId: replyCycleId,
     });
-    if (typeof input.followUpAfterMs === "number" && Number.isInteger(input.followUpAfterMs) && input.followUpAfterMs > 0) {
+    if (
+      typeof input.followUpAfterMs === "number" &&
+      Number.isInteger(input.followUpAfterMs) &&
+      input.followUpAfterMs > 0
+    ) {
       this.armMessageFollowUpReminder({
         chatId: input.chatId,
         anchorMessageId: result.messageId,
@@ -2756,10 +2755,12 @@ export class SessionRuntime {
   }
 
   private getLatestVisibleMessageForRoom(chatId: string): MessageRecord | undefined {
-    return this.messageSystem.queryMessages({
-      chatId,
-      limit: 1,
-    }).items.at(-1);
+    return this.messageSystem
+      .queryMessages({
+        chatId,
+        limit: 1,
+      })
+      .items.at(-1);
   }
 
   private buildMessageFollowUpReminderIngress(reminder: MessageFollowUpReminder): RuntimeSystemIngressEnvelope | null {
@@ -2804,7 +2805,8 @@ export class SessionRuntime {
   private async pollMessageFollowUpReminders(now = Date.now()): Promise<void> {
     const due = this.messageFollowUpReminders.consumeDue({
       now,
-      isAnchorStillLatest: (reminder) => this.getLatestVisibleMessageForRoom(reminder.chatId)?.messageId === reminder.anchorMessageId,
+      isAnchorStillLatest: (reminder) =>
+        this.getLatestVisibleMessageForRoom(reminder.chatId)?.messageId === reminder.anchorMessageId,
     });
     if (due.fired.length === 0) {
       return;
@@ -3928,9 +3930,10 @@ export class SessionRuntime {
           await this.persistAttentionSystem();
           this.attentionFactsVersion += 1;
           this.resetAttentionDebtBackoff();
-          this.markAttentionContextDirty(input.contextId);
+          // Tool-side attention commits are model-authored context mutations.
+          // They update durable scores/snapshots, but they are not incoming
+          // attention deltas that should be re-injected as AttentionItems.
           this.emitAttentionState();
-          this.notifyInput("attention");
           return commit;
         },
         messageList: (input) => this.listMessageChannelsForTooling(input),
@@ -3972,9 +3975,9 @@ export class SessionRuntime {
             terminal: projectRuntimeTerminal(result.terminal),
           };
         },
-        terminalGetConfig: async (input) => projectRuntimeTerminalConfig(this.getRuntimeTerminalConfig(input.terminalId)),
-        terminalSetConfig: async (input) =>
-          projectRuntimeTerminalConfigMutation(this.setRuntimeTerminalConfig(input)),
+        terminalGetConfig: async (input) =>
+          projectRuntimeTerminalConfig(this.getRuntimeTerminalConfig(input.terminalId)),
+        terminalSetConfig: async (input) => projectRuntimeTerminalConfigMutation(this.setRuntimeTerminalConfig(input)),
         terminalRead: async (input) => await this.readRuntimeTerminal(input),
         terminalAwait: async (input, context) =>
           await this.awaitRuntimeTerminal({
@@ -4293,6 +4296,7 @@ export class SessionRuntime {
       contextId: match.contextId,
       source: this.resolveAttentionSourceSystemId(match),
       focusState: match.context.focusState,
+      scores: match.context.scoreMap,
       scoreSum: Object.values(match.context.scoreMap).reduce((sum, value) => sum + Math.max(0, value), 0),
       headCommitId: match.context.headCommitId,
       owner: match.context.owner,
@@ -4367,10 +4371,8 @@ export class SessionRuntime {
     if (!primary) {
       return null;
     }
-    const protocolState = this.buildAttentionProtocolState();
     const items = selected.flatMap((match) => {
-      const cursorCommitId = protocolState.get(match.contextId)?.lastSeenCommitId ?? null;
-      return this.selectAttentionProtocolCommits(match, cursorCommitId).map((commit) => ({
+      return this.selectAttentionProtocolCommits(match).map((commit) => ({
         contextId: match.contextId,
         commit,
       }));
@@ -4614,10 +4616,10 @@ export class SessionRuntime {
       meta: {
         terminalId,
         kind: payload.kind,
-        fromHash: "fromHash" in payload ? payload.fromHash ?? null : null,
+        fromHash: "fromHash" in payload ? (payload.fromHash ?? null) : null,
         toHash:
           "toHash" in payload
-            ? payload.toHash ?? null
+            ? (payload.toHash ?? null)
             : "seq" in payload && typeof payload.seq === "number"
               ? String(payload.seq)
               : null,
@@ -4837,17 +4839,15 @@ export class SessionRuntime {
     };
   }
 
-  private enqueueRoomLifecycleAttentionCommit(
-    input: {
-      chatId: string;
-      contextId: string;
-      event: string;
-      summary: string;
-      payload?: Record<string, unknown>;
-      score?: number;
-      ingressType?: "commit" | "push";
-    },
-  ): void {
+  private enqueueRoomLifecycleAttentionCommit(input: {
+    chatId: string;
+    contextId: string;
+    event: string;
+    summary: string;
+    payload?: Record<string, unknown>;
+    score?: number;
+    ingressType?: "commit" | "push";
+  }): void {
     this.messageKernelAdapter.commitLifecycleIngress(
       this.buildLifecycleIngressEnvelope({
         system: "message",
@@ -4862,17 +4862,15 @@ export class SessionRuntime {
     );
   }
 
-  private enqueueTerminalLifecycleAttentionCommit(
-    input: {
-      terminalId: string;
-      contextId: string;
-      event: string;
-      summary: string;
-      payload?: Record<string, unknown>;
-      score?: number;
-      ingressType?: "commit" | "push";
-    },
-  ): void {
+  private enqueueTerminalLifecycleAttentionCommit(input: {
+    terminalId: string;
+    contextId: string;
+    event: string;
+    summary: string;
+    payload?: Record<string, unknown>;
+    score?: number;
+    ingressType?: "commit" | "push";
+  }): void {
     this.terminalKernelAdapter.commitLifecycleIngress(input);
   }
 
@@ -4929,12 +4927,12 @@ export class SessionRuntime {
     input: { notifyLoop: boolean },
   ): Promise<void> {
     const wakeableAttentionIngress = this.isWakeableAttentionIngress(contextId, commit);
-    if (wakeableAttentionIngress) {
-      this.markAttentionContextDirty(contextId);
+    const externalAttentionIngress = commit.meta.source !== "attention";
+    if (externalAttentionIngress && wakeableAttentionIngress) {
+      this.markAttentionContextDirty(contextId, commit.commitId);
     }
     this.recordAttentionCommitTrace(contextId, commit, input);
     this.attentionFactsVersion += 1;
-    const externalAttentionIngress = commit.meta.source !== "attention";
     if (externalAttentionIngress && wakeableAttentionIngress) {
       this.clearAttentionContainment(contextId);
       this.resetAttentionDebtBackoff();
@@ -5062,7 +5060,10 @@ export class SessionRuntime {
       contextIdOverride: contextId,
       target: input.target,
     });
-    const commitAction = input.commitMode === "system" ? this.attentionSystem.commitSystem.bind(this.attentionSystem) : this.attentionSystem.commit.bind(this.attentionSystem);
+    const commitAction =
+      input.commitMode === "system"
+        ? this.attentionSystem.commitSystem.bind(this.attentionSystem)
+        : this.attentionSystem.commit.bind(this.attentionSystem);
     const { commit } = commitAction(contextId, {
       target: commitInput.target,
       parentCommitIds: commitInput.parentCommitIds,
@@ -5184,16 +5185,16 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return;
     }
-    const commitRefs = this.attentionSystem
-      .snapshot()
-      .contexts.flatMap((context) =>
-        context.commits.map((commit) => ({
-          contextId: context.contextId,
-          commitId: commit.commitId,
-          createdAt: Date.parse(commit.createdAt) || Date.now(),
-        })),
-      );
-    const dispatches = this.sessionDb.listAttentionDispatches().map((dispatch) => this.toKernelDispatchRecord(dispatch));
+    const commitRefs = this.attentionSystem.snapshot().contexts.flatMap((context) =>
+      context.commits.map((commit) => ({
+        contextId: context.contextId,
+        commitId: commit.commitId,
+        createdAt: Date.parse(commit.createdAt) || Date.now(),
+      })),
+    );
+    const dispatches = this.sessionDb
+      .listAttentionDispatches()
+      .map((dispatch) => this.toKernelDispatchRecord(dispatch));
     const receipts = this.sessionDb.listAttentionReceipts().map((receipt) => this.toKernelReceiptRecord(receipt));
     this.runtimeKernelHost.restoreTimeline({
       commitRefs,
@@ -5701,58 +5702,17 @@ export class SessionRuntime {
     return null;
   }
 
-  private buildAttentionProtocolState(): Map<string, { bootstrapped: boolean; lastSeenCommitId: string | null }> {
-    const state = new Map<string, { bootstrapped: boolean; lastSeenCommitId: string | null }>();
-    const frames = [...this.attentionCycleFrames.values()].sort(
-      (left, right) => left.seq - right.seq || left.cycleId - right.cycleId,
-    );
-
-    const ensure = (contextId: string) => {
-      const existing = state.get(contextId);
-      if (existing) {
-        return existing;
-      }
-      const next = { bootstrapped: false, lastSeenCommitId: null as string | null };
-      state.set(contextId, next);
-      return next;
-    };
-
-    for (const frame of frames) {
-      if (frame.protocolMode === "compact" || frame.protocolMode === "none") {
-        continue;
-      }
-      for (const contextId of frame.inputContextIds) {
-        ensure(contextId).bootstrapped = true;
-      }
-      for (const ref of [...frame.inputCommitRefs, ...frame.producedCommitRefs]) {
-        const entry = ensure(ref.contextId);
-        entry.bootstrapped = true;
-        entry.lastSeenCommitId = ref.commitId;
-      }
+  private selectAttentionProtocolCommits(match: AttentionActiveContextMatch): AttentionCommit[] {
+    const dirtyCommitIds = this.dirtyAttentionCommitIdsByContext.get(match.contextId);
+    if (!dirtyCommitIds || dirtyCommitIds.size === 0) {
+      return [];
     }
-
-    return state;
-  }
-
-  private selectAttentionProtocolCommits(
-    match: AttentionActiveContextMatch,
-    cursorCommitId: string | null,
-  ): AttentionCommit[] {
     const context = this.attentionSystem.getContext(match.contextId);
     const allCommits = context?.listCommits() ?? match.recentCommits;
     if (allCommits.length === 0) {
       return [];
     }
-    const cursorIndex =
-      cursorCommitId === null ? -1 : allCommits.findIndex((commit) => commit.commitId === cursorCommitId);
-    let commits = allCommits.slice(cursorIndex + 1);
-    if (commits.length === 0) {
-      commits = allCommits.slice(-1);
-    }
-    if (commits.length > MAX_ATTENTION_PROTOCOL_COMMITS) {
-      commits = commits.slice(-MAX_ATTENTION_PROTOCOL_COMMITS);
-    }
-    return commits;
+    return allCommits.filter((commit) => dirtyCommitIds.has(commit.commitId));
   }
 
   private serializeAttentionItemsInput(
@@ -5993,8 +5953,7 @@ export class SessionRuntime {
     await this.runtimeKernelHost.bootstrap();
     if (this.attentionSystem.listActiveContexts().length > 0) {
       this.attentionFactsVersion += 1;
-      this.resetAttentionDebtBackoff();
-      this.notifyInput("attention");
+      this.requestAttentionContextBoundaryRefresh();
     }
     if (this.messageSystemCleanup.length === 0) {
       this.bindMessageSystem();
@@ -6390,6 +6349,7 @@ export class SessionRuntime {
     this.inputSignalAt = { user: null, terminal: null, task: null, attention: null };
     this.attentionSourceDigests.clear();
     this.dirtyAttentionContextIds.clear();
+    this.dirtyAttentionCommitIdsByContext.clear();
     this.dirtyAttentionContextOrder.clear();
     this.nextAttentionDirtyOrder = 0;
     this.attentionContainment.clear();
@@ -7530,9 +7490,7 @@ export class SessionRuntime {
     }
     const managed = this.terminals.get(terminalId);
     const next = {
-      processPhase: managed?.isRunning()
-        ? "running"
-        : (input.fallback?.processPhase ?? planeEntry.processPhase),
+      processPhase: managed?.isRunning() ? "running" : (input.fallback?.processPhase ?? planeEntry.processPhase),
       lifecycleTransition: planeEntry.lifecycleTransition ?? null,
       status: input.fallback?.status ?? managed?.getStatus() ?? planeEntry.status,
     } as const;
@@ -7761,13 +7719,22 @@ export class SessionRuntime {
     }
   }
 
-  private markAttentionContextDirty(contextId: string): void {
+  private markAttentionContextDirty(contextId: string, commitId?: string): void {
     this.dirtyAttentionContextIds.add(contextId);
     this.dirtyAttentionContextOrder.set(contextId, ++this.nextAttentionDirtyOrder);
+    if (commitId) {
+      const existing = this.dirtyAttentionCommitIdsByContext.get(contextId);
+      if (existing) {
+        existing.add(commitId);
+      } else {
+        this.dirtyAttentionCommitIdsByContext.set(contextId, new Set([commitId]));
+      }
+    }
   }
 
   private clearDirtyAttentionContext(contextId: string): void {
     this.dirtyAttentionContextIds.delete(contextId);
+    this.dirtyAttentionCommitIdsByContext.delete(contextId);
     this.dirtyAttentionContextOrder.delete(contextId);
   }
 
@@ -7828,6 +7795,17 @@ export class SessionRuntime {
     this.attentionDebtBackoffMs = ATTENTION_DEBT_INITIAL_BACKOFF_MS;
     this.attentionDebtNextWakeAt = null;
     this.attentionForceCollect = false;
+  }
+
+  private requestAttentionContextBoundaryRefresh(): void {
+    // Boundary refreshes rebuild the model's AttentionContext projection after
+    // start/compact without pretending historical commits are new items.
+    this.dirtyAttentionContextIds.clear();
+    this.dirtyAttentionCommitIdsByContext.clear();
+    this.dirtyAttentionContextOrder.clear();
+    this.resetAttentionDebtBackoff();
+    this.attentionForceCollect = true;
+    this.notifyInput("attention");
   }
 
   private advanceAttentionDebtBackoff(): void {
@@ -8287,6 +8265,7 @@ export class SessionRuntime {
     if (active.length === 0) {
       if (!bootstrapSnapshots) {
         this.dirtyAttentionContextIds.clear();
+        this.dirtyAttentionCommitIdsByContext.clear();
         this.dirtyAttentionContextOrder.clear();
         this.attentionContainment.clear();
         this.resetAttentionDebtBackoff();
@@ -8303,10 +8282,6 @@ export class SessionRuntime {
       return undefined;
     }
 
-    for (const match of selected) {
-      this.clearDirtyAttentionContext(match.contextId);
-    }
-
     const outputs: LoopBusInput[] = [];
     const bootstrapInput = this.buildAttentionContextBootstrapInput(
       active,
@@ -8320,6 +8295,9 @@ export class SessionRuntime {
     const itemsInput = this.buildAttentionItemsInput(selected);
     if (itemsInput) {
       outputs.push(itemsInput);
+    }
+    for (const match of selected) {
+      this.clearDirtyAttentionContext(match.contextId);
     }
     return outputs.length > 0 ? outputs : undefined;
   }
@@ -8760,6 +8738,9 @@ export class SessionRuntime {
         compactTrigger: compactTrigger ?? null,
       }),
     );
+    if (this.attentionSystem.listActiveContexts().length > 0) {
+      this.requestAttentionContextBoundaryRefresh();
+    }
   }
 
   private appendTerminalActivity(input: {
@@ -9060,7 +9041,7 @@ export class SessionRuntime {
           ? attentionContainment.nextWakeAt
           : waitingReason === "message_follow_up_timer"
             ? nextMessageFollowUpWakeAt
-          : null;
+            : null;
     const runtimeStatus: LoopBusKernelState["runtimeStatus"] = !this.started
       ? "idle"
       : waitingReason === "attention_blocked"
@@ -9101,9 +9082,9 @@ export class SessionRuntime {
           ? this.attentionDebtBackoffMs
           : waitingReason === "message_follow_up_timer" && nextAutoWakeAt !== null
             ? Math.max(0, nextAutoWakeAt - Date.now())
-          : waitingReason === "attention_backoff" && nextAutoWakeAt !== null
-            ? Math.max(0, nextAutoWakeAt - Date.now())
-            : null,
+            : waitingReason === "attention_backoff" && nextAutoWakeAt !== null
+              ? Math.max(0, nextAutoWakeAt - Date.now())
+              : null,
       retryCount: attentionContainment.retryCount,
       blockedReason: attentionContainment.blockedReason,
       lastProgressAt: this.lastAttentionProgressAt,

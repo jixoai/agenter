@@ -216,6 +216,14 @@ const CONTEXT_OVERFLOW_MARKERS = [
   "token limit",
   "context_length_exceeded",
 ];
+const TRANSIENT_ATTENTION_PROTOCOL_KINDS = new Set(["context", "items"]);
+
+// Attention protocol messages are per-call cognitive inputs. They must be
+// recorded in ai_call.request.messages, but they are not bounded prompt memory.
+const isTransientAttentionProtocolMessage = (message: LoopBusMessage): boolean =>
+  message.source === "attention" &&
+  typeof message.meta?.attentionProtocolKind === "string" &&
+  TRANSIENT_ATTENTION_PROTOCOL_KINDS.has(message.meta.attentionProtocolKind);
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException
@@ -1249,8 +1257,10 @@ export class AgenterAI {
       },
     });
     const promptWindowSnapshot = [...this.promptWindow];
+    const transientRequestMessages = await this.formatTransientAttentionProtocolMessages(roundMessages);
+    const requestMessages = [...promptWindowSnapshot, ...transientRequestMessages];
     const promptWindowStateId = await this.ensureCurrentPromptWindowStateId();
-    const contextChars = systemPrompt.length + JSON.stringify(promptWindowSnapshot).length;
+    const contextChars = systemPrompt.length + JSON.stringify(requestMessages).length;
     this.stats.lastContextChars = contextChars;
     this.stats.totalContextChars += contextChars;
     this.emitStats();
@@ -1260,11 +1270,12 @@ export class AgenterAI {
       systemPrompt,
       promptWindowStateId,
       roundIndex: this.promptWindowRoundIndex,
-      messages: structuredClone(promptWindowSnapshot),
+      messages: structuredClone(requestMessages),
       tools: tools.map((tool) => ({ name: tool.name, description: tool.description })),
       meta: {
         loopCount: this.stats.loops,
         promptWindowSize: promptWindowSnapshot.length,
+        transientAttentionInputCount: transientRequestMessages.length,
         attentionRound,
       },
     } satisfies AgentModelCallRecord["request"];
@@ -1334,7 +1345,7 @@ export class AgenterAI {
         run: (abortController) =>
           modelClient.respondWithMeta({
             systemPrompt,
-            messages: promptWindowSnapshot,
+            messages: requestMessages,
             tools,
             abortController,
             consumeCommittedAttentionMessages: (commitInput: ConsumeCommittedAttentionMessagesInput) => {
@@ -1550,14 +1561,32 @@ export class AgenterAI {
   }
 
   private async pushIncomingBatchToPromptWindow(messages: LoopBusMessage[]): Promise<void> {
+    const persistentMessages = messages.filter((message) => !isTransientAttentionProtocolMessage(message));
+    if (persistentMessages.length === 0) {
+      return;
+    }
     const nextPromptWindow = [...this.promptWindow];
-    for (const message of messages) {
+    for (const message of persistentMessages) {
       nextPromptWindow.push({
         role: "user",
         content: await this.formatUserMessage(message),
       });
     }
     await this.commitCurrentPromptWindow(nextPromptWindow);
+  }
+
+  private async formatTransientAttentionProtocolMessages(
+    messages: readonly LoopBusMessage[],
+  ): Promise<TextOnlyModelMessage[]> {
+    const transientMessages = messages.filter(isTransientAttentionProtocolMessage);
+    const formatted: TextOnlyModelMessage[] = [];
+    for (const message of transientMessages) {
+      formatted.push({
+        role: "user",
+        content: await this.formatUserMessage(message),
+      });
+    }
+    return formatted;
   }
 
   private async pushAssistantTurnToPromptWindow(input: {

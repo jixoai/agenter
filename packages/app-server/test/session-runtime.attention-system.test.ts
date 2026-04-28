@@ -2239,8 +2239,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       }).commit;
       await internal.handleCommittedAttentionCommit(contextId, commit, { notifyLoop: false });
 
-      const firstInputs = await internal.collectLoopInputs();
-      expect(getItemsInput(firstInputs)?.text).toContain("background room has historical work");
+      await internal.collectLoopInputs();
 
       await runtime.setChatVisibility({
         chatId: channel.chatId,
@@ -2254,6 +2253,96 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     } finally {
       await runtime.stop();
     }
+  });
+
+  test("Scenario: Given the model commits attention through the CLI When the next collection runs Then the commit is context state only and not an item reminder", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    await runtime.start();
+    await runtime.pause();
+    try {
+      await internal.collectLoopInputs();
+      const result = await internal.execRootWorkspaceBash({
+        command: "attention commit",
+        stdin: JSON.stringify({
+          contextId: PRIMARY_CONTEXT_ID,
+          meta: {
+            author: "assistant",
+            source: "attention",
+          },
+          scores: { hash_model_authored: 100 },
+          summary: "model-authored attention update",
+          change: {
+            type: "update",
+            value: "model-authored attention update",
+            format: "text/plain",
+          },
+        }),
+      });
+      expect(result.exitCode).toBe(0);
+
+      const inputs = await internal.collectLoopInputs();
+      expect(getItemsInput(inputs)).toBeUndefined();
+      expect(getAttentionContextSnapshot(internal, PRIMARY_CONTEXT_ID)?.scoreMap).toEqual({
+        hash_model_authored: 100,
+      });
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given compact finished with active attention When the next boundary is collected Then context projection refreshes without historical items", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      handleCommittedAttentionCommit: (
+        contextId: string,
+        commit: AttentionCommit,
+        input: { notifyLoop: boolean },
+      ) => Promise<void>;
+    };
+
+    await runtime.start();
+    await runtime.pause();
+    await internal.collectLoopInputs();
+
+    ensureAttentionContext(internal, PRIMARY_CONTEXT_ID);
+    const commit = appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
+      meta: {
+        author: "user:kzf",
+        source: "message",
+        src: createMessageSrc(PRIMARY_ROOM_ID, 404),
+      },
+      scores: { hash_compact_boundary: 100 },
+      title: "Keep this unresolved",
+    });
+    await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, commit, { notifyLoop: false });
+    const firstBatch = await internal.collectLoopInputs();
+    expect(getItemsInput(firstBatch)?.text).toContain("Keep this unresolved");
+
+    await internal.persistCycle({ wakeSource: "user", inputs: firstBatch ?? [] });
+    runtime.pushUserChat("/compact");
+    const compactInputs = await internal.collectLoopInputs();
+    await internal.persistCycle({ wakeSource: "user", inputs: compactInputs ?? [] });
+    await internal.handleModelCall({
+      id: "compact-boundary-call",
+      timestamp: 100,
+      completedAt: 101,
+      status: "done",
+      provider: "openai",
+      model: "gpt-5.4",
+      request: { messages: [] },
+      response: { decision: { kind: "compact" } },
+      outcome: { code: "done" },
+    });
+
+    (internal as RuntimeInternal & { requestAttentionContextBoundaryRefresh: () => void }).requestAttentionContextBoundaryRefresh();
+    const boundaryInputs = internal.collectAttentionInputs();
+    expect(getBootstrapInput(boundaryInputs)?.text).toContain("## AttentionContexts.metadata");
+    expect(getBootstrapInput(boundaryInputs)?.text).toContain(PRIMARY_CONTEXT_ID);
+    expect(getItemsInput(boundaryInputs)).toBeUndefined();
+
+    await runtime.stop();
   });
 
   test("Scenario: Given chat attention arrives while another context is already dirty When collectLoopInputs runs Then only the newest dirty context is sent to the model in that round", async () => {
@@ -4305,7 +4394,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(itemsInput?.text).toContain("references/guide.md");
   });
 
-  test("Scenario: Given a skill changes while the runtime is stopped When the same session restarts Then the offline skill reminder enters attention input", async () => {
+  test("Scenario: Given a skill changes while the runtime is stopped When the same session restarts Then only the skill AttentionContext projection is refreshed", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-session-runtime-skill-restart-"));
     const sessionRoot = join(root, "session");
     const skillDir = join(root, "skills", "offline-runtime");
@@ -4373,10 +4462,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await restarted.start();
     await restarted.pause();
     const inputs = await (restarted as unknown as RuntimeInternal).collectLoopInputs();
-    const itemsInput = getItemsInput(inputs);
-    expect(itemsInput).toBeDefined();
-    expect(itemsInput?.text).toContain("Updated runtime skill offline-runtime");
-    expect(itemsInput?.text).toContain("SKILL.md");
+    const contextInput = getBootstrapInput(inputs);
+    expect(contextInput?.text).toContain("## AttentionContexts.metadata");
+    expect(contextInput?.text).toContain("ctx-skill-system");
+    expect(contextInput?.text).toContain("offline-runtime");
+    expect(getItemsInput(inputs)).toBeUndefined();
 
     await restarted.stop();
   });

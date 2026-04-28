@@ -1212,6 +1212,57 @@ const createAttentionBootstrapMessages = (input: {
 ];
 
 describe("Feature: AgenterAI behavior", () => {
+  test("Scenario: Given transient attention protocol inputs When a later round is assembled Then AttentionContexts and AttentionItems are not replayed from prompt memory", async () => {
+    const chat = createAttentionGateway();
+    const seenUserReplay: string[][] = [];
+    const modelCalls: AgentModelCallRecord[] = [];
+
+    const modelClient = createModelClient(async (input) => {
+      seenUserReplay.push(extractUserReplay(input));
+      return {
+        thinking: "",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      attentionGateway: chat.gateway,
+      onModelCall: (record) => {
+        modelCalls.push(record);
+      },
+    });
+
+    await ai.send(
+      createAttentionBootstrapMessages({
+        contextId: "ctx-skill-system",
+        headCommitId: "commit-skill-1",
+        commitIds: ["commit-skill-1"],
+        contextText: "## AttentionContexts.metadata\nprimaryContextId: ctx-skill-system",
+        itemsText: "## Attention Items\n```yaml+attention-item\nsummary: runtime skill changed\n```",
+      }),
+    );
+    await ai.send([createUserMessage("ordinary next turn")]);
+
+    expect(seenUserReplay).toHaveLength(2);
+    expect(seenUserReplay[0]?.join("\n")).toContain("## AttentionContexts.metadata");
+    expect(seenUserReplay[0]?.join("\n")).toContain("## Attention Items");
+    expect(seenUserReplay[1]?.join("\n")).toContain("ordinary next turn");
+    expect(seenUserReplay[1]?.join("\n")).not.toContain("## AttentionContexts.metadata");
+    expect(seenUserReplay[1]?.join("\n")).not.toContain("## Attention Items");
+
+    const firstRunningCall = modelCalls.find((record) => record.status === "running");
+    expect(extractUserReplay(firstRunningCall?.request.messages).join("\n")).toContain(
+      "primaryContextId: ctx-skill-system",
+    );
+    expect(extractUserReplay(ai.inspectDebugState().promptWindow).join("\n")).not.toContain(
+      "primaryContextId: ctx-skill-system",
+    );
+  });
+
   test("Scenario: Given runtime root tools When terminal CLI is needed Then AgenterAI exposes workspace_list plus root_bash/workspace_bash and terminal subcommands execute through root_bash", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
@@ -2494,7 +2545,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(ai.consumePendingCompactRequest()).toBeNull();
   });
 
-  test("Scenario: Given attention-first follow-up rounds When the next prompt is built Then prior attention and tool evidence remain in replay history", async () => {
+  test("Scenario: Given attention-first follow-up rounds When the next prompt is built Then tool evidence remains replayable while attention inputs stay current-call only", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const tracked = chat.engine.add({ content: "ask gaubee then report back", from: "user", score: 100 });
@@ -2602,7 +2653,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(replay.some((item) => item.includes("tool: root_bash"))).toBeTrue();
     expect(replay.some((item) => item.includes('command: "message send"'))).toBeTrue();
     expect(replay.some((item) => item.includes('command: "attention commit"'))).toBeTrue();
-    expect(userReplay.some((item) => item.includes("ctx-main unresolved"))).toBeTrue();
+    expect(userReplay.some((item) => item.includes("ctx-main unresolved"))).toBeFalse();
     expect(userReplay.some((item) => item.includes("ctx-gaubee replied"))).toBeTrue();
     expect(roles.at(-1)).toBe("user");
     expect(flattenModelMessageContent(seenInputs[1].messages.at(-1))).toContain("ctx-gaubee");
@@ -3221,6 +3272,8 @@ describe("Feature: AgenterAI behavior", () => {
     });
     const secondRoundUserReplay = extractUserReplay(seenInputs[1]);
     expect(secondRoundUserReplay.some((item) => item.includes("第二阶段补充要求"))).toBeTrue();
+    const thirdRoundUserReplay = extractUserReplay(seenInputs[2]);
+    expect(thirdRoundUserReplay.some((item) => item.includes("第二阶段补充要求"))).toBeFalse();
     const thirdRoundAssistantReplay = extractAssistantReplay(seenInputs[2]);
     expect(thirdRoundAssistantReplay.some((item) => item.includes("tool: root_bash"))).toBeTrue();
     expect(thirdRoundAssistantReplay.some((item) => item.includes('command: "message send"'))).toBeTrue();
