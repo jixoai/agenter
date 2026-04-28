@@ -1793,6 +1793,7 @@ export class SessionRuntime {
       homeDir: this.getHomeDir(),
       rootWorkspacePath: this.getRootWorkspacePath(),
       principalId: this.options.avatarPrincipalId,
+      fingerprintManifestPath: join(this.options.sessionRoot, "skill-system", "fingerprint-map.json"),
       listWorkspaceAuthorities: () =>
         this.listWorkspaceAuthorities().map((authority) => ({
           workspaceRoot: authority.workspaceRoot,

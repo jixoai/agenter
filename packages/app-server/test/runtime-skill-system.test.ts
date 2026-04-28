@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -80,6 +80,7 @@ const createSystem = (input: {
   rootWorkspacePath: string;
   homeDir?: string;
   repoRoot?: string;
+  fingerprintManifestPath?: string;
   watchDebounceMs?: number;
   watchPollMs?: number;
   onIdleFlush?: (result: RuntimeSkillRefreshResult) => void;
@@ -90,6 +91,7 @@ const createSystem = (input: {
     rootWorkspacePath: input.rootWorkspacePath,
     homeDir: input.homeDir ?? input.rootWorkspacePath,
     repoRoot: input.repoRoot,
+    fingerprintManifestPath: input.fingerprintManifestPath,
     watchDebounceMs: input.watchDebounceMs,
     watchPollMs: input.watchPollMs,
     unrefTimers: false,
@@ -186,6 +188,127 @@ describe("Feature: runtime skill watcher and config surface", () => {
     expect(result.reminderIngresses[0]?.summary).toContain("Removed runtime skill removed-skill");
   });
 
+  test("Scenario: Given no persisted fingerprint manifest When refresh reminders are published Then the current skills become the baseline without added reminders", () => {
+    const rootWorkspacePath = createTempRoot();
+    writeSkill(rootWorkspacePath, { name: "baseline-skill" });
+    const fingerprintManifestPath = join(rootWorkspacePath, "session", "skill-system", "fingerprint-map.json");
+    const system = createSystem({ rootWorkspacePath, fingerprintManifestPath });
+
+    const result = system.refresh({ forceBootstrap: true, publishReminders: true });
+
+    expect(result.changedSkills).toHaveLength(0);
+    expect(result.reminderIngresses).toHaveLength(0);
+    expect(existsSync(fingerprintManifestPath)).toBeTrue();
+    expect(readFileSync(fingerprintManifestPath, "utf8")).toContain("baseline-skill");
+  });
+
+  test("Scenario: Given persisted skill fingerprints When skills change while the runtime is stopped Then restart refresh emits added updated and removed reminders once", () => {
+    const rootWorkspacePath = createTempRoot();
+    const updatedSkillDir = writeSkill(rootWorkspacePath, { name: "offline-updated" });
+    writeSkill(rootWorkspacePath, { name: "offline-removed" });
+    const fingerprintManifestPath = join(rootWorkspacePath, "session", "skill-system", "fingerprint-map.json");
+    const firstSystem = createSystem({ rootWorkspacePath, fingerprintManifestPath });
+    const baseline = firstSystem.refresh({ forceBootstrap: true, publishReminders: true });
+    expect(baseline.changedSkills).toHaveLength(0);
+    firstSystem.dispose();
+
+    writeFileSync(
+      join(updatedSkillDir, "SKILL.md"),
+      [
+        "---",
+        "name: offline-updated",
+        "description: updated while stopped",
+        "---",
+        "",
+        "# offline-updated",
+        "",
+        "Changed while no watcher exists.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    rmSync(join(rootWorkspacePath, "skills", "offline-removed"), { recursive: true, force: true });
+    writeSkill(rootWorkspacePath, { name: "offline-added" });
+
+    const restartedSystem = createSystem({ rootWorkspacePath, fingerprintManifestPath });
+    const restarted = restartedSystem.refresh({ forceBootstrap: true, publishReminders: true });
+    expect(restarted.changedSkills.map((change) => `${change.kind}:${change.name}`).sort()).toEqual([
+      "added:offline-added",
+      "removed:offline-removed",
+      "updated:offline-updated",
+    ]);
+    expect(restarted.reminderIngresses).toHaveLength(3);
+
+    const duplicateCheck = createSystem({ rootWorkspacePath, fingerprintManifestPath }).refresh({
+      forceBootstrap: true,
+      publishReminders: true,
+    });
+    expect(duplicateCheck.changedSkills).toHaveLength(0);
+    expect(duplicateCheck.reminderIngresses).toHaveLength(0);
+  });
+
+  test("Scenario: Given a declared skill file changes while stopped When restart refreshes from the manifest Then the declared file is reported", () => {
+    const rootWorkspacePath = createTempRoot();
+    const skillDir = writeSkill(rootWorkspacePath, {
+      name: "offline-declared",
+      extraConfig: { files: ["references/*.md"] },
+    });
+    mkdirSync(join(skillDir, "references"), { recursive: true });
+    const referencePath = join(skillDir, "references", "guide.md");
+    writeFileSync(referencePath, "reference-v1\n", "utf8");
+    const fingerprintManifestPath = join(rootWorkspacePath, "session", "skill-system", "fingerprint-map.json");
+    createSystem({ rootWorkspacePath, fingerprintManifestPath }).refresh({
+      forceBootstrap: true,
+      publishReminders: true,
+    });
+
+    writeFileSync(referencePath, "reference-v2\n", "utf8");
+
+    const result = createSystem({ rootWorkspacePath, fingerprintManifestPath }).refresh({
+      forceBootstrap: true,
+      publishReminders: true,
+    });
+    expect(result.changedSkills).toHaveLength(1);
+    expect(result.changedSkills[0]?.name).toBe("offline-declared");
+    expect(result.changedSkills[0]?.changedFiles).toContain(referencePath);
+    expect(result.reminderIngresses[0]?.summary).toContain("references/guide.md");
+  });
+
+  test("Scenario: Given an undeclared sibling file changes while stopped When restart refreshes from the manifest Then no skill reminder is emitted", () => {
+    const rootWorkspacePath = createTempRoot();
+    const skillDir = writeSkill(rootWorkspacePath, { name: "offline-unrelated" });
+    const fingerprintManifestPath = join(rootWorkspacePath, "session", "skill-system", "fingerprint-map.json");
+    createSystem({ rootWorkspacePath, fingerprintManifestPath }).refresh({
+      forceBootstrap: true,
+      publishReminders: true,
+    });
+
+    writeFileSync(join(skillDir, "cache.sqlite"), "db-churn", "utf8");
+
+    const result = createSystem({ rootWorkspacePath, fingerprintManifestPath }).refresh({
+      forceBootstrap: true,
+      publishReminders: true,
+    });
+    expect(result.changedSkills).toHaveLength(0);
+    expect(result.reminderIngresses).toHaveLength(0);
+  });
+
+  test("Scenario: Given a corrupt persisted fingerprint manifest When refresh runs Then it repairs the baseline without noisy reminders", () => {
+    const rootWorkspacePath = createTempRoot();
+    writeSkill(rootWorkspacePath, { name: "corrupt-baseline" });
+    const fingerprintManifestPath = join(rootWorkspacePath, "session", "skill-system", "fingerprint-map.json");
+    mkdirSync(join(rootWorkspacePath, "session", "skill-system"), { recursive: true });
+    writeFileSync(fingerprintManifestPath, "{not-json", "utf8");
+    const system = createSystem({ rootWorkspacePath, fingerprintManifestPath });
+
+    const result = system.refresh({ forceBootstrap: true, publishReminders: true });
+
+    expect(result.changedSkills).toHaveLength(0);
+    expect(result.reminderIngresses).toHaveLength(0);
+    expect(readFileSync(fingerprintManifestPath, "utf8")).toContain('"version": 1');
+    expect(readFileSync(fingerprintManifestPath, "utf8")).toContain("corrupt-baseline");
+  });
+
   test("Scenario: Given an unrelated database file in a skill directory When only that file changes Then no skill reminder is emitted", async () => {
     const rootWorkspacePath = createTempRoot();
     const skillDir = writeSkill(rootWorkspacePath, { name: "live-sync" });
@@ -225,7 +348,11 @@ describe("Feature: runtime skill watcher and config surface", () => {
       name: "live-sync",
       config: { files: ["notes/*.md"] },
     });
-    expect(setConfigResult.changedSkills.some((change) => change.changedFiles.some((path) => path.endsWith("ccski.config.json")))).toBeTrue();
+    expect(
+      setConfigResult.changedSkills.some((change) =>
+        change.changedFiles.some((path) => path.endsWith("ccski.config.json")),
+      ),
+    ).toBeTrue();
 
     writeFileSync(referencePath, "reference-v2\n", "utf8");
     await sleep(120);
@@ -263,10 +390,12 @@ describe("Feature: runtime skill watcher and config surface", () => {
     writeFileSync(referencePath, "reference-v2\n", "utf8");
     const originalSetTimeout = globalThis.setTimeout;
     const originalClearTimeout = globalThis.clearTimeout;
-    (globalThis as typeof globalThis & {
-      setTimeout: typeof setTimeout;
-      clearTimeout: typeof clearTimeout;
-    }).setTimeout = (((callback: TimerHandler) => {
+    (
+      globalThis as typeof globalThis & {
+        setTimeout: typeof setTimeout;
+        clearTimeout: typeof clearTimeout;
+      }
+    ).setTimeout = ((callback: TimerHandler) => {
       if (typeof callback === "function") {
         callback();
       }
@@ -275,21 +404,27 @@ describe("Feature: runtime skill watcher and config surface", () => {
           return this;
         },
       } as ReturnType<typeof setTimeout>;
-    }) as unknown) as typeof setTimeout;
-    (globalThis as typeof globalThis & {
-      clearTimeout: typeof clearTimeout;
-    }).clearTimeout = (((_timer: ReturnType<typeof setTimeout>) => {}) as unknown) as typeof clearTimeout;
+    }) as unknown as typeof setTimeout;
+    (
+      globalThis as typeof globalThis & {
+        clearTimeout: typeof clearTimeout;
+      }
+    ).clearTimeout = ((_timer: ReturnType<typeof setTimeout>) => {}) as unknown as typeof clearTimeout;
 
     try {
       (system as unknown as { markSkillDirty: (name: string) => void }).markSkillDirty("live-sync");
     } finally {
-      (globalThis as typeof globalThis & {
-        setTimeout: typeof setTimeout;
-        clearTimeout: typeof clearTimeout;
-      }).setTimeout = originalSetTimeout;
-      (globalThis as typeof globalThis & {
-        clearTimeout: typeof clearTimeout;
-      }).clearTimeout = originalClearTimeout;
+      (
+        globalThis as typeof globalThis & {
+          setTimeout: typeof setTimeout;
+          clearTimeout: typeof clearTimeout;
+        }
+      ).setTimeout = originalSetTimeout;
+      (
+        globalThis as typeof globalThis & {
+          clearTimeout: typeof clearTimeout;
+        }
+      ).clearTimeout = originalClearTimeout;
     }
 
     expect(idleResults).toHaveLength(1);

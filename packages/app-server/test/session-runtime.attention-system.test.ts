@@ -1737,11 +1737,13 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(socialContext?.obligation?.kind).toBe("room_reply_pending");
       expect(socialContext?.presence?.online).toEqual(["kzf", "Jane"]);
       expect(socialContext?.presence?.offline).toEqual(["JJ"]);
-      expect((socialContext?.visibleRooms ?? []).map((room) => ({
-        title: room.title,
-        participantLabels: room.participantLabels,
-        focused: room.focused,
-      }))).toEqual([
+      expect(
+        (socialContext?.visibleRooms ?? []).map((room) => ({
+          title: room.title,
+          participantLabels: room.participantLabels,
+          focused: room.focused,
+        })),
+      ).toEqual([
         {
           title: "gaubee",
           participantLabels: ["Jane", "gaubee"],
@@ -1851,9 +1853,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       const inputs = await jjInternal.collectLoopInputs();
       expect(getBootstrapInput(inputs)).toBeDefined();
       const socialContext = parseMessageSocialContext(
-        getActiveItems(jjInternal)
-          .find((item) => item.detail?.value.includes("我先去把接口跑起来，稍后把结果发到群里。"))
-          ?.detail?.value,
+        getActiveItems(jjInternal).find((item) =>
+          item.detail?.value.includes("我先去把接口跑起来，稍后把结果发到群里。"),
+        )?.detail?.value,
       );
       expect(socialContext).toMatchObject({
         channel: {
@@ -1996,9 +1998,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
       const stopped = await stopPromise;
       expect(stopped.ok).toBeTrue();
-      expect(runtime.snapshot().terminals.find((item) => item.terminalId === "transition-no-attention")?.processPhase).toBe(
-        "stopped",
-      );
+      expect(
+        runtime.snapshot().terminals.find((item) => item.terminalId === "transition-no-attention")?.processPhase,
+      ).toBe("stopped");
 
       const afterStopSnapshot = getAttentionContextSnapshot(internal, terminalContextId);
       expect(afterStopSnapshot?.commits.length ?? 0).toBe(beforeCommitCount);
@@ -2198,6 +2200,57 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(internal.attentionSystem.listActiveContexts().some((match) => match.contextId === "ctx-room-muted")).toBe(
         true,
       );
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given historical push work already reached the model When the context is focused again Then only AttentionContext metadata is injected", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      handleCommittedAttentionCommit: (
+        contextId: string,
+        commit: AttentionCommit,
+        input: { notifyLoop: boolean },
+      ) => Promise<void>;
+    };
+
+    await runtime.start();
+    await runtime.pause();
+    try {
+      const channel = await runtime.createMessageChannel({
+        kind: "room",
+        title: "Background room",
+        focus: false,
+      });
+      const contextId = channel.contextId ?? `ctx-${channel.chatId}`;
+      await internal.collectLoopInputs();
+
+      const commit = internal.attentionSystem.commit(contextId, {
+        ingressType: "push",
+        meta: {
+          author: "user:kzf",
+          source: "message",
+          src: createMessageSrc(channel.chatId, 303),
+        },
+        scores: { hash_background_focus: 100 },
+        summary: "background room has historical work",
+        change: { type: "update", value: "background room has historical work" },
+      }).commit;
+      await internal.handleCommittedAttentionCommit(contextId, commit, { notifyLoop: false });
+
+      const firstInputs = await internal.collectLoopInputs();
+      expect(getItemsInput(firstInputs)?.text).toContain("background room has historical work");
+
+      await runtime.setChatVisibility({
+        chatId: channel.chatId,
+        visible: true,
+        focused: true,
+      });
+      const focusInputs = await internal.collectLoopInputs();
+
+      expect(getBootstrapInput(focusInputs)?.text).toContain("hash_background_focus");
+      expect(getItemsInput(focusInputs)).toBeUndefined();
     } finally {
       await runtime.stop();
     }
@@ -3988,7 +4041,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(messages.filter((message) => message.content === "先等等，我确认一下。")).toHaveLength(1);
     expect(messages).toHaveLength(1);
     expect(activeItems.some((item) => item.title.includes("Re-evaluate room follow-up"))).toBeTrue();
-    expect(activeItems.some((item) => parseMessageAttentionSrc(item.meta.src ?? "")?.messageId === first.messageId)).toBeTrue();
+    expect(
+      activeItems.some((item) => parseMessageAttentionSrc(item.meta.src ?? "")?.messageId === first.messageId),
+    ).toBeTrue();
     expect(getBootstrapInput(batch)).toBeDefined();
 
     await runtime.stop();
@@ -4014,10 +4069,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await Bun.sleep(40);
 
     const waitPromise = internal.waitForAnyInput();
-    const winner = await Promise.race([
-      waitPromise,
-      Bun.sleep(80).then(() => "timeout" as const),
-    ]);
+    const winner = await Promise.race([waitPromise, Bun.sleep(80).then(() => "timeout" as const)]);
     const messages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
     const activeItems = getActiveItems(internal);
 
@@ -4253,9 +4305,96 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(itemsInput?.text).toContain("references/guide.md");
   });
 
+  test("Scenario: Given a skill changes while the runtime is stopped When the same session restarts Then the offline skill reminder enters attention input", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-session-runtime-skill-restart-"));
+    const sessionRoot = join(root, "session");
+    const skillDir = join(root, "skills", "offline-runtime");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      [
+        "---",
+        "name: offline-runtime",
+        "description: runtime skill baseline",
+        "---",
+        "",
+        "# offline-runtime",
+        "",
+        "Version one.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const createRestartableRuntime = (): SessionRuntime => {
+      const runtime = new SessionRuntime({
+        sessionId: "s-skill-restart",
+        cwd: root,
+        sessionRoot,
+        sessionName: "skill-restart",
+        storeTarget: "workspace",
+        primaryRoomId: PRIMARY_ROOM_ID,
+        allocateRoomId: createRuntimeRoomAllocator(),
+        terminalSystem: createTerminalSystem(root),
+        avatarPrincipalId: TEST_AVATAR_PRINCIPAL_ID,
+        avatarPrivateKey: TEST_AVATAR_PRIVATE_KEY,
+        homeDir: root,
+        rootWorkspacePath: root,
+        resolveRuntimeTerminalCwd: async (input) => ({
+          ok: true,
+          cwd: input.cwd ?? root,
+        }),
+      });
+      attachPrimaryRoom(runtime);
+      return runtime;
+    };
+
+    const firstRuntime = createRestartableRuntime();
+    await firstRuntime.start();
+    await firstRuntime.pause();
+    await firstRuntime.stop();
+
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      [
+        "---",
+        "name: offline-runtime",
+        "description: runtime skill updated while stopped",
+        "---",
+        "",
+        "# offline-runtime",
+        "",
+        "Version two.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const restarted = createRestartableRuntime();
+    await restarted.start();
+    await restarted.pause();
+    const inputs = await (restarted as unknown as RuntimeInternal).collectLoopInputs();
+    const itemsInput = getItemsInput(inputs);
+    expect(itemsInput).toBeDefined();
+    expect(itemsInput?.text).toContain("Updated runtime skill offline-runtime");
+    expect(itemsInput?.text).toContain("SKILL.md");
+
+    await restarted.stop();
+  });
+
   test("Scenario: Given root bash mutates a runtime skill When the next rounds are collected Then added updated and removed skill reminders all enter attention input", async () => {
     const runtime = createRuntime();
-    const internal = runtime as unknown as RuntimeInternal;
+    const internal = runtime as unknown as RuntimeInternal & {
+      ensureRuntimeSkillSystem: () => RuntimeSkillSystem;
+      handleRuntimeSkillRefreshResult: (
+        result: ReturnType<RuntimeSkillSystem["refresh"]>,
+        input: { notifyLoop: boolean },
+      ) => Promise<unknown>;
+    };
+    const skillSystem = internal.ensureRuntimeSkillSystem();
+    await internal.handleRuntimeSkillRefreshResult(
+      skillSystem.refresh({ forceBootstrap: true, publishReminders: true }),
+      { notifyLoop: false },
+    );
     const skillContent = (body: string): string =>
       ["---", "name: live-bridge", "description: runtime loop proof", "---", "", "# live-bridge", "", body, ""].join(
         "\n",
