@@ -3,7 +3,9 @@
 ## Purpose
 Define the shared descriptor registry that drives runtime-local API routes, shell CLI parsing, and schema-backed help for runtime commands.
 ## Requirements
+
 ### Requirement: Runtime SHALL define shell/API tool surfaces from a shared descriptor registry
+
 The runtime SHALL define `attention`, `message`, `workspace`, `terminal`, and descriptor-backed `skill` shell/API operations from one shared descriptor registry that owns command name, description, input schema, route, and execution mapping.
 
 #### Scenario: CLI and local API dispatch the same descriptor
@@ -27,6 +29,7 @@ The runtime SHALL define `attention`, `message`, `workspace`, `terminal`, and de
 - **AND** the runtime does not maintain a second hand-written parser for the same config payload
 
 ### Requirement: Runtime CLI SHALL accept only canonical JSON payload forms
+
 The AI-facing shell CLI SHALL accept only canonical JSON payload forms for descriptor-backed subcommands: empty input when the schema allows `{}`, one JSON argv payload, or JSON stdin payload. When `--compact` is present, the payload source SHALL be a compact JSON array derived from the descriptor schema instead of an object JSON payload.
 
 #### Scenario: CLI accepts a single JSON argv payload
@@ -50,6 +53,7 @@ The AI-facing shell CLI SHALL accept only canonical JSON payload forms for descr
 - **AND** the error explicitly points the caller back to JSON payload input or `--help`
 
 ### Requirement: Runtime CLI help SHALL be generated from descriptor description and input schema
+
 Each descriptor-backed runtime CLI subcommand SHALL expose `--help` output generated from the shared descriptor description, input schema, and canonical examples.
 
 #### Scenario: Help reveals schema-backed terminal write raw usage
@@ -79,6 +83,7 @@ Each descriptor-backed runtime CLI subcommand SHALL expose `--help` output gener
 - **AND** no runtime-local API request is emitted for that help probe
 
 ### Requirement: Runtime skills SHALL teach only canonical JSON shell forms
+
 Built-in runtime skills SHALL teach descriptor-backed CLI usage using only canonical JSON forms and help/discovery guidance.
 
 #### Scenario: Built-in skills stop teaching natural flag forms
@@ -88,6 +93,7 @@ Built-in runtime skills SHALL teach descriptor-backed CLI usage using only canon
 - **AND** it does not teach `--room`, `--content`, `--input`, or positional payload syntax as valid command forms
 
 ### Requirement: Runtime CLI SHALL preserve UTF-8 JSON payload fidelity
+
 The AI-facing shell CLI SHALL preserve UTF-8 content for descriptor-backed JSON payloads even when shell transport round-trips would otherwise leave the incoming JSON text in a likely mojibake form before decode.
 
 #### Scenario: CLI repairs likely shell-induced mojibake before JSON decode
@@ -96,6 +102,7 @@ The AI-facing shell CLI SHALL preserve UTF-8 content for descriptor-backed JSON 
 - **AND** the forwarded descriptor request preserves the recovered UTF-8 content
 
 ### Requirement: Runtime CLI SHALL support an explicit compact positional encoding
+
 Descriptor-backed runtime CLI subcommands SHALL accept an explicit `--compact` mode that encodes the descriptor payload as a JSON array derived from the shared schema, then decodes it back into the same validated object payload.
 
 #### Scenario: Compact argv decodes into the same descriptor payload
@@ -109,6 +116,7 @@ Descriptor-backed runtime CLI subcommands SHALL accept an explicit `--compact` m
 - **AND** the runtime handles the same request shape as the standard object-JSON form
 
 ### Requirement: Runtime CLI compact codec SHALL follow one schema-derived recursive law
+
 The compact positional encoding SHALL be derived from the descriptor schema and SHALL use one recursive law for fixed objects, arrays, records, enums, and discriminated unions.
 
 #### Scenario: Optional fields preserve position with omission and null holes
@@ -137,6 +145,7 @@ The compact positional encoding SHALL be derived from the descriptor schema and 
 - **AND** each record value continues to use recursive compact encoding
 
 ### Requirement: Runtime CLI help SHALL publish schema-derived compact guidance
+
 Descriptor-backed runtime CLI `--help` output SHALL publish compact availability, a compact example, and the schema-derived index mapping needed to construct compact payloads.
 
 #### Scenario: Help prints compact availability and index mapping
@@ -146,6 +155,7 @@ Descriptor-backed runtime CLI `--help` output SHALL publish compact availability
 - **AND** it prints field indexes, enum ordinal mappings, and recursive compact examples needed for the command
 
 ### Requirement: Message descriptors SHALL expose explicit reference-aware room context
+
 Descriptor-backed message tools SHALL expose the reply-reference contract and the post-send revision workflow explicitly. `message send` SHALL accept optional same-room `ref`, `message read` SHALL return direct referenced room messages as sidecar context, and help or skill guidance SHALL describe when the caller must reread room context before edit or recall.
 
 #### Scenario: Message send help teaches post-send revision workflow
@@ -164,6 +174,7 @@ Descriptor-backed message tools SHALL expose the reply-reference contract and th
 - **AND** it teaches the caller to use `message read` when room context or direct refs may change the revision decision
 
 ### Requirement: Attention commit descriptor SHALL not expose room-message routing fields
+
 The descriptor-backed `attention commit` command SHALL keep attention payloads internal. Its public schema and generated help MUST NOT expose room-message routing fields such as `message_reply`, `chatId`, or room-level reply-reference routing.
 
 #### Scenario: Attention commit help omits hidden room routing schema
@@ -172,6 +183,7 @@ The descriptor-backed `attention commit` command SHALL keep attention payloads i
 - **AND** the help no longer suggests that attention commit itself can send a visible room reply
 
 ### Requirement: Runtime descriptors SHALL expose terminal await as a JSON-first command
+
 The shared runtime tool descriptor registry SHALL expose `terminal await` as a descriptor-backed runtime-local API route, shell CLI subcommand, and generated help surface. The command SHALL follow canonical JSON payload rules and MUST NOT add natural positional or flag-only parsing that bypasses descriptor validation.
 
 #### Scenario: Terminal await help exposes the schema-backed observation contract
@@ -191,6 +203,7 @@ The shared runtime tool descriptor registry SHALL expose `terminal await` as a d
 - **AND** wait, match, and stabilization fields are not added to `terminal read` as an implicit second semantic mode
 
 ### Requirement: Runtime CLI cancellation SHALL propagate to long-running terminal await requests
+
 The runtime-local CLI surface SHALL treat `terminal await` as a long-running command that shares cancellation with the shell process, local API request, and TerminalSystem wait resources.
 
 #### Scenario: Shell-level timeout cancels the runtime await request
@@ -202,3 +215,80 @@ The runtime-local CLI surface SHALL treat `terminal await` as a long-running com
 - **WHEN** the runtime-local API request for `terminal await` is aborted before the await condition resolves
 - **THEN** the handler cancels the control-plane await operation
 - **AND** the handler does not leave server-side timers, waiters, or listeners alive after the request is gone
+
+### Requirement: Descriptor-backed message tools SHALL expose ref-aware revision workflow
+
+Descriptor-backed message tools SHALL expose the reply-reference contract and the post-send revision workflow explicitly. `message send` SHALL accept optional same-room `ref`, `message read` SHALL return direct referenced room messages as sidecar context, and help or skill guidance SHALL describe when the caller must reread room context before edit or recall.
+
+#### Scenario: Message send help teaches post-send revision workflow
+- **WHEN** the runtime renders `message send --help`
+- **THEN** the generated help explains that successful send returns `recentMessages`
+- **AND** it instructs the caller to inspect recent room context with `message read` before using `message edit` or `message recall` on a suspected accidental duplicate
+
+#### Scenario: Message read help exposes referencedItems
+- **WHEN** the runtime renders `message read --help`
+- **THEN** the generated help states that direct referenced room messages are returned as `referencedItems`
+- **AND** the help does not describe those references as runtime cycle anchors
+
+#### Scenario: Attention commit help omits hidden room routing schema
+- **WHEN** the runtime renders `attention commit --help`
+- **THEN** the generated schema omits any hidden room-message routing field
+- **AND** room-visible behavior is directed through message tools instead
+
+### Requirement: Runtime terminal descriptors SHALL expose explicit lifecycle verbs
+
+Descriptor-backed runtime terminal CLI and loopback-local API routes SHALL expose lifecycle control using explicit `bootstrap` and `stop` verbs that match the terminal truth model, instead of keeping legacy `kill` wording as the canonical public lifecycle action.
+
+#### Scenario: Runtime terminal bootstrap is explicit
+
+- **WHEN** the AI runs `terminal bootstrap` for a runtime-visible terminal whose `processPhase` is `not_started` or `stopped`
+- **THEN** the shared descriptor registry validates and dispatches that lifecycle request through the runtime-local API
+- **AND** the PTY only starts because of that explicit bootstrap command
+
+#### Scenario: Runtime terminal stop preserves lifecycle truth
+
+- **WHEN** the AI runs `terminal stop` for a running runtime-visible terminal
+- **THEN** the shared descriptor registry validates and dispatches that lifecycle request through the runtime-local API
+- **AND** the command stops the PTY without implying that the terminal durable identity was deleted
+
+### Requirement: Runtime terminal descriptors SHALL expose lifecycle-aware status inspection
+
+Descriptor-backed runtime terminal CLI SHALL present `terminal list` as the canonical shell-facing status inspection surface for runtime terminal lifecycle and observed identity facts.
+
+#### Scenario: Terminal list returns lifecycle and observed identity facts
+
+- **WHEN** the AI runs `terminal list`
+- **THEN** the returned terminal projection includes fields such as `processPhase`, `currentPath`, `currentTitle`, and stop facts
+- **AND** callers do not need to infer lifecycle only from raw `terminal read` output
+
+### Requirement: Runtime terminal descriptors SHALL expose transition-aware config commands
+
+Descriptor-backed runtime terminal CLI and loopback-local API routes SHALL expose `terminal get-config` and `terminal set-config` for durable terminal launch/config truth.
+
+#### Scenario: Terminal get-config is descriptor-backed
+
+- **WHEN** the AI runs `terminal get-config`
+- **THEN** the loopback-local API route, shell CLI subcommand, and `--help` output are all derived from the same descriptor entry
+- **AND** the command returns durable terminal config truth instead of forcing callers to inspect unrelated files or internal DB state
+
+#### Scenario: Terminal set-config is descriptor-backed
+
+- **WHEN** the AI runs `terminal set-config`
+- **THEN** the loopback-local API route, shell CLI subcommand, and `--help` output are all derived from the same descriptor entry
+- **AND** the runtime does not maintain a second hand-written parser or mutation surface for the same payload
+
+### Requirement: Runtime terminal help SHALL teach create auto-bootstrap plus transition wait law
+
+Terminal CLI help SHALL describe the current terminal lifecycle contract precisely.
+
+#### Scenario: Help teaches create auto-bootstrap
+
+- **WHEN** the AI runs `terminal create --help`
+- **THEN** the help text explains that public create auto-bootstraps by default
+- **AND** callers understand that a brand new terminal does not normally require a second explicit bootstrap command
+
+#### Scenario: Help teaches transition wait behavior
+
+- **WHEN** the AI runs `terminal bootstrap --help`, `terminal stop --help`, or `terminal set-config --help`
+- **THEN** the help text explains that `lifecycleTransition = bootstrapping | killing` means a lifecycle mutation is already in flight
+- **AND** callers are told to reread terminal status instead of stacking another conflicting lifecycle mutation

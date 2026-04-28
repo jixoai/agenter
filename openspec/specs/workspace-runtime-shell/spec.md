@@ -3,7 +3,9 @@
 ## Purpose
 Define the durable Avatar detail shell that sits behind the global `Avatars` workbench and runtime entry actions.
 ## Requirements
+
 ### Requirement: Running-avatar detail SHALL be a secondary runtime surface
+
 The WebUI SHALL expose running-avatar detail through dynamic session tabs inside the global `Avatars` workbench and through explicit runtime-entry actions, rather than through workspace-local embedded avatar pages or a separate secondary `Running Avatars` detail rail. In the active Svelte WebUI this shell SHALL remain addressable through dedicated runtime routes and SHALL preserve reload-safe deep linking.
 
 #### Scenario: Dynamic avatar tab opens the running-avatar shell
@@ -17,6 +19,7 @@ The WebUI SHALL expose running-avatar detail through dynamic session tabs inside
 - **AND** the detail behavior does not depend on a workspace-local avatar wrapper being present
 
 ### Requirement: Avatar detail SHALL compose `main-area`, `bottom-area`, and `right-drawer` inside `page_content`
+
 The runtime shell SHALL present the active tab content through one `page_content` region that contains a large primary `main-area`, a quieter `bottom-area` for auxiliary actions or inbox material, and a `right-drawer` for advanced metadata or inspection. The route shell and stage panels SHALL derive their structure from shared scaffold-family primitives instead of local split-layout classes.
 
 #### Scenario: Runtime shell derives from shared scaffold law without duplicate outer panes
@@ -25,6 +28,7 @@ The runtime shell SHALL present the active tab content through one `page_content
 - **AND** the stage header stays outside the body scroll region without page-local stretch-layout patches
 
 ### Requirement: Avatar detail SHALL expose `Heartbeat`, `Attention`, and `Settings` as peer runtime tabs
+
 The Avatar detail shell SHALL expose flat runtime-specific peer tabs named `Heartbeat`, `Attention`, and `Settings`. The default selected tab SHALL be `Heartbeat`.
 
 #### Scenario: Runtime peer tabs stay focused on the simplified shell
@@ -38,6 +42,7 @@ The Avatar detail shell SHALL expose flat runtime-specific peer tabs named `Hear
 - **AND** the current runtime heartbeat is visible without an extra tab switch
 
 ### Requirement: Runtime shell routes land on the canonical heartbeat tab
+
 The runtime shell SHALL expose a canonical runtime destination for each avatar session and SHALL route runtime entry URLs to `Heartbeat` without requiring feature-level navigation glue. Opening that route SHALL also trigger the data hydration needed for `Heartbeat`, `Attention`, and `Settings`, even when the shell starts from a cold browser state.
 
 #### Scenario: Runtime rail links land on heartbeat by default
@@ -228,6 +233,7 @@ The top-of-stream older-page affordance SHALL stay above the grouped Heartbeat c
 - **AND** the first visible Heartbeat group stays below that loading region instead of overlapping it
 
 ### Requirement: Avatar detail SHALL keep notification quick actions inside Attention
+
 The Avatar detail shell SHALL keep notification summaries and quick actions inside the `Attention` tab rather than exposing a separate notification page. `bottom-area` SHALL remain the place for attention-adjacent quick actions or inbox material, while `right-drawer` SHALL stay focused on advanced runtime metadata.
 
 #### Scenario: Background notification appears inside Attention
@@ -241,6 +247,7 @@ The Avatar detail shell SHALL keep notification summaries and quick actions insi
 - **AND** they do not become their own primary runtime tab
 
 ### Requirement: Attention main-area SHALL present one continuous runtime story
+
 The `Attention` tab `main-area` SHALL remain a continuous runtime surface rather than a split dashboard. It SHALL present the selected `AttentionContext` first, then the currently focused context stack, and then the queued push inbox. Notification rows SHALL stay compact until they are promoted into active attention or resolved through `bottom-area` quick actions.
 
 #### Scenario: Operator reads the current attention state from top to bottom
@@ -261,6 +268,7 @@ The `Attention` tab `main-area` SHALL remain a continuous runtime surface rather
 - **AND** the operator does not see a blank shell caused only by missing initial client hydration
 
 ### Requirement: Attention drawer SHALL use light sectional inspection
+
 The `Attention` tab `right-drawer` SHALL prefer section headings plus simple dividers over stacked metadata cards. Runtime inspection sections such as selection facts, delivery contract, suggested response, and linked runtime sources SHALL remain readable without turning the drawer into another dashboard. Low-priority summary facts SHALL stay docked at the bottom of the drawer.
 
 #### Scenario: Operator inspects a selected attention source
@@ -274,6 +282,7 @@ The `Attention` tab `right-drawer` SHALL prefer section headings plus simple div
 - **AND** they do not reappear as a second stack of bordered cards above the main inspection sections
 
 ### Requirement: Avatar detail SHALL NOT re-embed workspace or history surfaces as primary runtime panes
+
 The Avatar detail shell SHALL focus on runtime concerns and SHALL NOT restore workspace browsing, history browsing, or other system catalogs as first-class peer panes inside the runtime body. When the operator needs those resources, the shell SHALL link out to the corresponding global system surface.
 
 #### Scenario: Runtime detail stays heartbeat-first
@@ -303,6 +312,7 @@ The `Settings` tab SHALL preserve avatar-runtime configuration as a dedicated ru
 - **AND** the layer editor focuses the mapped pointer instead of leaving the operator in a disconnected single-file editor
 
 ### Requirement: Avatar runtime pages SHALL preserve the same capability path across desktop and compact breakpoints
+
 Responsive avatar runtime layouts SHALL preserve the same runtime tabs and page responsibilities even when the geometry changes. `Tablet landscape` MAY keep a visible left sidebar and persistent drawer longer, while `tablet portrait` and `phone` MAY collapse navigation into a compact shell and stack the detail surface below the `bottom-area`.
 
 #### Scenario: Use avatar runtime on tablet landscape
@@ -391,3 +401,29 @@ The grouped Heartbeat transcript SHALL reserve a dedicated top-of-stream lane fo
 - **WHEN** the operator requests older Heartbeat groups and that pagination request is still pending
 - **THEN** the top-of-stream affordance becomes disabled
 - **AND** its content switches from static button text to a loading treatment
+
+### Requirement: Runtime Settings SHALL own durable recovery policy while Heartbeat quick config stays execution-scoped
+
+The runtime shell SHALL keep Heartbeat quick config limited to next-call execution knobs, while durable recovery policy and provider transport retry editing SHALL live in the runtime Settings surface.
+
+#### Scenario: Operator edits durable recovery policy from Settings
+
+- **WHEN** the operator needs to change retry progression, backoff law, or provider transport retry behavior
+- **THEN** the runtime Settings surface is the canonical editing entry
+- **AND** the Heartbeat quick config does not expose those durable policy controls
+
+#### Scenario: Heartbeat quick config remains scoped to next-call execution knobs
+
+- **WHEN** the operator opens Heartbeat quick config after the retry-policy upgrade
+- **THEN** the surface still only edits next-call execution knobs such as sampling or thinking settings
+- **AND** it does not absorb durable recovery-policy responsibilities
+
+### Requirement: Runtime Settings SHALL group durable runtime configuration by responsibility
+
+The runtime Settings surface SHALL group durable runtime configuration into responsibility-based sections so provider transport, compact policy, retry policy, and prompt/locale settings are no longer mixed into one flat editing flow.
+
+#### Scenario: Durable runtime settings open with sectioned ownership
+
+- **WHEN** the operator opens the runtime Settings surface
+- **THEN** the surface presents durable runtime configuration through clear responsibility-based sections
+- **AND** the operator can distinguish provider transport settings from runtime retry policy without relying on implementation details

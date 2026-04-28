@@ -3,7 +3,9 @@
 ## Purpose
 TBD - created by archiving change attention-runtime-error-containment. Update Purpose after archive.
 ## Requirements
+
 ### Requirement: Attention debt SHALL remain active without forcing immediate model re-entry
+
 The runtime SHALL treat unresolved attention scores as durable debt, but SHALL only launch a new model round when an explicit runnable wake cause exists.
 
 #### Scenario: Unresolved debt waits without spinning
@@ -17,6 +19,7 @@ The runtime SHALL treat unresolved attention scores as durable debt, but SHALL o
 - **THEN** the runtime records the wake cause for that round
 
 ### Requirement: Repeated no-progress or equivalent failures SHALL be contained
+
 The runtime SHALL detect repeated no-progress outcomes and repeated equivalent failures, then suppress immediate retries once the configured retry budget is exhausted.
 
 #### Scenario: Repeated no-progress transitions to blocked state
@@ -29,3 +32,18 @@ The runtime SHALL detect repeated no-progress outcomes and repeated equivalent f
 - **THEN** the runtime clears the equivalent-failure retry streak for that affected debt
 - **THEN** the scheduler may resume model work under a new wake cause
 
+### Requirement: Containment SHALL consume the resolved runtime retry policy
+
+The runtime SHALL compute containment progression, next wake timing, and blocked/backoff transitions from the resolved runtime retry policy instead of from hard-coded retry math or implicit retry-budget constants.
+
+#### Scenario: Equivalent failures follow policy-derived next wake timing
+
+- **WHEN** repeated equivalent failures accumulate for the same unresolved runtime recovery context
+- **THEN** the runtime derives the next wake timing from the resolved retry policy
+- **AND** the containment state reflects the policy-derived progression instead of hidden built-in timing constants
+
+#### Scenario: Policy reset conditions clear containment progression
+
+- **WHEN** a reset condition defined by the resolved runtime retry policy occurs
+- **THEN** the runtime clears or rewinds containment progression according to that policy
+- **AND** later retries restart from the correct policy-defined attempt state

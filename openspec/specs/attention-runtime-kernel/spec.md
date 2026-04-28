@@ -6,6 +6,7 @@ TBD - created by archiving change attention-kernel-runtime-vnext. Update Purpose
 ## Requirements
 
 ### Requirement: Runtime SHALL treat attention as the primary execution model
+
 The runtime SHALL host a standalone LoopBus kernel that normalizes adapter-supplied system ingress into focus-aware attention ingress records before any cycle scheduling or model work starts. Focused source activity SHALL become committed attention, non-focused source activity SHALL become push ingress, and the kernel SHALL pass only attention-centric inputs into model work without requiring chat, terminal, or task output arrays as its semantic completion contract.
 
 #### Scenario: Session host boots the standalone kernel and its adapters
@@ -47,6 +48,7 @@ The runtime SHALL host a standalone LoopBus kernel that normalizes adapter-suppl
 - **AND** the synchronous provider loop strategy only consumes the staged projection for the next continuation request
 
 ### Requirement: Systems SHALL reinforce expected follow-up behavior through committed attention items
+
 When a system observes a new fact or a missing follow-up that the AI must still handle, that system SHALL express the obligation through committed attention items instead of adding source-specific hidden branches to the runtime core. The owning system's skill guidance SHALL explain how the AI should interpret and resolve those items.
 
 #### Scenario: A system splits "new fact" from "needs feedback" into separate obligations
@@ -60,6 +62,7 @@ When a system observes a new fact or a missing follow-up that the AI must still 
 - **AND** the runtime kernel itself remains agnostic to that source-specific workflow expectation
 
 ### Requirement: Runtime SHALL keep unresolved attention active across cycles
+
 Unresolved attention items SHALL remain queryable and eligible for later scheduling until their score vectors are reduced to zero or they are explicitly dismissed.
 
 #### Scenario: Partial progress keeps an item pending
@@ -73,6 +76,7 @@ Unresolved attention items SHALL remain queryable and eligible for later schedul
 - **THEN** later cycles can select work from more than one active context without flattening them into one text fact list
 
 ### Requirement: Runtime SHALL treat unresolved attention debt as an active scheduling obligation
+
 As long as one or more attention items still have `score >= 1`, the runtime SHALL keep re-scheduling follow-up work without requiring new external input, and it SHALL not treat plain-text-only model output as semantic completion.
 
 #### Scenario: Unresolved attention self-drives later model rounds
@@ -86,6 +90,7 @@ As long as one or more attention items still have `score >= 1`, the runtime SHAL
 - **THEN** raw plain-text output from that round does not become a user-visible Chat reply unless the assistant performs an explicit room mutation such as `message send`, `message edit`, or `message recall`
 
 ### Requirement: Runtime SHALL keep system prompt provider-agnostic and stable
+
 The runtime kernel SHALL assemble the model `systemPrompt` only from stable attention law and shared identity slots. The runtime-generated `skills.list` SHALL travel through the attention-backed bootstrap context as a readonly slot instead of being concatenated into `systemPrompt`. Tool providers and system adapters SHALL NOT inject provider-owned system guides into `systemPrompt`, and dynamic system details SHALL NOT be serialized into bootstrap help blocks.
 
 #### Scenario: Skills list moves to the attention bootstrap context
@@ -110,6 +115,7 @@ The runtime kernel SHALL assemble the model `systemPrompt` only from stable atte
 - **AND** it is not stored as a synthetic assistant or user replay message inside bounded prompt history
 
 ### Requirement: Runtime SHALL treat attention metadata as the only bootstrap truth
+
 The runtime SHALL bootstrap model rounds with minimal `AttentionContexts.metadata` only. Rich system descriptions, source-specific summaries, and detailed attention bodies SHALL be fetched on demand through CLI/API surfaces instead of being pre-injected into the model input. Compact summary, when present, remains prompt-window memory rather than a bootstrap document.
 
 #### Scenario: Bootstrap input only carries minimal attention metadata
@@ -123,6 +129,7 @@ The runtime SHALL bootstrap model rounds with minimal `AttentionContexts.metadat
 - **AND** the runtime is not required to serialize that detail in advance into the bootstrap message
 
 ### Requirement: Runtime SHALL inject avatar identity into shared prompt docs
+
 The runtime kernel SHALL provide the current avatar identity to shared prompt documents through prompt slots before assembling the outbound `systemPrompt`.
 
 #### Scenario: Shared prompt docs render the current avatar name
@@ -136,6 +143,7 @@ The runtime kernel SHALL provide the current avatar identity to shared prompt do
 - **AND** the prompt assembly does not leave unresolved `AVATAR_NAME` placeholders in the final `systemPrompt`
 
 ### Requirement: Runtime guidance SHALL teach ordinary-user delivery and resource recovery
+
 The runtime SHALL provide shared prompt law plus attention-backed dynamic system guidance that is strong enough for ordinary-user requests. That guidance SHALL help the model translate vague intent into delivery work, recover missing runtime resources through tools, and coordinate clearly in shared rooms without needing scripted user instructions.
 
 #### Scenario: Message guidance keeps replies plain and outcome-oriented for non-technical users
@@ -153,6 +161,7 @@ The runtime SHALL provide shared prompt law plus attention-backed dynamic system
 - **AND** room chat is not treated as a substitute for writing real files to disk
 
 ### Requirement: Runtime SHALL treat attention body as the model-visible truth
+
 The runtime SHALL ensure that any system detail the model needs is represented in attention body content or typed tools, not in hidden metadata side channels.
 
 #### Scenario: Source-specific context survives payload simplification
@@ -161,6 +170,7 @@ The runtime SHALL ensure that any system detail the model needs is represented i
 - **AND** the model does not need hidden metadata to understand the work
 
 ### Requirement: LoopBus transport metadata SHALL remain scheduler-only
+
 LoopBus transport metadata SHALL only carry scheduler/protocol facts needed for orchestration, persistence, or inspection. Business data and AI-relevant content SHALL NOT depend on that metadata.
 
 #### Scenario: Attention input keeps persistence refs without content leakage
@@ -169,6 +179,7 @@ LoopBus transport metadata SHALL only carry scheduler/protocol facts needed for 
 - **AND** room social context, terminal payload detail, and other AI-visible facts remain in the body text instead of transport metadata
 
 ### Requirement: Real cold restart recovery SHALL remain consistent with persisted runtime law
+
 The runtime kernel SHALL remain operable after a real `session.stop` / kernel restart / `session.start` boundary using persisted session, room, workspace, prompt-window, and attention facts instead of hidden in-memory source state.
 
 #### Scenario: Restarted runtime continues the same delivered task
@@ -211,3 +222,41 @@ When the model updates attention through the runtime-local attention commit tool
 - **WHEN** the model calls `attention commit` to reduce or update scores for a context
 - **THEN** runtime persists the commit and updates the context projection
 - **AND** runtime does not mark that commit as an incoming item delta for a later model request
+
+### Requirement: Attention runtime SHALL describe attention as Context plus Items
+
+The runtime attention law SHALL define AttentionSystem as an information carrier made of `Context` and committed items. `Context` SHALL represent the current cognitive snapshot, and committed items SHALL represent objective or subjective facts that can influence that snapshot. Scheduling pressure from unresolved scores is one use of this carrier, but it SHALL NOT redefine the whole system as only an unfinished-work ledger.
+
+#### Scenario: Objective and subjective items influence the same context
+- **WHEN** message ingress, terminal output, or model analysis produces attention commits for one context
+- **THEN** those commits are interpreted as inputs that influence the context snapshot
+- **AND** the runtime does not require every commit to be described as a user-facing TODO item
+
+### Requirement: Eligible message follow-up reminders SHALL mature into committed attention
+
+When a message-bound follow-up reminder reaches due time and its anchor message is still eligible, the runtime SHALL create one committed attention item in the corresponding room context. That committed attention SHALL reference the originating `chatId` and anchor `messageId` so the AI can decide whether silence or slow progress warrants another visible room reply.
+
+#### Scenario: Due reminder creates one follow-up decision obligation
+
+- **WHEN** a sent room message armed `followUpAfterMs`
+- **AND** that anchored message is still the latest visible room message when the due time arrives
+- **THEN** the runtime commits one follow-up attention item for the same room context
+- **AND** that attention item references the anchored `messageId` so later model work can judge the next reply from room context
+
+#### Scenario: Stale anchored reminders do not create new debt
+
+- **WHEN** a message-bound reminder reaches due time after the room has already moved on to a newer visible message
+- **THEN** the runtime does not commit a new follow-up attention item from that stale reminder
+- **AND** newer room activity remains the only live source of room debt
+
+#### Scenario: Reminder expiry never auto-sends a room message
+
+- **WHEN** a message follow-up reminder reaches due time
+- **THEN** the runtime does not append a visible room message from the reminder alone
+- **AND** any later room reply still requires an explicit `message send`, `message edit`, or `message recall`
+
+#### Scenario: Reminder fires at most once
+
+- **WHEN** a message follow-up reminder has already committed its due attention item or has already been suppressed as stale
+- **THEN** the runtime does not re-arm or re-commit that same reminder automatically
+- **AND** a later reminder requires a new explicit message send

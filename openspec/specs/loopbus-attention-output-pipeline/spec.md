@@ -3,7 +3,9 @@
 ## Purpose
 TBD - created by archiving change loopbus-attention-io-pipeline. Update Purpose after archive.
 ## Requirements
+
 ### Requirement: LoopBus SHALL keep attention commits separate from visible system mutations
+
 Committed attention items SHALL remain cognitive facts. Visible effects in other systems SHALL occur through explicit system mutations or delivery dispatch/receipt facts instead of hidden output adapters or processor-returned output arrays. LoopBus SHALL treat committed attention, compact-window rewrites, and adapter side-effects as inspectable outcomes of a cycle.
 
 #### Scenario: Message output uses explicit mutation
@@ -17,6 +19,7 @@ Committed attention items SHALL remain cognitive facts. Visible effects in other
 - **THEN** the cycle still completes from persisted facts and adapter side-effects
 
 ### Requirement: LoopBus lifecycle SHALL propagate abort signals
+
 Dispatch, receipt, model-call, tool-execution, and plugin lifecycle work SHALL receive the active cycle abort signal when that work can outlive the initiating call stack.
 
 #### Scenario: Stop aborts a pending model call

@@ -2,8 +2,10 @@
 
 Define the conversation-first presentation contract for the workspace Chat route.
 ## Requirements
+
 ### Requirement: Workspace Chat SHALL present a conversation-first session stage
-The WebUI SHALL render the workspace Chat route as a conversation-first stage that prioritizes user messages, assistant replies, avatars, restrained time dividers, attachment previews, the shared AI input composer, and message-system-native collaboration state over cycle or kernel inspection details.
+
+The WebUI SHALL render the workspace Chat route as a conversation-first stage that prioritizes user messages, assistant replies, avatars, restrained time dividers, attachment previews, the shared AI input composer, and message-system-native collaboration state over cycle or kernel inspection details. For shared rooms, surrounding route chrome SHALL not surface a synthetic room-level latest-progress summary; collaboration read state stays attached to message rows.
 
 #### Scenario: Active session opens on a conversation-focused surface
 - **WHEN** the user opens a workspace Chat route with an active session
@@ -26,7 +28,15 @@ The WebUI SHALL render the workspace Chat route as a conversation-first stage th
 - **THEN** the route does not summarize latest-read state as a room-header `x/y read` chip
 - **THEN** the UI does not treat "pending for attention" as the main collaboration summary for that room
 
+#### Scenario: Group chat keeps read state on message rows only
+
+- **WHEN** the user is viewing a shared room conversation
+- **THEN** each message row may expose its own read-progress affordance at inline-end
+- **AND** surrounding route chrome does not expose a synthetic “current room latest progress” summary
+- **AND** the UI does not treat a room-level latest-visible badge as collaboration truth
+
 ### Requirement: Room create and edit surfaces SHALL model seats, not fake identity roles
+
 Room create and metadata-edit surfaces SHALL let the operator choose seats without exposing deprecated `avatar|user|system` role selectors.
 
 #### Scenario: Create room starts with an empty seat list
@@ -40,6 +50,7 @@ Room create and metadata-edit surfaces SHALL let the operator choose seats witho
 - **AND** permission concepts remain in admin or grant controls rather than a fake participant identity role field
 
 ### Requirement: Room lifecycle actions SHALL expose archive and dissolve separately
+
 The room admin surface SHALL expose archive and dissolve as different actions with different consequences.
 
 #### Scenario: Admin sees both archive and delete actions
@@ -48,6 +59,7 @@ The room admin surface SHALL expose archive and dissolve as different actions wi
 - **AND** it presents delete as the destructive dissolve action
 
 ### Requirement: Workspace Chat SHALL expose one primary session action and one actionable status summary
+
 The WebUI SHALL expose exactly one primary session action inside the Chat route, and it SHALL summarize route-relevant runtime state into one actionable notice or passive status instead of stacking multiple competing technical statuses. The primary session action SHALL be rendered through one compact route-local session status pill menu rather than through header-level action chrome.
 
 #### Scenario: Stopped session offers one clear recovery path
@@ -66,6 +78,7 @@ The WebUI SHALL expose exactly one primary session action inside the Chat route,
 - **THEN** start, stop, resume, and abort controls stay inside the route-local session status pill menu
 
 ### Requirement: Technical assistant facts SHALL stay available without dominating Chat
+
 Technical tool lifecycle messages SHALL use `channel: tool` and remain excluded from the default Chat conversation stream.
 
 #### Scenario: Tool lifecycle is hidden from Chat narrative
@@ -74,6 +87,7 @@ Technical tool lifecycle messages SHALL use `channel: tool` and remain excluded 
 - **THEN** tool lifecycle remains inspectable in Devtools and terminal technical panels
 
 ### Requirement: Composer helper content SHALL collapse before primary actions degrade
+
 The shared Chat composer SHALL use adaptive affordances so helper copy collapses into a secondary help affordance before primary actions lose their semantic prominence.
 
 #### Scenario: Helper hints collapse into a rich tooltip
@@ -87,6 +101,7 @@ The shared Chat composer SHALL use adaptive affordances so helper copy collapses
 - **THEN** the primary send action still remains clearly identifiable
 
 ### Requirement: Workspace Chat SHALL preserve long-session pagination and live turn continuity
+
 The WebUI SHALL keep one stable conversation viewport while prepending older persisted pages and appending optimistic or streamed turns for the active session.
 
 #### Scenario: Older persisted history prepends without hiding the current conversation
@@ -105,6 +120,7 @@ The WebUI SHALL keep one stable conversation viewport while prepending older per
 - **THEN** the presence of attachments does not force the route back to cycle-oriented rendering
 
 ### Requirement: Workspace Chat SHALL virtualize long-lived transcripts
+
 The Chat route SHALL virtualize transcript rows regardless of history size thresholds so years-long sessions remain responsive while preserving prepend-anchor stability.
 
 #### Scenario: Very long history remains responsive

@@ -5,6 +5,7 @@ Define the canonical AI provider contract used by settings loading, runtime adap
 ## Requirements
 
 ### Requirement: Canonical provider settings SHALL be standard-first
+
 The system SHALL resolve AI provider configuration into a canonical structure that separates API standard from vendor identity. The canonical provider structure MUST include `apiStandard` and `model`, MAY include `vendor`, and MUST be the only provider shape used by runtime routing after settings are loaded.
 
 #### Scenario: Loading canonical provider settings
@@ -16,6 +17,7 @@ The system SHALL resolve AI provider configuration into a canonical structure th
 - **THEN** the loader normalizes that provider into the canonical standard-first structure before returning loaded settings
 
 ### Requirement: Provider routing SHALL select adapters by API standard
+
 The runtime SHALL choose its model transport according to the provider `apiStandard` and SHALL treat vendor-specific behavior as profile or extension logic layered on top of the standard transport.
 
 #### Scenario: Routing an OpenAI-compatible vendor
@@ -27,6 +29,7 @@ The runtime SHALL choose its model transport according to the provider `apiStand
 - **THEN** the runtime selects the Anthropic-family adapter regardless of the vendor name
 
 ### Requirement: Provider capabilities SHALL be explicit
+
 The runtime SHALL compute model capabilities from the declared API standard plus vendor/profile overrides, and downstream systems MUST consume those computed capabilities instead of inferring behavior from provider names.
 
 #### Scenario: Unsupported standard features are disabled explicitly
@@ -38,6 +41,7 @@ The runtime SHALL compute model capabilities from the declared API standard plus
 - **THEN** the resolved provider capabilities reflect the vendor-specific override
 
 ### Requirement: Runtime inspection SHALL expose canonical provider metadata
+
 The runtime SHALL expose canonical provider metadata and capabilities in draft resolution, model debug views, and model-call records so that operator tooling can inspect the actual transport contract in use.
 
 #### Scenario: Inspecting draft provider metadata
@@ -70,3 +74,19 @@ Operator-facing surfaces that consume provider pricing metadata SHALL treat it a
 - **WHEN** a model-call usage record includes prompt and completion tokens but does not expose cached-hit token detail
 - **THEN** operator inspection computes cost, if at all, from the available usage and provider pricing metadata as an estimate
 - **AND** the surface does not present that number as exact provider billing
+
+### Requirement: Provider retry settings SHALL remain transport-only
+
+Canonical provider settings SHALL treat retry metadata as transport-only request behavior, and runtime scheduler recovery SHALL NOT inherit its policy from provider transport retry settings.
+
+#### Scenario: Per-request transport retry stays inside the model client
+
+- **WHEN** canonical provider settings define transport retry metadata for a provider
+- **THEN** the model client uses that metadata only for per-request transport retry behavior
+- **AND** the provider contract does not become the source of truth for session-level backoff or blocked-state law
+
+#### Scenario: Runtime recovery ignores provider transport retry counts
+
+- **WHEN** the runtime scheduler computes recovery delay, blocked/backoff transitions, or retry progression
+- **THEN** it uses the resolved runtime retry policy instead of provider transport retry metadata
+- **AND** changing provider transport retry does not silently rewrite session recovery policy

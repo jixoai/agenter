@@ -4,7 +4,9 @@
 Define actor-scoped grants, admin-group failover, approval routing, and write leases for the global terminal control plane.
 
 ## Requirements
+
 ### Requirement: Terminal resources SHALL enforce actor-scoped grants
+
 The terminal collaboration control plane SHALL enforce grants bound to auth actors or session actors with roles `admin`, `writer`, `requester`, and `readonly`. Focus state SHALL also remain actor-scoped and SHALL be mutated only through that actor's terminal authority or a valid superadmin recovery path. A valid global superadmin claim MAY administer any terminal regardless of local grants.
 
 #### Scenario: Readonly actor can observe but not write
@@ -33,7 +35,8 @@ The terminal collaboration control plane SHALL enforce grants bound to auth acto
 - **THEN** the recorded actor and focus truth belong to the selected seat instead of the superadmin operator
 
 ### Requirement: Terminal administration SHALL elect one current admin from an ordered admin group
-Each terminal SHALL expose one current local admin at a time, while an ordered admin-group candidate list MAY be configured behind it. When the current admin goes offline, the next eligible candidate in order SHALL be promoted, and any still-pending approval work SHALL be reassigned to the newly promoted admin. If a higher-priority eligible candidate later comes online, it SHALL immediately preempt and become the current admin.
+
+Each terminal SHALL expose one current local admin at a time, while an ordered admin-group candidate list MAY be configured behind it. The ordered candidate list SHALL be stored in the canonical terminal admin-candidate table rather than duplicated in terminal metadata. When the current admin goes offline, the next eligible candidate in order SHALL be promoted, and any still-pending approval work SHALL be reassigned to the newly promoted admin. If a higher-priority eligible candidate later comes online, it SHALL immediately preempt and become the current admin.
 
 #### Scenario: Offline admin hands off to the next candidate
 - **WHEN** the current terminal admin goes offline and a lower-ranked eligible candidate is available
@@ -45,7 +48,13 @@ Each terminal SHALL expose one current local admin at a time, while an ordered a
 - **THEN** the higher-priority candidate immediately becomes the current admin
 - **THEN** unresolved approval requests are re-forwarded to the newly promoted admin
 
+#### Scenario: Admin group candidates do not mirror into terminal metadata
+- **WHEN** terminal administration updates the ordered admin group candidates
+- **THEN** the control plane persists the order in the canonical admin-candidate table
+- **AND** the terminal catalog metadata does not gain an `adminGroupCandidateIds` mirror
+
 ### Requirement: Admin-group promotion SHALL preserve the actor's base write semantics
+
 Promotion into the current-admin slot SHALL preserve the candidate's base write semantics. A candidate that is `readonly` outside the admin slot SHALL remain read-only after promotion, while a candidate that is `requester` outside the admin slot SHALL gain effective direct write ability once promoted and SHALL NOT need to self-approve its own writes.
 
 #### Scenario: Readonly candidate becomes a readonly admin
@@ -59,6 +68,7 @@ Promotion into the current-admin slot SHALL preserve the candidate's base write 
 - **THEN** its own writes no longer require a self-issued approval round-trip
 
 ### Requirement: Requester writes SHALL create approval requests
+
 Actors with the `requester` role SHALL NOT write directly to the PTY. Instead, each blocked write attempt SHALL create an approval request with an explicit, configurable expiry whose default is `90s`, and SHALL remain rejected until approved.
 
 #### Scenario: Requester submit creates approval request
@@ -77,6 +87,7 @@ Actors with the `requester` role SHALL NOT write directly to the PTY. Instead, e
 - **THEN** if no admin comes online and decides before expiry, the request times out and is denied by default
 
 ### Requirement: Approved requests SHALL mint timeboxed write leases
+
 When an admin approves a requester write flow, the control plane SHALL mint a timeboxed write lease with an explicit expiry, and every terminal input path, including transport input and raw writes, SHALL enforce that lease before reaching the PTY.
 
 #### Scenario: Approved lease unlocks raw and mixed terminal input
@@ -90,6 +101,7 @@ When an admin approves a requester write flow, the control plane SHALL mint a ti
 - **THEN** the actor must obtain a fresh approval or a stronger grant before writing
 
 ### Requirement: Browser auth SHALL gate global terminal control-plane routes before terminal grants apply
+
 Browser-facing global terminal routes SHALL require an authenticated browser auth session before they evaluate terminal grants, seat tokens, approval requests, or superadmin recovery authority.
 
 #### Scenario: Terminal seat token alone cannot bypass browser auth

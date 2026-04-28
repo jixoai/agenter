@@ -2,7 +2,9 @@
 
 Define how runtime facts are published to the WebUI so hot session activity updates only the affected surfaces.
 ## Requirements
+
 ### Requirement: Runtime clients SHALL publish scoped UI updates
+
 The runtime client SHALL expose subscription primitives that let WebUI surfaces observe narrow runtime slices so hot updates from one session do not force unrelated application surfaces to rerender.
 
 #### Scenario: Unrelated shell surfaces stay stable during session activity
@@ -21,6 +23,7 @@ The runtime client SHALL expose subscription primitives that let WebUI surfaces 
 - **THEN** inactive tabs do not receive fresh selected values for unrelated hot slices
 
 ### Requirement: Runtime publication SHALL coalesce hot event bursts
+
 The runtime client SHALL coalesce listener publication for hot runtime bursts while preserving the latest consistent state.
 
 #### Scenario: Multiple runtime events publish one coalesced update
@@ -34,6 +37,7 @@ The runtime client SHALL coalesce listener publication for hot runtime bursts wh
 - **THEN** no persisted runtime fact is dropped from the store
 
 ### Requirement: Runtime publication SHALL preserve long-history chat continuity
+
 The runtime client SHALL merge persisted chat hydration, older-page pagination, and live runtime events into one stable session-local chat state for the active route.
 
 #### Scenario: Persisted hydration and live events do not drop the visible chat state
@@ -47,6 +51,7 @@ The runtime client SHALL merge persisted chat hydration, older-page pagination, 
 - **THEN** the latest visible conversation rows stay available to the route while older rows are inserted
 
 ### Requirement: Runtime publication SHALL expose diagnostics for selector churn
+
 The runtime client SHALL expose diagnostics metadata that lets performance tooling inspect why a hot slice is being republished.
 
 #### Scenario: Diagnostics identify repeated selector publication
@@ -55,6 +60,7 @@ The runtime client SHALL expose diagnostics metadata that lets performance tooli
 - **THEN** the reported diagnostics can distinguish steady-state idleness from hot republish churn
 
 ### Requirement: Heavy runtime slices SHALL stay cold when their surfaces are inactive
+
 The runtime client SHALL avoid hydrating or republishing heavy route-local slices for surfaces that are not visible or not active.
 
 #### Scenario: Inactive technical tabs stay cold
@@ -63,6 +69,7 @@ The runtime client SHALL avoid hydrating or republishing heavy route-local slice
 - **THEN** their data remains fetchable when the user explicitly activates that panel
 
 ### Requirement: Runtime clients SHALL publish scheduler containment state
+
 The runtime client SHALL publish the session scheduler control state and wake metadata needed to explain why a session is running, waiting, backing off, blocked, paused, or aborted.
 
 #### Scenario: Waiting and backoff are observable without trace inference
@@ -134,7 +141,7 @@ The runtime Heartbeat ledger SHALL persist assistant `thinking` and `text` spans
 
 ### Requirement: Runtime clients SHALL project Heartbeat into grouped inspection pages
 
-Runtime inspection consumers SHALL read Heartbeat as grouped pages instead of directly rendering paged raw parts.
+Runtime inspection consumers SHALL read Heartbeat as grouped pages instead of directly rendering paged raw parts. The grouped page contract SHALL be served from bounded storage reads and SHALL NOT require full-session reconstruction before returning the recent page.
 
 #### Scenario: Heartbeat pages render one shared header per grouped fact cluster
 
@@ -153,6 +160,31 @@ Runtime inspection consumers SHALL read Heartbeat as grouped pages instead of di
 - **WHEN** a realtime `runtime.heartbeatPart` event arrives
 - **THEN** the client treats it as an invalidation signal for grouped Heartbeat data
 - **AND** the visible Heartbeat stream is reloaded from the grouped query path instead of merging raw parts locally
+
+#### Scenario: Heartbeat recent page is served from bounded history
+
+- **WHEN** the operator opens Heartbeat for a session with deep `ai_call`, `heartbeat_part`, and `request_aux` history
+- **THEN** the backend reads only the storage window needed for the requested grouped page plus any minimal comparison baseline needed to preserve grouping truth
+- **AND** it does not materialize the full session inspection history before returning the recent grouped page
+- **AND** the returned groups still preserve `before-call`, `call`, `compact`, and `before-call-pending` semantics
+
+#### Scenario: Loading older Heartbeat history expands by page instead of replaying all history
+
+- **WHEN** the operator asks Heartbeat to load older grouped history
+- **THEN** the backend expands the grouped query window only enough to satisfy that older page
+- **AND** it does not rebuild the entire Heartbeat grouping for every pagination request
+
+#### Scenario: Deep grouped Heartbeat history still settles route hydration
+
+- **WHEN** the browser hydrates Heartbeat for a session with long inspection history
+- **THEN** the grouped Heartbeat request resolves with data or an explicit error
+- **AND** the operator does not remain indefinitely on `Loading Heartbeat…` because the backend is rebuilding full history in memory
+
+#### Scenario: Heartbeat route hydrates only route-owned history
+
+- **WHEN** the browser opens the Heartbeat route for a session with large persisted history
+- **THEN** the route fetches grouped Heartbeat data plus the minimal model-call context needed by the Heartbeat status surface
+- **AND** it does not piggyback `chat.list`, scheduler logs, observability traces, request-aux timelines, or API-call timelines onto the same cold start
 
 ### Requirement: Grouped Heartbeat projection SHALL compare auxiliary facts by payload truth
 

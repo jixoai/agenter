@@ -2,7 +2,9 @@
 
 Define the attention-first LoopBus plugin pipeline and hook semantics.
 ## Requirements
+
 ### Requirement: LoopBus SHALL provide an attention-first plugin pipeline
+
 The runtime SHALL expose an attention-first plugin pipeline where external systems integrate by registering plugins, source adapters, delivery observers, explicit mutation providers, and stable lifecycle hooks around attention loading, transformation, scheduling, model calls, and effect inspection.
 
 #### Scenario: Built-in plugins register deterministic hooks
@@ -21,6 +23,7 @@ The runtime SHALL expose an attention-first plugin pipeline where external syste
 - **AND** the runtime keeps the ref invalidated for the next eligible round instead of dropping it
 
 ### Requirement: LoopBus hooks SHALL use explicit execution kinds
+
 Each LoopBus hook type SHALL define a stable execution kind such as `first`, `sequential`, `parallel`, or `sequential-waterfall`, and plugin registration SHALL preserve those semantics consistently across ingress, delivery, and lifecycle phases.
 
 #### Scenario: Waterfall hooks receive the previous result
@@ -39,6 +42,7 @@ Each LoopBus hook type SHALL define a stable execution kind such as `first`, `se
 - **AND** later handlers are not invoked for that source ref
 
 ### Requirement: LoopBus plugins SHALL expose shared services safely
+
 The plugin runtime SHALL allow plugins to expose and consume named services through a typed service registry so future system integrations can cooperate without reaching into session internals.
 
 #### Scenario: One plugin consumes another plugin's service
@@ -47,6 +51,7 @@ The plugin runtime SHALL allow plugins to expose and consume named services thro
 - **THEN** the interaction does not require direct access to `SessionRuntime` private state
 
 ### Requirement: Plugin/runtime source contracts SHALL distinguish lookup hints from attention payload facts
+
 LoopBus plugin contracts SHALL use typed source coordinates and first-class read-result fields for adapter lookup. They SHALL treat source lookup hints as adapter-internal addressing only, and they SHALL NOT expose a generic source-ref or read-result metadata bag. Any fact that must survive into durable attention or model payloads SHALL be promoted into typed draft fields before commit serialization.
 
 #### Scenario: Built-in source refs stay typed

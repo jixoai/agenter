@@ -2,7 +2,9 @@
 
 Define how external systems feed attention into LoopBus through source adapters.
 ## Requirements
+
 ### Requirement: Attention ingestion SHALL be sourced through source adapters
+
 Message-system, terminal-system, and future systems SHALL integrate with the attention kernel by invalidating protocol-native `src` addresses through registered source namespaces. Source adapters SHALL resolve those registered addresses into context-bound attention drafts, not into flattened LoopBus text facts or generic metadata bags.
 
 #### Scenario: Message invalidation uses a protocol-native room message source
@@ -27,6 +29,7 @@ Message-system, terminal-system, and future systems SHALL integrate with the att
 - **THEN** the runtime resolves that source into structured attention drafts without adding new session-runtime private queues
 
 ### Requirement: Attention commits SHALL remain the cycle gate
+
 The runtime SHALL decide whether to schedule model work only after attention drafts have been transformed and committed, and only when the resulting committed graph changed the active attention state.
 
 #### Scenario: No committed attention delta means no new cycle
@@ -40,6 +43,7 @@ The runtime SHALL decide whether to schedule model work only after attention dra
 - **THEN** the model call is delayed until the policy allows it
 
 ### Requirement: Source adapters SHALL emit typed attention draft fields
+
 Source adapters SHALL provide typed draft presentation, provenance, and semantic identity fields instead of relying on open metadata bags for model-facing information. If a source expects a visible effect in another system, that expectation SHALL be represented as model-visible attention content plus system skill guidance, and the effect SHALL still require an explicit system mutation.
 
 #### Scenario: Message source builds a presentation body from message truth

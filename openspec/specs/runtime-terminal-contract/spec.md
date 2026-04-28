@@ -3,7 +3,9 @@
 ## Purpose
 Define how app-server runtime publications expose attached global terminal state to clients without duplicating terminal-owned truth.
 ## Requirements
+
 ### Requirement: Runtime publications SHALL prefer focused terminal sets
+
 Runtime snapshots and realtime terminal events SHALL publish the focused set of globally attached terminals for the current session actor, with any single-focus field treated only as a derived compatibility projection.
 
 #### Scenario: Snapshot exposes multiple focused attached terminals
@@ -22,6 +24,7 @@ Runtime snapshots and realtime terminal events SHALL publish the focused set of 
 - **THEN** it does not replace `focusedTerminalIds` as the primary contract
 
 ### Requirement: Runtime terminal reads SHALL carry explicit representation metadata
+
 Whenever runtime events or snapshots include terminal read results, the payload SHALL declare whether the representation is a diff or a snapshot, SHALL preserve the global terminal id, title, and status context needed by terminal-facing UI, SHALL expose whether the read was recorded into durable activity history, and SHALL carry actor-scoped read cursor metadata when git-log cursors are available.
 
 #### Scenario: Runtime publishes a compact diff representation
@@ -46,6 +49,7 @@ Whenever runtime events or snapshots include terminal read results, the payload 
 - **AND** client-side optimistic activity can attribute the read to the same actor without guessing from route state
 
 ### Requirement: Runtime boot SHALL not auto-create default terminals
+
 Runtime boot SHALL attach terminals only through explicit durable terminal attachments or explicit runtime orchestration. It MUST NOT auto-create or auto-focus terminals solely because session config contains terminal presets.
 
 #### Scenario: Fresh runtime boot has no hidden terminal attachment
@@ -59,6 +63,7 @@ Runtime boot SHALL attach terminals only through explicit durable terminal attac
 - **AND** it does not create a brand new fallback terminal during boot
 
 ### Requirement: Dynamic terminal creation SHALL resolve cwd from explicit runtime context
+
 When the AI uses runtime terminal tooling to create a terminal, the runtime SHALL resolve `cwd` from explicit runtime mount context or reject the request. It MUST NOT fall back to `homedir()` when `cwd` is omitted.
 
 #### Scenario: One mounted workspace supplies implicit cwd
@@ -72,6 +77,7 @@ When the AI uses runtime terminal tooling to create a terminal, the runtime SHAL
 - **AND** it does not create a terminal in the user home directory
 
 ### Requirement: Runtime terminal surface invalidation SHALL refresh one resource family at a time
+
 Runtime terminal realtime publications SHALL invalidate terminal surface resource families explicitly so client stores can refresh catalog, grants, approvals, and activity without rebuilding terminal truth in route-local code. Live render-only facts such as terminal `snapshot/status` ticks SHALL NOT be escalated into `catalogChanged`.
 
 #### Scenario: Terminal activity invalidates only activity consumers
@@ -85,12 +91,32 @@ Runtime terminal realtime publications SHALL invalidate terminal surface resourc
 - **THEN** client consumers can refresh call-as and seat projection data from one authoritative path
 
 #### Scenario: Snapshot and status ticks stay out of catalog invalidation
+
 - **WHEN** a stopped terminal boots through transport and emits live `snapshot` or `status` updates for renderer hydration
 - **THEN** runtime publications do not mark `catalogChanged`
 - **AND** browser terminal consumers do not refetch `terminal.globalList` for those render-only ticks
 
+#### Scenario: Lifecycle change invalidates catalog-facing terminal truth without using snapshot ticks
+
+- **WHEN** a terminal is explicitly bootstrapped, stopped, or deleted
+- **THEN** runtime publications identify the catalog-facing lifecycle mutation explicitly
+- **AND** clients do not need to infer lifecycle from `snapshot/status` render ticks
+
+#### Scenario: Observed identity updates stay distinct from launch truth
+
+- **WHEN** the running terminal emits a new title or current path observation
+- **THEN** runtime publications can refresh observed identity without mutating launch config fields
+- **AND** clients preserve both truths simultaneously
+
+#### Scenario: Real catalog mutation still invalidates catalog consumers
+
+- **WHEN** terminal identity, presence, focus, or other catalog-facing truth changes
+- **THEN** runtime publications still identify the catalog invalidation explicitly
+- **AND** catalog consumers can refresh from one authoritative signal
+
 ### Requirement: Shared terminal environments SHALL preserve real home semantics
-When the runtime creates or recovers a shared terminal, it SHALL preserve the operator's real home-directory semantics unless the caller explicitly overrides `HOME`. Shared terminals are collaboration surfaces comparable to `public-workspace`, so the runtime MUST NOT rewrite `HOME` to the avatar root workspace and MUST NOT auto-mount root-workspace-exclusive CLI helpers or avatar-private control-plane env merely because the runtime has one fixed root workspace.
+
+When the runtime creates or recovers a shared terminal, it SHALL preserve the operator's real home-directory semantics unless the caller explicitly overrides `HOME`. Shared terminals are collaboration surfaces comparable to `public-workspace`, so the runtime MUST NOT rewrite `HOME` to the avatar root workspace and MUST NOT auto-mount root-workspace-exclusive CLI helpers or avatar-private control-plane env merely because the runtime has one fixed root workspace or one durable root-workspace shell world.
 
 #### Scenario: New shared terminal keeps real home semantics
 - **WHEN** the AI creates a terminal without explicitly setting `HOME`
@@ -112,7 +138,13 @@ When the runtime creates or recovers a shared terminal, it SHALL preserve the op
 - **THEN** root-workspace-only helper commands are not auto-mounted into that terminal
 - **AND** terminal collaboration does not depend on avatar-private runtime CLI exposure
 
+#### Scenario: Durable root-workspace shell world does not alter shared terminal law
+- **WHEN** the runtime upgrades `root-workspace` to one durable singleton shell world
+- **THEN** shared terminals still preserve real-home collaboration semantics
+- **AND** the root-workspace implementation change does not rewrite terminal env or CLI defaults
+
 ### Requirement: Runtime terminal await SHALL return structured bounded observation evidence
+
 Runtime terminal await results SHALL expose the await outcome and bounded terminal evidence in a stable JSON contract. The contract SHALL include enough clean snapshot text for the AI to continue reasoning without an immediate follow-up `terminal read`, while preserving bounded output limits.
 
 #### Scenario: Matched await returns snapshot lines and match context
@@ -133,6 +165,7 @@ Runtime terminal await results SHALL expose the await outcome and bounded termin
 - **AND** it does not return unbounded terminal scrollback by default
 
 ### Requirement: Runtime terminal await activity recording SHALL be caller controlled
+
 Runtime terminal await SHALL treat activity recording as an explicit observation control. The operation SHALL record durable terminal observation activity by default, and callers SHALL be able to disable that recording for pure probes.
 
 #### Scenario: Default await records observation activity
@@ -144,3 +177,58 @@ Runtime terminal await SHALL treat activity recording as an explicit observation
 - **WHEN** the AI runs `terminal await` with activity recording disabled
 - **THEN** the runtime returns the same await evidence contract
 - **AND** no terminal activity event is appended for that probe
+
+### Requirement: Runtime publications SHALL expose terminal launch truth, observed identity, and process lifecycle separately
+
+Runtime snapshots and terminal realtime publications SHALL expose terminal launch/config truth, runtime observed identity truth, and durable process lifecycle truth as separate fields instead of compressing them into a single `cwd/title/running/status` blob.
+
+#### Scenario: Launch cwd stays separate from observed current path
+
+- **WHEN** a terminal was created with launch cwd `/repo/app` but the running shell later `cd`s to `/repo/app/packages/webui`
+- **THEN** the runtime projection preserves `/repo/app` as launch truth
+- **AND** it publishes `/repo/app/packages/webui` as observed current path
+
+#### Scenario: Configured title stays separate from observed current title
+
+- **WHEN** a terminal has configured title `Ops shell` but the runtime later emits a different OSC/xterm title
+- **THEN** the runtime projection preserves `Ops shell` as configured title
+- **AND** it publishes the latest observed title separately for UI resolution
+
+#### Scenario: Process lifecycle stays separate from activity truth
+
+- **WHEN** a terminal PTY exits
+- **THEN** the runtime projection preserves whether the terminal is `not_started`, `running`, or `stopped`
+- **AND** it records stop reason, exit code/signal, and stopped timestamp separately from `IDLE/BUSY`
+
+### Requirement: Runtime publications SHALL expose terminal lifecycle transitions separately from durable process phase
+
+Runtime snapshots and terminal realtime publications SHALL expose durable `processPhase` and transient `lifecycleTransition` as separate fields so clients and AI can distinguish in-flight coordination locks from durable lifecycle facts.
+
+#### Scenario: Runtime publishes bootstrapping without pretending the PTY is already running
+
+- **WHEN** a newly created or explicitly bootstrapped terminal is still starting
+- **THEN** runtime projections can publish `lifecycleTransition = bootstrapping`
+- **AND** they do not have to claim `processPhase = running` before the PTY has actually started
+
+#### Scenario: Runtime publishes killing without losing the durable terminal identity
+
+- **WHEN** a terminal stop mutation is in flight
+- **THEN** runtime projections can publish `lifecycleTransition = killing`
+- **AND** callers can continue to resolve the same durable terminal id
+- **AND** once the stop completes the projection settles on `processPhase = stopped`
+
+### Requirement: Runtime terminal config surfaces SHALL expose durable launch truth
+
+Runtime-local terminal config reads and writes SHALL expose durable terminal launch/config truth independently from runtime observed identity truth.
+
+#### Scenario: Runtime get-config returns launch truth
+
+- **WHEN** the AI runs `terminal get-config`
+- **THEN** the runtime returns durable launch truth such as `command`, `launchCwd`, `processKind`, profile fields, and metadata
+- **AND** the caller does not need to infer durable config from `terminal list` or `terminal read`
+
+#### Scenario: Runtime set-config preserves observed identity separation
+
+- **WHEN** the AI updates terminal config while the running PTY later reports a different current path or current title
+- **THEN** runtime projections preserve the updated durable config
+- **AND** they continue to publish runtime-observed identity separately

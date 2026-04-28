@@ -3,7 +3,9 @@
 ## Purpose
 Define the global room-first message control plane, its transport contract, and the model-facing semantics for collaboration across auth actors and session actors.
 ## Requirements
+
 ### Requirement: Message-system SHALL manage multiple chat channels
+
 The message control plane SHALL manage multiple global room resources independently from session lifecycles. Auth actors and session actors MAY attach to the same room, room durability SHALL NOT depend on any single session remaining alive, room-local read-state SHALL remain durable as per-message frozen read membership rather than mutable actor read cursors, and durable room messages SHALL NOT encode AI scheduling or cycle queue state.
 
 #### Scenario: One room is shared by human and session actors
@@ -38,6 +40,7 @@ The message control plane SHALL manage multiple global room resources independen
 - **THEN** a later actor reattaching to that room can still observe the current read progression without recomputing prior message membership
 
 ### Requirement: Message control plane SHALL expose unread room summaries and unread subscriptions
+
 The message control plane SHALL expose authorized unread summary reads and actor-scoped unread subscriptions so runtimes can discover unread room work without scanning whole room histories.
 
 #### Scenario: Authorized runtime reads unread room summaries
@@ -104,6 +107,7 @@ Room actor validation SHALL accept raw principal ids for new runtimes and authen
 - **AND** the control plane does not require `session:<id>` for new runtimes
 
 ### Requirement: Chat transport SHALL expose snapshot and incremental messages
+
 A room transport endpoint SHALL deliver an initial room snapshot followed by incremental message updates for that global room, regardless of whether any session runtime is currently active.
 
 #### Scenario: Web client connects to a room endpoint
@@ -122,6 +126,7 @@ A room transport endpoint SHALL deliver an initial room snapshot followed by inc
 - **AND** the client can update transcript placement and lifecycle state without reloading the whole channel
 
 ### Requirement: Durable room messages SHALL support sender-authored recall
+
 The message control plane SHALL let the original sender recall their own durable room message without changing that message's `messageId`, frozen read membership, or place in the room timeline. A recalled message SHALL expose explicit recall metadata and SHALL no longer expose its stale user-visible body as if it were still the active room truth.
 
 #### Scenario: Sender recalls their own durable room message
@@ -141,6 +146,7 @@ The message control plane SHALL let the original sender recall their own durable
 - **THEN** consumers can tell that the message was recalled from the durable record itself instead of inferring it from a synthetic follow-up row
 
 ### Requirement: Room messages SHALL preserve durable acting actor identity
+
 The message control plane SHALL persist the canonical acting actor identity for each room message in addition to any display label, and every snapshot, page, and incremental transport payload SHALL expose that durable sender identity unchanged.
 
 #### Scenario: Same-label actors send distinct room messages
@@ -154,6 +160,7 @@ The message control plane SHALL persist the canonical acting actor identity for 
 - **THEN** later snapshot or page reads preserve that identity even after refresh or reconnect
 
 ### Requirement: Global room messages SHALL persist attachment references from room-owned assets
+
 The global room message control plane SHALL allow room text messages to reference previously uploaded room-owned asset identifiers. When a room message is sent with authorized room asset ids, the persisted room message record MUST expose the corresponding attachment metadata through snapshot, page, and incremental transport reads.
 
 #### Scenario: Room send stores attachment references
@@ -213,3 +220,40 @@ The message control plane SHALL expose an optional numeric `ref` on durable room
 - **THEN** the referencing message keeps the same `ref`
 - **THEN** later room reads can still resolve the referenced durable message and observe its current objective lifecycle state
 
+### Requirement: Model-facing room sends SHALL keep follow-up reminder intent out of durable room truth
+
+Model-facing room sends MAY include an optional `followUpAfterMs` reminder intent for the sending runtime. When present, the control plane SHALL bind that reminder to the successfully sent durable `messageId`, but it SHALL keep the reminder in sender-private runtime scheduling state rather than in the durable room message row, room snapshot payloads, or incremental room transport updates. That reminder SHALL remain eligible only while the anchored message is still the latest visible room message in the room.
+
+#### Scenario: Send with a follow-up reminder still persists a normal durable room message
+
+- **WHEN** an authorized runtime sends a room message with `followUpAfterMs`
+- **THEN** the durable room message is appended normally with the same visible room fields other readers expect
+- **AND** the reminder intent is bound privately to that sent `messageId` instead of being serialized into shared room truth
+
+#### Scenario: Room transport does not leak sender-private reminder state
+
+- **WHEN** another authorized room reader later receives a snapshot, page read, or incremental transport update for that message
+- **THEN** the payload does not expose `followUpAfterMs`, due times, or sender-private reminder lifecycle state
+- **AND** shared room truth remains free of AI scheduling residue
+
+#### Scenario: Newer visible room activity suppresses the older reminder
+
+- **WHEN** a later visible room message appears before the anchored reminder reaches due time
+- **THEN** the older reminder is no longer eligible to create later follow-up debt
+- **AND** stale silence from the superseded message does not reopen the room by itself
+
+### Requirement: Message skill SHALL teach follow-up reminders as etiquette-driven re-evaluation
+
+The owning message skill guidance SHALL describe `followUpAfterMs` as an optional, one-shot etiquette aid for deciding later whether a room still needs feedback. That guidance SHALL not present the field as a mandatory rule, as a transport timeout, or as permission to auto-send a visible room message without another model decision.
+
+#### Scenario: Long-running acknowledgement may arm a follow-up reminder
+
+- **WHEN** the assistant sends a brief acknowledgement before longer work and wants to revisit the room if silence continues
+- **THEN** the message skill may recommend `followUpAfterMs` on that acknowledgement
+- **AND** the later action remains an explicit decision about whether another room reply is actually needed
+
+#### Scenario: Skill guidance keeps follow-up reminders optional
+
+- **WHEN** the assistant already has enough evidence for the final answer or later room activity has already changed the situation
+- **THEN** the message skill does not require `followUpAfterMs`
+- **AND** it does not frame the reminder as universal policy for every room message

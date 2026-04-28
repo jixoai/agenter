@@ -3,7 +3,9 @@
 ## Purpose
 TBD - created by archiving change attention-trace-otel-vnext. Update Purpose after archive.
 ## Requirements
+
 ### Requirement: Runtime SHALL publish trace snapshots and incremental trace events
+
 The runtime SHALL publish trace snapshots for hydration and incremental trace events for live inspection, both keyed by stable attention-native references.
 
 #### Scenario: A client hydrates trace state for an active session
@@ -17,6 +19,7 @@ The runtime SHALL publish trace snapshots for hydration and incremental trace ev
 - **THEN** the published contract does not require reconstructing private backend state from raw logs
 
 ### Requirement: Trace publication SHALL support lookup by stable refs
+
 Trace consumers SHALL be able to locate trace history from attention refs, cycle-frame refs, model-call refs, delivery refs, and explicit system-mutation refs.
 
 #### Scenario: Inspect trace from an attention item
@@ -28,3 +31,12 @@ Trace consumers SHALL be able to locate trace history from attention refs, cycle
 - **WHEN** a consumer requests trace details for a model-call reference
 - **THEN** the runtime can return the causal span chain leading into and out of that model call
 - **THEN** linked attention items and cycle frames remain discoverable from that trace payload
+
+### Requirement: Attention trace publication SHALL expose causal lookup refs
+
+Trace consumers SHALL be able to locate trace history from attention refs, cycle-frame refs, model-call refs, delivery refs, and explicit system-mutation refs.
+
+#### Scenario: Trace lookup follows attention and delivery refs
+- **WHEN** a runtime inspector opens a trace from an attention commit
+- **THEN** the inspector can locate linked cycle, model-call, dispatch, receipt, and explicit system-mutation facts
+- **AND** it does not require a legacy output-routing ref to reconstruct the causal chain

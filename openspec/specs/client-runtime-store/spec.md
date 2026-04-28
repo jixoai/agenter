@@ -50,6 +50,25 @@ The client runtime store SHALL maintain explicit reverse-time page state for eac
 - **THEN** the client runtime store collapses those semantic duplicates into one row per message
 - **THEN** the persisted record wins over the in-memory runtime copy
 
+#### Scenario: Deep grouped Heartbeat hydration settles explicitly
+
+- **WHEN** grouped Heartbeat hydration runs for a session with deep persisted history
+- **THEN** the cached grouped resource settles to loaded-with-data, loaded-empty, or error explicitly once the grouped page request settles
+- **AND** the store does not leave Heartbeat in a permanent loading state just because the grouped query path is expensive
+
+#### Scenario: Grouped Heartbeat refresh keeps warm data while the next page settles
+
+- **WHEN** a realtime invalidation or route refresh triggers a new grouped Heartbeat fetch for a session that already has visible groups
+- **THEN** the store preserves the existing grouped rows during the refresh
+- **AND** it marks the resource as refreshing until the new request settles
+- **AND** a failed refresh surfaces an explicit error instead of dropping back to cold loading
+
+#### Scenario: Heartbeat shell hydration avoids unrelated heavy history
+
+- **WHEN** the runtime shell hydrates a Heartbeat route for one session
+- **THEN** the client runtime store skips transcript history and unrelated devtools timelines during that cold start
+- **AND** it only hydrates the Heartbeat-owned grouped resource, the minimal model-call window, and the route-owned notification/channel facts
+
 ### Requirement: Client runtime store SHALL keep bounded windows for long-list resources
 
 The client runtime store SHALL maintain bounded in-memory windows for workspace history, room timelines, terminal activity, and running-avatar detail resources, and SHALL keep pagination state separate from the visible list projection.
@@ -153,3 +172,20 @@ The client runtime store SHALL ingest explicit dispatch and receipt runtime even
 - **WHEN** a receipt event arrives for a hydrated session
 - **THEN** the store patches the corresponding delivery summary and receipt history in place
 - **AND** the visible surface can show `accepted`, `errored`, `aborted`, or `completed` immediately
+
+### Requirement: Client runtime store SHALL keep room read truth message-native
+
+The client runtime store SHALL preserve room read truth in the same shape it is durably stored: on room message rows. When room catalog entries and room snapshots refresh on different schedules, the store MAY update room/channel metadata independently, but it SHALL NOT synthesize or rewrite latest-visible read arrays from a room-level summary projection.
+
+#### Scenario: Room catalog refresh does not rewrite the latest message
+
+- **WHEN** the browser already holds a warm room snapshot with message `m9`
+- **AND** a later room catalog refresh updates room metadata before the next forced room snapshot refresh completes
+- **THEN** the cached snapshot keeps `m9.readActorIds` and `m9.unreadActorIds` exactly as they came from the snapshot
+- **AND** the store does not patch `m9` from any room-level latest-visible summary fields
+
+#### Scenario: Realtime room invalidation refreshes snapshot instead of synthesizing progress
+
+- **WHEN** a realtime room update indicates that a watched room snapshot changed
+- **THEN** the runtime store invalidates or refreshes that room snapshot through the room snapshot API
+- **AND** the browser learns new read truth from the refreshed message rows rather than from catalog-side room progress synthesis

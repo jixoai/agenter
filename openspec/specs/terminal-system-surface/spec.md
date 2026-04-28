@@ -3,8 +3,10 @@
 ## Purpose
 Define the durable WebUI contract for the standalone terminal-system route, including its shared split-detail shell, route-owned toolbar, actor-bearing tool composers, and live action-management surfaces.
 ## Requirements
+
 ### Requirement: Terminal-system SHALL present global terminals as a standalone product surface
-The WebUI SHALL expose a dedicated terminal-system route that lists global terminals, renders the selected terminal transcript, and provides terminal-specific actions and user/access management without requiring workspace ownership. The route SHALL use shared scaffold primitives for pane interiors and the shared split-detail workbench shell law so the terminal viewport, tool composer, and collaboration rail each keep explicit layout ownership on desktop while compact widths reuse the shared right-sheet fallback.
+
+The WebUI SHALL expose a dedicated terminal-system route that lists global terminals, renders the selected terminal transcript, and provides lifecycle-aware actions without reconstructing terminal identity from stale catalog fields.
 
 #### Scenario: Global terminal navigation
 - **WHEN** the operator opens the terminal-system route
@@ -28,13 +30,11 @@ The WebUI SHALL expose a dedicated terminal-system route that lists global termi
 - **THEN** terminal user management remains reachable through the toolbar dialog even after the split collapses
 
 #### Scenario: Selected terminal page owns the page-toolbar
+
 - **WHEN** the operator opens a concrete shared terminal route
-- **THEN** the route injects terminal-local toolbar content through the shared `WorkbenchPageToolbar` host instead of relying on static shell subtitle copy
-- **THEN** the toolbar identity reflects the active terminal facts such as the terminal label and cwd
-- **THEN** the toolbar status reflects authoritative runtime facts such as `running/stopped` and `busy/idle`
-- **THEN** toolbar lifecycle actions surface explicit pending copy such as `Bootstrapping PTY…` or `Killing PTY…` while the action is locked
-- **THEN** explanatory product copy is available through help affordance instead of occupying the primary identity row
-- **THEN** the help popup remains readable above compact shell chrome instead of rendering underneath navigation layers
+- **THEN** the toolbar identity resolves from `configured title ?? terminal id`
+- **AND** the toolbar second line prefers runtime observed current path instead of fixed launch cwd
+- **AND** if no runtime path is available, the route falls back to terminal id or nothing rather than pretending launch cwd is current path
 
 #### Scenario: Terminal users management lives behind a toolbar dialog
 - **WHEN** the operator needs to inspect seats, approvals, or grants
@@ -74,7 +74,32 @@ The WebUI SHALL expose a dedicated terminal-system route that lists global termi
 - **THEN** per-card viewer mode menus stay suppressed for this rail context
 - **THEN** the structured preview remains readable without introducing a terminal-only renderer fork
 
+#### Scenario: Terminal window titlebar may follow observed PTY title independently
+
+- **WHEN** the selected terminal emits an observed PTY title different from its configured terminal instance name
+- **THEN** tabs, toolbar, and dialog identity keep using the terminal instance name
+- **AND** the inner terminal window titlebar may separately resolve `observed title ?? configured title ?? terminal id`
+
+#### Scenario: Toolbar status reflects lifecycle plus activity
+
+- **WHEN** the selected terminal route renders
+- **THEN** the toolbar status shows process lifecycle facts such as `Provisioned`, `Running`, or `Stopped`
+- **AND** running terminals may additionally show `Busy` or `Idle`
+- **AND** stopped terminals show stop-reason detail such as `Killed`, `Exited`, or `Failed`
+
+#### Scenario: Actions reflect explicit lifecycle operations
+
+- **WHEN** a terminal is `running`
+- **THEN** the route exposes `Kill PTY` as the lifecycle action and keeps `Delete terminal` separate as the destructive catalog action
+
+#### Scenario: Stopped route stays open
+
+- **WHEN** the operator stops a terminal PTY
+- **THEN** the route stays on that terminal and disables read/write surfaces until bootstrap
+- **AND** only deleting the terminal removes it from the route/catalog
+
 ### Requirement: Terminal tool actions SHALL require an explicit acting actor
+
 Terminal read/write or other tool-call actions initiated from the UI SHALL let the operator choose which auth-backed actor performs the action, and the route SHALL derive those actor options from the authoritative terminal surface projection rather than reconstructing them from multiple client-side sources.
 
 #### Scenario: Tool call with actor selection
@@ -91,6 +116,7 @@ Terminal read/write or other tool-call actions initiated from the UI SHALL let t
 - **THEN** the UI surfaces the failure as a credential/access problem and does not silently fall back
 
 ### Requirement: Browser-facing global terminal control SHALL require an authenticated operator
+
 The browser-side terminal-system workbench SHALL require an authenticated operator before it can create terminals, hydrate the global terminal catalog, or use terminal seat tokens for terminal read/write or administration. A terminal `accessToken` is a capability within the authenticated control plane, not an anonymous browser identity.
 
 #### Scenario: Unauthenticated browser cannot create terminals
@@ -104,6 +130,7 @@ The browser-side terminal-system workbench SHALL require an authenticated operat
 - **THEN** the route surfaces `auth token required` until the operator authenticates again
 
 ### Requirement: Terminal users SHALL own focus state per seat
+
 Terminal focus behavior in the UI SHALL be modeled per user seat rather than as one terminal-global toggle.
 
 #### Scenario: User-specific focus
@@ -115,6 +142,7 @@ Terminal focus behavior in the UI SHALL be modeled per user seat rather than as 
 - **THEN** focus/unfocus controls are available in the user list instead of as one page-level terminal action
 
 ### Requirement: Terminal detail SHALL restore durable activity after refresh
+
 Refreshing the terminal route SHALL restore previously renderable terminal evidence from durable backend state, including the latest terminal surface projection, renderable terminal snapshot truth, transport endpoint, renderer metadata, absolute cwd, and recent terminal activity. After hydration, the route SHALL continue receiving live updates without requiring a second manual refresh.
 
 #### Scenario: Refresh terminal detail
@@ -132,6 +160,7 @@ Refreshing the terminal route SHALL restore previously renderable terminal evide
 - **THEN** the UI displays the absolute path rather than a workspace-relative shorthand such as `.`
 
 ### Requirement: Terminal-system route SHALL reflect seat and approval changes live
+
 The terminal-system route SHALL react to terminal activity, grant changes, approval changes, and seat focus changes without requiring page refresh or timer-based polling to reveal those facts.
 
 #### Scenario: Activity and seat state update in place
@@ -150,6 +179,7 @@ The terminal-system route SHALL react to terminal activity, grant changes, appro
 - **THEN** the current administrator can act on the latest approval queue immediately
 
 ### Requirement: Terminal Users pane SHALL keep grant controls independently hittable across pane widths
+
 The terminal Users pane SHALL derive its grant-access control layout from the pane width itself, not only from the browser viewport, so the actor selector, role selector, and `Grant seat` action remain independently interactable inside narrow collaboration rails.
 
 #### Scenario: Narrow desktop detail pane falls back to stacked grant controls
@@ -163,6 +193,7 @@ The terminal Users pane SHALL derive its grant-access control layout from the pa
 - **THEN** the actor selector and role selector can still be opened before granting a seat
 
 ### Requirement: Terminal write composer SHALL preserve draft text across rejected writes
+
 The terminal-system route SHALL preserve the current write draft whenever a terminal write fails or degrades into an approval request. The draft MAY only be cleared after a confirmed successful write.
 
 #### Scenario: Failed write preserves draft
@@ -176,6 +207,7 @@ The terminal-system route SHALL preserve the current write draft whenever a term
 - **THEN** the UI surfaces the approval-request state without pretending the write already succeeded
 
 ### Requirement: Terminal users pane SHALL share one seat-management behavior model across layouts
+
 The terminal-system route SHALL use one shared seat-management behavior model for compact and wide layouts so grant, focus, revoke, and approval actions remain behaviorally identical regardless of pane width.
 
 #### Scenario: Compact and wide panes execute the same grant behavior

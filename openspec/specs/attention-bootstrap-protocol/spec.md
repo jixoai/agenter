@@ -5,6 +5,7 @@ Define the prompt-side bootstrap contract that sits between attention-system, Lo
 ## Requirements
 
 ### Requirement: Attention bootstrap SHALL use a two-stage `context` + `items` protocol
+
 The first attention-native model inputs for a round SHALL be split into a bootstrap `context` document and a delta `items` payload. `context` SHALL carry only `AttentionContexts.metadata` plus rendered bootstrap-visible attention context snapshots. `items` SHALL carry only unresolved attention deltas. If a compact summary exists, it SHALL remain an ordinary prompt-window replay message rather than a separate bootstrap input.
 
 #### Scenario: Bootstrap context is emitted before delta items
@@ -26,6 +27,7 @@ The first attention-native model inputs for a round SHALL be split into a bootst
 - **AND** the runtime does not pre-bake related-query expansions into that payload
 
 ### Requirement: Bootstrap SHALL include only selected or explicitly bootstrapped system surfaces
+
 Runtime bootstrap SHALL surface only systems that participate in the current round or are explicitly published as bootstrap-visible attention contexts. Those systems SHALL appear through minimal context metadata and rendered context snapshots, not through provider-owned system guide strings.
 
 #### Scenario: Inactive systems stay out of the bootstrap
@@ -45,6 +47,7 @@ Runtime bootstrap SHALL surface only systems that participate in the current rou
 - **AND** runtime bootstrap can include that system without patching `agenter-ai` or reintroducing provider-owned `systemPrompt` glue
 
 ### Requirement: Cycle persistence SHALL retain bootstrap and delta refs
+
 When a cycle persists collected attention inputs, it SHALL preserve the attention context ids and commit refs attached to those bootstrap/delta inputs so later inspection can reconstruct which facts drove the round.
 
 #### Scenario: Persisted cycle keeps attention context refs
@@ -58,6 +61,7 @@ When a cycle persists collected attention inputs, it SHALL preserve the attentio
 - **AND** later debugging or replay inspection can trace the round back to the originating unresolved commits
 
 ### Requirement: Attention delta payloads SHALL serialize explicit durable fields
+
 The prompt-side attention `items` payload SHALL serialize only explicit durable fields needed by the model: provenance, scores, summary, and body/change content. It SHALL NOT dump raw metadata bags into the model payload, and it SHALL NOT carry hidden room-routing descriptors as a substitute for explicit message tools.
 
 #### Scenario: Message attention delta includes body context without raw metadata

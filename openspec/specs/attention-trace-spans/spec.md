@@ -3,7 +3,9 @@
 ## Purpose
 TBD - created by archiving change attention-trace-otel-vnext. Update Purpose after archive.
 ## Requirements
+
 ### Requirement: Runtime SHALL persist attention-native trace spans
+
 The runtime SHALL record execution as trace spans, events, and links keyed by stable attention-native references instead of ad-hoc step/detail strings.
 
 #### Scenario: Source read becomes a trace span
@@ -17,6 +19,7 @@ The runtime SHALL record execution as trace spans, events, and links keyed by st
 - **THEN** downstream tool calls, delivery dispatch spans, and explicit system-mutation spans can link back to that same causal chain
 
 ### Requirement: Trace spans SHALL encode terminal outcomes and causal links
+
 Trace data SHALL distinguish successful completion, recoverable error, explicit stop, explicit abort, and downstream dispatch failure without relying on textual inference.
 
 #### Scenario: Stop and abort are recorded differently
@@ -28,3 +31,12 @@ Trace data SHALL distinguish successful completion, recoverable error, explicit 
 - **WHEN** the runtime aborts and destroys owned systems
 - **THEN** the active span records an abort-oriented terminal outcome
 - **THEN** later inspection can distinguish teardown from a normal stop or timeout
+
+### Requirement: Attention trace spans SHALL preserve downstream causal links
+
+Attention trace spans SHALL keep enough causal links for downstream tool calls, delivery dispatches, receipts, and explicit system mutations to point back to the same attention work.
+
+#### Scenario: Downstream effects link back to attention work
+- **WHEN** an attention-driven cycle starts model work and later performs tools or explicit system mutations
+- **THEN** downstream spans can link back to the originating attention refs and model-call refs
+- **AND** trace inspection does not depend on a hidden output-routing span category

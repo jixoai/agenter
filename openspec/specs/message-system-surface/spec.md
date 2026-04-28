@@ -166,7 +166,7 @@ Room user lists, grant dialogs, and avatars SHALL resolve actors from auth/profi
 
 ### Requirement: Message-system route SHALL derive room users and viewer choices from canonical actor truth
 
-The room viewer selector, room management surface, send-as options, and read-progress details SHALL resolve actors from canonical auth/profile or session actor identity instead of local label-only guesses.
+The room viewer selector, room management surface, send-as options, and room seat metadata SHALL resolve actors from canonical auth/profile or session actor identity instead of local label-only guesses. Room management MAY show seat role, focus, presence, and credential state, but it SHALL NOT present room-level latest-visible read labels for those seats.
 
 #### Scenario: Viewer selector lists canonical actors
 
@@ -194,9 +194,16 @@ The room viewer selector, room management surface, send-as options, and read-pro
 - **THEN** the control seat does not appear as a normal `Users` entry, viewer choice, or ordinary `Send as` actor
 - **THEN** authenticated human or avatar actors remain the only user-facing membership choices unless a surface explicitly describes control-plane metadata
 
+#### Scenario: Room manage users stays seat-oriented
+
+- **WHEN** the operator opens room management for `Users`
+- **THEN** each visible user row is resolved from canonical actor truth
+- **AND** the surface may show role, focus, presence, and credential status for that seat
+- **AND** it does not show `Read`, `Unread`, or `Joined later` badges derived from the latest visible room message
+
 ### Requirement: Room read state SHALL use message-level group read progress semantics
 
-The room transcript SHALL present participant read progress and read timestamps as message-level collaboration facts, and SHALL NOT project latest-read progress as a room-header aggregate chip or as an attention-style pending label.
+The room transcript SHALL present collaboration read state as message-level facts attached to message rows. The route SHALL NOT reintroduce room-level read summaries in the room toolbar, management shell, or any auxiliary room seat surface.
 
 #### Scenario: Participant read progress
 
@@ -214,6 +221,13 @@ The room transcript SHALL present participant read progress and read timestamps 
 
 - **WHEN** the room list and transcript render
 - **THEN** message ordering is driven by durable send time rather than a pending-attention heuristic
+
+#### Scenario: Room surfaces avoid room-level read summary chrome
+
+- **WHEN** the operator views a room toolbar, room-management dialog, or room seat list
+- **THEN** those surfaces do not summarize the room as `x/y read`
+- **AND** they do not present “current room latest progress” as a separate room-level fact
+- **AND** read inspection remains attached to the relevant message row
 
 ### Requirement: Message-system route SHALL reflect room changes live
 
