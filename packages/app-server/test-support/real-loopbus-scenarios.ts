@@ -419,6 +419,19 @@ export interface RealTerminalSkillLearningScenarioResult {
   rootWorkspaceBashCommands: string[];
 }
 
+export interface RealTerminalAwaitScenarioResult {
+  reply: ChatMessage;
+  settledAttention: SessionRuntimeAttentionState;
+  recentModelCalls: Array<{
+    id: number;
+    cycleId: number | null;
+    status: "running" | "done" | "error" | "cancelled";
+    outcome: string | null;
+  }>;
+  toolTraceTools: string[];
+  rootWorkspaceBashCommands: string[];
+}
+
 export const runRealTerminalSkillLearningScenario = async (
   harness: RealKernelHarness,
 ): Promise<RealTerminalSkillLearningScenarioResult> => {
@@ -499,6 +512,67 @@ export const runRealTerminalSkillLearningScenario = async (
       extra: {
         primaryRoomId,
         proofFileName,
+        expectedToken,
+      },
+    });
+  }
+};
+
+export const runRealTerminalAwaitScenario = async (
+  harness: RealKernelHarness,
+): Promise<RealTerminalAwaitScenarioResult> => {
+  const timeoutMs = 300_000;
+  const primaryRoomId = getPrimaryRoomId(harness);
+  const expectedToken = "AWAIT-READY";
+  const startAt = Date.now();
+
+  try {
+    const prompt = [
+      "这是一个 terminal skill 真实行为验收。",
+      `目标房间 chatId: ${primaryRoomId}`,
+      "不要发送中间确认，也不要发送额外总结。",
+      "必须先通过 root_bash 执行 `skill info agenter-terminal`。",
+      "然后使用 terminalId `await-terminal` 创建或恢复一个 terminal。",
+      "通过 terminal CLI 在这个 terminal 内启动一个会先停顿片刻、随后输出 AWAIT-READY 的命令。",
+      `等你从 terminal 证据里确认已经看到 ${expectedToken} 之后，向 ${primaryRoomId} 发送一条最终用户可见消息，内容必须精确等于：${expectedToken}`,
+      "完成后把 attention 收敛到 0。",
+    ].join("\n");
+    const sent = await harness.kernel.sendChat(harness.session.id, prompt);
+    if (!sent.ok) {
+      throw new Error(`failed to send terminal await prompt: ${sent.reason ?? "unknown"}`);
+    }
+
+    const reply = await waitForAssistantMessage(harness, {
+      label: "terminal await final reply on primary room",
+      predicate: (message) => message.chatId === primaryRoomId && message.content.trim() === expectedToken,
+      timeoutMs,
+    });
+
+    const settledAttention = await waitForAttentionSettled(harness, timeoutMs);
+    const modelCallRecords = await waitForModelCallsAfter(harness, {
+      afterTimestamp: startAt,
+      label: "terminal await model call completion",
+      timeoutMs,
+    });
+
+    return {
+      reply,
+      settledAttention,
+      recentModelCalls: modelCallRecords.map((call) => ({
+        id: call.id,
+        cycleId: call.cycleId,
+        status: call.status,
+        outcome: readModelOutcomeCode(call),
+      })),
+      toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
+      rootWorkspaceBashCommands: modelCallRecords.flatMap(extractRootWorkspaceBashCommands),
+    };
+  } catch (error) {
+    throw await buildRealScenarioDiagnosticError(harness, {
+      label: "real-terminal-await-scenario",
+      error,
+      extra: {
+        primaryRoomId,
         expectedToken,
       },
     });

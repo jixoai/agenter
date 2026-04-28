@@ -3,7 +3,10 @@ import { describe, expect, test } from "bun:test";
 import { REAL_ROOM_TERMINAL_AVATAR_PROFILE } from "../test-support/real-ai-test-personas";
 import { createRealKernelHarness, REAL_MODEL_PROJECT_ROOT } from "../test-support/real-kernel-harness";
 import { resolveRealModelConfig } from "../test-support/real-model-cache";
-import { runRealTerminalSkillLearningScenario } from "../test-support/real-loopbus-scenarios";
+import {
+  runRealTerminalAwaitScenario,
+  runRealTerminalSkillLearningScenario,
+} from "../test-support/real-loopbus-scenarios";
 
 const hasRealModel =
   process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT) !== null;
@@ -61,6 +64,53 @@ describe("Feature: real AI terminal skill learning", () => {
             (command) => command.includes("terminal-skill-proof.txt") && /\bcat\b/u.test(command),
           ),
         ).toBe(true);
+      } finally {
+        await harness.stop();
+      }
+    },
+    { timeout: 420_000 },
+  );
+
+  realTest(
+    "Scenario: Given a real provider When terminal output is delayed Then the assistant uses terminal await instead of timeout grep polling",
+    async () => {
+      const harness = await createRealKernelHarness({
+        sessionName: "real-terminal-await-usage",
+        avatarNickname: "test-terminal-await-usage",
+        agenterPromptContent: TERMINAL_SKILL_PROMPT,
+      });
+      if (!harness) {
+        throw new Error("expected real kernel harness");
+      }
+
+      try {
+        const primaryRoomId = harness.session.primaryRoomId;
+        if (!primaryRoomId) {
+          throw new Error("expected session primaryRoomId");
+        }
+        const result = await runRealTerminalAwaitScenario(harness);
+        const commands = result.rootWorkspaceBashCommands;
+        const joinedCommands = commands.join("\n");
+        const firstSkillInfoIndex = commands.findIndex((command) => command.includes("skill info agenter-terminal"));
+        const firstTerminalAwaitIndex = commands.findIndex((command) => /\bterminal await\b/u.test(command));
+        const firstTerminalReadIndex = commands.findIndex((command) => /\bterminal read\b/u.test(command));
+
+        expect(result.reply.chatId).toBe(primaryRoomId);
+        expect(result.reply.content.trim()).toBe("AWAIT-READY");
+        expect(result.settledAttention.active).toHaveLength(0);
+        expect(result.recentModelCalls.length).toBeGreaterThan(0);
+        expect(result.recentModelCalls.some((call) => call.outcome === "done")).toBe(true);
+        expect(result.toolTraceTools).toContain("root_bash");
+        expect(firstSkillInfoIndex).toBeGreaterThanOrEqual(0);
+        expect(firstTerminalAwaitIndex).toBeGreaterThanOrEqual(0);
+        expect(firstSkillInfoIndex).toBeLessThan(firstTerminalAwaitIndex);
+        if (firstTerminalReadIndex >= 0) {
+          expect(firstTerminalAwaitIndex).toBeLessThan(firstTerminalReadIndex);
+        }
+        expect(commands.some((command) => /\bterminal (create|list)\b/u.test(command))).toBe(true);
+        expect(joinedCommands).not.toMatch(/\btimeout\s+\d+[^\n]*\bterminal\b/u);
+        expect(joinedCommands).not.toMatch(/\bterminal\s+read\b[^\n]*\|\s*grep\b/u);
+        expect(joinedCommands).not.toMatch(/\bsleep\b[^\n]*(?:&&|;)[^\n]*\bterminal\s+read\b/u);
       } finally {
         await harness.stop();
       }
