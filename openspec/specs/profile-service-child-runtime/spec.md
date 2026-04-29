@@ -44,14 +44,9 @@ App-server SHALL manage the auth authority as an auth-service child runtime or e
 - **THEN** it does not start both profile-service and auth-service runtimes
 
 ### Requirement: Auth-service storage defaults SHALL avoid duplicate durable authorities
-New auth-service child runtimes SHALL default to an auth-service storage root. If legacy profile-service storage exists and no auth-service storage exists, the resolver MAY use the legacy storage root as an explicit compatibility fallback, but it SHALL NOT create two writable stores for the same authority.
+New auth-service child runtimes SHALL default to an auth-service storage root and a canonical SQLite store file. The runtime SHALL target exactly one writable auth-service authority root and SHALL NOT reopen an older DuckDB file as a second runtime store.
 
-#### Scenario: Fresh runtime uses auth-service storage
+#### Scenario: Fresh runtime uses auth-service SQLite storage
 - **WHEN** app-server starts a fresh local auth-service child runtime
 - **THEN** the default data directory is under an auth-service-named path
-- **THEN** the database filename is auth-service-named
-
-#### Scenario: Legacy profile-service storage is reused explicitly
-- **WHEN** legacy profile-service storage exists and no auth-service storage has been created
-- **THEN** the runtime resolves one writable storage root for the auth authority
-- **THEN** it does not create a second independent auth database
+- **AND** the canonical database filename is `auth-service.sqlite`
