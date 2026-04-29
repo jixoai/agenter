@@ -70,6 +70,7 @@ describe("Feature: attention context commit log", () => {
       change: { type: "update", value: "answer" },
     });
 
+    expect(context.getState().scoreMap).toEqual({});
     expect(context.queryCommits({ hash: "hash1" })).toHaveLength(0);
     expect(context.queryCommits({ hash: "hash1", minScore: 0 }).map((entry) => entry.commit.summary)).toEqual([
       "resolved",
@@ -103,6 +104,7 @@ describe("Feature: attention context commit log", () => {
       change: { type: "clean" },
     });
 
+    expect(snapshot.scoreMap).toEqual({});
     expect(snapshot.content).toBe("");
     expect(snapshot.slots).toEqual({ default: "" });
   });

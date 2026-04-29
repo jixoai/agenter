@@ -1232,9 +1232,9 @@ describe("Feature: workspace system kernel integration", () => {
 
     const after = await kernel.inspectAttentionState(session.id);
     expect(after.active.some((item) => item.contextId === "ctx-chat-main")).toBeFalse();
-    expect(
-      after.snapshot.contexts.find((context) => context.contextId === "ctx-chat-main")?.scoreMap["delivery-hash"],
-    ).toBe(0);
+    const settledContext = after.snapshot.contexts.find((context) => context.contextId === "ctx-chat-main");
+    expect(settledContext?.scoreMap["delivery-hash"]).toBeUndefined();
+    expect(settledContext?.commits.at(-1)?.scores["delivery-hash"]).toBe(0);
 
     await kernel.stop();
   });
@@ -1294,8 +1294,10 @@ describe("Feature: workspace system kernel integration", () => {
     const after = await kernel.inspectAttentionState(session.id);
     expect(after.active.some((item) => item.contextId === "ctx-chat-main")).toBeFalse();
     const context = after.snapshot.contexts.find((item) => item.contextId === "ctx-chat-main");
-    expect(context?.scoreMap["delivery-hash"]).toBe(0);
-    expect(context?.scoreMap.delivery).toBe(0);
+    expect(context?.scoreMap["delivery-hash"]).toBeUndefined();
+    expect(context?.scoreMap.delivery).toBeUndefined();
+    expect(context?.commits.at(-1)?.scores["delivery-hash"]).toBe(0);
+    expect(context?.commits.at(-1)?.scores.delivery).toBe(0);
 
     await kernel.stop();
   });

@@ -42,6 +42,12 @@ export const normalizeAttentionScores = (scores: Record<string, number>): Record
   return next;
 };
 
+// Current state tracks only unresolved work; zero-valued settlement remains queryable on immutable commits.
+const normalizeAttentionStateScoreMap = (scores: Record<string, number>): Record<string, number> =>
+  Object.fromEntries(
+    Object.entries(normalizeAttentionScores(scores)).filter((entry): entry is [string, number] => entry[1] > 0),
+  );
+
 const resolveAttentionCommitTarget = (target?: string): string => {
   const normalized = target?.trim();
   return normalized && normalized.length > 0 ? normalized : DEFAULT_ATTENTION_COMMIT_TARGET;
@@ -150,7 +156,7 @@ const buildAttentionContextState = (input: {
     slots,
     content: deriveAttentionContextContent(template, slots),
     contentFormat: input.contentFormat,
-    scoreMap: normalizeAttentionScores(input.scoreMap ?? {}),
+    scoreMap: normalizeAttentionStateScoreMap(input.scoreMap ?? {}),
     consumedPushCommitIds: [...(input.consumedPushCommitIds ?? [])],
     headCommitId: input.headCommitId ?? null,
     createdAt,
@@ -269,10 +275,10 @@ export const buildAttentionContextStateFromCommits = (input: {
     });
     state = {
       ...state,
-      scoreMap: {
+      scoreMap: normalizeAttentionStateScoreMap({
         ...state.scoreMap,
-        ...normalizeAttentionScores(commit.scores),
-      },
+        ...commit.scores,
+      }),
       headCommitId: commit.commitId,
       updatedAt: commit.createdAt,
     };
@@ -560,10 +566,10 @@ export class AttentionContext {
     });
     nextState = {
       ...nextState,
-      scoreMap: {
+      scoreMap: normalizeAttentionStateScoreMap({
         ...nextState.scoreMap,
         ...commit.scores,
-      },
+      }),
       headCommitId: commit.commitId,
       updatedAt: createdAt,
     };

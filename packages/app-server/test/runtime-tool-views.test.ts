@@ -22,7 +22,7 @@ describe("Feature: runtime tool public views", () => {
         focusState: "focused",
         content: "x".repeat(320),
         contentFormat: "text/plain",
-        scoreMap: { delivery: 100, verify: 0 },
+        scoreMap: { delivery: 100 },
         consumedPushCommitIds: [],
         headCommitId: "commit-4",
         createdAt: "2026-04-11T00:00:00.000Z",
