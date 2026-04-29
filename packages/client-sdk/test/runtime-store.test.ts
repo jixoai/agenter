@@ -447,6 +447,38 @@ const createMockClient = (input: {
     targetAvatar: string;
   }) => Promise<{ avatar: WorkspaceAvatarCatalogEntry }>;
   workspaceCleanMissingMutate?: () => Promise<{ removed: string[] }>;
+  skillCatalogQuery?: (input: {
+    rootKind: "builtin" | "shared" | "global";
+  }) => Promise<{ items: unknown[] }>;
+  skillAvatarCatalogQuery?: () => Promise<{ items: unknown[] }>;
+  skillCatalogTreeQuery?: (input: {
+    rootKind: "builtin" | "shared" | "global";
+    name: string;
+    path?: string;
+    offset?: number;
+    limit?: number;
+  }) => Promise<unknown>;
+  skillCatalogPreviewQuery?: (input: {
+    rootKind: "builtin" | "shared" | "global";
+    name: string;
+    path: string;
+    maxBytes?: number;
+  }) => Promise<unknown>;
+  skillAvatarTreeQuery?: (input: {
+    avatarNickname: string;
+    workspacePath: string;
+    name: string;
+    path?: string;
+    offset?: number;
+    limit?: number;
+  }) => Promise<unknown>;
+  skillAvatarPreviewQuery?: (input: {
+    avatarNickname: string;
+    workspacePath: string;
+    name: string;
+    path: string;
+    maxBytes?: number;
+  }) => Promise<unknown>;
   authActorsQuery?: () => Promise<{
     items: Array<{
       actorId: string;
@@ -1944,6 +1976,87 @@ const createMockClient = (input: {
                     classify: payload.classify ?? null,
                     iconUrl: `http://127.0.0.1:4591/media/avatars/${encodeURIComponent(payload.nickname)}/icon`,
                   }),
+                },
+        },
+      },
+      skill: {
+        catalog: {
+          query: async (payload: { rootKind: "builtin" | "shared" | "global" }) =>
+            input.skillCatalogQuery ? await input.skillCatalogQuery(payload) : { items: [] },
+        },
+        avatarCatalog: {
+          query: async () => (input.skillAvatarCatalogQuery ? await input.skillAvatarCatalogQuery() : { items: [] }),
+        },
+        catalogTree: {
+          query: async (payload: {
+            rootKind: "builtin" | "shared" | "global";
+            name: string;
+            path?: string;
+            offset?: number;
+            limit?: number;
+          }) =>
+            input.skillCatalogTreeQuery
+              ? await input.skillCatalogTreeQuery(payload)
+              : { rootPath: "/", items: [], total: 0, nextOffset: null },
+        },
+        catalogPreview: {
+          query: async (payload: {
+            rootKind: "builtin" | "shared" | "global";
+            name: string;
+            path: string;
+            maxBytes?: number;
+          }) =>
+            input.skillCatalogPreviewQuery
+              ? await input.skillCatalogPreviewQuery(payload)
+              : {
+                  path: payload.path,
+                  name: payload.path.split("/").at(-1) ?? "",
+                  kind: "file",
+                  sizeBytes: 0,
+                  modifiedAtMs: 0,
+                  previewKind: "text",
+                  mimeType: "text/plain",
+                  textContent: "",
+                  mediaDataUrl: null,
+                  truncated: false,
+                  note: null,
+                },
+        },
+        avatarTree: {
+          query: async (payload: {
+            avatarNickname: string;
+            workspacePath: string;
+            name: string;
+            path?: string;
+            offset?: number;
+            limit?: number;
+          }) =>
+            input.skillAvatarTreeQuery
+              ? await input.skillAvatarTreeQuery(payload)
+              : { rootPath: "/", items: [], total: 0, nextOffset: null },
+        },
+        avatarPreview: {
+          query: async (payload: {
+            avatarNickname: string;
+            workspacePath: string;
+            name: string;
+            path: string;
+            maxBytes?: number;
+          }) =>
+            input.skillAvatarPreviewQuery
+              ? await input.skillAvatarPreviewQuery(payload)
+              : {
+                  path: payload.path,
+                  name: payload.path.split("/").at(-1) ?? "",
+                  kind: "file",
+                  sizeBytes: 0,
+                  modifiedAtMs: 0,
+                  previewKind: "text",
+                  mimeType: "text/plain",
+                  textContent: "",
+                  mediaDataUrl: null,
+                  truncated: false,
+                  note: null,
                 },
         },
       },
@@ -9246,5 +9359,158 @@ describe("Feature: runtime store synchronization", () => {
     releaseA();
     releaseB();
     store.disconnect();
+  });
+
+  test("Scenario: Given skill browser payloads When runtime store reads catalogs trees and previews Then the thin facades preserve the objective contracts", async () => {
+    const skillCatalog = {
+      items: [
+        {
+          name: "shared-handbook",
+          summary: "Shared handbook.",
+          rootKind: "shared" as const,
+          skillPath: "/home/.agents/skills/shared-handbook/SKILL.md",
+          skillDir: "/home/.agents/skills/shared-handbook",
+          configPath: "/home/.agents/skills/shared-handbook/ccski.config.json",
+          configExists: false,
+        },
+      ],
+    };
+    const avatarCatalog = {
+      items: [
+        {
+          nickname: "architect",
+          displayName: "Architect",
+          iconUrl: null,
+          runtimeId: "runtime-architect",
+          defaultAvatar: false,
+          groups: [
+            {
+              workspacePath: "~/",
+              workspaceLabel: "Root workspace",
+              workspaceDescription: "/home",
+              skillsRootPath: "/home/.agenter/avatars/by-principal/architect/skills",
+              skills: [
+                {
+                  name: "root-skill",
+                  summary: "Root skill.",
+                  rootKind: "avatar" as const,
+                  skillPath: "/home/.agenter/avatars/by-principal/architect/skills/root-skill/SKILL.md",
+                  skillDir: "/home/.agenter/avatars/by-principal/architect/skills/root-skill",
+                  configPath: "/home/.agenter/avatars/by-principal/architect/skills/root-skill/ccski.config.json",
+                  configExists: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const skillTree = {
+      rootPath: "/",
+      items: [
+        {
+          path: "/SKILL.md",
+          name: "SKILL.md",
+          kind: "file" as const,
+          sizeBytes: 128,
+          modifiedAtMs: 12,
+          previewKind: "text" as const,
+        },
+        {
+          path: "/manual.pdf",
+          name: "manual.pdf",
+          kind: "file" as const,
+          sizeBytes: 256,
+          modifiedAtMs: 13,
+          previewKind: "pdf" as const,
+        },
+      ],
+      total: 2,
+      nextOffset: null,
+    };
+    const skillPreview = {
+      path: "/manual.pdf",
+      name: "manual.pdf",
+      kind: "file" as const,
+      sizeBytes: 256,
+      modifiedAtMs: 13,
+      previewKind: "pdf" as const,
+      mimeType: "application/pdf",
+      textContent: null,
+      mediaDataUrl: "data:application/pdf;base64,JVBERi0xLjQK",
+      truncated: false,
+      note: null,
+    };
+
+    let catalogInput: { rootKind: "builtin" | "shared" | "global" } | null = null;
+    let avatarTreeInput:
+      | {
+          avatarNickname: string;
+          workspacePath: string;
+          name: string;
+          path?: string;
+          offset?: number;
+          limit?: number;
+        }
+      | null = null;
+
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(700),
+        skillCatalogQuery: async (input) => {
+          catalogInput = input;
+          return skillCatalog;
+        },
+        skillAvatarCatalogQuery: async () => avatarCatalog,
+        skillCatalogTreeQuery: async () => skillTree,
+        skillCatalogPreviewQuery: async () => skillPreview,
+        skillAvatarTreeQuery: async (input) => {
+          avatarTreeInput = input;
+          return skillTree;
+        },
+        skillAvatarPreviewQuery: async () => skillPreview,
+      }),
+    );
+
+    expect(await store.listSkillCatalog({ rootKind: "shared" })).toEqual(skillCatalog);
+    expect(catalogInput).toEqual({ rootKind: "shared" });
+
+    expect(await store.listSkillAvatarCatalog()).toEqual(avatarCatalog);
+    expect(
+      await store.listSkillCatalogTree({
+        rootKind: "shared",
+        name: "shared-handbook",
+        path: "/",
+      }),
+    ).toEqual(skillTree);
+    expect(
+      await store.readSkillCatalogPreview({
+        rootKind: "shared",
+        name: "shared-handbook",
+        path: "/manual.pdf",
+      }),
+    ).toEqual(skillPreview);
+    expect(
+      await store.listSkillAvatarTree({
+        avatarNickname: "architect",
+        workspacePath: "~/",
+        name: "root-skill",
+        path: "/",
+      }),
+    ).toEqual(skillTree);
+    expect(avatarTreeInput).toEqual({
+      avatarNickname: "architect",
+      workspacePath: "~/",
+      name: "root-skill",
+      path: "/",
+    });
+    expect(
+      await store.readSkillAvatarPreview({
+        avatarNickname: "architect",
+        workspacePath: "~/",
+        name: "root-skill",
+        path: "/manual.pdf",
+      }),
+    ).toEqual(skillPreview);
   });
 });

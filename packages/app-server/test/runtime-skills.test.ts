@@ -326,4 +326,64 @@ describe("Feature: runtime built-in skills", () => {
     expect(message?.path).toBe(join(overrideDir, "SKILL.md"));
     expect(readRuntimeSkillContent(message!)).toContain("This is the local override.");
   });
+
+  test("Scenario: Given the same skill name exists across every layer When runtime-visible skills are resolved Then precedence stays shared before built-in before global before avatar-private", () => {
+    const rootWorkspacePath = createTempRoot();
+    const homeDir = createTempRoot();
+    const skillName = "agenter-message";
+    const sharedDir = join(homeDir, ".agents", "skills", "shared-message");
+    const globalDir = join(homeDir, ".agenter", "skills", "global-message");
+    const avatarDir = join(rootWorkspacePath, "skills", "avatar-message");
+
+    for (const [skillDir, description, body] of [
+      [sharedDir, "shared override", "This is the shared version."],
+      [globalDir, "global override", "This is the global version."],
+      [avatarDir, "avatar override", "This is the avatar-private version."],
+    ] as const) {
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(
+        join(skillDir, "SKILL.md"),
+        [
+          "---",
+          `name: ${skillName}`,
+          `description: ${description}`,
+          "---",
+          "",
+          `# ${skillName}`,
+          "",
+          body,
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+    }
+
+    const input = {
+      rootWorkspacePath,
+      homeDir,
+      principalId: "principal-test",
+    };
+
+    const visibleWithAvatar = listRuntimeSkills(input).find((skill) => skill.name === skillName);
+    expect(visibleWithAvatar?.rootKind).toBe("avatar");
+    expect(readRuntimeSkillContent(visibleWithAvatar!)).toContain("avatar-private version");
+
+    rmSync(avatarDir, { recursive: true, force: true });
+    const visibleWithGlobal = listRuntimeSkills(input).find((skill) => skill.name === skillName);
+    expect(visibleWithGlobal?.rootKind).toBe("global");
+    expect(readRuntimeSkillContent(visibleWithGlobal!)).toContain("global version");
+
+    rmSync(globalDir, { recursive: true, force: true });
+    const visibleWithBuiltin = listRuntimeSkills(input).find((skill) => skill.name === skillName);
+    expect(visibleWithBuiltin?.rootKind).toBe("builtin");
+    expect(readRuntimeSkillContent(visibleWithBuiltin!)).toContain("Room messages are durable shared truth.");
+
+    const builtinPath = visibleWithBuiltin?.path;
+    expect(builtinPath).toBeTruthy();
+
+    rmSync(sharedDir, { recursive: true, force: true });
+    const visibleAfterSharedRemoval = listRuntimeSkills(input).find((skill) => skill.name === skillName);
+    expect(visibleAfterSharedRemoval?.rootKind).toBe("builtin");
+    expect(visibleAfterSharedRemoval?.path).toBe(builtinPath);
+  });
 });

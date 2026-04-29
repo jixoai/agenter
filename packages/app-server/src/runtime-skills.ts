@@ -52,6 +52,13 @@ export interface RuntimeSkillLookupInput {
   repoRoot?: string;
 }
 
+/**
+ * Visible runtime skills resolve from the broadest shared layer to the most
+ * specific avatar-private root. The order is durable because both the CLI and
+ * the Skills workbench rely on the same override law.
+ */
+const RUNTIME_SKILL_VISIBLE_LAYER_ORDER = ["shared", "builtin", "global", "avatar"] as const;
+
 const collectSkillFiles = (root: string, depth = 0): string[] => {
   if (!existsSync(root) || depth > 4) {
     return [];
@@ -244,22 +251,49 @@ const listBuiltinRuntimeSkills = (input: RuntimeSkillLookupInput): RuntimeSkillR
   });
 };
 
-const listRawRuntimeSkills = (input: RuntimeSkillLookupInput): RuntimeSkillRecord[] => {
-  const skills: RuntimeSkillRecord[] = [...listBuiltinRuntimeSkills(input)];
-  for (const root of resolveRuntimeSkillRoots(input)) {
-    for (const filePath of collectSkillFiles(root.path)) {
-      const record = readSkillRecord(filePath, root);
-      if (record) {
-        skills.push(record);
-      }
+export const listRuntimeSkillsInRoot = (root: RuntimeSkillRoot): RuntimeSkillRecord[] => {
+  const skills: RuntimeSkillRecord[] = [];
+  for (const filePath of collectSkillFiles(root.path)) {
+    const record = readSkillRecord(filePath, root);
+    if (record) {
+      skills.push(record);
     }
   }
   return skills.sort((left, right) => left.name.localeCompare(right.name) || left.path.localeCompare(right.path));
 };
 
+const listRuntimeSkillsByVisibleLayerOrder = (input: RuntimeSkillLookupInput): RuntimeSkillRecord[] => {
+  const runtimeRoots = new Map(resolveRuntimeSkillRoots(input).map((root) => [root.kind, root] as const));
+  const skills: RuntimeSkillRecord[] = [];
+
+  for (const layer of RUNTIME_SKILL_VISIBLE_LAYER_ORDER) {
+    if (layer === "builtin") {
+      skills.push(...listBuiltinRuntimeSkills(input));
+      continue;
+    }
+    const root = runtimeRoots.get(layer);
+    if (!root) {
+      continue;
+    }
+    skills.push(...listRuntimeSkillsInRoot(root));
+  }
+
+  return skills;
+};
+
+export const listRuntimeSkillsByRootKind = (
+  input: RuntimeSkillLookupInput,
+  rootKind: RuntimeSkillRootKind,
+): RuntimeSkillRecord[] => {
+  if (rootKind === "builtin") {
+    return listBuiltinRuntimeSkills(input);
+  }
+  return listRuntimeSkillsInRoot(resolveRuntimeSkillRootByKind(input, rootKind));
+};
+
 export const listRuntimeSkills = (input: RuntimeSkillLookupInput): RuntimeSkillRecord[] => {
   const visible = new Map<string, RuntimeSkillRecord>();
-  for (const skill of listRawRuntimeSkills(input)) {
+  for (const skill of listRuntimeSkillsByVisibleLayerOrder(input)) {
     visible.set(skill.name, skill);
   }
   return [...visible.values()].sort((left, right) => left.name.localeCompare(right.name));
@@ -292,8 +326,11 @@ export const getRuntimeSkillByName = (
   if (!normalizedName) {
     return null;
   }
-  const source = input.rootKind ? listRawRuntimeSkills(input) : listRuntimeSkills(input);
-  return source.find((skill) => skill.name === normalizedName && (input.rootKind ? skill.rootKind === input.rootKind : true)) ?? null;
+  const source = input.rootKind ? listRuntimeSkillsByVisibleLayerOrder(input) : listRuntimeSkills(input);
+  return (
+    source.find((skill) => skill.name === normalizedName && (input.rootKind ? skill.rootKind === input.rootKind : true)) ??
+    null
+  );
 };
 
 export const readRuntimeSkillContent = (skill: RuntimeSkillRecord | string): string =>

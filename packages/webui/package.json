@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "vite build && vite build --config filePreviewer.vite.config.ts",
     "preview": "vite preview",
     "prepare": "svelte-kit sync || echo ''",
     "lint:layout": "oxlint -c .oxlintrc.json src/lib && vitest run src/lib/scroll-contract.spec.ts src/lib/layout-law-contract.spec.ts",
@@ -50,6 +50,7 @@
     "idb-keyval": "^6.2.2",
     "lit": "^3.3.1",
     "markdown-it": "^14.1.0",
+    "pdfjs-dist": "^5.7.284",
     "shadcn-svelte": "^1.0.6",
     "tailwind-merge": "^3.3.1",
     "tailwind-variants": "^3.2.2",

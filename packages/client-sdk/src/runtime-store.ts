@@ -57,6 +57,12 @@ import type {
   RuntimeWorkspaceGrantEntry,
   RuntimeWorkspaceMountEntry,
   SessionEntry,
+  SkillAvatarCatalogOutput,
+  SkillAvatarPreviewOutput,
+  SkillAvatarTreeOutput,
+  SkillCatalogOutput,
+  SkillPreviewOutput,
+  SkillTreeOutput,
   TerminalActivityItem,
   UploadedSessionAsset,
   WorkspaceAvatarCatalogEntry,
@@ -3460,6 +3466,56 @@ export class RuntimeStore {
     avatar: string;
   }): Promise<RuntimeWorkspaceAssetRootsOutput> {
     return await this.client.trpc.workspace.assetRoots.query(input);
+  }
+
+  async listSkillCatalog(input: {
+    rootKind: "builtin" | "shared" | "global";
+  }): Promise<SkillCatalogOutput> {
+    return await this.client.trpc.skill.catalog.query(input);
+  }
+
+  async listSkillAvatarCatalog(): Promise<SkillAvatarCatalogOutput> {
+    return await this.client.trpc.skill.avatarCatalog.query();
+  }
+
+  async listSkillCatalogTree(input: {
+    rootKind: "builtin" | "shared" | "global";
+    name: string;
+    path?: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<SkillTreeOutput> {
+    return await this.client.trpc.skill.catalogTree.query(input);
+  }
+
+  async readSkillCatalogPreview(input: {
+    rootKind: "builtin" | "shared" | "global";
+    name: string;
+    path: string;
+    maxBytes?: number;
+  }): Promise<SkillPreviewOutput> {
+    return await this.client.trpc.skill.catalogPreview.query(input);
+  }
+
+  async listSkillAvatarTree(input: {
+    avatarNickname: string;
+    workspacePath: string;
+    name: string;
+    path?: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<SkillAvatarTreeOutput> {
+    return await this.client.trpc.skill.avatarTree.query(input);
+  }
+
+  async readSkillAvatarPreview(input: {
+    avatarNickname: string;
+    workspacePath: string;
+    name: string;
+    path: string;
+    maxBytes?: number;
+  }): Promise<SkillAvatarPreviewOutput> {
+    return await this.client.trpc.skill.avatarPreview.query(input);
   }
 
   async listWorkspaceWorkbenchTree(input: {

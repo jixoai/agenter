@@ -156,6 +156,15 @@ import {
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
 import { SettingsEditor } from "./settings-editor";
 import {
+  listSkillBrowserAvatarCatalog,
+  listSkillBrowserAvatarTree,
+  listSkillBrowserCatalog,
+  listSkillBrowserCatalogTree,
+  readSkillBrowserAvatarPreview,
+  readSkillBrowserCatalogPreview,
+  type SkillBrowserCatalogRootKind,
+} from "./skill-browser";
+import {
   listScopedSettingsGraph,
   readScopedSettingsLayer,
   saveScopedSettingsLayer,
@@ -1600,6 +1609,14 @@ export class AppKernel {
     });
   }
 
+  private buildSkillBrowserLookupInput(): { homeDir: string; rootWorkspacePath: string } {
+    const homeDir = this.getHomeDir();
+    return {
+      homeDir,
+      rootWorkspacePath: homeDir,
+    };
+  }
+
   async listWorkspaceAvatarCatalog(workspacePath: string): Promise<WorkspaceAvatarCatalogEntry[]> {
     const normalizedWorkspacePath = toWorkspacePath(workspacePath);
     const globalCatalog = await this.listGlobalAvatarCatalog();
@@ -1782,17 +1799,18 @@ export class AppKernel {
   getRuntimeWorkspaceAssetRoots(input: { workspacePath: string; avatar: string }): RuntimeWorkspaceAssetRoots {
     const workspacePath = toWorkspacePath(input.workspacePath);
     const avatar = normalizeAvatarNickname(input.avatar);
+    const homeDir = this.getHomeDir();
     const publicRoots = {
-      skills: resolveWorkspacePublicAssetRoot(workspacePath, "skills"),
-      memory: resolveWorkspacePublicAssetRoot(workspacePath, "memory"),
-      tools: resolveWorkspacePublicAssetRoot(workspacePath, "tools"),
-      archive: resolveWorkspacePublicAssetRoot(workspacePath, "archive"),
+      skills: resolveWorkspacePublicAssetRoot(workspacePath, "skills", homeDir),
+      memory: resolveWorkspacePublicAssetRoot(workspacePath, "memory", homeDir),
+      tools: resolveWorkspacePublicAssetRoot(workspacePath, "tools", homeDir),
+      archive: resolveWorkspacePublicAssetRoot(workspacePath, "archive", homeDir),
     };
     const privateRoots = {
-      skills: resolveWorkspaceAvatarAssetRoot(workspacePath, avatar, "skills"),
-      memory: resolveWorkspaceAvatarAssetRoot(workspacePath, avatar, "memory"),
-      tools: resolveWorkspaceAvatarAssetRoot(workspacePath, avatar, "tools"),
-      archive: resolveWorkspaceAvatarAssetRoot(workspacePath, avatar, "archive"),
+      skills: resolveWorkspaceAvatarAssetRoot(workspacePath, avatar, "skills", homeDir),
+      memory: resolveWorkspaceAvatarAssetRoot(workspacePath, avatar, "memory", homeDir),
+      tools: resolveWorkspaceAvatarAssetRoot(workspacePath, avatar, "tools", homeDir),
+      archive: resolveWorkspaceAvatarAssetRoot(workspacePath, avatar, "archive", homeDir),
     };
     for (const root of [...Object.values(publicRoots), ...Object.values(privateRoots)]) {
       mkdirSync(root, { recursive: true });
@@ -1803,6 +1821,91 @@ export class AppKernel {
       publicRoots,
       privateRoots,
     };
+  }
+
+  listSkillBrowserCatalog(input: { rootKind: SkillBrowserCatalogRootKind }) {
+    return listSkillBrowserCatalog({
+      lookup: this.buildSkillBrowserLookupInput(),
+      rootKind: input.rootKind,
+    });
+  }
+
+  async listSkillBrowserAvatarCatalog() {
+    return listSkillBrowserAvatarCatalog({
+      avatars: await this.listGlobalAvatarCatalog(),
+      workspacePaths: this.workspaces.list(),
+      homeDir: this.getHomeDir(),
+    });
+  }
+
+  listSkillBrowserCatalogTree(input: {
+    rootKind: SkillBrowserCatalogRootKind;
+    name: string;
+    path?: string;
+    offset?: number;
+    limit?: number;
+  }) {
+    return listSkillBrowserCatalogTree({
+      lookup: this.buildSkillBrowserLookupInput(),
+      rootKind: input.rootKind,
+      name: input.name,
+      path: input.path,
+      offset: input.offset,
+      limit: input.limit,
+    });
+  }
+
+  readSkillBrowserCatalogPreview(input: {
+    rootKind: SkillBrowserCatalogRootKind;
+    name: string;
+    path: string;
+    maxBytes?: number;
+  }) {
+    return readSkillBrowserCatalogPreview({
+      lookup: this.buildSkillBrowserLookupInput(),
+      rootKind: input.rootKind,
+      name: input.name,
+      path: input.path,
+      maxBytes: input.maxBytes,
+    });
+  }
+
+  listSkillBrowserAvatarTree(input: {
+    avatarNickname: string;
+    workspacePath: string;
+    name: string;
+    path?: string;
+    offset?: number;
+    limit?: number;
+  }) {
+    return listSkillBrowserAvatarTree({
+      avatarNickname: normalizeAvatarNickname(input.avatarNickname),
+      workspacePath: toWorkspacePath(input.workspacePath),
+      workspacePaths: this.workspaces.list(),
+      homeDir: this.getHomeDir(),
+      name: input.name,
+      path: input.path,
+      offset: input.offset,
+      limit: input.limit,
+    });
+  }
+
+  readSkillBrowserAvatarPreview(input: {
+    avatarNickname: string;
+    workspacePath: string;
+    name: string;
+    path: string;
+    maxBytes?: number;
+  }) {
+    return readSkillBrowserAvatarPreview({
+      avatarNickname: normalizeAvatarNickname(input.avatarNickname),
+      workspacePath: toWorkspacePath(input.workspacePath),
+      workspacePaths: this.workspaces.list(),
+      homeDir: this.getHomeDir(),
+      name: input.name,
+      path: input.path,
+      maxBytes: input.maxBytes,
+    });
   }
 
   listWorkspaceWorkbenchTree(input: {

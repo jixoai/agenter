@@ -97,6 +97,23 @@ const workspaceGrantInputSchema = z.object({
   pattern: z.string().trim().min(1),
   mode: z.enum(["ro", "rw"]),
 });
+const skillCatalogRootKindSchema = z.enum(["builtin", "shared", "global"]);
+const skillTreeInputSchema = z.object({
+  name: z.string().trim().min(1),
+  path: z.string().optional(),
+  offset: z.number().int().nonnegative().optional(),
+  limit: z.number().int().positive().max(1000).optional(),
+});
+const skillPreviewInputSchema = z.object({
+  name: z.string().trim().min(1),
+  path: z.string().trim().min(1),
+  maxBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(4 * 1024 * 1024)
+    .optional(),
+});
 const messageErrorPayloadSchema = z.object({
   title: z.string().trim().min(1).optional(),
   code: z.string().trim().min(1).optional(),
@@ -328,6 +345,54 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => ({
         avatar: await ctx.kernel.createGlobalAvatar(input),
       })),
+  }),
+  skill: t.router({
+    catalog: superadminProcedure
+      .input(
+        z.object({
+          rootKind: skillCatalogRootKindSchema,
+        }),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listSkillBrowserCatalog(input),
+      })),
+    avatarCatalog: superadminProcedure.query(async ({ ctx }) => ({
+      items: await ctx.kernel.listSkillBrowserAvatarCatalog(),
+    })),
+    catalogTree: superadminProcedure
+      .input(
+        z.object({
+          rootKind: skillCatalogRootKindSchema,
+        }).extend(skillTreeInputSchema.shape),
+      )
+      .query(({ ctx, input }) => ctx.kernel.listSkillBrowserCatalogTree(input)),
+    catalogPreview: superadminProcedure
+      .input(
+        z.object({
+          rootKind: skillCatalogRootKindSchema,
+        }).extend(skillPreviewInputSchema.shape),
+      )
+      .query(({ ctx, input }) => ctx.kernel.readSkillBrowserCatalogPreview(input)),
+    avatarTree: superadminProcedure
+      .input(
+        z
+          .object({
+            avatarNickname: z.string().trim().min(1),
+            workspacePath: z.string().trim().min(1),
+          })
+          .extend(skillTreeInputSchema.shape),
+      )
+      .query(({ ctx, input }) => ctx.kernel.listSkillBrowserAvatarTree(input)),
+    avatarPreview: superadminProcedure
+      .input(
+        z
+          .object({
+            avatarNickname: z.string().trim().min(1),
+            workspacePath: z.string().trim().min(1),
+          })
+          .extend(skillPreviewInputSchema.shape),
+      )
+      .query(({ ctx, input }) => ctx.kernel.readSkillBrowserAvatarPreview(input)),
   }),
   session: t.router({
     list: superadminProcedure.query(({ ctx }) => ({ sessions: ctx.kernel.listSessions() })),
