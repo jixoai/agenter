@@ -5,7 +5,7 @@ Define the shared browser-style workbench chrome for primary operator systems, i
 
 ## Requirements
 ### Requirement: Primary workbenches SHALL use one shared chrome-style workbench chrome
-The WebUI SHALL render the top edge of `Avatars`, `Messages`, `Workspaces`, and `Terminals` through one shared workbench chrome primitive that supports browser-style tab affordances, a toolbar row beneath those tabs, and route-driven selection.
+The WebUI SHALL render the top edge of `Avatars`, `Skills`, `Messages`, `Workspaces`, and `Terminals` through one shared workbench chrome primitive that supports browser-style tab affordances, a toolbar row beneath those tabs, and route-driven selection.
 
 #### Scenario: Shared tabs primitive renders fixed and dynamic tabs
 - **WHEN** a primary workbench contains fixed tabs, dynamic resource tabs, or both
@@ -13,9 +13,15 @@ The WebUI SHALL render the top edge of `Avatars`, `Messages`, `Workspaces`, and 
 - **THEN** the active tab remains the one selected by the current route
 
 #### Scenario: Fixed management tabs remain while addable tabs open
-- **WHEN** a primary workbench keeps a fixed start or catalog tab and the user opens runtime or creation flows from that workbench
+- **WHEN** a primary workbench keeps a fixed start, catalog, or directory tab and the user opens runtime, creation, or dedicated avatar skill flows from that workbench
 - **THEN** the fixed tab remains visible as part of the same chrome window
-- **THEN** each runtime or creation flow opens as its own addable tab instead of replacing the fixed management tab
+- **THEN** each runtime, creation, or avatar skill flow opens as its own addable tab instead of replacing the fixed management tab
+
+#### Scenario: Skills catalog page-tabs mirror the runtime inheritance law
+- **WHEN** the Skills workbench renders its fixed catalog tab
+- **THEN** the page-tabs appear in `shared / built-in / global / avatars` order
+- **THEN** the first visible tab is also the default route selection
+- **THEN** the tab order is treated as a durable override contract rather than a cosmetic sort
 
 #### Scenario: Active tabs and toolbar render as one continuous chrome surface
 - **WHEN** a primary workbench mounts local title, metadata, or actions into the shared chrome
@@ -24,12 +30,12 @@ The WebUI SHALL render the top edge of `Avatars`, `Messages`, `Workspaces`, and 
 - **THEN** the active tab does not keep a visible bottom dividing border against the toolbar surface
 
 #### Scenario: Chrome body renders as the same switched window
-- **WHEN** the user switches between `Avatars`, `Messages`, `Workspaces`, or `Terminals`
+- **WHEN** the user switches between `Avatars`, `Skills`, `Messages`, `Workspaces`, or `Terminals`
 - **THEN** the selected workbench renders its tab body as part of the same shared chrome window
 - **THEN** the result reads as one switched window surface rather than detached tab chrome above a separate page card
 
 #### Scenario: Route roots inside the window do not recreate detached outer cards
-- **WHEN** a primary workbench route renders a transcript, creation flow, history index, or secondary-pane interior inside the shared workbench window
+- **WHEN** a primary workbench route renders a transcript, creation flow, catalog browser, history index, or secondary-pane interior inside the shared workbench window
 - **THEN** the route mounts its root surface through the shared integrated page/pane scaffold
 - **THEN** the route does not add a second detached outer card around the entire page body
 

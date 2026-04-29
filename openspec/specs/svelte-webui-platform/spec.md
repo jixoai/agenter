@@ -43,18 +43,18 @@ The CLI WebUI delivery path SHALL resolve one canonical static asset root for th
 
 ### Requirement: The platform SHALL expose system-first navigation with nested secondary entries
 
-The top-level WebUI shell SHALL expose `Avatars`, `Messages`, `Workspaces`, and `Terminals` as the durable primary destinations. Each primary destination MAY expose nested secondary entries directly beneath itself inside the same left sidebar. `pin` SHALL be modeled as state on those secondary entries, rather than as a separate global `Pinned` section. The shell SHALL expose `/admin` only through the footer superadmin affordance, and running avatars SHALL appear as dynamic tabs inside the Avatars workbench instead of a separate primary destination, global top bar, or detached secondary rail card. The shell SHALL NOT inject a redundant top header or refresh-only control above the currently selected workbench window.
+The top-level WebUI shell SHALL expose `Avatars`, `Skills`, `Messages`, `Workspaces`, and `Terminals` as the durable primary destinations. Each primary destination MAY expose nested secondary entries directly beneath itself inside the same left sidebar. `pin` SHALL be modeled as state on those secondary entries, rather than as a separate global `Pinned` section. The shell SHALL expose `/admin` only through the footer superadmin affordance, and running avatars SHALL appear as dynamic tabs inside the Avatars workbench instead of a separate primary destination, global top bar, or detached secondary rail card. The shell SHALL NOT inject a redundant top header or refresh-only control above the currently selected workbench window.
 
-#### Scenario: Primary shell exposes exactly four destinations
+#### Scenario: Primary shell exposes exactly five destinations
 
 - **WHEN** the operator opens the WebUI
-- **THEN** the left primary navigation shows `Avatars`, `Messages`, `Workspaces`, and `Terminals`
-- **THEN** neither global settings nor running avatars are promoted into some fifth primary destination
+- **THEN** the left primary navigation shows `Avatars`, `Skills`, `Messages`, `Workspaces`, and `Terminals`
+- **THEN** neither global settings nor running avatars are promoted into some sixth primary destination
 
 #### Scenario: Secondary entries stay attached to their owning primary destination
 
-- **WHEN** the shell renders recent or open resources such as rooms, workspaces, or runtime entries
-- **THEN** those resources appear as nested secondary entries under their owning primary destination
+- **WHEN** the shell renders recent or open resources such as rooms, workspaces, runtime entries, or dedicated avatar skill tabs
+- **THEN** those resources appear as nested secondary entries under their owning primary destination when the IA requires sidebar presence
 - **THEN** the shell does not move them into a detached global rail or a separate `Pinned` block
 
 #### Scenario: Pin state belongs to each nested secondary entry
@@ -67,7 +67,7 @@ The top-level WebUI shell SHALL expose `Avatars`, `Messages`, `Workspaces`, and 
 
 - **WHEN** the operator needs global administration
 - **THEN** they enter `/admin` from the footer superadmin affordance
-- **THEN** the application does not add a fourth primary destination for that workflow
+- **THEN** the application does not add a sixth primary destination for that workflow
 
 #### Scenario: Auth bootstrap helper does not become a destination card
 
@@ -180,7 +180,7 @@ The top-level WebUI shell SHALL keep the left application sidebar visible on com
 #### Scenario: Mobile shell keeps the window switcher visible
 
 - **WHEN** the operator opens the WebUI on an iPhone 14-sized viewport
-- **THEN** the left rail still renders the primary `Avatars`, `Messages`, `Workspaces`, and `Terminals` navigation surface
+- **THEN** the left rail still renders the primary `Avatars`, `Skills`, `Messages`, `Workspaces`, and `Terminals` navigation surface
 - **THEN** the shell does not require a page-local toolbar button to reopen primary navigation
 
 #### Scenario: Compact rail can expand from sidebar chrome
