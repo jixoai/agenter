@@ -9,6 +9,7 @@ export {
   renderSessionFallbackSvg,
 } from "./render/fallback-icons";
 export { AVATAR_CLASSIFY_VALUES } from "./types";
+export { resolveAuthServiceDataDir } from "./config";
 export {
   formatAvatarDisplayName,
   normalizeAvatarClassify,
@@ -16,6 +17,13 @@ export {
   readAvatarPrincipalMetadata,
   resolveAvatarOwnerKey,
 } from "./avatar-metadata";
+export {
+  AUTH_SERVICE_RUNTIME_DESCRIPTOR_FILENAME,
+  clearOwnedAuthServiceRuntimeDescriptor,
+  readAuthServiceRuntimeDescriptor,
+  resolveAuthServiceRuntimeDescriptorPath,
+  writeAuthServiceRuntimeDescriptor,
+} from "./runtime-descriptor";
 export { createAuthServiceApp, createProfileServiceApp } from "./server/app";
 export { createAuthServiceRuntime, createProfileServiceRuntime } from "./server/runtime";
 export { startAuthServiceServer, startProfileServiceServer } from "./server/start-server";
@@ -43,6 +51,7 @@ export type {
   RootAuthPrivateKeyReveal,
   AuthServiceHandle,
   AuthServiceOptions,
+  AuthServiceRuntimeDescriptor,
   ProfileServiceHandle,
   ProfileServiceOptions,
   SessionIconSeed,

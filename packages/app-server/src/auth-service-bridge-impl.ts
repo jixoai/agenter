@@ -2,6 +2,7 @@ import {
   type AuthChallengeDescriptor,
   type AuthDescriptor,
   type AuthSessionProjection,
+  type AuthServiceRuntimeDescriptor,
   buildAvatarIconUrl,
   buildProfileIconUrl,
   buildRoomIconUrl,
@@ -10,6 +11,8 @@ import {
   type ListManagedPrincipalsInput,
   type ManagedPrincipalRecord,
   type PrincipalProjection,
+  readAuthServiceRuntimeDescriptor,
+  resolveAuthServiceDataDir,
   type RootAuthPrivateKeyReveal,
   startAuthServiceServer,
   type ProfileMetadata,
@@ -62,10 +65,17 @@ const jsonHeaders = { "content-type": "application/json" };
 const withBearerToken = (token: string | null | undefined, headers: HeadersInit = {}): HeadersInit =>
   token ? { ...headers, authorization: `Bearer ${token}` } : headers;
 const withTrailingSlashTrimmed = (value: string): string => value.replace(/\/$/, "");
+const toExternalLikeAuthDescriptor = (descriptor: AuthDescriptor): AuthDescriptor => ({
+  ...descriptor,
+  rootAuthBootstrapMode: "external",
+  canRevealRootAuthPrivateKey: false,
+  hasManagedRootAuthPrivateKey: false,
+});
 
 export class AuthServiceBridge {
   private childHandle: AuthServiceHandle | null = null;
   private childHandlePromise: Promise<AuthServiceHandle> | null = null;
+  private reusedLocalBaseUrl: string | null = null;
 
   constructor(private readonly options: AuthServiceBridgeOptions = {}) {}
 
@@ -78,6 +88,44 @@ export class AuthServiceBridge {
     });
   }
 
+  protected resolveManagedLocalDataDir(): string {
+    return resolveAuthServiceDataDir(this.options.dataDir);
+  }
+
+  protected readLocalRuntimeDescriptor(): AuthServiceRuntimeDescriptor | null {
+    return readAuthServiceRuntimeDescriptor(this.resolveManagedLocalDataDir());
+  }
+
+  protected async isReusableLocalDescriptorHealthy(descriptor: AuthServiceRuntimeDescriptor): Promise<boolean> {
+    try {
+      const response = await fetch(`${withTrailingSlashTrimmed(descriptor.endpoint)}/health`);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  private markReusedLocalDescriptor(descriptor: AuthServiceRuntimeDescriptor): string {
+    const baseUrl = withTrailingSlashTrimmed(descriptor.endpoint);
+    this.reusedLocalBaseUrl = baseUrl;
+    return baseUrl;
+  }
+
+  private async discoverReusableLocalBaseUrl(): Promise<string | null> {
+    const descriptor = this.readLocalRuntimeDescriptor();
+    if (!descriptor) {
+      return null;
+    }
+    if (!(await this.isReusableLocalDescriptorHealthy(descriptor))) {
+      return null;
+    }
+    return this.markReusedLocalDescriptor(descriptor);
+  }
+
+  private isExternalLikeAuthority(): boolean {
+    return Boolean(this.options.endpoint || this.reusedLocalBaseUrl);
+  }
+
   private async ensureChildHandle(): Promise<AuthServiceHandle> {
     if (this.childHandle) {
       return this.childHandle;
@@ -85,11 +133,16 @@ export class AuthServiceBridge {
     if (!this.childHandlePromise) {
       const launch = this.startChildHandle();
       this.childHandlePromise = launch;
-      void launch.then((handle) => {
-        if (this.childHandlePromise === launch) {
-          this.childHandle = handle;
-        }
-      });
+      void launch.then(
+        (handle) => {
+          if (this.childHandlePromise === launch) {
+            this.childHandle = handle;
+          }
+        },
+        () => {
+          // The awaiting startup path owns fallback and error handling.
+        },
+      );
     }
     try {
       return await this.childHandlePromise;
@@ -102,10 +155,25 @@ export class AuthServiceBridge {
 
   private async resolveBaseUrl(): Promise<string> {
     if (this.options.endpoint) {
-      return this.options.endpoint.replace(/\/$/, "");
+      return withTrailingSlashTrimmed(this.options.endpoint);
     }
-    const handle = await this.ensureChildHandle();
-    return `http://${handle.host}:${handle.port}`;
+    if (this.reusedLocalBaseUrl) {
+      return this.reusedLocalBaseUrl;
+    }
+    const discoveredBaseUrl = await this.discoverReusableLocalBaseUrl();
+    if (discoveredBaseUrl) {
+      return discoveredBaseUrl;
+    }
+    try {
+      const handle = await this.ensureChildHandle();
+      return `http://${handle.host}:${handle.port}`;
+    } catch (error) {
+      const fallbackBaseUrl = await this.discoverReusableLocalBaseUrl();
+      if (fallbackBaseUrl) {
+        return fallbackBaseUrl;
+      }
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
@@ -113,6 +181,7 @@ export class AuthServiceBridge {
     const pendingHandle = this.childHandlePromise;
     this.childHandle = null;
     this.childHandlePromise = null;
+    this.reusedLocalBaseUrl = null;
     if (activeHandle) {
       await activeHandle.stop();
       return;
@@ -137,14 +206,7 @@ export class AuthServiceBridge {
       throw new Error(`auth-service auth descriptor failed (${response.status})`);
     }
     const descriptor = (await response.json()) as AuthDescriptor;
-    const bootstrapDescriptor = this.options.endpoint
-      ? {
-          ...descriptor,
-          rootAuthBootstrapMode: "external" as const,
-          canRevealRootAuthPrivateKey: false,
-          hasManagedRootAuthPrivateKey: false,
-        }
-      : descriptor;
+    const bootstrapDescriptor = this.isExternalLikeAuthority() ? toExternalLikeAuthDescriptor(descriptor) : descriptor;
     return {
       endpoint: baseUrl,
       ...bootstrapDescriptor,
@@ -153,6 +215,10 @@ export class AuthServiceBridge {
 
   async revealRootAuthPrivateKey(): Promise<RootAuthPrivateKeyRevealResult> {
     if (this.options.endpoint) {
+      throw new Error("managed root auth key reveal is unavailable for external auth service");
+    }
+    await this.resolveBaseUrl();
+    if (this.reusedLocalBaseUrl) {
       throw new Error("managed root auth key reveal is unavailable for external auth service");
     }
     const response = await this.request("/auth/root-key/reveal", {

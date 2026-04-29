@@ -228,6 +228,43 @@ describe("Feature: cli daemon and web commands", () => {
     }
   }, 70_000);
 
+  test("Scenario: Given a healthy standalone local auth-service When daemon boots on the same authority root without an explicit endpoint Then it auto-reuses the discovered authority", async () => {
+    const host = "127.0.0.1";
+    const authPort = await findFreePort();
+    const daemonPort = await findFreePort();
+    const home = createIsolatedHome();
+    const authService = spawnCli(["auth-service", "--host", host, "--port", String(authPort)], { HOME: home });
+    daemons.push(authService);
+
+    const authHealthy = await waitForHealth(host, authPort);
+    if (!authHealthy) {
+      const stderr = await readText(authService.stderr);
+      throw new Error(`auth-service failed to become healthy: ${stderr}`);
+    }
+
+    const daemon = spawnCli(["daemon", "--host", host, "--port", String(daemonPort)], { HOME: home });
+    daemons.push(daemon);
+
+    const daemonHealthy = await waitForHealth(host, daemonPort);
+    if (!daemonHealthy) {
+      const stderr = await readText(daemon.stderr);
+      throw new Error(`daemon failed to become healthy: ${stderr}`);
+    }
+
+    const client = createAgenterClient({
+      wsUrl: `ws://${host}:${daemonPort}/trpc`,
+    });
+    try {
+      const descriptor = await client.trpc.auth.service.query();
+      expect(descriptor.endpoint).toBe(`http://${host}:${authPort}`);
+      expect(descriptor.rootAuthBootstrapMode).toBe("external");
+      expect(descriptor.canRevealRootAuthPrivateKey).toBe(false);
+      expect(descriptor.hasManagedRootAuthPrivateKey).toBe(false);
+    } finally {
+      client.close();
+    }
+  }, 70_000);
+
   test("Scenario: Given web command When reading root html Then the default entry serves the canonical Svelte shell", async () => {
     const host = "127.0.0.1";
     const port = await findFreePort();

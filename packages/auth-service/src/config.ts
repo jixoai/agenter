@@ -26,8 +26,10 @@ const DEFAULT_AUTH_JWT_TTL_MS = 1000 * 60 * 60;
 
 const resolveDefaultDataDir = (): string => join(homedir(), ".agenter", "auth-service");
 
+export const resolveAuthServiceDataDir = (dataDir?: string): string => resolve(dataDir ?? resolveDefaultDataDir());
+
 export const resolveAuthServiceConfig = (options: AuthServiceOptions = {}): ResolvedAuthServiceConfig => {
-  const dataDir = resolve(options.dataDir ?? resolveDefaultDataDir());
+  const dataDir = resolveAuthServiceDataDir(options.dataDir);
   mkdirSync(dataDir, { recursive: true });
   const host = options.host ?? DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;

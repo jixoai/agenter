@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createServer as createNetServer } from "node:net";
 import type { AuthServiceHandle, AuthServiceOptions, ProfileServiceHandle, ProfileServiceOptions } from "../types";
+import { clearOwnedAuthServiceRuntimeDescriptor, writeAuthServiceRuntimeDescriptor } from "../runtime-descriptor";
 import { createAuthServiceRuntime } from "./runtime";
 
 const resolveEphemeralPort = async (host: string): Promise<number> =>
@@ -40,6 +41,14 @@ export const startAuthServiceServer = async (options: AuthServiceOptions = {}): 
     typeof address === "object" && address !== null && "port" in address && typeof address.port === "number"
       ? address.port
       : runtime.port;
+  const endpoint = `http://${runtime.host}:${resolvedPort}`;
+  writeAuthServiceRuntimeDescriptor({
+    pid: process.pid,
+    endpoint,
+    dataDir: runtime.dataDir,
+    rootAuthKeyPath: runtime.rootAuthKeyPath,
+    updatedAt: new Date().toISOString(),
+  });
 
   return {
     host: runtime.host,
@@ -56,7 +65,16 @@ export const startAuthServiceServer = async (options: AuthServiceOptions = {}): 
           });
         });
       } finally {
-        await runtime.close();
+        try {
+          await runtime.close();
+        } finally {
+          clearOwnedAuthServiceRuntimeDescriptor({
+            pid: process.pid,
+            endpoint,
+            dataDir: runtime.dataDir,
+            rootAuthKeyPath: runtime.rootAuthKeyPath,
+          });
+        }
       }
     },
   };

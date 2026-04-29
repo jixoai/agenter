@@ -13,6 +13,8 @@ export interface AuthServiceRuntime {
   close: () => Promise<void>;
   host: string;
   port: number;
+  dataDir: string;
+  rootAuthKeyPath: string;
 }
 
 export type ProfileServiceRuntime = AuthServiceRuntime;
@@ -76,6 +78,8 @@ export const createAuthServiceRuntime = async (options: AuthServiceOptions = {})
     },
     host: config.host,
     port: config.port,
+    dataDir: config.dataDir,
+    rootAuthKeyPath: config.rootAuthKeyPath,
   };
 };
 

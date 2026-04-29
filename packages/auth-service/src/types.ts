@@ -191,3 +191,11 @@ export interface WebAuthnCredentialRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface AuthServiceRuntimeDescriptor {
+  pid: number;
+  endpoint: string;
+  dataDir: string;
+  rootAuthKeyPath: string;
+  updatedAt: string;
+}
