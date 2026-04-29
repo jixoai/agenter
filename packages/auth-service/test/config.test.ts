@@ -10,11 +10,10 @@ describe("Feature: auth-service configuration", () => {
     const config = resolveAuthServiceConfig({ dataDir });
 
     expect(config.dataDir).toBe(dataDir);
-    expect(config.dbPath).toBe(join(dataDir, "auth-service.duckdb"));
-    expect(config.usedLegacyDataDir).toBe(false);
+    expect(config.dbPath).toBe(join(dataDir, "auth-service.sqlite"));
   });
 
-  test("Scenario: Given legacy data dir compatibility When config receives that dir explicitly Then it keeps a single writable store", () => {
+  test("Scenario: Given a legacy duckdb file in the chosen data dir When config resolves Then canonical sqlite naming still wins", () => {
     const rootDir = mkdtempSync(join(tmpdir(), "auth-service-config-"));
     const dataDir = join(rootDir, "profile-service");
     mkdirSync(dataDir, { recursive: true });
@@ -23,7 +22,6 @@ describe("Feature: auth-service configuration", () => {
     const config = resolveAuthServiceConfig({ dataDir });
 
     expect(config.dataDir).toBe(dataDir);
-    expect(config.dbPath).toBe(join(dataDir, "profile-service.duckdb"));
-    expect(config.usedLegacyDataDir).toBe(true);
+    expect(config.dbPath).toBe(join(dataDir, "auth-service.sqlite"));
   });
 });

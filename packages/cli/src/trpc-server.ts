@@ -32,6 +32,8 @@ export interface TrpcServerOptions {
   workspaceCwd?: string;
   staticDir?: string;
   homeDir?: string;
+  authService?: AppKernelOptions["authService"];
+  /** @deprecated Use authService. */
   profileService?: AppKernelOptions["profileService"];
 }
 
@@ -221,6 +223,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
     workspacesPath: options.workspacesPath,
     homeDir: options.homeDir,
     initialWorkspace: options.workspaceCwd,
+    authService: options.authService,
     profileService: options.profileService,
   });
   await kernel.start();

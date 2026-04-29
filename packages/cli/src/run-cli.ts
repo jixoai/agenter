@@ -1,3 +1,5 @@
+import { type AuthServiceBridgeOptions } from "@agenter/app-server";
+import { startAuthServiceServer, type AuthServiceHandle } from "@agenter/auth-service";
 import { runTuiClient } from "@agenter/tui";
 import { join } from "node:path";
 import yargs from "yargs";
@@ -8,6 +10,17 @@ import { resolveCanonicalWebUiAssetRoot } from "./webui-static-root";
 interface CommonArgs {
   host: string;
   port: number;
+}
+
+interface AuthServiceBridgeCliArgs {
+  authServiceEndpoint?: string;
+  authServiceDataDir?: string;
+  authServiceHost?: string;
+  authServicePort?: number;
+}
+
+interface StandaloneAuthServiceCliArgs extends CommonArgs {
+  dataDir?: string;
 }
 
 const BUN_BIN = Bun.which("bun") ?? process.execPath;
@@ -40,14 +53,62 @@ const isDaemonAlive = async (args: CommonArgs): Promise<boolean> => {
   }
 };
 
-const startDaemon = async (args: CommonArgs & { staticDir?: string }): Promise<TrpcServerHandle> => {
+const resolveAuthServiceBridgeOptions = (args: AuthServiceBridgeCliArgs): AuthServiceBridgeOptions | undefined => {
+  const endpoint = args.authServiceEndpoint?.trim();
+  const dataDir = args.authServiceDataDir?.trim();
+  const host = args.authServiceHost?.trim();
+  const port = args.authServicePort;
+  if (!endpoint && !dataDir && !host && typeof port !== "number") {
+    return undefined;
+  }
+  return {
+    endpoint,
+    dataDir,
+    host,
+    port,
+  };
+};
+
+const startDaemon = async (
+  args: CommonArgs & AuthServiceBridgeCliArgs & { staticDir?: string },
+): Promise<TrpcServerHandle> => {
   return await startTrpcServer({
     host: args.host,
     port: args.port,
     workspaceCwd: process.cwd(),
     staticDir: args.staticDir,
+    authService: resolveAuthServiceBridgeOptions(args),
   });
 };
+
+const startStandaloneAuthService = async (
+  args: StandaloneAuthServiceCliArgs,
+): Promise<AuthServiceHandle> => {
+  return await startAuthServiceServer({
+    host: args.host,
+    port: args.port,
+    dataDir: args.dataDir,
+  });
+};
+
+const withAuthServiceBridgeOptions = <TBuilder extends ReturnType<typeof yargs>>(builder: TBuilder): TBuilder =>
+  builder
+    .option("auth-service-endpoint", {
+      type: "string",
+      describe: "reuse an already-running standalone auth-service endpoint instead of spawning a local child service",
+    })
+    .option("auth-service-data-dir", {
+      type: "string",
+      describe: "override the managed-local auth-service data directory when the daemon owns the child service",
+    })
+    .option("auth-service-host", {
+      type: "string",
+      describe: "override the managed-local auth-service host when the daemon owns the child service",
+    })
+    .option("auth-service-port", {
+      type: "number",
+      describe: "override the managed-local auth-service port when the daemon owns the child service",
+    }) as TBuilder;
 
 const waitForHttpServer = async (url: string, timeoutMs = 30_000): Promise<void> => {
   const startedAt = Date.now();
@@ -101,13 +162,46 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
       describe: "daemon port",
     })
     .command(
+      ["auth-service", "profile-service"],
+      "start standalone auth-service (profile-service remains a deprecated compatibility alias)",
+      (builder) =>
+        builder
+          .option("port", {
+            type: "number",
+            default: 4591,
+            describe: "auth-service port",
+          })
+          .option("data-dir", {
+            type: "string",
+            describe: "auth-service data directory; defaults to ~/.agenter/auth-service",
+          }),
+      async (args) => {
+        if (String(args._[0]) === "profile-service") {
+          console.warn("[deprecated] use `agenter auth-service` instead of `agenter profile-service`.");
+        }
+        const handle = await startStandaloneAuthService({
+          host: String(args.host),
+          port: Number(args.port),
+          dataDir: typeof args.dataDir === "string" ? args.dataDir : undefined,
+        });
+        console.log(`agenter auth-service listening on http://${handle.host}:${handle.port}`);
+        await waitForSignal(async () => {
+          await handle.stop();
+        });
+      },
+    )
+    .command(
       "daemon",
       "start daemon server",
-      (builder) => builder,
+      (builder) => withAuthServiceBridgeOptions(builder),
       async (args) => {
         const daemon = await startDaemon({
           host: String(args.host),
           port: Number(args.port),
+          authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
+          authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
+          authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
+          authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
         });
         console.log(`agenter daemon listening on ${daemon.host}:${daemon.port}`);
         await waitForSignal(async () => {
@@ -119,7 +213,7 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
       "web",
       "start daemon with webui entry",
       (builder) =>
-        builder
+        withAuthServiceBridgeOptions(builder)
           .option("dev", {
             type: "boolean",
             default: false,
@@ -140,6 +234,10 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
           host,
           port,
           staticDir: dev ? undefined : resolveCanonicalWebUiAssetRoot(import.meta.dir).staticDir,
+          authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
+          authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
+          authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
+          authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
         });
 
         if (!dev) {
@@ -168,7 +266,7 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
     .command(
       "tui",
       "run tui client (auto-start daemon when absent)",
-      (builder) => builder,
+      (builder) => withAuthServiceBridgeOptions(builder),
       async (args) => {
         const common: CommonArgs = {
           host: String(args.host),
@@ -177,7 +275,13 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
 
         let localDaemon: TrpcServerHandle | null = null;
         if (!(await isDaemonAlive(common))) {
-          localDaemon = await startDaemon(common);
+          localDaemon = await startDaemon({
+            ...common,
+            authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
+            authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
+            authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
+            authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
+          });
         }
 
         await runTuiClient(common);

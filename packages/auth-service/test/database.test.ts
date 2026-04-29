@@ -1,71 +1,59 @@
-import type { DuckDBConnection, DuckDBInstance } from "@duckdb/node-api";
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  backupProfileDatabaseWal,
-  isRecoverableProfileDatabaseWalError,
-  openProfileDatabaseWithDeps,
-} from "../src/store/database";
+import { openProfileDatabase } from "../src/store/database";
 
-const createTempDir = (): string => mkdtempSync(join(tmpdir(), "profile-database-test-"));
+const createTempDir = (): string => mkdtempSync(join(tmpdir(), "auth-service-database-test-"));
 
-describe("Feature: auth-service duckdb recovery", () => {
-  test("Scenario: Given a stale wal file When backup is requested Then the wal is moved aside instead of being deleted", async () => {
+describe("Feature: auth-service sqlite store startup", () => {
+  test("Scenario: Given a fresh auth-service store When it opens Then canonical sqlite storage is materialized", async () => {
     const dir = createTempDir();
-    const walPath = join(dir, "auth-service.duckdb.wal");
-    writeFileSync(walPath, "stale wal");
+    const dbPath = join(dir, "auth-service.sqlite");
 
-    const backupPath = await backupProfileDatabaseWal(walPath);
+    const database = await openProfileDatabase(dbPath);
 
-    expect(backupPath).toBeTruthy();
-    expect(existsSync(walPath)).toBe(false);
-    expect(backupPath ? existsSync(backupPath) : false).toBe(true);
-  });
-
-  test("Scenario: Given duckdb fails on wal replay When the wal is recoverable Then open retries after backing it up", async () => {
-    const dir = createTempDir();
-    const dbPath = join(dir, "auth-service.duckdb");
-    const walPath = `${dbPath}.wal`;
-    writeFileSync(walPath, "stale wal");
-
-    let openCount = 0;
-    const warnings: string[] = [];
-    const fakeConnection = {
-      run: async () => undefined,
-      closeSync: () => undefined,
-    } as unknown as DuckDBConnection;
-    const fakeInstance = {
-      closeSync: () => undefined,
-    } as unknown as DuckDBInstance;
-
-    const database = await openProfileDatabaseWithDeps(dbPath, {
-      open: async () => {
-        openCount += 1;
-        if (openCount === 1) {
-          throw new Error(
-            `Catalog Error: Failure while replaying WAL file "${walPath}": Table with name "session_seed" already exists!`,
-          );
-        }
-        return {
-          instance: fakeInstance,
-          connection: fakeConnection,
-        };
-      },
-      backupWal: backupProfileDatabaseWal,
-      warn: (message) => {
-        warnings.push(message);
-      },
-    });
-
-    expect(isRecoverableProfileDatabaseWalError(new Error("Failure while replaying WAL file x: already exists"))).toBe(
-      true,
-    );
-    expect(openCount).toBe(2);
-    expect(warnings).toHaveLength(1);
-    expect(existsSync(walPath)).toBe(false);
+    expect(existsSync(dbPath)).toBe(true);
 
     await database.close();
+    expect(existsSync(join(dir, "auth-service.lock.json"))).toBe(false);
+  });
+
+  test("Scenario: Given a running auth-service store When a second runtime targets the same path Then startup fails with reuse guidance", async () => {
+    const dir = createTempDir();
+    const dbPath = join(dir, "auth-service.sqlite");
+    const database = await openProfileDatabase(dbPath);
+
+    await expect(openProfileDatabase(dbPath)).rejects.toThrow(
+      "Reuse the existing auth-service via --auth-service-endpoint",
+    );
+
+    await database.close();
+  });
+
+  test("Scenario: Given a stale startup lock When auth-service boots Then it recovers the lock and starts", async () => {
+    const dir = createTempDir();
+    const dbPath = join(dir, "auth-service.sqlite");
+    const lockPath = join(dir, "auth-service.lock.json");
+    writeFileSync(
+      lockPath,
+      JSON.stringify(
+        {
+          pid: 999_999,
+          command: "bun",
+          createdAt: "2026-04-29T00:00:00.000Z",
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const database = await openProfileDatabase(dbPath);
+
+    expect(existsSync(dbPath)).toBe(true);
+
+    await database.close();
+    expect(existsSync(lockPath)).toBe(false);
   });
 });
