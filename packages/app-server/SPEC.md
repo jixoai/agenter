@@ -78,16 +78,24 @@
 - descriptor-backed runtime CLI 是 JSON-only contract：只接受空输入、单个 JSON argv、或 JSON stdin；不再提供 positional / natural-flag façade 兼容。
 - runtime-facing prompt / skill / error guidance 必须保持 stateless：当命令参数不匹配时，只能客观说明当前 contract、并引导 AI 使用 `<command> --help` 或 `skill info <skill>` 获取详情；不得暗示“旧语法”“之前的规则”或“记忆残留”。
 - runtime built-in skills 必须由 owning package 在 `skills/**/SKILL.md` 中维护，并通过 app-server build step 聚合成 generated catalog；runtime 不得再把这些 built-ins materialize 到 `<rootWorkspace>/skills`。
-- runtime skill system 的 durable truth 是可见 skill 的 on-disk files，而不是 prompt glue：shared / global / avatar skills 直接读盘；indexed built-in skills 在 source path 存在时也必须优先读当前磁盘文件，generated catalog 只负责 discovery baseline。
+- runtime skill system 的 durable truth 是可见 skill 的 on-disk files，而不是 prompt glue：shared / global / avatar-private skills 直接读盘；indexed built-in skills 在 source path 存在时也必须优先读当前磁盘文件，generated catalog 只负责 discovery baseline。
 - runtime built-in `SKILL.md` 必须保持 concise overview-first，并把 deeper material 下沉到同目录 `references/*.md`；attention-backed runtime skill snapshot 与全局提示必须把 `skills.list -> skill info <skill> -> 只读所需 reference file` 作为 canonical discovery path。
 - `ccski.config.json` 是 skill watcher 的唯一扩展入口：默认 live truth 只包含 `SKILL.md + ccski.config.json`，额外 watched files 只能来自 config `files[]` 声明；未声明 sibling file 的 churn 不得升级成 skill change。
 - watcher 事件只是 dirtiness hint；runtime 必须在下一次模型输入收集边界重新读盘并按 skill 聚合 attention reminder，空闲时再由 debounce fallback 触发同样的刷新；进程未运行期间发生的 skill 变更通过 `sessionRoot/skill-system/fingerprint-map.json` 的 session-local fingerprint baseline 在启动刷新时补齐 detection。
 - runtime skill facade 背后的 catalog discovery、truth snapshot、diff、baseline store、watch dirtiness 与 attention publishing 必须保持正交；同名覆盖与 diff identity 只使用 `skill.name`，不引入 root-qualified identity。
 - `skill get-config/set-config` 是受控 metadata surface：它只能暴露 config JSON、path metadata 与 resolved watch targets；built-in `set-config` 只有在 runtime 已拥有对应 package source path 的 workspace `rw` authority 时才允许写入。
+- browser-facing skill browsing 必须走 read-only bounded surface，而不是让前端从 `skill.path` 猜 sibling files：`catalog` 只列可见 skill roots，`tree` 只返回单个 skill root 下的 objective files，`preview` 只返回 bounded preview payload。
+- app-server 的 skill browser root model 固定分成四类 truth：
+  - `shared / builtin / global`：一行一个 visible skill，顺序同时表达最低到更高的 generic inheritance
+  - `avatars`：一行一个 avatar + workspace-grouped avatar-private skill roots
+  - `Root workspace` 固定来自 global avatar root `skills`
+  - 非 root workspace 只来自该 workspace 的 avatar-private `skills`，不使用 `effectivePath` 把 global skills 复制进每个 workspace group
+- skill browser preview classification 是 durable server contract：至少显式区分 `directory / text / image / audio / video / pdf / binary / unsupported`，由 server 给出，前端不得自行重猜 preview kind。
+- `previewKind` 只表达 renderer kind，不表达 preview shell 所有权：WebUI 可以把所有 kind 都交给统一的 `filePreviewer` 壳层，再在壳层内部按 `text / image / audio / video / pdf / binary / unsupported` 选择具体 renderer。
 - 外部事实型任务的人格偏好必须落在 `AGENTER.mdx`：当事实依赖当前世界或外部网络且可能变化时，Avatar 先做简短确认，再通过 shell 或其它可观察工具查证，最后只回复查证后的结果；这里表达的是 general shell-first bias，不得把某个天气/搜索 recipe 写成唯一 workflow。
 - runtime shell guidance 必须把 `root_bash` 的 outbound network verification 明确成客观能力边界，而不是在 runtime skills 里塞满固定查询脚本。
 - system-owned skill 必须只解释本 system 的义务语义与操作风格，尤其是如何理解和处理该 system 提交的 attention items；例如 message skill 应该教 AI 何时确认、何时回复、何时不要刷屏，而不是代替 terminal / workspace / network 系统承载底层可靠性细节。
-- `skill list/info/search` 必须把 built-in catalog 视为最低优先级 baseline，再叠加 `~/.agents/skills`、`~/.agenter/skills`、`<rootWorkspace>/skills` 的 on-disk skills；同名时由 on-disk skill 覆盖 built-in。
+- `skill list/info/search` 必须把 visible precedence 固化为 `shared < built-in < global < avatar-private`：`~/.agents/skills` 是最宽泛 baseline，built-in 只覆盖 shared，`~/.agenter/skills` 覆盖 built-in，而 runtime root-workspace 下的 avatar-private `skills` 最终覆盖前面所有同名层。
 - real-provider 的外部事实验收必须使用测试专用 Avatar + 专用 `AGENTER.mdx`，并在失败时输出 durable diagnostics：room truth、recent model calls、tool trace，以及 Avatar / prompt source identity。
 
 ## 5. Reactive Contract

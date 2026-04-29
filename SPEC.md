@@ -89,14 +89,17 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 
 ## 5. 产品表面长期法则
 
-- 一级导航固定为 `Avatars`、`Workspaces`、`Messages`、`Terminals`。
-- 三个一级 workbench 统一渲染为共享 browser-style workbench window：上层是 tabs，下层是响应式 toolbar，body 也属于同一窗口外轮廓。页面级标题、metadata、局部 actions 与 body 边界都必须挂载到这套共享 chrome 中，而不是在 route 内再手搓第二层 header 或独立外壳。
+- 一级导航固定为 `Avatars`、`Skills`、`Messages`、`Workspaces`、`Terminals`。
+- 一级系统 workbench 统一渲染为共享 browser-style workbench window：上层是 tabs，下层是响应式 toolbar，body 也属于同一窗口外轮廓。页面级标题、metadata、局部 actions 与 body 边界都必须挂载到这套共享 chrome 中，而不是在 route 内再手搓第二层 header 或独立外壳。
 - 进入这套 window 之后，route 根 surface 只能使用共享的 integrated `page/pane` 法则：`page` 负责窗口内整页，`pane` 负责次级面板。禁止在 primary workbench route 内再包一层 detached outer card。
 - 共享 workbench window body 负责页面级滚动；如果 route 内还需要独立 stage/pane 滚动，必须显式声明次级 `ScrollView`，而不是靠 route 根容器的固定高度或隐藏裁剪去“碰巧可用”。
 - 当 route 需要 `main + right detail` 关系时，必须复用共享 split-detail law：desktop 以 ratio-driven resize handle 持久化，compact 以 container-width collapse 进入 right-sheet；禁止再用 route-local `detailMode + matchMedia + fixed drawer width` 自行拼装。
 - compact right detail 打开时，`page-toolbar` 只允许接管为 close-only view affordance；detail-local 的 save / reload / apply / create 等功能动作继续留在 page content，通常留在 left-side `bottom-area`。
 - WebUI 的 redirect-only route entry（如 `/`、`/avatars`、`/avatars/runtime/{sessionId}`）必须通过 route-layer canonical redirect 在 feature 渲染前收敛；禁止再用 mount-time `goto()` 或 feature glue 补入口跳转。
 - `Avatars` 是统一的全局 avatar catalog workbench；运行中的 avatar session 以动态 runtime tabs 追加在同一层，不再复用旧的 workspace/history/settings 子页心智。
+- `Skills` 是统一的只读 skill workbench：固定保留一个 catalog tab，并在其 `page-tabs` 中按继承顺序表达 `shared / built-in / global / avatars`；默认 `/skills` 落到 `shared`，旧 `view=avatar` 入口必须在 route 层收敛为 `view=avatars`。从 `avatars` overview 打开的专属 avatar skill browser 以 closable workbench tab 追加在同一层。
+- `Skills` 的 durable truth 永远来自 objective skill roots，而不是前端自行拼接 sibling path：`shared / built-in / global` 一律是 skill-list-first 的 accordion list-detail browser；`avatars` 一律是 avatar-list-first overview，detail 只预览 workspace-grouped avatar-private skill roots，真正的文件树浏览放进 dedicated avatar tab。
+- `Skills` preview law 固定为一层 preview shell：所有 selected file 都走隔离的 `filePreviewer` iframe entry；`filePreviewer` 内部再按 kind 选择 renderer，其中 text-like files 默认使用 CodeMirror source preview，`pdf / image / audio / video` 使用对应成熟 renderer，不支持的类型也必须在同一 preview shell 中显式进入 unsupported 状态。
 - `Workspaces` 是独立的全局 WorkspaceSystem workbench；每个 workspace 只对应一个目录根，并通过共享 content header 暴露 `View as` avatar lens 与 `Explorer / Rules / Private` 三个 peer modes。
 - Workspace workbench 必须显式展示 `root-workspace` vs `public-workspace` 的 env/CLI 语义差异，但不得把这种差异表述成“root-workspace 不可共享”的所有权禁令。
 - workspace detail 可以从 `/workspaces` 自己打开 workspace-centric 的管理对话框来做 Avatar mount / unmount；这类控制面不再回流到 Avatar detail。

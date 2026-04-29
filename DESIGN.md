@@ -149,6 +149,12 @@ Workspaces
 - 密集型 `right-drawer` 默认使用“分节标题 + 轻量 divider + 底部事实区”的组织方式，而不是把每个信息块都做成独立 card。
 - 解释行为、使用限制、fallback 这类辅助信息，默认使用 `HelpHint` 这类紧凑提示原语承载；不要把页面主体写成一段段“说明书”。
 - `Preview` 必须按能力分型：文本默认走 `CodeMirror` 风格阅读面；图片/音频/视频走现代化轻量媒体预览；不支持预览的类型必须明确进入 `No preview` 状态，而不是留白或渲染错误内容。
+- `Skills` 页的内容模式不是单一浏览器模板：
+  - `shared / built-in / global` = generic skill-list-first 的 accordion list-detail
+  - `avatars` = avatar-list-first overview，detail 只预览 workspace-grouped avatar-private skills
+  - dedicated avatar tab = workspace-grouped file tree browser
+- `Skills` 的 tab 顺序不是视觉偏好，而是 override law 的可视化：`shared < built-in < global < avatar-private`。默认路由落在第一个 tab，旧 query key 只能做 canonical redirect，不能长期双写。
+- `Skills` 的移动端不发明第二套 preview 页面；compact 情况默认复用共享 split-detail 的 detail drawer / close ownership。
 
 例子：
 
@@ -276,6 +282,8 @@ Workspaces
 
 ## 12) 预览视口与隔离架构 (PreviewPort & Isolation)
 
-- **预览即隔离 (Isolation by Default)**：所有的文件内容预览（Text, Image, Video, Unknown 等）必须通过 `PreviewPort` 承载，底层实现强制使用沙箱化的 `<iframe>` 对接到 `/fileviewer?path=...`。
-- **UI 只负责 Port 的物理占位**：在设计稿和实现中，预览区不再硬编码特定格式的编辑器（如 CodeMirror）或播放器。UI 只负责提供一个稳定的、背景纯净的 Port 容器。
-- **状态由 Port 接管**：Preview 区域的 Loading、Error 以及 Unknown Fallback 样式由 Port 统一调度。设计稿应专注于 Port 与 Metadata 之间的布局关系，而非预览内容本身的渲染细节。
+- **隔离是 preview shell 的默认法则**：所有 file preview 都进入同一个 iframe shell，而不是由主 workbench 自己渲染一部分、再把另一部分外包出去。
+- **隔离入口固定为 `filePreviewer`**：WebUI 的 file preview 统一嵌入 `filePreviewer.html`，主应用只负责选择、metadata、容器和 empty/error framing，不在 route tree 里直接持有 CodeMirror/pdf.js/media player 的清理负担。
+- **允许 preview 子页面风格弱耦合**：`filePreviewer` 优先复用成熟技术库并保持可快速开发，不要求和主应用完全同皮肤；主应用只保证外层容器、toolbar 语义和 preview metadata 的一致性。
+- **渲染器与壳层分离**：`filePreviewer` 是 preview shell，不是某一种 renderer；text-like file 默认用 CodeMirror source preview，pdf 用 pdf.js，image/audio/video 用各自成熟 renderer，unsupported 也在同一 shell 内明确表达。
+- **状态边界必须清晰**：主 workbench 负责 empty/selection framing 与外层 metadata；`filePreviewer` 负责其内部的 loading/render/error/unsupported state。设计稿应专注于 Port 与 Metadata 的布局关系，而不是把 preview 内部 chrome 再复制到主页面。
