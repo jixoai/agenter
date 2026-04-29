@@ -73,11 +73,17 @@ describe("Feature: runtime built-in skills", () => {
     expect(attentionContent).toContain("`done: true`");
     expect(attentionContent).toContain("relay room");
     expect(attentionContent).toContain("origin room already received the final answer");
+    expect(attentionContent).toContain("tool-level `stdin` field");
+    expect(attentionContent).toContain("Do not synthesize `stdin` with shell glue");
+    expect(attentionContent).toContain("root_bash.command: attention commit");
+    expect(attentionContent).toContain("root_bash.stdin:");
     expect(attentionContent).toContain('attention commit \'{"contextId":"ctx-..."');
     expect(attentionContent).toContain("marks compact as `Suggested` or `Available`");
     expect(attentionContent).toContain("references/settlement.md");
     expect(attentionContent).toContain("do that real work before browsing attention");
-    expect(attentionContent).toContain("default to JSON `stdin`");
+    expect(attentionContent).toContain("default to the minimal command plus JSON in the tool-level `stdin`");
+    expect(attentionContent).toContain("do not add a redundant `echo`");
+    expect(attentionContent).toContain("Plain-shell fallback only when you are already inside a shell");
     expect(attentionContent).not.toContain("AttentionContexts.metadata");
 
     const messageContent = readRuntimeSkillContent(message!);
