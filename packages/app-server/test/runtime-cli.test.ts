@@ -820,8 +820,8 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(messageHelp.stdout).toContain('"followUpAfterMs"');
     expect(messageHelp.stdout).toContain("If recentMessages suggest an accidental duplicate");
     expect(messageHelp.stdout).toContain("use `message read` before `message edit` or `message recall`");
-    expect(messageHelp.stdout).toContain("followUpAfterMs is an optional one-shot delayed re-evaluation timer");
-    expect(messageHelp.stdout).toContain("creates attention only");
+    expect(messageHelp.stdout).toContain("followUpAfterMs is an optional one-shot re-decision timer");
+    expect(messageHelp.stdout).toContain("creates later attention only");
 
     expect(attentionHelp.exitCode).toBe(0);
     expect(attentionHelp.stdout).toContain("command: `attention commit`");

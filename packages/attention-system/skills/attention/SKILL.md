@@ -1,20 +1,20 @@
 ---
 name: agenter-attention
-description: Inspect and settle obligations. Use this when you need to understand or update attention debt.
+description: Inspect and settle attention work. Use this when you need to understand or update attention debt.
 ---
 
 # agenter-attention
 
-Use this skill when you need to inspect unresolved obligations or record that an obligation has truly progressed.
+Use this skill when you need to inspect unresolved attention work or record that the work has truly progressed.
 
 Quick start:
 1. If the current task already names the concrete file, room, terminal, or URL work to do next, do that real work before browsing attention.
-2. Run `attention list` only when you need the active `contextId` or need to confirm which obligations still remain.
+2. Run `attention list` only when you need the active `contextId` or need to confirm which attention work still remains.
 3. Run `attention query` with JSON `stdin` only if `attention list` is still not enough.
 4. When the real work is finished through `root_bash`, keep `command=attention commit` and put the JSON object in the tool-level `stdin` field.
 
 Key laws:
-- `score > 0` means the obligation still exists.
+- `score > 0` means the attention work still exists.
 - `done: true` is the normal way to resolve the active scores for a context.
 - Lower scores only after the real work has actually happened.
 - For `attention query` and `attention commit` through `root_bash`, default to the minimal command plus JSON in the tool-level `stdin`; only use argv JSON when you are already inside a plain shell and the payload is trivially short.
@@ -22,9 +22,9 @@ Key laws:
 - If you do choose the plain-shell fallback, pass the JSON directly as one argv object like `attention commit '{...}'`; do not add a redundant `echo`.
 - If `attention query --help` or `attention commit --help` marks compact as `Suggested` or `Available`, `--compact` is an optional positional mode. If the positional array becomes unclear, switch back to standard object JSON immediately.
 - For a simple single-room delivery task, do not interrupt the first action just to inspect attention if the current room already states the work clearly.
-- If you already sent the required durable reply, verified the file, or confirmed the external side effect, settle the attention in the same round instead of leaving solved work active.
-- If the work is still waiting on another participant, relay room, or external source, the obligation is not complete yet and must stay unresolved.
-- For relay work, `done: true` becomes legal only after the origin room already received the final answer, not merely an acknowledgement that you are asking someone else.
+- If you already sent the durable result, verified the file, or confirmed the external side effect, it is usually reasonable to settle the attention in the same round instead of leaving solved work active.
+- If the work is still waiting on another participant, relay room, or external source, the context is not complete yet and should stay open.
+- For relay work, `done: true` is usually appropriate only after the origin room already received the final answer, not merely a progress acknowledgement that you are asking someone else.
 
 Common endings:
 - Delivery finished and the user already got the result:

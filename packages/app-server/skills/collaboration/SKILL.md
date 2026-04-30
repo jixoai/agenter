@@ -21,12 +21,12 @@ Key laws:
 - Keep a single source of truth for shared contracts and ownership.
 - Do not rewrite artifact ownership toward your own specialty when another role is the better fit.
 - Claim ownership once. Do not repost the same "I will handle X" after the room already knows.
-- Once ownership is clear, the usual next move is workspace or terminal work, not another acknowledgement in the room.
-- Another participant's acknowledgement is not by itself a new obligation for you.
+- Once ownership is clear, the next useful move is often workspace or terminal work, not another acknowledgement in the room.
+- Another participant's acknowledgement does not by itself mean you need to answer again.
 - Re-enter the room when shared truth actually changed: you need a narrow dependency, you must correct a shared fact, you are handing off an artifact or contract, or you are delivering the final result.
 - A room message that claims a local URL, API, or "ready" state is shared truth, not a plan. Do not post that claim until the exact promised URL or path already works now.
-- Private reminders are coordination hints, not shared truth; they usually mean a shared-room obligation is still open.
-- If the room is waiting on a final protocol reply, terminal success alone is not enough; post the required shared-room message before you consider the work finished.
+- Private reminders are coordination hints, not shared truth; they usually mean some shared-room work is still unresolved.
+- If the room is waiting on a final protocol reply, terminal success alone is not enough; post the shared-room message before you consider the work finished.
 
 References:
 - `references/shared-room-protocols.md`: room protocol usage, ownership boundaries, and correction patterns

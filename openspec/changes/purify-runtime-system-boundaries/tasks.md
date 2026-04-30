@@ -50,9 +50,9 @@
 - [x] 5.2 Keep `skill list`, `skill search`, `skill info`, and `skill get-config` as explicit projection/query surfaces that enter the decision surface through tool results
 - [x] 5.3 Define and implement the policy for when skill changes publish ordinary objective attention items, including changed skill name, root kind, and changed files, without synthesizing a dedicated skill context and using the keyed interleaved attention-item staging path
 - [ ] 5.4 Ensure irrelevant skill watcher dirtiness does not preempt active room or terminal work by default
-- [ ] 5.5 Update package-owned built-in skill source files to remove platform-authored social obligation language and auto-ACK guidance while preserving optional etiquette and recommended playbooks as non-binding guidance
-- [ ] 5.6 Regenerate `packages/app-server/src/generated/runtime-skill-catalog.generated.ts` from the corrected skill sources
-- [ ] 5.7 Add catalog tests that fail if removed pollution terms reappear in generated built-in skill bodies
+- [x] 5.5 Update package-owned built-in skill source files to remove platform-authored social obligation language and auto-ACK guidance while preserving optional etiquette and recommended playbooks as non-binding guidance
+- [x] 5.6 Regenerate `packages/app-server/src/generated/runtime-skill-catalog.generated.ts` from the corrected skill sources
+- [x] 5.7 Add catalog tests that fail if removed pollution terms reappear in generated built-in skill bodies
 
 ## 6. Generic Watch Primitive
 
@@ -60,7 +60,7 @@
 - [x] 6.2 Implement watch due-time evaluation against world facts or capability projections
 - [x] 6.3 Ensure due watches create only reminder facts/signals and never perform external side effects automatically
 - [x] 6.4 Migrate message `followUpAfterMs` to delegate to the generic watch primitive or remove it from the public descriptor if backwards compatibility is intentionally broken
-- [ ] 6.5 Update `runtime-tool-descriptors.ts` so follow-up wording no longer describes message-specific etiquette and clearly states that expiry only asks the model to re-decide
+- [x] 6.5 Update `runtime-tool-descriptors.ts` so follow-up wording no longer describes message-specific etiquette and clearly states that expiry only asks the model to re-decide
 - [x] 6.6 Add inspection/publication support so active, satisfied, and expired watches are observable in runtime diagnostics
 
 ## 7. Backend Tests

@@ -6,17 +6,17 @@ Good defaults:
 
 - read before replying when facts may have changed
 - use `message query` when the answer depends on searching multiple prior messages or multiple already-authorized rooms
-- send one acknowledgement if the work will take time
-- if the work needs multiple steps, send that acknowledgement before you start the deeper work
+- if the work will take time, consider sending one concise acknowledgement
+- if the work needs multiple steps, that acknowledgement often helps before you start the deeper work
 - keep acknowledgements short; they should claim ownership, not replay the whole spec
 - keep room-facing language scoped to what the room needs
 - if `visibleRooms` already includes a room whose title or participants match the requested person, use that room as the relay channel instead of claiming the person is unavailable
 - a participant missing from the current room does not mean they are unreachable elsewhere in the runtime
-- if you relay out, the origin room still owns the final user-visible answer; a relay acknowledgement is not completion
-- while the relay target has not answered yet, keep the origin obligation open instead of settling it
-- once the relay target answers, return that answer to the origin room before you settle the attention
-- once the evidence is ready and the room is waiting for a protocol reply, send that durable message immediately
-- if the latest room-visible fact is only teammate progress and you have nothing new to deliver yet, prefer private tool work or attention settlement over another mirror-status message
+- if you relay out, the origin room still owns the final user-visible answer; a relay acknowledgement is progress, not completion
+- while the relay target has not answered yet, the origin attention usually stays open instead of being settled
+- once the relay target answers, returning that answer to the origin room is usually the cleanest next step before you settle the attention
+- once the evidence is ready and the room is still waiting for a protocol reply, send that durable message directly
+- if the latest room-visible fact is only teammate progress and you have nothing new to deliver yet, prefer private tool work or attention review over another mirror-status message
 - if the room fixed a concrete URL, path, or token, send that exact value back instead of a normalized variant such as a sibling path
 - if you need to correct yourself, send a new durable replacement instead of treating the earlier message as final truth
 - through `root_bash`, prefer `command=message send` plus JSON `stdin` for room replies; only use argv JSON when it is trivially short
@@ -24,7 +24,7 @@ Good defaults:
 - if `message send --help` marks compact as `Suggested` or `Available`, `message send --compact` is also available for positional payloads; if the array shape becomes unclear, fall back to object JSON immediately
 - if `message query --help` marks compact as `Suggested` or `Available`, `message query --compact` is also available for positional payloads; if the array shape becomes unclear, fall back to object JSON immediately
 - `message query` `mode:"sql"` is for read-only analysis over the pre-authorized room projection, not for editing or bypassing room scope
-- after the protocol reply is sent, switch back to `attention` and settle the same obligation instead of repeatedly re-reading the room
+- after the protocol reply is sent, a common cleanup step is to switch back to `attention` and settle the same context instead of repeatedly rereading the room
 
 Protocol discipline:
 

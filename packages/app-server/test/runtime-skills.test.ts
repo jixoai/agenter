@@ -61,15 +61,15 @@ describe("Feature: runtime built-in skills", () => {
     expect(content).toContain("Keep a single source of truth for shared contracts and ownership.");
     expect(content).toContain("Claim ownership once.");
     expect(content).toContain("workspace or terminal work");
-    expect(content).toContain("Another participant's acknowledgement is not by itself a new obligation for you.");
+    expect(content).toContain("Another participant's acknowledgement does not by itself mean you need to answer again.");
     expect(content).toContain("Private reminders are coordination hints");
     expect(content).toContain("References:");
     expect(content).toContain("references/shared-room-protocols.md");
     expect(content).not.toContain("server.js is not on disk yet");
 
     const attentionContent = readRuntimeSkillContent(attention!);
-    expect(attentionContent).toContain("Use this skill when you need to inspect unresolved obligations");
-    expect(attentionContent).toContain("`score > 0` means the obligation still exists.");
+    expect(attentionContent).toContain("Use this skill when you need to inspect unresolved attention work");
+    expect(attentionContent).toContain("`score > 0` means the attention work still exists.");
     expect(attentionContent).toContain("`done: true`");
     expect(attentionContent).toContain("relay room");
     expect(attentionContent).toContain("origin room already received the final answer");
@@ -96,15 +96,15 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageContent).toContain('chatId:"*"');
     expect(messageContent).toContain('mode:"sql"');
     expect(messageContent).toContain("literal room id is enough");
-    expect(messageContent).toContain("necessary room reply has been sent");
+    expect(messageContent).toContain("After the room-visible result is in place");
     expect(messageContent).toContain("send one short acknowledgement before the deeper tool work starts");
     expect(messageContent).toContain("preserve that fact exactly instead of silently normalizing it");
     expect(messageContent).toContain("switch to `attention` and settle");
-    expect(messageContent).toContain("do not spam the room with every internal step");
+    expect(messageContent).toContain("Keep room-visible updates concise and timely without narrating every internal step");
     expect(messageContent).toContain("Private reminders");
-    expect(messageContent).toContain("only an acknowledgement, not the final delivery");
+    expect(messageContent).toContain("\"I'm asking them now\" is progress, not the delivered answer");
     expect(messageContent).toContain("deliver that answer back into the origin room");
-    expect(messageContent).toContain("Terminal success alone is not the room reply");
+    expect(messageContent).toContain("Terminal success alone is not the room-visible result");
     expect(messageContent).toContain("prefer `command=message send` plus JSON `stdin`");
     expect(messageContent).toContain("message query");
     expect(messageContent).toContain("message send --compact");
@@ -268,7 +268,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageAttentionReference).toContain("after the exact HTTP check succeeds, send the room reply");
 
     const messageRoomReference = readFileSync(join(dirname(message!.path), "references", "room-protocols.md"), "utf8");
-    expect(messageRoomReference).toContain("send that acknowledgement before you start the deeper work");
+    expect(messageRoomReference).toContain("that acknowledgement often helps before you start the deeper work");
     expect(messageRoomReference).toContain("origin room still owns the final user-visible answer");
     expect(messageRoomReference).toContain("message query");
     expect(messageRoomReference).toContain('mode:"sql"');
@@ -281,7 +281,7 @@ describe("Feature: runtime built-in skills", () => {
       "utf8",
     );
     expect(collaborationReference).toContain("stop repeating that claim and go produce it");
-    expect(collaborationReference).toContain("does not automatically require you to reply again");
+    expect(collaborationReference).toContain("does not automatically mean you need to reply again");
     expect(collaborationReference).toContain("do not keep the room busy with status chatter");
   });
 

@@ -634,12 +634,12 @@ export const runtimeToolDescriptors = [
     name: "send",
     route: "/v1/message/send",
     description:
-      "Send a durable room message through the runtime message system. Use ref to reply to an earlier room message, optionally use followUpAfterMs for one-shot attention-only re-evaluation, then inspect recentMessages and follow up with message read/edit/recall when the visible outcome needs revision.",
+      "Send a durable room message through the runtime message system. Use ref to reply to an earlier room message, optionally use followUpAfterMs to schedule one later attention-only re-decision, then inspect recentMessages and use message read/edit/recall if you choose to revise the visible result.",
     inputSchema: messageSendSchema,
     helpNotes: [
-      "followUpAfterMs is an optional one-shot delayed re-evaluation timer owned by this explicit message action.",
-      "When followUpAfterMs expires, the runtime creates attention only if this message is still the latest visible room message.",
-      "followUpAfterMs never auto-sends a room reply and does not become durable room metadata.",
+      "followUpAfterMs is an optional one-shot re-decision timer owned by this explicit message action.",
+      "When followUpAfterMs expires, the runtime reopens attention only if this message is still the latest visible room message.",
+      "followUpAfterMs never auto-sends, edits, or recalls room-visible content and does not become durable room metadata.",
     ],
     examples: [
       {

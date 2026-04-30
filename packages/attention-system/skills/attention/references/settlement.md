@@ -1,6 +1,6 @@
 # Attention settlement
 
-Use `attention` to model obligation state, not to fake progress.
+Use `attention` to model attention state, not to fake progress.
 
 Common flow:
 
@@ -20,7 +20,7 @@ Rules:
 - If `attention query --help` or `attention commit --help` marks compact as `Suggested` or `Available`, `--compact` is also available for positional payloads; if the array shape becomes unclear, fall back to object JSON immediately.
 - `attention commit --help` is the source of truth for the current JSON contract.
 - `summary` is required. Keep it short and factual.
-- The normal closing move after a verified delivery is: send the durable reply first, then commit `done: true` for the same context.
+- A common closing move after a verified delivery is: send the durable reply first, then commit `done: true` for the same context.
 - If another participant or relay room still owes the missing fact, the context is still open; do not use `done: true` yet.
 - For relay requests, "asked gaubee" or "waiting for reply" is progress, not completion. Completion starts only after the origin room has the delivered answer.
 
