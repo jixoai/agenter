@@ -205,6 +205,13 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **前端联调顺序固定**：先验证后端接口与 durable contract，再验证 store / 界面绑定，最后做真实浏览器走查；不要反过来靠 UI 盲测接口。
 - **国际化单一真源**：业务层不硬编码文案；统一通过 i18n 包与配置加载。
 - **配置优先于硬编码**：模型、终端入口、提示词路径、策略等一律走 settings/prompt sources。
+- **元意识：约束与自由度共存**：任何强系统都同时依赖约束与自由度。约束负责稳定，自由度负责适应与涌现；缺少约束会发散，缺少自由度会僵死。不要把“加强结构”误解为“消灭自由度”。
+- **元意识：公理不代替推理**：底层规则应像公理，只定义不可违背的边界，不预先替上层推出具体结论。凡是仍应由情境判断、权衡和解释得到的东西，都不应被下沉成硬定理。
+- **元意识：势场优于牵引绳**：好的引导像势场，改变行动的倾向和成本；坏的引导像牵引绳，直接替主体完成选择。文档、经验、默认策略可以塑形，但不应越权代替决策。
+- **元意识：显式特权才是合法奇点**：系统允许存在少量特权，但必须被明确命名、明确授权、明确边界。未声明的特殊供应会像奇点一样扭曲整体坐标系，应默认视为异常而不是常态。
+- **元意识：保留负空间**：未被硬编码的空间不是缺陷，而是通用智能进行组合、变通、纠偏与学习的容量。收口应发生在不变量上，不应吞掉本应留给智能体的探索空间。
+- **元意识：投影不等于本体**：标签、摘要、评分、状态名、视图、画像都只是对事实的投影，不是事实本身。任何投影都必须明确暴露自己的投影身份，不能冒充本体进入推理。
+- **元意识：可见效果守恒到作用源**：凡是改变外部世界、改变他人可见结果、改变持久化事实的效果，都必须能追溯到明确的作用源。不能接受“效果出现了，但没有清晰的施力点”。
 - **架构做减法，算法做加法**：先保证路径直觉、最小可用，再增强算法与可观测性。
 - **循环系统哲学**：LoopBus 持续存在；外部熵增（用户输入、终端变更、任务事件）与未收敛的 attention debt 都可以成为下一轮 AI 调用的合法唤醒源。
 - **Containment Law**：`score > 0` 表示义务仍然存在，不等于允许立即再次调用模型；重复等价失败或 no-progress 必须进入 `backoff` 或 `blocked`，直到新证据、定时回退到期或人工干预解除。
@@ -217,6 +224,23 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **Provider 建模双轴化**：`apiStandard` 只表达传输/协议契约；`vendor/profile/extensions` 只表达厂商兼容与增强，禁止再用 vendor 名称替代协议分发。
 - **功能层次化呈现**：主界面聚焦聊天与任务推进；进阶能力放入侧栏/工具面板，不堆叠在主视图。
 - **问题定位分层实验**：先隔离运行时（PTY/Terminal），再隔离渲染层（xterm/headless/web），逐层缩小问题面。
+
+### 元意识自检（设计前先过五问）
+
+1. 我现在是在定义边界，还是在替未来的情境推理提前下结论？
+2. 我现在加的是势场，还是牵引绳？
+3. 这个特殊路径，是被命名和授权的奇点，还是未声明的特殊供应？
+4. 这个字段、标签、摘要、状态，到底是本体，还是投影？
+5. 这个可见效果，能否追溯到明确的作用源？
+
+### 元意识到代码（客观锚点）
+
+- `packages/app-server/src/session-runtime.ts` 中的 `shouldTreatSharedMessageAsReplyPending(...)`、`chatTurnState`、`chatObligationKind` 这类设计，要用“公理不代替推理”“投影不等于本体”审视：不要把情境判断提前固化成事实字段。
+- `packages/app-server/src/session-runtime.ts` 中的 `sendMessageTool(... originAckFallback ...)`、自动 ACK、自动外发消息，要用“可见效果守恒到作用源”审视：没有明确作用源的可见效果，应视为越权。
+- `packages/app-server/src/agenter-ai.ts` 中构造 social context、summary、metadata 的路径，要用“投影不等于本体”审视：摘要、组织结构、调度信息不能冒充原始事实进入推理。
+- `packages/app-server/src/runtime-system-kernel-adapters/terminal-adapter.ts` 中的 `terminal_focus`、`terminal_unfocus`、`terminal_idle_ready` 这类设计，要用“势场优于牵引绳”审视：生命周期信号可以影响倾向，但不应伪装成行动指令。
+- `packages/app-server/src/workspace-tool-provider.ts` 中的 root / workspace authority，要用“显式特权才是合法奇点”审视：特权可以存在，但必须清晰命名、清晰授权、清晰边界。
+- `packages/app-server/src/runtime-skill-contract.ts` 中的 `ctx-skill-system`、skill snapshot、skill reminder 这类设计，要用“显式特权才是合法奇点”“保留负空间”审视：未声明的常驻特供会侵占按需推理空间。
 
 ## 6.1) Git Worktree / Merge Discipline
 
