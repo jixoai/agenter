@@ -1609,7 +1609,6 @@ export class AgenterAI {
             context: {
               owner: match.context.owner,
               headCommitId: match.context.headCommitId,
-              scoreMap: match.context.scoreMap,
               content: match.context.content,
             },
             recentCommits: match.recentCommits.map((commit) => ({
@@ -1618,7 +1617,6 @@ export class AgenterAI {
               source: commit.meta.source,
               src: commit.meta.src,
               tags: commit.meta.tags,
-              scores: commit.scores,
               summary: commit.summary,
               change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
             })),
@@ -1743,7 +1741,6 @@ export class AgenterAI {
                 contextId: match.contextId,
                 owner: match.context.owner,
                 content: match.context.content,
-                scoreMap: match.context.scoreMap,
                 recentCommits: match.recentCommits.map((commit) => ({
                   commitId: commit.commitId,
                   author: commit.meta.author,
@@ -1751,7 +1748,6 @@ export class AgenterAI {
                   src: commit.meta.src,
                   tags: commit.meta.tags,
                   summary: commit.summary,
-                  scores: commit.scores,
                   change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
                 })),
               })),

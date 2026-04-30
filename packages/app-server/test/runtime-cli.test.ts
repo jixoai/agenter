@@ -450,6 +450,46 @@ describe("Feature: runtime descriptor CLI", () => {
     });
   });
 
+  test("Scenario: Given JSON stdin When attention context runs Then the CLI posts the explicit context-detail request shape", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/attention/context": {
+        context: {
+          contextId: "ctx-chat-main",
+          context: {
+            owner: "architect",
+            focusState: "focused",
+            headCommitId: "commit-1",
+            scoreMap: { delivery: 100 },
+            content: "Need to inspect full context.",
+            createdAt: "2026-04-30T00:00:00.000Z",
+            updatedAt: "2026-04-30T00:01:00.000Z",
+          },
+          commits: [],
+          commitCount: 0,
+          commitsTruncated: false,
+        },
+      },
+    });
+    const attention = createRuntimeCommand(api.baseUrl, "attention");
+
+    const result = await attention.execute(
+      ["context"],
+      createCommandContext(
+        JSON.stringify({
+          contextId: "ctx-chat-main",
+          commitLimit: 10,
+        }),
+      ),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('"contextId": "ctx-chat-main"');
+    expect(api.getLastRequest()?.body).toEqual({
+      contextId: "ctx-chat-main",
+      commitLimit: 10,
+    });
+  });
+
   test("Scenario: Given explicit compact stdin When message read runs Then the CLI decodes the positional array before calling the runtime API", async () => {
     const api = await startMockRuntimeApi({
       "/v1/message/read": { snapshot: { chatId: "room-1", messages: [] } },

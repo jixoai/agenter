@@ -9,6 +9,7 @@ import { toJSONSchema, z, type ZodTypeAny } from "zod";
 
 import type {
   RuntimeAttentionActiveView,
+  RuntimeAttentionContextView,
   RuntimeMessageChannelView,
   RuntimeMessageQueryResult,
   RuntimeMessageSendResult,
@@ -33,6 +34,7 @@ import {
 export interface RuntimeLocalApiHandlers {
   attentionList: () => AttentionContextDescriptor[];
   attentionActive: () => RuntimeAttentionActiveView[];
+  attentionContext: (input: { contextId: string; commitLimit?: number }) => Promise<RuntimeAttentionContextView> | RuntimeAttentionContextView;
   attentionDeliveryState: () => Promise<unknown> | unknown;
   attentionDeliveryTimeline: (input: {
     contextId?: string;
@@ -235,6 +237,11 @@ const attentionQuerySchema = z.object({
   query: z.string(),
   offset: z.number().int().min(0).optional(),
   limit: z.number().int().min(1).max(200).optional(),
+});
+
+const attentionContextSchema = z.object({
+  contextId: z.string().trim().min(1),
+  commitLimit: z.number().int().min(1).max(200).optional(),
 });
 
 const attentionDeliveryTimelineSchema = z.object({
@@ -477,6 +484,21 @@ export const runtimeToolDescriptors = [
     ],
     handler: async (input, handlers) => ({
       items: await handlers.attentionQuery(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "attention",
+    name: "context",
+    route: "/v1/attention/context",
+    description:
+      "Read one attention context's current full state and recent commit history on demand instead of relying on bootstrap-inlined detail.",
+    inputSchema: attentionContextSchema,
+    examples: [
+      { kind: "stdin", payload: { contextId: "ctx-chat-main", commitLimit: 20 } },
+      { kind: "argv", payload: { contextId: "ctx-terminal-main" } },
+    ],
+    handler: async (input, handlers) => ({
+      context: await handlers.attentionContext(input),
     }),
   }),
   defineRuntimeToolDescriptor({

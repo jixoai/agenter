@@ -2,7 +2,7 @@
 
 - [x] 1.1 Add typed runtime boundary primitives for `WorldFact`, `CapabilityProjection`, `SchedulerSignal`, `AgentAction`, and `EffectLedger` without using `any`, `as any`, or `@ts-nocheck`
 - [x] 1.2 Add adapter-facing helpers that require every runtime-system emission to declare its boundary channel before reaching the kernel host
-- [ ] 1.3 Add development/test assertions or guards that reject ambiguous adapter emissions in Message, Terminal, Skill, and future-system paths
+- [x] 1.3 Add development/test assertions or guards that reject ambiguous adapter emissions in Message, Terminal, Skill, and future-system paths
 - [x] 1.4 Add durable effect-ledger records that can trace explicit actions to durable external effects such as room messages, including stable action/effect identity, actor identity, target identity, timestamp, and cycle/model-call refs when available
 - [ ] 1.5 Ensure workspace/root shell privilege remains intact and is documented as outside this cleanup scope
 
@@ -22,7 +22,7 @@
 - [x] 3.1 Add `attentionContextSnapshot` tracking for AI-visible context views and clear it whenever `ai-messages` are cleared or compacted away
 - [x] 3.2 Update attention bootstrap/context serialization so scheduler metadata stays separate from model-visible source facts
 - [x] 3.3 Remove removed chat obligation fields from `packages/app-server/src/agenter-ai.ts`, compact/history enrichment, active attention prompt-window messages, and any replay path
-- [ ] 3.4 Keep focus and score data available only as scheduler/debug/routing metadata, not as source-authored task instructions or settlement conditions
+- [x] 3.4 Keep focus and score data available only as scheduler/debug/routing metadata, not as source-authored task instructions or settlement conditions
 - [x] 3.5 Seed `AttentionContext` into `ai-messages` by focus state: focused full, background minimal summary, muted none
 - [x] 3.6 Restrict `CommitAttentionItems` injection to focused contexts only
 - [x] 3.7 Implement per-focused-context injection selection by comparing `AttentionContextUserRoleMessageLength * 1.5` against `AttentionItemsUserRoleMessageLength`
@@ -30,7 +30,7 @@
 - [x] 3.9 Treat `Notify` attention items as serialized attention-item exceptions that bypass the commit cost comparison while still obeying normal context-seeding law
 - [x] 3.10 Define the successful-injection boundary as "response SSE has started and the first returned SSE event is non-error" for advancing `attentionContextSnapshot` and clearing staged items that were actually injected, and do not retroactively roll back after later stream interruption
 - [x] 3.11 Add keyed staged attention-item map semantics for interleaved injection, including keyed upsert, scoped replacement, scoped reset, removal, and retry-safe retention until successful injection
-- [ ] 3.12 Add an explicit way for the model to fetch full context details through CLI/API instead of relying on bootstrap-inlined social or skill projections
+- [x] 3.12 Add an explicit way for the model to fetch full context details through CLI/API instead of relying on bootstrap-inlined social or skill projections
 - [ ] 3.13 Defer or guard any diff-vs-full context optimization so first-wave acceptance does not depend on patch-style context injection
 - [x] 3.14 Add configurable notify quota enforcement with default period quotas for `muted` and `background`
 - [x] 3.15 Add notify quota query capability that returns effective quota configuration, current remaining state, send-eligibility, and historical notify-send records

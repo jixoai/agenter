@@ -1,4 +1,4 @@
-import type { AttentionActiveContextMatch } from "@agenter/attention-system";
+import type { AttentionActiveContextMatch, AttentionContextSnapshot } from "@agenter/attention-system";
 import type {
   MessageAttachment,
   MessageControlPlaneEntry,
@@ -144,6 +144,33 @@ export interface RuntimeAttentionActiveView {
     src?: string;
     changeType: AttentionActiveContextMatch["recentCommits"][number]["change"]["type"];
   }>;
+}
+
+export interface RuntimeAttentionContextView {
+  contextId: string;
+  context: {
+    owner: string;
+    focusState: AttentionContextSnapshot["focusState"];
+    headCommitId: string | null;
+    scoreMap: Record<string, number>;
+    contentFormat?: string;
+    content: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  commits: Array<{
+    commitId: string;
+    summary: string;
+    createdAt: string;
+    ingressType: AttentionContextSnapshot["commits"][number]["ingressType"];
+    parentCommitIds: string[];
+    scores: Record<string, number>;
+    src?: string;
+    tags?: string[];
+    change: AttentionContextSnapshot["commits"][number]["change"];
+  }>;
+  commitCount: number;
+  commitsTruncated: boolean;
 }
 
 export interface RuntimeWorkspaceSurface {
@@ -341,6 +368,33 @@ export const projectRuntimeAttentionActiveMatch = (match: AttentionActiveContext
     src: commit.meta.src,
     changeType: commit.change.type,
   })),
+});
+
+export const projectRuntimeAttentionContext = (context: AttentionContextSnapshot): RuntimeAttentionContextView => ({
+  contextId: context.contextId,
+  context: {
+    owner: context.owner,
+    focusState: context.focusState,
+    headCommitId: context.headCommitId,
+    scoreMap: { ...context.scoreMap },
+    contentFormat: context.contentFormat,
+    content: context.content,
+    createdAt: context.createdAt,
+    updatedAt: context.updatedAt,
+  },
+  commits: context.commits.map((commit) => ({
+    commitId: commit.commitId,
+    summary: commit.summary,
+    createdAt: commit.createdAt,
+    ingressType: commit.ingressType,
+    parentCommitIds: [...commit.parentCommitIds],
+    scores: { ...commit.scores },
+    src: commit.meta.src,
+    tags: Array.isArray(commit.meta.tags) ? [...commit.meta.tags] : undefined,
+    change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
+  })),
+  commitCount: context.commitCount ?? context.commits.length,
+  commitsTruncated: context.commitsTruncated ?? false,
 });
 
 export const projectRuntimeWorkspaceSurface = (input: {

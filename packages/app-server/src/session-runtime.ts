@@ -190,6 +190,7 @@ import {
 import { RuntimeTerminalKernelAdapter } from "./runtime-system-kernel-adapters/terminal-adapter";
 import type { RuntimeIngressCommitResult, RuntimeSystemIngressEnvelope } from "./runtime-system-kernel-adapters/types";
 import {
+  projectRuntimeAttentionContext,
   projectRuntimeAttentionActiveMatch,
   projectRuntimeMessageChannel,
   projectRuntimeMessageOverview,
@@ -946,15 +947,12 @@ const serializeAttentionCommitMatch = (match: AttentionCommitMatch): string =>
 const projectBackgroundAttentionContextForModel = (match: AttentionActiveContextMatch): Record<string, unknown> => ({
   contextId: match.contextId,
   owner: match.context.owner,
-  focusState: match.context.focusState,
   updatedAt: match.context.updatedAt,
   headCommitId: match.context.headCommitId,
-  scoreMap: match.context.scoreMap,
   contentPreview: truncateAttentionDetailPreview(match.context.content, 280),
   recentCommitSummaries: match.recentCommits.slice(-3).map((commit) => ({
     commitId: commit.commitId,
     summary: commit.summary,
-    scores: commit.scores,
   })),
 });
 
@@ -969,7 +967,6 @@ const projectAttentionCommitForPrompt = (commit: AttentionCommit): Record<string
     tags: commit.meta.tags,
     createdAt: commit.meta.createdAt,
   },
-  scores: { ...commit.scores },
   summary: commit.summary,
   change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
   createdAt: commit.createdAt,
@@ -980,10 +977,8 @@ const projectAttentionActiveContextForPrompt = (match: AttentionActiveContextMat
   context: {
     contextId: match.context.contextId,
     owner: match.context.owner,
-    focusState: match.context.focusState,
     content: truncateAttentionDetail(match.context.content, 1_600),
     contentFormat: match.context.contentFormat,
-    scoreMap: { ...match.context.scoreMap },
     headCommitId: match.context.headCommitId,
     createdAt: match.context.createdAt,
     updatedAt: match.context.updatedAt,
@@ -4084,6 +4079,7 @@ export class SessionRuntime {
       handlers: {
         attentionList: () => this.attentionSystem.listContexts(),
         attentionActive: () => this.attentionSystem.listActiveContexts().map(projectRuntimeAttentionActiveMatch),
+        attentionContext: async (input) => this.readRuntimeAttentionContext(input),
         attentionDeliveryState: () => this.inspectAttentionDeliveryState(),
         attentionDeliveryTimeline: (input) => this.queryAttentionDeliveryTimeline(input),
         attentionQuery: async (input) => (await this.queryAttention(input)).map(projectAttentionCommitMatchForModel),
@@ -6056,7 +6052,6 @@ export class SessionRuntime {
               tags: commit.meta.tags,
               createdAt: commit.meta.createdAt,
             },
-            scores: { ...commit.scores },
             summary: commit.summary,
             change: commit.change.type === "clean" ? { type: "clean" } : { ...commit.change },
             createdAt: commit.createdAt,
@@ -6936,6 +6931,21 @@ export class SessionRuntime {
 
   inspectAttentionState(): SessionRuntimeAttentionState {
     return this.buildAttentionRuntimeState();
+  }
+
+  readRuntimeAttentionContext(input: { contextId: string; commitLimit?: number }) {
+    const snapshot = this.attentionSystem.getContext(input.contextId)?.snapshot();
+    if (!snapshot) {
+      throw new Error(`attention context not found: ${input.contextId}`);
+    }
+    const commitLimit = input.commitLimit ?? 50;
+    const commits = snapshot.commits.slice(-commitLimit);
+    return projectRuntimeAttentionContext({
+      ...snapshot,
+      commits,
+      commitCount: snapshot.commits.length,
+      commitsTruncated: commits.length < snapshot.commits.length,
+    });
   }
 
   inspectAttentionDeliveryState(): SessionRuntimeAttentionDeliveryState {

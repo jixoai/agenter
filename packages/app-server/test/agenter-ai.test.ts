@@ -363,6 +363,35 @@ const callAttentionQueryViaCli = async (
     toolCallId,
   });
 
+const callAttentionContextViaCli = async (
+  input: Pick<ModelRespondInput, "tools">,
+  payload: { contextId: string; commitLimit?: number },
+  toolCallId = "call-attention-context",
+) =>
+  await callRootBashJson<{
+    ok: true;
+    context: {
+      contextId: string;
+      context: {
+        owner: string;
+        focusState: "focused" | "background" | "muted";
+        headCommitId: string | null;
+        scoreMap: Record<string, number>;
+        content: string;
+      };
+      commits: Array<{
+        commitId: string;
+        summary: string;
+      }>;
+      commitCount: number;
+      commitsTruncated: boolean;
+    };
+  }>(input, {
+    command: "attention context",
+    payload,
+    toolCallId,
+  });
+
 const callAttentionCommitViaCli = async (
   input: Pick<ModelRespondInput, "tools">,
   payload: Record<string, unknown>,
@@ -592,6 +621,40 @@ const createRuntimeLocalHandlers = (input: {
 }): RuntimeLocalApiHandlers => ({
   attentionList: () => input.attentionGateway?.listContexts() ?? [],
   attentionActive: () => (input.attentionGateway?.listActive() ?? []).map(projectRuntimeAttentionActiveMatch),
+  attentionContext: ({ contextId, commitLimit }) => {
+    const context = input.attentionGateway?.listContexts().find((item) => item.contextId === contextId);
+    const active = input.attentionGateway?.listActive().find((item) => item.contextId === contextId);
+    if (!context || !active) {
+      throw new Error(`attention context not found: ${contextId}`);
+    }
+    const commits = active.recentCommits.slice(-(commitLimit ?? active.recentCommits.length));
+    return {
+      contextId,
+      context: {
+        owner: active.context.owner,
+        focusState: active.context.focusState,
+        headCommitId: active.context.headCommitId,
+        scoreMap: { ...active.context.scoreMap },
+        contentFormat: active.context.contentFormat,
+        content: active.context.content,
+        createdAt: active.context.createdAt,
+        updatedAt: active.context.updatedAt,
+      },
+      commits: commits.map((commit) => ({
+        commitId: commit.commitId,
+        summary: commit.summary,
+        createdAt: commit.createdAt,
+        ingressType: commit.ingressType,
+        parentCommitIds: [...commit.parentCommitIds],
+        scores: { ...commit.scores },
+        src: commit.meta.src,
+        tags: Array.isArray(commit.meta.tags) ? [...commit.meta.tags] : undefined,
+        change: commit.change.type === "clean" ? { type: "clean" as const } : { ...commit.change },
+      })),
+      commitCount: active.recentCommits.length,
+      commitsTruncated: commits.length < active.recentCommits.length,
+    };
+  },
   attentionQuery: async (request) =>
     input.attentionGateway ? (await input.attentionGateway.query(request)).map(projectAttentionCommitMatchForModel) : [],
   attentionDeliveryState: () => ({
@@ -2663,14 +2726,58 @@ describe("Feature: AgenterAI behavior", () => {
     const replay = extractAssistantReplay(seenInputs[1]);
     const userReplay = extractUserReplay(seenInputs[1]);
     const roles = extractReplayRoles(seenInputs[1]);
+    const currentAttentionPayload = flattenModelMessageContent(seenInputs[1].messages.at(-1));
     expect(replay.some((item) => item.includes("yaml+attention_items"))).toBeTrue();
+    expect(currentAttentionPayload).not.toContain("scoreMap");
+    expect(currentAttentionPayload).not.toContain("scores:");
     expect(replay.some((item) => item.includes("tool: root_bash"))).toBeTrue();
     expect(replay.some((item) => item.includes('command: "message send"'))).toBeTrue();
     expect(replay.some((item) => item.includes('command: "attention commit"'))).toBeTrue();
     expect(userReplay.some((item) => item.includes("ctx-main unresolved"))).toBeFalse();
     expect(userReplay.some((item) => item.includes("ctx-gaubee replied"))).toBeTrue();
     expect(roles.at(-1)).toBe("user");
-    expect(flattenModelMessageContent(seenInputs[1].messages.at(-1))).toContain("ctx-gaubee");
+    expect(currentAttentionPayload).toContain("ctx-gaubee");
+  });
+
+  test("Scenario: Given bootstrap keeps only minimal attention facts When the model needs full context detail Then it can fetch the explicit context view through the runtime CLI", async () => {
+    const terminal = createTerminalGateway();
+    const chat = createAttentionGateway();
+    const tracked = chat.engine.add({ content: "full context please", from: "user", score: 100 });
+    let round = 0;
+
+    const modelClient = createModelClient(async (input) => {
+      round += 1;
+      if (round === 1) {
+        const context = await callAttentionContextViaCli(
+          input,
+          {
+            contextId: chat.defaultContextId,
+            commitLimit: 5,
+          },
+          "call-attention-context-full-detail",
+        );
+        expect(context.context.contextId).toBe(chat.defaultContextId);
+        expect(context.context.context.content).toContain("full context please");
+        expect(context.context.context.scoreMap).toEqual(tracked.scores);
+        expect(context.context.commits.some((commit) => commit.commitId === tracked.commitId)).toBeTrue();
+      }
+      return {
+        thinking: "",
+        text: "",
+        finishReason: "stop",
+      };
+    });
+
+    const ai = new AgenterAI({
+      modelClient,
+      logger: createLogger(),
+      promptStore: new FilePromptStore({ defaultDocs: createPromptDocs() }),
+      toolProviders: createToolProviders({ attentionGateway: chat.gateway, terminalGateway: terminal.gateway }),
+      attentionGateway: chat.gateway,
+    });
+
+    await ai.send([createUserMessage("继续")]);
+    expect(round).toBe(1);
   });
 
   test("Scenario: Given assistant internal thinking and text When the next turn is built Then replayed promptWindow keeps only assistant text without synthetic headings", async () => {
@@ -2930,6 +3037,8 @@ describe("Feature: AgenterAI behavior", () => {
     expect(response).toBeUndefined();
     expect(compactInputs.length).toBeGreaterThan(0);
     expect(compactInputs.join("\n")).toContain("attention_system");
+    expect(compactInputs.join("\n")).not.toContain("scoreMap");
+    expect(compactInputs.join("\n")).not.toContain('"scores"');
     expect(chat.engine.list()).toHaveLength(0);
     const replay = extractAssistantReplay(ai.inspectDebugState().promptWindow);
     expect(replay.some((item) => item.includes("yaml+prompt_window_compact"))).toBeTrue();

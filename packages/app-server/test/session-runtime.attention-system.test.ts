@@ -2014,6 +2014,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(contextInput.text).toContain(PRIMARY_CONTEXT_ID);
     expect(contextInput.text).not.toContain("Systems Descriptions");
     expect(contextInput.text).not.toContain("yaml+background-attention-context");
+    expect(contextInput.text).not.toContain("focusState:");
+    expect(contextInput.text).not.toContain("scoreMap:");
+    expect(contextInput.text).not.toContain("scores:");
   });
 
   test("Scenario: Given terminal focus changes When runtime replaces the focused terminal Then focus state changes without serializing focus lifecycle as terminal debt", async () => {
@@ -2504,7 +2507,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       });
       const focusInputs = await internal.collectLoopInputs();
 
-      expect(getBootstrapInput(focusInputs)?.text).toContain("hash_background_focus");
+      const bootstrap = getBootstrapInput(focusInputs)?.text ?? "";
+      expect(bootstrap).toContain("## AttentionContext.focused");
+      expect(bootstrap).toContain(contextId);
+      expect(bootstrap).toContain("background room has historical work");
+      expect(bootstrap).not.toContain("hash_background_focus");
       expect(getItemsInput(focusInputs)).toBeUndefined();
     } finally {
       await runtime.stop();
@@ -2744,6 +2751,12 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(expectedPrimaryKind).not.toBe(expectedTerminalKind);
     expect(primaryPlan.meta?.attentionProtocolKind).toBe(expectedPrimaryKind);
     expect(terminalPlan.meta?.attentionProtocolKind).toBe(expectedTerminalKind);
+    expect(primaryPlan.text).not.toContain("focusState:");
+    expect(primaryPlan.text).not.toContain("scoreMap:");
+    expect(primaryPlan.text).not.toContain("scores:");
+    expect(terminalPlan.text).not.toContain("focusState:");
+    expect(terminalPlan.text).not.toContain("scoreMap:");
+    expect(terminalPlan.text).not.toContain("scores:");
   });
 
   test("Scenario: Given chat attention arrives while another context is already dirty When collectLoopInputs runs Then higher-priority chat context is emitted before the older terminal context in the same round", async () => {

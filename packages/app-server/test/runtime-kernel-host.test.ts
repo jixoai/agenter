@@ -224,4 +224,71 @@ describe("Feature: runtime-kernel-host", () => {
 
     await expect(host.drainIngress()).rejects.toThrow("invalid boundaryChannel");
   });
+
+  test("Scenario: Given adapter ingress omits boundaryChannel entirely When host commits it Then the host rejects the ambiguous runtime ingress before attention changes", async () => {
+    const host = new RuntimeKernelHost({
+      commitIngress: async () => {
+        throw new Error("should not commit invalid ingress");
+      },
+      getAttentionCommit: () => null,
+      getAttentionContextState: () => null,
+    });
+
+    await expect(
+      host.commitIngress({
+        ...createIngressEnvelope(),
+        boundaryChannel: undefined as never,
+      }),
+    ).rejects.toThrow("invalid boundaryChannel");
+  });
+
+  test("Scenario: Given adapter ingress omits source identity When host drains it Then the host rejects the ambiguous runtime ingress", async () => {
+    const adapter: RuntimeSystemKernelAdapter = {
+      name: "message",
+      mount: () => {},
+      drainIngress: () => [
+        {
+          ...createIngressEnvelope(),
+          sourceId: "",
+        },
+      ],
+    };
+
+    const host = new RuntimeKernelHost({
+      commitIngress: async () => {
+        throw new Error("should not commit invalid ingress");
+      },
+      getAttentionCommit: () => null,
+      getAttentionContextState: () => null,
+    });
+
+    host.mountAdapter(adapter);
+
+    await expect(host.drainIngress()).rejects.toThrow("must declare sourceId");
+  });
+
+  test("Scenario: Given adapter ingress omits context identity When host drains it Then the host rejects the ambiguous runtime ingress", async () => {
+    const adapter: RuntimeSystemKernelAdapter = {
+      name: "message",
+      mount: () => {},
+      drainIngress: () => [
+        {
+          ...createIngressEnvelope(),
+          contextKey: "",
+        },
+      ],
+    };
+
+    const host = new RuntimeKernelHost({
+      commitIngress: async () => {
+        throw new Error("should not commit invalid ingress");
+      },
+      getAttentionCommit: () => null,
+      getAttentionContextState: () => null,
+    });
+
+    host.mountAdapter(adapter);
+
+    await expect(host.drainIngress()).rejects.toThrow("must declare contextKey");
+  });
 });
