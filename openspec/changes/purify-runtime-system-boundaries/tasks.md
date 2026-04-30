@@ -49,7 +49,7 @@
 - [x] 5.1 Change runtime skill refresh so it maintains a queryable skill index by default without creating/selecting `ctx-skill-system` or any dedicated skill-only task context
 - [x] 5.2 Keep `skill list`, `skill search`, `skill info`, and `skill get-config` as explicit projection/query surfaces that enter the decision surface through tool results
 - [x] 5.3 Define and implement the policy for when skill changes publish ordinary objective attention items, including changed skill name, root kind, and changed files, without synthesizing a dedicated skill context and using the keyed interleaved attention-item staging path
-- [ ] 5.4 Ensure irrelevant skill watcher dirtiness does not preempt active room or terminal work by default
+- [x] 5.4 Ensure irrelevant skill watcher dirtiness does not preempt active room or terminal work by default
 - [x] 5.5 Update package-owned built-in skill source files to remove platform-authored social obligation language and auto-ACK guidance while preserving optional etiquette and recommended playbooks as non-binding guidance
 - [x] 5.6 Regenerate `packages/app-server/src/generated/runtime-skill-catalog.generated.ts` from the corrected skill sources
 - [x] 5.7 Add catalog tests that fail if removed pollution terms reappear in generated built-in skill bodies

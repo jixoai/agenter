@@ -4442,6 +4442,13 @@ export class SessionRuntime {
     );
   }
 
+  private isSkillAttentionContext(match: AttentionActiveContextMatch): boolean {
+    return (
+      match.contextId === "ctx-workspace-runtime" ||
+      match.recentCommits.some((commit) => commit.meta.source === "skill")
+    );
+  }
+
   private resolveAttentionSourceSystemId(match: AttentionActiveContextMatch): string {
     if (this.isMessageAttentionContext(match)) {
       return "message";
@@ -4451,6 +4458,9 @@ export class SessionRuntime {
     }
     if (this.isTaskAttentionContext(match)) {
       return "task";
+    }
+    if (this.isSkillAttentionContext(match)) {
+      return "skill";
     }
     if (this.isWorkspaceAttentionContext(match)) {
       return "workspace";
@@ -8229,6 +8239,9 @@ export class SessionRuntime {
     if (match.contextId.startsWith("ctx-task-")) {
       return 2;
     }
+    if (this.isSkillAttentionContext(match)) {
+      return -1;
+    }
     if (match.contextId.startsWith("ctx-terminal-")) {
       return 0;
     }
@@ -8237,7 +8250,7 @@ export class SessionRuntime {
 
   private selectDirtyAttentionContexts(active: AttentionActiveContextMatch[]): AttentionActiveContextMatch[] {
     const activeById = new Map(active.map((match) => [match.contextId, match] as const));
-    return [...this.dirtyAttentionContextOrder.entries()]
+    const ordered = [...this.dirtyAttentionContextOrder.entries()]
       .map(([contextId, order]) => ({
         order,
         match: activeById.get(contextId) ?? null,
@@ -8259,6 +8272,11 @@ export class SessionRuntime {
         return right.order - left.order;
       })
       .map((entry) => entry.match);
+    const hasNonSkillDirty = ordered.some((match) => !this.isSkillAttentionContext(match));
+    if (!hasNonSkillDirty) {
+      return ordered;
+    }
+    return ordered.filter((match) => !this.isSkillAttentionContext(match));
   }
 
   private selectAttentionDebtContexts(active: AttentionActiveContextMatch[]): AttentionActiveContextMatch[] {

@@ -2774,6 +2774,72 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(secondRound).toBeUndefined();
   });
 
+  test("Scenario: Given a skill reminder becomes dirty while room and terminal work are already active When collectLoopInputs runs Then the runtime keeps skill churn out of the current task round", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      ensureRuntimeSkillSystem: () => RuntimeSkillSystem;
+      handleRuntimeSkillRefreshResult: (
+        result: ReturnType<RuntimeSkillSystem["refresh"]>,
+        input: { notifyLoop: boolean },
+      ) => Promise<unknown>;
+    };
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+
+    const rootWorkspacePath = (Reflect.get(runtime, "options") as { rootWorkspacePath: string }).rootWorkspacePath;
+    const skillDir = join(rootWorkspacePath, "skills", "skill-churn");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      ["---", "name: skill-churn", "description: runtime skill churn proof", "---", "", "# skill-churn", "", "Version one.", ""].join(
+        "\n",
+      ),
+      "utf8",
+    );
+    const skillSystem = internal.ensureRuntimeSkillSystem();
+    await internal.handleRuntimeSkillRefreshResult(
+      skillSystem.refresh({ publishReminders: false }),
+      { notifyLoop: false },
+    );
+    await internal.collectLoopInputs();
+
+    const terminalContextId = "ctx-terminal-skill-churn";
+    internal.attentionSystem.createContext({ contextId: terminalContextId, owner: "avatar:tester" });
+    const terminalCommit = appendAttentionCommit(internal, terminalContextId, {
+      meta: {
+        author: "terminal:skill-churn",
+        source: "terminal",
+        src: createTerminalSrc("skill-churn"),
+      },
+      scores: { hash_terminal: 100 },
+      title: "Terminal skill-churn is waiting for the next command",
+    });
+    await internal.handleCommittedAttentionCommit(terminalContextId, terminalCommit, { notifyLoop: false });
+
+    runtime.pushUserChat("Reply with exactly ROOM-FIRST");
+
+    await writeFile(
+      join(skillDir, "SKILL.md"),
+      ["---", "name: skill-churn", "description: runtime skill churn proof", "---", "", "# skill-churn", "", "Version two.", ""].join(
+        "\n",
+      ),
+      "utf8",
+    );
+    await internal.handleRuntimeSkillRefreshResult(
+      skillSystem.refresh({ publishReminders: true }),
+      { notifyLoop: false },
+    );
+
+    const firstRound = await internal.collectLoopInputs();
+    expect(firstRound).toHaveLength(2);
+    expect(firstRound?.map((item) => item.meta?.attentionContextId)).toEqual([PRIMARY_CONTEXT_ID, terminalContextId]);
+    expect(firstRound?.some((item) => item.meta?.attentionContextId === "ctx-workspace-runtime")).toBeFalse();
+    expect((firstRound ?? []).map((item) => item.text).join("\n")).not.toContain("Updated runtime skill skill-churn");
+
+    const secondRound = await internal.collectLoopInputs();
+    expect(secondRound?.some((item) => item.meta?.attentionContextId === "ctx-workspace-runtime")).toBeTrue();
+    expect((secondRound ?? []).map((item) => item.text).join("\n")).toContain("Updated runtime skill skill-churn");
+  });
+
   test("Scenario: Given an attention round makes no progress When the final model call is recorded Then the affected context enters backoff before the next retry", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
