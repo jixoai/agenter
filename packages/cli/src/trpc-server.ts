@@ -31,6 +31,7 @@ export interface TrpcServerOptions {
   workspacesPath?: string;
   workspaceCwd?: string;
   staticDir?: string;
+  publicEnv?: Record<string, string>;
   homeDir?: string;
   authService?: AppKernelOptions["authService"];
   /** @deprecated Use authService. */
@@ -177,8 +178,18 @@ const requireBrowserSuperadmin = async (
   return auth;
 };
 
-const serveStatic = (req: IncomingMessage, res: ServerResponse, staticDir: string): void => {
+const serveRuntimePublicEnv = (res: ServerResponse, publicEnv: Record<string, string>): void => {
+  res.statusCode = 200;
+  res.setHeader("content-type", "text/javascript; charset=utf-8");
+  res.end(`export const env=${JSON.stringify(publicEnv)}\n`);
+};
+
+const serveStatic = (req: IncomingMessage, res: ServerResponse, staticDir: string, publicEnv?: Record<string, string>): void => {
   const reqPath = req.url ? new URL(req.url, "http://localhost").pathname : "/";
+  if (reqPath === "/_app/env.js" && publicEnv) {
+    serveRuntimePublicEnv(res, publicEnv);
+    return;
+  }
   const safePath = normalize(reqPath).replace(/^\.\.+/, "");
   const entryDocumentPath = resolveWebUiEntryDocumentPath(staticDir);
   const filePath = safePath === "/" ? (entryDocumentPath ?? join(staticDir, "index.html")) : join(staticDir, safePath);
@@ -404,7 +415,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
     }
 
     if (options.staticDir) {
-      serveStatic(req, res, options.staticDir);
+      serveStatic(req, res, options.staticDir, options.publicEnv);
       return;
     }
 

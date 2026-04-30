@@ -322,6 +322,10 @@ const patchRuntimeAttentionDeliveryState = (
   return next;
 };
 
+const replaceRuntimeAttentionDeliveryState = (
+  delivery: RuntimeAttentionDeliveryState,
+): RuntimeAttentionDeliveryState => cloneRuntimeAttentionDeliveryState(delivery);
+
 const createCachedResourceState = <T>(data: T): CachedResourceState<T> => ({
   data,
   loaded: false,
@@ -6103,6 +6107,7 @@ export class RuntimeStore {
       event.type === "runtime.apiCall" ||
       event.type === "runtime.apiRecording" ||
       event.type === "runtime.attention" ||
+      event.type === "runtime.attentionDelivery" ||
       event.type === "runtime.attentionDispatch" ||
       event.type === "runtime.attentionReceipt" ||
       event.type === "runtime.cycle.updated"
@@ -6359,6 +6364,10 @@ export class RuntimeStore {
         runtime.attention = payload;
         this.state.attentionBySession ??= {};
         this.state.attentionBySession[sessionId] = payload;
+      } else if (event.type === "runtime.attentionDelivery") {
+        const payload = replaceRuntimeAttentionDeliveryState(event.payload as RuntimeAttentionDeliveryState);
+        runtime.attentionDelivery = payload;
+        this.state.attentionDeliveryBySession[sessionId] = payload;
       } else if (event.type === "runtime.attentionDispatch") {
         const payload = event.payload as {
           dispatch: RuntimeAttentionDeliveryState["dispatches"][number];

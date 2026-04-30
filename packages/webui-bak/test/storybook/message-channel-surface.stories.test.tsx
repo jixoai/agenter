@@ -20,6 +20,9 @@ describe("Feature: Storybook DOM contract for message channel surface", () => {
     await DesktopMultiChannelSurface.run();
     await CompactMultiChannelSurface.run();
     await DeliveredMessageLinksToDevtools.run();
+  });
+
+  test("Scenario: Given a room surface When the user creates a room from metadata controls Then the dialog submits the requested title", async () => {
     await CreateChannelViaMetadataDialog.run();
   });
 

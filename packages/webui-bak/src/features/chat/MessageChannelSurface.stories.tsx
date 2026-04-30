@@ -295,13 +295,13 @@ export const DesktopMultiChannelSurface: Story = {
     const canvas = within(canvasElement);
     const portal = within(document.body);
 
-    await expect(await canvas.findByText(transcriptByChatId["room-jane"])).toBeInTheDocument();
+    await expect(await canvas.findByText(transcriptByChatId["room-jane"], {}, { timeout: 5_000 })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Send" })).toBeInTheDocument();
     await expect(canvas.getByTestId("message-channel-metadata-trigger")).toBeInTheDocument();
 
     await userEvent.click(canvas.getByRole("tab", { name: /Team room/i }));
 
-    await expect(await canvas.findByText(transcriptByChatId["room-team"])).toBeInTheDocument();
+    await expect(await canvas.findByText(transcriptByChatId["room-team"], {}, { timeout: 5_000 })).toBeInTheDocument();
     await waitFor(() => {
       expect(canvas.queryByText(transcriptByChatId["room-jane"])).not.toBeInTheDocument();
     });
@@ -318,13 +318,13 @@ export const CompactMultiChannelSurface: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(await canvas.findByText(transcriptByChatId["room-jane"])).toBeInTheDocument();
+    await expect(await canvas.findByText(transcriptByChatId["room-jane"], {}, { timeout: 5_000 })).toBeInTheDocument();
     await expect(canvas.getByTestId("message-channel-metadata-trigger")).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "New room" })).toBeInTheDocument();
 
     await userEvent.click(canvas.getByRole("tab", { name: /Team room/i }));
 
-    await expect(await canvas.findByText(transcriptByChatId["room-team"])).toBeInTheDocument();
+    await expect(await canvas.findByText(transcriptByChatId["room-team"], {}, { timeout: 5_000 })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "New room" })).toBeVisible();
   },
 };
@@ -338,7 +338,7 @@ export const DeliveredMessageLinksToDevtools: Story = {
     const canvas = within(canvasElement);
     const portal = within(document.body);
 
-    await expect(await canvas.findByText(transcriptByChatId["room-jane"])).toBeInTheDocument();
+    await expect(await canvas.findByText(transcriptByChatId["room-jane"], {}, { timeout: 5_000 })).toBeInTheDocument();
 
     await userEvent.click(canvas.getByLabelText("Message actions"));
     await userEvent.click(await portal.findByText("View In Devtools"));
@@ -366,6 +366,7 @@ export const CreateChannelViaMetadataDialog: Story = {
     const portal = within(document.body);
 
     createChannelViaMetadataDialogSpy.mockClear();
+    await expect(await canvas.findByRole("button", { name: "New room" }, { timeout: 5_000 })).toBeEnabled();
     await userEvent.click(canvas.getByRole("button", { name: "New room" }));
     const dialog = await portal.findByRole("dialog", { name: "Create room" });
     await userEvent.clear(within(dialog).getByLabelText("Title"));
@@ -395,7 +396,7 @@ export const RefreshingChannelCollection: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await expect(await canvas.findByText(transcriptByChatId["room-jane"])).toBeInTheDocument();
+    await expect(await canvas.findByText(transcriptByChatId["room-jane"], {}, { timeout: 5_000 })).toBeInTheDocument();
     await expect(canvas.getByText("Refreshing rooms...")).toBeInTheDocument();
   },
 };

@@ -394,11 +394,33 @@ const terminalAwaitSchema = z.object({
 const terminalWriteSchema = z.object({
   terminalId: z.string(),
   text: z.string(),
+  returnRead: z
+    .union([
+      z.boolean(),
+      z.object({
+        throttleMs: z.number().int().min(0).optional(),
+        debounceMs: z.number().int().min(0).optional(),
+      }),
+    ])
+    .optional(),
+  readRecordActivity: z.boolean().optional(),
+  readMode: z.enum(["auto", "diff", "snapshot"]).optional(),
 });
 
 const terminalInputSchema = z.object({
   terminalId: z.string(),
   text: z.string(),
+  returnRead: z
+    .union([
+      z.boolean(),
+      z.object({
+        throttleMs: z.number().int().min(0).optional(),
+        debounceMs: z.number().int().min(0).optional(),
+      }),
+    ])
+    .optional(),
+  readRecordActivity: z.boolean().optional(),
+  readMode: z.enum(["auto", "diff", "snapshot"]).optional(),
 });
 
 const terminalFocusSchema = z.object({

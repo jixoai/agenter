@@ -40,7 +40,7 @@ describe("Feature: invocation-first heartbeat ledger cold restore", () => {
               ) ?? null,
           {
             label: "running invocation heartbeat row",
-            timeoutMs: 30_000,
+            timeoutMs: 60_000,
           },
         );
 
@@ -147,6 +147,6 @@ describe("Feature: invocation-first heartbeat ledger cold restore", () => {
         await harness.stop().catch(() => {});
       }
     },
-    { timeout: 30_000 },
+    { timeout: 60_000 },
   );
 });

@@ -75,6 +75,7 @@ const toExternalLikeAuthDescriptor = (descriptor: AuthDescriptor): AuthDescripto
 export class AuthServiceBridge {
   private childHandle: AuthServiceHandle | null = null;
   private childHandlePromise: Promise<AuthServiceHandle> | null = null;
+  private launchedLocalBaseUrl: string | null = null;
   private reusedLocalBaseUrl: string | null = null;
 
   constructor(private readonly options: AuthServiceBridgeOptions = {}) {}
@@ -123,7 +124,10 @@ export class AuthServiceBridge {
   }
 
   private isExternalLikeAuthority(): boolean {
-    return Boolean(this.options.endpoint || this.reusedLocalBaseUrl);
+    return Boolean(
+      this.options.endpoint ||
+        (this.reusedLocalBaseUrl && this.reusedLocalBaseUrl !== this.launchedLocalBaseUrl),
+    );
   }
 
   private async ensureChildHandle(): Promise<AuthServiceHandle> {
@@ -145,7 +149,9 @@ export class AuthServiceBridge {
       );
     }
     try {
-      return await this.childHandlePromise;
+      const handle = await this.childHandlePromise;
+      this.launchedLocalBaseUrl = `http://${handle.host}:${handle.port}`;
+      return handle;
     } finally {
       if (this.childHandlePromise) {
         this.childHandlePromise = null;
@@ -181,6 +187,7 @@ export class AuthServiceBridge {
     const pendingHandle = this.childHandlePromise;
     this.childHandle = null;
     this.childHandlePromise = null;
+    this.launchedLocalBaseUrl = null;
     this.reusedLocalBaseUrl = null;
     if (activeHandle) {
       await activeHandle.stop();
@@ -218,7 +225,7 @@ export class AuthServiceBridge {
       throw new Error("managed root auth key reveal is unavailable for external auth service");
     }
     await this.resolveBaseUrl();
-    if (this.reusedLocalBaseUrl) {
+    if (this.reusedLocalBaseUrl && this.reusedLocalBaseUrl !== this.launchedLocalBaseUrl) {
       throw new Error("managed root auth key reveal is unavailable for external auth service");
     }
     const response = await this.request("/auth/root-key/reveal", {

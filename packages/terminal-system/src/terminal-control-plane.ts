@@ -53,6 +53,7 @@ import type {
   TerminalWriteResult,
 } from "./terminal-control-plane.types";
 import { TerminalDb } from "./terminal-db";
+import { resolveDefaultInteractiveShellCommand } from "./default-shell-command";
 import type { TerminalLifecycleTransition, TerminalObservedIdentity } from "./terminal-runtime-truth";
 import type { TerminalStatus } from "./types";
 
@@ -119,7 +120,6 @@ const MAX_AWAIT_VIEW_LINES = 500;
 const MAX_AWAIT_CONTEXT_LINES = 10;
 
 const createId = (): string => `term-${randomUUID()}`;
-const defaultShellCommand = (): string[] => [process.env.SHELL || "/bin/bash"];
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 const createOpaqueToken = (): string => `termtok_${randomUUID().replace(/-/g, "")}`;
 const isCanonicalActorId = (actorId: string): actorId is TerminalActorId =>
@@ -1802,7 +1802,7 @@ export class TerminalControlPlane {
     );
     const command = profile.command
       ? [...profile.command]
-      : [...(this.options.defaultShellCommand ?? defaultShellCommand())];
+      : [...(this.options.defaultShellCommand ?? resolveDefaultInteractiveShellCommand())];
     const cwd = resolve(profile.cwd ?? homedir());
     return this.db.createTerminal({
       terminalId,

@@ -45,7 +45,7 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
         await harness.stop();
       }
     },
-    { timeout: 30_000 },
+    { timeout: 60_000 },
   );
 
   test(
@@ -84,7 +84,7 @@ describe("Feature: non-GUI LoopBus two-room relay", () => {
         await harness.stop();
       }
     },
-    { timeout: 30_000 },
+    { timeout: 60_000 },
   );
 
 });

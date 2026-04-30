@@ -1,11 +1,13 @@
 import type { MessageChannelEntry, MessageChannelGrantEntry, MessageChannelGrantIssueOutput } from "@agenter/client-sdk";
 import {
-  WebChatView,
-  type WebChatComposerRenderProps,
+  type WebChatComposerCapabilities,
   type WebChatMessage,
+  type WebChatMessageAction,
+  type WebChatMessageReadProgress,
   type WebChatMessageRenderInput,
   type WebChatNotice,
   type WebChatSocketFactory,
+  type WebChatVisibleMessageFact,
 } from "@agenter/web-chat-view";
 import { Plus } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
@@ -14,12 +16,13 @@ import { AdaptiveIconButton } from "../../components/ui/adaptive-icon-button";
 import { AsyncSurface, resolveAsyncSurfaceState } from "../../components/ui/async-surface";
 import { Tabs } from "../../components/ui/tabs";
 import { cn } from "../../lib/utils";
-import { MessageChannelBubble } from "./message-channel-bubble";
 import { MessageChannelCreateDialog, type MessageChannelCreateInput } from "./message-channel-create-dialog";
 import { MessageChannelMetadataDisclosure } from "./message-channel-metadata-disclosure";
 import { RoomReadProgressDisclosure } from "./RoomReadProgressDisclosure";
 import type { RoomActorOption } from "./room-participants";
-import { AIInput, type AIInputCommand, type AIInputSubmitPayload, type AIInputSuggestion } from "./AIInput";
+import { type AIInputCommand, type AIInputSubmitPayload, type AIInputSuggestion } from "./AIInput";
+import { SLASH_COMMANDS } from "./ai-input-contract";
+import { WebChatViewHost } from "./WebChatViewHost";
 
 interface MessageChannelSurfaceProps {
   sessionId: string;
@@ -66,7 +69,7 @@ interface MessageChannelSurfaceProps {
   readStates?: MessageChannelEntry["readStates"];
   socketFactory?: WebChatSocketFactory;
   onOpenDevtools?: (cycleId: number) => void;
-  renderComposerAccessory?: (props: WebChatComposerRenderProps) => ReactNode;
+  renderComposerAccessory?: (props: { channel: MessageChannelEntry; disabled: boolean }) => ReactNode;
   sidePanel?: ReactNode;
 }
 
@@ -121,34 +124,120 @@ export const MessageChannelSurface = ({
     : showEmptyChannelState
       ? "Create a room to start the conversation."
       : "Send a message to start this room.";
-
-  const renderComposer = (props: WebChatComposerRenderProps) => (
-    <div className="border-t border-slate-200 bg-white/94 px-2 py-2 backdrop-blur md:px-2.5 md:py-2.5">
-      {renderComposerAccessory ? <div className="mb-2">{renderComposerAccessory(props)}</div> : null}
-      <AIInput
-        workspacePath={workspacePath}
-        placeholder={selectedChannel ? "Message Agenter and use @ to reference files..." : "Create a room to start messaging."}
-        disabled={props.disabled}
-        imageEnabled
-        imageCompatible={imageCompatible}
-        onSubmit={(payload) => onSendMessage({ channel: props.channel, payload })}
-        onCommand={onCommand}
-        onSearchPaths={onSearchPaths}
-      />
-    </div>
+  const mentionSuggestions = useMemo(
+    () =>
+      actorOptions.map((actor) => ({
+        id: actor.actorId,
+        label: actor.label,
+        detail: actor.subtitle,
+        apply: `@${actor.label}`,
+        iconUrl: actor.iconUrl ?? null,
+      })),
+    [actorOptions],
   );
-
-  const renderMessage = (input: WebChatMessageRenderInput) => (
-    <MessageChannelBubble
-      message={input.message}
-      isAssistant={input.isAssistant}
-      assistantAvatarUrl={assistantAvatarUrl}
-      assistantAvatarLabel={assistantAvatarLabel}
-      userAvatarLabel={userAvatarLabel}
-      onOpenDevtools={onOpenDevtools}
-      onSubmitInteractive={input.onSubmitInteractive}
-    />
+  const composerCapabilities = useMemo<WebChatComposerCapabilities>(
+    () => ({
+      placeholder: selectedChannel ? "Message Agenter and use @ to reference files..." : "Create a room to start messaging.",
+      attachmentEnabled: true,
+      imageEnabled: true,
+      screenshotEnabled: true,
+      commandSuggestions: SLASH_COMMANDS,
+      mentionSuggestions,
+      resolveMentionSuggestions: onSearchPaths
+        ? async (query) => {
+            if (!workspacePath) {
+              return mentionSuggestions;
+            }
+            const paths = await onSearchPaths({ cwd: workspacePath, query, limit: 8 });
+            return [
+              ...mentionSuggestions,
+              ...paths.map((entry) => ({
+                id: entry.path,
+                label: entry.label,
+                detail: entry.path,
+                apply: `@${entry.path}`,
+              })),
+            ];
+          }
+        : undefined,
+    }),
+    [mentionSuggestions, onSearchPaths, selectedChannel, workspacePath],
   );
+  const resolveMessageActions = useMemo(
+    () =>
+      onOpenDevtools
+        ? (input: WebChatMessageRenderInput): readonly WebChatMessageAction[] => {
+            const cycleId =
+              typeof input.message.metadata?.cycleId === "number" && Number.isInteger(input.message.metadata.cycleId)
+                ? input.message.metadata.cycleId
+                : typeof input.message.rootId === "string" && Number.isInteger(Number(input.message.rootId))
+                  ? Number(input.message.rootId)
+                  : null;
+            return cycleId === null
+              ? []
+              : [
+                  {
+                    id: "view-in-devtools",
+                    label: "View In Devtools",
+                    detail: "cycle",
+                    onSelect: () => {
+                      onOpenDevtools(cycleId);
+                    },
+                  },
+                ];
+          }
+        : undefined,
+    [onOpenDevtools],
+  );
+  const resolveMessageReadProgress = useMemo(
+    () =>
+      readProgress || (readStates?.length ?? 0) > 0
+        ? (_input: WebChatMessageRenderInput): WebChatMessageReadProgress | null => {
+            if (!readProgress) {
+              return null;
+            }
+            return {
+              readCount: readProgress.readSeatCount,
+              totalCount: readProgress.totalSeatCount,
+              title: "Read progress",
+              readActors:
+                readStates
+                  ?.filter((state) => state.hasReadLatestVisible)
+                  .map((state) => ({
+                    actorId: state.actorId,
+                    label: state.label,
+                    subtitle: state.role,
+                  })) ?? [],
+              unreadActors:
+                readStates
+                  ?.filter((state) => !state.hasReadLatestVisible)
+                  .map((state) => ({
+                    actorId: state.actorId,
+                    label: state.label,
+                    subtitle: state.role,
+                  })) ?? [],
+            };
+          }
+        : undefined,
+    [readProgress, readStates],
+  );
+  const handleLatestVisibleAssistantViewKeyChange = (viewKey: string | null) => {
+    onLatestVisibleAssistantMessageIdChange?.(viewKey);
+  };
+  const handleLatestVisibleMessageChange = (message: WebChatVisibleMessageFact | null) => {
+    onLatestVisibleMessageIdChange?.(message?.messageId !== undefined ? String(message.messageId) : message?.viewKey ?? null);
+  };
+  const handleSendMessage = async (payload: AIInputSubmitPayload): Promise<void> => {
+    if (!selectedChannel) {
+      return;
+    }
+    const command = payload.assets.length === 0 ? payload.text.trim() : null;
+    if (command && onCommand && SLASH_COMMANDS.some((item) => item.label === command)) {
+      await onCommand(command as AIInputCommand);
+      return;
+    }
+    await onSendMessage({ channel: selectedChannel, payload });
+  };
 
   const asyncState = resolveAsyncSurfaceState({
     loading: channelsLoading,
@@ -222,29 +311,37 @@ export const MessageChannelSurface = ({
             </div>
           }
         >
-          <WebChatView
-            key={selectedChannel?.chatId ?? "empty"}
-            channel={selectedChannel}
-            initialMessages={initialMessages}
-            disabled={disabled || !selectedChannel}
-            showHeader={false}
-            routeNotice={
-              selectedChannel && channelsError
-                ? {
-                    tone: "destructive",
-                    message: channelsError,
-                  }
-                : routeNotice
-            }
-            emptyTitle={emptyTitle}
-            emptyMessage={emptyMessage}
-            renderComposer={renderComposer}
-            renderMessage={renderMessage}
-            onSendMessage={(payload) => (selectedChannel ? onSendMessage({ channel: selectedChannel, payload }) : Promise.resolve())}
-            onLatestVisibleAssistantMessageIdChange={onLatestVisibleAssistantMessageIdChange}
-            onLatestVisibleMessageIdChange={onLatestVisibleMessageIdChange}
-            socketFactory={socketFactory}
-          />
+          <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto]">
+            <WebChatViewHost
+              key={selectedChannel?.chatId ?? "empty"}
+              channel={selectedChannel}
+              initialMessages={initialMessages}
+              disabled={disabled || !selectedChannel}
+              showHeader={false}
+              routeNotice={
+                selectedChannel && channelsError
+                  ? {
+                      tone: "destructive",
+                      message: channelsError,
+                    }
+                  : routeNotice
+              }
+              emptyTitle={emptyTitle}
+              emptyMessage={emptyMessage}
+              composerCapabilities={composerCapabilities}
+              resolveMessageActions={resolveMessageActions}
+              resolveMessageReadProgress={resolveMessageReadProgress}
+              onSendMessage={handleSendMessage}
+              onLatestVisibleAssistantViewKeyChange={handleLatestVisibleAssistantViewKeyChange}
+              onLatestVisibleMessageChange={handleLatestVisibleMessageChange}
+              socketFactory={socketFactory}
+            />
+            {selectedChannel && renderComposerAccessory ? (
+              <div className="border-t border-slate-200 bg-white/94 px-2 py-2 backdrop-blur md:px-2.5 md:py-2.5">
+                {renderComposerAccessory({ channel: selectedChannel, disabled: disabled || !selectedChannel })}
+              </div>
+            ) : null}
+          </div>
         </AsyncSurface>
         {sidePanel ? <div className="min-h-0">{sidePanel}</div> : null}
       </div>

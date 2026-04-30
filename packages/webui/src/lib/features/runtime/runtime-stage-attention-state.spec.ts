@@ -3,8 +3,10 @@ import { describe, expect, test } from "vitest";
 
 import type { RuntimeAttentionContextItem } from "./runtime-attention-contexts";
 import {
+  buildRuntimeAttentionEffectItems,
   buildRuntimeAttentionQueueItems,
   buildRuntimeAttentionScoreSummary,
+  buildRuntimeAttentionWatchItems,
   filterRuntimeAttentionContextItems,
   filterRuntimeAttentionHooks,
   filterRuntimeAttentionQueueItems,
@@ -196,6 +198,195 @@ describe("Feature: Runtime attention stage state contract", () => {
     ]);
     expect(filterRuntimeAttentionQueueItems(queue, "main shell").map((item) => item.id)).toEqual([
       "notification-2",
+    ]);
+  });
+
+  test("Scenario: Given delivery effects for one selected context When building explicit effects Then only causally linked room effects stay visible in recency order", () => {
+    const effects = buildRuntimeAttentionEffectItems({
+      contextId: "ctx-room-alpha",
+      delivery: {
+        projections: [
+          {
+            contextId: "ctx-room-alpha",
+            commitId: "commit-1",
+            state: "completed",
+            attemptCount: 1,
+            latestDispatchId: "dispatch-1",
+            latestReceiptId: "receipt-1",
+            agentCallId: "agent-call-1",
+            sessionModelCallId: 91,
+            firstAcceptedAt: 1700000000001,
+            latestReceiptAt: 1700000000002,
+            latestError: null,
+          },
+        ],
+        dispatches: [
+          {
+            dispatchId: "dispatch-1",
+            contextId: "ctx-room-alpha",
+            commitId: "commit-1",
+            cycleId: 8,
+            attemptIndex: 1,
+            agentCallId: "agent-call-1",
+            sessionModelCallId: 91,
+            createdAt: 1700000000000,
+          },
+        ],
+        receipts: [
+          {
+            receiptId: "receipt-1",
+            dispatchId: "dispatch-1",
+            contextId: "ctx-room-alpha",
+            commitId: "commit-1",
+            cycleId: 8,
+            attemptIndex: 1,
+            agentCallId: "agent-call-1",
+            sessionModelCallId: 91,
+            status: "completed",
+            providerEventKind: "run_finished",
+            timestamp: 1700000000201,
+          },
+        ],
+        watches: [],
+        effects: [
+          {
+            id: 2,
+            effectId: "effect-2",
+            actionId: "action-2",
+            actionKind: "message_send",
+            actorId: "assistant",
+            cycleId: 8,
+            sessionModelCallId: 91,
+            target: "room:room-alpha",
+            effectKind: "message_row_created",
+            effectRecordId: "room-alpha/13",
+            timestamp: 1700000000200,
+            meta: { chatId: "room-alpha", messageId: 13, contextId: "ctx-room-alpha", commitId: "commit-1" },
+          },
+          {
+            id: 1,
+            effectId: "effect-1",
+            actionId: "action-1",
+            actionKind: "message_send",
+            actorId: "assistant",
+            cycleId: 8,
+            sessionModelCallId: 91,
+            target: "room:room-alpha",
+            effectKind: "message_row_created",
+            effectRecordId: "room-alpha/12",
+            timestamp: 1700000000100,
+            meta: { chatId: "room-alpha", messageId: 12, contextId: "ctx-room-alpha", commitId: "commit-1" },
+          },
+          {
+            id: 3,
+            effectId: "effect-3",
+            actionId: "action-3",
+            actionKind: "watch_remind",
+            actorId: "assistant",
+            cycleId: null,
+            sessionModelCallId: null,
+            target: "watch:watch-1",
+            effectKind: "watch_due_marked",
+            effectRecordId: "watch-1",
+            timestamp: 1700000000300,
+            meta: { contextId: "ctx-room-alpha", commitId: "commit-1" },
+          },
+          {
+            id: 4,
+            effectId: "effect-4",
+            actionId: "action-4",
+            actionKind: "message_send",
+            actorId: "assistant",
+            cycleId: 9,
+            sessionModelCallId: 92,
+            target: "room:room-beta",
+            effectKind: "message_row_created",
+            effectRecordId: "room-beta/1",
+            timestamp: 1700000000400,
+            meta: { chatId: "room-beta", messageId: 1, contextId: "ctx-room-beta", commitId: "commit-2" },
+          },
+        ],
+      },
+    });
+
+    expect(effects.map((effect) => effect.effectId)).toEqual(["effect-2", "effect-1"]);
+    expect(effects[0]).toEqual(
+      expect.objectContaining({
+        target: "room:room-alpha",
+        actionKind: "message_send",
+        effectKind: "message_row_created",
+      }),
+    );
+  });
+
+  test("Scenario: Given watch reminders bound to one context When building watch items Then reminder truth stays separate from explicit effects", () => {
+    const watches = buildRuntimeAttentionWatchItems({
+      contextId: "ctx-room-alpha",
+      delivery: {
+        projections: [],
+        dispatches: [],
+        receipts: [],
+        effects: [],
+        watches: [
+          {
+            id: 1,
+            watchId: "watch-1",
+            ownerActionId: "action-1",
+            ownerActionKind: "message_send",
+            ownerActorId: "assistant",
+            ownerCycleId: 8,
+            ownerSessionModelCallId: 91,
+            target: "room:room-alpha",
+            predicate: {
+              kind: "message_latest_visible",
+              chatId: "room-alpha",
+              anchorMessageId: 13,
+            },
+            dueAt: 1700000000100,
+            status: "expired",
+            createdAt: 1700000000000,
+            updatedAt: 1700000000100,
+            resolvedAt: 1700000000200,
+            reminderContextId: "ctx-room-alpha",
+            reminderCommitId: "commit-reminder-1",
+            meta: {},
+          },
+          {
+            id: 2,
+            watchId: "watch-2",
+            ownerActionId: "action-2",
+            ownerActionKind: "message_send",
+            ownerActorId: "assistant",
+            ownerCycleId: 9,
+            ownerSessionModelCallId: 92,
+            target: "room:room-beta",
+            predicate: {
+              kind: "message_latest_visible",
+              chatId: "room-beta",
+              anchorMessageId: 2,
+            },
+            dueAt: 1700000000300,
+            status: "pending",
+            createdAt: 1700000000000,
+            updatedAt: 1700000000300,
+            resolvedAt: null,
+            reminderContextId: "ctx-room-beta",
+            reminderCommitId: null,
+            meta: {},
+          },
+        ],
+      },
+    });
+
+    expect(watches).toEqual([
+      expect.objectContaining({
+        watchId: "watch-1",
+        ownerActionKind: "message_send",
+        target: "room:room-alpha",
+        status: "expired",
+        predicateKind: "message_latest_visible",
+        predicateLabel: "room-alpha#13",
+      }),
     ]);
   });
 });

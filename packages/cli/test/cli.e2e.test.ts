@@ -125,7 +125,8 @@ const runPlaywrightProbe = async (url: string): Promise<{ url: string; body: str
       if (msg.type() === "error") errors.push(\`console:\${msg.text()}\`);
     });
     page.on("pageerror", (err) => errors.push(\`pageerror:\${err.message}\`));
-    await page.goto(${JSON.stringify(url)}, { waitUntil: "networkidle" });
+    await page.goto(${JSON.stringify(url)}, { waitUntil: "load" });
+    await page.waitForURL(/\\/avatars\\/catalog(?:\\?.*)?$/, { timeout: 30000 });
     await page.waitForTimeout(1500);
     console.log(JSON.stringify({
       url: page.url(),
@@ -299,8 +300,16 @@ describe("Feature: cli daemon and web commands", () => {
     }
 
     const probe = await runPlaywrightProbe(`http://${host}:${port}/`);
-    expect(probe.url).toMatch(/\/avatars\/workspace(?:\?.*)?$/);
-    expect(probe.errors).toEqual([]);
+    const fatalErrors = probe.errors.filter(
+      (error) => !/^console:Failed to load resource: the server responded with a status of 401 \(Unauthorized\)$/u.test(error),
+    );
+    expect(probe.url).toMatch(/\/avatars\/catalog(?:\?.*)?$/);
+    expect(fatalErrors).toEqual([]);
+    expect(
+      probe.errors.some((error) =>
+        /ERR_CONNECTION_REFUSED|Unexpected token '<'|Unexpected end of JSON input|SyntaxError/i.test(error),
+      ),
+    ).toBe(false);
     expect(probe.body.trim().length).toBeGreaterThan(0);
   }, 120_000);
 
@@ -344,8 +353,13 @@ describe("Feature: cli daemon and web commands", () => {
     const client = createAgenterClient({
       wsUrl: `ws://${host}:${port}/trpc`,
     });
-    const store = createRuntimeStore(client);
     try {
+      const autoLogin = await client.trpc.auth.autoLogin.mutate();
+      if (!autoLogin.ok) {
+        throw new Error(`expected daemon auto login to succeed, got ${autoLogin.reason}: ${autoLogin.message}`);
+      }
+      client.setAuthToken(autoLogin.session.token);
+      const store = createRuntimeStore(client);
       await store.connect();
       await store.createSession({
         cwd: process.cwd(),
@@ -354,8 +368,9 @@ describe("Feature: cli daemon and web commands", () => {
       });
       await waitFor(() => store.getState().sessions.some((item) => item.name === "e2e-subscription"));
       expect(store.getState().sessions.some((item) => item.name === "e2e-subscription")).toBe(true);
-    } finally {
       store.disconnect();
+    } finally {
+      client.close();
     }
   }, 90_000);
 });

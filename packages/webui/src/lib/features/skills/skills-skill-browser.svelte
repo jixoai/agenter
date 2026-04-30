@@ -274,7 +274,7 @@
 																Loading file tree…
 															</div>
 														{:else}
-															<div class="h-[18rem] min-h-0">
+															<div class="h-[18rem]">
 																<SkillFileTree
 																	rows={buildSkillTreeRows({
 																		pages: treePagesBySkill[skillKey] ?? {},

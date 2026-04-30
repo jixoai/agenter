@@ -44,6 +44,7 @@ export type RuntimeEventType =
   | "runtime.apiCall"
   | "runtime.apiRecording"
   | "runtime.attention"
+  | "runtime.attentionDelivery"
   | "runtime.attentionDispatch"
   | "runtime.attentionReceipt"
   | "runtime.cycle.updated"

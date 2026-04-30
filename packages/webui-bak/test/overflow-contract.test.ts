@@ -13,12 +13,12 @@ const BACKGROUND_GUARD_FILES = new Map<string, string>([
   ["router.tsx", 'surfaceToneClassName("panel")'],
   ["features/shell/AppHeader.tsx", 'surfaceToneClassName("chrome")'],
   ["features/shell/BottomNavBar.tsx", 'surfaceToneClassName("chrome")'],
-  ["features/shell/SidebarNav.tsx", 'surfaceToneClassName("chrome")'],
+  ["components/ui/sidebar.tsx", 'surfaceToneClassName("chrome")'],
 ]);
 const VIEWPORT_GUARD_FILES = new Map<string, string>([
   ["features/shell/AppRoot.tsx", "ViewportMask"],
   ["features/shell/WorkspaceShellFrame.tsx", "ViewportMask"],
-  ["features/shell/SidebarNav.tsx", "ScrollViewport"],
+  ["components/ui/sidebar.tsx", "ScrollViewport"],
   ["features/settings/GlobalSettingsPanel.tsx", "ScrollViewport"],
   ["features/settings/SettingsPanel.tsx", "ScrollViewport"],
 ]);

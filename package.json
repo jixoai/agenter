@@ -29,6 +29,15 @@
     "test": "bun run --filter '*' test",
     "version-packages": "changeset version"
   },
+  "overrides": {
+    "@codemirror/autocomplete": "6.20.1",
+    "@codemirror/lang-html": "6.4.11",
+    "@codemirror/lang-markdown": "6.5.0",
+    "@codemirror/language": "6.12.3",
+    "@codemirror/language-data": "6.5.1",
+    "@codemirror/state": "6.6.0",
+    "@codemirror/view": "6.41.0"
+  },
   "dependencies": {
     "@agenter/ui-studio": "workspace:*",
     "imagetracerjs": "^1.2.6",

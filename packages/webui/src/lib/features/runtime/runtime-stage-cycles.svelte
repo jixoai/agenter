@@ -358,6 +358,32 @@
 
 								<section class="grid gap-2 rounded-2xl border border-border/70 bg-muted/15 px-4 py-3">
 									<div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+										Explicit effects
+									</div>
+									{#if selectedCycleDetail.deliveryEffects.length === 0}
+										<div class="text-sm text-muted-foreground">
+											No durable external effect was linked to this cycle.
+										</div>
+									{:else}
+										<div class="grid gap-2">
+											{#each selectedCycleDetail.deliveryEffects as effect (effect.effectId)}
+												<Item.Root size="sm" variant="muted" class="grid gap-2">
+													<div class="flex flex-wrap items-center gap-2">
+														<div class="text-sm font-medium">{effect.effectKind}</div>
+														<Badge variant="secondary">{effect.actionKind}</Badge>
+														<Badge variant="outline" class="rounded-full text-[11px]">{effect.target}</Badge>
+													</div>
+													<div class="text-xs text-muted-foreground">
+														action {effect.actionId} · record {effect.effectRecordId} · {formatRuntimeTimestamp(effect.timestamp)}
+													</div>
+												</Item.Root>
+											{/each}
+										</div>
+									{/if}
+								</section>
+
+								<section class="grid gap-2 rounded-2xl border border-border/70 bg-muted/15 px-4 py-3">
+									<div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
 										Trace evidence
 									</div>
 									{#if selectedCycleDetail.traces.length === 0}

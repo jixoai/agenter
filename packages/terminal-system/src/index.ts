@@ -1,4 +1,5 @@
 export { AgenticTerminal } from "./agentic-terminal";
+export { resolveDefaultInteractiveShellCommand } from "./default-shell-command";
 export {
   ManagedTerminal,
   type ManagedTerminalConfig,

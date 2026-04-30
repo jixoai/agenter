@@ -20,8 +20,10 @@
 	} from './runtime-attention-contexts';
 	import { formatRuntimeTimestamp } from './runtime-shell-format';
 	import {
+		buildRuntimeAttentionEffectItems,
 		buildRuntimeAttentionQueueItems,
 		buildRuntimeAttentionScoreSummary,
+		buildRuntimeAttentionWatchItems,
 		filterRuntimeAttentionContextItems,
 		filterRuntimeAttentionHooks,
 		filterRuntimeAttentionQueueItems,
@@ -169,6 +171,18 @@
 			.sort((left, right) => right.timestamp - left.timestamp || right.receiptId.localeCompare(left.receiptId))
 			.slice(0, 8);
 	});
+	const selectedDeliveryEffects = $derived(
+		buildRuntimeAttentionEffectItems({
+			delivery: attentionDelivery,
+			contextId: selectedContextId,
+		}),
+	);
+	const selectedWatchItems = $derived(
+		buildRuntimeAttentionWatchItems({
+			delivery: attentionDelivery,
+			contextId: selectedContextId,
+		}),
+	);
 	const focusedStackItems = $derived(
 		activeContextItems.filter((item) => item.contextId !== selectedContextId),
 	);
@@ -304,7 +318,7 @@
 				</Card.Header>
 				<Card.Content class="grid gap-4 pt-6">
 					{#if selectedContext}
-						<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+						<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start" data-testid="runtime-attention-selected-context">
 							<div class="grid gap-2">
 								<div class="flex flex-wrap items-center gap-2">
 									<div class="text-base font-semibold">{selectedContext.label}</div>
@@ -388,7 +402,7 @@
 							: 'When no focused stack exists, tracked contexts remain available for inspection.'}
 					</Card.Description>
 				</Card.Header>
-				<Card.Content class="grid gap-2 pt-6">
+				<Card.Content class="grid gap-2 pt-6" data-testid="runtime-attention-context-stack">
 					{#if focusedStackItems.length > 0 || trackedStackItems.length > 0}
 						{#each [...focusedStackItems, ...trackedStackItems] as item (item.contextId)}
 							<button
@@ -429,7 +443,7 @@
 						Background notifications stay compact here until they are focused or consumed.
 					</Card.Description>
 				</Card.Header>
-				<Card.Content class="grid gap-2 pt-6">
+				<Card.Content class="grid gap-2 pt-6" data-testid="runtime-attention-queue">
 					{#if filteredQueueItems.length > 0}
 						{#each filteredQueueItems as item (item.id)}
 							<button
@@ -462,7 +476,7 @@
 				<Card.Header class="border-b">
 					<Card.Title>Delivery ledger</Card.Title>
 					<Card.Description>
-						Hook outcomes stay separate. This section only shows dispatch attempts and stream receipts.
+						Hook outcomes stay separate. This section shows projections, dispatch attempts, stream receipts, watch reminders, and explicit external effects.
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="grid gap-4 pt-6">
@@ -526,10 +540,13 @@
 							</section>
 						</div>
 
-						<section class="grid gap-2">
-							<div class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-								Receipt history
-							</div>
+							<section class="grid gap-2">
+								<div
+									class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground"
+									data-testid="runtime-attention-delivery-receipts-heading"
+								>
+									Receipt history
+								</div>
 							{#if selectedDeliveryReceipts.length > 0}
 								<div class="grid gap-2">
 									{#each selectedDeliveryReceipts as receipt (receipt.receiptId)}
@@ -557,15 +574,85 @@
 							{:else}
 								<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
 									No stream receipt has been recorded for the selected context yet.
+									</div>
+								{/if}
+							</section>
+
+							<section class="grid gap-2">
+								<div
+									class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground"
+									data-testid="runtime-attention-delivery-effects-heading"
+								>
+									Explicit effects
 								</div>
-							{/if}
-						</section>
-					{:else}
-						<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-							Select one attention context first, then inspect its dispatch attempts and receipt history here.
-						</div>
-					{/if}
-				</Card.Content>
+								{#if selectedDeliveryEffects.length > 0}
+									<div class="grid gap-2" data-testid="runtime-attention-delivery-effects">
+										{#each selectedDeliveryEffects as effect (effect.effectId)}
+											<div class="rounded-2xl border px-4 py-3">
+												<div class="flex flex-wrap items-center gap-2">
+													<div class="text-sm font-semibold">{effect.effectKind}</div>
+													<Badge variant="secondary">{effect.actionKind}</Badge>
+													<Badge variant="outline">{effect.target}</Badge>
+												</div>
+												<div class="mt-1 text-xs text-muted-foreground">
+													action {effect.actionId} · record {effect.effectRecordId} · {formatRuntimeTimestamp(effect.timestamp)}
+												</div>
+												<div class="mt-1 text-xs text-muted-foreground">
+													commit {effect.commitId}
+													{#if effect.sessionModelCallId !== null}
+														<span> · ai_call #{effect.sessionModelCallId}</span>
+													{/if}
+												</div>
+											</div>
+										{/each}
+									</div>
+								{:else}
+									<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+										No durable external effect is linked to the selected context yet.
+									</div>
+								{/if}
+							</section>
+
+							<section class="grid gap-2">
+								<div
+									class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground"
+									data-testid="runtime-attention-delivery-watches-heading"
+								>
+									Watch reminders
+								</div>
+								{#if selectedWatchItems.length > 0}
+									<div class="grid gap-2" data-testid="runtime-attention-delivery-watches">
+										{#each selectedWatchItems as watch (watch.watchId)}
+											<div class="rounded-2xl border px-4 py-3">
+												<div class="flex flex-wrap items-center gap-2">
+													<div class="text-sm font-semibold">{watch.predicateKind}</div>
+													<Badge variant="secondary">{watch.status}</Badge>
+													<Badge variant="outline">{watch.target}</Badge>
+												</div>
+												<div class="mt-1 text-xs text-muted-foreground">
+													owner {watch.ownerActionKind} · due {formatRuntimeTimestamp(watch.dueAt)}
+												</div>
+												<div class="mt-1 text-xs text-muted-foreground">
+													predicate {watch.predicateLabel}
+													{#if watch.resolvedAt !== null}
+														<span> · resolved {formatRuntimeTimestamp(watch.resolvedAt)}</span>
+													{/if}
+												</div>
+											</div>
+										{/each}
+									</div>
+								{:else}
+									<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+										No watch reminder is currently linked to the selected context.
+									</div>
+								{/if}
+							</section>
+						{:else}
+							<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+								Select one attention context first, then inspect its delivery facts and explicit effects here.
+							</div>
+						{/if}
+					</Card.Content>
 			</Card.Root>
 		</div>
 	{/snippet}

@@ -331,6 +331,73 @@ const extractAttentionSystemFrames = (messages: readonly ChatMessage[]): Attenti
   return frames;
 };
 
+const extractPromptAttentionContextYamlBlocks = (content: string): string[] => {
+  const lines = content.split("\n");
+  const blocks: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trim();
+    if (line !== "## AttentionContext.focused" && line !== "## AttentionContext.background") {
+      continue;
+    }
+    let fenceIndex = index + 1;
+    while (fenceIndex < lines.length && lines[fenceIndex]?.trim().length === 0) {
+      fenceIndex += 1;
+    }
+    const fence = lines[fenceIndex]?.trim();
+    if (
+      fence !== "```yaml+focused-attention-context" &&
+      fence !== "```yaml+background-attention-context"
+    ) {
+      continue;
+    }
+    const yamlLines: string[] = [];
+    let cursor = fenceIndex + 1;
+    while (cursor < lines.length) {
+      const current = lines[cursor] ?? "";
+      if (current.trim() === "```") {
+        break;
+      }
+      yamlLines.push(current);
+      cursor += 1;
+    }
+    if (yamlLines.length > 0 && cursor < lines.length) {
+      blocks.push(yamlLines.join("\n").trim());
+      index = cursor;
+    }
+  }
+  return blocks;
+};
+
+const extractPromptAttentionContextFrames = (messages: readonly ChatMessage[]): AttentionFrame[] => {
+  const frames: AttentionFrame[] = [];
+  for (const message of messages) {
+    const content = message.content ?? "";
+    for (const yaml of extractPromptAttentionContextYamlBlocks(content)) {
+      if (!yaml) {
+        continue;
+      }
+      const parsed = safeYamlParse(yaml);
+      const contexts = Array.isArray(parsed) ? parsed : [parsed];
+      for (const entry of contexts) {
+        if (!entry || typeof entry !== "object") {
+          continue;
+        }
+        const record = entry as Record<string, unknown>;
+        const contextId = typeof record.contextId === "string" ? record.contextId : null;
+        const commitsRaw = Array.isArray(record.recentCommits) ? record.recentCommits : [];
+        if (!contextId || commitsRaw.length === 0) {
+          continue;
+        }
+        const commits = commitsRaw
+          .filter((commit): commit is Record<string, unknown> => Boolean(commit) && typeof commit === "object")
+          .map((commit) => normalizeAttentionCommit(commit, contextId));
+        frames.push({ contextId, commits });
+      }
+    }
+  }
+  return frames;
+};
+
 const extractPromptWindowCompactSummaries = (messages: readonly ChatMessage[]): PromptWindowCompactSummary[] => {
   const summaries: PromptWindowCompactSummary[] = [];
   for (const message of messages) {
@@ -762,10 +829,18 @@ const decideChat = (request: ChatCompletionRequest, state: MockModelServerState)
       ? directCurrentSemanticText
       : allSemanticText;
   const currentFrames = pickCurrentFrames(
-    mergeAttentionFrames(extractAttentionFrames(users), extractAttentionSystemFrames(users)),
+    mergeAttentionFrames(
+      extractAttentionFrames(users),
+      extractAttentionSystemFrames(users),
+      extractPromptAttentionContextFrames(users),
+    ),
   );
   const allFrames = pickCurrentFrames(
-    mergeAttentionFrames(extractAttentionFrames(request.messages), extractAttentionSystemFrames(request.messages)),
+    mergeAttentionFrames(
+      extractAttentionFrames(request.messages),
+      extractAttentionSystemFrames(request.messages),
+      extractPromptAttentionContextFrames(request.messages),
+    ),
   );
   const toolResults = extractToolResults(afterUsers);
   const assistantHistory = listAssistantTexts(request.messages).join("\n");

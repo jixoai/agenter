@@ -690,9 +690,12 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("stdin:");
     expect(result.stdout).toContain("Single argv JSON fallback for trivial payloads");
     expect(result.stdout).toContain("Compact positional mode:");
-    expect(result.stdout).toContain("Availability: Suggested");
+    expect(result.stdout).toContain("Availability: Available");
     expect(result.stdout).toContain('[0] terminalId: string');
     expect(result.stdout).toContain('[1] text: string');
+    expect(result.stdout).toContain('[2] returnRead?: value');
+    expect(result.stdout).toContain('[3] readRecordActivity?: boolean');
+    expect(result.stdout).toContain('[4] readMode?: 0="auto", 1="diff", 2="snapshot"');
     expect(result.stdout).toContain("Operator notes:");
     expect(result.stdout).toContain("only confirms input delivery");
     expect(result.stdout).toContain("`terminal write` is raw mode");

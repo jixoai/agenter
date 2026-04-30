@@ -28,6 +28,24 @@ const createPlane = () => {
   });
 };
 
+const createDefaultShellPlane = () => {
+  const outputRoot = mkdtempSync(join(tmpdir(), "ati-control-plane-"));
+  workspaces.push(outputRoot);
+  return new TerminalControlPlane({
+    dbPath: join(outputRoot, "terminal.db"),
+    outputRoot,
+    initialConfig: {
+      defaults: {
+        cols: 80,
+        rows: 20,
+      },
+      transport: {
+        port: null,
+      },
+    },
+  });
+};
+
 afterEach(() => {
   while (workspaces.length > 0) {
     const path = workspaces.pop();
@@ -293,6 +311,27 @@ describe("Feature: terminal control plane", () => {
       limit: 10,
     }).items;
     expect(events[0]?.payload.detail).toEqual({ mode: "mixed" });
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a default shell terminal When mixed input submits a command Then the control plane observes executed output instead of a stuck echoed line", async () => {
+    const plane = createDefaultShellPlane();
+    const created = await plane.create({ terminalId: "default-shell-exec" });
+
+    const result = await plane.input({
+      terminalId: created.terminalId,
+      text: '<raw>printf "__AGT_EXEC__=%s\\n" "ok"</raw><key data="enter"/>',
+      returnRead: {
+        debounceMs: 250,
+      },
+      readMode: "snapshot",
+    });
+
+    expect(result.ok).toBe(true);
+    const lines = result.read?.snapshot?.lines ?? [];
+    const visible = lines.join("\n");
+    expect(visible).toContain("__AGT_EXEC__=ok");
 
     await plane.dispose();
   });

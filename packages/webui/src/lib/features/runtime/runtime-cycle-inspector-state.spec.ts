@@ -226,7 +226,25 @@ const attentionDelivery: RuntimeAttentionDeliveryState = {
     },
   ],
   watches: [],
-  effects: [],
+  effects: [
+    {
+      id: 1,
+      effectId: "effect-1",
+      actionId: "action-message-send-1",
+      actionKind: "message_send",
+      actorId: "assistant",
+      cycleId: 12,
+      sessionModelCallId: 55,
+      target: "room:room-main",
+      effectKind: "message_row_created",
+      effectRecordId: "room-main/17",
+      timestamp: 1711929631000,
+      meta: {
+        chatId: "room-main",
+        messageId: 17,
+      },
+    },
+  ],
 };
 
 const olderCycle: RuntimeChatCycle = {
@@ -319,6 +337,15 @@ describe("Feature: Runtime cycle inspector state", () => {
       "receipt-1",
       "receipt-2",
       "receipt-3",
+    ]);
+    expect(detail.deliveryEffects).toEqual([
+      expect.objectContaining({
+        effectId: "effect-1",
+        actionKind: "message_send",
+        target: "room:room-main",
+        effectKind: "message_row_created",
+        effectRecordId: "room-main/17",
+      }),
     ]);
     expect(detail.modelCalls[0]?.id).toBe(55);
     expect(detail.modelConfig.systemPrompt).toBe("You are helpful.");

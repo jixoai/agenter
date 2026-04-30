@@ -1,11 +1,13 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { expect, test } from "bun:test";
 
+const cliEntry = resolve(import.meta.dirname, "../src/bin/ati.ts");
+
 const runCli = async (args: string[], cwd: string): Promise<{ code: number; stdout: string; stderr: string }> => {
-  const proc = Bun.spawn(["bun", "run", "src/bin/ati.ts", ...args], {
+  const proc = Bun.spawn(["bun", "run", cliEntry, ...args], {
     cwd,
     stdout: "pipe",
     stderr: "pipe",

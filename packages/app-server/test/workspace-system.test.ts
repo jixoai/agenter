@@ -90,7 +90,14 @@ const collectMarkedValues = (text: string): Record<string, string> => {
   return values;
 };
 
-const buildEnvDumpCommand = (): string =>
+const shellQuote = (value: string): string => {
+  if (value.length === 0) {
+    return "''";
+  }
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+};
+
+const buildEnvDumpCommand = (doneValue = "1"): string =>
   [
     `marker_prefix=__AGT`,
     `printf '%s_HOME__=%s\\n' "$marker_prefix" "$HOME"`,
@@ -98,145 +105,157 @@ const buildEnvDumpCommand = (): string =>
     `printf '%s_HOME_DIR__=%s\\n' "$marker_prefix" "\${AGENTER_HOME_DIR-}"`,
     `printf '%s_PRIVATE__=%s\\n' "$marker_prefix" "\${AGENTER_AVATAR_PRIVATE_KEY-}"`,
     `printf '%s_PATH__=%s\\n' "$marker_prefix" "$PATH"`,
-    `printf '%s_DONE__=1\\n' "$marker_prefix"`,
+    `printf '%s_DONE__=%s\\n' "$marker_prefix" ${shellQuote(doneValue)}`,
   ].join("; ");
 
-const buildEnvDumpWrites = (): Array<{
-  key: "HOME" | "ROOT" | "HOME_DIR" | "PRIVATE" | "PATH" | "DONE";
-  text: string;
-}> => [
-  { key: "HOME", text: `printf '__AGT_HOME__=%s\\n' "$HOME"\r` },
-  { key: "ROOT", text: "printf '__AGT_ROOT__=%s\\n' \"${AGENTER_ROOT_WORKSPACE-}\"\r" },
-  { key: "HOME_DIR", text: "printf '__AGT_HOME_DIR__=%s\\n' \"${AGENTER_HOME_DIR-}\"\r" },
-  { key: "PRIVATE", text: "printf '__AGT_PRIVATE__=%s\\n' \"${AGENTER_AVATAR_PRIVATE_KEY-}\"\r" },
-  { key: "PATH", text: `printf '__AGT_PATH__=%s\\n' "$PATH"\r` },
-  { key: "DONE", text: "printf '__AGT_DONE__=1\\n'\r" },
-];
-
-const waitForTerminalSurface = async (kernel: AppKernel, sessionId: string, terminalId: string): Promise<void> => {
-  await waitForRealValue(
-    async () => {
-      const read = await execRootWorkspaceBash(kernel, sessionId, {
-        command: "terminal read",
-        stdin: JSON.stringify({
-          terminalId,
-          mode: "snapshot",
-        }),
-      });
-      if (read.exitCode !== 0) {
-        return null;
-      }
-      const payload = JSON.parse(read.stdout) as {
-        result?:
-          | {
-              kind?: "terminal-snapshot";
-              tail?: string;
-              snapshot?: {
-                lines?: string[];
-              };
-            }
-          | {
-              kind?: "terminal-diff";
-              diff?: string;
-            };
+const getRuntimeTerminalApi = (kernel: AppKernel, sessionId: string) => {
+  const runtime = getRuntime(kernel, sessionId) as Record<string, unknown>;
+  const awaitMethod = Reflect.get(runtime, "awaitRuntimeTerminal");
+  const inputMethod = Reflect.get(runtime, "inputRuntimeTerminal");
+  if (typeof awaitMethod !== "function" || typeof inputMethod !== "function") {
+    throw new Error("runtime terminal api is unavailable");
+  }
+  return {
+    awaitRuntimeTerminal: (input: {
+      terminalId: string;
+      wait?: {
+        until?: "changed" | "idle" | "match" | "absent";
+        fromHash?: string | null;
+        timeoutMs?: number;
+        idleMs?: number;
       };
-      const result = payload.result;
-      if (!result) {
-        return null;
-      }
-      const visibleText =
-        result.kind === "terminal-snapshot"
-          ? (result.snapshot?.lines?.join("\n") ?? result.tail ?? "")
-          : result.kind === "terminal-diff"
-            ? (result.diff ?? "")
-            : "";
-      return visibleText.length > 0 ? true : null;
-    },
-    {
-      label: `terminal surface ${terminalId}`,
-      timeoutMs: 15_000,
-    },
-  );
-};
-
-const readTerminalSnapshotText = async (
-  kernel: AppKernel,
-  sessionId: string,
-  terminalId: string,
-): Promise<string | null> => {
-  const read = await execRootWorkspaceBash(kernel, sessionId, {
-    command: "terminal read",
-    stdin: JSON.stringify({
-      terminalId,
-      mode: "snapshot",
-    }),
-  });
-  if (read.exitCode !== 0) {
-    return null;
-  }
-  const payload = JSON.parse(read.stdout) as {
-    result?:
-      | {
-          kind?: "terminal-snapshot";
-          tail?: string;
-          snapshot?: {
-            lines?: string[];
-          };
-        }
-      | {
-          kind?: "terminal-diff";
-          diff?: string;
+      match?: {
+        pattern: string;
+        regex?: boolean;
+        caseInsensitive?: boolean;
+        contextLines?: number;
+      };
+      view?: {
+        type?: "tail";
+        lines?: number;
+      };
+      recordActivity?: boolean;
+      signal?: AbortSignal;
+    }) =>
+      Reflect.apply(awaitMethod, runtime, [input]) as Promise<{
+        kind?: "terminal-await";
+        outcome?: "matched" | "absent" | "idle" | "changed" | "timeout" | "stopped" | "cancelled";
+        snapshot?: {
+          lines?: string[];
         };
+        match?: {
+          matches?: Array<{
+            text?: string;
+            contextLines?: string[];
+          }>;
+        };
+      }>,
+    inputRuntimeTerminal: (input: {
+      terminalId: string;
+      text: string;
+      returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+      readRecordActivity?: boolean;
+      readMode?: "auto" | "diff" | "snapshot";
+    }) =>
+      Reflect.apply(inputMethod, runtime, [input]) as Promise<{
+        ok: boolean;
+        message: string;
+      }>,
   };
-  const result = payload.result;
-  return result?.kind === "terminal-snapshot"
-    ? (result.snapshot?.lines?.join("\n") ?? result.tail ?? "")
-    : result?.kind === "terminal-diff"
-      ? (result.diff ?? "")
-      : null;
 };
 
-const waitForTerminalMarkerValue = async (
-  kernel: AppKernel,
-  sessionId: string,
-  terminalId: string,
-  key: "HOME" | "ROOT" | "HOME_DIR" | "PRIVATE" | "PATH" | "DONE",
-): Promise<string> =>
+const waitForTerminalRunning = async (kernel: AppKernel, sessionId: string, terminalId: string): Promise<void> => {
   await waitForRealValue(
-    async () => {
-      const text = await readTerminalSnapshotText(kernel, sessionId, terminalId);
-      if (!text) {
+    () => {
+      const terminal = kernel.listTerminals(sessionId).find((entry) => entry.terminalId === terminalId);
+      if (!terminal) {
         return null;
       }
-      const match = text.match(new RegExp(`^__AGT_${key}__=([^\\r\\n]*)$`, "mu"));
-      return match?.[1]?.trimEnd() ?? null;
+      return terminal.processPhase === "running" && terminal.lifecycleTransition == null ? terminal : null;
     },
     {
-      label: `terminal marker ${terminalId}:${key}`,
+      label: `terminal ${terminalId} running`,
       timeoutMs: 15_000,
+      pollMs: 100,
     },
   );
+};
 
-const collectTerminalEnvValues = async (
+const collectAwaitEvidenceText = (input: {
+  snapshotLines?: string[];
+  matchEvidence?: Array<{
+    text?: string;
+    contextLines?: string[];
+  }>;
+}): string =>
+  [
+    ...(input.snapshotLines ?? []),
+    ...(input.matchEvidence ?? []).flatMap((entry) => [entry.text ?? "", ...(entry.contextLines ?? [])]),
+  ]
+    .filter((line) => line.length > 0)
+    .join("\n");
+
+const collectSharedTerminalEnvValues = async (
   kernel: AppKernel,
   sessionId: string,
   terminalId: string,
-): Promise<Record<string, string>> => {
-  const values: Record<string, string> = {};
-  for (const { key, text } of buildEnvDumpWrites()) {
-    const wrote = await execRootWorkspaceBash(kernel, sessionId, {
-      command: "terminal write",
-      stdin: JSON.stringify({
-        terminalId,
-        text,
-      }),
-    });
-    if (wrote.exitCode !== 0) {
-      throw new Error(`terminal write failed: ${JSON.stringify(wrote)}`);
-    }
-    values[key] = await waitForTerminalMarkerValue(kernel, sessionId, terminalId, key);
+): Promise<{
+  home: string;
+  root: string;
+  homeDir: string;
+  privateKey: string;
+  path: string;
+}> => {
+  await waitForTerminalRunning(kernel, sessionId, terminalId);
+  const runtimeTerminal = getRuntimeTerminalApi(kernel, sessionId);
+  const doneValue = `terminal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const awaitedResultPromise = runtimeTerminal.awaitRuntimeTerminal({
+    terminalId,
+    wait: {
+      until: "match",
+      timeoutMs: 15_000,
+      idleMs: 100,
+    },
+    match: {
+      pattern: `__AGT_DONE__=${doneValue}`,
+      contextLines: 8,
+    },
+    view: {
+      type: "tail",
+      lines: 80,
+    },
+    recordActivity: false,
+  });
+  const wrote = await runtimeTerminal.inputRuntimeTerminal({
+    terminalId,
+    text: `<raw>${buildEnvDumpCommand(doneValue)}</raw><key data="enter"/>`,
+    readRecordActivity: false,
+  });
+  if (!wrote.ok) {
+    throw new Error(`terminal input failed for ${terminalId}: ${JSON.stringify(wrote)}`);
   }
-  return values;
+  const awaitedResult = await awaitedResultPromise;
+  if (awaitedResult.kind !== "terminal-await" || awaitedResult.outcome !== "matched") {
+    throw new Error(`terminal await did not observe env dump for ${terminalId}: ${JSON.stringify(awaitedResult)}`);
+  }
+  const evidenceText = collectAwaitEvidenceText({
+    snapshotLines: awaitedResult.snapshot?.lines,
+    matchEvidence: awaitedResult.match?.matches,
+  });
+  const values = collectMarkedValues(evidenceText);
+  for (const key of ["HOME", "ROOT", "HOME_DIR", "PRIVATE", "PATH"] as const) {
+    if (!(key in values)) {
+      throw new Error(`terminal env evidence missing ${key} for ${terminalId}: ${evidenceText}`);
+    }
+  }
+
+  return {
+    home: values.HOME ?? "",
+    root: values.ROOT ?? "",
+    homeDir: values.HOME_DIR ?? "",
+    privateKey: values.PRIVATE ?? "",
+    path: values.PATH ?? "",
+  };
 };
 
 const tempDirs: string[] = [];
@@ -1057,17 +1076,18 @@ describe("Feature: workspace system kernel integration", () => {
       if (!terminalId) {
         throw new Error("expected terminalId from terminal create");
       }
-      await waitForTerminalSurface(kernel, session.id, terminalId);
+      await waitForTerminalRunning(kernel, session.id, terminalId);
 
-      const values = await collectTerminalEnvValues(kernel, session.id, terminalId);
-      expect(values.HOME).not.toBe(rootWorkspacePath);
+      const envValues = await collectSharedTerminalEnvValues(kernel, session.id, terminalId);
+      expect(envValues.home).not.toBe(rootWorkspacePath);
       if (process.env.HOME) {
-        expect(values.HOME).toBe(process.env.HOME);
+        expect(envValues.home, `shared terminal HOME=${envValues.home}`).toBe(process.env.HOME);
       }
-      expect(values.ROOT).toBe("");
-      expect(values.HOME_DIR).toBe("");
-      expect(values.PRIVATE).toBe("");
-      expect(values.PATH.includes(runtimeBinDir)).toBeFalse();
+      expect(envValues.root).toBe("");
+      expect(envValues.homeDir).toBe("");
+      expect(envValues.privateKey).toBe("");
+      expect(envValues.path.includes(runtimeBinDir)).toBeFalse();
+      await kernel.stopGlobalTerminal({ terminalId, actorId: "session:owner" }).catch(() => undefined);
     } finally {
       await kernel.stop();
     }
@@ -1110,15 +1130,18 @@ describe("Feature: workspace system kernel integration", () => {
       });
       expect(recovered.ok).toBeTrue();
 
-      const values = await collectTerminalEnvValues(kernel, session.id, configuredTerminalId);
-      expect(values.HOME).not.toBe(rootWorkspacePath);
+      const envValues = await collectSharedTerminalEnvValues(kernel, session.id, configuredTerminalId);
+      expect(envValues.home).not.toBe(rootWorkspacePath);
       if (process.env.HOME) {
-        expect(values.HOME).toBe(process.env.HOME);
+        expect(envValues.home, `shared terminal HOME=${envValues.home}`).toBe(process.env.HOME);
       }
-      expect(values.ROOT).toBe("");
-      expect(values.HOME_DIR).toBe("");
-      expect(values.PRIVATE).toBe("");
-      expect(values.PATH.includes(runtimeBinDir)).toBeFalse();
+      expect(envValues.root).toBe("");
+      expect(envValues.homeDir).toBe("");
+      expect(envValues.privateKey).toBe("");
+      expect(envValues.path.includes(runtimeBinDir)).toBeFalse();
+      await kernel.stopGlobalTerminal({ terminalId: configuredTerminalId, actorId: "session:owner" }).catch(
+        () => undefined,
+      );
     } finally {
       await kernel.stop();
     }
@@ -1162,17 +1185,18 @@ describe("Feature: workspace system kernel integration", () => {
       if (!terminalId) {
         throw new Error("expected terminalId from terminal create");
       }
-      await waitForTerminalSurface(kernel, session.id, terminalId);
+      await waitForTerminalRunning(kernel, session.id, terminalId);
 
-      const values = await collectTerminalEnvValues(kernel, session.id, terminalId);
-      expect(values.HOME).not.toBe(rootWorkspacePath);
+      const envValues = await collectSharedTerminalEnvValues(kernel, session.id, terminalId);
+      expect(envValues.home).not.toBe(rootWorkspacePath);
       if (process.env.HOME) {
-        expect(values.HOME).toBe(process.env.HOME);
+        expect(envValues.home, `shared terminal HOME=${envValues.home}`).toBe(process.env.HOME);
       }
-      expect(values.ROOT).toBe("");
-      expect(values.HOME_DIR).toBe("");
-      expect(values.PRIVATE).toBe("");
-      expect(values.PATH.includes(runtimeBinDir)).toBeFalse();
+      expect(envValues.root).toBe("");
+      expect(envValues.homeDir).toBe("");
+      expect(envValues.privateKey).toBe("");
+      expect(envValues.path.includes(runtimeBinDir)).toBeFalse();
+      await kernel.stopGlobalTerminal({ terminalId, actorId: "session:owner" }).catch(() => undefined);
     } finally {
       await kernel.stop();
     }

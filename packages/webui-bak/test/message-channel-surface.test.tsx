@@ -4,6 +4,10 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("@agenter/web-chat-view", () => ({
   WebChatView: () => <div data-testid="web-chat-view">mock-web-chat-view</div>,
+  WebChatViewHost: () => <div data-testid="web-chat-view">mock-web-chat-view</div>,
+}));
+vi.mock("../src/features/chat/WebChatViewHost", () => ({
+  WebChatViewHost: () => <div data-testid="web-chat-view">mock-web-chat-view</div>,
 }));
 
 import { MessageChannelSurface } from "../src/features/chat/MessageChannelSurface";

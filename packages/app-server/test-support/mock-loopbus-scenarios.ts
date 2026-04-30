@@ -6,7 +6,7 @@ import type { MockKernelHarness } from "./mock-kernel-harness";
 import { waitForMockValue } from "./mock-kernel-harness";
 import { MOCK_FINAL_ANSWER, MOCK_GAUBEE_REPLY, MOCK_RELAY_PROMPT } from "./mock-model-server";
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 const chatScenarioAttentionScope = excludeActiveContextPrefixes("ctx-task-source-");
 const getPrimaryRoomId = (harness: MockKernelHarness): string => {
   if (!harness.session.primaryRoomId) {

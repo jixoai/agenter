@@ -1,4 +1,8 @@
-import type { RuntimeAttentionState, SessionNotificationItem } from "@agenter/client-sdk";
+import type {
+  RuntimeAttentionDeliveryState,
+  RuntimeAttentionState,
+  SessionNotificationItem,
+} from "@agenter/client-sdk";
 
 import type {
   RuntimeAttentionContextItem,
@@ -24,6 +28,36 @@ export interface RuntimeAttentionQueueItem {
   content: string;
   timestamp: number;
   jumpTarget: RuntimeContextJumpTarget | null;
+}
+
+export interface RuntimeAttentionEffectItem {
+  effectId: string;
+  contextId: string | null;
+  commitId: string | null;
+  actionId: string;
+  actionKind: string;
+  actorId: string;
+  cycleId: number | null;
+  sessionModelCallId: number | null;
+  target: string;
+  effectKind: string;
+  effectRecordId: string;
+  timestamp: number;
+}
+
+export interface RuntimeAttentionWatchItem {
+  watchId: string;
+  ownerActionId: string;
+  ownerActionKind: string;
+  ownerActorId: string;
+  target: string;
+  status: string;
+  dueAt: number;
+  resolvedAt: number | null;
+  reminderContextId: string | null;
+  reminderCommitId: string | null;
+  predicateKind: string;
+  predicateLabel: string;
 }
 
 const normalizeSearchQuery = (value: string): string => value.trim().toLowerCase();
@@ -66,6 +100,10 @@ const resolveQueueSourceType = (sourceNamespace: string): RuntimeAttentionQueueI
   }
   return "source";
 };
+
+const compareEffectItemsByRecency = (left: RuntimeAttentionEffectItem, right: RuntimeAttentionEffectItem): number =>
+  right.timestamp - left.timestamp ||
+  right.effectId.localeCompare(left.effectId);
 
 export const buildRuntimeAttentionScoreSummary = (
   scores: ReadonlyArray<RuntimeAttentionScoreEntry>,
@@ -138,4 +176,94 @@ export const filterRuntimeAttentionQueueItems = (
     return [...items];
   }
   return items.filter((item) => buildQueueSearchText(item).includes(normalizedQuery));
+};
+
+export const buildRuntimeAttentionEffectItems = (input: {
+  delivery: RuntimeAttentionDeliveryState | null | undefined;
+  contextId: string | null | undefined;
+}): RuntimeAttentionEffectItem[] => {
+  if (!input.delivery || !input.contextId) {
+    return [];
+  }
+  const selectedProjection = input.delivery.projections.find((projection) => projection.contextId === input.contextId);
+  if (!selectedProjection) {
+    return [];
+  }
+  const selectedDispatches = input.delivery.dispatches.filter((dispatch) => dispatch.contextId === input.contextId);
+  const selectedReceipts = input.delivery.receipts.filter((receipt) => receipt.contextId === input.contextId);
+  const selectedCycleIds = new Set<number>(
+    [
+      ...selectedDispatches.map((dispatch) => dispatch.cycleId),
+      ...selectedReceipts.map((receipt) => receipt.cycleId),
+    ]
+      .filter((value): value is number => value !== null),
+  );
+  const selectedModelCallIds = new Set<number>(
+    [
+      selectedProjection.sessionModelCallId,
+      ...selectedDispatches.map((dispatch) => dispatch.sessionModelCallId),
+      ...selectedReceipts.map((receipt) => receipt.sessionModelCallId),
+    ].filter((value): value is number => value !== null),
+  );
+  return input.delivery.effects
+    .filter((effect) => effect.target.startsWith("room:"))
+    .filter((effect) => {
+      if (effect.cycleId !== null && selectedCycleIds.has(effect.cycleId)) {
+        return true;
+      }
+      if (effect.sessionModelCallId !== null && selectedModelCallIds.has(effect.sessionModelCallId)) {
+        return true;
+      }
+      return false;
+    })
+    .map((effect) => ({
+      effectId: effect.effectId,
+      contextId:
+        typeof effect.meta?.contextId === "string"
+          ? effect.meta.contextId
+          : selectedProjection.contextId,
+      commitId:
+        typeof effect.meta?.commitId === "string"
+          ? effect.meta.commitId
+          : selectedProjection.commitId,
+      actionId: effect.actionId,
+      actionKind: effect.actionKind,
+      actorId: effect.actorId,
+      cycleId: effect.cycleId,
+      sessionModelCallId: effect.sessionModelCallId,
+      target: effect.target,
+      effectKind: effect.effectKind,
+      effectRecordId: effect.effectRecordId,
+      timestamp: effect.timestamp,
+    }))
+    .sort(compareEffectItemsByRecency);
+};
+
+export const buildRuntimeAttentionWatchItems = (input: {
+  delivery: RuntimeAttentionDeliveryState | null | undefined;
+  contextId: string | null | undefined;
+}): RuntimeAttentionWatchItem[] => {
+  if (!input.delivery || !input.contextId) {
+    return [];
+  }
+  return input.delivery.watches
+    .filter((watch) => watch.reminderContextId === input.contextId)
+    .map((watch) => ({
+      watchId: watch.watchId,
+      ownerActionId: watch.ownerActionId,
+      ownerActionKind: watch.ownerActionKind,
+      ownerActorId: watch.ownerActorId,
+      target: watch.target,
+      status: watch.status,
+      dueAt: watch.dueAt,
+      resolvedAt: watch.resolvedAt,
+      reminderContextId: watch.reminderContextId ?? null,
+      reminderCommitId: watch.reminderCommitId ?? null,
+      predicateKind: watch.predicate.kind,
+      predicateLabel:
+        watch.predicate.kind === "message_latest_visible"
+          ? `${watch.predicate.chatId}#${watch.predicate.anchorMessageId}`
+          : watch.predicate.kind,
+    }))
+    .sort((left, right) => left.dueAt - right.dueAt || left.watchId.localeCompare(right.watchId));
 };

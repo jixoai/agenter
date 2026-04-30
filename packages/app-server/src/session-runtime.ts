@@ -1525,6 +1525,7 @@ export interface RuntimeEventMap {
   heartbeatPart: { entry: SessionMessageRecord };
   modelCall: { entry: SessionModelCallRecord };
   modelCallDelta: { entry: SessionModelCallDeltaRecord };
+  attentionDeliveryUpdated: SessionRuntimeAttentionDeliveryState;
   attentionDispatch: {
     reason: "created" | "bound";
     commitRef: DeliveryCommitRefRecord;
@@ -2142,6 +2143,13 @@ export class SessionRuntime {
     return Array.isArray(commit.meta.tags) && commit.meta.tags.includes("notification");
   }
 
+  private hasWakeableAttentionPayload(commit: AttentionCommit): boolean {
+    if (this.isNotificationAttentionCommit(commit)) {
+      return true;
+    }
+    return Object.values(commit.scores).some((score) => score > 0);
+  }
+
   private resolveNotifyQuotaWindowMs(focusState: AttentionFocusState): number | null {
     if (focusState === "muted") {
       return NOTIFY_QUOTA_DEFAULTS.muted;
@@ -2208,10 +2216,13 @@ export class SessionRuntime {
   }
 
   private isWakeableAttentionIngress(contextId: string, commit: AttentionCommit): boolean {
-    if (commit.ingressType === "commit") {
+    if (this.isNotificationAttentionCommit(commit)) {
       return true;
     }
-    if (this.isNotificationAttentionCommit(commit)) {
+    if (!this.hasWakeableAttentionPayload(commit)) {
+      return false;
+    }
+    if (commit.ingressType === "commit") {
       return true;
     }
     return this.resolveAttentionFocusState(contextId) === "background";
@@ -2715,6 +2726,7 @@ export class SessionRuntime {
       reminderCommitId: watch.reminderCommitId,
       meta: watch.meta,
     });
+    this.emitAttentionDeliveryState();
   }
 
 
@@ -2854,6 +2866,7 @@ export class SessionRuntime {
       reminderCommitId: watch.reminderCommitId ?? null,
       meta: watch.meta,
     });
+    this.emitAttentionDeliveryState();
     return watch;
   }
 
@@ -2886,6 +2899,7 @@ export class SessionRuntime {
       meta: input.meta,
     });
     this.effectLedgerRecords.set(record.effectId, record);
+    this.emitAttentionDeliveryState();
     return record;
   }
 
@@ -3311,7 +3325,13 @@ export class SessionRuntime {
     return result;
   }
 
-  async writeRuntimeTerminal(input: { terminalId: string; text: string }): Promise<{ ok: boolean; message: string }> {
+  async writeRuntimeTerminal(input: {
+    terminalId: string;
+    text: string;
+    returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+    readRecordActivity?: boolean;
+    readMode?: "auto" | "diff" | "snapshot";
+  }): Promise<{ ok: boolean; message: string; read?: TerminalReadPayload }> {
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(input.terminalId)) {
       return { ok: false, message: `unknown terminal: ${input.terminalId}` };
@@ -3320,6 +3340,9 @@ export class SessionRuntime {
       const result = await controlPlane.write({
         terminalId: input.terminalId,
         text: input.text,
+        returnRead: input.returnRead,
+        readRecordActivity: input.readRecordActivity,
+        readMode: input.readMode,
         actorId: this.terminalActorId,
       });
       if (result.ok) {
@@ -3336,7 +3359,7 @@ export class SessionRuntime {
               },
         });
       }
-      return { ok: result.ok, message: result.message };
+      return { ok: result.ok, message: result.message, ...(result.read ? { read: result.read } : {}) };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.emit("error", { message: `terminal write failed (${input.terminalId}): ${message}` });
@@ -3344,7 +3367,13 @@ export class SessionRuntime {
     }
   }
 
-  async inputRuntimeTerminal(input: { terminalId: string; text: string }): Promise<{ ok: boolean; message: string }> {
+  async inputRuntimeTerminal(input: {
+    terminalId: string;
+    text: string;
+    returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+    readRecordActivity?: boolean;
+    readMode?: "auto" | "diff" | "snapshot";
+  }): Promise<{ ok: boolean; message: string; read?: TerminalReadPayload }> {
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(input.terminalId)) {
       return { ok: false, message: `unknown terminal: ${input.terminalId}` };
@@ -3353,6 +3382,9 @@ export class SessionRuntime {
       const result = await controlPlane.input({
         terminalId: input.terminalId,
         text: input.text,
+        returnRead: input.returnRead,
+        readRecordActivity: input.readRecordActivity,
+        readMode: input.readMode,
         actorId: this.terminalActorId,
       });
       if (result.ok) {
@@ -3369,7 +3401,7 @@ export class SessionRuntime {
               },
         });
       }
-      return { ok: result.ok, message: result.message };
+      return { ok: result.ok, message: result.message, ...(result.read ? { read: result.read } : {}) };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.emit("error", { message: `terminal input failed (${input.terminalId}): ${message}` });
@@ -4654,6 +4686,9 @@ export class SessionRuntime {
     if (!contextPlan) {
       return [itemsPlan];
     }
+    // First-wave kernel law only compares full context text against item text.
+    // Diff/patch-style context injection stays intentionally out of scope until
+    // we have separate evidence that it remains readable and retry-safe.
     const contextCost = contextPlan.text.length * 1.5;
     const itemsCost = itemsPlan.text.length;
     return contextCost <= itemsCost ? [contextPlan] : [itemsPlan];
@@ -5462,6 +5497,10 @@ export class SessionRuntime {
 
   private emitAttentionState(): void {
     this.emit("attentionUpdated", this.buildAttentionRuntimePreviewState());
+  }
+
+  private emitAttentionDeliveryState(): void {
+    this.emit("attentionDeliveryUpdated", this.buildAttentionDeliveryRuntimeState());
   }
 
   private emitAttentionDispatch(input: RuntimeEventMap["attentionDispatch"]): void {

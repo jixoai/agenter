@@ -12,6 +12,7 @@ import {
   type TerminalBootEntry,
   type TerminalPresetSettings,
 } from "@agenter/settings";
+import { resolveDefaultInteractiveShellCommand } from "@agenter/terminal-system";
 
 import { DEFAULT_LANGUAGE, resolveLanguage } from "./i18n";
 
@@ -186,7 +187,7 @@ export const resolveSessionConfig = async (
   } else {
     const command = terminalSettings.command?.length
       ? [...terminalSettings.command]
-      : [process.env.SHELL ?? "bash", "-i"];
+      : resolveDefaultInteractiveShellCommand();
     const terminalId = terminalSettings.terminalId ?? `${deriveCliName(command[0] ?? "terminal")}-main`;
     presets = buildPresetFromLegacy(terminalId, command, terminalSettings);
   }
@@ -195,13 +196,13 @@ export const resolveSessionConfig = async (
   const primaryTerminalId = terminalSettings.terminalId ?? presetIds[0] ?? "terminal-main";
   if (!presets[primaryTerminalId]) {
     presets[primaryTerminalId] = {
-      command: [process.env.SHELL ?? "bash", "-i"],
+      command: resolveDefaultInteractiveShellCommand(),
     };
   }
 
   const terminals = Object.fromEntries(
     Object.entries(presets).map(([terminalId, preset]) => {
-      const command = preset.command.length > 0 ? preset.command : [process.env.SHELL ?? "bash", "-i"];
+      const command = preset.command.length > 0 ? preset.command : resolveDefaultInteractiveShellCommand();
       const cliName = deriveCliName(command[0] ?? "agent");
       const terminal: SessionTerminalConfig = {
         terminalId,

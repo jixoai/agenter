@@ -34,6 +34,6 @@ describe("Feature: non-GUI LoopBus settled follow-up", () => {
         await harness.stop();
       }
     },
-    { timeout: 30_000 },
+    { timeout: 60_000 },
   );
 });

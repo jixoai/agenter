@@ -16,6 +16,7 @@ type AttentionCommitRefView = AttentionCycleFrameView["inputCommitRefs"][number]
 type AttentionDeliveryProjectionView = RuntimeAttentionDeliveryState["projections"][number];
 type AttentionDeliveryDispatchView = RuntimeAttentionDeliveryState["dispatches"][number];
 type AttentionDeliveryReceiptView = RuntimeAttentionDeliveryState["receipts"][number];
+type AttentionDeliveryEffectView = RuntimeAttentionDeliveryState["effects"][number];
 
 type BadgeVariant = "outline" | "secondary" | "destructive";
 
@@ -79,6 +80,7 @@ export interface RuntimeCycleDetailModel {
   deliveryProjections: AttentionDeliveryProjectionView[];
   deliveryDispatches: AttentionDeliveryDispatchView[];
   deliveryReceipts: AttentionDeliveryReceiptView[];
+  deliveryEffects: AttentionDeliveryEffectView[];
   modelCalls: ModelCallItem[];
   primaryModelCall: ModelCallItem | null;
   traces: ObservabilityTraceItem[];
@@ -344,10 +346,26 @@ const buildCycleDeliveryDetail = (input: {
   );
   const dispatchIdSet = new Set(deliveryDispatches.map((dispatch) => dispatch.dispatchId));
   const deliveryReceipts = input.delivery.receipts.filter((receipt) => dispatchIdSet.has(receipt.dispatchId));
+  const cycleModelCallIds = new Set<number>(
+    [
+      input.cycle.modelCallId,
+      ...((frame?.modelCallIds ?? []).filter((value): value is number => typeof value === "number")),
+    ].filter((value): value is number => value !== null),
+  );
+  const deliveryEffects = input.delivery.effects.filter((effect) => {
+    if (effect.cycleId !== null && cycleId !== null && effect.cycleId === cycleId) {
+      return true;
+    }
+    if (effect.sessionModelCallId !== null && cycleModelCallIds.has(effect.sessionModelCallId)) {
+      return true;
+    }
+    return false;
+  });
   return {
     deliveryProjections,
     deliveryDispatches,
     deliveryReceipts,
+    deliveryEffects,
   };
 };
 
@@ -520,6 +538,7 @@ export const buildRuntimeCycleDetailModel = (input: {
     deliveryProjections: delivery.deliveryProjections,
     deliveryDispatches: delivery.deliveryDispatches,
     deliveryReceipts: delivery.deliveryReceipts,
+    deliveryEffects: delivery.deliveryEffects,
     modelCalls: detail.modelCalls,
     primaryModelCall,
     traces: detail.traces,

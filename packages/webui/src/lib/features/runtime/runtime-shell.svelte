@@ -334,7 +334,7 @@
 	</div>
 {:else}
 	<WorkbenchScaffold tone="page" body="body" bodyClass="h-full" data-testid="runtime-shell">
-		<div class="flex h-full min-h-0 flex-col gap-3">
+		<div class="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3">
 			{#if runtimeRouteNotice}
 				<NoticeBanner
 					tone={runtimeRouteNotice.tone}
@@ -343,7 +343,7 @@
 				/>
 			{/if}
 
-			<div class="min-h-0 flex-1">
+			<div class="h-full">
 				<RuntimePrimaryStage
 					tab={activeTab}
 					{session}

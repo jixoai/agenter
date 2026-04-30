@@ -71,7 +71,7 @@ const queryRelatedLocally = (
         if (!(currentHash in match.commit.scores) || visited.has(commitKey)) {
           continue;
         }
-        if (!matchesMinScore(match.context.scoreMap, input.minScore)) {
+        if (input.minScore > 0 && !matchesMinScore(match.context.scoreMap, input.minScore)) {
           continue;
         }
         visited.add(commitKey);

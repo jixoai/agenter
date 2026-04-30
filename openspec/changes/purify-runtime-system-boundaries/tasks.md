@@ -4,7 +4,7 @@
 - [x] 1.2 Add adapter-facing helpers that require every runtime-system emission to declare its boundary channel before reaching the kernel host
 - [x] 1.3 Add development/test assertions or guards that reject ambiguous adapter emissions in Message, Terminal, Skill, and future-system paths
 - [x] 1.4 Add durable effect-ledger records that can trace explicit actions to durable external effects such as room messages, including stable action/effect identity, actor identity, target identity, timestamp, and cycle/model-call refs when available
-- [ ] 1.5 Ensure workspace/root shell privilege remains intact and is documented as outside this cleanup scope
+- [x] 1.5 Ensure workspace/root shell privilege remains intact and is documented as outside this cleanup scope
 
 ## 2. Message Ingress And Side Effects
 
@@ -31,10 +31,10 @@
 - [x] 3.10 Define the successful-injection boundary as "response SSE has started and the first returned SSE event is non-error" for advancing `attentionContextSnapshot` and clearing staged items that were actually injected, and do not retroactively roll back after later stream interruption
 - [x] 3.11 Add keyed staged attention-item map semantics for interleaved injection, including keyed upsert, scoped replacement, scoped reset, removal, and retry-safe retention until successful injection
 - [x] 3.12 Add an explicit way for the model to fetch full context details through CLI/API instead of relying on bootstrap-inlined social or skill projections
-- [ ] 3.13 Defer or guard any diff-vs-full context optimization so first-wave acceptance does not depend on patch-style context injection
+- [x] 3.13 Defer or guard any diff-vs-full context optimization so first-wave acceptance does not depend on patch-style context injection
 - [x] 3.14 Add configurable notify quota enforcement with default period quotas for `muted` and `background`
 - [x] 3.15 Add notify quota query capability that returns effective quota configuration, current remaining state, send-eligibility, and historical notify-send records
-- [ ] 3.16 Rewrite conflicting long-lived bootstrap/delivery specs so this change does not archive with `ctx-skill-system` bootstrap or duplicate acceptance-law wording
+- [x] 3.16 Rewrite conflicting long-lived bootstrap/delivery specs so this change does not archive with `ctx-skill-system` bootstrap or duplicate acceptance-law wording
 
 ## 4. Terminal Adapter Cleanup
 
@@ -89,50 +89,50 @@
 
 ## 8. Frontend And Runtime Inspection Tests
 
-- [ ] 8.1 Update any WebUI/runtime inspection surfaces that displayed removed obligation labels so they render objective facts, scheduler metadata, and explicit effects instead
-- [ ] 8.2 Add or update Storybook DOM or unit contracts for any changed WebUI surfaces if removed labels were user-visible
-- [ ] 8.3 Add client/runtime publication tests proving scheduler signals, world facts, projections, and explicit effects are distinguishable in consumed payloads
-- [ ] 8.4 Verify mobile and desktop runtime inspection surfaces still expose enough evidence for room facts, terminal facts, skill index state, and watches if UI changed
+- [x] 8.1 Update any WebUI/runtime inspection surfaces that displayed removed obligation labels so they render objective facts, scheduler metadata, and explicit effects instead
+- [x] 8.2 Add or update Storybook DOM or unit contracts for any changed WebUI surfaces if removed labels were user-visible
+- [x] 8.3 Add client/runtime publication tests proving scheduler signals, world facts, projections, and explicit effects are distinguishable in consumed payloads
+- [x] 8.4 Verify mobile and desktop runtime inspection surfaces still expose enough evidence for room facts, terminal facts, skill index state, and watches if UI changed
 
 ## 9. Documentation And Durable Specs
 
-- [ ] 9.1 Update `packages/app-server/SPEC.md` with the durable four-channel runtime law, explicit-effect rule, no eager room social envelope, and no unresolved `terminal_idle_ready` debt wording
-- [ ] 9.2 Update `openspec/specs/attention-bootstrap-protocol/spec.md` so bootstrap no longer requires `ctx-skill-system` by default and instead follows the new skill/bootstrap law
-- [ ] 9.3 Update affected long-lived delivery/provider lifecycle specs or cross-references so successful-injection bookkeeping clearly reuses the existing first-valid-stream-event acceptance law
-- [ ] 9.4 Update affected long-lived specs or comments so Message, Terminal, Skill, Attention, and Watch boundaries match this change
-- [ ] 9.5 Update runtime skill source documentation and references so generated catalog text teaches explicit action/query/watch behavior
-- [ ] 9.6 Update any developer-facing docs that still describe auto-ACK, `room_reply_pending`, `self_update`, or message-specific follow-up etiquette
-- [ ] 9.7 Add a short migration note explaining removed fields and the supported replacement paths for model guidance, UI inspection, and tests
+- [x] 9.1 Update `packages/app-server/SPEC.md` with the durable four-channel runtime law, explicit-effect rule, no eager room social envelope, and no unresolved `terminal_idle_ready` debt wording
+- [x] 9.2 Update `openspec/specs/attention-bootstrap-protocol/spec.md` so bootstrap no longer requires `ctx-skill-system` by default and instead follows the new skill/bootstrap law
+- [x] 9.3 Update affected long-lived delivery/provider lifecycle specs or cross-references so successful-injection bookkeeping clearly reuses the existing first-valid-stream-event acceptance law
+- [x] 9.4 Update affected long-lived specs or comments so Message, Terminal, Skill, Attention, and Watch boundaries match this change
+- [x] 9.5 Update runtime skill source documentation and references so generated catalog text teaches explicit action/query/watch behavior
+- [x] 9.6 Update any developer-facing docs that still describe auto-ACK, `room_reply_pending`, `self_update`, or message-specific follow-up etiquette
+- [x] 9.7 Add a short migration note explaining removed fields and the supported replacement paths for model guidance, UI inspection, and tests
 
 ## 10. Real Runtime Walkthrough
 
-- [ ] 10.1 Run a real or integration room-message flow where another actor sends a question and verify the runtime records facts without auto-replying
-- [ ] 10.2 Run a real or integration `root_bash` flow from a room-originated task and verify no fallback acknowledgement appears before explicit `message send`
-- [ ] 10.3 Run a cross-room relay flow and verify only explicit target/origin messages appear in transcripts
-- [ ] 10.4 Run a kernel injection flow where one focused context chooses serialized items, another chooses serialized context, and the final prompt mixes both without hidden obligations
-- [ ] 10.5 Run a failed AI-call retry flow and verify `attentionContextSnapshot` plus staged keyed attention items do not falsely advance on failure
-- [ ] 10.6 Run response-stream boundary cases and verify that an error-first SSE does not advance `attentionContextSnapshot` or clear staged items, while a later post-boundary stream interruption does not retroactively roll them back
-- [ ] 10.7 Run a notify quota flow and verify muted/background defaults, remaining-quota queries, send-eligibility queries, and historical notify record queries
-- [ ] 10.8 Run a terminal idle/focus flow and verify the model sees objective terminal observations, not lifecycle obligation text
-- [ ] 10.9 Run a skill source edit/refresh flow and verify the index changes are queryable and, if published, arrive as ordinary objective attention items without becoming default user-task work or a dedicated skill context
-- [ ] 10.10 Run a watch/follow-up flow and verify due reminders re-open model decision without any automatic room mutation
-- [ ] 10.11 Write walkthrough evidence into `openspec/changes/purify-runtime-system-boundaries/walkthroughs/*.md`, with each file recording commands, expected result, actual result, and log/DB evidence paths or queries
+- [x] 10.1 Run a real or integration room-message flow where another actor sends a question and verify the runtime records facts without auto-replying
+- [x] 10.2 Run a real or integration `root_bash` flow from a room-originated task and verify no fallback acknowledgement appears before explicit `message send`
+- [x] 10.3 Run a cross-room relay flow and verify only explicit target/origin messages appear in transcripts
+- [x] 10.4 Run a kernel injection flow where one focused context chooses serialized items, another chooses serialized context, and the final prompt mixes both without hidden obligations
+- [x] 10.5 Run a failed AI-call retry flow and verify `attentionContextSnapshot` plus staged keyed attention items do not falsely advance on failure
+- [x] 10.6 Run response-stream boundary cases and verify that an error-first SSE does not advance `attentionContextSnapshot` or clear staged items, while a later post-boundary stream interruption does not retroactively roll them back
+- [x] 10.7 Run a notify quota flow and verify muted/background defaults, remaining-quota queries, send-eligibility queries, and historical notify record queries
+- [x] 10.8 Run a terminal idle/focus flow and verify the model sees objective terminal observations, not lifecycle obligation text
+- [x] 10.9 Run a skill source edit/refresh flow and verify the index changes are queryable and, if published, arrive as ordinary objective attention items without becoming default user-task work or a dedicated skill context
+- [x] 10.10 Run a watch/follow-up flow and verify due reminders re-open model decision without any automatic room mutation
+- [x] 10.11 Write walkthrough evidence into `openspec/changes/purify-runtime-system-boundaries/walkthroughs/*.md`, with each file recording commands, expected result, actual result, and log/DB evidence paths or queries
 
 ## 11. Verification Commands
 
 - [x] 11.1 Run targeted app-server tests for message ingress, attention bootstrap, terminal adapter, skill system, catalog generation, effect ledger, and watches
 - [x] 11.2 Run `bun run typecheck`
-- [ ] 11.3 Run `bun run test`
+- [x] 11.3 Run `bun run test`
 - [x] 11.4 Run any package-specific test commands needed by changed packages, including WebUI unit/DOM tests if frontend surfaces changed
-- [ ] 11.5 Run a repository search proving removed pollution terms do not remain in runtime prompt/catalog contracts except in archived specs, tests asserting absence, or migration notes
-- [ ] 11.6 Run `openspec validate purify-runtime-system-boundaries --strict` or the repository's equivalent OpenSpec validation command
+- [x] 11.5 Run a repository search proving removed pollution terms do not remain in runtime prompt/catalog contracts except in archived specs, tests asserting absence, or migration notes
+- [x] 11.6 Run `openspec validate purify-runtime-system-boundaries --strict` or the repository's equivalent OpenSpec validation command
 
 ## 12. Acceptance Gate
 
-- [ ] 12.1 No room-visible message can be produced without an explicit message action in tests or walkthrough evidence
-- [ ] 12.2 No platform-authored chat obligation field remains in active runtime prompt/bootstrap/model-envelope contracts
-- [ ] 12.3 Scheduler signals remain useful for wake/ranking/UI but are not serialized as source-specific task semantics
-- [ ] 12.4 `attentionContextSnapshot`, focus-aware seeding, cost-based commit-item injection, notify exception handling, notify quota, and keyed staged-item semantics all follow one current-state kernel law rather than separate recovery branches
-- [ ] 12.5 Message, Terminal, Skill, and Watch integrations all use the shared boundary vocabulary instead of source-specific kernel branches, and skill changes do not create hidden dedicated contexts by default
-- [ ] 12.6 Workspace/root shell privilege still works and remains explicitly out of scope for pollution cleanup
-- [ ] 12.7 All updated docs, specs, generated catalogs, tests, and walkthrough evidence are committed or ready for review together
+- [x] 12.1 No room-visible message can be produced without an explicit message action in tests or walkthrough evidence
+- [x] 12.2 No platform-authored chat obligation field remains in active runtime prompt/bootstrap/model-envelope contracts
+- [x] 12.3 Scheduler signals remain useful for wake/ranking/UI but are not serialized as source-specific task semantics
+- [x] 12.4 `attentionContextSnapshot`, focus-aware seeding, cost-based commit-item injection, notify exception handling, notify quota, and keyed staged-item semantics all follow one current-state kernel law rather than separate recovery branches
+- [x] 12.5 Message, Terminal, Skill, and Watch integrations all use the shared boundary vocabulary instead of source-specific kernel branches, and skill changes do not create hidden dedicated contexts by default
+- [x] 12.6 Workspace/root shell privilege still works and remains explicitly out of scope for pollution cleanup
+- [x] 12.7 All updated docs, specs, generated catalogs, tests, and walkthrough evidence are committed or ready for review together

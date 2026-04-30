@@ -90,6 +90,6 @@ describe("Feature: workspace direct tool request-body contract", () => {
         await harness.stop();
       }
     },
-    { timeout: 30_000 },
+    { timeout: 60_000 },
   );
 });

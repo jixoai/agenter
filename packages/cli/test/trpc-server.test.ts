@@ -29,6 +29,11 @@ const writeStaticEntry = (staticDir: string, title: string): void => {
   );
 };
 
+const writeStaticEnv = (staticDir: string, publicWsUrl: string): void => {
+  mkdirSync(join(staticDir, "_app"), { recursive: true });
+  writeFileSync(join(staticDir, "_app", "env.js"), `export const env=${JSON.stringify({ PUBLIC_AGENTER_WS_URL: publicWsUrl })}\n`);
+};
+
 const createCliLayout = (input: { workspaceCheckout: boolean; workspaceBuild: boolean; packagedAssets: boolean }) => {
   const dir = mkdtempSync(join(tmpdir(), "agenter-cli-layout-"));
   tempDirs.push(dir);
@@ -118,6 +123,33 @@ describe("Feature: cli server contracts", () => {
     expect(resolved.kind).toBe("workspace-build");
     expect(resolved.staticDir).toBe(layout.workspaceBuildDir);
     expect(readStaticDocumentTitle(resolved.staticDir)).toBe("workspace build");
+  });
+
+  test("Scenario: Given static web assets with stale build-time env When serving _app env Then the CLI injects the live runtime websocket endpoint", async () => {
+    const { dir } = createWorkspaceRoot();
+    const staticDir = join(dir, "static");
+    writeStaticEntry(staticDir, "runtime env");
+    writeStaticEnv(staticDir, "ws://127.0.0.1:19190/trpc");
+
+    const handle = await startTrpcServer({
+      host: "127.0.0.1",
+      port: 0,
+      globalSessionRoot: join(dir, "sessions"),
+      workspacesPath: join(dir, "workspaces.yaml"),
+      homeDir: join(dir, "home"),
+      staticDir,
+      publicEnv: {
+        PUBLIC_AGENTER_WS_URL: "ws://127.0.0.1:4580/trpc",
+      },
+    });
+    handles.push(handle);
+
+    const response = await fetch(`http://${handle.host}:${handle.port}/_app/env.js`);
+    const source = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(source).toContain('ws://127.0.0.1:4580/trpc');
+    expect(source).not.toContain('ws://127.0.0.1:19190/trpc');
   });
 
   test("Scenario: Given a workspace checkout without a build When resolving the canonical webui root Then startup fails fast with rebuild guidance", () => {

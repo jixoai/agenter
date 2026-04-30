@@ -29,7 +29,7 @@ describe("Feature: tui view-model mapping", () => {
           sessionId: "i-1",
           started: true,
           activityState: "active",
-          loopPhase: "collecting_inputs",
+          schedulerPhase: "collecting_inputs",
           stage: "observe",
           focusedTerminalId: "iflow-main",
           focusedTerminalIds: ["iflow-main"],

@@ -5479,6 +5479,9 @@ export class AppKernel {
           this.emit("notification.updated", { snapshot }, sessionId, event.timestamp);
         });
         return;
+      case "attentionDeliveryUpdated":
+        this.emit("runtime.attentionDelivery", event.payload, sessionId, event.timestamp);
+        return;
       case "attentionDispatch":
         this.emit("runtime.attentionDispatch", event.payload, sessionId, event.timestamp);
         return;

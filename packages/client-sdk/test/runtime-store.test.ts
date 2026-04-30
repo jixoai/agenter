@@ -3451,6 +3451,107 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given runtime snapshot includes explicit delivery effects When the store hydrates Then dispatch history and effect ledger stay distinguishable in consumed state", async () => {
+    const delivery = createAttentionDeliveryState({
+      projections: [
+        {
+          contextId: "ctx-room-main",
+          commitId: "commit-1",
+          state: "completed",
+          attemptCount: 1,
+          latestDispatchId: "dispatch-1",
+          latestReceiptId: "receipt-1",
+          agentCallId: "agent-call-1",
+          sessionModelCallId: 55,
+          firstAcceptedAt: 1700000000001,
+          latestReceiptAt: 1700000000002,
+          latestError: null,
+        },
+      ],
+      dispatches: [
+        {
+          dispatchId: "dispatch-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-1",
+          cycleId: 12,
+          attemptIndex: 1,
+          agentCallId: "agent-call-1",
+          sessionModelCallId: 55,
+          createdAt: 1700000000000,
+        },
+      ],
+      receipts: [
+        {
+          receiptId: "receipt-1",
+          dispatchId: "dispatch-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-1",
+          cycleId: 12,
+          attemptIndex: 1,
+          agentCallId: "agent-call-1",
+          sessionModelCallId: 55,
+          status: "completed",
+          providerEventKind: "run_finished",
+          timestamp: 1700000000002,
+          finishReason: "stop",
+        },
+      ],
+      effects: [
+        {
+          id: 1,
+          effectId: "effect-1",
+          contextId: "ctx-room-main",
+          commitId: "commit-1",
+          actionId: "action-message-send-1",
+          actionKind: "message_send",
+          actorId: "assistant",
+          cycleId: 12,
+          sessionModelCallId: 55,
+          target: "room:room-main",
+          effectKind: "message_row_created",
+          effectRecordId: "room-main/17",
+          timestamp: 1700000000003,
+          meta: { chatId: "room-main", messageId: 17 },
+        },
+      ],
+    });
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(365, { attentionDelivery: delivery }),
+      }),
+    );
+
+    await store.connect();
+
+    expect(store.getState().attentionDeliveryBySession["i-1"]).toEqual(
+      expect.objectContaining({
+        dispatches: [
+          expect.objectContaining({
+            dispatchId: "dispatch-1",
+            sessionModelCallId: 55,
+          }),
+        ],
+        receipts: [
+          expect.objectContaining({
+            receiptId: "receipt-1",
+            status: "completed",
+          }),
+        ],
+        effects: [
+          expect.objectContaining({
+            effectId: "effect-1",
+            actionKind: "message_send",
+            target: "room:room-main",
+            effectKind: "message_row_created",
+          }),
+        ],
+      }),
+    );
+    expect(store.getState().attentionDeliveryBySession["i-1"]?.dispatches[0]?.dispatchId).toBe("dispatch-1");
+    expect(store.getState().attentionDeliveryBySession["i-1"]?.effects[0]?.effectId).toBe("effect-1");
+    store.disconnect();
+  });
+
   test("Scenario: Given model-call delta events When duplicate ids and incremental deltas arrive Then the store merges by id while preserving ordered timeline", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const client = createMockClient({
@@ -6343,6 +6444,247 @@ describe("Feature: runtime store synchronization", () => {
       blockedReason: "provider.unavailable",
       lastProgressAt: 1699999999000,
       lastError: null,
+    });
+    store.disconnect();
+  });
+
+  test("Scenario: Given scheduler signals attention contexts and explicit effects When live runtime events arrive Then the store keeps scheduler metadata separate from attention facts and delivery effects", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(960),
+        onSubscribe: (handlers) => {
+          onData = handlers.onData;
+        },
+      }),
+    );
+
+    await store.connect();
+
+    onData?.({
+      version: 1,
+      eventId: 961,
+      timestamp: 1700000001000,
+      type: "runtime.scheduler.signal",
+      sessionId: "i-1",
+      payload: {
+        kind: "attention",
+        version: 7,
+        timestamp: 1700000001000,
+      },
+    });
+    onData?.({
+      version: 1,
+      eventId: 962,
+      timestamp: 1700000001001,
+      type: "runtime.attention",
+      sessionId: "i-1",
+      payload: {
+        snapshot: {
+          contexts: [
+            createAttentionContext({
+              contextId: "ctx-room-main",
+              owner: "message",
+              content: "Need a direct answer from the room",
+              scoreMap: { room: 5 },
+              commit: createAttentionCommit({
+                contextId: "ctx-room-main",
+                commitId: "commit-room-main",
+                summary: "Room asks a direct question",
+                body: "Need a direct answer from the room",
+              }),
+            }),
+          ],
+        },
+        active: [],
+        cycleFrames: [],
+        hooks: [],
+      },
+    });
+    onData?.({
+      version: 1,
+      eventId: 963,
+      timestamp: 1700000001002,
+      type: "runtime.attentionDispatch",
+      sessionId: "i-1",
+      payload: {
+        dispatch: {
+          dispatchId: "dispatch-room-main",
+          contextId: "ctx-room-main",
+          commitId: "commit-room-main",
+          cycleId: 14,
+          attemptIndex: 1,
+          agentCallId: "agent-call-room-main",
+          sessionModelCallId: 101,
+          createdAt: 1700000001002,
+        },
+        projection: {
+          contextId: "ctx-room-main",
+          commitId: "commit-room-main",
+          state: "dispatching",
+          attemptCount: 1,
+          latestDispatchId: "dispatch-room-main",
+          latestReceiptId: null,
+          agentCallId: "agent-call-room-main",
+          sessionModelCallId: 101,
+          firstAcceptedAt: null,
+          latestReceiptAt: null,
+          latestError: null,
+        },
+      },
+    });
+
+    const runtime = store.getState().runtimes["i-1"];
+    expect(runtime?.schedulerSignals.attention).toEqual({
+      version: 7,
+      timestamp: 1700000001000,
+    });
+    expect(store.getState().attentionBySession?.["i-1"]?.snapshot.contexts[0]).toEqual(
+      expect.objectContaining({
+        contextId: "ctx-room-main",
+        owner: "message",
+        scoreMap: { room: 5 },
+      }),
+    );
+    expect(store.getState().attentionDeliveryBySession["i-1"]).toEqual(
+      expect.objectContaining({
+        projections: [
+          expect.objectContaining({
+            contextId: "ctx-room-main",
+            state: "dispatching",
+          }),
+        ],
+        dispatches: [
+          expect.objectContaining({
+            dispatchId: "dispatch-room-main",
+          }),
+        ],
+        effects: [],
+      }),
+    );
+    expect(store.getState().attentionDeliveryBySession["i-1"]?.effects).toEqual([]);
+    store.disconnect();
+  });
+
+  test("Scenario: Given runtime attention delivery updates include watches and effects When the live event arrives Then the store replaces the explicit delivery ledger without mixing it into scheduler or attention channels", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(970),
+        onSubscribe: (handlers) => {
+          onData = handlers.onData;
+        },
+      }),
+    );
+
+    await store.connect();
+
+    onData?.({
+      version: 1,
+      eventId: 971,
+      timestamp: 1700000002000,
+      type: "runtime.attentionDelivery",
+      sessionId: "i-1",
+      payload: {
+        projections: [
+          {
+            contextId: "ctx-room-main",
+            commitId: "commit-room-main",
+            state: "completed",
+            attemptCount: 1,
+            latestDispatchId: "dispatch-room-main",
+            latestReceiptId: "receipt-room-main",
+            agentCallId: "agent-call-room-main",
+            sessionModelCallId: 140,
+            firstAcceptedAt: 1700000001800,
+            latestReceiptAt: 1700000001900,
+            latestError: null,
+          },
+        ],
+        dispatches: [],
+        receipts: [],
+        watches: [
+          {
+            id: 1,
+            watchId: "watch-room-main",
+            ownerActionId: "action-watch-room-main",
+            ownerActionKind: "message_follow_up",
+            ownerActorId: "assistant",
+            ownerCycleId: 12,
+            ownerSessionModelCallId: 139,
+            target: "room:room-main",
+            predicate: {
+              kind: "message_latest_visible",
+              chatId: "room-main",
+              anchorMessageId: 10,
+            },
+            dueAt: 1700000001500,
+            status: "expired",
+            createdAt: 1700000001200,
+            updatedAt: 1700000001600,
+            resolvedAt: 1700000001600,
+            reminderContextId: "ctx-room-main",
+            reminderCommitId: "commit-room-main",
+            meta: {
+              compatibilityAlias: "followUpAfterMs",
+            },
+          },
+        ],
+        effects: [
+          {
+            id: 1,
+            effectId: "effect-room-main",
+            contextId: "ctx-room-main",
+            commitId: "commit-room-main",
+            actionId: "action-message-send-room-main",
+            actionKind: "message_send",
+            actorId: "assistant",
+            cycleId: 12,
+            sessionModelCallId: 140,
+            target: "room:room-main",
+            effectKind: "message_row_created",
+            effectRecordId: "room-main/10",
+            timestamp: 1700000001900,
+            meta: {
+              chatId: "room-main",
+              messageId: 10,
+            },
+          },
+        ],
+      },
+    });
+
+    expect(store.getState().attentionDeliveryBySession["i-1"]).toEqual(
+      expect.objectContaining({
+        projections: [
+          expect.objectContaining({
+            contextId: "ctx-room-main",
+            state: "completed",
+          }),
+        ],
+        watches: [
+          expect.objectContaining({
+            watchId: "watch-room-main",
+            status: "expired",
+          }),
+        ],
+        effects: [
+          expect.objectContaining({
+            effectId: "effect-room-main",
+            effectKind: "message_row_created",
+          }),
+        ],
+      }),
+    );
+    expect(store.getState().runtimes["i-1"]?.schedulerSignals.attention).toEqual({
+      version: 0,
+      timestamp: null,
+    });
+    expect(store.getState().attentionBySession?.["i-1"]).toEqual({
+      snapshot: { contexts: [] },
+      active: [],
+      cycleFrames: [],
+      hooks: [],
     });
     store.disconnect();
   });
