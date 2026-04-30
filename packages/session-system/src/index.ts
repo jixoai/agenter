@@ -19,6 +19,8 @@ export type {
   SessionAttentionReceiptProviderEventKind,
   SessionAttentionReceiptRecord,
   SessionAttentionReceiptStatus,
+  SessionEffectLedgerInsert,
+  SessionEffectLedgerRecord,
   ReverseTimeCursor,
   SessionAiCallInsert,
   SessionAiCallRecord,
@@ -36,4 +38,9 @@ export type {
   SessionMessageScope,
   SessionMessageUpsertInput,
   SessionPromptWindowRecord,
+  SessionRuntimeWatchInsert,
+  SessionRuntimeWatchPredicate,
+  SessionRuntimeWatchRecord,
+  SessionRuntimeWatchStatus,
+  SessionRuntimeWatchUpdate,
 } from "./types";

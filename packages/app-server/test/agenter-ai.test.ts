@@ -656,7 +656,11 @@ const createRuntimeLocalHandlers = (input: {
     if (!input.messageGateway) {
       throw new Error("message gateway not configured");
     }
-    return await input.messageGateway.send(request);
+    const result = await input.messageGateway.send(request);
+    return {
+      actionId: "action/test-message-send",
+      ...result,
+    };
   },
   messageEdit: async (request) => {
     if (!input.messageGateway) {
@@ -1234,10 +1238,10 @@ describe("Feature: AgenterAI behavior", () => {
 
     await ai.send(
       createAttentionBootstrapMessages({
-        contextId: "ctx-skill-system",
+        contextId: "ctx-runtime-refresh",
         headCommitId: "commit-skill-1",
         commitIds: ["commit-skill-1"],
-        contextText: "## AttentionContexts.metadata\nprimaryContextId: ctx-skill-system",
+        contextText: "## AttentionContexts.metadata\nprimaryContextId: ctx-runtime-refresh",
         itemsText: "## Attention Items\n```yaml+attention-item\nsummary: runtime skill changed\n```",
       }),
     );
@@ -1252,10 +1256,10 @@ describe("Feature: AgenterAI behavior", () => {
 
     const firstRunningCall = modelCalls.find((record) => record.status === "running");
     expect(extractUserReplay(firstRunningCall?.request.messages).join("\n")).toContain(
-      "primaryContextId: ctx-skill-system",
+      "primaryContextId: ctx-runtime-refresh",
     );
     expect(extractUserReplay(ai.inspectDebugState().promptWindow).join("\n")).not.toContain(
-      "primaryContextId: ctx-skill-system",
+      "primaryContextId: ctx-runtime-refresh",
     );
   });
 

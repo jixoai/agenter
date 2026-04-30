@@ -68,6 +68,94 @@ describe("Feature: session-system AI-call ledger persistence", () => {
     }
   });
 
+  test("Scenario: Given a generic runtime watch When it expires or is satisfied Then durable watch inspection preserves owner and reminder linkage", () => {
+    const db = createDb();
+    try {
+      const watch = db.appendRuntimeWatch({
+        watchId: "watch-1",
+        ownerActionId: "action-1",
+        ownerActionKind: "message_send",
+        ownerActorId: "session:test",
+        ownerCycleId: 7,
+        ownerSessionModelCallId: 42,
+        target: "room:chat-main",
+        predicate: {
+          kind: "message_latest_visible",
+          chatId: "chat-main",
+          anchorMessageId: 11,
+        },
+        dueAt: 500,
+        meta: { reason: "follow-up" },
+      });
+
+      expect(watch.status).toBe("pending");
+      expect(db.listRuntimeWatches({ status: "pending" })).toHaveLength(1);
+
+      const expired = db.updateRuntimeWatch("watch-1", {
+        status: "expired",
+        updatedAt: 520,
+        resolvedAt: 520,
+        reminderContextId: "ctx-chat-main",
+        reminderCommitId: "commit-9",
+      });
+
+      expect(expired).toMatchObject({
+        watchId: "watch-1",
+        ownerActionId: "action-1",
+        ownerActionKind: "message_send",
+        ownerCycleId: 7,
+        ownerSessionModelCallId: 42,
+        status: "expired",
+        reminderContextId: "ctx-chat-main",
+        reminderCommitId: "commit-9",
+      });
+
+      const reloaded = db.getRuntimeWatchByWatchId("watch-1");
+      expect(reloaded?.predicate).toEqual({
+        kind: "message_latest_visible",
+        chatId: "chat-main",
+        anchorMessageId: 11,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  test("Scenario: Given an explicit room mutation When the effect ledger is appended Then durable inspection can trace action to room effect", () => {
+    const db = createDb();
+    try {
+      const effect = db.appendEffectLedger({
+        effectId: "effect-1",
+        actionId: "action-1",
+        actionKind: "message_send",
+        actorId: "session:test",
+        cycleId: 7,
+        sessionModelCallId: 42,
+        target: "room:chat-main",
+        effectKind: "message_row_created",
+        effectRecordId: "chat-main/11",
+        timestamp: 600,
+        meta: { chatId: "chat-main", messageId: 11 },
+      });
+
+      expect(effect).toMatchObject({
+        effectId: "effect-1",
+        actionId: "action-1",
+        actionKind: "message_send",
+        actorId: "session:test",
+        cycleId: 7,
+        sessionModelCallId: 42,
+        target: "room:chat-main",
+        effectKind: "message_row_created",
+        effectRecordId: "chat-main/11",
+      });
+      expect(db.listEffectLedger({ actionId: "action-1" })).toHaveLength(1);
+      expect(db.listEffectLedger({ target: "room:chat-main" })).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  });
+
   test("Scenario: Given a streamed heartbeat message When the same logical message is updated Then part ids stay stable and content advances", () => {
     const db = createDb();
     try {

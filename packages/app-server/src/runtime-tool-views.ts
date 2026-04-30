@@ -208,6 +208,7 @@ export interface RuntimeMessageOverviewItem {
 
 export interface RuntimeMessageSendResult {
   ok: true;
+  actionId: string;
   messageId: number;
   recentMessages: RuntimeMessageOverviewItem[];
 }

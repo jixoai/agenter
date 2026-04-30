@@ -1,11 +1,11 @@
 ---
 name: agenter-message
-description: Read, query, send, edit, and recall durable room messages. Use this when work depends on room context, room history must be searched, a room expects a protocol-shaped reply, or a chat-related attention item still needs a user-visible reply.
+description: Read, query, send, edit, and recall durable room messages. Use this when work depends on room context, room history must be searched, a room expects a protocol-shaped reply, or room-visible coordination may affect your next move.
 ---
 
 # agenter-message
 
-Use this skill when you need to read or query room history, send, edit, or recall a durable room message, or decide whether a chat-related attention item still requires a room reply.
+Use this skill when you need to read or query room history, send, edit, or recall a durable room message, or decide whether room-visible coordination is part of the next step.
 
 Quick start:
 1. If the latest room message already contains the full task and no other room is involved yet, do not reread the room first.
@@ -55,7 +55,7 @@ Key laws:
 - Reply promptly when the room is waiting on you, but do not spam the room with every internal step.
 - While another participant or room still owes you the missing fact, keep the origin-room obligation unresolved; do not close it with `attention commit ... done=true` yet.
 - After the relay target replies, the next required move is to deliver that answer back into the origin room before settling the attention.
-- If the current attention says `self_update` / `no_external_reply_needed`, that usually means you should continue private work or settle the attention, not send another room reply yet.
+- If the latest room-visible fact is only teammate progress and you do not yet have a new fact to deliver, keep doing the remaining private work instead of mirroring that progress back into the room.
 - Private reminders do not replace the required durable room reply; they usually mean the shared-room obligation is still open.
 - Follow the room's requested protocol exactly.
 - If the room already fixed a URL, path, or other reply token, preserve that fact exactly instead of silently normalizing it.

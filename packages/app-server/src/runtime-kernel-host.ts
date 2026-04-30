@@ -18,6 +18,7 @@ import {
 
 import type { AttentionDispatchedInput, AttentionReceiptInput } from "./loopbus-plugin-runtime";
 import type {
+  RuntimeBoundaryChannel,
   RuntimeIngressCommitResult,
   RuntimeSystemIngressEnvelope,
   RuntimeSystemKernelAdapter,
@@ -61,6 +62,13 @@ interface RuntimeKernelHostOptions {
 }
 
 const flattenHookResults = (results: AttentionCommitHookResult[][]): AttentionCommitHookResult[] => results.flat();
+const RUNTIME_BOUNDARY_CHANNELS = new Set<RuntimeBoundaryChannel>([
+  "world_fact",
+  "capability_projection",
+  "scheduler_signal",
+  "agent_action",
+  "effect_ledger",
+]);
 
 export class RuntimeKernelHost implements RuntimeSystemKernelHost {
   private readonly kernel: LoopBusKernel<AttentionCommitHookResult[]>;
@@ -118,6 +126,7 @@ export class RuntimeKernelHost implements RuntimeSystemKernelHost {
     envelope: RuntimeSystemIngressEnvelope,
     input: { notifyLoop?: boolean } = {},
   ): Promise<RuntimeIngressCommitResult | null> {
+    this.assertIngressEnvelope(envelope);
     const committed = await this.options.commitIngress(envelope, {
       notifyLoop: input.notifyLoop ?? false,
     });
@@ -149,6 +158,7 @@ export class RuntimeKernelHost implements RuntimeSystemKernelHost {
         continue;
       }
       for (const envelope of envelopes ?? []) {
+        this.assertIngressEnvelope(envelope);
         const result = await this.commitIngress(envelope, { notifyLoop: false });
         if (result) {
           committed += 1;
@@ -322,5 +332,26 @@ export class RuntimeKernelHost implements RuntimeSystemKernelHost {
         errorMessage: receipt.errorMessage,
       },
     });
+  }
+
+  private assertIngressEnvelope(envelope: RuntimeSystemIngressEnvelope): void {
+    if (!envelope.system || envelope.system.trim().length === 0) {
+      throw new Error("runtime ingress envelope must declare system");
+    }
+    if (!RUNTIME_BOUNDARY_CHANNELS.has(envelope.boundaryChannel)) {
+      throw new Error(`runtime ingress envelope has invalid boundaryChannel: ${String(envelope.boundaryChannel)}`);
+    }
+    if (!envelope.sourceId || envelope.sourceId.trim().length === 0) {
+      throw new Error("runtime ingress envelope must declare sourceId");
+    }
+    if (!envelope.contextKey || envelope.contextKey.trim().length === 0) {
+      throw new Error("runtime ingress envelope must declare contextKey");
+    }
+    if (!envelope.kind || envelope.kind.trim().length === 0) {
+      throw new Error("runtime ingress envelope must declare kind");
+    }
+    if (!Number.isFinite(envelope.createdAt)) {
+      throw new Error("runtime ingress envelope must declare numeric createdAt");
+    }
   }
 }

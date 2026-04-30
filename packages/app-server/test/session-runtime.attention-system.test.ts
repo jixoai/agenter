@@ -602,6 +602,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         title: "Room 2",
         focus: true,
       });
+      await internal.collectLoopInputs();
 
       const contextId = `ctx-${channel.chatId}`;
       ensureAttentionContext(internal, contextId);
@@ -622,7 +623,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       }).commit;
       await internal.handleCommittedAttentionCommit(contextId, commit, { notifyLoop: false });
 
-      const attentionInput = internal.collectAttentionInputs()?.find((item) => item.meta?.attentionContextId === contextId);
+      const attentionInput = (await internal.collectLoopInputs())?.find((item) => item.meta?.attentionContextId === contextId);
       expect(attentionInput).toBeDefined();
       if (!attentionInput) {
         return;
@@ -4069,6 +4070,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const batch = await internal.collectLoopInputs();
     const messages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
     const activeItems = getActiveItems(internal);
+    const delivery = runtime.inspectAttentionDeliveryState();
 
     expect(wake).toBe("attention");
     expect(messages.filter((message) => message.content === "先等等，我确认一下。")).toHaveLength(1);
@@ -4078,6 +4080,42 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       activeItems.some((item) => parseMessageAttentionSrc(item.meta.src ?? "")?.messageId === first.messageId),
     ).toBeTrue();
     expect(getBootstrapInput(batch)).toBeDefined();
+    expect(delivery.watches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ownerActionId: first.actionId,
+          ownerActionKind: "message_send",
+          target: `room:${PRIMARY_ROOM_ID}`,
+          status: "expired",
+          reminderContextId: PRIMARY_CONTEXT_ID,
+          predicate: {
+            kind: "message_latest_visible",
+            chatId: PRIMARY_ROOM_ID,
+            anchorMessageId: first.messageId,
+          },
+        }),
+      ]),
+    );
+    expect(delivery.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actionId: first.actionId,
+          actionKind: "message_send",
+        }),
+      ]),
+    );
+    expect(
+      delivery.effects.some(
+        (effect) =>
+          effect.actionId === first.actionId &&
+          effect.actionKind === "message_send" &&
+          effect.target === `room:${PRIMARY_ROOM_ID}` &&
+          effect.effectKind === "message_row_created" &&
+          effect.effectRecordId === `${PRIMARY_ROOM_ID}/${first.messageId}` &&
+          effect.meta?.chatId === PRIMARY_ROOM_ID &&
+          effect.meta?.messageId === first.messageId,
+      ),
+    ).toBeTrue();
 
     await runtime.stop();
   });
@@ -4087,7 +4125,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
 
     await runtime.start();
-    await internal.sendMessageTool({
+    const first = await internal.sendMessageTool({
       chatId: PRIMARY_ROOM_ID,
       content: "你住哪里？",
       from: "tester",
@@ -4105,13 +4143,94 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const winner = await Promise.race([waitPromise, Bun.sleep(80).then(() => "timeout" as const)]);
     const messages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
     const activeItems = getActiveItems(internal);
+    const delivery = runtime.inspectAttentionDeliveryState();
 
     expect(winner).toBe("timeout");
     expect(messages).toHaveLength(2);
     expect(activeItems.some((item) => item.title.includes("Re-evaluate room follow-up"))).toBeFalse();
+    expect(delivery.watches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ownerActionId: first.actionId,
+          target: `room:${PRIMARY_ROOM_ID}`,
+          status: "satisfied",
+          predicate: {
+            kind: "message_latest_visible",
+            chatId: PRIMARY_ROOM_ID,
+            anchorMessageId: first.messageId,
+          },
+          reminderContextId: null,
+          reminderCommitId: null,
+        }),
+      ]),
+    );
 
     internal.notifyInput("attention");
     await waitPromise;
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given explicit room message mutations When delivery diagnostics are inspected Then effect ledger keeps durable action-to-room causality", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeMessageEgressInternal;
+
+    await runtime.start();
+    const sent = await internal.sendMessageTool({
+      chatId: PRIMARY_ROOM_ID,
+      content: "第一版答复",
+      from: "tester",
+    });
+    const edited = await runtime.editRuntimeMessage({
+      chatId: PRIMARY_ROOM_ID,
+      messageId: sent.messageId,
+      content: "更正后的答复",
+    });
+    const recalled = await runtime.recallRuntimeMessage({
+      chatId: PRIMARY_ROOM_ID,
+      messageId: sent.messageId,
+    });
+
+    const delivery = runtime.inspectAttentionDeliveryState();
+    const timeline = runtime.queryAttentionDeliveryTimeline({ limit: 20 });
+
+    expect(delivery.effects.filter((effect) => effect.target === `room:${PRIMARY_ROOM_ID}`)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actionId: sent.actionId,
+          actionKind: "message_send",
+          target: `room:${PRIMARY_ROOM_ID}`,
+          effectKind: "message_row_created",
+          effectRecordId: `${PRIMARY_ROOM_ID}/${sent.messageId}`,
+          meta: expect.objectContaining({
+            chatId: PRIMARY_ROOM_ID,
+            messageId: sent.messageId,
+          }),
+        }),
+        expect.objectContaining({
+          actionKind: "message_edit",
+          target: `room:${PRIMARY_ROOM_ID}`,
+          effectKind: "message_row_updated",
+          effectRecordId: `${PRIMARY_ROOM_ID}/${edited.messageId}`,
+          meta: expect.objectContaining({
+            chatId: PRIMARY_ROOM_ID,
+            messageId: edited.messageId,
+          }),
+        }),
+        expect.objectContaining({
+          actionKind: "message_recall",
+          target: `room:${PRIMARY_ROOM_ID}`,
+          effectKind: "message_row_recalled",
+          effectRecordId: `${PRIMARY_ROOM_ID}/${recalled.messageId}`,
+          meta: expect.objectContaining({
+            chatId: PRIMARY_ROOM_ID,
+            messageId: recalled.messageId,
+            recalledAt: recalled.recalledAt,
+          }),
+        }),
+      ]),
+    );
+    expect(timeline.effects).toEqual(delivery.effects);
 
     await runtime.stop();
   });

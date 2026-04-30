@@ -4973,6 +4973,8 @@ export class AppKernel {
       projections: projections.filter((projection) => projection !== null),
       dispatches: timeline.dispatches,
       receipts: timeline.receipts,
+      watches: [],
+      effects: [],
     };
   }
 

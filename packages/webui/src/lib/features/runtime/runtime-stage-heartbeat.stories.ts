@@ -1173,6 +1173,8 @@ const dispatchingDeliveryState = {
 		},
 	],
 	receipts: [],
+	watches: [],
+	effects: [],
 } satisfies RuntimeAttentionDeliveryState;
 
 const firstErrorDeliveryState = {
@@ -1223,6 +1225,8 @@ const firstErrorDeliveryState = {
 			errorMessage: 'provider rejected the first frame',
 		},
 	],
+	watches: [],
+	effects: [],
 } satisfies RuntimeAttentionDeliveryState;
 
 const retryHistoryDeliveryState = {
@@ -1295,6 +1299,8 @@ const retryHistoryDeliveryState = {
 			timestamp: baseTimestamp + 72_000,
 		},
 	],
+	watches: [],
+	effects: [],
 } satisfies RuntimeAttentionDeliveryState;
 
 const createSchedulerState = (overrides?: Partial<RuntimeSchedulerState>): RuntimeSchedulerState => ({

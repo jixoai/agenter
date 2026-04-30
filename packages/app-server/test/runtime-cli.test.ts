@@ -817,7 +817,7 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(messageHelp.stdout).toContain('"followUpAfterMs"');
     expect(messageHelp.stdout).toContain("If recentMessages suggest an accidental duplicate");
     expect(messageHelp.stdout).toContain("use `message read` before `message edit` or `message recall`");
-    expect(messageHelp.stdout).toContain("followUpAfterMs is optional etiquette support");
+    expect(messageHelp.stdout).toContain("followUpAfterMs is an optional one-shot delayed re-evaluation timer");
     expect(messageHelp.stdout).toContain("creates attention only");
 
     expect(attentionHelp.exitCode).toBe(0);

@@ -199,4 +199,29 @@ describe("Feature: runtime-kernel-host", () => {
       latestDispatchId: dispatchResult.dispatch.dispatchId,
     });
   });
+
+  test("Scenario: Given adapter ingress omits a valid boundary declaration When host drains it Then the host rejects the ambiguous runtime ingress", async () => {
+    const adapter: RuntimeSystemKernelAdapter = {
+      name: "message",
+      mount: () => {},
+      drainIngress: () => [
+        {
+          ...createIngressEnvelope(),
+          boundaryChannel: "bad-boundary" as never,
+        },
+      ],
+    };
+
+    const host = new RuntimeKernelHost({
+      commitIngress: async () => {
+        throw new Error("should not commit invalid ingress");
+      },
+      getAttentionCommit: () => null,
+      getAttentionContextState: () => null,
+    });
+
+    host.mountAdapter(adapter);
+
+    await expect(host.drainIngress()).rejects.toThrow("invalid boundaryChannel");
+  });
 });

@@ -319,6 +319,8 @@ const createAttentionDeliveryState = (
   projections: overrides.projections ? structuredClone(overrides.projections) : [],
   dispatches: overrides.dispatches ? structuredClone(overrides.dispatches) : [],
   receipts: overrides.receipts ? structuredClone(overrides.receipts) : [],
+  watches: overrides.watches ? structuredClone(overrides.watches) : [],
+  effects: overrides.effects ? structuredClone(overrides.effects) : [],
 });
 
 const emitSubscriptionEvent = (handlers: SubscriptionHandlers | null, event: unknown) => {
@@ -1158,7 +1160,7 @@ const createMockClient = (input: {
           query: async (payload: { sessionId: string }) =>
             input.attentionDeliveryStateQuery
               ? await input.attentionDeliveryStateQuery(payload)
-              : { projections: [], dispatches: [], receipts: [] },
+              : { projections: [], dispatches: [], receipts: [], watches: [], effects: [] },
         },
         attentionDeliveryTimeline: {
           query: async (payload: {
@@ -1171,7 +1173,7 @@ const createMockClient = (input: {
           }) =>
             input.attentionDeliveryTimelineQuery
               ? await input.attentionDeliveryTimelineQuery(payload)
-              : { projections: [], dispatches: [], receipts: [] },
+              : { projections: [], dispatches: [], receipts: [], watches: [], effects: [] },
         },
         attentionQuery: {
           query: async (payload: { sessionId: string; query?: string; offset?: number; limit?: number }) =>

@@ -3,7 +3,7 @@
 - [x] 1.1 Add typed runtime boundary primitives for `WorldFact`, `CapabilityProjection`, `SchedulerSignal`, `AgentAction`, and `EffectLedger` without using `any`, `as any`, or `@ts-nocheck`
 - [x] 1.2 Add adapter-facing helpers that require every runtime-system emission to declare its boundary channel before reaching the kernel host
 - [ ] 1.3 Add development/test assertions or guards that reject ambiguous adapter emissions in Message, Terminal, Skill, and future-system paths
-- [ ] 1.4 Add durable effect-ledger records that can trace explicit actions to durable external effects such as room messages, including stable action/effect identity, actor identity, target identity, timestamp, and cycle/model-call refs when available
+- [x] 1.4 Add durable effect-ledger records that can trace explicit actions to durable external effects such as room messages, including stable action/effect identity, actor identity, target identity, timestamp, and cycle/model-call refs when available
 - [ ] 1.5 Ensure workspace/root shell privilege remains intact and is documented as outside this cleanup scope
 
 ## 2. Message Ingress And Side Effects
@@ -56,12 +56,12 @@
 
 ## 6. Generic Watch Primitive
 
-- [ ] 6.1 Add a generic one-shot watch/reminder model owned by an explicit action and backed by an objective due time plus predicate
-- [ ] 6.2 Implement watch due-time evaluation against world facts or capability projections
-- [ ] 6.3 Ensure due watches create only reminder facts/signals and never perform external side effects automatically
-- [ ] 6.4 Migrate message `followUpAfterMs` to delegate to the generic watch primitive or remove it from the public descriptor if backwards compatibility is intentionally broken
+- [x] 6.1 Add a generic one-shot watch/reminder model owned by an explicit action and backed by an objective due time plus predicate
+- [x] 6.2 Implement watch due-time evaluation against world facts or capability projections
+- [x] 6.3 Ensure due watches create only reminder facts/signals and never perform external side effects automatically
+- [x] 6.4 Migrate message `followUpAfterMs` to delegate to the generic watch primitive or remove it from the public descriptor if backwards compatibility is intentionally broken
 - [ ] 6.5 Update `runtime-tool-descriptors.ts` so follow-up wording no longer describes message-specific etiquette and clearly states that expiry only asks the model to re-decide
-- [ ] 6.6 Add inspection/publication support so active, satisfied, and expired watches are observable in runtime diagnostics
+- [x] 6.6 Add inspection/publication support so active, satisfied, and expired watches are observable in runtime diagnostics
 
 ## 7. Backend Tests
 
@@ -83,8 +83,8 @@
 - [x] 7.16 Add BDD tests proving successful requests advance injected snapshots only after response SSE starts with a non-error first event, clear only the staged keys actually committed by that request, and do not retroactively roll back after later stream interruption
 - [x] 7.17 Add BDD tests proving terminal focus/unfocus/idle-ready are scheduler signals and not task facts
 - [x] 7.18 Add BDD tests proving skill refresh updates the skill index and, when published, emits only ordinary objective attention items without creating a dedicated skill task context by default
-- [ ] 7.19 Add BDD tests proving generic watches re-evaluate predicates, emit reminders when still relevant, stay silent when satisfied, and never auto-send messages
-- [ ] 7.20 Add effect-ledger tests proving explicit message actions are causally linked to resulting room rows
+- [x] 7.19 Add BDD tests proving generic watches re-evaluate predicates, emit reminders when still relevant, stay silent when satisfied, and never auto-send messages
+- [x] 7.20 Add effect-ledger tests proving explicit message actions are causally linked to resulting room rows
 - [ ] 7.21 Add BDD tests proving the cost comparison uses final serialized user-role text length rather than raw object size or provider-token estimates
 
 ## 8. Frontend And Runtime Inspection Tests
@@ -120,7 +120,7 @@
 
 ## 11. Verification Commands
 
-- [ ] 11.1 Run targeted app-server tests for message ingress, attention bootstrap, terminal adapter, skill system, catalog generation, effect ledger, and watches
+- [x] 11.1 Run targeted app-server tests for message ingress, attention bootstrap, terminal adapter, skill system, catalog generation, effect ledger, and watches
 - [x] 11.2 Run `bun run typecheck`
 - [ ] 11.3 Run `bun run test`
 - [x] 11.4 Run any package-specific test commands needed by changed packages, including WebUI unit/DOM tests if frontend surfaces changed

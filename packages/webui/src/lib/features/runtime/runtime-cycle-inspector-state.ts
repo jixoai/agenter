@@ -121,6 +121,8 @@ export const EMPTY_RUNTIME_ATTENTION_DELIVERY_STATE: RuntimeAttentionDeliverySta
   projections: [],
   dispatches: [],
   receipts: [],
+  watches: [],
+  effects: [],
 };
 
 type LooseRecord = Record<string, unknown>;

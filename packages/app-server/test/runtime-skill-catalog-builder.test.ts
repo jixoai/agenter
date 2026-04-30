@@ -19,4 +19,22 @@ describe("Feature: runtime built-in skill catalog generation", () => {
       "agenter-workspace",
     ]);
   });
+
+  test("Scenario: Given generated built-in skills When catalog templates are inspected Then removed pollution terms stay out of generated guidance", () => {
+    const pollutedTerms = [
+      "self_update",
+      "no_external_reply_needed",
+      "room_reply_pending",
+      "required_room_reply_sent",
+      "chatTurnState",
+      "chatObligationKind",
+      "settlesWhen",
+      "originAckFallback",
+    ];
+
+    const joinedTemplates = runtimeBuiltinSkillCatalog.map((entry) => entry.template).join("\n");
+    for (const term of pollutedTerms) {
+      expect(joinedTemplates).not.toContain(term);
+    }
+  });
 });

@@ -16,7 +16,7 @@ Good defaults:
 - while the relay target has not answered yet, keep the origin obligation open instead of settling it
 - once the relay target answers, return that answer to the origin room before you settle the attention
 - once the evidence is ready and the room is waiting for a protocol reply, send that durable message immediately
-- if the current obligation is `self_update` / `no_external_reply_needed`, prefer private tool work or attention settlement over another room reply
+- if the latest room-visible fact is only teammate progress and you have nothing new to deliver yet, prefer private tool work or attention settlement over another mirror-status message
 - if the room fixed a concrete URL, path, or token, send that exact value back instead of a normalized variant such as a sibling path
 - if you need to correct yourself, send a new durable replacement instead of treating the earlier message as final truth
 - through `root_bash`, prefer `command=message send` plus JSON `stdin` for room replies; only use argv JSON when it is trivially short

@@ -13,6 +13,8 @@ import type {
   SessionAssetRecord,
   SessionAttentionDispatchInsert,
   SessionAttentionDispatchRecord,
+  SessionEffectLedgerInsert,
+  SessionEffectLedgerRecord,
   SessionAttentionReceiptInsert,
   SessionAttentionReceiptProviderEventKind,
   SessionAttentionReceiptRecord,
@@ -23,10 +25,14 @@ import type {
   SessionMessageScope,
   SessionMessageUpsertInput,
   SessionPromptWindowRecord,
+  SessionRuntimeWatchInsert,
+  SessionRuntimeWatchRecord,
+  SessionRuntimeWatchStatus,
+  SessionRuntimeWatchUpdate,
 } from "./types";
 import { PROMPT_WINDOW_STATE_PART_TYPE } from "./types";
 
-const SESSION_DB_SCHEMA_VERSION = 2;
+const SESSION_DB_SCHEMA_VERSION = 3;
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
   if (!value) {
@@ -984,6 +990,298 @@ export class SessionDb {
       .filter((row): row is SessionAttentionReceiptRecord => row !== null);
   }
 
+  appendRuntimeWatch(input: SessionRuntimeWatchInsert): SessionRuntimeWatchRecord {
+    const createdAt = input.createdAt ?? Date.now();
+    const updatedAt = input.updatedAt ?? createdAt;
+    const status = input.status ?? "pending";
+    this.db
+      .query(
+        `insert into runtime_watch (
+           watch_id,
+           owner_action_id,
+           owner_action_kind,
+           owner_actor_id,
+           owner_cycle_id,
+           owner_session_model_call_id,
+           target,
+           predicate_json,
+           due_at,
+           status,
+           created_at,
+           updated_at,
+           resolved_at,
+           reminder_context_id,
+           reminder_commit_id,
+           meta_json
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.watchId,
+        input.ownerActionId,
+        input.ownerActionKind,
+        input.ownerActorId,
+        input.ownerCycleId ?? null,
+        input.ownerSessionModelCallId ?? null,
+        input.target,
+        toJson(input.predicate),
+        input.dueAt,
+        status,
+        createdAt,
+        updatedAt,
+        input.resolvedAt ?? null,
+        input.reminderContextId ?? null,
+        input.reminderCommitId ?? null,
+        input.meta === undefined ? null : toJson(input.meta),
+      );
+    const record = this.getRuntimeWatchByWatchId(input.watchId);
+    if (!record) {
+      throw new Error(`failed to load runtime_watch ${input.watchId}`);
+    }
+    return record;
+  }
+
+  updateRuntimeWatch(watchId: string, input: SessionRuntimeWatchUpdate): SessionRuntimeWatchRecord {
+    const current = this.getRuntimeWatchByWatchId(watchId);
+    if (!current) {
+      throw new Error(`runtime_watch not found: ${watchId}`);
+    }
+    const updatedAt = input.updatedAt ?? Date.now();
+    const nextStatus = input.status ?? current.status;
+    const nextResolvedAt =
+      input.resolvedAt !== undefined ? input.resolvedAt : nextStatus === "pending" ? null : current.resolvedAt ?? updatedAt;
+    const nextReminderContextId =
+      input.reminderContextId !== undefined ? input.reminderContextId : current.reminderContextId ?? null;
+    const nextReminderCommitId =
+      input.reminderCommitId !== undefined ? input.reminderCommitId : current.reminderCommitId ?? null;
+    const nextMeta = input.meta !== undefined ? input.meta : current.meta;
+    this.db
+      .query(
+        `update runtime_watch
+         set status = ?,
+             updated_at = ?,
+             resolved_at = ?,
+             reminder_context_id = ?,
+             reminder_commit_id = ?,
+             meta_json = ?
+         where watch_id = ?`,
+      )
+      .run(
+        nextStatus,
+        updatedAt,
+        nextResolvedAt,
+        nextReminderContextId,
+        nextReminderCommitId,
+        nextMeta === undefined ? null : toJson(nextMeta),
+        watchId,
+      );
+    const record = this.getRuntimeWatchByWatchId(watchId);
+    if (!record) {
+      throw new Error(`failed to load updated runtime_watch ${watchId}`);
+    }
+    return record;
+  }
+
+  getRuntimeWatchByWatchId(watchId: string): SessionRuntimeWatchRecord | null {
+    const row = this.db
+      .query(
+        `select id, watch_id, owner_action_id, owner_action_kind, owner_actor_id, owner_cycle_id,
+                owner_session_model_call_id, target, predicate_json, due_at, status, created_at,
+                updated_at, resolved_at, reminder_context_id, reminder_commit_id, meta_json
+         from runtime_watch
+         where watch_id = ?`,
+      )
+      .get(watchId) as {
+      id: number;
+      watch_id: string;
+      owner_action_id: string;
+      owner_action_kind: string;
+      owner_actor_id: string;
+      owner_cycle_id: number | null;
+      owner_session_model_call_id: number | null;
+      target: string;
+      predicate_json: string;
+      due_at: number;
+      status: SessionRuntimeWatchStatus;
+      created_at: number;
+      updated_at: number;
+      resolved_at: number | null;
+      reminder_context_id: string | null;
+      reminder_commit_id: string | null;
+      meta_json: string | null;
+    } | null;
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      watchId: row.watch_id,
+      ownerActionId: row.owner_action_id,
+      ownerActionKind: row.owner_action_kind,
+      ownerActorId: row.owner_actor_id,
+      ownerCycleId: row.owner_cycle_id,
+      ownerSessionModelCallId: row.owner_session_model_call_id,
+      target: row.target,
+      predicate: parseJson<SessionRuntimeWatchRecord["predicate"]>(row.predicate_json, {
+        kind: "message_latest_visible",
+        chatId: "",
+        anchorMessageId: 0,
+      }),
+      dueAt: row.due_at,
+      status: row.status,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      resolvedAt: row.resolved_at,
+      reminderContextId: row.reminder_context_id,
+      reminderCommitId: row.reminder_commit_id,
+      meta: row.meta_json === null ? undefined : parseJson(row.meta_json, undefined),
+    };
+  }
+
+  listRuntimeWatches(input?: {
+    status?: SessionRuntimeWatchStatus;
+    ownerActionId?: string;
+    target?: string;
+  }): SessionRuntimeWatchRecord[] {
+    const rows = this.db
+      .query(
+        `select watch_id
+         from runtime_watch
+         where (? is null or status = ?)
+           and (? is null or owner_action_id = ?)
+           and (? is null or target = ?)
+         order by due_at asc, created_at asc, id asc`,
+      )
+      .all(
+        input?.status ?? null,
+        input?.status ?? null,
+        input?.ownerActionId ?? null,
+        input?.ownerActionId ?? null,
+        input?.target ?? null,
+        input?.target ?? null,
+      ) as Array<{ watch_id: string }>;
+    return rows
+      .map((row) => this.getRuntimeWatchByWatchId(row.watch_id))
+      .filter((row): row is SessionRuntimeWatchRecord => row !== null);
+  }
+
+  appendEffectLedger(input: SessionEffectLedgerInsert): SessionEffectLedgerRecord {
+    const timestamp = input.timestamp ?? Date.now();
+    this.db
+      .query(
+        `insert into effect_ledger (
+           effect_id,
+           action_id,
+           action_kind,
+           actor_id,
+           cycle_id,
+           session_model_call_id,
+           target,
+           effect_kind,
+           effect_record_id,
+           timestamp,
+           meta_json
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.effectId,
+        input.actionId,
+        input.actionKind,
+        input.actorId,
+        input.cycleId ?? null,
+        input.sessionModelCallId ?? null,
+        input.target,
+        input.effectKind,
+        input.effectRecordId,
+        timestamp,
+        input.meta === undefined ? null : toJson(input.meta),
+      );
+    const record = this.getEffectLedgerByEffectId(input.effectId);
+    if (!record) {
+      throw new Error(`failed to load effect_ledger ${input.effectId}`);
+    }
+    return record;
+  }
+
+  getEffectLedgerByEffectId(effectId: string): SessionEffectLedgerRecord | null {
+    const row = this.db
+      .query(
+        `select id, effect_id, action_id, action_kind, actor_id, cycle_id, session_model_call_id, target,
+                effect_kind, effect_record_id, timestamp, meta_json
+         from effect_ledger
+         where effect_id = ?`,
+      )
+      .get(effectId) as {
+      id: number;
+      effect_id: string;
+      action_id: string;
+      action_kind: string;
+      actor_id: string;
+      cycle_id: number | null;
+      session_model_call_id: number | null;
+      target: string;
+      effect_kind: string;
+      effect_record_id: string;
+      timestamp: number;
+      meta_json: string | null;
+    } | null;
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      effectId: row.effect_id,
+      actionId: row.action_id,
+      actionKind: row.action_kind,
+      actorId: row.actor_id,
+      cycleId: row.cycle_id,
+      sessionModelCallId: row.session_model_call_id,
+      target: row.target,
+      effectKind: row.effect_kind,
+      effectRecordId: row.effect_record_id,
+      timestamp: row.timestamp,
+      meta: row.meta_json === null ? undefined : parseJson(row.meta_json, undefined),
+    };
+  }
+
+  listEffectLedger(input?: {
+    actionId?: string;
+    actorId?: string;
+    target?: string;
+    effectKind?: string;
+    cycleId?: number;
+    sessionModelCallId?: number;
+  }): SessionEffectLedgerRecord[] {
+    const rows = this.db
+      .query(
+        `select effect_id
+         from effect_ledger
+         where (? is null or action_id = ?)
+           and (? is null or actor_id = ?)
+           and (? is null or target = ?)
+           and (? is null or effect_kind = ?)
+           and (? is null or cycle_id = ?)
+           and (? is null or session_model_call_id = ?)
+         order by timestamp asc, id asc`,
+      )
+      .all(
+        input?.actionId ?? null,
+        input?.actionId ?? null,
+        input?.actorId ?? null,
+        input?.actorId ?? null,
+        input?.target ?? null,
+        input?.target ?? null,
+        input?.effectKind ?? null,
+        input?.effectKind ?? null,
+        input?.cycleId ?? null,
+        input?.cycleId ?? null,
+        input?.sessionModelCallId ?? null,
+        input?.sessionModelCallId ?? null,
+      ) as Array<{ effect_id: string }>;
+    return rows
+      .map((row) => this.getEffectLedgerByEffectId(row.effect_id))
+      .filter((row): row is SessionEffectLedgerRecord => row !== null);
+  }
+
   appendAsset(input: SessionAssetInsert): SessionAssetRecord {
     const createdAt = input.createdAt ?? Date.now();
     this.db
@@ -1286,6 +1584,58 @@ export class SessionDb {
           on attention_receipt(cycle_id, timestamp asc, id asc);
         create index if not exists idx_attention_receipt_model_call
           on attention_receipt(session_model_call_id, timestamp asc, id asc);
+      `);
+    }
+    if (currentVersion < 3) {
+      this.db.exec(`
+        create table if not exists runtime_watch (
+          id integer primary key autoincrement,
+          watch_id text not null unique,
+          owner_action_id text not null,
+          owner_action_kind text not null,
+          owner_actor_id text not null,
+          owner_cycle_id integer,
+          owner_session_model_call_id integer,
+          target text not null,
+          predicate_json text not null,
+          due_at integer not null,
+          status text not null,
+          created_at integer not null,
+          updated_at integer not null,
+          resolved_at integer,
+          reminder_context_id text,
+          reminder_commit_id text,
+          meta_json text
+        );
+        create index if not exists idx_runtime_watch_due_status
+          on runtime_watch(status, due_at asc, id asc);
+        create index if not exists idx_runtime_watch_owner_action
+          on runtime_watch(owner_action_id, created_at asc, id asc);
+        create index if not exists idx_runtime_watch_target
+          on runtime_watch(target, created_at asc, id asc);
+
+        create table if not exists effect_ledger (
+          id integer primary key autoincrement,
+          effect_id text not null unique,
+          action_id text not null,
+          action_kind text not null,
+          actor_id text not null,
+          cycle_id integer,
+          session_model_call_id integer,
+          target text not null,
+          effect_kind text not null,
+          effect_record_id text not null,
+          timestamp integer not null,
+          meta_json text
+        );
+        create index if not exists idx_effect_ledger_action
+          on effect_ledger(action_id, timestamp asc, id asc);
+        create index if not exists idx_effect_ledger_target
+          on effect_ledger(target, timestamp asc, id asc);
+        create index if not exists idx_effect_ledger_cycle
+          on effect_ledger(cycle_id, timestamp asc, id asc);
+        create index if not exists idx_effect_ledger_model_call
+          on effect_ledger(session_model_call_id, timestamp asc, id asc);
       `);
     }
     this.db.exec(`pragma user_version = ${SESSION_DB_SCHEMA_VERSION}`);

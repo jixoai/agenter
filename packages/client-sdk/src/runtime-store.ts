@@ -180,6 +180,8 @@ const createEmptyAttentionDeliveryState = (): RuntimeAttentionDeliveryState => (
   projections: [],
   dispatches: [],
   receipts: [],
+  watches: [],
+  effects: [],
 });
 
 const cloneRuntimeAttentionState = (attention: RuntimeAttentionState): RuntimeAttentionState => ({
@@ -234,6 +236,15 @@ const cloneRuntimeAttentionDeliveryState = (
     ...receipt,
     usage: receipt.usage ? { ...receipt.usage } : undefined,
     meta: receipt.meta ? structuredClone(receipt.meta) : undefined,
+  })),
+  watches: (delivery.watches ?? []).map((watch) => ({
+    ...watch,
+    predicate: structuredClone(watch.predicate),
+    meta: watch.meta ? structuredClone(watch.meta) : undefined,
+  })),
+  effects: (delivery.effects ?? []).map((effect) => ({
+    ...effect,
+    meta: effect.meta ? structuredClone(effect.meta) : undefined,
   })),
 });
 

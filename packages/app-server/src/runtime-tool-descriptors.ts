@@ -292,7 +292,7 @@ const messageSendSchema = z.object({
     .int()
     .positive()
     .describe(
-      "Optional one-shot follow-up reminder in milliseconds. If this sent message is still the latest visible room message when the delay expires, the runtime creates attention instead of auto-sending a room reply.",
+      "Optional one-shot delayed re-evaluation in milliseconds. If this sent message is still the latest visible room message when the delay expires, the runtime creates attention for a fresh model decision and does not mutate the room automatically.",
     )
     .optional(),
 });
@@ -606,7 +606,7 @@ export const runtimeToolDescriptors = [
       "Send a durable room message through the runtime message system. Use ref to reply to an earlier room message, optionally use followUpAfterMs for one-shot attention-only re-evaluation, then inspect recentMessages and follow up with message read/edit/recall when the visible outcome needs revision.",
     inputSchema: messageSendSchema,
     helpNotes: [
-      "followUpAfterMs is optional etiquette support for long-running acknowledgements or unanswered follow-up questions.",
+      "followUpAfterMs is an optional one-shot delayed re-evaluation timer owned by this explicit message action.",
       "When followUpAfterMs expires, the runtime creates attention only if this message is still the latest visible room message.",
       "followUpAfterMs never auto-sends a room reply and does not become durable room metadata.",
     ],

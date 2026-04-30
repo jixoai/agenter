@@ -28,7 +28,7 @@ Good habits:
 - if `message query --help` marks compact as `Suggested` or `Available`, `message query --compact` is also available for positional payloads; if the array shape becomes unclear, fall back to object JSON immediately
 - `chatId:"*"` only searches rooms already granted to you. It is the right temporary cross-room lookup primitive when you do not know which visible room holds the fact yet.
 - if the user asked you to reach another participant and `visibleRooms` already exposes that participant's room, relay there instead of replying that the participant is absent from the current room
-- an acknowledgement like "I'll ask them now" is only a waiting-state message; it does not satisfy the origin room's final reply obligation
+- an acknowledgement like "I'll ask them now" is only a waiting-state message; it does not finish the origin room's final delivery
 - while you are still waiting on another participant or relay room, do not settle the origin attention with `done: true`
 - once the relay answer arrives, the next required step is to send the answer back to the origin room before you close the attention
 - keep the promised payload exact: if the room gave a fixed URL, path, or token, reuse that exact fact instead of silently rewriting it
@@ -37,7 +37,7 @@ Good habits:
 - if the room promised both a root URL and an API path such as `/api/status`, do not send the final reply until both are verifiably live
 - treat follow-up feedback as new debt: an earlier `APP-URL` does not satisfy the later `APP-UPDATED` or `APP-RESUMED` reply the room is now waiting for
 - treat private reminders as a signal to finish the shared-room obligation, not as a new durable room to answer
-- if a teammate only posted progress and the envelope says `self_update` / `no_external_reply_needed`, treat that as private plan refresh, not as a new reply obligation
+- if a teammate only posted progress and you do not yet have a new room-visible fact, treat that as private plan refresh, not as a reason to mirror the same status back into the room
 
 Settlement checklist:
 

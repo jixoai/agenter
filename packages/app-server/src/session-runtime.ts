@@ -48,6 +48,7 @@ import {
   type SessionAiCallRecord,
   type SessionAssetRecord,
   type SessionAttentionDispatchRecord,
+  type SessionEffectLedgerRecord,
   type SessionAttentionReceiptRecord,
   type SessionCollectedInput,
   type SessionCollectedInputPart,
@@ -56,6 +57,8 @@ import {
   type SessionMessageRecord,
   type SessionMessageUpsertInput,
   type SessionPromptWindowRecord,
+  type SessionRuntimeWatchPredicate,
+  type SessionRuntimeWatchRecord,
   type SessionTerminalOutcome,
   type SessionTraceRef,
 } from "@agenter/session-system";
@@ -150,7 +153,6 @@ import {
 } from "./loopbus-plugin-runtime";
 import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
 import { listMessageSeatEntries, summarizeMessageChannelPresence } from "./message-channel-presence";
-import { MessageFollowUpReminderScheduler, type MessageFollowUpReminder } from "./message-follow-up-reminders";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
@@ -230,6 +232,7 @@ import type { ChatMessage, ChatSessionAsset, ModelCapabilities, TaskStage } from
 import { UsageAnalyticsDb } from "./usage-analytics-db";
 import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "./usage-analytics-paths";
 import type { UsageAnalyticsFactInput } from "./usage-analytics-types";
+import { RuntimeWatchStore, type RuntimeWatchRecord } from "./runtime-watch-store";
 import {
   listWorkspaceSettingsLayers,
   readWorkspaceSettingsLayer,
@@ -853,7 +856,7 @@ const buildTaskAttentionPresentation = (
   }
 };
 
-const buildMessageFollowUpReminderPresentation = (input: {
+const buildRuntimeWatchReminderPresentation = (input: {
   chatId: string;
   anchorMessageId: number;
   dueAt: number;
@@ -1411,6 +1414,17 @@ const cloneAttentionReceiptRecord = (receipt: AttentionReceiptRecord): Attention
   meta: receipt.meta ? structuredClone(receipt.meta) : undefined,
 });
 
+const cloneRuntimeWatchRecord = (watch: SessionRuntimeWatchRecord): SessionRuntimeWatchRecord => ({
+  ...watch,
+  predicate: structuredClone(watch.predicate),
+  meta: watch.meta ? structuredClone(watch.meta) : undefined,
+});
+
+const cloneEffectLedgerRecord = (record: SessionEffectLedgerRecord): SessionEffectLedgerRecord => ({
+  ...record,
+  meta: record.meta ? structuredClone(record.meta) : undefined,
+});
+
 export interface SessionRuntimeAttentionState {
   snapshot: AttentionSystemSnapshot;
   active: AttentionActiveContextMatch[];
@@ -1422,6 +1436,8 @@ export interface SessionRuntimeAttentionDeliveryState {
   projections: AttentionDeliveryProjection[];
   dispatches: AttentionDispatchRecord[];
   receipts: AttentionReceiptRecord[];
+  watches: SessionRuntimeWatchRecord[];
+  effects: SessionEffectLedgerRecord[];
 }
 
 export interface SessionRuntimeAttentionApiSurface {
@@ -1641,7 +1657,8 @@ export class SessionRuntime {
   private readonly taskEngine = new TaskEngine();
   private readonly taskSourceMtime = new Map<string, number>();
   private readonly taskAttentionDraftQueue: AttentionDraft[] = [];
-  private readonly messageFollowUpReminders = new MessageFollowUpReminderScheduler();
+  private readonly runtimeWatchStore = new RuntimeWatchStore();
+  private readonly effectLedgerRecords = new Map<string, SessionEffectLedgerRecord>();
   private taskSources: TaskSourceResolved[] = [];
 
   private config: ResolvedSessionConfig | null = null;
@@ -2415,7 +2432,9 @@ export class SessionRuntime {
     }
     const replyCycleId = this.activeCycleId;
     const author = input.from ?? this.getAvatarName();
+    const actionId = this.createRuntimeActionId("message_send");
     const result = this.deliverRuntimeMessageDispatch({
+      actionId,
       chatId: input.chatId,
       content: input.content,
       ref: input.ref,
@@ -2427,7 +2446,14 @@ export class SessionRuntime {
       Number.isInteger(input.followUpAfterMs) &&
       input.followUpAfterMs > 0
     ) {
-      this.armMessageFollowUpReminder({
+      this.armRuntimeWatch({
+        watchId: `watch/message-follow-up/${input.chatId}/${result.messageId}/${this.messageActorId}`,
+        ownerActionId: actionId,
+        ownerActionKind: "message_send",
+        ownerActorId: this.messageActorId,
+        ownerCycleId: replyCycleId,
+        ownerSessionModelCallId: this.activeModelCallId,
+        target: `room:${input.chatId}`,
         chatId: input.chatId,
         anchorMessageId: result.messageId,
         followUpAfterMs: input.followUpAfterMs,
@@ -2441,12 +2467,28 @@ export class SessionRuntime {
     messageId: number;
     content: string;
   }): Promise<{ ok: boolean; messageId: number; updatedAt: number }> {
+    const actionId = this.createRuntimeActionId("message_edit");
     const access = this.requireActorChannelWriteAccess(input.chatId);
     const message = this.messageSystem.editAuthorized({
       chatId: access.chatId,
       accessToken: access.accessToken,
       messageId: input.messageId,
       content: input.content,
+    });
+    this.recordEffectLedger({
+      actionId,
+      actionKind: "message_edit",
+      actorId: this.messageActorId,
+      cycleId: this.activeCycleId,
+      sessionModelCallId: this.activeModelCallId,
+      target: `room:${input.chatId}`,
+      effectKind: "message_row_updated",
+      effectRecordId: `${input.chatId}/${message.messageId}`,
+      timestamp: message.updatedAt,
+      meta: {
+        chatId: input.chatId,
+        messageId: message.messageId,
+      },
     });
     return {
       ok: true,
@@ -2459,6 +2501,7 @@ export class SessionRuntime {
     chatId: string;
     messageId: number;
   }): Promise<{ ok: boolean; messageId: number; updatedAt: number; recalledAt: number }> {
+    const actionId = this.createRuntimeActionId("message_recall");
     const access = this.requireActorChannelWriteAccess(input.chatId);
     const message = this.messageSystem.recallAuthorized({
       chatId: access.chatId,
@@ -2468,6 +2511,22 @@ export class SessionRuntime {
     if (!message.recalledAt) {
       throw new Error("message recall did not persist recalledAt");
     }
+    this.recordEffectLedger({
+      actionId,
+      actionKind: "message_recall",
+      actorId: this.messageActorId,
+      cycleId: this.activeCycleId,
+      sessionModelCallId: this.activeModelCallId,
+      target: `room:${input.chatId}`,
+      effectKind: "message_row_recalled",
+      effectRecordId: `${input.chatId}/${message.messageId}`,
+      timestamp: message.recalledAt,
+      meta: {
+        chatId: input.chatId,
+        messageId: message.messageId,
+        recalledAt: message.recalledAt,
+      },
+    });
     return {
       ok: true,
       messageId: message.messageId,
@@ -2509,21 +2568,63 @@ export class SessionRuntime {
     });
   }
 
-  private armMessageFollowUpReminder(input: {
+  private armRuntimeWatch(input: {
+    watchId: string;
+    ownerActionId: string;
+    ownerActionKind: string;
+    ownerActorId: string;
+    ownerCycleId?: number | null;
+    ownerSessionModelCallId?: number | null;
+    target: string;
     chatId: string;
     anchorMessageId: number;
     followUpAfterMs: number;
   }): void {
-    this.messageFollowUpReminders.arm({
+    const dueAt = Date.now() + input.followUpAfterMs;
+    const predicate: SessionRuntimeWatchPredicate = {
+      kind: "message_latest_visible",
       chatId: input.chatId,
       anchorMessageId: input.anchorMessageId,
-      senderActorId: this.messageActorId,
-      dueAt: Date.now() + input.followUpAfterMs,
+    };
+    const watch = this.runtimeWatchStore.upsert({
+      watchId: input.watchId,
+      ownerActionId: input.ownerActionId,
+      ownerActionKind: input.ownerActionKind,
+      ownerActorId: input.ownerActorId,
+      ownerCycleId: input.ownerCycleId ?? null,
+      ownerSessionModelCallId: input.ownerSessionModelCallId ?? null,
+      target: input.target,
+      predicate,
+      dueAt,
+      meta: {
+        compatibilityAlias: "followUpAfterMs",
+        chatId: input.chatId,
+        anchorMessageId: input.anchorMessageId,
+      },
+    });
+    this.sessionDb?.appendRuntimeWatch({
+      watchId: watch.watchId,
+      ownerActionId: watch.ownerActionId,
+      ownerActionKind: watch.ownerActionKind,
+      ownerActorId: watch.ownerActorId,
+      ownerCycleId: watch.ownerCycleId,
+      ownerSessionModelCallId: watch.ownerSessionModelCallId,
+      target: watch.target,
+      predicate: watch.predicate,
+      dueAt: watch.dueAt,
+      status: watch.status,
+      createdAt: watch.createdAt,
+      updatedAt: watch.updatedAt,
+      resolvedAt: watch.resolvedAt,
+      reminderContextId: watch.reminderContextId,
+      reminderCommitId: watch.reminderCommitId,
+      meta: watch.meta,
     });
   }
 
 
   private deliverRuntimeMessageDispatch(input: {
+    actionId: string;
     chatId: string;
     content: string;
     ref?: number;
@@ -2538,8 +2639,10 @@ export class SessionRuntime {
     if (redundant) {
       this.markRuntimeDispatchDelivered(input.chatId, input.cycleId);
       return this.buildRuntimeMessageSendResult({
+        actionId: input.actionId,
         chatId: input.chatId,
         message: redundant,
+        recordEffect: false,
       });
     }
     const message = this.appendActorChannelReply({
@@ -2550,8 +2653,10 @@ export class SessionRuntime {
     });
     this.markRuntimeDispatchDelivered(input.chatId, input.cycleId);
     return this.buildRuntimeMessageSendResult({
+      actionId: input.actionId,
       chatId: input.chatId,
       message,
+      recordEffect: true,
     });
   }
 
@@ -2615,73 +2720,187 @@ export class SessionRuntime {
       .items.at(-1);
   }
 
-  private buildMessageFollowUpReminderIngress(reminder: MessageFollowUpReminder): RuntimeSystemIngressEnvelope | null {
-    const anchorMessage = this.getLatestVisibleMessageForRoom(reminder.chatId);
-    if (!anchorMessage || anchorMessage.messageId !== reminder.anchorMessageId) {
+  private createRuntimeActionId(kind: string): string {
+    return `action/${kind}/${createId()}`;
+  }
+
+  private createRuntimeEffectId(kind: string): string {
+    return `effect/${kind}/${createId()}`;
+  }
+
+  private isRuntimeWatchPredicateStillRelevant(predicate: SessionRuntimeWatchPredicate): boolean {
+    switch (predicate.kind) {
+      case "message_latest_visible":
+        return this.getLatestVisibleMessageForRoom(predicate.chatId)?.messageId === predicate.anchorMessageId;
+      default:
+        return false;
+    }
+  }
+
+  private settleRuntimeWatch(
+    watchId: string,
+    input: {
+      status: "expired" | "satisfied";
+      updatedAt?: number;
+      resolvedAt?: number | null;
+      reminderContextId?: string | null;
+      reminderCommitId?: string | null;
+    },
+  ): RuntimeWatchRecord | null {
+    const watch = this.runtimeWatchStore.update(watchId, input);
+    if (!watch) {
+      return null;
+    }
+    this.sessionDb?.updateRuntimeWatch(watchId, {
+      status: watch.status,
+      updatedAt: watch.updatedAt,
+      resolvedAt: watch.resolvedAt,
+      reminderContextId: watch.reminderContextId ?? null,
+      reminderCommitId: watch.reminderCommitId ?? null,
+      meta: watch.meta,
+    });
+    return watch;
+  }
+
+  private recordEffectLedger(input: {
+    actionId: string;
+    actionKind: string;
+    actorId: string;
+    target: string;
+    effectKind: string;
+    effectRecordId: string;
+    timestamp?: number;
+    cycleId?: number | null;
+    sessionModelCallId?: number | null;
+    meta?: Record<string, unknown>;
+  }): SessionEffectLedgerRecord | null {
+    if (!this.sessionDb) {
+      return null;
+    }
+    const record = this.sessionDb.appendEffectLedger({
+      effectId: this.createRuntimeEffectId(input.effectKind),
+      actionId: input.actionId,
+      actionKind: input.actionKind,
+      actorId: input.actorId,
+      cycleId: input.cycleId ?? null,
+      sessionModelCallId: input.sessionModelCallId ?? null,
+      target: input.target,
+      effectKind: input.effectKind,
+      effectRecordId: input.effectRecordId,
+      timestamp: input.timestamp,
+      meta: input.meta,
+    });
+    this.effectLedgerRecords.set(record.effectId, record);
+    return record;
+  }
+
+  private buildRuntimeWatchReminderIngress(watch: RuntimeWatchRecord): RuntimeSystemIngressEnvelope | null {
+    if (watch.predicate.kind !== "message_latest_visible") {
+      return null;
+    }
+    const anchorMessage = this.getLatestVisibleMessageForRoom(watch.predicate.chatId);
+    if (!anchorMessage || anchorMessage.messageId !== watch.predicate.anchorMessageId) {
       return null;
     }
     const channel =
-      this.getActorRoom(reminder.chatId, {
+      this.getActorRoom(watch.predicate.chatId, {
         includeArchived: true,
         touchPresence: false,
-      }) ?? this.messageSystem.getChannel(reminder.chatId, { includeArchived: true });
-    const presentation = buildMessageFollowUpReminderPresentation({
-      chatId: reminder.chatId,
-      anchorMessageId: reminder.anchorMessageId,
-      dueAt: reminder.dueAt,
+      }) ?? this.messageSystem.getChannel(watch.predicate.chatId, { includeArchived: true });
+    const presentation = buildRuntimeWatchReminderPresentation({
+      chatId: watch.predicate.chatId,
+      anchorMessageId: watch.predicate.anchorMessageId,
+      dueAt: watch.dueAt,
       messageContent: anchorMessage.content,
     });
     return {
       system: "message",
       boundaryChannel: "world_fact",
       sourceId: formatMessageAttentionSrc({
-        chatId: reminder.chatId,
-        messageId: reminder.anchorMessageId,
+        chatId: watch.predicate.chatId,
+        messageId: watch.predicate.anchorMessageId,
       }),
-      contextKey: channel?.contextId ?? this.getDefaultAttentionContextId(reminder.chatId),
+      contextKey: channel?.contextId ?? this.getDefaultAttentionContextId(watch.predicate.chatId),
       kind: "follow_up_reminder",
       summary: presentation.title,
       content: presentation.detailValue,
       format: presentation.detailFormat,
       score: 100,
       tags: ["message", "follow_up_reminder"],
-      createdAt: reminder.dueAt,
+      createdAt: watch.dueAt,
       author: this.getAvatarName(),
       meta: {
-        chatId: reminder.chatId,
-        anchorMessageId: reminder.anchorMessageId,
-        dueAt: reminder.dueAt,
+        watchId: watch.watchId,
+        ownerActionId: watch.ownerActionId,
+        chatId: watch.predicate.chatId,
+        anchorMessageId: watch.predicate.anchorMessageId,
+        dueAt: watch.dueAt,
       },
     };
   }
 
-  private async pollMessageFollowUpReminders(now = Date.now()): Promise<void> {
-    const due = this.messageFollowUpReminders.consumeDue({
-      now,
-      isAnchorStillLatest: (reminder) =>
-        this.getLatestVisibleMessageForRoom(reminder.chatId)?.messageId === reminder.anchorMessageId,
-    });
-    if (due.fired.length === 0) {
-      return;
-    }
-    for (const reminder of due.fired) {
-      const envelope = this.buildMessageFollowUpReminderIngress(reminder);
-      if (!envelope) {
+  private async pollRuntimeWatches(now = Date.now()): Promise<void> {
+    const dueWatches = this.runtimeWatchStore.list({ status: "pending" }).filter((watch) => watch.dueAt <= now);
+    for (const watch of dueWatches) {
+      const stillRelevant = this.isRuntimeWatchPredicateStillRelevant(watch.predicate);
+      if (!stillRelevant) {
+        this.settleRuntimeWatch(watch.watchId, {
+          status: "satisfied",
+          updatedAt: now,
+          resolvedAt: now,
+        });
         continue;
       }
-      await this.runtimeKernelHost.commitIngress(envelope, {
+      const envelope = this.buildRuntimeWatchReminderIngress(watch);
+      if (!envelope) {
+        this.settleRuntimeWatch(watch.watchId, {
+          status: "satisfied",
+          updatedAt: now,
+          resolvedAt: now,
+        });
+        continue;
+      }
+      const committed = await this.runtimeKernelHost.commitIngress(envelope, {
         notifyLoop: false,
+      });
+      this.settleRuntimeWatch(watch.watchId, {
+        status: "expired",
+        updatedAt: now,
+        resolvedAt: now,
+        reminderContextId: committed?.contextId ?? null,
+        reminderCommitId: committed?.commit.commitId ?? null,
       });
     }
   }
 
   private buildRuntimeMessageSendResult(input: {
+    actionId: string;
     chatId: string;
     message: MessageRecord;
     accessToken?: string;
+    recordEffect?: boolean;
   }): RuntimeMessageSendResult {
+    if (input.recordEffect ?? true) {
+      this.recordEffectLedger({
+        actionId: input.actionId,
+        actionKind: "message_send",
+        actorId: input.message.senderActorId ?? this.messageActorId,
+        cycleId: this.activeCycleId,
+        sessionModelCallId: this.activeModelCallId,
+        target: `room:${input.chatId}`,
+        effectKind: "message_row_created",
+        effectRecordId: `${input.chatId}/${input.message.messageId}`,
+        timestamp: input.message.createdAt,
+        meta: {
+          chatId: input.chatId,
+          messageId: input.message.messageId,
+          ref: input.message.ref,
+        },
+      });
+    }
     return {
       ok: true,
+      actionId: input.actionId,
       messageId: input.message.messageId,
       recentMessages: this.listRecentMessageOverview({
         chatId: input.chatId,
@@ -3439,7 +3658,19 @@ export class SessionRuntime {
   private bindMessageSystem(): void {
     this.messageSystemCleanup.push(
       this.messageSystem.onMessage(({ chatId, message }) => {
-        this.messageFollowUpReminders.suppressSuperseded(chatId, message.messageId);
+        const superseded = this.runtimeWatchStore
+          .list({ status: "pending", target: `room:${chatId}` })
+          .filter(
+            (watch) =>
+              watch.predicate.kind === "message_latest_visible" && watch.predicate.anchorMessageId < message.messageId,
+          );
+        for (const watch of superseded) {
+          this.settleRuntimeWatch(watch.watchId, {
+            status: "satisfied",
+            updatedAt: message.updatedAt,
+            resolvedAt: message.updatedAt,
+          });
+        }
         const actorRoom = this.getActorRoom(chatId, {
           includeArchived: true,
           touchPresence: false,
@@ -5095,6 +5326,10 @@ export class SessionRuntime {
       projections: this.runtimeKernelHost.listDeliveryProjections().map(cloneAttentionDeliveryProjection),
       dispatches: timeline.dispatches.map(cloneAttentionDispatchRecord),
       receipts: timeline.receipts.map(cloneAttentionReceiptRecord),
+      watches: this.runtimeWatchStore.list().map(cloneRuntimeWatchRecord),
+      effects: [...this.effectLedgerRecords.values()]
+        .sort((left, right) => left.timestamp - right.timestamp || left.id - right.id)
+        .map(cloneEffectLedgerRecord),
     };
   }
 
@@ -5131,6 +5366,11 @@ export class SessionRuntime {
   private restoreAttentionDeliveryState(): void {
     if (!this.sessionDb) {
       return;
+    }
+    this.runtimeWatchStore.load(this.sessionDb.listRuntimeWatches());
+    this.effectLedgerRecords.clear();
+    for (const effect of this.sessionDb.listEffectLedger()) {
+      this.effectLedgerRecords.set(effect.effectId, effect);
     }
     const commitRefs = this.attentionSystem.snapshot().contexts.flatMap((context) =>
       context.commits.map((commit) => ({
@@ -6257,7 +6497,8 @@ export class SessionRuntime {
 
     this.terminals.clear();
     this.taskAttentionDraftQueue.length = 0;
-    this.messageFollowUpReminders.clear();
+    this.runtimeWatchStore.clear();
+    this.effectLedgerRecords.clear();
     this.inboundMessageQueue.length = 0;
     this.messageKernelAdapter.reset();
     this.terminalKernelAdapter.reset();
@@ -6593,6 +6834,10 @@ export class SessionRuntime {
         .map(cloneAttentionDeliveryProjection),
       dispatches: timeline.dispatches.map(cloneAttentionDispatchRecord),
       receipts: timeline.receipts.map(cloneAttentionReceiptRecord),
+      watches: this.runtimeWatchStore.list().map(cloneRuntimeWatchRecord),
+      effects: [...this.effectLedgerRecords.values()]
+        .sort((left, right) => left.timestamp - right.timestamp || left.id - right.id)
+        .map(cloneEffectLedgerRecord),
     };
   }
 
@@ -6929,6 +7174,7 @@ export class SessionRuntime {
     assetIds?: string[];
     clientMessageId?: string;
   }): RuntimeMessageSendResult {
+    const actionId = this.createRuntimeActionId("message_send");
     const channel = this.messageSystem.getChannel(input.chatId);
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
@@ -6951,6 +7197,7 @@ export class SessionRuntime {
       metadata: input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,
     });
     return this.buildRuntimeMessageSendResult({
+      actionId,
       chatId: input.chatId,
       accessToken: input.accessToken,
       message,
@@ -6962,11 +7209,25 @@ export class SessionRuntime {
     messageId: number;
     updatedAt: number;
   } {
+    const actionId = this.createRuntimeActionId("message_edit");
     const message = this.messageSystem.editAuthorized({
       chatId: input.chatId,
       accessToken: input.accessToken,
       messageId: input.messageId,
       content: input.text,
+    });
+    this.recordEffectLedger({
+      actionId,
+      actionKind: "message_edit",
+      actorId: message.senderActorId ?? "unknown",
+      target: `room:${input.chatId}`,
+      effectKind: "message_row_updated",
+      effectRecordId: `${input.chatId}/${message.messageId}`,
+      timestamp: message.updatedAt,
+      meta: {
+        chatId: input.chatId,
+        messageId: message.messageId,
+      },
     });
     return {
       ok: true,
@@ -6981,6 +7242,7 @@ export class SessionRuntime {
     updatedAt: number;
     recalledAt: number;
   } {
+    const actionId = this.createRuntimeActionId("message_recall");
     const message = this.messageSystem.recallAuthorized({
       chatId: input.chatId,
       accessToken: input.accessToken,
@@ -6989,6 +7251,20 @@ export class SessionRuntime {
     if (!message.recalledAt) {
       throw new Error("message recall did not persist recalledAt");
     }
+    this.recordEffectLedger({
+      actionId,
+      actionKind: "message_recall",
+      actorId: message.recalledByActorId ?? message.senderActorId ?? "unknown",
+      target: `room:${input.chatId}`,
+      effectKind: "message_row_recalled",
+      effectRecordId: `${input.chatId}/${message.messageId}`,
+      timestamp: message.recalledAt,
+      meta: {
+        chatId: input.chatId,
+        messageId: message.messageId,
+        recalledAt: message.recalledAt,
+      },
+    });
     return {
       ok: true,
       messageId: message.messageId,
@@ -7810,9 +8086,27 @@ export class SessionRuntime {
   private selectDirtyAttentionContexts(active: AttentionActiveContextMatch[]): AttentionActiveContextMatch[] {
     const activeById = new Map(active.map((match) => [match.contextId, match] as const));
     return [...this.dirtyAttentionContextOrder.entries()]
-      .sort((left, right) => right[1] - left[1])
-      .map(([contextId]) => activeById.get(contextId) ?? null)
-      .filter((match): match is AttentionActiveContextMatch => match !== null)
+      .map(([contextId, order]) => ({
+        order,
+        match: activeById.get(contextId) ?? null,
+      }))
+      .filter(
+        (
+          entry,
+        ): entry is {
+          order: number;
+          match: AttentionActiveContextMatch;
+        } => entry.match !== null,
+      )
+      .sort((left, right) => {
+        const priorityDelta =
+          this.resolveAttentionCollectionPriority(right.match) - this.resolveAttentionCollectionPriority(left.match);
+        if (priorityDelta !== 0) {
+          return priorityDelta;
+        }
+        return right.order - left.order;
+      })
+      .map((entry) => entry.match)
       .slice(0, 1);
   }
 
@@ -7916,7 +8210,7 @@ export class SessionRuntime {
     if (this.isLoopStopped()) {
       return "stopped";
     }
-    const nextMessageFollowUpWakeAt = this.messageFollowUpReminders.nextDueAt();
+    const nextRuntimeWatchWakeAt = this.runtimeWatchStore.nextDueAt();
     const activeAttention = this.attentionSystem.listActiveContexts();
     if (activeAttention.length > 0) {
       const containment = this.summarizeAttentionContainment(activeAttention);
@@ -7948,14 +8242,14 @@ export class SessionRuntime {
     if (this.hasPendingAttentionInputs()) {
       return "ready_now";
     }
-    if (nextMessageFollowUpWakeAt !== null && nextMessageFollowUpWakeAt <= Date.now()) {
+    if (nextRuntimeWatchWakeAt !== null && nextRuntimeWatchWakeAt <= Date.now()) {
       return "ready_now";
     }
     if (activeAttention.length > 0) {
       return "attention_debt";
     }
-    if (nextMessageFollowUpWakeAt !== null) {
-      return "message_follow_up_timer";
+    if (nextRuntimeWatchWakeAt !== null) {
+      return "runtime_watch_timer";
     }
     if (this.hasTimeBasedTask()) {
       return "task_timer";
@@ -7972,7 +8266,7 @@ export class SessionRuntime {
         }
         const hasPendingAttention = this.hasPendingAttentionInputs();
         const now = Date.now();
-        const nextMessageFollowUpWakeAt = this.messageFollowUpReminders.nextDueAt();
+        const nextRuntimeWatchWakeAt = this.runtimeWatchStore.nextDueAt();
         const retryPolicy = this.getAttentionRetryPolicy();
         const hasDueAttentionContainmentWake = this.attentionSystem.listActiveContexts().some((match) => {
           const entry = this.attentionContainment.get(match.contextId);
@@ -8009,8 +8303,8 @@ export class SessionRuntime {
           this.resetAttentionDebtBackoff();
           return "task";
         }
-        if (nextMessageFollowUpWakeAt !== null && nextMessageFollowUpWakeAt <= now) {
-          this.loopKernelLastWakeCause = "message_follow_up";
+        if (nextRuntimeWatchWakeAt !== null && nextRuntimeWatchWakeAt <= now) {
+          this.loopKernelLastWakeCause = "runtime_watch";
           this.resetAttentionDebtBackoff();
           return "attention";
         }
@@ -8023,7 +8317,7 @@ export class SessionRuntime {
         const attentionContainment = this.summarizeAttentionContainment(activeAttention);
         return await new Promise<LoopInputKind>((resolve) => {
           let attentionDebtTimer: ReturnType<typeof setTimeout> | null = null;
-          let messageFollowUpTimer: ReturnType<typeof setTimeout> | null = null;
+          let runtimeWatchTimer: ReturnType<typeof setTimeout> | null = null;
           const signalWaiters = (["user", "task", "attention"] as const).map((kind) => ({
             kind,
             ...this.inputSignals[kind].waitAfter(this.inputSignalCursor[kind]),
@@ -8032,8 +8326,8 @@ export class SessionRuntime {
             if (attentionDebtTimer) {
               clearTimeout(attentionDebtTimer);
             }
-            if (messageFollowUpTimer) {
-              clearTimeout(messageFollowUpTimer);
+            if (runtimeWatchTimer) {
+              clearTimeout(runtimeWatchTimer);
             }
             for (const waiter of signalWaiters) {
               waiter.cancel();
@@ -8059,10 +8353,10 @@ export class SessionRuntime {
           } else {
             this.attentionDebtNextWakeAt = null;
           }
-          if (nextMessageFollowUpWakeAt !== null) {
-            const waitMs = Math.max(0, nextMessageFollowUpWakeAt - now);
-            messageFollowUpTimer = setTimeout(() => {
-              this.loopKernelLastWakeCause = "message_follow_up";
+          if (nextRuntimeWatchWakeAt !== null) {
+            const waitMs = Math.max(0, nextRuntimeWatchWakeAt - now);
+            runtimeWatchTimer = setTimeout(() => {
+              this.loopKernelLastWakeCause = "runtime_watch";
               settle("attention");
             }, waitMs);
           }
@@ -8129,7 +8423,7 @@ export class SessionRuntime {
     const loopPaused = this.isLoopPaused();
     const hasPendingAttention = this.hasPendingAttentionInputs();
     const now = Date.now();
-    const nextMessageFollowUpWakeAt = this.messageFollowUpReminders.nextDueAt();
+    const nextRuntimeWatchWakeAt = this.runtimeWatchStore.nextDueAt();
     const retryPolicy = this.getAttentionRetryPolicy();
     const hasDueAttentionContainmentWake = this.attentionSystem.listActiveContexts().some((match) => {
       const entry = this.attentionContainment.get(match.contextId);
@@ -8176,8 +8470,8 @@ export class SessionRuntime {
       this.resetAttentionDebtBackoff();
       return "task";
     }
-    if (nextMessageFollowUpWakeAt !== null && nextMessageFollowUpWakeAt <= now) {
-      this.loopKernelLastWakeCause = "message_follow_up";
+    if (nextRuntimeWatchWakeAt !== null && nextRuntimeWatchWakeAt <= now) {
+      this.loopKernelLastWakeCause = "runtime_watch";
       this.resetAttentionDebtBackoff();
       return "attention";
     }
@@ -8257,7 +8551,7 @@ export class SessionRuntime {
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attentionDebtTimer: ReturnType<typeof setTimeout> | null = null;
-    let messageFollowUpTimer: ReturnType<typeof setTimeout> | null = null;
+    let runtimeWatchTimer: ReturnType<typeof setTimeout> | null = null;
     const activeAttention = this.attentionSystem.listActiveContexts();
     const attentionContainment = this.summarizeAttentionContainment(activeAttention);
     this.attentionDebtNextWakeAt = null;
@@ -8296,12 +8590,12 @@ export class SessionRuntime {
         }),
       );
     }
-    if (nextMessageFollowUpWakeAt !== null) {
-      const waitMs = Math.max(0, nextMessageFollowUpWakeAt - now);
+    if (nextRuntimeWatchWakeAt !== null) {
+      const waitMs = Math.max(0, nextRuntimeWatchWakeAt - now);
       promises.push(
         new Promise<{ kind: LoopInputKind }>((resolve) => {
-          messageFollowUpTimer = setTimeout(() => {
-            this.loopKernelLastWakeCause = "message_follow_up";
+          runtimeWatchTimer = setTimeout(() => {
+            this.loopKernelLastWakeCause = "runtime_watch";
             resolve({ kind: "attention" });
           }, waitMs);
         }),
@@ -8315,8 +8609,8 @@ export class SessionRuntime {
     if (attentionDebtTimer) {
       clearTimeout(attentionDebtTimer);
     }
-    if (messageFollowUpTimer) {
-      clearTimeout(messageFollowUpTimer);
+    if (runtimeWatchTimer) {
+      clearTimeout(runtimeWatchTimer);
     }
     this.attentionDebtNextWakeAt = null;
     if (winner.kind === "attention" && this.attentionForceCollect) {
@@ -8361,7 +8655,7 @@ export class SessionRuntime {
     await this.pollTaskSources("watch");
     await this.pollTaskEventInbox();
     await this.collectUnreadRoomIngress();
-    await this.pollMessageFollowUpReminders();
+    await this.pollRuntimeWatches();
     await this.flushPluginAttentionDrafts();
     const triggered = this.taskEngine.pollTime();
     if (triggered.affected.length > 0) {
@@ -8469,7 +8763,7 @@ export class SessionRuntime {
   private async commitInterleavedAttentionItems(): Promise<LoopBusInput[] | undefined> {
     await this.flushPendingRuntimeSkillChanges();
     await this.collectUnreadRoomIngress();
-    await this.pollMessageFollowUpReminders();
+    await this.pollRuntimeWatches();
     const consumedUserInputs = this.drainInterleavedInboundQueue();
     const pluginChanged = await this.flushPluginAttentionDrafts();
     const pendingTaskDrafts = this.collectPendingTaskAttentionDrafts();
@@ -9302,14 +9596,14 @@ export class SessionRuntime {
     const attentionDebt = this.buildAttentionDebtState();
     const attentionContainment = this.summarizeAttentionContainment(this.attentionSystem.listActiveContexts());
     const waitingReason = this.resolveLoopWaitingReason(input.phase, paused);
-    const nextMessageFollowUpWakeAt = this.messageFollowUpReminders.nextDueAt();
+    const nextRuntimeWatchWakeAt = this.runtimeWatchStore.nextDueAt();
     const nextAutoWakeAt =
       waitingReason === "attention_debt"
         ? (this.attentionDebtNextWakeAt ?? Date.now() + this.attentionDebtBackoffMs)
         : waitingReason === "attention_backoff"
           ? attentionContainment.nextWakeAt
-          : waitingReason === "message_follow_up_timer"
-            ? nextMessageFollowUpWakeAt
+          : waitingReason === "runtime_watch_timer"
+            ? nextRuntimeWatchWakeAt
             : null;
     const runtimeStatus: LoopBusKernelState["runtimeStatus"] = !this.started
       ? "idle"
@@ -9351,7 +9645,7 @@ export class SessionRuntime {
       backoffMs:
         waitingReason === "attention_debt"
           ? this.attentionDebtBackoffMs
-          : waitingReason === "message_follow_up_timer" && nextAutoWakeAt !== null
+          : waitingReason === "runtime_watch_timer" && nextAutoWakeAt !== null
             ? Math.max(0, nextAutoWakeAt - Date.now())
             : waitingReason === "attention_backoff" && nextAutoWakeAt !== null
               ? Math.max(0, nextAutoWakeAt - Date.now())

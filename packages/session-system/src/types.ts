@@ -244,6 +244,92 @@ export interface SessionAttentionReceiptInsert {
   meta?: Record<string, unknown>;
 }
 
+export type SessionRuntimeWatchStatus = "pending" | "expired" | "satisfied";
+
+export type SessionRuntimeWatchPredicate =
+  | {
+      kind: "message_latest_visible";
+      chatId: string;
+      anchorMessageId: number;
+    };
+
+export interface SessionRuntimeWatchRecord {
+  id: number;
+  watchId: string;
+  ownerActionId: string;
+  ownerActionKind: string;
+  ownerActorId: string;
+  ownerCycleId: number | null;
+  ownerSessionModelCallId: number | null;
+  target: string;
+  predicate: SessionRuntimeWatchPredicate;
+  dueAt: number;
+  status: SessionRuntimeWatchStatus;
+  createdAt: number;
+  updatedAt: number;
+  resolvedAt: number | null;
+  reminderContextId?: string | null;
+  reminderCommitId?: string | null;
+  meta?: Record<string, unknown>;
+}
+
+export interface SessionRuntimeWatchInsert {
+  watchId: string;
+  ownerActionId: string;
+  ownerActionKind: string;
+  ownerActorId: string;
+  ownerCycleId?: number | null;
+  ownerSessionModelCallId?: number | null;
+  target: string;
+  predicate: SessionRuntimeWatchPredicate;
+  dueAt: number;
+  status?: SessionRuntimeWatchStatus;
+  createdAt?: number;
+  updatedAt?: number;
+  resolvedAt?: number | null;
+  reminderContextId?: string | null;
+  reminderCommitId?: string | null;
+  meta?: Record<string, unknown>;
+}
+
+export interface SessionRuntimeWatchUpdate {
+  status?: SessionRuntimeWatchStatus;
+  updatedAt?: number;
+  resolvedAt?: number | null;
+  reminderContextId?: string | null;
+  reminderCommitId?: string | null;
+  meta?: Record<string, unknown>;
+}
+
+export interface SessionEffectLedgerRecord {
+  id: number;
+  effectId: string;
+  actionId: string;
+  actionKind: string;
+  actorId: string;
+  cycleId: number | null;
+  sessionModelCallId: number | null;
+  target: string;
+  effectKind: string;
+  effectRecordId: string;
+  timestamp: number;
+  meta?: Record<string, unknown>;
+}
+
+export interface SessionEffectLedgerInsert {
+  effectId: string;
+  actionId: string;
+  actionKind: string;
+  actorId: string;
+  cycleId?: number | null;
+  sessionModelCallId?: number | null;
+  target: string;
+  effectKind: string;
+  effectRecordId: string;
+  timestamp?: number;
+  meta?: Record<string, unknown>;
+}
+
 export type SessionAssetKind = "image" | "video" | "file";
 
 export interface SessionAssetRecord {

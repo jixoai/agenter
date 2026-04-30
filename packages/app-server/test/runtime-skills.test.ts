@@ -258,7 +258,7 @@ describe("Feature: runtime built-in skills", () => {
       "utf8",
     );
     expect(messageAttentionReference).toContain("send the acknowledgement before you disappear into file writes");
-    expect(messageAttentionReference).toContain("does not satisfy the origin room's final reply obligation");
+    expect(messageAttentionReference).toContain("does not finish the origin room's final delivery");
     expect(messageAttentionReference).toContain("send the answer back to the origin room");
     expect(messageAttentionReference).toContain("message query");
     expect(messageAttentionReference).toContain('chatId:"*"');

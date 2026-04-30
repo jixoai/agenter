@@ -225,6 +225,8 @@ const attentionDelivery: RuntimeAttentionDeliveryState = {
       timestamp: 1711929630000,
     },
   ],
+  watches: [],
+  effects: [],
 };
 
 const olderCycle: RuntimeChatCycle = {
