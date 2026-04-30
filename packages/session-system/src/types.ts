@@ -330,6 +330,36 @@ export interface SessionEffectLedgerInsert {
   meta?: Record<string, unknown>;
 }
 
+export type SessionAttentionFocusState = "focused" | "background" | "muted";
+export type SessionNotifyQuotaWindowKind = "period";
+
+export interface SessionNotifyQuotaRecord {
+  id: number;
+  notifyId: string;
+  contextId: string;
+  quotaTarget: string;
+  focusState: SessionAttentionFocusState;
+  sourceId: string;
+  commitId: string;
+  sentAt: number;
+  windowKind: SessionNotifyQuotaWindowKind;
+  windowMs: number;
+  meta?: Record<string, unknown>;
+}
+
+export interface SessionNotifyQuotaInsert {
+  notifyId: string;
+  contextId: string;
+  quotaTarget: string;
+  focusState: SessionAttentionFocusState;
+  sourceId: string;
+  commitId: string;
+  sentAt?: number;
+  windowKind?: SessionNotifyQuotaWindowKind;
+  windowMs: number;
+  meta?: Record<string, unknown>;
+}
+
 export type SessionAssetKind = "image" | "video" | "file";
 
 export interface SessionAssetRecord {

@@ -13,6 +13,7 @@ export type {
 } from "./trace-types";
 export type {
   ReversePage,
+  SessionAttentionFocusState,
   SessionAttentionDispatchInsert,
   SessionAttentionDispatchRecord,
   SessionAttentionReceiptInsert,
@@ -21,6 +22,9 @@ export type {
   SessionAttentionReceiptStatus,
   SessionEffectLedgerInsert,
   SessionEffectLedgerRecord,
+  SessionNotifyQuotaInsert,
+  SessionNotifyQuotaRecord,
+  SessionNotifyQuotaWindowKind,
   ReverseTimeCursor,
   SessionAiCallInsert,
   SessionAiCallRecord,

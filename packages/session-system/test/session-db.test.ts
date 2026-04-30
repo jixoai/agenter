@@ -156,6 +156,59 @@ describe("Feature: session-system AI-call ledger persistence", () => {
     }
   });
 
+  test("Scenario: Given notify sends are recorded When quota history is queried Then durable records explain target, focus state, and rolling window", () => {
+    const db = createDb();
+    try {
+      const first = db.appendNotifyQuotaRecord({
+        notifyId: "notify-1",
+        contextId: "ctx-room-muted",
+        quotaTarget: "ctx-room-muted:msg:room-muted/202",
+        focusState: "muted",
+        sourceId: "msg:room-muted/202",
+        commitId: "commit-1",
+        sentAt: 1_000,
+        windowMs: 12 * 60 * 60 * 1_000,
+        meta: { reason: "notification" },
+      });
+      const second = db.appendNotifyQuotaRecord({
+        notifyId: "notify-2",
+        contextId: "ctx-room-muted",
+        quotaTarget: "ctx-room-muted:msg:room-muted/202",
+        focusState: "muted",
+        sourceId: "msg:room-muted/202",
+        commitId: "commit-2",
+        sentAt: 2_000,
+        windowMs: 12 * 60 * 60 * 1_000,
+      });
+
+      expect(first).toMatchObject({
+        notifyId: "notify-1",
+        quotaTarget: "ctx-room-muted:msg:room-muted/202",
+        focusState: "muted",
+        sourceId: "msg:room-muted/202",
+        commitId: "commit-1",
+      });
+      expect(db.getNotifyQuotaRecordByNotifyId("notify-2")).toMatchObject({
+        notifyId: "notify-2",
+        commitId: "commit-2",
+        sentAt: 2_000,
+      });
+      expect(
+        db.listNotifyQuotaRecords({
+          quotaTarget: "ctx-room-muted:msg:room-muted/202",
+        }),
+      ).toHaveLength(2);
+      expect(
+        db.listNotifyQuotaRecords({
+          quotaTarget: "ctx-room-muted:msg:room-muted/202",
+          sentAfter: 1_500,
+        }).map((record) => record.notifyId),
+      ).toEqual(["notify-2"]);
+    } finally {
+      db.close();
+    }
+  });
+
   test("Scenario: Given a streamed heartbeat message When the same logical message is updated Then part ids stay stable and content advances", () => {
     const db = createDb();
     try {

@@ -15,6 +15,8 @@ import type {
   SessionAttentionDispatchRecord,
   SessionEffectLedgerInsert,
   SessionEffectLedgerRecord,
+  SessionNotifyQuotaInsert,
+  SessionNotifyQuotaRecord,
   SessionAttentionReceiptInsert,
   SessionAttentionReceiptProviderEventKind,
   SessionAttentionReceiptRecord,
@@ -32,7 +34,7 @@ import type {
 } from "./types";
 import { PROMPT_WINDOW_STATE_PART_TYPE } from "./types";
 
-const SESSION_DB_SCHEMA_VERSION = 3;
+const SESSION_DB_SCHEMA_VERSION = 4;
 
 const parseJson = <T>(value: string | null, fallback: T): T => {
   if (!value) {
@@ -1282,6 +1284,116 @@ export class SessionDb {
       .filter((row): row is SessionEffectLedgerRecord => row !== null);
   }
 
+  appendNotifyQuotaRecord(input: SessionNotifyQuotaInsert): SessionNotifyQuotaRecord {
+    const sentAt = input.sentAt ?? Date.now();
+    const windowKind = input.windowKind ?? "period";
+    this.db
+      .query(
+        `insert into notify_quota (
+           notify_id,
+           context_id,
+           quota_target,
+           focus_state,
+           source_id,
+           commit_id,
+           sent_at,
+           window_kind,
+           window_ms,
+           meta_json
+         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.notifyId,
+        input.contextId,
+        input.quotaTarget,
+        input.focusState,
+        input.sourceId,
+        input.commitId,
+        sentAt,
+        windowKind,
+        input.windowMs,
+        input.meta === undefined ? null : toJson(input.meta),
+      );
+    const record = this.getNotifyQuotaRecordByNotifyId(input.notifyId);
+    if (!record) {
+      throw new Error(`failed to load notify_quota ${input.notifyId}`);
+    }
+    return record;
+  }
+
+  getNotifyQuotaRecordByNotifyId(notifyId: string): SessionNotifyQuotaRecord | null {
+    const row = this.db
+      .query(
+        `select id, notify_id, context_id, quota_target, focus_state, source_id, commit_id, sent_at, window_kind, window_ms, meta_json
+         from notify_quota
+         where notify_id = ?`,
+      )
+      .get(notifyId) as {
+      id: number;
+      notify_id: string;
+      context_id: string;
+      quota_target: string;
+      focus_state: SessionNotifyQuotaRecord["focusState"];
+      source_id: string;
+      commit_id: string;
+      sent_at: number;
+      window_kind: SessionNotifyQuotaRecord["windowKind"];
+      window_ms: number;
+      meta_json: string | null;
+    } | null;
+    if (!row) {
+      return null;
+    }
+    return {
+      id: row.id,
+      notifyId: row.notify_id,
+      contextId: row.context_id,
+      quotaTarget: row.quota_target,
+      focusState: row.focus_state,
+      sourceId: row.source_id,
+      commitId: row.commit_id,
+      sentAt: row.sent_at,
+      windowKind: row.window_kind,
+      windowMs: row.window_ms,
+      meta: row.meta_json === null ? undefined : parseJson(row.meta_json, undefined),
+    };
+  }
+
+  listNotifyQuotaRecords(input?: {
+    quotaTarget?: string;
+    contextId?: string;
+    focusState?: SessionNotifyQuotaRecord["focusState"];
+    sourceId?: string;
+    sentAfter?: number;
+  }): SessionNotifyQuotaRecord[] {
+    const rows = this.db
+      .query(
+        `select notify_id
+         from notify_quota
+         where (? is null or quota_target = ?)
+           and (? is null or context_id = ?)
+           and (? is null or focus_state = ?)
+           and (? is null or source_id = ?)
+           and (? is null or sent_at >= ?)
+         order by sent_at desc, id desc`,
+      )
+      .all(
+        input?.quotaTarget ?? null,
+        input?.quotaTarget ?? null,
+        input?.contextId ?? null,
+        input?.contextId ?? null,
+        input?.focusState ?? null,
+        input?.focusState ?? null,
+        input?.sourceId ?? null,
+        input?.sourceId ?? null,
+        input?.sentAfter ?? null,
+        input?.sentAfter ?? null,
+      ) as Array<{ notify_id: string }>;
+    return rows
+      .map((row) => this.getNotifyQuotaRecordByNotifyId(row.notify_id))
+      .filter((row): row is SessionNotifyQuotaRecord => row !== null);
+  }
+
   appendAsset(input: SessionAssetInsert): SessionAssetRecord {
     const createdAt = input.createdAt ?? Date.now();
     this.db
@@ -1636,6 +1748,29 @@ export class SessionDb {
           on effect_ledger(cycle_id, timestamp asc, id asc);
         create index if not exists idx_effect_ledger_model_call
           on effect_ledger(session_model_call_id, timestamp asc, id asc);
+      `);
+    }
+    if (currentVersion < 4) {
+      this.db.exec(`
+        create table if not exists notify_quota (
+          id integer primary key autoincrement,
+          notify_id text not null unique,
+          context_id text not null,
+          quota_target text not null,
+          focus_state text not null,
+          source_id text not null,
+          commit_id text not null,
+          sent_at integer not null,
+          window_kind text not null,
+          window_ms integer not null,
+          meta_json text
+        );
+        create index if not exists idx_notify_quota_target_sent
+          on notify_quota(quota_target, sent_at desc, id desc);
+        create index if not exists idx_notify_quota_context_sent
+          on notify_quota(context_id, sent_at desc, id desc);
+        create index if not exists idx_notify_quota_focus_sent
+          on notify_quota(focus_state, sent_at desc, id desc);
       `);
     }
     this.db.exec(`pragma user_version = ${SESSION_DB_SCHEMA_VERSION}`);

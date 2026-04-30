@@ -604,6 +604,20 @@ const createRuntimeLocalHandlers = (input: {
     dispatches: [],
     receipts: [],
   }),
+  attentionNotifyQuota: ({ contextId, sourceId, focusState = "focused" }) => ({
+    quotaTarget: `${contextId}:${sourceId}`,
+    focusState,
+    effective: {
+      windowKind: "period" as const,
+      windowMs: focusState === "muted" ? 12 * 60 * 60 * 1_000 : focusState === "background" ? 30 * 60 * 1_000 : null,
+    },
+    remaining: {
+      allowedNow: true,
+      remainingSends: focusState === "focused" ? null : 1,
+      nextAllowedAt: null,
+    },
+    history: [],
+  }),
   attentionCommit: async (request) => {
     if (!input.attentionGateway) {
       throw new Error("attention gateway not configured");

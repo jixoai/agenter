@@ -42,6 +42,11 @@ export interface RuntimeLocalApiHandlers {
     limit?: number;
   }) => Promise<unknown> | unknown;
   attentionQuery: (input: { query: string; offset?: number; limit?: number }) => Promise<unknown>;
+  attentionNotifyQuota: (input: {
+    contextId: string;
+    sourceId: string;
+    focusState?: "focused" | "background" | "muted";
+  }) => Promise<unknown> | unknown;
   attentionCommit: (input: AttentionCommitToolInput & { done?: boolean }) => Promise<AttentionCommit>;
   messageList: (input: { includeArchived?: boolean }) => RuntimeMessageChannelView[];
   messageRead: (input: { chatId: string; limit?: number }) => RuntimeMessageSnapshotView;
@@ -218,6 +223,13 @@ export type RuntimeToolCliInputMode = "object" | "compact";
 
 const emptyObjectSchema = z.object({}).strict();
 const runtimeMessageIdSchema = z.number().int().positive();
+const attentionNotifyQuotaSchema = z
+  .object({
+    contextId: z.string().min(1),
+    sourceId: z.string().min(1),
+    focusState: z.enum(["focused", "background", "muted"]).optional(),
+  })
+  .strict();
 
 const attentionQuerySchema = z.object({
   query: z.string(),
@@ -502,6 +514,25 @@ export const runtimeToolDescriptors = [
     ],
     handler: async (input, handlers) => ({
       delivery: await handlers.attentionDeliveryTimeline(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "attention",
+    name: "notify-quota",
+    route: "/v1/attention/notify-quota",
+    description: "Inspect notify quota config, remaining allowance, and historical notify sends for one attention source.",
+    inputSchema: attentionNotifyQuotaSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          contextId: "ctx-workspace-runtime",
+          sourceId: "skill:runtime:change:updated:live-sync:1:0",
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      quota: await handlers.attentionNotifyQuota(input),
     }),
   }),
   defineRuntimeToolDescriptor({

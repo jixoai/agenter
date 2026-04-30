@@ -49,6 +49,7 @@ import {
   type SessionAssetRecord,
   type SessionAttentionDispatchRecord,
   type SessionEffectLedgerRecord,
+  type SessionNotifyQuotaRecord,
   type SessionAttentionReceiptRecord,
   type SessionCollectedInput,
   type SessionCollectedInputPart,
@@ -355,6 +356,12 @@ interface PendingAttentionMessagePlan {
   attentionCommitRefs: AttentionCommitRefEnvelope[];
   clearsBoundaryRefresh: boolean;
   notifyOnly?: boolean;
+  notifyQuotaRecords?: Array<{
+    quotaTarget: string;
+    focusState: AttentionFocusState;
+    sourceId: string;
+    windowMs: number;
+  }>;
 }
 
 const mergeAttentionPlanCommitRefs = (
@@ -386,6 +393,34 @@ const COMPACT_CYCLE_TRIGGER_VALUES = new Set<CompactCycleTrigger>([
 ]);
 const ATTENTION_INPUT_PROTOCOL_KINDS = new Set<AttentionInputProtocolKind>(["context", "items"]);
 const COMPACT_CYCLE_INPUT_NAME = "CompactCycle";
+const NOTIFY_QUOTA_DEFAULTS = {
+  muted: 12 * 60 * 60 * 1_000,
+  background: 30 * 60 * 1_000,
+} as const;
+
+type NotifyQuotaFocusState = keyof typeof NOTIFY_QUOTA_DEFAULTS;
+
+interface RuntimeNotifyQuotaStatusView {
+  quotaTarget: string;
+  focusState: AttentionFocusState;
+  effective: {
+    windowKind: "period";
+    windowMs: number | null;
+  };
+  remaining: {
+    allowedNow: boolean;
+    remainingSends: number | null;
+    nextAllowedAt: number | null;
+  };
+  history: Array<{
+    notifyId: string;
+    contextId: string;
+    commitId: string;
+    sourceId: string;
+    sentAt: number;
+    windowMs: number;
+  }>;
+}
 
 const parseCompactCycleTrigger = (value: unknown): CompactCycleTrigger | null => {
   if (typeof value !== "string") {
@@ -2110,6 +2145,71 @@ export class SessionRuntime {
 
   private isNotificationAttentionCommit(commit: AttentionCommit): boolean {
     return Array.isArray(commit.meta.tags) && commit.meta.tags.includes("notification");
+  }
+
+  private resolveNotifyQuotaWindowMs(focusState: AttentionFocusState): number | null {
+    if (focusState === "muted") {
+      return NOTIFY_QUOTA_DEFAULTS.muted;
+    }
+    if (focusState === "background") {
+      return NOTIFY_QUOTA_DEFAULTS.background;
+    }
+    return null;
+  }
+
+  private buildNotifyQuotaTarget(contextId: string, sourceId: string): string {
+    return `${contextId}:${sourceId}`;
+  }
+
+  private listNotifyQuotaHistory(input: {
+    quotaTarget: string;
+    sentAfter?: number;
+  }): SessionNotifyQuotaRecord[] {
+    if (!this.sessionDb) {
+      return [];
+    }
+    return this.sessionDb.listNotifyQuotaRecords({
+      quotaTarget: input.quotaTarget,
+      sentAfter: input.sentAfter,
+    });
+  }
+
+  private buildNotifyQuotaStatus(input: {
+    contextId: string;
+    focusState: AttentionFocusState;
+    sourceId: string;
+  }): RuntimeNotifyQuotaStatusView {
+    const windowMs = this.resolveNotifyQuotaWindowMs(input.focusState);
+    const quotaTarget = this.buildNotifyQuotaTarget(input.contextId, input.sourceId);
+    const sentAfter = windowMs === null ? undefined : Date.now() - windowMs;
+    const history = this.listNotifyQuotaHistory({
+      quotaTarget,
+      sentAfter,
+    });
+    const latest = history[0] ?? null;
+    const nextAllowedAt = latest && windowMs !== null ? latest.sentAt + windowMs : null;
+    const allowedNow = windowMs === null ? true : history.length === 0 || (nextAllowedAt ?? 0) <= Date.now();
+    return {
+      quotaTarget,
+      focusState: input.focusState,
+      effective: {
+        windowKind: "period",
+        windowMs,
+      },
+      remaining: {
+        allowedNow,
+        remainingSends: windowMs === null ? null : allowedNow ? 1 : 0,
+        nextAllowedAt: allowedNow ? null : nextAllowedAt,
+      },
+      history: history.map((record) => ({
+        notifyId: record.notifyId,
+        contextId: record.contextId,
+        commitId: record.commitId,
+        sourceId: record.sourceId,
+        sentAt: record.sentAt,
+        windowMs: record.windowMs,
+      })),
+    };
   }
 
   private isWakeableAttentionIngress(contextId: string, commit: AttentionCommit): boolean {
@@ -3987,6 +4087,7 @@ export class SessionRuntime {
         attentionDeliveryState: () => this.inspectAttentionDeliveryState(),
         attentionDeliveryTimeline: (input) => this.queryAttentionDeliveryTimeline(input),
         attentionQuery: async (input) => (await this.queryAttention(input)).map(projectAttentionCommitMatchForModel),
+        attentionNotifyQuota: (input) => this.inspectNotifyQuota(input),
         attentionCommit: async (input) => {
           const existing = this.attentionSystem.getContext(input.contextId);
           if (!existing) {
@@ -4432,21 +4533,40 @@ export class SessionRuntime {
       return null;
     }
     const notifyEntries = selectedEntries.filter(({ entry }) => entry.isNotify);
-    const serializableEntries =
-      notifyEntries.length > 0
+    const allowedNotifyEntries =
+      notifyEntries.length === 0
         ? notifyEntries
+        : notifyEntries.filter(({ entry }) => {
+            const quota = this.buildNotifyQuotaStatus({
+              contextId: match.contextId,
+              focusState: match.context.focusState,
+              sourceId: entry.sourceId,
+            });
+            return quota.remaining.allowedNow;
+          });
+    const serializableEntries =
+      allowedNotifyEntries.length > 0
+        ? allowedNotifyEntries
         : match.context.focusState === "focused"
           ? selectedEntries
           : [];
     if (serializableEntries.length === 0) {
       return null;
     }
-    const notifyOnly = notifyEntries.length > 0 && notifyEntries.length === serializableEntries.length;
+    const notifyOnly = allowedNotifyEntries.length > 0 && allowedNotifyEntries.length === serializableEntries.length;
     const items = serializableEntries.map(({ commit }) => ({
       contextId: match.contextId,
       commit,
     }));
     const latestUpdatedAt = serializableEntries.reduce((max, item) => Math.max(max, item.entry.updatedAt), 0);
+    const notifyQuotaRecords = notifyOnly
+      ? serializableEntries.map(({ entry }) => ({
+          quotaTarget: this.buildNotifyQuotaTarget(match.contextId, entry.sourceId),
+          focusState: match.context.focusState,
+          sourceId: entry.sourceId,
+          windowMs: this.resolveNotifyQuotaWindowMs(match.context.focusState) ?? 0,
+        }))
+      : [];
     return {
       messageId: `attention-items:${match.contextId}:${serializableEntries.map((item) => item.commit.commitId).join(",")}`,
       contextId: match.contextId,
@@ -4461,6 +4581,7 @@ export class SessionRuntime {
       })),
       clearsBoundaryRefresh: false,
       notifyOnly,
+      notifyQuotaRecords,
     };
   }
 
@@ -6934,6 +7055,19 @@ export class SessionRuntime {
     });
   }
 
+  inspectNotifyQuota(input: {
+    contextId: string;
+    sourceId: string;
+    focusState?: AttentionFocusState;
+  }): RuntimeNotifyQuotaStatusView {
+    const focusState = input.focusState ?? this.resolveAttentionFocusState(input.contextId);
+    return this.buildNotifyQuotaStatus({
+      contextId: input.contextId,
+      focusState,
+      sourceId: input.sourceId,
+    });
+  }
+
   pageModelCalls(input?: {
     before?: SessionDbReverseTimeCursor;
     limit?: number;
@@ -8050,6 +8184,24 @@ export class SessionRuntime {
       nextSnapshots.set(plan.contextId, mergedSnapshot);
       if (plan.clearStageKeys.length > 0) {
         this.unstageAttentionItems(plan.contextId, plan.clearStageKeys);
+      }
+      if (plan.notifyOnly && plan.notifyQuotaRecords && plan.notifyQuotaRecords.length > 0 && this.sessionDb) {
+        const sentAt = Date.parse(plan.updatedAt) || Date.now();
+        for (const [index, record] of plan.notifyQuotaRecords.entries()) {
+          this.sessionDb.appendNotifyQuotaRecord({
+            notifyId: `${plan.contextId}:${plan.messageId}:${record.sourceId}:${index}`,
+            contextId: plan.contextId,
+            quotaTarget: record.quotaTarget,
+            focusState: record.focusState,
+            sourceId: record.sourceId,
+            commitId: plan.attentionCommitRefs[index]?.commitId ?? plan.headCommitId ?? plan.messageId,
+            sentAt,
+            windowMs: record.windowMs,
+            meta: {
+              attentionMessagePlanId: plan.messageId,
+            },
+          });
+        }
       }
       if (plan.clearsBoundaryRefresh) {
         boundaryRefreshCleared = true;

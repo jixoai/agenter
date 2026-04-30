@@ -32,8 +32,8 @@
 - [x] 3.11 Add keyed staged attention-item map semantics for interleaved injection, including keyed upsert, scoped replacement, scoped reset, removal, and retry-safe retention until successful injection
 - [ ] 3.12 Add an explicit way for the model to fetch full context details through CLI/API instead of relying on bootstrap-inlined social or skill projections
 - [ ] 3.13 Defer or guard any diff-vs-full context optimization so first-wave acceptance does not depend on patch-style context injection
-- [ ] 3.14 Add configurable notify quota enforcement with default period quotas for `muted` and `background`
-- [ ] 3.15 Add notify quota query capability that returns effective quota configuration, current remaining state, send-eligibility, and historical notify-send records
+- [x] 3.14 Add configurable notify quota enforcement with default period quotas for `muted` and `background`
+- [x] 3.15 Add notify quota query capability that returns effective quota configuration, current remaining state, send-eligibility, and historical notify-send records
 - [ ] 3.16 Rewrite conflicting long-lived bootstrap/delivery specs so this change does not archive with `ctx-skill-system` bootstrap or duplicate acceptance-law wording
 
 ## 4. Terminal Adapter Cleanup
@@ -77,8 +77,8 @@
 - [x] 7.10 Add BDD tests proving only focused contexts can serialize `CommitAttentionItems`
 - [x] 7.11 Add BDD tests proving per-context cost comparison can choose items for one context and context for another in the same model input
 - [x] 7.12 Add BDD tests proving `Notify` attention items always serialize as item payloads while still obeying the normal focus-aware seeding law for any accompanying context material
-- [ ] 7.13 Add BDD tests proving muted notify is throttled to one send per 12 hours by default and background notify is throttled to one send per 0.5 hours by default
-- [ ] 7.14 Add BDD tests proving notify quota queries can return effective config, current remaining state, send-eligibility, and historical notify records, with muted/background defaults computed from rolling time windows
+- [x] 7.13 Add BDD tests proving muted notify is throttled to one send per 12 hours by default and background notify is throttled to one send per 0.5 hours by default
+- [x] 7.14 Add BDD tests proving notify quota queries can return effective config, current remaining state, send-eligibility, and historical notify records, with muted/background defaults computed from rolling time windows
 - [x] 7.15 Add BDD tests proving failed requests do not advance `attentionContextSnapshot` or clear staged keyed attention items
 - [x] 7.16 Add BDD tests proving successful requests advance injected snapshots only after response SSE starts with a non-error first event, clear only the staged keys actually committed by that request, and do not retroactively roll back after later stream interruption
 - [x] 7.17 Add BDD tests proving terminal focus/unfocus/idle-ready are scheduler signals and not task facts

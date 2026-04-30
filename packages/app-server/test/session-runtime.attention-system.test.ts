@@ -229,6 +229,31 @@ interface RuntimeInternal {
   dirtyAttentionContextIds: Set<string>;
   dirtyAttentionCommitIdsByContext: Map<string, Set<string>>;
   resolveCycleReplyChatId: (inputs: LoopBusInput[]) => string | null;
+  inspectNotifyQuota: (input: {
+    contextId: string;
+    sourceId: string;
+    focusState?: "focused" | "background" | "muted";
+  }) => {
+    quotaTarget: string;
+    focusState: "focused" | "background" | "muted";
+    effective: {
+      windowKind: "period";
+      windowMs: number | null;
+    };
+    remaining: {
+      allowedNow: boolean;
+      remainingSends: number | null;
+      nextAllowedAt: number | null;
+    };
+    history: Array<{
+      notifyId: string;
+      contextId: string;
+      commitId: string;
+      sourceId: string;
+      sentAt: number;
+      windowMs: number;
+    }>;
+  };
 }
 
 interface RuntimeMessageEgressInternal extends RuntimeInternal {
@@ -2278,6 +2303,159 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(internal.attentionSystem.listActiveContexts().some((match) => match.contextId === "ctx-room-muted")).toBe(
         true,
       );
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given a muted notification already crossed the injection boundary within 12 hours When another muted notify is inspected Then quota reports blocked with history and next allowed time", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      buildAttentionItemsPlan: (match: AttentionActiveContextMatch) => { messageId: string; text: string } | null;
+      pendingAttentionMessagePlans: Map<string, { messageId: string; text: string }>;
+      commitInjectedAttentionPlans: (input: { requestMessages?: readonly { role: string; content: string }[] }) => void;
+    };
+
+    await runtime.start();
+    await runtime.pause();
+    try {
+      internal.attentionSystem.createContext({
+        contextId: "ctx-room-muted",
+        owner: "avatar:tester",
+        focusState: "muted",
+      });
+      const firstCommit = internal.attentionSystem.commit("ctx-room-muted", {
+        ingressType: "push",
+        meta: {
+          author: "user:kzf",
+          source: "message",
+          src: createMessageSrc("room-muted", 301),
+          tags: ["notification"],
+        },
+        scores: { hash_notification_muted_1: 100 },
+        summary: "muted notification one",
+        change: { type: "update", value: "muted notification one" },
+      }).commit;
+      await internal.handleCommittedAttentionCommit("ctx-room-muted", firstCommit, { notifyLoop: false });
+      const firstMatch = internal.attentionSystem
+        .listActiveContexts()
+        .find((match) => match.contextId === "ctx-room-muted");
+      if (!firstMatch) {
+        throw new Error("expected first muted notify context");
+      }
+      const firstPlan = internal.buildAttentionItemsPlan(firstMatch);
+      if (!firstPlan) {
+        throw new Error("expected first muted notify plan");
+      }
+      internal.pendingAttentionMessagePlans.set(firstPlan.messageId, firstPlan);
+      internal.commitInjectedAttentionPlans({
+        requestMessages: [{ role: "user", content: firstPlan.text }],
+      });
+      const firstQuota = internal.inspectNotifyQuota({
+        contextId: "ctx-room-muted",
+        sourceId: createMessageSrc("room-muted", 301),
+        focusState: "muted",
+      });
+
+      const secondCommit = internal.attentionSystem.commit("ctx-room-muted", {
+        ingressType: "push",
+        meta: {
+          author: "user:kzf",
+          source: "message",
+          src: createMessageSrc("room-muted", 301),
+          tags: ["notification"],
+        },
+        scores: { hash_notification_muted_2: 100 },
+        summary: "muted notification two",
+        change: { type: "update", value: "muted notification two" },
+      }).commit;
+      await internal.handleCommittedAttentionCommit("ctx-room-muted", secondCommit, { notifyLoop: false });
+
+      const quota = internal.inspectNotifyQuota({
+        contextId: "ctx-room-muted",
+        sourceId: createMessageSrc("room-muted", 301),
+        focusState: "muted",
+      });
+      const secondMatch = internal.attentionSystem
+        .listActiveContexts()
+        .find((match) => match.contextId === "ctx-room-muted");
+      if (!secondMatch) {
+        throw new Error("expected second muted notify context");
+      }
+      const secondPlan = internal.buildAttentionItemsPlan(secondMatch);
+
+      expect(firstQuota.history).toHaveLength(1);
+      expect(firstQuota.remaining.allowedNow).toBe(false);
+      expect(quota.focusState).toBe("muted");
+      expect(quota.effective.windowMs).toBe(12 * 60 * 60 * 1_000);
+      expect(quota.remaining.allowedNow).toBe(false);
+      expect(quota.remaining.remainingSends).toBe(0);
+      expect(quota.remaining.nextAllowedAt).toBeGreaterThan(Date.now());
+      expect(quota.history).toHaveLength(1);
+      expect(secondPlan).toBeNull();
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given a background notification already crossed the injection boundary within 0.5 hours When quota is queried Then the runtime reports blocked state, effective config, and send history", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      buildAttentionItemsPlan: (match: AttentionActiveContextMatch) => { messageId: string; text: string } | null;
+      pendingAttentionMessagePlans: Map<string, { messageId: string; text: string }>;
+      commitInjectedAttentionPlans: (input: { requestMessages?: readonly { role: string; content: string }[] }) => void;
+    };
+
+    await runtime.start();
+    await runtime.pause();
+    try {
+      internal.attentionSystem.createContext({
+        contextId: "ctx-room-background-notify",
+        owner: "avatar:tester",
+        focusState: "background",
+      });
+      const firstCommit = internal.attentionSystem.commit("ctx-room-background-notify", {
+        ingressType: "push",
+        meta: {
+          author: "user:kzf",
+          source: "message",
+          src: createMessageSrc("room-background", 401),
+          tags: ["notification"],
+        },
+        scores: { hash_notification_background_1: 100 },
+        summary: "background notification one",
+        change: { type: "update", value: "background notification one" },
+      }).commit;
+      await internal.handleCommittedAttentionCommit("ctx-room-background-notify", firstCommit, { notifyLoop: false });
+      const firstMatch = internal.attentionSystem
+        .listActiveContexts()
+        .find((match) => match.contextId === "ctx-room-background-notify");
+      if (!firstMatch) {
+        throw new Error("expected background notify context");
+      }
+      const firstPlan = internal.buildAttentionItemsPlan(firstMatch);
+      if (!firstPlan) {
+        throw new Error("expected first background notify plan");
+      }
+      internal.pendingAttentionMessagePlans.set(firstPlan.messageId, firstPlan);
+      internal.commitInjectedAttentionPlans({
+        requestMessages: [{ role: "user", content: firstPlan.text }],
+      });
+
+      const quota = internal.inspectNotifyQuota({
+        contextId: "ctx-room-background-notify",
+        sourceId: createMessageSrc("room-background", 401),
+        focusState: "background",
+      });
+
+      expect(quota.focusState).toBe("background");
+      expect(quota.effective.windowMs).toBe(30 * 60 * 1_000);
+      expect(quota.remaining.allowedNow).toBe(false);
+      expect(quota.history).toHaveLength(1);
+      expect(quota.history[0]).toMatchObject({
+        contextId: "ctx-room-background-notify",
+        sourceId: createMessageSrc("room-background", 401),
+      });
     } finally {
       await runtime.stop();
     }
