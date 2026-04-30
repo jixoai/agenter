@@ -35,11 +35,16 @@ Runtime bootstrap SHALL surface only systems that participate in the current rou
 - **THEN** that system does not appear in the bootstrap metadata set
 - **AND** no rendered `## AttentionContext.<contextId>` snapshot is emitted for it
 
-#### Scenario: Active or bootstrapped systems surface through metadata and snapshots
-- **WHEN** message attention is active and the canonical skill snapshot is bootstrap-visible for the current round
-- **THEN** the bootstrap context metadata lists both the message context and `ctx-skill-system`
-- **AND** the bootstrap context includes `## AttentionContext.ctx-skill-system`
+#### Scenario: Explicitly needed skill context can surface through metadata and snapshots
+- **WHEN** message attention is active and skill content has separately become bootstrap-visible through an explicit mount, explicit query result, or already-objective task dependency for the current round
+- **THEN** the bootstrap context metadata may list both the message context and the related skill context
+- **AND** the bootstrap context may include the corresponding `## AttentionContext.<contextId>` snapshot
 - **AND** the runtime does not duplicate the same skill snapshot in `systemPrompt`
+
+#### Scenario: Skill refresh alone does not bootstrap a dedicated skill context
+- **WHEN** runtime refreshes or reindexes visible skills without an explicit mount, explicit query, or already-objective task dependency
+- **THEN** the bootstrap context does not automatically include `ctx-skill-system`
+- **AND** skill refresh alone does not create a permanent bootstrap-visible skill task peer
 
 #### Scenario: Future systems extend bootstrap through attention contexts
 - **WHEN** a new runtime system needs bootstrap-visible context for a round
@@ -106,15 +111,21 @@ The attention `items` payload SHALL directly inject item detail for newly commit
 - **THEN** runtime may include the context's aggregate score in `AttentionContexts.metadata`
 - **AND** runtime does not serialize recent historical commits merely because a `lastSeenCommitId` cursor is missing
 
-### Requirement: AttentionContext SHALL be boundary-injected while AttentionItems SHALL be in-flight injected
+### Requirement: Attention bootstrap SHALL follow the current-state per-context injection law
 
-The runtime SHALL use `AttentionContext` payloads to re-establish model-visible context projection at hard boundaries such as prompt compaction and cold restart. The runtime SHALL use `AttentionItems` payloads only for item detail committed during the current in-flight boundary.
+The runtime SHALL use the same current-state per-context injection law for bootstrap-visible work and ordinary interleaved work. Hard boundaries such as prompt compaction and cold restart MAY require fresh `AttentionContext` projection, but a focused context MAY also use the `AttentionContext` path during ordinary interleaved injection when that path wins the current per-context comparison. Historical `AttentionItems` replay remains forbidden unless new commit delta exists for the current collection boundary or the selected item path is an explicit notify exception.
 
 #### Scenario: Compact boundary refreshes context projection without item replay
 
 - **WHEN** prompt-window compaction rebuilds the model's bounded memory while active attention still exists
 - **THEN** the next attention round may include fresh `AttentionContexts.metadata`
 - **AND** it does not serialize historical `AttentionItems` unless new commits happen during that boundary
+
+#### Scenario: Ordinary focused work may still choose context path
+
+- **WHEN** a focused context participates in an ordinary interleaved collection boundary and the current-state comparison chooses the `AttentionContext` branch
+- **THEN** runtime may inject that context projection even outside compact or cold-restart boundaries
+- **AND** the implementation does not reserve `AttentionContext` injection only for special recovery branches
 
 #### Scenario: Restart boundary refreshes context projection without item replay
 

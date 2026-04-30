@@ -56,8 +56,8 @@
 - compact / cold start 这类边界只能刷新 AttentionContext projection，不能把历史 AttentionItems 重新注入；AI 通过 runtime-local `attention commit` 自己写入的上下文更新也不能再反向唤醒成 item reminder。
 - tool-result 边界的 interleaved attention 提交必须走同一个 runtime commit API：`onCanCommitAttentionItems(ctx)` 只能调用 `ctx.commitAttentionItems()` 这类直接接口，不能通过 return payload 绕开 runtime；MessageRoom unread read ack、adapter consume 标记、AttentionSystem commit、projection staging 与 trace/ledger 更新属于同一次提交边界。
 - ModelClient 的 provider loop strategy 只允许同步消费已经 staged 的 committed attention projection，并把它追加到下一次 continuation request；它不得直接 drain MessageRoom/Terminal/Task，也不得执行 attention commit 或 read ack。
-- message attention body 必须直接携带 room social envelope、latest-message perspective、以及附件 facts；terminal / task 也必须各自通过自己的 presentation builder 提供足够的 AI-visible detail。
-- focused terminal source observations 默认只保留为 queryable attention history；只有显式 scored 的 terminal event（例如 background `terminal_idle_ready`）才继续形成 unresolved debt。
+- message attention body 必须直接携带消息级客观事实与必要附件 facts，不得再默认内联 room social envelope；participants / presence / visibleRooms 这类 room projection 必须通过显式 room snapshot、`message read`、`message query` 等既有 query surface 获取；terminal / task 也必须各自通过自己的 presentation builder 提供足够的 AI-visible detail。
+- focused terminal source observations 默认只保留为 queryable attention history；`terminal_idle_ready` 这类 lifecycle coordination 默认属于 scheduler signal / wake-rank truth，不得再作为 source-authored unresolved debt 直接进入 AI-visible task 语义。
 - real-provider backend 验收至少要能证明：同一 session 在 room-visible 交付之后，经过 `session.stop -> kernel cold restart -> session.start` 仍能靠磁盘事实继续工作，而不是依赖残留内存对象。
 - 需要真实语义判断的 backend 验收必须通过专用 semantic judge 层完成，而不是在测试里散落 prompt-specific 字符串 hack。
 - semantic judge real validation 固定使用 provider id `jixoai/agenter/test`，并通过现有 settings cascade 从 workspace `.agenter/settings.json` 或 `~/.agenter/settings.json` 解析；不得静默回退到 active runtime provider。
