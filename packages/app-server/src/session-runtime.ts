@@ -8106,8 +8106,7 @@ export class SessionRuntime {
         }
         return right.order - left.order;
       })
-      .map((entry) => entry.match)
-      .slice(0, 1);
+      .map((entry) => entry.match);
   }
 
   private selectAttentionDebtContexts(active: AttentionActiveContextMatch[]): AttentionActiveContextMatch[] {

@@ -65,9 +65,9 @@
 
 ## 7. Backend Tests
 
-- [ ] 7.1 Add BDD tests proving question marks do not create platform reply obligations
-- [ ] 7.2 Add BDD tests proving direct-room messages do not create platform reply obligations
-- [ ] 7.3 Add BDD tests proving `auth:*` group senders do not create platform reply obligations
+- [x] 7.1 Add BDD tests proving question marks do not create platform reply obligations
+- [x] 7.2 Add BDD tests proving direct-room messages do not create platform reply obligations
+- [x] 7.3 Add BDD tests proving `auth:*` group senders do not create platform reply obligations
 - [x] 7.4 Add BDD tests proving `root_bash` and non-message tool work do not auto-send origin-room acknowledgements
 - [x] 7.5 Add BDD tests proving cross-room relay sends only the explicit target-room message and no origin fallback message
 - [x] 7.6 Add BDD tests proving attention commits alone do not create room transcript rows
@@ -75,7 +75,7 @@
 - [x] 7.8 Add BDD tests proving attention bootstrap/context seeding omits removed chat obligation labels and keeps scheduler metadata separate
 - [x] 7.9 Add BDD tests proving focused contexts seed full views, background contexts seed minimal views, and muted contexts do not auto-seed
 - [x] 7.10 Add BDD tests proving only focused contexts can serialize `CommitAttentionItems`
-- [ ] 7.11 Add BDD tests proving per-context cost comparison can choose items for one context and context for another in the same model input
+- [x] 7.11 Add BDD tests proving per-context cost comparison can choose items for one context and context for another in the same model input
 - [x] 7.12 Add BDD tests proving `Notify` attention items always serialize as item payloads while still obeying the normal focus-aware seeding law for any accompanying context material
 - [ ] 7.13 Add BDD tests proving muted notify is throttled to one send per 12 hours by default and background notify is throttled to one send per 0.5 hours by default
 - [ ] 7.14 Add BDD tests proving notify quota queries can return effective config, current remaining state, send-eligibility, and historical notify records, with muted/background defaults computed from rolling time windows
@@ -85,7 +85,7 @@
 - [x] 7.18 Add BDD tests proving skill refresh updates the skill index and, when published, emits only ordinary objective attention items without creating a dedicated skill task context by default
 - [x] 7.19 Add BDD tests proving generic watches re-evaluate predicates, emit reminders when still relevant, stay silent when satisfied, and never auto-send messages
 - [x] 7.20 Add effect-ledger tests proving explicit message actions are causally linked to resulting room rows
-- [ ] 7.21 Add BDD tests proving the cost comparison uses final serialized user-role text length rather than raw object size or provider-token estimates
+- [x] 7.21 Add BDD tests proving the cost comparison uses final serialized user-role text length rather than raw object size or provider-token estimates
 
 ## 8. Frontend And Runtime Inspection Tests
 

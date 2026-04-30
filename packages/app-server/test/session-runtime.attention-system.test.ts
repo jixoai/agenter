@@ -227,6 +227,7 @@ interface RuntimeInternal {
     }
   >;
   dirtyAttentionContextIds: Set<string>;
+  dirtyAttentionCommitIdsByContext: Map<string, Set<string>>;
   resolveCycleReplyChatId: (inputs: LoopBusInput[]) => string | null;
 }
 
@@ -579,11 +580,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(firstRound).toBeDefined();
     expect(firstRound?.some((item) => item.source === "task")).toBe(false);
     expect(firstRound?.every((item) => item.source === "attention")).toBe(true);
-
-    const secondRound = await internal.collectLoopInputs();
-    expect(secondRound).toBeDefined();
-    expect(secondRound?.some((item) => item.source === "task")).toBe(false);
-    expect(secondRound?.every((item) => item.source === "attention")).toBe(true);
+    expect(getBootstrapInput(firstRound)).toBeDefined();
 
     const activeTaskItems = getActiveItems(internal).filter((item) => item.meta.source === "task");
     expect(activeTaskItems.length).toBeGreaterThan(0);
@@ -1825,6 +1822,139 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
+  test("Scenario: Given punctuation-heavy direct-room ingress When collectLoopInputs commits attention ingress Then the raw fact stays visible without platform reply obligations", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-room-direct-question-"));
+    const messageSystem = new MessageControlPlane({
+      dbPath: resolveMessageControlDbPath(root),
+    });
+
+    try {
+      const roomId = createPrincipalId(90321);
+      const room = messageSystem.createChannel({
+        chatId: roomId,
+        kind: "room",
+        owner: "ops",
+        contextId: `ctx-${roomId}`,
+        initialUsers: [
+          {
+            actorId: "auth:kzf",
+            label: "kzf",
+            role: "member",
+            focused: true,
+          },
+          {
+            actorId: "session:jane",
+            label: "Jane",
+            role: "member",
+            focused: true,
+          },
+        ],
+      });
+
+      const janeRuntime = createSharedRoomRuntime({
+        root,
+        sessionId: "jane",
+        sessionName: "jane",
+        messageSystem,
+      });
+      const janeInternal = janeRuntime as unknown as RuntimeInternal;
+      const kzfRoom = messageSystem.getChannelForActor(room.chatId, "auth:kzf", {
+        includeArchived: true,
+        touchPresence: false,
+      });
+      messageSystem.sendAuthorized({
+        chatId: room.chatId,
+        accessToken: kzfRoom?.accessToken ?? "",
+        senderActorId: "auth:kzf",
+        from: "kzf",
+        content: "你现在能回复我吗？？",
+      });
+
+      const inputs = await janeInternal.collectLoopInputs();
+      const bootstrap = getBootstrapInput(inputs);
+      expect(bootstrap).toBeDefined();
+      expect(bootstrap?.text).toContain("你现在能回复我吗？？");
+      expect(bootstrap?.text).not.toContain("room_reply_pending");
+      expect(bootstrap?.text).not.toContain("your_turn");
+      expect(bootstrap?.text).not.toContain("chatObligationKind");
+      expect(await stringifyAttentionQuery(janeRuntime, "你现在能回复我吗？？")).toContain("你现在能回复我吗？？");
+    } finally {
+      messageSystem.close();
+    }
+  });
+
+  test("Scenario: Given a group-room auth actor ingress When collectLoopInputs commits attention ingress Then sender identity stays factual without platform reply obligations", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-room-auth-actor-"));
+    const messageSystem = new MessageControlPlane({
+      dbPath: resolveMessageControlDbPath(root),
+    });
+
+    try {
+      const roomId = createPrincipalId(90322);
+      const room = messageSystem.createChannel({
+        chatId: roomId,
+        kind: "room",
+        owner: "ops",
+        contextId: `ctx-${roomId}`,
+        initialUsers: [
+          {
+            actorId: "auth:kzf",
+            label: "kzf",
+            role: "member",
+            focused: true,
+          },
+          {
+            actorId: "auth:gaubee",
+            label: "gaubee",
+            role: "member",
+            focused: true,
+          },
+          {
+            actorId: "session:jane",
+            label: "Jane",
+            role: "member",
+            focused: true,
+          },
+        ],
+      });
+
+      const janeRuntime = createSharedRoomRuntime({
+        root,
+        sessionId: "jane",
+        sessionName: "jane",
+        messageSystem,
+      });
+      const janeInternal = janeRuntime as unknown as RuntimeInternal;
+      const gaubeeRoom = messageSystem.getChannelForActor(room.chatId, "auth:gaubee", {
+        includeArchived: true,
+        touchPresence: false,
+      });
+      messageSystem.sendAuthorized({
+        chatId: room.chatId,
+        accessToken: gaubeeRoom?.accessToken ?? "",
+        senderActorId: "auth:gaubee",
+        from: "gaubee",
+        content: "同步一下当前状态。",
+      });
+
+      const inputs = await janeInternal.collectLoopInputs();
+      const bootstrap = getBootstrapInput(inputs);
+      expect(bootstrap).toBeDefined();
+      expect(bootstrap?.text).toContain("同步一下当前状态。");
+      expect(bootstrap?.text).not.toContain("room_reply_pending");
+      expect(bootstrap?.text).not.toContain("your_turn");
+      expect(bootstrap?.text).not.toContain("self_update");
+
+      const messageFact = parseMessageFactContext(
+        getActiveItems(janeInternal).find((item) => item.detail?.value.includes("同步一下当前状态。"))?.detail?.value,
+      );
+      expect(messageFact?.message?.senderActorId).toBe("auth:gaubee");
+      expect(messageFact?.message?.senderLabel).toBe("gaubee");
+    } finally {
+      messageSystem.close();
+    }
+  });
+
   test("Scenario: Given message and terminal attention are both active When bootstrap context is assembled Then only minimal metadata for both contexts is emitted", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
@@ -2292,7 +2422,153 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.stop();
   });
 
-  test("Scenario: Given chat attention arrives while another context is already dirty When collectLoopInputs runs Then only the newest dirty context is sent to the model in that round", async () => {
+  test("Scenario: Given focused contexts with seeded snapshots When collectLoopInputs runs Then one context can choose items while another chooses context in the same batch", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      buildFocusedAttentionContextText: (match: AttentionActiveContextMatch) => string;
+      buildAttentionItemsPlan: (
+        match: AttentionActiveContextMatch,
+      ) => {
+        kind: "items";
+        text: string;
+      } | null;
+      attentionContextSnapshot: Map<
+        string,
+        {
+          contextId: string;
+          kind: "context" | "items";
+          text: string;
+          headCommitId: string | null;
+          updatedAt: string;
+          seededFocusState?: "focused" | "background";
+        }
+      >;
+    };
+
+    internal.attentionSystem.createContext({ contextId: "ctx-terminal-mixed", owner: "avatar:tester", focusState: "focused" });
+    const primarySeedCommit = appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
+      meta: {
+        author: "user:kzf",
+        source: "message",
+        src: createMessageSrc(PRIMARY_ROOM_ID, 790),
+      },
+      scores: { hash_primary_seed: 100 },
+      title: "primary seed",
+      detail: {
+        kind: "replace",
+        value: "primary seed",
+        format: "text/plain",
+      },
+    });
+    await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, primarySeedCommit, { notifyLoop: false });
+    const primarySeedMatch = internal.attentionSystem.listActiveContexts().find((match) => match.contextId === PRIMARY_CONTEXT_ID);
+
+    const terminalSeedCommit = appendAttentionCommit(internal, "ctx-terminal-mixed", {
+      meta: {
+        author: "terminal:mixed",
+        source: "terminal",
+        src: createTerminalSrc("mixed"),
+      },
+      scores: { hash_terminal_mixed: 100 },
+      title: "terminal seed",
+      detail: {
+        kind: "replace",
+        value: "terminal seed",
+        format: "text/plain",
+      },
+    });
+    await internal.handleCommittedAttentionCommit("ctx-terminal-mixed", terminalSeedCommit, { notifyLoop: false });
+    const terminalSeedMatch = internal.attentionSystem
+      .listActiveContexts()
+      .find((match) => match.contextId === "ctx-terminal-mixed");
+    if (!primarySeedMatch || !terminalSeedMatch) {
+      throw new Error("expected seeded active attention contexts");
+    }
+
+    internal.attentionContextSnapshot.set(PRIMARY_CONTEXT_ID, {
+      contextId: PRIMARY_CONTEXT_ID,
+      kind: "context",
+      text: internal.buildFocusedAttentionContextText(primarySeedMatch),
+      headCommitId: primarySeedMatch.context.headCommitId,
+      updatedAt: primarySeedMatch.context.updatedAt,
+      seededFocusState: "focused",
+    });
+    internal.attentionContextSnapshot.set("ctx-terminal-mixed", {
+      contextId: "ctx-terminal-mixed",
+      kind: "context",
+      text: internal.buildFocusedAttentionContextText(terminalSeedMatch),
+      headCommitId: terminalSeedMatch.context.headCommitId,
+      updatedAt: terminalSeedMatch.context.updatedAt,
+      seededFocusState: "focused",
+    });
+    internal.dirtyAttentionContextIds.clear();
+    internal.dirtyAttentionCommitIdsByContext.clear();
+
+    for (const [index, messageId] of [801, 802, 803, 804, 805, 806].entries()) {
+      const primaryUpdateCommit = appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
+        meta: {
+          author: "user:kzf",
+          source: "message",
+          src: createMessageSrc(PRIMARY_ROOM_ID, messageId),
+        },
+        scores: { [`hash_primary_mixed_${index}`]: 100 },
+        title: `primary update ${index + 1}`,
+        detail: {
+          kind: "replace",
+          value: `primary update ${index + 1}: keep this room context synchronized with the latest visible factual detail and preserve the full rolling room state for later reasoning across multiple related facts in a single shared context.`,
+          format: "text/plain",
+        },
+      });
+      await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, primaryUpdateCommit, { notifyLoop: false });
+    }
+
+    for (const [index, eventId] of Array.from({ length: 24 }, (_, offset) => offset + 11).entries()) {
+      const terminalUpdateCommit = appendAttentionCommit(internal, "ctx-terminal-mixed", {
+        meta: {
+          author: "terminal:mixed",
+          source: "terminal",
+          src: createTerminalSrc("mixed", eventId),
+        },
+        scores: { [`hash_terminal_mixed_${index}`]: 100 },
+        title: `terminal blocked ${index + 1}`,
+        detail: {
+          kind: "replace",
+          value: `terminal blocked ${index + 1}: interactive shell is waiting on a multi-step authentication checklist and the model should retain the broader terminal state summary instead of replaying many granular commits.`,
+          format: "text/plain",
+        },
+      });
+      await internal.handleCommittedAttentionCommit("ctx-terminal-mixed", terminalUpdateCommit, { notifyLoop: false });
+    }
+
+    const activeMatches = internal.attentionSystem.listActiveContexts();
+    const primaryMatch = activeMatches.find((match) => match.contextId === PRIMARY_CONTEXT_ID);
+    const terminalMatch = activeMatches.find((match) => match.contextId === "ctx-terminal-mixed");
+    expect(primaryMatch).toBeDefined();
+    expect(terminalMatch).toBeDefined();
+    if (!primaryMatch || !terminalMatch) {
+      return;
+    }
+    const primaryContextText = internal.buildFocusedAttentionContextText(primaryMatch);
+    const terminalContextText = internal.buildFocusedAttentionContextText(terminalMatch);
+    const primaryItemsText = internal.buildAttentionItemsPlan(primaryMatch)?.text ?? "";
+    const terminalItemsText = internal.buildAttentionItemsPlan(terminalMatch)?.text ?? "";
+    const expectedPrimaryKind = primaryContextText.length * 1.5 <= primaryItemsText.length ? "context" : "items";
+    const expectedTerminalKind = terminalContextText.length * 1.5 <= terminalItemsText.length ? "context" : "items";
+
+    const mixedBatch = await internal.collectLoopInputs();
+    const primaryPlan = mixedBatch?.find((item) => item.meta?.attentionContextId === PRIMARY_CONTEXT_ID);
+    const terminalPlan = mixedBatch?.find((item) => item.meta?.attentionContextId === "ctx-terminal-mixed");
+    expect(primaryPlan).toBeDefined();
+    expect(terminalPlan).toBeDefined();
+    if (!primaryPlan || !terminalPlan) {
+      return;
+    }
+    expect(expectedPrimaryKind).not.toBe(expectedTerminalKind);
+    expect(primaryPlan.meta?.attentionProtocolKind).toBe(expectedPrimaryKind);
+    expect(terminalPlan.meta?.attentionProtocolKind).toBe(expectedTerminalKind);
+  });
+
+  test("Scenario: Given chat attention arrives while another context is already dirty When collectLoopInputs runs Then higher-priority chat context is emitted before the older terminal context in the same round", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
@@ -2312,14 +2588,12 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     runtime.pushUserChat("Reply with exactly FOCUS-CHAT-FIRST");
 
     const firstRound = await internal.collectLoopInputs();
-    expect(getAttentionProtocolKinds(firstRound)).toEqual(["context"]);
-    expect([...new Set(firstRound?.map((item) => item.meta?.attentionContextId) ?? [])]).toEqual([PRIMARY_CONTEXT_ID]);
+    expect(getAttentionProtocolKinds(firstRound)).toEqual(["context", "context"]);
+    expect(firstRound?.[0]?.meta?.attentionContextId).toBe(PRIMARY_CONTEXT_ID);
+    expect(firstRound?.[1]?.meta?.attentionContextId).toBe("ctx-terminal-iflow");
 
     const secondRound = await internal.collectLoopInputs();
-    expect(getAttentionProtocolKinds(secondRound)).toEqual(["context"]);
-    expect([...new Set(secondRound?.map((item) => item.meta?.attentionContextId) ?? [])]).toEqual([
-      "ctx-terminal-iflow",
-    ]);
+    expect(secondRound).toBeUndefined();
   });
 
   test("Scenario: Given an attention round makes no progress When the final model call is recorded Then the affected context enters backoff before the next retry", async () => {

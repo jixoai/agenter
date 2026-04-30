@@ -766,6 +766,9 @@ describe("Feature: runtime descriptor CLI", () => {
     await Bun.sleep(20);
     abort.abort();
     const result = await pending;
+    for (let index = 0; index < 20 && !requestClosed; index += 1) {
+      await Bun.sleep(10);
+    }
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr.toLowerCase()).toContain("abort");
