@@ -116,7 +116,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     const rootWorkspacePath = createTempRoot();
     const system = createSystem({ rootWorkspacePath });
 
-    system.refresh({ forceBootstrap: true, publishReminders: false });
+    system.refresh({ publishReminders: false });
 
     const result = system.upsert({
       name: "added-skill",
@@ -137,8 +137,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     expect(result.changedSkills).toHaveLength(1);
     expect(result.changedSkills[0]?.kind).toBe("added");
     expect(result.changedSkills[0]?.name).toBe("added-skill");
-    expect(result.reminderIngresses).toHaveLength(1);
-    expect(result.reminderIngresses[0]?.summary).toContain("Added runtime skill added-skill");
+    expect(result.publishedIngresses.some((ingress) => ingress.summary.includes("Added runtime skill added-skill"))).toBeTrue();
   });
 
   test("Scenario: Given an existing runtime skill is upserted with new content When refresh reminders are published Then an updated skill reminder commit is emitted", () => {
@@ -146,7 +145,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     writeSkill(rootWorkspacePath, { name: "updated-skill" });
     const system = createSystem({ rootWorkspacePath });
 
-    system.refresh({ forceBootstrap: true, publishReminders: false });
+    system.refresh({ publishReminders: false });
 
     const result = system.upsert({
       name: "updated-skill",
@@ -167,8 +166,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     expect(result.changedSkills).toHaveLength(1);
     expect(result.changedSkills[0]?.kind).toBe("updated");
     expect(result.changedSkills[0]?.name).toBe("updated-skill");
-    expect(result.reminderIngresses).toHaveLength(1);
-    expect(result.reminderIngresses[0]?.summary).toContain("Updated runtime skill updated-skill");
+    expect(result.publishedIngresses.some((ingress) => ingress.summary.includes("Updated runtime skill updated-skill"))).toBeTrue();
   });
 
   test("Scenario: Given an existing runtime skill is removed When refresh reminders are published Then a removed skill reminder commit is emitted", () => {
@@ -176,7 +174,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     writeSkill(rootWorkspacePath, { name: "removed-skill" });
     const system = createSystem({ rootWorkspacePath });
 
-    system.refresh({ forceBootstrap: true, publishReminders: false });
+    system.refresh({ publishReminders: false });
 
     const result = system.remove({ name: "removed-skill" });
 
@@ -184,8 +182,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     expect(result.changedSkills).toHaveLength(1);
     expect(result.changedSkills[0]?.kind).toBe("removed");
     expect(result.changedSkills[0]?.name).toBe("removed-skill");
-    expect(result.reminderIngresses).toHaveLength(1);
-    expect(result.reminderIngresses[0]?.summary).toContain("Removed runtime skill removed-skill");
+    expect(result.publishedIngresses.some((ingress) => ingress.summary.includes("Removed runtime skill removed-skill"))).toBeTrue();
   });
 
   test("Scenario: Given no persisted fingerprint manifest When refresh reminders are published Then the current skills become the baseline without added reminders", () => {
@@ -194,10 +191,11 @@ describe("Feature: runtime skill watcher and config surface", () => {
     const fingerprintManifestPath = join(rootWorkspacePath, "session", "skill-system", "fingerprint-map.json");
     const system = createSystem({ rootWorkspacePath, fingerprintManifestPath });
 
-    const result = system.refresh({ forceBootstrap: true, publishReminders: true });
+    const result = system.refresh({ publishReminders: true });
 
     expect(result.changedSkills).toHaveLength(0);
-    expect(result.reminderIngresses).toHaveLength(0);
+    expect(result.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_change")).toHaveLength(0);
+    expect(result.publishedIngresses.some((ingress) => ingress.kind === "runtime_skill_snapshot")).toBeTrue();
     expect(existsSync(fingerprintManifestPath)).toBeTrue();
     expect(readFileSync(fingerprintManifestPath, "utf8")).toContain("baseline-skill");
   });
@@ -208,7 +206,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     writeSkill(rootWorkspacePath, { name: "offline-removed" });
     const fingerprintManifestPath = join(rootWorkspacePath, "session", "skill-system", "fingerprint-map.json");
     const firstSystem = createSystem({ rootWorkspacePath, fingerprintManifestPath });
-    const baseline = firstSystem.refresh({ forceBootstrap: true, publishReminders: true });
+    const baseline = firstSystem.refresh({ publishReminders: true });
     expect(baseline.changedSkills).toHaveLength(0);
     firstSystem.dispose();
 
@@ -231,20 +229,20 @@ describe("Feature: runtime skill watcher and config surface", () => {
     writeSkill(rootWorkspacePath, { name: "offline-added" });
 
     const restartedSystem = createSystem({ rootWorkspacePath, fingerprintManifestPath });
-    const restarted = restartedSystem.refresh({ forceBootstrap: true, publishReminders: true });
+    const restarted = restartedSystem.refresh({ publishReminders: true });
     expect(restarted.changedSkills.map((change) => `${change.kind}:${change.name}`).sort()).toEqual([
       "added:offline-added",
       "removed:offline-removed",
       "updated:offline-updated",
     ]);
-    expect(restarted.reminderIngresses).toHaveLength(3);
+    expect(restarted.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_change")).toHaveLength(3);
 
     const duplicateCheck = createSystem({ rootWorkspacePath, fingerprintManifestPath }).refresh({
-      forceBootstrap: true,
       publishReminders: true,
     });
     expect(duplicateCheck.changedSkills).toHaveLength(0);
-    expect(duplicateCheck.reminderIngresses).toHaveLength(0);
+    expect(duplicateCheck.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_change")).toHaveLength(0);
+    expect(duplicateCheck.publishedIngresses.some((ingress) => ingress.kind === "runtime_skill_snapshot")).toBeTrue();
   });
 
   test("Scenario: Given a declared skill file changes while stopped When restart refreshes from the manifest Then the declared file is reported", () => {
@@ -258,20 +256,18 @@ describe("Feature: runtime skill watcher and config surface", () => {
     writeFileSync(referencePath, "reference-v1\n", "utf8");
     const fingerprintManifestPath = join(rootWorkspacePath, "session", "skill-system", "fingerprint-map.json");
     createSystem({ rootWorkspacePath, fingerprintManifestPath }).refresh({
-      forceBootstrap: true,
       publishReminders: true,
     });
 
     writeFileSync(referencePath, "reference-v2\n", "utf8");
 
     const result = createSystem({ rootWorkspacePath, fingerprintManifestPath }).refresh({
-      forceBootstrap: true,
       publishReminders: true,
     });
     expect(result.changedSkills).toHaveLength(1);
     expect(result.changedSkills[0]?.name).toBe("offline-declared");
     expect(result.changedSkills[0]?.changedFiles).toContain(referencePath);
-    expect(result.reminderIngresses[0]?.summary).toContain("references/guide.md");
+    expect(result.publishedIngresses.some((ingress) => ingress.summary.includes("references/guide.md"))).toBeTrue();
   });
 
   test("Scenario: Given an undeclared sibling file changes while stopped When restart refreshes from the manifest Then no skill reminder is emitted", () => {
@@ -279,18 +275,17 @@ describe("Feature: runtime skill watcher and config surface", () => {
     const skillDir = writeSkill(rootWorkspacePath, { name: "offline-unrelated" });
     const fingerprintManifestPath = join(rootWorkspacePath, "session", "skill-system", "fingerprint-map.json");
     createSystem({ rootWorkspacePath, fingerprintManifestPath }).refresh({
-      forceBootstrap: true,
       publishReminders: true,
     });
 
     writeFileSync(join(skillDir, "cache.sqlite"), "db-churn", "utf8");
 
     const result = createSystem({ rootWorkspacePath, fingerprintManifestPath }).refresh({
-      forceBootstrap: true,
       publishReminders: true,
     });
     expect(result.changedSkills).toHaveLength(0);
-    expect(result.reminderIngresses).toHaveLength(0);
+    expect(result.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_change")).toHaveLength(0);
+    expect(result.publishedIngresses.some((ingress) => ingress.kind === "runtime_skill_snapshot")).toBeTrue();
   });
 
   test("Scenario: Given a corrupt persisted fingerprint manifest When refresh runs Then it repairs the baseline without noisy reminders", () => {
@@ -301,10 +296,11 @@ describe("Feature: runtime skill watcher and config surface", () => {
     writeFileSync(fingerprintManifestPath, "{not-json", "utf8");
     const system = createSystem({ rootWorkspacePath, fingerprintManifestPath });
 
-    const result = system.refresh({ forceBootstrap: true, publishReminders: true });
+    const result = system.refresh({ publishReminders: true });
 
     expect(result.changedSkills).toHaveLength(0);
-    expect(result.reminderIngresses).toHaveLength(0);
+    expect(result.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_change")).toHaveLength(0);
+    expect(result.publishedIngresses.some((ingress) => ingress.kind === "runtime_skill_snapshot")).toBeTrue();
     expect(readFileSync(fingerprintManifestPath, "utf8")).toContain('"version": 1');
     expect(readFileSync(fingerprintManifestPath, "utf8")).toContain("corrupt-baseline");
   });
@@ -314,14 +310,14 @@ describe("Feature: runtime skill watcher and config surface", () => {
     const skillDir = writeSkill(rootWorkspacePath, { name: "live-sync" });
     const system = createSystem({ rootWorkspacePath, watchDebounceMs: 50 });
 
-    system.refresh({ forceBootstrap: true, publishReminders: false });
+    system.refresh({ publishReminders: false });
 
     writeFileSync(join(skillDir, "cache.sqlite"), "db-churn", "utf8");
 
     await sleep(120);
     const result = system.flushPendingChanges();
     expect(result?.changedSkills ?? []).toHaveLength(0);
-    expect(result?.reminderIngresses ?? []).toHaveLength(0);
+    expect(result?.publishedIngresses ?? []).toHaveLength(0);
   });
 
   test("Scenario: Given set-config changes the declared files When old and new targets change Then only the new targets trigger reminders", async () => {
@@ -338,7 +334,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     writeFileSync(notesPath, "notes-v1\n", "utf8");
 
     const system = createSystem({ rootWorkspacePath, watchDebounceMs: 50 });
-    system.refresh({ forceBootstrap: true, publishReminders: false });
+    system.refresh({ publishReminders: false });
 
     const configInfo = system.getConfig({ name: "live-sync" });
     expect(configInfo?.resolvedWatchTargets).toContain(referencePath);
@@ -363,7 +359,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     const newTargetResult = await waitForDirtyFlush(system);
     expect(newTargetResult.changedSkills).toHaveLength(1);
     expect(newTargetResult.changedSkills[0]?.changedFiles).toContain(notesPath);
-    expect(newTargetResult.reminderIngresses).toHaveLength(1);
+    expect(newTargetResult.publishedIngresses.some((ingress) => ingress.kind === "runtime_skill_change")).toBeTrue();
   });
 
   test("Scenario: Given a declared watched file changes while the runtime is idle When debounce expires Then idle flush publishes the aggregated reminder", async () => {
@@ -385,7 +381,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
         idleResults.push(result);
       },
     });
-    system.refresh({ forceBootstrap: true, publishReminders: false });
+    system.refresh({ publishReminders: false });
 
     writeFileSync(referencePath, "reference-v2\n", "utf8");
     const originalSetTimeout = globalThis.setTimeout;
@@ -458,7 +454,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
       rootWorkspacePath,
       repoRoot,
     });
-    noAuthority.refresh({ forceBootstrap: true, publishReminders: false });
+    noAuthority.refresh({ publishReminders: false });
 
     const builtinInfo = noAuthority.info("agenter-runtime", "builtin");
     expect(builtinInfo?.content).toContain("Repo live truth.");
@@ -480,7 +476,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
         },
       ],
     });
-    const initial = withAuthority.refresh({ forceBootstrap: true, publishReminders: false });
+    const initial = withAuthority.refresh({ publishReminders: false });
     expect(initial.skills.some((skill) => skill.name === "agenter-runtime" && skill.rootKind === "builtin")).toBeTrue();
 
     const result = withAuthority.setConfig({

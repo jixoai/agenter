@@ -509,20 +509,20 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const firstRound = await internal.collectLoopInputs();
     expect(firstRound?.some((item) => item.source === "chat" && item.text === "Please continue the task")).toBe(false);
-    expect(getAttentionProtocolKinds(firstRound)).toEqual(["context", "items"]);
+    expect(getAttentionProtocolKinds(firstRound)).toEqual(["context"]);
     const contextInput = getBootstrapInput(firstRound);
     const itemsInput = getItemsInput(firstRound);
     expect(contextInput).toBeDefined();
-    expect(itemsInput).toBeDefined();
+    expect(itemsInput).toBeUndefined();
     if (!contextInput) {
       return;
     }
 
-    expect(contextInput.text).toContain("## AttentionContexts.metadata");
+    expect(contextInput.text).toContain("## AttentionContext.focused");
     expect(contextInput.text).not.toContain("## Systems Descriptions");
     expect(contextInput.text).not.toContain("## PreAICallContext Summary");
     expect(contextInput.text).not.toContain("## Attention Items");
-    expect(contextInput.text).not.toContain("Please continue the task");
+    expect(contextInput.text).toContain("Please continue the task");
     expect(contextInput.meta?.attentionContextId).toBe(PRIMARY_CONTEXT_ID);
     expect(contextInput.meta?.attentionContextIds).toBe(JSON.stringify([PRIMARY_CONTEXT_ID]));
     expect(contextInput.meta?.chatId).toBe(PRIMARY_ROOM_ID);
@@ -530,9 +530,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(typeof contextInput.meta?.attentionHeadCommitId).toBe("string");
     expect(internal.resolveCycleReplyChatId([contextInput])).toBe(PRIMARY_ROOM_ID);
     expect(await stringifyAttentionQuery(runtime, "Please continue the task")).toContain("Please continue the task");
-    expect(itemsInput?.text).toContain("Please continue the task");
-    expect(itemsInput?.meta?.attentionContextId).toBe(PRIMARY_CONTEXT_ID);
-
     const secondRound = await internal.collectLoopInputs();
     expect(secondRound).toBeUndefined();
   });
@@ -546,21 +543,20 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const interleaved = await internal.commitInterleavedAttentionItems();
     expect(interleaved?.some((item) => item.source === "chat")).toBe(false);
-    expect(getAttentionProtocolKinds(interleaved)).toEqual(["context", "items"]);
+    expect(getAttentionProtocolKinds(interleaved)).toEqual(["context"]);
     const contextInput = getBootstrapInput(interleaved);
     const itemsInput = getItemsInput(interleaved);
     expect(contextInput).toBeDefined();
-    expect(itemsInput).toBeDefined();
+    expect(itemsInput).toBeUndefined();
     if (!contextInput) {
       return;
     }
 
     expect(contextInput.meta?.attentionContextId).toBe(PRIMARY_CONTEXT_ID);
     expect(contextInput.meta?.chatId).toBe(PRIMARY_ROOM_ID);
-    expect(contextInput.text).toContain("## AttentionContexts.metadata");
+    expect(contextInput.text).toContain("## AttentionContext.focused");
     expect(contextInput.text).not.toContain("## PreAICallContext Summary");
-    expect(contextInput.text).not.toContain("再补充一个条件");
-    expect(itemsInput?.text).toContain("再补充一个条件");
+    expect(contextInput.text).toContain("再补充一个条件");
     expect(await stringifyAttentionQuery(runtime, "再补充一个条件")).toContain("再补充一个条件");
 
     const nextRound = await internal.commitInterleavedAttentionItems();
@@ -598,12 +594,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
   test("Scenario: Given attention originates from a non-default chat channel When the runtime collects attention bootstrap Then replies still route back to that originating channel", async () => {
     const runtime = createRuntime();
-    const internal = runtime as unknown as RuntimeInternal & {
-      buildAttentionContextBootstrapInput: (
-        active: readonly AttentionActiveContextMatch[],
-        selected: readonly AttentionActiveContextMatch[],
-      ) => LoopBusInput | null;
-    };
+    const internal = runtime as unknown as RuntimeInternal;
     await runtime.start();
     try {
       const channel = await runtime.createMessageChannel({
@@ -631,10 +622,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       }).commit;
       await internal.handleCommittedAttentionCommit(contextId, commit, { notifyLoop: false });
 
-      const active = internal.attentionSystem.listActiveContexts();
-      const selected = active.filter((match) => match.contextId === contextId);
-      const attentionInput =
-        selected.length > 0 ? internal.buildAttentionContextBootstrapInput(active, selected) : null;
+      const attentionInput = internal.collectAttentionInputs()?.find((item) => item.meta?.attentionContextId === contextId);
       expect(attentionInput).toBeDefined();
       if (!attentionInput) {
         return;
@@ -765,7 +753,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given a room message exists before the avatar runtime starts When the runtime boots later Then startup hydration loads that unread room message and marks the seat read", async () => {
+  test("Scenario: Given a room message exists before the avatar runtime starts When startup hydration collects focused room work Then the focused AttentionContext includes the unread message while read truth stays deferred", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-startup-replay-"));
     const messageSystem = new MessageControlPlane({
       dbPath: resolveMessageControlDbPath(root),
@@ -819,7 +807,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       const attentionInput = getBootstrapInput(firstRound);
       expect(attentionInput).toBeDefined();
       expect(attentionInput?.meta?.chatId).toBe(room.chatId);
-      expect(attentionInput?.text).not.toContain("hello before jane starts");
+      expect(attentionInput?.text).toContain("hello before jane starts");
       expect(await stringifyAttentionQuery(janeRuntime, "hello before jane starts")).toContain(
         "hello before jane starts",
       );
@@ -905,7 +893,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given one avatar already loaded a room message When another granted avatar starts later Then unread room membership still lets the later avatar consume that same message", async () => {
+  test("Scenario: Given one avatar already loaded a room message When another granted avatar collects the same unread room work Then the later avatar sees the same focused AttentionContext without advancing read truth", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-multi-seat-replay-"));
     const messageSystem = new MessageControlPlane({
       dbPath: resolveMessageControlDbPath(root),
@@ -980,7 +968,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       const attentionInput = getBootstrapInput(jjInputs);
       expect(attentionInput).toBeDefined();
       expect(attentionInput?.meta?.chatId).toBe(room.chatId);
-      expect(attentionInput?.text).not.toContain("hello everyone");
+      expect(attentionInput?.text).toContain("hello everyone");
       expect(await stringifyAttentionQuery(jjRuntime, "hello everyone")).toContain("hello everyone");
 
       const afterJj = messageSystem.getMessage(room.chatId, sent.messageId);
@@ -991,7 +979,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given a real model dispatch reads a shared-room prompt When the peer runtime starts handling the AI call Then message-level read truth advances without any room-progress projection", async () => {
+  test("Scenario: Given a real model dispatch reads a shared-room prompt When the peer runtime starts handling the AI call Then the focused AttentionContext already carries the room message and read truth advances only at model dispatch", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-runtime-reply-"));
     const messageSystem = new MessageControlPlane({
       dbPath: resolveMessageControlDbPath(root),
@@ -1061,7 +1049,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       const jjReply = getBootstrapInput(jjInputs);
       expect(jjReply).toBeDefined();
       expect(jjReply?.meta?.chatId).toBe(roomId);
-      expect(jjReply?.text).not.toContain("hello from jane");
+      expect(jjReply?.text).toContain("hello from jane");
       expect(getActiveItems(jjInternal).some((item) => item.detail?.value.includes("hello from jane"))).toBeTrue();
 
       const afterCollect = sent ? messageSystem.getMessage(roomId, sent.messageId) : undefined;
@@ -1153,7 +1141,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(sent.unreadActorIds).toContain("session:jane");
 
       const interleaved = await janeInternal.commitInterleavedAttentionItems();
-      expect(getAttentionProtocolKinds(interleaved)).toEqual(["context", "items"]);
+      expect(getAttentionProtocolKinds(interleaved)).toEqual(["context"]);
       expect(await stringifyAttentionQuery(janeRuntime, "interleaved requirement while tool is running")).toContain(
         "interleaved requirement while tool is running",
       );
@@ -1866,9 +1854,8 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       return;
     }
 
-    expect(contextInput.text).toContain("## AttentionContexts.metadata");
-    expect(contextInput.text).toContain("source: message");
-    expect(contextInput.text).toContain("source: terminal");
+    expect(contextInput.text).toContain("## AttentionContext.focused");
+    expect(contextInput.text).toContain(PRIMARY_CONTEXT_ID);
     expect(contextInput.text).not.toContain("Systems Descriptions");
     expect(contextInput.text).not.toContain("yaml+background-attention-context");
   });
@@ -2252,7 +2239,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given compact finished with active attention When the next boundary is collected Then context projection refreshes without historical items", async () => {
+  test("Scenario: Given compact finished with active attention When the next boundary is collected Then focused contexts refresh as context without historical items afterward", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal & {
       handleCommittedAttentionCommit: (
@@ -2278,7 +2265,6 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     });
     await internal.handleCommittedAttentionCommit(PRIMARY_CONTEXT_ID, commit, { notifyLoop: false });
     const firstBatch = await internal.collectLoopInputs();
-    expect(getItemsInput(firstBatch)?.text).toContain("Keep this unresolved");
 
     await internal.persistCycle({ wakeSource: "user", inputs: firstBatch ?? [] });
     runtime.pushUserChat("/compact");
@@ -2298,7 +2284,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     (internal as RuntimeInternal & { requestAttentionContextBoundaryRefresh: () => void }).requestAttentionContextBoundaryRefresh();
     const boundaryInputs = internal.collectAttentionInputs();
-    expect(getBootstrapInput(boundaryInputs)?.text).toContain("## AttentionContexts.metadata");
+    expect(getBootstrapInput(boundaryInputs)?.text).toContain("## AttentionContext.focused");
     expect(getBootstrapInput(boundaryInputs)?.text).toContain(PRIMARY_CONTEXT_ID);
     expect(getItemsInput(boundaryInputs)).toBeUndefined();
 
@@ -2325,11 +2311,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     runtime.pushUserChat("Reply with exactly FOCUS-CHAT-FIRST");
 
     const firstRound = await internal.collectLoopInputs();
-    expect(getAttentionProtocolKinds(firstRound)).toEqual(["context", "items"]);
+    expect(getAttentionProtocolKinds(firstRound)).toEqual(["context"]);
     expect([...new Set(firstRound?.map((item) => item.meta?.attentionContextId) ?? [])]).toEqual([PRIMARY_CONTEXT_ID]);
 
     const secondRound = await internal.collectLoopInputs();
-    expect(getAttentionProtocolKinds(secondRound)).toEqual(["context", "items"]);
+    expect(getAttentionProtocolKinds(secondRound)).toEqual(["context"]);
     expect([...new Set(secondRound?.map((item) => item.meta?.attentionContextId) ?? [])]).toEqual([
       "ctx-terminal-iflow",
     ]);
@@ -2539,7 +2525,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.stop();
   });
 
-  test("Scenario: Given a fresh user message While the previous cycle is still running Then attention remains invisible until the next collect batch", async () => {
+  test("Scenario: Given a fresh user message When the next collect batch runs Then the focused AttentionContext carries the message while active attention only appears after collection", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
     internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
@@ -2550,7 +2536,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const firstRound = await internal.collectLoopInputs();
     expect(getBootstrapInput(firstRound)).toBeDefined();
-    expect(getBootstrapInput(firstRound)?.text).not.toContain("What time is it?");
+    expect(getBootstrapInput(firstRound)?.text).toContain("What time is it?");
     expect(getActiveItems(internal)).toHaveLength(1);
     expect(getActiveItems(internal)[0]?.detail?.value).toContain("What time is it?");
   });
@@ -2571,7 +2557,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(scoreKeys.some((key) => key.includes(":"))).toBe(false);
   });
 
-  test("Scenario: Given legacy terminal attention metadata When the runtime serializes attention for the model Then giant fingerprint blobs are compacted into short hash previews", async () => {
+  test("Scenario: Given legacy terminal attention metadata When the runtime serializes a focused terminal context for the model Then giant fingerprint blobs are compacted into short hash previews", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
 
@@ -2607,9 +2593,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       return;
     }
 
-    expect(attentionInput.text).toContain("## AttentionContexts.metadata");
-    expect(attentionInput.text).not.toContain("provenance:");
-    expect(attentionInput.text).not.toContain("```diff");
+    expect(attentionInput.text).toContain("## AttentionContext.focused");
     expect(attentionInput.text).not.toContain("richLines");
     expect(attentionInput.text.length).toBeLessThan(4_000);
   });
@@ -4335,7 +4319,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const skillSystem = internal.ensureRuntimeSkillSystem();
     await internal.handleRuntimeSkillRefreshResult(
-      skillSystem.refresh({ forceBootstrap: true, publishReminders: false }),
+      skillSystem.refresh({ publishReminders: false }),
       { notifyLoop: false },
     );
     await internal.collectLoopInputs();
@@ -4419,8 +4403,8 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await restarted.pause();
     const inputs = await (restarted as unknown as RuntimeInternal).collectLoopInputs();
     const contextInput = getBootstrapInput(inputs);
-    expect(contextInput?.text).toContain("## AttentionContexts.metadata");
-    expect(contextInput?.text).toContain("ctx-skill-system");
+    expect(contextInput?.text).toContain("## AttentionContext.background");
+    expect(contextInput?.text).toContain("ctx-workspace-runtime");
     expect(contextInput?.text).toContain("offline-runtime");
     expect(getItemsInput(inputs)).toBeUndefined();
 
@@ -4438,7 +4422,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     };
     const skillSystem = internal.ensureRuntimeSkillSystem();
     await internal.handleRuntimeSkillRefreshResult(
-      skillSystem.refresh({ forceBootstrap: true, publishReminders: true }),
+      skillSystem.refresh({ publishReminders: true }),
       { notifyLoop: false },
     );
     const skillContent = (body: string): string =>

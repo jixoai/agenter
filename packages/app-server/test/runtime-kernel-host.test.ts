@@ -8,6 +8,7 @@ import type { RuntimeSystemIngressEnvelope, RuntimeSystemKernelAdapter } from ".
 
 const createIngressEnvelope = (): RuntimeSystemIngressEnvelope => ({
   system: "message",
+  boundaryChannel: "world_fact",
   sourceId: "msg:room-alpha/1",
   contextKey: "ctx-room-alpha",
   kind: "room_ingress",

@@ -1043,7 +1043,6 @@ describe("Feature: runtime descriptor CLI", () => {
     const api = await startMockRuntimeApi({
       "/v1/skill/set-config": {
         result: {
-          contextId: "ctx-skill-system",
           skills: [],
           snapshot: "## skills.list",
           changedSkills: [
@@ -1054,10 +1053,7 @@ describe("Feature: runtime descriptor CLI", () => {
               changedFiles: ["/repo/packages/app-server/skills/runtime/ccski.config.json"],
             },
           ],
-          systemCommitId: null,
-          reminderCommitId: "commit-1",
-          reminderCommitIds: ["commit-1"],
-          bootstrapPending: true,
+          publishedCommitIds: ["commit-1"],
           skill: {
             name: "agenter-runtime",
             summary: "runtime shell guidance",

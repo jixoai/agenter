@@ -7,13 +7,7 @@ import { AttentionSystem } from "@agenter/attention-system";
 import { generatePrincipalKeyPair } from "@agenter/principal-crypto";
 import { MessageControlPlane, resolveMessageControlDbPath } from "@agenter/message-system";
 
-import {
-  RUNTIME_SKILL_CONTEXT_ID,
-  RUNTIME_SKILL_CONTEXT_TEMPLATE,
-  RUNTIME_SKILL_DEFAULT_TARGET,
-  RUNTIME_SKILL_SNAPSHOT_TARGET,
-  type RuntimeSkillRefreshResult,
-} from "../src/runtime-skill-system";
+import type { RuntimeSkillRefreshResult } from "../src/runtime-skill-system";
 import { RuntimeKernelHost } from "../src/runtime-kernel-host";
 import { RuntimeMessageKernelAdapter } from "../src/runtime-system-kernel-adapters/message-adapter";
 import { RuntimeSkillKernelAdapter } from "../src/runtime-system-kernel-adapters/skill-adapter";
@@ -21,6 +15,7 @@ import { RuntimeTerminalKernelAdapter } from "../src/runtime-system-kernel-adapt
 import type { RuntimeSystemIngressEnvelope } from "../src/runtime-system-kernel-adapters/types";
 
 const createRoomId = (): string => generatePrincipalKeyPair().principalId;
+const RUNTIME_SKILL_PUBLISH_CONTEXT_ID = "ctx-workspace-runtime";
 
 describe("Feature: runtime-system-kernel-adapters integration", () => {
   test("Scenario: Given message terminal and skill systems When they publish work Then all ingress enters the kernel through the same host contract", async () => {
@@ -30,7 +25,11 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
       commitIngress: async (envelope) => {
         committedEnvelopes.push(envelope);
         attention.getContext(envelope.contextKey) ??
-          attention.createContext({ contextId: envelope.contextKey, owner: envelope.author });
+          attention.createContext({
+            contextId: envelope.contextKey,
+            owner: envelope.author,
+            focusState: envelope.system === "skill" ? "background" : "focused",
+          });
         const action =
           envelope.commitMode === "system" ? attention.commitSystem.bind(attention) : attention.commit.bind(attention);
         const { commit } = action(envelope.contextKey, {
@@ -89,6 +88,7 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
       isUnreadInboundMessage: (message) => message.kind === "text" && message.unreadActorIds.includes(messageActorId),
       buildMessageIngressEnvelope: ({ message, channel }) => ({
         system: "message",
+        boundaryChannel: "world_fact",
         sourceId: `msg:${channel.chatId}/${message.messageId}`,
         contextKey: channel.contextId ?? `ctx-${channel.chatId}`,
         kind: "room_ingress",
@@ -115,6 +115,7 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
       getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
       readTerminalIngress: async () => ({
         system: "terminal",
+        boundaryChannel: "world_fact",
         sourceId: "tty:iflow",
         contextKey: "ctx-terminal-iflow",
         kind: "terminal_snapshot",
@@ -128,6 +129,7 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
       }),
       buildLifecycleIngressEnvelope: (input) => ({
         system: "terminal",
+        boundaryChannel: "scheduler_signal",
         sourceId: `tty:${input.terminalId}`,
         contextKey: input.contextId,
         kind: input.event,
@@ -142,33 +144,7 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
       onTerminalActivitySignal: () => {},
     });
 
-    const ensureSkillContext = () => {
-      if (!attention.getContext(RUNTIME_SKILL_CONTEXT_ID)) {
-        attention.createContext({
-          contextId: RUNTIME_SKILL_CONTEXT_ID,
-          owner: "avatar",
-          focusState: "background",
-          template: RUNTIME_SKILL_CONTEXT_TEMPLATE,
-          slots: {
-            [RUNTIME_SKILL_DEFAULT_TARGET]: "",
-            [RUNTIME_SKILL_SNAPSHOT_TARGET]: "",
-          },
-        });
-      }
-    };
-    const skillAdapter = new RuntimeSkillKernelAdapter({
-      ensureAttentionContext: ensureSkillContext,
-      getBootstrapContext: () => {
-        const context = attention.getContext(RUNTIME_SKILL_CONTEXT_ID);
-        return context
-          ? {
-              contextId: RUNTIME_SKILL_CONTEXT_ID,
-              context: context.getState(),
-              recentCommits: context.listRecentCommits(),
-            }
-          : null;
-      },
-    });
+    const skillAdapter = new RuntimeSkillKernelAdapter();
 
     host.mountAdapter(messageAdapter);
     host.mountAdapter(terminalAdapter);
@@ -178,34 +154,33 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
     expect(await host.drainIngress()).toBe(2);
 
     const skillRefresh: RuntimeSkillRefreshResult = {
-      contextId: RUNTIME_SKILL_CONTEXT_ID,
       skills: [],
       snapshot: "## skills.list",
       changedSkills: [],
-      systemIngress: {
-        system: "skill",
-        sourceId: "skill:runtime:snapshot",
-        contextKey: RUNTIME_SKILL_CONTEXT_ID,
-        kind: "runtime_skill_snapshot",
-        summary: "Refreshed runtime skill snapshot.",
-        content: "## skills.list",
-        format: "text/markdown",
-        score: 0,
-        tags: ["skill", "snapshot"],
-        createdAt: 3,
-        author: "avatar",
-        target: RUNTIME_SKILL_SNAPSHOT_TARGET,
-        commitMode: "system",
-      },
-      reminderIngresses: [],
-      bootstrapPending: true,
+      publishedIngresses: [
+        {
+          system: "skill",
+          boundaryChannel: "capability_projection",
+          sourceId: "skill:runtime:snapshot",
+          contextKey: RUNTIME_SKILL_PUBLISH_CONTEXT_ID,
+          kind: "runtime_skill_snapshot",
+          summary: "Refreshed runtime skill snapshot.",
+          content: "## skills.list",
+          format: "text/markdown",
+          score: 0,
+          tags: ["skill", "snapshot"],
+          createdAt: 3,
+          author: "avatar",
+          commitMode: "system",
+        },
+      ],
     };
     await skillAdapter.applyRefreshResult(skillRefresh, { notifyLoop: false });
 
     expect(committedEnvelopes.map((envelope) => envelope.system)).toEqual(["message", "terminal", "skill"]);
     expect(attention.getContext(room.contextId ?? `ctx-${room.chatId}`)).toBeDefined();
     expect(attention.getContext("ctx-terminal-iflow")).toBeDefined();
-    expect(attention.getContext(RUNTIME_SKILL_CONTEXT_ID)).toBeDefined();
+    expect(attention.getContext(RUNTIME_SKILL_PUBLISH_CONTEXT_ID)?.getState().focusState).toBe("background");
     expect(inbound.messageId).toBeGreaterThan(0);
   });
 });

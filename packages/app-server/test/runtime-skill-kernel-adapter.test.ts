@@ -2,15 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import { AttentionSystem } from "@agenter/attention-system";
 
-import {
-  RUNTIME_SKILL_CONTEXT_ID,
-  RUNTIME_SKILL_CONTEXT_TEMPLATE,
-  RUNTIME_SKILL_DEFAULT_TARGET,
-  RUNTIME_SKILL_SNAPSHOT_TARGET,
-  type RuntimeSkillRefreshResult,
-} from "../src/runtime-skill-system";
+import type { RuntimeSkillRefreshResult } from "../src/runtime-skill-system";
 import { RuntimeSkillKernelAdapter } from "../src/runtime-system-kernel-adapters/skill-adapter";
-import type { RuntimeSystemIngressEnvelope, RuntimeSystemKernelHost } from "../src/runtime-system-kernel-adapters/types";
+import type { RuntimeSystemKernelHost } from "../src/runtime-system-kernel-adapters/types";
+
+const RUNTIME_SKILL_PUBLISH_CONTEXT_ID = "ctx-workspace-runtime";
 
 const createSkillHost = (attention: AttentionSystem): RuntimeSystemKernelHost => ({
   registerCommitRef: (input) => ({ ...input, createdAt: 1 }),
@@ -19,9 +15,12 @@ const createSkillHost = (attention: AttentionSystem): RuntimeSystemKernelHost =>
   queryAttentionDeliveryTimeline: () => ({ dispatches: [], receipts: [] }),
   signalIngress: () => {},
   commitIngress: async (envelope) => {
-    if (!attention.getContext(envelope.contextKey)) {
-      throw new Error(`missing context: ${envelope.contextKey}`);
-    }
+    attention.getContext(envelope.contextKey) ??
+      attention.createContext({
+        contextId: envelope.contextKey,
+        owner: envelope.author,
+        focusState: "background",
+      });
     const action =
       envelope.commitMode === "system" ? attention.commitSystem.bind(attention) : attention.commit.bind(attention);
     const { commit } = action(envelope.contextKey, {
@@ -50,62 +49,36 @@ const createSkillHost = (attention: AttentionSystem): RuntimeSystemKernelHost =>
 });
 
 describe("Feature: runtime-skill-kernel-adapter", () => {
-  test("Scenario: Given a skill refresh result When the adapter applies it Then snapshot and reminders commit through the host API and bootstrap stays consumable", async () => {
+  test("Scenario: Given ordinary published skill ingress When the adapter applies it Then commits flow through the shared host contract", async () => {
     const attention = new AttentionSystem();
-    const ensureAttentionContext = () => {
-      if (!attention.getContext(RUNTIME_SKILL_CONTEXT_ID)) {
-        attention.createContext({
-          contextId: RUNTIME_SKILL_CONTEXT_ID,
-          owner: "avatar",
-          focusState: "background",
-          template: RUNTIME_SKILL_CONTEXT_TEMPLATE,
-          slots: {
-            [RUNTIME_SKILL_DEFAULT_TARGET]: "",
-            [RUNTIME_SKILL_SNAPSHOT_TARGET]: "",
-          },
-        });
-      }
-    };
-    const adapter = new RuntimeSkillKernelAdapter({
-      ensureAttentionContext,
-      getBootstrapContext: () => {
-        const context = attention.getContext(RUNTIME_SKILL_CONTEXT_ID);
-        return context
-          ? {
-              contextId: RUNTIME_SKILL_CONTEXT_ID,
-              context: context.getState(),
-              recentCommits: context.listRecentCommits(),
-            }
-          : null;
-      },
-    });
+    const adapter = new RuntimeSkillKernelAdapter();
     adapter.mount(createSkillHost(attention));
 
     const result: RuntimeSkillRefreshResult = {
-      contextId: RUNTIME_SKILL_CONTEXT_ID,
       skills: [],
       snapshot: "## skills.list",
       changedSkills: [],
-      systemIngress: {
-        system: "skill",
-        sourceId: "skill:runtime:snapshot",
-        contextKey: RUNTIME_SKILL_CONTEXT_ID,
-        kind: "runtime_skill_snapshot",
-        summary: "Refreshed runtime skill snapshot.",
-        content: "## skills.list",
-        format: "text/markdown",
-        score: 0,
-        tags: ["skill", "snapshot"],
-        createdAt: 1,
-        author: "avatar",
-        target: RUNTIME_SKILL_SNAPSHOT_TARGET,
-        commitMode: "system",
-      },
-      reminderIngresses: [
+      publishedIngresses: [
         {
           system: "skill",
+          boundaryChannel: "capability_projection",
+          sourceId: "skill:runtime:snapshot",
+          contextKey: RUNTIME_SKILL_PUBLISH_CONTEXT_ID,
+          kind: "runtime_skill_snapshot",
+          summary: "Refreshed runtime skill snapshot.",
+          content: "## skills.list",
+          format: "text/markdown",
+          score: 0,
+          tags: ["skill", "snapshot"],
+          createdAt: 1,
+          author: "avatar",
+          commitMode: "system",
+        },
+        {
+          system: "skill",
+          boundaryChannel: "world_fact",
           sourceId: "skill:runtime:change:updated:live-sync:1:0",
-          contextKey: RUNTIME_SKILL_CONTEXT_ID,
+          contextKey: RUNTIME_SKILL_PUBLISH_CONTEXT_ID,
           kind: "runtime_skill_change",
           summary: "Updated runtime skill live-sync.",
           content: "",
@@ -114,21 +87,20 @@ describe("Feature: runtime-skill-kernel-adapter", () => {
           tags: ["notification", "skill-change", "updated"],
           createdAt: 1,
           author: "avatar",
-          target: RUNTIME_SKILL_DEFAULT_TARGET,
           changeType: "diff",
         },
       ],
-      bootstrapPending: true,
     };
 
     const applied = await adapter.applyRefreshResult(result, { notifyLoop: true });
-    const bootstrap = adapter.consumeBootstrapContext();
+    const context = attention.getContext(RUNTIME_SKILL_PUBLISH_CONTEXT_ID);
 
-    expect(applied.systemCommitId).not.toBeNull();
-    expect(applied.reminderCommitIds).toHaveLength(1);
-    expect(applied.bootstrapPending).toBeTrue();
-    expect(bootstrap?.contextId).toBe(RUNTIME_SKILL_CONTEXT_ID);
-    expect(bootstrap?.context.content).toContain("## skills.list");
-    expect(adapter.consumeBootstrapContext()).toBeNull();
+    expect(applied.commitIds).toHaveLength(2);
+    expect(context).toBeDefined();
+    expect(context?.getState().focusState).toBe("background");
+    expect(context?.listRecentCommits().map((commit) => commit.summary)).toEqual([
+      "Refreshed runtime skill snapshot.",
+      "Updated runtime skill live-sync.",
+    ]);
   });
 });

@@ -4,7 +4,6 @@ import type { RuntimeSystemIngressEnvelope } from "./runtime-system-kernel-adapt
 export const buildRuntimeSkillSnapshotIngress = (input: {
   owner: string;
   contextId: string;
-  target: string;
   snapshot: string;
   createdAt: number;
 }): RuntimeSystemIngressEnvelope => ({
@@ -20,14 +19,12 @@ export const buildRuntimeSkillSnapshotIngress = (input: {
   tags: ["skill", "snapshot"],
   createdAt: input.createdAt,
   author: input.owner,
-  target: input.target,
   commitMode: "system",
 });
 
 export const buildRuntimeSkillChangeIngresses = (input: {
   owner: string;
   contextId: string;
-  target: string;
   scoreKey: string;
   changes: RuntimeSkillChange[];
   createdAt: number;
@@ -45,7 +42,6 @@ export const buildRuntimeSkillChangeIngresses = (input: {
     tags: ["notification", "skill-change", change.kind],
     createdAt: input.createdAt,
     author: input.owner,
-    target: input.target,
     commitMode: "commit" as const,
     changeType: "diff" as const,
     meta: {

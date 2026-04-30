@@ -563,14 +563,10 @@ const buildMockSkillView = (name: string) => ({
 });
 
 const buildMockSkillMutation = () => ({
-  contextId: "mock-skill-context",
   skills: [],
   snapshot: "",
   changedSkills: [],
-  systemCommitId: null,
-  reminderCommitId: null,
-  reminderCommitIds: [],
-  bootstrapPending: false,
+  publishedCommitIds: [],
 });
 
 const buildMockTerminalConfig = (terminalId: string) => ({

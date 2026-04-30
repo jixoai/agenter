@@ -2,9 +2,6 @@ import { RuntimeSkillBaselineStore } from "./runtime-skill-baseline-store";
 import type { RuntimeSkillConfig } from "./runtime-skill-config";
 import { writeRuntimeSkillConfigFile } from "./runtime-skill-config";
 import {
-  RUNTIME_SKILL_CONTEXT_ID,
-  RUNTIME_SKILL_DEFAULT_TARGET,
-  RUNTIME_SKILL_SNAPSHOT_TARGET,
   type RuntimeSkillConfigInfo,
   type RuntimeSkillInfo,
   type RuntimeSkillRefreshResult,
@@ -38,12 +35,6 @@ import {
 import type { RuntimeSystemIngressEnvelope } from "./runtime-system-kernel-adapters/types";
 import { resolveWorkspaceGrantModeFromAbsolutePath } from "./workspace-system";
 
-export {
-  RUNTIME_SKILL_CONTEXT_ID,
-  RUNTIME_SKILL_CONTEXT_TEMPLATE,
-  RUNTIME_SKILL_DEFAULT_TARGET,
-  RUNTIME_SKILL_SNAPSHOT_TARGET,
-} from "./runtime-skill-contract";
 export type {
   RuntimeSkillConfigInfo,
   RuntimeSkillInfo,
@@ -56,11 +47,11 @@ export type {
 } from "./runtime-skill-contract";
 
 const RUNTIME_SKILL_REMINDER_SCORE_KEY = "runtime-skill-system";
+const RUNTIME_SKILL_PUBLISH_CONTEXT_ID = "ctx-workspace-runtime";
 
 export class RuntimeSkillSystem {
   private skills: RuntimeSkillRecord[] = [];
   private trackedSkills = new Map<string, RuntimeSkillTruthState>();
-  private pendingBootstrap = false;
   private initialized = false;
   private publishedSnapshot = "";
   private readonly baselineStore: RuntimeSkillBaselineStore;
@@ -74,7 +65,7 @@ export class RuntimeSkillSystem {
       unrefTimers: input.unrefTimers,
       onIdleFlush: async () => {
         const result = this.flushPendingChanges();
-        if (!result || (result.systemIngress === null && result.reminderIngresses.length === 0)) {
+        if (!result || result.publishedIngresses.length === 0) {
           return;
         }
         await input.onIdleFlush?.(result);
@@ -155,12 +146,10 @@ export class RuntimeSkillSystem {
 
   refresh(
     input: {
-      forceBootstrap?: boolean;
       publishReminders?: boolean;
     } = {},
   ): RuntimeSkillRefreshResult {
     return this.refreshInternal({
-      forceBootstrap: input.forceBootstrap === true,
       publishReminders: input.publishReminders === true,
     });
   }
@@ -172,7 +161,6 @@ export class RuntimeSkillSystem {
     this.watchService.prepareFlush();
     return this.refresh({
       publishReminders: true,
-      forceBootstrap: false,
     });
   }
 
@@ -191,7 +179,6 @@ export class RuntimeSkillSystem {
     });
     const refreshed = this.refresh({
       publishReminders: true,
-      forceBootstrap: false,
     });
     return {
       ...refreshed,
@@ -221,7 +208,6 @@ export class RuntimeSkillSystem {
     });
     const refreshed = this.refresh({
       publishReminders: true,
-      forceBootstrap: false,
     });
     if (!removed.removed) {
       return {
@@ -263,7 +249,6 @@ export class RuntimeSkillSystem {
     const configPath = writeRuntimeSkillConfigFile(skill, input.config);
     const refreshed = this.refresh({
       publishReminders: true,
-      forceBootstrap: false,
     });
     return {
       ...refreshed,
@@ -288,7 +273,7 @@ export class RuntimeSkillSystem {
     this.syncWatchers(tracked);
   }
 
-  private refreshInternal(input: { forceBootstrap: boolean; publishReminders: boolean }): RuntimeSkillRefreshResult {
+  private refreshInternal(input: { publishReminders: boolean }): RuntimeSkillRefreshResult {
     const previousTracked = this.trackedSkills;
     const skills = listRuntimeSkills(this.input);
     const tracked = this.buildTrackedSkills(skills);
@@ -299,46 +284,41 @@ export class RuntimeSkillSystem {
     this.initialized = true;
     this.watchService.clearPendingChanges();
 
-    let systemIngress: RuntimeSystemIngressEnvelope | null = null;
+    const publishedIngresses: RuntimeSystemIngressEnvelope[] = [];
     if (this.publishedSnapshot !== snapshot) {
-      systemIngress = buildRuntimeSkillSnapshotIngress({
+      publishedIngresses.push(
+        buildRuntimeSkillSnapshotIngress({
         owner: this.input.owner,
-        contextId: RUNTIME_SKILL_CONTEXT_ID,
-        target: RUNTIME_SKILL_SNAPSHOT_TARGET,
+        contextId: RUNTIME_SKILL_PUBLISH_CONTEXT_ID,
         snapshot,
         createdAt: Date.now(),
-      });
+      }),
+      );
       this.publishedSnapshot = snapshot;
-      this.pendingBootstrap = true;
-    } else if (input.forceBootstrap) {
-      this.pendingBootstrap = true;
     }
 
     const baselineTracked = this.baselineStore.resolveChangeBaseline(previousTracked, input.publishReminders);
     const changedSkills = baselineTracked ? diffRuntimeSkillSnapshots(baselineTracked, tracked) : [];
-    const reminderIngresses = buildRuntimeSkillChangeIngresses({
-      owner: this.input.owner,
-      contextId: RUNTIME_SKILL_CONTEXT_ID,
-      target: RUNTIME_SKILL_DEFAULT_TARGET,
-      scoreKey: RUNTIME_SKILL_REMINDER_SCORE_KEY,
-      changes: changedSkills,
-      createdAt: Date.now(),
-    });
-    if (reminderIngresses.length > 0) {
-      this.pendingBootstrap = true;
+    if (changedSkills.length > 0) {
+      publishedIngresses.push(
+        ...buildRuntimeSkillChangeIngresses({
+          owner: this.input.owner,
+          contextId: RUNTIME_SKILL_PUBLISH_CONTEXT_ID,
+          scoreKey: RUNTIME_SKILL_REMINDER_SCORE_KEY,
+          changes: changedSkills,
+          createdAt: Date.now(),
+        }),
+      );
     }
 
     this.syncWatchers(tracked);
     this.baselineStore.write(tracked);
 
     return {
-      contextId: RUNTIME_SKILL_CONTEXT_ID,
       skills,
       snapshot,
       changedSkills,
-      systemIngress,
-      reminderIngresses,
-      bootstrapPending: this.pendingBootstrap,
+      publishedIngresses,
     };
   }
 

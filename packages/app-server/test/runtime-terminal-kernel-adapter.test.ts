@@ -8,6 +8,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
     const signals: string[] = [];
     const envelope: RuntimeSystemIngressEnvelope = {
       system: "terminal",
+      boundaryChannel: "world_fact",
       sourceId: "tty:iflow",
       contextKey: "ctx-terminal-iflow",
       kind: "terminal_snapshot",
@@ -28,6 +29,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
       readTerminalIngress: async () => envelope,
       buildLifecycleIngressEnvelope: (input) => ({
         system: "terminal",
+        boundaryChannel: "scheduler_signal",
         sourceId: `tty:${input.terminalId}`,
         contextKey: input.contextId,
         kind: input.event,
@@ -63,6 +65,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
       readTerminalIngress: async () => null,
       buildLifecycleIngressEnvelope: (input) => ({
         system: "terminal",
+        boundaryChannel: "scheduler_signal",
         sourceId: `tty:${input.terminalId}`,
         contextKey: input.contextId,
         kind: input.event,

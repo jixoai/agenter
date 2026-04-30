@@ -1,7 +1,7 @@
 ## 1. Platform Boundary Law
 
 - [x] 1.1 Add typed runtime boundary primitives for `WorldFact`, `CapabilityProjection`, `SchedulerSignal`, `AgentAction`, and `EffectLedger` without using `any`, `as any`, or `@ts-nocheck`
-- [ ] 1.2 Add adapter-facing helpers that require every runtime-system emission to declare its boundary channel before reaching the kernel host
+- [x] 1.2 Add adapter-facing helpers that require every runtime-system emission to declare its boundary channel before reaching the kernel host
 - [ ] 1.3 Add development/test assertions or guards that reject ambiguous adapter emissions in Message, Terminal, Skill, and future-system paths
 - [ ] 1.4 Add durable effect-ledger records that can trace explicit actions to durable external effects such as room messages, including stable action/effect identity, actor identity, target identity, timestamp, and cycle/model-call refs when available
 - [ ] 1.5 Ensure workspace/root shell privilege remains intact and is documented as outside this cleanup scope
@@ -19,17 +19,17 @@
 
 ## 3. Attention Runtime Kernel And Prompt Cleanup
 
-- [ ] 3.1 Add `attentionContextSnapshot` tracking for AI-visible context views and clear it whenever `ai-messages` are cleared or compacted away
-- [ ] 3.2 Update attention bootstrap/context serialization so scheduler metadata stays separate from model-visible source facts
+- [x] 3.1 Add `attentionContextSnapshot` tracking for AI-visible context views and clear it whenever `ai-messages` are cleared or compacted away
+- [x] 3.2 Update attention bootstrap/context serialization so scheduler metadata stays separate from model-visible source facts
 - [x] 3.3 Remove removed chat obligation fields from `packages/app-server/src/agenter-ai.ts`, compact/history enrichment, active attention prompt-window messages, and any replay path
 - [ ] 3.4 Keep focus and score data available only as scheduler/debug/routing metadata, not as source-authored task instructions or settlement conditions
-- [ ] 3.5 Seed `AttentionContext` into `ai-messages` by focus state: focused full, background minimal summary, muted none
-- [ ] 3.6 Restrict `CommitAttentionItems` injection to focused contexts only
-- [ ] 3.7 Implement per-focused-context injection selection by comparing `AttentionContextUserRoleMessageLength * 1.5` against `AttentionItemsUserRoleMessageLength`
-- [ ] 3.8 Allow final model input to mix `AttentionContext` messages and `AttentionItems` messages from different contexts based on those per-context decisions
-- [ ] 3.9 Treat `Notify` attention items as serialized attention-item exceptions that bypass the commit cost comparison while still obeying normal context-seeding law
-- [ ] 3.10 Define the successful-injection boundary as "response SSE has started and the first returned SSE event is non-error" for advancing `attentionContextSnapshot` and clearing staged items that were actually injected, and do not retroactively roll back after later stream interruption
-- [ ] 3.11 Add keyed staged attention-item map semantics for interleaved injection, including keyed upsert, scoped replacement, scoped reset, removal, and retry-safe retention until successful injection
+- [x] 3.5 Seed `AttentionContext` into `ai-messages` by focus state: focused full, background minimal summary, muted none
+- [x] 3.6 Restrict `CommitAttentionItems` injection to focused contexts only
+- [x] 3.7 Implement per-focused-context injection selection by comparing `AttentionContextUserRoleMessageLength * 1.5` against `AttentionItemsUserRoleMessageLength`
+- [x] 3.8 Allow final model input to mix `AttentionContext` messages and `AttentionItems` messages from different contexts based on those per-context decisions
+- [x] 3.9 Treat `Notify` attention items as serialized attention-item exceptions that bypass the commit cost comparison while still obeying normal context-seeding law
+- [x] 3.10 Define the successful-injection boundary as "response SSE has started and the first returned SSE event is non-error" for advancing `attentionContextSnapshot` and clearing staged items that were actually injected, and do not retroactively roll back after later stream interruption
+- [x] 3.11 Add keyed staged attention-item map semantics for interleaved injection, including keyed upsert, scoped replacement, scoped reset, removal, and retry-safe retention until successful injection
 - [ ] 3.12 Add an explicit way for the model to fetch full context details through CLI/API instead of relying on bootstrap-inlined social or skill projections
 - [ ] 3.13 Defer or guard any diff-vs-full context optimization so first-wave acceptance does not depend on patch-style context injection
 - [ ] 3.14 Add configurable notify quota enforcement with default period quotas for `muted` and `background`
@@ -41,14 +41,14 @@
 - [x] 4.1 Reclassify `terminal_focus` as a scheduler signal or UI invalidation instead of model-visible attention task content
 - [x] 4.2 Reclassify `terminal_unfocus` as a scheduler signal or UI invalidation instead of model-visible attention task content
 - [x] 4.3 Reclassify `terminal_idle_ready` as a scheduler signal that can wake/rank work without injecting `ready for your input` task text
-- [ ] 4.4 Preserve terminal snapshots, diffs, await evidence, process facts, and explicit command results as objective model-visible terminal facts
+- [x] 4.4 Preserve terminal snapshots, diffs, await evidence, process facts, and explicit command results as objective model-visible terminal facts
 - [x] 4.5 Update terminal adapter tests and fixtures so lifecycle coordination and terminal observations use different channels
 
 ## 5. Skill System And Built-In Catalog
 
-- [ ] 5.1 Change runtime skill refresh so it maintains a queryable skill index by default without creating/selecting `ctx-skill-system` or any dedicated skill-only task context
-- [ ] 5.2 Keep `skill list`, `skill search`, `skill info`, and `skill get-config` as explicit projection/query surfaces that enter the decision surface through tool results
-- [ ] 5.3 Define and implement the policy for when skill changes publish ordinary objective attention items, including changed skill name, root kind, and changed files, without synthesizing a dedicated skill context and using the keyed interleaved attention-item staging path
+- [x] 5.1 Change runtime skill refresh so it maintains a queryable skill index by default without creating/selecting `ctx-skill-system` or any dedicated skill-only task context
+- [x] 5.2 Keep `skill list`, `skill search`, `skill info`, and `skill get-config` as explicit projection/query surfaces that enter the decision surface through tool results
+- [x] 5.3 Define and implement the policy for when skill changes publish ordinary objective attention items, including changed skill name, root kind, and changed files, without synthesizing a dedicated skill context and using the keyed interleaved attention-item staging path
 - [ ] 5.4 Ensure irrelevant skill watcher dirtiness does not preempt active room or terminal work by default
 - [ ] 5.5 Update package-owned built-in skill source files to remove platform-authored social obligation language and auto-ACK guidance while preserving optional etiquette and recommended playbooks as non-binding guidance
 - [ ] 5.6 Regenerate `packages/app-server/src/generated/runtime-skill-catalog.generated.ts` from the corrected skill sources
@@ -72,17 +72,17 @@
 - [x] 7.5 Add BDD tests proving cross-room relay sends only the explicit target-room message and no origin fallback message
 - [x] 7.6 Add BDD tests proving attention commits alone do not create room transcript rows
 - [x] 7.7 Add BDD tests proving message participants, presence, and visible rooms are queryable projections rather than eager message-envelope fields
-- [ ] 7.8 Add BDD tests proving attention bootstrap/context seeding omits removed chat obligation labels and keeps scheduler metadata separate
-- [ ] 7.9 Add BDD tests proving focused contexts seed full views, background contexts seed minimal views, and muted contexts do not auto-seed
-- [ ] 7.10 Add BDD tests proving only focused contexts can serialize `CommitAttentionItems`
+- [x] 7.8 Add BDD tests proving attention bootstrap/context seeding omits removed chat obligation labels and keeps scheduler metadata separate
+- [x] 7.9 Add BDD tests proving focused contexts seed full views, background contexts seed minimal views, and muted contexts do not auto-seed
+- [x] 7.10 Add BDD tests proving only focused contexts can serialize `CommitAttentionItems`
 - [ ] 7.11 Add BDD tests proving per-context cost comparison can choose items for one context and context for another in the same model input
-- [ ] 7.12 Add BDD tests proving `Notify` attention items always serialize as item payloads while still obeying the normal focus-aware seeding law for any accompanying context material
+- [x] 7.12 Add BDD tests proving `Notify` attention items always serialize as item payloads while still obeying the normal focus-aware seeding law for any accompanying context material
 - [ ] 7.13 Add BDD tests proving muted notify is throttled to one send per 12 hours by default and background notify is throttled to one send per 0.5 hours by default
 - [ ] 7.14 Add BDD tests proving notify quota queries can return effective config, current remaining state, send-eligibility, and historical notify records, with muted/background defaults computed from rolling time windows
-- [ ] 7.15 Add BDD tests proving failed requests do not advance `attentionContextSnapshot` or clear staged keyed attention items
-- [ ] 7.16 Add BDD tests proving successful requests advance injected snapshots only after response SSE starts with a non-error first event, clear only the staged keys actually committed by that request, and do not retroactively roll back after later stream interruption
+- [x] 7.15 Add BDD tests proving failed requests do not advance `attentionContextSnapshot` or clear staged keyed attention items
+- [x] 7.16 Add BDD tests proving successful requests advance injected snapshots only after response SSE starts with a non-error first event, clear only the staged keys actually committed by that request, and do not retroactively roll back after later stream interruption
 - [x] 7.17 Add BDD tests proving terminal focus/unfocus/idle-ready are scheduler signals and not task facts
-- [ ] 7.18 Add BDD tests proving skill refresh updates the skill index and, when published, emits only ordinary objective attention items without creating a dedicated skill task context by default
+- [x] 7.18 Add BDD tests proving skill refresh updates the skill index and, when published, emits only ordinary objective attention items without creating a dedicated skill task context by default
 - [ ] 7.19 Add BDD tests proving generic watches re-evaluate predicates, emit reminders when still relevant, stay silent when satisfied, and never auto-send messages
 - [ ] 7.20 Add effect-ledger tests proving explicit message actions are causally linked to resulting room rows
 - [ ] 7.21 Add BDD tests proving the cost comparison uses final serialized user-role text length rather than raw object size or provider-token estimates
@@ -121,9 +121,9 @@
 ## 11. Verification Commands
 
 - [ ] 11.1 Run targeted app-server tests for message ingress, attention bootstrap, terminal adapter, skill system, catalog generation, effect ledger, and watches
-- [ ] 11.2 Run `bun run typecheck`
+- [x] 11.2 Run `bun run typecheck`
 - [ ] 11.3 Run `bun run test`
-- [ ] 11.4 Run any package-specific test commands needed by changed packages, including WebUI unit/DOM tests if frontend surfaces changed
+- [x] 11.4 Run any package-specific test commands needed by changed packages, including WebUI unit/DOM tests if frontend surfaces changed
 - [ ] 11.5 Run a repository search proving removed pollution terms do not remain in runtime prompt/catalog contracts except in archived specs, tests asserting absence, or migration notes
 - [ ] 11.6 Run `openspec validate purify-runtime-system-boundaries --strict` or the repository's equivalent OpenSpec validation command
 

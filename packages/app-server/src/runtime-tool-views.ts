@@ -303,7 +303,6 @@ export interface RuntimeSkillConfigInfoView {
 }
 
 export interface RuntimeSkillMutationView {
-  contextId: string;
   skills: RuntimeSkillView[];
   snapshot: string;
   changedSkills: Array<{
@@ -312,10 +311,7 @@ export interface RuntimeSkillMutationView {
     rootKind: RuntimeSkillRecord["rootKind"] | null;
     changedFiles: string[];
   }>;
-  systemCommitId: string | null;
-  reminderCommitId: string | null;
-  reminderCommitIds: string[];
-  bootstrapPending: boolean;
+  publishedCommitIds: string[];
   created?: boolean;
   removed?: boolean;
   removedPath?: string | null;
@@ -513,9 +509,7 @@ export const projectRuntimeSkillConfigInfo = (input: RuntimeSkillConfigInfo): Ru
 
 export const projectRuntimeSkillMutation = (
   input: RuntimeSkillRefreshResult & {
-    systemCommitId: string | null;
-    reminderCommitId: string | null;
-    reminderCommitIds: string[];
+    commitIds: string[];
     created?: boolean;
     removed?: boolean;
     removedPath?: string | null;
@@ -523,7 +517,6 @@ export const projectRuntimeSkillMutation = (
     skill?: RuntimeSkillRecord;
   },
 ): RuntimeSkillMutationView => ({
-  contextId: input.contextId,
   skills: input.skills.map(projectRuntimeSkill),
   snapshot: input.snapshot,
   changedSkills: input.changedSkills.map((change) => ({
@@ -532,10 +525,7 @@ export const projectRuntimeSkillMutation = (
     rootKind: change.rootKind,
     changedFiles: [...change.changedFiles],
   })),
-  systemCommitId: input.systemCommitId,
-  reminderCommitId: input.reminderCommitId,
-  reminderCommitIds: input.reminderCommitIds,
-  bootstrapPending: input.bootstrapPending,
+  publishedCommitIds: [...input.commitIds],
   created: input.created,
   removed: input.removed,
   removedPath: input.removedPath,

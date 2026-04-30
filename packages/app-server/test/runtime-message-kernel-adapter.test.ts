@@ -43,6 +43,7 @@ describe("Feature: runtime-message-kernel-adapter", () => {
       isUnreadInboundMessage: (message) => message.kind === "text" && message.unreadActorIds.includes(messageActorId),
       buildMessageIngressEnvelope: ({ message, channel }) => ({
         system: "message",
+        boundaryChannel: "world_fact",
         sourceId: `msg:${channel.chatId}/${message.messageId}`,
         contextKey: channel.contextId ?? `ctx-${channel.chatId}`,
         kind: "room_ingress",
@@ -66,6 +67,7 @@ describe("Feature: runtime-message-kernel-adapter", () => {
     expect(envelopes).toEqual([
       {
         system: "message",
+        boundaryChannel: "world_fact",
         sourceId: `msg:${room.chatId}/${inbound.messageId}`,
         contextKey: room.contextId ?? `ctx-${room.chatId}`,
         kind: "room_ingress",
@@ -107,6 +109,7 @@ describe("Feature: runtime-message-kernel-adapter", () => {
     });
     const envelope: RuntimeSystemIngressEnvelope = {
       system: "message",
+      boundaryChannel: "scheduler_signal",
       sourceId: "msg:room-alpha",
       contextKey: "ctx-room-alpha",
       kind: "channel_focus",

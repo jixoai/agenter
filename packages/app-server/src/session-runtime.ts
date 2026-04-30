@@ -153,7 +153,12 @@ import { listMessageSeatEntries, summarizeMessageChannelPresence } from "./messa
 import { MessageFollowUpReminderScheduler, type MessageFollowUpReminder } from "./message-follow-up-reminders";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
-import { ModelClient, type AssistantDeliveryEvent, type AssistantStreamUpdate } from "./model-client";
+import {
+  ModelClient,
+  type AssistantDeliveryEvent,
+  type AssistantStreamUpdate,
+  type TextOnlyModelMessage,
+} from "./model-client";
 import { FilePromptStore } from "./prompt-store";
 import { buildProviderSnapshot, normalizeTokenUsage, readProviderSnapshotFromRequestBody } from "./provider-snapshot";
 import { createRuntimeShellCommands } from "./runtime-cli";
@@ -171,10 +176,6 @@ import {
   buildSharedTerminalEnvironment,
 } from "./runtime-shell-bin";
 import {
-  RUNTIME_SKILL_CONTEXT_ID,
-  RUNTIME_SKILL_CONTEXT_TEMPLATE,
-  RUNTIME_SKILL_DEFAULT_TARGET,
-  RUNTIME_SKILL_SNAPSHOT_TARGET,
   RuntimeSkillSystem,
 } from "./runtime-skill-system";
 import { listRuntimeSkillMountRoots } from "./runtime-skills";
@@ -315,9 +316,55 @@ type CompactCycleTrigger =
   | "timeout"
   | "error";
 type AttentionInputProtocolKind = "context" | "items";
+type AttentionVisibleSnapshotKind = "context" | "items";
 interface AttentionCommitRefEnvelope {
   contextId: string;
   commitId: string;
+}
+
+interface AttentionVisibleSnapshot {
+  contextId: string;
+  kind: AttentionVisibleSnapshotKind;
+  text: string;
+  headCommitId: string | null;
+  updatedAt: string;
+  seededFocusState?: Exclude<AttentionFocusState, "muted">;
+}
+
+interface StagedAttentionItemEntry {
+  key: string;
+  commitId: string;
+  sourceId: string;
+  ingressType: AttentionCommit["ingressType"];
+  isNotify: boolean;
+  updatedAt: number;
+}
+
+interface PendingAttentionMessagePlan {
+  messageId: string;
+  contextId: string;
+  kind: AttentionVisibleSnapshotKind;
+  text: string;
+  headCommitId: string | null;
+  updatedAt: string;
+  seededFocusState?: Exclude<AttentionFocusState, "muted">;
+  clearStageKeys: string[];
+  attentionCommitRefs: AttentionCommitRefEnvelope[];
+  clearsBoundaryRefresh: boolean;
+  notifyOnly?: boolean;
+}
+
+const mergeAttentionPlanCommitRefs = (
+  contextPlan: PendingAttentionMessagePlan,
+  itemsPlan: PendingAttentionMessagePlan,
+): PendingAttentionMessagePlan => ({
+  ...contextPlan,
+  clearStageKeys: [...itemsPlan.clearStageKeys],
+  attentionCommitRefs: [...itemsPlan.attentionCommitRefs],
+});
+
+interface AttentionCollectedInputMeta {
+  attentionMessagePlanId?: string;
 }
 
 interface PendingCompactRequest {
@@ -559,6 +606,19 @@ const truncateAttentionDetail = (value: string, maxChars: number): string => {
   }
   const remaining = value.length - maxChars;
   return `${value.slice(0, maxChars)}\n... [truncated ${remaining} chars]`;
+};
+
+const truncateAttentionDetailPreview = (value: string, maxChars: number): string => {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  const headLength = Math.max(1, Math.floor(maxChars * 0.65));
+  const tailLength = Math.max(1, maxChars - headLength);
+  if (headLength + tailLength >= value.length) {
+    return value;
+  }
+  const remaining = value.length - headLength - tailLength;
+  return `${value.slice(0, headLength)}\n... [truncated ${remaining} chars] ...\n${value.slice(-tailLength)}`;
 };
 
 const buildTerminalSnapshotPayload = (
@@ -852,7 +912,7 @@ const projectBackgroundAttentionContextForModel = (match: AttentionActiveContext
   updatedAt: match.context.updatedAt,
   headCommitId: match.context.headCommitId,
   scoreMap: match.context.scoreMap,
-  contentPreview: truncateAttentionDetail(match.context.content, 280),
+  contentPreview: truncateAttentionDetailPreview(match.context.content, 280),
   recentCommitSummaries: match.recentCommits.slice(-3).map((commit) => ({
     commitId: commit.commitId,
     summary: commit.summary,
@@ -904,6 +964,9 @@ const serializeFocusedAttentionContexts = (matches: readonly AttentionActiveCont
     toYaml(collapseSingleAttentionValue(matches.map((match) => projectAttentionActiveContextForPrompt(match)))),
   );
 
+const serializeFocusedAttentionContextBody = (match: AttentionActiveContextMatch): string =>
+  ["## AttentionContext.focused", "", serializeFocusedAttentionContext(match)].join("\n");
+
 const serializeBackgroundAttentionContext = (match: AttentionActiveContextMatch): string =>
   mdFence("yaml+background-attention-context", toYaml(projectBackgroundAttentionContextForModel(match)));
 
@@ -912,6 +975,9 @@ const serializeBackgroundAttentionContexts = (matches: readonly AttentionActiveC
     "yaml+background-attention-context",
     toYaml(collapseSingleAttentionValue(matches.map((match) => projectBackgroundAttentionContextForModel(match)))),
   );
+
+const serializeBackgroundAttentionContextBody = (match: AttentionActiveContextMatch): string =>
+  ["## AttentionContext.background", "", serializeBackgroundAttentionContext(match)].join("\n");
 
 const serializeMutedAttentionContextList = (matches: readonly AttentionActiveContextMatch[]): string =>
   mdFence(
@@ -924,6 +990,19 @@ const serializeMutedAttentionContextList = (matches: readonly AttentionActiveCon
       })),
     ),
   );
+
+const modelMessageContentToText = (content: TextOnlyModelMessage["content"]): string => {
+  if (content === null || content === undefined) {
+    return "";
+  }
+  if (typeof content === "string") {
+    return content;
+  }
+  return content
+    .map((part) => (part.type === "text" ? part.content : ""))
+    .filter((part) => part.length > 0)
+    .join("\n");
+};
 
 const yamlScalar = (input: unknown): string => {
   if (input === null || input === undefined) {
@@ -1598,6 +1677,7 @@ export class SessionRuntime {
   private runtime: AgentRuntime | null = null;
   private started = false;
   private abortWakeRequested = false;
+  private loopSuspension: "fresh" | "active" | "paused" | "stopped" = "fresh";
   private loopPhase: LoopBusPhase = "waiting_commits";
   private stage: TaskStage = "idle";
   private readonly taskHeartbeatIntervalMs = 30_000;
@@ -1668,6 +1748,10 @@ export class SessionRuntime {
   private attentionDebtBackoffMs = ATTENTION_DEBT_INITIAL_BACKOFF_MS;
   private attentionDebtNextWakeAt: number | null = null;
   private attentionForceCollect = false;
+  private readonly attentionContextSnapshot = new Map<string, AttentionVisibleSnapshot>();
+  private readonly stagedAttentionItemsByContext = new Map<string, Map<string, StagedAttentionItemEntry>>();
+  private readonly pendingAttentionMessagePlans = new Map<string, PendingAttentionMessagePlan>();
+  private attentionBoundaryRefreshPending = false;
   private readonly dirtyAttentionContextIds = new Set<string>();
   private readonly dirtyAttentionCommitIdsByContext = new Map<string, Set<string>>();
   private readonly dirtyAttentionContextOrder = new Map<string, number>();
@@ -1791,12 +1875,7 @@ export class SessionRuntime {
         this.notifyInput("terminal");
       },
     });
-    this.skillKernelAdapter = new RuntimeSkillKernelAdapter({
-      ensureAttentionContext: () => {
-        this.ensureRuntimeSkillAttentionContext();
-      },
-      getBootstrapContext: () => this.getAttentionContextMatch(RUNTIME_SKILL_CONTEXT_ID),
-    });
+    this.skillKernelAdapter = new RuntimeSkillKernelAdapter();
     this.runtimeKernelHost.mountAdapter(this.messageKernelAdapter);
     this.runtimeKernelHost.mountAdapter(this.terminalKernelAdapter);
     this.runtimeKernelHost.mountAdapter(this.skillKernelAdapter);
@@ -1856,40 +1935,6 @@ export class SessionRuntime {
       },
     });
     return this.runtimeSkillSystem;
-  }
-
-  private ensureRuntimeSkillAttentionContext(): void {
-    const existing = this.attentionSystem.getContext(RUNTIME_SKILL_CONTEXT_ID);
-    const normalizedTemplate = normalizeAttentionContextTemplate(RUNTIME_SKILL_CONTEXT_TEMPLATE);
-    if (existing) {
-      const state = existing.getState();
-      if (normalizeAttentionContextTemplate(state.template) === normalizedTemplate) {
-        return;
-      }
-      const preservedDefault = state.slots?.[RUNTIME_SKILL_DEFAULT_TARGET] ?? state.content ?? "";
-      this.attentionSystem.removeContext(RUNTIME_SKILL_CONTEXT_ID);
-      this.attentionSystem.createContext({
-        contextId: RUNTIME_SKILL_CONTEXT_ID,
-        owner: this.getAvatarName(),
-        focusState: "background",
-        template: RUNTIME_SKILL_CONTEXT_TEMPLATE,
-        slots: {
-          [RUNTIME_SKILL_DEFAULT_TARGET]: preservedDefault,
-          [RUNTIME_SKILL_SNAPSHOT_TARGET]: "",
-        },
-      });
-      return;
-    }
-    this.attentionSystem.createContext({
-      contextId: RUNTIME_SKILL_CONTEXT_ID,
-      owner: this.getAvatarName(),
-      focusState: "background",
-      template: RUNTIME_SKILL_CONTEXT_TEMPLATE,
-      slots: {
-        [RUNTIME_SKILL_DEFAULT_TARGET]: "",
-        [RUNTIME_SKILL_SNAPSHOT_TARGET]: "",
-      },
-    });
   }
 
   private getAttentionContextMatch(contextId: string): AttentionActiveContextMatch | null {
@@ -2065,10 +2110,15 @@ export class SessionRuntime {
     if (before.focusState === focusState) {
       return;
     }
+    const snapshot = this.attentionContextSnapshot.get(contextId);
     this.attentionSystem.setContextFocusState(contextId, focusState);
     this.attentionFactsVersion += 1;
     await this.persistAttentionSystem();
     this.emitAttentionState();
+    if (focusState === "focused" && snapshot?.seededFocusState === "background") {
+      this.markAttentionContextDirty(contextId);
+      this.notifyInput("attention");
+    }
     if (focusState !== "muted" && this.attentionSystem.listPushCommits(contextId).length > 0) {
       this.markAttentionContextDirty(contextId);
       this.notifyInput("attention");
@@ -2583,6 +2633,7 @@ export class SessionRuntime {
     });
     return {
       system: "message",
+      boundaryChannel: "world_fact",
       sourceId: formatMessageAttentionSrc({
         chatId: reminder.chatId,
         messageId: reminder.anchorMessageId,
@@ -3255,6 +3306,10 @@ export class SessionRuntime {
     return this.runtime?.getLoopState().paused ?? false;
   }
 
+  private isLoopStopped(): boolean {
+    return this.loopSuspension === "stopped";
+  }
+
   private hasUnreadRoomWork(): boolean {
     return this.messageKernelAdapter.hasUnreadWork();
   }
@@ -3855,7 +3910,7 @@ export class SessionRuntime {
           });
         },
         skillRefresh: async () => {
-          const result = runtimeSkillSystem.refresh({ forceBootstrap: true, publishReminders: false });
+          const result = runtimeSkillSystem.refresh({ publishReminders: false });
           const applied = await this.handleRuntimeSkillRefreshResult(result, { notifyLoop: false });
           return projectRuntimeSkillMutation({
             ...result,
@@ -4072,142 +4127,178 @@ export class SessionRuntime {
     return latestSource ?? "attention";
   }
 
-  private collectAttentionBootstrapState(
-    active: readonly AttentionActiveContextMatch[],
-    selected: readonly AttentionActiveContextMatch[],
-    bootstrapSnapshots: readonly AttentionActiveContextMatch[] = [],
-  ) {
-    const primary = selected[0];
-    if (!primary) {
+  private buildFocusedAttentionContextText(match: AttentionActiveContextMatch): string {
+    return serializeFocusedAttentionContextBody(match);
+  }
+
+  private buildBackgroundAttentionContextText(match: AttentionActiveContextMatch): string {
+    return serializeBackgroundAttentionContextBody(match);
+  }
+
+  private buildAttentionContextSeedPlan(match: AttentionActiveContextMatch): PendingAttentionMessagePlan | null {
+    if (match.context.focusState === "muted") {
       return null;
     }
-    const metadataSource = [
-      ...selected,
-      ...bootstrapSnapshots.filter((snapshot) => !selected.some((match) => match.contextId === snapshot.contextId)),
-      ...active.filter(
-        (match) =>
-          !selected.some((selectedMatch) => selectedMatch.contextId === match.contextId) &&
-          !bootstrapSnapshots.some((snapshot) => snapshot.contextId === match.contextId),
-      ),
-    ];
-    const metadata = metadataSource.map((match) => ({
+    const text =
+      match.context.focusState === "focused"
+        ? this.buildFocusedAttentionContextText(match)
+        : this.buildBackgroundAttentionContextText(match);
+    return {
+      messageId: `attention-context:${match.contextId}:${match.context.headCommitId ?? "none"}:${match.context.focusState}`,
       contextId: match.contextId,
-      source: this.resolveAttentionSourceSystemId(match),
-      focusState: match.context.focusState,
-      scores: match.context.scoreMap,
-      scoreSum: Object.values(match.context.scoreMap).reduce((sum, value) => sum + Math.max(0, value), 0),
+      kind: "context",
+      text,
       headCommitId: match.context.headCommitId,
-      owner: match.context.owner,
       updatedAt: match.context.updatedAt,
-    }));
-    const selectedContextIds = [...selected, ...bootstrapSnapshots]
-      .map((match) => match.contextId)
-      .filter((value, index, all) => all.indexOf(value) === index);
-    const channel = this.resolveMessageChannelForContext(primary.contextId);
-    const chatId = channel?.chatId ?? this.resolveMessageChatIdForContext(primary.contextId);
-    const attentionContextIds = [...metadata.map((item) => item.contextId)];
-
-    return {
-      primary,
-      metadata,
-      selectedContextIds,
-      channel,
-      chatId,
-      attentionContextIds,
+      seededFocusState: match.context.focusState === "focused" ? "focused" : "background",
+      clearStageKeys: [],
+      attentionCommitRefs: match.recentCommits
+        .filter((commit) =>
+          Object.keys(commit.scores).some((hash) => {
+            const score = match.context.scoreMap[hash];
+            return typeof score === "number" && score > 0;
+          }),
+        )
+        .map((commit) => ({
+          contextId: match.contextId,
+          commitId: commit.commitId,
+        })),
+      clearsBoundaryRefresh: this.attentionBoundaryRefreshPending,
     };
   }
 
-  private buildAttentionContextBootstrapInput(
-    active: readonly AttentionActiveContextMatch[],
-    selected: readonly AttentionActiveContextMatch[],
-    bootstrapSnapshots: readonly AttentionActiveContextMatch[] = [],
-  ): LoopBusInput | null {
-    const state = this.collectAttentionBootstrapState(active, selected, bootstrapSnapshots);
-    if (!state) {
-      return null;
+  private isSnapshotUsableForContext(
+    snapshot: AttentionVisibleSnapshot | undefined,
+    context: AttentionActiveContextMatch["context"],
+  ): boolean {
+    if (!snapshot) {
+      return false;
     }
-    const text = [
-      "## AttentionContexts.metadata",
-      "",
-      toYaml({
-        primaryContextId: state.primary.contextId,
-        selectedContextIds: state.selectedContextIds,
-        activeContextCount: active.length,
-        items: state.metadata,
-      }),
-    ].join("\n");
-    const renderedSnapshots = bootstrapSnapshots
-      .filter((match) => match.context.content.trim().length > 0)
-      .map((match) =>
-        [`## AttentionContext.${match.contextId}`, "", mdFence("md+attention-context", match.context.content)].join(
-          "\n",
-        ),
-      );
-
-    return {
-      name: `AttentionContext-${state.primary.contextId}`,
-      role: "user",
-      type: "text",
-      source: "attention",
-      text: [text, ...renderedSnapshots].filter((part) => part.length > 0).join("\n\n"),
-      meta: {
-        attentionContextId: state.primary.contextId,
-        attentionContextIds: serializeAttentionContextIds(state.attentionContextIds) ?? null,
-        attentionCommitRefs: null,
-        attentionHeadCommitId: state.primary.context.headCommitId,
-        owner: state.primary.context.owner,
-        createdAt: state.primary.context.updatedAt,
-        attentionProtocolKind: "context",
-        ...(state.channel ? { chatFocused: state.channel.focused } : {}),
-        ...(state.chatId ? { chatId: state.chatId } : {}),
-      },
-    };
+    if (context.focusState === "focused") {
+      return snapshot.seededFocusState === "focused";
+    }
+    if (context.focusState === "background") {
+      return snapshot.seededFocusState === "background" || snapshot.seededFocusState === "focused";
+    }
+    return false;
   }
 
-  private buildAttentionItemsInput(selected: readonly AttentionActiveContextMatch[]): LoopBusInput | null {
-    const primary = selected[0];
-    if (!primary) {
+  private buildAttentionItemsPlan(match: AttentionActiveContextMatch): PendingAttentionMessagePlan | null {
+    const staged = this.stagedAttentionItemsByContext.get(match.contextId);
+    if (!staged || staged.size === 0) {
       return null;
     }
-    const items = selected.flatMap((match) => {
-      return this.selectAttentionProtocolCommits(match).map((commit) => ({
-        contextId: match.contextId,
-        commit,
-      }));
-    });
-    if (items.length === 0) {
+    const commits = this.attentionSystem.getContext(match.contextId)?.listCommits() ?? [];
+    const commitById = new Map(commits.map((commit) => [commit.commitId, commit] as const));
+    const selectedEntries = [...staged.values()]
+      .map((entry) => ({
+        entry,
+        commit: commitById.get(entry.commitId) ?? null,
+      }))
+      .filter((item): item is { entry: StagedAttentionItemEntry; commit: AttentionCommit } => item.commit !== null)
+      .sort((left, right) => left.entry.updatedAt - right.entry.updatedAt || left.entry.key.localeCompare(right.entry.key));
+    if (selectedEntries.length === 0) {
       return null;
     }
-    const attentionContextIds = [...new Set(items.map((item) => item.contextId))];
-    const attentionCommitRefs = items.map((item) => ({
-      contextId: item.contextId,
-      commitId: item.commit.commitId,
+    const notifyEntries = selectedEntries.filter(({ entry }) => entry.isNotify);
+    const serializableEntries =
+      notifyEntries.length > 0
+        ? notifyEntries
+        : match.context.focusState === "focused"
+          ? selectedEntries
+          : [];
+    if (serializableEntries.length === 0) {
+      return null;
+    }
+    const notifyOnly = notifyEntries.length > 0 && notifyEntries.length === serializableEntries.length;
+    const items = serializableEntries.map(({ commit }) => ({
+      contextId: match.contextId,
+      commit,
     }));
-    const channel = this.resolveMessageChannelForContext(primary.contextId);
-    const chatId = channel?.chatId ?? this.resolveMessageChatIdForContext(primary.contextId);
-    const primaryUpdatedAt = Date.parse(primary.context.updatedAt);
-    const latestCreatedAt = items.reduce(
-      (maxCreatedAt, item) => Math.max(maxCreatedAt, Date.parse(item.commit.createdAt)),
-      Number.isFinite(primaryUpdatedAt) ? primaryUpdatedAt : 0,
-    );
+    const latestUpdatedAt = serializableEntries.reduce((max, item) => Math.max(max, item.entry.updatedAt), 0);
     return {
-      name: `AttentionItems-${primary.contextId}`,
-      role: "user",
-      type: "text",
-      source: "attention",
+      messageId: `attention-items:${match.contextId}:${serializableEntries.map((item) => item.commit.commitId).join(",")}`,
+      contextId: match.contextId,
+      kind: "items",
       text: this.serializeAttentionItemsInput(items),
+      headCommitId: match.context.headCommitId,
+      updatedAt: new Date(latestUpdatedAt || Date.parse(match.context.updatedAt) || Date.now()).toISOString(),
+      clearStageKeys: serializableEntries.map(({ entry }) => entry.key),
+      attentionCommitRefs: serializableEntries.map(({ commit }) => ({
+        contextId: match.contextId,
+        commitId: commit.commitId,
+      })),
+      clearsBoundaryRefresh: false,
+      notifyOnly,
+    };
+  }
+
+  private createAttentionProtocolInput(plan: PendingAttentionMessagePlan): LoopBusInput {
+    const channel = this.resolveMessageChannelForContext(plan.contextId);
+    const chatId = channel?.chatId ?? this.resolveMessageChatIdForContext(plan.contextId);
+    const attentionCommitRefs = serializeAttentionCommitRefs(plan.attentionCommitRefs) ?? null;
+    return {
+      id: plan.messageId,
+      name: `${plan.kind === "context" ? "AttentionContext" : "AttentionItems"}-${plan.contextId}`,
+      role: "user",
+      type: "text",
+      source: "attention",
+      text: plan.text,
       meta: {
-        attentionContextId: primary.contextId,
-        attentionContextIds: serializeAttentionContextIds(attentionContextIds) ?? null,
-        attentionCommitRefs: serializeAttentionCommitRefs(attentionCommitRefs) ?? null,
-        attentionHeadCommitId: primary.context.headCommitId,
-        owner: primary.context.owner,
-        createdAt: latestCreatedAt,
-        attentionProtocolKind: "items",
+        attentionContextId: plan.contextId,
+        attentionContextIds: serializeAttentionContextIds([plan.contextId]) ?? null,
+        attentionCommitRefs,
+        attentionHeadCommitId: plan.headCommitId,
+        attentionVisibleKind: plan.kind,
+        owner: this.attentionSystem.getContext(plan.contextId)?.getState().owner ?? this.getAvatarName(),
+        createdAt: plan.updatedAt,
+        attentionProtocolKind: plan.kind,
+        attentionMessagePlanId: plan.messageId,
+        ...(plan.seededFocusState ? { attentionSeedFocusState: plan.seededFocusState } : {}),
         ...(channel ? { chatFocused: channel.focused } : {}),
         ...(chatId ? { chatId } : {}),
       },
     };
+  }
+
+  private selectAttentionProtocolPlan(
+    match: AttentionActiveContextMatch,
+    input: { reseedForDebt?: boolean } = {},
+  ): PendingAttentionMessagePlan[] {
+    const snapshot = this.attentionContextSnapshot.get(match.contextId);
+    const hasUsableSnapshot = this.isSnapshotUsableForContext(snapshot, match.context);
+    const itemsPlan = this.buildAttentionItemsPlan(match);
+    const shouldReseedForDebt = input.reseedForDebt === true;
+    if (!hasUsableSnapshot) {
+      const seedPlan = this.buildAttentionContextSeedPlan(match);
+      if (!seedPlan) {
+        return itemsPlan ? [itemsPlan] : [];
+      }
+      return itemsPlan?.notifyOnly ? [mergeAttentionPlanCommitRefs(seedPlan, itemsPlan), itemsPlan] : [seedPlan];
+    }
+    if (shouldReseedForDebt) {
+      const contextPlan = this.buildAttentionContextSeedPlan(match);
+      if (!contextPlan) {
+        return itemsPlan ? [itemsPlan] : [];
+      }
+      return [contextPlan];
+    }
+    if (!itemsPlan) {
+      return [];
+    }
+    if (itemsPlan.notifyOnly) {
+      return [itemsPlan];
+    }
+    if (match.context.focusState !== "focused") {
+      return [];
+    }
+    const contextPlan = this.buildAttentionContextSeedPlan(match);
+    if (!contextPlan) {
+      return [itemsPlan];
+    }
+    const contextCost = contextPlan.text.length * 1.5;
+    const itemsCost = itemsPlan.text.length;
+    return contextCost <= itemsCost ? [contextPlan] : [itemsPlan];
   }
 
   private async readMessageSource(request: LoopSourceReadRequest<MessageSourceParts>): Promise<LoopSourceReadResult> {
@@ -4407,6 +4498,7 @@ export class SessionRuntime {
     const sourceId = formatTerminalSourceSrc({ terminalId });
     return {
       system: "terminal",
+      boundaryChannel: "world_fact",
       sourceId,
       contextKey: this.getTerminalAttentionContextId(terminalId),
       kind: payload.kind === "terminal-diff" ? "terminal_diff" : "terminal_snapshot",
@@ -4536,7 +4628,7 @@ export class SessionRuntime {
 
   private buildAttentionCommitInput(
     draft: AttentionDraft,
-    input: { contextIdOverride?: string; target?: string } = {},
+    input: { contextIdOverride?: string; target?: string; ingressTypeOverride?: AttentionCommit["ingressType"] } = {},
   ): AttentionCommitToolInput {
     const contextId = input.contextIdOverride ?? this.resolveAttentionContextId(draft);
     const normalizedContent = draft.content.trim();
@@ -4578,7 +4670,7 @@ export class SessionRuntime {
     return {
       contextId,
       target: input.target,
-      ingressType: this.resolveAttentionIngressType(contextId),
+      ingressType: input.ingressTypeOverride ?? this.resolveAttentionIngressType(contextId),
       meta: this.buildAttentionMeta(draft),
       scores: this.buildAttentionScores(draft),
       summary: presentation.summary,
@@ -4604,6 +4696,45 @@ export class SessionRuntime {
       return {};
     }
     return Object.fromEntries(activeScores.map(([key]) => [key, 0]));
+  }
+
+  private resolveRuntimeIngressInitialFocusState(envelope: RuntimeSystemIngressEnvelope): AttentionFocusState {
+    if (envelope.system === "message") {
+      const chatFocused = envelope.meta?.chatFocused;
+      return chatFocused === true ? "focused" : "background";
+    }
+    if (envelope.system === "terminal") {
+      const terminalId = typeof envelope.meta?.terminalId === "string" ? envelope.meta.terminalId : null;
+      if (terminalId && this.focusedTerminalIds.includes(terminalId)) {
+        return "focused";
+      }
+      return "background";
+    }
+    return "background";
+  }
+
+  private ensureRuntimeIngressContext(envelope: RuntimeSystemIngressEnvelope, owner: string): AttentionContextState {
+    const existing = this.attentionSystem.getContext(envelope.contextKey);
+    if (existing) {
+      return existing.getState();
+    }
+    return this.attentionSystem
+      .createContext({
+        contextId: envelope.contextKey,
+        owner,
+        focusState: this.resolveRuntimeIngressInitialFocusState(envelope),
+      })
+      .getState();
+  }
+
+  private resolveRuntimeIngressType(
+    envelope: RuntimeSystemIngressEnvelope,
+    contextState: AttentionContextState,
+  ): AttentionCommit["ingressType"] {
+    if (envelope.ingressType) {
+      return envelope.ingressType;
+    }
+    return contextState.focusState === "focused" ? "commit" : "push";
   }
 
   private buildLifecycleIngressEnvelope(input: {
@@ -4741,6 +4872,7 @@ export class SessionRuntime {
     const externalAttentionIngress = commit.meta.source !== "attention";
     if (externalAttentionIngress && wakeableAttentionIngress) {
       this.markAttentionContextDirty(contextId, commit.commitId);
+      this.stageAttentionCommit(contextId, commit);
     }
     this.recordAttentionCommitTrace(contextId, commit, input);
     this.attentionFactsVersion += 1;
@@ -4848,6 +4980,7 @@ export class SessionRuntime {
       recordSourceReadTrace?: boolean;
       target?: string;
       commitMode?: RuntimeSystemIngressEnvelope["commitMode"];
+      ingressTypeOverride?: AttentionCommit["ingressType"];
     },
   ): Promise<{ changed: boolean; result: RuntimeIngressCommitResult | null }> {
     const digest = stableAttentionDraftDigest(draft);
@@ -4870,6 +5003,7 @@ export class SessionRuntime {
     const commitInput = this.buildAttentionCommitInput(draft, {
       contextIdOverride: contextId,
       target: input.target,
+      ingressTypeOverride: input.ingressTypeOverride,
     });
     const commitAction =
       input.commitMode === "system"
@@ -4902,12 +5036,14 @@ export class SessionRuntime {
     envelope: RuntimeSystemIngressEnvelope,
     input: { notifyLoop: boolean },
   ): Promise<RuntimeIngressCommitResult | null> {
+    const contextState = this.ensureRuntimeIngressContext(envelope, envelope.author);
     const { result } = await this.commitAttentionDraft(this.toAttentionDraftFromRuntimeSystemIngress(envelope), {
       notifyLoop: input.notifyLoop,
       contextIdOverride: envelope.contextKey,
       recordSourceReadTrace: false,
       target: envelope.target,
       commitMode: envelope.commitMode,
+      ingressTypeOverride: this.resolveRuntimeIngressType(envelope, contextState),
     });
     return result;
   }
@@ -5762,7 +5898,7 @@ export class SessionRuntime {
     this.attentionSearchEngine = new AttentionSearchEngine(join(this.options.sessionRoot, "attention-search.duckdb"));
     await this.persistAttentionSystem();
     await this.runtimeKernelHost.bootstrap();
-    if (this.attentionSystem.listActiveContexts().length > 0) {
+    if (this.listAttentionVisibleContextMatches().length > 0) {
       this.attentionFactsVersion += 1;
       this.requestAttentionContextBoundaryRefresh();
     }
@@ -5798,11 +5934,15 @@ export class SessionRuntime {
     await promptStore.reload();
     this.runtimeSkillSystem = this.ensureRuntimeSkillSystem();
     await this.handleRuntimeSkillRefreshResult(
-      this.runtimeSkillSystem.refresh({ forceBootstrap: true, publishReminders: false }),
+      this.runtimeSkillSystem.refresh({ publishReminders: false }),
       {
         notifyLoop: false,
       },
     );
+    if (this.listAttentionVisibleContextMatches().length > 0) {
+      this.attentionFactsVersion += 1;
+      this.requestAttentionContextBoundaryRefresh();
+    }
 
     const modelClient = this.createModelClient(this.config);
 
@@ -6021,6 +6161,7 @@ export class SessionRuntime {
     this.runtime.start();
     this.sessionStore.setLifecycle({ status: "running" });
     this.started = true;
+    this.loopSuspension = "active";
 
     for (const boot of this.config.bootTerminals) {
       if (!boot.autoRun) {
@@ -6058,12 +6199,12 @@ export class SessionRuntime {
       this.abortingActiveCycle = true;
     }
     this.runtime?.pause(status === "stopped" ? "session.stop" : "session.pause");
+    this.loopSuspension = status;
     // Wake commit waiters so the paused loop can settle without waiting for new external input.
     this.notifyInput("attention");
     if (status === "stopped") {
       this.messageSystem.setActorPresence(this.messageActorId, false);
       this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
-      this.skillKernelAdapter.clearPendingBootstrap();
       this.runtimeSkillSystem?.dispose();
     }
     this.sessionStore?.setLifecycle({ status });
@@ -6075,8 +6216,8 @@ export class SessionRuntime {
     }
     this.messageSystem.setActorPresence(this.messageActorId, true);
     this.terminalControlPlane.setActorPresence(this.terminalActorId, true);
-    this.skillKernelAdapter.markBootstrapPending();
     this.runtime?.resume();
+    this.loopSuspension = "active";
     this.sessionStore?.setLifecycle({ status: "running" });
   }
 
@@ -6169,6 +6310,7 @@ export class SessionRuntime {
     this.traceRowIdBySpanId.clear();
     this.runningTraceRowsByName.clear();
     this.started = false;
+    this.loopSuspension = "stopped";
     this.loopPhase = "stopped";
   }
 
@@ -7543,6 +7685,109 @@ export class SessionRuntime {
     }
   }
 
+  private buildStagedAttentionItemKey(contextId: string, commit: AttentionCommit): string {
+    const src = typeof commit.meta.src === "string" && commit.meta.src.length > 0 ? commit.meta.src : commit.commitId;
+    return `${contextId}:${src}`;
+  }
+
+  private stageAttentionCommit(contextId: string, commit: AttentionCommit): void {
+    const key = this.buildStagedAttentionItemKey(contextId, commit);
+    const entries = this.stagedAttentionItemsByContext.get(contextId) ?? new Map<string, StagedAttentionItemEntry>();
+    entries.set(key, {
+      key,
+      commitId: commit.commitId,
+      sourceId: typeof commit.meta.src === "string" ? commit.meta.src : commit.commitId,
+      ingressType: commit.ingressType,
+      isNotify: this.isNotificationAttentionCommit(commit),
+      updatedAt: Date.parse(commit.createdAt) || Date.now(),
+    });
+    this.stagedAttentionItemsByContext.set(contextId, entries);
+  }
+
+  private unstageAttentionItems(contextId: string, keys: readonly string[]): void {
+    const entries = this.stagedAttentionItemsByContext.get(contextId);
+    if (!entries) {
+      return;
+    }
+    for (const key of keys) {
+      entries.delete(key);
+    }
+    if (entries.size === 0) {
+      this.stagedAttentionItemsByContext.delete(contextId);
+    }
+  }
+
+  private clearAttentionCurrentState(): void {
+    this.attentionContextSnapshot.clear();
+    this.pendingAttentionMessagePlans.clear();
+    this.attentionBoundaryRefreshPending = false;
+  }
+
+  private commitInjectedAttentionPlans(input: {
+    requestMessages?: readonly TextOnlyModelMessage[];
+    collectedInputs?: readonly SessionCollectedInput[];
+  }): void {
+    const injectedPlanIds = new Set<string>();
+    for (const item of input.collectedInputs ?? []) {
+      if (item.source !== "attention") {
+        continue;
+      }
+      const planId = (item.meta as AttentionCollectedInputMeta | undefined)?.attentionMessagePlanId;
+      if (typeof planId === "string" && planId.length > 0) {
+        injectedPlanIds.add(planId);
+      }
+    }
+    if (injectedPlanIds.size === 0 && input.requestMessages) {
+      for (const plan of this.pendingAttentionMessagePlans.values()) {
+        const matched = input.requestMessages.some((message) => modelMessageContentToText(message.content) === plan.text);
+        if (matched) {
+          injectedPlanIds.add(plan.messageId);
+        }
+      }
+    }
+    let boundaryRefreshCleared = false;
+    const nextSnapshots = new Map<string, AttentionVisibleSnapshot>();
+    for (const [messageId, plan] of [...this.pendingAttentionMessagePlans.entries()]) {
+      if (!injectedPlanIds.has(messageId)) {
+        continue;
+      }
+      const previous =
+        nextSnapshots.get(plan.contextId) ?? this.attentionContextSnapshot.get(plan.contextId) ?? null;
+      const mergedSnapshot =
+        plan.kind === "items"
+          ? {
+              contextId: plan.contextId,
+              kind: previous?.kind ?? "items",
+              text: previous?.text ?? plan.text,
+              headCommitId: previous?.headCommitId ?? plan.headCommitId,
+              updatedAt: previous?.updatedAt ?? plan.updatedAt,
+              seededFocusState: previous?.seededFocusState ?? plan.seededFocusState,
+            }
+          : {
+              contextId: plan.contextId,
+              kind: plan.kind,
+              text: plan.text,
+              headCommitId: plan.headCommitId,
+              updatedAt: plan.updatedAt,
+              seededFocusState: plan.seededFocusState,
+            };
+      nextSnapshots.set(plan.contextId, mergedSnapshot);
+      if (plan.clearStageKeys.length > 0) {
+        this.unstageAttentionItems(plan.contextId, plan.clearStageKeys);
+      }
+      if (plan.clearsBoundaryRefresh) {
+        boundaryRefreshCleared = true;
+      }
+      this.pendingAttentionMessagePlans.delete(messageId);
+    }
+    for (const [contextId, snapshot] of nextSnapshots.entries()) {
+      this.attentionContextSnapshot.set(contextId, snapshot);
+    }
+    if (boundaryRefreshCleared) {
+      this.attentionBoundaryRefreshPending = false;
+    }
+  }
+
   private clearDirtyAttentionContext(contextId: string): void {
     this.dirtyAttentionContextIds.delete(contextId);
     this.dirtyAttentionCommitIdsByContext.delete(contextId);
@@ -7599,7 +7844,23 @@ export class SessionRuntime {
 
   private hasPendingAttentionInputs(): boolean {
     this.pruneDirtyAttentionContextIds();
-    return this.dirtyAttentionContextIds.size > 0;
+    const active = this.attentionSystem.listActiveContexts();
+    const visible = this.listAttentionVisibleContextMatches();
+    const selected = this.selectDirtyAttentionContexts(active);
+    const planMatches =
+      selected.length > 0
+        ? selected
+        : this.attentionBoundaryRefreshPending
+          ? visible
+          : [];
+    for (const match of planMatches) {
+      for (const plan of this.selectAttentionProtocolPlan(match)) {
+        if (!this.pendingAttentionMessagePlans.has(plan.messageId)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private resetAttentionDebtBackoff(): void {
@@ -7611,12 +7872,30 @@ export class SessionRuntime {
   private requestAttentionContextBoundaryRefresh(): void {
     // Boundary refreshes rebuild the model's AttentionContext projection after
     // start/compact without pretending historical commits are new items.
+    this.clearAttentionCurrentState();
     this.dirtyAttentionContextIds.clear();
     this.dirtyAttentionCommitIdsByContext.clear();
     this.dirtyAttentionContextOrder.clear();
     this.resetAttentionDebtBackoff();
     this.attentionForceCollect = true;
+    this.attentionBoundaryRefreshPending = true;
     this.notifyInput("attention");
+  }
+
+  private listAttentionVisibleContextMatches(): AttentionActiveContextMatch[] {
+    const activeById = new Map(this.attentionSystem.listActiveContexts().map((match) => [match.contextId, match] as const));
+    return this.attentionSystem.snapshot().contexts
+      .map((context) => activeById.get(context.contextId) ?? this.getAttentionContextMatch(context.contextId))
+      .filter((match): match is AttentionActiveContextMatch => match !== null)
+      .filter((match) => match.context.focusState !== "muted")
+      .sort((left, right) => {
+        const leftUpdated = Date.parse(left.context.updatedAt);
+        const rightUpdated = Date.parse(right.context.updatedAt);
+        if (leftUpdated !== rightUpdated) {
+          return rightUpdated - leftUpdated;
+        }
+        return left.contextId.localeCompare(right.contextId);
+      });
   }
 
   private advanceAttentionDebtBackoff(): void {
@@ -7632,6 +7911,9 @@ export class SessionRuntime {
 
   private resolveLoopWaitingReason(phase: LoopBusPhase, paused: boolean): string | null {
     if (!this.started) {
+      return "stopped";
+    }
+    if (this.isLoopStopped()) {
       return "stopped";
     }
     const nextMessageFollowUpWakeAt = this.messageFollowUpReminders.nextDueAt();
@@ -7682,6 +7964,164 @@ export class SessionRuntime {
   }
 
   private async waitForAnyInput(): Promise<LoopInputKind> {
+    if (!this.started) {
+      if (this.loopSuspension === "fresh") {
+        if (this.abortWakeRequested) {
+          this.loopKernelLastWakeCause = "attention_signal";
+          return "attention";
+        }
+        const hasPendingAttention = this.hasPendingAttentionInputs();
+        const now = Date.now();
+        const nextMessageFollowUpWakeAt = this.messageFollowUpReminders.nextDueAt();
+        const retryPolicy = this.getAttentionRetryPolicy();
+        const hasDueAttentionContainmentWake = this.attentionSystem.listActiveContexts().some((match) => {
+          const entry = this.attentionContainment.get(match.contextId);
+          if (!entry) {
+            return false;
+          }
+          if (retryPolicy.maxAttempts !== null && entry.retryCount >= retryPolicy.maxAttempts) {
+            return false;
+          }
+          return entry.nextWakeAt <= now;
+        });
+        if (this.hasPendingCompactCycle()) {
+          this.loopKernelLastWakeCause = "compact_cycle";
+          this.resetAttentionDebtBackoff();
+          return "attention";
+        }
+        if (this.inboundMessageQueue.length > 0) {
+          this.loopKernelLastWakeCause = "user_input";
+          this.resetAttentionDebtBackoff();
+          return "user";
+        }
+        if (this.taskAttentionDraftQueue.length > 0) {
+          this.loopKernelLastWakeCause = "task_input";
+          this.resetAttentionDebtBackoff();
+          return "task";
+        }
+        if (hasDueAttentionContainmentWake) {
+          this.attentionForceCollect = true;
+          this.loopKernelLastWakeCause = "attention_backoff";
+          return "attention";
+        }
+        if (this.inputSignals.task.current() > this.inputSignalCursor.task) {
+          this.loopKernelLastWakeCause = "task_input";
+          this.resetAttentionDebtBackoff();
+          return "task";
+        }
+        if (nextMessageFollowUpWakeAt !== null && nextMessageFollowUpWakeAt <= now) {
+          this.loopKernelLastWakeCause = "message_follow_up";
+          this.resetAttentionDebtBackoff();
+          return "attention";
+        }
+        if (hasPendingAttention) {
+          this.loopKernelLastWakeCause = "attention_signal";
+          this.resetAttentionDebtBackoff();
+          return "attention";
+        }
+        const activeAttention = this.attentionSystem.listActiveContexts();
+        const attentionContainment = this.summarizeAttentionContainment(activeAttention);
+        return await new Promise<LoopInputKind>((resolve) => {
+          let attentionDebtTimer: ReturnType<typeof setTimeout> | null = null;
+          let messageFollowUpTimer: ReturnType<typeof setTimeout> | null = null;
+          const signalWaiters = (["user", "task", "attention"] as const).map((kind) => ({
+            kind,
+            ...this.inputSignals[kind].waitAfter(this.inputSignalCursor[kind]),
+          }));
+          const settle = (kind: LoopInputKind): void => {
+            if (attentionDebtTimer) {
+              clearTimeout(attentionDebtTimer);
+            }
+            if (messageFollowUpTimer) {
+              clearTimeout(messageFollowUpTimer);
+            }
+            for (const waiter of signalWaiters) {
+              waiter.cancel();
+            }
+            resolve(kind);
+          };
+          if (attentionContainment.state === "ready") {
+            const scheduledBackoffMs = this.attentionDebtBackoffMs;
+            this.attentionDebtNextWakeAt = Date.now() + scheduledBackoffMs;
+            attentionDebtTimer = setTimeout(() => {
+              this.attentionForceCollect = true;
+              this.loopKernelLastWakeCause = "attention_debt";
+              settle("attention");
+            }, scheduledBackoffMs);
+          } else if (attentionContainment.state === "backoff" && attentionContainment.nextWakeAt !== null) {
+            const waitMs = Math.max(0, attentionContainment.nextWakeAt - Date.now());
+            this.attentionDebtNextWakeAt = attentionContainment.nextWakeAt;
+            attentionDebtTimer = setTimeout(() => {
+              this.attentionForceCollect = true;
+              this.loopKernelLastWakeCause = "attention_backoff";
+              settle("attention");
+            }, waitMs);
+          } else {
+            this.attentionDebtNextWakeAt = null;
+          }
+          if (nextMessageFollowUpWakeAt !== null) {
+            const waitMs = Math.max(0, nextMessageFollowUpWakeAt - now);
+            messageFollowUpTimer = setTimeout(() => {
+              this.loopKernelLastWakeCause = "message_follow_up";
+              settle("attention");
+            }, waitMs);
+          }
+          for (const waiter of signalWaiters) {
+            void waiter.promise.then(() => {
+              if (waiter.kind === "task") {
+                this.loopKernelLastWakeCause ??= "task_input";
+                this.resetAttentionDebtBackoff();
+              } else if (waiter.kind === "user") {
+                this.loopKernelLastWakeCause ??= "user_input";
+                this.resetAttentionDebtBackoff();
+              } else {
+                this.loopKernelLastWakeCause ??= "attention_signal";
+                this.resetAttentionDebtBackoff();
+              }
+              settle(waiter.kind);
+            });
+          }
+        });
+      }
+      return new Promise<LoopInputKind>((resolve) => {
+        const poll = (): void => {
+          if (this.inputSignals.user.current() > this.inputSignalCursor.user) {
+            this.loopKernelLastWakeCause = "user_input";
+            resolve("user");
+            return;
+          }
+          if (this.inputSignals.task.current() > this.inputSignalCursor.task) {
+            this.loopKernelLastWakeCause = "task_input";
+            resolve("task");
+            return;
+          }
+          setTimeout(poll, 5);
+        };
+        poll();
+      });
+    }
+    if (this.isLoopStopped()) {
+      return new Promise<LoopInputKind>((resolve) => {
+        const poll = (): void => {
+          if (!this.isLoopStopped()) {
+            resolve(this.waitForAnyInput());
+            return;
+          }
+          if (this.inputSignals.user.current() > this.inputSignalCursor.user) {
+            this.loopKernelLastWakeCause = "user_input";
+            resolve("user");
+            return;
+          }
+          if (this.inputSignals.task.current() > this.inputSignalCursor.task) {
+            this.loopKernelLastWakeCause = "task_input";
+            resolve("task");
+            return;
+          }
+          setTimeout(poll, 5);
+        };
+        poll();
+      });
+    }
     if (this.abortWakeRequested) {
       this.loopKernelLastWakeCause = "attention_signal";
       return "attention";
@@ -7908,6 +8348,15 @@ export class SessionRuntime {
   }
 
   private async collectLoopInputs(): Promise<LoopBusInput[] | undefined> {
+    if (this.isLoopStopped()) {
+      for (const kind of Object.keys(this.inputSignalCursor) as Array<LoopInputKind>) {
+        if (kind === "user" || kind === "task") {
+          continue;
+        }
+        this.inputSignalCursor[kind] = this.inputSignals[kind].current();
+      }
+      return undefined;
+    }
     await this.flushPendingRuntimeSkillChanges();
     await this.pollTaskSources("watch");
     await this.pollTaskEventInbox();
@@ -8072,16 +8521,14 @@ export class SessionRuntime {
     const forceCollect = this.attentionForceCollect;
     this.attentionForceCollect = false;
     const active = this.attentionSystem.listActiveContexts();
-    const bootstrapSnapshots = this.skillKernelAdapter.consumeBootstrapContext();
-    if (active.length === 0) {
-      if (!bootstrapSnapshots) {
-        this.dirtyAttentionContextIds.clear();
-        this.dirtyAttentionCommitIdsByContext.clear();
-        this.dirtyAttentionContextOrder.clear();
-        this.attentionContainment.clear();
-        this.resetAttentionDebtBackoff();
-        return undefined;
-      }
+    const visible = this.listAttentionVisibleContextMatches();
+    if (active.length === 0 && !this.attentionBoundaryRefreshPending) {
+      this.dirtyAttentionContextIds.clear();
+      this.dirtyAttentionCommitIdsByContext.clear();
+      this.dirtyAttentionContextOrder.clear();
+      this.attentionContainment.clear();
+      this.resetAttentionDebtBackoff();
+      return undefined;
     }
     this.pruneDirtyAttentionContextIds();
     this.pruneAttentionContainment(active);
@@ -8089,26 +8536,37 @@ export class SessionRuntime {
     const selected = forceCollect
       ? this.selectAttentionDebtContexts(active)
       : this.selectDirtyAttentionContexts(active);
-    if (selected.length === 0 && !bootstrapSnapshots) {
+    if (selected.length === 0 && !this.attentionBoundaryRefreshPending) {
       return undefined;
     }
 
     const outputs: LoopBusInput[] = [];
-    const bootstrapInput = this.buildAttentionContextBootstrapInput(
-      active,
-      selected.length > 0 ? selected : bootstrapSnapshots ? [bootstrapSnapshots] : [],
-      bootstrapSnapshots ? [bootstrapSnapshots] : [],
-    );
-    if (bootstrapInput) {
-      outputs.push(bootstrapInput);
+    const planMatches =
+      selected.length > 0
+        ? selected
+        : this.attentionBoundaryRefreshPending
+          ? visible
+          : [];
+    const plannedContexts = new Set<string>();
+    for (const match of planMatches) {
+      for (
+        const plan of this.selectAttentionProtocolPlan(match, {
+          reseedForDebt: forceCollect,
+        })
+      ) {
+        if (!forceCollect && this.pendingAttentionMessagePlans.has(plan.messageId)) {
+          continue;
+        }
+        this.pendingAttentionMessagePlans.set(plan.messageId, plan);
+        outputs.push(this.createAttentionProtocolInput(plan));
+        plannedContexts.add(plan.contextId);
+      }
+    }
+    if (outputs.length > 0) {
       this.attentionFactsSentVersion = this.attentionFactsVersion;
     }
-    const itemsInput = this.buildAttentionItemsInput(selected);
-    if (itemsInput) {
-      outputs.push(itemsInput);
-    }
-    for (const match of selected) {
-      this.clearDirtyAttentionContext(match.contextId);
+    for (const contextId of plannedContexts) {
+      this.clearDirtyAttentionContext(contextId);
     }
     return outputs.length > 0 ? outputs : undefined;
   }
@@ -8549,7 +9007,7 @@ export class SessionRuntime {
         compactTrigger: compactTrigger ?? null,
       }),
     );
-    if (this.attentionSystem.listActiveContexts().length > 0) {
+    if (this.listAttentionVisibleContextMatches().length > 0) {
       this.requestAttentionContextBoundaryRefresh();
     }
   }
@@ -8855,6 +9313,8 @@ export class SessionRuntime {
             : null;
     const runtimeStatus: LoopBusKernelState["runtimeStatus"] = !this.started
       ? "idle"
+      : this.isLoopStopped()
+        ? "paused"
       : waitingReason === "attention_blocked"
         ? "blocked"
         : waitingReason === "attention_backoff"
@@ -9063,6 +9523,22 @@ export class SessionRuntime {
         sessionModelCallId: this.activeModelCallId,
       });
       return;
+    }
+    if (event.status === "accepted" && this.activeModelCallId !== null && this.sessionDb) {
+      const requestBody = this.sessionDb.getAiCallById(this.activeModelCallId)?.requestBody as
+        | {
+            messages?: AgentModelCallRecord["request"]["messages"];
+            meta?: { collectedInputs?: SessionCollectedInput[] };
+          }
+        | undefined;
+      const requestMessages = requestBody?.messages;
+      const collectedInputs = Array.isArray(requestBody?.meta?.collectedInputs) ? requestBody.meta.collectedInputs : [];
+      if (Array.isArray(requestMessages) || collectedInputs.length > 0) {
+        this.commitInjectedAttentionPlans({
+          requestMessages: Array.isArray(requestMessages) ? requestMessages : undefined,
+          collectedInputs,
+        });
+      }
     }
     await this.appendAttentionReceiptForAttempt({
       agentCallId,

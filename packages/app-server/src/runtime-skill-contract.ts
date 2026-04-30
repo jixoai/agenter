@@ -4,11 +4,6 @@ import type { RuntimeSkillLookupInput, RuntimeSkillRecord, RuntimeSkillWritableR
 import type { RuntimeSystemIngressEnvelope } from "./runtime-system-kernel-adapters/types";
 import type { WorkspaceGrantRecord } from "./workspace-system";
 
-export const RUNTIME_SKILL_CONTEXT_ID = "ctx-skill-system";
-export const RUNTIME_SKILL_CONTEXT_TEMPLATE = '<Slot name="skills-list" readonly/>\n<Slot name="default"/>';
-export const RUNTIME_SKILL_SNAPSHOT_TARGET = "skills-list";
-export const RUNTIME_SKILL_DEFAULT_TARGET = "default";
-
 export interface RuntimeSkillWorkspaceAuthority {
   workspaceRoot: string;
   grants: WorkspaceGrantRecord[];
@@ -32,13 +27,10 @@ export interface RuntimeSkillConfigInfo {
 }
 
 export interface RuntimeSkillRefreshResult {
-  contextId: string;
   skills: RuntimeSkillRecord[];
   snapshot: string;
   changedSkills: RuntimeSkillChange[];
-  systemIngress: RuntimeSystemIngressEnvelope | null;
-  reminderIngresses: RuntimeSystemIngressEnvelope[];
-  bootstrapPending: boolean;
+  publishedIngresses: RuntimeSystemIngressEnvelope[];
 }
 
 export interface RuntimeSkillUpsertResult extends RuntimeSkillRefreshResult {
