@@ -82,40 +82,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
   }
 
   recordFocusTransitions(input: RuntimeTerminalFocusTransitionInput): void {
-    const beforeSet = new Set(input.before);
-    const afterSet = new Set(input.after);
-    for (const terminalId of input.after) {
-      if (beforeSet.has(terminalId)) {
-        continue;
-      }
-      this.commitLifecycleIngress({
-        terminalId,
-        contextId: this.options.getTerminalContextId(terminalId),
-        event: "terminal_focus",
-        summary: `Focused terminal ${terminalId}`,
-        payload: {
-          op: input.op,
-          focused: true,
-          focusedTerminalIds: [...input.after],
-        },
-      });
-    }
-    for (const terminalId of input.before) {
-      if (afterSet.has(terminalId)) {
-        continue;
-      }
-      this.commitLifecycleIngress({
-        terminalId,
-        contextId: this.options.getTerminalContextId(terminalId),
-        event: "terminal_unfocus",
-        summary: `Unfocused terminal ${terminalId}`,
-        payload: {
-          op: input.op,
-          focused: false,
-          focusedTerminalIds: [...input.after],
-        },
-      });
-    }
+    void input;
   }
 
   handleStatusChange(input: {
@@ -130,22 +97,18 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
       input.running &&
       !this.getFocusedTerminalIds().includes(input.terminalId)
     ) {
-      this.commitLifecycleIngress({
-        terminalId: input.terminalId,
-        contextId: this.options.getTerminalContextId(input.terminalId),
-        event: "terminal_idle_ready",
-        summary: `Terminal ${input.terminalId} is ready for your input.`,
-        ingressType: "push",
-        payload: {
-          running: input.running,
-          status: input.status,
-        },
-        score: 100,
-      });
+      this.options.onTerminalActivitySignal();
     }
   }
 
   commitLifecycleIngress(input: RuntimeTerminalLifecycleIngressInput): void {
+    if (
+      input.event === "terminal_focus" ||
+      input.event === "terminal_unfocus" ||
+      input.event === "terminal_idle_ready"
+    ) {
+      return;
+    }
     this.pendingLifecycleIngress.push(this.options.buildLifecycleIngressEnvelope(input));
     void this.flushPendingLifecycleIngress();
   }

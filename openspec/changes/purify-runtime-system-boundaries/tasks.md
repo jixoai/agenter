@@ -1,6 +1,6 @@
 ## 1. Platform Boundary Law
 
-- [ ] 1.1 Add typed runtime boundary primitives for `WorldFact`, `CapabilityProjection`, `SchedulerSignal`, `AgentAction`, and `EffectLedger` without using `any`, `as any`, or `@ts-nocheck`
+- [x] 1.1 Add typed runtime boundary primitives for `WorldFact`, `CapabilityProjection`, `SchedulerSignal`, `AgentAction`, and `EffectLedger` without using `any`, `as any`, or `@ts-nocheck`
 - [ ] 1.2 Add adapter-facing helpers that require every runtime-system emission to declare its boundary channel before reaching the kernel host
 - [ ] 1.3 Add development/test assertions or guards that reject ambiguous adapter emissions in Message, Terminal, Skill, and future-system paths
 - [ ] 1.4 Add durable effect-ledger records that can trace explicit actions to durable external effects such as room messages, including stable action/effect identity, actor identity, target identity, timestamp, and cycle/model-call refs when available
@@ -8,20 +8,20 @@
 
 ## 2. Message Ingress And Side Effects
 
-- [ ] 2.1 Remove `shouldTreatSharedMessageAsReplyPending(...)` and all call sites from `packages/app-server/src/session-runtime.ts`
-- [ ] 2.2 Stop emitting `chatTurnState`, `chatObligationKind`, `settlesWhen`, `room_reply_pending`, `self_update`, `required_room_reply_sent`, and `no_external_reply_needed` from message-backed attention and model envelopes
-- [ ] 2.3 Reduce message ingress/model facts to objective fields such as `chatId`, `messageId`, `senderActorId`, sender label, raw content, `ref`, explicit mentions, attachments, timestamps, and source refs
-- [ ] 2.4 Move participants, presence, focused seats, and visible-room summaries out of eager message envelopes into explicit room/message projection query surfaces
-- [ ] 2.5 Remove cross-room origin auto-ACK behavior from `sendMessageTool(...)`, including `originAckFallback`
-- [ ] 2.6 Remove `maybeAutoAcknowledgeOriginRoomForToolWork(...)` and its `root_bash` / tool-work call sites
-- [ ] 2.7 Ensure room-visible transcript mutation occurs only through explicit `message send`, `message edit`, or `message recall` actions
-- [ ] 2.8 Update runtime tool views and message send results so explicit message actions remain easy for the model to inspect without hidden fallback messages
+- [x] 2.1 Remove `shouldTreatSharedMessageAsReplyPending(...)` and all call sites from `packages/app-server/src/session-runtime.ts`
+- [x] 2.2 Stop emitting `chatTurnState`, `chatObligationKind`, `settlesWhen`, `room_reply_pending`, `self_update`, `required_room_reply_sent`, and `no_external_reply_needed` from message-backed attention and model envelopes
+- [x] 2.3 Reduce message ingress/model facts to objective fields such as `chatId`, `messageId`, `senderActorId`, sender label, raw content, `ref`, explicit mentions, attachments, timestamps, and source refs
+- [x] 2.4 Move participants, presence, focused seats, and visible-room summaries out of eager message envelopes into explicit room/message projection query surfaces
+- [x] 2.5 Remove cross-room origin auto-ACK behavior from `sendMessageTool(...)`, including `originAckFallback`
+- [x] 2.6 Remove `maybeAutoAcknowledgeOriginRoomForToolWork(...)` and its `root_bash` / tool-work call sites
+- [x] 2.7 Ensure room-visible transcript mutation occurs only through explicit `message send`, `message edit`, or `message recall` actions
+- [x] 2.8 Update runtime tool views and message send results so explicit message actions remain easy for the model to inspect without hidden fallback messages
 
 ## 3. Attention Runtime Kernel And Prompt Cleanup
 
 - [ ] 3.1 Add `attentionContextSnapshot` tracking for AI-visible context views and clear it whenever `ai-messages` are cleared or compacted away
 - [ ] 3.2 Update attention bootstrap/context serialization so scheduler metadata stays separate from model-visible source facts
-- [ ] 3.3 Remove removed chat obligation fields from `packages/app-server/src/agenter-ai.ts`, compact/history enrichment, active attention prompt-window messages, and any replay path
+- [x] 3.3 Remove removed chat obligation fields from `packages/app-server/src/agenter-ai.ts`, compact/history enrichment, active attention prompt-window messages, and any replay path
 - [ ] 3.4 Keep focus and score data available only as scheduler/debug/routing metadata, not as source-authored task instructions or settlement conditions
 - [ ] 3.5 Seed `AttentionContext` into `ai-messages` by focus state: focused full, background minimal summary, muted none
 - [ ] 3.6 Restrict `CommitAttentionItems` injection to focused contexts only
@@ -38,11 +38,11 @@
 
 ## 4. Terminal Adapter Cleanup
 
-- [ ] 4.1 Reclassify `terminal_focus` as a scheduler signal or UI invalidation instead of model-visible attention task content
-- [ ] 4.2 Reclassify `terminal_unfocus` as a scheduler signal or UI invalidation instead of model-visible attention task content
-- [ ] 4.3 Reclassify `terminal_idle_ready` as a scheduler signal that can wake/rank work without injecting `ready for your input` task text
+- [x] 4.1 Reclassify `terminal_focus` as a scheduler signal or UI invalidation instead of model-visible attention task content
+- [x] 4.2 Reclassify `terminal_unfocus` as a scheduler signal or UI invalidation instead of model-visible attention task content
+- [x] 4.3 Reclassify `terminal_idle_ready` as a scheduler signal that can wake/rank work without injecting `ready for your input` task text
 - [ ] 4.4 Preserve terminal snapshots, diffs, await evidence, process facts, and explicit command results as objective model-visible terminal facts
-- [ ] 4.5 Update terminal adapter tests and fixtures so lifecycle coordination and terminal observations use different channels
+- [x] 4.5 Update terminal adapter tests and fixtures so lifecycle coordination and terminal observations use different channels
 
 ## 5. Skill System And Built-In Catalog
 
@@ -68,10 +68,10 @@
 - [ ] 7.1 Add BDD tests proving question marks do not create platform reply obligations
 - [ ] 7.2 Add BDD tests proving direct-room messages do not create platform reply obligations
 - [ ] 7.3 Add BDD tests proving `auth:*` group senders do not create platform reply obligations
-- [ ] 7.4 Add BDD tests proving `root_bash` and non-message tool work do not auto-send origin-room acknowledgements
-- [ ] 7.5 Add BDD tests proving cross-room relay sends only the explicit target-room message and no origin fallback message
-- [ ] 7.6 Add BDD tests proving attention commits alone do not create room transcript rows
-- [ ] 7.7 Add BDD tests proving message participants, presence, and visible rooms are queryable projections rather than eager message-envelope fields
+- [x] 7.4 Add BDD tests proving `root_bash` and non-message tool work do not auto-send origin-room acknowledgements
+- [x] 7.5 Add BDD tests proving cross-room relay sends only the explicit target-room message and no origin fallback message
+- [x] 7.6 Add BDD tests proving attention commits alone do not create room transcript rows
+- [x] 7.7 Add BDD tests proving message participants, presence, and visible rooms are queryable projections rather than eager message-envelope fields
 - [ ] 7.8 Add BDD tests proving attention bootstrap/context seeding omits removed chat obligation labels and keeps scheduler metadata separate
 - [ ] 7.9 Add BDD tests proving focused contexts seed full views, background contexts seed minimal views, and muted contexts do not auto-seed
 - [ ] 7.10 Add BDD tests proving only focused contexts can serialize `CommitAttentionItems`
@@ -81,7 +81,7 @@
 - [ ] 7.14 Add BDD tests proving notify quota queries can return effective config, current remaining state, send-eligibility, and historical notify records, with muted/background defaults computed from rolling time windows
 - [ ] 7.15 Add BDD tests proving failed requests do not advance `attentionContextSnapshot` or clear staged keyed attention items
 - [ ] 7.16 Add BDD tests proving successful requests advance injected snapshots only after response SSE starts with a non-error first event, clear only the staged keys actually committed by that request, and do not retroactively roll back after later stream interruption
-- [ ] 7.17 Add BDD tests proving terminal focus/unfocus/idle-ready are scheduler signals and not task facts
+- [x] 7.17 Add BDD tests proving terminal focus/unfocus/idle-ready are scheduler signals and not task facts
 - [ ] 7.18 Add BDD tests proving skill refresh updates the skill index and, when published, emits only ordinary objective attention items without creating a dedicated skill task context by default
 - [ ] 7.19 Add BDD tests proving generic watches re-evaluate predicates, emit reminders when still relevant, stay silent when satisfied, and never auto-send messages
 - [ ] 7.20 Add effect-ledger tests proving explicit message actions are causally linked to resulting room rows

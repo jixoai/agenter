@@ -51,7 +51,6 @@ export interface RuntimeLocalApiHandlers {
     content: string;
     ref?: number;
     from?: string;
-    originAckFallback?: string;
     followUpAfterMs?: number;
   }) => Promise<RuntimeMessageSendResult>;
   messageEdit: (input: {
@@ -288,7 +287,6 @@ const messageSendSchema = z.object({
   content: z.string(),
   ref: z.number().int().positive().optional(),
   from: z.string().optional(),
-  originAckFallback: z.string().optional(),
   followUpAfterMs: z
     .number()
     .int()

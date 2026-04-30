@@ -311,33 +311,24 @@ const getItemsInput = (inputs: LoopBusInput[] | undefined): LoopBusInput | undef
 const stringifyAttentionQuery = async (runtime: SessionRuntime, query: string): Promise<string> =>
   JSON.stringify(await runtime.queryAttention({ query }));
 
-const parseMessageSocialContext = (
+const parseMessageFactContext = (
   detail: string | undefined,
 ): {
-  channel?: {
-    audience?: string | null;
-    participants?: string[];
-    otherParticipants?: string[];
+  room?: {
+    chatId?: string;
+    title?: string;
+    kind?: string;
+    contextId?: string;
+    focused?: boolean;
   };
-  perspective?: {
-    latestMessage?: string | null;
+  message?: {
+    messageId?: number;
+    ref?: number | null;
+    senderActorId?: string | null;
     senderLabel?: string | null;
-    selfLabel?: string | null;
-    turnState?: string | null;
+    kind?: string;
+    sourceRef?: string;
   };
-  obligation?: {
-    kind?: string | null;
-  };
-  presence?: {
-    online?: string[];
-    offline?: string[];
-  };
-  visibleRooms?: Array<{
-    chatId: string;
-    title: string;
-    participantLabels: string[];
-    focused: boolean;
-  }>;
 } | null => {
   if (!detail) {
     return null;
@@ -347,30 +338,21 @@ const parseMessageSocialContext = (
     return null;
   }
   return parseYaml(match[1]) as {
-    channel?: {
-      audience?: string | null;
-      participants?: string[];
-      otherParticipants?: string[];
+    room?: {
+      chatId?: string;
+      title?: string;
+      kind?: string;
+      contextId?: string;
+      focused?: boolean;
     };
-    perspective?: {
-      latestMessage?: string | null;
+    message?: {
+      messageId?: number;
+      ref?: number | null;
+      senderActorId?: string | null;
       senderLabel?: string | null;
-      selfLabel?: string | null;
-      turnState?: string | null;
+      kind?: string;
+      sourceRef?: string;
     };
-    obligation?: {
-      kind?: string | null;
-    };
-    presence?: {
-      online?: string[];
-      offline?: string[];
-    };
-    visibleRooms?: Array<{
-      chatId: string;
-      title: string;
-      participantLabels: string[];
-      focused: boolean;
-    }>;
   };
 };
 
@@ -1655,7 +1637,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given a shared-room unread message When collectLoopInputs commits attention ingress Then the message envelope keeps participant presence and latest-message perspective", async () => {
+  test("Scenario: Given a shared-room unread message When collectLoopInputs commits attention ingress Then the message envelope keeps only raw room facts while room projections stay queryable", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-social-meta-"));
     const messageSystem = new MessageControlPlane({
       dbPath: resolveMessageControlDbPath(root),
@@ -1724,32 +1706,18 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
       const inputs = await janeInternal.collectLoopInputs();
       expect(getBootstrapInput(inputs)).toBeDefined();
-      const socialContext = parseMessageSocialContext(
+      const messageFact = parseMessageFactContext(
         getActiveItems(janeInternal).find((item) => item.detail?.value.includes("status update"))?.detail?.value,
       );
-      expect(socialContext?.channel?.audience).toBe("group");
-      expect(socialContext?.channel?.participants).toEqual(["kzf", "Jane", "JJ"]);
-      expect(socialContext?.channel?.otherParticipants).toEqual(["kzf", "JJ"]);
-      expect(socialContext?.perspective?.latestMessage).toBe("other");
-      expect(socialContext?.perspective?.senderLabel).toBe("kzf");
-      expect(socialContext?.perspective?.selfLabel).toBe("Jane");
-      expect(socialContext?.perspective?.turnState).toBe("your_turn");
-      expect(socialContext?.obligation?.kind).toBe("room_reply_pending");
-      expect(socialContext?.presence?.online).toEqual(["kzf", "Jane"]);
-      expect(socialContext?.presence?.offline).toEqual(["JJ"]);
-      expect(
-        (socialContext?.visibleRooms ?? []).map((room) => ({
-          title: room.title,
-          participantLabels: room.participantLabels,
-          focused: room.focused,
-        })),
-      ).toEqual([
-        {
-          title: "gaubee",
-          participantLabels: ["Jane", "gaubee"],
-          focused: false,
-        },
-      ]);
+      expect(messageFact?.room?.kind).toBe("room");
+      expect(messageFact?.room?.contextId).toBe(room.contextId);
+      expect(messageFact?.room?.focused).toBe(true);
+      expect(messageFact?.message).toMatchObject({
+        senderActorId: "auth:kzf",
+        senderLabel: "kzf",
+        kind: "text",
+      });
+      expect(messageFact?.message?.sourceRef).toContain(`${room.chatId}/`);
 
       const projected = janeInternal.readMessageChannelForTooling({
         chatId: room.chatId,
@@ -1792,7 +1760,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given a shared-room peer status update When collectLoopInputs commits attention ingress Then the message envelope stays visible without auto-claiming a reply turn", async () => {
+  test("Scenario: Given a shared-room peer status update When collectLoopInputs commits attention ingress Then the message envelope stays visible as raw fact without auto-claiming a reply turn", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-room-peer-meta-"));
     const messageSystem = new MessageControlPlane({
       dbPath: resolveMessageControlDbPath(root),
@@ -1852,25 +1820,17 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
       const inputs = await jjInternal.collectLoopInputs();
       expect(getBootstrapInput(inputs)).toBeDefined();
-      const socialContext = parseMessageSocialContext(
+      const messageFact = parseMessageFactContext(
         getActiveItems(jjInternal).find((item) =>
           item.detail?.value.includes("我先去把接口跑起来，稍后把结果发到群里。"),
         )?.detail?.value,
       );
-      expect(socialContext).toMatchObject({
-        channel: {
-          audience: "group",
-        },
-        perspective: {
-          latestMessage: "other",
-          senderLabel: "Jane",
-          selfLabel: "JJ",
-          turnState: "waiting",
-        },
-        obligation: {
-          kind: "self_update",
-        },
-      });
+      expect(messageFact?.room?.kind).toBe("room");
+      expect(messageFact?.room?.contextId).toBe(room.contextId);
+      expect(messageFact?.room?.focused).toBe(false);
+      expect(messageFact?.message?.senderActorId).toBe("session:jane");
+      expect(messageFact?.message?.senderLabel).toBe("Jane");
+      expect(messageFact?.message?.kind).toBe("text");
     } finally {
       messageSystem.close();
     }
@@ -1913,7 +1873,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(contextInput.text).not.toContain("yaml+background-attention-context");
   });
 
-  test("Scenario: Given terminal focus changes When runtime replaces the focused terminal Then focus and unfocus facts are recorded without becoming active debt", async () => {
+  test("Scenario: Given terminal focus changes When runtime replaces the focused terminal Then focus state changes without serializing focus lifecycle as terminal debt", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
 
@@ -1941,8 +1901,10 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
       const firstSnapshot = getAttentionContextSnapshot(internal, "ctx-terminal-iflow-1");
       const secondSnapshot = getAttentionContextSnapshot(internal, "ctx-terminal-iflow-2");
-      expect(firstSnapshot?.commits.some((commit) => commit.meta.tags?.includes("terminal_unfocus"))).toBeTrue();
-      expect(secondSnapshot?.commits.some((commit) => commit.meta.tags?.includes("terminal_focus"))).toBeTrue();
+      expect(firstSnapshot?.focusState).toBe("background");
+      expect(secondSnapshot?.focusState).toBe("focused");
+      expect(firstSnapshot?.commits.some((commit) => commit.meta.tags?.includes("terminal_unfocus"))).toBeFalse();
+      expect(secondSnapshot?.commits.some((commit) => commit.meta.tags?.includes("terminal_focus"))).toBeFalse();
 
       const activeTerminalItems = getActiveItems(internal).filter((item) => isTerminalMeta(item.meta));
       expect(activeTerminalItems.some((item) => item.title === "Focused terminal iflow-2")).toBeFalse();
@@ -2061,7 +2023,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given terminal control-plane config changes When runtime updates config Then the change stays in history without becoming active debt", async () => {
+  test("Scenario: Given terminal control-plane config changes When runtime updates config Then the change stays in history as world fact without becoming active debt", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal & {
       updateTerminalControlPlaneConfig: (patch: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -2087,7 +2049,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given a background terminal becomes ready When runtime records the explicit ready event Then the context remains actionable debt", async () => {
+  test("Scenario: Given a background terminal becomes ready When runtime records the scheduler signal Then no terminal-ready task fact is committed", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal & {
       enqueueTerminalLifecycleAttentionCommit: (input: {
@@ -2113,9 +2075,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       const activeTerminalItems = getActiveItems(internal).filter((item) => isTerminalMeta(item.meta));
-      expect(
-        activeTerminalItems.some((item) => item.title === "Terminal bg-ready is ready for your input."),
-      ).toBeTrue();
+      expect(activeTerminalItems.some((item) => item.title === "Terminal bg-ready is ready for your input.")).toBeFalse();
     } finally {
       await runtime.stop();
     }
@@ -4221,7 +4181,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await restarted.stop();
   });
 
-  test("Scenario: Given a cycle originates from the primary room When message send targets a relay room first Then runtime auto-acknowledges the origin room before relay dispatch", async () => {
+  test("Scenario: Given a cycle originates from the primary room When message send targets a relay room first Then only the explicit relay-room message is created", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
     const relayChannel = await runtime.createMessageChannel({
@@ -4257,16 +4217,14 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     const mainMessages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
     const relayMessages = internal.messageSystem.snapshot(relayChannel.chatId, 10).items;
     expect(relayDispatch.ok).toBe(true);
-    expect(mainMessages).toHaveLength(1);
-    expect(mainMessages.at(-1)?.content).toBe("Understood. I'll handle it and report back.");
-    expect(mainMessages.at(-1)?.metadata).toEqual({});
+    expect(mainMessages).toHaveLength(0);
     expect(relayMessages.at(-1)?.content).toBe("gaubee，今天中午吃什么？");
     expect(relayMessages.at(-1)?.metadata).toEqual({});
 
     await runtime.stop();
   });
 
-  test("Scenario: Given a cycle originates from the primary room When root workspace bash starts tool work before any visible room reply Then runtime auto-acknowledges the origin room", async () => {
+  test("Scenario: Given a cycle originates from the primary room When root workspace bash starts tool work before any visible room reply Then the origin room stays unchanged", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
 
@@ -4295,9 +4253,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     const mainMessages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
     expect(bash.stdout).toBe("ready");
-    expect(mainMessages).toHaveLength(1);
-    expect(mainMessages.at(-1)?.content).toBe("Understood. I'll handle it and report back.");
-    expect(mainMessages.at(-1)?.metadata).toEqual({});
+    expect(mainMessages).toHaveLength(0);
 
     await runtime.stop();
   });

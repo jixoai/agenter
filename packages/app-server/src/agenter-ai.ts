@@ -393,62 +393,6 @@ const normalizeLoopInputs = (inputs: readonly LoopBusInput[] | undefined): LoopB
     attachments: input.attachments?.map((attachment) => ({ ...attachment })),
   }));
 
-const parseLoopMetaList = (value: unknown): string[] => {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    return [];
-  }
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-      : [];
-  } catch {
-    return [];
-  }
-};
-
-const buildChatSocialContext = (message: LoopBusMessage): Record<string, unknown> | null => {
-  const meta = message.meta ?? {};
-  if (typeof meta.chatId !== "string" && typeof meta.chatTitle !== "string") {
-    return null;
-  }
-  const participantLabels = parseLoopMetaList(meta.chatParticipantLabels);
-  const otherParticipantLabels = parseLoopMetaList(meta.chatOtherParticipantLabels);
-  const onlineLabels = parseLoopMetaList(meta.chatOnlineParticipantLabels);
-  const offlineLabels = parseLoopMetaList(meta.chatOfflineParticipantLabels);
-  const focusedLabels = parseLoopMetaList(meta.chatFocusedParticipantLabels);
-  return {
-    channel: {
-      chatId: typeof meta.chatId === "string" ? meta.chatId : null,
-      title: typeof meta.chatTitle === "string" ? meta.chatTitle : null,
-      kind: typeof meta.chatKind === "string" ? meta.chatKind : null,
-      audience: typeof meta.chatAudience === "string" ? meta.chatAudience : null,
-      participantCount: typeof meta.chatParticipantCount === "number" ? meta.chatParticipantCount : participantLabels.length,
-      participants: participantLabels,
-      otherParticipants: otherParticipantLabels,
-    },
-    perspective: {
-      latestMessage: typeof meta.chatMessagePerspective === "string" ? meta.chatMessagePerspective : null,
-      senderActorId: typeof meta.chatSenderActorId === "string" ? meta.chatSenderActorId : null,
-      senderLabel:
-        typeof meta.chatSenderLabel === "string" && meta.chatSenderLabel.trim().length > 0 ? meta.chatSenderLabel : message.name,
-      selfActorId: typeof meta.chatSelfActorId === "string" ? meta.chatSelfActorId : null,
-      selfLabel: typeof meta.chatSelfLabel === "string" ? meta.chatSelfLabel : null,
-      turnState: typeof meta.chatTurnState === "string" ? meta.chatTurnState : null,
-    },
-    obligation: {
-      kind: typeof meta.chatObligationKind === "string" ? meta.chatObligationKind : null,
-      settlesWhen:
-        meta.chatObligationKind === "room_reply_pending" ? "required_room_reply_sent" : "no_external_reply_needed",
-    },
-    presence: {
-      online: onlineLabels,
-      offline: offlineLabels,
-      focused: focusedLabels,
-    },
-  };
-};
-
 const COMPACT_SUMMARY_SCHEMA = z.object({
   overview: z.string().default(""),
   decisions: z.array(z.string()).default([]),
@@ -1920,10 +1864,8 @@ export class AgenterAI {
     const header = `### ${message.name}`;
     if (message.source === "chat") {
       const attachmentFacts: string[] = [];
-      const socialContext = buildChatSocialContext(message);
       const textSections = [
         header,
-        ...(socialContext ? [mdFence("yaml", toYaml(socialContext))] : []),
         message.text,
       ].filter((item) => item.length > 0);
       const parts: ContentPart[] = [toTextPart(textSections.join("\n\n"))];

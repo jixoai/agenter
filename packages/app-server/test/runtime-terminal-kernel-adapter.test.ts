@@ -52,7 +52,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
     expect(adapter.hasFocusedDirtyWork()).toBeFalse();
   });
 
-  test("Scenario: Given terminal lifecycle ingress before host boot When adapter bootstraps Then lifecycle commits flush through the host API", async () => {
+  test("Scenario: Given terminal lifecycle ingress before host boot When adapter bootstraps Then scheduler-only lifecycle stays out of host commits", async () => {
     const committed: RuntimeSystemIngressEnvelope[] = [];
     const adapter = new RuntimeTerminalKernelAdapter({
       isLoopPaused: () => false,
@@ -99,20 +99,6 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
     adapter.mount(host);
     await adapter.bootstrap();
 
-    expect(committed).toEqual([
-      {
-        system: "terminal",
-        sourceId: "tty:iflow",
-        contextKey: "ctx-terminal-iflow",
-        kind: "terminal_idle_ready",
-        summary: "Terminal iflow is ready for your input.",
-        content: "Terminal iflow is ready for your input.",
-        format: "text/plain",
-        score: 100,
-        tags: ["terminal", "lifecycle"],
-        createdAt: 1,
-        author: "avatar",
-      },
-    ]);
+    expect(committed).toEqual([]);
   });
 });

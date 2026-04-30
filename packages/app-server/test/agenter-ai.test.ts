@@ -2701,7 +2701,7 @@ describe("Feature: AgenterAI behavior", () => {
     expect(replay.join("\n\n")).not.toContain("### Tool activity");
   });
 
-  test("Scenario: Given a room chat carries social context When the model prompt is assembled Then the replay includes room presence and latest-message perspective", async () => {
+  test("Scenario: Given a room chat carries objective room facts When the model prompt is assembled Then the replay preserves only raw room-message facts and content", async () => {
     const terminal = createTerminalGateway();
     const chat = createAttentionGateway();
     const message = createMessageGateway();
@@ -2731,36 +2731,22 @@ describe("Feature: AgenterAI behavior", () => {
           chatId: "room-team",
           chatTitle: "Team room",
           chatKind: "room",
-          chatAudience: "group",
-          chatParticipantCount: 3,
-          chatParticipantLabels: JSON.stringify(["kzf", "Jane", "JJ"]),
-          chatOtherParticipantLabels: JSON.stringify(["kzf", "JJ"]),
-          chatOnlineParticipantLabels: JSON.stringify(["kzf", "Jane"]),
-          chatOfflineParticipantLabels: JSON.stringify(["JJ"]),
-          chatFocusedParticipantLabels: JSON.stringify(["Jane"]),
-          chatSenderActorId: "session:jane",
-          chatSenderLabel: "Jane",
-          chatSelfActorId: "session:jj",
-          chatSelfLabel: "JJ",
-          chatMessagePerspective: "other",
-          chatTurnState: "waiting",
-          chatObligationKind: "self_update",
+          messageId: 41,
+          senderActorId: "session:jane",
+          senderLabel: "Jane",
+          ref: null,
         },
       }),
     ]);
 
     const userReplay = extractUserReplay(seenInputs[0]);
     expect(userReplay).toHaveLength(1);
-    expect(userReplay[0]).toContain("participantCount: 3");
-    expect(userReplay[0]).toContain("latestMessage: other");
-    expect(userReplay[0]).toContain("senderLabel: Jane");
-    expect(userReplay[0]).toContain("selfLabel: JJ");
-    expect(userReplay[0]).toContain("turnState: waiting");
-    expect(userReplay[0]).toContain("kind: self_update");
-    expect(userReplay[0]).toContain("settlesWhen: no_external_reply_needed");
-    expect(userReplay[0]).toContain("online:");
-    expect(userReplay[0]).toContain("offline:");
+    expect(userReplay[0]).toContain("### Jane");
     expect(userReplay[0]).toContain("我们先等等，看谁更适合回答。");
+    expect(userReplay[0]).not.toContain("participantCount:");
+    expect(userReplay[0]).not.toContain("turnState:");
+    expect(userReplay[0]).not.toContain("self_update");
+    expect(userReplay[0]).not.toContain("settlesWhen:");
   });
 
   test("Scenario: Given assistant tool activity and reply When the next turn is built Then replayed promptWindow preserves text plus tool invocation fences", async () => {

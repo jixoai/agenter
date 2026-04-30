@@ -9,6 +9,7 @@ export const buildRuntimeSkillSnapshotIngress = (input: {
   createdAt: number;
 }): RuntimeSystemIngressEnvelope => ({
   system: "skill",
+  boundaryChannel: "capability_projection",
   sourceId: "skill:runtime:snapshot",
   contextKey: input.contextId,
   kind: "runtime_skill_snapshot",
@@ -33,6 +34,7 @@ export const buildRuntimeSkillChangeIngresses = (input: {
 }): RuntimeSystemIngressEnvelope[] =>
   input.changes.map((change, index) => ({
     system: "skill",
+    boundaryChannel: "world_fact",
     sourceId: `skill:runtime:change:${change.kind}:${change.name}:${input.createdAt}:${index}`,
     contextKey: input.contextId,
     kind: "runtime_skill_change",

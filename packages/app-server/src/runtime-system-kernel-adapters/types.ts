@@ -9,8 +9,16 @@ import type {
   SystemKernelHost,
 } from "@agenter/loopbus-kernel";
 
+export type RuntimeBoundaryChannel =
+  | "world_fact"
+  | "capability_projection"
+  | "scheduler_signal"
+  | "agent_action"
+  | "effect_ledger";
+
 export interface RuntimeSystemIngressEnvelope extends SystemIngressEnvelope {
   author: string;
+  boundaryChannel: RuntimeBoundaryChannel;
   ingressType?: "commit" | "push";
   changeType?: "update" | "diff";
   target?: string;

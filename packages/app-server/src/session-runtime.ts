@@ -1125,6 +1125,61 @@ const buildLifecycleAttentionDetail = (
   });
 };
 
+const cloneMessageAttachmentFacts = (message: MessageRecord): ChatSessionAsset[] =>
+  message.attachments?.map((attachment) => ({
+    assetId: attachment.assetId,
+    kind: attachment.kind,
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    sizeBytes: attachment.sizeBytes,
+    url: attachment.url,
+  })) ?? [];
+
+const buildMessageFactEnvelope = (input: {
+  message: MessageRecord;
+  chatTitle: string;
+  chatKind: string;
+  contextId: string;
+  focused: boolean;
+  attachments?: ChatSessionAsset[];
+}): string => {
+  const { message } = input;
+  const messageFact = {
+    room: {
+      chatId: message.chatId,
+      title: input.chatTitle,
+      kind: input.chatKind,
+      contextId: input.contextId,
+      focused: input.focused,
+    },
+    message: {
+      messageId: message.messageId,
+      ref: message.ref ?? null,
+      senderActorId: message.senderActorId ?? null,
+      senderLabel: message.from,
+      kind: message.kind,
+      createdAt: new Date(message.createdAt).toISOString(),
+      updatedAt: new Date(message.updatedAt).toISOString(),
+      visibleAt: typeof message.visibleAt === "number" ? new Date(message.visibleAt).toISOString() : null,
+      sourceRef: formatMessageSourceSrc({
+        chatId: message.chatId,
+        messageId: message.messageId,
+      }),
+    },
+  };
+  const attachmentFacts =
+    (input.attachments ?? []).length === 0
+      ? []
+      : [
+          "attachments:",
+          ...(input.attachments ?? []).map(
+            (attachment) =>
+              `- ${attachment.kind}: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes)`,
+          ),
+        ];
+  return [mdFence("yaml", toYaml(messageFact)), message.content, ...attachmentFacts].join("\n\n");
+};
+
 const stableAttentionDraftDigest = (draft: AttentionDraft): string => {
   const semanticHint =
     typeof draft.semanticHash === "string"
@@ -2297,205 +2352,11 @@ export class SessionRuntime {
     return summarizeMessageChannelPresence(channel);
   }
 
-  private shouldTreatSharedMessageAsReplyPending(input: {
-    message: MessageRecord;
-    selfActorId: string;
-    selfLabel: string;
-    audience: "direct" | "group";
-  }): boolean {
-    const senderActorId = input.message.senderActorId ?? null;
-    if (senderActorId === null || senderActorId === input.selfActorId) {
-      return false;
-    }
-    if (input.audience === "direct") {
-      return true;
-    }
-    if (senderActorId.startsWith("auth:")) {
-      return true;
-    }
-    return /[?？]/u.test(input.message.content);
-  }
-
-  private buildMessageLoopMeta(
-    message: MessageRecord,
-    channel: MessageControlPlaneEntry | undefined,
-    existingMeta: Record<string, string | number | boolean | null>,
-  ): Record<string, string | number | boolean | null> {
-    const nextMeta = { ...existingMeta };
-    if (!channel) {
-      return nextMeta;
-    }
-
-    const seatEntries = listMessageSeatEntries(channel);
-    const toLabels = (
-      entries: Array<{
-        label: string;
-      }>,
-    ): string[] => entries.map((entry) => entry.label);
-
-    const selfActorId = this.messageActorId;
-    const selfState = seatEntries.find((state) => state.actorId === selfActorId);
-    const senderActorId = message.senderActorId ?? null;
-    const senderState =
-      (senderActorId ? seatEntries.find((state) => state.actorId === senderActorId) : undefined) ??
-      seatEntries.find((state) => state.label === message.from);
-    const otherStates = seatEntries.filter((state) => state.actorId !== selfActorId);
-    const onlineStates = seatEntries.filter((state) => state.online === true);
-    const offlineStates = seatEntries.filter((state) => state.online === false);
-    const focusedStates = seatEntries.filter((state) => state.focused === true);
-    const otherOnlineStates = otherStates.filter((state) => state.online === true);
-    const otherOfflineStates = otherStates.filter((state) => state.online === false);
-    const chatAudience = seatEntries.length > 2 ? "group" : "direct";
-
-    nextMeta.chatParticipantCount = seatEntries.length;
-    nextMeta.chatParticipantLabels = JSON.stringify(toLabels(seatEntries));
-    nextMeta.chatOtherParticipantLabels = JSON.stringify(toLabels(otherStates));
-    nextMeta.chatOnlineParticipantLabels = JSON.stringify(toLabels(onlineStates));
-    nextMeta.chatOfflineParticipantLabels = JSON.stringify(toLabels(offlineStates));
-    nextMeta.chatFocusedParticipantLabels = JSON.stringify(toLabels(focusedStates));
-    nextMeta.chatOtherOnlineParticipantLabels = JSON.stringify(toLabels(otherOnlineStates));
-    nextMeta.chatOtherOfflineParticipantLabels = JSON.stringify(toLabels(otherOfflineStates));
-    nextMeta.chatSelfActorId = selfActorId;
-    nextMeta.chatSelfLabel = selfState?.label ?? this.getAvatarName();
-    const latestMessagePerspective = senderActorId !== null && senderActorId === selfActorId ? "self" : "other";
-    const replyPending =
-      latestMessagePerspective === "other" &&
-      this.shouldTreatSharedMessageAsReplyPending({
-        message,
-        selfActorId,
-        selfLabel: String(nextMeta.chatSelfLabel ?? ""),
-        audience: chatAudience,
-      });
-    nextMeta.chatSenderActorId = senderActorId;
-    nextMeta.chatSenderLabel = senderState?.label ?? message.from;
-    nextMeta.chatMessagePerspective = latestMessagePerspective;
-    nextMeta.chatTurnState = replyPending ? "your_turn" : "waiting";
-    nextMeta.chatObligationKind = replyPending ? "room_reply_pending" : "self_update";
-    nextMeta.chatAudience = chatAudience;
-    const visibleRooms = this.listVisibleMessageRoomSummaries(channel.chatId);
-    nextMeta.chatVisibleRoomCount = visibleRooms.length;
-    nextMeta.chatVisibleRoomSummaries = JSON.stringify(visibleRooms);
-    return nextMeta;
-  }
-
-  private parseMessageMetaLabelList(value: unknown): string[] {
-    if (typeof value !== "string" || value.trim().length === 0) {
-      return [];
-    }
-    try {
-      const parsed = JSON.parse(value) as unknown;
-      return Array.isArray(parsed)
-        ? parsed.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-        : [];
-    } catch {
-      return [];
-    }
-  }
-
-  private parseMessageMetaRoomSummaries(value: unknown): Array<{
-    chatId: string;
-    title: string;
-    participantLabels: string[];
-    focused: boolean;
-  }> {
-    if (typeof value !== "string" || value.trim().length === 0) {
-      return [];
-    }
-    try {
-      const parsed = JSON.parse(value) as unknown;
-      if (!Array.isArray(parsed)) {
-        return [];
-      }
-      return parsed.flatMap((entry) => {
-        if (!entry || typeof entry !== "object") {
-          return [];
-        }
-        const record = entry as Record<string, unknown>;
-        const chatId = typeof record.chatId === "string" ? record.chatId : null;
-        const title = typeof record.title === "string" ? record.title : null;
-        if (!chatId || !title) {
-          return [];
-        }
-        const participantLabels = Array.isArray(record.participantLabels)
-          ? record.participantLabels.filter(
-              (label): label is string => typeof label === "string" && label.trim().length > 0,
-            )
-          : [];
-        return [
-          {
-            chatId,
-            title,
-            participantLabels,
-            focused: record.focused === true,
-          },
-        ];
-      });
-    } catch {
-      return [];
-    }
-  }
-
-  private buildMessageModelEnvelope(
-    content: string,
-    meta: Record<string, unknown>,
-    attachments: ChatSessionAsset[] = [],
-  ): string {
-    const participantLabels = this.parseMessageMetaLabelList(meta.chatParticipantLabels);
-    const otherParticipantLabels = this.parseMessageMetaLabelList(meta.chatOtherParticipantLabels);
-    const onlineLabels = this.parseMessageMetaLabelList(meta.chatOnlineParticipantLabels);
-    const offlineLabels = this.parseMessageMetaLabelList(meta.chatOfflineParticipantLabels);
-    const focusedLabels = this.parseMessageMetaLabelList(meta.chatFocusedParticipantLabels);
-    const visibleRooms = this.parseMessageMetaRoomSummaries(meta.chatVisibleRoomSummaries);
-    const socialContext = {
-      channel: {
-        chatId: typeof meta.chatId === "string" ? meta.chatId : null,
-        title: typeof meta.chatTitle === "string" ? meta.chatTitle : null,
-        kind: typeof meta.chatKind === "string" ? meta.chatKind : null,
-        audience: typeof meta.chatAudience === "string" ? meta.chatAudience : null,
-        participantCount:
-          typeof meta.chatParticipantCount === "number" ? meta.chatParticipantCount : participantLabels.length || null,
-        participants: participantLabels,
-        otherParticipants: otherParticipantLabels,
-      },
-      perspective: {
-        latestMessage: typeof meta.chatMessagePerspective === "string" ? meta.chatMessagePerspective : null,
-        senderActorId: typeof meta.chatSenderActorId === "string" ? meta.chatSenderActorId : null,
-        senderLabel: typeof meta.chatSenderLabel === "string" ? meta.chatSenderLabel : null,
-        selfActorId: typeof meta.chatSelfActorId === "string" ? meta.chatSelfActorId : null,
-        selfLabel: typeof meta.chatSelfLabel === "string" ? meta.chatSelfLabel : null,
-        turnState: typeof meta.chatTurnState === "string" ? meta.chatTurnState : null,
-      },
-      obligation: {
-        kind: typeof meta.chatObligationKind === "string" ? meta.chatObligationKind : null,
-        settlesWhen:
-          meta.chatObligationKind === "room_reply_pending" ? "required_room_reply_sent" : "no_external_reply_needed",
-      },
-      presence: {
-        online: onlineLabels,
-        offline: offlineLabels,
-        focused: focusedLabels,
-      },
-      visibleRooms,
-    };
-    const attachmentFacts =
-      attachments.length === 0
-        ? []
-        : [
-            "attachments:",
-            ...attachments.map(
-              (attachment) =>
-                `- ${attachment.kind}: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes)`,
-            ),
-          ];
-    return [mdFence("yaml", toYaml(socialContext)), content, ...attachmentFacts].join("\n\n");
-  }
-
   private async sendMessageTool(input: {
     chatId: string;
     content: string;
     ref?: number;
     from?: string;
-    originAckFallback?: string;
     followUpAfterMs?: number;
   }): Promise<RuntimeMessageSendResult> {
     const channel = this.getActorRoom(input.chatId) ?? this.messageSystem.getChannel(input.chatId);
@@ -2504,26 +2365,6 @@ export class SessionRuntime {
     }
     const replyCycleId = this.activeCycleId;
     const author = input.from ?? this.getAvatarName();
-    const originChatId = this.getOriginChatIdForCycle(replyCycleId);
-    if (
-      originChatId &&
-      input.chatId !== originChatId &&
-      !this.hasDeliveredRuntimeDispatchForCycle(originChatId, replyCycleId)
-    ) {
-      const originChannel = this.getActorRoom(originChatId) ?? this.messageSystem.getChannel(originChatId);
-      const originAckFallback = input.originAckFallback?.trim();
-      if (originChannel) {
-        this.deliverRuntimeMessageDispatch({
-          chatId: originChatId,
-          content:
-            originAckFallback && originAckFallback.length > 0
-              ? originAckFallback
-              : this.getMessageSendOriginAckFallback(),
-          from: author,
-          cycleId: replyCycleId,
-        });
-      }
-    }
     const result = this.deliverRuntimeMessageDispatch({
       chatId: input.chatId,
       content: input.content,
@@ -2618,10 +2459,6 @@ export class SessionRuntime {
     });
   }
 
-  private getMessageSendOriginAckFallback(): string {
-    return this.config?.lang === "zh-Hans" ? "收到，我先处理一下。" : "Understood. I'll handle it and report back.";
-  }
-
   private armMessageFollowUpReminder(input: {
     chatId: string;
     anchorMessageId: number;
@@ -2635,41 +2472,6 @@ export class SessionRuntime {
     });
   }
 
-  private isVisibleRoomMutationCommand(command: string): boolean {
-    const tokens = command
-      .trim()
-      .split(/\s+/u)
-      .filter((token) => token.length > 0);
-    if (tokens[0] !== "message") {
-      return false;
-    }
-    if (tokens.includes("--help")) {
-      return false;
-    }
-    return tokens[1] === "send" || tokens[1] === "edit" || tokens[1] === "recall";
-  }
-
-  private maybeAutoAcknowledgeOriginRoomForToolWork(command: string): void {
-    const cycleId = this.activeCycleId;
-    const originChatId = this.getOriginChatIdForCycle(cycleId);
-    if (
-      !originChatId ||
-      this.hasDeliveredRuntimeDispatchForCycle(originChatId, cycleId) ||
-      this.isVisibleRoomMutationCommand(command)
-    ) {
-      return;
-    }
-    const originChannel = this.getActorRoom(originChatId) ?? this.messageSystem.getChannel(originChatId);
-    if (!originChannel) {
-      return;
-    }
-    this.deliverRuntimeMessageDispatch({
-      chatId: originChatId,
-      content: this.getMessageSendOriginAckFallback(),
-      from: this.getAvatarName(),
-      cycleId,
-    });
-  }
 
   private deliverRuntimeMessageDispatch(input: {
     chatId: string;
@@ -2843,7 +2645,6 @@ export class SessionRuntime {
     content: string;
     ref?: number;
     from?: string;
-    originAckFallback?: string;
     followUpAfterMs?: number;
   }): Promise<RuntimeMessageSendResult> {
     return await this.sendMessageTool(input);
@@ -3271,6 +3072,7 @@ export class SessionRuntime {
         contextId: this.getTerminalAttentionContextId(createdTerminalId),
         event: "terminal_create",
         summary: `Created terminal ${createdTerminalId}`,
+        boundaryChannel: "world_fact",
         payload: {
           processKind: input.processKind ?? "shell",
         },
@@ -3395,6 +3197,7 @@ export class SessionRuntime {
       contextId: this.getTerminalAttentionContextId(terminalId),
       event: "terminal_delete",
       summary: `Deleted terminal ${terminalId}`,
+      boundaryChannel: "world_fact",
     });
     return result;
   }
@@ -3468,22 +3271,8 @@ export class SessionRuntime {
     if (trimmedContent.length === 0 || trimmedContent === "/compact") {
       return null;
     }
-    const existingMeta =
-      message.metadata && typeof message.metadata === "object"
-        ? { ...(message.metadata as Record<string, string | number | boolean | null>) }
-        : {};
-    const socialMeta = this.buildMessageLoopMeta(message, channel, existingMeta);
-    const attachments =
-      message.attachments?.map((attachment) => ({
-        assetId: attachment.assetId,
-        kind: attachment.kind,
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes,
-        url: attachment.url,
-      })) ?? [];
+    const attachments = cloneMessageAttachmentFacts(message);
     const envelopeMeta = {
-      ...socialMeta,
       chatId: message.chatId,
       chatTitle: channel.title,
       chatKind: channel.kind,
@@ -3491,9 +3280,13 @@ export class SessionRuntime {
       chatFocused: channel.focused,
       messageId: message.messageId,
       visibleAt: message.visibleAt ?? message.createdAt,
+      senderActorId: message.senderActorId ?? null,
+      senderLabel: message.from,
+      ref: message.ref ?? null,
     } satisfies Record<string, unknown>;
     return {
       system: "message",
+      boundaryChannel: "world_fact",
       sourceId: formatMessageSourceSrc({
         chatId: message.chatId,
         messageId: message.messageId,
@@ -3501,7 +3294,14 @@ export class SessionRuntime {
       contextKey: channel.contextId ?? this.getDefaultAttentionContextId(channel.chatId),
       kind: "room_ingress",
       summary: truncateAttentionTitle(trimmedContent),
-      content: this.buildMessageModelEnvelope(message.content, envelopeMeta, attachments),
+      content: buildMessageFactEnvelope({
+        message,
+        chatTitle: channel.title,
+        chatKind: channel.kind,
+        contextId: channel.contextId ?? this.getDefaultAttentionContextId(channel.chatId),
+        focused: channel.focused,
+        attachments,
+      }),
       format: "text/markdown",
       score: 100,
       tags: ["message", "room_ingress"],
@@ -3512,17 +3312,15 @@ export class SessionRuntime {
   }
 
   private toLoopInputFromMessage(message: MessageRecord): LoopBusInput {
-    const existingMeta =
-      message.metadata && typeof message.metadata === "object"
-        ? { ...(message.metadata as Record<string, string | number | boolean | null>) }
-        : {};
     const channel =
       this.getActorRoom(message.chatId, { includeArchived: true }) ??
       this.messageSystem.getChannel(message.chatId, { includeArchived: true });
-    const meta = this.buildMessageLoopMeta(message, channel, existingMeta);
-    if (message.chatId) {
-      meta.chatId = message.chatId;
-    }
+    const meta: Record<string, string | number | boolean | null> = {};
+    meta.chatId = message.chatId;
+    meta.messageId = message.messageId;
+    meta.senderActorId = message.senderActorId ?? null;
+    meta.senderLabel = message.from;
+    meta.ref = message.ref ?? null;
     if (channel) {
       meta.chatTitle = channel.title;
       meta.chatKind = channel.kind;
@@ -3657,6 +3455,7 @@ export class SessionRuntime {
           summary: isAdminWork
             ? `Terminal ${terminalId} has a pending write request`
             : `Terminal ${terminalId} write request is ${request.status}`,
+          boundaryChannel: "world_fact",
           payload: {
             requestId: request.requestId,
             participantId: request.participantId,
@@ -4074,7 +3873,6 @@ export class SessionRuntime {
     stdin?: string;
   }): Promise<RootWorkspaceBashExecResult> {
     await this.ensureRuntimeLocalApiStarted();
-    this.maybeAutoAcknowledgeOriginRoomForToolWork(input.command);
     if (!this.runtimeLocalApi || !this.options.avatarPrivateKey) {
       throw new Error("runtime local api unavailable");
     }
@@ -4445,27 +4243,8 @@ export class SessionRuntime {
       return [];
     }
     const from = message?.from ?? channel?.title ?? chatId;
-    const attachments =
-      message?.attachments?.map((attachment) => ({
-        assetId: attachment.assetId,
-        kind: attachment.kind,
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes,
-        url: attachment.url,
-      })) ?? [];
-    const socialMeta =
-      message && channel
-        ? this.buildMessageLoopMeta(
-            message,
-            channel,
-            message.metadata && typeof message.metadata === "object"
-              ? (message.metadata as Record<string, string | number | boolean | null>)
-              : {},
-          )
-        : {};
+    const attachments = message ? cloneMessageAttachmentFacts(message) : [];
     const envelopeMeta = {
-      ...socialMeta,
       chatId,
       chatTitle: channel?.title ?? chatId,
       chatKind: channel?.kind ?? "direct",
@@ -4473,6 +4252,9 @@ export class SessionRuntime {
       chatFocused: channel?.focused ?? false,
       messageId: message?.messageId ?? sourceMessageId,
       visibleAt: message?.visibleAt ?? message?.createdAt ?? null,
+      senderActorId: message?.senderActorId ?? null,
+      senderLabel: message?.from ?? from,
+      ref: message?.ref ?? null,
     } satisfies Record<string, unknown>;
     const resolvedSourceMessageId = message?.messageId ?? sourceMessageId;
     return [
@@ -4503,7 +4285,31 @@ export class SessionRuntime {
         },
         presentation: {
           summary: truncateAttentionTitle(content.trim()),
-          body: this.buildMessageModelEnvelope(content, envelopeMeta, attachments),
+          body: buildMessageFactEnvelope({
+            message:
+              message ?? {
+                rowId: -1,
+                messageId: sourceMessageId,
+                chatId,
+                ref: undefined,
+                from,
+                kind: "text",
+                content,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                visibleAt: undefined,
+                readActorIds: [],
+                unreadActorIds: [],
+                senderActorId: undefined,
+                metadata: undefined,
+                attachments: undefined,
+              },
+            chatTitle: channel?.title ?? chatId,
+            chatKind: channel?.kind ?? "direct",
+            contextId: channel?.contextId ?? this.getDefaultAttentionContextId(chatId),
+            focused: channel?.focused ?? false,
+            attachments,
+          }),
           bodyFormat: "text/markdown",
           changeType: "update",
         },
@@ -4809,6 +4615,7 @@ export class SessionRuntime {
     payload?: Record<string, unknown>;
     score?: number;
     ingressType?: "commit" | "push";
+    boundaryChannel?: RuntimeSystemIngressEnvelope["boundaryChannel"];
   }): RuntimeSystemIngressEnvelope {
     const bridgeId = resolveLifecycleBridgeId(input.src);
     const score = Math.max(
@@ -4824,6 +4631,7 @@ export class SessionRuntime {
     const detail = buildLifecycleAttentionDetail(input.src, bridgeId, input.event, input.payload);
     return {
       system: input.system,
+      boundaryChannel: input.boundaryChannel ?? "scheduler_signal",
       sourceId: input.src,
       contextKey: input.contextId,
       kind: input.event,
@@ -4847,6 +4655,7 @@ export class SessionRuntime {
     payload?: Record<string, unknown>;
     score?: number;
     ingressType?: "commit" | "push";
+    boundaryChannel?: RuntimeSystemIngressEnvelope["boundaryChannel"];
   }): void {
     this.messageKernelAdapter.commitLifecycleIngress(
       this.buildLifecycleIngressEnvelope({
@@ -4858,6 +4667,7 @@ export class SessionRuntime {
         payload: input.payload,
         score: input.score,
         ingressType: input.ingressType,
+        boundaryChannel: input.boundaryChannel,
       }),
     );
   }
@@ -4870,6 +4680,7 @@ export class SessionRuntime {
     payload?: Record<string, unknown>;
     score?: number;
     ingressType?: "commit" | "push";
+    boundaryChannel?: RuntimeSystemIngressEnvelope["boundaryChannel"];
   }): void {
     this.terminalKernelAdapter.commitLifecycleIngress(input);
   }
