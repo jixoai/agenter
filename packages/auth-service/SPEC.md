@@ -67,6 +67,8 @@
 - SQLite 是 durable fact store，负责 auth identity、reference、challenge、credential、token、icon asset 等事实
 - 新 auth-service 默认使用 `.agenter/auth-service/auth-service.sqlite`
 - uploaded icon bytes 在首个切片中直接存入 SQLite blob，不分裂到第二套 sidecar file authority
-- auth-service 在 data dir 内维护显式 startup lock，确保同一个 authority root 同时只有一个 writable runtime；重复启动时必须引导 operator 复用既有 `--auth-service-endpoint` 或先停止既有实例
+- auth-service 在 data dir 内维护显式 startup lock，确保同一个 authority root 同时只有一个 writable runtime
+- auth-service 在同一个 data dir 内发布 authority-scoped runtime descriptor，至少包含 `endpoint`、`pid`、`dataDir`、`rootAuthKeyPath` 与 `updatedAt`
+- runtime descriptor 只是 authority discovery fact，不是并发写放行器；consumer 复用前必须先确认 descriptor 指向的 endpoint 仍然健康
 - auth-service 作为 single writer 维护 auth/icon/public-identity 事实；`app-server` 只能做 child-runtime 生命周期管理、root-auth bootstrap 与 session seed 同步，不得并发写第二份真源
-- child-runtime 模式下，`app-server` 负责生命周期与 endpoint 发现；客户端消费 icon/auth URL 时必须直连发现到的 auth-service endpoint。external endpoint 模式下，不得重复 spawn 本地实例
+- child-runtime 模式下，`app-server` 负责生命周期与 endpoint 发现；同 authority root 已存在健康 runtime descriptor 时，consumer 默认应复用该 writer 而不是再次启动。客户端消费 icon/auth URL 时必须直连发现到的 auth-service endpoint。external endpoint 模式下，不得重复 spawn 本地实例

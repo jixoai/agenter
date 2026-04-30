@@ -123,3 +123,10 @@
   - attention 仍然可以通过 query API 读取
 - workspace mounts / grants 当前以 query + mutation contract 为主；调用 `grantRuntime`、`detachRuntime`、`session.create/start` 后，调用方应主动刷新 mount/grant 视图。
 - `grantRuntime` 是公开的 workspace attach + grant mutation；`session.create/start` 只负责 runtime lifecycle，不负责隐式资源注入。
+
+## 6. Auth Authority Discovery Contract
+
+- `app-server` 在没有显式 `authService.endpoint` 时，必须先按目标 auth-service authority root 读取 runtime descriptor，再决定是否启动 child runtime
+- 只有当 descriptor 指向的 endpoint 经过健康探测仍然可用时，`app-server` 才能把该 authority 视为可复用 single writer
+- 若 child runtime 启动期间遭遇 single-writer 竞争，而同 authority root 此时已出现健康 descriptor，`app-server` 必须回退到 descriptor 复用，而不是让整个 boot 因“已存在 writer”失败
+- 自动复用到的本地 auth-service 在语义上等价于 external authority：`app-server` 不拥有其生命周期，也不得暴露 root-auth private key reveal 能力
