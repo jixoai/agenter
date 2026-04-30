@@ -41,6 +41,22 @@ The runtime skill system SHALL treat `SKILL.md` and sibling `ccski.config.json` 
 - **THEN** the runtime skill system treats that file as part of the skill truth
 - **AND** the next refresh publishes the corresponding skill-change reminder
 
+### Requirement: Skill refresh SHALL not create a dedicated task context by default
+
+Skill refresh SHALL maintain a capability index and MAY publish ordinary objective attention items, but it SHALL NOT synthesize or auto-bootstrap a dedicated skill-only attention context solely because the skill index changed.
+
+#### Scenario: Refresh updates the index without `ctx-skill-system`
+
+- **WHEN** visible skill truth is refreshed during boot, collection, or watcher flush
+- **THEN** `skill list`, `skill search`, `skill info`, and `skill get-config` reflect the latest capability index
+- **AND** the runtime does not auto-create or auto-bootstrap a dedicated skill-only task context for that refresh
+
+#### Scenario: Stopped-session restart refreshes only projection truth
+
+- **WHEN** a watched skill changed while the runtime was stopped and the same session later restarts
+- **THEN** the runtime refreshes the skill projection/index and any ordinary reminder facts
+- **AND** it does not replay that change as a permanent dedicated skill peer
+
 ### Requirement: Watcher events SHALL flush at the next collection boundary
 
 Watcher events SHALL be treated as dirtiness hints only. The runtime SHALL recompute skill truth from disk and publish aggregated reminders per changed skill at the next model input collection boundary, with an idle debounce fallback if no other input arrives first. When the runtime process was absent and no watcher could observe the edit, refresh SHALL compare current skill truth with the session-local fingerprint manifest.

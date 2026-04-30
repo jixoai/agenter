@@ -213,6 +213,67 @@ Focused AttentionContext commits SHALL remain an active notification path. When 
 - **THEN** runtime stages that new item delta for direct model injection
 - **AND** the model receives enough item detail to notice the new obligation without fetching the entire AttentionContext
 
+### Requirement: Prompt injection SHALL follow one current-state per-context law
+
+Prompt-side attention injection SHALL use one current-state law instead of separate compact-recovery and normal-interleaving branches. The runtime SHALL track the last AI-visible context projection, seed contexts by focus state, choose per focused context between full context text and committed item text by serialized payload cost, and keep diff/patch-style context injection out of first-wave acceptance.
+
+#### Scenario: Clear or compact resets AI-visible context snapshot
+
+- **WHEN** prompt-window state is cleared or compacted away so `ai-messages` become empty
+- **THEN** the runtime clears the corresponding `attentionContextSnapshot`
+- **AND** later injections behave as if the model has not seen those context projections yet
+
+#### Scenario: Focus-aware seeding happens before item comparison
+
+- **WHEN** a context has no usable AI-visible snapshot and the runtime needs it in model-visible work
+- **THEN** the runtime seeds a full context for `focused`, a minimal summary for `background`, and nothing automatic for `muted`
+- **AND** only after that seed exists may a focused context choose between context text and committed item text
+
+#### Scenario: Per-context cost chooses the cheaper serialized branch
+
+- **WHEN** a focused context has both a seedable `AttentionContext` representation and committed attention items
+- **THEN** the runtime compares `AttentionContextUserRoleMessageLength * 1.5` against `AttentionItemsUserRoleMessageLength`
+- **AND** it chooses the cheaper final serialized user-role text branch for that context
+- **AND** the final prompt may mix context branches and item branches from different contexts
+
+#### Scenario: First-wave acceptance does not depend on patch-style context injection
+
+- **WHEN** a context branch wins the current-state comparison
+- **THEN** the runtime injects the full selected context text for first-wave acceptance
+- **AND** any later `diff` versus `full` optimization remains optional rather than required for correctness
+
+### Requirement: Successful injection SHALL advance only at first valid provider stream event
+
+Prompt-side snapshot advancement and staged-item clearing SHALL reuse the shared delivery acceptance boundary: provider response streaming has started, and the first returned provider event is not an error event. Before that boundary, failed attempts SHALL keep prior snapshots and staged keys intact.
+
+#### Scenario: Failed request keeps snapshot and staged keyed items
+
+- **WHEN** a request that carried seeded context text or committed attention items fails before the first valid provider stream event
+- **THEN** `attentionContextSnapshot` stays at its previous committed AI-visible state
+- **AND** staged keyed attention items remain available for retry
+
+#### Scenario: Successful request clears only injected staged keys
+
+- **WHEN** a request crosses the first-valid-stream-event boundary
+- **THEN** the runtime advances only the injected AI-visible snapshots from that request
+- **AND** it clears only the staged keys that were actually serialized into that request
+
+#### Scenario: Later stream interruption does not retroactively roll back bookkeeping
+
+- **WHEN** a request already crossed the first-valid-stream-event boundary and later fails or is interrupted
+- **THEN** delivery inspection may still record the later failure
+- **AND** prompt-side snapshot advancement and staged-key clearing decisions already committed at the boundary remain in effect
+
+### Requirement: Notify SHALL stay an item-path exception with queryable quota
+
+`Notify` items SHALL stay on the item branch even when normal focused contexts use cost comparison. Notify eligibility SHALL be governed by queryable quota state rather than hidden heuristics.
+
+#### Scenario: Muted/background notify follows default rolling-window quota
+
+- **WHEN** muted or background notify traffic is inspected
+- **THEN** the runtime can report effective quota config, send eligibility, remaining state, and historical notify records
+- **AND** the default windows remain one send per 12 hours for `muted` and one send per 0.5 hours for `background`
+
 ### Requirement: AI-authored attention commits SHALL not become item reminders
 
 When the model updates attention through the runtime-local attention commit tool, that commit SHALL mutate durable AttentionContext facts and scores without being staged back to the model as a new `AttentionItems` reminder.

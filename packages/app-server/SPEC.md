@@ -33,10 +33,18 @@
 
 ## 3. Attention 与 Notification Contract
 
+- runtime-system boundary law 固定使用五类 durable vocabulary：
+  - `WorldFact`：真实发生过的世界事实
+  - `CapabilityProjection`：基于 durable facts 派生、可显式查询的投影视图
+  - `SchedulerSignal`：wake、focus、score、timer、backoff、idle 这类调度事实
+  - `AgentAction`：模型或操作员显式发起的动作
+  - `EffectLedger`：显式动作造成的 durable 外部效果
+- Message、Terminal、Skill、Watch 以及未来 system 都必须先分类到上述 vocabulary，再进入 shared runtime kernel；`app-server` 不得重新引入 source-specific hidden branches 去解释“这是不是该回复”“这是不是已经完成”。
 - running session 的 attention/notification projection 读取 live runtime。
 - stopped 或 cold session 的 attention/notification projection 读取 `sessionRoot/attention-system` 下的 persisted facts。
 - notification 不是独立 registry；它只是 unconsumed attention push 的投影。
 - attention commit 对外必须遵守二分法：`meta` 只暴露 provenance，`summary + change` 承载 AI/inspection 可读主体；可见外部效果必须走显式 system mutation 或 dispatch/receipt 事实，调用方不得再依赖开放 metadata bag。
+- `EffectLedger` 是 visible external mutation 的唯一可追责面。至少要能把 `actionId`、`actorId`、`target`、`effectRecordId`、`timestamp` 以及可用时的 `cycle/model-call refs` 串起来；room message creation 这类外部效果不得再通过隐式 fallback 或 transport side channel 解释。
 - `notification.snapshot`、`notification.setChatVisibility`、`notification.setTerminalVisibility`、`notification.consume` 都必须遵守同一条法则：有 runtime 读 runtime，无 runtime 读 persisted attention。
 - `session.stop` 与 `session.abort` 都必须让 runtime 从 kernel ownership 中消失；`snapshot.runtimes[sessionId]` 对 stopped session 返回空是正确行为，不是数据丢失。
 
@@ -54,10 +62,20 @@
 - source adapter 如果需要给模型更多上下文，必须在 `AttentionDraft.presentation` 或最终 `summary + change` 中补足，而不是把信息塞进 source ref/read result metadata。
 - Attention protocol payload 不属于 bounded prompt-window 记忆：`AttentionContexts.metadata` / context snapshot 是边界投影输入，`AttentionItems` 是当前 commit delta 输入；二者可以进入当前 provider request 与 `ai_call.request.messages`，但不得被写入 prompt window 后跨轮 replay。
 - compact / cold start 这类边界只能刷新 AttentionContext projection，不能把历史 AttentionItems 重新注入；AI 通过 runtime-local `attention commit` 自己写入的上下文更新也不能再反向唤醒成 item reminder。
+- `attentionContextSnapshot` 表示“模型已经见过的 AI-visible context 视图”，不是最新 raw context。`ai-messages` 被 clear 或 compact 清空时，这个 snapshot 也必须同步清空。
+- commit attention item 注入固定使用 current-state per-context law：
+  - 先按 focus state seed `AttentionContext`
+  - 只有 `focused` context 可注入 committed items
+  - 对每个 focused context 比较 `AttentionContextUserRoleMessageLength * 1.5` 与 `AttentionItemsUserRoleMessageLength`
+  - 可混合选择 context path 与 items path
+  - first-wave 不依赖 diff/patch-style context injection
+- successful injection boundary 复用 delivery acceptance law：只有当 response stream 已开始且第一个 returned stream event 不是 error 时，runtime 才能推进 `attentionContextSnapshot` 并清理本次真正注入成功的 staged keyed attention items；后续 stream interruption 不回滚这一决定。
+- staged `CommitAttentionItems` 必须是 keyed map 语义，而不是 append-only noise；failed request 不得清空 staged keys，successful request 也只能清除本次实际注入的 key。
+- `Notify` 是 item-path 例外：它仍然走 serialized attention-item payload，但要 obey 同一套 context seeding law，并服从 queryable quota contract。
 - tool-result 边界的 interleaved attention 提交必须走同一个 runtime commit API：`onCanCommitAttentionItems(ctx)` 只能调用 `ctx.commitAttentionItems()` 这类直接接口，不能通过 return payload 绕开 runtime；MessageRoom unread read ack、adapter consume 标记、AttentionSystem commit、projection staging 与 trace/ledger 更新属于同一次提交边界。
 - ModelClient 的 provider loop strategy 只允许同步消费已经 staged 的 committed attention projection，并把它追加到下一次 continuation request；它不得直接 drain MessageRoom/Terminal/Task，也不得执行 attention commit 或 read ack。
 - message attention body 必须直接携带消息级客观事实与必要附件 facts，不得再默认内联 room social envelope；participants / presence / visibleRooms 这类 room projection 必须通过显式 room snapshot、`message read`、`message query` 等既有 query surface 获取；terminal / task 也必须各自通过自己的 presentation builder 提供足够的 AI-visible detail。
-- focused terminal source observations 默认只保留为 queryable attention history；`terminal_idle_ready` 这类 lifecycle coordination 默认属于 scheduler signal / wake-rank truth，不得再作为 source-authored unresolved debt 直接进入 AI-visible task 语义。
+- focused terminal source observations 默认只保留为 queryable attention history；terminal idle/focus/unfocus 这类 lifecycle coordination 默认属于 scheduler signal / wake-rank truth，不得再作为 source-authored unresolved debt 直接进入 AI-visible task 语义。
 - real-provider backend 验收至少要能证明：同一 session 在 room-visible 交付之后，经过 `session.stop -> kernel cold restart -> session.start` 仍能靠磁盘事实继续工作，而不是依赖残留内存对象。
 - 需要真实语义判断的 backend 验收必须通过专用 semantic judge 层完成，而不是在测试里散落 prompt-specific 字符串 hack。
 - semantic judge real validation 固定使用 provider id `jixoai/agenter/test`，并通过现有 settings cascade 从 workspace `.agenter/settings.json` 或 `~/.agenter/settings.json` 解析；不得静默回退到 active runtime provider。
@@ -70,6 +88,7 @@
 - shared terminal 不是 root-workspace shell：runtime-created 与 recovery-created terminal 默认都保持 real-home collaboration semantics，不得因为 `cwd` 在 avatar root workspace 就注入 root-workspace-exclusive env/CLI。
 - `terminal.surface.updated` 的 `catalogChanged` 只允许表达 catalog-facing mutation（如 created/updated/deleted/focus/presence）；terminal `snapshot/status` 这类 live render ticks 必须留在 render/resource 层，不能升级成 browser `terminal.globalList` refetch 信号。
 - runtime-local shell/API 必须由共享 tool descriptor registry 驱动：route、description、`inputSchema`、`--help` 和 canonical JSON examples 不能各写一份。
+- workspace/root shell privilege 是本项目有意保留的 authority，不属于本轮 pollution cleanup 范围；本轮只清理 Message/Terminal/Skill/Attention 的语义污染，不削弱 `root_bash`、`workspace_bash`、runtime-local API、workspace grants、root-workspace shell world。
 - runtime-local terminal contract 固定拆成两个命令：
   - `terminal write` = raw mode，只接收 literal text，并要求调用方自己编码 Enter / control chars
   - `terminal input` = mixed mode，支持 `<key .../>`、`<wait .../>`、`<raw>...</raw>`

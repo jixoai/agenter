@@ -52,3 +52,19 @@ The runtime SHALL treat built-in catalog entries as the lowest-precedence baseli
 - **WHEN** an on-disk runtime skill under shared, global, or avatar roots uses the same skill name as a built-in catalog entry
 - **THEN** `skill list` and `skill info` resolve to the on-disk skill entry
 - **AND** the built-in entry remains available only as the baseline before that override is applied
+
+### Requirement: Built-in skill guidance SHALL stay soft and action/query oriented
+
+Built-in runtime skills MAY teach etiquette, defaults, follow-up patterns, and preferred playbooks as non-binding guidance, but they SHALL not reintroduce removed platform obligation labels, hidden auto-acknowledgement rules, or other runtime-authored semantic conclusions.
+
+#### Scenario: Message skill teaches explicit room actions instead of obligation labels
+
+- **WHEN** the generated built-in message skill is rendered
+- **THEN** it teaches `message send`, `message edit`, `message recall`, `message read`, and `message query` as the relevant room actions/query surfaces
+- **AND** it does not rely on platform labels such as `room_reply_pending`, `self_update`, `chatTurnState`, or `settlesWhen`
+
+#### Scenario: Terminal skill teaches await-first strategy without lifecycle obligation
+
+- **WHEN** the generated built-in terminal skill is rendered
+- **THEN** it may recommend `terminal await`, bounded reads, or verification-first workflows as soft guidance
+- **AND** it does not describe `terminal_focus`, `terminal_unfocus`, or `terminal_idle_ready` as AI-visible task obligations

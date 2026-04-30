@@ -173,6 +173,18 @@ The client runtime store SHALL ingest explicit dispatch and receipt runtime even
 - **THEN** the store patches the corresponding delivery summary and receipt history in place
 - **AND** the visible surface can show `accepted`, `errored`, `aborted`, or `completed` immediately
 
+#### Scenario: Full delivery snapshot replaces the explicit ledger slice
+
+- **WHEN** a `runtime.attentionDelivery` event arrives for a hydrated session
+- **THEN** the store replaces that session's cached delivery projections, dispatches, receipts, watches, and effects from the event payload
+- **AND** it does not merge those explicit effects into scheduler state or attention context truth
+
+#### Scenario: Scheduler and delivery stay distinguishable in normalized state
+
+- **WHEN** the store ingests scheduler-signal events, attention preview events, and delivery/effect events for the same session
+- **THEN** each category remains cached in its own normalized runtime slice
+- **AND** selectors can observe scheduler wake metadata separately from attention contexts and separately from explicit external effects
+
 ### Requirement: Client runtime store SHALL keep room read truth message-native
 
 The client runtime store SHALL preserve room read truth in the same shape it is durably stored: on room message rows. When room catalog entries and room snapshots refresh on different schedules, the store MAY update room/channel metadata independently, but it SHALL NOT synthesize or rewrite latest-visible read arrays from a room-level summary projection.

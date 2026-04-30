@@ -82,6 +82,19 @@ The runtime client SHALL publish the session scheduler control state and wake me
 - **THEN** the runtime client does not republish a fresh containment object for that selector
 - **THEN** UI surfaces that inspect scheduler state remain eligible for render stability
 
+### Requirement: Runtime publication SHALL keep attention, scheduler, and explicit effects distinguishable
+Runtime-facing UI publication SHALL keep objective attention facts, scheduler signals, and explicit delivery/effect ledger facts in distinct payloads or distinct normalized slices. UI surfaces SHALL not need to reverse-engineer explicit effects from attention commits or scheduler state.
+
+#### Scenario: Delivery ledger renders explicit effects without obligation labels
+- **WHEN** a runtime attention surface renders delivery diagnostics for one context
+- **THEN** it can show projections, dispatches, receipts, watches, and explicit effects from delivery publication
+- **AND** it does not depend on removed labels such as `room_reply_pending`, `self_update`, or `no_external_reply_needed`
+
+#### Scenario: Mobile and desktop surfaces preserve the same evidence
+- **WHEN** runtime inspection surfaces are rendered in compact or full layouts
+- **THEN** both layouts still expose room facts, terminal facts, skill-index churn, watch reminders, and explicit effect evidence
+- **AND** layout density changes do not collapse those facts back into hidden heuristics or missing actions
+
 ### Requirement: Runtime clients SHALL publish one Heartbeat message-parts slice
 
 The runtime client SHALL hydrate, merge, and republish one session-local Heartbeat slice backed by the runtime Heartbeat inspection API and realtime events. The Heartbeat surface SHALL no longer depend on assembling separate chat, request-aux, and model-call slices in the browser, and the inspection API SHALL include every durable ingress scope needed by the Heartbeat panel.

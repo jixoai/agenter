@@ -69,6 +69,21 @@ The system SHALL continue to expose `ai_call` request lifecycle state, but `stat
 - **THEN** the model call lifecycle ends as an error instead of a synthetic assistant success
 - **AND** the related delivery timeline records an `errored` terminal receipt
 
+### Requirement: First valid provider stream event SHALL remain the shared acceptance boundary
+The runtime SHALL use one shared acceptance boundary across delivery bookkeeping and prompt-injection bookkeeping: provider response streaming has started, and the first returned provider event is not an error event. Specs that advance AI-visible snapshots or clear staged attention payloads SHALL reuse this boundary instead of defining a second provider-specific acceptance model.
+
+#### Scenario: Error-first provider stream never becomes accepted
+- **WHEN** a provider request starts streaming but the first returned provider event is an error outcome
+- **THEN** the model-call lifecycle may still show a running-then-error path
+- **AND** the delivery timeline never records `accepted`
+- **AND** prompt-side staged attention bookkeeping does not treat that request as successfully injected
+
+#### Scenario: Later stream failure does not undo earlier acceptance
+- **WHEN** a provider request already crossed the first-valid-stream-event boundary and later fails or is interrupted
+- **THEN** the model-call lifecycle can still end in `error` or `cancelled`
+- **AND** delivery/history inspection preserves that the attempt had already been accepted before the later failure
+- **AND** downstream prompt bookkeeping does not retroactively roll back snapshot advancement or staged-item clearing decisions made at that boundary
+
 ### Requirement: Model calls SHALL bind to delivery attempts without replacing attempt identity
 The runtime SHALL bind each persisted `ai_call` row to an existing delivery attempt instead of using the `ai_call` row itself as the attempt identity.
 

@@ -43,7 +43,7 @@ Runtime bootstrap SHALL surface only systems that participate in the current rou
 
 #### Scenario: Skill refresh alone does not bootstrap a dedicated skill context
 - **WHEN** runtime refreshes or reindexes visible skills without an explicit mount, explicit query, or already-objective task dependency
-- **THEN** the bootstrap context does not automatically include `ctx-skill-system`
+- **THEN** the bootstrap context does not automatically include any dedicated skill-only context
 - **AND** skill refresh alone does not create a permanent bootstrap-visible skill task peer
 
 #### Scenario: Future systems extend bootstrap through attention contexts

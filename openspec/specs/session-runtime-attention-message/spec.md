@@ -1,102 +1,110 @@
 # session-runtime-attention-message Specification
 
 ## Purpose
-TBD - created by archiving change session-runtime-attention-message-migration. Update Purpose after archive.
+
+Define the durable law for how room-backed work enters attention, how room-visible messages are mutated, and how relay/follow-up behavior stays explicit instead of being inferred by the runtime.
+
 ## Requirements
 
-### Requirement: Session runtime SHALL route chat through attention and message adapters
+### Requirement: Session runtime SHALL ingest room work as objective attention facts
 
-Session runtime SHALL continue to ingest unread room work into attention, but room-visible assistant output MUST occur only when the model executes explicit message-system mutations. Attention commits alone SHALL remain internal, and visible room output SHALL still not count as completion until the related attention is settled separately. When one task spans an originating room and a secondary relay room, the originating room SHALL remain the owner of completion, and the factual answer MUST remain recoverable after a manual compact cycle.
+Session runtime SHALL ingest unread room work into attention, but the ingested model-visible room fact SHALL contain only objective room/message truth. It MUST NOT infer reply ownership, social etiquette state, or settlement conditions from punctuation, room shape, or sender identity.
 
 #### Scenario: Unread room work enters attention without auto-replying
+
 - **WHEN** the runtime selects unread room work for a new round
 - **THEN** it converts that room work into attention state for the model
-- **THEN** no visible assistant room message is created until the model later performs an explicit message mutation
+- **AND** no visible assistant room message is created until the model later performs an explicit message mutation
+
+#### Scenario: Punctuation-heavy ingress stays factual
+
+- **WHEN** a room message contains `?` or `？`
+- **THEN** the ingested room fact preserves the raw content, sender identity, and source refs
+- **AND** the runtime does not emit `chatTurnState`, `chatObligationKind`, `settlesWhen`, `room_reply_pending`, or `self_update`
+
+#### Scenario: Auth actor ingress stays factual
+
+- **WHEN** a room message arrives from an `auth:*` actor in a group room
+- **THEN** the runtime records sender identity as objective room fact
+- **AND** it does not infer that the avatar must reply
+
+### Requirement: Room-visible mutation SHALL require explicit message actions
+
+Room-visible assistant output MUST occur only when the model executes explicit message-system mutations such as `message send`, `message edit`, or `message recall`. Attention commits, tool work, relay work, and runtime heuristics SHALL remain invisible to the room unless one of those explicit actions occurs.
 
 #### Scenario: Explicit room mutation produces the visible reply
+
 - **WHEN** the model calls `message send`, `message edit`, or `message recall` for a room-backed task
 - **THEN** the runtime applies that authorized message-system mutation as the only source of visible room transcript change
-- **THEN** the related attention remains unresolved until the model also records the corresponding settlement
+- **AND** the related attention remains unresolved until the model also records the corresponding settlement
 
 #### Scenario: Attention commit alone does not become a room row
+
 - **WHEN** the model commits attention progress, summary changes, or cleanup without calling a message-system mutation
 - **THEN** the room transcript remains unchanged
-- **THEN** the internal progress stays visible only through attention/runtime inspection surfaces
+- **AND** the internal progress stays visible only through attention/runtime inspection surfaces
 
-#### Scenario: Single-room reply stays unresolved until attention settles
-- **WHEN** the assistant sends a user-visible reply into the current room for a chat-backed task
-- **THEN** the runtime keeps the related attention active until the assistant records the corresponding settlement
-- **THEN** the task is not considered complete while only the visible reply exists
+#### Scenario: Root or tool work does not prepend an acknowledgement
 
-#### Scenario: Main room request relays through a manually configured secondary room
-- **GIVEN** the runtime has an attached originating room for user `kzf`
-- **AND** a secondary room is manually created for user `gaubee`
-- **WHEN** `kzf` asks `gaubee在吗？问他中午吃什么？`
-- **THEN** the assistant first sends a message to the `gaubee` room
-- **AND** unresolved attention remains active until the final answer is delivered back to the `kzf` room
-- **AND** once the `gaubee` room replies `中午吃蛋炒饭。`, the assistant sends a user-visible answer back to the `kzf` room
-- **AND** the assistant settles the related attention only after that originating-room answer is dispatched
+- **WHEN** room-backed work starts with `root_bash`, terminal work, relay work, or another non-message tool
+- **THEN** the origin room transcript remains unchanged
+- **AND** the runtime does not synthesize `originAckFallback`, auto-ACK text, or any other fallback visible room mutation
 
-#### Scenario: Manual compact preserves room facts for the next question
-- **GIVEN** the runtime has already completed the relay and final answer above
-- **WHEN** the user triggers `/compact` and then asks `中午吃什么`
-- **THEN** the assistant answers correctly in the original `kzf` room from compacted factual history
-- **AND** the assistant does not need a fresh relay through the `gaubee` room to answer that follow-up
+### Requirement: Room social context SHALL stay on explicit projection/query surfaces
 
-#### Scenario: Cycle ingress starts from actor unread room state
-- **WHEN** a runtime is about to start a new cycle or attach new attention during tool side effects
-- **THEN** it first queries actor unread room state instead of scanning message rows for AI queue markers
-- **THEN** it converts the selected unread room slices into attention-items for that round
+Participants, presence, focused seats, and visible-room summaries are valid room facts, but they SHALL be supplied through explicit room/message projection surfaces rather than being eagerly inlined into every room-backed attention fact.
 
-#### Scenario: Selected unread messages become read when a real model request is dispatched
-- **WHEN** a runtime has selected unread room messages for one outbound model request
-- **AND** that outbound request is actually dispatched to the provider
-- **THEN** the runtime marks those selected unread room messages as read
-- **THEN** merely discovering unread candidates does not mark them read earlier
+#### Scenario: Message-backed attention omits eager social envelope
 
-#### Scenario: Failed model work does not require unread rollback
-- **WHEN** a dispatched model request later fails after the selected unread room messages were marked read
-- **THEN** the related attention debt remains active through its score vectors
-- **THEN** later cycles may query more room history through tools without pretending those same messages were never read
+- **WHEN** a room message is serialized into model-visible attention
+- **THEN** it carries only the objective message fact plus source refs and attachment facts
+- **AND** it does not inline full participants, presence, or visible-room arrays by default
 
-### Requirement: Session runtime SHALL bound unread room ingestion by configured room limits
+#### Scenario: Room projections remain queryable
 
-Session runtime SHALL select unread room work using configuration-driven limits so one noisy room cannot starve all other rooms.
+- **WHEN** the model needs room participants, presence, or visible rooms to decide the next action
+- **THEN** it can obtain them through existing explicit room/message surfaces such as room snapshot/page reads, `message read`, or `message query`
+- **AND** the returned data is labeled as room projection rather than as an already-decided obligation
 
-#### Scenario: Runtime selects only the configured number of focused unread rooms
-- **WHEN** more unread rooms exist than `message.maxFocusedRoomCount`
-- **THEN** the runtime selects only the highest-priority unread rooms up to that configured limit
-- **THEN** lower-priority unread rooms remain pending for later rounds
+### Requirement: Relay and completion ownership SHALL remain explicit
 
-#### Scenario: Runtime pages only the configured number of unread messages per room
-- **WHEN** one selected room has more unread messages than `message.maxBatchReadRoomMessageCount`
-- **THEN** the runtime only ingests the newest configured slice for that room in the current round
-- **THEN** older unread history remains queryable through room pagination in later rounds or tools
+When one task spans an originating room and a secondary relay room, the originating room remains the owner of user-visible completion. Relay progress is not the same thing as origin-room completion, and the runtime SHALL not hide that distinction behind automatic acknowledgements or settlement heuristics.
 
-### Requirement: Stop and abort SHALL have different runtime scopes
+#### Scenario: Relay room send does not finish origin room
 
-The runtime SHALL distinguish between stopping LoopBus work and destroying runtime-owned systems.
+- **WHEN** the model sends a message to a secondary visible room first
+- **THEN** only that explicit relay-room message is created
+- **AND** unresolved attention remains active until the originating room receives the final answer
 
-#### Scenario: Stop preserves channel state
-- **WHEN** stop is invoked during an active session
-- **THEN** the current model call is aborted and LoopBus stops
-- **THEN** terminal and message control planes remain available
+#### Scenario: Origin room completion happens only after explicit origin reply
 
-#### Scenario: Abort destroys runtime-owned systems
-- **WHEN** abort is invoked
-- **THEN** stop semantics happen first
-- **THEN** terminal and message control planes are torn down for that runtime
+- **WHEN** the relay room later returns the missing fact
+- **THEN** the model still needs an explicit message mutation back into the origin room
+- **AND** the related room-backed attention is not considered complete until that origin-room reply has been dispatched
 
-### Requirement: Room-visible assistant output SHALL require explicit message mutations
+### Requirement: Manual compact SHALL preserve durable room facts
 
-Session runtime SHALL continue to ingest unread room work into attention, but room-visible assistant output MUST occur only when the model executes explicit message-system mutations. Attention commits alone SHALL remain internal, and visible room output SHALL still not count as completion until the related attention is settled separately. When one task spans an originating room and a secondary relay room, the originating room SHALL remain the owner of completion, and the factual answer MUST remain recoverable after a manual compact cycle.
+Manual compact, cold start, or later replay assembly SHALL preserve durable room facts and visible answers without reintroducing hidden reply heuristics or requiring a new relay just to answer the same settled fact again.
 
-#### Scenario: Model uses explicit message mutation for room output
-- **WHEN** the model calls `message send`, `message edit`, or `message recall` for a room-backed task
-- **THEN** the room transcript changes through message-system durable truth
-- **AND** attention commits do not directly create room-visible rows
+#### Scenario: Compact preserves a settled origin-room answer
 
-#### Scenario: Tool side effects do not hide room completion
-- **WHEN** a runtime is about to start a new cycle or attach new attention during tool side effects
-- **THEN** room-visible completion still requires explicit message-system mutation
-- **AND** hidden tool-side state does not replace the required room reply
+- **GIVEN** the runtime already delivered a final answer back to the origin room
+- **WHEN** the user later triggers `/compact` and asks a direct factual follow-up in that same room
+- **THEN** the runtime can answer from compacted durable facts
+- **AND** it does not need to re-run the relay solely because the earlier answer left bounded prompt memory
+
+### Requirement: Message follow-up compatibility SHALL remain a watch alias
+
+If `followUpAfterMs` remains supported on `message send`, it SHALL stay a compatibility alias for the generic one-shot watch primitive. It creates later re-decision attention only, and SHALL NOT auto-send another room-visible message.
+
+#### Scenario: Follow-up compatibility creates private reminder only
+
+- **WHEN** `message send` is called with `followUpAfterMs`
+- **THEN** the runtime binds a one-shot reminder to the sent durable `messageId`
+- **AND** that reminder remains sender-private runtime scheduling state rather than shared room truth
+
+#### Scenario: Reminder expiry does not auto-send a room message
+
+- **WHEN** the compatible follow-up reminder expires while its predicate still holds
+- **THEN** the runtime creates only attention/watch reminder truth for re-decision
+- **AND** any later room-visible reply still requires an explicit `message send`, `message edit`, or `message recall`
