@@ -717,6 +717,109 @@ describe("Feature: message-chat-control-plane", () => {
     expect(recalled.unreadActorIds).toEqual(sent.unreadActorIds);
   });
 
+  test("Scenario: Given an unread room message is recalled before the receiver reads it When unread state is queried Then active unread truth settles to zero", async () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Viewer",
+      participantId: "auth:viewer",
+    });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const sent = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "viewer should not owe recalled work",
+    });
+
+    expect(plane.getActorUnreadState("auth:viewer").unreadTotal).toBe(1);
+    expect(plane.listUnreadRoomSummaries("auth:viewer")).toEqual([
+      expect.objectContaining({
+        actorId: "auth:viewer",
+        chatId: room.chatId,
+        unreadCount: 1,
+        latestUnreadRowId: sent.rowId,
+      }),
+    ]);
+
+    const recallVersion = plane.getUnreadVersion("auth:viewer");
+    const recallWait = plane.waitUnreadCommitted({
+      actorId: "auth:viewer",
+      fromVersion: recallVersion,
+    });
+    const recalled = plane.recallAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      messageId: sent.messageId,
+      recalledAt: sent.createdAt + 1,
+    });
+
+    await expect(recallWait.promise).resolves.toMatchObject({
+      actorId: "auth:viewer",
+      version: plane.getUnreadVersion("auth:viewer"),
+    });
+    expect(recalled.unreadActorIds).toContain("auth:viewer");
+    expect(plane.getActorUnreadState("auth:viewer").unreadTotal).toBe(0);
+    expect(plane.listUnreadRoomSummaries("auth:viewer")).toHaveLength(0);
+  });
+
+  test("Scenario: Given a newer unread row is recalled while an older unread row remains When unread summaries are queried Then latest unread points back to the older active row", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    plane.issueChannelGrantAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      label: "Viewer",
+      participantId: "auth:viewer",
+    });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const older = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "older active unread",
+      createdAt: 100,
+    });
+    const newer = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "newer recalled unread",
+      createdAt: 200,
+    });
+
+    plane.recallAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      messageId: newer.messageId,
+      recalledAt: 250,
+    });
+
+    expect(plane.getActorUnreadState("auth:viewer").unreadTotal).toBe(1);
+    expect(plane.listUnreadRoomSummaries("auth:viewer")).toEqual([
+      expect.objectContaining({
+        actorId: "auth:viewer",
+        chatId: room.chatId,
+        unreadCount: 1,
+        latestUnreadRowId: older.rowId,
+        latestUnreadAt: older.visibleAt,
+      }),
+    ]);
+  });
+
   test("Scenario: Given a sender recalls the latest durable room message When resolving active latest visible content Then recalled history is excluded only from the active projection", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });

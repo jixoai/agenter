@@ -665,8 +665,9 @@ export class MessageControlPlane {
   }
 
   recall(input: MessageRecallInput): MessageRecord {
-    const message = this.db.recallMessage(input);
+    const { message, unreadChangedActorIds } = this.db.recallMessage(input);
     this.bumpVersion();
+    this.bumpUnreadVersions(unreadChangedActorIds);
     for (const listener of this.messageListeners) {
       listener({ chatId: input.chatId, message });
     }

@@ -425,7 +425,7 @@ export class MessageDb {
     if (aliases.length === 0) {
       return { changed: false };
     }
-    const messages = this.listVisibleMessages(chatId);
+    const messages = this.listActiveVisibleMessages(chatId);
 
     const repair = this.db.transaction(() => {
       let changed = false;
@@ -903,7 +903,7 @@ export class MessageDb {
       rowId = Number(result.lastInsertRowid);
       this.db.transaction(() => {
         this.touchChannel(input.chatId, createdAt);
-        const visibleMessages = this.listVisibleMessages(input.chatId);
+        const visibleMessages = this.listActiveVisibleMessages(input.chatId);
         const trackedActorIds = normalizeActorIds([...readActorIds, ...unreadActorIds]);
         for (const actorId of trackedActorIds) {
           this.reconcileActorRoomStateFromMessages(input.chatId, actorId, visibleMessages);
@@ -957,13 +957,13 @@ export class MessageDb {
     return refreshed;
   }
 
-  recallMessage(input: MessageRecallInput): MessageRecord {
+  recallMessage(input: MessageRecallInput): { message: MessageRecord; unreadChangedActorIds: MessageActorId[] } {
     const current = this.getMessage(input.chatId, input.messageId);
     if (!current) {
       throw new Error(`unknown message: ${input.messageId}`);
     }
     if (current.recalledAt) {
-      return current;
+      return { message: current, unreadChangedActorIds: [] };
     }
     const recalledAt = input.recalledAt ?? Date.now();
     const updatedAt = input.updatedAt ?? recalledAt;
@@ -975,25 +975,33 @@ export class MessageDb {
     if (!roomDb) {
       throw new Error(`failed to open room message database: ${input.chatId}`);
     }
-    roomDb
-      .query(
-        `update chat_message
-         set content = '',
-             updated_at = ?,
-             recalled_at = ?,
-             recalled_by_actor_id = ?,
-             attachments_json = '[]',
-             payload_json = null
-         where id = ?`,
-      )
-      .run(updatedAt, recalledAt, input.recalledByActorId ?? null, rowId);
-    this.touchChannel(input.chatId, updatedAt);
+    const touchedActorIds = normalizeActorIds([...current.readActorIds, ...current.unreadActorIds]);
+    let unreadChangedActorIds: MessageActorId[] = [];
+    this.db.transaction(() => {
+      roomDb
+        .query(
+          `update chat_message
+           set content = '',
+               updated_at = ?,
+               recalled_at = ?,
+               recalled_by_actor_id = ?,
+               attachments_json = '[]',
+               payload_json = null
+           where id = ?`,
+        )
+        .run(updatedAt, recalledAt, input.recalledByActorId ?? null, rowId);
+      this.touchChannel(input.chatId, updatedAt);
+      const activeMessages = this.listActiveVisibleMessages(input.chatId);
+      unreadChangedActorIds = touchedActorIds.filter((actorId) =>
+        this.reconcileActorRoomStateFromMessages(input.chatId, actorId, activeMessages),
+      );
+    })();
     const refreshed = this.getMessage(input.chatId, input.messageId);
     if (!refreshed) {
       throw new Error("failed to load recalled message");
     }
     this.syncMessageQueryMessage(input.chatId, refreshed);
-    return refreshed;
+    return { message: refreshed, unreadChangedActorIds };
   }
 
   getMessage(chatId: string, messageId: number): MessageRecord | undefined {
@@ -1159,6 +1167,7 @@ export class MessageDb {
       .query(
         `${ROOM_MESSAGE_SELECT_SQL}
          where visible_at is not null
+           and recalled_at is null
            and id <= ?
          order by id asc`,
       )
@@ -1202,7 +1211,7 @@ export class MessageDb {
     });
     const changed = markRead();
     if (changed) {
-      const visibleMessages = this.listVisibleMessages(input.chatId);
+      const visibleMessages = this.listActiveVisibleMessages(input.chatId);
       this.reconcileActorRoomStateFromMessages(input.chatId, input.actorId, visibleMessages);
     }
     return { changed };
@@ -1330,6 +1339,22 @@ export class MessageDb {
     return rows.map((row) => mapMessage(chatId, row));
   }
 
+  private listActiveVisibleMessages(chatId: string): MessageRecord[] {
+    const roomDb = this.getRoomDb(chatId, false);
+    if (!roomDb) {
+      return [];
+    }
+    const rows = roomDb
+      .query(
+        `${ROOM_MESSAGE_SELECT_SQL}
+         where visible_at is not null
+           and recalled_at is null
+         order by id asc`,
+      )
+      .all() as StoredRoomMessageRow[];
+    return rows.map((row) => mapMessage(chatId, row));
+  }
+
   private listAllMessages(chatId: string): MessageRecord[] {
     const roomDb = this.getRoomDb(chatId, false);
     if (!roomDb) {
@@ -1444,8 +1469,8 @@ export class MessageDb {
   private reconcileActorRoomStateFromMessages(
     chatId: string,
     actorId: MessageActorId,
-    messages = this.listVisibleMessages(chatId),
-  ): void {
+    messages = this.listActiveVisibleMessages(chatId),
+  ): boolean {
     const current = this.getActorRoomState(chatId, actorId);
     const next = this.deriveRepairedActorRoomState(chatId, actorId, messages, current);
     if (!next) {
@@ -1459,10 +1484,11 @@ export class MessageDb {
       } else {
         this.ensureActorState(actorId);
       }
-      return;
+      return current !== undefined;
     }
     const unreadDelta = next.unreadCount - (current?.unreadCount ?? 0);
-    if (!this.hasSameActorRoomState(current, next)) {
+    const changed = !this.hasSameActorRoomState(current, next);
+    if (changed) {
       this.upsertActorRoomState(next);
     } else {
       this.ensureActorState(actorId);
@@ -1470,6 +1496,7 @@ export class MessageDb {
     if (unreadDelta !== 0) {
       this.adjustActorUnreadTotal(actorId, unreadDelta);
     }
+    return changed || unreadDelta !== 0;
   }
 
   private repairMaterializedActorUnreadState(): void {
@@ -1490,7 +1517,7 @@ export class MessageDb {
       const messagesByChat = new Map<string, MessageRecord[]>();
       for (const row of roomStateRows) {
         const current = mapActorRoomState(row);
-        const messages = messagesByChat.get(current.chatId) ?? this.listVisibleMessages(current.chatId);
+        const messages = messagesByChat.get(current.chatId) ?? this.listActiveVisibleMessages(current.chatId);
         messagesByChat.set(current.chatId, messages);
         this.reconcileActorRoomStateFromMessages(current.chatId, current.actorId, messages);
       }

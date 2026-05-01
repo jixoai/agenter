@@ -68,6 +68,7 @@ interface RuntimeInternal {
   collectLoopInputs: () => Promise<LoopBusInput[] | undefined>;
   commitInterleavedAttentionItems: () => Promise<LoopBusInput[] | undefined>;
   collectAttentionInputs: () => LoopBusInput[] | undefined;
+  hasUnreadRoomWork: () => boolean;
   collectUnreadRoomIngress: () => Promise<number>;
   waitForAnyInput: () => Promise<"user" | "terminal" | "task" | "attention">;
   notifyInput: (kind: "user" | "terminal" | "task" | "attention") => void;
@@ -919,6 +920,74 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
       janeInternal.notifyInput("user");
       expect(await pendingWake).toBe("user");
+    } finally {
+      messageSystem.close();
+    }
+  });
+
+  test("Scenario: Given only a recalled unread room row remains When the runtime checks message ingress Then no user-input readiness remains from that row", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-room-recalled-unread-"));
+    const messageSystem = new MessageControlPlane({
+      dbPath: resolveMessageControlDbPath(root),
+    });
+
+    try {
+      const roomId = createPrincipalId(9012);
+      const room = messageSystem.createChannel({
+        chatId: roomId,
+        kind: "room",
+        owner: "ops",
+        contextId: `ctx-${roomId}`,
+        initialUsers: [
+          {
+            actorId: "auth:kzf",
+            label: "kzf",
+            role: "member",
+            focused: true,
+          },
+          {
+            actorId: "session:jane",
+            label: "Jane",
+            role: "member",
+            focused: true,
+          },
+        ],
+      });
+      const janeRuntime = createSharedRoomRuntime({
+        root,
+        sessionId: "jane",
+        sessionName: "jane",
+        messageSystem,
+      });
+      const janeInternal = janeRuntime as unknown as RuntimeInternal;
+
+      await janeRuntime.start();
+      const kzfRoom = messageSystem.getChannelForActor(room.chatId, "auth:kzf", {
+        includeArchived: true,
+        touchPresence: false,
+      });
+      const sent = messageSystem.sendAuthorized({
+        chatId: room.chatId,
+        accessToken: kzfRoom?.accessToken ?? "",
+        senderActorId: "auth:kzf",
+        from: "kzf",
+        content: "this unread row will be recalled",
+      });
+      expect(janeInternal.hasUnreadRoomWork()).toBe(true);
+
+      messageSystem.recallAuthorized({
+        chatId: room.chatId,
+        accessToken: kzfRoom?.accessToken ?? "",
+        messageId: sent.messageId,
+        recalledAt: sent.createdAt + 1,
+      });
+
+      expect(messageSystem.getActorUnreadState("session:jane").unreadTotal).toBe(0);
+      expect(messageSystem.listUnreadRoomSummaries("session:jane")).toHaveLength(0);
+      expect(janeInternal.hasUnreadRoomWork()).toBe(false);
+      expect(await janeInternal.collectUnreadRoomIngress()).toBe(0);
+
+      await janeRuntime.stop();
     } finally {
       messageSystem.close();
     }
