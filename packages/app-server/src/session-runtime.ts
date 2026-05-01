@@ -2819,7 +2819,7 @@ export class SessionRuntime {
   }
 
   private getLatestVisibleMessageForRoom(chatId: string): MessageRecord | undefined {
-    return this.messageSystem.resolveLatestVisibleMessage(chatId, { includeRecalled: false });
+    return this.messageSystem.resolveLatestActiveVisibleMessage(chatId);
   }
 
   private createRuntimeActionId(kind: string): string {
@@ -3964,9 +3964,7 @@ export class SessionRuntime {
     if (normalizedContent.length === 0) {
       return null;
     }
-    const recent = this.messageSystem
-      .queryMessages({ chatId: input.chatId, limit: 16 })
-      .items.filter((message) => !message.recalledAt);
+    const recent = this.messageSystem.queryActiveVisibleMessages({ chatId: input.chatId, limit: 16 }).items;
     let latestNonAssistantAt = Number.NEGATIVE_INFINITY;
     let latestMatchingAssistant: MessageRecord | null = null;
     for (const message of recent) {

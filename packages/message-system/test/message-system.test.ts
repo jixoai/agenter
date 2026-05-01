@@ -754,6 +754,10 @@ describe("Feature: message-chat-control-plane", () => {
     ]);
     expect(plane.resolveLatestVisibleMessage(room.chatId)?.messageId).toBe(second.messageId);
     expect(plane.resolveLatestVisibleMessage(room.chatId, { includeRecalled: false })?.messageId).toBe(first.messageId);
+    expect(plane.resolveLatestActiveVisibleMessage(room.chatId)?.messageId).toBe(first.messageId);
+    expect(plane.queryActiveVisibleMessages({ chatId: room.chatId, limit: 5 }).items).toEqual([
+      expect.objectContaining({ messageId: first.messageId }),
+    ]);
   });
 
   test("Scenario: Given a different member tries to recall someone else's durable room message When the recall is authorized Then message-system rejects the mutation", () => {

@@ -4748,7 +4748,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.stop();
   });
 
-  test("Scenario: Given a follow-up watch message is recalled before expiry When the delay passes Then the recalled content satisfies the watch without creating reminder attention", async () => {
+  test("Scenario: Given a follow-up watch message is recalled before expiry When the delay passes Then the active-latest predicate settles silently without reminder attention", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
 

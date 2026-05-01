@@ -831,6 +831,14 @@ export class MessageControlPlane {
     return this.db.pageMessages(input.chatId, { before: input.before, limit: input.limit });
   }
 
+  queryActiveVisibleMessages(input: {
+    chatId: string;
+    before?: ReverseTimeCursor | null;
+    limit?: number;
+  }): ReversePage<MessageRecord> {
+    return this.db.pageActiveVisibleMessages(input.chatId, { before: input.before, limit: input.limit });
+  }
+
   queryMessagesAuthorized(input: MessageAuthorizedPageInput): ReversePage<MessageRecord> {
     this.requireAccess(input.chatId, input.accessToken, "readonly");
     return this.queryMessages({ chatId: input.chatId, before: input.before, limit: input.limit });
@@ -852,6 +860,10 @@ export class MessageControlPlane {
     input: { includeRecalled?: boolean } = {},
   ): MessageRecord | undefined {
     return this.db.resolveLatestVisibleMessage(chatId, input);
+  }
+
+  resolveLatestActiveVisibleMessage(chatId: string): MessageRecord | undefined {
+    return this.db.resolveLatestActiveVisibleMessage(chatId);
   }
 
   markChannelReadAuthorized(input: MessageAuthorizedMarkReadInput): MessageControlPlaneEntry {

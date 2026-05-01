@@ -1047,6 +1047,50 @@ export class MessageDb {
     };
   }
 
+  pageActiveVisibleMessages(
+    chatId: string,
+    input: { before?: ReverseTimeCursor | null; limit?: number },
+  ): ReversePage<MessageRecord> {
+    const safeLimit = resolvePageLimit(input.limit);
+    const before = input.before ?? undefined;
+    const roomDb = this.getRoomDb(chatId, false);
+    if (!roomDb) {
+      return {
+        items: [],
+        nextBefore: null,
+        hasMoreBefore: false,
+      };
+    }
+    const rows = roomDb
+      .query(
+        `${ROOM_MESSAGE_SELECT_SQL}
+         where visible_at is not null
+           and recalled_at is null
+           and (
+             ? is null
+             or created_at < ?
+             or (created_at = ? and id < ?)
+           )
+         order by created_at desc, id desc
+         limit ?`,
+      )
+      .all(
+        before?.beforeTimeMs ?? null,
+        before?.beforeTimeMs ?? null,
+        before?.beforeTimeMs ?? null,
+        before?.beforeId ?? null,
+        safeLimit + 1,
+      ) as StoredRoomMessageRow[];
+
+    const hasMoreBefore = rows.length > safeLimit;
+    const itemsDescending = rows.slice(0, safeLimit).map((row) => mapMessage(chatId, row));
+    return {
+      items: [...itemsDescending].reverse(),
+      nextBefore: buildNextCursor(itemsDescending, hasMoreBefore),
+      hasMoreBefore,
+    };
+  }
+
   queryMessagesByIndex(input: {
     chatIds: string[];
     mode: MessageQueryMode;
@@ -1100,6 +1144,10 @@ export class MessageDb {
       )
       .get(input.includeRecalled === false ? 0 : 1) as StoredRoomMessageRow | null;
     return row ? mapMessage(chatId, row) : undefined;
+  }
+
+  resolveLatestActiveVisibleMessage(chatId: string): MessageRecord | undefined {
+    return this.pageActiveVisibleMessages(chatId, { limit: 1 }).items.at(-1);
   }
 
   markMessagesReadUpTo(input: { chatId: string; actorId: MessageActorId; targetRowId: number }): { changed: boolean } {
