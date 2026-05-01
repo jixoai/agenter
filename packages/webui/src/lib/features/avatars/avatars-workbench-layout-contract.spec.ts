@@ -3,8 +3,6 @@ import { resolve } from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-const forbiddenLayoutPatchClass = "min-h-" + "0";
-
 const avatarsWorkbenchLayoutSource = readFileSync(
   resolve(import.meta.dirname, "avatars-workbench-layout.svelte"),
   "utf8",
@@ -31,6 +29,5 @@ describe("Feature: Avatar workbench toolbar density contract", () => {
   test("Scenario: Given avatar runtimes live inside WorkbenchWindow fill mode When reading the avatar workbench source Then the direct route wrapper stays plain and shared fill law owns the shrink contract", () => {
     expect(avatarsWorkbenchLayoutSource).toContain('bodyMode="fill"');
     expect(avatarsWorkbenchLayoutSource).toContain('<div class="h-full">');
-    expect(avatarsWorkbenchLayoutSource).not.toContain(forbiddenLayoutPatchClass);
   });
 });

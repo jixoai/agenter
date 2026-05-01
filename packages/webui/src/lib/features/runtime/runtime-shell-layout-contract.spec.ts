@@ -42,4 +42,12 @@ describe("Feature: Runtime shell toolbar contract", () => {
     expect(runtimeHeartbeatStageSource).toContain('class="runtime-heartbeat-stage');
     expect(runtimeHeartbeatStageSource).toContain("min-block-size: 0;");
   });
+
+  test("Scenario: Given runtime shell inserts route-level notices above the primary stage When reading the shell source Then the stage host itself remains shrinkable so Heartbeat keeps a bounded inner viewport", () => {
+    expect(runtimeShellSource).toContain('class="runtime-shell__layout-grid grid h-full grid-rows-[auto_minmax(0,1fr)] gap-3"');
+    expect(runtimeShellSource).toContain(".runtime-shell__layout-grid");
+    expect(runtimeShellSource).toContain('class="runtime-shell__stage-host h-full"');
+    expect(runtimeShellSource).toContain(".runtime-shell__stage-host");
+    expect(runtimeShellSource).toContain("min-block-size: 0;");
+  });
 });
