@@ -241,6 +241,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - `packages/app-server/src/runtime-system-kernel-adapters/terminal-adapter.ts` 中的 `terminal_focus`、`terminal_unfocus`、`terminal_idle_ready` 这类设计，要用“势场优于牵引绳”审视：生命周期信号可以影响倾向，但不应伪装成行动指令。
 - `packages/app-server/src/workspace-tool-provider.ts` 中的 root / workspace authority，要用“显式特权才是合法奇点”审视：特权可以存在，但必须清晰命名、清晰授权、清晰边界。
 - `packages/app-server/src/runtime-skill-contract.ts` 中的 `ctx-skill-system`、skill snapshot、skill reminder 这类设计，要用“显式特权才是合法奇点”“保留负空间”审视：未声明的常驻特供会侵占按需推理空间。
+- `packages/message-system/src/message-db.ts` 中的 active-visible / unread materialization 路径，要用“投影不等于本体”审视：transcript row 与冻结 read/unread 数组是历史本体，active unread、runtime readiness、active latest、watch predicate 是投影，不能让 recalled row 重新变成 active work。
 
 ## 6.1) Git Worktree / Merge Discipline
 

@@ -958,6 +958,9 @@ export class MessageDb {
   }
 
   recallMessage(input: MessageRecallInput): { message: MessageRecord; unreadChangedActorIds: MessageActorId[] } {
+    // A recalled row remains durable transcript history. Its frozen
+    // readActorIds/unreadActorIds stay visible for audit/history, while
+    // materialized unread state is repaired from active-visible rows only.
     const current = this.getMessage(input.chatId, input.messageId);
     if (!current) {
       throw new Error(`unknown message: ${input.messageId}`);
@@ -1059,6 +1062,8 @@ export class MessageDb {
     chatId: string,
     input: { before?: ReverseTimeCursor | null; limit?: number },
   ): ReversePage<MessageRecord> {
+    // Active-visible is the scheduler/readiness projection:
+    // visible_at is not null AND recalled_at is null.
     const safeLimit = resolvePageLimit(input.limit);
     const before = input.before ?? undefined;
     const roomDb = this.getRoomDb(chatId, false);
@@ -1340,6 +1345,8 @@ export class MessageDb {
   }
 
   private listActiveVisibleMessages(chatId: string): MessageRecord[] {
+    // Keep this predicate identical to pageActiveVisibleMessages; actor unread
+    // materialization and latest-active predicates depend on this exact view.
     const roomDb = this.getRoomDb(chatId, false);
     if (!roomDb) {
       return [];
@@ -1471,6 +1478,8 @@ export class MessageDb {
     actorId: MessageActorId,
     messages = this.listActiveVisibleMessages(chatId),
   ): boolean {
+    // The input must be active-visible rows. Raw transcript-visible rows would
+    // resurrect recalled messages as scheduler unread work.
     const current = this.getActorRoomState(chatId, actorId);
     const next = this.deriveRepairedActorRoomState(chatId, actorId, messages, current);
     if (!next) {

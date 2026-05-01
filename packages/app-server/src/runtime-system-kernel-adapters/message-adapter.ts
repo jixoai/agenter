@@ -63,6 +63,8 @@ export class RuntimeMessageKernelAdapter implements RuntimeSystemKernelAdapter {
   }
 
   hasUnreadWork(): boolean {
+    // This consumes message-system's materialized active-unread projection. Do
+    // not recompute readiness here from raw transcript rows.
     return this.options.messageSystem.getActorUnreadState(this.options.messageActorId).unreadTotal > this.pendingUnreadMessageIds.size;
   }
 
@@ -197,6 +199,9 @@ export class RuntimeMessageKernelAdapter implements RuntimeSystemKernelAdapter {
     const selected: MessageRecord[] = [];
     let before: ReverseTimeCursor | null = null;
     do {
+      // Raw transcript paging preserves stable history pagination. The active
+      // ingress gate is isUnreadInboundMessage(...), which must reject recalled
+      // or otherwise non-active rows before they reach AI-visible work.
       const page = this.options.messageSystem.queryMessages({
         chatId,
         before,

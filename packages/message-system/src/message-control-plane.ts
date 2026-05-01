@@ -665,6 +665,8 @@ export class MessageControlPlane {
   }
 
   recall(input: MessageRecallInput): MessageRecord {
+    // Recall preserves the transcript row as durable history, but it also
+    // changes active unread projections; both version streams must be bumped.
     const { message, unreadChangedActorIds } = this.db.recallMessage(input);
     this.bumpVersion();
     this.bumpUnreadVersions(unreadChangedActorIds);
@@ -837,6 +839,8 @@ export class MessageControlPlane {
     before?: ReverseTimeCursor | null;
     limit?: number;
   }): ReversePage<MessageRecord> {
+    // Runtime readiness, watches, dedup, and scheduler-facing views must use
+    // this active projection instead of raw transcript pagination.
     return this.db.pageActiveVisibleMessages(input.chatId, { before: input.before, limit: input.limit });
   }
 
@@ -864,6 +868,8 @@ export class MessageControlPlane {
   }
 
   resolveLatestActiveVisibleMessage(chatId: string): MessageRecord | undefined {
+    // "Latest active" intentionally excludes recalled history. Use
+    // resolveLatestVisibleMessage(..., { includeRecalled }) for transcript views.
     return this.db.resolveLatestActiveVisibleMessage(chatId);
   }
 

@@ -29,6 +29,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Room 历史的 durable truth 属于全局 `message-system`；session 只保留 room binding、message refs 与推理所需 projection facts，不复制 room history 当作自己的真源。
 - Room 文本消息对人类 transcript 默认立即可见；`attentionState=queued` 只表示它仍欠 AI/automation attention，不再表示“先隐藏，等 attention 后再显示”。
 - Room 级 read progress / read receipt 的 durable truth 属于全局 `message-system`，并以消息级冻结成员数组 `readActorIds` / `unreadActorIds` 维护，而不是退化成 session unread badge 或可变 seat cursor。
+- Room transcript/history 与 active scheduler/readiness projection 必须分离：recalled row 可以继续存在于历史 transcript 与冻结 read/unread 数组中，但 unread counters、runtime readiness、active latest、watch predicates 与 scheduler summaries 只能基于 active-visible rows（`visible_at is not null` 且未 recalled）计算。
 - Terminal truth、grant、approval、lease、activity history 的 durable truth 属于全局 `terminal-system`；session 只保留 terminal binding、focus refs、approval subscription 与推理所需 projection facts，不复制 terminal history 当作自己的真源。
 - Terminal 长时观察必须通过独立的 `terminal await` 原语表达；它等待 TerminalSystem 拥有的稳定 snapshot / status / commit truth，返回 bounded clean lines 与 post-mortem evidence，不把等待、匹配或 debounce 语义塞进 `terminal read`。
 - Terminal focus truth 属于 actor-scoped seat state；inspection tab、UI 选中态、以及别的 actor 的 focus 都不能被错误投影成当前 session actor 的 terminal attention 输入。
