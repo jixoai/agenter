@@ -283,6 +283,13 @@ describe("Feature: cli daemon and web commands", () => {
     const html = await response.text();
     expect(response.status).toBe(200);
     expectSvelteShellHtml(html);
+
+    const envResponse = await fetch(`http://${host}:${port}/_app/env.js`);
+    const envSource = await envResponse.text();
+    expect(envResponse.status).toBe(200);
+    expect(envSource).toBe("export const env={}\n");
+    expect(envSource).not.toContain("PUBLIC_AGENTER_WS_URL");
+
     await waitForWsOpen(`ws://${host}:${port}/trpc`);
   }, 70_000);
 

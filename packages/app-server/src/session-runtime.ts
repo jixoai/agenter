@@ -2708,7 +2708,7 @@ export class SessionRuntime {
         anchorMessageId: input.anchorMessageId,
       },
     });
-    this.sessionDb?.appendRuntimeWatch({
+    this.sessionDb?.upsertRuntimeWatch({
       watchId: watch.watchId,
       ownerActionId: watch.ownerActionId,
       ownerActionKind: watch.ownerActionKind,

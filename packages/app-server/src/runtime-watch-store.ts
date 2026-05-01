@@ -33,10 +33,12 @@ export class RuntimeWatchStore {
   private readonly watches = new Map<string, RuntimeWatchRecord>();
 
   upsert(input: RuntimeWatchInsert): RuntimeWatchRecord {
-    const createdAt = input.createdAt ?? Date.now();
-    const updatedAt = input.updatedAt ?? createdAt;
+    const existing = this.watches.get(input.watchId);
+    const now = Date.now();
+    const createdAt = input.createdAt ?? existing?.createdAt ?? now;
+    const updatedAt = input.updatedAt ?? (existing ? now : createdAt);
     const next: RuntimeWatchRecord = {
-      id: this.watches.get(input.watchId)?.id ?? 0,
+      id: existing?.id ?? 0,
       watchId: input.watchId,
       ownerActionId: input.ownerActionId,
       ownerActionKind: input.ownerActionKind,

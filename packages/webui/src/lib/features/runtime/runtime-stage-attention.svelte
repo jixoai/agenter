@@ -618,7 +618,7 @@
 									class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground"
 									data-testid="runtime-attention-delivery-watches-heading"
 								>
-									Watch reminders
+									Watches
 								</div>
 								{#if selectedWatchItems.length > 0}
 									<div class="grid gap-2" data-testid="runtime-attention-delivery-watches">
@@ -643,7 +643,7 @@
 									</div>
 								{:else}
 									<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-										No watch reminder is currently linked to the selected context.
+										No watch is currently linked to the selected context.
 									</div>
 								{/if}
 							</section>

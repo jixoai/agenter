@@ -121,6 +121,71 @@ describe("Feature: session-system AI-call ledger persistence", () => {
     }
   });
 
+  test("Scenario: Given the same runtime watch identity When scheduling refreshes it Then durable persistence updates the watch instead of inserting a duplicate", () => {
+    const db = createDb();
+    try {
+      db.appendRuntimeWatch({
+        watchId: "watch-refresh",
+        ownerActionId: "action-1",
+        ownerActionKind: "message_send",
+        ownerActorId: "session:test",
+        ownerCycleId: 7,
+        ownerSessionModelCallId: 42,
+        target: "room:chat-main",
+        predicate: {
+          kind: "message_latest_visible",
+          chatId: "chat-main",
+          anchorMessageId: 11,
+        },
+        dueAt: 500,
+        createdAt: 100,
+        updatedAt: 100,
+        status: "expired",
+        resolvedAt: 520,
+        reminderContextId: "ctx-chat-main",
+        reminderCommitId: "commit-old",
+        meta: { attempt: 1 },
+      });
+
+      const refreshed = db.upsertRuntimeWatch({
+        watchId: "watch-refresh",
+        ownerActionId: "action-2",
+        ownerActionKind: "message_send",
+        ownerActorId: "session:test",
+        ownerCycleId: 8,
+        ownerSessionModelCallId: 43,
+        target: "room:chat-main",
+        predicate: {
+          kind: "message_latest_visible",
+          chatId: "chat-main",
+          anchorMessageId: 11,
+        },
+        dueAt: 900,
+        updatedAt: 700,
+        status: "pending",
+        meta: { attempt: 2 },
+      });
+
+      expect(db.listRuntimeWatches()).toHaveLength(1);
+      expect(refreshed).toMatchObject({
+        watchId: "watch-refresh",
+        ownerActionId: "action-2",
+        ownerCycleId: 8,
+        ownerSessionModelCallId: 43,
+        dueAt: 900,
+        status: "pending",
+        createdAt: 100,
+        updatedAt: 700,
+        resolvedAt: null,
+        reminderContextId: null,
+        reminderCommitId: null,
+        meta: { attempt: 2 },
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   test("Scenario: Given an explicit room mutation When the effect ledger is appended Then durable inspection can trace action to room effect", () => {
     const db = createDb();
     try {

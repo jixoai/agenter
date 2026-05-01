@@ -235,7 +235,7 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
           host,
           port,
           staticDir: dev ? undefined : resolveCanonicalWebUiAssetRoot(import.meta.dir).staticDir,
-          publicEnv: dev ? undefined : { PUBLIC_AGENTER_WS_URL: `ws://${host}:${port}/trpc` },
+          publicEnv: dev ? undefined : {},
           authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
           authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
           authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,

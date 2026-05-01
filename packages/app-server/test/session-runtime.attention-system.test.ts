@@ -4583,6 +4583,54 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.stop();
   });
 
+  test("Scenario: Given a reused visible assistant reply with a follow-up watch When message send repeats the same chat content Then the runtime refreshes the existing watch without duplicate persistence", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeMessageEgressInternal;
+
+    await runtime.start();
+    const first = await internal.sendMessageTool({
+      chatId: PRIMARY_ROOM_ID,
+      content: "先等等，我确认一下。",
+      from: "tester",
+      followUpAfterMs: 30_000,
+    });
+    await Bun.sleep(5);
+    const second = await internal.sendMessageTool({
+      chatId: PRIMARY_ROOM_ID,
+      content: "先等等，我确认一下。",
+      from: "tester",
+      followUpAfterMs: 30_000,
+    });
+
+    const messages = internal.messageSystem.snapshot(PRIMARY_ROOM_ID, 10).items;
+    const matchingWatches = runtime
+      .inspectAttentionDeliveryState()
+      .watches.filter(
+        (watch) =>
+          watch.target === `room:${PRIMARY_ROOM_ID}` &&
+          watch.predicate.kind === "message_latest_visible" &&
+          watch.predicate.anchorMessageId === first.messageId,
+      );
+
+    expect(messages.filter((message) => message.content === "先等等，我确认一下。")).toHaveLength(1);
+    expect(second.messageId).toBe(first.messageId);
+    expect(matchingWatches).toHaveLength(1);
+    expect(matchingWatches[0]).toEqual(
+      expect.objectContaining({
+        ownerActionId: second.actionId,
+        ownerActionKind: "message_send",
+        status: "pending",
+        reminderContextId: null,
+        reminderCommitId: null,
+      }),
+    );
+    expect(
+      matchingWatches[0]?.watchId.startsWith(`watch/message-follow-up/${PRIMARY_ROOM_ID}/${first.messageId}/`),
+    ).toBeTrue();
+
+    await runtime.stop();
+  });
+
   test("Scenario: Given a sent acknowledgement arms follow-up reminder When the delay expires and no newer room message exists Then the runtime creates attention without auto-sending another room message", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;

@@ -152,6 +152,32 @@ describe("Feature: cli server contracts", () => {
     expect(source).not.toContain('ws://127.0.0.1:19190/trpc');
   });
 
+  test("Scenario: Given packaged web assets with stale build-time env When no explicit public websocket URL is configured Then runtime env keeps browser location fallback available", async () => {
+    const { dir } = createWorkspaceRoot();
+    const staticDir = join(dir, "static");
+    writeStaticEntry(staticDir, "runtime env fallback");
+    writeStaticEnv(staticDir, "ws://127.0.0.1:19190/trpc");
+
+    const handle = await startTrpcServer({
+      host: "127.0.0.1",
+      port: 0,
+      globalSessionRoot: join(dir, "sessions"),
+      workspacesPath: join(dir, "workspaces.yaml"),
+      homeDir: join(dir, "home"),
+      staticDir,
+      publicEnv: {},
+    });
+    handles.push(handle);
+
+    const response = await fetch(`http://${handle.host}:${handle.port}/_app/env.js`);
+    const source = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(source).toBe("export const env={}\n");
+    expect(source).not.toContain("PUBLIC_AGENTER_WS_URL");
+    expect(source).not.toContain("ws://127.0.0.1:19190/trpc");
+  });
+
   test("Scenario: Given a workspace checkout without a build When resolving the canonical webui root Then startup fails fast with rebuild guidance", () => {
     const layout = createCliLayout({
       workspaceCheckout: true,

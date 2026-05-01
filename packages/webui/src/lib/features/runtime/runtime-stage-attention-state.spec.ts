@@ -319,7 +319,7 @@ describe("Feature: Runtime attention stage state contract", () => {
     );
   });
 
-  test("Scenario: Given watch reminders bound to one context When building watch items Then reminder truth stays separate from explicit effects", () => {
+  test("Scenario: Given watches bound to one room context When building watch items Then pending, satisfied, and expired lifecycle records stay visible without depending on reminder identity", () => {
     const watches = buildRuntimeAttentionWatchItems({
       contextId: "ctx-room-alpha",
       delivery: {
@@ -374,10 +374,57 @@ describe("Feature: Runtime attention stage state contract", () => {
             reminderCommitId: null,
             meta: {},
           },
+          {
+            id: 3,
+            watchId: "watch-3",
+            ownerActionId: "action-3",
+            ownerActionKind: "message_send",
+            ownerActorId: "assistant",
+            ownerCycleId: 10,
+            ownerSessionModelCallId: 93,
+            target: "room:room-alpha",
+            predicate: {
+              kind: "message_latest_visible",
+              chatId: "room-alpha",
+              anchorMessageId: 14,
+            },
+            dueAt: 1700000000200,
+            status: "pending",
+            createdAt: 1700000000000,
+            updatedAt: 1700000000200,
+            resolvedAt: null,
+            reminderContextId: null,
+            reminderCommitId: null,
+            meta: {},
+          },
+          {
+            id: 4,
+            watchId: "watch-4",
+            ownerActionId: "action-4",
+            ownerActionKind: "message_send",
+            ownerActorId: "assistant",
+            ownerCycleId: 11,
+            ownerSessionModelCallId: 94,
+            target: "room:room-alpha",
+            predicate: {
+              kind: "message_latest_visible",
+              chatId: "room-alpha",
+              anchorMessageId: 15,
+            },
+            dueAt: 1700000000250,
+            status: "satisfied",
+            createdAt: 1700000000000,
+            updatedAt: 1700000000250,
+            resolvedAt: 1700000000260,
+            reminderContextId: null,
+            reminderCommitId: null,
+            meta: {},
+          },
         ],
       },
     });
 
+    expect(watches.map((watch) => watch.watchId)).toEqual(["watch-1", "watch-3", "watch-4"]);
     expect(watches).toEqual([
       expect.objectContaining({
         watchId: "watch-1",
@@ -386,6 +433,20 @@ describe("Feature: Runtime attention stage state contract", () => {
         status: "expired",
         predicateKind: "message_latest_visible",
         predicateLabel: "room-alpha#13",
+      }),
+      expect.objectContaining({
+        watchId: "watch-3",
+        target: "room:room-alpha",
+        status: "pending",
+        reminderContextId: null,
+        predicateLabel: "room-alpha#14",
+      }),
+      expect.objectContaining({
+        watchId: "watch-4",
+        target: "room:room-alpha",
+        status: "satisfied",
+        reminderContextId: null,
+        predicateLabel: "room-alpha#15",
       }),
     ]);
   });

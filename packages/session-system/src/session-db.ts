@@ -1042,6 +1042,57 @@ export class SessionDb {
     return record;
   }
 
+  upsertRuntimeWatch(input: SessionRuntimeWatchInsert): SessionRuntimeWatchRecord {
+    const current = this.getRuntimeWatchByWatchId(input.watchId);
+    if (!current) {
+      return this.appendRuntimeWatch(input);
+    }
+    const updatedAt = input.updatedAt ?? Date.now();
+    const status = input.status ?? "pending";
+    const resolvedAt = input.resolvedAt !== undefined ? input.resolvedAt : status === "pending" ? null : current.resolvedAt;
+    this.db
+      .query(
+        `update runtime_watch
+         set owner_action_id = ?,
+             owner_action_kind = ?,
+             owner_actor_id = ?,
+             owner_cycle_id = ?,
+             owner_session_model_call_id = ?,
+             target = ?,
+             predicate_json = ?,
+             due_at = ?,
+             status = ?,
+             updated_at = ?,
+             resolved_at = ?,
+             reminder_context_id = ?,
+             reminder_commit_id = ?,
+             meta_json = ?
+         where watch_id = ?`,
+      )
+      .run(
+        input.ownerActionId,
+        input.ownerActionKind,
+        input.ownerActorId,
+        input.ownerCycleId ?? null,
+        input.ownerSessionModelCallId ?? null,
+        input.target,
+        toJson(input.predicate),
+        input.dueAt,
+        status,
+        updatedAt,
+        resolvedAt ?? null,
+        input.reminderContextId ?? null,
+        input.reminderCommitId ?? null,
+        input.meta === undefined ? null : toJson(input.meta),
+        input.watchId,
+      );
+    const record = this.getRuntimeWatchByWatchId(input.watchId);
+    if (!record) {
+      throw new Error(`failed to load upserted runtime_watch ${input.watchId}`);
+    }
+    return record;
+  }
+
   updateRuntimeWatch(watchId: string, input: SessionRuntimeWatchUpdate): SessionRuntimeWatchRecord {
     const current = this.getRuntimeWatchByWatchId(watchId);
     if (!current) {

@@ -105,6 +105,35 @@ const compareEffectItemsByRecency = (left: RuntimeAttentionEffectItem, right: Ru
   right.timestamp - left.timestamp ||
   right.effectId.localeCompare(left.effectId);
 
+const candidateRoomIdsForContext = (contextId: string): Set<string> => {
+  const candidates = new Set<string>();
+  const prefixes = ["ctx-room-", "ctx-chat-", "ctx-"];
+  for (const prefix of prefixes) {
+    if (contextId.startsWith(prefix) && contextId.length > prefix.length) {
+      candidates.add(contextId.slice(prefix.length));
+    }
+  }
+  candidates.add(contextId);
+  return candidates;
+};
+
+const watchBelongsToContext = (
+  watch: RuntimeAttentionDeliveryState["watches"][number],
+  contextId: string,
+): boolean => {
+  if (watch.reminderContextId === contextId) {
+    return true;
+  }
+  if (typeof watch.meta?.contextId === "string" && watch.meta.contextId === contextId) {
+    return true;
+  }
+  const roomIds = candidateRoomIdsForContext(contextId);
+  if (watch.target.startsWith("room:") && roomIds.has(watch.target.slice("room:".length))) {
+    return true;
+  }
+  return watch.predicate.kind === "message_latest_visible" && roomIds.has(watch.predicate.chatId);
+};
+
 export const buildRuntimeAttentionScoreSummary = (
   scores: ReadonlyArray<RuntimeAttentionScoreEntry>,
 ): RuntimeAttentionScoreSummary | null => {
@@ -246,8 +275,9 @@ export const buildRuntimeAttentionWatchItems = (input: {
   if (!input.delivery || !input.contextId) {
     return [];
   }
+  const contextId = input.contextId;
   return input.delivery.watches
-    .filter((watch) => watch.reminderContextId === input.contextId)
+    .filter((watch) => watchBelongsToContext(watch, contextId))
     .map((watch) => ({
       watchId: watch.watchId,
       ownerActionId: watch.ownerActionId,
