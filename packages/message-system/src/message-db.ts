@@ -1082,7 +1082,10 @@ export class MessageDb {
     return { channel, items: page.items };
   }
 
-  resolveLatestVisibleMessage(chatId: string): MessageRecord | undefined {
+  resolveLatestVisibleMessage(
+    chatId: string,
+    input: { includeRecalled?: boolean } = {},
+  ): MessageRecord | undefined {
     const roomDb = this.getRoomDb(chatId, false);
     if (!roomDb) {
       return undefined;
@@ -1091,10 +1094,11 @@ export class MessageDb {
       .query(
         `${ROOM_MESSAGE_SELECT_SQL}
          where visible_at is not null
+           and (? = 1 or recalled_at is null)
          order by created_at desc, id desc
          limit 1`,
       )
-      .get() as StoredRoomMessageRow | null;
+      .get(input.includeRecalled === false ? 0 : 1) as StoredRoomMessageRow | null;
     return row ? mapMessage(chatId, row) : undefined;
   }
 

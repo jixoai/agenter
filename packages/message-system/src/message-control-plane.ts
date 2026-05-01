@@ -847,6 +847,13 @@ export class MessageControlPlane {
     });
   }
 
+  resolveLatestVisibleMessage(
+    chatId: string,
+    input: { includeRecalled?: boolean } = {},
+  ): MessageRecord | undefined {
+    return this.db.resolveLatestVisibleMessage(chatId, input);
+  }
+
   markChannelReadAuthorized(input: MessageAuthorizedMarkReadInput): MessageControlPlaneEntry {
     const grant = this.requireAccess(input.chatId, input.accessToken, "readonly");
     const channel = this.db.getChannel(

@@ -717,6 +717,45 @@ describe("Feature: message-chat-control-plane", () => {
     expect(recalled.unreadActorIds).toEqual(sent.unreadActorIds);
   });
 
+  test("Scenario: Given a sender recalls the latest durable room message When resolving active latest visible content Then recalled history is excluded only from the active projection", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+      includeArchived: true,
+      touchPresence: false,
+    });
+    const first = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "stable answer",
+      createdAt: 100,
+    });
+    const second = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      senderActorId: "auth:owner",
+      from: "owner",
+      content: "draft to withdraw",
+      createdAt: 200,
+    });
+
+    plane.recallAuthorized({
+      chatId: room.chatId,
+      accessToken: ownerRoom?.accessToken ?? "",
+      messageId: second.messageId,
+      recalledAt: 250,
+    });
+
+    expect(plane.queryMessages({ chatId: room.chatId, limit: 5 }).items.map((message) => message.messageId)).toEqual([
+      first.messageId,
+      second.messageId,
+    ]);
+    expect(plane.resolveLatestVisibleMessage(room.chatId)?.messageId).toBe(second.messageId);
+    expect(plane.resolveLatestVisibleMessage(room.chatId, { includeRecalled: false })?.messageId).toBe(first.messageId);
+  });
+
   test("Scenario: Given a different member tries to recall someone else's durable room message When the recall is authorized Then message-system rejects the mutation", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });

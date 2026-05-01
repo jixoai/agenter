@@ -13,7 +13,12 @@ import {
   type AttentionCommitChange,
   type AttentionCommitMeta,
 } from "@agenter/attention-system";
-import { MessageControlPlane, resolveMessageControlDbPath, type MessageActorId } from "@agenter/message-system";
+import {
+  MessageControlPlane,
+  resolveMessageControlDbPath,
+  type MessageActorId,
+  type MessageRecord,
+} from "@agenter/message-system";
 import { SessionDb } from "@agenter/session-system";
 import { TerminalControlPlane, type TerminalActorId } from "@agenter/terminal-system";
 import {
@@ -40,6 +45,9 @@ interface RuntimeMessageSnapshotView {
       ref?: number;
       metadata?: Record<string, unknown>;
     }>;
+  };
+  queryMessages: (input: { chatId: string; limit?: number }) => {
+    items: MessageRecord[];
   };
 }
 
@@ -4631,6 +4639,47 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     await runtime.stop();
   });
 
+  test("Scenario: Given a recalled visible assistant reply When message send repeats the same chat content Then the explicit action creates a new visible row and effect", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeMessageEgressInternal;
+
+    await runtime.start();
+    const first = await internal.sendMessageTool({
+      chatId: PRIMARY_ROOM_ID,
+      content: "这条需要重发。",
+      from: "tester",
+    });
+    await runtime.recallRuntimeMessage({
+      chatId: PRIMARY_ROOM_ID,
+      messageId: first.messageId,
+    });
+    const second = await internal.sendMessageTool({
+      chatId: PRIMARY_ROOM_ID,
+      content: "这条需要重发。",
+      from: "tester",
+    });
+
+    const messages = internal.messageSystem.queryMessages({ chatId: PRIMARY_ROOM_ID, limit: 10 }).items;
+    const delivery = runtime.inspectAttentionDeliveryState();
+
+    expect(second.messageId).not.toBe(first.messageId);
+    expect(messages.filter((message) => message.recalledAt)).toHaveLength(1);
+    expect(messages.filter((message) => !message.recalledAt && message.content === "这条需要重发。")).toHaveLength(1);
+    expect(delivery.effects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actionId: second.actionId,
+          actionKind: "message_send",
+          target: `room:${PRIMARY_ROOM_ID}`,
+          effectKind: "message_row_created",
+          effectRecordId: `${PRIMARY_ROOM_ID}/${second.messageId}`,
+        }),
+      ]),
+    );
+
+    await runtime.stop();
+  });
+
   test("Scenario: Given a sent acknowledgement arms follow-up reminder When the delay expires and no newer room message exists Then the runtime creates attention without auto-sending another room message", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
@@ -4695,6 +4744,54 @@ describe("Feature: session runtime attention-system loop inputs", () => {
           effect.meta?.messageId === first.messageId,
       ),
     ).toBeTrue();
+
+    await runtime.stop();
+  });
+
+  test("Scenario: Given a follow-up watch message is recalled before expiry When the delay passes Then the recalled content satisfies the watch without creating reminder attention", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeMessageEgressInternal;
+
+    await runtime.start();
+    const first = await internal.sendMessageTool({
+      chatId: PRIMARY_ROOM_ID,
+      content: "这条提醒应当被撤回。",
+      from: "tester",
+      followUpAfterMs: 25,
+    });
+    await runtime.recallRuntimeMessage({
+      chatId: PRIMARY_ROOM_ID,
+      messageId: first.messageId,
+    });
+
+    await Bun.sleep(40);
+
+    const waitPromise = internal.waitForAnyInput();
+    const winner = await Promise.race([waitPromise, Bun.sleep(80).then(() => "timeout" as const)]);
+    if (winner === "attention") {
+      await internal.collectLoopInputs();
+    }
+    const activeItems = getActiveItems(internal);
+    const delivery = runtime.inspectAttentionDeliveryState();
+
+    expect(winner).toBe("attention");
+    expect(activeItems.some((item) => item.title.includes("Re-evaluate room follow-up"))).toBeFalse();
+    expect(delivery.watches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ownerActionId: first.actionId,
+          target: `room:${PRIMARY_ROOM_ID}`,
+          status: "satisfied",
+          predicate: {
+            kind: "message_latest_visible",
+            chatId: PRIMARY_ROOM_ID,
+            anchorMessageId: first.messageId,
+          },
+          reminderContextId: null,
+          reminderCommitId: null,
+        }),
+      ]),
+    );
 
     await runtime.stop();
   });
