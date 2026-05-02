@@ -1,5 +1,6 @@
 <script lang="ts">
 	import FileClockIcon from '@lucide/svelte/icons/file-clock';
+	import MoveDiagonal2Icon from '@lucide/svelte/icons/move-diagonal-2';
 	import SendHorizontalIcon from '@lucide/svelte/icons/send-horizontal';
 	import { resolveAsyncSurfaceState, type ToolInvocationView } from '@agenter/web-components';
 	import { tick } from 'svelte';
@@ -38,6 +39,7 @@
 	let {
 		selectedTerminal,
 		terminalViewportComponent,
+		selectedTransportUrl,
 		terminalApprovalsState,
 		terminalActivityState,
 		routeNotice,
@@ -56,13 +58,14 @@
 		onDenyRequest,
 		onWriteToolCall,
 		onReadToolCall,
+		onResizeToolCall,
 	}: TerminalSystemSurfaceProps = $props();
 
 	let deleteBusy = $state(false);
 	let lifecycleBusy = $state(false);
 	let lifecycleIntent = $state<TerminalLifecycleIntent | null>(null);
 	let deleteDialogOpen = $state(false);
-	let actionToolTab: 'write' | 'read' = $state('write');
+	let actionToolTab: 'write' | 'read' | 'resize' = $state('write');
 	let actionsDetailOpen = $state(true);
 	let usersDialogOpen = $state(false);
 	let grantParticipantId = $state('');
@@ -73,7 +76,11 @@
 	let writeBusy = $state(false);
 	let readMode: 'auto' | 'diff' | 'snapshot' = $state('snapshot');
 	let readBusy = $state(false);
+	let resizeCols = $state('');
+	let resizeRows = $state('');
+	let resizeBusy = $state(false);
 	let viewportModeByTerminalId = $state<Record<string, 'fit' | 'cover'>>({});
+	let liveViewportSizeByTerminalId = $state<Record<string, { width: number; height: number }>>({});
 	let actionsPanelRef: HTMLElement | null = $state(null);
 	let detailRailCompact = $state(false);
 	let lastSelectedTerminalId = $state<string | null>(null);
@@ -132,6 +139,8 @@
 	const selectedViewportMode = $derived(
 		selectedTerminal ? (viewportModeByTerminalId[selectedTerminal.terminalId] ?? 'fit') : 'fit',
 	);
+	const selectedLiveViewportSize = $derived(selectedTerminal ? (liveViewportSizeByTerminalId[selectedTerminal.terminalId] ?? null) : null);
+	const effectiveTransportUrl = $derived(selectedTransportUrl ?? selectedTerminal?.transportUrl ?? null);
 	const seatStateByActorId = $derived(
 		new Map(seatStates.map((seat) => [seat.actorId, seat] as const)),
 	);
@@ -234,6 +243,14 @@
 		};
 	};
 
+	const clampResizeValue = (value: string, fallback: number): number => {
+		const parsed = Number.parseInt(value, 10);
+		if (!Number.isFinite(parsed)) {
+			return fallback;
+		}
+		return Math.max(1, parsed);
+	};
+
 	const handleGrantSeat = async (): Promise<void> => {
 		if (!selectedTerminal || grantBusy || grantParticipantId.length === 0) {
 			return;
@@ -280,12 +297,35 @@
 		}
 	};
 
+	const handleResizeToolCall = async (): Promise<void> => {
+		if (!selectedTerminal || resizeBusy) {
+			return;
+		}
+		const fallbackCols = selectedTerminal.snapshot?.cols ?? 80;
+		const fallbackRows = selectedTerminal.snapshot?.rows ?? 24;
+		const cols = clampResizeValue(resizeCols, fallbackCols);
+		const rows = clampResizeValue(resizeRows, fallbackRows);
+		resizeBusy = true;
+		try {
+			const result = await onResizeToolCall({ cols, rows });
+			if (result?.ok) {
+				resizeCols = String(result.cols);
+				resizeRows = String(result.rows);
+			}
+		} finally {
+			resizeBusy = false;
+		}
+	};
+
 	const resolveActionToolName = (kind: string): string => {
 		if (kind === 'terminal_write') {
 			return 'terminal.write';
 		}
 		if (kind === 'terminal_read') {
 			return 'terminal.read';
+		}
+		if (kind === 'terminal_resize') {
+			return 'terminal.resize';
 		}
 		return kind;
 	};
@@ -306,6 +346,33 @@
 						event.detail && typeof event.detail === 'object' && !Array.isArray(event.detail)
 							? { mode: representation }
 							: { mode: 'snapshot' },
+				},
+				result: {
+					value: event.detail ?? event.content,
+					rawText: detailText ?? event.content,
+				},
+				meta: {
+					title: event.title,
+					actorId: event.actorId,
+				},
+				startedAt: event.createdAt,
+				finishedAt: event.createdAt,
+			};
+		}
+		if (event.kind === 'terminal_resize') {
+			const resizeDetail =
+				event.detail && typeof event.detail === 'object' && !Array.isArray(event.detail)
+					? (event.detail as { cols?: number | null; rows?: number | null })
+					: {};
+			return {
+				invocationId: `${event.terminalId}:${event.id}`,
+				toolName: resolveActionToolName(event.kind),
+				status: 'success',
+				call: {
+					value: {
+						cols: resizeDetail.cols ?? null,
+						rows: resizeDetail.rows ?? null,
+					},
 				},
 				result: {
 					value: event.detail ?? event.content,
@@ -369,6 +436,14 @@
 	$effect(() => {
 		const nextTerminalId = selectedTerminal?.terminalId ?? null;
 		if (nextTerminalId) {
+			const snapshotCols = selectedTerminal?.snapshot?.cols ?? 80;
+			const snapshotRows = selectedTerminal?.snapshot?.rows ?? 24;
+			if (!resizeCols) {
+				resizeCols = String(snapshotCols);
+			}
+			if (!resizeRows) {
+				resizeRows = String(snapshotRows);
+			}
 			lastSelectedTerminalId = nextTerminalId;
 			return;
 		}
@@ -380,6 +455,8 @@
 			actionsDetailOpen = false;
 			lastSelectedTerminalId = null;
 		}
+		resizeCols = '';
+		resizeRows = '';
 	});
 </script>
 
@@ -391,6 +468,7 @@
 			usersOpen={usersDialogOpen}
 			{lifecycleBusy}
 			{lifecycleIntent}
+			{deleteBusy}
 			onToggleActions={() => {
 				usersDialogOpen = false;
 				actionsDetailOpen = !actionsDetailOpen;
@@ -400,6 +478,7 @@
 			}}
 			onBootstrapTerminal={() => void handleBootstrapTerminal()}
 			onStopTerminal={() => void handleStopTerminal()}
+			onDeleteTerminal={handleRequestDeleteTerminal}
 		/>
 	</WorkbenchPageToolbar>
 {/if}
@@ -516,12 +595,80 @@
 	</InputGroup.Root>
 {/snippet}
 
+{#snippet terminalResizeInputGroup()}
+	<InputGroup.Root layout="block" data-testid="terminal-resize-input-group">
+		<div class="grid gap-3 border-b border-border/60 bg-muted/15 px-4 py-3" data-testid="terminal-resize-parameter-panel">
+			<div class="grid gap-1">
+				<div class="text-[11px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
+					Resize terminal geometry
+				</div>
+				<p class="text-sm text-muted-foreground">
+					This updates the terminal's durable cols and rows. Running PTYs apply it live when allowed, and stopped PTYs use it on the next bootstrap.
+				</p>
+			</div>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div class="grid gap-1.5">
+					<label class="text-[11px] font-medium tracking-[0.18em] text-muted-foreground uppercase" for="terminal-resize-cols-input">
+						Cols
+					</label>
+					<InputGroup.Input
+						id="terminal-resize-cols-input"
+						type="number"
+						min="1"
+						step="1"
+						bind:value={resizeCols}
+						data-testid="terminal-resize-cols"
+					/>
+				</div>
+				<div class="grid gap-1.5">
+					<label class="text-[11px] font-medium tracking-[0.18em] text-muted-foreground uppercase" for="terminal-resize-rows-input">
+						Rows
+					</label>
+					<InputGroup.Input
+						id="terminal-resize-rows-input"
+						type="number"
+						min="1"
+						step="1"
+						bind:value={resizeRows}
+						data-testid="terminal-resize-rows"
+					/>
+				</div>
+			</div>
+		</div>
+		<InputGroup.Addon
+			align="block-end"
+			class="flex flex-wrap items-center justify-between gap-2 border-border/60 bg-muted/25 px-3 py-2.5"
+		>
+			<div class="text-xs text-muted-foreground">
+				{#if selectedTerminal?.snapshot}
+					<div data-testid="terminal-current-snapshot">
+						Current snapshot: {selectedTerminal.snapshot.cols}x{selectedTerminal.snapshot.rows}
+					</div>
+				{/if}
+				{#if selectedLiveViewportSize}
+					<div data-testid="terminal-live-resize-hint">Live frame: {selectedLiveViewportSize.width}x{selectedLiveViewportSize.height}px</div>
+				{/if}
+			</div>
+			<Button
+				data-testid="terminal-resize-submit"
+				class="w-full sm:w-auto"
+				disabled={!selectedTerminal || resizeBusy}
+				onclick={() => void handleResizeToolCall()}
+			>
+				<MoveDiagonal2Icon class="size-4" />
+				Apply resize
+			</Button>
+		</InputGroup.Addon>
+	</InputGroup.Root>
+{/snippet}
+
 {#snippet terminalActionsPanel()}
 	<div class="grid gap-3" data-testid="terminal-actions-panel">
 		<Tabs.Root bind:value={actionToolTab}>
-			<Tabs.List class="grid w-full grid-cols-2">
+			<Tabs.List class="grid w-full grid-cols-3">
 				<Tabs.Trigger value="write">Write</Tabs.Trigger>
 				<Tabs.Trigger value="read">Read</Tabs.Trigger>
+				<Tabs.Trigger value="resize">Resize</Tabs.Trigger>
 			</Tabs.List>
 
 			<Tabs.Content value="write" class="mt-3">
@@ -531,25 +678,43 @@
 			<Tabs.Content value="read" class="mt-3">
 				{@render terminalReadInputGroup()}
 			</Tabs.Content>
+
+			<Tabs.Content value="resize" class="mt-3">
+				{@render terminalResizeInputGroup()}
+			</Tabs.Content>
 		</Tabs.Root>
 	</div>
 {/snippet}
 
 {#snippet terminalStagePanel()}
-	<WorkbenchScaffold tone="page" body="scroll" data-testid="terminal-stage-pane">
+	<WorkbenchScaffold
+		tone="page"
+		body="scroll"
+		contentClass="grid gap-4 px-2 py-2 sm:px-3 sm:py-3"
+		data-testid="terminal-stage-pane"
+	>
 		{#if selectedTerminal}
-			<div class="grid gap-5">
+			<div class="grid gap-4">
 				{#if routeNotice}
 					<NoticeBanner tone={routeNotice.tone} message={routeNotice.message} />
 				{/if}
-					<div class="grid gap-4">
+					<div class="grid gap-3">
 					<TerminalWindowSurface
 						terminal={selectedTerminal}
 						terminalViewportComponent={TerminalViewport}
+						transportUrl={effectiveTransportUrl}
 						viewportMode={selectedViewportMode}
-						deleteBusy={deleteBusy}
-						onRequestDelete={handleRequestDeleteTerminal}
+						{lifecycleBusy}
+						{lifecycleIntent}
+						onBootstrapTerminal={() => void handleBootstrapTerminal()}
+						onStopTerminal={() => void handleStopTerminal()}
 						onToggleViewportMode={handleToggleViewportMode}
+						onLiveResize={({ width, height }) => {
+							liveViewportSizeByTerminalId = {
+								...liveViewportSizeByTerminalId,
+								[selectedTerminal.terminalId]: { width, height },
+							};
+						}}
 					/>
 					<div class="grid gap-2 text-xs text-muted-foreground">
 						<div>Launch cwd: {selectedTerminal.launchCwd}</div>
@@ -559,7 +724,7 @@
 						<div>
 							Projection mode: {selectedViewportMode === 'cover' ? 'cover window' : 'fit window'}
 						</div>
-						<div>Transport: {resolveTerminalTransportLabel(selectedTerminal)}</div>
+						<div>Transport: {effectiveTransportUrl ? 'Live websocket mirror' : 'No live transport'}</div>
 					</div>
 				</div>
 				{@render terminalActionsPanel()}

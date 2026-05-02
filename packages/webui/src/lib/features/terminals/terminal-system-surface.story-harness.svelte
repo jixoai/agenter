@@ -397,6 +397,19 @@
 	const selectedCallerToken = $derived(
 		selectedCallerTokenByTerminalId[selectedTerminalId] ?? callAsOptions[0]?.accessToken ?? null,
 	);
+	const selectedTransportUrl = $derived.by(() => {
+		const terminal = selectedTerminal;
+		if (!terminal?.transportUrl || !selectedCallerToken) {
+			return terminal?.transportUrl ?? null;
+		}
+		try {
+			const url = new URL(terminal.transportUrl);
+			url.searchParams.set('token', selectedCallerToken);
+			return url.toString();
+		} catch {
+			return terminal.transportUrl;
+		}
+	});
 
 	const updateTerminalEntry = (terminalId: string, updater: (terminal: GlobalTerminalEntry) => GlobalTerminalEntry): void => {
 		terminalsState = {
@@ -747,6 +760,49 @@
 		});
 		routeNotice = null;
 	};
+
+	const handleResizeToolCall = async (input: { cols: number; rows: number }) => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		updateTerminalEntry(terminal.terminalId, (entry) => {
+			const currentSnapshot = entry.snapshot ?? buildTerminalSnapshot(entry.launchCwd);
+			const nextSeq = (currentSnapshot.seq ?? 0) + 1;
+			return {
+				...entry,
+				seq: nextSeq,
+				snapshot: buildTerminalSnapshot(entry.currentPath ?? entry.launchCwd, currentSnapshot.lines, nextSeq, {
+					cols: input.cols,
+					rows: input.rows,
+				}),
+			};
+		});
+		appendActivity(terminal.terminalId, {
+			terminalId: terminal.terminalId,
+			createdAt: Date.now(),
+			kind: 'terminal_resize',
+			cycleId: null,
+			actorId: 'system:trusted-terminal-bootstrap',
+			title: 'Terminal resize',
+			content: `${input.cols}x${input.rows}`,
+			detail: {
+				source: 'terminal-config-mutation',
+				cols: input.cols,
+				rows: input.rows,
+				appliedLiveFields: ['cols', 'rows'],
+				nextBootstrapFields: [],
+			},
+		});
+		routeNotice = null;
+		return {
+			ok: true,
+			cols: input.cols,
+			rows: input.rows,
+			appliedLiveFields: ['cols', 'rows'],
+			nextBootstrapFields: [],
+		};
+	};
 </script>
 
 <Tooltip.Provider delayDuration={0}>
@@ -764,6 +820,7 @@
 			<TerminalSystemSurface
 				{selectedTerminal}
 				terminalViewportComponent={TerminalViewHost}
+				{selectedTransportUrl}
 				{terminalGrantsState}
 				{terminalApprovalsState}
 				{terminalActivityState}
@@ -783,6 +840,7 @@
 				onDenyRequest={handleDenyRequest}
 				onWriteToolCall={handleWriteToolCall}
 				onReadToolCall={handleReadToolCall}
+				onResizeToolCall={handleResizeToolCall}
 			/>
 		</WorkbenchWindow>
 	</div>

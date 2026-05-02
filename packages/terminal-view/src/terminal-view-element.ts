@@ -1,63 +1,26 @@
 import { Terminal } from "@xterm/xterm";
 import xtermStyles from "@xterm/xterm/css/xterm.css?inline";
+import {
+  binaryStringToBytes,
+  decodeTerminalTransportServerMessage,
+  encodeTerminalTransportClientMessage,
+  type TerminalTransportClientMessage,
+  type TerminalTransportServerMessage,
+  type TerminalTransportSnapshot,
+} from "@agenter/terminal-transport-protocol";
 import { LitElement, html } from "lit";
 import { property, query } from "lit/decorators.js";
+import { resolveTerminalScreenMetrics } from "./terminal-geometry";
 
 export const TERMINAL_VIEW_TAG = "terminal-view";
 
 export type TerminalViewConnectionState = "idle" | "connecting" | "connected" | "closed" | "error";
-
-export interface TerminalViewSnapshot {
-  seq: number;
-  timestamp?: number;
-  cols: number;
-  rows: number;
-  lines: string[];
-  richLines?: Array<{
-    spans: Array<{
-      text: string;
-      fg?: string;
-      bg?: string;
-      bold?: boolean;
-      underline?: boolean;
-      inverse?: boolean;
-    }>;
-  }>;
-  cursor: { x: number; y: number };
-  cursorVisible?: boolean;
-}
-
-export type TerminalViewServerMessage =
-  | {
-      type: "snapshot";
-      terminalId: string;
-      snapshot: TerminalViewSnapshot;
-      status: "IDLE" | "BUSY";
-    }
-  | {
-      type: "output";
-      terminalId: string;
-      data: string;
-    }
-  | {
-      type: "status";
-      terminalId: string;
-      running: boolean;
-      status: "IDLE" | "BUSY";
-    }
-  | {
-      type: "error";
-      terminalId: string;
-      message: string;
-    };
-
-interface TerminalViewportMetrics {
-  scale: number;
+export interface TerminalViewScreenMetrics {
   width: number;
   height: number;
-  scaledWidth: number;
-  scaledHeight: number;
 }
+
+export type TerminalViewSnapshot = TerminalTransportSnapshot;
 
 interface XtermRenderDimensions {
   css?: {
@@ -76,9 +39,14 @@ interface XtermInternalShape {
   };
 }
 
-const VIEWPORT_PADDING_X = 16;
-const VIEWPORT_PADDING_Y = 14;
-const FALLBACK_CELL_WIDTH = 8.2;
+interface XtermScreenWithCore {
+  _core?: {
+    _renderService?: {
+      dimensions?: XtermRenderDimensions;
+    };
+  };
+}
+
 const TERMINAL_FONT_SIZE = 12;
 const TERMINAL_LINE_HEIGHT = 1.25;
 const FALLBACK_LINE_HEIGHT = 16;
@@ -118,30 +86,30 @@ const PROGRAMMING_LIGATURES = Object.freeze([
 const templateStyles = `
   :host {
     display: block;
+    width: 100%;
     height: 100%;
     min-height: 0;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .terminal-stage {
-    display: flex;
+    position: relative;
+    width: 100%;
     height: 100%;
     min-height: 0;
-    align-items: center;
-    justify-content: center;
+    min-width: 0;
     overflow: hidden;
   }
 
   .terminal-frame-shell {
     position: relative;
-    flex: none;
-    max-width: 100%;
-    max-height: 100%;
+    overflow: hidden;
   }
 
   .terminal-frame {
     position: relative;
-    transform-origin: top left;
-    transition: transform 140ms ease;
+    overflow: hidden;
   }
 
   .terminal-screen {
@@ -180,6 +148,12 @@ const templateStyles = `
 `;
 
 const combinedStyles = `${xtermStyles}\n${templateStyles}`;
+const utf8Encoder = new TextEncoder();
+const toOwnedArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+};
 
 const ANSI_RESET = "\u001b[0m";
 const escapeRegex = (input: string): string => input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -229,7 +203,11 @@ const serializeRichSpan = (span: NonNullable<TerminalViewSnapshot["richLines"]>[
 
 const serializeSnapshot = (snapshot: TerminalViewSnapshot): string => {
   if (snapshot.richLines && snapshot.richLines.length > 0) {
-    return snapshot.richLines.map((line) => line.spans.map((span) => serializeRichSpan(span)).join("")).join("\r\n");
+    return snapshot.richLines
+      .map((line: NonNullable<TerminalViewSnapshot["richLines"]>[number]) =>
+        line.spans.map((span: NonNullable<TerminalViewSnapshot["richLines"]>[number]["spans"][number]) => serializeRichSpan(span)).join(""),
+      )
+      .join("\r\n");
   }
   return snapshot.lines.join("\r\n");
 };
@@ -252,37 +230,23 @@ const collectProgrammingLigatureRanges = (text: string): [number, number][] => {
   return ranges;
 };
 
-const buildViewportMetrics = (input: {
-  availableWidth: number;
-  availableHeight: number;
-  screenWidth: number;
-  screenHeight: number;
-  mode: "fit" | "cover";
-}): TerminalViewportMetrics => {
-  const width = input.screenWidth + VIEWPORT_PADDING_X * 2;
-  const height = input.screenHeight + VIEWPORT_PADDING_Y * 2;
-  const fitScale = Math.min(input.availableWidth / width, input.availableHeight / height);
-  const coverScale = Math.max(input.availableWidth / width, input.availableHeight / height);
-  const rawScale = input.mode === "cover" ? coverScale : fitScale;
-  const scale = Number.isFinite(rawScale) && rawScale > 0 ? rawScale : 1;
-  const scaledWidth = width * scale;
-  const scaledHeight = height * scale;
-  return {
-    scale,
-    width,
-    height,
-    scaledWidth,
-    scaledHeight,
-  };
-};
-
 export class TerminalViewElement extends LitElement {
+  static override shadowRootOptions = {
+    ...LitElement.shadowRootOptions,
+    delegatesFocus: true,
+  };
+
   @property({ attribute: "transport-url" }) accessor transportUrl = "";
   @property({ attribute: "terminal-id" }) accessor terminalId = "";
-  @property({ attribute: "viewport-mode" }) accessor viewportMode: "fit" | "cover" = "fit";
   @property({ attribute: false }) accessor snapshot: TerminalViewSnapshot | null = null;
   @property({ attribute: false }) accessor connectionState: TerminalViewConnectionState = "idle";
   @property({ attribute: false }) accessor errorMessage = "";
+  @property({ attribute: "projection-width", type: Number }) accessor projectionWidth = 0;
+  @property({ attribute: "projection-height", type: Number }) accessor projectionHeight = 0;
+  @property({ attribute: "projection-scale", type: Number }) accessor projectionScale = 1;
+  @property({ attribute: "projection-offset-x", type: Number }) accessor projectionOffsetX = 0;
+  @property({ attribute: "projection-offset-y", type: Number }) accessor projectionOffsetY = 0;
+  @property({ attribute: false }) accessor screenMetrics: TerminalViewScreenMetrics | null = null;
 
   @query("[data-terminal-stage]") private accessor stageHost!: HTMLDivElement;
   @query("[data-terminal-viewport]") private accessor viewportHost!: HTMLDivElement;
@@ -290,15 +254,38 @@ export class TerminalViewElement extends LitElement {
   private terminal: Terminal | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private socket: WebSocket | null = null;
+  private inputDataDisposable: { dispose(): void } | null = null;
+  private inputBinaryDisposable: { dispose(): void } | null = null;
   private ligatureJoinerId: number | null = null;
   private hydratedSnapshotSeq = -1;
   private liveSnapshotHydrated = false;
+  private lastSentResize: { cols: number; rows: number } | null = null;
   private stageWidth = 0;
   private stageHeight = 0;
   private screenWidth = 0;
   private screenHeight = 0;
   private firstUpdateFramePending = false;
   private stageResizeFrame = 0;
+  private viewportInteractionDisposers: Array<() => void> = [];
+
+  public requestViewportResize(input: { cols: number; rows: number }): boolean {
+    const cols = Math.max(1, Math.floor(input.cols));
+    const rows = Math.max(1, Math.floor(input.rows));
+    if (!Number.isFinite(cols) || !Number.isFinite(rows)) {
+      return false;
+    }
+    if (
+      this.sendClientMessage({
+        type: "resize",
+        cols,
+        rows,
+      })
+    ) {
+      this.lastSentResize = { cols, rows };
+      return true;
+    }
+    return false;
+  }
 
   private scheduleAfterUpdate(callback: () => void): void {
     const run = () => {
@@ -318,10 +305,17 @@ export class TerminalViewElement extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    if (!this.hasAttribute("tabindex")) {
+      this.tabIndex = 0;
+    }
     this.upgradeProperty("transportUrl");
     this.upgradeProperty("terminalId");
-    this.upgradeProperty("viewportMode");
     this.upgradeProperty("snapshot");
+    this.upgradeProperty("projectionWidth");
+    this.upgradeProperty("projectionHeight");
+    this.upgradeProperty("projectionScale");
+    this.upgradeProperty("projectionOffsetX");
+    this.upgradeProperty("projectionOffsetY");
     this.syncSocket();
   }
 
@@ -329,6 +323,14 @@ export class TerminalViewElement extends LitElement {
     this.disconnectSocket();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    for (const dispose of this.viewportInteractionDisposers) {
+      dispose();
+    }
+    this.viewportInteractionDisposers = [];
+    this.inputDataDisposable?.dispose();
+    this.inputDataDisposable = null;
+    this.inputBinaryDisposable?.dispose();
+    this.inputBinaryDisposable = null;
     if (this.stageResizeFrame !== 0) {
       cancelAnimationFrame(this.stageResizeFrame);
       this.stageResizeFrame = 0;
@@ -379,17 +381,23 @@ export class TerminalViewElement extends LitElement {
   render() {
     const cols = this.snapshot?.cols ?? this.terminal?.cols ?? DEFAULT_COLS;
     const rows = this.snapshot?.rows ?? this.terminal?.rows ?? DEFAULT_ROWS;
-    const screenWidth = this.screenWidth > 0 ? this.screenWidth : Math.round(cols * FALLBACK_CELL_WIDTH);
+    const screenWidth = this.screenWidth > 0 ? this.screenWidth : undefined;
     const screenHeight = this.screenHeight > 0 ? this.screenHeight : Math.round(rows * FALLBACK_LINE_HEIGHT);
-    const metrics = buildViewportMetrics({
-      availableWidth: Math.max(this.stageWidth, 320),
-      availableHeight: Math.max(this.stageHeight, 200),
+    const screenMetrics = resolveTerminalScreenMetrics({
+      cols,
+      rows,
       screenWidth,
       screenHeight,
-      mode: this.viewportMode,
     });
-    const stageStyle =
-      this.viewportMode === "cover" ? "align-items:flex-start;justify-content:flex-start;" : undefined;
+    const frameWidth = screenMetrics.frameWidth;
+    const frameHeight = screenMetrics.frameHeight;
+    const projectionScale = Number.isFinite(this.projectionScale) && this.projectionScale > 0 ? this.projectionScale : 1;
+    const projectionWidth =
+      Number.isFinite(this.projectionWidth) && this.projectionWidth > 0 ? this.projectionWidth : Math.round(frameWidth * projectionScale);
+    const projectionHeight =
+      Number.isFinite(this.projectionHeight) && this.projectionHeight > 0 ? this.projectionHeight : Math.round(frameHeight * projectionScale);
+    const projectionOffsetX = Number.isFinite(this.projectionOffsetX) ? this.projectionOffsetX : 0;
+    const projectionOffsetY = Number.isFinite(this.projectionOffsetY) ? this.projectionOffsetY : 0;
 
     return html`
       <style>
@@ -400,20 +408,18 @@ export class TerminalViewElement extends LitElement {
         data-terminal-stage
         data-terminal-scroll-contract="terminal-stage"
         data-terminal-scroll-owner="terminal-stage"
-        data-viewport-mode=${this.viewportMode}
-        style=${stageStyle ?? ""}
+        style=${`width:${projectionWidth}px;height:${projectionHeight}px;`}
       >
-        <div class="terminal-frame-shell" style=${`width:${metrics.scaledWidth}px;height:${metrics.scaledHeight}px;`}>
+        <div class="terminal-frame-shell" style=${`width:${projectionWidth}px;height:${projectionHeight}px;`}>
           <section
             class="terminal-frame"
             data-terminal-view-root="true"
-            data-viewport-mode=${this.viewportMode}
-            style=${`width:${metrics.width}px;height:${metrics.height}px;transform:scale(${metrics.scale});`}
+            style=${`width:${frameWidth}px;height:${frameHeight}px;transform:translate(${projectionOffsetX}px, ${projectionOffsetY}px) scale(${projectionScale});transform-origin:top left;`}
           >
             <div
               class="terminal-screen"
               data-terminal-viewport
-              style=${`width:${screenWidth}px;height:${screenHeight}px;`}
+              style=${`width:${screenMetrics.screenWidth}px;height:${screenMetrics.screenHeight}px;margin-left:${screenMetrics.framePaddingX}px;margin-top:${screenMetrics.framePaddingY}px;`}
             ></div>
           </section>
         </div>
@@ -446,7 +452,20 @@ export class TerminalViewElement extends LitElement {
     });
     terminal.open(this.viewportHost);
     this.ligatureJoinerId = terminal.registerCharacterJoiner(collectProgrammingLigatureRanges);
+    this.inputDataDisposable = terminal.onData((data) => {
+      this.sendClientMessage({
+        type: "inputBytes",
+        data: utf8Encoder.encode(data),
+      });
+    });
+    this.inputBinaryDisposable = terminal.onBinary((data) => {
+      this.sendClientMessage({
+        type: "inputBytes",
+        data: binaryStringToBytes(data),
+      });
+    });
     this.terminal = terminal;
+    this.bindViewportInteractionFocus();
     this.syncMeasuredScreen();
     if (this.snapshot) {
       const source = this.connectionState === "connected" && !this.liveSnapshotHydrated ? "transport" : "prop";
@@ -458,7 +477,16 @@ export class TerminalViewElement extends LitElement {
   }
 
   private upgradeProperty(
-    name: "transportUrl" | "terminalId" | "viewportMode" | "snapshot",
+    name:
+      | "transportUrl"
+      | "terminalId"
+      | "snapshot"
+      | "projectionWidth"
+      | "projectionHeight"
+      | "projectionScale"
+      | "projectionOffsetX"
+      | "projectionOffsetY"
+      | "screenMetrics",
   ): void {
     if (!Object.prototype.hasOwnProperty.call(this, name)) {
       return;
@@ -507,6 +535,48 @@ export class TerminalViewElement extends LitElement {
     this.resizeObserver.observe(this.stageHost);
   }
 
+  private bindViewportInteractionFocus(): void {
+    if (!this.viewportHost || this.viewportInteractionDisposers.length > 0) {
+      return;
+    }
+
+    const focusTerminalInput = (): void => {
+      this.focusTerminalInput();
+    };
+    const bind = (type: string, options?: AddEventListenerOptions): void => {
+      this.viewportHost.addEventListener(type, focusTerminalInput, options);
+      this.viewportInteractionDisposers.push(() => {
+        this.viewportHost.removeEventListener(type, focusTerminalInput, options);
+      });
+    };
+
+    bind("pointerdown", { passive: true });
+    bind("mousedown", { passive: true });
+    bind("touchstart", { passive: true });
+    bind("click", { passive: true });
+    bind("focusin");
+  }
+
+  private focusTerminalInput(): void {
+    const textarea = this.terminal?.textarea;
+    if (!this.terminal || !textarea) {
+      return;
+    }
+    if (textarea.ownerDocument.activeElement === textarea) {
+      return;
+    }
+    this.terminal.focus();
+    queueMicrotask(() => {
+      if (!this.isConnected || !this.terminal?.textarea) {
+        return;
+      }
+      if (this.terminal.textarea.ownerDocument.activeElement === this.terminal.textarea) {
+        return;
+      }
+      this.terminal.focus();
+    });
+  }
+
   private resizeTerminal(cols: number, rows: number): void {
     if (!this.terminal || cols < 1 || rows < 1) {
       return;
@@ -550,6 +620,7 @@ export class TerminalViewElement extends LitElement {
     }
     this.connectionState = "connecting";
     const socket = new WebSocket(this.transportUrl);
+    socket.binaryType = "arraybuffer";
     this.socket = socket;
     socket.addEventListener("open", () => {
       if (this.socket !== socket) {
@@ -560,7 +631,7 @@ export class TerminalViewElement extends LitElement {
       this.liveSnapshotHydrated = false;
     });
     socket.addEventListener("message", (event) => {
-      this.handleSocketMessage(String(event.data));
+      this.handleSocketMessage(event.data);
     });
     socket.addEventListener("close", () => {
       if (this.socket !== socket) {
@@ -586,39 +657,55 @@ export class TerminalViewElement extends LitElement {
     }
     this.socket.close();
     this.socket = null;
+    this.lastSentResize = null;
   }
 
-  private handleSocketMessage(raw: string): void {
-    try {
-      const message = JSON.parse(raw) as TerminalViewServerMessage;
-      if (message.type === "snapshot") {
-        const geometryChanged =
-          this.terminal === null ||
-          this.terminal.cols !== message.snapshot.cols ||
-          this.terminal.rows !== message.snapshot.rows;
-        if (!this.liveSnapshotHydrated || geometryChanged) {
-          this.snapshot = message.snapshot;
-          this.liveSnapshotHydrated = this.hydrateSnapshot(message.snapshot, "transport") || this.liveSnapshotHydrated;
-        } else {
-          this.hydratedSnapshotSeq = Math.max(this.hydratedSnapshotSeq, message.snapshot.seq);
-        }
-        return;
-      }
-      if (message.type === "output") {
-        this.terminal?.write(message.data);
-        return;
-      }
-      if (message.type === "status") {
-        if (!message.running) {
-          this.connectionState = "closed";
-        }
-        return;
-      }
-      this.connectionState = "error";
-      this.errorMessage = message.message;
-    } catch {
+  private sendClientMessage(message: TerminalTransportClientMessage): boolean {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN || this.connectionState !== "connected") {
+      return false;
+    }
+    this.socket.send(toOwnedArrayBuffer(encodeTerminalTransportClientMessage(message)));
+    return true;
+  }
+
+  private handleSocketMessage(raw: unknown): void {
+    if (!(raw instanceof ArrayBuffer)) {
       this.connectionState = "error";
       this.errorMessage = "invalid transport payload";
+      return;
+    }
+    const message = decodeTerminalTransportServerMessage(raw);
+    if (!message) {
+      this.connectionState = "error";
+      this.errorMessage = "invalid transport payload";
+      return;
+    }
+    if (message.type === "snapshot") {
+      const geometryChanged =
+        this.terminal === null ||
+        this.terminal.cols !== message.snapshot.cols ||
+        this.terminal.rows !== message.snapshot.rows;
+      if (!this.liveSnapshotHydrated || geometryChanged) {
+        this.snapshot = message.snapshot;
+        this.liveSnapshotHydrated = this.hydrateSnapshot(message.snapshot, "transport") || this.liveSnapshotHydrated;
+      } else {
+        this.hydratedSnapshotSeq = Math.max(this.hydratedSnapshotSeq, message.snapshot.seq);
+      }
+      return;
+    }
+    if (message.type === "outputBytes") {
+      this.terminal?.write(message.data);
+      return;
+    }
+    if (message.type === "status") {
+      if (!message.running) {
+        this.connectionState = "closed";
+      }
+      return;
+    }
+    if (message.type === "error") {
+      this.connectionState = "error";
+      this.errorMessage = message.message;
     }
   }
 
@@ -633,6 +720,12 @@ export class TerminalViewElement extends LitElement {
     const height = internal?._core?._renderService?.dimensions?.css?.canvas?.height;
     if (typeof width === "number" && width > 0 && typeof height === "number" && height > 0) {
       return { width, height };
+    }
+    const screenCore = this.getTerminalScreenElement() as (HTMLDivElement & XtermScreenWithCore) | null;
+    const screenWidth = screenCore?._core?._renderService?.dimensions?.css?.canvas?.width;
+    const screenHeight = screenCore?._core?._renderService?.dimensions?.css?.canvas?.height;
+    if (typeof screenWidth === "number" && screenWidth > 0 && typeof screenHeight === "number" && screenHeight > 0) {
+      return { width: screenWidth, height: screenHeight };
     }
     return null;
   }
@@ -657,6 +750,14 @@ export class TerminalViewElement extends LitElement {
     }
     this.screenWidth = roundedWidth;
     this.screenHeight = roundedHeight;
+    this.screenMetrics = { width: roundedWidth, height: roundedHeight };
+    this.dispatchEvent(
+      new CustomEvent<TerminalViewScreenMetrics>("terminal-view-screen-metrics", {
+        bubbles: true,
+        composed: true,
+        detail: this.screenMetrics,
+      }),
+    );
     this.requestUpdate();
   }
 
@@ -668,4 +769,4 @@ export const defineTerminalView = (): void => {
   }
 };
 
-export type { TerminalViewServerMessage as TerminalViewTransportMessage };
+export type { TerminalTransportServerMessage, TerminalTransportServerMessage as TerminalViewTransportMessage };

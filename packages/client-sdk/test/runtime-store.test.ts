@@ -910,6 +910,31 @@ const createMockClient = (input: {
     accessToken?: string;
   }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
   terminalGlobalDeleteMutate?: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
+  terminalGlobalSetConfigMutation?: (input: {
+    terminalId: string;
+    cols?: number;
+    rows?: number;
+  }) => Promise<{
+    result: {
+      config: {
+        terminalId: string;
+        processKind: string;
+        command: string[];
+        launchCwd: string;
+        profile: {
+          cols?: number;
+          rows?: number;
+          icon?: string;
+          title?: string;
+          shortcuts?: Record<string, string>;
+          rendererEngine?: "xterm";
+        };
+        processPhase: "running" | "stopped" | "not_started";
+      };
+      appliedLiveFields: string[];
+      nextBootstrapFields: string[];
+    };
+  }>;
   terminalGlobalReadQuery?: (input: {
     terminalId: string;
     accessToken?: string;
@@ -1625,6 +1650,31 @@ const createMockClient = (input: {
             input.terminalGlobalDeleteMutate
               ? await input.terminalGlobalDeleteMutate(payload)
               : { ok: true, message: "ok" },
+        },
+        globalSetConfig: {
+          mutate: async (payload: { terminalId: string; cols?: number; rows?: number }) =>
+            input.terminalGlobalSetConfigMutation
+              ? await input.terminalGlobalSetConfigMutation(payload)
+              : {
+                  result: {
+                    config: {
+                      terminalId: payload.terminalId,
+                      processKind: "shell",
+                      command: ["/bin/bash"],
+                      launchCwd: process.cwd(),
+                      profile: {
+                        cols: payload.cols,
+                        rows: payload.rows,
+                        rendererEngine: "xterm" as const,
+                      },
+                      processPhase: "running" as const,
+                    },
+                    appliedLiveFields: [payload.cols !== undefined ? "cols" : null, payload.rows !== undefined ? "rows" : null].filter(
+                      (value): value is string => value !== null,
+                    ),
+                    nextBootstrapFields: [],
+                  },
+                },
         },
         activityPage: {
           query: async (payload: {
@@ -9325,6 +9375,101 @@ describe("Feature: runtime store synchronization", () => {
     });
     expect(store.getState().globalTerminals.data[0]?.snapshot).toEqual(durableSnapshot);
     expect(store.getState().globalTerminals.data[0]?.actors).toEqual([reviewerSeat]);
+
+    releaseCatalog();
+    store.disconnect();
+  });
+
+  test("Scenario: Given a renderable global terminal When durable resize updates terminal config Then runtime store updates local snapshot geometry immediately", async () => {
+    const terminalId = "term-config-resize";
+    const requests: {
+      setConfig?: { terminalId: string; cols?: number; rows?: number };
+    } = {};
+    const entry: GlobalTerminalEntry = {
+      terminalId,
+      processKind: "shell",
+      command: ["/bin/bash"],
+      launchCwd: "/repo/resize",
+      workspace: null,
+      status: "IDLE" as const,
+      processPhase: "running" as const,
+      seq: 3,
+      snapshot: {
+        seq: 3,
+        timestamp: 3,
+        cols: 80,
+        rows: 24,
+        lines: Array.from({ length: 24 }, () => ""),
+        cursor: { x: 0, y: 0 },
+      },
+      focused: false,
+      icon: undefined,
+      configuredTitle: "Resize terminal",
+      currentTitle: undefined,
+      currentPath: undefined,
+      shortcuts: undefined,
+      rendererEngine: "xterm" as const,
+      transportUrl: "ws://127.0.0.1:7777/pty/term-config-resize?token=token-admin",
+      currentAdminId: "system:trusted-terminal-bootstrap",
+      approvalTimeoutMs: 90_000,
+      pendingRequestCount: 0,
+      access: {
+        role: "admin" as const,
+        accessToken: "token-admin",
+        participantId: "system:trusted-terminal-bootstrap",
+        currentAdmin: true,
+      },
+      actors: [],
+    };
+
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        terminalGlobalListQuery: async () => ({
+          items: [entry],
+        }),
+        terminalGlobalSetConfigMutation: async (input) => {
+          requests.setConfig = input;
+          return {
+            result: {
+              config: {
+                terminalId,
+                processKind: "shell",
+                command: ["/bin/bash"],
+                launchCwd: "/repo/resize",
+                profile: {
+                  cols: 96,
+                  rows: 28,
+                  rendererEngine: "xterm" as const,
+                },
+                processPhase: "running" as const,
+              },
+              appliedLiveFields: ["cols", "rows"],
+              nextBootstrapFields: [],
+            },
+          };
+        },
+      }),
+    );
+
+    const releaseCatalog = store.retainGlobalTerminals();
+    await store.hydrateGlobalTerminals();
+
+    const result = await store.setGlobalTerminalConfig({
+      terminalId,
+      cols: 96,
+      rows: 28,
+    });
+
+    expect(requests.setConfig).toEqual({
+      terminalId,
+      cols: 96,
+      rows: 28,
+    });
+    expect(result.config.profile.cols).toBe(96);
+    expect(result.config.profile.rows).toBe(28);
+    expect(store.getState().globalTerminals.data[0]?.snapshot?.cols).toBe(96);
+    expect(store.getState().globalTerminals.data[0]?.snapshot?.rows).toBe(28);
 
     releaseCatalog();
     store.disconnect();

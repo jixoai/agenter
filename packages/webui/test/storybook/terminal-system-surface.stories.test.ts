@@ -32,6 +32,7 @@ const ReadActionStructuredPreviewStaysCompact = getPortableStory(
 	'ReadActionStructuredPreviewStaysCompact',
 );
 const WindowChromeTogglesProjectionMode = getPortableStory(stories, 'WindowChromeTogglesProjectionMode');
+const WindowChromeLiveResizeUpdatesFrameHint = getPortableStory(stories, 'WindowChromeLiveResizeUpdatesFrameHint');
 const WindowCloseRequiresConfirmation = getPortableStory(stories, 'WindowCloseRequiresConfirmation');
 
 describe('Feature: Storybook DOM contract for terminal system surface', () => {
@@ -87,11 +88,15 @@ describe('Feature: Storybook DOM contract for terminal system surface', () => {
 		await ReadActionStructuredPreviewStaysCompact.run();
 	});
 
-	test('Scenario: Given a terminal window chrome When the maximize control toggles Then the projection switches between fit and cover inside the shared scroll container', async () => {
+	test('Scenario: Given a terminal window chrome When the maximize control toggles Then fit-cover changes the window geometry instead of scaling the titlebar', async () => {
 		await WindowChromeTogglesProjectionMode.run();
 	});
 
-	test('Scenario: Given a terminal window close control When deletion is confirmed Then the surface removes the terminal only after the confirmation dialog accepts it', async () => {
+	test('Scenario: Given a terminal window live resize handle When the operator drags it Then the frame hint updates before any durable resize form is used', async () => {
+		await WindowChromeLiveResizeUpdatesFrameHint.run();
+	});
+
+	test('Scenario: Given a terminal toolbar delete action When deletion is confirmed Then the surface removes the terminal only after the confirmation dialog accepts it', async () => {
 		await WindowCloseRequiresConfirmation.run();
 	});
 });

@@ -1,4 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  decodeTerminalTransportClientMessage,
+  encodeTerminalTransportServerMessage,
+  type TerminalTransportClientMessage,
+  type TerminalTransportServerMessage,
+} from "@agenter/terminal-transport-protocol";
 
 vi.mock("@xterm/xterm/css/xterm.css?inline", () => ({ default: ".xterm { display: block; }" }));
 
@@ -7,13 +13,17 @@ type ResizeEntry = Pick<ResizeObserverEntry, "target" | "contentRect">;
 class MockTerminal {
   cols = 80;
   rows = 24;
-  writes: string[] = [];
+  writes: Array<string | Uint8Array> = [];
   resetCount = 0;
+  focusCount = 0;
   characterJoiners: Array<(text: string) => [number, number][]> = [];
   deregisteredJoinerIds: number[] = [];
   openedWith: Element | null = null;
   element: HTMLElement | undefined;
+  textarea: HTMLTextAreaElement | undefined;
   options: Record<string, unknown> = {};
+  private dataListeners: Array<(data: string) => void> = [];
+  private binaryListeners: Array<(data: string) => void> = [];
   _core = {
     _renderService: {
       dimensions: {
@@ -41,6 +51,36 @@ class MockTerminal {
     return this.characterJoiners.length - 1;
   }
 
+  onData(listener: (data: string) => void): { dispose(): void } {
+    this.dataListeners.push(listener);
+    return {
+      dispose: () => {
+        this.dataListeners = this.dataListeners.filter((item) => item !== listener);
+      },
+    };
+  }
+
+  onBinary(listener: (data: string) => void): { dispose(): void } {
+    this.binaryListeners.push(listener);
+    return {
+      dispose: () => {
+        this.binaryListeners = this.binaryListeners.filter((item) => item !== listener);
+      },
+    };
+  }
+
+  emitData(data: string): void {
+    for (const listener of this.dataListeners) {
+      listener(data);
+    }
+  }
+
+  emitBinary(data: string): void {
+    for (const listener of this.binaryListeners) {
+      listener(data);
+    }
+  }
+
   deregisterCharacterJoiner(joinerId: number): void {
     this.deregisteredJoinerIds.push(joinerId);
   }
@@ -48,17 +88,21 @@ class MockTerminal {
   open(node: Element): void {
     this.openedWith = node;
     this.element = node as HTMLElement;
+    const textarea = document.createElement("textarea");
+    textarea.className = "xterm-helper-textarea";
+    this.textarea = textarea;
     const viewport = document.createElement("div");
     viewport.className = "xterm-viewport";
     const screen = document.createElement("div");
     screen.className = "xterm-screen";
     screen.style.width = `${this._core._renderService.dimensions.css.canvas.width}px`;
     screen.style.height = `${this._core._renderService.dimensions.css.canvas.height}px`;
+    node.appendChild(textarea);
     node.appendChild(screen);
     node.appendChild(viewport);
   }
 
-  write(data: string): void {
+  write(data: string | Uint8Array): void {
     this.writes.push(data);
   }
 
@@ -75,6 +119,11 @@ class MockTerminal {
 
   reset(): void {
     this.resetCount += 1;
+  }
+
+  focus(): void {
+    this.focusCount += 1;
+    this.textarea?.focus();
   }
 
   dispose(): void {}
@@ -142,7 +191,8 @@ class WebSocketMock {
   static instances: WebSocketMock[] = [];
 
   readyState = 0;
-  readonly sent: string[] = [];
+  binaryType: BinaryType = "blob";
+  readonly sent: ArrayBuffer[] = [];
   private readonly listeners = new Map<string, WebSocketListener[]>();
 
   constructor(readonly url: string) {
@@ -163,8 +213,18 @@ class WebSocketMock {
     );
   }
 
-  send(data: string): void {
-    this.sent.push(data);
+  send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    if (typeof data === "string") {
+      throw new Error("terminal transport v2 test mock only accepts binary frames");
+    }
+    if (ArrayBuffer.isView(data)) {
+      this.sent.push(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+      return;
+    }
+    if (data instanceof Blob) {
+      throw new Error("blob websocket test frames are not supported");
+    }
+    this.sent.push(data.slice(0));
   }
 
   close(): void {
@@ -191,6 +251,21 @@ class WebSocketMock {
     }
   }
 }
+
+const decodeSentClientFrames = (socket: WebSocketMock | undefined): TerminalTransportClientMessage[] =>
+  socket?.sent
+    .map((frame) => decodeTerminalTransportClientMessage(frame))
+    .filter((frame): frame is TerminalTransportClientMessage => frame !== null) ?? [];
+
+const encodeServerFrame = (frame: TerminalTransportServerMessage): ArrayBuffer =>
+  encodeTerminalTransportServerMessage(frame).buffer.slice(0);
+const containsWrittenText = (terminal: MockTerminal | undefined, value: string): boolean =>
+  (terminal?.writes ?? []).some((entry) => {
+    if (typeof entry === "string") {
+      return entry === value;
+    }
+    return new TextDecoder().decode(entry) === value;
+  });
 
 const waitForLifecycleFrame = async (): Promise<void> => {
   await new Promise<void>((resolve) => {
@@ -240,7 +315,13 @@ describe("Feature: terminal-view WebComponent", () => {
     >;
 
     element.terminalId = "iflow";
-    element.viewportMode = "cover";
+    element.projectionWidth = 1198;
+    element.projectionHeight = 780;
+    element.projectionScale = 1;
+    const screenMetricsEvents: Array<{ width: number; height: number }> = [];
+    element.addEventListener("terminal-view-screen-metrics", (event) => {
+      screenMetricsEvents.push((event as CustomEvent<{ width: number; height: number }>).detail);
+    });
     element.snapshot = {
       seq: 8,
       cols: 132,
@@ -280,15 +361,18 @@ describe("Feature: terminal-view WebComponent", () => {
       [10, 12],
     ]);
     expect(element.querySelector("style")).toBeNull();
-    expect(shadowRoot.querySelector(".terminal-frame")?.getAttribute("style")).toContain("width:1220px");
+    expect(shadowRoot.querySelector(".terminal-frame")?.getAttribute("style")).toContain("width:1198px");
     expect(shadowRoot.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toContain("width:1188px");
+    expect(shadowRoot.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toContain("margin-left:5px");
+    expect(shadowRoot.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toContain("margin-top:10px");
+    expect(element.screenMetrics).toEqual({ width: 1188, height: 760 });
+    expect(screenMetricsEvents).toContainEqual({ width: 1188, height: 760 });
     expect(shadowRoot.querySelector("style")?.textContent).toContain('font-feature-settings: "liga" 1, "calt" 1;');
     expect(terminal?.writes.at(-1)).toContain("npm ERR!");
     expect(terminal?.writes.at(-1)).toContain("38;2;241;76;76");
     expect(terminal?.writes.at(-1)).toContain("line 64");
     expect(shadowRoot.querySelector('[data-terminal-scroll-contract="terminal-stage"]')).not.toBeNull();
     expect(shadowRoot.querySelector('[data-terminal-scroll-owner="terminal-stage"]')).not.toBeNull();
-    expect(shadowRoot.querySelector('[data-viewport-mode="cover"]')).not.toBeNull();
     expect(shadowRoot.querySelector(".terminal-toolbar")).toBeNull();
     expect(shadowRoot.querySelector(".terminal-footer")).toBeNull();
     expect(shadowRoot.querySelector(".terminal-connection-badge")).toBeNull();
@@ -302,7 +386,9 @@ describe("Feature: terminal-view WebComponent", () => {
     >;
 
     element.terminalId = "fit-scrollback";
-    element.viewportMode = "fit";
+    element.projectionWidth = 730;
+    element.projectionHeight = 394;
+    element.projectionScale = 1;
     element.snapshot = {
       seq: 3,
       cols: 80,
@@ -318,6 +404,7 @@ describe("Feature: terminal-view WebComponent", () => {
 
     const shadowRoot = requireShadowRoot(element);
     expect(shadowRoot.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toContain("width:720px");
+    expect(shadowRoot.querySelector(".terminal-frame")?.getAttribute("style")).toContain("width:730px");
   });
 
   test("Scenario: Given fit mode on a wide remote terminal When stage metrics settle Then the viewport keeps the full remote geometry by shrinking the projection instead of falling back to overflow", async () => {
@@ -328,7 +415,9 @@ describe("Feature: terminal-view WebComponent", () => {
     >;
 
     element.terminalId = "fit-readable-floor";
-    element.viewportMode = "fit";
+    element.projectionWidth = 644;
+    element.projectionHeight = 430;
+    element.projectionScale = 0.538;
     element.snapshot = {
       seq: 9,
       cols: 132,
@@ -344,11 +433,11 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     const shadowRoot = requireShadowRoot(element);
-    expect(readTerminalScale(shadowRoot)).toBeCloseTo(0.533, 3);
-    expect(shadowRoot.querySelector('[data-terminal-stage]')?.hasAttribute("data-terminal-overflow")).toBe(false);
+    expect(readTerminalScale(shadowRoot)).toBeCloseTo(0.538, 3);
+    expect(shadowRoot.querySelector('[data-terminal-stage]')?.getAttribute("style")).toContain("width:644px");
   });
 
-  test("Scenario: Given cover mode on a wide remote terminal When stage metrics settle Then the projection anchors to the terminal origin instead of center-cropping the middle of the screen", async () => {
+  test("Scenario: Given a projected terminal viewport When explicit projection geometry is assigned Then the primitive uses that geometry without owning viewport mode semantics", async () => {
     const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
     defineTerminalView();
     const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
@@ -356,7 +445,9 @@ describe("Feature: terminal-view WebComponent", () => {
     >;
 
     element.terminalId = "cover-origin-anchor";
-    element.viewportMode = "cover";
+    element.projectionWidth = 1480;
+    element.projectionHeight = 980;
+    element.projectionScale = 1.234;
     element.snapshot = {
       seq: 10,
       cols: 132,
@@ -374,9 +465,43 @@ describe("Feature: terminal-view WebComponent", () => {
     const shadowRoot = requireShadowRoot(element);
     const terminalStage = shadowRoot.querySelector<HTMLDivElement>("[data-terminal-stage]");
     expect(terminalStage).not.toBeNull();
-    expect(terminalStage?.getAttribute("data-viewport-mode")).toBe("cover");
-    expect(terminalStage?.getAttribute("style")).toContain("align-items:flex-start");
-    expect(terminalStage?.getAttribute("style")).toContain("justify-content:flex-start");
+    expect(terminalStage?.getAttribute("style")).toContain("width:1480px");
+    expect(terminalStage?.getAttribute("style")).toContain("height:980px");
+    expect(readTerminalScale(shadowRoot)).toBeCloseTo(1.234, 3);
+  });
+
+  test("Scenario: Given viewport gutter is reserved for edge safety When the frame renders Then the terminal screen stays symmetrically inset instead of leaving a one-sided blank strip", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "balanced-gutter";
+    element.projectionWidth = 874;
+    element.projectionHeight = 552;
+    element.projectionScale = 1;
+    element.snapshot = {
+      seq: 14,
+      cols: 96,
+      rows: 28,
+      lines: Array.from({ length: 28 }, (_, index) => `line ${index + 1}`),
+      cursor: { x: 0, y: 27 },
+    };
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    const frameStyle = shadowRoot.querySelector(".terminal-frame")?.getAttribute("style") ?? "";
+    const viewportStyle = shadowRoot.querySelector("[data-terminal-viewport]")?.getAttribute("style") ?? "";
+    expect(frameStyle).toContain("width:874px");
+    expect(viewportStyle).toContain("width:864px");
+    expect(viewportStyle).toContain("margin-left:5px");
+    expect(viewportStyle).toContain("margin-top:10px");
   });
 
   test("Scenario: Given fit mode on a small remote terminal When stage metrics settle Then the viewport can scale up the projection without mutating remote rows or cols", async () => {
@@ -387,7 +512,9 @@ describe("Feature: terminal-view WebComponent", () => {
     >;
 
     element.terminalId = "fit-upscale";
-    element.viewportMode = "fit";
+    element.projectionWidth = 656;
+    element.projectionHeight = 328;
+    element.projectionScale = 2;
     element.snapshot = {
       seq: 12,
       cols: 40,
@@ -404,7 +531,7 @@ describe("Feature: terminal-view WebComponent", () => {
 
     const shadowRoot = requireShadowRoot(element);
     const terminal = mockTerminals.at(-1);
-    expect(readTerminalScale(shadowRoot)).toBeCloseTo(1.93, 2);
+    expect(readTerminalScale(shadowRoot)).toBeCloseTo(2, 2);
     expect(terminal?.cols).toBe(40);
     expect(terminal?.rows).toBe(10);
   });
@@ -438,7 +565,7 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(element.connectionState).toBe("connecting");
   });
 
-  test("Scenario: Given a transport-backed terminal When websocket events arrive Then the component keeps fixed geometry and reflects connection lifecycle without auto-resizing the PTY", async () => {
+  test("Scenario: Given a transport-backed terminal When websocket events arrive Then the component stays connected and only sends resize frames through the explicit viewport resize API", async () => {
     const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
     defineTerminalView();
     const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
@@ -460,16 +587,24 @@ describe("Feature: terminal-view WebComponent", () => {
 
     socket?.open();
     await element.updateComplete;
+    await waitForLifecycleFrame();
     await element.updateComplete;
     expect(element.connectionState).toBe("connected");
-    expect(socket?.sent).toHaveLength(0);
+    expect(decodeSentClientFrames(socket)).toEqual([]);
+
+    expect(element.requestViewportResize({ cols: 103, rows: 20 })).toBe(true);
+    expect(decodeSentClientFrames(socket)).toContainEqual({
+      type: "resize",
+      cols: 103,
+      rows: 20,
+    });
 
     const terminal = mockTerminals.at(-1);
     expect(terminal?.resetCount).toBe(0);
     expect(terminal?.characterJoiners).toHaveLength(1);
 
     socket?.message(
-      JSON.stringify({
+      encodeServerFrame({
         type: "snapshot",
         terminalId: "iflow",
         status: "BUSY",
@@ -499,7 +634,7 @@ describe("Feature: terminal-view WebComponent", () => {
     }) as typeof element.requestUpdate;
 
     socket?.message(
-      JSON.stringify({
+      encodeServerFrame({
         type: "snapshot",
         terminalId: "iflow",
         status: "BUSY",
@@ -530,15 +665,23 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(terminal?.resetCount).toBe(1);
     expect(terminal?.writes).not.toContain("stale prop snapshot");
 
+    terminal?.emitData("typed text");
+    terminal?.emitData("\u001b[A");
+    terminal?.emitBinary("\xff");
+    const sentFrames = decodeSentClientFrames(socket);
+    expect(sentFrames).toContainEqual({ type: "inputBytes", data: new TextEncoder().encode("typed text") });
+    expect(sentFrames).toContainEqual({ type: "inputBytes", data: new TextEncoder().encode("\u001b[A") });
+    expect(sentFrames).toContainEqual({ type: "inputBytes", data: Uint8Array.of(255) });
+
     socket?.message(
-      JSON.stringify({
-        type: "output",
+      encodeServerFrame({
+        type: "outputBytes",
         terminalId: "iflow",
-        data: "bun test\r\n",
+        data: new TextEncoder().encode("bun test\r\n"),
       }),
     );
     socket?.message(
-      JSON.stringify({
+      encodeServerFrame({
         type: "status",
         terminalId: "iflow",
         running: false,
@@ -547,12 +690,45 @@ describe("Feature: terminal-view WebComponent", () => {
     );
     await element.updateComplete;
 
-    expect(terminal?.writes).toContain("bun test\r\n");
+    expect(containsWrittenText(terminal, "bun test\r\n")).toBe(true);
     expect(element.connectionState).toBe("closed");
     expect(shadowRoot.querySelector(".terminal-connection-badge")).toBeNull();
 
+    const sentBeforeClosedInput = socket?.sent.length ?? 0;
+    terminal?.emitData("after close");
+    expect(socket?.sent).toHaveLength(sentBeforeClosedInput);
+
     element.remove();
     expect(terminal?.deregisteredJoinerIds).toContain(0);
+  });
+
+  test("Scenario: Given a terminal viewport inside shadow DOM When pointer and touch interactions happen Then the primitive explicitly focuses xterm input", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "focus-bridge";
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    const terminal = mockTerminals.at(-1);
+    const viewport = shadowRoot.querySelector<HTMLElement>("[data-terminal-viewport]");
+    expect(viewport).not.toBeNull();
+    expect(terminal?.focusCount).toBe(0);
+
+    viewport?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await waitForLifecycleFrame();
+    expect(terminal?.focusCount).toBeGreaterThanOrEqual(1);
+
+    terminal?.textarea?.blur();
+    viewport?.dispatchEvent(new Event("touchstart", { bubbles: true }));
+    await waitForLifecycleFrame();
+    expect(terminal?.focusCount).toBeGreaterThanOrEqual(2);
   });
 
   test("Scenario: Given the live snapshot arrives before xterm boot finishes When the component mounts Then the first transport snapshot is still rendered", async () => {
@@ -571,7 +747,7 @@ describe("Feature: terminal-view WebComponent", () => {
     const socket = WebSocketMock.instances.at(-1);
     socket?.open();
     socket?.message(
-      JSON.stringify({
+      encodeServerFrame({
         type: "snapshot",
         terminalId: "iflow",
         status: "BUSY",
@@ -614,7 +790,7 @@ describe("Feature: terminal-view WebComponent", () => {
     const shadowRoot = requireShadowRoot(element);
     const socket = WebSocketMock.instances.at(-1);
     socket?.open();
-    socket?.message("{invalid-json");
+    socket?.message(new ArrayBuffer(2));
     await element.updateComplete;
 
     expect(element.connectionState).toBe("error");

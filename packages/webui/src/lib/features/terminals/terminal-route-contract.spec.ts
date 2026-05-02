@@ -19,4 +19,11 @@ describe('Feature: Terminal route activity hydration contract', () => {
 		expect(terminalRouteSource).toContain('accessToken,');
 		expect(terminalRouteSource).toContain('remark: true,');
 	});
+
+	test('Scenario: Given a selected call-as seat token When the route binds the terminal viewport Then the live transport URL is re-derived from that token instead of reusing a stale catalog URL', () => {
+		expect(terminalRouteSource).toContain("const buildTransportUrlForToken = (token?: string | null): string | null => {");
+		expect(terminalRouteSource).toContain("url.searchParams.set('token', token);");
+		expect(terminalRouteSource).toContain('const selectedTransportUrl = $derived(buildTransportUrlForToken(selectedCallerToken));');
+		expect(terminalRouteSource).toContain('{selectedTransportUrl}');
+	});
 });

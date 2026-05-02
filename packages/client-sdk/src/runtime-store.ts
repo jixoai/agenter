@@ -400,7 +400,7 @@ const mergeTerminalSnapshot = (
   if (!incoming) {
     return current;
   }
-  return incoming.seq >= current.seq ? incoming : current;
+  return incoming.seq > current.seq ? incoming : current;
 };
 
 const normalizeOptionalAccessToken = (value: string | null | undefined): string | undefined =>
@@ -450,6 +450,66 @@ const isTrpcErrorCode = (error: unknown, code: string): boolean =>
 const AUTH_REQUIRED_MESSAGE = "auth token required";
 const unauthorizedErrorMessage = (error: unknown): string | null =>
   isTrpcErrorCode(error, "UNAUTHORIZED") ? AUTH_REQUIRED_MESSAGE : null;
+
+const projectGlobalTerminalFromConfigMutation = (current: GlobalTerminalEntry | null, result: {
+  config: {
+    terminalId: string;
+    processKind: string;
+    command: string[];
+    launchCwd: string;
+    profile: {
+      cols?: number;
+      rows?: number;
+      icon?: string;
+      title?: string;
+      shortcuts?: Record<string, string>;
+      rendererEngine?: "xterm";
+    };
+    processPhase: "running" | "stopped" | "not_started";
+  };
+}): GlobalTerminalEntry => {
+  const currentSnapshot = current?.snapshot;
+  const nextCols = result.config.profile.cols;
+  const nextRows = result.config.profile.rows;
+  const snapshot =
+    currentSnapshot && (nextCols !== undefined || nextRows !== undefined)
+      ? {
+          ...currentSnapshot,
+          seq: currentSnapshot.seq + 1,
+          timestamp: Date.now(),
+          cols: nextCols ?? currentSnapshot.cols,
+          rows: nextRows ?? currentSnapshot.rows,
+        }
+      : currentSnapshot ?? undefined;
+
+  return {
+    terminalId: result.config.terminalId,
+    processKind: result.config.processKind,
+    command: [...result.config.command],
+    launchCwd: result.config.launchCwd,
+    workspace: current?.workspace ?? null,
+    status: current?.status ?? "IDLE",
+    processPhase:
+      result.config.processPhase === "not_started"
+        ? (current?.processPhase ?? "stopped")
+        : result.config.processPhase,
+    seq: current?.seq ?? 0,
+    snapshot,
+    focused: current?.focused ?? false,
+    icon: result.config.profile.icon ?? current?.icon,
+    configuredTitle: result.config.profile.title ?? current?.configuredTitle,
+    currentTitle: current?.currentTitle,
+    currentPath: current?.currentPath,
+    shortcuts: result.config.profile.shortcuts ?? current?.shortcuts,
+    rendererEngine: result.config.profile.rendererEngine ?? current?.rendererEngine ?? "xterm",
+    transportUrl: current?.transportUrl,
+    currentAdminId: current?.currentAdminId,
+    approvalTimeoutMs: current?.approvalTimeoutMs,
+    pendingRequestCount: current?.pendingRequestCount,
+    access: current?.access,
+    actors: current?.actors,
+  };
+};
 
 const compareChatMessage = (left: RuntimeChatMessage, right: RuntimeChatMessage): number => {
   if (left.timestamp !== right.timestamp) {
@@ -4806,6 +4866,23 @@ export class RuntimeStore {
       this.projectTerminalActivityFact(readFact);
     }
     return output;
+  }
+
+  async setGlobalTerminalConfig(input: {
+    terminalId: string;
+    cols?: number;
+    rows?: number;
+  }) {
+    const output = await this.client.trpc.terminal.globalSetConfig.mutate(input);
+    const current = this.resolveGlobalTerminalEntry(input.terminalId);
+    this.reconcileGlobalTerminalEntry(projectGlobalTerminalFromConfigMutation(current, output.result));
+    await this.refreshGlobalTerminalSurface({
+      terminalIds: [input.terminalId],
+      activity: true,
+      catalog: true,
+      force: true,
+    });
+    return output.result;
   }
 
   async inputGlobalTerminal(input: {

@@ -4,6 +4,11 @@ import { join, resolve } from "node:path";
 
 import { isPrincipalId } from "@agenter/principal-crypto";
 import {
+  decodeTerminalTransportClientMessage,
+  encodeTerminalTransportServerMessage,
+  type TerminalTransportServerMessage,
+} from "@agenter/terminal-transport-protocol";
+import {
   ManagedTerminal,
   type ManagedTerminalConfig,
   type ManagedTerminalConfigPatch,
@@ -44,10 +49,8 @@ import type {
   TerminalReversePage,
   TerminalSeatProjection,
   TerminalShortcutMap,
-  TerminalTransportClientMessage,
   TerminalTransportConfig,
   TerminalTransportEndpoint,
-  TerminalTransportServerMessage,
   TerminalWriteInput,
   TerminalWriteLeaseRecord,
   TerminalWriteResult,
@@ -74,6 +77,7 @@ interface TerminalTransportSocketData {
   actorId: TerminalActorId | null;
   accessRole: TerminalGrantRole;
   accessToken: string;
+  binaryTypeConfigured: boolean;
 }
 
 type TerminalChangeReason =
@@ -380,30 +384,6 @@ const appendTokenToUrl = (url: string, accessToken?: string): string => {
   return next.toString();
 };
 
-const parseClientTransportMessage = (message: string): TerminalTransportClientMessage | null => {
-  try {
-    const parsed = JSON.parse(message) as TerminalTransportClientMessage;
-    if (!parsed || typeof parsed !== "object" || !("type" in parsed)) {
-      return null;
-    }
-    if (parsed.type === "input" && typeof parsed.data === "string") {
-      return parsed;
-    }
-    if (
-      parsed.type === "resize" &&
-      typeof parsed.cols === "number" &&
-      Number.isFinite(parsed.cols) &&
-      typeof parsed.rows === "number" &&
-      Number.isFinite(parsed.rows)
-    ) {
-      return parsed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-};
-
 export class TerminalControlPlane {
   private readonly db: TerminalDb;
   private readonly entries = new Map<string, ManagedEntry>();
@@ -544,6 +524,16 @@ export class TerminalControlPlane {
       this.describeEntry(record, {
         focused: this.getFocusedTerminalIds(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).includes(record.terminalId),
         access: this.getTrustedBootstrapAccess(record.terminalId),
+      }),
+    );
+  }
+
+  listForTrustedBootstrap(): TerminalControlPlaneEntry[] {
+    this.expireApprovalsAndLeases();
+    return this.db.listTerminals().map((record) =>
+      this.describeEntry(record, {
+        focused: this.getFocusedTerminalIds(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).includes(record.terminalId),
+        access: this.issueTrustedBootstrapAccess(record.terminalId),
       }),
     );
   }
@@ -776,7 +766,7 @@ export class TerminalControlPlane {
   }
 
   getTransportEndpoint(terminalId: string, accessToken?: string): TerminalTransportEndpoint | null {
-    if (!this.entries.get(terminalId)?.terminal.isRunning()) {
+    if (!this.db.getTerminal(terminalId)) {
       return null;
     }
     const transport = this.getConfig().transport;
@@ -825,14 +815,14 @@ export class TerminalControlPlane {
         if (!accessToken) {
           return new Response("missing token", { status: 401 });
         }
+        if (!this.db.getTerminal(terminalId)) {
+          return new Response("terminal-not-found", { status: 404 });
+        }
         let grant: TerminalGrantRecord;
         try {
           grant = this.requireAccess(terminalId, accessToken, "readonly");
         } catch {
           return new Response("credential-invalid", { status: 401 });
-        }
-        if (!this.entries.get(terminalId)?.terminal.isRunning()) {
-          return new Response("terminal-not-running", { status: 409 });
         }
         const upgraded = serverInstance.upgrade(request, {
           data: {
@@ -841,6 +831,7 @@ export class TerminalControlPlane {
             actorId: grant.participantId ?? null,
             accessRole: grant.role,
             accessToken,
+            binaryTypeConfigured: false,
           },
         });
         return upgraded ? undefined : new Response("upgrade failed", { status: 500 });
@@ -862,7 +853,7 @@ export class TerminalControlPlane {
               rows: snapshot.rows,
             };
             socket.send(
-              JSON.stringify({
+              encodeTerminalTransportServerMessage({
                 type: "snapshot",
                 terminalId: record.terminalId,
                 snapshot,
@@ -886,10 +877,10 @@ export class TerminalControlPlane {
             }),
           );
           cleanup.push(
-            entry.terminal.onOutput((data) => {
+            entry.terminal.onOutputBytes((data) => {
               socket.send(
-                JSON.stringify({
-                  type: "output",
+                encodeTerminalTransportServerMessage({
+                  type: "outputBytes",
                   terminalId: record.terminalId,
                   data,
                 } satisfies TerminalTransportServerMessage),
@@ -899,7 +890,7 @@ export class TerminalControlPlane {
           cleanup.push(
             entry.terminal.onStatus((running, status) => {
               socket.send(
-                JSON.stringify({
+                encodeTerminalTransportServerMessage({
                   type: "status",
                   terminalId: record.terminalId,
                   running,
@@ -912,20 +903,29 @@ export class TerminalControlPlane {
             }),
           );
           socket.data.cleanup = cleanup;
-          if (!entry.terminal.isRunning()) {
-            socket.close(4409, "terminal-not-running");
-            return;
-          }
           sendSnapshot(entry.terminal.getSnapshot());
           mirrorLiveSnapshots = true;
         },
         message: async (socket, message) => {
           const terminalId = socket.data.terminalId;
-          const text = typeof message === "string" ? message : Buffer.from(message).toString("utf8");
-          const parsed = parseClientTransportMessage(text);
+          if (!socket.data.binaryTypeConfigured) {
+            socket.binaryType = "arraybuffer";
+            socket.data.binaryTypeConfigured = true;
+          }
+          if (typeof message === "string") {
+            socket.send(
+              encodeTerminalTransportServerMessage({
+                type: "error",
+                terminalId,
+                message: "string websocket frames are not supported by terminal transport v2",
+              } satisfies TerminalTransportServerMessage),
+            );
+            return;
+          }
+          const parsed = decodeTerminalTransportClientMessage(message);
           if (!parsed) {
             socket.send(
-              JSON.stringify({
+              encodeTerminalTransportServerMessage({
                 type: "error",
                 terminalId,
                 message: "invalid transport message",
@@ -934,22 +934,22 @@ export class TerminalControlPlane {
             return;
           }
           try {
-            if (parsed.type === "input") {
-              const result = await this.write({
+            if (parsed.type === "inputBytes") {
+              this.forwardInteractiveInputBytes({
                 terminalId,
-                text: parsed.data,
+                data: parsed.data,
                 accessToken: socket.data.accessToken,
                 actorId: socket.data.actorId ?? undefined,
               });
-              if (!result.ok) {
-                throw new Error(result.message);
-              }
               return;
             }
-            this.ensureManagedEntry(terminalId).terminal.resize(parsed.cols, parsed.rows);
+            if (parsed.type === "resize") {
+              this.ensureManagedEntry(terminalId).terminal.resize(parsed.cols, parsed.rows);
+              return;
+            }
           } catch (error) {
             socket.send(
-              JSON.stringify({
+              encodeTerminalTransportServerMessage({
                 type: "error",
                 terminalId,
                 message: error instanceof Error ? error.message : "terminal access denied",
@@ -1424,6 +1424,33 @@ export class TerminalControlPlane {
     return { ok: true, message: "written", eventId: writeEvent.eventId, read };
   }
 
+  private forwardInteractiveInputBytes(input: {
+    terminalId: string;
+    data: Uint8Array;
+    actorId?: TerminalActorId;
+    accessToken?: string;
+    superadminActorId?: TerminalActorId;
+  }): void {
+    const transition = this.getLifecycleTransition(input.terminalId);
+    if (transition) {
+      throw new Error(`Terminal live input bytes require the terminal lifecycle transition to settle first (${transition})`);
+    }
+    const entry = this.ensureManagedEntry(input.terminalId);
+    if (!entry.terminal.isRunning()) {
+      throw new Error("Terminal live input bytes require a running terminal PTY");
+    }
+    const decision = this.authorizeWrite({
+      terminalId: input.terminalId,
+      actorId: input.actorId,
+      accessToken: input.accessToken,
+      superadminActorId: input.superadminActorId,
+    });
+    if (!decision.ok) {
+      throw new Error(decision.message ?? "terminal write denied");
+    }
+    entry.terminal.writeRawBytes(input.data);
+  }
+
   getEvent(eventId: number): TerminalEventRecord | undefined {
     return this.db.getEvent(eventId);
   }
@@ -1591,6 +1618,26 @@ export class TerminalControlPlane {
     });
     const result = this.applyTerminalConfigPatch(input.terminalId, input);
     this.emitChange({ terminalId: input.terminalId, reason: "updated", actorId: input.actorId });
+    if (input.cols !== undefined || input.rows !== undefined) {
+      const cols = result.record.profile.cols ?? undefined;
+      const rows = result.record.profile.rows ?? undefined;
+      this.db.appendEvent({
+        terminalId: input.terminalId,
+        kind: "terminal_resize",
+        payload: {
+          title: "Terminal resize",
+          content: cols && rows ? `${cols}x${rows}` : "Terminal resize",
+          actorId: input.actorId ?? input.superadminActorId,
+          detail: {
+            source: "terminal-config-mutation",
+            cols: cols ?? null,
+            rows: rows ?? null,
+            appliedLiveFields: [...result.appliedLiveFields],
+            nextBootstrapFields: [...result.nextBootstrapFields],
+          },
+        },
+      });
+    }
     return {
       config: this.describeTerminalConfig(result.record),
       appliedLiveFields: result.appliedLiveFields,
@@ -1970,10 +2017,7 @@ export class TerminalControlPlane {
       lastStoppedAt: record.lastStoppedAt,
       shortcuts: cloneShortcuts(record.profile.shortcuts),
       rendererEngine: record.profile.rendererEngine ?? "xterm",
-      transportUrl:
-        access?.accessToken && (entry?.terminal.isRunning() ?? false)
-        ? this.getTransportEndpoint(record.terminalId, access.accessToken)?.url
-        : undefined,
+      transportUrl: access?.accessToken ? this.getTransportEndpoint(record.terminalId, access.accessToken)?.url : undefined,
       currentAdminId: this.resolveCurrentAdminActorId(record.terminalId),
       approvalTimeoutMs: this.config.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
       pendingRequestCount: this.db.listPendingApprovalRequests(record.terminalId).length,

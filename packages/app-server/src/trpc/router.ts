@@ -1134,6 +1134,20 @@ export const appRouter = t.router({
             ...resolveTerminalCallerScope(ctx.auth),
           }),
       ),
+    globalSetConfig: authProcedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+          cols: z.number().int().positive().optional(),
+          rows: z.number().int().positive().optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        result: ctx.kernel.setGlobalTerminalConfig({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      })),
     activityPage: authProcedure
       .input(
         z.object({

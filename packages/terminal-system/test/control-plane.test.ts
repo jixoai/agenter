@@ -1,9 +1,14 @@
 import { Database } from "bun:sqlite";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
+import {
+  decodeTerminalTransportServerMessage,
+  encodeTerminalTransportClientMessage,
+  type TerminalTransportClientMessage,
+} from "@agenter/terminal-transport-protocol";
 
 import { TerminalControlPlane, type ManagedTerminal, type TerminalTransportServerMessage } from "../src";
 
@@ -45,6 +50,30 @@ const createDefaultShellPlane = () => {
     },
   });
 };
+
+const decodeServerFrame = (data: MessageEvent["data"]): TerminalTransportServerMessage | null => {
+  if (typeof data === "string") {
+    return null;
+  }
+  if (data instanceof ArrayBuffer) {
+    return decodeTerminalTransportServerMessage(data);
+  }
+  if (ArrayBuffer.isView(data)) {
+    return decodeTerminalTransportServerMessage(data);
+  }
+  return null;
+};
+
+const encodeClientFrame = (message: TerminalTransportClientMessage): ArrayBuffer => {
+  const bytes = encodeTerminalTransportClientMessage(message);
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+};
+
+const utf8Decoder = new TextDecoder();
+const outputIncludes = (message: TerminalTransportServerMessage, text: string): boolean =>
+  message.type === "outputBytes" && utf8Decoder.decode(message.data).includes(text);
 
 afterEach(() => {
   while (workspaces.length > 0) {
@@ -973,22 +1002,25 @@ describe("Feature: terminal control plane", () => {
       socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
     });
     socket.addEventListener("message", (event) => {
-      messages.push(JSON.parse(String(event.data)) as TerminalTransportServerMessage);
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
     });
 
     await opened;
-    socket.send(JSON.stringify({ type: "input", data: "hello transport\n" }));
+    socket.send(encodeClientFrame({ type: "inputBytes", data: new TextEncoder().encode("hello transport\n") }));
     await Bun.sleep(150);
 
     expect(messages.some((message) => message.type === "snapshot")).toBe(true);
-    expect(messages.some((message) => message.type === "output" && message.data.includes("hello transport"))).toBe(true);
+    expect(messages.some((message) => outputIncludes(message, "hello transport"))).toBe(true);
 
     const closed = new Promise<void>((resolve) => {
       socket.addEventListener("close", () => resolve(), { once: true });
     });
     await plane.stop(created.terminalId);
     await closed;
-    expect(plane.getTransportEndpoint(created.terminalId)).toBeNull();
+    expect(plane.getTransportEndpoint(created.terminalId)).not.toBeNull();
     plane.stopTransport();
     await plane.dispose();
   });
@@ -1009,7 +1041,10 @@ describe("Feature: terminal control plane", () => {
       socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
     });
     socket.addEventListener("message", (event) => {
-      messages.push(JSON.parse(String(event.data)) as TerminalTransportServerMessage);
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
     });
 
     await opened;
@@ -1028,7 +1063,7 @@ describe("Feature: terminal control plane", () => {
     );
 
     expect(snapshotMessages.length).toBe(initialSnapshotCount);
-    expect(messages.some((message) => message.type === "output" && message.data.includes("snapshot after connect"))).toBe(true);
+    expect(messages.some((message) => outputIncludes(message, "snapshot after connect"))).toBe(true);
 
     socket.close();
     plane.stopTransport();
@@ -1308,7 +1343,72 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
-  test("Scenario: Given requester transport input When no lease exists Then websocket input is rejected until an admin approves a write lease", async () => {
+  test("Scenario: Given a legacy terminal catalog still keeps cwd When a new terminal is created and updated Then launch_cwd and cwd stay aligned without insert failures", async () => {
+    const outputRoot = mkdtempSync(join(tmpdir(), "ati-control-plane-"));
+    workspaces.push(outputRoot);
+    const dbPath = join(outputRoot, "terminal.db");
+    const seed = new Database(dbPath);
+    try {
+      seed.exec(`
+        create table terminal_catalog (
+          terminal_id text primary key,
+          process_kind text not null,
+          command_json text not null,
+          cwd text not null,
+          profile_json text,
+          metadata_json text,
+          created_at integer not null,
+          updated_at integer not null,
+          removed_at integer
+        );
+      `);
+    } finally {
+      seed.close();
+    }
+
+    const plane = new TerminalControlPlane({
+      dbPath,
+      outputRoot,
+      defaultShellCommand: ["sh", "-lc", "cat"],
+      initialConfig: {
+        defaults: {
+          cols: 80,
+          rows: 20,
+        },
+        transport: {
+          port: null,
+        },
+      },
+    });
+
+    const created = await plane.create({
+      terminalId: "legacy-cwd-create",
+      cwd: outputRoot,
+      start: false,
+    });
+    expect(created.launchCwd).toBe(resolve(outputRoot));
+
+    plane.setTerminalConfigAuthorized({
+      terminalId: created.terminalId,
+      launchCwd: resolve(outputRoot, "next"),
+      superadminActorId: "system:test",
+    });
+
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      const row = db
+        .query(`select cwd, launch_cwd from terminal_catalog where terminal_id = ?`)
+        .get(created.terminalId) as { cwd: string; launch_cwd: string } | null;
+      expect(row).not.toBeNull();
+      expect(row?.cwd).toBe(resolve(outputRoot, "next"));
+      expect(row?.launch_cwd).toBe(resolve(outputRoot, "next"));
+    } finally {
+      db.close();
+      await plane.dispose();
+    }
+  });
+
+  test("Scenario: Given requester transport input When no lease exists Then websocket input is rejected until an admin approves a write lease through the durable path", async () => {
     const plane = createPlane();
     plane.setActorPresence("session:admin", true);
     const created = await plane.create({
@@ -1335,20 +1435,32 @@ describe("Feature: terminal control plane", () => {
       socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
     });
     socket.addEventListener("message", (event) => {
-      messages.push(JSON.parse(String(event.data)) as TerminalTransportServerMessage);
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
     });
     await opened;
 
-    socket.send(JSON.stringify({ type: "input", data: "blocked transport\n" }));
+    socket.send(encodeClientFrame({ type: "inputBytes", data: new TextEncoder().encode("blocked transport\n") }));
     await Bun.sleep(120);
     expect(messages.some((message) => message.type === "error" && message.message.includes("approval"))).toBe(true);
+    expect(
+      plane.listApprovalRequests({
+        terminalId: created.terminalId,
+        participantId: "session:requester",
+      }),
+    ).toHaveLength(0);
 
-    const pending = plane.listApprovalRequests({
+    const writePending = await plane.write({
       terminalId: created.terminalId,
-      participantId: "session:requester",
-    })[0];
+      text: "lease me",
+      actorId: "session:requester",
+      accessToken: requester.accessToken,
+    });
+    const pending = writePending.approvalRequest;
     if (!pending) {
-      throw new Error("expected pending transport request");
+      throw new Error("expected pending durable approval request");
     }
     plane.approveRequestAuthorized({
       terminalId: created.terminalId,
@@ -1357,9 +1469,129 @@ describe("Feature: terminal control plane", () => {
       actorId: "session:admin",
     });
 
-    socket.send(JSON.stringify({ type: "input", data: "allowed transport\n" }));
+    socket.send(encodeClientFrame({ type: "inputBytes", data: new TextEncoder().encode("allowed transport\n") }));
     await Bun.sleep(150);
-    expect(messages.some((message) => message.type === "output" && message.data.includes("allowed transport"))).toBe(true);
+    expect(messages.some((message) => outputIncludes(message, "allowed transport"))).toBe(true);
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given an actor-created terminal When a superadmin lists the catalog Then trusted live transport access is projected even without a preexisting bootstrap grant", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:owner", true);
+    const created = await plane.create({
+      terminalId: "superadmin-live-access",
+      bootstrapActorId: "session:owner",
+      bootstrapRole: "admin",
+    });
+    await plane.startTransport({ port: 0 });
+
+    expect(created.access?.participantId).toBe("session:owner");
+
+    const listed = plane.listForTrustedBootstrap().find((entry) => entry.terminalId === created.terminalId);
+    expect(listed).toBeDefined();
+    expect(listed?.access?.participantId).toBe("system:trusted-terminal-bootstrap");
+    expect(listed?.access?.role).toBe("admin");
+    expect(listed?.transportUrl ?? "").toContain(`/pty/${created.terminalId}?token=`);
+
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}?token=`);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given interactive transport live input bytes When the client types Then bytes reach the PTY without pending-file or activity truth", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "transport-raw-input",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId, created.access?.accessToken);
+
+    expect(transport.port).not.toBeNull();
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+    await opened;
+
+    const workspace = plane.getManagedTerminal(created.terminalId)?.getWorkspace();
+    if (!workspace) {
+      throw new Error("expected terminal workspace");
+    }
+    const pendingDir = join(workspace, "input", "pending");
+
+    socket.send(encodeClientFrame({ type: "inputBytes", data: new TextEncoder().encode("typed raw transport\n") }));
+    await Bun.sleep(150);
+
+    expect(messages.some((message) => outputIncludes(message, "typed raw transport"))).toBe(true);
+    expect(readdirSync(pendingDir)).toHaveLength(0);
+    expect(
+      plane.pageEventsAuthorized({
+        terminalId: created.terminalId,
+        actorId: "session:admin",
+        limit: 10,
+      }).items,
+    ).toHaveLength(0);
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given requester transport live input bytes When no write lease exists Then the client receives an error without creating approval work", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "transport-raw-acl",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+    const requester = plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      participantId: "session:requester",
+      role: "requester",
+    });
+    await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId, requester.accessToken);
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+    await opened;
+
+    socket.send(encodeClientFrame({ type: "inputBytes", data: new TextEncoder().encode("blocked raw transport\n") }));
+    await Bun.sleep(120);
+
+    expect(messages.some((message) => message.type === "error" && message.message.includes("approval"))).toBe(true);
+    expect(
+      plane.listApprovalRequests({
+        terminalId: created.terminalId,
+        participantId: "session:requester",
+      }),
+    ).toHaveLength(0);
 
     socket.close();
     plane.stopTransport();

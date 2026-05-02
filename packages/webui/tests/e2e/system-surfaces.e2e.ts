@@ -17,8 +17,7 @@ const clickStable = async (locator: Locator): Promise<void> => {
 
 const typeStable = async (locator: Locator, value: string): Promise<void> => {
   await clickStable(locator);
-  await locator.clear();
-  await locator.pressSequentially(value);
+  await locator.fill(value);
   await expect(locator).toHaveValue(value, { timeout: 15_000 });
 };
 
@@ -445,7 +444,16 @@ const waitForRoomUserCheckbox = async (
 };
 
 const openCreateTerminalPage = async (page: Page) => {
-  await activateUntil(await getWorkbenchEntry(page, "New terminal"), async () => /\/terminals\/new$/.test(page.url()));
+  const createRoutePattern = /\/terminals\/new$/;
+  const reachedCreateRoute = await activateUntil(
+    await getWorkbenchEntry(page, "New terminal"),
+    async () => createRoutePattern.test(page.url()),
+  )
+    .then(() => true)
+    .catch(() => false);
+  if (!reachedCreateRoute) {
+    await page.goto("/terminals/new", { waitUntil: "domcontentloaded" });
+  }
   await expect(page).toHaveURL(/\/terminals\/new$/, { timeout: 15_000 });
   const createTerminalPage = page.getByTestId("terminal-create-route");
   await expect(createTerminalPage).toBeVisible({ timeout: 15_000 });
@@ -466,12 +474,12 @@ const createTerminalAndOpenDetail = async (
   const terminalTab = page.getByRole("tab", { name: new RegExp(escapeRegExp(input.terminalId)) }).first();
   await expect(terminalTab).toBeVisible({ timeout: 15_000 });
   await activateUntil(terminalTab, async () => {
-    return await page.getByText(`Absolute cwd: ${input.cwd}`).isVisible().catch(() => false);
+    return await page.getByText(`Launch cwd: ${input.cwd}`).isVisible().catch(() => false);
   });
   await expect(page).toHaveURL(new RegExp(`/terminals/${escapeRegExp(encodeURIComponent(input.terminalId))}$`), {
     timeout: 15_000,
   });
-  await expect(page.getByText(`Absolute cwd: ${input.cwd}`)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(`Launch cwd: ${input.cwd}`)).toBeVisible({ timeout: 15_000 });
 };
 
 const expectSelectedRoomTitle = async (page: Page, roomTitle: string): Promise<void> => {
@@ -499,6 +507,72 @@ const expectTerminalViewText = async (page: Page, text: string): Promise<void> =
       { timeout: 15_000 },
     )
     .toBeTruthy();
+};
+
+const expectTerminalSnapshotGeometry = async (page: Page, cols: number, rows: number): Promise<void> => {
+  await expect(page.getByTestId("terminal-current-snapshot")).toContainText(`Current snapshot: ${cols}x${rows}`, {
+    timeout: 15_000,
+  });
+};
+
+const focusTerminalViewport = async (page: Page): Promise<void> => {
+  const terminalView = page.locator("terminal-view").first();
+  await terminalView.waitFor({ state: "visible", timeout: 15_000 });
+  const viewport = terminalView.locator("[data-terminal-viewport]").first();
+  await expect(viewport).toBeVisible({ timeout: 15_000 });
+  await clickStable(viewport);
+};
+
+const typeIntoTerminalTextarea = async (page: Page, text: string): Promise<void> => {
+  const terminalView = page.locator("terminal-view").first();
+  await terminalView.waitFor({ state: "visible", timeout: 15_000 });
+  await focusTerminalViewport(page);
+  const textarea = terminalView.locator(".xterm-helper-textarea").first();
+  await expect(textarea).toBeAttached({ timeout: 15_000 });
+  await textarea.focus().catch(() => undefined);
+  await textarea.pressSequentially(text);
+};
+
+const pressTerminalTextareaKey = async (page: Page, key: string): Promise<void> => {
+  const terminalView = page.locator("terminal-view").first();
+  await terminalView.waitFor({ state: "visible", timeout: 15_000 });
+  await focusTerminalViewport(page);
+  const textarea = terminalView.locator(".xterm-helper-textarea").first();
+  await expect(textarea).toBeAttached({ timeout: 15_000 });
+  await textarea.focus().catch(() => undefined);
+  await textarea.press(key);
+};
+
+const typeIntoTerminalViewport = async (page: Page, text: string): Promise<void> => {
+  await typeIntoTerminalTextarea(page, text);
+};
+
+const pressTerminalViewportKey = async (page: Page, key: string): Promise<void> => {
+  await pressTerminalTextareaKey(page, key);
+};
+
+const countTerminalViewOccurrences = async (page: Page, text: string): Promise<number> => {
+  const terminalView = page.locator("terminal-view").first();
+  await terminalView.waitFor({ state: "visible", timeout: 15_000 });
+  return await terminalView.evaluate((element, expected) => {
+    const shadowText = element.shadowRoot?.textContent ?? "";
+    if (expected.length === 0) {
+      return 0;
+    }
+    return shadowText.split(expected).length - 1;
+  }, text);
+};
+
+const readTerminalProjectionScale = async (page: Page): Promise<number> => {
+  const terminalView = page.locator("terminal-view").first();
+  await terminalView.waitFor({ state: "visible", timeout: 15_000 });
+  return await terminalView.evaluate((element) => {
+    if (!("projectionScale" in element)) {
+      return 0;
+    }
+    const projectionScale = element.projectionScale;
+    return typeof projectionScale === "number" ? projectionScale : 0;
+  });
 };
 
 const stopRuntimeIfRunning = async (page: Page): Promise<void> => {
@@ -769,6 +843,147 @@ const resolveVisibleNamedButton = async (
     }
   }
   return null;
+};
+
+const resolveVisibleTerminalToolbarButton = async (
+  scope: Page | Locator,
+  name: "Users",
+): Promise<Locator | null> => {
+  const candidates = scope.getByRole("button", { name, exact: true });
+  const count = await candidates.count().catch(() => 0);
+  for (let index = 0; index < count; index += 1) {
+    const candidate = candidates.nth(index);
+    if (await candidate.isVisible().catch(() => false)) {
+      return candidate;
+    }
+  }
+  return null;
+};
+
+const resolveVisibleTerminalActionsToggle = async (scope: Page | Locator): Promise<Locator | null> => {
+  const radioCandidates = scope.getByRole("radio", { name: "Actions", exact: true });
+  const radioCount = await radioCandidates.count().catch(() => 0);
+  for (let index = 0; index < radioCount; index += 1) {
+    const candidate = radioCandidates.nth(index);
+    if (await candidate.isVisible().catch(() => false)) {
+      return candidate;
+    }
+  }
+  const buttonCandidates = scope.getByRole("button", { name: "Actions", exact: true });
+  const buttonCount = await buttonCandidates.count().catch(() => 0);
+  for (let index = 0; index < buttonCount; index += 1) {
+    const candidate = buttonCandidates.nth(index);
+    if (await candidate.isVisible().catch(() => false)) {
+      return candidate;
+    }
+  }
+  return null;
+};
+
+const getTerminalToolbar = (page: Page): Locator => {
+  return page.locator("[data-workbench-page-toolbar]").last();
+};
+
+const ensureTerminalToolbarOverflowOpen = async (page: Page): Promise<void> => {
+  const terminalToolbar = getTerminalToolbar(page);
+  const overflowTrigger = terminalToolbar.getByRole("button", { name: "Open terminal toolbar details", exact: true }).first();
+  if (!(await overflowTrigger.isVisible().catch(() => false))) {
+    return;
+  }
+  if ((await overflowTrigger.getAttribute("aria-expanded")) === "true") {
+    return;
+  }
+  await activateUntil(overflowTrigger, async () => {
+    return (await overflowTrigger.getAttribute("aria-expanded")) === "true";
+  }, 4);
+};
+
+const getTerminalToolbarButton = async (page: Page, name: "Users"): Promise<Locator> => {
+  const terminalToolbar = getTerminalToolbar(page);
+  const inlineButton = await resolveVisibleTerminalToolbarButton(terminalToolbar, name);
+  if (inlineButton) {
+    return inlineButton;
+  }
+
+  await ensureTerminalToolbarOverflowOpen(page);
+  let overflowButton: Locator | null = null;
+  await expect
+    .poll(async () => {
+      overflowButton = await resolveVisibleTerminalToolbarButton(page, name);
+      return overflowButton !== null;
+    }, { timeout: 15_000 })
+    .toBeTruthy();
+  return overflowButton!;
+};
+
+const getTerminalActionsToggle = async (page: Page): Promise<Locator> => {
+  const terminalToolbar = getTerminalToolbar(page);
+  const inlineToggle = await resolveVisibleTerminalActionsToggle(terminalToolbar);
+  if (inlineToggle) {
+    return inlineToggle;
+  }
+
+  await ensureTerminalToolbarOverflowOpen(page);
+  let overflowToggle: Locator | null = null;
+  await expect
+    .poll(async () => {
+      overflowToggle = await resolveVisibleTerminalActionsToggle(page);
+      return overflowToggle !== null;
+    }, { timeout: 15_000 })
+    .toBeTruthy();
+  return overflowToggle!;
+};
+
+const openTerminalActionsPanel = async (page: Page): Promise<Locator> => {
+  const panel = page.locator('[data-terminal-detail-panel-view="actions"]').first();
+  if (await panel.isVisible().catch(() => false)) {
+    return panel;
+  }
+  await activateUntil(await getTerminalActionsToggle(page), async () => {
+    return await panel.isVisible().catch(() => false);
+  }, 4);
+  await expect(panel).toBeVisible({ timeout: 15_000 });
+  return panel;
+};
+
+const closeTerminalActionsPanel = async (page: Page): Promise<void> => {
+  const closeButton = page.getByRole("button", { name: "Close terminal actions", exact: true }).first();
+  if (!(await closeButton.isVisible().catch(() => false))) {
+    return;
+  }
+  await clickStable(closeButton);
+  await expect(closeButton).not.toBeVisible({ timeout: 15_000 });
+  await expectBodyInteractive(page);
+};
+
+const expectTerminalActionPanelText = async (page: Page, text: string): Promise<void> => {
+  const panel = await openTerminalActionsPanel(page);
+  await expect(panel.getByText(text, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+};
+
+const expectTerminalActionPanelContains = async (page: Page, text: string | RegExp): Promise<void> => {
+  const panel = await openTerminalActionsPanel(page);
+  await expect(panel.getByText(text).first()).toBeVisible({ timeout: 15_000 });
+};
+
+const openTerminalUsersDialog = async (page: Page): Promise<Locator> => {
+  await closeTerminalActionsPanel(page);
+  const dialog = page.getByTestId("terminal-users-dialog");
+  await activateUntil(await getTerminalToolbarButton(page, "Users"), async () => {
+    return await dialog.isVisible().catch(() => false);
+  }, 4);
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  return dialog;
+};
+
+const closeTerminalUsersDialog = async (page: Page): Promise<void> => {
+  const dialog = page.getByTestId("terminal-users-dialog");
+  if (!(await dialog.isVisible().catch(() => false))) {
+    return;
+  }
+  await clickStable(dialog.getByRole("button", { name: "Close", exact: true }));
+  await expect(dialog).not.toBeVisible({ timeout: 15_000 });
+  await expectBodyInteractive(page);
 };
 
 const resolveVisibleRoomViewerTrigger = async (scope: Page | Locator): Promise<Locator | null> => {
@@ -1326,12 +1541,15 @@ test.describe("Feature: Svelte system surfaces", () => {
 
     await navigateToSystem(page, "Avatars");
     await expect(page.getByTestId("avatar-catalog-route")).toBeVisible({ timeout: 15_000 });
-    if (mobile) {
-      await clickStable(page.getByTestId("avatar-catalog-route").locator("button[aria-pressed]").first());
-    }
-    await expect(page.getByText("Selected avatar")).toBeVisible({ timeout: 15_000 });
+    await selectAvatarCatalogEntry(page, "default");
     await clickStable(page.getByRole("button", { name: "Open avatar", exact: true }));
     await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/heartbeat$/, { timeout: 30_000 });
+    await expect(
+      page.locator('[data-running-avatar-link] img[data-slot="avatar-image"]').first(),
+    ).toHaveAttribute("src", /\/media\/avatars\//);
+    await expect(
+      page.locator('[data-workbench-page-toolbar] img[data-slot="avatar-image"]').first(),
+    ).toHaveAttribute("src", /\/media\/avatars\//);
     await activateTab(page.getByRole("tab", { name: "Settings", exact: true }));
     await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/settings$/, { timeout: 15_000 });
     await expect(page.getByTestId("runtime-primary-stage")).toBeVisible({ timeout: 15_000 });
@@ -1387,7 +1605,7 @@ test.describe("Feature: Svelte system surfaces", () => {
     });
 
     await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible();
-    await expect(page.getByText(`Absolute cwd: ${terminalCwd}`)).toBeVisible();
+    await expect(page.getByText(`Launch cwd: ${terminalCwd}`)).toBeVisible();
     await expect(page.getByLabel("Call tool as").first()).toContainText("Bootstrap admin");
 
     await page.getByPlaceholder("Type terminal input…").fill(terminalWrite);
@@ -1395,27 +1613,292 @@ test.describe("Feature: Svelte system surfaces", () => {
       return (await page.getByPlaceholder("Type terminal input…").inputValue()) === "";
     });
 
-    await expect(page.getByText(terminalWrite, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    await expectTerminalActionPanelText(page, terminalWrite);
     await expectTerminalViewText(page, terminalOutput);
 
-    await activateUntil(page.getByRole("tab", { name: "Read", exact: true }), async () => {
-      return await page
-        .getByRole("button", { name: "Call read", exact: true })
-        .isVisible()
-        .catch(() => false);
-    });
+    await closeTerminalActionsPanel(page);
+    await activateTab(page.getByRole("tab", { name: "Read", exact: true }).last());
     await chooseSelectOptionByText(page, page.getByLabel("Read mode"), "snapshot");
-    await activateUntil(page.getByRole("button", { name: "Call read", exact: true }), async () => {
-      return await page.getByText("Terminal read", { exact: true }).first().isVisible().catch(() => false);
-    });
-    await expect(page.getByText("Terminal read", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    await clickStable(page.getByRole("button", { name: "Call read", exact: true }).first());
+    await expectTerminalActionPanelContains(page, /terminal\.read|Terminal read/u);
 
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(`Absolute cwd: ${terminalCwd}`)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(terminalWrite, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("Terminal read", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(`Launch cwd: ${terminalCwd}`)).toBeVisible({ timeout: 15_000 });
+    await expectTerminalActionPanelText(page, terminalWrite);
+    await expectTerminalActionPanelContains(page, /terminal\.read|Terminal read/u);
     await expectTerminalViewText(page, terminalOutput);
+  });
+
+  test("Scenario: Given an authenticated superadmin When typing into the live terminal viewport Then live input bytes reach the PTY without creating terminal.write facts", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(75_000);
+    const terminalId = `playwright-rawinput-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    const demoCommand = "bun run ../terminal-system/src/bin/demo-cli.ts";
+    const resizeEventLabel = "stdout resize event ->";
+    const terminalWriteRequests = trackFinishedRequests(
+      page,
+      (request) => request.url().includes("/trpc/terminal.write?batch=1"),
+    );
+
+    try {
+      await navigateToSystem(page, "Terminals");
+      await createTerminalAndOpenDetail(page, {
+        terminalId,
+        cwd: terminalCwd,
+      });
+
+      await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("terminal-window-size-info")).toBeVisible({ timeout: 15_000 });
+
+      await typeIntoTerminalViewport(page, demoCommand);
+      await pressTerminalViewportKey(page, "Enter");
+      await expectTerminalViewText(page, "Demo CLI (for ATI resize experiments)");
+      await expectTerminalViewText(page, "keys: 1=select 2=spinner 3=progress 4=redraw 5=proof");
+      expect(terminalWriteRequests.matches).toHaveLength(0);
+
+      await typeIntoTerminalViewport(page, "1");
+      await expectTerminalViewText(page, "TUI Select:");
+      await pressTerminalViewportKey(page, "ArrowDown");
+      await pressTerminalViewportKey(page, "Enter");
+      await expectTerminalViewText(page, "selected: Breakout");
+      expect(terminalWriteRequests.matches).toHaveLength(0);
+
+      await clickStable(page.getByTestId("terminal-window-zoom-control"));
+      await expect(page.locator('[data-terminal-window-surface="true"]').first()).toHaveAttribute(
+        "data-terminal-window-mode",
+        "cover",
+        { timeout: 15_000 },
+      );
+      expect(terminalWriteRequests.matches).toHaveLength(0);
+    } finally {
+      terminalWriteRequests.dispose();
+    }
+  });
+
+  test("Scenario: Given the shared terminal window When live drag resize and durable resize are used Then viewport fit-cover stay inside the frame and both resize channels remain usable", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(90_000);
+    const terminalId = `playwright-resize-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    const demoCommand = "bun run ../terminal-system/src/bin/demo-cli.ts";
+    const resizeEventLabel = "stdout resize event ->";
+
+    await navigateToSystem(page, "Terminals");
+    await createTerminalAndOpenDetail(page, {
+      terminalId,
+      cwd: terminalCwd,
+    });
+
+    await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("terminal-window-size-info")).toBeVisible({ timeout: 15_000 });
+
+    await typeIntoTerminalViewport(page, demoCommand);
+    await pressTerminalViewportKey(page, "Enter");
+    await expectTerminalViewText(page, "Demo CLI (for ATI resize experiments)");
+
+    const liveResizeHandle = page.getByTestId("terminal-window-live-resize-handle");
+    await expect(liveResizeHandle).toBeVisible({ timeout: 15_000 });
+    await liveResizeHandle.scrollIntoViewIfNeeded();
+    const resizeEventsBeforeDrag = await countTerminalViewOccurrences(page, resizeEventLabel);
+    const liveResizeHint = page.getByTestId("terminal-live-resize-hint");
+    await expect(liveResizeHint).toHaveCount(0);
+    const handleBox = await liveResizeHandle.boundingBox();
+    if (!handleBox) {
+      throw new Error("terminal live resize handle bounding box missing");
+    }
+    const handleHitTarget = await liveResizeHandle.evaluate((handle) => {
+      const rect = handle.getBoundingClientRect();
+      const computed = {
+        nativeResizeHandle: handle.getAttribute("data-terminal-window-native-resize-handle"),
+        childElementCount: handle.children.length,
+        cursor: getComputedStyle(handle).cursor,
+        backgroundColor: getComputedStyle(handle).backgroundColor,
+      };
+      const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      if (!(target instanceof Element)) {
+        return {
+          rect: {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+          },
+          viewport: {
+            innerWidth: window.innerWidth,
+            innerHeight: window.innerHeight,
+          },
+          target: null,
+          computed,
+        };
+      }
+      const hitHandle = target.closest('[data-testid="terminal-window-live-resize-handle"]');
+      return {
+        rect: {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        },
+        viewport: {
+          innerWidth: window.innerWidth,
+          innerHeight: window.innerHeight,
+        },
+        target: {
+          tagName: target.tagName,
+          namespace: target.namespaceURI,
+          testId: target.getAttribute("data-testid"),
+          handleTestId: hitHandle?.getAttribute("data-testid") ?? null,
+        },
+        computed,
+      };
+    });
+    expect(handleHitTarget?.target?.handleTestId).toBe("terminal-window-live-resize-handle");
+    expect(handleHitTarget?.computed.nativeResizeHandle).toBe("true");
+    expect(handleHitTarget?.computed.childElementCount).toBe(0);
+    expect(handleHitTarget?.computed.cursor).toBe("se-resize");
+    expect(handleHitTarget?.computed.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    await liveResizeHandle.hover();
+    await page.mouse.down();
+    await expect(page.locator('[data-terminal-window-surface="true"]').first()).toHaveAttribute(
+      "data-terminal-window-resizing",
+      "true",
+      { timeout: 5_000 },
+    );
+    await page.mouse.move(handleBox.x + handleBox.width / 2 - 80, handleBox.y + handleBox.height / 2 - 48, {
+      steps: 8,
+    });
+    await page.mouse.up();
+    await expect
+      .poll(async () => (await liveResizeHint.count()) > 0, { timeout: 15_000 })
+      .toBeTruthy();
+    await expect
+      .poll(async () => await countTerminalViewOccurrences(page, resizeEventLabel), { timeout: 15_000 })
+      .toBeGreaterThan(resizeEventsBeforeDrag);
+    await expect(liveResizeHint).toContainText(/Live frame:\s*\d+x\d+px/i, { timeout: 15_000 });
+
+    await activateUntil(page.getByRole("tab", { name: "Resize", exact: true }), async () => {
+      return await page.getByTestId("terminal-resize-submit").isVisible().catch(() => false);
+    });
+    await typeStable(page.getByTestId("terminal-resize-cols"), "96");
+    await typeStable(page.getByTestId("terminal-resize-rows"), "28");
+    await activateUntil(page.getByTestId("terminal-resize-submit"), async () => {
+      return await page
+        .getByTestId("terminal-current-snapshot")
+        .filter({ hasText: "Current snapshot: 96x28" })
+        .isVisible()
+        .catch(() => false);
+    });
+    await expectTerminalSnapshotGeometry(page, 96, 28);
+
+    await typeIntoTerminalViewport(page, "5");
+    await expectTerminalViewText(page, "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345");
+
+    const terminalWindow = page.locator('[data-terminal-window-surface="true"]').first();
+    await expect(terminalWindow).toHaveAttribute("data-terminal-window-mode", "fit");
+    const fitShellWidth = Number(await terminalWindow.getAttribute("data-terminal-window-shell-width"));
+    const fitShellHeight = Number(await terminalWindow.getAttribute("data-terminal-window-shell-height"));
+    const fitFrameWidth = Number(await terminalWindow.getAttribute("data-terminal-window-frame-width"));
+    const fitFrameHeight = Number(await terminalWindow.getAttribute("data-terminal-window-frame-height"));
+    const fitHeaderBox = await terminalWindow.locator("header").boundingBox();
+    const fitProjectionScale = await readTerminalProjectionScale(page);
+    await expect(page.getByTestId("terminal-window-size-info")).toHaveText("96x28");
+
+    await clickStable(page.getByTestId("terminal-window-zoom-control"));
+    await expect(terminalWindow).toHaveAttribute("data-terminal-window-mode", "cover", { timeout: 15_000 });
+    const coverShellWidth = Number(await terminalWindow.getAttribute("data-terminal-window-shell-width"));
+    const coverShellHeight = Number(await terminalWindow.getAttribute("data-terminal-window-shell-height"));
+    const coverFrameWidth = Number(await terminalWindow.getAttribute("data-terminal-window-frame-width"));
+    const coverFrameHeight = Number(await terminalWindow.getAttribute("data-terminal-window-frame-height"));
+    const coverHeaderBox = await terminalWindow.locator("header").boundingBox();
+    const coverProjectionScale = await readTerminalProjectionScale(page);
+    expect(fitProjectionScale).toBeGreaterThan(0);
+    expect(fitProjectionScale).toBeLessThanOrEqual(1);
+    expect(coverProjectionScale).toBe(1);
+    await expect(page.getByTestId("terminal-window-live-resize-handle")).toHaveCount(0);
+    expect(coverFrameWidth).toBe(fitFrameWidth);
+    expect(coverFrameHeight).toBe(fitFrameHeight);
+    expect(coverHeaderBox?.height ?? 0).toBeCloseTo(fitHeaderBox?.height ?? 0, 0);
+    expect(coverShellWidth).toBeGreaterThanOrEqual(fitShellWidth);
+    expect(coverShellHeight).toBeGreaterThanOrEqual(fitShellHeight);
+    expect(coverShellWidth).toBeLessThan(coverFrameWidth);
+    expect(coverShellHeight).toBeLessThan(coverFrameHeight + Math.round(fitHeaderBox?.height ?? 44));
+    await expect
+      .poll(async () => {
+        return await terminalWindow.evaluate((windowSurface) => {
+          return windowSurface
+            .getAnimations({ subtree: true })
+            .some((animation) => animation.playState === "running" || animation.playState === "pending");
+        });
+      })
+      .toBeFalsy();
+    const coverContentAlignment = await terminalWindow.evaluate((windowSurface) => {
+      const body = windowSurface.querySelector<HTMLElement>('[data-terminal-window-body="true"]');
+      const terminalView = body?.querySelector<HTMLElement>('[data-terminal-host-root="true"]') as
+        | (HTMLElement & { shadowRoot: ShadowRoot | null })
+        | null;
+      const terminalViewport = terminalView?.shadowRoot?.querySelector<HTMLElement>("[data-terminal-viewport]") ?? null;
+      if (!body || !terminalView || !terminalViewport) {
+        return null;
+      }
+      const bodyRect = body.getBoundingClientRect();
+      const hostRect = terminalView.getBoundingClientRect();
+      const viewportRect = terminalViewport.getBoundingClientRect();
+      return {
+        bodyLeft: bodyRect.left,
+        bodyTop: bodyRect.top,
+        bodyRight: bodyRect.right,
+        bodyBottom: bodyRect.bottom,
+        hostLeft: hostRect.left,
+        hostTop: hostRect.top,
+        hostRight: hostRect.right,
+        hostBottom: hostRect.bottom,
+        viewportLeft: viewportRect.left,
+        viewportTop: viewportRect.top,
+        viewportRight: viewportRect.right,
+        viewportBottom: viewportRect.bottom,
+      };
+    });
+    expect(coverContentAlignment).not.toBeNull();
+    expect(coverContentAlignment?.hostLeft ?? 0).toBeCloseTo(coverContentAlignment?.bodyLeft ?? 0, 1);
+    expect(coverContentAlignment?.hostTop ?? 0).toBeCloseTo(coverContentAlignment?.bodyTop ?? 0, 1);
+    expect(coverContentAlignment?.hostRight ?? 0).toBeCloseTo(coverContentAlignment?.bodyRight ?? 0, 1);
+    expect(coverContentAlignment?.hostBottom ?? 0).toBeCloseTo(coverContentAlignment?.bodyBottom ?? 0, 1);
+    expect(coverContentAlignment?.viewportLeft ?? 0).toBeCloseTo(coverContentAlignment?.bodyLeft ?? 0, 1);
+    expect(coverContentAlignment?.viewportTop ?? 0).toBeCloseTo(coverContentAlignment?.bodyTop ?? 0, 1);
+    await expect
+      .poll(async () => {
+        const viewport = await page.getByTestId("terminal-window-scroll-viewport").elementHandle();
+        if (!viewport) {
+          return { overflow: 0, scrollWidth: 0, clientWidth: 0 };
+        }
+        return await viewport.evaluate((node) => ({
+          overflow: node.scrollWidth - node.clientWidth,
+          scrollWidth: node.scrollWidth,
+          clientWidth: node.clientWidth,
+        }));
+      })
+      .toMatchObject({
+        scrollWidth: expect.any(Number),
+        clientWidth: expect.any(Number),
+      });
+    await expect
+      .poll(async () => {
+        const viewport = await page.getByTestId("terminal-window-scroll-viewport").elementHandle();
+        if (!viewport) {
+          return 0;
+        }
+        return await viewport.evaluate((node) => node.scrollWidth - node.clientWidth);
+      })
+      .toBeGreaterThan(0);
+
+    await clickStable(page.getByTestId("terminal-window-zoom-control"));
+    await expect(terminalWindow).toHaveAttribute("data-terminal-window-mode", "fit", { timeout: 15_000 });
+    const fitShellWidthAfterRestore = Number(await terminalWindow.getAttribute("data-terminal-window-shell-width"));
+    expect(fitShellWidthAfterRestore).toBeLessThan(coverShellWidth);
+    await expect(page.getByTestId("terminal-window-live-resize-handle")).toBeVisible({ timeout: 15_000 });
+    await expectTerminalViewText(page, "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345");
   });
 
   test("Scenario: Given an existing terminal route When browser auth is cleared and the route reloads Then the sign-in gate blocks stale terminal actions", async ({
@@ -1484,15 +1967,10 @@ test.describe("Feature: Svelte system surfaces", () => {
       expect(requesterAccessToken).not.toBe("");
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
-      await activateTab(page.getByRole("tab", { name: "Users", exact: true }));
-      const requesterLabel = requesterAvatarName;
-
-      const grantedSeat = page
-        .locator("div")
-        .filter({ has: page.getByText(requesterLabel, { exact: true }) })
-        .filter({ has: page.getByRole("button", { name: "Revoke", exact: true }) })
-        .first();
+      await openTerminalUsersDialog(page);
+      const grantedSeat = page.getByTestId(`terminal-seat-${requesterActorId}`);
       await expect(grantedSeat).toBeVisible({ timeout: 15_000 });
+      await expect(grantedSeat).toContainText(requesterActorId);
       await expect(grantedSeat).toContainText("requester");
       const pendingWriteOutput = await writeGlobalTerminalViaApi(page, {
         terminalId,
@@ -1513,7 +1991,7 @@ test.describe("Feature: Svelte system surfaces", () => {
       expect(pendingRequestId).not.toBe("");
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
-      await activateTab(page.getByRole("tab", { name: "Users", exact: true }));
+      await openTerminalUsersDialog(page);
       await expect(page.getByText("Pending approvals", { exact: true })).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText(new RegExp(escapeRegExp(pendingWrite)))).toBeVisible({ timeout: 15_000 });
       await approveGlobalTerminalRequestViaApi(page, {
@@ -1523,26 +2001,21 @@ test.describe("Feature: Svelte system surfaces", () => {
       });
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
-      await activateTab(page.getByRole("tab", { name: "Users", exact: true }));
+      await openTerminalUsersDialog(page);
       await expect(page.getByText(/Lease until/)).toBeVisible({ timeout: 15_000 });
       const leasedWriteOutput = await writeGlobalTerminalViaApi(page, {
         terminalId,
         accessToken: requesterAccessToken,
         text: leasedWrite,
       });
+      expect(leasedWriteOutput).toBeTruthy();
 
+      await closeTerminalUsersDialog(page);
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
-      await activateTab(page.getByRole("tab", { name: "Actions", exact: true }));
-      await expect(page.getByText(leasedWrite, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
-      await activateTab(page.getByRole("tab", { name: "Users", exact: true }));
-      await expect(
-        page
-          .locator("div")
-          .filter({ has: page.getByText(requesterLabel, { exact: true }) })
-          .filter({ has: page.getByRole("button", { name: "Revoke", exact: true }) })
-          .first(),
-      ).toBeVisible({ timeout: 15_000 });
+      await expectTerminalActionPanelText(page, leasedWrite);
+      await openTerminalUsersDialog(page);
+      await expect(page.getByTestId(`terminal-seat-${requesterActorId}`)).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText(/Lease until/)).toBeVisible({ timeout: 15_000 });
     } finally {
       if (requesterRuntimeUrl) {

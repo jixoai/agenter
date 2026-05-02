@@ -44,7 +44,9 @@ describe("Feature: Terminal surface layout ownership contract", () => {
   test("Scenario: Given the terminal action composer should not revive a second footer card When reading the source Then the stage pane uses InputGroup bodies and keeps read parameters above the actor row", () => {
     expect(terminalSystemSurfaceSource).toContain('<InputGroup.Root layout="block" data-testid="terminal-write-input-group">');
     expect(terminalSystemSurfaceSource).toContain('<InputGroup.Root layout="block" data-testid="terminal-read-input-group">');
+    expect(terminalSystemSurfaceSource).toContain('<InputGroup.Root layout="block" data-testid="terminal-resize-input-group">');
     expect(terminalSystemSurfaceSource).toContain('data-testid="terminal-read-parameter-panel"');
+    expect(terminalSystemSurfaceSource).toContain('data-testid="terminal-resize-parameter-panel"');
     expect(terminalSystemSurfaceSource).toContain('data-testid="terminal-actions-panel"');
     expect(terminalSystemSurfaceSource).not.toContain('{#snippet footer()}');
   });
@@ -91,10 +93,42 @@ describe("Feature: Terminal surface layout ownership contract", () => {
     expect(terminalPageToolbarSource).toContain("disabled={lifecycleBusy}");
   });
 
+  test("Scenario: Given terminal deletion remains destructive but titlebar chrome is minimal When reading the source Then delete is route-owned instead of a third titlebar control", () => {
+    expect(terminalPageToolbarSource).toContain('label="Delete terminal"');
+    expect(terminalPageToolbarSource).toContain("inlineTone=\"critical\"");
+    expect(terminalWindowSurfaceSource).not.toContain('data-testid="terminal-window-close-control"');
+  });
+
   test("Scenario: Given terminal instance identity and PTY window title diverge When reading the source Then tabs and toolbar keep the instance name while the window title uses the observed PTY title", () => {
     expect(terminalPageToolbarSource).toContain("resolveTerminalInstanceName(selectedTerminal)");
     expect(terminalsWorkbenchLayoutSource).toContain("label: resolveTerminalInstanceName(terminal)");
     expect(terminalWindowSurfaceSource).toContain("resolveTerminalWindowTitle(terminal)");
     expect(terminalWindowSurfaceSource).not.toContain("resolveTerminalInstanceName(terminal)");
+  });
+
+  test("Scenario: Given live terminal resizing belongs to the window frame When reading the window source Then fit-cover sizing changes the window geometry while the titlebar stays outside terminal scaling", () => {
+    expect(terminalWindowSurfaceSource).toContain('data-testid="terminal-window-live-resize-handle"');
+    expect(terminalWindowSurfaceSource).toContain('onLiveResize?: (input: { width: number; height: number }) => void;');
+    expect(terminalWindowSurfaceSource).toContain("window.addEventListener('pointermove', handleResizeMove);");
+    expect(terminalWindowSurfaceSource).toContain("window.addEventListener('pointerup', handleResizeEnd);");
+    expect(terminalWindowSurfaceSource).toContain("window.addEventListener('pointercancel', handleResizeEnd);");
+    expect(terminalWindowSurfaceSource).toContain('reportLiveResize(nextFrameWidth, nextFrameHeight);');
+    expect(terminalWindowSurfaceSource).toContain('reportLiveResize(finalFrameWidth, finalFrameHeight);');
+    expect(terminalWindowSurfaceSource).toContain('if (nextFrameWidth === dragStartWidth && nextFrameHeight === dragStartHeight) {');
+    expect(terminalWindowSurfaceSource).toContain('const shouldCommitResize = dragResizeMoved;');
+    expect(terminalWindowSurfaceSource).toContain("resolveTerminalWindowProjection");
+    expect(terminalWindowSurfaceSource).toContain("projectionScale={viewportProjectionScale}");
+    expect(terminalWindowSurfaceSource).toContain('data-terminal-window-shell-width={String(shellWidth)}');
+    expect(terminalWindowSurfaceSource).toContain('data-testid="terminal-window-lifecycle-control"');
+    expect(terminalWindowSurfaceSource).toContain('data-testid="terminal-window-size-info"');
+    expect(terminalWindowSurfaceSource).toContain('class="native-window-resize-handle"');
+    expect(terminalWindowSurfaceSource).toContain('data-terminal-window-native-resize-handle="true"');
+    expect(terminalWindowSurfaceSource).toContain("document.documentElement.style.cursor = 'se-resize';");
+    expect(terminalWindowSurfaceSource).not.toContain("GripIcon");
+    expect(terminalWindowSurfaceSource).not.toContain("viewportMode={viewportMode}");
+    expect(terminalWindowSurfaceSource).not.toContain('transform:scale(');
+    expect(terminalWindowSurfaceSource).not.toContain("window.addEventListener('mousemove', handleResizeMove);");
+    expect(terminalWindowSurfaceSource).not.toContain("window.addEventListener('touchmove', handleResizeMove");
+    expect(terminalWindowSurfaceSource).not.toContain('const nextFrameKey = `${liveFrameWidth}x${liveFrameHeight}`;');
   });
 });

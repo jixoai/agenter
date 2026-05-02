@@ -197,7 +197,12 @@ const mapEvent = (row: {
 }): TerminalEventRecord => ({
   eventId: row.event_id,
   terminalId: row.terminal_id,
-  kind: row.kind === "terminal_write" ? "terminal_write" : "terminal_read",
+  kind:
+    row.kind === "terminal_write"
+      ? "terminal_write"
+      : row.kind === "terminal_resize"
+        ? "terminal_resize"
+        : "terminal_read",
   createdAt: row.created_at,
   payload: parseJson<TerminalEventPayload>(row.payload_json, { title: row.kind, content: "" }),
 });
@@ -216,6 +221,7 @@ const mapReadCursor = (row: {
 
 export class TerminalDb {
   private readonly db: Database;
+  private hasLegacyCwdColumn = false;
 
   constructor(filePath: string) {
     const fullPath = resolve(filePath);
@@ -230,29 +236,56 @@ export class TerminalDb {
 
   createTerminal(input: Omit<TerminalRecord, "createdAt" | "updatedAt">): TerminalRecord {
     const now = Date.now();
-    this.db
-      .query(
-        `insert into terminal_catalog (
-          terminal_id, process_kind, command_json, launch_cwd, profile_json, metadata_json,
-          process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at,
-          created_at, updated_at, removed_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)`,
-      )
-      .run(
-        input.terminalId,
-        input.processKind,
-        toJson(input.command),
-        input.launchCwd,
-        toJson(input.profile),
-        toJson(input.metadata),
-        input.processPhase,
-        input.lastStopReason ?? null,
-        input.lastExitCode ?? null,
-        input.lastExitSignal ?? null,
-        input.lastStoppedAt ?? null,
-        now,
-        now,
-      );
+    if (this.hasLegacyCwdColumn) {
+      this.db
+        .query(
+          `insert into terminal_catalog (
+            terminal_id, process_kind, command_json, cwd, launch_cwd, profile_json, metadata_json,
+            process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at,
+            created_at, updated_at, removed_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)`,
+        )
+        .run(
+          input.terminalId,
+          input.processKind,
+          toJson(input.command),
+          input.launchCwd,
+          input.launchCwd,
+          toJson(input.profile),
+          toJson(input.metadata),
+          input.processPhase,
+          input.lastStopReason ?? null,
+          input.lastExitCode ?? null,
+          input.lastExitSignal ?? null,
+          input.lastStoppedAt ?? null,
+          now,
+          now,
+        );
+    } else {
+      this.db
+        .query(
+          `insert into terminal_catalog (
+            terminal_id, process_kind, command_json, launch_cwd, profile_json, metadata_json,
+            process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at,
+            created_at, updated_at, removed_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)`,
+        )
+        .run(
+          input.terminalId,
+          input.processKind,
+          toJson(input.command),
+          input.launchCwd,
+          toJson(input.profile),
+          toJson(input.metadata),
+          input.processPhase,
+          input.lastStopReason ?? null,
+          input.lastExitCode ?? null,
+          input.lastExitSignal ?? null,
+          input.lastStoppedAt ?? null,
+          now,
+          now,
+        );
+    }
     return this.getTerminal(input.terminalId)!;
   }
 
@@ -308,21 +341,41 @@ export class TerminalDb {
       ...current.metadata,
       ...(patch.metadata ?? {}),
     };
-    this.db
-      .query(
-        `update terminal_catalog
-         set process_kind = ?, command_json = ?, launch_cwd = ?, profile_json = ?, metadata_json = ?, updated_at = ?
-         where terminal_id = ? and removed_at is null`,
-      )
-      .run(
-        patch.processKind ?? current.processKind,
-        toJson(patch.command ?? current.command),
-        patch.launchCwd ?? current.launchCwd,
-        toJson(nextProfile),
-        toJson(nextMetadata),
-        now,
-        terminalId,
-      );
+    const nextLaunchCwd = patch.launchCwd ?? current.launchCwd;
+    if (this.hasLegacyCwdColumn) {
+      this.db
+        .query(
+          `update terminal_catalog
+           set process_kind = ?, command_json = ?, cwd = ?, launch_cwd = ?, profile_json = ?, metadata_json = ?, updated_at = ?
+           where terminal_id = ? and removed_at is null`,
+        )
+        .run(
+          patch.processKind ?? current.processKind,
+          toJson(patch.command ?? current.command),
+          nextLaunchCwd,
+          nextLaunchCwd,
+          toJson(nextProfile),
+          toJson(nextMetadata),
+          now,
+          terminalId,
+        );
+    } else {
+      this.db
+        .query(
+          `update terminal_catalog
+           set process_kind = ?, command_json = ?, launch_cwd = ?, profile_json = ?, metadata_json = ?, updated_at = ?
+           where terminal_id = ? and removed_at is null`,
+        )
+        .run(
+          patch.processKind ?? current.processKind,
+          toJson(patch.command ?? current.command),
+          nextLaunchCwd,
+          toJson(nextProfile),
+          toJson(nextMetadata),
+          now,
+          terminalId,
+        );
+    }
     return this.getTerminal(terminalId)!;
   }
 
@@ -866,6 +919,7 @@ export class TerminalDb {
           .all() as Array<{ name: string }>
       ).map((column) => column.name),
     );
+    this.hasLegacyCwdColumn = columns.has("cwd");
     if (!columns.has("launch_cwd")) {
       this.db.query(`alter table terminal_catalog add column launch_cwd text`).run();
       this.db.query(`update terminal_catalog set launch_cwd = cwd where launch_cwd is null`).run();
@@ -887,7 +941,7 @@ export class TerminalDb {
     if (!columns.has("last_stopped_at")) {
       this.db.query(`alter table terminal_catalog add column last_stopped_at integer`).run();
     }
-    if (columns.has("cwd")) {
+    if (this.hasLegacyCwdColumn) {
       this.db.query(`update terminal_catalog set launch_cwd = coalesce(launch_cwd, cwd)`).run();
     }
   }

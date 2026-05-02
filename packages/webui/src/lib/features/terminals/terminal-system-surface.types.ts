@@ -5,7 +5,7 @@ import type {
   GlobalTerminalGrantEntry,
   TerminalActivityItem,
 } from "@agenter/client-sdk";
-import type { TerminalViewSnapshot } from "@agenter/terminal-view";
+import type { TerminalViewElement, TerminalViewScreenMetrics, TerminalViewSnapshot } from "@agenter/terminal-view";
 import type { Component } from "svelte";
 
 import type { ActorDirectoryEntry } from "$lib/features/collaboration/actor-directory";
@@ -73,12 +73,35 @@ export interface TerminalSystemWriteToolResult {
   message?: string;
 }
 
+export interface TerminalSystemResizeToolResult {
+  ok: boolean;
+  cols: number;
+  rows: number;
+  appliedLiveFields: string[];
+  nextBootstrapFields: string[];
+}
+
 export interface TerminalViewportProps {
   terminalId: string;
-  viewportMode?: "fit" | "cover";
   transportUrl?: string;
   snapshot?: TerminalViewSnapshot | null;
+  projectionWidth?: number;
+  projectionHeight?: number;
+  projectionScale?: number;
+  projectionOffsetX?: number;
+  projectionOffsetY?: number;
+  onScreenMetrics?: (metrics: TerminalViewScreenMetrics) => void;
+  elementRef?: (HTMLElement &
+    Pick<TerminalViewElement, "transportUrl" | "terminalId" | "snapshot"> & {
+      projectionWidth?: number;
+      projectionHeight?: number;
+      projectionScale?: number;
+      projectionOffsetX?: number;
+      projectionOffsetY?: number;
+      screenMetrics?: TerminalViewScreenMetrics | null;
+    }) | null;
   class?: string;
+  style?: string;
 }
 
 export type TerminalViewportComponent = Component<TerminalViewportProps>;
@@ -86,6 +109,7 @@ export type TerminalViewportComponent = Component<TerminalViewportProps>;
 export interface TerminalSystemSurfaceProps {
   selectedTerminal: GlobalTerminalEntry | null;
   terminalViewportComponent: TerminalViewportComponent;
+  selectedTransportUrl: string | null;
   terminalGrantsState: CachedResourceState<GlobalTerminalGrantEntry[]>;
   terminalApprovalsState: CachedResourceState<GlobalTerminalApprovalRequest[]>;
   terminalActivityState: CachedResourceState<TerminalActivityItem[]>;
@@ -105,4 +129,5 @@ export interface TerminalSystemSurfaceProps {
   onDenyRequest: (input: TerminalSystemApprovalDecisionInput) => Promise<void>;
   onWriteToolCall: (input: { text: string }) => Promise<TerminalSystemWriteToolResult | void>;
   onReadToolCall: (input: { mode: TerminalSystemReadMode }) => Promise<void>;
+  onResizeToolCall: (input: { cols: number; rows: number }) => Promise<TerminalSystemResizeToolResult | void>;
 }

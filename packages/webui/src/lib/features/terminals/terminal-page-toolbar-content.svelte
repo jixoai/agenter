@@ -3,6 +3,7 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import PowerIcon from '@lucide/svelte/icons/power';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import UsersIcon from '@lucide/svelte/icons/users';
 	import type { GlobalTerminalEntry } from '@agenter/client-sdk';
 
@@ -27,20 +28,24 @@
 		usersOpen,
 		lifecycleBusy = false,
 		lifecycleIntent = null,
+		deleteBusy = false,
 		onToggleActions,
 		onOpenUsers,
 		onStopTerminal,
 		onBootstrapTerminal,
+		onDeleteTerminal,
 	}: {
 		selectedTerminal: GlobalTerminalEntry | null;
 		actionsOpen: boolean;
 		usersOpen: boolean;
 		lifecycleBusy?: boolean;
 		lifecycleIntent?: TerminalLifecycleIntent | null;
+		deleteBusy?: boolean;
 		onToggleActions: () => void;
 		onOpenUsers: () => void;
 		onStopTerminal: () => void;
 		onBootstrapTerminal: () => void;
+		onDeleteTerminal: () => void;
 	} = $props();
 
 	const terminalTitle = $derived(resolveTerminalInstanceName(selectedTerminal));
@@ -79,7 +84,7 @@
 	});
 
 	const terminalHelpText =
-		'Shared terminals reopen durable tabs for long-lived shell sessions. Bootstrap/Kill PTY controls runtime lifecycle; Delete terminal remains a separate destructive action in the terminal window.';
+		'Shared terminals reopen durable tabs for long-lived shell sessions. Bootstrap/Kill PTY controls runtime lifecycle; Delete terminal remains a separate destructive catalog action in the route toolbar.';
 </script>
 
 {#snippet terminalToolbarIdentityLeading(_toolbarState: WorkbenchToolbarRenderState)}
@@ -161,6 +166,20 @@
 		>
 			<UsersIcon class="size-4" />
 		</WorkbenchToolbarAction>
+		{#if selectedTerminal}
+			<WorkbenchToolbarAction
+				type="button"
+				placement={toolbarState.placement}
+				label="Delete terminal"
+				title="Delete terminal"
+				inlineLabel
+				inlineTone="critical"
+				disabled={deleteBusy}
+				onclick={onDeleteTerminal}
+			>
+				<Trash2Icon class="size-4" />
+			</WorkbenchToolbarAction>
+		{/if}
 
 		<HelpHint
 			ariaLabel="Terminal workbench help"

@@ -26,9 +26,10 @@ import {
 import type {
 	TerminalSystemCallAsOption,
 	TerminalSystemNotice,
-		TerminalSystemSeatState,
-		TerminalSystemWriteToolResult,
-	} from './terminal-system-surface.types';
+	TerminalSystemResizeToolResult,
+	TerminalSystemSeatState,
+	TerminalSystemWriteToolResult,
+} from './terminal-system-surface.types';
 
 	let {
 		terminalId,
@@ -113,8 +114,31 @@ import type {
 				terminal: selectedTerminal,
 				grants: selectedTerminalGrantsState.data,
 				actorDirectoryMap,
-			}) as TerminalSystemCallAsOption[],
+				}) as TerminalSystemCallAsOption[],
 	);
+
+	const parseTransportUrl = (value?: string): URL | null => {
+		if (!value) {
+			return null;
+		}
+		try {
+			return new URL(value);
+		} catch {
+			return null;
+		}
+	};
+
+	const buildTransportUrlForToken = (token?: string | null): string | null => {
+		if (!token) {
+			return null;
+		}
+		const url = parseTransportUrl(selectedTerminal?.transportUrl);
+		if (!url) {
+			return null;
+		}
+		url.searchParams.set('token', token);
+		return url.toString();
+	};
 
 	const selectedCallerToken = $derived.by(() =>
 		isAuthenticated
@@ -125,6 +149,7 @@ import type {
 				})
 			: null,
 	);
+	const selectedTransportUrl = $derived(buildTransportUrlForToken(selectedCallerToken));
 
 	const terminalSeatStates = $derived.by(
 		() =>
@@ -424,6 +449,32 @@ import type {
 		}
 	};
 
+	const handleResizeToolCall = async (input: { cols: number; rows: number }): Promise<TerminalSystemResizeToolResult> => {
+		ensureAuthenticated();
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			throw new Error('terminal is unavailable');
+		}
+		try {
+			const result = await controller.runtimeStore.setGlobalTerminalConfig({
+				terminalId: terminal.terminalId,
+				cols: input.cols,
+				rows: input.rows,
+			});
+			routeNotice = null;
+			return {
+				ok: true,
+				cols: result.config.profile.cols ?? input.cols,
+				rows: result.config.profile.rows ?? input.rows,
+				appliedLiveFields: [...result.appliedLiveFields],
+				nextBootstrapFields: [...result.nextBootstrapFields],
+			};
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'terminal resize failed');
+			throw error;
+		}
+	};
+
 	$effect(() => {
 		if (!controller.runtimeState.globalTerminals.loaded) {
 			return;
@@ -460,6 +511,7 @@ import type {
 <TerminalSystemSurface
 	{selectedTerminal}
 	terminalViewportComponent={TerminalViewHost}
+	{selectedTransportUrl}
 	terminalGrantsState={selectedTerminalGrantsState}
 	terminalApprovalsState={selectedTerminalApprovalsState}
 	terminalActivityState={selectedTerminalActivityState}
@@ -479,4 +531,5 @@ import type {
 	onDenyRequest={handleDenyRequest}
 	onWriteToolCall={handleWriteToolCall}
 	onReadToolCall={handleReadToolCall}
+	onResizeToolCall={handleResizeToolCall}
 />

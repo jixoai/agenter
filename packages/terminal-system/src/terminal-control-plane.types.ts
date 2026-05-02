@@ -16,7 +16,7 @@ export type TerminalGrantRole = "admin" | "writer" | "requester" | "readonly";
 export type TerminalApprovalStatus = "pending" | "approved" | "denied" | "expired";
 export type TerminalRendererEngine = "xterm";
 export type TerminalActorId = PrincipalId | `${"auth" | "session" | "system"}:${string}`;
-export type TerminalEventKind = "terminal_read" | "terminal_write";
+export type TerminalEventKind = "terminal_read" | "terminal_write" | "terminal_resize";
 export type TerminalAutomationInputMode = "raw" | "mixed";
 
 export interface TerminalReverseCursor {
@@ -221,34 +221,6 @@ export interface TerminalTransportEndpoint {
   path: string;
   url: string;
 }
-
-export type TerminalTransportClientMessage =
-  | { type: "input"; data: string }
-  | { type: "resize"; cols: number; rows: number };
-
-export type TerminalTransportServerMessage =
-  | {
-      type: "snapshot";
-      terminalId: string;
-      snapshot: ManagedTerminalSnapshot;
-      status: TerminalStatus;
-    }
-  | {
-      type: "output";
-      terminalId: string;
-      data: string;
-    }
-  | {
-      type: "status";
-      terminalId: string;
-      running: boolean;
-      status: TerminalStatus;
-    }
-  | {
-      type: "error";
-      terminalId: string;
-      message: string;
-    };
 
 export interface TerminalGrantRecord {
   grantId: string;

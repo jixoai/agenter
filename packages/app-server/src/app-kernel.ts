@@ -42,9 +42,11 @@ import { isPrincipalId } from "@agenter/principal-crypto";
 import type { AuthSessionProjection, ProfileMetadata, ProfileProjection } from "@agenter/auth-service";
 import {
   buildAvatarIconUrl,
+  canonicalizeAvatarPrincipalMetadata,
   formatAvatarDisplayName,
   normalizeAvatarPrincipalMetadata,
   readAvatarPrincipalMetadata,
+  resolveBuiltInAvatarProfile,
   resolveAvatarOwnerKey,
   type AvatarClassify,
   type AvatarPrincipalMetadata,
@@ -135,7 +137,7 @@ import type {
   RuntimeLoopStateLogRecord,
   RuntimeTerminalActivityRecord,
 } from "./runtime-history-records";
-import type { RuntimeMessageSendResult } from "./runtime-tool-views";
+import { projectRuntimeTerminalConfigMutation, type RuntimeMessageSendResult } from "./runtime-tool-views";
 import { SessionCatalog, type SessionMeta } from "./session-catalog";
 import { resolveSessionRoomActorId } from "./session-chat-projection";
 import { resolveSessionConfig } from "./session-config";
@@ -383,7 +385,7 @@ const projectTerminalEventToActivityRecord = (event: {
   eventId: number;
   terminalId: string;
   createdAt: number;
-  kind: "terminal_read" | "terminal_write";
+  kind: "terminal_read" | "terminal_write" | "terminal_resize";
   payload: {
     title: string;
     content: string;
@@ -1526,7 +1528,7 @@ export class AppKernel {
     if (!input.createMissing) {
       return null;
     }
-    const metadata = normalizeAvatarPrincipalMetadata({
+    const metadata = canonicalizeAvatarPrincipalMetadata({
       nickname,
       displayName: input.displayName,
       classify: input.classify,
@@ -1567,8 +1569,8 @@ export class AppKernel {
       }
       const imported = await this.ensureGlobalAvatarPrincipal({
         nickname,
-        displayName: nickname === defaultAvatarNickname() ? formatAvatarDisplayName(nickname) : null,
-        classify: null,
+        displayName: resolveBuiltInAvatarProfile(nickname)?.displayName ?? (nickname === defaultAvatarNickname() ? formatAvatarDisplayName(nickname) : null),
+        classify: resolveBuiltInAvatarProfile(nickname)?.classify ?? null,
         createMissing: true,
       });
       if (imported) {
@@ -3239,7 +3241,7 @@ export class AppKernel {
     } = {},
   ): TerminalControlPlaneEntry[] {
     if (input.superadminActorId || !input.actorId) {
-      return this.terminalControlPlane.list();
+      return this.terminalControlPlane.listForTrustedBootstrap();
     }
     return this.terminalControlPlane.listForActor(input.actorId, {
       touchPresence: false,
@@ -3289,7 +3291,7 @@ export class AppKernel {
         terminal,
       };
     }
-    const terminal = this.terminalControlPlane.list().find((entry) => entry.terminalId === created.terminalId);
+    const terminal = this.terminalControlPlane.listForTrustedBootstrap().find((entry) => entry.terminalId === created.terminalId);
     return {
       ok: true,
       message: terminal ? "terminal created" : "terminal created but unavailable in catalog",
@@ -3328,7 +3330,13 @@ export class AppKernel {
     actorId?: TerminalActorId;
     superadminActorId?: TerminalActorId;
   }): { ok: boolean; message: string; terminal?: TerminalControlPlaneEntry } {
-    const terminal = this.terminalControlPlane.bootstrapAuthorized(input);
+    this.terminalControlPlane.bootstrapAuthorized(input);
+    const terminal =
+      input.actorId && !input.superadminActorId
+        ? this.terminalControlPlane
+            .listForActor(input.actorId, { touchPresence: false })
+            .find((entry) => entry.terminalId === input.terminalId)
+        : this.terminalControlPlane.listForTrustedBootstrap().find((entry) => entry.terminalId === input.terminalId);
     return {
       ok: true,
       message: "terminal PTY bootstrapped",
@@ -3350,6 +3358,16 @@ export class AppKernel {
     superadminActorId?: TerminalActorId;
   }): Promise<{ ok: boolean; message: string }> {
     return await this.terminalControlPlane.deleteAuthorized(input);
+  }
+
+  setGlobalTerminalConfig(input: {
+    terminalId: string;
+    cols?: number;
+    rows?: number;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }) {
+    return projectRuntimeTerminalConfigMutation(this.terminalControlPlane.setTerminalConfigAuthorized(input));
   }
 
   listGlobalTerminalGrants(input: {
