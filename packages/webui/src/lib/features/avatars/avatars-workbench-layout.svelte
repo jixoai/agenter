@@ -57,7 +57,9 @@
 			buildAvatarSessionRailItems(controller.runtimeState, {
 				activeSessionId,
 				openedSessionIds: avatarSessionTabIds,
-				resolveSessionIconUrl: (sessionId) => controller.runtimeStore.sessionIconUrl(sessionId),
+				resolveAvatarIconUrl: (principalId) => controller.runtimeStore.avatarIconUrl(principalId),
+				resolveAvatarCatalogEntry: (avatarNickname) =>
+					controller.runtimeState.globalAvatarCatalog.data.find((entry) => entry.nickname === avatarNickname) ?? null,
 			}),
 			(item) => item.sessionId,
 			dismissedSessionIds,

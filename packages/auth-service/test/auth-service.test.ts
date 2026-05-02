@@ -376,11 +376,65 @@ describe("Feature: auth-service control plane", () => {
     const firstSvg = await firstResponse.text();
     const secondSvg = await secondResponse.text();
     expect(firstSvg).toBe(secondSvg);
-    expect(firstSvg).toContain(`<rect x="10" y="10" width="28" height="10" rx="3" />`);
+    expect(firstSvg).toContain(`<svg x="24" y="24" width="48" height="48" viewBox="`);
+    expect(firstSvg).toContain(`<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/>`);
+    expect(firstSvg).toContain(`stop-color="hsl(`);
+    expect(firstSvg.includes(`stop-color="#`)).toBeFalse();
     expect(firstSvg.includes(">Backend<")).toBeFalse();
   });
 
-  test("Scenario: Given an avatar principal without classify When fallback is requested and an icon is uploaded Then text fallback works until the uploaded asset overrides it", async () => {
+  test("Scenario: Given two avatar principals with the same classify When fallback svg is requested Then the glyph stays classify-stable while the HSL background changes by principal seed", async () => {
+    const { handle } = await startServer(4612);
+    const baseUrl = `http://${handle.host}:${handle.port}`;
+
+    const createAvatar = async (nickname: string) => {
+      const response = await fetch(`${baseUrl}/principals/managed`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "avatar",
+          metadata: {
+            nickname,
+            displayName: nickname,
+            classify: "backend",
+          },
+        }),
+      });
+      expect(response.status).toBe(200);
+      return (await response.json()) as { principalId: string };
+    };
+
+    const firstAvatar = await createAvatar("api-alpha");
+    const secondAvatar = await createAvatar("api-beta");
+
+    const firstSvgResponse = await fetch(
+      `${baseUrl}/media/avatars/${encodeURIComponent(firstAvatar.principalId)}/icon?format=svg`,
+    );
+    const secondSvgResponse = await fetch(
+      `${baseUrl}/media/avatars/${encodeURIComponent(secondAvatar.principalId)}/icon?format=svg`,
+    );
+
+    expect(firstSvgResponse.status).toBe(200);
+    expect(secondSvgResponse.status).toBe(200);
+
+    const firstSvg = await firstSvgResponse.text();
+    const secondSvg = await secondSvgResponse.text();
+    const backendGlyphMarker = `<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/>`;
+
+    expect(firstSvg).toContain(backendGlyphMarker);
+    expect(secondSvg).toContain(backendGlyphMarker);
+    expect(firstSvg).toContain(`stop-color="hsl(`);
+    expect(secondSvg).toContain(`stop-color="hsl(`);
+    expect(firstSvg).not.toBe(secondSvg);
+
+    const firstGradientStart = firstSvg.match(/<stop offset="0%" stop-color="([^"]+)"/)?.[1] ?? null;
+    const secondGradientStart = secondSvg.match(/<stop offset="0%" stop-color="([^"]+)"/)?.[1] ?? null;
+    expect(firstGradientStart).toBeTruthy();
+    expect(secondGradientStart).toBeTruthy();
+    expect(firstGradientStart).not.toBe(secondGradientStart);
+  });
+
+  test("Scenario: Given a built-in avatar principal stored without classify When fallback is requested Then startup reconciliation restores the canonical glyph before any upload", async () => {
     const { handle } = await startServer(4611);
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
@@ -401,7 +455,23 @@ describe("Feature: auth-service control plane", () => {
     const fallbackResponse = await fetch(`${baseUrl}/media/avatars/${encodeURIComponent(created.principalId)}/icon?format=svg`);
     expect(fallbackResponse.status).toBe(200);
     const fallbackSvg = await fallbackResponse.text();
-    expect(fallbackSvg).toContain(">Reviewer<");
+    expect(fallbackSvg).toContain(`<svg x="24" y="24" width="48" height="48" viewBox="`);
+    expect(fallbackSvg.includes(">Reviewer<")).toBeFalse();
+
+    const listedResponse = await fetch(`${baseUrl}/principals?kind=avatar&ownerKey=reviewer`);
+    expect(listedResponse.status).toBe(200);
+    await expect(listedResponse.json()).resolves.toEqual({
+      items: [
+        expect.objectContaining({
+          principalId: created.principalId,
+          metadata: {
+            nickname: "reviewer",
+            displayName: "Reviewer",
+            classify: "reviewer",
+          },
+        }),
+      ],
+    });
 
     const uploadedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><text x="0" y="12">avatar</text></svg>`;
     const uploadResponse = await fetch(`${baseUrl}/avatars/${encodeURIComponent(created.principalId)}/icon`, {

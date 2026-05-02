@@ -120,6 +120,7 @@
 							<div class="flex min-w-0 items-start gap-3">
 								<ProfileAvatar
 									label={row.nickname}
+									src={row.iconUrl ?? null}
 									class="mt-0.5 size-10 rounded-2xl border-0 bg-foreground text-background"
 								/>
 								<div class="grid min-w-0 gap-1">

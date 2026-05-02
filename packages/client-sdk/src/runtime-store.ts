@@ -3725,6 +3725,10 @@ export class RuntimeStore {
     return this.buildProfileServiceUrl(`/media/sessions/${encodeURIComponent(sessionId)}/icon`);
   }
 
+  avatarIconUrl(principalId: string): string | null {
+    return this.buildProfileServiceUrl(`/media/avatars/${encodeURIComponent(principalId)}/icon`);
+  }
+
   roomIconUrl(roomId: string): string | null {
     return this.buildProfileServiceUrl(`/media/rooms/${encodeURIComponent(roomId)}/icon`);
   }

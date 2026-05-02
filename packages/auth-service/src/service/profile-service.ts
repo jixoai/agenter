@@ -7,9 +7,11 @@ import {
   ProfileWebAuthnControlPlane,
 } from "../auth/webauthn-control-plane";
 import {
+  canonicalizeAvatarPrincipalMetadata,
   formatAvatarDisplayName,
   normalizeAvatarPrincipalMetadata,
   readAvatarPrincipalMetadata,
+  resolveBuiltInAvatarProfile,
   resolveAvatarOwnerKey,
 } from "../avatar-metadata";
 import { isDurableIdentifierKind, normalizeIdentifier, parseIdentifierKey, toAuthId, toIdentifierKey } from "../identifiers";
@@ -37,10 +39,10 @@ import type {
   ProfileIdentifier,
   ProfileMetadata,
   ProfileProjection,
-  PrincipalProjection,
-  RoomIconSeed,
-  RootAuthPrivateKeyReveal,
-  SessionIconSeed,
+	PrincipalProjection,
+	RoomIconSeed,
+	RootAuthPrivateKeyReveal,
+	SessionIconSeed,
 } from "../types";
 import type { ProfileStore } from "../store/profile-store";
 
@@ -240,10 +242,40 @@ export class ProfileService {
       return await this.store.createManagedPrincipal({
         ...input,
         ownerKey,
-        metadata: { ...metadata },
+        metadata: { ...canonicalizeAvatarPrincipalMetadata(metadata) },
       });
     }
     return await this.store.createManagedPrincipal(input);
+  }
+
+  async reconcileBuiltInAvatarMetadata(): Promise<void> {
+    for (const principal of await this.store.listPrincipals({ kind: "avatar" })) {
+      const nickname = principal.ownerKey?.trim();
+      if (!nickname) {
+        continue;
+      }
+      const builtIn = resolveBuiltInAvatarProfile(nickname);
+      if (!builtIn) {
+        continue;
+      }
+      const current = readAvatarPrincipalMetadata(principal.metadata);
+      const canonical = canonicalizeAvatarPrincipalMetadata({
+        nickname,
+        displayName: current?.displayName,
+        classify: current?.classify,
+      });
+      if (
+        current?.nickname === canonical.nickname &&
+        current.displayName === canonical.displayName &&
+        current.classify === canonical.classify
+      ) {
+        continue;
+      }
+      await this.store.updateManagedPrincipalMetadata({
+        principalId: principal.principalId,
+        metadata: { ...canonical },
+      });
+    }
   }
 
   async resolvePrincipal(principalId: string): Promise<PrincipalProjection | null> {
@@ -405,7 +437,7 @@ export class ProfileService {
       });
     return {
       mimeType: "image/svg+xml",
-      svg: renderAvatarFallbackSvg({
+      svg: await renderAvatarFallbackSvg({
         principalId: principal.principalId,
         nickname: metadata.nickname,
         displayName: metadata.displayName,

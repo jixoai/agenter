@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { AppKernel } from "../../../app-server/src";
 import { GLOBAL_WORKSPACE_PATH } from "../../../app-server/src/workspace-target";
+import { resetSkillsHomeSandbox } from "../../src/lib/testing/skills-home-sandbox";
 
 const [, , homeArg] = process.argv;
 
@@ -11,9 +12,7 @@ if (!homeArg) {
   throw new Error("usage: bun run ./tests/e2e/setup-skills-home.ts <home-dir>");
 }
 
-const homeDir = resolve(homeArg);
-const playgroundRoot = resolve(homeDir, "..");
-const workspacePath = join(playgroundRoot, "workspaces", "skills-lab");
+const { homeDir, workspacePath } = resetSkillsHomeSandbox(homeArg);
 const globalSessionRoot = join(homeDir, ".agenter", "sessions");
 const archiveSessionRoot = join(homeDir, ".agenter", "archive", "sessions");
 const workspacesPath = join(homeDir, ".agenter", "workspaces.yaml");
@@ -58,9 +57,6 @@ ET`;
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
   return Buffer.from(pdf, "utf8");
 };
-
-rmSync(playgroundRoot, { recursive: true, force: true });
-mkdirSync(workspacePath, { recursive: true });
 
 const kernel = new AppKernel({
   globalSessionRoot,

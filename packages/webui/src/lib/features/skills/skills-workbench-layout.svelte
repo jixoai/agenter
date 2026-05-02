@@ -1,13 +1,13 @@
 <script lang="ts">
-	import BotIcon from '@lucide/svelte/icons/bot';
-	import SparklesIcon from '@lucide/svelte/icons/sparkles';
-	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
-	import type { Snippet } from 'svelte';
+import SparklesIcon from '@lucide/svelte/icons/sparkles';
+import { goto } from '$app/navigation';
+import { page } from '$app/state';
+import type { Snippet } from 'svelte';
 
-	import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
-	import WorkbenchWindow from '$lib/features/navigation/workbench-window.svelte';
-	import { resolveAdjacentWorkbenchTab } from '$lib/features/navigation/workbench-tab-state';
+import { getAppControllerContext } from '$lib/app/controller-context';
+import type { WorkbenchTabItem } from '$lib/features/navigation/workbench-tab-strip.svelte';
+import WorkbenchWindow from '$lib/features/navigation/workbench-window.svelte';
+import { resolveAdjacentWorkbenchTab } from '$lib/features/navigation/workbench-tab-state';
 	import {
 		readSkillAvatarTabs,
 		removeSkillAvatarTab,
@@ -26,7 +26,12 @@
 		children?: Snippet;
 	} = $props();
 
+	const controller = getAppControllerContext();
 	let skillAvatarTabs = $state(readSkillAvatarTabs());
+	let avatarCatalog = $state<
+		Awaited<ReturnType<ReturnType<typeof getAppControllerContext>['runtimeStore']['listSkillAvatarCatalog']>>['items']
+	>([]);
+	let avatarCatalogLoaded = $state(false);
 
 	const activeAvatarNickname = $derived.by(() => {
 		const match = /^\/skills\/avatar\/([^/]+)$/u.exec(page.url.pathname);
@@ -57,10 +62,27 @@
 	});
 
 	$effect(() => {
+		if (avatarCatalogLoaded) {
+			return;
+		}
+		avatarCatalogLoaded = true;
+		void controller.runtimeStore
+			.listSkillAvatarCatalog()
+			.then((output) => {
+				avatarCatalog = output.items;
+			})
+			.catch(() => {
+				avatarCatalog = [];
+			});
+	});
+
+	$effect(() => {
 		if (!activeAvatarNickname) {
 			return;
 		}
-		skillAvatarTabs = upsertSkillAvatarTab(skillAvatarTabs, activeAvatarNickname).entries;
+		skillAvatarTabs = upsertSkillAvatarTab(skillAvatarTabs, {
+			avatarNickname: activeAvatarNickname,
+		}).entries;
 	});
 
 	const copyToClipboard = async (value: string): Promise<void> => {
@@ -95,12 +117,15 @@
 			},
 		] satisfies WorkbenchTabItem[];
 
-		const avatarTabs = skillAvatarTabs.map((tab) => ({
+		const avatarTabs = skillAvatarTabs.map((tab) => {
+			const avatar = avatarCatalog.find((entry) => entry.nickname === tab.avatarNickname) ?? null;
+			return {
 			id: tab.id,
 			href: tab.href,
-			label: tab.avatarNickname,
-			icon: BotIcon,
-			title: `${tab.avatarNickname} skills`,
+			label: avatar?.displayName ?? tab.avatarNickname,
+			avatarLabel: avatar?.displayName ?? tab.avatarNickname,
+			avatarUrl: avatar?.iconUrl ?? null,
+			title: `${avatar?.displayName ?? tab.avatarNickname} skills`,
 			description: 'Workspace-grouped avatar skill browser.',
 			closable: true,
 			onClose: () => void closeSkillAvatarTab(tab.id),
@@ -117,7 +142,8 @@
 					onSelect: () => void closeSkillAvatarTab(tab.id),
 				},
 			],
-		})) satisfies WorkbenchTabItem[];
+			};
+		}) satisfies WorkbenchTabItem[];
 
 		return [...fixedTabs, ...avatarTabs];
 	});

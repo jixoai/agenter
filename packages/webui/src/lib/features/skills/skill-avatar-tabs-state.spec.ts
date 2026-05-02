@@ -9,22 +9,49 @@ import {
 
 describe('Feature: Skills avatar tab presence', () => {
 	test('Scenario: Given one avatar skill tab is revisited When upserting it again Then the workbench keeps one durable avatar tab entry', () => {
-		const current: SkillAvatarTabEntry[] = [createSkillAvatarTabEntry('default')];
+		const current: SkillAvatarTabEntry[] = [
+			createSkillAvatarTabEntry({
+				avatarNickname: 'default',
+			}),
+		];
 
-		const next = upsertSkillAvatarTab(current, 'default');
+		const next = upsertSkillAvatarTab(current, {
+			avatarNickname: 'default',
+		});
 
-		expect(next.entry).toEqual(createSkillAvatarTabEntry('default'));
-		expect(next.entries).toEqual([createSkillAvatarTabEntry('default')]);
+		expect(next.entry).toEqual(
+			createSkillAvatarTabEntry({
+				avatarNickname: 'default',
+			}),
+		);
+		expect(next.entries).toEqual([
+			createSkillAvatarTabEntry({
+				avatarNickname: 'default',
+			}),
+		]);
 	});
 
 	test('Scenario: Given multiple avatar skill tabs When closing one avatar tab Then the remaining browser-style avatar tabs stay intact', () => {
 		const current: SkillAvatarTabEntry[] = [
-			createSkillAvatarTabEntry('default'),
-			createSkillAvatarTabEntry('reviewer'),
+			createSkillAvatarTabEntry({
+				avatarNickname: 'default',
+			}),
+			createSkillAvatarTabEntry({
+				avatarNickname: 'reviewer',
+			}),
 		];
 
-		expect(removeSkillAvatarTab(current, createSkillAvatarTabEntry('default').id)).toEqual([
-			createSkillAvatarTabEntry('reviewer'),
+		expect(
+			removeSkillAvatarTab(
+				current,
+				createSkillAvatarTabEntry({
+					avatarNickname: 'default',
+				}).id,
+			),
+		).toEqual([
+			createSkillAvatarTabEntry({
+				avatarNickname: 'reviewer',
+			}),
 		]);
 	});
 });

@@ -11,10 +11,12 @@ export {
 export { AVATAR_CLASSIFY_VALUES } from "./types";
 export { resolveAuthServiceDataDir } from "./config";
 export {
+  canonicalizeAvatarPrincipalMetadata,
   formatAvatarDisplayName,
   normalizeAvatarClassify,
   normalizeAvatarPrincipalMetadata,
   readAvatarPrincipalMetadata,
+  resolveBuiltInAvatarProfile,
   resolveAvatarOwnerKey,
 } from "./avatar-metadata";
 export {

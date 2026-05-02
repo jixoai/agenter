@@ -1,8 +1,7 @@
 <script lang="ts">
-	import BotIcon from '@lucide/svelte/icons/bot';
-	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import { ScrollView } from '@agenter/svelte-components';
+import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
+import PlusIcon from '@lucide/svelte/icons/plus';
+import { ScrollView } from '@agenter/svelte-components';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
@@ -87,7 +86,11 @@
 				<div class="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-3.5 md:px-5">
 					<div class="grid gap-1">
 						<div class="flex items-center gap-2">
-							<BotIcon class="size-4 text-muted-foreground" />
+							<ProfileAvatar
+								label={selectedEntry?.displayName ?? selectedEntry?.nickname ?? 'Avatar'}
+								src={selectedEntry?.iconUrl ?? null}
+								class="size-6 rounded-md border-border/65 bg-background/70"
+							/>
 							<h2 class="text-sm font-semibold">Avatar skills</h2>
 						</div>
 						<p class="max-w-3xl text-sm leading-6 text-muted-foreground">

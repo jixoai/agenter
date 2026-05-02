@@ -11,7 +11,7 @@
 	const previewStorageKey = $derived(
 		`agenter:file-previewer:${preview.previewKind}:${preview.path}:${preview.modifiedAtMs}:${preview.sizeBytes}`,
 	);
-	const previewFrameSrc = $derived(`/filePreviewer.html?previewKey=${encodeURIComponent(previewStorageKey)}`);
+	const previewFrameSrc = $derived(`/file-previewer?previewKey=${encodeURIComponent(previewStorageKey)}`);
 	let previousPreviewStorageKey = $state<string | null>(null);
 	let iframeRef = $state<HTMLIFrameElement | null>(null);
 
@@ -67,5 +67,18 @@
 	bind:this={iframeRef}
 	title={`${preview.name} preview`}
 	src={previewFrameSrc}
-	class="h-full min-h-[24rem] w-full rounded-xl border border-border/60 bg-background"
+	class="skill-preview-frame"
 ></iframe>
+
+<style>
+	.skill-preview-frame {
+		display: block;
+		block-size: 100%;
+		inline-size: 100%;
+		min-block-size: 0;
+		min-inline-size: 0;
+		border: 1px solid color-mix(in srgb, var(--border), transparent 18%);
+		border-radius: 0.95rem;
+		background: var(--background);
+	}
+</style>

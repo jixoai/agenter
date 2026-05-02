@@ -14,8 +14,10 @@ const normalizeAvatarNickname = (value: string): string => value.trim();
 export const createSkillAvatarTabId = (avatarNickname: string): string =>
 	`skill-avatar:${normalizeAvatarNickname(avatarNickname)}`;
 
-export const createSkillAvatarTabEntry = (avatarNickname: string): SkillAvatarTabEntry => {
-	const normalizedAvatarNickname = normalizeAvatarNickname(avatarNickname);
+export const createSkillAvatarTabEntry = (input: {
+	avatarNickname: string;
+}): SkillAvatarTabEntry => {
+	const normalizedAvatarNickname = normalizeAvatarNickname(input.avatarNickname);
 	return {
 		id: createSkillAvatarTabId(normalizedAvatarNickname),
 		avatarNickname: normalizedAvatarNickname,
@@ -32,7 +34,9 @@ const normalizeSkillAvatarTabs = (entries: readonly SkillAvatarTabEntry[]): Skil
 		if (avatarNickname.length === 0) {
 			continue;
 		}
-		const normalizedEntry = createSkillAvatarTabEntry(avatarNickname);
+		const normalizedEntry = createSkillAvatarTabEntry({
+			avatarNickname,
+		});
 		if (seenIds.has(normalizedEntry.id)) {
 			continue;
 		}
@@ -70,10 +74,12 @@ export const readSkillAvatarTabs = (): SkillAvatarTabEntry[] => {
 		}
 		return normalizeSkillAvatarTabs(
 			parsed.entries
-				.filter(
-					(entry): entry is { avatarNickname: string } => typeof entry?.avatarNickname === 'string',
-				)
-				.map((entry) => createSkillAvatarTabEntry(entry.avatarNickname)),
+				.filter((entry): entry is { avatarNickname: string } => typeof entry?.avatarNickname === 'string')
+				.map((entry) =>
+					createSkillAvatarTabEntry({
+						avatarNickname: entry.avatarNickname,
+					}),
+				),
 		);
 	} catch {
 		return [];
@@ -103,10 +109,12 @@ export const writeSkillAvatarTabs = (entries: readonly SkillAvatarTabEntry[]): v
 
 export const upsertSkillAvatarTab = (
 	currentEntries: SkillAvatarTabEntry[],
-	avatarNickname: string,
+	input: {
+		avatarNickname: string;
+	},
 ): { entries: SkillAvatarTabEntry[]; entry: SkillAvatarTabEntry } => {
 	const normalizedCurrent = normalizeSkillAvatarTabs(currentEntries);
-	const entry = createSkillAvatarTabEntry(avatarNickname);
+	const entry = createSkillAvatarTabEntry(input);
 	const existing = normalizedCurrent.find((currentEntry) => currentEntry.id === entry.id);
 	if (existing) {
 		if (sameTabIds(currentEntries, normalizedCurrent)) {

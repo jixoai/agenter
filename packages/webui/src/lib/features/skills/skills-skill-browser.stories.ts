@@ -84,6 +84,7 @@ export const CompactSelectionKeepsPreviewReachable = {
 		await waitFor(() => {
 			const previewFrame = document.querySelector<HTMLIFrameElement>('iframe[title="SKILL.md preview"]');
 			expect(previewFrame).toBeTruthy();
+			expect(previewFrame?.className).toContain('skill-preview-frame');
 		});
 	},
 } satisfies Story;

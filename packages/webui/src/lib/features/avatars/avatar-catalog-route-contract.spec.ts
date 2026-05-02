@@ -54,6 +54,8 @@ describe("Feature: Avatar catalog shared list-detail contract", () => {
     expect(avatarCatalogRouteSource).toContain(
       "{catalogCountLabel}. Select one installed avatar to inspect its runtime identity and operational handoffs.",
     );
+    expect(avatarCatalogRouteSource).toContain("src={entry.iconUrl ?? null}");
+    expect(avatarCatalogRouteSource).toContain("src={selectedEntry.iconUrl ?? null}");
     expect(avatarCatalogRouteSource).toContain('<ScrollView class="h-full" contentClass="divide-y divide-border/50">');
     expect(avatarCatalogRouteSource).toContain("aria-pressed={isSelected}");
     expect(avatarCatalogRouteSource).toContain("bg-accent/45");

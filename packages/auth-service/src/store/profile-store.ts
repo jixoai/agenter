@@ -11,14 +11,15 @@ import type {
   IconAssetRecord,
   IconOwnerKind,
   ListManagedPrincipalsInput,
-  ManagedPrincipalRecord,
-  ProfileIdentifier,
-  ProfileMetadata,
-  ProfileProjection,
-  PrincipalProjection,
-  WebAuthnCredentialRecord,
-  WebAuthnFlowKind,
-  WebAuthnTicketRecord,
+	ManagedPrincipalRecord,
+	ProfileIdentifier,
+	ProfileMetadata,
+	ProfileProjection,
+	PrincipalProjection,
+	UpdateManagedPrincipalMetadataInput,
+	WebAuthnCredentialRecord,
+	WebAuthnFlowKind,
+	WebAuthnTicketRecord,
 } from "../types";
 import { isDurableIdentifierKind, normalizeIdentifier, toIdentifierKey } from "../identifiers";
 import { buildProfileIconUrl } from "../render/fallback-icons";
@@ -707,6 +708,22 @@ export class ProfileStore {
       throw new Error(`failed to read managed principal: ${principal.principalId}`);
     }
     return created;
+  }
+
+  async updateManagedPrincipalMetadata(input: UpdateManagedPrincipalMetadataInput): Promise<ManagedPrincipalRecord | null> {
+    const timestamp = nowIso();
+    this.run(
+      `update principal_registry
+       set metadata_json = $metadataJson,
+           updated_at = $updatedAt
+       where principal_id = $principalId`,
+      {
+        principalId: normalizePrincipalId(input.principalId),
+        metadataJson: JSON.stringify(input.metadata),
+        updatedAt: timestamp,
+      },
+    );
+    return await this.getManagedPrincipal(input.principalId);
   }
 
   async getPrincipal(principalId: string): Promise<PrincipalProjection | null> {

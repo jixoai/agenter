@@ -370,7 +370,7 @@
 
 	<section class="grid gap-4 rounded-[1rem] border border-border/60 bg-background/45 p-4 md:grid-cols-[auto_minmax(0,1fr)] md:items-start md:p-5">
 		{#if selectedSource}
-			<ProfileAvatar label={selectedSource.nickname} class="size-14 rounded-2xl" />
+			<ProfileAvatar label={selectedSource.nickname} src={selectedSource.iconUrl ?? null} class="size-14 rounded-2xl" />
 		{:else}
 			<div class="size-14 rounded-2xl border border-dashed"></div>
 		{/if}

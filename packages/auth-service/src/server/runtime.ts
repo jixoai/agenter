@@ -65,6 +65,7 @@ export const createAuthServiceRuntime = async (options: AuthServiceOptions = {})
       onEmailChallengeIssued: options.onEmailChallengeIssued ?? defaultEmailChallengeLogger,
     },
   );
+  await service.reconcileBuiltInAvatarMetadata();
   const app = createAuthServiceApp({
     service,
     publicBaseUrl: config.publicBaseUrl,

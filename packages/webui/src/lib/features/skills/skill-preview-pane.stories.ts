@@ -37,7 +37,7 @@ export const TextPreviewUsesFilePreviewer = {
 		await waitFor(() => {
 			const previewFrame = document.querySelector<HTMLIFrameElement>('iframe[title="SKILL.md preview"]');
 			expect(previewFrame).toBeTruthy();
-			expect(previewFrame?.getAttribute('src')).toContain('/filePreviewer.html?previewKey=');
+			expect(previewFrame?.getAttribute('src')).toContain('/file-previewer?previewKey=');
 		});
 	},
 } satisfies Story;

@@ -5,11 +5,11 @@
 	import MusicIcon from '@lucide/svelte/icons/music';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import VideoIcon from '@lucide/svelte/icons/video';
+	import { ScrollView } from '@agenter/svelte-components';
 	import { onMount } from 'svelte';
 	import * as pdfjs from 'pdfjs-dist/build/pdf.mjs';
 
 	import type { SkillPreviewRecord } from '$lib/features/skills/skill-browser-state';
-	import { formatSkillSize } from '$lib/features/skills/skill-browser-state';
 	import SkillTextViewer from '$lib/features/skills/skill-text-viewer.svelte';
 
 	pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString();
@@ -25,7 +25,7 @@
 		return bytes;
 	};
 
-	const resolveIcon = (previewKind: SkillPreviewRecord['previewKind']) => {
+	const resolveEmptyIcon = (previewKind: SkillPreviewRecord['previewKind']) => {
 		if (previewKind === 'image' || previewKind === 'pdf') {
 			return ImageIcon;
 		}
@@ -144,30 +144,20 @@
 			<span>Waiting for preview payload…</span>
 		</div>
 	{:else}
-		{@const PreviewIcon = resolveIcon(preview.previewKind)}
-		<header class="file-previewer__header">
-			<div class="file-previewer__identity">
-				<PreviewIcon class="size-4 text-muted-foreground" />
-				<div class="grid min-w-0 gap-0.5">
-					<div class="truncate text-sm font-semibold">{preview.name}</div>
-					<div class="truncate text-xs text-muted-foreground">{preview.path}</div>
-				</div>
-			</div>
-			<div class="file-previewer__meta">
-				<span>{preview.previewKind}</span>
-				<span>{formatSkillSize(preview.sizeBytes)}</span>
-			</div>
-		</header>
-
-		<div class="file-previewer__body">
+		<ScrollView
+			class="file-previewer__body"
+			contentClass="file-previewer__body-content"
+			viewportClass="file-previewer__body-viewport"
+		>
 			{#if preview.previewKind === 'text'}
 				<div class="file-previewer__text-shell">
 					<SkillTextViewer text={preview.textContent ?? ''} path={preview.path} mimeType={preview.mimeType} />
 				</div>
 			{:else if preview.previewKind === 'image'}
 				{#if !preview.mediaDataUrl}
+					{@const PreviewIcon = resolveEmptyIcon(preview.previewKind)}
 					<div class="file-previewer__empty">
-						<TriangleAlertIcon class="size-5" />
+						<PreviewIcon class="size-5" />
 						<span>{preview.note ?? 'No media payload was available for this preview.'}</span>
 					</div>
 				{:else}
@@ -175,8 +165,9 @@
 				{/if}
 			{:else if preview.previewKind === 'audio'}
 				{#if !preview.mediaDataUrl}
+					{@const PreviewIcon = resolveEmptyIcon(preview.previewKind)}
 					<div class="file-previewer__empty">
-						<TriangleAlertIcon class="size-5" />
+						<PreviewIcon class="size-5" />
 						<span>{preview.note ?? 'No media payload was available for this preview.'}</span>
 					</div>
 				{:else}
@@ -186,8 +177,9 @@
 				{/if}
 			{:else if preview.previewKind === 'video'}
 				{#if !preview.mediaDataUrl}
+					{@const PreviewIcon = resolveEmptyIcon(preview.previewKind)}
 					<div class="file-previewer__empty">
-						<TriangleAlertIcon class="size-5" />
+						<PreviewIcon class="size-5" />
 						<span>{preview.note ?? 'No media payload was available for this preview.'}</span>
 					</div>
 				{:else}
@@ -197,8 +189,9 @@
 				{/if}
 			{:else if preview.previewKind === 'pdf'}
 				{#if !preview.mediaDataUrl}
+					{@const PreviewIcon = resolveEmptyIcon(preview.previewKind)}
 					<div class="file-previewer__empty">
-						<TriangleAlertIcon class="size-5" />
+						<PreviewIcon class="size-5" />
 						<span>{preview.note ?? 'No media payload was available for this preview.'}</span>
 					</div>
 				{:else}
@@ -229,63 +222,44 @@
 					<span>{preview.note ?? 'Unsupported preview type.'}</span>
 				</div>
 			{/if}
-		</div>
+		</ScrollView>
 	{/if}
 </div>
 
 <style>
 	.file-previewer {
-		display: grid;
 		block-size: 100dvh;
-		grid-template-rows: auto minmax(0, 1fr);
 		background:
 			radial-gradient(circle at top, color-mix(in srgb, var(--accent), white 72%) 0%, transparent 46%),
 			linear-gradient(180deg, color-mix(in srgb, var(--background), white 4%) 0%, var(--background) 100%);
 		color: var(--foreground);
 	}
 
-	.file-previewer__header {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-		border-bottom: 1px solid color-mix(in srgb, var(--border), transparent 18%);
-		padding: 0.875rem 1rem;
-		background: color-mix(in srgb, var(--card), transparent 8%);
-	}
-
-	.file-previewer__identity {
-		display: flex;
-		min-inline-size: 0;
-		align-items: center;
-		gap: 0.625rem;
-	}
-
-	.file-previewer__meta {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		font-size: 0.75rem;
-		color: var(--muted-foreground);
-	}
-
-	.file-previewer__body,
+	:global(.file-previewer__body),
 	.file-previewer__pdf-shell,
 	.file-previewer__text-shell {
 		min-block-size: 0;
 		min-inline-size: 0;
 	}
 
-	.file-previewer__body {
+	:global(.file-previewer__body) {
+		block-size: 100%;
+	}
+
+	:global(.file-previewer__body-content) {
 		display: grid;
+		align-content: start;
+		min-block-size: 100%;
 		padding: 1rem;
-		overflow: auto;
+	}
+
+	:global(.file-previewer__body-viewport) {
+		scrollbar-width: thin;
 	}
 
 	.file-previewer__text-shell {
-		min-block-size: 100%;
-		overflow: hidden;
+		min-block-size: calc(100dvh - 2rem);
+		overflow: visible;
 		border: 1px solid color-mix(in srgb, var(--border), transparent 18%);
 		border-radius: 1rem;
 		padding: 0 0.875rem;
@@ -307,6 +281,7 @@
 	.file-previewer__video {
 		display: block;
 		max-inline-size: 100%;
+		max-block-size: calc(100dvh - 4rem);
 		margin-inline: auto;
 		border-radius: 1rem;
 		background: color-mix(in srgb, var(--card), transparent 4%);

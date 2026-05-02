@@ -21,6 +21,7 @@
 		basenameWorkspace,
 		buildRuntimeTabs,
 		normalizeRuntimeTab,
+		resolveAvatarSessionIdentity,
 		resolveRuntimeStatusLabel,
 	} from './runtime-shell-state';
 
@@ -76,7 +77,16 @@
 	const latestCycle = $derived(cycles[cycles.length - 1] ?? activeCycle ?? null);
 	const tabs = $derived(buildRuntimeTabs({ activeCycle, latestCycle }));
 	const workspaceLabel = $derived(session ? basenameWorkspace(session.workspacePath) : 'Unknown workspace');
-	const sessionIconUrl = $derived(session ? controller.runtimeStore.sessionIconUrl(session.id) : null);
+	const sessionIconUrl = $derived.by(() => {
+		if (!session) {
+			return null;
+		}
+		return resolveAvatarSessionIdentity(session, {
+			resolveAvatarIconUrl: (principalId) => controller.runtimeStore.avatarIconUrl(principalId),
+			resolveAvatarCatalogEntry: (avatarNickname) =>
+				controller.runtimeState.globalAvatarCatalog.data.find((entry) => entry.nickname === avatarNickname) ?? null,
+		}).iconUrl;
+	});
 	const unreadCount = $derived(controller.runtimeState.unreadBySession[sessionId] ?? 0);
 	const isRunning = $derived(session?.status === 'running' || session?.status === 'starting');
 	const runtimeRouteNotice = $derived.by(() => {

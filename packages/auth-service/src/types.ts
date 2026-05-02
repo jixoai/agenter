@@ -47,6 +47,11 @@ export interface ListManagedPrincipalsInput {
   ownerKey?: string;
 }
 
+export interface UpdateManagedPrincipalMetadataInput {
+  principalId: PrincipalId;
+  metadata: Record<string, unknown>;
+}
+
 export interface AvatarPrincipalMetadata {
   nickname: string;
   displayName: string | null;

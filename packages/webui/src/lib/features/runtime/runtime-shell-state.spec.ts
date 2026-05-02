@@ -10,12 +10,14 @@ const createSessionEntry = (input: {
   createdAt: string;
   status: SessionEntry["status"];
   workspacePath: string;
+  avatarPrincipalId?: string;
 }): SessionEntry => ({
   id: input.id,
   name: input.name ?? input.avatar,
   cwd: input.workspacePath,
   workspacePath: input.workspacePath,
   avatar: input.avatar,
+  avatarPrincipalId: input.avatarPrincipalId,
   createdAt: input.createdAt,
   updatedAt: input.createdAt,
   status: input.status,
@@ -124,13 +126,13 @@ describe("Feature: Avatar submenu navigation order", () => {
       activeSessionId: "session-alpha",
       pinnedSessionIds: [],
       openedSessionIds: [],
-      resolveSessionIconUrl: () => null,
+      resolveAvatarIconUrl: () => null,
     });
     const betaActive = buildAvatarSessionRailItems(state, {
       activeSessionId: "session-beta",
       pinnedSessionIds: [],
       openedSessionIds: [],
-      resolveSessionIconUrl: () => null,
+      resolveAvatarIconUrl: () => null,
     });
 
     expect(alphaActive.map((item) => item.sessionId)).toEqual(["session-zebra", "session-alpha", "session-beta"]);
@@ -175,7 +177,7 @@ describe("Feature: Avatar submenu navigation order", () => {
       activeSessionId: "session-alpha",
       pinnedSessionIds: ["session-alpha"],
       openedSessionIds: [],
-      resolveSessionIconUrl: () => null,
+      resolveAvatarIconUrl: () => null,
     });
 
     expect(items.map((item) => item.sessionId)).toEqual(["session-zebra", "session-alpha", "session-beta"]);
@@ -212,11 +214,87 @@ describe("Feature: Avatar submenu navigation order", () => {
       activeSessionId: "session-helper",
       openedSessionIds: ["session-helper"],
       pinnedSessionIds: [],
-      resolveSessionIconUrl: () => null,
+      resolveAvatarIconUrl: () => null,
     });
 
     expect(items.map((item) => item.sessionId)).toEqual(["session-zebra", "session-helper"]);
     expect(items.map((item) => item.active)).toEqual([false, true]);
     expect(items[1]?.status).toBe("stopped");
+  });
+
+  test("Scenario: Given a runtime session is missing avatarPrincipalId When the global avatar catalog still knows that avatar Then the sidebar keeps the avatar principal icon instead of falling back to initials", () => {
+    const state = createRuntimeState(
+      [
+        createSessionEntry({
+          id: "session-backend",
+          avatar: "backend",
+          createdAt: "2026-04-04T00:00:00.000Z",
+          status: "running",
+          workspacePath: "/repo/backend",
+        }),
+      ],
+      {
+        "session-backend": 0,
+      },
+    );
+
+    const items = buildAvatarSessionRailItems(state, {
+      activeSessionId: "session-backend",
+      openedSessionIds: [],
+      pinnedSessionIds: [],
+      resolveAvatarIconUrl: (principalId) => `https://profiles.test/media/avatars/${principalId}/icon`,
+      resolveAvatarCatalogEntry: (avatarNickname) =>
+        avatarNickname === "backend"
+          ? {
+              avatarPrincipalId: "avatar-backend",
+              iconUrl: "https://profiles.test/media/avatars/avatar-backend/icon",
+            }
+          : null,
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      sessionId: "session-backend",
+      avatarPrincipalId: "avatar-backend",
+      iconUrl: "https://profiles.test/media/avatars/avatar-backend/icon",
+    });
+  });
+
+  test("Scenario: Given session avatarPrincipalId diverges from the canonical avatar catalog When building avatar identity surfaces Then the catalog-backed avatar icon wins", () => {
+    const state = createRuntimeState(
+      [
+        createSessionEntry({
+          id: "session-backend",
+          avatar: "backend",
+          avatarPrincipalId: "session-actor-backend",
+          createdAt: "2026-04-04T00:00:00.000Z",
+          status: "running",
+          workspacePath: "/repo/backend",
+        }),
+      ],
+      {
+        "session-backend": 0,
+      },
+    );
+
+    const items = buildAvatarSessionRailItems(state, {
+      activeSessionId: "session-backend",
+      openedSessionIds: [],
+      pinnedSessionIds: [],
+      resolveAvatarIconUrl: (principalId) => `https://profiles.test/media/avatars/${principalId}/icon`,
+      resolveAvatarCatalogEntry: (avatarNickname) =>
+        avatarNickname === "backend"
+          ? {
+              avatarPrincipalId: "canonical-backend",
+              iconUrl: "https://profiles.test/media/avatars/canonical-backend/icon",
+            }
+          : null,
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      avatarPrincipalId: "canonical-backend",
+      iconUrl: "https://profiles.test/media/avatars/canonical-backend/icon",
+    });
   });
 });

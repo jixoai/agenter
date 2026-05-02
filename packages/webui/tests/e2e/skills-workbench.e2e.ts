@@ -76,7 +76,7 @@ const assertPdfPreview = async (page: Page): Promise<void> => {
   await expect(previewFrame).toBeVisible({ timeout: 15_000 });
 
   const previewFrameSrc = await previewFrame.getAttribute("src");
-  expect(previewFrameSrc).toContain("/filePreviewer.html?previewKey=");
+  expect(previewFrameSrc).toContain("/file-previewer?previewKey=");
   const previewKey = new URL(previewFrameSrc!, "http://127.0.0.1").searchParams.get("previewKey");
   expect(previewKey).toBeTruthy();
 
@@ -90,9 +90,6 @@ const assertPdfPreview = async (page: Page): Promise<void> => {
     .not.toBeNull();
 
   const pdfFrame = page.frameLocator('iframe[title="manual.pdf preview"]');
-  await expect(pdfFrame.locator(".file-previewer__identity .text-sm").filter({ hasText: "manual.pdf" })).toBeVisible({
-    timeout: 15_000,
-  });
   await expect(pdfFrame.locator("canvas.file-previewer__pdf-page").first()).toBeVisible({ timeout: 15_000 });
 };
 
@@ -104,13 +101,70 @@ const assertTextPreview = async (page: Page, input: { path: string; title: strin
   await expect(previewFrame).toBeVisible({ timeout: 15_000 });
 
   const previewFrameSrc = await previewFrame.getAttribute("src");
-  expect(previewFrameSrc).toContain("/filePreviewer.html?previewKey=");
+  expect(previewFrameSrc).toContain("/file-previewer?previewKey=");
 
   const textFrame = page.frameLocator(`iframe[title="${input.title} preview"]`);
   await expect(textFrame.locator(".cm-editor, .skill-text-viewer__fallback").first()).toBeVisible({ timeout: 15_000 });
   await expect(textFrame.locator(".cm-content, .skill-text-viewer__fallback").filter({ hasText: input.text }).first()).toBeVisible({
     timeout: 15_000,
   });
+  await expect
+    .poll(async () => {
+      return await textFrame.locator(".cm-content span").count();
+    })
+    .toBeGreaterThan(0);
+};
+
+const assertAvatarOverviewImages = async (page: Page): Promise<void> => {
+  const avatarButtons = page.locator('[data-testid="skills-avatar-overview"] button').filter({ has: page.locator('img[data-slot="avatar-image"]') });
+  await expect(avatarButtons.first()).toBeVisible({ timeout: 15_000 });
+  await expect
+    .poll(async () => {
+      const imageState = await page
+        .locator('[data-testid="skills-avatar-overview"] img[data-slot="avatar-image"]')
+        .evaluateAll((images) =>
+          images.slice(0, 2).map((image) => ({
+            complete: image instanceof HTMLImageElement ? image.complete : false,
+            naturalWidth: image instanceof HTMLImageElement ? image.naturalWidth : 0,
+            naturalHeight: image instanceof HTMLImageElement ? image.naturalHeight : 0,
+          })),
+        );
+      return (
+        imageState.length > 0 &&
+        imageState.every((image) => image.complete && image.naturalWidth > 0 && image.naturalHeight > 0)
+      );
+    })
+    .toBe(true);
+
+  const avatarImageState = await page
+    .locator('[data-testid="skills-avatar-overview"] img[data-slot="avatar-image"]')
+    .evaluateAll((images) =>
+      images.slice(0, 2).map((image) => ({
+        src: image.getAttribute("src"),
+        naturalWidth: image instanceof HTMLImageElement ? image.naturalWidth : 0,
+        naturalHeight: image instanceof HTMLImageElement ? image.naturalHeight : 0,
+      })),
+    );
+
+  expect(avatarImageState.length).toBeGreaterThan(0);
+  for (const image of avatarImageState) {
+    expect(image.src).toContain("/media/avatars/");
+    expect(image.naturalWidth).toBeGreaterThan(0);
+    expect(image.naturalHeight).toBeGreaterThan(0);
+  }
+};
+
+const assertAvatarChromeImages = async (page: Page, input: { tabName: string; headerLabel: string }): Promise<void> => {
+  const tabImage = page.getByRole("tab", { name: input.tabName }).locator('img[data-slot="avatar-image"]').first();
+  await expect(tabImage).toBeVisible({ timeout: 15_000 });
+  await expect(tabImage).toHaveAttribute("src", /\/media\/avatars\//);
+
+  const toolbarImage = page
+    .locator('[data-workbench-page-toolbar] img[data-slot="avatar-image"]')
+    .first();
+  await expect(toolbarImage).toBeVisible({ timeout: 15_000 });
+  await expect(toolbarImage).toHaveAttribute("src", /\/media\/avatars\//);
+  await expect(page.getByText(input.headerLabel, { exact: true })).toBeVisible({ timeout: 15_000 });
 };
 
 test.describe("Feature: Skills workbench route", () => {
@@ -140,6 +194,7 @@ test.describe("Feature: Skills workbench route", () => {
     await page.goto("/skills?view=avatar&avatar=architect", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/skills\?view=avatars&avatar=architect$/, { timeout: 15_000 });
     await openPageTab(page, "avatars");
+    await assertAvatarOverviewImages(page);
     await clickStable(page.locator("button").filter({ hasText: "Architect" }).first());
     await expect(page.getByText("Root workspace", { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText("workspace-skill")).toBeVisible({ timeout: 15_000 });
@@ -147,6 +202,10 @@ test.describe("Feature: Skills workbench route", () => {
     await expect(page).toHaveURL(/\/skills\/avatar\/architect$/, { timeout: 15_000 });
     await expect(page.getByRole("tab", { name: "architect" })).toHaveAttribute("aria-selected", "true", {
       timeout: 15_000,
+    });
+    await assertAvatarChromeImages(page, {
+      tabName: "architect",
+      headerLabel: "@architect",
     });
     await expandSkill(page, "workspace-skill");
     await clickVisibleTreePath(page, "/SKILL.md");

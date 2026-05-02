@@ -215,7 +215,11 @@
 			selectAvatar(entry.nickname);
 		}}
 	>
-		<ProfileAvatar label={entry.nickname} class="size-9 rounded-xl border-border/65 bg-background/70" />
+		<ProfileAvatar
+			label={entry.nickname}
+			src={entry.iconUrl ?? null}
+			class="size-9 rounded-xl border-border/65 bg-background/70"
+		/>
 		<div class="grid min-w-0 gap-0.5">
 			<div class="truncate text-sm font-semibold">{entry.nickname}</div>
 			<div class="flex flex-wrap items-center gap-x-1.5 text-[11px] leading-4 text-muted-foreground">
@@ -323,6 +327,7 @@
 						<div class="flex items-start gap-3">
 							<ProfileAvatar
 								label={selectedEntry.nickname}
+								src={selectedEntry.iconUrl ?? null}
 								class="size-12 rounded-xl border-border/65 bg-background/70 md:size-14"
 							/>
 							<div class="grid min-w-0 gap-1">

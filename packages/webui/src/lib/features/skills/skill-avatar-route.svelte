@@ -1,10 +1,9 @@
 <script lang="ts">
-	import BotIcon from '@lucide/svelte/icons/bot';
-
-	import { getAppControllerContext } from '$lib/app/controller-context';
-	import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
-	import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
-	import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
+import { getAppControllerContext } from '$lib/app/controller-context';
+import ProfileAvatar from '$lib/components/profile-avatar.svelte';
+import NoticeBanner from '$lib/components/ui/notice-banner.svelte';
+import WorkbenchPageToolbar from '$lib/features/navigation/workbench-page-toolbar.svelte';
+import WorkbenchToolbar from '$lib/features/navigation/workbench-toolbar.svelte';
 	import WorkbenchToolbarStatus from '$lib/features/navigation/workbench-toolbar-status.svelte';
 	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 
@@ -56,11 +55,15 @@
 </script>
 
 {#snippet avatarToolbarIdentityLeading(_toolbarState: WorkbenchToolbarRenderState)}
-	<BotIcon class="size-4 text-muted-foreground" />
+	<ProfileAvatar
+		label={selectedEntry?.displayName ?? selectedEntry?.nickname ?? avatarNickname}
+		src={selectedEntry?.iconUrl ?? null}
+		class="size-6 rounded-md border-border/65 bg-background/70"
+	/>
 {/snippet}
 
 {#snippet avatarToolbarIdentityTitle(_toolbarState: WorkbenchToolbarRenderState)}
-	<span class="truncate">@{avatarNickname}</span>
+	<span class="truncate">@{selectedEntry?.nickname ?? avatarNickname}</span>
 {/snippet}
 
 {#snippet avatarToolbarIdentitySubtitle(_toolbarState: WorkbenchToolbarRenderState)}

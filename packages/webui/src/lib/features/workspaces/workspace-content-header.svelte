@@ -15,6 +15,7 @@
 	interface AvatarOption {
 		nickname: string;
 		runtimeId: string;
+		iconUrl?: string | null;
 	}
 
 	let {
@@ -85,6 +86,7 @@
 				<div class="flex min-w-0 items-center gap-2">
 					<ProfileAvatar
 						label={selectedAvatarEntry?.nickname ?? selectedAvatar}
+						src={selectedAvatarEntry?.iconUrl ?? null}
 						class="size-7 rounded-[0.72rem] border-0 bg-foreground text-background md:size-8 md:rounded-[0.82rem]"
 					/>
 					<div class="grid min-w-0 text-left leading-tight">

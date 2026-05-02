@@ -404,6 +404,7 @@
 					return {
 						nickname: entry.nickname,
 						runtimeId: entry.runtimeId,
+						iconUrl: entry.iconUrl ?? null,
 						mountKind: mount?.kind ?? null,
 						grantCount: grants.length,
 						accessSummary: describeWorkspaceMountAccess(mount, grants),

@@ -1,6 +1,11 @@
 import type { WorkbenchPageTabBadgeTone } from "$lib/features/navigation/workbench-page-tabs.types";
 import { describeCompactWorkspace } from "$lib/features/workspaces/workspace-sorting";
-import type { RuntimeChatCycle, RuntimeClientState, SessionEntry } from "@agenter/client-sdk";
+import type {
+  GlobalAvatarCatalogEntry,
+  RuntimeChatCycle,
+  RuntimeClientState,
+  SessionEntry,
+} from "@agenter/client-sdk";
 
 export type RuntimeTabId = "heartbeat" | "attention" | "settings";
 
@@ -13,6 +18,7 @@ export interface AvatarSessionRailItem {
   status: SessionEntry["status"] | null;
   unreadCount: number;
   iconUrl: string | null;
+  avatarPrincipalId: string | null;
   href: string;
   active: boolean;
   pinned: boolean;
@@ -120,13 +126,38 @@ export const buildRuntimeTabs = (input: {
   ];
 };
 
+export const resolveAvatarSessionIdentity = (
+  session: Pick<SessionEntry, "avatar" | "avatarPrincipalId">,
+  input: {
+    resolveAvatarIconUrl: (principalId: string) => string | null;
+    resolveAvatarCatalogEntry?: (
+      avatarNickname: string,
+    ) => Pick<GlobalAvatarCatalogEntry, "avatarPrincipalId" | "iconUrl"> | null;
+  },
+): { avatarPrincipalId: string | null; iconUrl: string | null } => {
+  const catalogEntry = input.resolveAvatarCatalogEntry?.(session.avatar) ?? null;
+  const avatarPrincipalId = catalogEntry?.avatarPrincipalId ?? session.avatarPrincipalId ?? null;
+  const directIconUrl = session.avatarPrincipalId ? input.resolveAvatarIconUrl(session.avatarPrincipalId) : null;
+  const catalogIconUrl =
+    catalogEntry?.iconUrl ??
+    (catalogEntry?.avatarPrincipalId ? input.resolveAvatarIconUrl(catalogEntry.avatarPrincipalId) : null);
+
+  return {
+    avatarPrincipalId,
+    iconUrl: catalogIconUrl ?? directIconUrl ?? null,
+  };
+};
+
 export const buildAvatarSessionRailItems = (
   state: RuntimeClientState,
   input: {
     activeSessionId: string | null;
     openedSessionIds?: readonly string[];
     pinnedSessionIds?: readonly string[];
-    resolveSessionIconUrl: (sessionId: string) => string | null;
+    resolveAvatarIconUrl: (principalId: string) => string | null;
+    resolveAvatarCatalogEntry?: (
+      avatarNickname: string,
+    ) => Pick<GlobalAvatarCatalogEntry, "avatarPrincipalId" | "iconUrl"> | null;
   },
 ): AvatarSessionRailItem[] => {
   const openedSessionIds = new Set((input.openedSessionIds ?? []).filter((sessionId) => sessionId.length > 0));
@@ -139,20 +170,24 @@ export const buildAvatarSessionRailItems = (
         openedSessionIds.has(session.id) ||
         pinnedSessionIds.has(session.id),
     )
-    .map((session) => ({
-      sessionId: session.id,
-      label: session.avatar || session.name,
-      workspacePath: session.workspacePath,
-      workspaceName: basenameWorkspace(session.workspacePath),
-      detail: `${basenameWorkspace(session.workspacePath)} · ${resolveRuntimeStatusLabel(session.status)}`,
-      status: session.status,
-      unreadCount: state.unreadBySession[session.id] ?? 0,
-      iconUrl: input.resolveSessionIconUrl(session.id),
-      href: `/avatars/runtime/${encodeURIComponent(session.id)}/heartbeat`,
-      active: input.activeSessionId === session.id,
-      pinned: pinnedSessionIds.has(session.id),
-      pinEnabled: true,
-    }));
+    .map((session) => {
+      const identity = resolveAvatarSessionIdentity(session, input);
+      return {
+        sessionId: session.id,
+        label: session.avatar || session.name,
+        workspacePath: session.workspacePath,
+        workspaceName: basenameWorkspace(session.workspacePath),
+        detail: `${basenameWorkspace(session.workspacePath)} · ${resolveRuntimeStatusLabel(session.status)}`,
+        status: session.status,
+        unreadCount: state.unreadBySession[session.id] ?? 0,
+        iconUrl: identity.iconUrl,
+        avatarPrincipalId: identity.avatarPrincipalId,
+        href: `/avatars/runtime/${encodeURIComponent(session.id)}/heartbeat`,
+        active: input.activeSessionId === session.id,
+        pinned: pinnedSessionIds.has(session.id),
+        pinEnabled: true,
+      };
+    });
 };
 
 export const buildRunningAvatarRailItems = buildAvatarSessionRailItems;

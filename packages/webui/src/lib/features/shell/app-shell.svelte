@@ -59,7 +59,9 @@
 			activeSessionId: activeAvatarSessionId,
 			openedSessionIds: openedAvatarSessionIds,
 			pinnedSessionIds: pinnedAvatarSessionIds,
-			resolveSessionIconUrl: (sessionId) => controller.runtimeStore.sessionIconUrl(sessionId),
+			resolveAvatarIconUrl: (principalId) => controller.runtimeStore.avatarIconUrl(principalId),
+			resolveAvatarCatalogEntry: (avatarNickname) =>
+				controller.runtimeState.globalAvatarCatalog.data.find((entry) => entry.nickname === avatarNickname) ?? null,
 		}),
 	);
 	const showAvatarSubmenu = $derived(avatarSubmenuItems.length > 0 || activeItem?.href === '/avatars');
@@ -103,6 +105,17 @@
 		return () => {
 			active = false;
 			unsubscribe();
+		};
+	});
+
+	$effect(() => {
+		if (!controller.authSession) {
+			return;
+		}
+		const release = controller.runtimeStore.retainGlobalAvatarCatalog();
+		void controller.runtimeStore.hydrateGlobalAvatarCatalog();
+		return () => {
+			release();
 		};
 	});
 

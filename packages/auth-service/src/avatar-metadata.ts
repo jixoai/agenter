@@ -3,6 +3,41 @@ import { normalizeAvatarNickname } from "@agenter/avatar";
 import { AVATAR_CLASSIFY_VALUES, type AvatarClassify, type AvatarPrincipalMetadata } from "./types";
 
 const avatarClassifySet = new Set<string>(AVATAR_CLASSIFY_VALUES);
+const builtInAvatarProfiles = {
+  default: {
+    classify: "assistant",
+    displayName: "Default",
+  },
+  assistant: {
+    classify: "assistant",
+    displayName: "Assistant",
+  },
+  backend: {
+    classify: "backend",
+    displayName: "Backend",
+  },
+  architect: {
+    classify: "frontend",
+    displayName: "Architect",
+  },
+  design: {
+    classify: "design",
+    displayName: "Design",
+  },
+  frontend: {
+    classify: "frontend",
+    displayName: "Frontend",
+  },
+  ops: {
+    classify: "ops",
+    displayName: "Ops",
+  },
+  reviewer: {
+    classify: "reviewer",
+    displayName: "Reviewer",
+  },
+} as const satisfies Record<string, { classify: AvatarClassify | null; displayName: string }>;
+type BuiltInAvatarNickname = keyof typeof builtInAvatarProfiles;
 
 const readTrimmedString = (value: unknown): string | null => {
   if (typeof value !== "string") {
@@ -32,6 +67,21 @@ export const formatAvatarDisplayName = (nickname: string): string => {
   return title.length > 0 ? title : "Default";
 };
 
+export const resolveBuiltInAvatarProfile = (
+  nickname: string,
+): { nickname: string; displayName: string; classify: AvatarClassify | null } | null => {
+  const normalized = normalizeAvatarNickname(nickname);
+  const profile = builtInAvatarProfiles[normalized as BuiltInAvatarNickname];
+  if (!profile) {
+    return null;
+  }
+  return {
+    nickname: normalized,
+    displayName: profile.displayName,
+    classify: profile.classify,
+  };
+};
+
 export const normalizeAvatarPrincipalMetadata = (input: {
   nickname: string;
   displayName?: unknown;
@@ -41,6 +91,23 @@ export const normalizeAvatarPrincipalMetadata = (input: {
     nickname: normalizeAvatarNickname(input.nickname),
     displayName: readTrimmedString(input.displayName),
     classify: normalizeAvatarClassify(input.classify),
+  };
+};
+
+export const canonicalizeAvatarPrincipalMetadata = (input: {
+  nickname: string;
+  displayName?: unknown;
+  classify?: unknown;
+}): AvatarPrincipalMetadata => {
+  const normalized = normalizeAvatarPrincipalMetadata(input);
+  const builtIn = resolveBuiltInAvatarProfile(normalized.nickname);
+  if (!builtIn) {
+    return normalized;
+  }
+  return {
+    nickname: builtIn.nickname,
+    displayName: builtIn.displayName,
+    classify: builtIn.classify,
   };
 };
 

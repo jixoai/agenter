@@ -196,6 +196,7 @@ export const buildOpenAvatarRailItems = (
 		status: null,
 		unreadCount: 0,
 		iconUrl: null,
+		avatarPrincipalId: null,
 		href: tab.href,
 		active: input.activeTabId === tab.id,
 		pinned: false,
