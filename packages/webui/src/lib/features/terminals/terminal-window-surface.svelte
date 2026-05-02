@@ -57,7 +57,7 @@
 		onBootstrapTerminal?: () => void;
 		onStopTerminal?: () => void;
 		onToggleViewportMode: () => void;
-		onLiveResize?: (input: { width: number; height: number }) => void;
+		onLiveResize?: (input: { width: number; height: number; cols: number; rows: number }) => void;
 	} = $props();
 
 	const TerminalViewport = $derived(terminalViewportComponent);
@@ -233,8 +233,21 @@
 		bodyHeight: liveProjection.bodyHeight,
 	});
 
-	const reportLiveResize = (width: number, height: number): void => {
-		onLiveResize?.({ width, height });
+	const reportLiveResize = (
+		width: number,
+		height: number,
+		grid?: {
+			cols: number;
+			rows: number;
+		} | null,
+	): void => {
+		const cols =
+			grid?.cols ??
+			(committedLiveGrid?.terminalId === terminal.terminalId ? committedLiveGrid.cols : viewportCols);
+		const rows =
+			grid?.rows ??
+			(committedLiveGrid?.terminalId === terminal.terminalId ? committedLiveGrid.rows : viewportRows);
+		onLiveResize?.({ width, height, cols, rows });
 	};
 
 	const hasMotionSnapshotChanged = (
@@ -329,9 +342,17 @@
 		terminalBodyAnimation.addEventListener('cancel', clearAnimation, { once: true });
 	};
 
-	const requestLiveViewportResize = (frameWidth: number, frameHeight: number): boolean => {
+	const requestLiveViewportResize = (
+		frameWidth: number,
+		frameHeight: number,
+	):
+		| {
+				cols: number;
+				rows: number;
+		  }
+		| null => {
 		if (!terminal.snapshot) {
-			return false;
+			return null;
 		}
 		const referenceMetrics = resizeReferenceMetrics ?? {
 			cellWidth: effectiveScreenMetrics.cellWidth,
@@ -352,14 +373,20 @@
 		const currentRows =
 			committedLiveGrid?.terminalId === terminal.terminalId ? committedLiveGrid.rows : viewportRows;
 		if (nextCols === currentCols && nextRows === currentRows) {
-			return false;
+			return {
+				cols: currentCols,
+				rows: currentRows,
+			};
 		}
 		if (
 			lastGestureResizeGrid?.terminalId === terminal.terminalId &&
 			lastGestureResizeGrid.cols === nextCols &&
 			lastGestureResizeGrid.rows === nextRows
 		) {
-			return false;
+			return {
+				cols: nextCols,
+				rows: nextRows,
+			};
 		}
 		committedLiveGrid = {
 			terminalId: terminal.terminalId,
@@ -372,7 +399,10 @@
 			rows: nextRows,
 		};
 		terminalViewportElement?.requestViewportResize?.({ cols: nextCols, rows: nextRows });
-		return true;
+		return {
+			cols: nextCols,
+			rows: nextRows,
+		};
 	};
 
 	const resolveClientPoint = (event: PointerEvent): { x: number; y: number } | null => {
@@ -404,8 +434,8 @@
 		dragResizeMoved = true;
 		dragFrameWidth = nextFrameWidth;
 		dragFrameHeight = nextFrameHeight;
-		reportLiveResize(nextFrameWidth, nextFrameHeight);
-		requestLiveViewportResize(nextFrameWidth, nextFrameHeight);
+		const nextGrid = requestLiveViewportResize(nextFrameWidth, nextFrameHeight);
+		reportLiveResize(nextFrameWidth, nextFrameHeight, nextGrid);
 	};
 
 	const detachResizeListeners = (): void => {
@@ -429,8 +459,8 @@
 		resizePointerId = null;
 		detachResizeListeners();
 		if (shouldCommitResize) {
-			reportLiveResize(finalFrameWidth, finalFrameHeight);
-			requestLiveViewportResize(finalFrameWidth, finalFrameHeight);
+			const nextGrid = requestLiveViewportResize(finalFrameWidth, finalFrameHeight);
+			reportLiveResize(finalFrameWidth, finalFrameHeight, nextGrid);
 		}
 		dragFrameWidth = null;
 		dragFrameHeight = null;
@@ -556,7 +586,9 @@
 		if (
 			typeof terminal.snapshot?.cols === 'number' &&
 			typeof terminal.snapshot?.rows === 'number' &&
-			!draggingResize
+			!draggingResize &&
+			terminal.snapshot.cols === committedLiveGrid.cols &&
+			terminal.snapshot.rows === committedLiveGrid.rows
 		) {
 			committedLiveGrid = null;
 		}

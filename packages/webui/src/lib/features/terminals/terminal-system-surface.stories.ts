@@ -454,6 +454,8 @@ export const WindowChromeLiveResizeUpdatesFrameHint = {
     expect(windowSurface).not.toBeNull();
     const beforeFrameWidth = Number(windowSurface?.dataset.terminalWindowFrameWidth ?? "0");
     const beforeFrameHeight = Number(windowSurface?.dataset.terminalWindowFrameHeight ?? "0");
+    const resizeColsInput = canvas.getByTestId("terminal-resize-cols") as HTMLInputElement;
+    const resizeRowsInput = canvas.getByTestId("terminal-resize-rows") as HTMLInputElement;
     const handle = canvas.getByTestId("terminal-window-live-resize-handle");
     expect(handle).toHaveAttribute("data-terminal-window-native-resize-handle", "true");
     expect(handle.children.length).toBe(0);
@@ -493,6 +495,7 @@ export const WindowChromeLiveResizeUpdatesFrameHint = {
       expect(resizeHint.textContent?.trim() ?? "").toMatch(/Live frame:\s*\d+x\d+px/u);
     });
     const movedText = resizeHint.textContent?.trim() ?? "";
+    const movedGeometry = within(windowSurface!).getByTestId("terminal-window-size-info").textContent?.trim() ?? "";
     window.dispatchEvent(
       new PointerEvent("pointerup", {
         bubbles: true,
@@ -511,7 +514,10 @@ export const WindowChromeLiveResizeUpdatesFrameHint = {
       expect(releasedFrameHeight).not.toBe(beforeFrameHeight - 40);
       expect(releasedFrameWidth).toBeGreaterThan(320);
       expect(releasedFrameHeight).toBeGreaterThan(220);
-      expect(within(windowSurface!).getByTestId("terminal-window-size-info").textContent?.trim()).toBe("80x24");
+      expect(within(windowSurface!).getByTestId("terminal-window-size-info").textContent?.trim()).toBe(
+        movedGeometry,
+      );
+      expect(`${resizeColsInput.value}x${resizeRowsInput.value}`).toBe(movedGeometry);
     });
   },
 } satisfies Story;

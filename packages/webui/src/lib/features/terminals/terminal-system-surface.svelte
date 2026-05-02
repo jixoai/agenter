@@ -3,7 +3,7 @@
 	import MoveDiagonal2Icon from '@lucide/svelte/icons/move-diagonal-2';
 	import SendHorizontalIcon from '@lucide/svelte/icons/send-horizontal';
 	import { resolveAsyncSurfaceState, type ToolInvocationView } from '@agenter/web-components';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 
 	import { Scaffold } from '@agenter/svelte-components';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
@@ -80,10 +80,11 @@
 	let resizeRows = $state('');
 	let resizeBusy = $state(false);
 	let viewportModeByTerminalId = $state<Record<string, 'fit' | 'cover'>>({});
-	let liveViewportSizeByTerminalId = $state<Record<string, { width: number; height: number }>>({});
+	let liveViewportSizeByTerminalId = $state<Record<string, { width: number; height: number; cols: number; rows: number }>>({});
 	let actionsPanelRef: HTMLElement | null = $state(null);
 	let detailRailCompact = $state(false);
 	let lastSelectedTerminalId = $state<string | null>(null);
+	let lastResizeFormSeed = $state<{ terminalId: string; cols: number; rows: number } | null>(null);
 	type TerminalActionEvent = TerminalSystemSurfaceProps['terminalActivityState']['data'][number];
 
 	const TERMINAL_SURFACE_SPLIT_RATIO_PERSISTENCE = 'terminal-system:surface';
@@ -140,6 +141,16 @@
 		selectedTerminal ? (viewportModeByTerminalId[selectedTerminal.terminalId] ?? 'fit') : 'fit',
 	);
 	const selectedLiveViewportSize = $derived(selectedTerminal ? (liveViewportSizeByTerminalId[selectedTerminal.terminalId] ?? null) : null);
+	const selectedResizeGeometry = $derived.by(() => {
+		if (!selectedTerminal) {
+			return null;
+		}
+		return {
+			terminalId: selectedTerminal.terminalId,
+			cols: selectedLiveViewportSize?.cols ?? selectedTerminal.snapshot?.cols ?? 80,
+			rows: selectedLiveViewportSize?.rows ?? selectedTerminal.snapshot?.rows ?? 24,
+		};
+	});
 	const effectiveTransportUrl = $derived(selectedTransportUrl ?? selectedTerminal?.transportUrl ?? null);
 	const seatStateByActorId = $derived(
 		new Map(seatStates.map((seat) => [seat.actorId, seat] as const)),
@@ -251,6 +262,42 @@
 		return Math.max(1, parsed);
 	};
 
+	const projectResizeGeometry = (input: {
+		terminalId: string;
+		cols: number;
+		rows: number;
+	}): void => {
+		const current = untrack(() => {
+			const formCols = Number.parseInt(resizeCols, 10);
+			const formRows = Number.parseInt(resizeRows, 10);
+			return {
+				formCols,
+				formRows,
+				seed: lastResizeFormSeed,
+			};
+		});
+		const seedMatchesInput =
+			current.seed?.terminalId === input.terminalId &&
+			current.seed.cols === input.cols &&
+			current.seed.rows === input.rows;
+		if (seedMatchesInput) {
+			return;
+		}
+		const formMatchesSeed =
+			Number.isFinite(current.formCols) &&
+			Number.isFinite(current.formRows) &&
+			current.seed?.terminalId === input.terminalId &&
+			current.formCols === current.seed.cols &&
+			current.formRows === current.seed.rows;
+		const shouldReplaceForm = current.seed?.terminalId !== input.terminalId || formMatchesSeed;
+		lastResizeFormSeed = input;
+		if (!shouldReplaceForm) {
+			return;
+		}
+		resizeCols = String(input.cols);
+		resizeRows = String(input.rows);
+	};
+
 	const handleGrantSeat = async (): Promise<void> => {
 		if (!selectedTerminal || grantBusy || grantParticipantId.length === 0) {
 			return;
@@ -311,6 +358,13 @@
 			if (result?.ok) {
 				resizeCols = String(result.cols);
 				resizeRows = String(result.rows);
+				lastResizeFormSeed = selectedTerminal
+					? {
+							terminalId: selectedTerminal.terminalId,
+							cols: result.cols,
+							rows: result.rows,
+						}
+					: null;
 			}
 		} finally {
 			resizeBusy = false;
@@ -436,13 +490,11 @@
 	$effect(() => {
 		const nextTerminalId = selectedTerminal?.terminalId ?? null;
 		if (nextTerminalId) {
-			const snapshotCols = selectedTerminal?.snapshot?.cols ?? 80;
-			const snapshotRows = selectedTerminal?.snapshot?.rows ?? 24;
-			if (!resizeCols) {
-				resizeCols = String(snapshotCols);
-			}
-			if (!resizeRows) {
-				resizeRows = String(snapshotRows);
+			if (lastSelectedTerminalId !== nextTerminalId) {
+				const nextGeometry = selectedResizeGeometry;
+				if (nextGeometry) {
+					projectResizeGeometry(nextGeometry);
+				}
 			}
 			lastSelectedTerminalId = nextTerminalId;
 			return;
@@ -455,8 +507,17 @@
 			actionsDetailOpen = false;
 			lastSelectedTerminalId = null;
 		}
+		lastResizeFormSeed = null;
 		resizeCols = '';
 		resizeRows = '';
+	});
+
+	$effect(() => {
+		const geometry = selectedResizeGeometry;
+		if (!geometry) {
+			return;
+		}
+		projectResizeGeometry(geometry);
 	});
 </script>
 
@@ -709,10 +770,10 @@
 						onBootstrapTerminal={() => void handleBootstrapTerminal()}
 						onStopTerminal={() => void handleStopTerminal()}
 						onToggleViewportMode={handleToggleViewportMode}
-						onLiveResize={({ width, height }) => {
+						onLiveResize={({ width, height, cols, rows }) => {
 							liveViewportSizeByTerminalId = {
 								...liveViewportSizeByTerminalId,
-								[selectedTerminal.terminalId]: { width, height },
+								[selectedTerminal.terminalId]: { width, height, cols, rows },
 							};
 						}}
 					/>

@@ -108,12 +108,18 @@ describe("Feature: Terminal surface layout ownership contract", () => {
 
   test("Scenario: Given live terminal resizing belongs to the window frame When reading the window source Then fit-cover sizing changes the window geometry while the titlebar stays outside terminal scaling", () => {
     expect(terminalWindowSurfaceSource).toContain('data-testid="terminal-window-live-resize-handle"');
-    expect(terminalWindowSurfaceSource).toContain('onLiveResize?: (input: { width: number; height: number }) => void;');
+    expect(terminalWindowSurfaceSource).toContain(
+      'onLiveResize?: (input: { width: number; height: number; cols: number; rows: number }) => void;',
+    );
     expect(terminalWindowSurfaceSource).toContain("window.addEventListener('pointermove', handleResizeMove);");
     expect(terminalWindowSurfaceSource).toContain("window.addEventListener('pointerup', handleResizeEnd);");
     expect(terminalWindowSurfaceSource).toContain("window.addEventListener('pointercancel', handleResizeEnd);");
-    expect(terminalWindowSurfaceSource).toContain('reportLiveResize(nextFrameWidth, nextFrameHeight);');
-    expect(terminalWindowSurfaceSource).toContain('reportLiveResize(finalFrameWidth, finalFrameHeight);');
+    expect(terminalWindowSurfaceSource).toContain(
+      'reportLiveResize(nextFrameWidth, nextFrameHeight, nextGrid);',
+    );
+    expect(terminalWindowSurfaceSource).toContain(
+      'reportLiveResize(finalFrameWidth, finalFrameHeight, nextGrid);',
+    );
     expect(terminalWindowSurfaceSource).toContain('if (nextFrameWidth === dragStartWidth && nextFrameHeight === dragStartHeight) {');
     expect(terminalWindowSurfaceSource).toContain('const shouldCommitResize = dragResizeMoved;');
     expect(terminalWindowSurfaceSource).toContain("resolveTerminalWindowProjection");
