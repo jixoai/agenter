@@ -383,6 +383,19 @@ const findRuntimeSkillRecordInRoot = (
   return null;
 };
 
+const resolveRuntimeSkillDeletionDir = (root: RuntimeSkillRoot, record: RuntimeSkillRecord): string | null => {
+  const rootPath = resolve(root.path);
+  const skillDir = resolve(record.skillDir);
+  const relation = relative(rootPath, skillDir);
+  if (!relation || relation === "." || relation.startsWith("..")) {
+    return null;
+  }
+  if (resolve(record.path) !== resolve(join(skillDir, "SKILL.md"))) {
+    return null;
+  }
+  return skillDir;
+};
+
 export const removeRuntimeSkillFile = (
   input: RuntimeSkillLookupInput & {
     name: string;
@@ -408,7 +421,11 @@ export const removeRuntimeSkillFile = (
     if (!record) {
       continue;
     }
-    rmSync(dirname(record.path), { recursive: true, force: true });
+    const deletionDir = resolveRuntimeSkillDeletionDir(root, record);
+    if (!deletionDir) {
+      continue;
+    }
+    rmSync(deletionDir, { recursive: true, force: true });
     return {
       removed: true,
       path: record.path,

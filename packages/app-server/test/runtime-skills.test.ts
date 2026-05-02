@@ -9,6 +9,7 @@ import {
   listRuntimeSkillMountRoots,
   listRuntimeSkills,
   readRuntimeSkillContent,
+  removeRuntimeSkillFile,
 } from "../src/runtime-skills";
 
 const tempDirs: string[] = [];
@@ -391,5 +392,56 @@ describe("Feature: runtime built-in skills", () => {
     const visibleAfterSharedRemoval = listRuntimeSkills(input).find((skill) => skill.name === skillName);
     expect(visibleAfterSharedRemoval?.rootKind).toBe("builtin");
     expect(visibleAfterSharedRemoval?.path).toBe(builtinPath);
+  });
+
+  test("Scenario: Given a writable skill root contains sibling content When a runtime skill is removed Then only the matching skill directory is deleted", () => {
+    const homeDir = createTempRoot();
+    const rootWorkspacePath = createTempRoot();
+    const sharedRoot = join(homeDir, ".agents", "skills");
+    const skillDir = join(sharedRoot, "shared-reviewer");
+
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      ["---", "name: shared-reviewer", "description: removable", "---", "", "# shared-reviewer", ""].join("\n"),
+      "utf8",
+    );
+    writeFileSync(join(sharedRoot, "sibling.txt"), "preserve\n", "utf8");
+
+    const result = removeRuntimeSkillFile({
+      homeDir,
+      rootWorkspacePath,
+      rootKind: "shared",
+      name: "shared-reviewer",
+    });
+
+    expect(result.removed).toBeTrue();
+    expect(existsSync(skillDir)).toBeFalse();
+    expect(existsSync(sharedRoot)).toBeTrue();
+    expect(readFileSync(join(sharedRoot, "sibling.txt"), "utf8")).toBe("preserve\n");
+  });
+
+  test("Scenario: Given a root-level skill file When runtime skill removal is requested Then the writable root itself is preserved", () => {
+    const homeDir = createTempRoot();
+    const rootWorkspacePath = createTempRoot();
+    const sharedRoot = join(homeDir, ".agents", "skills");
+
+    mkdirSync(sharedRoot, { recursive: true });
+    writeFileSync(
+      join(sharedRoot, "SKILL.md"),
+      ["---", "name: shared-root-skill", "description: unsafe root", "---", "", "# shared-root-skill", ""].join("\n"),
+      "utf8",
+    );
+
+    const result = removeRuntimeSkillFile({
+      homeDir,
+      rootWorkspacePath,
+      rootKind: "shared",
+      name: "shared-root-skill",
+    });
+
+    expect(result.removed).toBeFalse();
+    expect(existsSync(sharedRoot)).toBeTrue();
+    expect(existsSync(join(sharedRoot, "SKILL.md"))).toBeTrue();
   });
 });
