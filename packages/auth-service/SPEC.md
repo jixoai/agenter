@@ -34,6 +34,8 @@
 - Avatar 是业务角色层，不属于 auth identity 本体
 - Avatar 仍然是独立实体，但 durable identity 必须由 AuthSystem mint 成 `kind: "avatar"` principal；`nickname` 只是 owner alias / display field，不是 canonical identity
 - avatar principal 的 public metadata 当前最小集合为 `nickname`、可选 `displayName`、可空 `classify`
+- 内置 avatar(`default`、`assistant`、`backend`、`architect`、`design`、`frontend`、`ops`、`reviewer`) 的 public metadata 属于 auth-service 的 canonical fact；其 `displayName` / `classify` 不允许由调用方各自推断
+- auth-service 启动时必须 reconcile 已存在的内置 avatar metadata，把漂移或缺失的 `displayName` / `classify` 收敛回 canonical built-in profile
 
 ## 3. 认证与绑定法则
 
@@ -53,14 +55,17 @@
 - fallback precedence 固定为：
   - `profile`: uploaded asset -> gravatar(仅适用于 email-backed resolution) -> deterministic renderer
   - `session`: uploaded asset -> deterministic renderer
-  - `avatar`: uploaded asset -> deterministic renderer(principal-seeded background + optional classify glyph)
+  - `avatar`: uploaded asset -> deterministic renderer(principal-seeded background + classify-stable center glyph)
   - `room` 与 future typed owner: uploaded asset -> deterministic renderer
 - `profile` 图形 seed 由 resolved identifier 决定
-- `avatar` 图形 seed 由 avatar principal / address 决定；`classify` 只提供 fallback glyph hint，不改变 canonical identity
+- `avatar` 图形 seed 由 avatar principal / address 决定；`classify` 只决定中心 glyph，不改变 canonical identity
+- avatar deterministic renderer 的背景色场只由 avatar principal seed 决定，并以 canonical SVG/HSL color stops 输出；调用方不得再按 nickname、label 或页面上下文重算第二套颜色法则
+- avatar deterministic renderer 的中心 glyph 必须只由 canonical `classify` 决定，并复用 Lucide SVG asset；调用方不得手写第二套 classify glyph switch 或页面私有 avatar renderer
 - `room` 与 future typed owner 图形 seed 由 owner-specific stable icon seed 决定
 - deterministic renderer 的 canonical source 是 SVG；PNG/JPEG 等 raster variant 必须由服务端通过 `bun:ffi + resvg bridge` 生成
 - 默认 icon read 对于 SVG-backed source 也必须返回服务端光栅化后的 raster bytes；只有显式 `format=svg` 才允许返回原始 SVG
 - 前端不得再为了“让后端有图可读”而先上传浏览器本地 rasterized fallback
+- 前端消费 avatar 图像时必须以 auth-service 返回的 `iconUrl` / raster variant 为唯一真源，不得在 WebUI、catalog、skills 或其他 feature 内发明第二套 avatar fallback renderer
 
 ## 5. 存储与运行时法则
 
