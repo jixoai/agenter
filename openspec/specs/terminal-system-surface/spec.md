@@ -87,7 +87,7 @@ The terminal-system route SHALL treat `fit` and `cover` as window-shell projecti
 #### Scenario: Fit projection shrinks the terminal window shell
 - **WHEN** the operator switches a terminal window to `fit`
 - **THEN** the terminal window shell shrinks proportionally to fit inside the available stage viewport
-- **AND** the terminal screen remains flush to the terminal window body edges instead of floating inside a separately scaled inner frame
+- **AND** the terminal window body preserves a small cell-derived inner inset around the projected terminal content instead of using outer shell margin
 - **AND** the titlebar height stays stable rather than being transform-scaled
 
 #### Scenario: Cover projection enlarges the terminal window shell
@@ -95,6 +95,7 @@ The terminal-system route SHALL treat `fit` and `cover` as window-shell projecti
 - **THEN** the terminal window shell grows proportionally beyond the available stage viewport
 - **AND** the titlebar is promoted out of `terminal-window` and becomes sticky chrome at the top of the surrounding `window-container`
 - **AND** the surrounding stage viewport owns the resulting scrollbars
+- **AND** the same cell-derived inner inset remains between terminal content and terminal window body
 - **AND** the underlying terminal frame geometry remains the same until an explicit live or durable resize changes cols or rows
 
 #### Scenario: Fit-cover does not mutate terminal geometry by itself

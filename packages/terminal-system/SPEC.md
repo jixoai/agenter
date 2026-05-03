@@ -259,7 +259,10 @@ git-log 约束：
 - 所有终端输入路径都必须经过同一 write policy gate：
   - direct write
   - raw write
-  - websocket transport input
+  - websocket transport input bytes
+- websocket transport 是独立的 live terminal session protocol，不承载 automation durable truth：
+  - live websocket `inputBytes` 归属真人交互 forwarding，必须经过同一 write policy gate，但授权后低延迟直写 PTY，不创建 pending file、approval request 或 `terminal_write` activity
+  - automation `terminal.write` / `terminal.input` 继续走 control-plane durable path，保留 pending inbox、approval request 与 `terminal_write` activity
 - grant 固定四级：`admin | writer | requester | readonly`
 - superadmin 可以越过 local grant 做恢复性管理，但不改变 terminal-local durable truth 的 owner。
 
@@ -295,10 +298,15 @@ git-log 约束：
 - `remark:true` 表示消费当前 actor 的 read cursor；其它 actor 再读同一个 terminal 时必须仍能从自己的 cursor 看到同一批 diff。
 - `remark:false` 表示不推进 read cursor；activity history 是否记录由 `recordActivity` 单独控制，不能与 cursor consumption 混成一个开关。
 - actor-facing terminal surface projection 必须把 catalog metadata、seat/access projection、approval counters、transport endpoint 与 renderable snapshot truth 聚合成一个 authoritative model；WebUI/client 不得再自行拼接 `access + grants + actors + snapshot` 来还原 terminal truth。
-- terminal websocket transport 的 contract 固定为“bootstrap snapshot + live output/status”：
-  - connect 时允许发送一份 renderable snapshot 作为 viewport hydration baseline
-  - live 阶段的主 truth 是 output/status，而不是每个 render tick 都镜像一份 full snapshot
+- terminal websocket transport 的 contract 固定为“bootstrap snapshot + live bytes/status”：
+  - websocket 本身只是 binary data link；terminal transport 的 authoritative live truth 是 PTY `inputBytes / outputBytes`
+  - live session frame 的 concrete wire format 固定为 `@agenter/terminal-transport-protocol` 提供的 protobuf message envelope；client/server 不得各自发明 ad-hoc JSON 或私有二进制布局
+  - connect 时允许发送一份 renderable snapshot 作为 viewport hydration baseline，即使 terminal 当前是 stopped 也可以连接并拿到 bootstrap snapshot
+  - live 阶段的主 truth 是 `outputBytes` / `status`，而不是每个 render tick 都镜像一份 full snapshot
   - geometry 未变化时，不得持续推送冗余 full snapshot
+  - client 可以发送 `resize` sideband frame 同步本地 viewport geometry
+  - client 可以发送 `inputBytes` frame 转发 xterm 交互字节；方向键、快捷键、普通输入、binary mouse report 都不得伪装成 automation write
+  - browser `keydown/paste/mouse/focus` 只是 renderer 本地事实；transport 优先承载 terminal-native bytes / control sequences，而不是浏览器语义事件总线
 - terminal listing / transport contract 必须显式携带：
   - global terminal id
   - title
@@ -374,7 +382,7 @@ git-log 约束：
 - `write()` 是 automation raw API，必须通过 pending `.raw.txt` 落盘后再消费
 - `input()` 是 automation mixed API，必须通过 pending `.mixed.txt` 落盘后再消费
 - pending 处理失败必须向 automation caller 回传失败；不能把没有真正写入 PTY 的输入伪装成 success
-- `writeRaw()` 只保留给 ATI-CLI / ATI-TUI 这类真人交互 forwarding；它不是 automation durable truth
+- `writeRaw()` 只保留给 ATI-CLI / ATI-TUI / terminal-view websocket live `inputBytes` 这类真人交互 forwarding；它不是 automation durable truth
 - mixed DSL 允许 `<key .../>`、`<wait .../>`、`<raw>...</raw>`
 - `<raw>...</raw>` 内只解码固定 HTML entities：`&lt;`、`&gt;`、`&amp;`、`&quot;`、`&#39;`
 - nested `<raw>` 属于非法 mixed payload，terminal-core 必须拒绝，不能半截吞掉 outer raw block
