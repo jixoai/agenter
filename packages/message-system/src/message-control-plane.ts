@@ -1,6 +1,18 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { isPrincipalId } from "@agenter/principal-crypto";
+import {
+  buildManagedInvitationAcceptPayload,
+  buildManagedInvitationShareDescriptor,
+  createManagedInvitationId,
+  createManagedInvitationToken,
+  digestManagedInvitationPayload,
+  hashManagedInvitationToken,
+  isManagedInvitationExpired,
+  parseManagedInvitationDescriptorInput,
+  validateManagedInvitationRecipientBinding,
+  verifyManagedInvitationAcceptProof,
+} from "@agenter/managed-seat-invitation-handshake";
 import { MessageDb } from "./message-db";
 import { resolveDefaultMessageControlDbPath } from "./message-paths";
 import type { MessageAuthorizedQueryInput, MessageQueryResult } from "./message-query-types";
@@ -35,6 +47,13 @@ import type {
   MessageFocusOp,
   MessageIssueGrantInput,
   MessageIssuedGrant,
+  MessageInvitationRecord,
+  MessageInviteSeatInput,
+  MessageManagedSeatClass,
+  MessageManagedSeatPayload,
+  MessageConfigSeatInput,
+  MessageAcceptSeatInput,
+  MessageRevokeSeatInput,
   MessageParticipant,
   MessageRecallInput,
   MessageRecord,
@@ -105,6 +124,7 @@ const ROOM_ADMIN_GROUP_CANDIDATE_IDS_KEY = "roomAdminGroupCandidateIds";
 const ROOM_CURRENT_ADMIN_ID_KEY = "currentRoomAdminId";
 const ROOM_PENDING_ADMIN_WORK_KEY = "pendingAdminWork";
 const TRANSIENT_ACTOR_PRESENCE_TTL_MS = 90_000;
+const DEFAULT_MANAGED_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 const cloneTransport = (input?: MessageTransportConfig): MessageTransportConfig => ({
   host: input?.host ?? "127.0.0.1",
@@ -1269,6 +1289,150 @@ export class MessageControlPlane {
     return { ok };
   }
 
+  inviteSeatAuthorized(input: MessageInviteSeatInput): MessageInvitationRecord {
+    const inviter = this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    if (!isPrincipalId(input.participantId)) {
+      throw new Error("room managed seat participantId must be a principal id");
+    }
+    const invitationId = createManagedInvitationId();
+    const previous = this.db.findLatestInvitationForParticipant({
+      chatId: input.chatId,
+      inviteeActorId: input.participantId,
+    });
+    if (previous?.status === "pending") {
+      this.db.updateInvitationStatus(input.chatId, previous.invitationId, {
+        status: "revoked",
+        revokedAt: Date.now(),
+        supersededByInvitationId: invitationId,
+      });
+    }
+    const payload = this.resolveManagedSeatPayload(input.seatClass, input.label);
+    const token = createManagedInvitationToken();
+    const invitation = this.db.upsertInvitation({
+      invitationId,
+      chatId: input.chatId,
+      inviterActorId: this.resolveManagedSeatInviterPrincipalId(inviter.participantId, input.superadminActorId),
+      inviteeActorId: input.participantId,
+      nativePayload: payload,
+      payloadDigest: digestManagedInvitationPayload(payload),
+      acceptanceTokenHash: hashManagedInvitationToken(token),
+      descriptor: buildManagedInvitationShareDescriptor({
+        resourceKind: "message",
+        token,
+        endpoint: input.endpoint,
+      }),
+      expiresAt: input.expiresAt ?? Date.now() + DEFAULT_MANAGED_INVITATION_TTL_MS,
+    });
+    this.bumpVersion();
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "grant-issued",
+      builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+      actorId: input.participantId,
+    });
+    return invitation;
+  }
+
+  async acceptSeat(input: MessageAcceptSeatInput): Promise<{
+    invitation: MessageInvitationRecord;
+    access: MessageChannelAccessProjection;
+    seat: MessageSeatStateProjection | undefined;
+  }> {
+    this.db.expirePendingInvitations();
+    const { token } = parseManagedInvitationDescriptorInput(input.descriptor);
+    const invitation = this.db.findInvitationByTokenHash(hashManagedInvitationToken(token));
+    if (!invitation) {
+      throw new Error("unknown room invitation");
+    }
+    if (invitation.status !== "pending") {
+      throw new Error(`room invitation is not pending: ${invitation.status}`);
+    }
+    if (isManagedInvitationExpired({ expiresAt: invitation.expiresAt })) {
+      this.db.updateInvitationStatus(invitation.resourceId, invitation.invitationId, {
+        status: "expired",
+      });
+      throw new Error("room invitation expired");
+    }
+    validateManagedInvitationRecipientBinding({
+      expectedInviteePrincipalId: invitation.inviteePrincipalId,
+      proof: input.proof,
+    });
+    if (!(await verifyManagedInvitationAcceptProof(input.proof))) {
+      throw new Error("room invitation proof verification failed");
+    }
+    const expectedProofPayload = buildManagedInvitationAcceptPayload({
+      invitationId: invitation.invitationId,
+      resourceKind: invitation.resourceKind,
+      resourceId: invitation.resourceId,
+      inviteePrincipalId: invitation.inviteePrincipalId,
+      payloadDigest: invitation.payloadDigest,
+      expiresAt: invitation.expiresAt,
+    });
+    if (input.proof.payload !== expectedProofPayload) {
+      throw new Error("room invitation proof payload digest mismatch");
+    }
+    const access = this.activateManagedSeatPayload(invitation.resourceId, invitation.inviteePrincipalId, invitation.payload);
+    const accepted = this.db.updateInvitationStatus(invitation.resourceId, invitation.invitationId, {
+      status: "accepted",
+      acceptedAt: Date.now(),
+    });
+    this.syncAdminAssignments();
+    this.bumpVersion();
+    this.emitChannelChanged({
+      chatId: invitation.resourceId,
+      reason: "grant-issued",
+      builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(invitation.resourceId)?.metadata),
+      actorId: invitation.inviteePrincipalId,
+    });
+    return {
+      invitation: accepted,
+      access,
+      seat: this.listSeatStateProjections(invitation.resourceId).find((seat) => seat.actorId === invitation.inviteePrincipalId),
+    };
+  }
+
+  configSeatAuthorized(input: MessageConfigSeatInput): MessageInvitationRecord | MessageChannelAccessProjection {
+    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    const existing = this.db.listActiveGrants(input.chatId).find((grant) => grant.participantId === input.participantId);
+    if (existing) {
+      return this.activateManagedSeatPayload(
+        input.chatId,
+        input.participantId,
+        this.resolveManagedSeatPayload(input.seatClass, input.label),
+      );
+    }
+    return this.inviteSeatAuthorized(input);
+  }
+
+  revokeSeatAuthorized(input: MessageRevokeSeatInput): { ok: true } {
+    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    this.db.revokePendingInvitationsByParticipant(input.chatId, input.participantId);
+    this.db.revokeActiveGrantsByParticipant(input.chatId, input.participantId);
+    const channel = this.db.getChannel(input.chatId);
+    if (channel) {
+      const nextMetadata = this.withAdminState(input.chatId, {
+        ...(channel.metadata ?? {}),
+        [ROOM_ADMIN_GROUP_CANDIDATE_IDS_KEY]: this.readAdminGroupCandidateIds(channel.metadata).filter(
+          (candidate) => candidate !== input.participantId,
+        ),
+      });
+      this.db.updateChannel(input.chatId, { metadata: nextMetadata }, false);
+    }
+    const cleared = this.db.clearActorRoomState(input.chatId, input.participantId);
+    if (cleared.changed) {
+      this.bumpUnreadVersion(input.participantId);
+    }
+    this.syncAdminAssignments();
+    this.bumpVersion();
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "grant-revoked",
+      builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+      actorId: input.participantId,
+    });
+    return { ok: true };
+  }
+
   listSourceSubscriptions(ownerActorId: MessageActorId): MessageSourceSubscriptionRecord[] {
     this.assertActorId(ownerActorId);
     return this.db.listSourceSubscriptions(ownerActorId);
@@ -2169,6 +2333,50 @@ export class MessageControlPlane {
       accessToken,
       participantId: actorId,
     });
+  }
+
+  private resolveManagedSeatPayload(seatClass: MessageManagedSeatClass, label?: string): MessageManagedSeatPayload {
+    return {
+      seatClass,
+      role: seatClass,
+      label,
+    };
+  }
+
+  private activateManagedSeatPayload(
+    chatId: string,
+    actorId: MessageActorId,
+    payload: MessageManagedSeatPayload,
+  ): MessageChannelAccessProjection {
+    const access = this.ensureActorAccess(chatId, actorId, payload.role);
+    const channel = this.db.getChannel(chatId);
+    if (channel && payload.role === "admin") {
+      const currentCandidates = this.readAdminGroupCandidateIds(channel.metadata);
+      if (!currentCandidates.includes(actorId)) {
+        this.db.updateChannel(
+          chatId,
+          {
+            metadata: this.withAdminState(chatId, {
+              ...(channel.metadata ?? {}),
+              [ROOM_ADMIN_GROUP_CANDIDATE_IDS_KEY]: [...currentCandidates, actorId],
+            }),
+          },
+          false,
+        );
+      }
+    }
+    return access;
+  }
+
+  private resolveManagedSeatInviterPrincipalId(
+    actorId: string | undefined,
+    superadminActorId?: MessageActorId,
+  ): MessageInvitationRecord["inviterPrincipalId"] {
+    const candidate = (actorId ?? superadminActorId)?.trim();
+    if (!candidate || !isPrincipalId(candidate)) {
+      throw new Error("room managed invitation inviter must resolve to a principal id");
+    }
+    return candidate;
   }
 
   private issueActorAccessToken(chatId: string, actorId: MessageActorId, role: MessageChannelAccessRole): string {

@@ -4,6 +4,19 @@ import { join, resolve } from "node:path";
 
 import { isPrincipalId } from "@agenter/principal-crypto";
 import {
+  buildManagedInvitationAcceptPayload,
+  buildManagedInvitationShareDescriptor,
+  createManagedInvitationId,
+  createManagedInvitationToken,
+  digestManagedInvitationPayload,
+  hashManagedInvitationToken,
+  isManagedInvitationExpired,
+  parseManagedInvitationDescriptorInput,
+  validateManagedInvitationRecipientBinding,
+  verifyManagedInvitationAcceptProof,
+  type ManagedInvitationEndpointDescriptor,
+} from "@agenter/managed-seat-invitation-handshake";
+import {
   decodeTerminalTransportClientMessage,
   encodeTerminalTransportServerMessage,
   type TerminalTransportServerMessage,
@@ -43,8 +56,15 @@ import type {
   TerminalFontProfile,
   TerminalGrantRecord,
   TerminalGrantRole,
+  TerminalInvitationRecord,
+  TerminalInviteSeatInput,
   TerminalIssueGrantInput,
   TerminalIssuedGrant,
+  TerminalManagedSeatClass,
+  TerminalManagedSeatPayload,
+  TerminalConfigSeatInput,
+  TerminalRevokeSeatInput,
+  TerminalAcceptSeatInput,
   TerminalInputInput,
   TerminalPatchInput,
   TerminalProcessProfile,
@@ -129,6 +149,7 @@ const MAX_AWAIT_IDLE_MS = 30_000;
 const DEFAULT_AWAIT_VIEW_LINES = 80;
 const MAX_AWAIT_VIEW_LINES = 500;
 const MAX_AWAIT_CONTEXT_LINES = 10;
+const DEFAULT_MANAGED_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 const createId = (): string => `term-${randomUUID()}`;
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
@@ -1766,6 +1787,138 @@ export class TerminalControlPlane {
     return { ok };
   }
 
+  inviteSeatAuthorized(input: TerminalInviteSeatInput): TerminalInvitationRecord {
+    const inviterActorId = this.requireAdministrativeAuthority(input.terminalId, input);
+    if (!isPrincipalId(input.participantId)) {
+      throw new Error("terminal managed seat participantId must be a principal id");
+    }
+    const invitationId = createManagedInvitationId();
+    const previous = this.db.findLatestInvitationForParticipant({
+      terminalId: input.terminalId,
+      inviteeParticipantId: input.participantId,
+    });
+    if (previous?.status === "pending") {
+      this.db.updateInvitationStatus(input.terminalId, previous.invitationId, {
+        status: "revoked",
+        revokedAt: Date.now(),
+        supersededByInvitationId: invitationId,
+      });
+    }
+    const token = createManagedInvitationToken();
+    const payload = this.resolveManagedSeatPayload(input.seatClass, input.label);
+    const descriptor = buildManagedInvitationShareDescriptor({
+      resourceKind: "terminal",
+      token,
+      endpoint: input.endpoint,
+    });
+    const invitation = this.db.upsertInvitation({
+      invitationId,
+      terminalId: input.terminalId,
+      inviterParticipantId: this.resolveManagedSeatInviterPrincipalId(inviterActorId, input.superadminActorId),
+      inviteeParticipantId: input.participantId,
+      nativePayload: payload,
+      payloadDigest: digestManagedInvitationPayload(payload),
+      acceptanceTokenHash: hashManagedInvitationToken(token),
+      descriptor,
+      expiresAt: input.expiresAt ?? Date.now() + DEFAULT_MANAGED_INVITATION_TTL_MS,
+    });
+    this.emitChange({
+      terminalId: input.terminalId,
+      reason: "grant-issued",
+      actorId: input.participantId,
+    });
+    return invitation;
+  }
+
+  async acceptSeat(input: TerminalAcceptSeatInput): Promise<{
+    invitation: TerminalInvitationRecord;
+    access: TerminalAccessProjection;
+    seat: TerminalSeatProjection | undefined;
+  }> {
+    this.db.expirePendingInvitations();
+    const { token } = parseManagedInvitationDescriptorInput(input.descriptor);
+    const invitation = this.db.findInvitationByTokenHash(hashManagedInvitationToken(token));
+    if (!invitation) {
+      throw new Error("unknown terminal invitation");
+    }
+    if (invitation.status !== "pending") {
+      throw new Error(`terminal invitation is not pending: ${invitation.status}`);
+    }
+    if (isManagedInvitationExpired({ expiresAt: invitation.expiresAt })) {
+      this.db.updateInvitationStatus(invitation.resourceId, invitation.invitationId, {
+        status: "expired",
+      });
+      throw new Error("terminal invitation expired");
+    }
+    validateManagedInvitationRecipientBinding({
+      expectedInviteePrincipalId: invitation.inviteePrincipalId,
+      proof: input.proof,
+    });
+    if (!(await verifyManagedInvitationAcceptProof(input.proof))) {
+      throw new Error("terminal invitation proof verification failed");
+    }
+    const expectedProofPayload = buildManagedInvitationAcceptPayload({
+      invitationId: invitation.invitationId,
+      resourceKind: invitation.resourceKind,
+      resourceId: invitation.resourceId,
+      inviteePrincipalId: invitation.inviteePrincipalId,
+      payloadDigest: invitation.payloadDigest,
+      expiresAt: invitation.expiresAt,
+    });
+    if (input.proof.payload !== expectedProofPayload) {
+      throw new Error("terminal invitation proof payload digest mismatch");
+    }
+    const access = this.activateManagedSeatPayload(invitation.resourceId, invitation.inviteePrincipalId, invitation.payload);
+    const accepted = this.db.updateInvitationStatus(invitation.resourceId, invitation.invitationId, {
+      status: "accepted",
+      acceptedAt: Date.now(),
+    });
+    this.syncAdminAssignments(invitation.resourceId);
+    this.emitChange({
+      terminalId: invitation.resourceId,
+      reason: "grant-issued",
+      actorId: invitation.inviteePrincipalId,
+    });
+    return {
+      invitation: accepted,
+      access,
+      seat: this.listActorSeats(invitation.resourceId).find((seat) => seat.actorId === invitation.inviteePrincipalId),
+    };
+  }
+
+  configSeatAuthorized(input: TerminalConfigSeatInput): TerminalInvitationRecord | TerminalAccessProjection {
+    this.requireAdministrativeAuthority(input.terminalId, input);
+    const existingGrant = this.getGrantForActor(input.terminalId, input.participantId);
+    if (existingGrant) {
+      return this.activateManagedSeatPayload(
+        input.terminalId,
+        input.participantId,
+        this.resolveManagedSeatPayload(input.seatClass, input.label),
+      );
+    }
+    return this.inviteSeatAuthorized(input);
+  }
+
+  revokeSeatAuthorized(input: TerminalRevokeSeatInput): { ok: true } {
+    this.requireAdministrativeAuthority(input.terminalId, input);
+    this.db.revokePendingInvitationsByParticipant(input.terminalId, input.participantId);
+    this.db.revokeActiveGrantsByParticipant(input.terminalId, input.participantId);
+    this.db.revokeActiveLeasesByParticipant(input.terminalId, input.participantId);
+    const candidates = this.db
+      .listAdminCandidates(input.terminalId)
+      .filter((candidate) => candidate.participantId !== input.participantId)
+      .map((candidate) => candidate.participantId);
+    this.db.setAdminGroup(input.terminalId, candidates);
+    this.expireApprovalsAndLeases();
+    this.syncAdminAssignments(input.terminalId);
+    this.emitChange({
+      terminalId: input.terminalId,
+      reason: "grant-revoked",
+      actorId: input.participantId,
+    });
+    return { ok: true };
+  }
+
   listApprovalRequests(
     input: {
       terminalId?: string;
@@ -2352,6 +2505,60 @@ export class TerminalControlPlane {
     return this.db
       .listActiveGrants(terminalId)
       .find((grant) => grant.participantId === actorId && !this.isTrustedBootstrapGrant(grant));
+  }
+
+  private resolveManagedSeatPayload(seatClass: TerminalManagedSeatClass, label?: string): TerminalManagedSeatPayload {
+    if (seatClass === "TM") {
+      return {
+        seatClass,
+        role: "admin",
+        label,
+        adminCandidateRank: Number.MAX_SAFE_INTEGER / 2,
+      };
+    }
+    return {
+      seatClass,
+      role: seatClass === "RW" ? "writer" : "readonly",
+      label,
+      adminCandidateRank: null,
+    };
+  }
+
+  private activateManagedSeatPayload(
+    terminalId: string,
+    participantId: TerminalActorId,
+    payload: TerminalManagedSeatPayload,
+  ): TerminalAccessProjection {
+    const access = this.ensureActorAccess(terminalId, participantId, payload.role, undefined, payload.label);
+    if (payload.role === "admin") {
+      const nextCandidates = this.mergeAdminCandidate(
+        terminalId,
+        participantId,
+        payload.adminCandidateRank ?? this.readAdminCandidateRank(terminalId, participantId) ?? 0,
+      );
+      this.db.setAdminGroup(
+        terminalId,
+        nextCandidates.sort((left, right) => left.priority - right.priority).map((candidate) => candidate.participantId),
+      );
+    } else {
+      const nextCandidates = this.db
+        .listAdminCandidates(terminalId)
+        .filter((candidate) => candidate.participantId !== participantId)
+        .map((candidate) => candidate.participantId);
+      this.db.setAdminGroup(terminalId, nextCandidates);
+    }
+    return access;
+  }
+
+  private resolveManagedSeatInviterPrincipalId(
+    actorId: TerminalActorId | null,
+    superadminActorId?: TerminalActorId,
+  ): TerminalInvitationRecord["inviterPrincipalId"] {
+    const candidate = (actorId ?? superadminActorId)?.trim();
+    if (!candidate || !isPrincipalId(candidate)) {
+      throw new Error("terminal managed invitation inviter must resolve to a principal id");
+    }
+    return candidate;
   }
 
   private requireGrantForActor(terminalId: string, actorId: TerminalActorId): TerminalGrantRecord {

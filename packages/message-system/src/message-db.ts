@@ -23,6 +23,8 @@ import type {
   MessageActorStateRecord,
   MessageAppendInput,
   MessageChannelGrantRecord,
+  MessageInvitationRecord,
+  MessageManagedSeatPayload,
   MessageChannelPatchInput,
   MessageChannelRecord,
   MessageContactRecord,
@@ -215,6 +217,57 @@ const mapGrant = (row: {
   accessToken: row.access_token ?? undefined,
   createdAt: row.created_at,
   revokedAt: row.revoked_at ?? undefined,
+});
+
+const normalizeInvitationStatus = (value: string | null): MessageInvitationRecord["status"] => {
+  switch (value) {
+    case "accepted":
+    case "revoked":
+    case "expired":
+      return value;
+    default:
+      return "pending";
+  }
+};
+
+const mapInvitation = (row: {
+  invitation_id: string;
+  chat_id: string;
+  inviter_actor_id: string;
+  invitee_actor_id: string;
+  native_payload_json: string;
+  payload_digest: string;
+  acceptance_token_hash: string;
+  descriptor_json: string;
+  status: string | null;
+  created_at: number;
+  expires_at: number;
+  accepted_at: number | null;
+  revoked_at: number | null;
+  superseded_by_invitation_id: string | null;
+}): MessageInvitationRecord => ({
+  invitationId: row.invitation_id,
+  resourceKind: "message",
+  resourceId: row.chat_id,
+  inviterPrincipalId: row.inviter_actor_id as MessageInvitationRecord["inviterPrincipalId"],
+  inviteePrincipalId: row.invitee_actor_id as MessageInvitationRecord["inviteePrincipalId"],
+  payload: parseJson<MessageManagedSeatPayload>(row.native_payload_json, {
+    seatClass: "readonly",
+    role: "readonly",
+  }),
+  payloadDigest: row.payload_digest,
+  tokenHash: row.acceptance_token_hash,
+  descriptor: parseJson<MessageInvitationRecord["descriptor"]>(row.descriptor_json, {
+    resourceKind: "message",
+    token: "",
+    deepLink: "",
+  }),
+  status: normalizeInvitationStatus(row.status),
+  createdAt: row.created_at,
+  expiresAt: row.expires_at,
+  acceptedAt: row.accepted_at ?? undefined,
+  revokedAt: row.revoked_at ?? undefined,
+  supersededByInvitationId: row.superseded_by_invitation_id ?? undefined,
 });
 
 const mapMessage = (chatId: string, row: StoredRoomMessageRow): MessageRecord => ({
@@ -880,6 +933,163 @@ export class MessageDb {
            and revoked_at is null`,
       )
       .run(now, chatId, participantId);
+  }
+
+  upsertInvitation(input: {
+    invitationId: string;
+    chatId: string;
+    inviterActorId: string;
+    inviteeActorId: string;
+    nativePayload: MessageManagedSeatPayload;
+    payloadDigest: string;
+    acceptanceTokenHash: string;
+    descriptor: MessageInvitationRecord["descriptor"];
+    expiresAt: number;
+    supersededByInvitationId?: string | null;
+  }): MessageInvitationRecord {
+    const now = Date.now();
+    this.db
+      .query(
+        `insert into chat_channel_invitation (
+          invitation_id,
+          chat_id,
+          inviter_actor_id,
+          invitee_actor_id,
+          native_payload_json,
+          payload_digest,
+          acceptance_token_hash,
+          descriptor_json,
+          status,
+          created_at,
+          expires_at,
+          accepted_at,
+          revoked_at,
+          superseded_by_invitation_id
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, null, null, ?)`,
+      )
+      .run(
+        input.invitationId,
+        input.chatId,
+        input.inviterActorId,
+        input.inviteeActorId,
+        toJson(input.nativePayload),
+        input.payloadDigest,
+        input.acceptanceTokenHash,
+        toJson(input.descriptor),
+        now,
+        input.expiresAt,
+        input.supersededByInvitationId ?? null,
+      );
+    return this.getInvitationById(input.chatId, input.invitationId)!;
+  }
+
+  getInvitationById(chatId: string, invitationId: string): MessageInvitationRecord | undefined {
+    const row = this.db
+      .query(
+        `select invitation_id, chat_id, inviter_actor_id, invitee_actor_id, native_payload_json,
+                payload_digest, acceptance_token_hash, descriptor_json, status, created_at, expires_at,
+                accepted_at, revoked_at, superseded_by_invitation_id
+         from chat_channel_invitation
+         where chat_id = ? and invitation_id = ?`,
+      )
+      .get(chatId, invitationId) as Parameters<typeof mapInvitation>[0] | null;
+    return row ? mapInvitation(row) : undefined;
+  }
+
+  findLatestInvitationForParticipant(input: {
+    chatId: string;
+    inviteeActorId: string;
+    includeNonPending?: boolean;
+  }): MessageInvitationRecord | undefined {
+    const row = this.db
+      .query(
+        `select invitation_id, chat_id, inviter_actor_id, invitee_actor_id, native_payload_json,
+                payload_digest, acceptance_token_hash, descriptor_json, status, created_at, expires_at,
+                accepted_at, revoked_at, superseded_by_invitation_id
+         from chat_channel_invitation
+         where chat_id = ?
+           and invitee_actor_id = ?
+           and (? = 1 or status = 'pending')
+         order by created_at desc, invitation_id desc
+         limit 1`,
+      )
+      .get(input.chatId, input.inviteeActorId, input.includeNonPending ? 1 : 0) as Parameters<typeof mapInvitation>[0] | null;
+    return row ? mapInvitation(row) : undefined;
+  }
+
+  findInvitationByTokenHash(acceptanceTokenHash: string): MessageInvitationRecord | undefined {
+    const row = this.db
+      .query(
+        `select invitation_id, chat_id, inviter_actor_id, invitee_actor_id, native_payload_json,
+                payload_digest, acceptance_token_hash, descriptor_json, status, created_at, expires_at,
+                accepted_at, revoked_at, superseded_by_invitation_id
+         from chat_channel_invitation
+         where acceptance_token_hash = ?
+         order by created_at desc, invitation_id desc
+         limit 1`,
+      )
+      .get(acceptanceTokenHash) as Parameters<typeof mapInvitation>[0] | null;
+    return row ? mapInvitation(row) : undefined;
+  }
+
+  updateInvitationStatus(
+    chatId: string,
+    invitationId: string,
+    patch: {
+      status?: MessageInvitationRecord["status"];
+      acceptedAt?: number | null;
+      revokedAt?: number | null;
+      supersededByInvitationId?: string | null;
+    },
+  ): MessageInvitationRecord {
+    const current = this.getInvitationById(chatId, invitationId);
+    if (!current) {
+      throw new Error(`unknown room invitation: ${invitationId}`);
+    }
+    this.db
+      .query(
+        `update chat_channel_invitation
+         set status = ?,
+             accepted_at = ?,
+             revoked_at = ?,
+             superseded_by_invitation_id = ?
+         where chat_id = ? and invitation_id = ?`,
+      )
+      .run(
+        patch.status ?? current.status,
+        patch.acceptedAt === undefined ? current.acceptedAt ?? null : patch.acceptedAt,
+        patch.revokedAt === undefined ? current.revokedAt ?? null : patch.revokedAt,
+        patch.supersededByInvitationId === undefined
+          ? current.supersededByInvitationId ?? null
+          : patch.supersededByInvitationId,
+        chatId,
+        invitationId,
+      );
+    return this.getInvitationById(chatId, invitationId)!;
+  }
+
+  revokePendingInvitationsByParticipant(chatId: string, participantId: string, revokedAt = Date.now()): void {
+    this.db
+      .query(
+        `update chat_channel_invitation
+         set status = 'revoked',
+             revoked_at = coalesce(revoked_at, ?)
+         where chat_id = ?
+           and invitee_actor_id = ?
+           and status = 'pending'`,
+      )
+      .run(revokedAt, chatId, participantId);
+  }
+
+  expirePendingInvitations(now = Date.now()): void {
+    this.db
+      .query(
+        `update chat_channel_invitation
+         set status = 'expired'
+         where status = 'pending'
+           and expires_at <= ?`,
+      )
+      .run(now);
   }
 
   getActorState(actorId: MessageActorId): MessageActorStateRecord | undefined {
@@ -2261,6 +2471,24 @@ export class MessageDb {
         foreign key(chat_id) references chat_channel(chat_id) on delete cascade
       );
 
+      create table if not exists chat_channel_invitation (
+        invitation_id text primary key,
+        chat_id text not null,
+        inviter_actor_id text not null,
+        invitee_actor_id text not null,
+        native_payload_json text not null,
+        payload_digest text not null,
+        acceptance_token_hash text not null,
+        descriptor_json text not null,
+        status text not null,
+        created_at integer not null,
+        expires_at integer not null,
+        accepted_at integer,
+        revoked_at integer,
+        superseded_by_invitation_id text,
+        foreign key(chat_id) references chat_channel(chat_id) on delete cascade
+      );
+
       create table if not exists actor_state (
         actor_id text primary key,
         unread_total integer not null default 0,
@@ -2341,6 +2569,9 @@ export class MessageDb {
       create index if not exists idx_chat_channel_updated on chat_channel(updated_at desc, chat_id asc);
       create index if not exists idx_chat_channel_archived on chat_channel(archived_at, updated_at desc, chat_id asc);
       create index if not exists idx_chat_channel_grant_chat_created on chat_channel_grant(chat_id, created_at desc, grant_id desc);
+      create index if not exists idx_chat_channel_invitation_chat_invitee on chat_channel_invitation(chat_id, invitee_actor_id, created_at desc, invitation_id desc);
+      create index if not exists idx_chat_channel_invitation_token_hash on chat_channel_invitation(acceptance_token_hash, created_at desc, invitation_id desc);
+      create index if not exists idx_chat_channel_invitation_chat_status_expiry on chat_channel_invitation(chat_id, status, expires_at asc, created_at desc);
       create index if not exists idx_actor_state_unread_total on actor_state(unread_total desc, actor_id asc);
       create index if not exists idx_actor_room_state_unread on actor_room_state(actor_id, unread_count desc, latest_unread_at desc, chat_id asc);
       create index if not exists idx_actor_source_subscription_updated on actor_source_subscription(owner_actor_id, updated_at desc, source_id asc);

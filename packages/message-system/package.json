@@ -11,6 +11,7 @@
     "./types": "./src/types.ts"
   },
   "dependencies": {
+    "@agenter/managed-seat-invitation-handshake": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",
     "@agenter/search-syntax": "workspace:*"
   }

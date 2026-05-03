@@ -17,6 +17,7 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
+    "@agenter/managed-seat-invitation-handshake": "workspace:*",
     "@agenter/terminal-transport-protocol": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",
     "@opentui/core": "latest",

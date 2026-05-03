@@ -1,4 +1,9 @@
 import type { PrincipalId } from "@agenter/principal-crypto";
+import type {
+  ManagedInvitationEndpointDescriptor,
+  ManagedInvitationRecordBase,
+  ManagedInvitationShareDescriptor,
+} from "@agenter/managed-seat-invitation-handshake";
 import type { ManagedTerminalSnapshot } from "./managed-terminal";
 import type { TerminalDirtySliceResult, TerminalGitLogMode, TerminalLogStyle, TerminalStatus } from "./types";
 import type {
@@ -13,6 +18,7 @@ export type TerminalReadMode = "auto" | "diff" | "snapshot";
 export type TerminalAwaitUntil = "changed" | "idle" | "match" | "absent";
 export type TerminalAwaitOutcome = "changed" | "idle" | "matched" | "absent" | "timeout" | "stopped" | "cancelled";
 export type TerminalGrantRole = "admin" | "writer" | "requester" | "readonly";
+export type TerminalManagedSeatClass = "RO" | "RW" | "TM";
 export type TerminalApprovalStatus = "pending" | "approved" | "denied" | "expired";
 export type TerminalRendererPreference = "auto" | "ghostty-web" | "wterm" | "xterm";
 export type TerminalResolvedRenderer = "ghostty-web" | "wterm" | "xterm";
@@ -343,6 +349,62 @@ export interface TerminalIssueGrantInput {
   label?: string;
   accessTokenHint?: string;
   adminCandidateRank?: number | null;
+}
+
+export interface TerminalManagedSeatPayload {
+  seatClass: TerminalManagedSeatClass;
+  role: Exclude<TerminalGrantRole, "requester">;
+  label?: string;
+  adminCandidateRank?: number | null;
+}
+
+export interface TerminalInvitationRecord extends ManagedInvitationRecordBase<TerminalManagedSeatPayload> {
+  resourceKind: "terminal";
+  resourceId: string;
+  descriptor: ManagedInvitationShareDescriptor & {
+    resourceKind: "terminal";
+  };
+}
+
+export interface TerminalInviteSeatInput {
+  terminalId: string;
+  participantId: PrincipalId;
+  seatClass: TerminalManagedSeatClass;
+  label?: string;
+  expiresAt?: number;
+  endpoint?: ManagedInvitationEndpointDescriptor;
+  accessToken?: string;
+  actorId?: TerminalActorId;
+  superadminActorId?: TerminalActorId;
+}
+
+export interface TerminalAcceptSeatInput {
+  descriptor: string;
+  proof: {
+    inviteePrincipalId: PrincipalId;
+    payload: string;
+    signature: string;
+  };
+}
+
+export interface TerminalConfigSeatInput {
+  terminalId: string;
+  participantId: PrincipalId;
+  seatClass: TerminalManagedSeatClass;
+  label?: string;
+  expiresAt?: number;
+  endpoint?: ManagedInvitationEndpointDescriptor;
+  accessToken?: string;
+  actorId?: TerminalActorId;
+  superadminActorId?: TerminalActorId;
+}
+
+export interface TerminalRevokeSeatInput {
+  terminalId: string;
+  participantId: PrincipalId;
+  accessToken?: string;
+  actorId?: TerminalActorId;
+  superadminActorId?: TerminalActorId;
 }
 
 export interface TerminalIssuedGrant extends TerminalGrantRecord {

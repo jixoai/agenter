@@ -5,6 +5,8 @@ import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 
 import type {
+  TerminalInvitationRecord,
+  TerminalManagedSeatPayload,
   TerminalAdminCandidateRecord,
   TerminalApprovalRequestRecord,
   TerminalApprovalStatus,
@@ -186,6 +188,57 @@ const mapAdminCandidate = (row: {
   terminalId: row.terminal_id,
   participantId: row.participant_id as TerminalAdminCandidateRecord["participantId"],
   priority: row.priority,
+});
+
+const normalizeInvitationStatus = (value: string | null): TerminalInvitationRecord["status"] => {
+  switch (value) {
+    case "accepted":
+    case "revoked":
+    case "expired":
+      return value;
+    default:
+      return "pending";
+  }
+};
+
+const mapInvitation = (row: {
+  invitation_id: string;
+  terminal_id: string;
+  inviter_participant_id: string;
+  invitee_participant_id: string;
+  native_payload_json: string;
+  payload_digest: string;
+  acceptance_token_hash: string;
+  descriptor_json: string;
+  status: string | null;
+  created_at: number;
+  expires_at: number;
+  accepted_at: number | null;
+  revoked_at: number | null;
+  superseded_by_invitation_id: string | null;
+}): TerminalInvitationRecord => ({
+  invitationId: row.invitation_id,
+  resourceKind: "terminal",
+  resourceId: row.terminal_id,
+  inviterPrincipalId: row.inviter_participant_id as TerminalInvitationRecord["inviterPrincipalId"],
+  inviteePrincipalId: row.invitee_participant_id as TerminalInvitationRecord["inviteePrincipalId"],
+  payload: parseJson<TerminalManagedSeatPayload>(row.native_payload_json, {
+    seatClass: "RO",
+    role: "readonly",
+  }),
+  payloadDigest: row.payload_digest,
+  tokenHash: row.acceptance_token_hash,
+  descriptor: parseJson<TerminalInvitationRecord["descriptor"]>(row.descriptor_json, {
+    resourceKind: "terminal",
+    token: "",
+    deepLink: "",
+  }),
+  status: normalizeInvitationStatus(row.status),
+  createdAt: row.created_at,
+  expiresAt: row.expires_at,
+  acceptedAt: row.accepted_at ?? undefined,
+  revokedAt: row.revoked_at ?? undefined,
+  supersededByInvitationId: row.superseded_by_invitation_id ?? undefined,
 });
 
 const mapEvent = (row: {
@@ -515,6 +568,188 @@ export class TerminalDb {
     return Number(result.changes) > 0;
   }
 
+  upsertInvitation(input: {
+    invitationId: string;
+    terminalId: string;
+    inviterParticipantId: string;
+    inviteeParticipantId: string;
+    nativePayload: TerminalManagedSeatPayload;
+    payloadDigest: string;
+    acceptanceTokenHash: string;
+    descriptor: TerminalInvitationRecord["descriptor"];
+    expiresAt: number;
+    supersededByInvitationId?: string | null;
+  }): TerminalInvitationRecord {
+    const now = Date.now();
+    this.db
+      .query(
+        `insert into terminal_invitation (
+          invitation_id,
+          terminal_id,
+          inviter_participant_id,
+          invitee_participant_id,
+          native_payload_json,
+          payload_digest,
+          acceptance_token_hash,
+          descriptor_json,
+          status,
+          created_at,
+          expires_at,
+          accepted_at,
+          revoked_at,
+          superseded_by_invitation_id
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, null, null, ?)`,
+      )
+      .run(
+        input.invitationId,
+        input.terminalId,
+        input.inviterParticipantId,
+        input.inviteeParticipantId,
+        toJson(input.nativePayload),
+        input.payloadDigest,
+        input.acceptanceTokenHash,
+        toJson(input.descriptor),
+        now,
+        input.expiresAt,
+        input.supersededByInvitationId ?? null,
+      );
+    return this.getInvitationById(input.terminalId, input.invitationId)!;
+  }
+
+  getInvitationById(terminalId: string, invitationId: string): TerminalInvitationRecord | undefined {
+    const row = this.db
+      .query(
+        `select invitation_id, terminal_id, inviter_participant_id, invitee_participant_id, native_payload_json,
+                payload_digest, acceptance_token_hash, descriptor_json, status, created_at, expires_at,
+                accepted_at, revoked_at, superseded_by_invitation_id
+         from terminal_invitation
+         where terminal_id = ? and invitation_id = ?`,
+      )
+      .get(terminalId, invitationId) as Parameters<typeof mapInvitation>[0] | null;
+    return row ? mapInvitation(row) : undefined;
+  }
+
+  findLatestInvitationForParticipant(input: {
+    terminalId: string;
+    inviteeParticipantId: string;
+    includeNonPending?: boolean;
+  }): TerminalInvitationRecord | undefined {
+    const row = this.db
+      .query(
+        `select invitation_id, terminal_id, inviter_participant_id, invitee_participant_id, native_payload_json,
+                payload_digest, acceptance_token_hash, descriptor_json, status, created_at, expires_at,
+                accepted_at, revoked_at, superseded_by_invitation_id
+         from terminal_invitation
+         where terminal_id = ?
+           and invitee_participant_id = ?
+           and (? = 1 or status = 'pending')
+         order by created_at desc, invitation_id desc
+         limit 1`,
+      )
+      .get(
+        input.terminalId,
+        input.inviteeParticipantId,
+        input.includeNonPending ? 1 : 0,
+      ) as Parameters<typeof mapInvitation>[0] | null;
+    return row ? mapInvitation(row) : undefined;
+  }
+
+  findInvitationByTokenHash(acceptanceTokenHash: string): TerminalInvitationRecord | undefined {
+    const row = this.db
+      .query(
+        `select invitation_id, terminal_id, inviter_participant_id, invitee_participant_id, native_payload_json,
+                payload_digest, acceptance_token_hash, descriptor_json, status, created_at, expires_at,
+                accepted_at, revoked_at, superseded_by_invitation_id
+         from terminal_invitation
+         where acceptance_token_hash = ?
+         order by created_at desc, invitation_id desc
+         limit 1`,
+      )
+      .get(acceptanceTokenHash) as Parameters<typeof mapInvitation>[0] | null;
+    return row ? mapInvitation(row) : undefined;
+  }
+
+  listInvitations(terminalId: string, input: { statuses?: TerminalInvitationRecord["status"][] } = {}): TerminalInvitationRecord[] {
+    const clauses = ["terminal_id = ?"];
+    const values: Array<string> = [terminalId];
+    if ((input.statuses?.length ?? 0) > 0) {
+      const placeholders = input.statuses!.map(() => "?").join(", ");
+      clauses.push(`status in (${placeholders})`);
+      values.push(...input.statuses!);
+    }
+    const rows = this.db
+      .query(
+        `select invitation_id, terminal_id, inviter_participant_id, invitee_participant_id, native_payload_json,
+                payload_digest, acceptance_token_hash, descriptor_json, status, created_at, expires_at,
+                accepted_at, revoked_at, superseded_by_invitation_id
+         from terminal_invitation
+         where ${clauses.join(" and ")}
+         order by created_at desc, invitation_id desc`,
+      )
+      .all(...values) as Array<Parameters<typeof mapInvitation>[0]>;
+    return rows.map(mapInvitation);
+  }
+
+  updateInvitationStatus(
+    terminalId: string,
+    invitationId: string,
+    patch: {
+      status?: TerminalInvitationRecord["status"];
+      acceptedAt?: number | null;
+      revokedAt?: number | null;
+      supersededByInvitationId?: string | null;
+    },
+  ): TerminalInvitationRecord {
+    const current = this.getInvitationById(terminalId, invitationId);
+    if (!current) {
+      throw new Error(`unknown terminal invitation: ${invitationId}`);
+    }
+    this.db
+      .query(
+        `update terminal_invitation
+         set status = ?,
+             accepted_at = ?,
+             revoked_at = ?,
+             superseded_by_invitation_id = ?
+         where terminal_id = ? and invitation_id = ?`,
+      )
+      .run(
+        patch.status ?? current.status,
+        patch.acceptedAt === undefined ? current.acceptedAt ?? null : patch.acceptedAt,
+        patch.revokedAt === undefined ? current.revokedAt ?? null : patch.revokedAt,
+        patch.supersededByInvitationId === undefined
+          ? current.supersededByInvitationId ?? null
+          : patch.supersededByInvitationId,
+        terminalId,
+        invitationId,
+      );
+    return this.getInvitationById(terminalId, invitationId)!;
+  }
+
+  revokePendingInvitationsByParticipant(terminalId: string, participantId: string, revokedAt = Date.now()): void {
+    this.db
+      .query(
+        `update terminal_invitation
+         set status = 'revoked',
+             revoked_at = coalesce(revoked_at, ?)
+         where terminal_id = ?
+           and invitee_participant_id = ?
+           and status = 'pending'`,
+      )
+      .run(revokedAt, terminalId, participantId);
+  }
+
+  expirePendingInvitations(now = Date.now()): void {
+    this.db
+      .query(
+        `update terminal_invitation
+         set status = 'expired'
+         where status = 'pending'
+           and expires_at <= ?`,
+      )
+      .run(now);
+  }
+
   setAdminGroup(terminalId: string, participantIds: string[]): TerminalAdminCandidateRecord[] {
     const current = this.listAdminCandidates(terminalId);
     const nextSet = new Set(participantIds);
@@ -717,6 +952,18 @@ export class TerminalDb {
     return row ? mapLease(row) : undefined;
   }
 
+  revokeActiveLeasesByParticipant(terminalId: string, participantId: string, revokedAt = Date.now()): void {
+    this.db
+      .query(
+        `update terminal_write_lease
+         set revoked_at = coalesce(revoked_at, ?)
+         where terminal_id = ?
+           and participant_id = ?
+           and revoked_at is null`,
+      )
+      .run(revokedAt, terminalId, participantId);
+  }
+
   revokeExpiredLeases(now = Date.now()): void {
     this.db
       .query(
@@ -860,6 +1107,22 @@ export class TerminalDb {
         created_at integer not null,
         revoked_at integer
       );
+      create table if not exists terminal_invitation (
+        invitation_id text primary key,
+        terminal_id text not null,
+        inviter_participant_id text not null,
+        invitee_participant_id text not null,
+        native_payload_json text not null,
+        payload_digest text not null,
+        acceptance_token_hash text not null,
+        descriptor_json text not null,
+        status text not null,
+        created_at integer not null,
+        expires_at integer not null,
+        accepted_at integer,
+        revoked_at integer,
+        superseded_by_invitation_id text
+      );
       create table if not exists terminal_admin_candidate (
         terminal_id text not null,
         participant_id text not null,
@@ -906,6 +1169,9 @@ export class TerminalDb {
       create index if not exists idx_terminal_catalog_updated on terminal_catalog(updated_at desc, terminal_id asc);
       create index if not exists idx_terminal_grant_terminal_participant on terminal_grant(terminal_id, participant_id, created_at desc, grant_id desc);
       create index if not exists idx_terminal_grant_token on terminal_grant(terminal_id, token_hash, created_at desc, grant_id desc);
+      create index if not exists idx_terminal_invitation_terminal_invitee on terminal_invitation(terminal_id, invitee_participant_id, created_at desc, invitation_id desc);
+      create index if not exists idx_terminal_invitation_token_hash on terminal_invitation(acceptance_token_hash, created_at desc, invitation_id desc);
+      create index if not exists idx_terminal_invitation_terminal_status_expiry on terminal_invitation(terminal_id, status, expires_at asc, created_at desc);
       create index if not exists idx_terminal_request_terminal_status on terminal_approval_request(terminal_id, status, created_at asc, request_id asc);
       create index if not exists idx_terminal_lease_terminal_participant on terminal_write_lease(terminal_id, participant_id, expires_at desc, lease_id desc);
       create index if not exists idx_terminal_event_terminal_created on terminal_event(terminal_id, created_at desc, event_id desc);

@@ -1,4 +1,9 @@
 import type { PrincipalId } from "@agenter/principal-crypto";
+import type {
+  ManagedInvitationEndpointDescriptor,
+  ManagedInvitationRecordBase,
+  ManagedInvitationShareDescriptor,
+} from "@agenter/managed-seat-invitation-handshake";
 
 export interface MessageTransportConfig {
   host?: string;
@@ -24,6 +29,7 @@ export interface MessageControlPlaneConfigPatch {
 export type MessageChannelKind = "room";
 export type MessageFocusOp = "add" | "remove" | "replace" | "clear";
 export type MessageChannelAccessRole = "admin" | "member" | "readonly";
+export type MessageManagedSeatClass = MessageChannelAccessRole;
 export type MessageActorId = PrincipalId | `auth:${string}` | `session:${string}` | `system:${string}`;
 export type MessageAdminWorkKind = "grant_issue" | "grant_revoke" | "metadata_update";
 export type MessageContactRequestDirection = "inbound" | "outbound";
@@ -402,6 +408,58 @@ export interface MessageIssueGrantInput {
   label?: string;
   participantId?: string;
   accessTokenHint?: string;
+}
+
+export interface MessageManagedSeatPayload {
+  seatClass: MessageManagedSeatClass;
+  role: MessageChannelAccessRole;
+  label?: string;
+}
+
+export interface MessageInvitationRecord extends ManagedInvitationRecordBase<MessageManagedSeatPayload> {
+  resourceKind: "message";
+  resourceId: string;
+  descriptor: ManagedInvitationShareDescriptor & {
+    resourceKind: "message";
+  };
+}
+
+export interface MessageInviteSeatInput {
+  chatId: string;
+  participantId: PrincipalId;
+  seatClass: MessageManagedSeatClass;
+  label?: string;
+  expiresAt?: number;
+  endpoint?: ManagedInvitationEndpointDescriptor;
+  accessToken?: string;
+  superadminActorId?: MessageActorId;
+}
+
+export interface MessageAcceptSeatInput {
+  descriptor: string;
+  proof: {
+    inviteePrincipalId: PrincipalId;
+    payload: string;
+    signature: string;
+  };
+}
+
+export interface MessageConfigSeatInput {
+  chatId: string;
+  participantId: PrincipalId;
+  seatClass: MessageManagedSeatClass;
+  label?: string;
+  expiresAt?: number;
+  endpoint?: ManagedInvitationEndpointDescriptor;
+  accessToken?: string;
+  superadminActorId?: MessageActorId;
+}
+
+export interface MessageRevokeSeatInput {
+  chatId: string;
+  participantId: PrincipalId;
+  accessToken?: string;
+  superadminActorId?: MessageActorId;
 }
 
 export interface CommitWaitHandle<T = unknown> {

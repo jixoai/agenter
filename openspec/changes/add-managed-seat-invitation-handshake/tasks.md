@@ -1,20 +1,20 @@
 ## 1. Shared Invitation Core
 
-- [ ] 1.1 Add durable invitation truth for pending, accepted, revoked, and expired managed-seat invitations.
-- [ ] 1.2 Add resource-native authority snapshot binding, shared invitation token parsing, share descriptor projection, and principal-signature acceptance helpers.
-- [ ] 1.3 Add tests for wrong-principal rejection, token expiry, and invitation replacement invalidation.
-- [ ] 1.4 Keep the shared layer protocol-only; do not introduce a new global invitation database or mutable invitation authority.
+- [x] 1.1 Add durable invitation truth for pending, accepted, revoked, and expired managed-seat invitations.
+- [x] 1.2 Add resource-native authority snapshot binding, shared invitation token parsing, share descriptor projection, and principal-signature acceptance helpers.
+- [x] 1.3 Add tests for wrong-principal rejection, token expiry, and invitation replacement invalidation.
+- [x] 1.4 Keep the shared layer protocol-only; do not introduce a new global invitation database or mutable invitation authority.
 
 ## 2. Terminal Integration
 
-- [ ] 2.1 Add terminal control-plane invite, accept, config, and revoke operations on top of the shared invitation core.
-- [ ] 2.2 Map terminal-native `RO | RW | TM` authority inputs to terminal payloads, keep `RW` as direct-write semantics, and preserve existing current-admin and lease rules.
+- [x] 2.1 Add terminal control-plane invite, accept, config, and revoke operations on top of the shared invitation core.
+- [x] 2.2 Map terminal-native `RO | RW | TM` authority inputs to terminal payloads, keep `RW` as direct-write semantics, and preserve existing current-admin and lease rules.
 - [ ] 2.3 Add terminal tests covering accepted-seat activation, TM admin-candidate insertion, config mutation, and revoke invalidation.
 
 ## 3. Message Integration
 
-- [ ] 3.1 Add message control-plane invite, accept, config, and revoke operations on top of the shared invitation core.
-- [ ] 3.2 Map room-native authority inputs to room payloads and preserve existing room current-admin and state-clear rules.
+- [x] 3.1 Add message control-plane invite, accept, config, and revoke operations on top of the shared invitation core.
+- [x] 3.2 Map room-native authority inputs to room payloads and preserve existing room current-admin and state-clear rules.
 - [ ] 3.3 Add message tests covering accepted-seat activation, room-admin candidate insertion, config mutation, and revoke invalidation.
 
 ## 4. CLI And Runtime Surface
