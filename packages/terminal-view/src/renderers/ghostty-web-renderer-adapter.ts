@@ -11,7 +11,24 @@ import {
 import type { ResolvedTerminalAppearance } from "../terminal-renderer-profile";
 import type { TerminalViewScreenMetrics } from "../terminal-view-types";
 
-const TERMINAL_FONT_SIZE = 12;
+type GhosttyTerminalOptionPatch = {
+  lineHeight?: number;
+  letterSpacing?: number;
+  fontWeight?: string;
+  fontWeightBold?: string;
+};
+
+const applyGhosttyFontOptions = (
+  terminal: Terminal,
+  appearance: ResolvedTerminalAppearance,
+): void => {
+  Object.assign(terminal.options as GhosttyTerminalOptionPatch, {
+    lineHeight: appearance.font.lineHeight,
+    letterSpacing: appearance.font.letterSpacing,
+    fontWeight: appearance.font.weight,
+    fontWeightBold: appearance.font.weightBold,
+  } satisfies GhosttyTerminalOptionPatch);
+};
 
 class GhosttyRendererSession implements TerminalRendererSession {
   readonly resolvedRenderer = "ghostty-web" as const;
@@ -28,12 +45,13 @@ class GhosttyRendererSession implements TerminalRendererSession {
       cursorStyle: input.appearance.cursorStyle,
       cols: input.cols,
       rows: input.rows,
-      fontFamily: "var(--font-mono, ui-monospace, SFMono-Regular, monospace)",
-      fontSize: TERMINAL_FONT_SIZE,
+      fontFamily: input.appearance.font.family,
+      fontSize: input.appearance.font.sizePx,
       scrollback: input.scrollback,
       smoothScrollDuration: 0,
       theme: input.appearance.theme,
     });
+    applyGhosttyFontOptions(this.terminal, input.appearance);
     this.host.replaceChildren();
     this.terminal.open(this.host);
     this.inputDataDisposable = this.terminal.onData((data: string) => {
@@ -78,30 +96,34 @@ class GhosttyRendererSession implements TerminalRendererSession {
   applyAppearance(appearance: ResolvedTerminalAppearance): void {
     this.terminal.options.theme = appearance.theme;
     this.terminal.options.cursorStyle = appearance.cursorStyle;
+    this.terminal.options.fontFamily = appearance.font.family;
+    this.terminal.options.fontSize = appearance.font.sizePx;
+    applyGhosttyFontOptions(this.terminal, appearance);
     this.terminal.renderer?.setTheme(appearance.theme);
     this.terminal.renderer?.setCursorStyle(appearance.cursorStyle);
     this.decoratePublicSurfaces();
   }
 
   getScreenMetrics(): TerminalViewScreenMetrics | null {
+    const metrics = this.terminal.renderer?.getMetrics();
+    if (metrics && metrics.width > 0 && metrics.height > 0) {
+      return {
+        width: Math.round(metrics.width * this.terminal.cols),
+        height: Math.round(metrics.height * this.terminal.rows),
+      };
+    }
     const canvas = this.terminal.renderer?.getCanvas();
     if (canvas) {
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
+      const width = canvas.clientWidth || canvas.offsetWidth;
+      const height = canvas.clientHeight || canvas.offsetHeight;
+      if (width > 0 && height > 0) {
         return {
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
+          width: Math.round(width),
+          height: Math.round(height),
         };
       }
     }
-    const metrics = this.terminal.renderer?.getMetrics();
-    if (!metrics || metrics.width <= 0 || metrics.height <= 0) {
-      return null;
-    }
-    return {
-      width: Math.round(metrics.width * this.terminal.cols),
-      height: Math.round(metrics.height * this.terminal.rows),
-    };
+    return null;
   }
 
   dispose(): void {
@@ -125,6 +147,13 @@ export const primeGhosttyWebRuntime = async (): Promise<void> => {
 export const ghosttyWebRendererAdapter: TerminalRendererAdapter = {
   renderer: "ghostty-web",
   styles: "",
+  // ghostty-web currently does not settle post-open theme swaps reliably enough to
+  // treat them as host-authoritative live updates. Keep that capability law adapter-local.
+  presentationMutationPolicy: {
+    theme: "rebuild-session",
+    cursor: "live-apply",
+    font: "rebuild-session",
+  },
   ensureReady: primeGhosttyWebRuntime,
   createSession(input) {
     return new GhosttyRendererSession(input);

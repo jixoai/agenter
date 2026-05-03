@@ -3,7 +3,7 @@
 	import MoveDiagonal2Icon from '@lucide/svelte/icons/move-diagonal-2';
 	import SendHorizontalIcon from '@lucide/svelte/icons/send-horizontal';
 	import { resolveAsyncSurfaceState, type ToolInvocationView } from '@agenter/web-components';
-	import { tick, untrack } from 'svelte';
+	import { flushSync, tick, untrack } from 'svelte';
 
 	import { Scaffold } from '@agenter/svelte-components';
 	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
@@ -60,6 +60,7 @@
 		onWriteToolCall,
 		onReadToolCall,
 		onResizeToolCall,
+		onPresentationConfigChange,
 	}: TerminalSystemSurfaceProps = $props();
 
 	let deleteBusy = $state(false);
@@ -337,9 +338,14 @@
 		if (!selectedTerminal || !effectiveCallerToken || !writeText.trim() || writeBusy) {
 			return;
 		}
+		flushSync();
+		const draft = writeText;
+		if (!draft.trim()) {
+			return;
+		}
 		writeBusy = true;
 		try {
-			const result = await onWriteToolCall({ text: writeText });
+			const result = await onWriteToolCall({ text: draft });
 			if (result?.ok) {
 				writeText = '';
 			}
@@ -788,6 +794,7 @@
 						{lifecycleIntent}
 						onRequestLifecycleAction={handleRequestLifecycleAction}
 						onToggleViewportMode={handleToggleViewportMode}
+						onPresentationConfigChange={onPresentationConfigChange}
 						onLiveResize={({ width, height, cols, rows }) => {
 							liveViewportSizeByTerminalId = {
 								...liveViewportSizeByTerminalId,

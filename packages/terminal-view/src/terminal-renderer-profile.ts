@@ -3,9 +3,29 @@ export type TerminalResolvedRenderer = "ghostty-web" | "wterm" | "xterm";
 export type TerminalThemeName = "default-dark" | "default-light" | "monokai";
 export type TerminalCursorStyle = "block" | "bar" | "underline";
 
+export interface TerminalFontProfile {
+  family: string;
+  sizePx: number;
+  lineHeight: number;
+  letterSpacing: number;
+  weight: string;
+  weightBold: string;
+  ligatures: boolean;
+}
+
 export const DEFAULT_TERMINAL_RENDERER_PREFERENCE = "auto" as const satisfies TerminalRendererPreference;
 export const DEFAULT_TERMINAL_THEME = "default-dark" as const satisfies TerminalThemeName;
 export const DEFAULT_TERMINAL_CURSOR = "block" as const satisfies TerminalCursorStyle;
+export const DEFAULT_TERMINAL_FONT: Readonly<TerminalFontProfile> = {
+  family:
+    "'JetBrains Mono Variable', 'JetBrains Mono', 'SFMono-Regular', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace",
+  sizePx: 13,
+  lineHeight: 1.2,
+  letterSpacing: 0,
+  weight: "400",
+  weightBold: "700",
+  ligatures: true,
+} as const satisfies TerminalFontProfile;
 
 export interface TerminalThemeTokens {
   name: TerminalThemeName;
@@ -37,6 +57,7 @@ export interface ResolvedTerminalAppearance {
   themeName: TerminalThemeName;
   cursorStyle: TerminalCursorStyle;
   theme: TerminalThemeTokens;
+  font: TerminalFontProfile;
 }
 
 export interface TerminalRendererResolution {
@@ -126,15 +147,29 @@ const TERMINAL_THEME_TOKENS = {
 export const resolveTerminalTheme = (themeName: TerminalThemeName | null | undefined): TerminalThemeTokens =>
   TERMINAL_THEME_TOKENS[themeName ?? DEFAULT_TERMINAL_THEME];
 
+// Font is durable terminal-system truth. Renderers resolve from this shared profile
+// instead of persisting engine-local font defaults or host-local CSS guesses.
+export const resolveTerminalFont = (font: Partial<TerminalFontProfile> | null | undefined): TerminalFontProfile => ({
+  family: font?.family ?? DEFAULT_TERMINAL_FONT.family,
+  sizePx: font?.sizePx ?? DEFAULT_TERMINAL_FONT.sizePx,
+  lineHeight: font?.lineHeight ?? DEFAULT_TERMINAL_FONT.lineHeight,
+  letterSpacing: font?.letterSpacing ?? DEFAULT_TERMINAL_FONT.letterSpacing,
+  weight: font?.weight ?? DEFAULT_TERMINAL_FONT.weight,
+  weightBold: font?.weightBold ?? DEFAULT_TERMINAL_FONT.weightBold,
+  ligatures: font?.ligatures ?? DEFAULT_TERMINAL_FONT.ligatures,
+});
+
 // Theme and cursor stay declarative at the durable top level. Adapters are allowed
 // to map or tolerate renderer-specific capability gaps without changing profile truth.
 export const resolveTerminalAppearance = (input?: {
   theme?: TerminalThemeName | null;
   cursor?: TerminalCursorStyle | null;
+  font?: Partial<TerminalFontProfile> | null;
 }): ResolvedTerminalAppearance => ({
   themeName: input?.theme ?? DEFAULT_TERMINAL_THEME,
   cursorStyle: input?.cursor ?? DEFAULT_TERMINAL_CURSOR,
   theme: resolveTerminalTheme(input?.theme ?? DEFAULT_TERMINAL_THEME),
+  font: resolveTerminalFont(input?.font),
 });
 
 // `auto` exists because renderer choice is front-end environment policy. The

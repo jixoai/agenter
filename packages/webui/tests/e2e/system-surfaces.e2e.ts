@@ -590,6 +590,15 @@ const readTerminalProjectionScale = async (page: Page): Promise<number> => {
   });
 };
 
+const openTerminalConfigDialog = async (page: Page): Promise<Locator> => {
+  const trigger = page.getByTestId("terminal-window-config-control");
+  await expect(trigger).toBeVisible({ timeout: 15_000 });
+  await clickStable(trigger);
+  const dialog = page.getByRole("dialog", { name: "Terminal presentation" });
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  return dialog;
+};
+
 const stopRuntimeIfRunning = async (page: Page): Promise<void> => {
   const stopButton = page.getByRole("button", { name: /^(Stop|Stop runtime)$/u }).first();
   const startButton = page.getByRole("button", { name: /^(Start|Start avatar|Start runtime)$/u }).first();
@@ -2011,6 +2020,75 @@ test.describe("Feature: Svelte system surfaces", () => {
       page,
       "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345",
     );
+  });
+
+  test("Scenario: Given the terminal titlebar config dialog When renderer theme and font change Then the live terminal route settles on the applied presentation profile", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(90_000);
+    const terminalId = `playwright-config-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+
+    await navigateToSystem(page, "Terminals");
+    await createTerminalAndOpenDetail(page, {
+      terminalId,
+      cwd: terminalCwd,
+    });
+
+    await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("terminal-window-fit-titlebar")).toBeVisible({ timeout: 15_000 });
+
+    const themeDialog = await openTerminalConfigDialog(page);
+    await chooseSelectOptionByText(page, themeDialog.getByTestId("terminal-config-theme-select"), "Default Light");
+    await clickStable(themeDialog.getByTestId("terminal-config-apply"));
+    await expect(themeDialog).toBeHidden({ timeout: 15_000 });
+    await expect
+      .poll(async () => {
+        return await page.locator("terminal-view").first().evaluate((element) => {
+          return "theme" in element ? element.theme : null;
+        });
+      })
+      .toBe("default-light");
+    await expect
+      .poll(async () => {
+        return await page.locator('[data-terminal-window-body="true"]').first().evaluate((element) => {
+          return getComputedStyle(element).backgroundColor;
+        });
+      })
+      .toBe("rgb(248, 250, 252)");
+
+    const rendererDialog = await openTerminalConfigDialog(page);
+    await chooseSelectOptionByText(page, rendererDialog.getByTestId("terminal-config-renderer-select"), "WTerm");
+    await clickStable(rendererDialog.getByTestId("terminal-config-apply"));
+    await expect(rendererDialog).toBeHidden({ timeout: 15_000 });
+    await expect
+      .poll(async () => {
+        return await page.locator("terminal-view").first().evaluate((element) => {
+          return "resolvedRenderer" in element ? element.resolvedRenderer : null;
+        });
+      })
+      .toBe("wterm");
+
+    const fontDialog = await openTerminalConfigDialog(page);
+    await chooseSelectOptionByText(page, fontDialog.getByTestId("terminal-config-font-family-select"), "SF Mono");
+    await chooseSelectOptionByText(page, fontDialog.getByTestId("terminal-config-font-size-select"), "16px");
+    await clickStable(fontDialog.getByTestId("terminal-config-apply"));
+    await expect(fontDialog).toBeHidden({ timeout: 15_000 });
+    await expect
+      .poll(async () => {
+        return await page.locator("terminal-view").first().evaluate((element) => {
+          return {
+            font: "font" in element ? element.font : null,
+            renderer: "resolvedRenderer" in element ? element.resolvedRenderer : null,
+          };
+        });
+      })
+      .toMatchObject({
+        renderer: "wterm",
+        font: {
+          family: expect.stringContaining("SF Mono"),
+          sizePx: 16,
+        },
+      });
   });
 
   test("Scenario: Given an existing terminal route When browser auth is cleared and the route reloads Then the sign-in gate blocks stale terminal actions", async ({

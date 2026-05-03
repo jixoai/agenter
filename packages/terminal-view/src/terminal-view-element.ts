@@ -9,21 +9,33 @@ import { property, query } from "lit/decorators.js";
 
 import {
   DEFAULT_TERMINAL_CURSOR,
+  DEFAULT_TERMINAL_FONT,
   DEFAULT_TERMINAL_RENDERER_PREFERENCE,
   DEFAULT_TERMINAL_THEME,
   resolveTerminalAppearance,
   resolveTerminalRenderer,
   type ResolvedTerminalAppearance,
   type TerminalCursorStyle,
+  type TerminalFontProfile,
   type TerminalRendererPreference,
   type TerminalResolvedRenderer,
   type TerminalThemeName,
 } from "./terminal-renderer-profile";
 import { resolveTerminalRendererAdapter, resolveTerminalRendererStyles } from "./terminal-renderer-registry";
-import type { TerminalRendererSession } from "./terminal-renderer-adapter";
+import type {
+  TerminalPresentationMutationField,
+  TerminalRendererAdapter,
+  TerminalRendererSession,
+} from "./terminal-renderer-adapter";
 import { TERMINAL_PUBLIC_SCREEN_ATTRIBUTE } from "./terminal-renderer-adapter";
 import { resolveTerminalScreenMetrics } from "./terminal-geometry";
-import type { TerminalViewConnectionState, TerminalViewScreenMetrics, TerminalViewSnapshot } from "./terminal-view-types";
+import type {
+  TerminalViewConnectionState,
+  TerminalViewPresentationReadyDetail,
+  TerminalViewPresentationSettleReason,
+  TerminalViewScreenMetrics,
+  TerminalViewSnapshot,
+} from "./terminal-view-types";
 
 export const TERMINAL_VIEW_TAG = "terminal-view";
 
@@ -150,6 +162,7 @@ export class TerminalViewElement extends LitElement {
     DEFAULT_TERMINAL_RENDERER_PREFERENCE;
   @property({ attribute: "theme-name" }) accessor theme: TerminalThemeName = DEFAULT_TERMINAL_THEME;
   @property({ attribute: "cursor-style" }) accessor cursor: TerminalCursorStyle = DEFAULT_TERMINAL_CURSOR;
+  @property({ attribute: false }) accessor font: TerminalFontProfile = { ...DEFAULT_TERMINAL_FONT };
   @property({ attribute: false }) accessor resolvedRenderer: TerminalResolvedRenderer | null = null;
   @property({ attribute: false }) accessor rendererReason = "";
   @property({ attribute: false }) accessor screenMetrics: TerminalViewScreenMetrics | null = null;
@@ -176,9 +189,11 @@ export class TerminalViewElement extends LitElement {
   private stageResizeFrame = 0;
   private viewportInteractionDisposers: Array<() => void> = [];
   private activeAppearanceKey = "";
+  private lastResolvedAppearance: ResolvedTerminalAppearance | null = null;
   private rendererErrorMessage = "";
   private rendererSetupToken = 0;
   private textEvidenceBuffer = "";
+  private lastResolvedRendererPreference: TerminalRendererPreference = DEFAULT_TERMINAL_RENDERER_PREFERENCE;
 
   // Canvas-first renderers such as ghostty-web do not surface visible terminal text
   // through DOM nodes. Keep one renderer-neutral text evidence surface for host probes
@@ -234,6 +249,7 @@ export class TerminalViewElement extends LitElement {
     this.upgradeProperty("rendererPreference");
     this.upgradeProperty("theme");
     this.upgradeProperty("cursor");
+    this.upgradeProperty("font");
     this.upgradeProperty("projectionWidth");
     this.upgradeProperty("projectionHeight");
     this.upgradeProperty("projectionScale");
@@ -287,7 +303,7 @@ export class TerminalViewElement extends LitElement {
         this.syncSocket();
       });
     }
-    if (changed.has("rendererPreference") || changed.has("theme") || changed.has("cursor")) {
+    if (changed.has("rendererPreference") || changed.has("theme") || changed.has("cursor") || changed.has("font")) {
       queueMicrotask(() => {
         if (!this.isConnected) {
           return;
@@ -360,7 +376,67 @@ export class TerminalViewElement extends LitElement {
     return resolveTerminalAppearance({
       theme: this.theme,
       cursor: this.cursor,
+      font: this.font,
     });
+  }
+
+  private resolvePresentationMutationRequirement(input: {
+    adapter: TerminalRendererAdapter;
+    previousAppearance: ResolvedTerminalAppearance | null;
+    nextAppearance: ResolvedTerminalAppearance;
+    previousRendererPreference: TerminalRendererPreference;
+    nextRendererPreference: TerminalRendererPreference;
+  }): {
+    fields: TerminalPresentationMutationField[];
+    requiresRebuild: boolean;
+    reason: TerminalViewPresentationSettleReason;
+  } {
+    const fields: TerminalPresentationMutationField[] = [];
+    if (!input.previousAppearance || input.previousAppearance.themeName !== input.nextAppearance.themeName) {
+      fields.push("theme");
+    }
+    if (!input.previousAppearance || input.previousAppearance.cursorStyle !== input.nextAppearance.cursorStyle) {
+      fields.push("cursor");
+    }
+    if (!input.previousAppearance || JSON.stringify(input.previousAppearance.font) !== JSON.stringify(input.nextAppearance.font)) {
+      fields.push("font");
+    }
+    if (input.previousRendererPreference !== input.nextRendererPreference) {
+      // Preference is durable truth even when auto resolves to the same renderer. Hosts still need
+      // a settled fact, so a pure preference change becomes a stable-session ack when no field changed.
+      if (fields.length === 0) {
+        return {
+          fields,
+          requiresRebuild: false,
+          reason: "stable-session",
+        };
+      }
+    }
+    const requiresRebuild = fields.some((field) => input.adapter.presentationMutationPolicy[field] === "rebuild-session");
+    return {
+      fields,
+      requiresRebuild,
+      reason: fields.length === 0 ? "stable-session" : requiresRebuild ? "rebuild-session" : "live-apply",
+    };
+  }
+
+  private dispatchPresentationReady(reason: TerminalViewPresentationSettleReason): void {
+    if (!this.resolvedRenderer) {
+      return;
+    }
+    const detail: TerminalViewPresentationReadyDetail = {
+      terminalId: this.terminalId,
+      resolvedRenderer: this.resolvedRenderer,
+      reason,
+      screenMetrics: this.screenMetrics,
+    };
+    this.dispatchEvent(
+      new CustomEvent<TerminalViewPresentationReadyDetail>("terminal-view-presentation-ready", {
+        detail,
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   private ensureRendererSession(): void {
@@ -375,18 +451,37 @@ export class TerminalViewElement extends LitElement {
       return;
     }
     const resolution = this.resolveRendererState();
+    const adapter = resolveTerminalRendererAdapter(resolution.resolvedRenderer);
     const appearance = this.resolveAppearance();
-    const appearanceKey = `${appearance.themeName}:${appearance.cursorStyle}`;
+    const appearanceKey = JSON.stringify({
+      themeName: appearance.themeName,
+      cursorStyle: appearance.cursorStyle,
+      font: appearance.font,
+    });
     const currentCols = this.snapshot?.cols ?? this.terminalSession?.cols ?? DEFAULT_COLS;
     const currentRows = this.snapshot?.rows ?? this.terminalSession?.rows ?? DEFAULT_ROWS;
-    const requiresRebuild = this.terminalSession?.resolvedRenderer !== resolution.resolvedRenderer;
+    const mutationRequirement =
+      adapter && this.terminalSession?.resolvedRenderer === resolution.resolvedRenderer
+        ? this.resolvePresentationMutationRequirement({
+            adapter,
+            previousAppearance: this.lastResolvedAppearance,
+            nextAppearance: appearance,
+            previousRendererPreference: this.lastResolvedRendererPreference,
+            nextRendererPreference: this.rendererPreference,
+          })
+        : {
+            fields: [] as TerminalPresentationMutationField[],
+            requiresRebuild: this.terminalSession?.resolvedRenderer !== resolution.resolvedRenderer,
+            reason: this.terminalSession ? ("rebuild-session" as const) : ("initial-session-ready" as const),
+          };
+    const requiresRebuild =
+      this.terminalSession?.resolvedRenderer !== resolution.resolvedRenderer || mutationRequirement.requiresRebuild;
 
     if (requiresRebuild) {
       this.disposeRendererSession();
     }
 
     if (!this.terminalSession) {
-      const adapter = resolveTerminalRendererAdapter(resolution.resolvedRenderer);
       if (!adapter) {
         this.resolvedRenderer = resolution.resolvedRenderer;
         this.rendererReason = resolution.reason;
@@ -414,7 +509,7 @@ export class TerminalViewElement extends LitElement {
         return;
       }
       this.rendererErrorMessage = "";
-      this.terminalSession = adapter.createSession({
+      this.terminalSession = await adapter.createSession({
         host: this.viewportHost,
         cols: currentCols,
         rows: currentRows,
@@ -428,17 +523,20 @@ export class TerminalViewElement extends LitElement {
         },
       });
       this.activeAppearanceKey = appearanceKey;
+      this.lastResolvedAppearance = appearance;
+      this.lastResolvedRendererPreference = this.rendererPreference;
       this.resolvedRenderer = resolution.resolvedRenderer;
       this.rendererReason = resolution.reason;
       this.bindViewportInteractionFocus();
       this.syncMeasuredScreen();
       if (this.snapshot) {
         const source = this.connectionState === "connected" ? "renderer" : "prop";
-        const applied = this.hydrateSnapshot(this.snapshot, source);
+        const applied = this.hydrateSnapshot(this.snapshot, source, { force: true });
         if (source === "renderer" && applied) {
           this.liveSnapshotHydrated = true;
         }
       }
+      this.dispatchPresentationReady(requiresRebuild ? "rebuild-session" : "initial-session-ready");
       return;
     }
 
@@ -447,7 +545,15 @@ export class TerminalViewElement extends LitElement {
     if (this.activeAppearanceKey !== appearanceKey) {
       this.terminalSession.applyAppearance(appearance);
       this.activeAppearanceKey = appearanceKey;
+      this.lastResolvedAppearance = appearance;
+      this.lastResolvedRendererPreference = this.rendererPreference;
       this.syncMeasuredScreen();
+      this.dispatchPresentationReady(mutationRequirement.reason);
+      return;
+    }
+    if (this.lastResolvedRendererPreference !== this.rendererPreference) {
+      this.lastResolvedRendererPreference = this.rendererPreference;
+      this.dispatchPresentationReady("stable-session");
     }
   }
 
@@ -458,6 +564,7 @@ export class TerminalViewElement extends LitElement {
     this.resolvedRenderer = null;
     this.rendererReason = "";
     this.activeAppearanceKey = "";
+    this.lastResolvedAppearance = null;
   }
 
   private upgradeProperty(
@@ -469,6 +576,7 @@ export class TerminalViewElement extends LitElement {
       | "rendererPreference"
       | "theme"
       | "cursor"
+      | "font"
       | "projectionWidth"
       | "projectionHeight"
       | "projectionScale"
@@ -578,15 +686,20 @@ export class TerminalViewElement extends LitElement {
     this.requestUpdate();
   }
 
-  private hydrateSnapshot(snapshot: TerminalViewSnapshot | null, source: "prop" | "transport" | "renderer"): boolean {
+  private hydrateSnapshot(
+    snapshot: TerminalViewSnapshot | null,
+    source: "prop" | "transport" | "renderer",
+    options?: { force?: boolean },
+  ): boolean {
     if (!snapshot || !this.terminalSession) {
       return false;
     }
     const geometryChanged = this.terminalSession.cols !== snapshot.cols || this.terminalSession.rows !== snapshot.rows;
+    const force = options?.force === true;
     if (source === "prop" && this.connectionState === "connected" && this.liveSnapshotHydrated) {
       return false;
     }
-    if (snapshot.seq <= this.hydratedSnapshotSeq && !geometryChanged) {
+    if (!force && snapshot.seq <= this.hydratedSnapshotSeq && !geometryChanged) {
       return false;
     }
     this.hydratedSnapshotSeq = Math.max(this.hydratedSnapshotSeq, snapshot.seq);
@@ -710,11 +823,6 @@ export class TerminalViewElement extends LitElement {
     const measured = this.terminalSession?.getScreenMetrics() ?? null;
     if (measured) {
       this.setScreenMetrics(measured.width, measured.height);
-      return;
-    }
-    const screenRect = this.renderRoot.querySelector(`[${TERMINAL_PUBLIC_SCREEN_ATTRIBUTE}]`)?.getBoundingClientRect();
-    if (screenRect && screenRect.width > 0 && screenRect.height > 0) {
-      this.setScreenMetrics(screenRect.width, screenRect.height);
     }
   }
 

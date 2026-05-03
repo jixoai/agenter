@@ -33,6 +33,10 @@ const ReadActionStructuredPreviewStaysCompact = getPortableStory(
 );
 const WindowChromeTogglesProjectionMode = getPortableStory(stories, 'WindowChromeTogglesProjectionMode');
 const WindowChromeLiveResizeUpdatesFrameHint = getPortableStory(stories, 'WindowChromeLiveResizeUpdatesFrameHint');
+const WindowTitlebarConfigPanelUpdatesPresentation = getPortableStory(
+	stories,
+	'WindowTitlebarConfigPanelUpdatesPresentation',
+);
 const WindowCloseRequiresConfirmation = getPortableStory(stories, 'WindowCloseRequiresConfirmation');
 const KillPtyRequiresConfirmation = getPortableStory(stories, 'KillPtyRequiresConfirmation');
 
@@ -95,6 +99,10 @@ describe('Feature: Storybook DOM contract for terminal system surface', () => {
 
 	test('Scenario: Given a terminal window live resize handle When the operator drags it Then the frame hint updates before any durable resize form is used', async () => {
 		await WindowChromeLiveResizeUpdatesFrameHint.run();
+	});
+
+	test('Scenario: Given terminal titlebar config controls When theme, renderer, and font options change Then the durable presentation profile updates across fit and cover chrome', async () => {
+		await WindowTitlebarConfigPanelUpdatesPresentation.run();
 	});
 
 	test('Scenario: Given a terminal toolbar delete action When deletion is confirmed Then the surface removes the terminal only after the confirmation dialog accepts it', async () => {

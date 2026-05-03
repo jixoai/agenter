@@ -220,4 +220,22 @@ describe("Feature: terminal window geometry", () => {
       frameHeight: 450,
     });
   });
+
+  test("Scenario: Given renderer-native screen metrics differ from fallback cell math When resolving screen metrics Then the measured renderer content stays authoritative", () => {
+    expect(
+      resolveTerminalScreenMetrics({
+        cols: 80,
+        rows: 24,
+        screenWidth: 824,
+        screenHeight: 612,
+      }),
+    ).toMatchObject({
+      cols: 80,
+      rows: 24,
+      screenWidth: 824,
+      screenHeight: 612,
+      frameWidth: 836,
+      frameHeight: 638,
+    });
+  });
 });

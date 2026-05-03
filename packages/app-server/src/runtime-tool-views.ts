@@ -299,6 +299,7 @@ export interface RuntimeTerminalView {
   rendererPreference: TerminalControlPlaneEntry["rendererPreference"];
   theme: TerminalControlPlaneEntry["theme"];
   cursor: TerminalControlPlaneEntry["cursor"];
+  font: TerminalControlPlaneEntry["font"];
 }
 
 export interface RuntimeTerminalConfigView extends TerminalConfigView {}
@@ -513,6 +514,7 @@ export const projectRuntimeTerminal = (terminal: TerminalControlPlaneEntry): Run
   rendererPreference: terminal.rendererPreference,
   theme: terminal.theme,
   cursor: terminal.cursor,
+  font: terminal.font,
 });
 
 export const projectRuntimeTerminalConfig = (config: TerminalConfigView): RuntimeTerminalConfigView => ({

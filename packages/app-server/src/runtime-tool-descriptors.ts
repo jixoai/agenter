@@ -79,7 +79,7 @@ export interface RuntimeLocalApiHandlers {
     processKind?: string;
     command?: string[];
     cwd?: string;
-    profile?: Omit<TerminalProcessProfile, "rendererPreference" | "theme" | "cursor">;
+    profile?: Omit<TerminalProcessProfile, "rendererPreference" | "theme" | "cursor" | "font">;
     focus?: boolean;
   }) => Promise<{ ok: boolean; message: string; terminal?: RuntimeTerminalView }>;
   terminalGetConfig: (input: { terminalId: string }) => Promise<RuntimeTerminalConfigView> | RuntimeTerminalConfigView;
@@ -179,7 +179,7 @@ export type RuntimeToolNamespace = "attention" | "message" | "workspace" | "term
 
 type RuntimeToolResult = Record<string, unknown>;
 
-type RuntimeToolVisibleTerminalProfile = Omit<TerminalProcessProfile, "rendererPreference" | "theme" | "cursor"> & {
+type RuntimeToolVisibleTerminalProfile = Omit<TerminalProcessProfile, "rendererPreference" | "theme" | "cursor" | "font"> & {
   rendererPreference?: TerminalRendererPreference;
   theme?: TerminalThemeName;
   cursor?: TerminalCursorStyle;

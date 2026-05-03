@@ -5,12 +5,18 @@ import type {
   GlobalTerminalGrantEntry,
   TerminalActivityItem,
 } from "@agenter/client-sdk";
-import type { TerminalViewElement, TerminalViewScreenMetrics, TerminalViewSnapshot } from "@agenter/terminal-view";
+import type {
+  TerminalViewElement,
+  TerminalViewPresentationReadyDetail,
+  TerminalViewScreenMetrics,
+  TerminalViewSnapshot,
+} from "@agenter/terminal-view";
 import type { Component } from "svelte";
 
 import type { ActorDirectoryEntry } from "$lib/features/collaboration/actor-directory";
 import type {
   TerminalCursorStyle,
+  TerminalFontProfile,
   TerminalRendererPreference,
   TerminalThemeName,
 } from "@agenter/terminal-view";
@@ -87,6 +93,13 @@ export interface TerminalSystemResizeToolResult {
   nextBootstrapFields: string[];
 }
 
+export interface TerminalSystemPresentationConfigInput {
+  rendererPreference?: TerminalRendererPreference;
+  theme?: TerminalThemeName;
+  cursor?: TerminalCursorStyle;
+  font?: TerminalFontProfile;
+}
+
 export interface TerminalViewportProps {
   terminalId: string;
   transportUrl?: string;
@@ -100,9 +113,11 @@ export interface TerminalViewportProps {
   rendererPreference?: TerminalRendererPreference;
   theme?: TerminalThemeName;
   cursor?: TerminalCursorStyle;
+  font?: TerminalFontProfile;
   onScreenMetrics?: (metrics: TerminalViewScreenMetrics) => void;
+  onPresentationReady?: (detail: TerminalViewPresentationReadyDetail) => void;
   elementRef?: (HTMLElement &
-    Pick<TerminalViewElement, "transportUrl" | "terminalId" | "snapshot" | "rendererPreference" | "theme" | "cursor"> & {
+    Pick<TerminalViewElement, "transportUrl" | "terminalId" | "snapshot" | "rendererPreference" | "theme" | "cursor" | "font"> & {
       projectionWidth?: number;
       projectionHeight?: number;
       projectionScale?: number;
@@ -140,4 +155,5 @@ export interface TerminalSystemSurfaceProps {
   onWriteToolCall: (input: { text: string }) => Promise<TerminalSystemWriteToolResult | void>;
   onReadToolCall: (input: { mode: TerminalSystemReadMode }) => Promise<void>;
   onResizeToolCall: (input: { cols: number; rows: number }) => Promise<TerminalSystemResizeToolResult | void>;
+  onPresentationConfigChange: (input: TerminalSystemPresentationConfigInput) => Promise<void>;
 }

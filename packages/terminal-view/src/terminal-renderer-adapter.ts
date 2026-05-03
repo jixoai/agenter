@@ -5,6 +5,15 @@ export const TERMINAL_PUBLIC_INPUT_ATTRIBUTE = "data-terminal-input-surface";
 export const TERMINAL_PUBLIC_SCROLL_ATTRIBUTE = "data-terminal-renderer-scroll";
 export const TERMINAL_PUBLIC_SCREEN_ATTRIBUTE = "data-terminal-renderer-screen";
 
+export type TerminalPresentationMutationStrategy = "live-apply" | "rebuild-session";
+export type TerminalPresentationMutationField = "theme" | "cursor" | "font";
+
+export interface TerminalRendererPresentationMutationPolicy {
+  theme: TerminalPresentationMutationStrategy;
+  cursor: TerminalPresentationMutationStrategy;
+  font: TerminalPresentationMutationStrategy;
+}
+
 export interface TerminalRendererSessionInput {
   host: HTMLElement;
   cols: number;
@@ -16,6 +25,8 @@ export interface TerminalRendererSessionInput {
 
 // Renderer-private DOM, selection, metrics, and hidden input mechanics must end
 // inside this contract so hosts never depend on one engine's internal structure.
+// `getScreenMetrics()` in particular must report the renderer's native terminal
+// content box, not the outer host/projection box that happens to contain it.
 export interface TerminalRendererSession {
   readonly resolvedRenderer: TerminalResolvedRenderer;
   readonly cols: number;
@@ -34,8 +45,9 @@ export interface TerminalRendererSession {
 export interface TerminalRendererAdapter {
   readonly renderer: TerminalResolvedRenderer;
   readonly styles: string;
+  readonly presentationMutationPolicy: TerminalRendererPresentationMutationPolicy;
   ensureReady?(): Promise<void>;
-  createSession(input: TerminalRendererSessionInput): TerminalRendererSession;
+  createSession(input: TerminalRendererSessionInput): Promise<TerminalRendererSession> | TerminalRendererSession;
 }
 
 export const markPublicTerminalSurface = (element: Element | null | undefined, attribute: string): void => {

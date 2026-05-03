@@ -1,4 +1,4 @@
-import { Terminal, type ITheme } from "@xterm/xterm";
+import { Terminal, type FontWeight, type ITheme } from "@xterm/xterm";
 import xtermStyles from "@xterm/xterm/css/xterm.css?inline";
 import { binaryStringToBytes } from "@agenter/terminal-transport-protocol";
 import type { IDisposable } from "@xterm/xterm";
@@ -31,9 +31,6 @@ interface XtermInternalShape {
     };
   };
 }
-
-const TERMINAL_FONT_SIZE = 12;
-const TERMINAL_LINE_HEIGHT = 1.25;
 
 const PROGRAMMING_LIGATURES = Object.freeze([
   "<!--",
@@ -93,6 +90,7 @@ const collectProgrammingLigatureRanges = (text: string): [number, number][] => {
 };
 
 const toXtermTheme = (appearance: ResolvedTerminalAppearance): ITheme => appearance.theme;
+const toXtermFontWeight = (value: string): FontWeight => value as FontWeight;
 
 class XtermRendererSession implements TerminalRendererSession {
   readonly resolvedRenderer = "xterm" as const;
@@ -112,11 +110,14 @@ class XtermRendererSession implements TerminalRendererSession {
       cursorStyle: input.appearance.cursorStyle,
       cols: input.cols,
       rows: input.rows,
-      fontFamily: "var(--font-mono, ui-monospace, SFMono-Regular, monospace)",
-      fontSize: TERMINAL_FONT_SIZE,
-      fontWeight: "400",
-      fontWeightBold: "700",
-      lineHeight: TERMINAL_LINE_HEIGHT,
+      fontFamily: input.appearance.font.family,
+      fontSize: input.appearance.font.sizePx,
+      fontWeight: toXtermFontWeight(input.appearance.font.weight),
+      fontWeightBold: toXtermFontWeight(input.appearance.font.weightBold),
+      lineHeight: input.appearance.font.lineHeight,
+      letterSpacing: input.appearance.font.letterSpacing,
+      customGlyphs: input.appearance.font.ligatures,
+      rescaleOverlappingGlyphs: true,
       scrollback: input.scrollback,
       theme: toXtermTheme(input.appearance),
     });
@@ -168,30 +169,43 @@ class XtermRendererSession implements TerminalRendererSession {
   applyAppearance(appearance: ResolvedTerminalAppearance): void {
     this.terminal.options.theme = toXtermTheme(appearance);
     this.terminal.options.cursorStyle = appearance.cursorStyle;
+    this.terminal.options.fontFamily = appearance.font.family;
+    this.terminal.options.fontSize = appearance.font.sizePx;
+    this.terminal.options.fontWeight = toXtermFontWeight(appearance.font.weight);
+    this.terminal.options.fontWeightBold = toXtermFontWeight(appearance.font.weightBold);
+    this.terminal.options.lineHeight = appearance.font.lineHeight;
+    this.terminal.options.letterSpacing = appearance.font.letterSpacing;
+    this.terminal.options.customGlyphs = appearance.font.ligatures;
     this.decoratePublicSurfaces();
   }
 
   getScreenMetrics(): TerminalViewScreenMetrics | null {
     const internal = this.terminal as unknown as XtermInternalShape;
-    const width = internal._core?._renderService?.dimensions?.css?.canvas?.width;
-    const height = internal._core?._renderService?.dimensions?.css?.canvas?.height;
-    if (typeof width === "number" && width > 0 && typeof height === "number" && height > 0) {
+    const measuredWidth = internal._core?._renderService?.dimensions?.css?.canvas?.width;
+    const measuredHeight = internal._core?._renderService?.dimensions?.css?.canvas?.height;
+    if (
+      typeof measuredWidth === "number" &&
+      measuredWidth > 0 &&
+      typeof measuredHeight === "number" &&
+      measuredHeight > 0
+    ) {
       return {
-        width: Math.round(width),
-        height: Math.round(height),
+        width: Math.round(measuredWidth),
+        height: Math.round(measuredHeight),
       };
     }
     const screen = this.terminal.element?.querySelector(".xterm-screen");
     if (!(screen instanceof HTMLElement)) {
       return null;
     }
-    const rect = screen.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
+    const width = screen.clientWidth || screen.offsetWidth;
+    const height = screen.clientHeight || screen.offsetHeight;
+    if (width <= 0 || height <= 0) {
       return null;
     }
     return {
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
+      width: Math.round(width),
+      height: Math.round(height),
     };
   }
 
@@ -241,6 +255,11 @@ const XTERM_RENDERER_LAYOUT_STYLES = `
 export const xtermRendererAdapter: TerminalRendererAdapter = {
   renderer: "xterm",
   styles: `${XTERM_RENDERER_STYLES}\n${XTERM_RENDERER_LAYOUT_STYLES}`,
+  presentationMutationPolicy: {
+    theme: "live-apply",
+    cursor: "live-apply",
+    font: "rebuild-session",
+  },
   createSession(input) {
     return new XtermRendererSession(input);
   },

@@ -3364,6 +3364,10 @@ export class AppKernel {
     terminalId: string;
     cols?: number;
     rows?: number;
+    rendererPreference?: TerminalProcessProfile["rendererPreference"];
+    theme?: TerminalProcessProfile["theme"];
+    cursor?: TerminalProcessProfile["cursor"];
+    font?: TerminalProcessProfile["font"];
     actorId?: TerminalActorId;
     superadminActorId?: TerminalActorId;
   }) {

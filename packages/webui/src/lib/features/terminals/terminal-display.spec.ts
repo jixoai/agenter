@@ -20,6 +20,16 @@ const createTerminalEntry = (overrides: Partial<GlobalTerminalEntry> = {}): Glob
 	rendererPreference: 'auto',
 	theme: 'default-dark',
 	cursor: 'block',
+	font: {
+		family:
+			"'JetBrains Mono Variable', 'JetBrains Mono', 'SFMono-Regular', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace",
+		sizePx: 13,
+		lineHeight: 1.2,
+		letterSpacing: 0,
+		weight: '400',
+		weightBold: '700',
+		ligatures: true,
+	},
 	...overrides,
 });
 

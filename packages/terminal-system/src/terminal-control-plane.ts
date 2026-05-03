@@ -16,6 +16,7 @@ import {
 } from "./managed-terminal";
 import {
   DEFAULT_TERMINAL_CURSOR,
+  DEFAULT_TERMINAL_FONT,
   DEFAULT_TERMINAL_RENDERER_PREFERENCE,
   DEFAULT_TERMINAL_THEME,
 } from "./terminal-control-plane.types";
@@ -39,6 +40,7 @@ import type {
   TerminalCreateInput,
   TerminalEventRecord,
   TerminalFocusOp,
+  TerminalFontProfile,
   TerminalGrantRecord,
   TerminalGrantRole,
   TerminalIssueGrantInput,
@@ -150,11 +152,21 @@ const roleRank = (role: TerminalGrantRole): number => {
 const cloneShortcuts = (input?: TerminalShortcutMap): TerminalShortcutMap | undefined =>
   input ? { ...input } : undefined;
 const cloneMetadata = (input?: Record<string, unknown>): Record<string, unknown> => ({ ...(input ?? {}) });
+const cloneFontProfile = (input?: TerminalFontProfile): TerminalFontProfile => ({
+  family: input?.family ?? DEFAULT_TERMINAL_FONT.family,
+  sizePx: input?.sizePx ?? DEFAULT_TERMINAL_FONT.sizePx,
+  lineHeight: input?.lineHeight ?? DEFAULT_TERMINAL_FONT.lineHeight,
+  letterSpacing: input?.letterSpacing ?? DEFAULT_TERMINAL_FONT.letterSpacing,
+  weight: input?.weight ?? DEFAULT_TERMINAL_FONT.weight,
+  weightBold: input?.weightBold ?? DEFAULT_TERMINAL_FONT.weightBold,
+  ligatures: input?.ligatures ?? DEFAULT_TERMINAL_FONT.ligatures,
+});
 const normalizeProfile = (profile: TerminalProcessProfile): TerminalProcessProfile => ({
   ...profile,
   rendererPreference: profile.rendererPreference ?? DEFAULT_TERMINAL_RENDERER_PREFERENCE,
   theme: profile.theme ?? DEFAULT_TERMINAL_THEME,
   cursor: profile.cursor ?? DEFAULT_TERMINAL_CURSOR,
+  font: cloneFontProfile(profile.font),
 });
 
 const cloneProfile = (input?: TerminalProcessProfile): TerminalProcessProfile =>
@@ -172,6 +184,7 @@ const cloneProfile = (input?: TerminalProcessProfile): TerminalProcessProfile =>
     rendererPreference: input?.rendererPreference,
     theme: input?.theme,
     cursor: input?.cursor,
+    font: input?.font ? cloneFontProfile(input.font) : undefined,
   });
 
 const cloneTransportConfig = (input?: TerminalTransportConfig): TerminalTransportConfig => ({
@@ -224,6 +237,9 @@ const mergeProfile = (...profiles: Array<TerminalProcessProfile | undefined>): T
     }
     if (profile.cursor !== undefined) {
       merged.cursor = profile.cursor;
+    }
+    if (profile.font !== undefined) {
+      merged.font = cloneFontProfile(profile.font);
     }
   }
   return normalizeProfile(merged);
@@ -2040,6 +2056,7 @@ export class TerminalControlPlane {
       rendererPreference: profile.rendererPreference ?? DEFAULT_TERMINAL_RENDERER_PREFERENCE,
       theme: profile.theme ?? DEFAULT_TERMINAL_THEME,
       cursor: profile.cursor ?? DEFAULT_TERMINAL_CURSOR,
+      font: cloneFontProfile(profile.font),
       transportUrl: access?.accessToken ? this.getTransportEndpoint(record.terminalId, access.accessToken)?.url : undefined,
       currentAdminId: this.resolveCurrentAdminActorId(record.terminalId),
       approvalTimeoutMs: this.config.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,

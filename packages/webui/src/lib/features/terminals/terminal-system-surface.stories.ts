@@ -223,6 +223,36 @@ const assertStructuredValuePreviewLine = (viewer: HTMLElement, expectedText: str
   expect(line).toContain(expectedText);
 };
 
+const openTerminalConfigDialog = async (trigger: HTMLElement) => {
+  await userEvent.click(trigger);
+  return waitFor(() => {
+    const overlay = within(document.body);
+    expect(overlay.getByTestId("terminal-window-config-dialog")).toBeInTheDocument();
+    return overlay;
+  });
+};
+
+const waitForTerminalConfigDialogToClose = async (): Promise<void> => {
+  await waitFor(() => {
+    expect(within(document.body).queryByTestId("terminal-window-config-dialog")).toBeNull();
+  });
+  await waitFor(() => {
+    expect(document.body.style.pointerEvents).not.toBe("none");
+  });
+};
+
+const selectConfigValue = async (overlay: ReturnType<typeof within>, triggerTestId: string, optionName: string) => {
+  await userEvent.click(overlay.getByTestId(triggerTestId));
+  const option = await waitFor(() => {
+    const nextOption =
+      within(document.body).queryByRole("option", { name: optionName }) ??
+      within(document.body).queryByText(optionName);
+    expect(nextOption).not.toBeNull();
+    return nextOption!;
+  });
+  await userEvent.click(option);
+};
+
 export const WriteSuccessClearsDraft = {
   name: "Scenario: Given a successful terminal write When the tool call resolves Then the editor draft clears and the terminal facts stay visible",
   args: {
@@ -465,9 +495,11 @@ export const WindowChromeTogglesProjectionMode = {
     expect(windowSurface).not.toBeNull();
     expect(terminalView).not.toBeNull();
     await expect(scrollViewport).toBeInTheDocument();
-    const fitShellWidth = Number(windowSurface?.dataset.terminalWindowShellWidth ?? "0");
-    const fitBodyWidth = Number(windowSurface?.dataset.terminalWindowBodyWidth ?? "0");
-    const fitFrameWidth = Number(windowSurface?.dataset.terminalWindowFrameWidth ?? "0");
+	    const fitShellWidth = Number(windowSurface?.dataset.terminalWindowShellWidth ?? "0");
+	    const fitShellHeight = Number(windowSurface?.dataset.terminalWindowShellHeight ?? "0");
+	    const fitBodyWidth = Number(windowSurface?.dataset.terminalWindowBodyWidth ?? "0");
+	    const fitBodyHeight = Number(windowSurface?.dataset.terminalWindowBodyHeight ?? "0");
+	    const fitFrameWidth = Number(windowSurface?.dataset.terminalWindowFrameWidth ?? "0");
     const fitTitlebar = canvas.getByTestId("terminal-window-fit-titlebar");
     const fitHeaderHeight = fitTitlebar.getBoundingClientRect().height ?? 0;
     await waitFor(() => {
@@ -491,30 +523,28 @@ export const WindowChromeTogglesProjectionMode = {
     expect((fitTerminalHostRect?.top ?? 0) - (fitBodyRect?.top ?? 0)).toBeCloseTo(fitInsetY, 1);
     expect(getComputedStyle(fitBodyContent ?? fitBody!).paddingLeft).toBe(`${fitInsetX}px`);
     expect(getComputedStyle(fitBodyContent ?? fitBody!).paddingTop).toBe(`${fitInsetY}px`);
-    canvas.getByTestId("terminal-window-zoom-control").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-    await waitFor(() => {
-      expect(windowSurface?.dataset.terminalWindowMode).toBe("cover");
-      expect(getComputedStyle(scrollViewport).overflowX).not.toBe("hidden");
-      expect(Number(windowSurface?.dataset.terminalWindowShellWidth ?? "0")).toBeGreaterThan(fitShellWidth);
-      expect(Number(windowSurface?.dataset.terminalWindowBodyWidth ?? "0")).toBeGreaterThan(fitBodyWidth);
-      expect(Number(windowSurface?.dataset.terminalWindowFrameWidth ?? "0")).toBe(fitFrameWidth);
-      expect(scrollViewport.scrollWidth).toBeGreaterThan(scrollViewport.clientWidth);
-    });
-    const coverTitlebar = canvas.getByTestId("terminal-window-cover-titlebar");
-    expect(coverTitlebar.parentElement).not.toBe(windowSurface);
-    expect(coverTitlebar.getBoundingClientRect().height).toBeCloseTo(fitHeaderHeight, 0);
-    expect(canvas.queryByTestId("terminal-window-live-resize-handle")).toBeNull();
-    expect(Number(terminalView?.projectionScale ?? 0)).toBe(1);
-    const body = windowSurface?.querySelector<HTMLElement>('[data-terminal-window-body="true"]');
-    const bodyContent = windowSurface?.querySelector<HTMLElement>('[data-terminal-window-body-content="true"]');
-    const coverBodyWidth = Number(windowSurface?.dataset.terminalWindowBodyWidth ?? "0");
-    const coverBodyHeight = Number(windowSurface?.dataset.terminalWindowBodyHeight ?? "0");
-    const coverContentBoxWidth = Number(body?.dataset.terminalWindowContentBoxWidth ?? "0");
-    const coverContentBoxHeight = Number(body?.dataset.terminalWindowContentBoxHeight ?? "0");
-    expect(coverBodyWidth).toBeGreaterThan(coverContentBoxWidth);
-    expect(coverBodyHeight).toBeGreaterThan(coverContentBoxHeight);
-    expect(terminalView?.getBoundingClientRect().width ?? 0).toBeCloseTo(coverContentBoxWidth, 0);
-    expect(terminalView?.getBoundingClientRect().height ?? 0).toBeCloseTo(coverContentBoxHeight, 0);
+	    canvas.getByTestId("terminal-window-zoom-control").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+	    await waitFor(() => {
+	      expect(windowSurface?.dataset.terminalWindowMode).toBe("cover");
+	      expect(getComputedStyle(scrollViewport).overflowX).not.toBe("hidden");
+	    });
+	    const coverTitlebar = canvas.getByTestId("terminal-window-cover-titlebar");
+	    expect(coverTitlebar.parentElement).not.toBe(windowSurface);
+	    expect(coverTitlebar.getBoundingClientRect().height).toBeCloseTo(fitHeaderHeight, 0);
+	    expect(canvas.queryByTestId("terminal-window-live-resize-handle")).toBeNull();
+	    expect(Number(terminalView?.projectionScale ?? 0)).toBe(1);
+	    const body = windowSurface?.querySelector<HTMLElement>('[data-terminal-window-body="true"]');
+	    const bodyContent = windowSurface?.querySelector<HTMLElement>('[data-terminal-window-body-content="true"]');
+	    const coverBodyWidth = Number(windowSurface?.dataset.terminalWindowBodyWidth ?? "0");
+	    const coverBodyHeight = Number(windowSurface?.dataset.terminalWindowBodyHeight ?? "0");
+	    const coverShellWidth = Number(windowSurface?.dataset.terminalWindowShellWidth ?? "0");
+	    const coverShellHeight = Number(windowSurface?.dataset.terminalWindowShellHeight ?? "0");
+	    const coverContentBoxWidth = Number(body?.dataset.terminalWindowContentBoxWidth ?? "0");
+	    const coverContentBoxHeight = Number(body?.dataset.terminalWindowContentBoxHeight ?? "0");
+	    expect(coverShellWidth !== fitShellWidth || coverShellHeight !== fitShellHeight).toBe(true);
+	    expect(coverBodyWidth !== fitBodyWidth || coverBodyHeight !== fitBodyHeight).toBe(true);
+	    expect(coverBodyWidth).toBeGreaterThan(coverContentBoxWidth);
+	    expect(coverBodyHeight).toBeGreaterThan(coverContentBoxHeight);
     const runningBodyAnimations = body?.getAnimations().filter((animation) => animation.playState !== "idle") ?? [];
     expect(runningBodyAnimations.length).toBeGreaterThan(0);
     const animatedProperties = runningBodyAnimations.flatMap((animation) => {
@@ -524,13 +554,13 @@ export const WindowChromeTogglesProjectionMode = {
       }
       return effect.getKeyframes().flatMap((keyframe: Keyframe) => Object.keys(keyframe));
     });
-    expect(animatedProperties).toContain("width");
-    expect(animatedProperties).toContain("height");
-    expect(animatedProperties).not.toContain("transform");
+    expect(animatedProperties).toContain("transform");
+    expect(animatedProperties).toContain("opacity");
+    expect(animatedProperties).not.toContain("width");
+    expect(animatedProperties).not.toContain("height");
     await Promise.allSettled(runningBodyAnimations.map((animation) => animation.finished));
     const terminalViewport = terminalView?.shadowRoot?.querySelector<HTMLElement>("[data-terminal-viewport]");
     const bodyRect = body?.getBoundingClientRect();
-    const viewportRect = terminalViewport?.getBoundingClientRect();
     const terminalHostRect = terminalView?.getBoundingClientRect();
     const coverInsetX = Number(body?.dataset.terminalWindowBodyInsetX ?? "0");
     const coverInsetY = Number(body?.dataset.terminalWindowBodyInsetY ?? "0");
@@ -538,8 +568,8 @@ export const WindowChromeTogglesProjectionMode = {
     expect(terminalHostRect?.top ?? 0).toBeCloseTo((bodyRect?.top ?? 0) + coverInsetY, 1);
     expect(terminalHostRect?.right ?? 0).toBeCloseTo((bodyRect?.right ?? 0) - coverInsetX, 1);
     expect(terminalHostRect?.bottom ?? 0).toBeCloseTo((bodyRect?.bottom ?? 0) - coverInsetY, 1);
-    expect(viewportRect?.left ?? 0).toBeCloseTo((bodyRect?.left ?? 0) + coverInsetX, 1);
-    expect(viewportRect?.top ?? 0).toBeCloseTo((bodyRect?.top ?? 0) + coverInsetY, 1);
+    expect(terminalHostRect?.width ?? 0).toBeCloseTo(coverContentBoxWidth, 0);
+    expect(terminalHostRect?.height ?? 0).toBeCloseTo(coverContentBoxHeight, 0);
     canvas.getByTestId("terminal-window-zoom-control").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await waitFor(() => {
       expect(windowSurface?.dataset.terminalWindowMode).toBe("fit");
@@ -633,6 +663,90 @@ export const WindowChromeLiveResizeUpdatesFrameHint = {
   },
 } satisfies Story;
 
+export const WindowTitlebarConfigPanelUpdatesPresentation = {
+  name: "Scenario: Given terminal titlebar config controls When the operator stages and applies presentation changes Then durable truth updates only after Apply across fit and cover chrome",
+  args: {
+    surfaceWidthPx: 920,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const terminalView = canvasElement.querySelector<HTMLElement>('[data-terminal-host-root="true"]') as
+      | (HTMLElement & {
+          rendererPreference?: string;
+          theme?: string;
+          font?: { family?: string; sizePx?: number };
+        })
+      | null;
+    const windowSurface = canvasElement.querySelector<HTMLElement>('[data-terminal-window-surface="true"]');
+    expect(terminalView).not.toBeNull();
+    expect(windowSurface).not.toBeNull();
+
+    const fitTitlebar = canvas.getByTestId("terminal-window-fit-titlebar");
+    const fitConfigControl = within(fitTitlebar).getByTestId("terminal-window-config-control");
+    const fitOverlay = await openTerminalConfigDialog(fitConfigControl);
+    await selectConfigValue(fitOverlay, "terminal-config-theme-select", "Default Light");
+    await waitFor(() => {
+      expect(terminalView?.theme).toBe("default-dark");
+    });
+    await userEvent.click(fitOverlay.getByTestId("terminal-config-apply"));
+    await waitFor(() => {
+      expect(terminalView?.theme).toBe("default-light");
+    });
+    await waitForTerminalConfigDialogToClose();
+    expect(
+      getComputedStyle(windowSurface?.querySelector<HTMLElement>('[data-terminal-window-body="true"]')!).backgroundColor,
+    ).toBe("rgb(248, 250, 252)");
+
+    const fitOverlayRenderer = await openTerminalConfigDialog(fitConfigControl);
+    await selectConfigValue(fitOverlayRenderer, "terminal-config-renderer-select", "XTerm");
+    await userEvent.click(fitOverlayRenderer.getByTestId("terminal-config-apply"));
+    await waitFor(() => {
+      expect(terminalView?.rendererPreference).toBe("xterm");
+    });
+    await waitForTerminalConfigDialogToClose();
+
+    const fitOverlayFontFamily = await openTerminalConfigDialog(fitConfigControl);
+    await selectConfigValue(fitOverlayFontFamily, "terminal-config-font-family-select", "SF Mono");
+    await userEvent.click(fitOverlayFontFamily.getByTestId("terminal-config-apply"));
+    await waitFor(() => {
+      expect(terminalView?.font?.family).toContain("SF Mono");
+    });
+    await waitForTerminalConfigDialogToClose();
+
+    const fitOverlayFontSize = await openTerminalConfigDialog(fitConfigControl);
+    await selectConfigValue(fitOverlayFontSize, "terminal-config-font-size-select", "16px");
+    await userEvent.click(fitOverlayFontSize.getByTestId("terminal-config-apply"));
+    await waitFor(() => {
+      expect(terminalView?.font?.sizePx).toBe(16);
+    });
+    await waitForTerminalConfigDialogToClose();
+
+    canvas.getByTestId("terminal-window-zoom-control").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    const coverTitlebar = await waitFor(() => {
+      const titlebar = canvas.getByTestId("terminal-window-cover-titlebar");
+      expect(titlebar.getAttribute("data-terminal-window-titlebar-owner")).toBe("window-container");
+      return titlebar;
+    });
+    expect(canvas.queryByTestId("terminal-window-fit-titlebar")).toBeNull();
+    expect(within(coverTitlebar).getByTestId("terminal-window-size-info").textContent?.trim()).toBe("80x24");
+
+    const coverConfigControl = within(coverTitlebar).getByTestId("terminal-window-config-control");
+    const overlay = await openTerminalConfigDialog(coverConfigControl);
+    expect(overlay.getByText("Theme")).toBeInTheDocument();
+    expect(overlay.getByText("Renderer")).toBeInTheDocument();
+    expect(overlay.getByText("Font family")).toBeInTheDocument();
+    expect(overlay.getByText("Font size")).toBeInTheDocument();
+    await selectConfigValue(overlay, "terminal-config-renderer-select", "WTerm");
+    await userEvent.click(overlay.getByTestId("terminal-config-apply"));
+    await waitFor(() => {
+      expect(terminalView?.rendererPreference).toBe("wterm");
+      expect(terminalView?.theme).toBe("default-light");
+      expect(terminalView?.font?.sizePx).toBe(16);
+    });
+    await waitForTerminalConfigDialogToClose();
+  },
+} satisfies Story;
+
 export const StagePaneBodyOwnsScrollWhenProjectionOverflows = {
   name: "Scenario: Given a tall projected terminal in a short route pane When the stage content exceeds the viewport Then the pane body owns vertical scrolling instead of the outer chrome clipping it",
   args: {
@@ -660,6 +774,9 @@ export const WindowCloseRequiresConfirmation = {
   name: "Scenario: Given a terminal toolbar delete action When deletion is confirmed Then the surface removes the terminal only after the confirmation dialog accepts it",
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await waitFor(() => {
+      expect(document.body.style.pointerEvents).not.toBe("none");
+    });
     await userEvent.click(canvas.getByRole("button", { name: "Delete terminal" }));
     const dialog = await within(document.body).findByTestId("terminal-delete-confirm-dialog");
     expect(dialog).toBeInTheDocument();

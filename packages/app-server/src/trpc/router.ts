@@ -1140,6 +1140,20 @@ export const appRouter = t.router({
           terminalId: z.string().min(1),
           cols: z.number().int().positive().optional(),
           rows: z.number().int().positive().optional(),
+          rendererPreference: z.enum(["auto", "ghostty-web", "wterm", "xterm"]).optional(),
+          theme: z.enum(["default-dark", "default-light", "monokai"]).optional(),
+          cursor: z.enum(["block", "bar", "underline"]).optional(),
+          font: z
+            .object({
+              family: z.string().min(1),
+              sizePx: z.number().positive(),
+              lineHeight: z.number().positive(),
+              letterSpacing: z.number(),
+              weight: z.string().min(1),
+              weightBold: z.string().min(1),
+              ligatures: z.boolean(),
+            })
+            .optional(),
         }),
       )
       .mutation(({ ctx, input }) => ({

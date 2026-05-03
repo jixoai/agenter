@@ -146,6 +146,9 @@ describe("Feature: Terminal surface layout ownership contract", () => {
     expect(terminalWindowSurfaceSource).toContain("projectionScale={viewportProjectionScale}");
     expect(terminalWindowSurfaceSource).toContain('data-terminal-window-shell-width={String(shellWidth)}');
     expect(terminalWindowSurfaceSource).toContain("const TERMINAL_BODY_INSET_EM = 0.25;");
+    expect(terminalWindowSurfaceSource).toContain("measuredScreenMetrics?.terminalId === terminal.terminalId");
+    expect(terminalWindowSurfaceSource).toContain("? measuredScreenMetrics.width");
+    expect(terminalWindowSurfaceSource).toContain("? measuredScreenMetrics.height");
     expect(terminalWindowSurfaceSource).toContain("data-terminal-window-body-inset-x={String(bodyInsetX)}");
     expect(terminalWindowSurfaceSource).toContain("data-terminal-window-body-inset-y={String(bodyInsetY)}");
     expect(terminalWindowSurfaceSource).toContain('data-terminal-window-body-content="true"');
@@ -163,6 +166,9 @@ describe("Feature: Terminal surface layout ownership contract", () => {
     expect(terminalWindowSurfaceSource).not.toContain("GripIcon");
     expect(terminalWindowSurfaceSource).not.toContain("viewportMode={viewportMode}");
     expect(terminalWindowSurfaceSource).not.toContain('transform:scale(');
+    expect(terminalWindowSurfaceSource).not.toContain("Math.round(metrics.width / projectionScale)");
+    expect(terminalWindowSurfaceSource).not.toContain("Math.round(metrics.height / projectionScale)");
+    expect(terminalWindowSurfaceSource).not.toContain("const projectionScale =");
     expect(terminalWindowSurfaceSource).not.toContain("window.addEventListener('mousemove', handleResizeMove);");
     expect(terminalWindowSurfaceSource).not.toContain("window.addEventListener('touchmove', handleResizeMove");
     expect(terminalWindowSurfaceSource).not.toContain('const nextFrameKey = `${liveFrameWidth}x${liveFrameHeight}`;');

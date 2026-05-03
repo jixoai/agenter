@@ -24,6 +24,7 @@ export {
 } from "./terminal-control-plane";
 export {
   DEFAULT_TERMINAL_CURSOR,
+  DEFAULT_TERMINAL_FONT,
   DEFAULT_TERMINAL_RENDERER_PREFERENCE,
   DEFAULT_TERMINAL_THEME,
 } from "./terminal-control-plane.types";
@@ -52,6 +53,7 @@ export type {
   TerminalEventPayload,
   TerminalEventRecord,
   TerminalFocusOp,
+  TerminalFontProfile,
   TerminalGrantRecord,
   TerminalGrantRole,
   TerminalIssueGrantInput,

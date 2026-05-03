@@ -551,6 +551,7 @@ describe("Feature: terminal-view WebComponent", () => {
     const shadowRoot = requireShadowRoot(element);
     expect(readTerminalScale(shadowRoot)).toBeCloseTo(0.538, 3);
     expect(shadowRoot.querySelector('[data-terminal-stage]')?.getAttribute("style")).toContain("width:644px");
+    expect(element.screenMetrics).toEqual({ width: 1188, height: 760 });
   });
 
   test("Scenario: Given a projected terminal viewport When explicit projection geometry is assigned Then the primitive uses that geometry without owning viewport mode semantics", async () => {
@@ -922,6 +923,121 @@ describe("Feature: terminal-view WebComponent", () => {
     viewport?.dispatchEvent(new Event("touchstart", { bubbles: true }));
     await waitForLifecycleFrame();
     expect(terminal?.focusCount).toBeGreaterThanOrEqual(2);
+  });
+
+  test("Scenario: Given a running xterm session When cursor style changes Then terminal-view emits a live-apply presentation-ready event without rebuilding the renderer session", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+    const readyEvents: Array<{
+      terminalId: string;
+      resolvedRenderer: string;
+      reason: string;
+    }> = [];
+
+    element.terminalId = "presentation-live-apply";
+    element.rendererPreference = "xterm";
+    element.addEventListener("terminal-view-presentation-ready", (event) => {
+      readyEvents.push(
+        (event as CustomEvent<{ terminalId: string; resolvedRenderer: string; reason: string }>).detail,
+      );
+    });
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const firstTerminal = mockTerminals.at(-1);
+    expect(firstTerminal).toBeDefined();
+
+    element.cursor = "bar";
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    expect(mockTerminals.at(-1)).toBe(firstTerminal);
+    expect(firstTerminal?.options.cursorStyle).toBe("bar");
+    expect(readyEvents.some((event) => event.reason === "live-apply")).toBe(true);
+  });
+
+  test("Scenario: Given a running ghostty-web session When theme changes Then terminal-view rebuilds the local renderer stack and emits a rebuild-session ready event", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+    const readyEvents: Array<{
+      terminalId: string;
+      resolvedRenderer: string;
+      reason: string;
+    }> = [];
+
+    element.terminalId = "presentation-rebuild";
+    element.rendererPreference = "ghostty-web";
+    element.addEventListener("terminal-view-presentation-ready", (event) => {
+      readyEvents.push(
+        (event as CustomEvent<{ terminalId: string; resolvedRenderer: string; reason: string }>).detail,
+      );
+    });
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const firstTerminal = mockGhosttyTerminals.at(-1);
+    expect(firstTerminal).toBeDefined();
+
+    element.theme = "default-light";
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const rebuiltTerminal = mockGhosttyTerminals.at(-1);
+    expect(rebuiltTerminal).toBeDefined();
+    expect(rebuiltTerminal).not.toBe(firstTerminal);
+    expect(readyEvents.some((event) => event.reason === "rebuild-session")).toBe(true);
+  });
+
+  test("Scenario: Given a rebuilt renderer session and an unchanged snapshot sequence When presentation rebuild settles Then the fresh renderer still rehydrates the current snapshot", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "rebuild-hydrate";
+    element.rendererPreference = "ghostty-web";
+    element.snapshot = {
+      seq: 7,
+      cols: 80,
+      rows: 24,
+      lines: ["hello rebuild"],
+      cursor: { x: 0, y: 0 },
+    };
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const firstTerminal = mockGhosttyTerminals.at(-1);
+    expect(firstTerminal?.writes.some((entry) => typeof entry === "string" && entry.includes("hello rebuild"))).toBe(true);
+
+    element.theme = "default-light";
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const rebuiltTerminal = mockGhosttyTerminals.at(-1);
+    expect(rebuiltTerminal).toBeDefined();
+    expect(rebuiltTerminal).not.toBe(firstTerminal);
+    expect(rebuiltTerminal?.writes.some((entry) => typeof entry === "string" && entry.includes("hello rebuild"))).toBe(
+      true,
+    );
   });
 
   test("Scenario: Given the live snapshot arrives before xterm boot finishes When the component mounts Then the first transport snapshot is still rendered", async () => {

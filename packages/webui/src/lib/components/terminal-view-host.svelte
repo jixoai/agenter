@@ -1,13 +1,16 @@
 <script lang="ts">
 	import {
 		DEFAULT_TERMINAL_CURSOR,
+		DEFAULT_TERMINAL_FONT,
 		DEFAULT_TERMINAL_RENDERER_PREFERENCE,
 		DEFAULT_TERMINAL_THEME,
 		TERMINAL_VIEW_TAG,
 		defineTerminalView,
 		type TerminalCursorStyle,
-		type TerminalViewElement,
+		type TerminalFontProfile,
 		type TerminalRendererPreference,
+		type TerminalViewElement,
+		type TerminalViewPresentationReadyDetail,
 		type TerminalViewScreenMetrics,
 		type TerminalViewSnapshot,
 		type TerminalThemeName,
@@ -30,7 +33,9 @@
 		rendererPreference = DEFAULT_TERMINAL_RENDERER_PREFERENCE,
 		theme = DEFAULT_TERMINAL_THEME,
 		cursor = DEFAULT_TERMINAL_CURSOR,
+		font = DEFAULT_TERMINAL_FONT,
 		onScreenMetrics,
+		onPresentationReady,
 		elementRef = $bindable<TerminalViewHostElement | null>(null),
 		class: className = '',
 		style = '',
@@ -47,7 +52,9 @@
 		rendererPreference?: TerminalRendererPreference;
 		theme?: TerminalThemeName;
 		cursor?: TerminalCursorStyle;
+		font?: TerminalFontProfile;
 		onScreenMetrics?: (metrics: TerminalViewScreenMetrics) => void;
+		onPresentationReady?: (detail: TerminalViewPresentationReadyDetail) => void;
 		elementRef?: TerminalViewHostElement | null;
 		class?: string;
 		style?: string;
@@ -56,7 +63,7 @@
 	type TerminalViewHostElement = HTMLElement &
 		Pick<
 			TerminalViewElement,
-			'transportUrl' | 'terminalId' | 'snapshot' | 'rendererPreference' | 'theme' | 'cursor'
+			'transportUrl' | 'terminalId' | 'snapshot' | 'rendererPreference' | 'theme' | 'cursor' | 'font'
 		> & {
 			liveTransportEnabled?: boolean;
 			projectionWidth?: number;
@@ -99,6 +106,7 @@
 		element.rendererPreference = rendererPreference;
 		element.theme = theme;
 		element.cursor = cursor;
+		element.font = font;
 	};
 
 	const isTerminalViewScreenMetrics = (value: unknown): value is TerminalViewScreenMetrics =>
@@ -118,6 +126,23 @@
 			return;
 		}
 		reportScreenMetrics(event.detail);
+	};
+
+	const isPresentationReadyDetail = (value: unknown): value is TerminalViewPresentationReadyDetail =>
+		typeof value === 'object' &&
+		value !== null &&
+		'terminalId' in value &&
+		'resolvedRenderer' in value &&
+		'reason' in value &&
+		typeof value.terminalId === 'string' &&
+		typeof value.resolvedRenderer === 'string' &&
+		typeof value.reason === 'string';
+
+	const handlePresentationReady = (event: Event): void => {
+		if (!(event instanceof CustomEvent) || !isPresentationReadyDetail(event.detail)) {
+			return;
+		}
+		onPresentationReady?.(event.detail);
 	};
 
 	const readElementScreenMetrics = (target: TerminalViewHostElement): void => {
@@ -150,6 +175,7 @@
 			readElementScreenMetrics(currentElement);
 		};
 		currentElement.addEventListener('terminal-view-screen-metrics', handleScreenMetrics);
+		currentElement.addEventListener('terminal-view-presentation-ready', handlePresentationReady);
 		readCurrentElementMetrics();
 		queueMicrotask(readCurrentElementMetrics);
 		if (typeof requestAnimationFrame === 'function') {
@@ -167,6 +193,7 @@
 				cancelAnimationFrame(secondFrame);
 			}
 			currentElement.removeEventListener('terminal-view-screen-metrics', handleScreenMetrics);
+			currentElement.removeEventListener('terminal-view-presentation-ready', handlePresentationReady);
 		};
 	});
 </script>

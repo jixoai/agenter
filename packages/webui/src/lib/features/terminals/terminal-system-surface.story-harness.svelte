@@ -113,6 +113,16 @@
 		rendererPreference: 'auto',
 		theme: 'default-dark',
 		cursor: 'block',
+		font: {
+			family:
+				"'JetBrains Mono Variable', 'JetBrains Mono', 'SFMono-Regular', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace",
+			sizePx: 13,
+			lineHeight: 1.2,
+			letterSpacing: 0,
+			weight: '400',
+			weightBold: '700',
+			ligatures: true,
+		},
 		// Transport discovery is durable across running/stopped states; live enablement is
 		// modeled separately through processPhase in the viewport host.
 		transportUrl: `ws://localhost/mock-terminals/${input.terminalId}`,
@@ -807,6 +817,25 @@
 			nextBootstrapFields: [],
 		};
 	};
+
+	const handlePresentationConfigChange = async (input: {
+		rendererPreference?: GlobalTerminalEntry['rendererPreference'];
+		theme?: GlobalTerminalEntry['theme'];
+		cursor?: GlobalTerminalEntry['cursor'];
+		font?: GlobalTerminalEntry['font'];
+	}): Promise<void> => {
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			return;
+		}
+		updateTerminalEntry(terminal.terminalId, (entry) => ({
+			...entry,
+			rendererPreference: input.rendererPreference ?? entry.rendererPreference,
+			theme: input.theme ?? entry.theme,
+			cursor: input.cursor ?? entry.cursor,
+			font: input.font ?? entry.font,
+		}));
+	};
 </script>
 
 <Tooltip.Provider delayDuration={0}>
@@ -845,6 +874,7 @@
 				onWriteToolCall={handleWriteToolCall}
 				onReadToolCall={handleReadToolCall}
 				onResizeToolCall={handleResizeToolCall}
+				onPresentationConfigChange={handlePresentationConfigChange}
 			/>
 		</WorkbenchWindow>
 	</div>

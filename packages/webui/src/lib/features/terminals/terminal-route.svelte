@@ -475,6 +475,37 @@ import type {
 		}
 	};
 
+	const handlePresentationConfigChange = async (input: {
+		rendererPreference?: 'auto' | 'ghostty-web' | 'wterm' | 'xterm';
+		theme?: 'default-dark' | 'default-light' | 'monokai';
+		cursor?: 'block' | 'bar' | 'underline';
+		font?: {
+			family: string;
+			sizePx: number;
+			lineHeight: number;
+			letterSpacing: number;
+			weight: string;
+			weightBold: string;
+			ligatures: boolean;
+		};
+	}): Promise<void> => {
+		ensureAuthenticated();
+		const terminal = selectedTerminal;
+		if (!terminal) {
+			throw new Error('terminal is unavailable');
+		}
+		try {
+			await controller.runtimeStore.setGlobalTerminalConfig({
+				terminalId: terminal.terminalId,
+				...input,
+			});
+			routeNotice = null;
+		} catch (error) {
+			routeNotice = describeTerminalError(error, 'terminal presentation config failed');
+			throw error;
+		}
+	};
+
 	$effect(() => {
 		if (!controller.runtimeState.globalTerminals.loaded) {
 			return;
@@ -532,4 +563,5 @@ import type {
 	onWriteToolCall={handleWriteToolCall}
 	onReadToolCall={handleReadToolCall}
 	onResizeToolCall={handleResizeToolCall}
+	onPresentationConfigChange={handlePresentationConfigChange}
 />

@@ -26,6 +26,27 @@ export const DEFAULT_TERMINAL_RENDERER_PREFERENCE = "auto" as const satisfies Te
 export const DEFAULT_TERMINAL_THEME = "default-dark" as const satisfies TerminalThemeName;
 export const DEFAULT_TERMINAL_CURSOR = "block" as const satisfies TerminalCursorStyle;
 
+export interface TerminalFontProfile {
+  family: string;
+  sizePx: number;
+  lineHeight: number;
+  letterSpacing: number;
+  weight: string;
+  weightBold: string;
+  ligatures: boolean;
+}
+
+export const DEFAULT_TERMINAL_FONT: Readonly<TerminalFontProfile> = {
+  family:
+    "var(--font-mono), ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
+  sizePx: 13,
+  lineHeight: 1.2,
+  letterSpacing: 0,
+  weight: "400",
+  weightBold: "700",
+  ligatures: true,
+} as const satisfies TerminalFontProfile;
+
 export interface TerminalReverseCursor {
   beforeTimeMs: number;
   beforeId: number;
@@ -55,6 +76,7 @@ export interface TerminalProcessProfile {
   rendererPreference?: TerminalRendererPreference;
   theme?: TerminalThemeName;
   cursor?: TerminalCursorStyle;
+  font?: TerminalFontProfile;
 }
 
 export interface TerminalTransportConfig {
@@ -346,6 +368,7 @@ export interface TerminalControlPlaneEntry {
   rendererPreference: TerminalRendererPreference;
   theme: TerminalThemeName;
   cursor: TerminalCursorStyle;
+  font: TerminalFontProfile;
   transportUrl?: string;
   currentAdminId?: TerminalActorId | null;
   approvalTimeoutMs?: number;
@@ -371,6 +394,7 @@ export interface TerminalPatchInput {
   rendererPreference?: TerminalRendererPreference;
   theme?: TerminalThemeName;
   cursor?: TerminalCursorStyle;
+  font?: TerminalFontProfile;
   adminGroupCandidateIds?: TerminalActorId[];
   metadata?: Record<string, unknown>;
 }

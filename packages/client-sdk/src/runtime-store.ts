@@ -423,6 +423,7 @@ const mergeGlobalTerminalEntry = (
     rendererPreference: incoming.rendererPreference ?? current.rendererPreference,
     theme: incoming.theme ?? current.theme,
     cursor: incoming.cursor ?? current.cursor,
+    font: incoming.font ?? current.font,
     launchCwd: incoming.launchCwd,
     configuredTitle: hasOwnProjectionField(incoming, "configuredTitle") ? incoming.configuredTitle : current.configuredTitle,
     currentTitle: hasOwnProjectionField(incoming, "currentTitle") ? incoming.currentTitle : current.currentTitle,
@@ -468,6 +469,15 @@ const projectGlobalTerminalFromConfigMutation = (current: GlobalTerminalEntry | 
       rendererPreference?: "auto" | "ghostty-web" | "wterm" | "xterm";
       theme?: "default-dark" | "default-light" | "monokai";
       cursor?: "block" | "bar" | "underline";
+      font?: {
+        family: string;
+        sizePx: number;
+        lineHeight: number;
+        letterSpacing: number;
+        weight: string;
+        weightBold: string;
+        ligatures: boolean;
+      };
     };
     processPhase: "running" | "stopped" | "not_started";
   };
@@ -508,6 +518,18 @@ const projectGlobalTerminalFromConfigMutation = (current: GlobalTerminalEntry | 
     rendererPreference: result.config.profile.rendererPreference ?? current?.rendererPreference ?? "auto",
     theme: result.config.profile.theme ?? current?.theme ?? "default-dark",
     cursor: result.config.profile.cursor ?? current?.cursor ?? "block",
+    font:
+      result.config.profile.font ??
+      current?.font ?? {
+        family:
+          "var(--font-mono), ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
+        sizePx: 13,
+        lineHeight: 1.2,
+        letterSpacing: 0,
+        weight: "400",
+        weightBold: "700",
+        ligatures: true,
+      },
     transportUrl: current?.transportUrl,
     currentAdminId: current?.currentAdminId,
     approvalTimeoutMs: current?.approvalTimeoutMs,
@@ -4878,6 +4900,18 @@ export class RuntimeStore {
     terminalId: string;
     cols?: number;
     rows?: number;
+    rendererPreference?: "auto" | "ghostty-web" | "wterm" | "xterm";
+    theme?: "default-dark" | "default-light" | "monokai";
+    cursor?: "block" | "bar" | "underline";
+    font?: {
+      family: string;
+      sizePx: number;
+      lineHeight: number;
+      letterSpacing: number;
+      weight: string;
+      weightBold: string;
+      ligatures: boolean;
+    };
   }) {
     const output = await this.client.trpc.terminal.globalSetConfig.mutate(input);
     const current = this.resolveGlobalTerminalEntry(input.terminalId);

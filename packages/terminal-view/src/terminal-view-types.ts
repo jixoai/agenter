@@ -7,4 +7,17 @@ export interface TerminalViewScreenMetrics {
   height: number;
 }
 
+export type TerminalViewPresentationSettleReason =
+  | "initial-session-ready"
+  | "live-apply"
+  | "rebuild-session"
+  | "stable-session";
+
+export interface TerminalViewPresentationReadyDetail {
+  terminalId: string;
+  resolvedRenderer: "ghostty-web" | "wterm" | "xterm";
+  reason: TerminalViewPresentationSettleReason;
+  screenMetrics: TerminalViewScreenMetrics | null;
+}
+
 export type TerminalViewSnapshot = TerminalTransportSnapshot;

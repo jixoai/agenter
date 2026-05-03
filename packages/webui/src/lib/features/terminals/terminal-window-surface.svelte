@@ -1,10 +1,20 @@
 <script lang="ts">
+	import Settings2Icon from '@lucide/svelte/icons/settings-2';
 	import { ScrollView } from '@agenter/svelte-components';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 
 	import type { GlobalTerminalEntry } from '@agenter/client-sdk';
 	import {
+		DEFAULT_TERMINAL_FONT,
 		resolveTerminalTheme,
+		type TerminalFontProfile,
+		type TerminalRendererPreference,
+		type TerminalThemeName,
 		type TerminalViewElement,
+		type TerminalViewPresentationReadyDetail,
 		type TerminalViewScreenMetrics,
 	} from '@agenter/terminal-view';
 
@@ -17,7 +27,7 @@
 	} from './terminal-geometry';
 
 	type LiveResizableTerminalViewportElement = HTMLElement &
-		Pick<TerminalViewElement, 'transportUrl' | 'terminalId' | 'snapshot' | 'rendererPreference' | 'theme' | 'cursor'> & {
+		Pick<TerminalViewElement, 'transportUrl' | 'terminalId' | 'snapshot' | 'rendererPreference' | 'theme' | 'cursor' | 'font'> & {
 			projectionWidth?: number;
 			projectionHeight?: number;
 			projectionScale?: number;
@@ -51,6 +61,7 @@
 		lifecycleIntent = null,
 		onRequestLifecycleAction,
 		onToggleViewportMode,
+		onPresentationConfigChange,
 		onLiveResize,
 	}: {
 		terminal: GlobalTerminalEntry;
@@ -61,6 +72,12 @@
 		lifecycleIntent?: 'bootstrap' | 'stop' | null;
 		onRequestLifecycleAction?: (action: TerminalLifecycleAction) => void;
 		onToggleViewportMode: () => void;
+		onPresentationConfigChange?: (input: {
+			rendererPreference?: 'auto' | 'ghostty-web' | 'wterm' | 'xterm';
+			theme?: 'default-dark' | 'default-light' | 'monokai';
+			cursor?: 'block' | 'bar' | 'underline';
+			font?: TerminalFontProfile;
+		}) => Promise<void>;
 		onLiveResize?: (input: { width: number; height: number; cols: number; rows: number }) => void;
 	} = $props();
 
@@ -70,6 +87,7 @@
 	const liveTransportEnabled = $derived(isTerminalRunning(terminal));
 	const terminalTitle = $derived(resolveTerminalWindowTitle(terminal));
 	const terminalTheme = $derived(resolveTerminalTheme(terminal.theme));
+	const terminalFont = $derived(terminal.font ?? DEFAULT_TERMINAL_FONT);
 	const viewportToggleLabel = $derived(
 		viewportMode === 'cover' ? 'Minimize terminal window to fit view' : 'Expand terminal window to cover view',
 	);
@@ -78,6 +96,86 @@
 		lifecycleAction === 'stop' ? 'Kill terminal PTY' : 'Bootstrap terminal PTY',
 	);
 	const modeControlLabel = $derived(viewportMode === 'cover' ? 'Terminal mode: cover' : 'Terminal mode: fit');
+	const rendererPreferenceOptions = [
+		{ value: 'auto', label: 'Auto' },
+		{ value: 'ghostty-web', label: 'Ghostty Web' },
+		{ value: 'wterm', label: 'WTerm' },
+		{ value: 'xterm', label: 'XTerm' },
+	] as const;
+	const themeOptions = [
+		{ value: 'default-dark', label: 'Default Dark' },
+		{ value: 'default-light', label: 'Default Light' },
+		{ value: 'monokai', label: 'Monokai' },
+	] as const;
+	const fontFamilyOptions = [
+		{
+			value:
+				"'JetBrains Mono Variable', 'JetBrains Mono', 'SFMono-Regular', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace",
+			label: 'JetBrains Mono',
+		},
+		{
+			value:
+				"'SF Mono', 'SFMono-Regular', Menlo, Consolas, ui-monospace, monospace",
+			label: 'SF Mono',
+		},
+		{
+			value: "'IBM Plex Mono', 'Cascadia Mono', 'Cascadia Code', 'Fira Code', ui-monospace, monospace",
+			label: 'Plex or Cascadia',
+		},
+	] as const;
+	const fontSizeOptions = [12, 13, 14, 15, 16] as const;
+	const rendererPreferenceItems = rendererPreferenceOptions.map((option) => ({
+		value: option.value,
+		label: option.label,
+	}));
+	const themeItems = themeOptions.map((option) => ({
+		value: option.value,
+		label: option.label,
+	}));
+	const fontFamilyItems = fontFamilyOptions.map((option) => ({
+		value: option.value,
+		label: option.label,
+	}));
+	const fontSizeItems = fontSizeOptions.map((option) => ({
+		value: String(option),
+		label: `${option}px`,
+	}));
+
+	const patchTerminalFont = (
+		patch: Partial<TerminalFontProfile>,
+		base: TerminalFontProfile = terminalFont,
+	): TerminalFontProfile => ({
+		...base,
+		...patch,
+	});
+
+	type PresentationDraft = {
+		rendererPreference: TerminalRendererPreference;
+		theme: TerminalThemeName;
+		font: TerminalFontProfile;
+	};
+
+	const createPresentationDraft = (): PresentationDraft => ({
+		rendererPreference: terminal.rendererPreference,
+		theme: terminal.theme,
+		font: {
+			...terminalFont,
+		},
+	});
+
+	const areFontsEqual = (left: TerminalFontProfile, right: TerminalFontProfile): boolean =>
+		left.family === right.family &&
+		left.sizePx === right.sizePx &&
+		left.lineHeight === right.lineHeight &&
+		left.letterSpacing === right.letterSpacing &&
+		left.weight === right.weight &&
+		left.weightBold === right.weightBold &&
+		left.ligatures === right.ligatures;
+
+	const hasPresentationDraftChanged = (draft: PresentationDraft): boolean =>
+		draft.rendererPreference !== terminal.rendererPreference ||
+		draft.theme !== terminal.theme ||
+		!areFontsEqual(draft.font, terminalFont);
 
 	const screenMetrics = $derived(
 		resolveTerminalScreenMetrics({
@@ -134,6 +232,14 @@
 		framePaddingY: number;
 	} | null>(null);
 	let lastGestureResizeGrid = $state<{ terminalId: string; cols: number; rows: number } | null>(null);
+	let configDialogOpen = $state(false);
+	let presentationDraft = $state<PresentationDraft>(createPresentationDraft());
+	let presentationApplyBusy = $state(false);
+	let presentationApplyEpoch = $state(0);
+	let awaitingPresentationAck = $state<{
+		epoch: number;
+		terminalId: string;
+	} | null>(null);
 
 	const effectiveViewportCols = $derived(
 		committedLiveGrid?.terminalId === terminal.terminalId ? committedLiveGrid.cols : viewportCols,
@@ -146,6 +252,29 @@
 			return `${effectiveViewportCols}x${effectiveViewportRows}`;
 		}
 		return 'geometry pending';
+	});
+	const selectedRendererPreferenceLabel = $derived(
+		rendererPreferenceOptions.find((option) => option.value === presentationDraft.rendererPreference)?.label ?? 'Auto',
+	);
+	const selectedThemeLabel = $derived(
+		themeOptions.find((option) => option.value === presentationDraft.theme)?.label ?? 'Default Dark',
+	);
+	const selectedFontFamilyLabel = $derived(
+		fontFamilyOptions.find((option) => option.value === presentationDraft.font.family)?.label ?? 'JetBrains Mono',
+	);
+	const selectedFontSizeLabel = $derived(`${presentationDraft.font.sizePx}px`);
+	const canApplyPresentationDraft = $derived(
+		!presentationApplyBusy && hasPresentationDraftChanged(presentationDraft),
+	);
+	const appliedPresentationMatchesTerminal = $derived.by(() => {
+		if (!awaitingPresentationAck) {
+			return false;
+		}
+		return (
+			presentationDraft.rendererPreference === terminal.rendererPreference &&
+			presentationDraft.theme === terminal.theme &&
+			areFontsEqual(presentationDraft.font, terminalFont)
+		);
 	});
 	const effectiveSnapshot = $derived.by(() => {
 		const snapshot = terminal.snapshot ?? null;
@@ -320,24 +449,32 @@
 		cancelTerminalWindowMotion();
 		const duration = reason === 'mode-toggle' ? MODE_TRANSITION_DURATION_MS : RESIZE_ACK_TRANSITION_DURATION_MS;
 		const easing = reason === 'mode-toggle' ? IOS_STANDARD_EASING : IOS_SYNC_EASING;
+		const shellScaleX = from.shellWidth / Math.max(1, to.shellWidth);
+		const shellScaleY = from.shellHeight / Math.max(1, to.shellHeight);
+		const bodyScaleX = from.bodyWidth / Math.max(1, to.bodyWidth);
+		const bodyScaleY = from.bodyHeight / Math.max(1, to.bodyHeight);
+		const shellTranslateX = (from.shellWidth - to.shellWidth) / 2;
+		const shellTranslateY = from.mode === 'cover' && to.mode === 'fit' ? 0 : (from.shellHeight - to.shellHeight) / 2;
+		const bodyTranslateX = (from.bodyWidth - to.bodyWidth) / 2;
+		const bodyTranslateY = (from.bodyHeight - to.bodyHeight) / 2;
 		const shellKeyframes: Keyframe[] = [
 			{
-				width: `${from.shellWidth}px`,
-				height: `${from.shellHeight}px`,
+				transform: `translate(${shellTranslateX}px, ${shellTranslateY}px) scale(${shellScaleX}, ${shellScaleY})`,
+				opacity: 0.92,
 			},
 			{
-				width: `${to.shellWidth}px`,
-				height: `${to.shellHeight}px`,
+				transform: 'translate(0px, 0px) scale(1, 1)',
+				opacity: 1,
 			},
 		];
 		const bodyKeyframes: Keyframe[] = [
 			{
-				width: `${from.bodyWidth}px`,
-				height: `${from.bodyHeight}px`,
+				transform: `translate(${bodyTranslateX}px, ${bodyTranslateY}px) scale(${bodyScaleX}, ${bodyScaleY})`,
+				opacity: 0.94,
 			},
 			{
-				width: `${to.bodyWidth}px`,
-				height: `${to.bodyHeight}px`,
+				transform: 'translate(0px, 0px) scale(1, 1)',
+				opacity: 1,
 			},
 		];
 		const options: KeyframeAnimationOptions = {
@@ -345,6 +482,8 @@
 			easing,
 			fill: 'none',
 		};
+		windowShellRef.style.transformOrigin = from.mode === 'cover' || to.mode === 'cover' ? 'top center' : 'center';
+		windowBodyRef.style.transformOrigin = from.mode === 'cover' || to.mode === 'cover' ? 'top center' : 'center';
 		terminalShellAnimation = windowShellRef.animate(shellKeyframes, options);
 		terminalBodyAnimation = windowBodyRef.animate(
 			bodyKeyframes,
@@ -557,8 +696,8 @@
 		}
 		measuredScreenMetrics = {
 			terminalId: terminal.terminalId,
-			width: metrics.width,
-			height: metrics.height,
+			width: Math.round(metrics.width),
+			height: Math.round(metrics.height),
 		};
 	};
 
@@ -580,6 +719,13 @@
 		const candidate = windowBodyRef?.querySelector<HTMLElement>('[data-terminal-host-root="true"]') ?? null;
 		return candidate as LiveResizableTerminalViewportElement | null;
 	};
+
+	$effect(() => {
+		if (measuredScreenMetrics?.terminalId === terminal.terminalId) {
+			return;
+		}
+		measuredScreenMetrics = null;
+	});
 
 	$effect(() => {
 		if (!scrollViewportRef || typeof ResizeObserver === 'undefined') {
@@ -616,6 +762,31 @@
 		) {
 			committedLiveGrid = null;
 		}
+	});
+
+	$effect(() => {
+		if (configDialogOpen || presentationApplyBusy) {
+			return;
+		}
+		resetPresentationDraft();
+	});
+
+	$effect(() => {
+		if (!presentationApplyBusy || !awaitingPresentationAck || !appliedPresentationMatchesTerminal) {
+			return;
+		}
+		const timeout = window.setTimeout(() => {
+			if (!awaitingPresentationAck || !appliedPresentationMatchesTerminal) {
+				return;
+			}
+			awaitingPresentationAck = null;
+			presentationApplyBusy = false;
+			configDialogOpen = false;
+			resetPresentationDraft();
+		}, 80);
+		return () => {
+			window.clearTimeout(timeout);
+		};
 	});
 
 	$effect(() => {
@@ -765,6 +936,66 @@
 			}
 		};
 	});
+
+	const updatePresentationConfig = async (input: {
+		rendererPreference?: 'auto' | 'ghostty-web' | 'wterm' | 'xterm';
+		theme?: 'default-dark' | 'default-light' | 'monokai';
+		font?: TerminalFontProfile;
+	}): Promise<void> => {
+		await onPresentationConfigChange?.(input);
+	};
+
+	const resetPresentationDraft = (): void => {
+		presentationDraft = createPresentationDraft();
+	};
+
+	const closePresentationDialog = (): void => {
+		if (presentationApplyBusy) {
+			return;
+		}
+		configDialogOpen = false;
+		resetPresentationDraft();
+	};
+
+	const handlePresentationReady = (detail: TerminalViewPresentationReadyDetail): void => {
+		if (!awaitingPresentationAck) {
+			return;
+		}
+		if (detail.terminalId !== awaitingPresentationAck.terminalId) {
+			return;
+		}
+		awaitingPresentationAck = null;
+		presentationApplyBusy = false;
+		configDialogOpen = false;
+		resetPresentationDraft();
+		pendingMotionReason = 'resize-ack';
+	};
+
+	const applyPresentationDraft = async (): Promise<void> => {
+		if (presentationApplyBusy || !hasPresentationDraftChanged(presentationDraft)) {
+			return;
+		}
+		presentationApplyBusy = true;
+		const nextEpoch = presentationApplyEpoch + 1;
+		presentationApplyEpoch = nextEpoch;
+		awaitingPresentationAck = {
+			epoch: nextEpoch,
+			terminalId: terminal.terminalId,
+		};
+		try {
+			await updatePresentationConfig({
+				rendererPreference: presentationDraft.rendererPreference,
+				theme: presentationDraft.theme,
+				font: {
+					...presentationDraft.font,
+				},
+			});
+		} catch (error) {
+			awaitingPresentationAck = null;
+			presentationApplyBusy = false;
+			throw error;
+		}
+	};
 </script>
 
 {#snippet terminalWindowTitlebar(className: string, owner: 'terminal-window' | 'window-container', testId: string)}
@@ -803,11 +1034,27 @@
 			</div>
 		</div>
 
-		<div
-			class="shrink-0 text-[11px] font-medium tabular-nums text-slate-300"
-			data-testid="terminal-window-size-info"
-		>
-			{terminalGeometry}
+		<div class="shrink-0 flex items-center gap-2">
+			<div
+				class="text-[11px] font-medium tabular-nums text-slate-300"
+				data-testid="terminal-window-size-info"
+			>
+				{terminalGeometry}
+			</div>
+			<button
+				type="button"
+				class="inline-flex size-6 items-center justify-center rounded-full border border-white/10 text-slate-300 transition-colors hover:bg-white/8 hover:text-slate-100 disabled:opacity-60"
+				aria-label="Terminal config"
+				title="Terminal config"
+				data-testid="terminal-window-config-control"
+				disabled={presentationApplyBusy}
+				onclick={() => {
+					configDialogOpen = true;
+					resetPresentationDraft();
+				}}
+			>
+				<Settings2Icon class="size-3.5" />
+			</button>
 		</div>
 	</header>
 {/snippet}
@@ -886,7 +1133,9 @@
 						rendererPreference={terminal.rendererPreference}
 						theme={terminal.theme}
 						cursor={terminal.cursor}
+						font={terminalFont}
 						onScreenMetrics={handleViewportScreenMetrics}
+						onPresentationReady={handlePresentationReady}
 					/>
 				</div>
 				{#if viewportMode !== 'cover'}
@@ -904,6 +1153,166 @@
 		</section>
 	</ScrollView>
 </div>
+
+<Dialog.Root
+	bind:open={configDialogOpen}
+	onOpenChange={(open) => {
+		if (!open && !presentationApplyBusy) {
+			resetPresentationDraft();
+		}
+	}}
+>
+	<Dialog.Content
+		class="max-w-lg gap-0 rounded-[1.4rem] border-white/60 bg-[linear-gradient(180deg,rgba(252,252,253,0.96),rgba(236,240,246,0.92))] p-0 shadow-[0_28px_72px_rgba(15,23,42,0.22),0_1px_0_rgba(255,255,255,0.6)_inset] backdrop-blur-2xl"
+		showCloseButton={false}
+		data-testid="terminal-window-config-dialog"
+	>
+		<div class="grid gap-0">
+			<Dialog.Header class="border-b border-slate-200/85 px-6 py-5">
+				<Dialog.Title class="text-base font-semibold text-slate-900">Terminal presentation</Dialog.Title>
+				<Dialog.Description class="text-sm text-slate-600">
+					Renderer, theme, and font changes are staged locally and only commit on Apply.
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<div class="grid gap-4 px-6 py-5">
+				<div class="grid gap-2">
+					<Label for="terminal-config-renderer-select">Renderer</Label>
+					<Select.Root
+						type="single"
+						items={rendererPreferenceItems}
+						value={presentationDraft.rendererPreference}
+						onValueChange={(value) => {
+							presentationDraft = {
+								...presentationDraft,
+								rendererPreference: value as TerminalRendererPreference,
+							};
+						}}
+					>
+						<Select.Trigger
+							id="terminal-config-renderer-select"
+							aria-label="Renderer"
+							data-testid="terminal-config-renderer-select"
+							class="w-full justify-between rounded-[1rem] border border-border/60 bg-background/90 px-3 py-2 text-left text-sm font-medium shadow-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring/40"
+						>
+							{selectedRendererPreferenceLabel}
+						</Select.Trigger>
+						<Select.Content>
+							{#each rendererPreferenceItems as item (item.value)}
+								<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<div class="grid gap-2">
+					<Label for="terminal-config-theme-select">Theme</Label>
+					<Select.Root
+						type="single"
+						items={themeItems}
+						value={presentationDraft.theme}
+						onValueChange={(value) => {
+							presentationDraft = {
+								...presentationDraft,
+								theme: value as TerminalThemeName,
+							};
+						}}
+					>
+						<Select.Trigger
+							id="terminal-config-theme-select"
+							aria-label="Theme"
+							data-testid="terminal-config-theme-select"
+							class="w-full justify-between rounded-[1rem] border border-border/60 bg-background/90 px-3 py-2 text-left text-sm font-medium shadow-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring/40"
+						>
+							{selectedThemeLabel}
+						</Select.Trigger>
+						<Select.Content>
+							{#each themeItems as item (item.value)}
+								<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<div class="grid gap-2">
+					<Label for="terminal-config-font-family-select">Font family</Label>
+					<Select.Root
+						type="single"
+						items={fontFamilyItems}
+						value={presentationDraft.font.family}
+						onValueChange={(value) => {
+							presentationDraft = {
+								...presentationDraft,
+								font: patchTerminalFont({ family: value }, presentationDraft.font),
+							};
+						}}
+					>
+						<Select.Trigger
+							id="terminal-config-font-family-select"
+							aria-label="Font family"
+							data-testid="terminal-config-font-family-select"
+							class="w-full justify-between rounded-[1rem] border border-border/60 bg-background/90 px-3 py-2 text-left text-sm font-medium shadow-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring/40"
+						>
+							{selectedFontFamilyLabel}
+						</Select.Trigger>
+						<Select.Content>
+							{#each fontFamilyItems as item (item.value)}
+								<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+
+				<div class="grid gap-2">
+					<Label for="terminal-config-font-size-select">Font size</Label>
+					<Select.Root
+						type="single"
+						items={fontSizeItems}
+						value={String(presentationDraft.font.sizePx)}
+						onValueChange={(value) => {
+							presentationDraft = {
+								...presentationDraft,
+								font: patchTerminalFont({ sizePx: Number(value) }, presentationDraft.font),
+							};
+						}}
+					>
+						<Select.Trigger
+							id="terminal-config-font-size-select"
+							aria-label="Font size"
+							data-testid="terminal-config-font-size-select"
+							class="w-full justify-between rounded-[1rem] border border-border/60 bg-background/90 px-3 py-2 text-left text-sm font-medium shadow-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring/40"
+						>
+							{selectedFontSizeLabel}
+						</Select.Trigger>
+						<Select.Content>
+							{#each fontSizeItems as item (item.value)}
+								<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			</div>
+
+			<Dialog.Footer class="border-t border-slate-200/80 px-6 py-4">
+				<Button
+					variant="outline"
+					disabled={presentationApplyBusy}
+					data-testid="terminal-config-cancel"
+					onclick={closePresentationDialog}
+				>
+					Cancel
+				</Button>
+				<Button
+					disabled={!canApplyPresentationDraft}
+					data-testid="terminal-config-apply"
+					onclick={() => void applyPresentationDraft()}
+				>
+					{presentationApplyBusy ? 'Applying…' : 'Apply'}
+				</Button>
+			</Dialog.Footer>
+		</div>
+	</Dialog.Content>
+</Dialog.Root>
 
 <style>
 	.window-control-button {

@@ -338,6 +338,7 @@ export class TerminalDb {
       ...(patch.rendererPreference !== undefined ? { rendererPreference: patch.rendererPreference } : {}),
       ...(patch.theme !== undefined ? { theme: patch.theme } : {}),
       ...(patch.cursor !== undefined ? { cursor: patch.cursor } : {}),
+      ...(patch.font !== undefined ? { font: patch.font } : {}),
     };
     const nextMetadata = {
       ...current.metadata,
