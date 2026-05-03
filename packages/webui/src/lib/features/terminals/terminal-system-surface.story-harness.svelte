@@ -110,7 +110,9 @@
 		currentTitle: input.running ? input.title : undefined,
 		currentPath: input.running ? input.cwd : undefined,
 		shortcuts: undefined,
-		rendererEngine: 'xterm',
+		rendererPreference: 'auto',
+		theme: 'default-dark',
+		cursor: 'block',
 		// Transport discovery is durable across running/stopped states; live enablement is
 		// modeled separately through processPhase in the viewport host.
 		transportUrl: `ws://localhost/mock-terminals/${input.terminalId}`,

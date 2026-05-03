@@ -263,7 +263,7 @@ Descriptor-backed runtime terminal CLI SHALL present `terminal list` as the cano
 
 ### Requirement: Runtime terminal descriptors SHALL expose transition-aware config commands
 
-Descriptor-backed runtime terminal CLI and loopback-local API routes SHALL expose `terminal get-config` and `terminal set-config` for durable terminal launch/config truth.
+Descriptor-backed runtime terminal CLI and loopback-local API routes SHALL expose `terminal get-config` and `terminal set-config` for durable terminal launch/config truth. The AI-facing public mutation surface SHALL only expose fields that belong to AI/tool-managed terminal truth; durable renderer preference and terminal theme identity remain terminal-system-owned profile facts rather than AI-facing mutable descriptor fields.
 
 #### Scenario: Terminal get-config is descriptor-backed
 
@@ -276,6 +276,12 @@ Descriptor-backed runtime terminal CLI and loopback-local API routes SHALL expos
 - **WHEN** the AI runs `terminal set-config`
 - **THEN** the loopback-local API route, shell CLI subcommand, and `--help` output are all derived from the same descriptor entry
 - **AND** the runtime does not maintain a second hand-written parser or mutation surface for the same payload
+
+#### Scenario: Terminal set-config omits renderer and theme ownership
+
+- **WHEN** the AI inspects or uses the public runtime `terminal set-config` command
+- **THEN** the input schema omits durable renderer preference and terminal theme identity as mutable fields
+- **AND** the descriptor does not imply that model-managed config owns renderer/theme law
 
 ### Requirement: Runtime terminal help SHALL teach create auto-bootstrap plus transition wait law
 

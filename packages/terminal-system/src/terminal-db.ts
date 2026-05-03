@@ -335,7 +335,9 @@ export class TerminalDb {
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.icon !== undefined ? { icon: patch.icon } : {}),
       ...(patch.shortcuts !== undefined ? { shortcuts: patch.shortcuts } : {}),
-      ...(patch.rendererEngine !== undefined ? { rendererEngine: patch.rendererEngine } : {}),
+      ...(patch.rendererPreference !== undefined ? { rendererPreference: patch.rendererPreference } : {}),
+      ...(patch.theme !== undefined ? { theme: patch.theme } : {}),
+      ...(patch.cursor !== undefined ? { cursor: patch.cursor } : {}),
     };
     const nextMetadata = {
       ...current.metadata,

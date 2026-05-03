@@ -61,10 +61,10 @@ importers:
         version: link:../packages/terminal-system
       '@opentui/core':
         specifier: latest
-        version: 0.2.1(typescript@6.0.3)(web-tree-sitter@0.25.10)
+        version: 0.2.2(typescript@6.0.3)(web-tree-sitter@0.25.10)
       '@opentui/react':
         specifier: latest
-        version: 0.2.1(react-devtools-core@7.0.1(bufferutil@4.1.0))(react@19.2.4)(typescript@6.0.3)(web-tree-sitter@0.25.10)(ws@8.20.0(bufferutil@4.1.0))
+        version: 0.2.2(react-devtools-core@7.0.1(bufferutil@4.1.0))(react@19.2.4)(typescript@6.0.3)(web-tree-sitter@0.25.10)(ws@8.20.0(bufferutil@4.1.0))
       '@tanstack/ai':
         specifier: ^0.6.1
         version: 0.6.3
@@ -489,12 +489,15 @@ importers:
       '@agenter/principal-crypto':
         specifier: workspace:*
         version: link:../principal-crypto
+      '@agenter/terminal-transport-protocol':
+        specifier: workspace:*
+        version: link:../terminal-transport-protocol
       '@opentui/core':
         specifier: latest
-        version: 0.2.1(typescript@6.0.3)(web-tree-sitter@0.25.10)
+        version: 0.2.2(typescript@6.0.3)(web-tree-sitter@0.25.10)
       '@opentui/react':
         specifier: latest
-        version: 0.2.1(react-devtools-core@7.0.1(bufferutil@4.1.0))(react@19.2.4)(typescript@6.0.3)(web-tree-sitter@0.25.10)(ws@8.20.0(bufferutil@4.1.0))
+        version: 0.2.2(react-devtools-core@7.0.1(bufferutil@4.1.0))(react@19.2.4)(typescript@6.0.3)(web-tree-sitter@0.25.10)(ws@8.20.0(bufferutil@4.1.0))
       '@xterm/headless':
         specifier: 6.1.0-beta.167
         version: 6.1.0-beta.167
@@ -518,14 +521,33 @@ importers:
         specifier: latest
         version: 6.0.3
 
+  packages/terminal-transport-protocol:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.12.0
+        version: 2.12.0
+    devDependencies:
+      '@bufbuild/protoc-gen-es':
+        specifier: ^2.12.0
+        version: 2.12.0(@bufbuild/protobuf@2.12.0)
+      typescript:
+        specifier: latest
+        version: 6.0.3
+
   packages/terminal-view:
     dependencies:
+      '@agenter/terminal-transport-protocol':
+        specifier: workspace:*
+        version: link:../terminal-transport-protocol
       '@xterm/addon-fit':
         specifier: ^0.10.0
         version: 0.10.0(@xterm/xterm@5.5.0)
       '@xterm/xterm':
         specifier: ^5.5.0
         version: 5.5.0
+      ghostty-web:
+        specifier: ^0.4.0
+        version: 0.4.0
       lit:
         specifier: ^3.3.1
         version: 3.3.2
@@ -547,10 +569,10 @@ importers:
         version: link:../client-sdk
       '@opentui/core':
         specifier: latest
-        version: 0.2.1(typescript@6.0.3)(web-tree-sitter@0.25.10)
+        version: 0.2.2(typescript@6.0.3)(web-tree-sitter@0.25.10)
       '@opentui/react':
         specifier: latest
-        version: 0.2.1(react-devtools-core@7.0.1(bufferutil@4.1.0))(react@19.2.4)(typescript@6.0.3)(web-tree-sitter@0.25.10)(ws@8.20.0(bufferutil@4.1.0))
+        version: 0.2.2(react-devtools-core@7.0.1(bufferutil@4.1.0))(react@19.2.4)(typescript@6.0.3)(web-tree-sitter@0.25.10)(ws@8.20.0(bufferutil@4.1.0))
       react:
         specifier: ^19.0.0
         version: 19.2.4
@@ -1071,6 +1093,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.2.2
         version: 4.2.2(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@tanstack/svelte-virtual':
+        specifier: ^3.13.23
+        version: 3.13.23(svelte@5.55.2)
       '@testing-library/jest-dom':
         specifier: ^6.7.0
         version: 6.9.1
@@ -1092,15 +1117,30 @@ importers:
       '@vitest/browser':
         specifier: ^4.1.2
         version: 4.1.2(bufferutil@4.1.0)(utf-8-validate@6.0.6)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))(vitest@4.1.2)
+      '@vitest/browser-playwright':
+        specifier: ^4.1.2
+        version: 4.1.2(bufferutil@4.1.0)(playwright@1.59.1)(utf-8-validate@6.0.6)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))(vitest@4.1.2)
+      highlight.js:
+        specifier: ^11.11.1
+        version: 11.11.1
       jsdom:
         specifier: ^26.1.0
         version: 26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      lit:
+        specifier: ^3.3.1
+        version: 3.3.2
+      markdown-it:
+        specifier: ^14.1.0
+        version: 14.1.1
       storybook:
         specifier: ^10.3.4
         version: 10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6)
       svelte:
         specifier: ^5.55.2
         version: 5.55.2
+      tailwind-variants:
+        specifier: ^3.2.2
+        version: 3.2.2(tailwind-merge@3.5.0)(tailwindcss@4.2.2)
       tailwindcss:
         specifier: ^4.2.2
         version: 4.2.2
@@ -1237,6 +1277,22 @@ packages:
 
   '@borewit/text-codec@0.2.2':
     resolution: {integrity: sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ==}
+
+  '@bufbuild/protobuf@2.12.0':
+    resolution: {integrity: sha512-B/XlCaFIP8LOwzo+bz5uFzATYokcwCKQcghqnlfwSmM5eX/qTkvDBnDPs+gXtX/RyjxJ4DRikECcPJbyALA8FA==}
+
+  '@bufbuild/protoc-gen-es@2.12.0':
+    resolution: {integrity: sha512-d9htF6jEkSwPbp9d/vSmZOBF7eeG18AvTMKmVg4I23afnrQOxL2w3WOXa9TaufMCyu24QakEUb4vux8apI5e7A==}
+    engines: {node: '>=20'}
+    hasBin: true
+    peerDependencies:
+      '@bufbuild/protobuf': 2.12.0
+    peerDependenciesMeta:
+      '@bufbuild/protobuf':
+        optional: true
+
+  '@bufbuild/protoplugin@2.12.0':
+    resolution: {integrity: sha512-ORlDITp8AFUXzIhLRoMCG+ud+D3MPKWb5HQXBoskMMnjeyEjE1H1qLonVNPyOr8lkx3xSfYUo8a0dvOZJVAzow==}
 
   '@changesets/apply-release-plan@7.1.0':
     resolution: {integrity: sha512-yq8ML3YS7koKQ/9bk1PqO0HMzApIFNwjlwCnwFEXMzNe8NpzeeYYKCmnhWJGkN8g7E51MnWaSbqRcTcdIxUgnQ==}
@@ -2075,43 +2131,43 @@ packages:
     resolution: {integrity: sha512-cifvXDhcqMwwTlTK04GBNeIe7yyo28Mfby85QXFe1Yk8nmi36Ab/5UQwptOx84SsoGNRg+EVSjwzfSZMy6pmlw==}
     engines: {node: '>=14'}
 
-  '@opentui/core-darwin-arm64@0.2.1':
-    resolution: {integrity: sha512-vT8rgeNdkzD84wCcS5zmrSVFgR/SjeVr+2FNM/icTjwKh9Jq3cY6UY7/EFck3PRjrmanNu4zw7W5lFKSpMxnPQ==}
+  '@opentui/core-darwin-arm64@0.2.2':
+    resolution: {integrity: sha512-tY5n3ZRQx+b0kyhQJJLsyJMeZ+0w4FV37YZc/Qqv3qvOqE9kZPw/7adR77FYwWDm/7fax94mLMrR8Y5bKUkDmw==}
     cpu: [arm64]
     os: [darwin]
 
-  '@opentui/core-darwin-x64@0.2.1':
-    resolution: {integrity: sha512-HAH1KeTejs0Z+RChNsNImI1eOlYJabKeAEvLtnn1aiHxvJFpzdAi6d/VrG5WFcxAem6TVRtnKN46gXff26lkig==}
+  '@opentui/core-darwin-x64@0.2.2':
+    resolution: {integrity: sha512-W/R7OnqY30FXcTG0tiP2JkQFmgtYbIte5afQ5PC12TliRoee1RqG3iCG6kY1jxW+3Vg6jge88uiSjUEDpeV2gA==}
     cpu: [x64]
     os: [darwin]
 
-  '@opentui/core-linux-arm64@0.2.1':
-    resolution: {integrity: sha512-447FI6xolsKbG1eH3hpNGQhQ/8M6FDJIgpiJhX9XXvZGO7vEyN6efyqqIzRF+quafqF69+rT3qK70S1svjwVKA==}
+  '@opentui/core-linux-arm64@0.2.2':
+    resolution: {integrity: sha512-1pzTYFEZauYuw6AGycw2TYGtAlZVGjuUtSdxH1fP51kBPS3oVWduUY2j7GKREz3SU5NulvO2Wc6HWsm3feMqwQ==}
     cpu: [arm64]
     os: [linux]
 
-  '@opentui/core-linux-x64@0.2.1':
-    resolution: {integrity: sha512-Xdds+HnAbFiylTdxyYhRxPFPnrHm75KTi7QCA1JHU3lb8Sfwrxv3nlYtFhEV798y4osafsghL20Nq5mqVPjizQ==}
+  '@opentui/core-linux-x64@0.2.2':
+    resolution: {integrity: sha512-ucVwUtUYeOYGVFPBLbPoxzbrPdhD0PDyKNQ2X4n1AJ9jlQX4gqBZRcXMEF8hiXDjFxsikZwef7De0ciCcWvAMg==}
     cpu: [x64]
     os: [linux]
 
-  '@opentui/core-win32-arm64@0.2.1':
-    resolution: {integrity: sha512-VEuqX9OSFpw960mibe4OXVmnE43V/VYwB61zoxD5uw7L3jgCiOfrf+W2TuFbcRAgtTD35MypJ53fYxmUcVZc8g==}
+  '@opentui/core-win32-arm64@0.2.2':
+    resolution: {integrity: sha512-MPhYdJNdxmC5Bqsq6sis/+VkjRgkEjm+bQ1Tl++NSKLuiTU32Re0ImcZlgHbe+LZtZoGMZHVSgZlkGd3oYXO2g==}
     cpu: [arm64]
     os: [win32]
 
-  '@opentui/core-win32-x64@0.2.1':
-    resolution: {integrity: sha512-ywwRbyjPPEbNe3da+ez4NxIaJWQ79sA2gdepuHKUVdmdxsevdRpAxOHkEpJNtiVvphPc/On9EsP25Hmn5gjYxg==}
+  '@opentui/core-win32-x64@0.2.2':
+    resolution: {integrity: sha512-19BroLfn2h0RDYfJS5o96Fc8kYCDhRBcseIXtHIkoKIsKMxx62KiDLo/byVye6rp+yQRRB7Xkd2uWqsbdiWo9w==}
     cpu: [x64]
     os: [win32]
 
-  '@opentui/core@0.2.1':
-    resolution: {integrity: sha512-tXFD2NeznXzZa02yOsQ/D0o/06GBqVrPR7VdmgqI+ZChcS7NY/QgNQGgAZUditW2vezFcxlgTqoCgQaZFqRfGQ==}
+  '@opentui/core@0.2.2':
+    resolution: {integrity: sha512-wxg1CD58SVrowu+WgbhZNi3UP/wWxPio2Kj2IeTjomoIE+6EXLxR8eCCxHYVuQUd9E4fknrKkY5HmiSsp6oPow==}
     peerDependencies:
       web-tree-sitter: 0.25.10
 
-  '@opentui/react@0.2.1':
-    resolution: {integrity: sha512-kHxNHqukauhf1StjuGV36DoR42dBPxU3YVj1wo/V2SOumC/enF6zxBnnsWC3EUWqxLKnMkufh38AvHL3EJ1Taw==}
+  '@opentui/react@0.2.2':
+    resolution: {integrity: sha512-29Lkyb6gZYccrGJG7swKe3VUXhPW1UpTiBBV0EZpRcbw1+rSaVGgWp4/xcF9V9zaYAxeB2LxQ1PN5QXAmUrfAw==}
     peerDependencies:
       react: '>=19.0.0'
       react-devtools-core: ^7.0.1
@@ -3114,6 +3170,11 @@ packages:
     resolution: {integrity: sha512-O9CjxypDT89fbHxRfETNoAnHj/i6IpRK0CvbVN3qibxlLdo5p5hcLmUuCCrHMpxiWSwKyI8mCP7qRNYuOJ0Uww==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
+  '@typescript/vfs@1.6.4':
+    resolution: {integrity: sha512-PJFXFS4ZJKiJ9Qiuix6Dz/OwEIqHD7Dme1UwZhTK11vR+5dqW2ACbdndWQexBzCx+CPuMe5WBYQWCsFyGlQLlQ==}
+    peerDependencies:
+      typescript: '*'
+
   '@uiw/codemirror-extensions-basic-setup@4.25.9':
     resolution: {integrity: sha512-QFAqr+pu6lDmNpAlecODcF49TlsrZ0bj15zPzfhiqSDl+Um3EsDLFLppixC7kFLn+rdDM2LTvVjn5CPvefpRgw==}
     peerDependencies:
@@ -3435,8 +3496,8 @@ packages:
     resolution: {integrity: sha512-ZMANVnAixE6AWWnPzlW2KpUrxhm9woycYvPOo67jWHyFowASTEd9s+QN1EIMsSDtwhIxN4sWE1jotpuDUIgyIw==}
     engines: {node: '>=6.14.2'}
 
-  bun-ffi-structs@0.1.2:
-    resolution: {integrity: sha512-Lh1oQAYHDcnesJauieA4UNkWGXY9hYck7OA5IaRwE3Bp6K2F2pJSNYqq+hIy7P3uOvo3km3oxS8304g5gDMl/w==}
+  bun-ffi-structs@0.2.2:
+    resolution: {integrity: sha512-N/ZWtyN0piZlrXQT7TO0V+q952orYqkfhXRXM1Hcbb+R3QSiBH4vLnib187Mrs1H7pWIYECAmPeapGYDOMCl+w==}
     peerDependencies:
       typescript: ^5
 
@@ -3929,6 +3990,9 @@ packages:
   get-east-asian-width@1.5.0:
     resolution: {integrity: sha512-CQ+bEO+Tva/qlmw24dCejulK5pMzVnUOFOijVogd3KQs07HnRIgp8TGipvCCRT06xeYEbpbgwaCxglFyiuIcmA==}
     engines: {node: '>=18'}
+
+  ghostty-web@0.4.0:
+    resolution: {integrity: sha512-0puDBik2qapbD/QQBW9o5ZHfXnZBqZWx/ctBiVtKZ6ZLds4NYb+wZuw1cRLXZk9zYovIQ908z3rvFhexAvc5Hg==}
 
   github-from-package@0.0.0:
     resolution: {integrity: sha512-SyHy3T1v2NUXn29OsWdxmK6RwHD+vkj3v8en8AOBZ1wBQ/hCAQ5bAQTD02kW4W9tUp/3Qh6J8r9EvntiyCmOOw==}
@@ -5367,6 +5431,11 @@ packages:
     resolution: {integrity: sha512-RAH822pAdBgcNMAfWnCBU3CFZcfZ/i1eZjwFU/dsLKumyuuP3niueg2UAukXYF0E2AAoc82ZSSf9J0WQBinzHA==}
     engines: {node: '>=12.20'}
 
+  typescript@5.4.5:
+    resolution: {integrity: sha512-vcI4UpRgg81oIRUFwR0WSIHKt11nJ7SAVlYNIu+QpqeyXP+gpQJy/Z4+F0aGxSE4MqwjyXvW/TzgkLAx2AGHwQ==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
@@ -5916,6 +5985,24 @@ snapshots:
   '@blazediff/core@1.9.1': {}
 
   '@borewit/text-codec@0.2.2': {}
+
+  '@bufbuild/protobuf@2.12.0': {}
+
+  '@bufbuild/protoc-gen-es@2.12.0(@bufbuild/protobuf@2.12.0)':
+    dependencies:
+      '@bufbuild/protoplugin': 2.12.0
+    optionalDependencies:
+      '@bufbuild/protobuf': 2.12.0
+    transitivePeerDependencies:
+      - supports-color
+
+  '@bufbuild/protoplugin@2.12.0':
+    dependencies:
+      '@bufbuild/protobuf': 2.12.0
+      '@typescript/vfs': 1.6.4(typescript@5.4.5)
+      typescript: 5.4.5
+    transitivePeerDependencies:
+      - supports-color
 
   '@changesets/apply-release-plan@7.1.0':
     dependencies:
@@ -6906,27 +6993,27 @@ snapshots:
 
   '@opentelemetry/semantic-conventions@1.40.0': {}
 
-  '@opentui/core-darwin-arm64@0.2.1':
+  '@opentui/core-darwin-arm64@0.2.2':
     optional: true
 
-  '@opentui/core-darwin-x64@0.2.1':
+  '@opentui/core-darwin-x64@0.2.2':
     optional: true
 
-  '@opentui/core-linux-arm64@0.2.1':
+  '@opentui/core-linux-arm64@0.2.2':
     optional: true
 
-  '@opentui/core-linux-x64@0.2.1':
+  '@opentui/core-linux-x64@0.2.2':
     optional: true
 
-  '@opentui/core-win32-arm64@0.2.1':
+  '@opentui/core-win32-arm64@0.2.2':
     optional: true
 
-  '@opentui/core-win32-x64@0.2.1':
+  '@opentui/core-win32-x64@0.2.2':
     optional: true
 
-  '@opentui/core@0.2.1(typescript@6.0.3)(web-tree-sitter@0.25.10)':
+  '@opentui/core@0.2.2(typescript@6.0.3)(web-tree-sitter@0.25.10)':
     dependencies:
-      bun-ffi-structs: 0.1.2(typescript@6.0.3)
+      bun-ffi-structs: 0.2.2(typescript@6.0.3)
       diff: 9.0.0
       marked: 17.0.1
       string-width: 7.2.0
@@ -6934,18 +7021,18 @@ snapshots:
       web-tree-sitter: 0.25.10
       yoga-layout: 3.2.1
     optionalDependencies:
-      '@opentui/core-darwin-arm64': 0.2.1
-      '@opentui/core-darwin-x64': 0.2.1
-      '@opentui/core-linux-arm64': 0.2.1
-      '@opentui/core-linux-x64': 0.2.1
-      '@opentui/core-win32-arm64': 0.2.1
-      '@opentui/core-win32-x64': 0.2.1
+      '@opentui/core-darwin-arm64': 0.2.2
+      '@opentui/core-darwin-x64': 0.2.2
+      '@opentui/core-linux-arm64': 0.2.2
+      '@opentui/core-linux-x64': 0.2.2
+      '@opentui/core-win32-arm64': 0.2.2
+      '@opentui/core-win32-x64': 0.2.2
     transitivePeerDependencies:
       - typescript
 
-  '@opentui/react@0.2.1(react-devtools-core@7.0.1(bufferutil@4.1.0))(react@19.2.4)(typescript@6.0.3)(web-tree-sitter@0.25.10)(ws@8.20.0(bufferutil@4.1.0))':
+  '@opentui/react@0.2.2(react-devtools-core@7.0.1(bufferutil@4.1.0))(react@19.2.4)(typescript@6.0.3)(web-tree-sitter@0.25.10)(ws@8.20.0(bufferutil@4.1.0))':
     dependencies:
-      '@opentui/core': 0.2.1(typescript@6.0.3)(web-tree-sitter@0.25.10)
+      '@opentui/core': 0.2.2(typescript@6.0.3)(web-tree-sitter@0.25.10)
       react: 19.2.4
       react-devtools-core: 7.0.1(bufferutil@4.1.0)
       react-reconciler: 0.32.0(react@19.2.4)
@@ -7919,6 +8006,13 @@ snapshots:
 
   '@typescript-eslint/types@8.58.0': {}
 
+  '@typescript/vfs@1.6.4(typescript@5.4.5)':
+    dependencies:
+      debug: 4.4.3
+      typescript: 5.4.5
+    transitivePeerDependencies:
+      - supports-color
+
   '@uiw/codemirror-extensions-basic-setup@4.25.9(@codemirror/autocomplete@6.20.1)(@codemirror/commands@6.10.3)(@codemirror/language@6.12.3)(@codemirror/lint@6.9.5)(@codemirror/search@6.6.0)(@codemirror/state@6.6.0)(@codemirror/view@6.41.0)':
     dependencies:
       '@codemirror/autocomplete': 6.20.1
@@ -8291,7 +8385,7 @@ snapshots:
       node-gyp-build: 4.8.4
     optional: true
 
-  bun-ffi-structs@0.1.2(typescript@6.0.3):
+  bun-ffi-structs@0.2.2(typescript@6.0.3):
     dependencies:
       typescript: 6.0.3
 
@@ -8753,6 +8847,8 @@ snapshots:
   get-caller-file@2.0.5: {}
 
   get-east-asian-width@1.5.0: {}
+
+  ghostty-web@0.4.0: {}
 
   github-from-package@0.0.0:
     optional: true
@@ -10459,6 +10555,8 @@ snapshots:
   tweetnacl@1.0.3: {}
 
   type-fest@2.19.0: {}
+
+  typescript@5.4.5: {}
 
   typescript@5.9.3: {}
 

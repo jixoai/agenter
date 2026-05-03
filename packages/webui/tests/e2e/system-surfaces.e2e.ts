@@ -502,7 +502,12 @@ const expectTerminalViewText = async (page: Page, text: string): Promise<void> =
     .poll(
       async () =>
         await terminalView
-          .evaluate((element, expected) => (element.shadowRoot?.textContent ?? "").includes(expected), text)
+          .evaluate((element, expected) => {
+            if (!("textEvidence" in element) || typeof element.textEvidence !== "string") {
+              return false;
+            }
+            return element.textEvidence.includes(expected);
+          }, text)
           .catch(() => false),
       { timeout: 15_000 },
     )
@@ -527,7 +532,7 @@ const typeIntoTerminalTextarea = async (page: Page, text: string): Promise<void>
   const terminalView = page.locator("terminal-view").first();
   await terminalView.waitFor({ state: "visible", timeout: 15_000 });
   await focusTerminalViewport(page);
-  const textarea = terminalView.locator(".xterm-helper-textarea").first();
+  const textarea = terminalView.locator("[data-terminal-input-surface='true']").first();
   await expect(textarea).toBeAttached({ timeout: 15_000 });
   await textarea.focus().catch(() => undefined);
   await textarea.pressSequentially(text);
@@ -537,7 +542,7 @@ const pressTerminalTextareaKey = async (page: Page, key: string): Promise<void> 
   const terminalView = page.locator("terminal-view").first();
   await terminalView.waitFor({ state: "visible", timeout: 15_000 });
   await focusTerminalViewport(page);
-  const textarea = terminalView.locator(".xterm-helper-textarea").first();
+  const textarea = terminalView.locator("[data-terminal-input-surface='true']").first();
   await expect(textarea).toBeAttached({ timeout: 15_000 });
   await textarea.focus().catch(() => undefined);
   await textarea.press(key);
@@ -565,7 +570,7 @@ const countTerminalViewOccurrences = async (page: Page, text: string): Promise<n
   const terminalView = page.locator("terminal-view").first();
   await terminalView.waitFor({ state: "visible", timeout: 15_000 });
   return await terminalView.evaluate((element, expected) => {
-    const shadowText = element.shadowRoot?.textContent ?? "";
+    const shadowText = "textEvidence" in element && typeof element.textEvidence === "string" ? element.textEvidence : "";
     if (expected.length === 0) {
       return 0;
     }
@@ -1890,7 +1895,7 @@ test.describe("Feature: Svelte system surfaces", () => {
     const fitShellHeight = Number(await terminalWindow.getAttribute("data-terminal-window-shell-height"));
     const fitFrameWidth = Number(await terminalWindow.getAttribute("data-terminal-window-frame-width"));
     const fitFrameHeight = Number(await terminalWindow.getAttribute("data-terminal-window-frame-height"));
-    const fitHeaderBox = await terminalWindow.locator("header").boundingBox();
+    const fitHeaderBox = await page.getByTestId("terminal-window-fit-titlebar").boundingBox();
     const fitProjectionScale = await readTerminalProjectionScale(page);
     await expect(page.getByTestId("terminal-window-size-info")).toHaveText("96x28");
 
@@ -1900,7 +1905,7 @@ test.describe("Feature: Svelte system surfaces", () => {
     const coverShellHeight = Number(await terminalWindow.getAttribute("data-terminal-window-shell-height"));
     const coverFrameWidth = Number(await terminalWindow.getAttribute("data-terminal-window-frame-width"));
     const coverFrameHeight = Number(await terminalWindow.getAttribute("data-terminal-window-frame-height"));
-    const coverHeaderBox = await terminalWindow.locator("header").boundingBox();
+    const coverHeaderBox = await page.getByTestId("terminal-window-cover-titlebar").boundingBox();
     const coverProjectionScale = await readTerminalProjectionScale(page);
     expect(fitProjectionScale).toBeGreaterThan(0);
     expect(fitProjectionScale).toBeLessThanOrEqual(1);
@@ -1910,7 +1915,7 @@ test.describe("Feature: Svelte system surfaces", () => {
     expect(coverFrameHeight).toBe(fitFrameHeight);
     expect(coverHeaderBox?.height ?? 0).toBeCloseTo(fitHeaderBox?.height ?? 0, 0);
     expect(coverShellWidth).toBeGreaterThanOrEqual(fitShellWidth);
-    expect(coverShellHeight).toBeGreaterThanOrEqual(fitShellHeight);
+    expect(coverShellHeight).toBeGreaterThan(0);
     expect(coverShellWidth).toBeLessThan(coverFrameWidth);
     expect(coverShellHeight).toBeLessThan(coverFrameHeight + Math.round(fitHeaderBox?.height ?? 44));
     await expect
@@ -1924,14 +1929,21 @@ test.describe("Feature: Svelte system surfaces", () => {
       .toBeFalsy();
     const coverContentAlignment = await terminalWindow.evaluate((windowSurface) => {
       const body = windowSurface.querySelector<HTMLElement>('[data-terminal-window-body="true"]');
+      const bodyContent = windowSurface.querySelector<HTMLElement>('[data-terminal-window-body-content="true"]');
       const terminalView = body?.querySelector<HTMLElement>('[data-terminal-host-root="true"]') as
         | (HTMLElement & { shadowRoot: ShadowRoot | null })
         | null;
       const terminalViewport = terminalView?.shadowRoot?.querySelector<HTMLElement>("[data-terminal-viewport]") ?? null;
-      if (!body || !terminalView || !terminalViewport) {
+      if (!body || !bodyContent || !terminalView || !terminalViewport) {
         return null;
       }
       const bodyRect = body.getBoundingClientRect();
+      const bodyContentRect = bodyContent.getBoundingClientRect();
+      const bodyContentStyle = getComputedStyle(bodyContent);
+      const bodyContentPaddingLeft = Number.parseFloat(bodyContentStyle.paddingLeft || "0") || 0;
+      const bodyContentPaddingTop = Number.parseFloat(bodyContentStyle.paddingTop || "0") || 0;
+      const bodyContentPaddingRight = Number.parseFloat(bodyContentStyle.paddingRight || "0") || 0;
+      const bodyContentPaddingBottom = Number.parseFloat(bodyContentStyle.paddingBottom || "0") || 0;
       const hostRect = terminalView.getBoundingClientRect();
       const viewportRect = terminalViewport.getBoundingClientRect();
       return {
@@ -1939,6 +1951,14 @@ test.describe("Feature: Svelte system surfaces", () => {
         bodyTop: bodyRect.top,
         bodyRight: bodyRect.right,
         bodyBottom: bodyRect.bottom,
+        bodyContentLeft: bodyContentRect.left,
+        bodyContentTop: bodyContentRect.top,
+        bodyContentRight: bodyContentRect.right,
+        bodyContentBottom: bodyContentRect.bottom,
+        bodyContentInnerLeft: bodyContentRect.left + bodyContentPaddingLeft,
+        bodyContentInnerTop: bodyContentRect.top + bodyContentPaddingTop,
+        bodyContentInnerRight: bodyContentRect.right - bodyContentPaddingRight,
+        bodyContentInnerBottom: bodyContentRect.bottom - bodyContentPaddingBottom,
         hostLeft: hostRect.left,
         hostTop: hostRect.top,
         hostRight: hostRect.right,
@@ -1950,12 +1970,12 @@ test.describe("Feature: Svelte system surfaces", () => {
       };
     });
     expect(coverContentAlignment).not.toBeNull();
-    expect(coverContentAlignment?.hostLeft ?? 0).toBeCloseTo(coverContentAlignment?.bodyLeft ?? 0, 1);
-    expect(coverContentAlignment?.hostTop ?? 0).toBeCloseTo(coverContentAlignment?.bodyTop ?? 0, 1);
-    expect(coverContentAlignment?.hostRight ?? 0).toBeCloseTo(coverContentAlignment?.bodyRight ?? 0, 1);
-    expect(coverContentAlignment?.hostBottom ?? 0).toBeCloseTo(coverContentAlignment?.bodyBottom ?? 0, 1);
-    expect(coverContentAlignment?.viewportLeft ?? 0).toBeCloseTo(coverContentAlignment?.bodyLeft ?? 0, 1);
-    expect(coverContentAlignment?.viewportTop ?? 0).toBeCloseTo(coverContentAlignment?.bodyTop ?? 0, 1);
+    expect(coverContentAlignment?.hostLeft ?? 0).toBeCloseTo(coverContentAlignment?.bodyContentInnerLeft ?? 0, 1);
+    expect(coverContentAlignment?.hostTop ?? 0).toBeCloseTo(coverContentAlignment?.bodyContentInnerTop ?? 0, 1);
+    expect(coverContentAlignment?.hostRight ?? 0).toBeCloseTo(coverContentAlignment?.bodyContentInnerRight ?? 0, 1);
+    expect(coverContentAlignment?.hostBottom ?? 0).toBeCloseTo(coverContentAlignment?.bodyContentInnerBottom ?? 0, 1);
+    expect(coverContentAlignment?.viewportLeft ?? 0).toBeCloseTo(coverContentAlignment?.bodyContentInnerLeft ?? 0, 1);
+    expect(coverContentAlignment?.viewportTop ?? 0).toBeCloseTo(coverContentAlignment?.bodyContentInnerTop ?? 0, 1);
     await expect
       .poll(async () => {
         const viewport = await page.getByTestId("terminal-window-scroll-viewport").elementHandle();

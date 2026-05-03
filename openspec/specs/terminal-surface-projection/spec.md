@@ -1,16 +1,16 @@
 # terminal-surface-projection Specification
 
 ## Purpose
-TBD - created by archiving change refactor-terminal-system-orthogonal-runtime. Update Purpose after archive.
+Define the authoritative actor-facing terminal surface projection contract for clients and WebUI hosts.
 ## Requirements
 
 ### Requirement: Terminal surface projection SHALL provide one authoritative actor-facing terminal model
 
-The system SHALL provide a terminal surface projection that combines terminal catalog metadata, lifecycle truth, observed identity, seat/access projection, approval counts, and renderable snapshot truth into one actor-facing model for clients and WebUI hosts.
+The system SHALL provide a terminal surface projection that combines terminal catalog metadata, lifecycle truth, observed identity, seat/access projection, approval counts, renderable snapshot truth, durable renderer preference, and durable theme identity into one actor-facing model for clients and WebUI hosts.
 
 #### Scenario: WebUI consumes one projection instead of merging local fragments
 - **WHEN** a client loads a terminal detail surface
-- **THEN** it receives one terminal surface projection containing the data needed for viewport, seat, and action rendering
+- **THEN** it receives one terminal surface projection containing the data needed for viewport, seat, action rendering, and renderer/theme selection
 - **THEN** the client does not need to reconstruct seat truth by merging `access`, `grants`, and `actors`
 
 #### Scenario: Projection carries renderable snapshot truth
@@ -21,7 +21,7 @@ The system SHALL provide a terminal surface projection that combines terminal ca
 #### Scenario: Projection includes lifecycle and observed identity
 
 - **WHEN** a client loads a terminal detail surface
-- **THEN** the projection includes launch cwd/configured title, observed current path/current title, and process lifecycle facts together
+- **THEN** the projection includes launch cwd/configured title, observed current path/current title, process lifecycle facts, durable renderer preference, and durable theme identity together
 - **AND** the client does not reconstruct those truths from raw snapshots or local heuristics
 
 #### Scenario: Projection retains transport discovery on stop

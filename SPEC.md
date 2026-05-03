@@ -33,6 +33,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Terminal truth、grant、approval、lease、activity history 的 durable truth 属于全局 `terminal-system`；session 只保留 terminal binding、focus refs、approval subscription 与推理所需 projection facts，不复制 terminal history 当作自己的真源。
 - Terminal 长时观察必须通过独立的 `terminal await` 原语表达；它等待 TerminalSystem 拥有的稳定 snapshot / status / commit truth，返回 bounded clean lines 与 post-mortem evidence，不把等待、匹配或 debounce 语义塞进 `terminal read`。
 - Terminal focus truth 属于 actor-scoped seat state；inspection tab、UI 选中态、以及别的 actor 的 focus 都不能被错误投影成当前 session actor 的 terminal attention 输入。
+- Terminal profile 的 renderer/theme/cursor truth 属于 `terminal-system` 的 declarative durable config：后端只发布 `rendererPreference + theme + cursor`，前端按环境把 `auto` 解析成 `resolvedRenderer`；AI-facing terminal config mutation 不得拥有 renderer/theme 改写权。
 - WorkspaceSystem 是独立平台系统，拥有 workspace mount、path grant、public assets、avatar-private assets 与 non-interactive workspace exec；workspace 不拥有 room 或 terminal truth。
 - Workspace path grant 的 durable law 是“workspace-root-relative ordered glob rules”: 规则默认拒绝、last-match-wins，并由共享的 overlay-rule filesystem evaluator 驱动 workspace bash、root workspace bash、terminal cwd 校验与 workbench explorer/preview。
 - Avatar private runtime home 是固定原语：每个 runtime 都必须拥有一个按 principal address 定位的 root workspace，dynamic workspace mounts 只是在此基础上的额外授权。

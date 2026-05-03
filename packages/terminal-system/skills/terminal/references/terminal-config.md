@@ -18,6 +18,6 @@ Rules:
 - `terminal set-config` uses patch semantics; send only the fields you intend to change
 - `cols` and `rows` may resize a running PTY immediately while also updating durable config
 - `command`, `launchCwd`, `env`, `processKind`, `gitLog`, and `logStyle` update durable truth first and normally take effect on the next bootstrap
-- `title`, `icon`, `shortcuts`, `rendererEngine`, and `metadata` update the durable projection without rewriting the running shell process in place
+- `title`, `icon`, `shortcuts`, `rendererPreference`, `theme`, `cursor`, and `metadata` update the durable projection without rewriting the running shell process in place
 - if the next mutation is unclear, read `terminal get-config --help` or `terminal set-config --help` before guessing payload shape
 - through `root_bash`, keep the command minimal and carry config JSON in `stdin` by default

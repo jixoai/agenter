@@ -7,6 +7,114 @@ import {
 } from "@agenter/terminal-transport-protocol";
 
 vi.mock("@xterm/xterm/css/xterm.css?inline", () => ({ default: ".xterm { display: block; }" }));
+vi.mock("ghostty-web", () => {
+  class MockGhosttyTerminal {
+    cols = 80;
+    rows = 24;
+    writes: Array<string | Uint8Array> = [];
+    resetCount = 0;
+    focusCount = 0;
+    openedWith: Element | null = null;
+    element: HTMLElement | undefined;
+    textarea: HTMLTextAreaElement | undefined;
+    options: Record<string, unknown> = {};
+    renderer = {
+      getCanvas: (): HTMLCanvasElement | null => this.canvas,
+      getMetrics: () => ({
+        width: 9,
+        height: 19,
+        baseline: 15,
+      }),
+      setTheme: vi.fn(),
+      setCursorStyle: vi.fn(),
+    };
+    private dataListeners: Array<(data: string) => void> = [];
+    private canvas: HTMLCanvasElement | null = null;
+
+    constructor(options?: Record<string, unknown>) {
+      this.options = { ...(options ?? {}) };
+      this.cols = typeof options?.cols === "number" ? options.cols : this.cols;
+      this.rows = typeof options?.rows === "number" ? options.rows : this.rows;
+    }
+
+    onData(listener: (data: string) => void): { dispose(): void } {
+      this.dataListeners.push(listener);
+      return {
+        dispose: () => {
+          this.dataListeners = this.dataListeners.filter((item) => item !== listener);
+        },
+      };
+    }
+
+    emitData(data: string): void {
+      for (const listener of this.dataListeners) {
+        listener(data);
+      }
+    }
+
+    open(node: Element): void {
+      this.openedWith = node;
+      this.element = node as HTMLElement;
+      const textarea = document.createElement("textarea");
+      textarea.setAttribute("data-terminal-input-surface", "true");
+      this.textarea = textarea;
+      const canvas = document.createElement("canvas");
+      canvas.setAttribute("data-terminal-renderer-screen", "true");
+      canvas.width = this.cols * 9;
+      canvas.height = this.rows * 19;
+      Object.defineProperty(canvas, "getBoundingClientRect", {
+        value: () => ({
+          width: this.cols * 9,
+          height: this.rows * 19,
+          top: 0,
+          left: 0,
+          right: this.cols * 9,
+          bottom: this.rows * 19,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }),
+      });
+      this.canvas = canvas;
+      node.appendChild(textarea);
+      node.appendChild(canvas);
+    }
+
+    write(data: string | Uint8Array): void {
+      this.writes.push(data);
+    }
+
+    resize(cols: number, rows: number): void {
+      this.cols = cols;
+      this.rows = rows;
+      if (this.canvas) {
+        this.canvas.width = cols * 9;
+        this.canvas.height = rows * 19;
+      }
+    }
+
+    reset(): void {
+      this.resetCount += 1;
+    }
+
+    focus(): void {
+      this.focusCount += 1;
+      this.textarea?.focus();
+    }
+
+    dispose(): void {}
+  }
+
+  return {
+    init: vi.fn(async () => undefined),
+    Terminal: class GhosttyTerminalMock extends MockGhosttyTerminal {
+      constructor(options?: Record<string, unknown>) {
+        super(options);
+        mockGhosttyTerminals.push(this);
+      }
+    },
+  };
+});
 
 type ResizeEntry = Pick<ResizeObserverEntry, "target" | "contentRect">;
 
@@ -135,6 +243,20 @@ class MockTerminal {
 }
 
 const mockTerminals: MockTerminal[] = [];
+const mockGhosttyTerminals: Array<{
+  cols: number;
+  rows: number;
+  writes: Array<string | Uint8Array>;
+  resetCount: number;
+  focusCount: number;
+  textarea?: HTMLTextAreaElement;
+  options: Record<string, unknown>;
+  emitData(data: string): void;
+  renderer: {
+    setTheme: ReturnType<typeof vi.fn>;
+    setCursorStyle: ReturnType<typeof vi.fn>;
+  };
+}> = [];
 vi.mock("@xterm/xterm", () => ({
   Terminal: class TerminalMock extends MockTerminal {
     constructor(options?: Record<string, unknown>) {
@@ -297,6 +419,7 @@ const readTerminalScale = (shadowRoot: ShadowRoot): number => {
 describe("Feature: terminal-view WebComponent", () => {
   beforeEach(() => {
     mockTerminals.length = 0;
+    mockGhosttyTerminals.length = 0;
     WebSocketMock.instances.length = 0;
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
     vi.stubGlobal("WebSocket", WebSocketMock);
@@ -345,21 +468,14 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     const shadowRoot = requireShadowRoot(element);
-    const terminal = mockTerminals.at(-1);
+    const terminal = mockGhosttyTerminals.at(-1);
     expect(terminal).toBeDefined();
     expect(terminal?.resetCount).toBe(1);
     expect(terminal?.cols).toBe(132);
     expect(terminal?.rows).toBe(40);
-    expect(terminal?.options.allowProposedApi).toBe(true);
-    expect(terminal?.options.lineHeight).toBe(1.25);
+    expect(element.resolvedRenderer).toBe("ghostty-web");
+    expect(terminal?.options.allowTransparency).toBe(true);
     expect(terminal?.options.scrollback).toBe(10_000);
-    expect(terminal?.characterJoiners).toHaveLength(1);
-    expect(terminal?.characterJoiners[0]?.("!== && => ??")).toEqual([
-      [0, 3],
-      [4, 6],
-      [7, 9],
-      [10, 12],
-    ]);
     expect(element.querySelector("style")).toBeNull();
     expect(shadowRoot.querySelector(".terminal-frame")?.getAttribute("style")).toContain("width:1198px");
     expect(shadowRoot.querySelector("[data-terminal-viewport]")?.getAttribute("style")).toContain("width:1188px");
@@ -530,7 +646,7 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     const shadowRoot = requireShadowRoot(element);
-    const terminal = mockTerminals.at(-1);
+    const terminal = mockGhosttyTerminals.at(-1);
     expect(readTerminalScale(shadowRoot)).toBeCloseTo(2, 2);
     expect(terminal?.cols).toBe(40);
     expect(terminal?.rows).toBe(10);
@@ -599,9 +715,8 @@ describe("Feature: terminal-view WebComponent", () => {
       rows: 20,
     });
 
-    const terminal = mockTerminals.at(-1);
+    const terminal = mockGhosttyTerminals.at(-1);
     expect(terminal?.resetCount).toBe(0);
-    expect(terminal?.characterJoiners).toHaveLength(1);
 
     socket?.message(
       encodeServerFrame({
@@ -667,11 +782,9 @@ describe("Feature: terminal-view WebComponent", () => {
 
     terminal?.emitData("typed text");
     terminal?.emitData("\u001b[A");
-    terminal?.emitBinary("\xff");
     const sentFrames = decodeSentClientFrames(socket);
     expect(sentFrames).toContainEqual({ type: "inputBytes", data: new TextEncoder().encode("typed text") });
     expect(sentFrames).toContainEqual({ type: "inputBytes", data: new TextEncoder().encode("\u001b[A") });
-    expect(sentFrames).toContainEqual({ type: "inputBytes", data: Uint8Array.of(255) });
 
     socket?.message(
       encodeServerFrame({
@@ -699,7 +812,6 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(socket?.sent).toHaveLength(sentBeforeClosedInput);
 
     element.remove();
-    expect(terminal?.deregisteredJoinerIds).toContain(0);
   });
 
   test("Scenario: Given terminal stop closes the live websocket When the same transport url is enabled again Then the component reconnects instead of staying closed", async () => {
@@ -797,7 +909,7 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     const shadowRoot = requireShadowRoot(element);
-    const terminal = mockTerminals.at(-1);
+    const terminal = mockGhosttyTerminals.at(-1);
     const viewport = shadowRoot.querySelector<HTMLElement>("[data-terminal-viewport]");
     expect(viewport).not.toBeNull();
     expect(terminal?.focusCount).toBe(0);
@@ -845,7 +957,7 @@ describe("Feature: terminal-view WebComponent", () => {
     await waitForLifecycleFrame();
     await element.updateComplete;
 
-    const terminal = mockTerminals.at(-1);
+    const terminal = mockGhosttyTerminals.at(-1);
     expect(element.connectionState).toBe("connected");
     expect(terminal?.resetCount).toBe(1);
     expect(terminal?.writes).toContain("boot output");

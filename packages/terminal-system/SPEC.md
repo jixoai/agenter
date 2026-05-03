@@ -298,6 +298,10 @@ git-log 约束：
 - `remark:true` 表示消费当前 actor 的 read cursor；其它 actor 再读同一个 terminal 时必须仍能从自己的 cursor 看到同一批 diff。
 - `remark:false` 表示不推进 read cursor；activity history 是否记录由 `recordActivity` 单独控制，不能与 cursor consumption 混成一个开关。
 - actor-facing terminal surface projection 必须把 catalog metadata、seat/access projection、approval counters、transport endpoint 与 renderable snapshot truth 聚合成一个 authoritative model；WebUI/client 不得再自行拼接 `access + grants + actors + snapshot` 来还原 terminal truth。
+- terminal profile truth 固定采用声明式 `rendererPreference + theme + cursor`：
+  - `rendererPreference` 是 terminal-system durable truth，允许 `auto | ghostty-web | wterm | xterm`
+  - `theme` 与 `cursor` 是 renderer-neutral 的 declarative profile identity，而不是 feature-local CSS 补丁
+  - `resolvedRenderer` 属于前端环境解析事实，不回写成 terminal-system authoritative truth
 - terminal websocket transport 的 contract 固定为“bootstrap snapshot + live bytes/status”：
   - websocket 本身只是 binary data link；terminal transport 的 authoritative live truth 是 PTY `inputBytes / outputBytes`
   - live session frame 的 concrete wire format 固定为 `@agenter/terminal-transport-protocol` 提供的 protobuf message envelope；client/server 不得各自发明 ad-hoc JSON 或私有二进制布局
@@ -311,7 +315,8 @@ git-log 约束：
   - global terminal id
   - title
   - status
-  - renderer engine
+  - renderer preference
+  - theme / cursor profile identity
   - actor seats / admin state
   - transport endpoint
 - WebUI 的 `Terminals` 页面是 terminal-system 的正式消费面：

@@ -1,87 +1,39 @@
-import { Terminal } from "@xterm/xterm";
-import xtermStyles from "@xterm/xterm/css/xterm.css?inline";
 import {
-  binaryStringToBytes,
   decodeTerminalTransportServerMessage,
   encodeTerminalTransportClientMessage,
   type TerminalTransportClientMessage,
   type TerminalTransportServerMessage,
-  type TerminalTransportSnapshot,
 } from "@agenter/terminal-transport-protocol";
 import { LitElement, html } from "lit";
 import { property, query } from "lit/decorators.js";
+
+import {
+  DEFAULT_TERMINAL_CURSOR,
+  DEFAULT_TERMINAL_RENDERER_PREFERENCE,
+  DEFAULT_TERMINAL_THEME,
+  resolveTerminalAppearance,
+  resolveTerminalRenderer,
+  type ResolvedTerminalAppearance,
+  type TerminalCursorStyle,
+  type TerminalRendererPreference,
+  type TerminalResolvedRenderer,
+  type TerminalThemeName,
+} from "./terminal-renderer-profile";
+import { resolveTerminalRendererAdapter, resolveTerminalRendererStyles } from "./terminal-renderer-registry";
+import type { TerminalRendererSession } from "./terminal-renderer-adapter";
+import { TERMINAL_PUBLIC_SCREEN_ATTRIBUTE } from "./terminal-renderer-adapter";
 import { resolveTerminalScreenMetrics } from "./terminal-geometry";
+import type { TerminalViewConnectionState, TerminalViewScreenMetrics, TerminalViewSnapshot } from "./terminal-view-types";
 
 export const TERMINAL_VIEW_TAG = "terminal-view";
 
-export type TerminalViewConnectionState = "idle" | "connecting" | "connected" | "closed" | "error";
-export interface TerminalViewScreenMetrics {
-  width: number;
-  height: number;
-}
-
-export type TerminalViewSnapshot = TerminalTransportSnapshot;
-
-interface XtermRenderDimensions {
-  css?: {
-    canvas?: {
-      width?: number;
-      height?: number;
-    };
-  };
-}
-
-interface XtermInternalShape {
-  _core?: {
-    _renderService?: {
-      dimensions?: XtermRenderDimensions;
-    };
-  };
-}
-
-interface XtermScreenWithCore {
-  _core?: {
-    _renderService?: {
-      dimensions?: XtermRenderDimensions;
-    };
-  };
-}
-
-const TERMINAL_FONT_SIZE = 12;
-const TERMINAL_LINE_HEIGHT = 1.25;
 const FALLBACK_LINE_HEIGHT = 16;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 const DEFAULT_SCROLLBACK = 10_000;
-const PROGRAMMING_LIGATURES = Object.freeze([
-  "<!--",
-  "!==",
-  "-->",
-  "...",
-  "<<<",
-  "<=>",
-  "===",
-  ">>>",
-  "!!",
-  "!=",
-  "##",
-  "&&",
-  "++",
-  "--",
-  "->",
-  "::",
-  ":=",
-  "<-",
-  "<<",
-  "<=",
-  "==",
-  "=>",
-  ">=",
-  ">>",
-  "?.",
-  "??",
-  "||",
-]);
+const utf8Encoder = new TextEncoder();
+const utf8Decoder = new TextDecoder();
+const MAX_TEXT_EVIDENCE_LENGTH = 200_000;
 
 const templateStyles = `
   :host {
@@ -114,41 +66,12 @@ const templateStyles = `
 
   .terminal-screen {
     overflow: hidden;
-    background: #020617;
     font-variant-ligatures: normal;
     font-feature-settings: "liga" 1, "calt" 1;
     text-rendering: optimizeLegibility;
   }
-
-  .xterm,
-  .xterm-screen,
-  .xterm-viewport {
-    height: 100%;
-  }
-
-  .xterm-viewport {
-    overflow-y: auto !important;
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, currentColor 28%, transparent) transparent;
-  }
-
-  .xterm-viewport::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-
-  .xterm-viewport::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .xterm-viewport::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: color-mix(in srgb, #cbd5e1 24%, transparent);
-  }
 `;
 
-const combinedStyles = `${xtermStyles}\n${templateStyles}`;
-const utf8Encoder = new TextEncoder();
 const toOwnedArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
@@ -156,14 +79,6 @@ const toOwnedArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
 };
 
 const ANSI_RESET = "\u001b[0m";
-const escapeRegex = (input: string): string => input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const PROGRAMMING_LIGATURE_REGEX = new RegExp(
-  [...PROGRAMMING_LIGATURES]
-    .sort((left, right) => right.length - left.length || left.localeCompare(right))
-    .map(escapeRegex)
-    .join("|"),
-  "g",
-);
 
 const hexToRgb = (input: string): [number, number, number] | null => {
   const normalized = input.trim();
@@ -212,23 +127,12 @@ const serializeSnapshot = (snapshot: TerminalViewSnapshot): string => {
   return snapshot.lines.join("\r\n");
 };
 
-const collectProgrammingLigatureRanges = (text: string): [number, number][] => {
-  if (text.length < 2) {
-    return [];
-  }
-
-  const ranges: [number, number][] = [];
-  PROGRAMMING_LIGATURE_REGEX.lastIndex = 0;
-
-  for (const match of text.matchAll(PROGRAMMING_LIGATURE_REGEX)) {
-    if (typeof match.index !== "number") {
-      continue;
-    }
-    ranges.push([match.index, match.index + match[0].length]);
-  }
-
-  return ranges;
-};
+const stripTerminalControlText = (value: string): string =>
+  value
+    .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/gu, "")
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, "")
+    .replace(/\u001b[@-_]/gu, "")
+    .replace(/[^\P{Cc}\n\t]/gu, "");
 
 export class TerminalViewElement extends LitElement {
   static override shadowRootOptions = {
@@ -242,22 +146,25 @@ export class TerminalViewElement extends LitElement {
   @property({ attribute: false }) accessor snapshot: TerminalViewSnapshot | null = null;
   @property({ attribute: false }) accessor connectionState: TerminalViewConnectionState = "idle";
   @property({ attribute: false }) accessor errorMessage = "";
+  @property({ attribute: "renderer-preference" }) accessor rendererPreference: TerminalRendererPreference =
+    DEFAULT_TERMINAL_RENDERER_PREFERENCE;
+  @property({ attribute: "theme-name" }) accessor theme: TerminalThemeName = DEFAULT_TERMINAL_THEME;
+  @property({ attribute: "cursor-style" }) accessor cursor: TerminalCursorStyle = DEFAULT_TERMINAL_CURSOR;
+  @property({ attribute: false }) accessor resolvedRenderer: TerminalResolvedRenderer | null = null;
+  @property({ attribute: false }) accessor rendererReason = "";
+  @property({ attribute: false }) accessor screenMetrics: TerminalViewScreenMetrics | null = null;
   @property({ attribute: "projection-width", type: Number }) accessor projectionWidth = 0;
   @property({ attribute: "projection-height", type: Number }) accessor projectionHeight = 0;
   @property({ attribute: "projection-scale", type: Number }) accessor projectionScale = 1;
   @property({ attribute: "projection-offset-x", type: Number }) accessor projectionOffsetX = 0;
   @property({ attribute: "projection-offset-y", type: Number }) accessor projectionOffsetY = 0;
-  @property({ attribute: false }) accessor screenMetrics: TerminalViewScreenMetrics | null = null;
 
   @query("[data-terminal-stage]") private accessor stageHost!: HTMLDivElement;
   @query("[data-terminal-viewport]") private accessor viewportHost!: HTMLDivElement;
 
-  private terminal: Terminal | null = null;
+  private terminalSession: TerminalRendererSession | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private socket: WebSocket | null = null;
-  private inputDataDisposable: { dispose(): void } | null = null;
-  private inputBinaryDisposable: { dispose(): void } | null = null;
-  private ligatureJoinerId: number | null = null;
   private hydratedSnapshotSeq = -1;
   private liveSnapshotHydrated = false;
   private lastSentResize: { cols: number; rows: number } | null = null;
@@ -268,6 +175,17 @@ export class TerminalViewElement extends LitElement {
   private firstUpdateFramePending = false;
   private stageResizeFrame = 0;
   private viewportInteractionDisposers: Array<() => void> = [];
+  private activeAppearanceKey = "";
+  private rendererErrorMessage = "";
+  private rendererSetupToken = 0;
+  private textEvidenceBuffer = "";
+
+  // Canvas-first renderers such as ghostty-web do not surface visible terminal text
+  // through DOM nodes. Keep one renderer-neutral text evidence surface for host probes
+  // and end-to-end verification instead of falling back to renderer-private selectors.
+  public get textEvidence(): string {
+    return this.textEvidenceBuffer;
+  }
 
   public requestViewportResize(input: { cols: number; rows: number }): boolean {
     const cols = Math.max(1, Math.floor(input.cols));
@@ -313,6 +231,9 @@ export class TerminalViewElement extends LitElement {
     this.upgradeProperty("liveTransportEnabled");
     this.upgradeProperty("terminalId");
     this.upgradeProperty("snapshot");
+    this.upgradeProperty("rendererPreference");
+    this.upgradeProperty("theme");
+    this.upgradeProperty("cursor");
     this.upgradeProperty("projectionWidth");
     this.upgradeProperty("projectionHeight");
     this.upgradeProperty("projectionScale");
@@ -329,20 +250,11 @@ export class TerminalViewElement extends LitElement {
       dispose();
     }
     this.viewportInteractionDisposers = [];
-    this.inputDataDisposable?.dispose();
-    this.inputDataDisposable = null;
-    this.inputBinaryDisposable?.dispose();
-    this.inputBinaryDisposable = null;
     if (this.stageResizeFrame !== 0) {
       cancelAnimationFrame(this.stageResizeFrame);
       this.stageResizeFrame = 0;
     }
-    if (this.terminal && this.ligatureJoinerId !== null) {
-      this.terminal.deregisterCharacterJoiner(this.ligatureJoinerId);
-      this.ligatureJoinerId = null;
-    }
-    this.terminal?.dispose();
-    this.terminal = null;
+    this.disposeRendererSession();
     super.disconnectedCallback();
   }
 
@@ -350,13 +262,10 @@ export class TerminalViewElement extends LitElement {
     if (this.firstUpdateFramePending) {
       return;
     }
-    // Terminal bootstrap measures the xterm screen and stage, and those paths
-    // can request a follow-up update. Defer them out of Lit's first update
-    // commit so Storybook/browser rendering stays free of change-in-update warnings.
     this.firstUpdateFramePending = true;
     this.scheduleAfterUpdate(() => {
       this.firstUpdateFramePending = false;
-      this.ensureTerminal();
+      this.ensureRendererSession();
       this.observeStage();
     });
   }
@@ -378,11 +287,19 @@ export class TerminalViewElement extends LitElement {
         this.syncSocket();
       });
     }
+    if (changed.has("rendererPreference") || changed.has("theme") || changed.has("cursor")) {
+      queueMicrotask(() => {
+        if (!this.isConnected) {
+          return;
+        }
+        this.ensureRendererSession();
+      });
+    }
   }
 
   render() {
-    const cols = this.snapshot?.cols ?? this.terminal?.cols ?? DEFAULT_COLS;
-    const rows = this.snapshot?.rows ?? this.terminal?.rows ?? DEFAULT_ROWS;
+    const cols = this.snapshot?.cols ?? this.terminalSession?.cols ?? DEFAULT_COLS;
+    const rows = this.snapshot?.rows ?? this.terminalSession?.rows ?? DEFAULT_ROWS;
     const screenWidth = this.screenWidth > 0 ? this.screenWidth : undefined;
     const screenHeight = this.screenHeight > 0 ? this.screenHeight : Math.round(rows * FALLBACK_LINE_HEIGHT);
     const screenMetrics = resolveTerminalScreenMetrics({
@@ -400,6 +317,9 @@ export class TerminalViewElement extends LitElement {
       Number.isFinite(this.projectionHeight) && this.projectionHeight > 0 ? this.projectionHeight : Math.round(frameHeight * projectionScale);
     const projectionOffsetX = Number.isFinite(this.projectionOffsetX) ? this.projectionOffsetX : 0;
     const projectionOffsetY = Number.isFinite(this.projectionOffsetY) ? this.projectionOffsetY : 0;
+    const appearance = this.resolveAppearance();
+    const rendererStyles = resolveTerminalRendererStyles(this.resolveRendererState().resolvedRenderer);
+    const combinedStyles = `${rendererStyles}\n${templateStyles}`;
 
     return html`
       <style>
@@ -410,6 +330,8 @@ export class TerminalViewElement extends LitElement {
         data-terminal-stage
         data-terminal-scroll-contract="terminal-stage"
         data-terminal-scroll-owner="terminal-stage"
+        data-terminal-renderer-preference=${this.rendererPreference}
+        data-terminal-resolved-renderer=${this.resolvedRenderer ?? ""}
         style=${`width:${projectionWidth}px;height:${projectionHeight}px;`}
       >
         <div class="terminal-frame-shell" style=${`width:${projectionWidth}px;height:${projectionHeight}px;`}>
@@ -421,7 +343,8 @@ export class TerminalViewElement extends LitElement {
             <div
               class="terminal-screen"
               data-terminal-viewport
-              style=${`width:${screenMetrics.screenWidth}px;height:${screenMetrics.screenHeight}px;margin-left:${screenMetrics.framePaddingX}px;margin-top:${screenMetrics.framePaddingY}px;`}
+              data-terminal-theme=${appearance.themeName}
+              style=${`width:${screenMetrics.screenWidth}px;height:${screenMetrics.screenHeight}px;margin-left:${screenMetrics.framePaddingX}px;margin-top:${screenMetrics.framePaddingY}px;background:${appearance.theme.background};color:${appearance.theme.foreground};`}
             ></div>
           </section>
         </div>
@@ -429,53 +352,112 @@ export class TerminalViewElement extends LitElement {
     `;
   }
 
-  private ensureTerminal(): void {
-    if (this.terminal || !this.viewportHost) {
+  private resolveRendererState() {
+    return resolveTerminalRenderer(this.rendererPreference);
+  }
+
+  private resolveAppearance(): ResolvedTerminalAppearance {
+    return resolveTerminalAppearance({
+      theme: this.theme,
+      cursor: this.cursor,
+    });
+  }
+
+  private ensureRendererSession(): void {
+    if (!this.viewportHost) {
       return;
     }
-    const terminal = new Terminal({
-      allowTransparency: true,
-      allowProposedApi: true,
-      convertEol: true,
-      cursorBlink: false,
-      cols: this.snapshot?.cols ?? DEFAULT_COLS,
-      rows: this.snapshot?.rows ?? DEFAULT_ROWS,
-      fontFamily: "var(--font-mono, ui-monospace, SFMono-Regular, monospace)",
-      fontSize: TERMINAL_FONT_SIZE,
-      fontWeight: "400",
-      fontWeightBold: "700",
-      lineHeight: TERMINAL_LINE_HEIGHT,
-      scrollback: DEFAULT_SCROLLBACK,
-      theme: {
-        background: "#020617",
-        foreground: "#e2e8f0",
-        cursor: "#38bdf8",
-      },
-    });
-    terminal.open(this.viewportHost);
-    this.ligatureJoinerId = terminal.registerCharacterJoiner(collectProgrammingLigatureRanges);
-    this.inputDataDisposable = terminal.onData((data) => {
-      this.sendClientMessage({
-        type: "inputBytes",
-        data: utf8Encoder.encode(data),
-      });
-    });
-    this.inputBinaryDisposable = terminal.onBinary((data) => {
-      this.sendClientMessage({
-        type: "inputBytes",
-        data: binaryStringToBytes(data),
-      });
-    });
-    this.terminal = terminal;
-    this.bindViewportInteractionFocus();
-    this.syncMeasuredScreen();
-    if (this.snapshot) {
-      const source = this.connectionState === "connected" && !this.liveSnapshotHydrated ? "transport" : "prop";
-      const applied = this.hydrateSnapshot(this.snapshot, source);
-      if (source === "transport" && applied) {
-        this.liveSnapshotHydrated = true;
-      }
+    void this.ensureRendererSessionAsync();
+  }
+
+  private async ensureRendererSessionAsync(): Promise<void> {
+    if (!this.viewportHost) {
+      return;
     }
+    const resolution = this.resolveRendererState();
+    const appearance = this.resolveAppearance();
+    const appearanceKey = `${appearance.themeName}:${appearance.cursorStyle}`;
+    const currentCols = this.snapshot?.cols ?? this.terminalSession?.cols ?? DEFAULT_COLS;
+    const currentRows = this.snapshot?.rows ?? this.terminalSession?.rows ?? DEFAULT_ROWS;
+    const requiresRebuild = this.terminalSession?.resolvedRenderer !== resolution.resolvedRenderer;
+
+    if (requiresRebuild) {
+      this.disposeRendererSession();
+    }
+
+    if (!this.terminalSession) {
+      const adapter = resolveTerminalRendererAdapter(resolution.resolvedRenderer);
+      if (!adapter) {
+        this.resolvedRenderer = resolution.resolvedRenderer;
+        this.rendererReason = resolution.reason;
+        this.rendererErrorMessage = `renderer '${resolution.resolvedRenderer}' is not available in terminal-view`;
+        this.connectionState = "error";
+        this.errorMessage = this.rendererErrorMessage;
+        return;
+      }
+      const setupToken = ++this.rendererSetupToken;
+      try {
+        await adapter.ensureReady?.();
+      } catch (error) {
+        if (setupToken !== this.rendererSetupToken) {
+          return;
+        }
+        this.resolvedRenderer = resolution.resolvedRenderer;
+        this.rendererReason = resolution.reason;
+        this.rendererErrorMessage =
+          error instanceof Error ? error.message : `failed to prepare renderer '${resolution.resolvedRenderer}'`;
+        this.connectionState = "error";
+        this.errorMessage = this.rendererErrorMessage;
+        return;
+      }
+      if (setupToken !== this.rendererSetupToken) {
+        return;
+      }
+      this.rendererErrorMessage = "";
+      this.terminalSession = adapter.createSession({
+        host: this.viewportHost,
+        cols: currentCols,
+        rows: currentRows,
+        scrollback: DEFAULT_SCROLLBACK,
+        appearance,
+        onInputBytes: (data) => {
+          this.sendClientMessage({
+            type: "inputBytes",
+            data,
+          });
+        },
+      });
+      this.activeAppearanceKey = appearanceKey;
+      this.resolvedRenderer = resolution.resolvedRenderer;
+      this.rendererReason = resolution.reason;
+      this.bindViewportInteractionFocus();
+      this.syncMeasuredScreen();
+      if (this.snapshot) {
+        const source = this.connectionState === "connected" ? "renderer" : "prop";
+        const applied = this.hydrateSnapshot(this.snapshot, source);
+        if (source === "renderer" && applied) {
+          this.liveSnapshotHydrated = true;
+        }
+      }
+      return;
+    }
+
+    this.resolvedRenderer = resolution.resolvedRenderer;
+    this.rendererReason = resolution.reason;
+    if (this.activeAppearanceKey !== appearanceKey) {
+      this.terminalSession.applyAppearance(appearance);
+      this.activeAppearanceKey = appearanceKey;
+      this.syncMeasuredScreen();
+    }
+  }
+
+  private disposeRendererSession(): void {
+    this.rendererSetupToken += 1;
+    this.terminalSession?.dispose();
+    this.terminalSession = null;
+    this.resolvedRenderer = null;
+    this.rendererReason = "";
+    this.activeAppearanceKey = "";
   }
 
   private upgradeProperty(
@@ -484,6 +466,9 @@ export class TerminalViewElement extends LitElement {
       | "liveTransportEnabled"
       | "terminalId"
       | "snapshot"
+      | "rendererPreference"
+      | "theme"
+      | "cursor"
       | "projectionWidth"
       | "projectionHeight"
       | "projectionScale"
@@ -561,42 +546,43 @@ export class TerminalViewElement extends LitElement {
   }
 
   private focusTerminalInput(): void {
-    const textarea = this.terminal?.textarea;
-    if (!this.terminal || !textarea) {
+    const inputElement = this.terminalSession?.inputElement;
+    if (!this.terminalSession || !inputElement) {
       return;
     }
-    if (textarea.ownerDocument.activeElement === textarea) {
+    if (inputElement.ownerDocument.activeElement === inputElement) {
       return;
     }
-    this.terminal.focus();
+    this.terminalSession.focus();
     queueMicrotask(() => {
-      if (!this.isConnected || !this.terminal?.textarea) {
+      const nextInputElement = this.terminalSession?.inputElement;
+      if (!this.isConnected || !this.terminalSession || !nextInputElement) {
         return;
       }
-      if (this.terminal.textarea.ownerDocument.activeElement === this.terminal.textarea) {
+      if (nextInputElement.ownerDocument.activeElement === nextInputElement) {
         return;
       }
-      this.terminal.focus();
+      this.terminalSession.focus();
     });
   }
 
   private resizeTerminal(cols: number, rows: number): void {
-    if (!this.terminal || cols < 1 || rows < 1) {
+    if (!this.terminalSession || cols < 1 || rows < 1) {
       return;
     }
-    if (this.terminal.cols === cols && this.terminal.rows === rows) {
+    if (this.terminalSession.cols === cols && this.terminalSession.rows === rows) {
       return;
     }
-    this.terminal.resize(cols, rows);
+    this.terminalSession.resize(cols, rows);
     this.syncMeasuredScreen();
     this.requestUpdate();
   }
 
-  private hydrateSnapshot(snapshot: TerminalViewSnapshot | null, source: "prop" | "transport"): boolean {
-    if (!snapshot || !this.terminal) {
+  private hydrateSnapshot(snapshot: TerminalViewSnapshot | null, source: "prop" | "transport" | "renderer"): boolean {
+    if (!snapshot || !this.terminalSession) {
       return false;
     }
-    const geometryChanged = this.terminal.cols !== snapshot.cols || this.terminal.rows !== snapshot.rows;
+    const geometryChanged = this.terminalSession.cols !== snapshot.cols || this.terminalSession.rows !== snapshot.rows;
     if (source === "prop" && this.connectionState === "connected" && this.liveSnapshotHydrated) {
       return false;
     }
@@ -604,12 +590,13 @@ export class TerminalViewElement extends LitElement {
       return false;
     }
     this.hydratedSnapshotSeq = Math.max(this.hydratedSnapshotSeq, snapshot.seq);
-    this.terminal.options.scrollback = Math.max(DEFAULT_SCROLLBACK, snapshot.lines.length - snapshot.rows + 256);
+    this.terminalSession.setScrollback(Math.max(DEFAULT_SCROLLBACK, snapshot.lines.length - snapshot.rows + 256));
     this.resizeTerminal(snapshot.cols, snapshot.rows);
-    this.terminal.reset();
+    this.terminalSession.reset();
     const rendered = serializeSnapshot(snapshot);
+    this.replaceTextEvidence(snapshot.lines.join("\n"));
     if (rendered.length > 0) {
-      this.terminal.write(rendered);
+      this.terminalSession.write(rendered);
     }
     this.syncMeasuredScreen();
     return true;
@@ -617,6 +604,11 @@ export class TerminalViewElement extends LitElement {
 
   private syncSocket(): void {
     this.disconnectSocket();
+    if (this.rendererErrorMessage) {
+      this.connectionState = "error";
+      this.errorMessage = this.rendererErrorMessage;
+      return;
+    }
     if (!this.liveTransportEnabled || !this.transportUrl) {
       this.connectionState = "idle";
       this.errorMessage = "";
@@ -686,9 +678,9 @@ export class TerminalViewElement extends LitElement {
     }
     if (message.type === "snapshot") {
       const geometryChanged =
-        this.terminal === null ||
-        this.terminal.cols !== message.snapshot.cols ||
-        this.terminal.rows !== message.snapshot.rows;
+        this.terminalSession === null ||
+        this.terminalSession.cols !== message.snapshot.cols ||
+        this.terminalSession.rows !== message.snapshot.rows;
       if (!this.liveSnapshotHydrated || geometryChanged) {
         this.snapshot = message.snapshot;
         this.liveSnapshotHydrated = this.hydrateSnapshot(message.snapshot, "transport") || this.liveSnapshotHydrated;
@@ -698,7 +690,8 @@ export class TerminalViewElement extends LitElement {
       return;
     }
     if (message.type === "outputBytes") {
-      this.terminal?.write(message.data);
+      this.appendTextEvidence(utf8Decoder.decode(message.data));
+      this.terminalSession?.write(message.data);
       return;
     }
     if (message.type === "status") {
@@ -713,34 +706,13 @@ export class TerminalViewElement extends LitElement {
     }
   }
 
-  private getTerminalScreenElement(): HTMLDivElement | null {
-    const screen = this.terminal?.element?.querySelector(".xterm-screen");
-    return screen instanceof HTMLDivElement ? screen : null;
-  }
-
-  private readMeasuredScreenFromXterm(): { width: number; height: number } | null {
-    const internal = this.terminal as unknown as XtermInternalShape | null;
-    const width = internal?._core?._renderService?.dimensions?.css?.canvas?.width;
-    const height = internal?._core?._renderService?.dimensions?.css?.canvas?.height;
-    if (typeof width === "number" && width > 0 && typeof height === "number" && height > 0) {
-      return { width, height };
-    }
-    const screenCore = this.getTerminalScreenElement() as (HTMLDivElement & XtermScreenWithCore) | null;
-    const screenWidth = screenCore?._core?._renderService?.dimensions?.css?.canvas?.width;
-    const screenHeight = screenCore?._core?._renderService?.dimensions?.css?.canvas?.height;
-    if (typeof screenWidth === "number" && screenWidth > 0 && typeof screenHeight === "number" && screenHeight > 0) {
-      return { width: screenWidth, height: screenHeight };
-    }
-    return null;
-  }
-
   private syncMeasuredScreen(): void {
-    const measured = this.readMeasuredScreenFromXterm();
+    const measured = this.terminalSession?.getScreenMetrics() ?? null;
     if (measured) {
       this.setScreenMetrics(measured.width, measured.height);
       return;
     }
-    const screenRect = this.getTerminalScreenElement()?.getBoundingClientRect();
+    const screenRect = this.renderRoot.querySelector(`[${TERMINAL_PUBLIC_SCREEN_ATTRIBUTE}]`)?.getBoundingClientRect();
     if (screenRect && screenRect.width > 0 && screenRect.height > 0) {
       this.setScreenMetrics(screenRect.width, screenRect.height);
     }
@@ -765,6 +737,24 @@ export class TerminalViewElement extends LitElement {
     this.requestUpdate();
   }
 
+  private replaceTextEvidence(value: string): void {
+    this.textEvidenceBuffer = this.clampTextEvidence(stripTerminalControlText(value));
+  }
+
+  private appendTextEvidence(value: string): void {
+    const next = stripTerminalControlText(value);
+    if (next.length === 0) {
+      return;
+    }
+    this.textEvidenceBuffer = this.clampTextEvidence(`${this.textEvidenceBuffer}${next}`);
+  }
+
+  private clampTextEvidence(value: string): string {
+    if (value.length <= MAX_TEXT_EVIDENCE_LENGTH) {
+      return value;
+    }
+    return value.slice(-MAX_TEXT_EVIDENCE_LENGTH);
+  }
 }
 
 export const defineTerminalView = (): void => {

@@ -22,6 +22,11 @@ export {
 export {
   TerminalControlPlane,
 } from "./terminal-control-plane";
+export {
+  DEFAULT_TERMINAL_CURSOR,
+  DEFAULT_TERMINAL_RENDERER_PREFERENCE,
+  DEFAULT_TERMINAL_THEME,
+} from "./terminal-control-plane.types";
 export type {
   TerminalAccessProjection,
   TerminalActorId,
@@ -59,11 +64,14 @@ export type {
   TerminalReadProjection,
   TerminalReadResult,
   TerminalRecord,
-  TerminalRendererEngine,
+  TerminalRendererPreference,
+  TerminalResolvedRenderer,
   TerminalReverseCursor,
   TerminalReversePage,
   TerminalSeatProjection,
   TerminalShortcutMap,
+  TerminalCursorStyle,
+  TerminalThemeName,
   TerminalTransportConfig,
   TerminalTransportEndpoint,
   TerminalWriteInput,

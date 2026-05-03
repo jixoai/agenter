@@ -9,6 +9,11 @@ import type { TerminalViewElement, TerminalViewScreenMetrics, TerminalViewSnapsh
 import type { Component } from "svelte";
 
 import type { ActorDirectoryEntry } from "$lib/features/collaboration/actor-directory";
+import type {
+  TerminalCursorStyle,
+  TerminalRendererPreference,
+  TerminalThemeName,
+} from "@agenter/terminal-view";
 
 export type TerminalSystemGrantRole = "admin" | "writer" | "requester" | "readonly";
 export type TerminalSystemReadMode = "auto" | "diff" | "snapshot";
@@ -92,9 +97,12 @@ export interface TerminalViewportProps {
   projectionScale?: number;
   projectionOffsetX?: number;
   projectionOffsetY?: number;
+  rendererPreference?: TerminalRendererPreference;
+  theme?: TerminalThemeName;
+  cursor?: TerminalCursorStyle;
   onScreenMetrics?: (metrics: TerminalViewScreenMetrics) => void;
   elementRef?: (HTMLElement &
-    Pick<TerminalViewElement, "transportUrl" | "terminalId" | "snapshot"> & {
+    Pick<TerminalViewElement, "transportUrl" | "terminalId" | "snapshot" | "rendererPreference" | "theme" | "cursor"> & {
       projectionWidth?: number;
       projectionHeight?: number;
       projectionScale?: number;

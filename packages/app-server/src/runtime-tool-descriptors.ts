@@ -4,7 +4,7 @@ import type {
   AttentionContextDescriptor,
 } from "@agenter/attention-system";
 import type { MessageQueryRequest } from "@agenter/message-system";
-import type { TerminalProcessProfile } from "@agenter/terminal-system";
+import type { TerminalCursorStyle, TerminalProcessProfile, TerminalRendererPreference, TerminalThemeName } from "@agenter/terminal-system";
 import { toJSONSchema, z, type ZodTypeAny } from "zod";
 
 import type {
@@ -79,7 +79,7 @@ export interface RuntimeLocalApiHandlers {
     processKind?: string;
     command?: string[];
     cwd?: string;
-    profile?: TerminalProcessProfile;
+    profile?: Omit<TerminalProcessProfile, "rendererPreference" | "theme" | "cursor">;
     focus?: boolean;
   }) => Promise<{ ok: boolean; message: string; terminal?: RuntimeTerminalView }>;
   terminalGetConfig: (input: { terminalId: string }) => Promise<RuntimeTerminalConfigView> | RuntimeTerminalConfigView;
@@ -96,7 +96,6 @@ export interface RuntimeLocalApiHandlers {
     title?: string;
     icon?: string;
     shortcuts?: Record<string, string>;
-    rendererEngine?: "xterm";
     metadata?: Record<string, unknown>;
   }) => Promise<RuntimeTerminalConfigMutationView> | RuntimeTerminalConfigMutationView;
   terminalRead: (input: {
@@ -179,6 +178,12 @@ export interface RuntimeLocalApiHandlers {
 export type RuntimeToolNamespace = "attention" | "message" | "workspace" | "terminal" | "skill";
 
 type RuntimeToolResult = Record<string, unknown>;
+
+type RuntimeToolVisibleTerminalProfile = Omit<TerminalProcessProfile, "rendererPreference" | "theme" | "cursor"> & {
+  rendererPreference?: TerminalRendererPreference;
+  theme?: TerminalThemeName;
+  cursor?: TerminalCursorStyle;
+};
 
 export interface RuntimeToolHandlerContext {
   signal?: AbortSignal;
@@ -332,7 +337,21 @@ const terminalCreateSchema = z.object({
   processKind: z.string().optional(),
   command: z.array(z.string()).optional(),
   cwd: z.string().optional(),
-  profile: z.record(z.string(), z.unknown()).optional(),
+  profile: z
+    .object({
+      command: z.array(z.string()).optional(),
+      cwd: z.string().optional(),
+      env: z.record(z.string(), z.string()).optional(),
+      cols: z.number().int().positive().optional(),
+      rows: z.number().int().positive().optional(),
+      gitLog: z.union([z.literal(false), z.enum(["normal", "verbose"])]).optional(),
+      logStyle: z.enum(["rich", "plain"]).optional(),
+      icon: z.string().optional(),
+      title: z.string().optional(),
+      shortcuts: z.record(z.string(), z.string()).optional(),
+    })
+    .strict()
+    .optional(),
   focus: z.boolean().optional(),
 });
 
@@ -353,7 +372,6 @@ const terminalSetConfigSchema = z.object({
   title: z.string().optional(),
   icon: z.string().optional(),
   shortcuts: z.record(z.string(), z.string()).optional(),
-  rendererEngine: z.literal("xterm").optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 

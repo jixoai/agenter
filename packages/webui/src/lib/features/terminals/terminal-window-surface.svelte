@@ -2,7 +2,11 @@
 	import { ScrollView } from '@agenter/svelte-components';
 
 	import type { GlobalTerminalEntry } from '@agenter/client-sdk';
-	import type { TerminalViewElement, TerminalViewScreenMetrics } from '@agenter/terminal-view';
+	import {
+		resolveTerminalTheme,
+		type TerminalViewElement,
+		type TerminalViewScreenMetrics,
+	} from '@agenter/terminal-view';
 
 	import { isTerminalRunning, resolveTerminalWindowTitle } from './terminal-display';
 	import type { TerminalLifecycleAction, TerminalViewportComponent } from './terminal-system-surface.types';
@@ -13,7 +17,7 @@
 	} from './terminal-geometry';
 
 	type LiveResizableTerminalViewportElement = HTMLElement &
-		Pick<TerminalViewElement, 'transportUrl' | 'terminalId' | 'snapshot'> & {
+		Pick<TerminalViewElement, 'transportUrl' | 'terminalId' | 'snapshot' | 'rendererPreference' | 'theme' | 'cursor'> & {
 			projectionWidth?: number;
 			projectionHeight?: number;
 			projectionScale?: number;
@@ -65,6 +69,7 @@
 	const viewportRows = $derived(terminal.snapshot?.rows ?? 24);
 	const liveTransportEnabled = $derived(isTerminalRunning(terminal));
 	const terminalTitle = $derived(resolveTerminalWindowTitle(terminal));
+	const terminalTheme = $derived(resolveTerminalTheme(terminal.theme));
 	const viewportToggleLabel = $derived(
 		viewportMode === 'cover' ? 'Minimize terminal window to fit view' : 'Expand terminal window to cover view',
 	);
@@ -636,7 +641,15 @@
 		) {
 			// This is the backend ack path after Apply resize or a live resize sideband was
 			// accepted. Do not replay a second motion when the viewport is already at that grid.
+			committedLiveGrid = null;
+			lastGestureResizeGrid = null;
 			return;
+		}
+		if (committedLiveGrid?.terminalId === terminal.terminalId) {
+			// Any authoritative snapshot geometry change ends the transient live-resize preview.
+			// This keeps Apply resize and backend acks as the single source of truth for rows/cols.
+			committedLiveGrid = null;
+			lastGestureResizeGrid = null;
 		}
 		pendingMotionReason = 'resize-ack';
 	});
@@ -800,7 +813,7 @@
 {/snippet}
 
 	<!-- window-container owns cover-mode chrome; terminal-window owns fit-mode chrome -->
-	<div class="flex h-full min-h-96 flex-col overflow-hidden rounded-lg bg-[linear-gradient(180deg,#1d1d1f,#171719)]">
+	<div class="flex h-full min-h-96 flex-col overflow-hidden rounded-lg" style={`background:${terminalTheme.background};color:${terminalTheme.foreground};`}>
 	{#if viewportMode === 'cover'}
 		{@render terminalWindowTitlebar(
 			'sticky top-0 z-20 shrink-0 flex h-8 items-center gap-2 border-b border-white/8 bg-[linear-gradient(180deg,rgba(58,58,60,0.98),rgba(40,40,42,0.96))] px-3 shadow-[0_1px_0_rgba(255,255,255,0.05)_inset] backdrop-blur-xl',
@@ -809,7 +822,7 @@
 		)}
 	{/if}
 	<ScrollView
-		class={viewportMode === 'cover' ? 'min-h-0 flex-1' : 'h-full'}
+		class={viewportMode === 'cover' ? 'flex-1' : 'h-full'}
 		orientation="both"
 		bind:viewportRef={scrollViewportRef}
 		viewportTestId="terminal-window-scroll-viewport"
@@ -819,8 +832,8 @@
 			bind:this={windowShellRef}
 			class={viewportMode === 'cover'
 				? 'flex flex-col overflow-visible text-slate-100'
-				: 'box-border flex flex-col overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(180deg,#2b2b2d,#1f1f21_12%,#1a1a1c)] text-slate-100 shadow-[0_28px_72px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.08)]'}
-			style={windowShellStyle}
+				: 'box-border flex flex-col overflow-hidden rounded-md border border-white/10 text-slate-100 shadow-[0_28px_72px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.08)]'}
+			style={`${windowShellStyle}${viewportMode === 'cover' ? '' : `background:${terminalTheme.background};`}`}
 			data-terminal-window-surface="true"
 			data-terminal-window-mode={viewportMode}
 			data-terminal-window-resizing={draggingResize ? 'true' : 'false'}
@@ -843,9 +856,9 @@
 			<div
 				bind:this={windowBodyRef}
 				class={viewportMode === 'cover'
-					? 'relative min-w-0 overflow-hidden bg-[linear-gradient(180deg,#1c1c1e,#171719)]'
-					: 'relative min-w-0 overflow-hidden bg-[linear-gradient(180deg,#1c1c1e,#171719)]'}
-				style={windowBodyStyle}
+					? 'relative min-w-0 overflow-hidden'
+					: 'relative min-w-0 overflow-hidden'}
+				style={`${windowBodyStyle}background:${terminalTheme.background};color:${terminalTheme.foreground};`}
 				data-terminal-window-body="true"
 				data-terminal-window-body-inset-x={String(bodyInsetX)}
 				data-terminal-window-body-inset-y={String(bodyInsetY)}
@@ -870,6 +883,9 @@
 						projectionScale={viewportProjectionScale}
 						projectionOffsetX={viewportProjectionOffsetX}
 						projectionOffsetY={viewportProjectionOffsetY}
+						rendererPreference={terminal.rendererPreference}
+						theme={terminal.theme}
+						cursor={terminal.cursor}
 						onScreenMetrics={handleViewportScreenMetrics}
 					/>
 				</div>

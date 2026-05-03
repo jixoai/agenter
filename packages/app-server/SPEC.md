@@ -96,6 +96,7 @@
 - runtime / global terminal `write` / `input` 必须忠实投影 terminal-core 的 pending 结果；如果 pending unit 被拒绝，不得回传伪造的 `written` success。
 - runtime / global terminal approval 请求必须把 `requestedInput.mode` 作为 durable fact 持久化；不得再靠 `submit`、`submitKey` 之类旧字段推断真实语义。
 - descriptor-backed runtime CLI 是 JSON-only contract：只接受空输入、单个 JSON argv、或 JSON stdin；不再提供 positional / natural-flag façade 兼容。
+- runtime-local terminal config descriptor 只暴露 AI/tool-managed launch/config truth；durable `rendererPreference` 与 terminal `theme/cursor` 仍属于 terminal-system owned profile law，不得作为 AI-facing mutable字段重新开放。
 - runtime-facing prompt / skill / error guidance 必须保持 stateless：当命令参数不匹配时，只能客观说明当前 contract、并引导 AI 使用 `<command> --help` 或 `skill info <skill>` 获取详情；不得暗示“旧语法”“之前的规则”或“记忆残留”。
 - runtime built-in skills 必须由 owning package 在 `skills/**/SKILL.md` 中维护，并通过 app-server build step 聚合成 generated catalog；runtime 不得再把这些 built-ins materialize 到 `<rootWorkspace>/skills`。
 - runtime skill system 的 durable truth 是可见 skill 的 on-disk files，而不是 prompt glue：shared / global / avatar-private skills 直接读盘；indexed built-in skills 在 source path 存在时也必须优先读当前磁盘文件，generated catalog 只负责 discovery baseline。

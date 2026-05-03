@@ -420,7 +420,9 @@ const mergeGlobalTerminalEntry = (
     ...current,
     ...incoming,
     snapshot: mergeTerminalSnapshot(current.snapshot, incoming.snapshot),
-    rendererEngine: incoming.rendererEngine ?? current.rendererEngine,
+    rendererPreference: incoming.rendererPreference ?? current.rendererPreference,
+    theme: incoming.theme ?? current.theme,
+    cursor: incoming.cursor ?? current.cursor,
     launchCwd: incoming.launchCwd,
     configuredTitle: hasOwnProjectionField(incoming, "configuredTitle") ? incoming.configuredTitle : current.configuredTitle,
     currentTitle: hasOwnProjectionField(incoming, "currentTitle") ? incoming.currentTitle : current.currentTitle,
@@ -463,7 +465,9 @@ const projectGlobalTerminalFromConfigMutation = (current: GlobalTerminalEntry | 
       icon?: string;
       title?: string;
       shortcuts?: Record<string, string>;
-      rendererEngine?: "xterm";
+      rendererPreference?: "auto" | "ghostty-web" | "wterm" | "xterm";
+      theme?: "default-dark" | "default-light" | "monokai";
+      cursor?: "block" | "bar" | "underline";
     };
     processPhase: "running" | "stopped" | "not_started";
   };
@@ -501,7 +505,9 @@ const projectGlobalTerminalFromConfigMutation = (current: GlobalTerminalEntry | 
     currentTitle: current?.currentTitle,
     currentPath: current?.currentPath,
     shortcuts: result.config.profile.shortcuts ?? current?.shortcuts,
-    rendererEngine: result.config.profile.rendererEngine ?? current?.rendererEngine ?? "xterm",
+    rendererPreference: result.config.profile.rendererPreference ?? current?.rendererPreference ?? "auto",
+    theme: result.config.profile.theme ?? current?.theme ?? "default-dark",
+    cursor: result.config.profile.cursor ?? current?.cursor ?? "block",
     transportUrl: current?.transportUrl,
     currentAdminId: current?.currentAdminId,
     approvalTimeoutMs: current?.approvalTimeoutMs,

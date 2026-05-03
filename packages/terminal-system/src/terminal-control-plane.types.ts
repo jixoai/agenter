@@ -14,10 +14,17 @@ export type TerminalAwaitUntil = "changed" | "idle" | "match" | "absent";
 export type TerminalAwaitOutcome = "changed" | "idle" | "matched" | "absent" | "timeout" | "stopped" | "cancelled";
 export type TerminalGrantRole = "admin" | "writer" | "requester" | "readonly";
 export type TerminalApprovalStatus = "pending" | "approved" | "denied" | "expired";
-export type TerminalRendererEngine = "xterm";
+export type TerminalRendererPreference = "auto" | "ghostty-web" | "wterm" | "xterm";
+export type TerminalResolvedRenderer = "ghostty-web" | "wterm" | "xterm";
+export type TerminalThemeName = "default-dark" | "default-light" | "monokai";
+export type TerminalCursorStyle = "block" | "bar" | "underline";
 export type TerminalActorId = PrincipalId | `${"auth" | "session" | "system"}:${string}`;
 export type TerminalEventKind = "terminal_read" | "terminal_write" | "terminal_resize";
 export type TerminalAutomationInputMode = "raw" | "mixed";
+
+export const DEFAULT_TERMINAL_RENDERER_PREFERENCE = "auto" as const satisfies TerminalRendererPreference;
+export const DEFAULT_TERMINAL_THEME = "default-dark" as const satisfies TerminalThemeName;
+export const DEFAULT_TERMINAL_CURSOR = "block" as const satisfies TerminalCursorStyle;
 
 export interface TerminalReverseCursor {
   beforeTimeMs: number;
@@ -45,7 +52,9 @@ export interface TerminalProcessProfile {
   icon?: string;
   title?: string;
   shortcuts?: TerminalShortcutMap;
-  rendererEngine?: TerminalRendererEngine;
+  rendererPreference?: TerminalRendererPreference;
+  theme?: TerminalThemeName;
+  cursor?: TerminalCursorStyle;
 }
 
 export interface TerminalTransportConfig {
@@ -334,7 +343,9 @@ export interface TerminalControlPlaneEntry {
   icon?: string;
   configuredTitle?: string;
   shortcuts?: TerminalShortcutMap;
-  rendererEngine?: TerminalRendererEngine;
+  rendererPreference: TerminalRendererPreference;
+  theme: TerminalThemeName;
+  cursor: TerminalCursorStyle;
   transportUrl?: string;
   currentAdminId?: TerminalActorId | null;
   approvalTimeoutMs?: number;
@@ -357,7 +368,9 @@ export interface TerminalPatchInput {
   title?: string;
   icon?: string;
   shortcuts?: TerminalShortcutMap;
-  rendererEngine?: TerminalRendererEngine;
+  rendererPreference?: TerminalRendererPreference;
+  theme?: TerminalThemeName;
+  cursor?: TerminalCursorStyle;
   adminGroupCandidateIds?: TerminalActorId[];
   metadata?: Record<string, unknown>;
 }

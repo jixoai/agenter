@@ -927,7 +927,9 @@ const createMockClient = (input: {
           icon?: string;
           title?: string;
           shortcuts?: Record<string, string>;
-          rendererEngine?: "xterm";
+          rendererPreference?: "auto" | "ghostty-web" | "wterm" | "xterm";
+          theme?: "default-dark" | "default-light" | "monokai";
+          cursor?: "block" | "bar" | "underline";
         };
         processPhase: "running" | "stopped" | "not_started";
       };
@@ -1665,7 +1667,9 @@ const createMockClient = (input: {
                       profile: {
                         cols: payload.cols,
                         rows: payload.rows,
-                        rendererEngine: "xterm" as const,
+                        rendererPreference: "auto" as const,
+                        theme: "default-dark" as const,
+                        cursor: "block" as const,
                       },
                       processPhase: "running" as const,
                     },
@@ -8149,7 +8153,9 @@ describe("Feature: runtime store synchronization", () => {
       currentTitle: undefined,
       currentPath: undefined,
       shortcuts: undefined,
-      rendererEngine: "xterm" as const,
+      rendererPreference: "auto" as const,
+      theme: "default-dark" as const,
+      cursor: "block" as const,
       transportUrl: `ws://127.0.0.1:7777/pty/${terminalId}?token=${accessToken}`,
       currentAdminId: "system:trusted-terminal-bootstrap",
       approvalTimeoutMs: 90_000,
@@ -8395,7 +8401,9 @@ describe("Feature: runtime store synchronization", () => {
       currentTitle: undefined,
       currentPath: undefined,
       shortcuts: undefined,
-      rendererEngine: "xterm" as const,
+      rendererPreference: "auto" as const,
+      theme: "default-dark" as const,
+      cursor: "block" as const,
       transportUrl: "ws://127.0.0.1:7777/pty/term-ops?token=termtok_admin",
       currentAdminId: "system:trusted-terminal-bootstrap",
       approvalTimeoutMs: 90_000,
@@ -8935,7 +8943,9 @@ describe("Feature: runtime store synchronization", () => {
                 currentTitle: undefined,
                 currentPath: undefined,
                 shortcuts: undefined,
-                rendererEngine: "xterm" as const,
+                rendererPreference: "auto" as const,
+                theme: "default-dark" as const,
+                cursor: "block" as const,
                 transportUrl: "ws://127.0.0.1:7777/pty/term-live-refresh?token=token-admin",
                 currentAdminId: "system:trusted-terminal-bootstrap",
                 approvalTimeoutMs: 90_000,
@@ -9311,7 +9321,9 @@ describe("Feature: runtime store synchronization", () => {
       currentTitle: undefined,
       currentPath: undefined,
       shortcuts: undefined,
-      rendererEngine: "xterm" as const,
+      rendererPreference: "auto" as const,
+      theme: "default-dark" as const,
+      cursor: "block" as const,
       transportUrl: "ws://127.0.0.1:7777/pty/term-renderable-refresh?token=token-admin",
       currentAdminId: "system:trusted-terminal-bootstrap",
       approvalTimeoutMs: 90_000,
@@ -9329,7 +9341,7 @@ describe("Feature: runtime store synchronization", () => {
       launchCwd: "/repo/renderable",
       processPhase: "stopped" as const,
       snapshot: undefined,
-      rendererEngine: undefined,
+      rendererPreference: undefined,
       transportUrl: undefined,
       access: undefined,
       actors: undefined,
@@ -9353,7 +9365,9 @@ describe("Feature: runtime store synchronization", () => {
       launchCwd: "/repo/renderable",
       processPhase: "running",
       transportUrl: fullEntry.transportUrl,
-      rendererEngine: "xterm",
+      rendererPreference: "auto",
+      theme: "default-dark",
+      cursor: "block",
       access: {
         accessToken: "token-admin",
       },
@@ -9368,7 +9382,9 @@ describe("Feature: runtime store synchronization", () => {
       launchCwd: "/repo/renderable",
       processPhase: "stopped",
       transportUrl: undefined,
-      rendererEngine: "xterm",
+      rendererPreference: "auto",
+      theme: "default-dark",
+      cursor: "block",
       access: {
         accessToken: "token-admin",
       },
@@ -9408,7 +9424,9 @@ describe("Feature: runtime store synchronization", () => {
       currentTitle: undefined,
       currentPath: undefined,
       shortcuts: undefined,
-      rendererEngine: "xterm" as const,
+      rendererPreference: "auto" as const,
+      theme: "default-dark" as const,
+      cursor: "block" as const,
       transportUrl: "ws://127.0.0.1:7777/pty/term-config-resize?token=token-admin",
       currentAdminId: "system:trusted-terminal-bootstrap",
       approvalTimeoutMs: 90_000,
@@ -9440,7 +9458,9 @@ describe("Feature: runtime store synchronization", () => {
                 profile: {
                   cols: 96,
                   rows: 28,
-                  rendererEngine: "xterm" as const,
+                  rendererPreference: "auto" as const,
+                  theme: "default-dark" as const,
+                  cursor: "block" as const,
                 },
                 processPhase: "running" as const,
               },

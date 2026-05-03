@@ -296,7 +296,9 @@ export interface RuntimeTerminalView {
   lastStoppedAt?: TerminalControlPlaneEntry["lastStoppedAt"];
   shortcuts?: TerminalControlPlaneEntry["shortcuts"];
   transportUrl?: string;
-  rendererEngine?: TerminalControlPlaneEntry["rendererEngine"];
+  rendererPreference: TerminalControlPlaneEntry["rendererPreference"];
+  theme: TerminalControlPlaneEntry["theme"];
+  cursor: TerminalControlPlaneEntry["cursor"];
 }
 
 export interface RuntimeTerminalConfigView extends TerminalConfigView {}
@@ -508,7 +510,9 @@ export const projectRuntimeTerminal = (terminal: TerminalControlPlaneEntry): Run
   lastStoppedAt: terminal.lastStoppedAt,
   shortcuts: terminal.shortcuts,
   transportUrl: terminal.transportUrl,
-  rendererEngine: terminal.rendererEngine,
+  rendererPreference: terminal.rendererPreference,
+  theme: terminal.theme,
+  cursor: terminal.cursor,
 });
 
 export const projectRuntimeTerminalConfig = (config: TerminalConfigView): RuntimeTerminalConfigView => ({

@@ -1,10 +1,16 @@
 <script lang="ts">
 	import {
+		DEFAULT_TERMINAL_CURSOR,
+		DEFAULT_TERMINAL_RENDERER_PREFERENCE,
+		DEFAULT_TERMINAL_THEME,
 		TERMINAL_VIEW_TAG,
 		defineTerminalView,
+		type TerminalCursorStyle,
 		type TerminalViewElement,
+		type TerminalRendererPreference,
 		type TerminalViewScreenMetrics,
 		type TerminalViewSnapshot,
+		type TerminalThemeName,
 	} from '@agenter/terminal-view';
 
 	if (typeof window !== 'undefined' && typeof customElements !== 'undefined') {
@@ -21,6 +27,9 @@
 		projectionScale = 1,
 		projectionOffsetX = 0,
 		projectionOffsetY = 0,
+		rendererPreference = DEFAULT_TERMINAL_RENDERER_PREFERENCE,
+		theme = DEFAULT_TERMINAL_THEME,
+		cursor = DEFAULT_TERMINAL_CURSOR,
 		onScreenMetrics,
 		elementRef = $bindable<TerminalViewHostElement | null>(null),
 		class: className = '',
@@ -35,6 +44,9 @@
 		projectionScale?: number;
 		projectionOffsetX?: number;
 		projectionOffsetY?: number;
+		rendererPreference?: TerminalRendererPreference;
+		theme?: TerminalThemeName;
+		cursor?: TerminalCursorStyle;
 		onScreenMetrics?: (metrics: TerminalViewScreenMetrics) => void;
 		elementRef?: TerminalViewHostElement | null;
 		class?: string;
@@ -42,7 +54,10 @@
 	} = $props();
 
 	type TerminalViewHostElement = HTMLElement &
-		Pick<TerminalViewElement, 'transportUrl' | 'terminalId' | 'snapshot'> & {
+		Pick<
+			TerminalViewElement,
+			'transportUrl' | 'terminalId' | 'snapshot' | 'rendererPreference' | 'theme' | 'cursor'
+		> & {
 			liveTransportEnabled?: boolean;
 			projectionWidth?: number;
 			projectionHeight?: number;
@@ -81,6 +96,9 @@
 		element.projectionScale = projectionScale;
 		element.projectionOffsetX = projectionOffsetX;
 		element.projectionOffsetY = projectionOffsetY;
+		element.rendererPreference = rendererPreference;
+		element.theme = theme;
+		element.cursor = cursor;
 	};
 
 	const isTerminalViewScreenMetrics = (value: unknown): value is TerminalViewScreenMetrics =>

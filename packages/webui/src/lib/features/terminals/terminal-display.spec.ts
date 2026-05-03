@@ -17,6 +17,9 @@ const createTerminalEntry = (overrides: Partial<GlobalTerminalEntry> = {}): Glob
 	processPhase: 'running',
 	seq: 0,
 	focused: false,
+	rendererPreference: 'auto',
+	theme: 'default-dark',
+	cursor: 'block',
 	...overrides,
 });
 

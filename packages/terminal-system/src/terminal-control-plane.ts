@@ -14,6 +14,11 @@ import {
   type ManagedTerminalConfigPatch,
   type ManagedTerminalSnapshot,
 } from "./managed-terminal";
+import {
+  DEFAULT_TERMINAL_CURSOR,
+  DEFAULT_TERMINAL_RENDERER_PREFERENCE,
+  DEFAULT_TERMINAL_THEME,
+} from "./terminal-control-plane.types";
 import type {
   TerminalAccessProjection,
   TerminalActorId,
@@ -145,20 +150,29 @@ const roleRank = (role: TerminalGrantRole): number => {
 const cloneShortcuts = (input?: TerminalShortcutMap): TerminalShortcutMap | undefined =>
   input ? { ...input } : undefined;
 const cloneMetadata = (input?: Record<string, unknown>): Record<string, unknown> => ({ ...(input ?? {}) });
-
-const cloneProfile = (input?: TerminalProcessProfile): TerminalProcessProfile => ({
-  command: input?.command ? [...input.command] : undefined,
-  cwd: input?.cwd,
-  env: input?.env ? { ...input.env } : undefined,
-  cols: input?.cols,
-  rows: input?.rows,
-  gitLog: input?.gitLog,
-  logStyle: input?.logStyle,
-  icon: input?.icon,
-  title: input?.title,
-  shortcuts: cloneShortcuts(input?.shortcuts),
-  rendererEngine: input?.rendererEngine,
+const normalizeProfile = (profile: TerminalProcessProfile): TerminalProcessProfile => ({
+  ...profile,
+  rendererPreference: profile.rendererPreference ?? DEFAULT_TERMINAL_RENDERER_PREFERENCE,
+  theme: profile.theme ?? DEFAULT_TERMINAL_THEME,
+  cursor: profile.cursor ?? DEFAULT_TERMINAL_CURSOR,
 });
+
+const cloneProfile = (input?: TerminalProcessProfile): TerminalProcessProfile =>
+  normalizeProfile({
+    command: input?.command ? [...input.command] : undefined,
+    cwd: input?.cwd,
+    env: input?.env ? { ...input.env } : undefined,
+    cols: input?.cols,
+    rows: input?.rows,
+    gitLog: input?.gitLog,
+    logStyle: input?.logStyle,
+    icon: input?.icon,
+    title: input?.title,
+    shortcuts: cloneShortcuts(input?.shortcuts),
+    rendererPreference: input?.rendererPreference,
+    theme: input?.theme,
+    cursor: input?.cursor,
+  });
 
 const cloneTransportConfig = (input?: TerminalTransportConfig): TerminalTransportConfig => ({
   host: input?.host ?? "127.0.0.1",
@@ -202,11 +216,17 @@ const mergeProfile = (...profiles: Array<TerminalProcessProfile | undefined>): T
     if (profile.shortcuts) {
       merged.shortcuts = { ...(merged.shortcuts ?? {}), ...profile.shortcuts };
     }
-    if (profile.rendererEngine !== undefined) {
-      merged.rendererEngine = profile.rendererEngine;
+    if (profile.rendererPreference !== undefined) {
+      merged.rendererPreference = profile.rendererPreference;
+    }
+    if (profile.theme !== undefined) {
+      merged.theme = profile.theme;
+    }
+    if (profile.cursor !== undefined) {
+      merged.cursor = profile.cursor;
     }
   }
-  return merged;
+  return normalizeProfile(merged);
 };
 
 const buildSnapshotPayload = (
@@ -1995,6 +2015,7 @@ export class TerminalControlPlane {
     const snapshot = entry?.terminal.getSnapshot();
     const observedIdentity = entry?.terminal.getObservedIdentity() ?? {};
     const access = input.access ?? undefined;
+    const profile = cloneProfile(record.profile);
     return {
       terminalId: record.terminalId,
       processKind: record.processKind,
@@ -2006,8 +2027,8 @@ export class TerminalControlPlane {
       seq: snapshot?.seq ?? 0,
       snapshot,
       focused: input.focused,
-      icon: record.profile.icon,
-      configuredTitle: record.profile.title,
+      icon: profile.icon,
+      configuredTitle: profile.title,
       currentPath: observedIdentity.currentPath,
       currentTitle: observedIdentity.currentTitle,
       processPhase: entry?.terminal.isRunning() ? "running" : record.processPhase,
@@ -2015,8 +2036,10 @@ export class TerminalControlPlane {
       lastExitCode: record.lastExitCode,
       lastExitSignal: record.lastExitSignal,
       lastStoppedAt: record.lastStoppedAt,
-      shortcuts: cloneShortcuts(record.profile.shortcuts),
-      rendererEngine: record.profile.rendererEngine ?? "xterm",
+      shortcuts: cloneShortcuts(profile.shortcuts),
+      rendererPreference: profile.rendererPreference ?? DEFAULT_TERMINAL_RENDERER_PREFERENCE,
+      theme: profile.theme ?? DEFAULT_TERMINAL_THEME,
+      cursor: profile.cursor ?? DEFAULT_TERMINAL_CURSOR,
       transportUrl: access?.accessToken ? this.getTransportEndpoint(record.terminalId, access.accessToken)?.url : undefined,
       currentAdminId: this.resolveCurrentAdminActorId(record.terminalId),
       approvalTimeoutMs: this.config.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
