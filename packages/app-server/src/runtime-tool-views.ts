@@ -309,6 +309,10 @@ export interface RuntimeTerminalView {
   access?: TerminalControlPlaneEntry["access"];
 }
 
+export type RuntimeTerminalCreateAckView = Omit<RuntimeTerminalView, "access"> & {
+  access?: undefined;
+};
+
 export interface RuntimeTerminalConfigView extends TerminalConfigView {}
 
 export interface RuntimeTerminalConfigMutationView extends TerminalConfigMutationResult {}

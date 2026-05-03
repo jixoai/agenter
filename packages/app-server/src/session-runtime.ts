@@ -167,6 +167,7 @@ import {
 } from "./loopbus-plugin-runtime";
 import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
 import {
+  readAvatarSeatDocument,
   saveAvatarMessageSeatCredential,
   saveAvatarTerminalSeatCredential,
 } from "./avatar-seat-store";
@@ -194,6 +195,8 @@ import {
   buildPublicWorkspaceShellEnvironment,
   buildRootWorkspaceShellEnvironment,
   buildSharedTerminalEnvironment,
+  materializeRuntimeShellBin,
+  resolveRuntimeShellBinDir,
 } from "./runtime-shell-bin";
 import {
   RuntimeSkillSystem,
@@ -226,6 +229,8 @@ import {
   type RuntimeMessageSendResult,
   type RuntimeMessageSnapshotView,
   type RuntimeReachableParticipantView,
+  type RuntimeTerminalCreateAckView,
+  type RuntimeTerminalView,
   type RuntimeVisibleMessageRoomView,
   type RuntimeWorkspaceSurface,
 } from "./runtime-tool-views";
@@ -1472,6 +1477,16 @@ const cloneEffectLedgerRecord = (record: SessionEffectLedgerRecord): SessionEffe
   meta: record.meta ? structuredClone(record.meta) : undefined,
 });
 
+const projectRuntimeTerminalCreateAck = (
+  terminal: RuntimeTerminalView,
+): RuntimeTerminalCreateAckView => {
+  const { access: _access, ...rest } = terminal;
+  return {
+    ...rest,
+    access: undefined,
+  };
+};
+
 export interface SessionRuntimeAttentionState {
   snapshot: AttentionSystemSnapshot;
   active: AttentionActiveContextMatch[];
@@ -1497,6 +1512,20 @@ type ManagedSeatAuthorityEndpoint = {
   authorityUrl: string;
   trpcPath?: string;
   acceptPath?: string;
+};
+
+type RemoteMessageSeatAccess = {
+  chatId: string;
+  accessToken: string;
+  accessRole: MessageChannelAccessProjection["accessRole"];
+  endpoint: ManagedSeatAuthorityEndpoint;
+};
+
+type RemoteTerminalSeatAccess = {
+  terminalId: string;
+  accessToken: string;
+  accessRole: TerminalAccessProjection["role"];
+  endpoint: ManagedSeatAuthorityEndpoint;
 };
 
 type RuntimeTerminalManageInviteResult = {
@@ -2067,10 +2096,73 @@ export class SessionRuntime {
     return accessToken;
   }
 
+  private getStoredSeatDocument() {
+    return readAvatarSeatDocument(this.getCurrentWorkspacePath(), this.getAvatarName(), this.getHomeDir());
+  }
+
+  private resolveStoredMessageSeat(chatId: string): RemoteMessageSeatAccess | null {
+    const seat = this.getStoredSeatDocument().messageSeats[chatId];
+    if (!seat || seat.state !== "active" || !seat.endpoint?.authorityUrl) {
+      return null;
+    }
+    return {
+      chatId,
+      accessToken: seat.accessToken,
+      accessRole: seat.accessRole,
+      endpoint: {
+        authorityUrl: seat.endpoint.authorityUrl,
+        trpcPath: seat.endpoint.trpcPath,
+        acceptPath: seat.endpoint.acceptPath,
+      },
+    };
+  }
+
+  private resolveStoredTerminalSeat(terminalId: string): RemoteTerminalSeatAccess | null {
+    const seat = this.getStoredSeatDocument().terminalSeats[terminalId];
+    if (!seat || seat.state !== "active" || !seat.endpoint?.authorityUrl) {
+      return null;
+    }
+    return {
+      terminalId,
+      accessToken: seat.accessToken,
+      accessRole: seat.accessRole,
+      endpoint: {
+        authorityUrl: seat.endpoint.authorityUrl,
+        trpcPath: seat.endpoint.trpcPath,
+        acceptPath: seat.endpoint.acceptPath,
+      },
+    };
+  }
+
+  private async getRemoteJson<TResult>(input: {
+    authorityUrl: string;
+    path: string;
+    accessToken?: string;
+    signal?: AbortSignal;
+  }): Promise<TResult> {
+    const headers = new Headers();
+    if (input.accessToken) {
+      headers.set("authorization", `Bearer ${input.accessToken}`);
+    }
+    const response = await fetch(`${input.authorityUrl}${input.path}`, {
+      method: "GET",
+      headers,
+      signal: input.signal,
+    });
+    const payload = (await response.json()) as Record<string, unknown>;
+    if (!response.ok) {
+      throw new Error(
+        typeof payload.error === "string" ? payload.error : `managed seat authority request failed: ${input.path}`,
+      );
+    }
+    return payload as TResult;
+  }
+
   private persistAcceptedMessageSeat(input: {
     chatId: string;
     accessToken: string;
     accessRole: MessageChannelAccessProjection["accessRole"];
+    endpoint?: ManagedSeatAuthorityEndpoint;
   }): void {
     saveAvatarMessageSeatCredential({
       workspacePath: this.getCurrentWorkspacePath(),
@@ -2078,6 +2170,7 @@ export class SessionRuntime {
       chatId: input.chatId,
       accessToken: input.accessToken,
       accessRole: input.accessRole,
+      endpoint: input.endpoint,
       homeDir: this.getHomeDir(),
     });
   }
@@ -2086,6 +2179,7 @@ export class SessionRuntime {
     terminalId: string;
     accessToken: string;
     accessRole: TerminalAccessProjection["role"];
+    endpoint?: ManagedSeatAuthorityEndpoint;
   }): void {
     saveAvatarTerminalSeatCredential({
       workspacePath: this.getCurrentWorkspacePath(),
@@ -2093,6 +2187,7 @@ export class SessionRuntime {
       terminalId: input.terminalId,
       accessToken: input.accessToken,
       accessRole: input.accessRole,
+      endpoint: input.endpoint,
       homeDir: this.getHomeDir(),
     });
   }
@@ -2599,9 +2694,9 @@ export class SessionRuntime {
     return channel ? this.projectMessageChannelForTooling(channel) : null;
   }
 
-  private readMessageChannelForTooling(input: { chatId: string; limit?: number }): RuntimeMessageSnapshotView {
+  private async readMessageChannelForTooling(input: { chatId: string; limit?: number }): Promise<RuntimeMessageSnapshotView> {
     const visibleRooms = this.listVisibleMessageRoomSummaries(input.chatId);
-    const snapshot = this.readMessageChannel(input);
+    const snapshot = await this.readMessageChannel(input);
     return projectRuntimeMessageSnapshot(snapshot, {
       visibleRooms,
       reachableParticipants: this.projectReachableMessageParticipants(visibleRooms),
@@ -2718,14 +2813,50 @@ export class SessionRuntime {
     from?: string;
     followUpAfterMs?: number;
   }): Promise<RuntimeMessageSendResult> {
-    const channel = this.getActorRoom(input.chatId) ?? this.messageSystem.getChannel(input.chatId);
+    const actorChannel = this.getActorRoom(input.chatId);
+    const channel = actorChannel ?? this.messageSystem.getChannel(input.chatId);
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
+    }
+    if (!actorChannel) {
+      const remoteSeat = this.resolveStoredMessageSeat(input.chatId);
+      if (!remoteSeat) {
+        throw new Error(`runtime actor has no member grant for chat channel: ${input.chatId}`);
+      }
+      const response = await this.postManagedSeatAuthority<{
+        ok: boolean;
+        reason?: string;
+      }>({
+        authorityUrl: remoteSeat.endpoint.authorityUrl,
+        path: "/trpc/message.globalSend",
+        body: {
+          chatId: input.chatId,
+          accessToken: remoteSeat.accessToken,
+          text: input.content,
+        },
+      });
+      if (response.ok !== true) {
+        throw new Error(response.reason ?? `remote room send failed: ${input.chatId}`);
+      }
+      const snapshot = await this.readMessageChannel({
+        chatId: input.chatId,
+        limit: 5,
+      });
+      const lastMessage = snapshot.items.at(-1);
+      if (!lastMessage) {
+        throw new Error("remote room send succeeded but no visible message was returned");
+      }
+      return {
+        ok: true,
+        actionId: this.createRuntimeActionId("message_send"),
+        messageId: lastMessage.messageId,
+        recentMessages: projectRuntimeMessageOverview(snapshot.items, 5),
+      };
     }
     const replyCycleId = this.activeCycleId;
     const author = input.from ?? this.getAvatarName();
     const actionId = this.createRuntimeActionId("message_send");
-    const result = this.deliverRuntimeMessageDispatch({
+    const result = await this.deliverRuntimeMessageDispatch({
       actionId,
       chatId: input.chatId,
       content: input.content,
@@ -2760,7 +2891,36 @@ export class SessionRuntime {
     content: string;
   }): Promise<{ ok: boolean; messageId: number; updatedAt: number }> {
     const actionId = this.createRuntimeActionId("message_edit");
-    const access = this.requireActorChannelWriteAccess(input.chatId);
+    const access = this.getActorRoom(input.chatId);
+    if (!access?.accessToken) {
+      const remoteSeat = this.resolveStoredMessageSeat(input.chatId);
+      if (!remoteSeat) {
+        throw new Error(`runtime actor has no member grant for chat channel: ${input.chatId}`);
+      }
+      const result = await this.postManagedSeatAuthority<{
+        ok: boolean;
+        messageId?: number;
+        updatedAt?: number;
+        reason?: string;
+      }>({
+        authorityUrl: remoteSeat.endpoint.authorityUrl,
+        path: "/trpc/message.globalEdit",
+        body: {
+          chatId: input.chatId,
+          accessToken: remoteSeat.accessToken,
+          messageId: input.messageId,
+          text: input.content,
+        },
+      });
+      if (!result.ok || typeof result.messageId !== "number" || typeof result.updatedAt !== "number") {
+        throw new Error(result.reason ?? `remote room edit failed: ${input.chatId}`);
+      }
+      return {
+        ok: true,
+        messageId: result.messageId,
+        updatedAt: result.updatedAt,
+      };
+    }
     const message = this.messageSystem.editAuthorized({
       chatId: access.chatId,
       accessToken: access.accessToken,
@@ -2794,7 +2954,42 @@ export class SessionRuntime {
     messageId: number;
   }): Promise<{ ok: boolean; messageId: number; updatedAt: number; recalledAt: number }> {
     const actionId = this.createRuntimeActionId("message_recall");
-    const access = this.requireActorChannelWriteAccess(input.chatId);
+    const access = this.getActorRoom(input.chatId);
+    if (!access?.accessToken) {
+      const remoteSeat = this.resolveStoredMessageSeat(input.chatId);
+      if (!remoteSeat) {
+        throw new Error(`runtime actor has no member grant for chat channel: ${input.chatId}`);
+      }
+      const result = await this.postManagedSeatAuthority<{
+        ok: boolean;
+        messageId?: number;
+        updatedAt?: number;
+        recalledAt?: number;
+        reason?: string;
+      }>({
+        authorityUrl: remoteSeat.endpoint.authorityUrl,
+        path: "/trpc/message.globalRecall",
+        body: {
+          chatId: input.chatId,
+          accessToken: remoteSeat.accessToken,
+          messageId: input.messageId,
+        },
+      });
+      if (
+        !result.ok ||
+        typeof result.messageId !== "number" ||
+        typeof result.updatedAt !== "number" ||
+        typeof result.recalledAt !== "number"
+      ) {
+        throw new Error(result.reason ?? `remote room recall failed: ${input.chatId}`);
+      }
+      return {
+        ok: true,
+        messageId: result.messageId,
+        updatedAt: result.updatedAt,
+        recalledAt: result.recalledAt,
+      };
+    }
     const message = this.messageSystem.recallAuthorized({
       chatId: access.chatId,
       accessToken: access.accessToken,
@@ -2916,14 +3111,14 @@ export class SessionRuntime {
   }
 
 
-  private deliverRuntimeMessageDispatch(input: {
+  private async deliverRuntimeMessageDispatch(input: {
     actionId: string;
     chatId: string;
     content: string;
     ref?: number;
     from: string;
     cycleId: number | null;
-  }): RuntimeMessageSendResult {
+  }): Promise<RuntimeMessageSendResult> {
     const redundant = this.findRedundantVisibleReply({
       chatId: input.chatId,
       content: input.content,
@@ -2931,7 +3126,7 @@ export class SessionRuntime {
     });
     if (redundant) {
       this.markRuntimeDispatchDelivered(input.chatId, input.cycleId);
-      return this.buildRuntimeMessageSendResult({
+      return await this.buildRuntimeMessageSendResult({
         actionId: input.actionId,
         chatId: input.chatId,
         message: redundant,
@@ -2945,7 +3140,7 @@ export class SessionRuntime {
       content: input.content,
     });
     this.markRuntimeDispatchDelivered(input.chatId, input.cycleId);
-    return this.buildRuntimeMessageSendResult({
+    return await this.buildRuntimeMessageSendResult({
       actionId: input.actionId,
       chatId: input.chatId,
       message,
@@ -2957,16 +3152,33 @@ export class SessionRuntime {
     return this.listActorRooms({ includeArchived: input.includeArchived });
   }
 
-  readMessageChannel(input: { chatId: string; limit?: number }): MessageSnapshot {
+  async readMessageChannel(input: { chatId: string; limit?: number }): Promise<MessageSnapshot> {
     const access = this.getActorRoom(input.chatId);
-    if (!access?.accessToken) {
+    if (access?.accessToken) {
+      return this.messageSystem.snapshotAuthorized({
+        chatId: access.chatId,
+        accessToken: access.accessToken,
+        limit: input.limit,
+      });
+    }
+    const remoteSeat = this.resolveStoredMessageSeat(input.chatId);
+    if (!remoteSeat) {
       throw new Error(`runtime actor has no grant for chat channel: ${input.chatId}`);
     }
-    return this.messageSystem.snapshotAuthorized({
-      chatId: access.chatId,
-      accessToken: access.accessToken,
-      limit: input.limit,
+    const payload = await this.getRemoteJson<{ snapshot: MessageSnapshot }>({
+      authorityUrl: remoteSeat.endpoint.authorityUrl,
+      path: `/trpc/message.globalSnapshot?input=${encodeURIComponent(
+        JSON.stringify({
+          json: {
+            chatId: input.chatId,
+            accessToken: remoteSeat.accessToken,
+            ...(typeof input.limit === "number" ? { limit: input.limit } : {}),
+          },
+        }),
+      )}`,
+      accessToken: remoteSeat.accessToken,
     });
+    return payload.snapshot;
   }
 
   async queryRuntimeMessages(input: {
@@ -2986,11 +3198,11 @@ export class SessionRuntime {
     });
   }
 
-  private listRecentMessageOverview(input: {
+  private async listRecentMessageOverview(input: {
     chatId: string;
     accessToken?: string;
     limit?: number;
-  }): RuntimeMessageOverviewItem[] {
+  }): Promise<RuntimeMessageOverviewItem[]> {
     if (input.accessToken) {
       return projectRuntimeMessageOverview(
         this.messageSystem.queryMessagesAuthorized({
@@ -3001,7 +3213,7 @@ export class SessionRuntime {
         input.limit,
       );
     }
-    return projectRuntimeMessageOverview(this.readMessageChannel(input).items, input.limit);
+    return projectRuntimeMessageOverview((await this.readMessageChannel(input)).items, input.limit);
   }
 
   private getLatestVisibleMessageForRoom(chatId: string): MessageRecord | undefined {
@@ -3163,13 +3375,13 @@ export class SessionRuntime {
     }
   }
 
-  private buildRuntimeMessageSendResult(input: {
+  private async buildRuntimeMessageSendResult(input: {
     actionId: string;
     chatId: string;
     message: MessageRecord;
     accessToken?: string;
     recordEffect?: boolean;
-  }): RuntimeMessageSendResult {
+  }): Promise<RuntimeMessageSendResult> {
     if (input.recordEffect ?? true) {
       this.recordEffectLedger({
         actionId: input.actionId,
@@ -3192,7 +3404,7 @@ export class SessionRuntime {
       ok: true,
       actionId: input.actionId,
       messageId: input.message.messageId,
-      recentMessages: this.listRecentMessageOverview({
+      recentMessages: await this.listRecentMessageOverview({
         chatId: input.chatId,
         accessToken: input.accessToken,
         limit: 5,
@@ -3297,6 +3509,7 @@ export class SessionRuntime {
       terminalId: accepted.invitation.resourceId,
       accessToken: accepted.access.accessToken,
       accessRole: accepted.access.role,
+      endpoint,
     });
     return accepted;
   }
@@ -3421,6 +3634,7 @@ export class SessionRuntime {
       chatId: accepted.invitation.resourceId,
       accessToken: accepted.access.accessToken,
       accessRole: accepted.access.accessRole,
+      endpoint,
     });
     return accepted;
   }
@@ -3698,7 +3912,36 @@ export class SessionRuntime {
   }
 
   listRuntimeTerminals(): TerminalControlPlaneEntry[] {
-    return this.requireTerminalControlPlane().listForActor(this.terminalActorId);
+    const localTerminals = this.requireTerminalControlPlane().listForActor(this.terminalActorId);
+    const byId = new Map(localTerminals.map((terminal) => [terminal.terminalId, terminal] as const));
+    for (const [terminalId, seat] of Object.entries(this.getStoredSeatDocument().terminalSeats)) {
+      if (byId.has(terminalId) || seat.state !== "active") {
+        continue;
+      }
+      byId.set(terminalId, {
+        terminalId,
+        processKind: "remote",
+        command: [],
+        launchCwd: "",
+        workspace: null,
+        status: "IDLE",
+        processPhase: "running",
+        seq: 0,
+        focused: false,
+        rendererPreference: "auto",
+        theme: "default-dark",
+        cursor: "block",
+        currentAdminId: null,
+        pendingRequestCount: 0,
+        access: {
+          role: seat.accessRole,
+          accessToken: seat.accessToken,
+          participantId: this.terminalActorId,
+          currentAdmin: seat.accessRole === "admin",
+        },
+      });
+    }
+    return [...byId.values()];
   }
 
   getRuntimeTerminalConfig(terminalId: string) {
@@ -3720,6 +3963,29 @@ export class SessionRuntime {
     mode?: TerminalReadMode;
     recordActivity?: boolean;
   }): Promise<TerminalReadPayload> {
+    const localControlPlane = this.terminalControlPlane;
+    if (!localControlPlane || !localControlPlane.has(input.terminalId)) {
+      const remoteSeat = this.resolveStoredTerminalSeat(input.terminalId);
+      if (remoteSeat) {
+        const response = await this.postManagedSeatAuthority<{
+          result: ControlPlaneTerminalReadResult;
+        }>({
+          authorityUrl: remoteSeat.endpoint.authorityUrl,
+          path: "/trpc/terminal.globalRead",
+          body: {
+            terminalId: input.terminalId,
+            accessToken: remoteSeat.accessToken,
+            mode: input.mode,
+            recordActivity: input.recordActivity,
+          },
+        });
+        return this.publishTerminalReadPayload(
+          input.terminalId,
+          response.result,
+          input.recordActivity ?? true,
+        );
+      }
+    }
     return await this.readTerminalRepresentation(input.terminalId, {
       mode: input.mode ?? "auto",
       remark: true,
@@ -3762,7 +4028,37 @@ export class SessionRuntime {
   }): Promise<{ ok: boolean; message: string; read?: TerminalReadPayload }> {
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(input.terminalId)) {
-      return { ok: false, message: `unknown terminal: ${input.terminalId}` };
+      const remoteSeat = this.resolveStoredTerminalSeat(input.terminalId);
+      if (!remoteSeat) {
+        return { ok: false, message: `unknown terminal: ${input.terminalId}` };
+      }
+      try {
+        const response = await this.postManagedSeatAuthority<{
+          ok: boolean;
+          message: string;
+          read?: ControlPlaneTerminalReadResult;
+        }>({
+          authorityUrl: remoteSeat.endpoint.authorityUrl,
+          path: "/trpc/terminal.globalWrite",
+          body: {
+            terminalId: input.terminalId,
+            accessToken: remoteSeat.accessToken,
+            text: input.text,
+            returnRead: input.returnRead,
+            readRecordActivity: input.readRecordActivity,
+            readMode: input.readMode,
+          },
+        });
+        return {
+          ok: response.ok,
+          message: response.message,
+          ...(response.read ? { read: response.read } : {}),
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.emit("error", { message: `terminal write failed (${input.terminalId}): ${message}` });
+        return { ok: false, message };
+      }
     }
     try {
       const result = await controlPlane.write({
@@ -3804,7 +4100,37 @@ export class SessionRuntime {
   }): Promise<{ ok: boolean; message: string; read?: TerminalReadPayload }> {
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(input.terminalId)) {
-      return { ok: false, message: `unknown terminal: ${input.terminalId}` };
+      const remoteSeat = this.resolveStoredTerminalSeat(input.terminalId);
+      if (!remoteSeat) {
+        return { ok: false, message: `unknown terminal: ${input.terminalId}` };
+      }
+      try {
+        const response = await this.postManagedSeatAuthority<{
+          ok: boolean;
+          message: string;
+          read?: ControlPlaneTerminalReadResult;
+        }>({
+          authorityUrl: remoteSeat.endpoint.authorityUrl,
+          path: "/trpc/terminal.globalInput",
+          body: {
+            terminalId: input.terminalId,
+            accessToken: remoteSeat.accessToken,
+            text: input.text,
+            returnRead: input.returnRead,
+            readRecordActivity: input.readRecordActivity,
+            readMode: input.readMode,
+          },
+        });
+        return {
+          ok: response.ok,
+          message: response.message,
+          ...(response.read ? { read: response.read } : {}),
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.emit("error", { message: `terminal input failed (${input.terminalId}): ${message}` });
+        return { ok: false, message };
+      }
     }
     try {
       const result = await controlPlane.input({
@@ -4579,7 +4905,7 @@ export class SessionRuntime {
           return commit;
         },
         messageList: (input) => this.listMessageChannelsForTooling(input),
-        messageRead: (input) => this.readMessageChannelForTooling(input),
+        messageRead: async (input) => await this.readMessageChannelForTooling(input),
         messageQuery: async (input) => await this.queryRuntimeMessages(input),
         messageSend: async (input) => await this.sendRuntimeMessage(input),
         messageEdit: async (input) => await this.editRuntimeMessage(input),
@@ -4618,7 +4944,7 @@ export class SessionRuntime {
           return {
             ok: result.ok,
             message: result.message,
-            terminal: projectRuntimeTerminal(result.terminal),
+            terminal: projectRuntimeTerminalCreateAck(projectRuntimeTerminal(result.terminal)),
           };
         },
         terminalGetConfig: async (input) =>
@@ -4727,6 +5053,8 @@ export class SessionRuntime {
     if (!this.runtimeLocalApi || !this.options.avatarPrivateKey) {
       throw new Error("runtime local api unavailable");
     }
+    materializeRuntimeShellBin(this.getRootWorkspacePath());
+    const runtimeBinDir = resolveRuntimeShellBinDir(this.getRootWorkspacePath());
     return await this.getOrCreateRootWorkspaceShellWorld().exec({
       command: input.command,
       cwd: input.cwd,
@@ -4737,7 +5065,10 @@ export class SessionRuntime {
         managedSeatAuthorityUrl: this.options.managedSeatAuthorityUrl,
         privateKey: this.options.avatarPrivateKey,
         principalId: this.options.avatarPrincipalId,
-        env: input.env,
+        env: {
+          ...(input.env ?? {}),
+          PATH: `${runtimeBinDir}:${input.env?.PATH ?? process.env.PATH ?? ""}`,
+        },
       }),
       stdin: input.stdin,
       mounts: [...this.getRootWorkspaceMounts()],
@@ -7797,13 +8128,13 @@ export class SessionRuntime {
     return this.sessionDb.listAssetsByIds(assetIds).map((asset) => toChatSessionAsset(this.options.sessionId, asset));
   }
 
-  sendMessageChannel(input: {
+  async sendMessageChannel(input: {
     chatId: string;
     accessToken: string;
     text: string;
     assetIds?: string[];
     clientMessageId?: string;
-  }): RuntimeMessageSendResult {
+  }): Promise<RuntimeMessageSendResult> {
     const actionId = this.createRuntimeActionId("message_send");
     const channel = this.messageSystem.getChannel(input.chatId);
     if (!channel) {
@@ -7826,7 +8157,7 @@ export class SessionRuntime {
       })),
       metadata: input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,
     });
-    return this.buildRuntimeMessageSendResult({
+    return await this.buildRuntimeMessageSendResult({
       actionId,
       chatId: input.chatId,
       accessToken: input.accessToken,

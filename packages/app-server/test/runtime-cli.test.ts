@@ -505,6 +505,58 @@ describe("Feature: runtime descriptor CLI", () => {
     });
   });
 
+  test("Scenario: Given terminal-manage and message-manage invite payloads When the CLI runs Then resource-native authority grammar is preserved through the runtime API", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/terminal-manage/invite": { invitation: { descriptor: { token: "seatinv_terminal" } } },
+      "/v1/message-manage/invite": { invitation: { descriptor: { token: "seatinv_message" } } },
+    });
+    const terminalManage = createRuntimeCommand(api.baseUrl, "terminal-manage");
+    const messageManage = createRuntimeCommand(api.baseUrl, "message-manage");
+
+    const terminalResult = await terminalManage.execute(
+      ['invite', '{"terminalId":"term-1","participantId":"0x1234567890abcdef1234567890abcdef12345678","seatClass":"RW"}'],
+      createCommandContext(),
+    );
+    expect(terminalResult.exitCode).toBe(0);
+    expect(api.getRequests()[0]?.body).toEqual({
+      terminalId: "term-1",
+      participantId: "0x1234567890abcdef1234567890abcdef12345678",
+      seatClass: "RW",
+    });
+
+    const messageResult = await messageManage.execute(
+      ['invite', '{"chatId":"room-1","participantId":"0x1234567890abcdef1234567890abcdef12345678","seatClass":"admin"}'],
+      createCommandContext(),
+    );
+    expect(messageResult.exitCode).toBe(0);
+    expect(api.getRequests()[1]?.body).toEqual({
+      chatId: "room-1",
+      participantId: "0x1234567890abcdef1234567890abcdef12345678",
+      seatClass: "admin",
+    });
+  });
+
+  test("Scenario: Given terminal-manage accept receives a deep link When the CLI runs Then descriptor transport is preserved for shared acceptance handling", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/terminal-manage/accept": {
+        invitation: { descriptor: { token: "seatinv_terminal" } },
+        access: { role: "writer", accessToken: "term-token" },
+      },
+    });
+    const terminalManage = createRuntimeCommand(api.baseUrl, "terminal-manage");
+    const deepLink = "terminal://join?token=seatinv_1234567890abcdefghijklmn";
+
+    const result = await terminalManage.execute(
+      ["accept", JSON.stringify({ descriptor: deepLink })],
+      createCommandContext(),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(api.getLastRequest()?.body).toEqual({
+      descriptor: deepLink,
+    });
+  });
+
   test("Scenario: Given compact stdin with a wildcard room scope When message query runs Then the CLI preserves the query contract without collapsing auth scope semantics", async () => {
     const api = await startMockRuntimeApi({
       "/v1/message/query": {

@@ -2271,7 +2271,7 @@ export class AppKernel {
       includeArchived: true,
     }).map((channel) => {
       const seat = seatDoc.messageSeats[channel.chatId];
-      const access = resolveWelcomeAccessState(accessibleRoomIds.has(channel.chatId), seat);
+      const access = resolveWelcomeAccessState(accessibleRoomIds.has(channel.chatId) || Boolean(seat?.endpoint), seat);
       return {
         channel,
         ...access,
@@ -2284,7 +2284,10 @@ export class AppKernel {
       superadminActorId: input.superadminTerminalActorId,
     }).map((terminal) => {
       const seat = seatDoc.terminalSeats[terminal.terminalId];
-      const access = resolveWelcomeAccessState(accessibleTerminalIds.has(terminal.terminalId), seat);
+      const access = resolveWelcomeAccessState(
+        accessibleTerminalIds.has(terminal.terminalId) || Boolean(seat?.endpoint),
+        seat,
+      );
       return {
         terminal,
         ...access,

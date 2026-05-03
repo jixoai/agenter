@@ -1611,6 +1611,42 @@ describe("Feature: workspace system kernel integration", () => {
     }
   });
 
+  test("Scenario: Given root workspace shell mounts runtime frontend clients When which checks managed seat commands Then terminal-manage and message-manage are both discoverable", async () => {
+    const root = createTempRoot();
+    const workspace = join(root, "workspace-a");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    try {
+      const session = await kernel.createSession({
+        cwd: workspace,
+        avatar: "architect",
+        autoStart: true,
+      });
+
+      const terminalManage = await execRootWorkspaceBash(kernel, session.id, {
+        command: "which terminal-manage",
+      });
+      expect(terminalManage.exitCode).toBe(0);
+      expect(terminalManage.stdout.trim().length).toBeGreaterThan(0);
+
+      const messageManage = await execRootWorkspaceBash(kernel, session.id, {
+        command: "which message-manage",
+      });
+      expect(messageManage.exitCode).toBe(0);
+      expect(messageManage.stdout.trim().length).toBeGreaterThan(0);
+    } finally {
+      await kernel.stop();
+    }
+  });
+
   test("Scenario: Given root workspace bash checks a dead loopback URL When curl writes only the HTTP code Then transport failure stays non-zero instead of fabricating 502", async () => {
     const root = createTempRoot();
     const rootWorkspace = join(root, "avatar-root");

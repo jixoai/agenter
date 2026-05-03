@@ -24,6 +24,7 @@ import {
   type PrincipalId,
   type PrincipalKeyPair,
 } from "@agenter/principal-crypto";
+import type { ManagedInvitationEndpointDescriptor } from "@agenter/managed-seat-invitation-handshake";
 import type { MessageChannelAccessRole } from "@agenter/message-system";
 import type { TerminalGrantRole } from "@agenter/terminal-system";
 import { normalizeAvatarNickname } from "@agenter/avatar";
@@ -36,9 +37,12 @@ import {
 
 export type AvatarSeatState = "active" | "credential-invalid";
 
+export interface AvatarSeatAuthorityEndpoint extends ManagedInvitationEndpointDescriptor {}
+
 export interface AvatarMessageSeatCredential {
   accessToken: string;
   accessRole: MessageChannelAccessRole;
+  endpoint?: AvatarSeatAuthorityEndpoint;
   state: AvatarSeatState;
   updatedAt: string;
 }
@@ -46,6 +50,7 @@ export interface AvatarMessageSeatCredential {
 export interface AvatarTerminalSeatCredential {
   accessToken: string;
   accessRole: TerminalGrantRole;
+  endpoint?: AvatarSeatAuthorityEndpoint;
   state: AvatarSeatState;
   updatedAt: string;
 }
@@ -129,6 +134,86 @@ export const ensureAvatarNicknameAlias = (input: {
 
 const nowIso = (): string => new Date().toISOString();
 
+const normalizeSeatEndpoint = (value: unknown): AvatarSeatAuthorityEndpoint | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const raw = value as {
+    authorityUrl?: unknown;
+    trpcPath?: unknown;
+    acceptPath?: unknown;
+  };
+  if (typeof raw.authorityUrl !== "string" || raw.authorityUrl.trim().length === 0) {
+    return undefined;
+  }
+  return {
+    authorityUrl: raw.authorityUrl.trim().replace(/\/+$/u, ""),
+    ...(typeof raw.trpcPath === "string" && raw.trpcPath.trim().length > 0 ? { trpcPath: raw.trpcPath.trim() } : {}),
+    ...(typeof raw.acceptPath === "string" && raw.acceptPath.trim().length > 0
+      ? { acceptPath: raw.acceptPath.trim() }
+      : {}),
+  };
+};
+
+const normalizeMessageSeatCredential = (value: unknown): AvatarMessageSeatCredential | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const raw = value as {
+    accessToken?: unknown;
+    accessRole?: unknown;
+    endpoint?: unknown;
+    state?: unknown;
+    updatedAt?: unknown;
+  };
+  if (
+    typeof raw.accessToken !== "string" ||
+    raw.accessToken.length === 0 ||
+    typeof raw.accessRole !== "string" ||
+    (raw.accessRole !== "admin" && raw.accessRole !== "member" && raw.accessRole !== "readonly")
+  ) {
+    return undefined;
+  }
+  return {
+    accessToken: raw.accessToken,
+    accessRole: raw.accessRole,
+    endpoint: normalizeSeatEndpoint(raw.endpoint),
+    state: raw.state === "credential-invalid" ? "credential-invalid" : "active",
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : nowIso(),
+  };
+};
+
+const normalizeTerminalSeatCredential = (value: unknown): AvatarTerminalSeatCredential | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const raw = value as {
+    accessToken?: unknown;
+    accessRole?: unknown;
+    endpoint?: unknown;
+    state?: unknown;
+    updatedAt?: unknown;
+  };
+  if (
+    typeof raw.accessToken !== "string" ||
+    raw.accessToken.length === 0 ||
+    typeof raw.accessRole !== "string" ||
+    (raw.accessRole !== "admin" &&
+      raw.accessRole !== "writer" &&
+      raw.accessRole !== "requester" &&
+      raw.accessRole !== "readonly")
+  ) {
+    return undefined;
+  }
+  return {
+    accessToken: raw.accessToken,
+    accessRole: raw.accessRole,
+    endpoint: normalizeSeatEndpoint(raw.endpoint),
+    state: raw.state === "credential-invalid" ? "credential-invalid" : "active",
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : nowIso(),
+  };
+};
+
 export const resolveAvatarSeatSettingsPath = (workspacePath: string, avatar: string, homeDir = homedir()): string => {
   return resolveWorkspaceAvatarSeatPath(workspacePath, normalizeAvatarNickname(avatar), homeDir);
 };
@@ -190,8 +275,18 @@ const normalizeSeatDocument = (value: unknown): AvatarSeatDocument => {
     algorithm: principal?.algorithm,
     publicKey: principal?.publicKey,
     privateKey: principal?.privateKey,
-    messageSeats: { ...(raw.messageSeats ?? {}) },
-    terminalSeats: { ...(raw.terminalSeats ?? {}) },
+    messageSeats: Object.fromEntries(
+      Object.entries(raw.messageSeats ?? {}).flatMap(([chatId, seat]) => {
+        const normalized = normalizeMessageSeatCredential(seat);
+        return normalized ? [[chatId, normalized] as const] : [];
+      }),
+    ),
+    terminalSeats: Object.fromEntries(
+      Object.entries(raw.terminalSeats ?? {}).flatMap(([terminalId, seat]) => {
+        const normalized = normalizeTerminalSeatCredential(seat);
+        return normalized ? [[terminalId, normalized] as const] : [];
+      }),
+    ),
   };
 };
 
@@ -272,6 +367,7 @@ export const saveAvatarMessageSeatCredential = (input: {
   chatId: string;
   accessToken: string;
   accessRole: MessageChannelAccessRole;
+  endpoint?: AvatarSeatAuthorityEndpoint;
   state?: AvatarSeatState;
   homeDir?: string;
 }): AvatarSeatDocument => {
@@ -284,6 +380,7 @@ export const saveAvatarMessageSeatCredential = (input: {
   doc.messageSeats[input.chatId] = {
     accessToken: input.accessToken,
     accessRole: input.accessRole,
+    endpoint: normalizeSeatEndpoint(input.endpoint),
     state: input.state ?? "active",
     updatedAt: nowIso(),
   };
@@ -301,6 +398,7 @@ export const saveAvatarTerminalSeatCredential = (input: {
   terminalId: string;
   accessToken: string;
   accessRole: TerminalGrantRole;
+  endpoint?: AvatarSeatAuthorityEndpoint;
   state?: AvatarSeatState;
   homeDir?: string;
 }): AvatarSeatDocument => {
@@ -313,6 +411,7 @@ export const saveAvatarTerminalSeatCredential = (input: {
   doc.terminalSeats[input.terminalId] = {
     accessToken: input.accessToken,
     accessRole: input.accessRole,
+    endpoint: normalizeSeatEndpoint(input.endpoint),
     state: input.state ?? "active",
     updatedAt: nowIso(),
   };

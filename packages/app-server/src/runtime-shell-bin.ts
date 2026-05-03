@@ -48,7 +48,6 @@ export const materializeRuntimeShellBin = (rootWorkspacePath: string): string =>
       join(binDir, commandName),
       [
         "#!/usr/bin/env bash",
-        "set -euo pipefail",
         `exec ${shellQuote(process.execPath)} ${shellQuote(RUNTIME_SHELL_ENTRY_PATH)} ${shellQuote(commandName)} "$@"`,
         "",
       ].join("\n"),
@@ -59,7 +58,6 @@ export const materializeRuntimeShellBin = (rootWorkspacePath: string): string =>
     join(binDir, "js-exec"),
     [
       "#!/usr/bin/env bash",
-      "set -euo pipefail",
       'if [ "$#" -lt 1 ]; then',
       '  printf "%s\\n" "js-exec requires <file> [-- <args>...]" >&2',
       "  exit 1",

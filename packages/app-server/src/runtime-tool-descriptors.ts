@@ -18,6 +18,7 @@ import type {
   RuntimeSkillMutationView,
   RuntimeMessageSnapshotView,
   RuntimeSkillView,
+  RuntimeTerminalCreateAckView,
   RuntimeTerminalConfigMutationView,
   RuntimeTerminalConfigView,
   RuntimeTerminalView,
@@ -51,7 +52,7 @@ export interface RuntimeLocalApiHandlers {
   }) => Promise<unknown> | unknown;
   attentionCommit: (input: AttentionCommitToolInput & { done?: boolean }) => Promise<AttentionCommit>;
   messageList: (input: { includeArchived?: boolean }) => RuntimeMessageChannelView[];
-  messageRead: (input: { chatId: string; limit?: number }) => RuntimeMessageSnapshotView;
+  messageRead: (input: { chatId: string; limit?: number }) => Promise<RuntimeMessageSnapshotView> | RuntimeMessageSnapshotView;
   messageQuery: (input: MessageQueryRequest) => Promise<RuntimeMessageQueryResult>;
   messageSend: (input: {
     chatId: string;
@@ -109,7 +110,7 @@ export interface RuntimeLocalApiHandlers {
     cwd?: string;
     profile?: Omit<TerminalProcessProfile, "rendererPreference" | "theme" | "cursor" | "font">;
     focus?: boolean;
-  }) => Promise<{ ok: boolean; message: string; terminal?: RuntimeTerminalView }>;
+  }) => Promise<{ ok: boolean; message: string; terminal?: RuntimeTerminalCreateAckView }>;
   terminalGetConfig: (input: { terminalId: string }) => Promise<RuntimeTerminalConfigView> | RuntimeTerminalConfigView;
   terminalSetConfig: (input: {
     terminalId: string;

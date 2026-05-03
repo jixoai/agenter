@@ -261,6 +261,70 @@ const messageRevokeBodySchema = z
   })
   .strict();
 
+const roomSnapshotBodySchema = z
+  .object({
+    chatId: z.string().trim().min(1),
+    accessToken: z.string().trim().min(1),
+    limit: z.number().int().positive().max(500).optional(),
+  })
+  .strict();
+
+const roomSendBodySchema = z
+  .object({
+    chatId: z.string().trim().min(1),
+    accessToken: z.string().trim().min(1),
+    text: z.string().min(1),
+  })
+  .strict();
+
+const roomEditBodySchema = z
+  .object({
+    chatId: z.string().trim().min(1),
+    accessToken: z.string().trim().min(1),
+    messageId: z.number().int().positive(),
+    text: z.string().min(1),
+  })
+  .strict();
+
+const roomRecallBodySchema = z
+  .object({
+    chatId: z.string().trim().min(1),
+    accessToken: z.string().trim().min(1),
+    messageId: z.number().int().positive(),
+  })
+  .strict();
+
+const terminalReadBodySchema = z
+  .object({
+    terminalId: z.string().trim().min(1),
+    accessToken: z.string().trim().min(1),
+    mode: z.enum(["auto", "diff", "snapshot"]).optional(),
+    recordActivity: z.boolean().optional(),
+    remark: z.boolean().optional(),
+  })
+  .strict();
+
+const terminalWriteBodySchema = z
+  .object({
+    terminalId: z.string().trim().min(1),
+    accessToken: z.string().trim().min(1),
+    text: z.string(),
+    readMode: z.enum(["auto", "diff", "snapshot"]).optional(),
+    readRecordActivity: z.boolean().optional(),
+    returnRead: z
+      .union([
+        z.boolean(),
+        z
+          .object({
+            throttleMs: z.number().int().nonnegative().optional(),
+            debounceMs: z.number().int().nonnegative().optional(),
+          })
+          .strict(),
+      ])
+      .optional(),
+  })
+  .strict();
+
 const readRequestAuthToken = (req: IncomingMessage, url: URL): string | null => {
   const headerToken = readBearerToken(readRequestHeader(req.headers.authorization));
   if (headerToken) {
@@ -612,6 +676,141 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
           sendJson(res, 200, { ok: true, result });
         } catch (error) {
           sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/trpc/message.globalSnapshot") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = roomSnapshotBodySchema.parse(await readJsonBody(req));
+          const snapshot = kernel.snapshotGlobalRoom({
+            chatId: body.chatId,
+            accessToken: body.accessToken,
+            limit: body.limit,
+          });
+          sendJson(res, 200, { snapshot });
+        } catch (error) {
+          sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/trpc/message.globalSend") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = roomSendBodySchema.parse(await readJsonBody(req));
+          const result = kernel.sendGlobalRoomMessage({
+            chatId: body.chatId,
+            accessToken: body.accessToken,
+            text: body.text,
+          });
+          sendJson(res, 200, result);
+        } catch (error) {
+          sendJson(res, 400, { ok: false, reason: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/trpc/message.globalEdit") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = roomEditBodySchema.parse(await readJsonBody(req));
+          const result = kernel.editGlobalRoomMessage({
+            chatId: body.chatId,
+            accessToken: body.accessToken,
+            messageId: body.messageId,
+            text: body.text,
+          });
+          sendJson(res, 200, result);
+        } catch (error) {
+          sendJson(res, 400, { ok: false, reason: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/trpc/message.globalRecall") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = roomRecallBodySchema.parse(await readJsonBody(req));
+          const result = kernel.recallGlobalRoomMessage({
+            chatId: body.chatId,
+            accessToken: body.accessToken,
+            messageId: body.messageId,
+          });
+          sendJson(res, 200, result);
+        } catch (error) {
+          sendJson(res, 400, { ok: false, reason: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/trpc/terminal.globalRead") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = terminalReadBodySchema.parse(await readJsonBody(req));
+          const result = await kernel.readGlobalTerminal({
+            terminalId: body.terminalId,
+            accessToken: body.accessToken,
+            mode: body.mode,
+            recordActivity: body.recordActivity,
+            remark: body.remark,
+          });
+          sendJson(res, 200, { result });
+        } catch (error) {
+          sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/trpc/terminal.globalWrite") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = terminalWriteBodySchema.parse(await readJsonBody(req));
+          const result = await kernel.writeGlobalTerminal({
+            terminalId: body.terminalId,
+            accessToken: body.accessToken,
+            text: body.text,
+            readMode: body.readMode,
+            readRecordActivity: body.readRecordActivity,
+            returnRead: body.returnRead,
+          });
+          sendJson(res, 200, result);
+        } catch (error) {
+          sendJson(res, 400, { ok: false, message: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/trpc/terminal.globalInput") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = terminalWriteBodySchema.parse(await readJsonBody(req));
+          const result = await kernel.inputGlobalTerminal({
+            terminalId: body.terminalId,
+            accessToken: body.accessToken,
+            text: body.text,
+            readMode: body.readMode,
+            readRecordActivity: body.readRecordActivity,
+            returnRead: body.returnRead,
+          });
+          sendJson(res, 200, result);
+        } catch (error) {
+          sendJson(res, 400, { ok: false, message: error instanceof Error ? error.message : String(error) });
         }
       })();
       return;

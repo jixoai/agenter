@@ -9,6 +9,8 @@ import {
   ensureAvatarSeatPrincipal,
   readAvatarSeatDocument,
   resolveAvatarSeatSettingsPath,
+  saveAvatarMessageSeatCredential,
+  saveAvatarTerminalSeatCredential,
 } from "../src/avatar-seat-store";
 import {
   resolveWorkspaceAvatarAliasRoot,
@@ -123,6 +125,57 @@ describe("Feature: avatar seat identity allocation", () => {
       expect(readAvatarSeatDocument(GLOBAL_WORKSPACE_PATH, "default", homeDir).principalId).toBe(legacyPrincipal.principalId);
       expect(readFileSync(join(canonicalRoot, "AGENTER.mdx"), "utf8")).toBe("# legacy avatar\n");
       expect(readFileSync(join(canonicalRoot, "settings.local.json"), "utf8")).toContain('"legacy-token"');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("Scenario: Given accepted remote room and terminal seats When credentials are saved Then authority endpoint metadata persists for later remote client reuse", () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-avatar-seat-"));
+    const homeDir = join(root, "home");
+    const workspacePath = join(root, "workspace");
+    mkdirSync(homeDir, { recursive: true });
+    mkdirSync(workspacePath, { recursive: true });
+
+    try {
+      saveAvatarMessageSeatCredential({
+        workspacePath,
+        avatar: "frontend",
+        chatId: "room-remote",
+        accessToken: "room-token",
+        accessRole: "member",
+        endpoint: {
+          authorityUrl: "http://127.0.0.1:4311/",
+          trpcPath: "/trpc",
+          acceptPath: "/join",
+        },
+        homeDir,
+      });
+      saveAvatarTerminalSeatCredential({
+        workspacePath,
+        avatar: "frontend",
+        terminalId: "term-remote",
+        accessToken: "term-token",
+        accessRole: "writer",
+        endpoint: {
+          authorityUrl: "http://127.0.0.1:4322/",
+          trpcPath: "/trpc",
+          acceptPath: "/join",
+        },
+        homeDir,
+      });
+
+      const doc = readAvatarSeatDocument(workspacePath, "frontend", homeDir);
+      expect(doc.messageSeats["room-remote"]?.endpoint).toEqual({
+        authorityUrl: "http://127.0.0.1:4311",
+        trpcPath: "/trpc",
+        acceptPath: "/join",
+      });
+      expect(doc.terminalSeats["term-remote"]?.endpoint).toEqual({
+        authorityUrl: "http://127.0.0.1:4322",
+        trpcPath: "/trpc",
+        acceptPath: "/join",
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
