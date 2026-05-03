@@ -755,6 +755,34 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(element.connectionState).toBe("connected");
   });
 
+  test("Scenario: Given transport discovery remains while live transport is disabled When the element updates Then it stays idle and does not attempt a websocket connection", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "stopped-discovery";
+    element.transportUrl = "ws://127.0.0.1:4900/pty/stopped-discovery";
+    element.liveTransportEnabled = false;
+    element.snapshot = {
+      seq: 1,
+      cols: 80,
+      rows: 24,
+      lines: ["bootstrap snapshot"],
+      cursor: { x: 0, y: 0 },
+    };
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    expect(WebSocketMock.instances.at(-1)?.url).not.toBe("ws://127.0.0.1:4900/pty/stopped-discovery");
+    expect(element.connectionState).toBe("idle");
+    expect(requireShadowRoot(element).querySelector("[data-terminal-viewport]")).not.toBeNull();
+  });
+
   test("Scenario: Given a terminal viewport inside shadow DOM When pointer and touch interactions happen Then the primitive explicitly focuses xterm input", async () => {
     const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
     defineTerminalView();

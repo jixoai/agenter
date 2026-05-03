@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { resolveTerminalGridFromFrame, resolveTerminalWindowProjection } from "./terminal-geometry";
+import {
+  resolveTerminalGridFromFrame,
+  resolveTerminalScreenMetrics,
+  resolveTerminalWindowProjection,
+} from "./terminal-geometry";
 
 describe("Feature: terminal window geometry", () => {
   test("Scenario: Given cover mode has more room than the terminal frame When resolving projection Then the scale is capped at one instead of growing with the container", () => {
@@ -85,6 +89,46 @@ describe("Feature: terminal window geometry", () => {
     });
   });
 
+  test("Scenario: Given fit mode width is tighter but height is available When resolving projection Then inline-fit fills width while preserving an unscaled titlebar budget", () => {
+    expect(
+      resolveTerminalWindowProjection({
+        mode: "fit",
+        frameWidth: 1180,
+        frameHeight: 720,
+        availableWidth: 760,
+        availableHeight: 820,
+        headerHeight: 44,
+      }),
+    ).toMatchObject({
+      scale: 0.6440677966101694,
+      bodyWidth: 760,
+      bodyHeight: 464,
+      shellWidth: 760,
+      shellHeight: 508,
+      anchor: "center",
+    });
+  });
+
+  test("Scenario: Given fit mode height is tighter but width is available When resolving projection Then block-fit fills height while width remains centered", () => {
+    expect(
+      resolveTerminalWindowProjection({
+        mode: "fit",
+        frameWidth: 1180,
+        frameHeight: 720,
+        availableWidth: 1440,
+        availableHeight: 500,
+        headerHeight: 44,
+      }),
+    ).toMatchObject({
+      scale: 0.6333333333333333,
+      bodyWidth: 747,
+      bodyHeight: 456,
+      shellWidth: 747,
+      shellHeight: 500,
+      anchor: "center",
+    });
+  });
+
   test("Scenario: Given a dragged terminal frame When deriving PTY geometry Then the result snaps to cols and rows instead of preserving arbitrary pixels", () => {
     expect(
       resolveTerminalGridFromFrame({
@@ -130,6 +174,26 @@ describe("Feature: terminal window geometry", () => {
     ).toEqual({
       cols: 101,
       rows: 26,
+    });
+  });
+
+  test("Scenario: Given renderer-measured viewport dimensions When resolving screen metrics Then frame padding remains a cell-derived safe area", () => {
+    expect(
+      resolveTerminalScreenMetrics({
+        cols: 80,
+        rows: 24,
+        screenWidth: 800,
+        screenHeight: 432,
+      }),
+    ).toMatchObject({
+      cols: 80,
+      rows: 24,
+      cellWidth: 10,
+      cellHeight: 18,
+      framePaddingX: 5,
+      framePaddingY: 9,
+      frameWidth: 810,
+      frameHeight: 450,
     });
   });
 });

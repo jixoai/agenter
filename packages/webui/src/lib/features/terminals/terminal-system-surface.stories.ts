@@ -345,6 +345,7 @@ export const SnapshotHydratesViewportBeforeTransportReconnect = {
   name: "Scenario: Given durable snapshot truth When the terminal route hydrates before transport reconnect Then the viewport renders without product chrome and stays readable",
   args: {
     surfaceWidthPx: 1280,
+    terminalRunning: false,
   },
   play: async ({ canvasElement }) => {
     const terminalView = canvasElement.querySelector<HTMLElement>('[data-terminal-host-root="true"]') as
@@ -362,6 +363,7 @@ export const SnapshotHydratesViewportBeforeTransportReconnect = {
       /width:\d+px;height:\d+px/u,
     );
     await expect(within(canvasElement).getByText("Launch cwd: /repo/ops")).toBeInTheDocument();
+    await expect(within(canvasElement).getByText("Transport: Transport discoverable while stopped")).toBeInTheDocument();
   },
 } satisfies Story;
 

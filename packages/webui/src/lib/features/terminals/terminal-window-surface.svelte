@@ -203,6 +203,8 @@
 			contentHeight: effectiveScreenMetrics.screenHeight,
 			availableWidth: Math.max(availableViewportWidth - WINDOW_SCROLL_PADDING_X, WINDOW_VIEWPORT_MIN_WIDTH),
 			availableHeight: Math.max(availableViewportHeight - WINDOW_SCROLL_PADDING_Y, WINDOW_VIEWPORT_MIN_HEIGHT),
+			// Cover chrome is owned by the outer window-container, so projection math must
+			// not subtract header height a second time once the titlebar is promoted there.
 			headerHeight: viewportMode === 'cover' ? 0 : WINDOW_HEADER_HEIGHT,
 		}),
 	);
@@ -353,6 +355,8 @@
 		if (!terminal.snapshot) {
 			return null;
 		}
+		// Live drag resize is an unrecorded preview channel. It may temporarily project a
+		// new cols x rows into the viewport, but durable geometry still belongs to Apply resize.
 		const referenceMetrics = resizeReferenceMetrics ?? {
 			cellWidth: effectiveScreenMetrics.cellWidth,
 			cellHeight: effectiveScreenMetrics.cellHeight,
@@ -614,6 +618,8 @@
 			committedLiveGrid.cols === viewportCols &&
 			committedLiveGrid.rows === viewportRows
 		) {
+			// This is the backend ack path after Apply resize or a live resize sideband was
+			// accepted. Do not replay a second motion when the viewport is already at that grid.
 			return;
 		}
 		pendingMotionReason = 'resize-ack';
@@ -777,6 +783,7 @@
 	</header>
 {/snippet}
 
+	<!-- window-container owns cover-mode chrome; terminal-window owns fit-mode chrome -->
 	<div class="flex h-full min-h-[24rem] flex-col overflow-hidden rounded-[1.7rem] bg-[linear-gradient(180deg,#1d1d1f,#171719)]">
 	{#if viewportMode === 'cover'}
 		{@render terminalWindowTitlebar(
@@ -808,6 +815,7 @@
 			data-terminal-window-frame-width={String(liveFrameWidth)}
 			data-terminal-window-frame-height={String(liveFrameHeight)}
 		>
+			<!-- Fit keeps one framed window, so the titlebar belongs to terminal-window itself. -->
 			{#if viewportMode !== 'cover'}
 				{@render terminalWindowTitlebar(
 					'flex h-8 items-center gap-2 border-b border-white/8 bg-[linear-gradient(180deg,rgba(58,58,60,0.98),rgba(40,40,42,0.96))] px-3 shadow-[0_1px_0_rgba(255,255,255,0.05)_inset]',

@@ -154,6 +154,9 @@
 		};
 	});
 	const effectiveTransportUrl = $derived(selectedTransportUrl ?? selectedTerminal?.transportUrl ?? null);
+	const selectedTransportLabel = $derived(
+		selectedTerminal ? resolveTerminalTransportLabel(selectedTerminal) : 'No transport discovery',
+	);
 	const seatStateByActorId = $derived(
 		new Map(seatStates.map((seat) => [seat.actorId, seat] as const)),
 	);
@@ -679,6 +682,9 @@
 				<p class="text-sm text-muted-foreground">
 					This updates the terminal's durable cols and rows. Running PTYs apply it live when allowed, and stopped PTYs use it on the next bootstrap.
 				</p>
+				<p class="text-xs text-muted-foreground">
+					Drag resize previews geometry through live transport first. Apply resize is the explicit durable mutation path.
+				</p>
 			</div>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div class="grid gap-1.5">
@@ -797,7 +803,7 @@
 						<div>
 							Projection mode: {selectedViewportMode === 'cover' ? 'cover window' : 'fit window'}
 						</div>
-						<div>Transport: {effectiveTransportUrl ? 'Live websocket mirror' : 'No live transport'}</div>
+						<div>Transport: {selectedTransportLabel}</div>
 					</div>
 				</div>
 				{@render terminalActionsPanel()}

@@ -70,8 +70,10 @@
 		if (!element) {
 			return;
 		}
-		element.transportUrl = transportUrl ?? '';
 		element.liveTransportEnabled = liveTransportEnabled;
+		// Route-level transport discovery may outlive a running PTY. The viewport primitive
+		// should only receive a live websocket URL when the host explicitly enables live transport.
+		element.transportUrl = liveTransportEnabled ? (transportUrl ?? '') : '';
 		element.terminalId = terminalId;
 		element.snapshot = snapshot ?? null;
 		element.projectionWidth = projectionWidth;

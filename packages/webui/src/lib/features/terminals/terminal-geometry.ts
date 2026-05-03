@@ -108,6 +108,8 @@ export const resolveTerminalScreenMetrics = (input: TerminalScreenMetricsInput):
 export const resolveTerminalWindowProjection = (
 	input: TerminalWindowProjectionInput,
 ): TerminalWindowProjection => {
+	// Projection only changes the outer window shell. The terminal grid itself remains
+	// authoritative until an explicit resize path derives new cols/rows.
 	const frameWidth = Math.max(1, Math.round(input.frameWidth));
 	const frameHeight = Math.max(1, Math.round(input.frameHeight));
 	const contentWidth = Math.max(1, Math.round(input.contentWidth ?? frameWidth));
@@ -134,6 +136,8 @@ export const resolveTerminalWindowProjection = (
 };
 
 export const resolveTerminalGridFromFrame = (input: TerminalGridFromFrameInput): TerminalGridSize => {
+	// Gesture resize converts dragged frame pixels back into discrete terminal geometry.
+	// Arbitrary drag pixels are preview state only; durable truth is always cols x rows.
 	const minCols = clampCellCount(input.minCols ?? 8);
 	const minRows = clampCellCount(input.minRows ?? 4);
 	const maxCols = Math.max(minCols, clampCellCount(input.maxCols ?? 300));

@@ -113,5 +113,9 @@ export const resolveTerminalLifecycleFacts = (
 	];
 };
 
-export const resolveTerminalTransportLabel = (terminal: GlobalTerminalEntry): string =>
-	terminal.transportUrl ? 'Live websocket mirror' : 'No live transport';
+export const resolveTerminalTransportLabel = (terminal: GlobalTerminalEntry): string => {
+	if (!terminal.transportUrl) {
+		return 'No transport discovery';
+	}
+	return terminal.processPhase === 'running' ? 'Live websocket mirror' : 'Transport discoverable while stopped';
+};

@@ -15,6 +15,10 @@ const terminalWindowSurfaceSource = readFileSync(
   resolve(import.meta.dirname, "terminal-window-surface.svelte"),
   "utf8",
 );
+const terminalViewHostSource = readFileSync(
+  resolve(import.meta.dirname, "../../components/terminal-view-host.svelte"),
+  "utf8",
+);
 const terminalsWorkbenchLayoutSource = readFileSync(
   resolve(import.meta.dirname, "terminals-workbench-layout.svelte"),
   "utf8",
@@ -109,6 +113,17 @@ describe("Feature: Terminal surface layout ownership contract", () => {
     expect(terminalsWorkbenchLayoutSource).toContain("label: resolveTerminalInstanceName(terminal)");
     expect(terminalWindowSurfaceSource).toContain("resolveTerminalWindowTitle(terminal)");
     expect(terminalWindowSurfaceSource).not.toContain("resolveTerminalInstanceName(terminal)");
+  });
+
+  test("Scenario: Given stopped terminals may still expose transport discovery When reading the route source Then transport discovery and live transport are not treated as the same truth", () => {
+    expect(terminalSystemSurfaceSource).toContain("const effectiveTransportUrl = $derived(selectedTransportUrl ?? selectedTerminal?.transportUrl ?? null);");
+    expect(terminalSystemSurfaceSource).toContain("const selectedTransportLabel = $derived(");
+    expect(terminalSystemSurfaceSource).toContain("resolveTerminalTransportLabel(selectedTerminal)");
+    expect(terminalSystemSurfaceSource).toContain("Transport: {selectedTransportLabel}");
+    expect(terminalWindowSurfaceSource).toContain("const liveTransportEnabled = $derived(isTerminalRunning(terminal));");
+    expect(terminalWindowSurfaceSource).toContain("{liveTransportEnabled}");
+    expect(terminalWindowSurfaceSource).toContain("transportUrl={transportUrl ?? terminal.transportUrl}");
+    expect(terminalViewHostSource).toContain("element.transportUrl = liveTransportEnabled ? (transportUrl ?? '') : '';");
   });
 
   test("Scenario: Given live terminal resizing belongs to the window frame When reading the window source Then fit-cover sizing changes the window geometry while the titlebar stays outside terminal scaling", () => {

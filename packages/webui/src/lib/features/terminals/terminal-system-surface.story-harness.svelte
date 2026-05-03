@@ -111,7 +111,9 @@
 		currentPath: input.running ? input.cwd : undefined,
 		shortcuts: undefined,
 		rendererEngine: 'xterm',
-		transportUrl: undefined,
+		// Transport discovery is durable across running/stopped states; live enablement is
+		// modeled separately through processPhase in the viewport host.
+		transportUrl: `ws://localhost/mock-terminals/${input.terminalId}`,
 		currentAdminId: 'system:trusted-terminal-bootstrap',
 		approvalTimeoutMs: 90_000,
 		pendingRequestCount: input.pendingRequestCount,
