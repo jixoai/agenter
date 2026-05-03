@@ -80,6 +80,52 @@ The WebUI SHALL expose a dedicated terminal-system route that lists global termi
 - **THEN** tabs, toolbar, and dialog identity keep using the terminal instance name
 - **AND** the inner terminal window titlebar may separately resolve `observed title ?? configured title ?? terminal id`
 
+### Requirement: Terminal window projection SHALL resize the window shell, not only the terminal content
+
+The terminal-system route SHALL treat `fit` and `cover` as window-shell projection modes. The selected terminal window SHALL change its own width and body height under those modes, while the titlebar remains an unscaled control surface with stable hit targets.
+
+#### Scenario: Fit projection shrinks the terminal window shell
+- **WHEN** the operator switches a terminal window to `fit`
+- **THEN** the terminal window shell shrinks proportionally to fit inside the available stage viewport
+- **AND** the terminal screen remains flush to the terminal window body edges instead of floating inside a separately scaled inner frame
+- **AND** the titlebar height stays stable rather than being transform-scaled
+
+#### Scenario: Cover projection enlarges the terminal window shell
+- **WHEN** the operator switches a terminal window to `cover`
+- **THEN** the terminal window shell grows proportionally beyond the available stage viewport
+- **AND** the titlebar is promoted out of `terminal-window` and becomes sticky chrome at the top of the surrounding `window-container`
+- **AND** the surrounding stage viewport owns the resulting scrollbars
+- **AND** the underlying terminal frame geometry remains the same until an explicit live or durable resize changes cols or rows
+
+#### Scenario: Fit-cover does not mutate terminal geometry by itself
+- **WHEN** the operator toggles between `fit` and `cover`
+- **THEN** the terminal snapshot `cols x rows` stay unchanged
+- **AND** only explicit live drag resize or durable resize form submission may request PTY geometry changes
+
+#### Scenario: Fit projection may resolve as inline-fit or block-fit
+- **WHEN** the operator stays in `fit` mode and the terminal aspect ratio differs from the available safe area
+- **THEN** projection may resolve as inline-fit or block-fit depending on which axis saturates first
+- **AND** the titlebar stays at normal size in both cases because only terminal-content participates in scale
+
+#### Scenario: Live resize derives terminal geometry from the dragged window frame
+- **WHEN** the operator drags the terminal window resize handle
+- **THEN** the window frame may follow the pointer as a temporary projection while dragging
+- **AND** the route derives discrete PTY `cols x rows` from the dragged frame size using the terminal cell metrics
+- **AND** the live transport sends a resize sideband for those derived `cols x rows`
+- **AND** on pointer release the temporary frame dimensions are discarded so the terminal window is again sized by terminal content geometry
+- **AND** the titlebar and geometry label reflect the effective `cols x rows` rather than preserving arbitrary drag pixels
+
+#### Scenario: Durable resize remains an explicit recorded tool path
+- **WHEN** the operator submits the resize form in the action composer
+- **THEN** the route applies the requested durable `cols x rows` through the terminal config mutation path
+- **AND** the resize appears as a recorded terminal action fact
+- **AND** this recorded path stays separate from unrecorded live transport resize sidebands
+
+#### Scenario: Transport discovery remains distinct from live transport
+- **WHEN** a stopped terminal detail route still has `transportUrl` for snapshot hydration and later reconnect
+- **THEN** the route keeps transport discovery visible without implying that live websocket mirroring is currently active
+- **AND** the viewport only enables live transport while the terminal lifecycle is actually `running`
+
 #### Scenario: Toolbar status reflects lifecycle plus activity
 
 - **WHEN** the selected terminal route renders

@@ -24,11 +24,12 @@ The system SHALL provide a terminal surface projection that combines terminal ca
 - **THEN** the projection includes launch cwd/configured title, observed current path/current title, and process lifecycle facts together
 - **AND** the client does not reconstruct those truths from raw snapshots or local heuristics
 
-#### Scenario: Projection can clear transport truth on stop
+#### Scenario: Projection retains transport discovery on stop
 
 - **WHEN** a running terminal is stopped
-- **THEN** the projection clears live transport discovery while preserving the rest of the terminal surface
-- **AND** the client does not retain a stale websocket endpoint through merge fallback
+- **THEN** the projection retains `transportUrl` discovery while preserving the rest of the terminal surface
+- **AND** the client may continue hydrating from durable snapshot truth or later reconnecting through that endpoint
+- **AND** the client still treats live transport enablement as lifecycle-dependent rather than assuming that discovery alone means the PTY is running
 
 ### Requirement: Terminal surface projection SHALL preserve actor-scoped seat semantics
 
