@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { signManagedInvitationAcceptProof } from "@agenter/managed-seat-invitation-handshake";
+import { generatePrincipalKeyPair } from "@agenter/principal-crypto";
 import {
   decodeTerminalTransportServerMessage,
   encodeTerminalTransportClientMessage,
@@ -1647,6 +1649,166 @@ describe("Feature: terminal control plane", () => {
     ).resolves.toEqual({ ok: true, message: "terminal PTY stopped" });
     expect(plane.list().find((entry) => entry.terminalId === created.terminalId)?.processPhase).toBe("stopped");
     expect(plane.list()).toHaveLength(1);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a pending terminal RW invitation When the invited principal accepts Then the seat activates and later config and revoke remain unilateral", async () => {
+    const plane = createPlane();
+    const admin = generatePrincipalKeyPair();
+    const invitee = generatePrincipalKeyPair();
+    plane.setActorPresence(admin.principalId, true);
+    plane.setActorPresence(invitee.principalId, true);
+    const created = await plane.create({
+      terminalId: "managed-seat-rw",
+      bootstrapActorId: admin.principalId,
+      bootstrapRole: "admin",
+    });
+
+    const invitation = plane.inviteSeatAuthorized({
+      terminalId: created.terminalId,
+      actorId: admin.principalId,
+      participantId: invitee.principalId,
+      seatClass: "RW",
+      label: "Writer seat",
+    });
+
+    expect(plane.listForActor(invitee.principalId, { touchPresence: false })).toHaveLength(0);
+
+    const accepted = await plane.acceptSeat({
+      descriptor: invitation.descriptor.httpUrl ?? invitation.descriptor.deepLink,
+      proof: await signManagedInvitationAcceptProof({
+        privateKey: invitee.privateKey,
+        payload: {
+          invitationId: invitation.invitationId,
+          resourceKind: invitation.resourceKind,
+          resourceId: invitation.resourceId,
+          inviteePrincipalId: invitee.principalId,
+          payloadDigest: invitation.payloadDigest,
+          expiresAt: invitation.expiresAt,
+        },
+      }),
+    });
+
+    expect(accepted.invitation.status).toBe("accepted");
+    expect(accepted.access.role).toBe("writer");
+    expect(accepted.seat).toMatchObject({
+      actorId: invitee.principalId,
+      role: "writer",
+      label: "Writer seat",
+    });
+    expect(
+      plane
+        .listForActor(invitee.principalId, { touchPresence: false })[0]
+        ?.actors?.find((actor) => actor.actorId === invitee.principalId),
+    ).toMatchObject({
+      actorId: invitee.principalId,
+      role: "writer",
+      label: "Writer seat",
+    });
+
+    const reconfigured = plane.configSeatAuthorized({
+      terminalId: created.terminalId,
+      actorId: admin.principalId,
+      participantId: invitee.principalId,
+      seatClass: "RO",
+      label: "Readonly seat",
+    });
+
+    expect("role" in reconfigured ? reconfigured.role : null).toBe("readonly");
+    expect(
+      plane
+        .listForActor(invitee.principalId, { touchPresence: false })[0]
+        ?.actors?.find((actor) => actor.actorId === invitee.principalId),
+    ).toMatchObject({
+      actorId: invitee.principalId,
+      role: "readonly",
+      label: "Readonly seat",
+    });
+
+    const deniedWrite = await plane.write({
+      terminalId: created.terminalId,
+      actorId: invitee.principalId,
+      text: "echo blocked\r",
+      createApprovalRequest: false,
+    });
+    expect(deniedWrite).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/readonly|requires approval/u),
+    });
+
+    expect(
+      plane.revokeSeatAuthorized({
+        terminalId: created.terminalId,
+        actorId: admin.principalId,
+        participantId: invitee.principalId,
+      }),
+    ).toEqual({ ok: true });
+    expect(plane.listForActor(invitee.principalId, { touchPresence: false })).toHaveLength(0);
+    await expect(
+      plane.write({
+        terminalId: created.terminalId,
+        actorId: invitee.principalId,
+        text: "echo gone\r",
+        createApprovalRequest: false,
+      }),
+    ).rejects.toThrow(`terminal access denied for actor: ${invitee.principalId}`);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a terminal TM invitation When the invited principal accepts Then terminal-native admin-candidate truth is materialized", async () => {
+    const plane = createPlane();
+    const admin = generatePrincipalKeyPair();
+    const manager = generatePrincipalKeyPair();
+    plane.setActorPresence(admin.principalId, true);
+    plane.setActorPresence(manager.principalId, true);
+    const created = await plane.create({
+      terminalId: "managed-seat-tm",
+      bootstrapActorId: admin.principalId,
+      bootstrapRole: "admin",
+    });
+
+    const invitation = plane.inviteSeatAuthorized({
+      terminalId: created.terminalId,
+      actorId: admin.principalId,
+      participantId: manager.principalId,
+      seatClass: "TM",
+      label: "Terminal manager",
+    });
+
+    const accepted = await plane.acceptSeat({
+      descriptor: invitation.descriptor.deepLink,
+      proof: await signManagedInvitationAcceptProof({
+        privateKey: manager.privateKey,
+        payload: {
+          invitationId: invitation.invitationId,
+          resourceKind: invitation.resourceKind,
+          resourceId: invitation.resourceId,
+          inviteePrincipalId: manager.principalId,
+          payloadDigest: invitation.payloadDigest,
+          expiresAt: invitation.expiresAt,
+        },
+      }),
+    });
+
+    expect(accepted.access.role).toBe("admin");
+    expect(accepted.seat).toMatchObject({
+      actorId: manager.principalId,
+      role: "admin",
+      label: "Terminal manager",
+      adminCandidateRank: expect.any(Number),
+    });
+    expect(
+      plane
+        .listForActor(admin.principalId, { touchPresence: false })[0]
+        ?.actors?.find((actor) => actor.actorId === manager.principalId),
+    ).toMatchObject({
+      actorId: manager.principalId,
+      role: "admin",
+      label: "Terminal manager",
+      adminCandidateRank: expect.any(Number),
+    });
 
     await plane.dispose();
   });

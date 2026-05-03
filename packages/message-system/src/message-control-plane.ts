@@ -2304,6 +2304,7 @@ export class MessageControlPlane {
     actorId: MessageActorId,
     role: MessageChannelAccessRole,
     preferredToken?: string,
+    label?: string,
   ): MessageChannelAccessProjection {
     this.assertActorId(actorId);
     if (!this.isTrustedBootstrapActor(actorId)) {
@@ -2311,6 +2312,13 @@ export class MessageControlPlane {
     }
     const existing = this.db.findReusableGrant({ chatId, role, participantId: actorId });
     if (existing?.accessToken) {
+      if ((existing.label ?? undefined) !== label) {
+        this.db.updateGrant(chatId, existing.grantId, {
+          role: existing.role,
+          participantId: actorId,
+          label,
+        });
+      }
       return this.createProjection({
         chatId,
         accessRole: existing.role,
@@ -2323,6 +2331,7 @@ export class MessageControlPlane {
     const grant = this.db.issueGrant({
       chatId,
       role,
+      label,
       participantId: actorId,
       accessToken,
       tokenHash: hashToken(accessToken),
@@ -2348,7 +2357,7 @@ export class MessageControlPlane {
     actorId: MessageActorId,
     payload: MessageManagedSeatPayload,
   ): MessageChannelAccessProjection {
-    const access = this.ensureActorAccess(chatId, actorId, payload.role);
+    const access = this.ensureActorAccess(chatId, actorId, payload.role, undefined, payload.label);
     const channel = this.db.getChannel(chatId);
     if (channel && payload.role === "admin") {
       const currentCandidates = this.readAdminGroupCandidateIds(channel.metadata);

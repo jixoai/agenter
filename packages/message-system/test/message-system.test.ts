@@ -1,4 +1,5 @@
 import { generatePrincipalKeyPair, type PrincipalId } from "@agenter/principal-crypto";
+import { signManagedInvitationAcceptProof } from "@agenter/managed-seat-invitation-handshake";
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
@@ -1559,6 +1560,151 @@ describe("Feature: message-chat-control-plane", () => {
         remoteDirectChatId: "0xremote",
       }),
     );
+  });
+
+  test("Scenario: Given a pending room member invitation When the invited principal accepts Then the room seat activates and later config and revoke remain unilateral", async () => {
+    const plane = createPlane();
+    const admin = generatePrincipalKeyPair();
+    const invitee = generatePrincipalKeyPair();
+    plane.setActorPresence(admin.principalId, true);
+    plane.setActorPresence(invitee.principalId, true);
+    const room = plane.createChannel({
+      chatId: createRoomId(),
+      kind: "room",
+      owner: "principal-room",
+      bootstrapActorId: admin.principalId,
+      participants: [{ id: admin.principalId, label: "Admin" }],
+    });
+
+    const invitation = plane.inviteSeatAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      participantId: invitee.principalId,
+      seatClass: "member",
+      label: "Room member",
+    });
+
+    expect(plane.getChannelForActor(room.chatId, invitee.principalId, { touchPresence: false })).toBeUndefined();
+
+    const accepted = await plane.acceptSeat({
+      descriptor: invitation.descriptor.httpUrl ?? invitation.descriptor.deepLink,
+      proof: await signManagedInvitationAcceptProof({
+        privateKey: invitee.privateKey,
+        payload: {
+          invitationId: invitation.invitationId,
+          resourceKind: invitation.resourceKind,
+          resourceId: invitation.resourceId,
+          inviteePrincipalId: invitee.principalId,
+          payloadDigest: invitation.payloadDigest,
+          expiresAt: invitation.expiresAt,
+        },
+      }),
+    });
+
+    expect(accepted.invitation.status).toBe("accepted");
+    expect(accepted.access.accessRole).toBe("member");
+    expect(accepted.seat).toMatchObject({
+      actorId: invitee.principalId,
+      role: "member",
+      label: "Room member",
+    });
+    expect(
+      plane.getChannelForActor(room.chatId, invitee.principalId, { touchPresence: false })?.seatStates?.find((seat) => seat.actorId === invitee.principalId),
+    ).toMatchObject({
+      actorId: invitee.principalId,
+      role: "member",
+      label: "Room member",
+    });
+
+    const reconfigured = plane.configSeatAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      participantId: invitee.principalId,
+      seatClass: "readonly",
+      label: "Readonly member",
+    });
+
+    expect("accessRole" in reconfigured ? reconfigured.accessRole : null).toBe("readonly");
+    expect(
+      plane.getChannelForActor(room.chatId, invitee.principalId, { touchPresence: false })?.seatStates?.find((seat) => seat.actorId === invitee.principalId),
+    ).toMatchObject({
+      actorId: invitee.principalId,
+      role: "readonly",
+      label: "Readonly member",
+    });
+    const readonlyProjection = plane.getChannelForActor(room.chatId, invitee.principalId, {
+      touchPresence: false,
+    });
+
+    expect(() =>
+      plane.sendAuthorized({
+        chatId: room.chatId,
+        accessToken: readonlyProjection?.accessToken ?? "",
+        senderActorId: invitee.principalId,
+        content: "blocked as readonly",
+      }),
+    ).toThrow("message channel member access required");
+
+    expect(
+      plane.revokeSeatAuthorized({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        participantId: invitee.principalId,
+      }),
+    ).toEqual({ ok: true });
+    expect(plane.getChannelForActor(room.chatId, invitee.principalId, { touchPresence: false })).toBeUndefined();
+  });
+
+  test("Scenario: Given a pending room admin invitation When the invited principal accepts Then room-native admin-candidate truth is materialized", async () => {
+    const plane = createPlane();
+    const admin = generatePrincipalKeyPair();
+    const invitee = generatePrincipalKeyPair();
+    plane.setActorPresence(admin.principalId, true);
+    plane.setActorPresence(invitee.principalId, true);
+    const room = plane.createChannel({
+      chatId: createRoomId(),
+      kind: "room",
+      owner: "principal-room",
+      bootstrapActorId: admin.principalId,
+      participants: [{ id: admin.principalId, label: "Admin" }],
+    });
+
+    const invitation = plane.inviteSeatAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      participantId: invitee.principalId,
+      seatClass: "admin",
+      label: "Room admin",
+    });
+
+    const accepted = await plane.acceptSeat({
+      descriptor: invitation.descriptor.deepLink,
+      proof: await signManagedInvitationAcceptProof({
+        privateKey: invitee.privateKey,
+        payload: {
+          invitationId: invitation.invitationId,
+          resourceKind: invitation.resourceKind,
+          resourceId: invitation.resourceId,
+          inviteePrincipalId: invitee.principalId,
+          payloadDigest: invitation.payloadDigest,
+          expiresAt: invitation.expiresAt,
+        },
+      }),
+    });
+
+    expect(accepted.access.accessRole).toBe("admin");
+    expect(accepted.seat).toMatchObject({
+      actorId: invitee.principalId,
+      role: "admin",
+      label: "Room admin",
+    });
+    expect(
+      plane.getChannelForActor(room.chatId, admin.principalId, { touchPresence: false })?.seatStates?.find((seat) => seat.actorId === invitee.principalId),
+    ).toMatchObject({
+      actorId: invitee.principalId,
+      role: "admin",
+      label: "Room admin",
+    });
   });
 
   test("Scenario: Given a room is marked direct When a third participant is inserted Then message-system rejects in-place expansion", () => {
