@@ -27,6 +27,7 @@ const getRuntime = (kernel: AppKernel, sessionId: string) => {
       stdin?: string;
     }) => Promise<{ stdout: string; stderr: string; exitCode: number; cwd: string }>;
     attentionSystem: AttentionSystem;
+    pause: () => Promise<void>;
   };
 };
 
@@ -2102,6 +2103,8 @@ describe("Feature: workspace system kernel integration", () => {
       if (!aliceMeta?.avatarPrincipalId || !bobMeta?.avatarPrincipalId) {
         throw new Error("expected both sessions to have avatar principals");
       }
+      await getRuntime(kernel, alice.id).pause();
+      await getRuntime(kernel, bob.id).pause();
 
       const room = await kernel.createGlobalRoom({
         title: "managed-seat-collaboration",
@@ -2177,6 +2180,7 @@ describe("Feature: workspace system kernel integration", () => {
       if (!bobTerminalAccessToken) {
         throw new Error("expected accepted terminal access token");
       }
+      expect(acceptedPayload.access?.role).toBe("writer");
 
       const marker = `shared-write-${Date.now()}`;
       const wrote = await kernel.writeGlobalTerminal({

@@ -26,7 +26,7 @@
 ## 5. Verification And Real-AI Trials
 
 - [x] 5.1 Add cross-system integration tests where a room-delivered invitation descriptor is accepted into terminal authority without changing invitation truth.
-- [ ] 5.2 Add real two-principal verification where principal A invites principal B, sends the descriptor through messageSystem, B accepts, B writes to the shared terminal, and both sides can observe the resulting terminal output under native read law.
+- [x] 5.2 Add real two-principal verification where principal A invites principal B, sends the descriptor through messageSystem, B accepts, B writes to the shared terminal, and both sides can observe the resulting terminal output under native read law.
 - [x] 5.3 Add expiry and renewal tests covering actual timeout failure, repeated invite expiry refresh, stale descriptor invalidation, and revoke-during-pending behavior.
 - [x] 5.4 Add dual-agenter multi-port verification where agenter-B hosts Avatar-B and a terminal, agenter-A hosts Avatar-A, both avatars first share a room on agenter-A, then Avatar-B invites Avatar-A into the terminal hosted by agenter-B, and both sides verify cross-instance terminal collaboration.
 
