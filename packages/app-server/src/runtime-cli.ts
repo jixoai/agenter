@@ -380,6 +380,7 @@ const createSkillCommand = (input: {
 
 export const createRuntimeShellCommands = (input: {
   baseUrl: string;
+  managedSeatAuthorityUrl?: string;
   privateKey: string;
   homeDir?: string;
   rootWorkspacePath: string;

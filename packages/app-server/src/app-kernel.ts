@@ -654,6 +654,7 @@ export interface AppKernelOptions {
   workspaceSystemStatePath?: string;
   homeDir?: string;
   initialWorkspace?: string;
+  managedSeatAuthorityUrl?: string;
   authService?: AuthServiceBridgeOptions;
   /** @deprecated Use authService. */
   profileService?: AuthServiceBridgeOptions;
@@ -811,6 +812,7 @@ export class AppKernel {
   private eventSeq = 0;
   private sessionsCatalogLoaded = false;
   private started = false;
+  private managedSeatAuthorityUrl: string | null;
 
   constructor(private readonly options: AppKernelOptions = {}) {
     const homeDir = options.homeDir ?? homedir();
@@ -839,6 +841,15 @@ export class AppKernel {
       ...authServiceOptions,
       dataDir: authServiceOptions?.dataDir ?? resolveDefaultAuthServiceDataDir(stateRoot),
     });
+    this.managedSeatAuthorityUrl = options.managedSeatAuthorityUrl?.trim() || null;
+  }
+
+  setManagedSeatAuthorityUrl(authorityUrl: string): void {
+    this.managedSeatAuthorityUrl = authorityUrl.trim();
+  }
+
+  getManagedSeatAuthorityUrl(): string | null {
+    return this.managedSeatAuthorityUrl;
   }
 
   private getHomeDir(): string {
@@ -2752,6 +2763,7 @@ export class AppKernel {
     const runtime = new SessionRuntime({
       sessionId: meta.id,
       cwd: meta.cwd,
+      workspacePath: meta.workspacePath,
       avatar: meta.avatar,
       sessionRoot: meta.sessionRoot,
       sessionName: meta.name,
@@ -2760,6 +2772,7 @@ export class AppKernel {
       avatarPrivateKey: avatarSeat.privateKey,
       homeDir: this.getHomeDir(),
       rootWorkspacePath,
+      managedSeatAuthorityUrl: this.getManagedSeatAuthorityUrl() ?? undefined,
       usageAnalyticsRoot: resolveGlobalAvatarCanonicalRoot(meta.avatarPrincipalId, this.getHomeDir()),
       listRuntimeWorkspaceAuthorities: () => this.listRuntimeWorkspaceAuthorities(meta.id),
       setRuntimeWorkspaceAlias: (input) =>

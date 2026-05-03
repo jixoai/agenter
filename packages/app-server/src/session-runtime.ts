@@ -1474,6 +1474,7 @@ export interface SessionRuntimeAttentionDeliveryState {
 export interface SessionRuntimeAttentionApiSurface {
   baseUrl: string;
   principalId: string;
+  managedSeatAuthorityUrl?: string | null;
 }
 
 interface SessionRuntimeWorkspaceAuthority {
@@ -1601,11 +1602,13 @@ export interface SessionRuntimeSnapshot {
 export interface SessionRuntimeOptions {
   sessionId: string;
   cwd: string;
+  workspacePath?: string;
   avatar?: string;
   avatarPrincipalId?: string;
   avatarPrivateKey?: string;
   homeDir?: string;
   rootWorkspacePath?: string;
+  managedSeatAuthorityUrl?: string;
   usageAnalyticsRoot?: string;
   sessionRoot: string;
   sessionName: string;
@@ -4321,6 +4324,7 @@ export class SessionRuntime {
         rootWorkspacePath: this.getRootWorkspacePath(),
         homeDir: this.getHomeDir(),
         apiBaseUrl: this.runtimeLocalApi.baseUrl,
+        managedSeatAuthorityUrl: this.options.managedSeatAuthorityUrl,
         privateKey: this.options.avatarPrivateKey,
         principalId: this.options.avatarPrincipalId,
         env: input.env,
@@ -7692,6 +7696,7 @@ export class SessionRuntime {
         ? {
             baseUrl: this.runtimeLocalApi.baseUrl,
             principalId: this.options.avatarPrincipalId ?? "",
+            managedSeatAuthorityUrl: this.options.managedSeatAuthorityUrl ?? null,
           }
         : null,
       modelCapabilities: this.config

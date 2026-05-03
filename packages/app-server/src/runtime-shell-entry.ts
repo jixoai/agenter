@@ -6,6 +6,7 @@ import { createRuntimeShellCommands } from "./runtime-cli";
 import {
   RUNTIME_API_BASE_URL_ENV,
   RUNTIME_HOME_DIR_ENV,
+  RUNTIME_MANAGED_SEAT_AUTHORITY_URL_ENV,
   RUNTIME_PRINCIPAL_ID_ENV,
   RUNTIME_PRIVATE_KEY_ENV,
   RUNTIME_ROOT_WORKSPACE_ENV,
@@ -70,6 +71,7 @@ const main = async (): Promise<void> => {
   }
 
   const baseUrl = process.env[RUNTIME_API_BASE_URL_ENV];
+  const managedSeatAuthorityUrl = process.env[RUNTIME_MANAGED_SEAT_AUTHORITY_URL_ENV];
   const privateKey = process.env[RUNTIME_PRIVATE_KEY_ENV];
   const rootWorkspacePath = process.env[RUNTIME_ROOT_WORKSPACE_ENV];
   const homeDir = process.env[RUNTIME_HOME_DIR_ENV];
@@ -88,6 +90,7 @@ const main = async (): Promise<void> => {
 
   const command = createRuntimeShellCommands({
     baseUrl,
+    managedSeatAuthorityUrl,
     privateKey,
     homeDir,
     rootWorkspacePath,

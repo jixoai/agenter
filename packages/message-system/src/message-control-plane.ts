@@ -1333,26 +1333,37 @@ export class MessageControlPlane {
     return invitation;
   }
 
+  prepareSeatAccept(input: { descriptor: string }): {
+    invitation: MessageInvitationRecord;
+    proofInput: {
+      invitationId: string;
+      resourceKind: MessageInvitationRecord["resourceKind"];
+      resourceId: string;
+      inviteePrincipalId: MessageInvitationRecord["inviteePrincipalId"];
+      payloadDigest: string;
+      expiresAt: number;
+    };
+  } {
+    const invitation = this.requirePendingInvitationByDescriptor(input.descriptor);
+    return {
+      invitation,
+      proofInput: {
+        invitationId: invitation.invitationId,
+        resourceKind: invitation.resourceKind,
+        resourceId: invitation.resourceId,
+        inviteePrincipalId: invitation.inviteePrincipalId,
+        payloadDigest: invitation.payloadDigest,
+        expiresAt: invitation.expiresAt,
+      },
+    };
+  }
+
   async acceptSeat(input: MessageAcceptSeatInput): Promise<{
     invitation: MessageInvitationRecord;
     access: MessageChannelAccessProjection;
     seat: MessageSeatStateProjection | undefined;
   }> {
-    this.db.expirePendingInvitations();
-    const { token } = parseManagedInvitationDescriptorInput(input.descriptor);
-    const invitation = this.db.findInvitationByTokenHash(hashManagedInvitationToken(token));
-    if (!invitation) {
-      throw new Error("unknown room invitation");
-    }
-    if (invitation.status !== "pending") {
-      throw new Error(`room invitation is not pending: ${invitation.status}`);
-    }
-    if (isManagedInvitationExpired({ expiresAt: invitation.expiresAt })) {
-      this.db.updateInvitationStatus(invitation.resourceId, invitation.invitationId, {
-        status: "expired",
-      });
-      throw new Error("room invitation expired");
-    }
+    const invitation = this.requirePendingInvitationByDescriptor(input.descriptor);
     validateManagedInvitationRecipientBinding({
       expectedInviteePrincipalId: invitation.inviteePrincipalId,
       proof: input.proof,
@@ -2350,6 +2361,25 @@ export class MessageControlPlane {
       role: seatClass,
       label,
     };
+  }
+
+  private requirePendingInvitationByDescriptor(descriptor: string): MessageInvitationRecord {
+    this.db.expirePendingInvitations();
+    const { token } = parseManagedInvitationDescriptorInput(descriptor);
+    const invitation = this.db.findInvitationByTokenHash(hashManagedInvitationToken(token));
+    if (!invitation) {
+      throw new Error("unknown room invitation");
+    }
+    if (invitation.status !== "pending") {
+      throw new Error(`room invitation is not pending: ${invitation.status}`);
+    }
+    if (isManagedInvitationExpired({ expiresAt: invitation.expiresAt })) {
+      this.db.updateInvitationStatus(invitation.resourceId, invitation.invitationId, {
+        status: "expired",
+      });
+      throw new Error("room invitation expired");
+    }
+    return invitation;
   }
 
   private activateManagedSeatPayload(

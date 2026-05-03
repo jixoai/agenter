@@ -1,5 +1,6 @@
 import type { PrincipalId } from "@agenter/principal-crypto";
 import type {
+  ManagedInvitationAcceptProof,
   ManagedInvitationEndpointDescriptor,
   ManagedInvitationRecordBase,
   ManagedInvitationShareDescriptor,
@@ -437,11 +438,7 @@ export interface MessageInviteSeatInput {
 
 export interface MessageAcceptSeatInput {
   descriptor: string;
-  proof: {
-    inviteePrincipalId: PrincipalId;
-    payload: string;
-    signature: string;
-  };
+  proof: ManagedInvitationAcceptProof;
 }
 
 export interface MessageConfigSeatInput {

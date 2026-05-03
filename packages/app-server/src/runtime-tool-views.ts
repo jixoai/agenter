@@ -194,6 +194,8 @@ export interface RuntimeMessageChannelView {
   kind: MessageControlPlaneEntry["kind"];
   title: string;
   contextId?: string;
+  accessToken?: string;
+  accessRole?: MessageControlPlaneEntry["accessRole"];
   participants: Array<{
     id: string;
     label?: string;
@@ -304,6 +306,7 @@ export interface RuntimeTerminalView {
   theme: TerminalControlPlaneEntry["theme"];
   cursor: TerminalControlPlaneEntry["cursor"];
   font: TerminalControlPlaneEntry["font"];
+  access?: TerminalControlPlaneEntry["access"];
 }
 
 export interface RuntimeTerminalConfigView extends TerminalConfigView {}
@@ -431,6 +434,8 @@ export const projectRuntimeMessageChannel = (channel: MessageControlPlaneEntry):
     kind: channel.kind,
     title: channel.title,
     contextId: channel.contextId,
+    accessToken: channel.accessToken,
+    accessRole: channel.accessRole,
     participants: channel.participants.map((participant) => ({
       id: participant.id,
       label: participant.label,
@@ -519,6 +524,7 @@ export const projectRuntimeTerminal = (terminal: TerminalControlPlaneEntry): Run
   theme: terminal.theme,
   cursor: terminal.cursor,
   font: terminal.font,
+  access: terminal.access,
 });
 
 export const projectRuntimeTerminalConfig = (config: TerminalConfigView): RuntimeTerminalConfigView => ({

@@ -1830,26 +1830,37 @@ export class TerminalControlPlane {
     return invitation;
   }
 
+  prepareSeatAccept(input: { descriptor: string }): {
+    invitation: TerminalInvitationRecord;
+    proofInput: {
+      invitationId: string;
+      resourceKind: TerminalInvitationRecord["resourceKind"];
+      resourceId: string;
+      inviteePrincipalId: TerminalInvitationRecord["inviteePrincipalId"];
+      payloadDigest: string;
+      expiresAt: number;
+    };
+  } {
+    const invitation = this.requirePendingInvitationByDescriptor(input.descriptor);
+    return {
+      invitation,
+      proofInput: {
+        invitationId: invitation.invitationId,
+        resourceKind: invitation.resourceKind,
+        resourceId: invitation.resourceId,
+        inviteePrincipalId: invitation.inviteePrincipalId,
+        payloadDigest: invitation.payloadDigest,
+        expiresAt: invitation.expiresAt,
+      },
+    };
+  }
+
   async acceptSeat(input: TerminalAcceptSeatInput): Promise<{
     invitation: TerminalInvitationRecord;
     access: TerminalAccessProjection;
     seat: TerminalSeatProjection | undefined;
   }> {
-    this.db.expirePendingInvitations();
-    const { token } = parseManagedInvitationDescriptorInput(input.descriptor);
-    const invitation = this.db.findInvitationByTokenHash(hashManagedInvitationToken(token));
-    if (!invitation) {
-      throw new Error("unknown terminal invitation");
-    }
-    if (invitation.status !== "pending") {
-      throw new Error(`terminal invitation is not pending: ${invitation.status}`);
-    }
-    if (isManagedInvitationExpired({ expiresAt: invitation.expiresAt })) {
-      this.db.updateInvitationStatus(invitation.resourceId, invitation.invitationId, {
-        status: "expired",
-      });
-      throw new Error("terminal invitation expired");
-    }
+    const invitation = this.requirePendingInvitationByDescriptor(input.descriptor);
     validateManagedInvitationRecipientBinding({
       expectedInviteePrincipalId: invitation.inviteePrincipalId,
       proof: input.proof,
@@ -2522,6 +2533,25 @@ export class TerminalControlPlane {
       label,
       adminCandidateRank: null,
     };
+  }
+
+  private requirePendingInvitationByDescriptor(descriptor: string): TerminalInvitationRecord {
+    this.db.expirePendingInvitations();
+    const { token } = parseManagedInvitationDescriptorInput(descriptor);
+    const invitation = this.db.findInvitationByTokenHash(hashManagedInvitationToken(token));
+    if (!invitation) {
+      throw new Error("unknown terminal invitation");
+    }
+    if (invitation.status !== "pending") {
+      throw new Error(`terminal invitation is not pending: ${invitation.status}`);
+    }
+    if (isManagedInvitationExpired({ expiresAt: invitation.expiresAt })) {
+      this.db.updateInvitationStatus(invitation.resourceId, invitation.invitationId, {
+        status: "expired",
+      });
+      throw new Error("terminal invitation expired");
+    }
+    return invitation;
   }
 
   private activateManagedSeatPayload(

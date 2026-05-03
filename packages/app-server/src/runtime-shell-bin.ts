@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   RUNTIME_API_BASE_URL_ENV,
   RUNTIME_HOME_DIR_ENV,
+  RUNTIME_MANAGED_SEAT_AUTHORITY_URL_ENV,
   RUNTIME_PRINCIPAL_ID_ENV,
   RUNTIME_PRIVATE_KEY_ENV,
   RUNTIME_ROOT_WORKSPACE_ENV,
@@ -74,6 +75,7 @@ export const buildRootWorkspaceShellEnvironment = (input: {
   rootWorkspacePath: string;
   homeDir: string;
   apiBaseUrl: string;
+  managedSeatAuthorityUrl?: string;
   privateKey: string;
   principalId?: string;
   env?: Record<string, string>;
@@ -82,6 +84,7 @@ export const buildRootWorkspaceShellEnvironment = (input: {
     ...(input.env ?? {}),
     HOME: input.rootWorkspacePath,
     [RUNTIME_API_BASE_URL_ENV]: input.apiBaseUrl,
+    [RUNTIME_MANAGED_SEAT_AUTHORITY_URL_ENV]: input.managedSeatAuthorityUrl ?? "",
     [RUNTIME_HOME_DIR_ENV]: input.homeDir,
     [RUNTIME_PRINCIPAL_ID_ENV]: input.principalId ?? "",
     [RUNTIME_PRIVATE_KEY_ENV]: input.privateKey,

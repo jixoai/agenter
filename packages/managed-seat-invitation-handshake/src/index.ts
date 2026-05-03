@@ -196,11 +196,11 @@ export const buildManagedInvitationHttpUrl = (input: {
   return base.toString();
 };
 
-export const buildManagedInvitationShareDescriptor = (input: {
-  resourceKind: ManagedInvitationResourceKind;
+export const buildManagedInvitationShareDescriptor = <const TResourceKind extends ManagedInvitationResourceKind>(input: {
+  resourceKind: TResourceKind;
   token: string;
   endpoint?: ManagedInvitationEndpointDescriptor;
-}): ManagedInvitationShareDescriptor => {
+}): ManagedInvitationShareDescriptor & { resourceKind: TResourceKind } => {
   const token = normalizeToken(input.token);
   const endpoint = input.endpoint
     ? {
@@ -214,7 +214,7 @@ export const buildManagedInvitationShareDescriptor = (input: {
     token,
     endpoint,
   });
-  return {
+  const descriptor: ManagedInvitationShareDescriptor & { resourceKind: TResourceKind } = {
     resourceKind: input.resourceKind,
     token,
     endpoint,
@@ -227,6 +227,7 @@ export const buildManagedInvitationShareDescriptor = (input: {
         })
       : undefined,
   };
+  return descriptor;
 };
 
 const resolveTokenFromDeepLink = (input: string): { token: string; descriptor?: ManagedInvitationShareDescriptor } => {
