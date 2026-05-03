@@ -156,6 +156,13 @@ const getSessionRuntime = (handle: TrpcServerHandle, sessionId: string) => {
       access: { accessToken: string; role: string };
     }>;
     writeRuntimeTerminal: (input: { terminalId: string; text: string }) => Promise<{ ok: boolean; message: string }>;
+    inputRuntimeTerminal: (input: {
+      terminalId: string;
+      text: string;
+      returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
+      readRecordActivity?: boolean;
+      readMode?: "auto" | "diff" | "snapshot";
+    }) => Promise<{ ok: boolean; message: string }>;
     readRuntimeTerminal: (input: {
       terminalId: string;
       mode?: "auto" | "diff" | "snapshot";
@@ -423,30 +430,24 @@ describe("Feature: cli server contracts", () => {
       throw new Error("expected avatar principals for both servers");
     }
 
-    const roomOnA = await clientA.trpc.message.globalCreate.mutate({
-      kind: "room",
+    const runtimeA = getSessionRuntime(handleA, sessionA.session.id);
+    const runtimeB = getSessionRuntime(handleB, sessionB.session.id);
+
+    const roomOnA = await handleA.kernel.createGlobalRoom({
       title: "cross-instance-managed-seat",
+      actorId: sessionA.session.avatarPrincipalId as `0x${string}`,
       initialUsers: [
         {
           actorId: sessionA.session.avatarPrincipalId as `0x${string}`,
           label: "Avatar A",
-          role: "member",
-          focused: true,
-        },
-        {
-          actorId: sessionB.session.avatarPrincipalId as `0x${string}`,
-          label: "Avatar B",
-          role: "member",
+          role: "admin",
           focused: true,
         },
       ],
     });
 
-    const runtimeA = getSessionRuntime(handleA, sessionA.session.id);
-    const runtimeB = getSessionRuntime(handleB, sessionB.session.id);
-
     const roomInvitePayload = await runtimeA.inviteRuntimeMessageSeat({
-      chatId: roomOnA.channel.chatId,
+      chatId: roomOnA.chatId,
       participantId: sessionB.session.avatarPrincipalId as `0x${string}`,
       seatClass: "member",
       authorityUrl: `http://${handleA.host}:${handleA.port}`,
@@ -466,14 +467,14 @@ describe("Feature: cli server contracts", () => {
 
     const bridgeMessage = `bridge-room-${Date.now()}`;
     const sentFromB = await runtimeB.sendRuntimeMessage({
-      chatId: roomOnA.channel.chatId,
+      chatId: roomOnA.chatId,
       content: bridgeMessage,
     });
     expect(sentFromB.ok).toBe(true);
 
     const roomSnapshot = await clientA.trpc.message.globalSnapshot.query({
-      chatId: roomOnA.channel.chatId,
-      accessToken: roomOnA.channel.accessToken,
+      chatId: roomOnA.chatId,
+      accessToken: roomOnA.accessToken,
       limit: 10,
     });
     expect(roomSnapshot.items.some((item) => item.content === bridgeMessage)).toBe(true);
@@ -504,14 +505,14 @@ describe("Feature: cli server contracts", () => {
     }
 
     const sent = await runtimeB.sendRuntimeMessage({
-      chatId: roomOnA.channel.chatId,
+      chatId: roomOnA.chatId,
       content: descriptor,
     });
     expect(sent.ok).toBe(true);
 
     const snapshotOnA = await clientA.trpc.message.globalSnapshot.query({
-      chatId: roomOnA.channel.chatId,
-      accessToken: roomOnA.channel.accessToken,
+      chatId: roomOnA.chatId,
+      accessToken: roomOnA.accessToken,
       limit: 10,
     });
     expect(snapshotOnA.items.some((item) => item.content === descriptor)).toBe(true);
@@ -522,9 +523,14 @@ describe("Feature: cli server contracts", () => {
     expect(accepted.access.role).toBe("writer");
 
     const marker = `cross-instance-${Date.now()}`;
-    const wroteByA = await runtimeA.writeRuntimeTerminal({
+    const wroteByA = await runtimeA.inputRuntimeTerminal({
       terminalId,
-      text: `${marker}\r`,
+      text: `<raw>${marker}</raw><key data="enter"/>`,
+      returnRead: {
+        debounceMs: 150,
+      },
+      readMode: "snapshot",
+      readRecordActivity: false,
     });
     expect(wroteByA.ok).toBe(true);
 

@@ -2152,7 +2152,39 @@ export class SessionRuntime {
     const payload = (await response.json()) as Record<string, unknown>;
     if (!response.ok) {
       throw new Error(
-        typeof payload.error === "string" ? payload.error : `managed seat authority request failed: ${input.path}`,
+        typeof payload.error === "string"
+          ? payload.error
+          : `managed seat authority request failed (${response.status}): ${input.path} :: ${JSON.stringify(payload)}`,
+      );
+    }
+    return payload as TResult;
+  }
+
+  private async postRemoteJson<TResult>(input: {
+    authorityUrl: string;
+    path: string;
+    body: Record<string, unknown>;
+    accessToken?: string;
+    signal?: AbortSignal;
+  }): Promise<TResult> {
+    const headers = new Headers({
+      "content-type": "application/json",
+    });
+    if (input.accessToken) {
+      headers.set("authorization", `Bearer ${input.accessToken}`);
+    }
+    const response = await fetch(`${input.authorityUrl}${input.path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(input.body),
+      signal: input.signal,
+    });
+    const payload = (await response.json()) as Record<string, unknown>;
+    if (!response.ok) {
+      throw new Error(
+        typeof payload.error === "string"
+          ? payload.error
+          : `managed seat authority request failed (${response.status}): ${input.path} :: ${JSON.stringify(payload)}`,
       );
     }
     return payload as TResult;
@@ -2817,13 +2849,13 @@ export class SessionRuntime {
     followUpAfterMs?: number;
   }): Promise<RuntimeMessageSendResult> {
     const actorChannel = this.getActorRoom(input.chatId);
-    const channel = actorChannel ?? this.messageSystem.getChannel(input.chatId);
-    if (!channel) {
-      throw new Error(`unknown chat channel: ${input.chatId}`);
-    }
     if (!actorChannel) {
       const remoteSeat = this.resolveStoredMessageSeat(input.chatId);
       if (!remoteSeat) {
+        const channel = this.messageSystem.getChannel(input.chatId);
+        if (!channel) {
+          throw new Error(`unknown chat channel: ${input.chatId}`);
+        }
         throw new Error(`runtime actor has no member grant for chat channel: ${input.chatId}`);
       }
       const response = await this.postManagedSeatAuthority<{
@@ -3168,17 +3200,14 @@ export class SessionRuntime {
     if (!remoteSeat) {
       throw new Error(`runtime actor has no grant for chat channel: ${input.chatId}`);
     }
-    const payload = await this.getRemoteJson<{ snapshot: MessageSnapshot }>({
+    const payload = await this.postRemoteJson<{ snapshot: MessageSnapshot }>({
       authorityUrl: remoteSeat.endpoint.authorityUrl,
-      path: `/trpc/message.globalSnapshot?input=${encodeURIComponent(
-        JSON.stringify({
-          json: {
-            chatId: input.chatId,
-            accessToken: remoteSeat.accessToken,
-            ...(typeof input.limit === "number" ? { limit: input.limit } : {}),
-          },
-        }),
-      )}`,
+      path: "/trpc/message.globalSnapshot",
+      body: {
+        chatId: input.chatId,
+        accessToken: remoteSeat.accessToken,
+        ...(typeof input.limit === "number" ? { limit: input.limit } : {}),
+      },
       accessToken: remoteSeat.accessToken,
     });
     return payload.snapshot;
@@ -3970,7 +3999,7 @@ export class SessionRuntime {
     if (!localControlPlane || !localControlPlane.has(input.terminalId)) {
       const remoteSeat = this.resolveStoredTerminalSeat(input.terminalId);
       if (remoteSeat) {
-        const response = await this.postManagedSeatAuthority<{
+        const response = await this.postRemoteJson<{
           result: ControlPlaneTerminalReadResult;
         }>({
           authorityUrl: remoteSeat.endpoint.authorityUrl,
