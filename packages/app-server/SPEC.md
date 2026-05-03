@@ -91,6 +91,20 @@
 - shared terminal 不是 root-workspace shell：runtime-created 与 recovery-created terminal 默认都保持 real-home collaboration semantics，不得因为 `cwd` 在 avatar root workspace 就注入 root-workspace-exclusive env/CLI。
 - `terminal.surface.updated` 的 `catalogChanged` 只允许表达 catalog-facing mutation（如 created/updated/deleted/focus/presence）；terminal `snapshot/status` 这类 live render ticks 必须留在 render/resource 层，不能升级成 browser `terminal.globalList` refetch 信号。
 - runtime-local shell/API 必须由共享 tool descriptor registry 驱动：route、description、`inputSchema`、`--help` 和 canonical JSON examples 不能各写一份。
+- runtime-local managed-seat commands (`terminal-manage` / `message-manage`) 是 frontend clients，不是 authority owners：
+  - backend authority 仍然分别属于 `terminal-system` 与 `message-system`
+  - runtime command 只负责 `endpoint + token + proof` 请求编排、descriptor 解析、以及 accepted remote seat 的本地投影持久化
+  - raw token、deep link、HTTP wrapper URL 都只是同一 invitation token 的 transport projection，不得成为第二份 authority truth
+  - accepted remote terminal/message seat 必须持久化为 avatar-private client projection，供后续跨实例 `read/write/send/read` 继续走远端 backend authority
+- managed-seat acceptance proof flow 固定为两段式：
+  - `prepare-accept` 返回 invitation fact + proof input
+  - runtime 用 avatar private key 签名后再调用 `accept`
+  - backend adapter 验证 invited principal、payload digest 和 expiry，只有验证通过才激活 native authority
+- authority grammar 必须保持 adapter-owned：
+  - terminal 管理面继续暴露 `RO | RW | TM`
+  - message 管理面继续暴露 `readonly | member | admin`
+  - shared runtime CLI 只共享 descriptor parsing / proof / JSON command law，不引入 universal role taxonomy
+- `workspace-manage` 不是当前 runtime contract 的一部分。workspace 仍只通过既有 WorkspaceSystem authority 与 workspace/root shell surfaces 暴露，不沿用本轮 managed-seat CLI。
 - workspace/root shell privilege 是本项目有意保留的 authority，不属于本轮 pollution cleanup 范围；本轮只清理 Message/Terminal/Skill/Attention 的语义污染，不削弱 `root_bash`、`workspace_bash`、runtime-local API、workspace grants、root-workspace shell world。
 - runtime-local terminal contract 固定拆成两个命令：
   - `terminal write` = raw mode，只接收 literal text，并要求调用方自己编码 Enter / control chars

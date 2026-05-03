@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -297,6 +297,248 @@ const executeTemporaryRootWorkspaceShell = async (input: {
     stdin: input.stdin,
     mounts: input.mounts,
   });
+};
+
+const writeJson = (response: ServerResponse, statusCode: number, body: unknown): void => {
+  response.statusCode = statusCode;
+  response.setHeader("content-type", "application/json; charset=utf-8");
+  response.end(`${JSON.stringify(body)}\n`);
+};
+
+const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of request) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  if (chunks.length === 0) {
+    return {};
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+};
+
+const startManagedSeatAuthorityServer = async (kernel: AppKernel) => {
+  const sockets = new Set<import("node:net").Socket>();
+  const server = createServer((request, response) => {
+    void (async () => {
+      try {
+        if (!request.url) {
+          writeJson(response, 404, { ok: false, error: "not found" });
+          return;
+        }
+        const url = new URL(request.url, "http://127.0.0.1");
+        if (request.method === "GET" && url.pathname === "/health") {
+          writeJson(response, 200, { ok: true });
+          return;
+        }
+        if (request.method !== "POST") {
+          writeJson(response, 404, { ok: false, error: "not found" });
+          return;
+        }
+        const body = (await readJsonBody(request)) as Record<string, unknown>;
+        if (url.pathname === "/api/managed-seats/terminal/invite") {
+          const invitation = kernel.inviteGlobalTerminalSeat({
+            terminalId: String(body.terminalId),
+            participantId: String(body.participantId),
+            seatClass: body.seatClass as "RO" | "RW" | "TM",
+            label: typeof body.label === "string" ? body.label : undefined,
+            expiresAt: typeof body.expiresAt === "number" ? body.expiresAt : undefined,
+            accessToken: typeof body.accessToken === "string" ? body.accessToken : undefined,
+            actorId: typeof body.actorId === "string" ? (body.actorId as never) : undefined,
+            superadminActorId:
+              typeof body.superadminActorId === "string" ? (body.superadminActorId as never) : undefined,
+            endpoint:
+              body.endpoint && typeof body.endpoint === "object"
+                ? {
+                    authorityUrl: String((body.endpoint as Record<string, unknown>).authorityUrl),
+                    trpcPath:
+                      typeof (body.endpoint as Record<string, unknown>).trpcPath === "string"
+                        ? String((body.endpoint as Record<string, unknown>).trpcPath)
+                        : undefined,
+                    acceptPath:
+                      typeof (body.endpoint as Record<string, unknown>).acceptPath === "string"
+                        ? String((body.endpoint as Record<string, unknown>).acceptPath)
+                        : undefined,
+                  }
+                : undefined,
+          });
+          writeJson(response, 200, { ok: true, invitation });
+          return;
+        }
+        if (url.pathname === "/api/managed-seats/terminal/prepare-accept") {
+          const result = kernel.prepareGlobalTerminalSeatAccept({
+            descriptor: String(body.descriptor),
+          });
+          writeJson(response, 200, { ok: true, ...result });
+          return;
+        }
+        if (url.pathname === "/api/managed-seats/terminal/accept") {
+          const result = await kernel.acceptGlobalTerminalSeat({
+            descriptor: String(body.descriptor),
+            proof: (body.proof ?? {}) as {
+              inviteePrincipalId: `0x${string}`;
+              payload: string;
+              signature: `0x${string}`;
+            },
+          });
+          writeJson(response, 200, { ok: true, ...result });
+          return;
+        }
+        if (url.pathname === "/api/managed-seats/message/invite") {
+          const invitation = kernel.inviteGlobalRoomSeat({
+            chatId: String(body.chatId),
+            participantId: String(body.participantId),
+            seatClass: body.seatClass as "readonly" | "member" | "admin",
+            label: typeof body.label === "string" ? body.label : undefined,
+            expiresAt: typeof body.expiresAt === "number" ? body.expiresAt : undefined,
+            accessToken: typeof body.accessToken === "string" ? body.accessToken : undefined,
+            superadminActorId:
+              typeof body.superadminActorId === "string" ? (body.superadminActorId as never) : undefined,
+            endpoint:
+              body.endpoint && typeof body.endpoint === "object"
+                ? {
+                    authorityUrl: String((body.endpoint as Record<string, unknown>).authorityUrl),
+                    trpcPath:
+                      typeof (body.endpoint as Record<string, unknown>).trpcPath === "string"
+                        ? String((body.endpoint as Record<string, unknown>).trpcPath)
+                        : undefined,
+                    acceptPath:
+                      typeof (body.endpoint as Record<string, unknown>).acceptPath === "string"
+                        ? String((body.endpoint as Record<string, unknown>).acceptPath)
+                        : undefined,
+                  }
+                : undefined,
+          });
+          writeJson(response, 200, { ok: true, invitation });
+          return;
+        }
+        if (url.pathname === "/api/managed-seats/message/prepare-accept") {
+          const result = kernel.prepareGlobalRoomSeatAccept({
+            descriptor: String(body.descriptor),
+          });
+          writeJson(response, 200, { ok: true, ...result });
+          return;
+        }
+        if (url.pathname === "/api/managed-seats/message/accept") {
+          const result = await kernel.acceptGlobalRoomSeat({
+            descriptor: String(body.descriptor),
+            proof: (body.proof ?? {}) as {
+              inviteePrincipalId: `0x${string}`;
+              payload: string;
+              signature: `0x${string}`;
+            },
+          });
+          writeJson(response, 200, { ok: true, ...result });
+          return;
+        }
+        if (url.pathname === "/trpc/message.globalSnapshot") {
+          const snapshot = kernel.snapshotGlobalRoom({
+            chatId: String(body.chatId),
+            accessToken: String(body.accessToken),
+            limit: typeof body.limit === "number" ? body.limit : undefined,
+          });
+          writeJson(response, 200, { snapshot });
+          return;
+        }
+        if (url.pathname === "/trpc/message.globalSend") {
+          const result = kernel.sendGlobalRoomMessage({
+            chatId: String(body.chatId),
+            accessToken: String(body.accessToken),
+            text: String(body.text),
+          });
+          writeJson(response, 200, result);
+          return;
+        }
+        if (url.pathname === "/trpc/terminal.globalRead") {
+          const result = await kernel.readGlobalTerminal({
+            terminalId: String(body.terminalId),
+            accessToken: String(body.accessToken),
+            mode:
+              body.mode === "auto" || body.mode === "diff" || body.mode === "snapshot"
+                ? body.mode
+                : undefined,
+            recordActivity: typeof body.recordActivity === "boolean" ? body.recordActivity : undefined,
+            remark: typeof body.remark === "boolean" ? body.remark : undefined,
+          });
+          writeJson(response, 200, { result });
+          return;
+        }
+        if (url.pathname === "/trpc/terminal.globalWrite") {
+          const result = await kernel.writeGlobalTerminal({
+            terminalId: String(body.terminalId),
+            accessToken: String(body.accessToken),
+            text: String(body.text),
+            readMode:
+              body.readMode === "auto" || body.readMode === "diff" || body.readMode === "snapshot"
+                ? body.readMode
+                : undefined,
+            readRecordActivity: typeof body.readRecordActivity === "boolean" ? body.readRecordActivity : undefined,
+            returnRead:
+              typeof body.returnRead === "boolean" ||
+              (body.returnRead !== null &&
+                typeof body.returnRead === "object" &&
+                !Array.isArray(body.returnRead))
+                ? (body.returnRead as boolean | { throttleMs?: number; debounceMs?: number })
+                : undefined,
+          });
+          writeJson(response, 200, result);
+          return;
+        }
+        if (url.pathname === "/trpc/terminal.globalInput") {
+          const result = await kernel.inputGlobalTerminal({
+            terminalId: String(body.terminalId),
+            accessToken: String(body.accessToken),
+            text: String(body.text),
+            readMode:
+              body.readMode === "auto" || body.readMode === "diff" || body.readMode === "snapshot"
+                ? body.readMode
+                : undefined,
+            readRecordActivity: typeof body.readRecordActivity === "boolean" ? body.readRecordActivity : undefined,
+            returnRead:
+              typeof body.returnRead === "boolean" ||
+              (body.returnRead !== null &&
+                typeof body.returnRead === "object" &&
+                !Array.isArray(body.returnRead))
+                ? (body.returnRead as boolean | { throttleMs?: number; debounceMs?: number })
+                : undefined,
+          });
+          writeJson(response, 200, result);
+          return;
+        }
+        writeJson(response, 404, { ok: false, error: "not found" });
+      } catch (error) {
+        writeJson(response, 400, {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    })();
+  });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => {
+      sockets.delete(socket);
+    });
+  });
+
+  await new Promise<void>((resolveReady, rejectReady) => {
+    server.once("error", rejectReady);
+    server.listen(0, "127.0.0.1", () => resolveReady());
+  });
+  const address = server.address();
+  if (!address || typeof address !== "object" || typeof address.port !== "number") {
+    throw new Error("managed seat authority server failed to bind");
+  }
+  return {
+    authorityUrl: `http://127.0.0.1:${address.port}`,
+    stop: async () => {
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      await new Promise<void>((resolveClose, rejectClose) => {
+        server.close((error) => (error ? rejectClose(error) : resolveClose()));
+      });
+    },
+  };
 };
 
 afterEach(async () => {
@@ -998,7 +1240,7 @@ describe("Feature: workspace system kernel integration", () => {
     expect(catReference.stdout).toContain("root_bash");
 
     await kernel.stop();
-  });
+  }, 15_000);
 
   test("Scenario: Given root workspace bash exposes the runtime tool namespace When tool --help runs Then the shell shows helper discovery instead of js-exec internals", async () => {
     const root = createTempRoot();
@@ -1028,7 +1270,7 @@ describe("Feature: workspace system kernel integration", () => {
     expect(result.stdout).not.toContain("js-exec - Sandboxed JavaScript/TypeScript runtime");
 
     await kernel.stop();
-  });
+  }, 15_000);
 
   test("Scenario: Given a shared terminal is created through the runtime CLI When its shell prints env markers Then the terminal keeps collaborative HOME semantics instead of root-workspace env or CLI", async () => {
     const root = createTempRoot();
@@ -1261,7 +1503,7 @@ describe("Feature: workspace system kernel integration", () => {
     expect(settledContext?.commits.at(-1)?.scores["delivery-hash"]).toBe(0);
 
     await kernel.stop();
-  });
+  }, 15_000);
 
   test("Scenario: Given active attention When JSON attention commit sends done with its own score map Then runtime still clears the existing context debt", async () => {
     const root = createTempRoot();
@@ -1324,7 +1566,7 @@ describe("Feature: workspace system kernel integration", () => {
     expect(context?.commits.at(-1)?.scores.delivery).toBe(0);
 
     await kernel.stop();
-  });
+  }, 15_000);
 
   test("Scenario: Given one-shot bash surfaces see background statements When a command tries to persist a process with ampersand Then the shell rejects it and points back to terminals", async () => {
     const root = createTempRoot();
@@ -1372,7 +1614,7 @@ describe("Feature: workspace system kernel integration", () => {
     expect(workspaceResponse.stderr).toContain("terminal");
 
     await kernel.stop();
-  });
+  }, 15_000);
 
   test("Scenario: Given duplicate root workspace mounts resolve to one path When root exec builds the shell Then the shared mount is merged instead of rejected", async () => {
     const root = createTempRoot();
@@ -1661,6 +1903,315 @@ describe("Feature: workspace system kernel integration", () => {
     expect(response.exitCode).not.toBe(0);
     expect(response.stdout.trim()).not.toBe("502");
   });
+
+  test("Scenario: Given a terminal invitation descriptor is delivered through a room When another principal accepts it Then terminal authority activates without changing the original invitation truth", async () => {
+    const root = createTempRoot();
+    const workspace = join(root, "workspace-a");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+    const authority = await startManagedSeatAuthorityServer(kernel);
+
+    try {
+      const alice = await kernel.createSession({
+        cwd: workspace,
+        avatar: "alice",
+        autoStart: true,
+      });
+      const bob = await kernel.createSession({
+        cwd: workspace,
+        avatar: "bob",
+        autoStart: true,
+      });
+      const aliceMeta = kernel.getSession(alice.id);
+      const bobMeta = kernel.getSession(bob.id);
+      if (!aliceMeta?.avatarPrincipalId || !bobMeta?.avatarPrincipalId) {
+        throw new Error("expected both sessions to have avatar principals");
+      }
+
+      const room = await kernel.createGlobalRoom({
+        title: "managed-seat-room",
+        initialUsers: [
+          { actorId: aliceMeta.avatarPrincipalId as `0x${string}`, label: "Alice", role: "member", focused: true },
+          { actorId: bobMeta.avatarPrincipalId as `0x${string}`, label: "Bob", role: "member", focused: true },
+        ],
+      });
+
+      const terminalResult = await kernel.createGlobalTerminal({
+        terminalId: "shared-managed-seat-5-1",
+        processKind: "shell",
+        command: ["sh", "-lc", "cat"],
+        actorId: aliceMeta.avatarPrincipalId as `0x${string}`,
+      });
+      expect(terminalResult.ok).toBeTrue();
+      const terminalId = terminalResult.terminal?.terminalId;
+      const aliceTerminalAccessToken = terminalResult.terminal?.access?.accessToken;
+      if (!terminalId || !aliceTerminalAccessToken) {
+        throw new Error("expected terminal create to return actor-scoped access");
+      }
+
+      const invited = await execRootWorkspaceBash(kernel, alice.id, {
+        command: "terminal-manage invite",
+        stdin: JSON.stringify({
+          terminalId,
+          participantId: bobMeta.avatarPrincipalId,
+          seatClass: "RW",
+          authorityUrl: authority.authorityUrl,
+        }),
+      });
+      expect(invited.exitCode).toBe(0);
+      const invitePayload = JSON.parse(invited.stdout) as {
+        invitation?: {
+          invitationId: string;
+          descriptor: {
+            token: string;
+            deepLink?: string;
+            httpUrl?: string;
+          };
+          status: string;
+        };
+      };
+      expect(invitePayload.invitation?.status).toBe("pending");
+
+      const descriptor =
+        invitePayload.invitation?.descriptor.httpUrl ??
+        invitePayload.invitation?.descriptor.deepLink ??
+        invitePayload.invitation?.descriptor.token;
+      if (!descriptor) {
+        throw new Error("expected managed terminal descriptor");
+      }
+
+      const delivered = await execRootWorkspaceBash(kernel, alice.id, {
+        command: "message send",
+        stdin: JSON.stringify({
+          chatId: room.chatId,
+          content: descriptor,
+        }),
+      });
+      expect(delivered.exitCode).toBe(0);
+
+      const beforeAccept = await execRootWorkspaceBash(kernel, bob.id, {
+        command: "message read",
+        stdin: JSON.stringify({
+          chatId: room.chatId,
+          limit: 10,
+        }),
+      });
+      expect(beforeAccept.exitCode).toBe(0);
+      const beforeAcceptPayload = JSON.parse(beforeAccept.stdout) as {
+        snapshot?: {
+          items?: Array<{
+            content?: string;
+          }>;
+        };
+      };
+      expect(beforeAcceptPayload.snapshot?.items?.some((item) => item.content === descriptor)).toBeTrue();
+
+      const accepted = await execRootWorkspaceBash(kernel, bob.id, {
+        command: "terminal-manage accept",
+        stdin: JSON.stringify({
+          descriptor,
+        }),
+      });
+      expect(accepted.exitCode).toBe(0);
+      const acceptedPayload = JSON.parse(accepted.stdout) as {
+        access?: {
+          accessToken?: string;
+          role?: string;
+        };
+        invitation?: {
+          invitationId?: string;
+          status?: string;
+        };
+      };
+      expect(acceptedPayload.invitation?.invitationId).toBe(invitePayload.invitation?.invitationId);
+      expect(acceptedPayload.invitation?.status).toBe("accepted");
+      expect(acceptedPayload.access?.role).toBe("writer");
+
+      const remoteRead = await execRootWorkspaceBash(kernel, bob.id, {
+        command: "terminal read",
+        stdin: JSON.stringify({
+          terminalId,
+          mode: "snapshot",
+          recordActivity: false,
+        }),
+      });
+      expect(remoteRead.exitCode).toBe(0);
+
+      const directAuthorityRead = await kernel.readGlobalTerminal({
+        terminalId,
+        accessToken: acceptedPayload.access?.accessToken,
+        mode: "snapshot",
+        recordActivity: false,
+      });
+      expect(Array.isArray(directAuthorityRead.snapshot?.lines)).toBeTrue();
+
+      const globalRoomSnapshot = kernel.snapshotGlobalRoom({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        limit: 10,
+      });
+      expect(globalRoomSnapshot.items.some((item) => item.content === descriptor)).toBeTrue();
+
+      const aliceAuthorityRead = await kernel.readGlobalTerminal({
+        terminalId,
+        accessToken: aliceTerminalAccessToken,
+        mode: "snapshot",
+        recordActivity: false,
+      });
+      expect(Array.isArray(aliceAuthorityRead.snapshot?.lines)).toBeTrue();
+    } finally {
+      await authority.stop();
+      await kernel.stop();
+    }
+  }, 15_000);
+
+  test("Scenario: Given one principal invites another through message transport When the invitee accepts and writes the shared terminal Then both principals observe the same terminal output", async () => {
+    const root = createTempRoot();
+    const workspace = join(root, "workspace-a");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+    const authority = await startManagedSeatAuthorityServer(kernel);
+
+    try {
+      const alice = await kernel.createSession({
+        cwd: workspace,
+        avatar: "alice-5-2",
+        autoStart: true,
+      });
+      const bob = await kernel.createSession({
+        cwd: workspace,
+        avatar: "bob-5-2",
+        autoStart: true,
+      });
+      const aliceMeta = kernel.getSession(alice.id);
+      const bobMeta = kernel.getSession(bob.id);
+      if (!aliceMeta?.avatarPrincipalId || !bobMeta?.avatarPrincipalId) {
+        throw new Error("expected both sessions to have avatar principals");
+      }
+
+      const room = await kernel.createGlobalRoom({
+        title: "managed-seat-collaboration",
+        initialUsers: [
+          { actorId: aliceMeta.avatarPrincipalId as `0x${string}`, label: "Alice", role: "member", focused: true },
+          { actorId: bobMeta.avatarPrincipalId as `0x${string}`, label: "Bob", role: "member", focused: true },
+        ],
+      });
+
+      const terminalResult = await kernel.createGlobalTerminal({
+        terminalId: "shared-managed-seat-5-2",
+        processKind: "shell",
+        command: ["sh", "-lc", "cat"],
+        actorId: aliceMeta.avatarPrincipalId as `0x${string}`,
+      });
+      expect(terminalResult.ok).toBeTrue();
+      const terminalId = terminalResult.terminal?.terminalId;
+      const aliceTerminalAccessToken = terminalResult.terminal?.access?.accessToken;
+      if (!terminalId || !aliceTerminalAccessToken) {
+        throw new Error("expected created terminal id");
+      }
+
+      const invite = await execRootWorkspaceBash(kernel, alice.id, {
+        command: "terminal-manage invite",
+        stdin: JSON.stringify({
+          terminalId,
+          participantId: bobMeta.avatarPrincipalId,
+          seatClass: "RW",
+          authorityUrl: authority.authorityUrl,
+        }),
+      });
+      expect(invite.exitCode).toBe(0);
+      const invitePayload = JSON.parse(invite.stdout) as {
+        invitation?: {
+          descriptor: {
+            token: string;
+            deepLink?: string;
+            httpUrl?: string;
+          };
+        };
+      };
+      const descriptor =
+        invitePayload.invitation?.descriptor.httpUrl ??
+        invitePayload.invitation?.descriptor.deepLink ??
+        invitePayload.invitation?.descriptor.token;
+      if (!descriptor) {
+        throw new Error("expected terminal descriptor");
+      }
+
+      const sent = await execRootWorkspaceBash(kernel, alice.id, {
+        command: "message send",
+        stdin: JSON.stringify({
+          chatId: room.chatId,
+          content: descriptor,
+        }),
+      });
+      expect(sent.exitCode).toBe(0);
+
+      const accepted = await execRootWorkspaceBash(kernel, bob.id, {
+        command: "terminal-manage accept",
+        stdin: JSON.stringify({
+          descriptor,
+        }),
+      });
+      expect(accepted.exitCode).toBe(0);
+      const acceptedPayload = JSON.parse(accepted.stdout) as {
+        access?: {
+          accessToken?: string;
+          role?: string;
+        };
+      };
+      const bobTerminalAccessToken = acceptedPayload.access?.accessToken;
+      if (!bobTerminalAccessToken) {
+        throw new Error("expected accepted terminal access token");
+      }
+
+      const marker = `shared-write-${Date.now()}`;
+      const wrote = await kernel.writeGlobalTerminal({
+        terminalId,
+        accessToken: bobTerminalAccessToken,
+        text: `${marker}\r`,
+      });
+      expect(wrote.ok).toBeTrue();
+
+      const bobRead = await kernel.readGlobalTerminal({
+        terminalId,
+        accessToken: bobTerminalAccessToken,
+        mode: "snapshot",
+        recordActivity: false,
+      });
+      expect(bobRead.snapshot?.lines.join("\n")).toContain(marker);
+
+      const aliceRead = await kernel.readGlobalTerminal({
+        terminalId,
+        accessToken: aliceTerminalAccessToken,
+        mode: "snapshot",
+        recordActivity: false,
+      });
+      expect(aliceRead.snapshot?.lines.join("\n")).toContain(marker);
+
+      const stopped = await kernel.stopGlobalTerminal({
+        terminalId,
+        actorId: aliceMeta.avatarPrincipalId as `0x${string}`,
+      });
+      expect(stopped.ok).toBeTrue();
+    } finally {
+      await authority.stop();
+      await kernel.stop();
+    }
+  }, 15_000);
 
   test("Scenario: Given a mounted workspace is detached while the session is stopped When the runtime starts again Then recovery does not resurrect that workspace authority", async () => {
     const root = createTempRoot();

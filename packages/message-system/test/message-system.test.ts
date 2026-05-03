@@ -57,6 +57,32 @@ const waitForSocketOutcome = async (
     });
   });
 
+const listInvitations = (plane: MessageControlPlane, chatId: string) => {
+  const db = Reflect.get(plane, "db") as {
+    findLatestInvitationForParticipant: (input: {
+      chatId: string;
+      inviteeActorId: string;
+      includeNonPending?: boolean;
+    }) => {
+      invitationId: string;
+      status: "pending" | "accepted" | "revoked" | "expired";
+      supersededByInvitationId?: string | null;
+      expiresAt: number;
+    } | undefined;
+    getInvitationById: (chatId: string, invitationId: string) => {
+      invitationId: string;
+      status: "pending" | "accepted" | "revoked" | "expired";
+      supersededByInvitationId?: string | null;
+      expiresAt: number;
+    } | undefined;
+  };
+  return {
+    latestForParticipant: (participantId: string) =>
+      db.findLatestInvitationForParticipant({ chatId, inviteeActorId: participantId, includeNonPending: true }),
+    byId: (invitationId: string) => db.getInvitationById(chatId, invitationId),
+  };
+};
+
 describe("Feature: message-chat-control-plane", () => {
   test("Scenario: Given room-only durability When rooms are created and listed for actors Then only room ids survive and same labels still get separate seats", async () => {
     const plane = createPlane();
@@ -1705,6 +1731,117 @@ describe("Feature: message-chat-control-plane", () => {
       role: "admin",
       label: "Room admin",
     });
+  });
+
+  test("Scenario: Given room invitations expire refresh or revoke while pending When acceptance uses old descriptors Then only the fresh pending descriptor can activate room authority", async () => {
+    const plane = createPlane();
+    const admin = generatePrincipalKeyPair();
+    const invitee = generatePrincipalKeyPair();
+    plane.setActorPresence(admin.principalId, true);
+    plane.setActorPresence(invitee.principalId, true);
+    const room = plane.createChannel({
+      chatId: createRoomId(),
+      kind: "room",
+      owner: "principal-room",
+      bootstrapActorId: admin.principalId,
+      participants: [{ id: admin.principalId, label: "Admin" }],
+    });
+
+    const expired = plane.inviteSeatAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      participantId: invitee.principalId,
+      seatClass: "member",
+      label: "Expired member",
+      expiresAt: Date.now() - 1,
+    });
+    await expect(
+      plane.acceptSeat({
+        descriptor: expired.descriptor.deepLink,
+        proof: await signManagedInvitationAcceptProof({
+          privateKey: invitee.privateKey,
+          payload: {
+            invitationId: expired.invitationId,
+            resourceKind: expired.resourceKind,
+            resourceId: expired.resourceId,
+            inviteePrincipalId: invitee.principalId,
+            payloadDigest: expired.payloadDigest,
+            expiresAt: expired.expiresAt,
+          },
+        }),
+      }),
+    ).rejects.toThrow(/expired|not pending/u);
+    expect(listInvitations(plane, room.chatId).byId(expired.invitationId)).toMatchObject({
+      invitationId: expired.invitationId,
+      status: "expired",
+    });
+
+    const firstPending = plane.inviteSeatAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      participantId: invitee.principalId,
+      seatClass: "member",
+      label: "First pending",
+      expiresAt: Date.now() + 10_000,
+    });
+    await Bun.sleep(5);
+    const renewedPending = plane.inviteSeatAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      participantId: invitee.principalId,
+      seatClass: "member",
+      label: "Renewed pending",
+      expiresAt: Date.now() + 60_000,
+    });
+    expect(renewedPending.expiresAt).toBeGreaterThan(firstPending.expiresAt);
+    const revokedSuperseded = listInvitations(plane, room.chatId).byId(firstPending.invitationId);
+    expect(revokedSuperseded).toMatchObject({
+      invitationId: firstPending.invitationId,
+      status: "revoked",
+      supersededByInvitationId: renewedPending.invitationId,
+    });
+
+    await expect(
+      plane.acceptSeat({
+        descriptor: firstPending.descriptor.deepLink,
+        proof: await signManagedInvitationAcceptProof({
+          privateKey: invitee.privateKey,
+          payload: {
+            invitationId: firstPending.invitationId,
+            resourceKind: firstPending.resourceKind,
+            resourceId: firstPending.resourceId,
+            inviteePrincipalId: invitee.principalId,
+            payloadDigest: firstPending.payloadDigest,
+            expiresAt: firstPending.expiresAt,
+          },
+        }),
+      }),
+    ).rejects.toThrow(/not pending: revoked/u);
+
+    expect(
+      plane.revokeSeatAuthorized({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        participantId: invitee.principalId,
+      }),
+    ).toEqual({ ok: true });
+
+    await expect(
+      plane.acceptSeat({
+        descriptor: renewedPending.descriptor.deepLink,
+        proof: await signManagedInvitationAcceptProof({
+          privateKey: invitee.privateKey,
+          payload: {
+            invitationId: renewedPending.invitationId,
+            resourceKind: renewedPending.resourceKind,
+            resourceId: renewedPending.resourceId,
+            inviteePrincipalId: invitee.principalId,
+            payloadDigest: renewedPending.payloadDigest,
+            expiresAt: renewedPending.expiresAt,
+          },
+        }),
+      }),
+    ).rejects.toThrow(/not pending: revoked/u);
   });
 
   test("Scenario: Given a room is marked direct When a third participant is inserted Then message-system rejects in-place expansion", () => {

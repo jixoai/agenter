@@ -195,8 +195,8 @@ import {
   buildPublicWorkspaceShellEnvironment,
   buildRootWorkspaceShellEnvironment,
   buildSharedTerminalEnvironment,
+  createRuntimeShellWhichCommand,
   materializeRuntimeShellBin,
-  resolveRuntimeShellBinDir,
 } from "./runtime-shell-bin";
 import {
   RuntimeSkillSystem,
@@ -2309,13 +2309,16 @@ export class SessionRuntime {
     }
     this.rootWorkspaceShellWorld = createRootWorkspaceShellWorld({
       rootWorkspacePath: this.getRootWorkspacePath(),
-      customCommands: createRuntimeShellCommands({
-        baseUrl: this.runtimeLocalApi.baseUrl,
-        privateKey: this.options.avatarPrivateKey,
-        homeDir: this.getHomeDir(),
-        rootWorkspacePath: this.getRootWorkspacePath(),
-        principalId: this.options.avatarPrincipalId,
-      }),
+      customCommands: [
+        createRuntimeShellWhichCommand(this.getRootWorkspacePath()),
+        ...createRuntimeShellCommands({
+          baseUrl: this.runtimeLocalApi.baseUrl,
+          privateKey: this.options.avatarPrivateKey,
+          homeDir: this.getHomeDir(),
+          rootWorkspacePath: this.getRootWorkspacePath(),
+          principalId: this.options.avatarPrincipalId,
+        }),
+      ],
     });
     return this.rootWorkspaceShellWorld;
   }
@@ -5054,7 +5057,6 @@ export class SessionRuntime {
       throw new Error("runtime local api unavailable");
     }
     materializeRuntimeShellBin(this.getRootWorkspacePath());
-    const runtimeBinDir = resolveRuntimeShellBinDir(this.getRootWorkspacePath());
     return await this.getOrCreateRootWorkspaceShellWorld().exec({
       command: input.command,
       cwd: input.cwd,
@@ -5065,10 +5067,7 @@ export class SessionRuntime {
         managedSeatAuthorityUrl: this.options.managedSeatAuthorityUrl,
         privateKey: this.options.avatarPrivateKey,
         principalId: this.options.avatarPrincipalId,
-        env: {
-          ...(input.env ?? {}),
-          PATH: `${runtimeBinDir}:${input.env?.PATH ?? process.env.PATH ?? ""}`,
-        },
+        env: input.env,
       }),
       stdin: input.stdin,
       mounts: [...this.getRootWorkspaceMounts()],

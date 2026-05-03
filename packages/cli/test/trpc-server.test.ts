@@ -92,6 +92,80 @@ const createSuperadminClient = async (
   };
 };
 
+const getSessionRuntime = (handle: TrpcServerHandle, sessionId: string) => {
+  const runtimes = Reflect.get(handle.kernel, "runtimes") as Map<string, unknown>;
+  const runtime = runtimes.get(sessionId);
+  if (!runtime) {
+    throw new Error(`missing runtime for session ${sessionId}`);
+  }
+  return runtime as {
+    createRuntimeTerminal: (input: {
+      terminalId?: string;
+      processKind?: string;
+      command?: string[];
+      cwd?: string;
+      focus?: boolean;
+    }) => Promise<{
+      ok: boolean;
+      message: string;
+      terminal?: {
+        terminalId: string;
+        access?: {
+          accessToken?: string;
+        };
+      };
+    }>;
+    stopRuntimeTerminal: (terminalId: string) => Promise<{ ok: boolean; message: string }>;
+    inviteRuntimeMessageSeat: (input: {
+      chatId: string;
+      participantId: `0x${string}`;
+      seatClass: "readonly" | "member" | "admin";
+      authorityUrl?: string;
+      accessToken?: string;
+    }) => Promise<{
+      invitation: {
+        descriptor: {
+          token: string;
+          deepLink?: string;
+          httpUrl?: string;
+        };
+      };
+    }>;
+    acceptRuntimeMessageSeat: (input: { descriptor: string; authorityUrl?: string }) => Promise<{
+      invitation: { resourceId: string };
+      access: { accessToken: string; accessRole: string };
+    }>;
+    inviteRuntimeTerminalSeat: (input: {
+      terminalId: string;
+      participantId: `0x${string}`;
+      seatClass: "RO" | "RW" | "TM";
+      authorityUrl?: string;
+      accessToken?: string;
+    }) => Promise<{
+      invitation: {
+        descriptor: {
+          token: string;
+          deepLink?: string;
+          httpUrl?: string;
+        };
+      };
+    }>;
+    sendRuntimeMessage: (input: { chatId: string; content: string }) => Promise<{ ok: boolean }>;
+    acceptRuntimeTerminalSeat: (input: { descriptor: string; authorityUrl?: string }) => Promise<{
+      invitation: { resourceId: string };
+      access: { accessToken: string; role: string };
+    }>;
+    writeRuntimeTerminal: (input: { terminalId: string; text: string }) => Promise<{ ok: boolean; message: string }>;
+    readRuntimeTerminal: (input: {
+      terminalId: string;
+      mode?: "auto" | "diff" | "snapshot";
+      recordActivity?: boolean;
+    }) => Promise<{
+      snapshot?: { lines: string[] };
+    }>;
+  };
+};
+
 afterEach(async () => {
   while (clients.length > 0) {
     clients.pop()?.close();
@@ -311,6 +385,167 @@ describe("Feature: cli server contracts", () => {
     expect(payload[0]?.result?.data?.json?.version).toBe(1);
     expect(Array.isArray(payload[0]?.result?.data?.json?.sessions)).toBe(true);
   });
+
+  test("Scenario: Given two agenters on different ports and one shared room When agenter-B shares its terminal to agenter-A Then agenter-A accepts and both sides verify the same terminal collaboration truth", async () => {
+    const a = createWorkspaceRoot();
+    const b = createWorkspaceRoot();
+    const handleA = await startTrpcServer({
+      host: "127.0.0.1",
+      port: 0,
+      globalSessionRoot: join(a.dir, "sessions"),
+      workspacesPath: join(a.dir, "workspaces.yaml"),
+      homeDir: join(a.dir, "home"),
+    });
+    handles.push(handleA);
+    const handleB = await startTrpcServer({
+      host: "127.0.0.1",
+      port: 0,
+      globalSessionRoot: join(b.dir, "sessions"),
+      workspacesPath: join(b.dir, "workspaces.yaml"),
+      homeDir: join(b.dir, "home"),
+    });
+    handles.push(handleB);
+
+    const { client: clientA } = await createSuperadminClient(handleA);
+    const { client: clientB } = await createSuperadminClient(handleB);
+
+    const sessionA = await clientA.trpc.session.create.mutate({
+      cwd: a.workspace,
+      avatar: "avatar-a",
+      autoStart: true,
+    });
+    const sessionB = await clientB.trpc.session.create.mutate({
+      cwd: b.workspace,
+      avatar: "avatar-b",
+      autoStart: true,
+    });
+    if (!sessionA.session.avatarPrincipalId || !sessionB.session.avatarPrincipalId) {
+      throw new Error("expected avatar principals for both servers");
+    }
+
+    const roomOnA = await clientA.trpc.message.globalCreate.mutate({
+      kind: "room",
+      title: "cross-instance-managed-seat",
+      initialUsers: [
+        {
+          actorId: sessionA.session.avatarPrincipalId as `0x${string}`,
+          label: "Avatar A",
+          role: "member",
+          focused: true,
+        },
+        {
+          actorId: sessionB.session.avatarPrincipalId as `0x${string}`,
+          label: "Avatar B",
+          role: "member",
+          focused: true,
+        },
+      ],
+    });
+
+    const runtimeA = getSessionRuntime(handleA, sessionA.session.id);
+    const runtimeB = getSessionRuntime(handleB, sessionB.session.id);
+
+    const roomInvitePayload = await runtimeA.inviteRuntimeMessageSeat({
+      chatId: roomOnA.channel.chatId,
+      participantId: sessionB.session.avatarPrincipalId as `0x${string}`,
+      seatClass: "member",
+      authorityUrl: `http://${handleA.host}:${handleA.port}`,
+    });
+    const roomDescriptor =
+      roomInvitePayload.invitation?.descriptor.httpUrl ??
+      roomInvitePayload.invitation?.descriptor.deepLink ??
+      roomInvitePayload.invitation?.descriptor.token;
+    if (!roomDescriptor) {
+      throw new Error("expected room invitation descriptor");
+    }
+
+    const acceptedRoomOnB = await runtimeB.acceptRuntimeMessageSeat({
+      descriptor: roomDescriptor,
+    });
+    expect(acceptedRoomOnB.access.accessRole).toBe("member");
+
+    const bridgeMessage = `bridge-room-${Date.now()}`;
+    const sentFromB = await runtimeB.sendRuntimeMessage({
+      chatId: roomOnA.channel.chatId,
+      content: bridgeMessage,
+    });
+    expect(sentFromB.ok).toBe(true);
+
+    const roomSnapshot = await clientA.trpc.message.globalSnapshot.query({
+      chatId: roomOnA.channel.chatId,
+      accessToken: roomOnA.channel.accessToken,
+      limit: 10,
+    });
+    expect(roomSnapshot.items.some((item) => item.content === bridgeMessage)).toBe(true);
+
+    const terminalOnB = await runtimeB.createRuntimeTerminal({
+      terminalId: "cross-instance-terminal",
+      processKind: "shell",
+      command: ["sh", "-lc", "cat"],
+      focus: true,
+    });
+    if (!terminalOnB.ok || !terminalOnB.terminal?.terminalId || !terminalOnB.terminal.access?.accessToken) {
+      throw new Error("expected B terminal create to return terminal access");
+    }
+    const terminalId = terminalOnB.terminal.terminalId;
+
+    const invitePayload = await runtimeB.inviteRuntimeTerminalSeat({
+      terminalId,
+      participantId: sessionA.session.avatarPrincipalId as `0x${string}`,
+      seatClass: "RW",
+      authorityUrl: `http://${handleB.host}:${handleB.port}`,
+    });
+    const descriptor =
+      invitePayload.invitation?.descriptor.httpUrl ??
+      invitePayload.invitation?.descriptor.deepLink ??
+      invitePayload.invitation?.descriptor.token;
+    if (!descriptor) {
+      throw new Error("expected terminal invitation descriptor");
+    }
+
+    const sent = await runtimeB.sendRuntimeMessage({
+      chatId: roomOnA.channel.chatId,
+      content: descriptor,
+    });
+    expect(sent.ok).toBe(true);
+
+    const snapshotOnA = await clientA.trpc.message.globalSnapshot.query({
+      chatId: roomOnA.channel.chatId,
+      accessToken: roomOnA.channel.accessToken,
+      limit: 10,
+    });
+    expect(snapshotOnA.items.some((item) => item.content === descriptor)).toBe(true);
+
+    const accepted = await runtimeA.acceptRuntimeTerminalSeat({
+      descriptor,
+    });
+    expect(accepted.access.role).toBe("writer");
+
+    const marker = `cross-instance-${Date.now()}`;
+    const wroteByA = await runtimeA.writeRuntimeTerminal({
+      terminalId,
+      text: `${marker}\r`,
+    });
+    expect(wroteByA.ok).toBe(true);
+
+    const readByA = await runtimeA.readRuntimeTerminal({
+      terminalId,
+      mode: "snapshot",
+      recordActivity: false,
+    });
+    expect(readByA.snapshot?.lines.join("\n")).toContain(marker);
+
+    const readByB = await clientB.trpc.terminal.read.query({
+      terminalId,
+      accessToken: terminalOnB.terminal.access.accessToken,
+      mode: "snapshot",
+      recordActivity: false,
+    });
+    expect(readByB.snapshot?.lines.join("\n")).toContain(marker);
+
+    const stopped = await runtimeB.stopRuntimeTerminal(terminalId);
+    expect(stopped.ok).toBe(true);
+  }, 30_000);
 
   test("Scenario: Given app-server starts a child profile-service When the client discovers it Then icon traffic goes to the independent profile endpoint", async () => {
     const { dir, workspace } = createWorkspaceRoot();

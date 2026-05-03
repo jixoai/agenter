@@ -875,7 +875,7 @@ export const runtimeToolDescriptors = [
       { kind: "argv", payload: { chatId: "room-1", limit: 10 } },
     ],
     handler: async (input, handlers) => ({
-      snapshot: handlers.messageRead(input),
+      snapshot: await handlers.messageRead(input),
     }),
   }),
   defineRuntimeToolDescriptor({

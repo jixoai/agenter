@@ -58,6 +58,12 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - provider continuation 可以在 TanStack/adapter 的同步 loop strategy 中追加已提交 attention projection，但该 strategy 只能消费已经由统一 commit API 产出的 projection，不能在同步 provider loop 内执行 source drain、read ack 或 attention commit。
 - LoopBus 的模型表面必须保持极小：稳定 attention law、attention-backed `skills.list` 摘要、以及 `workspace_list` / `root_bash` / `workspace_bash` 三个显式 workspace 原语。message / workspace / terminal / future systems 的操作统一经由 runtime-local CLI/API 自助发现，不再直接注入成 model tools。
 - runtime-local CLI/API 的 tool surface 必须遵守单一信源：`attention` / `message` / `workspace` / `terminal` 的 route、description、`inputSchema`、`--help` 与 canonical examples 都由共享 descriptor registry 派生；AI-facing shell 不再接受 positional/natural-form 参数，只接受空输入、单个 JSON argv 或 JSON stdin，且当前唯一的特殊非 JSON 标记就是 `--help`。
+- 当某个系统需要把 authority 共享给别的 runtime/client 时，平台优先复用 `system backend + endpoint/token/proof client frontend` 法则：
+  - durable truth 与 lifecycle mutation 继续留在 owning backend system
+  - frontend client 只负责 transport projection、proof submission 与 accepted seat 的本地投影缓存
+  - HTTP link、deep link、raw token 都只是 invitation token 的投影，不得升级成新的 authority owner
+  - resource-specific authority grammar 必须继续由 adapter 自己定义，不得为了共享 transport 强行抽象成 universal role model
+- `workspace-manage` 不自动继承这套法则。是否让 workspace 进入 managed-seat handshake，必须等 workspace 自身的 authority/object model 先证明值得承担这层解耦成本，再另立 change。
 - runtime-local CLI/API 的长时命令必须共享 cancellation law：shell/process abort、HTTP request abort 与 system 内部 wait resources 必须串联到同一个 `AbortSignal` 语义；当外部 `timeout` 杀掉 CLI 时，server-side waiter/listener/timer 仍然必须释放。
 - skill system 也是 attention-first 平台原子：它的 durable truth 来自 on-disk skill files，默认 live truth 只观察 `SKILL.md + ccski.config.json`，额外 watched files 只能由 skill 自己声明；watcher 只是 live hint，session-local fingerprint manifest 负责补齐进程未运行期间的变更检测；skill 变更通过 attention reminder 发布，而不是重新回流到 prompt glue。
 - skill system 的 facade 可以保持单一入口，但内部法则必须保持原子化：catalog discovery、truth snapshot、diff、baseline store、watch dirtiness 与 attention publishing 是独立职责；diff / override identity 固定只使用 `skill.name`。

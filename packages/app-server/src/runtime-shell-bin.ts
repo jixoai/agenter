@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+
+import { defineCommand } from "just-bash";
 
 import {
   RUNTIME_API_BASE_URL_ENV,
@@ -12,7 +13,6 @@ import {
 } from "./runtime-skills";
 
 const RUNTIME_BIN_DIRNAME = ".runtime-bin";
-const RUNTIME_SHELL_ENTRY_PATH = fileURLToPath(new URL("./runtime-shell-entry.ts", import.meta.url));
 const RUNTIME_SHELL_COMMANDS = [
   "attention",
   "message",
@@ -23,13 +23,6 @@ const RUNTIME_SHELL_COMMANDS = [
   "skill",
   "tool",
 ] as const;
-
-const shellQuote = (value: string): string => {
-  if (value.length === 0) {
-    return "''";
-  }
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-};
 
 const writeExecutable = (filePath: string, content: string): void => {
   writeFileSync(filePath, content, "utf8");
@@ -48,32 +41,122 @@ export const materializeRuntimeShellBin = (rootWorkspacePath: string): string =>
       join(binDir, commandName),
       [
         "#!/usr/bin/env bash",
-        `exec ${shellQuote(process.execPath)} ${shellQuote(RUNTIME_SHELL_ENTRY_PATH)} ${shellQuote(commandName)} "$@"`,
+        `${commandName} "$@"`,
         "",
       ].join("\n"),
     );
   }
 
-  writeExecutable(
-    join(binDir, "js-exec"),
-    [
-      "#!/usr/bin/env bash",
-      'if [ "$#" -lt 1 ]; then',
-      '  printf "%s\\n" "js-exec requires <file> [-- <args>...]" >&2',
-      "  exit 1",
-      "fi",
-      'script_path="$1"',
-      "shift",
-      'if [ "${1-}" = "--" ]; then',
-      "  shift",
-      "fi",
-      `exec ${shellQuote(process.execPath)} "$script_path" "$@"`,
-      "",
-    ].join("\n"),
-  );
-
   return binDir;
 };
+
+const renderWhichHelp = (): string =>
+  [
+    "Usage: which [-as] program ...",
+    "",
+    "Options:",
+    "  -a        list all matching executables in PATH and runtime shell projections",
+    "  -s        no output; exit 0 if all programs are found",
+    "  --help    display this help and exit",
+    "",
+  ].join("\n");
+
+const parseWhichArgs = (
+  args: readonly string[],
+): { ok: true; showAll: boolean; silent: boolean; programs: string[] } | { ok: false; error: string } => {
+  let showAll = false;
+  let silent = false;
+  const programs: string[] = [];
+  for (const arg of args) {
+    if (arg === "--help") {
+      return { ok: false, error: renderWhichHelp() };
+    }
+    if (arg.startsWith("-") && arg !== "-") {
+      for (const flag of arg.slice(1)) {
+        if (flag === "a") {
+          showAll = true;
+          continue;
+        }
+        if (flag === "s") {
+          silent = true;
+          continue;
+        }
+        return {
+          ok: false,
+          error: `which: invalid option -- '${flag}'\n${renderWhichHelp()}`,
+        };
+      }
+      continue;
+    }
+    programs.push(arg);
+  }
+  return { ok: true, showAll, silent, programs };
+};
+
+export const createRuntimeShellWhichCommand = (rootWorkspacePath: string): ReturnType<typeof defineCommand> =>
+  defineCommand("which", async (args, ctx) => {
+    const parsed = parseWhichArgs(args);
+    if (!parsed.ok) {
+      const isHelp = parsed.error.startsWith("Usage:");
+      return {
+        stdout: isHelp ? `${parsed.error}\n` : "",
+        stderr: isHelp ? "" : `${parsed.error}\n`,
+        exitCode: isHelp ? 0 : 1,
+      };
+    }
+    if (parsed.programs.length === 0) {
+      return {
+        stdout: "",
+        stderr: "",
+        exitCode: 1,
+      };
+    }
+
+    const runtimeCommandNames = new Set<string>(RUNTIME_SHELL_COMMANDS);
+    const searchDirs = (ctx.env.get("PATH") ?? "/usr/bin:/bin").split(":").filter((dir) => dir.length > 0);
+    let stdout = "";
+    let allFound = true;
+
+    for (const program of parsed.programs) {
+      let foundForProgram = false;
+      if (runtimeCommandNames.has(program)) {
+        const projectedPath = join(resolveRuntimeShellBinDir(rootWorkspacePath), program);
+        if (await ctx.fs.exists(projectedPath)) {
+          foundForProgram = true;
+          if (!parsed.silent) {
+            stdout += `${projectedPath}\n`;
+          }
+          if (!parsed.showAll) {
+            continue;
+          }
+        }
+      }
+
+      for (const dir of searchDirs) {
+        const candidatePath = ctx.fs.resolvePath(dir, program);
+        if (!(await ctx.fs.exists(candidatePath))) {
+          continue;
+        }
+        foundForProgram = true;
+        if (!parsed.silent) {
+          stdout += `${candidatePath}\n`;
+        }
+        if (!parsed.showAll) {
+          break;
+        }
+      }
+
+      if (!foundForProgram) {
+        allFound = false;
+      }
+    }
+
+    return {
+      stdout,
+      stderr: "",
+      exitCode: allFound ? 0 : 1,
+    };
+  });
 
 /**
  * Root-workspace is the only shell surface that carries avatar-private runtime CLI/env by default.

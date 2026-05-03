@@ -77,6 +77,18 @@ const utf8Decoder = new TextDecoder();
 const outputIncludes = (message: TerminalTransportServerMessage, text: string): boolean =>
   message.type === "outputBytes" && utf8Decoder.decode(message.data).includes(text);
 
+const listInvitations = (plane: TerminalControlPlane, terminalId: string) => {
+  const db = Reflect.get(plane, "db") as {
+    listInvitations: (terminalId: string, input?: { statuses?: Array<"pending" | "accepted" | "revoked" | "expired"> }) => Array<{
+      invitationId: string;
+      status: "pending" | "accepted" | "revoked" | "expired";
+      supersededByInvitationId?: string | null;
+      expiresAt: number;
+    }>;
+  };
+  return db.listInvitations(terminalId);
+};
+
 afterEach(() => {
   while (workspaces.length > 0) {
     const path = workspaces.pop();
@@ -1809,6 +1821,123 @@ describe("Feature: terminal control plane", () => {
       label: "Terminal manager",
       adminCandidateRank: expect.any(Number),
     });
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given terminal invitations expire refresh or revoke while pending When acceptance uses old descriptors Then only the fresh pending descriptor can activate authority", async () => {
+    const plane = createPlane();
+    const admin = generatePrincipalKeyPair();
+    const invitee = generatePrincipalKeyPair();
+    plane.setActorPresence(admin.principalId, true);
+    plane.setActorPresence(invitee.principalId, true);
+    const created = await plane.create({
+      terminalId: "managed-seat-expiry",
+      bootstrapActorId: admin.principalId,
+      bootstrapRole: "admin",
+    });
+
+    const expired = plane.inviteSeatAuthorized({
+      terminalId: created.terminalId,
+      actorId: admin.principalId,
+      participantId: invitee.principalId,
+      seatClass: "RW",
+      label: "Expired writer",
+      expiresAt: Date.now() - 1,
+    });
+    await expect(
+      plane.acceptSeat({
+        descriptor: expired.descriptor.deepLink,
+        proof: await signManagedInvitationAcceptProof({
+          privateKey: invitee.privateKey,
+          payload: {
+            invitationId: expired.invitationId,
+            resourceKind: expired.resourceKind,
+            resourceId: expired.resourceId,
+            inviteePrincipalId: invitee.principalId,
+            payloadDigest: expired.payloadDigest,
+            expiresAt: expired.expiresAt,
+          },
+        }),
+      }),
+    ).rejects.toThrow(/expired|not pending/u);
+    expect(listInvitations(plane, created.terminalId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          invitationId: expired.invitationId,
+          status: "expired",
+        }),
+      ]),
+    );
+
+    const firstPending = plane.inviteSeatAuthorized({
+      terminalId: created.terminalId,
+      actorId: admin.principalId,
+      participantId: invitee.principalId,
+      seatClass: "RW",
+      label: "First pending",
+      expiresAt: Date.now() + 10_000,
+    });
+    await Bun.sleep(5);
+    const renewedPending = plane.inviteSeatAuthorized({
+      terminalId: created.terminalId,
+      actorId: admin.principalId,
+      participantId: invitee.principalId,
+      seatClass: "RW",
+      label: "Renewed pending",
+      expiresAt: Date.now() + 60_000,
+    });
+    expect(renewedPending.expiresAt).toBeGreaterThan(firstPending.expiresAt);
+    const revokedSuperseded = listInvitations(plane, created.terminalId).find(
+      (item) => item.invitationId === firstPending.invitationId,
+    );
+    expect(revokedSuperseded).toMatchObject({
+      invitationId: firstPending.invitationId,
+      status: "revoked",
+      supersededByInvitationId: renewedPending.invitationId,
+    });
+
+    await expect(
+      plane.acceptSeat({
+        descriptor: firstPending.descriptor.deepLink,
+        proof: await signManagedInvitationAcceptProof({
+          privateKey: invitee.privateKey,
+          payload: {
+            invitationId: firstPending.invitationId,
+            resourceKind: firstPending.resourceKind,
+            resourceId: firstPending.resourceId,
+            inviteePrincipalId: invitee.principalId,
+            payloadDigest: firstPending.payloadDigest,
+            expiresAt: firstPending.expiresAt,
+          },
+        }),
+      }),
+    ).rejects.toThrow(/not pending: revoked/u);
+
+    expect(
+      plane.revokeSeatAuthorized({
+        terminalId: created.terminalId,
+        actorId: admin.principalId,
+        participantId: invitee.principalId,
+      }),
+    ).toEqual({ ok: true });
+
+    await expect(
+      plane.acceptSeat({
+        descriptor: renewedPending.descriptor.deepLink,
+        proof: await signManagedInvitationAcceptProof({
+          privateKey: invitee.privateKey,
+          payload: {
+            invitationId: renewedPending.invitationId,
+            resourceKind: renewedPending.resourceKind,
+            resourceId: renewedPending.resourceId,
+            inviteePrincipalId: invitee.principalId,
+            payloadDigest: renewedPending.payloadDigest,
+            expiresAt: renewedPending.expiresAt,
+          },
+        }),
+      }),
+    ).rejects.toThrow(/not pending: revoked/u);
 
     await plane.dispose();
   });

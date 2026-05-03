@@ -19,17 +19,17 @@
 
 ## 4. CLI And Runtime Surface
 
-- [ ] 4.1 Expose `terminal-manage` and `message-manage` through runtime-local API and root-workspace shell command mounting as endpoint-speaking frontend clients.
-- [ ] 4.2 Implement JSON-first `invite`, `accept`, `config`, and `revoke` command flows plus descriptor normalization for raw tokens, deep links, HTTP wrapper URLs, terminal `RO | RW | TM`, and message `readonly | member | admin`.
-- [ ] 4.3 Document the backend-system / frontend-client law, the shared acceptance proof flow, the adapter-owned authority model, and the non-goal status of `workspace-manage`.
+- [x] 4.1 Expose `terminal-manage` and `message-manage` through runtime-local API and root-workspace shell command mounting as endpoint-speaking frontend clients.
+- [x] 4.2 Implement JSON-first `invite`, `accept`, `config`, and `revoke` command flows plus descriptor normalization for raw tokens, deep links, HTTP wrapper URLs, terminal `RO | RW | TM`, and message `readonly | member | admin`.
+- [x] 4.3 Document the backend-system / frontend-client law, the shared acceptance proof flow, the adapter-owned authority model, and the non-goal status of `workspace-manage`.
 
 ## 5. Verification And Real-AI Trials
 
-- [ ] 5.1 Add cross-system integration tests where a room-delivered invitation descriptor is accepted into terminal authority without changing invitation truth.
+- [x] 5.1 Add cross-system integration tests where a room-delivered invitation descriptor is accepted into terminal authority without changing invitation truth.
 - [ ] 5.2 Add real two-principal verification where principal A invites principal B, sends the descriptor through messageSystem, B accepts, B writes to the shared terminal, and both sides can observe the resulting terminal output under native read law.
-- [ ] 5.3 Add expiry and renewal tests covering actual timeout failure, repeated invite expiry refresh, stale descriptor invalidation, and revoke-during-pending behavior.
+- [x] 5.3 Add expiry and renewal tests covering actual timeout failure, repeated invite expiry refresh, stale descriptor invalidation, and revoke-during-pending behavior.
 - [ ] 5.4 Add dual-agenter multi-port verification where agenter-B hosts Avatar-B and a terminal, agenter-A hosts Avatar-A, both avatars first share a room on agenter-A, then Avatar-B invites Avatar-A into the terminal hosted by agenter-B, and both sides verify cross-instance terminal collaboration.
 
 ## 6. Architecture Extraction
 
-- [ ] 6.1 Capture the reusable `system backend + endpoint/token/proof client frontend` pattern as follow-up architecture guidance once terminal/message implementations stabilize.
+- [x] 6.1 Capture the reusable `system backend + endpoint/token/proof client frontend` pattern as follow-up architecture guidance once terminal/message implementations stabilize.
