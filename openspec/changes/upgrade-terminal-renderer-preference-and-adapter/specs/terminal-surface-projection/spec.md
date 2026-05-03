@@ -1,0 +1,28 @@
+## MODIFIED Requirements
+
+### Requirement: Terminal surface projection SHALL provide one authoritative actor-facing terminal model
+
+The system SHALL provide a terminal surface projection that combines terminal catalog metadata, lifecycle truth, observed identity, seat/access projection, approval counts, renderable snapshot truth, durable renderer preference, and durable theme identity into one actor-facing model for clients and WebUI hosts.
+
+#### Scenario: WebUI consumes one projection instead of merging local fragments
+- **WHEN** a client loads a terminal detail surface
+- **THEN** it receives one terminal surface projection containing the data needed for viewport, seat, action rendering, and renderer/theme selection
+- **THEN** the client does not need to reconstruct seat truth by merging `access`, `grants`, and `actors`
+
+#### Scenario: Projection carries renderable snapshot truth
+- **WHEN** a terminal has durable runtime snapshot data
+- **THEN** the terminal surface projection includes the renderable snapshot needed to hydrate the viewport
+- **THEN** the host can render terminal output before live transport reconnects
+
+#### Scenario: Projection includes lifecycle and observed identity
+
+- **WHEN** a client loads a terminal detail surface
+- **THEN** the projection includes launch cwd/configured title, observed current path/current title, process lifecycle facts, durable renderer preference, and durable theme identity together
+- **AND** the client does not reconstruct those truths from raw snapshots or local heuristics
+
+#### Scenario: Projection retains transport discovery on stop
+
+- **WHEN** a running terminal is stopped
+- **THEN** the projection retains `transportUrl` discovery while preserving the rest of the terminal surface
+- **AND** the client may continue hydrating from durable snapshot truth or later reconnecting through that endpoint
+- **AND** the client still treats live transport enablement as lifecycle-dependent rather than assuming that discovery alone means the PTY is running
