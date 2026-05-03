@@ -106,7 +106,13 @@ const splitShellWords = (value: string): string[] => {
 };
 
 const isRuntimeNamespace = (value: string): value is RuntimeToolNamespace =>
-  value === "attention" || value === "message" || value === "workspace" || value === "terminal" || value === "skill";
+  value === "attention" ||
+  value === "message" ||
+  value === "message-manage" ||
+  value === "workspace" ||
+  value === "terminal" ||
+  value === "terminal-manage" ||
+  value === "skill";
 
 const executeInProcessRootBashCommand = async (input: {
   command: string;

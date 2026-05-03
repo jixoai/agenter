@@ -4,6 +4,7 @@ import { extname, join, normalize, resolve } from "node:path";
 import { Readable } from "node:stream";
 
 import { AppKernel, appRouter, createTrpcContext, readBearerToken, type AppKernelOptions } from "@agenter/app-server";
+import { z } from "zod";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -129,6 +130,136 @@ const decodePathMatch = (pathname: string, pattern: RegExp): string[] | null => 
 
 const readRequestHeader = (value: string | string[] | undefined): string | null =>
   Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+
+const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of request) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  if (chunks.length === 0) {
+    return {};
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+};
+
+const managedSeatEndpointSchema = z
+  .object({
+    authorityUrl: z.string().trim().url(),
+    trpcPath: z.string().trim().min(1).optional(),
+    acceptPath: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
+const terminalInviteBodySchema = z
+  .object({
+    terminalId: z.string().trim().min(1),
+    participantId: z.string().trim().min(1),
+    seatClass: z.enum(["RO", "RW", "TM"]),
+    label: z.string().trim().min(1).optional(),
+    expiresAt: z.number().int().positive().optional(),
+    accessToken: z.string().trim().min(1).optional(),
+    actorId: z.string().trim().min(1).optional(),
+    superadminActorId: z.string().trim().min(1).optional(),
+    endpoint: managedSeatEndpointSchema.optional(),
+  })
+  .strict();
+
+const terminalPrepareAcceptBodySchema = z
+  .object({
+    descriptor: z.string().trim().min(1),
+  })
+  .strict();
+
+const terminalAcceptBodySchema = z
+  .object({
+    descriptor: z.string().trim().min(1),
+    proof: z
+      .object({
+        inviteePrincipalId: z.string().trim().min(1),
+        payload: z.string().min(1),
+        signature: z.string().trim().min(1),
+      })
+      .strict(),
+  })
+  .strict();
+
+const terminalConfigBodySchema = z
+  .object({
+    terminalId: z.string().trim().min(1),
+    participantId: z.string().trim().min(1),
+    seatClass: z.enum(["RO", "RW", "TM"]),
+    label: z.string().trim().min(1).optional(),
+    expiresAt: z.number().int().positive().optional(),
+    accessToken: z.string().trim().min(1).optional(),
+    actorId: z.string().trim().min(1).optional(),
+    superadminActorId: z.string().trim().min(1).optional(),
+    endpoint: managedSeatEndpointSchema.optional(),
+  })
+  .strict();
+
+const terminalRevokeBodySchema = z
+  .object({
+    terminalId: z.string().trim().min(1),
+    participantId: z.string().trim().min(1),
+    accessToken: z.string().trim().min(1).optional(),
+    actorId: z.string().trim().min(1).optional(),
+    superadminActorId: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
+const messageInviteBodySchema = z
+  .object({
+    chatId: z.string().trim().min(1),
+    participantId: z.string().trim().min(1),
+    seatClass: z.enum(["readonly", "member", "admin"]),
+    label: z.string().trim().min(1).optional(),
+    expiresAt: z.number().int().positive().optional(),
+    accessToken: z.string().trim().min(1).optional(),
+    superadminActorId: z.string().trim().min(1).optional(),
+    endpoint: managedSeatEndpointSchema.optional(),
+  })
+  .strict();
+
+const messagePrepareAcceptBodySchema = z
+  .object({
+    descriptor: z.string().trim().min(1),
+  })
+  .strict();
+
+const messageAcceptBodySchema = z
+  .object({
+    descriptor: z.string().trim().min(1),
+    proof: z
+      .object({
+        inviteePrincipalId: z.string().trim().min(1),
+        payload: z.string().min(1),
+        signature: z.string().trim().min(1),
+      })
+      .strict(),
+  })
+  .strict();
+
+const messageConfigBodySchema = z
+  .object({
+    chatId: z.string().trim().min(1),
+    participantId: z.string().trim().min(1),
+    seatClass: z.enum(["readonly", "member", "admin"]),
+    label: z.string().trim().min(1).optional(),
+    expiresAt: z.number().int().positive().optional(),
+    accessToken: z.string().trim().min(1).optional(),
+    superadminActorId: z.string().trim().min(1).optional(),
+    endpoint: managedSeatEndpointSchema.optional(),
+  })
+  .strict();
+
+const messageRevokeBodySchema = z
+  .object({
+    chatId: z.string().trim().min(1),
+    participantId: z.string().trim().min(1),
+    accessToken: z.string().trim().min(1).optional(),
+    superadminActorId: z.string().trim().min(1).optional(),
+  })
+  .strict();
 
 const readRequestAuthToken = (req: IncomingMessage, url: URL): string | null => {
   const headerToken = readBearerToken(readRequestHeader(req.headers.authorization));
@@ -280,6 +411,209 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
         ok: true,
         port: (server.address() as { port?: number } | null)?.port ?? options.port,
       });
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/managed-seats/terminal/invite") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = terminalInviteBodySchema.parse(await readJsonBody(req));
+          const invitation = kernel.inviteGlobalTerminalSeat({
+            terminalId: body.terminalId,
+            participantId: body.participantId,
+            seatClass: body.seatClass,
+            label: body.label,
+            expiresAt: body.expiresAt,
+            accessToken: body.accessToken,
+            actorId: body.actorId as never,
+            superadminActorId: body.superadminActorId as never,
+            endpoint: body.endpoint,
+          });
+          sendJson(res, 200, { ok: true, invitation });
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/managed-seats/terminal/prepare-accept") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = terminalPrepareAcceptBodySchema.parse(await readJsonBody(req));
+          const result = kernel.prepareGlobalTerminalSeatAccept(body);
+          sendJson(res, 200, { ok: true, ...result });
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/managed-seats/terminal/accept") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = terminalAcceptBodySchema.parse(await readJsonBody(req));
+          const result = await kernel.acceptGlobalTerminalSeat({
+            descriptor: body.descriptor,
+            proof: {
+              inviteePrincipalId: body.proof.inviteePrincipalId as `0x${string}`,
+              payload: body.proof.payload,
+              signature: body.proof.signature as `0x${string}`,
+            },
+          });
+          sendJson(res, 200, { ok: true, ...result });
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/managed-seats/terminal/config") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = terminalConfigBodySchema.parse(await readJsonBody(req));
+          const result = kernel.configGlobalTerminalSeat({
+            terminalId: body.terminalId,
+            participantId: body.participantId,
+            seatClass: body.seatClass,
+            label: body.label,
+            expiresAt: body.expiresAt,
+            accessToken: body.accessToken,
+            actorId: body.actorId as never,
+            superadminActorId: body.superadminActorId as never,
+            endpoint: body.endpoint,
+          });
+          sendJson(res, 200, { ok: true, result });
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/managed-seats/terminal/revoke") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = terminalRevokeBodySchema.parse(await readJsonBody(req));
+          const result = kernel.revokeGlobalTerminalSeat({
+            terminalId: body.terminalId,
+            participantId: body.participantId,
+            accessToken: body.accessToken,
+            actorId: body.actorId as never,
+            superadminActorId: body.superadminActorId as never,
+          });
+          sendJson(res, 200, { ok: true, result });
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/managed-seats/message/invite") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = messageInviteBodySchema.parse(await readJsonBody(req));
+          const invitation = kernel.inviteGlobalRoomSeat({
+            chatId: body.chatId,
+            participantId: body.participantId,
+            seatClass: body.seatClass,
+            label: body.label,
+            expiresAt: body.expiresAt,
+            accessToken: body.accessToken,
+            superadminActorId: body.superadminActorId as never,
+            endpoint: body.endpoint,
+          });
+          sendJson(res, 200, { ok: true, invitation });
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/managed-seats/message/prepare-accept") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = messagePrepareAcceptBodySchema.parse(await readJsonBody(req));
+          const result = kernel.prepareGlobalRoomSeatAccept(body);
+          sendJson(res, 200, { ok: true, ...result });
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/managed-seats/message/accept") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = messageAcceptBodySchema.parse(await readJsonBody(req));
+          const result = await kernel.acceptGlobalRoomSeat({
+            descriptor: body.descriptor,
+            proof: {
+              inviteePrincipalId: body.proof.inviteePrincipalId as `0x${string}`,
+              payload: body.proof.payload,
+              signature: body.proof.signature as `0x${string}`,
+            },
+          });
+          sendJson(res, 200, { ok: true, ...result });
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/managed-seats/message/config") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = messageConfigBodySchema.parse(await readJsonBody(req));
+          const result = kernel.configGlobalRoomSeat({
+            chatId: body.chatId,
+            participantId: body.participantId,
+            seatClass: body.seatClass,
+            label: body.label,
+            expiresAt: body.expiresAt,
+            accessToken: body.accessToken,
+            superadminActorId: body.superadminActorId as never,
+            endpoint: body.endpoint,
+          });
+          sendJson(res, 200, { ok: true, result });
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/api/managed-seats/message/revoke") {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = messageRevokeBodySchema.parse(await readJsonBody(req));
+          const result = kernel.revokeGlobalRoomSeat({
+            chatId: body.chatId,
+            participantId: body.participantId,
+            accessToken: body.accessToken,
+            superadminActorId: body.superadminActorId as never,
+          });
+          sendJson(res, 200, { ok: true, result });
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+        }
+      })();
       return;
     }
 
@@ -466,6 +800,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
   });
 
   const actualPort = (server.address() as { port?: number } | null)?.port ?? options.port;
+  kernel.setManagedSeatAuthorityUrl(`http://${options.host}:${actualPort}`);
 
   return {
     host: options.host,

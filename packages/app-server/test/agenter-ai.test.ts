@@ -751,6 +751,18 @@ const createRuntimeLocalHandlers = (input: {
     }
     return await input.messageGateway.recall(request);
   },
+  messageManageInvite: async () => {
+    throw new Error("message manage invite not configured");
+  },
+  messageManageAccept: async () => {
+    throw new Error("message manage accept not configured");
+  },
+  messageManageConfig: async () => {
+    throw new Error("message manage config not configured");
+  },
+  messageManageRevoke: async () => {
+    throw new Error("message manage revoke not configured");
+  },
   workspaceList: () => [],
   workspaceSetAlias: async ({ workspaceId, alias }) => ({
     workspace: {
@@ -824,6 +836,18 @@ const createRuntimeLocalHandlers = (input: {
       throw new Error("terminal gateway not configured");
     }
     return await input.terminalGateway.stop(request);
+  },
+  terminalManageInvite: async () => {
+    throw new Error("terminal manage invite not configured");
+  },
+  terminalManageAccept: async () => {
+    throw new Error("terminal manage accept not configured");
+  },
+  terminalManageConfig: async () => {
+    throw new Error("terminal manage config not configured");
+  },
+  terminalManageRevoke: async () => {
+    throw new Error("terminal manage revoke not configured");
   },
   skillList: () => [],
   skillSearch: () => [],

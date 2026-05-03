@@ -24,6 +24,7 @@ import {
   MessageControlPlane,
   resolveMessageControlDbPath,
   type MessageActorId,
+  type MessageChannelAccessProjection,
   type MessageChannelAccessRole,
   type MessageChannelGrantRecord,
   type MessageChannelKind,
@@ -32,11 +33,14 @@ import {
   type MessageContactRequestRecord,
   type MessageControlPlaneEntry,
   type MessageFocusOp,
+  type MessageInvitationRecord,
   type MessageIssuedGrant,
   type MessageIssueGrantInput,
+  type MessageManagedSeatClass,
   type MessageQueryRequest,
   type MessageQueryResult,
   type MessageRecord,
+  type MessageSeatStateProjection,
   type MessageSnapshot,
   type MessageSourceSubscriptionInput,
   type MessageSourceSubscriptionRecord,
@@ -65,15 +69,19 @@ import {
 } from "@agenter/session-system";
 import {
   TerminalControlPlane,
+  type TerminalAccessProjection,
   type TerminalActorId,
   type TerminalApprovalRequestRecord,
   type TerminalControlPlaneEntry,
   type TerminalGrantRecord,
   type TerminalGrantRole,
+  type TerminalInvitationRecord,
   type TerminalIssueGrantInput,
+  type TerminalManagedSeatClass,
   type TerminalProcessProfile,
   type TerminalReadMode,
   type TerminalReadResult,
+  type TerminalSeatProjection,
   type TerminalWriteResult,
 } from "@agenter/terminal-system";
 import { privateKeyToAccount } from "viem/accounts";
@@ -3707,6 +3715,88 @@ export class AppKernel {
     });
   }
 
+  inviteGlobalRoomSeat(input: {
+    chatId: string;
+    participantId: string;
+    seatClass: MessageManagedSeatClass;
+    label?: string;
+    expiresAt?: number;
+    endpoint?: { authorityUrl: string; trpcPath?: string; acceptPath?: string };
+    accessToken?: string;
+    superadminActorId?: MessageActorId;
+  }): MessageInvitationRecord {
+    if (!isPrincipalId(input.participantId)) {
+      throw new Error("room managed seat participantId must be a principal id");
+    }
+    return this.messageControlPlane.inviteSeatAuthorized({
+      ...input,
+      participantId: input.participantId,
+    });
+  }
+
+  prepareGlobalRoomSeatAccept(input: { descriptor: string }): {
+    invitation: MessageInvitationRecord;
+    proofInput: {
+      invitationId: string;
+      resourceKind: MessageInvitationRecord["resourceKind"];
+      resourceId: string;
+      inviteePrincipalId: MessageInvitationRecord["inviteePrincipalId"];
+      payloadDigest: string;
+      expiresAt: number;
+    };
+  } {
+    return this.messageControlPlane.prepareSeatAccept(input);
+  }
+
+  async acceptGlobalRoomSeat(input: {
+    descriptor: string;
+    proof: {
+      inviteePrincipalId: `0x${string}`;
+      payload: string;
+      signature: `0x${string}`;
+    };
+  }): Promise<{
+    invitation: MessageInvitationRecord;
+    access: MessageChannelAccessProjection;
+    seat: MessageSeatStateProjection | undefined;
+  }> {
+    return await this.messageControlPlane.acceptSeat(input);
+  }
+
+  configGlobalRoomSeat(input: {
+    chatId: string;
+    participantId: string;
+    seatClass: MessageManagedSeatClass;
+    label?: string;
+    expiresAt?: number;
+    endpoint?: { authorityUrl: string; trpcPath?: string; acceptPath?: string };
+    accessToken?: string;
+    superadminActorId?: MessageActorId;
+  }): MessageInvitationRecord | MessageChannelAccessProjection {
+    if (!isPrincipalId(input.participantId)) {
+      throw new Error("room managed seat participantId must be a principal id");
+    }
+    return this.messageControlPlane.configSeatAuthorized({
+      ...input,
+      participantId: input.participantId,
+    });
+  }
+
+  revokeGlobalRoomSeat(input: {
+    chatId: string;
+    participantId: string;
+    accessToken?: string;
+    superadminActorId?: MessageActorId;
+  }): { ok: true } {
+    if (!isPrincipalId(input.participantId)) {
+      throw new Error("room managed seat participantId must be a principal id");
+    }
+    return this.messageControlPlane.revokeSeatAuthorized({
+      ...input,
+      participantId: input.participantId,
+    });
+  }
+
   listGlobalTerminals(
     input: {
       actorId?: TerminalActorId;
@@ -3872,6 +3962,91 @@ export class AppKernel {
     superadminActorId?: TerminalActorId;
   }): { ok: boolean } {
     return this.terminalControlPlane.revokeGrantAuthorized(input);
+  }
+
+  inviteGlobalTerminalSeat(input: {
+    terminalId: string;
+    participantId: string;
+    seatClass: TerminalManagedSeatClass;
+    label?: string;
+    expiresAt?: number;
+    endpoint?: { authorityUrl: string; trpcPath?: string; acceptPath?: string };
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): TerminalInvitationRecord {
+    if (!isPrincipalId(input.participantId)) {
+      throw new Error("terminal managed seat participantId must be a principal id");
+    }
+    return this.terminalControlPlane.inviteSeatAuthorized({
+      ...input,
+      participantId: input.participantId,
+    });
+  }
+
+  prepareGlobalTerminalSeatAccept(input: { descriptor: string }): {
+    invitation: TerminalInvitationRecord;
+    proofInput: {
+      invitationId: string;
+      resourceKind: TerminalInvitationRecord["resourceKind"];
+      resourceId: string;
+      inviteePrincipalId: TerminalInvitationRecord["inviteePrincipalId"];
+      payloadDigest: string;
+      expiresAt: number;
+    };
+  } {
+    return this.terminalControlPlane.prepareSeatAccept(input);
+  }
+
+  async acceptGlobalTerminalSeat(input: {
+    descriptor: string;
+    proof: {
+      inviteePrincipalId: `0x${string}`;
+      payload: string;
+      signature: `0x${string}`;
+    };
+  }): Promise<{
+    invitation: TerminalInvitationRecord;
+    access: TerminalAccessProjection;
+    seat: TerminalSeatProjection | undefined;
+  }> {
+    return await this.terminalControlPlane.acceptSeat(input);
+  }
+
+  configGlobalTerminalSeat(input: {
+    terminalId: string;
+    participantId: string;
+    seatClass: TerminalManagedSeatClass;
+    label?: string;
+    expiresAt?: number;
+    endpoint?: { authorityUrl: string; trpcPath?: string; acceptPath?: string };
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): TerminalInvitationRecord | TerminalAccessProjection {
+    if (!isPrincipalId(input.participantId)) {
+      throw new Error("terminal managed seat participantId must be a principal id");
+    }
+    return this.terminalControlPlane.configSeatAuthorized({
+      ...input,
+      participantId: input.participantId,
+    });
+  }
+
+  revokeGlobalTerminalSeat(input: {
+    terminalId: string;
+    participantId: string;
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): { ok: true } {
+    if (!isPrincipalId(input.participantId)) {
+      throw new Error("terminal managed seat participantId must be a principal id");
+    }
+    return this.terminalControlPlane.revokeSeatAuthorized({
+      ...input,
+      participantId: input.participantId,
+    });
   }
 
   listGlobalTerminalApprovalRequests(input: {

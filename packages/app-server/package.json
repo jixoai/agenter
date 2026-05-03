@@ -23,6 +23,7 @@
     "@agenter/i18n-zh-hans": "workspace:*",
     "@agenter/just-bash-overlay-rule-fs": "workspace:*",
     "@agenter/loopbus-kernel": "workspace:*",
+    "@agenter/managed-seat-invitation-handshake": "workspace:*",
     "@agenter/mdx2md": "workspace:*",
     "@agenter/message-system": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",

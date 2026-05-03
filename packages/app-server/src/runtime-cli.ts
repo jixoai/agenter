@@ -390,7 +390,9 @@ export const createRuntimeShellCommands = (input: {
     rootWorkspacePath: input.rootWorkspacePath,
     homeDir: input.homeDir,
   });
-  const runtimeNamespaces = (["attention", "message", "workspace", "terminal"] as const).map((namespace) =>
+  const runtimeNamespaces = (
+    ["attention", "message", "message-manage", "workspace", "terminal", "terminal-manage"] as const
+  ).map((namespace) =>
     createRuntimeNamespaceCommand({
       namespace,
       baseUrl: input.baseUrl,

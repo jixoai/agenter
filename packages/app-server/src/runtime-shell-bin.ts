@@ -13,7 +13,16 @@ import {
 
 const RUNTIME_BIN_DIRNAME = ".runtime-bin";
 const RUNTIME_SHELL_ENTRY_PATH = fileURLToPath(new URL("./runtime-shell-entry.ts", import.meta.url));
-const RUNTIME_SHELL_COMMANDS = ["attention", "message", "workspace", "terminal", "skill", "tool"] as const;
+const RUNTIME_SHELL_COMMANDS = [
+  "attention",
+  "message",
+  "message-manage",
+  "workspace",
+  "terminal",
+  "terminal-manage",
+  "skill",
+  "tool",
+] as const;
 
 const shellQuote = (value: string): string => {
   if (value.length === 0) {

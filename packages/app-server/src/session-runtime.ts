@@ -30,6 +30,7 @@ import {
   MessageControlPlane,
   resolveMessageControlDbPath,
   type MessageActorId,
+  type MessageChannelAccessProjection,
   type MessageChannelGrantRecord,
   type MessageChannelKind,
   type MessageChannelPatchInput,
@@ -37,13 +38,20 @@ import {
   type MessageControlPlaneEntry,
   type MessageErrorPayload,
   type MessageFocusOp,
+  type MessageInvitationRecord,
   type MessageInteractivePayload,
   type MessageIssueGrantInput,
   type MessageIssuedGrant,
+  type MessageManagedSeatClass,
   type MessageQueryRequest,
   type MessageRecord,
+  type MessageSeatStateProjection,
   type MessageSnapshot,
 } from "@agenter/message-system";
+import {
+  parseManagedInvitationDescriptorInput,
+  signManagedInvitationAcceptProof,
+} from "@agenter/managed-seat-invitation-handshake";
 import {
   SessionDb,
   type SessionAiCallRecord,
@@ -75,6 +83,7 @@ import {
 } from "@agenter/task-system";
 import {
   TerminalControlPlane,
+  type TerminalAccessProjection,
   type TerminalAwaitResult as ControlPlaneTerminalAwaitResult,
   type TerminalReadResult as ControlPlaneTerminalReadResult,
   type TerminalActorId,
@@ -82,8 +91,11 @@ import {
   type TerminalControlPlaneConfig,
   type TerminalControlPlaneConfigPatch,
   type TerminalControlPlaneEntry,
+  type TerminalInvitationRecord,
+  type TerminalManagedSeatClass,
   type TerminalPatchInput,
   type TerminalProcessProfile,
+  type TerminalSeatProjection,
 } from "@agenter/terminal-system";
 import { toolDefinition } from "@tanstack/ai";
 import { createHash } from "node:crypto";
@@ -154,6 +166,10 @@ import {
   type LoopTerminalSourceRef,
 } from "./loopbus-plugin-runtime";
 import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
+import {
+  saveAvatarMessageSeatCredential,
+  saveAvatarTerminalSeatCredential,
+} from "./avatar-seat-store";
 import { listMessageSeatEntries, summarizeMessageChannelPresence } from "./message-channel-presence";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
@@ -1477,6 +1493,48 @@ export interface SessionRuntimeAttentionApiSurface {
   managedSeatAuthorityUrl?: string | null;
 }
 
+type ManagedSeatAuthorityEndpoint = {
+  authorityUrl: string;
+  trpcPath?: string;
+  acceptPath?: string;
+};
+
+type RuntimeTerminalManageInviteResult = {
+  invitation: TerminalInvitationRecord;
+};
+
+type RuntimeTerminalManageAcceptResult = {
+  invitation: TerminalInvitationRecord;
+  access: TerminalAccessProjection;
+  seat?: TerminalSeatProjection;
+};
+
+type RuntimeTerminalManageConfigResult = {
+  result: TerminalInvitationRecord | TerminalAccessProjection;
+};
+
+type RuntimeTerminalManageRevokeResult = {
+  result: { ok: true };
+};
+
+type RuntimeMessageManageInviteResult = {
+  invitation: MessageInvitationRecord;
+};
+
+type RuntimeMessageManageAcceptResult = {
+  invitation: MessageInvitationRecord;
+  access: MessageChannelAccessProjection;
+  seat?: MessageSeatStateProjection;
+};
+
+type RuntimeMessageManageConfigResult = {
+  result: MessageInvitationRecord | MessageChannelAccessProjection;
+};
+
+type RuntimeMessageManageRevokeResult = {
+  result: { ok: true };
+};
+
 interface SessionRuntimeWorkspaceAuthority {
   mount: WorkspaceMountRecord;
   workspaceRoot: string;
@@ -1940,6 +1998,103 @@ export class SessionRuntime {
 
   private getRootWorkspacePath(): string {
     return this.options.rootWorkspacePath ?? this.options.cwd;
+  }
+
+  private getCurrentWorkspacePath(): string {
+    return this.options.workspacePath ?? this.options.cwd;
+  }
+
+  private resolveManagedSeatAuthorityEndpoint(input: {
+    descriptorInput?: string;
+    explicitAuthorityUrl?: string;
+  }): ManagedSeatAuthorityEndpoint {
+    if (input.explicitAuthorityUrl?.trim()) {
+      return {
+        authorityUrl: input.explicitAuthorityUrl.trim().replace(/\/+$/u, ""),
+      };
+    }
+    if (input.descriptorInput) {
+      const parsed = parseManagedInvitationDescriptorInput(input.descriptorInput);
+      if (parsed.descriptor?.endpoint?.authorityUrl) {
+        return {
+          authorityUrl: parsed.descriptor.endpoint.authorityUrl.replace(/\/+$/u, ""),
+          trpcPath: parsed.descriptor.endpoint.trpcPath,
+          acceptPath: parsed.descriptor.endpoint.acceptPath,
+        };
+      }
+    }
+    if (this.options.managedSeatAuthorityUrl?.trim()) {
+      return {
+        authorityUrl: this.options.managedSeatAuthorityUrl.trim().replace(/\/+$/u, ""),
+      };
+    }
+    throw new Error("managed seat authority url is unavailable");
+  }
+
+  private async postManagedSeatAuthority<TResult>(input: {
+    authorityUrl: string;
+    path: string;
+    body: unknown;
+  }): Promise<TResult> {
+    const response = await fetch(`${input.authorityUrl}${input.path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input.body),
+    });
+    const payload = (await response.json()) as { ok?: boolean; error?: string } & Record<string, unknown>;
+    if (!response.ok || payload.ok !== true) {
+      throw new Error(payload.error ?? `managed seat authority request failed: ${input.path}`);
+    }
+    return payload as TResult;
+  }
+
+  private resolveCurrentActorMessageAccessToken(chatId: string): string {
+    const channel = this.getActorRoom(chatId, { includeArchived: true, touchPresence: false });
+    if (!channel?.accessToken) {
+      throw new Error(`runtime actor has no visible room access token for managed seat admin flow: ${chatId}`);
+    }
+    return channel.accessToken;
+  }
+
+  private resolveCurrentActorTerminalAccessToken(terminalId: string): string {
+    const terminal = this.listRuntimeTerminals().find((entry) => entry.terminalId === terminalId);
+    const accessToken = terminal?.access?.accessToken;
+    if (!accessToken) {
+      throw new Error(`runtime actor has no visible terminal access token for managed seat admin flow: ${terminalId}`);
+    }
+    return accessToken;
+  }
+
+  private persistAcceptedMessageSeat(input: {
+    chatId: string;
+    accessToken: string;
+    accessRole: MessageChannelAccessProjection["accessRole"];
+  }): void {
+    saveAvatarMessageSeatCredential({
+      workspacePath: this.getCurrentWorkspacePath(),
+      avatar: this.getAvatarName(),
+      chatId: input.chatId,
+      accessToken: input.accessToken,
+      accessRole: input.accessRole,
+      homeDir: this.getHomeDir(),
+    });
+  }
+
+  private persistAcceptedTerminalSeat(input: {
+    terminalId: string;
+    accessToken: string;
+    accessRole: TerminalAccessProjection["role"];
+  }): void {
+    saveAvatarTerminalSeatCredential({
+      workspacePath: this.getCurrentWorkspacePath(),
+      avatar: this.getAvatarName(),
+      terminalId: input.terminalId,
+      accessToken: input.accessToken,
+      accessRole: input.accessRole,
+      homeDir: this.getHomeDir(),
+    });
   }
 
   private listWorkspaceAuthorities(): SessionRuntimeWorkspaceAuthority[] {
@@ -3070,6 +3225,253 @@ export class SessionRuntime {
     return await this.recallMessageTool(input);
   }
 
+  async inviteRuntimeTerminalSeat(input: {
+    terminalId: string;
+    participantId: `0x${string}`;
+    seatClass: TerminalManagedSeatClass;
+    label?: string;
+    expiresAt?: number;
+    authorityUrl?: string;
+    accessToken?: string;
+  }): Promise<RuntimeTerminalManageInviteResult> {
+    const endpoint = this.resolveManagedSeatAuthorityEndpoint({
+      explicitAuthorityUrl: input.authorityUrl,
+    });
+    return await this.postManagedSeatAuthority<RuntimeTerminalManageInviteResult>({
+      authorityUrl: endpoint.authorityUrl,
+      path: "/api/managed-seats/terminal/invite",
+      body: {
+        terminalId: input.terminalId,
+        participantId: input.participantId,
+        seatClass: input.seatClass,
+        label: input.label,
+        expiresAt: input.expiresAt,
+        accessToken: input.accessToken ?? this.resolveCurrentActorTerminalAccessToken(input.terminalId),
+        actorId: this.terminalActorId,
+        endpoint,
+      },
+    });
+  }
+
+  async acceptRuntimeTerminalSeat(input: {
+    descriptor: string;
+    authorityUrl?: string;
+  }): Promise<RuntimeTerminalManageAcceptResult> {
+    if (!this.options.avatarPrivateKey) {
+      throw new Error("runtime avatar private key is unavailable");
+    }
+    const endpoint = this.resolveManagedSeatAuthorityEndpoint({
+      descriptorInput: input.descriptor,
+      explicitAuthorityUrl: input.authorityUrl,
+    });
+    const prepared = await this.postManagedSeatAuthority<{
+      invitation: TerminalInvitationRecord;
+      proofInput: {
+        invitationId: string;
+        resourceKind: TerminalInvitationRecord["resourceKind"];
+        resourceId: string;
+        inviteePrincipalId: TerminalInvitationRecord["inviteePrincipalId"];
+        payloadDigest: string;
+        expiresAt: number;
+      };
+    }>({
+      authorityUrl: endpoint.authorityUrl,
+      path: "/api/managed-seats/terminal/prepare-accept",
+      body: {
+        descriptor: input.descriptor,
+      },
+    });
+    const proof = await signManagedInvitationAcceptProof({
+      privateKey: this.options.avatarPrivateKey,
+      payload: prepared.proofInput,
+    });
+    const accepted = await this.postManagedSeatAuthority<RuntimeTerminalManageAcceptResult>({
+      authorityUrl: endpoint.authorityUrl,
+      path: "/api/managed-seats/terminal/accept",
+      body: {
+        descriptor: input.descriptor,
+        proof,
+      },
+    });
+    this.persistAcceptedTerminalSeat({
+      terminalId: accepted.invitation.resourceId,
+      accessToken: accepted.access.accessToken,
+      accessRole: accepted.access.role,
+    });
+    return accepted;
+  }
+
+  async configRuntimeTerminalSeat(input: {
+    terminalId: string;
+    participantId: `0x${string}`;
+    seatClass: TerminalManagedSeatClass;
+    label?: string;
+    expiresAt?: number;
+    authorityUrl?: string;
+    accessToken?: string;
+  }): Promise<RuntimeTerminalManageConfigResult> {
+    const endpoint = this.resolveManagedSeatAuthorityEndpoint({
+      explicitAuthorityUrl: input.authorityUrl,
+    });
+    return await this.postManagedSeatAuthority<RuntimeTerminalManageConfigResult>({
+      authorityUrl: endpoint.authorityUrl,
+      path: "/api/managed-seats/terminal/config",
+      body: {
+        terminalId: input.terminalId,
+        participantId: input.participantId,
+        seatClass: input.seatClass,
+        label: input.label,
+        expiresAt: input.expiresAt,
+        accessToken: input.accessToken ?? this.resolveCurrentActorTerminalAccessToken(input.terminalId),
+        actorId: this.terminalActorId,
+        endpoint,
+      },
+    });
+  }
+
+  async revokeRuntimeTerminalSeat(input: {
+    terminalId: string;
+    participantId: `0x${string}`;
+    authorityUrl?: string;
+    accessToken?: string;
+  }): Promise<RuntimeTerminalManageRevokeResult> {
+    const endpoint = this.resolveManagedSeatAuthorityEndpoint({
+      explicitAuthorityUrl: input.authorityUrl,
+    });
+    return await this.postManagedSeatAuthority<RuntimeTerminalManageRevokeResult>({
+      authorityUrl: endpoint.authorityUrl,
+      path: "/api/managed-seats/terminal/revoke",
+      body: {
+        terminalId: input.terminalId,
+        participantId: input.participantId,
+        accessToken: input.accessToken ?? this.resolveCurrentActorTerminalAccessToken(input.terminalId),
+        actorId: this.terminalActorId,
+      },
+    });
+  }
+
+  async inviteRuntimeMessageSeat(input: {
+    chatId: string;
+    participantId: `0x${string}`;
+    seatClass: MessageManagedSeatClass;
+    label?: string;
+    expiresAt?: number;
+    authorityUrl?: string;
+    accessToken?: string;
+  }): Promise<RuntimeMessageManageInviteResult> {
+    const endpoint = this.resolveManagedSeatAuthorityEndpoint({
+      explicitAuthorityUrl: input.authorityUrl,
+    });
+    return await this.postManagedSeatAuthority<RuntimeMessageManageInviteResult>({
+      authorityUrl: endpoint.authorityUrl,
+      path: "/api/managed-seats/message/invite",
+      body: {
+        chatId: input.chatId,
+        participantId: input.participantId,
+        seatClass: input.seatClass,
+        label: input.label,
+        expiresAt: input.expiresAt,
+        accessToken: input.accessToken ?? this.resolveCurrentActorMessageAccessToken(input.chatId),
+        endpoint,
+      },
+    });
+  }
+
+  async acceptRuntimeMessageSeat(input: {
+    descriptor: string;
+    authorityUrl?: string;
+  }): Promise<RuntimeMessageManageAcceptResult> {
+    if (!this.options.avatarPrivateKey) {
+      throw new Error("runtime avatar private key is unavailable");
+    }
+    const endpoint = this.resolveManagedSeatAuthorityEndpoint({
+      descriptorInput: input.descriptor,
+      explicitAuthorityUrl: input.authorityUrl,
+    });
+    const prepared = await this.postManagedSeatAuthority<{
+      invitation: MessageInvitationRecord;
+      proofInput: {
+        invitationId: string;
+        resourceKind: MessageInvitationRecord["resourceKind"];
+        resourceId: string;
+        inviteePrincipalId: MessageInvitationRecord["inviteePrincipalId"];
+        payloadDigest: string;
+        expiresAt: number;
+      };
+    }>({
+      authorityUrl: endpoint.authorityUrl,
+      path: "/api/managed-seats/message/prepare-accept",
+      body: {
+        descriptor: input.descriptor,
+      },
+    });
+    const proof = await signManagedInvitationAcceptProof({
+      privateKey: this.options.avatarPrivateKey,
+      payload: prepared.proofInput,
+    });
+    const accepted = await this.postManagedSeatAuthority<RuntimeMessageManageAcceptResult>({
+      authorityUrl: endpoint.authorityUrl,
+      path: "/api/managed-seats/message/accept",
+      body: {
+        descriptor: input.descriptor,
+        proof,
+      },
+    });
+    this.persistAcceptedMessageSeat({
+      chatId: accepted.invitation.resourceId,
+      accessToken: accepted.access.accessToken,
+      accessRole: accepted.access.accessRole,
+    });
+    return accepted;
+  }
+
+  async configRuntimeMessageSeat(input: {
+    chatId: string;
+    participantId: `0x${string}`;
+    seatClass: MessageManagedSeatClass;
+    label?: string;
+    expiresAt?: number;
+    authorityUrl?: string;
+    accessToken?: string;
+  }): Promise<RuntimeMessageManageConfigResult> {
+    const endpoint = this.resolveManagedSeatAuthorityEndpoint({
+      explicitAuthorityUrl: input.authorityUrl,
+    });
+    return await this.postManagedSeatAuthority<RuntimeMessageManageConfigResult>({
+      authorityUrl: endpoint.authorityUrl,
+      path: "/api/managed-seats/message/config",
+      body: {
+        chatId: input.chatId,
+        participantId: input.participantId,
+        seatClass: input.seatClass,
+        label: input.label,
+        expiresAt: input.expiresAt,
+        accessToken: input.accessToken ?? this.resolveCurrentActorMessageAccessToken(input.chatId),
+        endpoint,
+      },
+    });
+  }
+
+  async revokeRuntimeMessageSeat(input: {
+    chatId: string;
+    participantId: `0x${string}`;
+    authorityUrl?: string;
+    accessToken?: string;
+  }): Promise<RuntimeMessageManageRevokeResult> {
+    const endpoint = this.resolveManagedSeatAuthorityEndpoint({
+      explicitAuthorityUrl: input.authorityUrl,
+    });
+    return await this.postManagedSeatAuthority<RuntimeMessageManageRevokeResult>({
+      authorityUrl: endpoint.authorityUrl,
+      path: "/api/managed-seats/message/revoke",
+      body: {
+        chatId: input.chatId,
+        participantId: input.participantId,
+        accessToken: input.accessToken ?? this.resolveCurrentActorMessageAccessToken(input.chatId),
+      },
+    });
+  }
+
   async createMessageChannel(input: {
     kind: MessageChannelKind;
     title?: string;
@@ -4182,6 +4584,10 @@ export class SessionRuntime {
         messageSend: async (input) => await this.sendRuntimeMessage(input),
         messageEdit: async (input) => await this.editRuntimeMessage(input),
         messageRecall: async (input) => await this.recallRuntimeMessage(input),
+        messageManageInvite: async (input) => await this.inviteRuntimeMessageSeat(input),
+        messageManageAccept: async (input) => await this.acceptRuntimeMessageSeat(input),
+        messageManageConfig: async (input) => await this.configRuntimeMessageSeat(input),
+        messageManageRevoke: async (input) => await this.revokeRuntimeMessageSeat(input),
         workspaceList: () => this.projectRuntimeWorkspaceList(),
         workspaceSetAlias: async (input) => {
           const updated = await this.options.setRuntimeWorkspaceAlias?.({
@@ -4249,6 +4655,10 @@ export class SessionRuntime {
             terminal: projectRuntimeTerminal(result.terminal),
           };
         },
+        terminalManageInvite: async (input) => await this.inviteRuntimeTerminalSeat(input),
+        terminalManageAccept: async (input) => await this.acceptRuntimeTerminalSeat(input),
+        terminalManageConfig: async (input) => await this.configRuntimeTerminalSeat(input),
+        terminalManageRevoke: async (input) => await this.revokeRuntimeTerminalSeat(input),
         skillList: () => runtimeSkillSystem.list().map(projectRuntimeSkill),
         skillSearch: (input) => runtimeSkillSystem.search(input.query ?? "").map(projectRuntimeSkill),
         skillInfo: async (input) => {

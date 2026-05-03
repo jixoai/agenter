@@ -69,6 +69,34 @@ export interface RuntimeLocalApiHandlers {
     chatId: string;
     messageId: number;
   }) => Promise<{ ok: boolean; messageId: number; updatedAt: number; recalledAt: number }>;
+  messageManageInvite: (input: {
+    chatId: string;
+    participantId: `0x${string}`;
+    seatClass: "readonly" | "member" | "admin";
+    label?: string;
+    expiresAt?: number;
+    authorityUrl?: string;
+    accessToken?: string;
+  }) => Promise<{ invitation: MessageInvitationLike }>;
+  messageManageAccept: (input: {
+    descriptor: string;
+    authorityUrl?: string;
+  }) => Promise<{ invitation: MessageInvitationLike; access: MessageManageAccessLike; seat?: MessageManageSeatLike }>;
+  messageManageConfig: (input: {
+    chatId: string;
+    participantId: `0x${string}`;
+    seatClass: "readonly" | "member" | "admin";
+    label?: string;
+    expiresAt?: number;
+    authorityUrl?: string;
+    accessToken?: string;
+  }) => Promise<{ result: MessageInvitationLike | MessageManageAccessLike }>;
+  messageManageRevoke: (input: {
+    chatId: string;
+    participantId: `0x${string}`;
+    authorityUrl?: string;
+    accessToken?: string;
+  }) => Promise<{ result: { ok: true } }>;
   workspaceList: () => Array<RuntimeWorkspaceSurface>;
   workspaceSetAlias: (input: { workspaceId: number; alias: string }) => Promise<{
     workspace: RuntimeWorkspaceSurface;
@@ -149,6 +177,34 @@ export interface RuntimeLocalApiHandlers {
     message: string;
     terminal?: RuntimeTerminalView;
   }>;
+  terminalManageInvite: (input: {
+    terminalId: string;
+    participantId: `0x${string}`;
+    seatClass: "RO" | "RW" | "TM";
+    label?: string;
+    expiresAt?: number;
+    authorityUrl?: string;
+    accessToken?: string;
+  }) => Promise<{ invitation: TerminalInvitationLike }>;
+  terminalManageAccept: (input: {
+    descriptor: string;
+    authorityUrl?: string;
+  }) => Promise<{ invitation: TerminalInvitationLike; access: TerminalManageAccessLike; seat?: TerminalManageSeatLike }>;
+  terminalManageConfig: (input: {
+    terminalId: string;
+    participantId: `0x${string}`;
+    seatClass: "RO" | "RW" | "TM";
+    label?: string;
+    expiresAt?: number;
+    authorityUrl?: string;
+    accessToken?: string;
+  }) => Promise<{ result: TerminalInvitationLike | TerminalManageAccessLike }>;
+  terminalManageRevoke: (input: {
+    terminalId: string;
+    participantId: `0x${string}`;
+    authorityUrl?: string;
+    accessToken?: string;
+  }) => Promise<{ result: { ok: true } }>;
   skillList: () => RuntimeSkillView[];
   skillSearch: (input: { query?: string }) => RuntimeSkillView[];
   skillInfo: (input: { name: string; rootKind?: "builtin" | "shared" | "global" | "avatar" }) => Promise<RuntimeSkillInfoView> | RuntimeSkillInfoView;
@@ -175,7 +231,89 @@ export interface RuntimeLocalApiHandlers {
   skillRefresh: () => Promise<RuntimeSkillMutationView> | RuntimeSkillMutationView;
 }
 
-export type RuntimeToolNamespace = "attention" | "message" | "workspace" | "terminal" | "skill";
+export type RuntimeToolNamespace =
+  | "attention"
+  | "message"
+  | "message-manage"
+  | "workspace"
+  | "terminal"
+  | "terminal-manage"
+  | "skill";
+
+type MessageInvitationLike = {
+  invitationId: string;
+  resourceKind: "message";
+  resourceId: string;
+  inviteePrincipalId: `0x${string}`;
+  inviterPrincipalId: `0x${string}`;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  payload: unknown;
+  payloadDigest: string;
+  descriptor: unknown;
+  createdAt: number;
+  expiresAt: number;
+  acceptedAt?: number;
+  revokedAt?: number;
+  supersededByInvitationId?: string;
+};
+
+type MessageManageAccessLike = {
+  accessRole: "admin" | "member" | "readonly";
+  accessToken: string;
+  participantId?: string;
+  currentAdmin?: boolean;
+  transportUrl?: string;
+};
+
+type MessageManageSeatLike = {
+  actorId: string;
+  role: "admin" | "member" | "readonly";
+  label?: string;
+  currentAdmin: boolean;
+  online: boolean;
+  focused: boolean;
+  invalidCredential?: boolean;
+};
+
+type TerminalInvitationLike = {
+  invitationId: string;
+  resourceKind: "terminal";
+  resourceId: string;
+  inviteePrincipalId: `0x${string}`;
+  inviterPrincipalId: `0x${string}`;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  payload: unknown;
+  payloadDigest: string;
+  descriptor: unknown;
+  createdAt: number;
+  expiresAt: number;
+  acceptedAt?: number;
+  revokedAt?: number;
+  supersededByInvitationId?: string;
+};
+
+type TerminalManageAccessLike = {
+  role: string;
+  accessToken: string;
+  participantId?: string;
+  currentAdmin: boolean;
+  adminCandidateRank?: number;
+  leaseId?: string;
+  leaseExpiresAt?: number;
+};
+
+type TerminalManageSeatLike = {
+  actorId: string;
+  role: string;
+  label?: string;
+  currentAdmin: boolean;
+  adminCandidateRank?: number;
+  online: boolean;
+  focused: boolean;
+  invalidCredential?: boolean;
+  leaseId?: string;
+  leaseExpiresAt?: number;
+};
 
 type RuntimeToolResult = Record<string, unknown>;
 
@@ -332,6 +470,46 @@ const messageRecallSchema = z.object({
   messageId: runtimeMessageIdSchema,
 });
 
+const managedSeatAuthorityUrlSchema = z.string().trim().url().optional();
+
+const messageManageInviteSchema = z.object({
+  chatId: z.string().trim().min(1),
+  participantId: z.custom<`0x${string}`>((value) => typeof value === "string" && /^0x[0-9a-f]+$/iu.test(value), {
+    message: "participantId must be a principal id",
+  }),
+  seatClass: z.enum(["readonly", "member", "admin"]),
+  label: z.string().trim().min(1).optional(),
+  expiresAt: z.number().int().positive().optional(),
+  authorityUrl: managedSeatAuthorityUrlSchema,
+  accessToken: z.string().trim().min(1).optional(),
+});
+
+const messageManageAcceptSchema = z.object({
+  descriptor: z.string().trim().min(1),
+  authorityUrl: managedSeatAuthorityUrlSchema,
+});
+
+const messageManageConfigSchema = z.object({
+  chatId: z.string().trim().min(1),
+  participantId: z.custom<`0x${string}`>((value) => typeof value === "string" && /^0x[0-9a-f]+$/iu.test(value), {
+    message: "participantId must be a principal id",
+  }),
+  seatClass: z.enum(["readonly", "member", "admin"]),
+  label: z.string().trim().min(1).optional(),
+  expiresAt: z.number().int().positive().optional(),
+  authorityUrl: managedSeatAuthorityUrlSchema,
+  accessToken: z.string().trim().min(1).optional(),
+});
+
+const messageManageRevokeSchema = z.object({
+  chatId: z.string().trim().min(1),
+  participantId: z.custom<`0x${string}`>((value) => typeof value === "string" && /^0x[0-9a-f]+$/iu.test(value), {
+    message: "participantId must be a principal id",
+  }),
+  authorityUrl: managedSeatAuthorityUrlSchema,
+  accessToken: z.string().trim().min(1).optional(),
+});
+
 const terminalCreateSchema = z.object({
   terminalId: z.string().optional(),
   processKind: z.string().optional(),
@@ -448,6 +626,44 @@ const terminalFocusSchema = z.object({
 
 const terminalLifecycleMutationSchema = z.object({
   terminalId: z.string(),
+});
+
+const terminalManageInviteSchema = z.object({
+  terminalId: z.string().trim().min(1),
+  participantId: z.custom<`0x${string}`>((value) => typeof value === "string" && /^0x[0-9a-f]+$/iu.test(value), {
+    message: "participantId must be a principal id",
+  }),
+  seatClass: z.enum(["RO", "RW", "TM"]),
+  label: z.string().trim().min(1).optional(),
+  expiresAt: z.number().int().positive().optional(),
+  authorityUrl: managedSeatAuthorityUrlSchema,
+  accessToken: z.string().trim().min(1).optional(),
+});
+
+const terminalManageAcceptSchema = z.object({
+  descriptor: z.string().trim().min(1),
+  authorityUrl: managedSeatAuthorityUrlSchema,
+});
+
+const terminalManageConfigSchema = z.object({
+  terminalId: z.string().trim().min(1),
+  participantId: z.custom<`0x${string}`>((value) => typeof value === "string" && /^0x[0-9a-f]+$/iu.test(value), {
+    message: "participantId must be a principal id",
+  }),
+  seatClass: z.enum(["RO", "RW", "TM"]),
+  label: z.string().trim().min(1).optional(),
+  expiresAt: z.number().int().positive().optional(),
+  authorityUrl: managedSeatAuthorityUrlSchema,
+  accessToken: z.string().trim().min(1).optional(),
+});
+
+const terminalManageRevokeSchema = z.object({
+  terminalId: z.string().trim().min(1),
+  participantId: z.custom<`0x${string}`>((value) => typeof value === "string" && /^0x[0-9a-f]+$/iu.test(value), {
+    message: "participantId must be a principal id",
+  }),
+  authorityUrl: managedSeatAuthorityUrlSchema,
+  accessToken: z.string().trim().min(1).optional(),
 });
 
 const workspaceSetAliasSchema = z.object({
@@ -780,6 +996,75 @@ export const runtimeToolDescriptors = [
     handler: async (input, handlers) => ({
       result: await handlers.messageRecall(input),
     }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "message-manage",
+    name: "invite",
+    route: "/v1/message-manage/invite",
+    description: "Create a pending managed room seat invitation and return share descriptors instead of live room authority.",
+    inputSchema: messageManageInviteSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          chatId: "room-1",
+          participantId: "0x1111111111111111111111111111111111111111",
+          seatClass: "member",
+        },
+      },
+    ],
+    handler: async (input, handlers) => await handlers.messageManageInvite(input),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "message-manage",
+    name: "accept",
+    route: "/v1/message-manage/accept",
+    description: "Accept a managed room seat invitation from a raw token, deep link, or HTTP wrapper URL.",
+    inputSchema: messageManageAcceptSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          descriptor: "message://join?token=seatinv_1234567890abcdef1234567890abcdef",
+        },
+      },
+    ],
+    handler: async (input, handlers) => await handlers.messageManageAccept(input),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "message-manage",
+    name: "config",
+    route: "/v1/message-manage/config",
+    description: "Unilaterally reconfigure a pending or accepted managed room seat.",
+    inputSchema: messageManageConfigSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          chatId: "room-1",
+          participantId: "0x1111111111111111111111111111111111111111",
+          seatClass: "admin",
+        },
+      },
+    ],
+    handler: async (input, handlers) => await handlers.messageManageConfig(input),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "message-manage",
+    name: "revoke",
+    route: "/v1/message-manage/revoke",
+    description: "Unilaterally revoke both pending invitation truth and active room authority for one principal.",
+    inputSchema: messageManageRevokeSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          chatId: "room-1",
+          participantId: "0x1111111111111111111111111111111111111111",
+        },
+      },
+    ],
+    handler: async (input, handlers) => await handlers.messageManageRevoke(input),
   }),
   defineRuntimeToolDescriptor({
     namespace: "workspace",
@@ -1169,6 +1454,75 @@ export const runtimeToolDescriptors = [
     handler: async (input, handlers) => ({
       result: await handlers.terminalStop(input),
     }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "terminal-manage",
+    name: "invite",
+    route: "/v1/terminal-manage/invite",
+    description: "Create a pending managed terminal seat invitation and return share descriptors instead of live terminal authority.",
+    inputSchema: terminalManageInviteSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          terminalId: "term-1",
+          participantId: "0x1111111111111111111111111111111111111111",
+          seatClass: "RW",
+        },
+      },
+    ],
+    handler: async (input, handlers) => await handlers.terminalManageInvite(input),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "terminal-manage",
+    name: "accept",
+    route: "/v1/terminal-manage/accept",
+    description: "Accept a managed terminal seat invitation from a raw token, deep link, or HTTP wrapper URL.",
+    inputSchema: terminalManageAcceptSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          descriptor: "terminal://join?token=seatinv_1234567890abcdef1234567890abcdef",
+        },
+      },
+    ],
+    handler: async (input, handlers) => await handlers.terminalManageAccept(input),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "terminal-manage",
+    name: "config",
+    route: "/v1/terminal-manage/config",
+    description: "Unilaterally reconfigure a pending or accepted managed terminal seat.",
+    inputSchema: terminalManageConfigSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          terminalId: "term-1",
+          participantId: "0x1111111111111111111111111111111111111111",
+          seatClass: "TM",
+        },
+      },
+    ],
+    handler: async (input, handlers) => await handlers.terminalManageConfig(input),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "terminal-manage",
+    name: "revoke",
+    route: "/v1/terminal-manage/revoke",
+    description: "Unilaterally revoke both pending invitation truth and active terminal authority for one principal.",
+    inputSchema: terminalManageRevokeSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          terminalId: "term-1",
+          participantId: "0x1111111111111111111111111111111111111111",
+        },
+      },
+    ],
+    handler: async (input, handlers) => await handlers.terminalManageRevoke(input),
   }),
 ] as const satisfies readonly RuntimeToolDescriptor[];
 
