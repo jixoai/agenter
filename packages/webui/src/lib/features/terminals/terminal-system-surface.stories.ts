@@ -466,7 +466,8 @@ export const WindowChromeTogglesProjectionMode = {
     const fitShellWidth = Number(windowSurface?.dataset.terminalWindowShellWidth ?? "0");
     const fitBodyWidth = Number(windowSurface?.dataset.terminalWindowBodyWidth ?? "0");
     const fitFrameWidth = Number(windowSurface?.dataset.terminalWindowFrameWidth ?? "0");
-    const fitHeaderHeight = windowSurface?.querySelector("header")?.getBoundingClientRect().height ?? 0;
+    const fitTitlebar = canvas.getByTestId("terminal-window-fit-titlebar");
+    const fitHeaderHeight = fitTitlebar.getBoundingClientRect().height ?? 0;
     await waitFor(() => {
       expect(windowSurface?.dataset.terminalWindowMode).toBe("fit");
       expect(terminalView?.shadowRoot?.querySelector('[data-terminal-view-root="true"]')).not.toBeNull();
@@ -474,7 +475,7 @@ export const WindowChromeTogglesProjectionMode = {
     const fitProjectionScale = Number(terminalView?.projectionScale ?? 0);
     expect(fitProjectionScale).toBeGreaterThan(0);
     expect(fitProjectionScale).toBeLessThanOrEqual(1);
-    expect(windowSurface?.querySelector("header")?.textContent).not.toContain("/repo/ops");
+    expect(fitTitlebar.textContent).not.toContain("/repo/ops");
     expect(canvas.getByTestId("terminal-window-size-info").textContent?.trim()).toBe("80x24");
     canvas.getByTestId("terminal-window-zoom-control").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await waitFor(() => {
@@ -483,9 +484,11 @@ export const WindowChromeTogglesProjectionMode = {
       expect(Number(windowSurface?.dataset.terminalWindowShellWidth ?? "0")).toBeGreaterThan(fitShellWidth);
       expect(Number(windowSurface?.dataset.terminalWindowBodyWidth ?? "0")).toBeGreaterThan(fitBodyWidth);
       expect(Number(windowSurface?.dataset.terminalWindowFrameWidth ?? "0")).toBe(fitFrameWidth);
-      expect((windowSurface?.querySelector("header")?.getBoundingClientRect().height ?? 0)).toBeCloseTo(fitHeaderHeight, 0);
       expect(scrollViewport.scrollWidth).toBeGreaterThan(scrollViewport.clientWidth);
     });
+    const coverTitlebar = canvas.getByTestId("terminal-window-cover-titlebar");
+    expect(coverTitlebar.parentElement).not.toBe(windowSurface);
+    expect(coverTitlebar.getBoundingClientRect().height).toBeCloseTo(fitHeaderHeight, 0);
     expect(canvas.queryByTestId("terminal-window-live-resize-handle")).toBeNull();
     expect(Number(terminalView?.projectionScale ?? 0)).toBe(1);
     const body = windowSurface?.querySelector<HTMLElement>('[data-terminal-window-body="true"]');
@@ -523,6 +526,7 @@ export const WindowChromeTogglesProjectionMode = {
         Number(windowSurface?.dataset.terminalWindowFrameWidth ?? "0"),
       );
     });
+    expect(canvas.queryByTestId("terminal-window-cover-titlebar")).toBeNull();
     await expect(canvas.getByTestId("terminal-window-live-resize-handle")).toBeInTheDocument();
   },
 } satisfies Story;

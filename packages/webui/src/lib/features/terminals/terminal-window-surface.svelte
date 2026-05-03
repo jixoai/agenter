@@ -203,7 +203,7 @@
 			contentHeight: effectiveScreenMetrics.screenHeight,
 			availableWidth: Math.max(availableViewportWidth - WINDOW_SCROLL_PADDING_X, WINDOW_VIEWPORT_MIN_WIDTH),
 			availableHeight: Math.max(availableViewportHeight - WINDOW_SCROLL_PADDING_Y, WINDOW_VIEWPORT_MIN_HEIGHT),
-			headerHeight: WINDOW_HEADER_HEIGHT,
+			headerHeight: viewportMode === 'cover' ? 0 : WINDOW_HEADER_HEIGHT,
 		}),
 	);
 	const shellWidth = $derived(liveProjection.shellWidth);
@@ -732,9 +732,61 @@
 	});
 </script>
 
-	<div class="h-full min-h-[24rem] overflow-hidden rounded-[1.7rem] bg-[linear-gradient(180deg,#1d1d1f,#171719)]">
+{#snippet terminalWindowTitlebar(className: string, owner: 'terminal-window' | 'window-container', testId: string)}
+	<header
+		class={className}
+		data-terminal-window-titlebar-owner={owner}
+		data-testid={testId}
+	>
+		<div class="flex min-w-0 flex-1 items-center gap-2">
+			<div class="flex items-center gap-2" aria-label="Window controls">
+				<button
+					type="button"
+					class={`window-control-button ${lifecycleAction === 'stop' ? 'window-control-button-lifecycle-stop' : 'window-control-button-lifecycle-bootstrap'}`}
+					data-testid="terminal-window-lifecycle-control"
+					data-terminal-window-lifecycle-state={lifecycleAction === 'stop' ? 'kill' : 'bootstrap'}
+					aria-label={lifecycleControlLabel}
+					title={lifecycleControlLabel}
+					disabled={lifecycleBusy}
+					onclick={() => {
+						onRequestLifecycleAction?.(lifecycleAction);
+					}}
+				></button>
+				<button
+					type="button"
+					class={`window-control-button ${viewportMode === 'cover' ? 'window-control-button-mode-cover' : 'window-control-button-mode-fit'}`}
+					data-testid="terminal-window-zoom-control"
+					data-terminal-window-mode-state={viewportMode}
+					aria-label={viewportToggleLabel}
+					title={modeControlLabel}
+					onclick={onToggleViewportMode}
+				></button>
+			</div>
+
+			<div class="min-w-0 flex-1 truncate text-[12px] font-medium text-slate-100">
+				{terminalTitle}
+			</div>
+		</div>
+
+		<div
+			class="shrink-0 text-[11px] font-medium tabular-nums text-slate-300"
+			data-testid="terminal-window-size-info"
+		>
+			{terminalGeometry}
+		</div>
+	</header>
+{/snippet}
+
+	<div class="flex h-full min-h-[24rem] flex-col overflow-hidden rounded-[1.7rem] bg-[linear-gradient(180deg,#1d1d1f,#171719)]">
+	{#if viewportMode === 'cover'}
+		{@render terminalWindowTitlebar(
+			'sticky top-0 z-20 shrink-0 flex h-8 items-center gap-2 border-b border-white/8 bg-[linear-gradient(180deg,rgba(58,58,60,0.98),rgba(40,40,42,0.96))] px-3 shadow-[0_1px_0_rgba(255,255,255,0.05)_inset] backdrop-blur-xl',
+			'window-container',
+			'terminal-window-cover-titlebar',
+		)}
+	{/if}
 	<ScrollView
-		class="h-full"
+		class={viewportMode === 'cover' ? 'min-h-0 flex-1' : 'h-full'}
 		orientation="both"
 		bind:viewportRef={scrollViewportRef}
 		viewportTestId="terminal-window-scroll-viewport"
@@ -756,48 +808,13 @@
 			data-terminal-window-frame-width={String(liveFrameWidth)}
 			data-terminal-window-frame-height={String(liveFrameHeight)}
 		>
-			<header
-				class={viewportMode === 'cover'
-					? 'sticky top-0 z-20 flex h-8 items-center gap-2 border-b border-white/8 bg-[linear-gradient(180deg,rgba(58,58,60,0.98),rgba(40,40,42,0.96))] px-3 shadow-[0_1px_0_rgba(255,255,255,0.05)_inset] backdrop-blur-xl'
-					: 'flex h-8 items-center gap-2 border-b border-white/8 bg-[linear-gradient(180deg,rgba(58,58,60,0.98),rgba(40,40,42,0.96))] px-3 shadow-[0_1px_0_rgba(255,255,255,0.05)_inset]'}
-			>
-				<div class="flex min-w-0 flex-1 items-center gap-2">
-					<div class="flex items-center gap-2" aria-label="Window controls">
-						<button
-							type="button"
-							class={`window-control-button ${lifecycleAction === 'stop' ? 'window-control-button-lifecycle-stop' : 'window-control-button-lifecycle-bootstrap'}`}
-							data-testid="terminal-window-lifecycle-control"
-							data-terminal-window-lifecycle-state={lifecycleAction === 'stop' ? 'kill' : 'bootstrap'}
-							aria-label={lifecycleControlLabel}
-							title={lifecycleControlLabel}
-							disabled={lifecycleBusy}
-							onclick={() => {
-								onRequestLifecycleAction?.(lifecycleAction);
-							}}
-						></button>
-						<button
-							type="button"
-							class={`window-control-button ${viewportMode === 'cover' ? 'window-control-button-mode-cover' : 'window-control-button-mode-fit'}`}
-							data-testid="terminal-window-zoom-control"
-							data-terminal-window-mode-state={viewportMode}
-							aria-label={viewportToggleLabel}
-							title={modeControlLabel}
-							onclick={onToggleViewportMode}
-						></button>
-					</div>
-
-					<div class="min-w-0 flex-1 truncate text-[12px] font-medium text-slate-100">
-						{terminalTitle}
-					</div>
-				</div>
-
-				<div
-					class="shrink-0 text-[11px] font-medium tabular-nums text-slate-300"
-					data-testid="terminal-window-size-info"
-				>
-					{terminalGeometry}
-				</div>
-			</header>
+			{#if viewportMode !== 'cover'}
+				{@render terminalWindowTitlebar(
+					'flex h-8 items-center gap-2 border-b border-white/8 bg-[linear-gradient(180deg,rgba(58,58,60,0.98),rgba(40,40,42,0.96))] px-3 shadow-[0_1px_0_rgba(255,255,255,0.05)_inset]',
+					'terminal-window',
+					'terminal-window-fit-titlebar',
+				)}
+			{/if}
 
 			<div
 				bind:this={windowBodyRef}

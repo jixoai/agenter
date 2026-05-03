@@ -132,6 +132,11 @@ describe("Feature: Terminal surface layout ownership contract", () => {
     expect(terminalWindowSurfaceSource).toContain('data-terminal-window-shell-width={String(shellWidth)}');
     expect(terminalWindowSurfaceSource).toContain('data-testid="terminal-window-lifecycle-control"');
     expect(terminalWindowSurfaceSource).toContain('data-testid="terminal-window-size-info"');
+    expect(terminalWindowSurfaceSource).toContain("data-terminal-window-titlebar-owner={owner}");
+    expect(terminalWindowSurfaceSource).toContain("'window-container'");
+    expect(terminalWindowSurfaceSource).toContain("'terminal-window'");
+    expect(terminalWindowSurfaceSource).toContain("'terminal-window-cover-titlebar'");
+    expect(terminalWindowSurfaceSource).toContain("'terminal-window-fit-titlebar'");
     expect(terminalWindowSurfaceSource).toContain('class="native-window-resize-handle"');
     expect(terminalWindowSurfaceSource).toContain('data-terminal-window-native-resize-handle="true"');
     expect(terminalWindowSurfaceSource).toContain("document.documentElement.style.cursor = 'se-resize';");
