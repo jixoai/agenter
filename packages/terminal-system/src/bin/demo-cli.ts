@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-type Mode = "idle" | "select" | "spinner" | "progress" | "redraw";
+type Mode = "idle" | "select" | "spinner" | "progress" | "redraw" | "proof";
 
 const ESC = "\u001b";
 const CLEAR_SCREEN = `${ESC}[2J${ESC}[H`;
@@ -75,14 +75,28 @@ const buildBar = (value: number, width: number): string => {
   return `[${"#".repeat(filled)}${"-".repeat(Math.max(0, safeWidth - filled))}] ${value}%`;
 };
 
+const buildProofLine = (cols: number): string => {
+  const safeCols = Math.max(1, cols);
+  return Array.from({ length: safeCols }, (_, index) => String(index % 10)).join("");
+};
+
 const render = (): void => {
   const cols = process.stdout.columns ?? 80;
   const rows = process.stdout.rows ?? 24;
   const lines: string[] = [];
 
+  if (mode === "proof") {
+    const proofLine = buildProofLine(cols);
+    for (let row = 0; row < rows; row += 1) {
+      lines.push(proofLine);
+    }
+    process.stdout.write(`${CLEAR_SCREEN}${lines.join("\n")}`);
+    return;
+  }
+
   lines.push("Demo CLI (for ATI resize experiments)");
   lines.push(`size=${cols}x${rows} mode=${mode}`);
-  lines.push("keys: 1=select 2=spinner 3=progress 4=redraw c=clear h=help q=quit");
+  lines.push("keys: 1=select 2=spinner 3=progress 4=redraw 5=proof c=clear h=help q=quit");
   lines.push("select mode: up/down or j/k + enter, esc to cancel");
   lines.push("-".repeat(Math.max(16, Math.min(cols, 80))));
 
@@ -177,6 +191,9 @@ const handleInput = (input: string): void => {
     case "4":
       setMode("redraw");
       return;
+    case "5":
+      setMode("proof");
+      return;
     case "c":
       logs.length = 0;
       pushLog("logs cleared");
@@ -208,7 +225,7 @@ process.stdin.setRawMode?.(true);
 process.stdin.resume();
 process.stdout.write(HIDE_CURSOR);
 pushLog("demo-cli started");
-pushLog("resize terminal or press 1/2/3/4 to generate TUI patterns");
+pushLog("resize terminal or press 1/2/3/4/5 to generate TUI patterns");
 render();
 
 process.stdin.on("data", (chunk: Buffer | string) => {

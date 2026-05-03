@@ -29,10 +29,14 @@ interface TerminalWindowProjectionInput {
 	availableWidth: number;
 	availableHeight: number;
 	headerHeight: number;
+	bodyInsetX?: number;
+	bodyInsetY?: number;
 }
 
 interface TerminalWindowProjection {
 	scale: number;
+	contentBoxWidth: number;
+	contentBoxHeight: number;
 	bodyWidth: number;
 	bodyHeight: number;
 	shellWidth: number;
@@ -115,18 +119,30 @@ export const resolveTerminalWindowProjection = (
 	const contentWidth = Math.max(1, Math.round(input.contentWidth ?? frameWidth));
 	const contentHeight = Math.max(1, Math.round(input.contentHeight ?? frameHeight));
 	const headerHeight = Math.max(0, Math.round(input.headerHeight));
+	const bodyInsetX = Math.max(0, Math.round(input.bodyInsetX ?? 0));
+	const bodyInsetY = Math.max(0, Math.round(input.bodyInsetY ?? 0));
 	const availableWidth = resolvePositiveOr(input.availableWidth, contentWidth);
-	const availableBodyHeight = Math.max(1, resolvePositiveOr(input.availableHeight, headerHeight + contentHeight) - headerHeight);
-	const widthRatio = availableWidth / contentWidth;
+	const availableBodyWidth = Math.max(1, availableWidth - bodyInsetX * 2);
+	const availableBodyHeight = Math.max(
+		1,
+		resolvePositiveOr(input.availableHeight, headerHeight + contentHeight + bodyInsetY * 2) -
+			headerHeight -
+			bodyInsetY * 2,
+	);
+	const widthRatio = availableBodyWidth / contentWidth;
 	const heightRatio = availableBodyHeight / contentHeight;
 	const fitRatio = Math.min(widthRatio, heightRatio);
 	const rawScale = input.mode === 'cover' ? 1 : Math.min(1, fitRatio);
 	const scale = Number.isFinite(rawScale) && rawScale > 0 ? rawScale : 1;
-	const bodyWidth = Math.max(1, Math.round(contentWidth * scale));
-	const bodyHeight = Math.max(1, Math.round(contentHeight * scale));
+	const contentBoxWidth = Math.max(1, Math.round(contentWidth * scale));
+	const contentBoxHeight = Math.max(1, Math.round(contentHeight * scale));
+	const bodyWidth = contentBoxWidth + bodyInsetX * 2;
+	const bodyHeight = contentBoxHeight + bodyInsetY * 2;
 
 	return {
 		scale,
+		contentBoxWidth,
+		contentBoxHeight,
 		bodyWidth,
 		bodyHeight,
 		shellWidth: bodyWidth,

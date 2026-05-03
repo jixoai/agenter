@@ -63,7 +63,7 @@ export interface RuntimeTerminalActivityRecord {
   id: number;
   terminalId: string;
   createdAt: number;
-  kind: "cycle_input" | "message" | "terminal_read" | "terminal_write";
+  kind: "cycle_input" | "message" | "terminal_read" | "terminal_write" | "terminal_resize";
   cycleId: number | null;
   actorId?: string;
   role?: ChatMessage["role"];

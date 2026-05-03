@@ -9,6 +9,7 @@
 		title,
 		description,
 		tone = 'pane',
+		scrollBody = true,
 		class: className,
 		contentClass,
 		summaryClass,
@@ -19,6 +20,7 @@
 		title: string;
 		description?: string;
 		tone?: 'page' | 'pane';
+		scrollBody?: boolean;
 		class?: string;
 		contentClass?: string;
 		summaryClass?: string;
@@ -57,12 +59,18 @@
 	header={header}
 	footer={summary ? footer : undefined}
 >
-	<ScrollView
-		class="h-full"
-		contentClass={cn('grid gap-4 p-4', contentClass)}
-	>
-		{@render children?.()}
-	</ScrollView>
+	{#if scrollBody}
+		<ScrollView
+			class="h-full"
+			contentClass={cn('grid gap-4 p-4', contentClass)}
+		>
+			{@render children?.()}
+		</ScrollView>
+	{:else}
+		<div class={cn('workbench-detail-drawer__body', contentClass)}>
+			{@render children?.()}
+		</div>
+	{/if}
 </WorkbenchScaffold>
 
 <style>
@@ -70,5 +78,11 @@
 		min-block-size: 0;
 		min-inline-size: 0;
 		block-size: 100%;
+	}
+
+	.workbench-detail-drawer__body {
+		block-size: 100%;
+		min-block-size: 0;
+		min-inline-size: 0;
 	}
 </style>

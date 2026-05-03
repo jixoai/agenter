@@ -1,4 +1,8 @@
 export { AgenticTerminal } from "./agentic-terminal";
+export type {
+  TerminalTransportClientMessage,
+  TerminalTransportServerMessage,
+} from "@agenter/terminal-transport-protocol";
 export { resolveDefaultInteractiveShellCommand } from "./default-shell-command";
 export {
   ManagedTerminal,
@@ -60,10 +64,8 @@ export type {
   TerminalReversePage,
   TerminalSeatProjection,
   TerminalShortcutMap,
-  TerminalTransportClientMessage,
   TerminalTransportConfig,
   TerminalTransportEndpoint,
-  TerminalTransportServerMessage,
   TerminalWriteInput,
   TerminalWriteLeaseRecord,
   TerminalWriteResult,

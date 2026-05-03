@@ -128,7 +128,7 @@ export class Pty {
     }
   }
 
-  write(input: string): void {
+  write(input: string | Uint8Array): void {
     const terminal = this.proc?.terminal;
     if (!terminal) throw new Error("PTY not running");
     terminal.write(input);

@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package agenter.terminal.transport.v1;
+
+message TerminalCursor {
+  uint32 x = 1;
+  uint32 y = 2;
+}
+
+message TerminalRichSpan {
+  string text = 1;
+  optional string fg = 2;
+  optional string bg = 3;
+  bool bold = 4;
+  bool underline = 5;
+  bool inverse = 6;
+}
+
+message TerminalRichLine {
+  repeated TerminalRichSpan spans = 1;
+}
+
+message TerminalSnapshot {
+  uint32 seq = 1;
+  optional double timestamp = 2;
+  uint32 cols = 3;
+  uint32 rows = 4;
+  repeated string lines = 5;
+  repeated TerminalRichLine rich_lines = 6;
+  TerminalCursor cursor = 7;
+  optional bool cursor_visible = 8;
+}
+
+enum TerminalStatus {
+  TERMINAL_STATUS_UNSPECIFIED = 0;
+  TERMINAL_STATUS_IDLE = 1;
+  TERMINAL_STATUS_BUSY = 2;
+}
+
+message TerminalHello {
+  optional string terminal_id = 1;
+}
+
+message TerminalResize {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+message TerminalInputBytes {
+  bytes data = 1;
+}
+
+message TerminalClientFrame {
+  oneof body {
+    TerminalHello hello = 1;
+    TerminalResize resize = 2;
+    TerminalInputBytes input_bytes = 3;
+  }
+}
+
+message TerminalOutputBytes {
+  string terminal_id = 1;
+  bytes data = 2;
+}
+
+message TerminalSnapshotFrame {
+  string terminal_id = 1;
+  TerminalSnapshot snapshot = 2;
+  TerminalStatus status = 3;
+}
+
+message TerminalStatusFrame {
+  string terminal_id = 1;
+  bool running = 2;
+  TerminalStatus status = 3;
+}
+
+message TerminalErrorFrame {
+  string terminal_id = 1;
+  string message = 2;
+}
+
+message TerminalHelloAck {
+  string terminal_id = 1;
+}
+
+message TerminalServerFrame {
+  oneof body {
+    TerminalSnapshotFrame snapshot = 1;
+    TerminalStatusFrame status = 2;
+    TerminalErrorFrame error = 3;
+    TerminalHelloAck hello_ack = 4;
+    TerminalOutputBytes output_bytes = 5;
+  }
+}

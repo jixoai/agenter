@@ -38,7 +38,12 @@ const countVisibleListboxes = async (page: Page): Promise<number> => {
   const count = await listboxes.count();
   let visibleCount = 0;
   for (let index = 0; index < count; index += 1) {
-    if (await listboxes.nth(index).isVisible().catch(() => false)) {
+    if (
+      await listboxes
+        .nth(index)
+        .isVisible()
+        .catch(() => false)
+    ) {
       visibleCount += 1;
     }
   }
@@ -68,14 +73,17 @@ const openSelectContent = async (page: Page, trigger: Locator): Promise<Locator>
   });
   let content = page.getByRole("listbox").last();
   const opened = await expect
-    .poll(async () => {
-      const visibleListbox = await findVisibleListbox(page);
-      if (visibleListbox) {
-        content = visibleListbox;
-        return true;
-      }
-      return false;
-    }, { timeout: 2_000 })
+    .poll(
+      async () => {
+        const visibleListbox = await findVisibleListbox(page);
+        if (visibleListbox) {
+          content = visibleListbox;
+          return true;
+        }
+        return false;
+      },
+      { timeout: 2_000 },
+    )
     .toBeTruthy()
     .then(() => true)
     .catch(() => false);
@@ -84,14 +92,17 @@ const openSelectContent = async (page: Page, trigger: Locator): Promise<Locator>
     await trigger.press("ArrowDown").catch(() => undefined);
   }
   const openedAfterArrow = await expect
-    .poll(async () => {
-      const visibleListbox = await findVisibleListbox(page);
-      if (visibleListbox) {
-        content = visibleListbox;
-        return true;
-      }
-      return false;
-    }, { timeout: 2_000 })
+    .poll(
+      async () => {
+        const visibleListbox = await findVisibleListbox(page);
+        if (visibleListbox) {
+          content = visibleListbox;
+          return true;
+        }
+        return false;
+      },
+      { timeout: 2_000 },
+    )
     .toBeTruthy()
     .then(() => true)
     .catch(() => false);
@@ -99,14 +110,17 @@ const openSelectContent = async (page: Page, trigger: Locator): Promise<Locator>
     await trigger.press("Enter").catch(() => undefined);
   }
   const openedAfterKey = await expect
-    .poll(async () => {
-      const visibleListbox = await findVisibleListbox(page);
-      if (visibleListbox) {
-        content = visibleListbox;
-        return true;
-      }
-      return false;
-    }, { timeout: 2_000 })
+    .poll(
+      async () => {
+        const visibleListbox = await findVisibleListbox(page);
+        if (visibleListbox) {
+          content = visibleListbox;
+          return true;
+        }
+        return false;
+      },
+      { timeout: 2_000 },
+    )
     .toBeTruthy()
     .then(() => true)
     .catch(() => false);
@@ -117,20 +131,19 @@ const openSelectContent = async (page: Page, trigger: Locator): Promise<Locator>
   return content;
 };
 
-const chooseSelectOptionByText = async (
-  page: Page,
-  trigger: Locator,
-  optionText: string | RegExp,
-): Promise<string> => {
+const chooseSelectOptionByText = async (page: Page, trigger: Locator, optionText: string | RegExp): Promise<string> => {
   await expect(trigger).toBeVisible({ timeout: 15_000 });
   const content = await openSelectContent(page, trigger);
   const matcher = typeof optionText === "string" ? new RegExp(`^${escapeRegExp(optionText)}$`) : optionText;
   let optionLabels: string[] = [];
   const matched = await expect
-    .poll(async () => {
-      optionLabels = (await content.getByRole("option").allTextContents()).map((value) => value.trim());
-      return optionLabels.some((value) => matcher.test(value));
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        optionLabels = (await content.getByRole("option").allTextContents()).map((value) => value.trim());
+        return optionLabels.some((value) => matcher.test(value));
+      },
+      { timeout: 15_000 },
+    )
     .toBeTruthy()
     .then(() => true)
     .catch(() => false);
@@ -150,25 +163,28 @@ const chooseSelectOptionByText = async (
   ].filter((value, index, values) => value.length > 0 && values.indexOf(value) === index);
   const targetOption = content.getByRole("option", { name: matcher }).first();
   await expect(targetOption).toBeVisible({ timeout: 15_000 });
-  await targetOption.dispatchEvent("pointerup", {
-    bubbles: true,
-    button: 0,
-    pointerId: 1,
-    pointerType: "mouse",
-  }).catch(async () => {
-    await targetOption.click({ force: true, timeout: 1_000 });
-  });
+  await targetOption
+    .dispatchEvent("pointerup", {
+      bubbles: true,
+      button: 0,
+      pointerId: 1,
+      pointerType: "mouse",
+    })
+    .catch(async () => {
+      await targetOption.click({ force: true, timeout: 1_000 });
+    });
+  await expect.poll(async () => await content.isVisible().catch(() => false), { timeout: 15_000 }).toBeFalsy();
   await expect
-    .poll(async () => await content.isVisible().catch(() => false), { timeout: 15_000 })
-    .toBeFalsy();
-  await expect
-    .poll(async () => {
-      const triggerText = ((await trigger.textContent()) ?? "").replace(/\s+/g, " ").trim();
-      const triggerTitle = ((await trigger.getAttribute("title")) ?? "").replace(/\s+/g, " ").trim();
-      return confirmationCandidates.some((candidate) => {
-        return triggerText.includes(candidate) || triggerTitle.includes(candidate);
-      });
-    }, { timeout: 2_000 })
+    .poll(
+      async () => {
+        const triggerText = ((await trigger.textContent()) ?? "").replace(/\s+/g, " ").trim();
+        const triggerTitle = ((await trigger.getAttribute("title")) ?? "").replace(/\s+/g, " ").trim();
+        return confirmationCandidates.some((candidate) => {
+          return triggerText.includes(candidate) || triggerTitle.includes(candidate);
+        });
+      },
+      { timeout: 2_000 },
+    )
     .toBeTruthy()
     .catch(() => undefined);
   return label;
@@ -191,30 +207,24 @@ const chooseFirstSelectOption = async (
       .catch(() => undefined);
     return null;
   }
-  const targetOption = content
-    .getByRole("option", { name: new RegExp(`^${escapeRegExp(selectedLabel)}$`) })
-    .first();
+  const targetOption = content.getByRole("option", { name: new RegExp(`^${escapeRegExp(selectedLabel)}$`) }).first();
   await expect(targetOption).toBeVisible({ timeout: 15_000 });
-  await targetOption.dispatchEvent("pointerup", {
-    bubbles: true,
-    button: 0,
-    pointerId: 1,
-    pointerType: "mouse",
-  }).catch(async () => {
-    await targetOption.click({ force: true, timeout: 1_000 });
-  });
+  await targetOption
+    .dispatchEvent("pointerup", {
+      bubbles: true,
+      button: 0,
+      pointerId: 1,
+      pointerType: "mouse",
+    })
+    .catch(async () => {
+      await targetOption.click({ force: true, timeout: 1_000 });
+    });
   await expect(trigger).toContainText(selectedLabel.split(" · ")[0] ?? selectedLabel, { timeout: 15_000 });
-  await expect
-    .poll(async () => await content.isVisible().catch(() => false), { timeout: 15_000 })
-    .toBeFalsy();
+  await expect.poll(async () => await content.isVisible().catch(() => false), { timeout: 15_000 }).toBeFalsy();
   return selectedLabel;
 };
 
-const activateUntil = async (
-  locator: Locator,
-  predicate: () => Promise<boolean>,
-  attempts = 3,
-): Promise<void> => {
+const activateUntil = async (locator: Locator, predicate: () => Promise<boolean>, attempts = 3): Promise<void> => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     await clickStable(locator);
     const activatedByPointer = await expect
@@ -241,17 +251,10 @@ const activateUntil = async (
 };
 
 const activateTab = async (tab: Locator): Promise<void> => {
-  await activateUntil(
-    tab,
-    async () => ((await tab.getAttribute("aria-selected")) ?? "false") === "true",
-    2,
-  );
+  await activateUntil(tab, async () => ((await tab.getAttribute("aria-selected")) ?? "false") === "true", 2);
 };
 
-const navigateToSystem = async (
-  page: Page,
-  label: "Avatars" | "Messages" | "Terminals",
-): Promise<void> => {
+const navigateToSystem = async (page: Page, label: "Avatars" | "Messages" | "Terminals"): Promise<void> => {
   const targetPath = `/${label.toLowerCase()}`;
   const namedLink = page.getByRole("link", { name: label });
   const hrefLink = page.locator(`a[href="${targetPath}"]`).first();
@@ -272,19 +275,19 @@ const navigateToSystem = async (
   if (await sidebarDialog.isVisible().catch(() => false)) {
     await page.keyboard.press("Escape");
     await expect
-      .poll(async () => {
-        const visible = await sidebarDialog.isVisible().catch(() => false);
-        if (!visible) {
-          return true;
-        }
-        return (await sidebarDialog.getAttribute("data-state")) === "closed";
-      }, { timeout: 15_000 })
+      .poll(
+        async () => {
+          const visible = await sidebarDialog.isVisible().catch(() => false);
+          if (!visible) {
+            return true;
+          }
+          return (await sidebarDialog.getAttribute("data-state")) === "closed";
+        },
+        { timeout: 15_000 },
+      )
       .toBeTruthy();
   }
-  await expect(page).toHaveURL(
-    new RegExp(`/${label.toLowerCase()}(?:$|/.*|\\?.*)`),
-    { timeout: 15_000 },
-  );
+  await expect(page).toHaveURL(new RegExp(`/${label.toLowerCase()}(?:$|/.*|\\?.*)`), { timeout: 15_000 });
 };
 
 const navigateToAdmin = async (page: Page): Promise<void> => {
@@ -313,21 +316,20 @@ const ensureSidebarClosed = async (page: Page): Promise<void> => {
   }
   await page.keyboard.press("Escape").catch(() => undefined);
   await expect
-    .poll(async () => {
-      const visible = await sidebarDialog.isVisible().catch(() => false);
-      if (!visible) {
-        return true;
-      }
-      return (await sidebarDialog.getAttribute("data-state")) === "closed";
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        const visible = await sidebarDialog.isVisible().catch(() => false);
+        if (!visible) {
+          return true;
+        }
+        return (await sidebarDialog.getAttribute("data-state")) === "closed";
+      },
+      { timeout: 15_000 },
+    )
     .toBeTruthy();
 };
 
-const getWorkbenchEntry = async (
-  page: Page,
-  name: string | RegExp,
-  exact = true,
-): Promise<Locator> => {
+const getWorkbenchEntry = async (page: Page, name: string | RegExp, exact = true): Promise<Locator> => {
   await ensureSidebarClosed(page);
   const tab = page.getByRole("tab", { name, exact }).first();
   if (await tab.isVisible().catch(() => false)) {
@@ -357,11 +359,7 @@ const readRoomComposerText = async (roomComposer: Locator): Promise<string> => {
   return ((await roomComposer.textContent()) ?? "").replace(/\u200b/g, "").trim();
 };
 
-const sendRoomMessage = async (
-  page: Page,
-  roomTitle: string,
-  message: string,
-): Promise<Locator> => {
+const sendRoomMessage = async (page: Page, roomTitle: string, message: string): Promise<Locator> => {
   const roomComposer = getRoomComposer(page);
   const sendMessageButton = page.getByRole("button", { name: "Send", exact: true });
   await roomComposer.fill(message);
@@ -419,21 +417,21 @@ const openCreateRoomPage = async (page: Page) => {
   return createRoomPage;
 };
 
-const waitForRoomUserCheckbox = async (
-  createRoomPage: Locator,
-  label: string,
-): Promise<Locator> => {
+const waitForRoomUserCheckbox = async (createRoomPage: Locator, label: string): Promise<Locator> => {
   const checkbox = createRoomPage.getByRole("checkbox", {
     name: new RegExp(`^Include ${escapeRegExp(label)}$`),
   });
   let availableUsers: string[] = [];
   const visible = await expect
-    .poll(async () => {
-      availableUsers = (await createRoomPage.locator('[data-testid^="new-room-user-"]').allTextContents())
-        .map((value) => value.replace(/\s+/g, " ").trim())
-        .filter(Boolean);
-      return await checkbox.isVisible().catch(() => false);
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        availableUsers = (await createRoomPage.locator('[data-testid^="new-room-user-"]').allTextContents())
+          .map((value) => value.replace(/\s+/g, " ").trim())
+          .filter(Boolean);
+        return await checkbox.isVisible().catch(() => false);
+      },
+      { timeout: 15_000 },
+    )
     .toBeTruthy()
     .then(() => true)
     .catch(() => false);
@@ -445,9 +443,8 @@ const waitForRoomUserCheckbox = async (
 
 const openCreateTerminalPage = async (page: Page) => {
   const createRoutePattern = /\/terminals\/new$/;
-  const reachedCreateRoute = await activateUntil(
-    await getWorkbenchEntry(page, "New terminal"),
-    async () => createRoutePattern.test(page.url()),
+  const reachedCreateRoute = await activateUntil(await getWorkbenchEntry(page, "New terminal"), async () =>
+    createRoutePattern.test(page.url()),
   )
     .then(() => true)
     .catch(() => false);
@@ -474,7 +471,10 @@ const createTerminalAndOpenDetail = async (
   const terminalTab = page.getByRole("tab", { name: new RegExp(escapeRegExp(input.terminalId)) }).first();
   await expect(terminalTab).toBeVisible({ timeout: 15_000 });
   await activateUntil(terminalTab, async () => {
-    return await page.getByText(`Launch cwd: ${input.cwd}`).isVisible().catch(() => false);
+    return await page
+      .getByText(`Launch cwd: ${input.cwd}`)
+      .isVisible()
+      .catch(() => false);
   });
   await expect(page).toHaveURL(new RegExp(`/terminals/${escapeRegExp(encodeURIComponent(input.terminalId))}$`), {
     timeout: 15_000,
@@ -551,6 +551,16 @@ const pressTerminalViewportKey = async (page: Page, key: string): Promise<void> 
   await pressTerminalTextareaKey(page, key);
 };
 
+const typeIntoTerminalViewportByKeyboard = async (page: Page, text: string): Promise<void> => {
+  await focusTerminalViewport(page);
+  await page.keyboard.type(text);
+};
+
+const pressTerminalViewportKeyByKeyboard = async (page: Page, key: string): Promise<void> => {
+  await focusTerminalViewport(page);
+  await page.keyboard.press(key);
+};
+
 const countTerminalViewOccurrences = async (page: Page, text: string): Promise<number> => {
   const terminalView = page.locator("terminal-view").first();
   await terminalView.waitFor({ state: "visible", timeout: 15_000 });
@@ -582,9 +592,9 @@ const stopRuntimeIfRunning = async (page: Page): Promise<void> => {
   const settled = await expect
     .poll(
       async () =>
-        (await stopButton.isVisible().catch(() => false))
-        || (await startButton.isVisible().catch(() => false))
-        || (await overflowTrigger.isVisible().catch(() => false)),
+        (await stopButton.isVisible().catch(() => false)) ||
+        (await startButton.isVisible().catch(() => false)) ||
+        (await overflowTrigger.isVisible().catch(() => false)),
       { timeout: 15_000 },
     )
     .toBeTruthy()
@@ -595,17 +605,15 @@ const stopRuntimeIfRunning = async (page: Page): Promise<void> => {
   }
   for (let attempt = 0; attempt < 25; attempt += 1) {
     if (
-      !(await stopButton.isVisible().catch(() => false))
-      && !(await startButton.isVisible().catch(() => false))
-      && (await overflowTrigger.isVisible().catch(() => false))
+      !(await stopButton.isVisible().catch(() => false)) &&
+      !(await startButton.isVisible().catch(() => false)) &&
+      (await overflowTrigger.isVisible().catch(() => false))
     ) {
       await clickStable(overflowTrigger);
     }
     if (await stopButton.isVisible().catch(() => false)) {
       await clickStable(stopButton);
-      await expect
-        .poll(async () => await startButton.isVisible().catch(() => false), { timeout: 15_000 })
-        .toBeTruthy();
+      await expect.poll(async () => await startButton.isVisible().catch(() => false), { timeout: 15_000 }).toBeTruthy();
       return;
     }
     if (attempt === 24) {
@@ -623,9 +631,9 @@ const startRuntimeIfStopped = async (page: Page): Promise<void> => {
   const settled = await expect
     .poll(
       async () =>
-        (await stopButton.isVisible().catch(() => false))
-        || (await startButton.isVisible().catch(() => false))
-        || (await overflowTrigger.isVisible().catch(() => false)),
+        (await stopButton.isVisible().catch(() => false)) ||
+        (await startButton.isVisible().catch(() => false)) ||
+        (await overflowTrigger.isVisible().catch(() => false)),
       { timeout: 15_000 },
     )
     .toBeTruthy()
@@ -636,17 +644,15 @@ const startRuntimeIfStopped = async (page: Page): Promise<void> => {
   }
   for (let attempt = 0; attempt < 25; attempt += 1) {
     if (
-      !(await stopButton.isVisible().catch(() => false))
-      && !(await startButton.isVisible().catch(() => false))
-      && (await overflowTrigger.isVisible().catch(() => false))
+      !(await stopButton.isVisible().catch(() => false)) &&
+      !(await startButton.isVisible().catch(() => false)) &&
+      (await overflowTrigger.isVisible().catch(() => false))
     ) {
       await clickStable(overflowTrigger);
     }
     if (await startButton.isVisible().catch(() => false)) {
       await clickStable(startButton);
-      await expect
-        .poll(async () => await stopButton.isVisible().catch(() => false), { timeout: 30_000 })
-        .toBeTruthy();
+      await expect.poll(async () => await stopButton.isVisible().catch(() => false), { timeout: 30_000 }).toBeTruthy();
       return;
     }
     if (await stopButton.isVisible().catch(() => false)) {
@@ -823,9 +829,13 @@ const trackFinishedRequests = (
 
 const openManageRoomDialog = async (page: Page): Promise<Locator> => {
   const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
-  await activateUntil(await getRoomToolbarButton(page, "Manage room"), async () => {
-    return await manageRoomDialog.isVisible().catch(() => false);
-  }, 4);
+  await activateUntil(
+    await getRoomToolbarButton(page, "Manage room"),
+    async () => {
+      return await manageRoomDialog.isVisible().catch(() => false);
+    },
+    4,
+  );
   await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
   return manageRoomDialog;
 };
@@ -845,10 +855,7 @@ const resolveVisibleNamedButton = async (
   return null;
 };
 
-const resolveVisibleTerminalToolbarButton = async (
-  scope: Page | Locator,
-  name: "Users",
-): Promise<Locator | null> => {
+const resolveVisibleTerminalToolbarButton = async (scope: Page | Locator, name: "Users"): Promise<Locator | null> => {
   const candidates = scope.getByRole("button", { name, exact: true });
   const count = await candidates.count().catch(() => 0);
   for (let index = 0; index < count; index += 1) {
@@ -886,16 +893,22 @@ const getTerminalToolbar = (page: Page): Locator => {
 
 const ensureTerminalToolbarOverflowOpen = async (page: Page): Promise<void> => {
   const terminalToolbar = getTerminalToolbar(page);
-  const overflowTrigger = terminalToolbar.getByRole("button", { name: "Open terminal toolbar details", exact: true }).first();
+  const overflowTrigger = terminalToolbar
+    .getByRole("button", { name: "Open terminal toolbar details", exact: true })
+    .first();
   if (!(await overflowTrigger.isVisible().catch(() => false))) {
     return;
   }
   if ((await overflowTrigger.getAttribute("aria-expanded")) === "true") {
     return;
   }
-  await activateUntil(overflowTrigger, async () => {
-    return (await overflowTrigger.getAttribute("aria-expanded")) === "true";
-  }, 4);
+  await activateUntil(
+    overflowTrigger,
+    async () => {
+      return (await overflowTrigger.getAttribute("aria-expanded")) === "true";
+    },
+    4,
+  );
 };
 
 const getTerminalToolbarButton = async (page: Page, name: "Users"): Promise<Locator> => {
@@ -908,10 +921,13 @@ const getTerminalToolbarButton = async (page: Page, name: "Users"): Promise<Loca
   await ensureTerminalToolbarOverflowOpen(page);
   let overflowButton: Locator | null = null;
   await expect
-    .poll(async () => {
-      overflowButton = await resolveVisibleTerminalToolbarButton(page, name);
-      return overflowButton !== null;
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        overflowButton = await resolveVisibleTerminalToolbarButton(page, name);
+        return overflowButton !== null;
+      },
+      { timeout: 15_000 },
+    )
     .toBeTruthy();
   return overflowButton!;
 };
@@ -926,10 +942,13 @@ const getTerminalActionsToggle = async (page: Page): Promise<Locator> => {
   await ensureTerminalToolbarOverflowOpen(page);
   let overflowToggle: Locator | null = null;
   await expect
-    .poll(async () => {
-      overflowToggle = await resolveVisibleTerminalActionsToggle(page);
-      return overflowToggle !== null;
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        overflowToggle = await resolveVisibleTerminalActionsToggle(page);
+        return overflowToggle !== null;
+      },
+      { timeout: 15_000 },
+    )
     .toBeTruthy();
   return overflowToggle!;
 };
@@ -939,9 +958,13 @@ const openTerminalActionsPanel = async (page: Page): Promise<Locator> => {
   if (await panel.isVisible().catch(() => false)) {
     return panel;
   }
-  await activateUntil(await getTerminalActionsToggle(page), async () => {
-    return await panel.isVisible().catch(() => false);
-  }, 4);
+  await activateUntil(
+    await getTerminalActionsToggle(page),
+    async () => {
+      return await panel.isVisible().catch(() => false);
+    },
+    4,
+  );
   await expect(panel).toBeVisible({ timeout: 15_000 });
   return panel;
 };
@@ -969,9 +992,13 @@ const expectTerminalActionPanelContains = async (page: Page, text: string | RegE
 const openTerminalUsersDialog = async (page: Page): Promise<Locator> => {
   await closeTerminalActionsPanel(page);
   const dialog = page.getByTestId("terminal-users-dialog");
-  await activateUntil(await getTerminalToolbarButton(page, "Users"), async () => {
-    return await dialog.isVisible().catch(() => false);
-  }, 4);
+  await activateUntil(
+    await getTerminalToolbarButton(page, "Users"),
+    async () => {
+      return await dialog.isVisible().catch(() => false);
+    },
+    4,
+  );
   await expect(dialog).toBeVisible({ timeout: 15_000 });
   return dialog;
 };
@@ -1011,16 +1038,23 @@ const getRoomToolbarButton = async (
   const overflowTrigger = roomToolbar.getByRole("button", { name: "Open room toolbar details", exact: true }).first();
   await expect(overflowTrigger).toBeVisible({ timeout: 15_000 });
   if ((await overflowTrigger.getAttribute("aria-expanded")) !== "true") {
-    await activateUntil(overflowTrigger, async () => {
-      return (await overflowTrigger.getAttribute("aria-expanded")) === "true";
-    }, 4);
+    await activateUntil(
+      overflowTrigger,
+      async () => {
+        return (await overflowTrigger.getAttribute("aria-expanded")) === "true";
+      },
+      4,
+    );
   }
   let overflowButton: Locator | null = null;
   await expect
-    .poll(async () => {
-      overflowButton = await resolveVisibleNamedButton(page, name);
-      return overflowButton !== null;
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        overflowButton = await resolveVisibleNamedButton(page, name);
+        return overflowButton !== null;
+      },
+      { timeout: 15_000 },
+    )
     .toBeTruthy();
   return overflowButton!;
 };
@@ -1035,16 +1069,23 @@ const getRoomViewerTrigger = async (page: Page): Promise<Locator> => {
   const overflowTrigger = roomToolbar.getByRole("button", { name: "Open room toolbar details", exact: true }).first();
   await expect(overflowTrigger).toBeVisible({ timeout: 15_000 });
   if ((await overflowTrigger.getAttribute("aria-expanded")) !== "true") {
-    await activateUntil(overflowTrigger, async () => {
-      return (await overflowTrigger.getAttribute("aria-expanded")) === "true";
-    }, 4);
+    await activateUntil(
+      overflowTrigger,
+      async () => {
+        return (await overflowTrigger.getAttribute("aria-expanded")) === "true";
+      },
+      4,
+    );
   }
   let viewerTrigger: Locator | null = null;
   await expect
-    .poll(async () => {
-      viewerTrigger = await resolveVisibleRoomViewerTrigger(page);
-      return viewerTrigger !== null;
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        viewerTrigger = await resolveVisibleRoomViewerTrigger(page);
+        return viewerTrigger !== null;
+      },
+      { timeout: 15_000 },
+    )
     .toBeTruthy();
   return viewerTrigger!;
 };
@@ -1119,7 +1160,9 @@ const openCopyAvatarDialog = async (page: Page): Promise<Locator> => {
 const selectAvatarCatalogEntry = async (page: Page, avatarName: string): Promise<void> => {
   const avatarCatalogRoute = page.getByTestId("avatar-catalog-route");
   const avatarButton = avatarCatalogRoute.locator("button", { hasText: avatarName }).first();
-  const selectedAvatarButton = avatarCatalogRoute.locator('button[aria-pressed="true"]', { hasText: avatarName }).first();
+  const selectedAvatarButton = avatarCatalogRoute
+    .locator('button[aria-pressed="true"]', { hasText: avatarName })
+    .first();
   const detailHeading = page.getByRole("heading", { name: avatarName, exact: true }).last();
   const closeDetailButton = page.getByRole("button", { name: "Close detail", exact: true });
 
@@ -1133,9 +1176,13 @@ const selectAvatarCatalogEntry = async (page: Page, avatarName: string): Promise
     await expectBodyInteractive(page);
   }
   await expect(avatarButton).toBeVisible({ timeout: 15_000 });
-  await activateUntil(avatarButton, async () => {
-    return await selectedAvatarButton.isVisible().catch(() => false);
-  }, 4);
+  await activateUntil(
+    avatarButton,
+    async () => {
+      return await selectedAvatarButton.isVisible().catch(() => false);
+    },
+    4,
+  );
   await expect(selectedAvatarButton).toBeVisible({ timeout: 15_000 });
   const detailVisible = await expect
     .poll(async () => await detailHeading.isVisible().catch(() => false), { timeout: 3_000 })
@@ -1171,30 +1218,44 @@ const closeDialogAndExpectInteractive = async (page: Page, dialog: Locator): Pro
 
 const expectLocatorMissingOrDisabled = async (locator: Locator): Promise<void> => {
   await expect
-    .poll(async () => {
-      const count = await locator.count().catch(() => 0);
-      if (count === 0) {
-        return true;
-      }
-      const target = locator.first();
-      if (!(await target.isVisible().catch(() => false))) {
-        return true;
-      }
-      return await target.isDisabled().catch(() => false);
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        const count = await locator.count().catch(() => 0);
+        if (count === 0) {
+          return true;
+        }
+        const target = locator.first();
+        if (!(await target.isVisible().catch(() => false))) {
+          return true;
+        }
+        return await target.isDisabled().catch(() => false);
+      },
+      { timeout: 15_000 },
+    )
     .toBeTruthy();
 };
 
 const openManageRoomAddUserDialog = async (page: Page): Promise<Locator> => {
   const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
-  await activateUntil(await getRoomToolbarButton(page, "Add user"), async () => {
-    const userTriggerVisible = await getManageRoomUserTrigger(manageRoomDialog).isVisible().catch(() => false);
-    const roleTriggerVisible = await getManageRoomRoleTrigger(manageRoomDialog).isVisible().catch(() => false);
-    return userTriggerVisible && roleTriggerVisible;
-  }, 4);
+  await activateUntil(
+    await getRoomToolbarButton(page, "Add user"),
+    async () => {
+      const userTriggerVisible = await getManageRoomUserTrigger(manageRoomDialog)
+        .isVisible()
+        .catch(() => false);
+      const roleTriggerVisible = await getManageRoomRoleTrigger(manageRoomDialog)
+        .isVisible()
+        .catch(() => false);
+      return userTriggerVisible && roleTriggerVisible;
+    },
+    4,
+  );
   await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
   await expect(manageRoomDialog.getByTestId("room-manage-nav-users")).toHaveAttribute("aria-pressed", "true");
-  await expect(manageRoomDialog.getByRole("tab", { name: "Add", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(manageRoomDialog.getByRole("tab", { name: "Add", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   return manageRoomDialog;
 };
 
@@ -1208,7 +1269,10 @@ const getManageRoomRoleTrigger = (manageRoomDialog: Locator): Locator => {
 
 const openManageRoomUsersAddForm = async (manageRoomDialog: Locator): Promise<void> => {
   await activateUntil(manageRoomDialog.getByTestId("room-manage-nav-users"), async () => {
-    return await manageRoomDialog.getByTestId("room-manage-users-section").isVisible().catch(() => false);
+    return await manageRoomDialog
+      .getByTestId("room-manage-users-section")
+      .isVisible()
+      .catch(() => false);
   });
   const addTab = manageRoomDialog.getByRole("tab", { name: "Add", exact: true });
   await expect(addTab).toBeVisible({ timeout: 15_000 });
@@ -1217,10 +1281,7 @@ const openManageRoomUsersAddForm = async (manageRoomDialog: Locator): Promise<vo
   await expect(getManageRoomRoleTrigger(manageRoomDialog)).toBeVisible({ timeout: 15_000 });
 };
 
-const submitManageRoomUser = async (
-  manageRoomDialog: Locator,
-  predicate: () => Promise<boolean>,
-): Promise<void> => {
+const submitManageRoomUser = async (manageRoomDialog: Locator, predicate: () => Promise<boolean>): Promise<void> => {
   await clickStable(manageRoomDialog.getByRole("button", { name: "Add room user" }));
   await expect.poll(predicate, { timeout: 15_000 }).toBeTruthy();
 };
@@ -1239,10 +1300,13 @@ const authenticateWithManagedKey = async (page: Page): Promise<void> => {
   const useManagedKeyButton = page.getByRole("button", { name: "Use backend-managed key" });
   await clickStable(useManagedKeyButton);
   await expect
-    .poll(async () => {
-      const value = await privateKeyInput.inputValue().catch(() => "");
-      return value.trim().length > 0;
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        const value = await privateKeyInput.inputValue().catch(() => "");
+        return value.trim().length > 0;
+      },
+      { timeout: 15_000 },
+    )
     .toBeTruthy();
 
   const signChallengeButton = page.getByRole("button", { name: "Sign challenge" });
@@ -1256,10 +1320,13 @@ const authenticateWithManagedKey = async (page: Page): Promise<void> => {
 };
 
 const clearBrowserAuthSession = async (page: Page): Promise<void> => {
-  await page.evaluate(({ authKey, skipKey }) => {
-    window.localStorage.removeItem(authKey);
-    window.sessionStorage.setItem(skipKey, "1");
-  }, { authKey: AUTH_SESSION_STORAGE_KEY, skipKey: AUTH_SKIP_AUTO_LOGIN_ONCE_KEY });
+  await page.evaluate(
+    ({ authKey, skipKey }) => {
+      window.localStorage.removeItem(authKey);
+      window.sessionStorage.setItem(skipKey, "1");
+    },
+    { authKey: AUTH_SESSION_STORAGE_KEY, skipKey: AUTH_SKIP_AUTO_LOGIN_ONCE_KEY },
+  );
   await expect
     .poll(() => page.evaluate((key) => window.localStorage.getItem(key), AUTH_SESSION_STORAGE_KEY), { timeout: 15_000 })
     .toBeNull();
@@ -1414,25 +1481,29 @@ test.describe("Feature: Svelte system surfaces", () => {
 
       if ((page.viewportSize()?.width ?? 0) >= 768) {
         const viewerTrigger = await getRoomViewerTrigger(page);
-        await chooseSelectOptionByText(
-          page,
-          viewerTrigger,
-          new RegExp(escapeRegExp(viewerAvatarName)),
-        );
+        await chooseSelectOptionByText(page, viewerTrigger, new RegExp(escapeRegExp(viewerAvatarName)));
         await expect(viewerTrigger).toContainText(viewerAvatarName, { timeout: 15_000 });
       }
 
       const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
-      await activateUntil(await getRoomToolbarButton(page, "Add user"), async () => {
-        return await manageRoomDialog.isVisible().catch(() => false);
-      }, 4);
+      await activateUntil(
+        await getRoomToolbarButton(page, "Add user"),
+        async () => {
+          return await manageRoomDialog.isVisible().catch(() => false);
+        },
+        4,
+      );
       await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
       await activateTab(manageRoomDialog.getByRole("tab", { name: "List", exact: true }));
       const userSeatRows = manageRoomDialog
         .getByTestId("room-manage-stage")
         .locator('[data-testid^="room-seat-"]:not([data-testid^="room-seat-role-"])');
       await activateUntil(manageRoomDialog.getByRole("button", { name: "Open Users section" }), async () => {
-        return await userSeatRows.filter({ hasText: viewerAvatarName }).first().isVisible().catch(() => false);
+        return await userSeatRows
+          .filter({ hasText: viewerAvatarName })
+          .first()
+          .isVisible()
+          .catch(() => false);
       });
       await expect(userSeatRows).toHaveCount(2, { timeout: 15_000 });
       await expect(userSeatRows.filter({ hasText: viewerAvatarName }).first()).toBeVisible({ timeout: 15_000 });
@@ -1480,17 +1551,17 @@ test.describe("Feature: Svelte system surfaces", () => {
 
       await expectSelectedRoomTitle(page, roomTitle);
       const viewerTrigger = await getRoomViewerTrigger(page);
-      await chooseSelectOptionByText(
-        page,
-        viewerTrigger,
-        new RegExp(escapeRegExp(viewerAvatarName)),
-      );
+      await chooseSelectOptionByText(page, viewerTrigger, new RegExp(escapeRegExp(viewerAvatarName)));
       await expect(viewerTrigger).toContainText(viewerAvatarName, { timeout: 15_000 });
 
       const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
-      await activateUntil(await getRoomToolbarButton(page, "Add user"), async () => {
-        return await manageRoomDialog.isVisible().catch(() => false);
-      }, 4);
+      await activateUntil(
+        await getRoomToolbarButton(page, "Add user"),
+        async () => {
+          return await manageRoomDialog.isVisible().catch(() => false);
+        },
+        4,
+      );
       await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
     } finally {
       if (viewerRuntimeUrl) {
@@ -1537,19 +1608,23 @@ test.describe("Feature: Svelte system surfaces", () => {
 
     await navigateToAdmin(page);
     await expect(page.getByRole("heading", { name: "Admin", exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: "Superadmin session", exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: "Superadmin session", exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
 
     await navigateToSystem(page, "Avatars");
     await expect(page.getByTestId("avatar-catalog-route")).toBeVisible({ timeout: 15_000 });
     await selectAvatarCatalogEntry(page, "default");
     await clickStable(page.getByRole("button", { name: "Open avatar", exact: true }));
     await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/heartbeat$/, { timeout: 30_000 });
-    await expect(
-      page.locator('[data-running-avatar-link] img[data-slot="avatar-image"]').first(),
-    ).toHaveAttribute("src", /\/media\/avatars\//);
-    await expect(
-      page.locator('[data-workbench-page-toolbar] img[data-slot="avatar-image"]').first(),
-    ).toHaveAttribute("src", /\/media\/avatars\//);
+    await expect(page.locator('[data-running-avatar-link] img[data-slot="avatar-image"]').first()).toHaveAttribute(
+      "src",
+      /\/media\/avatars\//,
+    );
+    await expect(page.locator('[data-workbench-page-toolbar] img[data-slot="avatar-image"]').first()).toHaveAttribute(
+      "src",
+      /\/media\/avatars\//,
+    );
     await activateTab(page.getByRole("tab", { name: "Settings", exact: true }));
     await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/settings$/, { timeout: 15_000 });
     await expect(page.getByTestId("runtime-primary-stage")).toBeVisible({ timeout: 15_000 });
@@ -1637,9 +1712,8 @@ test.describe("Feature: Svelte system surfaces", () => {
     const terminalId = `playwright-rawinput-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
     const demoCommand = "bun run ../terminal-system/src/bin/demo-cli.ts";
     const resizeEventLabel = "stdout resize event ->";
-    const terminalWriteRequests = trackFinishedRequests(
-      page,
-      (request) => request.url().includes("/trpc/terminal.write?batch=1"),
+    const terminalWriteRequests = trackFinishedRequests(page, (request) =>
+      request.url().includes("/trpc/terminal.write?batch=1"),
     );
 
     try {
@@ -1652,16 +1726,16 @@ test.describe("Feature: Svelte system surfaces", () => {
       await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
       await expect(page.getByTestId("terminal-window-size-info")).toBeVisible({ timeout: 15_000 });
 
-      await typeIntoTerminalViewport(page, demoCommand);
-      await pressTerminalViewportKey(page, "Enter");
+      await typeIntoTerminalViewportByKeyboard(page, demoCommand);
+      await pressTerminalViewportKeyByKeyboard(page, "Enter");
       await expectTerminalViewText(page, "Demo CLI (for ATI resize experiments)");
       await expectTerminalViewText(page, "keys: 1=select 2=spinner 3=progress 4=redraw 5=proof");
       expect(terminalWriteRequests.matches).toHaveLength(0);
 
-      await typeIntoTerminalViewport(page, "1");
+      await typeIntoTerminalViewportByKeyboard(page, "1");
       await expectTerminalViewText(page, "TUI Select:");
-      await pressTerminalViewportKey(page, "ArrowDown");
-      await pressTerminalViewportKey(page, "Enter");
+      await pressTerminalViewportKeyByKeyboard(page, "ArrowDown");
+      await pressTerminalViewportKeyByKeyboard(page, "Enter");
       await expectTerminalViewText(page, "selected: Breakout");
       expect(terminalWriteRequests.matches).toHaveLength(0);
 
@@ -1694,8 +1768,8 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("terminal-window-size-info")).toBeVisible({ timeout: 15_000 });
 
-    await typeIntoTerminalViewport(page, demoCommand);
-    await pressTerminalViewportKey(page, "Enter");
+    await typeIntoTerminalViewportByKeyboard(page, demoCommand);
+    await pressTerminalViewportKeyByKeyboard(page, "Enter");
     await expectTerminalViewText(page, "Demo CLI (for ATI resize experiments)");
 
     const liveResizeHandle = page.getByTestId("terminal-window-live-resize-handle");
@@ -1770,16 +1844,28 @@ test.describe("Feature: Svelte system surfaces", () => {
       steps: 8,
     });
     await page.mouse.up();
-    await expect
-      .poll(async () => (await liveResizeHint.count()) > 0, { timeout: 15_000 })
-      .toBeTruthy();
+    await expect(page.locator('[data-terminal-window-surface="true"]').first()).toHaveAttribute(
+      "data-terminal-window-resizing",
+      "false",
+      { timeout: 5_000 },
+    );
+    await expect.poll(async () => (await liveResizeHint.count()) > 0, { timeout: 15_000 }).toBeTruthy();
     await expect
       .poll(async () => await countTerminalViewOccurrences(page, resizeEventLabel), { timeout: 15_000 })
       .toBeGreaterThan(resizeEventsBeforeDrag);
     await expect(liveResizeHint).toContainText(/Live frame:\s*\d+x\d+px/i, { timeout: 15_000 });
+    const liveGeometryAfterRelease = await page.getByTestId("terminal-window-size-info").textContent();
+    expect(liveGeometryAfterRelease?.trim().length ?? 0).toBeGreaterThan(0);
+    await page.waitForTimeout(1_000);
+    await expect(page.getByTestId("terminal-window-size-info")).toHaveText(liveGeometryAfterRelease ?? "", {
+      timeout: 5_000,
+    });
 
     await activateUntil(page.getByRole("tab", { name: "Resize", exact: true }), async () => {
-      return await page.getByTestId("terminal-resize-submit").isVisible().catch(() => false);
+      return await page
+        .getByTestId("terminal-resize-submit")
+        .isVisible()
+        .catch(() => false);
     });
     await typeStable(page.getByTestId("terminal-resize-cols"), "96");
     await typeStable(page.getByTestId("terminal-resize-rows"), "28");
@@ -1793,7 +1879,10 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expectTerminalSnapshotGeometry(page, 96, 28);
 
     await typeIntoTerminalViewport(page, "5");
-    await expectTerminalViewText(page, "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345");
+    await expectTerminalViewText(
+      page,
+      "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345",
+    );
 
     const terminalWindow = page.locator('[data-terminal-window-surface="true"]').first();
     await expect(terminalWindow).toHaveAttribute("data-terminal-window-mode", "fit");
@@ -1829,7 +1918,7 @@ test.describe("Feature: Svelte system surfaces", () => {
         return await terminalWindow.evaluate((windowSurface) => {
           return windowSurface
             .getAnimations({ subtree: true })
-            .some((animation) => animation.playState === "running" || animation.playState === "pending");
+            .some((animation) => animation.playState === "running");
         });
       })
       .toBeFalsy();
@@ -1898,7 +1987,10 @@ test.describe("Feature: Svelte system surfaces", () => {
     const fitShellWidthAfterRestore = Number(await terminalWindow.getAttribute("data-terminal-window-shell-width"));
     expect(fitShellWidthAfterRestore).toBeLessThan(coverShellWidth);
     await expect(page.getByTestId("terminal-window-live-resize-handle")).toBeVisible({ timeout: 15_000 });
-    await expectTerminalViewText(page, "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345");
+    await expectTerminalViewText(
+      page,
+      "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345",
+    );
   });
 
   test("Scenario: Given an existing terminal route When browser auth is cleared and the route reloads Then the sign-in gate blocks stale terminal actions", async ({
@@ -2047,9 +2139,7 @@ test.describe("Feature: Svelte system surfaces", () => {
         .getByTestId("room-manage-rail")
         .locator("button[aria-pressed]")
         .evaluateAll((buttons) =>
-          buttons
-            .map((button) => button.getBoundingClientRect().height)
-            .filter((height) => height > 0),
+          buttons.map((button) => button.getBoundingClientRect().height).filter((height) => height > 0),
         );
       expect(Math.max(...railButtonHeights)).toBeLessThan(96);
     }
@@ -2076,9 +2166,13 @@ test.describe("Feature: Svelte system surfaces", () => {
     });
 
     const grantedLabel = grantedOption.split(" · ")[0] ?? grantedOption;
-    const grantedSeat = manageRoomDialog.getByTestId("room-manage-stage").locator('[data-testid^="room-seat-"]').filter({
-      hasText: grantedLabel,
-    }).first();
+    const grantedSeat = manageRoomDialog
+      .getByTestId("room-manage-stage")
+      .locator('[data-testid^="room-seat-"]')
+      .filter({
+        hasText: grantedLabel,
+      })
+      .first();
     await expect(grantedSeat).toBeVisible({ timeout: 15_000 });
     await expect(grantedSeat).toContainText(grantedLabel);
     await expect(grantedSeat).toContainText("readonly");
@@ -2151,7 +2245,10 @@ test.describe("Feature: Svelte system surfaces", () => {
       await expect(permissionRow).toBeVisible({ timeout: 15_000 });
       await clickStable(permissionRow.getByRole("button", { name: "Admin", exact: true }));
       await activateUntil(permissionRow.getByRole("button", { name: "Apply", exact: true }), async () => {
-        return !(await permissionRow.getByRole("button", { name: "Apply", exact: true }).isVisible().catch(() => false));
+        return !(await permissionRow
+          .getByRole("button", { name: "Apply", exact: true })
+          .isVisible()
+          .catch(() => false));
       });
       await expect(permissionRow).toContainText("Current role", { timeout: 15_000 });
 
@@ -2199,7 +2296,11 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(manageRoomDialog.getByTestId("room-manage-overview-section")).toBeVisible({ timeout: 15_000 });
     await typeStable(manageRoomDialog.getByLabel("Room title"), renamedTitle);
     await activateUntil(manageRoomDialog.getByRole("button", { name: "Save title", exact: true }), async () => {
-      return await page.getByRole("tab", { name: new RegExp(escapeRegExp(renamedTitle)) }).first().isVisible().catch(() => false);
+      return await page
+        .getByRole("tab", { name: new RegExp(escapeRegExp(renamedTitle)) })
+        .first()
+        .isVisible()
+        .catch(() => false);
     });
     await page.keyboard.press("Escape");
     await expect(manageRoomDialog).not.toBeVisible({ timeout: 15_000 });
@@ -2574,9 +2675,15 @@ test.describe("Feature: Svelte system surfaces", () => {
 
     await expectSelectedRoomTitle(page, roomTitle);
     const manageRoomDialog = page.getByRole("dialog", { name: "Manage room" });
-    await activateUntil(await getRoomToolbarButton(page, "Add user"), async () => {
-      return await getManageRoomUserTrigger(manageRoomDialog).isVisible().catch(() => false);
-    }, 4);
+    await activateUntil(
+      await getRoomToolbarButton(page, "Add user"),
+      async () => {
+        return await getManageRoomUserTrigger(manageRoomDialog)
+          .isVisible()
+          .catch(() => false);
+      },
+      4,
+    );
 
     await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
     await expect(manageRoomDialog.getByTestId("room-manage-nav-users")).toHaveAttribute("aria-pressed", "true");
@@ -2600,22 +2707,34 @@ test.describe("Feature: Svelte system surfaces", () => {
     const manageRoomDialog = await openManageRoomDialog(page);
     await closeDialogAndExpectInteractive(page, manageRoomDialog);
 
-    await activateUntil(await getRoomToolbarButton(page, "Manage room"), async () => {
-      return await manageRoomDialog.isVisible().catch(() => false);
-    }, 4);
+    await activateUntil(
+      await getRoomToolbarButton(page, "Manage room"),
+      async () => {
+        return await manageRoomDialog.isVisible().catch(() => false);
+      },
+      4,
+    );
     await expect(manageRoomDialog).toBeVisible({ timeout: 15_000 });
     await closeDialogAndExpectInteractive(page, manageRoomDialog);
 
     const searchDialog = page.getByTestId("room-search-dialog");
-    await activateUntil(await getRoomToolbarButton(page, "Search messages"), async () => {
-      return await searchDialog.isVisible().catch(() => false);
-    }, 4);
+    await activateUntil(
+      await getRoomToolbarButton(page, "Search messages"),
+      async () => {
+        return await searchDialog.isVisible().catch(() => false);
+      },
+      4,
+    );
     await expect(searchDialog).toBeVisible({ timeout: 15_000 });
     await closeDialogAndExpectInteractive(page, searchDialog);
 
-    await activateUntil(await getRoomToolbarButton(page, "Search messages"), async () => {
-      return await searchDialog.isVisible().catch(() => false);
-    }, 4);
+    await activateUntil(
+      await getRoomToolbarButton(page, "Search messages"),
+      async () => {
+        return await searchDialog.isVisible().catch(() => false);
+      },
+      4,
+    );
     await expect(searchDialog).toBeVisible({ timeout: 15_000 });
     await closeDialogAndExpectInteractive(page, searchDialog);
     await expect(getRoomComposer(page)).toBeVisible({ timeout: 15_000 });
@@ -2656,11 +2775,7 @@ test.describe("Feature: Svelte system surfaces", () => {
       const chatId = await readSelectedRoomChatId(page, roomTitle);
 
       const viewerTrigger = await getRoomViewerTrigger(page);
-      await chooseSelectOptionByText(
-        page,
-        viewerTrigger,
-        new RegExp(escapeRegExp(viewerAvatarName)),
-      );
+      await chooseSelectOptionByText(page, viewerTrigger, new RegExp(escapeRegExp(viewerAvatarName)));
       await expect(viewerTrigger).toContainText(viewerAvatarName, { timeout: 15_000 });
 
       await page.reload({ waitUntil: "domcontentloaded" });
@@ -2695,9 +2810,16 @@ test.describe("Feature: Svelte system surfaces", () => {
     const firstMatchRow = await sendRoomMessage(page, roomTitle, firstMatchMessage);
     const secondMatchRow = await sendRoomMessage(page, roomTitle, secondMatchMessage);
 
-    await activateUntil(await getRoomToolbarButton(page, "Search messages"), async () => {
-      return await page.getByTestId("room-search-dialog").isVisible().catch(() => false);
-    }, 4);
+    await activateUntil(
+      await getRoomToolbarButton(page, "Search messages"),
+      async () => {
+        return await page
+          .getByTestId("room-search-dialog")
+          .isVisible()
+          .catch(() => false);
+      },
+      4,
+    );
 
     const searchDialog = page.getByTestId("room-search-dialog");
     await expect(searchDialog).toBeVisible({ timeout: 15_000 });
@@ -2706,17 +2828,20 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(searchDialog.getByTestId("room-search-count")).toHaveText("1/2", { timeout: 15_000 });
     let initialActiveMatch: "first" | "second" | null = null;
     await expect
-      .poll(async () => {
-        if ((await firstMatchRow.getAttribute("data-room-search-match")) === "true") {
-          initialActiveMatch = "first";
-          return true;
-        }
-        if ((await secondMatchRow.getAttribute("data-room-search-match")) === "true") {
-          initialActiveMatch = "second";
-          return true;
-        }
-        return false;
-      }, { timeout: 15_000 })
+      .poll(
+        async () => {
+          if ((await firstMatchRow.getAttribute("data-room-search-match")) === "true") {
+            initialActiveMatch = "first";
+            return true;
+          }
+          if ((await secondMatchRow.getAttribute("data-room-search-match")) === "true") {
+            initialActiveMatch = "second";
+            return true;
+          }
+          return false;
+        },
+        { timeout: 15_000 },
+      )
       .toBeTruthy();
     expect(initialActiveMatch).not.toBeNull();
     const initialInactiveRow = initialActiveMatch === "first" ? secondMatchRow : firstMatchRow;
@@ -2768,15 +2893,22 @@ test.describe("Feature: Svelte system surfaces", () => {
     const sendMessageButton = page.getByRole("button", { name: "Send", exact: true });
     await expect(sendMessageButton).toBeEnabled({ timeout: 15_000 });
     await activateUntil(sendMessageButton, async () => {
-      return await page.getByText(roomMessage, { exact: true }).first().isVisible().catch(() => false);
+      return await page
+        .getByText(roomMessage, { exact: true })
+        .first()
+        .isVisible()
+        .catch(() => false);
     });
 
     await activateTab(roomToolbar.getByRole("tab", { name: "Assets", exact: true }));
     const assetsViewport = page.getByTestId("room-assets-pane-viewport");
     await expect(assetsViewport).toBeVisible({ timeout: 15_000 });
-    const assetRow = assetsViewport.locator('[data-testid^="room-asset-row-"]').filter({
-      hasText: assetName,
-    }).first();
+    const assetRow = assetsViewport
+      .locator('[data-testid^="room-asset-row-"]')
+      .filter({
+        hasText: assetName,
+      })
+      .first();
     await expect(assetRow).toBeVisible({ timeout: 15_000 });
     await expect(assetRow).toContainText("text/plain");
     await expect(composerGroup).toHaveCount(0);
@@ -2793,8 +2925,10 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(startAvatarButton).toBeEnabled({ timeout: 60_000 });
     const avatarWorkbenchTabs = page.getByLabel("Avatar workbench tabs");
     await activateUntil(startAvatarButton, async () => {
-      return /\/avatars\/runtime\/.+\/attention$/.test(page.url())
-        || (await avatarWorkbenchTabs.getByRole("tab").count()) > 3;
+      return (
+        /\/avatars\/runtime\/.+\/attention$/.test(page.url()) ||
+        (await avatarWorkbenchTabs.getByRole("tab").count()) > 3
+      );
     });
 
     await expect(avatarWorkbenchTabs.getByRole("tab")).toHaveCount(4, { timeout: 15_000 });

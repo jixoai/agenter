@@ -70,6 +70,7 @@ export class ManagedTerminal {
   private readonly snapshotListeners: Array<(snapshot: ManagedTerminalSnapshot) => void> = [];
   private readonly statusListeners: Array<(running: boolean, status: TerminalStatus) => void> = [];
   private readonly outputListeners: Array<(chunk: string) => void> = [];
+  private readonly outputBytesListeners: Array<(chunk: Uint8Array) => void> = [];
   private readonly lifecycleListeners: Array<(event: ManagedTerminalLifecycleEvent) => void> = [];
   private readonly identityListeners: Array<(identity: TerminalObservedIdentity) => void> = [];
   private readonly commitWaiters = new Set<TerminalCommitWaiter>();
@@ -115,6 +116,16 @@ export class ManagedTerminal {
       const index = this.outputListeners.indexOf(listener);
       if (index >= 0) {
         this.outputListeners.splice(index, 1);
+      }
+    };
+  }
+
+  onOutputBytes(listener: (chunk: Uint8Array) => void): () => void {
+    this.outputBytesListeners.push(listener);
+    return () => {
+      const index = this.outputBytesListeners.indexOf(listener);
+      if (index >= 0) {
+        this.outputBytesListeners.splice(index, 1);
       }
     };
   }
@@ -170,6 +181,9 @@ export class ManagedTerminal {
 
     this.terminal.onOutput((chunk) => {
       this.emitOutput(chunk);
+    });
+    this.terminal.onOutputBytes((chunk) => {
+      this.emitOutputBytes(chunk);
     });
 
     this.terminal.onStatus(() => {
@@ -387,6 +401,13 @@ export class ManagedTerminal {
     this.terminal.writeRaw(input);
   }
 
+  writeRawBytes(input: Uint8Array): void {
+    if (!this.terminal) {
+      throw new Error(`terminal ${this.config.terminalId} is not running`);
+    }
+    this.terminal.writeRawBytes(input);
+  }
+
   async read(): Promise<ManagedTerminalSnapshot> {
     if (!this.terminal || !this.running) {
       throw new Error("terminal is not running");
@@ -444,6 +465,12 @@ export class ManagedTerminal {
 
   private emitOutput(chunk: string): void {
     for (const listener of this.outputListeners) {
+      listener(chunk);
+    }
+  }
+
+  private emitOutputBytes(chunk: Uint8Array): void {
+    for (const listener of this.outputBytesListeners) {
       listener(chunk);
     }
   }

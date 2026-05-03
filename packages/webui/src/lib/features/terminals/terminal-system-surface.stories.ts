@@ -479,6 +479,18 @@ export const WindowChromeTogglesProjectionMode = {
     expect(fitProjectionScale).toBeLessThanOrEqual(1);
     expect(fitTitlebar.textContent).not.toContain("/repo/ops");
     expect(canvas.getByTestId("terminal-window-size-info").textContent?.trim()).toBe("80x24");
+    const fitBody = windowSurface?.querySelector<HTMLElement>('[data-terminal-window-body="true"]');
+    const fitBodyContent = windowSurface?.querySelector<HTMLElement>('[data-terminal-window-body-content="true"]');
+    const fitInsetX = Number(fitBody?.dataset.terminalWindowBodyInsetX ?? "0");
+    const fitInsetY = Number(fitBody?.dataset.terminalWindowBodyInsetY ?? "0");
+    expect(fitInsetX).toBeGreaterThanOrEqual(2);
+    expect(fitInsetY).toBeGreaterThanOrEqual(2);
+    const fitBodyRect = fitBody?.getBoundingClientRect();
+    const fitTerminalHostRect = terminalView?.getBoundingClientRect();
+    expect((fitTerminalHostRect?.left ?? 0) - (fitBodyRect?.left ?? 0)).toBeCloseTo(fitInsetX, 1);
+    expect((fitTerminalHostRect?.top ?? 0) - (fitBodyRect?.top ?? 0)).toBeCloseTo(fitInsetY, 1);
+    expect(getComputedStyle(fitBodyContent ?? fitBody!).paddingLeft).toBe(`${fitInsetX}px`);
+    expect(getComputedStyle(fitBodyContent ?? fitBody!).paddingTop).toBe(`${fitInsetY}px`);
     canvas.getByTestId("terminal-window-zoom-control").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await waitFor(() => {
       expect(windowSurface?.dataset.terminalWindowMode).toBe("cover");
@@ -494,10 +506,15 @@ export const WindowChromeTogglesProjectionMode = {
     expect(canvas.queryByTestId("terminal-window-live-resize-handle")).toBeNull();
     expect(Number(terminalView?.projectionScale ?? 0)).toBe(1);
     const body = windowSurface?.querySelector<HTMLElement>('[data-terminal-window-body="true"]');
+    const bodyContent = windowSurface?.querySelector<HTMLElement>('[data-terminal-window-body-content="true"]');
     const coverBodyWidth = Number(windowSurface?.dataset.terminalWindowBodyWidth ?? "0");
     const coverBodyHeight = Number(windowSurface?.dataset.terminalWindowBodyHeight ?? "0");
-    expect(terminalView?.getBoundingClientRect().width ?? 0).toBeCloseTo(coverBodyWidth, 0);
-    expect(terminalView?.getBoundingClientRect().height ?? 0).toBeCloseTo(coverBodyHeight, 0);
+    const coverContentBoxWidth = Number(body?.dataset.terminalWindowContentBoxWidth ?? "0");
+    const coverContentBoxHeight = Number(body?.dataset.terminalWindowContentBoxHeight ?? "0");
+    expect(coverBodyWidth).toBeGreaterThan(coverContentBoxWidth);
+    expect(coverBodyHeight).toBeGreaterThan(coverContentBoxHeight);
+    expect(terminalView?.getBoundingClientRect().width ?? 0).toBeCloseTo(coverContentBoxWidth, 0);
+    expect(terminalView?.getBoundingClientRect().height ?? 0).toBeCloseTo(coverContentBoxHeight, 0);
     const runningBodyAnimations = body?.getAnimations().filter((animation) => animation.playState !== "idle") ?? [];
     expect(runningBodyAnimations.length).toBeGreaterThan(0);
     const animatedProperties = runningBodyAnimations.flatMap((animation) => {
@@ -515,12 +532,14 @@ export const WindowChromeTogglesProjectionMode = {
     const bodyRect = body?.getBoundingClientRect();
     const viewportRect = terminalViewport?.getBoundingClientRect();
     const terminalHostRect = terminalView?.getBoundingClientRect();
-    expect(terminalHostRect?.left ?? 0).toBeCloseTo(bodyRect?.left ?? 0, 1);
-    expect(terminalHostRect?.top ?? 0).toBeCloseTo(bodyRect?.top ?? 0, 1);
-    expect(terminalHostRect?.right ?? 0).toBeCloseTo(bodyRect?.right ?? 0, 1);
-    expect(terminalHostRect?.bottom ?? 0).toBeCloseTo(bodyRect?.bottom ?? 0, 1);
-    expect(viewportRect?.left ?? 0).toBeCloseTo(bodyRect?.left ?? 0, 1);
-    expect(viewportRect?.top ?? 0).toBeCloseTo(bodyRect?.top ?? 0, 1);
+    const coverInsetX = Number(body?.dataset.terminalWindowBodyInsetX ?? "0");
+    const coverInsetY = Number(body?.dataset.terminalWindowBodyInsetY ?? "0");
+    expect(terminalHostRect?.left ?? 0).toBeCloseTo((bodyRect?.left ?? 0) + coverInsetX, 1);
+    expect(terminalHostRect?.top ?? 0).toBeCloseTo((bodyRect?.top ?? 0) + coverInsetY, 1);
+    expect(terminalHostRect?.right ?? 0).toBeCloseTo((bodyRect?.right ?? 0) - coverInsetX, 1);
+    expect(terminalHostRect?.bottom ?? 0).toBeCloseTo((bodyRect?.bottom ?? 0) - coverInsetY, 1);
+    expect(viewportRect?.left ?? 0).toBeCloseTo((bodyRect?.left ?? 0) + coverInsetX, 1);
+    expect(viewportRect?.top ?? 0).toBeCloseTo((bodyRect?.top ?? 0) + coverInsetY, 1);
     canvas.getByTestId("terminal-window-zoom-control").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await waitFor(() => {
       expect(windowSurface?.dataset.terminalWindowMode).toBe("fit");

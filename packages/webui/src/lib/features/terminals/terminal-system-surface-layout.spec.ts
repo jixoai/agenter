@@ -145,6 +145,11 @@ describe("Feature: Terminal surface layout ownership contract", () => {
     expect(terminalWindowSurfaceSource).toContain("resolveTerminalWindowProjection");
     expect(terminalWindowSurfaceSource).toContain("projectionScale={viewportProjectionScale}");
     expect(terminalWindowSurfaceSource).toContain('data-terminal-window-shell-width={String(shellWidth)}');
+    expect(terminalWindowSurfaceSource).toContain("const TERMINAL_BODY_INSET_EM = 0.25;");
+    expect(terminalWindowSurfaceSource).toContain("data-terminal-window-body-inset-x={String(bodyInsetX)}");
+    expect(terminalWindowSurfaceSource).toContain("data-terminal-window-body-inset-y={String(bodyInsetY)}");
+    expect(terminalWindowSurfaceSource).toContain('data-terminal-window-body-content="true"');
+    expect(terminalWindowSurfaceSource).toContain("padding:${bodyInsetY}px ${bodyInsetX}px;");
     expect(terminalWindowSurfaceSource).toContain('data-testid="terminal-window-lifecycle-control"');
     expect(terminalWindowSurfaceSource).toContain('data-testid="terminal-window-size-info"');
     expect(terminalWindowSurfaceSource).toContain("data-terminal-window-titlebar-owner={owner}");

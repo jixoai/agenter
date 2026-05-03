@@ -90,6 +90,7 @@ export class AgenticTerminal {
   private resizeQueue: Promise<void> = Promise.resolve();
   private appliedSize: { cols: number; rows: number } | null = null;
   private readonly outputListeners: Array<(chunk: string) => void> = [];
+  private readonly outputBytesListeners: Array<(chunk: Uint8Array) => void> = [];
   private readonly exitListeners: Array<(info: AgenticTerminalExitInfo) => void> = [];
   private readonly statusListeners: Array<(status: TerminalStatus) => void> = [];
   private readonly observedIdentityListeners: Array<(identity: TerminalObservedIdentity) => void> = [];
@@ -210,10 +211,14 @@ export class AgenticTerminal {
 
     this.pty.setOnData((chunk) => {
       this.markBusy();
+      const outputBytes = chunk.slice();
       const textChunk = this.outputDecoder.decode(chunk, { stream: true });
       this.applyObservedIdentity(this.observedIdentityTracker.consume(textChunk));
       for (const listener of this.outputListeners) {
         listener(textChunk);
+      }
+      for (const listener of this.outputBytesListeners) {
+        listener(outputBytes);
       }
       const xterm = this.xterm;
       const committer = this.committer;
@@ -338,12 +343,27 @@ export class AgenticTerminal {
     this.pty?.write(input);
   }
 
+  public writeRawBytes(input: Uint8Array): void {
+    this.ensureStarted();
+    this.pty?.write(input);
+  }
+
   public onOutput(listener: (chunk: string) => void): () => void {
     this.outputListeners.push(listener);
     return () => {
       const index = this.outputListeners.indexOf(listener);
       if (index >= 0) {
         this.outputListeners.splice(index, 1);
+      }
+    };
+  }
+
+  public onOutputBytes(listener: (chunk: Uint8Array) => void): () => void {
+    this.outputBytesListeners.push(listener);
+    return () => {
+      const index = this.outputBytesListeners.indexOf(listener);
+      if (index >= 0) {
+        this.outputBytesListeners.splice(index, 1);
       }
     };
   }
@@ -625,6 +645,7 @@ export class AgenticTerminal {
     this.xterm = null;
     this.pager = null;
     this.outputListeners.length = 0;
+    this.outputBytesListeners.length = 0;
     this.exitListeners.length = 0;
     this.statusListeners.length = 0;
     this.observedIdentityListeners.length = 0;

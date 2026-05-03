@@ -109,6 +109,30 @@ describe("Feature: terminal window geometry", () => {
     });
   });
 
+  test("Scenario: Given terminal window projection reserves a body inset When resolving fit projection Then the shell includes the inset while the content box stays smaller", () => {
+    expect(
+      resolveTerminalWindowProjection({
+        mode: "fit",
+        frameWidth: 1180,
+        frameHeight: 720,
+        availableWidth: 748,
+        availableHeight: 808,
+        headerHeight: 44,
+        bodyInsetX: 2,
+        bodyInsetY: 4,
+      }),
+    ).toMatchObject({
+      scale: 0.6305084745762712,
+      contentBoxWidth: 744,
+      contentBoxHeight: 454,
+      bodyWidth: 748,
+      bodyHeight: 462,
+      shellWidth: 748,
+      shellHeight: 506,
+      anchor: "center",
+    });
+  });
+
   test("Scenario: Given fit mode height is tighter but width is available When resolving projection Then block-fit fills height while width remains centered", () => {
     expect(
       resolveTerminalWindowProjection({

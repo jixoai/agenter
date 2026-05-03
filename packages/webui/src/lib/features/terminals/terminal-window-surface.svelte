@@ -32,6 +32,8 @@
 		frameHeight: number;
 		shellWidth: number;
 		shellHeight: number;
+		contentBoxWidth: number;
+		contentBoxHeight: number;
 		bodyWidth: number;
 		bodyHeight: number;
 	}
@@ -84,8 +86,7 @@
 	const MAX_FRAME_WIDTH = 2400;
 	const MAX_FRAME_HEIGHT = 1600;
 	const WINDOW_HEADER_HEIGHT = 44;
-	const WINDOW_SCROLL_PADDING_X = $derived(Math.max(12, screenMetrics.framePaddingX * 2));
-	const WINDOW_SCROLL_PADDING_Y = $derived(Math.max(12, screenMetrics.framePaddingY * 2));
+	const TERMINAL_BODY_INSET_EM = 0.25;
 	const WINDOW_VIEWPORT_MIN_WIDTH = 320;
 	const WINDOW_VIEWPORT_MIN_HEIGHT = 240;
 	const MODE_TRANSITION_DURATION_MS = 420;
@@ -194,6 +195,8 @@
 	const liveFrameHeight = $derived(
 		clampFrameDimension(dragFrameHeight ?? intrinsicFrameHeight, MIN_FRAME_HEIGHT, MAX_FRAME_HEIGHT),
 	);
+	const bodyInsetX = $derived(Math.max(2, Math.round(effectiveScreenMetrics.cellWidth * TERMINAL_BODY_INSET_EM)));
+	const bodyInsetY = $derived(Math.max(2, Math.round(effectiveScreenMetrics.cellHeight * TERMINAL_BODY_INSET_EM)));
 	const liveProjection = $derived(
 		resolveTerminalWindowProjection({
 			mode: viewportMode,
@@ -201,25 +204,32 @@
 			frameHeight: liveFrameHeight,
 			contentWidth: effectiveScreenMetrics.screenWidth,
 			contentHeight: effectiveScreenMetrics.screenHeight,
-			availableWidth: Math.max(availableViewportWidth - WINDOW_SCROLL_PADDING_X, WINDOW_VIEWPORT_MIN_WIDTH),
-			availableHeight: Math.max(availableViewportHeight - WINDOW_SCROLL_PADDING_Y, WINDOW_VIEWPORT_MIN_HEIGHT),
+			availableWidth: Math.max(availableViewportWidth, WINDOW_VIEWPORT_MIN_WIDTH),
+			availableHeight: Math.max(availableViewportHeight, WINDOW_VIEWPORT_MIN_HEIGHT),
 			// Cover chrome is owned by the outer window-container, so projection math must
 			// not subtract header height a second time once the titlebar is promoted there.
 			headerHeight: viewportMode === 'cover' ? 0 : WINDOW_HEADER_HEIGHT,
+			bodyInsetX,
+			bodyInsetY,
 		}),
 	);
 	const shellWidth = $derived(liveProjection.shellWidth);
 	const shellHeight = $derived(liveProjection.shellHeight);
 	const windowShellStyle = $derived(`width:${shellWidth}px;max-width:none;`);
 	const windowBodyStyle = $derived(`width:${liveProjection.bodyWidth}px;height:${liveProjection.bodyHeight}px;`);
-	const windowContentStyle = $derived(`width:${liveProjection.bodyWidth}px;height:${liveProjection.bodyHeight}px;`);
+	const windowBodyInsetStyle = $derived(
+		`padding:${bodyInsetY}px ${bodyInsetX}px;box-sizing:border-box;width:100%;height:100%;`,
+	);
+	const windowBodyContentStyle = $derived(
+		`width:${liveProjection.contentBoxWidth}px;height:${liveProjection.contentBoxHeight}px;`,
+	);
 	const windowScrollContentClass = $derived(
 		viewportMode === 'cover'
-			? 'grid box-border min-h-full w-full min-w-max justify-items-start content-start px-1.5 py-1.5 sm:px-2 sm:py-2'
-			: 'grid box-border min-h-full w-full min-w-0 justify-items-center content-start px-1.5 py-1.5 sm:px-2 sm:py-2',
+			? 'grid box-border min-h-full w-full min-w-max justify-items-start content-start'
+			: 'grid box-border min-h-full w-full min-w-0 justify-items-center content-start',
 	);
-	const viewportProjectionWidth = $derived(liveProjection.bodyWidth);
-	const viewportProjectionHeight = $derived(liveProjection.bodyHeight);
+	const viewportProjectionWidth = $derived(liveProjection.contentBoxWidth);
+	const viewportProjectionHeight = $derived(liveProjection.contentBoxHeight);
 	const viewportProjectionScale = $derived(liveProjection.scale);
 	const viewportProjectionOffsetX = $derived(-effectiveScreenMetrics.framePaddingX * viewportProjectionScale);
 	const viewportProjectionOffsetY = $derived(-effectiveScreenMetrics.framePaddingY * viewportProjectionScale);
@@ -230,6 +240,8 @@
 		frameHeight: liveFrameHeight,
 		shellWidth,
 		shellHeight,
+		contentBoxWidth: liveProjection.contentBoxWidth,
+		contentBoxHeight: liveProjection.contentBoxHeight,
 		bodyWidth: liveProjection.bodyWidth,
 		bodyHeight: liveProjection.bodyHeight,
 	});
@@ -262,6 +274,8 @@
 		previous.frameHeight !== next.frameHeight ||
 		previous.shellWidth !== next.shellWidth ||
 		previous.shellHeight !== next.shellHeight ||
+		previous.contentBoxWidth !== next.contentBoxWidth ||
+		previous.contentBoxHeight !== next.contentBoxHeight ||
 		previous.bodyWidth !== next.bodyWidth ||
 		previous.bodyHeight !== next.bodyHeight;
 
@@ -290,6 +304,8 @@
 		if (
 			Math.abs(from.shellWidth - to.shellWidth) < 1 &&
 			Math.abs(from.shellHeight - to.shellHeight) < 1 &&
+			Math.abs(from.contentBoxWidth - to.contentBoxWidth) < 1 &&
+			Math.abs(from.contentBoxHeight - to.contentBoxHeight) < 1 &&
 			Math.abs(from.bodyWidth - to.bodyWidth) < 1 &&
 			Math.abs(from.bodyHeight - to.bodyHeight) < 1
 		) {
@@ -784,7 +800,7 @@
 {/snippet}
 
 	<!-- window-container owns cover-mode chrome; terminal-window owns fit-mode chrome -->
-	<div class="flex h-full min-h-[24rem] flex-col overflow-hidden rounded-[1.7rem] bg-[linear-gradient(180deg,#1d1d1f,#171719)]">
+	<div class="flex h-full min-h-96 flex-col overflow-hidden rounded-lg bg-[linear-gradient(180deg,#1d1d1f,#171719)]">
 	{#if viewportMode === 'cover'}
 		{@render terminalWindowTitlebar(
 			'sticky top-0 z-20 shrink-0 flex h-8 items-center gap-2 border-b border-white/8 bg-[linear-gradient(180deg,rgba(58,58,60,0.98),rgba(40,40,42,0.96))] px-3 shadow-[0_1px_0_rgba(255,255,255,0.05)_inset] backdrop-blur-xl',
@@ -803,7 +819,7 @@
 			bind:this={windowShellRef}
 			class={viewportMode === 'cover'
 				? 'flex flex-col overflow-visible text-slate-100'
-				: 'flex flex-col overflow-visible rounded-[1.2rem] border border-white/10 bg-[linear-gradient(180deg,#2b2b2d,#1f1f21_12%,#1a1a1c)] text-slate-100 shadow-[0_28px_72px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.08)]'}
+				: 'box-border flex flex-col overflow-hidden rounded-md border border-white/10 bg-[linear-gradient(180deg,#2b2b2d,#1f1f21_12%,#1a1a1c)] text-slate-100 shadow-[0_28px_72px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.08)]'}
 			style={windowShellStyle}
 			data-terminal-window-surface="true"
 			data-terminal-window-mode={viewportMode}
@@ -828,25 +844,35 @@
 				bind:this={windowBodyRef}
 				class={viewportMode === 'cover'
 					? 'relative min-w-0 overflow-hidden bg-[linear-gradient(180deg,#1c1c1e,#171719)]'
-					: 'relative min-w-0 overflow-hidden bg-[linear-gradient(180deg,#1c1c1e,#171719)] rounded-b-[1.2rem]'}
+					: 'relative min-w-0 overflow-hidden bg-[linear-gradient(180deg,#1c1c1e,#171719)]'}
 				style={windowBodyStyle}
 				data-terminal-window-body="true"
+				data-terminal-window-body-inset-x={String(bodyInsetX)}
+				data-terminal-window-body-inset-y={String(bodyInsetY)}
+				data-terminal-window-content-box-width={String(liveProjection.contentBoxWidth)}
+				data-terminal-window-content-box-height={String(liveProjection.contentBoxHeight)}
 			>
-				<TerminalViewport
-					class="block"
-					style={windowContentStyle}
-					bind:elementRef={terminalViewportElement}
-					terminalId={terminal.terminalId}
-					transportUrl={transportUrl ?? terminal.transportUrl}
-					{liveTransportEnabled}
-					snapshot={effectiveSnapshot}
-					projectionWidth={viewportProjectionWidth}
-					projectionHeight={viewportProjectionHeight}
-					projectionScale={viewportProjectionScale}
-					projectionOffsetX={viewportProjectionOffsetX}
-					projectionOffsetY={viewportProjectionOffsetY}
-					onScreenMetrics={handleViewportScreenMetrics}
-				/>
+				<div
+					class="box-border h-full w-full"
+					style={windowBodyInsetStyle}
+					data-terminal-window-body-content="true"
+				>
+					<TerminalViewport
+						class="block"
+						style={windowBodyContentStyle}
+						bind:elementRef={terminalViewportElement}
+						terminalId={terminal.terminalId}
+						transportUrl={transportUrl ?? terminal.transportUrl}
+						{liveTransportEnabled}
+						snapshot={effectiveSnapshot}
+						projectionWidth={viewportProjectionWidth}
+						projectionHeight={viewportProjectionHeight}
+						projectionScale={viewportProjectionScale}
+						projectionOffsetX={viewportProjectionOffsetX}
+						projectionOffsetY={viewportProjectionOffsetY}
+						onScreenMetrics={handleViewportScreenMetrics}
+					/>
+				</div>
 				{#if viewportMode !== 'cover'}
 					<button
 						type="button"
@@ -918,8 +944,8 @@
 		bottom: 0;
 		z-index: 20;
 		display: block;
-		width: 2rem;
-		height: 2rem;
+		width: 1.25rem;
+		height: 1.25rem;
 		border: 0;
 		padding: 0;
 		background: transparent;
