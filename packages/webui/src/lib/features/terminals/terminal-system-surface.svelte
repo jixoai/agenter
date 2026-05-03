@@ -31,6 +31,7 @@
 		resolveTerminalTransportLabel,
 	} from './terminal-display';
 	import type {
+		TerminalLifecycleAction,
 		TerminalLifecycleIntent,
 		TerminalSystemNotice,
 		TerminalSystemSurfaceProps,
@@ -65,6 +66,7 @@
 	let lifecycleBusy = $state(false);
 	let lifecycleIntent = $state<TerminalLifecycleIntent | null>(null);
 	let deleteDialogOpen = $state(false);
+	let stopDialogOpen = $state(false);
 	let actionToolTab: 'write' | 'read' | 'resize' = $state('write');
 	let actionsDetailOpen = $state(true);
 	let usersDialogOpen = $state(false);
@@ -234,6 +236,17 @@
 			lifecycleBusy = false;
 			lifecycleIntent = null;
 		}
+	};
+
+	const handleRequestLifecycleAction = (action: TerminalLifecycleAction): void => {
+		if (!selectedTerminal || lifecycleBusy) {
+			return;
+		}
+		if (action === 'stop') {
+			stopDialogOpen = true;
+			return;
+		}
+		void handleBootstrapTerminal();
 	};
 
 	const handleRequestDeleteTerminal = (): void => {
@@ -502,6 +515,7 @@
 		lifecycleBusy = false;
 		lifecycleIntent = null;
 		deleteDialogOpen = false;
+		stopDialogOpen = false;
 		usersDialogOpen = false;
 		if (lastSelectedTerminalId !== null) {
 			actionsDetailOpen = false;
@@ -537,8 +551,7 @@
 			onOpenUsers={() => {
 				usersDialogOpen = true;
 			}}
-			onBootstrapTerminal={() => void handleBootstrapTerminal()}
-			onStopTerminal={() => void handleStopTerminal()}
+			onRequestLifecycleAction={handleRequestLifecycleAction}
 			onDeleteTerminal={handleRequestDeleteTerminal}
 		/>
 	</WorkbenchPageToolbar>
@@ -767,8 +780,7 @@
 						viewportMode={selectedViewportMode}
 						{lifecycleBusy}
 						{lifecycleIntent}
-						onBootstrapTerminal={() => void handleBootstrapTerminal()}
-						onStopTerminal={() => void handleStopTerminal()}
+						onRequestLifecycleAction={handleRequestLifecycleAction}
 						onToggleViewportMode={handleToggleViewportMode}
 						onLiveResize={({ width, height, cols, rows }) => {
 							liveViewportSizeByTerminalId = {
@@ -837,6 +849,46 @@
 					onclick={() => void handleDeleteTerminal()}
 				>
 					{deleteBusy ? 'Deleting…' : 'Delete terminal'}
+				</Button>
+			</Dialog.Footer>
+		</div>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={stopDialogOpen}>
+	<Dialog.Content
+		class="max-w-md gap-0 rounded-[1.5rem] border-white/60 bg-[linear-gradient(180deg,rgba(252,252,253,0.96),rgba(236,240,246,0.92))] p-0 shadow-[0_28px_72px_rgba(15,23,42,0.22),0_1px_0_rgba(255,255,255,0.6)_inset] backdrop-blur-2xl"
+		showCloseButton={false}
+		data-testid="terminal-stop-confirm-dialog"
+	>
+		<div class="grid gap-0">
+			<Dialog.Header class="border-b border-slate-200/85 px-6 py-5">
+				<Dialog.Title class="text-base font-semibold text-slate-900">Kill terminal PTY?</Dialog.Title>
+				<Dialog.Description class="text-sm text-slate-600">
+					This stops the live PTY now but keeps the terminal entry and durable launch configuration.
+				</Dialog.Description>
+			</Dialog.Header>
+
+			<Dialog.Footer class="border-t border-slate-200/80 px-6 py-4">
+				<Button
+					variant="outline"
+					disabled={lifecycleBusy}
+					onclick={() => {
+						stopDialogOpen = false;
+					}}
+				>
+					Cancel
+				</Button>
+				<Button
+					variant="destructive"
+					disabled={lifecycleBusy}
+					data-testid="terminal-stop-confirm-submit"
+					onclick={() => {
+						stopDialogOpen = false;
+						void handleStopTerminal();
+					}}
+				>
+					{lifecycleBusy && lifecycleIntent === 'stop' ? 'Killing…' : 'Kill PTY'}
 				</Button>
 			</Dialog.Footer>
 		</div>

@@ -14,6 +14,7 @@
 	let {
 		terminalId,
 		transportUrl,
+		liveTransportEnabled = true,
 		snapshot = null,
 		projectionWidth = 0,
 		projectionHeight = 0,
@@ -27,6 +28,7 @@
 	}: {
 		terminalId: string;
 		transportUrl?: string;
+		liveTransportEnabled?: boolean;
 		snapshot?: TerminalViewSnapshot | null;
 		projectionWidth?: number;
 		projectionHeight?: number;
@@ -41,6 +43,7 @@
 
 	type TerminalViewHostElement = HTMLElement &
 		Pick<TerminalViewElement, 'transportUrl' | 'terminalId' | 'snapshot'> & {
+			liveTransportEnabled?: boolean;
 			projectionWidth?: number;
 			projectionHeight?: number;
 			projectionScale?: number;
@@ -68,6 +71,7 @@
 			return;
 		}
 		element.transportUrl = transportUrl ?? '';
+		element.liveTransportEnabled = liveTransportEnabled;
 		element.terminalId = terminalId;
 		element.snapshot = snapshot ?? null;
 		element.projectionWidth = projectionWidth;

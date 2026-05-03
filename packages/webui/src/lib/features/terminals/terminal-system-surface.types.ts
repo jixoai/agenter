@@ -13,6 +13,7 @@ import type { ActorDirectoryEntry } from "$lib/features/collaboration/actor-dire
 export type TerminalSystemGrantRole = "admin" | "writer" | "requester" | "readonly";
 export type TerminalSystemReadMode = "auto" | "diff" | "snapshot";
 export type TerminalLifecycleIntent = "bootstrap" | "stop";
+export type TerminalLifecycleAction = TerminalLifecycleIntent;
 
 export interface TerminalSystemNotice {
   tone: "default" | "warning" | "destructive";
@@ -84,6 +85,7 @@ export interface TerminalSystemResizeToolResult {
 export interface TerminalViewportProps {
   terminalId: string;
   transportUrl?: string;
+  liveTransportEnabled?: boolean;
   snapshot?: TerminalViewSnapshot | null;
   projectionWidth?: number;
   projectionHeight?: number;

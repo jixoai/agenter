@@ -450,7 +450,7 @@
 			status: 'IDLE',
 			currentTitle: entry.currentTitle ?? entry.configuredTitle,
 			currentPath: entry.currentPath ?? entry.launchCwd,
-			transportUrl: undefined,
+			transportUrl: entry.transportUrl,
 		}));
 		routeNotice = null;
 	};
@@ -466,7 +466,7 @@
 			status: 'IDLE',
 			currentTitle: undefined,
 			currentPath: undefined,
-			transportUrl: undefined,
+			transportUrl: entry.transportUrl,
 			lastStopReason: 'killed',
 			lastExitSignal: 'SIGTERM',
 			lastStoppedAt: Date.now(),

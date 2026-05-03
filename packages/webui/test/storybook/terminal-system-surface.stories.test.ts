@@ -34,6 +34,7 @@ const ReadActionStructuredPreviewStaysCompact = getPortableStory(
 const WindowChromeTogglesProjectionMode = getPortableStory(stories, 'WindowChromeTogglesProjectionMode');
 const WindowChromeLiveResizeUpdatesFrameHint = getPortableStory(stories, 'WindowChromeLiveResizeUpdatesFrameHint');
 const WindowCloseRequiresConfirmation = getPortableStory(stories, 'WindowCloseRequiresConfirmation');
+const KillPtyRequiresConfirmation = getPortableStory(stories, 'KillPtyRequiresConfirmation');
 
 describe('Feature: Storybook DOM contract for terminal system surface', () => {
 	test('Scenario: Given a successful terminal write When the tool call resolves Then the editor draft clears and the terminal facts stay visible', async () => {
@@ -98,5 +99,9 @@ describe('Feature: Storybook DOM contract for terminal system surface', () => {
 
 	test('Scenario: Given a terminal toolbar delete action When deletion is confirmed Then the surface removes the terminal only after the confirmation dialog accepts it', async () => {
 		await WindowCloseRequiresConfirmation.run();
+	});
+
+	test('Scenario: Given terminal lifecycle kill is requested When the operator confirms the warning Then the PTY stops only after the confirmation dialog accepts it', async () => {
+		await KillPtyRequiresConfirmation.run();
 	});
 });

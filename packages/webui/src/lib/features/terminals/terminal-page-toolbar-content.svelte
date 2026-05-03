@@ -20,7 +20,7 @@
 		resolveTerminalInstanceName,
 		resolveTerminalLifecycleFacts,
 	} from './terminal-display';
-	import type { TerminalLifecycleIntent } from './terminal-system-surface.types';
+	import type { TerminalLifecycleAction, TerminalLifecycleIntent } from './terminal-system-surface.types';
 
 	let {
 		selectedTerminal,
@@ -31,8 +31,7 @@
 		deleteBusy = false,
 		onToggleActions,
 		onOpenUsers,
-		onStopTerminal,
-		onBootstrapTerminal,
+		onRequestLifecycleAction,
 		onDeleteTerminal,
 	}: {
 		selectedTerminal: GlobalTerminalEntry | null;
@@ -43,8 +42,7 @@
 		deleteBusy?: boolean;
 		onToggleActions: () => void;
 		onOpenUsers: () => void;
-		onStopTerminal: () => void;
-		onBootstrapTerminal: () => void;
+		onRequestLifecycleAction: (action: TerminalLifecycleAction) => void;
 		onDeleteTerminal: () => void;
 	} = $props();
 
@@ -136,7 +134,7 @@
 				title={lifecycleActionTitle}
 				inlineLabel
 				disabled={lifecycleBusy}
-				onclick={lifecycleAction === 'stop' ? onStopTerminal : onBootstrapTerminal}
+				onclick={() => onRequestLifecycleAction(lifecycleAction)}
 			>
 				{#if lifecycleAction === 'stop'}
 					<PowerIcon class="size-4" />

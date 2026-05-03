@@ -237,6 +237,7 @@ export class TerminalViewElement extends LitElement {
   };
 
   @property({ attribute: "transport-url" }) accessor transportUrl = "";
+  @property({ attribute: "live-transport-enabled", type: Boolean }) accessor liveTransportEnabled = true;
   @property({ attribute: "terminal-id" }) accessor terminalId = "";
   @property({ attribute: false }) accessor snapshot: TerminalViewSnapshot | null = null;
   @property({ attribute: false }) accessor connectionState: TerminalViewConnectionState = "idle";
@@ -309,6 +310,7 @@ export class TerminalViewElement extends LitElement {
       this.tabIndex = 0;
     }
     this.upgradeProperty("transportUrl");
+    this.upgradeProperty("liveTransportEnabled");
     this.upgradeProperty("terminalId");
     this.upgradeProperty("snapshot");
     this.upgradeProperty("projectionWidth");
@@ -368,7 +370,7 @@ export class TerminalViewElement extends LitElement {
         this.hydrateSnapshot(this.snapshot, "prop");
       });
     }
-    if (changed.has("transportUrl")) {
+    if (changed.has("transportUrl") || changed.has("liveTransportEnabled")) {
       queueMicrotask(() => {
         if (!this.isConnected) {
           return;
@@ -479,6 +481,7 @@ export class TerminalViewElement extends LitElement {
   private upgradeProperty(
     name:
       | "transportUrl"
+      | "liveTransportEnabled"
       | "terminalId"
       | "snapshot"
       | "projectionWidth"
@@ -614,8 +617,9 @@ export class TerminalViewElement extends LitElement {
 
   private syncSocket(): void {
     this.disconnectSocket();
-    if (!this.transportUrl) {
+    if (!this.liveTransportEnabled || !this.transportUrl) {
       this.connectionState = "idle";
+      this.errorMessage = "";
       return;
     }
     this.connectionState = "connecting";

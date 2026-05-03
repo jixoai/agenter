@@ -36,28 +36,114 @@ const writeDraft = async (canvasElement: HTMLElement, text: string) => {
   };
 };
 
+const resolvePageToolbarRoot = (canvasElement: HTMLElement): HTMLElement => {
+  const toolbarRoot = canvasElement.querySelector<HTMLElement>("[data-workbench-page-toolbar]");
+  if (!toolbarRoot) {
+    throw new Error("Page toolbar root not found");
+  }
+  return toolbarRoot;
+};
+
 const resolveToolbarOverflowPanel = async (canvasElement: HTMLElement): Promise<HTMLElement> => {
-  const panel = canvasElement.querySelector<HTMLElement>('[data-workbench-toolbar-region="overflow-panel"]');
+  const toolbarRoot = resolvePageToolbarRoot(canvasElement);
+  const panel = toolbarRoot.querySelector<HTMLElement>('[data-workbench-toolbar-region="overflow-panel"]');
   if (panel) {
     return panel;
   }
-  const canvas = within(canvasElement);
-  await userEvent.click(canvas.getByRole("button", { name: "Open terminal toolbar details" }));
+  const trigger = await waitFor(() => {
+    const nextTrigger =
+      findNamedToolbarButton(toolbarRoot, "Open terminal toolbar details") ??
+      Array.from(
+        toolbarRoot.querySelectorAll<HTMLElement>(
+          '[data-workbench-toolbar-region="overflow-trigger"] button, [data-workbench-toolbar-region="overflow-trigger"] [role="button"]',
+        ),
+      ).find(isInteractableToolbarButton) ??
+      null;
+    expect(nextTrigger).not.toBeNull();
+    return nextTrigger!;
+  });
+  await userEvent.click(trigger);
   return waitFor(() => {
-    const nextPanel = canvasElement.querySelector<HTMLElement>('[data-workbench-toolbar-region="overflow-panel"]');
+    const nextPanel = toolbarRoot.querySelector<HTMLElement>('[data-workbench-toolbar-region="overflow-panel"]');
     expect(nextPanel).not.toBeNull();
     return nextPanel!;
   });
 };
 
-const findToolbarActionButton = async (canvasElement: HTMLElement, name: string): Promise<HTMLElement> => {
-  const canvas = within(canvasElement);
-  const inlineButton = canvas.queryByRole("button", { name });
-  if (inlineButton) {
-    return inlineButton;
+const isInteractableToolbarButton = (element: HTMLElement | null | undefined): element is HTMLElement => {
+  if (!element) {
+    return false;
   }
-  const overflowPanel = await resolveToolbarOverflowPanel(canvasElement);
-  return within(overflowPanel).getByRole("button", { name });
+  if (element.closest("[hidden]")) {
+    return false;
+  }
+  const styles = getComputedStyle(element);
+  if (styles.pointerEvents === "none" || styles.visibility === "hidden" || styles.display === "none") {
+    return false;
+  }
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return false;
+  }
+  return true;
+};
+
+const findNamedToolbarButton = (root: ParentNode | null | undefined, name: string): HTMLElement | null => {
+  if (!root) {
+    return null;
+  }
+  return (
+    Array.from(root.querySelectorAll<HTMLElement>('button,[role="button"]')).find(
+      (element) =>
+        isInteractableToolbarButton(element) &&
+        (element.getAttribute("aria-label") === name ||
+          element.getAttribute("title") === name ||
+          element.textContent?.trim() === name),
+    ) ?? null
+  );
+};
+
+const findToolbarActionButton = async (canvasElement: HTMLElement, name: string): Promise<HTMLElement> => {
+  const toolbarRoot = resolvePageToolbarRoot(canvasElement);
+  const toolbarState = await waitFor(() => {
+    const nextInlineButton = findNamedToolbarButton(
+      toolbarRoot.querySelector('[data-workbench-toolbar-region="actions-inline"]') ?? toolbarRoot,
+      name,
+    );
+    const nextOverflowTrigger =
+      findNamedToolbarButton(toolbarRoot, "Open terminal toolbar details") ??
+      Array.from(
+        toolbarRoot.querySelectorAll<HTMLElement>(
+          '[data-workbench-toolbar-region="overflow-trigger"] button, [data-workbench-toolbar-region="overflow-trigger"] [role="button"]',
+        ),
+      ).find(isInteractableToolbarButton) ??
+      null;
+    expect(nextInlineButton || nextOverflowTrigger).not.toBeNull();
+    return {
+      inlineButton: nextInlineButton,
+      overflowTrigger: nextOverflowTrigger,
+    };
+  });
+  if (toolbarState.inlineButton) {
+    return toolbarState.inlineButton;
+  }
+  if (!toolbarState.overflowTrigger) {
+    throw new Error(`Toolbar action button not found: ${name}`);
+  }
+  await userEvent.click(toolbarState.overflowTrigger);
+  const overflowPanel = await waitFor(() => {
+    const nextPanel = toolbarRoot.querySelector<HTMLElement>('[data-workbench-toolbar-region="overflow-panel"]');
+    expect(nextPanel).not.toBeNull();
+    return nextPanel!;
+  });
+  const overflowButton = findNamedToolbarButton(
+    overflowPanel.querySelector('[data-workbench-toolbar-region="overflow-actions"]') ?? overflowPanel,
+    name,
+  );
+  if (!overflowButton) {
+    throw new Error(`Toolbar action button not found: ${name}`);
+  }
+  return overflowButton;
 };
 
 const findToolbarActionsToggle = async (canvasElement: HTMLElement): Promise<HTMLElement> => {
@@ -556,6 +642,20 @@ export const WindowCloseRequiresConfirmation = {
     await waitFor(() => {
       expect(canvas.queryByRole("button", { name: "Delete terminal" })).not.toBeInTheDocument();
       expect(canvas.getByText("Select a terminal tab.")).toBeInTheDocument();
+    });
+  },
+} satisfies Story;
+
+export const KillPtyRequiresConfirmation = {
+  name: "Scenario: Given terminal lifecycle kill is requested When the operator confirms the warning Then the PTY stops only after the confirmation dialog accepts it",
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await findToolbarActionButton(canvasElement, "Kill PTY"));
+    const dialog = await within(document.body).findByTestId("terminal-stop-confirm-dialog");
+    expect(dialog).toBeInTheDocument();
+    await userEvent.click(within(document.body).getByTestId("terminal-stop-confirm-submit"));
+    await waitFor(() => {
+      expect(canvas.getByRole("button", { name: "Bootstrap PTY" })).toBeInTheDocument();
     });
   },
 } satisfies Story;

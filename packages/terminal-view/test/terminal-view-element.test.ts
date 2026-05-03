@@ -702,6 +702,59 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(terminal?.deregisteredJoinerIds).toContain(0);
   });
 
+  test("Scenario: Given terminal stop closes the live websocket When the same transport url is enabled again Then the component reconnects instead of staying closed", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "reconnect-after-stop";
+    element.transportUrl = "ws://127.0.0.1:4900/pty/reconnect-after-stop";
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const firstSocket = WebSocketMock.instances.at(-1);
+    expect(firstSocket?.url).toBe("ws://127.0.0.1:4900/pty/reconnect-after-stop");
+    firstSocket?.open();
+    await element.updateComplete;
+    expect(element.connectionState).toBe("connected");
+
+    firstSocket?.message(
+      encodeServerFrame({
+        type: "status",
+        terminalId: "reconnect-after-stop",
+        running: false,
+        status: "IDLE",
+      }),
+    );
+    await element.updateComplete;
+    expect(element.connectionState).toBe("closed");
+
+    element.liveTransportEnabled = false;
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    expect(element.connectionState).toBe("idle");
+
+    element.liveTransportEnabled = true;
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const secondSocket = WebSocketMock.instances.at(-1);
+    expect(secondSocket).toBeDefined();
+    expect(secondSocket).not.toBe(firstSocket);
+    expect(secondSocket?.url).toBe("ws://127.0.0.1:4900/pty/reconnect-after-stop");
+    expect(element.connectionState).toBe("connecting");
+
+    secondSocket?.open();
+    await element.updateComplete;
+    expect(element.connectionState).toBe("connected");
+  });
+
   test("Scenario: Given a terminal viewport inside shadow DOM When pointer and touch interactions happen Then the primitive explicitly focuses xterm input", async () => {
     const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
     defineTerminalView();

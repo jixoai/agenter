@@ -87,10 +87,15 @@ describe("Feature: Terminal surface layout ownership contract", () => {
     expect(terminalSystemSurfaceSource).toContain("let lifecycleIntent = $state<TerminalLifecycleIntent | null>(null);");
     expect(terminalSystemSurfaceSource).toContain("lifecycleIntent = 'bootstrap';");
     expect(terminalSystemSurfaceSource).toContain("lifecycleIntent = 'stop';");
+    expect(terminalSystemSurfaceSource).toContain("let stopDialogOpen = $state(false);");
+    expect(terminalSystemSurfaceSource).toContain("const handleRequestLifecycleAction = (action: TerminalLifecycleAction): void => {");
     expect(terminalPageToolbarSource).toContain("lifecycleIntent?: TerminalLifecycleIntent | null;");
+    expect(terminalPageToolbarSource).toContain("onRequestLifecycleAction: (action: TerminalLifecycleAction) => void;");
     expect(terminalPageToolbarSource).toContain("return 'Bootstrapping PTY…';");
     expect(terminalPageToolbarSource).toContain("return 'Killing PTY…';");
     expect(terminalPageToolbarSource).toContain("disabled={lifecycleBusy}");
+    expect(terminalSystemSurfaceSource).toContain('data-testid="terminal-stop-confirm-dialog"');
+    expect(terminalSystemSurfaceSource).toContain('data-testid="terminal-stop-confirm-submit"');
   });
 
   test("Scenario: Given terminal deletion remains destructive but titlebar chrome is minimal When reading the source Then delete is route-owned instead of a third titlebar control", () => {

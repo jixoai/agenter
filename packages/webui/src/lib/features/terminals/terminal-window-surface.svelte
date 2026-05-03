@@ -5,7 +5,7 @@
 	import type { TerminalViewElement, TerminalViewScreenMetrics } from '@agenter/terminal-view';
 
 	import { isTerminalRunning, resolveTerminalWindowTitle } from './terminal-display';
-	import type { TerminalViewportComponent } from './terminal-system-surface.types';
+	import type { TerminalLifecycleAction, TerminalViewportComponent } from './terminal-system-surface.types';
 	import {
 		resolveTerminalGridFromFrame,
 		resolveTerminalScreenMetrics,
@@ -43,8 +43,7 @@
 		viewportMode,
 		lifecycleBusy = false,
 		lifecycleIntent = null,
-		onBootstrapTerminal,
-		onStopTerminal,
+		onRequestLifecycleAction,
 		onToggleViewportMode,
 		onLiveResize,
 	}: {
@@ -54,8 +53,7 @@
 		viewportMode: 'fit' | 'cover';
 		lifecycleBusy?: boolean;
 		lifecycleIntent?: 'bootstrap' | 'stop' | null;
-		onBootstrapTerminal?: () => void;
-		onStopTerminal?: () => void;
+		onRequestLifecycleAction?: (action: TerminalLifecycleAction) => void;
 		onToggleViewportMode: () => void;
 		onLiveResize?: (input: { width: number; height: number; cols: number; rows: number }) => void;
 	} = $props();
@@ -63,6 +61,7 @@
 	const TerminalViewport = $derived(terminalViewportComponent);
 	const viewportCols = $derived(terminal.snapshot?.cols ?? 80);
 	const viewportRows = $derived(terminal.snapshot?.rows ?? 24);
+	const liveTransportEnabled = $derived(isTerminalRunning(terminal));
 	const terminalTitle = $derived(resolveTerminalWindowTitle(terminal));
 	const viewportToggleLabel = $derived(
 		viewportMode === 'cover' ? 'Minimize terminal window to fit view' : 'Expand terminal window to cover view',
@@ -773,11 +772,7 @@
 							title={lifecycleControlLabel}
 							disabled={lifecycleBusy}
 							onclick={() => {
-								if (lifecycleAction === 'stop') {
-									onStopTerminal?.();
-									return;
-								}
-								onBootstrapTerminal?.();
+								onRequestLifecycleAction?.(lifecycleAction);
 							}}
 						></button>
 						<button
@@ -818,6 +813,7 @@
 					bind:elementRef={terminalViewportElement}
 					terminalId={terminal.terminalId}
 					transportUrl={transportUrl ?? terminal.transportUrl}
+					{liveTransportEnabled}
 					snapshot={effectiveSnapshot}
 					projectionWidth={viewportProjectionWidth}
 					projectionHeight={viewportProjectionHeight}
