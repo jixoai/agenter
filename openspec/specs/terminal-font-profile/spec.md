@@ -58,6 +58,16 @@ The system SHALL provide one shared default terminal font resolver so supported 
 - **AND** the shared default line height is `1`
 
 #### Scenario: Optional terminal webfonts remain lazy until used
-- **WHEN** WebUI has already injected `@font-face` rules for optional terminal fonts
-- **THEN** browser hosts do not treat stylesheet presence as proof that font bytes are already loaded
-- **AND** renderer adapters must explicitly wait for browser font readiness before trusting terminal metrics
+- **WHEN** the durable terminal font profile selects an optional webfont such as `JetBrains Mono`, `IBM Plex Mono`, `Cascadia Mono`, `Source Code Pro`, `Fira Code`, or `Geist Mono`
+- **THEN** `terminal-view` owns the matching webfont asset declaration and load lifecycle
+- **AND** browser hosts do not treat unrelated host stylesheet presence as proof that font bytes are already loaded
+- **AND** renderer adapters must explicitly wait for terminal-owned browser font readiness before trusting terminal metrics
+
+### Requirement: Terminal font selectors SHALL consume one shared catalog
+
+Hosts that expose user-selectable terminal font families SHALL consume one shared catalog exported by `terminal-view` instead of duplicating family labels, fallback stacks, or asset assumptions in feature-local code.
+
+#### Scenario: WebUI reuses the shared terminal font catalog
+- **WHEN** the terminal settings surface renders font family choices
+- **THEN** it reads those choices from the `terminal-view` catalog
+- **AND** new terminal-owned fonts can land without re-encoding the same family truth in WebUI-local constants

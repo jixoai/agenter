@@ -89,6 +89,11 @@ The standalone `terminal-view` component SHALL consume shared declarative `rende
 - **THEN** `terminal-view` disposes and recreates only the local renderer stack
 - **AND** the websocket transport, terminal id, and durable snapshot truth remain attached to the same terminal session
 
+#### Scenario: Terminal-view owns optional webfont asset preparation
+- **WHEN** the shared terminal font profile selects an optional terminal webfont
+- **THEN** `terminal-view` injects and prepares that font asset from its own package boundary before renderer settle
+- **AND** the terminal surface remains logically complete without requiring host-global font imports
+
 ### Requirement: Terminal-view SHALL emit an explicit presentation-ready fact
 
 After a presentation mutation settles, `terminal-view` SHALL emit one renderer-settled event so hosts can distinguish durable config writes from visible renderer completion.

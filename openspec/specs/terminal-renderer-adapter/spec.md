@@ -106,13 +106,13 @@ Renderer stack adapters SHALL declare whether shared presentation fields can set
 
 #### Scenario: Ghostty-web waits for browser font settlement
 - **WHEN** `ghostty-web` opens or applies a new font family or size
-- **THEN** the adapter waits for browser font readiness when available
+- **THEN** the adapter waits for terminal-view-owned browser font readiness when available
 - **AND** it remeasures and repaints the canvas using the configured shared font profile instead of leaving fallback-width metrics active
 - **AND** unsupported shared font knobs such as line-height, letter-spacing, and weight do not become fake renderer option truth
 
 #### Scenario: XTerm waits for browser font settlement
 - **WHEN** `xterm` opens or applies a new font family or size
-- **THEN** the adapter waits for browser font readiness when available
+- **THEN** the adapter waits for terminal-view-owned browser font readiness when available
 - **AND** it refreshes the existing terminal grid after font settlement so previously written rows do not keep fallback metrics
 
 ### Requirement: Renderer stacks SHALL report native viewport metrics
