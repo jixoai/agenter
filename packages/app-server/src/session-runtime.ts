@@ -1998,6 +1998,7 @@ export class SessionRuntime {
         terminalId === "control-plane"
           ? this.getTerminalControlPlaneAttentionContextId()
           : this.getTerminalAttentionContextId(terminalId),
+      isTerminalActionable: (terminalId) => this.isTerminalActionable(terminalId),
       readTerminalIngress: async (terminalId) => await this.buildTerminalSystemIngressEnvelope(terminalId),
       buildLifecycleIngressEnvelope: (input) =>
         this.buildLifecycleIngressEnvelope({
@@ -2010,7 +2011,7 @@ export class SessionRuntime {
           score: input.score,
           ingressType: input.ingressType,
         }),
-      onTerminalActivitySignal: () => {
+      onTerminalActionableSignal: () => {
         this.notifyInput("terminal");
       },
     });
@@ -5744,6 +5745,12 @@ export class SessionRuntime {
     this.terminalKernelAdapter.syncFocusedDirtyTerminals();
   }
 
+  private isTerminalActionable(terminalId: string): boolean {
+    const status = this.terminalStatusById.get(terminalId);
+    const transition = status?.lifecycleTransition ?? null;
+    return transition !== null;
+  }
+
   private updateFocusedTerminals(op: TerminalFocusOp, terminalIds: string[] = []): string[] {
     const incoming = this.normalizeFocusedTerminalIds(terminalIds);
     const next = this.terminalControlPlane.focusForActor(this.terminalActorId, op, incoming);
@@ -9251,9 +9258,6 @@ export class SessionRuntime {
     if (this.inputSignals.task.current() > this.inputSignalCursor.task) {
       return "ready_now";
     }
-    if (this.terminalKernelAdapter.hasFocusedDirtyWork()) {
-      return "ready_now";
-    }
     if (this.hasPendingAttentionInputs()) {
       return "ready_now";
     }
@@ -9383,6 +9387,9 @@ export class SessionRuntime {
               } else if (waiter.kind === "user") {
                 this.loopKernelLastWakeCause ??= "user_input";
                 this.resetAttentionDebtBackoff();
+              } else if (waiter.kind === "terminal") {
+                this.loopKernelLastWakeCause ??= "terminal_activity";
+                this.resetAttentionDebtBackoff();
               } else {
                 this.loopKernelLastWakeCause ??= "attention_signal";
                 this.resetAttentionDebtBackoff();
@@ -9465,11 +9472,6 @@ export class SessionRuntime {
       this.resetAttentionDebtBackoff();
       return "user";
     }
-    if (!loopPaused && this.terminalKernelAdapter.hasFocusedDirtyWork()) {
-      this.loopKernelLastWakeCause = "terminal_activity";
-      this.resetAttentionDebtBackoff();
-      return "terminal";
-    }
     if (this.taskAttentionDraftQueue.length > 0) {
       this.loopKernelLastWakeCause = "task_input";
       this.resetAttentionDebtBackoff();
@@ -9503,34 +9505,16 @@ export class SessionRuntime {
     if (!hasPendingAttention) {
       this.inputSignalCursor.attention = this.inputSignals.attention.current();
     }
+    if (!loopPaused) {
+      this.inputSignalCursor.terminal = this.inputSignals.terminal.current();
+    }
 
-    const signalWaiters = (["user", "task", "attention"] as const).map((kind) => ({
+    const signalWaiters = ([...(loopPaused ? [] : (["terminal"] as const)), "user", "task", "attention"] as const).map(
+      (kind) => ({
       kind,
       ...this.inputSignals[kind].waitAfter(this.inputSignalCursor[kind]),
-    }));
-    const terminalHandles = loopPaused
-      ? []
-      : this.focusedTerminalIds
-          .map((terminalId) => {
-            const terminal = this.terminals.get(terminalId);
-            if (!terminal || !terminal.isRunning()) {
-              return null;
-            }
-            return {
-              kind: "terminal" as const,
-              terminalId,
-              handle: terminal.waitCommitted({ fromHash: terminal.getHeadHash() }),
-            };
-          })
-          .filter(
-            (
-              item,
-            ): item is {
-              kind: "terminal";
-              terminalId: string;
-              handle: { promise: Promise<{ toHash: string | null }>; reject: (reason: unknown) => void };
-            } => item !== null,
-          );
+    }),
+    );
     const unreadHandle = loopPaused
       ? null
       : this.messageSystem.waitUnreadCommitted({
@@ -9551,16 +9535,6 @@ export class SessionRuntime {
               }),
           ]
         : []),
-      ...terminalHandles.map((item) =>
-        item.handle.promise
-          .then(() => ({ kind: item.kind }))
-          .catch((error) => {
-            if (error === IGNORE_WAIT) {
-              return new Promise<{ kind: LoopInputKind }>(() => {});
-            }
-            throw error;
-          }),
-      ),
       ...signalWaiters.map((item) => item.promise.then(() => ({ kind: item.kind }))),
     ];
 
@@ -9638,16 +9612,9 @@ export class SessionRuntime {
     } else if (winner.kind === "user") {
       this.loopKernelLastWakeCause ??= "user_input";
       this.resetAttentionDebtBackoff();
-    } else if (winner.kind === "terminal") {
-      this.loopKernelLastWakeCause ??= "terminal_activity";
-      this.resetAttentionDebtBackoff();
     } else if (winner.kind === "attention" && !this.attentionForceCollect) {
       this.loopKernelLastWakeCause ??= "attention_signal";
       this.resetAttentionDebtBackoff();
-    }
-
-    for (const item of terminalHandles) {
-      item.handle.reject(IGNORE_WAIT);
     }
     unreadHandle?.reject(IGNORE_WAIT);
     for (const waiter of signalWaiters) {

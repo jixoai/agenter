@@ -174,6 +174,35 @@ export interface RealKernelHarnessDiagnostics {
     }>;
   }>;
   promptWindow: Array<Record<string, unknown>>;
+  validationResources: RealKernelHarnessValidationResourcesDiagnostics;
+}
+
+export interface RealKernelHarnessOwnedPortRecord {
+  kind: string;
+  label: string;
+  host: string;
+  port: number;
+  expectedUrl?: string;
+  declaredAt: number;
+  owner: "validation-run";
+}
+
+export interface RealKernelHarnessCleanupReport {
+  status: "not_started" | "completed" | "failed";
+  startedAt: number | null;
+  completedAt: number | null;
+  sessionAbort: "pending" | "done" | "failed";
+  kernelStop: "pending" | "done" | "failed";
+  proxyStop: "skipped" | "pending" | "done" | "failed";
+  rootDirRemove: "pending" | "done" | "failed";
+  errors: string[];
+}
+
+export interface RealKernelHarnessValidationResourcesDiagnostics {
+  runId: string;
+  ownershipBoundary: string;
+  ownedPorts: RealKernelHarnessOwnedPortRecord[];
+  cleanup: RealKernelHarnessCleanupReport;
 }
 
 const allocatePort = async (): Promise<number> => {
@@ -233,8 +262,16 @@ export interface RealKernelHarness {
     messageLimit?: number;
     promptWindowLimit?: number;
   }) => Promise<RealKernelHarnessDiagnostics>;
+  declareOwnedPort: (input: {
+    kind: string;
+    label: string;
+    port: number;
+    expectedUrl?: string;
+    host?: string;
+  }) => RealKernelHarnessOwnedPortRecord;
+  getValidationResources: () => RealKernelHarnessValidationResourcesDiagnostics;
   restartKernel: () => Promise<void>;
-  stop: () => Promise<void>;
+  stop: () => Promise<RealKernelHarnessCleanupReport>;
 }
 
 export const createRealKernelHarness = async (
@@ -267,11 +304,12 @@ export const createRealKernelHarness = async (
   }
 
   let proxy: CachedModelProxyHandle | null = null;
+  let proxyPort: number | null = null;
   let providerBaseUrl = config.baseUrl;
   let providerApiKey = config.apiKey;
 
   if (canProxyRealModelConfig(config)) {
-    const proxyPort = await allocatePort();
+    proxyPort = await allocatePort();
     proxy = await startCachedRealModelProxy({
       host: "127.0.0.1",
       port: proxyPort,
@@ -345,6 +383,69 @@ export const createRealKernelHarness = async (
     if (kernel.listTerminals(startedSession.id).length > 0) {
       throw new Error(`real harness booted with unexpected terminals: ${startedSession.id}`);
     }
+    const ownedPorts: RealKernelHarnessOwnedPortRecord[] = [];
+    const cleanup: RealKernelHarnessCleanupReport = {
+      status: "not_started",
+      startedAt: null,
+      completedAt: null,
+      sessionAbort: "pending",
+      kernelStop: "pending",
+      proxyStop: proxy ? "pending" : "skipped",
+      rootDirRemove: "pending",
+      errors: [],
+    };
+    const snapshotCleanup = (): RealKernelHarnessCleanupReport => ({
+      ...cleanup,
+      errors: cleanup.errors.slice(),
+    });
+    const snapshotValidationResources = (): RealKernelHarnessValidationResourcesDiagnostics => ({
+      runId: startedSession.id,
+      ownershipBoundary:
+        "Only resources listed here are owned by this validation run. Any other listener, terminal, or background task should be treated as external to this run.",
+      ownedPorts: ownedPorts.map((record) => ({ ...record })),
+      cleanup: snapshotCleanup(),
+    });
+    const pushCleanupError = (step: string, error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      cleanup.errors.push(`${step}: ${message}`);
+    };
+    const declareOwnedPort = (resourceInput: {
+      kind: string;
+      label: string;
+      port: number;
+      expectedUrl?: string;
+      host?: string;
+    }): RealKernelHarnessOwnedPortRecord => {
+      const existingIndex = ownedPorts.findIndex(
+        (record) =>
+          record.kind === resourceInput.kind &&
+          record.port === resourceInput.port &&
+          record.expectedUrl === resourceInput.expectedUrl,
+      );
+      const nextRecord: RealKernelHarnessOwnedPortRecord = {
+        kind: resourceInput.kind,
+        label: resourceInput.label,
+        host: resourceInput.host ?? "127.0.0.1",
+        port: resourceInput.port,
+        expectedUrl: resourceInput.expectedUrl,
+        declaredAt: Date.now(),
+        owner: "validation-run",
+      };
+      if (existingIndex >= 0) {
+        ownedPorts[existingIndex] = nextRecord;
+      } else {
+        ownedPorts.push(nextRecord);
+      }
+      return nextRecord;
+    };
+    if (proxyPort !== null) {
+      declareOwnedPort({
+        kind: "model-proxy",
+        label: "real model cache proxy",
+        port: proxyPort,
+        expectedUrl: `http://127.0.0.1:${proxyPort}/v1`,
+      });
+    }
     const harness: RealKernelHarness = {
       rootDir,
       homeDir,
@@ -389,8 +490,11 @@ export const createRealKernelHarness = async (
           promptWindow: debug.promptWindow
             .slice(-(diagnosticInput.promptWindowLimit ?? DEFAULT_DIAGNOSTIC_PROMPT_WINDOW_LIMIT))
             .map(projectPromptWindowEntry),
+          validationResources: snapshotValidationResources(),
         };
       },
+      declareOwnedPort,
+      getValidationResources: snapshotValidationResources,
       restartKernel: async () => {
         await harness.kernel.stop();
         const nextKernel = new AppKernel(kernelOptions);
@@ -403,10 +507,41 @@ export const createRealKernelHarness = async (
         harness.session = restored;
       },
       stop: async () => {
-        await harness.kernel.abortSession(harness.session.id).catch(() => {});
-        await harness.kernel.stop();
-        await proxy?.stop();
-        await rm(rootDir, { recursive: true, force: true });
+        cleanup.startedAt ??= Date.now();
+        cleanup.status = "failed";
+        try {
+          await harness.kernel.abortSession(harness.session.id);
+          cleanup.sessionAbort = "done";
+        } catch (error) {
+          cleanup.sessionAbort = "failed";
+          pushCleanupError("abortSession", error);
+        }
+        try {
+          await harness.kernel.stop();
+          cleanup.kernelStop = "done";
+        } catch (error) {
+          cleanup.kernelStop = "failed";
+          pushCleanupError("kernel.stop", error);
+        }
+        if (proxy) {
+          try {
+            await proxy.stop();
+            cleanup.proxyStop = "done";
+          } catch (error) {
+            cleanup.proxyStop = "failed";
+            pushCleanupError("proxy.stop", error);
+          }
+        }
+        try {
+          await rm(rootDir, { recursive: true, force: true });
+          cleanup.rootDirRemove = "done";
+        } catch (error) {
+          cleanup.rootDirRemove = "failed";
+          pushCleanupError("rm(rootDir)", error);
+        }
+        cleanup.completedAt = Date.now();
+        cleanup.status = cleanup.errors.length === 0 ? "completed" : "failed";
+        return snapshotCleanup();
       },
     };
     return harness;

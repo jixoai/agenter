@@ -2103,8 +2103,6 @@ describe("Feature: workspace system kernel integration", () => {
       if (!aliceMeta?.avatarPrincipalId || !bobMeta?.avatarPrincipalId) {
         throw new Error("expected both sessions to have avatar principals");
       }
-      await getRuntime(kernel, alice.id).pause();
-      await getRuntime(kernel, bob.id).pause();
 
       const room = await kernel.createGlobalRoom({
         title: "managed-seat-collaboration",

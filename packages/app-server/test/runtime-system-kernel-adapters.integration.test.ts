@@ -113,6 +113,7 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
       isTerminalRunning: () => true,
       getTerminalStatus: () => "IDLE",
       getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
+      isTerminalActionable: () => false,
       readTerminalIngress: async () => ({
         system: "terminal",
         boundaryChannel: "world_fact",
@@ -141,7 +142,7 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
         createdAt: 2,
         author: "avatar",
       }),
-      onTerminalActivitySignal: () => {},
+      onTerminalActionableSignal: () => {},
     });
 
     const skillAdapter = new RuntimeSkillKernelAdapter();
@@ -151,7 +152,7 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
     host.mountAdapter(skillAdapter);
 
     terminalAdapter.markTerminalDirty("iflow");
-    expect(await host.drainIngress()).toBe(2);
+    expect(await host.drainIngress()).toBe(1);
 
     const skillRefresh: RuntimeSkillRefreshResult = {
       skills: [],
@@ -177,9 +178,9 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
     };
     await skillAdapter.applyRefreshResult(skillRefresh, { notifyLoop: false });
 
-    expect(committedEnvelopes.map((envelope) => envelope.system)).toEqual(["message", "terminal", "skill"]);
+    expect(committedEnvelopes.map((envelope) => envelope.system)).toEqual(["message", "skill"]);
     expect(attention.getContext(room.contextId ?? `ctx-${room.chatId}`)).toBeDefined();
-    expect(attention.getContext("ctx-terminal-iflow")).toBeDefined();
+    expect(attention.getContext("ctx-terminal-iflow")).toBeUndefined();
     expect(attention.getContext(RUNTIME_SKILL_PUBLISH_CONTEXT_ID)?.getState().focusState).toBe("background");
     expect(inbound.messageId).toBeGreaterThan(0);
   });

@@ -27,6 +27,7 @@ describe("Feature: real AI realistic novice-user delivery", () => {
       if (!harness) {
         throw new Error("expected real kernel harness");
       }
+      let cleanupStatus: "not_started" | "completed" | "failed" = "not_started";
 
       try {
         const primaryRoomId = harness.session.primaryRoomId;
@@ -72,9 +73,12 @@ describe("Feature: real AI realistic novice-user delivery", () => {
         expect(result.settledAttention.active).toHaveLength(0);
         expect(result.recentModelCalls.length).toBeGreaterThan(0);
         expect(result.toolTraceTools).toContain("root_bash");
+        expect(result.validationResources.ownedPorts.some((record) => record.expectedUrl === result.deliveryUrl)).toBe(true);
       } finally {
-        await harness.stop();
+        const cleanup = await harness.stop();
+        cleanupStatus = cleanup.status;
       }
+      expect(cleanupStatus).toBe("completed");
     },
     { timeout: 420_000 },
   );

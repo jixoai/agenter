@@ -26,6 +26,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
       isTerminalRunning: () => true,
       getTerminalStatus: () => "IDLE",
       getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
+      isTerminalActionable: () => false,
       readTerminalIngress: async () => envelope,
       buildLifecycleIngressEnvelope: (input) => ({
         system: "terminal",
@@ -41,14 +42,65 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
         createdAt: 1,
         author: "avatar",
       }),
-      onTerminalActivitySignal: () => {
+      onTerminalActionableSignal: () => {
         signals.push("terminal");
       },
     });
 
     adapter.markTerminalDirty("iflow");
 
-    expect(signals).toEqual(["terminal"]);
+    expect(signals).toEqual([]);
+    expect(adapter.hasFocusedDirtyWork()).toBeFalse();
+    expect(await adapter.drainIngress()).toBeUndefined();
+    expect(adapter.hasFocusedDirtyWork()).toBeFalse();
+  });
+
+  test("Scenario: Given a focused actionable terminal When adapter drains Then one actionable signal and ingress are emitted", async () => {
+    const signals: string[] = [];
+    const envelope: RuntimeSystemIngressEnvelope = {
+      system: "terminal",
+      boundaryChannel: "world_fact",
+      sourceId: "tty:iflow",
+      contextKey: "ctx-terminal-iflow",
+      kind: "terminal_snapshot",
+      summary: "Terminal iflow: ready",
+      content: "ready",
+      format: "text/plain",
+      score: 0,
+      tags: ["terminal", "snapshot"],
+      createdAt: 1,
+      author: "terminal:iflow",
+    };
+    const adapter = new RuntimeTerminalKernelAdapter({
+      isLoopPaused: () => false,
+      listFocusedTerminalIds: () => ["iflow"],
+      isTerminalRunning: () => true,
+      getTerminalStatus: () => "IDLE",
+      getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
+      isTerminalActionable: () => true,
+      readTerminalIngress: async () => envelope,
+      buildLifecycleIngressEnvelope: (input) => ({
+        system: "terminal",
+        boundaryChannel: "scheduler_signal",
+        sourceId: `tty:${input.terminalId}`,
+        contextKey: input.contextId,
+        kind: input.event,
+        summary: input.summary,
+        content: input.summary,
+        format: "text/plain",
+        score: input.score ?? 0,
+        tags: ["terminal", "lifecycle"],
+        createdAt: 1,
+        author: "avatar",
+      }),
+      onTerminalActionableSignal: ({ terminalId, reason }) => {
+        signals.push(`${terminalId}:${reason}`);
+      },
+    });
+
+    adapter.markTerminalDirty("iflow");
+
+    expect(signals).toEqual(["iflow:terminal.actionable"]);
     expect(adapter.hasFocusedDirtyWork()).toBeTrue();
     expect(await adapter.drainIngress()).toEqual([envelope]);
     expect(adapter.hasFocusedDirtyWork()).toBeFalse();
@@ -62,6 +114,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
       isTerminalRunning: () => false,
       getTerminalStatus: () => null,
       getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
+      isTerminalActionable: () => false,
       readTerminalIngress: async () => null,
       buildLifecycleIngressEnvelope: (input) => ({
         system: "terminal",
@@ -77,7 +130,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
         createdAt: 1,
         author: "avatar",
       }),
-      onTerminalActivitySignal: () => {},
+      onTerminalActionableSignal: () => {},
     });
     const host: RuntimeSystemKernelHost = {
       registerCommitRef: (input) => ({ ...input, createdAt: 1 }),

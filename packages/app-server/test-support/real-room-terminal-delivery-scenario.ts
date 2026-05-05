@@ -270,6 +270,8 @@ export const waitForUrlMarkers = async (
 
 export interface RealRoomTerminalDeliveryDiagnostics {
   phase: string;
+  expectedDeliveryPort: number;
+  expectedDeliveryUrl: string;
   lastDeliveryUrl: string | null;
   lastFetchObservation: {
     status?: number;
@@ -302,6 +304,7 @@ export interface RealRoomTerminalDeliveryDiagnostics {
       error: string | null;
     }>;
   }>;
+  validationResources: Awaited<ReturnType<RealKernelHarness["collectDiagnostics"]>>["validationResources"];
 }
 
 export interface RealRoomTerminalDeliveryScenarioResult {
@@ -322,20 +325,28 @@ export interface RealRoomTerminalDeliveryScenarioResult {
     outcome: string | null;
   }>;
   toolTraceTools: string[];
+  validationResources: Awaited<ReturnType<RealKernelHarness["collectDiagnostics"]>>["validationResources"];
 }
 
 const collectRealRoomTerminalDeliveryDiagnostics = async (
   harness: RealKernelHarness,
   state: {
     phase: string;
+    expectedDeliveryPort: number;
+    expectedDeliveryUrl: string;
     lastDeliveryUrl: string | null;
     lastFetchObservation: RealRoomTerminalDeliveryDiagnostics["lastFetchObservation"];
   },
 ): Promise<RealRoomTerminalDeliveryDiagnostics> => {
   const attention = await harness.kernel.inspectAttentionState(harness.session.id);
   const recentModelCalls = await listRecentModelCallRecords(harness);
+  const harnessDiagnostics = await harness.collectDiagnostics({
+    label: "real-room-terminal-delivery-diagnostics",
+  });
   return {
     phase: state.phase,
+    expectedDeliveryPort: state.expectedDeliveryPort,
+    expectedDeliveryUrl: state.expectedDeliveryUrl,
     lastDeliveryUrl: state.lastDeliveryUrl,
     lastFetchObservation: state.lastFetchObservation,
     terminals: harness.kernel.listTerminals(harness.session.id).map((terminal) => ({
@@ -351,6 +362,7 @@ const collectRealRoomTerminalDeliveryDiagnostics = async (
     })),
     chatMessages: listRoomTruthMessages(harness),
     recentModelCalls: projectModelCallDiagnostics(recentModelCalls),
+    validationResources: harnessDiagnostics.validationResources,
   };
 };
 
@@ -364,13 +376,23 @@ export const runRealRoomTerminalDeliveryScenario = async (
   const budget = createScenarioBudget("real room-terminal delivery scenario", REAL_ROOM_DELIVERY_SCENARIO_TIMEOUT_MS);
   const debugState: {
     phase: string;
+    expectedDeliveryPort: number;
+    expectedDeliveryUrl: string;
     lastDeliveryUrl: string | null;
     lastFetchObservation: RealRoomTerminalDeliveryDiagnostics["lastFetchObservation"];
   } = {
     phase: "prepare initial prompt",
+    expectedDeliveryPort: port,
+    expectedDeliveryUrl: url,
     lastDeliveryUrl: null,
     lastFetchObservation: null,
   };
+  harness.declareOwnedPort({
+    kind: "delivery-http",
+    label: "room terminal tiny-app delivery",
+    port,
+    expectedUrl: url,
+  });
 
   try {
     const prompt = [
@@ -503,6 +525,7 @@ export const runRealRoomTerminalDeliveryScenario = async (
         outcome: readModelOutcomeCode(call),
       })),
       toolTraceTools: modelCallRecords.flatMap(extractToolTraceTools),
+      validationResources: harness.getValidationResources(),
     };
   } catch (error) {
     const diagnostics = await collectRealRoomTerminalDeliveryDiagnostics(harness, debugState);

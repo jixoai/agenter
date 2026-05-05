@@ -2357,6 +2357,127 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
+  test("Scenario: Given a passive focused terminal dirty change When runtime records scheduler signals Then no terminal wake signal is emitted", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      isTerminalActionable: (terminalId: string) => boolean;
+      terminalKernelAdapter: {
+        markTerminalDirty: (terminalId: string) => void;
+      };
+    };
+
+    await runtime.start();
+    try {
+      const beforeVersion = runtime.snapshot().schedulerSignals.terminal.version;
+      internal.config = {
+        ...(internal.config ?? {}),
+        terminals: {
+          ...(internal.config?.terminals ?? {}),
+          iflow: {
+            terminalId: "iflow",
+            cwd: "/tmp",
+            command: ["bash"],
+            commandLabel: "bash",
+            gitLog: false,
+          },
+        },
+      };
+      internal.terminals.set("iflow", {
+        isRunning: () => true,
+        getSnapshot: () => ({
+          seq: 1,
+          cols: 80,
+          rows: 24,
+          cursor: { x: 0, y: 0 },
+          lines: ["echo passive"],
+        }),
+        getStatus: () => "IDLE",
+        sliceDirty: async () => ({
+          ok: true,
+          changed: false,
+          fromHash: null,
+          toHash: null,
+          diff: "",
+          bytes: 0,
+        }),
+      });
+      internal.focusedTerminalIds = ["iflow"];
+      internal.terminalKernelAdapter.markTerminalDirty("iflow");
+      expect(internal.isTerminalActionable("iflow")).toBeFalse();
+      await Bun.sleep(10);
+      expect(runtime.snapshot().schedulerSignals.terminal.version).toBe(beforeVersion);
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given an actionable terminal signal When runtime records scheduler signals Then one terminal wake signal is emitted", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      terminalStatusById: Map<
+        string,
+        {
+          processPhase: "not_started" | "running" | "stopped";
+          lifecycleTransition: string | null;
+          status: "IDLE" | "BUSY";
+        }
+      >;
+      terminalKernelAdapter: {
+        markTerminalDirty: (terminalId: string) => void;
+      };
+    };
+
+    await runtime.start();
+    try {
+      const beforeVersion = runtime.snapshot().schedulerSignals.terminal.version;
+      internal.config = {
+        ...(internal.config ?? {}),
+        terminals: {
+          ...(internal.config?.terminals ?? {}),
+          iflow: {
+            terminalId: "iflow",
+            cwd: "/tmp",
+            command: ["bash"],
+            commandLabel: "bash",
+            gitLog: false,
+          },
+        },
+      };
+      internal.terminals.set("iflow", {
+        isRunning: () => true,
+        getSnapshot: () => ({
+          seq: 1,
+          cols: 80,
+          rows: 24,
+          cursor: { x: 0, y: 0 },
+          lines: ["echo actionable"],
+        }),
+        getStatus: () => "IDLE",
+        sliceDirty: async () => ({
+          ok: true,
+          changed: false,
+          fromHash: null,
+          toHash: null,
+          diff: "",
+          bytes: 0,
+        }),
+      });
+      internal.focusedTerminalIds = ["iflow"];
+      internal.terminalStatusById.set("iflow", {
+        processPhase: "running",
+        lifecycleTransition: "bootstrapping",
+        status: "IDLE",
+      });
+
+      internal.terminalKernelAdapter.markTerminalDirty("iflow");
+      await Bun.sleep(10);
+
+      expect(runtime.snapshot().schedulerSignals.terminal.version).toBe(beforeVersion + 1);
+    } finally {
+      await runtime.stop();
+    }
+  });
+
   test("Scenario: Given a muted notification push When it is committed Then runtime still wakes for the forced notification", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal & {

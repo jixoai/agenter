@@ -22,9 +22,10 @@ interface RuntimeTerminalKernelAdapterOptions {
   isTerminalRunning: (terminalId: string) => boolean;
   getTerminalStatus: (terminalId: string) => "IDLE" | "BUSY" | null;
   getTerminalContextId: (terminalId: string) => string;
+  isTerminalActionable: (terminalId: string) => boolean;
   readTerminalIngress: (terminalId: string) => Promise<RuntimeSystemIngressEnvelope | null>;
   buildLifecycleIngressEnvelope: (input: RuntimeTerminalLifecycleIngressInput) => RuntimeSystemIngressEnvelope;
-  onTerminalActivitySignal: () => void;
+  onTerminalActionableSignal: (input: { terminalId: string; reason: string }) => void;
 }
 
 export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter {
@@ -53,14 +54,20 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
 
   hasFocusedDirtyWork(): boolean {
     return this.getFocusedTerminalIds().some(
-      (terminalId) => this.dirtyTerminalIds.has(terminalId) && this.options.isTerminalRunning(terminalId),
+      (terminalId) =>
+        this.dirtyTerminalIds.has(terminalId) &&
+        this.options.isTerminalRunning(terminalId) &&
+        this.options.isTerminalActionable(terminalId),
     );
   }
 
   markTerminalDirty(terminalId: string): void {
     this.dirtyTerminalIds.add(terminalId);
     if (this.queueFocusedTerminal(terminalId)) {
-      this.options.onTerminalActivitySignal();
+      this.options.onTerminalActionableSignal({
+        terminalId,
+        reason: "terminal.actionable",
+      });
     }
   }
 
@@ -70,14 +77,17 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
   }
 
   syncFocusedDirtyTerminals(): void {
-    let signaled = false;
+    const actionableTerminalIds: string[] = [];
     for (const terminalId of this.getFocusedTerminalIds()) {
       if (this.queueFocusedTerminal(terminalId)) {
-        signaled = true;
+        actionableTerminalIds.push(terminalId);
       }
     }
-    if (signaled) {
-      this.options.onTerminalActivitySignal();
+    for (const terminalId of actionableTerminalIds) {
+      this.options.onTerminalActionableSignal({
+        terminalId,
+        reason: "terminal.focused-actionable",
+      });
     }
   }
 
@@ -95,9 +105,13 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
       input.previousStatus === "BUSY" &&
       input.status === "IDLE" &&
       input.running &&
-      !this.getFocusedTerminalIds().includes(input.terminalId)
+      !this.getFocusedTerminalIds().includes(input.terminalId) &&
+      this.options.isTerminalActionable(input.terminalId)
     ) {
-      this.options.onTerminalActivitySignal();
+      this.options.onTerminalActionableSignal({
+        terminalId: input.terminalId,
+        reason: "terminal.idle-actionable",
+      });
     }
   }
 
@@ -128,6 +142,10 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
       if (!this.getFocusedTerminalIds().includes(terminalId)) {
         continue;
       }
+      if (!this.options.isTerminalActionable(terminalId)) {
+        this.markTerminalConsumed(terminalId);
+        continue;
+      }
       if (this.options.getTerminalStatus(terminalId) === "BUSY") {
         this.queuedTerminalIds.add(terminalId);
         continue;
@@ -149,7 +167,8 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
     if (
       !this.dirtyTerminalIds.has(terminalId) ||
       !this.getFocusedTerminalIds().includes(terminalId) ||
-      !this.options.isTerminalRunning(terminalId)
+      !this.options.isTerminalRunning(terminalId) ||
+      !this.options.isTerminalActionable(terminalId)
     ) {
       return false;
     }
