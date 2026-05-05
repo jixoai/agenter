@@ -38,9 +38,9 @@ export interface TerminalFontProfile {
 
 export const DEFAULT_TERMINAL_FONT: Readonly<TerminalFontProfile> = {
   family:
-    "var(--font-mono), ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
-  sizePx: 13,
-  lineHeight: 1.2,
+    "ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  sizePx: 14,
+  lineHeight: 1,
   letterSpacing: 0,
   weight: "400",
   weightBold: "700",

@@ -10,34 +10,43 @@ import {
 } from "../terminal-renderer-adapter";
 import type { ResolvedTerminalAppearance } from "../terminal-renderer-profile";
 import type { TerminalViewScreenMetrics } from "../terminal-view-types";
+import { resolveTerminalFontSignature, waitForBrowserTerminalFont } from "./browser-terminal-font";
 
-type GhosttyTerminalOptionPatch = {
-  lineHeight?: number;
-  letterSpacing?: number;
-  fontWeight?: string;
-  fontWeightBold?: string;
+type GhosttyTerminalRenderer = {
+  getCanvas(): HTMLCanvasElement | null;
+  getMetrics(): { width: number; height: number } | null;
+  setTheme(theme: ResolvedTerminalAppearance["theme"]): void;
+  setCursorStyle(style: ResolvedTerminalAppearance["cursorStyle"]): void;
+  setFontFamily?(family: string): void;
+  setFontSize?(size: number): void;
+  remeasureFont?(): void;
+  render?(
+    buffer: unknown,
+    forceAll?: boolean,
+    viewportY?: number,
+    scrollbackProvider?: unknown,
+    scrollbarOpacity?: number,
+  ): void;
 };
 
-const applyGhosttyFontOptions = (
-  terminal: Terminal,
-  appearance: ResolvedTerminalAppearance,
-): void => {
-  Object.assign(terminal.options as GhosttyTerminalOptionPatch, {
-    lineHeight: appearance.font.lineHeight,
-    letterSpacing: appearance.font.letterSpacing,
-    fontWeight: appearance.font.weight,
-    fontWeightBold: appearance.font.weightBold,
-  } satisfies GhosttyTerminalOptionPatch);
+type GhosttyTerminalShape = Terminal & {
+  renderer?: GhosttyTerminalRenderer;
+  wasmTerm?: unknown;
+  viewportY?: number;
+  scrollbackOpacity?: number;
 };
 
 class GhosttyRendererSession implements TerminalRendererSession {
   readonly resolvedRenderer = "ghostty-web" as const;
-  readonly terminal: Terminal;
+  readonly terminal: GhosttyTerminalShape;
   readonly host: HTMLElement;
   readonly inputDataDisposable: { dispose(): void };
+  private fontProfile: ResolvedTerminalAppearance["font"];
+  private lastSettledFontSignature = "";
 
   constructor(input: TerminalRendererSessionInput) {
     this.host = input.host;
+    this.fontProfile = input.appearance.font;
     this.terminal = new Terminal({
       allowTransparency: true,
       convertEol: true,
@@ -50,8 +59,7 @@ class GhosttyRendererSession implements TerminalRendererSession {
       scrollback: input.scrollback,
       smoothScrollDuration: 0,
       theme: input.appearance.theme,
-    });
-    applyGhosttyFontOptions(this.terminal, input.appearance);
+    }) as GhosttyTerminalShape;
     this.host.replaceChildren();
     this.terminal.open(this.host);
     this.inputDataDisposable = this.terminal.onData((data: string) => {
@@ -94,13 +102,35 @@ class GhosttyRendererSession implements TerminalRendererSession {
   }
 
   applyAppearance(appearance: ResolvedTerminalAppearance): void {
+    this.fontProfile = appearance.font;
     this.terminal.options.theme = appearance.theme;
     this.terminal.options.cursorStyle = appearance.cursorStyle;
     this.terminal.options.fontFamily = appearance.font.family;
     this.terminal.options.fontSize = appearance.font.sizePx;
-    applyGhosttyFontOptions(this.terminal, appearance);
     this.terminal.renderer?.setTheme(appearance.theme);
     this.terminal.renderer?.setCursorStyle(appearance.cursorStyle);
+    this.decoratePublicSurfaces();
+  }
+
+  async settlePresentation(): Promise<void> {
+    const nextFontSignature = resolveTerminalFontSignature(this.fontProfile);
+    if (this.lastSettledFontSignature !== nextFontSignature) {
+      // Canvas metrics cannot trust stylesheet presence alone. Wait until the
+      // browser has actually settled the configured font before remeasuring.
+      await waitForBrowserTerminalFont(this.fontProfile);
+      this.lastSettledFontSignature = nextFontSignature;
+    }
+    const renderer = this.terminal.renderer;
+    renderer?.setFontFamily?.(this.fontProfile.family);
+    renderer?.setFontSize?.(this.fontProfile.sizePx);
+    renderer?.remeasureFont?.();
+    renderer?.render?.(
+      this.terminal.wasmTerm,
+      true,
+      this.terminal.viewportY ?? 0,
+      this.terminal,
+      0,
+    );
     this.decoratePublicSurfaces();
   }
 
@@ -152,10 +182,13 @@ export const ghosttyWebRendererAdapter: TerminalRendererAdapter = {
   presentationMutationPolicy: {
     theme: "rebuild-session",
     cursor: "live-apply",
-    font: "rebuild-session",
+    // ghostty-web already exposes runtime font mutation and remeasurement; keep font
+    // settle adapter-local instead of rebuilding the whole viewport stack.
+    font: "live-apply",
   },
   ensureReady: primeGhosttyWebRuntime,
   createSession(input) {
+    void waitForBrowserTerminalFont(input.appearance.font);
     return new GhosttyRendererSession(input);
   },
 };

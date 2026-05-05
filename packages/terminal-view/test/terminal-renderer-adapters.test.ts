@@ -16,6 +16,8 @@ const mockState = vi.hoisted(() => ({
     dispose: ReturnType<typeof vi.fn>;
     resize: ReturnType<typeof vi.fn>;
     write: ReturnType<typeof vi.fn>;
+    refresh: ReturnType<typeof vi.fn>;
+    clearTextureAtlas: ReturnType<typeof vi.fn>;
   }>,
   ghosttyTerminals: [] as Array<{
     cols: number;
@@ -27,6 +29,10 @@ const mockState = vi.hoisted(() => ({
       getMetrics: ReturnType<typeof vi.fn>;
       setTheme: ReturnType<typeof vi.fn>;
       setCursorStyle: ReturnType<typeof vi.fn>;
+      setFontFamily: ReturnType<typeof vi.fn>;
+      setFontSize: ReturnType<typeof vi.fn>;
+      remeasureFont: ReturnType<typeof vi.fn>;
+      render: ReturnType<typeof vi.fn>;
     };
     reset: ReturnType<typeof vi.fn>;
     focus: ReturnType<typeof vi.fn>;
@@ -75,6 +81,8 @@ vi.mock("@xterm/xterm", () => ({
       this.rows = rows;
     });
     write = vi.fn();
+    refresh = vi.fn();
+    clearTextureAtlas = vi.fn();
 
     constructor(options?: Record<string, unknown>) {
       this.options = { ...(options ?? {}) };
@@ -108,6 +116,10 @@ vi.mock("ghostty-web", () => ({
       getMetrics: vi.fn(() => ({ width: 9, height: 18 })),
       setTheme: vi.fn(),
       setCursorStyle: vi.fn(),
+      setFontFamily: vi.fn(),
+      setFontSize: vi.fn(),
+      remeasureFont: vi.fn(),
+      render: vi.fn(),
     };
     reset = vi.fn();
     focus = vi.fn();
@@ -246,6 +258,8 @@ const createAppearance = () =>
   });
 
 describe("Feature: terminal renderer adapters", () => {
+  const documentFontsLoad = vi.fn(async () => []);
+
   beforeEach(() => {
     document.body.innerHTML = "";
     mockState.xtermTerminals.length = 0;
@@ -253,6 +267,15 @@ describe("Feature: terminal renderer adapters", () => {
     mockState.wtermTerminals.length = 0;
     mockState.ghosttyCoreLoad.mockClear();
     mockState.ghosttyInit.mockClear();
+    vi.stubGlobal("document", document);
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: {
+        ready: Promise.resolve(),
+        load: documentFontsLoad,
+      },
+    });
+    documentFontsLoad.mockClear();
   });
 
   test("Scenario: Given the shared terminal appearance law When xterm and ghostty-web sessions are created Then both adapters map the same font, theme, and cursor truth into engine-local options", async () => {
@@ -294,10 +317,6 @@ describe("Feature: terminal renderer adapters", () => {
     expect(mockState.ghosttyInit).not.toHaveBeenCalled();
     expect(ghostty?.options.fontFamily).toBe(appearance.font.family);
     expect(ghostty?.options.fontSize).toBe(appearance.font.sizePx);
-    expect(ghostty?.options.fontWeight).toBe(appearance.font.weight);
-    expect(ghostty?.options.fontWeightBold).toBe(appearance.font.weightBold);
-    expect(ghostty?.options.lineHeight).toBe(appearance.font.lineHeight);
-    expect(ghostty?.options.letterSpacing).toBe(appearance.font.letterSpacing);
     expect(ghostty?.options.cursorStyle).toBe(appearance.cursorStyle);
     expect(ghostty?.options.theme).toEqual(appearance.theme);
 
@@ -318,21 +337,34 @@ describe("Feature: terminal renderer adapters", () => {
     expect(xterm?.options.customGlyphs).toBe(true);
     expect(xterm?.options.theme).toEqual(nextAppearance.theme);
     expect(ghostty?.options.fontSize).toBe(14);
-    expect(ghostty?.options.fontWeight).toBe("400");
     expect(ghostty?.renderer.setTheme).toHaveBeenCalledWith(nextAppearance.theme);
     expect(ghostty?.renderer.setCursorStyle).toHaveBeenCalledWith(nextAppearance.cursorStyle);
+    await ghosttySession.settlePresentation?.();
+    expect(documentFontsLoad.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["500 16px 'JetBrains Mono'", "MW@#"],
+        ["400 14px ui-monospace", "MW@#"],
+      ]),
+    );
+    expect(ghostty?.renderer.setFontFamily).toHaveBeenCalledWith(nextAppearance.font.family);
+    expect(ghostty?.renderer.setFontSize).toHaveBeenCalledWith(nextAppearance.font.sizePx);
+    expect(ghostty?.renderer.remeasureFont).toHaveBeenCalled();
+    expect(ghostty?.renderer.render).toHaveBeenCalled();
+    await xtermSession.settlePresentation?.();
+    expect(xterm?.clearTextureAtlas).toHaveBeenCalled();
+    expect(xterm?.refresh).toHaveBeenCalledWith(0, 27);
   });
 
   test("Scenario: Given renderer stacks own presentation capability law When the host asks how theme, cursor, and font can settle Then adapters expose policy instead of leaking renderer-specific branches", () => {
     expect(xtermRendererAdapter.presentationMutationPolicy).toEqual({
       theme: "live-apply",
       cursor: "live-apply",
-      font: "rebuild-session",
+      font: "live-apply",
     });
     expect(ghosttyWebRendererAdapter.presentationMutationPolicy).toEqual({
       theme: "rebuild-session",
       cursor: "live-apply",
-      font: "rebuild-session",
+      font: "live-apply",
     });
     expect(wtermRendererAdapter.presentationMutationPolicy).toEqual({
       theme: "live-apply",

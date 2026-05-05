@@ -16,11 +16,13 @@ export interface TerminalFontProfile {
 export const DEFAULT_TERMINAL_RENDERER_PREFERENCE = "auto" as const satisfies TerminalRendererPreference;
 export const DEFAULT_TERMINAL_THEME = "default-dark" as const satisfies TerminalThemeName;
 export const DEFAULT_TERMINAL_CURSOR = "block" as const satisfies TerminalCursorStyle;
+// Keep the durable default compact and renderer-neutral. The default path should
+// use a system monospace stack so first paint does not depend on a webfont fetch,
+// while optional webfonts can still settle through renderer-owned font loading.
 export const DEFAULT_TERMINAL_FONT: Readonly<TerminalFontProfile> = {
-  family:
-    "'JetBrains Mono Variable', 'JetBrains Mono', 'SFMono-Regular', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace",
-  sizePx: 13,
-  lineHeight: 1.2,
+  family: "ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  sizePx: 14,
+  lineHeight: 1,
   letterSpacing: 0,
   weight: "400",
   weightBold: "700",

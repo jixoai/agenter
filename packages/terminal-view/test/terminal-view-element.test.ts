@@ -27,6 +27,10 @@ vi.mock("ghostty-web", () => {
       }),
       setTheme: vi.fn(),
       setCursorStyle: vi.fn(),
+      setFontFamily: vi.fn(),
+      setFontSize: vi.fn(),
+      remeasureFont: vi.fn(),
+      render: vi.fn(),
     };
     private dataListeners: Array<(data: string) => void> = [];
     private canvas: HTMLCanvasElement | null = null;
@@ -124,6 +128,8 @@ class MockTerminal {
   writes: Array<string | Uint8Array> = [];
   resetCount = 0;
   focusCount = 0;
+  refreshCount = 0;
+  clearTextureAtlasCount = 0;
   characterJoiners: Array<(text: string) => [number, number][]> = [];
   deregisteredJoinerIds: number[] = [];
   openedWith: Element | null = null;
@@ -227,6 +233,14 @@ class MockTerminal {
 
   reset(): void {
     this.resetCount += 1;
+  }
+
+  refresh(): void {
+    this.refreshCount += 1;
+  }
+
+  clearTextureAtlas(): void {
+    this.clearTextureAtlasCount += 1;
   }
 
   focus(): void {
@@ -423,6 +437,13 @@ describe("Feature: terminal-view WebComponent", () => {
     WebSocketMock.instances.length = 0;
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
     vi.stubGlobal("WebSocket", WebSocketMock);
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: {
+        ready: Promise.resolve(),
+        load: vi.fn(async () => []),
+      },
+    });
   });
 
   afterEach(() => {
@@ -963,6 +984,51 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(readyEvents.some((event) => event.reason === "live-apply")).toBe(true);
   });
 
+  test("Scenario: Given a running xterm session When font size changes Then terminal-view live-applies the font settle path without rebuilding the renderer session", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+    const readyEvents: Array<{
+      terminalId: string;
+      resolvedRenderer: string;
+      reason: string;
+    }> = [];
+
+    element.terminalId = "presentation-font-live-apply";
+    element.rendererPreference = "xterm";
+    element.addEventListener("terminal-view-presentation-ready", (event) => {
+      readyEvents.push(
+        (event as CustomEvent<{ terminalId: string; resolvedRenderer: string; reason: string }>).detail,
+      );
+    });
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const firstTerminal = mockTerminals.at(-1);
+    expect(firstTerminal).toBeDefined();
+    expect(firstTerminal?.options.fontSize).toBe(14);
+
+    element.font = {
+      ...element.font,
+      sizePx: 16,
+    };
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    expect(mockTerminals.at(-1)).toBe(firstTerminal);
+    expect(firstTerminal?.options.fontSize).toBe(16);
+    expect(firstTerminal?.clearTextureAtlasCount).toBeGreaterThanOrEqual(2);
+    expect(firstTerminal?.refreshCount).toBeGreaterThanOrEqual(2);
+    expect(readyEvents.at(-1)?.reason).toBe("live-apply");
+  });
+
   test("Scenario: Given a running ghostty-web session When theme changes Then terminal-view rebuilds the local renderer stack and emits a rebuild-session ready event", async () => {
     const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
     defineTerminalView();
@@ -1038,6 +1104,47 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(rebuiltTerminal?.writes.some((entry) => typeof entry === "string" && entry.includes("hello rebuild"))).toBe(
       true,
     );
+    expect(rebuiltTerminal?.renderer.render).toHaveBeenCalled();
+  });
+
+  test("Scenario: Given an xterm session with an existing snapshot When renderer preference switches to ghostty-web Then the rebuilt ghostty-web session paints immediately", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "xterm-to-ghostty";
+    element.rendererPreference = "xterm";
+    element.snapshot = {
+      seq: 11,
+      cols: 80,
+      rows: 24,
+      lines: ["switch renderer repaint"],
+      cursor: { x: 0, y: 0 },
+    };
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const xtermTerminal = mockTerminals.at(-1);
+    expect(xtermTerminal?.writes.some((entry) => typeof entry === "string" && entry.includes("switch renderer repaint"))).toBe(
+      true,
+    );
+
+    element.rendererPreference = "ghostty-web";
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const rebuiltTerminal = mockGhosttyTerminals.at(-1);
+    expect(rebuiltTerminal?.writes.some((entry) => typeof entry === "string" && entry.includes("switch renderer repaint"))).toBe(
+      true,
+    );
+    expect(rebuiltTerminal?.renderer.render).toHaveBeenCalled();
   });
 
   test("Scenario: Given the live snapshot arrives before xterm boot finishes When the component mounts Then the first transport snapshot is still rendered", async () => {

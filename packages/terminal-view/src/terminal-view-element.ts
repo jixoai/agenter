@@ -536,6 +536,8 @@ export class TerminalViewElement extends LitElement {
           this.liveSnapshotHydrated = true;
         }
       }
+      await this.terminalSession.settlePresentation?.();
+      this.syncMeasuredScreen();
       this.dispatchPresentationReady(requiresRebuild ? "rebuild-session" : "initial-session-ready");
       return;
     }
@@ -544,6 +546,7 @@ export class TerminalViewElement extends LitElement {
     this.rendererReason = resolution.reason;
     if (this.activeAppearanceKey !== appearanceKey) {
       this.terminalSession.applyAppearance(appearance);
+      await this.terminalSession.settlePresentation?.();
       this.activeAppearanceKey = appearanceKey;
       this.lastResolvedAppearance = appearance;
       this.lastResolvedRendererPreference = this.rendererPreference;
@@ -711,6 +714,7 @@ export class TerminalViewElement extends LitElement {
     if (rendered.length > 0) {
       this.terminalSession.write(rendered);
     }
+    void this.terminalSession.settlePresentation?.();
     this.syncMeasuredScreen();
     return true;
   }

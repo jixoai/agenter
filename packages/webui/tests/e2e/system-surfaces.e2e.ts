@@ -2057,7 +2057,7 @@ test.describe("Feature: Svelte system surfaces", () => {
       .toBe("rgb(248, 250, 252)");
 
     const rendererDialog = await openTerminalConfigDialog(page);
-    await chooseSelectOptionByText(page, rendererDialog.getByTestId("terminal-config-renderer-select"), "WTerm");
+    await chooseSelectOptionByText(page, rendererDialog.getByTestId("terminal-config-renderer-select"), "WTerm (Experimental)");
     await clickStable(rendererDialog.getByTestId("terminal-config-apply"));
     await expect(rendererDialog).toBeHidden({ timeout: 15_000 });
     await expect

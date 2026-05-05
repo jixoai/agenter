@@ -52,5 +52,10 @@ describe("Feature: terminal renderer profile law", () => {
       ligatures: DEFAULT_TERMINAL_FONT.ligatures,
     });
     expect(resolveTerminalAppearance().themeName).toBe(DEFAULT_TERMINAL_THEME);
+    expect(DEFAULT_TERMINAL_FONT.family).toBe(
+      "ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    );
+    expect(DEFAULT_TERMINAL_FONT.sizePx).toBe(14);
+    expect(DEFAULT_TERMINAL_FONT.lineHeight).toBe(1);
   });
 });

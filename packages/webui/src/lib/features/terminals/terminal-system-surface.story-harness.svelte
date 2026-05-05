@@ -114,10 +114,9 @@
 		theme: 'default-dark',
 		cursor: 'block',
 		font: {
-			family:
-				"'JetBrains Mono Variable', 'JetBrains Mono', 'SFMono-Regular', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace",
-			sizePx: 13,
-			lineHeight: 1.2,
+			family: "ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+			sizePx: 14,
+			lineHeight: 1,
 			letterSpacing: 0,
 			weight: '400',
 			weightBold: '700',

@@ -14,6 +14,7 @@ import {
 } from "../terminal-renderer-adapter";
 import type { ResolvedTerminalAppearance } from "../terminal-renderer-profile";
 import type { TerminalViewScreenMetrics } from "../terminal-view-types";
+import { resolveTerminalFontSignature, waitForBrowserTerminalFont } from "./browser-terminal-font";
 
 interface XtermRenderDimensions {
   css?: {
@@ -99,9 +100,12 @@ class XtermRendererSession implements TerminalRendererSession {
   readonly inputDataDisposable: IDisposable;
   readonly inputBinaryDisposable: IDisposable;
   readonly ligatureJoinerId: number;
+  private fontProfile: ResolvedTerminalAppearance["font"];
+  private lastSettledFontSignature = "";
 
   constructor(input: TerminalRendererSessionInput) {
     this.host = input.host;
+    this.fontProfile = input.appearance.font;
     this.terminal = new Terminal({
       allowTransparency: true,
       allowProposedApi: true,
@@ -167,6 +171,7 @@ class XtermRendererSession implements TerminalRendererSession {
   }
 
   applyAppearance(appearance: ResolvedTerminalAppearance): void {
+    this.fontProfile = appearance.font;
     this.terminal.options.theme = toXtermTheme(appearance);
     this.terminal.options.cursorStyle = appearance.cursorStyle;
     this.terminal.options.fontFamily = appearance.font.family;
@@ -176,6 +181,26 @@ class XtermRendererSession implements TerminalRendererSession {
     this.terminal.options.lineHeight = appearance.font.lineHeight;
     this.terminal.options.letterSpacing = appearance.font.letterSpacing;
     this.terminal.options.customGlyphs = appearance.font.ligatures;
+    this.decoratePublicSurfaces();
+  }
+
+  async settlePresentation(): Promise<void> {
+    const nextFontSignature = resolveTerminalFontSignature(this.fontProfile);
+    if (this.lastSettledFontSignature !== nextFontSignature) {
+      // xterm can keep the existing session alive, but its grid still needs one
+      // explicit post-load settle pass when the browser finishes a webfont swap.
+      await waitForBrowserTerminalFont(this.fontProfile);
+      this.lastSettledFontSignature = nextFontSignature;
+    }
+    this.terminal.options.fontFamily = this.fontProfile.family;
+    this.terminal.options.fontSize = this.fontProfile.sizePx;
+    this.terminal.options.fontWeight = toXtermFontWeight(this.fontProfile.weight);
+    this.terminal.options.fontWeightBold = toXtermFontWeight(this.fontProfile.weightBold);
+    this.terminal.options.lineHeight = this.fontProfile.lineHeight;
+    this.terminal.options.letterSpacing = this.fontProfile.letterSpacing;
+    this.terminal.options.customGlyphs = this.fontProfile.ligatures;
+    this.terminal.clearTextureAtlas();
+    this.terminal.refresh(0, Math.max(0, this.terminal.rows - 1));
     this.decoratePublicSurfaces();
   }
 
@@ -258,9 +283,10 @@ export const xtermRendererAdapter: TerminalRendererAdapter = {
   presentationMutationPolicy: {
     theme: "live-apply",
     cursor: "live-apply",
-    font: "rebuild-session",
+    font: "live-apply",
   },
   createSession(input) {
+    void waitForBrowserTerminalFont(input.appearance.font);
     return new XtermRendererSession(input);
   },
 };

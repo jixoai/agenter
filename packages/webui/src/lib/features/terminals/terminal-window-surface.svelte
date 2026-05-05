@@ -99,7 +99,7 @@
 	const rendererPreferenceOptions = [
 		{ value: 'auto', label: 'Auto' },
 		{ value: 'ghostty-web', label: 'Ghostty Web' },
-		{ value: 'wterm', label: 'WTerm' },
+		{ value: 'wterm', label: 'WTerm (Experimental)' },
 		{ value: 'xterm', label: 'XTerm' },
 	] as const;
 	const themeOptions = [
@@ -110,17 +110,22 @@
 	const fontFamilyOptions = [
 		{
 			value:
-				"'JetBrains Mono Variable', 'JetBrains Mono', 'SFMono-Regular', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace",
+				"ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+			label: 'System Mono',
+		},
+		{
+			value:
+				"'JetBrains Mono', Menlo, Monaco, 'Courier New', monospace",
 			label: 'JetBrains Mono',
+		},
+		{
+			value: "'IBM Plex Mono', 'Cascadia Mono', 'Cascadia Code', 'Fira Code', ui-monospace, monospace",
+			label: 'Plex / Cascadia',
 		},
 		{
 			value:
 				"'SF Mono', 'SFMono-Regular', Menlo, Consolas, ui-monospace, monospace",
 			label: 'SF Mono',
-		},
-		{
-			value: "'IBM Plex Mono', 'Cascadia Mono', 'Cascadia Code', 'Fira Code', ui-monospace, monospace",
-			label: 'Plex or Cascadia',
 		},
 	] as const;
 	const fontSizeOptions = [12, 13, 14, 15, 16] as const;
@@ -260,7 +265,7 @@
 		themeOptions.find((option) => option.value === presentationDraft.theme)?.label ?? 'Default Dark',
 	);
 	const selectedFontFamilyLabel = $derived(
-		fontFamilyOptions.find((option) => option.value === presentationDraft.font.family)?.label ?? 'JetBrains Mono',
+		fontFamilyOptions.find((option) => option.value === presentationDraft.font.family)?.label ?? 'System Mono',
 	);
 	const selectedFontSizeLabel = $derived(`${presentationDraft.font.sizePx}px`);
 	const canApplyPresentationDraft = $derived(

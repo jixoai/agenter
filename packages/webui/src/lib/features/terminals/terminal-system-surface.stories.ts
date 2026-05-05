@@ -736,7 +736,7 @@ export const WindowTitlebarConfigPanelUpdatesPresentation = {
     expect(overlay.getByText("Renderer")).toBeInTheDocument();
     expect(overlay.getByText("Font family")).toBeInTheDocument();
     expect(overlay.getByText("Font size")).toBeInTheDocument();
-    await selectConfigValue(overlay, "terminal-config-renderer-select", "WTerm");
+    await selectConfigValue(overlay, "terminal-config-renderer-select", "WTerm (Experimental)");
     await userEvent.click(overlay.getByTestId("terminal-config-apply"));
     await waitFor(() => {
       expect(terminalView?.rendererPreference).toBe("wterm");

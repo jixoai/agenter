@@ -38,6 +38,7 @@ export interface TerminalRendererSession {
   focus(): void;
   setScrollback(scrollback: number): void;
   applyAppearance(appearance: ResolvedTerminalAppearance): void;
+  settlePresentation?(): Promise<void> | void;
   getScreenMetrics(): TerminalViewScreenMetrics | null;
   dispose(): void;
 }
