@@ -253,6 +253,13 @@ const selectConfigValue = async (overlay: ReturnType<typeof within>, triggerTest
   await userEvent.click(option);
 };
 
+const setConfigRangeValue = async (overlay: ReturnType<typeof within>, inputTestId: string, value: string) => {
+  const input = overlay.getByTestId(inputTestId) as HTMLInputElement;
+  await userEvent.click(input);
+  input.value = value;
+  input.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+};
+
 export const WriteSuccessClearsDraft = {
   name: "Scenario: Given a successful terminal write When the tool call resolves Then the editor draft clears and the terminal facts stay visible",
   args: {
@@ -706,15 +713,15 @@ export const WindowTitlebarConfigPanelUpdatesPresentation = {
     await waitForTerminalConfigDialogToClose();
 
     const fitOverlayFontFamily = await openTerminalConfigDialog(fitConfigControl);
-    await selectConfigValue(fitOverlayFontFamily, "terminal-config-font-family-select", "SF Mono");
+    await selectConfigValue(fitOverlayFontFamily, "terminal-config-font-family-select", "Cascadia Mono");
     await userEvent.click(fitOverlayFontFamily.getByTestId("terminal-config-apply"));
     await waitFor(() => {
-      expect(terminalView?.font?.family).toContain("SF Mono");
+      expect(terminalView?.font?.family).toContain("Cascadia Mono");
     });
     await waitForTerminalConfigDialogToClose();
 
     const fitOverlayFontSize = await openTerminalConfigDialog(fitConfigControl);
-    await selectConfigValue(fitOverlayFontSize, "terminal-config-font-size-select", "16px");
+    await setConfigRangeValue(fitOverlayFontSize, "terminal-config-font-size-range", "16");
     await userEvent.click(fitOverlayFontSize.getByTestId("terminal-config-apply"));
     await waitFor(() => {
       expect(terminalView?.font?.sizePx).toBe(16);

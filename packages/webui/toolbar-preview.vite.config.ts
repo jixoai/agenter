@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 import { bitsUiVirtualStylePlugin } from './vite.bits-ui-style-plugin';
+import { workspaceSourceDependencyExcludes } from './src/lib/dev/vite-dependency-optimization';
 
 const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,7 +25,14 @@ export default defineConfig({
 		},
 	},
 	optimizeDeps: {
-		include: ['@agenter/terminal-view', 'lit/decorators.js'],
-		exclude: ['@agenter/svelte-components', '@lucide/svelte', 'bits-ui', 'events', 'shadcn-svelte'],
+		include: ['lit/decorators.js'],
+		exclude: [
+			...workspaceSourceDependencyExcludes,
+			'@agenter/svelte-components',
+			'@lucide/svelte',
+			'bits-ui',
+			'events',
+			'shadcn-svelte',
+		],
 	},
 });

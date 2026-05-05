@@ -1,4 +1,6 @@
 import type { TerminalFontProfile } from "../terminal-renderer-profile";
+import { resolvePrimaryTerminalFontFamily } from "../terminal-font-catalog";
+import { ensureTerminalFontPrepared } from "../terminal-font-loader";
 
 const waitForAnimationFrame = (): Promise<void> =>
   new Promise((resolve) => {
@@ -8,47 +10,6 @@ const waitForAnimationFrame = (): Promise<void> =>
     }
     setTimeout(resolve, 0);
   });
-
-const splitFontFamilyStack = (input: string): string[] => {
-  const families: string[] = [];
-  let current = "";
-  let quote: '"' | "'" | null = null;
-
-  for (const char of input) {
-    if (quote) {
-      current += char;
-      if (char === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      current += char;
-      continue;
-    }
-    if (char === ",") {
-      const normalized = current.trim();
-      if (normalized.length > 0) {
-        families.push(normalized);
-      }
-      current = "";
-      continue;
-    }
-    current += char;
-  }
-
-  const tail = current.trim();
-  if (tail.length > 0) {
-    families.push(tail);
-  }
-  return families;
-};
-
-export const resolvePrimaryTerminalFontFamily = (input: string): string => {
-  const primary = splitFontFamilyStack(input)[0];
-  return primary && primary.length > 0 ? primary : "monospace";
-};
 
 export const resolveTerminalFontSignature = (font: TerminalFontProfile): string =>
   [
@@ -64,10 +25,18 @@ export const resolveTerminalFontSignature = (font: TerminalFontProfile): string 
 // `document.fonts.check()` is not sufficient here. It only answers whether a
 // face matches the descriptor, not whether the browser has actually fetched the
 // webfont we need before terminal metric measurement.
-export const waitForBrowserTerminalFont = async (font: Pick<TerminalFontProfile, "family" | "sizePx" | "weight">) => {
+export const waitForBrowserTerminalFont = async (
+  font: Pick<TerminalFontProfile, "family" | "sizePx" | "weight" | "weightBold">,
+) => {
   if (typeof document === "undefined") {
     return;
   }
+  await ensureTerminalFontPrepared({
+    family: font.family,
+    sizePx: font.sizePx,
+    weight: font.weight,
+    weightBold: font.weightBold,
+  });
   const fonts = document.fonts;
   if (!fonts) {
     await waitForAnimationFrame();

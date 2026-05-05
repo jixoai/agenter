@@ -28,6 +28,15 @@ export {
   type TerminalThemeTokens,
 } from "./terminal-renderer-profile";
 export {
+  TERMINAL_FONT_CATALOG,
+  TERMINAL_FONT_FAMILY_OPTIONS,
+  resolvePrimaryTerminalFontFamily,
+  resolveTerminalFontCatalogEntry,
+  type TerminalFontAssetFace,
+  type TerminalFontCatalogEntry,
+  type TerminalFontFamilyOption,
+} from "./terminal-font-catalog";
+export {
   TERMINAL_PUBLIC_INPUT_ATTRIBUTE,
   TERMINAL_PUBLIC_SCREEN_ATTRIBUTE,
   TERMINAL_PUBLIC_SCROLL_ATTRIBUTE,

@@ -9,6 +9,9 @@
 	import type { GlobalTerminalEntry } from '@agenter/client-sdk';
 	import {
 		DEFAULT_TERMINAL_FONT,
+		TERMINAL_FONT_FAMILY_OPTIONS,
+		resolvePrimaryTerminalFontFamily,
+		resolveTerminalFontCatalogEntry,
 		resolveTerminalTheme,
 		type TerminalFontProfile,
 		type TerminalRendererPreference,
@@ -107,28 +110,9 @@
 		{ value: 'default-light', label: 'Default Light' },
 		{ value: 'monokai', label: 'Monokai' },
 	] as const;
-	const fontFamilyOptions = [
-		{
-			value:
-				"ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-			label: 'System Mono',
-		},
-		{
-			value:
-				"'JetBrains Mono', Menlo, Monaco, 'Courier New', monospace",
-			label: 'JetBrains Mono',
-		},
-		{
-			value: "'IBM Plex Mono', 'Cascadia Mono', 'Cascadia Code', 'Fira Code', ui-monospace, monospace",
-			label: 'Plex / Cascadia',
-		},
-		{
-			value:
-				"'SF Mono', 'SFMono-Regular', Menlo, Consolas, ui-monospace, monospace",
-			label: 'SF Mono',
-		},
-	] as const;
-	const fontSizeOptions = [12, 13, 14, 15, 16] as const;
+	const TERMINAL_FONT_SIZE_MIN = 8;
+	const TERMINAL_FONT_SIZE_MAX = 32;
+	const TERMINAL_FONT_SIZE_STEP = 0.5;
 	const rendererPreferenceItems = rendererPreferenceOptions.map((option) => ({
 		value: option.value,
 		label: option.label,
@@ -137,14 +121,29 @@
 		value: option.value,
 		label: option.label,
 	}));
-	const fontFamilyItems = fontFamilyOptions.map((option) => ({
+	const fontFamilyItems = TERMINAL_FONT_FAMILY_OPTIONS.map((option) => ({
 		value: option.value,
 		label: option.label,
 	}));
-	const fontSizeItems = fontSizeOptions.map((option) => ({
-		value: String(option),
-		label: `${option}px`,
-	}));
+
+	const clampTerminalFontSize = (value: number): number =>
+		Math.min(TERMINAL_FONT_SIZE_MAX, Math.max(TERMINAL_FONT_SIZE_MIN, value));
+
+	const roundTerminalFontSize = (value: number): number =>
+		Math.round(clampTerminalFontSize(value) / TERMINAL_FONT_SIZE_STEP) * TERMINAL_FONT_SIZE_STEP;
+
+	const formatTerminalFontSize = (value: number): string => {
+		const rounded = roundTerminalFontSize(value);
+		return Number.isInteger(rounded) ? `${rounded}px` : `${rounded.toFixed(1)}px`;
+	};
+
+	const formatTerminalFontFamilyLabel = (familyStack: string): string => {
+		const knownFont = resolveTerminalFontCatalogEntry(familyStack);
+		if (knownFont) {
+			return knownFont.label;
+		}
+		return resolvePrimaryTerminalFontFamily(familyStack).replace(/^['"]|['"]$/g, '');
+	};
 
 	const patchTerminalFont = (
 		patch: Partial<TerminalFontProfile>,
@@ -264,10 +263,13 @@
 	const selectedThemeLabel = $derived(
 		themeOptions.find((option) => option.value === presentationDraft.theme)?.label ?? 'Default Dark',
 	);
-	const selectedFontFamilyLabel = $derived(
-		fontFamilyOptions.find((option) => option.value === presentationDraft.font.family)?.label ?? 'System Mono',
+	const selectedFontFamilyLabel = $derived(formatTerminalFontFamilyLabel(presentationDraft.font.family));
+	const selectedFontSizeLabel = $derived(formatTerminalFontSize(presentationDraft.font.sizePx));
+	const fontSizeRangeProgress = $derived(
+		((clampTerminalFontSize(presentationDraft.font.sizePx) - TERMINAL_FONT_SIZE_MIN) /
+			(TERMINAL_FONT_SIZE_MAX - TERMINAL_FONT_SIZE_MIN)) *
+			100,
 	);
-	const selectedFontSizeLabel = $derived(`${presentationDraft.font.sizePx}px`);
 	const canApplyPresentationDraft = $derived(
 		!presentationApplyBusy && hasPresentationDraftChanged(presentationDraft),
 	);
@@ -1269,32 +1271,44 @@
 				</div>
 
 				<div class="grid gap-2">
-					<Label for="terminal-config-font-size-select">Font size</Label>
-					<Select.Root
-						type="single"
-						items={fontSizeItems}
-						value={String(presentationDraft.font.sizePx)}
-						onValueChange={(value) => {
-							presentationDraft = {
-								...presentationDraft,
-								font: patchTerminalFont({ sizePx: Number(value) }, presentationDraft.font),
-							};
-						}}
-					>
-						<Select.Trigger
-							id="terminal-config-font-size-select"
-							aria-label="Font size"
-							data-testid="terminal-config-font-size-select"
-							class="w-full justify-between rounded-[1rem] border border-border/60 bg-background/90 px-3 py-2 text-left text-sm font-medium shadow-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring/40"
+					<div class="flex items-center justify-between gap-3">
+						<Label for="terminal-config-font-size-range">Font size</Label>
+						<output
+							for="terminal-config-font-size-range"
+							class="inline-flex min-w-[4.75rem] items-center justify-center rounded-full border border-border/70 bg-muted/60 px-2.5 py-1 text-[11px] font-semibold tracking-[0.02em] text-foreground/80"
+							data-testid="terminal-config-font-size-value"
 						>
 							{selectedFontSizeLabel}
-						</Select.Trigger>
-						<Select.Content>
-							{#each fontSizeItems as item (item.value)}
-								<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+						</output>
+					</div>
+					<div class="grid gap-2.5">
+						<input
+							id="terminal-config-font-size-range"
+							type="range"
+							min={TERMINAL_FONT_SIZE_MIN}
+							max={TERMINAL_FONT_SIZE_MAX}
+							step={TERMINAL_FONT_SIZE_STEP}
+							value={clampTerminalFontSize(presentationDraft.font.sizePx)}
+							aria-label="Font size"
+							data-testid="terminal-config-font-size-range"
+							class="terminal-font-size-range"
+							style={`--terminal-font-size-progress: ${fontSizeRangeProgress}%;`}
+							oninput={(event) => {
+								const nextValue = Number((event.currentTarget as HTMLInputElement).value);
+								if (!Number.isFinite(nextValue)) {
+									return;
+								}
+								presentationDraft = {
+									...presentationDraft,
+									font: patchTerminalFont({ sizePx: roundTerminalFontSize(nextValue) }, presentationDraft.font),
+								};
+							}}
+						/>
+						<div class="flex items-center justify-between px-0.5 text-[11px] font-medium text-muted-foreground/85">
+							<span>{formatTerminalFontSize(TERMINAL_FONT_SIZE_MIN)}</span>
+							<span>{formatTerminalFontSize(TERMINAL_FONT_SIZE_MAX)}</span>
+						</div>
+					</div>
 				</div>
 			</div>
 
@@ -1366,6 +1380,91 @@
 	.window-control-button-mode-cover {
 		background: linear-gradient(180deg, #39d161, #27bc47);
 		color: rgba(11, 78, 27, 0.9);
+	}
+
+	.terminal-font-size-range {
+		appearance: none;
+		width: 100%;
+		height: 1.5rem;
+		border-radius: 9999px;
+		background:
+			linear-gradient(
+				90deg,
+				color-mix(in oklch, var(--primary) 68%, white 10%) 0%,
+				color-mix(in oklch, var(--primary) 68%, white 10%) var(--terminal-font-size-progress),
+				color-mix(in oklch, var(--muted) 88%, var(--background)) var(--terminal-font-size-progress),
+				color-mix(in oklch, var(--muted) 88%, var(--background)) 100%
+			);
+		background-color: color-mix(in oklch, var(--muted) 88%, var(--background));
+		cursor: pointer;
+		outline: none;
+	}
+
+	.terminal-font-size-range:focus-visible {
+		box-shadow:
+			0 0 0 2px color-mix(in oklch, var(--background) 92%, transparent),
+			0 0 0 4px color-mix(in oklch, var(--primary) 22%, transparent);
+	}
+
+	.terminal-font-size-range::-webkit-slider-runnable-track {
+		height: 0.4rem;
+		border-radius: 9999px;
+		background: transparent;
+	}
+
+	.terminal-font-size-range::-webkit-slider-thumb {
+		appearance: none;
+		margin-top: -0.3rem;
+		height: 1rem;
+		width: 1rem;
+		border-radius: 9999px;
+		border: 1px solid color-mix(in oklch, var(--border) 84%, transparent);
+		background:
+			radial-gradient(circle at 32% 32%, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.82) 38%, transparent 42%),
+			color-mix(in oklch, var(--background) 94%, white 6%);
+		box-shadow:
+			0 1px 2px color-mix(in srgb, black 16%, transparent),
+			0 0 0 1px color-mix(in oklch, var(--background) 84%, transparent) inset;
+		transition:
+			transform 120ms ease,
+			box-shadow 120ms ease,
+			background-color 120ms ease;
+	}
+
+	.terminal-font-size-range:hover::-webkit-slider-thumb,
+	.terminal-font-size-range:focus-visible::-webkit-slider-thumb {
+		transform: scale(1.04);
+		box-shadow:
+			0 2px 6px color-mix(in srgb, black 18%, transparent),
+			0 0 0 1px color-mix(in oklch, var(--background) 84%, transparent) inset;
+	}
+
+	.terminal-font-size-range:active::-webkit-slider-thumb {
+		transform: scale(0.98);
+	}
+
+	.terminal-font-size-range::-moz-range-track {
+		height: 0.4rem;
+		border: 0;
+		border-radius: 9999px;
+		background: color-mix(in oklch, var(--muted) 88%, var(--background));
+	}
+
+	.terminal-font-size-range::-moz-range-progress {
+		height: 0.4rem;
+		border-radius: 9999px;
+		background: color-mix(in oklch, var(--primary) 68%, white 10%);
+	}
+
+	.terminal-font-size-range::-moz-range-thumb {
+		height: 1rem;
+		width: 1rem;
+		border: 1px solid color-mix(in oklch, var(--border) 84%, transparent);
+		border-radius: 9999px;
+		background: color-mix(in oklch, var(--background) 94%, white 6%);
+		box-shadow:
+			0 1px 2px color-mix(in srgb, black 16%, transparent),
+			0 0 0 1px color-mix(in oklch, var(--background) 84%, transparent) inset;
 	}
 
 	.native-window-resize-handle {

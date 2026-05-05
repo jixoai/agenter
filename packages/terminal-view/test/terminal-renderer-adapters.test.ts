@@ -340,6 +340,9 @@ describe("Feature: terminal renderer adapters", () => {
     expect(ghostty?.renderer.setTheme).toHaveBeenCalledWith(nextAppearance.theme);
     expect(ghostty?.renderer.setCursorStyle).toHaveBeenCalledWith(nextAppearance.cursorStyle);
     await ghosttySession.settlePresentation?.();
+    expect(document.head.querySelectorAll('style[data-terminal-font-asset="agenter-terminal-font-jetbrains-mono"]')).toHaveLength(
+      1,
+    );
     expect(documentFontsLoad.mock.calls).toEqual(
       expect.arrayContaining([
         ["500 16px 'JetBrains Mono'", "MW@#"],

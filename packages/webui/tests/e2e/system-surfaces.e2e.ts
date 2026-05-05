@@ -190,6 +190,21 @@ const chooseSelectOptionByText = async (page: Page, trigger: Locator, optionText
   return label;
 };
 
+const setRangeValue = async (locator: Locator, value: number): Promise<void> => {
+  await expect(locator).toBeVisible({ timeout: 15_000 });
+  await locator.evaluate(
+    (element, nextValue) => {
+      if (!(element instanceof HTMLInputElement)) {
+        throw new Error("Expected range input");
+      }
+      element.value = String(nextValue);
+      element.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
+    },
+    value,
+  );
+};
+
 const chooseFirstSelectOption = async (
   page: Page,
   trigger: Locator,
@@ -2069,8 +2084,8 @@ test.describe("Feature: Svelte system surfaces", () => {
       .toBe("wterm");
 
     const fontDialog = await openTerminalConfigDialog(page);
-    await chooseSelectOptionByText(page, fontDialog.getByTestId("terminal-config-font-family-select"), "SF Mono");
-    await chooseSelectOptionByText(page, fontDialog.getByTestId("terminal-config-font-size-select"), "16px");
+    await chooseSelectOptionByText(page, fontDialog.getByTestId("terminal-config-font-family-select"), "Cascadia Mono");
+    await setRangeValue(fontDialog.getByTestId("terminal-config-font-size-range"), 16);
     await clickStable(fontDialog.getByTestId("terminal-config-apply"));
     await expect(fontDialog).toBeHidden({ timeout: 15_000 });
     await expect
@@ -2085,9 +2100,86 @@ test.describe("Feature: Svelte system surfaces", () => {
       .toMatchObject({
         renderer: "wterm",
         font: {
-          family: expect.stringContaining("SF Mono"),
+          family: expect.stringContaining("Cascadia Mono"),
           sizePx: 16,
         },
+      });
+  });
+
+  test("Scenario: Given terminal-view owns optional terminal webfonts When JetBrains Mono is selected Then terminal-view injects its own font asset and the browser loads the matching font faces", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(90_000);
+    const terminalId = `playwright-font-law-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+
+    await navigateToSystem(page, "Terminals");
+    await createTerminalAndOpenDetail(page, {
+      terminalId,
+      cwd: terminalCwd,
+    });
+
+    const fontDialog = await openTerminalConfigDialog(page);
+    await chooseSelectOptionByText(page, fontDialog.getByTestId("terminal-config-font-family-select"), "JetBrains Mono");
+    await clickStable(fontDialog.getByTestId("terminal-config-apply"));
+    await expect(fontDialog).toBeHidden({ timeout: 15_000 });
+
+    await expect
+      .poll(async () => {
+        return await page.locator("terminal-view").first().evaluate((element) => {
+          return {
+            font: "font" in element ? element.font : null,
+            renderer: "resolvedRenderer" in element ? element.resolvedRenderer : null,
+          };
+        });
+      })
+      .toMatchObject({
+        renderer: "ghostty-web",
+        font: {
+          family: expect.stringContaining("JetBrains Mono"),
+        },
+      });
+
+    await expect
+      .poll(async () => {
+        return await page.evaluate(() => {
+          const styleMarkers = Array.from(document.querySelectorAll('style[data-terminal-font-asset]')).map((style) =>
+            style.getAttribute("data-terminal-font-asset"),
+          );
+          const fontStatuses = Array.from(document.fonts)
+            .filter((font) => /JetBrains Mono/i.test(font.family))
+            .map((font) => ({
+              family: font.family,
+              status: font.status,
+              weight: font.weight,
+            }));
+          const fontResources = performance
+            .getEntriesByType("resource")
+            .map((entry) => entry.name)
+            .filter((name) => /jetbrains-mono-.*\.woff2(?:$|\?)/i.test(name));
+          return {
+            styleMarkers,
+            fontStatuses,
+            fontResources,
+          };
+        });
+      }, { timeout: 20_000 })
+      .toMatchObject({
+        styleMarkers: expect.arrayContaining(["agenter-terminal-font-jetbrains-mono"]),
+        fontStatuses: expect.arrayContaining([
+          expect.objectContaining({
+            family: "JetBrains Mono",
+            status: "loaded",
+            weight: "400",
+          }),
+          expect.objectContaining({
+            family: "JetBrains Mono",
+            status: "loaded",
+            weight: "700",
+          }),
+        ]),
+        fontResources: expect.arrayContaining([
+          expect.stringMatching(/jetbrains-mono-latin-400-normal(?:\.[A-Za-z0-9_-]+)?\.woff2(?:$|\?)/i),
+        ]),
       });
   });
 

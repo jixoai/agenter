@@ -12,6 +12,12 @@
   },
   "dependencies": {
     "@agenter/terminal-transport-protocol": "workspace:*",
+    "@fontsource/cascadia-mono": "^5.2.3",
+    "@fontsource/fira-code": "^5.2.7",
+    "@fontsource/geist-mono": "^5.2.7",
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/source-code-pro": "^5.2.7",
     "@wterm/dom": "^0.3.0",
     "@wterm/ghostty": "^0.3.0",
     "@xterm/addon-fit": "^0.10.0",

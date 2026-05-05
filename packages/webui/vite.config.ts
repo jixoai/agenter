@@ -7,6 +7,12 @@ import { playwright } from '@vitest/browser-playwright';
 import type { InlineConfig } from 'vitest/node';
 import type { UserConfig } from 'vite';
 import { bitsUiVirtualStylePlugin } from './vite.bits-ui-style-plugin';
+import {
+  appOptimizeDepsInclude,
+  appVitestOptimizeDepsInclude,
+  codemirrorDedupe,
+  workspaceSourceDependencyExcludes,
+} from './src/lib/dev/vite-dependency-optimization';
 const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
 const resolveTrpcProxyTarget = (): string => {
@@ -26,36 +32,6 @@ const resolveTrpcProxyTarget = (): string => {
 
 const proxyTarget = resolveTrpcProxyTarget();
 
-const codemirrorDedupe = [
-  '@codemirror/autocomplete',
-  '@codemirror/lang-json',
-  '@codemirror/lang-markdown',
-  '@codemirror/lang-yaml',
-  '@codemirror/language',
-  '@codemirror/language-data',
-  '@codemirror/state',
-  '@codemirror/view'
-];
-
-const optimizeDepsInclude = [
-  ...codemirrorDedupe,
-  '@agenter/terminal-view',
-  '@lezer/highlight',
-  '@tanstack/svelte-virtual',
-  'clsx',
-  'highlight.js',
-  'idb-keyval',
-  'lit',
-  'lit/decorators.js',
-  'lit/directives/style-map.js',
-  'lit/directives/unsafe-html.js',
-  'lit/static-html.js',
-  'markdown-it',
-  'tailwind-merge',
-  'tailwind-variants',
-  'yaml'
-];
-
 const appSvelteDependencyExcludes = [
   '@agenter/svelte-components',
   '@agenter/web-chat-view',
@@ -71,6 +47,7 @@ const storybookSvelteDependencyExcludes = [
 ];
 
 const createConfig = async (): Promise<UserConfig & { test: InlineConfig }> => {
+  const isVitest = Boolean(process.env.VITEST);
   return {
     plugins: [bitsUiVirtualStylePlugin(), tailwindcss(), sveltekit()],
     resolve: {
@@ -94,9 +71,13 @@ const createConfig = async (): Promise<UserConfig & { test: InlineConfig }> => {
       }
     },
     optimizeDeps: {
-      include: optimizeDepsInclude,
+      include: isVitest ? appVitestOptimizeDepsInclude : appOptimizeDepsInclude,
       // Storybook DOM tests must let Vite's Svelte pipeline own Svelte dependencies.
-      exclude: [...appSvelteDependencyExcludes, ...storybookSvelteDependencyExcludes]
+      exclude: [
+        ...(isVitest ? [] : workspaceSourceDependencyExcludes),
+        ...appSvelteDependencyExcludes,
+        ...storybookSvelteDependencyExcludes
+      ]
     },
     test: {
       expect: {
