@@ -4,6 +4,10 @@ import {
   resolveMessageControlDbPath,
   type MessageTransportServerMessage,
 } from "@agenter/message-system";
+import {
+  decodeTerminalTransportServerMessage,
+  type TerminalTransportServerMessage,
+} from "@agenter/terminal-transport-protocol";
 import { SessionDb } from "@agenter/session-system";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -57,6 +61,23 @@ const waitForRoomTransportMessage = async (socket: WebSocket): Promise<MessageTr
     socket.addEventListener("close", onClose);
     socket.addEventListener("error", onError);
   });
+
+const decodeTerminalTransportFrame = (data: MessageEvent["data"]): TerminalTransportServerMessage | null => {
+  if (typeof data === "string") {
+    return null;
+  }
+  if (data instanceof ArrayBuffer) {
+    return decodeTerminalTransportServerMessage(data);
+  }
+  if (ArrayBuffer.isView(data)) {
+    return decodeTerminalTransportServerMessage(data);
+  }
+  return null;
+};
+
+const utf8Decoder = new TextDecoder();
+const outputIncludes = (message: TerminalTransportServerMessage, text: string): boolean =>
+  message.type === "outputBytes" && utf8Decoder.decode(message.data).includes(text);
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -405,7 +426,7 @@ describe("Feature: app kernel event replay", () => {
     });
 
     const socket = new WebSocket(transportUrl);
-    const messages: Array<{ type?: string; data?: string }> = [];
+    const messages: TerminalTransportServerMessage[] = [];
     const opened = new Promise<void>((resolve, reject) => {
       socket.addEventListener("open", () => resolve(), { once: true });
       socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
@@ -415,14 +436,17 @@ describe("Feature: app kernel event replay", () => {
     });
     const secondFrame = new Promise<void>((resolve) => {
       socket.addEventListener("message", (event) => {
-        const message = JSON.parse(String(event.data)) as { type?: string; data?: string };
-        if (message.type === "output" && message.data?.includes("second-frame")) {
+        const message = decodeTerminalTransportFrame(event.data);
+        if (message && outputIncludes(message, "second-frame")) {
           resolve();
         }
       });
     });
     socket.addEventListener("message", (event) => {
-      messages.push(JSON.parse(String(event.data)) as { type?: string; data?: string });
+      const message = decodeTerminalTransportFrame(event.data);
+      if (message) {
+        messages.push(message);
+      }
     });
 
     await opened;
@@ -434,7 +458,7 @@ describe("Feature: app kernel event replay", () => {
     unsubscribe();
 
     expect(messages.some((message) => message.type === "snapshot")).toBeTrue();
-    expect(messages.some((message) => message.type === "output" && message.data?.includes("first-frame"))).toBeTrue();
+    expect(messages.some((message) => outputIncludes(message, "first-frame"))).toBeTrue();
     expect(
       surfaceEvents.some((event) => {
         if (!event.payload || typeof event.payload !== "object" || Array.isArray(event.payload)) {

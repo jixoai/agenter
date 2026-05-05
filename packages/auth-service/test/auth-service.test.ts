@@ -20,7 +20,6 @@ const EXPECTED_SESSION_FALLBACK_SVG =
 const ROOT_AUTH_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f094538c5f1b6f6db1d4c4a2a2d5f6b7c8d9e0f1";
 
 const startServer = async (
-  port: number,
   emailCodes = new Map<string, string>(),
   options: {
     rootAuthPrivateKey?: string;
@@ -31,7 +30,7 @@ const startServer = async (
     onEmailChallengeIssued: async (event) => {
       emailCodes.set(event.email, event.code);
     },
-    port,
+    port: 0,
     rootAuthPrivateKey: options.rootAuthPrivateKey,
   });
   handles.push(handle);
@@ -46,14 +45,14 @@ afterEach(async () => {
 
 describe("Feature: auth-service control plane", () => {
   test("Scenario: Given the service boots When health is requested Then it reports ok", async () => {
-    const { handle } = await startServer(4599);
+    const { handle } = await startServer();
     const response = await fetch(`http://${handle.host}:${handle.port}/health`);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
   });
 
   test("Scenario: Given auth service startup When the descriptor is requested Then wallet challenge JWT mode and root identity are exposed", async () => {
-    const { handle } = await startServer(4598, new Map(), {
+    const { handle } = await startServer(new Map(), {
       rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
     });
     const response = await fetch(`http://${handle.host}:${handle.port}/auth/descriptor`);
@@ -85,7 +84,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given a managed local root auth key When the reveal endpoint is requested Then the exact private key and auth identity are returned", async () => {
-    const { handle } = await startServer(4606, new Map(), {
+    const { handle } = await startServer(new Map(), {
       rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
     });
     const response = await fetch(`http://${handle.host}:${handle.port}/auth/root-key/reveal`, {
@@ -105,7 +104,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given auth-service fresh start When the reveal endpoint is requested Then the generated managed key matches the published auth descriptor", async () => {
-    const { handle } = await startServer(4607);
+    const { handle } = await startServer();
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const descriptorResponse = await fetch(`${baseUrl}/auth/descriptor`);
@@ -137,7 +136,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given wallet auth challenge When the signature is valid Then the auth service returns a JWT session and replays it from /auth/session", async () => {
-    const { handle } = await startServer(4597);
+    const { handle } = await startServer();
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const account = privateKeyToAccount(generatePrivateKey());
@@ -197,7 +196,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given wallet auth challenge When the signature does not match Then the auth service rejects the verification", async () => {
-    const { handle } = await startServer(4596);
+    const { handle } = await startServer();
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const account = privateKeyToAccount(generatePrivateKey());
@@ -230,7 +229,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given a managed room principal When it is created Then the public registry and reveal endpoints stay consistent", async () => {
-    const { handle } = await startServer(4608);
+    const { handle } = await startServer();
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const createResponse = await fetch(`${baseUrl}/principals/managed`, {
@@ -288,7 +287,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given a managed avatar principal When it is created and listed Then nickname-backed metadata stays on the auth control plane", async () => {
-    const { handle } = await startServer(4609);
+    const { handle } = await startServer();
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const createResponse = await fetch(`${baseUrl}/principals/managed`, {
@@ -351,7 +350,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given an avatar principal with classify metadata When svg icon is requested twice Then the fallback stays deterministic and classify-backed", async () => {
-    const { handle } = await startServer(4610);
+    const { handle } = await startServer();
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const createResponse = await fetch(`${baseUrl}/principals/managed`, {
@@ -384,7 +383,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given two avatar principals with the same classify When fallback svg is requested Then the glyph stays classify-stable while the HSL background changes by principal seed", async () => {
-    const { handle } = await startServer(4612);
+    const { handle } = await startServer();
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const createAvatar = async (nickname: string) => {
@@ -435,7 +434,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given a built-in avatar principal stored without classify When fallback is requested Then startup reconciliation restores the canonical glyph before any upload", async () => {
-    const { handle } = await startServer(4611);
+    const { handle } = await startServer();
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const createResponse = await fetch(`${baseUrl}/principals/managed`, {
@@ -487,7 +486,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given a temporary identifier When profile icon is requested Then the default response is rasterized png", async () => {
-    const { handle } = await startServer(4600);
+    const { handle } = await startServer();
     const response = await fetch(`http://${handle.host}:${handle.port}/media/profiles/demo-user/icon`);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/png");
@@ -496,7 +495,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given a temporary identifier When png output is requested Then the service rasterizes the deterministic svg", async () => {
-    const { handle } = await startServer(4603);
+    const { handle } = await startServer();
     const response = await fetch(`http://${handle.host}:${handle.port}/media/profiles/demo-user/icon?format=png&size=64`);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/png");
@@ -505,7 +504,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given a temporary identifier When svg output is requested Then the service returns the canonical Agenter profile fallback", async () => {
-    const { handle } = await startServer(4605);
+    const { handle } = await startServer();
     const response = await fetch(`http://${handle.host}:${handle.port}/media/profiles/demo-user/icon?format=svg`);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/svg+xml");
@@ -515,7 +514,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given wallet auth When metadata is updated Then later reads return the canonical projection", async () => {
-    const { handle } = await startServer(4601);
+    const { handle } = await startServer();
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const account = privateKeyToAccount(generatePrivateKey());
@@ -589,7 +588,7 @@ describe("Feature: auth-service control plane", () => {
 
   test("Scenario: Given email bootstrap When OTP is verified Then the service returns a registration ticket instead of a durable token", async () => {
     const emailCodes = new Map<string, string>();
-    const { handle } = await startServer(4602, emailCodes);
+    const { handle } = await startServer(emailCodes);
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     await fetch(`${baseUrl}/auth/email/start`, {
@@ -636,7 +635,7 @@ describe("Feature: auth-service control plane", () => {
 
   test("Scenario: Given wallet and email identifiers When email OTP is verified with a wallet bearer token Then both identifiers share one profile and icon", async () => {
     const emailCodes = new Map<string, string>();
-    const { handle } = await startServer(4602, emailCodes);
+    const { handle } = await startServer(emailCodes);
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const account = privateKeyToAccount(generatePrivateKey());
@@ -714,7 +713,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given a synced session seed When session icon is requested Then the caller no longer needs workspace query params", async () => {
-    const { handle } = await startServer(4604);
+    const { handle } = await startServer();
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const syncResponse = await fetch(`${baseUrl}/sessions/session-1/seed`, {
@@ -735,7 +734,7 @@ describe("Feature: auth-service control plane", () => {
   });
 
   test("Scenario: Given a synced session seed When svg output is requested Then the service returns the canonical random session avatar", async () => {
-    const { handle } = await startServer(4606);
+    const { handle } = await startServer();
     const baseUrl = `http://${handle.host}:${handle.port}`;
 
     const seedPayload = {

@@ -272,7 +272,8 @@ describe("Feature: app-server trpc procedures", () => {
     expect(defaultEntry).toMatchObject({
       avatarPrincipalId: expect.any(String),
       displayName: "Default",
-      classify: null,
+      classify: "assistant",
+      defaultAvatar: true,
     });
     expect(defaultEntry?.iconUrl).toContain("/media/avatars/");
     expect(defaultEntry?.globalPath).toContain(join(".agenter", "avatars", "by-principal"));

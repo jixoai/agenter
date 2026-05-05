@@ -338,6 +338,10 @@
 		if (!selectedTerminal || !effectiveCallerToken || !writeText.trim() || writeBusy) {
 			return;
 		}
+		// Let the bound textarea value settle before we snapshot the draft for submission.
+		// Storybook DOM runs can click the submit button immediately after typing, and
+		// reading writeText too early truncates the final characters.
+		await tick();
 		flushSync();
 		const draft = writeText;
 		if (!draft.trim()) {

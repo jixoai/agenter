@@ -48,6 +48,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@agenter/terminal-transport-protocol": "workspace:*",
     "@types/bun": "latest",
     "typescript": "latest",
     "viem": "^2.47.6",

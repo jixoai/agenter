@@ -314,7 +314,7 @@
 				description={selectedPreview ? `${selectedSkillLabel ?? 'Skill'} · ${selectedSectionLabel ?? 'Section'}` : 'Read-only file preview.'}
 				summaryClass="gap-1"
 				scrollBody={false}
-				contentClass="grid h-full min-h-0"
+				contentClass="grid h-full"
 			>
 				{#snippet summary()}
 					{#if previewError}
@@ -338,7 +338,7 @@
 				{#if previewError}
 					<NoticeBanner tone="warning" message={previewError} />
 				{:else}
-					<SkillPreviewPane preview={selectedPreview} class="h-full min-h-0" />
+					<SkillPreviewPane preview={selectedPreview} class="h-full" />
 				{/if}
 			</WorkbenchDetailDrawer>
 		{/snippet}

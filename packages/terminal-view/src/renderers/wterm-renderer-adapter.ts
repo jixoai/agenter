@@ -1,6 +1,6 @@
 import { GhosttyCore, type GhosttyOptions } from "@wterm/ghostty";
 import { WTerm } from "@wterm/dom";
-import wtermStyles from "@wterm/dom/css?inline";
+import wtermStyles from "./wterm-dom.css?inline";
 
 import {
   TERMINAL_PUBLIC_INPUT_ATTRIBUTE,

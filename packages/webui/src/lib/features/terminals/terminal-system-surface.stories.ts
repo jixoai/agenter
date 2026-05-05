@@ -26,7 +26,12 @@ const writeDraft = async (canvasElement: HTMLElement, text: string) => {
   });
   await userEvent.clear(draft);
   await userEvent.type(draft, text);
+  if (draft.value !== text) {
+    draft.value = text;
+  }
+  draft.dispatchEvent(new Event("input", { bubbles: true }));
   await waitFor(() => {
+    expect(draft).toHaveValue(text);
     expect(submit).not.toBeDisabled();
   });
   await userEvent.click(submit);

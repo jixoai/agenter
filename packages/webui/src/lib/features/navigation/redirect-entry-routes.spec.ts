@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-const routesRoot = resolve(import.meta.dirname, "../../../routes");
+const routesRoot = resolve(import.meta.dirname, "../../../routes/(app)");
 
 const readRoute = (relativePath: string): string => readFileSync(resolve(routesRoot, relativePath), "utf8");
 
