@@ -6,6 +6,7 @@
 
 - `app-server` 是 AvatarRuntime lifecycle、WorkspaceSystem、attention-derived notification projection 的组合根。
 - `app-server` 可以持有 session catalog、runtime lifecycle、tRPC surface 与 projection cache，但不能成为 `message-system` 或 `terminal-system` 的 durable truth owner。
+- remote `message-system` search / contact-request / accept-contact HTTP bridge 固定属于 `app-server`；`message-system` 只保存 actor-private source metadata 与 contact truth，不直接拥有远端 transport/auth 调用。
 - stopped / cold sessions 的 attention、notification、history inspection 必须回到磁盘事实，而不是依赖残留内存对象。
 
 ## 2. AvatarRuntime 与 WorkspaceSystem Contract
@@ -76,6 +77,7 @@
 - ModelClient 的 provider loop strategy 只允许同步消费已经 staged 的 committed attention projection，并把它追加到下一次 continuation request；它不得直接 drain MessageRoom/Terminal/Task，也不得执行 attention commit 或 read ack。
 - message attention body 必须直接携带消息级客观事实与必要附件 facts，不得再默认内联 room social envelope；participants / presence / visibleRooms 这类 room projection 必须通过显式 room snapshot、`message read`、`message query` 等既有 query surface 获取；terminal / task 也必须各自通过自己的 presentation builder 提供足够的 AI-visible detail。
 - app-server 不得从 raw room transcript rows 重新推导 message unread truth 或 runtime readiness；它只能消费 `message-system` 提供的 active unread / active-visible projection，并在需要历史分页时另行保持 recalled transcript rows 的历史身份。
+- runtime-facing reachable participant directory 必须优先投影 durable contacts，只在没有 contact truth 时才回退到 visible-room label projection；room label 不得再冒充 durable people truth。
 - focused terminal source observations 默认只保留为 queryable attention history；terminal idle/focus/unfocus 这类 lifecycle coordination 默认属于 scheduler signal / wake-rank truth，不得再作为 source-authored unresolved debt 直接进入 AI-visible task 语义。
 - real-provider backend 验收至少要能证明：同一 session 在 room-visible 交付之后，经过 `session.stop -> kernel cold restart -> session.start` 仍能靠磁盘事实继续工作，而不是依赖残留内存对象。
 - 需要真实语义判断的 backend 验收必须通过专用 semantic judge 层完成，而不是在测试里散落 prompt-specific 字符串 hack。
