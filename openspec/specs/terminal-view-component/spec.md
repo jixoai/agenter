@@ -31,6 +31,16 @@ The component SHALL connect to the terminal-system websocket PTY transport contr
 - **THEN** the component renders the snapshot immediately
 - **THEN** live PTY output takes over without clearing the already rendered viewport
 
+#### Scenario: Stable transport URL reconnects after lifecycle restart
+- **WHEN** the host keeps the same durable websocket URL but disables live transport because the terminal has stopped
+- **THEN** the component moves to an idle live-transport state without discarding snapshot hydration
+- **AND** when the host re-enables live transport on that same URL after bootstrap, the component opens a fresh websocket connection instead of staying closed
+
+#### Scenario: Snapshot stays renderable while live transport is disabled
+- **WHEN** the host disables live transport for a stopped terminal that still has snapshot truth
+- **THEN** the component keeps rendering the current snapshot viewport
+- **AND** it does not require the host to clear transport discovery just to prevent stale live websocket activity
+
 ### Requirement: Terminal-view SHALL preserve stable live rendering
 
 The terminal renderer SHALL preserve ANSI rendering fidelity and stable fit-driven resizing while live transport is active. Once live transport has hydrated the viewport, redundant same-geometry fallback snapshots SHALL NOT trigger another reactive rehydration cycle.

@@ -107,6 +107,11 @@ The terminal-system route SHALL treat `fit` and `cover` as window-shell projecti
 - **THEN** projection may resolve as inline-fit or block-fit depending on which axis saturates first
 - **AND** the titlebar stays at normal size in both cases because only terminal-content participates in scale
 
+#### Scenario: Cover projection does not expose a frame resize affordance
+- **WHEN** the terminal window is in `cover`
+- **THEN** the route does not render the framed live resize handle
+- **AND** only framed fit-mode windows may present the live resize affordance
+
 #### Scenario: Live resize derives terminal geometry from the dragged window frame
 - **WHEN** the operator drags the terminal window resize handle
 - **THEN** the window frame may follow the pointer as a temporary projection while dragging
@@ -137,6 +142,21 @@ The terminal-system route SHALL treat `fit` and `cover` as window-shell projecti
 
 - **WHEN** a terminal is `running`
 - **THEN** the route exposes `Kill PTY` as the lifecycle action and keeps `Delete terminal` separate as the destructive catalog action
+
+#### Scenario: Page-toolbar and titlebar project one lifecycle owner
+- **WHEN** the selected terminal route renders lifecycle controls in both the page-toolbar and the terminal-window titlebar
+- **THEN** both controls emit the same route-owned lifecycle action type
+- **AND** busy state, lifecycle labels, and destructive confirmation rules stay aligned across both projections
+
+#### Scenario: Kill PTY requires confirmation
+- **WHEN** the operator requests `Kill PTY` from either lifecycle projection
+- **THEN** the route opens one confirmation dialog before calling the stop mutation
+- **AND** cancelling the dialog does not stop the PTY
+
+#### Scenario: Bootstrap stays a lifecycle action
+- **WHEN** the operator requests `Bootstrap PTY`
+- **THEN** the route starts the PTY from the current durable terminal configuration
+- **AND** the lifecycle control itself does not become an inline launch-parameter editor
 
 #### Scenario: Stopped route stays open
 
@@ -270,6 +290,18 @@ The selected terminal window titlebar SHALL expose one icon-only presentation co
 - **THEN** the titlebar keeps the same window title, lifecycle control, fit-cover control, geometry text, and config icon control
 - **AND** cover mode only changes chrome ownership and stickiness, not titlebar content
 
+#### Scenario: Titlebar controls stay minimal and stateful
+- **WHEN** the terminal window titlebar renders
+- **THEN** it exposes exactly two macOS-style circular control primitives
+- **AND** one circle projects the current lifecycle state as blue `bootstrap` or red `kill`
+- **AND** the other circle projects the current projection mode as yellow `fit` or green `cover`
+- **AND** the circles do not render icons, inline labels, or a third destructive control category
+
+#### Scenario: Titlebar inline-end shows size information only
+- **WHEN** the terminal window titlebar renders
+- **THEN** the inline-end metadata is limited to terminal size information
+- **AND** the titlebar does not repeat transport, projection, or other multi-chip status labels there
+
 #### Scenario: Config dialog stages presentation draft locally
 - **WHEN** the operator opens the titlebar config dialog
 - **THEN** the dialog lets them change terminal theme, renderer preference, font family, and font size
@@ -303,4 +335,3 @@ The integrated terminal window SHALL size fit/cover projection from renderer-mea
 - **WHEN** a live renderer session reports native terminal content metrics in cover mode
 - **THEN** the terminal window body, scroll container, and terminal content remain aligned to the same native content box
 - **AND** cover mode does not invent extra spacing between `terminal-content` and `terminal-window`
-
