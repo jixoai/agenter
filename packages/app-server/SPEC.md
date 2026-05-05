@@ -110,6 +110,8 @@
   - backend / real-AI evaluators 必须用 room truth、seat timeline、descriptor projection、terminal observation、port/process ownership 这类 durable facts 判定成败，而不是依赖 exact assistant wording
 - `workspace-manage` 不是当前 runtime contract 的一部分。workspace 仍只通过既有 WorkspaceSystem authority 与 workspace/root shell surfaces 暴露，不沿用本轮 managed-seat CLI。
 - workspace/root shell privilege 是本项目有意保留的 authority，不属于本轮 pollution cleanup 范围；本轮只清理 Message/Terminal/Skill/Attention 的语义污染，不削弱 `root_bash`、`workspace_bash`、runtime-local API、workspace grants、root-workspace shell world。
+- workspace command discovery 也必须进入同一条平台法则：`helpcenter` 与 browser workspace CLI page 只能读取共享 command catalog projection；不得分别解析 bare `help`、shell stdout 或 route-local glue。
+- workspace file-backed tool commands 的 structured helpcenter metadata 通过 sidecar `<tool-file>.cli.json` 提供，最小字段固定为 `name + description`；缺失或无效 metadata 时命令仍可调用，但 catalog 必须以 fallback description 客观暴露这条事实。
 - runtime-local terminal contract 固定拆成两个命令：
   - `terminal write` = raw mode，只接收 literal text，并要求调用方自己编码 Enter / control chars
   - `terminal input` = mixed mode，支持 `<key .../>`、`<wait .../>`、`<raw>...</raw>`

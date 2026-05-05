@@ -203,7 +203,8 @@ Workspaces
 - 第二行不应再复制一个“右半区动作带”。
 - 第二行的控制项更适合用 pills / segmented controls 表达视角和模式切换。
 - `workspace` 页的第二行优先承载 page-level mode switch，例如 `Explorer / Rules / Private`。
-- `View as` 这类 avatar 视角切换属于 shared content header，不应再占据 workspace toolbar 第二行。
+- `View as` 这类 avatar 视角切换属于 shared `page-toolbar` 的 `status` / overflow 集群，不应再留在 workspace content header 或 route body 中重复出现。
+- `page-toolbar` 自带响应式折叠与 overflow panel；同一组 route-local controls 必须声明一次后交给 shared toolbar 编排，而不是再手写 desktop/mobile 两套变体。
 
 ### 7.2.1 Toolbar 身份表达
 

@@ -108,7 +108,8 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `Skills` 是统一的只读 skill workbench：固定保留一个 catalog tab，并在其 `page-tabs` 中按继承顺序表达 `shared / built-in / global / avatars`；默认 `/skills` 落到 `shared`，旧 `view=avatar` 入口必须在 route 层收敛为 `view=avatars`。从 `avatars` overview 打开的专属 avatar skill browser 以 closable workbench tab 追加在同一层。
 - `Skills` 的 durable truth 永远来自 objective skill roots，而不是前端自行拼接 sibling path：`shared / built-in / global` 一律是 skill-list-first 的 accordion list-detail browser；`avatars` 一律是 avatar-list-first overview，detail 只预览 workspace-grouped avatar-private skill roots，真正的文件树浏览放进 dedicated avatar tab。
 - `Skills` preview law 固定为一层 preview shell：所有 selected file 都走隔离的 `filePreviewer` iframe entry；`filePreviewer` 内部再按 kind 选择 renderer，其中 text-like files 默认使用 CodeMirror source preview，`pdf / image / audio / video` 使用对应成熟 renderer，不支持的类型也必须在同一 preview shell 中显式进入 unsupported 状态。
-- `Workspaces` 是独立的全局 WorkspaceSystem workbench；每个 workspace 只对应一个目录根，并通过共享 content header 暴露 `View as` avatar lens 与 `Explorer / Rules / Private` 三个 peer modes。
+- `Workspaces` 是独立的全局 WorkspaceSystem workbench；每个 workspace 只对应一个目录根，并通过共享 page-toolbar 暴露 `View as` avatar lens 与 `Explorer / Rules / Private / CLI` 四个 peer modes，content header 只保留 workspace root 与 surface facts。
+- Workspace CLI discovery 只展示 product/runtime truth：包含 `just-bash` builtins、descriptor-backed root runtime CLI、以及当前 workspace/avatar 的 public/private tool commands；不把任意 PATH binary 伪装成 workspace capability。
 - Workspace workbench 必须显式展示 `root-workspace` vs `public-workspace` 的 env/CLI 语义差异，但不得把这种差异表述成“root-workspace 不可共享”的所有权禁令。
 - workspace detail 可以从 `/workspaces` 自己打开 workspace-centric 的管理对话框来做 Avatar mount / unmount；这类控制面不再回流到 Avatar detail。
 - `Messages` 是 `message-system` 的全局 workbench；每个 room 对应一个 tab，并固定保留一个 `new room` tab。`room` 是当前聊天 channel 的承载概念，不能把 `room` 与 `chat`、`message-system` 混为一个概念。
