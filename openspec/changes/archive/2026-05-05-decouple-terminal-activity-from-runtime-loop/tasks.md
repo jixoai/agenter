@@ -20,4 +20,4 @@
 
 - [x] 4.1 Run targeted app-server terminal/runtime tests covering bridge classification, scheduler wake behavior, and shared-terminal collaboration.
 - [x] 4.2 Run relevant real/opt-in terminal validation entrypoints or document why they could not be executed in this turn.
-- [ ] 4.3 Sync durable specs if implementation changes require it, then archive `decouple-terminal-activity-from-runtime-loop` and commit the completed change.
+- [x] 4.3 Sync durable specs if implementation changes require it, then archive `decouple-terminal-activity-from-runtime-loop` and commit the completed change.
