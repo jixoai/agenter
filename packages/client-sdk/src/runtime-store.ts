@@ -66,6 +66,7 @@ import type {
   TerminalActivityItem,
   UploadedSessionAsset,
   WorkspaceAvatarCatalogEntry,
+  WorkspaceCliCatalogOutput,
   WorkspacePathSearchOutput,
   WorkspaceSessionCounts,
   WorkspaceSessionEntry,
@@ -425,7 +426,9 @@ const mergeGlobalTerminalEntry = (
     cursor: incoming.cursor ?? current.cursor,
     font: incoming.font ?? current.font,
     launchCwd: incoming.launchCwd,
-    configuredTitle: hasOwnProjectionField(incoming, "configuredTitle") ? incoming.configuredTitle : current.configuredTitle,
+    configuredTitle: hasOwnProjectionField(incoming, "configuredTitle")
+      ? incoming.configuredTitle
+      : current.configuredTitle,
     currentTitle: hasOwnProjectionField(incoming, "currentTitle") ? incoming.currentTitle : current.currentTitle,
     currentPath: hasOwnProjectionField(incoming, "currentPath") ? incoming.currentPath : current.currentPath,
     transportUrl: hasOwnProjectionField(incoming, "transportUrl") ? incoming.transportUrl : current.transportUrl,
@@ -664,7 +667,11 @@ const projectTerminalReadActivitySummary = (
   const tailPreview = trimTerminalActivityPreview(output.tail ?? snapshot?.lines?.slice(-20).join("\n"));
   const preview =
     tailPreview.preview ||
-    [output.title ?? "Terminal read", cols && rows ? `${cols}x${rows}` : null, lineCount !== null ? `${lineCount} lines` : null]
+    [
+      output.title ?? "Terminal read",
+      cols && rows ? `${cols}x${rows}` : null,
+      lineCount !== null ? `${lineCount} lines` : null,
+    ]
       .filter(Boolean)
       .join(" · ");
   return {
@@ -3619,6 +3626,10 @@ export class RuntimeStore {
     maxBytes?: number;
   }): Promise<SkillAvatarPreviewOutput> {
     return await this.client.trpc.skill.avatarPreview.query(input);
+  }
+
+  async readWorkspaceCliCatalog(input: { workspacePath: string; avatar: string }): Promise<WorkspaceCliCatalogOutput> {
+    return await this.client.trpc.workspace.cliCatalog.query(input);
   }
 
   async listWorkspaceWorkbenchTree(input: {

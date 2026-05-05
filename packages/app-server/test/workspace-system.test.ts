@@ -9,7 +9,11 @@ import type { AttentionSystem } from "@agenter/attention-system";
 
 import { AppKernel } from "../src";
 import { resolveRuntimeShellBinDir } from "../src/runtime-shell-bin";
-import { resolveWorkspaceAvatarCanonicalRoot } from "../src/workspace-system/paths";
+import {
+  resolveWorkspaceAvatarAssetRoot,
+  resolveWorkspaceAvatarCanonicalRoot,
+  resolveWorkspacePublicAssetRoot,
+} from "../src/workspace-system/paths";
 import { createRootWorkspaceShellWorld, type RootWorkspaceMountInput } from "../src/workspace-system/root-exec";
 import { startManagedSeatAuthorityServer } from "../test-support/managed-seat-authority-server";
 import { waitForRealValue } from "../test-support/real-kernel-harness";
@@ -949,6 +953,83 @@ describe("Feature: workspace system kernel integration", () => {
       expect(values.PRIVATE).toBe("");
       expect(values.PATH).toBe("/tmp/public-workspace-path");
       expect(values.PATH.includes(runtimeBinDir)).toBeFalse();
+    } finally {
+      await kernel.stop();
+    }
+  });
+
+  test("Scenario: Given workspace_bash exposes helpcenter When the shell lists JSON Then builtins and workspace tool groups stay visible without root runtime CLI claims", async () => {
+    const root = createTempRoot();
+    const workspace = join(root, "workspace-a");
+    mkdirSync(workspace, { recursive: true });
+    const avatar = "architect";
+    const publicToolsRoot = resolveWorkspacePublicAssetRoot(workspace, "tools");
+    const privateToolsRoot = resolveWorkspaceAvatarAssetRoot(workspace, avatar, "tools");
+    mkdirSync(publicToolsRoot, { recursive: true });
+    mkdirSync(privateToolsRoot, { recursive: true });
+    writeFileSync(join(publicToolsRoot, "review.sh"), "#!/usr/bin/env bash\necho review\n");
+    writeFileSync(
+      join(publicToolsRoot, "review.sh.cli.json"),
+      JSON.stringify({
+        name: "Review workspace",
+        description: "Run the shared workspace review helper.",
+      }),
+    );
+    writeFileSync(join(privateToolsRoot, "draft.ts"), "#!/usr/bin/env node\nconsole.log('draft')\n");
+
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+    try {
+      const session = await kernel.createSession({
+        cwd: workspace,
+        avatar,
+        autoStart: true,
+      });
+      kernel.grantRuntimeWorkspace({
+        runtimeId: session.id,
+        workspacePath: workspace,
+        grants: [{ pattern: "/", mode: "rw" }],
+      });
+
+      const workspaceMount = kernel
+        .listRuntimeWorkspaceMounts(session.id)
+        .find((entry) => entry.workspacePath === workspace && entry.kind === "workspace");
+      if (!workspaceMount) {
+        throw new Error("expected mounted workspace");
+      }
+
+      const result = await execWorkspaceBash(kernel, session.id, {
+        workspaceId: workspaceMount.runtimeWorkspaceId,
+        command: "helpcenter list --json",
+      });
+      expect(result.exitCode).toBe(0);
+      const payload = JSON.parse(result.stdout) as {
+        groups: Array<{
+          id: string;
+          entries: Array<{ commandLabel: string }>;
+        }>;
+      };
+      expect(payload.groups.map((group) => group.id)).toEqual([
+        "just-bash-builtins",
+        "workspace-public-tools",
+        "workspace-private-tools",
+      ]);
+      expect(payload.groups[0]?.entries.some((entry) => entry.commandLabel === "cd")).toBeTrue();
+      expect(payload.groups[1]?.entries).toEqual([
+        expect.objectContaining({
+          commandLabel: "tool_review",
+        }),
+      ]);
+      expect(payload.groups[2]?.entries).toEqual([
+        expect.objectContaining({
+          commandLabel: "tool_draft",
+        }),
+      ]);
     } finally {
       await kernel.stop();
     }

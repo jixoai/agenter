@@ -1,18 +1,16 @@
-import { accessSync, constants as fsConstants, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { relative, resolve } from "node:path";
 
 import { OverlayRuleFs } from "@agenter/just-bash-overlay-rule-fs";
 import { Bash, defineCommand, InMemoryFs, MountableFs } from "just-bash";
 
+import { createWorkspaceHelpcenterCommand } from "../cli-command-catalog";
 import { buildRuntimeToolExecCommand } from "../runtime-tool-exec";
 import { normalizeWorkspaceGrantPattern } from "./grants";
 import { getOneShotShellProcessViolation } from "./one-shot-shell-guard";
-import {
-  resolveWorkspaceAvatarAssetRoot,
-  resolveWorkspacePublicAssetRoot,
-  resolveWorkspaceToolCommandName,
-} from "./paths";
+import { resolveWorkspaceAvatarAssetRoot, resolveWorkspacePublicAssetRoot } from "./paths";
 import { listWorkspaceHiddenPrivatePaths } from "./private-isolation";
+import { listWorkspaceToolBindings } from "./tool-bindings";
 import type { WorkspaceAssetKind, WorkspaceGrantRecord } from "./types";
 
 export interface WorkspaceBashExecInput {
@@ -32,55 +30,7 @@ export interface WorkspaceBashExecResult {
   cwd: string;
 }
 
-interface WorkspaceToolBinding {
-  commandName: string;
-  absolutePath: string;
-  shell: "bash" | "sh" | "python3" | "js-exec";
-}
-
 const WORKSPACE_SYSTEM_GRANT_KINDS: WorkspaceAssetKind[] = ["skills", "memory", "tools", "archive"];
-
-const ensureReadableDirectory = (path: string): boolean => {
-  try {
-    accessSync(path, fsConstants.R_OK);
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-};
-
-const scanToolBindings = (input: { workspacePath: string; avatar: string }): WorkspaceToolBinding[] => {
-  const roots = [
-    resolveWorkspacePublicAssetRoot(input.workspacePath, "tools"),
-    resolveWorkspaceAvatarAssetRoot(input.workspacePath, input.avatar, "tools"),
-  ];
-  const bindings: WorkspaceToolBinding[] = [];
-  for (const root of roots) {
-    if (!ensureReadableDirectory(root)) {
-      continue;
-    }
-    for (const entry of readdirSync(root, { withFileTypes: true })) {
-      if (!entry.isFile()) {
-        continue;
-      }
-      const filePath = join(root, entry.name);
-      const firstLine = readFileSync(filePath, "utf8").split(/\r?\n/, 1)[0] ?? "";
-      const shell = firstLine.includes("python")
-        ? "python3"
-        : firstLine.includes("node") || firstLine.includes("deno") || firstLine.includes("bun")
-          ? "js-exec"
-          : firstLine.includes("sh")
-            ? "sh"
-            : "bash";
-      bindings.push({
-        commandName: resolveWorkspaceToolCommandName(entry.name),
-        absolutePath: resolve(filePath),
-        shell,
-      });
-    }
-  }
-  return bindings;
-};
 
 const createBashFs = (input: { workspacePath: string; avatar: string; grants: WorkspaceGrantRecord[] }) => {
   mkdirSync(input.workspacePath, { recursive: true });
@@ -138,7 +88,7 @@ export const executeWorkspaceBash = async (input: WorkspaceBashExecInput): Promi
     avatar: input.avatar,
     grants: input.grants,
   });
-  const toolBindings = scanToolBindings({
+  const toolBindings = listWorkspaceToolBindings({
     workspacePath,
     avatar: input.avatar,
   });
@@ -147,27 +97,33 @@ export const executeWorkspaceBash = async (input: WorkspaceBashExecInput): Promi
     cwd,
     python: toolBindings.some((binding) => binding.shell === "python3"),
     javascript: toolBindings.some((binding) => binding.shell === "js-exec"),
-    customCommands: toolBindings.map((binding) =>
-      defineCommand(binding.commandName, async (args, ctx) => {
-        const exec = ctx.exec;
-        if (!exec) {
-          return { stdout: "", stderr: `tool execution unavailable for ${binding.commandName}\n`, exitCode: 1 };
-        }
-        return await exec(
-          buildRuntimeToolExecCommand({
-            runner: binding.shell,
-            filePath: binding.absolutePath,
-            args,
-          }),
-          {
-            cwd: ctx.cwd,
-            env: Object.fromEntries(ctx.env.entries()),
-            stdin: ctx.stdin,
-            signal: ctx.signal,
-          },
-        );
+    customCommands: [
+      ...toolBindings.map((binding) =>
+        defineCommand(binding.commandName, async (args, ctx) => {
+          const exec = ctx.exec;
+          if (!exec) {
+            return { stdout: "", stderr: `tool execution unavailable for ${binding.commandName}\n`, exitCode: 1 };
+          }
+          return await exec(
+            buildRuntimeToolExecCommand({
+              runner: binding.shell,
+              filePath: binding.absolutePath,
+              args,
+            }),
+            {
+              cwd: ctx.cwd,
+              env: Object.fromEntries(ctx.env.entries()),
+              stdin: ctx.stdin,
+              signal: ctx.signal,
+            },
+          );
+        }),
+      ),
+      createWorkspaceHelpcenterCommand({
+        workspacePath,
+        avatar: input.avatar,
       }),
-    ),
+    ],
   });
   try {
     const result = await bash.exec(input.command, {

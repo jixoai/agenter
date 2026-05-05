@@ -1,10 +1,12 @@
 import type {
   RuntimeWorkspaceGrantEntry,
+  WorkspaceCliCatalogEntry,
+  WorkspaceCliCatalogGroup,
   WorkspaceWorkbenchTreeEntry,
   WorkspaceWorkbenchTreeOutput,
 } from "@agenter/client-sdk";
 
-export type WorkspaceMode = "explorer" | "rules" | "private";
+export type WorkspaceMode = "explorer" | "rules" | "private" | "cli";
 
 export interface WorkspaceRuleDraft {
   id: string;
@@ -29,6 +31,13 @@ export interface WorkspaceTreeLoadMoreRow {
 }
 
 export type WorkspaceTreeRow = WorkspaceTreeEntryRow | WorkspaceTreeLoadMoreRow;
+
+const WORKSPACE_CLI_GROUP_DISPLAY_PRIORITY: Record<WorkspaceCliCatalogGroup["id"], number> = {
+  "workspace-public-tools": 0,
+  "workspace-private-tools": 1,
+  "root-runtime-cli": 2,
+  "just-bash-builtins": 3,
+};
 
 const normalizeRelativePath = (value: string | null | undefined): string => {
   const normalized = (value ?? "/").replace(/\\/gu, "/").trim();
@@ -63,6 +72,17 @@ const ruleMatchesQuery = (rule: WorkspaceRuleDraft, query: string): boolean => {
     .includes(normalizedQuery);
 };
 
+const cliEntryMatchesQuery = (entry: WorkspaceCliCatalogEntry, query: string): boolean => {
+  const normalizedQuery = normalizeSearchQuery(query);
+  if (!normalizedQuery) {
+    return true;
+  }
+  return [entry.commandLabel, entry.displayName, entry.description, entry.detailHint ?? "", entry.toolFileName ?? ""]
+    .join("\n")
+    .toLowerCase()
+    .includes(normalizedQuery);
+};
+
 const ancestorPaths = (path: string): string[] => {
   const normalized = normalizeRelativePath(path);
   if (normalized === "/") {
@@ -80,7 +100,7 @@ const resolveDepth = (path: string): number =>
   Math.max(0, normalizeRelativePath(path).split("/").filter(Boolean).length - 1);
 
 export const normalizeWorkspaceMode = (value: string | null | undefined): WorkspaceMode => {
-  if (value === "rules" || value === "private") {
+  if (value === "rules" || value === "private" || value === "cli") {
     return value;
   }
   return "explorer";
@@ -179,4 +199,75 @@ export const collectWorkspaceRuleMatchIds = (rules: readonly WorkspaceRuleDraft[
     return [];
   }
   return rules.filter((rule) => ruleMatchesQuery(rule, query)).map((rule) => rule.id);
+};
+
+export const filterWorkspaceCliCatalogGroups = (
+  groups: readonly WorkspaceCliCatalogGroup[],
+  searchQuery: string,
+): WorkspaceCliCatalogGroup[] => {
+  const query = normalizeSearchQuery(searchQuery);
+  if (!query) {
+    return groups.map((group) => ({
+      ...group,
+      entries: [...group.entries],
+    }));
+  }
+  return groups
+    .map((group) => ({
+      ...group,
+      entries: group.entries.filter((entry) => cliEntryMatchesQuery(entry, query)),
+    }))
+    .filter((group) => group.entries.length > 0);
+};
+
+export const orderWorkspaceCliCatalogGroupsForDisplay = (
+  groups: readonly WorkspaceCliCatalogGroup[],
+): WorkspaceCliCatalogGroup[] =>
+  [...groups]
+    .sort((left, right) => {
+      const leftPriority = WORKSPACE_CLI_GROUP_DISPLAY_PRIORITY[left.id] ?? Number.MAX_SAFE_INTEGER;
+      const rightPriority = WORKSPACE_CLI_GROUP_DISPLAY_PRIORITY[right.id] ?? Number.MAX_SAFE_INTEGER;
+      return leftPriority - rightPriority || left.title.localeCompare(right.title);
+    })
+    .map((group) => ({
+      ...group,
+      entries: [...group.entries],
+    }));
+
+const isHumanFriendlyBuiltinDefault = (entry: WorkspaceCliCatalogEntry): boolean =>
+  entry.groupId !== "just-bash-builtins" || /^[A-Za-z0-9]/u.test(entry.commandLabel);
+
+export const resolveWorkspaceCliDefaultEntryId = (
+  groups: readonly WorkspaceCliCatalogGroup[],
+  currentEntryId?: string | null,
+): string | null => {
+  if (currentEntryId) {
+    const currentVisible = groups.some((group) => group.entries.some((entry) => entry.id === currentEntryId));
+    if (currentVisible) {
+      return currentEntryId;
+    }
+  }
+
+  for (const group of groups) {
+    const preferredEntry = group.entries.find((entry) => isHumanFriendlyBuiltinDefault(entry)) ?? group.entries[0];
+    if (preferredEntry) {
+      return preferredEntry.id;
+    }
+  }
+
+  return null;
+};
+
+export const collectWorkspaceCliMatchIds = (
+  groups: readonly WorkspaceCliCatalogGroup[],
+  searchQuery: string,
+): string[] => {
+  const query = normalizeSearchQuery(searchQuery);
+  if (!query) {
+    return [];
+  }
+  return groups
+    .flatMap((group) => group.entries)
+    .filter((entry) => cliEntryMatchesQuery(entry, query))
+    .map((entry) => entry.id);
 };

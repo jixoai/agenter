@@ -3,7 +3,9 @@
 	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 	import SearchIcon from '@lucide/svelte/icons/search';
 
+	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import { Input } from '$lib/components/ui/input/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 	import WorkbenchPageTabs from '$lib/features/navigation/workbench-page-tabs.svelte';
 	import type { WorkbenchPageTabItem } from '$lib/features/navigation/workbench-page-tabs.types';
@@ -79,6 +81,12 @@
 
 	const selectedWorkspace = $derived(workspaces[0] ?? null);
 	const selectedAvatarEntry = $derived(avatars.find((avatar) => avatar.nickname === selectedAvatar) ?? avatars[0] ?? null);
+	const avatarSelectItems = $derived(
+		avatars.map((avatar) => ({
+			value: avatar.nickname,
+			label: avatar.nickname,
+		})),
+	);
 	const rows = $derived(
 		buildWorkspaceTreeRows({
 			pages,
@@ -159,6 +167,63 @@
 	</div>
 {/snippet}
 
+{#snippet workspaceShellToolbarStatus(toolbarState: WorkbenchToolbarRenderState)}
+	<div class={cn('min-w-0', toolbarState.placement === 'overflow' ? 'grid w-full gap-2' : 'flex justify-end')}>
+		{#if toolbarState.placement === 'overflow'}
+			<div class="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">View as</div>
+		{/if}
+		<Select.Root
+			type="single"
+			items={avatarSelectItems}
+			value={selectedAvatar}
+			onValueChange={(value) => {
+				selectedAvatar = value as string;
+			}}
+		>
+			<Select.Trigger
+				aria-label="View as"
+				class={cn(
+					'min-w-0 justify-start border border-border/60 bg-background/70 shadow-none',
+					toolbarState.placement === 'overflow'
+						? 'h-11 min-h-11 w-full rounded-[0.95rem] px-3'
+						: 'h-8 min-h-8 min-w-[9rem] max-w-[11.5rem] rounded-full px-2.5',
+				)}
+				data-testid="workspace-avatar-select"
+			>
+				<div class="flex min-w-0 items-center gap-2">
+					<ProfileAvatar
+						label={selectedAvatarEntry?.nickname ?? selectedAvatar}
+						class={cn(
+							'border-0 bg-foreground text-background',
+							toolbarState.placement === 'overflow'
+								? 'size-8 rounded-[0.82rem]'
+								: 'size-6 rounded-[0.72rem]',
+						)}
+					/>
+					<div class="grid min-w-0 text-left leading-tight">
+						<span
+							class={cn(
+								'truncate font-semibold text-foreground',
+								toolbarState.placement === 'overflow' ? 'text-sm' : 'text-[13px]',
+							)}
+						>
+							{selectedAvatarEntry?.nickname ?? selectedAvatar}
+						</span>
+						{#if toolbarState.placement === 'overflow'}
+							<span class="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Avatar lens</span>
+						{/if}
+					</div>
+				</div>
+			</Select.Trigger>
+			<Select.Content>
+				{#each avatars as avatar (avatar.nickname)}
+					<Select.Item value={avatar.nickname} label={avatar.nickname}>{avatar.nickname}</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+	</div>
+{/snippet}
+
 <div
 	class={cn('grid grid-rows-[auto_auto_minmax(0,1fr)] gap-3 rounded-[1.1rem] border p-3', frameClass)}
 	data-testid="workspace-shell-story"
@@ -169,6 +234,7 @@
 	>
 		<WorkbenchToolbar
 			pageTabs={workspaceShellToolbarPageTabs}
+			status={workspaceShellToolbarStatus}
 			actions={workspaceShellToolbarActions}
 			overflowLabel="Open workspace toolbar details"
 		/>
@@ -177,14 +243,8 @@
 	<WorkspaceContentHeader
 		objectivePath={selectedWorkspace?.path ?? null}
 		{selectedWorkspace}
-		selectedAvatar={selectedAvatar}
-		{selectedAvatarEntry}
 		{surfaceKind}
 		{surfaceSummary}
-		avatars={avatars}
-		onAvatarChange={(avatar) => {
-			selectedAvatar = avatar;
-		}}
 	/>
 
 	<WorkbenchPageContent

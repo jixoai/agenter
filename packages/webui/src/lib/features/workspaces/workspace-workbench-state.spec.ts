@@ -1,11 +1,16 @@
+import type { WorkspaceCliCatalogGroup } from "@agenter/client-sdk";
 import { describe, expect, test } from "vitest";
 
 import {
   buildRuleDrafts,
   buildWorkspaceTreeRows,
+  collectWorkspaceCliMatchIds,
   collectWorkspaceRuleMatchIds,
   collectWorkspaceTreeMatchPaths,
+  filterWorkspaceCliCatalogGroups,
   normalizeWorkspaceMode,
+  orderWorkspaceCliCatalogGroupsForDisplay,
+  resolveWorkspaceCliDefaultEntryId,
   serializeRuleDrafts,
   type WorkspaceTreePages,
 } from "./workspace-workbench-state";
@@ -16,6 +21,7 @@ describe("Feature: Workspace workbench state primitives", () => {
     expect(normalizeWorkspaceMode("detail")).toBe("explorer");
     expect(normalizeWorkspaceMode("rules")).toBe("rules");
     expect(normalizeWorkspaceMode("private")).toBe("private");
+    expect(normalizeWorkspaceMode("cli")).toBe("cli");
   });
 
   test("Scenario: Given runtime grants with disabled drafts When serializing rules Then only enabled normalized paths are persisted", () => {
@@ -136,5 +142,153 @@ describe("Feature: Workspace workbench state primitives", () => {
         "disabled",
       ),
     ).toEqual(["rule-src"]);
+  });
+
+  test("Scenario: Given the CLI catalog uses grouped search When filtering commands Then matching entries stay in their original group shells", () => {
+    const groups: WorkspaceCliCatalogGroup[] = [
+      {
+        id: "root-runtime-cli",
+        title: "root runtime CLI",
+        description: "root runtime CLI",
+        entries: [
+          {
+            id: "root-runtime-cli:message send",
+            groupId: "root-runtime-cli",
+            source: "runtime-cli",
+            commandLabel: "message send",
+            displayName: "send",
+            description: "Send a durable room message.",
+            detailHint: "message send --help",
+          },
+        ],
+      },
+      {
+        id: "workspace-private-tools",
+        title: "workspace private tools",
+        description: "private tools",
+        entries: [
+          {
+            id: "workspace-private-tools:tool_draft",
+            groupId: "workspace-private-tools",
+            source: "workspace-tool",
+            commandLabel: "tool_draft",
+            displayName: "Draft note",
+            description: "Draft a private note.",
+            detailHint: "tool_draft --help",
+            toolFileName: "draft.ts",
+          },
+        ],
+      },
+    ];
+
+    expect(filterWorkspaceCliCatalogGroups(groups, "draft")).toEqual([
+      {
+        ...groups[1],
+        entries: [...groups[1].entries],
+      },
+    ]);
+    expect(collectWorkspaceCliMatchIds(groups, "message")).toEqual(["root-runtime-cli:message send"]);
+  });
+
+  test("Scenario: Given browser CLI discovery mixes workspace runtime and builtin groups When ordering for display Then product commands stay above builtin noise without losing entries", () => {
+    const groups: WorkspaceCliCatalogGroup[] = [
+      {
+        id: "just-bash-builtins",
+        title: "just-bash builtins",
+        description: "builtins",
+        entries: [],
+      },
+      {
+        id: "root-runtime-cli",
+        title: "root runtime CLI",
+        description: "runtime",
+        entries: [],
+      },
+      {
+        id: "workspace-private-tools",
+        title: "workspace private tools",
+        description: "private",
+        entries: [],
+      },
+    ];
+
+    expect(orderWorkspaceCliCatalogGroupsForDisplay(groups).map((group) => group.id)).toEqual([
+      "workspace-private-tools",
+      "root-runtime-cli",
+      "just-bash-builtins",
+    ]);
+  });
+
+  test("Scenario: Given builtin punctuation commands sort first When resolving the default CLI detail Then the page prefers a human-readable command over symbolic noise", () => {
+    const groups: WorkspaceCliCatalogGroup[] = [
+      {
+        id: "just-bash-builtins",
+        title: "just-bash builtins",
+        description: "builtins",
+        entries: [
+          {
+            id: "just-bash-builtins:.",
+            groupId: "just-bash-builtins",
+            source: "just-bash-builtin",
+            commandLabel: ".",
+            displayName: ".",
+            description: "Execute commands from a file in the current shell.",
+            detailHint: "help .",
+          },
+          {
+            id: "just-bash-builtins:alias",
+            groupId: "just-bash-builtins",
+            source: "just-bash-builtin",
+            commandLabel: "alias",
+            displayName: "alias",
+            description: "Define or display aliases.",
+            detailHint: "help alias",
+          },
+        ],
+      },
+    ];
+
+    expect(resolveWorkspaceCliDefaultEntryId(groups, null)).toBe("just-bash-builtins:alias");
+    expect(resolveWorkspaceCliDefaultEntryId(groups, "just-bash-builtins:alias")).toBe("just-bash-builtins:alias");
+  });
+
+  test("Scenario: Given the raw CLI catalog starts with builtins When route initialization asks for the default detail Then ordered product commands win before builtin fallbacks", () => {
+    const groups: WorkspaceCliCatalogGroup[] = [
+      {
+        id: "just-bash-builtins",
+        title: "just-bash builtins",
+        description: "builtins",
+        entries: [
+          {
+            id: "just-bash-builtins:.",
+            groupId: "just-bash-builtins",
+            source: "just-bash-builtin",
+            commandLabel: ".",
+            displayName: ".",
+            description: "Execute commands from a file in the current shell.",
+            detailHint: "help .",
+          },
+        ],
+      },
+      {
+        id: "root-runtime-cli",
+        title: "root runtime CLI",
+        description: "runtime",
+        entries: [
+          {
+            id: "root-runtime-cli:attention commit",
+            groupId: "root-runtime-cli",
+            source: "runtime-cli",
+            commandLabel: "attention commit",
+            displayName: "commit",
+            description: "Persist an attention commit.",
+            detailHint: "help attention commit",
+          },
+        ],
+      },
+    ];
+
+    const orderedGroups = orderWorkspaceCliCatalogGroupsForDisplay(groups);
+    expect(resolveWorkspaceCliDefaultEntryId(orderedGroups, null)).toBe("root-runtime-cli:attention commit");
   });
 });

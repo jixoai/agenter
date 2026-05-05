@@ -10,7 +10,7 @@ const normalizeNonEmpty = (value: string | null | undefined): string | null => {
 };
 
 const normalizeWorkspaceModeQuery = (value: WorkspaceMode | string | null | undefined): WorkspaceMode | null => {
-  if (value === "explorer" || value === "rules" || value === "private") {
+  if (value === "explorer" || value === "rules" || value === "private" || value === "cli") {
     return value;
   }
   return null;

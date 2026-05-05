@@ -444,6 +444,44 @@ describe("Feature: app-server trpc procedures", () => {
     expect(assetRoots.workspacePath).toBe(workspaceA);
     expect(assetRoots.avatar).toBe("architect");
     writeFileSync(join(assetRoots.publicRoots.tools, "hello.sh"), "#!/usr/bin/env bash\necho tool-ok\n", "utf8");
+    writeFileSync(
+      join(assetRoots.publicRoots.tools, "hello.sh.cli.json"),
+      JSON.stringify({
+        name: "Hello workspace",
+        description: "Run the shared hello workspace tool.",
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      join(assetRoots.privateRoots.tools, "draft.ts"),
+      "#!/usr/bin/env node\nconsole.log('draft')\n",
+      "utf8",
+    );
+
+    const cliCatalog = await caller.workspace.cliCatalog({
+      workspacePath: workspaceA,
+      avatar: "architect",
+    });
+    expect(cliCatalog.groups.map((group) => group.id)).toEqual([
+      "just-bash-builtins",
+      "root-runtime-cli",
+      "workspace-public-tools",
+      "workspace-private-tools",
+    ]);
+    expect(cliCatalog.groups[0]?.entries.some((entry) => entry.commandLabel === "cd")).toBeTrue();
+    expect(cliCatalog.groups[1]?.entries.some((entry) => entry.commandLabel === "workspace list")).toBeTrue();
+    expect(cliCatalog.groups[2]?.entries).toEqual([
+      expect.objectContaining({
+        commandLabel: "tool_hello",
+        displayName: "Hello workspace",
+      }),
+    ]);
+    expect(cliCatalog.groups[3]?.entries).toEqual([
+      expect.objectContaining({
+        commandLabel: "tool_draft",
+        metadataState: "fallback",
+      }),
+    ]);
 
     const granted = await caller.workspace.grantRuntime({
       runtimeId: first.session.id,
@@ -1104,7 +1142,9 @@ describe("Feature: app-server trpc procedures", () => {
     expect(
       activity.items.some((item) => item.kind === "terminal_write" && item.actorId === "session:avatar-pair"),
     ).toBeTrue();
-    expect(activity.items.filter((item) => item.kind === "terminal_write" && item.title === "Terminal input")).toHaveLength(1);
+    expect(
+      activity.items.filter((item) => item.kind === "terminal_write" && item.title === "Terminal input"),
+    ).toHaveLength(1);
 
     const focused = await caller.terminal.globalFocus({
       op: "clear",

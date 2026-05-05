@@ -433,6 +433,22 @@ const createMockClient = (input: {
     }>;
   }>;
   workspaceAvatarCatalogQuery?: (input: { workspacePath: string }) => Promise<{ items: WorkspaceAvatarCatalogEntry[] }>;
+  workspaceCliCatalogQuery?: (input: { workspacePath: string; avatar: string }) => Promise<{
+    groups: Array<{
+      id: string;
+      title: string;
+      description: string;
+      entries: Array<{
+        id: string;
+        groupId: string;
+        source: string;
+        commandLabel: string;
+        displayName: string;
+        description: string;
+        detailHint?: string;
+      }>;
+    }>;
+  }>;
   globalAvatarCatalogQuery?: () => Promise<{ items: GlobalAvatarCatalogEntry[] }>;
   globalAvatarCreateMutate?: (input: {
     nickname: string;
@@ -2154,6 +2170,10 @@ const createMockClient = (input: {
         avatarCatalog: {
           query: async (payload: { workspacePath: string }) =>
             input.workspaceAvatarCatalogQuery ? await input.workspaceAvatarCatalogQuery(payload) : { items: [] },
+        },
+        cliCatalog: {
+          query: async (payload: { workspacePath: string; avatar: string }) =>
+            input.workspaceCliCatalogQuery ? await input.workspaceCliCatalogQuery(payload) : { groups: [] },
         },
         forkAvatar: {
           mutate: async (payload: { workspacePath: string; avatar: string }) =>
@@ -10021,5 +10041,51 @@ describe("Feature: runtime store synchronization", () => {
         path: "/manual.pdf",
       }),
     ).toEqual(skillPreview);
+  });
+
+  test("Scenario: Given the workspace CLI catalog query When the runtime store reads one workspace lens Then the grouped command surface is returned without route-local transport code", async () => {
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        workspaceCliCatalogQuery: async ({ workspacePath, avatar }) => ({
+          groups: [
+            {
+              id: "root-runtime-cli",
+              title: "root runtime CLI",
+              description: `${workspacePath}:${avatar}`,
+              entries: [
+                {
+                  id: "root-runtime-cli:message send",
+                  groupId: "root-runtime-cli",
+                  source: "runtime-cli",
+                  commandLabel: "message send",
+                  displayName: "send",
+                  description: "Send a durable room message.",
+                  detailHint: "message send --help",
+                },
+              ],
+            },
+          ],
+        }),
+      }),
+    );
+
+    const output = await store.readWorkspaceCliCatalog({
+      workspacePath: "/repo/agenter",
+      avatar: "reviewer",
+    });
+
+    expect(output.groups).toEqual([
+      expect.objectContaining({
+        id: "root-runtime-cli",
+        description: "/repo/agenter:reviewer",
+        entries: [
+          expect.objectContaining({
+            commandLabel: "message send",
+            detailHint: "message send --help",
+          }),
+        ],
+      }),
+    ]);
   });
 });

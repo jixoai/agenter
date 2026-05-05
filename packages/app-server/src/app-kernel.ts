@@ -19,7 +19,23 @@ import {
   type AttentionCycleFrame,
   type AttentionHookRecord,
 } from "@agenter/attention-system";
+import {
+  buildAvatarIconUrl,
+  canonicalizeAvatarPrincipalMetadata,
+  formatAvatarDisplayName,
+  normalizeAvatarPrincipalMetadata,
+  readAvatarPrincipalMetadata,
+  resolveBuiltInAvatarProfile,
+  resolveAvatarOwnerKey,
+  type AvatarClassify,
+  type AvatarPrincipalMetadata,
+  type AuthSessionProjection,
+  type ProfileMetadata,
+  type ProfileProjection,
+  type PrincipalProjection,
+} from "@agenter/auth-service";
 import { defaultAvatarNickname, normalizeAvatarNickname, resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
+import { LoopBusKernel } from "@agenter/loopbus-kernel";
 import {
   MessageControlPlane,
   resolveMessageControlDbPath,
@@ -45,21 +61,7 @@ import {
   type MessageSourceSubscriptionInput,
   type MessageSourceSubscriptionRecord,
 } from "@agenter/message-system";
-import { LoopBusKernel } from "@agenter/loopbus-kernel";
 import { isPrincipalId } from "@agenter/principal-crypto";
-import type { AuthSessionProjection, ProfileMetadata, ProfileProjection } from "@agenter/auth-service";
-import {
-  buildAvatarIconUrl,
-  canonicalizeAvatarPrincipalMetadata,
-  formatAvatarDisplayName,
-  normalizeAvatarPrincipalMetadata,
-  readAvatarPrincipalMetadata,
-  resolveBuiltInAvatarProfile,
-  resolveAvatarOwnerKey,
-  type AvatarClassify,
-  type AvatarPrincipalMetadata,
-  type PrincipalProjection,
-} from "@agenter/auth-service";
 import {
   SessionDb,
   type ReversePage,
@@ -129,6 +131,7 @@ import {
   type AvatarSeatState,
 } from "./avatar-seat-store";
 import { type ChatCycle } from "./chat-cycles";
+import { buildWorkspaceCliCommandCatalog } from "./cli-command-catalog";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
 import type { RuntimeHeartbeatGroupRecord } from "./heartbeat-groups";
 import { pageHeartbeatGroupsFromDb } from "./heartbeat-groups-page";
@@ -2149,6 +2152,14 @@ export class AppKernel {
       path: input.path,
       maxBytes: input.maxBytes,
       grants,
+    });
+  }
+
+  async readWorkspaceCliCatalog(input: { workspacePath: string; avatar: string }) {
+    return await buildWorkspaceCliCommandCatalog({
+      workspacePath: toWorkspacePath(input.workspacePath),
+      avatar: normalizeAvatarNickname(input.avatar),
+      perspective: "browser",
     });
   }
 
@@ -4686,9 +4697,7 @@ export class AppKernel {
     return await this.authService.authenticateAuthToken(token);
   }
 
-  private async validateRootAuthPrivateKey(
-    privateKey: string,
-  ): Promise<{
+  private async validateRootAuthPrivateKey(privateKey: string): Promise<{
     descriptor: Awaited<ReturnType<AuthServiceBridge["describe"]>>;
     authId: string;
     privateKey: `0x${string}`;
@@ -5571,38 +5580,36 @@ export class AppKernel {
     );
 
     const dbPath = join(session.sessionRoot, "session.db");
-    const dispatches =
-      existsSync(dbPath)
-        ? (() => {
-            const db = new SessionDb(dbPath);
-            try {
-              return db.listAttentionDispatches({
-                contextId: input.contextId,
-                commitId: input.commitId,
-                cycleId: input.cycleId,
-                sessionModelCallId: input.sessionModelCallId,
-              });
-            } finally {
-              db.close();
-            }
-          })()
-        : [];
-    const receipts =
-      existsSync(dbPath)
-        ? (() => {
-            const db = new SessionDb(dbPath);
-            try {
-              return db.listAttentionReceipts({
-                contextId: input.contextId,
-                commitId: input.commitId,
-                cycleId: input.cycleId,
-                sessionModelCallId: input.sessionModelCallId,
-              });
-            } finally {
-              db.close();
-            }
-          })()
-        : [];
+    const dispatches = existsSync(dbPath)
+      ? (() => {
+          const db = new SessionDb(dbPath);
+          try {
+            return db.listAttentionDispatches({
+              contextId: input.contextId,
+              commitId: input.commitId,
+              cycleId: input.cycleId,
+              sessionModelCallId: input.sessionModelCallId,
+            });
+          } finally {
+            db.close();
+          }
+        })()
+      : [];
+    const receipts = existsSync(dbPath)
+      ? (() => {
+          const db = new SessionDb(dbPath);
+          try {
+            return db.listAttentionReceipts({
+              contextId: input.contextId,
+              commitId: input.commitId,
+              cycleId: input.cycleId,
+              sessionModelCallId: input.sessionModelCallId,
+            });
+          } finally {
+            db.close();
+          }
+        })()
+      : [];
 
     kernel.restoreTimeline({
       commitRefs,

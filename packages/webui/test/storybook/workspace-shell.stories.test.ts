@@ -18,7 +18,7 @@ describe('Feature: Storybook DOM contract for workspace shell', () => {
 		await ModeSwitchingKeepsSharedShell.run();
 	});
 
-	test('Scenario: Given the shared content header When the avatar lens changes Then the selected workspace root stays fixed', async () => {
+	test('Scenario: Given the shared page-toolbar When the avatar lens changes Then the selected workspace root stays fixed', async () => {
 		await AvatarLensKeepsRootContext.run();
 	});
 

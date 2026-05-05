@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createServer, type Server } from "node:http";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,7 +24,7 @@ afterEach(async () => {
             }
             resolveClose();
           });
-      }),
+        }),
     ),
   );
   for (const dir of tempDirs.splice(0)) {
@@ -132,7 +132,7 @@ describe("Feature: runtime descriptor CLI", () => {
     const message = createRuntimeCommand(api.baseUrl, "message");
 
     const result = await message.execute(
-      ['send', '{"chatId":"room-1","ref":1,"content":"APP-ACK: 开始构建","followUpAfterMs":30000}'],
+      ["send", '{"chatId":"room-1","ref":1,"content":"APP-ACK: 开始构建","followUpAfterMs":30000}'],
       createCommandContext(),
     );
 
@@ -159,7 +159,7 @@ describe("Feature: runtime descriptor CLI", () => {
     const message = createRuntimeCommand(api.baseUrl, "message");
 
     const result = await message.execute(
-      ['send', '{"chatId":"room-1","content":"APP-ACK: 开始构建","followUpAfterMs":0}'],
+      ["send", '{"chatId":"room-1","content":"APP-ACK: 开始构建","followUpAfterMs":0}'],
       createCommandContext(),
     );
 
@@ -943,10 +943,7 @@ describe("Feature: runtime descriptor CLI", () => {
     const api = await startMockRuntimeApi();
     const message = createRuntimeCommand(api.baseUrl, "message");
 
-    const result = await message.execute(
-      ["send", "--room", "room-1", "--content", "hello"],
-      createCommandContext(),
-    );
+    const result = await message.execute(["send", "--room", "room-1", "--content", "hello"], createCommandContext());
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("message send requires exactly one JSON object payload source");
@@ -989,7 +986,9 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("get-config: Read one terminal's durable launch/config truth");
     expect(result.stdout).toContain("set-config: Patch one terminal's durable launch/config truth");
     expect(result.stdout).toContain("bootstrap: Bootstrap a provisioned or stopped runtime terminal by id.");
-    expect(result.stdout).toContain("stop: Stop a running runtime terminal PTY by id while preserving durable terminal identity.");
+    expect(result.stdout).toContain(
+      "stop: Stop a running runtime terminal PTY by id while preserving durable terminal identity.",
+    );
     expect(result.stdout).not.toContain("kill: Kill a runtime terminal by id.");
     expect(api.getRequests()).toHaveLength(0);
   });
@@ -1014,6 +1013,28 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("tool <file>");
     expect(result.stdout).toContain("tool <file> --help");
     expect(result.stdout).toContain("Available files: none");
+  });
+
+  test("Scenario: Given the root workspace shell helpcenter When JSON listing is requested Then just-bash builtins and runtime CLI commands stay grouped in one catalog", async () => {
+    const api = await startMockRuntimeApi();
+    const helpcenter = createRuntimeCommand(api.baseUrl, "helpcenter", {
+      rootWorkspacePath: createTempRoot(),
+      homeDir: createTempRoot(),
+    });
+
+    const result = await helpcenter.execute(["list", "--json"], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      groups: Array<{
+        id: string;
+        entries: Array<{ commandLabel: string }>;
+      }>;
+    };
+    expect(payload.groups.map((group) => group.id)).toEqual(["just-bash-builtins", "root-runtime-cli"]);
+    expect(payload.groups[0]?.entries.some((entry) => entry.commandLabel === "cd")).toBeTrue();
+    expect(payload.groups[1]?.entries.some((entry) => entry.commandLabel === "message send")).toBeTrue();
+    expect(payload.groups[1]?.entries.some((entry) => entry.commandLabel === "workspace list")).toBeTrue();
   });
 
   test("Scenario: Given built-in skills When skill list runs Then the shell output teaches progressive discovery through real paths and references through the local API", async () => {

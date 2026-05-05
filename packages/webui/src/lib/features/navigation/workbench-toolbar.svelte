@@ -49,6 +49,10 @@
 		return 'wide';
 	};
 
+	// Shared toolbar responsiveness is platform law. Feature routes express one page-local
+	// identity / status / action model here, while breakpoint collapse and overflow promotion
+	// stay centralized instead of being reimplemented as bespoke mobile branches per page.
+
 	const buildToolbarVisibility = ({
 		stage,
 		hasPageTabs,

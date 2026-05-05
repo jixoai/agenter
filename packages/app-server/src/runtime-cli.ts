@@ -3,7 +3,8 @@ import { join } from "node:path";
 
 import { defineCommand } from "just-bash";
 
-import { buildRuntimeToolExecCommand } from "./runtime-tool-exec";
+import { createRootWorkspaceHelpcenterCommand } from "./cli-command-catalog";
+import { buildRuntimeSkillsList } from "./runtime-skills";
 import {
   getRuntimeToolDescriptor,
   listRuntimeToolDescriptors,
@@ -12,7 +13,7 @@ import {
   renderRuntimeToolHelp,
   type RuntimeToolNamespace,
 } from "./runtime-tool-descriptors";
-import { buildRuntimeSkillsList } from "./runtime-skills";
+import { buildRuntimeToolExecCommand } from "./runtime-tool-exec";
 import type {
   RuntimeSkillConfigInfoView,
   RuntimeSkillInfoView,
@@ -57,7 +58,7 @@ const renderToolNamespaceHelp = (toolFiles: readonly string[]): string =>
     "Quick start:",
     "- `ls ~/tools`",
     "- `tool <file> --help`",
-    "- `tool <file> '{\"key\":\"value\"}'`",
+    '- `tool <file> \'{"key":"value"}\'`',
     "- `cat <<'EOF' | tool <file>`",
     "  {",
     '    "key": "value"',
@@ -93,9 +94,7 @@ const renderSkillSubcommandHelp = (subcommand: string): string | null => {
     return ["skill list [--json]", "", "List runtime-visible skills.", ""].join("\n");
   }
   if (subcommand === "search") {
-    return ["skill search <query> [--json]", "", "Search runtime-visible skills by free-text query.", ""].join(
-      "\n",
-    );
+    return ["skill search <query> [--json]", "", "Search runtime-visible skills by free-text query.", ""].join("\n");
   }
   if (subcommand === "info") {
     return [
@@ -245,10 +244,7 @@ const createRuntimeNamespaceCommand = (input: {
     }
   });
 
-const createSkillCommand = (input: {
-  baseUrl: string;
-  privateKey: string;
-}) =>
+const createSkillCommand = (input: { baseUrl: string; privateKey: string }) =>
   defineCommand("skill", async (args, ctx) => {
     try {
       const [subcommand = "list", ...rest] = args;
@@ -403,6 +399,7 @@ export const createRuntimeShellCommands = (input: {
     baseUrl: input.baseUrl,
     privateKey: input.privateKey,
   });
+  const helpcenter = createRootWorkspaceHelpcenterCommand();
 
   const tool = defineCommand("tool", async (args, ctx) => {
     try {
@@ -449,12 +446,9 @@ export const createRuntimeShellCommands = (input: {
     }
   });
 
-  return [...runtimeNamespaces, skill, tool];
+  return [...runtimeNamespaces, skill, helpcenter, tool];
 };
 
 export const listRuntimeShellCommandNames = (): string[] => [
-  ...new Set([
-    ...listRuntimeToolDescriptors().map((descriptor) => descriptor.namespace),
-    "tool",
-  ]),
+  ...new Set([...listRuntimeToolDescriptors().map((descriptor) => descriptor.namespace), "helpcenter", "tool"]),
 ];

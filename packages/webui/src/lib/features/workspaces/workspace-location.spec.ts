@@ -13,10 +13,10 @@ describe("Feature: Workspace routing helpers", () => {
       buildWorkspaceDetailHref({
         workspacePath: "/repo/agenter",
         avatar: "reviewer",
-        mode: "rules",
+        mode: "cli",
         q: "README",
       }),
-    ).toBe("/workspaces/root/%2Frepo%2Fagenter?avatar=reviewer&mode=rules&q=README");
+    ).toBe("/workspaces/root/%2Frepo%2Fagenter?avatar=reviewer&mode=cli&q=README");
 
     expect(buildWorkspaceDetailHref({ workspacePath: "~/" })).toBe("/workspaces/root/~%2F");
   });

@@ -2,9 +2,9 @@ import { TRPCError } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
 import { z } from "zod";
 
+import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
 import type { MessageActorId } from "@agenter/message-system";
 import { isPrincipalId } from "@agenter/principal-crypto";
-import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
 import type { TerminalActorId } from "@agenter/terminal-system";
 import {
   authDraftCreateInputSchema,
@@ -2110,6 +2110,14 @@ export const appRouter = t.router({
         }),
       )
       .query(({ ctx, input }) => ctx.kernel.getRuntimeWorkspaceAssetRoots(input)),
+    cliCatalog: superadminProcedure
+      .input(
+        z.object({
+          workspacePath: z.string().min(1),
+          avatar: z.string().min(1),
+        }),
+      )
+      .query(async ({ ctx, input }) => await ctx.kernel.readWorkspaceCliCatalog(input)),
     workbenchTree: superadminProcedure
       .input(
         z.object({

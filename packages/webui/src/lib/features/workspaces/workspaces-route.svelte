@@ -13,11 +13,13 @@
 	import { onMount, tick } from 'svelte';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
+	import ProfileAvatar from '$lib/components/profile-avatar.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button, buttonVariants } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as NativeSelect from '$lib/components/ui/native-select/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 	import WorkbenchDetailDrawer from '$lib/features/navigation/workbench-detail-drawer.svelte';
 	import WorkbenchPageTabs from '$lib/features/navigation/workbench-page-tabs.svelte';
 	import type { WorkbenchPageTabItem } from '$lib/features/navigation/workbench-page-tabs.types';
@@ -39,10 +41,14 @@
 	} from '$lib/features/workspaces/workspace-location';
 	import {
 		buildRuleDrafts,
+		collectWorkspaceCliMatchIds,
 		collectWorkspaceRuleMatchIds,
 		buildWorkspaceTreeRows,
 		collectWorkspaceTreeMatchPaths,
+		filterWorkspaceCliCatalogGroups,
 		normalizeWorkspaceMode,
+		orderWorkspaceCliCatalogGroupsForDisplay,
+		resolveWorkspaceCliDefaultEntryId,
 		serializeRuleDrafts,
 		toGrantPattern,
 		type WorkspaceMode,
@@ -85,6 +91,9 @@
 	let selectedPrivatePath = $state<string | null>('/');
 	let preview = $state<Awaited<ReturnType<typeof controller.runtimeStore.readWorkspaceWorkbenchPreview>> | null>(null);
 	let previewLoading = $state(false);
+	let cliCatalog = $state<Awaited<ReturnType<typeof controller.runtimeStore.readWorkspaceCliCatalog>> | null>(null);
+	let cliLoading = $state(false);
+	let selectedCliCommandId = $state<string | null>(null);
 	let assetRoots = $state<Awaited<ReturnType<typeof controller.runtimeStore.getRuntimeWorkspaceAssetRoots>> | null>(null);
 	let currentMount = $state<RuntimeWorkspaceMountEntry | null>(null);
 	let rules = $state<WorkspaceRuleDraft[]>([]);
@@ -105,6 +114,7 @@
 		{ value: 'explorer', label: 'explorer', title: 'Explorer' },
 		{ value: 'rules', label: 'rules', title: 'Rules' },
 		{ value: 'private', label: 'private', title: 'Private assets' },
+		{ value: 'cli', label: 'cli', title: 'CLI' },
 	] as const satisfies WorkbenchPageTabItem[];
 
 	const sortedWorkspaces = $derived(
@@ -135,6 +145,12 @@
 	const selectedAvatarEntry = $derived(
 		avatarOptions.find((entry) => entry.nickname === selectedAvatar) ?? avatarOptions[0] ?? null,
 	);
+	const avatarSelectItems = $derived(
+		avatarOptions.map((entry) => ({
+			value: entry.nickname,
+			label: entry.nickname,
+		})),
+	);
 	const runtimeId = $derived(selectedAvatarEntry?.runtimeId ?? null);
 	const explorerRows = $derived(
 		buildWorkspaceTreeRows({
@@ -150,17 +166,34 @@
 			searchQuery,
 		}),
 	);
+	const filteredCliGroups = $derived(
+		cliCatalog
+			? orderWorkspaceCliCatalogGroupsForDisplay(filterWorkspaceCliCatalogGroups(cliCatalog.groups, searchQuery))
+			: [],
+	);
+	const filteredCliEntries = $derived(filteredCliGroups.flatMap((group) => group.entries));
+	const preferredCliCommandId = $derived(resolveWorkspaceCliDefaultEntryId(filteredCliGroups, selectedCliCommandId));
 	const activeMatchIds = $derived(
-		mode === 'private'
+		mode === 'cli'
+			? collectWorkspaceCliMatchIds(filteredCliGroups, searchQuery)
+			: mode === 'private'
 			? collectWorkspaceTreeMatchPaths(privatePages, searchQuery)
 			: mode === 'explorer'
 				? collectWorkspaceTreeMatchPaths(explorerPages, searchQuery)
 				: collectWorkspaceRuleMatchIds(rules, searchQuery),
 	);
 	const activeMatchId = $derived(activeMatchIds[activeMatchIndex] ?? null);
-	const activeSelectionPath = $derived(mode === 'private' ? selectedPrivatePath : selectedExplorerPath);
+	const activeSelectionPath = $derived(
+		mode === 'private' ? selectedPrivatePath : mode === 'explorer' ? selectedExplorerPath : null,
+	);
 	const selectedRule = $derived(rules.find((rule) => rule.id === selectedRuleId) ?? rules[0] ?? null);
 	const selectedRuleIndex = $derived(selectedRule ? rules.findIndex((rule) => rule.id === selectedRule.id) : -1);
+	const selectedCliEntry = $derived(
+		filteredCliEntries.find((entry) => entry.id === preferredCliCommandId) ?? null,
+	);
+	const selectedCliGroup = $derived(
+		filteredCliGroups.find((group) => group.entries.some((entry) => entry.id === selectedCliEntry?.id)) ?? null,
+	);
 	const selectedQuickRule = $derived(
 		selectedExplorerPath ? rules.find((rule) => rule.pattern === toGrantPattern(selectedExplorerPath)) ?? null : null,
 	);
@@ -257,7 +290,9 @@
 		}
 		await tick();
 		const selector =
-			mode === 'rules'
+			mode === 'cli'
+				? `[data-workspace-cli-command-id="${CSS.escape(targetId)}"]`
+				: mode === 'rules'
 				? `[data-workspace-rule-id="${CSS.escape(targetId)}"]`
 				: `[data-workspace-tree-path="${CSS.escape(targetId)}"]`;
 		const element = document.querySelector<HTMLElement>(selector);
@@ -340,6 +375,26 @@
 		}
 	};
 
+	const loadCliCatalog = async (): Promise<void> => {
+		if (!selectedWorkspace || !selectedAvatarEntry) {
+			cliCatalog = null;
+			selectedCliCommandId = null;
+			return;
+		}
+		cliLoading = true;
+		try {
+			const nextCatalog = await controller.runtimeStore.readWorkspaceCliCatalog({
+				workspacePath: selectedWorkspace.path,
+				avatar: selectedAvatarEntry.nickname,
+			});
+			cliCatalog = nextCatalog;
+			const orderedGroups = orderWorkspaceCliCatalogGroupsForDisplay(nextCatalog.groups);
+			selectedCliCommandId = resolveWorkspaceCliDefaultEntryId(orderedGroups, selectedCliCommandId);
+		} finally {
+			cliLoading = false;
+		}
+	};
+
 	const refreshWorkbenchContext = async (): Promise<void> => {
 		if (!selectedWorkspace || !selectedAvatarEntry || !runtimeId) {
 			currentMount = null;
@@ -365,14 +420,14 @@
 		selectedRuleId = nextRules[0]?.id ?? null;
 		rulesDirty = false;
 		assetRoots = nextRoots;
+		cliCatalog = null;
 		explorerPages = {};
 		privatePages = {};
 		expandedExplorerPaths = new Set(['/']);
 		expandedPrivatePaths = new Set(['/']);
 		selectedExplorerPath = '/';
 		selectedPrivatePath = '/';
-		await Promise.all([loadTree('explorer', '/'), loadTree('private', '/')]);
-		await loadPreview('explorer', '/');
+		await Promise.all([loadTree('explorer', '/'), loadTree('private', '/'), loadPreview('explorer', '/'), loadCliCatalog()]);
 	};
 
 	const loadManageRows = async (): Promise<void> => {
@@ -618,6 +673,12 @@
 			await scrollActiveMatchIntoView(nextTarget);
 			return;
 		}
+		if (mode === 'cli') {
+			selectedCliCommandId = nextTarget;
+			revealDetail();
+			await scrollActiveMatchIntoView(nextTarget);
+			return;
+		}
 		if (mode === 'explorer') {
 			await revealTreePath('explorer', nextTarget);
 			selectedExplorerPath = nextTarget;
@@ -683,6 +744,12 @@
 	});
 
 	$effect(() => {
+		if (selectedCliCommandId !== preferredCliCommandId) {
+			selectedCliCommandId = preferredCliCommandId;
+		}
+	});
+
+	$effect(() => {
 		syncRoute();
 	});
 
@@ -701,6 +768,65 @@
 			mode = value as WorkspaceMode;
 		}}
 	/>
+{/snippet}
+
+{#snippet workspaceRouteToolbarStatus(toolbarState: WorkbenchToolbarRenderState)}
+	<!-- Shared page-toolbar already owns responsive overflow; keep the avatar lens here once
+		and let the shared inline/overflow placements decide how compact viewports present it. -->
+	<div class={cn('min-w-0', toolbarState.placement === 'overflow' ? 'grid w-full gap-2' : 'flex justify-end')}>
+		{#if toolbarState.placement === 'overflow'}
+			<div class="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">View as</div>
+		{/if}
+		<Select.Root
+			type="single"
+			items={avatarSelectItems}
+			value={selectedAvatar}
+			onValueChange={(value) => {
+				selectedAvatar = value as string;
+			}}
+		>
+			<Select.Trigger
+				aria-label="View as"
+				class={cn(
+					'min-w-0 justify-start border border-border/60 bg-background/70 shadow-none',
+					toolbarState.placement === 'overflow'
+						? 'h-11 min-h-11 w-full rounded-[0.95rem] px-3'
+						: 'h-8 min-h-8 min-w-[9rem] max-w-[11.5rem] rounded-full px-2.5',
+				)}
+				data-testid="workspace-avatar-select"
+			>
+				<div class="flex min-w-0 items-center gap-2">
+					<ProfileAvatar
+						label={selectedAvatarEntry?.nickname ?? selectedAvatar}
+						class={cn(
+							'border-0 bg-foreground text-background',
+							toolbarState.placement === 'overflow'
+								? 'size-8 rounded-[0.82rem]'
+								: 'size-6 rounded-[0.72rem]',
+						)}
+					/>
+					<div class="grid min-w-0 text-left leading-tight">
+						<span
+							class={cn(
+								'truncate font-semibold text-foreground',
+								toolbarState.placement === 'overflow' ? 'text-sm' : 'text-[13px]',
+							)}
+						>
+							{selectedAvatarEntry?.nickname ?? selectedAvatar}
+						</span>
+						{#if toolbarState.placement === 'overflow'}
+							<span class="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Avatar lens</span>
+						{/if}
+					</div>
+				</div>
+			</Select.Trigger>
+			<Select.Content>
+				{#each avatarOptions as avatar (avatar.nickname)}
+					<Select.Item value={avatar.nickname} label={avatar.nickname}>{avatar.nickname}</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+	</div>
 {/snippet}
 
 {#snippet workspaceRouteToolbarActions(toolbarState: WorkbenchToolbarRenderState)}
@@ -742,17 +868,17 @@
 		>
 			<div class="flex min-w-0 items-center gap-1.5">
 				<SearchIcon class="size-3.5 shrink-0 text-muted-foreground" />
-				<Input
-					bind:value={searchQuery}
-					class={cn(
-						'h-auto border-0 bg-transparent p-0 shadow-none focus-visible:ring-0',
-						toolbarState.placement === 'overflow'
-							? 'w-full min-w-[14rem] text-sm'
-							: 'min-w-0 flex-1 text-[11px] md:text-xs',
-					)}
-					placeholder={mode === 'rules' ? 'Search rules' : 'Search loaded tree'}
-				/>
-			</div>
+					<Input
+						bind:value={searchQuery}
+						class={cn(
+							'h-auto border-0 bg-transparent p-0 shadow-none focus-visible:ring-0',
+							toolbarState.placement === 'overflow'
+								? 'w-full min-w-[14rem] text-sm'
+								: 'min-w-0 flex-1 text-[11px] md:text-xs',
+						)}
+						placeholder={mode === 'rules' ? 'Search rules' : mode === 'cli' ? 'Search commands' : 'Search loaded tree'}
+					/>
+				</div>
 
 			{#if activeMatchIds.length > 0}
 				<div
@@ -796,6 +922,7 @@
 <WorkbenchPageToolbar>
 	<WorkbenchToolbar
 		pageTabs={workspaceRouteToolbarPageTabs}
+		status={workspaceRouteToolbarStatus}
 		actions={workspaceRouteToolbarActions}
 		overflowLabel="Open workspace toolbar details"
 	/>
@@ -830,14 +957,8 @@
 		<WorkspaceContentHeader
 			objectivePath={workspaceObjectivePath}
 			{selectedWorkspace}
-			selectedAvatar={selectedAvatar}
-			{selectedAvatarEntry}
 			surfaceKind={currentSurfaceKind}
 			surfaceSummary={currentSurfaceSummary}
-			avatars={avatarOptions}
-			onAvatarChange={(avatar) => {
-				selectedAvatar = avatar;
-			}}
 		/>
 	</div>
 	<WorkspaceManageDialog
@@ -862,15 +983,17 @@
 			{#snippet main()}
 				<Card.Root class="h-full gap-0 rounded-none border-0 bg-transparent py-0 shadow-none">
 					<Card.Header class="gap-1 border-b px-3 py-3.5 md:px-5 md:py-4.5">
-						<Card.Title>{mode === 'rules' ? 'Rules' : mode === 'private' ? 'Private assets' : 'Explorer'}</Card.Title>
+						<Card.Title>{mode === 'rules' ? 'Rules' : mode === 'private' ? 'Private assets' : mode === 'cli' ? 'CLI' : 'Explorer'}</Card.Title>
 						<Card.Description class="hidden max-w-[30rem] text-xs leading-5 md:block md:text-sm">
 							{#if mode === 'rules'}
 								Rule order maps directly to runtime grant priority for the selected avatar lens.
 							{:else if mode === 'private'}
-							Avatar-private assets reuse the tree model without workspace permission badges.
-						{:else}
-							Folders toggle inline and loaded tree search stays inside the same hierarchy.
-						{/if}
+								Avatar-private assets reuse the tree model without workspace permission badges.
+							{:else if mode === 'cli'}
+								One grouped catalog keeps builtins, root runtime CLI, and workspace tools aligned with helpcenter truth.
+							{:else}
+								Folders toggle inline and loaded tree search stays inside the same hierarchy.
+							{/if}
 					</Card.Description>
 				</Card.Header>
 					<Card.Content class="h-full p-0">
@@ -912,6 +1035,66 @@
 								{/each}
 							{/if}
 						</div>
+					{:else if mode === 'cli'}
+						<ScrollView class="h-full" contentClass="grid gap-3 p-3 md:gap-4 md:p-4">
+							{#if cliLoading}
+								<div class="rounded-[0.95rem] bg-muted/24 px-4 py-6 text-sm text-muted-foreground">
+									Loading the workspace CLI catalog for the active avatar lens…
+								</div>
+							{:else if filteredCliGroups.length === 0}
+								<div class="rounded-[0.95rem] bg-muted/24 px-4 py-6 text-sm text-muted-foreground">
+									No registered command rows match the current query for this workspace lens.
+								</div>
+							{:else}
+								{#each filteredCliGroups as group (group.id)}
+									<section class="grid gap-2.5">
+										<div class="grid gap-1 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+											<div class="min-w-0">
+												<div class="truncate text-sm font-semibold md:text-[15px]">{group.title}</div>
+												<div class="text-xs leading-5 text-muted-foreground">{group.description}</div>
+											</div>
+											<Badge variant="outline" class="w-fit bg-background/70">{group.entries.length}</Badge>
+										</div>
+
+										<div class="grid gap-2">
+											{#each group.entries as entry (entry.id)}
+												{@const matched = activeMatchIds.includes(entry.id)}
+												{@const activeMatched = activeMatchId === entry.id}
+												{@const selected = selectedCliEntry?.id === entry.id}
+												<button
+													type="button"
+													data-workspace-cli-command-id={entry.id}
+													class={cn(
+														'grid w-full gap-2 rounded-[0.9rem] border border-transparent px-3 py-3 text-left transition-colors hover:bg-muted/34 md:px-4',
+														selected ? 'bg-primary/6 ring-1 ring-primary/24' : 'bg-transparent',
+														matched && 'bg-amber-500/8',
+														activeMatched && 'ring-2 ring-amber-500/60',
+													)}
+													onclick={() => {
+														selectedCliCommandId = entry.id;
+														revealDetail();
+													}}
+												>
+													<div class="flex min-w-0 flex-wrap items-center gap-2">
+														<code class="rounded bg-muted/38 px-2 py-1 text-[11px] font-semibold md:text-xs">{entry.commandLabel}</code>
+														{#if entry.toolScope}
+															<Badge variant="outline">{entry.toolScope}</Badge>
+														{/if}
+														{#if entry.metadataState === 'fallback'}
+															<Badge variant="secondary">fallback metadata</Badge>
+														{/if}
+													</div>
+													{#if entry.displayName !== entry.commandLabel}
+														<div class="text-sm font-medium">{entry.displayName}</div>
+													{/if}
+													<div class="text-xs leading-5 text-muted-foreground md:text-sm">{entry.description}</div>
+												</button>
+											{/each}
+										</div>
+									</section>
+								{/each}
+							{/if}
+						</ScrollView>
 					{:else}
 						<WorkspaceTree
 							rows={mode === 'private' ? privateRows : explorerRows}
@@ -1035,6 +1218,28 @@
 								<Badge variant="outline" class="bg-background/70">{assetRoots.privateRoots.memory}</Badge>
 							{/if}
 						</div>
+						{:else if mode === 'cli'}
+							<div class="grid gap-1.5">
+								<div class="text-sm font-medium">
+									{selectedCliEntry ? selectedCliEntry.commandLabel : 'Select one command to inspect its detail hint.'}
+								</div>
+								<div class="text-xs text-muted-foreground">
+									{selectedCliEntry
+										? selectedCliEntry.description
+										: 'The same grouped catalog also powers helpcenter inside the shell surfaces.'}
+								</div>
+							</div>
+							<div class="flex flex-wrap items-center gap-2">
+								{#if selectedCliGroup}
+									<Badge variant="outline" class="bg-background/70">{selectedCliGroup.title}</Badge>
+								{/if}
+								{#if selectedCliEntry?.detailHint}
+									<Badge variant="outline" class="bg-background/70">{selectedCliEntry.detailHint}</Badge>
+								{/if}
+								<Badge variant="outline" class="bg-background/70">
+									{filteredCliGroups.length} group{filteredCliGroups.length === 1 ? '' : 's'}
+								</Badge>
+							</div>
 						{:else}
 							<div class="grid gap-2 md:hidden">
 								<div class="min-w-0 truncate text-[13px] font-medium" title={selectedExplorerPath ?? ''}>
@@ -1089,7 +1294,13 @@
 
 		{#snippet drawer()}
 			{#snippet workspaceDrawerSummary()}
-				{#if mode !== 'rules' && preview}
+				{#if mode === 'cli' && selectedCliEntry}
+					<div><span class="font-medium text-foreground">Group:</span> {selectedCliGroup?.title ?? 'CLI'}</div>
+					<div><span class="font-medium text-foreground">Command:</span> {selectedCliEntry.commandLabel}</div>
+					{#if selectedCliEntry.detailHint}
+						<div><span class="font-medium text-foreground">Hint:</span> {selectedCliEntry.detailHint}</div>
+					{/if}
+				{:else if mode !== 'rules' && preview}
 					<div class="break-all"><span class="font-medium text-foreground">Path:</span> {preview.path}</div>
 					<div><span class="font-medium text-foreground">Kind:</span> {preview.previewKind}</div>
 					<div><span class="font-medium text-foreground">Size:</span> {preview.sizeBytes} bytes</div>
@@ -1103,10 +1314,12 @@
 
 			<WorkbenchDetailDrawer
 				tone={detailCompact ? 'page' : 'pane'}
-				title={mode === 'rules' ? 'Rule detail' : 'Preview'}
+				title={mode === 'rules' ? 'Rule detail' : mode === 'cli' ? 'Command detail' : 'Preview'}
 				description={
 					mode === 'rules'
 						? 'Rules keeps the drawer informational while editing stays below.'
+						: mode === 'cli'
+							? 'Command discovery stays grouped while the drawer holds the currently selected detail hint.'
 						: 'Preview stays dominant and metadata remains secondary.'
 				}
 				contentClass={cn(mode !== 'rules' && detailCompact && 'min-h-full')}
@@ -1123,6 +1336,51 @@
 							No rule selected.
 						{/if}
 					</div>
+				{:else if mode === 'cli'}
+					{#if cliLoading}
+						<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[0.9rem] bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
+							<div class="grid max-w-[16rem] gap-2">
+								<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
+								<div class="font-medium text-foreground">Loading command detail…</div>
+								<div class="text-xs leading-5 text-muted-foreground">Waiting for the grouped CLI catalog to finish loading.</div>
+							</div>
+						</div>
+					{:else if !selectedCliEntry}
+						<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[0.9rem] bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
+							<div class="grid max-w-[16rem] gap-2">
+								<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
+								<div class="font-medium text-foreground">Select one command to inspect its detail hint.</div>
+								<div class="text-xs leading-5 text-muted-foreground">Builtins point back to `help`, while runtime and workspace commands point back to `--help`.</div>
+							</div>
+						</div>
+					{:else}
+						<div class="grid gap-3 rounded-[0.9rem] bg-muted/24 px-4 py-4 text-sm">
+							<div class="grid gap-1">
+								<code class="w-fit rounded bg-background px-2 py-1 text-[11px] font-semibold md:text-xs">{selectedCliEntry.commandLabel}</code>
+								{#if selectedCliEntry.displayName !== selectedCliEntry.commandLabel}
+									<div class="font-semibold">{selectedCliEntry.displayName}</div>
+								{/if}
+								<div class="text-muted-foreground">{selectedCliEntry.description}</div>
+							</div>
+							{#if selectedCliEntry.detailHint}
+								<div class="grid gap-1 rounded-[0.8rem] border border-border/60 bg-background/70 px-3 py-2.5">
+									<div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Detail hint</div>
+									<code class="break-all text-[11px] md:text-xs">{selectedCliEntry.detailHint}</code>
+								</div>
+							{/if}
+							<div class="flex flex-wrap gap-2">
+								{#if selectedCliGroup}
+									<Badge variant="outline">{selectedCliGroup.title}</Badge>
+								{/if}
+								{#if selectedCliEntry.metadataState === 'fallback'}
+									<Badge variant="secondary">Fallback metadata</Badge>
+								{/if}
+								{#if selectedCliEntry.toolFileName}
+									<Badge variant="outline">{selectedCliEntry.toolFileName}</Badge>
+								{/if}
+							</div>
+						</div>
+					{/if}
 				{:else if previewLoading}
 					<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[0.9rem] bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
 						<div class="grid max-w-[16rem] gap-2">

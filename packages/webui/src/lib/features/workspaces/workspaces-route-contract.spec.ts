@@ -22,11 +22,21 @@ describe("Feature: Workspaces route search and rules contract", () => {
     expect(workspacesRouteSource).toContain("WorkbenchToolbarAction");
     expect(workspacesRouteSource).toContain("<WorkbenchToolbar");
     expect(workspacesRouteSource).toContain("pageTabs={workspaceRouteToolbarPageTabs}");
+    expect(workspacesRouteSource).toContain("status={workspaceRouteToolbarStatus}");
     expect(workspacesRouteSource).toContain("actions={workspaceRouteToolbarActions}");
     expect(workspacesRouteSource).toContain('overflowLabel="Open workspace toolbar details"');
   });
 
+  test("Scenario: Given avatar lens is page-local toolbar context When reading the route source Then the shared toolbar owns View as and the content header no longer receives avatar picker props", () => {
+    expect(workspacesRouteSource).toContain('data-testid="workspace-avatar-select"');
+    expect(workspacesRouteSource).toContain("items={avatarSelectItems}");
+    expect(workspacesRouteSource).not.toContain("avatars={avatarOptions}");
+    expect(workspacesRouteSource).not.toContain("onAvatarChange={(avatar) => {");
+  });
+
   test("Scenario: Given workspace modes own page-local search When reading the route source Then search keeps prev-next-cancel inside the shared toolbar", () => {
+    expect(workspacesRouteSource).toContain("collectWorkspaceCliMatchIds");
+    expect(workspacesRouteSource).toContain("filterWorkspaceCliCatalogGroups");
     expect(workspacesRouteSource).toContain("collectWorkspaceRuleMatchIds");
     expect(workspacesRouteSource).toContain("jumpToActiveMatch");
     expect(workspacesRouteSource).toContain("revealTreePath");
@@ -47,12 +57,24 @@ describe("Feature: Workspaces route search and rules contract", () => {
     expect(workspacesRouteSource).toContain("WorkbenchDetailDrawer");
   });
 
+  test("Scenario: Given Workspace now owns a CLI mode When reading the route source Then the mode tab model and detail copy explicitly cover grouped command discovery", () => {
+    expect(workspacesRouteSource).toContain("{ value: 'cli', label: 'cli', title: 'CLI' }");
+    expect(workspacesRouteSource).toContain(
+      "One grouped catalog keeps builtins, root runtime CLI, and workspace tools aligned with helpcenter truth.",
+    );
+    expect(workspacesRouteSource).toContain("orderWorkspaceCliCatalogGroupsForDisplay");
+    expect(workspacesRouteSource).toContain("resolveWorkspaceCliDefaultEntryId");
+    expect(workspacesRouteSource).toContain("data-workspace-cli-command-id");
+    expect(workspacesRouteSource).toContain("fallback metadata");
+    expect(workspacesRouteSource).toContain("Command detail");
+  });
+
   test("Scenario: Given compact detail opens on mobile When reading the route source Then the content header yields focus so the detail surface can become the single task view", () => {
     expect(workspacesRouteSource).toContain("hideCompactContentHeader");
     expect(workspacesRouteSource).toContain("hidden md:block");
     expect(workspacesRouteSource).toContain("detailCompact && detailOpen");
     expect(workspacesRouteSource).toContain("gap-0 p-0");
-    expect(workspacesRouteSource).toContain("class=\"row-start-2 h-full min-w-0 w-full\"");
+    expect(workspacesRouteSource).toContain('class="row-start-2 h-full min-w-0 w-full"');
     expect(workspacesRouteSource).toContain("tone={detailCompact ? 'page' : 'pane'}");
   });
 
@@ -60,7 +82,7 @@ describe("Feature: Workspaces route search and rules contract", () => {
     expect(workspacesRouteSource).toContain("grid gap-2 md:hidden");
     expect(workspacesRouteSource).toContain("title={selectedExplorerPath ?? ''}");
     expect(workspacesRouteSource).toContain('aria-label="Quick rule access mode"');
-    expect(workspacesRouteSource).toContain('title={quickRuleMode === \'ro\' ? \'Read only\' : \'Read write\'}');
+    expect(workspacesRouteSource).toContain("title={quickRuleMode === 'ro' ? 'Read only' : 'Read write'}");
     expect(workspacesRouteSource).toContain("Stage");
     expect(workspacesRouteSource).toContain("Apply");
     expect(workspacesRouteSource).toContain("grid-cols-[minmax(0,1fr)_auto_auto]");
