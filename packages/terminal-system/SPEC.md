@@ -300,11 +300,14 @@ git-log 约束：
 - actor-facing terminal surface projection 必须把 catalog metadata、seat/access projection、approval counters、transport endpoint 与 renderable snapshot truth 聚合成一个 authoritative model；WebUI/client 不得再自行拼接 `access + grants + actors + snapshot` 来还原 terminal truth。
 - terminal profile truth 固定采用声明式 `rendererPreference + theme + cursor`：
   - `font` 也是 terminal-system durable truth，固定使用 renderer-neutral profile：`family + sizePx + lineHeight + letterSpacing + weight + weightBold + ligatures`
+  - durable default font baseline 当前对齐验证过的 compact baseline 是 literal system mono stack：`ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace` + `14px` + `lineHeight: 1`
   - `rendererPreference` 是 terminal-system durable truth，允许 `auto | ghostty-web | wterm | xterm`
   - `theme` 与 `cursor` 是 renderer-neutral 的 declarative profile identity，而不是 feature-local CSS 补丁
   - `font/theme/cursor/rendererPreference` 的 durable 写入口属于 authenticated browser terminal config mutation；AI-facing runtime config mutation 不得重新取得这些 presentation 字段的写权限
   - `resolvedRenderer` 属于前端环境解析事实，不回写成 terminal-system authoritative truth
   - 当前 desktop `auto` 默认解析到 `ghostty-web`，因为 fit/cover 缩放下它的选择与渲染行为比当前 xterm DOM stack 更稳定
+  - renderer-neutral 不等于 renderer-identical：`ghostty-web` 当前只稳定消费 `family + sizePx` 等受支持子集，并在 adapter 内处理 browser font settle / repaint；`xterm` 与 `wterm` 可以继续消费更多 font subfields
+  - `@font-face` declaration 不是 renderer-ready truth：只有 renderer adapter 自己拿到 browser font readiness 之后，才允许信任 webfont metrics
   - `wterm` 是 renderer stack law，而不是单一 widget law：实现可以在 adapter 内部组合 `@wterm/ghostty` core 与 `@wterm/dom` host，但 host/UI 只能消费统一 terminal-view contract
   - terminal-window 的 fit/cover 几何真值来自 renderer-native content metrics，而不是 renderer host box；当 scroll host 与 terminal content box 不一致时，adapter 必须上报 content surface 的尺寸事实
 - terminal websocket transport 的 contract 固定为“bootstrap snapshot + live bytes/status”：

@@ -113,6 +113,12 @@ When `terminal-view` rebuilds its local renderer stack, it SHALL restore the cur
 - **THEN** the fresh renderer session still hydrates from the current snapshot
 - **AND** the visible viewport does not remain blank while waiting for future PTY output
 
+#### Scenario: XTerm-to-ghostty-web swap repaints immediately
+- **WHEN** the host changes renderer preference from `xterm` to `ghostty-web`
+- **AND** the current durable snapshot already contains renderable terminal content
+- **THEN** the rebuilt `ghostty-web` session paints that snapshot without requiring future PTY output
+- **AND** the operator does not need to type another command just to reveal the old buffer
+
 ### Requirement: Terminal-view SHALL report renderer-native content metrics
 
 The standalone `terminal-view` component SHALL report renderer-owned native content metrics that hosts can use as geometry truth for fit/cover projection.
@@ -121,4 +127,3 @@ The standalone `terminal-view` component SHALL report renderer-owned native cont
 - **WHEN** the host renders `terminal-view` inside a fit projection smaller than native scale
 - **THEN** the component still reports native content metrics for the current renderer session
 - **AND** the host does not need to reconstruct intrinsic size by dividing projected dimensions
-

@@ -27,6 +27,11 @@ WebUI terminal-facing surfaces SHALL render from global terminal ids, actor-scop
 - **THEN** it uses public viewport facts and shared adapter-owned behavior
 - **AND** it does not depend on `.xterm-*` selectors or xterm-private metric objects
 
+#### Scenario: Experimental renderers are labeled in config UI
+- **WHEN** the operator opens the terminal presentation config dialog
+- **THEN** stable renderer entries such as `Auto`, `Ghostty Web`, and `XTerm` are listed plainly
+- **AND** `wterm` is labeled as experimental rather than being presented as an equally stable renderer path
+
 ### Requirement: Terminals page SHALL expose a tabbed terminal workbench
 The top-level `Terminals` page SHALL expose the running global terminal catalog as a tabbed workbench with one terminal-local toolbar.
 

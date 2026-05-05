@@ -22,9 +22,15 @@ Terminal profiles SHALL expose one renderer-neutral font profile owned by termin
 Renderer stacks SHALL consume the shared terminal font profile through adapter-local mapping instead of feature-local CSS or renderer-private host conditionals.
 
 #### Scenario: Xterm-like stacks map the shared font profile to engine options
-- **WHEN** the resolved renderer is `xterm` or `ghostty-web`
+- **WHEN** the resolved renderer is `xterm`
 - **THEN** the adapter maps shared font profile values into renderer option fields such as family, size, line height, and weight
 - **AND** host surfaces do not hard-code a second set of terminal font numbers
+
+#### Scenario: Ghostty-web maps only the supported shared font subset
+- **WHEN** the resolved renderer is `ghostty-web`
+- **THEN** the adapter maps the shared font profile into renderer-supported fields such as family and size
+- **AND** browser-font settlement, remeasure, and repaint stay adapter-local
+- **AND** unsupported shared subfields do not become fake `ghostty-web` option truth
 
 #### Scenario: WTerm stack maps the shared font profile to CSS variables
 - **WHEN** the resolved renderer is `wterm`
@@ -38,10 +44,20 @@ The system SHALL provide one shared default terminal font resolver so supported 
 #### Scenario: Default font profile resolves consistently
 - **WHEN** a terminal profile does not override font settings
 - **THEN** the viewport resolves one shared default terminal font profile
-- **AND** supported renderers start from the same family, size, line-height, spacing, and weight baseline instead of per-renderer magic numbers
+- **AND** supported renderers start from the same compact family, size, and line-height baseline instead of feature-local magic numbers
 
 #### Scenario: Default font family stays renderer-safe outside WebUI CSS
 - **WHEN** `terminal-view` resolves the default terminal font profile in a host that does not provide WebUI-local CSS variables
 - **THEN** the default font family still resolves to a usable literal monospace stack
 - **AND** renderer adapters do not depend on `var(--font-mono)` being understood inside third-party JS option parsing
 
+#### Scenario: Default font family matches the verified compact baseline
+- **WHEN** the current WebUI host uses the shared terminal font default
+- **THEN** the default family starts from a literal system monospace stack instead of a webfont-first stack
+- **AND** the shared default size is `14px`
+- **AND** the shared default line height is `1`
+
+#### Scenario: Optional terminal webfonts remain lazy until used
+- **WHEN** WebUI has already injected `@font-face` rules for optional terminal fonts
+- **THEN** browser hosts do not treat stylesheet presence as proof that font bytes are already loaded
+- **AND** renderer adapters must explicitly wait for browser font readiness before trusting terminal metrics

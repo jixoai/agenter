@@ -65,9 +65,15 @@ The shared viewport contract SHALL expose adapter-owned public facts for input, 
 Renderer stack adapters SHALL map shared `theme + cursor + font` profile inputs into renderer-specific options or CSS variables inside the adapter boundary.
 
 #### Scenario: Xterm-like stack maps shared presentation profile locally
-- **WHEN** `xterm` or `ghostty-web` is the resolved renderer
+- **WHEN** `xterm` is the resolved renderer
 - **THEN** the adapter maps shared presentation fields into renderer-local options
 - **AND** host surfaces do not duplicate renderer-specific presentation mapping
+
+#### Scenario: Ghostty-web maps only the supported shared font subset
+- **WHEN** the resolved renderer is `ghostty-web`
+- **THEN** the adapter maps the shared font profile into renderer-supported fields such as family and size
+- **AND** browser-font settlement, remeasure, and repaint stay adapter-local
+- **AND** unsupported shared subfields do not become fake `ghostty-web` option truth
 
 #### Scenario: WTerm stack maps shared presentation profile locally
 - **WHEN** `wterm` is the resolved renderer
@@ -83,10 +89,31 @@ Renderer stack adapters SHALL declare whether shared presentation fields can set
 - **THEN** the adapter policy reports that theme settlement requires `rebuild-session`
 - **AND** `terminal-view` does not pretend that host-local live-apply is authoritative
 
+#### Scenario: Ghostty-web font mutation settles live
+- **WHEN** `ghostty-web` receives a durable font mutation while the renderer session stays on `ghostty-web`
+- **THEN** the adapter policy reports `live-apply`
+- **AND** the adapter remeasures and repaints the renderer from the same terminal session instead of forcing a rebuild
+
 #### Scenario: XTerm cursor mutation stays live
 - **WHEN** `xterm` receives a cursor-style mutation while the terminal session stays on `xterm`
 - **THEN** the adapter policy reports `live-apply`
 - **AND** `terminal-view` keeps the same renderer session alive
+
+#### Scenario: XTerm font mutation stays live
+- **WHEN** `xterm` receives a durable font mutation while the terminal session stays on `xterm`
+- **THEN** the adapter policy reports `live-apply`
+- **AND** the adapter refreshes the existing renderer session after browser font readiness instead of forcing a rebuild
+
+#### Scenario: Ghostty-web waits for browser font settlement
+- **WHEN** `ghostty-web` opens or applies a new font family or size
+- **THEN** the adapter waits for browser font readiness when available
+- **AND** it remeasures and repaints the canvas using the configured shared font profile instead of leaving fallback-width metrics active
+- **AND** unsupported shared font knobs such as line-height, letter-spacing, and weight do not become fake renderer option truth
+
+#### Scenario: XTerm waits for browser font settlement
+- **WHEN** `xterm` opens or applies a new font family or size
+- **THEN** the adapter waits for browser font readiness when available
+- **AND** it refreshes the existing terminal grid after font settlement so previously written rows do not keep fallback metrics
 
 ### Requirement: Renderer stacks SHALL report native viewport metrics
 
@@ -106,4 +133,3 @@ Renderer stack adapters SHALL report native terminal content metrics through the
 - **WHEN** `wterm` host scroll geometry differs from its active `.term-grid` content surface
 - **THEN** the adapter reports the active terminal content metrics rather than the outer scroll-host box
 - **AND** host code does not compensate by reverse-projecting or second-guessing the renderer metrics
-
