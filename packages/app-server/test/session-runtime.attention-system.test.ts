@@ -31,7 +31,7 @@ import type { LoopBusInput } from "../src/loop-bus";
 import { LoopBusPluginRuntime, type AttentionDraft, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
 import type { AssistantDeliveryEvent, AssistantStreamUpdate } from "../src/model-client";
 import type { RuntimeSkillSystem } from "../src/runtime-skill-system";
-import type { RuntimeMessageSendResult } from "../src/runtime-tool-views";
+import type { RuntimeMessageSendResult, RuntimeReachableParticipantView } from "../src/runtime-tool-views";
 import { resolveSessionRoomActorId } from "../src/session-chat-projection";
 import { SessionRuntime } from "../src/session-runtime";
 
@@ -1779,6 +1779,12 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         ],
         focus: false,
       });
+      messageSystem.upsertContact({
+        ownerActorId: "session:jane",
+        sourceId: "source-remote",
+        remoteActorId: "auth:gaubee",
+        label: "gaubee",
+      });
 
       const kzfRoom = messageSystem.getChannelForActor(room.chatId, "auth:kzf", {
         includeArchived: true,
@@ -1819,8 +1825,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
           focused: false,
         },
       ]);
-      expect(projected.directory?.reachableParticipants).toEqual([
+      const expectedReachableParticipants: RuntimeReachableParticipantView[] = [
         {
+          kind: "contact",
+          actorId: "auth:gaubee",
+          sourceId: "source-remote",
           label: "gaubee",
           rooms: [
             {
@@ -1832,6 +1841,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
           ],
         },
         {
+          kind: "room-label",
           label: "Jane",
           rooms: [
             {
@@ -1842,7 +1852,8 @@ describe("Feature: session runtime attention-system loop inputs", () => {
             },
           ],
         },
-      ]);
+      ];
+      expect(projected.directory?.reachableParticipants).toEqual(expectedReachableParticipants);
     } finally {
       messageSystem.close();
     }

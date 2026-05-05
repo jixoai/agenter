@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { AttentionActiveContextMatch } from "@agenter/attention-system";
 import type { MessageSnapshot } from "@agenter/message-system";
-import type { TerminalControlPlaneEntry } from "@agenter/terminal-system";
+import { DEFAULT_TERMINAL_FONT, type TerminalControlPlaneEntry } from "@agenter/terminal-system";
 
 import {
   projectRuntimeAttentionActiveMatch,
@@ -125,6 +125,7 @@ describe("Feature: runtime tool public views", () => {
       rendererPreference: "auto",
       theme: "default-dark",
       cursor: "block",
+      font: { ...DEFAULT_TERMINAL_FONT },
       transportUrl: "ws://127.0.0.1/terminal/term-1",
       approvalTimeoutMs: 30_000,
       pendingRequestCount: 2,
@@ -156,6 +157,7 @@ describe("Feature: runtime tool public views", () => {
       ],
       reachableParticipants: [
         {
+          kind: "room-label",
           label: "gaubee",
           rooms: [
             {

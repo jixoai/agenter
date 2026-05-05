@@ -33,6 +33,7 @@ import {
   type MessageChannelGrantRecord,
   type MessageChannelKind,
   type MessageChannelPatchInput,
+  type MessageContactRecord,
   type MessageControlPlaneEntry,
   type MessageErrorPayload,
   type MessageFocusOp,
@@ -2478,23 +2479,53 @@ export class SessionRuntime {
         participantLabels: this.projectMessagePresenceSummary(channel).participantLabels,
         focused: channel.focused,
       }))
-      .sort((left, right) => {
-        if (left.focused !== right.focused) {
-          return left.focused ? -1 : 1;
-        }
-        return left.title.localeCompare(right.title);
-      })
+      .sort((left, right) => this.compareVisibleMessageRooms(left, right))
       .slice(0, 8);
+  }
+
+  private compareVisibleMessageRooms(
+    left: RuntimeVisibleMessageRoomView,
+    right: RuntimeVisibleMessageRoomView,
+  ): number {
+    if (left.focused !== right.focused) {
+      return left.focused ? -1 : 1;
+    }
+    return left.title.localeCompare(right.title);
+  }
+
+  private projectReachableMessageContact(
+    contact: MessageContactRecord,
+    visibleRooms: RuntimeVisibleMessageRoomView[],
+  ): RuntimeReachableParticipantView {
+    const label = contact.label.trim() || contact.remoteActorId;
+    const rooms = visibleRooms
+      .filter(
+        (room) =>
+          room.chatId === contact.localDirectChatId ||
+          room.participantLabels.some((participantLabel) => participantLabel.trim() === label),
+      )
+      .sort((left, right) => this.compareVisibleMessageRooms(left, right));
+    return {
+      kind: "contact",
+      actorId: contact.remoteActorId,
+      sourceId: contact.sourceId,
+      label,
+      rooms,
+    };
   }
 
   private projectReachableMessageParticipants(
     visibleRooms: RuntimeVisibleMessageRoomView[],
   ): RuntimeReachableParticipantView[] {
+    const contacts = this.messageSystem
+      .listContacts(this.messageActorId)
+      .map((contact) => this.projectReachableMessageContact(contact, visibleRooms));
+    const coveredLabels = new Set(contacts.map((contact) => contact.label));
     const directory = new Map<string, RuntimeVisibleMessageRoomView[]>();
     for (const room of visibleRooms) {
       for (const label of room.participantLabels) {
         const normalizedLabel = label.trim();
-        if (normalizedLabel.length === 0) {
+        if (normalizedLabel.length === 0 || coveredLabels.has(normalizedLabel)) {
           continue;
         }
         const rooms = directory.get(normalizedLabel) ?? [];
@@ -2502,17 +2533,14 @@ export class SessionRuntime {
         directory.set(normalizedLabel, rooms);
       }
     }
-    return [...directory.entries()]
+    const fallbacks = [...directory.entries()]
       .map(([label, rooms]) => ({
+        kind: "room-label" as const,
         label,
-        rooms: rooms.sort((left, right) => {
-          if (left.focused !== right.focused) {
-            return left.focused ? -1 : 1;
-          }
-          return left.title.localeCompare(right.title);
-        }),
+        rooms: rooms.sort((left, right) => this.compareVisibleMessageRooms(left, right)),
       }))
       .sort((left, right) => left.label.localeCompare(right.label));
+    return [...contacts, ...fallbacks].sort((left, right) => left.label.localeCompare(right.label));
   }
 
   private projectMessagePresenceSummary(channel: MessageControlPlaneEntry): {

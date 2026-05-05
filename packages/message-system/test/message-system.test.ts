@@ -1455,4 +1455,123 @@ describe("Feature: message-chat-control-plane", () => {
       latest_unread_row_id: unread.rowId,
     });
   });
+
+  test("Scenario: Given actor-private sources and repeated contact requests When contact truth is managed Then subscriptions stay private and older pending requests are superseded", () => {
+    const plane = createPlane();
+    plane.upsertSourceSubscription({
+      ownerActorId: "auth:owner",
+      sourceId: "remote-b",
+      label: "Remote B",
+      endpoint: "http://127.0.0.1:4100/",
+      authToken: "abcdefghijklmnop",
+      callbackSourceId: "local-a",
+      callbackEndpoint: "http://127.0.0.1:4200/",
+    });
+
+    expect(plane.listSourceSubscriptions("auth:owner")).toEqual([
+      expect.objectContaining({
+        ownerActorId: "auth:owner",
+        sourceId: "remote-b",
+        endpoint: "http://127.0.0.1:4100",
+        callbackEndpoint: "http://127.0.0.1:4200",
+      }),
+    ]);
+    expect(plane.listSourceSubscriptions("auth:other")).toEqual([]);
+
+    const first = plane.createContactRequest({
+      ownerActorId: "auth:owner",
+      direction: "outbound",
+      sourceId: "remote-b",
+      remoteActorId: "auth:bob",
+      remoteLabel: "Bob",
+      callbackSourceId: "local-a",
+      callbackEndpoint: "http://127.0.0.1:4200",
+    });
+    const second = plane.createContactRequest({
+      ownerActorId: "auth:owner",
+      direction: "outbound",
+      sourceId: "remote-b",
+      remoteActorId: "auth:bob",
+      remoteLabel: "Bob",
+      callbackSourceId: "local-a",
+      callbackEndpoint: "http://127.0.0.1:4200",
+    });
+
+    expect(plane.getContactRequest("auth:owner", first.requestId)).toMatchObject({
+      state: "superseded",
+      supersededByRequestId: second.requestId,
+    });
+    expect(plane.getContactRequest("auth:owner", second.requestId)).toMatchObject({
+      state: "pending",
+      sourceId: "remote-b",
+      remoteActorId: "auth:bob",
+    });
+  });
+
+  test("Scenario: Given an expired or accepted contact request When contact state is queried Then expiry is materialized and acceptance creates source-scoped contact truth", () => {
+    const plane = createPlane();
+    plane.upsertSourceSubscription({
+      ownerActorId: "auth:owner",
+      sourceId: "remote-b",
+      label: "Remote B",
+      endpoint: "http://127.0.0.1:4100",
+      authToken: "abcdefghijklmnop",
+    });
+
+    const expired = plane.createContactRequest({
+      ownerActorId: "auth:owner",
+      direction: "outbound",
+      sourceId: "remote-b",
+      remoteActorId: "auth:alice",
+      remoteLabel: "Alice",
+      expiresAt: Date.now() - 1_000,
+    });
+    expect(plane.getContactRequest("auth:owner", expired.requestId)).toMatchObject({
+      state: "expired",
+    });
+
+    const inbound = plane.createContactRequest({
+      ownerActorId: "auth:owner",
+      direction: "inbound",
+      sourceId: "remote-b",
+      remoteActorId: "auth:bob",
+      remoteLabel: "Bob",
+      remoteSubtitle: "auth:bob",
+      remoteIconUrl: "https://example.com/bob.png",
+    });
+    const accepted = plane.acceptContactRequest({
+      ownerActorId: "auth:owner",
+      requestId: inbound.requestId,
+      localDirectChatId: "0xlocal",
+      remoteDirectChatId: "0xremote",
+    });
+
+    expect(accepted.request.state).toBe("accepted");
+    expect(plane.getContact("auth:owner", "remote-b", "auth:bob")).toEqual(
+      expect.objectContaining({
+        ownerActorId: "auth:owner",
+        sourceId: "remote-b",
+        remoteActorId: "auth:bob",
+        label: "Bob",
+        subtitle: "auth:bob",
+        iconUrl: "https://example.com/bob.png",
+        localDirectChatId: "0xlocal",
+        remoteDirectChatId: "0xremote",
+      }),
+    );
+  });
+
+  test("Scenario: Given a room is marked direct When a third participant is inserted Then message-system rejects in-place expansion", () => {
+    const plane = createPlane();
+    expect(() =>
+      plane.createChannel({
+        chatId: createRoomId(),
+        kind: "room",
+        owner: "ops",
+        participants: [{ id: "auth:a" }, { id: "auth:b" }, { id: "auth:c" }],
+        metadata: { roomMode: "direct" },
+        bootstrapActorId: "auth:a",
+      }),
+    ).toThrow("direct room cannot have more than two participants");
+  });
 });

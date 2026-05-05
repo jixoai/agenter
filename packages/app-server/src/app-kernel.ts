@@ -28,6 +28,8 @@ import {
   type MessageChannelGrantRecord,
   type MessageChannelKind,
   type MessageChannelPatchInput,
+  type MessageContactRecord,
+  type MessageContactRequestRecord,
   type MessageControlPlaneEntry,
   type MessageFocusOp,
   type MessageIssuedGrant,
@@ -36,6 +38,8 @@ import {
   type MessageQueryResult,
   type MessageRecord,
   type MessageSnapshot,
+  type MessageSourceSubscriptionInput,
+  type MessageSourceSubscriptionRecord,
 } from "@agenter/message-system";
 import { LoopBusKernel } from "@agenter/loopbus-kernel";
 import { isPrincipalId } from "@agenter/principal-crypto";
@@ -123,6 +127,10 @@ import { pageHeartbeatGroupsFromDb } from "./heartbeat-groups-page";
 import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
 import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
+import {
+  createRemoteMessageSourceClient,
+  type RemoteMessageSourceCatalogItem,
+} from "./remote-message-source-client";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
   settingsKindSchema,
@@ -270,6 +278,10 @@ const sanitizeGlobalRoomMetadata = (metadata?: Record<string, unknown>): Record<
   delete nextMetadata.primaryRoom;
   return Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined;
 };
+
+const normalizeRemoteEndpoint = (value: string): string => value.trim().replace(/\/+$/u, "");
+const readRoomMode = (metadata: Record<string, unknown> | undefined): "direct" | "public" =>
+  metadata?.roomMode === "direct" ? "direct" : "public";
 
 const isTerminalEventRefDetail = (
   value: unknown,
@@ -1324,6 +1336,161 @@ export class AppKernel {
       room,
       accessToken: input.accessToken ?? room.accessToken,
     };
+  }
+
+  private requireMessageSourceSubscription(
+    actorId: MessageActorId,
+    sourceId: string,
+  ): MessageSourceSubscriptionRecord {
+    const source = this.messageControlPlane.getSourceSubscription(actorId, sourceId);
+    if (!source) {
+      throw new Error(`unknown message source subscription: ${sourceId}`);
+    }
+    return source;
+  }
+
+  private requirePendingMessageContactRequest(
+    actorId: MessageActorId,
+    requestId: string,
+  ): MessageContactRequestRecord {
+    const request = this.messageControlPlane.getContactRequest(actorId, requestId);
+    if (!request) {
+      throw new Error(`unknown contact request: ${requestId}`);
+    }
+    if (request.state !== "pending") {
+      throw new Error(`contact request is not pending: ${requestId}`);
+    }
+    return request;
+  }
+
+  private requireResponseSourceSubscription(
+    actorId: MessageActorId,
+    request: MessageContactRequestRecord,
+  ): MessageSourceSubscriptionRecord {
+    const bySourceId = this.messageControlPlane.getSourceSubscription(actorId, request.sourceId);
+    if (bySourceId) {
+      return bySourceId;
+    }
+    if (request.callbackEndpoint) {
+      const callbackEndpoint = normalizeRemoteEndpoint(request.callbackEndpoint);
+      const matched = this.messageControlPlane
+        .listSourceSubscriptions(actorId)
+        .find((source) => normalizeRemoteEndpoint(source.endpoint) === callbackEndpoint);
+      if (matched) {
+        return matched;
+      }
+    }
+    throw new Error(`no response source subscription for contact request: ${request.requestId}`);
+  }
+
+  private async resolveMessageActorDirectoryProjection(actorId: MessageActorId): Promise<{
+    actorId: MessageActorId;
+    label: string;
+    subtitle: string;
+    iconUrl: string;
+  }> {
+    if (actorId.startsWith("auth:")) {
+      const actors = await this.listAuthActors();
+      const projected = actors.find((item) => item.actorId === actorId);
+      if (projected) {
+        return {
+          actorId,
+          label: projected.label,
+          subtitle: projected.subtitle,
+          iconUrl: projected.iconUrl,
+        };
+      }
+    }
+    return {
+      actorId,
+      label: actorId.split(":").at(-1) ?? actorId,
+      subtitle: actorId,
+      iconUrl: "",
+    };
+  }
+
+  private async resolveRemoteMessageActorProjection(
+    source: MessageSourceSubscriptionRecord,
+    remoteActorId: MessageActorId,
+  ): Promise<{ actorId: MessageActorId; label: string; subtitle: string; iconUrl: string }> {
+    const client = createRemoteMessageSourceClient({
+      endpoint: source.endpoint,
+      authToken: source.authToken,
+    });
+    const items = await client.searchAuthCatalog({
+      query: remoteActorId,
+    });
+    const projected = items.find((item) => item.actorId === remoteActorId);
+    if (projected) {
+      return {
+        actorId: remoteActorId,
+        label: projected.label,
+        subtitle: projected.subtitle,
+        iconUrl: projected.iconUrl,
+      };
+    }
+    return {
+      actorId: remoteActorId,
+      label: remoteActorId.split(":").at(-1) ?? remoteActorId,
+      subtitle: remoteActorId,
+      iconUrl: "",
+    };
+  }
+
+  private async createLocalDirectContactRoom(input: {
+    actorId: MessageActorId;
+    sourceId: string;
+    remoteActorId: MessageActorId;
+    remoteLabel?: string;
+    remoteDirectChatId?: string;
+  }): Promise<PublicRoomEntry> {
+    return await this.createGlobalRoom({
+      actorId: input.actorId,
+      title: input.remoteLabel?.trim() || (input.remoteActorId.split(":").at(-1) ?? input.remoteActorId),
+      participants: [
+        { id: input.actorId },
+        input.remoteLabel ? { id: input.remoteActorId, label: input.remoteLabel } : { id: input.remoteActorId },
+      ],
+      metadata: {
+        roomMode: "direct",
+        directSourceId: input.sourceId,
+        directPeerActorId: input.remoteActorId,
+        remoteDirectChatId: input.remoteDirectChatId,
+      },
+      focus: false,
+    });
+  }
+
+  private patchDirectRoomPairing(input: {
+    actorId: MessageActorId;
+    chatId: string;
+    remoteDirectChatId: string;
+  }): PublicRoomEntry {
+    const room = this.resolveGlobalRoomProjection({
+      chatId: input.chatId,
+      actorId: input.actorId,
+      includeArchived: true,
+    });
+    return this.updateGlobalRoom({
+      actorId: input.actorId,
+      chatId: input.chatId,
+      patch: {
+        metadata: {
+          ...(room.metadata ?? {}),
+          remoteDirectChatId: input.remoteDirectChatId,
+          roomMode: "direct",
+        },
+      },
+    });
+  }
+
+  private appendDirectBootstrapMessage(chatId: string, senderActorId: MessageActorId, content: string): void {
+    this.messageControlPlane.send({
+      chatId,
+      senderActorId,
+      kind: "text",
+      content,
+    });
   }
 
   private resolveGlobalTerminalProjection(input: {
@@ -2838,6 +3005,299 @@ export class AppKernel {
       chatId: input.chatId,
       accessToken: input.accessToken,
       grantId: input.grantId,
+    });
+  }
+
+  listMessageSourceSubscriptions(input: { actorId: MessageActorId }): MessageSourceSubscriptionRecord[] {
+    return this.messageControlPlane.listSourceSubscriptions(input.actorId);
+  }
+
+  saveMessageSourceSubscription(
+    input: {
+      actorId: MessageActorId;
+    } & MessageSourceSubscriptionInput,
+  ): MessageSourceSubscriptionRecord {
+    return this.messageControlPlane.upsertSourceSubscription({
+      ownerActorId: input.actorId,
+      sourceId: input.sourceId,
+      label: input.label,
+      endpoint: normalizeRemoteEndpoint(input.endpoint),
+      authToken: input.authToken,
+      callbackSourceId: input.callbackSourceId,
+      callbackEndpoint: input.callbackEndpoint ? normalizeRemoteEndpoint(input.callbackEndpoint) : undefined,
+      metadata: input.metadata,
+    });
+  }
+
+  deleteMessageSourceSubscription(input: { actorId: MessageActorId; sourceId: string }): { ok: boolean } {
+    return this.messageControlPlane.deleteSourceSubscription({
+      ownerActorId: input.actorId,
+      sourceId: input.sourceId,
+    });
+  }
+
+  listMessageContacts(input: { actorId: MessageActorId }): MessageContactRecord[] {
+    return this.messageControlPlane.listContacts(input.actorId);
+  }
+
+  listMessageContactRequests(input: {
+    actorId: MessageActorId;
+    direction?: "inbound" | "outbound";
+    state?: "pending" | "accepted" | "rejected" | "revoked" | "expired" | "superseded";
+  }): MessageContactRequestRecord[] {
+    return this.messageControlPlane.listContactRequests(input.actorId, {
+      direction: input.direction,
+      state: input.state,
+    });
+  }
+
+  async searchMessageSourceActors(input: {
+    actorId: MessageActorId;
+    sourceId: string;
+    query?: string;
+  }): Promise<
+    Array<
+      RemoteMessageSourceCatalogItem & {
+        sourceId: string;
+        sourceLabel: string;
+        sourceEndpoint: string;
+      }
+    >
+  > {
+    const source = this.requireMessageSourceSubscription(input.actorId, input.sourceId);
+    const client = createRemoteMessageSourceClient({
+      endpoint: source.endpoint,
+      authToken: source.authToken,
+    });
+    const items = await client.searchAuthCatalog({
+      query: input.query?.trim() || undefined,
+    });
+    return items.map((item) => ({
+      ...item,
+      sourceId: source.sourceId,
+      sourceLabel: source.label,
+      sourceEndpoint: source.endpoint,
+    }));
+  }
+
+  async sendMessageContactRequest(input: {
+    actorId: MessageActorId;
+    sourceId: string;
+    remoteActorId: MessageActorId;
+    message?: string;
+    expiresAt?: number;
+  }): Promise<MessageContactRequestRecord> {
+    const source = this.requireMessageSourceSubscription(input.actorId, input.sourceId);
+    const localActor = await this.resolveMessageActorDirectoryProjection(input.actorId);
+    const remoteActor = await this.resolveRemoteMessageActorProjection(source, input.remoteActorId);
+    const request = this.messageControlPlane.createContactRequest({
+      ownerActorId: input.actorId,
+      direction: "outbound",
+      sourceId: source.sourceId,
+      remoteActorId: input.remoteActorId,
+      remoteLabel: remoteActor.label,
+      remoteSubtitle: remoteActor.subtitle,
+      remoteIconUrl: remoteActor.iconUrl,
+      message: input.message,
+      callbackSourceId: source.callbackSourceId,
+      callbackEndpoint: source.callbackEndpoint,
+      expiresAt: input.expiresAt,
+    });
+    const client = createRemoteMessageSourceClient({
+      endpoint: source.endpoint,
+      authToken: source.authToken,
+    });
+    await client.receiveContactRequest({
+      requestId: request.requestId,
+      sourceId: source.callbackSourceId ?? source.sourceId,
+      remoteActorId: input.actorId,
+      remoteLabel: localActor.label,
+      remoteSubtitle: localActor.subtitle,
+      remoteIconUrl: localActor.iconUrl,
+      message: input.message,
+      callbackEndpoint: source.callbackEndpoint,
+      expiresAt: request.expiresAt,
+    });
+    return request;
+  }
+
+  receiveMessageContactRequest(input: {
+    actorId: MessageActorId;
+    requestId: string;
+    sourceId: string;
+    remoteActorId: MessageActorId;
+    remoteLabel?: string;
+    remoteSubtitle?: string;
+    remoteIconUrl?: string;
+    message?: string;
+    callbackEndpoint?: string;
+    expiresAt?: number;
+  }): MessageContactRequestRecord {
+    return this.messageControlPlane.createContactRequest({
+      ownerActorId: input.actorId,
+      requestId: input.requestId,
+      direction: "inbound",
+      sourceId: input.sourceId,
+      remoteActorId: input.remoteActorId,
+      remoteLabel: input.remoteLabel,
+      remoteSubtitle: input.remoteSubtitle,
+      remoteIconUrl: input.remoteIconUrl,
+      message: input.message,
+      callbackEndpoint: input.callbackEndpoint,
+      expiresAt: input.expiresAt,
+    });
+  }
+
+  async acceptMessageContactRequest(input: {
+    actorId: MessageActorId;
+    requestId: string;
+    firstChat?: string;
+  }): Promise<{
+    request: MessageContactRequestRecord;
+    contact: MessageContactRecord;
+    localDirectChatId?: string;
+    remoteDirectChatId?: string;
+  }> {
+    const pending = this.requirePendingMessageContactRequest(input.actorId, input.requestId);
+    const responseSource = this.requireResponseSourceSubscription(input.actorId, pending);
+    let localDirectRoom: PublicRoomEntry | null = null;
+    if (input.firstChat?.trim()) {
+      localDirectRoom = await this.createLocalDirectContactRoom({
+        actorId: input.actorId,
+        sourceId: pending.sourceId,
+        remoteActorId: pending.remoteActorId,
+        remoteLabel: pending.remoteLabel,
+      });
+    }
+    const acceptedLocal = this.messageControlPlane.acceptContactRequest({
+      ownerActorId: input.actorId,
+      requestId: input.requestId,
+      label: pending.remoteLabel,
+      subtitle: pending.remoteSubtitle,
+      iconUrl: pending.remoteIconUrl,
+      localDirectChatId: localDirectRoom?.chatId,
+    });
+    const localActor = await this.resolveMessageActorDirectoryProjection(input.actorId);
+    const client = createRemoteMessageSourceClient({
+      endpoint: responseSource.endpoint,
+      authToken: responseSource.authToken,
+    });
+    const remoteAccepted = await client.acceptContactRequestRemote({
+      requestId: input.requestId,
+      remoteActorId: input.actorId,
+      remoteLabel: localActor.label,
+      remoteSubtitle: localActor.subtitle,
+      remoteIconUrl: localActor.iconUrl,
+      firstChat: input.firstChat?.trim() || undefined,
+      remoteDirectChatId: localDirectRoom?.chatId,
+    });
+    if (localDirectRoom && remoteAccepted.localDirectChatId && input.firstChat?.trim()) {
+      localDirectRoom = this.patchDirectRoomPairing({
+        actorId: input.actorId,
+        chatId: localDirectRoom.chatId,
+        remoteDirectChatId: remoteAccepted.localDirectChatId,
+      });
+      this.appendDirectBootstrapMessage(localDirectRoom.chatId, input.actorId, input.firstChat.trim());
+      this.messageControlPlane.upsertContact({
+        ownerActorId: input.actorId,
+        sourceId: pending.sourceId,
+        remoteActorId: pending.remoteActorId,
+        label: acceptedLocal.contact.label,
+        subtitle: acceptedLocal.contact.subtitle,
+        iconUrl: acceptedLocal.contact.iconUrl,
+        localDirectChatId: localDirectRoom.chatId,
+        remoteDirectChatId: remoteAccepted.localDirectChatId,
+      });
+    }
+    return {
+      request: this.messageControlPlane.getContactRequest(input.actorId, input.requestId) ?? acceptedLocal.request,
+      contact:
+        this.messageControlPlane.getContact(input.actorId, pending.sourceId, pending.remoteActorId) ??
+        acceptedLocal.contact,
+      localDirectChatId: localDirectRoom?.chatId,
+      remoteDirectChatId: remoteAccepted.localDirectChatId ?? undefined,
+    };
+  }
+
+  async acceptContactRequestRemote(input: {
+    actorId: MessageActorId;
+    requestId: string;
+    remoteActorId: MessageActorId;
+    remoteLabel?: string;
+    remoteSubtitle?: string;
+    remoteIconUrl?: string;
+    firstChat?: string;
+    remoteDirectChatId?: string;
+  }): Promise<{
+    request: MessageContactRequestRecord;
+    contact: MessageContactRecord;
+    localDirectChatId?: string;
+  }> {
+    const pending = this.requirePendingMessageContactRequest(input.actorId, input.requestId);
+    let localDirectRoom: PublicRoomEntry | null = null;
+    if (input.firstChat?.trim()) {
+      localDirectRoom = await this.createLocalDirectContactRoom({
+        actorId: input.actorId,
+        sourceId: pending.sourceId,
+        remoteActorId: input.remoteActorId,
+        remoteLabel: input.remoteLabel,
+        remoteDirectChatId: input.remoteDirectChatId,
+      });
+    }
+    const accepted = this.messageControlPlane.acceptContactRequest({
+      ownerActorId: input.actorId,
+      requestId: input.requestId,
+      label: input.remoteLabel,
+      subtitle: input.remoteSubtitle,
+      iconUrl: input.remoteIconUrl,
+      localDirectChatId: localDirectRoom?.chatId,
+      remoteDirectChatId: input.remoteDirectChatId,
+    });
+    if (localDirectRoom && input.firstChat?.trim()) {
+      this.appendDirectBootstrapMessage(localDirectRoom.chatId, input.remoteActorId, input.firstChat.trim());
+    }
+    return {
+      request: accepted.request,
+      contact:
+        this.messageControlPlane.getContact(input.actorId, pending.sourceId, input.remoteActorId) ?? accepted.contact,
+      localDirectChatId: localDirectRoom?.chatId,
+    };
+  }
+
+  async inviteAdditionalParticipantFromGlobalRoom(input: {
+    actorId: MessageActorId;
+    chatId: string;
+    invitedActorId: MessageActorId;
+    invitedLabel?: string;
+  }): Promise<PublicRoomEntry> {
+    const room = this.resolveGlobalRoomProjection({
+      chatId: input.chatId,
+      actorId: input.actorId,
+      includeArchived: false,
+    });
+    if (readRoomMode(room.metadata) === "direct") {
+      return await this.createGlobalRoom({
+        actorId: input.actorId,
+        title: room.title,
+        participants: [
+          ...room.participants,
+          input.invitedLabel ? { id: input.invitedActorId, label: input.invitedLabel } : { id: input.invitedActorId },
+        ],
+        metadata: {
+          roomMode: "public",
+          createdFromDirectRoomId: room.chatId,
+        },
+      });
+    }
+    return this.updateGlobalRoom({
+      actorId: input.actorId,
+      chatId: input.chatId,
+      patch: {
+        participants: [
+          ...room.participants.filter((participant) => participant.id !== input.invitedActorId),
+          input.invitedLabel ? { id: input.invitedActorId, label: input.invitedLabel } : { id: input.invitedActorId },
+        ],
+      },
     });
   }
 

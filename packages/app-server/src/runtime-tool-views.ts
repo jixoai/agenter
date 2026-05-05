@@ -1,6 +1,7 @@
 import type { AttentionActiveContextMatch, AttentionContextSnapshot } from "@agenter/attention-system";
 import type {
   MessageAttachment,
+  MessageActorId,
   MessageControlPlaneEntry,
   MessageKind,
   MessagePayload,
@@ -217,6 +218,9 @@ export interface RuntimeVisibleMessageRoomView {
 }
 
 export interface RuntimeReachableParticipantView {
+  kind?: "contact" | "room-label";
+  actorId?: MessageActorId;
+  sourceId?: string;
   label: string;
   rooms: RuntimeVisibleMessageRoomView[];
 }

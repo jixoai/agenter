@@ -135,6 +135,23 @@ const messageInteractivePayloadSchema = z.object({
   submitLabel: z.string().trim().min(1).optional(),
   fields: z.array(messageInteractiveFieldSchema).min(1),
 });
+const messageSourceSubscriptionInputSchema = z.object({
+  sourceId: z.string().trim().min(1),
+  label: z.string().trim().min(1).optional(),
+  endpoint: z.string().trim().min(1),
+  authToken: z.string().trim().min(1).optional(),
+  callbackSourceId: z.string().trim().min(1).optional(),
+  callbackEndpoint: z.string().trim().min(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+const messageContactRequestStateSchema = z.enum([
+  "pending",
+  "accepted",
+  "rejected",
+  "revoked",
+  "expired",
+  "superseded",
+]);
 const profileMetadataPatchSchema = z
   .object({
     nickname: z.string().trim().min(1).max(64).optional(),
@@ -218,10 +235,33 @@ const resolveMessageCallerScope = (
   return auth.claims.superadmin ? { superadminActorId: actorId } : { actorId };
 };
 
+const resolveAuthedMessageActorId = (auth: { claims: { authId: string } }): MessageActorId =>
+  `auth:${auth.claims.authId}` as MessageActorId;
+
 export const appRouter = t.router({
   auth: t.router({
     service: publicProcedure.query(async ({ ctx }) => await ctx.kernel.getAuthServiceDescriptor()),
     actors: superadminProcedure.query(async ({ ctx }) => ({ items: await ctx.kernel.listAuthActors() })),
+    catalog: authProcedure
+      .input(
+        z
+          .object({
+            query: z.string().trim().min(1).optional(),
+          })
+          .optional(),
+      )
+      .query(async ({ ctx, input }) => {
+        const query = input?.query?.trim().toLowerCase();
+        const items = await ctx.kernel.listAuthActors();
+        if (!query) {
+          return { items };
+        }
+        return {
+          items: items.filter((item) =>
+            [item.actorId, item.label, item.subtitle].some((value) => value.toLowerCase().includes(query)),
+          ),
+        };
+      }),
     challengeStart: publicProcedure
       .input(authChallengeStartInput)
       .mutation(async ({ ctx, input }) => await ctx.kernel.startAuthChallenge(input.authId)),
@@ -1025,6 +1065,150 @@ export const appRouter = t.router({
           ...resolveMessageCallerScope(ctx.auth),
         }),
       ),
+    sourceList: authProcedure.query(({ ctx }) => ({
+      items: ctx.kernel.listMessageSourceSubscriptions({
+        actorId: resolveAuthedMessageActorId(ctx.auth),
+      }),
+    })),
+    sourceUpsert: authProcedure
+      .input(messageSourceSubscriptionInputSchema)
+      .mutation(({ ctx, input }) => ({
+        source: ctx.kernel.saveMessageSourceSubscription({
+          actorId: resolveAuthedMessageActorId(ctx.auth),
+          ...input,
+        }),
+      })),
+    sourceDelete: authProcedure
+      .input(
+        z.object({
+          sourceId: z.string().trim().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.deleteMessageSourceSubscription({
+          actorId: resolveAuthedMessageActorId(ctx.auth),
+          sourceId: input.sourceId,
+        }),
+      ),
+    contactList: authProcedure.query(({ ctx }) => ({
+      items: ctx.kernel.listMessageContacts({
+        actorId: resolveAuthedMessageActorId(ctx.auth),
+      }),
+    })),
+    contactRequestList: authProcedure
+      .input(
+        z
+          .object({
+            direction: z.enum(["inbound", "outbound"]).optional(),
+            state: messageContactRequestStateSchema.optional(),
+          })
+          .optional(),
+      )
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listMessageContactRequests({
+          actorId: resolveAuthedMessageActorId(ctx.auth),
+          direction: input?.direction,
+          state: input?.state,
+        }),
+      })),
+    contactSearch: authProcedure
+      .input(
+        z.object({
+          sourceId: z.string().trim().min(1),
+          query: z.string().trim().min(1).optional(),
+        }),
+      )
+      .query(({ ctx, input }) =>
+        ctx.kernel.searchMessageSourceActors({
+          actorId: resolveAuthedMessageActorId(ctx.auth),
+          sourceId: input.sourceId,
+          query: input.query,
+        }),
+      ),
+    contactRequestSend: authProcedure
+      .input(
+        z.object({
+          sourceId: z.string().trim().min(1),
+          remoteActorId: messageActorIdSchema,
+          message: z.string().trim().min(1).optional(),
+          expiresAt: z.number().int().positive().optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => ({
+        request: await ctx.kernel.sendMessageContactRequest({
+          actorId: resolveAuthedMessageActorId(ctx.auth),
+          sourceId: input.sourceId,
+          remoteActorId: input.remoteActorId,
+          message: input.message,
+          expiresAt: input.expiresAt,
+        }),
+      })),
+    receiveContactRequest: authProcedure
+      .input(
+        z.object({
+          requestId: z.string().trim().min(1),
+          sourceId: z.string().trim().min(1),
+          remoteActorId: messageActorIdSchema,
+          remoteLabel: z.string().trim().min(1).optional(),
+          remoteSubtitle: z.string().trim().min(1).optional(),
+          remoteIconUrl: z.string().trim().min(1).optional(),
+          message: z.string().trim().min(1).optional(),
+          callbackEndpoint: z.string().trim().min(1).optional(),
+          expiresAt: z.number().int().positive().optional(),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        request: ctx.kernel.receiveMessageContactRequest({
+          actorId: resolveAuthedMessageActorId(ctx.auth),
+          ...input,
+        }),
+      })),
+    acceptContactRequest: authProcedure
+      .input(
+        z.object({
+          requestId: z.string().trim().min(1),
+          firstChat: z.string().trim().min(1).optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => ({
+        result: await ctx.kernel.acceptMessageContactRequest({
+          actorId: resolveAuthedMessageActorId(ctx.auth),
+          requestId: input.requestId,
+          firstChat: input.firstChat,
+        }),
+      })),
+    acceptContactRequestRemote: authProcedure
+      .input(
+        z.object({
+          requestId: z.string().trim().min(1),
+          remoteActorId: messageActorIdSchema,
+          remoteLabel: z.string().trim().min(1).optional(),
+          remoteSubtitle: z.string().trim().min(1).optional(),
+          remoteIconUrl: z.string().trim().min(1).optional(),
+          firstChat: z.string().trim().min(1).optional(),
+          remoteDirectChatId: z.string().trim().min(1).optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => ({
+        result: await ctx.kernel.acceptContactRequestRemote({
+          actorId: resolveAuthedMessageActorId(ctx.auth),
+          ...input,
+        }),
+      })),
+    inviteParticipant: authProcedure
+      .input(
+        z.object({
+          chatId: z.string().trim().min(1),
+          invitedActorId: messageActorIdSchema,
+          invitedLabel: z.string().trim().min(1).optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => ({
+        room: await ctx.kernel.inviteAdditionalParticipantFromGlobalRoom({
+          actorId: resolveAuthedMessageActorId(ctx.auth),
+          ...input,
+        }),
+      })),
   }),
   terminal: t.router({
     list: superadminProcedure

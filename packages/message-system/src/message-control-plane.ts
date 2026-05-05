@@ -20,6 +20,12 @@ import type {
   MessageChannelAccessRole,
   MessageChannelGrantRecord,
   MessageChannelPatchInput,
+  MessageContactRecord,
+  MessageContactRequestCreateInput,
+  MessageContactRequestDirection,
+  MessageContactRequestRecord,
+  MessageContactRequestState,
+  MessageContactUpsertInput,
   MessageControlPlaneConfig,
   MessageControlPlaneConfigPatch,
   MessageControlPlaneEntry,
@@ -33,6 +39,8 @@ import type {
   MessageRecallInput,
   MessageRecord,
   MessageSeatStateProjection,
+  MessageSourceSubscriptionInput,
+  MessageSourceSubscriptionRecord,
   MessageSnapshot,
   MessageTransportClientMessage,
   MessageTransportConfig,
@@ -399,6 +407,7 @@ export class MessageControlPlane {
       normalizeChannelParticipants(input.participants),
       initialUsers,
     );
+    this.assertRoomModeParticipants(participants, input.metadata);
     const channel = this.db.createChannel(
       {
         ...input,
@@ -1260,6 +1269,151 @@ export class MessageControlPlane {
     return { ok };
   }
 
+  listSourceSubscriptions(ownerActorId: MessageActorId): MessageSourceSubscriptionRecord[] {
+    this.assertActorId(ownerActorId);
+    return this.db.listSourceSubscriptions(ownerActorId);
+  }
+
+  getSourceSubscription(ownerActorId: MessageActorId, sourceId: string): MessageSourceSubscriptionRecord | undefined {
+    this.assertActorId(ownerActorId);
+    return this.db.getSourceSubscription(ownerActorId, sourceId);
+  }
+
+  upsertSourceSubscription(input: {
+    ownerActorId: MessageActorId;
+  } & MessageSourceSubscriptionInput): MessageSourceSubscriptionRecord {
+    this.assertActorId(input.ownerActorId);
+    return this.db.upsertSourceSubscription(input.ownerActorId, input);
+  }
+
+  deleteSourceSubscription(input: { ownerActorId: MessageActorId; sourceId: string }): { ok: boolean } {
+    this.assertActorId(input.ownerActorId);
+    return {
+      ok: this.db.deleteSourceSubscription(input.ownerActorId, input.sourceId),
+    };
+  }
+
+  listContacts(ownerActorId: MessageActorId): MessageContactRecord[] {
+    this.assertActorId(ownerActorId);
+    return this.db.listContacts(ownerActorId);
+  }
+
+  getContact(
+    ownerActorId: MessageActorId,
+    sourceId: string,
+    remoteActorId: MessageActorId,
+  ): MessageContactRecord | undefined {
+    this.assertActorId(ownerActorId);
+    this.assertActorId(remoteActorId);
+    return this.db.getContact(ownerActorId, sourceId, remoteActorId);
+  }
+
+  upsertContact(input: { ownerActorId: MessageActorId } & MessageContactUpsertInput): MessageContactRecord {
+    this.assertActorId(input.ownerActorId);
+    this.assertActorId(input.remoteActorId);
+    return this.db.upsertContact(input.ownerActorId, input);
+  }
+
+  createContactRequest(input: {
+    ownerActorId: MessageActorId;
+  } & MessageContactRequestCreateInput): MessageContactRequestRecord {
+    this.assertActorId(input.ownerActorId);
+    this.assertActorId(input.remoteActorId);
+    if (input.direction === "outbound" && !this.db.getSourceSubscription(input.ownerActorId, input.sourceId)) {
+      throw new Error(`unknown message source subscription: ${input.sourceId}`);
+    }
+    const currentPending = this.db.findPendingContactRequests({
+      ownerActorId: input.ownerActorId,
+      direction: input.direction,
+      sourceId: input.sourceId,
+      remoteActorId: input.remoteActorId,
+    });
+    const created = this.db.createContactRequest(input.ownerActorId, input);
+    for (const pending of currentPending) {
+      if (pending.requestId === created.requestId) {
+        continue;
+      }
+      this.db.updateContactRequestState({
+        ownerActorId: input.ownerActorId,
+        requestId: pending.requestId,
+        state: "superseded",
+        respondedAt: Date.now(),
+        supersededByRequestId: created.requestId,
+      });
+    }
+    return created;
+  }
+
+  listContactRequests(
+    ownerActorId: MessageActorId,
+    input: {
+      direction?: MessageContactRequestDirection;
+      state?: MessageContactRequestState;
+    } = {},
+  ): MessageContactRequestRecord[] {
+    this.assertActorId(ownerActorId);
+    return this.db.listContactRequests(ownerActorId, input).map((request) => this.expireContactRequestIfNeeded(request));
+  }
+
+  getContactRequest(ownerActorId: MessageActorId, requestId: string): MessageContactRequestRecord | undefined {
+    this.assertActorId(ownerActorId);
+    const current = this.db.getContactRequest(ownerActorId, requestId);
+    return current ? this.expireContactRequestIfNeeded(current) : undefined;
+  }
+
+  acceptContactRequest(input: {
+    ownerActorId: MessageActorId;
+    requestId: string;
+    label?: string;
+    subtitle?: string;
+    iconUrl?: string;
+    localDirectChatId?: string;
+    remoteDirectChatId?: string;
+    metadata?: Record<string, unknown>;
+  }): { request: MessageContactRequestRecord; contact: MessageContactRecord } {
+    this.assertActorId(input.ownerActorId);
+    const request = this.requirePendingContactRequest(input.ownerActorId, input.requestId);
+    const accepted = this.db.updateContactRequestState({
+      ownerActorId: input.ownerActorId,
+      requestId: input.requestId,
+      state: "accepted",
+      respondedAt: Date.now(),
+    });
+    const contact = this.db.upsertContact(input.ownerActorId, {
+      sourceId: request.sourceId,
+      remoteActorId: request.remoteActorId,
+      label: input.label?.trim() || request.remoteLabel || request.remoteActorId,
+      subtitle: input.subtitle ?? request.remoteSubtitle,
+      iconUrl: input.iconUrl ?? request.remoteIconUrl,
+      localDirectChatId: input.localDirectChatId,
+      remoteDirectChatId: input.remoteDirectChatId,
+      metadata: input.metadata,
+    });
+    return { request: accepted, contact };
+  }
+
+  rejectContactRequest(input: { ownerActorId: MessageActorId; requestId: string }): MessageContactRequestRecord {
+    this.assertActorId(input.ownerActorId);
+    this.requirePendingContactRequest(input.ownerActorId, input.requestId);
+    return this.db.updateContactRequestState({
+      ownerActorId: input.ownerActorId,
+      requestId: input.requestId,
+      state: "rejected",
+      respondedAt: Date.now(),
+    });
+  }
+
+  revokeContactRequest(input: { ownerActorId: MessageActorId; requestId: string }): MessageContactRequestRecord {
+    this.assertActorId(input.ownerActorId);
+    this.requirePendingContactRequest(input.ownerActorId, input.requestId);
+    return this.db.updateContactRequestState({
+      ownerActorId: input.ownerActorId,
+      requestId: input.requestId,
+      state: "revoked",
+      respondedAt: Date.now(),
+    });
+  }
+
   getHeadVersion(): string {
     return String(this.headVersion);
   }
@@ -1926,6 +2080,33 @@ export class MessageControlPlane {
     }
   }
 
+  private expireContactRequestIfNeeded(request: MessageContactRequestRecord): MessageContactRequestRecord {
+    if (request.state !== "pending" || !request.expiresAt || request.expiresAt > Date.now()) {
+      return request;
+    }
+    return this.db.updateContactRequestState({
+      ownerActorId: request.ownerActorId,
+      requestId: request.requestId,
+      state: "expired",
+      respondedAt: request.expiresAt,
+    });
+  }
+
+  private requirePendingContactRequest(
+    ownerActorId: MessageActorId,
+    requestId: string,
+  ): MessageContactRequestRecord {
+    const current = this.db.getContactRequest(ownerActorId, requestId);
+    if (!current) {
+      throw new Error(`unknown contact request: ${requestId}`);
+    }
+    const next = this.expireContactRequestIfNeeded(current);
+    if (next.state !== "pending") {
+      throw new Error(`contact request is not pending: ${requestId}`);
+    }
+    return next;
+  }
+
   private getFocusedChatIdsForActor(actorId: string): Set<string> {
     let focused = this.focusedChatIdsByActor.get(actorId);
     if (!focused) {
@@ -2005,11 +2186,29 @@ export class MessageControlPlane {
         : {}),
     };
     const synced = this.withAdminState(chatId, nextMetadata);
+    const participants = normalizeChannelParticipants(patch.participants) ?? current?.participants;
+    this.assertRoomModeParticipants(participants, synced);
     return {
       title: patch.title,
-      participants: normalizeChannelParticipants(patch.participants),
+      participants,
       metadata: synced,
     };
+  }
+
+  private assertRoomModeParticipants(
+    participants: MessageParticipant[] | undefined,
+    metadata: Record<string, unknown> | undefined,
+  ): void {
+    const roomMode = metadata?.roomMode;
+    if (roomMode === undefined) {
+      return;
+    }
+    if (roomMode !== "direct" && roomMode !== "public") {
+      throw new Error(`invalid roomMode: ${String(roomMode)}`);
+    }
+    if (roomMode === "direct" && (participants?.length ?? 0) > 2) {
+      throw new Error("direct room cannot have more than two participants");
+    }
   }
 
   private withAdminState(chatId: string, metadata: Record<string, unknown> | undefined): Record<string, unknown> {

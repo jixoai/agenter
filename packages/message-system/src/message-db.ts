@@ -25,6 +25,12 @@ import type {
   MessageChannelGrantRecord,
   MessageChannelPatchInput,
   MessageChannelRecord,
+  MessageContactRecord,
+  MessageContactRequestCreateInput,
+  MessageContactRequestDirection,
+  MessageContactRequestRecord,
+  MessageContactRequestState,
+  MessageContactUpsertInput,
   MessageCreateInput,
   MessageEditInput,
   MessageIssueGrantInput,
@@ -33,6 +39,8 @@ import type {
   MessagePayload,
   MessageRecallInput,
   MessageRecord,
+  MessageSourceSubscriptionInput,
+  MessageSourceSubscriptionRecord,
   ReversePage,
   ReverseTimeCursor,
 } from "./types";
@@ -55,7 +63,7 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
 const toJson = (value: unknown): string => JSON.stringify(value ?? null);
 const resolvePageLimit = (limit: number | undefined, max = 500): number => Math.max(1, Math.min(limit ?? 100, max));
 const MESSAGE_CONTROL_DB_BREAKING_RESET_VERSION = 6;
-const MESSAGE_CONTROL_DB_SCHEMA_VERSION = 6;
+const MESSAGE_CONTROL_DB_SCHEMA_VERSION = 7;
 const ROOM_MESSAGE_DB_BREAKING_RESET_VERSION = 2;
 const ROOM_MESSAGE_DB_SCHEMA_VERSION = 2;
 const normalizeActorIds = (value: readonly MessageActorId[]): MessageActorId[] =>
@@ -79,6 +87,11 @@ const normalizeMessageKind = (value: string | null): MessageKind => {
   return "text";
 };
 const parseBoolean = (value: number | null | undefined): boolean => value === 1;
+const normalizeEndpoint = (value: string): string => value.trim().replace(/\/+$/u, "");
+const normalizeOptionalText = (value: string | null | undefined): string | undefined => {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+};
 
 const parseMessagePayload = (kind: MessageKind, raw: string | null): MessagePayload | undefined => {
   const parsed = parseJson<Record<string, unknown>>(raw, {});
@@ -258,6 +271,112 @@ const mapActorRoomState = (row: {
   lastReadAt: row.last_read_at ?? undefined,
   latestUnreadRowId: row.latest_unread_row_id ?? undefined,
   latestUnreadAt: row.latest_unread_at ?? undefined,
+  metadata: parseJson<Record<string, unknown>>(row.metadata_json, {}),
+});
+
+const mapSourceSubscription = (row: {
+  owner_actor_id: string;
+  source_id: string;
+  label: string;
+  endpoint: string;
+  auth_token: string | null;
+  callback_source_id: string | null;
+  callback_endpoint: string | null;
+  created_at: number;
+  updated_at: number;
+  metadata_json: string | null;
+}): MessageSourceSubscriptionRecord => ({
+  ownerActorId: row.owner_actor_id as MessageActorId,
+  sourceId: row.source_id,
+  label: row.label,
+  endpoint: row.endpoint,
+  authToken: row.auth_token ?? undefined,
+  callbackSourceId: row.callback_source_id ?? undefined,
+  callbackEndpoint: row.callback_endpoint ?? undefined,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  metadata: parseJson<Record<string, unknown>>(row.metadata_json, {}),
+});
+
+const mapContact = (row: {
+  owner_actor_id: string;
+  source_id: string;
+  remote_actor_id: string;
+  label: string;
+  subtitle: string | null;
+  icon_url: string | null;
+  local_direct_chat_id: string | null;
+  remote_direct_chat_id: string | null;
+  created_at: number;
+  updated_at: number;
+  metadata_json: string | null;
+}): MessageContactRecord => ({
+  ownerActorId: row.owner_actor_id as MessageActorId,
+  sourceId: row.source_id,
+  remoteActorId: row.remote_actor_id as MessageActorId,
+  label: row.label,
+  subtitle: row.subtitle ?? undefined,
+  iconUrl: row.icon_url ?? undefined,
+  localDirectChatId: row.local_direct_chat_id ?? undefined,
+  remoteDirectChatId: row.remote_direct_chat_id ?? undefined,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  metadata: parseJson<Record<string, unknown>>(row.metadata_json, {}),
+});
+
+const normalizeContactRequestDirection = (value: string | null): MessageContactRequestDirection =>
+  value === "outbound" ? "outbound" : "inbound";
+
+const normalizeContactRequestState = (value: string | null): MessageContactRequestState => {
+  if (
+    value === "accepted" ||
+    value === "rejected" ||
+    value === "revoked" ||
+    value === "expired" ||
+    value === "superseded"
+  ) {
+    return value;
+  }
+  return "pending";
+};
+
+const mapContactRequest = (row: {
+  owner_actor_id: string;
+  request_id: string;
+  direction: string;
+  source_id: string;
+  remote_actor_id: string;
+  remote_label: string | null;
+  remote_subtitle: string | null;
+  remote_icon_url: string | null;
+  message: string | null;
+  state: string;
+  callback_source_id: string | null;
+  callback_endpoint: string | null;
+  created_at: number;
+  updated_at: number;
+  expires_at: number | null;
+  responded_at: number | null;
+  superseded_by_request_id: string | null;
+  metadata_json: string | null;
+}): MessageContactRequestRecord => ({
+  ownerActorId: row.owner_actor_id as MessageActorId,
+  requestId: row.request_id,
+  direction: normalizeContactRequestDirection(row.direction),
+  sourceId: row.source_id,
+  remoteActorId: row.remote_actor_id as MessageActorId,
+  remoteLabel: row.remote_label ?? undefined,
+  remoteSubtitle: row.remote_subtitle ?? undefined,
+  remoteIconUrl: row.remote_icon_url ?? undefined,
+  message: row.message ?? undefined,
+  state: normalizeContactRequestState(row.state),
+  callbackSourceId: row.callback_source_id ?? undefined,
+  callbackEndpoint: row.callback_endpoint ?? undefined,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  expiresAt: row.expires_at ?? undefined,
+  respondedAt: row.responded_at ?? undefined,
+  supersededByRequestId: row.superseded_by_request_id ?? undefined,
   metadata: parseJson<Record<string, unknown>>(row.metadata_json, {}),
 });
 
@@ -851,6 +970,367 @@ export class MessageDb {
     });
     remove();
     return { changed: true, removedUnreadCount: current.unreadCount };
+  }
+
+  upsertSourceSubscription(
+    ownerActorId: MessageActorId,
+    input: MessageSourceSubscriptionInput,
+  ): MessageSourceSubscriptionRecord {
+    this.ensureActorState(ownerActorId);
+    const current = this.getSourceSubscription(ownerActorId, input.sourceId);
+    const now = Date.now();
+    this.db
+      .query(
+        `insert into actor_source_subscription (
+          owner_actor_id, source_id, label, endpoint, auth_token, callback_source_id, callback_endpoint, created_at, updated_at, metadata_json
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(owner_actor_id, source_id) do update set
+          label = excluded.label,
+          endpoint = excluded.endpoint,
+          auth_token = excluded.auth_token,
+          callback_source_id = excluded.callback_source_id,
+          callback_endpoint = excluded.callback_endpoint,
+          updated_at = excluded.updated_at,
+          metadata_json = excluded.metadata_json`,
+      )
+      .run(
+        ownerActorId,
+        input.sourceId,
+        normalizeOptionalText(input.label) ?? input.sourceId,
+        normalizeEndpoint(input.endpoint),
+        normalizeOptionalText(input.authToken) ?? null,
+        normalizeOptionalText(input.callbackSourceId) ?? null,
+        input.callbackEndpoint ? normalizeEndpoint(input.callbackEndpoint) : null,
+        current?.createdAt ?? now,
+        now,
+        toJson(input.metadata ?? current?.metadata ?? {}),
+      );
+    return this.getSourceSubscription(ownerActorId, input.sourceId)!;
+  }
+
+  getSourceSubscription(ownerActorId: MessageActorId, sourceId: string): MessageSourceSubscriptionRecord | undefined {
+    const row = this.db
+      .query(
+        `select owner_actor_id, source_id, label, endpoint, auth_token, callback_source_id, callback_endpoint, created_at, updated_at, metadata_json
+         from actor_source_subscription
+         where owner_actor_id = ? and source_id = ?`,
+      )
+      .get(ownerActorId, sourceId) as Parameters<typeof mapSourceSubscription>[0] | null;
+    return row ? mapSourceSubscription(row) : undefined;
+  }
+
+  listSourceSubscriptions(ownerActorId: MessageActorId): MessageSourceSubscriptionRecord[] {
+    const rows = this.db
+      .query(
+        `select owner_actor_id, source_id, label, endpoint, auth_token, callback_source_id, callback_endpoint, created_at, updated_at, metadata_json
+         from actor_source_subscription
+         where owner_actor_id = ?
+         order by updated_at desc, source_id asc`,
+      )
+      .all(ownerActorId) as Array<Parameters<typeof mapSourceSubscription>[0]>;
+    return rows.map(mapSourceSubscription);
+  }
+
+  deleteSourceSubscription(ownerActorId: MessageActorId, sourceId: string): boolean {
+    const result = this.db
+      .query(`delete from actor_source_subscription where owner_actor_id = ? and source_id = ?`)
+      .run(ownerActorId, sourceId);
+    return Number(result.changes) > 0;
+  }
+
+  upsertContact(ownerActorId: MessageActorId, input: MessageContactUpsertInput): MessageContactRecord {
+    this.ensureActorState(ownerActorId);
+    const current = this.getContact(ownerActorId, input.sourceId, input.remoteActorId);
+    const now = Date.now();
+    this.db
+      .query(
+        `insert into actor_contact (
+          owner_actor_id,
+          source_id,
+          remote_actor_id,
+          label,
+          subtitle,
+          icon_url,
+          local_direct_chat_id,
+          remote_direct_chat_id,
+          created_at,
+          updated_at,
+          metadata_json
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(owner_actor_id, source_id, remote_actor_id) do update set
+          label = excluded.label,
+          subtitle = excluded.subtitle,
+          icon_url = excluded.icon_url,
+          local_direct_chat_id = excluded.local_direct_chat_id,
+          remote_direct_chat_id = excluded.remote_direct_chat_id,
+          updated_at = excluded.updated_at,
+          metadata_json = excluded.metadata_json`,
+      )
+      .run(
+        ownerActorId,
+        input.sourceId,
+        input.remoteActorId,
+        input.label.trim(),
+        normalizeOptionalText(input.subtitle) ?? null,
+        normalizeOptionalText(input.iconUrl) ?? null,
+        normalizeOptionalText(input.localDirectChatId) ?? null,
+        normalizeOptionalText(input.remoteDirectChatId) ?? null,
+        current?.createdAt ?? now,
+        now,
+        toJson(input.metadata ?? current?.metadata ?? {}),
+      );
+    return this.getContact(ownerActorId, input.sourceId, input.remoteActorId)!;
+  }
+
+  getContact(
+    ownerActorId: MessageActorId,
+    sourceId: string,
+    remoteActorId: MessageActorId,
+  ): MessageContactRecord | undefined {
+    const row = this.db
+      .query(
+        `select
+           owner_actor_id,
+           source_id,
+           remote_actor_id,
+           label,
+           subtitle,
+           icon_url,
+           local_direct_chat_id,
+           remote_direct_chat_id,
+           created_at,
+           updated_at,
+           metadata_json
+         from actor_contact
+         where owner_actor_id = ? and source_id = ? and remote_actor_id = ?`,
+      )
+      .get(ownerActorId, sourceId, remoteActorId) as Parameters<typeof mapContact>[0] | null;
+    return row ? mapContact(row) : undefined;
+  }
+
+  listContacts(ownerActorId: MessageActorId): MessageContactRecord[] {
+    const rows = this.db
+      .query(
+        `select
+           owner_actor_id,
+           source_id,
+           remote_actor_id,
+           label,
+           subtitle,
+           icon_url,
+           local_direct_chat_id,
+           remote_direct_chat_id,
+           created_at,
+           updated_at,
+           metadata_json
+         from actor_contact
+         where owner_actor_id = ?
+         order by updated_at desc, label asc, remote_actor_id asc`,
+      )
+      .all(ownerActorId) as Array<Parameters<typeof mapContact>[0]>;
+    return rows.map(mapContact);
+  }
+
+  deleteContact(ownerActorId: MessageActorId, sourceId: string, remoteActorId: MessageActorId): boolean {
+    const result = this.db
+      .query(`delete from actor_contact where owner_actor_id = ? and source_id = ? and remote_actor_id = ?`)
+      .run(ownerActorId, sourceId, remoteActorId);
+    return Number(result.changes) > 0;
+  }
+
+  createContactRequest(
+    ownerActorId: MessageActorId,
+    input: MessageContactRequestCreateInput,
+  ): MessageContactRequestRecord {
+    this.ensureActorState(ownerActorId);
+    const now = Date.now();
+    const requestId = input.requestId ?? crypto.randomUUID();
+    this.db
+      .query(
+        `insert into actor_contact_request (
+          owner_actor_id,
+          request_id,
+          direction,
+          source_id,
+          remote_actor_id,
+          remote_label,
+          remote_subtitle,
+          remote_icon_url,
+          message,
+          state,
+          callback_source_id,
+          callback_endpoint,
+          created_at,
+          updated_at,
+          expires_at,
+          responded_at,
+          superseded_by_request_id,
+          metadata_json
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, null, null, ?)`,
+      )
+      .run(
+        ownerActorId,
+        requestId,
+        input.direction,
+        input.sourceId,
+        input.remoteActorId,
+        normalizeOptionalText(input.remoteLabel) ?? null,
+        normalizeOptionalText(input.remoteSubtitle) ?? null,
+        normalizeOptionalText(input.remoteIconUrl) ?? null,
+        normalizeOptionalText(input.message) ?? null,
+        normalizeOptionalText(input.callbackSourceId) ?? null,
+        input.callbackEndpoint ? normalizeEndpoint(input.callbackEndpoint) : null,
+        now,
+        now,
+        input.expiresAt ?? null,
+        toJson(input.metadata ?? {}),
+      );
+    return this.getContactRequest(ownerActorId, requestId)!;
+  }
+
+  getContactRequest(ownerActorId: MessageActorId, requestId: string): MessageContactRequestRecord | undefined {
+    const row = this.db
+      .query(
+        `select
+           owner_actor_id,
+           request_id,
+           direction,
+           source_id,
+           remote_actor_id,
+           remote_label,
+           remote_subtitle,
+           remote_icon_url,
+           message,
+           state,
+           callback_source_id,
+           callback_endpoint,
+           created_at,
+           updated_at,
+           expires_at,
+           responded_at,
+           superseded_by_request_id,
+           metadata_json
+         from actor_contact_request
+         where owner_actor_id = ? and request_id = ?`,
+      )
+      .get(ownerActorId, requestId) as Parameters<typeof mapContactRequest>[0] | null;
+    return row ? mapContactRequest(row) : undefined;
+  }
+
+  listContactRequests(
+    ownerActorId: MessageActorId,
+    input: {
+      direction?: MessageContactRequestDirection;
+      state?: MessageContactRequestState;
+    } = {},
+  ): MessageContactRequestRecord[] {
+    const rows = this.db
+      .query(
+        `select
+           owner_actor_id,
+           request_id,
+           direction,
+           source_id,
+           remote_actor_id,
+           remote_label,
+           remote_subtitle,
+           remote_icon_url,
+           message,
+           state,
+           callback_source_id,
+           callback_endpoint,
+           created_at,
+           updated_at,
+           expires_at,
+           responded_at,
+           superseded_by_request_id,
+           metadata_json
+         from actor_contact_request
+         where owner_actor_id = ?
+           and (? is null or direction = ?)
+           and (? is null or state = ?)
+         order by updated_at desc, request_id desc`,
+      )
+      .all(
+        ownerActorId,
+        input.direction ?? null,
+        input.direction ?? null,
+        input.state ?? null,
+        input.state ?? null,
+      ) as Array<Parameters<typeof mapContactRequest>[0]>;
+    return rows.map(mapContactRequest);
+  }
+
+  findPendingContactRequests(input: {
+    ownerActorId: MessageActorId;
+    direction: MessageContactRequestDirection;
+    sourceId: string;
+    remoteActorId: MessageActorId;
+  }): MessageContactRequestRecord[] {
+    const rows = this.db
+      .query(
+        `select
+           owner_actor_id,
+           request_id,
+           direction,
+           source_id,
+           remote_actor_id,
+           remote_label,
+           remote_subtitle,
+           remote_icon_url,
+           message,
+           state,
+           callback_source_id,
+           callback_endpoint,
+           created_at,
+           updated_at,
+           expires_at,
+           responded_at,
+           superseded_by_request_id,
+           metadata_json
+         from actor_contact_request
+         where owner_actor_id = ?
+           and direction = ?
+           and source_id = ?
+           and remote_actor_id = ?
+           and state = 'pending'
+         order by created_at desc, request_id desc`,
+      )
+      .all(input.ownerActorId, input.direction, input.sourceId, input.remoteActorId) as Array<
+      Parameters<typeof mapContactRequest>[0]
+    >;
+    return rows.map(mapContactRequest);
+  }
+
+  updateContactRequestState(input: {
+    ownerActorId: MessageActorId;
+    requestId: string;
+    state: MessageContactRequestState;
+    respondedAt?: number;
+    supersededByRequestId?: string;
+    metadata?: Record<string, unknown>;
+  }): MessageContactRequestRecord {
+    const current = this.getContactRequest(input.ownerActorId, input.requestId);
+    if (!current) {
+      throw new Error(`unknown contact request: ${input.requestId}`);
+    }
+    const updatedAt = Date.now();
+    this.db
+      .query(
+        `update actor_contact_request
+         set state = ?, updated_at = ?, responded_at = ?, superseded_by_request_id = ?, metadata_json = ?
+         where owner_actor_id = ? and request_id = ?`,
+      )
+      .run(
+        input.state,
+        updatedAt,
+        input.respondedAt ?? current.respondedAt ?? null,
+        input.supersededByRequestId ?? current.supersededByRequestId ?? null,
+        toJson(input.metadata ?? current.metadata ?? {}),
+        input.ownerActorId,
+        input.requestId,
+      );
+    return this.getContactRequest(input.ownerActorId, input.requestId)!;
   }
 
   appendMessage(input: MessageAppendInput): MessageRecord {
@@ -1804,11 +2284,69 @@ export class MessageDb {
         foreign key(actor_id) references actor_state(actor_id) on delete cascade
       );
 
+      create table if not exists actor_source_subscription (
+        owner_actor_id text not null,
+        source_id text not null,
+        label text not null,
+        endpoint text not null,
+        auth_token text,
+        callback_source_id text,
+        callback_endpoint text,
+        created_at integer not null,
+        updated_at integer not null,
+        metadata_json text,
+        primary key(owner_actor_id, source_id),
+        foreign key(owner_actor_id) references actor_state(actor_id) on delete cascade
+      );
+
+      create table if not exists actor_contact (
+        owner_actor_id text not null,
+        source_id text not null,
+        remote_actor_id text not null,
+        label text not null,
+        subtitle text,
+        icon_url text,
+        local_direct_chat_id text,
+        remote_direct_chat_id text,
+        created_at integer not null,
+        updated_at integer not null,
+        metadata_json text,
+        primary key(owner_actor_id, source_id, remote_actor_id),
+        foreign key(owner_actor_id) references actor_state(actor_id) on delete cascade
+      );
+
+      create table if not exists actor_contact_request (
+        owner_actor_id text not null,
+        request_id text not null,
+        direction text not null,
+        source_id text not null,
+        remote_actor_id text not null,
+        remote_label text,
+        remote_subtitle text,
+        remote_icon_url text,
+        message text,
+        state text not null,
+        callback_source_id text,
+        callback_endpoint text,
+        created_at integer not null,
+        updated_at integer not null,
+        expires_at integer,
+        responded_at integer,
+        superseded_by_request_id text,
+        metadata_json text,
+        primary key(owner_actor_id, request_id),
+        foreign key(owner_actor_id) references actor_state(actor_id) on delete cascade
+      );
+
       create index if not exists idx_chat_channel_updated on chat_channel(updated_at desc, chat_id asc);
       create index if not exists idx_chat_channel_archived on chat_channel(archived_at, updated_at desc, chat_id asc);
       create index if not exists idx_chat_channel_grant_chat_created on chat_channel_grant(chat_id, created_at desc, grant_id desc);
       create index if not exists idx_actor_state_unread_total on actor_state(unread_total desc, actor_id asc);
       create index if not exists idx_actor_room_state_unread on actor_room_state(actor_id, unread_count desc, latest_unread_at desc, chat_id asc);
+      create index if not exists idx_actor_source_subscription_updated on actor_source_subscription(owner_actor_id, updated_at desc, source_id asc);
+      create index if not exists idx_actor_contact_updated on actor_contact(owner_actor_id, updated_at desc, source_id asc, remote_actor_id asc);
+      create index if not exists idx_actor_contact_request_updated on actor_contact_request(owner_actor_id, updated_at desc, request_id desc);
+      create index if not exists idx_actor_contact_request_pending on actor_contact_request(owner_actor_id, direction, source_id, remote_actor_id, state, created_at desc);
     `);
     this.db.exec(`drop table if exists chat_message;`);
     this.db.exec(`drop index if exists idx_chat_message_chat_created;`);

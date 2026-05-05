@@ -26,6 +26,14 @@ export type MessageFocusOp = "add" | "remove" | "replace" | "clear";
 export type MessageChannelAccessRole = "admin" | "member" | "readonly";
 export type MessageActorId = PrincipalId | `auth:${string}` | `session:${string}` | `system:${string}`;
 export type MessageAdminWorkKind = "grant_issue" | "grant_revoke" | "metadata_update";
+export type MessageContactRequestDirection = "inbound" | "outbound";
+export type MessageContactRequestState =
+  | "pending"
+  | "accepted"
+  | "rejected"
+  | "revoked"
+  | "expired"
+  | "superseded";
 
 export interface MessageParticipant {
   /**
@@ -44,6 +52,90 @@ export interface MessageAdminWorkItem {
   requestedBy: MessageActorId;
   assignedAdminId?: MessageActorId;
   payload?: Record<string, unknown>;
+}
+
+export interface MessageSourceSubscriptionRecord {
+  ownerActorId: MessageActorId;
+  sourceId: string;
+  label: string;
+  endpoint: string;
+  authToken?: string;
+  callbackSourceId?: string;
+  callbackEndpoint?: string;
+  createdAt: number;
+  updatedAt: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MessageSourceSubscriptionInput {
+  sourceId: string;
+  label?: string;
+  endpoint: string;
+  authToken?: string;
+  callbackSourceId?: string;
+  callbackEndpoint?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MessageContactRecord {
+  ownerActorId: MessageActorId;
+  sourceId: string;
+  remoteActorId: MessageActorId;
+  label: string;
+  subtitle?: string;
+  iconUrl?: string;
+  localDirectChatId?: string;
+  remoteDirectChatId?: string;
+  createdAt: number;
+  updatedAt: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MessageContactUpsertInput {
+  sourceId: string;
+  remoteActorId: MessageActorId;
+  label: string;
+  subtitle?: string;
+  iconUrl?: string;
+  localDirectChatId?: string;
+  remoteDirectChatId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MessageContactRequestRecord {
+  ownerActorId: MessageActorId;
+  requestId: string;
+  direction: MessageContactRequestDirection;
+  sourceId: string;
+  remoteActorId: MessageActorId;
+  remoteLabel?: string;
+  remoteSubtitle?: string;
+  remoteIconUrl?: string;
+  message?: string;
+  state: MessageContactRequestState;
+  callbackSourceId?: string;
+  callbackEndpoint?: string;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt?: number;
+  respondedAt?: number;
+  supersededByRequestId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MessageContactRequestCreateInput {
+  requestId?: string;
+  direction: MessageContactRequestDirection;
+  sourceId: string;
+  remoteActorId: MessageActorId;
+  remoteLabel?: string;
+  remoteSubtitle?: string;
+  remoteIconUrl?: string;
+  message?: string;
+  callbackSourceId?: string;
+  callbackEndpoint?: string;
+  expiresAt?: number;
+  metadata?: Record<string, unknown>;
 }
 
 export type MessageKind = "text" | "error" | "interactive";
