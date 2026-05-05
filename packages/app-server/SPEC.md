@@ -104,6 +104,10 @@
   - terminal 管理面继续暴露 `RO | RW | TM`
   - message 管理面继续暴露 `readonly | member | admin`
   - shared runtime CLI 只共享 descriptor parsing / proof / JSON command law，不引入 universal role taxonomy
+- managed-seat validation contract 也必须保持 projection-first：
+  - scenario truth固定拆成 `setup / objective / invariants / success / failureEvidence`
+  - actor-facing validation brief 只能描述情境、资源和目标，不得把 `terminal-manage`、`message-manage`、`terminal write` 之类当前 CLI spelling 写成唯一正确剧本
+  - backend / real-AI evaluators 必须用 room truth、seat timeline、descriptor projection、terminal observation、port/process ownership 这类 durable facts 判定成败，而不是依赖 exact assistant wording
 - `workspace-manage` 不是当前 runtime contract 的一部分。workspace 仍只通过既有 WorkspaceSystem authority 与 workspace/root shell surfaces 暴露，不沿用本轮 managed-seat CLI。
 - workspace/root shell privilege 是本项目有意保留的 authority，不属于本轮 pollution cleanup 范围；本轮只清理 Message/Terminal/Skill/Attention 的语义污染，不削弱 `root_bash`、`workspace_bash`、runtime-local API、workspace grants、root-workspace shell world。
 - runtime-local terminal contract 固定拆成两个命令：
