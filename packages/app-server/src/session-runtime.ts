@@ -82,6 +82,7 @@ import {
   type TaskView,
 } from "@agenter/task-system";
 import {
+  DEFAULT_TERMINAL_FONT,
   TerminalControlPlane,
   type TerminalAccessProjection,
   type TerminalAwaitResult as ControlPlaneTerminalAwaitResult,
@@ -3964,6 +3965,7 @@ export class SessionRuntime {
         rendererPreference: "auto",
         theme: "default-dark",
         cursor: "block",
+        font: { ...DEFAULT_TERMINAL_FONT },
         currentAdminId: null,
         pendingRequestCount: 0,
         access: {
@@ -9386,9 +9388,6 @@ export class SessionRuntime {
                 this.resetAttentionDebtBackoff();
               } else if (waiter.kind === "user") {
                 this.loopKernelLastWakeCause ??= "user_input";
-                this.resetAttentionDebtBackoff();
-              } else if (waiter.kind === "terminal") {
-                this.loopKernelLastWakeCause ??= "terminal_activity";
                 this.resetAttentionDebtBackoff();
               } else {
                 this.loopKernelLastWakeCause ??= "attention_signal";

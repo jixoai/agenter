@@ -19,6 +19,9 @@ type Story = StoryObj<typeof meta>;
 const writeDraft = async (canvasElement: HTMLElement, text: string) => {
   const canvas = within(canvasElement);
   const draft = canvas.getByTestId("terminal-write-draft");
+  if (!(draft instanceof HTMLInputElement || draft instanceof HTMLTextAreaElement)) {
+    throw new Error("terminal-write-draft must be an input or textarea");
+  }
   const submit = canvas.getByTestId("terminal-write-submit");
   await waitFor(() => {
     expect(canvas.getByText("Launch cwd: /repo/ops")).toBeInTheDocument();

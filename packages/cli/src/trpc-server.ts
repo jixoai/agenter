@@ -787,7 +787,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
             readRecordActivity: body.readRecordActivity,
             returnRead: body.returnRead,
           });
-          sendJson(res, 200, result);
+          sendJson(res, 200, { ...result });
         } catch (error) {
           sendJson(res, 400, { ok: false, message: error instanceof Error ? error.message : String(error) });
         }
@@ -808,7 +808,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
             readRecordActivity: body.readRecordActivity,
             returnRead: body.returnRead,
           });
-          sendJson(res, 200, result);
+          sendJson(res, 200, { ...result });
         } catch (error) {
           sendJson(res, 400, { ok: false, message: error instanceof Error ? error.message : String(error) });
         }
