@@ -22,6 +22,12 @@ Session runtime SHALL ingest unread room work into attention, but the ingested m
 - **THEN** the ingested room fact preserves the raw content, sender identity, and source refs
 - **AND** the runtime does not emit `chatTurnState`, `chatObligationKind`, `settlesWhen`, `room_reply_pending`, or `self_update`
 
+#### Scenario: Direct room ingress stays factual
+
+- **WHEN** a two-seat room receives a message from the other participant
+- **THEN** runtime records the message as a room fact
+- **AND** runtime does not mark the message as `your_turn` or `room_reply_pending`
+
 #### Scenario: Auth actor ingress stays factual
 
 - **WHEN** a room message arrives from an `auth:*` actor in a group room
@@ -50,6 +56,12 @@ Room-visible assistant output MUST occur only when the model executes explicit m
 - **THEN** the origin room transcript remains unchanged
 - **AND** the runtime does not synthesize `originAckFallback`, auto-ACK text, or any other fallback visible room mutation
 
+#### Scenario: Cross-room relay does not auto-acknowledge the origin room
+
+- **WHEN** the model sends a message to a secondary visible room
+- **THEN** only that explicit target-room message is created
+- **AND** the origin room receives no automatic `originAckFallback` message
+
 ### Requirement: Room social context SHALL stay on explicit projection/query surfaces
 
 Participants, presence, focused seats, and visible-room summaries are valid room facts, but they SHALL be supplied through explicit room/message projection surfaces rather than being eagerly inlined into every room-backed attention fact.
@@ -65,6 +77,12 @@ Participants, presence, focused seats, and visible-room summaries are valid room
 - **WHEN** the model needs room participants, presence, or visible rooms to decide the next action
 - **THEN** it can obtain them through existing explicit room/message surfaces such as room snapshot/page reads, `message read`, or `message query`
 - **AND** the returned data is labeled as room projection rather than as an already-decided obligation
+
+#### Scenario: Projection replacement path stays explicit
+
+- **WHEN** eager room social envelopes have been removed from message-backed attention
+- **THEN** the implementation still preserves an explicit replacement path through existing room/message query contracts
+- **AND** cleanup is not considered complete if eager injection was only deleted without leaving that path usable from model work
 
 ### Requirement: Relay and completion ownership SHALL remain explicit
 
@@ -93,6 +111,16 @@ Manual compact, cold start, or later replay assembly SHALL preserve durable room
 - **THEN** the runtime can answer from compacted durable facts
 - **AND** it does not need to re-run the relay solely because the earlier answer left bounded prompt memory
 
+### Requirement: Room etiquette MAY remain guidance, not fact
+
+Room etiquette, acknowledgement style, relay conventions, and reply playbooks MAY remain in message-system guidance, but they SHALL NOT be serialized as already-decided room obligations or embedded as hidden room mutations.
+
+#### Scenario: Message guidance can teach etiquette without deciding reply
+
+- **WHEN** message guidance recommends how to acknowledge, relay, or close a room protocol
+- **THEN** that recommendation may help the model choose its next explicit message action
+- **AND** runtime still does not mark the room fact as `your_turn`, `room_reply_pending`, or otherwise already decided
+
 ### Requirement: Message follow-up compatibility SHALL remain a watch alias
 
 If `followUpAfterMs` remains supported on `message send`, it SHALL stay a compatibility alias for the generic one-shot watch primitive. It creates later re-decision attention only, and SHALL NOT auto-send another room-visible message.
@@ -102,6 +130,12 @@ If `followUpAfterMs` remains supported on `message send`, it SHALL stay a compat
 - **WHEN** `message send` is called with `followUpAfterMs`
 - **THEN** the runtime binds a one-shot reminder to the sent durable `messageId`
 - **AND** that reminder remains sender-private runtime scheduling state rather than shared room truth
+
+#### Scenario: Follow-up compatibility uses a generic watch predicate
+
+- **WHEN** `message send` receives `followUpAfterMs`
+- **THEN** runtime creates a generic one-shot watch owned by the explicit message action
+- **AND** the watch predicate references objective room state such as whether the sent message remains the latest visible fact
 
 #### Scenario: Reminder expiry does not auto-send a room message
 

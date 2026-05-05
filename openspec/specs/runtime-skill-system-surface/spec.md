@@ -57,6 +57,12 @@ Skill refresh SHALL maintain a capability index and MAY publish ordinary objecti
 - **THEN** the runtime refreshes the skill projection/index and any ordinary reminder facts
 - **AND** it does not replay that change as a permanent dedicated skill peer
 
+#### Scenario: Changed skill publishes one ordinary objective item
+
+- **WHEN** a visible skill file changes and notification policy allows publication
+- **THEN** the runtime emits one ordinary objective attention item describing the changed skill name, root kind, and changed files
+- **AND** it does not synthesize a dedicated skill-system context solely because the files changed
+
 ### Requirement: Watcher events SHALL flush at the next collection boundary
 
 Watcher events SHALL be treated as dirtiness hints only. The runtime SHALL recompute skill truth from disk and publish aggregated reminders per changed skill at the next model input collection boundary, with an idle debounce fallback if no other input arrives first. When the runtime process was absent and no watcher could observe the edit, refresh SHALL compare current skill truth with the session-local fingerprint manifest.
@@ -96,3 +102,39 @@ Watcher events SHALL be treated as dirtiness hints only. The runtime SHALL recom
 - **WHEN** the runtime skill system refreshes
 - **THEN** it replaces the manifest with the current skill fingerprints
 - **AND** it does not infer broad skill-change reminders from the corrupt baseline
+
+### Requirement: Skill change notification SHALL be objective and explicitly scoped
+
+Skill file changes MAY publish objective notifications when configured by runtime law, but those notifications SHALL describe index-level skill truth changes and SHALL NOT masquerade as task obligations unrelated to the current work.
+
+#### Scenario: Changed skill notification stays objective
+
+- **WHEN** a visible skill file changes and notification policy allows publication
+- **THEN** the emitted fact describes the changed skill name, root kind, and changed files
+- **AND** it does not instruct the model that it must abandon unrelated current work
+
+#### Scenario: Irrelevant skill churn does not preempt task work
+
+- **WHEN** a skill file changes while the model is working on an unrelated room or terminal task
+- **THEN** scheduler policy may record the index change
+- **AND** the current task is not replaced by a skill-system task context by default
+
+### Requirement: Skill bootstrap SHALL be explicit or objective-dependency-driven
+
+Runtime skill bootstrap content SHALL enter model work only when explicitly requested, explicitly mounted, or already objectively required by the active work. Hidden special supply paths SHALL NOT inject a dedicated skill context by default.
+
+#### Scenario: Explicit skill query enters the decision surface
+
+- **WHEN** the model calls `skill list`, `skill search`, `skill info`, or `skill get-config`
+- **THEN** the returned skill projection enters the current decision surface as a tool/action result
+
+#### Scenario: Explicit mount can bring skill content into work
+
+- **WHEN** an operator, model action, or already-objective task dependency explicitly mounts a skill body or skill snapshot
+- **THEN** that mounted content may enter the current decision surface
+- **AND** the supply path remains inspectable as an explicit query, mount, or dependency
+
+#### Scenario: Default bootstrap omits a permanent skill task
+
+- **WHEN** a model call is prepared for ordinary room or terminal work
+- **THEN** the runtime does not include a permanent or dedicated skill-system attention context unless the current work already reached it through an explicit standard supply path

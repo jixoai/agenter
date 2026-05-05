@@ -63,8 +63,29 @@ Built-in runtime skills MAY teach etiquette, defaults, follow-up patterns, and p
 - **THEN** it teaches `message send`, `message edit`, `message recall`, `message read`, and `message query` as the relevant room actions/query surfaces
 - **AND** it does not rely on platform labels such as `room_reply_pending`, `self_update`, `chatTurnState`, or `settlesWhen`
 
+#### Scenario: Message skill teaches room projections as queries
+
+- **WHEN** the generated built-in message skill explains participants, presence, or visible rooms
+- **THEN** it presents them as explicit room/message query surfaces
+- **AND** it does not imply that eager prompt metadata has already decided those facts for the model
+
 #### Scenario: Terminal skill teaches await-first strategy without lifecycle obligation
 
 - **WHEN** the generated built-in terminal skill is rendered
 - **THEN** it may recommend `terminal await`, bounded reads, or verification-first workflows as soft guidance
 - **AND** it does not describe `terminal_focus`, `terminal_unfocus`, or `terminal_idle_ready` as AI-visible task obligations
+
+### Requirement: Runtime skill catalog generation SHALL guard against removed pollution terms
+
+Catalog generation and regression tests SHALL fail when removed platform-pollution terms or hidden auto-acknowledgement guidance reappear in generated built-in runtime skill bodies.
+
+#### Scenario: Removed terms fail catalog tests
+
+- **WHEN** tests inspect the generated runtime skill catalog
+- **THEN** they fail if removed social-obligation terms or auto-ACK instructions appear in message guidance
+
+#### Scenario: Source edits regenerate clean catalog
+
+- **WHEN** a package-owned built-in skill source is edited
+- **THEN** generated catalog output matches the edited source
+- **AND** the pollution-term guard still passes
