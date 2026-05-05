@@ -161,7 +161,7 @@ interface RuntimeInternal {
     terminalId: string,
     input: { mode: "auto" | "diff" | "snapshot"; remark: boolean },
   ) => Promise<{ kind: string; representation: string } | { ok: false; reason: string }>;
-  readMessageChannelForTooling: (input: { chatId: string; limit?: number }) => {
+  readMessageChannelForTooling: (input: { chatId: string; limit?: number }) => Promise<{
     items: Array<{
       messageId: number;
       content: string;
@@ -188,7 +188,7 @@ interface RuntimeInternal {
         }>;
       }>;
     };
-  };
+  }>;
   config: {
     terminals?: Record<
       string,
@@ -1813,7 +1813,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       });
       expect(messageFact?.message?.sourceRef).toContain(`${room.chatId}/`);
 
-      const projected = janeInternal.readMessageChannelForTooling({
+      const projected = await janeInternal.readMessageChannelForTooling({
         chatId: room.chatId,
         limit: 10,
       });
@@ -4597,7 +4597,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       from: "tester",
     });
 
-    const snapshot = internal.readMessageChannelForTooling({
+    const snapshot = await internal.readMessageChannelForTooling({
       chatId: PRIMARY_ROOM_ID,
       limit: 10,
     });
