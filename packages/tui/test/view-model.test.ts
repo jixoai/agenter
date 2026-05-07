@@ -5,7 +5,7 @@ import type { RuntimeClientState } from "@agenter/client-sdk";
 import { buildViewModel } from "../src/types";
 
 describe("Feature: tui view-model mapping", () => {
-  test("Scenario: Given active session runtime When building view Then expose phase text and messages", () => {
+  test("Scenario: Given active session runtime When building view Then expose phase text and only user-or-assistant messages", () => {
     const state: RuntimeClientState = {
       connected: true,
       connectionStatus: "connected",
@@ -62,6 +62,12 @@ describe("Feature: tui view-model mapping", () => {
       chatsBySession: {
         "i-1": [
           {
+            id: "m-0",
+            role: "system",
+            content: "hidden",
+            timestamp: Date.now(),
+          },
+          {
             id: "m-1",
             role: "assistant",
             content: "hello",
@@ -85,6 +91,7 @@ describe("Feature: tui view-model mapping", () => {
     const view = buildViewModel(state, "i-1");
     expect(view.connected).toBe(true);
     expect(view.messages).toHaveLength(1);
+    expect(view.messages[0]?.id).toBe("m-1");
     expect(view.phaseText).toContain("collecting_inputs");
     expect(view.phaseText).toContain("observe");
   });

@@ -1,13 +1,17 @@
 import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
 
-import { parseCliShellArgs } from "./argv";
+import { isCliShellMetadataOnlyArgv, parseCliShellArgs } from "./argv";
 import { bootstrapCliShell } from "./bootstrap";
-import { startCliShellTui } from "./tui/run-cli-shell-tui";
 
 const formatCreatedState = (created: boolean): string => (created ? "created" : "reused");
 
 export const runCliShell = async (argvInput = process.argv): Promise<void> => {
-  const args = parseCliShellArgs(argvInput.slice(2));
+  const productArgv = argvInput.slice(2);
+  if (isCliShellMetadataOnlyArgv(productArgv)) {
+    parseCliShellArgs(productArgv);
+    return;
+  }
+  const args = parseCliShellArgs(productArgv);
   const client = createAgenterClient({
     wsUrl: `ws://${args.host}:${args.port}/trpc`,
   });
@@ -23,6 +27,7 @@ export const runCliShell = async (argvInput = process.argv): Promise<void> => {
     });
 
     if (process.stdout.isTTY && process.stdin.isTTY) {
+      const { startCliShellTui } = await import("./tui/run-cli-shell-tui");
       activeTui = await startCliShellTui({
         store,
         shellName: args.shellName,

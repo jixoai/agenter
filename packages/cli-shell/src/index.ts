@@ -19,7 +19,7 @@ export {
   type CliShellManagedEnableResult,
   type CliShellManagedState,
 } from "./managed";
-export { normalizeShellName, parseCliShellArgs, type CliShellParsedArgs } from "./argv";
+export { isCliShellMetadataOnlyArgv, normalizeShellName, parseCliShellArgs, type CliShellParsedArgs } from "./argv";
 export { runCliShell } from "./run-cli-shell";
 export { fitTerminalText, measureTerminalText } from "./tui/cell-width";
 export { createTerminalCanvas, drawCanvasHorizontalLine, drawCanvasVerticalLine, fillCanvasRow, renderCanvasLines, writeCanvasText } from "./tui/canvas";

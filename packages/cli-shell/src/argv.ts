@@ -2,6 +2,8 @@ import yargs from "yargs";
 
 import { CLI_SHELL_DEFAULT_AVATAR, CLI_SHELL_DEFAULT_SESSION } from "./product";
 
+const metadataOnlyTokens = new Set(["--help", "-h", "help", "--version", "-v", "version"]);
+
 export interface CliShellParsedArgs {
   avatarNickname: string;
   shellName: string;
@@ -37,6 +39,9 @@ export const normalizeShellName = (value: string | undefined): string => {
   const trimmed = value?.trim() || CLI_SHELL_DEFAULT_SESSION;
   return trimmed.startsWith("shell-") ? trimmed : `shell-${trimmed}`;
 };
+
+export const isCliShellMetadataOnlyArgv = (argv: readonly string[]): boolean =>
+  argv.some((token) => metadataOnlyTokens.has(token));
 
 export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEnv = process.env): CliShellParsedArgs => {
   const parsed = yargs([...argv])

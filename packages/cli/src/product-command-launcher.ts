@@ -9,6 +9,7 @@ import { resolveProductCommandDescriptor } from "./product-command-registry";
 
 const BUN_BIN = Bun.which("bun") ?? process.execPath;
 const DEFAULT_PRODUCT_PACKAGE_RUNNER = "bunx";
+const metadataOnlyTokens = new Set(["--help", "-h", "help", "--version", "-v", "version"]);
 
 const builtInCommands = new Set(["auth-service", "profile-service", "daemon", "web", "tui", "doctor", "help"]);
 
@@ -277,6 +278,9 @@ export const buildProductLaunchEnv = (input: ProductLaunchEnvInput): NodeJS.Proc
 
 export const resolveProductPackageRunner = (env: NodeJS.ProcessEnv = process.env): string =>
   env.AGENTER_PRODUCT_PACKAGE_RUNNER?.trim() || DEFAULT_PRODUCT_PACKAGE_RUNNER;
+
+export const isProductMetadataOnlyArgv = (productArgv: readonly string[]): boolean =>
+  productArgv.some((token) => metadataOnlyTokens.has(token));
 
 export const buildProductProcessCommand = (
   target: ProductLaunchTarget,

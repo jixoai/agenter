@@ -1,10 +1,12 @@
-import type { RuntimeClientState, SessionEntry } from "@agenter/client-sdk";
+import type { RuntimeChatMessage, RuntimeClientState, SessionEntry } from "@agenter/client-sdk";
+
+type TuiChatMessage = RuntimeChatMessage & { role: "user" | "assistant" };
 
 export interface TuiViewModel {
   connected: boolean;
   activeSessionId: string | null;
   sessions: SessionEntry[];
-  messages: RuntimeClientState["chatsBySession"][string];
+  messages: TuiChatMessage[];
   tasks: RuntimeClientState["tasksBySession"][string];
   loopbusTraces: RuntimeClientState["observabilityTracesBySession"][string];
   modelCalls: RuntimeClientState["modelCallsBySession"][string];
@@ -14,11 +16,12 @@ export interface TuiViewModel {
 
 export const buildViewModel = (state: RuntimeClientState, activeSessionId: string | null): TuiViewModel => {
   const activeRuntime = activeSessionId ? state.runtimes[activeSessionId] : undefined;
+  const messages = activeSessionId ? (state.chatsBySession[activeSessionId] ?? []) : [];
   return {
     connected: state.connected,
     activeSessionId,
     sessions: state.sessions,
-    messages: activeSessionId ? (state.chatsBySession[activeSessionId] ?? []) : [],
+    messages: messages.filter((message): message is TuiChatMessage => message.role === "user" || message.role === "assistant"),
     tasks: activeSessionId ? (state.tasksBySession[activeSessionId] ?? []) : [],
     loopbusTraces: activeSessionId ? (state.observabilityTracesBySession?.[activeSessionId] ?? []) : [],
     modelCalls: activeSessionId ? (state.modelCallsBySession?.[activeSessionId] ?? []) : [],

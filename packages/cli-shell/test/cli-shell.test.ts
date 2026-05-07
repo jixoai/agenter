@@ -6,6 +6,7 @@ import {
   buildShellAssistantPromptSeed,
   disableCliShellManagedMode,
   enableCliShellManagedMode,
+  isCliShellMetadataOnlyArgv,
   normalizeShellName,
   parseCliShellArgs,
   shellAssistantMemoryRoles,
@@ -37,6 +38,12 @@ describe("Feature: cli-shell orchestration", () => {
     expect(parsed.host).toBe("127.0.0.9");
     expect(parsed.port).toBe(4999);
     expect(parsed.authServiceEndpoint).toBe("http://127.0.0.1:4591");
+  });
+
+  test("Scenario: Given help or version argv When classifying cli-shell execution Then product metadata requests return before attach side effects", () => {
+    expect(isCliShellMetadataOnlyArgv(["--help"])).toBe(true);
+    expect(isCliShellMetadataOnlyArgv(["@default", "--version"])).toBe(true);
+    expect(isCliShellMetadataOnlyArgv(["@default", "--session=2"])).toBe(false);
   });
 
   test("Scenario: Given shell-assistant is missing When bootstrapping cli-shell Then it ensures avatar runtime prompt memory terminal and room without mutating explicit avatars", async () => {

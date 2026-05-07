@@ -8,7 +8,14 @@ describe("Feature: cli-shell package boundary", () => {
   test("Scenario: Given the external cli-shell package When inspecting its dependencies Then it consumes daemon-facing contracts without importing core runtime internals", () => {
     const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
       dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      bin?: Record<string, string>;
+      files?: string[];
+      private?: boolean;
+      publishConfig?: { access?: string };
+      scripts?: Record<string, string>;
     };
+    const wrapperSource = readFileSync(join(packageRoot, "bin", "agenter-cli-shell.js"), "utf8");
     const argvSource = readFileSync(join(packageRoot, "src", "argv.ts"), "utf8");
     const productSource = readFileSync(join(packageRoot, "src", "product.ts"), "utf8");
     const bootstrapSource = readFileSync(join(packageRoot, "src", "bootstrap.ts"), "utf8");
@@ -18,14 +25,22 @@ describe("Feature: cli-shell package boundary", () => {
     const runCliShellSource = readFileSync(join(packageRoot, "src", "run-cli-shell.ts"), "utf8");
 
     expect(pkg.dependencies).toEqual({
-      "@agenter/client-sdk": "workspace:*",
-      "@agenter/product-extension-runtime": "workspace:*",
       "@opentui/core": "latest",
       "@opentui/react": "latest",
       react: "^19.0.0",
       "string-width": "^7.2.0",
       "yargs": "^17.7.2",
     });
+    expect(pkg.devDependencies?.["@agenter/client-sdk"]).toBe("workspace:*");
+    expect(pkg.devDependencies?.["@agenter/product-extension-runtime"]).toBe("workspace:*");
+    expect(pkg.private).toBeUndefined();
+    expect(pkg.bin).toEqual({ "agenter-cli-shell": "./bin/agenter-cli-shell.js" });
+    expect(pkg.files).toEqual(["SPEC.md", "bin", "dist"]);
+    expect(pkg.publishConfig).toEqual({ access: "public" });
+    expect(pkg.scripts?.build).toBe("bun run ./scripts/build.ts");
+    expect(pkg.scripts?.prepack).toBe("bun run build");
+    expect(wrapperSource).toContain("../dist/agenter-cli-shell.js");
+    expect(wrapperSource).toContain("../src/bin/agenter-cli-shell.ts");
     expect(argvSource).toContain("AGENTER_DAEMON_HOST");
     expect(argvSource).toContain("AGENTER_DAEMON_PORT");
     expect(argvSource).toContain("AGENTER_AUTH_SERVICE_ENDPOINT");
@@ -41,6 +56,8 @@ describe("Feature: cli-shell package boundary", () => {
     expect(tuiAppSource).not.toContain("@agenter/tui");
     expect(tuiRunnerSource).not.toContain("@agenter/tui");
     expect(runCliShellSource).toContain("ws://${args.host}:${args.port}/trpc");
+    expect(runCliShellSource).toContain('await import("./tui/run-cli-shell-tui")');
+    expect(runCliShellSource).not.toContain('import { startCliShellTui } from "./tui/run-cli-shell-tui"');
     expect(runCliShellSource).not.toContain("port-file");
     expect(runCliShellSource).not.toContain("daemon-port");
     expect(runCliShellSource).not.toContain(".agenter");

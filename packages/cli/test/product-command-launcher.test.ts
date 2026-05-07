@@ -7,6 +7,7 @@ import {
   buildProductLaunchEnv,
   buildProductProcessCommand,
   isBuiltInCommand,
+  isProductMetadataOnlyArgv,
   readCommandToken,
   resolveProductCommandInvocation,
   resolveProductLaunchTarget,
@@ -26,16 +27,18 @@ const createCliLayout = (): string => {
   const cliSourceDir = join(root, "packages", "cli", "src");
   const packageDir = join(root, "packages", "cli-shell");
   mkdirSync(cliSourceDir, { recursive: true });
+  mkdirSync(join(packageDir, "bin"), { recursive: true });
   mkdirSync(join(packageDir, "src", "bin"), { recursive: true });
   writeFileSync(
     join(packageDir, "package.json"),
     JSON.stringify({
       name: "@agenter/cli-shell",
       bin: {
-        "agenter-cli-shell": "./src/bin/agenter-cli-shell.ts",
+        "agenter-cli-shell": "./bin/agenter-cli-shell.js",
       },
     }),
   );
+  writeFileSync(join(packageDir, "bin", "agenter-cli-shell.js"), "console.log('wrapper')\n");
   writeFileSync(join(packageDir, "src", "bin", "agenter-cli-shell.ts"), "console.log('ok')\n");
   return cliSourceDir;
 };
@@ -59,7 +62,7 @@ describe("Feature: product command launcher", () => {
     if (target.source !== "workspace") {
       return;
     }
-    expect(target.binPath.endsWith("packages/cli-shell/src/bin/agenter-cli-shell.ts")).toBe(true);
+    expect(target.binPath.endsWith("packages/cli-shell/bin/agenter-cli-shell.js")).toBe(true);
   });
 
   test("Scenario: Given no local package and a resolvable installed package When resolving the launch target Then installed metadata provides the bin path", () => {
@@ -67,17 +70,17 @@ describe("Feature: product command launcher", () => {
     const cliSourceDir = join(root, "packages", "cli", "src");
     const installedDir = join(root, "node_modules", "@agenter", "cli-shell");
     mkdirSync(cliSourceDir, { recursive: true });
-    mkdirSync(join(installedDir, "dist"), { recursive: true });
+    mkdirSync(join(installedDir, "bin"), { recursive: true });
     writeFileSync(
       join(installedDir, "package.json"),
       JSON.stringify({
         name: "@agenter/cli-shell",
         bin: {
-          "agenter-cli-shell": "./dist/cli.mjs",
+          "agenter-cli-shell": "./bin/agenter-cli-shell.js",
         },
       }),
     );
-    writeFileSync(join(installedDir, "dist", "cli.mjs"), "console.log('installed')\n");
+    writeFileSync(join(installedDir, "bin", "agenter-cli-shell.js"), "console.log('installed')\n");
     const descriptor = resolveProductCommandDescriptor("shell");
     if (!descriptor) {
       throw new Error("missing shell descriptor");
@@ -90,7 +93,7 @@ describe("Feature: product command launcher", () => {
     if (target.source !== "installed") {
       return;
     }
-    expect(target.binPath.endsWith("node_modules/@agenter/cli-shell/dist/cli.mjs")).toBe(true);
+    expect(target.binPath.endsWith("node_modules/@agenter/cli-shell/bin/agenter-cli-shell.js")).toBe(true);
   });
 
   test("Scenario: Given no resolvable local or installed package When building the remote fallback command Then the configured runner is honored without changing the controlled package name", () => {
@@ -146,6 +149,12 @@ describe("Feature: product command launcher", () => {
     expect(isBuiltInCommand("doctor")).toBe(true);
     expect(isBuiltInCommand("unknown-product")).toBe(false);
     expect(resolveProductCommandInvocation(["unknown-product"])).toBeNull();
+  });
+
+  test("Scenario: Given product metadata-only argv When classifying launcher bootstrap needs Then help and version requests stay out of daemon/runtime side effects", () => {
+    expect(isProductMetadataOnlyArgv(["--help"])).toBe(true);
+    expect(isProductMetadataOnlyArgv(["@default", "--version"])).toBe(true);
+    expect(isProductMetadataOnlyArgv(["@default", "--session=2"])).toBe(false);
   });
 
   test("Scenario: Given launcher source is inspected When checking for product-specific runtime branches Then shell grammar and toolbar semantics stay outside core", () => {

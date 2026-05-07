@@ -1,11 +1,14 @@
 import {
   PROMPT_DOC_KEYS,
+  promptDocRecordSchema,
   runtimeTextCatalogSchema,
   type PromptDocRecord,
   type RuntimeTextCatalog,
 } from "@agenter/i18n-core";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import promptsJson from "../prompts.json";
+import runtimeTextsJson from "../runtime.json";
 
 export const LANG = "en";
 export const PROMPTS_PATH = new URL("../prompts.json", import.meta.url);
@@ -34,8 +37,8 @@ const loadFromPromptsDir = (): PromptDocRecord => {
 export const PROMPTS =
   existsSync(join(rootDir, "prompts")) && existsSync(join(rootDir, "prompts", "AGENTER_SYSTEM.mdx"))
     ? loadFromPromptsDir()
-    : (JSON.parse(readFileSync(decodeURIComponent(PROMPTS_PATH.pathname), "utf8")) as PromptDocRecord);
+    : promptDocRecordSchema.parse(promptsJson as unknown);
 
 export const RUNTIME_TEXTS: RuntimeTextCatalog = runtimeTextCatalogSchema.parse(
-  JSON.parse(readFileSync(decodeURIComponent(RUNTIME_TEXTS_PATH.pathname), "utf8")) as unknown,
+  runtimeTextsJson as unknown,
 );

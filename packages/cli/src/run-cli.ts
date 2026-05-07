@@ -1,6 +1,4 @@
 import { type AuthServiceBridgeOptions } from "@agenter/app-server";
-import { startAuthServiceServer, type AuthServiceHandle } from "@agenter/auth-service";
-import { runTuiClient } from "@agenter/tui";
 import { join } from "node:path";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
@@ -8,11 +6,13 @@ import {
   buildProductLaunchEnv,
   buildProductProcessCommand,
   isBuiltInCommand,
+  isProductMetadataOnlyArgv,
   readCommandToken,
   resolveProductCommandInvocation,
   resolveProductLaunchTarget,
 } from "./product-command-launcher";
-import { startTrpcServer, type TrpcServerHandle } from "./trpc-server";
+import type { AuthServiceHandle } from "@agenter/auth-service";
+import type { TrpcServerHandle } from "./trpc-server";
 import { resolveCanonicalWebUiAssetRoot } from "./webui-static-root";
 
 interface CommonArgs {
@@ -80,6 +80,7 @@ const resolveAuthServiceBridgeOptions = (args: AuthServiceBridgeCliArgs): AuthSe
 const startDaemon = async (
   args: CommonArgs & AuthServiceBridgeCliArgs & { staticDir?: string; publicEnv?: Record<string, string> },
 ): Promise<TrpcServerHandle> => {
+  const { startTrpcServer } = await import("./trpc-server");
   return await startTrpcServer({
     host: args.host,
     port: args.port,
@@ -93,6 +94,7 @@ const startDaemon = async (
 const startStandaloneAuthService = async (
   args: StandaloneAuthServiceCliArgs,
 ): Promise<AuthServiceHandle> => {
+  const { startAuthServiceServer } = await import("@agenter/auth-service");
   return await startAuthServiceServer({
     host: args.host,
     port: args.port,
@@ -176,9 +178,11 @@ const launchProductCommand = async (argvInput: readonly string[]): Promise<boole
     host: routed.launcherOptions.host,
     port: routed.launcherOptions.port,
   };
+  const needsRuntimeBootstrap =
+    routed.descriptor.capabilityHints.requiresDaemon && !isProductMetadataOnlyArgv(routed.productArgv);
 
   let localDaemon: TrpcServerHandle | null = null;
-  if (routed.descriptor.capabilityHints.requiresDaemon && !(await isDaemonAlive(common))) {
+  if (needsRuntimeBootstrap && !(await isDaemonAlive(common))) {
     localDaemon = await startDaemon({
       ...common,
       authServiceEndpoint: routed.launcherOptions.authServiceEndpoint,
@@ -356,6 +360,7 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
           });
         }
 
+        const { runTuiClient } = await import("@agenter/tui");
         await runTuiClient(common);
         if (localDaemon) {
           await localDaemon.stop();
