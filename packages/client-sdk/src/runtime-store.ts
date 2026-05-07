@@ -5197,6 +5197,36 @@ export class RuntimeStore {
     return output;
   }
 
+  async grantGlobalTerminalWriteLease(input: {
+    terminalId: string;
+    participantId: GlobalTerminalActorId;
+    durationMs: number;
+  }) {
+    const output = await this.client.trpc.terminal.grantWriteLease.mutate(input);
+    await this.refreshGlobalTerminalSurface({
+      terminalIds: [input.terminalId],
+      approvals: true,
+      catalog: true,
+      force: true,
+    });
+    return output;
+  }
+
+  async revokeGlobalTerminalWriteLease(input: {
+    terminalId: string;
+    leaseId?: string;
+    participantId?: GlobalTerminalActorId;
+  }) {
+    const output = await this.client.trpc.terminal.revokeWriteLease.mutate(input);
+    await this.refreshGlobalTerminalSurface({
+      terminalIds: [input.terminalId],
+      approvals: true,
+      catalog: true,
+      force: true,
+    });
+    return output;
+  }
+
   async listProductDelegations(input: {
     productId: string;
     resourceKey?: string;

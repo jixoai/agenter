@@ -126,6 +126,7 @@ describe("Feature: cli-shell orchestration", () => {
     expect(enabled.grantedByActorId).toBe("auth:root-superadmin");
     expect(enabled.delegation.policy.mode).toBe("write");
     expect(enabled.delegation.provenance.attentionContextId).toBe("ctx-hosting-shell-1");
+    expect(enabled.delegation.provenance.terminalLeaseId).toBeDefined();
     expect(store.lastAttentionCommit).toMatchObject({
       contextId: "ctx-hosting-shell-1",
       scores: { hosting: 1000 },
@@ -137,6 +138,11 @@ describe("Feature: cli-shell orchestration", () => {
       },
     });
     expect(store.delegations).toHaveLength(1);
+    expect(
+      store.terminalWriteLeases.find(
+        (lease) => lease.terminalId === "shell-1" && lease.participantId === "auth:shell-assistant" && lease.revokedAt === undefined,
+      )?.leaseId,
+    ).toBe(enabled.delegation.provenance.terminalLeaseId);
 
     const disabled = await disableCliShellManagedMode({
       store,
@@ -160,6 +166,11 @@ describe("Feature: cli-shell orchestration", () => {
         resourceKey: "shell-1",
       },
     });
+    expect(
+      store.terminalWriteLeases.every(
+        (lease) => lease.participantId !== "auth:shell-assistant" || lease.revokedAt !== undefined,
+      ),
+    ).toBe(true);
   });
 
   test("Scenario: Given repeated attach and reconnect flows When reusing shell-1 and later opening shell-2 Then runtime identity stays avatar-scoped while terminal and room bindings stay shell-scoped", async () => {

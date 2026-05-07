@@ -68,7 +68,7 @@
 - [x] 4.18 Render dialogue short time metadata for each message group and centered date divider rows when visible messages cross a local date boundary
 - [x] 4.19 Implement managed/takeover on behavior as hosting AttentionItem commit with the literal fixed key `scores: {"hosting": 1000}`, plus default write-capable terminal delegation create/refresh
 - [x] 4.20 Implement managed/takeover off behavior as delegation revoke plus mandatory hosting attention settlement `scores: {"hosting": 0}` with reason `user_disabled`, without deleting conversation or read access
-- [ ] 4.21 Ensure autonomous terminal writes under managed/takeover use the Avatar actor identity and record delegation/lease provenance, not hidden superadmin writes
+- [x] 4.21 Ensure autonomous terminal writes under managed/takeover use the Avatar actor identity and record delegation/lease provenance, not hidden superadmin writes
 - [x] 4.22 Add focused TUI/view-model tests for initial render, one-line toolbar, toolbar zones, status states, Heartbeat streaming, action buttons/unread count, hosting attention projection, managed delegation projection, optional visual separator, dialogue panel open/close/placement, Markdown list rendering, short time rendering, date divider rendering, focused input, cell-grid alignment, wide glyph width accounting, absence of top product chrome, absence of multi-terminal navigation, terminal hydration, input routing, and resize geometry
 
 ## 5. Validation

@@ -75,6 +75,7 @@ import {
   type TerminalActorId,
   type TerminalApprovalRequestRecord,
   type TerminalControlPlaneEntry,
+  type TerminalGrantWriteLeaseInput,
   type TerminalGrantRecord,
   type TerminalGrantRole,
   type TerminalInvitationRecord,
@@ -83,7 +84,9 @@ import {
   type TerminalProcessProfile,
   type TerminalReadMode,
   type TerminalReadResult,
+  type TerminalRevokeWriteLeaseInput,
   type TerminalSeatProjection,
+  type TerminalWriteLeaseRecord,
   type TerminalWriteResult,
 } from "@agenter/terminal-system";
 import type {
@@ -4162,6 +4165,18 @@ export class AppKernel {
     superadminActorId?: TerminalActorId;
   }) {
     return this.terminalControlPlane.denyRequestAuthorized(input);
+  }
+
+  grantGlobalTerminalWriteLease(
+    input: TerminalGrantWriteLeaseInput,
+  ): TerminalWriteLeaseRecord {
+    return this.terminalControlPlane.grantWriteLeaseAuthorized(input);
+  }
+
+  revokeGlobalTerminalWriteLease(
+    input: TerminalRevokeWriteLeaseInput,
+  ): { ok: true; revokedCount: number } {
+    return this.terminalControlPlane.revokeWriteLeaseAuthorized(input);
   }
 
   pageGlobalTerminalActivity(input: {

@@ -141,6 +141,13 @@ export class FakeCliShellStore implements CliShellStore {
   sessions = new Map<string, SessionEntry>();
   terminals: GlobalTerminalEntry[] = [];
   terminalGrants = new Map<string, GlobalTerminalGrantEntry[]>();
+  terminalWriteLeases: Array<{
+    leaseId: string;
+    terminalId: string;
+    participantId: GlobalTerminalActorId;
+    expiresAt: number;
+    revokedAt?: number;
+  }> = [];
   focusTerminalCalls: string[][] = [];
   rooms: GlobalRoomEntry[] = [];
   roomGrants = new Map<string, GlobalRoomGrantEntry[]>();
@@ -265,6 +272,55 @@ export class FakeCliShellStore implements CliShellStore {
   }): Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }> {
     this.focusTerminalCalls.push([...input.terminalIds]);
     return { ok: true, message: "focused", focusedTerminalIds: input.terminalIds };
+  }
+
+  async grantGlobalTerminalWriteLease(input: {
+    terminalId: string;
+    participantId: GlobalTerminalActorId;
+    durationMs: number;
+  }): Promise<{ leaseId: string; participantId: GlobalTerminalActorId; expiresAt: number }> {
+    const lease = {
+      leaseId: `lease:${input.terminalId}:${input.participantId}:${this.terminalWriteLeases.length + 1}`,
+      terminalId: input.terminalId,
+      participantId: input.participantId,
+      expiresAt: Date.now() + input.durationMs,
+    };
+    this.terminalWriteLeases = this.terminalWriteLeases
+      .map((record) =>
+        record.terminalId === input.terminalId &&
+        record.participantId === input.participantId &&
+        record.revokedAt === undefined
+          ? { ...record, revokedAt: Date.now() }
+          : record,
+      )
+      .concat(lease);
+    return {
+      leaseId: lease.leaseId,
+      participantId: lease.participantId,
+      expiresAt: lease.expiresAt,
+    };
+  }
+
+  async revokeGlobalTerminalWriteLease(input: {
+    terminalId: string;
+    leaseId?: string;
+    participantId?: GlobalTerminalActorId;
+  }): Promise<{ ok: true; revokedCount: number }> {
+    let revokedCount = 0;
+    this.terminalWriteLeases = this.terminalWriteLeases.map((record) => {
+      const matchesLease = input.leaseId ? record.leaseId === input.leaseId : false;
+      const matchesParticipant = input.participantId ? record.participantId === input.participantId : false;
+      const matches = record.terminalId === input.terminalId && (matchesLease || matchesParticipant);
+      if (!matches || record.revokedAt !== undefined) {
+        return record;
+      }
+      revokedCount += 1;
+      return {
+        ...record,
+        revokedAt: Date.now(),
+      };
+    });
+    return { ok: true, revokedCount };
   }
 
   async listGlobalRooms(_input?: { includeArchived?: boolean }): Promise<GlobalRoomEntry[]> {

@@ -1229,6 +1229,7 @@ describe("Feature: app-server trpc procedures", () => {
       returnRead: false,
     });
     expect(allowed.ok).toBeTrue();
+    expect(allowed.leaseId).toBe(lease.leaseId);
 
     const allowedMixed = await caller.terminal.input({
       terminalId,
@@ -1270,6 +1271,97 @@ describe("Feature: app-server trpc procedures", () => {
     });
     expect(deleted.ok).toBeTrue();
     expect((await caller.terminal.globalList()).items.some((item) => item.terminalId === terminalId)).toBeFalse();
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given managed terminal lease routes When a requester avatar writes under the granted lease Then app-server preserves avatar actor identity and lease provenance without hidden superadmin writes", async () => {
+    const root = makeTempDir();
+    const avatarActorId: TerminalActorId = "auth:shell-assistant";
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      authService: {
+        rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+      },
+    });
+    await kernel.start();
+    const { caller } = await createRootSuperadminCaller(kernel);
+    const created = await caller.terminal.globalCreate({
+      terminalId: "managed-lease-route",
+      processKind: "shell",
+      cwd: root,
+      focus: false,
+    });
+    const terminalId = created.result.terminal?.terminalId;
+    if (!terminalId) {
+      throw new Error("expected global terminal id");
+    }
+
+    await caller.terminal.issueGrant({
+      terminalId,
+      role: "requester",
+      participantId: avatarActorId,
+      label: "Shell assistant",
+    });
+
+    const lease = await caller.terminal.grantWriteLease({
+      terminalId,
+      participantId: avatarActorId,
+      durationMs: 30 * 60 * 1000,
+    });
+    expect(lease.participantId).toBe(avatarActorId);
+
+    const terminalSystem = Reflect.get(kernel, "terminalControlPlane") as TerminalControlPlane;
+    const written = await terminalSystem.write({
+      terminalId,
+      text: "managed lease write\n",
+      actorId: avatarActorId,
+    });
+    expect(written.ok).toBeTrue();
+    expect(written.leaseId).toBe(lease.leaseId);
+
+    const event = written.eventId ? terminalSystem.getEvent(written.eventId) : undefined;
+    expect(event?.payload.actorId).toBe(avatarActorId);
+    expect(event?.payload.detail).toMatchObject({
+      mode: "raw",
+      leaseId: lease.leaseId,
+    });
+
+    const activity = await caller.terminal.activityPage({
+      terminalId,
+      limit: 20,
+    });
+    expect(
+      activity.items.some(
+        (item) =>
+          item.kind === "terminal_write" &&
+          item.actorId === avatarActorId &&
+          item.detail &&
+          typeof item.detail === "object" &&
+          "leaseId" in item.detail &&
+          Reflect.get(item.detail, "leaseId") === lease.leaseId,
+      ),
+    ).toBeTrue();
+
+    const revoked = await caller.terminal.revokeWriteLease({
+      terminalId,
+      participantId: avatarActorId,
+    });
+    expect(revoked).toEqual({
+      ok: true,
+      revokedCount: 1,
+    });
+
+    const blockedAgain = await terminalSystem.write({
+      terminalId,
+      text: "blocked again",
+      actorId: avatarActorId,
+      createApprovalRequest: false,
+    });
+    expect(blockedAgain.ok).toBeFalse();
+    expect(blockedAgain.message).toContain("approval");
 
     await kernel.stop();
   });

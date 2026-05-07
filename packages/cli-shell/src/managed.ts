@@ -1,6 +1,7 @@
 import type {
   AttentionQueryItem,
   AuthSessionOutput,
+  GlobalTerminalActorId,
   ProductDelegationRecord,
 } from "@agenter/client-sdk";
 import {
@@ -64,6 +65,8 @@ const resolveGrantedByActorId = (authSession: AuthSessionOutput | null): string 
   }
   return `auth:${authId}`;
 };
+
+const toTerminalActorId = (avatarActorId: string): GlobalTerminalActorId => avatarActorId as GlobalTerminalActorId;
 
 const buildManagedObjectiveBody = (input: {
   shellName: string;
@@ -151,6 +154,7 @@ export const enableCliShellManagedMode = async (input: CliShellManagedEnableInpu
   const runtimeClient = input.store;
   const contextId = buildCliShellHostingContextId(input.shellName);
   const grantedByActorId = resolveGrantedByActorId(await input.store.getAuthSession());
+  const delegationTtlMs = Math.max(1_000, input.delegationTtlMs ?? CLI_SHELL_DEFAULT_DELEGATION_TTL_MS);
   const activeDelegation = resolveLatestActiveDelegation(
     await runtimeClient.listProductDelegations({
       productId: CLI_SHELL_PRODUCT_ID,
@@ -159,6 +163,11 @@ export const enableCliShellManagedMode = async (input: CliShellManagedEnableInpu
       avatarActorId: input.avatarActorId,
     }),
   );
+  const terminalLease = await runtimeClient.grantGlobalTerminalWriteLease({
+    terminalId: input.terminalId,
+    participantId: toTerminalActorId(input.avatarActorId),
+    durationMs: delegationTtlMs,
+  });
 
   await runtimeClient.commitAttention({
     sessionId: input.sessionId,
@@ -202,13 +211,14 @@ export const enableCliShellManagedMode = async (input: CliShellManagedEnableInpu
     terminalId: input.terminalId,
     roomId: input.roomId,
     enabledAt: now,
-    expiresAt: now + Math.max(1_000, input.delegationTtlMs ?? CLI_SHELL_DEFAULT_DELEGATION_TTL_MS),
+    expiresAt: now + delegationTtlMs,
     policy: {
       mode: "write",
     },
     provenance: {
       source: "cli-shell",
       attentionContextId: contextId,
+      terminalLeaseId: terminalLease.leaseId,
       notes: input.notes?.trim() || input.objective?.trim() || undefined,
     },
   });
@@ -238,6 +248,12 @@ export const disableCliShellManagedMode = async (input: CliShellManagedDisableIn
         revokedReason: PRODUCT_HOSTING_USER_DISABLED_REASON,
       }),
     );
+  }
+  if (input.terminalId) {
+    await runtimeClient.revokeGlobalTerminalWriteLease({
+      terminalId: input.terminalId,
+      participantId: toTerminalActorId(input.avatarActorId),
+    });
   }
 
   await runtimeClient.settleAttention({

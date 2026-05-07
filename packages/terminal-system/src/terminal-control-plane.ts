@@ -54,6 +54,7 @@ import type {
   TerminalEventRecord,
   TerminalFocusOp,
   TerminalFontProfile,
+  TerminalGrantWriteLeaseInput,
   TerminalGrantRecord,
   TerminalGrantRole,
   TerminalInvitationRecord,
@@ -72,6 +73,7 @@ import type {
   TerminalReadProjection,
   TerminalReadResult,
   TerminalRecord,
+  TerminalRevokeWriteLeaseInput,
   TerminalReverseCursor,
   TerminalReversePage,
   TerminalSeatProjection,
@@ -1453,6 +1455,7 @@ export class TerminalControlPlane {
         actorId: this.resolveEventActorId(input),
         detail: {
           mode: input.mode,
+          leaseId: decision.lease?.leaseId,
         },
       },
     });
@@ -1462,7 +1465,12 @@ export class TerminalControlPlane {
       actorId: this.resolveEventActorId(input),
     });
     if (!input.returnRead) {
-      return { ok: true, message: "written", eventId: writeEvent.eventId };
+      return {
+        ok: true,
+        message: "written",
+        eventId: writeEvent.eventId,
+        leaseId: decision.lease?.leaseId,
+      };
     }
     if (typeof input.returnRead === "object") {
       const waitMs = Math.max(input.returnRead.throttleMs ?? 0, input.returnRead.debounceMs ?? 0);
@@ -1478,7 +1486,13 @@ export class TerminalControlPlane {
       accessToken: input.accessToken,
       superadminActorId: input.superadminActorId,
     });
-    return { ok: true, message: "written", eventId: writeEvent.eventId, read };
+    return {
+      ok: true,
+      message: "written",
+      eventId: writeEvent.eventId,
+      leaseId: decision.lease?.leaseId,
+      read,
+    };
   }
 
   private forwardInteractiveInputBytes(input: {
@@ -2000,6 +2014,47 @@ export class TerminalControlPlane {
       actorId: request.participantId,
     });
     return lease;
+  }
+
+  grantWriteLeaseAuthorized(input: TerminalGrantWriteLeaseInput): TerminalWriteLeaseRecord {
+    const grantedBy = this.requireAdministrativeAuthority(input.terminalId, input) ?? input.superadminActorId;
+    const grant = this.requireGrantForActor(input.terminalId, input.participantId);
+    if (grant.role === "readonly") {
+      throw new Error("terminal is readonly");
+    }
+    this.db.revokeActiveLeasesByParticipant(input.terminalId, input.participantId);
+    const lease = this.db.createWriteLease({
+      terminalId: input.terminalId,
+      participantId: input.participantId,
+      grantedBy,
+      expiresAt: Date.now() + Math.max(1_000, input.durationMs),
+    });
+    this.emitChange({
+      terminalId: input.terminalId,
+      reason: "approval",
+      actorId: input.participantId,
+    });
+    return lease;
+  }
+
+  revokeWriteLeaseAuthorized(input: TerminalRevokeWriteLeaseInput): { ok: true; revokedCount: number } {
+    this.requireAdministrativeAuthority(input.terminalId, input);
+    const revokedAt = Date.now();
+    let revokedCount = 0;
+    if (input.leaseId) {
+      revokedCount += this.db.revokeWriteLease(input.terminalId, input.leaseId, revokedAt);
+    }
+    if (input.participantId) {
+      revokedCount += this.db.revokeActiveLeasesByParticipant(input.terminalId, input.participantId, revokedAt);
+    }
+    if (revokedCount > 0) {
+      this.emitChange({
+        terminalId: input.terminalId,
+        reason: "approval",
+        actorId: input.participantId,
+      });
+    }
+    return { ok: true, revokedCount };
   }
 
   denyRequestAuthorized(input: {

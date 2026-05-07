@@ -952,8 +952,8 @@ export class TerminalDb {
     return row ? mapLease(row) : undefined;
   }
 
-  revokeActiveLeasesByParticipant(terminalId: string, participantId: string, revokedAt = Date.now()): void {
-    this.db
+  revokeActiveLeasesByParticipant(terminalId: string, participantId: string, revokedAt = Date.now()): number {
+    const result = this.db
       .query(
         `update terminal_write_lease
          set revoked_at = coalesce(revoked_at, ?)
@@ -962,6 +962,20 @@ export class TerminalDb {
            and revoked_at is null`,
       )
       .run(revokedAt, terminalId, participantId);
+    return Number(result.changes ?? 0);
+  }
+
+  revokeWriteLease(terminalId: string, leaseId: string, revokedAt = Date.now()): number {
+    const result = this.db
+      .query(
+        `update terminal_write_lease
+         set revoked_at = coalesce(revoked_at, ?)
+         where terminal_id = ?
+           and lease_id = ?
+           and revoked_at is null`,
+      )
+      .run(revokedAt, terminalId, leaseId);
+    return Number(result.changes ?? 0);
   }
 
   revokeExpiredLeases(now = Date.now()): void {

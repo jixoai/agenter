@@ -26,6 +26,16 @@ export interface CliShellStore extends ProductExtensionRuntimeStore {
   >;
   getAuthSession(): Promise<AuthSessionOutput | null>;
   setAuthToken(token: string | null | undefined): void;
+  grantGlobalTerminalWriteLease(input: {
+    terminalId: string;
+    participantId: GlobalTerminalActorId;
+    durationMs: number;
+  }): Promise<{ leaseId: string; participantId: GlobalTerminalActorId; expiresAt: number }>;
+  revokeGlobalTerminalWriteLease(input: {
+    terminalId: string;
+    leaseId?: string;
+    participantId?: GlobalTerminalActorId;
+  }): Promise<{ ok: true; revokedCount: number }>;
 }
 
 export interface CliShellBootstrapInput {

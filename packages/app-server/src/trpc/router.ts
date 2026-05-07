@@ -1532,6 +1532,38 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       ),
+    grantWriteLease: authProcedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+          participantId: terminalActorIdSchema,
+          durationMs: z.number().int().positive(),
+        }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.grantGlobalTerminalWriteLease({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      ),
+    revokeWriteLease: authProcedure
+      .input(
+        z
+          .object({
+            terminalId: z.string().min(1),
+            leaseId: z.string().min(1).optional(),
+            participantId: terminalActorIdSchema.optional(),
+          })
+          .refine((value) => Boolean(value.leaseId || value.participantId), {
+            message: "leaseId or participantId is required",
+          }),
+      )
+      .mutation(({ ctx, input }) =>
+        ctx.kernel.revokeGlobalTerminalWriteLease({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      ),
   }),
   productExtension: t.router({
     listDelegations: superadminProcedure

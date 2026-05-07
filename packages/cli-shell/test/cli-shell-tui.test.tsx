@@ -309,6 +309,7 @@ interface TuiStoreHarness {
   sentMessages: Array<{ chatId: string; text: string }>;
   attentionScores: Record<string, number>;
   delegations: ProductDelegationRecord[];
+  terminalWriteLeases: Array<{ leaseId: string; terminalId: string; participantId: string; revokedAt?: number }>;
 }
 
 const createAttentionItem = (contextId: string, score: number): AttentionQueryItem =>
@@ -332,6 +333,7 @@ const createTuiStore = (input: {
   const sentMessages: Array<{ chatId: string; text: string }> = [];
   const attentionScores: Record<string, number> = {};
   let delegations: ProductDelegationRecord[] = [];
+  let terminalWriteLeases: Array<{ leaseId: string; terminalId: string; participantId: string; revokedAt?: number }> = [];
   const authSession: AuthSessionOutput = {
     token: "superadmin-token",
     issuedAt: new Date(0).toISOString(),
@@ -430,6 +432,47 @@ const createTuiStore = (input: {
     }),
     getAuthSession: async () => authSession,
     setAuthToken: () => {},
+    grantGlobalTerminalWriteLease: async (payload: { terminalId: string; participantId: string; durationMs: number }) => {
+      terminalWriteLeases = terminalWriteLeases
+        .map((record) =>
+          record.terminalId === payload.terminalId &&
+          record.participantId === payload.participantId &&
+          record.revokedAt === undefined
+            ? { ...record, revokedAt: Date.now() }
+            : record,
+        )
+        .concat({
+          leaseId: `lease:${payload.terminalId}:${payload.participantId}:${terminalWriteLeases.length + 1}`,
+          terminalId: payload.terminalId,
+          participantId: payload.participantId,
+        });
+      const current = terminalWriteLeases.at(-1);
+      return {
+        leaseId: current?.leaseId ?? "lease:missing",
+        participantId: payload.participantId,
+        expiresAt: Date.now() + payload.durationMs,
+      };
+    },
+    revokeGlobalTerminalWriteLease: async (payload: { terminalId: string; leaseId?: string; participantId?: string }) => {
+      let revokedCount = 0;
+      terminalWriteLeases = terminalWriteLeases.map((record) => {
+        const matchesLease = payload.leaseId ? record.leaseId === payload.leaseId : false;
+        const matchesParticipant = payload.participantId ? record.participantId === payload.participantId : false;
+        if (
+          record.terminalId !== payload.terminalId ||
+          record.revokedAt !== undefined ||
+          (!matchesLease && !matchesParticipant)
+        ) {
+          return record;
+        }
+        revokedCount += 1;
+        return {
+          ...record,
+          revokedAt: Date.now(),
+        };
+      });
+      return { ok: true as const, revokedCount };
+    },
     queryAttention: async (payload: { query: string }) => {
       const contextId = payload.query.match(/contextId:([^\s]+)/)?.[1] ?? buildCliShellHostingContextId("shell-1");
       const score = attentionScores[contextId] ?? 0;
@@ -477,6 +520,9 @@ const createTuiStore = (input: {
     attentionScores,
     get delegations() {
       return delegations;
+    },
+    get terminalWriteLeases() {
+      return terminalWriteLeases;
     },
   };
 };

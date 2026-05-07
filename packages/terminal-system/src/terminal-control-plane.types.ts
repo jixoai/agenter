@@ -323,6 +323,22 @@ export interface TerminalWriteLeaseRecord {
   revokedAt?: number;
 }
 
+export interface TerminalGrantWriteLeaseInput {
+  terminalId: string;
+  participantId: TerminalActorId;
+  durationMs: number;
+  actorId?: TerminalActorId;
+  superadminActorId?: TerminalActorId;
+}
+
+export interface TerminalRevokeWriteLeaseInput {
+  terminalId: string;
+  leaseId?: string;
+  participantId?: TerminalActorId;
+  actorId?: TerminalActorId;
+  superadminActorId?: TerminalActorId;
+}
+
 export interface TerminalReadCursorRecord {
   terminalId: string;
   readerActorId: TerminalActorId;
@@ -500,6 +516,7 @@ export interface TerminalWriteResult {
   ok: boolean;
   message: string;
   eventId?: number;
+  leaseId?: string;
   read?: TerminalReadResult;
   approvalRequest?: TerminalApprovalRequestRecord;
 }

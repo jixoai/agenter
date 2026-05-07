@@ -1150,6 +1150,78 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
+  test("Scenario: Given a requester seat with a direct managed lease When it writes and later the lease is revoked Then terminal write events keep avatar actor identity and lease provenance", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "managed-lease-direct",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      participantId: "session:avatar",
+      role: "requester",
+    });
+
+    const lease = plane.grantWriteLeaseAuthorized({
+      terminalId: created.terminalId,
+      participantId: "session:avatar",
+      durationMs: 60_000,
+      actorId: "session:admin",
+    });
+
+    const written = await plane.write({
+      terminalId: created.terminalId,
+      text: "lease-backed write\n",
+      actorId: "session:avatar",
+    });
+    expect(written.ok).toBe(true);
+    expect(written.leaseId).toBe(lease.leaseId);
+    expect(written.eventId).toBeDefined();
+
+    const event = written.eventId ? plane.getEvent(written.eventId) : undefined;
+    expect(event?.payload.actorId).toBe("session:avatar");
+    expect(event?.payload.detail).toMatchObject({
+      mode: "raw",
+      leaseId: lease.leaseId,
+    });
+    expect(
+      plane
+        .listForActor("session:avatar", { touchPresence: false })
+        .find((item) => item.terminalId === created.terminalId)
+        ?.actors?.find((actor) => actor.actorId === "session:avatar"),
+    ).toMatchObject({
+      actorId: "session:avatar",
+      role: "requester",
+      leaseId: lease.leaseId,
+    });
+
+    expect(
+      plane.revokeWriteLeaseAuthorized({
+        terminalId: created.terminalId,
+        participantId: "session:avatar",
+        actorId: "session:admin",
+      }),
+    ).toEqual({
+      ok: true,
+      revokedCount: 1,
+    });
+
+    const blockedAgain = await plane.write({
+      terminalId: created.terminalId,
+      text: "needs approval again",
+      actorId: "session:avatar",
+      createApprovalRequest: false,
+    });
+    expect(blockedAgain.ok).toBe(false);
+    expect(blockedAgain.message).toContain("approval");
+
+    await plane.dispose();
+  });
+
   test("Scenario: Given admin-group failover When higher-priority admins move online Then pending work is reassigned without changing readonly base writes", async () => {
     const plane = createPlane();
     plane.setActorPresence("session:alpha", true);
