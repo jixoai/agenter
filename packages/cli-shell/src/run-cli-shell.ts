@@ -25,6 +25,7 @@ export const runCliShell = async (argvInput = process.argv): Promise<void> => {
     console.log(`runtime: ${attached.avatar.runtimeId}`);
     console.log(`terminal: ${attached.terminal.entry.terminalId} (${formatCreatedState(attached.terminal.created)})`);
     console.log(`room: ${attached.room.entry.chatId} (${formatCreatedState(attached.room.created)})`);
+    console.log(`managed: ${attached.managed.managed ? "on" : "off"}`);
     console.log(`source: ${process.env.AGENTER_PRODUCT_SOURCE?.trim() || "direct"}`);
     console.log(`promptSeeded: ${attached.promptSeeded ? "yes" : "no"}`);
     console.log(

@@ -29,7 +29,7 @@
 - [x] 2.2 Parse optional `@avatar` mention and `--session` into normalized `avatarNickname` and `shellName`, defaulting the Avatar to `shell-assistant` when no mention is provided
 - [x] 2.3 Connect to the daemon using launcher-provided connection context and perform superadmin auto-login
 - [x] 2.4 Ensure the selected AvatarRuntime is started or reused without using the cli-shell session name as runtime identity, including creating or ensuring the default `shell-assistant` Avatar through generic Avatar/product-extension APIs when absent
-- [ ] 2.5 Consume product extension runtime APIs for resource binding, assistant initialization, attention projection, hosting attention, and delegation instead of importing core internals or adding cli-shell special cases to core modules
+- [x] 2.5 Consume product extension runtime APIs for resource binding, assistant initialization, attention projection, hosting attention, and delegation instead of importing core internals or adding cli-shell special cases to core modules
 - [x] 2.6 Add unit tests for command parsing, default `shell-assistant` ensure, explicit `@avatar` override such as `@default`, shell name normalization, AvatarRuntime identity inputs, extension API consumption, and the rule that historical terminal-assistant role notes do not override an explicit `@avatar` mention
 - [x] 2.7 Initialize missing `shell-assistant` `AGENTER.mdx` with flexible pair-programming, user-understanding, self-evolution, and managed-mode autonomy guidance while explicitly stating self-evolution is orthogonal to managed mode and underlying prompt/memory files remain openly editable user assets
 - [x] 2.8 Initialize missing `shell-assistant` memory roles for `user-model`, `pairing-playbook`, `terminal-habits`, `self-evolution-log`, and `hosting-objective`, and link them explicitly from `AGENTER.mdx`
@@ -44,7 +44,7 @@
 - [x] 3.3 Implement product room lookup by generic product metadata `productId=cli-shell` and `resourceKey=<shellName>`
 - [x] 3.4 Create missing product rooms with backend-allocated room ids and visible title `<shellName>`
 - [x] 3.5 Ensure room grant and focus for the summoned Avatar principal through message-system native authority
-- [ ] 3.6 Add integration tests for repeated `agenter shell`, explicit `agenter shell @default`, `--session=2`, no duplicate terminal or room creation, and absence of cli-shell-specific backend branches
+- [x] 3.6 Add integration tests for repeated `agenter shell`, explicit `agenter shell @default`, `--session=2`, no duplicate terminal or room creation, and absence of cli-shell-specific backend branches
 
 ## 4. Terminal Product TUI
 
@@ -75,12 +75,12 @@
 
 - [x] 5.1 Run targeted `@agenter/cli` tests for launcher behavior
 - [x] 5.2 Run targeted product-extension-runtime tests for descriptor isolation, generic resource binding, assistant initialization, attention projection, hosting score lifecycle, delegation lease lifecycle, and no cli-shell imports in core
-- [ ] 5.3 Run targeted `@agenter/cli-shell` tests for parsing, orchestration, extension API consumption, prompt/memory initialization, hosting attention, delegation projection, and TUI view-model behavior
-- [ ] 5.4 Run app-server/client-sdk tests covering generic product resource binding, terminal ensure, room ensure, grants, AvatarRuntime reuse, prompt/memory ensure, attention ingress, hosting settlement, and delegation lease provenance
+- [x] 5.3 Run targeted `@agenter/cli-shell` tests for parsing, orchestration, extension API consumption, prompt/memory initialization, hosting attention, delegation projection, and TUI view-model behavior
+- [x] 5.4 Run app-server/client-sdk tests covering generic product resource binding, terminal ensure, room ensure, grants, AvatarRuntime reuse, prompt/memory ensure, attention ingress, hosting settlement, and delegation lease provenance
 - [ ] 5.5 Run a real local walkthrough of `agenter shell`, repeat launch, explicit `agenter shell @default`, detach/reconnect, one-line toolbar, status state transitions, Heartbeat streaming, managed toggle on/off, managed state reconnect, chat unread entry, dialogue panel open/close/placement, short time rendering, date divider rendering, dialogue input send/cancel, terminal `Ctrl+C`, resize, and `agenter shell --session=2` from a separate shell-terminal
 - [ ] 5.6 Refresh the v8 PNG/SVG/TXT reference set if product feedback changes the IA, then update `design.md`, specs, and audit evidence to point only at the accepted reference set
 - [ ] 5.7 Add long-running real AI semantic-judge tests for shell-assistant self-evolution using `SemanticJudge.judgeStructured` or equivalent existing judge support, with a rubric for user-fit learning, memory quality, self-evolution direction, orthogonality, hosting separation, programmable attention usage, and anti-overfit behavior
 - [ ] 5.8 Implement AI evaluation threshold and retry policy: fail below the configured score threshold, retry at most twice to absorb model variance, and treat repeated low scores as prompt or implementation defects
 - [ ] 5.9 Run real AI evaluation scenarios for senior-led, requirement-led, and playful/companion-like collaboration traces, and verify the assistant learns from evidence rather than relying on preset archetype labels
-- [ ] 5.10 Create and use `.chat/add-cli-shell-product/` during implementation to record contradictions, idealized assumptions, objective pain points, test-overfit pressure, and product/runtime tensions discovered while building the change
+- [x] 5.10 Create and use `.chat/add-cli-shell-product/` during implementation to record contradictions, idealized assumptions, objective pain points, test-overfit pressure, and product/runtime tensions discovered while building the change
 - [ ] 5.11 Generate and run a long-script real AI validation suite that simulates many-turn terminal work, user correction, memory update, compact/restart continuity, later reuse of learned memory, and model-response cache behavior; keep normal CI gating explicit but do not replace this suite with deterministic-only assertions

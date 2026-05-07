@@ -12,6 +12,7 @@ describe("Feature: cli-shell package boundary", () => {
     const argvSource = readFileSync(join(packageRoot, "src", "argv.ts"), "utf8");
     const productSource = readFileSync(join(packageRoot, "src", "product.ts"), "utf8");
     const bootstrapSource = readFileSync(join(packageRoot, "src", "bootstrap.ts"), "utf8");
+    const managedSource = readFileSync(join(packageRoot, "src", "managed.ts"), "utf8");
     const runCliShellSource = readFileSync(join(packageRoot, "src", "run-cli-shell.ts"), "utf8");
 
     expect(pkg.dependencies).toEqual({
@@ -24,6 +25,10 @@ describe("Feature: cli-shell package boundary", () => {
     expect(argvSource).toContain("AGENTER_AUTH_SERVICE_ENDPOINT");
     expect(productSource).toContain('from "@agenter/client-sdk"');
     expect(productSource).toContain('from "@agenter/product-extension-runtime"');
+    expect(managedSource).toContain('from "@agenter/client-sdk"');
+    expect(managedSource).toContain('from "@agenter/product-extension-runtime"');
+    expect(managedSource).not.toContain("@agenter/app-server");
+    expect(managedSource).not.toContain("session-runtime");
     expect(runCliShellSource).toContain("ws://${args.host}:${args.port}/trpc");
     expect(runCliShellSource).not.toContain("port-file");
     expect(runCliShellSource).not.toContain("daemon-port");

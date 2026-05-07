@@ -1,4 +1,6 @@
 import type {
+  AttentionQueryItem,
+  AuthSessionOutput,
   GlobalAvatarCatalogEntry,
   GlobalRoomActorId,
   GlobalRoomEntry,
@@ -10,6 +12,7 @@ import type {
   WorkspacePrivateTextAssetEnsureOutput,
 } from "@agenter/client-sdk";
 
+import { readCliShellManagedState, type CliShellManagedState } from "./managed";
 import { CLI_SHELL_DEFAULT_AVATAR, CLI_SHELL_PRODUCT_ID, createCliShellProductRuntimeClient } from "./product";
 import { SHELL_ASSISTANT_DISPLAY_NAME, buildShellAssistantPromptSeed, shellAssistantMemoryRoles } from "./shell-assistant-seeds";
 
@@ -21,6 +24,7 @@ export interface CliShellStore extends ProductExtensionRuntimeStore {
   autoLogin(): Promise<
     CliShellAutoLoginResult
   >;
+  getAuthSession(): Promise<AuthSessionOutput | null>;
   setAuthToken(token: string | null | undefined): void;
 }
 
@@ -38,6 +42,7 @@ export interface CliShellBootstrapResult {
   room: ProductEnsureBindingResult<GlobalRoomEntry>;
   promptSeeded: boolean;
   memoryFiles: WorkspacePrivateTextAssetEnsureOutput[];
+  managed: CliShellManagedState;
 }
 
 const requireAvatarPrincipalId = (avatar: GlobalAvatarCatalogEntry): NonNullable<GlobalAvatarCatalogEntry["avatarPrincipalId"]> => {
@@ -145,6 +150,14 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
     focus: true,
   });
 
+  const managed = await readCliShellManagedState({
+    store: input.store,
+    sessionId: session.id,
+    runtimeId: avatar.runtimeId,
+    avatarActorId: avatarPrincipalId,
+    shellName: input.shellName,
+  });
+
   return {
     avatar,
     session,
@@ -152,5 +165,6 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
     room,
     promptSeeded,
     memoryFiles,
+    managed,
   };
 };

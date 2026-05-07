@@ -4,6 +4,8 @@ import {
   CLI_SHELL_DEFAULT_AVATAR,
   bootstrapCliShell,
   buildShellAssistantPromptSeed,
+  disableCliShellManagedMode,
+  enableCliShellManagedMode,
   normalizeShellName,
   parseCliShellArgs,
   shellAssistantMemoryRoles,
@@ -103,6 +105,61 @@ describe("Feature: cli-shell orchestration", () => {
     expect(attached.promptSeeded).toBe(false);
     expect(attached.memoryFiles).toEqual([]);
     expect(store.avatars.some((entry) => entry.nickname === CLI_SHELL_DEFAULT_AVATAR)).toBe(false);
+  });
+
+  test("Scenario: Given cli-shell managed mode is enabled and later disabled When the product uses runtime attention and delegation helpers Then hosting facts and delegated authority stay platform-backed", async () => {
+    const store = new FakeCliShellStore();
+    store.setAuthToken("superadmin-token");
+
+    const enabled = await enableCliShellManagedMode({
+      store,
+      sessionId: "session:/repo:shell-assistant",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      shellName: "shell-1",
+      terminalId: "shell-1",
+      roomId: "room-shell-1",
+      objective: "Watch test output and report failures.",
+    });
+
+    expect(enabled.contextId).toBe("ctx-hosting-shell-1");
+    expect(enabled.grantedByActorId).toBe("auth:root-superadmin");
+    expect(enabled.delegation.policy.mode).toBe("write");
+    expect(enabled.delegation.provenance.attentionContextId).toBe("ctx-hosting-shell-1");
+    expect(store.lastAttentionCommit).toMatchObject({
+      contextId: "ctx-hosting-shell-1",
+      scores: { hosting: 1000 },
+      meta: {
+        productId: "cli-shell",
+        resourceKey: "shell-1",
+        terminalId: "shell-1",
+        roomId: "room-shell-1",
+      },
+    });
+    expect(store.delegations).toHaveLength(1);
+
+    const disabled = await disableCliShellManagedMode({
+      store,
+      sessionId: "session:/repo:shell-assistant",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      shellName: "shell-1",
+      terminalId: "shell-1",
+      roomId: "room-shell-1",
+    });
+
+    expect(disabled.contextId).toBe("ctx-hosting-shell-1");
+    expect(disabled.revokedDelegations).toHaveLength(1);
+    expect(disabled.revokedDelegations[0]?.status).toBe("revoked");
+    expect(store.lastAttentionSettle).toMatchObject({
+      contextId: "ctx-hosting-shell-1",
+      scores: { hosting: 0 },
+      reason: "user_disabled",
+      meta: {
+        productId: "cli-shell",
+        resourceKey: "shell-1",
+      },
+    });
   });
 
   test("Scenario: Given repeated attach and reconnect flows When reusing shell-1 and later opening shell-2 Then runtime identity stays avatar-scoped while terminal and room bindings stay shell-scoped", async () => {

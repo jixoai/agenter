@@ -1,5 +1,7 @@
 import type { ProductDelegationCreateInput } from "@agenter/product-extension-runtime";
 import type {
+  AttentionQueryItem,
+  AuthSessionOutput,
   GlobalAvatarCatalogEntry,
   GlobalRoomActorId,
   GlobalRoomEntry,
@@ -117,6 +119,24 @@ const createRoomEntry = (
 
 export class FakeCliShellStore implements CliShellStore {
   authToken: string | null = null;
+  readonly authSession: AuthSessionOutput = {
+    token: "superadmin-token",
+    issuedAt: new Date(0).toISOString(),
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    claims: {
+      authId: "root-superadmin",
+      profileId: "profile-root",
+      admin: true,
+      superadmin: true,
+    },
+    profile: {
+      profileId: "profile-root",
+      identifiers: [{ kind: "email", value: "root@example.com" }],
+      metadata: {},
+      iconUrl: "http://127.0.0.1/icon/root",
+      isVirtual: false,
+    },
+  };
   avatars: GlobalAvatarCatalogEntry[] = [createAvatarEntry("default")];
   sessions = new Map<string, SessionEntry>();
   terminals: GlobalTerminalEntry[] = [];
@@ -128,9 +148,16 @@ export class FakeCliShellStore implements CliShellStore {
   privateAssets = new Map<string, WorkspacePrivateTextAssetEnsureOutput>();
   delegations: ProductDelegationRecord[] = [];
   promptFiles = new Map<string, { path: string; content: string; mtimeMs: number }>();
+  attentionQueryItems: AttentionQueryItem[] = [];
+  lastAttentionCommit: Record<string, unknown> | null = null;
+  lastAttentionSettle: Record<string, unknown> | null = null;
 
   async autoLogin() {
     return { ok: true as const, session: { token: "superadmin-token" } };
+  }
+
+  async getAuthSession(): Promise<AuthSessionOutput | null> {
+    return this.authToken ? this.authSession : null;
   }
 
   setAuthToken(token: string | null | undefined): void {
@@ -311,19 +338,19 @@ export class FakeCliShellStore implements CliShellStore {
     return created;
   }
 
-  async queryAttention(input: { sessionId: string; query: string; offset?: number; limit?: number }): Promise<[]> {
+  async queryAttention(input: { sessionId: string; query: string; offset?: number; limit?: number }): Promise<AttentionQueryItem[]> {
     void input;
-    return [];
+    return [...this.attentionQueryItems];
   }
 
   async commitAttention(input: { sessionId: string; contextId: string }): Promise<{ commit: unknown }> {
-    void input;
-    return { commit: {} };
+    this.lastAttentionCommit = input;
+    return { commit: { contextId: input.contextId } };
   }
 
   async settleAttention(input: { sessionId: string; contextId: string }): Promise<{ commit: unknown }> {
-    void input;
-    return { commit: {} };
+    this.lastAttentionSettle = input;
+    return { commit: { contextId: input.contextId } };
   }
 
   async listProductDelegations(input: {
