@@ -21,4 +21,15 @@ export {
 } from "./managed";
 export { normalizeShellName, parseCliShellArgs, type CliShellParsedArgs } from "./argv";
 export { runCliShell } from "./run-cli-shell";
+export { fitTerminalText, measureTerminalText } from "./tui/cell-width";
+export {
+  resolveCliShellToolbarStatus,
+  resolveCliShellToolbarStatusIcon,
+  summarizeCliShellHeartbeat,
+  type CliShellToolbarStatusKind,
+} from "./tui/heartbeat";
+export { layoutCliShellCollapsedFrame, type CliShellCollapsedFrame } from "./tui/frame";
+export { buildCliShellCollapsedModel, type CliShellCollapsedModel } from "./tui/model";
+export { CliShellTuiApp, type CliShellTuiAppProps } from "./tui/app";
+export { startCliShellTui, type CliShellTuiController } from "./tui/run-cli-shell-tui";
 export { SHELL_ASSISTANT_DISPLAY_NAME, buildShellAssistantPromptSeed, shellAssistantMemoryRoles } from "./shell-assistant-seeds";

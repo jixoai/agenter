@@ -48,12 +48,12 @@
 
 ## 4. Terminal Product TUI
 
-- [ ] 4.1 Build the shell TUI collapsed layout as one shell-terminal attached to one internal terminal, using `assets/cli-shell-product-reference-v8-toolbar-grid.png` as the final product-effect reference, `assets/cli-shell-product-reference-v8-toolbar-grid.svg` as the inspection/regeneration companion, and `assets/cli-shell-product-reference-v8-toolbar-grid.txt` as the cell-grid contract
-- [ ] 4.2 Build cli-shell directly on `@opentui/react` primitives without importing dashboard/session-list panels from `@agenter/tui`
-- [ ] 4.3 Render terminal identity from durable terminal facts instead of local product state
-- [ ] 4.4 Render the default toolbar in three zones: status icon, current Heartbeat, and action buttons
-- [ ] 4.5 Implement toolbar state icons for idle, text-progressing, thinking, tool-call, message-tool, and terminal-tool states
-- [ ] 4.6 Implement toolbar Heartbeat rendering from the latest message-part, including optimized summaries for message/terminal/attention built-in tool calls
+- [x] 4.1 Build the shell TUI collapsed layout as one shell-terminal attached to one internal terminal, using `assets/cli-shell-product-reference-v8-toolbar-grid.png` as the final product-effect reference, `assets/cli-shell-product-reference-v8-toolbar-grid.svg` as the inspection/regeneration companion, and `assets/cli-shell-product-reference-v8-toolbar-grid.txt` as the cell-grid contract
+- [x] 4.2 Build cli-shell directly on `@opentui/react` primitives without importing dashboard/session-list panels from `@agenter/tui`
+- [x] 4.3 Render terminal identity from durable terminal facts instead of local product state
+- [x] 4.4 Render the default toolbar in three zones: status icon, current Heartbeat, and action buttons
+- [x] 4.5 Implement toolbar state icons for idle, text-progressing, thinking, tool-call, message-tool, and terminal-tool states
+- [x] 4.6 Implement toolbar Heartbeat rendering from the latest message-part, including optimized summaries for message/terminal/attention built-in tool calls
 - [ ] 4.7 Implement toolbar action buttons: managed/takeover toggle backed by platform hosting attention plus delegation projections, and chat entry with unread count plus shortcut
 - [ ] 4.8 Implement the explicit TUI dialogue panel using `assets/cli-shell-product-reference-v8-dialogue-right-grid.png` as the final product-effect reference, `assets/cli-shell-product-reference-v8-dialogue-right-grid.svg` as the inspection/regeneration companion, and `assets/cli-shell-product-reference-v8-dialogue-right-grid.txt` as the cell-grid contract
 - [ ] 4.9 Implement dialogue panel top toolbar placement controls for left, right, floating, bottom, plus close

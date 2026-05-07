@@ -2,6 +2,7 @@ import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
 
 import { parseCliShellArgs } from "./argv";
 import { bootstrapCliShell } from "./bootstrap";
+import { startCliShellTui } from "./tui/run-cli-shell-tui";
 
 const formatCreatedState = (created: boolean): string => (created ? "created" : "reused");
 
@@ -10,6 +11,7 @@ export const runCliShell = async (argvInput = process.argv): Promise<void> => {
   const client = createAgenterClient({
     wsUrl: `ws://${args.host}:${args.port}/trpc`,
   });
+  let activeTui: { finished: Promise<void>; destroy(): void } | null = null;
 
   try {
     const store = createRuntimeStore(client);
@@ -19,6 +21,16 @@ export const runCliShell = async (argvInput = process.argv): Promise<void> => {
       avatarNickname: args.avatarNickname,
       shellName: args.shellName,
     });
+
+    if (process.stdout.isTTY && process.stdin.isTTY) {
+      activeTui = await startCliShellTui({
+        store,
+        shellName: args.shellName,
+        attached,
+      });
+      await activeTui.finished;
+      return;
+    }
 
     console.log(`cli-shell attached`);
     console.log(`avatar: ${attached.avatar.nickname}`);
@@ -32,6 +44,7 @@ export const runCliShell = async (argvInput = process.argv): Promise<void> => {
       `memorySeeds: ${attached.memoryFiles.map((file) => `${file.path}:${file.created ? "created" : "kept"}`).join(", ") || "none"}`,
     );
   } finally {
+    activeTui?.destroy();
     client.close();
   }
 };

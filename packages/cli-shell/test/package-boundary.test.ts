@@ -13,11 +13,17 @@ describe("Feature: cli-shell package boundary", () => {
     const productSource = readFileSync(join(packageRoot, "src", "product.ts"), "utf8");
     const bootstrapSource = readFileSync(join(packageRoot, "src", "bootstrap.ts"), "utf8");
     const managedSource = readFileSync(join(packageRoot, "src", "managed.ts"), "utf8");
+    const tuiAppSource = readFileSync(join(packageRoot, "src", "tui", "app.tsx"), "utf8");
+    const tuiRunnerSource = readFileSync(join(packageRoot, "src", "tui", "run-cli-shell-tui.tsx"), "utf8");
     const runCliShellSource = readFileSync(join(packageRoot, "src", "run-cli-shell.ts"), "utf8");
 
     expect(pkg.dependencies).toEqual({
       "@agenter/client-sdk": "workspace:*",
       "@agenter/product-extension-runtime": "workspace:*",
+      "@opentui/core": "latest",
+      "@opentui/react": "latest",
+      react: "^19.0.0",
+      "string-width": "^7.2.0",
       "yargs": "^17.7.2",
     });
     expect(argvSource).toContain("AGENTER_DAEMON_HOST");
@@ -29,6 +35,11 @@ describe("Feature: cli-shell package boundary", () => {
     expect(managedSource).toContain('from "@agenter/product-extension-runtime"');
     expect(managedSource).not.toContain("@agenter/app-server");
     expect(managedSource).not.toContain("session-runtime");
+    expect(tuiAppSource).toContain('from "@opentui/react"');
+    expect(tuiRunnerSource).toContain('from "@opentui/core"');
+    expect(tuiRunnerSource).toContain('from "@opentui/react"');
+    expect(tuiAppSource).not.toContain("@agenter/tui");
+    expect(tuiRunnerSource).not.toContain("@agenter/tui");
     expect(runCliShellSource).toContain("ws://${args.host}:${args.port}/trpc");
     expect(runCliShellSource).not.toContain("port-file");
     expect(runCliShellSource).not.toContain("daemon-port");
