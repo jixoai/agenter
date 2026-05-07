@@ -129,6 +129,8 @@ const createRoomMessage = (input: {
   from: string;
   content: string;
   createdAt: number;
+  unreadActorIds?: string[];
+  recalledAt?: number;
 }): GlobalRoomMessage => ({
   rowId: input.messageId,
   messageId: input.messageId,
@@ -140,7 +142,8 @@ const createRoomMessage = (input: {
   createdAt: input.createdAt,
   updatedAt: input.createdAt,
   readActorIds: [],
-  unreadActorIds: [],
+  unreadActorIds: input.unreadActorIds ?? [],
+  ...(typeof input.recalledAt === "number" ? { recalledAt: input.recalledAt } : {}),
   metadata: {},
   attachments: [],
 });
@@ -630,6 +633,7 @@ describe("Feature: cli-shell interactive TUI", () => {
           from: "you",
           content: "解释一下这次 terminal 测试结果。",
           createdAt: Date.parse("2026-05-06T10:28:00+08:00"),
+          unreadActorIds: ["auth:shell-assistant"],
         }),
         createRoomMessage({
           messageId: 2,
@@ -644,9 +648,10 @@ describe("Feature: cli-shell interactive TUI", () => {
           from: "you",
           content: "给我下一步最小命令。",
           createdAt: Date.parse("2026-05-07T09:12:00+08:00"),
+          unreadActorIds: ["auth:shell-assistant"],
         }),
       ],
-      unread: 3,
+      unread: 99,
     });
 
     const model = buildCliShellTuiModel({
@@ -683,7 +688,7 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(frame.lines.some((line) => line.includes("shell-1 复用了已有 terminal"))).toBe(true);
     expect(frame.lines[37]).toContain("> _");
     expect(frame.lines[39]).toContain("托管 off");
-    expect(frame.lines[39]).toContain("✉ 3 ⌘J");
+    expect(frame.lines[39]).toContain("✉ 2 ⌘J");
     expect(frame.lines.join("\n")).not.toContain("SHELLS");
     expect(frame.lines.join("\n")).not.toContain("SESSIONS");
     const userLineIndex = frame.lines.findIndex((line) => /\d{2}:\d{2} you/.test(line));
@@ -709,6 +714,7 @@ describe("Feature: cli-shell interactive TUI", () => {
           from: "you",
           content: "把 你好🙂 这行也保留到对话里。",
           createdAt: Date.parse("2026-05-08T10:00:00+08:00"),
+          unreadActorIds: ["auth:shell-assistant"],
         }),
       ],
       unread: 5,
@@ -735,7 +741,7 @@ describe("Feature: cli-shell interactive TUI", () => {
       height: 40,
     });
     expect(leftModel.toolbarManaged).toBe("托管 host");
-    expect(leftModel.toolbarUnread).toBe("✉ 5 ⌘J");
+    expect(leftModel.toolbarUnread).toBe("✉ 1 ⌘J");
     const leftFrame = layoutCliShellTuiFrame({
       model: leftModel,
       width: 120,
@@ -802,6 +808,70 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(floatingFrame.lines.some((line) => line.includes("┘"))).toBe(true);
     expect(floatingFrame.lines.some((line) => line.includes("你好🙂"))).toBe(true);
     expect(floatingFrame.lines.every((line) => measureTerminalText(line) === 50)).toBe(true);
+  });
+
+  test("Scenario: Given room truth carries unread inbound messages When building the toolbar Then cli-shell projects unread count from room facts instead of session badges", () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell", "shell-1:~/project $"],
+      roomMessages: [
+        createRoomMessage({
+          messageId: 1,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: "我已经连上 terminal。",
+          createdAt: Date.parse("2026-05-08T10:00:00+08:00"),
+        }),
+        createRoomMessage({
+          messageId: 2,
+          senderActorId: "auth:user",
+          from: "you",
+          content: "看一下最新失败用例。",
+          createdAt: Date.parse("2026-05-08T10:01:00+08:00"),
+          unreadActorIds: ["auth:shell-assistant"],
+        }),
+        createRoomMessage({
+          messageId: 3,
+          senderActorId: "auth:user",
+          from: "you",
+          content: "这条已经读过。",
+          createdAt: Date.parse("2026-05-08T10:02:00+08:00"),
+        }),
+        createRoomMessage({
+          messageId: 4,
+          senderActorId: "auth:user",
+          from: "you",
+          content: "这条被撤回了。",
+          createdAt: Date.parse("2026-05-08T10:03:00+08:00"),
+          unreadActorIds: ["auth:shell-assistant"],
+          recalledAt: Date.parse("2026-05-08T10:04:00+08:00"),
+        }),
+      ],
+      unread: 9,
+    });
+
+    const model = buildCliShellTuiModel({
+      state,
+      projection: {
+        roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null,
+      },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: false,
+        requestedPlacement: "smart",
+        dialogueDraft: "",
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings: resolveCliShellTuiKeybindings(null),
+      width: 120,
+      height: 40,
+    });
+
+    expect(model.toolbarUnread).toBe("✉ 1 ⌘J");
   });
 
   test("Scenario: Given dialogue mode shortcuts When placement and cancel commands run Then chat focus changes without leaking control keys into the backend terminal", async () => {

@@ -142,6 +142,8 @@ const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
 };
 
+const isBatchedTrpcHttpRequest = (url: URL | null): boolean => url?.searchParams.has("batch") ?? false;
+
 const managedSeatEndpointSchema = z
   .object({
     authorityUrl: z.string().trim().url(),
@@ -681,7 +683,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       return;
     }
 
-    if (req.method === "POST" && pathname === "/trpc/message.globalSnapshot") {
+    if (req.method === "POST" && pathname === "/trpc/message.globalSnapshot" && !isBatchedTrpcHttpRequest(url)) {
       setCors(res, allowedOrigin);
       void (async () => {
         try {
@@ -699,7 +701,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       return;
     }
 
-    if (req.method === "POST" && pathname === "/trpc/message.globalSend") {
+    if (req.method === "POST" && pathname === "/trpc/message.globalSend" && !isBatchedTrpcHttpRequest(url)) {
       setCors(res, allowedOrigin);
       void (async () => {
         try {
@@ -717,7 +719,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       return;
     }
 
-    if (req.method === "POST" && pathname === "/trpc/message.globalEdit") {
+    if (req.method === "POST" && pathname === "/trpc/message.globalEdit" && !isBatchedTrpcHttpRequest(url)) {
       setCors(res, allowedOrigin);
       void (async () => {
         try {
@@ -736,7 +738,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       return;
     }
 
-    if (req.method === "POST" && pathname === "/trpc/message.globalRecall") {
+    if (req.method === "POST" && pathname === "/trpc/message.globalRecall" && !isBatchedTrpcHttpRequest(url)) {
       setCors(res, allowedOrigin);
       void (async () => {
         try {
@@ -754,7 +756,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       return;
     }
 
-    if (req.method === "POST" && pathname === "/trpc/terminal.globalRead") {
+    if (req.method === "POST" && pathname === "/trpc/terminal.globalRead" && !isBatchedTrpcHttpRequest(url)) {
       setCors(res, allowedOrigin);
       void (async () => {
         try {
@@ -774,7 +776,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       return;
     }
 
-    if (req.method === "POST" && pathname === "/trpc/terminal.globalWrite") {
+    if (req.method === "POST" && pathname === "/trpc/terminal.globalWrite" && !isBatchedTrpcHttpRequest(url)) {
       setCors(res, allowedOrigin);
       void (async () => {
         try {
@@ -795,7 +797,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       return;
     }
 
-    if (req.method === "POST" && pathname === "/trpc/terminal.globalInput") {
+    if (req.method === "POST" && pathname === "/trpc/terminal.globalInput" && !isBatchedTrpcHttpRequest(url)) {
       setCors(res, allowedOrigin);
       void (async () => {
         try {

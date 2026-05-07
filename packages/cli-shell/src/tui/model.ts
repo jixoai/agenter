@@ -102,6 +102,22 @@ const resolveAuthorLabel = (message: GlobalRoomMessage, avatarActorId: string): 
   };
 };
 
+const countUnreadRoomMessages = (
+  snapshot: CliShellTuiAppProjection["roomSnapshot"],
+  avatarActorId: string,
+): number | null => {
+  if (!snapshot) {
+    return null;
+  }
+  return snapshot.items.filter(
+    (message) =>
+      message.kind === "text" &&
+      !message.recalledAt &&
+      message.senderActorId !== avatarActorId &&
+      message.unreadActorIds.includes(avatarActorId),
+  ).length;
+};
+
 const buildDialogueBlocks = (input: {
   projection: CliShellTuiAppProjection;
   avatarActorId: string;
@@ -209,7 +225,7 @@ export const buildCliShellTuiModel = (input: {
   const terminalId = resolveTerminalId(input);
   const heartbeatGroups = input.state.heartbeatGroupsBySession[input.sessionId]?.data ?? [];
   const status = resolveCliShellToolbarStatus(heartbeatGroups);
-  const unread = input.state.unreadBySession[input.sessionId] ?? 0;
+  const unread = countUnreadRoomMessages(input.projection.roomSnapshot, input.avatarActorId) ?? input.state.unreadBySession[input.sessionId] ?? 0;
   const dialoguePlacement = input.ui.dialogueOpen
     ? resolveCliShellDialoguePlacement({
         requestedPlacement: input.ui.requestedPlacement,

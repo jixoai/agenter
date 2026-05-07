@@ -2794,6 +2794,41 @@ describe("Feature: runtime store synchronization", () => {
     });
   });
 
+  test("Scenario: Given a non-browser window shim When runtime store connects in Bun Then browser listener wiring is skipped without breaking connectivity", async () => {
+    const client = createMockClient({
+      snapshotQuery: async () => createSnapshot(27),
+    });
+    const store = new RuntimeStore(client);
+    const originalWindow = globalThis.window;
+    const originalNavigator = globalThis.navigator;
+
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {},
+    });
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { onLine: true },
+    });
+
+    try {
+      await store.connect();
+      expect(store.getState().connected).toBe(true);
+      expect(store.getState().connectionStatus).toBe("connected");
+      expect(store.getState().lastEventId).toBe(27);
+      store.disconnect();
+    } finally {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: originalWindow,
+      });
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: originalNavigator,
+      });
+    }
+  });
+
   test("Scenario: Given retained API-call streams When reconnect succeeds Then the runtime restores them from the saved cursor without duplicates", async () => {
     let transportListener: ((event: AgenterTransportEvent) => void) | undefined;
     const apiCallSubscriptions: Array<{ sessionId: string; afterId: number }> = [];

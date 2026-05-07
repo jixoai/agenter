@@ -393,6 +393,39 @@ describe("Feature: cli server contracts", () => {
     expect(Array.isArray(payload[0]?.result?.data?.json?.sessions)).toBe(true);
   });
 
+  test("Scenario: Given a batched tRPC message mutation When sending to a global room Then the standard HTTP handler bypasses the plain-body compatibility shim", async () => {
+    const { dir } = createWorkspaceRoot();
+    const handle = await startTrpcServer({
+      host: "127.0.0.1",
+      port: 0,
+      globalSessionRoot: join(dir, "sessions"),
+      workspacesPath: join(dir, "workspaces.yaml"),
+      homeDir: join(dir, "home"),
+    });
+    handles.push(handle);
+
+    const { client } = await createSuperadminClient(handle);
+    const created = await client.trpc.message.globalCreate.mutate({
+      kind: "room",
+      title: "batch-room",
+    });
+    const room = created.channel;
+
+    const sent = await client.trpc.message.globalSend.mutate({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      text: "batch hello",
+    });
+    expect(sent.ok).toBe(true);
+
+    const snapshot = await client.trpc.message.globalSnapshot.query({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 10,
+    });
+    expect(snapshot.items.some((item) => item.content === "batch hello")).toBe(true);
+  });
+
   test("Scenario: Given two agenters on different ports and one shared room When agenter-B shares its terminal to agenter-A Then agenter-A accepts and both sides verify the same terminal collaboration truth", async () => {
     const a = createWorkspaceRoot();
     const b = createWorkspaceRoot();

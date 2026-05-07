@@ -2837,6 +2837,25 @@ export class RuntimeStore {
     return this.getBrowserOnlineState() === false ? "offline" : "reconnecting";
   }
 
+  private getBrowserEventTarget():
+    | {
+        addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
+        removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
+      }
+    | null {
+    if (
+      typeof window === "undefined" ||
+      typeof window.addEventListener !== "function" ||
+      typeof window.removeEventListener !== "function"
+    ) {
+      return null;
+    }
+    return {
+      addEventListener: window.addEventListener.bind(window),
+      removeEventListener: window.removeEventListener.bind(window),
+    };
+  }
+
   private clearReconnectTimer(): void {
     if (!this.reconnectTimer) {
       return;
@@ -2860,20 +2879,22 @@ export class RuntimeStore {
   }
 
   private attachBrowserListeners(): void {
-    if (this.browserListenersAttached || typeof window === "undefined") {
+    const eventTarget = this.getBrowserEventTarget();
+    if (this.browserListenersAttached || !eventTarget) {
       return;
     }
-    window.addEventListener("online", this.handleBrowserOnline);
-    window.addEventListener("offline", this.handleBrowserOffline);
+    eventTarget.addEventListener("online", this.handleBrowserOnline);
+    eventTarget.addEventListener("offline", this.handleBrowserOffline);
     this.browserListenersAttached = true;
   }
 
   private detachBrowserListeners(): void {
-    if (!this.browserListenersAttached || typeof window === "undefined") {
+    const eventTarget = this.getBrowserEventTarget();
+    if (!this.browserListenersAttached || !eventTarget) {
       return;
     }
-    window.removeEventListener("online", this.handleBrowserOnline);
-    window.removeEventListener("offline", this.handleBrowserOffline);
+    eventTarget.removeEventListener("online", this.handleBrowserOnline);
+    eventTarget.removeEventListener("offline", this.handleBrowserOffline);
     this.browserListenersAttached = false;
   }
 
