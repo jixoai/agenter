@@ -1,5 +1,8 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+const LONG_SCROLLBACK_COMMAND = `printf 'scrollback-%02d\\n' ${Array.from({ length: 90 }, (_, index) => index).join(" ")}`;
+const LONG_SCROLLBACK_LAST_LINE = "scrollback-89";
+
 const clickStable = async (locator: Locator): Promise<void> => {
   await locator.scrollIntoViewIfNeeded();
   try {
@@ -9,11 +12,7 @@ const clickStable = async (locator: Locator): Promise<void> => {
   }
 };
 
-const activateUntil = async (
-  locator: Locator,
-  predicate: () => Promise<boolean>,
-  attempts = 3,
-): Promise<void> => {
+const activateUntil = async (locator: Locator, predicate: () => Promise<boolean>, attempts = 3): Promise<void> => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     await clickStable(locator);
     const activated = await expect
@@ -30,11 +29,7 @@ const activateUntil = async (
 };
 
 const activateTab = async (tab: Locator): Promise<void> => {
-  await activateUntil(
-    tab,
-    async () => ((await tab.getAttribute("aria-selected")) ?? "false") === "true",
-    2,
-  );
+  await activateUntil(tab, async () => ((await tab.getAttribute("aria-selected")) ?? "false") === "true", 2);
 };
 
 const authenticateWithManagedKey = async (page: Page): Promise<void> => {
@@ -50,10 +45,13 @@ const authenticateWithManagedKey = async (page: Page): Promise<void> => {
   const privateKeyInput = page.getByLabel("Root private key");
   await clickStable(page.getByRole("button", { name: "Use backend-managed key" }));
   await expect
-    .poll(async () => {
-      const value = await privateKeyInput.inputValue().catch(() => "");
-      return value.trim().length > 0;
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        const value = await privateKeyInput.inputValue().catch(() => "");
+        return value.trim().length > 0;
+      },
+      { timeout: 15_000 },
+    )
     .toBeTruthy();
 
   const signChallengeButton = page.getByRole("button", { name: "Sign challenge" });
@@ -63,10 +61,7 @@ const authenticateWithManagedKey = async (page: Page): Promise<void> => {
   });
 };
 
-const navigateToSystem = async (
-  page: Page,
-  label: "Avatars" | "Workspaces",
-): Promise<void> => {
+const navigateToSystem = async (page: Page, label: "Avatars" | "Workspaces"): Promise<void> => {
   const targetPath = `/${label.toLowerCase()}`;
   const namedLink = page.getByRole("link", { name: label });
   const hrefLink = page.locator(`a[href="${targetPath}"]`).first();
@@ -91,22 +86,23 @@ const navigateToSystem = async (
   const sidebarDialog = page.getByRole("dialog", { name: "Sidebar" });
   if (await sidebarDialog.isVisible().catch(() => false)) {
     await page.keyboard.press("Escape");
-    await expect
-      .poll(async () => await sidebarDialog.isVisible().catch(() => false), { timeout: 2_000 })
-      .toBeFalsy();
+    await expect.poll(async () => await sidebarDialog.isVisible().catch(() => false), { timeout: 2_000 }).toBeFalsy();
   }
   await expect(page).toHaveURL(new RegExp(`${targetPath}(?:$|/.*|\\?.*)`), { timeout: 15_000 });
 };
 
 const waitForWorkspaceStartReady = async (page: Page): Promise<void> => {
   await expect
-    .poll(async () => {
-      const itemCount = await page
-        .locator("[data-workspace-start-item]")
-        .count()
-        .catch(() => 0);
-      return itemCount > 0;
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        const itemCount = await page
+          .locator("[data-workspace-start-item]")
+          .count()
+          .catch(() => 0);
+        return itemCount > 0;
+      },
+      { timeout: 15_000 },
+    )
     .toBeTruthy();
 };
 
@@ -172,7 +168,11 @@ const findWorkspaceManageActionRow = async (manageDialog: Locator): Promise<Loca
   let actionableIndex = -1;
   await expect
     .poll(
-      async () => await manageDialog.getByText("Loading avatar mount state…").isVisible().catch(() => false),
+      async () =>
+        await manageDialog
+          .getByText("Loading avatar mount state…")
+          .isVisible()
+          .catch(() => false),
       { timeout: 15_000 },
     )
     .toBeFalsy();
@@ -182,7 +182,10 @@ const findWorkspaceManageActionRow = async (manageDialog: Locator): Promise<Loca
         const count = await rows.count().catch(() => 0);
         for (let index = 0; index < count; index += 1) {
           const row = rows.nth(index);
-          const mountCount = await row.locator('[data-testid^="workspace-manage-mount-"]').count().catch(() => 0);
+          const mountCount = await row
+            .locator('[data-testid^="workspace-manage-mount-"]')
+            .count()
+            .catch(() => 0);
           if (mountCount > 0) {
             actionableIndex = index;
             return true;
@@ -190,7 +193,10 @@ const findWorkspaceManageActionRow = async (manageDialog: Locator): Promise<Loca
         }
         for (let index = 0; index < count; index += 1) {
           const row = rows.nth(index);
-          const unmountCount = await row.locator('[data-testid^="workspace-manage-unmount-"]').count().catch(() => 0);
+          const unmountCount = await row
+            .locator('[data-testid^="workspace-manage-unmount-"]')
+            .count()
+            .catch(() => 0);
           if (unmountCount > 0) {
             actionableIndex = index;
             return true;
@@ -204,9 +210,7 @@ const findWorkspaceManageActionRow = async (manageDialog: Locator): Promise<Loca
   return rows.nth(actionableIndex);
 };
 
-const readWorkspaceManageRowState = async (
-  row: Locator,
-): Promise<"detached" | "mounted" | "pending"> => {
+const readWorkspaceManageRowState = async (row: Locator): Promise<"detached" | "mounted" | "pending"> => {
   const mountVisible = await row
     .getByRole("button", { name: "Mount", exact: true })
     .isVisible()
@@ -226,21 +230,12 @@ const readWorkspaceManageRowState = async (
   return "pending";
 };
 
-const waitForWorkspaceManageRowState = async (
-  row: Locator,
-  targetState: "detached" | "mounted",
-): Promise<void> => {
-  await expect
-    .poll(async () => await readWorkspaceManageRowState(row), { timeout: 15_000 })
-    .toBe(targetState);
+const waitForWorkspaceManageRowState = async (row: Locator, targetState: "detached" | "mounted"): Promise<void> => {
+  await expect.poll(async () => await readWorkspaceManageRowState(row), { timeout: 15_000 }).toBe(targetState);
 };
 
-const resolveWorkspaceManageRowState = async (
-  row: Locator,
-): Promise<"detached" | "mounted"> => {
-  await expect
-    .poll(async () => await readWorkspaceManageRowState(row), { timeout: 15_000 })
-    .not.toBe("pending");
+const resolveWorkspaceManageRowState = async (row: Locator): Promise<"detached" | "mounted"> => {
+  await expect.poll(async () => await readWorkspaceManageRowState(row), { timeout: 15_000 }).not.toBe("pending");
 
   const state = await readWorkspaceManageRowState(row);
   if (state === "pending") {
@@ -281,6 +276,104 @@ const expectPageContentLayout = async (root: Locator, mobile: boolean): Promise<
   expect(drawerBox.x).toBeGreaterThan(mainBox.x);
   expect(drawerBox.y).toBeLessThanOrEqual(bottomBox.y + 8);
 };
+
+const readTerminalTranscript = async (host: Locator): Promise<string> =>
+  await host.evaluate((element) => (element instanceof HTMLElement ? element.innerText : (element.textContent ?? "")));
+
+const readTerminalVisibleText = async (host: Locator): Promise<string> =>
+  await host.evaluate((element) => {
+    const hostElement = element as HTMLElement;
+    const hostBox = hostElement.getBoundingClientRect();
+    const rows = Array.from(hostElement.querySelectorAll(".term-row")).filter(
+      (row): row is HTMLElement => row instanceof HTMLElement,
+    );
+    return rows
+      .filter((row) => {
+        const rowBox = row.getBoundingClientRect();
+        const rowStyle = window.getComputedStyle(row);
+        return (
+          rowStyle.display !== "none" &&
+          rowStyle.visibility !== "hidden" &&
+          rowBox.bottom > hostBox.top &&
+          rowBox.top < hostBox.bottom
+        );
+      })
+      .map((row) => (row.textContent ?? "").trimEnd())
+      .filter((text) => text.trim().length > 0)
+      .join("\n");
+  });
+
+const readTerminalScrollState = async (host: Locator) =>
+  await host.evaluate((element) => {
+    const hostElement = element as HTMLElement;
+    const computed = window.getComputedStyle(hostElement);
+    return {
+      clientHeight: hostElement.clientHeight,
+      clientWidth: hostElement.clientWidth,
+      overflowX: computed.overflowX,
+      overflowY: computed.overflowY,
+      scrollHeight: hostElement.scrollHeight,
+      scrollLeft: hostElement.scrollLeft,
+      scrollTop: hostElement.scrollTop,
+      scrollWidth: hostElement.scrollWidth,
+      touchAction: computed.touchAction,
+      windowScrollY: window.scrollY,
+    };
+  });
+
+const readTerminalScrollbackVisibility = async (host: Locator) =>
+  await host.evaluate((element) => {
+    const hostElement = element as HTMLElement;
+    const frameElement = hostElement.closest('[data-testid="workspace-shell-dialog-terminal-frame"]');
+
+    const readVisibleState = () => {
+      const hostBox = hostElement.getBoundingClientRect();
+      const rows = Array.from(hostElement.querySelectorAll(".term-scrollback-row")).filter(
+        (row): row is HTMLElement => row instanceof HTMLElement,
+      );
+      const visibleRows = rows.filter((row) => {
+        const rowBox = row.getBoundingClientRect();
+        const rowStyle = window.getComputedStyle(row);
+        return (
+          rowStyle.display !== "none" &&
+          rowStyle.visibility !== "hidden" &&
+          rowBox.bottom > hostBox.top &&
+          rowBox.top < hostBox.bottom
+        );
+      });
+      const firstVisibleText =
+        visibleRows.map((row) => (row.textContent ?? "").trim()).find((text) => text.length > 0) ?? "";
+
+      return {
+        firstVisibleText,
+        frameOverflowY: frameElement instanceof HTMLElement ? window.getComputedStyle(frameElement).overflowY : null,
+        frameScrollTop: frameElement instanceof HTMLElement ? frameElement.scrollTop : null,
+        hostClientHeight: hostElement.clientHeight,
+        hostOverflowY: window.getComputedStyle(hostElement).overflowY,
+        hostScrollHeight: hostElement.scrollHeight,
+        hostScrollTop: hostElement.scrollTop,
+        scrollbackRows: rows.length,
+        visibleScrollbackRows: visibleRows.length,
+      };
+    };
+
+    const maxScrollTop = Math.max(0, hostElement.scrollHeight - hostElement.clientHeight);
+    const step = Math.max(1, Math.floor(hostElement.clientHeight / 2));
+    for (let scrollTop = 0; scrollTop <= maxScrollTop; scrollTop += step) {
+      hostElement.scrollTop = scrollTop;
+      const state = readVisibleState();
+      if (state.firstVisibleText.length > 0) {
+        return state;
+      }
+    }
+    hostElement.scrollTop = maxScrollTop;
+    const bottomState = readVisibleState();
+    if (bottomState.firstVisibleText.length > 0) {
+      return bottomState;
+    }
+    hostElement.scrollTop = 0;
+    return readVisibleState();
+  });
 
 test.describe("Feature: Workspace and runtime shells", () => {
   test.beforeEach(async ({ page }, testInfo) => {
@@ -340,7 +433,9 @@ test.describe("Feature: Workspace and runtime shells", () => {
     if (mobile) {
       await expect(page.getByRole("button", { name: "Add rule", exact: true })).toBeVisible({ timeout: 15_000 });
     } else {
-      await expect(page.getByText("Rule order maps directly to runtime grant priority for the selected avatar lens.")).toBeVisible({
+      await expect(
+        page.getByText("Rule order maps directly to runtime grant priority for the selected avatar lens."),
+      ).toBeVisible({
         timeout: 15_000,
       });
       await expect(page.getByPlaceholder("Search rules")).toBeVisible({ timeout: 15_000 });
@@ -352,7 +447,9 @@ test.describe("Feature: Workspace and runtime shells", () => {
         timeout: 15_000,
       });
     } else {
-      await expect(page.getByText("Avatar-private assets reuse the tree model without workspace permission badges.")).toBeVisible({
+      await expect(
+        page.getByText("Avatar-private assets reuse the tree model without workspace permission badges."),
+      ).toBeVisible({
         timeout: 15_000,
       });
     }
@@ -363,7 +460,9 @@ test.describe("Feature: Workspace and runtime shells", () => {
         timeout: 15_000,
       });
     } else {
-      await expect(page.getByText("Folders toggle inline and loaded tree search stays inside the same hierarchy.")).toBeVisible({
+      await expect(
+        page.getByText("Folders toggle inline and loaded tree search stays inside the same hierarchy."),
+      ).toBeVisible({
         timeout: 15_000,
       });
     }
@@ -417,6 +516,244 @@ test.describe("Feature: Workspace and runtime shells", () => {
       });
     }
     await expect(page.getByTestId("workspaces-route")).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("Scenario: Given the workspace CLI list When the user scrolls the left rail Then the list scrolls independently without moving the page shell", async ({
+    page,
+  }) => {
+    await navigateToSystem(page, "Workspaces");
+    await openWorkspaceDetailFromStartPage(page);
+    await activateTab(page.getByRole("tab", { name: "cli", exact: true }));
+
+    const listViewport = page.getByTestId("workspace-cli-list");
+    await expect(listViewport).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(async () => await listViewport.evaluate((element) => element.scrollHeight > element.clientHeight), {
+        timeout: 15_000,
+      })
+      .toBeTruthy();
+
+    const before = await listViewport.evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      mainScrollTop: element.closest('[data-workbench-page-content-region="main"]')?.scrollTop ?? null,
+      scrollHeight: element.scrollHeight,
+      scrollTop: element.scrollTop,
+      windowScrollY: window.scrollY,
+    }));
+    expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);
+
+    await listViewport.hover();
+    await page.mouse.wheel(0, 600);
+
+    await expect
+      .poll(async () => await listViewport.evaluate((element) => element.scrollTop), { timeout: 5_000 })
+      .toBeGreaterThan(before.scrollTop);
+    await expect
+      .poll(
+        async () =>
+          await listViewport.evaluate((element) => ({
+            mainScrollTop: element.closest('[data-workbench-page-content-region="main"]')?.scrollTop ?? null,
+            windowScrollY: window.scrollY,
+          })),
+        { timeout: 5_000 },
+      )
+      .toEqual({
+        mainScrollTop: 0,
+        windowScrollY: 0,
+      });
+    const after = await listViewport.evaluate((element) => element.scrollTop);
+    expect(after).toBeGreaterThan(before.scrollTop);
+  });
+
+  test("Scenario: Given one root-workspace CLI command on a mounted public workspace When Run in shell opens the dialog Then the terminal transcript stays visible without a cwd-grant rejection", async ({
+    page,
+  }, testInfo) => {
+    const mobile = testInfo.project.name.includes("mobile");
+    await navigateToSystem(page, "Workspaces");
+    await openWorkspaceDetailFromStartPage(page);
+    await activateTab(page.getByRole("tab", { name: "cli", exact: true }));
+
+    const rootCommand = page.locator('[data-workspace-cli-command-id="root-runtime-cli:attention commit"]');
+    await expect(rootCommand).toBeVisible({ timeout: 15_000 });
+    await clickStable(rootCommand);
+    await expect(page.getByTestId("workspace-detail-drawer")).toContainText("attention commit", { timeout: 15_000 });
+    await expect(page.getByText("attention commit --help", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("workspace-detail-drawer")).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByTestId("workspace-detail-drawer").locator('[data-workbench-detail-drawer-region="summary"]'),
+    ).toHaveCount(0);
+
+    const openShellButton = page.getByTestId("workspace-cli-open-shell-button");
+    await expect(openShellButton).toBeVisible({ timeout: 15_000 });
+    await clickStable(openShellButton);
+
+    const dialog = page.getByTestId("workspace-shell-dialog");
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+
+    const terminalHost = page.getByTestId("workspace-shell-terminal-host");
+    await expect(terminalHost).toBeVisible({ timeout: 15_000 });
+    const terminalFrame = page.getByTestId("workspace-shell-dialog-terminal-frame");
+    await expect(terminalFrame).toBeVisible({ timeout: 15_000 });
+
+    await expect
+      .poll(async () => await readTerminalTranscript(terminalHost), { timeout: 15_000 })
+      .toContain("default@root:");
+    await expect
+      .poll(async () => await readTerminalTranscript(terminalHost), { timeout: 15_000 })
+      .toContain("command: `attention commit`");
+    await expect
+      .poll(async () => await readTerminalTranscript(terminalHost), { timeout: 15_000 })
+      .not.toContain("outside explicit workspace grants");
+    await expect
+      .poll(async () => await readTerminalTranscript(terminalHost), { timeout: 15_000 })
+      .not.toContain("/Users/");
+
+    const readShellContainmentState = async () =>
+      await terminalHost.evaluate((element) => {
+        const hostElement = element as HTMLElement;
+        const frameElement = hostElement.closest('[data-testid="workspace-shell-dialog-terminal-frame"]');
+        const dialogElement = hostElement.closest('[data-testid="workspace-shell-dialog"]');
+        if (!(frameElement instanceof HTMLElement) || !(dialogElement instanceof HTMLElement)) {
+          return null;
+        }
+        const hostBox = hostElement.getBoundingClientRect();
+        const frameBox = frameElement.getBoundingClientRect();
+        const dialogBox = dialogElement.getBoundingClientRect();
+        const hostStyle = getComputedStyle(hostElement);
+        return {
+          frameWithinDialog:
+            frameBox.left >= dialogBox.left - 1 &&
+            frameBox.right <= dialogBox.right + 1 &&
+            frameBox.top >= dialogBox.top - 1 &&
+            frameBox.bottom <= dialogBox.bottom + 1,
+          hostBottomGap: Math.abs(Math.round(frameBox.bottom - hostBox.bottom)),
+          hostFlushesFrameBottom: Math.abs(hostBox.bottom - frameBox.bottom) <= 1,
+          hostPaddingBottom: hostStyle.paddingBottom,
+          hostWithinFrame:
+            hostBox.left >= frameBox.left - 1 &&
+            hostBox.right <= frameBox.right + 1 &&
+            hostBox.top >= frameBox.top - 1 &&
+            hostBox.bottom <= frameBox.bottom + 1,
+        };
+      });
+    await expect.poll(readShellContainmentState, { timeout: 5_000 }).toEqual({
+      frameWithinDialog: true,
+      hostBottomGap: 0,
+      hostFlushesFrameBottom: true,
+      hostPaddingBottom: "0px",
+      hostWithinFrame: true,
+    });
+
+    await expect
+      .poll(
+        async () => {
+          const state = await readTerminalScrollState(terminalHost);
+          return state.scrollHeight > state.clientHeight;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+    await terminalHost.evaluate((element) => {
+      const hostElement = element as HTMLElement;
+      hostElement.scrollTop = 0;
+    });
+    await expect
+      .poll(async () => await readTerminalVisibleText(terminalHost), { timeout: 5_000 })
+      .toContain("attention commit --help");
+
+    await terminalHost.click();
+    await page.keyboard.type(LONG_SCROLLBACK_COMMAND);
+    await page.keyboard.press("Enter");
+    await expect
+      .poll(async () => await readTerminalTranscript(terminalHost), { timeout: 15_000 })
+      .toContain(LONG_SCROLLBACK_LAST_LINE);
+
+    await expect
+      .poll(
+        async () => {
+          const state = await readTerminalScrollState(terminalHost);
+          return state.scrollHeight > state.clientHeight;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+
+    await terminalHost.evaluate((element) => {
+      const hostElement = element as HTMLElement;
+      hostElement.scrollTop = 0;
+      hostElement.scrollLeft = 0;
+    });
+    await expect
+      .poll(
+        async () => {
+          const state = await readTerminalScrollbackVisibility(terminalHost);
+          return {
+            frameOverflowY: state.frameOverflowY,
+            frameScrollTop: state.frameScrollTop,
+            hasReadableScrollbackText: state.firstVisibleText.length > 0,
+            hasScrollbackRows: state.scrollbackRows > 0,
+            hasVisibleScrollbackRows: state.visibleScrollbackRows > 0,
+            hostOverflowY: state.hostOverflowY,
+            hostScrollsInternally: state.hostScrollHeight > state.hostClientHeight,
+          };
+        },
+        { timeout: 5_000 },
+      )
+      .toEqual({
+        frameOverflowY: "hidden",
+        frameScrollTop: 0,
+        hasReadableScrollbackText: true,
+        hasScrollbackRows: true,
+        hasVisibleScrollbackRows: true,
+        hostOverflowY: "auto",
+        hostScrollsInternally: true,
+      });
+    await terminalHost.evaluate((element) => {
+      const hostElement = element as HTMLElement;
+      hostElement.scrollTop = 0;
+    });
+    const beforeWheelState = await readTerminalScrollState(terminalHost);
+    await terminalHost.hover();
+    await page.mouse.wheel(0, Math.max(120, Math.floor(beforeWheelState.clientHeight / 2)));
+    await expect
+      .poll(
+        async () => {
+          const state = await readTerminalScrollState(terminalHost);
+          return {
+            scrollTopAdvanced: state.scrollTop > beforeWheelState.scrollTop,
+            windowScrollY: state.windowScrollY,
+          };
+        },
+        { timeout: 5_000 },
+      )
+      .toEqual({
+        scrollTopAdvanced: true,
+        windowScrollY: beforeWheelState.windowScrollY,
+      });
+
+    if (mobile) {
+      const mobileScrollState = await readTerminalScrollState(terminalHost);
+      expect(mobileScrollState.overflowX).toBe("auto");
+      expect(mobileScrollState.overflowY).toBe("auto");
+      expect(mobileScrollState.clientWidth).toBeGreaterThan(0);
+      expect(mobileScrollState.scrollWidth).toBeGreaterThan(mobileScrollState.clientWidth);
+      expect(mobileScrollState.touchAction === "manipulation" || mobileScrollState.touchAction.includes("pan-x")).toBe(
+        true,
+      );
+      await terminalHost.evaluate((element) => {
+        const hostElement = element as HTMLElement;
+        hostElement.scrollLeft = hostElement.scrollWidth - hostElement.clientWidth;
+      });
+      await expect
+        .poll(
+          async () => {
+            const state = await readTerminalScrollState(terminalHost);
+            return state.scrollLeft;
+          },
+          { timeout: 5_000 },
+        )
+        .toBeGreaterThan(0);
+    }
   });
 
   test("Scenario: Given the avatars catalog When opening a stopped avatar Then launch actions remain available without a blocker gate", async ({

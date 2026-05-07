@@ -25,14 +25,14 @@ import {
   formatAvatarDisplayName,
   normalizeAvatarPrincipalMetadata,
   readAvatarPrincipalMetadata,
-  resolveBuiltInAvatarProfile,
   resolveAvatarOwnerKey,
+  resolveBuiltInAvatarProfile,
+  type AuthSessionProjection,
   type AvatarClassify,
   type AvatarPrincipalMetadata,
-  type AuthSessionProjection,
+  type PrincipalProjection,
   type ProfileMetadata,
   type ProfileProjection,
-  type PrincipalProjection,
 } from "@agenter/auth-service";
 import { defaultAvatarNickname, normalizeAvatarNickname, resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
 import { LoopBusKernel } from "@agenter/loopbus-kernel";
@@ -131,17 +131,13 @@ import {
   type AvatarSeatState,
 } from "./avatar-seat-store";
 import { type ChatCycle } from "./chat-cycles";
-import { buildWorkspaceCliCommandCatalog } from "./cli-command-catalog";
+import { buildWorkspaceCliCommandCatalog, type CliCommandExecutionSurface } from "./cli-command-catalog";
 import { readGlobalSettingsFile, saveGlobalSettingsFile } from "./global-settings";
 import type { RuntimeHeartbeatGroupRecord } from "./heartbeat-groups";
 import { pageHeartbeatGroupsFromDb } from "./heartbeat-groups-page";
 import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./heartbeat-message-parts";
 import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
-import {
-  createRemoteMessageSourceClient,
-  type RemoteMessageSourceCatalogItem,
-} from "./remote-message-source-client";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
   settingsKindSchema,
@@ -150,6 +146,7 @@ import {
   type RuntimeEventType,
   type RuntimeSnapshotPayload,
 } from "./realtime-types";
+import { createRemoteMessageSourceClient, type RemoteMessageSourceCatalogItem } from "./remote-message-source-client";
 import { RoomAssetStore, toChatRoomAsset, type RoomAssetRecord } from "./room-assets";
 import type {
   RuntimeCycleRecord,
@@ -177,6 +174,12 @@ import {
 import { SessionRuntime, type RuntimeEvent } from "./session-runtime";
 import { SettingsEditor } from "./settings-editor";
 import {
+  listScopedSettingsGraph,
+  readScopedSettingsLayer,
+  saveScopedSettingsLayer,
+  type SettingsScope,
+} from "./settings-scope";
+import {
   listSkillBrowserAvatarCatalog,
   listSkillBrowserAvatarTree,
   listSkillBrowserCatalog,
@@ -185,12 +188,6 @@ import {
   readSkillBrowserCatalogPreview,
   type SkillBrowserCatalogRootKind,
 } from "./skill-browser";
-import {
-  listScopedSettingsGraph,
-  readScopedSettingsLayer,
-  saveScopedSettingsLayer,
-  type SettingsScope,
-} from "./settings-scope";
 import type { ChatMessage, ChatSessionAsset, ModelCapabilities, RoomMediaAsset } from "./types";
 import { createEmptyUsageAnalyticsResult, UsageAnalyticsDb } from "./usage-analytics-db";
 import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "./usage-analytics-paths";
@@ -209,11 +206,18 @@ import {
   resolveWorkspacePublicAssetRoot,
   WorkspaceSystemStore,
   type WorkspaceAssetRoots,
+  type WorkspaceBashExecResult,
   type WorkspaceGrantInput,
   type WorkspaceGrantRecord,
   type WorkspaceMountRecord,
 } from "./workspace-system";
-import { GLOBAL_WORKSPACE_PATH, isGlobalWorkspacePath, toWorkspaceCwd, toWorkspacePath } from "./workspace-target";
+import {
+  GLOBAL_WORKSPACE_PATH,
+  isGlobalWorkspacePath,
+  resolveWorkspaceFsPath,
+  toWorkspaceCwd,
+  toWorkspacePath,
+} from "./workspace-target";
 import {
   createWorkspacePrivateAsset,
   listWorkspaceWorkbenchTree,
@@ -1360,10 +1364,7 @@ export class AppKernel {
     };
   }
 
-  private requireMessageSourceSubscription(
-    actorId: MessageActorId,
-    sourceId: string,
-  ): MessageSourceSubscriptionRecord {
+  private requireMessageSourceSubscription(actorId: MessageActorId, sourceId: string): MessageSourceSubscriptionRecord {
     const source = this.messageControlPlane.getSourceSubscription(actorId, sourceId);
     if (!source) {
       throw new Error(`unknown message source subscription: ${sourceId}`);
@@ -1371,10 +1372,7 @@ export class AppKernel {
     return source;
   }
 
-  private requirePendingMessageContactRequest(
-    actorId: MessageActorId,
-    requestId: string,
-  ): MessageContactRequestRecord {
+  private requirePendingMessageContactRequest(actorId: MessageActorId, requestId: string): MessageContactRequestRecord {
     const request = this.messageControlPlane.getContactRequest(actorId, requestId);
     if (!request) {
       throw new Error(`unknown contact request: ${requestId}`);
@@ -1758,7 +1756,9 @@ export class AppKernel {
       }
       const imported = await this.ensureGlobalAvatarPrincipal({
         nickname,
-        displayName: resolveBuiltInAvatarProfile(nickname)?.displayName ?? (nickname === defaultAvatarNickname() ? formatAvatarDisplayName(nickname) : null),
+        displayName:
+          resolveBuiltInAvatarProfile(nickname)?.displayName ??
+          (nickname === defaultAvatarNickname() ? formatAvatarDisplayName(nickname) : null),
         classify: resolveBuiltInAvatarProfile(nickname)?.classify ?? null,
         createMissing: true,
       });
@@ -1920,12 +1920,14 @@ export class AppKernel {
       .listRuntimeMounts(runtimeId)
       .map((mount) => ({
         mount,
-        workspaceRoot: toWorkspaceCwd(mount.workspacePath),
-        defaultCwd:
+        workspaceRoot: toWorkspaceCwd(mount.workspacePath, this.getHomeDir()),
+        defaultCwd: resolveWorkspaceFsPath(
           this.workspaceSystem.getRuntimeWorkspaceExecProfile({
             runtimeId,
             workspacePath: mount.workspacePath,
-          })?.cwd ?? toWorkspaceCwd(mount.workspacePath),
+          })?.cwd ?? mount.workspacePath,
+          this.getHomeDir(),
+        ),
         grants: this.workspaceSystem.listRuntimeWorkspaceGrants({
           runtimeId,
           workspacePath: mount.workspacePath,
@@ -1948,7 +1950,7 @@ export class AppKernel {
   }): { ok: true; cwd: string } | { ok: false; message: string } {
     const authorities = this.listRuntimeWorkspaceAuthorities(input.runtimeId);
     if (typeof input.cwd === "string" && input.cwd.trim().length > 0) {
-      const cwd = resolve(input.cwd);
+      const cwd = resolveWorkspaceFsPath(input.cwd, this.getHomeDir());
       const allowed = authorities.some(
         (entry) =>
           resolveWorkspaceGrantModeFromAbsolutePath({
@@ -2187,20 +2189,60 @@ export class AppKernel {
     cwd?: string;
     env?: Record<string, string>;
     stdin?: string;
+    surface?: CliCommandExecutionSurface;
   }) {
+    const resolveExecFailure = (message: string, cwd: string): WorkspaceBashExecResult => ({
+      stdout: "",
+      stderr: `${message}\n`,
+      exitCode: 1,
+      cwd,
+    });
+    const explicitCwd =
+      typeof input.cwd === "string" && input.cwd.trim().length > 0
+        ? resolveWorkspaceFsPath(input.cwd, this.getHomeDir())
+        : undefined;
+    const fallbackCwd = explicitCwd ?? toWorkspaceCwd(input.workspacePath, this.getHomeDir());
+
+    if (input.surface === "root-workspace") {
+      const runtime = this.runtimes.get(input.runtimeId);
+      if (!runtime) {
+        return resolveExecFailure(`runtime not active for root-workspace exec: ${input.runtimeId}`, fallbackCwd);
+      }
+      return await runtime.execRootWorkspaceBash({
+        command: input.command,
+        cwd: explicitCwd,
+        env: input.env,
+        stdin: input.stdin,
+      });
+    }
     const workspacePath = toWorkspacePath(input.workspacePath);
+    const workspaceRoot = toWorkspaceCwd(workspacePath, this.getHomeDir());
     const grants = this.workspaceSystem.listRuntimeWorkspaceGrants({
       runtimeId: input.runtimeId,
       workspacePath,
     });
     if (grants.length === 0) {
-      throw new Error(`workspace grants missing for runtime ${input.runtimeId} on ${workspacePath}`);
+      return resolveExecFailure(
+        `workspace grants missing for runtime ${input.runtimeId} on ${workspacePath}`,
+        fallbackCwd,
+      );
+    }
+    if (
+      explicitCwd &&
+      resolveWorkspaceGrantModeFromAbsolutePath({
+        workspaceRoot,
+        absolutePath: explicitCwd,
+        grants,
+        partial: true,
+      }) === "none"
+    ) {
+      return resolveExecFailure(`workspace cwd is outside explicit grants: ${explicitCwd}`, explicitCwd);
     }
     return await executeWorkspaceBash({
       workspacePath,
       avatar: input.avatar,
       command: input.command,
-      cwd: input.cwd,
+      cwd: explicitCwd,
       env: input.env,
       stdin: input.stdin,
       grants,
@@ -3086,11 +3128,7 @@ export class AppKernel {
     });
   }
 
-  async searchMessageSourceActors(input: {
-    actorId: MessageActorId;
-    sourceId: string;
-    query?: string;
-  }): Promise<
+  async searchMessageSourceActors(input: { actorId: MessageActorId; sourceId: string; query?: string }): Promise<
     Array<
       RemoteMessageSourceCatalogItem & {
         sourceId: string;
@@ -3868,7 +3906,9 @@ export class AppKernel {
         terminal,
       };
     }
-    const terminal = this.terminalControlPlane.listForTrustedBootstrap().find((entry) => entry.terminalId === created.terminalId);
+    const terminal = this.terminalControlPlane
+      .listForTrustedBootstrap()
+      .find((entry) => entry.terminalId === created.terminalId);
     return {
       ok: true,
       message: terminal ? "terminal created" : "terminal created but unavailable in catalog",
@@ -4258,7 +4298,7 @@ export class AppKernel {
       return { ok: false, reason: "session runtime is not active" };
     }
     try {
-      return runtime.sendMessageChannel({
+      return await runtime.sendMessageChannel({
         chatId: input.chatId,
         accessToken: input.accessToken,
         text: input.text,

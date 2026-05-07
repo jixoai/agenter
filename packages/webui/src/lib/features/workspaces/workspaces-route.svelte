@@ -4,6 +4,7 @@
 	import ArrowUpIcon from '@lucide/svelte/icons/arrow-up';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
+	import PlayIcon from '@lucide/svelte/icons/play';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SaveIcon from '@lucide/svelte/icons/save';
 	import SearchIcon from '@lucide/svelte/icons/search';
@@ -30,6 +31,7 @@
 	import type { WorkbenchToolbarRenderState } from '$lib/features/navigation/workbench-toolbar.types';
 	import { cn } from '$lib/utils.js';
 	import WorkspaceManageDialog from '$lib/features/workspaces/workspace-manage-dialog.svelte';
+	import WorkspaceShellDialog from '$lib/features/workspaces/workspace-shell-dialog.svelte';
 	import WorkspaceTree from '$lib/features/workspaces/workspace-tree.svelte';
 	import WorkspaceContentHeader from '$lib/features/workspaces/workspace-content-header.svelte';
 	import type { WorkspaceManageAvatarRow } from '$lib/features/workspaces/workspace-manage-dialog.types';
@@ -39,6 +41,13 @@
 		readWorkspaceAvatar,
 		WORKSPACE_SEARCH_QUERY_PARAM,
 	} from '$lib/features/workspaces/workspace-location';
+	import {
+		resolveWorkspaceShellRuntimeRunning,
+		resolveWorkspaceShellRuntimeStarting,
+		resolveWorkspaceShellLaunchCwd,
+		resolveWorkspaceShellSurface,
+		type WorkspaceShellLaunch,
+	} from '$lib/features/workspaces/workspace-shell-contract';
 	import {
 		buildRuleDrafts,
 		collectWorkspaceCliMatchIds,
@@ -96,6 +105,7 @@
 	let selectedCliCommandId = $state<string | null>(null);
 	let assetRoots = $state<Awaited<ReturnType<typeof controller.runtimeStore.getRuntimeWorkspaceAssetRoots>> | null>(null);
 	let currentMount = $state<RuntimeWorkspaceMountEntry | null>(null);
+	let currentGrantEntries = $state<RuntimeWorkspaceGrantEntry[]>([]);
 	let rules = $state<WorkspaceRuleDraft[]>([]);
 	let selectedRuleId = $state<string | null>(null);
 	let rulesDirty = $state(false);
@@ -109,6 +119,12 @@
 	let manageDialogError = $state<string | null>(null);
 	let manageRows = $state<WorkspaceManageAvatarRow[]>([]);
 	let manageRequestVersion = 0;
+	let workspaceShellOpen = $state(false);
+	let workspaceShellPreparing = $state(false);
+	let workspaceShellError = $state<string | null>(null);
+	let workspaceShellLaunch = $state<WorkspaceShellLaunch | null>(null);
+	let workspaceShellLaunchKey = $state<string | null>(null);
+	let pendingCliShellLaunchRequest = $state<WorkspaceShellLaunch | null>(null);
 
 	const workspaceModeTabItems = [
 		{ value: 'explorer', label: 'explorer', title: 'Explorer' },
@@ -145,6 +161,14 @@
 	const selectedAvatarEntry = $derived(
 		avatarOptions.find((entry) => entry.nickname === selectedAvatar) ?? avatarOptions[0] ?? null,
 	);
+	const selectedRuntimeSession = $derived(
+		selectedAvatarEntry
+			? controller.runtimeState.sessions.find((session) => session.id === selectedAvatarEntry.runtimeId) ?? null
+			: null,
+	);
+	const selectedRootRuntimeStatus = $derived(selectedRuntimeSession?.status ?? null);
+	const selectedRootRuntimeRunning = $derived(resolveWorkspaceShellRuntimeRunning(selectedRootRuntimeStatus));
+	const selectedRootRuntimeStarting = $derived(resolveWorkspaceShellRuntimeStarting(selectedRootRuntimeStatus));
 	const avatarSelectItems = $derived(
 		avatarOptions.map((entry) => ({
 			value: entry.nickname,
@@ -172,7 +196,11 @@
 			: [],
 	);
 	const filteredCliEntries = $derived(filteredCliGroups.flatMap((group) => group.entries));
-	const preferredCliCommandId = $derived(resolveWorkspaceCliDefaultEntryId(filteredCliGroups, selectedCliCommandId));
+	const preferredCliCommandId = $derived(
+		resolveWorkspaceCliDefaultEntryId(filteredCliGroups, selectedCliCommandId, {
+			allowRootRuntimeDefault: selectedRootRuntimeRunning,
+		}),
+	);
 	const activeMatchIds = $derived(
 		mode === 'cli'
 			? collectWorkspaceCliMatchIds(filteredCliGroups, searchQuery)
@@ -208,6 +236,70 @@
 			? 'Avatar-private env and runtime CLI live here by default. Sharing still depends on mounts and grants.'
 			: 'Collaboration surface. Root-exclusive env and CLI stay out by default.',
 	);
+	const currentWorkspaceHasRootGrantAccess = $derived(currentGrantEntries.some((grant) => grant.pattern === '/'));
+	const selectedCliShellLaunch = $derived.by(() => {
+		if (!selectedWorkspace || !selectedAvatarEntry || !selectedCliEntry) {
+			return null;
+		}
+		const surface = resolveWorkspaceShellSurface({
+			entry: selectedCliEntry,
+			currentSurfaceKind,
+		});
+		const shellCwd = resolveWorkspaceShellLaunchCwd({
+			surface,
+			workspacePath: selectedWorkspace.path,
+			mountKind: currentMount?.kind ?? null,
+			hasRootGrantAccess: currentWorkspaceHasRootGrantAccess,
+		});
+		return {
+			avatar: selectedAvatarEntry.nickname,
+			command: selectedCliEntry.suggestedCommand,
+			commandLabel: selectedCliEntry.commandLabel,
+			cwd: shellCwd,
+			runtimeId: selectedAvatarEntry.runtimeId,
+			surface,
+			workspacePath: selectedWorkspace.path,
+		};
+	});
+	const selectedCliNeedsRootRuntime = $derived(
+		selectedCliShellLaunch?.surface === 'root-workspace' || selectedCliEntry?.preferredExecutionSurface === 'root-workspace',
+	);
+	const selectedCliRunLabel = $derived.by(() => {
+		if (!selectedCliNeedsRootRuntime) {
+			return 'Run in shell';
+		}
+		if (workspaceShellPreparing) {
+			return selectedRootRuntimeRunning ? 'Opening shell…' : 'Starting runtime…';
+		}
+		if (selectedRootRuntimeStarting) {
+			return 'Run when runtime is ready';
+		}
+		if (!selectedRootRuntimeRunning) {
+			return 'Start runtime and run';
+		}
+		return 'Run in shell';
+	});
+
+	const selectedCliRuntimeNotice = $derived.by(() => {
+		if (!selectedCliNeedsRootRuntime || selectedRootRuntimeRunning) {
+			return null;
+		}
+		if (selectedRootRuntimeStarting) {
+			return workspaceShellPreparing
+				? {
+						title: 'The avatar runtime is starting now.',
+						description: 'The shell dialog will open automatically once the root runtime is actually running.',
+				  }
+				: {
+						title: 'The avatar runtime is still starting.',
+						description: 'Wait for the runtime to finish booting, then run this command in the root shell.',
+				  };
+		}
+		return {
+			title: 'This command needs the avatar runtime first.',
+			description: 'The shell button below will start that runtime, then run the command in the real backend shell.',
+		};
+	});
 
 	const describeWorkspaceMountAccess = (
 		mount: RuntimeWorkspaceMountEntry | null,
@@ -252,6 +344,80 @@
 
 	const revealDetail = (): void => {
 		detailOpen = true;
+	};
+
+	const presentCliShellDialog = (launch: WorkspaceShellLaunch): void => {
+		if (detailCompact) {
+			detailOpen = false;
+		}
+		workspaceShellLaunch = { ...launch };
+		workspaceShellLaunchKey = `${launch.runtimeId}:${launch.surface}:${Date.now()}`;
+		workspaceShellOpen = true;
+	};
+
+	$effect(() => {
+		if (
+			!pendingCliShellLaunchRequest ||
+			pendingCliShellLaunchRequest.surface !== 'root-workspace' ||
+			!selectedRootRuntimeRunning
+		) {
+			return;
+		}
+		const nextLaunch = {
+			...pendingCliShellLaunchRequest,
+			cwd: resolveWorkspaceShellLaunchCwd({
+				surface: pendingCliShellLaunchRequest.surface,
+				workspacePath: pendingCliShellLaunchRequest.workspacePath,
+				mountKind: currentMount?.kind ?? null,
+				hasRootGrantAccess: currentWorkspaceHasRootGrantAccess,
+			}),
+			runtimeId: selectedAvatarEntry?.runtimeId ?? pendingCliShellLaunchRequest.runtimeId,
+		};
+		pendingCliShellLaunchRequest = null;
+		workspaceShellPreparing = false;
+		presentCliShellDialog(nextLaunch);
+	});
+
+	const openCliShellDialog = async (): Promise<void> => {
+		if (!selectedWorkspace || !selectedAvatarEntry || !selectedCliShellLaunch) {
+			return;
+		}
+		const pendingLaunch = { ...selectedCliShellLaunch };
+		workspaceShellPreparing = true;
+		workspaceShellError = null;
+		try {
+			if (selectedCliShellLaunch.surface === 'root-workspace' && !selectedRootRuntimeRunning) {
+				pendingCliShellLaunchRequest = pendingLaunch;
+				if (selectedRootRuntimeStarting) {
+					return;
+				}
+				if (selectedRuntimeSession) {
+					await controller.runtimeStore.startSession(selectedRuntimeSession.id);
+				} else {
+					await controller.runtimeStore.createSession({
+						cwd: selectedWorkspace.path,
+						avatar: selectedAvatarEntry.nickname,
+						autoStart: true,
+					});
+				}
+				await refreshWorkbenchContext();
+				return;
+			}
+			presentCliShellDialog(pendingLaunch);
+		} catch (error) {
+			pendingCliShellLaunchRequest = null;
+			workspaceShellError = error instanceof Error ? error.message : String(error);
+		} finally {
+			if (!pendingCliShellLaunchRequest) {
+				workspaceShellPreparing = false;
+			}
+		}
+	};
+
+	const closeCliShellDialog = (): void => {
+		workspaceShellOpen = false;
+		workspaceShellLaunch = null;
+		workspaceShellLaunchKey = null;
 	};
 
 	const getPreviewEmptyStateTitle = (
@@ -389,7 +555,9 @@
 			});
 			cliCatalog = nextCatalog;
 			const orderedGroups = orderWorkspaceCliCatalogGroupsForDisplay(nextCatalog.groups);
-			selectedCliCommandId = resolveWorkspaceCliDefaultEntryId(orderedGroups, selectedCliCommandId);
+			selectedCliCommandId = resolveWorkspaceCliDefaultEntryId(orderedGroups, selectedCliCommandId, {
+				allowRootRuntimeDefault: selectedRootRuntimeRunning,
+			});
 		} finally {
 			cliLoading = false;
 		}
@@ -398,6 +566,8 @@
 	const refreshWorkbenchContext = async (): Promise<void> => {
 		if (!selectedWorkspace || !selectedAvatarEntry || !runtimeId) {
 			currentMount = null;
+			currentGrantEntries = [];
+			pendingCliShellLaunchRequest = null;
 			return;
 		}
 		const [nextGrants, nextRoots, mounts] = await Promise.all([
@@ -415,6 +585,7 @@
 			mounts.find((item) => item.workspacePath === selectedWorkspace.path && item.kind === 'avatar-root') ??
 			mounts.find((item) => item.workspacePath === selectedWorkspace.path) ??
 			null;
+		currentGrantEntries = nextGrants;
 		const nextRules = buildRuleDrafts(nextGrants);
 		rules = nextRules;
 		selectedRuleId = nextRules[0]?.id ?? null;
@@ -712,6 +883,22 @@
 	});
 
 	$effect(() => {
+		if (!workspaceShellLaunch) {
+			return;
+		}
+		if (!selectedWorkspace || !selectedAvatarEntry) {
+			closeCliShellDialog();
+			return;
+		}
+		if (
+			workspaceShellLaunch.workspacePath !== selectedWorkspace.path ||
+			workspaceShellLaunch.avatar !== selectedAvatarEntry.nickname
+		) {
+			closeCliShellDialog();
+		}
+	});
+
+	$effect(() => {
 		if (!selectedWorkspace || !selectedAvatarEntry || !runtimeId) {
 			return;
 		}
@@ -746,6 +933,13 @@
 	$effect(() => {
 		if (selectedCliCommandId !== preferredCliCommandId) {
 			selectedCliCommandId = preferredCliCommandId;
+		}
+	});
+
+	$effect(() => {
+		if (!workspaceShellOpen && workspaceShellLaunch) {
+			workspaceShellLaunch = null;
+			workspaceShellLaunchKey = null;
 		}
 	});
 
@@ -974,14 +1168,16 @@
 	/>
 
 	<WorkbenchPageContent
-		class="row-start-2 h-full min-w-0 w-full"
+		class="row-start-2 h-full min-h-0 min-w-0 w-full"
+		mainClass="h-full min-h-0"
+		drawerClass="h-full min-h-0"
 		detailLayout="split-detail"
 		bind:detailCompact
 		bind:detailOpen
 		detailRatioPersistence="workspaces:detail"
 		>
 			{#snippet main()}
-				<Card.Root class="h-full gap-0 rounded-none border-0 bg-transparent py-0 shadow-none">
+				<Card.Root class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-0 rounded-none border-0 bg-transparent py-0 shadow-none">
 					<Card.Header class="gap-1 border-b px-3 py-3.5 md:px-5 md:py-4.5">
 						<Card.Title>{mode === 'rules' ? 'Rules' : mode === 'private' ? 'Private assets' : mode === 'cli' ? 'CLI' : 'Explorer'}</Card.Title>
 						<Card.Description class="hidden max-w-[30rem] text-xs leading-5 md:block md:text-sm">
@@ -996,9 +1192,9 @@
 							{/if}
 					</Card.Description>
 				</Card.Header>
-					<Card.Content class="h-full p-0">
+					<Card.Content class="h-full min-h-0 p-0">
 						{#if mode === 'rules'}
-							<div class="grid gap-2 p-2.5 md:p-3">
+							<ScrollView class="h-full" contentClass="grid gap-2 p-2.5 md:p-3">
 								{#if rules.length === 0}
 									<div class="rounded-[0.9rem] bg-muted/24 px-4 py-6 text-sm text-muted-foreground">
 										No explicit rules are configured for this workspace/avatar pair.
@@ -1034,9 +1230,13 @@
 									</button>
 								{/each}
 							{/if}
-						</div>
+						</ScrollView>
 					{:else if mode === 'cli'}
-						<ScrollView class="h-full" contentClass="grid gap-3 p-3 md:gap-4 md:p-4">
+						<ScrollView
+							class="h-full"
+							contentClass="grid gap-3 p-3 md:gap-4 md:p-4"
+							viewportTestId="workspace-cli-list"
+						>
 							{#if cliLoading}
 								<div class="rounded-[0.95rem] bg-muted/24 px-4 py-6 text-sm text-muted-foreground">
 									Loading the workspace CLI catalog for the active avatar lens…
@@ -1129,259 +1329,9 @@
 			</Card.Root>
 		{/snippet}
 
-			{#snippet bottom()}
-				<Card.Root class="gap-0 rounded-none border-0 bg-transparent py-0 shadow-none">
-					<Card.Content class="grid gap-2.5 border-t border-border/40 bg-background/35 px-3 pb-3 pt-3 md:gap-3 md:px-5 md:pb-5 md:pt-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-						{#if mode === 'rules'}
-							<div class="grid gap-2.5 md:grid-cols-3">
-								<Input
-									value={selectedRule?.pattern ?? '/'}
-									oninput={(event) => {
-									const value = (event.currentTarget as HTMLInputElement).value;
-									if (!selectedRule) {
-										return;
-									}
-									rules = rules.map((rule) => (rule.id === selectedRule.id ? { ...rule, pattern: value } : rule));
-									rulesDirty = true;
-								}}
-							/>
-							<NativeSelect.NativeSelect
-								value={selectedRule?.mode ?? 'ro'}
-								onchange={(event) => {
-									const value = (event.currentTarget as HTMLSelectElement).value as 'ro' | 'rw';
-									if (!selectedRule) {
-										return;
-									}
-									rules = rules.map((rule) => (rule.id === selectedRule.id ? { ...rule, mode: value } : rule));
-									rulesDirty = true;
-								}}
-							>
-								<option value="ro">Read only</option>
-								<option value="rw">Read write</option>
-							</NativeSelect.NativeSelect>
-							<label class="flex items-center gap-2 text-sm">
-								<input
-									type="checkbox"
-									checked={selectedRule?.enabled ?? false}
-									onchange={(event) => {
-										const checked = (event.currentTarget as HTMLInputElement).checked;
-										if (!selectedRule) {
-											return;
-										}
-										rules = rules.map((rule) => (rule.id === selectedRule.id ? { ...rule, enabled: checked } : rule));
-										rulesDirty = true;
-									}}
-								/>
-								Enabled
-							</label>
-						</div>
-							<div class="flex flex-wrap gap-2">
-							<Button variant="outline" onclick={addRule}>
-								<PlusIcon class="size-4" />
-								Add rule
-							</Button>
-							<Button variant="outline" onclick={duplicateRule}>
-								<PlusIcon class="size-4" />
-								Duplicate
-							</Button>
-							<Button variant="outline" onclick={() => moveRule(-1)}>
-								<ArrowUpIcon class="size-4" />
-								Move up
-							</Button>
-							<Button variant="outline" onclick={() => moveRule(1)}>
-								<ArrowDownIcon class="size-4" />
-								Move down
-							</Button>
-							<Button variant="outline" onclick={removeRule}>
-								<Trash2Icon class="size-4" />
-								Delete
-							</Button>
-							<Button disabled={!rulesDirty || rulesSaving} onclick={() => void persistRules()}>
-								<SaveIcon class="size-4" />
-								{rulesSaving ? 'Applying…' : 'Apply rules'}
-							</Button>
-						</div>
-						{:else if mode === 'private'}
-							<div class="grid gap-2.5 md:grid-cols-[minmax(0,1fr)_12rem]">
-								<Input bind:value={privateAssetName} placeholder="New private asset name" />
-								<NativeSelect.NativeSelect bind:value={privateAssetKind}>
-								<option value="file">File</option>
-								<option value="directory">Directory</option>
-							</NativeSelect.NativeSelect>
-						</div>
-						<div class="flex flex-wrap gap-2">
-							<Button disabled={privateAssetBusy || privateAssetName.trim().length === 0} onclick={() => void createPrivateAsset()}>
-								<FolderPlusIcon class="size-4" />
-								{privateAssetBusy ? 'Creating…' : 'Create private asset'}
-							</Button>
-							{#if assetRoots}
-								<Badge variant="outline" class="bg-background/70">{assetRoots.privateRoots.memory}</Badge>
-							{/if}
-						</div>
-						{:else if mode === 'cli'}
-							<div class="grid gap-1.5">
-								<div class="text-sm font-medium">
-									{selectedCliEntry ? selectedCliEntry.commandLabel : 'Select one command to inspect its detail hint.'}
-								</div>
-								<div class="text-xs text-muted-foreground">
-									{selectedCliEntry
-										? selectedCliEntry.description
-										: 'The same grouped catalog also powers helpcenter inside the shell surfaces.'}
-								</div>
-							</div>
-							<div class="flex flex-wrap items-center gap-2">
-								{#if selectedCliGroup}
-									<Badge variant="outline" class="bg-background/70">{selectedCliGroup.title}</Badge>
-								{/if}
-								{#if selectedCliEntry?.detailHint}
-									<Badge variant="outline" class="bg-background/70">{selectedCliEntry.detailHint}</Badge>
-								{/if}
-								<Badge variant="outline" class="bg-background/70">
-									{filteredCliGroups.length} group{filteredCliGroups.length === 1 ? '' : 's'}
-								</Badge>
-							</div>
-						{:else}
-							<div class="grid gap-2 md:hidden">
-								<div class="min-w-0 truncate text-[13px] font-medium" title={selectedExplorerPath ?? ''}>
-										{selectedExplorerPath ?? 'Select one path to stage a quick rule.'}
-								</div>
-								<div class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1.5">
-									<NativeSelect.NativeSelect
-										bind:value={quickRuleMode}
-										class="min-w-0"
-									aria-label="Quick rule access mode"
-									title={quickRuleMode === 'ro' ? 'Read only' : 'Read write'}
-								>
-										<option value="ro">RO</option>
-										<option value="rw">RW</option>
-									</NativeSelect.NativeSelect>
-									<Button variant="outline" size="sm" class="px-2.5" onclick={stageQuickRule}>
-										<PlusIcon class="size-4" />
-										Stage
-									</Button>
-									<Button size="sm" class="px-2.5" disabled={!rulesDirty || rulesSaving} onclick={() => void persistRules()}>
-										<SaveIcon class="size-4" />
-										{rulesSaving ? 'Applying…' : 'Apply'}
-									</Button>
-							</div>
-						</div>
-						<div class="hidden md:grid md:gap-2">
-							<div class="text-sm font-medium">
-								{selectedExplorerPath ? `Selected path: ${selectedExplorerPath}` : 'Select one path to stage a quick rule.'}
-							</div>
-							<div class="text-xs text-muted-foreground">
-								Quick edit only stages one rule; the full catalog lives in Rules mode.
-							</div>
-						</div>
-						<div class="hidden md:flex md:flex-wrap md:items-center md:gap-2">
-							<NativeSelect.NativeSelect bind:value={quickRuleMode} class="min-w-36">
-								<option value="ro">Read only</option>
-								<option value="rw">Read write</option>
-							</NativeSelect.NativeSelect>
-							<Button variant="outline" onclick={stageQuickRule}>
-								<PlusIcon class="size-4" />
-								Stage rule
-							</Button>
-							<Button disabled={!rulesDirty || rulesSaving} onclick={() => void persistRules()}>
-								<SaveIcon class="size-4" />
-								{rulesSaving ? 'Applying…' : 'Apply rules'}
-							</Button>
-						</div>
-					{/if}
-				</Card.Content>
-			</Card.Root>
-		{/snippet}
-
 		{#snippet drawer()}
-			{#snippet workspaceDrawerSummary()}
-				{#if mode === 'cli' && selectedCliEntry}
-					<div><span class="font-medium text-foreground">Group:</span> {selectedCliGroup?.title ?? 'CLI'}</div>
-					<div><span class="font-medium text-foreground">Command:</span> {selectedCliEntry.commandLabel}</div>
-					{#if selectedCliEntry.detailHint}
-						<div><span class="font-medium text-foreground">Hint:</span> {selectedCliEntry.detailHint}</div>
-					{/if}
-				{:else if mode !== 'rules' && preview}
-					<div class="break-all"><span class="font-medium text-foreground">Path:</span> {preview.path}</div>
-					<div><span class="font-medium text-foreground">Kind:</span> {preview.previewKind}</div>
-					<div><span class="font-medium text-foreground">Size:</span> {preview.sizeBytes} bytes</div>
-				{:else if selectedRule}
-					<div><span class="font-medium text-foreground">Priority:</span> {selectedRuleIndex + 1}</div>
-					<div><span class="font-medium text-foreground">Access:</span> {selectedRule.mode}</div>
-				{:else}
-					<div>No secondary facts are available yet.</div>
-				{/if}
-			{/snippet}
-
-			<WorkbenchDetailDrawer
-				tone={detailCompact ? 'page' : 'pane'}
-				title={mode === 'rules' ? 'Rule detail' : mode === 'cli' ? 'Command detail' : 'Preview'}
-				description={
-					mode === 'rules'
-						? 'Rules keeps the drawer informational while editing stays below.'
-						: mode === 'cli'
-							? 'Command discovery stays grouped while the drawer holds the currently selected detail hint.'
-						: 'Preview stays dominant and metadata remains secondary.'
-				}
-				contentClass={cn(mode !== 'rules' && detailCompact && 'min-h-full')}
-				summary={workspaceDrawerSummary}
-			>
-				{#if mode === 'rules'}
-					<div class="rounded-[0.85rem] bg-muted/24 px-4 py-3.5 text-sm">
-						{#if selectedRule}
-							<div class="font-semibold">{selectedRule.pattern}</div>
-							<div class="mt-2 text-muted-foreground">
-								{selectedRule.enabled ? 'Enabled' : 'Disabled'} · {selectedRule.mode}
-							</div>
-						{:else}
-							No rule selected.
-						{/if}
-					</div>
-				{:else if mode === 'cli'}
-					{#if cliLoading}
-						<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[0.9rem] bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
-							<div class="grid max-w-[16rem] gap-2">
-								<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
-								<div class="font-medium text-foreground">Loading command detail…</div>
-								<div class="text-xs leading-5 text-muted-foreground">Waiting for the grouped CLI catalog to finish loading.</div>
-							</div>
-						</div>
-					{:else if !selectedCliEntry}
-						<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[0.9rem] bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
-							<div class="grid max-w-[16rem] gap-2">
-								<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
-								<div class="font-medium text-foreground">Select one command to inspect its detail hint.</div>
-								<div class="text-xs leading-5 text-muted-foreground">Builtins point back to `help`, while runtime and workspace commands point back to `--help`.</div>
-							</div>
-						</div>
-					{:else}
-						<div class="grid gap-3 rounded-[0.9rem] bg-muted/24 px-4 py-4 text-sm">
-							<div class="grid gap-1">
-								<code class="w-fit rounded bg-background px-2 py-1 text-[11px] font-semibold md:text-xs">{selectedCliEntry.commandLabel}</code>
-								{#if selectedCliEntry.displayName !== selectedCliEntry.commandLabel}
-									<div class="font-semibold">{selectedCliEntry.displayName}</div>
-								{/if}
-								<div class="text-muted-foreground">{selectedCliEntry.description}</div>
-							</div>
-							{#if selectedCliEntry.detailHint}
-								<div class="grid gap-1 rounded-[0.8rem] border border-border/60 bg-background/70 px-3 py-2.5">
-									<div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Detail hint</div>
-									<code class="break-all text-[11px] md:text-xs">{selectedCliEntry.detailHint}</code>
-								</div>
-							{/if}
-							<div class="flex flex-wrap gap-2">
-								{#if selectedCliGroup}
-									<Badge variant="outline">{selectedCliGroup.title}</Badge>
-								{/if}
-								{#if selectedCliEntry.metadataState === 'fallback'}
-									<Badge variant="secondary">Fallback metadata</Badge>
-								{/if}
-								{#if selectedCliEntry.toolFileName}
-									<Badge variant="outline">{selectedCliEntry.toolFileName}</Badge>
-								{/if}
-							</div>
-						</div>
-					{/if}
-				{:else if previewLoading}
+		{#snippet workspacePreviewDetail()}
+				{#if previewLoading}
 					<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[0.9rem] bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
 						<div class="grid max-w-[16rem] gap-2">
 							<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
@@ -1420,8 +1370,248 @@
 						</div>
 					</div>
 				{/if}
+			{/snippet}
+
+			<WorkbenchDetailDrawer
+				data-testid="workspace-detail-drawer"
+				tone={detailCompact ? 'page' : 'pane'}
+				title={mode === 'rules' ? 'Rule detail' : mode === 'cli' ? 'Command detail' : mode === 'private' ? 'Private detail' : 'Preview'}
+				description={
+					mode === 'rules'
+						? 'Rules editing and apply actions stay inside this drawer.'
+						: mode === 'cli'
+							? 'Command discovery stays grouped while runtime-sensitive execution stays explicit in this drawer.'
+						: mode === 'private'
+							? 'Create avatar-private assets here, then inspect the currently selected entry below.'
+						: 'Preview stays dominant while quick rule staging stays beside the selected path.'
+				}
+				contentClass={cn(mode !== 'rules' && detailCompact && 'min-h-full')}
+			>
+				{#if mode === 'rules'}
+					<div class="grid gap-3 rounded-[0.9rem] bg-muted/24 px-4 py-4 text-sm">
+						{#if selectedRule}
+							<div class="grid gap-2.5">
+								<div class="font-semibold">{selectedRule.pattern}</div>
+								<div class="grid gap-2.5">
+									<Input
+										value={selectedRule.pattern}
+										oninput={(event) => {
+											const value = (event.currentTarget as HTMLInputElement).value;
+											rules = rules.map((rule) => (rule.id === selectedRule.id ? { ...rule, pattern: value } : rule));
+											rulesDirty = true;
+										}}
+									/>
+									<NativeSelect.NativeSelect
+										value={selectedRule.mode}
+										onchange={(event) => {
+											const value = (event.currentTarget as HTMLSelectElement).value as 'ro' | 'rw';
+											rules = rules.map((rule) => (rule.id === selectedRule.id ? { ...rule, mode: value } : rule));
+											rulesDirty = true;
+										}}
+									>
+										<option value="ro">Read only</option>
+										<option value="rw">Read write</option>
+									</NativeSelect.NativeSelect>
+									<label class="flex items-center gap-2 text-sm">
+										<input
+											type="checkbox"
+											checked={selectedRule.enabled}
+											onchange={(event) => {
+												const checked = (event.currentTarget as HTMLInputElement).checked;
+												rules = rules.map((rule) => (rule.id === selectedRule.id ? { ...rule, enabled: checked } : rule));
+												rulesDirty = true;
+											}}
+										/>
+										Enabled
+									</label>
+								</div>
+							</div>
+						{:else}
+							No rule selected.
+						{/if}
+						<div class="flex flex-wrap gap-2">
+							<Button variant="outline" onclick={addRule}>
+								<PlusIcon class="size-4" />
+								Add rule
+							</Button>
+							<Button variant="outline" disabled={!selectedRule} onclick={duplicateRule}>
+								<PlusIcon class="size-4" />
+								Duplicate
+							</Button>
+							<Button variant="outline" disabled={selectedRuleIndex <= 0} onclick={() => moveRule(-1)}>
+								<ArrowUpIcon class="size-4" />
+								Move up
+							</Button>
+							<Button
+								variant="outline"
+								disabled={selectedRuleIndex < 0 || selectedRuleIndex >= rules.length - 1}
+								onclick={() => moveRule(1)}
+							>
+								<ArrowDownIcon class="size-4" />
+								Move down
+							</Button>
+							<Button variant="outline" disabled={!selectedRule} onclick={removeRule}>
+								<Trash2Icon class="size-4" />
+								Delete
+							</Button>
+							<Button disabled={!rulesDirty || rulesSaving} onclick={() => void persistRules()}>
+								<SaveIcon class="size-4" />
+								{rulesSaving ? 'Applying…' : 'Apply rules'}
+							</Button>
+						</div>
+					</div>
+				{:else if mode === 'cli'}
+					{#if cliLoading}
+						<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[0.9rem] bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
+							<div class="grid max-w-[16rem] gap-2">
+								<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
+								<div class="font-medium text-foreground">Loading command detail…</div>
+								<div class="text-xs leading-5 text-muted-foreground">Waiting for the grouped CLI catalog to finish loading.</div>
+							</div>
+						</div>
+					{:else if !selectedCliEntry}
+						<div class="grid min-h-[clamp(10rem,26vh,16rem)] place-items-center rounded-[0.9rem] bg-[radial-gradient(circle_at_top,color-mix(in_srgb,var(--muted),transparent_18%),transparent_72%)] px-4 py-6 text-center text-sm text-muted-foreground">
+							<div class="grid max-w-[16rem] gap-2">
+								<SearchIcon class="mx-auto size-6 text-muted-foreground/70" />
+								<div class="font-medium text-foreground">Select one command to inspect its detail hint.</div>
+								<div class="text-xs leading-5 text-muted-foreground">Builtins point back to `help`, while runtime and workspace commands point back to `--help`.</div>
+							</div>
+						</div>
+					{:else}
+						<div class="grid gap-3 rounded-[0.9rem] bg-muted/24 px-4 py-4 text-sm">
+							<div class="grid gap-1">
+								<code class="w-fit rounded bg-background px-2 py-1 text-[11px] font-semibold md:text-xs">{selectedCliEntry.commandLabel}</code>
+								{#if selectedCliEntry.displayName !== selectedCliEntry.commandLabel}
+									<div class="font-semibold">{selectedCliEntry.displayName}</div>
+								{/if}
+								<div class="text-muted-foreground">{selectedCliEntry.description}</div>
+							</div>
+							{#if selectedCliEntry.detailHint}
+								<div class="grid gap-1 rounded-[0.8rem] border border-border/60 bg-background/70 px-3 py-2.5">
+									<div class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Detail hint</div>
+									<code class="break-all text-[11px] md:text-xs">{selectedCliEntry.detailHint}</code>
+								</div>
+							{/if}
+							{#if selectedCliRuntimeNotice}
+								<div class="grid gap-1 rounded-[0.8rem] border border-amber-500/30 bg-amber-500/8 px-3 py-2.5 text-xs text-amber-950 dark:text-amber-100">
+									<div class="font-semibold">{selectedCliRuntimeNotice.title}</div>
+									<div>{selectedCliRuntimeNotice.description}</div>
+								</div>
+							{/if}
+							{#if workspaceShellError}
+								<div class="grid gap-1 rounded-[0.8rem] border border-destructive/30 bg-destructive/8 px-3 py-2.5 text-xs text-destructive">
+									<div class="font-semibold">Shell launch failed.</div>
+									<div>{workspaceShellError}</div>
+								</div>
+							{/if}
+							<div class="flex flex-wrap gap-2">
+								{#if selectedCliGroup}
+									<Badge variant="outline">{selectedCliGroup.title}</Badge>
+								{/if}
+								{#if selectedCliEntry.metadataState === 'fallback'}
+									<Badge variant="secondary">Fallback metadata</Badge>
+								{/if}
+								{#if selectedCliEntry.toolFileName}
+									<Badge variant="outline">{selectedCliEntry.toolFileName}</Badge>
+								{/if}
+								{#if selectedCliNeedsRootRuntime && !selectedRootRuntimeRunning}
+									<Badge variant="outline">{selectedRootRuntimeStarting ? 'runtime starting' : 'runtime stopped'}</Badge>
+								{/if}
+							</div>
+							<div class="flex flex-wrap gap-2">
+								<Button
+									data-testid="workspace-cli-open-shell-button"
+									disabled={!selectedCliShellLaunch || workspaceShellPreparing}
+									onclick={() => void openCliShellDialog()}
+								>
+									<PlayIcon class="size-4" />
+									{selectedCliRunLabel}
+								</Button>
+								{#if selectedCliShellLaunch}
+									<Badge variant="outline">{selectedCliShellLaunch.surface}</Badge>
+								{/if}
+							</div>
+						</div>
+					{/if}
+				{:else if mode === 'private'}
+					<div class="grid gap-4">
+						<div class="grid gap-3 rounded-[0.9rem] bg-muted/24 px-4 py-4 text-sm">
+							<div class="grid gap-1">
+								<div class="font-semibold">Create private asset</div>
+								<div class="text-muted-foreground">New private files and folders are scoped to the selected avatar lens.</div>
+							</div>
+							<div class="grid gap-2.5">
+								<Input bind:value={privateAssetName} placeholder="New private asset name" />
+								<NativeSelect.NativeSelect bind:value={privateAssetKind}>
+									<option value="file">File</option>
+									<option value="directory">Directory</option>
+								</NativeSelect.NativeSelect>
+							</div>
+							<div class="flex flex-wrap gap-2">
+								<Button disabled={privateAssetBusy || privateAssetName.trim().length === 0} onclick={() => void createPrivateAsset()}>
+									<FolderPlusIcon class="size-4" />
+									{privateAssetBusy ? 'Creating…' : 'Create private asset'}
+								</Button>
+								{#if assetRoots}
+									<Badge variant="outline">{assetRoots.privateRoots.memory}</Badge>
+								{/if}
+							</div>
+						</div>
+						{@render workspacePreviewDetail()}
+					</div>
+				{:else if mode === 'explorer'}
+					<div class="grid gap-4">
+						<div class="grid gap-3 rounded-[0.9rem] bg-muted/24 px-4 py-4 text-sm">
+							<div class="grid gap-1">
+								<div class="font-semibold">
+									{selectedExplorerPath ? `Stage rule for ${selectedExplorerPath}` : 'Select one path to stage a quick rule.'}
+								</div>
+								<div class="text-muted-foreground">
+									Quick edit only stages one rule; the full catalog still lives in Rules mode.
+								</div>
+							</div>
+							<div class="flex flex-wrap items-center gap-2">
+								<NativeSelect.NativeSelect
+									bind:value={quickRuleMode}
+									class="min-w-36"
+									aria-label="Quick rule access mode"
+									title={quickRuleMode === 'ro' ? 'Read only' : 'Read write'}
+								>
+									<option value="ro">Read only</option>
+									<option value="rw">Read write</option>
+								</NativeSelect.NativeSelect>
+								<Button variant="outline" disabled={!selectedExplorerPath} onclick={stageQuickRule}>
+									<PlusIcon class="size-4" />
+									Stage rule
+								</Button>
+								<Button disabled={!rulesDirty || rulesSaving} onclick={() => void persistRules()}>
+									<SaveIcon class="size-4" />
+									{rulesSaving ? 'Applying…' : 'Apply rules'}
+								</Button>
+							</div>
+						</div>
+						{@render workspacePreviewDetail()}
+					</div>
+				{:else}
+					{@render workspacePreviewDetail()}
+				{/if}
 			</WorkbenchDetailDrawer>
-		{/snippet}
+	{/snippet}
 	</WorkbenchPageContent>
 	{/if}
 </div>
+
+<WorkspaceShellDialog
+	bind:open={workspaceShellOpen}
+	launch={workspaceShellLaunch}
+	launchKey={workspaceShellLaunchKey}
+	onExec={async (input) =>
+		await controller.runtimeStore.execRuntimeWorkspace({
+			avatar: input.avatar,
+			command: input.command,
+			cwd: input.cwd,
+			runtimeId: input.runtimeId,
+			surface: input.surface,
+			workspacePath: input.workspacePath,
+		})}
+/>

@@ -445,9 +445,26 @@ const createMockClient = (input: {
         commandLabel: string;
         displayName: string;
         description: string;
+        suggestedCommand: string;
         detailHint?: string;
+        preferredExecutionSurface?: "root-workspace" | "public-workspace";
       }>;
     }>;
+  }>;
+  workspaceExecMutate?: (input: {
+    runtimeId: string;
+    workspacePath: string;
+    avatar: string;
+    surface?: "root-workspace" | "public-workspace";
+    command: string;
+    cwd?: string;
+    env?: Record<string, string>;
+    stdin?: string;
+  }) => Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    cwd: string;
   }>;
   globalAvatarCatalogQuery?: () => Promise<{ items: GlobalAvatarCatalogEntry[] }>;
   globalAvatarCreateMutate?: (input: {
@@ -465,9 +482,7 @@ const createMockClient = (input: {
     targetAvatar: string;
   }) => Promise<{ avatar: WorkspaceAvatarCatalogEntry }>;
   workspaceCleanMissingMutate?: () => Promise<{ removed: string[] }>;
-  skillCatalogQuery?: (input: {
-    rootKind: "builtin" | "shared" | "global";
-  }) => Promise<{ items: unknown[] }>;
+  skillCatalogQuery?: (input: { rootKind: "builtin" | "shared" | "global" }) => Promise<{ items: unknown[] }>;
   skillAvatarCatalogQuery?: () => Promise<{ items: unknown[] }>;
   skillCatalogTreeQuery?: (input: {
     rootKind: "builtin" | "shared" | "global";
@@ -926,11 +941,7 @@ const createMockClient = (input: {
     accessToken?: string;
   }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
   terminalGlobalDeleteMutate?: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
-  terminalGlobalSetConfigMutation?: (input: {
-    terminalId: string;
-    cols?: number;
-    rows?: number;
-  }) => Promise<{
+  terminalGlobalSetConfigMutation?: (input: { terminalId: string; cols?: number; rows?: number }) => Promise<{
     result: {
       config: {
         terminalId: string;
@@ -1689,9 +1700,10 @@ const createMockClient = (input: {
                       },
                       processPhase: "running" as const,
                     },
-                    appliedLiveFields: [payload.cols !== undefined ? "cols" : null, payload.rows !== undefined ? "rows" : null].filter(
-                      (value): value is string => value !== null,
-                    ),
+                    appliedLiveFields: [
+                      payload.cols !== undefined ? "cols" : null,
+                      payload.rows !== undefined ? "rows" : null,
+                    ].filter((value): value is string => value !== null),
                     nextBootstrapFields: [],
                   },
                 },
@@ -2174,6 +2186,21 @@ const createMockClient = (input: {
         cliCatalog: {
           query: async (payload: { workspacePath: string; avatar: string }) =>
             input.workspaceCliCatalogQuery ? await input.workspaceCliCatalogQuery(payload) : { groups: [] },
+        },
+        exec: {
+          mutate: async (payload: {
+            runtimeId: string;
+            workspacePath: string;
+            avatar: string;
+            surface?: "root-workspace" | "public-workspace";
+            command: string;
+            cwd?: string;
+            env?: Record<string, string>;
+            stdin?: string;
+          }) =>
+            input.workspaceExecMutate
+              ? await input.workspaceExecMutate(payload)
+              : { stdout: "", stderr: "", exitCode: 0, cwd: payload.cwd ?? payload.workspacePath },
         },
         forkAvatar: {
           mutate: async (payload: { workspacePath: string; avatar: string }) =>
@@ -9972,16 +9999,14 @@ describe("Feature: runtime store synchronization", () => {
     };
 
     let catalogInput: { rootKind: "builtin" | "shared" | "global" } | null = null;
-    let avatarTreeInput:
-      | {
-          avatarNickname: string;
-          workspacePath: string;
-          name: string;
-          path?: string;
-          offset?: number;
-          limit?: number;
-        }
-      | null = null;
+    let avatarTreeInput: {
+      avatarNickname: string;
+      workspacePath: string;
+      name: string;
+      path?: string;
+      offset?: number;
+      limit?: number;
+    } | null = null;
 
     const store = new RuntimeStore(
       createMockClient({
@@ -10002,6 +10027,9 @@ describe("Feature: runtime store synchronization", () => {
     );
 
     expect(await store.listSkillCatalog({ rootKind: "shared" })).toEqual(skillCatalog);
+    if (!catalogInput) {
+      throw new Error("expected skill catalog query input");
+    }
     expect(catalogInput).toEqual({ rootKind: "shared" });
 
     expect(await store.listSkillAvatarCatalog()).toEqual(avatarCatalog);
@@ -10027,6 +10055,9 @@ describe("Feature: runtime store synchronization", () => {
         path: "/",
       }),
     ).toEqual(skillTree);
+    if (!avatarTreeInput) {
+      throw new Error("expected avatar tree query input");
+    }
     expect(avatarTreeInput).toEqual({
       avatarNickname: "architect",
       workspacePath: "~/",
@@ -10061,7 +10092,9 @@ describe("Feature: runtime store synchronization", () => {
                   commandLabel: "message send",
                   displayName: "send",
                   description: "Send a durable room message.",
+                  suggestedCommand: "message send --help",
                   detailHint: "message send --help",
+                  preferredExecutionSurface: "root-workspace",
                 },
               ],
             },
@@ -10082,10 +10115,68 @@ describe("Feature: runtime store synchronization", () => {
         entries: [
           expect.objectContaining({
             commandLabel: "message send",
+            suggestedCommand: "message send --help",
             detailHint: "message send --help",
+            preferredExecutionSurface: "root-workspace",
           }),
         ],
       }),
     ]);
+  });
+
+  test("Scenario: Given the workspace runner overlay reruns one command When the runtime store executes workspace bash Then the typed exec surface is forwarded intact", async () => {
+    let execInput: {
+      runtimeId: string;
+      workspacePath: string;
+      avatar: string;
+      surface?: "root-workspace" | "public-workspace";
+      command: string;
+      cwd?: string;
+      env?: Record<string, string>;
+      stdin?: string;
+    } | null = null;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        workspaceExecMutate: async (input) => {
+          execInput = input;
+          return {
+            stdout: "ok\n",
+            stderr: "",
+            exitCode: 0,
+            cwd: input.cwd ?? input.workspacePath,
+          };
+        },
+      }),
+    );
+
+    const output = await store.execRuntimeWorkspace({
+      runtimeId: "runtime-1",
+      workspacePath: "/repo/agenter",
+      avatar: "reviewer",
+      surface: "root-workspace",
+      command: "workspace list --help",
+      cwd: "/repo/agenter",
+      stdin: '{"mode":"check"}',
+    });
+
+    if (!execInput) {
+      throw new Error("expected workspace exec input");
+    }
+    expect(execInput).toEqual({
+      runtimeId: "runtime-1",
+      workspacePath: "/repo/agenter",
+      avatar: "reviewer",
+      surface: "root-workspace",
+      command: "workspace list --help",
+      cwd: "/repo/agenter",
+      stdin: '{"mode":"check"}',
+    });
+    expect(output).toEqual({
+      stdout: "ok\n",
+      stderr: "",
+      exitCode: 0,
+      cwd: "/repo/agenter",
+    });
   });
 });

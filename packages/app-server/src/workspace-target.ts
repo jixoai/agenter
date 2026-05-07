@@ -15,12 +15,23 @@ export const isGlobalWorkspacePath = (value: string, homeDir = homedir()): boole
   return resolve(value) === resolve(homeDir);
 };
 
+export const resolveWorkspaceFsPath = (value: string, homeDir = homedir()): string => {
+  const trimmed = value.trim();
+  if (normalizeGlobalToken(trimmed) || trimmed === "~") {
+    return resolve(homeDir);
+  }
+  if (trimmed.startsWith("~/")) {
+    return resolve(homeDir, trimmed.slice(2));
+  }
+  return resolve(trimmed);
+};
+
 export const toWorkspacePath = (value: string, homeDir = homedir()): string => {
-  return isGlobalWorkspacePath(value, homeDir) ? GLOBAL_WORKSPACE_PATH : resolve(value);
+  return isGlobalWorkspacePath(value, homeDir) ? GLOBAL_WORKSPACE_PATH : resolveWorkspaceFsPath(value, homeDir);
 };
 
 export const toWorkspaceCwd = (value: string, homeDir = homedir()): string => {
-  return isGlobalWorkspacePath(value, homeDir) ? resolve(homeDir) : resolve(value);
+  return isGlobalWorkspacePath(value, homeDir) ? resolve(homeDir) : resolveWorkspaceFsPath(value, homeDir);
 };
 
 export const workspaceDisplayName = (workspacePath: string): string => {

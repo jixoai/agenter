@@ -1,7 +1,6 @@
 import {
   AttentionStore,
   AttentionSystem,
-  normalizeAttentionContextTemplate,
   type AttentionActiveContextMatch,
   type AttentionCommit,
   type AttentionCommitChange,
@@ -27,6 +26,10 @@ import type {
   AttentionCommitRefRecord as DeliveryCommitRefRecord,
 } from "@agenter/loopbus-kernel";
 import {
+  parseManagedInvitationDescriptorInput,
+  signManagedInvitationAcceptProof,
+} from "@agenter/managed-seat-invitation-handshake";
+import {
   MessageControlPlane,
   resolveMessageControlDbPath,
   type MessageActorId,
@@ -38,8 +41,8 @@ import {
   type MessageControlPlaneEntry,
   type MessageErrorPayload,
   type MessageFocusOp,
-  type MessageInvitationRecord,
   type MessageInteractivePayload,
+  type MessageInvitationRecord,
   type MessageIssueGrantInput,
   type MessageIssuedGrant,
   type MessageManagedSeatClass,
@@ -49,23 +52,19 @@ import {
   type MessageSnapshot,
 } from "@agenter/message-system";
 import {
-  parseManagedInvitationDescriptorInput,
-  signManagedInvitationAcceptProof,
-} from "@agenter/managed-seat-invitation-handshake";
-import {
   SessionDb,
   type SessionAiCallRecord,
   type SessionAssetRecord,
   type SessionAttentionDispatchRecord,
-  type SessionEffectLedgerRecord,
-  type SessionNotifyQuotaRecord,
   type SessionAttentionReceiptRecord,
   type SessionCollectedInput,
   type SessionCollectedInputPart,
   type ReversePage as SessionDbReversePage,
   type ReverseTimeCursor as SessionDbReverseTimeCursor,
+  type SessionEffectLedgerRecord,
   type SessionMessageRecord,
   type SessionMessageUpsertInput,
+  type SessionNotifyQuotaRecord,
   type SessionPromptWindowRecord,
   type SessionRuntimeWatchPredicate,
   type SessionRuntimeWatchRecord,
@@ -84,9 +83,9 @@ import {
 import {
   DEFAULT_TERMINAL_FONT,
   TerminalControlPlane,
-  type TerminalAccessProjection,
   type TerminalAwaitResult as ControlPlaneTerminalAwaitResult,
   type TerminalReadResult as ControlPlaneTerminalReadResult,
+  type TerminalAccessProjection,
   type TerminalActorId,
   type TerminalAwaitInput,
   type TerminalControlPlaneConfig,
@@ -133,6 +132,11 @@ import {
   type TerminalAttentionSrc,
 } from "./attention-src";
 import {
+  readAvatarSeatDocument,
+  saveAvatarMessageSeatCredential,
+  saveAvatarTerminalSeatCredential,
+} from "./avatar-seat-store";
+import {
   collectClientMessageIds,
   detectChatCycleKind,
   toChatCycleId,
@@ -167,12 +171,7 @@ import {
   type LoopTerminalSourceRef,
 } from "./loopbus-plugin-runtime";
 import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
-import {
-  readAvatarSeatDocument,
-  saveAvatarMessageSeatCredential,
-  saveAvatarTerminalSeatCredential,
-} from "./avatar-seat-store";
-import { listMessageSeatEntries, summarizeMessageChannelPresence } from "./message-channel-presence";
+import { summarizeMessageChannelPresence } from "./message-channel-presence";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
@@ -199,9 +198,7 @@ import {
   createRuntimeShellWhichCommand,
   materializeRuntimeShellBin,
 } from "./runtime-shell-bin";
-import {
-  RuntimeSkillSystem,
-} from "./runtime-skill-system";
+import { RuntimeSkillSystem } from "./runtime-skill-system";
 import { listRuntimeSkillMountRoots } from "./runtime-skills";
 import { RuntimeMessageKernelAdapter } from "./runtime-system-kernel-adapters/message-adapter";
 import {
@@ -211,8 +208,8 @@ import {
 import { RuntimeTerminalKernelAdapter } from "./runtime-system-kernel-adapters/terminal-adapter";
 import type { RuntimeIngressCommitResult, RuntimeSystemIngressEnvelope } from "./runtime-system-kernel-adapters/types";
 import {
-  projectRuntimeAttentionContext,
   projectRuntimeAttentionActiveMatch,
+  projectRuntimeAttentionContext,
   projectRuntimeMessageChannel,
   projectRuntimeMessageOverview,
   projectRuntimeMessageSnapshot,
@@ -236,6 +233,7 @@ import {
   type RuntimeWorkspaceSurface,
 } from "./runtime-tool-views";
 import { createSpanId, createTraceEvent, createTraceId, createTraceRef } from "./runtime-trace";
+import { RuntimeWatchStore, type RuntimeWatchRecord } from "./runtime-watch-store";
 import { buildSessionAssetRelativePath, resolveSessionAssetKind, toChatSessionAsset } from "./session-assets";
 import { resolveSessionRoomActorId } from "./session-chat-projection";
 import { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
@@ -257,7 +255,6 @@ import type { ChatMessage, ChatSessionAsset, ModelCapabilities, TaskStage } from
 import { UsageAnalyticsDb } from "./usage-analytics-db";
 import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "./usage-analytics-paths";
 import type { UsageAnalyticsFactInput } from "./usage-analytics-types";
-import { RuntimeWatchStore, type RuntimeWatchRecord } from "./runtime-watch-store";
 import {
   listWorkspaceSettingsLayers,
   readWorkspaceSettingsLayer,
@@ -275,6 +272,7 @@ import {
   type WorkspaceGrantRecord,
   type WorkspaceMountRecord,
 } from "./workspace-system";
+import { resolveWorkspaceFsPath } from "./workspace-target";
 
 const createId = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const DEFAULT_CHAT_OWNER = "agenter";
@@ -1478,9 +1476,7 @@ const cloneEffectLedgerRecord = (record: SessionEffectLedgerRecord): SessionEffe
   meta: record.meta ? structuredClone(record.meta) : undefined,
 });
 
-const projectRuntimeTerminalCreateAck = (
-  terminal: RuntimeTerminalView,
-): RuntimeTerminalCreateAckView => {
+const projectRuntimeTerminalCreateAck = (terminal: RuntimeTerminalView): RuntimeTerminalCreateAckView => {
   const { access: _access, ...rest } = terminal;
   return {
     ...rest,
@@ -2455,10 +2451,7 @@ export class SessionRuntime {
     return `${contextId}:${sourceId}`;
   }
 
-  private listNotifyQuotaHistory(input: {
-    quotaTarget: string;
-    sentAfter?: number;
-  }): SessionNotifyQuotaRecord[] {
+  private listNotifyQuotaHistory(input: { quotaTarget: string; sentAfter?: number }): SessionNotifyQuotaRecord[] {
     if (!this.sessionDb) {
       return [];
     }
@@ -2731,7 +2724,10 @@ export class SessionRuntime {
     return channel ? this.projectMessageChannelForTooling(channel) : null;
   }
 
-  private async readMessageChannelForTooling(input: { chatId: string; limit?: number }): Promise<RuntimeMessageSnapshotView> {
+  private async readMessageChannelForTooling(input: {
+    chatId: string;
+    limit?: number;
+  }): Promise<RuntimeMessageSnapshotView> {
     const visibleRooms = this.listVisibleMessageRoomSummaries(input.chatId);
     const snapshot = await this.readMessageChannel(input);
     return projectRuntimeMessageSnapshot(snapshot, {
@@ -3146,7 +3142,6 @@ export class SessionRuntime {
     });
     this.emitAttentionDeliveryState();
   }
-
 
   private async deliverRuntimeMessageDispatch(input: {
     actionId: string;
@@ -4014,11 +4009,7 @@ export class SessionRuntime {
             recordActivity: input.recordActivity,
           },
         });
-        return this.publishTerminalReadPayload(
-          input.terminalId,
-          response.result,
-          input.recordActivity ?? true,
-        );
+        return this.publishTerminalReadPayload(input.terminalId, response.result, input.recordActivity ?? true);
       }
     }
     return await this.readTerminalRepresentation(input.terminalId, {
@@ -5078,7 +5069,7 @@ export class SessionRuntime {
     });
   }
 
-  private async execRootWorkspaceBash(input: {
+  async execRootWorkspaceBash(input: {
     command: string;
     cwd?: string;
     env?: Record<string, string>;
@@ -5088,10 +5079,24 @@ export class SessionRuntime {
     if (!this.runtimeLocalApi || !this.options.avatarPrivateKey) {
       throw new Error("runtime local api unavailable");
     }
+    let explicitCwd: string | undefined;
+    if (typeof input.cwd === "string" && input.cwd.trim().length > 0) {
+      const normalizedCwd = resolveWorkspaceFsPath(input.cwd, this.getHomeDir());
+      const cwdResolution = await this.resolveRuntimeTerminalCwd({ cwd: normalizedCwd });
+      if (!cwdResolution.ok) {
+        return {
+          stdout: "",
+          stderr: `${cwdResolution.message}\n`,
+          exitCode: 1,
+          cwd: normalizedCwd,
+        };
+      }
+      explicitCwd = cwdResolution.cwd;
+    }
     materializeRuntimeShellBin(this.getRootWorkspacePath());
     return await this.getOrCreateRootWorkspaceShellWorld().exec({
       command: input.command,
-      cwd: input.cwd,
+      cwd: explicitCwd,
       env: buildRootWorkspaceShellEnvironment({
         rootWorkspacePath: this.getRootWorkspacePath(),
         homeDir: this.getHomeDir(),
@@ -5127,7 +5132,10 @@ export class SessionRuntime {
       workspacePath: authority.mount.workspacePath,
       avatar,
       command: input.command,
-      cwd: input.cwd ?? authority.defaultCwd,
+      cwd:
+        typeof input.cwd === "string" && input.cwd.trim().length > 0
+          ? resolveWorkspaceFsPath(input.cwd, this.getHomeDir())
+          : authority.defaultCwd,
       env: buildPublicWorkspaceShellEnvironment({
         env: input.env,
       }),
@@ -5365,7 +5373,9 @@ export class SessionRuntime {
         commit: commitById.get(entry.commitId) ?? null,
       }))
       .filter((item): item is { entry: StagedAttentionItemEntry; commit: AttentionCommit } => item.commit !== null)
-      .sort((left, right) => left.entry.updatedAt - right.entry.updatedAt || left.entry.key.localeCompare(right.entry.key));
+      .sort(
+        (left, right) => left.entry.updatedAt - right.entry.updatedAt || left.entry.key.localeCompare(right.entry.key),
+      );
     if (selectedEntries.length === 0) {
       return null;
     }
@@ -5569,24 +5579,23 @@ export class SessionRuntime {
         presentation: {
           summary: truncateAttentionTitle(content.trim()),
           body: buildMessageFactEnvelope({
-            message:
-              message ?? {
-                rowId: -1,
-                messageId: sourceMessageId,
-                chatId,
-                ref: undefined,
-                from,
-                kind: "text",
-                content,
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-                visibleAt: undefined,
-                readActorIds: [],
-                unreadActorIds: [],
-                senderActorId: undefined,
-                metadata: undefined,
-                attachments: undefined,
-              },
+            message: message ?? {
+              rowId: -1,
+              messageId: sourceMessageId,
+              chatId,
+              ref: undefined,
+              from,
+              kind: "text",
+              content,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              visibleAt: undefined,
+              readActorIds: [],
+              unreadActorIds: [],
+              senderActorId: undefined,
+              metadata: undefined,
+              attachments: undefined,
+            },
             chatTitle: channel?.title ?? chatId,
             chatKind: channel?.kind ?? "direct",
             contextId: channel?.contextId ?? this.getDefaultAttentionContextId(chatId),
@@ -7143,12 +7152,9 @@ export class SessionRuntime {
     const promptStore = this.createPromptStore(this.config);
     await promptStore.reload();
     this.runtimeSkillSystem = this.ensureRuntimeSkillSystem();
-    await this.handleRuntimeSkillRefreshResult(
-      this.runtimeSkillSystem.refresh({ publishReminders: false }),
-      {
-        notifyLoop: false,
-      },
-    );
+    await this.handleRuntimeSkillRefreshResult(this.runtimeSkillSystem.refresh({ publishReminders: false }), {
+      notifyLoop: false,
+    });
     if (this.listAttentionVisibleContextMatches().length > 0) {
       this.attentionFactsVersion += 1;
       this.requestAttentionContextBoundaryRefresh();
@@ -9014,7 +9020,9 @@ export class SessionRuntime {
     }
     if (injectedPlanIds.size === 0 && input.requestMessages) {
       for (const plan of this.pendingAttentionMessagePlans.values()) {
-        const matched = input.requestMessages.some((message) => modelMessageContentToText(message.content) === plan.text);
+        const matched = input.requestMessages.some(
+          (message) => modelMessageContentToText(message.content) === plan.text,
+        );
         if (matched) {
           injectedPlanIds.add(plan.messageId);
         }
@@ -9026,8 +9034,7 @@ export class SessionRuntime {
       if (!injectedPlanIds.has(messageId)) {
         continue;
       }
-      const previous =
-        nextSnapshots.get(plan.contextId) ?? this.attentionContextSnapshot.get(plan.contextId) ?? null;
+      const previous = nextSnapshots.get(plan.contextId) ?? this.attentionContextSnapshot.get(plan.contextId) ?? null;
       const mergedSnapshot =
         plan.kind === "items"
           ? {
@@ -9165,12 +9172,7 @@ export class SessionRuntime {
     const active = this.attentionSystem.listActiveContexts();
     const visible = this.listAttentionVisibleContextMatches();
     const selected = this.selectDirtyAttentionContexts(active);
-    const planMatches =
-      selected.length > 0
-        ? selected
-        : this.attentionBoundaryRefreshPending
-          ? visible
-          : [];
+    const planMatches = selected.length > 0 ? selected : this.attentionBoundaryRefreshPending ? visible : [];
     for (const match of planMatches) {
       for (const plan of this.selectAttentionProtocolPlan(match)) {
         if (!this.pendingAttentionMessagePlans.has(plan.messageId)) {
@@ -9201,9 +9203,12 @@ export class SessionRuntime {
   }
 
   private listAttentionVisibleContextMatches(): AttentionActiveContextMatch[] {
-    const activeById = new Map(this.attentionSystem.listActiveContexts().map((match) => [match.contextId, match] as const));
-    return this.attentionSystem.snapshot().contexts
-      .map((context) => activeById.get(context.contextId) ?? this.getAttentionContextMatch(context.contextId))
+    const activeById = new Map(
+      this.attentionSystem.listActiveContexts().map((match) => [match.contextId, match] as const),
+    );
+    return this.attentionSystem
+      .snapshot()
+      .contexts.map((context) => activeById.get(context.contextId) ?? this.getAttentionContextMatch(context.contextId))
       .filter((match): match is AttentionActiveContextMatch => match !== null)
       .filter((match) => match.context.focusState !== "muted")
       .sort((left, right) => {
@@ -9510,9 +9515,9 @@ export class SessionRuntime {
 
     const signalWaiters = ([...(loopPaused ? [] : (["terminal"] as const)), "user", "task", "attention"] as const).map(
       (kind) => ({
-      kind,
-      ...this.inputSignals[kind].waitAfter(this.inputSignalCursor[kind]),
-    }),
+        kind,
+        ...this.inputSignals[kind].waitAfter(this.inputSignalCursor[kind]),
+      }),
     );
     const unreadHandle = loopPaused
       ? null
@@ -9816,19 +9821,12 @@ export class SessionRuntime {
     }
 
     const outputs: LoopBusInput[] = [];
-    const planMatches =
-      selected.length > 0
-        ? selected
-        : this.attentionBoundaryRefreshPending
-          ? visible
-          : [];
+    const planMatches = selected.length > 0 ? selected : this.attentionBoundaryRefreshPending ? visible : [];
     const plannedContexts = new Set<string>();
     for (const match of planMatches) {
-      for (
-        const plan of this.selectAttentionProtocolPlan(match, {
-          reseedForDebt: forceCollect,
-        })
-      ) {
+      for (const plan of this.selectAttentionProtocolPlan(match, {
+        reseedForDebt: forceCollect,
+      })) {
         if (!forceCollect && this.pendingAttentionMessagePlans.has(plan.messageId)) {
           continue;
         }
@@ -10590,19 +10588,19 @@ export class SessionRuntime {
       ? "idle"
       : this.isLoopStopped()
         ? "paused"
-      : waitingReason === "attention_blocked"
-        ? "blocked"
-        : waitingReason === "attention_backoff"
-          ? "backoff"
-          : paused
-            ? "paused"
-            : input.phase !== "waiting_commits"
-              ? "running"
-              : waitingReason === "attention_debt"
-                ? "waiting"
-                : waitingReason === "ready_now"
-                  ? "running"
-                  : "idle";
+        : waitingReason === "attention_blocked"
+          ? "blocked"
+          : waitingReason === "attention_backoff"
+            ? "backoff"
+            : paused
+              ? "paused"
+              : input.phase !== "waiting_commits"
+                ? "running"
+                : waitingReason === "attention_debt"
+                  ? "waiting"
+                  : waitingReason === "ready_now"
+                    ? "running"
+                    : "idle";
     const next: LoopBusKernelState = {
       ...previous,
       phase: input.phase,

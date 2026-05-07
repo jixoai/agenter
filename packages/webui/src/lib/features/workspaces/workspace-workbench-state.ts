@@ -240,6 +240,9 @@ const isHumanFriendlyBuiltinDefault = (entry: WorkspaceCliCatalogEntry): boolean
 export const resolveWorkspaceCliDefaultEntryId = (
   groups: readonly WorkspaceCliCatalogGroup[],
   currentEntryId?: string | null,
+  options?: {
+    allowRootRuntimeDefault?: boolean;
+  },
 ): string | null => {
   if (currentEntryId) {
     const currentVisible = groups.some((group) => group.entries.some((entry) => entry.id === currentEntryId));
@@ -249,6 +252,9 @@ export const resolveWorkspaceCliDefaultEntryId = (
   }
 
   for (const group of groups) {
+    if (group.id === "root-runtime-cli" && options?.allowRootRuntimeDefault === false) {
+      continue;
+    }
     const preferredEntry = group.entries.find((entry) => isHumanFriendlyBuiltinDefault(entry)) ?? group.entries[0];
     if (preferredEntry) {
       return preferredEntry.id;

@@ -44,6 +44,7 @@ const mockState = vi.hoisted(() => ({
   wtermTerminals: [] as Array<{
     cols: number;
     rows: number;
+    bridge: unknown;
     host: HTMLElement;
     options: Record<string, unknown>;
     textarea: HTMLTextAreaElement;
@@ -55,7 +56,13 @@ const mockState = vi.hoisted(() => ({
     init: ReturnType<typeof vi.fn>;
     resize: ReturnType<typeof vi.fn>;
   }>,
-  ghosttyCoreLoad: vi.fn(async (options: unknown) => ({ options })),
+  ghosttyCoreLoad: vi.fn(async (options: unknown) => ({
+    options,
+    getCols: vi.fn(() => 80),
+    getScrollbackCell: vi.fn(() => ({ bg: 256, char: 32, fg: 256, flags: 0 })),
+    getScrollbackCount: vi.fn(() => 0),
+    getScrollbackLineLen: vi.fn(() => 0),
+  })),
   ghosttyInit: vi.fn(async () => undefined),
 }));
 
@@ -165,6 +172,7 @@ vi.mock("@wterm/dom", () => ({
     rows: number;
     readonly host: HTMLElement;
     readonly options: Record<string, unknown>;
+    readonly bridge: unknown;
     readonly textarea: HTMLTextAreaElement;
     readonly grid: HTMLDivElement;
     readonly rowsDom: HTMLDivElement[] = [];
@@ -220,6 +228,7 @@ vi.mock("@wterm/dom", () => ({
     constructor(host: HTMLElement, options: Record<string, unknown>) {
       this.host = host;
       this.options = options;
+      this.bridge = options.core;
       this.cols = Number(options.cols ?? 80);
       this.rows = Number(options.rows ?? 24);
       this.textarea = document.createElement("textarea");
@@ -232,15 +241,15 @@ vi.mock("@wterm/dom", () => ({
   },
 }));
 
+import { ghosttyWebRendererAdapter } from "../src/renderers/ghostty-web-renderer-adapter";
+import { wtermRendererAdapter } from "../src/renderers/wterm-renderer-adapter";
+import { xtermRendererAdapter } from "../src/renderers/xterm-renderer-adapter";
 import {
   TERMINAL_PUBLIC_INPUT_ATTRIBUTE,
   TERMINAL_PUBLIC_SCREEN_ATTRIBUTE,
   TERMINAL_PUBLIC_SCROLL_ATTRIBUTE,
 } from "../src/terminal-renderer-adapter";
 import { resolveTerminalAppearance } from "../src/terminal-renderer-profile";
-import { ghosttyWebRendererAdapter } from "../src/renderers/ghostty-web-renderer-adapter";
-import { wtermRendererAdapter } from "../src/renderers/wterm-renderer-adapter";
-import { xtermRendererAdapter } from "../src/renderers/xterm-renderer-adapter";
 
 const createAppearance = () =>
   resolveTerminalAppearance({
@@ -256,6 +265,21 @@ const createAppearance = () =>
       ligatures: false,
     },
   });
+
+interface MockWTermCore {
+  getCols: ReturnType<typeof vi.fn>;
+  getScrollbackCell: ReturnType<typeof vi.fn>;
+  getScrollbackCount: ReturnType<typeof vi.fn>;
+  getScrollbackLineLen: ReturnType<typeof vi.fn>;
+}
+
+const isMockWTermCore = (value: unknown): value is MockWTermCore =>
+  typeof value === "object" &&
+  value !== null &&
+  "getCols" in value &&
+  "getScrollbackCell" in value &&
+  "getScrollbackCount" in value &&
+  "getScrollbackLineLen" in value;
 
 describe("Feature: terminal renderer adapters", () => {
   const documentFontsLoad = vi.fn(async () => []);
@@ -340,9 +364,9 @@ describe("Feature: terminal renderer adapters", () => {
     expect(ghostty?.renderer.setTheme).toHaveBeenCalledWith(nextAppearance.theme);
     expect(ghostty?.renderer.setCursorStyle).toHaveBeenCalledWith(nextAppearance.cursorStyle);
     await ghosttySession.settlePresentation?.();
-    expect(document.head.querySelectorAll('style[data-terminal-font-asset="agenter-terminal-font-jetbrains-mono"]')).toHaveLength(
-      1,
-    );
+    expect(
+      document.head.querySelectorAll('style[data-terminal-font-asset="agenter-terminal-font-jetbrains-mono"]'),
+    ).toHaveLength(1);
     expect(documentFontsLoad.mock.calls).toEqual(
       expect.arrayContaining([
         ["500 16px 'JetBrains Mono'", "MW@#"],
@@ -404,10 +428,14 @@ describe("Feature: terminal renderer adapters", () => {
     expect(host.style.getPropertyValue("--term-fg")).toBe(appearance.theme.foreground);
     expect(host.style.fontFeatureSettings).toBe('"liga" 0, "calt" 0');
     expect(host.style.fontVariantLigatures).toBe("none");
+    expect(host.style.height).toBe("660px");
     expect(host.getAttribute(TERMINAL_PUBLIC_SCROLL_ATTRIBUTE)).toBe("true");
     expect(host.querySelector("textarea")?.getAttribute(TERMINAL_PUBLIC_INPUT_ATTRIBUTE)).toBe("true");
     expect(host.querySelector(".term-grid")?.getAttribute(TERMINAL_PUBLIC_SCREEN_ATTRIBUTE)).toBe("true");
     expect(session.getScreenMetrics()).toEqual({ width: 810, height: 600 });
+
+    session.resize(90, 12);
+    expect(host.style.height).toBe("264px");
 
     session.applyAppearance(
       resolveTerminalAppearance({
@@ -424,6 +452,34 @@ describe("Feature: terminal renderer adapters", () => {
     expect(host.style.getPropertyValue("--term-bg")).toBe("#f8fafc");
     expect(host.style.fontFeatureSettings).toBe('"liga" 1, "calt" 1');
     expect(host.style.fontVariantLigatures).toBe("normal");
+    expect(host.style.height).toBe("168px");
+  });
+
+  test("Scenario: Given wterm materializes blank scrollback rows When the adapter writes after render Then historical rows are refreshed from the core without replacing the live grid", async () => {
+    const host = document.createElement("div");
+    const session = await wtermRendererAdapter.createSession({
+      host,
+      cols: 80,
+      rows: 1,
+      scrollback: 2048,
+      appearance: createAppearance(),
+      onInputBytes: vi.fn(),
+    });
+    const wterm = mockState.wtermTerminals.at(-1);
+    if (!wterm || !isMockWTermCore(wterm.bridge)) {
+      throw new Error("wterm mock core was not captured");
+    }
+    const scrollbackRow = document.createElement("div");
+    scrollbackRow.className = "term-row term-scrollback-row";
+    wterm.grid.prepend(scrollbackRow);
+    wterm.bridge.getCols.mockReturnValue(80);
+    wterm.bridge.getScrollbackCount.mockReturnValue(1);
+    wterm.bridge.getScrollbackLineLen.mockReturnValue(0);
+
+    session.write("hello world\r\nnext prompt");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(scrollbackRow.textContent).toBe("hello world");
   });
 
   test("Scenario: Given wterm host metrics and inner grid metrics disagree When screen metrics are read Then the adapter reports the active terminal content box instead of the outer scroll host", async () => {

@@ -323,9 +323,8 @@ const patchRuntimeAttentionDeliveryState = (
   return next;
 };
 
-const replaceRuntimeAttentionDeliveryState = (
-  delivery: RuntimeAttentionDeliveryState,
-): RuntimeAttentionDeliveryState => cloneRuntimeAttentionDeliveryState(delivery);
+const replaceRuntimeAttentionDeliveryState = (delivery: RuntimeAttentionDeliveryState): RuntimeAttentionDeliveryState =>
+  cloneRuntimeAttentionDeliveryState(delivery);
 
 const createCachedResourceState = <T>(data: T): CachedResourceState<T> => ({
   data,
@@ -457,34 +456,37 @@ const AUTH_REQUIRED_MESSAGE = "auth token required";
 const unauthorizedErrorMessage = (error: unknown): string | null =>
   isTrpcErrorCode(error, "UNAUTHORIZED") ? AUTH_REQUIRED_MESSAGE : null;
 
-const projectGlobalTerminalFromConfigMutation = (current: GlobalTerminalEntry | null, result: {
-  config: {
-    terminalId: string;
-    processKind: string;
-    command: string[];
-    launchCwd: string;
-    profile: {
-      cols?: number;
-      rows?: number;
-      icon?: string;
-      title?: string;
-      shortcuts?: Record<string, string>;
-      rendererPreference?: "auto" | "ghostty-web" | "wterm" | "xterm";
-      theme?: "default-dark" | "default-light" | "monokai";
-      cursor?: "block" | "bar" | "underline";
-      font?: {
-        family: string;
-        sizePx: number;
-        lineHeight: number;
-        letterSpacing: number;
-        weight: string;
-        weightBold: string;
-        ligatures: boolean;
+const projectGlobalTerminalFromConfigMutation = (
+  current: GlobalTerminalEntry | null,
+  result: {
+    config: {
+      terminalId: string;
+      processKind: string;
+      command: string[];
+      launchCwd: string;
+      profile: {
+        cols?: number;
+        rows?: number;
+        icon?: string;
+        title?: string;
+        shortcuts?: Record<string, string>;
+        rendererPreference?: "auto" | "ghostty-web" | "wterm" | "xterm";
+        theme?: "default-dark" | "default-light" | "monokai";
+        cursor?: "block" | "bar" | "underline";
+        font?: {
+          family: string;
+          sizePx: number;
+          lineHeight: number;
+          letterSpacing: number;
+          weight: string;
+          weightBold: string;
+          ligatures: boolean;
+        };
       };
+      processPhase: "running" | "stopped" | "not_started";
     };
-    processPhase: "running" | "stopped" | "not_started";
-  };
-}): GlobalTerminalEntry => {
+  },
+): GlobalTerminalEntry => {
   const currentSnapshot = current?.snapshot;
   const nextCols = result.config.profile.cols;
   const nextRows = result.config.profile.rows;
@@ -497,7 +499,7 @@ const projectGlobalTerminalFromConfigMutation = (current: GlobalTerminalEntry | 
           cols: nextCols ?? currentSnapshot.cols,
           rows: nextRows ?? currentSnapshot.rows,
         }
-      : currentSnapshot ?? undefined;
+      : (currentSnapshot ?? undefined);
 
   return {
     terminalId: result.config.terminalId,
@@ -507,9 +509,7 @@ const projectGlobalTerminalFromConfigMutation = (current: GlobalTerminalEntry | 
     workspace: current?.workspace ?? null,
     status: current?.status ?? "IDLE",
     processPhase:
-      result.config.processPhase === "not_started"
-        ? (current?.processPhase ?? "stopped")
-        : result.config.processPhase,
+      result.config.processPhase === "not_started" ? (current?.processPhase ?? "stopped") : result.config.processPhase,
     seq: current?.seq ?? 0,
     snapshot,
     focused: current?.focused ?? false,
@@ -521,8 +521,7 @@ const projectGlobalTerminalFromConfigMutation = (current: GlobalTerminalEntry | 
     rendererPreference: result.config.profile.rendererPreference ?? current?.rendererPreference ?? "auto",
     theme: result.config.profile.theme ?? current?.theme ?? "default-dark",
     cursor: result.config.profile.cursor ?? current?.cursor ?? "block",
-    font:
-      result.config.profile.font ??
+    font: result.config.profile.font ??
       current?.font ?? {
         family:
           "ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
@@ -3578,9 +3577,7 @@ export class RuntimeStore {
     return await this.client.trpc.workspace.assetRoots.query(input);
   }
 
-  async listSkillCatalog(input: {
-    rootKind: "builtin" | "shared" | "global";
-  }): Promise<SkillCatalogOutput> {
+  async listSkillCatalog(input: { rootKind: "builtin" | "shared" | "global" }): Promise<SkillCatalogOutput> {
     return await this.client.trpc.skill.catalog.query(input);
   }
 
@@ -3667,6 +3664,7 @@ export class RuntimeStore {
     runtimeId: string;
     workspacePath: string;
     avatar: string;
+    surface?: "root-workspace" | "public-workspace";
     command: string;
     cwd?: string;
     env?: Record<string, string>;

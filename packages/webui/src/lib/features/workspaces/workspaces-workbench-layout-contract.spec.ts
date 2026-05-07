@@ -17,4 +17,9 @@ describe("Feature: Workspaces shell toolbar contract", () => {
     expect(workspacesWorkbenchLayoutSource).toContain("status={workspacesToolbarStatus}");
     expect(workspacesWorkbenchLayoutSource).not.toContain("meta={workspacesToolbarMeta}");
   });
+
+  test("Scenario: Given workspace detail pages own nested scroll regions When reading the layout source Then the outer window body stays in fill mode instead of wrapping the entire route in one extra scroll viewport", () => {
+    expect(workspacesWorkbenchLayoutSource).toContain('bodyMode="fill"');
+    expect(workspacesWorkbenchLayoutSource).toContain('<div class="h-full min-h-0">');
+  });
 });

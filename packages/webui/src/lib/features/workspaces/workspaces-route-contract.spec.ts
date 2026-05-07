@@ -43,12 +43,13 @@ describe("Feature: Workspaces route search and rules contract", () => {
     expect(workspacesRouteSource).toContain("Cancel");
   });
 
-  test("Scenario: Given the rules editor lives in the bottom area When reading the route source Then add duplicate delete and apply all remain in one editing surface", () => {
+  test("Scenario: Given rule editing now belongs to the detail panel When reading the route source Then add duplicate delete and apply all live in the drawer instead of a bottom dock", () => {
     expect(workspacesRouteSource).toContain("const addRule");
     expect(workspacesRouteSource).toContain("const duplicateRule");
     expect(workspacesRouteSource).toContain("const removeRule");
     expect(workspacesRouteSource).toContain("Apply rules");
     expect(workspacesRouteSource).toContain("Add rule");
+    expect(workspacesRouteSource).not.toContain("{#snippet bottom()}");
   });
 
   test("Scenario: Given shared shell primitives were extracted When reading the route source Then the real page assembly consumes the shared content header page-content layout and typed drawer", () => {
@@ -65,8 +66,32 @@ describe("Feature: Workspaces route search and rules contract", () => {
     expect(workspacesRouteSource).toContain("orderWorkspaceCliCatalogGroupsForDisplay");
     expect(workspacesRouteSource).toContain("resolveWorkspaceCliDefaultEntryId");
     expect(workspacesRouteSource).toContain("data-workspace-cli-command-id");
+    expect(workspacesRouteSource).toContain('viewportTestId="workspace-cli-list"');
     expect(workspacesRouteSource).toContain("fallback metadata");
     expect(workspacesRouteSource).toContain("Command detail");
+  });
+
+  test("Scenario: Given the CLI helpcenter can now launch real shell runs When reading the route source Then the page opens one terminal dialog backed by the selected shell surface", () => {
+    expect(workspacesRouteSource).toContain("WorkspaceShellDialog");
+    expect(workspacesRouteSource).toContain("selectedCliShellLaunch");
+    expect(workspacesRouteSource).toContain("currentWorkspaceHasRootGrantAccess");
+    expect(workspacesRouteSource).toContain("selectedRootRuntimeRunning");
+    expect(workspacesRouteSource).toContain("selectedRootRuntimeStarting");
+    expect(workspacesRouteSource).toContain("Start runtime and run");
+    expect(workspacesRouteSource).toContain(
+      "The shell dialog will open automatically once the root runtime is actually running.",
+    );
+    expect(workspacesRouteSource).toContain("workspace-cli-open-shell-button");
+    expect(workspacesRouteSource).toContain("openCliShellDialog");
+    expect(workspacesRouteSource).toContain("workspaceShellLaunchKey");
+    expect(workspacesRouteSource).toContain("resolveWorkspaceShellSurface");
+    expect(workspacesRouteSource).toContain("resolveWorkspaceShellLaunchCwd");
+  });
+
+  test("Scenario: Given the left workbench list should own its own scrolling When reading the route source Then the list card uses a fixed header plus one minmax body and rules mode scrolls inside that body", () => {
+    expect(workspacesRouteSource).toContain("grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]");
+    expect(workspacesRouteSource).toContain('<Card.Content class="h-full min-h-0 p-0">');
+    expect(workspacesRouteSource).toContain('<ScrollView class="h-full" contentClass="grid gap-2 p-2.5 md:p-3">');
   });
 
   test("Scenario: Given compact detail opens on mobile When reading the route source Then the content header yields focus so the detail surface can become the single task view", () => {
@@ -74,18 +99,19 @@ describe("Feature: Workspaces route search and rules contract", () => {
     expect(workspacesRouteSource).toContain("hidden md:block");
     expect(workspacesRouteSource).toContain("detailCompact && detailOpen");
     expect(workspacesRouteSource).toContain("gap-0 p-0");
-    expect(workspacesRouteSource).toContain('class="row-start-2 h-full min-w-0 w-full"');
+    expect(workspacesRouteSource).toContain('class="row-start-2 h-full min-h-0 min-w-0 w-full"');
+    expect(workspacesRouteSource).toContain('mainClass="h-full min-h-0"');
+    expect(workspacesRouteSource).toContain('drawerClass="h-full min-h-0"');
     expect(workspacesRouteSource).toContain("tone={detailCompact ? 'page' : 'pane'}");
   });
 
-  test("Scenario: Given explorer quick actions stay in the bottom area When reading the route source Then mobile switches to a denser action dock instead of repeating the desktop card", () => {
-    expect(workspacesRouteSource).toContain("grid gap-2 md:hidden");
-    expect(workspacesRouteSource).toContain("title={selectedExplorerPath ?? ''}");
+  test("Scenario: Given explorer and private actions now belong to the detail panel When reading the route source Then quick rule staging and private asset creation live beside preview instead of under the list", () => {
+    expect(workspacesRouteSource).toContain("Create private asset");
+    expect(workspacesRouteSource).toContain("Stage rule");
     expect(workspacesRouteSource).toContain('aria-label="Quick rule access mode"');
     expect(workspacesRouteSource).toContain("title={quickRuleMode === 'ro' ? 'Read only' : 'Read write'}");
-    expect(workspacesRouteSource).toContain("Stage");
-    expect(workspacesRouteSource).toContain("Apply");
-    expect(workspacesRouteSource).toContain("grid-cols-[minmax(0,1fr)_auto_auto]");
+    expect(workspacesRouteSource).toContain("workspacePreviewDetail");
+    expect(workspacesRouteSource).not.toContain("summary={workspaceDrawerSummary}");
   });
 
   test("Scenario: Given workspace root selection moved to the fixed start page When reading the detail route source Then the detail shell no longer owns an inline root switcher", () => {

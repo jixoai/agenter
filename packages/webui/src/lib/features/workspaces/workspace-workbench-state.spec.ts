@@ -158,7 +158,9 @@ describe("Feature: Workspace workbench state primitives", () => {
             commandLabel: "message send",
             displayName: "send",
             description: "Send a durable room message.",
+            suggestedCommand: "message send --help",
             detailHint: "message send --help",
+            preferredExecutionSurface: "root-workspace",
           },
         ],
       },
@@ -174,7 +176,9 @@ describe("Feature: Workspace workbench state primitives", () => {
             commandLabel: "tool_draft",
             displayName: "Draft note",
             description: "Draft a private note.",
+            suggestedCommand: "tool_draft --help",
             detailHint: "tool_draft --help",
+            preferredExecutionSurface: "public-workspace",
             toolFileName: "draft.ts",
           },
         ],
@@ -233,6 +237,7 @@ describe("Feature: Workspace workbench state primitives", () => {
             commandLabel: ".",
             displayName: ".",
             description: "Execute commands from a file in the current shell.",
+            suggestedCommand: "help .",
             detailHint: "help .",
           },
           {
@@ -242,6 +247,7 @@ describe("Feature: Workspace workbench state primitives", () => {
             commandLabel: "alias",
             displayName: "alias",
             description: "Define or display aliases.",
+            suggestedCommand: "help alias",
             detailHint: "help alias",
           },
         ],
@@ -266,6 +272,7 @@ describe("Feature: Workspace workbench state primitives", () => {
             commandLabel: ".",
             displayName: ".",
             description: "Execute commands from a file in the current shell.",
+            suggestedCommand: "help .",
             detailHint: "help .",
           },
         ],
@@ -282,7 +289,9 @@ describe("Feature: Workspace workbench state primitives", () => {
             commandLabel: "attention commit",
             displayName: "commit",
             description: "Persist an attention commit.",
-            detailHint: "help attention commit",
+            suggestedCommand: "attention commit --help",
+            detailHint: "attention commit --help",
+            preferredExecutionSurface: "root-workspace",
           },
         ],
       },
@@ -290,5 +299,55 @@ describe("Feature: Workspace workbench state primitives", () => {
 
     const orderedGroups = orderWorkspaceCliCatalogGroupsForDisplay(groups);
     expect(resolveWorkspaceCliDefaultEntryId(orderedGroups, null)).toBe("root-runtime-cli:attention commit");
+  });
+
+  test("Scenario: Given root runtime commands need a stopped runtime When resolving the default CLI detail Then inactive root entries are skipped until the user selects them explicitly", () => {
+    const groups: WorkspaceCliCatalogGroup[] = [
+      {
+        id: "root-runtime-cli",
+        title: "root runtime CLI",
+        description: "runtime",
+        entries: [
+          {
+            id: "root-runtime-cli:attention commit",
+            groupId: "root-runtime-cli",
+            source: "runtime-cli",
+            commandLabel: "attention commit",
+            displayName: "commit",
+            description: "Persist an attention commit.",
+            suggestedCommand: "attention commit --help",
+            detailHint: "attention commit --help",
+            preferredExecutionSurface: "root-workspace",
+          },
+        ],
+      },
+      {
+        id: "just-bash-builtins",
+        title: "just-bash builtins",
+        description: "builtins",
+        entries: [
+          {
+            id: "just-bash-builtins:alias",
+            groupId: "just-bash-builtins",
+            source: "just-bash-builtin",
+            commandLabel: "alias",
+            displayName: "alias",
+            description: "Define or display aliases.",
+            suggestedCommand: "help alias",
+            detailHint: "help alias",
+          },
+        ],
+      },
+    ];
+
+    const orderedGroups = orderWorkspaceCliCatalogGroupsForDisplay(groups);
+    expect(resolveWorkspaceCliDefaultEntryId(orderedGroups, null, { allowRootRuntimeDefault: false })).toBe(
+      "just-bash-builtins:alias",
+    );
+    expect(
+      resolveWorkspaceCliDefaultEntryId(orderedGroups, "root-runtime-cli:attention commit", {
+        allowRootRuntimeDefault: false,
+      }),
+    ).toBe("root-runtime-cli:attention commit");
   });
 });

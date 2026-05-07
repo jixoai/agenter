@@ -401,16 +401,20 @@ export const appRouter = t.router({
     })),
     catalogTree: superadminProcedure
       .input(
-        z.object({
-          rootKind: skillCatalogRootKindSchema,
-        }).extend(skillTreeInputSchema.shape),
+        z
+          .object({
+            rootKind: skillCatalogRootKindSchema,
+          })
+          .extend(skillTreeInputSchema.shape),
       )
       .query(({ ctx, input }) => ctx.kernel.listSkillBrowserCatalogTree(input)),
     catalogPreview: superadminProcedure
       .input(
-        z.object({
-          rootKind: skillCatalogRootKindSchema,
-        }).extend(skillPreviewInputSchema.shape),
+        z
+          .object({
+            rootKind: skillCatalogRootKindSchema,
+          })
+          .extend(skillPreviewInputSchema.shape),
       )
       .query(({ ctx, input }) => ctx.kernel.readSkillBrowserCatalogPreview(input)),
     avatarTree: superadminProcedure
@@ -1070,14 +1074,12 @@ export const appRouter = t.router({
         actorId: resolveAuthedMessageActorId(ctx.auth),
       }),
     })),
-    sourceUpsert: authProcedure
-      .input(messageSourceSubscriptionInputSchema)
-      .mutation(({ ctx, input }) => ({
-        source: ctx.kernel.saveMessageSourceSubscription({
-          actorId: resolveAuthedMessageActorId(ctx.auth),
-          ...input,
-        }),
-      })),
+    sourceUpsert: authProcedure.input(messageSourceSubscriptionInputSchema).mutation(({ ctx, input }) => ({
+      source: ctx.kernel.saveMessageSourceSubscription({
+        actorId: resolveAuthedMessageActorId(ctx.auth),
+        ...input,
+      }),
+    })),
     sourceDelete: authProcedure
       .input(
         z.object({
@@ -2163,6 +2165,7 @@ export const appRouter = t.router({
           runtimeId: z.string().min(1),
           workspacePath: z.string().min(1),
           avatar: z.string().min(1),
+          surface: z.enum(["root-workspace", "public-workspace"]).optional(),
           command: z.string().min(1),
           cwd: z.string().min(1).optional(),
           env: z.record(z.string(), z.string()).optional(),

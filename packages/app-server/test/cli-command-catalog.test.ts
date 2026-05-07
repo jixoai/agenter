@@ -68,6 +68,8 @@ describe("Feature: workspace CLI command catalog", () => {
         commandLabel: "tool_review",
         displayName: "Review workspace",
         metadataState: "registered",
+        suggestedCommand: "tool_review --help",
+        preferredExecutionSurface: "public-workspace",
       }),
     ]);
     expect(catalog.groups[3]?.entries).toEqual([
@@ -75,8 +77,27 @@ describe("Feature: workspace CLI command catalog", () => {
         commandLabel: "tool_draft",
         displayName: "draft.ts",
         metadataState: "fallback",
+        suggestedCommand: "tool_draft --help",
+        preferredExecutionSurface: "public-workspace",
       }),
     ]);
+    expect(catalog.groups[1]?.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          commandLabel: "message send",
+          suggestedCommand: "message send --help",
+          preferredExecutionSurface: "root-workspace",
+        }),
+      ]),
+    );
+    expect(catalog.groups[0]?.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          commandLabel: "cd",
+          suggestedCommand: "help cd",
+        }),
+      ]),
+    );
   });
 
   test("Scenario: Given the public workspace helpcenter shell When it lists JSON Then builtins and workspace tool groups are visible without root runtime CLI drift", async () => {

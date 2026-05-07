@@ -14,6 +14,7 @@ export type CliCommandCatalogGroupId =
   | "workspace-public-tools"
   | "workspace-private-tools";
 export type CliCommandCatalogPerspective = "browser" | "root-workspace-shell" | "public-workspace-shell";
+export type CliCommandExecutionSurface = "root-workspace" | "public-workspace";
 
 export interface CliCommandCatalogEntry {
   id: string;
@@ -22,7 +23,9 @@ export interface CliCommandCatalogEntry {
   commandLabel: string;
   displayName: string;
   description: string;
+  suggestedCommand: string;
   detailHint?: string;
+  preferredExecutionSurface?: CliCommandExecutionSurface;
   toolFileName?: string;
   toolScope?: WorkspaceToolScope;
   metadataState?: "registered" | "fallback";
@@ -155,6 +158,7 @@ const loadBuiltinCatalogEntries = async (): Promise<readonly CliCommandCatalogEn
           name,
           helpText: detail.stdout,
         }),
+        suggestedCommand: `help ${name}`,
         detailHint: `help ${name}`,
       } satisfies CliCommandCatalogEntry;
     }),
@@ -178,7 +182,9 @@ const listRootRuntimeCliCatalogEntries = (): CliCommandCatalogEntry[] =>
         commandLabel,
         displayName: descriptor.name,
         description: descriptor.description,
+        suggestedCommand: `${commandLabel} --help`,
         detailHint: `${commandLabel} --help`,
+        preferredExecutionSurface: "root-workspace",
       } satisfies CliCommandCatalogEntry;
     })
     .sort((left, right) => left.commandLabel.localeCompare(right.commandLabel));
@@ -206,7 +212,9 @@ const toWorkspaceToolCatalogEntry = (
   commandLabel: binding.commandName,
   displayName: binding.helpcenter.name,
   description: binding.helpcenter.description,
+  suggestedCommand: `${binding.commandName} --help`,
   detailHint: `${binding.commandName} --help`,
+  preferredExecutionSurface: "public-workspace",
   toolFileName: binding.fileName,
   toolScope: binding.scope,
   metadataState: binding.helpcenter.registered ? "registered" : "fallback",
@@ -296,8 +304,12 @@ export const renderCliCommandCatalogEntry = (input: {
   if (input.entry.displayName !== input.entry.commandLabel) {
     lines.push(`Display name: ${input.entry.displayName}`);
   }
+  lines.push(`Suggested command: ${input.entry.suggestedCommand}`);
   if (input.entry.detailHint) {
     lines.push(`Detail hint: ${input.entry.detailHint}`);
+  }
+  if (input.entry.preferredExecutionSurface) {
+    lines.push(`Preferred browser surface: ${input.entry.preferredExecutionSurface}`);
   }
   if (input.entry.toolFileName) {
     lines.push(`Tool file: ${input.entry.toolFileName}`);

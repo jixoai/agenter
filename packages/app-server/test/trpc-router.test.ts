@@ -10,6 +10,7 @@ import type { TerminalActorId, TerminalControlPlane } from "@agenter/terminal-sy
 import { AppKernel, SessionDb, appRouter, createTrpcContext } from "../src";
 import { UsageAnalyticsDb } from "../src/usage-analytics-db";
 import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "../src/usage-analytics-paths";
+import { GLOBAL_WORKSPACE_PATH } from "../src/workspace-target";
 
 const tempDirs: string[] = [];
 const settleFilesystem = async (): Promise<void> => {
@@ -500,6 +501,7 @@ describe("Feature: app-server trpc procedures", () => {
       runtimeId: first.session.id,
       workspacePath: workspaceA,
       avatar: "architect",
+      surface: "public-workspace",
       command:
         "mkdir -p /workspace/sandbox && printf workspace-ok > /workspace/sandbox/out.txt && tool_hello && cat /workspace/sandbox/out.txt",
     });
@@ -512,6 +514,7 @@ describe("Feature: app-server trpc procedures", () => {
       runtimeId: first.session.id,
       workspacePath: workspaceA,
       avatar: "architect",
+      surface: "public-workspace",
       command: "printf blocked > /workspace/blocked.txt",
     });
     expect(execDenied.exitCode).not.toBe(0);
@@ -527,6 +530,116 @@ describe("Feature: app-server trpc procedures", () => {
       runtimeId: first.session.id,
     });
     expect(mountsAfterDetach.items.map((item) => item.workspacePath)).toEqual([workspaceA]);
+
+    const execMissingGrant = await caller.workspace.exec({
+      runtimeId: first.session.id,
+      workspacePath: workspaceB,
+      avatar: "architect",
+      surface: "public-workspace",
+      command: "pwd",
+    });
+    expect(execMissingGrant.exitCode).toBe(1);
+    expect(execMissingGrant.stderr).toContain(
+      `workspace grants missing for runtime ${first.session.id} on ${workspaceB}`,
+    );
+
+    await caller.session.start({
+      sessionId: first.session.id,
+    });
+
+    const rootExec = await caller.workspace.exec({
+      runtimeId: first.session.id,
+      workspacePath: workspaceA,
+      avatar: "architect",
+      surface: "root-workspace",
+      command: "workspace list --help",
+      cwd: workspaceA,
+    });
+    expect(rootExec.exitCode).toBe(0);
+    expect(rootExec.stdout).toContain("workspace list");
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given browser root-workspace exec needs one active runtime When the runtime is not started Then workspace exec returns an explicit non-zero shell failure instead of throwing 500", async () => {
+    const root = makeTempDir();
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+    const { caller } = await createRootSuperadminCaller(kernel);
+
+    const created = await caller.session.create({
+      cwd: workspace,
+      name: "inactive-root-exec",
+      autoStart: false,
+    });
+
+    const inactiveExec = await caller.workspace.exec({
+      runtimeId: created.session.id,
+      workspacePath: workspace,
+      avatar: "default",
+      surface: "root-workspace",
+      command: "workspace list --help",
+    });
+    expect(inactiveExec.exitCode).toBe(1);
+    expect(inactiveExec.stderr).toContain(`runtime not active for root-workspace exec: ${created.session.id}`);
+    expect(inactiveExec.cwd).toBe(workspace);
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given browser shell launch passes a mounted global-workspace tilde cwd When workspace.exec runs Then the backend expands that token against the configured home instead of the daemon cwd", async () => {
+    const root = makeTempDir();
+    const homeDir = join(root, "home");
+    const workspace = join(root, "workspace");
+    mkdirSync(homeDir, { recursive: true });
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir,
+    });
+    await kernel.start();
+    const { caller } = await createRootSuperadminCaller(kernel);
+
+    const created = await caller.session.create({
+      cwd: workspace,
+      name: "global-cwd-normalization",
+      autoStart: true,
+    });
+
+    const granted = await caller.workspace.grantRuntime({
+      runtimeId: created.session.id,
+      workspacePath: GLOBAL_WORKSPACE_PATH,
+      grants: [{ pattern: "/", mode: "rw" }],
+    });
+    expect(granted.items).toEqual([
+      expect.objectContaining({
+        workspacePath: GLOBAL_WORKSPACE_PATH,
+        pattern: "/",
+        mode: "rw",
+      }),
+    ]);
+
+    const exec = await caller.workspace.exec({
+      runtimeId: created.session.id,
+      workspacePath: GLOBAL_WORKSPACE_PATH,
+      avatar: "default",
+      surface: "root-workspace",
+      command: "pwd",
+      cwd: "~/",
+    });
+    expect(exec.exitCode).toBe(0);
+    expect(exec.cwd).toBe(homeDir);
+    expect(exec.stdout.trim()).toBe(homeDir);
 
     await kernel.stop();
   });
