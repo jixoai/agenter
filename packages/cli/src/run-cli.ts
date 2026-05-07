@@ -4,6 +4,14 @@ import { runTuiClient } from "@agenter/tui";
 import { join } from "node:path";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
+import {
+  buildProductLaunchEnv,
+  buildProductProcessCommand,
+  isBuiltInCommand,
+  readCommandToken,
+  resolveProductCommandInvocation,
+  resolveProductLaunchTarget,
+} from "./product-command-launcher";
 import { startTrpcServer, type TrpcServerHandle } from "./trpc-server";
 import { resolveCanonicalWebUiAssetRoot } from "./webui-static-root";
 
@@ -109,7 +117,7 @@ const withAuthServiceBridgeOptions = <TBuilder extends ReturnType<typeof yargs>>
     .option("auth-service-port", {
       type: "number",
       describe: "override the managed-local auth-service port when the daemon owns the child service",
-    }) as TBuilder;
+    }) as unknown as TBuilder;
 
 const waitForHttpServer = async (url: string, timeoutMs = 30_000): Promise<void> => {
   const startedAt = Date.now();
@@ -149,8 +157,70 @@ const startWebDevServer = async (input: {
   return proc;
 };
 
+const launchProductCommand = async (argvInput: readonly string[]): Promise<boolean> => {
+  const routed = resolveProductCommandInvocation(argvInput);
+  if (!routed) {
+    const commandToken = readCommandToken(argvInput);
+    if (commandToken && !isBuiltInCommand(commandToken)) {
+      console.error(`unsupported product command: ${commandToken}`);
+      process.exitCode = 1;
+      return true;
+    }
+    return false;
+  }
+
+  const target = resolveProductLaunchTarget(routed.descriptor, {
+    cliSourceDir: import.meta.dir,
+  });
+  const common: CommonArgs = {
+    host: routed.launcherOptions.host,
+    port: routed.launcherOptions.port,
+  };
+
+  let localDaemon: TrpcServerHandle | null = null;
+  if (routed.descriptor.capabilityHints.requiresDaemon && !(await isDaemonAlive(common))) {
+    localDaemon = await startDaemon({
+      ...common,
+      authServiceEndpoint: routed.launcherOptions.authServiceEndpoint,
+      authServiceDataDir: routed.launcherOptions.authServiceDataDir,
+      authServiceHost: routed.launcherOptions.authServiceHost,
+      authServicePort: routed.launcherOptions.authServicePort,
+    });
+  }
+
+  const env = buildProductLaunchEnv({
+    descriptor: routed.descriptor,
+    source: target.source,
+    launcherOptions: routed.launcherOptions,
+  });
+  const child = Bun.spawn({
+    cmd: buildProductProcessCommand(target, routed.descriptor, routed.productArgv, env),
+    cwd: process.cwd(),
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+    env,
+  });
+
+  try {
+    const exitCode = await child.exited;
+    process.exitCode = exitCode;
+  } finally {
+    if (localDaemon) {
+      await localDaemon.stop();
+    }
+  }
+
+  return true;
+};
+
 export const runCli = async (argvInput = process.argv): Promise<void> => {
-  const argv = await yargs(hideBin(argvInput))
+  const rawArgs = hideBin(argvInput);
+  if (await launchProductCommand(rawArgs)) {
+    return;
+  }
+
+  const argv = await yargs(rawArgs)
     .scriptName("agenter")
     .option("host", {
       type: "string",

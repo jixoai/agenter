@@ -14,36 +14,36 @@
 
 ## 1. Product Launcher
 
-- [ ] 1.1 Add a descriptor-driven product-command registry in `@agenter/cli` that maps `shell` to `@agenter/cli-shell` without importing cli-shell implementation code
-- [ ] 1.2 Implement local-first package resolution for `packages/cli-shell` before installed-package and remote npm fallback
-- [ ] 1.3 Forward host, port, auth-service options, and remaining argv from `agenter shell ...` into the product process
-- [ ] 1.4 Run product bins as foreground interactive processes with inherited stdio and propagated exit status
-- [ ] 1.5 Add launcher tests for descriptor lookup, local workspace resolution, unsupported command rejection, no product-specific runtime branch, and remote fallback command construction
-- [ ] 1.6 Define and pass the launcher-owned env contract: `AGENTER_DAEMON_HOST`, `AGENTER_DAEMON_PORT`, `AGENTER_AUTH_SERVICE_ENDPOINT`, `AGENTER_PRODUCT_COMMAND`, `AGENTER_PRODUCT_PACKAGE`, and `AGENTER_PRODUCT_SOURCE`
-- [ ] 1.7 Add package-runner override tests for remote fallback without executing arbitrary user-supplied package names
-- [ ] 1.8 Add launcher/product tests proving cli-shell consumes launcher-owned daemon context and does not create a product-local daemon port-file authority
+- [x] 1.1 Add a descriptor-driven product-command registry in `@agenter/cli` that maps `shell` to `@agenter/cli-shell` without importing cli-shell implementation code
+- [x] 1.2 Implement local-first package resolution for `packages/cli-shell` before installed-package and remote npm fallback
+- [x] 1.3 Forward host, port, auth-service options, and remaining argv from `agenter shell ...` into the product process
+- [x] 1.4 Run product bins as foreground interactive processes with inherited stdio and propagated exit status
+- [x] 1.5 Add launcher tests for descriptor lookup, local workspace resolution, unsupported command rejection, no product-specific runtime branch, and remote fallback command construction
+- [x] 1.6 Define and pass the launcher-owned env contract: `AGENTER_DAEMON_HOST`, `AGENTER_DAEMON_PORT`, `AGENTER_AUTH_SERVICE_ENDPOINT`, `AGENTER_PRODUCT_COMMAND`, `AGENTER_PRODUCT_PACKAGE`, and `AGENTER_PRODUCT_SOURCE`
+- [x] 1.7 Add package-runner override tests for remote fallback without executing arbitrary user-supplied package names
+- [x] 1.8 Add launcher/product tests proving cli-shell consumes launcher-owned daemon context and does not create a product-local daemon port-file authority
 
 ## 2. Cli-shell Package
 
-- [ ] 2.1 Create `packages/cli-shell` with package metadata, bin entry, TypeScript config, and workspace dependency declarations
-- [ ] 2.2 Parse optional `@avatar` mention and `--session` into normalized `avatarNickname` and `shellName`, defaulting the Avatar to `shell-assistant` when no mention is provided
-- [ ] 2.3 Connect to the daemon using launcher-provided connection context and perform superadmin auto-login
-- [ ] 2.4 Ensure the selected AvatarRuntime is started or reused without using the cli-shell session name as runtime identity, including creating or ensuring the default `shell-assistant` Avatar through generic Avatar/product-extension APIs when absent
+- [x] 2.1 Create `packages/cli-shell` with package metadata, bin entry, TypeScript config, and workspace dependency declarations
+- [x] 2.2 Parse optional `@avatar` mention and `--session` into normalized `avatarNickname` and `shellName`, defaulting the Avatar to `shell-assistant` when no mention is provided
+- [x] 2.3 Connect to the daemon using launcher-provided connection context and perform superadmin auto-login
+- [x] 2.4 Ensure the selected AvatarRuntime is started or reused without using the cli-shell session name as runtime identity, including creating or ensuring the default `shell-assistant` Avatar through generic Avatar/product-extension APIs when absent
 - [ ] 2.5 Consume product extension runtime APIs for resource binding, assistant initialization, attention projection, hosting attention, and delegation instead of importing core internals or adding cli-shell special cases to core modules
-- [ ] 2.6 Add unit tests for command parsing, default `shell-assistant` ensure, explicit `@avatar` override such as `@default`, shell name normalization, AvatarRuntime identity inputs, extension API consumption, and the rule that historical terminal-assistant role notes do not override an explicit `@avatar` mention
-- [ ] 2.7 Initialize missing `shell-assistant` `AGENTER.mdx` with flexible pair-programming, user-understanding, self-evolution, and managed-mode autonomy guidance while explicitly stating self-evolution is orthogonal to managed mode and underlying prompt/memory files remain openly editable user assets
-- [ ] 2.8 Initialize missing `shell-assistant` memory roles for `user-model`, `pairing-playbook`, `terminal-habits`, `self-evolution-log`, and `hosting-objective`, and link them explicitly from `AGENTER.mdx`
-- [ ] 2.9 Add tests proving prompt/memory initialization is seed-if-missing, does not lock or automatically restore user-edited files, explicit `@avatar` override does not mutate `shell-assistant`, and memory roles live in Avatar-private memory rather than cli-shell process state
-- [ ] 2.10 Add shell-assistant prompt guidance and deterministic tests for collaboration-style variance: senior-led, requirement-led, playful/companion-like, and user-specific learned adaptation without fixed archetype branching
-- [ ] 2.11 Add prompt/memory tests proving `auto-dream` is only an example self-evolution loop name and no default prompt, score key, or core branch treats it as a built-in feature
+- [x] 2.6 Add unit tests for command parsing, default `shell-assistant` ensure, explicit `@avatar` override such as `@default`, shell name normalization, AvatarRuntime identity inputs, extension API consumption, and the rule that historical terminal-assistant role notes do not override an explicit `@avatar` mention
+- [x] 2.7 Initialize missing `shell-assistant` `AGENTER.mdx` with flexible pair-programming, user-understanding, self-evolution, and managed-mode autonomy guidance while explicitly stating self-evolution is orthogonal to managed mode and underlying prompt/memory files remain openly editable user assets
+- [x] 2.8 Initialize missing `shell-assistant` memory roles for `user-model`, `pairing-playbook`, `terminal-habits`, `self-evolution-log`, and `hosting-objective`, and link them explicitly from `AGENTER.mdx`
+- [x] 2.9 Add tests proving prompt/memory initialization is seed-if-missing, does not lock or automatically restore user-edited files, explicit `@avatar` override does not mutate `shell-assistant`, and memory roles live in Avatar-private memory rather than cli-shell process state
+- [x] 2.10 Add shell-assistant prompt guidance and deterministic tests for collaboration-style variance: senior-led, requirement-led, playful/companion-like, and user-specific learned adaptation without fixed archetype branching
+- [x] 2.11 Add prompt/memory tests proving `auto-dream` is only an example self-evolution loop name and no default prompt, score key, or core branch treats it as a built-in feature
 
 ## 3. Backend Resource Orchestration
 
-- [ ] 3.1 Implement list-before-create terminal ensure through the generic product resource binding API for terminal resource keys such as `shell-1`
-- [ ] 3.2 Ensure terminal grant and focus for the summoned Avatar principal through terminal-system native authority
-- [ ] 3.3 Implement product room lookup by generic product metadata `productId=cli-shell` and `resourceKey=<shellName>`
-- [ ] 3.4 Create missing product rooms with backend-allocated room ids and visible title `<shellName>`
-- [ ] 3.5 Ensure room grant and focus for the summoned Avatar principal through message-system native authority
+- [x] 3.1 Implement list-before-create terminal ensure through the generic product resource binding API for terminal resource keys such as `shell-1`
+- [x] 3.2 Ensure terminal grant and focus for the summoned Avatar principal through terminal-system native authority
+- [x] 3.3 Implement product room lookup by generic product metadata `productId=cli-shell` and `resourceKey=<shellName>`
+- [x] 3.4 Create missing product rooms with backend-allocated room ids and visible title `<shellName>`
+- [x] 3.5 Ensure room grant and focus for the summoned Avatar principal through message-system native authority
 - [ ] 3.6 Add integration tests for repeated `agenter shell`, explicit `agenter shell @default`, `--session=2`, no duplicate terminal or room creation, and absence of cli-shell-specific backend branches
 
 ## 4. Terminal Product TUI
@@ -73,8 +73,8 @@
 
 ## 5. Validation
 
-- [ ] 5.1 Run targeted `@agenter/cli` tests for launcher behavior
-- [ ] 5.2 Run targeted product-extension-runtime tests for descriptor isolation, generic resource binding, assistant initialization, attention projection, hosting score lifecycle, delegation lease lifecycle, and no cli-shell imports in core
+- [x] 5.1 Run targeted `@agenter/cli` tests for launcher behavior
+- [x] 5.2 Run targeted product-extension-runtime tests for descriptor isolation, generic resource binding, assistant initialization, attention projection, hosting score lifecycle, delegation lease lifecycle, and no cli-shell imports in core
 - [ ] 5.3 Run targeted `@agenter/cli-shell` tests for parsing, orchestration, extension API consumption, prompt/memory initialization, hosting attention, delegation projection, and TUI view-model behavior
 - [ ] 5.4 Run app-server/client-sdk tests covering generic product resource binding, terminal ensure, room ensure, grants, AvatarRuntime reuse, prompt/memory ensure, attention ingress, hosting settlement, and delegation lease provenance
 - [ ] 5.5 Run a real local walkthrough of `agenter shell`, repeat launch, explicit `agenter shell @default`, detach/reconnect, one-line toolbar, status state transitions, Heartbeat streaming, managed toggle on/off, managed state reconnect, chat unread entry, dialogue panel open/close/placement, short time rendering, date divider rendering, dialogue input send/cancel, terminal `Ctrl+C`, resize, and `agenter shell --session=2` from a separate shell-terminal

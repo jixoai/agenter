@@ -145,6 +145,7 @@
       "dependencies": {
         "@agenter/app-server": "workspace:*",
         "@agenter/auth-service": "workspace:*",
+        "@agenter/product-extension-runtime": "workspace:*",
         "@agenter/tui": "workspace:*",
         "@trpc/server": "^11.7.1",
         "ws": "^8.18.0",
@@ -162,12 +163,18 @@
     "packages/cli-shell": {
       "name": "@agenter/cli-shell",
       "version": "0.0.0",
+      "bin": {
+        "agenter-cli-shell": "./src/bin/agenter-cli-shell.ts",
+      },
       "dependencies": {
         "@agenter/client-sdk": "workspace:*",
         "@agenter/product-extension-runtime": "workspace:*",
+        "yargs": "^17.7.2",
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "@types/yargs": "^17.0.35",
+        "typescript": "latest",
       },
     },
     "packages/client-sdk": {

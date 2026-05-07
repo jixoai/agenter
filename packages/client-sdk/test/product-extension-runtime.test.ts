@@ -442,6 +442,27 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
 }
 
 describe("Feature: product extension runtime client", () => {
+  test("Scenario: Given repeated runtime ensures for the same avatar When the shell name changes Then runtime identity stays avatar-scoped instead of product-session-scoped", async () => {
+    const store = new FakeProductRuntimeStore();
+    const client = new ProductExtensionRuntimeClient(store);
+
+    const first = await client.ensureRuntime({
+      workspacePath: "/repo",
+      avatarNickname: "shell-assistant",
+      sessionName: "shell-1",
+    });
+    const second = await client.ensureRuntime({
+      workspacePath: "/repo",
+      avatarNickname: "shell-assistant",
+      sessionName: "shell-2",
+    });
+
+    expect(first.id).toBe(second.id);
+    expect(second.avatar).toBe("shell-assistant");
+    expect(second.name).toBe("shell-1");
+    expect(store.sessions.size).toBe(1);
+  });
+
   test("Scenario: Given a missing assistant prompt and memory pack When the client ensures them Then avatar creation and seed-if-missing stay generic and preserve later edits", async () => {
     const store = new FakeProductRuntimeStore();
     const client = new ProductExtensionRuntimeClient(store);
