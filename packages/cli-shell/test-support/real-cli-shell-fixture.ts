@@ -15,10 +15,18 @@ import { resolveWorkspaceAvatarAssetRoot } from "../../app-server/src";
 import { createAgenterClient, createRuntimeStore, type RuntimeStore } from "@agenter/client-sdk";
 
 import { startTrpcServer, type TrpcServerHandle } from "../../cli/src/trpc-server";
-import { bootstrapCliShell, CLI_SHELL_DEFAULT_AVATAR, shellAssistantMemoryRoles, type CliShellBootstrapResult } from "../src";
+import {
+  bootstrapCliShell,
+  CLI_SHELL_DEFAULT_AVATAR,
+  shellAssistantMemoryRoles,
+  type CliShellBootstrapInput,
+  type CliShellBootstrapResult,
+} from "../src";
 
 const DEFAULT_TIMEOUT_MS = 240_000;
+const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
 const REAL_PROVIDER_ID = "real-cli-shell";
+const RETRYABLE_BOOTSTRAP_ERROR = "auth-service principal list failed (502)";
 
 const stripLeadingSlash = (value: string): string => value.replace(/^\/+/u, "");
 
@@ -145,6 +153,27 @@ export interface RealCliShellFixture {
 
 export const resolveRealCliShellModelConfig = (): RealModelConfig | null => resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT);
 
+const isRetryableBootstrapError = (error: unknown): boolean =>
+  error instanceof Error && error.message.includes(RETRYABLE_BOOTSTRAP_ERROR);
+
+const bootstrapCliShellWithRetry = async (input: CliShellBootstrapInput): Promise<CliShellBootstrapResult> =>
+  await waitForRealValue(
+    async () => {
+      try {
+        return await bootstrapCliShell(input);
+      } catch (error) {
+        if (isRetryableBootstrapError(error)) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    {
+      label: "real cli-shell bootstrap",
+      timeoutMs: BOOTSTRAP_RETRY_TIMEOUT_MS,
+    },
+  );
+
 export const createRealCliShellFixture = async (): Promise<RealCliShellFixture | null> => {
   const rawConfig = resolveRealCliShellModelConfig();
   if (!rawConfig) {
@@ -189,7 +218,7 @@ export const createRealCliShellFixture = async (): Promise<RealCliShellFixture |
     host: handle.host,
     port: handle.port,
   });
-  let attached = await bootstrapCliShell({
+  let attached = await bootstrapCliShellWithRetry({
     store: connection.store,
     workspacePath,
     avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
@@ -349,12 +378,13 @@ export const createRealCliShellFixture = async (): Promise<RealCliShellFixture |
       };
     },
     reconnect: async () => {
+      connection.store.disconnect();
       connection.client.close();
       connection = await createAuthedStore({
         host: handle.host,
         port: handle.port,
       });
-      attached = await bootstrapCliShell({
+      attached = await bootstrapCliShellWithRetry({
         store: connection.store,
         workspacePath,
         avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
