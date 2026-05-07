@@ -1,5 +1,6 @@
 /** @jsxImportSource @opentui/react */
 
+import type { GlobalRoomMessage } from "@agenter/client-sdk";
 import { useKeyboard, usePaste, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
@@ -18,7 +19,7 @@ export interface CliShellTuiAppProps {
   roomChatId: string;
   roomAccessToken?: string;
   runtimeId: string;
-  avatarActorId: string;
+  avatarActorId: GlobalRoomMessage["unreadActorIds"][number];
   managed: CliShellManagedState;
   keybindings: CliShellTuiKeybindings;
   onQuit: () => void;

@@ -1,5 +1,6 @@
 /** @jsxImportSource @opentui/react */
 
+import type { GlobalRoomMessage } from "@agenter/client-sdk";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 
@@ -18,6 +19,11 @@ export const startCliShellTui = async (input: {
   shellName: string;
   attached: CliShellBootstrapResult;
 }): Promise<CliShellTuiController> => {
+  const avatarPrincipalId = input.attached.avatar.avatarPrincipalId;
+  if (!avatarPrincipalId) {
+    throw new Error(`cli-shell tui requires avatar principal id for ${input.attached.avatar.nickname}`);
+  }
+  const avatarActorId = avatarPrincipalId as GlobalRoomMessage["unreadActorIds"][number];
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     useMouse: true,
@@ -50,7 +56,7 @@ export const startCliShellTui = async (input: {
       roomChatId={input.attached.room.entry.chatId}
       roomAccessToken={input.attached.room.entry.accessToken}
       runtimeId={input.attached.avatar.runtimeId}
-      avatarActorId={input.attached.avatar.avatarPrincipalId ?? input.attached.avatar.nickname}
+      avatarActorId={avatarActorId}
       managed={input.attached.managed}
       keybindings={keybindings}
       onQuit={destroy}

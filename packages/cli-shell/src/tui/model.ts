@@ -87,7 +87,10 @@ const resolveMessageDateLabel = (message: GlobalRoomMessage): string => DATE_DIV
 
 const resolveMessageTimeLabel = (message: GlobalRoomMessage): string => SHORT_TIME_FORMAT.format(message.createdAt);
 
-const resolveAuthorLabel = (message: GlobalRoomMessage, avatarActorId: string): { label: string; authoredByUser: boolean } => {
+const resolveAuthorLabel = (
+  message: GlobalRoomMessage,
+  avatarActorId: GlobalRoomMessage["unreadActorIds"][number],
+): { label: string; authoredByUser: boolean } => {
   const authoredByUser = message.senderActorId !== avatarActorId;
   if (authoredByUser) {
     return {
@@ -104,7 +107,7 @@ const resolveAuthorLabel = (message: GlobalRoomMessage, avatarActorId: string): 
 
 const countUnreadRoomMessages = (
   snapshot: CliShellTuiAppProjection["roomSnapshot"],
-  avatarActorId: string,
+  avatarActorId: GlobalRoomMessage["unreadActorIds"][number],
 ): number | null => {
   if (!snapshot) {
     return null;
@@ -120,7 +123,7 @@ const countUnreadRoomMessages = (
 
 const buildDialogueBlocks = (input: {
   projection: CliShellTuiAppProjection;
-  avatarActorId: string;
+  avatarActorId: GlobalRoomMessage["unreadActorIds"][number];
 }): CliShellDialogueBlock[] => {
   const snapshot = input.projection.roomSnapshot;
   if (!snapshot) {
@@ -216,7 +219,7 @@ export const buildCliShellTuiModel = (input: {
   sessionId: string;
   shellName: string;
   fallbackTerminalId: string;
-  avatarActorId: string;
+  avatarActorId: GlobalRoomMessage["unreadActorIds"][number];
   ui: CliShellTuiViewState;
   keybindings: CliShellTuiKeybindings;
   width: number;

@@ -180,6 +180,7 @@
         "@types/react": "^19.0.0",
         "@types/yargs": "^17.0.35",
         "typescript": "latest",
+        "zod": "^4.0.0",
       },
     },
     "packages/client-sdk": {

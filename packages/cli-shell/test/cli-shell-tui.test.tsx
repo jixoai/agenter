@@ -129,7 +129,7 @@ const createRoomMessage = (input: {
   from: string;
   content: string;
   createdAt: number;
-  unreadActorIds?: string[];
+  unreadActorIds?: GlobalRoomMessage["unreadActorIds"];
   recalledAt?: number;
 }): GlobalRoomMessage => ({
   rowId: input.messageId,
