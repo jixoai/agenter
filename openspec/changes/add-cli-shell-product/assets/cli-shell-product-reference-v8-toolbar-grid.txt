@@ -1,0 +1,42 @@
+120 cols x 40 rows terminal-grid reference. Row 39 is the only collapsed product row.
+
+00  $ agenter shell
+01  shell-1:~/project $ pnpm test --filter @agenter/cli
+02  packages/cli test: Feature: product command launcher
+03  packages/cli test: Scenario: Given shell command When local package exists Then workspace bin starts
+04  packages/terminal-system test: Feature: shell assistant attachment
+05
+06  PASS packages/cli/test/product-command-launcher.test.ts
+07  PASS packages/terminal-system/test/control-plane.test.ts
+08
+09  shell-1:~/project $ git status --short
+10  ?? openspec/changes/add-cli-shell-product/
+11
+12  shell-1:~/project $ _
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39  ⚙ terminal │ ◉ 分析测试结果：workspace 包已复用，shell-1 已连接…                           │ 托管 off │ ✉ 3 ⌘J
