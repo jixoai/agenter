@@ -1,5 +1,5 @@
 {
-  "name": "@agenter/client-sdk",
+  "name": "@agenter/cli-shell",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,11 +10,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@agenter/app-server": "workspace:*",
-    "@agenter/product-extension-runtime": "workspace:*",
-    "@trpc/client": "^11.7.1",
-    "@trpc/server": "^11.7.1",
-    "superjson": "^2.2.2"
+    "@agenter/client-sdk": "workspace:*",
+    "@agenter/product-extension-runtime": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest"

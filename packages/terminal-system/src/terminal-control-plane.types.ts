@@ -114,6 +114,7 @@ export interface TerminalCreateInput {
   command?: string[];
   cwd?: string;
   profile?: TerminalProcessProfile;
+  metadata?: Record<string, unknown>;
   start?: boolean;
   bootstrapActorId?: TerminalActorId;
   bootstrapRole?: TerminalGrantRole;
@@ -432,6 +433,7 @@ export interface TerminalControlPlaneEntry {
   currentAdminId?: TerminalActorId | null;
   approvalTimeoutMs?: number;
   pendingRequestCount?: number;
+  metadata?: Record<string, unknown>;
   access?: TerminalAccessProjection;
   actors?: TerminalSeatProjection[];
 }

@@ -1,8 +1,13 @@
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
 
 import type { WorkspaceGrantMode, WorkspaceGrantRecord } from "./workspace-system";
-import { resolveWorkspaceAvatarPrivateRoot, resolveWorkspaceGrantModeFromAbsolutePath } from "./workspace-system";
+import {
+  resolveWorkspaceAvatarAssetRoot,
+  resolveWorkspaceAvatarPrivateRoot,
+  resolveWorkspaceGrantModeFromAbsolutePath,
+  type WorkspaceAssetKind,
+} from "./workspace-system";
 import { toWorkspaceCwd } from "./workspace-target";
 
 export type WorkspaceWorkbenchMode = "explorer" | "private";
@@ -353,4 +358,42 @@ export const createWorkspacePrivateAsset = (input: {
     writeFileSync(targetAbsolutePath, "", "utf8");
   }
   return { path: targetRelativePath };
+};
+
+export const ensureWorkspacePrivateTextAsset = (input: {
+  workspacePath: string;
+  avatar: string;
+  assetKind: WorkspaceAssetKind;
+  relativePath: string;
+  seedContent: string;
+}): { path: string; created: boolean; content: string; mtimeMs: number } => {
+  const rootPath = resolveWorkspaceAvatarAssetRoot(input.workspacePath, input.avatar, input.assetKind);
+  mkdirSync(rootPath, { recursive: true });
+  const relativePath = toRelativePath(input.relativePath);
+  if (relativePath === "/") {
+    throw new Error("private text asset path must point to a file");
+  }
+  const absolutePath = ensureInsideRoot(rootPath, relativePath);
+  if (existsSync(absolutePath)) {
+    const current = statSync(absolutePath);
+    if (current.isDirectory()) {
+      throw new Error(`private text asset path is a directory: ${relativePath}`);
+    }
+    return {
+      path: relativePath,
+      created: false,
+      content: readFileSync(absolutePath, "utf8"),
+      mtimeMs: current.mtimeMs,
+    };
+  }
+
+  mkdirSync(resolve(absolutePath, ".."), { recursive: true });
+  writeFileSync(absolutePath, input.seedContent, "utf8");
+  const created = statSync(absolutePath);
+  return {
+    path: relativePath,
+    created: true,
+    content: readFileSync(absolutePath, "utf8"),
+    mtimeMs: created.mtimeMs,
+  };
 };

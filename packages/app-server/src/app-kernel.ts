@@ -86,6 +86,15 @@ import {
   type TerminalSeatProjection,
   type TerminalWriteResult,
 } from "@agenter/terminal-system";
+import type {
+  ProductAttentionCommitInput,
+  ProductAttentionSettleInput,
+  ProductDelegationCreateInput,
+  ProductDelegationLookup,
+  ProductDelegationRecord,
+  ProductDelegationRevokeInput,
+  ProductPrivateTextAssetEnsureInput,
+} from "@agenter/product-extension-runtime";
 import { privateKeyToAccount } from "viem/accounts";
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
 import { appAttentionSourceRegistry } from "./attention-src";
@@ -139,6 +148,7 @@ import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./hea
 import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
+import { ProductExtensionDelegationStore } from "./product-extension-delegation-store";
 import {
   settingsKindSchema,
   type AnyRuntimeEvent,
@@ -220,6 +230,7 @@ import {
 } from "./workspace-target";
 import {
   createWorkspacePrivateAsset,
+  ensureWorkspacePrivateTextAsset,
   listWorkspaceWorkbenchTree,
   readWorkspaceWorkbenchPreview,
   type WorkspaceWorkbenchMode,
@@ -667,6 +678,7 @@ export interface AppKernelOptions {
   archiveSessionRoot?: string;
   workspacesPath?: string;
   workspaceSystemStatePath?: string;
+  productDelegationStorePath?: string;
   homeDir?: string;
   initialWorkspace?: string;
   managedSeatAuthorityUrl?: string;
@@ -800,6 +812,7 @@ export class AppKernel {
   private readonly messageControlPlane: MessageControlPlane;
   private readonly terminalControlPlane: TerminalControlPlane;
   private readonly roomAssets: RoomAssetStore;
+  private readonly productExtensionDelegations: ProductExtensionDelegationStore;
   private readonly runtimes = new Map<string, SessionRuntime>();
   private readonly runtimeStopListeners = new Map<string, () => void>();
   private readonly listeners = new Set<KernelListener>();
@@ -844,6 +857,11 @@ export class AppKernel {
       dbPath: resolveMessageControlDbPath(join(this.sessions.getGlobalRoot(), "..", ".message")),
     });
     this.roomAssets = new RoomAssetStore(join(this.sessions.getGlobalRoot(), "..", ".message"));
+    this.productExtensionDelegations = new ProductExtensionDelegationStore({
+      filePath:
+        options.productDelegationStorePath ??
+        join(this.sessions.getGlobalRoot(), "..", ".product-extension", "delegations.json"),
+    });
     this.terminalControlPlane = new TerminalControlPlane({
       dbPath: join(this.sessions.getGlobalRoot(), "..", ".terminal", "terminal.db"),
       outputRoot: join(this.sessions.getGlobalRoot(), "..", ".terminal", "output"),
@@ -2178,6 +2196,16 @@ export class AppKernel {
       parentPath: input.parentPath,
       name: input.name,
       kind: input.kind,
+    });
+  }
+
+  ensureWorkspacePrivateTextAsset(input: ProductPrivateTextAssetEnsureInput) {
+    return ensureWorkspacePrivateTextAsset({
+      workspacePath: toWorkspacePath(input.workspacePath),
+      avatar: normalizeAvatarNickname(input.avatarNickname),
+      assetKind: input.assetKind,
+      relativePath: input.relativePath,
+      seedContent: input.seedContent,
     });
   }
 
@@ -3869,6 +3897,7 @@ export class AppKernel {
     command?: string[];
     cwd?: string;
     profile?: TerminalProcessProfile;
+    metadata?: Record<string, unknown>;
     start?: boolean;
     focus?: boolean;
     actorId?: TerminalActorId;
@@ -3882,6 +3911,7 @@ export class AppKernel {
             command: input.command,
             cwd: input.cwd,
             profile: input.profile,
+            metadata: input.metadata,
             start: input.start,
           })
         : await this.terminalControlPlane.create({
@@ -3890,6 +3920,7 @@ export class AppKernel {
             command: input.command,
             cwd: input.cwd,
             profile: input.profile,
+            metadata: input.metadata,
             start: input.start,
           });
 
@@ -5271,6 +5302,45 @@ export class AppKernel {
       snapshot: attention.snapshot,
       request: input,
     });
+  }
+
+  async commitAttention(sessionId: string, input: ProductAttentionCommitInput) {
+    const runtime = await this.ensureRuntime(sessionId);
+    const summary = input.summary ?? input.body ?? `Attention update for ${input.contextId}`;
+    return await runtime.commitAttention({
+      contextId: input.contextId,
+      summary,
+      change: input.body ? { type: "update", value: input.body, format: "text/plain" } : { type: "clean" },
+      done: input.done,
+      scores: input.scores,
+      meta: input.meta,
+    });
+  }
+
+  async settleAttention(sessionId: string, input: ProductAttentionSettleInput) {
+    const runtime = await this.ensureRuntime(sessionId);
+    const summary = input.summary ?? `Settled attention for ${input.contextId}${input.reason ? ` (${input.reason})` : ""}`;
+    const body = input.body ?? (input.reason ? `reason=${input.reason}` : undefined);
+    return await runtime.settleAttention({
+      contextId: input.contextId,
+      summary,
+      change: body ? { type: "update", value: body, format: "text/plain" } : { type: "clean" },
+      scores: input.scores,
+      reason: input.reason,
+      meta: input.meta,
+    });
+  }
+
+  createProductDelegation(input: ProductDelegationCreateInput): ProductDelegationRecord {
+    return this.productExtensionDelegations.create(input);
+  }
+
+  listProductDelegations(input: ProductDelegationLookup): ProductDelegationRecord[] {
+    return this.productExtensionDelegations.list(input);
+  }
+
+  revokeProductDelegation(input: ProductDelegationRevokeInput): ProductDelegationRecord {
+    return this.productExtensionDelegations.revoke(input);
   }
 
   async inspectModelDebug(sessionId: string): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {

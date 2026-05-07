@@ -42,6 +42,7 @@ import type {
   MessageSendSuccessOutput,
   ModelCallItem,
   NotificationSnapshotOutput,
+  ProductDelegationRecord,
   RuntimeAttentionDeliveryState,
   RuntimeAttentionState,
   RuntimeChatCycle,
@@ -71,6 +72,7 @@ import type {
   WorkspaceSessionCounts,
   WorkspaceSessionEntry,
   WorkspaceSessionTab,
+  WorkspacePrivateTextAssetEnsureOutput,
   WorkspaceWorkbenchPreviewOutput,
   WorkspaceWorkbenchTreeOutput,
 } from "./types";
@@ -3660,6 +3662,16 @@ export class RuntimeStore {
     return await this.client.trpc.workspace.createPrivateAsset.mutate(input);
   }
 
+  async ensureWorkspacePrivateTextAsset(input: {
+    workspacePath: string;
+    avatarNickname: string;
+    assetKind: "skills" | "memory" | "tools" | "archive";
+    relativePath: string;
+    seedContent: string;
+  }): Promise<WorkspacePrivateTextAssetEnsureOutput> {
+    return await this.client.trpc.workspace.ensurePrivateTextAsset.mutate(input);
+  }
+
   async execRuntimeWorkspace(input: {
     runtimeId: string;
     workspacePath: string;
@@ -3722,6 +3734,30 @@ export class RuntimeStore {
   }): Promise<AttentionQueryItem[]> {
     const output = await this.client.trpc.runtime.attentionQuery.query(input);
     return output.items;
+  }
+
+  async commitAttention(input: {
+    sessionId: string;
+    contextId: string;
+    summary?: string;
+    body?: string;
+    done?: boolean;
+    scores?: Record<string, number>;
+    meta?: Record<string, unknown>;
+  }) {
+    return await this.client.trpc.runtime.attentionCommit.mutate(input);
+  }
+
+  async settleAttention(input: {
+    sessionId: string;
+    contextId: string;
+    summary?: string;
+    body?: string;
+    scores?: Record<string, number>;
+    reason?: string;
+    meta?: Record<string, unknown>;
+  }) {
+    return await this.client.trpc.runtime.attentionSettle.mutate(input);
   }
 
   async queryUsageAnalytics(input: RuntimeUsageAnalyticsInput): Promise<RuntimeUsageAnalyticsOutput> {
@@ -4720,6 +4756,7 @@ export class RuntimeStore {
       title?: string;
       shortcuts?: Record<string, string>;
     };
+    metadata?: Record<string, unknown>;
     start?: boolean;
     focus?: boolean;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
@@ -5158,6 +5195,52 @@ export class RuntimeStore {
       force: true,
     });
     return output;
+  }
+
+  async listProductDelegations(input: {
+    productId: string;
+    resourceKey?: string;
+    runtimeId?: string;
+    avatarActorId?: string;
+    includeRevoked?: boolean;
+  }): Promise<ProductDelegationRecord[]> {
+    const output = await this.client.trpc.productExtension.listDelegations.query(input);
+    return output.items;
+  }
+
+  async createProductDelegation(input: {
+    productId: string;
+    resourceKey: string;
+    runtimeId: string;
+    avatarActorId: string;
+    grantedByActorId: string;
+    terminalId: string;
+    roomId: string;
+    enabledAt: number;
+    expiresAt: number;
+    policy: {
+      mode: "observe" | "write" | "confirm-before-write";
+      maxWriteBytes?: number;
+    };
+    provenance: {
+      source: string;
+      attentionContextId?: string;
+      attentionCommitId?: string;
+      terminalLeaseId?: string;
+      notes?: string;
+    };
+  }): Promise<ProductDelegationRecord> {
+    const output = await this.client.trpc.productExtension.createDelegation.mutate(input);
+    return output.delegation;
+  }
+
+  async revokeProductDelegation(input: {
+    delegationId: string;
+    revokedAt: number;
+    revokedReason: string;
+  }): Promise<ProductDelegationRecord> {
+    const output = await this.client.trpc.productExtension.revokeDelegation.mutate(input);
+    return output.delegation;
   }
 
   async loadGlobalTerminalActivity(

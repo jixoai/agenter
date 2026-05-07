@@ -4,6 +4,15 @@ import { z } from "zod";
 
 import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
 import type { MessageActorId } from "@agenter/message-system";
+import {
+  productAttentionCommitInputSchema,
+  productAttentionQueryInputSchema,
+  productAttentionSettleInputSchema,
+  productDelegationCreateInputSchema,
+  productDelegationLookupSchema,
+  productDelegationRevokeInputSchema,
+  productPrivateTextAssetEnsureInputSchema,
+} from "@agenter/product-extension-runtime";
 import { isPrincipalId } from "@agenter/principal-crypto";
 import type { TerminalActorId } from "@agenter/terminal-system";
 import {
@@ -1259,6 +1268,7 @@ export const appRouter = t.router({
           command: z.array(z.string().min(1)).min(1).optional(),
           cwd: z.string().min(1).optional(),
           profile: terminalProcessProfileSchema.optional(),
+          metadata: z.record(z.string(), z.unknown()).optional(),
           start: z.boolean().optional(),
           focus: z.boolean().optional(),
         }),
@@ -1523,6 +1533,23 @@ export const appRouter = t.router({
         }),
       ),
   }),
+  productExtension: t.router({
+    listDelegations: superadminProcedure
+      .input(productDelegationLookupSchema)
+      .query(({ ctx, input }) => ({
+        items: ctx.kernel.listProductDelegations(input),
+      })),
+    createDelegation: superadminProcedure
+      .input(productDelegationCreateInputSchema)
+      .mutation(({ ctx, input }) => ({
+        delegation: ctx.kernel.createProductDelegation(input),
+      })),
+    revokeDelegation: superadminProcedure
+      .input(productDelegationRevokeInputSchema)
+      .mutation(({ ctx, input }) => ({
+        delegation: ctx.kernel.revokeProductDelegation(input),
+      })),
+  }),
   draft: t.router({
     resolve: superadminProcedure
       .input(
@@ -1775,14 +1802,7 @@ export const appRouter = t.router({
         return await ctx.kernel.queryAttentionDeliveryTimeline(sessionId, query);
       }),
     attentionQuery: superadminProcedure
-      .input(
-        z.object({
-          sessionId: z.string().min(1),
-          query: z.string(),
-          offset: z.number().int().min(0).optional(),
-          limit: z.number().int().min(1).max(200).optional(),
-        }),
-      )
+      .input(sessionIdInput.extend(productAttentionQueryInputSchema.shape))
       .query(async ({ ctx, input }) => ({
         items: await ctx.kernel.queryAttention(input.sessionId, {
           query: input.query,
@@ -1790,6 +1810,22 @@ export const appRouter = t.router({
           limit: input.limit,
         }),
       })),
+    attentionCommit: superadminProcedure
+      .input(sessionIdInput.extend(productAttentionCommitInputSchema.shape))
+      .mutation(async ({ ctx, input }) => {
+        const { sessionId, ...commit } = input;
+        return {
+          commit: await ctx.kernel.commitAttention(sessionId, commit),
+        };
+      }),
+    attentionSettle: superadminProcedure
+      .input(sessionIdInput.extend(productAttentionSettleInputSchema.shape))
+      .mutation(async ({ ctx, input }) => {
+        const { sessionId, ...settle } = input;
+        return {
+          commit: await ctx.kernel.settleAttention(sessionId, settle),
+        };
+      }),
     requestCompact: superadminProcedure
       .input(sessionIdInput)
       .mutation(({ ctx, input }) => ctx.kernel.requestRuntimeCompact(input.sessionId)),
@@ -2159,6 +2195,9 @@ export const appRouter = t.router({
         }),
       )
       .mutation(({ ctx, input }) => ctx.kernel.createWorkspacePrivateAsset(input)),
+    ensurePrivateTextAsset: superadminProcedure
+      .input(productPrivateTextAssetEnsureInputSchema)
+      .mutation(({ ctx, input }) => ctx.kernel.ensureWorkspacePrivateTextAsset(input)),
     exec: superadminProcedure
       .input(
         z.object({

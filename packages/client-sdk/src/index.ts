@@ -1,8 +1,19 @@
+export {
+  ProductExtensionRuntimeClient,
+  createProductExtensionRuntimeClient,
+  type ProductEnsureRoomBindingInput,
+  type ProductEnsureRuntimeInput,
+  type ProductEnsureTerminalBindingInput,
+  type ProductEnsureBindingResult,
+  type ProductExtensionRuntimeStore,
+} from "./product-extension-runtime";
 export { RuntimeStore, createRuntimeStore } from "./runtime-store";
 export { createAgenterClient, type AgenterClient, type AgenterClientOptions } from "./trpc-client";
 export type {
+  AttentionCommitMutationOutput,
   AttentionQueryItem,
   AttentionQueryOutput,
+  AttentionSettleMutationOutput,
   AttentionStateOutput,
   AuthActorCatalogEntry,
   AuthActorCatalogOutput,
@@ -71,6 +82,10 @@ export type {
   ObservabilityTraceItem,
   ProfileEmailChallengeStartOutput,
   ProfileEmailChallengeVerifyOutput,
+  ProductDelegationCreateOutput,
+  ProductDelegationListOutput,
+  ProductDelegationRecord,
+  ProductDelegationRevokeOutput,
   ProfileListItem,
   ProfileListOutput,
   ProfileProjectionOutput,
@@ -119,6 +134,7 @@ export type {
   WorkspaceCliCatalogEntry,
   WorkspaceCliCatalogGroup,
   WorkspaceCliCatalogOutput,
+  WorkspacePrivateTextAssetEnsureOutput,
   WorkspaceEntry,
   WorkspacePathSearchOutput,
   WorkspaceSessionCounts,

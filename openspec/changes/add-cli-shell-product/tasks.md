@@ -1,16 +1,16 @@
 ## 0. Product Extension Runtime
 
-- [ ] 0.1 Define the product extension descriptor contract for command name, package name, bin metadata, source policy, and capability hints
-- [ ] 0.2 Add extension-runtime tests proving core packages do not import `@agenter/cli-shell` implementation code or branch on cli-shell grammar, toolbar state, layout, or terminal naming
-- [ ] 0.3 Define generic product resource binding APIs using `productId`, `resourceKey`, resource kind, and owner-system metadata rather than cli-shell-specific fields
-- [ ] 0.4 Define product-scoped attention ingress/projection APIs for Heartbeat display, unread/chat signals, terminal idle/dirty signals, and product lifecycle facts
-- [ ] 0.5 Define generic assistant initialization APIs for product-owned Avatar ensure, prompt-source ensure, and avatar-private memory-pack ensure without product-specific core branches
-- [ ] 0.6 Define product hosting attention APIs for managed/takeover scheduling, including the literal fixed score key `hosting`, managed-on commits `scores: {"hosting": 1000}`, and mandatory managed-off commits `scores: {"hosting": 0}` with reason `user_disabled`
-- [ ] 0.7 Define product delegation APIs for managed/takeover terminal write authority with granting user, target Avatar, terminal id, room id, expiry, revocation, policy, and provenance
-- [ ] 0.8 Add contract tests showing cli-shell can be removed or disabled without breaking core daemon, terminal, room, AvatarRuntime, prompt, memory, or attention modules
-- [ ] 0.9 Extend or verify minimal attention-cli compatible product APIs for committing, querying, and settling self-evolution attention contexts without adding fixed kernel features such as `auto-dream`; defer watch/schedule primitives to `extend-attention-cli-self-evolution-runtime`
-- [ ] 0.10 Add contract tests proving self-evolution attention loops do not require `hosting`, do not grant terminal write authority, and remain reusable by future products
-- [ ] 0.11 Add package-boundary tests proving cli-shell consumes daemon/client-sdk style extension contracts and does not import core runtime internals even during local workspace tests
+- [x] 0.1 Define the product extension descriptor contract for command name, package name, bin metadata, source policy, and capability hints
+- [x] 0.2 Add extension-runtime tests proving core packages do not import `@agenter/cli-shell` implementation code or branch on cli-shell grammar, toolbar state, layout, or terminal naming
+- [x] 0.3 Define generic product resource binding APIs using `productId`, `resourceKey`, resource kind, and owner-system metadata rather than cli-shell-specific fields
+- [x] 0.4 Define product-scoped attention ingress/projection APIs for Heartbeat display, unread/chat signals, terminal idle/dirty signals, and product lifecycle facts
+- [x] 0.5 Define generic assistant initialization APIs for product-owned Avatar ensure, prompt-source ensure, and avatar-private memory-pack ensure without product-specific core branches
+- [x] 0.6 Define product hosting attention APIs for managed/takeover scheduling, including the literal fixed score key `hosting`, managed-on commits `scores: {"hosting": 1000}`, and mandatory managed-off commits `scores: {"hosting": 0}` with reason `user_disabled`
+- [x] 0.7 Define product delegation APIs for managed/takeover terminal write authority with granting user, target Avatar, terminal id, room id, expiry, revocation, policy, and provenance
+- [x] 0.8 Add contract tests showing cli-shell can be removed or disabled without breaking core daemon, terminal, room, AvatarRuntime, prompt, memory, or attention modules
+- [x] 0.9 Extend or verify minimal attention-cli compatible product APIs for committing, querying, and settling self-evolution attention contexts without adding fixed kernel features such as `auto-dream`; defer watch/schedule primitives to `extend-attention-cli-self-evolution-runtime`
+- [x] 0.10 Add contract tests proving self-evolution attention loops do not require `hosting`, do not grant terminal write authority, and remain reusable by future products
+- [x] 0.11 Add package-boundary tests proving cli-shell consumes daemon/client-sdk style extension contracts and does not import core runtime internals even during local workspace tests
 
 ## 1. Product Launcher
 

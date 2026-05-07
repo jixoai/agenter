@@ -4896,40 +4896,7 @@ export class SessionRuntime {
         attentionDeliveryTimeline: (input) => this.queryAttentionDeliveryTimeline(input),
         attentionQuery: async (input) => (await this.queryAttention(input)).map(projectAttentionCommitMatchForModel),
         attentionNotifyQuota: (input) => this.inspectNotifyQuota(input),
-        attentionCommit: async (input) => {
-          const existing = this.attentionSystem.getContext(input.contextId);
-          if (!existing) {
-            this.attentionSystem.createContext({
-              contextId: input.contextId,
-              owner: input.meta?.author ?? this.getAvatarName(),
-            });
-          }
-          const resolvedScores = input.done ? this.buildResolvedAttentionScoresForContext(input.contextId) : undefined;
-          const effectiveScores =
-            input.scores === undefined
-              ? resolvedScores
-              : resolvedScores
-                ? {
-                    ...resolvedScores,
-                    ...input.scores,
-                  }
-                : input.scores;
-          const { commit } = this.attentionSystem.commit(input.contextId, {
-            parentCommitIds: input.parentCommitIds,
-            meta: input.meta,
-            scores: effectiveScores,
-            summary: input.summary,
-            change: input.change,
-          });
-          await this.persistAttentionSystem();
-          this.attentionFactsVersion += 1;
-          this.resetAttentionDebtBackoff();
-          // Tool-side attention commits are model-authored context mutations.
-          // They update durable scores/snapshots, but they are not incoming
-          // attention deltas that should be re-injected as AttentionItems.
-          this.emitAttentionState();
-          return commit;
-        },
+        attentionCommit: async (input) => await this.commitAttention(input),
         messageList: (input) => this.listMessageChannelsForTooling(input),
         messageRead: async (input) => await this.readMessageChannelForTooling(input),
         messageQuery: async (input) => await this.queryRuntimeMessages(input),
@@ -7922,6 +7889,53 @@ export class SessionRuntime {
       attentionSystem: this.attentionSystem,
       snapshot: this.attentionSystem.snapshot(),
       request: input,
+    });
+  }
+
+  async commitAttention(input: AttentionCommitToolInput & { done?: boolean }): Promise<AttentionCommit> {
+    const existing = this.attentionSystem.getContext(input.contextId);
+    if (!existing) {
+      this.attentionSystem.createContext({
+        contextId: input.contextId,
+        owner: input.meta?.author ?? this.getAvatarName(),
+      });
+    }
+    const resolvedScores = input.done ? this.buildResolvedAttentionScoresForContext(input.contextId) : undefined;
+    const effectiveScores =
+      input.scores === undefined
+        ? resolvedScores
+        : resolvedScores
+          ? {
+              ...resolvedScores,
+              ...input.scores,
+            }
+          : input.scores;
+    const { commit } = this.attentionSystem.commit(input.contextId, {
+      parentCommitIds: input.parentCommitIds,
+      meta: input.meta,
+      scores: effectiveScores,
+      summary: input.summary,
+      change: input.change,
+    });
+    await this.persistAttentionSystem();
+    this.attentionFactsVersion += 1;
+    this.resetAttentionDebtBackoff();
+    // Direct attention commits update durable truth, but they are not new
+    // ingress facts that should be restaged as fresh AttentionItems.
+    this.emitAttentionState();
+    return commit;
+  }
+
+  async settleAttention(
+    input: Omit<AttentionCommitToolInput, "done"> & {
+      reason?: string;
+    },
+  ): Promise<AttentionCommit> {
+    return await this.commitAttention({
+      ...input,
+      summary: input.summary ?? `Settled attention for ${input.contextId}${input.reason ? ` (${input.reason})` : ""}`,
+      done: true,
+      meta: input.meta,
     });
   }
 

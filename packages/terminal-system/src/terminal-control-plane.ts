@@ -2057,7 +2057,7 @@ export class TerminalControlPlane {
       command,
       launchCwd: cwd,
       profile,
-      metadata: {},
+      metadata: cloneMetadata(input.metadata),
       processPhase: "not_started",
       lastStopReason: null,
       lastExitCode: null,
@@ -2225,6 +2225,7 @@ export class TerminalControlPlane {
       currentAdminId: this.resolveCurrentAdminActorId(record.terminalId),
       approvalTimeoutMs: this.config.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
       pendingRequestCount: this.db.listPendingApprovalRequests(record.terminalId).length,
+      metadata: cloneMetadata(record.metadata),
       access: access ?? undefined,
       actors: this.listActorSeats(record.terminalId),
     };
