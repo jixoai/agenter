@@ -260,6 +260,7 @@ git-log 约束：
   - direct write
   - raw write
   - websocket transport input bytes
+- product-managed autonomy 也必须回到同一 gate：ordinary-user product 只能通过显式 delegation / lease 获得 timeboxed terminal write authority，不能绕过 terminal-system 自己发明 hidden write path。
 - websocket transport 是独立的 live terminal session protocol，不承载 automation durable truth：
   - live websocket `inputBytes` 归属真人交互 forwarding，必须经过同一 write policy gate，但授权后低延迟直写 PTY，不创建 pending file、approval request 或 `terminal_write` activity
   - automation `terminal.write` / `terminal.input` 继续走 control-plane durable path，保留 pending inbox、approval request 与 `terminal_write` activity
@@ -288,6 +289,8 @@ git-log 约束：
 - approval history 必须保留 `pending | approved | denied | expired` 的 durable 状态转移；审批查询读取的是历史事实，而不是只看当前 pending 队列。
 - approved request 必须 mint timeboxed write lease。
 - lease 过期后，所有输入路径立即恢复拒绝。
+- product delegation 创建的 write-capable autonomy 也必须最终落到 terminal-native lease 或等价 authority fact；hosting attention 本身不得替代 lease。
+- autonomous terminal write 的 activity / effect ledger 必须保留 Avatar actor identity 与 delegation / lease provenance，不能把 superadmin bootstrap actor 当成 hidden writer。
 
 ### 7.4 Session Projection and UI Contract
 
