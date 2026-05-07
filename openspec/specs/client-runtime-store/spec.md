@@ -28,6 +28,22 @@ The client runtime store SHALL normalize workspaces, running avatars, workspace 
 - **THEN** the normalized terminal entry still carries its absolute cwd, latest durable snapshot, renderer preference metadata, resolved renderer facts, theme metadata, and transport URL after hydration
 - **THEN** route consumers do not need a second ad hoc refetch to render the terminal again
 
+### Requirement: Client runtime store SHALL expose typed workspace CLI catalog and exec facades
+
+The client runtime store SHALL expose typed methods for the workspace CLI catalog and for workspace command execution. Feature routes SHALL NOT instantiate their own transport clients for helpcenter reads or shell-dialog execution. The exec facade SHALL allow the caller to pass `surface = "root-workspace" | "public-workspace"` explicitly.
+
+#### Scenario: Workspace route reads one grouped CLI catalog through the store
+
+- **WHEN** the Workspace workbench opens `CLI` mode for one workspace/avatar lens
+- **THEN** it can obtain the grouped command catalog through one typed runtime-store method
+- **AND** the route does not construct a route-local transport call for that catalog
+
+#### Scenario: Workspace shell dialog forwards the requested execution surface intact
+
+- **WHEN** the Workspace shell dialog runs one selected command
+- **THEN** it can call one typed runtime-store workspace exec method with `surface`
+- **AND** the store forwards that `surface` without collapsing root and public execution into one implicit shell profile
+
 ### Requirement: Client runtime store SHALL track reverse-time paging state per long-history resource
 
 The client runtime store SHALL maintain explicit reverse-time page state for each long-history global resource and each long-history running-avatar detail resource, and SHALL hydrate only recent windows by default.

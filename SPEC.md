@@ -110,6 +110,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - `Skills` preview law 固定为一层 preview shell：所有 selected file 都走隔离的 `filePreviewer` iframe entry；`filePreviewer` 内部再按 kind 选择 renderer，其中 text-like files 默认使用 CodeMirror source preview，`pdf / image / audio / video` 使用对应成熟 renderer，不支持的类型也必须在同一 preview shell 中显式进入 unsupported 状态。
 - `Workspaces` 是独立的全局 WorkspaceSystem workbench；每个 workspace 只对应一个目录根，并通过共享 page-toolbar 暴露 `View as` avatar lens 与 `Explorer / Rules / Private / CLI` 四个 peer modes，content header 只保留 workspace root 与 surface facts。
 - Workspace CLI discovery 只展示 product/runtime truth：包含 `just-bash` builtins、descriptor-backed root runtime CLI、以及当前 workspace/avatar 的 public/private tool commands；不把任意 PATH binary 伪装成 workspace capability。
+- Workspace shell dialog 只是 browser helpcenter 对 backend shell truth 的控制投影：catalog row 必须提供 `suggestedCommand`，必要时显式声明 `root-workspace | public-workspace` 执行面；browser 不得再本地实现第二套 shell，且 `root-workspace` shell dialog 在 runtime 未激活时必须直接报错而不是隐式拉起 authority。
 - Workspace workbench 必须显式展示 `root-workspace` vs `public-workspace` 的 env/CLI 语义差异，但不得把这种差异表述成“root-workspace 不可共享”的所有权禁令。
 - workspace detail 可以从 `/workspaces` 自己打开 workspace-centric 的管理对话框来做 Avatar mount / unmount；这类控制面不再回流到 Avatar detail。
 - `Messages` 是 `message-system` 的全局 workbench；每个 room 对应一个 tab，并固定保留一个 `new room` tab。`room` 是当前聊天 channel 的承载概念，不能把 `room` 与 `chat`、`message-system` 混为一个概念。
