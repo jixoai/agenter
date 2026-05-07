@@ -1,20 +1,30 @@
 /** @jsxImportSource @opentui/react */
 
-import type { RuntimeStore } from "@agenter/client-sdk";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { useMemo, useSyncExternalStore } from "react";
+import { useKeyboard, usePaste, useTerminalDimensions } from "@opentui/react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
-import { layoutCliShellCollapsedFrame } from "./frame";
-import { buildCliShellCollapsedModel } from "./model";
+import { routeCliShellKey, routeCliShellPaste, syncCliShellTerminalGeometry } from "./controller";
+import { layoutCliShellTuiFrame } from "./frame";
+import type { CliShellTuiKeybindings } from "./keybindings";
+import { buildCliShellTuiModel } from "./model";
+import type { CliShellManagedState } from "../managed";
+import type { CliShellTuiStore, CliShellTuiViewState } from "./types";
 
 export interface CliShellTuiAppProps {
-  store: Pick<RuntimeStore, "getState" | "subscribe">;
+  store: CliShellTuiStore;
   sessionId: string;
   shellName: string;
   fallbackTerminalId: string;
-  managed: boolean;
+  roomChatId: string;
+  roomAccessToken?: string;
+  runtimeId: string;
+  avatarActorId: string;
+  managed: CliShellManagedState;
+  keybindings: CliShellTuiKeybindings;
   onQuit: () => void;
 }
+
+const textDecoder = new TextDecoder();
 
 export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
   const state = useSyncExternalStore(
@@ -22,42 +32,129 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
     () => props.store.getState(),
   );
   const { width, height } = useTerminalDimensions();
+  const [viewState, setViewState] = useState<CliShellTuiViewState>({
+    dialogueOpen: false,
+    requestedPlacement: "smart",
+    dialogueDraft: "",
+    managed: props.managed,
+    statusNotice: null,
+  });
+  const geometryRef = useRef<string>("");
+  const roomSnapshot = state.globalRoomSnapshotsById[props.roomChatId]?.data ?? null;
+
   const model = useMemo(
     () =>
-      buildCliShellCollapsedModel({
+      buildCliShellTuiModel({
         state,
+        projection: {
+          roomSnapshot,
+        },
         sessionId: props.sessionId,
         shellName: props.shellName,
         fallbackTerminalId: props.fallbackTerminalId,
-        managed: props.managed,
+        avatarActorId: props.avatarActorId,
+        ui: viewState,
+        keybindings: props.keybindings,
+        width,
+        height,
       }),
-    [props.fallbackTerminalId, props.managed, props.sessionId, props.shellName, state],
+    [
+      height,
+      props.avatarActorId,
+      props.fallbackTerminalId,
+      props.keybindings,
+      props.sessionId,
+      props.shellName,
+      roomSnapshot,
+      state,
+      viewState,
+      width,
+    ],
   );
-  const frame = useMemo(() => layoutCliShellCollapsedFrame({ model, width, height }), [height, model, width]);
+  const frame = useMemo(() => layoutCliShellTuiFrame({ model, width, height }), [height, model, width]);
+  const controllerContext = useMemo(
+    () => ({
+      store: props.store,
+      sessionId: props.sessionId,
+      shellName: props.shellName,
+      roomChatId: props.roomChatId,
+      roomAccessToken: props.roomAccessToken,
+      runtimeId: props.runtimeId,
+      avatarActorId: props.avatarActorId,
+      keybindings: props.keybindings,
+      onQuit: props.onQuit,
+      getViewState: () => viewState,
+      getModel: () => model,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        setViewState((current) => updater(current));
+      },
+    }),
+    [
+      model,
+      props.avatarActorId,
+      props.keybindings,
+      props.onQuit,
+      props.roomAccessToken,
+      props.roomChatId,
+      props.runtimeId,
+      props.sessionId,
+      props.shellName,
+      props.store,
+      viewState,
+    ],
+  );
+
+  useEffect(() => {
+    const release = props.store.retainGlobalRoomSnapshot(props.roomChatId);
+    void props.store.hydrateGlobalRoomSnapshot({
+      chatId: props.roomChatId,
+      accessToken: props.roomAccessToken,
+      force: true,
+    });
+    return release;
+  }, [props.roomAccessToken, props.roomChatId, props.store]);
+
+  useEffect(() => {
+    void syncCliShellTerminalGeometry({
+      store: props.store,
+      terminalId: model.terminalId,
+      width,
+      height,
+      previousGeometryKey: geometryRef.current,
+    })
+      .then((nextKey) => {
+        geometryRef.current = nextKey;
+      })
+      .catch(() => undefined);
+  }, [height, model.terminalId, props.store, width]);
+
+  usePaste((event) => {
+    routeCliShellPaste(controllerContext, textDecoder.decode(event.bytes));
+  });
 
   useKeyboard((key) => {
-    if (key.ctrl && key.name === "q") {
-      props.onQuit();
-      return true;
-    }
-    return false;
+    return routeCliShellKey(controllerContext, key);
   });
 
   return (
-    <box width="100%" height="100%" flexDirection="column">
-      <box flexGrow={1}>
-        <text selectable>
-          {frame.bodyLines.map((line, index) => (
-            <span key={`body-${index}`}>
-              {line}
-              {index < frame.bodyLines.length - 1 ? <br /> : null}
-            </span>
-          ))}
-        </text>
-      </box>
-      <box height={1} backgroundColor="#2b3036">
-        <text fg="#f4f7fb">{frame.toolbarLine}</text>
-      </box>
+    <box width="100%" height="100%">
+      <text selectable>
+        {frame.styledLines.map((line, index) => (
+          <span key={`line-${index}`}>
+            {line.spans.length > 0
+              ? line.spans.map((span, spanIndex) => {
+                  let content: ReactNode = (
+                    <span key={`text-${index}-${spanIndex}`} fg={span.fg} bg={span.bg}>
+                      {span.text}
+                    </span>
+                  );
+                  return <span key={`span-${index}-${spanIndex}`}>{content}</span>;
+                })
+              : " "}
+            {index < frame.lines.length - 1 ? <br /> : null}
+          </span>
+        ))}
+      </text>
     </box>
   );
 };

@@ -54,22 +54,22 @@
 - [x] 4.4 Render the default toolbar in three zones: status icon, current Heartbeat, and action buttons
 - [x] 4.5 Implement toolbar state icons for idle, text-progressing, thinking, tool-call, message-tool, and terminal-tool states
 - [x] 4.6 Implement toolbar Heartbeat rendering from the latest message-part, including optimized summaries for message/terminal/attention built-in tool calls
-- [ ] 4.7 Implement toolbar action buttons: managed/takeover toggle backed by platform hosting attention plus delegation projections, and chat entry with unread count plus shortcut
-- [ ] 4.8 Implement the explicit TUI dialogue panel using `assets/cli-shell-product-reference-v8-dialogue-right-grid.png` as the final product-effect reference, `assets/cli-shell-product-reference-v8-dialogue-right-grid.svg` as the inspection/regeneration companion, and `assets/cli-shell-product-reference-v8-dialogue-right-grid.txt` as the cell-grid contract
-- [ ] 4.9 Implement dialogue panel top toolbar placement controls for left, right, floating, bottom, plus close
-- [ ] 4.10 Implement dialogue panel Markdown message list with left gutter, right scrollbar, gray user message background, `>` gutter marker, and docked panel separators instead of a full enclosing border
-- [ ] 4.11 Implement focused bottom input box with one-line separator, gray background, left `>` gutter, and cursor
-- [ ] 4.12 Implement smart dialogue placement on first open and resize using minimum viable thresholds
-- [ ] 4.13 Implement terminal-mode input routing so printable keys, paste, arrows, and `Ctrl+C` go to the backend terminal by default
-- [ ] 4.14 Implement settings-driven toolbar/chat/dialogue focus/cancel/send behavior without leaking chat input into the backend terminal
-- [ ] 4.15 Implement shell-terminal resize handling that updates backend terminal cols/rows after subtracting the one-line toolbar
-- [ ] 4.16 Keep UI terminology aligned with v8 references, distinguishing `shell-terminal` from backend `terminal`
-- [ ] 4.17 Implement all cli-shell product chrome as terminal cell-grid output: split lines, minimal floating borders, gutter columns, scrollbar columns, background cell ranges, and deterministic width accounting for emoji/CJK glyphs
-- [ ] 4.18 Render dialogue short time metadata for each message group and centered date divider rows when visible messages cross a local date boundary
-- [ ] 4.19 Implement managed/takeover on behavior as hosting AttentionItem commit with the literal fixed key `scores: {"hosting": 1000}`, plus default write-capable terminal delegation create/refresh
-- [ ] 4.20 Implement managed/takeover off behavior as delegation revoke plus mandatory hosting attention settlement `scores: {"hosting": 0}` with reason `user_disabled`, without deleting conversation or read access
+- [x] 4.7 Implement toolbar action buttons: managed/takeover toggle backed by platform hosting attention plus delegation projections, and chat entry with unread count plus shortcut
+- [x] 4.8 Implement the explicit TUI dialogue panel using `assets/cli-shell-product-reference-v8-dialogue-right-grid.png` as the final product-effect reference, `assets/cli-shell-product-reference-v8-dialogue-right-grid.svg` as the inspection/regeneration companion, and `assets/cli-shell-product-reference-v8-dialogue-right-grid.txt` as the cell-grid contract
+- [x] 4.9 Implement dialogue panel top toolbar placement controls for left, right, floating, bottom, plus close
+- [x] 4.10 Implement dialogue panel Markdown message list with left gutter, right scrollbar, gray user message background, `>` gutter marker, and docked panel separators instead of a full enclosing border
+- [x] 4.11 Implement focused bottom input box with one-line separator, gray background, left `>` gutter, and cursor
+- [x] 4.12 Implement smart dialogue placement on first open and resize using minimum viable thresholds
+- [x] 4.13 Implement terminal-mode input routing so printable keys, paste, arrows, and `Ctrl+C` go to the backend terminal by default
+- [x] 4.14 Implement settings-driven toolbar/chat/dialogue focus/cancel/send behavior without leaking chat input into the backend terminal
+- [x] 4.15 Implement shell-terminal resize handling that updates backend terminal cols/rows after subtracting the one-line toolbar
+- [x] 4.16 Keep UI terminology aligned with v8 references, distinguishing `shell-terminal` from backend `terminal`
+- [x] 4.17 Implement all cli-shell product chrome as terminal cell-grid output: split lines, minimal floating borders, gutter columns, scrollbar columns, background cell ranges, and deterministic width accounting for emoji/CJK glyphs
+- [x] 4.18 Render dialogue short time metadata for each message group and centered date divider rows when visible messages cross a local date boundary
+- [x] 4.19 Implement managed/takeover on behavior as hosting AttentionItem commit with the literal fixed key `scores: {"hosting": 1000}`, plus default write-capable terminal delegation create/refresh
+- [x] 4.20 Implement managed/takeover off behavior as delegation revoke plus mandatory hosting attention settlement `scores: {"hosting": 0}` with reason `user_disabled`, without deleting conversation or read access
 - [ ] 4.21 Ensure autonomous terminal writes under managed/takeover use the Avatar actor identity and record delegation/lease provenance, not hidden superadmin writes
-- [ ] 4.22 Add focused TUI/view-model tests for initial render, one-line toolbar, toolbar zones, status states, Heartbeat streaming, action buttons/unread count, hosting attention projection, managed delegation projection, optional visual separator, dialogue panel open/close/placement, Markdown list rendering, short time rendering, date divider rendering, focused input, cell-grid alignment, wide glyph width accounting, absence of top product chrome, absence of multi-terminal navigation, terminal hydration, input routing, and resize geometry
+- [x] 4.22 Add focused TUI/view-model tests for initial render, one-line toolbar, toolbar zones, status states, Heartbeat streaming, action buttons/unread count, hosting attention projection, managed delegation projection, optional visual separator, dialogue panel open/close/placement, Markdown list rendering, short time rendering, date divider rendering, focused input, cell-grid alignment, wide glyph width accounting, absence of top product chrome, absence of multi-terminal navigation, terminal hydration, input routing, and resize geometry
 
 ## 5. Validation
 
