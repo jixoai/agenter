@@ -4,15 +4,12 @@
   "type": "module",
   "files": [
     "SPEC.md",
-    "bin",
-    "dist"
+    "src"
   ],
   "bin": {
-    "agenter": "./bin/agenter.js"
+    "agenter": "./src/bin/agenter.ts"
   },
   "scripts": {
-    "build": "bun run ./scripts/build.ts",
-    "prepack": "bun run build",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit"
   },

@@ -5,7 +5,7 @@ import { join } from "node:path";
 const packageRoot = join(import.meta.dir, "..");
 
 describe("Feature: agenter publish package", () => {
-  test("Scenario: Given the public agenter package When inspecting its release metadata Then npm users receive a bundled wrapper instead of private workspace dependencies", () => {
+  test("Scenario: Given the public agenter package When inspecting its release metadata Then the package stays Bun-first with a ts-first binary entry", () => {
     const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
       bin?: Record<string, string>;
       dependencies?: Record<string, string>;
@@ -15,13 +15,12 @@ describe("Feature: agenter publish package", () => {
       private?: boolean;
       scripts?: Record<string, string>;
     };
-    const wrapperSource = readFileSync(join(packageRoot, "bin", "agenter.js"), "utf8");
     const sourceEntry = readFileSync(join(packageRoot, "src", "bin", "agenter.ts"), "utf8");
 
     expect(pkg.name).toBe("agenter");
     expect(pkg.private).toBeUndefined();
-    expect(pkg.bin).toEqual({ agenter: "./bin/agenter.js" });
-    expect(pkg.files).toEqual(["SPEC.md", "bin", "dist"]);
+    expect(pkg.bin).toEqual({ agenter: "./src/bin/agenter.ts" });
+    expect(pkg.files).toEqual(["SPEC.md", "src"]);
     expect(pkg.dependencies).toEqual({
       "@duckdb/node-api": "^1.5.1-r.1",
       "@opentui/core": "latest",
@@ -29,11 +28,8 @@ describe("Feature: agenter publish package", () => {
       react: "^19.0.0",
     });
     expect(pkg.devDependencies?.["@agenter/cli"]).toBe("workspace:*");
-    expect(pkg.scripts?.build).toBe("bun run ./scripts/build.ts");
-    expect(pkg.scripts?.prepack).toBe("bun run build");
-    expect(wrapperSource).toContain("../dist/agenter.js");
-    expect(wrapperSource).toContain("../src/bin/agenter.ts");
-    expect(wrapperSource).toContain("existsSync(fileURLToPath(sourceEntry)) ? sourceEntry.href : distEntry.href");
+    expect(pkg.scripts?.build).toBeUndefined();
+    expect(pkg.scripts?.prepack).toBeUndefined();
     expect(sourceEntry).toContain('from "@agenter/cli"');
   });
 });

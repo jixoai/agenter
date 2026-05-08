@@ -13,5 +13,5 @@
 ## 2. 长期法则
 
 - public package 是 release surface，不是新的 runtime authority；descriptor-driven launcher law 仍由 internal `@agenter/cli` 实现。
-- workspace 开发态允许 wrapper 回退到 source bin；publish 产物固定优先使用 `dist` bundle。
+- Bun-first package 的 `bin` / `exports` 必须 ts-first，直接指向 source entry；不得再维护 source-or-dist wrapper 分流。
 - public package 只能 externalize unavoidable native/runtime npm dependencies；内部 workspace package 不得作为 published runtime dependency 暴露给消费者。

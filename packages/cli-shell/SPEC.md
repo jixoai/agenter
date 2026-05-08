@@ -12,6 +12,7 @@
 
 ## 2. 长期法则
 
+- Bun-first package 的 entry contract 必须 ts-first：`bin` / `exports` 直接指向 source entry，不再保留 dist wrapper 回退。
 - package 只能通过 `@agenter/client-sdk` 与 `@agenter/product-extension-runtime` 消费平台能力；不得 import core runtime internals。
 - optional `@avatar` 与 `--session` grammar 属于 product-local parsing：Avatar identity 与 shell name 必须分离，shell name 不能成为 runtime identity。
 - 默认 assistant 是 `shell-assistant`；其 prompt 与 memory 初始化固定为 seed-if-missing，且底层 avatar-private 文件保持开放可编辑。

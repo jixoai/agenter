@@ -15,7 +15,7 @@ describe("Feature: cli-shell package boundary", () => {
       publishConfig?: { access?: string };
       scripts?: Record<string, string>;
     };
-    const wrapperSource = readFileSync(join(packageRoot, "bin", "agenter-cli-shell.js"), "utf8");
+    const binSource = readFileSync(join(packageRoot, "src", "bin", "agenter-cli-shell.ts"), "utf8");
     const argvSource = readFileSync(join(packageRoot, "src", "argv.ts"), "utf8");
     const productSource = readFileSync(join(packageRoot, "src", "product.ts"), "utf8");
     const bootstrapSource = readFileSync(join(packageRoot, "src", "bootstrap.ts"), "utf8");
@@ -34,14 +34,12 @@ describe("Feature: cli-shell package boundary", () => {
     expect(pkg.devDependencies?.["@agenter/client-sdk"]).toBe("workspace:*");
     expect(pkg.devDependencies?.["@agenter/product-extension-runtime"]).toBe("workspace:*");
     expect(pkg.private).toBeUndefined();
-    expect(pkg.bin).toEqual({ "agenter-cli-shell": "./bin/agenter-cli-shell.js" });
-    expect(pkg.files).toEqual(["SPEC.md", "bin", "dist"]);
+    expect(pkg.bin).toEqual({ "agenter-cli-shell": "./src/bin/agenter-cli-shell.ts" });
+    expect(pkg.files).toEqual(["SPEC.md", "src"]);
     expect(pkg.publishConfig).toEqual({ access: "public" });
-    expect(pkg.scripts?.build).toBe("bun run ./scripts/build.ts");
-    expect(pkg.scripts?.prepack).toBe("bun run build");
-    expect(wrapperSource).toContain("../dist/agenter-cli-shell.js");
-    expect(wrapperSource).toContain("../src/bin/agenter-cli-shell.ts");
-    expect(wrapperSource).toContain("existsSync(fileURLToPath(sourceEntry)) ? sourceEntry.href : distEntry.href");
+    expect(pkg.scripts?.build).toBeUndefined();
+    expect(pkg.scripts?.prepack).toBeUndefined();
+    expect(binSource).toContain('await runCliShell(process.argv)');
     expect(argvSource).toContain("AGENTER_DAEMON_HOST");
     expect(argvSource).toContain("AGENTER_DAEMON_PORT");
     expect(argvSource).toContain("AGENTER_AUTH_SERVICE_ENDPOINT");

@@ -27,18 +27,16 @@ const createCliLayout = (): string => {
   const cliSourceDir = join(root, "packages", "cli", "src");
   const packageDir = join(root, "packages", "cli-shell");
   mkdirSync(cliSourceDir, { recursive: true });
-  mkdirSync(join(packageDir, "bin"), { recursive: true });
   mkdirSync(join(packageDir, "src", "bin"), { recursive: true });
   writeFileSync(
     join(packageDir, "package.json"),
     JSON.stringify({
       name: "@agenter/cli-shell",
       bin: {
-        "agenter-cli-shell": "./bin/agenter-cli-shell.js",
+        "agenter-cli-shell": "./src/bin/agenter-cli-shell.ts",
       },
     }),
   );
-  writeFileSync(join(packageDir, "bin", "agenter-cli-shell.js"), "console.log('wrapper')\n");
   writeFileSync(join(packageDir, "src", "bin", "agenter-cli-shell.ts"), "console.log('ok')\n");
   return cliSourceDir;
 };
@@ -62,7 +60,7 @@ describe("Feature: product command launcher", () => {
     if (target.source !== "workspace") {
       return;
     }
-    expect(target.binPath.endsWith("packages/cli-shell/bin/agenter-cli-shell.js")).toBe(true);
+    expect(target.binPath.endsWith("packages/cli-shell/src/bin/agenter-cli-shell.ts")).toBe(true);
   });
 
   test("Scenario: Given no local package and a resolvable installed package When resolving the launch target Then installed metadata provides the bin path", () => {
@@ -70,17 +68,17 @@ describe("Feature: product command launcher", () => {
     const cliSourceDir = join(root, "packages", "cli", "src");
     const installedDir = join(root, "node_modules", "@agenter", "cli-shell");
     mkdirSync(cliSourceDir, { recursive: true });
-    mkdirSync(join(installedDir, "bin"), { recursive: true });
+    mkdirSync(join(installedDir, "src", "bin"), { recursive: true });
     writeFileSync(
       join(installedDir, "package.json"),
       JSON.stringify({
         name: "@agenter/cli-shell",
         bin: {
-          "agenter-cli-shell": "./bin/agenter-cli-shell.js",
+          "agenter-cli-shell": "./src/bin/agenter-cli-shell.ts",
         },
       }),
     );
-    writeFileSync(join(installedDir, "bin", "agenter-cli-shell.js"), "console.log('installed')\n");
+    writeFileSync(join(installedDir, "src", "bin", "agenter-cli-shell.ts"), "console.log('installed')\n");
     const descriptor = resolveProductCommandDescriptor("shell");
     if (!descriptor) {
       throw new Error("missing shell descriptor");
@@ -93,7 +91,7 @@ describe("Feature: product command launcher", () => {
     if (target.source !== "installed") {
       return;
     }
-    expect(target.binPath.endsWith("node_modules/@agenter/cli-shell/bin/agenter-cli-shell.js")).toBe(true);
+    expect(target.binPath.endsWith("node_modules/@agenter/cli-shell/src/bin/agenter-cli-shell.ts")).toBe(true);
   });
 
   test("Scenario: Given no resolvable local or installed package When building the remote fallback command Then the configured runner is honored without changing the controlled package name", () => {
