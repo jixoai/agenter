@@ -1,4 +1,4 @@
-import type { TerminalMode, TerminalReadable } from "./termless-types.js";
+import type { TerminalMode, TerminalReadable } from "@agenter/termless-core";
 import { AgenterXtermBackend } from "./agenter-xterm-backend.js";
 
 const DEFAULT_COLS = 120;

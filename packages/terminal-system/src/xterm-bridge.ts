@@ -1,1 +1,1 @@
-export { XtermBridge } from "@agenter/termless-core";
+export { XtermBridge } from "@agenter/termless-xterm-backend";

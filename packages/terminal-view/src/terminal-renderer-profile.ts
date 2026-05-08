@@ -175,8 +175,8 @@ export const resolveTerminalAppearance = (input?: {
 });
 
 // `auto` exists because renderer choice is front-end environment policy. The
-// current desktop default is `ghostty-web` because fit/cover host scaling keeps
-// selection aligned more reliably there than in today's xterm-based DOM stack.
+// current default stays on xterm until the termless backend migration and
+// browser parity work prove a different renderer as the durable baseline.
 export const resolveTerminalRenderer = (
   preference: TerminalRendererPreference | null | undefined,
 ): TerminalRendererResolution => {
@@ -184,8 +184,8 @@ export const resolveTerminalRenderer = (
   if (normalized === "auto") {
     return {
       preference: normalized,
-      resolvedRenderer: "ghostty-web",
-      reason: "desktop-auto-prefers-ghostty-web-for-scale-safe-selection",
+      resolvedRenderer: "xterm",
+      reason: "auto-defaults-to-xterm-until-backend-parity-is-proven",
     };
   }
   return {

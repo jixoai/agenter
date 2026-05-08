@@ -19,6 +19,7 @@
   "dependencies": {
     "@agenter/managed-seat-invitation-handshake": "workspace:*",
     "@agenter/termless-core": "workspace:*",
+    "@agenter/termless-xterm-backend": "workspace:*",
     "@agenter/terminal-transport-protocol": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",
     "@opentui/core": "latest",

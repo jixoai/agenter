@@ -1,6 +1,6 @@
 # @agenter/terminal-system
 
-ATI (Agentic Terminal Interface): 用 PTY + `@xterm/headless` 把终端输出落盘为可被 AI 消费的语义化 HTML 日志。
+ATI (Agentic Terminal Interface): 用 PTY + Termless-compatible terminal backend 把终端输出落盘为可被 AI 消费的语义化 HTML 日志。
 内核采用 ANSI-first：先生成结构化语义快照，再序列化为 `log.html`。
 
 ## 安装与运行
@@ -62,7 +62,7 @@ ati [options] [command] [args]
 
 在交互 TTY 下，ATI 使用 OpenTUI 渲染一个独立视图区域：
 
-- 视图内容来自 `@xterm/headless` 的结构化渲染结果（text + fg/bg + attrs）
+- 视图内容来自 `@agenter/termless-core` 的结构化渲染结果（text + fg/bg + attrs）
 - 刷新策略是“替换当前视图”（clear + rewrite），不是简单 stdout 追加打印
 - 键盘输入由 ATI-TUI 捕获并转发到目标进程（`ctrl+q` 退出 ATI）
 - 视图可显示边框；PTY 的 auto 尺寸会继承“边框内”可用区域
@@ -141,7 +141,7 @@ ati [options] [command] [args]
 ## 近期关键修复
 
 - 修复 `meta.status` 长时间停留 `BUSY`：空闲后会触发状态快照提交，最终可落盘 `IDLE`
-- cursor 定位改为严格使用 `@xterm/headless` 原始光标（不做 placeholder 文案硬编码修正）
+- cursor 定位改为严格使用 terminal backend 提供的原始光标事实（不做 placeholder 文案硬编码修正）
 - 支持 `showCursor` 语义：当硬件光标被隐藏时，ATI 不再注入额外光标块
 - 保留 `inverse` 样式（如 `SGR 7m/27m`），用于显示应用自绘焦点
 - 当检测到 inverse 焦点时，ATI-TUI 会优先显示 inverse 并抑制额外块光标，避免双光标或错位

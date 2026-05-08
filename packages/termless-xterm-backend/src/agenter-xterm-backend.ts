@@ -1,4 +1,4 @@
-import { Terminal, type IBuffer, type IBufferCell, type IBufferLine, type IModes } from "./xterm-headless-module.js";
+import { Terminal, type IBuffer, type IBufferCell, type IModes } from "./xterm-headless-module.js";
 import type {
   Cell,
   CursorState,
@@ -10,7 +10,7 @@ import type {
   TerminalMode,
   TerminalOptions,
   UnderlineStyle,
-} from "./termless-types.js";
+} from "@agenter/termless-core";
 
 const DEFAULT_CAPABILITIES: TerminalCapabilities = {
   name: "xterm-headless",

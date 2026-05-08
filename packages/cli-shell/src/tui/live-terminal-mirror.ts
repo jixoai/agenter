@@ -1,9 +1,9 @@
 import {
   renderStructuredBuffer,
-  XtermBridge,
   type TerminalRenderRichLine,
   type TerminalStructuredRender,
 } from "@agenter/termless-core";
+import { XtermBridge } from "@agenter/termless-xterm-backend";
 import {
   createTerminalTransportClientSession,
   type TerminalTransportClientConnectionState,

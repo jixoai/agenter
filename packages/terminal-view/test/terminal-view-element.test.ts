@@ -503,12 +503,12 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     const shadowRoot = requireShadowRoot(element);
-    const terminal = mockGhosttyTerminals.at(-1);
+    const terminal = mockTerminals.at(-1);
     expect(terminal).toBeDefined();
     expect(terminal?.resetCount).toBe(1);
     expect(terminal?.cols).toBe(132);
     expect(terminal?.rows).toBe(40);
-    expect(element.resolvedRenderer).toBe("ghostty-web");
+    expect(element.resolvedRenderer).toBe("xterm");
     expect(terminal?.options.allowTransparency).toBe(true);
     expect(terminal?.options.scrollback).toBe(10_000);
     expect(element.querySelector("style")).toBeNull();
@@ -682,7 +682,7 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     const shadowRoot = requireShadowRoot(element);
-    const terminal = mockGhosttyTerminals.at(-1);
+    const terminal = mockTerminals.at(-1);
     expect(readTerminalScale(shadowRoot)).toBeCloseTo(2, 2);
     expect(terminal?.cols).toBe(40);
     expect(terminal?.rows).toBe(10);
@@ -751,7 +751,7 @@ describe("Feature: terminal-view WebComponent", () => {
       rows: 20,
     });
 
-    const terminal = mockGhosttyTerminals.at(-1);
+    const terminal = mockTerminals.at(-1);
     expect(terminal?.resetCount).toBe(0);
 
     socket?.message(
@@ -945,7 +945,7 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     const shadowRoot = requireShadowRoot(element);
-    const terminal = mockGhosttyTerminals.at(-1);
+    const terminal = mockTerminals.at(-1);
     const viewport = shadowRoot.querySelector<HTMLElement>("[data-terminal-viewport]");
     expect(viewport).not.toBeNull();
     expect(terminal?.focusCount).toBe(0);
@@ -1194,7 +1194,7 @@ describe("Feature: terminal-view WebComponent", () => {
     await waitForLifecycleFrame();
     await element.updateComplete;
 
-    const terminal = mockGhosttyTerminals.at(-1);
+    const terminal = mockTerminals.at(-1);
     expect(element.connectionState).toBe("connected");
     expect(terminal?.resetCount).toBe(1);
     expect(terminal?.writes).toContain("boot output");

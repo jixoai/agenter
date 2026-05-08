@@ -9,11 +9,11 @@ import {
 } from "../src/terminal-renderer-profile";
 
 describe("Feature: terminal renderer profile law", () => {
-  test("Scenario: Given auto renderer preference When the viewport resolves it Then desktop defaults stay on ghostty-web and the reason remains explicit", () => {
+  test("Scenario: Given auto renderer preference When the viewport resolves it Then the durable default stays on xterm until another backend earns the baseline", () => {
     expect(resolveTerminalRenderer("auto")).toEqual({
       preference: "auto",
-      resolvedRenderer: "ghostty-web",
-      reason: "desktop-auto-prefers-ghostty-web-for-scale-safe-selection",
+      resolvedRenderer: "xterm",
+      reason: "auto-defaults-to-xterm-until-backend-parity-is-proven",
     });
   });
 
