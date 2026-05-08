@@ -32,8 +32,12 @@ export interface ManagedTerminalSnapshot {
   rows: number;
   lines: string[];
   richLines?: RichLine[];
-  cursor: { x: number; y: number };
-  cursorVisible?: boolean;
+  cursor: { x: number; y: number; visible?: boolean };
+  scrollback: {
+    viewportOffset: number;
+    totalLines: number;
+    screenLines: number;
+  };
 }
 
 export interface ManagedTerminalLifecycleEvent extends TerminalLifecycleState {}
@@ -85,8 +89,12 @@ export class ManagedTerminal {
       rows: this.rows,
       lines: Array.from({ length: this.rows }, () => ""),
       richLines: Array.from({ length: this.rows }, () => ({ spans: [] })),
-      cursor: { x: 0, y: 0 },
-      cursorVisible: false,
+      cursor: { x: 0, y: 0, visible: false },
+      scrollback: {
+        viewportOffset: 0,
+        totalLines: this.rows,
+        screenLines: this.rows,
+      },
     };
   }
 
@@ -516,15 +524,19 @@ export class ManagedTerminal {
       rows: this.rows,
       cursor: {
         x: Math.max(0, Math.min(this.snapshot.cursor.x, Math.max(0, this.cols - 1))),
-        y: Math.max(0, Math.min(this.snapshot.cursor.y, Math.max(0, this.rows - 1))),
+        y: Math.max(0, this.snapshot.cursor.y),
+        visible: this.snapshot.cursor.visible,
+      },
+      scrollback: {
+        viewportOffset: Math.max(0, this.snapshot.scrollback.viewportOffset),
+        totalLines: Math.max(this.rows, this.snapshot.scrollback.totalLines),
+        screenLines: this.rows,
       },
     };
     this.emitSnapshot();
   }
 
   private toSnapshot(render: RenderResult): ManagedTerminalSnapshot {
-    const viewportStart = Math.max(0, render.plainLines.length - this.rows);
-    const cursorY = Math.max(0, Math.min(render.cursorAbsRow - viewportStart, Math.max(0, this.rows - 1)));
     this.seq += 1;
 
     return {
@@ -540,9 +552,14 @@ export class ManagedTerminal {
       })),
       cursor: {
         x: render.cursorCol,
-        y: cursorY,
+        y: render.cursorAbsRow,
+        visible: render.cursorVisible,
       },
-      cursorVisible: render.cursorVisible,
+      scrollback: {
+        viewportOffset: Math.max(0, render.plainLines.length - this.rows),
+        totalLines: render.plainLines.length,
+        screenLines: this.rows,
+      },
     };
   }
 }

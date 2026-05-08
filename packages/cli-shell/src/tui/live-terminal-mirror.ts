@@ -3,7 +3,7 @@ import {
   XtermBridge,
   type TerminalRenderRichLine,
   type TerminalStructuredRender,
-} from "@agenter/terminal-render-core";
+} from "@agenter/termless-core";
 import {
   createTerminalTransportClientSession,
   type TerminalTransportClientConnectionState,
@@ -38,9 +38,12 @@ export interface CliShellLiveTerminalMirror {
 
 const EMPTY_STRUCTURED_RENDER: TerminalStructuredRender = {
   richLines: [],
-  cursorAbsRow: 0,
-  cursorCol: 0,
-  cursorVisible: false,
+  cursor: { x: 0, y: 0, visible: false },
+  scrollback: {
+    viewportOffset: 0,
+    totalLines: 24,
+    screenLines: 24,
+  },
   rows: 24,
   cols: 80,
 };
@@ -59,19 +62,19 @@ const viewFromStructured = (input: {
 }): CliShellLiveTerminalView => {
   const richLines = cloneRichLines(input.render.richLines);
   const plainLines = richLines.map((line) => richLineToPlain(line));
-  const viewportStart = Math.max(0, richLines.length - input.render.rows);
-  const viewportEnd = Math.max(viewportStart, richLines.length);
+  const viewportStart = Math.max(0, input.render.scrollback.viewportOffset);
+  const viewportEnd = Math.max(viewportStart, viewportStart + input.render.rows);
   return {
     plainLines,
     richLines,
-    cursorAbsRow: input.render.cursorAbsRow,
-    cursorCol: input.render.cursorCol,
-    cursorVisible: input.render.cursorVisible,
+    cursorAbsRow: input.render.cursor.y,
+    cursorCol: input.render.cursor.x,
+    cursorVisible: input.render.cursor.visible ?? true,
     rows: input.render.rows,
     cols: input.render.cols,
     viewportStart,
     viewportEnd,
-    scrollbackRows: richLines.length,
+    scrollbackRows: input.render.scrollback.totalLines,
     running: input.running,
     connected: input.connected,
   };
@@ -101,6 +104,7 @@ export const createCliShellLiveTerminalMirror = (input: {
     ...EMPTY_STRUCTURED_RENDER,
     rows: input.initialSnapshot?.rows ?? EMPTY_STRUCTURED_RENDER.rows,
     cols: input.initialSnapshot?.cols ?? EMPTY_STRUCTURED_RENDER.cols,
+    scrollback: input.initialSnapshot?.scrollback ?? EMPTY_STRUCTURED_RENDER.scrollback,
   };
   const listeners = new Set<() => void>();
 
@@ -114,20 +118,22 @@ export const createCliShellLiveTerminalMirror = (input: {
     latestRender = renderStructuredBuffer(bridge);
   };
 
-  const toCursorAbsRow = (snapshot: TerminalTransportSnapshot): number => {
-    const viewportStart = Math.max(0, snapshot.lines.length - snapshot.rows);
-    return viewportStart + Math.max(0, Math.min(snapshot.cursor.y, Math.max(0, snapshot.rows - 1)));
-  };
-
   const applySnapshotRender = (snapshot: TerminalTransportSnapshot): void => {
     latestRender = {
       richLines:
         snapshot.richLines && snapshot.richLines.length > 0
           ? cloneRichLines(snapshot.richLines)
           : renderStructuredBuffer(bridge).richLines,
-      cursorAbsRow: toCursorAbsRow(snapshot),
-      cursorCol: Math.max(0, snapshot.cursor.x),
-      cursorVisible: snapshot.cursorVisible ?? true,
+      cursor: {
+        x: Math.max(0, snapshot.cursor.x),
+        y: Math.max(0, snapshot.cursor.y),
+        visible: snapshot.cursor.visible ?? true,
+      },
+      scrollback: {
+        viewportOffset: Math.max(0, snapshot.scrollback.viewportOffset),
+        totalLines: Math.max(snapshot.lines.length, snapshot.scrollback.totalLines),
+        screenLines: snapshot.scrollback.screenLines,
+      },
       rows: snapshot.rows,
       cols: snapshot.cols,
     };

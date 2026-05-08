@@ -1,5 +1,5 @@
 import type { GlobalRoomMessage, RuntimeClientState } from "@agenter/client-sdk";
-import type { TerminalRenderRichLine } from "@agenter/terminal-render-core";
+import type { TerminalRenderRichLine } from "@agenter/termless-core";
 
 import { formatCliShellShortcut, type CliShellTuiKeybindings } from "./keybindings";
 import {

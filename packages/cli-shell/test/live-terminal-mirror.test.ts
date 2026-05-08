@@ -27,8 +27,13 @@ const createRichSnapshot = (input: {
   cursor: {
     x: input.cursorX,
     y: input.cursorY,
+    visible: true,
   },
-  cursorVisible: true,
+  scrollback: {
+    viewportOffset: Math.max(0, input.lines.length - input.rows),
+    totalLines: input.lines.length,
+    screenLines: input.rows,
+  },
 });
 
 const settleMirror = async (): Promise<void> => {

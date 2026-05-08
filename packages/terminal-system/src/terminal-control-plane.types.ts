@@ -228,13 +228,18 @@ export interface TerminalAwaitResult {
   seq: number;
   cols: number;
   rows: number;
-  cursor: { x: number; y: number };
+  cursor: { x: number; y: number; visible?: boolean };
   snapshot: {
     seq: number;
     timestamp: number;
     cols: number;
     rows: number;
-    cursor: { x: number; y: number };
+    cursor: { x: number; y: number; visible?: boolean };
+    scrollback: {
+      viewportOffset: number;
+      totalLines: number;
+      screenLines: number;
+    };
     lines: string[];
   };
   match?: {

@@ -28,8 +28,12 @@ export interface TerminalTransportSnapshot {
       inverse?: boolean;
     }>;
   }>;
-  cursor: { x: number; y: number };
-  cursorVisible?: boolean;
+  cursor: { x: number; y: number; visible?: boolean };
+  scrollback: {
+    viewportOffset: number;
+    totalLines: number;
+    screenLines: number;
+  };
 }
 
 export type TerminalTransportClientSideband =
@@ -115,12 +119,17 @@ const toProtoSnapshot = (snapshot: TerminalTransportSnapshot): ProtoTerminalSnap
     cursor: {
       x: snapshot.cursor.x,
       y: snapshot.cursor.y,
+      visible: snapshot.cursor.visible,
     },
-    cursorVisible: snapshot.cursorVisible,
+    scrollback: {
+      viewportOffset: snapshot.scrollback.viewportOffset,
+      totalLines: snapshot.scrollback.totalLines,
+      screenLines: snapshot.scrollback.screenLines,
+    },
   });
 
 const fromProtoSnapshot = (snapshot: ProtoTerminalSnapshot): TerminalTransportSnapshot | null => {
-  if (!snapshot?.cursor) {
+  if (!snapshot?.cursor || !snapshot?.scrollback) {
     return null;
   }
   return {
@@ -145,8 +154,13 @@ const fromProtoSnapshot = (snapshot: ProtoTerminalSnapshot): TerminalTransportSn
     cursor: {
       x: snapshot.cursor.x,
       y: snapshot.cursor.y,
+      visible: snapshot.cursor.visible,
     },
-    cursorVisible: snapshot.cursorVisible,
+    scrollback: {
+      viewportOffset: snapshot.scrollback.viewportOffset,
+      totalLines: snapshot.scrollback.totalLines,
+      screenLines: snapshot.scrollback.screenLines,
+    },
   };
 };
 

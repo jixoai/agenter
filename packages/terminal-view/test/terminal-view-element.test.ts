@@ -4,6 +4,7 @@ import {
   encodeTerminalTransportServerMessage,
   type TerminalTransportClientMessage,
   type TerminalTransportServerMessage,
+  type TerminalTransportSnapshot,
 } from "@agenter/terminal-transport-protocol";
 
 vi.mock("@xterm/xterm/css/xterm.css?inline", () => ({ default: ".xterm { display: block; }" }));
@@ -31,7 +32,7 @@ vi.mock("ghostty-web", () => {
       setFontSize: vi.fn(),
       remeasureFont: vi.fn(),
       render: vi.fn(),
-    };
+    });
     private dataListeners: Array<(data: string) => void> = [];
     private canvas: HTMLCanvasElement | null = null;
 
@@ -46,7 +47,7 @@ vi.mock("ghostty-web", () => {
       return {
         dispose: () => {
           this.dataListeners = this.dataListeners.filter((item) => item !== listener);
-        },
+        }),
       };
     }
 
@@ -146,7 +147,7 @@ class MockTerminal {
             width: 0,
             height: 0,
           },
-        },
+        }),
       },
     },
   };
@@ -171,7 +172,7 @@ class MockTerminal {
       dispose: () => {
         this.dataListeners = this.dataListeners.filter((item) => item !== listener);
       },
-    };
+    });
   }
 
   onBinary(listener: (data: string) => void): { dispose(): void } {
@@ -180,7 +181,7 @@ class MockTerminal {
       dispose: () => {
         this.binaryListeners = this.binaryListeners.filter((item) => item !== listener);
       },
-    };
+    });
   }
 
   emitData(data: string): void {
@@ -271,6 +272,19 @@ const mockGhosttyTerminals: Array<{
     setCursorStyle: ReturnType<typeof vi.fn>;
   };
 }> = [];
+
+const withSnapshotScrollback = (
+  snapshot: Omit<TerminalTransportSnapshot, "scrollback"> & {
+    scrollback?: TerminalTransportSnapshot["scrollback"];
+  },
+): TerminalTransportSnapshot => ({
+  ...snapshot,
+  scrollback: snapshot.scrollback ?? {
+    viewportOffset: Math.max(0, snapshot.lines.length - snapshot.rows),
+    totalLines: snapshot.lines.length,
+    screenLines: snapshot.rows,
+  },
+});
 vi.mock("@xterm/xterm", () => ({
   Terminal: class TerminalMock extends MockTerminal {
     constructor(options?: Record<string, unknown>) {
@@ -466,7 +480,7 @@ describe("Feature: terminal-view WebComponent", () => {
     element.addEventListener("terminal-view-screen-metrics", (event) => {
       screenMetricsEvents.push((event as CustomEvent<{ width: number; height: number }>).detail);
     });
-    element.snapshot = {
+    element.snapshot = withSnapshotScrollback({
       seq: 8,
       cols: 132,
       rows: 40,
@@ -480,7 +494,7 @@ describe("Feature: terminal-view WebComponent", () => {
         })),
       ],
       cursor: { x: 3, y: 63 },
-    };
+    });
 
     document.body.append(element);
     await element.updateComplete;
@@ -526,13 +540,13 @@ describe("Feature: terminal-view WebComponent", () => {
     element.projectionWidth = 730;
     element.projectionHeight = 394;
     element.projectionScale = 1;
-    element.snapshot = {
+    element.snapshot = withSnapshotScrollback({
       seq: 3,
       cols: 80,
       rows: 24,
       lines: Array.from({ length: 240 }, (_, index) => `line ${index + 1}`),
       cursor: { x: 0, y: 239 },
-    };
+    });
 
     document.body.append(element);
     await element.updateComplete;
@@ -555,13 +569,13 @@ describe("Feature: terminal-view WebComponent", () => {
     element.projectionWidth = 644;
     element.projectionHeight = 430;
     element.projectionScale = 0.538;
-    element.snapshot = {
+    element.snapshot = withSnapshotScrollback({
       seq: 9,
       cols: 132,
       rows: 40,
       lines: Array.from({ length: 40 }, (_, index) => `line ${index + 1}`),
       cursor: { x: 0, y: 39 },
-    };
+    });
 
     document.body.append(element);
     await element.updateComplete;
@@ -586,13 +600,13 @@ describe("Feature: terminal-view WebComponent", () => {
     element.projectionWidth = 1480;
     element.projectionHeight = 980;
     element.projectionScale = 1.234;
-    element.snapshot = {
+    element.snapshot = withSnapshotScrollback({
       seq: 10,
       cols: 132,
       rows: 40,
       lines: Array.from({ length: 40 }, (_, index) => `line ${index + 1}`),
       cursor: { x: 0, y: 39 },
-    };
+    });
 
     document.body.append(element);
     await element.updateComplete;
@@ -619,13 +633,13 @@ describe("Feature: terminal-view WebComponent", () => {
     element.projectionWidth = 874;
     element.projectionHeight = 552;
     element.projectionScale = 1;
-    element.snapshot = {
+    element.snapshot = withSnapshotScrollback({
       seq: 14,
       cols: 96,
       rows: 28,
       lines: Array.from({ length: 28 }, (_, index) => `line ${index + 1}`),
       cursor: { x: 0, y: 27 },
-    };
+    });
 
     document.body.append(element);
     await element.updateComplete;
@@ -653,13 +667,13 @@ describe("Feature: terminal-view WebComponent", () => {
     element.projectionWidth = 656;
     element.projectionHeight = 328;
     element.projectionScale = 2;
-    element.snapshot = {
+    element.snapshot = withSnapshotScrollback({
       seq: 12,
       cols: 40,
       rows: 10,
       lines: Array.from({ length: 10 }, (_, index) => `line ${index + 1}`),
       cursor: { x: 0, y: 9 },
-    };
+    });
 
     document.body.append(element);
     await element.updateComplete;
@@ -687,13 +701,13 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     element.transportUrl = "ws://127.0.0.1:4900/pty/bootstrap";
-    element.snapshot = {
+    element.snapshot = withSnapshotScrollback({
       seq: 1,
       cols: 80,
       rows: 24,
       lines: ["bootstrap snapshot"],
       cursor: { x: 0, y: 0 },
-    };
+    });
 
     await element.updateComplete;
     await waitForLifecycleFrame();
@@ -745,13 +759,13 @@ describe("Feature: terminal-view WebComponent", () => {
         type: "snapshot",
         terminalId: "iflow",
         status: "BUSY",
-        snapshot: {
+        snapshot: withSnapshotScrollback({
           seq: 2,
           cols: 140,
           rows: 40,
           lines: ["initial state"],
           cursor: { x: 0, y: 0 },
-        },
+        }),
       }),
     );
     await element.updateComplete;
@@ -775,13 +789,13 @@ describe("Feature: terminal-view WebComponent", () => {
         type: "snapshot",
         terminalId: "iflow",
         status: "BUSY",
-        snapshot: {
+        snapshot: withSnapshotScrollback({
           seq: 3,
           cols: 140,
           rows: 40,
           lines: ["redundant full snapshot"],
           cursor: { x: 0, y: 0 },
-        },
+        }),
       }),
     );
     await element.updateComplete;
@@ -790,13 +804,13 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(terminal?.resetCount).toBe(1);
     expect(terminal?.writes).not.toContain("redundant full snapshot");
 
-    element.snapshot = {
+    element.snapshot = withSnapshotScrollback({
       seq: 4,
       cols: 60,
       rows: 12,
       lines: ["stale prop snapshot"],
       cursor: { x: 0, y: 0 },
-    };
+    });
     await element.updateComplete;
     await element.updateComplete;
     expect(terminal?.resetCount).toBe(1);
@@ -899,13 +913,13 @@ describe("Feature: terminal-view WebComponent", () => {
     element.terminalId = "stopped-discovery";
     element.transportUrl = "ws://127.0.0.1:4900/pty/stopped-discovery";
     element.liveTransportEnabled = false;
-    element.snapshot = {
+    element.snapshot = withSnapshotScrollback({
       seq: 1,
       cols: 80,
       rows: 24,
       lines: ["bootstrap snapshot"],
       cursor: { x: 0, y: 0 },
-    };
+    });
 
     document.body.append(element);
     await element.updateComplete;
@@ -1016,7 +1030,7 @@ describe("Feature: terminal-view WebComponent", () => {
     element.font = {
       ...element.font,
       sizePx: 16,
-    };
+    });
     await element.updateComplete;
     await waitForLifecycleFrame();
     await waitForLifecycleFrame();
@@ -1077,13 +1091,13 @@ describe("Feature: terminal-view WebComponent", () => {
 
     element.terminalId = "rebuild-hydrate";
     element.rendererPreference = "ghostty-web";
-    element.snapshot = {
+    element.snapshot = withSnapshotScrollback({
       seq: 7,
       cols: 80,
       rows: 24,
       lines: ["hello rebuild"],
       cursor: { x: 0, y: 0 },
-    };
+    });
 
     document.body.append(element);
     await element.updateComplete;
@@ -1116,13 +1130,13 @@ describe("Feature: terminal-view WebComponent", () => {
 
     element.terminalId = "xterm-to-ghostty";
     element.rendererPreference = "xterm";
-    element.snapshot = {
+    element.snapshot = withSnapshotScrollback({
       seq: 11,
       cols: 80,
       rows: 24,
       lines: ["switch renderer repaint"],
       cursor: { x: 0, y: 0 },
-    };
+    });
 
     document.body.append(element);
     await element.updateComplete;
@@ -1167,13 +1181,13 @@ describe("Feature: terminal-view WebComponent", () => {
         type: "snapshot",
         terminalId: "iflow",
         status: "BUSY",
-        snapshot: {
+        snapshot: withSnapshotScrollback({
           seq: 1,
           cols: 120,
           rows: 30,
           lines: ["boot output"],
           cursor: { x: 0, y: 0 },
-        },
+        }),
       }),
     );
 

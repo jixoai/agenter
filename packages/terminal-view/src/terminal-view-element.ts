@@ -139,6 +139,9 @@ const serializeSnapshot = (snapshot: TerminalViewSnapshot): string => {
   return snapshot.lines.join("\r\n");
 };
 
+const resolveSnapshotScrollback = (snapshot: TerminalViewSnapshot): number =>
+  Math.max(DEFAULT_SCROLLBACK, snapshot.scrollback.totalLines + 256);
+
 const stripTerminalControlText = (value: string): string =>
   value
     .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/gu, "")
@@ -706,7 +709,7 @@ export class TerminalViewElement extends LitElement {
       return false;
     }
     this.hydratedSnapshotSeq = Math.max(this.hydratedSnapshotSeq, snapshot.seq);
-    this.terminalSession.setScrollback(Math.max(DEFAULT_SCROLLBACK, snapshot.lines.length - snapshot.rows + 256));
+    this.terminalSession.setScrollback(resolveSnapshotScrollback(snapshot));
     this.resizeTerminal(snapshot.cols, snapshot.rows);
     this.terminalSession.reset();
     const rendered = serializeSnapshot(snapshot);

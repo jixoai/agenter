@@ -7,10 +7,8 @@
     "lib": ["ESNext", "DOM"],
     "strict": true,
     "noEmit": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "@opentui/react",
     "types": ["bun"],
     "skipLibCheck": true
   },
-  "include": ["src/**/*", "test/**/*"]
+  "include": ["src/**/*"]
 }

@@ -2994,6 +2994,7 @@ export class TerminalControlPlane {
         cols: input.snapshot.cols,
         rows: input.snapshot.rows,
         cursor: input.snapshot.cursor,
+        scrollback: input.snapshot.scrollback,
         lines,
       },
       match: input.input.match

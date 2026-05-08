@@ -2,7 +2,7 @@ import type {
   GlobalRoomSnapshotOutput,
   RuntimeStore,
 } from "@agenter/client-sdk";
-import type { TerminalRenderRichLine } from "@agenter/terminal-render-core";
+import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import type { CliShellLiveTerminalView } from "./live-terminal-mirror";
 
 import type { CliShellStore } from "../bootstrap";

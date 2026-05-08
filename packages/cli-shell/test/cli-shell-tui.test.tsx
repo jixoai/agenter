@@ -139,7 +139,12 @@ const createGlobalTerminalEntry = (terminalId: string, lines: string[]): GlobalT
     cols: 120,
     rows: 39,
     lines,
-    cursor: { x: 0, y: Math.max(0, lines.length - 1) },
+    cursor: { x: 0, y: Math.max(0, lines.length - 1), visible: true },
+    scrollback: {
+      viewportOffset: Math.max(0, lines.length - 39),
+      totalLines: lines.length,
+      screenLines: 39,
+    },
   },
   focused: false,
   icon: undefined,
@@ -213,7 +218,12 @@ const createRuntimeState = (input: {
       cols: 120,
       rows: 39,
       lines: input.lines,
-      cursor: { x: 0, y: Math.max(0, input.lines.length - 1) },
+      cursor: { x: 0, y: Math.max(0, input.lines.length - 1), visible: true },
+      scrollback: {
+        viewportOffset: Math.max(0, input.lines.length - 39),
+        totalLines: input.lines.length,
+        screenLines: 39,
+      },
     },
   };
   const roomSnapshot: GlobalRoomSnapshotOutput = {

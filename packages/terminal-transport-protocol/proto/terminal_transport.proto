@@ -5,6 +5,13 @@ package agenter.terminal.transport.v1;
 message TerminalCursor {
   uint32 x = 1;
   uint32 y = 2;
+  optional bool visible = 3;
+}
+
+message TerminalScrollback {
+  uint32 viewport_offset = 1;
+  uint32 total_lines = 2;
+  uint32 screen_lines = 3;
 }
 
 message TerminalRichSpan {
@@ -28,7 +35,7 @@ message TerminalSnapshot {
   repeated string lines = 5;
   repeated TerminalRichLine rich_lines = 6;
   TerminalCursor cursor = 7;
-  optional bool cursor_visible = 8;
+  TerminalScrollback scrollback = 8;
 }
 
 enum TerminalStatus {

@@ -1,11 +1,12 @@
 {
-  "name": "@agenter/terminal-render-core",
+  "name": "@agenter/termless-core",
   "version": "0.0.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@termless/core": "^0.6.0",
     "@xterm/headless": "6.1.0-beta.167"
   },
   "devDependencies": {

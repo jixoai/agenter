@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@agenter/managed-seat-invitation-handshake": "workspace:*",
+    "@agenter/termless-core": "workspace:*",
     "@agenter/terminal-transport-protocol": "workspace:*",
     "@agenter/terminal-render-core": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",
@@ -32,8 +33,5 @@
     "@types/react": "^19.0.0",
     "@types/yargs": "^17.0.35",
     "typescript": "latest"
-  },
-  "patchedDependencies": {
-    "@xterm/headless@6.1.0-beta.167": "patches/@xterm%2Fheadless@6.1.0-beta.167.patch"
   }
 }

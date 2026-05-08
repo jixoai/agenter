@@ -95,8 +95,12 @@ describe("Feature: terminal transport protocol", () => {
             spans: [{ text: "hello", fg: "#ffffff", bold: true }],
           },
         ],
-        cursor: { x: 2, y: 1 },
-        cursorVisible: true,
+        cursor: { x: 2, y: 1, visible: true },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 2,
+          screenLines: 24,
+        },
       },
     });
     const outputBytes = encodeTerminalTransportServerMessage({
@@ -126,8 +130,12 @@ describe("Feature: terminal transport protocol", () => {
             spans: [{ text: "hello", fg: "#ffffff", bg: undefined, bold: true, underline: false, inverse: false }],
           },
         ],
-        cursor: { x: 2, y: 1 },
-        cursorVisible: true,
+        cursor: { x: 2, y: 1, visible: true },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 2,
+          screenLines: 24,
+        },
       },
     });
     expect(decodeTerminalTransportServerMessage(outputBytes)).toEqual({

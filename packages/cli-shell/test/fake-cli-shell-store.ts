@@ -70,7 +70,12 @@ const createTerminalEntry = (
     cols: 80,
     rows: 24,
     lines: Array.from({ length: 24 }, () => ""),
-    cursor: { x: 0, y: 0 },
+    cursor: { x: 0, y: 0, visible: false },
+    scrollback: {
+      viewportOffset: 0,
+      totalLines: 24,
+      screenLines: 24,
+    },
   },
   focused: false,
   icon: undefined,

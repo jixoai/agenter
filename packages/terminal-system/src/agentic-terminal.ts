@@ -234,10 +234,11 @@ export class AgenticTerminal {
         const render = this.buildRenderFromXterm(xterm);
         const compact = compactRenderForPersistence(render);
         this.emitRender(render);
+        const scrollback = xterm.getScrollback();
         committer.schedule({
           plainText: compact.plainLines.join("\n"),
           commit: async () => {
-            this.persistRenderToPager(compact, xterm.baseY, xterm.rows, xterm.cols, "write");
+            this.persistRenderToPager(compact, scrollback.viewportOffset, xterm.rows, xterm.cols, "write");
           },
         });
       });
@@ -511,17 +512,18 @@ export class AgenticTerminal {
       try {
         await this.forceCommit();
         const beforeResize = this.buildRenderFromXterm(xterm);
+        const beforeScrollback = xterm.getScrollback();
         this.debug("resize.before-seal", {
           lines: beforeResize.lines.length,
           cursor: { row: beforeResize.cursorAbsRow, col: beforeResize.cursorCol },
-          baseY: xterm.baseY,
+          viewportOffset: beforeScrollback.viewportOffset,
           rows: xterm.rows,
           cols: xterm.cols,
         });
         const sealedFile = pager.sealForResize(beforeResize.lines.length, {
           cursorRow: beforeResize.cursorAbsRow + 1,
           cursorCol: beforeResize.cursorCol + 1,
-          viewportBase: xterm.baseY,
+          viewportBase: beforeScrollback.viewportOffset,
           logStyle: this.profile.logStyle,
           rows: xterm.rows,
           cols: xterm.cols,
@@ -551,10 +553,11 @@ export class AgenticTerminal {
 
         const snapshot = this.buildRenderFromXterm(xterm);
         const compact = compactRenderForPersistence(snapshot);
+        const afterScrollback = xterm.getScrollback();
         this.debug("resize.snapshot", {
           lines: snapshot.lines.length,
           cursor: { row: snapshot.cursorAbsRow, col: snapshot.cursorCol },
-          baseY: xterm.baseY,
+          viewportOffset: afterScrollback.viewportOffset,
           rows,
           cols,
         });
@@ -562,7 +565,7 @@ export class AgenticTerminal {
         pager.writeResizeSnapshot(
           this.toPersistenceRender(compact),
           this.status,
-          xterm.baseY,
+          afterScrollback.viewportOffset,
           cols,
           rows,
           sealedFile,
@@ -598,10 +601,11 @@ export class AgenticTerminal {
 
     const render = this.buildRenderFromXterm(xterm);
     const compact = compactRenderForPersistence(render);
+    const scrollback = xterm.getScrollback();
     committer.schedule({
       plainText: compact.plainLines.join("\n"),
       commit: async () => {
-        this.persistRenderToPager(compact, xterm.baseY, xterm.rows, xterm.cols, reason);
+        this.persistRenderToPager(compact, scrollback.viewportOffset, xterm.rows, xterm.cols, reason);
       },
     });
     await committer.forceCommit();

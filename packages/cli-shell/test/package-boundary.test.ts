@@ -28,11 +28,10 @@ describe("Feature: cli-shell package boundary", () => {
     expect(pkg.dependencies).toEqual({
       "@agenter/client-sdk": "workspace:*",
       "@agenter/product-extension-runtime": "workspace:*",
-      "@agenter/terminal-render-core": "workspace:*",
+      "@agenter/termless-core": "workspace:*",
       "@agenter/terminal-transport-protocol": "workspace:*",
       "@opentui/core": "latest",
       "@opentui/react": "latest",
-      "@xterm/headless": "6.1.0-beta.167",
       react: "^19.0.0",
       "string-width": "^7.2.0",
       "yargs": "^17.7.2",
@@ -59,7 +58,7 @@ describe("Feature: cli-shell package boundary", () => {
     expect(tuiRunnerSource).toContain('from "@opentui/core"');
     expect(tuiRunnerSource).toContain('from "@opentui/react"');
     expect(liveMirrorSource).toContain('from "@agenter/terminal-transport-protocol"');
-    expect(liveMirrorSource).toContain('from "@agenter/terminal-render-core"');
+    expect(liveMirrorSource).toContain('from "@agenter/termless-core"');
     expect(liveMirrorSource).not.toContain("@agenter/app-server");
     expect(liveMirrorSource).not.toContain("session-runtime");
     expect(tuiAppSource).not.toContain("@agenter/tui");

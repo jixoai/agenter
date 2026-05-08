@@ -17,3 +17,5 @@ if (runtimeGlobal.Bun && typeof runtimeGlobal.window === "undefined") {
     writable: true,
   });
 }
+
+export {};

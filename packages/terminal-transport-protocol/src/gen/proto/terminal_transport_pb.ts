@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file proto/terminal_transport.proto.
  */
 export const file_proto_terminal_transport: GenFile = /*@__PURE__*/
-  fileDesc("Ch5wcm90by90ZXJtaW5hbF90cmFuc3BvcnQucHJvdG8SHWFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxIiYKDlRlcm1pbmFsQ3Vyc29yEgkKAXgYASABKA0SCQoBeRgCIAEoDSKCAQoQVGVybWluYWxSaWNoU3BhbhIMCgR0ZXh0GAEgASgJEg8KAmZnGAIgASgJSACIAQESDwoCYmcYAyABKAlIAYgBARIMCgRib2xkGAQgASgIEhEKCXVuZGVybGluZRgFIAEoCBIPCgdpbnZlcnNlGAYgASgIQgUKA19mZ0IFCgNfYmciUgoQVGVybWluYWxSaWNoTGluZRI+CgVzcGFucxgBIAMoCzIvLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsUmljaFNwYW4ipAIKEFRlcm1pbmFsU25hcHNob3QSCwoDc2VxGAEgASgNEhYKCXRpbWVzdGFtcBgCIAEoAUgAiAEBEgwKBGNvbHMYAyABKA0SDAoEcm93cxgEIAEoDRINCgVsaW5lcxgFIAMoCRJDCgpyaWNoX2xpbmVzGAYgAygLMi8uYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxSaWNoTGluZRI9CgZjdXJzb3IYByABKAsyLS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbEN1cnNvchIbCg5jdXJzb3JfdmlzaWJsZRgIIAEoCEgBiAEBQgwKCl90aW1lc3RhbXBCEQoPX2N1cnNvcl92aXNpYmxlIjkKDVRlcm1pbmFsSGVsbG8SGAoLdGVybWluYWxfaWQYASABKAlIAIgBAUIOCgxfdGVybWluYWxfaWQiLAoOVGVybWluYWxSZXNpemUSDAoEY29scxgBIAEoDRIMCgRyb3dzGAIgASgNIiIKElRlcm1pbmFsSW5wdXRCeXRlcxIMCgRkYXRhGAEgASgMIucBChNUZXJtaW5hbENsaWVudEZyYW1lEj0KBWhlbGxvGAEgASgLMiwuYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxIZWxsb0gAEj8KBnJlc2l6ZRgCIAEoCzItLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsUmVzaXplSAASSAoLaW5wdXRfYnl0ZXMYAyABKAsyMS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbElucHV0Qnl0ZXNIAEIGCgRib2R5IjgKE1Rlcm1pbmFsT3V0cHV0Qnl0ZXMSEwoLdGVybWluYWxfaWQYASABKAkSDAoEZGF0YRgCIAEoDCKuAQoVVGVybWluYWxTbmFwc2hvdEZyYW1lEhMKC3Rlcm1pbmFsX2lkGAEgASgJEkEKCHNuYXBzaG90GAIgASgLMi8uYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxTbmFwc2hvdBI9CgZzdGF0dXMYAyABKA4yLS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFN0YXR1cyJ6ChNUZXJtaW5hbFN0YXR1c0ZyYW1lEhMKC3Rlcm1pbmFsX2lkGAEgASgJEg8KB3J1bm5pbmcYAiABKAgSPQoGc3RhdHVzGAMgASgOMi0uYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxTdGF0dXMiOgoSVGVybWluYWxFcnJvckZyYW1lEhMKC3Rlcm1pbmFsX2lkGAEgASgJEg8KB21lc3NhZ2UYAiABKAkiJwoQVGVybWluYWxIZWxsb0FjaxITCgt0ZXJtaW5hbF9pZBgBIAEoCSKDAwoTVGVybWluYWxTZXJ2ZXJGcmFtZRJICghzbmFwc2hvdBgBIAEoCzI0LmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsU25hcHNob3RGcmFtZUgAEkQKBnN0YXR1cxgCIAEoCzIyLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsU3RhdHVzRnJhbWVIABJCCgVlcnJvchgDIAEoCzIxLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsRXJyb3JGcmFtZUgAEkQKCWhlbGxvX2FjaxgEIAEoCzIvLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsSGVsbG9BY2tIABJKCgxvdXRwdXRfYnl0ZXMYBSABKAsyMi5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbE91dHB1dEJ5dGVzSABCBgoEYm9keSplCg5UZXJtaW5hbFN0YXR1cxIfChtURVJNSU5BTF9TVEFUVVNfVU5TUEVDSUZJRUQQABIYChRURVJNSU5BTF9TVEFUVVNfSURMRRABEhgKFFRFUk1JTkFMX1NUQVRVU19CVVNZEAJiBnByb3RvMw");
+  fileDesc("Ch5wcm90by90ZXJtaW5hbF90cmFuc3BvcnQucHJvdG8SHWFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxIkgKDlRlcm1pbmFsQ3Vyc29yEgkKAXgYASABKA0SCQoBeRgCIAEoDRIUCgd2aXNpYmxlGAMgASgISACIAQFCCgoIX3Zpc2libGUiWAoSVGVybWluYWxTY3JvbGxiYWNrEhcKD3ZpZXdwb3J0X29mZnNldBgBIAEoDRITCgt0b3RhbF9saW5lcxgCIAEoDRIUCgxzY3JlZW5fbGluZXMYAyABKA0iggEKEFRlcm1pbmFsUmljaFNwYW4SDAoEdGV4dBgBIAEoCRIPCgJmZxgCIAEoCUgAiAEBEg8KAmJnGAMgASgJSAGIAQESDAoEYm9sZBgEIAEoCBIRCgl1bmRlcmxpbmUYBSABKAgSDwoHaW52ZXJzZRgGIAEoCEIFCgNfZmdCBQoDX2JnIlIKEFRlcm1pbmFsUmljaExpbmUSPgoFc3BhbnMYASADKAsyLy5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFJpY2hTcGFuIrsCChBUZXJtaW5hbFNuYXBzaG90EgsKA3NlcRgBIAEoDRIWCgl0aW1lc3RhbXAYAiABKAFIAIgBARIMCgRjb2xzGAMgASgNEgwKBHJvd3MYBCABKA0SDQoFbGluZXMYBSADKAkSQwoKcmljaF9saW5lcxgGIAMoCzIvLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsUmljaExpbmUSPQoGY3Vyc29yGAcgASgLMi0uYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxDdXJzb3ISRQoKc2Nyb2xsYmFjaxgIIAEoCzIxLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsU2Nyb2xsYmFja0IMCgpfdGltZXN0YW1wIjkKDVRlcm1pbmFsSGVsbG8SGAoLdGVybWluYWxfaWQYASABKAlIAIgBAUIOCgxfdGVybWluYWxfaWQiLAoOVGVybWluYWxSZXNpemUSDAoEY29scxgBIAEoDRIMCgRyb3dzGAIgASgNIiIKElRlcm1pbmFsSW5wdXRCeXRlcxIMCgRkYXRhGAEgASgMIucBChNUZXJtaW5hbENsaWVudEZyYW1lEj0KBWhlbGxvGAEgASgLMiwuYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxIZWxsb0gAEj8KBnJlc2l6ZRgCIAEoCzItLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsUmVzaXplSAASSAoLaW5wdXRfYnl0ZXMYAyABKAsyMS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbElucHV0Qnl0ZXNIAEIGCgRib2R5IjgKE1Rlcm1pbmFsT3V0cHV0Qnl0ZXMSEwoLdGVybWluYWxfaWQYASABKAkSDAoEZGF0YRgCIAEoDCKuAQoVVGVybWluYWxTbmFwc2hvdEZyYW1lEhMKC3Rlcm1pbmFsX2lkGAEgASgJEkEKCHNuYXBzaG90GAIgASgLMi8uYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxTbmFwc2hvdBI9CgZzdGF0dXMYAyABKA4yLS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFN0YXR1cyJ6ChNUZXJtaW5hbFN0YXR1c0ZyYW1lEhMKC3Rlcm1pbmFsX2lkGAEgASgJEg8KB3J1bm5pbmcYAiABKAgSPQoGc3RhdHVzGAMgASgOMi0uYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxTdGF0dXMiOgoSVGVybWluYWxFcnJvckZyYW1lEhMKC3Rlcm1pbmFsX2lkGAEgASgJEg8KB21lc3NhZ2UYAiABKAkiJwoQVGVybWluYWxIZWxsb0FjaxITCgt0ZXJtaW5hbF9pZBgBIAEoCSKDAwoTVGVybWluYWxTZXJ2ZXJGcmFtZRJICghzbmFwc2hvdBgBIAEoCzI0LmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsU25hcHNob3RGcmFtZUgAEkQKBnN0YXR1cxgCIAEoCzIyLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsU3RhdHVzRnJhbWVIABJCCgVlcnJvchgDIAEoCzIxLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsRXJyb3JGcmFtZUgAEkQKCWhlbGxvX2FjaxgEIAEoCzIvLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsSGVsbG9BY2tIABJKCgxvdXRwdXRfYnl0ZXMYBSABKAsyMi5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbE91dHB1dEJ5dGVzSABCBgoEYm9keSplCg5UZXJtaW5hbFN0YXR1cxIfChtURVJNSU5BTF9TVEFUVVNfVU5TUEVDSUZJRUQQABIYChRURVJNSU5BTF9TVEFUVVNfSURMRRABEhgKFFRFUk1JTkFMX1NUQVRVU19CVVNZEAJiBnByb3RvMw");
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalCursor
@@ -25,6 +25,11 @@ export type TerminalCursor = Message<"agenter.terminal.transport.v1.TerminalCurs
    * @generated from field: uint32 y = 2;
    */
   y: number;
+
+  /**
+   * @generated from field: optional bool visible = 3;
+   */
+  visible?: boolean | undefined;
 };
 
 /**
@@ -33,6 +38,33 @@ export type TerminalCursor = Message<"agenter.terminal.transport.v1.TerminalCurs
  */
 export const TerminalCursorSchema: GenMessage<TerminalCursor> = /*@__PURE__*/
   messageDesc(file_proto_terminal_transport, 0);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalScrollback
+ */
+export type TerminalScrollback = Message<"agenter.terminal.transport.v1.TerminalScrollback"> & {
+  /**
+   * @generated from field: uint32 viewport_offset = 1;
+   */
+  viewportOffset: number;
+
+  /**
+   * @generated from field: uint32 total_lines = 2;
+   */
+  totalLines: number;
+
+  /**
+   * @generated from field: uint32 screen_lines = 3;
+   */
+  screenLines: number;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalScrollback.
+ * Use `create(TerminalScrollbackSchema)` to create a new message.
+ */
+export const TerminalScrollbackSchema: GenMessage<TerminalScrollback> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 1);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalRichSpan
@@ -74,7 +106,7 @@ export type TerminalRichSpan = Message<"agenter.terminal.transport.v1.TerminalRi
  * Use `create(TerminalRichSpanSchema)` to create a new message.
  */
 export const TerminalRichSpanSchema: GenMessage<TerminalRichSpan> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 1);
+  messageDesc(file_proto_terminal_transport, 2);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalRichLine
@@ -91,7 +123,7 @@ export type TerminalRichLine = Message<"agenter.terminal.transport.v1.TerminalRi
  * Use `create(TerminalRichLineSchema)` to create a new message.
  */
 export const TerminalRichLineSchema: GenMessage<TerminalRichLine> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 2);
+  messageDesc(file_proto_terminal_transport, 3);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalSnapshot
@@ -133,9 +165,9 @@ export type TerminalSnapshot = Message<"agenter.terminal.transport.v1.TerminalSn
   cursor?: TerminalCursor | undefined;
 
   /**
-   * @generated from field: optional bool cursor_visible = 8;
+   * @generated from field: agenter.terminal.transport.v1.TerminalScrollback scrollback = 8;
    */
-  cursorVisible?: boolean | undefined;
+  scrollback?: TerminalScrollback | undefined;
 };
 
 /**
@@ -143,7 +175,7 @@ export type TerminalSnapshot = Message<"agenter.terminal.transport.v1.TerminalSn
  * Use `create(TerminalSnapshotSchema)` to create a new message.
  */
 export const TerminalSnapshotSchema: GenMessage<TerminalSnapshot> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 3);
+  messageDesc(file_proto_terminal_transport, 4);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalHello
@@ -160,7 +192,7 @@ export type TerminalHello = Message<"agenter.terminal.transport.v1.TerminalHello
  * Use `create(TerminalHelloSchema)` to create a new message.
  */
 export const TerminalHelloSchema: GenMessage<TerminalHello> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 4);
+  messageDesc(file_proto_terminal_transport, 5);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalResize
@@ -182,7 +214,7 @@ export type TerminalResize = Message<"agenter.terminal.transport.v1.TerminalResi
  * Use `create(TerminalResizeSchema)` to create a new message.
  */
 export const TerminalResizeSchema: GenMessage<TerminalResize> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 5);
+  messageDesc(file_proto_terminal_transport, 6);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalInputBytes
@@ -199,7 +231,7 @@ export type TerminalInputBytes = Message<"agenter.terminal.transport.v1.Terminal
  * Use `create(TerminalInputBytesSchema)` to create a new message.
  */
 export const TerminalInputBytesSchema: GenMessage<TerminalInputBytes> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 6);
+  messageDesc(file_proto_terminal_transport, 7);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalClientFrame
@@ -234,7 +266,7 @@ export type TerminalClientFrame = Message<"agenter.terminal.transport.v1.Termina
  * Use `create(TerminalClientFrameSchema)` to create a new message.
  */
 export const TerminalClientFrameSchema: GenMessage<TerminalClientFrame> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 7);
+  messageDesc(file_proto_terminal_transport, 8);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalOutputBytes
@@ -256,7 +288,7 @@ export type TerminalOutputBytes = Message<"agenter.terminal.transport.v1.Termina
  * Use `create(TerminalOutputBytesSchema)` to create a new message.
  */
 export const TerminalOutputBytesSchema: GenMessage<TerminalOutputBytes> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 8);
+  messageDesc(file_proto_terminal_transport, 9);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalSnapshotFrame
@@ -283,7 +315,7 @@ export type TerminalSnapshotFrame = Message<"agenter.terminal.transport.v1.Termi
  * Use `create(TerminalSnapshotFrameSchema)` to create a new message.
  */
 export const TerminalSnapshotFrameSchema: GenMessage<TerminalSnapshotFrame> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 9);
+  messageDesc(file_proto_terminal_transport, 10);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalStatusFrame
@@ -310,7 +342,7 @@ export type TerminalStatusFrame = Message<"agenter.terminal.transport.v1.Termina
  * Use `create(TerminalStatusFrameSchema)` to create a new message.
  */
 export const TerminalStatusFrameSchema: GenMessage<TerminalStatusFrame> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 10);
+  messageDesc(file_proto_terminal_transport, 11);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalErrorFrame
@@ -332,7 +364,7 @@ export type TerminalErrorFrame = Message<"agenter.terminal.transport.v1.Terminal
  * Use `create(TerminalErrorFrameSchema)` to create a new message.
  */
 export const TerminalErrorFrameSchema: GenMessage<TerminalErrorFrame> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 11);
+  messageDesc(file_proto_terminal_transport, 12);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalHelloAck
@@ -349,7 +381,7 @@ export type TerminalHelloAck = Message<"agenter.terminal.transport.v1.TerminalHe
  * Use `create(TerminalHelloAckSchema)` to create a new message.
  */
 export const TerminalHelloAckSchema: GenMessage<TerminalHelloAck> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 12);
+  messageDesc(file_proto_terminal_transport, 13);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalServerFrame
@@ -396,7 +428,7 @@ export type TerminalServerFrame = Message<"agenter.terminal.transport.v1.Termina
  * Use `create(TerminalServerFrameSchema)` to create a new message.
  */
 export const TerminalServerFrameSchema: GenMessage<TerminalServerFrame> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 13);
+  messageDesc(file_proto_terminal_transport, 14);
 
 /**
  * @generated from enum agenter.terminal.transport.v1.TerminalStatus

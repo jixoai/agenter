@@ -1,5 +1,5 @@
-import { renderStructuredBuffer as renderStructuredBufferCore } from "@agenter/terminal-render-core";
-import type { IBufferCell, IBufferLine } from "@xterm/headless";
+import { renderStructuredBuffer as renderStructuredBufferCore } from "@agenter/termless-core";
+import type { Cell } from "@agenter/termless-core";
 
 import type { RenderResult, RichLine, RichSpan, StructuredRenderResult, TerminalLogStyle } from "./types";
 import type { XtermBridge } from "./xterm-bridge";
@@ -107,102 +107,48 @@ const wrapByStyle = (text: string, style: CellStyle): string => {
 const rgbToHex = (r: number, g: number, b: number): string =>
   `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
 
-const toFgColor = (cell: IBufferCell): ColorHex => {
-  if (cell.isFgPalette()) {
-    const idx = cell.getFgColor();
-    const rgb = paletteIndexToRgb(idx);
-    return rgbToHex(rgb[0], rgb[1], rgb[2]);
+const toFgColor = (cell: Cell): ColorHex =>
+  cell.fg ? rgbToHex(cell.fg.r, cell.fg.g, cell.fg.b) : undefined;
+
+const toBgColor = (cell: Cell): ColorHex =>
+  cell.bg ? rgbToHex(cell.bg.r, cell.bg.g, cell.bg.b) : undefined;
+
+const toTagFromHex = (hex: string | undefined): ColorTag => {
+  if (!hex) {
+    return undefined;
   }
-  if (cell.isFgRGB()) {
-    const color = cell.getFgColor();
-    const r = (color >> 16) & 0xff;
-    const g = (color >> 8) & 0xff;
-    const b = color & 0xff;
-    return rgbToHex(r, g, b);
+  const rgb = hexToRgb(hex);
+  if (!rgb) {
+    return undefined;
   }
-  return undefined;
+  return nearestSemanticTag(rgb[0], rgb[1], rgb[2]);
 };
 
-const toBgColor = (cell: IBufferCell): ColorHex => {
-  if (cell.isBgPalette()) {
-    const idx = cell.getBgColor();
-    const rgb = paletteIndexToRgb(idx);
-    return rgbToHex(rgb[0], rgb[1], rgb[2]);
-  }
-  if (cell.isBgRGB()) {
-    const color = cell.getBgColor();
-    const r = (color >> 16) & 0xff;
-    const g = (color >> 8) & 0xff;
-    const b = color & 0xff;
-    return rgbToHex(r, g, b);
-  }
-  return undefined;
+const toFgTag = (cell: Cell): ColorTag => toTagFromHex(toFgColor(cell));
+
+const toBgTag = (cell: Cell): ColorTag => {
+  const fgTag = toTagFromHex(toBgColor(cell));
+  return fgTag ? `bg-${fgTag}` : undefined;
 };
 
-const toFgTag = (cell: IBufferCell): ColorTag => {
-  if (cell.isFgPalette()) {
-    const idx = cell.getFgColor();
-    if (idx >= 0 && idx < FG_TAGS.length) {
-      return FG_TAGS[idx];
-    }
-    if (idx >= 16 && idx <= 255) {
-      const rgb = paletteIndexToRgb(idx);
-      return nearestSemanticTag(rgb[0], rgb[1], rgb[2]);
-    }
-  }
-  if (cell.isFgRGB()) {
-    const color = cell.getFgColor();
-    const r = (color >> 16) & 0xff;
-    const g = (color >> 8) & 0xff;
-    const b = color & 0xff;
-    return nearestSemanticTag(r, g, b);
-  }
-  return undefined;
-};
-
-const toBgTag = (cell: IBufferCell): ColorTag => {
-  if (cell.isBgPalette()) {
-    const idx = cell.getBgColor();
-    if (idx >= 0 && idx < BG_TAGS.length) {
-      return BG_TAGS[idx];
-    }
-    if (idx >= 16 && idx <= 255) {
-      const rgb = paletteIndexToRgb(idx);
-      const fgTag = nearestSemanticTag(rgb[0], rgb[1], rgb[2]);
-      return fgTag ? `bg-${fgTag}` : undefined;
-    }
-  }
-  if (cell.isBgRGB()) {
-    const color = cell.getBgColor();
-    const r = (color >> 16) & 0xff;
-    const g = (color >> 8) & 0xff;
-    const b = color & 0xff;
-    const fgTag = nearestSemanticTag(r, g, b);
-    return fgTag ? `bg-${fgTag}` : undefined;
-  }
-  return undefined;
-};
-
-const toStyle = (cell: IBufferCell): CellStyle => ({
+const toStyle = (cell: Cell): CellStyle => ({
   fgTag: toFgTag(cell),
   bgTag: toBgTag(cell),
   fgColor: toFgColor(cell),
   bgColor: toBgColor(cell),
-  bold: cell.isBold() !== 0,
-  underline: cell.isUnderline() !== 0,
-  inverse: cell.isInverse() !== 0,
+  bold: cell.bold,
+  underline: cell.underline !== false,
+  inverse: cell.inverse,
 });
 
-const readCell = (line: IBufferLine, index: number): StyledChar => {
-  const cell = line.getCell(index);
+const readCell = (cell: Cell | undefined): StyledChar => {
   if (!cell) {
     return { text: " ", style: emptyStyle };
   }
-  if (cell.getWidth() === 0) {
+  if (cell.continuation) {
     return { text: "", style: emptyStyle };
   }
-  const chars = cell.getChars();
-  const text = chars.length === 0 ? " " : chars;
+  const text = cell.char.length === 0 ? " " : cell.char;
   return { text, style: toStyle(cell) };
 };
 
@@ -407,7 +353,15 @@ export const compactRenderForPersistence = (render: RenderResult): RenderResult 
 };
 
 export const renderStructuredBuffer = (bridge: XtermBridge): StructuredRenderResult => {
-  return renderStructuredBufferCore(bridge) as StructuredRenderResult;
+  const structured = renderStructuredBufferCore(bridge);
+  return {
+    richLines: structured.richLines,
+    cursorAbsRow: structured.cursor.y,
+    cursorCol: structured.cursor.x,
+    cursorVisible: structured.cursor.visible ?? true,
+    rows: structured.rows,
+    cols: structured.cols,
+  };
 };
 
 export const renderSemanticBuffer = (bridge: XtermBridge): RenderResult => {

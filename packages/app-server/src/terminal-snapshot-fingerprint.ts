@@ -11,7 +11,7 @@ export const buildTerminalViewFingerprint = (snapshot: ManagedTerminalSnapshot):
     cols: snapshot.cols,
     rows: snapshot.rows,
     cursor: snapshot.cursor,
-    cursorVisible: snapshot.cursorVisible,
+    scrollback: snapshot.scrollback,
     lines: snapshot.lines,
     richLines: snapshot.richLines,
   });

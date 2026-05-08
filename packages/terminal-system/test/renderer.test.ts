@@ -89,10 +89,11 @@ test("renderer uses raw xterm cursor without placeholder-specific relocation", a
   await bridge.write("cwd: ~/workspace/project\r\n");
   await bridge.write("\r\n");
   const rendered = renderSemanticBuffer(bridge);
+  const cursor = bridge.getCursor();
   const line = rendered.lines.find((it) => it.includes("Type your message"));
   expect(line?.includes("<cursor/>")).toBe(false);
-  expect(rendered.cursorAbsRow).toBe(bridge.baseY + bridge.cursorY);
-  expect(rendered.cursorCol).toBe(bridge.cursorX);
+  expect(rendered.cursorAbsRow).toBe(cursor.y);
+  expect(rendered.cursorCol).toBe(cursor.x);
   expect(rendered.cursorVisible).toBe(true);
   bridge.dispose();
 });

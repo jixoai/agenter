@@ -6451,7 +6451,12 @@ export class RuntimeStore {
             cols: number;
             rows: number;
             lines: string[];
-            cursor: { x: number; y: number };
+            cursor: { x: number; y: number; visible?: boolean };
+            scrollback: {
+              viewportOffset: number;
+              totalLines: number;
+              screenLines: number;
+            };
           };
         };
         runtime.terminals = runtime.terminals.map((item) =>
