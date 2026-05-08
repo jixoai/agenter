@@ -31,8 +31,6 @@ const DATE_DIVIDER_FORMAT = new Intl.DateTimeFormat("en-CA", {
 const MIN_BODY_ROWS = 8;
 const MIN_SIDE_PANEL_WIDTH = 44;
 const MIN_TERMINAL_WIDTH = 32;
-const MIN_BOTTOM_PANEL_HEIGHT = 10;
-const MIN_BOTTOM_TERMINAL_HEIGHT = 8;
 const MIN_FLOATING_WIDTH = 36;
 const MIN_FLOATING_HEIGHT = 12;
 
@@ -239,18 +237,12 @@ const buildDialogueBlocks = (input: {
 const isSidePlacementViable = (width: number, bodyHeight: number): boolean =>
   width >= MIN_SIDE_PANEL_WIDTH + MIN_TERMINAL_WIDTH + 1 && bodyHeight >= MIN_BODY_ROWS;
 
-const isBottomPlacementViable = (width: number, bodyHeight: number): boolean =>
-  width >= 60 && bodyHeight >= MIN_BOTTOM_PANEL_HEIGHT + MIN_BOTTOM_TERMINAL_HEIGHT + 1;
-
 const isFloatingPlacementViable = (width: number, bodyHeight: number): boolean =>
   width >= MIN_FLOATING_WIDTH && bodyHeight >= MIN_FLOATING_HEIGHT;
 
 const resolveSmartPlacement = (width: number, bodyHeight: number): CliShellDialoguePlacement => {
   if (isSidePlacementViable(width, bodyHeight)) {
     return "right";
-  }
-  if (isBottomPlacementViable(width, bodyHeight)) {
-    return "bottom";
   }
   return "floating";
 };
@@ -271,9 +263,7 @@ export const resolveCliShellDialoguePlacement = (input: {
       : resolveSmartPlacement(input.width, bodyHeight);
   }
   if (input.requestedPlacement === "bottom") {
-    return isBottomPlacementViable(input.width, bodyHeight)
-      ? "bottom"
-      : resolveSmartPlacement(input.width, bodyHeight);
+    return "bottom";
   }
   return isFloatingPlacementViable(input.width, bodyHeight) ? "floating" : resolveSmartPlacement(input.width, bodyHeight);
 };
@@ -289,11 +279,19 @@ export const buildCliShellTuiModel = (input: {
   keybindings: CliShellTuiKeybindings;
   width: number;
   height: number;
+  toolbarHeartbeatProjection?: string;
 }): CliShellTuiModel => {
   const terminalId = resolveTerminalId(input);
   const heartbeatGroups = input.state.heartbeatGroupsBySession[input.sessionId]?.data ?? [];
   const status = resolveCliShellToolbarStatus(heartbeatGroups);
   const unread = countUnreadRoomMessages(input.projection.roomSnapshot, input.avatarActorId) ?? input.state.unreadBySession[input.sessionId] ?? 0;
+  const toolbarHeartbeat =
+    input.ui.statusNotice?.trim() ||
+    summarizeCliShellHeartbeat({
+      groups: heartbeatGroups,
+      terminalId: terminalId || input.shellName,
+      connected: input.state.connected,
+    });
   const dialoguePlacement = input.ui.dialogueOpen
     ? resolveCliShellDialoguePlacement({
         requestedPlacement: input.ui.requestedPlacement,
@@ -312,13 +310,8 @@ export const buildCliShellTuiModel = (input: {
       shellName: input.shellName,
     }),
     toolbarLeft: `${resolveCliShellToolbarStatusIcon(status)} terminal`,
-    toolbarHeartbeat:
-      input.ui.statusNotice?.trim() ||
-      summarizeCliShellHeartbeat({
-        groups: heartbeatGroups,
-        terminalId: terminalId || input.shellName,
-        connected: input.state.connected,
-      }),
+    toolbarHeartbeat,
+    toolbarHeartbeatProjection: input.toolbarHeartbeatProjection ?? toolbarHeartbeat,
     toolbarManaged: resolveManagedLabel(input.ui.managed),
     toolbarUnread: `✉ ${unread} ${formatCliShellShortcut(input.keybindings.openDialogue)}`,
     dialogueOpen: input.ui.dialogueOpen,

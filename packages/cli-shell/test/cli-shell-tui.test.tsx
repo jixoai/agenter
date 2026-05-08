@@ -26,6 +26,7 @@ import {
   renderCanvasLines,
   routeCliShellKey,
   routeCliShellPaste,
+  projectMarkdownLastLine,
   resolveCliShellDialoguePlacement,
   resolveCliShellTerminalRegion,
   resolveCliShellToolbarStatus,
@@ -694,10 +695,21 @@ describe("Feature: cli-shell interactive TUI", () => {
     ).toBe("终端工具 bash 处理中");
   });
 
-  test("Scenario: Given multiple viewport sizes When resolving dialogue placement Then smart placement prefers right, then bottom, then floating", () => {
+  test("Scenario: Given multiple viewport sizes When resolving dialogue placement Then smart placement prefers right, then floating while bottom stays projection-only", () => {
     expect(resolveCliShellDialoguePlacement({ requestedPlacement: "smart", width: 120, height: 40 })).toBe("right");
-    expect(resolveCliShellDialoguePlacement({ requestedPlacement: "smart", width: 70, height: 40 })).toBe("bottom");
+    expect(resolveCliShellDialoguePlacement({ requestedPlacement: "smart", width: 70, height: 40 })).toBe("floating");
     expect(resolveCliShellDialoguePlacement({ requestedPlacement: "smart", width: 50, height: 14 })).toBe("floating");
+    expect(resolveCliShellDialoguePlacement({ requestedPlacement: "bottom", width: 72, height: 32 })).toBe("bottom");
+  });
+
+  test("Scenario: Given markdown content and constrained width When projecting the bottom row Then cli-shell keeps only the last rendered visual line", async () => {
+    const projected = await projectMarkdownLastLine({
+      content: "first line\n\n- alpha beta gamma\n- delta epsilon zeta",
+      width: 12,
+    });
+
+    expect(measureTerminalText(projected)).toBe(12);
+    expect(projected.trim()).toBe("epsilon zeta");
   });
 
   test("Scenario: Given room truth with date boundaries When building the right dialogue frame Then terminal-first layout, date dividers, short times, and bottom toolbar all stay inside the shell-terminal grid", () => {
@@ -913,7 +925,8 @@ describe("Feature: cli-shell interactive TUI", () => {
       height: 32,
     });
     expect(bottomFrame.lines[0]).toContain("$ agenter shell");
-    expect(bottomFrame.lines.some((line, index) => index > 8 && line.includes("L  R  F  B  Dialogue"))).toBe(true);
+    expect(bottomFrame.lines.some((line, index) => index > 0 && line.includes("L  R  F  B  Dialogue"))).toBe(false);
+    expect(bottomFrame.lines.at(-1)).toContain("✉ 1 ⌘J");
     expect(bottomFrame.lines.every((line) => measureTerminalText(line) === 72)).toBe(true);
 
     const floatingFrame = layoutCliShellTuiFrame({
@@ -1080,12 +1093,17 @@ describe("Feature: cli-shell interactive TUI", () => {
     routeCliShellKey(controllerContext, createTestKeyEvent({ name: "f", ctrl: true, sequence: "\u0006" }));
     expect(viewState.requestedPlacement).toBe("floating");
     routeCliShellKey(controllerContext, createTestKeyEvent({ name: "b", ctrl: true, sequence: "\u0002" }));
+    expect(viewState.dialogueOpen).toBe(false);
     expect(viewState.requestedPlacement).toBe("bottom");
 
     routeCliShellKey(controllerContext, createTestKeyEvent({ name: "escape", sequence: "\u001b", raw: "\u001b" }));
     expect(viewState.dialogueOpen).toBe(false);
     expect(viewState.dialogueDraft).toBe("");
-    expect(harness.inputs).toHaveLength(0);
+    expect(harness.inputs).toHaveLength(1);
+    expect(harness.inputs[0]).toMatchObject({
+      terminalId: "shell-1",
+      text: "\u001b",
+    });
   });
 
   test("Scenario: Given terminal mode and dialogue mode When keys are routed through the controller Then terminal input, resize geometry, managed toggle, and room-message send each stay in their own backend contract", async () => {
@@ -1250,7 +1268,7 @@ describe("Feature: cli-shell interactive TUI", () => {
     });
   });
 
-  test("Scenario: Given docked dialogue placements When syncing terminal geometry Then the PTY uses the visible terminal region instead of the full shell frame", async () => {
+  test("Scenario: Given docked dialogue placements When syncing terminal geometry Then only side transcript chrome changes PTY geometry", async () => {
     const state = createRuntimeState({
       heartbeat: [],
       lines: ["$ agenter shell", "shell-1:~/project $"],
@@ -1320,7 +1338,7 @@ describe("Feature: cli-shell interactive TUI", () => {
     });
     expect(resolveCliShellTerminalRegion({ model: bottomModel, width: 72, height: 32 })).toEqual({
       width: 72,
-      height: 19,
+      height: 31,
     });
     const bottomGeometryKey = await syncCliShellTerminalGeometry({
       store: harness.store,
@@ -1329,11 +1347,11 @@ describe("Feature: cli-shell interactive TUI", () => {
       model: bottomModel,
       previousGeometryKey: rightGeometryKey,
     });
-    expect(bottomGeometryKey).toBe("shell-1:72x19");
+    expect(bottomGeometryKey).toBe("shell-1:72x31");
     expect(harness.terminalConfigs.at(-1)).toEqual({
       terminalId: "shell-1",
       cols: 72,
-      rows: 19,
+      rows: 31,
     });
   });
 });

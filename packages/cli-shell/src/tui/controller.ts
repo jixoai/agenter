@@ -212,7 +212,9 @@ export const routeCliShellKey = (ctx: CliShellTuiControllerContext, key: KeyEven
     if (matchCliShellShortcut(key, ctx.keybindings.placeBottom)) {
       ctx.updateViewState((current) => ({
         ...current,
+        dialogueOpen: false,
         requestedPlacement: "bottom",
+        dialogueDraft: "",
         statusNotice: null,
       }));
       return true;
@@ -240,6 +242,7 @@ export const routeCliShellKey = (ctx: CliShellTuiControllerContext, key: KeyEven
     ctx.updateViewState((current) => ({
       ...current,
       dialogueOpen: true,
+      requestedPlacement: current.requestedPlacement === "bottom" ? "smart" : current.requestedPlacement,
       statusNotice: null,
     }));
     return true;

@@ -4,10 +4,12 @@ import type { GlobalRoomMessage } from "@agenter/client-sdk";
 import { useKeyboard, usePaste, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
+import { measureTerminalText } from "./cell-width";
 import { routeCliShellKey, routeCliShellPaste, syncCliShellTerminalGeometry } from "./controller";
 import { layoutCliShellTuiFrame } from "./frame";
 import type { CliShellTuiKeybindings } from "./keybindings";
 import { createCliShellLiveTerminalMirror, type CliShellLiveTerminalMirror } from "./live-terminal-mirror";
+import { projectMarkdownLastLine } from "./markdown-projection";
 import { buildCliShellTuiModel } from "./model";
 import type { CliShellManagedState } from "../managed";
 import type { CliShellTuiStore, CliShellTuiViewState } from "./types";
@@ -46,6 +48,7 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
     managed: props.managed,
     statusNotice: null,
   });
+  const [toolbarHeartbeatProjection, setToolbarHeartbeatProjection] = useState("");
   const geometryRef = useRef<string>("");
   const liveMirrorRef = useRef<CliShellLiveTerminalMirror | null>(null);
   const liveMirrorTransportUrlRef = useRef<string | null>(null);
@@ -75,6 +78,7 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
         keybindings: props.keybindings,
         width,
         height,
+        toolbarHeartbeatProjection,
       }),
     [
       height,
@@ -86,6 +90,7 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
       liveTerminal,
       roomSnapshot,
       state,
+      toolbarHeartbeatProjection,
       viewState,
       width,
     ],
@@ -206,6 +211,31 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
       props.onQuit();
     }
   }, [props, terminalEntry?.processPhase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const separator = " │ ";
+    const reserved =
+      measureTerminalText(model.toolbarLeft) +
+      measureTerminalText(model.toolbarManaged) +
+      measureTerminalText(model.toolbarUnread) +
+      measureTerminalText(separator) * 3;
+    const projectionWidth = reserved >= width ? width : Math.max(1, width - reserved);
+
+    void projectMarkdownLastLine({
+      content: model.toolbarHeartbeat,
+      width: projectionWidth,
+    }).then((projection) => {
+      if (cancelled) {
+        return;
+      }
+      setToolbarHeartbeatProjection((current) => (current === projection ? current : projection));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [model.toolbarHeartbeat, model.toolbarLeft, model.toolbarManaged, model.toolbarUnread, width]);
 
   useEffect(() => {
     void syncCliShellTerminalGeometry({

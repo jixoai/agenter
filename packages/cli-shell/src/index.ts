@@ -53,6 +53,7 @@ export {
 } from "./tui/controller";
 export { encodeCliShellTerminalKey } from "./tui/terminal-input";
 export { layoutCliShellTuiFrame, resolveCliShellTerminalRegion, type CliShellTuiFrame } from "./tui/frame";
+export { projectMarkdownLastLine } from "./tui/markdown-projection";
 export { buildCliShellTuiModel, resolveCliShellDialoguePlacement } from "./tui/model";
 export { CliShellTuiApp, type CliShellTuiAppProps } from "./tui/app";
 export { startCliShellTui, type CliShellTuiController } from "./tui/run-cli-shell-tui";

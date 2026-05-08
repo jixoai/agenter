@@ -13,13 +13,13 @@
 
 ## 3. Bottom single-line projection
 
-- [ ] 3.1 Replace bottom multi-row rendering with a one-line markdown projection helper built from OpenTUI `MarkdownRenderable` plus last-line extraction.
-- [ ] 3.2 Update cli-shell TUI model/controller/frame law so the bottom row remains display-only and transcript chrome stays side or floating.
-- [ ] 3.3 Remove multi-row bottom smart-placement behavior and keep `bottom` as projection-only mode.
-- [ ] 3.4 Add focused TUI tests for constrained-width markdown projection, last-line clipping, no multi-row bottom panel, and preserved terminal input ownership.
+- [x] 3.1 Replace bottom multi-row rendering with a one-line markdown projection helper built from OpenTUI `MarkdownRenderable` plus last-line extraction.
+- [x] 3.2 Update cli-shell TUI model/controller/frame law so the bottom row remains display-only and transcript chrome stays side or floating.
+- [x] 3.3 Remove multi-row bottom smart-placement behavior and keep `bottom` as projection-only mode.
+- [x] 3.4 Add focused TUI tests for constrained-width markdown projection, last-line clipping, no multi-row bottom panel, and preserved terminal input ownership.
 
 ## 4. Verification
 
-- [ ] 4.1 Run targeted tests for terminal-system, client-sdk/product-extension-runtime, and cli-shell.
-- [ ] 4.2 Run `openspec validate promote-ghostty-native-cli-shell --strict`.
-- [ ] 4.3 Perform a real local walkthrough of `bun agenter shell --backend=ghostty-native`, including actual terminal input and observable output.
+- [x] 4.1 Run targeted tests for terminal-system, client-sdk/product-extension-runtime, and cli-shell.
+- [x] 4.2 Run `openspec validate promote-ghostty-native-cli-shell --strict`.
+- [x] 4.3 Perform a real local walkthrough of `bun agenter shell --backend=ghostty-native`, including actual terminal input and observable output.

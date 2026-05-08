@@ -25,7 +25,6 @@ export interface CliShellTerminalRegion {
 }
 
 const MIN_SIDE_PANEL_WIDTH = 44;
-const MIN_BOTTOM_PANEL_HEIGHT = 10;
 const MIN_FLOATING_PANEL_WIDTH = 36;
 const MIN_FLOATING_PANEL_HEIGHT = 12;
 
@@ -40,6 +39,7 @@ const buildToolbarLine = (model: CliShellTuiModel, width: number): string => {
   const left = model.toolbarLeft;
   const managed = model.toolbarManaged;
   const unread = model.toolbarUnread;
+  const heartbeatSource = model.toolbarHeartbeatProjection;
   const reserved =
     measureTerminalText(left) +
     measureTerminalText(managed) +
@@ -47,11 +47,11 @@ const buildToolbarLine = (model: CliShellTuiModel, width: number): string => {
     measureTerminalText(separator) * 3;
 
   if (reserved >= width) {
-    return fitTerminalText(model.toolbarHeartbeat, width, { ellipsis: true });
+    return fitTerminalText(heartbeatSource, width, { ellipsis: true });
   }
 
   const heartbeatWidth = width - reserved;
-  const heartbeat = fitTerminalText(model.toolbarHeartbeat, heartbeatWidth, { ellipsis: true });
+  const heartbeat = fitTerminalText(heartbeatSource, heartbeatWidth, { ellipsis: true });
   return `${left}${separator}${heartbeat}${separator}${managed}${separator}${unread}`;
 };
 
@@ -87,9 +87,6 @@ const wrapTerminalText = (text: string, width: number): string[] => {
 };
 
 const resolveSidePanelWidth = (width: number): number => clamp(Math.floor((width - 1) * 0.37), MIN_SIDE_PANEL_WIDTH, Math.max(MIN_SIDE_PANEL_WIDTH, width - 20));
-
-const resolveBottomPanelHeight = (bodyHeight: number): number =>
-  clamp(Math.floor(bodyHeight * 0.38), MIN_BOTTOM_PANEL_HEIGHT, Math.max(MIN_BOTTOM_PANEL_HEIGHT, bodyHeight - 8));
 
 const resolveFloatingGeometry = (width: number, bodyHeight: number) => {
   const panelWidth = clamp(Math.floor(width * 0.44), MIN_FLOATING_PANEL_WIDTH, Math.max(MIN_FLOATING_PANEL_WIDTH, width - 4));
@@ -127,15 +124,6 @@ export const resolveCliShellTerminalRegion = (input: {
     return {
       width: Math.max(0, splitCol),
       height: bodyHeight,
-    };
-  }
-
-  if (placement === "bottom") {
-    const panelHeight = resolveBottomPanelHeight(bodyHeight);
-    const splitRow = bodyHeight - panelHeight - 1;
-    return {
-      width: input.width,
-      height: Math.max(0, splitRow),
     };
   }
 
@@ -489,36 +477,6 @@ const renderLeftPlacement = (
   });
 };
 
-const renderBottomPlacement = (
-  canvas: ReturnType<typeof createTerminalCanvas>,
-  model: CliShellTuiModel,
-  width: number,
-  bodyHeight: number,
-): void => {
-  const panelHeight = resolveBottomPanelHeight(bodyHeight);
-  const splitRow = bodyHeight - panelHeight - 1;
-  renderTerminalRegion({
-    canvas,
-    row: 0,
-    col: 0,
-    width,
-    height: Math.max(0, splitRow),
-    model: model.terminalView,
-  });
-  drawCanvasHorizontalLine(canvas, {
-    row: splitRow,
-    width,
-  });
-  renderDockedDialoguePanel({
-    canvas,
-    row: splitRow + 1,
-    col: 0,
-    width,
-    height: panelHeight,
-    model,
-  });
-};
-
 const renderFloatingPlacement = (
   canvas: ReturnType<typeof createTerminalCanvas>,
   model: CliShellTuiModel,
@@ -608,7 +566,14 @@ const renderDialoguePlacement = (
     return;
   }
   if (placement === "bottom") {
-    renderBottomPlacement(canvas, model, width, bodyHeight);
+    renderTerminalRegion({
+      canvas,
+      row: 0,
+      col: 0,
+      width,
+      height: bodyHeight,
+      model: model.terminalView,
+    });
     return;
   }
   renderFloatingPlacement(canvas, model, width, bodyHeight);

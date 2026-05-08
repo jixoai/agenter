@@ -37,6 +37,7 @@ export interface CliShellTuiModel {
   };
   toolbarLeft: string;
   toolbarHeartbeat: string;
+  toolbarHeartbeatProjection: string;
   toolbarManaged: string;
   toolbarUnread: string;
   dialogueOpen: boolean;
