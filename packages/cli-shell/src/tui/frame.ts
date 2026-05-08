@@ -18,6 +18,11 @@ export interface CliShellTuiFrame {
   styledLines: TerminalCanvasStyledLine[];
 }
 
+export interface CliShellTerminalRegion {
+  width: number;
+  height: number;
+}
+
 const MIN_SIDE_PANEL_WIDTH = 44;
 const MIN_BOTTOM_PANEL_HEIGHT = 10;
 const MIN_FLOATING_PANEL_WIDTH = 36;
@@ -97,6 +102,45 @@ const resolveFloatingGeometry = (width: number, bodyHeight: number) => {
     panelHeight,
     col: Math.max(0, Math.floor((width - panelWidth) / 2)),
     row: Math.max(0, Math.floor((bodyHeight - panelHeight) / 2)),
+  };
+};
+
+export const resolveCliShellTerminalRegion = (input: {
+  model: CliShellTuiModel;
+  width: number;
+  height: number;
+}): CliShellTerminalRegion => {
+  const bodyHeight = Math.max(0, input.height - 1);
+  const placement = input.model.dialoguePlacement;
+
+  if (bodyHeight <= 0 || input.width <= 0) {
+    return {
+      width: Math.max(0, input.width),
+      height: Math.max(0, bodyHeight),
+    };
+  }
+
+  if (placement === "left" || placement === "right") {
+    const panelWidth = resolveSidePanelWidth(input.width);
+    const splitCol = input.width - panelWidth - 1;
+    return {
+      width: Math.max(0, splitCol),
+      height: bodyHeight,
+    };
+  }
+
+  if (placement === "bottom") {
+    const panelHeight = resolveBottomPanelHeight(bodyHeight);
+    const splitRow = bodyHeight - panelHeight - 1;
+    return {
+      width: input.width,
+      height: Math.max(0, splitRow),
+    };
+  }
+
+  return {
+    width: input.width,
+    height: bodyHeight,
   };
 };
 
@@ -360,8 +404,9 @@ const renderTerminalRegion = (input: {
   }
   const scrollbarWidth = 1;
   const contentWidth = Math.max(1, input.width - scrollbarWidth);
-  const viewportStart = Math.max(0, input.model.viewportEnd - input.height);
-  const visible = input.model.richLines.slice(viewportStart, input.model.viewportEnd);
+  const viewportStart = Math.max(0, input.model.viewportStart);
+  const viewportEnd = Math.max(viewportStart, input.model.viewportEnd);
+  const visible = input.model.richLines.slice(viewportStart, viewportEnd);
   const scrollbar = buildViewportScrollbar({
     totalRows: input.model.scrollbackRows,
     visibleRows: input.height,

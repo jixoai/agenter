@@ -294,7 +294,13 @@
 			rows: committedLiveGrid.rows,
 			cursor: {
 				x: Math.max(0, Math.min(snapshot.cursor.x, Math.max(0, committedLiveGrid.cols - 1))),
-				y: Math.max(0, Math.min(snapshot.cursor.y, Math.max(0, committedLiveGrid.rows - 1))),
+				y: Math.max(0, snapshot.cursor.y),
+				visible: snapshot.cursor.visible,
+			},
+			scrollback: {
+				viewportOffset: snapshot.scrollback.viewportOffset,
+				totalLines: Math.max(snapshot.scrollback.totalLines, snapshot.lines.length),
+				screenLines: committedLiveGrid.rows,
 			},
 		};
 	});

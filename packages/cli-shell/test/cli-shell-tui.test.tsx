@@ -25,6 +25,7 @@ import {
   routeCliShellKey,
   routeCliShellPaste,
   resolveCliShellDialoguePlacement,
+  resolveCliShellTerminalRegion,
   resolveCliShellToolbarStatus,
   resolveCliShellTuiKeybindings,
   syncCliShellTerminalGeometry,
@@ -1155,9 +1156,9 @@ describe("Feature: cli-shell interactive TUI", () => {
 
     const geometryKey = await syncCliShellTerminalGeometry({
       store: harness.store,
-      terminalId: "shell-1",
       width: 120,
       height: 40,
+      model: buildModel(),
       previousGeometryKey: "",
     });
     expect(geometryKey).toBe("shell-1:120x39");
@@ -1219,9 +1220,9 @@ describe("Feature: cli-shell interactive TUI", () => {
 
     const resizedGeometryKey = await syncCliShellTerminalGeometry({
       store: harness.store,
-      terminalId: "shell-1",
       width: 80,
       height: 24,
+      model: buildModel(),
       previousGeometryKey: geometryKey,
     });
     expect(resizedGeometryKey).toBe("shell-1:80x23");
@@ -1229,6 +1230,93 @@ describe("Feature: cli-shell interactive TUI", () => {
       terminalId: "shell-1",
       cols: 80,
       rows: 23,
+    });
+  });
+
+  test("Scenario: Given docked dialogue placements When syncing terminal geometry Then the PTY uses the visible terminal region instead of the full shell frame", async () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell", "shell-1:~/project $"],
+      roomMessages: [],
+      unread: 0,
+    });
+    const harness = createTuiStore({ state });
+    const keybindings = resolveCliShellTuiKeybindings(null);
+
+    const rightModel = buildCliShellTuiModel({
+      state: harness.store.getState(),
+      projection: {
+        roomSnapshot: harness.store.getState().globalRoomSnapshotsById["room-shell-1"]?.data ?? null,
+      },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: true,
+        requestedPlacement: "right",
+        dialogueDraft: "",
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings,
+      width: 120,
+      height: 40,
+    });
+    expect(resolveCliShellTerminalRegion({ model: rightModel, width: 120, height: 40 })).toEqual({
+      width: 75,
+      height: 39,
+    });
+    const rightGeometryKey = await syncCliShellTerminalGeometry({
+      store: harness.store,
+      width: 120,
+      height: 40,
+      model: rightModel,
+      previousGeometryKey: "",
+    });
+    expect(rightGeometryKey).toBe("shell-1:75x39");
+    expect(harness.terminalConfigs.at(-1)).toEqual({
+      terminalId: "shell-1",
+      cols: 75,
+      rows: 39,
+    });
+
+    const bottomModel = buildCliShellTuiModel({
+      state: harness.store.getState(),
+      projection: {
+        roomSnapshot: harness.store.getState().globalRoomSnapshotsById["room-shell-1"]?.data ?? null,
+      },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: true,
+        requestedPlacement: "bottom",
+        dialogueDraft: "",
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings,
+      width: 72,
+      height: 32,
+    });
+    expect(resolveCliShellTerminalRegion({ model: bottomModel, width: 72, height: 32 })).toEqual({
+      width: 72,
+      height: 19,
+    });
+    const bottomGeometryKey = await syncCliShellTerminalGeometry({
+      store: harness.store,
+      width: 72,
+      height: 32,
+      model: bottomModel,
+      previousGeometryKey: rightGeometryKey,
+    });
+    expect(bottomGeometryKey).toBe("shell-1:72x19");
+    expect(harness.terminalConfigs.at(-1)).toEqual({
+      terminalId: "shell-1",
+      cols: 72,
+      rows: 19,
     });
   });
 });

@@ -50,7 +50,7 @@ const waitForMirrorEvent = (mirror: ReturnType<typeof createCliShellLiveTerminal
   });
 
 describe("Feature: cli-shell live terminal mirror", () => {
-  test("Scenario: Given an initial snapshot with scrollback When the mirror projects cursor truth Then cursorAbsRow stays viewport-aware", async () => {
+  test("Scenario: Given an initial snapshot with scrollback When the mirror projects cursor truth Then cursorAbsRow stays absolute and viewport metadata remains explicit", async () => {
     const mirror = createCliShellLiveTerminalMirror({
       terminalId: "shell-1",
       transportUrl: "ws://127.0.0.1/pty/shell-1",
@@ -80,7 +80,7 @@ describe("Feature: cli-shell live terminal mirror", () => {
     await settleMirror();
 
     const view = mirror.getView();
-    expect(view.cursorAbsRow).toBe(3);
+    expect(view.cursorAbsRow).toBe(1);
     expect(view.viewportStart).toBe(2);
     expect(view.viewportEnd).toBe(4);
   });

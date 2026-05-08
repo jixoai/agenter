@@ -32,7 +32,7 @@ vi.mock("ghostty-web", () => {
       setFontSize: vi.fn(),
       remeasureFont: vi.fn(),
       render: vi.fn(),
-    });
+    };
     private dataListeners: Array<(data: string) => void> = [];
     private canvas: HTMLCanvasElement | null = null;
 
@@ -47,7 +47,7 @@ vi.mock("ghostty-web", () => {
       return {
         dispose: () => {
           this.dataListeners = this.dataListeners.filter((item) => item !== listener);
-        }),
+        },
       };
     }
 
@@ -147,7 +147,7 @@ class MockTerminal {
             width: 0,
             height: 0,
           },
-        }),
+        },
       },
     },
   };
@@ -172,7 +172,7 @@ class MockTerminal {
       dispose: () => {
         this.dataListeners = this.dataListeners.filter((item) => item !== listener);
       },
-    });
+    };
   }
 
   onBinary(listener: (data: string) => void): { dispose(): void } {
@@ -181,7 +181,7 @@ class MockTerminal {
       dispose: () => {
         this.binaryListeners = this.binaryListeners.filter((item) => item !== listener);
       },
-    });
+    };
   }
 
   emitData(data: string): void {
@@ -1030,7 +1030,7 @@ describe("Feature: terminal-view WebComponent", () => {
     element.font = {
       ...element.font,
       sizePx: 16,
-    });
+    };
     await element.updateComplete;
     await waitForLifecycleFrame();
     await waitForLifecycleFrame();

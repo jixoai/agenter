@@ -210,9 +210,9 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
   useEffect(() => {
     void syncCliShellTerminalGeometry({
       store: props.store,
-      terminalId: model.terminalId,
       width,
       height,
+      model,
       previousGeometryKey: geometryRef.current,
       liveMirror: liveMirrorRef.current,
     })
@@ -220,7 +220,7 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
         geometryRef.current = nextKey;
       })
       .catch(() => undefined);
-  }, [height, model.terminalId, props.store, width]);
+  }, [height, model, props.store, width]);
 
   usePaste((event) => {
     routeCliShellPaste(controllerContext, textDecoder.decode(event.bytes));

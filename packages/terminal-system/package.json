@@ -20,7 +20,6 @@
     "@agenter/managed-seat-invitation-handshake": "workspace:*",
     "@agenter/termless-core": "workspace:*",
     "@agenter/terminal-transport-protocol": "workspace:*",
-    "@agenter/terminal-render-core": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",
     "@opentui/core": "latest",
     "@opentui/react": "latest",

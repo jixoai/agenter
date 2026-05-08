@@ -76,8 +76,16 @@
 			richLines: nextLines.map((line) => ({
 				spans: [{ text: line }],
 			})),
-			cursor: { x: cursorLine.length, y: Math.max(0, nextLines.length - 1) },
-			cursorVisible: true,
+			cursor: {
+				x: cursorLine.length,
+				y: Math.max(0, nextLines.length - 1),
+				visible: true,
+			},
+			scrollback: {
+				viewportOffset: Math.max(0, nextLines.length - (geometry.rows ?? 24)),
+				totalLines: nextLines.length,
+				screenLines: geometry.rows ?? 24,
+			},
 		};
 	};
 
