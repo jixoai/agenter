@@ -285,6 +285,7 @@ export type RuntimeMessageQueryResult = MessageQueryResult;
 export interface RuntimeTerminalView {
   terminalId: string;
   processKind: string;
+  backend: TerminalControlPlaneEntry["backend"];
   command: string[];
   launchCwd: string;
   workspace: string | null;
@@ -306,12 +307,9 @@ export interface RuntimeTerminalView {
   theme: TerminalControlPlaneEntry["theme"];
   cursor: TerminalControlPlaneEntry["cursor"];
   font: TerminalControlPlaneEntry["font"];
-  access?: TerminalControlPlaneEntry["access"];
 }
 
-export type RuntimeTerminalCreateAckView = Omit<RuntimeTerminalView, "access"> & {
-  access?: undefined;
-};
+export type RuntimeTerminalCreateAckView = RuntimeTerminalView;
 
 export interface RuntimeTerminalConfigView extends TerminalConfigView {}
 
@@ -507,6 +505,7 @@ export const projectRuntimeMessageOverview = (
 export const projectRuntimeTerminal = (terminal: TerminalControlPlaneEntry): RuntimeTerminalView => ({
   terminalId: terminal.terminalId,
   processKind: terminal.processKind,
+  backend: terminal.backend,
   command: [...terminal.command],
   launchCwd: terminal.launchCwd,
   workspace: terminal.workspace,
@@ -528,12 +527,12 @@ export const projectRuntimeTerminal = (terminal: TerminalControlPlaneEntry): Run
   theme: terminal.theme,
   cursor: terminal.cursor,
   font: terminal.font,
-  access: terminal.access,
 });
 
 export const projectRuntimeTerminalConfig = (config: TerminalConfigView): RuntimeTerminalConfigView => ({
   terminalId: config.terminalId,
   processKind: config.processKind,
+  backend: config.backend,
   command: [...config.command],
   launchCwd: config.launchCwd,
   profile: {

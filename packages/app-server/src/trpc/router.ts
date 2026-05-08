@@ -14,7 +14,7 @@ import {
   productPrivateTextAssetEnsureInputSchema,
 } from "@agenter/product-extension-runtime";
 import { isPrincipalId } from "@agenter/principal-crypto";
-import type { TerminalActorId } from "@agenter/terminal-system";
+import { TERMINAL_BACKEND_KINDS, type TerminalActorId } from "@agenter/terminal-system";
 import {
   authDraftCreateInputSchema,
   authDraftDeleteInputSchema,
@@ -102,9 +102,11 @@ const terminalProcessProfileSchema = z.object({
   title: z.string().trim().min(1).optional(),
   shortcuts: z.record(z.string(), z.string().min(1)).optional(),
 });
+const terminalBackendSchema = z.enum(TERMINAL_BACKEND_KINDS);
 const terminalConfigPatchSchema = z.object({
   terminalId: z.string().min(1),
   processKind: z.string().trim().min(1).optional(),
+  backend: terminalBackendSchema.optional(),
   command: z.array(z.string().min(1)).min(1).optional(),
   launchCwd: z.string().min(1).optional(),
   env: z.record(z.string(), z.string()).optional(),
@@ -1260,6 +1262,7 @@ export const appRouter = t.router({
           sessionId: z.string().min(1),
           terminalId: z.string().min(1).optional(),
           processKind: z.string().trim().min(1).optional(),
+          backend: terminalBackendSchema.optional(),
           command: z.array(z.string().min(1)).min(1).optional(),
           cwd: z.string().min(1).optional(),
           profile: terminalProcessProfileSchema.optional(),
@@ -1294,6 +1297,7 @@ export const appRouter = t.router({
         z.object({
           terminalId: z.string().min(1).optional(),
           processKind: z.string().trim().min(1).optional(),
+          backend: terminalBackendSchema.optional(),
           command: z.array(z.string().min(1)).min(1).optional(),
           cwd: z.string().min(1).optional(),
           profile: terminalProcessProfileSchema.optional(),

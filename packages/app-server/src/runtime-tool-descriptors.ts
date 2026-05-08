@@ -4,7 +4,13 @@ import type {
   AttentionContextDescriptor,
 } from "@agenter/attention-system";
 import type { MessageQueryRequest } from "@agenter/message-system";
-import type { TerminalCursorStyle, TerminalProcessProfile, TerminalRendererPreference, TerminalThemeName } from "@agenter/terminal-system";
+import type {
+  TerminalBackendKind,
+  TerminalCursorStyle,
+  TerminalProcessProfile,
+  TerminalRendererPreference,
+  TerminalThemeName,
+} from "@agenter/terminal-system";
 import { toJSONSchema, z, type ZodTypeAny } from "zod";
 
 import type {
@@ -106,6 +112,7 @@ export interface RuntimeLocalApiHandlers {
   terminalCreate: (input: {
     terminalId?: string;
     processKind?: string;
+    backend?: TerminalBackendKind;
     command?: string[];
     cwd?: string;
     profile?: Omit<TerminalProcessProfile, "rendererPreference" | "theme" | "cursor" | "font">;
@@ -115,6 +122,7 @@ export interface RuntimeLocalApiHandlers {
   terminalSetConfig: (input: {
     terminalId: string;
     processKind?: string;
+    backend?: TerminalBackendKind;
     command?: string[];
     launchCwd?: string;
     env?: Record<string, string>;

@@ -601,6 +601,7 @@ const buildMockSkillMutation = () => ({
 const buildMockTerminalConfig = (terminalId: string) => ({
   terminalId,
   processKind: "shell",
+  backend: "xterm" as const,
   command: ["bash"],
   launchCwd: ROOT_WORKSPACE_PATH,
   profile: {
@@ -781,6 +782,7 @@ const createRuntimeLocalHandlers = (input: {
   terminalSetConfig: async ({ terminalId, ...patch }) => ({
     config: {
       ...buildMockTerminalConfig(terminalId),
+      ...(patch.backend ? { backend: patch.backend } : {}),
       ...(patch.processKind ? { processKind: patch.processKind } : {}),
       ...(patch.command ? { command: [...patch.command] } : {}),
       ...(patch.launchCwd ? { launchCwd: patch.launchCwd } : {}),

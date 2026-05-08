@@ -110,6 +110,7 @@ describe("Feature: runtime tool public views", () => {
     const terminal = {
       terminalId: "term-1",
       processKind: "shell",
+      backend: "xterm",
       command: ["bash"],
       launchCwd: "/tmp/workspace",
       workspace: "/tmp/workspace",
@@ -212,6 +213,7 @@ describe("Feature: runtime tool public views", () => {
     expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.items[0] ?? {}, "metadata")).toBeFalse();
 
     expect(projectedTerminal.terminalId).toBe("term-1");
+    expect(projectedTerminal.backend).toBe("xterm");
     expect(projectedTerminal.launchCwd).toBe("/tmp/workspace");
     expect(projectedTerminal.transportUrl).toBe("ws://127.0.0.1/terminal/term-1");
     expect(Object.prototype.hasOwnProperty.call(projectedTerminal, "access")).toBeFalse();

@@ -3950,6 +3950,7 @@ export class SessionRuntime {
       byId.set(terminalId, {
         terminalId,
         processKind: "remote",
+        backend: "xterm",
         command: [],
         launchCwd: "",
         workspace: null,

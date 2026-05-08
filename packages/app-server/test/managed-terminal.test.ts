@@ -6,6 +6,7 @@ describe("Feature: managed terminal lifecycle", () => {
   test("Scenario: Given missing command When starting terminal Then it fails without leaving running state", async () => {
     const terminal = new ManagedTerminal({
       terminalId: "missing-bin",
+      backend: "xterm",
       command: ["__agenter_missing_binary__"],
       cwd: process.cwd(),
       cols: 80,

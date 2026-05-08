@@ -75,6 +75,7 @@ import {
   type TerminalActorId,
   type TerminalApprovalRequestRecord,
   type TerminalControlPlaneEntry,
+  type TerminalBackendKind,
   type TerminalGrantWriteLeaseInput,
   type TerminalGrantRecord,
   type TerminalGrantRole,
@@ -3897,6 +3898,7 @@ export class AppKernel {
   async createGlobalTerminal(input: {
     terminalId?: string;
     processKind?: string;
+    backend?: TerminalBackendKind;
     command?: string[];
     cwd?: string;
     profile?: TerminalProcessProfile;
@@ -3911,6 +3913,7 @@ export class AppKernel {
         ? await this.terminalControlPlane.createForActor(input.actorId, {
             terminalId: input.terminalId,
             processKind: input.processKind,
+            backend: input.backend,
             command: input.command,
             cwd: input.cwd,
             profile: input.profile,
@@ -3920,6 +3923,7 @@ export class AppKernel {
         : await this.terminalControlPlane.create({
             terminalId: input.terminalId,
             processKind: input.processKind,
+            backend: input.backend,
             command: input.command,
             cwd: input.cwd,
             profile: input.profile,
@@ -4013,6 +4017,16 @@ export class AppKernel {
 
   setGlobalTerminalConfig(input: {
     terminalId: string;
+    processKind?: string;
+    backend?: TerminalBackendKind;
+    command?: string[];
+    launchCwd?: string;
+    env?: Record<string, string>;
+    gitLog?: TerminalProcessProfile["gitLog"];
+    logStyle?: TerminalProcessProfile["logStyle"];
+    title?: string;
+    icon?: string;
+    shortcuts?: TerminalProcessProfile["shortcuts"];
     cols?: number;
     rows?: number;
     rendererPreference?: TerminalProcessProfile["rendererPreference"];
