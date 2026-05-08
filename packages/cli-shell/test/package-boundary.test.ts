@@ -41,6 +41,7 @@ describe("Feature: cli-shell package boundary", () => {
     expect(pkg.scripts?.prepack).toBe("bun run build");
     expect(wrapperSource).toContain("../dist/agenter-cli-shell.js");
     expect(wrapperSource).toContain("../src/bin/agenter-cli-shell.ts");
+    expect(wrapperSource).toContain("existsSync(fileURLToPath(sourceEntry)) ? sourceEntry.href : distEntry.href");
     expect(argvSource).toContain("AGENTER_DAEMON_HOST");
     expect(argvSource).toContain("AGENTER_DAEMON_PORT");
     expect(argvSource).toContain("AGENTER_AUTH_SERVICE_ENDPOINT");

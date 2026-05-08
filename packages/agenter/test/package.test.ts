@@ -33,6 +33,7 @@ describe("Feature: agenter publish package", () => {
     expect(pkg.scripts?.prepack).toBe("bun run build");
     expect(wrapperSource).toContain("../dist/agenter.js");
     expect(wrapperSource).toContain("../src/bin/agenter.ts");
+    expect(wrapperSource).toContain("existsSync(fileURLToPath(sourceEntry)) ? sourceEntry.href : distEntry.href");
     expect(sourceEntry).toContain('from "@agenter/cli"');
   });
 });
