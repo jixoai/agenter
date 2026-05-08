@@ -245,6 +245,22 @@ export class FakeCliShellStore implements CliShellStore {
     return { ok: true, message: "terminal created", terminal };
   }
 
+  async bootstrapGlobalTerminal(input: {
+    terminalId: string;
+  }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
+    const index = this.terminals.findIndex((entry) => entry.terminalId === input.terminalId);
+    if (index === -1) {
+      return { ok: false, message: "terminal missing" };
+    }
+    const terminal = {
+      ...this.terminals[index]!,
+      processPhase: "running" as const,
+      status: "IDLE" as const,
+    };
+    this.terminals[index] = terminal;
+    return { ok: true, message: "terminal bootstrapped", terminal };
+  }
+
   async listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]> {
     return [...(this.terminalGrants.get(terminalId) ?? [])];
   }

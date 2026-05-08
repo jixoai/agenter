@@ -69,6 +69,9 @@ export interface ProductExtensionRuntimeStore {
     start?: boolean;
     focus?: boolean;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }>;
+  bootstrapGlobalTerminal(input: {
+    terminalId: string;
+  }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }>;
   listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]>;
   issueGlobalTerminalGrant(input: {
     terminalId: string;
@@ -282,6 +285,7 @@ export class ProductExtensionRuntimeClient {
   async ensureTerminalBinding(input: ProductEnsureTerminalBindingInput): Promise<ProductEnsureBindingResult<GlobalTerminalEntry>> {
     const { bindingMetadata, metadata } = mergeBindingMetadata(input.binding);
     const terminalId = input.terminalId ?? input.binding.resourceKey;
+    const shouldStart = input.createInput?.start ?? false;
     const terminals = await this.store.listGlobalTerminals();
     let entry =
       terminals.find((candidate) => matchesProductBindingMetadata(candidate.metadata, bindingMetadata)) ??
@@ -303,6 +307,15 @@ export class ProductExtensionRuntimeClient {
       }
       entry = result.terminal;
       created = true;
+    }
+    if (!created && shouldStart && entry.processPhase !== "running") {
+      const bootstrapped = await this.store.bootstrapGlobalTerminal({
+        terminalId: entry.terminalId,
+      });
+      if (!bootstrapped.terminal) {
+        throw new Error(bootstrapped.message);
+      }
+      entry = bootstrapped.terminal;
     }
 
     let granted = false;

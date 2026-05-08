@@ -56,6 +56,7 @@ const createAvatarEntry = (nickname: string): GlobalAvatarCatalogEntry => ({
 const createTerminalEntry = (
   terminalId: string,
   metadata: Record<string, unknown> = {},
+  processPhase: GlobalTerminalEntry["processPhase"] = "running",
 ): GlobalTerminalEntry => ({
   terminalId,
   processKind: "shell",
@@ -63,7 +64,7 @@ const createTerminalEntry = (
   launchCwd: "/repo",
   workspace: null,
   status: "IDLE",
-  processPhase: "running",
+  processPhase,
   seq: 1,
   snapshot: {
     seq: 1,
@@ -124,6 +125,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   readonly sessions = new Map<string, SessionEntry>();
   readonly terminals: GlobalTerminalEntry[] = [];
   readonly terminalGrants = new Map<string, GlobalTerminalGrantEntry[]>();
+  readonly bootstrapTerminalCalls: string[] = [];
   readonly rooms: GlobalRoomEntry[] = [];
   readonly roomGrants = new Map<string, GlobalRoomGrantEntry[]>();
   readonly privateAssets = new Map<string, WorkspacePrivateTextAssetEnsureOutput>();
@@ -251,6 +253,21 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
 
   async listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]> {
     return [...(this.terminalGrants.get(terminalId) ?? [])];
+  }
+
+  async bootstrapGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
+    this.bootstrapTerminalCalls.push(input.terminalId);
+    const index = this.terminals.findIndex((entry) => entry.terminalId === input.terminalId);
+    if (index === -1) {
+      return { ok: false, message: "terminal missing" };
+    }
+    const next = {
+      ...this.terminals[index]!,
+      processPhase: "running" as const,
+      status: "IDLE" as const,
+    };
+    this.terminals[index] = next;
+    return { ok: true, message: "bootstrapped", terminal: next };
   }
 
   async issueGlobalTerminalGrant(input: {
@@ -619,6 +636,41 @@ describe("Feature: product extension runtime client", () => {
     expect(ensuredRoom.granted).toBe(false);
     expect(store.focusTerminalCalls).toEqual([["shell-1"]]);
     expect(store.focusRoomCalls).toEqual([["room-shell-1"]]);
+  });
+
+  test("Scenario: Given an existing stopped terminal binding When the product requires start on reconnect Then the runtime client bootstraps the durable terminal before reuse", async () => {
+    const store = new FakeProductRuntimeStore();
+    store.terminals.push(
+      createTerminalEntry(
+        "shell-1",
+        {
+          productId: "cli-shell",
+          resourceKey: "shell-1",
+          ownerSystem: "terminal-system",
+        },
+        "stopped",
+      ),
+    );
+    const client = new ProductExtensionRuntimeClient(store);
+
+    const ensuredTerminal = await client.ensureTerminalBinding({
+      binding: {
+        productId: "cli-shell",
+        resourceKey: "shell-1",
+        resourceKind: "terminal",
+        ownerSystem: "terminal-system",
+      },
+      createInput: {
+        processKind: "shell",
+        cwd: "/repo",
+        start: true,
+      },
+    });
+
+    expect(ensuredTerminal.created).toBe(false);
+    expect(ensuredTerminal.entry.processPhase).toBe("running");
+    expect(store.bootstrapTerminalCalls).toEqual(["shell-1"]);
+    expect(store.focusTerminalCalls).toEqual([["shell-1"]]);
   });
 
   test("Scenario: Given self-evolution attention and explicit delegations When invoking the runtime client Then attention does not implicitly create hosting leases", async () => {

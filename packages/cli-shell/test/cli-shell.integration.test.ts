@@ -220,4 +220,33 @@ describe("Feature: cli-shell real daemon integration", () => {
     expect(afterDisable.activeDelegation).toBeNull();
     expect(afterDisable.managed).toBe(false);
   }, 45_000);
+
+  test("Scenario: Given a reused shell terminal was previously stopped When cli-shell reattaches the same shell Then product runtime binding bootstraps it back to a readable PTY", async () => {
+    const fixture = await createRuntimeFixture();
+
+    const first = await bootstrapCliShell({
+      store: fixture.store,
+      workspacePath: fixture.workspacePath,
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+    await fixture.store.stopGlobalTerminal({
+      terminalId: first.terminal.entry.terminalId,
+    });
+
+    const reconnect = await bootstrapCliShell({
+      store: fixture.store,
+      workspacePath: fixture.workspacePath,
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+    const read = await fixture.store.readGlobalTerminal({
+      terminalId: reconnect.terminal.entry.terminalId,
+      mode: "snapshot",
+    });
+
+    expect(reconnect.terminal.created).toBe(false);
+    expect(reconnect.terminal.entry.processPhase).toBe("running");
+    expect(read.terminalId).toBe("shell-1");
+  }, 45_000);
 });
