@@ -1,5 +1,7 @@
 import yargs from "yargs";
 
+import { assertTerminalBackendKind, type TerminalBackendKind } from "@agenter/termless-core";
+
 import { CLI_SHELL_DEFAULT_AVATAR, CLI_SHELL_DEFAULT_SESSION } from "./product";
 
 const metadataOnlyTokens = new Set(["--help", "-h", "help", "--version", "-v", "version"]);
@@ -7,12 +9,14 @@ const metadataOnlyTokens = new Set(["--help", "-h", "help", "--version", "-v", "
 export interface CliShellParsedArgs {
   avatarNickname: string;
   shellName: string;
+  backend?: TerminalBackendKind;
   host: string;
   port: number;
   authServiceEndpoint?: string;
 }
 
 interface CliShellArgvParseResult {
+  backend?: string;
   host: string;
   port: number;
   authServiceEndpoint?: string;
@@ -62,6 +66,9 @@ export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEn
       type: "string",
       default: CLI_SHELL_DEFAULT_SESSION,
     })
+    .option("backend", {
+      type: "string",
+    })
     .strictOptions()
     .exitProcess(false)
     .help()
@@ -75,6 +82,7 @@ export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEn
   return {
     avatarNickname: normalizeAvatarMention(mentions[0]),
     shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
+    backend: typeof parsed.backend === "string" ? assertTerminalBackendKind(parsed.backend) : undefined,
     host: String(parsed.host),
     port: Number(parsed.port),
     authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,

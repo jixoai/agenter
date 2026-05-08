@@ -1,4 +1,5 @@
 import type { ProductDelegationCreateInput } from "@agenter/product-extension-runtime";
+import type { TerminalBackendKind } from "@agenter/termless-core";
 import type {
   AttentionQueryItem,
   AuthSessionOutput,
@@ -55,9 +56,11 @@ const createTerminalEntry = (
   metadata: Record<string, unknown> = {},
   command: string[] = ["/bin/bash"],
   launchCwd = "/repo",
+  backend: TerminalBackendKind = "xterm",
 ): GlobalTerminalEntry => ({
   terminalId,
   processKind: "shell",
+  backend,
   command,
   launchCwd,
   workspace: null,
@@ -237,6 +240,7 @@ export class FakeCliShellStore implements CliShellStore {
   async createGlobalTerminal(input: {
     terminalId?: string;
     processKind?: string;
+    backend?: TerminalBackendKind;
     command?: string[];
     cwd?: string;
     profile?: NonNullable<ProductEnsureTerminalBindingInput["createInput"]>["profile"];
@@ -253,6 +257,7 @@ export class FakeCliShellStore implements CliShellStore {
       input.metadata ?? {},
       input.command ?? ["/bin/bash"],
       input.cwd ?? "/repo",
+      input.backend ?? "xterm",
     );
     this.terminals.push(terminal);
     return { ok: true, message: "terminal created", terminal };
@@ -261,6 +266,7 @@ export class FakeCliShellStore implements CliShellStore {
   async setGlobalTerminalConfig(input: {
     terminalId: string;
     processKind?: string;
+    backend?: TerminalBackendKind;
     command?: string[];
     launchCwd?: string;
     env?: Record<string, string>;
@@ -293,6 +299,7 @@ export class FakeCliShellStore implements CliShellStore {
     this.terminals[index] = {
       ...current,
       processKind: input.processKind ?? current.processKind,
+      backend: input.backend ?? current.backend,
       command: input.command ? [...input.command] : current.command,
       launchCwd: input.launchCwd ?? current.launchCwd,
       metadata: {

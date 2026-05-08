@@ -24,6 +24,7 @@ export const runCliShell = async (argvInput = process.argv): Promise<void> => {
       workspacePath: process.cwd(),
       avatarNickname: args.avatarNickname,
       shellName: args.shellName,
+      backend: args.backend,
     });
 
     if (process.stdout.isTTY && process.stdin.isTTY) {
@@ -41,6 +42,7 @@ export const runCliShell = async (argvInput = process.argv): Promise<void> => {
     console.log(`avatar: ${attached.avatar.nickname}`);
     console.log(`runtime: ${attached.avatar.runtimeId}`);
     console.log(`terminal: ${attached.terminal.entry.terminalId} (${formatCreatedState(attached.terminal.created)})`);
+    console.log(`backend: ${attached.terminal.entry.backend}`);
     console.log(`room: ${attached.room.entry.chatId} (${formatCreatedState(attached.room.created)})`);
     console.log(`managed: ${attached.managed.managed ? "on" : "off"}`);
     console.log(`source: ${process.env.AGENTER_PRODUCT_SOURCE?.trim() || "direct"}`);

@@ -11,6 +11,7 @@ import type {
   SessionEntry,
   WorkspacePrivateTextAssetEnsureOutput,
 } from "@agenter/client-sdk";
+import type { TerminalBackendKind } from "@agenter/termless-core";
 
 import { readCliShellManagedState, type CliShellManagedState } from "./managed";
 import { CLI_SHELL_DEFAULT_AVATAR, CLI_SHELL_PRODUCT_ID, createCliShellProductRuntimeClient } from "./product";
@@ -43,6 +44,7 @@ export interface CliShellBootstrapInput {
   workspacePath: string;
   avatarNickname: string;
   shellName: string;
+  backend?: TerminalBackendKind;
 }
 
 export interface CliShellBootstrapResult {
@@ -143,6 +145,7 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
     focus: true,
     createInput: {
       processKind: "shell",
+      backend: input.backend,
       command: resolveCliShellCommand(),
       cwd: input.workspacePath,
       start: true,

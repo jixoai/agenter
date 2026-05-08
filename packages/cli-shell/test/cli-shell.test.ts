@@ -18,12 +18,22 @@ describe("Feature: cli-shell orchestration", () => {
     const parsed = parseCliShellArgs([]);
     expect(parsed.avatarNickname).toBe(CLI_SHELL_DEFAULT_AVATAR);
     expect(parsed.shellName).toBe("shell-1");
+    expect(parsed.backend).toBeUndefined();
   });
 
-  test("Scenario: Given explicit avatar and session When parsing cli-shell args Then avatar override and shell name normalization stay product-local", () => {
-    const parsed = parseCliShellArgs(["@default", "--session=prod", "--host", "127.0.0.2", "--port", "4600"]);
+  test("Scenario: Given explicit avatar session and backend When parsing cli-shell args Then avatar override shell name normalization and backend truth stay product-local", () => {
+    const parsed = parseCliShellArgs([
+      "@default",
+      "--session=prod",
+      "--backend=ghostty-native",
+      "--host",
+      "127.0.0.2",
+      "--port",
+      "4600",
+    ]);
     expect(parsed.avatarNickname).toBe("default");
     expect(parsed.shellName).toBe("shell-prod");
+    expect(parsed.backend).toBe("ghostty-native");
     expect(parsed.host).toBe("127.0.0.2");
     expect(parsed.port).toBe(4600);
     expect(normalizeShellName("shell-2")).toBe("shell-2");
@@ -38,6 +48,10 @@ describe("Feature: cli-shell orchestration", () => {
     expect(parsed.host).toBe("127.0.0.9");
     expect(parsed.port).toBe(4999);
     expect(parsed.authServiceEndpoint).toBe("http://127.0.0.1:4591");
+  });
+
+  test("Scenario: Given an unsupported backend flag When parsing cli-shell args Then the product rejects it explicitly", () => {
+    expect(() => parseCliShellArgs(["--backend=ghostty-web"])).toThrow("unsupported terminal backend");
   });
 
   test("Scenario: Given help or version argv When classifying cli-shell execution Then product metadata requests return before attach side effects", () => {
@@ -112,6 +126,40 @@ describe("Feature: cli-shell orchestration", () => {
     expect(attached.promptSeeded).toBe(false);
     expect(attached.memoryFiles).toEqual([]);
     expect(store.avatars.some((entry) => entry.nickname === CLI_SHELL_DEFAULT_AVATAR)).toBe(false);
+  });
+
+  test("Scenario: Given explicit ghostty-native backend When bootstrapping cli-shell Then the terminal binding carries backend launch truth through the generic product contract", async () => {
+    const store = new FakeCliShellStore();
+    const attached = await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+      backend: "ghostty-native",
+    });
+
+    expect(attached.terminal.entry.backend).toBe("ghostty-native");
+    expect(store.terminals.find((entry) => entry.terminalId === "shell-1")?.backend).toBe("ghostty-native");
+  });
+
+  test("Scenario: Given a running shell terminal with another backend When bootstrapping cli-shell with ghostty-native Then the mismatch is surfaced instead of silently reusing xterm", async () => {
+    const store = new FakeCliShellStore();
+    await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+
+    await expect(
+      bootstrapCliShell({
+        store,
+        workspacePath: "/repo",
+        avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+        shellName: "shell-1",
+        backend: "ghostty-native",
+      }),
+    ).rejects.toThrow("terminal backend mismatch");
   });
 
   test("Scenario: Given cli-shell managed mode is enabled and later disabled When the product uses runtime attention and delegation helpers Then hosting facts and delegated authority stay platform-backed", async () => {

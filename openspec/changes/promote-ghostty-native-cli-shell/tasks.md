@@ -7,9 +7,9 @@
 
 ## 2. Cli-shell backend orchestration
 
-- [ ] 2.1 Parse `--backend` in cli-shell argv and thread it through bootstrap inputs and terminal ensure calls.
-- [ ] 2.2 Implement backend-aware terminal reuse policy: update stopped terminals, reject running backend mismatches, and keep explicit failure messages.
-- [ ] 2.3 Add cli-shell unit and integration tests for `bun agenter shell --backend=ghostty-native` and backend mismatch behavior.
+- [x] 2.1 Parse `--backend` in cli-shell argv and thread it through bootstrap inputs and terminal ensure calls.
+- [x] 2.2 Implement backend-aware terminal reuse policy: update stopped terminals, reject running backend mismatches, and keep explicit failure messages.
+- [x] 2.3 Add cli-shell unit and integration tests for `bun agenter shell --backend=ghostty-native` and backend mismatch behavior.
 
 ## 3. Bottom single-line projection
 

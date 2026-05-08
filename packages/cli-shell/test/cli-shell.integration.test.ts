@@ -249,4 +249,54 @@ describe("Feature: cli-shell real daemon integration", () => {
     expect(reconnect.terminal.entry.processPhase).toBe("running");
     expect(read.terminalId).toBe("shell-1");
   }, 45_000);
+
+  test("Scenario: Given a stopped shell terminal already exists When cli-shell reattaches with ghostty-native Then the product patches backend launch truth before bootstrap", async () => {
+    const fixture = await createRuntimeFixture();
+
+    const first = await bootstrapCliShell({
+      store: fixture.store,
+      workspacePath: fixture.workspacePath,
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+    await fixture.store.stopGlobalTerminal({
+      terminalId: first.terminal.entry.terminalId,
+    });
+
+    const reconnect = await bootstrapCliShell({
+      store: fixture.store,
+      workspacePath: fixture.workspacePath,
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+      backend: "ghostty-native",
+    });
+    const terminals = await fixture.store.listGlobalTerminals();
+    const shellTerminal = terminals.find((entry) => entry.terminalId === "shell-1");
+
+    expect(reconnect.terminal.created).toBe(false);
+    expect(reconnect.terminal.entry.backend).toBe("ghostty-native");
+    expect(shellTerminal?.backend).toBe("ghostty-native");
+    expect(reconnect.terminal.entry.processPhase).toBe("running");
+  }, 90_000);
+
+  test("Scenario: Given a running shell terminal already uses xterm When cli-shell reattaches with ghostty-native Then the product surfaces backend mismatch instead of silently attaching", async () => {
+    const fixture = await createRuntimeFixture();
+
+    await bootstrapCliShell({
+      store: fixture.store,
+      workspacePath: fixture.workspacePath,
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+
+    await expect(
+      bootstrapCliShell({
+        store: fixture.store,
+        workspacePath: fixture.workspacePath,
+        avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+        shellName: "shell-1",
+        backend: "ghostty-native",
+      }),
+    ).rejects.toThrow("terminal backend mismatch");
+  }, 45_000);
 });
