@@ -8,11 +8,12 @@ export type {
   KeyDescriptor,
   RGB,
   ScrollbackState,
+  Terminal,
   TerminalBackend,
   TerminalCapabilities,
+  TerminalCreateOptions,
   TerminalMode,
   TerminalOptions,
   TerminalReadable,
-  TermlessBridge,
   UnderlineStyle,
-} from "./types.js";
+} from "./termless-types.js";

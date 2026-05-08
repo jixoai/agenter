@@ -1,0 +1,15 @@
+export type {
+  Cell,
+  CursorState,
+  KeyDescriptor,
+  RGB,
+  ScrollbackState,
+  Terminal,
+  TerminalBackend,
+  TerminalCapabilities,
+  TerminalCreateOptions,
+  TerminalMode,
+  TerminalOptions,
+  TerminalReadable,
+  UnderlineStyle,
+} from "../node_modules/@termless/core/src/types";

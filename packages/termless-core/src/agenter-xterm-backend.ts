@@ -10,7 +10,7 @@ import type {
   TerminalMode,
   TerminalOptions,
   UnderlineStyle,
-} from "./types.js";
+} from "./termless-types.js";
 
 const DEFAULT_CAPABILITIES: TerminalCapabilities = {
   name: "xterm-headless",
@@ -184,6 +184,7 @@ const readMode = (modes: IModes, mode: TerminalMode): boolean => {
     case "reverseVideo":
       return false;
   }
+  return false;
 };
 
 type XtermSyncTerminal = Terminal & {
@@ -268,9 +269,9 @@ export class AgenterXtermBackend implements TerminalBackend {
     return rows.join("\n");
   }
 
-  getCell(row: number, col: number): Cell | undefined {
+  getCell(row: number, col: number): Cell {
     const line = this.buffer.getLine(row);
-    return line ? toCell(line.getCell(col)) : undefined;
+    return line ? toCell(line.getCell(col)) : toCell(undefined);
   }
 
   getLine(row: number): Cell[] {

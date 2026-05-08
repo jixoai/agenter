@@ -1,4 +1,4 @@
-import type { TerminalMode, TermlessBridge } from "./types.js";
+import type { TerminalMode, TerminalReadable } from "./termless-types.js";
 import { AgenterXtermBackend } from "./agenter-xterm-backend.js";
 
 const DEFAULT_COLS = 120;
@@ -7,7 +7,18 @@ const DEFAULT_SCROLLBACK = 10_000;
 
 const textEncoder = new TextEncoder();
 
-export class XtermReadableBridge implements TermlessBridge {
+export interface XtermBridgeReadable extends TerminalReadable {
+  readonly cols: number;
+  readonly rows: number;
+  write(data: string | Uint8Array): Promise<void>;
+  writeSync(data: string | Uint8Array): void;
+  resize(cols: number, rows: number): void;
+  reset(): void;
+  dispose(): void;
+  onTitleChange(listener: (title: string) => void): () => void;
+}
+
+export class XtermReadableBridge implements XtermBridgeReadable {
   private readonly backend: AgenterXtermBackend;
   private readonly titleListeners: Array<(title: string) => void> = [];
   private lastTitle = "";

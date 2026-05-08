@@ -1,5 +1,4 @@
-import type { Cell } from "./types.js";
-import type { XtermReadableBridge } from "./termless-bridge.js";
+import type { Cell, TerminalReadable } from "./termless-types.js";
 
 export interface TerminalRenderRichSpan {
   text: string;
@@ -88,12 +87,12 @@ const renderLine = (cells: readonly Cell[]): TerminalRenderRichLine => {
   return { spans };
 };
 
-export const renderStructuredBuffer = (bridge: XtermReadableBridge): TerminalStructuredRender => {
+export const renderStructuredBuffer = (bridge: Pick<TerminalReadable, "getCursor" | "getLines" | "getScrollback"> & { rows: number; cols: number }): TerminalStructuredRender => {
   const lines = bridge.getLines();
   const cursor = bridge.getCursor();
   const scrollback = bridge.getScrollback();
   return {
-    richLines: lines.map((line) => renderLine(line)),
+    richLines: lines.map((line: Cell[]) => renderLine(line)),
     cursor: {
       x: cursor.x,
       y: cursor.y,
