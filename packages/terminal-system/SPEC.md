@@ -7,7 +7,7 @@
 `@agenter/terminal-system` 是一个 TypeScript 终端内核库：
 
 - 使用 Bun PTY 运行任意 CLI 程序
-- 使用 `@xterm/headless` 维护绝对滚动缓冲
+- 使用 Termless-compatible backend 维护绝对滚动缓冲
 - 将终端状态写入语义化 HTML 分页日志，供 AI/工具稳定消费
 - 提供 `ati` CLI 作为运行入口
 
@@ -19,7 +19,7 @@
 ## 2. 架构与模块
 
 - `Pty`：封装 Bun PTY 进程（启动、写入、退出、resize）
-- `XtermBridge`：封装 `@xterm/headless`（写入流、读取 buffer）
+- `XtermBridge`：封装默认 xterm backend（写入流、读取 buffer）
 - `renderer`：把 buffer 转成 ANSI/Cell 语义模型（`richLines`），再序列化成 `log.html`
 - `output-reader`：按 `latest + pre-file` 文件链读取 `output/*.log.html` 正文行
 - `Committer`：debounce + throttle + plain text 去噪提交
@@ -104,7 +104,7 @@ Resize 工作流（强制）：
    - 将 `latest.log.html` 重命名为归档名（`start~end.log.html`）
    - 更新内存文件链（仅关系，不缓存内容）
 2. 执行 resize 并等待稳定
-   - 同步 resize 到 PTY + `@xterm/headless`
+   - 同步 resize 到 PTY + terminal backend
    - 等待稳定窗口（默认 500ms），吸收目标 TUI 的 SIGWINCH 重绘噪声
 3. 启动新 epoch（viewport snapshot）
    - 创建新的 `latest.log.html`
@@ -134,7 +134,7 @@ Debug 约束（用于定位 resize 问题）：
 - 必须基于绝对 scrollback 渲染（非仅 viewport）
 - 渲染阶段输出面向 UI 观察：不得提前裁剪可见样式空白（例如 trailing inverse）
 - 插入 `<cursor/>` 表示输入焦点（仅当 xterm `showCursor=true`）
-- cursor 的位置必须直接来自 `@xterm/headless` 原始 buffer（`baseY + cursorY`, `cursorX`）
+- cursor 的位置必须直接来自 terminal backend 原始 buffer（`baseY + cursorY`, `cursorX`）
 - 禁止基于特定应用文案（如 placeholder 文本）做硬编码寻址修正
 - 必须保留并透传关键文本样式属性（至少：fg/bg/bold/underline/inverse）
 - 当目标程序通过 SGR（如 `7m/27m`）自绘焦点时，ATI 不得用硬件 cursor 覆盖该语义
@@ -308,7 +308,7 @@ git-log 约束：
   - `theme` 与 `cursor` 是 renderer-neutral 的 declarative profile identity，而不是 feature-local CSS 补丁
   - `font/theme/cursor/rendererPreference` 的 durable 写入口属于 authenticated browser terminal config mutation；AI-facing runtime config mutation 不得重新取得这些 presentation 字段的写权限
   - `resolvedRenderer` 属于前端环境解析事实，不回写成 terminal-system authoritative truth
-  - 当前 desktop `auto` 默认解析到 `ghostty-web`，因为 fit/cover 缩放下它的选择与渲染行为比当前 xterm DOM stack 更稳定
+  - 当前 desktop `auto` 默认解析到 `xterm`，直到其它 renderer 通过 termless backend parity 与真实走查证明自己可以成为新的 durable baseline
   - renderer-neutral 不等于 renderer-identical：`ghostty-web` 当前只稳定消费 `family + sizePx` 等受支持子集，并在 adapter 内处理 browser font settle / repaint；`xterm` 与 `wterm` 可以继续消费更多 font subfields
   - `@font-face` declaration 不是 renderer-ready truth：只有 renderer adapter 自己拿到 browser font readiness 之后，才允许信任 webfont metrics
   - `wterm` 是 renderer stack law，而不是单一 widget law：实现可以在 adapter 内部组合 `@wterm/ghostty` core 与 `@wterm/dom` host，但 host/UI 只能消费统一 terminal-view contract

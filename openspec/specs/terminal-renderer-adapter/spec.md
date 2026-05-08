@@ -37,14 +37,14 @@ The viewport and its consuming clients SHALL distinguish durable renderer prefer
 - **THEN** the viewport attempts that renderer specifically
 - **AND** it does not silently substitute a different renderer as if the explicit preference had succeeded
 
-### Requirement: Current desktop WebUI SHALL resolve auto preference to ghostty-web
+### Requirement: Current desktop WebUI SHALL resolve auto preference to xterm
 
-Current desktop WebUI SHALL resolve `rendererPreference = auto` to `ghostty-web` unless the host explicitly overrides that environment policy.
+Current desktop WebUI SHALL resolve `rendererPreference = auto` to `xterm` unless the host explicitly overrides that environment policy.
 
-#### Scenario: Desktop auto preference selects ghostty-web
+#### Scenario: Desktop auto preference selects xterm
 - **WHEN** the browser host renders a terminal on the current desktop WebUI surface with `rendererPreference = auto`
-- **THEN** the resolved renderer is `ghostty-web`
-- **AND** the viewport renders through the `ghostty-web` adapter instead of defaulting to xterm
+- **THEN** the resolved renderer is `xterm`
+- **AND** the viewport renders through the `xterm` adapter instead of defaulting to another experimental renderer
 
 ### Requirement: Adapter-owned viewport facts SHALL replace renderer-private host probing
 
