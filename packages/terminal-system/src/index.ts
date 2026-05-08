@@ -24,10 +24,12 @@ export {
   TerminalControlPlane,
 } from "./terminal-control-plane";
 export {
+  DEFAULT_TERMINAL_BACKEND,
   DEFAULT_TERMINAL_CURSOR,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_TERMINAL_RENDERER_PREFERENCE,
   DEFAULT_TERMINAL_THEME,
+  TERMINAL_BACKEND_KINDS,
 } from "./terminal-control-plane.types";
 export type {
   TerminalAccessProjection,
@@ -42,6 +44,7 @@ export type {
   TerminalAwaitViewOptions,
   TerminalAwaitWaitOptions,
   TerminalAutomationInputMode,
+  TerminalBackendKind,
   TerminalApprovalRequestRecord,
   TerminalApprovalStatus,
   TerminalAcceptSeatInput,

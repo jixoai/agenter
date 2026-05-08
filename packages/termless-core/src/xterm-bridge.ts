@@ -1,5 +1,4 @@
-import { createXtermBackend } from "./termless-xtermjs.js";
-
+import { createTerminalBackend, DEFAULT_TERMINAL_BACKEND, type TerminalBackendKind } from "./backend-factory.js";
 import type { Cell, CursorState, ScrollbackState, TerminalBackend, TerminalMode, TerminalReadable } from "./termless-types.js";
 
 const DEFAULT_COLS = 120;
@@ -11,6 +10,7 @@ const textEncoder = new TextEncoder();
 export interface XtermBridgeReadable extends TerminalReadable {
   readonly cols: number;
   readonly rows: number;
+  readonly backendKind: TerminalBackendKind;
   write(data: string | Uint8Array): Promise<void>;
   writeSync(data: string | Uint8Array): void;
   resize(cols: number, rows: number): void;
@@ -25,11 +25,19 @@ export class XtermReadableBridge implements XtermBridgeReadable {
   private lastTitle = "";
   private colsValue: number;
   private rowsValue: number;
+  private readonly backendKindValue: TerminalBackendKind;
 
-  constructor(cols: number = DEFAULT_COLS, rows: number = DEFAULT_ROWS, scrollbackLimit: number = DEFAULT_SCROLLBACK) {
+  constructor(
+    cols: number = DEFAULT_COLS,
+    rows: number = DEFAULT_ROWS,
+    scrollbackLimit: number = DEFAULT_SCROLLBACK,
+    backend: TerminalBackendKind = DEFAULT_TERMINAL_BACKEND,
+  ) {
     this.colsValue = cols;
     this.rowsValue = rows;
-    this.backend = createXtermBackend({
+    this.backendKindValue = backend;
+    this.backend = createTerminalBackend({
+      backend,
       cols,
       rows,
       scrollbackLimit,
@@ -115,6 +123,10 @@ export class XtermReadableBridge implements XtermBridgeReadable {
 
   get rows(): number {
     return this.rowsValue;
+  }
+
+  get backendKind(): TerminalBackendKind {
+    return this.backendKindValue;
   }
 
   private flushTitle(): void {

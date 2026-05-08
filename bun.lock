@@ -217,6 +217,13 @@
         "@types/bun": "latest",
       },
     },
+    "packages/ghostty-native": {
+      "name": "@termless/ghostty-native",
+      "version": "0.3.1",
+      "peerDependencies": {
+        "@termless/core": "*",
+      },
+    },
     "packages/i18n-core": {
       "name": "@agenter/i18n-core",
       "version": "0.0.1",
@@ -440,6 +447,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@termless/core": "^0.6.0",
+        "@termless/ghostty-native": "workspace:*",
         "@termless/xtermjs": "0.3.1",
         "string-width": "^7.2.0",
       },
@@ -1570,6 +1578,8 @@
     "@tanstack/virtual-core": ["@tanstack/virtual-core@3.13.23", "", {}, "sha512-zSz2Z2HNyLjCplANTDyl3BcdQJc2k1+yyFoKhNRmCr7V7dY8o8q5m8uFTI1/Pg1kL+Hgrz6u3Xo6eFUB7l66cg=="],
 
     "@termless/core": ["@termless/core@0.6.0", "", { "optionalDependencies": { "@resvg/resvg-js": "^2.6.2", "gifenc": "^1.0.3", "upng-js": "^2.1.0" }, "peerDependencies": { "node-pty": ">=1.0.0" }, "optionalPeers": ["node-pty"] }, "sha512-SszWJ+vpVwg0MrPOpzGqmbd46HZAmdBN5Tkq1sBdCEIcXYzQLNy3gqzvTCgoC0y2H4jJi1l//09hNE0LeKPCgg=="],
+
+    "@termless/ghostty-native": ["@termless/ghostty-native@workspace:packages/ghostty-native"],
 
     "@termless/xtermjs": ["@termless/xtermjs@0.3.1", "", { "dependencies": { "@xterm/headless": "^5.5.0" }, "peerDependencies": { "@termless/core": "*" } }, "sha512-47cHZjlyI0F9F43gqQB8Ay4aTJP9jCo81egeDrw+d97Kibe4AHlJ4VGVngJwlCsyttN7rMhD0WUjqrHhmfFreg=="],
 

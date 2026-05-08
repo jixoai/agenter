@@ -422,6 +422,7 @@ const mergeGlobalTerminalEntry = (
     ...current,
     ...incoming,
     snapshot: mergeTerminalSnapshot(current.snapshot, incoming.snapshot),
+    backend: incoming.backend ?? current.backend,
     rendererPreference: incoming.rendererPreference ?? current.rendererPreference,
     theme: incoming.theme ?? current.theme,
     cursor: incoming.cursor ?? current.cursor,
@@ -464,6 +465,7 @@ const projectGlobalTerminalFromConfigMutation = (
     config: {
       terminalId: string;
       processKind: string;
+      backend: "xterm" | "ghostty-native";
       command: string[];
       launchCwd: string;
       profile: {
@@ -506,6 +508,7 @@ const projectGlobalTerminalFromConfigMutation = (
   return {
     terminalId: result.config.terminalId,
     processKind: result.config.processKind,
+    backend: result.config.backend,
     command: [...result.config.command],
     launchCwd: result.config.launchCwd,
     workspace: current?.workspace ?? null,
@@ -4764,6 +4767,7 @@ export class RuntimeStore {
   async createGlobalTerminal(input: {
     terminalId?: string;
     processKind?: string;
+    backend?: "xterm" | "ghostty-native";
     command?: string[];
     cwd?: string;
     profile?: {
@@ -4966,6 +4970,7 @@ export class RuntimeStore {
   async setGlobalTerminalConfig(input: {
     terminalId: string;
     processKind?: string;
+    backend?: "xterm" | "ghostty-native";
     command?: string[];
     launchCwd?: string;
     env?: Record<string, string>;

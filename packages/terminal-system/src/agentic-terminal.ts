@@ -1,6 +1,8 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { DEFAULT_TERMINAL_BACKEND } from "@agenter/termless-core";
+
 import { Committer } from "./committer";
 import { TerminalGitLogger } from "./git-log";
 import { InputInbox } from "./input-inbox";
@@ -37,6 +39,8 @@ export interface AgenticTerminalExitInfo {
   signal: number | string | null;
 }
 
+const DEFAULT_STARTUP_SETTLE_TIMEOUT_MS = 3_200;
+
 const resolveMaxLinesPerFile = (profile: TerminalProfile): number => {
   if (profile.maxLinesPerFile !== undefined) {
     return profile.maxLinesPerFile;
@@ -60,6 +64,7 @@ const resolveProfile = (profile: TerminalProfile | undefined) => {
     resumePid: next.resumePid,
     cwd: next.cwd,
     env: next.env,
+    backend: next.backend ?? DEFAULT_TERMINAL_BACKEND,
     debugCursor: next.debugCursor ?? false,
     gitLog: next.gitLog ?? "none",
   };
@@ -104,6 +109,10 @@ export class AgenticTerminal {
   private debugLogPath = "";
   private gitLogger: TerminalGitLogger | null = null;
   private observedIdentity: TerminalObservedIdentity = {};
+  private runtimeGeneration = 0;
+  private startupSettled = false;
+  private startupSettlePromise: Promise<void> | null = null;
+  private startupSettleResolve: (() => void) | null = null;
   private lastRender: RenderResult = {
     lines: [],
     plainLines: [],
@@ -146,6 +155,12 @@ export class AgenticTerminal {
     }
     this.destroyed = false;
     this.resetObservedIdentity();
+    this.runtimeGeneration += 1;
+    const runtimeGeneration = this.runtimeGeneration;
+    this.startupSettled = false;
+    this.startupSettlePromise = new Promise<void>((resolve) => {
+      this.startupSettleResolve = resolve;
+    });
 
     this.workspace = createWorkspace({
       outputRoot: this.profile.outputRoot,
@@ -179,7 +194,12 @@ export class AgenticTerminal {
       this.gitLogger = null;
     }
 
-    this.xterm = new XtermBridge(this.profile.cols, this.profile.rows);
+    this.xterm = new XtermBridge(
+      this.profile.cols,
+      this.profile.rows,
+      undefined,
+      this.profile.backend ?? DEFAULT_TERMINAL_BACKEND,
+    );
     this.xterm.onTitleChange((title) => {
       this.applyObservedIdentity(this.observedIdentityTracker.applyTitle(title));
     });
@@ -215,6 +235,10 @@ export class AgenticTerminal {
     });
 
     this.pty.setOnData((chunk) => {
+      if (!this.isRuntimeGenerationActive(runtimeGeneration)) {
+        return;
+      }
+      this.settleStartup();
       this.markBusy();
       const outputBytes = chunk.slice();
       const textChunk = this.outputDecoder.decode(chunk, { stream: true });
@@ -232,7 +256,13 @@ export class AgenticTerminal {
       }
 
       this.renderQueue = this.renderQueue.then(async () => {
+        if (!this.isRuntimeGenerationActive(runtimeGeneration)) {
+          return;
+        }
         await xterm.write(chunk);
+        if (!this.isRuntimeGenerationActive(runtimeGeneration)) {
+          return;
+        }
         if (this.resizing) {
           return;
         }
@@ -243,6 +273,9 @@ export class AgenticTerminal {
         committer.schedule({
           plainText: compact.plainLines.join("\n"),
           commit: async () => {
+            if (!this.isRuntimeGenerationActive(runtimeGeneration)) {
+              return;
+            }
             this.persistRenderToPager(compact, scrollback.viewportOffset, xterm.rows, xterm.cols, "write");
           },
         });
@@ -250,6 +283,9 @@ export class AgenticTerminal {
     });
 
     this.pty.setOnExit((code, signal) => {
+      if (!this.isRuntimeGenerationActive(runtimeGeneration)) {
+        return;
+      }
       this.markIdle();
       this.debug("pty.exit", { code, signal });
       for (const listener of this.exitListeners) {
@@ -487,8 +523,9 @@ export class AgenticTerminal {
   /** Resize PTY and xterm buffer; split epoch and snapshot viewport to avoid reflow noise. */
   public resize(cols: number, rows: number): Promise<void> {
     this.ensureStarted();
+    const runtimeGeneration = this.runtimeGeneration;
     this.resizeQueue = this.resizeQueue.then(async () => {
-      if (!this.started || this.destroyed) {
+      if (!this.isRuntimeGenerationActive(runtimeGeneration)) {
         return;
       }
       const xterm = this.xterm;
@@ -516,6 +553,9 @@ export class AgenticTerminal {
       });
       try {
         await this.forceCommit();
+        if (!this.isRuntimeGenerationActive(runtimeGeneration)) {
+          return;
+        }
         const beforeResize = this.buildRenderFromXterm(xterm);
         const beforeScrollback = xterm.getScrollback();
         this.debug("resize.before-seal", {
@@ -555,6 +595,9 @@ export class AgenticTerminal {
 
         await Bun.sleep(500);
         await this.renderQueue;
+        if (!this.isRuntimeGenerationActive(runtimeGeneration)) {
+          return;
+        }
 
         const snapshot = this.buildRenderFromXterm(xterm);
         const compact = compactRenderForPersistence(snapshot);
@@ -619,6 +662,7 @@ export class AgenticTerminal {
   /** Gracefully stop process and optionally keep workspace logs. */
   public async destroy(keepLogs = false): Promise<void> {
     this.destroyed = true;
+    this.settleStartup();
     if (!this.started) {
       if (this.workspace) {
         destroyWorkspace(this.workspace, keepLogs);
@@ -681,6 +725,7 @@ export class AgenticTerminal {
   }
 
   private rollbackStartState(): void {
+    this.settleStartup();
     this.inbox?.stop();
     this.inbox = null;
 
@@ -879,8 +924,9 @@ export class AgenticTerminal {
       this.idleTimer = null;
     }
     if (this.started && !this.destroyed) {
+      const runtimeGeneration = this.runtimeGeneration;
       this.renderQueue = this.renderQueue.then(async () => {
-        if (!this.started || this.destroyed) {
+        if (!this.isRuntimeGenerationActive(runtimeGeneration)) {
           return;
         }
         try {
@@ -894,6 +940,7 @@ export class AgenticTerminal {
 
   private enqueueMixedInput(mixedInput: string, source: string): Promise<void> {
     this.writeQueue = this.writeQueue.then(async () => {
+      await this.awaitStartupSettle();
       this.appendInputLog(mixedInput, source);
       await runMixedInput(mixedInput, {
         write: (data) => {
@@ -907,6 +954,7 @@ export class AgenticTerminal {
 
   private enqueueRawInput(rawInput: string, source: string): Promise<void> {
     this.writeQueue = this.writeQueue.then(async () => {
+      await this.awaitStartupSettle();
       this.appendInputLog(rawInput, source);
       this.pty?.write(rawInput);
     });
@@ -1168,5 +1216,34 @@ export class AgenticTerminal {
       };
     }
     return { ok: true, hash: nextHead.stdout };
+  }
+
+  private isRuntimeGenerationActive(runtimeGeneration: number): boolean {
+    return this.started && !this.destroyed && this.runtimeGeneration === runtimeGeneration;
+  }
+
+  private settleStartup(): void {
+    if (this.startupSettled) {
+      return;
+    }
+    this.startupSettled = true;
+    this.startupSettleResolve?.();
+    this.startupSettleResolve = null;
+  }
+
+  private async awaitStartupSettle(): Promise<void> {
+    if (this.startupSettled) {
+      return;
+    }
+    const pending = this.startupSettlePromise;
+    if (!pending) {
+      return;
+    }
+    await Promise.race([pending, Bun.sleep(this.getStartupSettleTimeoutMs())]);
+    this.settleStartup();
+  }
+
+  private getStartupSettleTimeoutMs(): number {
+    return this.args.length === 0 ? DEFAULT_STARTUP_SETTLE_TIMEOUT_MS : 250;
   }
 }

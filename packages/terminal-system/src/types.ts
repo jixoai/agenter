@@ -1,3 +1,5 @@
+import type { TerminalBackendKind } from "@agenter/termless-core";
+
 export interface TerminalProfile {
   debounceMs?: number;
   throttleMs?: number;
@@ -16,6 +18,8 @@ export interface TerminalProfile {
   cwd?: string;
   /** Optional environment overrides for spawned process. */
   env?: Record<string, string>;
+  /** Headless terminal backend used to interpret PTY bytes. */
+  backend?: TerminalBackendKind;
   /** Enable persistent cursor diagnostics log for experiments. */
   debugCursor?: boolean;
   /** Enable workspace git history logs (`normal` keyframes, `verbose` every write). */

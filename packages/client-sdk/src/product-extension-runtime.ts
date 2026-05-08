@@ -52,6 +52,7 @@ export interface ProductExtensionRuntimeStore {
   createGlobalTerminal(input: {
     terminalId?: string;
     processKind?: string;
+    backend?: "xterm" | "ghostty-native";
     command?: string[];
     cwd?: string;
     profile?: {
@@ -75,6 +76,7 @@ export interface ProductExtensionRuntimeStore {
   setGlobalTerminalConfig(input: {
     terminalId: string;
     processKind?: string;
+    backend?: "xterm" | "ghostty-native";
     command?: string[];
     launchCwd?: string;
     env?: Record<string, string>;
@@ -187,6 +189,7 @@ export interface ProductEnsureTerminalBindingInput {
   focus?: boolean;
   createInput?: {
     processKind?: string;
+    backend?: "xterm" | "ghostty-native";
     command?: string[];
     cwd?: string;
     profile?: {
@@ -283,6 +286,10 @@ const buildTerminalReusePatch = (
 
   if (input.createInput?.processKind && input.createInput.processKind !== entry.processKind) {
     patch.processKind = input.createInput.processKind;
+    changed = true;
+  }
+  if (input.createInput?.backend && input.createInput.backend !== entry.backend) {
+    patch.backend = input.createInput.backend;
     changed = true;
   }
   if (input.createInput?.command && !equalStringArray(input.createInput.command, entry.command)) {
@@ -417,10 +424,12 @@ export class ProductExtensionRuntimeClient {
       terminals.find((candidate) => matchesProductBindingMetadata(candidate.metadata, bindingMetadata)) ??
       terminals.find((candidate) => candidate.terminalId === terminalId);
     let created = false;
+    const requestedBackend = input.createInput?.backend;
     if (!entry) {
       const result = await this.store.createGlobalTerminal({
         terminalId,
         processKind: input.createInput?.processKind,
+        backend: requestedBackend,
         command: input.createInput?.command,
         cwd: input.createInput?.cwd,
         profile: input.createInput?.profile,
@@ -435,6 +444,11 @@ export class ProductExtensionRuntimeClient {
       created = true;
     }
     if (!created) {
+      if (requestedBackend && entry.processPhase === "running" && entry.backend !== requestedBackend) {
+        throw new Error(
+          `terminal backend mismatch: ${entry.terminalId} is running with ${entry.backend}, requested ${requestedBackend}`,
+        );
+      }
       const entryId = entry.terminalId;
       const patch = buildTerminalReusePatch(entry, input, metadata);
       if (patch) {

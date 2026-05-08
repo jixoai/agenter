@@ -1,9 +1,9 @@
 ## 1. Backend launch truth contracts
 
-- [ ] 1.1 Add explicit terminal `backend` durable launch truth to terminal-system create/list/get-config/set-config contracts and storage.
-- [ ] 1.2 Extend product-extension-runtime and client-sdk terminal-binding contracts so cli-shell can request and inspect backend launch truth without importing core internals.
-- [ ] 1.3 Add official Termless backend factory/adapter wiring for `xterm` and `ghostty-native` without reintroducing Agenter-private backend ownership.
-- [ ] 1.4 Add contract tests for omitted-backend defaulting, explicit `ghostty-native`, unsupported backend errors, and backend/renderer separation.
+- [x] 1.1 Add explicit terminal `backend` durable launch truth to terminal-system create/list/get-config/set-config contracts and storage.
+- [x] 1.2 Extend product-extension-runtime and client-sdk terminal-binding contracts so cli-shell can request and inspect backend launch truth without importing core internals.
+- [x] 1.3 Add official Termless backend factory/adapter wiring for `xterm` and `ghostty-native` without reintroducing Agenter-private backend ownership.
+- [x] 1.4 Add contract tests for omitted-backend defaulting, explicit `ghostty-native`, unsupported backend errors, and backend/renderer separation.
 
 ## 2. Cli-shell backend orchestration
 

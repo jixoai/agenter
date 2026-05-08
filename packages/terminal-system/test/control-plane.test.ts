@@ -950,6 +950,7 @@ describe("Feature: terminal control plane", () => {
       terminalId: created.terminalId,
       actorId: "session:owner",
     });
+    expect(initialConfig.backend).toBe("xterm");
     expect(initialConfig.processPhase).toBe("running");
     expect(initialConfig.launchCwd).toBe(created.launchCwd);
     expect(Object.prototype.hasOwnProperty.call(initialConfig, "currentPath")).toBe(false);
@@ -957,6 +958,7 @@ describe("Feature: terminal control plane", () => {
     const mutation = plane.setTerminalConfigAuthorized({
       terminalId: created.terminalId,
       actorId: "session:owner",
+      backend: "ghostty-native",
       command: ["sh", "-lc", "pwd; cat"],
       launchCwd: nextCwd,
       cols: 100,
@@ -968,7 +970,8 @@ describe("Feature: terminal control plane", () => {
     });
 
     expect(mutation.appliedLiveFields).toEqual(expect.arrayContaining(["cols", "rows"]));
-    expect(mutation.nextBootstrapFields).toEqual(expect.arrayContaining(["command", "launchCwd"]));
+    expect(mutation.nextBootstrapFields).toEqual(expect.arrayContaining(["backend", "command", "launchCwd"]));
+    expect(mutation.config.backend).toBe("ghostty-native");
     expect(mutation.config.profile.title).toBe("Ops shell");
     expect(mutation.config.metadata).toEqual({ owner: "ops" });
 

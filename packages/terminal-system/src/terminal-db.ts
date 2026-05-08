@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import { Database } from "bun:sqlite";
+import { DEFAULT_TERMINAL_BACKEND, isTerminalBackendKind } from "@agenter/termless-core";
 
 import type {
   TerminalInvitationRecord,
@@ -61,6 +62,7 @@ const buildNextCursor = <T extends { createdAt: number }>(
 const mapTerminal = (row: {
   terminal_id: string;
   process_kind: string;
+  backend: string | null;
   command_json: string;
   launch_cwd: string;
   profile_json: string | null;
@@ -75,6 +77,7 @@ const mapTerminal = (row: {
 }): TerminalRecord => ({
   terminalId: row.terminal_id,
   processKind: row.process_kind,
+  backend: isTerminalBackendKind(row.backend) ? row.backend : DEFAULT_TERMINAL_BACKEND,
   command: parseJson<string[]>(row.command_json, []),
   launchCwd: row.launch_cwd,
   profile: parseJson(row.profile_json, {}),
@@ -293,14 +296,15 @@ export class TerminalDb {
       this.db
         .query(
           `insert into terminal_catalog (
-            terminal_id, process_kind, command_json, cwd, launch_cwd, profile_json, metadata_json,
+            terminal_id, process_kind, backend, command_json, cwd, launch_cwd, profile_json, metadata_json,
             process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at,
             created_at, updated_at, removed_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)`,
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)`,
         )
         .run(
           input.terminalId,
           input.processKind,
+          input.backend,
           toJson(input.command),
           input.launchCwd,
           input.launchCwd,
@@ -318,14 +322,15 @@ export class TerminalDb {
       this.db
         .query(
           `insert into terminal_catalog (
-            terminal_id, process_kind, command_json, launch_cwd, profile_json, metadata_json,
+            terminal_id, process_kind, backend, command_json, launch_cwd, profile_json, metadata_json,
             process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at,
             created_at, updated_at, removed_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)`,
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)`,
         )
         .run(
           input.terminalId,
           input.processKind,
+          input.backend,
           toJson(input.command),
           input.launchCwd,
           toJson(input.profile),
@@ -346,6 +351,7 @@ export class TerminalDb {
     const row = this.db
       .query(
         `select terminal_id, process_kind, command_json, launch_cwd, profile_json, metadata_json,
+                backend,
                 process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at,
                 created_at, updated_at
          from terminal_catalog
@@ -359,6 +365,7 @@ export class TerminalDb {
     const rows = this.db
       .query(
         `select terminal_id, process_kind, command_json, launch_cwd, profile_json, metadata_json,
+                backend,
                 process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at,
                 created_at, updated_at
          from terminal_catalog
@@ -402,11 +409,12 @@ export class TerminalDb {
       this.db
         .query(
           `update terminal_catalog
-           set process_kind = ?, command_json = ?, cwd = ?, launch_cwd = ?, profile_json = ?, metadata_json = ?, updated_at = ?
+           set process_kind = ?, backend = ?, command_json = ?, cwd = ?, launch_cwd = ?, profile_json = ?, metadata_json = ?, updated_at = ?
            where terminal_id = ? and removed_at is null`,
         )
         .run(
           patch.processKind ?? current.processKind,
+          patch.backend ?? current.backend,
           toJson(patch.command ?? current.command),
           nextLaunchCwd,
           nextLaunchCwd,
@@ -419,11 +427,12 @@ export class TerminalDb {
       this.db
         .query(
           `update terminal_catalog
-           set process_kind = ?, command_json = ?, launch_cwd = ?, profile_json = ?, metadata_json = ?, updated_at = ?
+           set process_kind = ?, backend = ?, command_json = ?, launch_cwd = ?, profile_json = ?, metadata_json = ?, updated_at = ?
            where terminal_id = ? and removed_at is null`,
         )
         .run(
           patch.processKind ?? current.processKind,
+          patch.backend ?? current.backend,
           toJson(patch.command ?? current.command),
           nextLaunchCwd,
           toJson(nextProfile),
@@ -1097,6 +1106,7 @@ export class TerminalDb {
       create table if not exists terminal_catalog (
         terminal_id text primary key,
         process_kind text not null,
+        backend text not null default 'xterm',
         command_json text not null,
         launch_cwd text not null,
         profile_json text,
@@ -1207,6 +1217,9 @@ export class TerminalDb {
       this.db.query(`alter table terminal_catalog add column launch_cwd text`).run();
       this.db.query(`update terminal_catalog set launch_cwd = cwd where launch_cwd is null`).run();
     }
+    if (!columns.has("backend")) {
+      this.db.query(`alter table terminal_catalog add column backend text not null default 'xterm'`).run();
+    }
     if (!columns.has("process_phase")) {
       this.db
         .query(`alter table terminal_catalog add column process_phase text not null default 'not_started'`)
@@ -1227,5 +1240,6 @@ export class TerminalDb {
     if (this.hasLegacyCwdColumn) {
       this.db.query(`update terminal_catalog set launch_cwd = coalesce(launch_cwd, cwd)`).run();
     }
+    this.db.query(`update terminal_catalog set backend = coalesce(backend, 'xterm')`).run();
   }
 }

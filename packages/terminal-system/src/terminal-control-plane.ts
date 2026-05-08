@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { DEFAULT_TERMINAL_BACKEND, isTerminalBackendKind, type TerminalBackendKind } from "@agenter/termless-core";
 import { isPrincipalId } from "@agenter/principal-crypto";
 import {
   buildManagedInvitationAcceptPayload,
@@ -28,6 +29,7 @@ import {
   type ManagedTerminalSnapshot,
 } from "./managed-terminal";
 import {
+  DEFAULT_TERMINAL_BACKEND as DEFAULT_CONTROL_PLANE_TERMINAL_BACKEND,
   DEFAULT_TERMINAL_CURSOR,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_TERMINAL_RENDERER_PREFERENCE,
@@ -184,6 +186,17 @@ const cloneFontProfile = (input?: TerminalFontProfile): TerminalFontProfile => (
   weightBold: input?.weightBold ?? DEFAULT_TERMINAL_FONT.weightBold,
   ligatures: input?.ligatures ?? DEFAULT_TERMINAL_FONT.ligatures,
 });
+const normalizeBackend = (backend: TerminalBackendKind | undefined): TerminalBackendKind =>
+  backend ?? DEFAULT_TERMINAL_BACKEND;
+const resolveBackend = (backend: unknown): TerminalBackendKind => {
+  if (backend === undefined) {
+    return DEFAULT_TERMINAL_BACKEND;
+  }
+  if (!isTerminalBackendKind(backend)) {
+    throw new Error(`unsupported terminal backend: ${String(backend)}`);
+  }
+  return backend;
+};
 const normalizeProfile = (profile: TerminalProcessProfile): TerminalProcessProfile => ({
   ...profile,
   rendererPreference: profile.rendererPreference ?? DEFAULT_TERMINAL_RENDERER_PREFERENCE,
@@ -2106,9 +2119,11 @@ export class TerminalControlPlane {
       ? [...profile.command]
       : [...(this.options.defaultShellCommand ?? resolveDefaultInteractiveShellCommand())];
     const cwd = resolve(profile.cwd ?? homedir());
+    const backend = resolveBackend(input.backend);
     return this.db.createTerminal({
       terminalId,
       processKind,
+      backend,
       command,
       launchCwd: cwd,
       profile,
@@ -2130,6 +2145,7 @@ export class TerminalControlPlane {
     const normalizedCwd = resolve(record.launchCwd);
     const managedConfig: ManagedTerminalConfig = {
       terminalId: record.terminalId,
+      backend: record.backend,
       command: [...record.command],
       cwd: normalizedCwd,
       env: record.profile.env,
@@ -2181,6 +2197,9 @@ export class TerminalControlPlane {
       this.db.setAdminGroup(terminalId, input.adminGroupCandidateIds);
       this.syncAdminAssignments(terminalId);
     }
+    if (input.backend !== undefined) {
+      resolveBackend(input.backend);
+    }
     const record = this.db.updateTerminal(terminalId, input);
     const managed = this.entries.get(terminalId);
     const appliedLiveFields: string[] = [];
@@ -2188,6 +2207,10 @@ export class TerminalControlPlane {
     if (managed) {
       managed.record = record;
       const reconfigurePatch: ManagedTerminalConfigPatch = {};
+      if (input.backend !== undefined) {
+        reconfigurePatch.backend = record.backend;
+        nextBootstrapFields.push("backend");
+      }
       if (input.command) {
         reconfigurePatch.command = [...record.command];
         if (managed.terminal.isRunning()) {
@@ -2254,6 +2277,7 @@ export class TerminalControlPlane {
     return {
       terminalId: record.terminalId,
       processKind: record.processKind,
+      backend: record.backend,
       command: [...record.command],
       launchCwd: resolve(record.launchCwd),
       workspace: entry?.terminal.getWorkspace() ?? null,
@@ -2355,6 +2379,7 @@ export class TerminalControlPlane {
     return {
       terminalId: record.terminalId,
       processKind: record.processKind,
+      backend: record.backend,
       command: [...record.command],
       launchCwd: resolve(record.launchCwd),
       profile: cloneProfile(record.profile),

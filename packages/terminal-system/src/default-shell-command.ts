@@ -39,7 +39,7 @@ const resolveExecutable = (candidates: readonly string[]): string | null => {
 
 /**
  * Shared terminals should honor the current environment shell first, then fall
- * back to a broadly available interactive shell.
+ * back to a broadly available shell path without forcing interactive flags.
  */
 export const resolveDefaultInteractiveShellCommand = (): string[] => {
   if (process.platform === "win32") {
@@ -56,8 +56,8 @@ export const resolveDefaultInteractiveShellCommand = (): string[] => {
     "sh",
   ]);
   if (shell) {
-    return basename(shell) === "bash" ? [shell, "-i"] : [shell, "-i"];
+    return [shell];
   }
 
-  return [process.env.SHELL ?? "bash", "-i"];
+  return [process.env.SHELL ?? "bash"];
 };

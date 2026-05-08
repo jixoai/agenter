@@ -1,4 +1,5 @@
 import { AgenticTerminal } from "./agentic-terminal";
+import type { TerminalBackendKind } from "@agenter/termless-core";
 import type {
   RichLine,
   StructuredRenderResult,
@@ -11,6 +12,7 @@ import type { TerminalLifecycleState, TerminalObservedIdentity } from "./termina
 
 export interface ManagedTerminalConfig {
   terminalId: string;
+  backend: TerminalBackendKind;
   command: string[];
   cwd: string;
   env?: Record<string, string>;
@@ -22,6 +24,7 @@ export interface ManagedTerminalConfig {
 }
 
 export interface ManagedTerminalConfigPatch {
+  backend?: TerminalBackendKind;
   command?: string[];
   cwd?: string;
   env?: Record<string, string>;
@@ -184,6 +187,7 @@ export class ManagedTerminal {
       rows: this.rows,
       cwd: this.config.cwd,
       env: this.config.env,
+      backend: this.config.backend,
       outputRoot: this.config.outputRoot,
       gitLog: this.config.gitLog ?? false,
       logStyle: this.config.logStyle ?? "rich",
@@ -303,6 +307,9 @@ export class ManagedTerminal {
   }
 
   reconfigure(patch: ManagedTerminalConfigPatch): void {
+    if (patch.backend !== undefined) {
+      this.config.backend = patch.backend;
+    }
     if (patch.command) {
       this.config.command = [...patch.command];
     }

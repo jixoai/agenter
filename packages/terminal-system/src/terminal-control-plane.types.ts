@@ -1,4 +1,9 @@
 import type { PrincipalId } from "@agenter/principal-crypto";
+import {
+  DEFAULT_TERMINAL_BACKEND as DEFAULT_TERMLESS_BACKEND,
+  TERMINAL_BACKEND_KINDS as TERMLESS_TERMINAL_BACKEND_KINDS,
+  type TerminalBackendKind,
+} from "@agenter/termless-core";
 import type {
   ManagedInvitationAcceptProof,
   ManagedInvitationEndpointDescriptor,
@@ -29,6 +34,10 @@ export type TerminalActorId = PrincipalId | `${"auth" | "session" | "system"}:${
 export type TerminalEventKind = "terminal_read" | "terminal_write" | "terminal_resize";
 export type TerminalAutomationInputMode = "raw" | "mixed";
 
+export type { TerminalBackendKind } from "@agenter/termless-core";
+
+export const TERMINAL_BACKEND_KINDS = TERMLESS_TERMINAL_BACKEND_KINDS;
+export const DEFAULT_TERMINAL_BACKEND = DEFAULT_TERMLESS_BACKEND;
 export const DEFAULT_TERMINAL_RENDERER_PREFERENCE = "auto" as const satisfies TerminalRendererPreference;
 export const DEFAULT_TERMINAL_THEME = "default-dark" as const satisfies TerminalThemeName;
 export const DEFAULT_TERMINAL_CURSOR = "block" as const satisfies TerminalCursorStyle;
@@ -111,6 +120,7 @@ export interface TerminalControlPlaneConfigPatch {
 export interface TerminalCreateInput {
   terminalId?: string;
   processKind?: string;
+  backend?: TerminalBackendKind;
   command?: string[];
   cwd?: string;
   profile?: TerminalProcessProfile;
@@ -435,6 +445,7 @@ export interface TerminalIssuedGrant extends TerminalGrantRecord {
 export interface TerminalControlPlaneEntry {
   terminalId: string;
   processKind: string;
+  backend: TerminalBackendKind;
   command: string[];
   launchCwd: string;
   workspace: string | null;
@@ -463,6 +474,7 @@ export interface TerminalControlPlaneEntry extends TerminalObservedIdentity, Ter
 
 export interface TerminalPatchInput {
   processKind?: string;
+  backend?: TerminalBackendKind;
   command?: string[];
   launchCwd?: string;
   env?: Record<string, string>;
@@ -484,6 +496,7 @@ export interface TerminalPatchInput {
 export interface TerminalConfigView {
   terminalId: string;
   processKind: string;
+  backend: TerminalBackendKind;
   command: string[];
   launchCwd: string;
   profile: TerminalProcessProfile;
@@ -501,6 +514,7 @@ export interface TerminalConfigMutationResult {
 export interface TerminalRecord {
   terminalId: string;
   processKind: string;
+  backend: TerminalBackendKind;
   command: string[];
   launchCwd: string;
   profile: TerminalProcessProfile;

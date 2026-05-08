@@ -1,0 +1,21 @@
+.{
+    .name = .termless_ghostty_native,
+    .version = "0.1.0",
+    .fingerprint = 0x7e83b83bd6f917e6,
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        ".ghostty-src",
+    },
+
+    .dependencies = .{
+        .napigen = .{
+            .path = "../vendor/napigen",
+        },
+        .uucode = .{
+            .path = "../vendor/uucode",
+        },
+    },
+}

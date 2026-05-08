@@ -60,6 +60,7 @@ const createTerminalEntry = (
 ): GlobalTerminalEntry => ({
   terminalId,
   processKind: "shell",
+  backend: "xterm",
   command: ["/bin/bash"],
   launchCwd: "/repo",
   workspace: null,
@@ -129,6 +130,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   readonly setTerminalConfigCalls: Array<{
     terminalId: string;
     processKind?: string;
+    backend?: "xterm" | "ghostty-native";
     command?: string[];
     launchCwd?: string;
     metadata?: Record<string, unknown>;
@@ -246,6 +248,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   async createGlobalTerminal(input: {
     terminalId?: string;
     processKind?: string;
+    backend?: "xterm" | "ghostty-native";
     command?: string[];
     cwd?: string;
     profile?: NonNullable<ProductEnsureTerminalBindingInput["createInput"]>["profile"];
@@ -280,6 +283,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   async setGlobalTerminalConfig(input: {
     terminalId: string;
     processKind?: string;
+    backend?: "xterm" | "ghostty-native";
     command?: string[];
     launchCwd?: string;
     env?: Record<string, string>;
@@ -307,6 +311,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     this.setTerminalConfigCalls.push({
       terminalId: input.terminalId,
       processKind: input.processKind,
+      backend: input.backend,
       command: input.command,
       launchCwd: input.launchCwd,
       metadata: input.metadata,
@@ -319,6 +324,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     const next: GlobalTerminalEntry = {
       ...current,
       processKind: input.processKind ?? current.processKind,
+      backend: input.backend ?? current.backend,
       command: input.command ? [...input.command] : current.command,
       launchCwd: input.launchCwd ?? current.launchCwd,
       icon: input.icon ?? current.icon,
@@ -634,6 +640,7 @@ describe("Feature: product extension runtime client", () => {
 
     expect(terminal.created).toBe(true);
     expect(terminal.granted).toBe(true);
+    expect(terminal.entry.backend).toBe("xterm");
     expect(terminal.bindingMetadata.resourceKey).toBe("shell-1");
     expect(terminal.entry.metadata?.productId).toBe("cli-shell");
     expect(room.created).toBe(true);
@@ -781,6 +788,72 @@ describe("Feature: product extension runtime client", () => {
       ownerSystem: "terminal-system",
     });
     expect(store.bootstrapTerminalCalls).toEqual(["shell-1"]);
+  });
+
+  test("Scenario: Given an existing stopped terminal with another backend When ensuring a new backend Then the runtime client patches durable backend truth before bootstrap", async () => {
+    const store = new FakeProductRuntimeStore();
+    store.terminals.push({
+      ...createTerminalEntry("shell-1", {}, "stopped"),
+      backend: "xterm",
+    });
+    const client = new ProductExtensionRuntimeClient(store);
+
+    const ensuredTerminal = await client.ensureTerminalBinding({
+      binding: {
+        productId: "cli-shell",
+        resourceKey: "shell-1",
+        resourceKind: "terminal",
+        ownerSystem: "terminal-system",
+      },
+      createInput: {
+        processKind: "shell",
+        backend: "ghostty-native",
+        start: true,
+      },
+    });
+
+    expect(store.setTerminalConfigCalls).toEqual([
+      {
+        terminalId: "shell-1",
+        processKind: undefined,
+        backend: "ghostty-native",
+        command: undefined,
+        launchCwd: undefined,
+        metadata: {
+          productId: "cli-shell",
+          resourceKey: "shell-1",
+          ownerSystem: "terminal-system",
+        },
+      },
+    ]);
+    expect(store.bootstrapTerminalCalls).toEqual(["shell-1"]);
+    expect(ensuredTerminal.entry.backend).toBe("ghostty-native");
+  });
+
+  test("Scenario: Given an existing running terminal with another backend When ensuring a requested backend Then the runtime client rejects the mismatch", async () => {
+    const store = new FakeProductRuntimeStore();
+    store.terminals.push({
+      ...createTerminalEntry("shell-1", {}, "running"),
+      backend: "xterm",
+    });
+    const client = new ProductExtensionRuntimeClient(store);
+
+    await expect(
+      client.ensureTerminalBinding({
+        binding: {
+          productId: "cli-shell",
+          resourceKey: "shell-1",
+          resourceKind: "terminal",
+          ownerSystem: "terminal-system",
+        },
+        createInput: {
+          backend: "ghostty-native",
+          start: true,
+        },
+      }),
+    ).rejects.toThrow("terminal backend mismatch");
+    expect(store.setTerminalConfigCalls).toEqual([]);
+    expect(store.bootstrapTerminalCalls).toEqual([]);
   });
 
   test("Scenario: Given self-evolution attention and explicit delegations When invoking the runtime client Then attention does not implicitly create hosting leases", async () => {
