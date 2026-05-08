@@ -26,4 +26,4 @@
 
 - [x] 5.1 Update this task list together with each implementation commit so progress remains factual
 - [x] 5.2 Keep backend ownership refactor separate from any future `ghostty-native` promotion work
-- [ ] 5.3 Archive the change only after durable specs are synced and all verification evidence is complete
+- [x] 5.3 Archive the change only after durable specs are synced and all verification evidence is complete
