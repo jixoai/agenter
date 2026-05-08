@@ -1,0 +1,59 @@
+diff --git a/src/backend.ts b/src/backend.ts
+index a107b505b2f489f8577a19e1f031a35ba7a1242e..38b4920720f46679f9408da9caaef106d81a3675 100644
+--- a/src/backend.ts
++++ b/src/backend.ts
+@@ -15,8 +15,8 @@ import type {
+   ScrollbackState,
+   TerminalCapabilities,
+   RGB,
+-} from "../../../src/types.ts"
+-import { encodeKeyToAnsi } from "../../../src/key-encoding.ts"
++} from "@termless/core"
++import { encodeKeyToAnsi } from "@termless/core"
+ 
+ // ═══════════════════════════════════════════════════════
+ // ANSI 256-color palette
+@@ -344,7 +344,7 @@ export function createXtermBackend(opts?: Partial<TerminalOptions>): TerminalBac
+     const t = ensureTerm()
+     const rows = t.rows
+     const result: Cell[][] = []
+-    for (let row = 0; row < rows; row++) {
++    for (let row = 0; row < t.buffer.active.length; row++) {
+       result.push(getLine(row))
+     }
+     return result
+@@ -354,9 +354,9 @@ export function createXtermBackend(opts?: Partial<TerminalOptions>): TerminalBac
+     const t = ensureTerm()
+     return {
+       x: t.buffer.active.cursorX,
+-      y: t.buffer.active.cursorY,
+-      visible: true, // DECTCEM not available in headless mode
+-      style: "block", // default — headless doesn't expose cursor style
++      y: t.buffer.active.baseY + t.buffer.active.cursorY,
++      visible: !(t as any)._core.coreService.isCursorHidden,
++      style: null
+     }
+   }
+ 
+@@ -367,7 +367,7 @@ export function createXtermBackend(opts?: Partial<TerminalOptions>): TerminalBac
+       case "altScreen":
+         return t.buffer.active.type === "alternate"
+       case "cursorVisible":
+-        return true // not easily trackable in headless mode
++        return !(t as any)._core.coreService.isCursorHidden
+       case "bracketedPaste":
+         return t.modes.bracketedPasteMode
+       case "applicationCursor":
+diff --git a/src/index.ts b/src/index.ts
+index 1fb2dc2e1b2a95be2dfdbd01322249ce42680f50..7db346cf4216d10bb4ea6c5f751223502feb5407 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,7 +1,7 @@
+ export { createXtermBackend } from "./backend.ts"
+ 
+ import { createXtermBackend } from "./backend.ts"
+-import type { TerminalBackend, TerminalOptions } from "../../../src/types.ts"
++import type { TerminalBackend, TerminalOptions } from "@termless/core"
+ 
+ /** Resolve this backend for the registry. Handles all initialization. */
+ export async function resolve(opts?: Partial<TerminalOptions>): Promise<TerminalBackend> {

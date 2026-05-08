@@ -12,4 +12,4 @@ export type {
   TerminalOptions,
   TerminalReadable,
   UnderlineStyle,
-} from "../node_modules/@termless/core/src/types";
+} from "@termless/core";

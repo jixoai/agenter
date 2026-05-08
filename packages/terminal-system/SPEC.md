@@ -7,7 +7,7 @@
 `@agenter/terminal-system` 是一个 TypeScript 终端内核库：
 
 - 使用 Bun PTY 运行任意 CLI 程序
-- 使用 Termless-compatible backend 维护绝对滚动缓冲
+- 通过 `@agenter/termless-core` bridge 消费 official Termless backend 维护绝对滚动缓冲
 - 将终端状态写入语义化 HTML 分页日志，供 AI/工具稳定消费
 - 提供 `ati` CLI 作为运行入口
 
@@ -18,8 +18,10 @@
 
 ## 2. 架构与模块
 
+- official backend ownership 固定属于 Termless：`@termless/core` 定义 backend contract，`@termless/xtermjs` 提供当前默认 xterm backend，后续如 `@termless/ghostty-native` 也必须复用同一 ownership slot。
+- Agenter 只拥有 adapter/projection law：`@agenter/termless-core` 与 `@agenter/terminal-system` 可以包装 official backend instance，但不得重新声明 backend package identity，也不得把 browser `resolvedRenderer` 冒充成 backend authority。
 - `Pty`：封装 Bun PTY 进程（启动、写入、退出、resize）
-- `XtermBridge`：封装默认 xterm backend（写入流、读取 buffer）
+- `XtermBridge`：封装 official `@termless/xtermjs` backend 的本地 bridge（写入流、读取 buffer）
 - `renderer`：把 buffer 转成 ANSI/Cell 语义模型（`richLines`），再序列化成 `log.html`
 - `output-reader`：按 `latest + pre-file` 文件链读取 `output/*.log.html` 正文行
 - `Committer`：debounce + throttle + plain text 去噪提交

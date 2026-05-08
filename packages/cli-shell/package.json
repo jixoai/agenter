@@ -17,7 +17,6 @@
     "@agenter/client-sdk": "workspace:*",
     "@agenter/product-extension-runtime": "workspace:*",
     "@agenter/termless-core": "workspace:*",
-    "@agenter/termless-xterm-backend": "workspace:*",
     "@agenter/terminal-transport-protocol": "workspace:*",
     "@opentui/core": "latest",
     "@opentui/react": "latest",

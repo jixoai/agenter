@@ -47,6 +47,6 @@
     "svgo": "^4.0.1"
   },
   "patchedDependencies": {
-    "@xterm/headless@6.1.0-beta.167": "patches/@xterm%2Fheadless@6.1.0-beta.167.patch"
+    "@termless/xtermjs@0.3.1": "patches/@termless+xtermjs@0.3.1.patch"
   }
 }

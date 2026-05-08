@@ -1,5 +1,6 @@
-import type { TerminalMode, TerminalReadable } from "@agenter/termless-core";
-import { AgenterXtermBackend } from "./agenter-xterm-backend.js";
+import { createXtermBackend } from "./termless-xtermjs.js";
+
+import type { Cell, CursorState, ScrollbackState, TerminalBackend, TerminalMode, TerminalReadable } from "./termless-types.js";
 
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 30;
@@ -19,21 +20,25 @@ export interface XtermBridgeReadable extends TerminalReadable {
 }
 
 export class XtermReadableBridge implements XtermBridgeReadable {
-  private readonly backend: AgenterXtermBackend;
   private readonly titleListeners: Array<(title: string) => void> = [];
+  private readonly backend: TerminalBackend;
   private lastTitle = "";
+  private colsValue: number;
+  private rowsValue: number;
 
   constructor(cols: number = DEFAULT_COLS, rows: number = DEFAULT_ROWS, scrollbackLimit: number = DEFAULT_SCROLLBACK) {
-    this.backend = new AgenterXtermBackend({ cols, rows, scrollbackLimit });
+    this.colsValue = cols;
+    this.rowsValue = rows;
+    this.backend = createXtermBackend({
+      cols,
+      rows,
+      scrollbackLimit,
+    });
+    this.lastTitle = this.backend.getTitle();
   }
 
-  write(data: string | Uint8Array): Promise<void> {
-    return new Promise<void>((resolve) => {
-      this.backend.writableTerminal.write(data, () => {
-        this.flushTitle();
-        resolve();
-      });
-    });
+  async write(data: string | Uint8Array): Promise<void> {
+    this.writeSync(data);
   }
 
   writeSync(data: string | Uint8Array): void {
@@ -42,7 +47,10 @@ export class XtermReadableBridge implements XtermBridgeReadable {
   }
 
   resize(cols: number, rows: number): void {
+    this.colsValue = cols;
+    this.rowsValue = rows;
     this.backend.resize(cols, rows);
+    this.flushTitle();
   }
 
   reset(): void {
@@ -63,23 +71,23 @@ export class XtermReadableBridge implements XtermBridgeReadable {
     return this.backend.getTextRange(startRow, startCol, endRow, endCol);
   }
 
-  getCell(row: number, col: number) {
+  getCell(row: number, col: number): Cell {
     return this.backend.getCell(row, col);
   }
 
-  getLine(row: number) {
+  getLine(row: number): Cell[] {
     return this.backend.getLine(row);
   }
 
-  getLines() {
+  getLines(): Cell[][] {
     return this.backend.getLines();
   }
 
-  getCursor() {
+  getCursor(): CursorState {
     return this.backend.getCursor();
   }
 
-  getMode(mode: TerminalMode) {
+  getMode(mode: TerminalMode): boolean {
     return this.backend.getMode(mode);
   }
 
@@ -87,7 +95,7 @@ export class XtermReadableBridge implements XtermBridgeReadable {
     return this.backend.getTitle();
   }
 
-  getScrollback() {
+  getScrollback(): ScrollbackState {
     return this.backend.getScrollback();
   }
 
@@ -102,11 +110,11 @@ export class XtermReadableBridge implements XtermBridgeReadable {
   }
 
   get cols(): number {
-    return this.backend.cols;
+    return this.colsValue;
   }
 
   get rows(): number {
-    return this.backend.rows;
+    return this.rowsValue;
   }
 
   private flushTitle(): void {

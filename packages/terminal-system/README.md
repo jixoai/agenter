@@ -1,7 +1,13 @@
 # @agenter/terminal-system
 
-ATI (Agentic Terminal Interface): 用 PTY + Termless-compatible terminal backend 把终端输出落盘为可被 AI 消费的语义化 HTML 日志。
+ATI (Agentic Terminal Interface): 用 PTY + official Termless backend 把终端输出落盘为可被 AI 消费的语义化 HTML 日志。
 内核采用 ANSI-first：先生成结构化语义快照，再序列化为 `log.html`。
+
+长期法则：
+
+- backend identity 固定属于 official Termless packages：`@termless/core` 提供 contract，`@termless/xtermjs` 提供当前默认 xterm backend。
+- `@agenter/termless-core` 与 `@agenter/terminal-system` 只保留 Agenter-local bridge / projection / transport law，不再发布或依赖 Agenter-private backend authority。
+- browser `rendererPreference` / `resolvedRenderer` 只是 viewport policy 与前端解析事实；它们不能反向改写 terminal backend ownership。
 
 ## 安装与运行
 

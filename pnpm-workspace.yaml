@@ -4,3 +4,4 @@ packages:
 
 patchedDependencies:
   '@storybook/addon-svelte-csf': patches/@storybook__addon-svelte-csf.patch
+  '@termless/xtermjs@0.3.1': patches/@termless+xtermjs@0.3.1.patch
