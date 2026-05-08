@@ -102,11 +102,11 @@ export const writeCanvasStyledText = (
     if (consumedWidth >= maxWidth) {
       break;
     }
-    const clipped = fitTerminalText(span.text, maxWidth - consumedWidth);
+    const clipped = span.text;
     for (const char of toTerminalChars(clipped)) {
       const width = Math.max(1, measureTerminalText(char));
       if (col + width > canvas.width || consumedWidth + width > maxWidth) {
-        return;
+        break;
       }
       canvas.rows[input.row]![col] = {
         char,

@@ -20,8 +20,10 @@ import { KeyEvent } from "@opentui/core";
 import {
   buildCliShellHostingContextId,
   buildCliShellTuiModel,
+  createTerminalCanvas,
   layoutCliShellTuiFrame,
   measureTerminalText,
+  renderCanvasLines,
   routeCliShellKey,
   routeCliShellPaste,
   resolveCliShellDialoguePlacement,
@@ -30,6 +32,7 @@ import {
   resolveCliShellTuiKeybindings,
   syncCliShellTerminalGeometry,
   summarizeCliShellHeartbeat,
+  writeCanvasStyledText,
   type CliShellManagedState,
   type CliShellTuiStore,
   type CliShellTuiViewState,
@@ -627,6 +630,20 @@ const createTestKeyEvent = (input: {
   });
 
 describe("Feature: cli-shell interactive TUI", () => {
+  test("Scenario: Given adjacent styled spans When projecting one terminal row Then later spans keep their own columns instead of being padded over", () => {
+    const canvas = createTerminalCanvas(6, 1);
+    writeCanvasStyledText(canvas, {
+      row: 0,
+      col: 0,
+      width: 6,
+      spans: [
+        { text: "two", fg: "red" },
+        { text: "X", fg: "blue" },
+      ],
+    });
+    expect(renderCanvasLines(canvas)[0]).toBe("twoX  ");
+  });
+
   test("Scenario: Given latest heartbeat parts When resolving toolbar state Then status icons and summaries stay product-local but derive from durable runtime facts", () => {
     const thinkingGroup = createHeartbeatGroup(
       createHeartbeatPart({
