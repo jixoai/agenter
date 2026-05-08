@@ -50,11 +50,16 @@ const createAvatarEntry = (nickname: string): GlobalAvatarCatalogEntry => ({
   effectivePath: `/global/${nickname}`,
 });
 
-const createTerminalEntry = (terminalId: string, metadata: Record<string, unknown> = {}): GlobalTerminalEntry => ({
+const createTerminalEntry = (
+  terminalId: string,
+  metadata: Record<string, unknown> = {},
+  command: string[] = ["/bin/bash"],
+  launchCwd = "/repo",
+): GlobalTerminalEntry => ({
   terminalId,
   processKind: "shell",
-  command: ["/bin/bash"],
-  launchCwd: "/repo",
+  command,
+  launchCwd,
   workspace: null,
   status: "IDLE",
   processPhase: "running",
@@ -235,14 +240,65 @@ export class FakeCliShellStore implements CliShellStore {
     focus?: boolean;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
     void input.processKind;
-    void input.command;
-    void input.cwd;
     void input.profile;
     void input.start;
     void input.focus;
-    const terminal = createTerminalEntry(input.terminalId ?? `terminal-${this.terminals.length + 1}`, input.metadata ?? {});
+    const terminal = createTerminalEntry(
+      input.terminalId ?? `terminal-${this.terminals.length + 1}`,
+      input.metadata ?? {},
+      input.command ?? ["/bin/bash"],
+      input.cwd ?? "/repo",
+    );
     this.terminals.push(terminal);
     return { ok: true, message: "terminal created", terminal };
+  }
+
+  async setGlobalTerminalConfig(input: {
+    terminalId: string;
+    processKind?: string;
+    command?: string[];
+    launchCwd?: string;
+    env?: Record<string, string>;
+    cols?: number;
+    rows?: number;
+    gitLog?: false | "none" | "normal" | "verbose";
+    logStyle?: "plain" | "rich";
+    title?: string;
+    icon?: string;
+    shortcuts?: Record<string, string>;
+    rendererPreference?: "auto" | "ghostty-web" | "wterm" | "xterm";
+    theme?: "default-dark" | "default-light" | "monokai";
+    cursor?: "block" | "bar" | "underline";
+    font?: {
+      family: string;
+      sizePx: number;
+      lineHeight: number;
+      letterSpacing: number;
+      weight: string;
+      weightBold: string;
+      ligatures: boolean;
+    };
+    metadata?: Record<string, unknown>;
+  }): Promise<unknown> {
+    const index = this.terminals.findIndex((entry) => entry.terminalId === input.terminalId);
+    if (index === -1) {
+      throw new Error(`terminal missing: ${input.terminalId}`);
+    }
+    const current = this.terminals[index]!;
+    this.terminals[index] = {
+      ...current,
+      processKind: input.processKind ?? current.processKind,
+      command: input.command ? [...input.command] : current.command,
+      launchCwd: input.launchCwd ?? current.launchCwd,
+      metadata: {
+        ...current.metadata,
+        ...(input.metadata ?? {}),
+      },
+      configuredTitle: input.title ?? current.configuredTitle,
+      icon: input.icon ?? current.icon,
+      shortcuts: input.shortcuts ?? current.shortcuts,
+    };
+    return { ok: true };
   }
 
   async bootstrapGlobalTerminal(input: {

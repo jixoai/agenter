@@ -72,6 +72,33 @@ export interface ProductExtensionRuntimeStore {
   bootstrapGlobalTerminal(input: {
     terminalId: string;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }>;
+  setGlobalTerminalConfig(input: {
+    terminalId: string;
+    processKind?: string;
+    command?: string[];
+    launchCwd?: string;
+    env?: Record<string, string>;
+    cols?: number;
+    rows?: number;
+    gitLog?: false | "none" | "normal" | "verbose";
+    logStyle?: "plain" | "rich";
+    title?: string;
+    icon?: string;
+    shortcuts?: Record<string, string>;
+    rendererPreference?: "auto" | "ghostty-web" | "wterm" | "xterm";
+    theme?: "default-dark" | "default-light" | "monokai";
+    cursor?: "block" | "bar" | "underline";
+    font?: {
+      family: string;
+      sizePx: number;
+      lineHeight: number;
+      letterSpacing: number;
+      weight: string;
+      weightBold: string;
+      ligatures: boolean;
+    };
+    metadata?: Record<string, unknown>;
+  }): Promise<unknown>;
   listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]>;
   issueGlobalTerminalGrant(input: {
     terminalId: string;
@@ -213,6 +240,105 @@ const mergeBindingMetadata = (
   };
 };
 
+const equalStringRecord = (
+  left: Record<string, string> | undefined,
+  right: Record<string, string> | undefined,
+): boolean => {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+  return leftKeys.every((key) => left[key] === right[key]);
+};
+
+const equalStringArray = (left: readonly string[] | undefined, right: readonly string[] | undefined): boolean => {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right || left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
+};
+
+const needsMetadataPatch = (current: Record<string, unknown> | undefined, desired: Record<string, unknown>): boolean =>
+  Object.entries(desired).some(([key, value]) => current?.[key] !== value);
+
+const buildTerminalReusePatch = (
+  entry: GlobalTerminalEntry,
+  input: ProductEnsureTerminalBindingInput,
+  metadata: Record<string, unknown>,
+): Parameters<ProductExtensionRuntimeStore["setGlobalTerminalConfig"]>[0] | null => {
+  const patch: Parameters<ProductExtensionRuntimeStore["setGlobalTerminalConfig"]>[0] = {
+    terminalId: entry.terminalId,
+  };
+  let changed = false;
+
+  if (input.createInput?.processKind && input.createInput.processKind !== entry.processKind) {
+    patch.processKind = input.createInput.processKind;
+    changed = true;
+  }
+  if (input.createInput?.command && !equalStringArray(input.createInput.command, entry.command)) {
+    patch.command = [...input.createInput.command];
+    changed = true;
+  }
+  if (input.createInput?.cwd && input.createInput.cwd !== entry.launchCwd) {
+    patch.launchCwd = input.createInput.cwd;
+    changed = true;
+  }
+
+  const profile = input.createInput?.profile;
+  if (profile?.command) {
+    patch.command = [...profile.command];
+    changed = true;
+  }
+  if (profile?.cwd) {
+    patch.launchCwd = profile.cwd;
+    changed = true;
+  }
+  if (profile?.cols !== undefined && profile.cols !== entry.snapshot?.cols) {
+    patch.cols = profile.cols;
+    changed = true;
+  }
+  if (profile?.rows !== undefined && profile.rows !== entry.snapshot?.rows) {
+    patch.rows = profile.rows;
+    changed = true;
+  }
+  if (profile?.gitLog !== undefined) {
+    patch.gitLog = profile.gitLog;
+    changed = true;
+  }
+  if (profile?.logStyle !== undefined) {
+    patch.logStyle = profile.logStyle;
+    changed = true;
+  }
+  if (profile?.icon !== undefined && profile.icon !== entry.icon) {
+    patch.icon = profile.icon;
+    changed = true;
+  }
+  if (profile?.title !== undefined && profile.title !== entry.configuredTitle) {
+    patch.title = profile.title;
+    changed = true;
+  }
+  if (profile?.shortcuts !== undefined && !equalStringRecord(profile.shortcuts, entry.shortcuts)) {
+    patch.shortcuts = profile.shortcuts;
+    changed = true;
+  }
+  if (needsMetadataPatch(entry.metadata, metadata)) {
+    patch.metadata = metadata;
+    changed = true;
+  }
+
+  return changed ? patch : null;
+};
+
 export class ProductExtensionRuntimeClient {
   constructor(private readonly store: ProductExtensionRuntimeStore) {}
 
@@ -307,6 +433,18 @@ export class ProductExtensionRuntimeClient {
       }
       entry = result.terminal;
       created = true;
+    }
+    if (!created) {
+      const entryId = entry.terminalId;
+      const patch = buildTerminalReusePatch(entry, input, metadata);
+      if (patch) {
+        await this.store.setGlobalTerminalConfig(patch);
+        const refreshed = await this.store.listGlobalTerminals();
+        entry =
+          refreshed.find((candidate) => candidate.terminalId === entryId) ??
+          refreshed.find((candidate) => matchesProductBindingMetadata(candidate.metadata, bindingMetadata)) ??
+          entry;
+      }
     }
     if (!created && shouldStart && entry.processPhase !== "running") {
       const bootstrapped = await this.store.bootstrapGlobalTerminal({

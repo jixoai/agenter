@@ -2,10 +2,11 @@ import type {
   GlobalRoomSnapshotOutput,
   RuntimeStore,
 } from "@agenter/client-sdk";
+import type { TerminalRenderRichLine } from "@agenter/terminal-render-core";
+import type { CliShellLiveTerminalView } from "./live-terminal-mirror";
 
 import type { CliShellStore } from "../bootstrap";
 import type { CliShellManagedState } from "../managed";
-
 export type CliShellDialoguePlacement = "left" | "right" | "bottom" | "floating";
 export type CliShellDialoguePlacementRequest = CliShellDialoguePlacement | "smart";
 
@@ -20,7 +21,20 @@ export interface CliShellDialogueBlock {
 
 export interface CliShellTuiModel {
   terminalId: string;
-  terminalLines: string[];
+  terminalView: {
+    plainLines: string[];
+    richLines: TerminalRenderRichLine[];
+    cursorAbsRow: number;
+    cursorCol: number;
+    cursorVisible: boolean;
+    rows: number;
+    cols: number;
+    viewportStart: number;
+    viewportEnd: number;
+    scrollbackRows: number;
+    connected: boolean;
+    running: boolean;
+  };
   toolbarLeft: string;
   toolbarHeartbeat: string;
   toolbarManaged: string;
@@ -42,6 +56,7 @@ export interface CliShellTuiViewState {
 
 export interface CliShellTuiAppProjection {
   roomSnapshot: GlobalRoomSnapshotOutput | null;
+  liveTerminal?: CliShellLiveTerminalView | null;
 }
 
 export type CliShellTuiStore = CliShellStore &
@@ -52,6 +67,9 @@ export type CliShellTuiStore = CliShellStore &
     | "connect"
     | "disconnect"
     | "hydrateSessionArtifacts"
+    | "retainGlobalTerminals"
+    | "hydrateGlobalTerminals"
+    | "readGlobalTerminal"
     | "retainGlobalRoomSnapshot"
     | "hydrateGlobalRoomSnapshot"
     | "sendGlobalRoomMessage"

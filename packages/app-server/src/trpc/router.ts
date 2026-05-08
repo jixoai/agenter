@@ -102,6 +102,35 @@ const terminalProcessProfileSchema = z.object({
   title: z.string().trim().min(1).optional(),
   shortcuts: z.record(z.string(), z.string().min(1)).optional(),
 });
+const terminalConfigPatchSchema = z.object({
+  terminalId: z.string().min(1),
+  processKind: z.string().trim().min(1).optional(),
+  command: z.array(z.string().min(1)).min(1).optional(),
+  launchCwd: z.string().min(1).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  cols: z.number().int().positive().optional(),
+  rows: z.number().int().positive().optional(),
+  gitLog: z.union([z.literal(false), z.literal("none"), z.literal("normal"), z.literal("verbose")]).optional(),
+  logStyle: z.union([z.literal("plain"), z.literal("rich")]).optional(),
+  title: z.string().trim().min(1).optional(),
+  icon: z.string().trim().min(1).optional(),
+  shortcuts: z.record(z.string(), z.string().min(1)).optional(),
+  rendererPreference: z.enum(["auto", "ghostty-web", "wterm", "xterm"]).optional(),
+  theme: z.enum(["default-dark", "default-light", "monokai"]).optional(),
+  cursor: z.enum(["block", "bar", "underline"]).optional(),
+  font: z
+    .object({
+      family: z.string().min(1),
+      sizePx: z.number().positive(),
+      lineHeight: z.number().positive(),
+      letterSpacing: z.number(),
+      weight: z.string().min(1),
+      weightBold: z.string().min(1),
+      ligatures: z.boolean(),
+    })
+    .optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
 const workspaceGrantInputSchema = z.object({
   pattern: z.string().trim().min(1),
   mode: z.enum(["ro", "rw"]),
@@ -1331,27 +1360,7 @@ export const appRouter = t.router({
           }),
       ),
     globalSetConfig: authProcedure
-      .input(
-        z.object({
-          terminalId: z.string().min(1),
-          cols: z.number().int().positive().optional(),
-          rows: z.number().int().positive().optional(),
-          rendererPreference: z.enum(["auto", "ghostty-web", "wterm", "xterm"]).optional(),
-          theme: z.enum(["default-dark", "default-light", "monokai"]).optional(),
-          cursor: z.enum(["block", "bar", "underline"]).optional(),
-          font: z
-            .object({
-              family: z.string().min(1),
-              sizePx: z.number().positive(),
-              lineHeight: z.number().positive(),
-              letterSpacing: z.number(),
-              weight: z.string().min(1),
-              weightBold: z.string().min(1),
-              ligatures: z.boolean(),
-            })
-            .optional(),
-        }),
-      )
+      .input(terminalConfigPatchSchema)
       .mutation(({ ctx, input }) => ({
         result: ctx.kernel.setGlobalTerminalConfig({
           ...input,

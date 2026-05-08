@@ -1,6 +1,7 @@
 import type { KeyEvent } from "@opentui/core";
 
 import { disableCliShellManagedMode, enableCliShellManagedMode, readCliShellManagedState } from "../managed";
+import type { CliShellLiveTerminalMirror } from "./live-terminal-mirror";
 import { matchCliShellShortcut, type CliShellTuiKeybindings } from "./keybindings";
 import { encodeCliShellTerminalKey } from "./terminal-input";
 import type { CliShellTuiModel, CliShellTuiStore, CliShellTuiViewState } from "./types";
@@ -18,6 +19,7 @@ export interface CliShellTuiControllerContext {
   trackAsyncTask?: (task: Promise<void>) => void;
   getViewState: () => CliShellTuiViewState;
   getModel: () => CliShellTuiModel;
+  getLiveMirror?: () => CliShellLiveTerminalMirror | null;
   updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => void;
 }
 
@@ -63,6 +65,10 @@ const closeDialogue = (ctx: CliShellTuiControllerContext): void => {
 };
 
 const sendTerminalInput = (ctx: CliShellTuiControllerContext, text: string): void => {
+  const mirror = ctx.getLiveMirror?.();
+  if (mirror?.sendInputBytes(new TextEncoder().encode(text))) {
+    return;
+  }
   void ctx.store
     .inputGlobalTerminal({
       terminalId: ctx.getModel().terminalId,
@@ -258,11 +264,15 @@ export const syncCliShellTerminalGeometry = async (input: {
   width: number;
   height: number;
   previousGeometryKey: string;
+  liveMirror?: CliShellLiveTerminalMirror | null;
 }): Promise<string> => {
   const rows = Math.max(1, input.height - 1);
   const geometryKey = `${input.terminalId}:${input.width}x${rows}`;
   if (geometryKey === input.previousGeometryKey || input.width <= 0 || input.height <= 0) {
     return input.previousGeometryKey;
+  }
+  if (input.liveMirror?.resize(input.width, rows)) {
+    return geometryKey;
   }
   await input.store.setGlobalTerminalConfig({
     terminalId: input.terminalId,

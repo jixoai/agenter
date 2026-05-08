@@ -22,17 +22,23 @@ describe("Feature: cli-shell package boundary", () => {
     const managedSource = readFileSync(join(packageRoot, "src", "managed.ts"), "utf8");
     const tuiAppSource = readFileSync(join(packageRoot, "src", "tui", "app.tsx"), "utf8");
     const tuiRunnerSource = readFileSync(join(packageRoot, "src", "tui", "run-cli-shell-tui.tsx"), "utf8");
+    const liveMirrorSource = readFileSync(join(packageRoot, "src", "tui", "live-terminal-mirror.ts"), "utf8");
     const runCliShellSource = readFileSync(join(packageRoot, "src", "run-cli-shell.ts"), "utf8");
 
     expect(pkg.dependencies).toEqual({
+      "@agenter/client-sdk": "workspace:*",
+      "@agenter/product-extension-runtime": "workspace:*",
+      "@agenter/terminal-render-core": "workspace:*",
+      "@agenter/terminal-transport-protocol": "workspace:*",
       "@opentui/core": "latest",
       "@opentui/react": "latest",
+      "@xterm/headless": "6.1.0-beta.167",
       react: "^19.0.0",
       "string-width": "^7.2.0",
       "yargs": "^17.7.2",
     });
-    expect(pkg.devDependencies?.["@agenter/client-sdk"]).toBe("workspace:*");
-    expect(pkg.devDependencies?.["@agenter/product-extension-runtime"]).toBe("workspace:*");
+    expect(pkg.devDependencies?.["@agenter/client-sdk"]).toBeUndefined();
+    expect(pkg.devDependencies?.["@agenter/product-extension-runtime"]).toBeUndefined();
     expect(pkg.private).toBeUndefined();
     expect(pkg.bin).toEqual({ "agenter-cli-shell": "./src/bin/agenter-cli-shell.ts" });
     expect(pkg.files).toEqual(["SPEC.md", "src"]);
@@ -52,6 +58,10 @@ describe("Feature: cli-shell package boundary", () => {
     expect(tuiAppSource).toContain('from "@opentui/react"');
     expect(tuiRunnerSource).toContain('from "@opentui/core"');
     expect(tuiRunnerSource).toContain('from "@opentui/react"');
+    expect(liveMirrorSource).toContain('from "@agenter/terminal-transport-protocol"');
+    expect(liveMirrorSource).toContain('from "@agenter/terminal-render-core"');
+    expect(liveMirrorSource).not.toContain("@agenter/app-server");
+    expect(liveMirrorSource).not.toContain("session-runtime");
     expect(tuiAppSource).not.toContain("@agenter/tui");
     expect(tuiRunnerSource).not.toContain("@agenter/tui");
     expect(runCliShellSource).toContain("ws://${args.host}:${args.port}/trpc");

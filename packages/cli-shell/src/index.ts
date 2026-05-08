@@ -22,7 +22,15 @@ export {
 export { isCliShellMetadataOnlyArgv, normalizeShellName, parseCliShellArgs, type CliShellParsedArgs } from "./argv";
 export { runCliShell } from "./run-cli-shell";
 export { fitTerminalText, measureTerminalText } from "./tui/cell-width";
-export { createTerminalCanvas, drawCanvasHorizontalLine, drawCanvasVerticalLine, fillCanvasRow, renderCanvasLines, writeCanvasText } from "./tui/canvas";
+export {
+  createTerminalCanvas,
+  drawCanvasHorizontalLine,
+  drawCanvasVerticalLine,
+  fillCanvasRow,
+  renderCanvasLines,
+  writeCanvasStyledText,
+  writeCanvasText,
+} from "./tui/canvas";
 export {
   resolveCliShellToolbarStatus,
   resolveCliShellToolbarStatusIcon,

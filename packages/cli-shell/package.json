@@ -14,20 +14,22 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
+    "@agenter/client-sdk": "workspace:*",
+    "@agenter/product-extension-runtime": "workspace:*",
+    "@agenter/terminal-render-core": "workspace:*",
+    "@agenter/terminal-transport-protocol": "workspace:*",
     "@opentui/core": "latest",
     "@opentui/react": "latest",
+    "@xterm/headless": "6.1.0-beta.167",
     "react": "^19.0.0",
     "string-width": "^7.2.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
-    "@agenter/client-sdk": "workspace:*",
-    "@agenter/product-extension-runtime": "workspace:*",
     "@types/bun": "latest",
     "@types/react": "^19.0.0",
     "@types/yargs": "^17.0.35",
-    "typescript": "latest",
-    "zod": "^4.0.0"
+    "typescript": "latest"
   },
   "engines": {
     "bun": ">=1.3.10"

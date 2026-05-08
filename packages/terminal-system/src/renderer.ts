@@ -1,3 +1,4 @@
+import { renderStructuredBuffer as renderStructuredBufferCore } from "@agenter/terminal-render-core";
 import type { IBufferCell, IBufferLine } from "@xterm/headless";
 
 import type { RenderResult, RichLine, RichSpan, StructuredRenderResult, TerminalLogStyle } from "./types";
@@ -406,35 +407,7 @@ export const compactRenderForPersistence = (render: RenderResult): RenderResult 
 };
 
 export const renderStructuredBuffer = (bridge: XtermBridge): StructuredRenderResult => {
-  const buffer = bridge.buffer;
-  const cursorAbsRow = buffer.baseY + buffer.cursorY;
-  const cursorCol = buffer.cursorX;
-  const cursorVisible = bridge.cursorVisible;
-
-  const richLines: Array<{ spans: RichSpan[] }> = [];
-  for (let row = 0; row < buffer.length; row += 1) {
-    const line = buffer.getLine(row);
-    if (!line) {
-      richLines.push({ spans: [] });
-      continue;
-    }
-
-    const cells: StyledChar[] = [];
-    for (let col = 0; col < bridge.cols; col += 1) {
-      cells[col] = readCell(line, col);
-    }
-    const rendered = renderLine(cells);
-    richLines.push({ spans: rendered.rich });
-  }
-
-  return {
-    richLines,
-    cursorAbsRow,
-    cursorCol,
-    cursorVisible,
-    rows: bridge.rows,
-    cols: bridge.cols,
-  };
+  return renderStructuredBufferCore(bridge) as StructuredRenderResult;
 };
 
 export const renderSemanticBuffer = (bridge: XtermBridge): RenderResult => {

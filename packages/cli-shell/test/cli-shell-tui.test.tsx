@@ -8,6 +8,7 @@ import type {
   GlobalRoomEntry,
   GlobalRoomMessage,
   GlobalRoomSnapshotOutput,
+  GlobalTerminalEntry,
   HeartbeatGroupItem,
   HeartbeatPartItem,
   ProductDelegationRecord,
@@ -121,6 +122,55 @@ const createRoomEntry = (chatId: string): GlobalRoomEntry => ({
   focused: false,
   accessRole: "admin",
   accessToken: `tok:${chatId}`,
+});
+
+const createGlobalTerminalEntry = (terminalId: string, lines: string[]): GlobalTerminalEntry => ({
+  terminalId,
+  processKind: "shell",
+  command: ["/bin/bash"],
+  launchCwd: "/repo",
+  workspace: null,
+  status: "IDLE",
+  processPhase: "running",
+  seq: 2,
+  snapshot: {
+    seq: 2,
+    timestamp: 20,
+    cols: 120,
+    rows: 39,
+    lines,
+    cursor: { x: 0, y: Math.max(0, lines.length - 1) },
+  },
+  focused: false,
+  icon: undefined,
+  configuredTitle: terminalId,
+  currentTitle: undefined,
+  currentPath: undefined,
+  shortcuts: undefined,
+  rendererPreference: "auto",
+  theme: "default-dark",
+  cursor: "block",
+  font: {
+    family: "monospace",
+    sizePx: 13,
+    lineHeight: 1.4,
+    letterSpacing: 0,
+    weight: "400",
+    weightBold: "700",
+    ligatures: false,
+  },
+  transportUrl: `ws://127.0.0.1/pty/${terminalId}`,
+  currentAdminId: null,
+  approvalTimeoutMs: 90_000,
+  pendingRequestCount: 0,
+  access: {
+    role: "admin",
+    accessToken: `tok:${terminalId}`,
+    participantId: "system:trusted-terminal-bootstrap",
+    currentAdmin: true,
+  },
+  actors: [],
+  metadata: {},
 });
 
 const createRoomMessage = (input: {
@@ -257,7 +307,7 @@ const createRuntimeState = (input: {
     globalRoomSnapshotsById: { [roomEntry.chatId]: createCached(roomSnapshot) },
     globalRoomGrantsById: {},
     globalRoomAssetsById: {},
-    globalTerminals: createCached([]),
+    globalTerminals: createCached([createGlobalTerminalEntry("shell-1", input.lines)]),
     globalTerminalGrantsById: {},
     globalTerminalApprovalsById: {},
     globalTerminalActivityById: {},
@@ -382,6 +432,19 @@ const createTuiStore = (input: {
     connect: async () => {},
     disconnect: () => {},
     hydrateSessionArtifacts: async () => undefined,
+    retainGlobalTerminals: () => () => {},
+    hydrateGlobalTerminals: async () => state.globalTerminals.data,
+    readGlobalTerminal: async (payload: { terminalId: string }) => {
+      const terminal = state.globalTerminals.data.find((entry) => entry.terminalId === payload.terminalId);
+      if (!terminal?.snapshot) {
+        throw new Error(`terminal snapshot missing: ${payload.terminalId}`);
+      }
+      return {
+        terminalId: payload.terminalId,
+        representation: "snapshot" as const,
+        snapshot: terminal.snapshot,
+      };
+    },
     retainGlobalRoomSnapshot: () => () => {},
     hydrateGlobalRoomSnapshot: async () => getRoomSnapshot(),
     sendGlobalRoomMessage: async (payload: { chatId: string; text: string }) => {
@@ -697,6 +760,51 @@ describe("Feature: cli-shell interactive TUI", () => {
     const inputLineIndex = frame.lines.findIndex((line) => line.includes("> _"));
     expect(inputLineIndex).toBeGreaterThanOrEqual(0);
     expect(frame.styledLines[inputLineIndex]?.spans.some((span) => span.bg === "gray")).toBe(true);
+  });
+
+  test("Scenario: Given session terminal snapshots are absent When global terminal truth is hydrated Then the TUI model still renders durable terminal lines", () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: [
+        "$ agenter shell",
+        "shell-1:~/project $ printf 'platform truth\\n'",
+        "platform truth",
+      ],
+      roomMessages: [],
+      unread: 0,
+    });
+    state.terminalSnapshotsBySession["session-1"] = {};
+    state.runtimes["session-1"] = {
+      ...state.runtimes["session-1"]!,
+      terminalSnapshots: {},
+    };
+
+    const model = buildCliShellTuiModel({
+      state,
+      projection: {
+        roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null,
+      },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: false,
+        requestedPlacement: "smart",
+        dialogueDraft: "",
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings: resolveCliShellTuiKeybindings(null),
+      width: 120,
+      height: 40,
+    });
+
+    expect(model.terminalView.plainLines).toEqual([
+      "$ agenter shell",
+      "shell-1:~/project $ printf 'platform truth\\n'",
+      "platform truth",
+    ]);
   });
 
   test("Scenario: Given explicit dialogue placements and wide glyph content When building frames Then docked and floating chrome stay aligned inside the shell-terminal cell grid", () => {

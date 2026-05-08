@@ -19,6 +19,7 @@ export {
   serializeStructuredLinesForLog,
   stripHtmlTags,
 } from "./renderer";
+export { XtermBridge } from "./xterm-bridge";
 export {
   TerminalControlPlane,
 } from "./terminal-control-plane";

@@ -1,0 +1,18 @@
+{
+  "name": "@agenter/terminal-render-core",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@xterm/headless": "6.1.0-beta.167"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "latest"
+  },
+  "patchedDependencies": {
+    "@xterm/headless@6.1.0-beta.167": "../../patches/@xterm%2Fheadless@6.1.0-beta.167.patch"
+  }
+}

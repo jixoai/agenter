@@ -334,3 +334,11 @@ export const decodeTerminalTransportServerMessage = (
 };
 
 export const binaryStringToBytes = (input: string): Uint8Array => Uint8Array.from(input, (char) => char.charCodeAt(0) & 0xff);
+
+export {
+  createTerminalTransportClientSession,
+  type TerminalTransportClientConnectionState,
+  type TerminalTransportClientSession,
+  type TerminalTransportClientSessionEvents,
+  type TerminalTransportClientSocketLike,
+} from "./client-session";

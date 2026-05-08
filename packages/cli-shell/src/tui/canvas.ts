@@ -79,6 +79,53 @@ export const writeCanvasText = (
   }
 };
 
+export const writeCanvasStyledText = (
+  canvas: TerminalCanvas,
+  input: {
+    row: number;
+    col: number;
+    spans: readonly TerminalCanvasSpan[];
+    width?: number;
+  },
+): void => {
+  if (input.row < 0 || input.row >= canvas.height || input.col >= canvas.width) {
+    return;
+  }
+  const maxWidth = Math.max(0, Math.min(canvas.width - input.col, input.width ?? canvas.width - input.col));
+  if (maxWidth <= 0) {
+    return;
+  }
+
+  let col = input.col;
+  let consumedWidth = 0;
+  for (const span of input.spans) {
+    if (consumedWidth >= maxWidth) {
+      break;
+    }
+    const clipped = fitTerminalText(span.text, maxWidth - consumedWidth);
+    for (const char of toTerminalChars(clipped)) {
+      const width = Math.max(1, measureTerminalText(char));
+      if (col + width > canvas.width || consumedWidth + width > maxWidth) {
+        return;
+      }
+      canvas.rows[input.row]![col] = {
+        char,
+        fg: span.fg,
+        bg: span.bg,
+      };
+      for (let index = 1; index < width; index += 1) {
+        canvas.rows[input.row]![col + index] = {
+          char: "",
+          fg: span.fg,
+          bg: span.bg,
+        };
+      }
+      col += width;
+      consumedWidth += width;
+    }
+  }
+};
+
 export const fillCanvasRow = (
   canvas: TerminalCanvas,
   input: {

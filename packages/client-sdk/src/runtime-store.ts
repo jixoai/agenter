@@ -4965,6 +4965,15 @@ export class RuntimeStore {
 
   async setGlobalTerminalConfig(input: {
     terminalId: string;
+    processKind?: string;
+    command?: string[];
+    launchCwd?: string;
+    env?: Record<string, string>;
+    gitLog?: false | "none" | "normal" | "verbose";
+    logStyle?: "plain" | "rich";
+    title?: string;
+    icon?: string;
+    shortcuts?: Record<string, string>;
     cols?: number;
     rows?: number;
     rendererPreference?: "auto" | "ghostty-web" | "wterm" | "xterm";
@@ -4979,6 +4988,7 @@ export class RuntimeStore {
       weightBold: string;
       ligatures: boolean;
     };
+    metadata?: Record<string, unknown>;
   }) {
     const output = await this.client.trpc.terminal.globalSetConfig.mutate(input);
     const current = this.resolveGlobalTerminalEntry(input.terminalId);
@@ -6424,6 +6434,14 @@ export class RuntimeStore {
               }
             : item,
         );
+        const current = this.resolveGlobalTerminalEntry(payload.terminalId);
+        if (current) {
+          this.reconcileGlobalTerminalEntry({
+            ...current,
+            processPhase: payload.processPhase,
+            status: payload.status,
+          });
+        }
       } else if (event.type === "terminal.snapshot") {
         const payload = event.payload as {
           terminalId: string;
@@ -6448,6 +6466,14 @@ export class RuntimeStore {
           ...(this.state.terminalSnapshotsBySession[sessionId] ?? {}),
           [payload.terminalId]: payload.snapshot,
         };
+        const current = this.resolveGlobalTerminalEntry(payload.terminalId);
+        if (current) {
+          this.reconcileGlobalTerminalEntry({
+            ...current,
+            seq: payload.snapshot.seq,
+            snapshot: payload.snapshot,
+          });
+        }
       } else if (event.type === "terminal.read") {
         const payload = event.payload as {
           terminalId: string;
@@ -6461,6 +6487,26 @@ export class RuntimeStore {
           ...(this.state.terminalReadsBySession[sessionId] ?? {}),
           [payload.terminalId]: payload.result,
         };
+        if (
+          payload.result.representation === "snapshot" &&
+          payload.result.snapshot &&
+          typeof payload.result.snapshot === "object"
+        ) {
+          const current = this.resolveGlobalTerminalEntry(payload.terminalId);
+          if (current) {
+            this.reconcileGlobalTerminalEntry({
+              ...current,
+              seq:
+                typeof payload.result.seq === "number"
+                  ? payload.result.seq
+                  : current.seq,
+              snapshot: {
+                ...current.snapshot,
+                ...payload.result.snapshot,
+              },
+            });
+          }
+        }
       } else if (event.type === "task.updated") {
         const payload = event.payload as { task: { key: string } };
         const current = this.state.tasksBySession[sessionId] ?? [];

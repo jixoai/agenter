@@ -126,6 +126,13 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   readonly terminals: GlobalTerminalEntry[] = [];
   readonly terminalGrants = new Map<string, GlobalTerminalGrantEntry[]>();
   readonly bootstrapTerminalCalls: string[] = [];
+  readonly setTerminalConfigCalls: Array<{
+    terminalId: string;
+    processKind?: string;
+    command?: string[];
+    launchCwd?: string;
+    metadata?: Record<string, unknown>;
+  }> = [];
   readonly rooms: GlobalRoomEntry[] = [];
   readonly roomGrants = new Map<string, GlobalRoomGrantEntry[]>();
   readonly privateAssets = new Map<string, WorkspacePrivateTextAssetEnsureOutput>();
@@ -268,6 +275,66 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     };
     this.terminals[index] = next;
     return { ok: true, message: "bootstrapped", terminal: next };
+  }
+
+  async setGlobalTerminalConfig(input: {
+    terminalId: string;
+    processKind?: string;
+    command?: string[];
+    launchCwd?: string;
+    env?: Record<string, string>;
+    cols?: number;
+    rows?: number;
+    gitLog?: false | "none" | "normal" | "verbose";
+    logStyle?: "plain" | "rich";
+    title?: string;
+    icon?: string;
+    shortcuts?: Record<string, string>;
+    rendererPreference?: "auto" | "ghostty-web" | "wterm" | "xterm";
+    theme?: "default-dark" | "default-light" | "monokai";
+    cursor?: "block" | "bar" | "underline";
+    font?: {
+      family: string;
+      sizePx: number;
+      lineHeight: number;
+      letterSpacing: number;
+      weight: string;
+      weightBold: string;
+      ligatures: boolean;
+    };
+    metadata?: Record<string, unknown>;
+  }): Promise<unknown> {
+    this.setTerminalConfigCalls.push({
+      terminalId: input.terminalId,
+      processKind: input.processKind,
+      command: input.command,
+      launchCwd: input.launchCwd,
+      metadata: input.metadata,
+    });
+    const index = this.terminals.findIndex((entry) => entry.terminalId === input.terminalId);
+    if (index === -1) {
+      throw new Error(`unknown terminal: ${input.terminalId}`);
+    }
+    const current = this.terminals[index]!;
+    const next: GlobalTerminalEntry = {
+      ...current,
+      processKind: input.processKind ?? current.processKind,
+      command: input.command ? [...input.command] : current.command,
+      launchCwd: input.launchCwd ?? current.launchCwd,
+      icon: input.icon ?? current.icon,
+      configuredTitle: input.title ?? current.configuredTitle,
+      shortcuts: input.shortcuts ?? current.shortcuts,
+      metadata: {
+        ...current.metadata,
+        ...(input.metadata ?? {}),
+      },
+    };
+    this.terminals[index] = next;
+    return {
+      config: {
+        terminalId: next.terminalId,
+      },
+    };
   }
 
   async issueGlobalTerminalGrant(input: {
@@ -671,6 +738,49 @@ describe("Feature: product extension runtime client", () => {
     expect(ensuredTerminal.entry.processPhase).toBe("running");
     expect(store.bootstrapTerminalCalls).toEqual(["shell-1"]);
     expect(store.focusTerminalCalls).toEqual([["shell-1"]]);
+  });
+
+  test("Scenario: Given an existing legacy terminal without product metadata When ensuring the binding again Then the runtime client reconciles durable launch truth before reuse", async () => {
+    const store = new FakeProductRuntimeStore();
+    store.terminals.push(createTerminalEntry("shell-1", {}, "stopped"));
+    const client = new ProductExtensionRuntimeClient(store);
+
+    const ensuredTerminal = await client.ensureTerminalBinding({
+      binding: {
+        productId: "cli-shell",
+        resourceKey: "shell-1",
+        resourceKind: "terminal",
+        ownerSystem: "terminal-system",
+      },
+      createInput: {
+        processKind: "shell",
+        command: ["/bin/zsh", "-i"],
+        cwd: "/repo/current",
+        start: true,
+      },
+    });
+
+    expect(ensuredTerminal.created).toBe(false);
+    expect(store.setTerminalConfigCalls).toEqual([
+      {
+        terminalId: "shell-1",
+        command: ["/bin/zsh", "-i"],
+        launchCwd: "/repo/current",
+        metadata: {
+          productId: "cli-shell",
+          resourceKey: "shell-1",
+          ownerSystem: "terminal-system",
+        },
+      },
+    ]);
+    expect(ensuredTerminal.entry.command).toEqual(["/bin/zsh", "-i"]);
+    expect(ensuredTerminal.entry.launchCwd).toBe("/repo/current");
+    expect(ensuredTerminal.entry.metadata).toMatchObject({
+      productId: "cli-shell",
+      resourceKey: "shell-1",
+      ownerSystem: "terminal-system",
+    });
+    expect(store.bootstrapTerminalCalls).toEqual(["shell-1"]);
   });
 
   test("Scenario: Given self-evolution attention and explicit delegations When invoking the runtime client Then attention does not implicitly create hosting leases", async () => {

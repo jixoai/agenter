@@ -9577,6 +9577,135 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given live terminal snapshot and status events When runtime store updates one session Then global terminal truth stays synchronized for product consumers", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const terminalId = "term-product-truth";
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        onSubscribe: (handlers) => {
+          onData = handlers.onData;
+        },
+        terminalGlobalListQuery: async () => ({
+          items: [
+            {
+              terminalId,
+              processKind: "shell",
+              command: ["/bin/bash"],
+              launchCwd: "/repo/product-truth",
+              workspace: null,
+              status: "IDLE" as const,
+              processPhase: "running" as const,
+              seq: 1,
+              snapshot: {
+                seq: 1,
+                timestamp: 1,
+                cols: 80,
+                rows: 24,
+                lines: ["prompt$"],
+                cursor: { x: 7, y: 0 },
+              },
+              focused: false,
+              icon: undefined,
+              configuredTitle: "Product truth",
+              currentTitle: undefined,
+              currentPath: undefined,
+              shortcuts: undefined,
+              rendererPreference: "auto" as const,
+              theme: "default-dark" as const,
+              cursor: "block" as const,
+              transportUrl: undefined,
+              currentAdminId: null,
+              approvalTimeoutMs: 90_000,
+              pendingRequestCount: 0,
+              access: undefined,
+              actors: [],
+            },
+          ],
+        }),
+      }),
+    );
+
+    await store.connect();
+    await store.hydrateGlobalTerminals({ force: true });
+
+    onData?.({
+      version: 1,
+      eventId: 11,
+      timestamp: Date.now(),
+      type: "terminal.snapshot",
+      sessionId: "i-1",
+      payload: {
+        terminalId,
+        snapshot: {
+          seq: 2,
+          timestamp: 2,
+          cols: 100,
+          rows: 30,
+          lines: ["prompt$", "echo synced", "synced"],
+          cursor: { x: 6, y: 2 },
+        },
+      },
+    });
+    onData?.({
+      version: 1,
+      eventId: 12,
+      timestamp: Date.now(),
+      type: "terminal.status",
+      sessionId: "i-1",
+      payload: {
+        terminalId,
+        processPhase: "running",
+        status: "BUSY",
+      },
+    });
+    onData?.({
+      version: 1,
+      eventId: 13,
+      timestamp: Date.now(),
+      type: "terminal.read",
+      sessionId: "i-1",
+      payload: {
+        terminalId,
+        result: {
+          representation: "snapshot",
+          terminalId,
+          seq: 3,
+          cols: 100,
+          rows: 30,
+          cursor: { x: 7, y: 2 },
+          snapshot: {
+            seq: 3,
+            timestamp: 3,
+            cols: 100,
+            rows: 30,
+            lines: ["prompt$", "echo synced", "synced!"],
+            cursor: { x: 7, y: 2 },
+          },
+          status: "IDLE",
+          title: "Product truth terminal",
+          running: true,
+        },
+      },
+    });
+
+    const entry = store.getState().globalTerminals.data.find((item) => item.terminalId === terminalId);
+    expect(entry).toMatchObject({
+      terminalId,
+      processPhase: "running",
+      status: "BUSY",
+      seq: 3,
+      snapshot: {
+        seq: 3,
+        cols: 100,
+        rows: 30,
+      },
+    });
+    expect(entry?.snapshot?.lines).toEqual(["prompt$", "echo synced", "synced!"]);
+
+    store.disconnect();
+  });
+
   test("Scenario: Given room-local read state and session unread notifications When runtime store marks a global room read Then room snapshots keep message-level truth separate from unread badges", async () => {
     const requests: {
       markRead?: { chatId: string; accessToken?: string; messageId?: number };

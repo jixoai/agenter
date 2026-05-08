@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactN
 import { routeCliShellKey, routeCliShellPaste, syncCliShellTerminalGeometry } from "./controller";
 import { layoutCliShellTuiFrame } from "./frame";
 import type { CliShellTuiKeybindings } from "./keybindings";
+import { createCliShellLiveTerminalMirror, type CliShellLiveTerminalMirror } from "./live-terminal-mirror";
 import { buildCliShellTuiModel } from "./model";
 import type { CliShellManagedState } from "../managed";
 import type { CliShellTuiStore, CliShellTuiViewState } from "./types";
@@ -26,6 +27,11 @@ export interface CliShellTuiAppProps {
 }
 
 const textDecoder = new TextDecoder();
+const resolveActiveTerminalId = (input: {
+  state: ReturnType<CliShellTuiStore["getState"]>;
+  sessionId: string;
+  fallbackTerminalId: string;
+}): string => input.state.runtimes[input.sessionId]?.focusedTerminalId?.trim() || input.fallbackTerminalId;
 
 export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
   const state = useSyncExternalStore(
@@ -41,7 +47,17 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
     statusNotice: null,
   });
   const geometryRef = useRef<string>("");
+  const liveMirrorRef = useRef<CliShellLiveTerminalMirror | null>(null);
+  const liveMirrorTransportUrlRef = useRef<string | null>(null);
+  const [, setLiveTerminalRevision] = useState(0);
   const roomSnapshot = state.globalRoomSnapshotsById[props.roomChatId]?.data ?? null;
+  const activeTerminalId = resolveActiveTerminalId({
+    state,
+    sessionId: props.sessionId,
+    fallbackTerminalId: props.fallbackTerminalId,
+  });
+  const terminalEntry = state.globalTerminals.data.find((entry) => entry.terminalId === activeTerminalId) ?? null;
+  const liveTerminal = liveMirrorRef.current?.getView() ?? null;
 
   const model = useMemo(
     () =>
@@ -49,6 +65,7 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
         state,
         projection: {
           roomSnapshot,
+          liveTerminal,
         },
         sessionId: props.sessionId,
         shellName: props.shellName,
@@ -66,6 +83,7 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
       props.keybindings,
       props.sessionId,
       props.shellName,
+      liveTerminal,
       roomSnapshot,
       state,
       viewState,
@@ -86,6 +104,7 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
       onQuit: props.onQuit,
       getViewState: () => viewState,
       getModel: () => model,
+      getLiveMirror: () => liveMirrorRef.current,
       updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
         setViewState((current) => updater(current));
       },
@@ -116,12 +135,86 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
   }, [props.roomAccessToken, props.roomChatId, props.store]);
 
   useEffect(() => {
+    const release = props.store.retainGlobalTerminals();
+    if (props.fallbackTerminalId.trim().length > 0) {
+      void props.store
+        .hydrateGlobalTerminals({ force: true })
+        .then(async (terminals) => {
+          const terminal = terminals.find((entry) => entry.terminalId === props.fallbackTerminalId);
+          if (terminal?.snapshot?.lines?.some((line) => line.length > 0)) {
+            return;
+          }
+          await props.store.readGlobalTerminal({
+            terminalId: props.fallbackTerminalId,
+            mode: "snapshot",
+            recordActivity: false,
+          });
+        })
+        .catch(() => undefined);
+    }
+    return release;
+  }, [props.fallbackTerminalId, props.store]);
+
+  useEffect(() => {
+    if (!terminalEntry?.transportUrl) {
+      liveMirrorRef.current?.disconnect();
+      liveMirrorRef.current = null;
+      liveMirrorTransportUrlRef.current = null;
+      setLiveTerminalRevision((current) => current + 1);
+      return;
+    }
+
+    if (liveMirrorRef.current && liveMirrorTransportUrlRef.current === terminalEntry.transportUrl) {
+      return;
+    }
+
+    liveMirrorRef.current?.disconnect();
+    const mirror = createCliShellLiveTerminalMirror({
+      terminalId: terminalEntry.terminalId,
+      transportUrl: terminalEntry.transportUrl,
+      initialSnapshot: terminalEntry.snapshot ?? null,
+    });
+    liveMirrorRef.current = mirror;
+    liveMirrorTransportUrlRef.current = terminalEntry.transportUrl;
+    const release = mirror.subscribe(() => {
+      if (!mirror.getView().running) {
+        props.onQuit();
+        return;
+      }
+      setLiveTerminalRevision((current) => current + 1);
+    });
+    void mirror.connect().catch(() => undefined);
+    setLiveTerminalRevision((current) => current + 1);
+    return () => {
+      release();
+      mirror.disconnect();
+      if (liveMirrorRef.current === mirror) {
+        liveMirrorRef.current = null;
+        liveMirrorTransportUrlRef.current = null;
+      }
+    };
+  }, [activeTerminalId, props, terminalEntry?.snapshot?.seq, terminalEntry?.terminalId, terminalEntry?.transportUrl]);
+
+  useEffect(() => {
+    if (liveTerminal && !liveTerminal.running) {
+      props.onQuit();
+    }
+  }, [liveTerminal, props]);
+
+  useEffect(() => {
+    if (terminalEntry?.processPhase === "stopped") {
+      props.onQuit();
+    }
+  }, [props, terminalEntry?.processPhase]);
+
+  useEffect(() => {
     void syncCliShellTerminalGeometry({
       store: props.store,
       terminalId: model.terminalId,
       width,
       height,
       previousGeometryKey: geometryRef.current,
+      liveMirror: liveMirrorRef.current,
     })
       .then((nextKey) => {
         geometryRef.current = nextKey;
@@ -144,12 +237,19 @@ export const CliShellTuiApp = (props: CliShellTuiAppProps) => {
           <span key={`line-${index}`}>
             {line.spans.length > 0
               ? line.spans.map((span, spanIndex) => {
-                  let content: ReactNode = (
-                    <span key={`text-${index}-${spanIndex}`} fg={span.fg} bg={span.bg}>
-                      {span.text}
-                    </span>
-                  );
-                  return <span key={`span-${index}-${spanIndex}`}>{content}</span>;
+                const content: ReactNode = (
+                  <span key={`text-${index}-${spanIndex}`} fg={span.fg} bg={span.bg}>
+                    {span.text}
+                  </span>
+                );
+                  let decorated = content;
+                  if ("bold" in span && (span as { bold?: boolean }).bold) {
+                    decorated = <strong>{decorated}</strong>;
+                  }
+                  if ("underline" in span && (span as { underline?: boolean }).underline) {
+                    decorated = <u>{decorated}</u>;
+                  }
+                  return <span key={`span-${index}-${spanIndex}`}>{decorated}</span>;
                 })
               : " "}
             {index < frame.lines.length - 1 ? <br /> : null}

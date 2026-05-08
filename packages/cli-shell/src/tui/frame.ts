@@ -5,7 +5,9 @@ import {
   drawCanvasVerticalLine,
   fillCanvasRow,
   renderCanvasLines,
+  writeCanvasStyledText,
   writeCanvasText,
+  type TerminalCanvasSpan,
   type TerminalCanvasStyledLine,
 } from "./canvas";
 import { fitTerminalText, measureTerminalText } from "./cell-width";
@@ -125,6 +127,105 @@ const buildScrollbar = (totalRows: number, visibleRows: number): string[] => {
     track[thumbStart + index] = "█";
   }
   return track;
+};
+
+const buildViewportScrollbar = (input: {
+  totalRows: number;
+  visibleRows: number;
+  startRow: number;
+}): string[] => {
+  if (input.visibleRows <= 0) {
+    return [];
+  }
+  if (input.totalRows <= input.visibleRows) {
+    return Array.from({ length: input.visibleRows }, () => "▒");
+  }
+  const track = Array.from({ length: input.visibleRows }, () => "░");
+  const thumbSize = Math.max(1, Math.floor((input.visibleRows * input.visibleRows) / input.totalRows));
+  const maxStart = Math.max(1, input.totalRows - input.visibleRows);
+  const safeStart = Math.max(0, Math.min(maxStart, input.startRow));
+  const thumbStart = Math.floor((safeStart / maxStart) * Math.max(0, input.visibleRows - thumbSize));
+  for (let index = 0; index < thumbSize; index += 1) {
+    track[thumbStart + index] = "█";
+  }
+  return track;
+};
+
+const cloneSpan = (span: TerminalCanvasSpan, text: string): TerminalCanvasSpan => ({
+  text,
+  fg: span.fg,
+  bg: span.bg,
+});
+
+const splitTextAtColumn = (text: string, column: number): [string, string] => {
+  const chars = Array.from(text);
+  const safeColumn = Math.max(0, Math.min(column, chars.length));
+  return [chars.slice(0, safeColumn).join(""), chars.slice(safeColumn).join("")];
+};
+
+const materializeTerminalLine = (input: {
+  line: CliShellTuiModel["terminalView"]["richLines"][number];
+  width: number;
+  cursorCol: number | null;
+}): TerminalCanvasSpan[] => {
+  const spans: TerminalCanvasSpan[] = [];
+  const normalizedCursor = input.cursorCol === null ? null : Math.max(0, input.cursorCol);
+  let offset = 0;
+  let cursorInjected = normalizedCursor === null;
+
+  for (const span of input.line.spans) {
+    if (span.text.length === 0) {
+      continue;
+    }
+    const resolvedFg = span.inverse ? (span.bg ?? "#111111") : span.fg;
+    const resolvedBg = span.inverse ? (span.fg ?? "#f3f6fb") : span.bg;
+    const style: TerminalCanvasSpan = {
+      text: span.text,
+      fg: resolvedFg,
+      bg: resolvedBg,
+    };
+    const spanChars = Array.from(span.text);
+    const spanWidth = spanChars.length;
+    const spanEnd = offset + spanWidth;
+    if (!cursorInjected && normalizedCursor !== null && normalizedCursor >= offset && normalizedCursor <= spanEnd) {
+      const [left, right] = splitTextAtColumn(span.text, normalizedCursor - offset);
+      if (left.length > 0) {
+        spans.push(cloneSpan(style, left));
+      }
+      spans.push({
+        text: "█",
+        fg: resolvedBg ?? "#000000",
+        bg: resolvedFg ?? "#ffffff",
+      });
+      if (right.length > 0) {
+        spans.push(cloneSpan(style, right));
+      }
+      cursorInjected = true;
+      offset = spanEnd;
+      continue;
+    }
+    spans.push(style);
+    offset = spanEnd;
+  }
+
+  if (!cursorInjected && normalizedCursor !== null && normalizedCursor >= offset) {
+    spans.push({
+      text: "█",
+      fg: "#000000",
+      bg: "#ffffff",
+    });
+  }
+  return spans;
+};
+
+const resolveCursorColForVisibleRow = (
+  model: CliShellTuiModel["terminalView"],
+  absoluteRow: number,
+): number | null => {
+  if (!model.cursorVisible || model.cursorAbsRow !== absoluteRow) {
+    return null;
+  }
+  return model.cursorCol;
 };
 
 type DialogueRenderableRow =
@@ -252,16 +353,45 @@ const renderTerminalRegion = (input: {
   col: number;
   width: number;
   height: number;
-  lines: readonly string[];
+  model: CliShellTuiModel["terminalView"];
 }): void => {
-  const visible = input.lines.slice(-input.height);
+  if (input.width <= 0 || input.height <= 0) {
+    return;
+  }
+  const scrollbarWidth = 1;
+  const contentWidth = Math.max(1, input.width - scrollbarWidth);
+  const viewportStart = Math.max(0, input.model.viewportEnd - input.height);
+  const visible = input.model.richLines.slice(viewportStart, input.model.viewportEnd);
+  const scrollbar = buildViewportScrollbar({
+    totalRows: input.model.scrollbackRows,
+    visibleRows: input.height,
+    startRow: viewportStart,
+  });
   for (let index = 0; index < input.height; index += 1) {
-    const line = visible[index] ?? "";
-    writeCanvasText(input.canvas, {
-      row: input.row + index,
+    const targetRow = input.row + index;
+    fillCanvasRow(input.canvas, {
+      row: targetRow,
       col: input.col,
-      text: line,
       width: input.width,
+    });
+    const line = visible[index];
+    if (line) {
+      writeCanvasStyledText(input.canvas, {
+        row: targetRow,
+        col: input.col,
+        spans: materializeTerminalLine({
+          line,
+          width: contentWidth,
+          cursorCol: resolveCursorColForVisibleRow(input.model, viewportStart + index),
+        }),
+        width: contentWidth,
+      });
+    }
+    writeCanvasText(input.canvas, {
+      row: targetRow,
+      col: input.col + contentWidth,
+      text: scrollbar[index] ?? "▒",
+      width: scrollbarWidth,
     });
   }
 };
@@ -340,7 +470,7 @@ const renderRightPlacement = (
     col: 0,
     width: splitCol,
     height: bodyHeight,
-    lines: model.terminalLines,
+    model: model.terminalView,
   });
   drawCanvasVerticalLine(canvas, {
     col: splitCol,
@@ -382,7 +512,7 @@ const renderLeftPlacement = (
     col: splitCol + 1,
     width: Math.max(0, width - splitCol - 1),
     height: bodyHeight,
-    lines: model.terminalLines,
+    model: model.terminalView,
   });
 };
 
@@ -400,7 +530,7 @@ const renderBottomPlacement = (
     col: 0,
     width,
     height: Math.max(0, splitRow),
-    lines: model.terminalLines,
+    model: model.terminalView,
   });
   drawCanvasHorizontalLine(canvas, {
     row: splitRow,
@@ -428,7 +558,7 @@ const renderFloatingPlacement = (
     col: 0,
     width,
     height: bodyHeight,
-    lines: model.terminalLines,
+    model: model.terminalView,
   });
   const geometry = resolveFloatingGeometry(width, bodyHeight);
   fillCanvasRow(canvas, {
@@ -491,7 +621,7 @@ const renderDialoguePlacement = (
       col: 0,
       width,
       height: bodyHeight,
-      lines: model.terminalLines,
+      model: model.terminalView,
     });
     return;
   }

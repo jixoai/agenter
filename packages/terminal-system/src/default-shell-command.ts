@@ -38,23 +38,26 @@ const resolveExecutable = (candidates: readonly string[]): string | null => {
 };
 
 /**
- * Shared terminals need an automation-stable interactive shell, not merely the
- * host account's current login shell preference.
+ * Shared terminals should honor the current environment shell first, then fall
+ * back to a broadly available interactive shell.
  */
 export const resolveDefaultInteractiveShellCommand = (): string[] => {
   if (process.platform === "win32") {
     return [process.env.ComSpec ?? "cmd.exe"];
   }
 
-  const bash = resolveExecutable(["/bin/bash", "/usr/bin/bash", "bash"]);
-  if (bash) {
-    return [bash, "-i"];
-  }
-
-  const shell = resolveExecutable([process.env.SHELL ?? "", "/bin/sh", "/usr/bin/sh", "sh"]);
+  const shell = resolveExecutable([
+    process.env.SHELL ?? "",
+    "bash",
+    "/bin/bash",
+    "/usr/bin/bash",
+    "/bin/sh",
+    "/usr/bin/sh",
+    "sh",
+  ]);
   if (shell) {
     return basename(shell) === "bash" ? [shell, "-i"] : [shell, "-i"];
   }
 
-  return ["/bin/sh", "-i"];
+  return [process.env.SHELL ?? "bash", "-i"];
 };

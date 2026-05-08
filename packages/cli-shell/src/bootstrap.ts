@@ -70,6 +70,8 @@ const toRoomActorId = (
   avatarPrincipalId: NonNullable<GlobalAvatarCatalogEntry["avatarPrincipalId"]>,
 ): GlobalRoomActorId => avatarPrincipalId as GlobalRoomActorId;
 
+const resolveCliShellCommand = (): string[] => [process.env.SHELL ?? "bash", "-i"];
+
 const requireAutoLogin = async (store: CliShellStore): Promise<void> => {
   const autoLogin = await store.autoLogin();
   if (!autoLogin.ok) {
@@ -141,6 +143,7 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
     focus: true,
     createInput: {
       processKind: "shell",
+      command: resolveCliShellCommand(),
       cwd: input.workspacePath,
       start: true,
     },
