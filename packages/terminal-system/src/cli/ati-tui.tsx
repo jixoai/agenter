@@ -1,6 +1,7 @@
 import type { KeyEvent } from "@opentui/core";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot, useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { projectTerminalViewport } from "@agenter/termless-core";
 import type { ReactNode } from "react";
 import { useEffect, useSyncExternalStore } from "react";
 
@@ -85,78 +86,6 @@ const encodeTerminalKey = (key: KeyEvent): string | null => {
   return null;
 };
 
-const cloneSpan = (span: RichSpan, text: string): RichSpan => ({
-  text,
-  fg: span.fg,
-  bg: span.bg,
-  bold: span.bold,
-  underline: span.underline,
-});
-
-const injectCursor = (line: RichLine, col: number): RichLine => {
-  const safeCol = Math.max(0, col);
-  const out: RichSpan[] = [];
-  let consumed = 0;
-  let inserted = false;
-
-  for (const span of line.spans) {
-    if (inserted) {
-      out.push(span);
-      consumed += span.text.length;
-      continue;
-    }
-    const next = consumed + span.text.length;
-    if (safeCol > next) {
-      out.push(span);
-      consumed = next;
-      continue;
-    }
-
-    const cut = Math.max(0, Math.min(span.text.length, safeCol - consumed));
-    const before = span.text.slice(0, cut);
-    const after = span.text.slice(cut);
-    if (before.length > 0) {
-      out.push(cloneSpan(span, before));
-    }
-    out.push({
-      text: "█",
-      fg: span.bg ?? "#000000",
-      bg: span.fg ?? "#ffffff",
-      bold: true,
-    });
-    if (after.length > 0) {
-      out.push(cloneSpan(span, after));
-    }
-    inserted = true;
-    consumed = next;
-  }
-
-  if (!inserted) {
-    out.push({
-      text: "█",
-      fg: "#000000",
-      bg: "#ffffff",
-      bold: true,
-    });
-  }
-
-  return { spans: out };
-};
-
-const findInverseCursor = (lines: RichLine[]): { row: number; col: number } | null => {
-  for (let row = lines.length - 1; row >= 0; row -= 1) {
-    const spans = lines[row]?.spans ?? [];
-    let col = 0;
-    for (const span of spans) {
-      if (span.inverse && span.text.length > 0) {
-        return { row, col };
-      }
-      col += span.text.length;
-    }
-  }
-  return null;
-};
-
 class AtiTuiStore {
   private snapshot: AtiSnapshot;
   private stickyCursor: { row: number; col: number } | null = null;
@@ -191,58 +120,29 @@ class AtiTuiStore {
   }
 
   updateRender(render: RenderResult, status: TerminalStatus, viewportRows: number): void {
-    const lines = render.richLines;
-    const safeRows = Math.max(1, viewportRows);
-    const inverseCursor = findInverseCursor(lines);
+    const projection = projectTerminalViewport({
+      lines: render.richLines,
+      cursorAbsRow: render.cursorAbsRow,
+      cursorCol: render.cursorCol,
+      cursorVisible: render.cursorVisible,
+      viewportRows,
+      stickyCursor: this.stickyCursor,
+    });
 
-    let resolvedCursor = {
-      row: render.cursorAbsRow,
-      col: render.cursorCol,
-      source: "none" as AtiSnapshot["cursorSource"],
-    };
-    if (inverseCursor) {
-      resolvedCursor = {
-        row: inverseCursor.row,
-        col: inverseCursor.col,
-        source: "inverse",
-      };
-      this.stickyCursor = { row: inverseCursor.row, col: inverseCursor.col };
-    } else if (render.cursorVisible) {
-      resolvedCursor = {
-        row: render.cursorAbsRow,
-        col: render.cursorCol,
-        source: "hardware",
-      };
-      this.stickyCursor = { row: render.cursorAbsRow, col: render.cursorCol };
-    } else if (this.stickyCursor) {
-      resolvedCursor = {
-        row: this.stickyCursor.row,
-        col: this.stickyCursor.col,
-        source: "sticky",
-      };
-    }
-
-    const maxRow = Math.max(0, lines.length - 1);
-    const focusRow = Math.max(0, Math.min(maxRow, resolvedCursor.row));
-    const start = Math.max(0, focusRow - safeRows + 1);
-    const end = Math.min(lines.length, start + safeRows);
-    const view = lines.slice(start, end).map((line) => ({ spans: [...line.spans] }));
-    const cursorRowInView = resolvedCursor.row - start;
-    if (resolvedCursor.source === "hardware" && cursorRowInView >= 0 && cursorRowInView < view.length) {
-      const raw = view[cursorRowInView] ?? { spans: [] };
-      view[cursorRowInView] = injectCursor(raw, resolvedCursor.col);
+    if (projection.cursor.source === "inverse" || projection.cursor.source === "hardware") {
+      this.stickyCursor = { row: projection.cursor.row, col: projection.cursor.col };
     }
 
     this.snapshot = {
       ...this.snapshot,
       status,
-      cursorRow: resolvedCursor.row + 1,
-      cursorCol: resolvedCursor.col + 1,
+      cursorRow: projection.cursor.row + 1,
+      cursorCol: projection.cursor.col + 1,
       cursorVisible: render.cursorVisible,
-      cursorSource: resolvedCursor.source,
+      cursorSource: projection.cursor.source as AtiSnapshot["cursorSource"],
       rawCursorRow: render.cursorAbsRow + 1,
       rawCursorCol: render.cursorCol + 1,
-      lines: view,
+      lines: projection.lines as RichLine[],
     };
     this.emit();
   }

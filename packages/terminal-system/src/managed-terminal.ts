@@ -1,5 +1,12 @@
 import { AgenticTerminal } from "./agentic-terminal";
-import type { RenderResult, RichLine, TerminalDirtySliceOptions, TerminalDirtySliceResult, TerminalPendingInputResult, TerminalStatus } from "./types";
+import type {
+  RichLine,
+  StructuredRenderResult,
+  TerminalDirtySliceOptions,
+  TerminalDirtySliceResult,
+  TerminalPendingInputResult,
+  TerminalStatus,
+} from "./types";
 import type { TerminalLifecycleState, TerminalObservedIdentity } from "./terminal-runtime-truth";
 
 export interface ManagedTerminalConfig {
@@ -182,8 +189,8 @@ export class ManagedTerminal {
       logStyle: this.config.logStyle ?? "rich",
     });
 
-    this.terminal.onRender((render) => {
-      this.snapshot = this.toSnapshot(render);
+    this.terminal.onStructured((structured) => {
+      this.snapshot = this.toSnapshot(structured);
       this.emitSnapshot();
     });
 
@@ -241,7 +248,7 @@ export class ManagedTerminal {
     }
 
     this.running = true;
-    this.snapshot = this.toSnapshot(this.terminal.getLatestRender());
+    this.snapshot = this.toSnapshot(this.terminal.getLatestStructured());
     this.emitSnapshot();
     this.emitLifecycle({
       processPhase: "running",
@@ -536,8 +543,9 @@ export class ManagedTerminal {
     this.emitSnapshot();
   }
 
-  private toSnapshot(render: RenderResult): ManagedTerminalSnapshot {
+  private toSnapshot(render: StructuredRenderResult): ManagedTerminalSnapshot {
     this.seq += 1;
+    const lines = render.richLines.map((line) => line.spans.map((span) => span.text).join(""));
 
     return {
       seq: this.seq,
@@ -546,7 +554,7 @@ export class ManagedTerminal {
       rows: this.rows,
       // Preserve the whole xterm scrollback so the frontend terminal can restore
       // a stable buffer and expose real scrolling, while rows/cols keep the PTY geometry.
-      lines: [...render.plainLines],
+      lines,
       richLines: render.richLines.map((line) => ({
         spans: line.spans.map((span) => ({ ...span })),
       })),
@@ -555,11 +563,7 @@ export class ManagedTerminal {
         y: render.cursorAbsRow,
         visible: render.cursorVisible,
       },
-      scrollback: {
-        viewportOffset: Math.max(0, render.plainLines.length - this.rows),
-        totalLines: render.plainLines.length,
-        screenLines: this.rows,
-      },
+      scrollback: { ...render.scrollback },
     };
   }
 }

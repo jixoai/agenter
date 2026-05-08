@@ -122,6 +122,11 @@ export class AgenticTerminal {
     cursorAbsRow: 0,
     cursorCol: 0,
     cursorVisible: true,
+    scrollback: {
+      viewportOffset: 0,
+      totalLines: 0,
+      screenLines: 0,
+    },
   };
 
   private readonly profile;

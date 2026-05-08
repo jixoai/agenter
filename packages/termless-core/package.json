@@ -7,7 +7,8 @@
   },
   "dependencies": {
     "@termless/core": "^0.6.0",
-    "@xterm/headless": "6.1.0-beta.167"
+    "@xterm/headless": "6.1.0-beta.167",
+    "string-width": "^7.2.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

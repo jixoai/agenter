@@ -10,6 +10,7 @@ import {
   type TerminalCanvasSpan,
   type TerminalCanvasStyledLine,
 } from "./canvas";
+import { projectTerminalViewport } from "@agenter/termless-core";
 import { fitTerminalText, measureTerminalText } from "./cell-width";
 import type { CliShellDialogueBlock, CliShellDialoguePlacement, CliShellTuiModel } from "./types";
 
@@ -195,83 +196,6 @@ const buildViewportScrollbar = (input: {
   return track;
 };
 
-const cloneSpan = (span: TerminalCanvasSpan, text: string): TerminalCanvasSpan => ({
-  text,
-  fg: span.fg,
-  bg: span.bg,
-});
-
-const splitTextAtColumn = (text: string, column: number): [string, string] => {
-  const chars = Array.from(text);
-  const safeColumn = Math.max(0, Math.min(column, chars.length));
-  return [chars.slice(0, safeColumn).join(""), chars.slice(safeColumn).join("")];
-};
-
-const materializeTerminalLine = (input: {
-  line: CliShellTuiModel["terminalView"]["richLines"][number];
-  width: number;
-  cursorCol: number | null;
-}): TerminalCanvasSpan[] => {
-  const spans: TerminalCanvasSpan[] = [];
-  const normalizedCursor = input.cursorCol === null ? null : Math.max(0, input.cursorCol);
-  let offset = 0;
-  let cursorInjected = normalizedCursor === null;
-
-  for (const span of input.line.spans) {
-    if (span.text.length === 0) {
-      continue;
-    }
-    const resolvedFg = span.inverse ? (span.bg ?? "#111111") : span.fg;
-    const resolvedBg = span.inverse ? (span.fg ?? "#f3f6fb") : span.bg;
-    const style: TerminalCanvasSpan = {
-      text: span.text,
-      fg: resolvedFg,
-      bg: resolvedBg,
-    };
-    const spanChars = Array.from(span.text);
-    const spanWidth = spanChars.length;
-    const spanEnd = offset + spanWidth;
-    if (!cursorInjected && normalizedCursor !== null && normalizedCursor >= offset && normalizedCursor <= spanEnd) {
-      const [left, right] = splitTextAtColumn(span.text, normalizedCursor - offset);
-      if (left.length > 0) {
-        spans.push(cloneSpan(style, left));
-      }
-      spans.push({
-        text: "█",
-        fg: resolvedBg ?? "#000000",
-        bg: resolvedFg ?? "#ffffff",
-      });
-      if (right.length > 0) {
-        spans.push(cloneSpan(style, right));
-      }
-      cursorInjected = true;
-      offset = spanEnd;
-      continue;
-    }
-    spans.push(style);
-    offset = spanEnd;
-  }
-
-  if (!cursorInjected && normalizedCursor !== null && normalizedCursor >= offset) {
-    spans.push({
-      text: "█",
-      fg: "#000000",
-      bg: "#ffffff",
-    });
-  }
-  return spans;
-};
-
-const resolveCursorColForVisibleRow = (
-  model: CliShellTuiModel["terminalView"],
-  absoluteRow: number,
-): number | null => {
-  if (!model.cursorVisible || model.cursorAbsRow !== absoluteRow) {
-    return null;
-  }
-  return model.cursorCol;
-};
-
 type DialogueRenderableRow =
   | { kind: "message"; gutter: string; content: string; bg?: string }
   | { kind: "divider"; content: string }
@@ -404,13 +328,17 @@ const renderTerminalRegion = (input: {
   }
   const scrollbarWidth = 1;
   const contentWidth = Math.max(1, input.width - scrollbarWidth);
-  const viewportStart = Math.max(0, input.model.viewportStart);
-  const viewportEnd = Math.max(viewportStart, input.model.viewportEnd);
-  const visible = input.model.richLines.slice(viewportStart, viewportEnd);
+  const projection = projectTerminalViewport({
+    lines: input.model.richLines,
+    cursorAbsRow: input.model.cursorAbsRow,
+    cursorCol: input.model.cursorCol,
+    cursorVisible: input.model.cursorVisible,
+    viewportRows: input.height,
+  });
   const scrollbar = buildViewportScrollbar({
     totalRows: input.model.scrollbackRows,
     visibleRows: input.height,
-    startRow: viewportStart,
+    startRow: projection.viewport.start,
   });
   for (let index = 0; index < input.height; index += 1) {
     const targetRow = input.row + index;
@@ -419,16 +347,16 @@ const renderTerminalRegion = (input: {
       col: input.col,
       width: input.width,
     });
-    const line = visible[index];
+    const line = projection.lines[index];
     if (line) {
       writeCanvasStyledText(input.canvas, {
         row: targetRow,
         col: input.col,
-        spans: materializeTerminalLine({
-          line,
-          width: contentWidth,
-          cursorCol: resolveCursorColForVisibleRow(input.model, viewportStart + index),
-        }),
+        spans: line.spans.map((span) => ({
+          text: span.text,
+          fg: span.inverse ? (span.bg ?? "#111111") : span.fg,
+          bg: span.inverse ? (span.fg ?? "#f3f6fb") : span.bg,
+        })),
         width: contentWidth,
       });
     }

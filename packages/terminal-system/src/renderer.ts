@@ -361,6 +361,7 @@ export const renderStructuredBuffer = (bridge: XtermBridge): StructuredRenderRes
     cursorVisible: structured.cursor.visible ?? true,
     rows: structured.rows,
     cols: structured.cols,
+    scrollback: structured.scrollback,
   };
 };
 

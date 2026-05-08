@@ -57,6 +57,12 @@ export interface StructuredRenderResult {
   rows: number;
   /** Current terminal cols */
   cols: number;
+  /** Absolute scrollback/viewport truth from the terminal backend */
+  scrollback: {
+    viewportOffset: number;
+    totalLines: number;
+    screenLines: number;
+  };
 }
 
 export interface RenderResult {

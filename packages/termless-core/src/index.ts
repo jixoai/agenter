@@ -1,7 +1,9 @@
 export { AgenterXtermBackend } from "./agenter-xterm-backend.js";
+export { projectTerminalViewport } from "./project-terminal-viewport.js";
 export { renderStructuredBuffer } from "./render-structured-buffer.js";
 export type { TerminalRenderRichLine, TerminalRenderRichSpan, TerminalStructuredRender } from "./render-structured-buffer.js";
 export { XtermReadableBridge, XtermBridge } from "./termless-bridge.js";
+export type { ProjectedTerminalViewport, TerminalViewportCursorSource } from "./project-terminal-viewport.js";
 export type {
   Cell,
   CursorState,
