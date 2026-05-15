@@ -1,4 +1,7 @@
-import { renderStructuredBuffer as renderStructuredBufferCore } from "@agenter/termless-core";
+import {
+  renderStructuredBuffer as renderStructuredBufferCore,
+  renderStructuredViewportBuffer,
+} from "@agenter/termless-core";
 import type { Cell } from "@agenter/termless-core";
 
 import type { RenderResult, RichLine, RichSpan, StructuredRenderResult, TerminalLogStyle } from "./types";
@@ -353,6 +356,19 @@ export const compactRenderForPersistence = (render: RenderResult): RenderResult 
 };
 
 export const renderStructuredBuffer = (bridge: XtermBridge): StructuredRenderResult => {
+  const structured = renderStructuredViewportBuffer(bridge);
+  return {
+    richLines: structured.richLines,
+    cursorAbsRow: structured.cursor.y + structured.scrollback.viewportOffset,
+    cursorCol: structured.cursor.x,
+    cursorVisible: structured.cursor.visible ?? true,
+    rows: structured.rows,
+    cols: structured.cols,
+    scrollback: structured.scrollback,
+  };
+};
+
+export const renderFullStructuredBuffer = (bridge: XtermBridge): StructuredRenderResult => {
   const structured = renderStructuredBufferCore(bridge);
   return {
     richLines: structured.richLines,

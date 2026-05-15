@@ -128,6 +128,26 @@ Debug 约束（用于定位 resize 问题）：
 
 ## 4. 渲染与语义约束
 
+- terminal screen transport 采用 dirty signal + client-paced pull：
+  - backend 对屏幕变化发送 `frameDirty`
+  - client 按自身 pacing 发送 `pullFrame`
+  - 本地传输默认返回 viewport-sized row-cache frame：后端仍直接序列化当前 viewport 行，但通过每个 WebSocket attachment 私有的行 `cid` 缓存复用已知行，减少重复传输和解析
+  - `cid=0` 固定表示空白无样式行；未知非零 `cid` 且未携带行内容时必须视为协议错误/重置条件
+  - row-cache / not-modified 类优化只能属于 transport codec/patch 层，不允许在 product、viewport 或 frontend render 逻辑里通过可见 frame 对象比较来跳过工作
+  - diff 只作为显式 `transport.framePatchMode: "diff"` 的远程/低带宽优化，不是本地默认路径
+  - `pullFrame` 只表达 last applied frame 与当前 geometry；viewport 变化必须通过显式 `viewportDelta` / `viewportTarget` 先进入 backend truth
+  - frame transport 必须拆成三个正交循环：
+    - input drain loop：WebSocket 消息先进入 backend queue；连续 `viewportDelta` 可以合并为一次 `scrollViewport(delta)`；`inputBytes`、`resize`、`viewportTarget`、`pullFrame` 等语义事件会先 flush 当前滚动段再处理
+    - dirty clock loop：每个 terminal backend 共享一个默认 20FPS 的 dirty 检查循环；dirty 状态跟随 WebSocket attachment，而不是全局 terminal；已 dirty 但未 pull 的连接不重复收到 dirty
+    - pull/draw delivery loop：client 客观发送滚动/输入事件后即结束输入任务；默认输出路径固定 20FPS 拉取后端 cells 并通过 frame buffer 重放；动态刷新只作为显式实验能力，dirty 可提升到 20FPS，并在前端实际绘制 cells 连续安静后降到 1FPS
+  - 前端输入事件不得成为本地 screen refresh 请求；滚轮/键盘/鼠标只负责发送 backend event，最终画面只能来自后端 cells 拉取结果
+  - backend viewport 输入同样不得同步发送 `frameDirty` 或直接激活 pull；`viewportDelta` / `viewportTarget` 只修改 backend viewport truth，后续可见结果由 dirty clock 或 client 下一次 `pullFrame` 消费
+  - 同一个 pulled frame 只能进入一条 cells paint path；mirror subscription/status 不能和 frame paint callback 同时触发同一帧的重复重绘
+  - dirty 判断以 backend `getText()` 为主要优化比较源，同时附加 viewport/cursor facts，确保纯滚动和光标移动能触发可见帧 dirty
+  - 当前 JS 运行时依赖事件循环顺序保证 queued input 与 `pullFrame` 的垂直同步；不需要额外 pre-pull flush。若未来迁移到多线程运行时，必须重新审查这个同步边界
+  - WebSocket 仍然是 transport control plane：负责 bootstrap、credential、lifecycle close 与 fallback；同 Bun 进程/同 pid 客户端可以在 `hello`/`helloAck` 后升级到 same-process direct data plane
+  - same-process direct data plane 只用函数调用承载同一套 semantic terminal messages，消息仍进入 backend input drain；它不是第二个 terminal truth、不是 product-layer shortcut，也不绑定 BroadcastChannel
+  - direct upgrade token 必须一次性 claim；未来如果扩展到 worker/thread/cross-process，可以替换底层 broker，但必须保留 WebSocket control-plane 与 direct data-plane 的边界
 - 落盘链路必须是 **ANSI-first**：
   - 先从 xterm buffer 生成结构化快照（`richLines` + cursor + rows/cols）
   - 再按 `log-style` 序列化到 `log.html`
@@ -321,9 +341,14 @@ git-log 约束：
   - connect 时允许发送一份 renderable snapshot 作为 viewport hydration baseline，即使 terminal 当前是 stopped 也可以连接并拿到 bootstrap snapshot
   - live 阶段的主 truth 是 `outputBytes` / `status`，而不是每个 render tick 都镜像一份 full snapshot
   - geometry 未变化时，不得持续推送冗余 full snapshot
-  - client 可以发送 `resize` sideband frame 同步本地 viewport geometry
+  - client 可以发送 `resize` sideband frame 同步 backend terminal geometry，但 geometry authority 必须是显式 contract，而不是 last-resizer-wins 副作用
+  - same-terminal attachments 还必须支持显式 `viewportDelta` sideband frame，让 shared viewport mutation 回到 backend terminal truth，而不是藏在 host-local scroll state
   - client 可以发送 `inputBytes` frame 转发 xterm 交互字节；方向键、快捷键、普通输入、binary mouse report 都不得伪装成 automation write
   - browser `keydown/paste/mouse/focus` 只是 renderer 本地事实；transport 优先承载 terminal-native bytes / control sequences，而不是浏览器语义事件总线
+- one terminal truth 必须同时驱动 renderable snapshot truth、durable terminal change-log truth 与 terminal observation ingress truth；client projection cache 不能被提升成第二 authoritative terminal state machine。
+- 同一个 terminal id 的 attachments 默认共享 visible viewport truth 与 visible input effects；如果一个 attachment 触发 shared viewport mutation，结果必须先经 backend apply，再由 authoritative publication 回显给所有 attachments。
+- geometry authority 与 presentation scaling 必须分离：projection-only attachment 可以 fit/cover/zoom shared geometry，但不得在另一个 attachment 持有 authority 时静默重写 backend cols/rows。
+- projection contract 要求同一 terminal truth 保持连续 renderer surface；不得把 scrollback/history 降级成第二个 plain-text mirror fidelity tier。
 - terminal listing / transport contract 必须显式携带：
   - global terminal id
   - title

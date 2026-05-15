@@ -68,22 +68,22 @@ const makeCases = (agentCwd: string): ReproCase[] => {
     {
       id: "start_with_cwd",
       token: makeToken("start_with_cwd"),
-      command: ["bun", "run", "src/index.terminal-devtools.tsx", `--cwd=${agentCwd}`],
+      command: ["bun", "run", "src/index.terminal-devtools.ts", `--cwd=${agentCwd}`],
     },
     {
       id: "start_without_cwd",
       token: makeToken("start_without_cwd"),
-      command: ["bun", "run", "src/index.terminal-devtools.tsx"],
+      command: ["bun", "run", "src/index.terminal-devtools.ts"],
     },
     {
       id: "watch_with_cwd",
       token: makeToken("watch_with_cwd"),
-      command: ["bun", "--watch", "run", "src/index.terminal-devtools.tsx", "--", `--cwd=${agentCwd}`],
+      command: ["bun", "--watch", "run", "src/index.terminal-devtools.ts", "--", `--cwd=${agentCwd}`],
     },
     {
       id: "watch_without_cwd",
       token: makeToken("watch_without_cwd"),
-      command: ["bun", "--watch", "run", "src/index.terminal-devtools.tsx", "--"],
+      command: ["bun", "--watch", "run", "src/index.terminal-devtools.ts", "--"],
     },
   ].map((item) => ({
     ...item,

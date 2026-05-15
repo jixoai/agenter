@@ -3,6 +3,7 @@ import type {
   AuthSessionOutput,
   GlobalTerminalActorId,
   ProductDelegationRecord,
+  ProductExtensionRuntimeStore,
 } from "@agenter/client-sdk";
 import {
   PRODUCT_HOSTING_DISABLED_SCORES,
@@ -11,8 +12,29 @@ import {
   PRODUCT_HOSTING_USER_DISABLED_REASON,
 } from "@agenter/product-extension-runtime";
 
-import type { CliShellStore } from "./bootstrap";
 import { CLI_SHELL_PRODUCT_ID } from "./product";
+
+type CliShellManagedStore = Pick<
+  ProductExtensionRuntimeStore,
+  | "queryAttention"
+  | "commitAttention"
+  | "settleAttention"
+  | "listProductDelegations"
+  | "createProductDelegation"
+  | "revokeProductDelegation"
+> & {
+  getAuthSession(): Promise<AuthSessionOutput | null>;
+  grantGlobalTerminalWriteLease(input: {
+    terminalId: string;
+    participantId: GlobalTerminalActorId;
+    durationMs: number;
+  }): Promise<{ leaseId: string; participantId: GlobalTerminalActorId; expiresAt: number }>;
+  revokeGlobalTerminalWriteLease(input: {
+    terminalId: string;
+    leaseId?: string;
+    participantId?: GlobalTerminalActorId;
+  }): Promise<{ ok: true; revokedCount: number }>;
+};
 
 export const CLI_SHELL_DEFAULT_DELEGATION_TTL_MS = 30 * 60 * 1_000;
 
@@ -24,7 +46,7 @@ export interface CliShellManagedContext {
 }
 
 export interface CliShellManagedEnableInput extends CliShellManagedContext {
-  store: CliShellStore;
+  store: CliShellManagedStore;
   terminalId: string;
   roomId: string;
   objective?: string;
@@ -33,7 +55,7 @@ export interface CliShellManagedEnableInput extends CliShellManagedContext {
 }
 
 export interface CliShellManagedDisableInput extends CliShellManagedContext {
-  store: CliShellStore;
+  store: CliShellManagedStore;
   terminalId?: string;
   roomId?: string;
   notes?: string;
@@ -117,7 +139,7 @@ const resolveLatestActiveDelegation = (
 export const buildCliShellHostingContextId = (shellName: string): string => `ctx-hosting-${shellName}`;
 
 export const readCliShellManagedState = async (input: {
-  store: CliShellStore;
+  store: CliShellManagedStore;
   sessionId: string;
   runtimeId: string;
   avatarActorId: string;

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file proto/terminal_transport.proto.
  */
 export const file_proto_terminal_transport: GenFile = /*@__PURE__*/
-  fileDesc("Ch5wcm90by90ZXJtaW5hbF90cmFuc3BvcnQucHJvdG8SHWFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxIkgKDlRlcm1pbmFsQ3Vyc29yEgkKAXgYASABKA0SCQoBeRgCIAEoDRIUCgd2aXNpYmxlGAMgASgISACIAQFCCgoIX3Zpc2libGUiWAoSVGVybWluYWxTY3JvbGxiYWNrEhcKD3ZpZXdwb3J0X29mZnNldBgBIAEoDRITCgt0b3RhbF9saW5lcxgCIAEoDRIUCgxzY3JlZW5fbGluZXMYAyABKA0iggEKEFRlcm1pbmFsUmljaFNwYW4SDAoEdGV4dBgBIAEoCRIPCgJmZxgCIAEoCUgAiAEBEg8KAmJnGAMgASgJSAGIAQESDAoEYm9sZBgEIAEoCBIRCgl1bmRlcmxpbmUYBSABKAgSDwoHaW52ZXJzZRgGIAEoCEIFCgNfZmdCBQoDX2JnIlIKEFRlcm1pbmFsUmljaExpbmUSPgoFc3BhbnMYASADKAsyLy5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFJpY2hTcGFuIrsCChBUZXJtaW5hbFNuYXBzaG90EgsKA3NlcRgBIAEoDRIWCgl0aW1lc3RhbXAYAiABKAFIAIgBARIMCgRjb2xzGAMgASgNEgwKBHJvd3MYBCABKA0SDQoFbGluZXMYBSADKAkSQwoKcmljaF9saW5lcxgGIAMoCzIvLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsUmljaExpbmUSPQoGY3Vyc29yGAcgASgLMi0uYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxDdXJzb3ISRQoKc2Nyb2xsYmFjaxgIIAEoCzIxLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsU2Nyb2xsYmFja0IMCgpfdGltZXN0YW1wIjkKDVRlcm1pbmFsSGVsbG8SGAoLdGVybWluYWxfaWQYASABKAlIAIgBAUIOCgxfdGVybWluYWxfaWQiLAoOVGVybWluYWxSZXNpemUSDAoEY29scxgBIAEoDRIMCgRyb3dzGAIgASgNIiIKElRlcm1pbmFsSW5wdXRCeXRlcxIMCgRkYXRhGAEgASgMIucBChNUZXJtaW5hbENsaWVudEZyYW1lEj0KBWhlbGxvGAEgASgLMiwuYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxIZWxsb0gAEj8KBnJlc2l6ZRgCIAEoCzItLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsUmVzaXplSAASSAoLaW5wdXRfYnl0ZXMYAyABKAsyMS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbElucHV0Qnl0ZXNIAEIGCgRib2R5IjgKE1Rlcm1pbmFsT3V0cHV0Qnl0ZXMSEwoLdGVybWluYWxfaWQYASABKAkSDAoEZGF0YRgCIAEoDCKuAQoVVGVybWluYWxTbmFwc2hvdEZyYW1lEhMKC3Rlcm1pbmFsX2lkGAEgASgJEkEKCHNuYXBzaG90GAIgASgLMi8uYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxTbmFwc2hvdBI9CgZzdGF0dXMYAyABKA4yLS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFN0YXR1cyJ6ChNUZXJtaW5hbFN0YXR1c0ZyYW1lEhMKC3Rlcm1pbmFsX2lkGAEgASgJEg8KB3J1bm5pbmcYAiABKAgSPQoGc3RhdHVzGAMgASgOMi0uYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxTdGF0dXMiOgoSVGVybWluYWxFcnJvckZyYW1lEhMKC3Rlcm1pbmFsX2lkGAEgASgJEg8KB21lc3NhZ2UYAiABKAkiJwoQVGVybWluYWxIZWxsb0FjaxITCgt0ZXJtaW5hbF9pZBgBIAEoCSKDAwoTVGVybWluYWxTZXJ2ZXJGcmFtZRJICghzbmFwc2hvdBgBIAEoCzI0LmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsU25hcHNob3RGcmFtZUgAEkQKBnN0YXR1cxgCIAEoCzIyLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsU3RhdHVzRnJhbWVIABJCCgVlcnJvchgDIAEoCzIxLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsRXJyb3JGcmFtZUgAEkQKCWhlbGxvX2FjaxgEIAEoCzIvLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsSGVsbG9BY2tIABJKCgxvdXRwdXRfYnl0ZXMYBSABKAsyMi5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbE91dHB1dEJ5dGVzSABCBgoEYm9keSplCg5UZXJtaW5hbFN0YXR1cxIfChtURVJNSU5BTF9TVEFUVVNfVU5TUEVDSUZJRUQQABIYChRURVJNSU5BTF9TVEFUVVNfSURMRRABEhgKFFRFUk1JTkFMX1NUQVRVU19CVVNZEAJiBnByb3RvMw");
+  fileDesc("Ch5wcm90by90ZXJtaW5hbF90cmFuc3BvcnQucHJvdG8SHWFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxIkgKDlRlcm1pbmFsQ3Vyc29yEgkKAXgYASABKA0SCQoBeRgCIAEoDRIUCgd2aXNpYmxlGAMgASgISACIAQFCCgoIX3Zpc2libGUiWAoSVGVybWluYWxTY3JvbGxiYWNrEhcKD3ZpZXdwb3J0X29mZnNldBgBIAEoDRITCgt0b3RhbF9saW5lcxgCIAEoDRIUCgxzY3JlZW5fbGluZXMYAyABKA0iggEKEFRlcm1pbmFsUmljaFNwYW4SDAoEdGV4dBgBIAEoCRIPCgJmZxgCIAEoCUgAiAEBEg8KAmJnGAMgASgJSAGIAQESDAoEYm9sZBgEIAEoCBIRCgl1bmRlcmxpbmUYBSABKAgSDwoHaW52ZXJzZRgGIAEoCEIFCgNfZmdCBQoDX2JnIlIKEFRlcm1pbmFsUmljaExpbmUSPgoFc3BhbnMYASADKAsyLy5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFJpY2hTcGFuIr8CChRUZXJtaW5hbEZyYW1lUGF5bG9hZBILCgNzZXEYASABKA0SFgoJdGltZXN0YW1wGAIgASgBSACIAQESDAoEY29scxgDIAEoDRIMCgRyb3dzGAQgASgNEg0KBWxpbmVzGAUgAygJEkMKCnJpY2hfbGluZXMYBiADKAsyLy5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFJpY2hMaW5lEj0KBmN1cnNvchgHIAEoCzItLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsQ3Vyc29yEkUKCnNjcm9sbGJhY2sYCCABKAsyMS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFNjcm9sbGJhY2tCDAoKX3RpbWVzdGFtcCKgAgoNVGVybWluYWxIZWxsbxIYCgt0ZXJtaW5hbF9pZBgBIAEoCUgAiAEBEkoKDWdlb21ldHJ5X3JvbGUYAiABKA4yMy5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbEdlb21ldHJ5Um9sZRIbCg5nZW9tZXRyeV9vcmRlchgDIAEoEUgBiAEBEhMKC2RlYnVnX3RyYWNlGAQgASgIEhkKDHJ1bnRpbWVfanNvbhgFIAEoCUgCiAEBEhgKC2RpcmVjdF9qc29uGAYgASgJSAOIAQFCDgoMX3Rlcm1pbmFsX2lkQhEKD19nZW9tZXRyeV9vcmRlckIPCg1fcnVudGltZV9qc29uQg4KDF9kaXJlY3RfanNvbiIsCg5UZXJtaW5hbFJlc2l6ZRIMCgRjb2xzGAEgASgNEgwKBHJvd3MYAiABKA0iIgoSVGVybWluYWxJbnB1dEJ5dGVzEgwKBGRhdGEYASABKAwiKwoVVGVybWluYWxWaWV3cG9ydERlbHRhEhIKCmRlbHRhX3Jvd3MYASABKBEiMAoWVGVybWluYWxWaWV3cG9ydFRhcmdldBIWCg52aWV3cG9ydF9zdGFydBgBIAEoDSKBAQoRVGVybWluYWxQdWxsRnJhbWUSHgoWbGFzdF9hcHBsaWVkX2ZyYW1lX3NlcRgBIAEoDRIMCgRjb2xzGAIgASgNEgwKBHJvd3MYAyABKA0SHAoPbWF4X3BhdGNoX2J5dGVzGAQgASgNSACIAQFCEgoQX21heF9wYXRjaF9ieXRlcyLRAwoTVGVybWluYWxDbGllbnRGcmFtZRI9CgVoZWxsbxgBIAEoCzIsLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsSGVsbG9IABI/CgZyZXNpemUYAiABKAsyLS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFJlc2l6ZUgAEkgKC2lucHV0X2J5dGVzGAMgASgLMjEuYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxJbnB1dEJ5dGVzSAASTgoOdmlld3BvcnRfZGVsdGEYBCABKAsyNC5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFZpZXdwb3J0RGVsdGFIABJQCg92aWV3cG9ydF90YXJnZXQYBSABKAsyNS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFZpZXdwb3J0VGFyZ2V0SAASRgoKcHVsbF9mcmFtZRgGIAEoCzIwLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsUHVsbEZyYW1lSABCBgoEYm9keSJcChZUZXJtaW5hbEZyYW1lRnVsbFBhdGNoEkIKBWZyYW1lGAEgASgLMjMuYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxGcmFtZVBheWxvYWQidgoVVGVybWluYWxGcmFtZVJvd1BhdGNoEgsKA3JvdxgBIAEoDRIMCgRsaW5lGAIgASgJEkIKCXJpY2hfbGluZRgDIAEoCzIvLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsUmljaExpbmUiwwIKFlRlcm1pbmFsRnJhbWVSb3dzUGF0Y2gSFgoOYmFzZV9mcmFtZV9zZXEYASABKA0SSQoLcm93X3BhdGNoZXMYAiADKAsyNC5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbEZyYW1lUm93UGF0Y2gSDAoEY29scxgDIAEoDRIMCgRyb3dzGAQgASgNEj0KBmN1cnNvchgFIAEoCzItLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsQ3Vyc29yEkUKCnNjcm9sbGJhY2sYBiABKAsyMS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFNjcm9sbGJhY2sSFgoJdGltZXN0YW1wGAcgASgBSACIAQFCDAoKX3RpbWVzdGFtcCL4AgocVGVybWluYWxGcmFtZVNjcm9sbFJvd3NQYXRjaBIWCg5iYXNlX2ZyYW1lX3NlcRgBIAEoDRISCgpkZWx0YV9yb3dzGAIgASgREhYKDmluc2VydGVkX2xpbmVzGAMgAygJEkwKE2luc2VydGVkX3JpY2hfbGluZXMYBCADKAsyLy5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFJpY2hMaW5lEgwKBGNvbHMYBSABKA0SDAoEcm93cxgGIAEoDRI9CgZjdXJzb3IYByABKAsyLS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbEN1cnNvchJFCgpzY3JvbGxiYWNrGAggASgLMjEuYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxTY3JvbGxiYWNrEhYKCXRpbWVzdGFtcBgJIAEoAUgAiAEBQgwKCl90aW1lc3RhbXAihQEKFlRlcm1pbmFsRnJhbWVDYWNoZWRSb3cSCwoDY2lkGAEgASgNEhEKBGxpbmUYAiABKAlIAIgBARJCCglyaWNoX2xpbmUYAyABKAsyLy5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFJpY2hMaW5lQgcKBV9saW5lIsgCChpUZXJtaW5hbEZyYW1lUm93Q2FjaGVQYXRjaBIWCg5iYXNlX2ZyYW1lX3NlcRgBIAEoDRJKCgtjYWNoZWRfcm93cxgCIAMoCzI1LmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsRnJhbWVDYWNoZWRSb3cSDAoEY29scxgDIAEoDRIMCgRyb3dzGAQgASgNEj0KBmN1cnNvchgFIAEoCzItLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsQ3Vyc29yEkUKCnNjcm9sbGJhY2sYBiABKAsyMS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFNjcm9sbGJhY2sSFgoJdGltZXN0YW1wGAcgASgBSACIAQFCDAoKX3RpbWVzdGFtcCJdCh1UZXJtaW5hbEZyYW1lTm90TW9kaWZpZWRQYXRjaBIWCg5iYXNlX2ZyYW1lX3NlcRgBIAEoDRIWCgl0aW1lc3RhbXAYAiABKAFIAIgBAUIMCgpfdGltZXN0YW1wIqQDChJUZXJtaW5hbEZyYW1lUGF0Y2gSRQoEZnVsbBgBIAEoCzI1LmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsRnJhbWVGdWxsUGF0Y2hIABJFCgRyb3dzGAIgASgLMjUuYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxGcmFtZVJvd3NQYXRjaEgAElIKC3Njcm9sbF9yb3dzGAMgASgLMjsuYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxGcmFtZVNjcm9sbFJvd3NQYXRjaEgAEk4KCXJvd19jYWNoZRgEIAEoCzI5LmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsRnJhbWVSb3dDYWNoZVBhdGNoSAASVAoMbm90X21vZGlmaWVkGAUgASgLMjwuYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxGcmFtZU5vdE1vZGlmaWVkUGF0Y2hIAEIGCgRib2R5InIKElRlcm1pbmFsRnJhbWVEaXJ0eRITCgt0ZXJtaW5hbF9pZBgBIAEoCRIRCglmcmFtZV9zZXEYAiABKA0SDgoGcmVhc29uGAMgASgJEhYKCXRpbWVzdGFtcBgEIAEoAUgAiAEBQgwKCl90aW1lc3RhbXAiwAEKFVRlcm1pbmFsRnJhbWVEZWxpdmVyeRITCgt0ZXJtaW5hbF9pZBgBIAEoCRIRCglmcmFtZV9zZXEYAiABKA0SPQoGc3RhdHVzGAMgASgOMi0uYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxTdGF0dXMSQAoFcGF0Y2gYBCABKAsyMS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbEZyYW1lUGF0Y2giegoTVGVybWluYWxTdGF0dXNGcmFtZRITCgt0ZXJtaW5hbF9pZBgBIAEoCRIPCgdydW5uaW5nGAIgASgIEj0KBnN0YXR1cxgDIAEoDjItLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsU3RhdHVzIjoKElRlcm1pbmFsRXJyb3JGcmFtZRITCgt0ZXJtaW5hbF9pZBgBIAEoCRIPCgdtZXNzYWdlGAIgASgJIvYCChBUZXJtaW5hbEhlbGxvQWNrEhMKC3Rlcm1pbmFsX2lkGAEgASgJEhUKDWF0dGFjaG1lbnRfaWQYAiABKAkSVAoXZWZmZWN0aXZlX2dlb21ldHJ5X3JvbGUYAyABKA4yMy5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbEdlb21ldHJ5Um9sZRItCiBnZW9tZXRyeV9hdXRob3JpdHlfYXR0YWNobWVudF9pZBgEIAEoCUgAiAEBEhsKDmdlb21ldHJ5X29yZGVyGAUgASgRSAGIAQESHQoQYXV0aG9yaXR5X3JlYXNvbhgGIAEoCUgCiAEBEhgKC2RpcmVjdF9qc29uGAcgASgJSAOIAQFCIwohX2dlb21ldHJ5X2F1dGhvcml0eV9hdHRhY2htZW50X2lkQhEKD19nZW9tZXRyeV9vcmRlckITChFfYXV0aG9yaXR5X3JlYXNvbkIOCgxfZGlyZWN0X2pzb24ihgEKElRlcm1pbmFsVHJhY2VGaWVsZBILCgNrZXkYASABKAkSFgoMc3RyaW5nX3ZhbHVlGAIgASgJSAASFgoMbnVtYmVyX3ZhbHVlGAMgASgBSAASFAoKYm9vbF92YWx1ZRgEIAEoCEgAEhQKCm51bGxfdmFsdWUYBSABKAhIAEIHCgV2YWx1ZSKhAQoSVGVybWluYWxUcmFjZUZyYW1lEhMKC3Rlcm1pbmFsX2lkGAEgASgJEg0KBWV2ZW50GAIgASgJEkEKBmZpZWxkcxgDIAMoCzIxLmFnZW50ZXIudGVybWluYWwudHJhbnNwb3J0LnYxLlRlcm1pbmFsVHJhY2VGaWVsZBIWCgl0aW1lc3RhbXAYBCABKAFIAIgBAUIMCgpfdGltZXN0YW1wIsIDChNUZXJtaW5hbFNlcnZlckZyYW1lEkgKC2ZyYW1lX2RpcnR5GAEgASgLMjEuYWdlbnRlci50ZXJtaW5hbC50cmFuc3BvcnQudjEuVGVybWluYWxGcmFtZURpcnR5SAASRQoFZnJhbWUYAiABKAsyNC5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbEZyYW1lRGVsaXZlcnlIABJECgZzdGF0dXMYAyABKAsyMi5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFN0YXR1c0ZyYW1lSAASQgoFZXJyb3IYBCABKAsyMS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbEVycm9yRnJhbWVIABJECgloZWxsb19hY2sYBSABKAsyLy5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbEhlbGxvQWNrSAASQgoFdHJhY2UYBiABKAsyMS5hZ2VudGVyLnRlcm1pbmFsLnRyYW5zcG9ydC52MS5UZXJtaW5hbFRyYWNlRnJhbWVIAEIGCgRib2R5KmUKDlRlcm1pbmFsU3RhdHVzEh8KG1RFUk1JTkFMX1NUQVRVU19VTlNQRUNJRklFRBAAEhgKFFRFUk1JTkFMX1NUQVRVU19JRExFEAESGAoUVEVSTUlOQUxfU1RBVFVTX0JVU1kQAiqQAQoUVGVybWluYWxHZW9tZXRyeVJvbGUSJgoiVEVSTUlOQUxfR0VPTUVUUllfUk9MRV9VTlNQRUNJRklFRBAAEioKJlRFUk1JTkFMX0dFT01FVFJZX1JPTEVfUFJPSkVDVElPTl9PTkxZEAESJAogVEVSTUlOQUxfR0VPTUVUUllfUk9MRV9BVVRIT1JJVFkQAmIGcHJvdG8z");
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalCursor
@@ -126,9 +126,9 @@ export const TerminalRichLineSchema: GenMessage<TerminalRichLine> = /*@__PURE__*
   messageDesc(file_proto_terminal_transport, 3);
 
 /**
- * @generated from message agenter.terminal.transport.v1.TerminalSnapshot
+ * @generated from message agenter.terminal.transport.v1.TerminalFramePayload
  */
-export type TerminalSnapshot = Message<"agenter.terminal.transport.v1.TerminalSnapshot"> & {
+export type TerminalFramePayload = Message<"agenter.terminal.transport.v1.TerminalFramePayload"> & {
   /**
    * @generated from field: uint32 seq = 1;
    */
@@ -171,10 +171,10 @@ export type TerminalSnapshot = Message<"agenter.terminal.transport.v1.TerminalSn
 };
 
 /**
- * Describes the message agenter.terminal.transport.v1.TerminalSnapshot.
- * Use `create(TerminalSnapshotSchema)` to create a new message.
+ * Describes the message agenter.terminal.transport.v1.TerminalFramePayload.
+ * Use `create(TerminalFramePayloadSchema)` to create a new message.
  */
-export const TerminalSnapshotSchema: GenMessage<TerminalSnapshot> = /*@__PURE__*/
+export const TerminalFramePayloadSchema: GenMessage<TerminalFramePayload> = /*@__PURE__*/
   messageDesc(file_proto_terminal_transport, 4);
 
 /**
@@ -185,6 +185,31 @@ export type TerminalHello = Message<"agenter.terminal.transport.v1.TerminalHello
    * @generated from field: optional string terminal_id = 1;
    */
   terminalId?: string | undefined;
+
+  /**
+   * @generated from field: agenter.terminal.transport.v1.TerminalGeometryRole geometry_role = 2;
+   */
+  geometryRole: TerminalGeometryRole;
+
+  /**
+   * @generated from field: optional sint32 geometry_order = 3;
+   */
+  geometryOrder?: number | undefined;
+
+  /**
+   * @generated from field: bool debug_trace = 4;
+   */
+  debugTrace: boolean;
+
+  /**
+   * @generated from field: optional string runtime_json = 5;
+   */
+  runtimeJson?: string | undefined;
+
+  /**
+   * @generated from field: optional string direct_json = 6;
+   */
+  directJson?: string | undefined;
 };
 
 /**
@@ -234,6 +259,72 @@ export const TerminalInputBytesSchema: GenMessage<TerminalInputBytes> = /*@__PUR
   messageDesc(file_proto_terminal_transport, 7);
 
 /**
+ * @generated from message agenter.terminal.transport.v1.TerminalViewportDelta
+ */
+export type TerminalViewportDelta = Message<"agenter.terminal.transport.v1.TerminalViewportDelta"> & {
+  /**
+   * @generated from field: sint32 delta_rows = 1;
+   */
+  deltaRows: number;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalViewportDelta.
+ * Use `create(TerminalViewportDeltaSchema)` to create a new message.
+ */
+export const TerminalViewportDeltaSchema: GenMessage<TerminalViewportDelta> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 8);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalViewportTarget
+ */
+export type TerminalViewportTarget = Message<"agenter.terminal.transport.v1.TerminalViewportTarget"> & {
+  /**
+   * @generated from field: uint32 viewport_start = 1;
+   */
+  viewportStart: number;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalViewportTarget.
+ * Use `create(TerminalViewportTargetSchema)` to create a new message.
+ */
+export const TerminalViewportTargetSchema: GenMessage<TerminalViewportTarget> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 9);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalPullFrame
+ */
+export type TerminalPullFrame = Message<"agenter.terminal.transport.v1.TerminalPullFrame"> & {
+  /**
+   * @generated from field: uint32 last_applied_frame_seq = 1;
+   */
+  lastAppliedFrameSeq: number;
+
+  /**
+   * @generated from field: uint32 cols = 2;
+   */
+  cols: number;
+
+  /**
+   * @generated from field: uint32 rows = 3;
+   */
+  rows: number;
+
+  /**
+   * @generated from field: optional uint32 max_patch_bytes = 4;
+   */
+  maxPatchBytes?: number | undefined;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalPullFrame.
+ * Use `create(TerminalPullFrameSchema)` to create a new message.
+ */
+export const TerminalPullFrameSchema: GenMessage<TerminalPullFrame> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 10);
+
+/**
  * @generated from message agenter.terminal.transport.v1.TerminalClientFrame
  */
 export type TerminalClientFrame = Message<"agenter.terminal.transport.v1.TerminalClientFrame"> & {
@@ -258,6 +349,24 @@ export type TerminalClientFrame = Message<"agenter.terminal.transport.v1.Termina
      */
     value: TerminalInputBytes;
     case: "inputBytes";
+  } | {
+    /**
+     * @generated from field: agenter.terminal.transport.v1.TerminalViewportDelta viewport_delta = 4;
+     */
+    value: TerminalViewportDelta;
+    case: "viewportDelta";
+  } | {
+    /**
+     * @generated from field: agenter.terminal.transport.v1.TerminalViewportTarget viewport_target = 5;
+     */
+    value: TerminalViewportTarget;
+    case: "viewportTarget";
+  } | {
+    /**
+     * @generated from field: agenter.terminal.transport.v1.TerminalPullFrame pull_frame = 6;
+     */
+    value: TerminalPullFrame;
+    case: "pullFrame";
   } | { case: undefined; value?: undefined };
 };
 
@@ -266,56 +375,362 @@ export type TerminalClientFrame = Message<"agenter.terminal.transport.v1.Termina
  * Use `create(TerminalClientFrameSchema)` to create a new message.
  */
 export const TerminalClientFrameSchema: GenMessage<TerminalClientFrame> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 8);
+  messageDesc(file_proto_terminal_transport, 11);
 
 /**
- * @generated from message agenter.terminal.transport.v1.TerminalOutputBytes
+ * @generated from message agenter.terminal.transport.v1.TerminalFrameFullPatch
  */
-export type TerminalOutputBytes = Message<"agenter.terminal.transport.v1.TerminalOutputBytes"> & {
+export type TerminalFrameFullPatch = Message<"agenter.terminal.transport.v1.TerminalFrameFullPatch"> & {
   /**
-   * @generated from field: string terminal_id = 1;
+   * @generated from field: agenter.terminal.transport.v1.TerminalFramePayload frame = 1;
    */
-  terminalId: string;
-
-  /**
-   * @generated from field: bytes data = 2;
-   */
-  data: Uint8Array;
+  frame?: TerminalFramePayload | undefined;
 };
 
 /**
- * Describes the message agenter.terminal.transport.v1.TerminalOutputBytes.
- * Use `create(TerminalOutputBytesSchema)` to create a new message.
+ * Describes the message agenter.terminal.transport.v1.TerminalFrameFullPatch.
+ * Use `create(TerminalFrameFullPatchSchema)` to create a new message.
  */
-export const TerminalOutputBytesSchema: GenMessage<TerminalOutputBytes> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 9);
+export const TerminalFrameFullPatchSchema: GenMessage<TerminalFrameFullPatch> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 12);
 
 /**
- * @generated from message agenter.terminal.transport.v1.TerminalSnapshotFrame
+ * @generated from message agenter.terminal.transport.v1.TerminalFrameRowPatch
  */
-export type TerminalSnapshotFrame = Message<"agenter.terminal.transport.v1.TerminalSnapshotFrame"> & {
+export type TerminalFrameRowPatch = Message<"agenter.terminal.transport.v1.TerminalFrameRowPatch"> & {
+  /**
+   * @generated from field: uint32 row = 1;
+   */
+  row: number;
+
+  /**
+   * @generated from field: string line = 2;
+   */
+  line: string;
+
+  /**
+   * @generated from field: agenter.terminal.transport.v1.TerminalRichLine rich_line = 3;
+   */
+  richLine?: TerminalRichLine | undefined;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalFrameRowPatch.
+ * Use `create(TerminalFrameRowPatchSchema)` to create a new message.
+ */
+export const TerminalFrameRowPatchSchema: GenMessage<TerminalFrameRowPatch> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 13);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalFrameRowsPatch
+ */
+export type TerminalFrameRowsPatch = Message<"agenter.terminal.transport.v1.TerminalFrameRowsPatch"> & {
+  /**
+   * @generated from field: uint32 base_frame_seq = 1;
+   */
+  baseFrameSeq: number;
+
+  /**
+   * @generated from field: repeated agenter.terminal.transport.v1.TerminalFrameRowPatch row_patches = 2;
+   */
+  rowPatches: TerminalFrameRowPatch[];
+
+  /**
+   * @generated from field: uint32 cols = 3;
+   */
+  cols: number;
+
+  /**
+   * @generated from field: uint32 rows = 4;
+   */
+  rows: number;
+
+  /**
+   * @generated from field: agenter.terminal.transport.v1.TerminalCursor cursor = 5;
+   */
+  cursor?: TerminalCursor | undefined;
+
+  /**
+   * @generated from field: agenter.terminal.transport.v1.TerminalScrollback scrollback = 6;
+   */
+  scrollback?: TerminalScrollback | undefined;
+
+  /**
+   * @generated from field: optional double timestamp = 7;
+   */
+  timestamp?: number | undefined;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalFrameRowsPatch.
+ * Use `create(TerminalFrameRowsPatchSchema)` to create a new message.
+ */
+export const TerminalFrameRowsPatchSchema: GenMessage<TerminalFrameRowsPatch> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 14);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalFrameScrollRowsPatch
+ */
+export type TerminalFrameScrollRowsPatch = Message<"agenter.terminal.transport.v1.TerminalFrameScrollRowsPatch"> & {
+  /**
+   * @generated from field: uint32 base_frame_seq = 1;
+   */
+  baseFrameSeq: number;
+
+  /**
+   * @generated from field: sint32 delta_rows = 2;
+   */
+  deltaRows: number;
+
+  /**
+   * @generated from field: repeated string inserted_lines = 3;
+   */
+  insertedLines: string[];
+
+  /**
+   * @generated from field: repeated agenter.terminal.transport.v1.TerminalRichLine inserted_rich_lines = 4;
+   */
+  insertedRichLines: TerminalRichLine[];
+
+  /**
+   * @generated from field: uint32 cols = 5;
+   */
+  cols: number;
+
+  /**
+   * @generated from field: uint32 rows = 6;
+   */
+  rows: number;
+
+  /**
+   * @generated from field: agenter.terminal.transport.v1.TerminalCursor cursor = 7;
+   */
+  cursor?: TerminalCursor | undefined;
+
+  /**
+   * @generated from field: agenter.terminal.transport.v1.TerminalScrollback scrollback = 8;
+   */
+  scrollback?: TerminalScrollback | undefined;
+
+  /**
+   * @generated from field: optional double timestamp = 9;
+   */
+  timestamp?: number | undefined;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalFrameScrollRowsPatch.
+ * Use `create(TerminalFrameScrollRowsPatchSchema)` to create a new message.
+ */
+export const TerminalFrameScrollRowsPatchSchema: GenMessage<TerminalFrameScrollRowsPatch> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 15);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalFrameCachedRow
+ */
+export type TerminalFrameCachedRow = Message<"agenter.terminal.transport.v1.TerminalFrameCachedRow"> & {
+  /**
+   * @generated from field: uint32 cid = 1;
+   */
+  cid: number;
+
+  /**
+   * @generated from field: optional string line = 2;
+   */
+  line?: string | undefined;
+
+  /**
+   * @generated from field: agenter.terminal.transport.v1.TerminalRichLine rich_line = 3;
+   */
+  richLine?: TerminalRichLine | undefined;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalFrameCachedRow.
+ * Use `create(TerminalFrameCachedRowSchema)` to create a new message.
+ */
+export const TerminalFrameCachedRowSchema: GenMessage<TerminalFrameCachedRow> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 16);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalFrameRowCachePatch
+ */
+export type TerminalFrameRowCachePatch = Message<"agenter.terminal.transport.v1.TerminalFrameRowCachePatch"> & {
+  /**
+   * @generated from field: uint32 base_frame_seq = 1;
+   */
+  baseFrameSeq: number;
+
+  /**
+   * @generated from field: repeated agenter.terminal.transport.v1.TerminalFrameCachedRow cached_rows = 2;
+   */
+  cachedRows: TerminalFrameCachedRow[];
+
+  /**
+   * @generated from field: uint32 cols = 3;
+   */
+  cols: number;
+
+  /**
+   * @generated from field: uint32 rows = 4;
+   */
+  rows: number;
+
+  /**
+   * @generated from field: agenter.terminal.transport.v1.TerminalCursor cursor = 5;
+   */
+  cursor?: TerminalCursor | undefined;
+
+  /**
+   * @generated from field: agenter.terminal.transport.v1.TerminalScrollback scrollback = 6;
+   */
+  scrollback?: TerminalScrollback | undefined;
+
+  /**
+   * @generated from field: optional double timestamp = 7;
+   */
+  timestamp?: number | undefined;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalFrameRowCachePatch.
+ * Use `create(TerminalFrameRowCachePatchSchema)` to create a new message.
+ */
+export const TerminalFrameRowCachePatchSchema: GenMessage<TerminalFrameRowCachePatch> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 17);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalFrameNotModifiedPatch
+ */
+export type TerminalFrameNotModifiedPatch = Message<"agenter.terminal.transport.v1.TerminalFrameNotModifiedPatch"> & {
+  /**
+   * @generated from field: uint32 base_frame_seq = 1;
+   */
+  baseFrameSeq: number;
+
+  /**
+   * @generated from field: optional double timestamp = 2;
+   */
+  timestamp?: number | undefined;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalFrameNotModifiedPatch.
+ * Use `create(TerminalFrameNotModifiedPatchSchema)` to create a new message.
+ */
+export const TerminalFrameNotModifiedPatchSchema: GenMessage<TerminalFrameNotModifiedPatch> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 18);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalFramePatch
+ */
+export type TerminalFramePatch = Message<"agenter.terminal.transport.v1.TerminalFramePatch"> & {
+  /**
+   * @generated from oneof agenter.terminal.transport.v1.TerminalFramePatch.body
+   */
+  body: {
+    /**
+     * @generated from field: agenter.terminal.transport.v1.TerminalFrameFullPatch full = 1;
+     */
+    value: TerminalFrameFullPatch;
+    case: "full";
+  } | {
+    /**
+     * @generated from field: agenter.terminal.transport.v1.TerminalFrameRowsPatch rows = 2;
+     */
+    value: TerminalFrameRowsPatch;
+    case: "rows";
+  } | {
+    /**
+     * @generated from field: agenter.terminal.transport.v1.TerminalFrameScrollRowsPatch scroll_rows = 3;
+     */
+    value: TerminalFrameScrollRowsPatch;
+    case: "scrollRows";
+  } | {
+    /**
+     * @generated from field: agenter.terminal.transport.v1.TerminalFrameRowCachePatch row_cache = 4;
+     */
+    value: TerminalFrameRowCachePatch;
+    case: "rowCache";
+  } | {
+    /**
+     * @generated from field: agenter.terminal.transport.v1.TerminalFrameNotModifiedPatch not_modified = 5;
+     */
+    value: TerminalFrameNotModifiedPatch;
+    case: "notModified";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalFramePatch.
+ * Use `create(TerminalFramePatchSchema)` to create a new message.
+ */
+export const TerminalFramePatchSchema: GenMessage<TerminalFramePatch> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 19);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalFrameDirty
+ */
+export type TerminalFrameDirty = Message<"agenter.terminal.transport.v1.TerminalFrameDirty"> & {
   /**
    * @generated from field: string terminal_id = 1;
    */
   terminalId: string;
 
   /**
-   * @generated from field: agenter.terminal.transport.v1.TerminalSnapshot snapshot = 2;
+   * @generated from field: uint32 frame_seq = 2;
    */
-  snapshot?: TerminalSnapshot | undefined;
+  frameSeq: number;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: optional double timestamp = 4;
+   */
+  timestamp?: number | undefined;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalFrameDirty.
+ * Use `create(TerminalFrameDirtySchema)` to create a new message.
+ */
+export const TerminalFrameDirtySchema: GenMessage<TerminalFrameDirty> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 20);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalFrameDelivery
+ */
+export type TerminalFrameDelivery = Message<"agenter.terminal.transport.v1.TerminalFrameDelivery"> & {
+  /**
+   * @generated from field: string terminal_id = 1;
+   */
+  terminalId: string;
+
+  /**
+   * @generated from field: uint32 frame_seq = 2;
+   */
+  frameSeq: number;
 
   /**
    * @generated from field: agenter.terminal.transport.v1.TerminalStatus status = 3;
    */
   status: TerminalStatus;
+
+  /**
+   * @generated from field: agenter.terminal.transport.v1.TerminalFramePatch patch = 4;
+   */
+  patch?: TerminalFramePatch | undefined;
 };
 
 /**
- * Describes the message agenter.terminal.transport.v1.TerminalSnapshotFrame.
- * Use `create(TerminalSnapshotFrameSchema)` to create a new message.
+ * Describes the message agenter.terminal.transport.v1.TerminalFrameDelivery.
+ * Use `create(TerminalFrameDeliverySchema)` to create a new message.
  */
-export const TerminalSnapshotFrameSchema: GenMessage<TerminalSnapshotFrame> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 10);
+export const TerminalFrameDeliverySchema: GenMessage<TerminalFrameDelivery> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 21);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalStatusFrame
@@ -342,7 +757,7 @@ export type TerminalStatusFrame = Message<"agenter.terminal.transport.v1.Termina
  * Use `create(TerminalStatusFrameSchema)` to create a new message.
  */
 export const TerminalStatusFrameSchema: GenMessage<TerminalStatusFrame> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 11);
+  messageDesc(file_proto_terminal_transport, 22);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalErrorFrame
@@ -364,7 +779,7 @@ export type TerminalErrorFrame = Message<"agenter.terminal.transport.v1.Terminal
  * Use `create(TerminalErrorFrameSchema)` to create a new message.
  */
 export const TerminalErrorFrameSchema: GenMessage<TerminalErrorFrame> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 12);
+  messageDesc(file_proto_terminal_transport, 23);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalHelloAck
@@ -374,6 +789,36 @@ export type TerminalHelloAck = Message<"agenter.terminal.transport.v1.TerminalHe
    * @generated from field: string terminal_id = 1;
    */
   terminalId: string;
+
+  /**
+   * @generated from field: string attachment_id = 2;
+   */
+  attachmentId: string;
+
+  /**
+   * @generated from field: agenter.terminal.transport.v1.TerminalGeometryRole effective_geometry_role = 3;
+   */
+  effectiveGeometryRole: TerminalGeometryRole;
+
+  /**
+   * @generated from field: optional string geometry_authority_attachment_id = 4;
+   */
+  geometryAuthorityAttachmentId?: string | undefined;
+
+  /**
+   * @generated from field: optional sint32 geometry_order = 5;
+   */
+  geometryOrder?: number | undefined;
+
+  /**
+   * @generated from field: optional string authority_reason = 6;
+   */
+  authorityReason?: string | undefined;
+
+  /**
+   * @generated from field: optional string direct_json = 7;
+   */
+  directJson?: string | undefined;
 };
 
 /**
@@ -381,7 +826,85 @@ export type TerminalHelloAck = Message<"agenter.terminal.transport.v1.TerminalHe
  * Use `create(TerminalHelloAckSchema)` to create a new message.
  */
 export const TerminalHelloAckSchema: GenMessage<TerminalHelloAck> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 13);
+  messageDesc(file_proto_terminal_transport, 24);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalTraceField
+ */
+export type TerminalTraceField = Message<"agenter.terminal.transport.v1.TerminalTraceField"> & {
+  /**
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from oneof agenter.terminal.transport.v1.TerminalTraceField.value
+   */
+  value: {
+    /**
+     * @generated from field: string string_value = 2;
+     */
+    value: string;
+    case: "stringValue";
+  } | {
+    /**
+     * @generated from field: double number_value = 3;
+     */
+    value: number;
+    case: "numberValue";
+  } | {
+    /**
+     * @generated from field: bool bool_value = 4;
+     */
+    value: boolean;
+    case: "boolValue";
+  } | {
+    /**
+     * @generated from field: bool null_value = 5;
+     */
+    value: boolean;
+    case: "nullValue";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalTraceField.
+ * Use `create(TerminalTraceFieldSchema)` to create a new message.
+ */
+export const TerminalTraceFieldSchema: GenMessage<TerminalTraceField> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 25);
+
+/**
+ * @generated from message agenter.terminal.transport.v1.TerminalTraceFrame
+ */
+export type TerminalTraceFrame = Message<"agenter.terminal.transport.v1.TerminalTraceFrame"> & {
+  /**
+   * @generated from field: string terminal_id = 1;
+   */
+  terminalId: string;
+
+  /**
+   * @generated from field: string event = 2;
+   */
+  event: string;
+
+  /**
+   * @generated from field: repeated agenter.terminal.transport.v1.TerminalTraceField fields = 3;
+   */
+  fields: TerminalTraceField[];
+
+  /**
+   * @generated from field: optional double timestamp = 4;
+   */
+  timestamp?: number | undefined;
+};
+
+/**
+ * Describes the message agenter.terminal.transport.v1.TerminalTraceFrame.
+ * Use `create(TerminalTraceFrameSchema)` to create a new message.
+ */
+export const TerminalTraceFrameSchema: GenMessage<TerminalTraceFrame> = /*@__PURE__*/
+  messageDesc(file_proto_terminal_transport, 26);
 
 /**
  * @generated from message agenter.terminal.transport.v1.TerminalServerFrame
@@ -392,34 +915,40 @@ export type TerminalServerFrame = Message<"agenter.terminal.transport.v1.Termina
    */
   body: {
     /**
-     * @generated from field: agenter.terminal.transport.v1.TerminalSnapshotFrame snapshot = 1;
+     * @generated from field: agenter.terminal.transport.v1.TerminalFrameDirty frame_dirty = 1;
      */
-    value: TerminalSnapshotFrame;
-    case: "snapshot";
+    value: TerminalFrameDirty;
+    case: "frameDirty";
   } | {
     /**
-     * @generated from field: agenter.terminal.transport.v1.TerminalStatusFrame status = 2;
+     * @generated from field: agenter.terminal.transport.v1.TerminalFrameDelivery frame = 2;
+     */
+    value: TerminalFrameDelivery;
+    case: "frame";
+  } | {
+    /**
+     * @generated from field: agenter.terminal.transport.v1.TerminalStatusFrame status = 3;
      */
     value: TerminalStatusFrame;
     case: "status";
   } | {
     /**
-     * @generated from field: agenter.terminal.transport.v1.TerminalErrorFrame error = 3;
+     * @generated from field: agenter.terminal.transport.v1.TerminalErrorFrame error = 4;
      */
     value: TerminalErrorFrame;
     case: "error";
   } | {
     /**
-     * @generated from field: agenter.terminal.transport.v1.TerminalHelloAck hello_ack = 4;
+     * @generated from field: agenter.terminal.transport.v1.TerminalHelloAck hello_ack = 5;
      */
     value: TerminalHelloAck;
     case: "helloAck";
   } | {
     /**
-     * @generated from field: agenter.terminal.transport.v1.TerminalOutputBytes output_bytes = 5;
+     * @generated from field: agenter.terminal.transport.v1.TerminalTraceFrame trace = 6;
      */
-    value: TerminalOutputBytes;
-    case: "outputBytes";
+    value: TerminalTraceFrame;
+    case: "trace";
   } | { case: undefined; value?: undefined };
 };
 
@@ -428,7 +957,7 @@ export type TerminalServerFrame = Message<"agenter.terminal.transport.v1.Termina
  * Use `create(TerminalServerFrameSchema)` to create a new message.
  */
 export const TerminalServerFrameSchema: GenMessage<TerminalServerFrame> = /*@__PURE__*/
-  messageDesc(file_proto_terminal_transport, 14);
+  messageDesc(file_proto_terminal_transport, 27);
 
 /**
  * @generated from enum agenter.terminal.transport.v1.TerminalStatus
@@ -455,4 +984,30 @@ export enum TerminalStatus {
  */
 export const TerminalStatusSchema: GenEnum<TerminalStatus> = /*@__PURE__*/
   enumDesc(file_proto_terminal_transport, 0);
+
+/**
+ * @generated from enum agenter.terminal.transport.v1.TerminalGeometryRole
+ */
+export enum TerminalGeometryRole {
+  /**
+   * @generated from enum value: TERMINAL_GEOMETRY_ROLE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: TERMINAL_GEOMETRY_ROLE_PROJECTION_ONLY = 1;
+   */
+  PROJECTION_ONLY = 1,
+
+  /**
+   * @generated from enum value: TERMINAL_GEOMETRY_ROLE_AUTHORITY = 2;
+   */
+  AUTHORITY = 2,
+}
+
+/**
+ * Describes the enum agenter.terminal.transport.v1.TerminalGeometryRole.
+ */
+export const TerminalGeometryRoleSchema: GenEnum<TerminalGeometryRole> = /*@__PURE__*/
+  enumDesc(file_proto_terminal_transport, 1);
 

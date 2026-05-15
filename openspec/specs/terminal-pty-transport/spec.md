@@ -92,3 +92,37 @@ Any terminal input sent through websocket transport SHALL respect the same grant
 - **WHEN** a requester websocket client sends live terminal input bytes without an active write lease
 - **THEN** terminal-system rejects the frame before it reaches the PTY
 - **AND** terminal-system does not create an approval request from that interactive session traffic
+
+### Requirement: Terminal transport SHALL support shared viewport truth for same-terminal attachments
+
+When multiple clients participate in one same-terminal shared shell attachment, terminal transport SHALL preserve one shared viewport truth in addition to the existing bytes-first input and output transport. Shared viewport mutations such as scrolling SHALL not remain hidden frontend-local state.
+
+#### Scenario: Same-terminal scroll updates are synchronized
+- **WHEN** one client scrolls the shared viewport for a same-terminal shell attachment
+- **THEN** the shared viewport truth updates through terminal-authoritative transport or control-plane semantics
+- **AND** other same-terminal clients observe the same visible viewport position
+
+#### Scenario: Shared viewport truth does not replace bytes-first input law
+- **WHEN** same-terminal clients send live terminal input
+- **THEN** transport still treats that input as bytes-first interactive terminal input
+- **AND** shared viewport synchronization remains additional terminal truth rather than a replacement for bytes-first input transport
+
+### Requirement: Terminal transport SHALL keep shared viewport control explicit while preserving bytes-first shell input
+
+When same-terminal attachments need shared viewport mutations, the transport or terminal control-plane contract SHALL express those mutations as explicit terminal-authoritative facts instead of hiding them inside host-local UI state. Printable input, paste, and terminal control keys SHALL remain bytes-first live input.
+
+#### Scenario: Shared viewport control does not require a frontend-only state machine
+- **WHEN** a same-terminal attachment mutates the shared viewport
+- **THEN** that mutation is expressed through explicit terminal-authoritative synchronization
+- **AND** other attachments do not need a second frontend-owned terminal model to discover it
+
+#### Scenario: Viewport mutation is echoed back through backend terminal truth
+- **WHEN** one same-terminal attachment requests a viewport mutation such as scroll up or scroll down
+- **THEN** runtime/control-plane applies that mutation against backend terminal truth first
+- **AND** the resulting shared viewport position is republished to all attachments through authoritative terminal publication
+- **AND** the initiating attachment also treats that republished viewport as the visible-truth confirmation
+
+#### Scenario: Shell input remains bytes-first after shared viewport support is added
+- **WHEN** a same-terminal attachment sends printable input, paste, or terminal control keys
+- **THEN** transport still forwards that live shell input through the bytes-first path
+- **AND** shared viewport support does not reinterpret those inputs as projection-only host events

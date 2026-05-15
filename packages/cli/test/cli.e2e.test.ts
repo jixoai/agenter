@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { request as httpRequest } from "node:http";
 
 import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
 
@@ -15,6 +16,46 @@ const readText = async (stream: ReadableStream<Uint8Array> | null): Promise<stri
     return "";
   }
   return await new Response(stream).text();
+};
+
+const readUntilMatch = async (
+  stream: ReadableStream<Uint8Array> | null,
+  pattern: RegExp,
+  timeoutMs = 30_000,
+): Promise<string> => {
+  if (!stream) {
+    throw new Error("expected readable stream");
+  }
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let output = "";
+  const startedAt = Date.now();
+  try {
+    for (;;) {
+      if (pattern.test(output)) {
+        return output;
+      }
+      const remainingMs = timeoutMs - (Date.now() - startedAt);
+      if (remainingMs <= 0) {
+        throw new Error(`timed out waiting for pattern ${pattern}`);
+      }
+      const result = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`timed out waiting for pattern ${pattern}`)), remainingMs),
+        ),
+      ]);
+      if (result.done) {
+        if (pattern.test(output)) {
+          return output;
+        }
+        throw new Error(`stream ended before pattern matched: ${pattern}\n${output}`);
+      }
+      output += decoder.decode(result.value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
 };
 
 const findFreePort = async (): Promise<number> =>
@@ -73,8 +114,26 @@ const waitForHealth = async (host: string, port: number, timeoutMs = 45_000): Pr
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     try {
-      const response = await fetch(`http://${host}:${port}/health`);
-      if (response.ok) {
+      const statusCode = await new Promise<number | undefined>((resolveResponse, rejectResponse) => {
+        const req = httpRequest(
+          `http://${host}:${port}/health`,
+          {
+            method: "GET",
+            timeout: 5_000,
+          },
+          (response) => {
+            response.resume();
+            resolveResponse(response.statusCode);
+          },
+        );
+        req.on("error", rejectResponse);
+        req.on("timeout", () => {
+          req.destroy();
+          rejectResponse(new Error("timeout"));
+        });
+        req.end();
+      });
+      if (typeof statusCode === "number" && statusCode >= 200 && statusCode < 300) {
         return true;
       }
     } catch {
@@ -264,6 +323,55 @@ describe("Feature: cli daemon and web commands", () => {
     } finally {
       client.close();
     }
+  }, 70_000);
+
+  test("Scenario: Given a healthy daemon already owns the runtime root on a different port When `agenter shell --web` starts through the default launcher path Then the launcher reuses that daemon authority instead of booting a competing writer", async () => {
+    const host = "127.0.0.1";
+    const daemonPort = await findFreePort();
+    const home = createIsolatedHome();
+    const daemon = spawnCli(["daemon", "--host", host, "--port", String(daemonPort)], { HOME: home });
+    daemons.push(daemon);
+
+    const daemonHealthy = await waitForHealth(host, daemonPort);
+    if (!daemonHealthy) {
+      const stderr = await readText(daemon.stderr);
+      throw new Error(`daemon failed to become healthy: ${stderr}`);
+    }
+
+    const shell = spawnCli(["shell", "--web=0"], { HOME: home });
+    daemons.push(shell);
+
+    const stdout = await readUntilMatch(shell.stdout, /web: http:\/\/127\.0\.0\.1:\d+\//u);
+    expect(stdout).toContain("cli-shell attached");
+    expect(stdout).toContain(`web: http://${host}:`);
+    expect(stdout).not.toContain("Unable to transform response from server");
+  }, 70_000);
+
+  test("Scenario: Given the runtime root contains a stale daemon descriptor When `agenter shell --web` starts Then launcher bootstrap ignores the stale descriptor and still serves the shell host", async () => {
+    const host = "127.0.0.1";
+    const home = createIsolatedHome();
+    const staleDir = resolve(home, ".agenter");
+    mkdirSync(staleDir, { recursive: true });
+    writeFileSync(
+      resolve(staleDir, "daemon.runtime.json"),
+      `${JSON.stringify({
+        pid: process.pid + 9999,
+        host,
+        port: 65501,
+        endpoint: `http://${host}:65501`,
+        homeDir: home,
+        updatedAt: new Date().toISOString(),
+      })}\n`,
+      "utf8",
+    );
+
+    const shell = spawnCli(["shell", "--web=0"], { HOME: home });
+    daemons.push(shell);
+
+    const stdout = await readUntilMatch(shell.stdout, /web: http:\/\/127\.0\.0\.1:\d+\//u);
+    expect(stdout).toContain("cli-shell attached");
+    expect(stdout).toContain(`web: http://${host}:`);
+    expect(stdout).not.toContain("Unable to transform response from server");
   }, 70_000);
 
   test("Scenario: Given web command When reading root html Then the default entry serves the canonical Svelte shell", async () => {

@@ -24,7 +24,7 @@ describe("Feature: ghostty-native package boundary", () => {
     expect(pkg.files).toEqual(["README.md", "src", "build", "native", "vendor"]);
     expect(pkg.scripts).toEqual({
       "build:ghostty-native": "bash build/build.sh",
-      typecheck: "bunx tsc --noEmit",
+      typecheck: "bunx tsc -p tsconfig.typecheck.json --noEmit",
     });
     expect(pkg.peerDependencies).toEqual({ "@termless/core": "*" });
 

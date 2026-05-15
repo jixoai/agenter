@@ -37,6 +37,7 @@ export interface TerminalRendererSession {
   reset(): void;
   focus(): void;
   setScrollback(scrollback: number): void;
+  applyViewport?(viewportStart: number): void;
   applyAppearance(appearance: ResolvedTerminalAppearance): void;
   settlePresentation?(): Promise<void> | void;
   getScreenMetrics(): TerminalViewScreenMetrics | null;

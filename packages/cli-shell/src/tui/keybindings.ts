@@ -8,14 +8,15 @@ export type CliShellShortcutId =
   | "sendDialogue"
   | "placeLeft"
   | "placeRight"
-  | "placeFloating"
-  | "placeBottom";
+  | "placeFloating";
 
 export interface CliShellShortcut {
   id: CliShellShortcutId;
   key: string;
+  command: boolean;
   ctrl: boolean;
   meta: boolean;
+  super: boolean;
   alt: boolean;
   shift: boolean;
 }
@@ -29,13 +30,13 @@ export interface CliShellTuiKeybindings {
   placeLeft: CliShellShortcut;
   placeRight: CliShellShortcut;
   placeFloating: CliShellShortcut;
-  placeBottom: CliShellShortcut;
 }
 
 const KEY_ALIASES: Record<string, string> = {
-  cmd: "meta",
-  command: "meta",
+  cmd: "command",
+  command: "command",
   meta: "meta",
+  super: "super",
   ctrl: "ctrl",
   control: "ctrl",
   alt: "alt",
@@ -95,8 +96,10 @@ const parseShortcutValue = (value: string, id: CliShellShortcutId): Omit<CliShel
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
   let key = "";
+  let command = false;
   let ctrl = false;
   let meta = false;
+  let superModifier = false;
   let alt = false;
   let shift = false;
 
@@ -108,6 +111,14 @@ const parseShortcutValue = (value: string, id: CliShellShortcutId): Omit<CliShel
     }
     if (normalized === "meta") {
       meta = true;
+      continue;
+    }
+    if (normalized === "super") {
+      superModifier = true;
+      continue;
+    }
+    if (normalized === "command") {
+      command = true;
       continue;
     }
     if (normalized === "alt") {
@@ -127,8 +138,10 @@ const parseShortcutValue = (value: string, id: CliShellShortcutId): Omit<CliShel
 
   return {
     key,
+    command,
     ctrl,
     meta,
+    super: superModifier,
     alt,
     shift,
   };
@@ -143,7 +156,6 @@ const DEFAULT_KEYBINDINGS: CliShellTuiKeybindings = {
   placeLeft: defaultShortcut("placeLeft", "Meta+L"),
   placeRight: defaultShortcut("placeRight", "Meta+R"),
   placeFloating: defaultShortcut("placeFloating", "Meta+F"),
-  placeBottom: defaultShortcut("placeBottom", "Meta+B"),
 };
 
 const readShortcutOverride = (settingsContent: string | null | undefined, id: CliShellShortcutId): string | null => {
@@ -183,13 +195,25 @@ export const resolveCliShellTuiKeybindings = (
 
 export const matchCliShellShortcut = (key: KeyEvent, shortcut: CliShellShortcut): boolean => {
   const keyName = key.name.trim().toLowerCase();
-  return (
-    keyName === shortcut.key &&
-    Boolean(key.ctrl) === shortcut.ctrl &&
-    Boolean(key.meta) === shortcut.meta &&
-    Boolean(key.shift) === shortcut.shift &&
-    Boolean(key.option) === shortcut.alt
-  );
+  if (keyName !== shortcut.key) {
+    return false;
+  }
+  if (Boolean(key.ctrl) !== shortcut.ctrl) {
+    return false;
+  }
+  if (Boolean(key.shift) !== shortcut.shift) {
+    return false;
+  }
+  if (Boolean(key.option) !== shortcut.alt) {
+    return false;
+  }
+  if (shortcut.command) {
+    return Boolean(key.meta || key.super);
+  }
+  if (shortcut.meta || shortcut.super) {
+    return Boolean(key.meta) === shortcut.meta && Boolean(key.super) === shortcut.super;
+  }
+  return !key.meta && !key.super;
 };
 
 export const formatCliShellShortcut = (shortcut: CliShellShortcut): string => {
@@ -203,8 +227,14 @@ export const formatCliShellShortcut = (shortcut: CliShellShortcut): string => {
   if (shortcut.shift) {
     parts.push("⇧");
   }
-  if (shortcut.meta) {
+  if (shortcut.command) {
     parts.push("⌘");
+  }
+  if (shortcut.meta) {
+    parts.push("M-");
+  }
+  if (shortcut.super) {
+    parts.push("Super-");
   }
   const label = DISPLAY_KEY_LABELS[shortcut.key] ?? shortcut.key.toUpperCase();
   return `${parts.join("")}${label}`;

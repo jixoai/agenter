@@ -133,6 +133,50 @@ const terminalConfigPatchSchema = z.object({
     .optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
+const terminalComposedSurfaceSchema = z.object({
+  terminalId: z.string().min(1),
+  surface: z.object({
+    shellTerminalId: z.string().min(1),
+    terminalId: z.string().min(1),
+    shellSnapshotSeq: z.number().int(),
+    cols: z.number().int().positive(),
+    rows: z.number().int().positive(),
+    bottomLine: z.string(),
+    dialogueOpen: z.boolean(),
+    dialoguePlacement: z.enum(["left", "right", "floating"]).nullable(),
+    dialogueDraft: z.string(),
+    managedLabel: z.string(),
+    unreadLabel: z.string(),
+    heartbeatLabel: z.string(),
+    terminalLines: z.array(z.string()),
+    terminalRichLines: z
+      .array(
+        z.object({
+          spans: z.array(
+            z.object({
+              text: z.string(),
+              fg: z.string().optional(),
+              bg: z.string().optional(),
+              bold: z.boolean().optional(),
+              underline: z.boolean().optional(),
+              inverse: z.boolean().optional(),
+            }),
+          ),
+        }),
+      )
+      .optional(),
+    cursor: z.object({
+      x: z.number().int().nonnegative(),
+      y: z.number().int().nonnegative(),
+      visible: z.boolean().optional(),
+    }),
+    scrollback: z.object({
+      viewportOffset: z.number().int().nonnegative(),
+      totalLines: z.number().int().nonnegative(),
+      screenLines: z.number().int().positive(),
+    }),
+  }),
+});
 const workspaceGrantInputSchema = z.object({
   pattern: z.string().trim().min(1),
   mode: z.enum(["ro", "rw"]),
@@ -1367,6 +1411,14 @@ export const appRouter = t.router({
       .input(terminalConfigPatchSchema)
       .mutation(({ ctx, input }) => ({
         result: ctx.kernel.setGlobalTerminalConfig({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      })),
+    globalPublishComposedSurface: authProcedure
+      .input(terminalComposedSurfaceSchema)
+      .mutation(({ ctx, input }) => ({
+        result: ctx.kernel.publishGlobalTerminalComposedSurface({
           ...input,
           ...resolveTerminalCallerScope(ctx.auth),
         }),

@@ -50,6 +50,8 @@ export {
 } from "./terminal-view-element";
 export type {
   TerminalViewConnectionState,
+  TerminalViewGeometryAuthorityDetail,
+  TerminalViewGeometryRole,
   TerminalViewPresentationReadyDetail,
   TerminalViewPresentationSettleReason,
   TerminalViewScreenMetrics,

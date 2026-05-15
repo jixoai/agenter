@@ -187,6 +187,23 @@ const waitForTerminalRunning = async (kernel: AppKernel, sessionId: string, term
   );
 };
 
+const waitForTerminalInteractive = async (kernel: AppKernel, sessionId: string, terminalId: string): Promise<void> => {
+  await waitForTerminalRunning(kernel, sessionId, terminalId);
+  const runtimeTerminal = getRuntimeTerminalApi(kernel, sessionId);
+  const idle = await runtimeTerminal.awaitRuntimeTerminal({
+    terminalId,
+    wait: {
+      until: "idle",
+      timeoutMs: 5_000,
+      idleMs: 0,
+    },
+    recordActivity: false,
+  });
+  if (idle.kind !== "terminal-await" || (idle.outcome !== "idle" && idle.outcome !== "changed")) {
+    throw new Error(`terminal did not become interactive for ${terminalId}: ${JSON.stringify(idle)}`);
+  }
+};
+
 const collectAwaitEvidenceText = (input: {
   snapshotLines?: string[];
   matchEvidence?: Array<{
@@ -212,36 +229,47 @@ const collectSharedTerminalEnvValues = async (
   privateKey: string;
   path: string;
 }> => {
-  await waitForTerminalRunning(kernel, sessionId, terminalId);
+  await waitForTerminalInteractive(kernel, sessionId, terminalId);
   const runtimeTerminal = getRuntimeTerminalApi(kernel, sessionId);
-  const doneValue = `terminal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const awaitedResultPromise = runtimeTerminal.awaitRuntimeTerminal({
-    terminalId,
-    wait: {
-      until: "match",
-      timeoutMs: 15_000,
-      idleMs: 100,
-    },
-    match: {
-      pattern: `__AGT_DONE__=${doneValue}`,
-      contextLines: 8,
-    },
-    view: {
-      type: "tail",
-      lines: 80,
-    },
-    recordActivity: false,
-  });
-  const wrote = await runtimeTerminal.inputRuntimeTerminal({
-    terminalId,
-    text: `<raw>${buildEnvDumpCommand(doneValue)}</raw><key data="enter"/>`,
-    readRecordActivity: false,
-  });
-  if (!wrote.ok) {
-    throw new Error(`terminal input failed for ${terminalId}: ${JSON.stringify(wrote)}`);
+  let awaitedResult:
+    | Awaited<ReturnType<ReturnType<typeof getRuntimeTerminalApi>["awaitRuntimeTerminal"]>>
+    | null = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const doneValue = `terminal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const awaitedResultPromise = runtimeTerminal.awaitRuntimeTerminal({
+      terminalId,
+      wait: {
+        until: "match",
+        timeoutMs: 15_000,
+        idleMs: 100,
+      },
+      match: {
+        pattern: `__AGT_DONE__=${doneValue}`,
+        contextLines: 8,
+      },
+      view: {
+        type: "tail",
+        lines: 80,
+      },
+      recordActivity: false,
+    });
+    const wrote = await runtimeTerminal.inputRuntimeTerminal({
+      terminalId,
+      text: `<raw>${buildEnvDumpCommand(doneValue)}</raw><key data="enter"/>`,
+      readRecordActivity: false,
+    });
+    if (!wrote.ok) {
+      throw new Error(`terminal input failed for ${terminalId}: ${JSON.stringify(wrote)}`);
+    }
+    awaitedResult = await awaitedResultPromise;
+    if (awaitedResult.kind === "terminal-await" && awaitedResult.outcome === "matched") {
+      break;
+    }
+    if (attempt === 0) {
+      await waitForTerminalInteractive(kernel, sessionId, terminalId);
+    }
   }
-  const awaitedResult = await awaitedResultPromise;
-  if (awaitedResult.kind !== "terminal-await" || awaitedResult.outcome !== "matched") {
+  if (!awaitedResult || awaitedResult.kind !== "terminal-await" || awaitedResult.outcome !== "matched") {
     throw new Error(`terminal await did not observe env dump for ${terminalId}: ${JSON.stringify(awaitedResult)}`);
   }
   const evidenceText = collectAwaitEvidenceText({

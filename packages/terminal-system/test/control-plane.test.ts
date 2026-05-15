@@ -7,12 +7,24 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { signManagedInvitationAcceptProof } from "@agenter/managed-seat-invitation-handshake";
 import { generatePrincipalKeyPair } from "@agenter/principal-crypto";
 import {
+  applyTerminalFramePatch,
+  createTerminalTransportRowCacheDecoder,
+  createTerminalTransportClientSession,
   decodeTerminalTransportServerMessage,
   encodeTerminalTransportClientMessage,
+  getTerminalTransportDirectRegistry,
   type TerminalTransportClientMessage,
+  type TerminalTransportFramePayload,
+  type TerminalTransportRowCacheDecoder,
 } from "@agenter/terminal-transport-protocol";
 
-import { TerminalControlPlane, type ManagedTerminal, type TerminalTransportServerMessage } from "../src";
+import {
+  projectTerminalSnapshotFramePayload,
+  TerminalControlPlane,
+  type ManagedTerminalSnapshot,
+  type TerminalRuntime,
+  type TerminalTransportServerMessage,
+} from "../src";
 
 const workspaces: string[] = [];
 
@@ -73,9 +85,101 @@ const encodeClientFrame = (message: TerminalTransportClientMessage): ArrayBuffer
   return buffer;
 };
 
-const utf8Decoder = new TextDecoder();
-const outputIncludes = (message: TerminalTransportServerMessage, text: string): boolean =>
-  message.type === "outputBytes" && utf8Decoder.decode(message.data).includes(text);
+const rowCacheDecodersBySocket = new WeakMap<WebSocket, TerminalTransportRowCacheDecoder>();
+
+const resolveRowCacheDecoder = (socket: WebSocket, decoder?: TerminalTransportRowCacheDecoder): TerminalTransportRowCacheDecoder => {
+  if (decoder) {
+    return decoder;
+  }
+  const existing = rowCacheDecodersBySocket.get(socket);
+  if (existing) {
+    return existing;
+  }
+  const next = createTerminalTransportRowCacheDecoder();
+  rowCacheDecodersBySocket.set(socket, next);
+  return next;
+};
+
+const pullLatestFrame = async (input: {
+  socket: WebSocket;
+  messages: TerminalTransportServerMessage[];
+  lastFrame: TerminalTransportFramePayload | null;
+  rowCacheDecoder?: TerminalTransportRowCacheDecoder;
+  cols?: number;
+  rows?: number;
+}): Promise<TerminalTransportFramePayload> => {
+  const messageStart = input.messages.length;
+  input.socket.send(
+    encodeClientFrame({
+      type: "pullFrame",
+      lastAppliedFrameSeq: input.lastFrame?.seq ?? 0,
+      cols: input.cols ?? input.lastFrame?.cols ?? 80,
+      rows: input.rows ?? input.lastFrame?.rows ?? 20,
+    }),
+  );
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await Bun.sleep(20);
+    const frameMessage = input.messages.slice(messageStart).findLast(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
+    );
+    if (!frameMessage) {
+      continue;
+    }
+    const frame = applyTerminalFramePatch(
+      input.lastFrame,
+      frameMessage.patch,
+      frameMessage.frameSeq,
+      resolveRowCacheDecoder(input.socket, input.rowCacheDecoder),
+    );
+    if (!frame) {
+      throw new Error("terminal frame patch did not apply");
+    }
+    return frame;
+  }
+  throw new Error("timed out waiting for terminal frame");
+};
+
+const waitForServerTrace = async <T extends Extract<TerminalTransportServerMessage, { type: "trace" }>>(
+  messages: TerminalTransportServerMessage[],
+  predicate: (message: Extract<TerminalTransportServerMessage, { type: "trace" }>) => message is T,
+): Promise<T> => {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const trace = messages.findLast(
+      (message): message is T => message.type === "trace" && predicate(message),
+    );
+    if (trace) {
+      return trace;
+    }
+    await Bun.sleep(25);
+  }
+  throw new Error("timed out waiting for terminal trace");
+};
+
+const createSnapshotForFrameProjection = (input: {
+  lineCount: number;
+  rows: number;
+  viewportOffset: number;
+  cursorY: number;
+}): ManagedTerminalSnapshot => ({
+  seq: 7,
+  timestamp: 10,
+  cols: 80,
+  rows: input.rows,
+  lines: Array.from({ length: input.lineCount }, (_, index) => `line-${index}`),
+  richLines: Array.from({ length: input.lineCount }, (_, index) => ({
+    spans: [{ text: `line-${index}` }],
+  })),
+  cursor: {
+    x: 3,
+    y: input.cursorY,
+    visible: true,
+  },
+  scrollback: {
+    viewportOffset: input.viewportOffset,
+    totalLines: input.lineCount,
+    screenLines: input.rows,
+  },
+});
 
 const listInvitations = (plane: TerminalControlPlane, terminalId: string) => {
   const db = Reflect.get(plane, "db") as {
@@ -99,6 +203,80 @@ afterEach(() => {
 });
 
 describe("Feature: terminal control plane", () => {
+  test("Scenario: Given a large terminal scrollback When projecting a transport frame Then the frame carries only the requested viewport rows and local cursor coordinates", () => {
+    const snapshot = createSnapshotForFrameProjection({
+      lineCount: 200,
+      rows: 20,
+      viewportOffset: 150,
+      cursorY: 169,
+    });
+
+    const frame = projectTerminalSnapshotFramePayload(snapshot, {
+      cols: 80,
+      rows: 20,
+      viewportStart: 150,
+    });
+
+    expect(frame.lines).toHaveLength(20);
+    expect(frame.richLines).toHaveLength(20);
+    expect(frame.lines[0]).toBe("line-150");
+    expect(frame.lines[19]).toBe("line-169");
+    expect(frame.scrollback).toEqual({
+      viewportOffset: 150,
+      totalLines: 200,
+      screenLines: 20,
+    });
+    expect(frame.cursor).toEqual({
+      x: 3,
+      y: 19,
+      visible: true,
+    });
+  });
+
+  test("Scenario: Given a composed terminal snapshot already carries one viewport canvas When projecting a transport frame Then viewport metadata cannot slice the canvas blank", () => {
+    const lines = Array.from({ length: 12 }, (_, index) => (index === 11 ? "bottom status" : `canvas-${index}`));
+    const snapshot: ManagedTerminalSnapshot = {
+      seq: 4,
+      timestamp: 4,
+      cols: 80,
+      rows: 12,
+      lines,
+      richLines: lines.map((line) => ({
+        spans: line.length > 0 ? [{ text: line }] : [],
+      })),
+      cursor: {
+        x: 6,
+        y: 11,
+        visible: true,
+      },
+      scrollback: {
+        viewportOffset: 30,
+        totalLines: 40,
+        screenLines: 12,
+      },
+    };
+
+    const frame = projectTerminalSnapshotFramePayload(snapshot, {
+      cols: 80,
+      rows: 12,
+      viewportStart: 30,
+    });
+
+    expect(frame.lines).toHaveLength(12);
+    expect(frame.lines[0]).toBe("canvas-0");
+    expect(frame.lines[11]).toBe("bottom status");
+    expect(frame.cursor).toEqual({
+      x: 6,
+      y: 0,
+      visible: false,
+    });
+    expect(frame.scrollback).toEqual({
+      viewportOffset: 30,
+      totalLines: 42,
+      screenLines: 12,
+    });
+  });
+
   test("Scenario: Given default create When creating and listing terminals Then the control plane starts a shell-backed terminal with profile metadata", async () => {
     const plane = createPlane();
     plane.setConfig({
@@ -358,23 +536,210 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
-  test("Scenario: Given a default shell terminal When mixed input submits a command Then the control plane observes executed output instead of a stuck echoed line", async () => {
-    const plane = createDefaultShellPlane();
-    const created = await plane.create({ terminalId: "default-shell-exec" });
+  test(
+    "Scenario: Given a default shell terminal When mixed input submits a command Then the control plane observes executed output instead of a stuck echoed line",
+    async () => {
+      const plane = createDefaultShellPlane();
+      const created = await plane.create({ terminalId: "default-shell-exec" });
 
-    const result = await plane.input({
-      terminalId: created.terminalId,
-      text: '<raw>printf "__AGT_EXEC__=%s\\n" "ok"</raw><key data="enter"/>',
-      returnRead: {
-        debounceMs: 250,
+      const result = await plane.input({
+        terminalId: created.terminalId,
+        text: '<raw>printf "__AGT_EXEC__=%s\\n" "ok"</raw><key data="enter"/>',
+        returnRead: {
+          debounceMs: 250,
+        },
+        readMode: "snapshot",
+      });
+
+      expect(result.ok).toBe(true);
+      const matched = await plane.awaitAuthorized({
+        terminalId: created.terminalId,
+        wait: { until: "match", timeoutMs: 10_000, idleMs: 0 },
+        match: { pattern: "__AGT_EXEC__=ok", contextLines: 1 },
+        recordActivity: false,
+      });
+      expect(matched.outcome).toBe("matched");
+      expect(matched.snapshot.lines.join("\n")).toContain("__AGT_EXEC__=ok");
+
+      await plane.dispose();
+    },
+    { timeout: 16_000 },
+  );
+
+  test("Scenario: Given a projection terminal metadata source When the source terminal changes Then the projection terminal reuses the same snapshot and live output truth", async () => {
+    const plane = createPlane();
+    const source = await plane.create({ terminalId: "shell-1:terminal-1" });
+    const projection = await plane.create({
+      terminalId: "shell-1:terminal-2",
+      metadata: {
+        projectionSourceTerminalId: source.terminalId,
       },
-      readMode: "snapshot",
     });
 
-    expect(result.ok).toBe(true);
-    const lines = result.read?.snapshot?.lines ?? [];
-    const visible = lines.join("\n");
-    expect(visible).toContain("__AGT_EXEC__=ok");
+    const sourceRuntime = plane.getManagedTerminal(source.terminalId);
+    const projectionRuntime = plane.getManagedTerminal(projection.terminalId);
+    if (!sourceRuntime || !projectionRuntime) {
+      throw new Error("expected source and projection runtimes");
+    }
+
+    await sourceRuntime.write("echo projection\n");
+    await Bun.sleep(200);
+
+    const sourceSnapshot = sourceRuntime.getSnapshot();
+    const projectionSnapshot = projectionRuntime.getSnapshot();
+    expect(projectionSnapshot.lines).toEqual(sourceSnapshot.lines);
+    expect(projectionSnapshot.scrollback.viewportOffset).toBe(sourceSnapshot.scrollback.viewportOffset);
+    expect(projectionRuntime.getStatus()).toBe(sourceRuntime.getStatus());
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a composed terminal-2 runtime When shell truth changes and backend later publishes product surface Then terminal-2 changes only through the composed runtime publication seam", async () => {
+    const plane = createPlane();
+    const source = await plane.create({ terminalId: "shell-1:terminal-1" });
+    const composed = await plane.create({
+      terminalId: "shell-1:terminal-2",
+      metadata: {
+        terminalRuntimeKind: "composed",
+        composedShellTerminalId: source.terminalId,
+      },
+      profile: {
+        cols: 80,
+        rows: 20,
+      },
+    });
+
+    const sourceRuntime = plane.getManagedTerminal(source.terminalId);
+    const composedRuntime = plane.getManagedTerminal(composed.terminalId);
+    if (!sourceRuntime || !composedRuntime) {
+      throw new Error("expected source and composed runtimes");
+    }
+
+    const initialSnapshot = composedRuntime.getSnapshot();
+    expect(initialSnapshot.lines[0]?.includes("shell-1:terminal-2")).toBe(true);
+
+    await sourceRuntime.write("echo should-not-directly-project\n");
+    await Bun.sleep(200);
+
+    const afterSourceWrite = composedRuntime.getSnapshot();
+    expect(afterSourceWrite.lines.join("\n")).not.toContain("should-not-directly-project");
+    expect(afterSourceWrite.lines).toEqual(initialSnapshot.lines);
+
+    const updated = plane.publishComposedSurfaceAuthorized({
+      terminalId: composed.terminalId,
+      surface: {
+        shellTerminalId: source.terminalId,
+        terminalId: composed.terminalId,
+        shellSnapshotSeq: sourceRuntime.getSnapshot().seq,
+        cols: 80,
+        rows: 20,
+        bottomLine: "托管 off",
+        dialogueOpen: true,
+        dialoguePlacement: "right",
+        dialogueDraft: "",
+        managedLabel: "托管 off",
+        unreadLabel: "✉ 0 M-J",
+        heartbeatLabel: "Avatar started；等待新的 terminal 变化…",
+        terminalLines: [
+          "$ agenter shell",
+          "shell-1:~/project $",
+          "",
+          "dialogue right",
+          "",
+          "托管 off  ✉ 0 M-J",
+        ],
+        terminalRichLines: [
+          { spans: [{ text: "$ agenter shell", fg: "#00ff00" }] },
+          { spans: [{ text: "shell-1:~/project $", fg: "#ffffff" }] },
+          { spans: [] },
+          { spans: [{ text: "dialogue right", fg: "#6ee7ff" }] },
+          { spans: [] },
+          { spans: [{ text: "托管 off  ✉ 0 M-J", fg: "#facc15" }] },
+        ],
+        cursor: { x: 5, y: 1, visible: true },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 20,
+          screenLines: 20,
+        },
+      },
+    });
+
+    expect(updated.terminalId).toBe(composed.terminalId);
+    const composedSnapshot = composedRuntime.getSnapshot();
+    expect(composedSnapshot.lines.join("\n")).toContain("dialogue right");
+    expect(composedSnapshot.lines.join("\n")).toContain("托管 off");
+    expect(composedSnapshot.richLines?.[0]?.spans[0]?.fg).toBe("#00ff00");
+
+    const read = await plane.read(composed.terminalId, "snapshot", { recordActivity: false });
+    expect(read.representation).toBe("snapshot");
+    expect(read.snapshot?.lines.join("\n")).toContain("dialogue right");
+    expect(read.snapshot?.lines.join("\n")).not.toContain("should-not-directly-project");
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a composed terminal-2 runtime When it is created without a child PTY command Then it still publishes terminal screen truth through the composed seam", async () => {
+    const plane = createPlane();
+    const source = await plane.create({ terminalId: "shell-no-pty:terminal-1" });
+    const composed = await plane.create({
+      terminalId: "shell-no-pty:terminal-2",
+      metadata: {
+        terminalRuntimeKind: "composed",
+        composedShellTerminalId: source.terminalId,
+      },
+      profile: {
+        command: [],
+        cols: 32,
+        rows: 8,
+      },
+    });
+
+    const composedRuntime = plane.getManagedTerminal(composed.terminalId);
+    if (!composedRuntime) {
+      throw new Error("expected composed runtime");
+    }
+
+    expect(composedRuntime.getSnapshot().lines.join("\n")).toContain("shell-no-pty:terminal-2");
+
+    plane.publishComposedSurfaceAuthorized({
+      terminalId: composed.terminalId,
+      surface: {
+        shellTerminalId: source.terminalId,
+        terminalId: composed.terminalId,
+        shellSnapshotSeq: 0,
+        cols: 32,
+        rows: 8,
+        bottomLine: "Avatar started",
+        dialogueOpen: false,
+        dialoguePlacement: null,
+        dialogueDraft: "",
+        managedLabel: "托管 off",
+        unreadLabel: "✉ 0",
+        heartbeatLabel: "Avatar started",
+        terminalLines: [
+          "terminal-2 composed screen",
+          "no child PTY process",
+          "Avatar started",
+        ],
+        terminalRichLines: [
+          { spans: [{ text: "terminal-2 composed screen", fg: "#f8fafc" }] },
+          { spans: [{ text: "no child PTY process", fg: "#93c5fd" }] },
+          { spans: [{ text: "Avatar started", fg: "#facc15" }] },
+        ],
+        cursor: { x: 0, y: 0, visible: false },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 8,
+          screenLines: 8,
+        },
+      },
+    });
+
+    const snapshot = composedRuntime.getSnapshot();
+    expect(snapshot.lines.join("\n")).toContain("terminal-2 composed screen");
+    expect(snapshot.lines.join("\n")).toContain("no child PTY process");
+    expect(snapshot.richLines?.[1]?.spans[0]?.text).toBe("no child PTY process");
 
     await plane.dispose();
   });
@@ -688,7 +1053,7 @@ describe("Feature: terminal control plane", () => {
         activeSnapshotListeners -= 1;
         release();
       };
-    }) satisfies ManagedTerminal["onSnapshot"];
+    }) satisfies TerminalRuntime["onSnapshot"];
     managed.onStatus = ((listener) => {
       activeStatusListeners += 1;
       const release = originalOnStatus(listener);
@@ -696,7 +1061,7 @@ describe("Feature: terminal control plane", () => {
         activeStatusListeners -= 1;
         release();
       };
-    }) satisfies ManagedTerminal["onStatus"];
+    }) satisfies TerminalRuntime["onStatus"];
     managed.waitCommitted = ((input) => {
       activeCommitWaiters += 1;
       const handle = originalWaitCommitted(input);
@@ -707,7 +1072,7 @@ describe("Feature: terminal control plane", () => {
           handle.reject(reason);
         },
       };
-    }) satisfies ManagedTerminal["waitCommitted"];
+    }) satisfies TerminalRuntime["waitCommitted"];
 
     const abort = new AbortController();
     const waiting = plane.awaitAuthorized({
@@ -1003,7 +1368,7 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
-  test("Scenario: Given websocket transport is started When a client connects and the terminal is stopped Then endpoint discovery output streaming and lifecycle shutdown stay coherent", async () => {
+  test("Scenario: Given websocket transport is started When a client connects pulls frames and the terminal is stopped Then endpoint discovery projection and lifecycle shutdown stay coherent", async () => {
     const plane = createPlane();
     const created = await plane.create({ terminalId: "stream" });
     const transport = await plane.startTransport({ port: 0 });
@@ -1028,9 +1393,10 @@ describe("Feature: terminal control plane", () => {
     await opened;
     socket.send(encodeClientFrame({ type: "inputBytes", data: new TextEncoder().encode("hello transport\n") }));
     await Bun.sleep(150);
+    const frame = await pullLatestFrame({ socket, messages, lastFrame: null });
 
-    expect(messages.some((message) => message.type === "snapshot")).toBe(true);
-    expect(messages.some((message) => outputIncludes(message, "hello transport"))).toBe(true);
+    expect(messages.some((message) => message.type === "frameDirty")).toBe(true);
+    expect(frame.lines.join("\n")).toContain("hello transport");
 
     const closed = new Promise<void>((resolve) => {
       socket.addEventListener("close", () => resolve(), { once: true });
@@ -1042,9 +1408,746 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
-  test("Scenario: Given a transport client is attached When terminal output changes without a geometry change Then websocket subscribers keep the bootstrap snapshot and stream output instead of receiving a fresh full snapshot every tick", async () => {
+  test("Scenario: Given a Bun client in the same process When transport hello negotiates direct mode Then control plane uses WebSocket only for handshake and direct functions for frame/input data", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "stream-direct-data-plane" });
+    await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    const websocketFrames: TerminalTransportServerMessage[] = [];
+    const directFrames: TerminalTransportServerMessage[] = [];
+    const traces: Array<{ kind: string; messageType?: string; dataPlane?: string; reason?: string }> = [];
+    const session = createTerminalTransportClientSession({
+      transportUrl: endpoint!.url,
+      geometryRole: "authority",
+      debugTrace: true,
+      events: {
+        onMessage(message) {
+          if (message.type === "helloAck" || message.type === "status") {
+            websocketFrames.push(message);
+          } else {
+            directFrames.push(message);
+          }
+        },
+        onTrace(event) {
+          traces.push(event);
+        },
+      },
+    });
+
+    await session.connect();
+    const directAck = await new Promise<Extract<TerminalTransportServerMessage, { type: "helloAck" }>>(
+      (resolveAck, rejectAck) => {
+        const startedAt = Date.now();
+        const poll = () => {
+          const found = websocketFrames.findLast(
+            (message): message is Extract<TerminalTransportServerMessage, { type: "helloAck" }> =>
+              message.type === "helloAck" && message.direct?.accepted === true,
+          );
+          if (found) {
+            resolveAck(found);
+            return;
+          }
+          if (Date.now() - startedAt > 2_000) {
+            rejectAck(new Error("timeout waiting for direct helloAck"));
+            return;
+          }
+          setTimeout(poll, 20);
+        };
+        poll();
+      },
+    );
+    expect(directAck?.direct).toMatchObject({
+      accepted: true,
+      upgradeId: expect.any(String),
+      registryKey: "@agenter/terminal-transport/direct-registry/v1",
+      serverToken: expect.any(String),
+    });
+    expect(
+      getTerminalTransportDirectRegistry()?.claim(directAck!.direct!.upgradeId!, directAck!.direct!.serverToken!),
+    ).toBeNull();
+
+    session.sendInputBytes(new TextEncoder().encode("direct transport\n"));
+    await Bun.sleep(80);
+    session.pullFrame({
+      lastAppliedFrameSeq: 0,
+      cols: 80,
+      rows: 20,
+    });
+    const frame = await new Promise<Extract<TerminalTransportServerMessage, { type: "frame" }>>((resolve, reject) => {
+      const startedAt = Date.now();
+      const poll = () => {
+        const found = directFrames.findLast(
+          (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
+        );
+        if (found) {
+          resolve(found);
+          return;
+        }
+        if (Date.now() - startedAt > 2_000) {
+          reject(new Error("timeout waiting for direct frame"));
+          return;
+        }
+        setTimeout(poll, 20);
+      };
+      poll();
+    });
+    const decodedFrame = applyTerminalFramePatch(
+      null,
+      frame.patch,
+      frame.frameSeq,
+      createTerminalTransportRowCacheDecoder(),
+    );
+
+    expect(decodedFrame?.lines.join("\n")).toContain("direct transport");
+    expect(traces).toContainEqual({
+      kind: "client-direct-upgrade",
+      reason: "connected",
+      dataPlane: "direct",
+    });
+    expect(traces).toContainEqual({
+      kind: "client-send",
+      messageType: "pullFrame",
+      dataPlane: "direct",
+    });
+    expect(directFrames.some((message) => message.type === "frameDirty")).toBe(true);
+
+    session.disconnect();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given default local transport When terminal output changes without a geometry change Then websocket subscribers pull row-cache frames without running the diff path", async () => {
     const plane = createPlane();
     const created = await plane.create({ terminalId: "stream-snapshot-updates" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.port).not.toBeNull();
+    expect(transport.framePatchMode).toBe("rowCache");
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const rowCacheDecoder = createTerminalTransportRowCacheDecoder();
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+
+    await opened;
+    await Bun.sleep(80);
+    let latestFrame = await pullLatestFrame({ socket, messages, lastFrame: null, rowCacheDecoder });
+    const initialDirtyCount = messages.filter((message) => message.type === "frameDirty").length;
+    expect(initialDirtyCount).toBeGreaterThan(0);
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "snapshot after connect\n",
+    });
+    await Bun.sleep(150);
+    latestFrame = await pullLatestFrame({ socket, messages, lastFrame: latestFrame, rowCacheDecoder });
+
+    const frameMessages = messages.filter(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
+    );
+
+    expect(messages.filter((message) => message.type === "frameDirty").length).toBeGreaterThanOrEqual(initialDirtyCount);
+    expect(latestFrame.lines.join("\n")).toContain("snapshot after connect");
+    expect(frameMessages.every((message) => message.patch.type === "rowCache")).toBe(true);
+    expect(
+      frameMessages.some(
+        (message) =>
+          message.patch.type === "rowCache" &&
+          message.patch.cachedRows.some((row) => row.cid > 0 && row.line === undefined && row.richLine === undefined),
+      ),
+    ).toBe(true);
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given row-cache transport has already serialized one viewport When the next pull observes identical cells Then the backend returns a codec-level notModified frame", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "stream-row-cache-not-modified" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.framePatchMode).toBe("rowCache");
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+
+    await opened;
+    await Bun.sleep(80);
+    const firstFrame = await pullLatestFrame({ socket, messages, lastFrame: null });
+    const firstFrameMessage = messages.findLast(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
+    );
+    expect(firstFrameMessage?.patch.type).toBe("rowCache");
+
+    socket.send(
+      encodeClientFrame({
+        type: "pullFrame",
+        lastAppliedFrameSeq: firstFrame.seq,
+        cols: firstFrame.cols,
+        rows: firstFrame.rows,
+      }),
+    );
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await Bun.sleep(20);
+      const latestFrameMessage = messages.findLast(
+        (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
+      );
+      if (latestFrameMessage && latestFrameMessage !== firstFrameMessage) {
+        expect(latestFrameMessage.patch).toEqual({
+          type: "notModified",
+          baseFrameSeq: firstFrame.seq,
+          timestamp: expect.any(Number),
+        });
+        socket.close();
+        plane.stopTransport();
+        await plane.dispose();
+        return;
+      }
+    }
+    throw new Error("timed out waiting for notModified frame");
+  });
+
+  test("Scenario: Given debug trace is requested in hello When the client pulls a frame Then backend timing breakdown and aggregate diagnostics are sent as transport trace sideband", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "stream-debug-trace" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.port).not.toBeNull();
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+
+    await opened;
+    socket.send(encodeClientFrame({ type: "hello", geometryRole: "authority", debugTrace: true }));
+    const frame = await pullLatestFrame({ socket, messages, lastFrame: null, rows: 8 });
+
+    const trace = messages.findLast(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "trace" }> =>
+        message.type === "trace" && message.event === "pull-frame-server",
+    );
+    const rawTrace = messages.find(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "trace" }> =>
+        message.type === "trace" && message.event === "client-message-raw",
+    );
+    const decodedTrace = messages.find(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "trace" }> =>
+        message.type === "trace" &&
+        message.event === "client-message-decoded" &&
+        message.fields.messageType === "pullFrame",
+    );
+    const pullStartTrace = messages.find(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "trace" }> =>
+        message.type === "trace" && message.event === "pull-frame-start",
+    );
+    const diagnosticsTrace = await waitForServerTrace(
+      messages,
+      (message): message is Extract<TerminalTransportServerMessage, { type: "trace" }> =>
+        message.event === "transport-diagnostics",
+    );
+    expect(trace).toBeDefined();
+    expect(rawTrace).toBeUndefined();
+    expect(decodedTrace).toBeUndefined();
+    expect(pullStartTrace).toBeUndefined();
+    expect(diagnosticsTrace?.fields).toMatchObject({
+      tcpNoDelayAttempted: true,
+      tcpNoDelayEnabled: expect.any(Boolean),
+      eventLoopLagMs: expect.any(Number),
+      queuedMessages: expect.any(Number),
+      scrollMessages: expect.any(Number),
+      nonScrollMessages: expect.any(Number),
+      pullMessages: expect.any(Number),
+      totalDecodeMs: expect.any(Number),
+      maxQueueDepthBeforeDrain: expect.any(Number),
+      inputDrains: expect.any(Number),
+      pullFrames: expect.any(Number),
+      lastPullTotalMs: expect.any(Number),
+      maxPullTotalMs: expect.any(Number),
+      lastPullPatchType: "rowCache",
+      outputBytes: expect.any(Number),
+      outputEvents: expect.any(Number),
+      snapshots: expect.any(Number),
+      dirtyTicks: expect.any(Number),
+      dirtySignals: expect.any(Number),
+      dirtyCheckMs: expect.any(Number),
+    });
+    expect(diagnosticsTrace?.fields).toHaveProperty("oldestQueueAgeMs");
+    expect(diagnosticsTrace?.fields).toHaveProperty("oldestRawQueueAgeMs");
+    expect(diagnosticsTrace?.fields).toHaveProperty("lastDrainMs");
+    expect(diagnosticsTrace?.fields).toHaveProperty("maxDrainMs");
+    expect(trace?.terminalId).toBe(created.terminalId);
+    expect(trace?.fields).toMatchObject({
+      frameSeq: frame.seq,
+      lastAppliedFrameSeq: 0,
+      patchType: "rowCache",
+      patchRows: 8,
+      queuedMessages: expect.any(Number),
+      viewportStart: frame.scrollback.viewportOffset,
+      totalLines: frame.scrollback.totalLines,
+      screenLines: frame.scrollback.screenLines,
+    });
+    expect(typeof trace?.fields.encodedBytes).toBe("number");
+    expect(typeof trace?.fields.snapshotMs).toBe("number");
+    expect(typeof trace?.fields.projectionMs).toBe("number");
+    expect(typeof trace?.fields.patchMs).toBe("number");
+    expect(typeof trace?.fields.statusMs).toBe("number");
+    expect(typeof trace?.fields.encodeMs).toBe("number");
+    expect(typeof trace?.fields.sendMs).toBe("number");
+    expect(typeof trace?.fields.totalMs).toBe("number");
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given debug trace is not requested When the client pulls a frame Then backend timing sideband stays disabled by default", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "stream-debug-trace-default-off" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.port).not.toBeNull();
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+
+    await opened;
+    await pullLatestFrame({ socket, messages, lastFrame: null, rows: 8 });
+    await Bun.sleep(40);
+
+    expect(messages.some((message) => message.type === "trace")).toBe(false);
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given diff transport mode When terminal output changes without a geometry change Then websocket subscribers may receive row diffs", async () => {
+    const plane = createPlane();
+    plane.setConfig({ transport: { framePatchMode: "diff" } });
+    const created = await plane.create({ terminalId: "stream-row-diff-updates" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.framePatchMode).toBe("diff");
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+
+    await opened;
+    await Bun.sleep(80);
+    let latestFrame = await pullLatestFrame({ socket, messages, lastFrame: null });
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "diff after connect\n",
+    });
+    await Bun.sleep(150);
+    latestFrame = await pullLatestFrame({ socket, messages, lastFrame: latestFrame });
+
+    const frameMessages = messages.filter(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
+    );
+
+    expect(latestFrame.lines.join("\n")).toContain("diff after connect");
+    expect(frameMessages.some((message) => message.patch.type === "rows" || message.patch.type === "scrollRows")).toBe(
+      true,
+    );
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a shared transport attachment When the client scrolls the viewport Then websocket subscribers pull an authoritative frame with updated viewport truth", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "shared-viewport" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.port).not.toBeNull();
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "line-1\nline-2\nline-3\nline-4\nline-5\nline-6\nline-7\nline-8\nline-9\nline-10\nline-11\nline-12\nline-13\nline-14\nline-15\nline-16\nline-17\nline-18\nline-19\nline-20\nline-21\nline-22\nline-23\nline-24\nline-25\nline-26\n",
+    });
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+
+    await opened;
+    await Bun.sleep(120);
+
+    const initialFrame = await pullLatestFrame({ socket, messages, lastFrame: null });
+
+    socket.send(encodeClientFrame({ type: "viewportDelta", deltaRows: -3 }));
+    await Bun.sleep(120);
+    const latestFrame = await pullLatestFrame({ socket, messages, lastFrame: initialFrame });
+
+    expect(latestFrame.scrollback.viewportOffset).toBeLessThan(initialFrame.scrollback.viewportOffset);
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a shared transport attachment When viewport input changes backend scroll Then input stays objective and pull reads backend truth", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "shared-viewport-objective-input" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.port).not.toBeNull();
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: `${Array.from({ length: 80 }, (_, index) => `line-${index}`).join("\n")}\n`,
+    });
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+
+    await opened;
+    const initialFrame = await pullLatestFrame({ socket, messages, lastFrame: null, rows: 12 });
+    const initialDirtyCount = messages.filter((message) => message.type === "frameDirty").length;
+
+    socket.send(encodeClientFrame({ type: "viewportDelta", deltaRows: -4 }));
+    await Bun.sleep(5);
+
+    const dirtyMessages = messages.filter(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "frameDirty" }> =>
+        message.type === "frameDirty",
+    );
+    expect(
+      dirtyMessages
+        .slice(initialDirtyCount)
+        .every((message) => message.reason !== "viewport-delta" && message.reason !== "viewport-target"),
+    ).toBe(true);
+
+    const latestFrame = await pullLatestFrame({ socket, messages, lastFrame: initialFrame, rows: 12 });
+    expect(latestFrame.scrollback.viewportOffset).toBeLessThan(initialFrame.scrollback.viewportOffset);
+
+    const targetInitialDirtyCount = messages.filter((message) => message.type === "frameDirty").length;
+    const targetViewportStart = Math.max(0, latestFrame.scrollback.viewportOffset - 2);
+    socket.send(encodeClientFrame({ type: "viewportTarget", viewportStart: targetViewportStart }));
+    await Bun.sleep(5);
+
+    const targetDirtyMessages = messages.filter(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "frameDirty" }> =>
+        message.type === "frameDirty",
+    );
+    expect(
+      targetDirtyMessages
+        .slice(targetInitialDirtyCount)
+        .every((message) => message.reason !== "viewport-delta" && message.reason !== "viewport-target"),
+    ).toBe(true);
+    const targetFrame = await pullLatestFrame({ socket, messages, lastFrame: latestFrame, rows: 12 });
+    expect(targetFrame.scrollback.viewportOffset).toBe(targetViewportStart);
+    expect(
+      messages.some(
+        (message) =>
+          message.type === "frameDirty" &&
+          (message.reason === "viewport-delta" || message.reason === "viewport-target"),
+      ),
+    ).toBe(false);
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given websocket buffers many scroll inputs When backend drains one turn Then only consecutive scroll runs are merged and semantic events keep order", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "backend-scroll-drain" });
+    const managed = plane.getManagedTerminal(created.terminalId);
+    if (!managed) {
+      throw new Error("expected managed terminal");
+    }
+    const operations: string[] = [];
+    const originalScrollViewport = managed.scrollViewport.bind(managed);
+    const originalWriteRawBytes = managed.writeRawBytes.bind(managed);
+    managed.scrollViewport = ((deltaRows: number) => {
+      operations.push(`scroll:${deltaRows}`);
+      originalScrollViewport(deltaRows);
+    }) satisfies TerminalRuntime["scrollViewport"];
+    managed.writeRawBytes = ((bytes: Uint8Array) => {
+      operations.push(`input:${new TextDecoder().decode(bytes)}`);
+      originalWriteRawBytes(bytes);
+    }) satisfies TerminalRuntime["writeRawBytes"];
+
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+    expect(transport.port).not.toBeNull();
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    const socket = new WebSocket(endpoint!.url);
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    await opened;
+
+    for (let index = 0; index < 12; index += 1) {
+      socket.send(encodeClientFrame({ type: "viewportDelta", deltaRows: 1 }));
+    }
+    await Bun.sleep(80);
+    expect(operations.filter((operation) => operation.startsWith("scroll:"))).toEqual(["scroll:12"]);
+
+    operations.length = 0;
+    for (let index = 0; index < 3; index += 1) {
+      socket.send(encodeClientFrame({ type: "viewportDelta", deltaRows: -1 }));
+    }
+    socket.send(encodeClientFrame({ type: "inputBytes", data: new TextEncoder().encode("x") }));
+    for (let index = 0; index < 2; index += 1) {
+      socket.send(encodeClientFrame({ type: "viewportDelta", deltaRows: 1 }));
+    }
+    await Bun.sleep(120);
+    expect(operations).toEqual(["scroll:-3", "input:x", "scroll:2"]);
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given one websocket consumer is already dirty When terminal text changes repeatedly Then the shared dirty loop waits until that connection pulls again", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "backend-dirty-loop" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+    expect(transport.port).not.toBeNull();
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+    await opened;
+    await Bun.sleep(120);
+    const initialDirtyCount = messages.filter((message) => message.type === "frameDirty").length;
+    expect(initialDirtyCount).toBe(1);
+
+    await plane.write({ terminalId: created.terminalId, text: "dirty one\n" });
+    await plane.write({ terminalId: created.terminalId, text: "dirty two\n" });
+    await Bun.sleep(180);
+    expect(messages.filter((message) => message.type === "frameDirty")).toHaveLength(initialDirtyCount);
+
+    const latestFrame = await pullLatestFrame({ socket, messages, lastFrame: null });
+    await plane.write({ terminalId: created.terminalId, text: "dirty three\n" });
+    await Bun.sleep(180);
+    expect(messages.filter((message) => message.type === "frameDirty")).toHaveLength(initialDirtyCount + 1);
+    expect(latestFrame.lines.join("\n")).toContain("dirty two");
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given terminal output exceeds the client viewport When websocket client targets then pulls a frame Then transport sends only backend authoritative viewport rows", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "viewport-frame" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.port).not.toBeNull();
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: `${Array.from({ length: 80 }, (_, index) => `viewport-line-${index}`).join("\n")}\n`,
+    });
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+
+    await opened;
+    await Bun.sleep(120);
+    const initialFrame = await pullLatestFrame({
+      socket,
+      messages,
+      lastFrame: null,
+      cols: 80,
+      rows: 12,
+    });
+    socket.send(encodeClientFrame({ type: "viewportTarget", viewportStart: 30 }));
+    await Bun.sleep(120);
+    const frame = await pullLatestFrame({
+      socket,
+      messages,
+      lastFrame: initialFrame,
+      cols: 80,
+      rows: 12,
+    });
+
+    expect(frame.lines).toHaveLength(12);
+    expect(frame.scrollback.viewportOffset).toBe(30);
+    expect(frame.scrollback.screenLines).toBe(12);
+    expect(frame.scrollback.totalLines).toBeGreaterThan(12);
+    expect(frame.lines[0]?.trimEnd()).toBe("viewport-line-30");
+    expect(frame.lines.join("\n")).not.toContain("viewport-line-0");
+    expect(frame.lines.join("\n")).not.toContain("viewport-line-79");
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a shared transport attachment When the client targets an absolute viewport start Then websocket subscribers pull the authoritative republished viewport truth", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "shared-viewport-target" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.port).not.toBeNull();
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "line-1\nline-2\nline-3\nline-4\nline-5\nline-6\nline-7\nline-8\nline-9\nline-10\nline-11\nline-12\nline-13\nline-14\nline-15\nline-16\nline-17\nline-18\nline-19\nline-20\nline-21\nline-22\nline-23\nline-24\nline-25\nline-26\n",
+    });
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+
+    await opened;
+    await Bun.sleep(120);
+    const initialFrame = await pullLatestFrame({ socket, messages, lastFrame: null });
+
+    socket.send(encodeClientFrame({ type: "viewportTarget", viewportStart: 5 }));
+    await Bun.sleep(120);
+    const latestFrame = await pullLatestFrame({ socket, messages, lastFrame: initialFrame });
+
+    expect(latestFrame.scrollback.viewportOffset).toBe(5);
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given transport was stopped When endpoint discovery runs Then the control plane does not project a stale websocket URL", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "stale-transport-endpoint" });
+    await plane.startTransport({ port: 0 });
+
+    expect(plane.getTransportEndpoint(created.terminalId)?.url).toContain(`/pty/${created.terminalId}`);
+
+    plane.stopTransport();
+
+    expect(plane.getTransportEndpoint(created.terminalId)).toBeNull();
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a projection-only transport attachment When it tries to resize backend geometry Then the control plane rejects last-resizer-wins behavior", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "projection-only-resize" });
     const transport = await plane.startTransport({ port: 0 });
     const endpoint = plane.getTransportEndpoint(created.terminalId);
 
@@ -1066,23 +2169,164 @@ describe("Feature: terminal control plane", () => {
 
     await opened;
     await Bun.sleep(80);
-    const initialSnapshotCount = messages.filter((message) => message.type === "snapshot").length;
-    expect(initialSnapshotCount).toBeGreaterThan(0);
+    socket.send(encodeClientFrame({ type: "resize", cols: 101, rows: 19 }));
+    await Bun.sleep(80);
 
-    await plane.write({
-      terminalId: created.terminalId,
-      text: "snapshot after connect\n",
-    });
-    await Bun.sleep(150);
-
-    const snapshotMessages = messages.filter(
-      (message): message is Extract<TerminalTransportServerMessage, { type: "snapshot" }> => message.type === "snapshot",
+    const latestError = messages.findLast(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "error" }> => message.type === "error",
     );
-
-    expect(snapshotMessages.length).toBe(initialSnapshotCount);
-    expect(messages.some((message) => outputIncludes(message, "snapshot after connect"))).toBe(true);
+    expect(latestError?.message).toContain("projection-only");
+    expect(plane.getSnapshot(created.terminalId).cols).not.toBe(101);
+    expect(plane.getSnapshot(created.terminalId).rows).not.toBe(19);
 
     socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given two authority-capable attachments with explicit geometry order When backend arbitrates Then lower order wins and loser resize is rejected", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "authority-explicit-order" });
+    await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+    const first = new WebSocket(endpoint!.url);
+    const second = new WebSocket(endpoint!.url);
+    const firstMessages: TerminalTransportServerMessage[] = [];
+    const secondMessages: TerminalTransportServerMessage[] = [];
+    const waitOpen = (socket: WebSocket) =>
+      new Promise<void>((resolve, reject) => {
+        socket.addEventListener("open", () => resolve(), { once: true });
+        socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+      });
+    first.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        firstMessages.push(frame);
+      }
+    });
+    second.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        secondMessages.push(frame);
+      }
+    });
+
+    await Promise.all([waitOpen(first), waitOpen(second)]);
+    first.send(encodeClientFrame({ type: "hello", geometryRole: "authority", geometryOrder: 5 }));
+    second.send(encodeClientFrame({ type: "hello", geometryRole: "authority", geometryOrder: 1 }));
+    await Bun.sleep(120);
+
+    const secondHelloAck = secondMessages.findLast(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "helloAck" }> => message.type === "helloAck",
+    );
+    expect(secondHelloAck?.effectiveGeometryRole).toBe("authority");
+    expect(secondHelloAck?.authorityReason).toBe("explicit-geometry-order");
+
+    const attachments = plane.getTransportAttachments(created.terminalId);
+    expect(attachments).toHaveLength(2);
+    const authority = attachments.find((attachment) => attachment.effectiveGeometryRole === "authority");
+    const loser = attachments.find((attachment) => attachment.effectiveGeometryRole === "projection-only");
+    expect(authority?.geometryOrder).toBe(1);
+    expect(authority?.authorityReason).toBe("explicit-geometry-order");
+    expect(loser?.geometryAuthorityAttachmentId).toBe(authority?.attachmentId);
+
+    first.send(encodeClientFrame({ type: "resize", cols: 101, rows: 19 }));
+    await Bun.sleep(80);
+    const firstError = firstMessages.findLast(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "error" }> => message.type === "error",
+    );
+    expect(firstError?.message).toContain("projection-only");
+
+    second.send(encodeClientFrame({ type: "resize", cols: 91, rows: 22 }));
+    await Bun.sleep(80);
+    expect(plane.getSnapshot(created.terminalId).cols).toBe(91);
+    expect(plane.getSnapshot(created.terminalId).rows).toBe(22);
+
+    first.close();
+    second.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given authority-capable attachments without explicit order When backend arbitrates Then attach order wins until winner disconnects", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "authority-attach-order" });
+    await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+    const first = new WebSocket(endpoint!.url);
+    const second = new WebSocket(endpoint!.url);
+    const waitOpen = (socket: WebSocket) =>
+      new Promise<void>((resolve, reject) => {
+        socket.addEventListener("open", () => resolve(), { once: true });
+        socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+      });
+
+    await Promise.all([waitOpen(first), waitOpen(second)]);
+    first.send(encodeClientFrame({ type: "hello", geometryRole: "authority" }));
+    second.send(encodeClientFrame({ type: "hello", geometryRole: "authority" }));
+    await Bun.sleep(120);
+
+    let attachments = plane.getTransportAttachments(created.terminalId);
+    expect(attachments).toHaveLength(2);
+    let authority = attachments.find((attachment) => attachment.effectiveGeometryRole === "authority");
+    expect(authority?.authorityReason).toBe("backend-attach-order-fallback");
+    const initialAuthorityId = authority?.attachmentId;
+
+    first.close();
+    await Bun.sleep(120);
+
+    attachments = plane.getTransportAttachments(created.terminalId);
+    expect(attachments).toHaveLength(1);
+    authority = attachments[0];
+    expect(authority?.effectiveGeometryRole).toBe("authority");
+    expect(authority?.attachmentId).not.toBe(initialAuthorityId);
+
+    second.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given one attachment later drops explicit geometry order When backend reevaluates Then attach-order fallback becomes the visible authority reason", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "authority-order-cleared" });
+    await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+    const first = new WebSocket(endpoint!.url);
+    const second = new WebSocket(endpoint!.url);
+    const firstMessages: TerminalTransportServerMessage[] = [];
+    const waitOpen = (socket: WebSocket) =>
+      new Promise<void>((resolve, reject) => {
+        socket.addEventListener("open", () => resolve(), { once: true });
+        socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+      });
+    first.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        firstMessages.push(frame);
+      }
+    });
+
+    await Promise.all([waitOpen(first), waitOpen(second)]);
+    first.send(encodeClientFrame({ type: "hello", geometryRole: "authority", geometryOrder: 1 }));
+    second.send(encodeClientFrame({ type: "hello", geometryRole: "authority", geometryOrder: 10 }));
+    await Bun.sleep(120);
+
+    first.send(encodeClientFrame({ type: "hello", geometryRole: "authority" }));
+    second.send(encodeClientFrame({ type: "hello", geometryRole: "authority" }));
+    await Bun.sleep(120);
+
+    const authority = plane
+      .getTransportAttachments(created.terminalId)
+      .find((attachment) => attachment.effectiveGeometryRole === "authority");
+    expect(authority?.authorityReason).toBe("backend-attach-order-fallback");
+
+    const latestHelloAck = firstMessages.findLast(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "helloAck" }> => message.type === "helloAck",
+    );
+    expect(latestHelloAck?.authorityReason).toBe("backend-attach-order-fallback");
+
+    first.close();
+    second.close();
     plane.stopTransport();
     await plane.dispose();
   });
@@ -1560,7 +2804,8 @@ describe("Feature: terminal control plane", () => {
 
     socket.send(encodeClientFrame({ type: "inputBytes", data: new TextEncoder().encode("allowed transport\n") }));
     await Bun.sleep(150);
-    expect(messages.some((message) => outputIncludes(message, "allowed transport"))).toBe(true);
+    const frame = await pullLatestFrame({ socket, messages, lastFrame: null });
+    expect(frame.lines.join("\n")).toContain("allowed transport");
 
     socket.close();
     plane.stopTransport();
@@ -1624,9 +2869,21 @@ describe("Feature: terminal control plane", () => {
     const pendingDir = join(workspace, "input", "pending");
 
     socket.send(encodeClientFrame({ type: "inputBytes", data: new TextEncoder().encode("typed raw transport\n") }));
-    await Bun.sleep(150);
+    const sawTransportEcho = async (): Promise<TerminalTransportFramePayload> => {
+      const startAt = Date.now();
+      let latestFrame: TerminalTransportFramePayload | null = null;
+      while (Date.now() - startAt <= 2_000) {
+        latestFrame = await pullLatestFrame({ socket, messages, lastFrame: latestFrame });
+        if (latestFrame.lines.join("\n").includes("typed raw transport")) {
+          return latestFrame;
+        }
+        await Bun.sleep(25);
+      }
+      throw new Error("timeout waiting transport echo");
+    };
+    const latestFrame = await sawTransportEcho();
 
-    expect(messages.some((message) => outputIncludes(message, "typed raw transport"))).toBe(true);
+    expect(latestFrame.lines.join("\n")).toContain("typed raw transport");
     expect(readdirSync(pendingDir)).toHaveLength(0);
     expect(
       plane.pageEventsAuthorized({

@@ -1,7 +1,7 @@
 # cli-shell-product Specification
 
 ## Purpose
-Define the ordinary-user `@agenter/cli-shell` product that binds one user shell-terminal to one backend terminal, one room, and one AvatarRuntime through product-extension runtime law.
+Define the ordinary-user `@agenter/cli-shell` product that binds one user shell-terminal host, one shell-truth terminal (`terminal-1`), one final visible product terminal (`terminal-2`), one room, and one AvatarRuntime through product-extension runtime law.
 
 ## Requirements
 
@@ -68,26 +68,33 @@ Cli-shell SHALL ensure the selected AvatarRuntime is running for the selected Av
 - **THEN** both resolved terminal resources attach to the same AvatarRuntime for Avatar `shell-assistant`
 - **AND** the different shell names only select different terminal and room resources
 
-### Requirement: Cli-shell SHALL ensure a durable internal terminal by name
+### Requirement: Cli-shell SHALL ensure durable terminal resources by session key
 
-Cli-shell SHALL list before creating the target terminal because terminal creation is not idempotent. The target terminal id SHALL be the resolved product terminal name.
+Cli-shell SHALL list before creating its session terminal resources because terminal creation is not idempotent. The resolved product shell session key, such as `shell-1`, SHALL be the durable product key from which cli-shell derives both terminal-1 shell truth and terminal-2 final visible product-terminal truth for that session.
 
-#### Scenario: Existing internal terminal is reused
-- **GIVEN** global terminal `shell-1` already exists
+#### Scenario: Existing session terminal resources are reused
+- **GIVEN** the session terminal resources derived from `shell-1` already exist
 - **WHEN** cli-shell starts for `--session=1`
-- **THEN** it focuses or attaches terminal `shell-1`
-- **AND** it does not call terminal create for `shell-1`
+- **THEN** it reuses the existing terminal-1 and terminal-2 resources for that session
+- **AND** it does not call terminal create again for already-existing resources
 
-#### Scenario: Missing internal terminal is created
-- **GIVEN** global terminal `shell-2` does not exist
+#### Scenario: Missing session terminal resources are created
+- **GIVEN** the session terminal resources derived from `shell-2` do not exist
 - **WHEN** cli-shell starts for `--session=2`
-- **THEN** it creates terminal `shell-2` through the backend terminal control plane
-- **AND** the created terminal is visible in the global terminal catalog
+- **THEN** it creates terminal-1 shell truth and terminal-2 final visible product terminal for that session through the backend terminal control plane
+- **AND** the created resources remain visible to backend terminal truth
 
-#### Scenario: Terminal grant is ensured for the summoned Avatar
-- **WHEN** cli-shell attaches terminal `shell-1` while Avatar `shell-assistant` is selected by default
-- **THEN** the Avatar principal has sufficient terminal access to observe and participate through backend systems
-- **AND** terminal focus for that Avatar points at `shell-1`
+#### Scenario: Session key derives distinct terminal binding identities
+- **WHEN** a user runs `agenter shell --session=1`
+- **THEN** cli-shell keeps `shell-1` as the durable product session key
+- **AND** it derives a distinct binding identity for terminal-1 from that session key
+- **AND** it derives a distinct binding identity for terminal-2 from that session key
+- **AND** repeated launches with the same session key resolve those same two terminal bindings instead of collapsing back to one terminal resource
+
+#### Scenario: Terminal access is ensured for the summoned Avatar
+- **WHEN** cli-shell attaches session `shell-1` while Avatar `shell-assistant` is selected by default
+- **THEN** the Avatar principal has sufficient access to observe and participate through the backend systems required by that product session
+- **AND** focus, grants, or equivalent terminal-role bindings are applied through the owning systems instead of local product memory
 
 ### Requirement: Cli-shell SHALL ensure a durable room for the shell product
 
@@ -110,24 +117,62 @@ Cli-shell SHALL create or reuse a global room for the resolved shell name, using
 - **THEN** the selected Avatar principal has room access
 - **AND** the room is focused for that Avatar as part of the summon flow
 
-### Requirement: Cli-shell SHALL bind one shell-terminal to one internal terminal
+### Requirement: Cli-shell SHALL bind one shell-terminal host to one cli-shell product session
 
-Cli-shell SHALL treat the user-launched shell-terminal as a single attachment surface for one internal `terminalSystem` terminal. It SHALL NOT provide in-product management or switching across multiple internal terminals in one shell-terminal.
+Cli-shell SHALL treat the user-launched shell-terminal as one native host attachment surface for one cli-shell product session. That product session includes terminal-1 as shell truth and terminal-2 as the final visible product terminal. Cli-shell SHALL NOT provide in-product management or switching across multiple product sessions in one shell-terminal.
 
-#### Scenario: One shell-terminal attaches one terminal
+#### Scenario: One shell-terminal attaches one product session
 - **WHEN** a user runs `agenter shell --session=1`
-- **THEN** that shell-terminal attaches to internal terminal `shell-1`
+- **THEN** that shell-terminal attaches to product session `shell-1`
+- **AND** `shell-terminal-view` renders the visible product terminal for that session
+- **AND** cli-shell keeps the matching shell-truth terminal internal to that same product session
 - **AND** cli-shell does not create a second visible terminal slot inside the same shell-terminal
 
-#### Scenario: Another terminal requires another shell-terminal launch
+#### Scenario: Another product session requires another shell-terminal launch
 - **WHEN** a user wants to work with `shell-2`
 - **THEN** they run `agenter shell --session=2` from another shell-terminal
-- **AND** the first shell-terminal remains attached only to `shell-1`
+- **AND** the first shell-terminal remains attached only to product session `shell-1`
 
 #### Scenario: Existing global terminal catalog remains backend truth
 - **WHEN** cli-shell attaches to `shell-1`
-- **THEN** it may read backend terminal facts for status and hydration
+- **THEN** it may read backend terminal facts for the bound shell-truth and visible product-terminal resources
 - **AND** it does not materialize a local multi-terminal catalog as a navigation surface
+
+### Requirement: Cli-shell SHALL preserve two backend terminal roles under one product law
+
+Cli-shell SHALL preserve one shell-truth terminal (`terminal-1`) and one final visible product terminal (`terminal-2`) under one product/bootstrap law. Terminal-1 remains the only shell truth for PTY interaction, shell buffer, shell scrollback, shell cursor, shell viewport, durable shell commit source, and LoopBus shell observation source. Terminal-2 remains the authoritative visible product-terminal surface consumed by native and Web hosts.
+
+#### Scenario: Default launch binds both terminal roles
+- **WHEN** a user runs `agenter shell`
+- **THEN** cli-shell ensures one shell-truth terminal and one visible product terminal for that shell session
+- **AND** both terminal roles remain part of one product bootstrap rather than two independent products
+
+#### Scenario: Product surfaces bind terminal-2 while shell authority remains on terminal-1
+- **WHEN** cli-shell completes bootstrap for `shell-1`
+- **THEN** native `shell-terminal-view` binds the visible shell body to terminal-2
+- **AND** `agenter shell --web` binds `web-terminal-view` to terminal-2 for that same product session
+- **AND** shell PTY authority, durable shell commit truth, and LoopBus shell observation truth remain attached to terminal-1
+
+#### Scenario: Native host consumes terminal-2 while terminal-1 remains shell truth
+- **WHEN** cli-shell renders in native host mode
+- **THEN** `shell-terminal-view` projects terminal-2 back to the owning shell host
+- **AND** native protocol-2 composition keeps terminal-1 and terminal-2 responsibilities distinct
+
+#### Scenario: Focus or host changes do not collapse terminal roles
+- **WHEN** runtime focus changes or another host attaches to the same cli-shell product session
+- **THEN** terminal-1 and terminal-2 responsibilities remain distinct
+- **AND** the product does not bypass terminal-2 or silently swap shell truth
+
+#### Scenario: Session key remains the product identity while the two terminal roles stay distinct
+- **WHEN** a user launches `agenter shell --session=1`
+- **THEN** cli-shell treats `shell-1` as the durable product session key
+- **AND** terminal-1 and terminal-2 remain distinct backend roles within that same product session
+- **AND** the session key does not collapse the two terminal roles into one identity
+
+#### Scenario: Visible product-terminal identity remains backend truth
+- **WHEN** a host renders the visible shell surface for `shell-1`
+- **THEN** it consumes terminal-2 as the visible product-terminal truth for that session
+- **AND** it does not reinterpret that visible surface as terminal-1 shell truth
 
 ### Requirement: Cli-shell TUI SHALL intrude only at the bottom of the shell-terminal
 
@@ -135,7 +180,7 @@ Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-te
 
 #### Scenario: First screen shows one active terminal with one-line bottom toolbar
 - **WHEN** cli-shell renders after orchestration succeeds
-- **THEN** the main body renders ordinary terminal content for the active internal terminal
+- **THEN** the main body renders ordinary terminal content for the active visible product terminal
 - **AND** Agenter status and controls are confined to one bottom toolbar row
 - **AND** no top status line, header, route tabs, dashboard frame, left rail, shell list, session list, tab strip, or terminal switcher is rendered
 - **AND** no persistent right-side room transcript pane is rendered
@@ -155,7 +200,7 @@ Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-te
 - **AND** wide emoji and CJK glyphs are measured with terminal-width semantics before layout is finalized
 
 #### Scenario: Docked dialogue panels use separators instead of enclosing borders
-- **WHEN** cli-shell renders the dialogue panel in right, left, or bottom placement
+- **WHEN** cli-shell renders the dialogue panel in right or left placement
 - **THEN** it separates terminal content from dialogue content with a single split line in the placement direction
 - **AND** it separates dialogue toolbar, message list, and input regions with internal split lines
 - **AND** it does not draw a complete outer rectangle around the docked dialogue panel
@@ -187,6 +232,22 @@ Cli-shell SHALL render a terminal-first TUI whose first screen uses the shell-te
 - **AND** `assets/cli-shell-product-reference-v8-dialogue-right-grid.txt` is available as its terminal-grid auxiliary contract
 - **AND** stale v1-v7 exploration images are not retained as final-review assets
 - **AND** the implementation target can be revised only by replacing the whole accepted PNG/SVG/TXT reference set in later feedback rounds
+
+### Requirement: Cli-shell SHALL compose `shell-terminal-view` as its primary shell surface
+
+Cli-shell SHALL render a shell-first product whose primary visible surface is `shell-terminal-view` bound to terminal-2. Terminal-1 remains the only shell truth, and backend-owned protocol-2 composition projects terminal-1 plus accepted product chrome into terminal-2. In the collapsed default state, the product UI SHALL intrude only as a one-row bottom extension.
+
+#### Scenario: First screen shows one active shell-terminal-view with one-line bottom extension
+- **WHEN** cli-shell renders after orchestration succeeds
+- **THEN** the main body renders ordinary shell content for terminal-2 through `shell-terminal-view`
+- **AND** Agenter product chrome is confined to one bottom row
+- **AND** no top status line, header, route tabs, dashboard frame, left rail, shell list, session list, tab strip, or terminal switcher is rendered
+- **AND** the bottom row does not replace shell ownership of terminal scrolling, cursor, or input semantics
+
+#### Scenario: Bottom extension remains orthogonal to shell ownership
+- **WHEN** cli-shell renders product metadata or extension actions
+- **THEN** the bottom row projects extension state without becoming the terminal viewport owner
+- **AND** shell scrolling, shell cursor state, and shell lifecycle truth still come from the backend terminal
 
 ### Requirement: Cli-shell toolbar SHALL expose status, current Heartbeat, and actions
 
@@ -275,11 +336,11 @@ Cli-shell SHALL provide an Agenter dialogue panel for the product room. The pane
 - **WHEN** the user invokes the configured dialogue-open gesture
 - **THEN** cli-shell renders the product room conversation as a right-side dialogue panel
 - **AND** the panel contains visible conversation structure such as user messages, Avatar replies, and a message input area
-- **AND** the terminal remains the single active internal terminal
+- **AND** the visible shell surface remains the single active product-terminal surface
 
 #### Scenario: Dialogue panel toolbar exposes placement and close actions
 - **WHEN** the dialogue panel is open
-- **THEN** its top toolbar renders placement buttons for left, right, floating, and bottom
+- **THEN** its top toolbar renders placement buttons for left, right, and floating
 - **AND** it renders a close button on the right side of that toolbar
 
 #### Scenario: Dialogue panel reads from backend room truth
@@ -320,40 +381,65 @@ Cli-shell SHALL provide an Agenter dialogue panel for the product room. The pane
 - **THEN** the bottom input box is focused by default
 - **AND** it has a one-line separator, gray background, left `>` gutter, and visible cursor
 
+### Requirement: Cli-shell SHALL provide explicit transcript chrome only as optional extension chrome
+
+Cli-shell MAY provide explicit transcript chrome for the product room, but that transcript chrome SHALL remain optional extension chrome separate from shell ownership. It SHALL read durable room truth, SHALL NOT create another terminal truth, and SHALL NOT reuse the one-line bottom extension as a transcript pane.
+
+#### Scenario: Optional transcript chrome opens without replacing the shell
+- **WHEN** the user invokes the configured transcript-open gesture
+- **THEN** cli-shell may render the product room conversation in explicit side or floating transcript chrome
+- **AND** the visible shell surface remains the single active product-terminal surface
+- **AND** the one-line bottom extension does not expand into a second transcript panel
+
+#### Scenario: Transcript chrome reads durable room truth
+- **WHEN** transcript chrome is open for `shell-1`
+- **THEN** it renders messages from the durable product room for `shell-1`
+- **AND** it does not keep a separate local transcript as authoritative truth
+
+#### Scenario: Transcript chrome closes back to the one-line shell-first default
+- **WHEN** transcript chrome is open
+- **AND** the user closes or cancels it
+- **THEN** cli-shell returns to the one-line bottom extension default
+- **AND** terminal input ownership returns to shell mode
+
 ### Requirement: Cli-shell dialogue panel SHALL support smart placement
 
-Cli-shell SHALL support left, right, floating, and bottom dialogue panel placement. Initial placement and resize handling SHALL use deterministic smart placement based on available shell-terminal space and minimum viable thresholds.
+Cli-shell SHALL support left, right, and floating dialogue panel placement. Initial placement and resize handling SHALL use deterministic smart placement based on available shell-terminal space and minimum viable thresholds.
 
 #### Scenario: First open uses smart placement
 - **WHEN** the user opens the dialogue panel for the first time
 - **THEN** cli-shell chooses right placement if horizontal space is sufficient
-- **AND** chooses bottom placement if vertical space is sufficient and right placement is not viable
-- **AND** chooses floating placement as fallback
+- **AND** chooses floating placement as fallback when side placement is not viable
 
 #### Scenario: Resize may trigger smart re-placement
 - **WHEN** the shell-terminal is resized and the current placement falls below its minimum viable space threshold
 - **THEN** cli-shell reruns smart placement
 - **AND** it keeps the panel usable without creating a second terminal surface
 
+#### Scenario: Resize may switch between side and floating transcript chrome
+- **WHEN** the shell-terminal is resized and the current transcript placement falls below its minimum viable threshold
+- **THEN** cli-shell may switch between side and floating transcript chrome
+- **AND** it does not convert bottom into a multi-row transcript placement
+
 ### Requirement: Cli-shell SHALL keep terminal input as the default input owner
 
-Cli-shell SHALL forward shell-terminal input to the attached internal terminal by default. The bottom Agenter composer SHALL receive input only after an explicit product focus gesture.
+Cli-shell SHALL forward shell-terminal input to the current shell session terminal path by default. The bottom Agenter composer SHALL receive input only after an explicit product focus gesture.
 
 #### Scenario: Printable input goes to the terminal by default
 - **WHEN** cli-shell is in terminal mode and the user types printable characters
-- **THEN** cli-shell forwards those characters to internal terminal `shell-1`
+- **THEN** cli-shell forwards those characters to the current shell session terminal path
 - **AND** the bottom Agenter composer does not receive or buffer them
 
 #### Scenario: Terminal control keys remain terminal-owned by default
 - **WHEN** cli-shell is in terminal mode and the user presses `Ctrl+C`
-- **THEN** cli-shell forwards the interrupt to internal terminal `shell-1`
+- **THEN** cli-shell forwards the interrupt to the current shell session terminal path
 - **AND** cli-shell does not exit because of that keypress
 
 #### Scenario: Explicit composer focus sends room message
 - **WHEN** the user enters the Agenter composer through the configured focus gesture
 - **AND** types a message and presses `Enter`
 - **THEN** cli-shell sends that message to the product room
-- **AND** it does not send the message text to the internal terminal
+- **AND** it does not send the message text to the current shell session terminal path
 - **AND** focus returns to terminal mode after sending
 
 #### Scenario: Composer cancel returns to terminal mode
@@ -362,6 +448,11 @@ Cli-shell SHALL forward shell-terminal input to the attached internal terminal b
 - **THEN** cli-shell discards the composer draft
 - **AND** focus returns to terminal mode
 
+#### Scenario: Explicit extension actions do not leak into terminal input bytes
+- **WHEN** the user triggers a configured bottom-extension action through click or shortcut
+- **THEN** cli-shell routes that activation to the product extension action path
+- **AND** `shell-terminal-view` does not emit that activation as shell input bytes to the backend terminal
+
 ### Requirement: Cli-shell SHALL derive backend terminal geometry from shell-terminal geometry
 
 Cli-shell SHALL reserve the collapsed one-row toolbar and SHALL configure the backend terminal with the remaining visible geometry. The opened dialogue panel is a view state over the terminal surface and SHALL NOT create another terminal or terminal navigation model.
@@ -369,7 +460,7 @@ Cli-shell SHALL reserve the collapsed one-row toolbar and SHALL configure the ba
 #### Scenario: Initial terminal geometry subtracts collapsed toolbar row
 - **GIVEN** the shell-terminal is 120 columns by 40 rows
 - **WHEN** cli-shell renders with a one-row collapsed toolbar
-- **THEN** it configures internal terminal `shell-1` with 120 columns and 39 rows
+- **THEN** it configures the visible product terminal for that shell session with 120 columns and 39 rows
 - **AND** it renders collapsed Agenter UI only in the bottom row
 
 #### Scenario: Resize updates backend terminal config
@@ -382,23 +473,43 @@ Cli-shell SHALL reserve the collapsed one-row toolbar and SHALL configure the ba
 - **THEN** cli-shell keeps shell-terminal geometry ownership local to the current shell-terminal
 - **AND** it does not create another terminal surface or terminal navigation model
 
+#### Scenario: Web attachments do not silently replace cli-shell geometry authority
+- **GIVEN** cli-shell already owns geometry for `shell-1` through `shell-terminal-view`
+- **WHEN** another `web-terminal-view` attachment changes local panel size
+- **THEN** that Web host adapts presentation locally
+- **AND** backend terminal cols and rows remain derived from `shell-terminal-view` and the native shell window until authority changes explicitly
+
+### Requirement: Cli-shell SHALL expose active terminal observation as product startup truth
+
+Cli-shell SHALL treat visible Avatar startup as active shell-truth observation readiness. The product-visible startup state MUST indicate when terminal-1 changes can wake LoopBus and participate in assistant understanding, rather than relying only on local heartbeat wording or process bootstrap assumptions.
+
+#### Scenario: LoopBus-ready observation counts as Avatar started
+- **WHEN** cli-shell has attached terminal-1 and its terminal semantic changes can wake LoopBus observation flow
+- **THEN** the product may present the Avatar as started or ready
+- **AND** that readiness is based on terminal observation truth rather than on a local-only toolbar string
+
+#### Scenario: Runtime bootstrap without terminal observation is not sufficient startup evidence
+- **WHEN** runtime processes have auto-started but terminal observation is not yet active
+- **THEN** cli-shell does not present full Avatar-started readiness
+- **AND** the product does not treat a heartbeat placeholder alone as sufficient evidence
+
 ### Requirement: Cli-shell SHALL detach without deleting durable backend resources
 
-Cli-shell process exit SHALL detach the shell-terminal from backend resources. It SHALL NOT delete the internal terminal or product room by default.
+Cli-shell process exit SHALL detach the shell-terminal host from product backend resources. It SHALL NOT delete the shell-session terminal resources or product room by default.
 
 #### Scenario: Product process exits without deleting terminal or room
-- **GIVEN** cli-shell is attached to internal terminal `shell-1` and a product room for `shell-1`
+- **GIVEN** cli-shell is attached to shell session `shell-1` with terminal-1, terminal-2, and a product room
 - **WHEN** the cli-shell process exits
-- **THEN** internal terminal `shell-1` remains in the global terminal catalog
+- **THEN** the durable terminal resources for shell session `shell-1` remain available to backend truth
 - **AND** the product room remains reusable by metadata
 
 #### Scenario: Repeated launch reconnects after detach
 - **GIVEN** a previous cli-shell process detached from `shell-1`
 - **WHEN** the user runs `agenter shell` again
-- **THEN** cli-shell reattaches to existing internal terminal `shell-1`
+- **THEN** cli-shell reattaches to the existing shell session terminal resources for `shell-1`
 - **AND** it reuses the existing product room for `shell-1`
 
 #### Scenario: Internal terminal process stop is visible but not destructive
-- **WHEN** the backend terminal process for `shell-1` stops
+- **WHEN** one backend terminal resource for shell session `shell-1` stops
 - **THEN** cli-shell shows the stopped state in the bottom layer
 - **AND** it preserves the terminal record and room identity for reconnect or restart behavior

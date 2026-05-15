@@ -15,6 +15,11 @@ describe("Feature: terminal snapshot fingerprints", () => {
       richLines: Array.from({ length: 24 }, (_, index) => ({
         spans: [{ text: `line-${index}`, bold: false, underline: false, inverse: false }],
       })),
+      scrollback: {
+        viewportOffset: 0,
+        totalLines: 24,
+        screenLines: 24,
+      },
     };
 
     const viewHash = buildTerminalViewFingerprint(snapshot);

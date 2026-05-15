@@ -5007,6 +5007,24 @@ export class RuntimeStore {
     return output.result;
   }
 
+  async publishGlobalTerminalComposedSurface(input: {
+    terminalId: string;
+    surface: import("./product-extension-runtime").ProductTerminalComposedSurfaceState;
+  }) {
+    const output = await this.client.trpc.terminal.globalPublishComposedSurface.mutate(input);
+    const current = this.resolveGlobalTerminalEntry(input.terminalId);
+    if (current && output.result && typeof output.result === "object" && "terminalId" in output.result) {
+      this.reconcileGlobalTerminalEntry(output.result as typeof current);
+    }
+    await this.refreshGlobalTerminalSurface({
+      terminalIds: [input.terminalId],
+      activity: false,
+      catalog: true,
+      force: true,
+    });
+    return output.result;
+  }
+
   async inputGlobalTerminal(input: {
     terminalId: string;
     accessToken?: string;

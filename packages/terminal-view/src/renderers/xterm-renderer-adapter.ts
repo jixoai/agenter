@@ -170,6 +170,10 @@ class XtermRendererSession implements TerminalRendererSession {
     this.terminal.options.scrollback = scrollback;
   }
 
+  applyViewport(viewportStart: number): void {
+    this.terminal.scrollToLine(Math.max(0, Math.trunc(viewportStart)));
+  }
+
   applyAppearance(appearance: ResolvedTerminalAppearance): void {
     this.fontProfile = appearance.font;
     this.terminal.options.theme = toXtermTheme(appearance);

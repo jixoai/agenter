@@ -2,9 +2,11 @@ import { DEFAULT_LANGUAGE, resolveLanguage } from "@agenter/app-server";
 import {
   loadSettings,
   type AiApiStandard,
+  type AiSettings,
   type SettingsSourceInput,
   type TerminalBootEntry,
   type TerminalPresetSettings,
+  type TerminalSettings,
 } from "@agenter/settings";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 
@@ -18,6 +20,13 @@ export interface TerminalRuntimeConfig {
   gitLog?: false | "normal" | "verbose";
   helpSource?: string;
 }
+
+type DemoTerminalSettings = TerminalSettings & {
+  submitGapMs?: number;
+  presets?: Record<string, TerminalPresetSettings & { submitGapMs?: number }>;
+};
+
+type DemoAiSettings = AiSettings;
 
 export interface RuntimeConfig {
   lang: string;
@@ -326,13 +335,8 @@ const normalizeBootEntries = (
 const buildPresetFromLegacy = (
   terminalId: string,
   command: string[],
-  terminalSettings: {
-    submitGapMs?: number;
-    outputRoot?: string;
-    gitLog?: false | "normal" | "verbose";
-    helpSources?: Record<string, string>;
-  },
-): Record<string, TerminalPresetSettings> => {
+  terminalSettings: DemoTerminalSettings,
+): Record<string, TerminalPresetSettings & { submitGapMs?: number }> => {
   const cliName = deriveCliName(command[0] ?? "agent");
   const helpSource = terminalSettings.helpSources?.[terminalId] ?? terminalSettings.helpSources?.[cliName];
   return {
@@ -375,9 +379,9 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
   const envCommand = parseCommandValue(process.env.AGENTER_TERMINAL_CMD ?? "");
 
   const agentCwd = overrides.cwd ?? (settings.agentCwd ? toAbsolute(settings.agentCwd, baseDir) : baseDir);
-  const terminalSettings = settings.terminal ?? {};
+  const terminalSettings: DemoTerminalSettings = settings.terminal ?? {};
 
-  let presets: Record<string, TerminalPresetSettings> = {};
+  let presets: Record<string, TerminalPresetSettings & { submitGapMs?: number }> = {};
   if (terminalSettings.presets && Object.keys(terminalSettings.presets).length > 0) {
     presets = { ...terminalSettings.presets };
   } else {
@@ -458,7 +462,7 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
       ? derivePromptRootFromSettingsPath(firstSettingsPath)
       : undefined;
 
-  const ai = settings.ai ?? {};
+  const ai: DemoAiSettings = settings.ai ?? {};
   const providers = ai.providers ?? {};
   const providerId = ai.activeProvider ?? Object.keys(providers)[0] ?? "default";
   const provider = providers[providerId] ?? {
@@ -467,9 +471,7 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
     model: "deepseek-chat",
     baseUrl: "https://api.deepseek.com/v1",
     apiKeyEnv: "DEEPSEEK_API_KEY",
-    temperature: 0.2,
     maxRetries: 2,
-    maxToken: 64_000,
     compactThreshold: 0.75,
   };
   const apiKey = provider.apiKey ?? (provider.apiKeyEnv ? process.env[provider.apiKeyEnv] : undefined);
@@ -508,9 +510,9 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
       model: provider.model,
       baseUrl: provider.baseUrl,
       headers: provider.headers,
-      temperature: provider.temperature ?? 0.2,
+      temperature: ai.temperature ?? 0.2,
       maxRetries: provider.maxRetries ?? 2,
-      maxToken: provider.maxToken,
+      maxToken: ai.maxToken,
       compactThreshold: provider.compactThreshold,
     },
     settingsMeta: loadedSettings.meta,

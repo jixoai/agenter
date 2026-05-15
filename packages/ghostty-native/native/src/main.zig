@@ -7,6 +7,10 @@ const std = @import("std");
 const napigen = @import("napigen");
 const ghostty = @import("ghostty");
 
+pub const std_options: std.Options = .{
+    .log_level = .err,
+};
+
 // ghostty's lib_vt.zig public API — types are exported directly,
 // not under a `terminal` namespace.
 const Terminal = ghostty.Terminal;
@@ -56,6 +60,8 @@ fn initModule(js: *napigen.JsContext, exports: napigen.napi_value) napigen.Error
     try js.setNamedProperty(exports, "getCell", try js.createFunction(getCell));
     try js.setNamedProperty(exports, "getLine", try js.createFunction(getLine));
     try js.setNamedProperty(exports, "getLines", try js.createFunction(getLines));
+    try js.setNamedProperty(exports, "getLinesRange", try js.createFunction(getLinesRange));
+    try js.setNamedProperty(exports, "getViewportLines", try js.createFunction(getViewportLines));
     try js.setNamedProperty(exports, "getCursor", try js.createFunction(getCursor));
     try js.setNamedProperty(exports, "getMode", try js.createFunction(getMode));
     try js.setNamedProperty(exports, "getTitle", try js.createFunction(getTitle));
@@ -168,7 +174,7 @@ fn getTextRange(handle: *TerminalHandle, start_row: u16, start_col: u16, end_row
 
         var col: u16 = col_start;
         while (col < col_end) : (col += 1) {
-            const p = pages.pin(.{ .viewport = .{ .x = col, .y = row } }) orelse continue;
+            const p = pages.pin(.{ .screen = .{ .x = col, .y = row } }) orelse continue;
             const rac = p.rowAndCell();
             const cell = rac.cell;
 
@@ -232,7 +238,7 @@ fn readCellAt(handle: *TerminalHandle, row: u16, col: u16) JsCell {
     const pages = &screen.pages;
 
     // Get the pin for this viewport position
-    const p = pages.pin(.{ .viewport = .{ .x = col, .y = row } }) orelse return defaultCell();
+    const p = pages.pin(.{ .screen = .{ .x = col, .y = row } }) orelse return defaultCell();
     const rac = p.rowAndCell();
     const cell = rac.cell;
     const page = &p.node.data;
@@ -401,12 +407,26 @@ fn getLine(js: *napigen.JsContext, handle: *TerminalHandle, row: u16) !napigen.n
 }
 
 fn getLines(js: *napigen.JsContext, handle: *TerminalHandle) !napigen.napi_value {
-    const arr = try js.createArrayWithLength(handle.rows);
-    for (0..handle.rows) |row| {
-        const line = try getLine(js, handle, @intCast(row));
+    const scrollback = getScrollback(handle);
+    return try getLinesRange(js, handle, 0, @intCast(scrollback.total_lines));
+}
+
+fn getLinesRange(js: *napigen.JsContext, handle: *TerminalHandle, start_row: u32, row_count: u32) !napigen.napi_value {
+    const scrollback = getScrollback(handle);
+    const safe_start = @min(start_row, scrollback.total_lines);
+    const max_count = scrollback.total_lines - safe_start;
+    const safe_count = @min(row_count, max_count);
+    const arr = try js.createArrayWithLength(safe_count);
+    for (0..safe_count) |row| {
+        const line = try getLine(js, handle, @intCast(safe_start + row));
         try js.setElement(arr, @intCast(row), line);
     }
     return arr;
+}
+
+fn getViewportLines(js: *napigen.JsContext, handle: *TerminalHandle) !napigen.napi_value {
+    const scrollback = getScrollback(handle);
+    return try getLinesRange(js, handle, scrollback.viewport_offset, scrollback.screen_lines);
 }
 
 // ─── Cursor ─────────────────────────────────────────────
@@ -421,6 +441,7 @@ const JsCursor = struct {
 fn getCursor(handle: *TerminalHandle) JsCursor {
     const screen = handle.terminal.screens.active;
     const cursor = &screen.cursor;
+    const pages = &screen.pages;
 
     const cursor_style: u8 = switch (cursor.cursor_style) {
         .bar => 0,
@@ -431,7 +452,11 @@ fn getCursor(handle: *TerminalHandle) JsCursor {
 
     return .{
         .x = cursor.x,
-        .y = cursor.y,
+        .y = y: {
+            const pin = pages.pin(.{ .active = .{ .x = cursor.x, .y = cursor.y } }) orelse break :y cursor.y;
+            const screen_point = pages.pointFromPin(.screen, pin) orelse break :y cursor.y;
+            break :y @intCast(screen_point.screen.y);
+        },
         .visible = handle.terminal.modes.get(.cursor_visible),
         .style = cursor_style,
     };
@@ -475,24 +500,14 @@ fn getScrollback(handle: *TerminalHandle) JsScrollback {
     const screen = handle.terminal.screens.active;
     const pages = &screen.pages;
 
-    // Calculate viewport offset: distance from viewport top to active area top
+    // Normalize to the same contract as the official xterm backend:
+    // viewport_offset is the absolute top row index of the visible viewport
+    // within the full screen (scrollback + active area).
     const viewport_tl = pages.getTopLeft(.viewport);
+    const viewport_screen_point = pages.pointFromPin(.screen, viewport_tl) orelse point.Point{ .screen = .{ .x = 0, .y = 0 } };
 
     // Count rows between viewport and active area top
-    var offset: u32 = 0;
-    if (pages.pointFromPin(.active, viewport_tl)) |_| {
-        // viewport is within or at the active area — no scrollback offset
-        offset = 0;
-    } else {
-        // viewport is in scrollback — count rows from viewport to active
-        var pin = viewport_tl;
-        while (pin.down(1)) |next| {
-            if (pages.pointFromPin(.active, next) != null) break;
-            offset += 1;
-            pin = next;
-        }
-        offset += 1; // include the starting row
-    }
+    const offset: u32 = viewport_screen_point.screen.y;
 
     // Total lines = all rows in the screen (scrollback + active)
     const screen_tl = pages.getTopLeft(.screen);

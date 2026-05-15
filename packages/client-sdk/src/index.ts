@@ -6,6 +6,7 @@ export {
   type ProductEnsureTerminalBindingInput,
   type ProductEnsureBindingResult,
   type ProductExtensionRuntimeStore,
+  type ProductTerminalComposedSurfaceState,
 } from "./product-extension-runtime";
 export { RuntimeStore, createRuntimeStore } from "./runtime-store";
 export { createAgenterClient, type AgenterClient, type AgenterClientOptions } from "./trpc-client";

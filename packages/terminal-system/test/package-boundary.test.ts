@@ -17,11 +17,13 @@ describe("Feature: terminal-system package boundary", () => {
       "@agenter/terminal-transport-protocol": "workspace:*",
       "@agenter/principal-crypto": "workspace:*",
       "@opentui/core": "latest",
-      "@opentui/react": "latest",
-      react: "^19.0.0",
       yargs: "^17.7.2",
     });
     expect(xtermBridgeSource).toContain('from "@agenter/termless-core"');
     expect(xtermBridgeSource).not.toContain("@agenter/termless-xterm-backend");
+    const tuiSource = readFileSync(join(packageRoot, "src", "cli", "ati-tui.ts"), "utf8");
+    expect(tuiSource).toContain('from "@opentui/core"');
+    expect(tuiSource).not.toContain("@opentui/react");
+    expect(tuiSource).not.toContain("createRoot");
   });
 });

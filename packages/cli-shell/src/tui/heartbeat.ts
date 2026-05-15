@@ -1,5 +1,11 @@
 import type { HeartbeatGroupItem } from "@agenter/client-sdk";
 
+export const CLI_SHELL_HEARTBEAT_COPY = {
+  disconnected: "正在连接 Agenter daemon…",
+  observationPending: "等待 terminal observation 就绪…",
+  observationReady: "Avatar started；等待新的 terminal 变化…",
+} as const;
+
 export type CliShellToolbarStatusKind =
   | "idle"
   | "text-progressing"
@@ -80,6 +86,13 @@ const resolveLatestHeartbeatPart = (groups: readonly HeartbeatGroupItem[]) => {
   };
 };
 
+export const resolveLatestCliShellHeartbeatTimestamp = (
+  groups: readonly HeartbeatGroupItem[],
+): number | null => {
+  const latest = resolveLatestHeartbeatPart(groups);
+  return latest.part?.updatedAt ?? latest.item?.updatedAt ?? latest.group?.updatedAt ?? null;
+};
+
 export const resolveCliShellToolbarStatus = (groups: readonly HeartbeatGroupItem[]): CliShellToolbarStatusKind => {
   const latest = resolveLatestHeartbeatPart(groups);
   if (!latest.part) {
@@ -121,22 +134,76 @@ const summarizeTextLikePart = (payload: unknown, fallback: string): string => {
   if (!isRecord(payload)) {
     return fallback;
   }
-  return (
-    readRecordString(payload, "content") ??
-    readRecordString(payload, "text") ??
-    readRecordString(payload, "summary") ??
-    fallback
-  );
+  const content = readRecordString(payload, "content") ?? readRecordString(payload, "text") ?? readRecordString(payload, "summary");
+  if (!content) {
+    return fallback;
+  }
+  const parsedToolTrace = parseToolTraceSummary(content);
+  if (parsedToolTrace) {
+    return summarizeToolPart(
+      {
+        tool: parsedToolTrace.toolName,
+        ...(parsedToolTrace.error ? { error: parsedToolTrace.error } : {}),
+      },
+      parsedToolTrace.completed,
+    );
+  }
+  return content;
+};
+
+const readToolTraceField = (content: string, key: string): string | null => {
+  const match = content.match(new RegExp(`^\\s*${key}:\\s*(.+?)\\s*$`, "m"));
+  if (!match) {
+    return null;
+  }
+  const value = match[1]?.trim() ?? "";
+  if (!value || value === "null") {
+    return null;
+  }
+  return value.replace(/^['"]|['"]$/g, "");
+};
+
+const parseToolTraceSummary = (
+  content: string,
+): {
+  toolName: string | null;
+  completed: boolean;
+  error: string | null;
+} | null => {
+  if (!content.includes("tool:")) {
+    return null;
+  }
+  const toolName = readToolTraceField(content, "tool");
+  if (!toolName) {
+    return null;
+  }
+  const status = readToolTraceField(content, "status")?.toLowerCase() ?? null;
+  const error = readToolTraceField(content, "error");
+  return {
+    toolName,
+    completed: status === "success" || status === "completed" || status === "done",
+    error,
+  };
 };
 
 export const summarizeCliShellHeartbeat = (input: {
   groups: readonly HeartbeatGroupItem[];
   terminalId: string;
   connected: boolean;
+  observationReady?: boolean;
 }): string => {
+  if (!input.connected) {
+    return CLI_SHELL_HEARTBEAT_COPY.disconnected;
+  }
+  if (input.observationReady === false) {
+    return CLI_SHELL_HEARTBEAT_COPY.observationPending;
+  }
+
   const latest = resolveLatestHeartbeatPart(input.groups);
   if (!latest.part || !latest.item) {
-    return input.connected ? `${input.terminalId} 已连接，等待新的 Heartbeat…` : "正在连接 Agenter daemon…";
+    return input.observationReady
+      ? CLI_SHELL_HEARTBEAT_COPY.observationReady
+      : CLI_SHELL_HEARTBEAT_COPY.observationPending;
   }
 
   const fallbackText = latest.item.text?.trim() || `${input.terminalId} 已连接`;

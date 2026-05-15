@@ -11,6 +11,7 @@ const productCommandDescriptors = [
     packageName: "@agenter/cli-shell",
     bin: {
       name: "agenter-cli-shell",
+      mainExport: "runCliShell",
     },
     sourcePolicy: createLocalFirstProductSourcePolicy(),
     capabilityHints: {

@@ -6,7 +6,14 @@ export {
   cliShellProductDescriptor,
   createCliShellProductRuntimeClient,
 } from "./product";
-export { bootstrapCliShell, type CliShellBootstrapInput, type CliShellBootstrapResult, type CliShellStore } from "./bootstrap";
+export {
+  bootstrapCliShell,
+  type CliShellBootstrapInput,
+  type CliShellBootstrapResult,
+  type CliShellInteractiveHostStore,
+  type CliShellProductHostStore,
+  type CliShellStore,
+} from "./bootstrap";
 export {
   CLI_SHELL_DEFAULT_DELEGATION_TTL_MS,
   buildCliShellHostingContextId,
@@ -28,6 +35,7 @@ export {
   drawCanvasVerticalLine,
   fillCanvasRow,
   renderCanvasLines,
+  splitTerminalTextToWidth,
   writeCanvasStyledText,
   writeCanvasText,
 } from "./tui/canvas";
@@ -47,21 +55,119 @@ export {
 } from "./tui/keybindings";
 export {
   routeCliShellKey,
+  routeCliShellMouseScroll,
   routeCliShellPaste,
+  routeCliShellPointerAction,
+  routeCliShellViewportTarget,
+  setCliShellDialogueDraft,
+  submitCliShellDialogue,
   syncCliShellTerminalGeometry,
   type CliShellTuiControllerContext,
 } from "./tui/controller";
 export { encodeCliShellTerminalKey } from "./tui/terminal-input";
-export { layoutCliShellTuiFrame, resolveCliShellTerminalRegion, type CliShellTuiFrame } from "./tui/frame";
+export { buildCliShellComposedSurface } from "./tui/composed-surface";
+export type {
+  CliShellOffscreenRendererFrame,
+  CliShellProjectionFrameSource,
+  CliShellProjectionProtocol,
+  CliShellRawTerminalOutput,
+  CliShellScreenFrame,
+  CliShellScreenFrameCursor,
+  CliShellTerminal2ComposedScreen,
+} from "./tui/projection-law";
+export {
+  buildCliShellDialogueSurface,
+  type CliShellDialogueSurface,
+} from "./tui/dialogue-surface";
+export {
+  CliShellDialogueBackend,
+  projectCliShellDialogueBackendFrame,
+  type CliShellDialogueBackendFrame,
+} from "./tui/dialogue-backend";
+export {
+  layoutCliShellTuiFrame,
+  resolveCliShellScrollbarPointerTarget,
+  resolveCliShellShellScrollbarProjection,
+  resolveCliShellToolbarLayout,
+  resolveCliShellTerminalScrollRegion,
+  resolveCliShellTerminalScrollbarRegion,
+  resolveCliShellTranscriptPanelLayout,
+  resolveCliShellTerminalRegion,
+  resolveCliShellTuiInteractionLayout,
+  type CliShellShellScrollbarFrameState,
+  type CliShellShellScrollbarProjection,
+  type CliShellTuiFrame,
+} from "./tui/frame";
+export {
+  isPointInsideDialoguePanel,
+  resolveComposedSurfaceCursorCellPosition,
+  resolveBackendScrollbarStateGeometry,
+  resolveBackendViewportScrollPosition,
+  resolveDialogueCursorCellPosition,
+  resolveDialogueCursorPosition,
+  resolveDialogueInputRegion,
+  resolveShellCursorCellPosition,
+  resolveShellCursorPosition,
+  resolveShellTerminalOrigin,
+  toNativeHardwareCursorPosition,
+  resolveVisibleCursorCellPosition,
+  resolveVisibleCursorPosition,
+  type NativeCursorPosition,
+} from "./tui/native-projection";
 export { projectMarkdownLastLine } from "./tui/markdown-projection";
+export {
+  inferCliShellPasteMediaFromText,
+  isCliShellImagePastePayload,
+  readCliShellPasteMimeTypes,
+  readCliShellPastePayload,
+  readCliShellPasteText,
+  resolveCliShellPasteMediaKind,
+  type CliShellPasteMediaItem,
+  type CliShellPasteMediaKind,
+  type CliShellPastePayload,
+} from "./tui/paste-input";
+export { createCliShellPerfTracer, type CliShellPerfTraceEvent, type CliShellPerfTracer } from "./tui/perf-trace";
+export { createInitialCliShellViewState } from "./tui/view-state";
+export { CliShellDebugBarRenderable, formatCliShellDebugBarLine, type CliShellDebugBarOptions } from "./tui/debug-bar";
 export { buildCliShellTuiModel, resolveCliShellDialoguePlacement } from "./tui/model";
-export { CliShellTuiApp, type CliShellTuiAppProps } from "./tui/app";
+export { CliShellCoreApp, type CliShellCoreAppProps } from "./tui/core-app";
 export { startCliShellTui, type CliShellTuiController } from "./tui/run-cli-shell-tui";
+export { startCliShellStartupTui, type CliShellStartupTuiController, type CliShellStartupAppProps } from "./tui/startup-shell-tui";
+export {
+  BackendFrameRenderable,
+  type BackendFramePaintStats,
+  type BackendFrameProjectionUpdate,
+  type BackendFrameRenderableOptions,
+} from "./tui/backend-frame-renderable";
+export {
+  ShellTerminalViewRenderable,
+  type ShellTerminalViewOptions,
+} from "./tui/shell-terminal-view";
+export type {
+  CliShellLiveTerminalTransportSessionFactory,
+  CliShellLiveTerminalTransportSessionInput,
+} from "./tui/live-terminal-mirror";
+export {
+  BackendScrollbarRenderable,
+  type BackendScrollbarOptions,
+  type BackendScrollbarState,
+} from "./tui/backend-scrollbar";
+export {
+  BackendTerminalFrameRenderable,
+  type BackendTerminalFrameBridge,
+  type BackendTerminalFrameOptions,
+  type BackendTerminalFrameState,
+  type BackendTerminalFrameUpdateResult,
+} from "./tui/backend-terminal-frame";
 export type {
   CliShellDialogueBlock,
   CliShellDialoguePlacement,
   CliShellDialoguePlacementRequest,
+  CliShellPointerAction,
+  CliShellScrollRegion,
+  CliShellSelectionSource,
   CliShellTuiAppProjection,
+  CliShellTuiInteractionLayout,
   CliShellTuiModel,
   CliShellTuiStore,
   CliShellTuiViewState,

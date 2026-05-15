@@ -7,7 +7,6 @@
     "lib": ["ESNext", "DOM"],
     "strict": true,
     "noEmit": true,
-    "types": ["bun"],
     "skipLibCheck": true
   },
   "include": ["src/**/*"]

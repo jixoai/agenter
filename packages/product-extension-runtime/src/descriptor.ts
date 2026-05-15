@@ -29,6 +29,7 @@ export type ProductLaunchPlane = z.infer<typeof productLaunchPlaneSchema>;
 export const productBinDescriptorSchema = z.object({
   name: z.string().trim().min(1),
   path: z.string().trim().min(1).optional(),
+  mainExport: z.string().trim().min(1).optional(),
 });
 export type ProductBinDescriptor = z.infer<typeof productBinDescriptorSchema>;
 

@@ -27,6 +27,38 @@ import type {
   WorkspacePrivateTextAssetEnsureOutput,
 } from "./types";
 
+export interface ProductTerminalComposedSurfaceState {
+  shellTerminalId: string;
+  terminalId: string;
+  shellSnapshotSeq: number;
+  cols: number;
+  rows: number;
+  bottomLine: string;
+  dialogueOpen: boolean;
+  dialoguePlacement: "left" | "right" | "floating" | null;
+  dialogueDraft: string;
+  managedLabel: string;
+  unreadLabel: string;
+  heartbeatLabel: string;
+  terminalLines: string[];
+  terminalRichLines?: Array<{
+    spans: Array<{
+      text: string;
+      fg?: string;
+      bg?: string;
+      bold?: boolean;
+      underline?: boolean;
+      inverse?: boolean;
+    }>;
+  }>;
+  cursor: { x: number; y: number; visible?: boolean };
+  scrollback: {
+    viewportOffset: number;
+    totalLines: number;
+    screenLines: number;
+  };
+}
+
 export interface ProductExtensionRuntimeStore {
   createSession(input: { cwd: string; name?: string; avatar?: string; autoStart?: boolean }): Promise<SessionEntry>;
   hydrateGlobalAvatarCatalog(input?: { force?: boolean }): Promise<GlobalAvatarCatalogEntry[]>;
@@ -101,6 +133,10 @@ export interface ProductExtensionRuntimeStore {
     };
     metadata?: Record<string, unknown>;
   }): Promise<unknown>;
+  publishGlobalTerminalComposedSurface(input: {
+    terminalId: string;
+    surface: ProductTerminalComposedSurfaceState;
+  }): Promise<unknown>;
   listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]>;
   issueGlobalTerminalGrant(input: {
     terminalId: string;
@@ -110,6 +146,11 @@ export interface ProductExtensionRuntimeStore {
     accessTokenHint?: string;
     adminCandidateRank?: number | null;
   }): Promise<unknown>;
+  focusTerminals(input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    terminalIds: string[];
+  }): Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
   focusGlobalTerminals(input: {
     op: "add" | "remove" | "replace" | "clear";
     terminalIds: string[];
@@ -138,6 +179,11 @@ export interface ProductExtensionRuntimeStore {
     participantId: GlobalRoomActorId;
     label?: string;
     accessTokenHint?: string;
+  }): Promise<unknown>;
+  focusMessageChannels(input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    channels: Array<{ chatId: string; accessToken: string }>;
   }): Promise<unknown>;
   focusGlobalRooms(input: {
     op: "add" | "remove" | "replace" | "clear";
@@ -177,7 +223,15 @@ export interface ProductEnsureBindingResult<TEntry> {
   bindingMetadata: ProductBindingMetadata;
 }
 
+const requireSessionActorId = (session: SessionEntry): NonNullable<SessionEntry["avatarPrincipalId"]> => {
+  if (!session.avatarPrincipalId) {
+    throw new Error(`session missing avatar principal id: ${session.id}`);
+  }
+  return session.avatarPrincipalId;
+};
+
 export interface ProductEnsureTerminalBindingInput {
+  session: SessionEntry;
   binding: ProductResourceBindingInput & {
     resourceKind: "terminal";
     ownerSystem: "terminal-system";
@@ -208,6 +262,7 @@ export interface ProductEnsureTerminalBindingInput {
 }
 
 export interface ProductEnsureRoomBindingInput {
+  session: SessionEntry;
   binding: ProductResourceBindingInput & {
     resourceKind: "room";
     ownerSystem: "message-system";
@@ -273,6 +328,17 @@ const equalStringArray = (left: readonly string[] | undefined, right: readonly s
 
 const needsMetadataPatch = (current: Record<string, unknown> | undefined, desired: Record<string, unknown>): boolean =>
   Object.entries(desired).some(([key, value]) => current?.[key] !== value);
+
+const isProjectionTerminalBinding = (metadata: Record<string, unknown> | undefined): boolean =>
+  typeof metadata?.projectionSourceTerminalId === "string" && metadata.projectionSourceTerminalId.length > 0;
+
+const isComposedTerminalBinding = (metadata: Record<string, unknown> | undefined): boolean =>
+  metadata?.terminalRuntimeKind === "composed" &&
+  typeof metadata?.composedShellTerminalId === "string" &&
+  metadata.composedShellTerminalId.length > 0;
+
+const isDerivedTerminalBinding = (metadata: Record<string, unknown> | undefined): boolean =>
+  isProjectionTerminalBinding(metadata) || isComposedTerminalBinding(metadata);
 
 const buildTerminalReusePatch = (
   entry: GlobalTerminalEntry,
@@ -417,6 +483,7 @@ export class ProductExtensionRuntimeClient {
 
   async ensureTerminalBinding(input: ProductEnsureTerminalBindingInput): Promise<ProductEnsureBindingResult<GlobalTerminalEntry>> {
     const { bindingMetadata, metadata } = mergeBindingMetadata(input.binding);
+    const sessionActorId = requireSessionActorId(input.session);
     const terminalId = input.terminalId ?? input.binding.resourceKey;
     const shouldStart = input.createInput?.start ?? false;
     const terminals = await this.store.listGlobalTerminals();
@@ -444,7 +511,12 @@ export class ProductExtensionRuntimeClient {
       created = true;
     }
     if (!created) {
-      if (requestedBackend && entry.processPhase === "running" && entry.backend !== requestedBackend) {
+      if (
+        requestedBackend &&
+        entry.processPhase === "running" &&
+        entry.backend !== requestedBackend &&
+        !isDerivedTerminalBinding(entry.metadata)
+      ) {
         throw new Error(
           `terminal backend mismatch: ${entry.terminalId} is running with ${entry.backend}, requested ${requestedBackend}`,
         );
@@ -471,28 +543,46 @@ export class ProductExtensionRuntimeClient {
     }
 
     let granted = false;
+    let focusedAccessToken: string | undefined;
     if (input.participantId) {
       const grants = await this.store.listGlobalTerminalGrants(entry.terminalId);
       const existingGrant = grants.find(
         (grant) => grant.participantId === input.participantId && grant.role === (input.grantRole ?? "writer"),
       );
       if (!existingGrant) {
-        await this.store.issueGlobalTerminalGrant({
+        const issued = await this.store.issueGlobalTerminalGrant({
           terminalId: entry.terminalId,
           role: input.grantRole ?? "writer",
           participantId: input.participantId,
           label: input.participantLabel,
         });
+        focusedAccessToken = (issued as { accessToken?: string }).accessToken;
         granted = true;
+      } else {
+        focusedAccessToken = existingGrant.accessToken;
       }
     }
 
     const focused = input.focus ?? true;
-    if (!created && focused) {
-      await this.store.focusGlobalTerminals({
-        op: "add",
-        terminalIds: [entry.terminalId],
-      });
+    if (focused) {
+      if (!input.participantId || input.participantId === sessionActorId) {
+        await this.store.focusTerminals({
+          sessionId: input.session.id,
+          op: "add",
+          terminalIds: [entry.terminalId],
+        });
+      } else if (focusedAccessToken) {
+        await this.store.focusGlobalTerminals({
+          op: "add",
+          terminalIds: [entry.terminalId],
+          accessToken: focusedAccessToken,
+        });
+      } else {
+        await this.store.focusGlobalTerminals({
+          op: "add",
+          terminalIds: [entry.terminalId],
+        });
+      }
     }
 
     return {
@@ -506,6 +596,7 @@ export class ProductExtensionRuntimeClient {
 
   async ensureRoomBinding(input: ProductEnsureRoomBindingInput): Promise<ProductEnsureBindingResult<GlobalRoomEntry>> {
     const { bindingMetadata, metadata } = mergeBindingMetadata(input.binding);
+    const sessionActorId = requireSessionActorId(input.session);
     const rooms = await this.store.listGlobalRooms();
     let entry = rooms.find((candidate) => matchesProductBindingMetadata(candidate.metadata, bindingMetadata));
     let created = false;
@@ -519,6 +610,7 @@ export class ProductExtensionRuntimeClient {
     }
 
     let granted = false;
+    let focusedAccessToken: string | undefined;
     if (input.participantId) {
       const grants = await this.store.listGlobalRoomGrants({
         chatId: entry.chatId,
@@ -527,22 +619,48 @@ export class ProductExtensionRuntimeClient {
         (grant) => grant.participantId === input.participantId && grant.role === (input.grantRole ?? "member"),
       );
       if (!existingGrant) {
-        await this.store.issueGlobalRoomGrant({
+        const issued = await this.store.issueGlobalRoomGrant({
           chatId: entry.chatId,
           role: input.grantRole ?? "member",
           participantId: input.participantId,
           label: input.participantLabel,
         });
+        focusedAccessToken = (issued as { accessToken?: string }).accessToken;
         granted = true;
+      } else {
+        focusedAccessToken = existingGrant.accessToken;
       }
     }
 
     const focused = input.focus ?? true;
-    if (!created && focused) {
-      await this.store.focusGlobalRooms({
-        op: "add",
-        channels: [{ chatId: entry.chatId }],
-      });
+    if (focused) {
+      if (!input.participantId || input.participantId === sessionActorId) {
+        const accessToken =
+          focusedAccessToken ??
+          (entry.accessToken && entry.accessRole !== "readonly" ? entry.accessToken : undefined);
+        if (accessToken) {
+          await this.store.focusMessageChannels({
+            sessionId: input.session.id,
+            op: "add",
+            channels: [{ chatId: entry.chatId, accessToken }],
+          });
+        }
+      } else if (focusedAccessToken) {
+        await this.store.focusMessageChannels({
+          sessionId: input.session.id,
+          op: "add",
+          channels: [{ chatId: entry.chatId, accessToken: focusedAccessToken }],
+        });
+        await this.store.focusGlobalRooms({
+          op: "add",
+          channels: [{ chatId: entry.chatId, accessToken: focusedAccessToken }],
+        });
+      } else {
+        await this.store.focusGlobalRooms({
+          op: "add",
+          channels: [{ chatId: entry.chatId }],
+        });
+      }
     }
 
     return {

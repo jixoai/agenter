@@ -29,6 +29,32 @@ test("structured renderer is the single source for style spans", async () => {
   bridge.dispose();
 });
 
+test("structured renderer reads the visible viewport instead of the whole scrollback", async () => {
+  const bridge = new XtermBridge(24, 4);
+  await bridge.write("one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\n");
+  const structured = renderStructuredBuffer(bridge);
+  const text = structured.richLines.map((line) => line.spans.map((span) => span.text).join("").trimEnd());
+  expect(structured.richLines).toHaveLength(4);
+  expect(structured.scrollback.totalLines).toBeGreaterThan(4);
+  expect(text).toContain("six");
+  expect(text).not.toContain("one");
+  expect(structured.cursorAbsRow).toBe(bridge.getCursor().y);
+  bridge.dispose();
+});
+
+test("structured renderer keeps the current viewport when scrollback is moved", async () => {
+  const bridge = new XtermBridge(24, 4);
+  await bridge.write("one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix\r\n");
+  bridge.scrollViewport(-2);
+  const structured = renderStructuredBuffer(bridge);
+  const text = structured.richLines.map((line) => line.spans.map((span) => span.text).join("").trimEnd());
+  expect(structured.richLines).toHaveLength(4);
+  expect(structured.scrollback.viewportOffset).toBeLessThan(bridge.getScrollback().totalLines - bridge.rows);
+  expect(text).toContain("two");
+  expect(text).not.toContain("six");
+  bridge.dispose();
+});
+
 test("renderer preserves inverse style for app-drawn focus", async () => {
   const bridge = new XtermBridge(40, 4);
   await bridge.write("> \u001b[7m \u001b[27mType\r\n");

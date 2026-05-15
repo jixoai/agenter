@@ -10,6 +10,7 @@ import {
 const createTerminalEntry = (overrides: Partial<GlobalTerminalEntry> = {}): GlobalTerminalEntry => ({
 	terminalId: 'term-qa',
 	processKind: 'shell',
+	backend: 'xterm',
 	command: ['/bin/bash'],
 	launchCwd: '/repo',
 	workspace: null,

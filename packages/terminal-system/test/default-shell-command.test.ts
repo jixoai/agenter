@@ -31,6 +31,6 @@ describe("Feature: default interactive shell resolution", () => {
     writeFileSync(preferredShell, "#!/bin/sh\n", { mode: 0o755 });
     process.env.SHELL = preferredShell;
 
-    expect(resolveDefaultInteractiveShellCommand()).toEqual([preferredShell, "-i"]);
+    expect(resolveDefaultInteractiveShellCommand()).toEqual([preferredShell]);
   });
 });

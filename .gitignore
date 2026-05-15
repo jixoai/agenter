@@ -25,6 +25,9 @@ demo/.env
 
 # terminal runtime artifacts
 packages/terminal/tmp/
+.agenter-cli-shell-trace.ndjson
+packages/cli-shell/CPU.*.cpuprofile
+packages/cli-shell/CPU.*.md
 
 # i18n build artifacts
 packages/i18n-en/prompts.json

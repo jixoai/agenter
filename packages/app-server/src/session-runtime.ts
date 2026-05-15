@@ -170,7 +170,7 @@ import {
   type LoopTaskSourceRef,
   type LoopTerminalSourceRef,
 } from "./loopbus-plugin-runtime";
-import { ManagedTerminal, type ManagedTerminalSnapshot } from "./managed-terminal";
+import { type ManagedTerminalSnapshot, type TerminalRuntime } from "./managed-terminal";
 import { summarizeMessageChannelPresence } from "./message-channel-presence";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
@@ -1477,10 +1477,8 @@ const cloneEffectLedgerRecord = (record: SessionEffectLedgerRecord): SessionEffe
 });
 
 const projectRuntimeTerminalCreateAck = (terminal: RuntimeTerminalView): RuntimeTerminalCreateAckView => {
-  const { access: _access, ...rest } = terminal;
   return {
-    ...rest,
-    access: undefined,
+    ...terminal,
   };
 };
 
@@ -1809,7 +1807,7 @@ export class SessionRuntime {
   private runtimeSkillSystem: RuntimeSkillSystem | null = null;
   private rootWorkspaceShellWorld: RootWorkspaceShellWorld | null = null;
   private readonly terminalControlPlane: TerminalControlPlane;
-  private terminals = new Map<string, ManagedTerminal>();
+  private terminals = new Map<string, TerminalRuntime>();
   private runtime: AgentRuntime | null = null;
   private started = false;
   private abortWakeRequested = false;
@@ -5726,8 +5724,16 @@ export class SessionRuntime {
 
   private isTerminalActionable(terminalId: string): boolean {
     const status = this.terminalStatusById.get(terminalId);
-    const transition = status?.lifecycleTransition ?? null;
-    return transition !== null;
+    if (!status) {
+      return false;
+    }
+    if (status.processPhase !== "running") {
+      return false;
+    }
+    if (status.lifecycleTransition !== null) {
+      return true;
+    }
+    return status.status === "IDLE" || status.status === "BUSY";
   }
 
   private updateFocusedTerminals(op: TerminalFocusOp, terminalIds: string[] = []): string[] {
@@ -8678,7 +8684,7 @@ export class SessionRuntime {
     return { ok: true };
   }
 
-  private attachRuntimeTerminal(terminalId: string, terminal: ManagedTerminal): void {
+  private attachRuntimeTerminal(terminalId: string, terminal: TerminalRuntime): void {
     if (this.terminals.has(terminalId)) {
       this.syncRuntimeTerminalStatus(terminalId);
       return;
@@ -11730,7 +11736,6 @@ export class SessionRuntime {
     await Promise.all([
       this.attentionStore.save(snapshot),
       this.attentionHashAliasStore.save(this.attentionHashAliases.snapshot()),
-      this.attentionSearchEngine?.sync(snapshot) ?? Promise.resolve(),
     ]);
   }
 

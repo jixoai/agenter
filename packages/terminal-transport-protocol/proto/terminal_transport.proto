@@ -27,7 +27,7 @@ message TerminalRichLine {
   repeated TerminalRichSpan spans = 1;
 }
 
-message TerminalSnapshot {
+message TerminalFramePayload {
   uint32 seq = 1;
   optional double timestamp = 2;
   uint32 cols = 3;
@@ -44,8 +44,19 @@ enum TerminalStatus {
   TERMINAL_STATUS_BUSY = 2;
 }
 
+enum TerminalGeometryRole {
+  TERMINAL_GEOMETRY_ROLE_UNSPECIFIED = 0;
+  TERMINAL_GEOMETRY_ROLE_PROJECTION_ONLY = 1;
+  TERMINAL_GEOMETRY_ROLE_AUTHORITY = 2;
+}
+
 message TerminalHello {
   optional string terminal_id = 1;
+  TerminalGeometryRole geometry_role = 2;
+  optional sint32 geometry_order = 3;
+  bool debug_trace = 4;
+  optional string runtime_json = 5;
+  optional string direct_json = 6;
 }
 
 message TerminalResize {
@@ -57,23 +68,107 @@ message TerminalInputBytes {
   bytes data = 1;
 }
 
+message TerminalViewportDelta {
+  sint32 delta_rows = 1;
+}
+
+message TerminalViewportTarget {
+  uint32 viewport_start = 1;
+}
+
+message TerminalPullFrame {
+  uint32 last_applied_frame_seq = 1;
+  uint32 cols = 2;
+  uint32 rows = 3;
+  optional uint32 max_patch_bytes = 4;
+}
+
 message TerminalClientFrame {
   oneof body {
     TerminalHello hello = 1;
     TerminalResize resize = 2;
     TerminalInputBytes input_bytes = 3;
+    TerminalViewportDelta viewport_delta = 4;
+    TerminalViewportTarget viewport_target = 5;
+    TerminalPullFrame pull_frame = 6;
   }
 }
 
-message TerminalOutputBytes {
-  string terminal_id = 1;
-  bytes data = 2;
+message TerminalFrameFullPatch {
+  TerminalFramePayload frame = 1;
 }
 
-message TerminalSnapshotFrame {
+message TerminalFrameRowPatch {
+  uint32 row = 1;
+  string line = 2;
+  TerminalRichLine rich_line = 3;
+}
+
+message TerminalFrameRowsPatch {
+  uint32 base_frame_seq = 1;
+  repeated TerminalFrameRowPatch row_patches = 2;
+  uint32 cols = 3;
+  uint32 rows = 4;
+  TerminalCursor cursor = 5;
+  TerminalScrollback scrollback = 6;
+  optional double timestamp = 7;
+}
+
+message TerminalFrameScrollRowsPatch {
+  uint32 base_frame_seq = 1;
+  sint32 delta_rows = 2;
+  repeated string inserted_lines = 3;
+  repeated TerminalRichLine inserted_rich_lines = 4;
+  uint32 cols = 5;
+  uint32 rows = 6;
+  TerminalCursor cursor = 7;
+  TerminalScrollback scrollback = 8;
+  optional double timestamp = 9;
+}
+
+message TerminalFrameCachedRow {
+  uint32 cid = 1;
+  optional string line = 2;
+  TerminalRichLine rich_line = 3;
+}
+
+message TerminalFrameRowCachePatch {
+  uint32 base_frame_seq = 1;
+  repeated TerminalFrameCachedRow cached_rows = 2;
+  uint32 cols = 3;
+  uint32 rows = 4;
+  TerminalCursor cursor = 5;
+  TerminalScrollback scrollback = 6;
+  optional double timestamp = 7;
+}
+
+message TerminalFrameNotModifiedPatch {
+  uint32 base_frame_seq = 1;
+  optional double timestamp = 2;
+}
+
+message TerminalFramePatch {
+  oneof body {
+    TerminalFrameFullPatch full = 1;
+    TerminalFrameRowsPatch rows = 2;
+    TerminalFrameScrollRowsPatch scroll_rows = 3;
+    TerminalFrameRowCachePatch row_cache = 4;
+    TerminalFrameNotModifiedPatch not_modified = 5;
+  }
+}
+
+message TerminalFrameDirty {
   string terminal_id = 1;
-  TerminalSnapshot snapshot = 2;
+  uint32 frame_seq = 2;
+  string reason = 3;
+  optional double timestamp = 4;
+}
+
+message TerminalFrameDelivery {
+  string terminal_id = 1;
+  uint32 frame_seq = 2;
   TerminalStatus status = 3;
+  TerminalFramePatch patch = 4;
 }
 
 message TerminalStatusFrame {
@@ -89,14 +184,38 @@ message TerminalErrorFrame {
 
 message TerminalHelloAck {
   string terminal_id = 1;
+  string attachment_id = 2;
+  TerminalGeometryRole effective_geometry_role = 3;
+  optional string geometry_authority_attachment_id = 4;
+  optional sint32 geometry_order = 5;
+  optional string authority_reason = 6;
+  optional string direct_json = 7;
+}
+
+message TerminalTraceField {
+  string key = 1;
+  oneof value {
+    string string_value = 2;
+    double number_value = 3;
+    bool bool_value = 4;
+    bool null_value = 5;
+  }
+}
+
+message TerminalTraceFrame {
+  string terminal_id = 1;
+  string event = 2;
+  repeated TerminalTraceField fields = 3;
+  optional double timestamp = 4;
 }
 
 message TerminalServerFrame {
   oneof body {
-    TerminalSnapshotFrame snapshot = 1;
-    TerminalStatusFrame status = 2;
-    TerminalErrorFrame error = 3;
-    TerminalHelloAck hello_ack = 4;
-    TerminalOutputBytes output_bytes = 5;
+    TerminalFrameDirty frame_dirty = 1;
+    TerminalFrameDelivery frame = 2;
+    TerminalStatusFrame status = 3;
+    TerminalErrorFrame error = 4;
+    TerminalHelloAck hello_ack = 5;
+    TerminalTraceFrame trace = 6;
   }
 }

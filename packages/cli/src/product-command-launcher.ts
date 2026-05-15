@@ -49,6 +49,7 @@ export interface LocalProductLaunchTarget {
   packageDir: string;
   packageJsonPath: string;
   binPath: string;
+  mainPath: string;
 }
 
 export interface RemoteProductLaunchTarget {
@@ -170,6 +171,7 @@ const tryResolveWorkspaceTarget = (
     packageDir,
     packageJsonPath,
     binPath: resolve(packageDir, binRelativePath),
+    mainPath: resolve(packageDir, "src", "index.ts"),
   };
 };
 
@@ -193,6 +195,7 @@ const tryResolveInstalledTarget = (
       packageDir: dirname(packageJsonPath),
       packageJsonPath,
       binPath: resolve(dirname(packageJsonPath), binRelativePath),
+      mainPath: resolve(dirname(packageJsonPath), "src", "index.ts"),
     };
   } catch {
     return null;
@@ -260,13 +263,31 @@ export const resolveProductLaunchTarget = (
 };
 
 export const buildProductLaunchEnv = (input: ProductLaunchEnvInput): NodeJS.ProcessEnv => {
+  const baseEnv = input.baseEnv ?? process.env;
+  const bypassHosts = new Set(
+    [
+      baseEnv.NO_PROXY,
+      baseEnv.no_proxy,
+      "localhost",
+      "127.0.0.1",
+      "::1",
+      input.launcherOptions.host,
+    ]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .flatMap((value) => value.split(","))
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0),
+  );
+  const noProxy = [...bypassHosts].join(",");
   const env: NodeJS.ProcessEnv = {
-    ...(input.baseEnv ?? process.env),
+    ...baseEnv,
     AGENTER_DAEMON_HOST: input.launcherOptions.host,
     AGENTER_DAEMON_PORT: String(input.launcherOptions.port),
     AGENTER_PRODUCT_COMMAND: input.descriptor.command,
     AGENTER_PRODUCT_PACKAGE: input.descriptor.packageName,
     AGENTER_PRODUCT_SOURCE: input.source,
+    NO_PROXY: noProxy,
+    no_proxy: noProxy,
   };
   if (input.launcherOptions.authServiceEndpoint?.trim()) {
     env.AGENTER_AUTH_SERVICE_ENDPOINT = input.launcherOptions.authServiceEndpoint.trim();

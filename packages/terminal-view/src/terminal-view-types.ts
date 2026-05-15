@@ -1,4 +1,5 @@
 import type { TerminalTransportSnapshot } from "@agenter/terminal-transport-protocol";
+import type { TerminalTransportGeometryRole } from "@agenter/terminal-transport-protocol";
 
 export type TerminalViewConnectionState = "idle" | "connecting" | "connected" | "closed" | "error";
 
@@ -21,3 +22,14 @@ export interface TerminalViewPresentationReadyDetail {
 }
 
 export type TerminalViewSnapshot = TerminalTransportSnapshot;
+export type TerminalViewGeometryRole = TerminalTransportGeometryRole;
+
+export interface TerminalViewGeometryAuthorityDetail {
+  terminalId: string;
+  requestedGeometryRole: TerminalViewGeometryRole;
+  effectiveGeometryRole: TerminalViewGeometryRole;
+  geometryOrder?: number;
+  transportAttachmentId?: string;
+  geometryAuthorityAttachmentId?: string;
+  authorityReason?: string;
+}

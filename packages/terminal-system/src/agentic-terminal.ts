@@ -11,6 +11,7 @@ import { HtmlPaginationStore } from "./pagination";
 import { Pty } from "./pty";
 import {
   compactRenderForPersistence,
+  renderFullStructuredBuffer,
   renderSemanticBuffer,
   renderStructuredBuffer,
   serializeRenderLinesForLog,
@@ -468,6 +469,24 @@ export class AgenticTerminal {
     return this.lastStructured;
   }
 
+  public getFullStructured(): TerminalStructuredSnapshot {
+    const xterm = this.xterm;
+    if (!xterm) {
+      return this.lastStructured;
+    }
+    const structured = renderFullStructuredBuffer(xterm);
+    return {
+      ...structured,
+      seq: this.structuredSerial,
+      timestamp: Date.now(),
+      status: this.status,
+    };
+  }
+
+  public getText(): string {
+    return this.xterm?.getText() ?? this.lastRender.plainLines.join("\n");
+  }
+
   public getObservedIdentity(): TerminalObservedIdentity {
     return { ...this.observedIdentity };
   }
@@ -636,6 +655,32 @@ export class AgenticTerminal {
       }
     });
     return this.resizeQueue;
+  }
+
+  public scrollViewport(deltaRows: number): void {
+    this.ensureStarted();
+    const delta = Math.trunc(deltaRows);
+    if (!Number.isFinite(delta) || delta === 0) {
+      return;
+    }
+    const xterm = this.xterm;
+    if (!xterm) {
+      return;
+    }
+    xterm.scrollViewport(delta);
+    const render = this.buildRenderFromXterm(xterm);
+    this.emitRender(render);
+  }
+
+  public setViewportStart(viewportStart: number): void {
+    this.ensureStarted();
+    const xterm = this.xterm;
+    if (!xterm) {
+      return;
+    }
+    xterm.setViewportStart(viewportStart);
+    const render = this.buildRenderFromXterm(xterm);
+    this.emitRender(render);
   }
 
   private async commitSnapshotNow(reason: "force" | "status-idle"): Promise<void> {

@@ -358,10 +358,22 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
       role: input.role,
       participantId: input.participantId,
       label: input.label,
+      accessToken: `grant-token:${input.terminalId}:${input.participantId}`,
       createdAt: Date.now(),
     });
     this.terminalGrants.set(input.terminalId, grants);
-    return { ok: true };
+    return { ok: true, accessToken: `grant-token:${input.terminalId}:${input.participantId}` };
+  }
+
+  async focusTerminals(input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    terminalIds: string[];
+  }): Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }> {
+    void input.sessionId;
+    void input.op;
+    this.focusTerminalCalls.push([...input.terminalIds]);
+    return { ok: true, message: "focused", focusedTerminalIds: input.terminalIds };
   }
 
   async focusGlobalTerminals(input: {
@@ -415,10 +427,22 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
       role: input.role,
       participantId: input.participantId,
       label: input.label,
+      accessToken: `grant-token:${input.chatId}:${input.participantId}`,
       createdAt: Date.now(),
     });
     this.roomGrants.set(input.chatId, grants);
-    return { ok: true };
+    return { ok: true, accessToken: `grant-token:${input.chatId}:${input.participantId}` };
+  }
+
+  async focusMessageChannels(input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    channels: Array<{ chatId: string; accessToken: string }>;
+  }): Promise<GlobalRoomEntry[]> {
+    void input.sessionId;
+    void input.op;
+    this.focusRoomCalls.push(input.channels.map((channel) => channel.chatId));
+    return this.rooms.filter((entry) => input.channels.some((channel) => channel.chatId === entry.chatId));
   }
 
   async focusGlobalRooms(input: {
@@ -617,6 +641,7 @@ describe("Feature: product extension runtime client", () => {
     const client = new ProductExtensionRuntimeClient(store);
 
     const terminal = await client.ensureTerminalBinding({
+      session: createSessionEntry("/repo", "shell-assistant"),
       binding: {
         productId: "cli-shell",
         resourceKey: "shell-1",
@@ -627,6 +652,7 @@ describe("Feature: product extension runtime client", () => {
       participantLabel: "Shell Assistant",
     });
     const room = await client.ensureRoomBinding({
+      session: createSessionEntry("/repo", "shell-assistant"),
       binding: {
         productId: "cli-shell",
         resourceKey: "shell-1",
@@ -686,6 +712,7 @@ describe("Feature: product extension runtime client", () => {
     const client = new ProductExtensionRuntimeClient(store);
 
     const ensuredTerminal = await client.ensureTerminalBinding({
+      session: createSessionEntry("/repo", "shell-assistant"),
       binding: {
         productId: "cli-shell",
         resourceKey: "shell-1",
@@ -695,6 +722,7 @@ describe("Feature: product extension runtime client", () => {
       participantId: "auth:shell-assistant",
     });
     const ensuredRoom = await client.ensureRoomBinding({
+      session: createSessionEntry("/repo", "shell-assistant"),
       binding: {
         productId: "cli-shell",
         resourceKey: "shell-1",
@@ -728,6 +756,7 @@ describe("Feature: product extension runtime client", () => {
     const client = new ProductExtensionRuntimeClient(store);
 
     const ensuredTerminal = await client.ensureTerminalBinding({
+      session: createSessionEntry("/repo", "shell-assistant"),
       binding: {
         productId: "cli-shell",
         resourceKey: "shell-1",
@@ -753,6 +782,7 @@ describe("Feature: product extension runtime client", () => {
     const client = new ProductExtensionRuntimeClient(store);
 
     const ensuredTerminal = await client.ensureTerminalBinding({
+      session: createSessionEntry("/repo", "shell-assistant"),
       binding: {
         productId: "cli-shell",
         resourceKey: "shell-1",
@@ -799,6 +829,7 @@ describe("Feature: product extension runtime client", () => {
     const client = new ProductExtensionRuntimeClient(store);
 
     const ensuredTerminal = await client.ensureTerminalBinding({
+      session: createSessionEntry("/repo", "shell-assistant"),
       binding: {
         productId: "cli-shell",
         resourceKey: "shell-1",
@@ -840,6 +871,7 @@ describe("Feature: product extension runtime client", () => {
 
     await expect(
       client.ensureTerminalBinding({
+        session: createSessionEntry("/repo", "shell-assistant"),
         binding: {
           productId: "cli-shell",
           resourceKey: "shell-1",
@@ -854,6 +886,53 @@ describe("Feature: product extension runtime client", () => {
     ).rejects.toThrow("terminal backend mismatch");
     expect(store.setTerminalConfigCalls).toEqual([]);
     expect(store.bootstrapTerminalCalls).toEqual([]);
+  });
+
+  test("Scenario: Given an existing running projection terminal with another backend When ensuring a requested backend Then the runtime client treats backend as projection config instead of PTY mismatch", async () => {
+    const store = new FakeProductRuntimeStore();
+    store.terminals.push({
+      ...createTerminalEntry(
+        "shell-1:terminal-2",
+        {
+          productId: "cli-shell",
+          resourceKey: "shell-1:terminal-2",
+          ownerSystem: "terminal-system",
+          projectionSourceTerminalId: "shell-1:terminal-1",
+        },
+        "running",
+      ),
+      backend: "xterm",
+    });
+    const client = new ProductExtensionRuntimeClient(store);
+
+    const ensuredTerminal = await client.ensureTerminalBinding({
+      session: createSessionEntry("/repo", "shell-assistant"),
+      binding: {
+        productId: "cli-shell",
+        resourceKey: "shell-1:terminal-2",
+        resourceKind: "terminal",
+        ownerSystem: "terminal-system",
+        metadata: {
+          projectionSourceTerminalId: "shell-1:terminal-1",
+        },
+      },
+      createInput: {
+        backend: "ghostty-native",
+      },
+    });
+
+    expect(ensuredTerminal.created).toBe(false);
+    expect(store.setTerminalConfigCalls).toEqual([
+      {
+        terminalId: "shell-1:terminal-2",
+        processKind: undefined,
+        backend: "ghostty-native",
+        command: undefined,
+        launchCwd: undefined,
+        metadata: undefined,
+      },
+    ]);
+    expect(ensuredTerminal.entry.backend).toBe("ghostty-native");
   });
 
   test("Scenario: Given self-evolution attention and explicit delegations When invoking the runtime client Then attention does not implicitly create hosting leases", async () => {

@@ -1,4 +1,5 @@
 const std = @import("std");
+const napigen = @import("napigen");
 const TerminalBuildOptions = @import(".ghostty-src/src/terminal/build_options.zig").Options;
 
 const GeneratedTables = struct {
@@ -91,8 +92,6 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
         .link_libc = true,
     });
-    const napigen_dep = b.dependency("napigen", .{});
-    root_module.addImport("napigen", napigen_dep.module("napigen"));
     root_module.addImport("ghostty", ghostty_module);
 
     const lib = b.addLibrary(.{
@@ -106,7 +105,7 @@ pub fn build(b: *std.Build) !void {
         lib.headerpad_max_install_names = true;
     }
 
-    lib.linker_allow_shlib_undefined = true;
+    napigen.setup(lib);
     b.installArtifact(lib);
 
     const copy_node = b.addInstallLibFile(

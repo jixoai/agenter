@@ -1,5 +1,3 @@
-import stringWidth from "string-width";
-
 import type { TerminalRenderRichLine, TerminalRenderRichSpan } from "./render-structured-buffer.js";
 
 export type TerminalViewportCursorSource = "inverse" | "hardware" | "sticky" | "none";
@@ -44,7 +42,7 @@ const findInverseCursor = (lines: readonly TerminalRenderRichLine[]): StickyCurs
       if (span.inverse && span.text.length > 0) {
         return { row, col };
       }
-      col += stringWidth(span.text);
+      col += Bun.stringWidth(span.text);
     }
   }
   return null;
@@ -59,10 +57,10 @@ const injectCursor = (line: TerminalRenderRichLine, col: number): TerminalRender
   for (const span of line.spans) {
     if (inserted) {
       out.push({ ...span });
-      consumed += stringWidth(span.text);
+      consumed += Bun.stringWidth(span.text);
       continue;
     }
-    const spanWidth = stringWidth(span.text);
+    const spanWidth = Bun.stringWidth(span.text);
     const next = consumed + spanWidth;
     if (safeCol > next) {
       out.push({ ...span });
@@ -75,7 +73,7 @@ const injectCursor = (line: TerminalRenderRichLine, col: number): TerminalRender
     let used = consumed;
     let cursorCoveredByWideGlyph = false;
     for (const char of Array.from(span.text)) {
-      const width = Math.max(1, stringWidth(char));
+      const width = Math.max(1, Bun.stringWidth(char));
       const nextUsed = used + width;
       if (!cursorCoveredByWideGlyph && safeCol >= used && safeCol < nextUsed) {
         cursorCoveredByWideGlyph = true;
@@ -122,6 +120,7 @@ export const projectTerminalViewport = (input: {
   cursorCol: number;
   cursorVisible: boolean;
   viewportRows: number;
+  viewportStart?: number;
   stickyCursor?: StickyCursor | null;
 }): ProjectedTerminalViewport => {
   const safeRows = Math.max(1, input.viewportRows);
@@ -153,7 +152,11 @@ export const projectTerminalViewport = (input: {
 
   const maxRow = Math.max(0, input.lines.length - 1);
   const focusRow = Math.max(0, Math.min(maxRow, resolvedCursor.row));
-  const start = Math.max(0, focusRow - safeRows + 1);
+  const maxStart = Math.max(0, input.lines.length - safeRows);
+  const start =
+    typeof input.viewportStart === "number"
+      ? Math.max(0, Math.min(maxStart, Math.trunc(input.viewportStart)))
+      : Math.max(0, focusRow - safeRows + 1);
   const end = Math.min(input.lines.length, start + safeRows);
   const view = input.lines.slice(start, end).map((line) => ({
     spans: line.spans.map((span) => ({ ...span })),

@@ -8,6 +8,7 @@ import type {
   GlobalTerminalActorId,
   ProductEnsureBindingResult,
   ProductExtensionRuntimeStore,
+  RuntimeStore,
   SessionEntry,
   WorkspacePrivateTextAssetEnsureOutput,
 } from "@agenter/client-sdk";
@@ -16,6 +17,7 @@ import type { TerminalBackendKind } from "@agenter/termless-core";
 import { readCliShellManagedState, type CliShellManagedState } from "./managed";
 import { CLI_SHELL_DEFAULT_AVATAR, CLI_SHELL_PRODUCT_ID, createCliShellProductRuntimeClient } from "./product";
 import { SHELL_ASSISTANT_DISPLAY_NAME, buildShellAssistantPromptSeed, shellAssistantMemoryRoles } from "./shell-assistant-seeds";
+import type { CliShellTuiStore } from "./tui/types";
 
 export type CliShellAutoLoginResult =
   | { ok: true; session: { token: string } }
@@ -39,29 +41,46 @@ export interface CliShellStore extends ProductExtensionRuntimeStore {
   }): Promise<{ ok: true; revokedCount: number }>;
 }
 
+export type CliShellInteractiveHostStore = CliShellStore &
+  Pick<
+    RuntimeStore,
+    "connect" | "disconnect" | "getState" | "hydrateSessionArtifacts" | "hydrateGlobalTerminals"
+  >;
+
+export type CliShellProductHostStore = CliShellInteractiveHostStore & CliShellTuiStore;
+
 export interface CliShellBootstrapInput {
   store: CliShellStore;
   workspacePath: string;
   avatarNickname: string;
   shellName: string;
   backend?: TerminalBackendKind;
+  onProgress?: (phase: CliShellBootstrapProgressPhase) => void;
 }
+
+export type CliShellBootstrapProgressPhase = "authenticating" | "observation-pending";
 
 export interface CliShellBootstrapResult {
   avatar: GlobalAvatarCatalogEntry;
   session: SessionEntry;
-  terminal: ProductEnsureBindingResult<GlobalTerminalEntry>;
+  avatarActorId: GlobalTerminalActorId;
+  shellTruthTerminal: ProductEnsureBindingResult<GlobalTerminalEntry>;
+  visibleTerminal: ProductEnsureBindingResult<GlobalTerminalEntry>;
   room: ProductEnsureBindingResult<GlobalRoomEntry>;
   promptSeeded: boolean;
   memoryFiles: WorkspacePrivateTextAssetEnsureOutput[];
   managed: CliShellManagedState;
 }
 
-const requireAvatarPrincipalId = (avatar: GlobalAvatarCatalogEntry): NonNullable<GlobalAvatarCatalogEntry["avatarPrincipalId"]> => {
-  if (!avatar.avatarPrincipalId) {
-    throw new Error(`avatar missing principal id: ${avatar.nickname}`);
+const toShellTruthResourceKey = (shellName: string): string => `${shellName}:terminal-1`;
+const toVisibleTerminalResourceKey = (shellName: string): string => `${shellName}:terminal-2`;
+const TERMINAL_RUNTIME_KIND_METADATA_KEY = "terminalRuntimeKind" as const;
+
+const requireSessionAvatarPrincipalId = (session: SessionEntry): NonNullable<SessionEntry["avatarPrincipalId"]> => {
+  if (!session.avatarPrincipalId) {
+    throw new Error(`session missing avatar principal id: ${session.id}`);
   }
-  return avatar.avatarPrincipalId;
+  return session.avatarPrincipalId;
 };
 
 const toTerminalActorId = (
@@ -106,15 +125,17 @@ const resolveSelectedAvatar = async (
 };
 
 export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<CliShellBootstrapResult> => {
+  input.onProgress?.("authenticating");
   await requireAutoLogin(input.store);
   const runtimeClient = createCliShellProductRuntimeClient(input.store);
   const avatar = await resolveSelectedAvatar(input.store, input.workspacePath, input.avatarNickname);
-  const avatarPrincipalId = requireAvatarPrincipalId(avatar);
   const session = await runtimeClient.ensureRuntime({
     workspacePath: input.workspacePath,
     avatarNickname: avatar.nickname,
     autoStart: true,
   });
+  input.onProgress?.("observation-pending");
+  const avatarActorId = toTerminalActorId(requireSessionAvatarPrincipalId(session));
 
   let promptSeeded = false;
   let memoryFiles: WorkspacePrivateTextAssetEnsureOutput[] = [];
@@ -132,14 +153,15 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
     });
   }
 
-  const terminal = await runtimeClient.ensureTerminalBinding({
+  const shellTruthTerminal = await runtimeClient.ensureTerminalBinding({
+    session,
     binding: {
       productId: CLI_SHELL_PRODUCT_ID,
-      resourceKey: input.shellName,
+      resourceKey: toShellTruthResourceKey(input.shellName),
       resourceKind: "terminal",
       ownerSystem: "terminal-system",
     },
-    participantId: toTerminalActorId(avatarPrincipalId),
+    participantId: avatarActorId,
     participantLabel: avatar.displayName ?? avatar.nickname,
     grantRole: "requester",
     focus: true,
@@ -152,7 +174,29 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
     },
   });
 
+  const visibleTerminal = await runtimeClient.ensureTerminalBinding({
+    session,
+    binding: {
+      productId: CLI_SHELL_PRODUCT_ID,
+      resourceKey: toVisibleTerminalResourceKey(input.shellName),
+      resourceKind: "terminal",
+      ownerSystem: "terminal-system",
+      metadata: {
+        [TERMINAL_RUNTIME_KIND_METADATA_KEY]: "composed",
+        composedShellTerminalId: shellTruthTerminal.entry.terminalId,
+      },
+    },
+    participantId: avatarActorId,
+    participantLabel: avatar.displayName ?? avatar.nickname,
+    grantRole: "requester",
+    focus: true,
+    createInput: {
+      backend: input.backend,
+    },
+  });
+
   const room = await runtimeClient.ensureRoomBinding({
+    session,
     binding: {
       productId: CLI_SHELL_PRODUCT_ID,
       resourceKey: input.shellName,
@@ -160,7 +204,7 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
       ownerSystem: "message-system",
       title: input.shellName,
     },
-    participantId: toRoomActorId(avatarPrincipalId),
+    participantId: toRoomActorId(avatarActorId),
     participantLabel: avatar.displayName ?? avatar.nickname,
     grantRole: "member",
     focus: true,
@@ -170,14 +214,16 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
     store: input.store,
     sessionId: session.id,
     runtimeId: avatar.runtimeId,
-    avatarActorId: avatarPrincipalId,
+    avatarActorId,
     shellName: input.shellName,
   });
 
   return {
     avatar,
     session,
-    terminal,
+    avatarActorId,
+    shellTruthTerminal,
+    visibleTerminal,
     room,
     promptSeeded,
     memoryFiles,

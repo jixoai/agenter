@@ -52,9 +52,46 @@ export interface ManagedTerminalSnapshot {
 
 export interface ManagedTerminalLifecycleEvent extends TerminalLifecycleState {}
 
-interface CommitWaitHandle<T = unknown> {
+export interface TerminalCommitWaitHandle<T = unknown> {
   promise: Promise<T>;
   reject: (reason: unknown) => void;
+}
+
+export interface TerminalRuntime {
+  onSnapshot(listener: (snapshot: ManagedTerminalSnapshot) => void): () => void;
+  onStatus(listener: (running: boolean, status: TerminalStatus) => void): () => void;
+  onOutput(listener: (chunk: string) => void): () => void;
+  onOutputBytes(listener: (chunk: Uint8Array) => void): () => void;
+  onLifecycle(listener: (event: ManagedTerminalLifecycleEvent) => void): () => void;
+  onObservedIdentity(listener: (identity: TerminalObservedIdentity) => void): () => void;
+  start(): void;
+  stop(): Promise<void>;
+  isRunning(): boolean;
+  getSnapshot(): ManagedTerminalSnapshot;
+  getStatus(): TerminalStatus;
+  getObservedIdentity(): TerminalObservedIdentity;
+  reconfigure(patch: ManagedTerminalConfigPatch): void;
+  getHeadHash(): string | null;
+  waitCommitted(input?: { fromHash?: string | null }): TerminalCommitWaitHandle<{ toHash: string | null }>;
+  getWorkspace(): string | null;
+  getText(): string;
+  resize(cols: number, rows: number): void;
+  scrollViewport(deltaRows: number): void;
+  setViewportStart(viewportStart: number): void;
+  write(input: string): Promise<TerminalPendingInputResult>;
+  input(mixedInput: string): Promise<TerminalPendingInputResult>;
+  writeRaw(input: string): void;
+  writeRawBytes(input: Uint8Array): void;
+  publishSnapshot?(snapshot: ManagedTerminalSnapshot): void;
+  publishComposedSurface?(surface: {
+    snapshot: ManagedTerminalSnapshot;
+    running?: boolean;
+    status?: TerminalStatus;
+    observedIdentity?: TerminalObservedIdentity;
+  }): void;
+  read(): Promise<ManagedTerminalSnapshot>;
+  markDirty(): Promise<{ ok: boolean; hash: string | null; reason?: string }>;
+  sliceDirty(options?: TerminalDirtySliceOptions): Promise<TerminalDirtySliceResult>;
 }
 
 interface TerminalCommitWaiter {
@@ -72,7 +109,7 @@ const normalizeSeqHash = (value?: string | null): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-export class ManagedTerminal {
+export class ManagedTerminal implements TerminalRuntime {
   private terminal: AgenticTerminal | null = null;
   private running = false;
   private stopping = false;
@@ -345,7 +382,7 @@ export class ManagedTerminal {
     return String(this.snapshot.seq);
   }
 
-  waitCommitted(input: { fromHash?: string | null } = {}): CommitWaitHandle<{ toHash: string | null }> {
+  waitCommitted(input: { fromHash?: string | null } = {}): TerminalCommitWaitHandle<{ toHash: string | null }> {
     const afterSeq = normalizeSeqHash(input.fromHash);
     if (this.snapshot.seq > afterSeq) {
       return {
@@ -387,6 +424,10 @@ export class ManagedTerminal {
     return this.terminal?.workspace ?? null;
   }
 
+  getText(): string {
+    return this.terminal?.getText() ?? this.snapshot.lines.join("\n");
+  }
+
   resize(cols: number, rows: number): void {
     const nextCols = Math.max(8, cols);
     const nextRows = Math.max(4, rows);
@@ -400,6 +441,26 @@ export class ManagedTerminal {
       return;
     }
     void this.terminal.resize(this.cols, this.rows);
+  }
+
+  scrollViewport(deltaRows: number): void {
+    const delta = Math.trunc(deltaRows);
+    if (!Number.isFinite(delta) || delta === 0 || !this.terminal) {
+      return;
+    }
+    this.terminal.scrollViewport(delta);
+    this.snapshot = this.toSnapshot(this.terminal.getLatestStructured());
+    this.emitSnapshot();
+  }
+
+  setViewportStart(viewportStart: number): void {
+    const safeStart = Math.max(0, Math.trunc(viewportStart));
+    if (!Number.isFinite(safeStart) || !this.terminal) {
+      return;
+    }
+    this.terminal.setViewportStart(safeStart);
+    this.snapshot = this.toSnapshot(this.terminal.getLatestStructured());
+    this.emitSnapshot();
   }
 
   async write(input: string): Promise<TerminalPendingInputResult> {
@@ -434,7 +495,7 @@ export class ManagedTerminal {
     if (!this.terminal || !this.running) {
       throw new Error("terminal is not running");
     }
-    return this.snapshot;
+    return this.toSnapshot(this.terminal.getFullStructured());
   }
 
   async markDirty(): Promise<{ ok: boolean; hash: string | null; reason?: string }> {

@@ -239,6 +239,54 @@ Runtime-local terminal config reads and writes SHALL expose durable terminal lau
 - **THEN** runtime terminal config continues to expose backend launch truth separately from renderer fact
 - **AND** runtime code does not collapse backend selection into browser renderer naming
 
+### Requirement: Runtime terminal truth SHALL derive render, durable change log, and observation from one backend source
+
+Whenever runtime publishes terminal state, renderable terminal state, durable terminal change-log truth, and LoopBus terminal observation ingress SHALL all originate from the same backend terminal truth rather than from client-local reconstructions.
+
+#### Scenario: One backend change source drives renderer, commit, and observation truth
+- **GIVEN** one backend terminal emits new renderable state
+- **WHEN** runtime projects that change
+- **THEN** renderer hydration, durable terminal change-log publication, and observation ingress refer to the same backend terminal change source
+- **AND** clients do not synthesize a second authoritative transcript to bridge those paths
+
+#### Scenario: Projection caches do not become durable terminal truth
+- **WHEN** a client or host keeps local render caches
+- **THEN** runtime does not promote those caches into authoritative durable terminal history or observation facts
+- **AND** the runtime contract keeps backend terminal state as the only source of truth
+
+### Requirement: Runtime publications SHALL preserve shared terminal viewport truth
+
+Runtime terminal publications SHALL preserve shared viewport truth for same-terminal attachments when the product contract requires a single visible source of truth. Buffer content, viewport position, and visible input results SHALL remain synchronized across same-terminal clients that participate in that shared terminal attachment.
+
+#### Scenario: Same-terminal clients observe the same visible viewport
+- **WHEN** multiple clients attach to the same backend terminal through a shared terminal contract
+- **THEN** runtime-facing terminal projections preserve one shared visible viewport truth for that terminal
+- **AND** clients do not invent separate authoritative viewport positions for the same attachment
+
+#### Scenario: Visible input results remain synchronized across same-terminal clients
+- **WHEN** one same-terminal client sends interactive terminal input
+- **THEN** other same-terminal clients can observe the resulting visible shell changes from the same backend terminal truth
+- **AND** runtime projections do not require each client to reconstruct those visible changes independently
+
+### Requirement: Runtime publications SHALL distinguish geometry authority from presentation scale
+
+Runtime terminal projections SHALL distinguish backend terminal geometry truth from host-local presentation scaling. When a product host currently owns geometry authority, other projection hosts may present the same terminal grid without silently rewriting backend columns and rows.
+
+#### Scenario: Cli-shell-owned geometry remains explicit to other attachments
+- **WHEN** `cli-shell` owns geometry authority for a terminal through `shell-terminal-view`
+- **THEN** runtime-facing geometry truth remains derived from the native shell window after subtracting reserved product rows
+- **AND** other attachments can observe that geometry without inferring that they own it
+
+#### Scenario: Web host local resize changes presentation only
+- **WHEN** a `web-terminal-view` host resizes its local container while another host still owns backend geometry authority
+- **THEN** runtime terminal geometry truth remains unchanged
+- **AND** the Web host may still recompute local fit, cover, or zoom presentation from that shared geometry
+
+#### Scenario: Attachment resize role is explicit instead of inferred from last writer
+- **WHEN** multiple attachments are connected to the same backend terminal truth
+- **THEN** runtime/control-plane can distinguish the geometry-authoritative attachment from projection-only attachments
+- **AND** backend terminal geometry is not reassigned implicitly just because another projection host resized its local surface
+
 ### Requirement: Terminal lifecycle coordination SHALL be scheduler-only
 
 Runtime terminal focus, unfocus, and idle-ready coordination SHALL be treated as scheduler signals or UI invalidations. They MUST NOT be committed as task facts or obligation text in model-visible attention content.

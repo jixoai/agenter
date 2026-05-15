@@ -1,0 +1,59 @@
+import type { ProductTerminalComposedSurfaceState } from "@agenter/client-sdk";
+
+import { layoutCliShellTuiFrame, resolveCliShellTerminalRegion } from "./frame";
+import { resolveVisibleCursorCellPosition } from "./native-projection";
+import type { CliShellTuiModel } from "./types";
+
+export const buildCliShellComposedSurface = (input: {
+  shellTerminalId: string;
+  terminalId: string;
+  model: CliShellTuiModel;
+  width: number;
+  height: number;
+}): ProductTerminalComposedSurfaceState => {
+  const frame = layoutCliShellTuiFrame({
+    model: input.model,
+    width: input.width,
+    height: input.height,
+    renderToolbar: true,
+  });
+  const terminalRegion = resolveCliShellTerminalRegion({
+    model: input.model,
+    width: input.width,
+    height: input.height,
+  });
+  const productRows = Math.max(1, input.height);
+  const cursor = resolveVisibleCursorCellPosition({
+    model: input.model,
+    width: input.width,
+    height: input.height,
+  });
+  return {
+    shellTerminalId: input.shellTerminalId,
+    terminalId: input.terminalId,
+    shellSnapshotSeq: input.model.terminalView.snapshotSeq,
+    cols: Math.max(1, input.width),
+    rows: Math.max(1, input.height),
+    bottomLine: frame.lines.at(-1) ?? "",
+    dialogueOpen: input.model.dialogueOpen,
+    dialoguePlacement: input.model.dialoguePlacement,
+    dialogueDraft: input.model.dialogueDraft,
+    managedLabel: input.model.toolbarManaged,
+    unreadLabel: input.model.toolbarUnread,
+    heartbeatLabel: input.model.toolbarHeartbeatProjection,
+    terminalLines: [...frame.lines],
+    terminalRichLines: frame.styledLines.map((line) => ({
+      spans: line.spans.map((span) => ({ ...span })),
+    })),
+    cursor: {
+      x: cursor.x,
+      y: cursor.y,
+      visible: cursor.visible && terminalRegion.width > 0,
+    },
+    scrollback: {
+      viewportOffset: 0,
+      totalLines: Math.max(productRows, frame.lines.length),
+      screenLines: productRows,
+    },
+  };
+};

@@ -102,6 +102,7 @@
 	}): GlobalTerminalEntry => ({
 		terminalId: input.terminalId,
 		processKind: 'shell',
+		backend: 'xterm',
 		command: ['/bin/bash'],
 		launchCwd: input.cwd,
 		workspace: null,

@@ -123,35 +123,47 @@ describe("Feature: cli-shell real daemon integration", () => {
     if (!shellOneRoom) {
       throw new Error("expected shell-1 room");
     }
-    const shellAssistantActorId = first.avatar.avatarPrincipalId;
+    const shellAssistantActorId = first.session.avatarPrincipalId;
     if (!shellAssistantActorId) {
       throw new Error("expected shell-assistant principal id");
     }
-    const defaultActorId = defaultSameShell.avatar.avatarPrincipalId;
+    const defaultActorId = defaultSameShell.session.avatarPrincipalId;
     if (!defaultActorId) {
       throw new Error("expected default avatar principal id");
     }
-    const terminalGrants = await fixture.store.listGlobalTerminalGrants("shell-1");
+    const shellTruthTerminalGrants = await fixture.store.listGlobalTerminalGrants("shell-1:terminal-1");
+    const visibleTerminalGrants = await fixture.store.listGlobalTerminalGrants("shell-1:terminal-2");
     const roomGrants = await fixture.store.listGlobalRoomGrants({ chatId: shellOneRoom.chatId });
-    const terminalGrantActors = terminalGrants.map((grant) => grant.participantId).filter(isPresent).map(String);
+    const shellTruthGrantActors = shellTruthTerminalGrants.map((grant) => grant.participantId).filter(isPresent).map(String);
+    const visibleGrantActors = visibleTerminalGrants.map((grant) => grant.participantId).filter(isPresent).map(String);
     const roomGrantActors = roomGrants.map((grant) => grant.participantId).filter(isPresent).map(String);
 
     expect(reconnect.session.id).toBe(first.session.id);
     expect(defaultShellTwo.session.id).toBe(defaultSameShell.session.id);
-    expect(defaultSameShell.terminal.created).toBe(false);
+    expect(defaultSameShell.shellTruthTerminal.created).toBe(false);
+    expect(defaultSameShell.visibleTerminal.created).toBe(false);
     expect(defaultSameShell.room.created).toBe(false);
-    expect(defaultShellTwo.terminal.created).toBe(true);
+    expect(defaultShellTwo.shellTruthTerminal.created).toBe(true);
+    expect(defaultShellTwo.visibleTerminal.created).toBe(true);
     expect(defaultShellTwo.room.created).toBe(true);
-    expect(terminals.map((entry) => entry.terminalId).sort()).toEqual(["shell-1", "shell-2"]);
+    expect(terminals.map((entry) => entry.terminalId).sort()).toEqual([
+      "shell-1:terminal-1",
+      "shell-1:terminal-2",
+      "shell-2:terminal-1",
+      "shell-2:terminal-2",
+    ]);
     expect(
       rooms
         .map((entry) => entry.metadata?.resourceKey)
         .filter(isPresent)
         .sort(),
     ).toEqual(["shell-1", "shell-2"]);
-    expect(terminalGrantActors).toHaveLength(2);
-    expect(terminalGrantActors).toContain(shellAssistantActorId);
-    expect(terminalGrantActors).toContain(defaultActorId);
+    expect(shellTruthGrantActors).toHaveLength(2);
+    expect(shellTruthGrantActors).toContain(shellAssistantActorId);
+    expect(shellTruthGrantActors).toContain(defaultActorId);
+    expect(visibleGrantActors).toHaveLength(2);
+    expect(visibleGrantActors).toContain(shellAssistantActorId);
+    expect(visibleGrantActors).toContain(defaultActorId);
     expect(roomGrantActors).toContain(shellAssistantActorId);
     expect(roomGrantActors).toContain(defaultActorId);
   }, 45_000);
@@ -165,7 +177,7 @@ describe("Feature: cli-shell real daemon integration", () => {
       avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
       shellName: "shell-1",
     });
-    if (!attached.avatar.avatarPrincipalId) {
+    if (!attached.session.avatarPrincipalId) {
       throw new Error("expected shell-assistant principal id");
     }
 
@@ -173,9 +185,9 @@ describe("Feature: cli-shell real daemon integration", () => {
       store: fixture.store,
       sessionId: attached.session.id,
       runtimeId: attached.avatar.runtimeId,
-      avatarActorId: attached.avatar.avatarPrincipalId,
+      avatarActorId: attached.avatarActorId,
       shellName: "shell-1",
-      terminalId: attached.terminal.entry.terminalId,
+      terminalId: attached.shellTruthTerminal.entry.terminalId,
       roomId: attached.room.entry.chatId,
       objective: "Watch terminal output and report failures.",
     });
@@ -183,7 +195,7 @@ describe("Feature: cli-shell real daemon integration", () => {
       store: fixture.store,
       sessionId: attached.session.id,
       runtimeId: attached.avatar.runtimeId,
-      avatarActorId: attached.avatar.avatarPrincipalId,
+      avatarActorId: attached.avatarActorId,
       shellName: "shell-1",
     });
     const reconnect = await bootstrapCliShell({
@@ -202,16 +214,16 @@ describe("Feature: cli-shell real daemon integration", () => {
       store: fixture.store,
       sessionId: reconnect.session.id,
       runtimeId: reconnect.avatar.runtimeId,
-      avatarActorId: reconnect.avatar.avatarPrincipalId ?? attached.avatar.avatarPrincipalId,
+      avatarActorId: reconnect.avatarActorId,
       shellName: "shell-1",
-      terminalId: reconnect.terminal.entry.terminalId,
+      terminalId: reconnect.shellTruthTerminal.entry.terminalId,
       roomId: reconnect.room.entry.chatId,
     });
     const afterDisable = await readCliShellManagedState({
       store: fixture.store,
       sessionId: reconnect.session.id,
       runtimeId: reconnect.avatar.runtimeId,
-      avatarActorId: reconnect.avatar.avatarPrincipalId ?? attached.avatar.avatarPrincipalId,
+      avatarActorId: reconnect.avatarActorId,
       shellName: "shell-1",
     });
 
@@ -231,7 +243,7 @@ describe("Feature: cli-shell real daemon integration", () => {
       shellName: "shell-1",
     });
     await fixture.store.stopGlobalTerminal({
-      terminalId: first.terminal.entry.terminalId,
+      terminalId: first.shellTruthTerminal.entry.terminalId,
     });
 
     const reconnect = await bootstrapCliShell({
@@ -241,13 +253,13 @@ describe("Feature: cli-shell real daemon integration", () => {
       shellName: "shell-1",
     });
     const read = await fixture.store.readGlobalTerminal({
-      terminalId: reconnect.terminal.entry.terminalId,
+      terminalId: reconnect.shellTruthTerminal.entry.terminalId,
       mode: "snapshot",
     });
 
-    expect(reconnect.terminal.created).toBe(false);
-    expect(reconnect.terminal.entry.processPhase).toBe("running");
-    expect(read.terminalId).toBe("shell-1");
+    expect(reconnect.shellTruthTerminal.created).toBe(false);
+    expect(reconnect.shellTruthTerminal.entry.processPhase).toBe("running");
+    expect(read.terminalId).toBe("shell-1:terminal-1");
   }, 45_000);
 
   test("Scenario: Given a stopped shell terminal already exists When cli-shell reattaches with ghostty-native Then the product patches backend launch truth before bootstrap", async () => {
@@ -260,7 +272,7 @@ describe("Feature: cli-shell real daemon integration", () => {
       shellName: "shell-1",
     });
     await fixture.store.stopGlobalTerminal({
-      terminalId: first.terminal.entry.terminalId,
+      terminalId: first.shellTruthTerminal.entry.terminalId,
     });
 
     const reconnect = await bootstrapCliShell({
@@ -271,12 +283,12 @@ describe("Feature: cli-shell real daemon integration", () => {
       backend: "ghostty-native",
     });
     const terminals = await fixture.store.listGlobalTerminals();
-    const shellTerminal = terminals.find((entry) => entry.terminalId === "shell-1");
+    const shellTerminal = terminals.find((entry) => entry.terminalId === "shell-1:terminal-1");
 
-    expect(reconnect.terminal.created).toBe(false);
-    expect(reconnect.terminal.entry.backend).toBe("ghostty-native");
+    expect(reconnect.shellTruthTerminal.created).toBe(false);
+    expect(reconnect.shellTruthTerminal.entry.backend).toBe("ghostty-native");
     expect(shellTerminal?.backend).toBe("ghostty-native");
-    expect(reconnect.terminal.entry.processPhase).toBe("running");
+    expect(reconnect.shellTruthTerminal.entry.processPhase).toBe("running");
   }, 90_000);
 
   test("Scenario: Given a running shell terminal already uses xterm When cli-shell reattaches with ghostty-native Then the product surfaces backend mismatch instead of silently attaching", async () => {
@@ -298,5 +310,32 @@ describe("Feature: cli-shell real daemon integration", () => {
         backend: "ghostty-native",
       }),
     ).rejects.toThrow("terminal backend mismatch");
+  }, 45_000);
+
+  test("Scenario: Given avatar catalog principal differs from session principal on a real daemon When cli-shell binds shell-1 Then runtime-visible grants and focus follow the session actor truth", async () => {
+    const fixture = await createRuntimeFixture();
+
+    const first = await bootstrapCliShell({
+      store: fixture.store,
+      workspacePath: fixture.workspacePath,
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+    await fixture.store.hydrateSessionArtifacts(first.session.id, {
+      includeChatHistory: false,
+      observabilityMode: "heartbeat",
+    });
+    const runtime = fixture.store.getRuntime(first.session.id);
+    const shellTruthTerminalGrants = await fixture.store.listGlobalTerminalGrants("shell-1:terminal-1");
+    const visibleTerminalGrants = await fixture.store.listGlobalTerminalGrants("shell-1:terminal-2");
+
+    expect(first.avatar.avatarPrincipalId).not.toBe(first.session.avatarPrincipalId);
+    const sessionActorId = first.session.avatarPrincipalId;
+    expect(sessionActorId).toBeTruthy();
+    expect(first.avatarActorId).toBe(sessionActorId as typeof first.avatarActorId);
+    expect(shellTruthTerminalGrants.some((grant) => grant.participantId === sessionActorId)).toBe(true);
+    expect(visibleTerminalGrants.some((grant) => grant.participantId === sessionActorId)).toBe(true);
+    expect(runtime?.focusedTerminalIds).toContain("shell-1:terminal-1");
+    expect(runtime?.focusedTerminalIds).toContain("shell-1:terminal-2");
   }, 45_000);
 });

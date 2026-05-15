@@ -10,6 +10,9 @@ export interface CliShellParsedArgs {
   avatarNickname: string;
   shellName: string;
   backend?: TerminalBackendKind;
+  webPort?: number;
+  debug: boolean;
+  experimentalDynamicRefresh: boolean;
   host: string;
   port: number;
   authServiceEndpoint?: string;
@@ -21,6 +24,8 @@ interface CliShellArgvParseResult {
   port: number;
   authServiceEndpoint?: string;
   session: string;
+  debug?: boolean;
+  experimentalDynamicRefresh?: boolean;
   _: Array<string | number>;
 }
 
@@ -47,8 +52,48 @@ export const normalizeShellName = (value: string | undefined): string => {
 export const isCliShellMetadataOnlyArgv = (argv: readonly string[]): boolean =>
   argv.some((token) => metadataOnlyTokens.has(token));
 
+const parseOptionalWebPortToken = (value: string): number => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return 0;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`invalid --web port: ${value}`);
+  }
+  return parsed;
+};
+
+const extractWebHostMode = (argv: readonly string[]): { argv: string[]; webPort?: number } => {
+  const nextArgv: string[] = [];
+  let webPort: number | undefined;
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--web") {
+      const nextToken = argv[index + 1];
+      if (typeof nextToken === "string" && /^\d+$/.test(nextToken.trim())) {
+        webPort = parseOptionalWebPortToken(nextToken);
+        index += 1;
+      } else {
+        webPort = 0;
+      }
+      continue;
+    }
+    if (token.startsWith("--web=")) {
+      webPort = parseOptionalWebPortToken(token.slice("--web=".length));
+      continue;
+    }
+    nextArgv.push(token);
+  }
+  return {
+    argv: nextArgv,
+    webPort,
+  };
+};
+
 export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEnv = process.env): CliShellParsedArgs => {
-  const parsed = yargs([...argv])
+  const extracted = extractWebHostMode(argv);
+  const parsed = yargs([...extracted.argv])
     .scriptName("agenter-cli-shell")
     .option("host", {
       type: "string",
@@ -69,6 +114,14 @@ export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEn
     .option("backend", {
       type: "string",
     })
+    .option("debug", {
+      type: "boolean",
+      default: false,
+    })
+    .option("experimental-dynamic-refresh", {
+      type: "boolean",
+      default: false,
+    })
     .strictOptions()
     .exitProcess(false)
     .help()
@@ -83,6 +136,9 @@ export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEn
     avatarNickname: normalizeAvatarMention(mentions[0]),
     shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
     backend: typeof parsed.backend === "string" ? assertTerminalBackendKind(parsed.backend) : undefined,
+    webPort: extracted.webPort,
+    debug: parsed.debug === true,
+    experimentalDynamicRefresh: parsed.experimentalDynamicRefresh === true,
     host: String(parsed.host),
     port: Number(parsed.port),
     authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,

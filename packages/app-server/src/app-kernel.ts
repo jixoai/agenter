@@ -76,6 +76,7 @@ import {
   type TerminalApprovalRequestRecord,
   type TerminalControlPlaneEntry,
   type TerminalBackendKind,
+  type TerminalComposedProductSurfaceState,
   type TerminalGrantWriteLeaseInput,
   type TerminalGrantRecord,
   type TerminalGrantRole,
@@ -4037,6 +4038,15 @@ export class AppKernel {
     superadminActorId?: TerminalActorId;
   }) {
     return projectRuntimeTerminalConfigMutation(this.terminalControlPlane.setTerminalConfigAuthorized(input));
+  }
+
+  publishGlobalTerminalComposedSurface(input: {
+    terminalId: string;
+    surface: TerminalComposedProductSurfaceState;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }) {
+    return this.terminalControlPlane.publishComposedSurfaceAuthorized(input);
   }
 
   listGlobalTerminalGrants(input: {

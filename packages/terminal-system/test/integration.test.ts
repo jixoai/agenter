@@ -15,6 +15,30 @@ const waitUntil = async (predicate: () => boolean, timeoutMs = 1500): Promise<vo
   }
 };
 
+const waitForTerminalStatus = async (
+  terminal: AgenticTerminal,
+  expected: "BUSY" | "IDLE",
+  timeoutMs = 4_500,
+): Promise<void> => {
+  if (terminal.getLatestStructured().status === expected) {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      dispose();
+      reject(new Error(`timeout waiting terminal status ${expected}`));
+    }, timeoutMs);
+    const dispose = terminal.onStatus((status) => {
+      if (status !== expected) {
+        return;
+      }
+      clearTimeout(timeout);
+      dispose();
+      resolve();
+    });
+  });
+};
+
 const hasGit = (): boolean => {
   const result = Bun.spawnSync({
     cmd: ["git", "--version"],
@@ -34,13 +58,19 @@ test("AgenticTerminal writes semantic html files in workspace", async () => {
   });
 
   terminal.start();
-  await Bun.sleep(180);
+  await waitUntil(
+    () =>
+      terminal
+        .getLatestStructured()
+        .richLines.some((line) => line.spans.map((span) => span.text).join("").toLowerCase().includes("hello")),
+    2_500,
+  );
   await terminal.forceCommit();
 
   const workspace = terminal.workspace;
   const latest = join(workspace, "output", "latest.log.html");
 
-  await waitUntil(() => existsSync(latest), 1200);
+  await waitUntil(() => existsSync(latest), 2_000);
   const content = readFileSync(latest, "utf8");
   expect(content).toContain("meta:");
   expect(content).toContain('status: "');
@@ -48,7 +78,7 @@ test("AgenticTerminal writes semantic html files in workspace", async () => {
 
   await terminal.destroy(true);
   rmSync(workspace, { recursive: true, force: true });
-});
+}, { timeout: 8_000 });
 
 test("AgenticTerminal exposes structured snapshots", async () => {
   const terminal = new AgenticTerminal("sh", ["-lc", "printf 'structured\\n'"], {
@@ -88,57 +118,73 @@ test("AgenticTerminal exposes structured snapshots", async () => {
   rmSync(workspace, { recursive: true, force: true });
 });
 
-test("AgenticTerminal consumes mixed pending files from input/pending", async () => {
-  const terminal = new AgenticTerminal("cat", [], {
-    debounceMs: 20,
-    throttleMs: 120,
-    cols: 60,
-    rows: 8,
-  });
+test(
+  "AgenticTerminal consumes mixed pending files from input/pending",
+  async () => {
+    const terminal = new AgenticTerminal("cat", [], {
+      debounceMs: 20,
+      throttleMs: 120,
+      cols: 60,
+      rows: 8,
+    });
 
-  terminal.start();
-  const workspace = terminal.workspace;
-  const pending = join(workspace, "input", "pending", "001.mixed.txt");
-  writeFileSync(pending, `hello<key data="enter"/>`, "utf8");
+    terminal.start();
+    const workspace = terminal.workspace;
+    const pending = join(workspace, "input", "pending", "001.mixed.txt");
+    writeFileSync(pending, `hello<key data="enter"/>`, "utf8");
 
-  await Bun.sleep(350);
-  await terminal.forceCommit();
+    await waitUntil(() => existsSync(join(workspace, "input", "done", "001.mixed.txt.done")), 4_500);
+    await waitForTerminalStatus(terminal, "BUSY", 1_500);
+    await terminal.forceCommit();
 
-  const latest = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
-  expect(latest.toLowerCase()).toContain("hello");
-  expect(existsSync(join(workspace, "input", "done", "001.mixed.txt.done"))).toBe(true);
+    const latest = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
+    expect(latest.toLowerCase()).toContain("hello");
+    expect(existsSync(join(workspace, "input", "done", "001.mixed.txt.done"))).toBe(true);
 
-  await Bun.sleep(2200);
-  const latestAfterIdle = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
-  expect(latestAfterIdle).toContain('status: "IDLE"');
+    await waitForTerminalStatus(terminal, "IDLE", 3_500);
+    const latestAfterIdle = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
+    expect(latestAfterIdle).toContain('status: "IDLE"');
 
-  await terminal.destroy(true);
-  rmSync(workspace, { recursive: true, force: true });
-});
+    await terminal.destroy(true);
+    rmSync(workspace, { recursive: true, force: true });
+  },
+  { timeout: 10_000 },
+);
 
-test("AgenticTerminal consumes raw pending files from input/pending", async () => {
-  const terminal = new AgenticTerminal("cat", [], {
-    debounceMs: 20,
-    throttleMs: 120,
-    cols: 60,
-    rows: 8,
-  });
+test(
+  "AgenticTerminal consumes raw pending files from input/pending",
+  async () => {
+    const terminal = new AgenticTerminal("cat", [], {
+      debounceMs: 20,
+      throttleMs: 120,
+      cols: 60,
+      rows: 8,
+    });
 
-  terminal.start();
-  const workspace = terminal.workspace;
-  const pending = join(workspace, "input", "pending", "001.raw.txt");
-  writeFileSync(pending, "hello raw\r", "utf8");
+    terminal.start();
+    const workspace = terminal.workspace;
+    const pending = join(workspace, "input", "pending", "001.raw.txt");
+    writeFileSync(pending, "hello raw\r", "utf8");
 
-  await Bun.sleep(350);
-  await terminal.forceCommit();
+    await waitUntil(() => existsSync(join(workspace, "input", "done", "001.raw.txt.done")), 4_500);
+    await waitUntil(
+      () =>
+        terminal
+          .getLatestStructured()
+          .richLines.some((line) => line.spans.map((span) => span.text).join("").toLowerCase().includes("hello raw")),
+      4_500,
+    );
+    await terminal.forceCommit();
 
-  const latest = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
-  expect(latest.toLowerCase()).toContain("hello raw");
-  expect(existsSync(join(workspace, "input", "done", "001.raw.txt.done"))).toBe(true);
+    const latest = readFileSync(join(workspace, "output", "latest.log.html"), "utf8");
+    expect(latest.toLowerCase()).toContain("hello raw");
+    expect(existsSync(join(workspace, "input", "done", "001.raw.txt.done"))).toBe(true);
 
-  await terminal.destroy(true);
-  rmSync(workspace, { recursive: true, force: true });
-});
+    await terminal.destroy(true);
+    rmSync(workspace, { recursive: true, force: true });
+  },
+  { timeout: 10_000 },
+);
 
 test("AgenticTerminal rejects nested raw blocks in mixed pending files", async () => {
   const terminal = new AgenticTerminal("cat", [], {
@@ -153,7 +199,7 @@ test("AgenticTerminal rejects nested raw blocks in mixed pending files", async (
   const pending = join(workspace, "input", "pending", "001.mixed.txt");
   writeFileSync(pending, "<raw>a<raw>b</raw>c</raw>", "utf8");
 
-  await waitUntil(() => existsSync(join(workspace, "input", "failed", "001.mixed.txt.failed")), 1200);
+  await waitUntil(() => existsSync(join(workspace, "input", "failed", "001.mixed.txt.failed")), 4_500);
   expect(existsSync(join(workspace, "input", "done", "001.mixed.txt.done"))).toBe(false);
 
   await terminal.destroy(true);

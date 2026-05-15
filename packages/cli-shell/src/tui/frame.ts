@@ -1,25 +1,77 @@
 import {
   createTerminalCanvas,
-  drawCanvasHorizontalLine,
-  renderCanvasStyledLines,
   drawCanvasVerticalLine,
   fillCanvasRow,
   renderCanvasLines,
+  renderCanvasStyledLines,
   writeCanvasStyledText,
   writeCanvasText,
-  type TerminalCanvasSpan,
   type TerminalCanvasStyledLine,
 } from "./canvas";
 import { projectTerminalViewport } from "@agenter/termless-core";
 import { fitTerminalText, measureTerminalText } from "./cell-width";
-import type { CliShellDialogueBlock, CliShellDialoguePlacement, CliShellTuiModel } from "./types";
+import { projectCliShellDialogueBackendFrame } from "./dialogue-backend";
+import type {
+  CliShellDialoguePlacement,
+  CliShellScrollRegion,
+  CliShellSelectionRegion,
+  CliShellSelectionSource,
+  CliShellTuiInteractionLayout,
+  CliShellTuiModel,
+} from "./types";
 
 export interface CliShellTuiFrame {
   lines: string[];
   styledLines: TerminalCanvasStyledLine[];
+  actionRegions: CliShellActionHitRegion[];
+  selectionSources: CliShellSelectionSource[];
+}
+
+export interface CliShellToolbarItem {
+  id: string;
+  text: string;
+  col: number;
+  width: number;
 }
 
 export interface CliShellTerminalRegion {
+  width: number;
+  height: number;
+}
+
+export interface CliShellShellScrollbarFrameState {
+  scrollSize: number;
+  viewportSize: number;
+  scrollPosition: number;
+  maxPosition: number;
+  thumbStart: number;
+  thumbSize: number;
+}
+
+export interface CliShellShellScrollbarProjection {
+  region: CliShellScrollRegion;
+  state: CliShellShellScrollbarFrameState;
+}
+
+export interface CliShellTranscriptPanelLayout {
+  row: number;
+  col: number;
+  width: number;
+  height: number;
+}
+
+export interface CliShellActionHitRegion {
+  action:
+    | "toggleManaged"
+    | "openDialogue"
+    | "closeDialogue"
+    | "focusDialogueInput"
+    | "submitDialogue"
+    | "placeLeft"
+    | "placeRight"
+    | "placeFloating"
+  row: number;
+  col: number;
   width: number;
   height: number;
 }
@@ -50,42 +102,74 @@ const buildToolbarLine = (model: CliShellTuiModel, width: number): string => {
     return fitTerminalText(heartbeatSource, width, { ellipsis: true });
   }
 
-  const heartbeatWidth = width - reserved;
+  const heartbeatWidth = Math.max(0, width - reserved - 1);
   const heartbeat = fitTerminalText(heartbeatSource, heartbeatWidth, { ellipsis: true });
   return `${left}${separator}${heartbeat}${separator}${managed}${separator}${unread}`;
 };
 
-const wrapTerminalText = (text: string, width: number): string[] => {
+export const resolveCliShellToolbarLayout = (
+  model: CliShellTuiModel,
+  width: number,
+): { line: string; items: CliShellToolbarItem[] } => {
   if (width <= 0) {
-    return [""];
+    return {
+      line: "",
+      items: [],
+    };
   }
 
-  const lines: string[] = [];
-  const paragraphs = text.replace(/\r\n/g, "\n").split("\n");
-  for (const paragraph of paragraphs) {
-    if (paragraph.length === 0) {
-      lines.push("");
-      continue;
-    }
-    let current = "";
-    let currentWidth = 0;
-    for (const char of Array.from(paragraph)) {
-      const charWidth = Math.max(1, measureTerminalText(char));
-      if (currentWidth + charWidth > width) {
-        lines.push(current);
-        current = char;
-        currentWidth = charWidth;
-        continue;
-      }
-      current += char;
-      currentWidth += charWidth;
-    }
-    lines.push(current);
+  const separator = " │ ";
+  const left = model.toolbarLeft;
+  const managed = model.toolbarManaged;
+  const unread = model.toolbarUnread;
+  const reserved =
+    measureTerminalText(left) +
+    measureTerminalText(managed) +
+    measureTerminalText(unread) +
+    measureTerminalText(separator) * 3;
+
+  if (reserved >= width) {
+    const heartbeat = fitTerminalText(model.toolbarHeartbeatProjection, width, { ellipsis: true });
+    return {
+      line: heartbeat,
+      items: [
+        {
+          id: "heartbeat",
+          text: heartbeat,
+          col: 0,
+          width: measureTerminalText(heartbeat),
+        },
+      ],
+    };
   }
 
-  return lines.length > 0 ? lines : [""];
+  const heartbeatWidth = Math.max(0, width - reserved - 1);
+  const heartbeat = fitTerminalText(model.toolbarHeartbeatProjection, heartbeatWidth, { ellipsis: true });
+  const items: CliShellToolbarItem[] = [];
+  let col = 0;
+  for (const item of [
+    { id: "left", text: left },
+    { id: "sep-1", text: separator },
+    { id: "heartbeat", text: heartbeat },
+    { id: "sep-2", text: separator },
+    { id: "managed", text: managed },
+    { id: "sep-3", text: separator },
+    { id: "unread", text: unread },
+  ]) {
+    const itemWidth = measureTerminalText(item.text);
+    items.push({
+      ...item,
+      col,
+      width: itemWidth,
+    });
+    col += itemWidth;
+  }
+
+  return {
+    line: `${left}${separator}${heartbeat}${separator}${managed}${separator}${unread}`,
+    items,
+  };
 };
-
 const resolveSidePanelWidth = (width: number): number => clamp(Math.floor((width - 1) * 0.37), MIN_SIDE_PANEL_WIDTH, Math.max(MIN_SIDE_PANEL_WIDTH, width - 20));
 
 const resolveFloatingGeometry = (width: number, bodyHeight: number) => {
@@ -104,7 +188,7 @@ const resolveFloatingGeometry = (width: number, bodyHeight: number) => {
 };
 
 export const resolveCliShellTerminalRegion = (input: {
-  model: CliShellTuiModel;
+  model: Pick<CliShellTuiModel, "dialoguePlacement">;
   width: number;
   height: number;
 }): CliShellTerminalRegion => {
@@ -120,7 +204,7 @@ export const resolveCliShellTerminalRegion = (input: {
 
   if (placement === "left" || placement === "right") {
     const panelWidth = resolveSidePanelWidth(input.width);
-    const splitCol = input.width - panelWidth - 1;
+    const splitCol = input.width - panelWidth - 2;
     return {
       width: Math.max(0, splitCol),
       height: bodyHeight,
@@ -133,174 +217,167 @@ export const resolveCliShellTerminalRegion = (input: {
   };
 };
 
-const buildDialogueToolbarLine = (title: string, width: number): string => {
-  if (width <= 0) {
-    return "";
-  }
-  const left = `L  R  F  B  ${title}`;
-  if (measureTerminalText(left) >= width) {
-    return fitTerminalText(left, width);
-  }
-  return `${fitTerminalText(left, Math.max(0, width - 1))}x`;
-};
-
-const buildScrollbar = (totalRows: number, visibleRows: number): string[] => {
-  if (visibleRows <= 0) {
-    return [];
-  }
-  if (totalRows <= visibleRows) {
-    return Array.from({ length: visibleRows }, () => "▒");
-  }
-  const track = Array.from({ length: visibleRows }, () => "░");
-  const thumbSize = Math.max(1, Math.floor((visibleRows * visibleRows) / totalRows));
-  const maxStart = Math.max(0, totalRows - visibleRows);
-  const start = maxStart;
-  const thumbStart = Math.floor((start / maxStart) * Math.max(0, visibleRows - thumbSize));
-  for (let index = 0; index < thumbSize; index += 1) {
-    track[thumbStart + index] = "█";
-  }
-  return track;
-};
-
-const buildViewportScrollbar = (input: {
-  totalRows: number;
-  visibleRows: number;
-  startRow: number;
-}): string[] => {
-  if (input.visibleRows <= 0) {
-    return [];
-  }
-  if (input.totalRows <= input.visibleRows) {
-    return Array.from({ length: input.visibleRows }, () => "▒");
-  }
-  const track = Array.from({ length: input.visibleRows }, () => "░");
-  const thumbSize = Math.max(1, Math.floor((input.visibleRows * input.visibleRows) / input.totalRows));
-  const maxStart = Math.max(1, input.totalRows - input.visibleRows);
-  const safeStart = Math.max(0, Math.min(maxStart, input.startRow));
-  const thumbStart = Math.floor((safeStart / maxStart) * Math.max(0, input.visibleRows - thumbSize));
-  for (let index = 0; index < thumbSize; index += 1) {
-    track[thumbStart + index] = "█";
-  }
-  return track;
-};
-
-type DialogueRenderableRow =
-  | { kind: "message"; gutter: string; content: string; bg?: string }
-  | { kind: "divider"; content: string }
-  | { kind: "blank" };
-
-const buildDialogueRows = (blocks: readonly CliShellDialogueBlock[], contentWidth: number): DialogueRenderableRow[] => {
-  const rows: DialogueRenderableRow[] = [];
-  let previousWasMessage = false;
-
-  for (const block of blocks) {
-    if (block.kind === "date-divider") {
-      rows.push({
-        kind: "divider",
-        content: block.dateLabel ?? "",
-      });
-      previousWasMessage = false;
-      continue;
-    }
-
-    if (previousWasMessage) {
-      rows.push({ kind: "blank" });
-    }
-
-    const header = `${block.timeLabel ?? "--:--"} ${block.authorLabel ?? "@agenter"}`;
-    rows.push({
-      kind: "message",
-      gutter: block.authoredByUser ? "> " : "  ",
-      content: header,
-      bg: block.authoredByUser ? "gray" : undefined,
-    });
-    for (const line of wrapTerminalText(block.body ?? "", contentWidth)) {
-      rows.push({
-        kind: "message",
-        gutter: "  ",
-        content: line,
-        bg: block.authoredByUser ? "gray" : undefined,
-      });
-    }
-    previousWasMessage = true;
-  }
-
-  return rows.length > 0 ? rows : [{ kind: "blank" }];
-};
-
-const renderDialogueList = (input: {
-  canvas: ReturnType<typeof createTerminalCanvas>;
-  row: number;
-  col: number;
+export const resolveCliShellTranscriptPanelLayout = (input: {
+  model: CliShellTuiModel;
   width: number;
   height: number;
-  blocks: readonly CliShellDialogueBlock[];
-}): void => {
-  if (input.width <= 0 || input.height <= 0) {
-    return;
+}): CliShellTranscriptPanelLayout => {
+  const bodyHeight = Math.max(0, input.height - 1);
+  if (!input.model.dialoguePlacement || input.width <= 0 || bodyHeight <= 0) {
+    return {
+      row: 0,
+      col: 0,
+      width: 0,
+      height: 0,
+    };
   }
 
-  const contentWidth = Math.max(1, input.width - 3);
-  const rows = buildDialogueRows(input.blocks, contentWidth);
-  const visibleRows = rows.slice(-input.height);
-  const scrollbar = buildScrollbar(rows.length, input.height);
-
-  for (let index = 0; index < input.height; index += 1) {
-    const targetRow = input.row + index;
-    const renderable = visibleRows[index];
-    const scrollbarChar = scrollbar[index] ?? "▒";
-    if (!renderable) {
-      writeCanvasText(input.canvas, {
-        row: targetRow,
-        col: input.col,
-        text: `${" ".repeat(Math.max(0, input.width - 1))}${scrollbarChar}`,
-        width: input.width,
-      });
-      continue;
-    }
-
-    if (renderable.kind === "blank") {
-      writeCanvasText(input.canvas, {
-        row: targetRow,
-        col: input.col,
-        text: `${" ".repeat(Math.max(0, input.width - 1))}${scrollbarChar}`,
-        width: input.width,
-      });
-      continue;
-    }
-
-    if (renderable.kind === "divider") {
-      const dividerWidth = Math.max(1, input.width - 1);
-      const label = ` ${renderable.content} `;
-      const fillWidth = Math.max(0, dividerWidth - measureTerminalText(label));
-      const leftWidth = Math.floor(fillWidth / 2);
-      const rightWidth = fillWidth - leftWidth;
-      writeCanvasText(input.canvas, {
-        row: targetRow,
-        col: input.col,
-        text: `${"─".repeat(leftWidth)}${label}${"─".repeat(rightWidth)}${scrollbarChar}`,
-        width: input.width,
-      });
-      continue;
-    }
-
-    const content = fitTerminalText(renderable.content, contentWidth);
-    if (renderable.bg) {
-      fillCanvasRow(input.canvas, {
-        row: targetRow,
-        col: input.col,
-        width: Math.max(0, input.width - 1),
-        bg: renderable.bg,
-      });
-    }
-    writeCanvasText(input.canvas, {
-      row: targetRow,
-      col: input.col,
-      text: `${fitTerminalText(renderable.gutter, 2)}${content}${scrollbarChar}`,
-      width: input.width,
-      bg: renderable.bg,
-    });
+  if (input.model.dialoguePlacement === "left") {
+    return {
+      row: 0,
+      col: 0,
+      width: resolveSidePanelWidth(input.width),
+      height: bodyHeight,
+    };
   }
+
+  if (input.model.dialoguePlacement === "right") {
+    const panelWidth = resolveSidePanelWidth(input.width);
+    return {
+      row: 0,
+      col: Math.max(0, input.width - panelWidth),
+      width: panelWidth,
+      height: bodyHeight,
+    };
+  }
+
+  const geometry = resolveFloatingGeometry(input.width, bodyHeight);
+  return {
+    row: geometry.row,
+    col: geometry.col,
+    width: geometry.panelWidth,
+    height: geometry.panelHeight,
+  };
+};
+
+export const resolveCliShellTerminalScrollRegion = (input: {
+  model: CliShellTuiModel;
+  width: number;
+  height: number;
+}): CliShellScrollRegion | null => {
+  const terminal = resolveCliShellTerminalRegion(input);
+  if (terminal.width <= 1 || terminal.height <= 0) {
+    return null;
+  }
+  const placement = input.model.dialoguePlacement;
+  if (placement === "left") {
+    const panelWidth = resolveSidePanelWidth(input.width);
+    return {
+      row: 0,
+      col: panelWidth + 2,
+      width: terminal.width,
+      height: terminal.height,
+    };
+  }
+  if (placement === "right") {
+    return {
+      row: 0,
+      col: 0,
+      width: terminal.width,
+      height: terminal.height,
+    };
+  }
+  return {
+    row: 0,
+    col: 0,
+    width: Math.max(1, terminal.width - 1),
+    height: terminal.height,
+  };
+};
+
+export const resolveCliShellTerminalScrollbarRegion = (input: {
+  model: CliShellTuiModel;
+  width: number;
+  height: number;
+}): CliShellScrollRegion | null => {
+  const terminal = resolveCliShellTerminalRegion(input);
+  if (terminal.width <= 0 || terminal.height <= 0) {
+    return null;
+  }
+  const placement = input.model.dialoguePlacement;
+  if (placement === "left") {
+    const panelWidth = resolveSidePanelWidth(input.width);
+    return {
+      row: 0,
+      col: panelWidth + 1,
+      width: 1,
+      height: terminal.height,
+    };
+  }
+  if (placement === "right") {
+    return {
+      row: 0,
+      col: terminal.width + 1,
+      width: 1,
+      height: terminal.height,
+    };
+  }
+  return {
+    row: 0,
+    col: Math.max(0, terminal.width - 1),
+    width: 1,
+    height: terminal.height,
+  };
+};
+
+export const resolveCliShellShellScrollbarProjection = (input: {
+  model: CliShellTuiModel;
+  width: number;
+  height: number;
+}): CliShellShellScrollbarProjection | null => {
+  const region = resolveCliShellTerminalScrollbarRegion(input);
+  const scrollRegion = resolveCliShellTerminalScrollRegion(input);
+  if (!region || !scrollRegion || region.height <= 0) {
+    return null;
+  }
+  const viewportSize = Math.max(1, Math.min(input.model.terminalView.rows, scrollRegion.height));
+  const scrollSize = Math.max(viewportSize, input.model.terminalView.scrollbackRows);
+  const maxPosition = Math.max(0, scrollSize - viewportSize);
+  const scrollPosition = Math.max(0, Math.min(maxPosition, Math.trunc(input.model.terminalView.viewportStart)));
+  const thumbSize =
+    maxPosition === 0
+      ? region.height
+      : Math.max(1, Math.min(region.height, Math.ceil((viewportSize / scrollSize) * region.height)));
+  const movableRows = Math.max(0, region.height - thumbSize);
+  const thumbStart =
+    maxPosition === 0 || movableRows === 0
+      ? 0
+      : Math.max(0, Math.min(movableRows, Math.round((scrollPosition / maxPosition) * movableRows)));
+  return {
+    region,
+    state: {
+      scrollSize,
+      viewportSize,
+      scrollPosition,
+      maxPosition,
+      thumbStart,
+      thumbSize,
+    },
+  };
+};
+
+export const resolveCliShellScrollbarPointerTarget = (input: {
+  projection: CliShellShellScrollbarProjection;
+  row: number;
+}): number => {
+  const { region, state } = input.projection;
+  if (state.maxPosition <= 0 || region.height <= 1) {
+    return 0;
+  }
+  const localRow = Math.max(0, Math.min(region.height - 1, Math.trunc(input.row - region.row)));
+  const movableRows = Math.max(1, region.height - state.thumbSize);
+  const centeredRow = Math.max(0, Math.min(movableRows, localRow - Math.floor(state.thumbSize / 2)));
+  return Math.max(0, Math.min(state.maxPosition, Math.round((centeredRow / movableRows) * state.maxPosition)));
 };
 
 const renderTerminalRegion = (input: {
@@ -314,19 +391,16 @@ const renderTerminalRegion = (input: {
   if (input.width <= 0 || input.height <= 0) {
     return;
   }
-  const scrollbarWidth = 1;
-  const contentWidth = Math.max(1, input.width - scrollbarWidth);
+  const carriesFullScrollback = input.model.richLines.length >= input.model.scrollbackRows;
   const projection = projectTerminalViewport({
     lines: input.model.richLines,
-    cursorAbsRow: input.model.cursorAbsRow,
+    cursorAbsRow: carriesFullScrollback
+      ? input.model.cursorAbsRow
+      : Math.max(0, input.model.cursorAbsRow - input.model.viewportStart),
     cursorCol: input.model.cursorCol,
-    cursorVisible: input.model.cursorVisible,
+    cursorVisible: false,
     viewportRows: input.height,
-  });
-  const scrollbar = buildViewportScrollbar({
-    totalRows: input.model.scrollbackRows,
-    visibleRows: input.height,
-    startRow: projection.viewport.start,
+    viewportStart: carriesFullScrollback ? input.model.viewportStart : undefined,
   });
   for (let index = 0; index < input.height; index += 1) {
     const targetRow = input.row + index;
@@ -345,258 +419,170 @@ const renderTerminalRegion = (input: {
           fg: span.inverse ? (span.bg ?? "#111111") : span.fg,
           bg: span.inverse ? (span.fg ?? "#f3f6fb") : span.bg,
         })),
-        width: contentWidth,
+        width: input.width,
       });
     }
-    writeCanvasText(input.canvas, {
-      row: targetRow,
-      col: input.col + contentWidth,
-      text: scrollbar[index] ?? "▒",
-      width: scrollbarWidth,
-    });
   }
 };
 
-const renderDockedDialoguePanel = (input: {
+const renderShellScrollbar = (input: {
   canvas: ReturnType<typeof createTerminalCanvas>;
-  row: number;
-  col: number;
-  width: number;
-  height: number;
-  model: CliShellTuiModel;
+  projection: CliShellShellScrollbarProjection | null;
 }): void => {
-  if (input.width <= 0 || input.height <= 0) {
+  const projection = input.projection;
+  if (!projection || projection.region.height <= 0 || projection.region.width <= 0) {
     return;
   }
-
-  writeCanvasText(input.canvas, {
-    row: input.row,
-    col: input.col,
-    text: buildDialogueToolbarLine(input.model.dialogueTitle, input.width),
-    width: input.width,
+  drawCanvasVerticalLine(input.canvas, {
+    row: projection.region.row,
+    col: projection.region.col,
+    height: projection.region.height,
+    char: "░",
+    fg: "#334155",
   });
-  if (input.height >= 2) {
-    drawCanvasHorizontalLine(input.canvas, {
-      row: input.row + 1,
-      col: input.col,
-      width: input.width,
-    });
-  }
-
-  const inputSeparatorRow = Math.max(input.row + 2, input.row + input.height - 3);
-  if (input.height >= 4) {
-    renderDialogueList({
-      canvas: input.canvas,
-      row: input.row + 2,
-      col: input.col,
-      width: input.width,
-      height: Math.max(1, inputSeparatorRow - (input.row + 2)),
-      blocks: input.model.dialogueBlocks,
-    });
-    drawCanvasHorizontalLine(input.canvas, {
-      row: inputSeparatorRow,
-      col: input.col,
-      width: input.width,
-    });
-    fillCanvasRow(input.canvas, {
-      row: inputSeparatorRow + 1,
-      col: input.col,
-      width: input.width,
-      bg: "gray",
-    });
-    writeCanvasText(input.canvas, {
-      row: inputSeparatorRow + 1,
-      col: input.col,
-      text: `${fitTerminalText("> ", 2)}${fitTerminalText(
-        `${input.model.dialogueDraft}${input.model.dialogueDraft.length > 0 ? "_" : "_"}`,
-        Math.max(1, input.width - 2),
-      )}`,
-      width: input.width,
-      bg: "gray",
-    });
-  }
-};
-
-const renderRightPlacement = (
-  canvas: ReturnType<typeof createTerminalCanvas>,
-  model: CliShellTuiModel,
-  width: number,
-  bodyHeight: number,
-): void => {
-  const panelWidth = resolveSidePanelWidth(width);
-  const splitCol = width - panelWidth - 1;
-  renderTerminalRegion({
-    canvas,
-    row: 0,
-    col: 0,
-    width: splitCol,
-    height: bodyHeight,
-    model: model.terminalView,
+  const thumbStart = projection.region.row + projection.state.thumbStart;
+  drawCanvasVerticalLine(input.canvas, {
+    row: thumbStart,
+    col: projection.region.col,
+    height: projection.state.thumbSize,
+    char: "█",
+    fg: "#94a3b8",
   });
-  drawCanvasVerticalLine(canvas, {
-    col: splitCol,
-    height: bodyHeight,
-  });
-  renderDockedDialoguePanel({
-    canvas,
-    row: 0,
-    col: splitCol + 1,
-    width: panelWidth,
-    height: bodyHeight,
-    model,
-  });
-};
-
-const renderLeftPlacement = (
-  canvas: ReturnType<typeof createTerminalCanvas>,
-  model: CliShellTuiModel,
-  width: number,
-  bodyHeight: number,
-): void => {
-  const panelWidth = resolveSidePanelWidth(width);
-  const splitCol = panelWidth;
-  renderDockedDialoguePanel({
-    canvas,
-    row: 0,
-    col: 0,
-    width: panelWidth,
-    height: bodyHeight,
-    model,
-  });
-  drawCanvasVerticalLine(canvas, {
-    col: splitCol,
-    height: bodyHeight,
-  });
-  renderTerminalRegion({
-    canvas,
-    row: 0,
-    col: splitCol + 1,
-    width: Math.max(0, width - splitCol - 1),
-    height: bodyHeight,
-    model: model.terminalView,
-  });
-};
-
-const renderFloatingPlacement = (
-  canvas: ReturnType<typeof createTerminalCanvas>,
-  model: CliShellTuiModel,
-  width: number,
-  bodyHeight: number,
-): void => {
-  renderTerminalRegion({
-    canvas,
-    row: 0,
-    col: 0,
-    width,
-    height: bodyHeight,
-    model: model.terminalView,
-  });
-  const geometry = resolveFloatingGeometry(width, bodyHeight);
-  fillCanvasRow(canvas, {
-    row: geometry.row,
-    col: geometry.col,
-    width: geometry.panelWidth,
-    char: "─",
-  });
-  fillCanvasRow(canvas, {
-    row: geometry.row + geometry.panelHeight - 1,
-    col: geometry.col,
-    width: geometry.panelWidth,
-    char: "─",
-  });
-  drawCanvasVerticalLine(canvas, {
-    row: geometry.row,
-    col: geometry.col,
-    height: geometry.panelHeight,
-    char: "│",
-  });
-  drawCanvasVerticalLine(canvas, {
-    row: geometry.row,
-    col: geometry.col + geometry.panelWidth - 1,
-    height: geometry.panelHeight,
-    char: "│",
-  });
-  writeCanvasText(canvas, {
-    row: geometry.row,
-    col: geometry.col,
-    text: `┌${"─".repeat(Math.max(0, geometry.panelWidth - 2))}┐`,
-    width: geometry.panelWidth,
-  });
-  writeCanvasText(canvas, {
-    row: geometry.row + geometry.panelHeight - 1,
-    col: geometry.col,
-    text: `└${"─".repeat(Math.max(0, geometry.panelWidth - 2))}┘`,
-    width: geometry.panelWidth,
-  });
-  renderDockedDialoguePanel({
-    canvas,
-    row: geometry.row + 1,
-    col: geometry.col + 1,
-    width: Math.max(1, geometry.panelWidth - 2),
-    height: Math.max(1, geometry.panelHeight - 2),
-    model,
-  });
-};
-
-const renderDialoguePlacement = (
-  canvas: ReturnType<typeof createTerminalCanvas>,
-  model: CliShellTuiModel,
-  placement: CliShellDialoguePlacement | null,
-  width: number,
-  bodyHeight: number,
-): void => {
-  if (!placement) {
-    renderTerminalRegion({
-      canvas,
-      row: 0,
-      col: 0,
-      width,
-      height: bodyHeight,
-      model: model.terminalView,
-    });
-    return;
-  }
-
-  if (placement === "right") {
-    renderRightPlacement(canvas, model, width, bodyHeight);
-    return;
-  }
-  if (placement === "left") {
-    renderLeftPlacement(canvas, model, width, bodyHeight);
-    return;
-  }
-  if (placement === "bottom") {
-    renderTerminalRegion({
-      canvas,
-      row: 0,
-      col: 0,
-      width,
-      height: bodyHeight,
-      model: model.terminalView,
-    });
-    return;
-  }
-  renderFloatingPlacement(canvas, model, width, bodyHeight);
 };
 
 export const layoutCliShellTuiFrame = (input: {
   model: CliShellTuiModel;
   width: number;
   height: number;
+  renderToolbar?: boolean;
 }): CliShellTuiFrame => {
   const canvas = createTerminalCanvas(input.width, input.height);
-  const bodyHeight = Math.max(0, input.height - 1);
-  renderDialoguePlacement(canvas, input.model, input.model.dialoguePlacement, input.width, bodyHeight);
-  if (input.height > 0) {
+  const actionRegions: CliShellActionHitRegion[] = [];
+  const selectionSources: CliShellSelectionSource[] = [];
+  const renderToolbar = input.renderToolbar ?? true;
+  const bodyHeight = Math.max(0, renderToolbar ? input.height - 1 : input.height);
+  const terminalRegion = resolveCliShellTerminalRegion(input);
+  const terminalCol =
+    input.model.dialoguePlacement === "left" ? Math.max(0, input.width - terminalRegion.width) : 0;
+  const terminalScrollRegion = resolveCliShellTerminalScrollRegion(input);
+  renderTerminalRegion({
+    canvas,
+    row: terminalScrollRegion?.row ?? 0,
+    col: terminalScrollRegion?.col ?? terminalCol,
+    width: terminalScrollRegion?.width ?? terminalRegion.width,
+    height: terminalScrollRegion?.height ?? bodyHeight,
+    model: input.model.terminalView,
+  });
+  if (terminalScrollRegion) {
+    const carriesFullScrollback = input.model.terminalView.richLines.length >= input.model.terminalView.scrollbackRows;
+    const terminalProjection = projectTerminalViewport({
+      lines: input.model.terminalView.richLines,
+      cursorAbsRow: carriesFullScrollback
+        ? input.model.terminalView.cursorAbsRow
+        : Math.max(0, input.model.terminalView.cursorAbsRow - input.model.terminalView.viewportStart),
+      cursorCol: input.model.terminalView.cursorCol,
+      cursorVisible: false,
+      viewportRows: terminalScrollRegion.height,
+      viewportStart: carriesFullScrollback ? input.model.terminalView.viewportStart : undefined,
+    });
+    selectionSources.push({
+      owner: "terminal",
+      ...terminalScrollRegion,
+      lines: terminalProjection.lines,
+    });
+  }
+  renderShellScrollbar({
+    canvas,
+    projection: resolveCliShellShellScrollbarProjection(input),
+  });
+  if (input.model.dialoguePlacement) {
+    const layout = resolveCliShellTranscriptPanelLayout({
+      model: input.model,
+      width: input.width,
+      height: input.height,
+    });
+    const dialogueSurface = projectCliShellDialogueBackendFrame({
+      layout,
+      model: input.model,
+    });
+    dialogueSurface.styledLines.forEach((line, row) => {
+      writeCanvasStyledText(canvas, {
+        row: layout.row + row,
+        col: layout.col,
+        spans: line.spans,
+        width: layout.width,
+      });
+    });
+    selectionSources.push({
+      owner: "dialogue",
+      row: layout.row,
+      col: layout.col,
+      width: layout.width,
+      height: layout.height,
+      lines: dialogueSurface.styledLines,
+    });
+    for (const region of dialogueSurface.actionRegions) {
+      actionRegions.push({
+        ...region,
+        row: region.row + layout.row,
+        col: region.col + layout.col,
+      });
+    }
+  }
+  if (renderToolbar && input.height > 0) {
+    const toolbar = resolveCliShellToolbarLayout(input.model, input.width);
     writeCanvasText(canvas, {
       row: input.height - 1,
       col: 0,
-      text: buildToolbarLine(input.model, input.width),
+      text: toolbar.line,
       width: input.width,
     });
+    for (const item of toolbar.items) {
+      if (item.id === "managed" || item.id === "unread") {
+        actionRegions.push({
+          action: item.id === "managed" ? "toggleManaged" : "openDialogue",
+          row: input.height - 1,
+          col: item.col,
+          width: item.width,
+          height: 1,
+        });
+      }
+    }
   }
   return {
     lines: renderCanvasLines(canvas),
     styledLines: renderCanvasStyledLines(canvas),
+    actionRegions,
+    selectionSources,
+  };
+};
+
+export const resolveCliShellTuiInteractionLayout = (input: {
+  model: CliShellTuiModel;
+  width: number;
+  height: number;
+}): CliShellTuiInteractionLayout => {
+  const terminalScrollRegion = resolveCliShellTerminalScrollRegion(input);
+  const dialogueLayout = resolveCliShellTranscriptPanelLayout(input);
+  const selectionRegions: CliShellSelectionRegion[] = [];
+  if (terminalScrollRegion) {
+    selectionRegions.push({
+      owner: "terminal",
+      ...terminalScrollRegion,
+    });
+  }
+  if (dialogueLayout.width > 0 && dialogueLayout.height > 0) {
+    selectionRegions.push({
+      owner: "dialogue",
+      row: dialogueLayout.row,
+      col: dialogueLayout.col,
+      width: dialogueLayout.width,
+      height: dialogueLayout.height,
+    });
+  }
+  return {
+    terminalScrollRegion,
+    terminalScrollbarRegion: resolveCliShellTerminalScrollbarRegion(input),
+    selectionRegions,
   };
 };

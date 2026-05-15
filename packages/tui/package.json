@@ -4,18 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit"
   },
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
     "@agenter/client-sdk": "workspace:*",
-    "@opentui/core": "latest",
-    "@opentui/react": "latest",
-    "react": "^19.0.0"
+    "@opentui/core": "latest"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0"
+    "@types/bun": "latest",
+    "typescript": "latest"
   }
 }

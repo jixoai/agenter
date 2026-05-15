@@ -7,16 +7,20 @@ import type {
   GlobalRoomActorId,
   GlobalRoomEntry,
   GlobalRoomGrantEntry,
+  GlobalRoomMessage,
+  GlobalRoomSnapshotOutput,
   GlobalTerminalActorId,
   GlobalTerminalEntry,
   GlobalTerminalGrantEntry,
   ProductEnsureTerminalBindingInput,
   ProductDelegationRecord,
+  ProductTerminalComposedSurfaceState,
+  RuntimeClientState,
   SessionEntry,
   WorkspacePrivateTextAssetEnsureOutput,
 } from "@agenter/client-sdk";
 
-import type { CliShellStore } from "../src";
+import type { CliShellProductHostStore, CliShellStore } from "../src";
 
 const nowIso = () => new Date().toISOString();
 
@@ -57,9 +61,10 @@ const createTerminalEntry = (
   command: string[] = ["/bin/bash"],
   launchCwd = "/repo",
   backend: TerminalBackendKind = "xterm",
+  processKind = "shell",
 ): GlobalTerminalEntry => ({
   terminalId,
-  processKind: "shell",
+  processKind,
   backend,
   command,
   launchCwd,
@@ -153,6 +158,7 @@ export class FakeCliShellStore implements CliShellStore {
   avatars: GlobalAvatarCatalogEntry[] = [createAvatarEntry("default")];
   sessions = new Map<string, SessionEntry>();
   terminals: GlobalTerminalEntry[] = [];
+  lastPublishedComposedSurface: ProductTerminalComposedSurfaceState | null = null;
   terminalGrants = new Map<string, GlobalTerminalGrantEntry[]>();
   terminalWriteLeases: Array<{
     leaseId: string;
@@ -165,12 +171,202 @@ export class FakeCliShellStore implements CliShellStore {
   rooms: GlobalRoomEntry[] = [];
   roomGrants = new Map<string, GlobalRoomGrantEntry[]>();
   focusRoomCalls: string[][] = [];
+  inputs: Array<{ terminalId: string; text: string }> = [];
+  sentMessages: Array<{ chatId: string; text: string }> = [];
+  private listeners = new Set<() => void>();
   privateAssets = new Map<string, WorkspacePrivateTextAssetEnsureOutput>();
   delegations: ProductDelegationRecord[] = [];
   promptFiles = new Map<string, { path: string; content: string; mtimeMs: number }>();
   attentionQueryItems: AttentionQueryItem[] = [];
   lastAttentionCommit: Record<string, unknown> | null = null;
   lastAttentionSettle: Record<string, unknown> | null = null;
+
+  private emit(): void {
+    for (const listener of this.listeners) {
+      listener();
+    }
+  }
+
+  private createDefaultSession(): SessionEntry {
+    const firstSession = [...this.sessions.values()][0];
+    return firstSession ?? createSessionEntry("/repo", "shell-assistant");
+  }
+
+  private createRuntimeState(): RuntimeClientState {
+    const session = this.createDefaultSession();
+    const terminalSnapshots = Object.fromEntries(
+      this.terminals
+        .filter((entry) => entry.snapshot)
+        .map((entry) => [entry.terminalId, entry.snapshot!]),
+    );
+    return {
+      connected: true,
+      connectionStatus: "connected",
+      profileService: null,
+      lastEventId: 0,
+      sessions: [session],
+      runtimes: {
+        [session.id]: {
+          sessionId: session.id,
+          started: true,
+          activityState: "active",
+          schedulerPhase: "waiting_commits",
+          stage: "idle",
+          focusedTerminalId: this.terminals[0]?.terminalId ?? null,
+          focusedTerminalIds: this.terminals[0]?.terminalId ? [this.terminals[0].terminalId] : [],
+          chatMessages: [],
+          terminalSnapshots,
+          terminalReads: {},
+          tasks: [],
+          schedulerState: null,
+          attention: undefined,
+          attentionDelivery: {
+            projections: [],
+            dispatches: [],
+            receipts: [],
+            watches: [],
+            effects: [],
+          },
+          schedulerSignals: {
+            user: { version: 0, timestamp: null },
+            terminal: { version: 1, timestamp: 1 },
+            task: { version: 0, timestamp: null },
+            attention: { version: 0, timestamp: null },
+          },
+          apiCallRecording: { enabled: false, refCount: 0 },
+          attentionApi: null,
+          terminals: this.terminals.map((entry) => ({
+            terminalId: entry.terminalId,
+            status: entry.status,
+            processPhase: entry.processPhase,
+            lifecycleTransition: null,
+            seq: entry.seq,
+            launchCwd: entry.launchCwd,
+          })),
+          modelCapabilities: {
+            streaming: true,
+            tools: true,
+            imageInput: false,
+            nativeCompact: false,
+            summarizeFallback: true,
+            fileUpload: false,
+            mcpCatalog: false,
+          },
+          activeCycle: null,
+        },
+      },
+      activityBySession: { [session.id]: "active" },
+      terminalSnapshotsBySession: { [session.id]: terminalSnapshots },
+      terminalReadsBySession: { [session.id]: {} },
+      chatsBySession: { [session.id]: [] },
+      messageChannelsBySession: {},
+      chatCyclesBySession: { [session.id]: [] },
+      attentionBySession: {},
+      attentionDeliveryBySession: {
+        [session.id]: {
+          projections: [],
+          dispatches: [],
+          receipts: [],
+          watches: [],
+          effects: [],
+        },
+      },
+      tasksBySession: { [session.id]: [] },
+      recentWorkspaces: [],
+      workspaces: [],
+      globalAvatarCatalog: this.createCached([]),
+      workspaceAvatarCatalogByPath: {},
+      globalRooms: this.createCached([...this.rooms]),
+      globalRoomSnapshotsById: Object.fromEntries(
+        this.rooms.map((room) => [room.chatId, this.createCached(this.createRoomSnapshot(room))]),
+      ),
+      globalRoomGrantsById: {},
+      globalRoomAssetsById: {},
+      globalTerminals: this.createCached([...this.terminals]),
+      globalTerminalGrantsById: {},
+      globalTerminalApprovalsById: {},
+      globalTerminalActivityById: {},
+      schedulerLogsBySession: { [session.id]: [] },
+      observabilityTracesBySession: { [session.id]: [] },
+      heartbeatGroupsBySession: { [session.id]: this.createCached([]) },
+      modelCallsBySession: { [session.id]: [] },
+      requestAuxBySession: { [session.id]: [] },
+      modelCallDeltasBySession: { [session.id]: [] },
+      apiCallsBySession: { [session.id]: [] },
+      terminalActivityBySession: { [session.id]: {} },
+      apiCallRecordingBySession: { [session.id]: { enabled: false, refCount: 0 } },
+      notifications: [],
+      unreadBySession: { [session.id]: 0 },
+      unreadByBucket: {},
+    };
+  }
+
+  private createCached<T>(data: T) {
+    return {
+      data,
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: 0,
+    };
+  }
+
+  private createRoomSnapshot(room: GlobalRoomEntry): GlobalRoomSnapshotOutput {
+    return {
+      channel: room,
+      items: this.sentMessages
+        .filter((message) => message.chatId === room.chatId)
+        .map(
+          (message, index): GlobalRoomMessage => ({
+            rowId: index + 1,
+            messageId: index + 1,
+            chatId: message.chatId,
+            senderActorId: "auth:user",
+            from: "you",
+            kind: "text",
+            content: message.text,
+            createdAt: 1_714_560_000_000 + index * 60_000,
+            updatedAt: 1_714_560_000_000 + index * 60_000,
+            readActorIds: [],
+            unreadActorIds: [],
+            metadata: {},
+            attachments: [],
+          }),
+        ),
+      nextBefore: null,
+      hasMoreBefore: false,
+      headVersion: String(this.sentMessages.length),
+    };
+  }
+
+  getState(): RuntimeClientState {
+    return this.createRuntimeState();
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  async connect(): Promise<void> {}
+
+  disconnect(): void {}
+
+  async hydrateSessionArtifacts(
+    _sessionId: string,
+    _input?: { includeChatHistory?: boolean; observabilityMode?: "heartbeat" | "full" },
+  ): Promise<void> {}
+
+  retainGlobalTerminals(): () => void {
+    return () => {};
+  }
+
+  retainGlobalRoomSnapshot(_chatId: string): () => void {
+    return () => {};
+  }
 
   async autoLogin() {
     return { ok: true as const, session: { token: "superadmin-token" } };
@@ -237,6 +433,26 @@ export class FakeCliShellStore implements CliShellStore {
     return [...this.terminals];
   }
 
+  async hydrateGlobalTerminals(_input?: { force?: boolean }): Promise<GlobalTerminalEntry[]> {
+    return await this.listGlobalTerminals();
+  }
+
+  async readGlobalTerminal(input: { terminalId: string }): Promise<{
+    terminalId: string;
+    representation: "snapshot";
+    snapshot: NonNullable<GlobalTerminalEntry["snapshot"]>;
+  }> {
+    const terminal = this.terminals.find((entry) => entry.terminalId === input.terminalId);
+    if (!terminal?.snapshot) {
+      throw new Error(`terminal snapshot missing: ${input.terminalId}`);
+    }
+    return {
+      terminalId: input.terminalId,
+      representation: "snapshot",
+      snapshot: terminal.snapshot,
+    };
+  }
+
   async createGlobalTerminal(input: {
     terminalId?: string;
     processKind?: string;
@@ -252,13 +468,30 @@ export class FakeCliShellStore implements CliShellStore {
     void input.profile;
     void input.start;
     void input.focus;
+    const isComposedTerminal = input.metadata?.terminalRuntimeKind === "composed";
+    const sourceTerminalId =
+      typeof input.metadata?.projectionSourceTerminalId === "string"
+        ? input.metadata.projectionSourceTerminalId
+        : null;
+    const sourceTerminal = sourceTerminalId
+      ? this.terminals.find((entry) => entry.terminalId === sourceTerminalId) ?? null
+      : null;
     const terminal = createTerminalEntry(
       input.terminalId ?? `terminal-${this.terminals.length + 1}`,
       input.metadata ?? {},
-      input.command ?? ["/bin/bash"],
-      input.cwd ?? "/repo",
+      sourceTerminal?.command ?? input.command ?? (isComposedTerminal ? [] : ["/bin/bash"]),
+      sourceTerminal?.launchCwd ?? input.cwd ?? "/repo",
       input.backend ?? "xterm",
+      input.processKind ??
+        (isComposedTerminal ? "product" : "shell"),
     );
+    if (sourceTerminal?.snapshot) {
+      terminal.snapshot = structuredClone(sourceTerminal.snapshot);
+      terminal.seq = sourceTerminal.seq;
+      terminal.status = sourceTerminal.status;
+      terminal.processPhase = sourceTerminal.processPhase;
+      terminal.transportUrl = `ws://127.0.0.1/pty/${terminal.terminalId}`;
+    }
     this.terminals.push(terminal);
     return { ok: true, message: "terminal created", terminal };
   }
@@ -313,6 +546,48 @@ export class FakeCliShellStore implements CliShellStore {
     return { ok: true };
   }
 
+  async publishGlobalTerminalComposedSurface(input: {
+    terminalId: string;
+    surface: ProductTerminalComposedSurfaceState;
+  }): Promise<GlobalTerminalEntry> {
+    const index = this.terminals.findIndex((entry) => entry.terminalId === input.terminalId);
+    if (index === -1) {
+      throw new Error(`terminal missing: ${input.terminalId}`);
+    }
+    const current = this.terminals[index]!;
+    const next: GlobalTerminalEntry = {
+      ...current,
+      seq: current.seq + 1,
+      metadata: {
+        ...current.metadata,
+        composedBottomLine: input.surface.bottomLine,
+        composedDialogueOpen: input.surface.dialogueOpen,
+        composedDialoguePlacement: input.surface.dialoguePlacement,
+        composedDialogueDraft: input.surface.dialogueDraft,
+        composedManagedLabel: input.surface.managedLabel,
+        composedUnreadLabel: input.surface.unreadLabel,
+        composedHeartbeatLabel: input.surface.heartbeatLabel,
+        composedShellSnapshotSeq: input.surface.shellSnapshotSeq,
+      },
+      snapshot: {
+        seq: (current.snapshot?.seq ?? 0) + 1,
+        timestamp: Date.now(),
+        cols: input.surface.cols,
+        rows: input.surface.rows,
+        lines: [...input.surface.terminalLines],
+        richLines: input.surface.terminalRichLines?.map((line) => ({
+          spans: line.spans.map((span) => ({ ...span })),
+        })),
+        cursor: { ...input.surface.cursor },
+        scrollback: { ...input.surface.scrollback },
+      },
+    };
+    this.lastPublishedComposedSurface = structuredClone(input.surface);
+    this.terminals[index] = next;
+    this.emit();
+    return next;
+  }
+
   async bootstrapGlobalTerminal(input: {
     terminalId: string;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
@@ -346,7 +621,18 @@ export class FakeCliShellStore implements CliShellStore {
     const grants = this.terminalGrants.get(input.terminalId) ?? [];
     grants.push({ grantId: `grant:${input.terminalId}:${input.participantId}`, terminalId: input.terminalId, role: input.role, participantId: input.participantId, label: input.label, createdAt: Date.now() });
     this.terminalGrants.set(input.terminalId, grants);
-    return { ok: true };
+    return { ok: true, accessToken: `grant-token:${input.terminalId}:${input.participantId}` };
+  }
+
+  async focusTerminals(input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    terminalIds: string[];
+  }): Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }> {
+    void input.sessionId;
+    void input.op;
+    this.focusTerminalCalls.push([...input.terminalIds]);
+    return { ok: true, message: "focused", focusedTerminalIds: input.terminalIds };
   }
 
   async focusGlobalTerminals(input: {
@@ -454,9 +740,20 @@ export class FakeCliShellStore implements CliShellStore {
     void input.accessToken;
     void input.accessTokenHint;
     const grants = this.roomGrants.get(input.chatId) ?? [];
-    grants.push({ grantId: `grant:${input.chatId}:${input.participantId}`, chatId: input.chatId, role: input.role, participantId: input.participantId, label: input.label, createdAt: Date.now() });
+    grants.push({ grantId: `grant:${input.chatId}:${input.participantId}`, chatId: input.chatId, role: input.role, participantId: input.participantId, label: input.label, accessToken: `grant-token:${input.chatId}:${input.participantId}`, createdAt: Date.now() });
     this.roomGrants.set(input.chatId, grants);
-    return { ok: true };
+    return { ok: true, accessToken: `grant-token:${input.chatId}:${input.participantId}` };
+  }
+
+  async focusMessageChannels(input: {
+    sessionId: string;
+    op: "add" | "remove" | "replace" | "clear";
+    channels: Array<{ chatId: string; accessToken: string }>;
+  }): Promise<GlobalRoomEntry[]> {
+    void input.sessionId;
+    void input.op;
+    this.focusRoomCalls.push(input.channels.map((channel) => channel.chatId));
+    return this.rooms.filter((entry) => input.channels.some((channel) => channel.chatId === entry.chatId));
   }
 
   async focusGlobalRooms(input: {
@@ -465,6 +762,28 @@ export class FakeCliShellStore implements CliShellStore {
   }): Promise<{ ok: boolean; message: string; focusedChatIds: string[] }> {
     this.focusRoomCalls.push(input.channels.map((channel) => channel.chatId));
     return { ok: true, message: "focused", focusedChatIds: input.channels.map((channel) => channel.chatId) };
+  }
+
+  async hydrateGlobalRoomSnapshot(input: { chatId: string }): Promise<GlobalRoomSnapshotOutput> {
+    const room = this.rooms.find((entry) => entry.chatId === input.chatId) ?? createRoomEntry(input.chatId);
+    return this.createRoomSnapshot(room);
+  }
+
+  async sendGlobalRoomMessage(input: {
+    chatId: string;
+    text: string;
+  }): Promise<{ ok: true }> {
+    this.sentMessages.push({ chatId: input.chatId, text: input.text });
+    this.emit();
+    return { ok: true };
+  }
+
+  async inputGlobalTerminal(input: {
+    terminalId: string;
+    text: string;
+  }): Promise<{ ok: true }> {
+    this.inputs.push({ terminalId: input.terminalId, text: input.text });
+    return { ok: true };
   }
 
   async ensureWorkspacePrivateTextAsset(input: { workspacePath: string; avatarNickname: string; assetKind: "skills" | "memory" | "tools" | "archive"; relativePath: string; seedContent: string }): Promise<WorkspacePrivateTextAssetEnsureOutput> {
@@ -520,3 +839,8 @@ export class FakeCliShellStore implements CliShellStore {
     return revoked;
   }
 }
+
+export type FakeCliShellProductHostStore = FakeCliShellStore & CliShellProductHostStore;
+
+export const createFakeCliShellProductHostStore = (): FakeCliShellProductHostStore =>
+  new FakeCliShellStore() as FakeCliShellProductHostStore;

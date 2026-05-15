@@ -3,6 +3,8 @@ import type { TerminalRenderRichLine } from "@agenter/termless-core";
 
 import { formatCliShellShortcut, type CliShellTuiKeybindings } from "./keybindings";
 import {
+  CLI_SHELL_HEARTBEAT_COPY,
+  resolveLatestCliShellHeartbeatTimestamp,
   resolveCliShellToolbarStatus,
   resolveCliShellToolbarStatusIcon,
   summarizeCliShellHeartbeat,
@@ -11,6 +13,7 @@ import type {
   CliShellDialogueBlock,
   CliShellDialoguePlacement,
   CliShellDialoguePlacementRequest,
+  CliShellObservationReadyBaseline,
   CliShellTuiAppProjection,
   CliShellTuiModel,
   CliShellTuiViewState,
@@ -39,8 +42,7 @@ const resolveTerminalId = (input: {
   sessionId: string;
   fallbackTerminalId: string;
 }): string => {
-  const runtime = input.state.runtimes[input.sessionId];
-  return runtime?.focusedTerminalId?.trim() || input.fallbackTerminalId;
+  return input.fallbackTerminalId;
 };
 
 const resolveTerminalLines = (input: {
@@ -79,6 +81,7 @@ const cloneRichLines = (lines: readonly TerminalRenderRichLine[]): TerminalRende
 const resolveTerminalView = (input: {
   state: RuntimeClientState;
   projection: CliShellTuiAppProjection;
+  activeFocusTarget: NonNullable<CliShellTuiViewState["activeFocusTarget"]>;
   sessionId: string;
   terminalId: string;
   shellName: string;
@@ -86,11 +89,12 @@ const resolveTerminalView = (input: {
   const liveTerminal = input.projection.liveTerminal;
   if (liveTerminal) {
     return {
+      snapshotSeq: liveTerminal.snapshotSeq,
       plainLines: [...liveTerminal.plainLines],
       richLines: cloneRichLines(liveTerminal.richLines),
       cursorAbsRow: liveTerminal.cursorAbsRow,
       cursorCol: liveTerminal.cursorCol,
-      cursorVisible: liveTerminal.cursorVisible,
+      cursorVisible: liveTerminal.cursorVisible && input.activeFocusTarget === "terminal",
       rows: liveTerminal.rows,
       cols: liveTerminal.cols,
       viewportStart: liveTerminal.viewportStart,
@@ -102,21 +106,26 @@ const resolveTerminalView = (input: {
   }
 
   const plainLines = resolveTerminalLines(input);
+  const terminalSnapshot =
+    input.state.terminalSnapshotsBySession[input.sessionId]?.[input.terminalId] ??
+    input.state.runtimes[input.sessionId]?.terminalSnapshots?.[input.terminalId] ??
+    input.state.globalTerminals.data.find((terminal) => terminal.terminalId === input.terminalId)?.snapshot;
   const rows = Math.max(1, plainLines.length);
-  const viewportStart = Math.max(0, plainLines.length - rows);
+  const viewportStart = Math.max(0, terminalSnapshot?.scrollback.viewportOffset ?? plainLines.length - rows);
   return {
+    snapshotSeq: terminalSnapshot?.seq ?? -1,
     plainLines,
     richLines: plainLines.map((text) => ({
       spans: text.length > 0 ? [{ text }] : [],
     })),
-    cursorAbsRow: Math.max(0, plainLines.length - 1),
-    cursorCol: 0,
-    cursorVisible: false,
-    rows,
-    cols: Math.max(1, plainLines.reduce((max, line) => Math.max(max, line.length), 0)),
+    cursorAbsRow: terminalSnapshot?.cursor.y ?? Math.max(0, plainLines.length - 1),
+    cursorCol: terminalSnapshot?.cursor.x ?? 0,
+    cursorVisible: (terminalSnapshot?.cursor.visible ?? false) && input.activeFocusTarget === "terminal",
+    rows: terminalSnapshot?.scrollback.screenLines ?? terminalSnapshot?.rows ?? rows,
+    cols: terminalSnapshot?.cols ?? Math.max(1, plainLines.reduce((max, line) => Math.max(max, line.length), 0)),
     viewportStart,
-    viewportEnd: plainLines.length,
-    scrollbackRows: plainLines.length,
+    viewportEnd: viewportStart + (terminalSnapshot?.scrollback.screenLines ?? terminalSnapshot?.rows ?? rows),
+    scrollbackRows: terminalSnapshot?.scrollback.totalLines ?? plainLines.length,
     connected: input.state.connected,
     running: true,
   };
@@ -240,18 +249,21 @@ const isSidePlacementViable = (width: number, bodyHeight: number): boolean =>
 const isFloatingPlacementViable = (width: number, bodyHeight: number): boolean =>
   width >= MIN_FLOATING_WIDTH && bodyHeight >= MIN_FLOATING_HEIGHT;
 
-const resolveSmartPlacement = (width: number, bodyHeight: number): CliShellDialoguePlacement => {
+const resolveSmartPlacement = (width: number, bodyHeight: number): CliShellDialoguePlacement | null => {
   if (isSidePlacementViable(width, bodyHeight)) {
     return "right";
   }
-  return "floating";
+  if (isFloatingPlacementViable(width, bodyHeight)) {
+    return "floating";
+  }
+  return null;
 };
 
 export const resolveCliShellDialoguePlacement = (input: {
   requestedPlacement: CliShellDialoguePlacementRequest;
   width: number;
   height: number;
-}): CliShellDialoguePlacement => {
+}): CliShellDialoguePlacement | null => {
   const bodyHeight = Math.max(1, input.height - 1);
   if (input.requestedPlacement === "smart") {
     return resolveSmartPlacement(input.width, bodyHeight);
@@ -261,9 +273,6 @@ export const resolveCliShellDialoguePlacement = (input: {
     return isSidePlacementViable(input.width, bodyHeight)
       ? input.requestedPlacement
       : resolveSmartPlacement(input.width, bodyHeight);
-  }
-  if (input.requestedPlacement === "bottom") {
-    return "bottom";
   }
   return isFloatingPlacementViable(input.width, bodyHeight) ? "floating" : resolveSmartPlacement(input.width, bodyHeight);
 };
@@ -280,17 +289,42 @@ export const buildCliShellTuiModel = (input: {
   width: number;
   height: number;
   toolbarHeartbeatProjection?: string;
+  observationReadyBaseline?: CliShellObservationReadyBaseline | null;
 }): CliShellTuiModel => {
   const terminalId = resolveTerminalId(input);
+  const activeFocusTarget = input.ui.activeFocusTarget ?? input.ui.focusTarget;
   const heartbeatGroups = input.state.heartbeatGroupsBySession[input.sessionId]?.data ?? [];
+  const terminalSignal = input.state.runtimes[input.sessionId]?.schedulerSignals.terminal ?? {
+    version: 0,
+    timestamp: null,
+  };
+  const terminalObservationReadyAt = terminalSignal.timestamp;
+  const baseline = input.observationReadyBaseline ?? null;
+  const terminalObservationReady =
+    baseline === null
+      ? terminalObservationReadyAt !== null
+      : terminalSignal.version > baseline.version ||
+        (terminalObservationReadyAt !== null &&
+          baseline.timestamp !== null &&
+          terminalObservationReadyAt > baseline.timestamp);
+  const latestHeartbeatTimestamp = resolveLatestCliShellHeartbeatTimestamp(heartbeatGroups);
   const status = resolveCliShellToolbarStatus(heartbeatGroups);
   const unread = countUnreadRoomMessages(input.projection.roomSnapshot, input.avatarActorId) ?? input.state.unreadBySession[input.sessionId] ?? 0;
+  const startupReadyHeartbeat =
+    terminalObservationReady &&
+    (terminalObservationReadyAt === null ||
+      latestHeartbeatTimestamp === null ||
+      latestHeartbeatTimestamp < terminalObservationReadyAt)
+      ? CLI_SHELL_HEARTBEAT_COPY.observationReady
+      : null;
   const toolbarHeartbeat =
     input.ui.statusNotice?.trim() ||
+    startupReadyHeartbeat ||
     summarizeCliShellHeartbeat({
       groups: heartbeatGroups,
       terminalId: terminalId || input.shellName,
       connected: input.state.connected,
+      observationReady: terminalObservationReady,
     });
   const dialoguePlacement = input.ui.dialogueOpen
     ? resolveCliShellDialoguePlacement({
@@ -302,9 +336,13 @@ export const buildCliShellTuiModel = (input: {
 
   return {
     terminalId,
+    terminalObservationReady,
+    focusTarget: input.ui.focusTarget,
+    activeFocusTarget,
     terminalView: resolveTerminalView({
       state: input.state,
       projection: input.projection,
+      activeFocusTarget,
       sessionId: input.sessionId,
       terminalId,
       shellName: input.shellName,
@@ -321,6 +359,7 @@ export const buildCliShellTuiModel = (input: {
       avatarActorId: input.avatarActorId,
     }),
     dialogueDraft: input.ui.dialogueDraft,
+    dialogueScrollOffset: Math.max(0, Math.trunc(input.ui.dialogueScrollOffset ?? 0)),
     dialogueTitle: "Dialogue",
   };
 };

@@ -1,14 +1,19 @@
 {
   "name": "@agenter/terminal-view",
   "version": "0.0.0",
-  "private": true,
   "type": "module",
+  "files": [
+    "src"
+  ],
   "scripts": {
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "bunx tsc --noEmit"
   },
   "exports": {
     ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@agenter/terminal-transport-protocol": "workspace:*",

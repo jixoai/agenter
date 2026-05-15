@@ -27,6 +27,7 @@ import {
   parseMessageAttentionSrc,
   parseTerminalAttentionSrc,
 } from "../src/attention-src";
+import { AttentionSearchEngine } from "../src/attention-search";
 import type { LoopBusInput } from "../src/loop-bus";
 import { LoopBusPluginRuntime, type AttentionDraft, type LoopBusPlugin } from "../src/loopbus-plugin-runtime";
 import type { AssistantDeliveryEvent, AssistantStreamUpdate } from "../src/model-client";
@@ -160,7 +161,23 @@ interface RuntimeInternal {
   readTerminalRepresentation: (
     terminalId: string,
     input: { mode: "auto" | "diff" | "snapshot"; remark: boolean },
-  ) => Promise<{ kind: string; representation: string } | { ok: false; reason: string }>;
+  ) => Promise<
+    | {
+        kind: "terminal-snapshot";
+        representation: "snapshot";
+        snapshot: {
+          lines: string[];
+        };
+      }
+    | {
+        kind: "terminal-diff";
+        representation: "diff";
+        diff: string;
+        fromHash: string | null;
+        toHash: string | null;
+      }
+    | { ok: false; reason: string }
+  >;
   readMessageChannelForTooling: (input: { chatId: string; limit?: number }) => Promise<{
     items: Array<{
       messageId: number;
@@ -211,6 +228,11 @@ interface RuntimeInternal {
         rows: number;
         cursor: { x: number; y: number };
         lines: string[];
+        scrollback: {
+          viewportOffset: number;
+          totalLines: number;
+          screenLines: number;
+        };
       };
       getStatus: () => "IDLE" | "BUSY";
       sliceDirty: (input: { fromHash?: string | null; wait?: boolean }) => Promise<{
@@ -535,6 +557,28 @@ const createSharedRoomRuntime = (input: {
   });
 
 describe("Feature: session runtime attention-system loop inputs", () => {
+  test("Scenario: Given attention search indexing is slow When the session runtime starts Then startup does not wait for the derived search cache", async () => {
+    const originalSync = AttentionSearchEngine.prototype.sync;
+    let syncCalls = 0;
+    AttentionSearchEngine.prototype.sync = async () => {
+      syncCalls += 1;
+      await new Promise<void>(() => {});
+    };
+    const runtime = createRuntime();
+    try {
+      const startResult = await Promise.race([
+        runtime.start().then(() => "started" as const),
+        new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 1_500)),
+      ]);
+
+      expect(startResult).toBe("started");
+      expect(syncCalls).toBe(0);
+    } finally {
+      AttentionSearchEngine.prototype.sync = originalSync;
+      await runtime.stop();
+    }
+  });
+
   test("Scenario: Given plugin-backed user chat When collectLoopInputs runs Then the batch is attention-native without raw chat duplication", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
@@ -2116,11 +2160,13 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       const created1 = await runtime.createRuntimeTerminal({
         terminalId: "iflow-1",
         processKind: "shell",
+        command: [process.execPath, "-e", "void 0"],
         focus: true,
       });
       const created2 = await runtime.createRuntimeTerminal({
         terminalId: "iflow-2",
         processKind: "shell",
+        command: [process.execPath, "-e", "void 0"],
         focus: false,
       });
 
@@ -2357,7 +2403,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
-  test("Scenario: Given a passive focused terminal dirty change When runtime records scheduler signals Then no terminal wake signal is emitted", async () => {
+  test("Scenario: Given a focused terminal without runtime status When runtime records scheduler signals Then no terminal wake signal is emitted", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal & {
       isTerminalActionable: (terminalId: string) => boolean;
@@ -2390,6 +2436,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
           rows: 24,
           cursor: { x: 0, y: 0 },
           lines: ["echo passive"],
+          scrollback: {
+            viewportOffset: 0,
+            totalLines: 24,
+            screenLines: 24,
+          },
         }),
         getStatus: () => "IDLE",
         sliceDirty: async () => ({
@@ -2451,6 +2502,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
           rows: 24,
           cursor: { x: 0, y: 0 },
           lines: ["echo actionable"],
+          scrollback: {
+            viewportOffset: 0,
+            totalLines: 24,
+            screenLines: 24,
+          },
         }),
         getStatus: () => "IDLE",
         sliceDirty: async () => ({
@@ -2473,6 +2529,81 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       await Bun.sleep(10);
 
       expect(runtime.snapshot().schedulerSignals.terminal.version).toBe(beforeVersion + 1);
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given a focused steady-state running terminal When semantic terminal output changes Then runtime records a terminal wake signal without requiring a lifecycle transition", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      terminalStatusById: Map<
+        string,
+        {
+          processPhase: "not_started" | "running" | "stopped";
+          lifecycleTransition: string | null;
+          status: "IDLE" | "BUSY";
+        }
+      >;
+      terminalKernelAdapter: {
+        markTerminalDirty: (terminalId: string) => void;
+      };
+      isTerminalActionable: (terminalId: string) => boolean;
+    };
+
+    await runtime.start();
+    try {
+      const beforeVersion = runtime.snapshot().schedulerSignals.terminal.version;
+      internal.config = {
+        ...(internal.config ?? {}),
+        terminals: {
+          ...(internal.config?.terminals ?? {}),
+          iflow: {
+            terminalId: "iflow",
+            cwd: "/tmp",
+            command: ["bash"],
+            commandLabel: "bash",
+            gitLog: false,
+          },
+        },
+      };
+      internal.terminals.set("iflow", {
+        isRunning: () => true,
+        getSnapshot: () => ({
+          seq: 2,
+          cols: 80,
+          rows: 24,
+          cursor: { x: 0, y: 1 },
+          lines: ["echo ready", "matrixd-signal"],
+          scrollback: {
+            viewportOffset: 0,
+            totalLines: 24,
+            screenLines: 24,
+          },
+        }),
+        getStatus: () => "IDLE",
+        sliceDirty: async () => ({
+          ok: true,
+          changed: true,
+          fromHash: "hash-1",
+          toHash: "hash-2",
+          diff: "+matrixd-signal",
+          bytes: 14,
+        }),
+      });
+      internal.focusedTerminalIds = ["iflow"];
+      internal.terminalStatusById.set("iflow", {
+        processPhase: "running",
+        lifecycleTransition: null,
+        status: "IDLE",
+      });
+
+      expect(internal.isTerminalActionable("iflow")).toBeTrue();
+      internal.terminalKernelAdapter.markTerminalDirty("iflow");
+      await Bun.sleep(10);
+
+      expect(runtime.snapshot().schedulerSignals.terminal.version).toBe(beforeVersion + 1);
+      expect(runtime.snapshot().schedulerSignals.terminal.timestamp).not.toBeNull();
     } finally {
       await runtime.stop();
     }
@@ -3728,6 +3859,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         rows: 24,
         cursor: { x: 0, y: 23 },
         lines: ["echo ready"],
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 24,
+          screenLines: 24,
+        },
       }),
       getStatus: () => "IDLE",
       sliceDirty: async () => ({
@@ -3788,6 +3924,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         rows: 24,
         cursor: { x: 0, y: 0 },
         lines: Array.from({ length: 24 }, () => ""),
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 24,
+          screenLines: 24,
+        },
       }),
       getStatus: () => "BUSY",
       sliceDirty: async () => ({
@@ -3835,6 +3976,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         rows: 24,
         cursor: { x: 0, y: 23 },
         lines: Array.from({ length: 24 }, (_, index) => `line-${index}`),
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 24,
+          screenLines: 24,
+        },
       }),
       getStatus: () => "IDLE",
       sliceDirty: async () => ({
@@ -3893,6 +4039,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         rows: 24,
         cursor: { x: 0, y: 23 },
         lines: ["echo ready"],
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 24,
+          screenLines: 24,
+        },
       }),
       getStatus: () => "IDLE",
       sliceDirty: async () => ({
@@ -3951,6 +4102,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       rows: 24,
       cursor: { x: 0, y: 23 },
       lines: ["echo ready"],
+      scrollback: {
+        viewportOffset: 0,
+        totalLines: 24,
+        screenLines: 24,
+      },
     };
 
     internal.terminals.set("iflow", {
@@ -4045,6 +4201,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         rows: 24,
         cursor: { x: 4, y: 1 },
         lines: ["echo ready"],
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 24,
+          screenLines: 24,
+        },
       }),
       getStatus: () => "IDLE",
       sliceDirty: async () => ({
@@ -4097,6 +4258,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         rows: 24,
         cursor: { x: 0, y: 1 },
         lines: ["echo ready", "line 2"],
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 24,
+          screenLines: 24,
+        },
       }),
       getStatus: () => "IDLE",
       sliceDirty: async () => ({
@@ -4129,6 +4295,114 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(terminalActivityView.pageTerminalActivity("main", { limit: 10 }).items[0]?.kind).toBe("terminal_read");
   });
 
+  test("Scenario: Given one backend terminal truth When runtime derives render diff and observation Then all three paths stay sourced from the same terminal state", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      buildTerminalSystemIngressEnvelope: (terminalId: string) => Promise<{
+        kind: string;
+        meta?: { terminalId?: string; kind?: string; fromHash?: string | null; toHash?: string | null };
+      } | null>;
+      terminalStatusById: Map<
+        string,
+        {
+          processPhase: "not_started" | "running" | "stopped";
+          lifecycleTransition: string | null;
+          status: "IDLE" | "BUSY";
+        }
+      >;
+      terminalKernelAdapter: {
+        markTerminalDirty: (terminalId: string) => void;
+      };
+    };
+
+    await runtime.start();
+    try {
+      internal.config = {
+        ...(internal.config ?? {}),
+        terminals: {
+          ...(internal.config?.terminals ?? {}),
+          main: {
+            terminalId: "main",
+            cwd: "/tmp",
+            command: ["bash"],
+            commandLabel: "bash",
+            gitLog: "normal",
+          },
+        },
+      };
+      internal.terminals.set("main", {
+        isRunning: () => true,
+        getSnapshot: () => ({
+          seq: 9,
+          cols: 80,
+          rows: 24,
+          cursor: { x: 0, y: 1 },
+          lines: ["echo ready", "line 2"],
+          scrollback: {
+            viewportOffset: 0,
+            totalLines: 24,
+            screenLines: 24,
+          },
+        }),
+        getStatus: () => "IDLE",
+        sliceDirty: async () => ({
+          ok: true,
+          changed: true,
+          fromHash: "hash-8",
+          toHash: "hash-9",
+          diff: "+line 2",
+          bytes: 7,
+        }),
+      });
+      internal.focusedTerminalIds = ["main"];
+      internal.terminalStatusById.set("main", {
+        processPhase: "running",
+        lifecycleTransition: null,
+        status: "IDLE",
+      });
+
+      const snapshotPayload = await internal.readTerminalRepresentation("main", { mode: "snapshot", remark: false });
+      const diffPayload = await internal.readTerminalRepresentation("main", { mode: "auto", remark: false });
+      const ingress = await internal.buildTerminalSystemIngressEnvelope("main");
+      const beforeVersion = runtime.snapshot().schedulerSignals.terminal.version;
+      internal.terminalKernelAdapter.markTerminalDirty("main");
+      await Bun.sleep(10);
+
+      expect("ok" in snapshotPayload).toBeFalse();
+      if ("ok" in snapshotPayload) {
+        return;
+      }
+      expect(snapshotPayload.kind).toBe("terminal-snapshot");
+      if (snapshotPayload.kind !== "terminal-snapshot") {
+        return;
+      }
+      expect(snapshotPayload.snapshot.lines).toEqual(["echo ready", "line 2"]);
+
+      expect("ok" in diffPayload).toBeFalse();
+      if ("ok" in diffPayload) {
+        return;
+      }
+      expect(diffPayload.kind).toBe("terminal-diff");
+      if (diffPayload.kind !== "terminal-diff") {
+        return;
+      }
+      expect(diffPayload.diff).toBe("+line 2");
+      expect(diffPayload.fromHash).toBe("hash-8");
+      expect(diffPayload.toHash).toBe("hash-9");
+      expect(internal.terminalReads.main?.representation).toBe("diff");
+
+      expect(ingress?.kind).toBe("terminal_diff");
+      expect(ingress?.meta?.terminalId).toBe("main");
+      expect(ingress?.meta?.kind).toBe("terminal-diff");
+      expect(ingress?.meta?.fromHash).toBe("hash-8");
+      expect(ingress?.meta?.toHash).toBe("hash-9");
+
+      expect(runtime.snapshot().schedulerSignals.terminal.version).toBe(beforeVersion + 1);
+    } finally {
+      await runtime.stop();
+    }
+  });
+
   test("Scenario: Given source-driven drafts When a cycle policy hook defers Then terminal history still commits while cycle start stays deferred", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
@@ -4152,6 +4426,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         rows: 24,
         cursor: { x: 0, y: 23 },
         lines: ["echo deferred"],
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 24,
+          screenLines: 24,
+        },
       }),
       getStatus: () => "IDLE",
       sliceDirty: async () => ({

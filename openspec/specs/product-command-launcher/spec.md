@@ -107,6 +107,19 @@ The product command launcher SHALL ensure or reuse a local daemon and pass conne
 - **THEN** it owns cleanup of that daemon after the product exits
 - **AND** it does not stop a daemon that was already running before product launch
 
+#### Scenario: Launcher reuses healthy daemon authority for the same runtime root
+- **GIVEN** one healthy local daemon already owns the same runtime home root but is listening on a different loopback port than the launcher's default request
+- **WHEN** a user runs `agenter shell --web` through the default launcher path
+- **THEN** the launcher discovers that same-root daemon authority before starting another local daemon
+- **AND** it forwards the discovered daemon host and port to `@agenter/cli-shell`
+- **AND** it does not start a competing second daemon writer for that runtime root
+
+#### Scenario: Stale daemon descriptor is ignored during auto-start
+- **GIVEN** the runtime home root contains a stale daemon descriptor whose endpoint is no longer healthy
+- **WHEN** a product command needs launcher-owned daemon bootstrap
+- **THEN** the launcher ignores that stale descriptor
+- **AND** it may start a new local daemon for that runtime root
+
 ### Requirement: Product launcher SHALL preserve terminal process semantics
 
 The product command launcher SHALL run product bins as foreground interactive processes with inherited stdio and exit status propagation.

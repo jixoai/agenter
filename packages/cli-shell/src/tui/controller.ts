@@ -5,7 +5,12 @@ import { resolveCliShellTerminalRegion } from "./frame";
 import type { CliShellLiveTerminalMirror } from "./live-terminal-mirror";
 import { matchCliShellShortcut, type CliShellTuiKeybindings } from "./keybindings";
 import { encodeCliShellTerminalKey } from "./terminal-input";
-import type { CliShellTuiModel, CliShellTuiStore, CliShellTuiViewState } from "./types";
+import type {
+  CliShellPointerAction,
+  CliShellTuiModel,
+  CliShellTuiStore,
+  CliShellTuiViewState,
+} from "./types";
 
 export interface CliShellTuiControllerContext {
   store: CliShellTuiStore;
@@ -24,31 +29,6 @@ export interface CliShellTuiControllerContext {
   updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => void;
 }
 
-const resolveDraftInput = (key: {
-  name: string;
-  sequence?: string;
-  raw?: string;
-  ctrl?: boolean;
-  meta?: boolean;
-}): string | null => {
-  if (key.ctrl || key.meta) {
-    return null;
-  }
-  if (key.name === "space") {
-    return " ";
-  }
-  if (key.name === "tab") {
-    return "\t";
-  }
-  if (key.sequence && key.sequence.length > 0 && !key.sequence.startsWith("\u001b")) {
-    return key.sequence;
-  }
-  if (key.raw && key.raw.length > 0 && !key.raw.startsWith("\u001b")) {
-    return key.raw;
-  }
-  return null;
-};
-
 const setStatus = (ctx: CliShellTuiControllerContext, statusNotice: string | null): void => {
   ctx.updateViewState((current) => ({
     ...current,
@@ -56,11 +36,29 @@ const setStatus = (ctx: CliShellTuiControllerContext, statusNotice: string | nul
   }));
 };
 
+const isPlainReturnShortcut = (input: CliShellTuiKeybindings["sendDialogue"]): boolean =>
+  input.key === "return" &&
+  !input.command &&
+  !input.ctrl &&
+  !input.meta &&
+  !input.super &&
+  !input.alt &&
+  !input.shift;
+
 const closeDialogue = (ctx: CliShellTuiControllerContext): void => {
   ctx.updateViewState((current) => ({
     ...current,
     dialogueOpen: false,
+    focusTarget: "terminal",
     dialogueDraft: "",
+    statusNotice: null,
+  }));
+};
+
+export const setCliShellDialogueDraft = (ctx: CliShellTuiControllerContext, draft: string): void => {
+  ctx.updateViewState((current) => ({
+    ...current,
+    dialogueDraft: draft,
     statusNotice: null,
   }));
 };
@@ -68,6 +66,7 @@ const closeDialogue = (ctx: CliShellTuiControllerContext): void => {
 const sendTerminalInput = (ctx: CliShellTuiControllerContext, text: string): void => {
   const mirror = ctx.getLiveMirror?.();
   if (mirror?.sendInputBytes(new TextEncoder().encode(text))) {
+    mirror.followCursor();
     return;
   }
   void ctx.store
@@ -124,7 +123,7 @@ const toggleManaged = async (ctx: CliShellTuiControllerContext): Promise<void> =
   }
 };
 
-const sendDialogueDraft = async (ctx: CliShellTuiControllerContext): Promise<void> => {
+export const submitCliShellDialogue = async (ctx: CliShellTuiControllerContext): Promise<void> => {
   const text = ctx.getViewState().dialogueDraft.trim();
   if (text.length === 0) {
     return;
@@ -146,7 +145,6 @@ const sendDialogueDraft = async (ctx: CliShellTuiControllerContext): Promise<voi
     });
     ctx.updateViewState((current) => ({
       ...current,
-      dialogueOpen: false,
       dialogueDraft: "",
       statusNotice: "消息已发送",
     }));
@@ -155,13 +153,95 @@ const sendDialogueDraft = async (ctx: CliShellTuiControllerContext): Promise<voi
   }
 };
 
-export const routeCliShellPaste = (ctx: CliShellTuiControllerContext, text: string): void => {
-  if (ctx.getViewState().dialogueOpen) {
+const openDialogue = (ctx: CliShellTuiControllerContext): void => {
+  ctx.updateViewState((current) => ({
+    ...current,
+    dialogueOpen: true,
+    focusTarget: "dialogue",
+    statusNotice: null,
+  }));
+};
+
+const setDialoguePlacement = (
+  ctx: CliShellTuiControllerContext,
+  placement: CliShellTuiViewState["requestedPlacement"],
+): void => {
+  ctx.updateViewState((current) => ({
+    ...current,
+    dialogueOpen: true,
+    focusTarget: "dialogue",
+    requestedPlacement: placement,
+    statusNotice: null,
+  }));
+};
+
+export const routeCliShellPointerAction = (ctx: CliShellTuiControllerContext, action: CliShellPointerAction): void => {
+  if (action === "toggleManaged") {
+    const task = toggleManaged(ctx);
+    ctx.trackAsyncTask?.(task);
+    void task;
+    return;
+  }
+  if (action === "openDialogue") {
+    openDialogue(ctx);
+    return;
+  }
+  if (action === "closeDialogue") {
+    closeDialogue(ctx);
+    return;
+  }
+  if (action === "focusDialogueInput") {
     ctx.updateViewState((current) => ({
       ...current,
-      dialogueDraft: `${current.dialogueDraft}${text}`,
+      dialogueOpen: true,
+      focusTarget: "dialogue",
       statusNotice: null,
     }));
+    return;
+  }
+  if (action === "submitDialogue") {
+    const task = submitCliShellDialogue(ctx);
+    ctx.trackAsyncTask?.(task);
+    void task;
+    return;
+  }
+  if (action === "placeLeft") {
+    setDialoguePlacement(ctx, "left");
+    return;
+  }
+  if (action === "placeRight") {
+    setDialoguePlacement(ctx, "right");
+    return;
+  }
+  if (action === "placeFloating") {
+    setDialoguePlacement(ctx, "floating");
+    return;
+  }
+};
+
+export const routeCliShellMouseScroll = (ctx: CliShellTuiControllerContext, input: { deltaRows: number }): boolean => {
+  const deltaRows = Math.trunc(input.deltaRows);
+  if (!Number.isFinite(deltaRows) || deltaRows === 0) {
+    return false;
+  }
+  const mirror = ctx.getLiveMirror?.();
+  return mirror?.scrollViewport(deltaRows) ?? false;
+};
+
+export const routeCliShellViewportTarget = (
+  ctx: CliShellTuiControllerContext,
+  input: { viewportStart: number },
+): boolean => {
+  const viewportStart = Math.max(0, Math.trunc(input.viewportStart));
+  if (!Number.isFinite(viewportStart)) {
+    return false;
+  }
+  const mirror = ctx.getLiveMirror?.();
+  return mirror?.setViewportStart(viewportStart) ?? false;
+};
+
+export const routeCliShellPaste = (ctx: CliShellTuiControllerContext, text: string): void => {
+  if (ctx.getViewState().dialogueOpen && ctx.getViewState().focusTarget === "dialogue") {
     return;
   }
   sendTerminalInput(ctx, text);
@@ -174,13 +254,19 @@ export const routeCliShellKey = (ctx: CliShellTuiControllerContext, key: KeyEven
   }
 
   const viewState = ctx.getViewState();
-  if (viewState.dialogueOpen) {
+  if (viewState.dialogueOpen && viewState.focusTarget === "dialogue") {
+    if (matchCliShellShortcut(key, ctx.keybindings.toggleManaged)) {
+      const task = toggleManaged(ctx);
+      ctx.trackAsyncTask?.(task);
+      void task;
+      return true;
+    }
     if (matchCliShellShortcut(key, ctx.keybindings.closeDialogue)) {
       closeDialogue(ctx);
       return true;
     }
-    if (matchCliShellShortcut(key, ctx.keybindings.sendDialogue)) {
-      const task = sendDialogueDraft(ctx);
+    if (matchCliShellShortcut(key, ctx.keybindings.sendDialogue) && !isPlainReturnShortcut(ctx.keybindings.sendDialogue)) {
+      const task = submitCliShellDialogue(ctx);
       ctx.trackAsyncTask?.(task);
       void task;
       return true;
@@ -188,6 +274,7 @@ export const routeCliShellKey = (ctx: CliShellTuiControllerContext, key: KeyEven
     if (matchCliShellShortcut(key, ctx.keybindings.placeLeft)) {
       ctx.updateViewState((current) => ({
         ...current,
+        focusTarget: "dialogue",
         requestedPlacement: "left",
         statusNotice: null,
       }));
@@ -196,6 +283,7 @@ export const routeCliShellKey = (ctx: CliShellTuiControllerContext, key: KeyEven
     if (matchCliShellShortcut(key, ctx.keybindings.placeRight)) {
       ctx.updateViewState((current) => ({
         ...current,
+        focusTarget: "dialogue",
         requestedPlacement: "right",
         statusNotice: null,
       }));
@@ -204,53 +292,29 @@ export const routeCliShellKey = (ctx: CliShellTuiControllerContext, key: KeyEven
     if (matchCliShellShortcut(key, ctx.keybindings.placeFloating)) {
       ctx.updateViewState((current) => ({
         ...current,
+        focusTarget: "dialogue",
         requestedPlacement: "floating",
         statusNotice: null,
       }));
       return true;
     }
-    if (matchCliShellShortcut(key, ctx.keybindings.placeBottom)) {
-      ctx.updateViewState((current) => ({
-        ...current,
-        dialogueOpen: false,
-        requestedPlacement: "bottom",
-        dialogueDraft: "",
-        statusNotice: null,
-      }));
+    if (key.name === "escape") {
+      closeDialogue(ctx);
       return true;
     }
-    if (key.name === "backspace") {
-      ctx.updateViewState((current) => ({
-        ...current,
-        dialogueDraft: current.dialogueDraft.slice(0, -1),
-        statusNotice: null,
-      }));
-      return true;
-    }
-    const draftInput = resolveDraftInput(key);
-    if (draftInput) {
-      ctx.updateViewState((current) => ({
-        ...current,
-        dialogueDraft: `${current.dialogueDraft}${draftInput}`,
-        statusNotice: null,
-      }));
-    }
-    return true;
+    return false;
   }
 
   if (matchCliShellShortcut(key, ctx.keybindings.openDialogue)) {
-    ctx.updateViewState((current) => ({
-      ...current,
-      dialogueOpen: true,
-      requestedPlacement: current.requestedPlacement === "bottom" ? "smart" : current.requestedPlacement,
-      statusNotice: null,
-    }));
+    openDialogue(ctx);
+    return true;
+  }
+  if (viewState.dialogueOpen && matchCliShellShortcut(key, ctx.keybindings.closeDialogue)) {
+    closeDialogue(ctx);
     return true;
   }
   if (matchCliShellShortcut(key, ctx.keybindings.toggleManaged)) {
-    const task = toggleManaged(ctx);
-    ctx.trackAsyncTask?.(task);
-    void task;
+    routeCliShellPointerAction(ctx, "toggleManaged");
     return true;
   }
 
@@ -267,6 +331,7 @@ export const syncCliShellTerminalGeometry = async (input: {
   width: number;
   height: number;
   model: CliShellTuiModel;
+  terminalId?: string;
   previousGeometryKey: string;
   liveMirror?: CliShellLiveTerminalMirror | null;
 }): Promise<string> => {
@@ -277,7 +342,8 @@ export const syncCliShellTerminalGeometry = async (input: {
   });
   const cols = Math.max(1, region.width);
   const rows = Math.max(1, region.height);
-  const geometryKey = `${input.model.terminalId}:${cols}x${rows}`;
+  const terminalId = input.terminalId ?? input.model.terminalId;
+  const geometryKey = `${terminalId}:${cols}x${rows}`;
   if (geometryKey === input.previousGeometryKey || input.width <= 0 || input.height <= 0) {
     return input.previousGeometryKey;
   }
@@ -285,7 +351,7 @@ export const syncCliShellTerminalGeometry = async (input: {
     return geometryKey;
   }
   await input.store.setGlobalTerminalConfig({
-    terminalId: input.model.terminalId,
+    terminalId,
     cols,
     rows,
   });

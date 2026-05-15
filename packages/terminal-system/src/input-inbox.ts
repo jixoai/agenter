@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, renameSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 
 import type { TerminalPendingInputMode } from "./types";
@@ -28,6 +28,8 @@ export class InputInbox {
   private readonly failedDir: string;
   private readonly pollMs: number;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private watcher: FSWatcher | null = null;
+  private scanScheduled = false;
   private running = false;
   private queue = Promise.resolve();
   private readonly inQueue = new Set<string>();
@@ -48,14 +50,21 @@ export class InputInbox {
       return;
     }
     this.running = true;
+    try {
+      this.watcher = watch(this.pendingDir, () => {
+        this.scheduleScan();
+      });
+    } catch {
+      this.watcher = null;
+    }
     this.timer = setInterval(() => {
-      this.scan();
-    }, this.pollMs);
-    this.scan();
+      this.scheduleScan();
+    }, Math.max(this.pollMs, 2_000));
+    this.scheduleScan();
   }
 
   poke(): void {
-    this.scan();
+    this.scheduleScan();
   }
 
   stop(): void {
@@ -64,6 +73,20 @@ export class InputInbox {
       clearInterval(this.timer);
       this.timer = null;
     }
+    this.watcher?.close();
+    this.watcher = null;
+    this.scanScheduled = false;
+  }
+
+  private scheduleScan(): void {
+    if (!this.running || this.scanScheduled) {
+      return;
+    }
+    this.scanScheduled = true;
+    setTimeout(() => {
+      this.scanScheduled = false;
+      this.scan();
+    }, 0);
   }
 
   private scan(): void {

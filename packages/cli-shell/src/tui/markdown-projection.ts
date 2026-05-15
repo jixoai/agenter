@@ -92,6 +92,12 @@ const collectHighlightingRenderables = (renderable: Renderable): Renderable[] =>
   return pending;
 };
 
+const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
+  typeof value === "object" &&
+  value !== null &&
+  "then" in value &&
+  typeof (value as { then?: unknown }).then === "function";
+
 export const projectMarkdownLastLine = async (input: {
   content: string;
   width: number;
@@ -148,7 +154,7 @@ export const projectMarkdownLastLine = async (input: {
 
     const pending = collectHighlightingRenderables(surface).filter(
       (renderable): renderable is Renderable & { highlightingDone: Promise<void> } =>
-        "highlightingDone" in renderable && typeof renderable.highlightingDone?.then === "function",
+        "highlightingDone" in renderable && isPromiseLike(renderable.highlightingDone),
     );
     if (pending.length > 0) {
       await Promise.all(pending.map((renderable) => renderable.highlightingDone));

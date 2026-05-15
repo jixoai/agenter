@@ -1,6 +1,4 @@
-import stringWidth from "string-width";
-
-export const measureTerminalText = (text: string): number => stringWidth(text);
+export const measureTerminalText = (text: string): number => Bun.stringWidth(text);
 
 const toTerminalChars = (text: string): string[] => Array.from(text);
 

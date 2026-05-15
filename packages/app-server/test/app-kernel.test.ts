@@ -5,7 +5,10 @@ import {
   type MessageTransportServerMessage,
 } from "@agenter/message-system";
 import {
+  applyTerminalFramePatch,
   decodeTerminalTransportServerMessage,
+  encodeTerminalTransportClientMessage,
+  type TerminalTransportFramePayload,
   type TerminalTransportServerMessage,
 } from "@agenter/terminal-transport-protocol";
 import { SessionDb } from "@agenter/session-system";
@@ -75,9 +78,41 @@ const decodeTerminalTransportFrame = (data: MessageEvent["data"]): TerminalTrans
   return null;
 };
 
-const utf8Decoder = new TextDecoder();
-const outputIncludes = (message: TerminalTransportServerMessage, text: string): boolean =>
-  message.type === "outputBytes" && utf8Decoder.decode(message.data).includes(text);
+const encodeTerminalClientFrame = (message: Parameters<typeof encodeTerminalTransportClientMessage>[0]): ArrayBuffer => {
+  const bytes = encodeTerminalTransportClientMessage(message);
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+};
+
+const pullTerminalFrame = async (input: {
+  socket: WebSocket;
+  messages: TerminalTransportServerMessage[];
+  lastFrame: TerminalTransportFramePayload | null;
+}): Promise<TerminalTransportFramePayload> => {
+  input.socket.send(
+    encodeTerminalClientFrame({
+      type: "pullFrame",
+      lastAppliedFrameSeq: input.lastFrame?.seq ?? 0,
+      cols: input.lastFrame?.cols ?? 80,
+      rows: input.lastFrame?.rows ?? 24,
+    }),
+  );
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await Bun.sleep(25);
+    const frameMessage = input.messages.findLast(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
+    );
+    if (!frameMessage) {
+      continue;
+    }
+    const nextFrame = applyTerminalFramePatch(input.lastFrame, frameMessage.patch, frameMessage.frameSeq);
+    if (nextFrame) {
+      return nextFrame;
+    }
+  }
+  throw new Error("timed out waiting for terminal frame");
+};
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -434,14 +469,6 @@ describe("Feature: app kernel event replay", () => {
     const closed = new Promise<void>((resolve) => {
       socket.addEventListener("close", () => resolve(), { once: true });
     });
-    const secondFrame = new Promise<void>((resolve) => {
-      socket.addEventListener("message", (event) => {
-        const message = decodeTerminalTransportFrame(event.data);
-        if (message && outputIncludes(message, "second-frame")) {
-          resolve();
-        }
-      });
-    });
     socket.addEventListener("message", (event) => {
       const message = decodeTerminalTransportFrame(event.data);
       if (message) {
@@ -450,15 +477,26 @@ describe("Feature: app kernel event replay", () => {
     });
 
     await opened;
-    await secondFrame;
+    let latestFrame: TerminalTransportFramePayload | null = null;
+    const startAt = Date.now();
+    while (Date.now() - startAt < 3_000) {
+      if (messages.some((message) => message.type === "frameDirty")) {
+        latestFrame = await pullTerminalFrame({ socket, messages, lastFrame: latestFrame });
+        if (latestFrame.lines.join("\n").includes("second-frame")) {
+          break;
+        }
+      }
+      await Bun.sleep(25);
+    }
     socket.close();
     await closed;
     await Bun.sleep(80);
 
     unsubscribe();
 
-    expect(messages.some((message) => message.type === "snapshot")).toBeTrue();
-    expect(messages.some((message) => outputIncludes(message, "first-frame"))).toBeTrue();
+    expect(messages.some((message) => message.type === "frameDirty")).toBeTrue();
+    expect(latestFrame?.lines.join("\n")).toContain("first-frame");
+    expect(latestFrame?.lines.join("\n")).toContain("second-frame");
     expect(
       surfaceEvents.some((event) => {
         if (!event.payload || typeof event.payload !== "object" || Array.isArray(event.payload)) {

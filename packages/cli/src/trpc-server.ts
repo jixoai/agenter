@@ -8,6 +8,7 @@ import { z } from "zod";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import { WebSocketServer, type WebSocket } from "ws";
+import { clearOwnedDaemonRuntimeDescriptor, writeDaemonRuntimeDescriptor } from "./daemon-runtime-descriptor";
 import { resolveWebUiEntryDocumentPath } from "./webui-static-root";
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -1001,7 +1002,16 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
   });
 
   const actualPort = (server.address() as { port?: number } | null)?.port ?? options.port;
+  const homeDir = options.homeDir ?? process.env.HOME ?? process.cwd();
   kernel.setManagedSeatAuthorityUrl(`http://${options.host}:${actualPort}`);
+  writeDaemonRuntimeDescriptor({
+    pid: process.pid,
+    host: options.host,
+    port: actualPort,
+    endpoint: `http://${options.host}:${actualPort}`,
+    homeDir,
+    updatedAt: new Date().toISOString(),
+  });
 
   return {
     host: options.host,
@@ -1011,15 +1021,25 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       wsHandler.broadcastReconnectNotification();
       wss.close();
       await kernel.stop();
-      await new Promise<void>((resolveStop, rejectStop) => {
-        server.close((error) => {
-          if (error) {
-            rejectStop(error);
-            return;
-          }
-          resolveStop();
+      try {
+        await new Promise<void>((resolveStop, rejectStop) => {
+          server.close((error) => {
+            if (error) {
+              rejectStop(error);
+              return;
+            }
+            resolveStop();
+          });
         });
-      });
+      } finally {
+        clearOwnedDaemonRuntimeDescriptor({
+          pid: process.pid,
+          host: options.host,
+          port: actualPort,
+          endpoint: `http://${options.host}:${actualPort}`,
+          homeDir,
+        });
+      }
     },
   };
 };

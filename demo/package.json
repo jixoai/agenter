@@ -4,31 +4,28 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch run src/index.tsx",
-    "start": "bun run src/index.tsx",
-    "dev:terminal-devtools": "bun --watch run src/index.terminal-devtools.tsx",
-    "start:terminal-devtools": "bun run src/index.terminal-devtools.tsx",
-    "dev:iflow-devtools": "bun --watch run src/index.iflow-devtools.tsx",
-    "start:iflow-devtools": "bun run src/index.iflow-devtools.tsx",
+    "dev": "bun --watch run src/index.ts",
+    "start": "bun run src/index.ts",
+    "dev:terminal-devtools": "bun --watch run src/index.terminal-devtools.ts",
+    "start:terminal-devtools": "bun run src/index.terminal-devtools.ts",
+    "dev:iflow-devtools": "bun --watch run src/index.iflow-devtools.ts",
+    "start:iflow-devtools": "bun run src/index.iflow-devtools.ts",
     "diagnose:terminal-crash": "bun run scripts/repro-iflow-crash.ts",
     "diagnose:iflow-crash": "bun run scripts/repro-iflow-crash.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
     "@agenter/app-server": "workspace:*",
-    "@agenter/attention-system": "workspace:*",
     "@agenter/settings": "workspace:*",
     "@agenter/terminal-system": "workspace:*",
     "@opentui/core": "latest",
-    "@opentui/react": "latest",
     "@tanstack/ai": "^0.6.1",
     "@xterm/headless": "latest",
-    "react": "^19.0.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/react": "^19.0.0",
     "typescript": "latest"
   }
 }

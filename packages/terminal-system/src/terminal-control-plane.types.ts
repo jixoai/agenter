@@ -30,6 +30,7 @@ export type TerminalRendererPreference = "auto" | "ghostty-web" | "wterm" | "xte
 export type TerminalResolvedRenderer = "ghostty-web" | "wterm" | "xterm";
 export type TerminalThemeName = "default-dark" | "default-light" | "monokai";
 export type TerminalCursorStyle = "block" | "bar" | "underline";
+export type TerminalTransportFramePatchMode = "rowCache" | "full" | "diff";
 export type TerminalActorId = PrincipalId | `${"auth" | "session" | "system"}:${string}`;
 export type TerminalEventKind = "terminal_read" | "terminal_write" | "terminal_resize";
 export type TerminalAutomationInputMode = "raw" | "mixed";
@@ -99,6 +100,19 @@ export interface TerminalTransportConfig {
   host?: string;
   port: number | null;
   pathPrefix?: string;
+  framePatchMode?: TerminalTransportFramePatchMode;
+}
+
+export interface TerminalTransportAttachmentProjection {
+  attachmentId: string;
+  terminalId: string;
+  actorId: TerminalActorId | null;
+  requestedGeometryRole: "projection-only" | "authority";
+  effectiveGeometryRole: "projection-only" | "authority";
+  geometryOrder?: number;
+  geometryAuthorityAttachmentId?: string;
+  attachedAt: number;
+  authorityReason: string;
 }
 
 export interface TerminalControlPlaneConfig {
@@ -131,6 +145,9 @@ export interface TerminalCreateInput {
   bootstrapAccessToken?: string;
   adminGroupCandidateIds?: TerminalActorId[];
 }
+
+export const TERMINAL_RUNTIME_KIND_METADATA_KEY = "terminalRuntimeKind" as const;
+export type TerminalRuntimeKind = "managed" | "projection" | "composed";
 
 export interface TerminalWriteInput {
   terminalId: string;
@@ -491,6 +508,25 @@ export interface TerminalPatchInput {
   font?: TerminalFontProfile;
   adminGroupCandidateIds?: TerminalActorId[];
   metadata?: Record<string, unknown>;
+}
+
+export interface TerminalComposedProductSurfaceState {
+  shellTerminalId: string;
+  terminalId: string;
+  shellSnapshotSeq: number;
+  cols: number;
+  rows: number;
+  bottomLine: string;
+  dialogueOpen: boolean;
+  dialoguePlacement: "left" | "right" | "floating" | null;
+  dialogueDraft: string;
+  managedLabel: string;
+  unreadLabel: string;
+  heartbeatLabel: string;
+  terminalLines: string[];
+  terminalRichLines?: ManagedTerminalSnapshot["richLines"];
+  cursor: ManagedTerminalSnapshot["cursor"];
+  scrollback: ManagedTerminalSnapshot["scrollback"];
 }
 
 export interface TerminalConfigView {

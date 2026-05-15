@@ -81,6 +81,8 @@ interface NativeModule {
   getCell(handle: NativeTerminalHandle, row: number, col: number): NativeCell
   getLine(handle: NativeTerminalHandle, row: number): NativeCell[]
   getLines(handle: NativeTerminalHandle): NativeCell[][]
+  getLinesRange?(handle: NativeTerminalHandle, startRow: number, rowCount: number): NativeCell[][]
+  getViewportLines?(handle: NativeTerminalHandle): NativeCell[][]
   getCursor(handle: NativeTerminalHandle): NativeCursor
   getMode(handle: NativeTerminalHandle, mode: string): boolean
   getTitle(handle: NativeTerminalHandle): string
@@ -299,6 +301,43 @@ export function createGhosttyNativeBackend(opts?: Partial<TerminalOptions>): Ter
     }
   }
 
+  function getLinesRange(startRow: number, rowCount: number): Cell[][] {
+    const native = loadGhosttyNative()
+    const h = ensureHandle()
+    const safeStart = Math.max(0, Math.trunc(startRow))
+    const safeRows = Math.max(1, Math.trunc(rowCount))
+    try {
+      const nativeRows =
+        typeof native.getLinesRange === "function"
+          ? native.getLinesRange(h, safeStart, safeRows)
+          : Array.from({ length: safeRows }, (_, index) => native.getLine(h, safeStart + index))
+      return nativeRows.map((row) => row.map(convertNativeCell))
+    } catch {
+      return []
+    }
+  }
+
+  function getViewportLines(): Cell[][] {
+    const native = loadGhosttyNative()
+    const h = ensureHandle()
+    try {
+      const nativeRows =
+        typeof native.getViewportLines === "function"
+          ? native.getViewportLines(h)
+          : (() => {
+              const scrollback = native.getScrollback(h)
+              return typeof native.getLinesRange === "function"
+                ? native.getLinesRange(h, scrollback.viewport_offset, scrollback.screen_lines)
+                : Array.from({ length: scrollback.screen_lines }, (_, index) =>
+                    native.getLine(h, scrollback.viewport_offset + index),
+                  )
+            })()
+      return nativeRows.map((row) => row.map(convertNativeCell))
+    } catch {
+      return []
+    }
+  }
+
   function getCursor(): CursorState {
     const native = loadGhosttyNative()
     const nc = native.getCursor(ensureHandle())
@@ -370,6 +409,8 @@ export function createGhosttyNativeBackend(opts?: Partial<TerminalOptions>): Ter
     getCell,
     getLine,
     getLines,
+    getLinesRange,
+    getViewportLines,
     getCursor,
     getMode,
     getTitle,

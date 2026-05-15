@@ -1,7 +1,11 @@
 import {
+  applyTerminalFramePatch,
+  createTerminalTransportRowCacheDecoder,
   decodeTerminalTransportServerMessage,
   encodeTerminalTransportClientMessage,
   type TerminalTransportClientMessage,
+  type TerminalTransportFramePayload,
+  type TerminalTransportRowCacheDecoder,
   type TerminalTransportServerMessage,
 } from "@agenter/terminal-transport-protocol";
 import { LitElement, html } from "lit";
@@ -27,10 +31,12 @@ import type {
   TerminalRendererAdapter,
   TerminalRendererSession,
 } from "./terminal-renderer-adapter";
-import { TERMINAL_PUBLIC_SCREEN_ATTRIBUTE } from "./terminal-renderer-adapter";
+import { TERMINAL_PUBLIC_SCREEN_ATTRIBUTE, TERMINAL_PUBLIC_SCROLL_ATTRIBUTE } from "./terminal-renderer-adapter";
 import { resolveTerminalScreenMetrics } from "./terminal-geometry";
 import type {
   TerminalViewConnectionState,
+  TerminalViewGeometryAuthorityDetail,
+  TerminalViewGeometryRole,
   TerminalViewPresentationReadyDetail,
   TerminalViewPresentationSettleReason,
   TerminalViewScreenMetrics,
@@ -44,8 +50,8 @@ const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 const DEFAULT_SCROLLBACK = 10_000;
 const utf8Encoder = new TextEncoder();
-const utf8Decoder = new TextDecoder();
 const MAX_TEXT_EVIDENCE_LENGTH = 200_000;
+const TERMINAL_TEXT_EVIDENCE_ATTRIBUTE = "data-terminal-text-evidence";
 
 const templateStyles = `
   :host {
@@ -169,6 +175,12 @@ export class TerminalViewElement extends LitElement {
   @property({ attribute: false }) accessor resolvedRenderer: TerminalResolvedRenderer | null = null;
   @property({ attribute: false }) accessor rendererReason = "";
   @property({ attribute: false }) accessor screenMetrics: TerminalViewScreenMetrics | null = null;
+  @property({ attribute: "geometry-role" }) accessor geometryRole: TerminalViewGeometryRole = "projection-only";
+  @property({ attribute: "geometry-order", type: Number }) accessor geometryOrder: number | undefined = undefined;
+  @property({ attribute: false }) accessor effectiveGeometryRole: TerminalViewGeometryRole = "projection-only";
+  @property({ attribute: false }) accessor transportAttachmentId = "";
+  @property({ attribute: false }) accessor geometryAuthorityAttachmentId = "";
+  @property({ attribute: false }) accessor geometryAuthorityReason = "";
   @property({ attribute: "projection-width", type: Number }) accessor projectionWidth = 0;
   @property({ attribute: "projection-height", type: Number }) accessor projectionHeight = 0;
   @property({ attribute: "projection-scale", type: Number }) accessor projectionScale = 1;
@@ -181,8 +193,17 @@ export class TerminalViewElement extends LitElement {
   private terminalSession: TerminalRendererSession | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private socket: WebSocket | null = null;
+  private latestLiveFrame: TerminalTransportFramePayload | null = null;
+  private rowCacheDecoder: TerminalTransportRowCacheDecoder = createTerminalTransportRowCacheDecoder();
   private hydratedSnapshotSeq = -1;
   private liveSnapshotHydrated = false;
+  private dirtyFrameSeq = 0;
+  private observedFrameSeq = 0;
+  private pullFrameInFlight = false;
+  private pullFrameTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastPullFrameAt = 0;
+  private pullDueNow = false;
+  private lastAppliedViewportStart: number | null = null;
   private lastSentResize: { cols: number; rows: number } | null = null;
   private stageWidth = 0;
   private stageHeight = 0;
@@ -191,11 +212,17 @@ export class TerminalViewElement extends LitElement {
   private firstUpdateFramePending = false;
   private stageResizeFrame = 0;
   private viewportInteractionDisposers: Array<() => void> = [];
+  private rendererScrollInteractionDisposers: Array<() => void> = [];
+  private boundRendererScrollSurface: HTMLElement | null = null;
+  private rendererScrollSyncSuppressed = false;
+  private rendererScrollSyncReleaseFrame = 0;
   private activeAppearanceKey = "";
   private lastResolvedAppearance: ResolvedTerminalAppearance | null = null;
   private rendererErrorMessage = "";
   private rendererSetupToken = 0;
   private textEvidenceBuffer = "";
+  private textEvidenceNode: HTMLSpanElement | null = null;
+  private pendingTerminalFocus = false;
   private lastResolvedRendererPreference: TerminalRendererPreference = DEFAULT_TERMINAL_RENDERER_PREFERENCE;
 
   // Canvas-first renderers such as ghostty-web do not surface visible terminal text
@@ -203,6 +230,12 @@ export class TerminalViewElement extends LitElement {
   // and end-to-end verification instead of falling back to renderer-private selectors.
   public get textEvidence(): string {
     return this.textEvidenceBuffer;
+  }
+
+  public override focus(options?: FocusOptions): void {
+    this.pendingTerminalFocus = true;
+    super.focus(options);
+    this.focusTerminalInput();
   }
 
   public requestViewportResize(input: { cols: number; rows: number }): boolean {
@@ -218,10 +251,37 @@ export class TerminalViewElement extends LitElement {
         rows,
       })
     ) {
+      this.dirtyFrameSeq = Math.max(this.dirtyFrameSeq, this.observedFrameSeq + 1);
+      this.pullDueNow = true;
       this.lastSentResize = { cols, rows };
+      this.schedulePullFrame();
       return true;
     }
     return false;
+  }
+
+  public requestViewportDelta(input: { deltaRows: number }): boolean {
+    const deltaRows = Math.trunc(input.deltaRows);
+    if (!Number.isFinite(deltaRows) || deltaRows === 0) {
+      return false;
+    }
+    return this.withSuppressedRendererScrollSync(() => {
+      return this.sendClientMessage({
+        type: "viewportDelta",
+        deltaRows,
+      });
+    });
+  }
+
+  public requestViewportTarget(input: { viewportStart: number }): boolean {
+    const viewportStart = Math.max(0, Math.trunc(input.viewportStart));
+    if (!Number.isFinite(viewportStart)) {
+      return false;
+    }
+    return this.sendClientMessage({
+      type: "viewportTarget",
+      viewportStart,
+    });
   }
 
   private scheduleAfterUpdate(callback: () => void): void {
@@ -245,6 +305,7 @@ export class TerminalViewElement extends LitElement {
     if (!this.hasAttribute("tabindex")) {
       this.tabIndex = 0;
     }
+    this.ensureTextEvidenceNode();
     this.upgradeProperty("transportUrl");
     this.upgradeProperty("liveTransportEnabled");
     this.upgradeProperty("terminalId");
@@ -253,6 +314,8 @@ export class TerminalViewElement extends LitElement {
     this.upgradeProperty("theme");
     this.upgradeProperty("cursor");
     this.upgradeProperty("font");
+    this.upgradeProperty("geometryRole");
+    this.upgradeProperty("geometryOrder");
     this.upgradeProperty("projectionWidth");
     this.upgradeProperty("projectionHeight");
     this.upgradeProperty("projectionScale");
@@ -269,9 +332,14 @@ export class TerminalViewElement extends LitElement {
       dispose();
     }
     this.viewportInteractionDisposers = [];
+    this.clearRendererScrollSurfaceBindings();
     if (this.stageResizeFrame !== 0) {
       cancelAnimationFrame(this.stageResizeFrame);
       this.stageResizeFrame = 0;
+    }
+    if (this.rendererScrollSyncReleaseFrame !== 0) {
+      cancelAnimationFrame(this.rendererScrollSyncReleaseFrame);
+      this.rendererScrollSyncReleaseFrame = 0;
     }
     this.disposeRendererSession();
     super.disconnectedCallback();
@@ -304,6 +372,14 @@ export class TerminalViewElement extends LitElement {
           return;
         }
         this.syncSocket();
+      });
+    }
+    if (changed.has("geometryRole") || changed.has("geometryOrder")) {
+      queueMicrotask(() => {
+        if (!this.isConnected) {
+          return;
+        }
+        this.syncGeometryAuthorityHandshake();
       });
     }
     if (changed.has("rendererPreference") || changed.has("theme") || changed.has("cursor") || changed.has("font")) {
@@ -531,7 +607,11 @@ export class TerminalViewElement extends LitElement {
       this.resolvedRenderer = resolution.resolvedRenderer;
       this.rendererReason = resolution.reason;
       this.bindViewportInteractionFocus();
+      this.bindRendererScrollSurface();
       this.syncMeasuredScreen();
+      if (this.pendingTerminalFocus || this.ownerDocument.activeElement === this) {
+        this.focusTerminalInput();
+      }
       if (this.snapshot) {
         const source = this.connectionState === "connected" ? "renderer" : "prop";
         const applied = this.hydrateSnapshot(this.snapshot, source, { force: true });
@@ -540,6 +620,7 @@ export class TerminalViewElement extends LitElement {
         }
       }
       await this.terminalSession.settlePresentation?.();
+      this.bindRendererScrollSurface();
       this.syncMeasuredScreen();
       this.dispatchPresentationReady(requiresRebuild ? "rebuild-session" : "initial-session-ready");
       return;
@@ -550,6 +631,7 @@ export class TerminalViewElement extends LitElement {
     if (this.activeAppearanceKey !== appearanceKey) {
       this.terminalSession.applyAppearance(appearance);
       await this.terminalSession.settlePresentation?.();
+      this.bindRendererScrollSurface();
       this.activeAppearanceKey = appearanceKey;
       this.lastResolvedAppearance = appearance;
       this.lastResolvedRendererPreference = this.rendererPreference;
@@ -565,12 +647,15 @@ export class TerminalViewElement extends LitElement {
 
   private disposeRendererSession(): void {
     this.rendererSetupToken += 1;
+    this.clearRendererScrollSurfaceBindings();
     this.terminalSession?.dispose();
     this.terminalSession = null;
+    this.rowCacheDecoder.reset();
     this.resolvedRenderer = null;
     this.rendererReason = "";
     this.activeAppearanceKey = "";
     this.lastResolvedAppearance = null;
+    this.lastAppliedViewportStart = null;
   }
 
   private upgradeProperty(
@@ -583,6 +668,8 @@ export class TerminalViewElement extends LitElement {
       | "theme"
       | "cursor"
       | "font"
+      | "geometryRole"
+      | "geometryOrder"
       | "projectionWidth"
       | "projectionHeight"
       | "projectionScale"
@@ -657,6 +744,115 @@ export class TerminalViewElement extends LitElement {
     bind("touchstart", { passive: true });
     bind("click", { passive: true });
     bind("focusin");
+    const handleWheel = (event: WheelEvent): void => {
+      const deltaRows = Math.trunc(event.deltaY);
+      if (!this.liveTransportEnabled || this.connectionState !== "connected" || deltaRows === 0) {
+        return;
+      }
+      const sent = this.requestViewportDelta({ deltaRows });
+      if (sent) {
+        event.preventDefault();
+      }
+    };
+    this.viewportHost.addEventListener("wheel", handleWheel, { passive: false });
+    this.viewportInteractionDisposers.push(() => {
+      this.viewportHost.removeEventListener("wheel", handleWheel);
+    });
+  }
+
+  private clearRendererScrollSurfaceBindings(): void {
+    for (const dispose of this.rendererScrollInteractionDisposers) {
+      dispose();
+    }
+    this.rendererScrollInteractionDisposers = [];
+    this.boundRendererScrollSurface = null;
+  }
+
+  private bindRendererScrollSurface(): void {
+    if (!this.viewportHost) {
+      this.clearRendererScrollSurfaceBindings();
+      return;
+    }
+    const scrollSurface = this.viewportHost.querySelector<HTMLElement>(`[${TERMINAL_PUBLIC_SCROLL_ATTRIBUTE}]`);
+    if (!scrollSurface) {
+      this.clearRendererScrollSurfaceBindings();
+      return;
+    }
+    if (this.boundRendererScrollSurface === scrollSurface && this.rendererScrollInteractionDisposers.length > 0) {
+      return;
+    }
+
+    this.clearRendererScrollSurfaceBindings();
+    const handleScroll = (): void => {
+      if (!this.liveTransportEnabled || this.connectionState !== "connected") {
+        return;
+      }
+      if (this.rendererScrollSyncSuppressed) {
+        return;
+      }
+      const viewportStart = this.resolveViewportStartFromRendererScrollSurface(scrollSurface);
+      if (viewportStart === null || viewportStart === this.lastAppliedViewportStart) {
+        return;
+      }
+      this.requestViewportTarget({ viewportStart });
+    };
+    scrollSurface.addEventListener("scroll", handleScroll, { passive: true });
+    this.rendererScrollInteractionDisposers.push(() => {
+      scrollSurface.removeEventListener("scroll", handleScroll);
+    });
+    this.boundRendererScrollSurface = scrollSurface;
+  }
+
+  private resolveViewportStartFromRendererScrollSurface(scrollSurface: HTMLElement): number | null {
+    const snapshot = this.snapshot;
+    if (!snapshot) {
+      return null;
+    }
+    const screenLines = Math.max(1, snapshot.scrollback.screenLines);
+    const maxViewportStart = Math.max(0, snapshot.scrollback.totalLines - screenLines);
+    if (maxViewportStart === 0) {
+      return 0;
+    }
+    const maxScrollTop = scrollSurface.scrollHeight - scrollSurface.clientHeight;
+    if (Number.isFinite(maxScrollTop) && maxScrollTop > 0) {
+      const ratio = Math.max(0, Math.min(1, scrollSurface.scrollTop / maxScrollTop));
+      return Math.max(0, Math.min(maxViewportStart, Math.round(ratio * maxViewportStart)));
+    }
+    const rowHeight =
+      this.screenMetrics && snapshot.rows > 0 ? this.screenMetrics.height / Math.max(1, snapshot.rows) : 0;
+    if (!Number.isFinite(rowHeight) || rowHeight <= 0) {
+      return null;
+    }
+    return Math.max(0, Math.min(maxViewportStart, Math.round(scrollSurface.scrollTop / rowHeight)));
+  }
+
+  private applyAuthoritativeViewport(viewportStart: number): void {
+    this.lastAppliedViewportStart = viewportStart;
+    this.withSuppressedRendererScrollSync(() => {
+      this.terminalSession?.applyViewport?.(viewportStart);
+    });
+  }
+
+  private withSuppressedRendererScrollSync<T>(callback: () => T): T {
+    this.rendererScrollSyncSuppressed = true;
+    let result!: T;
+    try {
+      result = callback();
+    } finally {
+      const release = () => {
+        this.rendererScrollSyncReleaseFrame = 0;
+        this.rendererScrollSyncSuppressed = false;
+      };
+      if (typeof requestAnimationFrame === "function") {
+        if (this.rendererScrollSyncReleaseFrame !== 0) {
+          cancelAnimationFrame(this.rendererScrollSyncReleaseFrame);
+        }
+        this.rendererScrollSyncReleaseFrame = requestAnimationFrame(release);
+      } else {
+        setTimeout(release, 0);
+      }
+    }
+    return result;
   }
 
   private focusTerminalInput(): void {
@@ -665,6 +861,7 @@ export class TerminalViewElement extends LitElement {
       return;
     }
     if (inputElement.ownerDocument.activeElement === inputElement) {
+      this.pendingTerminalFocus = false;
       return;
     }
     this.terminalSession.focus();
@@ -674,9 +871,13 @@ export class TerminalViewElement extends LitElement {
         return;
       }
       if (nextInputElement.ownerDocument.activeElement === nextInputElement) {
+        this.pendingTerminalFocus = false;
         return;
       }
       this.terminalSession.focus();
+      if (nextInputElement.ownerDocument.activeElement === nextInputElement) {
+        this.pendingTerminalFocus = false;
+      }
     });
   }
 
@@ -702,24 +903,92 @@ export class TerminalViewElement extends LitElement {
     }
     const geometryChanged = this.terminalSession.cols !== snapshot.cols || this.terminalSession.rows !== snapshot.rows;
     const force = options?.force === true;
+    const viewportChanged = this.lastAppliedViewportStart !== snapshot.scrollback.viewportOffset;
     if (source === "prop" && this.connectionState === "connected" && this.liveSnapshotHydrated) {
+      if (this.latestLiveFrame && this.snapshot !== this.latestLiveFrame) {
+        this.snapshot = this.latestLiveFrame;
+      }
       return false;
     }
-    if (!force && snapshot.seq <= this.hydratedSnapshotSeq && !geometryChanged) {
+    if (!force && snapshot.seq <= this.hydratedSnapshotSeq && !geometryChanged && !viewportChanged) {
       return false;
     }
     this.hydratedSnapshotSeq = Math.max(this.hydratedSnapshotSeq, snapshot.seq);
     this.terminalSession.setScrollback(resolveSnapshotScrollback(snapshot));
-    this.resizeTerminal(snapshot.cols, snapshot.rows);
-    this.terminalSession.reset();
-    const rendered = serializeSnapshot(snapshot);
     this.replaceTextEvidence(snapshot.lines.join("\n"));
-    if (rendered.length > 0) {
-      this.terminalSession.write(rendered);
+    if (force || geometryChanged) {
+      this.resizeTerminal(snapshot.cols, snapshot.rows);
+      this.terminalSession.reset();
+      const rendered = serializeSnapshot(snapshot);
+      if (rendered.length > 0) {
+        this.terminalSession.write(rendered);
+      }
     }
+    this.applyAuthoritativeViewport(snapshot.scrollback.viewportOffset);
     void this.terminalSession.settlePresentation?.();
     this.syncMeasuredScreen();
-    return true;
+    return force || geometryChanged || viewportChanged;
+  }
+
+  private applyLiveFrame(frame: TerminalTransportFramePayload): void {
+    this.latestLiveFrame = frame;
+    this.snapshot = frame;
+    const geometryChanged =
+      this.terminalSession === null ||
+      this.terminalSession.cols !== frame.cols ||
+      this.terminalSession.rows !== frame.rows;
+    if (!this.liveSnapshotHydrated || geometryChanged) {
+      this.liveSnapshotHydrated = this.hydrateSnapshot(frame, "transport") || this.liveSnapshotHydrated;
+      return;
+    }
+    this.hydratedSnapshotSeq = Math.max(this.hydratedSnapshotSeq, frame.seq);
+    this.replaceTextEvidence(frame.lines.join("\n"));
+    this.applyAuthoritativeViewport(frame.scrollback.viewportOffset);
+  }
+
+  private resolvePullFrameDelayMs(): number {
+    return this.dirtyFrameSeq > this.observedFrameSeq ? 50 : 1000;
+  }
+
+  private markFrameDirty(frameSeq: number): void {
+    this.dirtyFrameSeq = Math.max(this.dirtyFrameSeq, frameSeq);
+    this.schedulePullFrame();
+  }
+
+  private schedulePullFrame(): void {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN || this.connectionState !== "connected") {
+      return;
+    }
+    if (this.pullFrameInFlight) {
+      return;
+    }
+    if (this.pullFrameTimer) {
+      return;
+    }
+    const delayMs = this.resolvePullFrameDelayMs();
+    const elapsed = Date.now() - this.lastPullFrameAt;
+    const waitMs = this.pullDueNow || this.dirtyFrameSeq > this.observedFrameSeq ? 0 : Math.max(0, delayMs - elapsed);
+    this.pullFrameTimer = setTimeout(() => {
+      this.pullFrameTimer = null;
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN || this.connectionState !== "connected") {
+        return;
+      }
+      if (this.pullFrameInFlight) {
+        return;
+      }
+      this.pullFrameInFlight = true;
+      this.pullDueNow = false;
+      this.lastPullFrameAt = Date.now();
+      const sent = this.sendClientMessage({
+        type: "pullFrame",
+        lastAppliedFrameSeq: this.snapshot?.seq ?? 0,
+        cols: this.snapshot?.cols ?? this.terminalSession?.cols ?? DEFAULT_COLS,
+        rows: this.snapshot?.rows ?? this.terminalSession?.rows ?? DEFAULT_ROWS,
+      });
+      if (!sent) {
+        this.pullFrameInFlight = false;
+      }
+    }, waitMs);
   }
 
   private syncSocket(): void {
@@ -745,6 +1014,11 @@ export class TerminalViewElement extends LitElement {
       this.connectionState = "connected";
       this.errorMessage = "";
       this.liveSnapshotHydrated = false;
+      this.dirtyFrameSeq = Math.max(this.dirtyFrameSeq, this.snapshot?.seq ?? 0);
+      this.observedFrameSeq = Math.max(this.observedFrameSeq, this.snapshot?.seq ?? 0);
+      this.pullDueNow = true;
+      this.syncGeometryAuthorityHandshake();
+      this.schedulePullFrame();
     });
     socket.addEventListener("message", (event) => {
       this.handleSocketMessage(event.data);
@@ -773,7 +1047,24 @@ export class TerminalViewElement extends LitElement {
     }
     this.socket.close();
     this.socket = null;
+    this.rowCacheDecoder.reset();
+    this.observedFrameSeq = this.snapshot?.seq ?? 0;
+    this.pullDueNow = false;
     this.lastSentResize = null;
+    this.pullFrameInFlight = false;
+    if (this.pullFrameTimer) {
+      clearTimeout(this.pullFrameTimer);
+      this.pullFrameTimer = null;
+    }
+  }
+
+  private syncGeometryAuthorityHandshake(): void {
+    this.sendClientMessage({
+      type: "hello",
+      terminalId: this.terminalId || undefined,
+      geometryRole: this.geometryRole,
+      geometryOrder: this.geometryOrder,
+    });
   }
 
   private sendClientMessage(message: TerminalTransportClientMessage): boolean {
@@ -796,28 +1087,57 @@ export class TerminalViewElement extends LitElement {
       this.errorMessage = "invalid transport payload";
       return;
     }
-    if (message.type === "snapshot") {
-      const geometryChanged =
-        this.terminalSession === null ||
-        this.terminalSession.cols !== message.snapshot.cols ||
-        this.terminalSession.rows !== message.snapshot.rows;
-      if (!this.liveSnapshotHydrated || geometryChanged) {
-        this.snapshot = message.snapshot;
-        this.liveSnapshotHydrated = this.hydrateSnapshot(message.snapshot, "transport") || this.liveSnapshotHydrated;
-      } else {
-        this.hydratedSnapshotSeq = Math.max(this.hydratedSnapshotSeq, message.snapshot.seq);
-      }
+    if (message.type === "frameDirty") {
+      this.markFrameDirty(message.frameSeq);
       return;
     }
-    if (message.type === "outputBytes") {
-      this.appendTextEvidence(utf8Decoder.decode(message.data));
-      this.terminalSession?.write(message.data);
+    if (message.type === "frame") {
+      this.observedFrameSeq = Math.max(this.observedFrameSeq, message.frameSeq);
+      if (message.patch.type === "notModified") {
+        this.pullFrameInFlight = false;
+        this.schedulePullFrame();
+        return;
+      }
+      const nextFrame = applyTerminalFramePatch(
+        this.latestLiveFrame ?? this.snapshot,
+        message.patch,
+        message.frameSeq,
+        this.rowCacheDecoder,
+      );
+      this.pullFrameInFlight = false;
+      if (nextFrame) {
+        this.applyLiveFrame(nextFrame);
+      }
+      this.schedulePullFrame();
       return;
     }
     if (message.type === "status") {
       if (!message.running) {
         this.connectionState = "closed";
       }
+      return;
+    }
+    if (message.type === "helloAck") {
+      this.transportAttachmentId = message.attachmentId;
+      this.effectiveGeometryRole = message.effectiveGeometryRole;
+      this.geometryAuthorityAttachmentId = message.geometryAuthorityAttachmentId ?? "";
+      this.geometryAuthorityReason = message.authorityReason ?? "";
+      const detail: TerminalViewGeometryAuthorityDetail = {
+        terminalId: message.terminalId,
+        requestedGeometryRole: this.geometryRole,
+        effectiveGeometryRole: message.effectiveGeometryRole,
+        geometryOrder: message.geometryOrder,
+        transportAttachmentId: message.attachmentId,
+        geometryAuthorityAttachmentId: message.geometryAuthorityAttachmentId,
+        authorityReason: message.authorityReason,
+      };
+      this.dispatchEvent(
+        new CustomEvent<TerminalViewGeometryAuthorityDetail>("terminal-view-geometry-authority", {
+          bubbles: true,
+          composed: true,
+          detail,
+        }),
+      );
       return;
     }
     if (message.type === "error") {
@@ -854,14 +1174,7 @@ export class TerminalViewElement extends LitElement {
 
   private replaceTextEvidence(value: string): void {
     this.textEvidenceBuffer = this.clampTextEvidence(stripTerminalControlText(value));
-  }
-
-  private appendTextEvidence(value: string): void {
-    const next = stripTerminalControlText(value);
-    if (next.length === 0) {
-      return;
-    }
-    this.textEvidenceBuffer = this.clampTextEvidence(`${this.textEvidenceBuffer}${next}`);
+    this.syncTextEvidenceNode();
   }
 
   private clampTextEvidence(value: string): string {
@@ -869,6 +1182,41 @@ export class TerminalViewElement extends LitElement {
       return value;
     }
     return value.slice(-MAX_TEXT_EVIDENCE_LENGTH);
+  }
+
+  private ensureTextEvidenceNode(): HTMLSpanElement {
+    const existing = this.querySelector<HTMLSpanElement>(`[${TERMINAL_TEXT_EVIDENCE_ATTRIBUTE}]`);
+    if (existing) {
+      this.textEvidenceNode = existing;
+      this.syncTextEvidenceNode();
+      return existing;
+    }
+    const node = this.ownerDocument.createElement("span");
+    node.setAttribute(TERMINAL_TEXT_EVIDENCE_ATTRIBUTE, "true");
+    node.setAttribute("aria-live", "polite");
+    node.setAttribute("aria-atomic", "false");
+    node.style.position = "absolute";
+    node.style.width = "1px";
+    node.style.height = "1px";
+    node.style.padding = "0";
+    node.style.margin = "-1px";
+    node.style.overflow = "hidden";
+    node.style.clip = "rect(0, 0, 0, 0)";
+    node.style.clipPath = "inset(50%)";
+    node.style.border = "0";
+    node.style.whiteSpace = "pre";
+    this.appendChild(node);
+    this.textEvidenceNode = node;
+    this.syncTextEvidenceNode();
+    return node;
+  }
+
+  private syncTextEvidenceNode(): void {
+    const node = this.textEvidenceNode ?? (this.isConnected ? this.ensureTextEvidenceNode() : null);
+    if (!node) {
+      return;
+    }
+    node.textContent = this.textEvidenceBuffer;
   }
 }
 

@@ -50,6 +50,9 @@ export interface PendingInputOptions {
   pollMs?: number;
 }
 
+const exitCodeForLog = (input: { code: number | null; signal: number | string | null }): number =>
+  input.code ?? (input.signal ? 128 : 0);
+
 export class TerminalAdapter {
   private terminal: AgenticTerminal | null = null;
   private snapshot = createEmptySnapshot();
@@ -117,13 +120,18 @@ export class TerminalAdapter {
       this.snapshot = this.toSnapshot(render);
       this.emitSnapshot();
     });
-    this.terminal.onExit((code) => {
+    this.terminal.onExit((info) => {
       this.running = false;
+      const code = exitCodeForLog(info);
       this.logger.log({
         channel: "pty.out",
         level: code === 0 ? "info" : "warn",
         message: "terminal exited",
-        meta: { code: code ?? -1, terminalId: this.config.terminalId },
+        meta: {
+          code,
+          signal: info.signal === null ? "none" : String(info.signal),
+          terminalId: this.config.terminalId,
+        },
       });
       this.emitStatus();
     });
@@ -203,7 +211,12 @@ export class TerminalAdapter {
     if (!this.terminal) {
       return { ok: false, reason: "terminal-not-started" };
     }
-    const result = await this.terminal.enqueuePendingInput(input, options);
+    const result = await this.terminal.enqueuePendingInput(input, {
+      mode: "mixed",
+      wait: options.wait,
+      timeoutMs: options.timeoutMs,
+      pollMs: options.pollMs,
+    });
     if (!result.ok) {
       this.logger.log({
         channel: "error",

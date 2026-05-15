@@ -3,12 +3,11 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
     "lib": ["ESNext", "DOM"],
     "strict": true,
     "noEmit": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "@opentui/react",
-    "types": ["bun-types"],
+    "types": ["bun"],
     "skipLibCheck": true
   },
   "include": ["src/**/*", "test/**/*"]

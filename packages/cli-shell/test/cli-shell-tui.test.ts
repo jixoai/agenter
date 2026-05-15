@@ -1,0 +1,2480 @@
+import { describe, expect, mock, test } from "bun:test";
+import type {
+  AuthSessionOutput,
+  CachedResourceState,
+  GlobalRoomEntry,
+  GlobalRoomMessage,
+  GlobalRoomSnapshotOutput,
+  GlobalTerminalEntry,
+  HeartbeatGroupItem,
+  ProductDelegationRecord,
+  RuntimeClientState,
+  SessionEntry,
+} from "@agenter/client-sdk";
+import type {
+  TerminalTransportClientMessage,
+  TerminalTransportServerMessage,
+} from "@agenter/terminal-transport-protocol";
+import { KeyEvent } from "@opentui/core";
+import { createTestRenderer } from "@opentui/core/testing";
+
+import {
+  BackendScrollbarRenderable,
+  BackendFrameRenderable,
+  BackendTerminalFrameRenderable,
+  buildCliShellComposedSurface,
+  buildCliShellHostingContextId,
+  buildCliShellTuiModel,
+  CliShellDialogueBackend,
+  CliShellCoreApp,
+  createCliShellPerfTracer,
+  createTerminalCanvas,
+  formatCliShellDebugBarLine,
+  layoutCliShellTuiFrame,
+  measureTerminalText,
+  projectCliShellDialogueBackendFrame,
+  renderCanvasLines,
+  resolveCliShellShellScrollbarProjection,
+  resolveCliShellScrollbarPointerTarget,
+  resolveCliShellTerminalRegion,
+  resolveCliShellTranscriptPanelLayout,
+  resolveCliShellTuiInteractionLayout,
+  resolveCliShellTuiKeybindings,
+  routeCliShellKey,
+  routeCliShellMouseScroll,
+  routeCliShellPaste,
+  routeCliShellViewportTarget,
+  setCliShellDialogueDraft,
+  ShellTerminalViewRenderable,
+  submitCliShellDialogue,
+  writeCanvasStyledText,
+  type CliShellLiveTerminalTransportSessionFactory,
+  type CliShellManagedState,
+  type CliShellTuiStore,
+  type CliShellTuiViewState,
+} from "../src";
+import { createTestTransportSession } from "./test-transport-session";
+
+const createCached = <T,>(data: T): CachedResourceState<T> => ({
+  data,
+  loaded: true,
+  loading: false,
+  refreshing: false,
+  error: null,
+  refreshedAt: 0,
+});
+
+const normalizeAsciiLetters = (value: string): string => value.replace(/[^a-z]+/gi, "").toLowerCase();
+
+const createSession = (): SessionEntry => ({
+  id: "session-1",
+  name: "shell-assistant",
+  cwd: "/repo",
+  workspacePath: "/repo",
+  avatar: "shell-assistant",
+  avatarPrincipalId: "auth:shell-assistant",
+  createdAt: new Date(0).toISOString(),
+  updatedAt: new Date(0).toISOString(),
+  status: "running",
+  storageState: "active",
+  sessionRoot: "/tmp/session-1",
+  storeTarget: "global",
+});
+
+const createRoomEntry = (chatId: string): GlobalRoomEntry => ({
+  chatId,
+  kind: "room",
+  title: "shell-1",
+  owner: "ops",
+  participants: [{ id: "auth:user", label: "User" }],
+  metadata: {
+    product: "cli-shell",
+    resourceKey: "shell-1",
+  },
+  createdAt: 1,
+  updatedAt: 1,
+  focused: false,
+  accessRole: "admin",
+  accessToken: `tok:${chatId}`,
+});
+
+const createGlobalTerminalEntry = (terminalId: string, lines: string[]): GlobalTerminalEntry => ({
+  terminalId,
+  processKind: "shell",
+  backend: "xterm",
+  command: ["/bin/bash"],
+  launchCwd: "/repo",
+  workspace: null,
+  status: "IDLE",
+  processPhase: "running",
+  seq: 2,
+  snapshot: {
+    seq: 2,
+    timestamp: 20,
+    cols: 120,
+    rows: 39,
+    lines,
+    cursor: { x: 0, y: Math.max(0, lines.length - 1), visible: true },
+    scrollback: {
+      viewportOffset: Math.max(0, lines.length - 39),
+      totalLines: lines.length,
+      screenLines: 39,
+    },
+  },
+  focused: false,
+  icon: undefined,
+  configuredTitle: terminalId,
+  currentTitle: undefined,
+  currentPath: undefined,
+  shortcuts: undefined,
+  rendererPreference: "auto",
+  theme: "default-dark",
+  cursor: "block",
+  font: {
+    family: "monospace",
+    sizePx: 13,
+    lineHeight: 1.4,
+    letterSpacing: 0,
+    weight: "400",
+    weightBold: "700",
+    ligatures: false,
+  },
+  transportUrl: `ws://127.0.0.1/pty/${terminalId}`,
+  currentAdminId: null,
+  approvalTimeoutMs: 90_000,
+  pendingRequestCount: 0,
+  access: {
+    role: "admin",
+    accessToken: `tok:${terminalId}`,
+    participantId: "system:trusted-terminal-bootstrap",
+    currentAdmin: true,
+  },
+  actors: [],
+  metadata: {},
+});
+
+const createCliShellTerminal2Entry = (input: {
+  terminalId?: string;
+  shellTerminalId?: string;
+  lines?: string[];
+  cols?: number;
+  rows?: number;
+  metadata?: Record<string, unknown>;
+} = {}): GlobalTerminalEntry => {
+  const terminalId = input.terminalId ?? "shell-1:terminal-2";
+  const shellTerminalId = input.shellTerminalId ?? "shell-1:terminal-1";
+  const entry = createGlobalTerminalEntry(terminalId, input.lines ?? []);
+  return {
+    ...entry,
+    processKind: "product",
+    configuredTitle: terminalId,
+    metadata: {
+      terminalRuntimeKind: "composed",
+      composedShellTerminalId: shellTerminalId,
+      ...(input.metadata ?? {}),
+    },
+    snapshot: entry.snapshot
+      ? {
+          ...entry.snapshot,
+          cols: input.cols ?? entry.snapshot.cols,
+          rows: input.rows ?? entry.snapshot.rows,
+          scrollback: {
+            ...entry.snapshot.scrollback,
+            screenLines: input.rows ?? entry.snapshot.scrollback.screenLines,
+          },
+        }
+      : entry.snapshot,
+  };
+};
+
+const withoutTransportUrl = (entry: GlobalTerminalEntry): GlobalTerminalEntry => ({ ...entry, transportUrl: undefined });
+
+const createRoomMessage = (input: {
+  messageId: number;
+  senderActorId: NonNullable<GlobalRoomMessage["senderActorId"]>;
+  from: string;
+  content: string;
+  createdAt: number;
+  unreadActorIds?: GlobalRoomMessage["unreadActorIds"];
+}): GlobalRoomMessage => ({
+  rowId: input.messageId,
+  messageId: input.messageId,
+  chatId: "room-shell-1",
+  senderActorId: input.senderActorId,
+  from: input.from,
+  kind: "text",
+  content: input.content,
+  createdAt: input.createdAt,
+  updatedAt: input.createdAt,
+  readActorIds: [],
+  unreadActorIds: input.unreadActorIds ?? [],
+  metadata: {},
+  attachments: [],
+});
+
+const createRuntimeState = (input: {
+  heartbeat: HeartbeatGroupItem[];
+  lines: string[];
+  roomMessages?: GlobalRoomMessage[];
+  unread?: number;
+}): RuntimeClientState => {
+  const sessionId = "session-1";
+  const roomEntry = createRoomEntry("room-shell-1");
+  const terminalSnapshots = {
+    "shell-1": {
+      seq: 2,
+      timestamp: 20,
+      cols: 120,
+      rows: 39,
+      lines: input.lines,
+      cursor: { x: 0, y: Math.max(0, input.lines.length - 1), visible: true },
+      scrollback: {
+        viewportOffset: Math.max(0, input.lines.length - 39),
+        totalLines: input.lines.length,
+        screenLines: 39,
+      },
+    },
+  };
+  const roomSnapshot: GlobalRoomSnapshotOutput = {
+    channel: roomEntry,
+    items: input.roomMessages ?? [],
+    nextBefore: null,
+    hasMoreBefore: false,
+    headVersion: "1",
+  };
+
+  return {
+    connected: true,
+    connectionStatus: "connected",
+    profileService: null,
+    lastEventId: 2,
+    sessions: [createSession()],
+    runtimes: {
+      [sessionId]: {
+        sessionId,
+        started: true,
+        activityState: "active",
+        schedulerPhase: "waiting_commits",
+        stage: "idle",
+        focusedTerminalId: "shell-1",
+        focusedTerminalIds: ["shell-1"],
+        chatMessages: [],
+        terminalSnapshots,
+        terminalReads: {},
+        tasks: [],
+        schedulerState: null,
+        attention: undefined,
+        attentionDelivery: {
+          projections: [],
+          dispatches: [],
+          receipts: [],
+          watches: [],
+          effects: [],
+        },
+        schedulerSignals: {
+          user: { version: 0, timestamp: null },
+          terminal: { version: 0, timestamp: null },
+          task: { version: 0, timestamp: null },
+          attention: { version: 0, timestamp: null },
+        },
+        apiCallRecording: { enabled: false, refCount: 0 },
+        attentionApi: null,
+        terminals: [
+          {
+            terminalId: "shell-1",
+            status: "IDLE",
+            processPhase: "running",
+            lifecycleTransition: null,
+            seq: 2,
+            launchCwd: "/repo",
+          },
+        ],
+        modelCapabilities: {
+          streaming: true,
+          tools: true,
+          imageInput: false,
+          nativeCompact: false,
+          summarizeFallback: true,
+          fileUpload: false,
+          mcpCatalog: false,
+        },
+        activeCycle: null,
+      },
+    },
+    activityBySession: { [sessionId]: "active" },
+    terminalSnapshotsBySession: { [sessionId]: terminalSnapshots },
+    terminalReadsBySession: { [sessionId]: {} },
+    chatsBySession: { [sessionId]: [] },
+    messageChannelsBySession: {},
+    chatCyclesBySession: { [sessionId]: [] },
+    attentionBySession: {},
+    attentionDeliveryBySession: {
+      [sessionId]: {
+        projections: [],
+        dispatches: [],
+        receipts: [],
+        watches: [],
+        effects: [],
+      },
+    },
+    tasksBySession: { [sessionId]: [] },
+    recentWorkspaces: [],
+    workspaces: [],
+    globalAvatarCatalog: createCached([]),
+    workspaceAvatarCatalogByPath: {},
+    globalRooms: createCached([roomEntry]),
+    globalRoomSnapshotsById: { [roomEntry.chatId]: createCached(roomSnapshot) },
+    globalRoomGrantsById: {},
+    globalRoomAssetsById: {},
+    globalTerminals: createCached([createGlobalTerminalEntry("shell-1", input.lines)]),
+    globalTerminalGrantsById: {},
+    globalTerminalApprovalsById: {},
+    globalTerminalActivityById: {},
+    schedulerLogsBySession: { [sessionId]: [] },
+    observabilityTracesBySession: { [sessionId]: [] },
+    heartbeatGroupsBySession: { [sessionId]: createCached(input.heartbeat) },
+    modelCallsBySession: { [sessionId]: [] },
+    requestAuxBySession: { [sessionId]: [] },
+    modelCallDeltasBySession: { [sessionId]: [] },
+    apiCallsBySession: { [sessionId]: [] },
+    terminalActivityBySession: { [sessionId]: {} },
+    apiCallRecordingBySession: { [sessionId]: { enabled: false, refCount: 0 } },
+    notifications: [],
+    unreadBySession: { [sessionId]: input.unread ?? 3 },
+    unreadByBucket: {},
+  };
+};
+
+const createManagedState = (input: { shellName?: string; managed?: boolean } = {}): CliShellManagedState => ({
+  contextId: buildCliShellHostingContextId(input.shellName ?? "shell-1"),
+  hostingMatches: [],
+  hostingActive: false,
+  activeDelegation:
+    input.managed === true
+      ? ({
+          delegationId: "delegation:cli-shell:shell-1",
+          productId: "cli-shell",
+          resourceKey: "shell-1",
+          runtimeId: "runtime:shell-assistant",
+          avatarActorId: "auth:shell-assistant",
+          grantedByActorId: "auth:root-superadmin",
+          terminalId: "shell-1",
+          roomId: "room-shell-1",
+          enabledAt: 100,
+          expiresAt: 100 + 30 * 60 * 1000,
+          policy: { mode: "write" },
+          provenance: { source: "cli-shell" },
+          status: "active",
+        } as ProductDelegationRecord)
+      : null,
+  managed: input.managed ?? false,
+});
+
+interface TuiStoreHarness {
+  store: CliShellTuiStore;
+  replaceGlobalTerminals(nextTerminals: GlobalTerminalEntry[]): void;
+  inputs: Array<{ terminalId: string; text: string }>;
+  terminalConfigs: Array<{ terminalId: string; cols?: number; rows?: number }>;
+  sentMessages: Array<{ chatId: string; text: string }>;
+  lastPublishedComposedSurface: Parameters<CliShellTuiStore["publishGlobalTerminalComposedSurface"]>[0]["surface"] | null;
+  delegations: ProductDelegationRecord[];
+}
+
+const createTuiStore = (input: {
+  state: RuntimeClientState;
+  settingsContent?: string;
+}): TuiStoreHarness => {
+  let state = input.state;
+  const listeners = new Set<() => void>();
+  const inputs: Array<{ terminalId: string; text: string }> = [];
+  const terminalConfigs: Array<{ terminalId: string; cols?: number; rows?: number }> = [];
+  const sentMessages: Array<{ chatId: string; text: string }> = [];
+  let lastPublishedComposedSurface: TuiStoreHarness["lastPublishedComposedSurface"] = null;
+  let delegations: ProductDelegationRecord[] = [];
+  const authSession: AuthSessionOutput = {
+    token: "superadmin-token",
+    issuedAt: new Date(0).toISOString(),
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    claims: {
+      authId: "root-superadmin",
+      profileId: "profile-root",
+      admin: true,
+      superadmin: true,
+    },
+    profile: {
+      profileId: "profile-root",
+      identifiers: [{ kind: "email", value: "root@example.com" }],
+      metadata: {},
+      iconUrl: "",
+      isVirtual: false,
+    },
+  };
+
+  const emit = () => {
+    for (const listener of listeners) {
+      listener();
+    }
+  };
+
+  const getRoomSnapshot = (): GlobalRoomSnapshotOutput =>
+    state.globalRoomSnapshotsById["room-shell-1"]?.data ?? {
+      channel: createRoomEntry("room-shell-1"),
+      items: [],
+      nextBefore: null,
+      hasMoreBefore: false,
+      headVersion: "0",
+    };
+
+  const replaceGlobalTerminals = (nextTerminals: GlobalTerminalEntry[]): void => {
+    state = {
+      ...state,
+      globalTerminals: createCached(nextTerminals),
+    };
+    emit();
+  };
+
+  const store = {
+    getState: () => state,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    connect: async () => {},
+    disconnect: () => {},
+    hydrateSessionArtifacts: async () => undefined,
+    retainGlobalTerminals: () => () => {},
+    hydrateGlobalTerminals: async () => state.globalTerminals.data,
+    readGlobalTerminal: async (payload: { terminalId: string }) => {
+      const terminal = state.globalTerminals.data.find((entry) => entry.terminalId === payload.terminalId);
+      if (!terminal?.snapshot) {
+        throw new Error(`terminal snapshot missing: ${payload.terminalId}`);
+      }
+      return {
+        terminalId: payload.terminalId,
+        representation: "snapshot" as const,
+        snapshot: terminal.snapshot,
+      };
+    },
+    retainGlobalRoomSnapshot: () => () => {},
+    hydrateGlobalRoomSnapshot: async () => getRoomSnapshot(),
+    sendGlobalRoomMessage: async (payload: { chatId: string; text: string }) => {
+      sentMessages.push({ chatId: payload.chatId, text: payload.text });
+      const snapshot = getRoomSnapshot();
+      const nextMessage = createRoomMessage({
+        messageId: snapshot.items.length + 100,
+        senderActorId: "auth:user",
+        from: "you",
+        content: payload.text,
+        createdAt: 1_714_560_000_000 + snapshot.items.length * 60_000,
+      });
+      state = {
+        ...state,
+        globalRoomSnapshotsById: {
+          ...state.globalRoomSnapshotsById,
+          [payload.chatId]: createCached({ ...snapshot, items: [...snapshot.items, nextMessage] }),
+        },
+      };
+      emit();
+      return { ok: true };
+    },
+    inputGlobalTerminal: async (payload: { terminalId: string; text: string }) => {
+      inputs.push({ terminalId: payload.terminalId, text: payload.text });
+      return { ok: true };
+    },
+    setGlobalTerminalConfig: async (payload: { terminalId: string; cols?: number; rows?: number }) => {
+      terminalConfigs.push(payload);
+      return payload;
+    },
+    publishGlobalTerminalComposedSurface: async (payload: {
+      terminalId: string;
+      surface: NonNullable<TuiStoreHarness["lastPublishedComposedSurface"]>;
+    }) => {
+      const index = state.globalTerminals.data.findIndex((entry) => entry.terminalId === payload.terminalId);
+      if (index === -1) {
+        throw new Error(`terminal missing: ${payload.terminalId}`);
+      }
+      const current = state.globalTerminals.data[index]!;
+      const nextEntry: GlobalTerminalEntry = {
+        ...current,
+        seq: current.seq + 1,
+        metadata: {
+          ...current.metadata,
+          composedBottomLine: payload.surface.bottomLine,
+          composedDialogueOpen: payload.surface.dialogueOpen,
+          composedDialoguePlacement: payload.surface.dialoguePlacement,
+          composedDialogueDraft: payload.surface.dialogueDraft,
+          composedManagedLabel: payload.surface.managedLabel,
+          composedUnreadLabel: payload.surface.unreadLabel,
+          composedHeartbeatLabel: payload.surface.heartbeatLabel,
+          composedShellSnapshotSeq: payload.surface.shellSnapshotSeq,
+        },
+        snapshot: {
+          seq: (current.snapshot?.seq ?? 0) + 1,
+          timestamp: Date.now(),
+          cols: payload.surface.cols,
+          rows: payload.surface.rows,
+          lines: [...payload.surface.terminalLines],
+          richLines: payload.surface.terminalRichLines?.map((line) => ({
+            spans: line.spans.map((span) => ({ ...span })),
+          })),
+          cursor: { ...payload.surface.cursor },
+          scrollback: { ...payload.surface.scrollback },
+        },
+      };
+      lastPublishedComposedSurface = structuredClone(payload.surface);
+      state = {
+        ...state,
+        globalTerminals: createCached(
+          state.globalTerminals.data.map((entry, entryIndex) => (entryIndex === index ? nextEntry : entry)),
+        ),
+      };
+      emit();
+      return nextEntry;
+    },
+    readSettings: async () => ({
+      path: "/tmp/settings.json",
+      content: input.settingsContent ?? "",
+      mtimeMs: 1,
+    }),
+    getAuthSession: async () => authSession,
+    grantGlobalTerminalWriteLease: async (payload: { terminalId: string; participantId: string; durationMs: number }) => ({
+      leaseId: `lease:${payload.terminalId}:${payload.participantId}`,
+      participantId: payload.participantId,
+      expiresAt: Date.now() + payload.durationMs,
+    }),
+    revokeGlobalTerminalWriteLease: async () => ({ ok: true as const, revokedCount: 1 }),
+    queryAttention: async () => [],
+    commitAttention: async (payload: { contextId: string }) => ({ commit: payload }),
+    settleAttention: async (payload: { contextId: string }) => ({ commit: payload }),
+    listProductDelegations: async () => delegations,
+    createProductDelegation: async (payload: Omit<ProductDelegationRecord, "delegationId" | "status">) => {
+      const delegation = {
+        ...payload,
+        delegationId: `delegation:${payload.productId}:${payload.resourceKey}`,
+        status: "active",
+      } as ProductDelegationRecord;
+      delegations = [...delegations.filter((item) => item.status !== "active"), delegation];
+      return delegation;
+    },
+    revokeProductDelegation: async (payload: { delegationId: string; revokedAt: number; revokedReason: string }) => {
+      const delegation = delegations.find((item) => item.delegationId === payload.delegationId);
+      if (!delegation) {
+        throw new Error("delegation not found");
+      }
+      const revoked = { ...delegation, status: "revoked", revokedAt: payload.revokedAt, revokedReason: payload.revokedReason } as ProductDelegationRecord;
+      delegations = delegations.map((item) => (item.delegationId === payload.delegationId ? revoked : item));
+      return revoked;
+    },
+  };
+
+  return {
+    store: store as unknown as CliShellTuiStore,
+    replaceGlobalTerminals,
+    inputs,
+    terminalConfigs,
+    sentMessages,
+    get lastPublishedComposedSurface() {
+      return lastPublishedComposedSurface;
+    },
+    get delegations() {
+      return delegations;
+    },
+  };
+};
+
+const createTestKeyEvent = (input: {
+  name: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  super?: boolean;
+  shift?: boolean;
+  option?: boolean;
+  sequence?: string;
+  raw?: string;
+}): KeyEvent =>
+  new KeyEvent({
+    name: input.name,
+    ctrl: input.ctrl ?? false,
+    meta: input.meta ?? false,
+    super: input.super ?? false,
+    shift: input.shift ?? false,
+    option: input.option ?? false,
+    sequence: input.sequence ?? "",
+    raw: input.raw ?? input.sequence ?? "",
+    number: false,
+    eventType: "press",
+    source: "raw",
+  });
+
+interface CoreAppTestSetup {
+  renderer: Awaited<ReturnType<typeof createTestRenderer>>["renderer"];
+  mockInput: Awaited<ReturnType<typeof createTestRenderer>>["mockInput"];
+  mockMouse: Awaited<ReturnType<typeof createTestRenderer>>["mockMouse"];
+  renderOnce: Awaited<ReturnType<typeof createTestRenderer>>["renderOnce"];
+  captureCharFrame: Awaited<ReturnType<typeof createTestRenderer>>["captureCharFrame"];
+  captureSpans: Awaited<ReturnType<typeof createTestRenderer>>["captureSpans"];
+  resize: Awaited<ReturnType<typeof createTestRenderer>>["resize"];
+  app: CliShellCoreApp;
+  destroy(): void;
+}
+
+const createCoreAppTestSetup = async (input: {
+  state: RuntimeClientState;
+  width?: number;
+  height?: number;
+  fallbackTerminalId?: string;
+  debug?: boolean;
+  createTransportSession?: CliShellLiveTerminalTransportSessionFactory;
+  harness?: TuiStoreHarness;
+}): Promise<CoreAppTestSetup> => {
+  const testRenderer = await createTestRenderer({
+    width: input.width ?? 80,
+    height: input.height ?? 24,
+    useMouse: true,
+    exitOnCtrlC: false,
+  });
+  const harness = input.harness ?? createTuiStore({ state: input.state });
+  const app = new CliShellCoreApp({
+    renderer: testRenderer.renderer,
+    store: harness.store,
+    sessionId: "session-1",
+    shellName: "shell-1",
+    fallbackTerminalId: input.fallbackTerminalId ?? "shell-1",
+    roomChatId: "room-shell-1",
+    roomAccessToken: "tok:room-shell-1",
+    runtimeId: "runtime:shell-assistant",
+    avatarActorId: "auth:shell-assistant",
+    managed: createManagedState(),
+    keybindings: resolveCliShellTuiKeybindings(null),
+    onQuit: () => {},
+    debug: input.debug ?? false,
+    createTransportSession: input.createTransportSession,
+  });
+  app.start();
+  return {
+    ...testRenderer,
+    app,
+    destroy() {
+      app.dispose();
+      testRenderer.renderer.destroy();
+    },
+  };
+};
+
+const createShellTerminalViewTestSetup = async (input: ConstructorParameters<typeof ShellTerminalViewRenderable>[1]) => {
+  const setup = await createTestRenderer({
+    width: typeof input.width === "number" ? input.width : 80,
+    height: typeof input.height === "number" ? input.height : 24,
+    useMouse: true,
+    exitOnCtrlC: false,
+  });
+  const view = new ShellTerminalViewRenderable(setup.renderer, input);
+  setup.renderer.root.add(view);
+  view.focus();
+  return { ...setup, view };
+};
+
+const createBackendScrollbarTestSetup = async (input: ConstructorParameters<typeof BackendScrollbarRenderable>[1]) => {
+  const setup = await createTestRenderer({
+    width: typeof input.width === "number" ? input.width : 1,
+    height: typeof input.height === "number" ? input.height : 10,
+    useMouse: true,
+    exitOnCtrlC: false,
+  });
+  const scrollbar = new BackendScrollbarRenderable(setup.renderer, input);
+  setup.renderer.root.add(scrollbar);
+  scrollbar.focus();
+  return { ...setup, scrollbar };
+};
+
+const createBackendTerminalFrameTestSetup = async (
+  input: ConstructorParameters<typeof BackendTerminalFrameRenderable>[1],
+) => {
+  const setup = await createTestRenderer({
+    width: typeof input.width === "number" ? input.width : 80,
+    height: typeof input.height === "number" ? input.height : 24,
+    useMouse: true,
+    exitOnCtrlC: false,
+  });
+  const frame = new BackendTerminalFrameRenderable(setup.renderer, input);
+  setup.renderer.root.add(frame);
+  frame.focusTerminal();
+  return { ...setup, frame };
+};
+
+describe("Feature: cli-shell interactive TUI", () => {
+  test("Scenario: Given debug mode is enabled When the debug bar formats frame timing Then the line separates paint cost from frame gap facts", () => {
+    const line = formatCliShellDebugBarLine(
+      {
+        dirtyAgoMs: 1200,
+        pullMs: 18,
+        patch: "rows:4",
+        frameBytes: 16_384,
+        diffBytes: 512,
+        applyMs: 3,
+        renderMs: 16,
+        frameGapMs: 120,
+        fps: 61,
+        dirtyQueue: 1,
+        pullQueue: 0,
+        renderQueue: 2,
+        skippedFrames: 3,
+        paintCells: "10r/12s/240g",
+        viewport: "20-40/80",
+        frameSource: "terminal-2-composed",
+        mode: "active",
+      },
+      260,
+    );
+
+    expect(line).toContain("dirty 1200ms");
+    expect(line).toContain("pull 18ms");
+    expect(line).toContain("patch rows:4");
+    expect(line).toContain("bytes f16.0kb/d512b");
+    expect(line).toContain("paint 16ms");
+    expect(line).toContain("gap 120ms");
+    expect(line).toContain("q d1/p0/r2");
+    expect(line).toContain("skip 3");
+    expect(line).toContain("cells 10r/12s/240g");
+    expect(line).toContain("src terminal-2-composed");
+    expect(line).toContain("vp 20-40/80");
+    expect(line).toContain("mode active");
+  });
+
+  test("Scenario: Given shell-terminal-view receives one projection update When content and selection bounds change together Then it repaints the backend canvas once", async () => {
+    let paintCalls = 0;
+    class CountingBackendFrameRenderable extends BackendFrameRenderable {
+      protected override paintBackendFrame() {
+        paintCalls += 1;
+        return super.paintBackendFrame();
+      }
+    }
+    const setup = await createTestRenderer({
+      width: 20,
+      height: 3,
+      useMouse: true,
+      exitOnCtrlC: false,
+    });
+    const view = new CountingBackendFrameRenderable(setup.renderer, {
+      width: 20,
+      height: 3,
+      lines: [{ spans: [{ text: "old" }] }],
+    });
+    setup.renderer.root.add(view);
+    paintCalls = 0;
+
+    const stats = view.updateProjection({
+      lines: [{ spans: [{ text: "new line" }] }, { spans: [{ text: "dialogue" }] }],
+      selectionRegion: { x: 0, y: 0, width: 8, height: 2 },
+      selectionRegions: [
+        { owner: "terminal", row: 0, col: 0, width: 8, height: 2 },
+        { owner: "dialogue", row: 0, col: 10, width: 8, height: 2 },
+      ],
+    });
+
+    expect(paintCalls).toBe(1);
+    expect(stats.rows).toBe(2);
+    expect(stats.spans).toBe(2);
+    expect(stats.glyphs).toBe("new line".length + "dialogue".length);
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("new line");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given shell-terminal-view rich spans When rendered through OpenTUI core Then shell body stays cell-locked without host text-flow re-layout", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 8,
+      height: 2,
+      lines: [
+        {
+          spans: [
+            { text: "$ ", fg: "#00ff00" },
+            { text: "ls", fg: "#ffffff", bg: "#333333", bold: true },
+          ],
+        },
+        {
+          spans: [{ text: "█", fg: "#111111", bg: "#f3f6fb" }],
+        },
+      ],
+    });
+
+    await setup.renderOnce();
+    const captured = setup.captureSpans();
+    expect(captured.lines[0]?.spans.map((span) => span.text)).toEqual(["$ ", "ls", "    "]);
+    expect(captured.lines[0]?.spans[0]?.fg.toString()).toBe("rgba(0.00, 1.00, 0.00, 1.00)");
+    expect(captured.lines[0]?.spans[1]?.bg.toString()).toBe("rgba(0.20, 0.20, 0.20, 1.00)");
+    expect(captured.lines[1]?.spans[0]?.text).toBe("█");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given CliShellCoreApp debug mode is enabled When the product renders Then the debug bar owns the top row and shell projection starts below it", async () => {
+    const previousTraceEnv = process.env.AGENTER_CLI_SHELL_TRACE;
+    const tracePath = `/tmp/agenter-cli-shell-debug-bar-${Date.now()}-${Math.random().toString(36).slice(2)}.ndjson`;
+    process.env.AGENTER_CLI_SHELL_TRACE = tracePath;
+    try {
+      const shellLines = ["debug-shell-row", "shell-1:~/project $"];
+      const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages: [], unread: 0 });
+      const harness = createTuiStore({ state });
+      const setup = await createCoreAppTestSetup({ state, harness, width: 80, height: 12, debug: true });
+
+      await setup.renderOnce();
+      const rows = setup.captureCharFrame().split("\n");
+      expect(rows[0]).toContain("dirty");
+      expect(rows[0]).toContain("pull");
+      expect(rows[1]).toContain("debug-shell-row");
+      setup.destroy();
+    } finally {
+      if (previousTraceEnv === undefined) {
+        delete process.env.AGENTER_CLI_SHELL_TRACE;
+      } else {
+        process.env.AGENTER_CLI_SHELL_TRACE = previousTraceEnv;
+      }
+      await Bun.file(tracePath).delete().catch(() => undefined);
+    }
+  });
+
+  test("Scenario: Given CliShellCoreApp debug mode is disabled When the product renders Then shell projection keeps the top row without the debug bar", async () => {
+    const shellLines = ["normal-shell-row", "shell-1:~/project $"];
+    const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages: [], unread: 0 });
+    const harness = createTuiStore({ state });
+    const setup = await createCoreAppTestSetup({ state, harness, width: 80, height: 12 });
+
+    await setup.renderOnce();
+    const rows = setup.captureCharFrame().split("\n");
+    expect(rows[0]).toContain("normal-shell-row");
+    expect(rows[0]).not.toContain("dirty");
+    setup.destroy();
+  });
+
+  test("Scenario: Given composed terminal has no live transport When CliShellCoreApp renders repeatedly Then mirror lifecycle does not schedule self-feeding terminal revisions", async () => {
+    const previousTraceEnv = process.env.AGENTER_CLI_SHELL_TRACE;
+    const tracePath = `/tmp/agenter-cli-shell-no-transport-${Date.now()}-${Math.random().toString(36).slice(2)}.ndjson`;
+    process.env.AGENTER_CLI_SHELL_TRACE = tracePath;
+    try {
+      const shellEntry = withoutTransportUrl(createGlobalTerminalEntry("shell-1:terminal-1", ["shell source"]));
+      const visibleEntry = withoutTransportUrl(
+        createCliShellTerminal2Entry({
+          terminalId: "shell-1:terminal-2",
+          shellTerminalId: "shell-1:terminal-1",
+          lines: ["composed product"],
+          cols: 80,
+          rows: 12,
+        }),
+      );
+      const state = createRuntimeState({ heartbeat: [], lines: [], roomMessages: [], unread: 0 });
+      state.globalTerminals = createCached([shellEntry, visibleEntry]);
+      const harness = createTuiStore({ state });
+      const setup = await createCoreAppTestSetup({
+        state,
+        harness,
+        fallbackTerminalId: "shell-1:terminal-2",
+        width: 80,
+        height: 12,
+      });
+
+      await setup.renderOnce();
+      await setup.renderOnce();
+      await setup.renderOnce();
+      setup.destroy();
+
+      const lines = (await Bun.file(tracePath).text()).trim().split("\n").filter(Boolean);
+      const events = lines.map((line) => JSON.parse(line) as { kind: string; detail?: { reason?: string } });
+      const liveRevisionStarts = events.filter(
+        (event) => event.kind === "render-now-started" && event.detail?.reason === "live-terminal-revision",
+      );
+      expect(liveRevisionStarts.length).toBeLessThanOrEqual(1);
+    } finally {
+      if (previousTraceEnv === undefined) {
+        delete process.env.AGENTER_CLI_SHELL_TRACE;
+      } else {
+        process.env.AGENTER_CLI_SHELL_TRACE = previousTraceEnv;
+      }
+      await Bun.file(tracePath).delete().catch(() => undefined);
+    }
+  });
+
+  test("Scenario: Given shell-terminal-view projected cells When the user drags across terminal text Then native selection returns projected text without mutating backend truth", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 20,
+      height: 3,
+      lines: [
+        { spans: [{ text: "$ echo hello" }] },
+        { spans: [{ text: "你好 emoji 🙂 ok" }] },
+        { spans: [{ text: "shell prompt" }] },
+      ],
+    });
+
+    await setup.renderOnce();
+    await setup.mockMouse.drag(0, 0, 7, 1);
+    await setup.renderOnce();
+    expect(setup.renderer.getSelection()?.getSelectedText()).toBe("$ echo hello\n你好 emo");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given shell-terminal-view renders wide glyphs When selection highlights Chinese cells Then glyph width stays two cells and foreground color is not rewritten", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 10,
+      height: 1,
+      lines: [{ spans: [{ text: "你a", fg: "#00ff00", bg: "#111111" }] }],
+    });
+
+    await setup.renderOnce();
+    let spans = setup.captureSpans().lines[0]?.spans ?? [];
+    expect(spans.map((span) => span.text).join("").replace(/\s+/g, "")).toContain("你a");
+    expect(spans.find((span) => span.text.includes("你a"))?.width).toBe(3);
+    expect(measureTerminalText("你a")).toBe(3);
+
+    await setup.mockMouse.drag(0, 0, 1, 0);
+    await setup.renderOnce();
+    spans = setup.captureSpans().lines[0]?.spans ?? [];
+    const selectedSpan = spans.find((span) => span.text.includes("你"));
+    expect(selectedSpan?.fg.toString()).toBe("rgba(0.00, 1.00, 0.00, 1.00)");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given shell-terminal-view projected cells When the user only clicks terminal text Then native selection stays empty until a real drag happens", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 20,
+      height: 2,
+      lines: [{ spans: [{ text: "$ echo hello" }] }, { spans: [{ text: "shell prompt" }] }],
+    });
+
+    await setup.renderOnce();
+    await setup.mockMouse.click(2, 0);
+    await setup.renderOnce();
+    expect(setup.renderer.getSelection()?.getSelectedText() ?? "").toBe("");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given shell-terminal-view has separate shell and dialogue regions When dragging starts inside dialogue Then selection stays inside dialogue text", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 20,
+      height: 4,
+      selectionRegions: [
+        { owner: "terminal", row: 0, col: 0, width: 8, height: 4 },
+        { owner: "dialogue", row: 0, col: 10, width: 10, height: 4 },
+      ],
+      lines: [
+        { spans: [{ text: "shell-00  dlg-alpha" }] },
+        { spans: [{ text: "shell-11  dlg-beta" }] },
+        { spans: [{ text: "shell-22  dlg-gamma" }] },
+      ],
+    });
+
+    await setup.renderOnce();
+    await setup.mockMouse.drag(10, 0, 19, 1);
+    await setup.renderOnce();
+    expect(setup.view.getSelectionOwner()).toBe("dialogue");
+    expect(setup.renderer.getSelection()?.getSelectedText()).toBe("dlg-alpha\ndlg-beta");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given terminal-chat backend frame is active When dialogue text wraps and scrolls Then cursor selection and copy stay inside dialogue truth with hidden scrollbar chrome", async () => {
+    const messages = Array.from({ length: 8 }, (_, index) =>
+      createRoomMessage({
+        messageId: index + 1,
+        senderActorId: index % 2 === 0 ? "auth:shell-assistant" : "auth:user",
+        from: index % 2 === 0 ? "shell-assistant" : "you",
+        content: `dialogue message ${index} with 中文内容 wrapping around the panel`,
+        createdAt: Date.parse("2026-05-08T10:00:00+08:00") + index * 60_000,
+      }),
+    );
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["shell-row"],
+      roomMessages: messages,
+      unread: 0,
+    });
+    const model = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: true,
+        focusTarget: "dialogue",
+        activeFocusTarget: "dialogue",
+        requestedPlacement: "right",
+        dialogueDraft: "中文 draft input wraps here",
+        dialogueScrollOffset: 2,
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings: resolveCliShellTuiKeybindings(null),
+      width: 80,
+      height: 24,
+    });
+    const backend = new CliShellDialogueBackend();
+    const frame = backend.project({
+      layout: { width: 30, height: 10 },
+      model,
+    });
+
+    expect(frame.chrome.scrollbar).toBe("hidden");
+    expect(frame.viewport.offsetFromBottom).toBeGreaterThan(0);
+    expect(frame.viewport.totalRows).toBeGreaterThan(frame.viewport.visibleRows);
+    expect(frame.cursor.visible).toBe(true);
+    expect(frame.lines.join("\n")).toContain("中文");
+
+    const setup = await createShellTerminalViewTestSetup({
+      width: 40,
+      height: 10,
+      lines: frame.styledLines,
+      selectionRegions: [{ owner: "dialogue", row: 0, col: 0, width: 30, height: 10 }],
+      selectionSources: [{ owner: "dialogue", row: 0, col: 0, width: 30, height: 10, lines: frame.styledLines }],
+    });
+    await setup.renderOnce();
+    await setup.mockMouse.drag(1, 2, 18, 3);
+    await setup.renderOnce();
+    expect(setup.view.getSelectionOwner()).toBe("dialogue");
+    const selectedText = setup.renderer.getSelection()?.getSelectedText() ?? "";
+    expect(selectedText.length).toBeGreaterThan(0);
+    expect(selectedText).not.toContain("shell-row");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given cli-shell frame layout When terminal content is projected Then shell offscreen frame owns the scrollbar cells", () => {
+    const model = buildCliShellTuiModel({
+      state: createRuntimeState({
+        heartbeat: [],
+        lines: Array.from({ length: 12 }, (_, index) => `line-${index}`),
+        roomMessages: [],
+        unread: 0,
+      }),
+      projection: { roomSnapshot: null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: false,
+        focusTarget: "terminal",
+        requestedPlacement: "smart",
+        dialogueDraft: "",
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings: resolveCliShellTuiKeybindings(null),
+      width: 12,
+      height: 5,
+    });
+
+    const frame = layoutCliShellTuiFrame({ model, width: 12, height: 5, renderToolbar: false });
+    expect(frame.lines.some((line) => line.endsWith("█") || line.endsWith("░"))).toBe(true);
+    expect(resolveCliShellTuiInteractionLayout({ model, width: 12, height: 5 }).terminalScrollbarRegion).toEqual({
+      row: 0,
+      col: 11,
+      width: 1,
+      height: 4,
+    });
+    const projection = resolveCliShellShellScrollbarProjection({ model, width: 12, height: 5 });
+    expect(projection?.region).toEqual({ row: 0, col: 11, width: 1, height: 4 });
+    expect(projection?.state.scrollSize).toBeGreaterThan(projection?.state.viewportSize ?? 0);
+    expect(resolveCliShellScrollbarPointerTarget({ projection: projection!, row: 3 })).toBeGreaterThan(0);
+  });
+
+  test("Scenario: Given a shell selection exists When copy shortcut is pressed Then cli-shell copies the projected shell text through OSC52", async () => {
+    const exerciseCopyShortcut = async (shortcut: { meta?: boolean; super?: boolean; ctrl?: boolean; shift?: boolean }) => {
+      const state = createRuntimeState({ heartbeat: [], lines: ["$ echo hello", "copy target"], roomMessages: [], unread: 0 });
+      const harness = createTuiStore({ state });
+      const setup = await createCoreAppTestSetup({ state, harness, width: 40, height: 10 });
+      const copyCalls: string[] = [];
+      setup.renderer.copyToClipboardOSC52 = mock((text: string) => {
+        copyCalls.push(text);
+        return true;
+      });
+
+      await setup.renderOnce();
+      await setup.mockMouse.drag(0, 0, 11, 0);
+      await setup.renderOnce();
+      if (shortcut.ctrl && shortcut.shift) {
+        setup.renderer.keyInput.processParsedKey({
+          name: "c",
+          ctrl: true,
+          meta: false,
+          shift: true,
+          option: false,
+          sequence: "\u001b[27;6;99~",
+          raw: "\u001b[27;6;99~",
+          number: false,
+          eventType: "press",
+          source: "raw",
+        });
+      } else if (shortcut.super) {
+        setup.renderer.keyInput.processParsedKey({
+          name: "c",
+          ctrl: false,
+          meta: false,
+          super: true,
+          shift: false,
+          option: false,
+          sequence: "c",
+          raw: "c",
+          number: false,
+          eventType: "press",
+          source: "raw",
+        });
+      } else {
+        setup.mockInput.pressKey("c", shortcut);
+      }
+      setup.destroy();
+      return copyCalls;
+    };
+
+    expect(await exerciseCopyShortcut({ meta: true })).toEqual(["$ echo hello"]);
+    expect(await exerciseCopyShortcut({ super: true })).toEqual(["$ echo hello"]);
+    expect(await exerciseCopyShortcut({ ctrl: true, shift: true })).toEqual(["$ echo hello"]);
+  });
+
+  test("Scenario: Given adjacent styled spans When projecting one terminal row Then later spans keep their own columns instead of being padded over", () => {
+    const canvas = createTerminalCanvas(6, 1);
+    writeCanvasStyledText(canvas, {
+      row: 0,
+      col: 0,
+      spans: [
+        { text: "two" },
+        { text: "X" },
+      ],
+      width: 6,
+    });
+    expect(renderCanvasLines(canvas)[0]).toBe("twoX  ");
+  });
+
+  test("Scenario: Given backend-owned composed surface is built When dialogue is open Then terminal and dialogue are mixed into one backend projection", () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell", "shell-1:~/project $"],
+      roomMessages: [
+        createRoomMessage({
+          messageId: 1,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: "ready",
+          createdAt: Date.parse("2026-05-08T10:00:00+08:00"),
+        }),
+      ],
+      unread: 0,
+    });
+    const model = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: true,
+        focusTarget: "dialogue",
+        activeFocusTarget: "dialogue",
+        requestedPlacement: "right",
+        dialogueDraft: "status?",
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings: resolveCliShellTuiKeybindings(null),
+      width: 80,
+      height: 24,
+    });
+
+    const surface = buildCliShellComposedSurface({
+      shellTerminalId: "shell-1:terminal-1",
+      terminalId: "shell-1:terminal-2",
+      model,
+      width: 80,
+      height: 24,
+    });
+    expect(surface.dialogueOpen).toBe(true);
+    expect(surface.dialoguePlacement).toBe("right");
+    expect(surface.dialogueDraft).toBe("status?");
+    expect(surface.terminalLines.join("\n")).toContain("┌layout");
+    expect(surface.terminalLines.join("\n")).toContain("[Send]");
+  });
+
+  test("Scenario: Given terminal-chat backend is active When terminal-2 composes dialogue Then it consumes the backend frame instead of owning a replacement dialogue algorithm", () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell", "shell-1:~/project $"],
+      roomMessages: [
+        createRoomMessage({
+          messageId: 1,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: "backend-owned dialogue line",
+          createdAt: Date.parse("2026-05-08T10:00:00+08:00"),
+        }),
+      ],
+      unread: 0,
+    });
+    const model = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: true,
+        focusTarget: "dialogue",
+        activeFocusTarget: "dialogue",
+        requestedPlacement: "right",
+        dialogueDraft: "backend draft",
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings: resolveCliShellTuiKeybindings(null),
+      width: 80,
+      height: 24,
+    });
+    const surface = buildCliShellComposedSurface({
+      shellTerminalId: "shell-1:terminal-1",
+      terminalId: "shell-1:terminal-2",
+      model,
+      width: 80,
+      height: 24,
+    });
+    const backendFrame = projectCliShellDialogueBackendFrame({
+      layout: { width: 44, height: 23 },
+      model,
+    });
+
+    for (const backendLine of backendFrame.lines.filter((line) => line.trim().length > 0)) {
+      expect(surface.terminalLines.some((line) => line.includes(backendLine.trim()))).toBe(true);
+    }
+    expect(backendFrame.chrome.scrollbar).toBe("hidden");
+    expect(surface.terminalLines.join("\n")).toContain("backend draft");
+  });
+
+  test("Scenario: Given terminal-2 is the visible cli-shell surface When CliShellCoreApp renders and opens dialogue Then backend-owned composed surface truth is published through the standard runtime contract", async () => {
+    const shellLines = ["$ agenter shell", "shell-1:~/project $ ls"];
+    const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages: [], unread: 0 });
+    const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", shellLines);
+    const visibleTerminalEntry = createCliShellTerminal2Entry({ lines: shellLines });
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const harness = createTuiStore({ state });
+    const setup = await createCoreAppTestSetup({
+      state,
+      harness,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 80,
+      height: 24,
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+    expect(harness.lastPublishedComposedSurface).not.toBeNull();
+    expect(harness.lastPublishedComposedSurface?.terminalId).toBe("shell-1:terminal-2");
+    expect(harness.lastPublishedComposedSurface?.shellTerminalId).toBe("shell-1:terminal-1");
+    expect(harness.lastPublishedComposedSurface?.dialogueOpen).toBe(false);
+
+    setup.mockInput.pressKey("j", { meta: true });
+    await setup.renderOnce();
+    await setup.renderOnce();
+    expect(harness.lastPublishedComposedSurface?.dialogueOpen).toBe(true);
+    expect(harness.lastPublishedComposedSurface?.dialoguePlacement).toBe("right");
+    setup.destroy();
+  });
+
+  test("Scenario: Given terminal-2 is the single product screen When native core renders collapsed and dialogue-open modes Then both modes are published as the same terminal-2 surface consumed by host adapters", async () => {
+    const shellLines = ["$ agenter shell", "shell-1:~/project $ pwd", "/repo"];
+    const roomMessages = [
+      createRoomMessage({
+        messageId: 1,
+        senderActorId: "auth:shell-assistant",
+        from: "shell-assistant",
+        content: "dialogue backend body",
+        createdAt: Date.parse("2026-05-08T10:00:00+08:00"),
+      }),
+    ];
+    const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages, unread: 0 });
+    const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", shellLines);
+    const visibleTerminalEntry = createCliShellTerminal2Entry({ lines: shellLines });
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const harness = createTuiStore({ state });
+    const setup = await createCoreAppTestSetup({
+      state,
+      harness,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 90,
+      height: 22,
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+    const collapsedSurface = harness.lastPublishedComposedSurface;
+    expect(collapsedSurface?.terminalId).toBe("shell-1:terminal-2");
+    expect(collapsedSurface?.shellTerminalId).toBe("shell-1:terminal-1");
+    expect(collapsedSurface?.cols).toBe(90);
+    expect(collapsedSurface?.rows).toBe(22);
+    expect(collapsedSurface?.dialogueOpen).toBe(false);
+    expect(collapsedSurface?.terminalLines.join("\n")).toContain("$ agenter shell");
+    expect(collapsedSurface?.terminalLines.at(-1)).toContain("◉ terminal");
+
+    setup.mockInput.pressKey("j", { meta: true });
+    await setup.renderOnce();
+    await setup.renderOnce();
+    const openSurface = harness.lastPublishedComposedSurface;
+    expect(openSurface?.terminalId).toBe("shell-1:terminal-2");
+    expect(openSurface?.shellTerminalId).toBe("shell-1:terminal-1");
+    expect(openSurface?.cols).toBe(90);
+    expect(openSurface?.rows).toBe(22);
+    expect(openSurface?.dialogueOpen).toBe(true);
+    expect(openSurface?.dialoguePlacement).toBe("right");
+    expect(normalizeAsciiLetters(openSurface?.terminalLines.join("") ?? "")).toContain("dialoguebackendbody");
+    expect(openSurface?.terminalLines.at(-1)).toContain("◉ terminal");
+    setup.destroy();
+  });
+
+  test("Scenario: Given terminal-2 snapshot has old geometry When native core is resized with dialogue open Then terminal-2 republishes new geometry and host adapters never consume a stale partial frame", async () => {
+    const shellLines = ["$ agenter shell", "shell-1:~/project $", "resize target"];
+    const roomMessages = [
+      createRoomMessage({
+        messageId: 1,
+        senderActorId: "auth:shell-assistant",
+        from: "shell-assistant",
+        content: "dialogue resize body",
+        createdAt: Date.parse("2026-05-08T10:00:00+08:00"),
+      }),
+    ];
+    const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages, unread: 0 });
+    const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", shellLines);
+    const visibleTerminalEntry = createCliShellTerminal2Entry({
+      lines: ["old terminal-2 row"],
+      cols: 80,
+      rows: 24,
+      metadata: {
+        composedBottomLine: "old bottom",
+        composedDialogueOpen: true,
+        composedDialoguePlacement: "right",
+        composedShellSnapshotSeq: shellTerminalEntry.snapshot?.seq ?? 0,
+      },
+    });
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const harness = createTuiStore({ state });
+    const setup = await createCoreAppTestSetup({
+      state,
+      harness,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 80,
+      height: 24,
+    });
+
+    await setup.renderOnce();
+    setup.resize(100, 30);
+    await setup.renderOnce();
+    await setup.renderOnce();
+
+    const resizedSurface = harness.lastPublishedComposedSurface;
+    expect(resizedSurface?.cols).toBe(100);
+    expect(resizedSurface?.rows).toBe(30);
+    expect(resizedSurface?.dialogueOpen).toBe(true);
+    expect(resizedSurface?.terminalLines).toHaveLength(30);
+    expect(resizedSurface?.terminalLines.join("\n")).toContain("resize target");
+    expect(normalizeAsciiLetters(resizedSurface?.terminalLines.join("") ?? "")).toContain("dialogueresizebody");
+    expect(resizedSurface?.terminalLines.join("\n")).not.toContain("old terminal-2 row");
+
+    const model = buildCliShellTuiModel({
+      state: harness.store.getState(),
+      projection: { roomSnapshot: harness.store.getState().globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1:terminal-2",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: true,
+        focusTarget: "terminal",
+        activeFocusTarget: "terminal",
+        requestedPlacement: "right",
+        dialogueDraft: "",
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings: resolveCliShellTuiKeybindings(null),
+      width: 100,
+      height: 30,
+    });
+    const terminalRegion = resolveCliShellTerminalRegion({ model, width: 100, height: 30 });
+    const dialogueLayout = resolveCliShellTranscriptPanelLayout({ model, width: 100, height: 30 });
+    expect(terminalRegion.height).toBe(29);
+    expect(dialogueLayout.height).toBe(29);
+    expect(terminalRegion.width + dialogueLayout.width).toBeLessThanOrEqual(98);
+    setup.destroy();
+  });
+
+  test("Scenario: Given terminal-2 carries a stale-size composed snapshot When CliShellCoreApp renders before live transport catches up Then native draws local terminal-2 composition instead of the stale snapshot", async () => {
+    const shellLines = ["$ agenter shell", "shell-1:~/project $ ls"];
+    const visibleLines = ["visible terminal-2 line 1", "visible terminal-2 line 2", "visible terminal-2 line 3"];
+    const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages: [], unread: 0 });
+    const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", shellLines);
+    const visibleTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1:terminal-2", visibleLines),
+      processKind: "product",
+      metadata: {
+        terminalRuntimeKind: "composed",
+        composedShellTerminalId: "shell-1:terminal-1",
+      },
+      configuredTitle: "shell-1:terminal-2",
+      snapshot: {
+        ...createGlobalTerminalEntry("shell-1:terminal-2", visibleLines).snapshot!,
+        richLines: visibleLines.map((text) => ({ spans: [{ text }] })),
+      },
+    };
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const harness = createTuiStore({ state });
+    const setup = await createCoreAppTestSetup({
+      state,
+      harness,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 80,
+      height: 24,
+    });
+
+    await setup.renderOnce();
+    const rendered = setup.captureCharFrame();
+    expect(rendered).toContain("$ agenter shell");
+    expect(rendered).toContain("shell-1:~/project $ ls");
+    expect(rendered).not.toContain("visible terminal-2 line 1");
+    setup.destroy();
+  });
+
+  test("Scenario: Given terminal-2 snapshot still has an old native height When CliShellCoreApp renders Then it uses local composed truth instead of clearing the larger canvas with partial rows", async () => {
+    const shellLines = ["$ agenter shell", "shell-1:~/project $"];
+    const oldVisibleLines = ["old-visible-0", "old-visible-1"];
+    const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages: [], unread: 0 });
+    const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", shellLines);
+    const visibleTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1:terminal-2", oldVisibleLines),
+      processKind: "product",
+      metadata: {
+        terminalRuntimeKind: "composed",
+        composedShellTerminalId: "shell-1:terminal-1",
+      },
+      configuredTitle: "shell-1:terminal-2",
+      snapshot: {
+        ...createGlobalTerminalEntry("shell-1:terminal-2", oldVisibleLines).snapshot!,
+        cols: 80,
+        rows: 2,
+        lines: oldVisibleLines,
+        richLines: oldVisibleLines.map((text) => ({ spans: [{ text }] })),
+        cursor: { x: 12, y: 1, visible: true },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 2,
+          screenLines: 2,
+        },
+      },
+    };
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const setup = await createCoreAppTestSetup({
+      state,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 80,
+      height: 12,
+      createTransportSession: ({ terminalId, events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+            expect(terminalId).toBe("shell-1:terminal-1");
+            events.onMessage({
+              type: "frameDirty",
+              terminalId: "shell-1:terminal-1",
+              frameSeq: visibleTerminalEntry.snapshot!.seq + 1,
+              reason: "stale-source-frame",
+            });
+          },
+          disconnect() {},
+          send() {
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+
+    const rendered = setup.captureCharFrame();
+    expect(rendered).toContain("$ agenter shell");
+    expect(rendered).toContain("shell-1:~/project $");
+    expect(rendered).not.toContain("old-visible-0");
+    setup.destroy();
+  });
+
+  test("Scenario: Given terminal-2 advertises a transport URL When native core attaches to the composed product Then it never opens a terminal-2 pull session", async () => {
+    const shellLines = ["$ agenter shell", "shell-1:~/project $"];
+    const liveLines = Array.from({ length: 12 }, (_, index) => (index === 0 ? "visible-live-row" : `live-${index}`));
+    const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages: [], unread: 0 });
+    const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", shellLines);
+    const visibleTerminalEntry = createCliShellTerminal2Entry({
+      lines: ["snapshot row"],
+      cols: 80,
+      rows: 12,
+    });
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const openedTerminalIds: Array<string | undefined> = [];
+    const setup = await createCoreAppTestSetup({
+      state,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 80,
+      height: 12,
+      createTransportSession: ({ terminalId, events }) =>
+        createTestTransportSession({
+          async connect() {
+            openedTerminalIds.push(terminalId);
+            events.onOpen();
+            if (terminalId === "shell-1:terminal-2") {
+              events.onMessage({
+                type: "frame",
+                terminalId,
+                frameSeq: visibleTerminalEntry.snapshot!.seq + 1,
+                status: "IDLE",
+                patch: {
+                  type: "full",
+                  frame: {
+                    seq: visibleTerminalEntry.snapshot!.seq + 1,
+                    timestamp: Date.now(),
+                    cols: 80,
+                    rows: 12,
+                    lines: liveLines,
+                    richLines: liveLines.map((text) => ({ spans: [{ text }] })),
+                    cursor: { x: "visible-live-row".length, y: 0, visible: true },
+                    scrollback: {
+                      viewportOffset: 0,
+                      totalLines: 12,
+                      screenLines: 12,
+                    },
+                  },
+                },
+              });
+            }
+          },
+          disconnect() {},
+          send() {
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+
+    const rendered = setup.captureCharFrame();
+    expect(openedTerminalIds).toEqual(["shell-1:terminal-1"]);
+    expect(rendered).not.toContain("visible-live-row");
+    setup.destroy();
+  });
+
+  test("Scenario: Given shell owner cursor is stored as an absolute scrollback row When CliShellCoreApp renders scrolled shell projection Then hardware cursor remains visible in the local viewport", async () => {
+    const visibleLines = Array.from({ length: 10 }, (_, index) => `line-${index + 20}`);
+    const state = createRuntimeState({ heartbeat: [], lines: visibleLines, roomMessages: [], unread: 0 });
+    const visibleTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1", visibleLines),
+      snapshot: {
+        ...createGlobalTerminalEntry("shell-1", visibleLines).snapshot!,
+        cols: 80,
+        rows: 10,
+        lines: visibleLines,
+        richLines: visibleLines.map((text) => ({ spans: [{ text }] })),
+        cursor: { x: 6, y: 29, visible: true },
+        scrollback: {
+          viewportOffset: 20,
+          totalLines: 30,
+          screenLines: 10,
+        },
+      },
+    };
+    state.globalTerminals = createCached([visibleTerminalEntry]);
+    const setup = await createCoreAppTestSetup({
+      state,
+      fallbackTerminalId: "shell-1",
+      width: 80,
+      height: 10,
+      createTransportSession: ({ events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+            events.onMessage({
+              type: "frame",
+              terminalId: "shell-1",
+              frameSeq: visibleTerminalEntry.snapshot!.seq,
+              status: "IDLE",
+              patch: { type: "full", frame: visibleTerminalEntry.snapshot! },
+            });
+          },
+          disconnect() {},
+          send() {
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+
+    const cursor = setup.renderer.getCursorState();
+    expect(cursor.visible).toBe(true);
+    expect(cursor.x).toBe(7);
+    expect(cursor.y).toBe(9);
+    setup.destroy();
+  });
+
+  test("Scenario: Given an attached live mirror When terminal region scroll is requested through mouse interaction Then cli-shell forwards shared viewport movement to backend truth", () => {
+    const state = createRuntimeState({ heartbeat: [], lines: ["$ agenter shell", "shell-1:~/project $", "line-3"], roomMessages: [], unread: 0 });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const scrollCalls: number[] = [];
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings: resolveCliShellTuiKeybindings(null),
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () =>
+        buildCliShellTuiModel({
+          state,
+          projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+          sessionId: "session-1",
+          shellName: "shell-1",
+          fallbackTerminalId: "shell-1",
+          avatarActorId: "auth:shell-assistant",
+          ui: viewState,
+          keybindings: resolveCliShellTuiKeybindings(null),
+          width: 120,
+          height: 40,
+        }),
+      getLiveMirror: () => ({ scrollViewport: (deltaRows: number) => (scrollCalls.push(deltaRows), true) } as never),
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    expect(routeCliShellMouseScroll(ctx, { deltaRows: -3 })).toBe(true);
+    expect(scrollCalls).toEqual([-3]);
+  });
+
+  test("Scenario: Given an attached live mirror When the native scrollbar targets an absolute viewport start Then cli-shell forwards backend-truth viewport targeting", () => {
+    const state = createRuntimeState({ heartbeat: [], lines: ["$ agenter shell", "shell-1:~/project $", "line-3", "line-4"], roomMessages: [], unread: 0 });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const targetCalls: number[] = [];
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings: resolveCliShellTuiKeybindings(null),
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () =>
+        buildCliShellTuiModel({
+          state,
+          projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+          sessionId: "session-1",
+          shellName: "shell-1",
+          fallbackTerminalId: "shell-1",
+          avatarActorId: "auth:shell-assistant",
+          ui: viewState,
+          keybindings: resolveCliShellTuiKeybindings(null),
+          width: 120,
+          height: 40,
+        }),
+      getLiveMirror: () => ({ setViewportStart: (viewportStart: number) => (targetCalls.push(viewportStart), true) } as never),
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    expect(routeCliShellViewportTarget(ctx, { viewportStart: 7 })).toBe(true);
+    expect(targetCalls).toEqual([7]);
+  });
+
+  test("Scenario: Given CliShellCoreApp renders the shell offscreen scrollbar When the user clicks and drags it Then cli-shell sends absolute backend viewport targets", async () => {
+    const shellLines = Array.from({ length: 80 }, (_, index) => `line-${index}`);
+    const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages: [], unread: 0 });
+    const shellTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines),
+      snapshot: {
+        ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines).snapshot!,
+        rows: 10,
+        cols: 80,
+        cursor: { x: 0, y: 35, visible: true },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: shellLines.length,
+          screenLines: 10,
+        },
+      },
+    };
+    const visibleTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1:terminal-2", shellLines),
+      processKind: "product",
+      metadata: {
+        terminalRuntimeKind: "composed",
+        composedShellTerminalId: "shell-1:terminal-1",
+      },
+      configuredTitle: "shell-1:terminal-2",
+    };
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const sentMessages: TerminalTransportClientMessage[] = [];
+    const harness = createTuiStore({ state });
+    const setup = await createCoreAppTestSetup({
+      state,
+      harness,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 80,
+      height: 12,
+      createTransportSession: ({ events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+            events.onMessage({
+              type: "frame",
+              terminalId: "shell-1:terminal-1",
+              frameSeq: shellTerminalEntry.snapshot!.seq,
+              status: "IDLE",
+              patch: { type: "full", frame: shellTerminalEntry.snapshot! },
+            });
+          },
+          disconnect() {},
+          send(message) {
+            sentMessages.push(message);
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+    const before = setup.captureCharFrame();
+    expect(before.split("\n").slice(0, 10).some((line) => line.endsWith("█") || line.endsWith("░"))).toBe(true);
+    await setup.mockMouse.click(79, 8);
+    await setup.mockMouse.drag(79, 2, 79, 9);
+    await setup.renderOnce();
+    const viewportTargets = sentMessages.filter((message) => message.type === "viewportTarget");
+    expect(viewportTargets.length).toBeGreaterThan(0);
+    if (viewportTargets.at(-1)?.type === "viewportTarget") {
+      expect(viewportTargets.at(-1)?.viewportStart).toBeGreaterThan(0);
+    }
+    setup.destroy();
+  });
+
+  test("Scenario: Given backend scrollbar receives real mouse input When the track is clicked and dragged Then every change is a backend viewport target", async () => {
+    const changes: number[] = [];
+    const setup = await createBackendScrollbarTestSetup({
+      width: 1,
+      height: 10,
+      orientation: "vertical",
+      backendState: {
+        scrollSize: 100,
+        viewportSize: 20,
+        scrollPosition: 0,
+      },
+      onBackendChange: (position: number) => {
+        changes.push(position);
+      },
+    });
+
+    await setup.renderOnce();
+    await setup.mockMouse.click(0, 8);
+    await setup.renderOnce();
+    expect(changes.length).toBeGreaterThan(0);
+    expect(changes.at(-1)).toBeGreaterThan(0);
+    expect(setup.scrollbar.latestBackendPosition).toBe(0);
+    const afterClickTarget = changes.at(-1) ?? 0;
+    setup.scrollbar.applyBackendState({
+      scrollSize: 100,
+      viewportSize: 20,
+      scrollPosition: afterClickTarget,
+    });
+    await setup.renderOnce();
+    expect(setup.scrollbar.latestBackendPosition).toBe(afterClickTarget);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given a backend terminal frame is rendered When scrollbar input changes position Then the frame routes viewport targets to the backend bridge", async () => {
+    const viewportTargets: number[] = [];
+    const setup = await createBackendTerminalFrameTestSetup({
+      id: "backend-terminal-frame-test",
+      width: 20,
+      height: 6,
+      position: "absolute",
+      top: 0,
+      left: 0,
+      state: {
+        lines: Array.from({ length: 6 }, (_, row) => ({
+          spans: [{ text: `line-${row}` }],
+        })),
+        cursorCol: 0,
+        cursorAbsRow: 0,
+        cursorVisible: true,
+        viewportStart: 0,
+        scrollbackRows: 60,
+      },
+      bridge: {
+        scrollViewport: () => true,
+        setViewportStart: (viewportStart) => {
+          viewportTargets.push(viewportStart);
+          return true;
+        },
+      },
+    });
+
+    expect(setup.frame.terminalView.width).toBe(19);
+    expect(setup.frame.scrollbar.left).toBe(19);
+    expect(setup.frame.scrollbar.visible).toBe(true);
+    await setup.renderOnce();
+    await setup.mockMouse.click(19, 5);
+    await setup.renderOnce();
+    expect(viewportTargets.length).toBeGreaterThan(0);
+    expect(viewportTargets.at(-1)).toBeGreaterThan(0);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given a backend terminal frame owns selected text When copy is requested Then the frame writes the selection through OSC52", async () => {
+    const setup = await createBackendTerminalFrameTestSetup({
+      id: "backend-terminal-frame-copy-test",
+      width: 20,
+      height: 4,
+      position: "absolute",
+      top: 0,
+      left: 0,
+      state: {
+        lines: [
+          { spans: [{ text: "copy target" }] },
+          { spans: [{ text: "next line" }] },
+          { spans: [] },
+          { spans: [] },
+        ],
+        cursorCol: 0,
+        cursorAbsRow: 0,
+        cursorVisible: true,
+        viewportStart: 0,
+        scrollbackRows: 4,
+      },
+      bridge: {
+        scrollViewport: () => true,
+        setViewportStart: () => true,
+      },
+    });
+    const copyCalls: string[] = [];
+    setup.renderer.copyToClipboardOSC52 = mock((text: string) => {
+      copyCalls.push(text);
+      return true;
+    });
+
+    await setup.renderOnce();
+    await setup.mockMouse.drag(0, 0, 11, 0);
+    await setup.renderOnce();
+
+    expect(setup.frame.copySelectionViaOsc52()).toBe(true);
+    expect(copyCalls).toEqual(["copy target"]);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given a backend terminal frame is focused When paste text arrives Then the frame writes the text to backend input", async () => {
+    const inputTexts: string[] = [];
+    let followCursorCount = 0;
+    const setup = await createBackendTerminalFrameTestSetup({
+      id: "backend-terminal-frame-paste-test",
+      width: 20,
+      height: 4,
+      position: "absolute",
+      top: 0,
+      left: 0,
+      state: {
+        lines: [{ spans: [{ text: "paste target" }] }, { spans: [] }, { spans: [] }, { spans: [] }],
+        cursorCol: 0,
+        cursorAbsRow: 0,
+        cursorVisible: true,
+        viewportStart: 0,
+        scrollbackRows: 4,
+      },
+      bridge: {
+        sendInputText: (text) => {
+          inputTexts.push(text);
+          return true;
+        },
+        scrollViewport: () => true,
+        setViewportStart: () => true,
+        followCursor: () => {
+          followCursorCount += 1;
+          return true;
+        },
+      },
+    });
+
+    setup.renderer.keyInput.processPaste(new TextEncoder().encode("粘贴 ok\n"));
+
+    expect(inputTexts).toEqual(["粘贴 ok\n"]);
+    expect(followCursorCount).toBe(1);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given a backend terminal frame receives Unicode prompt text When paste arrives Then the frame preserves the original string before shell editor display", async () => {
+    const inputTexts: string[] = [];
+    const promptText = "agenter on  main [$✘!?⇡] via 🥟 v1.3.14";
+    const setup = await createBackendTerminalFrameTestSetup({
+      id: "backend-terminal-frame-unicode-paste-test",
+      width: 60,
+      height: 4,
+      position: "absolute",
+      top: 0,
+      left: 0,
+      state: {
+        lines: [{ spans: [{ text: "paste target" }] }, { spans: [] }, { spans: [] }, { spans: [] }],
+        cursorCol: 0,
+        cursorAbsRow: 0,
+        cursorVisible: true,
+        viewportStart: 0,
+        scrollbackRows: 4,
+      },
+      bridge: {
+        sendInputText: (text) => {
+          inputTexts.push(text);
+          return true;
+        },
+        scrollViewport: () => true,
+        setViewportStart: () => true,
+      },
+    });
+
+    setup.renderer.keyInput.processPaste(new TextEncoder().encode(promptText));
+
+    expect(inputTexts).toEqual([promptText]);
+    expect(new TextEncoder().encode(inputTexts[0] ?? "")).toEqual(new TextEncoder().encode(promptText));
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given a backend terminal frame receives image paste metadata When no media bridge is installed Then the image is not sent to shell input", async () => {
+    const inputTexts: string[] = [];
+    const mediaPayloadKinds: string[] = [];
+    const setup = await createBackendTerminalFrameTestSetup({
+      id: "backend-terminal-frame-image-paste-test",
+      width: 20,
+      height: 4,
+      position: "absolute",
+      top: 0,
+      left: 0,
+      state: {
+        lines: [{ spans: [{ text: "paste target" }] }, { spans: [] }, { spans: [] }, { spans: [] }],
+        cursorCol: 0,
+        cursorAbsRow: 0,
+        cursorVisible: true,
+        viewportStart: 0,
+        scrollbackRows: 4,
+      },
+      bridge: {
+        sendInputText: (text) => {
+          inputTexts.push(text);
+          return true;
+        },
+        handleUnsupportedMediaPaste: (payload) => {
+          mediaPayloadKinds.push(...payload.items.map((item) => `${item.kind}:${item.mimeType}`));
+          return true;
+        },
+        scrollViewport: () => true,
+        setViewportStart: () => true,
+      },
+    });
+
+    setup.renderer.keyInput.processPaste(new Uint8Array([137, 80, 78, 71]), {
+      kind: "binary",
+      mimeType: "image/png",
+    });
+
+    expect(inputTexts).toEqual([]);
+    expect(mediaPayloadKinds).toEqual(["image:image/png"]);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given a backend terminal frame receives a pasted image file URL When no image reader is installed Then the file URL is blocked from shell stdin", async () => {
+    const inputTexts: string[] = [];
+    const mediaPayloadKinds: string[] = [];
+    const setup = await createBackendTerminalFrameTestSetup({
+      id: "backend-terminal-frame-image-url-paste-test",
+      width: 20,
+      height: 4,
+      position: "absolute",
+      top: 0,
+      left: 0,
+      state: {
+        lines: [{ spans: [{ text: "paste target" }] }, { spans: [] }, { spans: [] }, { spans: [] }],
+        cursorCol: 0,
+        cursorAbsRow: 0,
+        cursorVisible: true,
+        viewportStart: 0,
+        scrollbackRows: 4,
+      },
+      bridge: {
+        sendInputText: (text) => {
+          inputTexts.push(text);
+          return true;
+        },
+        handleUnsupportedMediaPaste: (payload) => {
+          mediaPayloadKinds.push(...payload.items.map((item) => `${item.kind}:${item.mimeType}:${item.name ?? ""}`));
+          return true;
+        },
+        scrollViewport: () => true,
+        setViewportStart: () => true,
+      },
+    });
+
+    setup.renderer.keyInput.processPaste(new TextEncoder().encode("file:///tmp/screenshot.png"));
+
+    expect(inputTexts).toEqual([]);
+    expect(mediaPayloadKinds).toEqual(["image:image/png:screenshot.png"]);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given CliShellCoreApp receives image paste metadata When no media attachment bridge is installed Then the image paste does not become terminal input", async () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell", "shell-1:~/project $"],
+      roomMessages: [],
+      unread: 0,
+    });
+    const harness = createTuiStore({ state });
+    const setup = await createCoreAppTestSetup({ state, harness, width: 80, height: 18 });
+
+    setup.renderer.keyInput.processPaste(new Uint8Array([137, 80, 78, 71]), {
+      kind: "binary",
+      mimeType: "image/png",
+    });
+
+    expect(harness.inputs).toEqual([]);
+    expect(harness.sentMessages).toEqual([]);
+    setup.destroy();
+  });
+
+  test("Scenario: Given a backend terminal frame has no selected text When OSC52 copy is requested Then the frame reports no copy", async () => {
+    const setup = await createBackendTerminalFrameTestSetup({
+      id: "backend-terminal-frame-empty-copy-test",
+      width: 20,
+      height: 4,
+      position: "absolute",
+      top: 0,
+      left: 0,
+      state: {
+        lines: [{ spans: [{ text: "copy target" }] }, { spans: [] }, { spans: [] }, { spans: [] }],
+        cursorCol: 0,
+        cursorAbsRow: 0,
+        cursorVisible: true,
+        viewportStart: 0,
+        scrollbackRows: 4,
+      },
+      bridge: {
+        scrollViewport: () => true,
+        setViewportStart: () => true,
+      },
+    });
+    const copyCalls: string[] = [];
+    setup.renderer.copyToClipboardOSC52 = mock((text: string) => {
+      copyCalls.push(text);
+      return true;
+    });
+
+    expect(setup.frame.copySelectionViaOsc52()).toBe(false);
+    expect(copyCalls).toEqual([]);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given perf tracing is enabled When cli-shell records render events Then trace output is newline-delimited JSON", async () => {
+    const previousTraceEnv = process.env.AGENTER_CLI_SHELL_TRACE;
+    const tracePath = `/tmp/agenter-cli-shell-trace-${Date.now()}-${Math.random().toString(36).slice(2)}.ndjson`;
+    process.env.AGENTER_CLI_SHELL_TRACE = tracePath;
+    try {
+      await Bun.write(tracePath, "stale trace line\n");
+      const tracer = createCliShellPerfTracer();
+      expect(tracer.enabled).toBe(true);
+      tracer.record({ kind: "frame-dirty-received", detail: { dirtyQueueDepth: 4 } });
+      tracer.record({
+        kind: "pull-frame-blocked",
+        detail: { blockedReasons: ["paint-in-flight"], dirtyQueueDepth: 5, pullMode: "active" },
+      });
+      tracer.record({
+        kind: "frame-received",
+        detail: {
+          latencyMs: 8,
+          patchType: "rows",
+          patchRows: 4,
+          frameBytes: 16_384,
+          diffBytes: 512,
+          skippedFrames: 2,
+        },
+      });
+      tracer.record({
+        kind: "render-applied",
+        detail: {
+          elapsedMs: 20,
+          estimatedFps: 50,
+          stats: {
+            fps: 50,
+            frameCount: 3,
+            frameTimes: [1, 18, 40],
+            averageFrameTime: 19.67,
+            minFrameTime: 1,
+            maxFrameTime: 40,
+          },
+        },
+      });
+      tracer.record({ kind: "viewport-target", detail: { source: "scrollbar", targetPosition: 12 } });
+      tracer.record({ kind: "render-revision-coalesced", detail: { trigger: "source-mirror.requestPaint" } });
+      expect(tracer.snapshot()).toMatchObject({
+        pullMs: 8,
+        patch: "rows:4",
+        frameBytes: 16_384,
+        diffBytes: 512,
+        dirtyQueue: 5,
+        skippedFrames: 2,
+        frameGapMs: 20,
+        fps: 50,
+        mode: "active",
+      });
+      tracer.dispose();
+
+      const lines = (await Bun.file(tracePath).text()).trim().split("\n");
+      expect(lines.length).toBe(6);
+      const parsedLines = lines.map((line) => JSON.parse(line));
+      expect(lines.some((line) => line.includes("stale trace line"))).toBe(false);
+      expect(parsedLines[0]).toMatchObject({
+        kind: "frame-dirty-received",
+        seq: 1,
+        sinceStartMs: 0,
+        sincePreviousMs: 0,
+        detail: { dirtyQueueDepth: 4 },
+      });
+      expect(parsedLines[1]).toMatchObject({
+        kind: "pull-frame-blocked",
+        seq: 2,
+        detail: { blockedReasons: ["paint-in-flight"], dirtyQueueDepth: 5 },
+      });
+      expect(parsedLines[2]).toMatchObject({
+        kind: "frame-received",
+        detail: { frameBytes: 16_384, diffBytes: 512, skippedFrames: 2 },
+      });
+      expect(parsedLines[3]).toMatchObject({
+        kind: "render-applied",
+        detail: {
+          elapsedMs: 20,
+          estimatedFps: 50,
+          rendererStats: {
+            frameTimeSampleCount: 3,
+            slowFramesOver16Ms: 2,
+            slowFramesOver33Ms: 1,
+          },
+        },
+      });
+      expect(parsedLines[3].detail.stats).toBeUndefined();
+      expect(parsedLines[4]).toMatchObject({
+        kind: "viewport-target",
+        detail: { targetPosition: 12 },
+      });
+      expect(parsedLines[5]).toMatchObject({
+        kind: "render-revision-coalesced",
+        detail: { trigger: "source-mirror.requestPaint" },
+      });
+    } finally {
+      if (previousTraceEnv === undefined) {
+        delete process.env.AGENTER_CLI_SHELL_TRACE;
+      } else {
+        process.env.AGENTER_CLI_SHELL_TRACE = previousTraceEnv;
+      }
+      await Bun.file(tracePath).delete().catch(() => undefined);
+    }
+  });
+
+  test("Scenario: Given fixed pacing records many unchanged pulls When perf trace writes to disk Then empty frame traffic is summarized instead of logged per pull", async () => {
+    const previousTraceEnv = process.env.AGENTER_CLI_SHELL_TRACE;
+    const tracePath = `/tmp/agenter-cli-shell-trace-summary-${Date.now()}-${Math.random().toString(36).slice(2)}.ndjson`;
+    process.env.AGENTER_CLI_SHELL_TRACE = tracePath;
+    try {
+      const tracer = createCliShellPerfTracer();
+      expect(tracer.enabled).toBe(true);
+      for (let index = 0; index < 20; index += 1) {
+        tracer.record({
+          kind: "pull-frame-sent",
+          detail: {
+            dirtyQueueDepth: 0,
+            pullMode: "active",
+          },
+        });
+        tracer.record({
+          kind: "frame-received",
+          detail: {
+            frameSeq: 10,
+            patchType: "notModified",
+            patchRows: 0,
+            latencyMs: 1,
+          },
+        });
+        tracer.record({
+          kind: "frame-not-modified",
+          detail: {
+            frameSeq: 10,
+            latencyMs: 1,
+          },
+        });
+      }
+      tracer.dispose();
+
+      const lines = (await Bun.file(tracePath).text()).trim().split("\n");
+      expect(lines).toHaveLength(1);
+      const summary = JSON.parse(lines[0] ?? "{}") as {
+        kind?: string;
+        detail?: {
+          suppressedEvents?: number;
+          kinds?: string;
+          lastFrameSeq?: number;
+          lastPatchType?: string;
+          maxPullLatencyMs?: number;
+        };
+      };
+      expect(summary.kind).toBe("trace-summary");
+      expect(summary.detail?.suppressedEvents).toBe(60);
+      expect(summary.detail?.lastFrameSeq).toBe(10);
+      expect(summary.detail?.lastPatchType).toBe("notModified");
+      expect(summary.detail?.maxPullLatencyMs).toBe(1);
+      expect(summary.detail?.kinds).toContain("frame-not-modified");
+    } finally {
+      if (previousTraceEnv === undefined) {
+        delete process.env.AGENTER_CLI_SHELL_TRACE;
+      } else {
+        process.env.AGENTER_CLI_SHELL_TRACE = previousTraceEnv;
+      }
+      await Bun.file(tracePath).delete().catch(() => undefined);
+    }
+  });
+
+  test("Scenario: Given dialogue mode owns keyboard routing When Enter is pressed Then cli-shell submits exactly one room message without a second visible input", async () => {
+    const state = createRuntimeState({ heartbeat: [], lines: ["$ agenter shell", "shell-1:~/project $"], roomMessages: [], unread: 0 });
+    const harness = createTuiStore({ state });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: true,
+      focusTarget: "dialogue",
+      requestedPlacement: "right",
+      dialogueDraft: "send once",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const ctx = {
+      store: harness.store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () =>
+        buildCliShellTuiModel({
+          state: harness.store.getState(),
+          projection: { roomSnapshot: harness.store.getState().globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+          sessionId: "session-1",
+          shellName: "shell-1",
+          fallbackTerminalId: "shell-1",
+          avatarActorId: "auth:shell-assistant",
+          ui: viewState,
+          keybindings,
+          width: 120,
+          height: 40,
+        }),
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    await submitCliShellDialogue(ctx);
+    expect(harness.sentMessages).toEqual([{ chatId: "room-shell-1", text: "send once" }]);
+    expect(viewState.dialogueOpen).toBe(true);
+    expect(viewState.dialogueDraft).toBe("");
+  });
+
+  test("Scenario: Given dialogue backend owns scroll When the wheel targets dialogue Then shell viewport is not changed by the event", async () => {
+    const roomMessages = Array.from({ length: 12 }, (_, index) =>
+      createRoomMessage({
+        messageId: index + 1,
+        senderActorId: "auth:shell-assistant",
+        from: "shell-assistant",
+        content: `dialogue scroll row ${index}`,
+        createdAt: Date.parse("2026-05-08T10:00:00+08:00") + index * 60_000,
+      }),
+    );
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: Array.from({ length: 40 }, (_, index) => `shell-${index}`),
+      roomMessages,
+      unread: 0,
+    });
+    const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", state.globalTerminals.data[0]?.snapshot?.lines ?? []);
+    const visibleTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1:terminal-2", ["product"]),
+      processKind: "product",
+      metadata: {
+        terminalRuntimeKind: "composed",
+        composedShellTerminalId: "shell-1:terminal-1",
+      },
+      configuredTitle: "shell-1:terminal-2",
+    };
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const sentMessages: TerminalTransportClientMessage[] = [];
+    const setup = await createCoreAppTestSetup({
+      state,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 80,
+      height: 16,
+      createTransportSession: ({ events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+          },
+          disconnect() {},
+          send(message) {
+            sentMessages.push(message);
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    setup.mockInput.pressKey("j", { meta: true });
+    await setup.renderOnce();
+    await setup.mockMouse.scroll(60, 4, "down");
+    await setup.renderOnce();
+
+    expect(sentMessages.filter((message) => message.type === "viewportDelta")).toHaveLength(0);
+    setup.destroy();
+  });
+
+  test("Scenario: Given terminal mode and dialogue mode When keys are routed through the controller Then terminal input and room-message send each stay in their own backend contract", async () => {
+    const state = createRuntimeState({ heartbeat: [], lines: ["$ agenter shell", "shell-1:~/project $"], roomMessages: [], unread: 0 });
+    const harness = createTuiStore({ state });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const ctx = {
+      store: harness.store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () =>
+        buildCliShellTuiModel({
+          state: harness.store.getState(),
+          projection: { roomSnapshot: harness.store.getState().globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+          sessionId: "session-1",
+          shellName: "shell-1",
+          fallbackTerminalId: "shell-1",
+          avatarActorId: "auth:shell-assistant",
+          ui: viewState,
+          keybindings,
+          width: 120,
+          height: 40,
+        }),
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    routeCliShellKey(ctx, createTestKeyEvent({ name: "l", sequence: "l", raw: "l" }));
+    routeCliShellKey(ctx, createTestKeyEvent({ name: "s", sequence: "s", raw: "s" }));
+    expect(harness.inputs.map((entry) => entry.text)).toEqual(["l", "s"]);
+    routeCliShellKey(ctx, createTestKeyEvent({ name: "j", meta: true, sequence: "j", raw: "j" }));
+    expect(viewState.dialogueOpen).toBe(true);
+    routeCliShellPaste(ctx, "status?");
+    expect(harness.inputs).toHaveLength(2);
+    setCliShellDialogueDraft(ctx, "status?");
+    await submitCliShellDialogue(ctx);
+    expect(harness.sentMessages).toEqual([{ chatId: "room-shell-1", text: "status?" }]);
+  });
+
+  test("Scenario: Given native OpenTUI controls receive dialogue input When the user opens types and submits dialogue Then visible control effects return through terminal-2 publication", async () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell", "shell-1:~/project $"],
+      roomMessages: [],
+      unread: 0,
+    });
+    const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", state.globalTerminals.data[0]?.snapshot?.lines ?? []);
+    const visibleTerminalEntry = createCliShellTerminal2Entry({ lines: ["initial terminal-2"] });
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const harness = createTuiStore({ state });
+    const setup = await createCoreAppTestSetup({
+      state,
+      harness,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 80,
+      height: 18,
+    });
+
+    await setup.renderOnce();
+    setup.mockInput.pressKey("j", { meta: true });
+    setup.renderer.keyInput.processParsedKey(createTestKeyEvent({ name: "h", sequence: "h", raw: "h" }));
+    setup.renderer.keyInput.processParsedKey(createTestKeyEvent({ name: "i", sequence: "i", raw: "i" }));
+    await setup.renderOnce();
+    await setup.renderOnce();
+
+    const draftSurface = harness.lastPublishedComposedSurface;
+    expect(draftSurface?.terminalId).toBe("shell-1:terminal-2");
+    expect(draftSurface?.dialogueOpen).toBe(true);
+    expect(draftSurface?.dialogueDraft).toBe("hi");
+    expect(draftSurface?.terminalLines.join("\n")).toContain("> hi");
+
+    setup.mockInput.pressEnter();
+    await setup.renderOnce();
+    await setup.renderOnce();
+
+    expect(harness.sentMessages).toEqual([{ chatId: "room-shell-1", text: "hi" }]);
+    expect(harness.lastPublishedComposedSurface?.dialogueOpen).toBe(true);
+    expect(harness.lastPublishedComposedSurface?.dialogueDraft).toBe("");
+    expect(harness.lastPublishedComposedSurface?.terminalLines.join("\n")).not.toContain("> hi");
+    setup.destroy();
+  });
+});

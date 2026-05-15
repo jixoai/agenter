@@ -22,13 +22,10 @@
     "@agenter/terminal-transport-protocol": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",
     "@opentui/core": "latest",
-    "@opentui/react": "latest",
-    "react": "^19.0.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/react": "^19.0.0",
     "@types/yargs": "^17.0.35",
     "typescript": "latest"
   }

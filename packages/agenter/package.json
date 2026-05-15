@@ -14,15 +14,11 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
-    "@duckdb/node-api": "^1.5.1-r.1",
-    "@opentui/core": "latest",
-    "@opentui/react": "latest",
-    "react": "^19.0.0"
+    "@duckdb/node-api": "^1.5.1-r.1"
   },
   "devDependencies": {
     "@agenter/cli": "workspace:*",
     "@types/bun": "latest",
-    "@types/react": "^19.0.0",
     "typescript": "latest"
   },
   "engines": {

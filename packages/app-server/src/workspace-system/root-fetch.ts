@@ -36,10 +36,14 @@ try {
     redirect: payload.followRedirects ? "follow" : "manual",
     signal: controller.signal,
   });
+  const headers = {};
+  response.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
   const result = {
     status: response.status,
     statusText: response.statusText,
-    headers: Object.fromEntries(response.headers.entries()),
+    headers,
     body: await response.text(),
     url: response.url,
   };
@@ -67,7 +71,11 @@ const normalizeRequestHeaders = (headers?: Headers | Record<string, string>): Re
     return {};
   }
   if (headers instanceof Headers) {
-    return Object.fromEntries(headers.entries());
+    const normalized: Record<string, string> = {};
+    headers.forEach((value, key) => {
+      normalized[key] = value;
+    });
+    return normalized;
   }
   return { ...headers };
 };

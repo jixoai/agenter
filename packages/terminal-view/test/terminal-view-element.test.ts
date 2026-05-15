@@ -5,6 +5,7 @@ import {
   type TerminalTransportClientMessage,
   type TerminalTransportServerMessage,
   type TerminalTransportSnapshot,
+  type TerminalTransportRichLine,
 } from "@agenter/terminal-transport-protocol";
 
 vi.mock("@xterm/xterm/css/xterm.css?inline", () => ({ default: ".xterm { display: block; }" }));
@@ -136,7 +137,9 @@ class MockTerminal {
   openedWith: Element | null = null;
   element: HTMLElement | undefined;
   textarea: HTMLTextAreaElement | undefined;
+  viewport: HTMLDivElement | undefined;
   options: Record<string, unknown> = {};
+  scrollToLineCalls: number[] = [];
   private dataListeners: Array<(data: string) => void> = [];
   private binaryListeners: Array<(data: string) => void> = [];
   _core = {
@@ -208,6 +211,7 @@ class MockTerminal {
     this.textarea = textarea;
     const viewport = document.createElement("div");
     viewport.className = "xterm-viewport";
+    this.viewport = viewport;
     const screen = document.createElement("div");
     screen.className = "xterm-screen";
     screen.style.width = `${this._core._renderService.dimensions.css.canvas.width}px`;
@@ -242,6 +246,14 @@ class MockTerminal {
 
   clearTextureAtlas(): void {
     this.clearTextureAtlasCount += 1;
+  }
+
+  scrollToLine(line: number): void {
+    this.scrollToLineCalls.push(line);
+    if (this.viewport) {
+      this.viewport.scrollTop = line * 19;
+      this.viewport.dispatchEvent(new Event("scroll"));
+    }
   }
 
   focus(): void {
@@ -409,13 +421,57 @@ const decodeSentClientFrames = (socket: WebSocketMock | undefined): TerminalTran
 
 const encodeServerFrame = (frame: TerminalTransportServerMessage): ArrayBuffer =>
   encodeTerminalTransportServerMessage(frame).buffer.slice(0);
-const containsWrittenText = (terminal: MockTerminal | undefined, value: string): boolean =>
-  (terminal?.writes ?? []).some((entry) => {
-    if (typeof entry === "string") {
-      return entry === value;
-    }
-    return new TextDecoder().decode(entry) === value;
-  });
+const publishFullFrame = (
+  socket: WebSocketMock | undefined,
+  frame: TerminalTransportSnapshot,
+  status: "IDLE" | "BUSY" = "BUSY",
+): void => {
+  socket?.message(
+    encodeServerFrame({
+      type: "frame",
+      terminalId: "iflow",
+      frameSeq: frame.seq,
+      status,
+      patch: {
+        type: "full",
+        frame,
+      },
+    }),
+  );
+};
+
+const publishRowCacheFrame = (
+  socket: WebSocketMock | undefined,
+  input: {
+    frameSeq: number;
+    baseFrameSeq: number;
+    rows: Array<{ cid: number; line?: string; richLine?: TerminalTransportRichLine }>;
+    cols: number;
+    rowCount: number;
+    cursor: TerminalTransportSnapshot["cursor"];
+    scrollback: TerminalTransportSnapshot["scrollback"];
+    terminalId?: string;
+    status?: "IDLE" | "BUSY";
+  },
+): void => {
+  socket?.message(
+    encodeServerFrame({
+      type: "frame",
+      terminalId: input.terminalId ?? "iflow",
+      frameSeq: input.frameSeq,
+      status: input.status ?? "BUSY",
+      patch: {
+        type: "rowCache",
+        baseFrameSeq: input.baseFrameSeq,
+        cachedRows: input.rows,
+        cols: input.cols,
+        rows: input.rowCount,
+        cursor: input.cursor,
+        scrollback: input.scrollback,
+      },
+    }),
+  );
+};
 
 const waitForLifecycleFrame = async (): Promise<void> => {
   await new Promise<void>((resolve) => {
@@ -717,7 +773,7 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(element.connectionState).toBe("connecting");
   });
 
-  test("Scenario: Given a transport-backed terminal When websocket events arrive Then the component stays connected and only sends resize frames through the explicit viewport resize API", async () => {
+  test("Scenario: Given a transport-backed terminal When websocket events arrive Then the component stays connected and sends explicit resize and both viewport mutation shapes through transport APIs", async () => {
     const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
     defineTerminalView();
     const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
@@ -726,6 +782,7 @@ describe("Feature: terminal-view WebComponent", () => {
 
     element.terminalId = "iflow";
     element.transportUrl = "ws://127.0.0.1:4900/pty/iflow";
+    element.geometryOrder = 2;
 
     document.body.append(element);
     await element.updateComplete;
@@ -742,7 +799,16 @@ describe("Feature: terminal-view WebComponent", () => {
     await waitForLifecycleFrame();
     await element.updateComplete;
     expect(element.connectionState).toBe("connected");
-    expect(decodeSentClientFrames(socket)).toEqual([]);
+    expect(decodeSentClientFrames(socket)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "hello",
+          terminalId: "iflow",
+          geometryRole: "projection-only",
+          geometryOrder: 2,
+        }),
+      ]),
+    );
 
     expect(element.requestViewportResize({ cols: 103, rows: 20 })).toBe(true);
     expect(decodeSentClientFrames(socket)).toContainEqual({
@@ -750,22 +816,68 @@ describe("Feature: terminal-view WebComponent", () => {
       cols: 103,
       rows: 20,
     });
+    expect(element.requestViewportDelta({ deltaRows: -3 })).toBe(true);
+    expect(decodeSentClientFrames(socket)).toContainEqual({
+      type: "viewportDelta",
+      deltaRows: -3,
+    });
+    expect(element.requestViewportTarget({ viewportStart: 9 })).toBe(true);
+    expect(decodeSentClientFrames(socket)).toContainEqual({
+      type: "viewportTarget",
+      viewportStart: 9,
+    });
 
     const terminal = mockTerminals.at(-1);
     expect(terminal?.resetCount).toBe(0);
 
+    const authorityEvents: Array<{
+      terminalId: string;
+      requestedGeometryRole: string;
+      effectiveGeometryRole: string;
+      geometryOrder?: number;
+      transportAttachmentId?: string;
+      geometryAuthorityAttachmentId?: string;
+      authorityReason?: string;
+    }> = [];
+    element.addEventListener("terminal-view-geometry-authority", (event) => {
+      authorityEvents.push((event as CustomEvent<typeof authorityEvents[number]>).detail);
+    });
+
     socket?.message(
       encodeServerFrame({
-        type: "snapshot",
+        type: "helloAck",
         terminalId: "iflow",
-        status: "BUSY",
-        snapshot: withSnapshotScrollback({
-          seq: 2,
-          cols: 140,
-          rows: 40,
-          lines: ["initial state"],
-          cursor: { x: 0, y: 0 },
-        }),
+        attachmentId: "attach-1",
+        effectiveGeometryRole: "authority",
+        geometryAuthorityAttachmentId: "attach-1",
+        geometryOrder: 2,
+        authorityReason: "explicit-geometry-order",
+      }),
+    );
+    await element.updateComplete;
+
+    expect(element.transportAttachmentId).toBe("attach-1");
+    expect(element.effectiveGeometryRole).toBe("authority");
+    expect(element.geometryAuthorityAttachmentId).toBe("attach-1");
+    expect(element.geometryAuthorityReason).toBe("explicit-geometry-order");
+    expect(authorityEvents.at(-1)).toEqual({
+      terminalId: "iflow",
+      requestedGeometryRole: "projection-only",
+      effectiveGeometryRole: "authority",
+      geometryOrder: 2,
+      transportAttachmentId: "attach-1",
+      geometryAuthorityAttachmentId: "attach-1",
+      authorityReason: "explicit-geometry-order",
+    });
+
+    publishFullFrame(
+      socket,
+      withSnapshotScrollback({
+        seq: 2,
+        cols: 140,
+        rows: 40,
+        lines: ["initial state"],
+        cursor: { x: 0, y: 0 },
       }),
     );
     await element.updateComplete;
@@ -784,28 +896,54 @@ describe("Feature: terminal-view WebComponent", () => {
       return originalRequestUpdate(...args);
     }) as typeof element.requestUpdate;
 
-    socket?.message(
-      encodeServerFrame({
-        type: "snapshot",
-        terminalId: "iflow",
-        status: "BUSY",
-        snapshot: withSnapshotScrollback({
-          seq: 3,
-          cols: 140,
-          rows: 40,
-          lines: ["redundant full snapshot"],
-          cursor: { x: 0, y: 0 },
-        }),
+    publishFullFrame(
+      socket,
+      withSnapshotScrollback({
+        seq: 3,
+        cols: 140,
+        rows: 40,
+        lines: ["redundant full snapshot"],
+        cursor: { x: 0, y: 0 },
       }),
     );
     await element.updateComplete;
     await element.updateComplete;
-    expect(redundantSnapshotUpdates).toBe(0);
+    expect(redundantSnapshotUpdates).toBe(1);
     expect(terminal?.resetCount).toBe(1);
     expect(terminal?.writes).not.toContain("redundant full snapshot");
 
+    socket?.message(
+      encodeServerFrame({
+        type: "frame",
+        terminalId: "iflow",
+        frameSeq: 4,
+        status: "BUSY",
+        patch: {
+          type: "rows",
+          baseFrameSeq: 3,
+          rowPatches: [],
+          cols: 140,
+          rows: 40,
+          cursor: { x: 0, y: 0 },
+          scrollback: {
+            viewportOffset: 6,
+            totalLines: 40,
+            screenLines: 40,
+          },
+          timestamp: 4,
+        },
+      }),
+    );
+    await element.updateComplete;
+    await element.updateComplete;
+    expect(terminal?.scrollToLineCalls.at(-1)).toBe(6);
+    expect(decodeSentClientFrames(socket)).not.toContainEqual({
+      type: "viewportTarget",
+      viewportStart: 6,
+    });
+
     element.snapshot = withSnapshotScrollback({
-      seq: 4,
+      seq: 5,
       cols: 60,
       rows: 12,
       lines: ["stale prop snapshot"],
@@ -824,9 +962,30 @@ describe("Feature: terminal-view WebComponent", () => {
 
     socket?.message(
       encodeServerFrame({
-        type: "outputBytes",
+        type: "frame",
         terminalId: "iflow",
-        data: new TextEncoder().encode("bun test\r\n"),
+        frameSeq: 6,
+        status: "BUSY",
+        patch: {
+          type: "rows",
+          baseFrameSeq: 4,
+          rowPatches: [
+            {
+              row: 0,
+              line: "bun test",
+              richLine: { spans: [{ text: "bun test" }] },
+            },
+          ],
+          cols: 140,
+          rows: 40,
+          cursor: { x: 8, y: 0 },
+          scrollback: {
+            viewportOffset: 6,
+            totalLines: 40,
+            screenLines: 40,
+          },
+          timestamp: 6,
+        },
       }),
     );
     socket?.message(
@@ -839,13 +998,272 @@ describe("Feature: terminal-view WebComponent", () => {
     );
     await element.updateComplete;
 
-    expect(containsWrittenText(terminal, "bun test\r\n")).toBe(true);
+    expect(element.textEvidence).toContain("bun test");
     expect(element.connectionState).toBe("closed");
     expect(shadowRoot.querySelector(".terminal-connection-badge")).toBeNull();
 
     const sentBeforeClosedInput = socket?.sent.length ?? 0;
     terminal?.emitData("after close");
     expect(socket?.sent).toHaveLength(sentBeforeClosedInput);
+
+    element.remove();
+  });
+
+  test("Scenario: Given a connected transport-backed viewport When wheel scrolling happens Then the component forwards explicit viewportDelta frames instead of owning scroll locally", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "wheel-sync";
+    element.transportUrl = "ws://127.0.0.1:4900/pty/wheel-sync";
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const socket = WebSocketMock.instances.at(-1);
+    socket?.open();
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    const viewport = shadowRoot.querySelector<HTMLElement>("[data-terminal-viewport]");
+    expect(viewport).not.toBeNull();
+
+    viewport?.dispatchEvent(new WheelEvent("wheel", { deltaY: -4, bubbles: true, cancelable: true }));
+    expect(decodeSentClientFrames(socket)).toContainEqual({
+      type: "viewportDelta",
+      deltaRows: -4,
+    });
+
+    element.remove();
+  });
+
+  test("Scenario: Given a connected transport-backed viewport When wheel scrolling races a local renderer scroll echo Then the component suppresses the browser-local mirror until the next frame", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "wheel-suppression";
+    element.transportUrl = "ws://127.0.0.1:4900/pty/wheel-suppression";
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const socket = WebSocketMock.instances.at(-1);
+    socket?.open();
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    publishFullFrame(
+      socket,
+      withSnapshotScrollback({
+        seq: 1,
+        cols: 80,
+        rows: 24,
+        lines: Array.from({ length: 200 }, (_, index) => `line-${index + 1}`),
+        cursor: { x: 0, y: 0 },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 200,
+          screenLines: 24,
+        },
+      }),
+    );
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    const viewport = shadowRoot.querySelector<HTMLElement>("[data-terminal-viewport]");
+    const rendererScroll = shadowRoot.querySelector<HTMLElement>("[data-terminal-renderer-scroll]");
+    expect(viewport).not.toBeNull();
+    expect(rendererScroll).not.toBeNull();
+    if (!(viewport instanceof HTMLElement) || !(rendererScroll instanceof HTMLElement)) {
+      throw new Error("terminal viewport or renderer scroll surface missing");
+    }
+
+    Object.defineProperty(rendererScroll, "clientHeight", {
+      configurable: true,
+      value: 456,
+    });
+    Object.defineProperty(rendererScroll, "scrollHeight", {
+      configurable: true,
+      value: 456 + 176 * 19,
+    });
+
+    const framesBeforeWheel = decodeSentClientFrames(socket).length;
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -4, bubbles: true, cancelable: true }));
+    rendererScroll.scrollTop = 17 * 19;
+    rendererScroll.dispatchEvent(new Event("scroll"));
+
+    const framesDuringSuppression = decodeSentClientFrames(socket).slice(framesBeforeWheel);
+    expect(framesDuringSuppression).toContainEqual({
+      type: "viewportDelta",
+      deltaRows: -4,
+    });
+    expect(framesDuringSuppression).not.toContainEqual({
+      type: "viewportTarget",
+      viewportStart: 17,
+    });
+
+    await waitForLifecycleFrame();
+    rendererScroll.scrollTop = 18 * 19;
+    rendererScroll.dispatchEvent(new Event("scroll"));
+
+    expect(decodeSentClientFrames(socket).slice(framesBeforeWheel)).toContainEqual({
+      type: "viewportTarget",
+      viewportStart: 18,
+    });
+
+    element.remove();
+  });
+
+  test("Scenario: Given a connected transport-backed viewport When the renderer scrollbar moves Then the component forwards an explicit viewportTarget frame instead of keeping browser-local viewport truth", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "scrollbar-sync";
+    element.transportUrl = "ws://127.0.0.1:4900/pty/scrollbar-sync";
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const socket = WebSocketMock.instances.at(-1);
+    socket?.open();
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    publishFullFrame(
+      socket,
+      withSnapshotScrollback({
+        seq: 1,
+        cols: 80,
+        rows: 24,
+        lines: Array.from({ length: 24 }, (_, index) => `line-${index + 1}`),
+        cursor: { x: 0, y: 0 },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 200,
+          screenLines: 24,
+        },
+      }),
+    );
+    await element.updateComplete;
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    const rendererScroll = shadowRoot.querySelector<HTMLElement>("[data-terminal-renderer-scroll]");
+    expect(rendererScroll).not.toBeNull();
+    if (!(rendererScroll instanceof HTMLElement)) {
+      throw new Error("renderer scroll surface missing");
+    }
+
+    Object.defineProperty(rendererScroll, "clientHeight", {
+      configurable: true,
+      value: 456,
+    });
+    Object.defineProperty(rendererScroll, "scrollHeight", {
+      configurable: true,
+      value: 456 + 176 * 19,
+    });
+    rendererScroll.scrollTop = 17 * 19;
+    rendererScroll.dispatchEvent(new Event("scroll"));
+
+    expect(decodeSentClientFrames(socket)).toContainEqual({
+      type: "viewportTarget",
+      viewportStart: 17,
+    });
+
+    element.remove();
+  });
+
+  test("Scenario: Given a connected transport-backed viewport When backend republishes a viewport-only snapshot Then xterm applies the authoritative viewport target without rehydrating the full buffer", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "viewport-republish";
+    element.transportUrl = "ws://127.0.0.1:4900/pty/viewport-republish";
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const socket = WebSocketMock.instances.at(-1);
+    socket?.open();
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const terminal = mockTerminals.at(-1);
+    publishFullFrame(
+      socket,
+      withSnapshotScrollback({
+        seq: 1,
+        cols: 80,
+        rows: 24,
+        lines: ["line-1"],
+        cursor: { x: 0, y: 0 },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 24,
+          screenLines: 24,
+        },
+      }),
+    );
+    await element.updateComplete;
+    await element.updateComplete;
+    const initialResetCount = terminal?.resetCount ?? 0;
+
+    socket?.message(
+      encodeServerFrame({
+        type: "frame",
+        terminalId: "viewport-republish",
+        frameSeq: 2,
+        status: "BUSY",
+        patch: {
+          type: "rows",
+          baseFrameSeq: 1,
+          rowPatches: [],
+          cols: 80,
+          rows: 24,
+          cursor: { x: 0, y: 0 },
+          scrollback: {
+            viewportOffset: 8,
+            totalLines: 40,
+            screenLines: 24,
+          },
+        },
+      }),
+    );
+    await element.updateComplete;
+    await element.updateComplete;
+
+    expect(terminal?.resetCount).toBe(initialResetCount);
+    expect(terminal?.scrollToLineCalls.at(-1)).toBe(8);
+    expect(element.snapshot?.scrollback.viewportOffset).toBe(8);
+    expect(element.snapshot?.seq).toBe(2);
 
     element.remove();
   });
@@ -958,6 +1376,159 @@ describe("Feature: terminal-view WebComponent", () => {
     viewport?.dispatchEvent(new Event("touchstart", { bubbles: true }));
     await waitForLifecycleFrame();
     expect(terminal?.focusCount).toBeGreaterThanOrEqual(2);
+  });
+
+  test("Scenario: Given a host focuses terminal-view directly When the renderer session is ready Then terminal input takes focus ownership", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "focus-host";
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const terminal = mockTerminals.at(-1);
+    expect(terminal?.focusCount).toBe(0);
+
+    element.focus();
+    await waitForLifecycleFrame();
+
+    expect(terminal?.focusCount).toBeGreaterThanOrEqual(1);
+    expect(document.activeElement).toBe(element);
+    expect(element.shadowRoot?.activeElement).toBe(terminal?.textarea);
+  });
+
+  test("Scenario: Given a transport-backed terminal receives row-cache patches When known rows repeat Then terminal-view decodes cid-only rows through its connection-local cache", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "row-cache-view";
+    element.transportUrl = "ws://127.0.0.1:4900/pty/row-cache-view";
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const socket = WebSocketMock.instances.at(-1);
+    socket?.open();
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    publishRowCacheFrame(socket, {
+      terminalId: "row-cache-view",
+      frameSeq: 1,
+      baseFrameSeq: 0,
+      rows: [
+        { cid: 1, line: "alpha", richLine: { spans: [{ text: "alpha" }] } },
+        { cid: 2, line: "beta", richLine: { spans: [{ text: "beta" }] } },
+        { cid: 0 },
+      ],
+      cols: 40,
+      rowCount: 3,
+      cursor: { x: 4, y: 1 },
+      scrollback: { viewportOffset: 0, totalLines: 3, screenLines: 3 },
+    });
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    expect(element.textEvidence).toContain("alpha\nbeta");
+
+    publishRowCacheFrame(socket, {
+      terminalId: "row-cache-view",
+      frameSeq: 2,
+      baseFrameSeq: 1,
+      rows: [{ cid: 2 }, { cid: 0 }, { cid: 1 }],
+      cols: 40,
+      rowCount: 3,
+      cursor: { x: 5, y: 2 },
+      scrollback: { viewportOffset: 1, totalLines: 4, screenLines: 3 },
+    });
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+
+    expect(element.textEvidence).toContain("beta\n\nalpha");
+    expect(element.snapshot?.scrollback.viewportOffset).toBe(1);
+    expect(element.snapshot?.lines).toEqual(["beta", "", "alpha"]);
+  });
+
+  test("Scenario: Given transport frames update terminal-view When a host reads the light DOM evidence Then accessible text stays observable outside the renderer shadow surface", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "text-evidence";
+    element.transportUrl = "ws://127.0.0.1:4900/pty/text-evidence";
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const socket = WebSocketMock.instances.at(-1);
+    socket?.open();
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    publishFullFrame(
+      socket,
+      withSnapshotScrollback({
+        seq: 1,
+        cols: 80,
+        rows: 24,
+        lines: ["hello from snapshot"],
+        cursor: { x: 0, y: 0 },
+      }),
+    );
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+
+    socket?.message(
+      encodeServerFrame({
+        type: "frame",
+        terminalId: "text-evidence",
+        frameSeq: 2,
+        status: "BUSY",
+        patch: {
+          type: "rows",
+          baseFrameSeq: 1,
+          rowPatches: [
+            {
+              row: 1,
+              line: "live output",
+              richLine: { spans: [{ text: "live output" }] },
+            },
+          ],
+          cols: 80,
+          rows: 24,
+          cursor: { x: 11, y: 1 },
+          scrollback: {
+            viewportOffset: 0,
+            totalLines: 24,
+            screenLines: 24,
+          },
+        },
+      }),
+    );
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+
+    const lightDomEvidence = element.querySelector<HTMLElement>("[data-terminal-text-evidence]");
+    expect(lightDomEvidence).not.toBeNull();
+    expect(lightDomEvidence?.textContent).toContain("hello from snapshot");
+    expect(lightDomEvidence?.textContent).toContain("live output");
+    expect(lightDomEvidence?.getAttribute("aria-live")).toBe("polite");
+    expect(element.textEvidence).toContain("live output");
   });
 
   test("Scenario: Given a running xterm session When cursor style changes Then terminal-view emits a live-apply presentation-ready event without rebuilding the renderer session", async () => {
@@ -1161,7 +1732,7 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(rebuiltTerminal?.renderer.render).toHaveBeenCalled();
   });
 
-  test("Scenario: Given the live snapshot arrives before xterm boot finishes When the component mounts Then the first transport snapshot is still rendered", async () => {
+  test("Scenario: Given the live frame arrives before xterm boot finishes When the component mounts Then the first transport frame is still rendered", async () => {
     const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
     defineTerminalView();
     const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
@@ -1176,18 +1747,14 @@ describe("Feature: terminal-view WebComponent", () => {
 
     const socket = WebSocketMock.instances.at(-1);
     socket?.open();
-    socket?.message(
-      encodeServerFrame({
-        type: "snapshot",
-        terminalId: "iflow",
-        status: "BUSY",
-        snapshot: withSnapshotScrollback({
-          seq: 1,
-          cols: 120,
-          rows: 30,
-          lines: ["boot output"],
-          cursor: { x: 0, y: 0 },
-        }),
+    publishFullFrame(
+      socket,
+      withSnapshotScrollback({
+        seq: 1,
+        cols: 120,
+        rows: 30,
+        lines: ["boot output"],
+        cursor: { x: 0, y: 0 },
       }),
     );
 

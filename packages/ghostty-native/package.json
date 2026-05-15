@@ -41,7 +41,10 @@
   },
   "scripts": {
     "build:ghostty-native": "bash build/build.sh",
-    "typecheck": "bunx tsc --noEmit"
+    "typecheck": "bunx tsc -p tsconfig.typecheck.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
   },
   "peerDependencies": {
     "@termless/core": "*"

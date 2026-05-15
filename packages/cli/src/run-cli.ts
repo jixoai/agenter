@@ -1,5 +1,9 @@
 import { type AuthServiceBridgeOptions } from "@agenter/app-server";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { homedir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import {
@@ -7,17 +11,23 @@ import {
   buildProductProcessCommand,
   isBuiltInCommand,
   isProductMetadataOnlyArgv,
+  type LocalProductLaunchTarget,
   readCommandToken,
   resolveProductCommandInvocation,
   resolveProductLaunchTarget,
 } from "./product-command-launcher";
 import type { AuthServiceHandle } from "@agenter/auth-service";
 import type { TrpcServerHandle } from "./trpc-server";
+import { readDaemonRuntimeDescriptor, type DaemonRuntimeDescriptor } from "./daemon-runtime-descriptor";
 import { resolveCanonicalWebUiAssetRoot } from "./webui-static-root";
 
 interface CommonArgs {
   host: string;
   port: number;
+}
+
+interface ResolvedDaemonAuthority extends CommonArgs {
+  authServiceEndpoint?: string;
 }
 
 interface AuthServiceBridgeCliArgs {
@@ -51,14 +61,50 @@ const waitForSignal = async (cleanup?: () => Promise<void> | void): Promise<void
 
 const healthUrl = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
 const webUrl = (args: { host: string; port: number }): string => `http://${args.host}:${args.port}`;
+const resolveLauncherHomeDir = (): string => process.env.HOME || homedir();
+const resolveDaemonHealthLabel = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
 
-const isDaemonAlive = async (args: CommonArgs): Promise<boolean> => {
-  try {
-    const response = await fetch(healthUrl(args));
-    return response.ok;
-  } catch {
-    return false;
+const isHttpHealthAlive = async (urlString: string): Promise<boolean> => {
+  const url = new URL(urlString);
+  const request = url.protocol === "https:" ? httpsRequest : httpRequest;
+  return await new Promise<boolean>((resolve) => {
+    const req = request(
+      url,
+      {
+        method: "GET",
+        timeout: 5_000,
+      },
+      (response) => {
+        response.resume();
+        resolve(response.statusCode !== undefined && response.statusCode >= 200 && response.statusCode < 300);
+      },
+    );
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.end();
+  });
+};
+
+const isDaemonAlive = async (args: CommonArgs): Promise<boolean> => await isHttpHealthAlive(healthUrl(args));
+
+const isReusableDaemonDescriptorHealthy = async (descriptor: DaemonRuntimeDescriptor): Promise<boolean> =>
+  await isHttpHealthAlive(`${descriptor.endpoint.replace(/\/$/u, "")}/health`);
+
+const discoverReusableDaemonAuthority = async (): Promise<ResolvedDaemonAuthority | null> => {
+  const descriptor = readDaemonRuntimeDescriptor(resolveLauncherHomeDir());
+  if (!descriptor) {
+    return null;
   }
+  if (!(await isReusableDaemonDescriptorHealthy(descriptor))) {
+    return null;
+  }
+  return {
+    host: descriptor.host,
+    port: descriptor.port,
+  };
 };
 
 const resolveAuthServiceBridgeOptions = (args: AuthServiceBridgeCliArgs): AuthServiceBridgeOptions | undefined => {
@@ -87,6 +133,7 @@ const startDaemon = async (
     workspaceCwd: process.cwd(),
     staticDir: args.staticDir,
     publicEnv: args.publicEnv,
+    homeDir: resolveLauncherHomeDir(),
     authService: resolveAuthServiceBridgeOptions(args),
   });
 };
@@ -125,8 +172,8 @@ const waitForHttpServer = async (url: string, timeoutMs = 30_000): Promise<void>
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     try {
-      const response = await fetch(url);
-      if (response.ok || response.status === 404) {
+      const alive = await isHttpHealthAlive(url);
+      if (alive) {
         return;
       }
     } catch {
@@ -159,7 +206,75 @@ const startWebDevServer = async (input: {
   return proc;
 };
 
-const launchProductCommand = async (argvInput: readonly string[]): Promise<boolean> => {
+export interface ProductCommandLaunchDependencies {
+  isDaemonAlive(args: CommonArgs): Promise<boolean>;
+  discoverReusableDaemonAuthority(): Promise<ResolvedDaemonAuthority | null>;
+  startDaemon(
+    args: CommonArgs & AuthServiceBridgeCliArgs & { staticDir?: string; publicEnv?: Record<string, string> },
+  ): Promise<TrpcServerHandle>;
+  spawnProduct(input: {
+    target: Parameters<typeof buildProductProcessCommand>[0];
+    descriptor: Parameters<typeof buildProductProcessCommand>[1];
+    productArgv: readonly string[];
+    env: NodeJS.ProcessEnv;
+  }): Bun.Subprocess<"inherit", "inherit", "inherit">;
+}
+
+const defaultProductCommandLaunchDependencies: ProductCommandLaunchDependencies = {
+  isDaemonAlive,
+  discoverReusableDaemonAuthority,
+  startDaemon,
+  spawnProduct(input) {
+    return Bun.spawn({
+      cmd: buildProductProcessCommand(input.target, input.descriptor, input.productArgv, input.env),
+      cwd: process.cwd(),
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+      env: input.env,
+    });
+  },
+};
+
+const runLocalProductInProcess = async (input: {
+  target: LocalProductLaunchTarget;
+  mainExport: string;
+  productArgv: readonly string[];
+  env: NodeJS.ProcessEnv;
+}): Promise<boolean> => {
+  const previousEnv = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(input.env)) {
+    previousEnv.set(key, process.env[key]);
+    if (typeof value === "string") {
+      process.env[key] = value;
+    } else {
+      delete process.env[key];
+    }
+  }
+  try {
+    const mod = await import(pathToFileURL(input.target.mainPath).href) as Record<string, unknown>;
+    const runner = mod[input.mainExport];
+    if (typeof runner !== "function") {
+      return false;
+    }
+    const argv = [process.argv[0] ?? "bun", input.target.binPath, ...input.productArgv];
+    await (runner as (argv: string[]) => Promise<void> | void)(argv);
+    return true;
+  } finally {
+    for (const [key, value] of previousEnv) {
+      if (typeof value === "string") {
+        process.env[key] = value;
+      } else {
+        delete process.env[key];
+      }
+    }
+  }
+};
+
+export const launchProductCommandForTest = async (
+  argvInput: readonly string[],
+  dependencies: ProductCommandLaunchDependencies = defaultProductCommandLaunchDependencies,
+): Promise<boolean> => {
   const routed = resolveProductCommandInvocation(argvInput);
   if (!routed) {
     const commandToken = readCommandToken(argvInput);
@@ -182,27 +297,67 @@ const launchProductCommand = async (argvInput: readonly string[]): Promise<boole
     routed.descriptor.capabilityHints.requiresDaemon && !isProductMetadataOnlyArgv(routed.productArgv);
 
   let localDaemon: TrpcServerHandle | null = null;
-  if (needsRuntimeBootstrap && !(await isDaemonAlive(common))) {
-    localDaemon = await startDaemon({
-      ...common,
-      authServiceEndpoint: routed.launcherOptions.authServiceEndpoint,
-      authServiceDataDir: routed.launcherOptions.authServiceDataDir,
-      authServiceHost: routed.launcherOptions.authServiceHost,
-      authServicePort: routed.launcherOptions.authServicePort,
-    });
+  let resolvedDaemonAuthority: ResolvedDaemonAuthority = { ...common };
+  if (needsRuntimeBootstrap) {
+    if (await dependencies.isDaemonAlive(common)) {
+      resolvedDaemonAuthority = { ...common };
+    } else {
+      const reusableAuthority = await dependencies.discoverReusableDaemonAuthority();
+      if (reusableAuthority) {
+        resolvedDaemonAuthority = reusableAuthority;
+      } else {
+        localDaemon = await dependencies.startDaemon({
+          ...common,
+          authServiceEndpoint: routed.launcherOptions.authServiceEndpoint,
+          authServiceDataDir: routed.launcherOptions.authServiceDataDir,
+          authServiceHost: routed.launcherOptions.authServiceHost,
+          authServicePort: routed.launcherOptions.authServicePort,
+        });
+        resolvedDaemonAuthority = {
+          host: localDaemon.host,
+          port: localDaemon.port,
+        };
+      }
+    }
   }
 
   const env = buildProductLaunchEnv({
     descriptor: routed.descriptor,
     source: target.source,
-    launcherOptions: routed.launcherOptions,
+    launcherOptions: {
+      ...routed.launcherOptions,
+      host: resolvedDaemonAuthority.host,
+      port: resolvedDaemonAuthority.port,
+    },
   });
-  const child = Bun.spawn({
-    cmd: buildProductProcessCommand(target, routed.descriptor, routed.productArgv, env),
-    cwd: process.cwd(),
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
+  if (target.source !== "remote" && routed.descriptor.bin.mainExport) {
+    try {
+      const handled = await runLocalProductInProcess({
+        target,
+        mainExport: routed.descriptor.bin.mainExport,
+        productArgv: routed.productArgv,
+        env,
+      });
+      if (handled) {
+        if (localDaemon) {
+          await localDaemon.stop();
+          localDaemon = null;
+        }
+        return true;
+      }
+    } catch (error) {
+      if (localDaemon) {
+        await localDaemon.stop();
+        localDaemon = null;
+      }
+      throw error;
+    }
+  }
+
+  const child = dependencies.spawnProduct({
+    target,
+    descriptor: routed.descriptor,
+    productArgv: routed.productArgv,
     env,
   });
 
@@ -217,6 +372,9 @@ const launchProductCommand = async (argvInput: readonly string[]): Promise<boole
 
   return true;
 };
+
+const launchProductCommand = async (argvInput: readonly string[]): Promise<boolean> =>
+  await launchProductCommandForTest(argvInput);
 
 export const runCli = async (argvInput = process.argv): Promise<void> => {
   const rawArgs = hideBin(argvInput);
@@ -351,13 +509,21 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
 
         let localDaemon: TrpcServerHandle | null = null;
         if (!(await isDaemonAlive(common))) {
-          localDaemon = await startDaemon({
-            ...common,
-            authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
-            authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
-            authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
-            authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
-          });
+          const reusableAuthority = await discoverReusableDaemonAuthority();
+          if (reusableAuthority) {
+            common.host = reusableAuthority.host;
+            common.port = reusableAuthority.port;
+          } else {
+            localDaemon = await startDaemon({
+              ...common,
+              authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
+              authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
+              authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
+              authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
+            });
+            common.host = localDaemon.host;
+            common.port = localDaemon.port;
+          }
         }
 
         const { runTuiClient } = await import("@agenter/tui");
@@ -378,11 +544,11 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
         };
         const alive = await isDaemonAlive(common);
         if (!alive) {
-          console.log(`daemon is not reachable at ${healthUrl(common)}`);
+          console.log(`daemon is not reachable at ${resolveDaemonHealthLabel(common)}`);
           process.exitCode = 1;
           return;
         }
-        console.log(`daemon is healthy at ${healthUrl(common)}`);
+        console.log(`daemon is healthy at ${resolveDaemonHealthLabel(common)}`);
       },
     )
     .demandCommand(1)

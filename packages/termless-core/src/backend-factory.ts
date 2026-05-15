@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 
 import { createXtermBackend } from "./termless-xtermjs.js";
 import type { TerminalBackend } from "./termless-types.js";
+import type { Cell } from "./termless-types.js";
 
 export type TerminalBackendKind = "xterm" | "ghostty-native";
 
@@ -17,6 +18,11 @@ export interface CreateTerminalBackendInput {
   cols: number;
   rows: number;
   scrollbackLimit: number;
+}
+
+export interface RangeReadableTerminalBackend extends TerminalBackend {
+  getLinesRange(startRow: number, rowCount: number): Cell[][];
+  getViewportLines(): Cell[][];
 }
 
 export const isTerminalBackendKind = (value: unknown): value is TerminalBackendKind =>
@@ -123,13 +129,31 @@ const createOfficialTerminalBackend = (
   }
 };
 
-export const createTerminalBackend = (input: CreateTerminalBackendInput): TerminalBackend => {
+const withRangeReads = (backend: TerminalBackend): RangeReadableTerminalBackend => {
+  const extended = backend as TerminalBackend & Partial<RangeReadableTerminalBackend>;
+  if (typeof extended.getLinesRange !== "function") {
+    extended.getLinesRange = (startRow: number, rowCount: number): Cell[][] => {
+      const safeStart = Math.max(0, Math.trunc(startRow));
+      const safeRows = Math.max(1, Math.trunc(rowCount));
+      return Array.from({ length: safeRows }, (_, index) => backend.getLine(safeStart + index));
+    };
+  }
+  if (typeof extended.getViewportLines !== "function") {
+    extended.getViewportLines = (): Cell[][] => {
+      const scrollback = backend.getScrollback();
+      return extended.getLinesRange!(scrollback.viewportOffset, scrollback.screenLines);
+    };
+  }
+  return extended as RangeReadableTerminalBackend;
+};
+
+export const createTerminalBackend = (input: CreateTerminalBackendInput): RangeReadableTerminalBackend => {
   const backend = input.backend ?? DEFAULT_TERMINAL_BACKEND;
   switch (backend) {
     case "xterm":
-      return createOfficialTerminalBackend(backend, input);
+      return withRangeReads(createOfficialTerminalBackend(backend, input));
     case "ghostty-native":
-      return createOfficialTerminalBackend(backend, input);
+      return withRangeReads(createOfficialTerminalBackend(backend, input));
     default:
       throw new Error(`unsupported terminal backend: ${backend satisfies never}`);
   }

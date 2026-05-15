@@ -17,3 +17,4 @@
 - product package resolution 固定遵守 `workspace > installed package > configured remote runner`。
 - launcher 创建的 product 进程必须以前台交互模式运行，继承当前 shell-terminal 的 stdio，并传播原始退出码。
 - 如果 launcher 为 product command 临时启动了 daemon，则 launcher 负责在 product 退出后清理；若 daemon 先于 launcher 存在，则 launcher 不得接管其生命周期。
+- 本机 loopback auto-start 路径必须以 runtime home root 为单一 daemon authority discovery 作用域：先复用健康的 same-root daemon descriptor，再决定是否启动新的本地 daemon；product 不得自建第二套 daemon 发现真源。

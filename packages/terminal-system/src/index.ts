@@ -9,7 +9,9 @@ export {
   type ManagedTerminalConfig,
   type ManagedTerminalLifecycleEvent,
   type ManagedTerminalSnapshot,
+  type TerminalRuntime,
 } from "./managed-terminal";
+export { ProjectionTerminalRuntime, type ProjectionTerminalRuntimeConfig } from "./projection-terminal-runtime";
 export { keyToSequence, parseMixedInput, runMixedInput } from "./input-parser";
 export { readTerminalOutput, readTerminalOutputLines, streamTerminalOutput } from "./output-reader";
 export {
@@ -20,6 +22,13 @@ export {
   stripHtmlTags,
 } from "./renderer";
 export { XtermBridge } from "./xterm-bridge";
+export {
+  chooseTerminalFramePatch,
+  projectTerminalSnapshotFramePayload,
+  terminalSnapshotToFramePayload,
+  type TerminalTransportFramePatch,
+  type TerminalTransportFramePayload,
+} from "./terminal-frame-diff";
 export {
   TerminalControlPlane,
 } from "./terminal-control-plane";
@@ -53,6 +62,7 @@ export type {
   TerminalControlPlaneEntry,
   TerminalConfigMutationResult,
   TerminalConfigSeatInput,
+  TerminalComposedProductSurfaceState,
   TerminalConfigView,
   TerminalCreateInput,
   TerminalEventKind,
@@ -87,6 +97,8 @@ export type {
   TerminalCursorStyle,
   TerminalThemeName,
   TerminalTransportConfig,
+  TerminalTransportFramePatchMode,
+  TerminalTransportAttachmentProjection,
   TerminalTransportEndpoint,
   TerminalRevokeSeatInput,
   TerminalWriteInput,

@@ -1,5 +1,6 @@
 import type {
   GlobalRoomSnapshotOutput,
+  ProductTerminalComposedSurfaceState,
   RuntimeStore,
 } from "@agenter/client-sdk";
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
@@ -7,7 +8,7 @@ import type { CliShellLiveTerminalView } from "./live-terminal-mirror";
 
 import type { CliShellStore } from "../bootstrap";
 import type { CliShellManagedState } from "../managed";
-export type CliShellDialoguePlacement = "left" | "right" | "bottom" | "floating";
+export type CliShellDialoguePlacement = "left" | "right" | "floating";
 export type CliShellDialoguePlacementRequest = CliShellDialoguePlacement | "smart";
 
 export interface CliShellDialogueBlock {
@@ -21,7 +22,11 @@ export interface CliShellDialogueBlock {
 
 export interface CliShellTuiModel {
   terminalId: string;
+  terminalObservationReady: boolean;
+  focusTarget: "terminal" | "dialogue";
+  activeFocusTarget?: "terminal" | "dialogue";
   terminalView: {
+    snapshotSeq: number;
     plainLines: string[];
     richLines: TerminalRenderRichLine[];
     cursorAbsRow: number;
@@ -44,13 +49,48 @@ export interface CliShellTuiModel {
   dialoguePlacement: CliShellDialoguePlacement | null;
   dialogueBlocks: CliShellDialogueBlock[];
   dialogueDraft: string;
+  dialogueScrollOffset: number;
   dialogueTitle: string;
+}
+
+export type CliShellPointerAction =
+  | "toggleManaged"
+  | "openDialogue"
+  | "closeDialogue"
+  | "focusDialogueInput"
+  | "submitDialogue"
+  | "placeLeft"
+  | "placeRight"
+  | "placeFloating";
+
+export interface CliShellScrollRegion {
+  row: number;
+  col: number;
+  width: number;
+  height: number;
+}
+
+export interface CliShellSelectionRegion extends CliShellScrollRegion {
+  owner: "terminal" | "dialogue";
+}
+
+export interface CliShellSelectionSource extends CliShellSelectionRegion {
+  lines: readonly TerminalRenderRichLine[];
+}
+
+export interface CliShellTuiInteractionLayout {
+  terminalScrollRegion: CliShellScrollRegion | null;
+  terminalScrollbarRegion: CliShellScrollRegion | null;
+  selectionRegions: CliShellSelectionRegion[];
 }
 
 export interface CliShellTuiViewState {
   dialogueOpen: boolean;
+  focusTarget: "terminal" | "dialogue";
+  activeFocusTarget?: "terminal" | "dialogue";
   requestedPlacement: CliShellDialoguePlacementRequest;
   dialogueDraft: string;
+  dialogueScrollOffset?: number;
   managed: CliShellManagedState;
   statusNotice: string | null;
 }
@@ -60,7 +100,24 @@ export interface CliShellTuiAppProjection {
   liveTerminal?: CliShellLiveTerminalView | null;
 }
 
-export type CliShellTuiStore = CliShellStore &
+export interface CliShellObservationReadyBaseline {
+  version: number;
+  timestamp: number | null;
+}
+
+export type CliShellTuiStore = Pick<
+  CliShellStore,
+  | "readSettings"
+  | "getAuthSession"
+  | "grantGlobalTerminalWriteLease"
+  | "revokeGlobalTerminalWriteLease"
+  | "queryAttention"
+  | "commitAttention"
+  | "settleAttention"
+  | "listProductDelegations"
+  | "createProductDelegation"
+  | "revokeProductDelegation"
+> &
   Pick<
     RuntimeStore,
     | "getState"
@@ -76,4 +133,7 @@ export type CliShellTuiStore = CliShellStore &
     | "sendGlobalRoomMessage"
     | "inputGlobalTerminal"
     | "setGlobalTerminalConfig"
+    | "publishGlobalTerminalComposedSurface"
   >;
+
+export type CliShellComposedSurfaceState = ProductTerminalComposedSurfaceState;

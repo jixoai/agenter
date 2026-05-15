@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build:skills": "bun run ./scripts/build-runtime-skill-catalog.ts",
-    "test": "bun test",
+    "test": "bun run ./scripts/run-package-tests.ts",
     "test:real": "bun test test/real-loopbus.integration.test.ts",
     "test:real:archive-gate": "bun run ./scripts/run-real-archive-gate.ts",
     "typecheck": "bunx tsc --noEmit",

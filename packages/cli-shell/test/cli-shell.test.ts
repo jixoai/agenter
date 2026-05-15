@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { GlobalRoomActorId, GlobalTerminalActorId } from "@agenter/client-sdk";
 
 import {
   CLI_SHELL_DEFAULT_AVATAR,
@@ -19,6 +20,9 @@ describe("Feature: cli-shell orchestration", () => {
     expect(parsed.avatarNickname).toBe(CLI_SHELL_DEFAULT_AVATAR);
     expect(parsed.shellName).toBe("shell-1");
     expect(parsed.backend).toBeUndefined();
+    expect(parsed.webPort).toBeUndefined();
+    expect(parsed.debug).toBe(false);
+    expect(parsed.experimentalDynamicRefresh).toBe(false);
   });
 
   test("Scenario: Given explicit avatar session and backend When parsing cli-shell args Then avatar override shell name normalization and backend truth stay product-local", () => {
@@ -39,6 +43,16 @@ describe("Feature: cli-shell orchestration", () => {
     expect(normalizeShellName("shell-2")).toBe("shell-2");
   });
 
+  test("Scenario: Given debug argv When parsing cli-shell args Then debug display is an explicit startup flag", () => {
+    expect(parseCliShellArgs(["--debug"]).debug).toBe(true);
+    expect(parseCliShellArgs(["--debug=false"]).debug).toBe(false);
+  });
+
+  test("Scenario: Given dynamic refresh argv When parsing cli-shell args Then dynamic pacing is explicit and experimental", () => {
+    expect(parseCliShellArgs(["--experimental-dynamic-refresh"]).experimentalDynamicRefresh).toBe(true);
+    expect(parseCliShellArgs(["--experimental-dynamic-refresh=false"]).experimentalDynamicRefresh).toBe(false);
+  });
+
   test("Scenario: Given launcher-owned daemon env When parsing cli-shell args Then the product consumes daemon context without inventing a local port authority", () => {
     const parsed = parseCliShellArgs([], {
       AGENTER_DAEMON_HOST: "127.0.0.9",
@@ -48,6 +62,14 @@ describe("Feature: cli-shell orchestration", () => {
     expect(parsed.host).toBe("127.0.0.9");
     expect(parsed.port).toBe(4999);
     expect(parsed.authServiceEndpoint).toBe("http://127.0.0.1:4591");
+  });
+
+  test("Scenario: Given cli-shell web host argv When parsing args Then web mode stays a host flag instead of becoming the default backend mode", () => {
+    expect(parseCliShellArgs(["--web"]).webPort).toBe(0);
+    expect(parseCliShellArgs(["--web=3210"]).webPort).toBe(3210);
+    expect(parseCliShellArgs(["--web", "3211"]).webPort).toBe(3211);
+    expect(parseCliShellArgs(["--web", "@default"]).avatarNickname).toBe("default");
+    expect(parseCliShellArgs(["--web", "@default"]).webPort).toBe(0);
   });
 
   test("Scenario: Given an unsupported backend flag When parsing cli-shell args Then the product rejects it explicitly", () => {
@@ -72,7 +94,11 @@ describe("Feature: cli-shell orchestration", () => {
     expect(store.authToken).toBe("superadmin-token");
     expect(attached.avatar.nickname).toBe(CLI_SHELL_DEFAULT_AVATAR);
     expect(attached.session.avatar).toBe(CLI_SHELL_DEFAULT_AVATAR);
-    expect(attached.terminal.entry.terminalId).toBe("shell-1");
+    expect(attached.shellTruthTerminal.entry.terminalId).toBe("shell-1:terminal-1");
+    expect(attached.visibleTerminal.entry.terminalId).toBe("shell-1:terminal-2");
+    expect(attached.visibleTerminal.entry.processKind).toBe("product");
+    expect(attached.visibleTerminal.entry.metadata?.terminalRuntimeKind).toBe("composed");
+    expect(attached.visibleTerminal.entry.metadata?.composedShellTerminalId).toBe("shell-1:terminal-1");
     expect(attached.room.entry.title).toBe("shell-1");
     expect(attached.room.entry.metadata?.resourceKey).toBe("shell-1");
     expect(attached.promptSeeded).toBe(true);
@@ -80,6 +106,26 @@ describe("Feature: cli-shell orchestration", () => {
     expect(Array.from(store.privateAssets.keys())).toEqual(
       shellAssistantMemoryRoles.map((role) => `/repo:${CLI_SHELL_DEFAULT_AVATAR}:memory:${role.path}`),
     );
+  });
+
+  test("Scenario: Given cli-shell bootstraps terminal-2 When inspecting terminal creation Then terminal-2 is a composed product terminal without a shell child command", async () => {
+    const store = new FakeCliShellStore();
+    const attached = await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+    const shellTerminal = store.terminals.find((entry) => entry.terminalId === attached.shellTruthTerminal.entry.terminalId);
+    const visibleTerminal = store.terminals.find((entry) => entry.terminalId === attached.visibleTerminal.entry.terminalId);
+
+    expect(shellTerminal?.processKind).toBe("shell");
+    expect(shellTerminal?.command).toEqual([process.env.SHELL ?? "bash", "-i"]);
+    expect(visibleTerminal?.processKind).toBe("product");
+    expect(visibleTerminal?.metadata?.terminalRuntimeKind).toBe("composed");
+    expect(visibleTerminal?.metadata?.composedShellTerminalId).toBe(shellTerminal?.terminalId);
+    expect(visibleTerminal?.command).not.toEqual(shellTerminal?.command);
+    expect(visibleTerminal?.command).toEqual([]);
   });
 
   test("Scenario: Given prompt and memory already exist When bootstrapping shell-assistant again Then cli-shell keeps user edits and reuses room and terminal resources", async () => {
@@ -105,7 +151,8 @@ describe("Feature: cli-shell orchestration", () => {
       shellName: "shell-1",
     });
 
-    expect(second.terminal.created).toBe(false);
+    expect(second.shellTruthTerminal.created).toBe(false);
+    expect(second.visibleTerminal.created).toBe(false);
     expect(second.room.created).toBe(false);
     expect(second.promptSeeded).toBe(false);
     expect(store.promptFiles.get(first.session.id)?.content).toBe("# user edited prompt\n");
@@ -138,8 +185,8 @@ describe("Feature: cli-shell orchestration", () => {
       backend: "ghostty-native",
     });
 
-    expect(attached.terminal.entry.backend).toBe("ghostty-native");
-    expect(store.terminals.find((entry) => entry.terminalId === "shell-1")?.backend).toBe("ghostty-native");
+    expect(attached.shellTruthTerminal.entry.backend).toBe("ghostty-native");
+    expect(store.terminals.find((entry) => entry.terminalId === "shell-1:terminal-1")?.backend).toBe("ghostty-native");
   });
 
   test("Scenario: Given a running shell terminal with another backend When bootstrapping cli-shell with ghostty-native Then the mismatch is surfaced instead of silently reusing xterm", async () => {
@@ -257,24 +304,75 @@ describe("Feature: cli-shell orchestration", () => {
 
     expect(shellAssistantReconnect.session.id).toBe(shellAssistantFirst.session.id);
     expect(defaultShellTwo.session.id).toBe(defaultSameShell.session.id);
-    expect(defaultSameShell.terminal.created).toBe(false);
+    expect(defaultSameShell.shellTruthTerminal.created).toBe(false);
+    expect(defaultSameShell.visibleTerminal.created).toBe(false);
     expect(defaultSameShell.room.created).toBe(false);
-    expect(defaultShellTwo.terminal.created).toBe(true);
+    expect(defaultShellTwo.shellTruthTerminal.created).toBe(true);
+    expect(defaultShellTwo.visibleTerminal.created).toBe(true);
     expect(defaultShellTwo.room.created).toBe(true);
     expect(store.sessions.size).toBe(2);
-    expect(store.terminals.map((entry) => entry.terminalId)).toEqual(["shell-1", "shell-2"]);
-    expect(store.focusTerminalCalls).toEqual([["shell-1"], ["shell-1"]]);
+    expect(store.terminals.map((entry) => entry.terminalId)).toEqual([
+      "shell-1:terminal-1",
+      "shell-1:terminal-2",
+      "shell-2:terminal-1",
+      "shell-2:terminal-2",
+    ]);
+    expect(store.focusTerminalCalls).toEqual([
+      ["shell-1:terminal-1"],
+      ["shell-1:terminal-2"],
+      ["shell-1:terminal-1"],
+      ["shell-1:terminal-2"],
+      ["shell-1:terminal-1"],
+      ["shell-1:terminal-2"],
+      ["shell-2:terminal-1"],
+      ["shell-2:terminal-2"],
+    ]);
     expect(store.rooms.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-1", "shell-2"]);
     expect(store.rooms.map((entry) => entry.title)).toEqual(["shell-1", "shell-2"]);
-    expect(store.focusRoomCalls).toEqual([[shellAssistantFirst.room.entry.chatId], [shellAssistantFirst.room.entry.chatId]]);
-    expect(store.terminalGrants.get("shell-1")?.map((grant) => grant.participantId)).toEqual([
-      "auth:shell-assistant",
-      "auth:default",
+    expect(store.focusRoomCalls).toEqual([
+      [shellAssistantFirst.room.entry.chatId],
+      [shellAssistantFirst.room.entry.chatId],
+      [shellAssistantFirst.room.entry.chatId],
+      [defaultShellTwo.room.entry.chatId],
+    ]);
+    expect(store.terminalGrants.get("shell-1:terminal-1")?.map((grant) => grant.participantId)).toEqual([
+      shellAssistantFirst.session.avatarPrincipalId as GlobalTerminalActorId,
+      defaultSameShell.session.avatarPrincipalId as GlobalTerminalActorId,
+    ]);
+    expect(store.terminalGrants.get("shell-1:terminal-2")?.map((grant) => grant.participantId)).toEqual([
+      shellAssistantFirst.session.avatarPrincipalId as GlobalTerminalActorId,
+      defaultSameShell.session.avatarPrincipalId as GlobalTerminalActorId,
     ]);
     expect(store.roomGrants.get(shellAssistantFirst.room.entry.chatId)?.map((grant) => grant.participantId)).toEqual([
-      "auth:shell-assistant",
-      "auth:default",
+      shellAssistantFirst.session.avatarPrincipalId as GlobalRoomActorId,
+      defaultSameShell.session.avatarPrincipalId as GlobalRoomActorId,
     ]);
+  });
+
+  test("Scenario: Given avatar catalog principal diverges from runtime session principal When bootstrapping cli-shell Then bindings follow the ensured session actor instead of the catalog projection", async () => {
+    const store = new FakeCliShellStore();
+    store.avatars = [
+      {
+        ...store.avatars[0]!,
+        nickname: CLI_SHELL_DEFAULT_AVATAR,
+        displayName: "Shell Assistant",
+        avatarPrincipalId: "auth:catalog-shell-assistant",
+        runtimeId: "runtime:shell-assistant",
+      },
+    ];
+    const attached = await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+
+    expect(attached.avatar.avatarPrincipalId).toBe("auth:catalog-shell-assistant");
+    expect(attached.session.avatarPrincipalId).toBe("auth:shell-assistant");
+    expect(attached.avatarActorId).toBe("auth:shell-assistant");
+    expect(store.terminalGrants.get("shell-1:terminal-1")?.[0]?.participantId).toBe("auth:shell-assistant");
+    expect(store.terminalGrants.get("shell-1:terminal-2")?.[0]?.participantId).toBe("auth:shell-assistant");
+    expect(store.roomGrants.get(attached.room.entry.chatId)?.[0]?.participantId).toBe("auth:shell-assistant");
   });
 
   test("Scenario: Given the default shell-assistant prompt seed When inspecting the content Then collaboration variance memory roles and auto-dream remain explicit examples instead of built-in modes", () => {

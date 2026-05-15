@@ -18,8 +18,17 @@ import {
   type ManagedInvitationEndpointDescriptor,
 } from "@agenter/managed-seat-invitation-handshake";
 import {
+  createTerminalTransportRowCacheEncoder,
   decodeTerminalTransportClientMessage,
   encodeTerminalTransportServerMessage,
+  getTerminalTransportDirectRegistry,
+  TERMINAL_TRANSPORT_DIRECT_REGISTRY_KEY,
+  type TerminalTransportClientMessage,
+  type TerminalTransportDirectEndpoint,
+  type TerminalTransportFramePatch,
+  type TerminalTransportGeometryRole,
+  type TerminalTransportFramePayload,
+  type TerminalTransportRowCacheEncoder,
   type TerminalTransportServerMessage,
 } from "@agenter/terminal-transport-protocol";
 import {
@@ -27,13 +36,18 @@ import {
   type ManagedTerminalConfig,
   type ManagedTerminalConfigPatch,
   type ManagedTerminalSnapshot,
+  type TerminalRuntime,
 } from "./managed-terminal";
+import { ProjectionTerminalRuntime } from "./projection-terminal-runtime";
 import {
   DEFAULT_TERMINAL_BACKEND as DEFAULT_CONTROL_PLANE_TERMINAL_BACKEND,
   DEFAULT_TERMINAL_CURSOR,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_TERMINAL_RENDERER_PREFERENCE,
   DEFAULT_TERMINAL_THEME,
+  TERMINAL_RUNTIME_KIND_METADATA_KEY,
+  type TerminalRuntimeKind,
+  type TerminalTransportFramePatchMode,
 } from "./terminal-control-plane.types";
 import type {
   TerminalAccessProjection,
@@ -66,6 +80,7 @@ import type {
   TerminalManagedSeatClass,
   TerminalManagedSeatPayload,
   TerminalConfigSeatInput,
+  TerminalComposedProductSurfaceState,
   TerminalRevokeSeatInput,
   TerminalAcceptSeatInput,
   TerminalInputInput,
@@ -80,6 +95,7 @@ import type {
   TerminalReversePage,
   TerminalSeatProjection,
   TerminalShortcutMap,
+  TerminalTransportAttachmentProjection,
   TerminalTransportConfig,
   TerminalTransportEndpoint,
   TerminalWriteInput,
@@ -90,10 +106,123 @@ import { TerminalDb } from "./terminal-db";
 import { resolveDefaultInteractiveShellCommand } from "./default-shell-command";
 import type { TerminalLifecycleTransition, TerminalObservedIdentity } from "./terminal-runtime-truth";
 import type { TerminalStatus } from "./types";
+import { ComposedTerminalRuntime } from "./composed-terminal-runtime";
+import {
+  chooseTerminalFramePatch,
+  cloneTerminalFramePayload,
+  projectTerminalSnapshotFramePayload,
+  terminalSnapshotToFramePayload,
+} from "./terminal-frame-diff";
 
 interface ManagedEntry {
   record: TerminalRecord;
-  terminal: ManagedTerminal;
+  terminal: TerminalRuntime;
+}
+
+type TerminalRuntimeFactory = (input: {
+  record: TerminalRecord;
+  outputRoot: string;
+}) => TerminalRuntime;
+
+type TerminalTransportSocket = {
+  data: TerminalTransportSocketData;
+  send(message: TerminalTransportServerMessage): unknown;
+  close(code?: number, reason?: string): void;
+};
+
+type TerminalTransportTraceFields = Record<string, string | number | boolean | null>;
+
+const TRANSPORT_DIAGNOSTICS_INTERVAL_MS = 1_000;
+const TRANSPORT_SLOW_PULL_TRACE_MS = 16;
+
+interface TerminalTransportNoDelayCapability {
+  setNoDelay(noDelay?: boolean): boolean;
+}
+
+const hasTransportNoDelayCapability = (value: unknown): value is TerminalTransportNoDelayCapability => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  return typeof (value as { setNoDelay?: unknown }).setNoDelay === "function";
+};
+
+const resolveTransportPayloadByteLength = (message: ArrayBuffer | ArrayBufferView | Uint8Array): number | null => {
+  if (ArrayBuffer.isView(message)) {
+    return message.byteLength;
+  }
+  return message.byteLength;
+};
+
+interface TerminalTransportDiagnostics {
+  lastEmittedAt: number;
+  lastLoopProbeAt: number;
+  maxEventLoopLagMs: number;
+  inputDrains: number;
+  queuedMessages: number;
+  scrollMessages: number;
+  nonScrollMessages: number;
+  pullMessages: number;
+  oldestQueueAgeMs: number | null;
+  oldestRawQueueAgeMs: number | null;
+  totalDecodeMs: number;
+  maxQueueDepthBeforeDrain: number;
+  lastDrainMs: number | null;
+  maxDrainMs: number;
+  pullFrames: number;
+  lastPullTotalMs: number | null;
+  maxPullTotalMs: number;
+  lastPullPatchType: string | null;
+  outputEvents: number;
+  outputBytes: number;
+  snapshots: number;
+  dirtyTicks: number;
+  dirtySignals: number;
+  dirtyCheckMs: number;
+}
+
+const createTransportDiagnostics = (): TerminalTransportDiagnostics => {
+  const now = Date.now();
+  return {
+    lastEmittedAt: 0,
+    lastLoopProbeAt: now,
+    maxEventLoopLagMs: 0,
+    inputDrains: 0,
+    queuedMessages: 0,
+    scrollMessages: 0,
+    nonScrollMessages: 0,
+    pullMessages: 0,
+    oldestQueueAgeMs: null,
+    oldestRawQueueAgeMs: null,
+    totalDecodeMs: 0,
+    maxQueueDepthBeforeDrain: 0,
+    lastDrainMs: null,
+    maxDrainMs: 0,
+    pullFrames: 0,
+    lastPullTotalMs: null,
+    maxPullTotalMs: 0,
+    lastPullPatchType: null,
+    outputEvents: 0,
+    outputBytes: 0,
+    snapshots: 0,
+    dirtyTicks: 0,
+    dirtySignals: 0,
+    dirtyCheckMs: 0,
+  };
+};
+
+const updateMaxNullable = (current: number | null, next: number | null): number | null => {
+  if (next === null) {
+    return current;
+  }
+  return current === null ? next : Math.max(current, next);
+};
+
+interface TerminalTransportQueuedMessage {
+  message: TerminalTransportClientMessage;
+  receivedAt: number;
+  rawReceivedAt: number;
+  decodeMs: number | null;
+  byteLength: number | null;
 }
 
 interface ActorPresence {
@@ -104,12 +233,75 @@ interface ActorPresence {
 
 interface TerminalTransportSocketData {
   cleanup: Array<() => void>;
+  directCleanup: Array<() => void>;
   terminalId: string;
   actorId: TerminalActorId | null;
   accessRole: TerminalGrantRole;
   accessToken: string;
   binaryTypeConfigured: boolean;
+  attachmentId: string;
+  requestedGeometryRole: TerminalTransportGeometryRole;
+  effectiveGeometryRole: TerminalTransportGeometryRole;
+  geometryOrder?: number;
+  geometryAuthorityAttachmentId?: string;
+  authorityReason: string;
+  inputQueue: TerminalTransportQueuedMessage[];
+  inputDrainScheduled: boolean;
+  inputDrainScheduledAt: number | null;
+  debugTrace: boolean;
+  diagnostics: TerminalTransportDiagnostics;
+  tcpNoDelayAttempted: boolean;
+  tcpNoDelayEnabled: boolean;
+  dataPlane: "websocket" | "direct";
+  directOffered: boolean;
+  directEnabled: boolean;
+  directUpgradeId?: string;
+  directClientToken?: string;
+  directServerToken?: string;
+  directClientSend?: (message: TerminalTransportServerMessage) => void;
 }
+
+interface TerminalTransportAttachmentRecord {
+  attachmentId: string;
+  terminalId: string;
+  actorId: TerminalActorId | null;
+  requestedGeometryRole: TerminalTransportGeometryRole;
+  effectiveGeometryRole: TerminalTransportGeometryRole;
+  geometryOrder?: number;
+  attachedAt: number;
+  geometryAuthorityAttachmentId?: string;
+  authorityReason: string;
+}
+
+interface TerminalTransportFrameState {
+  lastDeliveredFrame: TerminalTransportFramePayload | null;
+  rowCacheEncoder: TerminalTransportRowCacheEncoder;
+  dirtyOutstanding: boolean;
+  lastDirtyFrameSeq: number;
+  lastDirtyReason: string;
+  lastDirtyTimestamp?: number;
+}
+
+interface TerminalTransportDirtyLoopState {
+  timer: ReturnType<typeof setTimeout> | null;
+  previousText: string;
+}
+
+const resolveTransportPatchRowCount = (patch: TerminalTransportFramePatch): number => {
+  if (patch.type === "full") {
+    return patch.frame.lines.length;
+  }
+  if (patch.type === "rows") {
+    return patch.rowPatches.length;
+  }
+  if (patch.type === "scrollRows") {
+    return patch.insertedLines.length;
+  }
+  if (patch.type === "rowCache") {
+    return patch.cachedRows.length;
+  }
+  return 0;
+};
 
 type TerminalChangeReason =
   | "created"
@@ -154,6 +346,9 @@ const DEFAULT_AWAIT_VIEW_LINES = 80;
 const MAX_AWAIT_VIEW_LINES = 500;
 const MAX_AWAIT_CONTEXT_LINES = 10;
 const DEFAULT_MANAGED_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const TERMINAL_TRANSPORT_DIRTY_FPS = 20;
+const TERMINAL_TRANSPORT_DIRTY_INTERVAL_MS = Math.floor(1000 / TERMINAL_TRANSPORT_DIRTY_FPS);
+const TERMINAL_TRANSPORT_DIRECT_TTL_MS = 10_000;
 
 const createId = (): string => `term-${randomUUID()}`;
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
@@ -177,6 +372,10 @@ const roleRank = (role: TerminalGrantRole): number => {
 const cloneShortcuts = (input?: TerminalShortcutMap): TerminalShortcutMap | undefined =>
   input ? { ...input } : undefined;
 const cloneMetadata = (input?: Record<string, unknown>): Record<string, unknown> => ({ ...(input ?? {}) });
+const readTerminalRuntimeKind = (metadata?: Record<string, unknown>): TerminalRuntimeKind => {
+  const value = metadata?.[TERMINAL_RUNTIME_KIND_METADATA_KEY];
+  return value === "projection" || value === "composed" ? value : "managed";
+};
 const cloneFontProfile = (input?: TerminalFontProfile): TerminalFontProfile => ({
   family: input?.family ?? DEFAULT_TERMINAL_FONT.family,
   sizePx: input?.sizePx ?? DEFAULT_TERMINAL_FONT.sizePx,
@@ -227,7 +426,11 @@ const cloneTransportConfig = (input?: TerminalTransportConfig): TerminalTranspor
   host: input?.host ?? "127.0.0.1",
   port: input?.port ?? null,
   pathPrefix: input?.pathPrefix ?? "/pty",
+  framePatchMode: input?.framePatchMode ?? "rowCache",
 });
+
+const resolveFramePatchMode = (input?: TerminalTransportFramePatchMode): TerminalTransportFramePatchMode =>
+  input === "diff" || input === "full" ? input : "rowCache";
 
 const mergeProfile = (...profiles: Array<TerminalProcessProfile | undefined>): TerminalProcessProfile => {
   const merged: TerminalProcessProfile = {};
@@ -456,9 +659,43 @@ const appendTokenToUrl = (url: string, accessToken?: string): string => {
   return next.toString();
 };
 
+const authoritySortValue = (record: TerminalTransportAttachmentRecord): number =>
+  typeof record.geometryOrder === "number" ? record.geometryOrder : Number.POSITIVE_INFINITY;
+
+const createWebSocketTransportSocket = (socket: {
+  data: TerminalTransportSocketData;
+  send(data: Uint8Array): unknown;
+  close(code?: number, reason?: string): void;
+}): TerminalTransportSocket => ({
+  data: socket.data,
+  send(message) {
+    if (socket.data.directEnabled && socket.data.directClientSend) {
+      queueMicrotask(() => socket.data.directClientSend?.(message));
+      return true;
+    }
+    return socket.send(encodeTerminalTransportServerMessage(message));
+  },
+  close(code, reason) {
+    socket.close(code, reason);
+  },
+});
+
+const canOfferDirectTransport = (message: Extract<TerminalTransportClientMessage, { type: "hello" }>): boolean =>
+  message.direct?.requested === true &&
+  message.runtime?.kind === "bun" &&
+  message.runtime.pid === process.pid &&
+  message.runtime.directRegistryKey === TERMINAL_TRANSPORT_DIRECT_REGISTRY_KEY &&
+  typeof message.direct.clientToken === "string" &&
+  message.direct.clientToken.length > 0;
+
 export class TerminalControlPlane {
   private readonly db: TerminalDb;
   private readonly entries = new Map<string, ManagedEntry>();
+  private readonly transportAttachmentsById = new Map<string, TerminalTransportAttachmentRecord>();
+  private readonly transportAttachmentIdsByTerminal = new Map<string, string[]>();
+  private readonly transportSocketsByAttachmentId = new Map<string, TerminalTransportSocket>();
+  private readonly transportFrameStateByAttachmentId = new Map<string, TerminalTransportFrameState>();
+  private readonly transportDirtyLoopByTerminal = new Map<string, TerminalTransportDirtyLoopState>();
   private readonly focusedTerminalIdsByActor = new Map<string, Set<string>>();
   private readonly actorPresence = new Map<string, ActorPresence>();
   private readonly changeListeners = new Set<(payload: TerminalChangePayload) => void>();
@@ -477,6 +714,7 @@ export class TerminalControlPlane {
   private readonly lifecycleTransitions = new Map<string, TerminalLifecycleTransition>();
   private config: TerminalControlPlaneConfig;
   private transportServer: Bun.Server<TerminalTransportSocketData> | null = null;
+  private readonly terminalRuntimeFactory: TerminalRuntimeFactory;
 
   constructor(
     private readonly options: {
@@ -484,6 +722,7 @@ export class TerminalControlPlane {
       outputRoot?: string;
       defaultShellCommand?: string[];
       initialConfig?: TerminalControlPlaneConfig;
+      terminalRuntimeFactory?: TerminalRuntimeFactory;
     } = {},
   ) {
     this.config = {
@@ -498,6 +737,7 @@ export class TerminalControlPlane {
       approvalTimeoutMs: options.initialConfig?.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
     };
     this.db = new TerminalDb(options.dbPath ?? join(homedir(), ".agenter", ".terminal", "terminal.db"));
+    this.terminalRuntimeFactory = options.terminalRuntimeFactory ?? ((input) => this.createDefaultTerminalRuntime(input));
     this.normalizeRecoveredLifecycle();
   }
 
@@ -586,7 +826,7 @@ export class TerminalControlPlane {
     return Boolean(this.db.getTerminal(terminalId));
   }
 
-  getManagedTerminal(terminalId: string): ManagedTerminal | null {
+  getManagedTerminal(terminalId: string): TerminalRuntime | null {
     return this.entries.get(terminalId)?.terminal ?? null;
   }
 
@@ -843,10 +1083,10 @@ export class TerminalControlPlane {
     }
     const transport = this.getConfig().transport;
     const livePort = this.transportServer ? Number.parseInt(this.transportServer.url.port, 10) : Number.NaN;
-    const port = Number.isFinite(livePort) && livePort > 0 ? livePort : transport?.port;
-    if (!port) {
+    if (!Number.isFinite(livePort) || livePort <= 0) {
       return null;
     }
+    const port = livePort;
     const resolvedAccessToken = accessToken ?? this.getTrustedBootstrapAccess(terminalId)?.accessToken;
     if (!resolvedAccessToken) {
       return null;
@@ -896,144 +1136,148 @@ export class TerminalControlPlane {
         } catch {
           return new Response("credential-invalid", { status: 401 });
         }
+        const attachment = this.registerTransportAttachment({
+          terminalId,
+          actorId: grant.participantId ?? null,
+        });
         const upgraded = serverInstance.upgrade(request, {
           data: {
             cleanup: [],
+            directCleanup: [],
             terminalId,
             actorId: grant.participantId ?? null,
             accessRole: grant.role,
             accessToken,
             binaryTypeConfigured: false,
+            attachmentId: attachment.attachmentId,
+            requestedGeometryRole: attachment.requestedGeometryRole,
+            effectiveGeometryRole: attachment.effectiveGeometryRole,
+            geometryOrder: attachment.geometryOrder,
+            geometryAuthorityAttachmentId: attachment.geometryAuthorityAttachmentId,
+            authorityReason: attachment.authorityReason,
+            inputQueue: [],
+            inputDrainScheduled: false,
+            inputDrainScheduledAt: null,
+            debugTrace: false,
+            diagnostics: createTransportDiagnostics(),
+            tcpNoDelayAttempted: false,
+            tcpNoDelayEnabled: false,
+            dataPlane: "websocket",
+            directOffered: false,
+            directEnabled: false,
           },
         });
+        if (!upgraded) {
+          this.removeTransportAttachment(attachment.attachmentId);
+        }
         return upgraded ? undefined : new Response("upgrade failed", { status: 500 });
       },
       websocket: {
         open: (socket) => {
+          socket.data.tcpNoDelayAttempted = true;
+          // Bun TCP/TLS sockets expose setNoDelay, but Bun 1.3 ServerWebSocket does not.
+          // Keep this as a capability boundary so a future transport/runtime can prove whether TCP_NODELAY helps.
+          socket.data.tcpNoDelayEnabled = hasTransportNoDelayCapability(socket) ? socket.setNoDelay(true) : false;
           const record = this.db.getTerminal(socket.data.terminalId);
           if (!record) {
             socket.close(4404, "terminal-not-found");
             return;
           }
+          const attachment = this.requireTransportAttachment(socket.data.attachmentId);
+          socket.data.requestedGeometryRole = attachment.requestedGeometryRole;
+          socket.data.effectiveGeometryRole = attachment.effectiveGeometryRole;
+          socket.data.geometryOrder = attachment.geometryOrder;
+          socket.data.geometryAuthorityAttachmentId = attachment.geometryAuthorityAttachmentId;
+          socket.data.authorityReason = attachment.authorityReason;
+          const transportSocket = createWebSocketTransportSocket(socket);
+          this.transportSocketsByAttachmentId.set(socket.data.attachmentId, transportSocket);
           const entry = this.ensureManagedEntry(record.terminalId);
           const cleanup: Array<() => void> = [];
-          let lastSentGeometry: { cols: number; rows: number } | null = null;
-          let mirrorLiveSnapshots = false;
-          const sendSnapshot = (snapshot: ManagedTerminalSnapshot): void => {
-            lastSentGeometry = {
-              cols: snapshot.cols,
-              rows: snapshot.rows,
-            };
-            socket.send(
-              encodeTerminalTransportServerMessage({
-                type: "snapshot",
-                terminalId: record.terminalId,
-                snapshot,
-                status: entry.terminal.getStatus(),
-              } satisfies TerminalTransportServerMessage),
-            );
-          };
-          cleanup.push(
-            entry.terminal.onSnapshot((snapshot) => {
-              if (!mirrorLiveSnapshots) {
-                return;
-              }
-              if (
-                lastSentGeometry &&
-                lastSentGeometry.cols === snapshot.cols &&
-                lastSentGeometry.rows === snapshot.rows
-              ) {
-                return;
-              }
-              sendSnapshot(snapshot);
-            }),
-          );
-          cleanup.push(
-            entry.terminal.onOutputBytes((data) => {
-              socket.send(
-                encodeTerminalTransportServerMessage({
-                  type: "outputBytes",
-                  terminalId: record.terminalId,
-                  data,
-                } satisfies TerminalTransportServerMessage),
-              );
-            }),
-          );
           cleanup.push(
             entry.terminal.onStatus((running, status) => {
-              socket.send(
-                encodeTerminalTransportServerMessage({
+              transportSocket.send({
                   type: "status",
                   terminalId: record.terminalId,
                   running,
                   status,
-                } satisfies TerminalTransportServerMessage),
-              );
+                });
               if (!running) {
                 socket.close(1000, "terminal-stopped");
               }
             }),
           );
+          cleanup.push(
+            entry.terminal.onOutputBytes((chunk) => {
+              const diagnostics = socket.data.diagnostics;
+              diagnostics.outputEvents += 1;
+              diagnostics.outputBytes += chunk.byteLength;
+              this.emitTransportDiagnosticsIfDue(transportSocket);
+            }),
+          );
+          cleanup.push(
+            entry.terminal.onSnapshot(() => {
+              socket.data.diagnostics.snapshots += 1;
+              this.emitTransportDiagnosticsIfDue(transportSocket);
+            }),
+          );
           socket.data.cleanup = cleanup;
-          sendSnapshot(entry.terminal.getSnapshot());
-          mirrorLiveSnapshots = true;
+          transportSocket.send({
+              type: "helloAck",
+              terminalId: record.terminalId,
+              attachmentId: socket.data.attachmentId,
+              effectiveGeometryRole: socket.data.effectiveGeometryRole,
+              geometryAuthorityAttachmentId: socket.data.geometryAuthorityAttachmentId,
+              geometryOrder: socket.data.geometryOrder,
+              authorityReason: socket.data.authorityReason,
+            });
+          this.markTransportFrameDirtyForSocket(transportSocket, entry.terminal.getSnapshot(), "attached");
+          this.ensureTransportDirtyLoop(record.terminalId);
         },
         message: async (socket, message) => {
+          const rawReceivedAt = Date.now();
           const terminalId = socket.data.terminalId;
           if (!socket.data.binaryTypeConfigured) {
             socket.binaryType = "arraybuffer";
             socket.data.binaryTypeConfigured = true;
           }
           if (typeof message === "string") {
-            socket.send(
-              encodeTerminalTransportServerMessage({
-                type: "error",
-                terminalId,
-                message: "string websocket frames are not supported by terminal transport v2",
-              } satisfies TerminalTransportServerMessage),
-            );
+            createWebSocketTransportSocket(socket).send({
+              type: "error",
+              terminalId,
+              message: "string websocket frames are not supported by terminal transport v2",
+            });
             return;
           }
+          const byteLength = resolveTransportPayloadByteLength(message);
+          const decodeStartedAt = Date.now();
           const parsed = decodeTerminalTransportClientMessage(message);
+          const decodeMs = Date.now() - decodeStartedAt;
           if (!parsed) {
-            socket.send(
-              encodeTerminalTransportServerMessage({
-                type: "error",
-                terminalId,
-                message: "invalid transport message",
-              } satisfies TerminalTransportServerMessage),
-            );
+            createWebSocketTransportSocket(socket).send({
+              type: "error",
+              terminalId,
+              message: "invalid transport message",
+            });
             return;
           }
-          try {
-            if (parsed.type === "inputBytes") {
-              this.forwardInteractiveInputBytes({
-                terminalId,
-                data: parsed.data,
-                accessToken: socket.data.accessToken,
-                actorId: socket.data.actorId ?? undefined,
-              });
-              return;
-            }
-            if (parsed.type === "resize") {
-              this.ensureManagedEntry(terminalId).terminal.resize(parsed.cols, parsed.rows);
-              return;
-            }
-          } catch (error) {
-            socket.send(
-              encodeTerminalTransportServerMessage({
-                type: "error",
-                terminalId,
-                message: error instanceof Error ? error.message : "terminal access denied",
-              } satisfies TerminalTransportServerMessage),
-            );
-          }
+          this.enqueueTransportClientMessage(createWebSocketTransportSocket(socket), parsed, {
+            receivedAt: Date.now(),
+            rawReceivedAt,
+            decodeMs,
+            byteLength,
+          });
         },
         close: (socket) => {
           for (const cleanup of socket.data.cleanup) {
             cleanup();
           }
+          for (const cleanup of socket.data.directCleanup) {
+            cleanup();
+          }
           socket.data.cleanup = [];
+          socket.data.directCleanup = [];
+          this.transportSocketsByAttachmentId.delete(socket.data.attachmentId);
+          this.removeTransportAttachment(socket.data.attachmentId);
         },
       },
     });
@@ -1046,6 +1290,7 @@ export class TerminalControlPlane {
         pathPrefix,
         port:
           Number.isFinite(livePort) && livePort > 0 ? livePort : (this.transportServer.port ?? requestedPort ?? null),
+        framePatchMode: resolveFramePatchMode(this.config.transport?.framePatchMode),
       },
     };
     return cloneTransportConfig(this.config.transport);
@@ -1054,6 +1299,16 @@ export class TerminalControlPlane {
   stopTransport(): void {
     this.transportServer?.stop(true);
     this.transportServer = null;
+    for (const state of this.transportDirtyLoopByTerminal.values()) {
+      if (state.timer) {
+        clearTimeout(state.timer);
+      }
+    }
+    this.transportDirtyLoopByTerminal.clear();
+    this.transportAttachmentsById.clear();
+    this.transportAttachmentIdsByTerminal.clear();
+    this.transportSocketsByAttachmentId.clear();
+    this.transportFrameStateByAttachmentId.clear();
     this.config = {
       ...this.config,
       transport: {
@@ -1450,6 +1705,7 @@ export class TerminalControlPlane {
       });
       return { ok: false, message, approvalRequest: request };
     }
+    const beforeHash = input.returnRead ? entry.terminal.getHeadHash() : null;
 
     const pendingResult =
       input.mode === "raw" ? await entry.terminal.write(input.text) : await entry.terminal.input(input.text);
@@ -1485,10 +1741,28 @@ export class TerminalControlPlane {
         leaseId: decision.lease?.leaseId,
       };
     }
-    if (typeof input.returnRead === "object") {
-      const waitMs = Math.max(input.returnRead.throttleMs ?? 0, input.returnRead.debounceMs ?? 0);
-      if (waitMs > 0) {
-        await Bun.sleep(waitMs);
+    const returnReadWait = this.normalizeReturnReadWait(input.returnRead);
+    if (beforeHash) {
+      const awaitResult = await this.awaitAuthorized({
+        terminalId: input.terminalId,
+        wait: {
+          until: "changed",
+          fromHash: beforeHash,
+          timeoutMs: returnReadWait.timeoutMs,
+          idleMs: returnReadWait.idleMs,
+        },
+        recordActivity: false,
+        actorId: input.actorId,
+        accessToken: input.accessToken,
+        superadminActorId: input.superadminActorId,
+      });
+      if (awaitResult.outcome === "stopped") {
+        return {
+          ok: false,
+          message: `${input.title} observed the terminal stop before the post-write read settled`,
+          eventId: writeEvent.eventId,
+          leaseId: decision.lease?.leaseId,
+        };
       }
     }
     const read = await this.readAuthorized({
@@ -1505,6 +1779,26 @@ export class TerminalControlPlane {
       eventId: writeEvent.eventId,
       leaseId: decision.lease?.leaseId,
       read,
+    };
+  }
+
+  private normalizeReturnReadWait(input: boolean | { throttleMs?: number; debounceMs?: number }): {
+    timeoutMs: number;
+    idleMs: number;
+  } {
+    if (input !== false && typeof input === "object") {
+      return {
+        timeoutMs: normalizePositiveInt(
+          Math.max(input.throttleMs ?? 0, input.debounceMs ?? 0),
+          DEFAULT_AWAIT_TIMEOUT_MS,
+          MAX_AWAIT_TIMEOUT_MS,
+        ),
+        idleMs: normalizePositiveInt(input.debounceMs, DEFAULT_AWAIT_IDLE_MS, MAX_AWAIT_IDLE_MS),
+      };
+    }
+    return {
+      timeoutMs: DEFAULT_AWAIT_TIMEOUT_MS,
+      idleMs: DEFAULT_AWAIT_IDLE_MS,
     };
   }
 
@@ -1533,6 +1827,565 @@ export class TerminalControlPlane {
       throw new Error(decision.message ?? "terminal write denied");
     }
     entry.terminal.writeRawBytes(input.data);
+  }
+
+  private scheduleTransportInputDrain(socket: TerminalTransportSocket): void {
+    if (socket.data.inputDrainScheduled) {
+      return;
+    }
+    socket.data.inputDrainScheduled = true;
+    socket.data.inputDrainScheduledAt = Date.now();
+    setTimeout(() => {
+      socket.data.inputDrainScheduled = false;
+      const scheduledAt = socket.data.inputDrainScheduledAt;
+      socket.data.inputDrainScheduledAt = null;
+      const drainStartedAt = Date.now();
+      this.drainTransportInputQueue(socket);
+      const drainMs = Date.now() - drainStartedAt;
+      const diagnostics = socket.data.diagnostics;
+      diagnostics.maxEventLoopLagMs = Math.max(
+        diagnostics.maxEventLoopLagMs,
+        scheduledAt ? Math.max(0, drainStartedAt - scheduledAt) : 0,
+      );
+      diagnostics.lastDrainMs = drainMs;
+      diagnostics.maxDrainMs = Math.max(diagnostics.maxDrainMs, drainMs);
+      this.emitTransportDiagnosticsIfDue(socket);
+    }, 0);
+  }
+
+  private drainTransportInputQueue(socket: TerminalTransportSocket): void {
+    const queued = socket.data.inputQueue.splice(0);
+    if (queued.length === 0) {
+      return;
+    }
+    let pendingScrollDelta = 0;
+    const flushScroll = (): void => {
+      if (pendingScrollDelta === 0) {
+        return;
+      }
+      this.flushTransportScrollDelta(socket, pendingScrollDelta);
+      pendingScrollDelta = 0;
+    };
+    let oldestQueueAgeMs: number | null = null;
+    let oldestRawQueueAgeMs: number | null = null;
+    let totalDecodeMs = 0;
+    let scrollMessageCount = 0;
+    let nonScrollMessageCount = 0;
+    let pullMessageCount = 0;
+    let maxQueueDepthBeforeDrain = queued.length;
+    for (const item of queued) {
+      const message = item.message;
+      const queueAgeMs = Date.now() - item.receivedAt;
+      const rawQueueAgeMs = Date.now() - item.rawReceivedAt;
+      oldestQueueAgeMs = oldestQueueAgeMs === null ? queueAgeMs : Math.max(oldestQueueAgeMs, queueAgeMs);
+      oldestRawQueueAgeMs =
+        oldestRawQueueAgeMs === null ? rawQueueAgeMs : Math.max(oldestRawQueueAgeMs, rawQueueAgeMs);
+      if (typeof item.decodeMs === "number" && Number.isFinite(item.decodeMs)) {
+        totalDecodeMs += item.decodeMs;
+      }
+      try {
+        if (message.type === "viewportDelta") {
+          scrollMessageCount += 1;
+          const delta = Math.trunc(message.deltaRows);
+          if (Number.isFinite(delta)) {
+            pendingScrollDelta += delta;
+          }
+          continue;
+        }
+        nonScrollMessageCount += 1;
+        if (message.type === "pullFrame") {
+          pullMessageCount += 1;
+        }
+        flushScroll();
+        this.handleTransportClientMessage(socket, message);
+      } catch (error) {
+        this.sendTransportError(socket, error);
+      }
+    }
+    flushScroll();
+    const diagnostics = socket.data.diagnostics;
+    diagnostics.inputDrains += 1;
+    diagnostics.queuedMessages += queued.length;
+    diagnostics.scrollMessages += scrollMessageCount;
+    diagnostics.nonScrollMessages += nonScrollMessageCount;
+    diagnostics.pullMessages += pullMessageCount;
+    diagnostics.oldestQueueAgeMs = updateMaxNullable(diagnostics.oldestQueueAgeMs, oldestQueueAgeMs);
+    diagnostics.oldestRawQueueAgeMs = updateMaxNullable(diagnostics.oldestRawQueueAgeMs, oldestRawQueueAgeMs);
+    diagnostics.totalDecodeMs += totalDecodeMs;
+    diagnostics.maxQueueDepthBeforeDrain = Math.max(diagnostics.maxQueueDepthBeforeDrain, maxQueueDepthBeforeDrain);
+    this.emitTransportDiagnosticsIfDue(socket);
+  }
+
+  private flushTransportScrollDelta(socket: TerminalTransportSocket, deltaRows: number): void {
+    const delta = Math.trunc(deltaRows);
+    if (!Number.isFinite(delta) || delta === 0) {
+      return;
+    }
+    const entry = this.ensureManagedEntry(socket.data.terminalId);
+    // Viewport input is objective backend state mutation only.
+    // Do not turn scroll into a direct dirty/pull activation path here:
+    // the shared dirty loop and the client's next pull own frame synchronization.
+    entry.terminal.scrollViewport(delta);
+  }
+
+  private createDirectTransportOffer(
+    socket: TerminalTransportSocket,
+    message: Extract<TerminalTransportClientMessage, { type: "hello" }>,
+  ): Extract<TerminalTransportServerMessage, { type: "helloAck" }>["direct"] {
+    const direct = message.direct;
+    if (!canOfferDirectTransport(message) || !direct) {
+      return {
+        accepted: false,
+        reason: "direct-unavailable",
+      };
+    }
+    const registry = getTerminalTransportDirectRegistry();
+    if (!registry) {
+      return {
+        accepted: false,
+        reason: "registry-unavailable",
+      };
+    }
+    const upgradeId = `direct-${randomUUID()}`;
+    const serverToken = randomUUID();
+    const clientToken = direct.clientToken;
+    socket.data.directOffered = true;
+    socket.data.directUpgradeId = upgradeId;
+    socket.data.directClientToken = clientToken;
+    socket.data.directServerToken = serverToken;
+    let directClosed = false;
+    let directAccepted = false;
+    const unregister = registry.register({
+      upgradeId,
+      clientToken,
+      serverToken,
+      acceptClient: (input) => {
+        if (directClosed || directAccepted || input.clientToken !== clientToken) {
+          return null;
+        }
+        directAccepted = true;
+        unregister();
+        socket.data.directClientSend = input.onServerMessage;
+        socket.data.dataPlane = "direct";
+        socket.data.directEnabled = true;
+        socket.data.directCleanup.push(() => input.onClose());
+        this.emitTransportDiagnosticsIfDue(socket, { force: true });
+        return {
+          sendClientMessage: (clientMessage) => {
+            if (directClosed) {
+              return false;
+            }
+            this.enqueueTransportClientMessage(socket, clientMessage, {
+              rawReceivedAt: Date.now(),
+              decodeMs: 0,
+              byteLength: null,
+            });
+            return true;
+          },
+          close: () => {
+            directClosed = true;
+            socket.data.dataPlane = "websocket";
+            socket.data.directEnabled = false;
+            input.onClose();
+          },
+        };
+      },
+    } satisfies TerminalTransportDirectEndpoint);
+    const expiry = setTimeout(() => {
+      unregister();
+      if (!socket.data.directEnabled) {
+        socket.data.directOffered = false;
+      }
+    }, TERMINAL_TRANSPORT_DIRECT_TTL_MS);
+    socket.data.directCleanup.push(() => {
+      directClosed = true;
+      unregister();
+      clearTimeout(expiry);
+      socket.data.directClientSend = undefined;
+    });
+    return {
+      accepted: true,
+      upgradeId,
+      registryKey: TERMINAL_TRANSPORT_DIRECT_REGISTRY_KEY,
+      serverToken,
+    };
+  }
+
+  private enqueueTransportClientMessage(
+    socket: TerminalTransportSocket,
+    message: TerminalTransportClientMessage,
+    input: {
+      receivedAt?: number;
+      rawReceivedAt: number;
+      decodeMs: number;
+      byteLength: number | null;
+    },
+  ): void {
+    if (message.type === "hello") {
+      socket.data.debugTrace = message.debugTrace === true;
+    }
+    socket.data.inputQueue.push({
+      message,
+      receivedAt: input.receivedAt ?? Date.now(),
+      rawReceivedAt: input.rawReceivedAt,
+      decodeMs: input.decodeMs,
+      byteLength: input.byteLength,
+    });
+    this.scheduleTransportInputDrain(socket);
+  }
+
+  private sendTransportTrace(socket: TerminalTransportSocket, event: string, fields: TerminalTransportTraceFields): void {
+    if (!socket.data.debugTrace) {
+      return;
+    }
+    socket.send({
+      type: "trace",
+      terminalId: socket.data.terminalId,
+      event,
+      fields,
+      timestamp: Date.now(),
+    });
+  }
+
+  private emitTransportDiagnosticsIfDue(socket: TerminalTransportSocket, input: { force?: boolean } = {}): void {
+    if (!socket.data.debugTrace) {
+      return;
+    }
+    const diagnostics = socket.data.diagnostics;
+    const now = Date.now();
+    if (!input.force && now - diagnostics.lastEmittedAt < TRANSPORT_DIAGNOSTICS_INTERVAL_MS) {
+      return;
+    }
+    diagnostics.lastEmittedAt = now;
+    this.sendTransportTrace(socket, "transport-diagnostics", {
+      tcpNoDelayAttempted: socket.data.tcpNoDelayAttempted,
+      tcpNoDelayEnabled: socket.data.tcpNoDelayEnabled,
+      dataPlane: socket.data.dataPlane,
+      directOffered: socket.data.directOffered,
+      directEnabled: socket.data.directEnabled,
+      eventLoopLagMs: diagnostics.maxEventLoopLagMs,
+      inputDrains: diagnostics.inputDrains,
+      queuedMessages: diagnostics.queuedMessages,
+      scrollMessages: diagnostics.scrollMessages,
+      nonScrollMessages: diagnostics.nonScrollMessages,
+      pullMessages: diagnostics.pullMessages,
+      oldestQueueAgeMs: diagnostics.oldestQueueAgeMs,
+      oldestRawQueueAgeMs: diagnostics.oldestRawQueueAgeMs,
+      totalDecodeMs: diagnostics.totalDecodeMs,
+      maxQueueDepthBeforeDrain: diagnostics.maxQueueDepthBeforeDrain,
+      lastDrainMs: diagnostics.lastDrainMs,
+      maxDrainMs: diagnostics.maxDrainMs,
+      pullFrames: diagnostics.pullFrames,
+      lastPullTotalMs: diagnostics.lastPullTotalMs,
+      maxPullTotalMs: diagnostics.maxPullTotalMs,
+      lastPullPatchType: diagnostics.lastPullPatchType,
+      outputEvents: diagnostics.outputEvents,
+      outputBytes: diagnostics.outputBytes,
+      snapshots: diagnostics.snapshots,
+      dirtyTicks: diagnostics.dirtyTicks,
+      dirtySignals: diagnostics.dirtySignals,
+      dirtyCheckMs: diagnostics.dirtyCheckMs,
+    });
+    diagnostics.maxEventLoopLagMs = 0;
+    diagnostics.inputDrains = 0;
+    diagnostics.queuedMessages = 0;
+    diagnostics.scrollMessages = 0;
+    diagnostics.nonScrollMessages = 0;
+    diagnostics.pullMessages = 0;
+    diagnostics.oldestQueueAgeMs = null;
+    diagnostics.oldestRawQueueAgeMs = null;
+    diagnostics.totalDecodeMs = 0;
+    diagnostics.maxQueueDepthBeforeDrain = 0;
+    diagnostics.lastDrainMs = null;
+    diagnostics.maxDrainMs = 0;
+    diagnostics.pullFrames = 0;
+    diagnostics.lastPullTotalMs = null;
+    diagnostics.maxPullTotalMs = 0;
+    diagnostics.lastPullPatchType = null;
+    diagnostics.outputEvents = 0;
+    diagnostics.outputBytes = 0;
+    diagnostics.snapshots = 0;
+    diagnostics.dirtyTicks = 0;
+    diagnostics.dirtySignals = 0;
+    diagnostics.dirtyCheckMs = 0;
+  }
+
+  private handleTransportClientMessage(
+    socket: TerminalTransportSocket,
+    message: TerminalTransportClientMessage,
+  ): void {
+    const terminalId = socket.data.terminalId;
+    if (message.type === "inputBytes") {
+      this.forwardInteractiveInputBytes({
+        terminalId,
+        data: message.data,
+        accessToken: socket.data.accessToken,
+        actorId: socket.data.actorId ?? undefined,
+      });
+      return;
+    }
+    if (message.type === "pullFrame") {
+      this.sendTransportFrame(socket, message);
+      return;
+    }
+    if (message.type === "hello") {
+      socket.data.debugTrace = message.debugTrace === true;
+      const attachment = this.updateTransportAttachment(socket.data.attachmentId, {
+        requestedGeometryRole: message.geometryRole ?? "projection-only",
+        geometryOrder: message.geometryOrder,
+      });
+      socket.data.requestedGeometryRole = attachment.requestedGeometryRole;
+      socket.data.effectiveGeometryRole = attachment.effectiveGeometryRole;
+      socket.data.geometryOrder = attachment.geometryOrder;
+      socket.data.geometryAuthorityAttachmentId = attachment.geometryAuthorityAttachmentId;
+      socket.data.authorityReason = attachment.authorityReason;
+      socket.send({
+        type: "helloAck",
+        terminalId,
+        attachmentId: socket.data.attachmentId,
+        effectiveGeometryRole: socket.data.effectiveGeometryRole,
+        geometryAuthorityAttachmentId: socket.data.geometryAuthorityAttachmentId,
+        geometryOrder: socket.data.geometryOrder,
+        authorityReason: socket.data.authorityReason,
+        direct: this.createDirectTransportOffer(socket, message),
+      });
+      return;
+    }
+    if (message.type === "resize") {
+      const attachment = this.requireTransportAttachment(socket.data.attachmentId);
+      socket.data.effectiveGeometryRole = attachment.effectiveGeometryRole;
+      socket.data.geometryAuthorityAttachmentId = attachment.geometryAuthorityAttachmentId;
+      socket.data.authorityReason = attachment.authorityReason;
+      if (attachment.effectiveGeometryRole !== "authority") {
+        throw new Error("terminal geometry authority is projection-only for this attachment");
+      }
+      this.ensureManagedEntry(terminalId).terminal.resize(message.cols, message.rows);
+      return;
+    }
+    if (message.type === "viewportTarget") {
+      // Same law as viewportDelta: this sets backend viewport truth, then stops.
+      // It must not synchronously send frameDirty or create a pull-per-scroll path.
+      this.ensureManagedEntry(terminalId).terminal.setViewportStart(message.viewportStart);
+    }
+  }
+
+  private sendTransportFrame(
+    socket: TerminalTransportSocket,
+    message: Extract<TerminalTransportClientMessage, { type: "pullFrame" }>,
+  ): void {
+    const startedAt = Date.now();
+    const queuedMessagesBeforePull = socket.data.inputQueue.length;
+    if (socket.data.debugTrace && queuedMessagesBeforePull > 0) {
+      this.sendTransportTrace(socket, "pull-frame-start", {
+        lastAppliedFrameSeq: message.lastAppliedFrameSeq,
+        cols: message.cols,
+        rows: message.rows,
+        queuedMessages: queuedMessagesBeforePull,
+      });
+    }
+    const entry = this.ensureManagedEntry(socket.data.terminalId);
+    const snapshotStartedAt = Date.now();
+    const snapshot = entry.terminal.getSnapshot();
+    const snapshotMs = Date.now() - snapshotStartedAt;
+    const projectionStartedAt = Date.now();
+    const currentFrame = projectTerminalSnapshotFramePayload(snapshot, {
+      cols: message.cols,
+      rows: message.rows,
+    });
+    const projectionMs = Date.now() - projectionStartedAt;
+    const frameState = this.transportFrameStateByAttachmentId.get(socket.data.attachmentId);
+    const patchMode = resolveFramePatchMode(this.config.transport?.framePatchMode);
+    const patchStartedAt = Date.now();
+    const patch =
+      patchMode === "diff"
+        ? chooseTerminalFramePatch({
+            baseFrame: frameState?.lastDeliveredFrame ?? null,
+            currentFrame,
+            lastAppliedFrameSeq: message.lastAppliedFrameSeq,
+            maxPatchBytes: message.maxPatchBytes,
+          })
+        : patchMode === "full"
+          ? ({
+              type: "full",
+              frame: cloneTerminalFramePayload(currentFrame),
+            } as const)
+          : (frameState?.rowCacheEncoder.encode(currentFrame) ?? {
+              type: "full",
+              frame: cloneTerminalFramePayload(currentFrame),
+            });
+    const patchMs = Date.now() - patchStartedAt;
+    // notModified belongs only in the transport serializer/patch layer.
+    // Do not add code-level coupling here such as "if visible frame equals last frame then skip".
+    // The correct optimization is: serialize cells/rows, compare the serialized transport payload
+    // against the previous delivered payload, and emit a transport marker when it is identical.
+    // Row-level serialized comparison is the preferred refinement because it preserves the same
+    // serialization cost while reducing transfer and parse work.
+    const statusStartedAt = Date.now();
+    const status = entry.terminal.getStatus();
+    const statusMs = Date.now() - statusStartedAt;
+    const serverMessage = {
+      type: "frame",
+      terminalId: socket.data.terminalId,
+      frameSeq: currentFrame.seq,
+      status,
+      patch,
+    } as const satisfies TerminalTransportServerMessage;
+    const encodeStartedAt = Date.now();
+    const encodedBytes =
+      socket.data.dataPlane === "websocket" ? encodeTerminalTransportServerMessage(serverMessage).byteLength : 0;
+    const encodeMs = Date.now() - encodeStartedAt;
+    const sendStartedAt = Date.now();
+    socket.send(serverMessage);
+    const sendMs = Date.now() - sendStartedAt;
+    if (frameState) {
+      if (patch.type !== "notModified") {
+        frameState.lastDeliveredFrame = cloneTerminalFramePayload(currentFrame);
+      }
+      frameState.dirtyOutstanding = false;
+    }
+    const totalMs = Date.now() - startedAt;
+    const diagnostics = socket.data.diagnostics;
+    diagnostics.pullFrames += 1;
+    diagnostics.lastPullTotalMs = totalMs;
+    diagnostics.maxPullTotalMs = Math.max(diagnostics.maxPullTotalMs, totalMs);
+    diagnostics.lastPullPatchType = patch.type;
+    if (patch.type !== "notModified" || totalMs >= TRANSPORT_SLOW_PULL_TRACE_MS) {
+      this.sendTransportTrace(socket, "pull-frame-server", {
+        frameSeq: currentFrame.seq,
+        lastAppliedFrameSeq: message.lastAppliedFrameSeq,
+        patchType: patch.type,
+        patchRows: resolveTransportPatchRowCount(patch),
+        encodedBytes,
+        dataPlane: socket.data.dataPlane,
+        queuedMessages: queuedMessagesBeforePull,
+        snapshotMs,
+        projectionMs,
+        patchMs,
+        statusMs,
+        encodeMs,
+        sendMs,
+        totalMs,
+        viewportStart: currentFrame.scrollback.viewportOffset,
+        totalLines: currentFrame.scrollback.totalLines,
+        screenLines: currentFrame.scrollback.screenLines,
+      });
+    }
+    this.emitTransportDiagnosticsIfDue(socket);
+  }
+
+  private sendTransportError(socket: TerminalTransportSocket, error: unknown): void {
+    socket.send({
+      type: "error",
+      terminalId: socket.data.terminalId,
+      message: error instanceof Error ? error.message : "terminal access denied",
+    });
+  }
+
+  private markTransportFrameDirtyForSocket(
+    socket: TerminalTransportSocket,
+    snapshot: ManagedTerminalSnapshot,
+    reason: string,
+  ): void {
+    const frameState = this.transportFrameStateByAttachmentId.get(socket.data.attachmentId);
+    if (!frameState) {
+      return;
+    }
+    frameState.lastDirtyFrameSeq = Math.max(frameState.lastDirtyFrameSeq, snapshot.seq);
+    frameState.lastDirtyReason = reason;
+    frameState.lastDirtyTimestamp = snapshot.timestamp;
+    if (frameState.dirtyOutstanding) {
+      return;
+    }
+    frameState.dirtyOutstanding = true;
+    socket.data.diagnostics.dirtySignals += 1;
+    socket.send({
+      type: "frameDirty",
+      terminalId: socket.data.terminalId,
+      frameSeq: frameState.lastDirtyFrameSeq,
+      reason,
+      timestamp: snapshot.timestamp,
+    });
+  }
+
+  private ensureTransportDirtyLoop(terminalId: string): void {
+    if (this.transportDirtyLoopByTerminal.has(terminalId)) {
+      return;
+    }
+    const entry = this.ensureManagedEntry(terminalId);
+    const state: TerminalTransportDirtyLoopState = {
+      timer: null,
+      previousText: this.resolveTransportDirtyText(entry.terminal),
+    };
+    this.transportDirtyLoopByTerminal.set(terminalId, state);
+    this.scheduleTransportDirtyLoop(terminalId, state);
+  }
+
+  private resolveTransportDirtyText(terminal: TerminalRuntime): string {
+    const snapshot = terminal.getSnapshot();
+    // JS event-loop ordering already preserves the vertical sync between queued input and pullFrame.
+    // If this transport loop is ported to a multi-threaded runtime, flush queued input before frame pulls.
+    // `getText()` is the optimized backend comparison source; viewport facts are appended because
+    // scrolling changes the visible frame even when the full buffer text is unchanged.
+    return [
+      terminal.getText(),
+      snapshot.scrollback.viewportOffset,
+      snapshot.scrollback.totalLines,
+      snapshot.scrollback.screenLines,
+      snapshot.cursor.x,
+      snapshot.cursor.y,
+      snapshot.cursor.visible === false ? 0 : 1,
+    ].join("\u001f");
+  }
+
+  private scheduleTransportDirtyLoop(terminalId: string, state: TerminalTransportDirtyLoopState): void {
+    state.timer = setTimeout(() => {
+      state.timer = null;
+      this.runTransportDirtyLoopTick(terminalId, state);
+    }, TERMINAL_TRANSPORT_DIRTY_INTERVAL_MS);
+  }
+
+  private runTransportDirtyLoopTick(terminalId: string, state: TerminalTransportDirtyLoopState): void {
+    const tickStartedAt = Date.now();
+    const attachmentIds = this.transportAttachmentIdsByTerminal.get(terminalId) ?? [];
+    if (attachmentIds.length === 0) {
+      this.transportDirtyLoopByTerminal.delete(terminalId);
+      return;
+    }
+    const sockets = attachmentIds
+      .map((attachmentId) => this.transportSocketsByAttachmentId.get(attachmentId))
+      .filter((socket): socket is TerminalTransportSocket => socket !== undefined);
+    const hasConsumerReadyForDirty = sockets.some((socket) => {
+      const frameState = this.transportFrameStateByAttachmentId.get(socket.data.attachmentId);
+      return frameState ? !frameState.dirtyOutstanding : false;
+    });
+    if (hasConsumerReadyForDirty) {
+      const entry = this.ensureManagedEntry(terminalId);
+      const text = this.resolveTransportDirtyText(entry.terminal);
+      if (text !== state.previousText) {
+        state.previousText = text;
+        const snapshot = entry.terminal.getSnapshot();
+        for (const socket of sockets) {
+          const frameState = this.transportFrameStateByAttachmentId.get(socket.data.attachmentId);
+          if (!frameState?.dirtyOutstanding) {
+            this.markTransportFrameDirtyForSocket(socket, snapshot, "dirty-loop");
+          }
+        }
+      }
+    }
+    const dirtyCheckMs = Date.now() - tickStartedAt;
+    for (const socket of sockets) {
+      const diagnostics = socket.data.diagnostics;
+      const expectedElapsedMs = tickStartedAt - diagnostics.lastLoopProbeAt;
+      diagnostics.lastLoopProbeAt = tickStartedAt;
+      diagnostics.maxEventLoopLagMs = Math.max(
+        diagnostics.maxEventLoopLagMs,
+        Math.max(0, expectedElapsedMs - TERMINAL_TRANSPORT_DIRTY_INTERVAL_MS),
+      );
+      diagnostics.dirtyTicks += 1;
+      diagnostics.dirtyCheckMs = Math.max(diagnostics.dirtyCheckMs, dirtyCheckMs);
+      this.emitTransportDiagnosticsIfDue(socket);
+    }
+    this.scheduleTransportDirtyLoop(terminalId, state);
   }
 
   getEvent(eventId: number): TerminalEventRecord | undefined {
@@ -1599,6 +2452,20 @@ export class TerminalControlPlane {
     return entry?.terminal.getStatus() ?? "IDLE";
   }
 
+  getTransportAttachments(terminalId: string): TerminalTransportAttachmentProjection[] {
+    return this.listTransportAttachments(terminalId).map((record) => ({
+      attachmentId: record.attachmentId,
+      terminalId: record.terminalId,
+      actorId: record.actorId,
+      requestedGeometryRole: record.requestedGeometryRole,
+      effectiveGeometryRole: record.effectiveGeometryRole,
+      geometryOrder: record.geometryOrder,
+      geometryAuthorityAttachmentId: record.geometryAuthorityAttachmentId,
+      attachedAt: record.attachedAt,
+      authorityReason: record.authorityReason,
+    }));
+  }
+
   isRunning(terminalId: string): boolean {
     return this.entries.get(terminalId)?.terminal.isRunning() ?? false;
   }
@@ -1658,6 +2525,9 @@ export class TerminalControlPlane {
         ...(this.config.transport ?? cloneTransportConfig()),
         ...(patch.transport ?? {}),
         port: patch.transport?.port ?? this.config.transport?.port ?? null,
+        framePatchMode: resolveFramePatchMode(
+          patch.transport?.framePatchMode ?? this.config.transport?.framePatchMode,
+        ),
       },
       approvalTimeoutMs: patch.approvalTimeoutMs ?? this.config.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
     };
@@ -1727,6 +2597,64 @@ export class TerminalControlPlane {
       appliedLiveFields: result.appliedLiveFields,
       nextBootstrapFields: result.nextBootstrapFields,
     };
+  }
+
+  publishComposedSurfaceAuthorized(input: {
+    terminalId: string;
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+    surface: TerminalComposedProductSurfaceState;
+  }): TerminalControlPlaneEntry {
+    this.requireAdministrativeAuthority(input.terminalId, {
+      accessToken: input.accessToken,
+      actorId: input.actorId,
+      superadminActorId: input.superadminActorId,
+    });
+    const managed = this.ensureManagedEntry(input.terminalId);
+    if (readTerminalRuntimeKind(managed.record.metadata) !== "composed") {
+      throw new Error(`terminal is not composed: ${input.terminalId}`);
+    }
+    if (typeof managed.terminal.publishComposedSurface !== "function") {
+      throw new Error(`composed terminal runtime missing publish surface support: ${input.terminalId}`);
+    }
+    const metadataPatch: Record<string, unknown> = {
+      composedBottomLine: input.surface.bottomLine,
+      composedDialogueOpen: input.surface.dialogueOpen,
+      composedDialoguePlacement: input.surface.dialoguePlacement,
+      composedDialogueDraft: input.surface.dialogueDraft,
+      composedManagedLabel: input.surface.managedLabel,
+      composedUnreadLabel: input.surface.unreadLabel,
+      composedHeartbeatLabel: input.surface.heartbeatLabel,
+      composedShellSnapshotSeq: input.surface.shellSnapshotSeq,
+    };
+    managed.record = this.db.updateTerminal(input.terminalId, {
+      metadata: metadataPatch,
+    });
+    managed.terminal.publishComposedSurface({
+      snapshot: {
+        seq: managed.terminal.getSnapshot().seq + 1,
+        timestamp: Date.now(),
+        cols: input.surface.cols,
+        rows: input.surface.rows,
+        lines: [...input.surface.terminalLines],
+        richLines: input.surface.terminalRichLines?.map((line) => ({
+          spans: line.spans.map((span) => ({ ...span })),
+        })),
+        cursor: { ...input.surface.cursor },
+        scrollback: { ...input.surface.scrollback },
+      },
+      running: true,
+      status: managed.terminal.getStatus(),
+        observedIdentity: managed.terminal.getObservedIdentity(),
+      });
+    this.emitChange({ terminalId: input.terminalId, reason: "snapshot", actorId: input.actorId });
+    return this.describeEntry(managed.record, {
+      focused: this.getFocusedTerminalIds(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).includes(input.terminalId),
+      access: input.actorId
+        ? this.createAccessProjection(input.terminalId, this.requireGrantForActor(input.terminalId, input.actorId))
+        : this.getTrustedBootstrapAccess(input.terminalId),
+    });
   }
 
   listGrantsAuthorized(input: {
@@ -2107,7 +3035,8 @@ export class TerminalControlPlane {
     if (this.db.getTerminal(terminalId)) {
       throw new Error(`terminal already exists: ${terminalId}`);
     }
-    const processKind = input.processKind ?? "shell";
+    const runtimeKind = readTerminalRuntimeKind(input.metadata);
+    const processKind = input.processKind ?? (runtimeKind === "composed" ? "product" : "shell");
     const profile = mergeProfile(
       this.config.defaults,
       this.config.processProfiles?.[processKind],
@@ -2115,9 +3044,14 @@ export class TerminalControlPlane {
       input.profile,
       { command: input.command, cwd: input.cwd },
     );
-    const command = profile.command
-      ? [...profile.command]
-      : [...(this.options.defaultShellCommand ?? resolveDefaultInteractiveShellCommand())];
+    const command =
+      runtimeKind === "composed"
+        ? profile.command
+          ? [...profile.command]
+          : []
+        : profile.command
+          ? [...profile.command]
+          : [...(this.options.defaultShellCommand ?? resolveDefaultInteractiveShellCommand())];
     const cwd = resolve(profile.cwd ?? homedir());
     const backend = resolveBackend(input.backend);
     return this.db.createTerminal({
@@ -2143,26 +3077,132 @@ export class TerminalControlPlane {
     }
     const record = this.requireRecord(terminalId);
     const normalizedCwd = resolve(record.launchCwd);
-    const managedConfig: ManagedTerminalConfig = {
-      terminalId: record.terminalId,
-      backend: record.backend,
-      command: [...record.command],
-      cwd: normalizedCwd,
-      env: record.profile.env,
-      cols: record.profile.cols ?? 120,
-      rows: record.profile.rows ?? 30,
-      gitLog: toManagedGitLogMode(record.profile.gitLog),
-      logStyle: record.profile.logStyle ?? "rich",
-      outputRoot: join(
-        this.options.outputRoot ?? join(homedir(), ".agenter", ".terminal", "output"),
-        record.terminalId,
-      ),
-    };
-    const terminal = new ManagedTerminal(managedConfig);
+    const outputRoot = join(
+      this.options.outputRoot ?? join(homedir(), ".agenter", ".terminal", "output"),
+      record.terminalId,
+    );
+    const terminal = this.terminalRuntimeFactory({
+      record: {
+        ...record,
+        launchCwd: normalizedCwd,
+      },
+      outputRoot,
+    });
     const next: ManagedEntry = { record, terminal };
     this.bindTerminalListeners(next);
     this.entries.set(terminalId, next);
     return next;
+  }
+
+  private createDefaultTerminalRuntime(input: { record: TerminalRecord; outputRoot: string }): TerminalRuntime {
+    const runtimeKind = readTerminalRuntimeKind(input.record.metadata);
+    if (runtimeKind === "composed") {
+      const shellTerminalId = this.readComposedShellTerminalId(input.record);
+      if (!shellTerminalId) {
+        throw new Error(`composed terminal missing shell source: ${input.record.terminalId}`);
+      }
+      return new ComposedTerminalRuntime({
+        terminalId: input.record.terminalId,
+        resolveShellTerminal: () => {
+          const source = this.getManagedTerminal(shellTerminalId);
+          if (!source) {
+            throw new Error(`composed terminal shell source missing: ${shellTerminalId}`);
+          }
+          return source;
+        },
+        resolveInitialSnapshot: () => this.buildComposedTerminalSnapshot(input.record),
+      });
+    }
+    const sourceTerminalId = this.readProjectionSourceTerminalId(input.record);
+    if (sourceTerminalId) {
+      return new ProjectionTerminalRuntime({
+        terminalId: input.record.terminalId,
+        sourceTerminalId,
+        resolveSourceTerminal: () => {
+          const source = this.getManagedTerminal(sourceTerminalId);
+          if (!source) {
+            throw new Error(`projection source terminal missing: ${sourceTerminalId}`);
+          }
+          return source;
+        },
+      });
+    }
+    const managedConfig: ManagedTerminalConfig = {
+      terminalId: input.record.terminalId,
+      backend: input.record.backend,
+      command: [...input.record.command],
+      cwd: resolve(input.record.launchCwd),
+      env: input.record.profile.env,
+      cols: input.record.profile.cols ?? 120,
+      rows: input.record.profile.rows ?? 30,
+      gitLog: toManagedGitLogMode(input.record.profile.gitLog),
+      logStyle: input.record.profile.logStyle ?? "rich",
+      outputRoot: input.outputRoot,
+    };
+    return new ManagedTerminal(managedConfig);
+  }
+
+  private readProjectionSourceTerminalId(record: TerminalRecord): string | null {
+    const value = record.metadata?.projectionSourceTerminalId;
+    return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  }
+
+  private readComposedShellTerminalId(record: TerminalRecord): string | null {
+    const value = record.metadata?.composedShellTerminalId;
+    return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  }
+
+  private buildComposedTerminalSnapshot(record: TerminalRecord): ManagedTerminalSnapshot {
+    const cols = Math.max(1, record.profile.cols ?? 120);
+    const rows = Math.max(1, record.profile.rows ?? 30);
+    const bottomLine = this.readComposedBottomLine(record);
+    const terminalLines = Array.from({ length: rows }, () => "");
+    terminalLines[0] = record.profile.title ?? record.terminalId;
+    terminalLines[rows - 1] = bottomLine;
+    return {
+      seq: 0,
+      timestamp: Date.now(),
+      cols,
+      rows,
+      lines: terminalLines,
+      richLines: terminalLines.map((line) => ({ spans: line.length > 0 ? [{ text: line }] : [] })),
+      cursor: { x: Math.max(0, Math.min(cols - 1, bottomLine.length)), y: Math.max(0, rows - 1), visible: false },
+      scrollback: {
+        viewportOffset: 0,
+        totalLines: terminalLines.length,
+        screenLines: rows,
+      },
+    };
+  }
+
+  private readComposedBottomLine(record: TerminalRecord): string {
+    const bottom = record.metadata?.composedBottomLine;
+    if (typeof bottom === "string" && bottom.trim().length > 0) {
+      return bottom;
+    }
+    const managedLabel = typeof record.metadata?.composedManagedLabel === "string" ? record.metadata.composedManagedLabel : "托管 off";
+    const unreadLabel = typeof record.metadata?.composedUnreadLabel === "string" ? record.metadata.composedUnreadLabel : "✉ 0";
+    const heartbeatLabel = typeof record.metadata?.composedHeartbeatLabel === "string" ? record.metadata.composedHeartbeatLabel : record.terminalId;
+    return `${record.profile.title ?? record.terminalId} │ ${heartbeatLabel} │ ${managedLabel} │ ${unreadLabel}`;
+  }
+
+  private readComposedDialogueOpen(record: TerminalRecord): boolean {
+    return record.metadata?.composedDialogueOpen === true;
+  }
+
+  private readComposedDialoguePlacement(record: TerminalRecord): "left" | "right" | "floating" | null {
+    const value = record.metadata?.composedDialoguePlacement;
+    return value === "left" || value === "right" || value === "floating" ? value : null;
+  }
+
+  private readComposedDialogueDraft(record: TerminalRecord): string {
+    const value = record.metadata?.composedDialogueDraft;
+    return typeof value === "string" ? value : "";
+  }
+
+  private readComposedShellSnapshotSeq(record: TerminalRecord): number {
+    const value = record.metadata?.composedShellSnapshotSeq;
+    return typeof value === "number" && Number.isInteger(value) ? value : -1;
   }
 
   private bindTerminalListeners(entry: ManagedEntry): void {
@@ -2261,6 +3301,12 @@ export class TerminalControlPlane {
         }
       }
       managed.terminal.reconfigure(reconfigurePatch);
+      if (input.metadata !== undefined && typeof managed.terminal.publishSnapshot === "function") {
+        if (readTerminalRuntimeKind(record.metadata) === "composed") {
+          managed.terminal.publishSnapshot(this.buildComposedTerminalSnapshot(record));
+          appliedLiveFields.push("metadata");
+        }
+      }
     }
     return { record, appliedLiveFields, nextBootstrapFields };
   }
@@ -2361,7 +3407,7 @@ export class TerminalControlPlane {
     });
   }
 
-  private describeReadProjection(record: TerminalRecord, terminal: ManagedTerminal): TerminalReadProjection {
+  private describeReadProjection(record: TerminalRecord, terminal: TerminalRuntime): TerminalReadProjection {
     const observedIdentity = terminal.getObservedIdentity();
     return {
       status: terminal.getStatus(),
@@ -2422,6 +3468,146 @@ export class TerminalControlPlane {
   private emitChange(payload: TerminalChangePayload): void {
     for (const listener of this.changeListeners) {
       listener(payload);
+    }
+  }
+
+  private listTransportAttachments(terminalId: string): TerminalTransportAttachmentRecord[] {
+    const attachmentIds = this.transportAttachmentIdsByTerminal.get(terminalId) ?? [];
+    return attachmentIds
+      .map((attachmentId) => this.transportAttachmentsById.get(attachmentId))
+      .filter((record): record is TerminalTransportAttachmentRecord => record !== undefined);
+  }
+
+  private registerTransportAttachment(input: {
+    terminalId: string;
+    actorId: TerminalActorId | null;
+    requestedGeometryRole?: TerminalTransportGeometryRole;
+    geometryOrder?: number;
+  }): TerminalTransportAttachmentRecord {
+    const attachment: TerminalTransportAttachmentRecord = {
+      attachmentId: `attach-${randomUUID()}`,
+      terminalId: input.terminalId,
+      actorId: input.actorId,
+      requestedGeometryRole: input.requestedGeometryRole ?? "projection-only",
+      effectiveGeometryRole: "projection-only",
+      geometryOrder: input.geometryOrder,
+      attachedAt: Date.now(),
+      geometryAuthorityAttachmentId: undefined,
+      authorityReason: "awaiting-backend-arbitration",
+    };
+    this.transportAttachmentsById.set(attachment.attachmentId, attachment);
+    this.transportFrameStateByAttachmentId.set(attachment.attachmentId, {
+      lastDeliveredFrame: null,
+      rowCacheEncoder: createTerminalTransportRowCacheEncoder(),
+      dirtyOutstanding: false,
+      lastDirtyFrameSeq: 0,
+      lastDirtyReason: "attached",
+    });
+    const nextIds = [...(this.transportAttachmentIdsByTerminal.get(input.terminalId) ?? []), attachment.attachmentId];
+    this.transportAttachmentIdsByTerminal.set(input.terminalId, nextIds);
+    this.recomputeTransportGeometryAuthority(input.terminalId);
+    return this.requireTransportAttachment(attachment.attachmentId);
+  }
+
+  private updateTransportAttachment(
+    attachmentId: string,
+    patch: {
+      requestedGeometryRole?: TerminalTransportGeometryRole;
+      geometryOrder?: number | undefined;
+    },
+  ): TerminalTransportAttachmentRecord {
+    const current = this.requireTransportAttachment(attachmentId);
+    const next: TerminalTransportAttachmentRecord = {
+      ...current,
+      requestedGeometryRole:
+        Object.prototype.hasOwnProperty.call(patch, "requestedGeometryRole") && patch.requestedGeometryRole
+          ? patch.requestedGeometryRole
+          : current.requestedGeometryRole,
+      geometryOrder: Object.prototype.hasOwnProperty.call(patch, "geometryOrder")
+        ? patch.geometryOrder
+        : current.geometryOrder,
+    };
+    this.transportAttachmentsById.set(attachmentId, next);
+    this.recomputeTransportGeometryAuthority(next.terminalId);
+    return this.requireTransportAttachment(attachmentId);
+  }
+
+  private removeTransportAttachment(attachmentId: string): void {
+    const current = this.transportAttachmentsById.get(attachmentId);
+    if (!current) {
+      return;
+    }
+    this.transportAttachmentsById.delete(attachmentId);
+    this.transportFrameStateByAttachmentId.delete(attachmentId);
+    const remainingIds = (this.transportAttachmentIdsByTerminal.get(current.terminalId) ?? []).filter(
+      (candidate) => candidate !== attachmentId,
+    );
+    if (remainingIds.length === 0) {
+      this.transportAttachmentIdsByTerminal.delete(current.terminalId);
+      return;
+    }
+    this.transportAttachmentIdsByTerminal.set(current.terminalId, remainingIds);
+    this.recomputeTransportGeometryAuthority(current.terminalId);
+  }
+
+  private requireTransportAttachment(attachmentId: string): TerminalTransportAttachmentRecord {
+    const attachment = this.transportAttachmentsById.get(attachmentId);
+    if (!attachment) {
+      throw new Error(`unknown transport attachment: ${attachmentId}`);
+    }
+    return attachment;
+  }
+
+  private recomputeTransportGeometryAuthority(terminalId: string): void {
+    const attachments = this.listTransportAttachments(terminalId);
+    const authorityCandidates = attachments
+      .filter((record) => record.requestedGeometryRole === "authority")
+      .sort((left, right) => {
+        const orderDiff = authoritySortValue(left) - authoritySortValue(right);
+        if (orderDiff !== 0) {
+          return orderDiff;
+        }
+        return left.attachedAt - right.attachedAt;
+      });
+    const winner = authorityCandidates[0];
+    const fallbackReason =
+      winner && winner.geometryOrder === undefined
+        ? "backend-attach-order-fallback"
+        : "explicit-geometry-order";
+    for (const record of attachments) {
+      const next: TerminalTransportAttachmentRecord = {
+        ...record,
+        effectiveGeometryRole:
+          winner && winner.attachmentId === record.attachmentId ? "authority" : "projection-only",
+        geometryAuthorityAttachmentId: winner?.attachmentId,
+        authorityReason:
+          winner === undefined
+            ? "no-authority-capable-attachments"
+            : winner.attachmentId === record.attachmentId
+              ? fallbackReason
+              : `projection-only-under-${winner.attachmentId}`,
+      };
+      this.transportAttachmentsById.set(record.attachmentId, next);
+    }
+    for (const updated of this.listTransportAttachments(terminalId)) {
+      const socket = this.transportSocketsByAttachmentId.get(updated.attachmentId);
+      if (!socket) {
+        continue;
+      }
+      socket.data.requestedGeometryRole = updated.requestedGeometryRole;
+      socket.data.effectiveGeometryRole = updated.effectiveGeometryRole;
+      socket.data.geometryOrder = updated.geometryOrder;
+      socket.data.geometryAuthorityAttachmentId = updated.geometryAuthorityAttachmentId;
+      socket.data.authorityReason = updated.authorityReason;
+      socket.send({
+        type: "helloAck",
+        terminalId,
+        attachmentId: updated.attachmentId,
+        effectiveGeometryRole: updated.effectiveGeometryRole,
+        geometryAuthorityAttachmentId: updated.geometryAuthorityAttachmentId,
+        geometryOrder: updated.geometryOrder,
+        authorityReason: updated.authorityReason,
+      });
     }
   }
 

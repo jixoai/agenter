@@ -1,4 +1,5 @@
 import { createTerminalBackend, DEFAULT_TERMINAL_BACKEND, type TerminalBackendKind } from "./backend-factory.js";
+import type { TerminalLinesRangeReadable } from "./render-structured-buffer.js";
 import type { Cell, CursorState, ScrollbackState, TerminalBackend, TerminalMode, TerminalReadable } from "./termless-types.js";
 
 const DEFAULT_COLS = 120;
@@ -7,13 +8,20 @@ const DEFAULT_SCROLLBACK = 10_000;
 
 const textEncoder = new TextEncoder();
 
-export interface XtermBridgeReadable extends TerminalReadable {
+interface TerminalBackendWithRangeReads extends TerminalBackend {
+  getLinesRange?: (startRow: number, rowCount: number) => Cell[][];
+  getViewportLines?: () => Cell[][];
+}
+
+export interface XtermBridgeReadable extends TerminalReadable, TerminalLinesRangeReadable {
   readonly cols: number;
   readonly rows: number;
   readonly backendKind: TerminalBackendKind;
   write(data: string | Uint8Array): Promise<void>;
   writeSync(data: string | Uint8Array): void;
   resize(cols: number, rows: number): void;
+  scrollViewport(delta: number): void;
+  setViewportStart(viewportStart: number): void;
   reset(): void;
   dispose(): void;
   onTitleChange(listener: (title: string) => void): () => void;
@@ -21,7 +29,7 @@ export interface XtermBridgeReadable extends TerminalReadable {
 
 export class XtermReadableBridge implements XtermBridgeReadable {
   private readonly titleListeners: Array<(title: string) => void> = [];
-  private readonly backend: TerminalBackend;
+  private readonly backend: TerminalBackendWithRangeReads;
   private lastTitle = "";
   private colsValue: number;
   private rowsValue: number;
@@ -61,6 +69,25 @@ export class XtermReadableBridge implements XtermBridgeReadable {
     this.flushTitle();
   }
 
+  scrollViewport(delta: number): void {
+    if (!Number.isFinite(delta) || delta === 0) {
+      return;
+    }
+    this.backend.scrollViewport(Math.trunc(delta));
+    this.flushTitle();
+  }
+
+  setViewportStart(viewportStart: number): void {
+    const scrollback = this.backend.getScrollback();
+    const safeStart = Math.max(0, Math.trunc(viewportStart));
+    const delta = safeStart - scrollback.viewportOffset;
+    if (!Number.isFinite(delta) || delta === 0) {
+      return;
+    }
+    this.backend.scrollViewport(delta);
+    this.flushTitle();
+  }
+
   reset(): void {
     this.backend.reset();
     this.flushTitle();
@@ -89,6 +116,18 @@ export class XtermReadableBridge implements XtermBridgeReadable {
 
   getLines(): Cell[][] {
     return this.backend.getLines();
+  }
+
+  getLinesRange(startRow: number, rowCount: number): Cell[][] {
+    const safeStart = Math.max(0, Math.trunc(startRow));
+    const safeRows = Math.max(1, Math.trunc(rowCount));
+    return this.backend.getLinesRange?.(safeStart, safeRows) ??
+      Array.from({ length: safeRows }, (_, index) => this.backend.getLine(safeStart + index));
+  }
+
+  getViewportLines(): Cell[][] {
+    const scrollback = this.backend.getScrollback();
+    return this.backend.getViewportLines?.() ?? this.getLinesRange(scrollback.viewportOffset, this.rows);
   }
 
   getCursor(): CursorState {
