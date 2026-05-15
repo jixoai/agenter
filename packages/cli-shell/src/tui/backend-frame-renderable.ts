@@ -1,5 +1,6 @@
 import {
   FrameBufferRenderable,
+  MouseButton,
   RGBA,
   TextAttributes,
   convertGlobalToLocalSelection,
@@ -17,6 +18,23 @@ import type { CliShellSelectionRegion, CliShellSelectionSource } from "./types";
 const DEFAULT_FG = RGBA.fromHex("#f3f6fb");
 const DEFAULT_BG = RGBA.fromHex("#111111");
 const DEFAULT_SELECTION_BG = RGBA.fromHex("#2563eb");
+const SEMANTIC_CLICK_MAX_MS = 450;
+const SEMANTIC_CLICK_MAX_DISTANCE = 1;
+
+interface BackendFrameSelectionRange {
+  startRow: number;
+  endRow: number;
+  startCol: number;
+  endCol: number;
+}
+
+interface BackendFrameClickTracker {
+  timeMs: number;
+  x: number;
+  y: number;
+  button: number;
+  count: number;
+}
 
 const toColor = (color: string | undefined, fallback: RGBA): RGBA => {
   if (!color) {
@@ -66,8 +84,10 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
   #selectionRegions: readonly CliShellSelectionRegion[];
   #selectionSources: readonly CliShellSelectionSource[];
   #selection: LocalSelectionBounds | null = null;
+  #semanticSelection: BackendFrameSelectionRange | null = null;
   #selectionBg: RGBA;
   #selectionOwner: CliShellSelectionRegion["owner"] | null = null;
+  #lastClick: BackendFrameClickTracker | null = null;
   #lastPaintStats: BackendFramePaintStats = {
     durationMs: 0,
     rows: 0,
@@ -79,14 +99,22 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     super(ctx, options);
     this.focusable = true;
     this.selectable = true;
-    this.onMouseDown = options.onMouseDown;
-    this.onMouseDrag = options.onMouseDrag;
     this.onMouseScroll = options.onMouseScroll;
     this.#lines = options.lines;
     this.#selectionRegion = options.selectionRegion ?? null;
     this.#selectionRegions = options.selectionRegions ?? [];
     this.#selectionSources = options.selectionSources ?? [];
     this.#selectionBg = options.selectionBg ?? DEFAULT_SELECTION_BG;
+    const userMouseDown = options.onMouseDown;
+    const userMouseDrag = options.onMouseDrag;
+    this.onMouseDown = (event) => {
+      this.handleSemanticMouseDown(event);
+      userMouseDown?.(event);
+    };
+    this.onMouseDrag = (event) => {
+      this.#semanticSelection = null;
+      userMouseDrag?.(event);
+    };
     this.paintBackendFrame();
   }
 
@@ -104,6 +132,7 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     this.#selectionRegions = selectionRegions ?? [];
     if (this.#selectionOwner && !this.#selectionRegions.some((region) => region.owner === this.#selectionOwner)) {
       this.#selectionOwner = null;
+      this.#semanticSelection = null;
     }
     this.paintAndRequestRender();
   }
@@ -129,6 +158,7 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
       this.#selectionRegions = update.selectionRegions ?? [];
       if (this.#selectionOwner && !this.#selectionRegions.some((region) => region.owner === this.#selectionOwner)) {
         this.#selectionOwner = null;
+        this.#semanticSelection = null;
       }
     }
     if ("selectionSources" in update) {
@@ -155,6 +185,7 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     const localY = Math.trunc(y - this.y);
     const region = this.resolveSelectionRegionForPoint(localX, localY);
     this.#selectionOwner = region.owner;
+    this.#semanticSelection = null;
     return (
       localX >= region.x &&
       localY >= region.y &&
@@ -169,6 +200,12 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
       selection?.isDragging || (selection?.isActive && !selection.isStart)
         ? convertGlobalToLocalSelection(selection, this.x, this.y)
         : null;
+    if (
+      this.#selection &&
+      (this.#selection.anchorX !== this.#selection.focusX || this.#selection.anchorY !== this.#selection.focusY)
+    ) {
+      this.#semanticSelection = null;
+    }
     this.paintAndRequestRender();
     return this.hasSelection();
   }
@@ -193,6 +230,58 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
 
   getSelectionOwner(): CliShellSelectionRegion["owner"] | null {
     return this.resolveSelectionRange() ? this.#selectionOwner : null;
+  }
+
+  selectWordAt(localX: number, localY: number): boolean {
+    const region = this.resolveSelectionRegionForPoint(Math.trunc(localX), Math.trunc(localY));
+    if (!this.isPointInsideRegion(localX, localY, region)) {
+      return false;
+    }
+    const line = this.plainLineAt(localY);
+    const charIndex = this.columnToStringIndex(line, localX);
+    const segment = this.findWordInTerminal(line, charIndex);
+    if (!segment) {
+      this.#semanticSelection = null;
+      this.paintAndRequestRender();
+      return false;
+    }
+    const startCol = this.stringIndexToColumn(line, segment.start);
+    const endCol = this.stringIndexToColumn(line, segment.end);
+    this.#selection = null;
+    this.#selectionOwner = region.owner;
+    this.#semanticSelection = {
+      startRow: localY,
+      endRow: localY,
+      startCol: Math.max(region.x, Math.min(region.x + region.width, startCol)),
+      endCol: Math.max(region.x, Math.min(region.x + region.width, endCol)),
+    };
+    if (this.#semanticSelection.startCol >= this.#semanticSelection.endCol) {
+      this.#semanticSelection = null;
+      return false;
+    }
+    this.paintAndRequestRender();
+    return true;
+  }
+
+  selectRowAt(localX: number, localY: number): boolean {
+    const region = this.resolveSelectionRegionForPoint(Math.trunc(localX), Math.trunc(localY));
+    if (!this.isPointInsideRegion(localX, localY, region)) {
+      return false;
+    }
+    const line = this.plainLineAt(localY);
+    const regionEndCol = region.x + region.width;
+    const rawEndCol = Math.min(regionEndCol, Math.max(region.x, this.stringIndexToColumn(line, line.trimEnd().length)));
+    const endCol = rawEndCol > region.x ? rawEndCol : Math.min(regionEndCol, region.x + 1);
+    this.#selection = null;
+    this.#selectionOwner = region.owner;
+    this.#semanticSelection = {
+      startRow: localY,
+      endRow: localY,
+      startCol: region.x,
+      endCol,
+    };
+    this.paintAndRequestRender();
+    return true;
   }
 
   protected paintAndRequestRender(): void {
@@ -279,6 +368,9 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
   }
 
   protected resolveSelectionRange(): { startRow: number; endRow: number; startCol: number; endCol: number } | null {
+    if (this.#semanticSelection) {
+      return this.#semanticSelection;
+    }
     const selection = this.#selection;
     if (!selection?.isActive) {
       return null;
@@ -427,5 +519,113 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
       col = nextCol;
     }
     return result;
+  }
+
+  private handleSemanticMouseDown(event: MouseEvent): void {
+    if (event.button !== MouseButton.LEFT) {
+      return;
+    }
+    const localX = Math.trunc(event.x - this.x);
+    const localY = Math.trunc(event.y - this.y);
+    const clickCount = this.resolveClickCount(event, localX, localY);
+    if (clickCount >= 3 && this.selectRowAt(localX, localY)) {
+      event.preventDefault();
+      return;
+    }
+    if (clickCount === 2 && this.selectWordAt(localX, localY)) {
+      event.preventDefault();
+    }
+  }
+
+  private resolveClickCount(event: MouseEvent, localX: number, localY: number): number {
+    const providedClickCount = this.readProvidedClickCount(event);
+    if (providedClickCount !== null) {
+      return providedClickCount;
+    }
+    const now = performance.now();
+    const previous = this.#lastClick;
+    const sameClickCluster =
+      previous !== null &&
+      previous.button === event.button &&
+      now - previous.timeMs <= SEMANTIC_CLICK_MAX_MS &&
+      Math.abs(previous.x - localX) <= SEMANTIC_CLICK_MAX_DISTANCE &&
+      Math.abs(previous.y - localY) <= SEMANTIC_CLICK_MAX_DISTANCE;
+    const nextCount = sameClickCluster ? previous.count + 1 : 1;
+    this.#lastClick = {
+      timeMs: now,
+      x: localX,
+      y: localY,
+      button: event.button,
+      count: Math.min(nextCount, 3),
+    };
+    return this.#lastClick.count;
+  }
+
+  private readProvidedClickCount(event: MouseEvent): number | null {
+    const candidate = event as unknown as { clickCount?: unknown; detail?: unknown };
+    const value = typeof candidate.clickCount === "number" ? candidate.clickCount : candidate.detail;
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return null;
+    }
+    return Math.max(1, Math.trunc(value));
+  }
+
+  private isPointInsideRegion(
+    localX: number,
+    localY: number,
+    region: { x: number; y: number; width: number; height: number },
+  ): boolean {
+    return (
+      localX >= region.x &&
+      localY >= region.y &&
+      localX < region.x + region.width &&
+      localY < region.y + region.height &&
+      localY < Math.min(this.height, this.#lines.length)
+    );
+  }
+
+  private findWordInTerminal(
+    text: string,
+    charIndex: number,
+  ): { word: string; start: number; end: number } | null {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+    const segments = segmenter.segment(text);
+    const segmentInfo = segments.containing(charIndex);
+    if (segmentInfo?.isWordLike) {
+      return {
+        word: segmentInfo.segment,
+        start: segmentInfo.index,
+        end: segmentInfo.index + segmentInfo.segment.length,
+      };
+    }
+    return null;
+  }
+
+  private columnToStringIndex(line: string, targetCol: number): number {
+    let col = 0;
+    let index = 0;
+    for (const char of Array.from(line)) {
+      const width = Math.max(1, measureTerminalText(char));
+      const nextCol = col + width;
+      if (targetCol < nextCol) {
+        return index;
+      }
+      col = nextCol;
+      index += char.length;
+    }
+    return line.length;
+  }
+
+  private stringIndexToColumn(line: string, targetIndex: number): number {
+    let col = 0;
+    let index = 0;
+    for (const char of Array.from(line)) {
+      if (index >= targetIndex) {
+        break;
+      }
+      col += Math.max(1, measureTerminalText(char));
+      index += char.length;
+    }
+    return col;
   }
 }

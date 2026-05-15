@@ -675,7 +675,7 @@ export class CliShellCoreApp {
   };
 
   #copyActiveSelection(): boolean {
-    const selectedText = this.#renderer.getSelection()?.getSelectedText() ?? "";
+    const selectedText = this.#renderer.getSelection()?.getSelectedText() || this.#terminalView.getSelectedText();
     if (selectedText.length === 0) {
       return false;
     }

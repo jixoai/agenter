@@ -946,6 +946,65 @@ describe("Feature: cli-shell interactive TUI", () => {
     setup.renderer.destroy();
   });
 
+  test("Scenario: Given shell-terminal-view projected cells When the user double-clicks mixed CJK ASCII text Then selection uses segmented word semantics", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 40,
+      height: 2,
+      lines: [{ spans: [{ text: "$ echo 你好world ok" }] }, { spans: [{ text: "shell prompt" }] }],
+    });
+
+    await setup.renderOnce();
+    await setup.mockMouse.doubleClick(9, 0);
+    await setup.renderOnce();
+
+    const expectedWord = new Intl.Segmenter(undefined, { granularity: "word" })
+      .segment("$ echo 你好world ok")
+      .containing(8);
+    expect(expectedWord?.isWordLike).toBe(true);
+    expect(expectedWord?.segment).toBeString();
+    expect(setup.view.getSelectedText()).toBe(expectedWord!.segment);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given shell-terminal-view has separate owner regions When the user triple-clicks a dialogue row Then row selection stays inside dialogue text", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 32,
+      height: 4,
+      selectionRegions: [
+        { owner: "terminal", row: 0, col: 0, width: 10, height: 4 },
+        { owner: "dialogue", row: 0, col: 12, width: 20, height: 4 },
+      ],
+      selectionSources: [
+        {
+          owner: "dialogue",
+          row: 0,
+          col: 12,
+          width: 20,
+          height: 4,
+          lines: [
+            { spans: [{ text: "dialogue first row" }] },
+            { spans: [{ text: "dialogue second row" }] },
+          ],
+        },
+      ],
+      lines: [
+        { spans: [{ text: "shell-00    dialogue first row" }] },
+        { spans: [{ text: "shell-11    dialogue second row" }] },
+      ],
+    });
+
+    await setup.renderOnce();
+    await setup.mockMouse.click(14, 1);
+    await setup.mockMouse.click(14, 1);
+    await setup.mockMouse.click(14, 1);
+    await setup.renderOnce();
+
+    expect(setup.view.getSelectionOwner()).toBe("dialogue");
+    expect(setup.view.getSelectedText()).toBe("dialogue second row");
+    expect(setup.view.getSelectedText()).not.toContain("shell-11");
+    setup.renderer.destroy();
+  });
+
   test("Scenario: Given shell-terminal-view has separate shell and dialogue regions When dragging starts inside dialogue Then selection stays inside dialogue text", async () => {
     const setup = await createShellTerminalViewTestSetup({
       width: 20,
@@ -1862,6 +1921,39 @@ describe("Feature: cli-shell interactive TUI", () => {
     setup.renderer.destroy();
   });
 
+  test("Scenario: Given backend scrollbar receives backend viewport state When the backend scroll position changes Then visible progress state changes from backend truth", async () => {
+    const setup = await createBackendScrollbarTestSetup({
+      width: 1,
+      height: 10,
+      orientation: "vertical",
+      backendState: {
+        scrollSize: 100,
+        viewportSize: 20,
+        scrollPosition: 0,
+      },
+      onBackendChange: () => {},
+    });
+
+    await setup.renderOnce();
+    const before = setup.scrollbar.visibleProgressState;
+    expect(before).toMatchObject({ min: 0, max: 80, value: 0, viewportSize: 20 });
+
+    setup.scrollbar.applyBackendState({
+      scrollSize: 100,
+      viewportSize: 20,
+      scrollPosition: 40,
+    });
+    await setup.renderOnce();
+
+    expect(setup.scrollbar.visibleProgressState).toMatchObject({
+      min: 0,
+      max: 80,
+      value: 40,
+      viewportSize: 20,
+    });
+    setup.renderer.destroy();
+  });
+
   test("Scenario: Given a backend terminal frame owns selected text When copy is requested Then the frame writes the selection through OSC52", async () => {
     const setup = await createBackendTerminalFrameTestSetup({
       id: "backend-terminal-frame-copy-test",
@@ -1900,6 +1992,42 @@ describe("Feature: cli-shell interactive TUI", () => {
 
     expect(setup.frame.copySelectionViaOsc52()).toBe(true);
     expect(copyCalls).toEqual(["copy target"]);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given a backend terminal frame owns a semantic word selection When copy is requested Then the same frame copy path writes the selected word through OSC52", async () => {
+    const setup = await createBackendTerminalFrameTestSetup({
+      id: "backend-terminal-frame-semantic-copy-test",
+      width: 30,
+      height: 4,
+      position: "absolute",
+      top: 0,
+      left: 0,
+      state: {
+        lines: [{ spans: [{ text: "$ echo semantic" }] }, { spans: [] }, { spans: [] }, { spans: [] }],
+        cursorCol: 0,
+        cursorAbsRow: 0,
+        cursorVisible: true,
+        viewportStart: 0,
+        scrollbackRows: 4,
+      },
+      bridge: {
+        scrollViewport: () => true,
+        setViewportStart: () => true,
+      },
+    });
+    const copyCalls: string[] = [];
+    setup.renderer.copyToClipboardOSC52 = mock((text: string) => {
+      copyCalls.push(text);
+      return true;
+    });
+
+    await setup.renderOnce();
+    await setup.mockMouse.doubleClick(9, 0);
+    await setup.renderOnce();
+
+    expect(setup.frame.copySelectionViaOsc52()).toBe(true);
+    expect(copyCalls).toEqual(["semantic"]);
     setup.renderer.destroy();
   });
 
@@ -2433,6 +2561,117 @@ describe("Feature: cli-shell interactive TUI", () => {
     setCliShellDialogueDraft(ctx, "status?");
     await submitCliShellDialogue(ctx);
     expect(harness.sentMessages).toEqual([{ chatId: "room-shell-1", text: "status?" }]);
+  });
+
+  test("Scenario: Given terminal input is routed to a live mirror When backend accepts bytes Then cli-shell requests backend cursor follow", () => {
+    const state = createRuntimeState({ heartbeat: [], lines: ["$ agenter shell"], roomMessages: [], unread: 0 });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const sentInput: string[] = [];
+    let followCursorCount = 0;
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings: resolveCliShellTuiKeybindings(null),
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () =>
+        buildCliShellTuiModel({
+          state,
+          projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+          sessionId: "session-1",
+          shellName: "shell-1",
+          fallbackTerminalId: "shell-1",
+          avatarActorId: "auth:shell-assistant",
+          ui: viewState,
+          keybindings: resolveCliShellTuiKeybindings(null),
+          width: 120,
+          height: 40,
+        }),
+      getLiveMirror: () =>
+        ({
+          sendInputBytes: (data: Uint8Array) => {
+            sentInput.push(new TextDecoder().decode(data));
+            return true;
+          },
+          followCursor: () => {
+            followCursorCount += 1;
+            return true;
+          },
+        }) as never,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "x", sequence: "x", raw: "x" }))).toBe(true);
+    expect(sentInput).toEqual(["x"]);
+    expect(followCursorCount).toBe(1);
+  });
+
+  test("Scenario: Given terminal input is rejected by a live mirror When a key is routed Then cli-shell does not request backend cursor follow", () => {
+    const state = createRuntimeState({ heartbeat: [], lines: ["$ agenter shell"], roomMessages: [], unread: 0 });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    let followCursorCount = 0;
+    const harness = createTuiStore({ state });
+    const ctx = {
+      store: harness.store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings: resolveCliShellTuiKeybindings(null),
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () =>
+        buildCliShellTuiModel({
+          state,
+          projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+          sessionId: "session-1",
+          shellName: "shell-1",
+          fallbackTerminalId: "shell-1",
+          avatarActorId: "auth:shell-assistant",
+          ui: viewState,
+          keybindings: resolveCliShellTuiKeybindings(null),
+          width: 120,
+          height: 40,
+        }),
+      getLiveMirror: () =>
+        ({
+          sendInputBytes: () => false,
+          followCursor: () => {
+            followCursorCount += 1;
+            return true;
+          },
+        }) as never,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "x", sequence: "x", raw: "x" }))).toBe(true);
+    expect(followCursorCount).toBe(0);
+    expect(harness.inputs.map((entry) => entry.text)).toEqual(["x"]);
   });
 
   test("Scenario: Given native OpenTUI controls receive dialogue input When the user opens types and submits dialogue Then visible control effects return through terminal-2 publication", async () => {

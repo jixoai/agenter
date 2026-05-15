@@ -112,4 +112,12 @@ export class BackendScrollbarRenderable extends ScrollBarRenderable {
     return this.#latestBackendPosition;
   }
 
+  get visibleProgressState(): { min: number; max: number; value: number; viewportSize: number } {
+    return {
+      min: this.slider.min,
+      max: this.slider.max,
+      value: this.slider.value,
+      viewportSize: this.slider.viewPortSize,
+    };
+  }
 }
