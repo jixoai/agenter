@@ -64,6 +64,8 @@
 - `dcdbf7be docs(spec): propose cli-shell terminal interaction polish`
 - `35706839 feat: polish cli-shell terminal interactions`
 - `d58eb891 docs(spec): archive cli-shell terminal interaction polish`
+- `8f09ccea docs: report cli-shell terminal interaction closure`
+- `6b767790 docs(spec): mark cli-shell terminal interaction archive complete`
 
 ## 自动化验证
 
