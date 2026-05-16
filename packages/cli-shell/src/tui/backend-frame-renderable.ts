@@ -13,6 +13,15 @@ import {
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
 
 import { measureTerminalText } from "./cell-width";
+import {
+  CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
+  type CliShellInteractionEnhancementProfile,
+} from "./interaction-capabilities";
+import {
+  findWordInTerminal,
+  stringIndexToTerminalColumn,
+  terminalColumnToStringIndex,
+} from "./terminal-word-navigation";
 import type { CliShellSelectionRegion, CliShellSelectionSource } from "./types";
 
 const DEFAULT_FG = RGBA.fromHex("#f3f6fb");
@@ -58,6 +67,7 @@ export interface BackendFrameRenderableOptions extends FrameBufferOptions {
   selectionRegions?: readonly CliShellSelectionRegion[];
   selectionSources?: readonly CliShellSelectionSource[];
   selectionBg?: RGBA;
+  interactionProfile?: CliShellInteractionEnhancementProfile;
   onMouseDown?: (event: MouseEvent) => void;
   onMouseDrag?: (event: MouseEvent) => void;
   onMouseScroll?: (event: MouseEvent) => void;
@@ -76,6 +86,7 @@ export interface BackendFrameProjectionUpdate {
   selectionRegions?: readonly CliShellSelectionRegion[];
   selectionSources?: readonly CliShellSelectionSource[];
   selectionBg?: RGBA;
+  interactionProfile?: CliShellInteractionEnhancementProfile;
 }
 
 export class BackendFrameRenderable extends FrameBufferRenderable {
@@ -86,6 +97,7 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
   #selection: LocalSelectionBounds | null = null;
   #semanticSelection: BackendFrameSelectionRange | null = null;
   #selectionBg: RGBA;
+  #interactionProfile: CliShellInteractionEnhancementProfile;
   #selectionOwner: CliShellSelectionRegion["owner"] | null = null;
   #lastClick: BackendFrameClickTracker | null = null;
   #lastPaintStats: BackendFramePaintStats = {
@@ -105,6 +117,7 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     this.#selectionRegions = options.selectionRegions ?? [];
     this.#selectionSources = options.selectionSources ?? [];
     this.#selectionBg = options.selectionBg ?? DEFAULT_SELECTION_BG;
+    this.#interactionProfile = options.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE;
     const userMouseDown = options.onMouseDown;
     const userMouseDrag = options.onMouseDrag;
     this.onMouseDown = (event) => {
@@ -166,6 +179,9 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     }
     if (update.selectionBg) {
       this.#selectionBg = update.selectionBg;
+    }
+    if (update.interactionProfile) {
+      this.#interactionProfile = update.interactionProfile;
     }
     this.paintAndRequestRender();
     return this.#lastPaintStats;
@@ -238,15 +254,15 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
       return false;
     }
     const line = this.plainLineAt(localY);
-    const charIndex = this.columnToStringIndex(line, localX);
-    const segment = this.findWordInTerminal(line, charIndex);
+    const charIndex = terminalColumnToStringIndex(line, localX);
+    const segment = findWordInTerminal(line, charIndex);
     if (!segment) {
       this.#semanticSelection = null;
       this.paintAndRequestRender();
       return false;
     }
-    const startCol = this.stringIndexToColumn(line, segment.start);
-    const endCol = this.stringIndexToColumn(line, segment.end);
+    const startCol = stringIndexToTerminalColumn(line, segment.start);
+    const endCol = stringIndexToTerminalColumn(line, segment.end);
     this.#selection = null;
     this.#selectionOwner = region.owner;
     this.#semanticSelection = {
@@ -270,7 +286,10 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     }
     const line = this.plainLineAt(localY);
     const regionEndCol = region.x + region.width;
-    const rawEndCol = Math.min(regionEndCol, Math.max(region.x, this.stringIndexToColumn(line, line.trimEnd().length)));
+    const rawEndCol = Math.min(
+      regionEndCol,
+      Math.max(region.x, stringIndexToTerminalColumn(line, line.trimEnd().length)),
+    );
     const endCol = rawEndCol > region.x ? rawEndCol : Math.min(regionEndCol, region.x + 1);
     this.#selection = null;
     this.#selectionOwner = region.owner;
@@ -528,11 +547,11 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     const localX = Math.trunc(event.x - this.x);
     const localY = Math.trunc(event.y - this.y);
     const clickCount = this.resolveClickCount(event, localX, localY);
-    if (clickCount >= 3 && this.selectRowAt(localX, localY)) {
+    if (clickCount >= 3 && this.#interactionProfile.semanticRowSelection && this.selectRowAt(localX, localY)) {
       event.preventDefault();
       return;
     }
-    if (clickCount === 2 && this.selectWordAt(localX, localY)) {
+    if (clickCount === 2 && this.#interactionProfile.semanticWordSelection && this.selectWordAt(localX, localY)) {
       event.preventDefault();
     }
   }
@@ -584,48 +603,4 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     );
   }
 
-  private findWordInTerminal(
-    text: string,
-    charIndex: number,
-  ): { word: string; start: number; end: number } | null {
-    const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
-    const segments = segmenter.segment(text);
-    const segmentInfo = segments.containing(charIndex);
-    if (segmentInfo?.isWordLike) {
-      return {
-        word: segmentInfo.segment,
-        start: segmentInfo.index,
-        end: segmentInfo.index + segmentInfo.segment.length,
-      };
-    }
-    return null;
-  }
-
-  private columnToStringIndex(line: string, targetCol: number): number {
-    let col = 0;
-    let index = 0;
-    for (const char of Array.from(line)) {
-      const width = Math.max(1, measureTerminalText(char));
-      const nextCol = col + width;
-      if (targetCol < nextCol) {
-        return index;
-      }
-      col = nextCol;
-      index += char.length;
-    }
-    return line.length;
-  }
-
-  private stringIndexToColumn(line: string, targetIndex: number): number {
-    let col = 0;
-    let index = 0;
-    for (const char of Array.from(line)) {
-      if (index >= targetIndex) {
-        break;
-      }
-      col += Math.max(1, measureTerminalText(char));
-      index += char.length;
-    }
-    return col;
-  }
 }

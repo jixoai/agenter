@@ -116,6 +116,20 @@ export {
 } from "./tui/native-projection";
 export { projectMarkdownLastLine } from "./tui/markdown-projection";
 export {
+  CLI_SHELL_BACKEND_INTERACTION_RECOMMENDATIONS,
+  CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
+  resolveCliShellInteractionEnhancementProfile,
+  type CliShellInteractionEnhancementProfile,
+} from "./tui/interaction-capabilities";
+export {
+  findNextTerminalWordBoundary,
+  findPreviousTerminalWordBoundary,
+  findWordInTerminal,
+  stringIndexToTerminalColumn,
+  terminalColumnToStringIndex,
+  type TerminalWordSegment,
+} from "./tui/terminal-word-navigation";
+export {
   inferCliShellPasteMediaFromText,
   isCliShellImagePastePayload,
   readCliShellPasteMimeTypes,

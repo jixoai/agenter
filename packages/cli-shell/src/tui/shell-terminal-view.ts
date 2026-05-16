@@ -2,6 +2,7 @@ import type { FrameBufferOptions, RenderContext } from "@opentui/core";
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
 
 import { BackendFrameRenderable } from "./backend-frame-renderable";
+import type { CliShellInteractionEnhancementProfile } from "./interaction-capabilities";
 import type { CliShellSelectionRegion, CliShellSelectionSource } from "./types";
 
 export interface ShellTerminalViewOptions extends FrameBufferOptions {
@@ -15,6 +16,7 @@ export interface ShellTerminalViewOptions extends FrameBufferOptions {
   } | null;
   selectionRegions?: readonly CliShellSelectionRegion[];
   selectionSources?: readonly CliShellSelectionSource[];
+  interactionProfile?: CliShellInteractionEnhancementProfile;
   onMouseDown?: BackendFrameRenderable["onMouseDown"];
   onMouseDrag?: BackendFrameRenderable["onMouseDrag"];
   onMouseScroll?: BackendFrameRenderable["onMouseScroll"];

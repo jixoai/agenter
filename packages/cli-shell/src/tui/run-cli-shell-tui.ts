@@ -2,6 +2,7 @@ import { createCliRenderer } from "@opentui/core";
 
 import type { CliShellBootstrapResult } from "../bootstrap";
 import { CliShellCoreApp } from "./core-app";
+import { resolveCliShellInteractionEnhancementProfile } from "./interaction-capabilities";
 import { resolveCliShellTuiKeybindings } from "./keybindings";
 import type { CliShellObservationReadyBaseline, CliShellTuiStore } from "./types";
 
@@ -25,6 +26,7 @@ export const startCliShellTui = async (input: {
   });
   const settingsFile = await input.store.readSettings(input.attached.session.id, "settings").catch(() => null);
   const keybindings = resolveCliShellTuiKeybindings(settingsFile?.content);
+  const interactionProfile = resolveCliShellInteractionEnhancementProfile(input.attached.shellTruthTerminal.entry.backend);
   let done = false;
   let resolveFinished = () => {};
   const finished = new Promise<void>((resolve) => {
@@ -54,6 +56,7 @@ export const startCliShellTui = async (input: {
     avatarActorId: input.attached.avatarActorId,
     managed: input.attached.managed,
     keybindings,
+    interactionProfile,
     onQuit: destroy,
     observationReadyBaseline: input.observationReadyBaseline ?? null,
     debug: input.debug ?? false,

@@ -59,6 +59,10 @@ import { isCliShellImagePastePayload, readCliShellPastePayload } from "./paste-i
 import { createCliShellPerfTracer, type CliShellPerfTracer } from "./perf-trace";
 import type { CliShellProjectionFrameSource } from "./projection-law";
 import { ShellTerminalViewRenderable } from "./shell-terminal-view";
+import {
+  CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
+  type CliShellInteractionEnhancementProfile,
+} from "./interaction-capabilities";
 import type {
   CliShellComposedSurfaceState,
   CliShellObservationReadyBaseline,
@@ -84,6 +88,7 @@ export interface CliShellCoreAppProps {
   observationReadyBaseline?: CliShellObservationReadyBaseline | null;
   debug?: boolean;
   experimentalDynamicRefresh?: boolean;
+  interactionProfile?: CliShellInteractionEnhancementProfile;
   createTransportSession?: CliShellLiveTerminalTransportSessionFactory;
 }
 
@@ -208,6 +213,7 @@ export class CliShellCoreApp {
       onMouseDown: (event) => this.#handleShellMouseDown(event),
       onMouseDrag: (event) => this.#handleShellMouseDrag(event),
       onMouseScroll: (event) => this.#handleTerminalScroll(event),
+      interactionProfile: props.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
     });
     if (this.#debugBar) {
       this.#root.add(this.#debugBar);
@@ -361,6 +367,7 @@ export class CliShellCoreApp {
       height: contentHeight,
       toolbarHeartbeatProjection: this.#toolbarHeartbeatProjection,
       observationReadyBaseline: this.#props.observationReadyBaseline,
+      interactionProfile: this.#props.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
     });
     this.#lastModel = model;
     this.#restorePublishedSurface({ publishedSurface: publishedSurfaceState.surface });
@@ -463,6 +470,7 @@ export class CliShellCoreApp {
       : null,
       selectionRegions: interactionLayout.selectionRegions,
       selectionSources: frame.selectionSources,
+      interactionProfile: model.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
     });
 
     this.#syncGeometry({ model, width, height: contentHeight, shellSourceTerminalId });
@@ -552,6 +560,7 @@ export class CliShellCoreApp {
       height: this.#contentHeight(),
       toolbarHeartbeatProjection: this.#toolbarHeartbeatProjection,
       observationReadyBaseline: this.#props.observationReadyBaseline,
+      interactionProfile: this.#props.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
     });
   }
 

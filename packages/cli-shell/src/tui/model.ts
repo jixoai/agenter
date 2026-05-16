@@ -9,6 +9,7 @@ import {
   resolveCliShellToolbarStatusIcon,
   summarizeCliShellHeartbeat,
 } from "./heartbeat";
+import type { CliShellInteractionEnhancementProfile } from "./interaction-capabilities";
 import type {
   CliShellDialogueBlock,
   CliShellDialoguePlacement,
@@ -290,6 +291,7 @@ export const buildCliShellTuiModel = (input: {
   height: number;
   toolbarHeartbeatProjection?: string;
   observationReadyBaseline?: CliShellObservationReadyBaseline | null;
+  interactionProfile?: CliShellInteractionEnhancementProfile;
 }): CliShellTuiModel => {
   const terminalId = resolveTerminalId(input);
   const activeFocusTarget = input.ui.activeFocusTarget ?? input.ui.focusTarget;
@@ -361,5 +363,6 @@ export const buildCliShellTuiModel = (input: {
     dialogueDraft: input.ui.dialogueDraft,
     dialogueScrollOffset: Math.max(0, Math.trunc(input.ui.dialogueScrollOffset ?? 0)),
     dialogueTitle: "Dialogue",
+    interactionProfile: input.interactionProfile,
   };
 };

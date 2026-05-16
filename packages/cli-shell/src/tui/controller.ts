@@ -5,6 +5,12 @@ import { resolveCliShellTerminalRegion } from "./frame";
 import type { CliShellLiveTerminalMirror } from "./live-terminal-mirror";
 import { matchCliShellShortcut, type CliShellTuiKeybindings } from "./keybindings";
 import { encodeCliShellTerminalKey } from "./terminal-input";
+import {
+  findNextTerminalWordBoundary,
+  findPreviousTerminalWordBoundary,
+  stringIndexToTerminalColumn,
+  terminalColumnToStringIndex,
+} from "./terminal-word-navigation";
 import type {
   CliShellPointerAction,
   CliShellTuiModel,
@@ -66,7 +72,9 @@ export const setCliShellDialogueDraft = (ctx: CliShellTuiControllerContext, draf
 const sendTerminalInput = (ctx: CliShellTuiControllerContext, text: string): void => {
   const mirror = ctx.getLiveMirror?.();
   if (mirror?.sendInputBytes(new TextEncoder().encode(text))) {
-    mirror.followCursor();
+    if (ctx.getModel().interactionProfile?.followCursorOnInput !== false) {
+      mirror.followCursor();
+    }
     return;
   }
   void ctx.store
@@ -78,6 +86,38 @@ const sendTerminalInput = (ctx: CliShellTuiControllerContext, text: string): voi
     .catch((error: unknown) => {
       setStatus(ctx, `终端输入失败: ${error instanceof Error ? error.message : String(error)}`);
     });
+};
+
+const repeatTerminalKey = (key: "\u001b[C" | "\u001b[D", count: number): string | null => {
+  const safeCount = Math.max(0, Math.trunc(count));
+  return safeCount > 0 ? key.repeat(safeCount) : null;
+};
+
+const resolveOptionWordNavigationInput = (ctx: CliShellTuiControllerContext, key: KeyEvent): string | null => {
+  if (!key.option || (key.name !== "left" && key.name !== "right")) {
+    return null;
+  }
+  const model = ctx.getModel();
+  if (model.interactionProfile?.wordNavigation !== true) {
+    return null;
+  }
+  const localCursorRow = Math.max(0, Math.trunc(model.terminalView.cursorAbsRow - model.terminalView.viewportStart));
+  const line = model.terminalView.plainLines[localCursorRow] ?? "";
+  const cursorCol = Math.max(0, Math.trunc(model.terminalView.cursorCol));
+  const cursorIndex = terminalColumnToStringIndex(line, cursorCol);
+  const targetIndex =
+    key.name === "left"
+      ? findPreviousTerminalWordBoundary(line, cursorIndex)
+      : findNextTerminalWordBoundary(line, cursorIndex);
+  if (targetIndex === null) {
+    return null;
+  }
+  const targetCol = stringIndexToTerminalColumn(line, targetIndex);
+  const delta = targetCol - cursorCol;
+  if (delta === 0) {
+    return null;
+  }
+  return delta > 0 ? repeatTerminalKey("\u001b[C", delta) : repeatTerminalKey("\u001b[D", Math.abs(delta));
 };
 
 const toggleManaged = async (ctx: CliShellTuiControllerContext): Promise<void> => {
@@ -318,7 +358,9 @@ export const routeCliShellKey = (ctx: CliShellTuiControllerContext, key: KeyEven
     return true;
   }
 
-  const encoded = encodeCliShellTerminalKey(key);
+  const encoded =
+    resolveOptionWordNavigationInput(ctx, key) ??
+    encodeCliShellTerminalKey(key, { homeEndFallback: ctx.getModel().interactionProfile?.homeEndFallback });
   if (encoded) {
     sendTerminalInput(ctx, encoded);
     return true;

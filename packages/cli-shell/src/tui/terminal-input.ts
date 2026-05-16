@@ -14,7 +14,26 @@ const arrowMap: Record<string, string> = {
   pagedown: "\u001b[6~",
 };
 
-export const encodeCliShellTerminalKey = (key: KeyEvent): string | null => {
+const isHomeOrEndKey = (name: string): boolean => name === "home" || name === "end";
+
+const nativeSequence = (key: KeyEvent): string | null => {
+  if (key.sequence.length > 0) {
+    return key.sequence;
+  }
+  if (key.raw.length > 0) {
+    return key.raw;
+  }
+  return null;
+};
+
+export interface CliShellTerminalKeyEncodingOptions {
+  homeEndFallback?: boolean;
+}
+
+export const encodeCliShellTerminalKey = (
+  key: KeyEvent,
+  options: CliShellTerminalKeyEncodingOptions = {},
+): string | null => {
   if (key.name === "return") {
     return "\r";
   }
@@ -34,7 +53,17 @@ export const encodeCliShellTerminalKey = (key: KeyEvent): string | null => {
     return "\u001b";
   }
 
+  if (isHomeOrEndKey(key.name)) {
+    const native = nativeSequence(key);
+    if (native) {
+      return native;
+    }
+  }
+
   if (arrowMap[key.name]) {
+    if (isHomeOrEndKey(key.name) && options.homeEndFallback === false) {
+      return null;
+    }
     return arrowMap[key.name];
   }
 

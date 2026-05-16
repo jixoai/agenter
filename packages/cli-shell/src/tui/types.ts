@@ -4,6 +4,7 @@ import type {
   RuntimeStore,
 } from "@agenter/client-sdk";
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
+import type { CliShellInteractionEnhancementProfile } from "./interaction-capabilities";
 import type { CliShellLiveTerminalView } from "./live-terminal-mirror";
 
 import type { CliShellStore } from "../bootstrap";
@@ -51,6 +52,7 @@ export interface CliShellTuiModel {
   dialogueDraft: string;
   dialogueScrollOffset: number;
   dialogueTitle: string;
+  interactionProfile?: CliShellInteractionEnhancementProfile;
 }
 
 export type CliShellPointerAction =

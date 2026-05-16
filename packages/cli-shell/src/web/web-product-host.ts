@@ -5,6 +5,7 @@ import type {
 } from "@agenter/client-sdk";
 import type { CliShellBootstrapResult } from "../bootstrap";
 import type { CliShellManagedState } from "../managed";
+import { resolveCliShellInteractionEnhancementProfile } from "../tui/interaction-capabilities";
 import {
   routeCliShellMouseScroll,
   routeCliShellPaste,
@@ -145,6 +146,7 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
   let releaseVisibleMirror: (() => void) | null = null;
   let liveTerminalRevisionTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  const interactionProfile = resolveCliShellInteractionEnhancementProfile(input.attached.shellTruthTerminal.entry.backend);
   const perfTracer = createCliShellPerfTracer({ enabled: input.debug === true });
 
   const surfaceKey = (surface: CliShellComposedSurfaceState): string =>
@@ -272,6 +274,7 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
       width,
       height,
       observationReadyBaseline: input.observationReadyBaseline ?? null,
+      interactionProfile,
     });
     return {
       model,

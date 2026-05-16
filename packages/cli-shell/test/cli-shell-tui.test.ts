@@ -27,13 +27,19 @@ import {
   buildCliShellTuiModel,
   CliShellDialogueBackend,
   CliShellCoreApp,
+  CLI_SHELL_BACKEND_INTERACTION_RECOMMENDATIONS,
   createCliShellPerfTracer,
   createTerminalCanvas,
+  encodeCliShellTerminalKey,
   formatCliShellDebugBarLine,
+  findNextTerminalWordBoundary,
+  findPreviousTerminalWordBoundary,
+  findWordInTerminal,
   layoutCliShellTuiFrame,
   measureTerminalText,
   projectCliShellDialogueBackendFrame,
   renderCanvasLines,
+  resolveCliShellInteractionEnhancementProfile,
   resolveCliShellShellScrollbarProjection,
   resolveCliShellScrollbarPointerTarget,
   resolveCliShellTerminalRegion,
@@ -46,7 +52,9 @@ import {
   routeCliShellViewportTarget,
   setCliShellDialogueDraft,
   ShellTerminalViewRenderable,
+  stringIndexToTerminalColumn,
   submitCliShellDialogue,
+  terminalColumnToStringIndex,
   writeCanvasStyledText,
   type CliShellLiveTerminalTransportSessionFactory,
   type CliShellManagedState,
@@ -703,6 +711,72 @@ const createBackendTerminalFrameTestSetup = async (
 };
 
 describe("Feature: cli-shell interactive TUI", () => {
+  test("Scenario: Given backend interaction recommendations When cli-shell resolves profiles Then every supported backend has explicit enhancement decisions", () => {
+    expect(CLI_SHELL_BACKEND_INTERACTION_RECOMMENDATIONS.xterm).toEqual({
+      semanticWordSelection: true,
+      semanticRowSelection: true,
+      wordNavigation: true,
+      followCursorOnInput: true,
+      homeEndFallback: true,
+    });
+    expect(CLI_SHELL_BACKEND_INTERACTION_RECOMMENDATIONS["ghostty-native"]).toEqual({
+      semanticWordSelection: true,
+      semanticRowSelection: true,
+      wordNavigation: true,
+      followCursorOnInput: true,
+      homeEndFallback: true,
+    });
+    expect(resolveCliShellInteractionEnhancementProfile(undefined)).toEqual({
+      semanticWordSelection: true,
+      semanticRowSelection: true,
+      wordNavigation: true,
+      followCursorOnInput: true,
+      homeEndFallback: true,
+    });
+  });
+
+  test("Scenario: Given terminal word navigation helper When CJK ASCII and punctuation are segmented Then selection and word navigation share ICU boundaries", () => {
+    const line = "$ echo 你好world ok";
+    const cjkWord = findWordInTerminal(line, line.indexOf("你"));
+    expect(cjkWord?.word).toBe("你好");
+    expect(findPreviousTerminalWordBoundary(line, line.indexOf("ok"))).toBe(line.indexOf("world"));
+    expect(findNextTerminalWordBoundary(line, line.indexOf("你"))).toBe(line.indexOf("你") + "你好".length);
+
+    expect(terminalColumnToStringIndex("你a", 0)).toBe(0);
+    expect(terminalColumnToStringIndex("你a", 2)).toBe("你".length);
+    expect(stringIndexToTerminalColumn("你a", "你".length)).toBe(2);
+  });
+
+  test("Scenario: Given supported terminal keys When encoding shell input Then native Home End sequences are preferred and fallback stays explicit", () => {
+    const cases: Array<{ key: Parameters<typeof createTestKeyEvent>[0]; expected: string | null }> = [
+      { key: { name: "x", sequence: "x", raw: "x" }, expected: "x" },
+      { key: { name: "return" }, expected: "\r" },
+      { key: { name: "linefeed" }, expected: "\n" },
+      { key: { name: "backspace" }, expected: "\u007f" },
+      { key: { name: "tab" }, expected: "\t" },
+      { key: { name: "space" }, expected: " " },
+      { key: { name: "escape" }, expected: "\u001b" },
+      { key: { name: "up" }, expected: "\u001b[A" },
+      { key: { name: "down" }, expected: "\u001b[B" },
+      { key: { name: "right" }, expected: "\u001b[C" },
+      { key: { name: "left" }, expected: "\u001b[D" },
+      { key: { name: "delete" }, expected: "\u001b[3~" },
+      { key: { name: "pageup" }, expected: "\u001b[5~" },
+      { key: { name: "pagedown" }, expected: "\u001b[6~" },
+      { key: { name: "a", ctrl: true }, expected: "\x01" },
+    ];
+
+    for (const item of cases) {
+      expect(encodeCliShellTerminalKey(createTestKeyEvent(item.key))).toBe(item.expected);
+    }
+    expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "home", sequence: "\u001b[1~" }))).toBe("\u001b[1~");
+    expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "end", sequence: "\u001b[4~" }))).toBe("\u001b[4~");
+    expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "home" }))).toBe("\u001b[H");
+    expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "end" }))).toBe("\u001b[F");
+    expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "home" }), { homeEndFallback: false })).toBeNull();
+    expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "f13" }))).toBeNull();
+  });
+
   test("Scenario: Given debug mode is enabled When the debug bar formats frame timing Then the line separates paint cost from frame gap facts", () => {
     const line = formatCliShellDebugBarLine(
       {
@@ -2618,6 +2692,163 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "x", sequence: "x", raw: "x" }))).toBe(true);
     expect(sentInput).toEqual(["x"]);
     expect(followCursorCount).toBe(1);
+  });
+
+  test("Scenario: Given terminal input is routed to a live mirror When navigation keys move the cursor Then cli-shell still requests backend cursor follow", () => {
+    const state = createRuntimeState({ heartbeat: [], lines: ["$ agenter shell"], roomMessages: [], unread: 0 });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const sentInput: string[] = [];
+    let followCursorCount = 0;
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings: resolveCliShellTuiKeybindings(null),
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () =>
+        buildCliShellTuiModel({
+          state,
+          projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+          sessionId: "session-1",
+          shellName: "shell-1",
+          fallbackTerminalId: "shell-1",
+          avatarActorId: "auth:shell-assistant",
+          ui: viewState,
+          keybindings: resolveCliShellTuiKeybindings(null),
+          width: 120,
+          height: 40,
+        }),
+      getLiveMirror: () =>
+        ({
+          sendInputBytes: (data: Uint8Array) => {
+            sentInput.push(new TextDecoder().decode(data));
+            return true;
+          },
+          followCursor: () => {
+            followCursorCount += 1;
+            return true;
+          },
+        }) as never,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    for (const key of ["left", "right", "home", "end"]) {
+      expect(routeCliShellKey(ctx, createTestKeyEvent({ name: key }))).toBe(true);
+    }
+    expect(sentInput).toEqual(["\u001b[D", "\u001b[C", "\u001b[H", "\u001b[F"]);
+    expect(followCursorCount).toBe(4);
+  });
+
+  test("Scenario: Given word navigation enhancement is enabled When Option Left Right is pressed Then cli-shell sends segmented cursor movement", () => {
+    const wordLine = "$ echo hello world ok";
+    const state = createRuntimeState({ heartbeat: [], lines: [wordLine], roomMessages: [], unread: 0 });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const sentInput: string[] = [];
+    let followCursorCount = 0;
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const baseModel = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: viewState,
+      keybindings,
+      width: 120,
+      height: 40,
+      interactionProfile: {
+        semanticWordSelection: true,
+        semanticRowSelection: true,
+        wordNavigation: true,
+        followCursorOnInput: true,
+        homeEndFallback: true,
+      },
+    });
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () => ({
+        ...baseModel,
+        terminalView: {
+          ...baseModel.terminalView,
+          plainLines: [wordLine],
+          cursorAbsRow: 0,
+          viewportStart: 0,
+          cursorCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("ok")),
+        },
+      }),
+      getLiveMirror: () =>
+        ({
+          sendInputBytes: (data: Uint8Array) => {
+            sentInput.push(new TextDecoder().decode(data));
+            return true;
+          },
+          followCursor: () => {
+            followCursorCount += 1;
+            return true;
+          },
+        }) as never,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, sequence: "\u001bb" }))).toBe(true);
+    const expectedLeftCells =
+      stringIndexToTerminalColumn(wordLine, wordLine.indexOf("ok")) -
+      stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world"));
+    expect(sentInput).toEqual(["\u001b[D".repeat(expectedLeftCells)]);
+    expect(followCursorCount).toBe(1);
+
+    const rightCtx = {
+      ...ctx,
+      getModel: () => ({
+        ...baseModel,
+        terminalView: {
+          ...baseModel.terminalView,
+          plainLines: [wordLine],
+          cursorAbsRow: 0,
+          viewportStart: 0,
+          cursorCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world")),
+        },
+      }),
+    };
+    expect(routeCliShellKey(rightCtx, createTestKeyEvent({ name: "right", option: true, sequence: "\u001bf" }))).toBe(true);
+    const expectedRightCells = stringIndexToTerminalColumn(
+      wordLine,
+      wordLine.indexOf("world") + "world".length,
+    ) - stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world"));
+    expect(sentInput.at(-1)).toBe("\u001b[C".repeat(expectedRightCells));
   });
 
   test("Scenario: Given terminal input is rejected by a live mirror When a key is routed Then cli-shell does not request backend cursor follow", () => {
