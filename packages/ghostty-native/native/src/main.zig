@@ -15,6 +15,7 @@ pub const std_options: std.Options = .{
 // not under a `terminal` namespace.
 const Terminal = ghostty.Terminal;
 const Screen = ghostty.Screen;
+const Selection = ghostty.Selection;
 const PageList = ghostty.PageList;
 const Cell = ghostty.Cell;
 const Page = ghostty.Page;
@@ -67,6 +68,12 @@ fn initModule(js: *napigen.JsContext, exports: napigen.napi_value) napigen.Error
     try js.setNamedProperty(exports, "getTitle", try js.createFunction(getTitle));
     try js.setNamedProperty(exports, "getScrollback", try js.createFunction(getScrollback));
     try js.setNamedProperty(exports, "scrollViewport", try js.createFunction(scrollViewport));
+    try js.setNamedProperty(exports, "clearSelection", try js.createFunction(clearSelection));
+    try js.setNamedProperty(exports, "selectRange", try js.createFunction(selectRange));
+    try js.setNamedProperty(exports, "selectWordAt", try js.createFunction(selectWordAt));
+    try js.setNamedProperty(exports, "selectLineAt", try js.createFunction(selectLineAt));
+    try js.setNamedProperty(exports, "getSelectionText", try js.createFunction(getSelectionText));
+    try js.setNamedProperty(exports, "getSelectionOverlay", try js.createFunction(getSelectionOverlay));
     try js.setNamedProperty(exports, "getDefaultColors", try js.createFunction(getDefaultColors));
     return exports;
 }
@@ -529,6 +536,90 @@ fn getScrollback(handle: *TerminalHandle) JsScrollback {
 
 fn scrollViewport(handle: *TerminalHandle, delta: i32) void {
     handle.terminal.scrollViewport(.{ .delta = @as(isize, delta) });
+}
+
+// ─── Selection ──────────────────────────────────────────
+
+const JsSelectionOverlayRow = struct {
+    row: u32,
+    start_col: u16,
+    end_col: u16,
+};
+
+fn pinFromScreenPoint(handle: *TerminalHandle, row: u32, col: u16) ?PageList.Pin {
+    const screen = handle.terminal.screens.active;
+    const pages = &screen.pages;
+    const scrollback = getScrollback(handle);
+    if (row >= scrollback.total_lines) {
+        return null;
+    }
+    const safe_col: u16 = if (handle.cols == 0) 0 else @min(col, handle.cols - 1);
+    return pages.pin(.{ .screen = .{ .x = safe_col, .y = @intCast(row) } });
+}
+
+fn clearSelection(handle: *TerminalHandle) void {
+    handle.terminal.screens.active.clearSelection();
+}
+
+fn selectRange(handle: *TerminalHandle, start_row: u32, start_col: u16, end_row: u32, end_col: u16, rectangular: bool) bool {
+    const start_pin = pinFromScreenPoint(handle, start_row, start_col) orelse return false;
+    const end_pin = pinFromScreenPoint(handle, end_row, end_col) orelse return false;
+    handle.terminal.screens.active.select(Selection.init(start_pin, end_pin, rectangular)) catch return false;
+    return true;
+}
+
+fn selectWordAt(handle: *TerminalHandle, row: u32, col: u16) bool {
+    const pin = pinFromScreenPoint(handle, row, col) orelse return false;
+    const boundary_codepoints = &[_]u21{
+        0,   ' ', '\t', '\'', '"', '│', '`', '|', ':', ';',
+        ',', '(', ')',  '[',  ']', '{',   '}', '<', '>', '$',
+    };
+    const selection = handle.terminal.screens.active.selectWord(pin, boundary_codepoints) orelse return false;
+    handle.terminal.screens.active.select(selection) catch return false;
+    return true;
+}
+
+fn selectLineAt(handle: *TerminalHandle, row: u32, col: u16) bool {
+    const pin = pinFromScreenPoint(handle, row, col) orelse return false;
+    const selection = handle.terminal.screens.active.selectLine(.{ .pin = pin }) orelse return false;
+    handle.terminal.screens.active.select(selection) catch return false;
+    return true;
+}
+
+fn getSelectionText(handle: *TerminalHandle) ![]const u8 {
+    const screen = handle.terminal.screens.active;
+    const selection = screen.selection orelse return "";
+    const text = screen.selectionString(allocator, .{
+        .sel = selection,
+        .trim = true,
+    }) catch return error.OutOfMemory;
+    return text;
+}
+
+fn getSelectionOverlay(js: *napigen.JsContext, handle: *TerminalHandle) !napigen.napi_value {
+    const screen = handle.terminal.screens.active;
+    const selection = screen.selection orelse return try js.createArrayWithLength(0);
+    const ordered = selection.ordered(screen, .forward);
+    const start_point = screen.pages.pointFromPin(.screen, ordered.start()) orelse return try js.createArrayWithLength(0);
+    const end_point = screen.pages.pointFromPin(.screen, ordered.end()) orelse return try js.createArrayWithLength(0);
+    const start_row = start_point.screen.y;
+    const end_row = end_point.screen.y;
+    if (end_row < start_row) {
+        return try js.createArrayWithLength(0);
+    }
+    const arr = try js.createArrayWithLength(end_row - start_row + 1);
+    var row: u32 = start_row;
+    while (row <= end_row) : (row += 1) {
+        const start_col: u16 = if (row == start_row) @intCast(start_point.screen.x) else 0;
+        const raw_end_col: u16 = if (row == end_row) @intCast(end_point.screen.x + 1) else handle.cols;
+        const end_col: u16 = @min(raw_end_col, handle.cols);
+        try js.setElement(arr, @intCast(row - start_row), try js.write(JsSelectionOverlayRow{
+            .row = row,
+            .start_col = start_col,
+            .end_col = end_col,
+        }));
+    }
+    return arr;
 }
 
 // ─── Colors ─────────────────────────────────────────────

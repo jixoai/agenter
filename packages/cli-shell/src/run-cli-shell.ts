@@ -36,6 +36,7 @@ export interface CliShellRunDependencies {
       observationReadyBaseline?: CliShellObservationReadyBaseline | null;
       preconnected?: boolean;
       debug?: boolean;
+      debugFilters?: readonly string[];
       experimentalDynamicRefresh?: boolean;
     }): Promise<CliShellTuiController>;
   }>;
@@ -46,6 +47,7 @@ export interface CliShellRunDependencies {
       attached: CliShellBootstrapResult;
       requestedPort: number;
       debug?: boolean;
+      debugFilters?: readonly string[];
       experimentalDynamicRefresh?: boolean;
     }): Promise<CliShellWebHostController>;
   }>;
@@ -111,6 +113,7 @@ export const runCliShellWithDependencies = async (
         attached,
         requestedPort: args.webPort,
         debug: args.debug,
+        debugFilters: args.debugFilters,
         experimentalDynamicRefresh: args.experimentalDynamicRefresh,
       });
       console.log(`cli-shell attached`);
@@ -156,6 +159,7 @@ export const runCliShellWithDependencies = async (
         observationReadyBaseline,
         preconnected: true,
         debug: args.debug,
+        debugFilters: args.debugFilters,
         experimentalDynamicRefresh: args.experimentalDynamicRefresh,
       });
       await activeTui.finished;

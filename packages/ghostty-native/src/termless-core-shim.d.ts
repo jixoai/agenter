@@ -62,6 +62,64 @@ declare module "@termless/core" {
     extensions: Set<string>;
   }
 
+  export type TerminalInteractionOwnership =
+    | "backend-native"
+    | "backend-adapter-owned"
+    | "unavailable"
+    | "host-projection-only";
+
+  export interface TerminalInteractionCapabilities {
+    ownership: TerminalInteractionOwnership;
+    selection: boolean;
+    copy: boolean;
+    semanticSelection: boolean;
+    cursorFollow: boolean;
+    overlay: boolean;
+    reason?: string;
+  }
+
+  export interface TerminalOwnerCoordinate {
+    ownerId: string;
+    row: number;
+    col: number;
+  }
+
+  export interface TerminalSelectionRange {
+    ownerId: string;
+    startRow: number;
+    startCol: number;
+    endRow: number;
+    endCol: number;
+    rectangular?: boolean;
+  }
+
+  export interface TerminalSelectionOverlayRow {
+    row: number;
+    startCol: number;
+    endCol: number;
+  }
+
+  export interface TerminalSelectionOverlay {
+    ownerId: string;
+    ownership: Extract<TerminalInteractionOwnership, "backend-native" | "backend-adapter-owned">;
+    rows: TerminalSelectionOverlayRow[];
+    selectedText?: string;
+  }
+
+  export interface TerminalInteractionController {
+    readonly interactionCapabilities: TerminalInteractionCapabilities;
+    startSelection(point: TerminalOwnerCoordinate): boolean;
+    updateSelection(point: TerminalOwnerCoordinate): boolean;
+    endSelection(point: TerminalOwnerCoordinate): boolean;
+    selectRange(range: TerminalSelectionRange): boolean;
+    selectWordAt(point: TerminalOwnerCoordinate): boolean;
+    selectLineAt(point: TerminalOwnerCoordinate): boolean;
+    clearSelection(ownerId?: string): boolean;
+    copySelection(ownerId?: string): string;
+    getSelectionOverlay(ownerId?: string): TerminalSelectionOverlay | null;
+    followCursor?(): boolean;
+  }
+
   export interface KeyDescriptor {
     key: string;
     shift?: boolean;

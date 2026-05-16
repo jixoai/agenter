@@ -45,7 +45,17 @@ describe("Feature: cli-shell orchestration", () => {
 
   test("Scenario: Given debug argv When parsing cli-shell args Then debug display is an explicit startup flag", () => {
     expect(parseCliShellArgs(["--debug"]).debug).toBe(true);
+    expect(parseCliShellArgs(["--debug"]).debugFilters).toEqual([]);
     expect(parseCliShellArgs(["--debug=false"]).debug).toBe(false);
+    expect(parseCliShellArgs(["--debug=false"]).debugFilters).toEqual([]);
+    expect(parseCliShellArgs(["--debug=key,selection,follow"])).toMatchObject({
+      debug: true,
+      debugFilters: ["key", "selection", "follow"],
+    });
+    expect(parseCliShellArgs(["--debug=*key*,*follow*"])).toMatchObject({
+      debug: true,
+      debugFilters: ["key", "follow"],
+    });
   });
 
   test("Scenario: Given dynamic refresh argv When parsing cli-shell args Then dynamic pacing is explicit and experimental", () => {

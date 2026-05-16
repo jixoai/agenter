@@ -719,6 +719,7 @@ export interface CliShellWebHostStartInput {
   attached: CliShellBootstrapResult;
   requestedPort: number;
   debug?: boolean;
+  debugFilters?: readonly string[];
   experimentalDynamicRefresh?: boolean;
 }
 
@@ -752,6 +753,7 @@ export const startCliShellWebHost = async (input: CliShellWebHostStartInput): Pr
     attached: input.attached,
     keybindings,
     debug: input.debug ?? false,
+    debugFilters: input.debugFilters,
     experimentalDynamicRefresh: input.experimentalDynamicRefresh ?? false,
     initialCols: terminalEntry.snapshot?.cols ?? 80,
     initialRows: terminalEntry.snapshot?.rows ?? 24,

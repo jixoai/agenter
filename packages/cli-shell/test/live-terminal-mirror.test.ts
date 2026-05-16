@@ -28,6 +28,7 @@ const createRichSnapshot = (input: {
   cursor: {
     x: input.cursorX,
     y: input.cursorY,
+    absY: input.viewportOffset !== undefined && input.lines.length <= input.rows ? input.viewportOffset + input.cursorY : input.cursorY,
     visible: true,
   },
   scrollback: {
@@ -698,7 +699,7 @@ describe("Feature: cli-shell live terminal mirror", () => {
     });
   });
 
-  test("Scenario: Given input leaves the cursor below the visible viewport When cli-shell asks to follow the cursor Then the transport sends an absolute viewport target", async () => {
+  test("Scenario: Given input leaves the cursor below the visible viewport When cli-shell asks to follow the cursor Then the transport sends a backend follow request", async () => {
     const sent: TerminalTransportClientMessage[] = [];
     const mirror = createCliShellLiveTerminalMirror({
       terminalId: "shell-1",
@@ -730,10 +731,51 @@ describe("Feature: cli-shell live terminal mirror", () => {
 
     await mirror.connect();
     expect(mirror.followCursor()).toBe(true);
-    expect(sent).toContainEqual({
-      type: "viewportTarget",
-      viewportStart: 30,
+    expect(sent).toEqual([{ type: "followCursor" }]);
+    expect(sent).not.toContainEqual({ type: "viewportTarget", viewportStart: 30 });
+  });
+
+  test("Scenario: Given a projected frame hides the cursor but carries absolute cursor truth When follow is requested Then cli-shell still delegates cursor follow to backend truth", async () => {
+    const sent: TerminalTransportClientMessage[] = [];
+    const mirror = createCliShellLiveTerminalMirror({
+      terminalId: "shell-1",
+      transportUrl: "ws://127.0.0.1/pty/shell-1",
+      initialSnapshot: {
+        seq: 1,
+        timestamp: 1,
+        cols: 80,
+        rows: 10,
+        lines: Array.from({ length: 10 }, (_, index) => `visible-${index}`),
+        richLines: Array.from({ length: 10 }, (_, index) => ({ spans: [{ text: `visible-${index}` }] })),
+        cursor: { x: 3, y: 0, absY: 39, visible: false },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 40,
+          screenLines: 10,
+        },
+      },
+      createTransportSession: ({ events }) =>
+        createTestTransportSession({
+          async connect(): Promise<void> {
+            events.onOpen();
+          },
+          disconnect(): void {
+            events.onClose();
+          },
+          send(message: TerminalTransportClientMessage): boolean {
+            sent.push(message);
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
     });
+
+    await mirror.connect();
+    expect(mirror.followCursor()).toBe(true);
+    expect(sent).toEqual([{ type: "followCursor" }]);
+    expect(sent).not.toContainEqual({ type: "viewportTarget", viewportStart: 30 });
   });
 
   test("Scenario: Given large shell output like cat AGENTS.md When dirty signals arrive quickly Then the mirror pulls one viewport-sized frame and records skipped frame pressure", async () => {

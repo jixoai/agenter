@@ -5,12 +5,25 @@ import {
   TerminalFramePatchSchema,
   TerminalFramePayloadSchema,
   TerminalGeometryRole as ProtoTerminalGeometryRole,
+  TerminalInteractionCapabilitiesSchema,
+  TerminalInteractionFrameStateSchema,
+  TerminalOwnerActionSchema,
+  TerminalOwnerCoordinateSchema,
   TerminalServerFrameSchema,
+  TerminalSelectionOverlaySchema,
+  TerminalSelectionRangeActionSchema,
+  TerminalSelectionRangeSchema,
+  TerminalSelectionPointActionSchema,
   TerminalStatus as ProtoTerminalStatus,
   TerminalTraceFieldSchema,
   type TerminalClientFrame,
   type TerminalFramePatch as ProtoTerminalFramePatch,
   type TerminalFramePayload as ProtoTerminalFramePayload,
+  type TerminalInteractionCapabilities as ProtoTerminalInteractionCapabilities,
+  type TerminalInteractionFrameState as ProtoTerminalInteractionFrameState,
+  type TerminalOwnerCoordinate as ProtoTerminalOwnerCoordinate,
+  type TerminalSelectionOverlay as ProtoTerminalSelectionOverlay,
+  type TerminalSelectionRange as ProtoTerminalSelectionRange,
   type TerminalTraceField as ProtoTerminalTraceField,
   type TerminalServerFrame,
 } from "./gen/proto/terminal_transport_pb";
@@ -40,12 +53,13 @@ export interface TerminalTransportFramePayload {
   rows: number;
   lines: string[];
   richLines?: TerminalTransportRichLine[];
-  cursor: { x: number; y: number; visible?: boolean };
+  cursor: { x: number; y: number; visible?: boolean; absY?: number };
   scrollback: {
     viewportOffset: number;
     totalLines: number;
     screenLines: number;
   };
+  interaction?: TerminalTransportInteractionFrameState;
 }
 
 export type TerminalTransportSnapshot = TerminalTransportFramePayload;
@@ -75,6 +89,7 @@ export type TerminalTransportFramePatch =
       rows: number;
       cursor: TerminalTransportFramePayload["cursor"];
       scrollback: TerminalTransportFramePayload["scrollback"];
+      interaction?: TerminalTransportInteractionFrameState;
       timestamp?: number;
     }
   | {
@@ -87,6 +102,7 @@ export type TerminalTransportFramePatch =
       rows: number;
       cursor: TerminalTransportFramePayload["cursor"];
       scrollback: TerminalTransportFramePayload["scrollback"];
+      interaction?: TerminalTransportInteractionFrameState;
       timestamp?: number;
     }
   | {
@@ -97,6 +113,7 @@ export type TerminalTransportFramePatch =
       rows: number;
       cursor: TerminalTransportFramePayload["cursor"];
       scrollback: TerminalTransportFramePayload["scrollback"];
+      interaction?: TerminalTransportInteractionFrameState;
       timestamp?: number;
     }
   | {
@@ -155,6 +172,10 @@ export type TerminalTransportClientSideband =
       viewportStart: number;
     }
   | {
+      type: "followCursor";
+    }
+  | TerminalTransportInteractionClientMessage
+  | {
       type: "pullFrame";
       lastAppliedFrameSeq: number;
       cols: number;
@@ -176,6 +197,74 @@ export type TerminalTransportClientSideband =
         requested: boolean;
         clientToken: string;
       };
+    };
+
+export type TerminalTransportInteractionOwnership =
+  | "backend-native"
+  | "backend-adapter-owned"
+  | "unavailable"
+  | "host-projection-only";
+
+export interface TerminalTransportInteractionCapabilities {
+  ownership: TerminalTransportInteractionOwnership;
+  selection: boolean;
+  copy: boolean;
+  semanticSelection: boolean;
+  cursorFollow: boolean;
+  overlay: boolean;
+  reason?: string;
+}
+
+export interface TerminalTransportOwnerCoordinate {
+  ownerId: string;
+  row: number;
+  col: number;
+}
+
+export interface TerminalTransportSelectionRange {
+  ownerId: string;
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+  rectangular?: boolean;
+}
+
+export interface TerminalTransportSelectionOverlayRow {
+  row: number;
+  startCol: number;
+  endCol: number;
+}
+
+export interface TerminalTransportSelectionOverlay {
+  ownerId: string;
+  ownership: Extract<TerminalTransportInteractionOwnership, "backend-native" | "backend-adapter-owned">;
+  rows: TerminalTransportSelectionOverlayRow[];
+  selectedText?: string;
+}
+
+export interface TerminalTransportInteractionFrameState {
+  activeOwnerId?: string;
+  selectionOverlays?: TerminalTransportSelectionOverlay[];
+  capabilities?: Record<string, TerminalTransportInteractionCapabilities>;
+}
+
+export type TerminalTransportPointInteractionClientMessage = {
+  [Type in "selectionStart" | "selectionUpdate" | "selectionEnd" | "selectWordAt" | "selectLineAt"]: {
+    type: Type;
+    point: TerminalTransportOwnerCoordinate;
+  };
+}["selectionStart" | "selectionUpdate" | "selectionEnd" | "selectWordAt" | "selectLineAt"];
+
+export type TerminalTransportInteractionClientMessage =
+  | TerminalTransportPointInteractionClientMessage
+  | {
+      type: "selectRange";
+      range: TerminalTransportSelectionRange;
+    }
+  | {
+      type: "copySelection" | "clearSelection";
+      ownerId?: string;
     };
 
 export type TerminalTransportServerSideband =
@@ -226,6 +315,12 @@ export type TerminalTransportServerSideband =
       event: string;
       fields: Record<string, TerminalTransportTraceValue>;
       timestamp?: number;
+    }
+  | {
+      type: "selectionText";
+      terminalId: string;
+      ownerId?: string;
+      text: string;
     };
 
 export type TerminalTransportClientMessage =
@@ -334,6 +429,185 @@ const decodeHelloAckDirect = (
   };
 };
 
+const isTransportInteractionOwnership = (value: string): value is TerminalTransportInteractionOwnership =>
+  value === "backend-native" ||
+  value === "backend-adapter-owned" ||
+  value === "unavailable" ||
+  value === "host-projection-only";
+
+const isOverlayOwnership = (
+  value: string,
+): value is Extract<TerminalTransportInteractionOwnership, "backend-native" | "backend-adapter-owned"> =>
+  value === "backend-native" || value === "backend-adapter-owned";
+
+const cloneInteractionCapabilities = (
+  capabilities: TerminalTransportInteractionCapabilities,
+): TerminalTransportInteractionCapabilities => ({ ...capabilities });
+
+const cloneSelectionOverlay = (
+  overlay: TerminalTransportSelectionOverlay,
+): TerminalTransportSelectionOverlay => ({
+  ownerId: overlay.ownerId,
+  ownership: overlay.ownership,
+  rows: overlay.rows.map((row) => ({ ...row })),
+  selectedText: overlay.selectedText,
+});
+
+const cloneInteractionFrameState = (
+  state: TerminalTransportInteractionFrameState | undefined,
+): TerminalTransportInteractionFrameState | undefined =>
+  state
+    ? {
+        activeOwnerId: state.activeOwnerId,
+        selectionOverlays: state.selectionOverlays?.map(cloneSelectionOverlay),
+        capabilities: state.capabilities
+          ? Object.fromEntries(
+              Object.entries(state.capabilities).map(([ownerId, capabilities]) => [
+                ownerId,
+                cloneInteractionCapabilities(capabilities),
+              ]),
+            )
+          : undefined,
+      }
+    : undefined;
+
+const toProtoInteractionCapabilities = (capabilities: TerminalTransportInteractionCapabilities) =>
+  create(TerminalInteractionCapabilitiesSchema, {
+    ownership: capabilities.ownership,
+    selection: capabilities.selection,
+    copy: capabilities.copy,
+    semanticSelection: capabilities.semanticSelection,
+    cursorFollow: capabilities.cursorFollow,
+    overlay: capabilities.overlay,
+    reason: capabilities.reason,
+  });
+
+const fromProtoInteractionCapabilities = (
+  capabilities: ProtoTerminalInteractionCapabilities | undefined,
+): TerminalTransportInteractionCapabilities | null => {
+  if (!capabilities || !isTransportInteractionOwnership(capabilities.ownership)) {
+    return null;
+  }
+  return {
+    ownership: capabilities.ownership,
+    selection: capabilities.selection,
+    copy: capabilities.copy,
+    semanticSelection: capabilities.semanticSelection,
+    cursorFollow: capabilities.cursorFollow,
+    overlay: capabilities.overlay,
+    reason: capabilities.reason,
+  };
+};
+
+const toProtoSelectionOverlay = (overlay: TerminalTransportSelectionOverlay) =>
+  create(TerminalSelectionOverlaySchema, {
+    ownerId: overlay.ownerId,
+    ownership: overlay.ownership,
+    rows: overlay.rows.map((row) => ({
+      row: row.row,
+      startCol: row.startCol,
+      endCol: row.endCol,
+    })),
+    selectedText: overlay.selectedText,
+  });
+
+const fromProtoSelectionOverlay = (
+  overlay: ProtoTerminalSelectionOverlay,
+): TerminalTransportSelectionOverlay | null => {
+  if (!overlay.ownerId || !isOverlayOwnership(overlay.ownership)) {
+    return null;
+  }
+  return {
+    ownerId: overlay.ownerId,
+    ownership: overlay.ownership,
+    rows: overlay.rows.map((row) => ({
+      row: row.row,
+      startCol: row.startCol,
+      endCol: row.endCol,
+    })),
+    selectedText: overlay.selectedText,
+  };
+};
+
+const toProtoInteractionFrameState = (state: TerminalTransportInteractionFrameState | undefined) =>
+  state
+    ? create(TerminalInteractionFrameStateSchema, {
+        activeOwnerId: state.activeOwnerId,
+        selectionOverlays: (state.selectionOverlays ?? []).map(toProtoSelectionOverlay),
+        capabilities: Object.entries(state.capabilities ?? {}).map(([ownerId, capabilities]) => ({
+          ownerId,
+          capabilities: toProtoInteractionCapabilities(capabilities),
+        })),
+      })
+    : undefined;
+
+const fromProtoInteractionFrameState = (
+  state: ProtoTerminalInteractionFrameState | undefined,
+): TerminalTransportInteractionFrameState | undefined => {
+  if (!state) {
+    return undefined;
+  }
+  const selectionOverlays = state.selectionOverlays
+    .map(fromProtoSelectionOverlay)
+    .filter((overlay): overlay is TerminalTransportSelectionOverlay => overlay !== null);
+  const capabilityEntries = state.capabilities
+    .map((entry): [string, TerminalTransportInteractionCapabilities] | null => {
+      if (!entry.ownerId) {
+        return null;
+      }
+      const capabilities = fromProtoInteractionCapabilities(entry.capabilities);
+      return capabilities ? [entry.ownerId, capabilities] : null;
+    })
+    .filter((entry): entry is [string, TerminalTransportInteractionCapabilities] => entry !== null);
+  return {
+    activeOwnerId: state.activeOwnerId,
+    selectionOverlays: selectionOverlays.length > 0 ? selectionOverlays : undefined,
+    capabilities: capabilityEntries.length > 0 ? Object.fromEntries(capabilityEntries) : undefined,
+  };
+};
+
+const toProtoOwnerCoordinate = (point: TerminalTransportOwnerCoordinate) =>
+  create(TerminalOwnerCoordinateSchema, {
+    ownerId: point.ownerId,
+    row: point.row,
+    col: point.col,
+  });
+
+const fromProtoOwnerCoordinate = (
+  point: ProtoTerminalOwnerCoordinate | undefined,
+): TerminalTransportOwnerCoordinate | null =>
+  point && point.ownerId
+    ? {
+        ownerId: point.ownerId,
+        row: point.row,
+        col: point.col,
+      }
+    : null;
+
+const toProtoSelectionRange = (range: TerminalTransportSelectionRange) =>
+  create(TerminalSelectionRangeSchema, {
+    ownerId: range.ownerId,
+    startRow: range.startRow,
+    startCol: range.startCol,
+    endRow: range.endRow,
+    endCol: range.endCol,
+    rectangular: range.rectangular === true,
+  });
+
+const fromProtoSelectionRange = (
+  range: ProtoTerminalSelectionRange | undefined,
+): TerminalTransportSelectionRange | null =>
+  range && range.ownerId
+    ? {
+        ownerId: range.ownerId,
+        startRow: range.startRow,
+        startCol: range.startCol,
+        endRow: range.endRow,
+        endCol: range.endCol,
+        rectangular: range.rectangular,
+      }
+    : null;
+
 const toProtoFramePayload = (frame: TerminalTransportFramePayload): ProtoTerminalFramePayload =>
   create(TerminalFramePayloadSchema, {
     seq: frame.seq,
@@ -355,12 +629,14 @@ const toProtoFramePayload = (frame: TerminalTransportFramePayload): ProtoTermina
       x: frame.cursor.x,
       y: frame.cursor.y,
       visible: frame.cursor.visible,
+      absY: frame.cursor.absY,
     },
     scrollback: {
       viewportOffset: frame.scrollback.viewportOffset,
       totalLines: frame.scrollback.totalLines,
       screenLines: frame.scrollback.screenLines,
     },
+    interaction: toProtoInteractionFrameState(frame.interaction),
   });
 
 const fromProtoRichLine = (line: NonNullable<ProtoTerminalFramePayload["richLines"]>[number]): TerminalTransportRichLine => ({
@@ -380,6 +656,7 @@ const fromProtoCursor = (
   x: cursor.x,
   y: cursor.y,
   visible: cursor.visible,
+  absY: cursor.absY,
 });
 
 const fromProtoScrollback = (
@@ -403,6 +680,7 @@ const fromProtoFramePayload = (frame: ProtoTerminalFramePayload): TerminalTransp
     richLines: frame.richLines.length > 0 ? frame.richLines.map(fromProtoRichLine) : undefined,
     cursor: fromProtoCursor(frame.cursor),
     scrollback: fromProtoScrollback(frame.scrollback),
+    interaction: fromProtoInteractionFrameState(frame.interaction),
   };
 };
 
@@ -496,6 +774,7 @@ const toProtoFramePatch = (patch: TerminalTransportFramePatch): ProtoTerminalFra
           rows: patch.rows,
           cursor: { ...patch.cursor },
           scrollback: { ...patch.scrollback },
+          interaction: toProtoInteractionFrameState(patch.interaction),
           timestamp: patch.timestamp,
         },
       },
@@ -514,6 +793,7 @@ const toProtoFramePatch = (patch: TerminalTransportFramePatch): ProtoTerminalFra
           rows: patch.rows,
           cursor: { ...patch.cursor },
           scrollback: { ...patch.scrollback },
+          interaction: toProtoInteractionFrameState(patch.interaction),
           timestamp: patch.timestamp,
         },
       },
@@ -534,6 +814,7 @@ const toProtoFramePatch = (patch: TerminalTransportFramePatch): ProtoTerminalFra
           rows: patch.rows,
           cursor: { ...patch.cursor },
           scrollback: { ...patch.scrollback },
+          interaction: toProtoInteractionFrameState(patch.interaction),
           timestamp: patch.timestamp,
         },
       },
@@ -569,6 +850,7 @@ const cloneFramePayload = (frame: TerminalTransportFramePayload): TerminalTransp
   richLines: frame.richLines?.map(cloneRichLine),
   cursor: { ...frame.cursor },
   scrollback: { ...frame.scrollback },
+  interaction: cloneInteractionFrameState(frame.interaction),
 });
 
 export const cloneTerminalTransportFramePayload = cloneFramePayload;
@@ -657,6 +939,7 @@ export const createTerminalTransportRowCacheEncoder = (): TerminalTransportRowCa
         rows: frame.rows,
         cursor: frame.cursor,
         scrollback: frame.scrollback,
+        interaction: frame.interaction,
       });
       if (visibleKey === lastVisibleKey) {
         const patch: Extract<TerminalTransportFramePatch, { type: "notModified" }> = {
@@ -675,6 +958,7 @@ export const createTerminalTransportRowCacheEncoder = (): TerminalTransportRowCa
         rows: frame.rows,
         cursor: { ...frame.cursor },
         scrollback: { ...frame.scrollback },
+        interaction: cloneInteractionFrameState(frame.interaction),
         timestamp: frame.timestamp,
       };
       lastRowCacheFrameSeq = frame.seq;
@@ -742,6 +1026,7 @@ export const createTerminalTransportRowCacheDecoder = (): TerminalTransportRowCa
         richLines: hasRichLines ? richLines : undefined,
         cursor: { ...patch.cursor },
         scrollback: { ...patch.scrollback },
+        interaction: cloneInteractionFrameState(patch.interaction),
       };
     },
     reset() {
@@ -787,6 +1072,7 @@ export const applyTerminalFramePatch = (
       richLines,
       cursor: { ...patch.cursor },
       scrollback: { ...patch.scrollback },
+      interaction: cloneInteractionFrameState(patch.interaction),
     };
   }
   const delta = Math.trunc(patch.deltaRows);
@@ -816,6 +1102,7 @@ export const applyTerminalFramePatch = (
     richLines,
     cursor: { ...patch.cursor },
     scrollback: { ...patch.scrollback },
+    interaction: cloneInteractionFrameState(patch.interaction),
   };
 };
 
@@ -844,6 +1131,7 @@ const fromProtoFramePatch = (patch: ProtoTerminalFramePatch | undefined): Termin
         rows: patch.body.value.rows,
         cursor: fromProtoCursor(patch.body.value.cursor),
         scrollback: fromProtoScrollback(patch.body.value.scrollback),
+        interaction: fromProtoInteractionFrameState(patch.body.value.interaction),
         timestamp: patch.body.value.timestamp,
       };
     case "scrollRows":
@@ -863,6 +1151,7 @@ const fromProtoFramePatch = (patch: ProtoTerminalFramePatch | undefined): Termin
         rows: patch.body.value.rows,
         cursor: fromProtoCursor(patch.body.value.cursor),
         scrollback: fromProtoScrollback(patch.body.value.scrollback),
+        interaction: fromProtoInteractionFrameState(patch.body.value.interaction),
         timestamp: patch.body.value.timestamp,
       };
     case "rowCache":
@@ -881,6 +1170,7 @@ const fromProtoFramePatch = (patch: ProtoTerminalFramePatch | undefined): Termin
         rows: patch.body.value.rows,
         cursor: fromProtoCursor(patch.body.value.cursor),
         scrollback: fromProtoScrollback(patch.body.value.scrollback),
+        interaction: fromProtoInteractionFrameState(patch.body.value.interaction),
         timestamp: patch.body.value.timestamp,
       };
     case "notModified":
@@ -904,70 +1194,135 @@ const normalizeIncomingBytes = (input: ArrayBuffer | ArrayBufferView | Uint8Arra
   return new Uint8Array(input);
 };
 
+const encodePointAction = (
+  message: Extract<
+    TerminalTransportInteractionClientMessage,
+    { type: "selectionStart" | "selectionUpdate" | "selectionEnd" | "selectWordAt" | "selectLineAt" }
+  >,
+): TerminalClientFrame => {
+  const caseName = message.type;
+  return create(TerminalClientFrameSchema, {
+    body: {
+      case: caseName,
+      value: create(TerminalSelectionPointActionSchema, {
+        point: toProtoOwnerCoordinate(message.point),
+      }),
+    },
+  });
+};
+
 export const encodeTerminalTransportClientMessage = (message: TerminalTransportClientMessage): Uint8Array => {
-  const frame: TerminalClientFrame =
-    message.type === "inputBytes"
-      ? create(TerminalClientFrameSchema, {
-          body: {
-            case: "inputBytes",
-            value: {
-              data: message.data,
-            },
+  let frame: TerminalClientFrame;
+  switch (message.type) {
+    case "inputBytes":
+      frame = create(TerminalClientFrameSchema, {
+        body: {
+          case: "inputBytes",
+          value: {
+            data: message.data,
           },
-        })
-      : message.type === "resize"
-        ? create(TerminalClientFrameSchema, {
-            body: {
-              case: "resize",
-              value: {
-                cols: message.cols,
-                rows: message.rows,
-              },
-            },
-          })
-        : message.type === "viewportDelta"
-          ? create(TerminalClientFrameSchema, {
-              body: {
-                case: "viewportDelta",
-                value: {
-                  deltaRows: message.deltaRows,
-                },
-              },
-            })
-          : message.type === "viewportTarget"
-            ? create(TerminalClientFrameSchema, {
-                body: {
-                  case: "viewportTarget",
-                  value: {
-                    viewportStart: message.viewportStart,
-                  },
-                },
-              })
-            : message.type === "pullFrame"
-              ? create(TerminalClientFrameSchema, {
-                  body: {
-                    case: "pullFrame",
-                    value: {
-                      lastAppliedFrameSeq: message.lastAppliedFrameSeq,
-                      cols: message.cols,
-                      rows: message.rows,
-                      maxPatchBytes: message.maxPatchBytes,
-                    },
-                  },
-                })
-              : create(TerminalClientFrameSchema, {
-                  body: {
-                    case: "hello",
-                    value: {
-                      terminalId: message.terminalId,
-                      geometryRole: protoGeometryRoleFromDomain(message.geometryRole),
-                      geometryOrder: message.geometryOrder,
-                      debugTrace: message.debugTrace ?? false,
-                      runtimeJson: encodeJsonField(message.runtime),
-                      directJson: encodeJsonField(message.direct),
-                    },
-                  },
-                });
+        },
+      });
+      break;
+    case "resize":
+      frame = create(TerminalClientFrameSchema, {
+        body: {
+          case: "resize",
+          value: {
+            cols: message.cols,
+            rows: message.rows,
+          },
+        },
+      });
+      break;
+    case "viewportDelta":
+      frame = create(TerminalClientFrameSchema, {
+        body: {
+          case: "viewportDelta",
+          value: {
+            deltaRows: message.deltaRows,
+          },
+        },
+      });
+      break;
+    case "viewportTarget":
+      frame = create(TerminalClientFrameSchema, {
+        body: {
+          case: "viewportTarget",
+          value: {
+            viewportStart: message.viewportStart,
+          },
+        },
+      });
+      break;
+    case "followCursor":
+      frame = create(TerminalClientFrameSchema, {
+        body: {
+          case: "followCursor",
+          value: {},
+        },
+      });
+      break;
+    case "selectionStart":
+    case "selectionUpdate":
+    case "selectionEnd":
+    case "selectWordAt":
+    case "selectLineAt":
+      frame = encodePointAction(message);
+      break;
+    case "selectRange":
+      frame = create(TerminalClientFrameSchema, {
+        body: {
+          case: "selectRange",
+          value: create(TerminalSelectionRangeActionSchema, {
+            range: toProtoSelectionRange(message.range),
+          }),
+        },
+      });
+      break;
+    case "copySelection":
+    case "clearSelection":
+      frame = create(TerminalClientFrameSchema, {
+        body: {
+          case: message.type,
+          value: create(TerminalOwnerActionSchema, {
+            ownerId: message.ownerId,
+          }),
+        },
+      });
+      break;
+    case "hello":
+      frame = create(TerminalClientFrameSchema, {
+        body: {
+          case: "hello",
+          value: {
+            terminalId: message.terminalId,
+            geometryRole: protoGeometryRoleFromDomain(message.geometryRole),
+            geometryOrder: message.geometryOrder,
+            debugTrace: message.debugTrace ?? false,
+            runtimeJson: encodeJsonField(message.runtime),
+            directJson: encodeJsonField(message.direct),
+          },
+        },
+      });
+      break;
+    case "pullFrame":
+      frame = create(TerminalClientFrameSchema, {
+        body: {
+          case: "pullFrame",
+          value: {
+            lastAppliedFrameSeq: message.lastAppliedFrameSeq,
+            cols: message.cols,
+            rows: message.rows,
+            maxPatchBytes: message.maxPatchBytes,
+          },
+        },
+      });
+      break;
+    default:
+      message satisfies never;
+      frame = create(TerminalClientFrameSchema);
+  }
   return toBinary(TerminalClientFrameSchema, frame);
 };
 
@@ -997,7 +1352,18 @@ export const encodeTerminalTransportServerMessage = (message: TerminalTransportS
               },
             },
           })
-        : message.type === "status"
+        : message.type === "selectionText"
+          ? create(TerminalServerFrameSchema, {
+              body: {
+                case: "selectionText",
+                value: {
+                  terminalId: message.terminalId,
+                  ownerId: message.ownerId,
+                  text: message.text,
+                },
+              },
+            })
+          : message.type === "status"
           ? create(TerminalServerFrameSchema, {
               body: {
                 case: "status",
@@ -1074,6 +1440,32 @@ export const decodeTerminalTransportClientMessage = (
           type: "viewportTarget",
           viewportStart: frame.body.value.viewportStart,
         };
+      case "followCursor":
+        return {
+          type: "followCursor",
+        };
+      case "selectionStart":
+      case "selectionUpdate":
+      case "selectionEnd":
+      case "selectWordAt":
+      case "selectLineAt": {
+        const point = fromProtoOwnerCoordinate(frame.body.value.point);
+        return point ? { type: frame.body.case, point } : null;
+      }
+      case "selectRange": {
+        const range = fromProtoSelectionRange(frame.body.value.range);
+        return range ? { type: "selectRange", range } : null;
+      }
+      case "copySelection":
+        return {
+          type: "copySelection",
+          ownerId: frame.body.value.ownerId,
+        };
+      case "clearSelection":
+        return {
+          type: "clearSelection",
+          ownerId: frame.body.value.ownerId,
+        };
       case "pullFrame":
         return {
           type: "pullFrame",
@@ -1128,6 +1520,13 @@ export const decodeTerminalTransportServerMessage = (
           patch,
         };
       }
+      case "selectionText":
+        return {
+          type: "selectionText",
+          terminalId: frame.body.value.terminalId,
+          ownerId: frame.body.value.ownerId,
+          text: frame.body.value.text,
+        };
       case "status": {
         const status = domainStatusFromProto(frame.body.value.status);
         if (!status) {

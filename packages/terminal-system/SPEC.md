@@ -142,6 +142,7 @@ Debug 约束（用于定位 resize 问题）：
     - pull/draw delivery loop：client 客观发送滚动/输入事件后即结束输入任务；默认输出路径固定 20FPS 拉取后端 cells 并通过 frame buffer 重放；动态刷新只作为显式实验能力，dirty 可提升到 20FPS，并在前端实际绘制 cells 连续安静后降到 1FPS
   - 前端输入事件不得成为本地 screen refresh 请求；滚轮/键盘/鼠标只负责发送 backend event，最终画面只能来自后端 cells 拉取结果
   - backend viewport 输入同样不得同步发送 `frameDirty` 或直接激活 pull；`viewportDelta` / `viewportTarget` 只修改 backend viewport truth，后续可见结果由 dirty clock 或 client 下一次 `pullFrame` 消费
+  - `followCursor` 是 backend viewport mutation，不是 frontend viewportTarget fallback；transport attachment 可以把最近一次 `pullFrame` 的 rows 作为可见高度约束传给 backend，由 backend 根据当前 cursor truth 派生该 attachment 的 projection viewport
   - 同一个 pulled frame 只能进入一条 cells paint path；mirror subscription/status 不能和 frame paint callback 同时触发同一帧的重复重绘
   - dirty 判断以 backend `getText()` 为主要优化比较源，同时附加 viewport/cursor facts，确保纯滚动和光标移动能触发可见帧 dirty
   - 当前 JS 运行时依赖事件循环顺序保证 queued input 与 `pullFrame` 的垂直同步；不需要额外 pre-pull flush。若未来迁移到多线程运行时，必须重新审查这个同步边界
@@ -153,6 +154,7 @@ Debug 约束（用于定位 resize 问题）：
   - 再按 `log-style` 序列化到 `log.html`
   - 禁止通过“先 rich-html 再正则剥离标签”得到 plain
 - 结构化快照是内核唯一信源；`rich/plain` 都是转录视图
+- terminal interaction 是 backend/offscreen renderer capability：selection/copy/semantic selection/cursor-follow 必须通过 `TerminalInteractionEvent` 和 backend-owned `TerminalInteractionFrameState` 传播；host-projection-only 只能表示宿主能捕获事件，不能拥有 selected text 或 durable selection range
 - 必须基于绝对 scrollback 渲染（非仅 viewport）
 - 渲染阶段输出面向 UI 观察：不得提前裁剪可见样式空白（例如 trailing inverse）
 - 插入 `<cursor/>` 表示输入焦点（仅当 xterm `showCursor=true`）

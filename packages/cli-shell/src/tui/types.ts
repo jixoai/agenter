@@ -4,6 +4,7 @@ import type {
   RuntimeStore,
 } from "@agenter/client-sdk";
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
+import type { TerminalTransportInteractionFrameState } from "@agenter/terminal-transport-protocol";
 import type { CliShellInteractionEnhancementProfile } from "./interaction-capabilities";
 import type { CliShellLiveTerminalView } from "./live-terminal-mirror";
 
@@ -38,6 +39,7 @@ export interface CliShellTuiModel {
     viewportStart: number;
     viewportEnd: number;
     scrollbackRows: number;
+    interaction?: TerminalTransportInteractionFrameState;
     connected: boolean;
     running: boolean;
   };
@@ -78,6 +80,12 @@ export interface CliShellSelectionRegion extends CliShellScrollRegion {
 
 export interface CliShellSelectionSource extends CliShellSelectionRegion {
   lines: readonly TerminalRenderRichLine[];
+  /**
+   * Absolute row in the owner's backend buffer that corresponds to `row`.
+   * Selection state is anchored to backend content coordinates so highlights can
+   * be re-projected after viewport scrolling instead of sticking to screen rows.
+   */
+  sourceStartRow?: number;
 }
 
 export interface CliShellTuiInteractionLayout {

@@ -489,6 +489,7 @@ export const layoutCliShellTuiFrame = (input: {
       owner: "terminal",
       ...terminalScrollRegion,
       lines: terminalProjection.lines,
+      sourceStartRow: terminalProjection.viewport.start,
     });
   }
   renderShellScrollbar({
@@ -520,6 +521,7 @@ export const layoutCliShellTuiFrame = (input: {
       width: layout.width,
       height: layout.height,
       lines: dialogueSurface.styledLines,
+      sourceStartRow: 0,
     });
     for (const region of dialogueSurface.actionRegions) {
       actionRegions.push({

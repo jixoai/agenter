@@ -1,4 +1,4 @@
-import type { TerminalBackendKind } from "@agenter/termless-core";
+import type { TerminalBackendKind, TerminalInteractionFrameState } from "@agenter/termless-core";
 
 export interface TerminalProfile {
   debounceMs?: number;
@@ -67,6 +67,7 @@ export interface StructuredRenderResult {
     totalLines: number;
     screenLines: number;
   };
+  interaction?: TerminalInteractionFrameState;
 }
 
 export interface RenderResult {
@@ -82,6 +83,7 @@ export interface RenderResult {
   cursorCol: number;
   /** Whether hardware cursor should be shown */
   cursorVisible: boolean;
+  interaction?: TerminalInteractionFrameState;
 }
 
 export interface TerminalStructuredSnapshot extends StructuredRenderResult {

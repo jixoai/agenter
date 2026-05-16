@@ -65,6 +65,15 @@ export interface TerminalTransportClientSession {
   resize(cols: number, rows: number): boolean;
   scrollViewport(deltaRows: number): boolean;
   setViewportStart(viewportStart: number): boolean;
+  followCursor(): boolean;
+  selectionStart(point: Extract<TerminalTransportClientMessage, { type: "selectionStart" }>["point"]): boolean;
+  selectionUpdate(point: Extract<TerminalTransportClientMessage, { type: "selectionUpdate" }>["point"]): boolean;
+  selectionEnd(point: Extract<TerminalTransportClientMessage, { type: "selectionEnd" }>["point"]): boolean;
+  selectWordAt(point: Extract<TerminalTransportClientMessage, { type: "selectWordAt" }>["point"]): boolean;
+  selectLineAt(point: Extract<TerminalTransportClientMessage, { type: "selectLineAt" }>["point"]): boolean;
+  selectRange(range: Extract<TerminalTransportClientMessage, { type: "selectRange" }>["range"]): boolean;
+  copySelection(ownerId?: string): boolean;
+  clearSelection(ownerId?: string): boolean;
   pullFrame(input: { lastAppliedFrameSeq: number; cols: number; rows: number; maxPatchBytes?: number }): boolean;
   getConnectionState(): TerminalTransportClientConnectionState;
 }
@@ -310,6 +319,33 @@ export const createTerminalTransportClientSession = (input: {
     },
     setViewportStart(viewportStart: number): boolean {
       return sendSemantic({ type: "viewportTarget", viewportStart });
+    },
+    followCursor(): boolean {
+      return sendSemantic({ type: "followCursor" });
+    },
+    selectionStart(point): boolean {
+      return sendSemantic({ type: "selectionStart", point });
+    },
+    selectionUpdate(point): boolean {
+      return sendSemantic({ type: "selectionUpdate", point });
+    },
+    selectionEnd(point): boolean {
+      return sendSemantic({ type: "selectionEnd", point });
+    },
+    selectWordAt(point): boolean {
+      return sendSemantic({ type: "selectWordAt", point });
+    },
+    selectLineAt(point): boolean {
+      return sendSemantic({ type: "selectLineAt", point });
+    },
+    selectRange(range): boolean {
+      return sendSemantic({ type: "selectRange", range });
+    },
+    copySelection(ownerId): boolean {
+      return sendSemantic({ type: "copySelection", ownerId });
+    },
+    clearSelection(ownerId): boolean {
+      return sendSemantic({ type: "clearSelection", ownerId });
     },
     pullFrame(frameInput): boolean {
       return sendSemantic({ type: "pullFrame", ...frameInput });

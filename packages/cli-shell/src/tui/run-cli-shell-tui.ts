@@ -18,6 +18,7 @@ export const startCliShellTui = async (input: {
   observationReadyBaseline?: CliShellObservationReadyBaseline | null;
   preconnected?: boolean;
   debug?: boolean;
+  debugFilters?: readonly string[];
   experimentalDynamicRefresh?: boolean;
 }): Promise<CliShellTuiController> => {
   const renderer = await createCliRenderer({
@@ -60,6 +61,7 @@ export const startCliShellTui = async (input: {
     onQuit: destroy,
     observationReadyBaseline: input.observationReadyBaseline ?? null,
     debug: input.debug ?? false,
+    debugFilters: input.debugFilters,
     experimentalDynamicRefresh: input.experimentalDynamicRefresh ?? false,
   });
   app.start();

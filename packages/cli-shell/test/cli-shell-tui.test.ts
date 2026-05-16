@@ -967,7 +967,8 @@ describe("Feature: cli-shell interactive TUI", () => {
     }
   });
 
-  test("Scenario: Given shell-terminal-view projected cells When the user drags across terminal text Then native selection returns projected text without mutating backend truth", async () => {
+  test("Scenario: Given shell-terminal-view projected cells When the user drags across terminal text Then projection sends selection lifecycle to the backend owner", async () => {
+    const selectionEvents: Array<{ type: string; ownerId: string; row: number; col: number }> = [];
     const setup = await createShellTerminalViewTestSetup({
       width: 20,
       height: 3,
@@ -976,12 +977,26 @@ describe("Feature: cli-shell interactive TUI", () => {
         { spans: [{ text: "你好 emoji 🙂 ok" }] },
         { spans: [{ text: "shell prompt" }] },
       ],
+      onSelectionStart: (point) => {
+        selectionEvents.push({ type: "start", ...point });
+        return true;
+      },
+      onSelectionUpdate: (point) => {
+        selectionEvents.push({ type: "update", ...point });
+        return true;
+      },
+      onSelectionEnd: (point) => {
+        selectionEvents.push({ type: "end", ...point });
+        return true;
+      },
     });
 
     await setup.renderOnce();
     await setup.mockMouse.drag(0, 0, 7, 1);
     await setup.renderOnce();
-    expect(setup.renderer.getSelection()?.getSelectedText()).toBe("$ echo hello\n你好 emo");
+    expect(selectionEvents[0]).toEqual({ type: "start", ownerId: "terminal", row: 0, col: 0 });
+    expect(selectionEvents.some((event) => event.type === "update" && event.ownerId === "terminal")).toBe(true);
+    expect(setup.renderer.getSelection()?.getSelectedText() ?? "").toBe("");
     setup.renderer.destroy();
   });
 
@@ -998,7 +1013,15 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(spans.find((span) => span.text.includes("你a"))?.width).toBe(3);
     expect(measureTerminalText("你a")).toBe(3);
 
-    await setup.mockMouse.drag(0, 0, 1, 0);
+    setup.view.updateProjection({
+      selectionOverlays: [
+        {
+          ownerId: "terminal",
+          ownership: "backend-adapter-owned",
+          rows: [{ row: 0, startCol: 0, endCol: 2 }],
+        },
+      ],
+    });
     await setup.renderOnce();
     spans = setup.captureSpans().lines[0]?.spans ?? [];
     const selectedSpan = spans.find((span) => span.text.includes("你"));
@@ -1020,27 +1043,200 @@ describe("Feature: cli-shell interactive TUI", () => {
     setup.renderer.destroy();
   });
 
-  test("Scenario: Given shell-terminal-view projected cells When the user double-clicks mixed CJK ASCII text Then selection uses segmented word semantics", async () => {
+  test("Scenario: Given shell-terminal-view projected cells When the user double-clicks mixed CJK ASCII text Then projection asks the backend owner for word selection", async () => {
+    const semanticPoints: Array<{ ownerId: string; row: number; col: number }> = [];
     const setup = await createShellTerminalViewTestSetup({
       width: 40,
       height: 2,
       lines: [{ spans: [{ text: "$ echo 你好world ok" }] }, { spans: [{ text: "shell prompt" }] }],
+      onSelectWordAt: (point) => {
+        semanticPoints.push(point);
+        return true;
+      },
     });
 
     await setup.renderOnce();
     await setup.mockMouse.doubleClick(9, 0);
     await setup.renderOnce();
 
-    const expectedWord = new Intl.Segmenter(undefined, { granularity: "word" })
-      .segment("$ echo 你好world ok")
-      .containing(8);
-    expect(expectedWord?.isWordLike).toBe(true);
-    expect(expectedWord?.segment).toBeString();
-    expect(setup.view.getSelectedText()).toBe(expectedWord!.segment);
+    expect(semanticPoints).toEqual([{ ownerId: "terminal", row: 0, col: 9 }]);
+    expect(setup.renderer.getSelection()?.getSelectedText() ?? "").toBe("");
     setup.renderer.destroy();
   });
 
-  test("Scenario: Given shell-terminal-view has separate owner regions When the user triple-clicks a dialogue row Then row selection stays inside dialogue text", async () => {
+  test("Scenario: Given semantic click drift exceeds configured cell distance When the user clicks twice Then word selection cluster resets", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 40,
+      height: 2,
+      semanticClickMaxDistanceCells: 1,
+      lines: [{ spans: [{ text: "$ echo hello world" }] }, { spans: [{ text: "shell prompt" }] }],
+    });
+
+    await setup.renderOnce();
+    await setup.mockMouse.click(2, 0);
+    await setup.mockMouse.click(5, 0);
+    await setup.renderOnce();
+
+    expect(setup.view.hasSelection()).toBe(false);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given OpenTUI reports a double click after cursor drift When adjacent clicks exceed cell distance Then semantic word selection resets", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 40,
+      height: 2,
+      semanticClickMaxDistanceCells: 1,
+      lines: [{ spans: [{ text: "$ echo hello world" }] }, { spans: [{ text: "shell prompt" }] }],
+    });
+
+    await setup.renderOnce();
+    await setup.view.onMouseDown?.({
+      x: 2,
+      y: 0,
+      button: 0,
+      preventDefault() {},
+    } as never);
+    await setup.view.onMouseDown?.({
+      x: 5,
+      y: 0,
+      button: 0,
+      clickCount: 2,
+      preventDefault() {},
+    } as never);
+    await setup.renderOnce();
+
+    expect(setup.view.hasSelection()).toBe(false);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given selection is anchored to backend rows When the viewport scrolls Then highlight follows content instead of the screen row", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 20,
+      height: 2,
+      selectionRegions: [{ owner: "terminal", row: 0, col: 0, width: 20, height: 2 }],
+      selectionSources: [
+        {
+          owner: "terminal",
+          row: 0,
+          col: 0,
+          width: 20,
+          height: 2,
+          sourceStartRow: 10,
+          lines: [{ spans: [{ text: "line-10" }] }, { spans: [{ text: "line-11" }] }],
+        },
+      ],
+      lines: [{ spans: [{ text: "line-10" }] }, { spans: [{ text: "line-11" }] }],
+      selectionOverlays: [
+        {
+          ownerId: "terminal",
+          ownership: "backend-adapter-owned",
+          rows: [{ row: 11, startCol: 0, endCol: 4 }],
+        },
+      ],
+    });
+
+    await setup.renderOnce();
+
+    setup.view.updateProjection({
+      lines: [{ spans: [{ text: "line-11" }] }, { spans: [{ text: "line-12" }] }],
+      selectionSources: [
+        {
+          owner: "terminal",
+          row: 0,
+          col: 0,
+          width: 20,
+          height: 2,
+          sourceStartRow: 11,
+          lines: [{ spans: [{ text: "line-11" }] }, { spans: [{ text: "line-12" }] }],
+        },
+      ],
+      selectionOverlays: [
+        {
+          ownerId: "terminal",
+          ownership: "backend-adapter-owned",
+          rows: [{ row: 11, startCol: 0, endCol: 4 }],
+        },
+      ],
+    });
+    await setup.renderOnce();
+    const selectedCells = setup
+      .captureSpans()
+      .lines.flatMap((line, row) =>
+        line.spans
+          .filter((span) => span.bg.toString() === "rgba(0.15, 0.39, 0.92, 1.00)")
+          .map((span) => ({ row, text: span.text })),
+      );
+    expect(selectedCells.some((cell) => cell.row === 0 && cell.text.includes("line"))).toBe(true);
+    expect(selectedCells.some((cell) => cell.row === 1 && cell.text.includes("line"))).toBe(false);
+    expect(setup.view.getSelectionOwner()).toBe("terminal");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given drag selection is anchored to backend rows When the viewport scrolls Then the selected range follows the selected content", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 20,
+      height: 2,
+      selectionRegions: [{ owner: "terminal", row: 0, col: 0, width: 20, height: 2 }],
+      selectionSources: [
+        {
+          owner: "terminal",
+          row: 0,
+          col: 0,
+          width: 20,
+          height: 2,
+          sourceStartRow: 10,
+          lines: [{ spans: [{ text: "line-10" }] }, { spans: [{ text: "line-11" }] }],
+        },
+      ],
+      lines: [{ spans: [{ text: "line-10" }] }, { spans: [{ text: "line-11" }] }],
+      selectionOverlays: [
+        {
+          ownerId: "terminal",
+          ownership: "backend-adapter-owned",
+          rows: [{ row: 11, startCol: 0, endCol: 7 }],
+        },
+      ],
+    });
+
+    await setup.renderOnce();
+
+    setup.view.updateProjection({
+      lines: [{ spans: [{ text: "line-11" }] }, { spans: [{ text: "line-12" }] }],
+      selectionSources: [
+        {
+          owner: "terminal",
+          row: 0,
+          col: 0,
+          width: 20,
+          height: 2,
+          sourceStartRow: 11,
+          lines: [{ spans: [{ text: "line-11" }] }, { spans: [{ text: "line-12" }] }],
+        },
+      ],
+      selectionOverlays: [
+        {
+          ownerId: "terminal",
+          ownership: "backend-adapter-owned",
+          rows: [{ row: 11, startCol: 0, endCol: 7 }],
+        },
+      ],
+    });
+    await setup.renderOnce();
+    const selectedCells = setup
+      .captureSpans()
+      .lines.flatMap((line, row) =>
+        line.spans
+          .filter((span) => span.bg.toString() === "rgba(0.15, 0.39, 0.92, 1.00)")
+          .map((span) => ({ row, text: span.text })),
+      );
+    expect(selectedCells.some((cell) => cell.row === 0 && cell.text.includes("line-11"))).toBe(true);
+    expect(selectedCells.some((cell) => cell.row === 1 && cell.text.includes("line-12"))).toBe(false);
+    expect(setup.view.getSelectionOwner()).toBe("terminal");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given shell-terminal-view has separate owner regions When the user triple-clicks a dialogue row Then projection routes line selection to the dialogue owner", async () => {
+    const lineSelectionPoints: Array<{ ownerId: string; row: number; col: number }> = [];
     const setup = await createShellTerminalViewTestSetup({
       width: 32,
       height: 4,
@@ -1065,6 +1261,10 @@ describe("Feature: cli-shell interactive TUI", () => {
         { spans: [{ text: "shell-00    dialogue first row" }] },
         { spans: [{ text: "shell-11    dialogue second row" }] },
       ],
+      onSelectLineAt: (point) => {
+        lineSelectionPoints.push(point);
+        return true;
+      },
     });
 
     await setup.renderOnce();
@@ -1073,13 +1273,13 @@ describe("Feature: cli-shell interactive TUI", () => {
     await setup.mockMouse.click(14, 1);
     await setup.renderOnce();
 
-    expect(setup.view.getSelectionOwner()).toBe("dialogue");
-    expect(setup.view.getSelectedText()).toBe("dialogue second row");
-    expect(setup.view.getSelectedText()).not.toContain("shell-11");
+    expect(lineSelectionPoints).toEqual([{ ownerId: "dialogue", row: 1, col: 2 }]);
+    expect(setup.renderer.getSelection()?.getSelectedText() ?? "").toBe("");
     setup.renderer.destroy();
   });
 
-  test("Scenario: Given shell-terminal-view has separate shell and dialogue regions When dragging starts inside dialogue Then selection stays inside dialogue text", async () => {
+  test("Scenario: Given shell-terminal-view has separate shell and dialogue regions When dragging starts inside dialogue Then selection events stay inside dialogue owner coordinates", async () => {
+    const selectionEvents: Array<{ type: string; ownerId: string; row: number; col: number }> = [];
     const setup = await createShellTerminalViewTestSetup({
       width: 20,
       height: 4,
@@ -1092,13 +1292,26 @@ describe("Feature: cli-shell interactive TUI", () => {
         { spans: [{ text: "shell-11  dlg-beta" }] },
         { spans: [{ text: "shell-22  dlg-gamma" }] },
       ],
+      onSelectionStart: (point) => {
+        selectionEvents.push({ type: "start", ...point });
+        return true;
+      },
+      onSelectionUpdate: (point) => {
+        selectionEvents.push({ type: "update", ...point });
+        return true;
+      },
+      onSelectionEnd: (point) => {
+        selectionEvents.push({ type: "end", ...point });
+        return true;
+      },
     });
 
     await setup.renderOnce();
     await setup.mockMouse.drag(10, 0, 19, 1);
     await setup.renderOnce();
-    expect(setup.view.getSelectionOwner()).toBe("dialogue");
-    expect(setup.renderer.getSelection()?.getSelectedText()).toBe("dlg-alpha\ndlg-beta");
+    expect(selectionEvents[0]).toEqual({ type: "start", ownerId: "dialogue", row: 0, col: 0 });
+    expect(selectionEvents.every((event) => event.ownerId === "dialogue")).toBe(true);
+    expect(selectionEvents.some((event) => event.row === 1)).toBe(true);
     setup.renderer.destroy();
   });
 
@@ -1151,21 +1364,16 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(frame.cursor.visible).toBe(true);
     expect(frame.lines.join("\n")).toContain("中文");
 
-    const setup = await createShellTerminalViewTestSetup({
-      width: 40,
-      height: 10,
-      lines: frame.styledLines,
-      selectionRegions: [{ owner: "dialogue", row: 0, col: 0, width: 30, height: 10 }],
-      selectionSources: [{ owner: "dialogue", row: 0, col: 0, width: 30, height: 10, lines: frame.styledLines }],
-    });
-    await setup.renderOnce();
-    await setup.mockMouse.drag(1, 2, 18, 3);
-    await setup.renderOnce();
-    expect(setup.view.getSelectionOwner()).toBe("dialogue");
-    const selectedText = setup.renderer.getSelection()?.getSelectedText() ?? "";
+    expect(backend.selectionStart({ ownerId: "dialogue", row: 2, col: 1 })).toBe(true);
+    expect(backend.selectionUpdate({ ownerId: "dialogue", row: 3, col: 18 })).toBe(true);
+    expect(backend.selectionEnd({ ownerId: "dialogue", row: 3, col: 18 })).toBe(true);
+    const selectedText = backend.copySelection();
     expect(selectedText.length).toBeGreaterThan(0);
     expect(selectedText).not.toContain("shell-row");
-    setup.renderer.destroy();
+    const overlay = backend.getInteractionFrameState().selectionOverlays?.[0];
+    expect(overlay?.ownerId).toBe("dialogue");
+    expect(overlay?.ownership).toBe("backend-adapter-owned");
+    expect(overlay?.rows.every((row) => row.row >= 2 && row.row <= 3)).toBe(true);
   });
 
   test("Scenario: Given cli-shell frame layout When terminal content is projected Then shell offscreen frame owns the scrollbar cells", () => {
@@ -1212,7 +1420,31 @@ describe("Feature: cli-shell interactive TUI", () => {
     const exerciseCopyShortcut = async (shortcut: { meta?: boolean; super?: boolean; ctrl?: boolean; shift?: boolean }) => {
       const state = createRuntimeState({ heartbeat: [], lines: ["$ echo hello", "copy target"], roomMessages: [], unread: 0 });
       const harness = createTuiStore({ state });
-      const setup = await createCoreAppTestSetup({ state, harness, width: 40, height: 10 });
+      const sentMessages: TerminalTransportClientMessage[] = [];
+      const transportHooks: {
+        onMessage?: (message: TerminalTransportServerMessage) => void;
+      } = {};
+      const setup = await createCoreAppTestSetup({
+        state,
+        harness,
+        width: 40,
+        height: 10,
+        createTransportSession: ({ events }) =>
+          createTestTransportSession({
+            async connect() {
+              transportHooks.onMessage = events.onMessage;
+              events.onOpen();
+            },
+            disconnect() {},
+            send(message) {
+              sentMessages.push(message);
+              return true;
+            },
+            getConnectionState() {
+              return "connected";
+            },
+          }),
+      });
       const copyCalls: string[] = [];
       setup.renderer.copyToClipboardOSC52 = mock((text: string) => {
         copyCalls.push(text);
@@ -1252,6 +1484,13 @@ describe("Feature: cli-shell interactive TUI", () => {
       } else {
         setup.mockInput.pressKey("c", shortcut);
       }
+      expect(sentMessages).toContainEqual({ type: "copySelection", ownerId: "terminal" });
+      transportHooks.onMessage?.({
+        type: "selectionText",
+        terminalId: "shell-1",
+        ownerId: "terminal",
+        text: "$ echo hello",
+      });
       setup.destroy();
       return copyCalls;
     };
@@ -2028,7 +2267,8 @@ describe("Feature: cli-shell interactive TUI", () => {
     setup.renderer.destroy();
   });
 
-  test("Scenario: Given a backend terminal frame owns selected text When copy is requested Then the frame writes the selection through OSC52", async () => {
+  test("Scenario: Given a backend terminal frame owns selected text When copy is requested Then the frame asks the backend bridge to copy selection", async () => {
+    const copyOwners: Array<string | undefined> = [];
     const setup = await createBackendTerminalFrameTestSetup({
       id: "backend-terminal-frame-copy-test",
       width: 20,
@@ -2052,24 +2292,21 @@ describe("Feature: cli-shell interactive TUI", () => {
       bridge: {
         scrollViewport: () => true,
         setViewportStart: () => true,
+        copySelection: (ownerId) => {
+          copyOwners.push(ownerId);
+          return true;
+        },
       },
     });
-    const copyCalls: string[] = [];
-    setup.renderer.copyToClipboardOSC52 = mock((text: string) => {
-      copyCalls.push(text);
-      return true;
-    });
 
-    await setup.renderOnce();
-    await setup.mockMouse.drag(0, 0, 11, 0);
     await setup.renderOnce();
 
     expect(setup.frame.copySelectionViaOsc52()).toBe(true);
-    expect(copyCalls).toEqual(["copy target"]);
+    expect(copyOwners).toEqual(["terminal"]);
     setup.renderer.destroy();
   });
 
-  test("Scenario: Given a backend terminal frame owns a semantic word selection When copy is requested Then the same frame copy path writes the selected word through OSC52", async () => {
+  test("Scenario: Given a backend terminal frame has no backend copy bridge When copy is requested Then it reports no copy", async () => {
     const setup = await createBackendTerminalFrameTestSetup({
       id: "backend-terminal-frame-semantic-copy-test",
       width: 30,
@@ -2090,18 +2327,10 @@ describe("Feature: cli-shell interactive TUI", () => {
         setViewportStart: () => true,
       },
     });
-    const copyCalls: string[] = [];
-    setup.renderer.copyToClipboardOSC52 = mock((text: string) => {
-      copyCalls.push(text);
-      return true;
-    });
 
     await setup.renderOnce();
-    await setup.mockMouse.doubleClick(9, 0);
-    await setup.renderOnce();
 
-    expect(setup.frame.copySelectionViaOsc52()).toBe(true);
-    expect(copyCalls).toEqual(["semantic"]);
+    expect(setup.frame.copySelectionViaOsc52()).toBe(false);
     setup.renderer.destroy();
   });
 
@@ -2407,6 +2636,37 @@ describe("Feature: cli-shell interactive TUI", () => {
         kind: "render-revision-coalesced",
         detail: { trigger: "source-mirror.requestPaint" },
       });
+    } finally {
+      if (previousTraceEnv === undefined) {
+        delete process.env.AGENTER_CLI_SHELL_TRACE;
+      } else {
+        process.env.AGENTER_CLI_SHELL_TRACE = previousTraceEnv;
+      }
+      await Bun.file(tracePath).delete().catch(() => undefined);
+    }
+  });
+
+  test("Scenario: Given perf tracing filters are enabled When mixed events are recorded Then only matching debug groups are written", async () => {
+    const previousTraceEnv = process.env.AGENTER_CLI_SHELL_TRACE;
+    const tracePath = `/tmp/agenter-cli-shell-trace-filter-${Date.now()}-${Math.random().toString(36).slice(2)}.ndjson`;
+    process.env.AGENTER_CLI_SHELL_TRACE = tracePath;
+    try {
+      const tracer = createCliShellPerfTracer({ enabled: true, filters: ["key", "follow"] });
+      tracer.record({ kind: "render-applied", detail: { elapsedMs: 1 } });
+      tracer.record({ kind: "terminal-key-encoded", detail: { keyName: "left" } });
+      tracer.record({ kind: "follow-cursor-requested", detail: { followed: true } });
+      tracer.record({ kind: "selection-drag", detail: { owner: "terminal" } });
+      tracer.dispose();
+
+      const parsedLines = (await Bun.file(tracePath).text())
+        .trim()
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map((line) => JSON.parse(line));
+      expect(parsedLines.filter((line) => line.kind !== "trace-summary").map((line) => line.kind)).toEqual([
+        "terminal-key-encoded",
+        "follow-cursor-requested",
+      ]);
     } finally {
       if (previousTraceEnv === undefined) {
         delete process.env.AGENTER_CLI_SHELL_TRACE;
@@ -2848,6 +3108,38 @@ describe("Feature: cli-shell interactive TUI", () => {
       wordLine,
       wordLine.indexOf("world") + "world".length,
     ) - stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world"));
+    expect(sentInput.at(-1)).toBe("\u001b[C".repeat(expectedRightCells));
+
+    const escSequenceCtx = {
+      ...ctx,
+      getModel: () => ({
+        ...baseModel,
+        terminalView: {
+          ...baseModel.terminalView,
+          plainLines: [wordLine],
+          cursorAbsRow: 0,
+          viewportStart: 0,
+          cursorCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("ok")),
+        },
+      }),
+    };
+    expect(routeCliShellKey(escSequenceCtx, createTestKeyEvent({ name: "b", sequence: "\u001bb" }))).toBe(true);
+    expect(sentInput.at(-1)).toBe("\u001b[D".repeat(expectedLeftCells));
+
+    const escRightSequenceCtx = {
+      ...ctx,
+      getModel: () => ({
+        ...baseModel,
+        terminalView: {
+          ...baseModel.terminalView,
+          plainLines: [wordLine],
+          cursorAbsRow: 0,
+          viewportStart: 0,
+          cursorCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world")),
+        },
+      }),
+    };
+    expect(routeCliShellKey(escRightSequenceCtx, createTestKeyEvent({ name: "f", sequence: "\u001bf" }))).toBe(true);
     expect(sentInput.at(-1)).toBe("\u001b[C".repeat(expectedRightCells));
   });
 

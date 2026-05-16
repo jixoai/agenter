@@ -229,6 +229,7 @@ describe("Feature: terminal control plane", () => {
     expect(frame.cursor).toEqual({
       x: 3,
       y: 19,
+      absY: 169,
       visible: true,
     });
   });
@@ -268,6 +269,7 @@ describe("Feature: terminal control plane", () => {
     expect(frame.cursor).toEqual({
       x: 6,
       y: 0,
+      absY: 11,
       visible: false,
     });
     expect(frame.scrollback).toEqual({
@@ -1512,6 +1514,248 @@ describe("Feature: terminal control plane", () => {
       dataPlane: "direct",
     });
     expect(directFrames.some((message) => message.type === "frameDirty")).toBe(true);
+
+    session.disconnect();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given transport selection events When a client pulls a frame Then backend-owned overlay and copy text are published", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "stream-backend-selection" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.port).not.toBeNull();
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "alpha beta\n",
+    });
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+
+    await opened;
+    const initialFrame = await pullLatestFrame({ socket, messages, lastFrame: null, rows: 6 });
+    const targetRow = initialFrame.lines.findIndex((line) => line.includes("alpha beta"));
+    expect(targetRow).toBeGreaterThanOrEqual(0);
+    const backendRow = initialFrame.scrollback.viewportOffset + targetRow;
+
+    socket.send(
+      encodeClientFrame({
+        type: "selectionStart",
+        point: { ownerId: "terminal", row: backendRow, col: 0 },
+      }),
+    );
+    socket.send(
+      encodeClientFrame({
+        type: "selectionUpdate",
+        point: { ownerId: "terminal", row: backendRow, col: 4 },
+      }),
+    );
+    socket.send(
+      encodeClientFrame({
+        type: "selectionEnd",
+        point: { ownerId: "terminal", row: backendRow, col: 4 },
+      }),
+    );
+    socket.send(encodeClientFrame({ type: "copySelection", ownerId: "terminal" }));
+    await Bun.sleep(80);
+
+    const selectedFrame = await pullLatestFrame({ socket, messages, lastFrame: initialFrame, rows: 6 });
+    const selectionText = messages.findLast(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "selectionText" }> =>
+        message.type === "selectionText",
+    );
+
+    expect(selectionText).toEqual({
+      type: "selectionText",
+      terminalId: created.terminalId,
+      ownerId: "terminal",
+      text: "alpha",
+    });
+    expect(selectedFrame.interaction?.activeOwnerId).toBe("terminal");
+    expect(selectedFrame.interaction?.selectionOverlays?.[0]).toMatchObject({
+      ownerId: "terminal",
+      ownership: "backend-adapter-owned",
+      rows: [{ row: targetRow, startCol: 0, endCol: 5 }],
+      selectedText: "alpha",
+    });
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given transport cursor-follow is requested When the client has scrolled away Then the pulled frame uses backend cursor truth", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "stream-follow-cursor" });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+
+    expect(transport.port).not.toBeNull();
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    await plane.write({
+      terminalId: created.terminalId,
+      text: `${Array.from({ length: 50 }, (_, index) => `follow-line-${index}`).join("\n")}\n`,
+    });
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+
+    await opened;
+    const bottomFrame = await pullLatestFrame({ socket, messages, lastFrame: null, rows: 8 });
+    expect(bottomFrame.scrollback.viewportOffset).toBeGreaterThan(0);
+
+    socket.send(encodeClientFrame({ type: "viewportTarget", viewportStart: 0 }));
+    await Bun.sleep(100);
+    const topFrame = await pullLatestFrame({ socket, messages, lastFrame: bottomFrame, rows: 8 });
+    expect(topFrame.scrollback.viewportOffset).toBe(0);
+    expect(topFrame.cursor.visible).toBe(false);
+
+    socket.send(encodeClientFrame({ type: "followCursor" }));
+    await Bun.sleep(100);
+    const followedFrame = await pullLatestFrame({ socket, messages, lastFrame: topFrame, rows: 8 });
+
+    expect(followedFrame.scrollback.viewportOffset).toBeGreaterThan(topFrame.scrollback.viewportOffset);
+    expect(followedFrame.scrollback.screenLines).toBe(8);
+    expect(followedFrame.cursor.visible).toBe(true);
+    expect(followedFrame.cursor.y).toBeGreaterThanOrEqual(0);
+    expect(followedFrame.cursor.y).toBeLessThan(followedFrame.rows);
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given direct transport interaction methods When semantic selection is sent Then structured messages reach backend without websocket data frames", async () => {
+    const plane = createPlane();
+    const created = await plane.create({ terminalId: "stream-direct-interaction" });
+    await plane.write({
+      terminalId: created.terminalId,
+      text: "word jump\n",
+    });
+    await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId);
+    expect(endpoint?.url).toContain(`/pty/${created.terminalId}`);
+
+    const websocketFrames: TerminalTransportServerMessage[] = [];
+    const directFrames: TerminalTransportServerMessage[] = [];
+    const traces: Array<{ kind: string; messageType?: string; dataPlane?: string; reason?: string }> = [];
+    const session = createTerminalTransportClientSession({
+      transportUrl: endpoint!.url,
+      geometryRole: "authority",
+      debugTrace: true,
+      events: {
+        onMessage(message) {
+          if (message.type === "helloAck" || message.type === "status") {
+            websocketFrames.push(message);
+          } else {
+            directFrames.push(message);
+          }
+        },
+        onTrace(event) {
+          traces.push(event);
+        },
+      },
+    });
+
+    await session.connect();
+    const directAck = await new Promise<Extract<TerminalTransportServerMessage, { type: "helloAck" }>>(
+      (resolveAck, rejectAck) => {
+        const startedAt = Date.now();
+        const poll = () => {
+          const found = websocketFrames.findLast(
+            (message): message is Extract<TerminalTransportServerMessage, { type: "helloAck" }> =>
+              message.type === "helloAck" && message.direct?.accepted === true,
+          );
+          if (found) {
+            resolveAck(found);
+            return;
+          }
+          if (Date.now() - startedAt > 2_000) {
+            rejectAck(new Error("timeout waiting for direct helloAck"));
+            return;
+          }
+          setTimeout(poll, 20);
+        };
+        poll();
+      },
+    );
+    expect(directAck.direct?.accepted).toBe(true);
+
+    session.selectWordAt({ ownerId: "terminal", row: 0, col: 1 });
+    session.copySelection("terminal");
+    session.pullFrame({ lastAppliedFrameSeq: 0, cols: 80, rows: 6 });
+
+    const frame = await new Promise<Extract<TerminalTransportServerMessage, { type: "frame" }>>((resolve, reject) => {
+      const startedAt = Date.now();
+      const poll = () => {
+        const found = directFrames.findLast(
+          (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
+        );
+        if (found) {
+          resolve(found);
+          return;
+        }
+        if (Date.now() - startedAt > 2_000) {
+          reject(new Error("timeout waiting for direct interaction frame"));
+          return;
+        }
+        setTimeout(poll, 20);
+      };
+      poll();
+    });
+    const decodedFrame = applyTerminalFramePatch(
+      null,
+      frame.patch,
+      frame.frameSeq,
+      createTerminalTransportRowCacheDecoder(),
+    );
+    const selectionText = directFrames.findLast(
+      (message): message is Extract<TerminalTransportServerMessage, { type: "selectionText" }> =>
+        message.type === "selectionText",
+    );
+
+    expect(selectionText?.text).toBe("word");
+    expect(decodedFrame?.interaction?.selectionOverlays?.[0]).toMatchObject({
+      ownerId: "terminal",
+      ownership: "backend-adapter-owned",
+      selectedText: "word",
+    });
+    expect(traces).toContainEqual({
+      kind: "client-send",
+      messageType: "selectWordAt",
+      dataPlane: "direct",
+    });
+    expect(traces).toContainEqual({
+      kind: "client-send",
+      messageType: "copySelection",
+      dataPlane: "direct",
+    });
 
     session.disconnect();
     plane.stopTransport();

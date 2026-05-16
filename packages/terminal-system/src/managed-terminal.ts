@@ -1,5 +1,10 @@
 import { AgenticTerminal } from "./agentic-terminal";
-import type { TerminalBackendKind } from "@agenter/termless-core";
+import type {
+  TerminalBackendKind,
+  TerminalInteractionCapabilities,
+  TerminalInteractionEvent,
+  TerminalInteractionFrameState,
+} from "@agenter/termless-core";
 import type {
   RichLine,
   StructuredRenderResult,
@@ -48,6 +53,7 @@ export interface ManagedTerminalSnapshot {
     totalLines: number;
     screenLines: number;
   };
+  interaction?: TerminalInteractionFrameState;
 }
 
 export interface ManagedTerminalLifecycleEvent extends TerminalLifecycleState {}
@@ -78,6 +84,11 @@ export interface TerminalRuntime {
   resize(cols: number, rows: number): void;
   scrollViewport(deltaRows: number): void;
   setViewportStart(viewportStart: number): void;
+  followCursor(options?: { viewportRows?: number }): void;
+  applyInteractionEvent(event: TerminalInteractionEvent): { ok: boolean; selectedText?: string };
+  copySelection(ownerId?: string): string;
+  getInteractionCapabilities(): TerminalInteractionCapabilities | null;
+  getInteractionFrameState(ownerId?: string): TerminalInteractionFrameState | null;
   write(input: string): Promise<TerminalPendingInputResult>;
   input(mixedInput: string): Promise<TerminalPendingInputResult>;
   writeRaw(input: string): void;
@@ -463,6 +474,37 @@ export class ManagedTerminal implements TerminalRuntime {
     this.emitSnapshot();
   }
 
+  followCursor(options: { viewportRows?: number } = {}): void {
+    if (!this.terminal) {
+      return;
+    }
+    this.terminal.followCursor(options);
+    this.snapshot = this.toSnapshot(this.terminal.getLatestStructured());
+    this.emitSnapshot();
+  }
+
+  applyInteractionEvent(event: TerminalInteractionEvent): { ok: boolean; selectedText?: string } {
+    if (!this.terminal) {
+      return { ok: false };
+    }
+    const result = this.terminal.applyInteractionEvent(event);
+    this.snapshot = this.toSnapshot(this.terminal.getLatestStructured());
+    this.emitSnapshot();
+    return result;
+  }
+
+  copySelection(ownerId?: string): string {
+    return this.terminal?.copySelection(ownerId) ?? "";
+  }
+
+  getInteractionCapabilities(): TerminalInteractionCapabilities | null {
+    return this.terminal?.getInteractionCapabilities() ?? null;
+  }
+
+  getInteractionFrameState(ownerId?: string): TerminalInteractionFrameState | null {
+    return this.terminal?.getInteractionFrameState(ownerId) ?? null;
+  }
+
   async write(input: string): Promise<TerminalPendingInputResult> {
     if (!this.terminal) {
       throw new Error(`terminal ${this.config.terminalId} is not running`);
@@ -607,6 +649,7 @@ export class ManagedTerminal implements TerminalRuntime {
         totalLines: Math.max(this.rows, this.snapshot.scrollback.totalLines),
         screenLines: this.rows,
       },
+      interaction: this.snapshot.interaction,
     };
     this.emitSnapshot();
   }
@@ -632,6 +675,7 @@ export class ManagedTerminal implements TerminalRuntime {
         visible: render.cursorVisible,
       },
       scrollback: { ...render.scrollback },
+      interaction: render.interaction,
     };
   }
 }

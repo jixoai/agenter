@@ -2,7 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { DEFAULT_TERMINAL_BACKEND, isTerminalBackendKind, type TerminalBackendKind } from "@agenter/termless-core";
+import {
+  DEFAULT_TERMINAL_BACKEND,
+  TERMINAL_INTERACTION_DEFAULT_OWNER_ID,
+  isTerminalBackendKind,
+  type TerminalBackendKind,
+  type TerminalInteractionEvent,
+  type TerminalInteractionOwnerId,
+} from "@agenter/termless-core";
 import { isPrincipalId } from "@agenter/principal-crypto";
 import {
   buildManagedInvitationAcceptPayload,
@@ -217,6 +224,49 @@ const updateMaxNullable = (current: number | null, next: number | null): number 
   return current === null ? next : Math.max(current, next);
 };
 
+const terminalTransportMessageToInteractionEvent = (
+  message: TerminalTransportClientMessage,
+): TerminalInteractionEvent | null => {
+  switch (message.type) {
+    case "selectionStart":
+    case "selectionUpdate":
+    case "selectionEnd":
+    case "selectWordAt":
+    case "selectLineAt":
+      return { type: message.type, point: { ...message.point } };
+    case "selectRange":
+      return { type: "selectRange", range: { ...message.range } };
+    case "copySelection":
+      return { type: "copySelection", ownerId: message.ownerId };
+    case "clearSelection":
+      return { type: "clearSelection", ownerId: message.ownerId };
+    case "followCursor":
+      return { type: "followCursor" };
+    default:
+      return null;
+  }
+};
+
+const getInteractionEventOwnerId = (event: TerminalInteractionEvent): TerminalInteractionOwnerId => {
+  switch (event.type) {
+    case "selectionStart":
+    case "selectionUpdate":
+    case "selectionEnd":
+    case "selectWordAt":
+    case "selectLineAt":
+      return event.point.ownerId;
+    case "selectRange":
+      return event.range.ownerId;
+    case "copySelection":
+    case "clearSelection":
+      return event.ownerId ?? TERMINAL_INTERACTION_DEFAULT_OWNER_ID;
+    case "followCursor":
+      return TERMINAL_INTERACTION_DEFAULT_OWNER_ID;
+    default:
+      return event satisfies never;
+  }
+};
+
 interface TerminalTransportQueuedMessage {
   message: TerminalTransportClientMessage;
   receivedAt: number;
@@ -268,6 +318,9 @@ interface TerminalTransportAttachmentRecord {
   requestedGeometryRole: TerminalTransportGeometryRole;
   effectiveGeometryRole: TerminalTransportGeometryRole;
   geometryOrder?: number;
+  lastPullCols?: number;
+  lastPullRows?: number;
+  projectionViewportStart?: number;
   attachedAt: number;
   geometryAuthorityAttachmentId?: string;
   authorityReason: string;
@@ -1926,6 +1979,30 @@ export class TerminalControlPlane {
     // Do not turn scroll into a direct dirty/pull activation path here:
     // the shared dirty loop and the client's next pull own frame synchronization.
     entry.terminal.scrollViewport(delta);
+    this.clearTransportProjectionViewport(socket.data.attachmentId);
+  }
+
+  private clearTransportProjectionViewport(attachmentId: string): void {
+    const attachment = this.transportAttachmentsById.get(attachmentId);
+    if (!attachment || attachment.projectionViewportStart === undefined) {
+      return;
+    }
+    this.transportAttachmentsById.set(attachmentId, {
+      ...attachment,
+      projectionViewportStart: undefined,
+    });
+  }
+
+  private setTransportProjectionViewport(attachmentId: string, viewportStart: number): void {
+    const attachment = this.requireTransportAttachment(attachmentId);
+    const normalized = Math.max(0, Math.trunc(viewportStart));
+    if (!Number.isFinite(normalized)) {
+      return;
+    }
+    this.transportAttachmentsById.set(attachmentId, {
+      ...attachment,
+      projectionViewportStart: normalized,
+    });
   }
 
   private createDirectTransportOffer(
@@ -2166,6 +2243,43 @@ export class TerminalControlPlane {
       // Same law as viewportDelta: this sets backend viewport truth, then stops.
       // It must not synchronously send frameDirty or create a pull-per-scroll path.
       this.ensureManagedEntry(terminalId).terminal.setViewportStart(message.viewportStart);
+      this.clearTransportProjectionViewport(socket.data.attachmentId);
+      return;
+    }
+    if (message.type === "followCursor") {
+      // Cursor following is also an objective backend viewport mutation. The
+      // frontend sends intent only; the backend uses its current cursor truth.
+      // The attachment's last pull size is only the visible viewport constraint,
+      // not a frontend-computed viewport target.
+      const attachment = this.requireTransportAttachment(socket.data.attachmentId);
+      const terminal = this.ensureManagedEntry(terminalId).terminal;
+      terminal.followCursor({ viewportRows: attachment.lastPullRows });
+      const snapshot = terminal.getSnapshot();
+      const viewportRows = Math.max(1, Math.trunc(attachment.lastPullRows ?? snapshot.scrollback.screenLines));
+      this.setTransportProjectionViewport(
+        socket.data.attachmentId,
+        Math.max(0, Math.trunc(snapshot.cursor.y) - viewportRows + 1),
+      );
+      return;
+    }
+    const interactionEvent = terminalTransportMessageToInteractionEvent(message);
+    if (interactionEvent) {
+      const result = this.ensureManagedEntry(terminalId).terminal.applyInteractionEvent(interactionEvent);
+      this.sendTransportTrace(socket, `interaction-${message.type}`, {
+        ownerId: getInteractionEventOwnerId(interactionEvent),
+        ok: result.ok,
+        selectedTextLength: result.selectedText?.length ?? null,
+        dataPlane: socket.data.dataPlane,
+      });
+      if (message.type === "copySelection") {
+        socket.send({
+          type: "selectionText",
+          terminalId,
+          ownerId: message.ownerId,
+          text: result.selectedText ?? "",
+        });
+      }
+      return;
     }
   }
 
@@ -2184,6 +2298,13 @@ export class TerminalControlPlane {
       });
     }
     const entry = this.ensureManagedEntry(socket.data.terminalId);
+    const attachment = this.requireTransportAttachment(socket.data.attachmentId);
+    this.transportAttachmentsById.set(socket.data.attachmentId, {
+      ...attachment,
+      lastPullCols: message.cols,
+      lastPullRows: message.rows,
+    });
+    const updatedAttachment = this.requireTransportAttachment(socket.data.attachmentId);
     const snapshotStartedAt = Date.now();
     const snapshot = entry.terminal.getSnapshot();
     const snapshotMs = Date.now() - snapshotStartedAt;
@@ -2191,6 +2312,7 @@ export class TerminalControlPlane {
     const currentFrame = projectTerminalSnapshotFramePayload(snapshot, {
       cols: message.cols,
       rows: message.rows,
+      viewportStart: updatedAttachment.projectionViewportStart,
     });
     const projectionMs = Date.now() - projectionStartedAt;
     const frameState = this.transportFrameStateByAttachmentId.get(socket.data.attachmentId);
@@ -2334,6 +2456,7 @@ export class TerminalControlPlane {
       snapshot.cursor.x,
       snapshot.cursor.y,
       snapshot.cursor.visible === false ? 0 : 1,
+      JSON.stringify(snapshot.interaction ?? null),
     ].join("\u001f");
   }
 
@@ -3491,6 +3614,9 @@ export class TerminalControlPlane {
       requestedGeometryRole: input.requestedGeometryRole ?? "projection-only",
       effectiveGeometryRole: "projection-only",
       geometryOrder: input.geometryOrder,
+      lastPullCols: undefined,
+      lastPullRows: undefined,
+      projectionViewportStart: undefined,
       attachedAt: Date.now(),
       geometryAuthorityAttachmentId: undefined,
       authorityReason: "awaiting-backend-arbitration",

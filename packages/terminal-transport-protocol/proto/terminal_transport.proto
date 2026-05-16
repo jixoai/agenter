@@ -6,12 +6,47 @@ message TerminalCursor {
   uint32 x = 1;
   uint32 y = 2;
   optional bool visible = 3;
+  optional uint32 abs_y = 4;
 }
 
 message TerminalScrollback {
   uint32 viewport_offset = 1;
   uint32 total_lines = 2;
   uint32 screen_lines = 3;
+}
+
+message TerminalInteractionCapabilities {
+  string ownership = 1;
+  bool selection = 2;
+  bool copy = 3;
+  bool semantic_selection = 4;
+  bool cursor_follow = 5;
+  bool overlay = 6;
+  optional string reason = 7;
+}
+
+message TerminalSelectionOverlayRow {
+  uint32 row = 1;
+  uint32 start_col = 2;
+  uint32 end_col = 3;
+}
+
+message TerminalSelectionOverlay {
+  string owner_id = 1;
+  string ownership = 2;
+  repeated TerminalSelectionOverlayRow rows = 3;
+  optional string selected_text = 4;
+}
+
+message TerminalInteractionCapabilityEntry {
+  string owner_id = 1;
+  TerminalInteractionCapabilities capabilities = 2;
+}
+
+message TerminalInteractionFrameState {
+  optional string active_owner_id = 1;
+  repeated TerminalSelectionOverlay selection_overlays = 2;
+  repeated TerminalInteractionCapabilityEntry capabilities = 3;
 }
 
 message TerminalRichSpan {
@@ -36,6 +71,7 @@ message TerminalFramePayload {
   repeated TerminalRichLine rich_lines = 6;
   TerminalCursor cursor = 7;
   TerminalScrollback scrollback = 8;
+  TerminalInteractionFrameState interaction = 9;
 }
 
 enum TerminalStatus {
@@ -76,6 +112,35 @@ message TerminalViewportTarget {
   uint32 viewport_start = 1;
 }
 
+message TerminalFollowCursor {}
+
+message TerminalOwnerCoordinate {
+  string owner_id = 1;
+  uint32 row = 2;
+  uint32 col = 3;
+}
+
+message TerminalSelectionRange {
+  string owner_id = 1;
+  uint32 start_row = 2;
+  uint32 start_col = 3;
+  uint32 end_row = 4;
+  uint32 end_col = 5;
+  bool rectangular = 6;
+}
+
+message TerminalSelectionPointAction {
+  TerminalOwnerCoordinate point = 1;
+}
+
+message TerminalSelectionRangeAction {
+  TerminalSelectionRange range = 1;
+}
+
+message TerminalOwnerAction {
+  optional string owner_id = 1;
+}
+
 message TerminalPullFrame {
   uint32 last_applied_frame_seq = 1;
   uint32 cols = 2;
@@ -91,6 +156,15 @@ message TerminalClientFrame {
     TerminalViewportDelta viewport_delta = 4;
     TerminalViewportTarget viewport_target = 5;
     TerminalPullFrame pull_frame = 6;
+    TerminalFollowCursor follow_cursor = 7;
+    TerminalSelectionPointAction selection_start = 8;
+    TerminalSelectionPointAction selection_update = 9;
+    TerminalSelectionPointAction selection_end = 10;
+    TerminalSelectionPointAction select_word_at = 11;
+    TerminalSelectionPointAction select_line_at = 12;
+    TerminalSelectionRangeAction select_range = 13;
+    TerminalOwnerAction copy_selection = 14;
+    TerminalOwnerAction clear_selection = 15;
   }
 }
 
@@ -112,6 +186,7 @@ message TerminalFrameRowsPatch {
   TerminalCursor cursor = 5;
   TerminalScrollback scrollback = 6;
   optional double timestamp = 7;
+  TerminalInteractionFrameState interaction = 8;
 }
 
 message TerminalFrameScrollRowsPatch {
@@ -124,6 +199,7 @@ message TerminalFrameScrollRowsPatch {
   TerminalCursor cursor = 7;
   TerminalScrollback scrollback = 8;
   optional double timestamp = 9;
+  TerminalInteractionFrameState interaction = 10;
 }
 
 message TerminalFrameCachedRow {
@@ -140,6 +216,7 @@ message TerminalFrameRowCachePatch {
   TerminalCursor cursor = 5;
   TerminalScrollback scrollback = 6;
   optional double timestamp = 7;
+  TerminalInteractionFrameState interaction = 8;
 }
 
 message TerminalFrameNotModifiedPatch {
@@ -209,6 +286,12 @@ message TerminalTraceFrame {
   optional double timestamp = 4;
 }
 
+message TerminalSelectionTextFrame {
+  string terminal_id = 1;
+  optional string owner_id = 2;
+  string text = 3;
+}
+
 message TerminalServerFrame {
   oneof body {
     TerminalFrameDirty frame_dirty = 1;
@@ -217,5 +300,6 @@ message TerminalServerFrame {
     TerminalErrorFrame error = 4;
     TerminalHelloAck hello_ack = 5;
     TerminalTraceFrame trace = 6;
+    TerminalSelectionTextFrame selection_text = 7;
   }
 }

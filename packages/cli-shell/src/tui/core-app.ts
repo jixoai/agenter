@@ -32,7 +32,7 @@ import {
   resolveCliShellShellScrollbarProjection,
   resolveCliShellTuiInteractionLayout,
 } from "./frame";
-import { projectCliShellDialogueBackendFrame } from "./dialogue-backend";
+import { CliShellDialogueBackend } from "./dialogue-backend";
 import type { CliShellTuiKeybindings } from "./keybindings";
 import {
   createCliShellLiveTerminalMirror,
@@ -71,6 +71,11 @@ import type {
   CliShellTuiViewState,
 } from "./types";
 import { createInitialCliShellViewState } from "./view-state";
+import type {
+  TerminalTransportInteractionFrameState,
+  TerminalTransportOwnerCoordinate,
+  TerminalTransportSelectionOverlay,
+} from "@agenter/terminal-transport-protocol";
 
 export interface CliShellCoreAppProps {
   renderer: CliRenderer;
@@ -87,6 +92,7 @@ export interface CliShellCoreAppProps {
   onQuit: () => void;
   observationReadyBaseline?: CliShellObservationReadyBaseline | null;
   debug?: boolean;
+  debugFilters?: readonly string[];
   experimentalDynamicRefresh?: boolean;
   interactionProfile?: CliShellInteractionEnhancementProfile;
   createTransportSession?: CliShellLiveTerminalTransportSessionFactory;
@@ -147,6 +153,7 @@ export class CliShellCoreApp {
   readonly #perfTracer: CliShellPerfTracer;
   readonly #root: BoxRenderable;
   readonly #terminalView: ShellTerminalViewRenderable;
+  readonly #dialogueBackend = new CliShellDialogueBackend();
   readonly #debugBar: CliShellDebugBarRenderable | null;
   #viewState: CliShellTuiViewState;
   #state: RuntimeClientState;
@@ -176,7 +183,7 @@ export class CliShellCoreApp {
   constructor(props: CliShellCoreAppProps) {
     this.#props = props;
     this.#renderer = props.renderer;
-    this.#perfTracer = createCliShellPerfTracer({ enabled: props.debug === true });
+    this.#perfTracer = createCliShellPerfTracer({ enabled: props.debug === true, filters: props.debugFilters });
     this.#viewState = createInitialCliShellViewState(props.managed);
     this.#state = props.store.getState();
     this.#renderer.setGatherStats?.(this.#perfTracer.enabled);
@@ -213,6 +220,11 @@ export class CliShellCoreApp {
       onMouseDown: (event) => this.#handleShellMouseDown(event),
       onMouseDrag: (event) => this.#handleShellMouseDrag(event),
       onMouseScroll: (event) => this.#handleTerminalScroll(event),
+      onSelectionStart: (point) => this.#routeSelectionStartForPoint(point),
+      onSelectionUpdate: (point) => this.#routeSelectionUpdate(point),
+      onSelectionEnd: (point) => this.#routeSelectionEnd(point),
+      onSelectWordAt: (point) => this.#routeSelectWordAtForPoint(point),
+      onSelectLineAt: (point) => this.#routeSelectLineAtForPoint(point),
       interactionProfile: props.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
     });
     if (this.#debugBar) {
@@ -396,6 +408,7 @@ export class CliShellCoreApp {
       height: contentHeight,
       renderToolbar: false,
     });
+    this.#syncDialogueBackend({ model, width, height: contentHeight });
     const interactionFrame = layoutCliShellTuiFrame({
       model,
       width,
@@ -470,6 +483,7 @@ export class CliShellCoreApp {
       : null,
       selectionRegions: interactionLayout.selectionRegions,
       selectionSources: frame.selectionSources,
+      selectionOverlays: this.#resolveSelectionOverlays(model.terminalView.interaction),
       interactionProfile: model.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
     });
 
@@ -534,6 +548,7 @@ export class CliShellCoreApp {
       getViewState: () => this.#viewState,
       getModel: () => this.#lastModel ?? this.#fallbackModel(),
       getLiveMirror: () => this.#sourceMirror,
+      trace: this.#perfTracer,
       updateViewState: (updater) => {
         this.#localComposedInteractionDirty = true;
         const next = updater(this.#viewState);
@@ -620,9 +635,29 @@ export class CliShellCoreApp {
         keyName: key.name,
         sequenceLength: key.sequence?.length ?? 0,
         rawLength: key.raw?.length ?? 0,
+        sequence: key.sequence,
+        raw: key.raw,
         ctrl: key.ctrl === true,
         shift: key.shift === true,
         meta: key.meta === true,
+        option: key.option === true,
+        optionLike:
+          key.option === true ||
+          key.meta === true ||
+          key.sequence === "\u001bb" ||
+          key.raw === "\u001bb" ||
+          key.sequence === "\u001bf" ||
+          key.raw === "\u001bf",
+        wordNavigationSequence:
+          key.sequence === "\u001bb" || key.raw === "\u001bb"
+            ? "left"
+            : key.sequence === "\u001bf" || key.raw === "\u001bf"
+              ? "right"
+              : null,
+        super: key.super === true,
+        hyper: key.hyper === true,
+        source: key.source,
+        code: key.code ?? null,
         focusTarget: this.#viewState.focusTarget,
         activeFocusTarget: this.#viewState.activeFocusTarget,
       },
@@ -684,11 +719,184 @@ export class CliShellCoreApp {
   };
 
   #copyActiveSelection(): boolean {
-    const selectedText = this.#renderer.getSelection()?.getSelectedText() || this.#terminalView.getSelectedText();
-    if (selectedText.length === 0) {
+    const owner = this.#terminalView.getSelectionOwner() ?? this.#viewState.activeFocusTarget ?? "terminal";
+    if (owner === "dialogue") {
+      const text = this.#dialogueBackend.copySelection();
+      const sent = text.length > 0 && this.#renderer.copyToClipboardOSC52(text);
+      this.#perfTracer.record({
+        kind: "selection-copy-requested",
+        detail: {
+          ownerId: "dialogue",
+          sent,
+          textLength: text.length,
+        },
+      });
+      return sent;
+    }
+    const sent = this.#sourceMirror?.copySelection("terminal") ?? false;
+    this.#perfTracer.record({
+      kind: "selection-copy-requested",
+      detail: {
+        ownerId: "terminal",
+        sent,
+      },
+    });
+    return sent;
+  }
+
+  #copySelectionTextFromBackend(event: { ownerId?: string; text: string }): void {
+    if (event.text.length === 0) {
+      this.#perfTracer.record({
+        kind: "selection-copy-empty",
+        detail: { ownerId: event.ownerId ?? "terminal" },
+      });
+      return;
+    }
+    const copied = this.#renderer.copyToClipboardOSC52(event.text);
+    this.#perfTracer.record({
+      kind: "selection-copy-delivered",
+      detail: {
+        ownerId: event.ownerId ?? "terminal",
+        textLength: event.text.length,
+        copied,
+      },
+    });
+  }
+
+  #syncDialogueBackend(input: { model: CliShellTuiModel; width: number; height: number }): void {
+    const layout = resolveCliShellTranscriptPanelLayout(input);
+    this.#dialogueBackend.project({
+      layout,
+      model: input.model,
+    });
+  }
+
+  #resolveSelectionOverlays(
+    shellInteraction: TerminalTransportInteractionFrameState | undefined,
+  ): TerminalTransportSelectionOverlay[] {
+    return [
+      ...(shellInteraction?.selectionOverlays ?? []),
+      ...(this.#dialogueBackend.getInteractionFrameState().selectionOverlays ?? []),
+    ].map((overlay) => ({
+      ownerId: overlay.ownerId,
+      ownership: overlay.ownership,
+      rows: overlay.rows.map((row) => ({ ...row })),
+      selectedText: overlay.selectedText,
+    }));
+  }
+
+  #routeSelectionStart(point: TerminalTransportOwnerCoordinate): boolean {
+    this.#perfTracer.record({
+      kind: "selection-start-routed",
+      detail: { ownerId: point.ownerId, row: point.row, col: point.col },
+    });
+    if (point.ownerId === "dialogue") {
+      return this.#dialogueBackend.selectionStart(point);
+    }
+    return this.#sourceMirror?.selectionStart(point) ?? false;
+  }
+
+  #routeSelectionUpdate(point: TerminalTransportOwnerCoordinate): boolean {
+    this.#perfTracer.record({
+      kind: "selection-update-routed",
+      detail: { ownerId: point.ownerId, row: point.row, col: point.col },
+    });
+    if (point.ownerId === "dialogue") {
+      return this.#dialogueBackend.selectionUpdate(point);
+    }
+    return this.#sourceMirror?.selectionUpdate(point) ?? false;
+  }
+
+  #routeSelectionEnd(point: TerminalTransportOwnerCoordinate): boolean {
+    this.#perfTracer.record({
+      kind: "selection-end-routed",
+      detail: { ownerId: point.ownerId, row: point.row, col: point.col },
+    });
+    if (point.ownerId === "dialogue") {
+      const ended = this.#dialogueBackend.selectionEnd(point);
+      this.renderNow("dialogue-selection-end");
+      return ended;
+    }
+    return this.#sourceMirror?.selectionEnd(point) ?? false;
+  }
+
+  #routeSelectWordAt(point: TerminalTransportOwnerCoordinate): boolean {
+    this.#perfTracer.record({
+      kind: "semantic-selection-word-routed",
+      detail: { ownerId: point.ownerId, row: point.row, col: point.col },
+    });
+    if (point.ownerId === "dialogue") {
+      const selected = this.#dialogueBackend.selectWordAt(point);
+      this.renderNow("dialogue-select-word");
+      return selected;
+    }
+    return this.#sourceMirror?.selectWordAt(point) ?? false;
+  }
+
+  #routeSelectLineAt(point: TerminalTransportOwnerCoordinate): boolean {
+    this.#perfTracer.record({
+      kind: "semantic-selection-line-routed",
+      detail: { ownerId: point.ownerId, row: point.row, col: point.col },
+    });
+    if (point.ownerId === "dialogue") {
+      const selected = this.#dialogueBackend.selectLineAt(point);
+      this.renderNow("dialogue-select-line");
+      return selected;
+    }
+    return this.#sourceMirror?.selectLineAt(point) ?? false;
+  }
+
+  #clearSelectionForOwner(ownerId: "terminal" | "dialogue"): boolean {
+    if (ownerId === "dialogue") {
+      const cleared = this.#dialogueBackend.clearSelection();
+      this.renderNow("dialogue-selection-clear");
+      return cleared;
+    }
+    return this.#sourceMirror?.clearSelection("terminal") ?? false;
+  }
+
+  #clearOtherSelection(ownerId: "terminal" | "dialogue"): void {
+    const other = ownerId === "terminal" ? "dialogue" : "terminal";
+    this.#clearSelectionForOwner(other);
+  }
+
+  #activateSelectionOwner(ownerId: "terminal" | "dialogue"): void {
+    this.#clearOtherSelection(ownerId);
+  }
+
+  #isKnownSelectionOwner(ownerId: string): ownerId is "terminal" | "dialogue" {
+    return ownerId === "terminal" || ownerId === "dialogue";
+  }
+
+  #normalizeSelectionOwner(point: TerminalTransportOwnerCoordinate): "terminal" | "dialogue" | null {
+    return this.#isKnownSelectionOwner(point.ownerId) ? point.ownerId : null;
+  }
+
+  #routeSelectionStartForPoint(point: TerminalTransportOwnerCoordinate): boolean {
+    const owner = this.#normalizeSelectionOwner(point);
+    if (!owner) {
       return false;
     }
-    return this.#renderer.copyToClipboardOSC52(selectedText);
+    this.#activateSelectionOwner(owner);
+    return this.#routeSelectionStart(point);
+  }
+
+  #routeSelectWordAtForPoint(point: TerminalTransportOwnerCoordinate): boolean {
+    const owner = this.#normalizeSelectionOwner(point);
+    if (!owner) {
+      return false;
+    }
+    this.#activateSelectionOwner(owner);
+    return this.#routeSelectWordAt(point);
+  }
+
+  #routeSelectLineAtForPoint(point: TerminalTransportOwnerCoordinate): boolean {
+    const owner = this.#normalizeSelectionOwner(point);
+    if (!owner) {
+      return false;
+    }
+    this.#activateSelectionOwner(owner);
+    return this.#routeSelectLineAt(point);
   }
 
   #handleTerminalScroll(event: MouseEvent): void {
@@ -755,7 +963,7 @@ export class CliShellCoreApp {
       width: input.width,
       height: input.height,
     });
-    const frame = projectCliShellDialogueBackendFrame({
+    const frame = this.#dialogueBackend.project({
       layout,
       model: input.model,
     });
@@ -924,12 +1132,13 @@ export class CliShellCoreApp {
         transportUrl: input.shellSourceEntry.transportUrl,
         initialSnapshot: input.shellSourceEntry.snapshot ?? null,
         geometryRole: "authority",
-        debugTrace: this.#props.debug === true,
+        debugTrace: this.#props.debug === true && (this.#props.debugFilters?.length ?? 0) === 0,
         pacing: {
           mode: this.#props.experimentalDynamicRefresh === true ? "dynamic" : "fixed",
         },
         trace: this.#perfTracer,
         requestPaint: () => this.#bumpLiveTerminalRevision("source-mirror.requestPaint"),
+        onSelectionText: (event) => this.#copySelectionTextFromBackend(event),
         createTransportSession: this.#props.createTransportSession,
       });
       this.#sourceMirror = mirror;

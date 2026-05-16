@@ -1,5 +1,15 @@
 import { createTerminalBackend, DEFAULT_TERMINAL_BACKEND, type TerminalBackendKind } from "./backend-factory.js";
 import type { TerminalLinesRangeReadable } from "./render-structured-buffer.js";
+import {
+  TERMINAL_INTERACTION_DEFAULT_OWNER_ID,
+  createBackendInteractionAdapter,
+  isTerminalInteractionController,
+  type TerminalInteractionCapabilities,
+  type TerminalInteractionController,
+  type TerminalOwnerCoordinate,
+  type TerminalSelectionOverlay,
+  type TerminalSelectionRange,
+} from "./terminal-interaction.js";
 import type { Cell, CursorState, ScrollbackState, TerminalBackend, TerminalMode, TerminalReadable } from "./termless-types.js";
 
 const DEFAULT_COLS = 120;
@@ -22,14 +32,16 @@ export interface XtermBridgeReadable extends TerminalReadable, TerminalLinesRang
   resize(cols: number, rows: number): void;
   scrollViewport(delta: number): void;
   setViewportStart(viewportStart: number): void;
+  followCursor(options?: { viewportRows?: number }): boolean;
   reset(): void;
   dispose(): void;
   onTitleChange(listener: (title: string) => void): () => void;
 }
 
-export class XtermReadableBridge implements XtermBridgeReadable {
+export class XtermReadableBridge implements XtermBridgeReadable, TerminalInteractionController {
   private readonly titleListeners: Array<(title: string) => void> = [];
   private readonly backend: TerminalBackendWithRangeReads;
+  private readonly interaction: TerminalInteractionController;
   private lastTitle = "";
   private colsValue: number;
   private rowsValue: number;
@@ -50,6 +62,13 @@ export class XtermReadableBridge implements XtermBridgeReadable {
       rows,
       scrollbackLimit,
     });
+    this.interaction = isTerminalInteractionController(this.backend)
+      ? this.backend
+      : createBackendInteractionAdapter({
+          ownerId: TERMINAL_INTERACTION_DEFAULT_OWNER_ID,
+          readable: this,
+          followCursor: () => this.followCursor(),
+        });
     this.lastTitle = this.backend.getTitle();
   }
 
@@ -86,6 +105,56 @@ export class XtermReadableBridge implements XtermBridgeReadable {
     }
     this.backend.scrollViewport(delta);
     this.flushTitle();
+  }
+
+  followCursor(options: { viewportRows?: number } = {}): boolean {
+    const cursor = this.backend.getCursor();
+    const scrollback = this.backend.getScrollback();
+    const requestedRows = Math.trunc(options.viewportRows ?? scrollback.screenLines);
+    const viewportSize = Number.isFinite(requestedRows) && requestedRows > 0 ? requestedRows : Math.max(1, scrollback.screenLines);
+    const target = Math.max(0, Math.trunc(cursor.y) - viewportSize + 1);
+    this.setViewportStart(target);
+    return true;
+  }
+
+  get interactionCapabilities(): TerminalInteractionCapabilities {
+    return this.interaction.interactionCapabilities;
+  }
+
+  startSelection(point: TerminalOwnerCoordinate): boolean {
+    return this.interaction.startSelection(point);
+  }
+
+  updateSelection(point: TerminalOwnerCoordinate): boolean {
+    return this.interaction.updateSelection(point);
+  }
+
+  endSelection(point: TerminalOwnerCoordinate): boolean {
+    return this.interaction.endSelection(point);
+  }
+
+  selectRange(range: TerminalSelectionRange): boolean {
+    return this.interaction.selectRange(range);
+  }
+
+  selectWordAt(point: TerminalOwnerCoordinate): boolean {
+    return this.interaction.selectWordAt(point);
+  }
+
+  selectLineAt(point: TerminalOwnerCoordinate): boolean {
+    return this.interaction.selectLineAt(point);
+  }
+
+  clearSelection(ownerId?: string): boolean {
+    return this.interaction.clearSelection(ownerId);
+  }
+
+  copySelection(ownerId?: string): string {
+    return this.interaction.copySelection(ownerId);
+  }
+
+  getSelectionOverlay(ownerId?: string): TerminalSelectionOverlay | null {
+    return this.interaction.getSelectionOverlay(ownerId);
   }
 
   reset(): void {

@@ -101,6 +101,7 @@ const resolveTerminalView = (input: {
       viewportStart: liveTerminal.viewportStart,
       viewportEnd: liveTerminal.viewportEnd,
       scrollbackRows: liveTerminal.scrollbackRows,
+      interaction: liveTerminal.interaction ? structuredClone(liveTerminal.interaction) : undefined,
       connected: liveTerminal.connected,
       running: liveTerminal.running,
     };
@@ -127,6 +128,7 @@ const resolveTerminalView = (input: {
     viewportStart,
     viewportEnd: viewportStart + (terminalSnapshot?.scrollback.screenLines ?? terminalSnapshot?.rows ?? rows),
     scrollbackRows: terminalSnapshot?.scrollback.totalLines ?? plainLines.length,
+    interaction: undefined,
     connected: input.state.connected,
     running: true,
   };

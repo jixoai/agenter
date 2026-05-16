@@ -154,7 +154,7 @@ describe("Feature: terminal transport protocol", () => {
           spans: [{ text: "hello", fg: "#ffffff", bold: true }],
         },
       ],
-      cursor: { x: 2, y: 1, visible: true },
+      cursor: { x: 2, y: 1, visible: true, absY: 41 },
       scrollback: {
         viewportOffset: 0,
         totalLines: 2,
@@ -195,7 +195,7 @@ describe("Feature: terminal transport protocol", () => {
         ],
         cols: 80,
         rows: 24,
-        cursor: { x: 2, y: 1, visible: true },
+        cursor: { x: 2, y: 1, visible: true, absY: 41 },
         scrollback: {
           viewportOffset: 0,
           totalLines: 2,
@@ -217,7 +217,7 @@ describe("Feature: terminal transport protocol", () => {
         insertedRichLines: [{ spans: [{ text: "tail", fg: "#00ff00" }] }],
         cols: 80,
         rows: 24,
-        cursor: { x: 4, y: 2, visible: false },
+        cursor: { x: 4, y: 2, visible: false, absY: 42 },
         scrollback: {
           viewportOffset: 1,
           totalLines: 3,
@@ -241,7 +241,7 @@ describe("Feature: terminal transport protocol", () => {
         ],
         cols: 80,
         rows: 3,
-        cursor: { x: 1, y: 2, visible: true },
+        cursor: { x: 1, y: 2, visible: true, absY: 43 },
         scrollback: {
           viewportOffset: 2,
           totalLines: 5,
@@ -333,7 +333,7 @@ describe("Feature: terminal transport protocol", () => {
         ],
         cols: 80,
         rows: 24,
-        cursor: { x: 2, y: 1, visible: true },
+        cursor: { x: 2, y: 1, visible: true, absY: 41 },
         scrollback: {
           viewportOffset: 0,
           totalLines: 2,
@@ -359,7 +359,7 @@ describe("Feature: terminal transport protocol", () => {
         ],
         cols: 80,
         rows: 24,
-        cursor: { x: 4, y: 2, visible: false },
+        cursor: { x: 4, y: 2, visible: false, absY: 42 },
         scrollback: {
           viewportOffset: 1,
           totalLines: 3,
@@ -389,7 +389,7 @@ describe("Feature: terminal transport protocol", () => {
         ],
         cols: 80,
         rows: 3,
-        cursor: { x: 1, y: 2, visible: true },
+        cursor: { x: 1, y: 2, visible: true, absY: 43 },
         scrollback: {
           viewportOffset: 2,
           totalLines: 5,
@@ -436,6 +436,199 @@ describe("Feature: terminal transport protocol", () => {
         queueWaitMs: null,
       },
       timestamp: 1239,
+    });
+  });
+
+  test("Scenario: Given backend interaction client messages When protobuf roundtrip runs Then owner coordinates and copy intent are preserved", () => {
+    const point = { ownerId: "shell", row: 12, col: 8 };
+    const range = {
+      ownerId: "dialogue",
+      startRow: 1,
+      startCol: 2,
+      endRow: 3,
+      endCol: 4,
+      rectangular: false,
+    };
+
+    expect(
+      decodeTerminalTransportClientMessage(
+        encodeTerminalTransportClientMessage({
+          type: "selectionStart",
+          point,
+        }),
+      ),
+    ).toEqual({
+      type: "selectionStart",
+      point,
+    });
+    expect(
+      decodeTerminalTransportClientMessage(
+        encodeTerminalTransportClientMessage({
+          type: "selectionUpdate",
+          point: { ...point, col: 14 },
+        }),
+      ),
+    ).toEqual({
+      type: "selectionUpdate",
+      point: { ...point, col: 14 },
+    });
+    expect(
+      decodeTerminalTransportClientMessage(
+        encodeTerminalTransportClientMessage({
+          type: "selectionEnd",
+          point: { ...point, row: 13 },
+        }),
+      ),
+    ).toEqual({
+      type: "selectionEnd",
+      point: { ...point, row: 13 },
+    });
+    expect(
+      decodeTerminalTransportClientMessage(
+        encodeTerminalTransportClientMessage({
+          type: "selectWordAt",
+          point,
+        }),
+      ),
+    ).toEqual({
+      type: "selectWordAt",
+      point,
+    });
+    expect(
+      decodeTerminalTransportClientMessage(
+        encodeTerminalTransportClientMessage({
+          type: "selectLineAt",
+          point,
+        }),
+      ),
+    ).toEqual({
+      type: "selectLineAt",
+      point,
+    });
+    expect(
+      decodeTerminalTransportClientMessage(
+        encodeTerminalTransportClientMessage({
+          type: "selectRange",
+          range,
+        }),
+      ),
+    ).toEqual({
+      type: "selectRange",
+      range,
+    });
+    expect(
+      decodeTerminalTransportClientMessage(
+        encodeTerminalTransportClientMessage({
+          type: "copySelection",
+          ownerId: "dialogue",
+        }),
+      ),
+    ).toEqual({
+      type: "copySelection",
+      ownerId: "dialogue",
+    });
+    expect(
+      decodeTerminalTransportClientMessage(
+        encodeTerminalTransportClientMessage({
+          type: "clearSelection",
+          ownerId: "shell",
+        }),
+      ),
+    ).toEqual({
+      type: "clearSelection",
+      ownerId: "shell",
+    });
+    expect(decodeTerminalTransportClientMessage(encodeTerminalTransportClientMessage({ type: "followCursor" }))).toEqual(
+      {
+        type: "followCursor",
+      },
+    );
+  });
+
+  test("Scenario: Given backend interaction overlays When frame payloads roundtrip Then projection clients receive backend-owned selection state", () => {
+    const frame: TerminalTransportFramePayload = {
+      seq: 21,
+      timestamp: 2048,
+      cols: 20,
+      rows: 3,
+      lines: ["alpha beta", "中文测试", ""],
+      richLines: [
+        { spans: [{ text: "alpha beta" }] },
+        { spans: [{ text: "中文测试", fg: "#ffffff" }] },
+        { spans: [] },
+      ],
+      cursor: { x: 3, y: 1, visible: true, absY: 9 },
+      scrollback: { viewportOffset: 8, totalLines: 11, screenLines: 3 },
+      interaction: {
+        activeOwnerId: "shell",
+        selectionOverlays: [
+          {
+            ownerId: "shell",
+            ownership: "backend-native",
+            rows: [
+              { row: 8, startCol: 0, endCol: 5 },
+              { row: 9, startCol: 0, endCol: 4 },
+            ],
+            selectedText: "alpha\n中文",
+          },
+        ],
+        capabilities: {
+          shell: {
+            ownership: "backend-native",
+            selection: true,
+            copy: true,
+            semanticSelection: true,
+            cursorFollow: true,
+            overlay: true,
+          },
+        },
+      },
+    };
+
+    const decoded = decodeTerminalTransportServerMessage(
+      encodeTerminalTransportServerMessage({
+        type: "frame",
+        terminalId: "term-demo",
+        frameSeq: frame.seq,
+        status: "IDLE",
+        patch: {
+          type: "full",
+          frame,
+        },
+      }),
+    );
+
+    expect(decoded).toEqual({
+      type: "frame",
+      terminalId: "term-demo",
+      frameSeq: frame.seq,
+      status: "IDLE",
+      patch: {
+        type: "full",
+        frame: {
+          ...frame,
+          richLines: [
+            { spans: [{ text: "alpha beta", fg: undefined, bg: undefined, bold: false, underline: false, inverse: false }] },
+            { spans: [{ text: "中文测试", fg: "#ffffff", bg: undefined, bold: false, underline: false, inverse: false }] },
+            { spans: [] },
+          ],
+        },
+      },
+    });
+    expect(
+      decodeTerminalTransportServerMessage(
+        encodeTerminalTransportServerMessage({
+          type: "selectionText",
+          terminalId: "term-demo",
+          ownerId: "shell",
+          text: "alpha",
+        }),
+      ),
+    ).toEqual({
+      type: "selectionText",
+      terminalId: "term-demo",
+      ownerId: "shell",
+      text: "alpha",
     });
   });
 
@@ -538,6 +731,55 @@ describe("Feature: terminal transport protocol", () => {
     }
     const decodedThird = applyTerminalFramePatch(decodedSecond, thirdPatch, thirdFrame.seq, decoder);
     expect(decodedThird).toEqual(thirdFrame);
+  });
+
+  test("Scenario: Given only backend interaction state changes When row-cache encodes Then style-only selection updates still produce a drawable frame", () => {
+    const encoder = createTerminalTransportRowCacheEncoder();
+    const baseFrame: TerminalTransportFramePayload = {
+      seq: 1,
+      timestamp: 10,
+      cols: 12,
+      rows: 2,
+      lines: ["same", "rows"],
+      richLines: [{ spans: [{ text: "same" }] }, { spans: [{ text: "rows" }] }],
+      cursor: { x: 0, y: 0, visible: true },
+      scrollback: { viewportOffset: 0, totalLines: 2, screenLines: 2 },
+    };
+
+    const firstPatch = encoder.encode(baseFrame);
+    expect(firstPatch.type).toBe("rowCache");
+
+    const selectedPatch = encoder.encode({
+      ...baseFrame,
+      seq: 2,
+      timestamp: 11,
+      interaction: {
+        activeOwnerId: "shell",
+        selectionOverlays: [
+          {
+            ownerId: "shell",
+            ownership: "backend-adapter-owned",
+            rows: [{ row: 0, startCol: 0, endCol: 4 }],
+          },
+        ],
+      },
+    });
+    expect(selectedPatch.type).toBe("rowCache");
+    if (selectedPatch.type !== "rowCache") {
+      throw new Error("expected interaction change to produce rowCache patch");
+    }
+    expect(selectedPatch.interaction).toEqual({
+      activeOwnerId: "shell",
+      selectionOverlays: [
+        {
+          ownerId: "shell",
+          ownership: "backend-adapter-owned",
+          rows: [{ row: 0, startCol: 0, endCol: 4 }],
+          selectedText: undefined,
+        },
+      ],
+      capabilities: undefined,
+    });
   });
 
   test("Scenario: Given a row-cache patch references an unknown cid When decoding Then the transport rejects the patch instead of drawing stale content", () => {

@@ -21,8 +21,15 @@ import type {
   ScrollbackState,
   TerminalCapabilities,
   RGB,
+  TerminalInteractionCapabilities,
+  TerminalInteractionController,
+  TerminalOwnerCoordinate,
+  TerminalSelectionOverlay,
+  TerminalSelectionRange,
 } from "@termless/core"
 import { encodeKeyToAnsi } from "@termless/core"
+
+const DEFAULT_INTERACTION_OWNER_ID = "terminal"
 
 // ═══════════════════════════════════════════════════════
 // Native module types (from Zig napigen)
@@ -70,6 +77,12 @@ interface NativeColors {
   bg_b: number
 }
 
+interface NativeSelectionOverlayRow {
+  row: number
+  start_col: number
+  end_col: number
+}
+
 interface NativeModule {
   createTerminal(cols: number, rows: number, maxScrollback: number): NativeTerminalHandle
   destroyTerminal(handle: NativeTerminalHandle): void
@@ -88,6 +101,19 @@ interface NativeModule {
   getTitle(handle: NativeTerminalHandle): string
   getScrollback(handle: NativeTerminalHandle): NativeScrollback
   scrollViewport(handle: NativeTerminalHandle, delta: number): void
+  clearSelection?(handle: NativeTerminalHandle): void
+  selectRange?(
+    handle: NativeTerminalHandle,
+    startRow: number,
+    startCol: number,
+    endRow: number,
+    endCol: number,
+    rectangular: boolean,
+  ): boolean
+  selectWordAt?(handle: NativeTerminalHandle, row: number, col: number): boolean
+  selectLineAt?(handle: NativeTerminalHandle, row: number, col: number): boolean
+  getSelectionText?(handle: NativeTerminalHandle): string
+  getSelectionOverlay?(handle: NativeTerminalHandle): NativeSelectionOverlayRow[]
   getDefaultColors(handle: NativeTerminalHandle): NativeColors
   /** Check if the terminal has pending response data. Returns false if not available. */
   hasResponse?(handle: NativeTerminalHandle): boolean
@@ -194,6 +220,8 @@ function emptyCell(): Cell {
 const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 24
 
+export interface GhosttyNativeInteractionBackend extends TerminalBackend, TerminalInteractionController {}
+
 /**
  * Create a native Ghostty backend for termless.
  *
@@ -204,7 +232,7 @@ const DEFAULT_ROWS = 24
  * Requires the native module to be built first. See README.md for
  * build instructions.
  */
-export function createGhosttyNativeBackend(opts?: Partial<TerminalOptions>): TerminalBackend {
+export function createGhosttyNativeBackend(opts?: Partial<TerminalOptions>): GhosttyNativeInteractionBackend {
   let handle: NativeTerminalHandle | null = null
 
   function ensureHandle(): NativeTerminalHandle {
@@ -374,6 +402,134 @@ export function createGhosttyNativeBackend(opts?: Partial<TerminalOptions>): Ter
     native.scrollViewport(ensureHandle(), delta)
   }
 
+  const interactionCapabilities: TerminalInteractionCapabilities = {
+    ownership: "backend-native",
+    selection: true,
+    copy: true,
+    semanticSelection: true,
+    cursorFollow: true,
+    overlay: true,
+  }
+
+  const pointToBackend = (point: TerminalOwnerCoordinate): { row: number; col: number } | null => {
+    if (point.ownerId !== DEFAULT_INTERACTION_OWNER_ID) {
+      return null
+    }
+    const row = Math.max(0, Math.trunc(point.row))
+    const col = Math.max(0, Math.trunc(point.col))
+    return { row, col }
+  }
+
+  const clearSelection = (ownerId?: string): boolean => {
+    if (ownerId && ownerId !== DEFAULT_INTERACTION_OWNER_ID) {
+      return false
+    }
+    const native = loadGhosttyNative()
+    native.clearSelection?.(ensureHandle())
+    return typeof native.clearSelection === "function"
+  }
+
+  const selectRange = (range: TerminalSelectionRange): boolean => {
+    if (range.ownerId !== DEFAULT_INTERACTION_OWNER_ID) {
+      return false
+    }
+    const native = loadGhosttyNative()
+    if (typeof native.selectRange !== "function") {
+      return false
+    }
+    return native.selectRange(
+      ensureHandle(),
+      Math.max(0, Math.trunc(range.startRow)),
+      Math.max(0, Math.trunc(range.startCol)),
+      Math.max(0, Math.trunc(range.endRow)),
+      Math.max(0, Math.trunc(range.endCol)),
+      range.rectangular === true,
+    )
+  }
+
+  const startSelection = (point: TerminalOwnerCoordinate): boolean => {
+    const normalized = pointToBackend(point)
+    if (!normalized) {
+      return false
+    }
+    return selectRange({
+      ownerId: DEFAULT_INTERACTION_OWNER_ID,
+      startRow: normalized.row,
+      startCol: normalized.col,
+      endRow: normalized.row,
+      endCol: normalized.col,
+    })
+  }
+
+  let selectionAnchor: TerminalOwnerCoordinate | null = null
+
+  const updateSelection = (point: TerminalOwnerCoordinate): boolean => {
+    const normalized = pointToBackend(point)
+    if (!normalized || !selectionAnchor) {
+      return false
+    }
+    return selectRange({
+      ownerId: DEFAULT_INTERACTION_OWNER_ID,
+      startRow: selectionAnchor.row,
+      startCol: selectionAnchor.col,
+      endRow: normalized.row,
+      endCol: normalized.col,
+    })
+  }
+
+  const endSelection = (point: TerminalOwnerCoordinate): boolean => {
+    const updated = updateSelection(point)
+    selectionAnchor = null
+    return updated
+  }
+
+  const selectWordAt = (point: TerminalOwnerCoordinate): boolean => {
+    const normalized = pointToBackend(point)
+    if (!normalized) {
+      return false
+    }
+    const native = loadGhosttyNative()
+    return native.selectWordAt?.(ensureHandle(), normalized.row, normalized.col) === true
+  }
+
+  const selectLineAt = (point: TerminalOwnerCoordinate): boolean => {
+    const normalized = pointToBackend(point)
+    if (!normalized) {
+      return false
+    }
+    const native = loadGhosttyNative()
+    return native.selectLineAt?.(ensureHandle(), normalized.row, normalized.col) === true
+  }
+
+  const copySelection = (ownerId?: string): string => {
+    if (ownerId && ownerId !== DEFAULT_INTERACTION_OWNER_ID) {
+      return ""
+    }
+    const native = loadGhosttyNative()
+    return native.getSelectionText?.(ensureHandle()) ?? ""
+  }
+
+  const getSelectionOverlay = (ownerId?: string): TerminalSelectionOverlay | null => {
+    if (ownerId && ownerId !== DEFAULT_INTERACTION_OWNER_ID) {
+      return null
+    }
+    const native = loadGhosttyNative()
+    const rows = native.getSelectionOverlay?.(ensureHandle()) ?? []
+    if (rows.length === 0) {
+      return null
+    }
+    return {
+      ownerId: DEFAULT_INTERACTION_OWNER_ID,
+      ownership: "backend-native",
+      rows: rows.map((row) => ({
+        row: row.row,
+        startCol: row.start_col,
+        endCol: row.end_col,
+      })),
+      selectedText: copySelection(ownerId),
+    }
+  }
+
   const capabilities: TerminalCapabilities = {
     name: "ghostty-native",
     version: "1.3.1",
@@ -397,7 +553,7 @@ export function createGhosttyNativeBackend(opts?: Partial<TerminalOptions>): Ter
   //   3. Expose hasResponse(handle) and readResponse(handle) via napigen
   // The TS side is already wired — it calls hasResponse/readResponse after each feed().
 
-  const backend: TerminalBackend = {
+  const backend: GhosttyNativeInteractionBackend = {
     name: "ghostty-native",
     init,
     destroy,
@@ -416,6 +572,31 @@ export function createGhosttyNativeBackend(opts?: Partial<TerminalOptions>): Ter
     getTitle,
     getScrollback,
     scrollViewport,
+    interactionCapabilities,
+    startSelection(point) {
+      selectionAnchor = point.ownerId === DEFAULT_INTERACTION_OWNER_ID ? point : null
+      clearSelection(DEFAULT_INTERACTION_OWNER_ID)
+      return selectionAnchor !== null
+    },
+    updateSelection,
+    endSelection,
+    selectRange,
+    selectWordAt,
+    selectLineAt,
+    clearSelection,
+    copySelection,
+    getSelectionOverlay,
+    followCursor() {
+      const cursor = getCursor()
+      const scrollback = getScrollback()
+      const viewportSize = Math.max(1, scrollback.screenLines)
+      const target = Math.max(0, Math.trunc(cursor.y) - viewportSize + 1)
+      const delta = target - scrollback.viewportOffset
+      if (delta !== 0) {
+        scrollViewport(delta)
+      }
+      return true
+    },
     encodeKey: encodeKeyToAnsi,
     capabilities,
   }

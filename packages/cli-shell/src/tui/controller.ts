@@ -17,6 +17,7 @@ import type {
   CliShellTuiStore,
   CliShellTuiViewState,
 } from "./types";
+import type { CliShellPerfTracer } from "./perf-trace";
 
 export interface CliShellTuiControllerContext {
   store: CliShellTuiStore;
@@ -32,6 +33,7 @@ export interface CliShellTuiControllerContext {
   getViewState: () => CliShellTuiViewState;
   getModel: () => CliShellTuiModel;
   getLiveMirror?: () => CliShellLiveTerminalMirror | null;
+  trace?: CliShellPerfTracer;
   updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => void;
 }
 
@@ -72,11 +74,26 @@ export const setCliShellDialogueDraft = (ctx: CliShellTuiControllerContext, draf
 const sendTerminalInput = (ctx: CliShellTuiControllerContext, text: string): void => {
   const mirror = ctx.getLiveMirror?.();
   if (mirror?.sendInputBytes(new TextEncoder().encode(text))) {
+    let followed = false;
     if (ctx.getModel().interactionProfile?.followCursorOnInput !== false) {
-      mirror.followCursor();
+      followed = mirror.followCursor();
     }
+    ctx.trace?.record({
+      kind: "follow-cursor-requested",
+      detail: {
+        source: "terminal-input",
+        byteLength: new TextEncoder().encode(text).byteLength,
+        followed,
+      },
+    });
     return;
   }
+  ctx.trace?.record({
+    kind: "terminal-input-fallback",
+    detail: {
+      byteLength: new TextEncoder().encode(text).byteLength,
+    },
+  });
   void ctx.store
     .inputGlobalTerminal({
       terminalId: ctx.getModel().terminalId,
@@ -93,12 +110,40 @@ const repeatTerminalKey = (key: "\u001b[C" | "\u001b[D", count: number): string 
   return safeCount > 0 ? key.repeat(safeCount) : null;
 };
 
+type OptionWordNavigationDirection = "left" | "right";
+
+const resolveOptionWordNavigationDirection = (key: KeyEvent): OptionWordNavigationDirection | null => {
+  const sequence = key.sequence || key.raw;
+  if (sequence === "\u001bb") {
+    return "left";
+  }
+  if (sequence === "\u001bf") {
+    return "right";
+  }
+  if ((key.name === "left" || key.name === "right") && (key.option === true || key.meta === true)) {
+    return key.name;
+  }
+  return null;
+};
+
+const isOptionWordNavigationKey = (key: KeyEvent): boolean => {
+  return resolveOptionWordNavigationDirection(key) !== null;
+};
+
 const resolveOptionWordNavigationInput = (ctx: CliShellTuiControllerContext, key: KeyEvent): string | null => {
-  if (!key.option || (key.name !== "left" && key.name !== "right")) {
+  const direction = resolveOptionWordNavigationDirection(key);
+  if (!direction) {
     return null;
   }
   const model = ctx.getModel();
   if (model.interactionProfile?.wordNavigation !== true) {
+    ctx.trace?.record({
+      kind: "terminal-key-word-navigation-skipped",
+      detail: {
+        reason: "profile-disabled",
+        keyName: key.name,
+      },
+    });
     return null;
   }
   const localCursorRow = Math.max(0, Math.trunc(model.terminalView.cursorAbsRow - model.terminalView.viewportStart));
@@ -106,17 +151,54 @@ const resolveOptionWordNavigationInput = (ctx: CliShellTuiControllerContext, key
   const cursorCol = Math.max(0, Math.trunc(model.terminalView.cursorCol));
   const cursorIndex = terminalColumnToStringIndex(line, cursorCol);
   const targetIndex =
-    key.name === "left"
+    direction === "left"
       ? findPreviousTerminalWordBoundary(line, cursorIndex)
       : findNextTerminalWordBoundary(line, cursorIndex);
   if (targetIndex === null) {
+    ctx.trace?.record({
+      kind: "terminal-key-word-navigation-skipped",
+      detail: {
+        reason: "no-boundary",
+        keyName: key.name,
+        cursorCol,
+        cursorIndex,
+        line,
+      },
+    });
     return null;
   }
   const targetCol = stringIndexToTerminalColumn(line, targetIndex);
   const delta = targetCol - cursorCol;
   if (delta === 0) {
+    ctx.trace?.record({
+      kind: "terminal-key-word-navigation-skipped",
+      detail: {
+        reason: "zero-delta",
+        keyName: key.name,
+        cursorCol,
+        targetCol,
+        cursorIndex,
+        targetIndex,
+        line,
+      },
+    });
     return null;
   }
+  ctx.trace?.record({
+    kind: "terminal-key-word-navigation",
+    detail: {
+      keyName: key.name,
+      localCursorRow,
+      viewportStart: model.terminalView.viewportStart,
+      cursorAbsRow: model.terminalView.cursorAbsRow,
+      cursorCol,
+      cursorIndex,
+      targetIndex,
+      targetCol,
+      delta,
+      line,
+    },
+  });
   return delta > 0 ? repeatTerminalKey("\u001b[C", delta) : repeatTerminalKey("\u001b[D", Math.abs(delta));
 };
 
@@ -362,9 +444,41 @@ export const routeCliShellKey = (ctx: CliShellTuiControllerContext, key: KeyEven
     resolveOptionWordNavigationInput(ctx, key) ??
     encodeCliShellTerminalKey(key, { homeEndFallback: ctx.getModel().interactionProfile?.homeEndFallback });
   if (encoded) {
+    ctx.trace?.record({
+      kind: "terminal-key-encoded",
+      detail: {
+        keyName: key.name,
+        sequence: key.sequence,
+        raw: key.raw,
+        ctrl: key.ctrl === true,
+        shift: key.shift === true,
+        meta: key.meta === true,
+        option: key.option === true,
+        optionLike: isOptionWordNavigationKey(key),
+        super: key.super === true,
+        hyper: key.hyper === true,
+        encodedLength: encoded.length,
+        encodedCodes: Array.from(encoded).map((char) => char.charCodeAt(0)),
+      },
+    });
     sendTerminalInput(ctx, encoded);
     return true;
   }
+  ctx.trace?.record({
+    kind: "terminal-key-unsupported",
+    detail: {
+      keyName: key.name,
+      sequence: key.sequence,
+      raw: key.raw,
+      ctrl: key.ctrl === true,
+      shift: key.shift === true,
+      meta: key.meta === true,
+      option: key.option === true,
+      optionLike: isOptionWordNavigationKey(key),
+      super: key.super === true,
+      hyper: key.hyper === true,
+    },
+  });
   return false;
 };
 

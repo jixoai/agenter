@@ -1,9 +1,11 @@
 import type {
+  TerminalTransportInteractionFrameState,
   TerminalTransportFramePayload,
   TerminalTransportFramePatch,
   TerminalTransportRichLine,
 } from "@agenter/terminal-transport-protocol";
 import { cloneTerminalTransportFramePayload } from "@agenter/terminal-transport-protocol";
+import type { TerminalInteractionFrameState } from "@agenter/termless-core";
 
 import type { ManagedTerminalSnapshot } from "./managed-terminal";
 
@@ -18,6 +20,54 @@ const cloneRichLine = (line: TerminalTransportRichLine): TerminalTransportRichLi
   spans: line.spans.map((span) => ({ ...span })),
 });
 
+const cloneInteractionFrameState = (
+  interaction: TerminalInteractionFrameState | undefined,
+): TerminalTransportInteractionFrameState | undefined =>
+  interaction
+    ? {
+        activeOwnerId: interaction.activeOwnerId,
+        selectionOverlays: interaction.selectionOverlays?.map((overlay) => ({
+          ownerId: overlay.ownerId,
+          ownership: overlay.ownership,
+          rows: overlay.rows.map((row) => ({ ...row })),
+          selectedText: overlay.selectedText,
+        })),
+        capabilities: interaction.capabilities
+          ? Object.fromEntries(
+              Object.entries(interaction.capabilities).map(([ownerId, capabilities]) => [
+                ownerId,
+                { ...capabilities },
+              ]),
+            )
+          : undefined,
+      }
+    : undefined;
+
+const projectInteractionFrameState = (
+  interaction: TerminalInteractionFrameState | undefined,
+  input: { viewportStart: number; requestedRows: number },
+): TerminalTransportFramePayload["interaction"] => {
+  const cloned = cloneInteractionFrameState(interaction);
+  if (!cloned?.selectionOverlays) {
+    return cloned;
+  }
+  const selectionOverlays = cloned.selectionOverlays
+    .map((overlay) => ({
+      ...overlay,
+      rows: overlay.rows
+        .map((row) => ({
+          ...row,
+          row: row.row - input.viewportStart,
+        }))
+        .filter((row) => row.row >= 0 && row.row < input.requestedRows),
+    }))
+    .filter((overlay) => overlay.rows.length > 0);
+  return {
+    ...cloned,
+    selectionOverlays: selectionOverlays.length > 0 ? selectionOverlays : undefined,
+  };
+};
+
 export const cloneTerminalFramePayload = cloneTerminalTransportFramePayload;
 
 export const terminalSnapshotToFramePayload = (snapshot: ManagedTerminalSnapshot): TerminalTransportFramePayload => ({
@@ -29,6 +79,7 @@ export const terminalSnapshotToFramePayload = (snapshot: ManagedTerminalSnapshot
   richLines: snapshot.richLines?.map(cloneRichLine),
   cursor: { ...snapshot.cursor },
   scrollback: { ...snapshot.scrollback },
+  interaction: cloneInteractionFrameState(snapshot.interaction),
 });
 
 export const projectTerminalSnapshotFramePayload = (
@@ -95,6 +146,7 @@ export const projectTerminalSnapshotFramePayload = (
     cursor: {
       x: Math.max(0, Math.min(Math.max(0, requestedCols - 1), snapshot.cursor.x)),
       y: Math.max(0, cursorLocalY),
+      absY: Math.max(0, snapshot.cursor.y),
       visible: (snapshot.cursor.visible ?? true) && cursorLocalY >= 0 && cursorLocalY < requestedRows,
     },
     scrollback: {
@@ -102,6 +154,7 @@ export const projectTerminalSnapshotFramePayload = (
       totalLines,
       screenLines: requestedRows,
     },
+    interaction: projectInteractionFrameState(snapshot.interaction, { viewportStart, requestedRows }),
   };
 };
 

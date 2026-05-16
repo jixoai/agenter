@@ -226,6 +226,26 @@ export class ComposedTerminalRuntime implements TerminalRuntime {
     this.requireShell().setViewportStart(viewportStart);
   }
 
+  followCursor(options?: { viewportRows?: number }): void {
+    this.requireShell().followCursor(options);
+  }
+
+  applyInteractionEvent(event: Parameters<TerminalRuntime["applyInteractionEvent"]>[0]): ReturnType<TerminalRuntime["applyInteractionEvent"]> {
+    return this.requireShell().applyInteractionEvent(event);
+  }
+
+  copySelection(ownerId?: string): string {
+    return this.requireShell().copySelection(ownerId);
+  }
+
+  getInteractionCapabilities(): ReturnType<TerminalRuntime["getInteractionCapabilities"]> {
+    return this.requireShell().getInteractionCapabilities();
+  }
+
+  getInteractionFrameState(ownerId?: string): ReturnType<TerminalRuntime["getInteractionFrameState"]> {
+    return this.requireShell().getInteractionFrameState(ownerId);
+  }
+
   async write(input: string): Promise<TerminalPendingInputResult> {
     return await this.requireShell().write(input);
   }

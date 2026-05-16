@@ -200,6 +200,26 @@ export class ProjectionTerminalRuntime implements TerminalRuntime {
     this.requireSource().setViewportStart(viewportStart);
   }
 
+  followCursor(options?: { viewportRows?: number }): void {
+    this.requireSource().followCursor(options);
+  }
+
+  applyInteractionEvent(event: Parameters<TerminalRuntime["applyInteractionEvent"]>[0]): ReturnType<TerminalRuntime["applyInteractionEvent"]> {
+    return this.requireSource().applyInteractionEvent(event);
+  }
+
+  copySelection(ownerId?: string): string {
+    return this.requireSource().copySelection(ownerId);
+  }
+
+  getInteractionCapabilities(): ReturnType<TerminalRuntime["getInteractionCapabilities"]> {
+    return this.requireSource().getInteractionCapabilities();
+  }
+
+  getInteractionFrameState(ownerId?: string): ReturnType<TerminalRuntime["getInteractionFrameState"]> {
+    return this.requireSource().getInteractionFrameState(ownerId);
+  }
+
   async write(input: string): Promise<TerminalPendingInputResult> {
     return await this.requireSource().write(input);
   }

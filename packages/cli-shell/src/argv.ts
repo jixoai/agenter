@@ -12,6 +12,7 @@ export interface CliShellParsedArgs {
   backend?: TerminalBackendKind;
   webPort?: number;
   debug: boolean;
+  debugFilters: string[];
   experimentalDynamicRefresh: boolean;
   host: string;
   port: number;
@@ -24,7 +25,7 @@ interface CliShellArgvParseResult {
   port: number;
   authServiceEndpoint?: string;
   session: string;
-  debug?: boolean;
+  debug?: boolean | string;
   experimentalDynamicRefresh?: boolean;
   _: Array<string | number>;
 }
@@ -91,9 +92,35 @@ const extractWebHostMode = (argv: readonly string[]): { argv: string[]; webPort?
   };
 };
 
+const normalizeDebugArgv = (argv: readonly string[]): string[] =>
+  argv.map((token) => (token === "--debug" ? "--debug=true" : token));
+
+const normalizeDebugArg = (value: boolean | string | undefined): { debug: boolean; debugFilters: string[] } => {
+  if (value === true) {
+    return { debug: true, debugFilters: [] };
+  }
+  if (value === false || value === undefined) {
+    return { debug: false, debugFilters: [] };
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed === "true" || trimmed === "1") {
+    return { debug: true, debugFilters: [] };
+  }
+  if (trimmed === "false" || trimmed === "0") {
+    return { debug: false, debugFilters: [] };
+  }
+  return {
+    debug: true,
+    debugFilters: trimmed
+      .split(",")
+      .map((part) => part.trim().toLowerCase().replace(/^\*+|\*+$/g, ""))
+      .filter((part) => part.length > 0),
+  };
+};
+
 export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEnv = process.env): CliShellParsedArgs => {
   const extracted = extractWebHostMode(argv);
-  const parsed = yargs([...extracted.argv])
+  const parsed = yargs(normalizeDebugArgv(extracted.argv))
     .scriptName("agenter-cli-shell")
     .option("host", {
       type: "string",
@@ -115,8 +142,8 @@ export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEn
       type: "string",
     })
     .option("debug", {
-      type: "boolean",
-      default: false,
+      type: "string",
+      default: "false",
     })
     .option("experimental-dynamic-refresh", {
       type: "boolean",
@@ -131,13 +158,15 @@ export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEn
   if (mentions.length > 1) {
     throw new Error(`unexpected extra argv: ${mentions.slice(1).join(" ")}`);
   }
+  const debug = normalizeDebugArg(parsed.debug);
 
   return {
     avatarNickname: normalizeAvatarMention(mentions[0]),
     shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
     backend: typeof parsed.backend === "string" ? assertTerminalBackendKind(parsed.backend) : undefined,
     webPort: extracted.webPort,
-    debug: parsed.debug === true,
+    debug: debug.debug,
+    debugFilters: debug.debugFilters,
     experimentalDynamicRefresh: parsed.experimentalDynamicRefresh === true,
     host: String(parsed.host),
     port: Number(parsed.port),

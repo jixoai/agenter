@@ -75,6 +75,7 @@ export interface CliShellWebProductHostInput {
   keybindings: CliShellTuiKeybindings;
   observationReadyBaseline?: CliShellObservationReadyBaseline | null;
   debug?: boolean;
+  debugFilters?: readonly string[];
   experimentalDynamicRefresh?: boolean;
   initialCols?: number;
   initialRows?: number;
@@ -102,6 +103,7 @@ const createControllerContext = (input: {
   runtimeId: string;
   avatarActorId: GlobalRoomMessage["unreadActorIds"][number];
   keybindings: CliShellTuiKeybindings;
+  trace?: CliShellPerfTracer;
   getViewState: () => CliShellTuiViewState;
   getModel: () => CliShellTuiModel;
   getLiveMirror: () => CliShellLiveTerminalMirror | null;
@@ -115,6 +117,7 @@ const createControllerContext = (input: {
   runtimeId: input.runtimeId,
   avatarActorId: input.avatarActorId,
   keybindings: input.keybindings,
+  trace: input.trace,
   onQuit: () => undefined,
   trackAsyncTask: (task) => {
     void task.catch(() => undefined);
@@ -147,7 +150,7 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
   let liveTerminalRevisionTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
   const interactionProfile = resolveCliShellInteractionEnhancementProfile(input.attached.shellTruthTerminal.entry.backend);
-  const perfTracer = createCliShellPerfTracer({ enabled: input.debug === true });
+  const perfTracer = createCliShellPerfTracer({ enabled: input.debug === true, filters: input.debugFilters });
 
   const surfaceKey = (surface: CliShellComposedSurfaceState): string =>
     JSON.stringify({
@@ -346,6 +349,7 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
       runtimeId: input.attached.avatar.runtimeId,
       avatarActorId: input.attached.avatarActorId,
       keybindings: input.keybindings,
+      trace: perfTracer,
       getViewState: () => viewState,
       getModel: () => lastModel ?? buildModel().model,
       getLiveMirror: () => sourceMirror,

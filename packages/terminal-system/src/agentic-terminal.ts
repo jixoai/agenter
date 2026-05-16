@@ -1,7 +1,17 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { DEFAULT_TERMINAL_BACKEND } from "@agenter/termless-core";
+import {
+  DEFAULT_TERMINAL_BACKEND,
+  TERMINAL_INTERACTION_DEFAULT_OWNER_ID,
+  applyTerminalInteractionEvent,
+  cloneTerminalInteractionFrameState,
+  type TerminalInteractionCapabilities,
+  type TerminalInteractionController,
+  type TerminalInteractionEvent,
+  type TerminalInteractionFrameState,
+  type TerminalInteractionOwnerId,
+} from "@agenter/termless-core";
 
 import { Committer } from "./committer";
 import { TerminalGitLogger } from "./git-log";
@@ -683,6 +693,60 @@ export class AgenticTerminal {
     this.emitRender(render);
   }
 
+  public followCursor(options: { viewportRows?: number } = {}): void {
+    this.ensureStarted();
+    const xterm = this.xterm;
+    if (!xterm) {
+      return;
+    }
+    xterm.followCursor(options);
+    const render = this.buildRenderFromXterm(xterm);
+    this.emitRender(render);
+  }
+
+  public applyInteractionEvent(event: TerminalInteractionEvent): { ok: boolean; selectedText?: string } {
+    this.ensureStarted();
+    const xterm = this.xterm;
+    if (!xterm) {
+      return { ok: false };
+    }
+    const result = applyTerminalInteractionEvent(xterm, event);
+    if (result.ok || event.type === "clearSelection") {
+      const render = this.buildRenderFromXterm(xterm);
+      this.emitRender(render);
+    }
+    return result;
+  }
+
+  public copySelection(ownerId?: string): string {
+    this.ensureStarted();
+    return this.xterm?.copySelection(ownerId) ?? "";
+  }
+
+  public getInteractionCapabilities(): TerminalInteractionCapabilities {
+    this.ensureStarted();
+    const xterm = this.xterm;
+    if (!xterm) {
+      return {
+        ownership: "unavailable",
+        selection: false,
+        copy: false,
+        semanticSelection: false,
+        cursorFollow: false,
+        overlay: false,
+        reason: "terminal is not started",
+      };
+    }
+    return { ...xterm.interactionCapabilities };
+  }
+
+  public getInteractionFrameState(
+    ownerId: TerminalInteractionOwnerId = TERMINAL_INTERACTION_DEFAULT_OWNER_ID,
+  ): TerminalInteractionFrameState {
+    this.ensureStarted();
+    return this.buildInteractionFrameState(this.xterm, ownerId);
+  }
+
   private async commitSnapshotNow(reason: "force" | "status-idle"): Promise<void> {
     this.ensureStarted();
     const xterm = this.xterm;
@@ -1054,8 +1118,10 @@ export class AgenticTerminal {
 
   private buildRenderFromXterm(xterm: XtermBridge): RenderResult {
     const structured = renderStructuredBuffer(xterm);
+    const interaction = this.buildInteractionFrameState(xterm);
     this.lastStructured = {
       ...structured,
+      interaction,
       seq: this.structuredSerial + 1,
       timestamp: Date.now(),
       status: this.status,
@@ -1066,10 +1132,42 @@ export class AgenticTerminal {
       lines: serializeStructuredLinesForLog(structured, "rich"),
       plainLines,
       richLines: structured.richLines,
+      interaction,
       cursorAbsRow: structured.cursorAbsRow,
       cursorCol: structured.cursorCol,
       cursorVisible: structured.cursorVisible,
     };
+  }
+
+  private buildInteractionFrameState(
+    controller: TerminalInteractionController | null,
+    ownerId: TerminalInteractionOwnerId = TERMINAL_INTERACTION_DEFAULT_OWNER_ID,
+  ): TerminalInteractionFrameState {
+    if (!controller) {
+      return {
+        capabilities: {
+          [ownerId]: {
+            ownership: "unavailable",
+            selection: false,
+            copy: false,
+            semanticSelection: false,
+            cursorFollow: false,
+            overlay: false,
+            reason: "terminal is not started",
+          },
+        },
+      };
+    }
+    const overlay = controller.getSelectionOverlay(ownerId);
+    return (
+      cloneTerminalInteractionFrameState({
+        activeOwnerId: overlay ? ownerId : undefined,
+        selectionOverlays: overlay ? [overlay] : undefined,
+        capabilities: {
+          [ownerId]: controller.interactionCapabilities,
+        },
+      }) ?? {}
+    );
   }
 
   private persistRenderToPager(

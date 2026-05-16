@@ -39,6 +39,14 @@ export interface CliShellPerfTracer {
 const initializedTraceFiles = new Set<string>();
 const TRACE_SUMMARY_INTERVAL_MS = 1_000;
 
+const TRACE_KIND_GROUPS: Record<string, readonly string[]> = {
+  key: ["key-", "terminal-key-", "terminal-input-"],
+  selection: ["selection-", "semantic-selection-"],
+  follow: ["follow-cursor", "viewport-target"],
+  scroll: ["viewport-", "scrollbar-"],
+  frame: ["frame-", "pull-frame-", "paint-", "render-"],
+};
+
 interface SuppressedTraceSummary {
   count: number;
   firstAt: number;
@@ -66,7 +74,7 @@ const resolveTraceFile = (debugEnabled = false): string | null => {
   return value;
 };
 
-export const createCliShellPerfTracer = (input: { enabled?: boolean } = {}): CliShellPerfTracer => {
+export const createCliShellPerfTracer = (input: { enabled?: boolean; filters?: readonly string[] } = {}): CliShellPerfTracer => {
   const traceFile = resolveTraceFile(input.enabled ?? false);
   if (!traceFile) {
     return {
@@ -125,6 +133,7 @@ export const createCliShellPerfTracer = (input: { enabled?: boolean } = {}): Cli
   };
   let lastDirtyAt: number | null = null;
   let suppressedSummary: SuppressedTraceSummary | null = null;
+  const filters = (input.filters ?? []).map((filter) => filter.trim().toLowerCase()).filter((filter) => filter.length > 0);
 
   const numberDetail = (detail: Record<string, unknown> | undefined, key: string): number | null => {
     const value = detail?.[key];
@@ -312,6 +321,9 @@ export const createCliShellPerfTracer = (input: { enabled?: boolean } = {}): Cli
   };
 
   const shouldSuppressTraceEvent = (event: CliShellPerfTraceEvent): boolean => {
+    if (!matchesTraceFilter(event.kind)) {
+      return true;
+    }
     if (event.kind === "pull-frame-scheduled" || event.kind === "pull-frame-sent") {
       return numericDetail(event.detail, "dirtyQueueDepth") === 0;
     }
@@ -331,6 +343,19 @@ export const createCliShellPerfTracer = (input: { enabled?: boolean } = {}): Cli
       return true;
     }
     return false;
+  };
+
+  const matchesTraceFilter = (kind: string): boolean => {
+    if (filters.length === 0) {
+      return true;
+    }
+    return filters.some((filter) => {
+      const group = TRACE_KIND_GROUPS[filter];
+      if (group) {
+        return group.some((prefix) => kind.startsWith(prefix));
+      }
+      return kind === filter || kind.startsWith(`${filter}-`) || kind.includes(filter);
+    });
   };
 
   const rememberSuppressedEvent = (event: CliShellPerfTraceEvent): void => {

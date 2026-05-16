@@ -11,36 +11,31 @@ import {
   type Selection,
 } from "@opentui/core";
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
+import type {
+  TerminalTransportOwnerCoordinate,
+  TerminalTransportSelectionOverlay,
+} from "@agenter/terminal-transport-protocol";
 
 import { measureTerminalText } from "./cell-width";
 import {
   CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
   type CliShellInteractionEnhancementProfile,
 } from "./interaction-capabilities";
-import {
-  findWordInTerminal,
-  stringIndexToTerminalColumn,
-  terminalColumnToStringIndex,
-} from "./terminal-word-navigation";
 import type { CliShellSelectionRegion, CliShellSelectionSource } from "./types";
 
 const DEFAULT_FG = RGBA.fromHex("#f3f6fb");
 const DEFAULT_BG = RGBA.fromHex("#111111");
 const DEFAULT_SELECTION_BG = RGBA.fromHex("#2563eb");
 const SEMANTIC_CLICK_MAX_MS = 450;
-const SEMANTIC_CLICK_MAX_DISTANCE = 1;
-
-interface BackendFrameSelectionRange {
-  startRow: number;
-  endRow: number;
-  startCol: number;
-  endCol: number;
-}
+const DEFAULT_SEMANTIC_CLICK_MAX_DISTANCE_CELLS = 1;
+const DEFAULT_OWNER_ID = "terminal";
 
 interface BackendFrameClickTracker {
   timeMs: number;
   x: number;
   y: number;
+  ownerId: string;
+  row: number;
   button: number;
   count: number;
 }
@@ -56,6 +51,13 @@ const toColor = (color: string | undefined, fallback: RGBA): RGBA => {
   }
 };
 
+const normalizeSemanticClickMaxDistance = (value: number | undefined): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_SEMANTIC_CLICK_MAX_DISTANCE_CELLS;
+  }
+  return Math.max(0, Math.trunc(value));
+};
+
 export interface BackendFrameRenderableOptions extends FrameBufferOptions {
   lines: readonly TerminalRenderRichLine[];
   selectionRegion?: {
@@ -66,8 +68,15 @@ export interface BackendFrameRenderableOptions extends FrameBufferOptions {
   } | null;
   selectionRegions?: readonly CliShellSelectionRegion[];
   selectionSources?: readonly CliShellSelectionSource[];
+  selectionOverlays?: readonly TerminalTransportSelectionOverlay[];
   selectionBg?: RGBA;
   interactionProfile?: CliShellInteractionEnhancementProfile;
+  semanticClickMaxDistanceCells?: number;
+  onSelectionStart?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  onSelectionUpdate?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  onSelectionEnd?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  onSelectWordAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  onSelectLineAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
   onMouseDown?: (event: MouseEvent) => void;
   onMouseDrag?: (event: MouseEvent) => void;
   onMouseScroll?: (event: MouseEvent) => void;
@@ -85,6 +94,7 @@ export interface BackendFrameProjectionUpdate {
   selectionRegion?: BackendFrameRenderableOptions["selectionRegion"];
   selectionRegions?: readonly CliShellSelectionRegion[];
   selectionSources?: readonly CliShellSelectionSource[];
+  selectionOverlays?: readonly TerminalTransportSelectionOverlay[];
   selectionBg?: RGBA;
   interactionProfile?: CliShellInteractionEnhancementProfile;
 }
@@ -94,11 +104,12 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
   #selectionRegion: NonNullable<BackendFrameRenderableOptions["selectionRegion"]> | null;
   #selectionRegions: readonly CliShellSelectionRegion[];
   #selectionSources: readonly CliShellSelectionSource[];
-  #selection: LocalSelectionBounds | null = null;
-  #semanticSelection: BackendFrameSelectionRange | null = null;
+  #selectionOverlays: readonly TerminalTransportSelectionOverlay[];
   #selectionBg: RGBA;
   #interactionProfile: CliShellInteractionEnhancementProfile;
-  #selectionOwner: CliShellSelectionRegion["owner"] | null = null;
+  #semanticClickMaxDistanceCells: number;
+  #activeSelectionOwnerId: string | null = null;
+  #lastSelectionPoint: TerminalTransportOwnerCoordinate | null = null;
   #lastClick: BackendFrameClickTracker | null = null;
   #lastPaintStats: BackendFramePaintStats = {
     durationMs: 0,
@@ -106,6 +117,11 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     spans: 0,
     glyphs: 0,
   };
+  #onSelectionStart?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  #onSelectionUpdate?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  #onSelectionEnd?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  #onSelectWordAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  #onSelectLineAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
 
   constructor(ctx: RenderContext, options: BackendFrameRenderableOptions) {
     super(ctx, options);
@@ -116,8 +132,15 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     this.#selectionRegion = options.selectionRegion ?? null;
     this.#selectionRegions = options.selectionRegions ?? [];
     this.#selectionSources = options.selectionSources ?? [];
+    this.#selectionOverlays = options.selectionOverlays ?? [];
     this.#selectionBg = options.selectionBg ?? DEFAULT_SELECTION_BG;
     this.#interactionProfile = options.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE;
+    this.#semanticClickMaxDistanceCells = normalizeSemanticClickMaxDistance(options.semanticClickMaxDistanceCells);
+    this.#onSelectionStart = options.onSelectionStart;
+    this.#onSelectionUpdate = options.onSelectionUpdate;
+    this.#onSelectionEnd = options.onSelectionEnd;
+    this.#onSelectWordAt = options.onSelectWordAt;
+    this.#onSelectLineAt = options.onSelectLineAt;
     const userMouseDown = options.onMouseDown;
     const userMouseDrag = options.onMouseDrag;
     this.onMouseDown = (event) => {
@@ -125,7 +148,6 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
       userMouseDown?.(event);
     };
     this.onMouseDrag = (event) => {
-      this.#semanticSelection = null;
       userMouseDrag?.(event);
     };
     this.paintBackendFrame();
@@ -143,9 +165,8 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
 
   set selectionRegions(selectionRegions: readonly CliShellSelectionRegion[] | undefined) {
     this.#selectionRegions = selectionRegions ?? [];
-    if (this.#selectionOwner && !this.#selectionRegions.some((region) => region.owner === this.#selectionOwner)) {
-      this.#selectionOwner = null;
-      this.#semanticSelection = null;
+    if (this.#activeSelectionOwnerId && !this.#selectionRegions.some((region) => region.owner === this.#activeSelectionOwnerId)) {
+      this.#activeSelectionOwnerId = null;
     }
     this.paintAndRequestRender();
   }
@@ -155,9 +176,19 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     this.paintAndRequestRender();
   }
 
+  set selectionOverlays(selectionOverlays: readonly TerminalTransportSelectionOverlay[] | undefined) {
+    this.#selectionOverlays = selectionOverlays ?? [];
+    this.#activeSelectionOwnerId = this.#selectionOverlays[0]?.ownerId ?? null;
+    this.paintAndRequestRender();
+  }
+
   set selectionBg(selectionBg: RGBA | undefined) {
     this.#selectionBg = selectionBg ?? DEFAULT_SELECTION_BG;
     this.paintAndRequestRender();
+  }
+
+  set semanticClickMaxDistanceCells(value: number | undefined) {
+    this.#semanticClickMaxDistanceCells = normalizeSemanticClickMaxDistance(value);
   }
 
   updateProjection(update: BackendFrameProjectionUpdate): BackendFramePaintStats {
@@ -169,13 +200,16 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     }
     if ("selectionRegions" in update) {
       this.#selectionRegions = update.selectionRegions ?? [];
-      if (this.#selectionOwner && !this.#selectionRegions.some((region) => region.owner === this.#selectionOwner)) {
-        this.#selectionOwner = null;
-        this.#semanticSelection = null;
+      if (this.#activeSelectionOwnerId && !this.#selectionRegions.some((region) => region.owner === this.#activeSelectionOwnerId)) {
+        this.#activeSelectionOwnerId = null;
       }
     }
     if ("selectionSources" in update) {
       this.#selectionSources = update.selectionSources ?? [];
+    }
+    if ("selectionOverlays" in update) {
+      this.#selectionOverlays = update.selectionOverlays ?? [];
+      this.#activeSelectionOwnerId = this.#selectionOverlays[0]?.ownerId ?? null;
     }
     if (update.selectionBg) {
       this.#selectionBg = update.selectionBg;
@@ -197,110 +231,38 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
   }
 
   shouldStartSelection(x: number, y: number): boolean {
-    const localX = Math.trunc(x - this.x);
-    const localY = Math.trunc(y - this.y);
-    const region = this.resolveSelectionRegionForPoint(localX, localY);
-    this.#selectionOwner = region.owner;
-    this.#semanticSelection = null;
-    return (
-      localX >= region.x &&
-      localY >= region.y &&
-      localX < region.x + region.width &&
-      localY < region.y + region.height &&
-      localY < Math.min(this.height, this.#lines.length)
-    );
+    const point = this.globalToOwnerCoordinate(x, y);
+    if (!point) {
+      return false;
+    }
+    this.#activeSelectionOwnerId = point.ownerId;
+    this.#lastSelectionPoint = point;
+    this.#onSelectionStart?.(point);
+    return true;
   }
 
   onSelectionChanged(selection: Selection | null): boolean {
-    this.#selection =
+    const localSelection =
       selection?.isDragging || (selection?.isActive && !selection.isStart)
         ? convertGlobalToLocalSelection(selection, this.x, this.y)
         : null;
-    if (
-      this.#selection &&
-      (this.#selection.anchorX !== this.#selection.focusX || this.#selection.anchorY !== this.#selection.focusY)
-    ) {
-      this.#semanticSelection = null;
+    const sent = this.routeSelectionChange(localSelection);
+    if (!selection?.isActive && this.#lastSelectionPoint) {
+      const ended = this.#onSelectionEnd?.(this.#lastSelectionPoint) ?? false;
+      this.#activeSelectionOwnerId = null;
+      this.#lastSelectionPoint = null;
+      return sent || ended || this.hasSelection();
     }
-    this.paintAndRequestRender();
-    return this.hasSelection();
+    return sent || this.hasSelection();
   }
 
   hasSelection(): boolean {
-    return this.resolveSelectionRange() !== null;
-  }
-
-  getSelectedText(): string {
-    const range = this.resolveSelectionRange();
-    if (!range) {
-      return "";
-    }
-    const lines: string[] = [];
-    for (let row = range.startRow; row <= range.endRow; row += 1) {
-      const line = this.plainLineAt(row);
-      const { startCol, endCol } = this.resolveSelectedColumnsForRow(range, row);
-      lines.push(this.sliceLineByColumns(line, startCol, endCol).trimEnd());
-    }
-    return lines.join("\n");
+    return this.#selectionOverlays.some((overlay) => overlay.rows.length > 0);
   }
 
   getSelectionOwner(): CliShellSelectionRegion["owner"] | null {
-    return this.resolveSelectionRange() ? this.#selectionOwner : null;
-  }
-
-  selectWordAt(localX: number, localY: number): boolean {
-    const region = this.resolveSelectionRegionForPoint(Math.trunc(localX), Math.trunc(localY));
-    if (!this.isPointInsideRegion(localX, localY, region)) {
-      return false;
-    }
-    const line = this.plainLineAt(localY);
-    const charIndex = terminalColumnToStringIndex(line, localX);
-    const segment = findWordInTerminal(line, charIndex);
-    if (!segment) {
-      this.#semanticSelection = null;
-      this.paintAndRequestRender();
-      return false;
-    }
-    const startCol = stringIndexToTerminalColumn(line, segment.start);
-    const endCol = stringIndexToTerminalColumn(line, segment.end);
-    this.#selection = null;
-    this.#selectionOwner = region.owner;
-    this.#semanticSelection = {
-      startRow: localY,
-      endRow: localY,
-      startCol: Math.max(region.x, Math.min(region.x + region.width, startCol)),
-      endCol: Math.max(region.x, Math.min(region.x + region.width, endCol)),
-    };
-    if (this.#semanticSelection.startCol >= this.#semanticSelection.endCol) {
-      this.#semanticSelection = null;
-      return false;
-    }
-    this.paintAndRequestRender();
-    return true;
-  }
-
-  selectRowAt(localX: number, localY: number): boolean {
-    const region = this.resolveSelectionRegionForPoint(Math.trunc(localX), Math.trunc(localY));
-    if (!this.isPointInsideRegion(localX, localY, region)) {
-      return false;
-    }
-    const line = this.plainLineAt(localY);
-    const regionEndCol = region.x + region.width;
-    const rawEndCol = Math.min(
-      regionEndCol,
-      Math.max(region.x, stringIndexToTerminalColumn(line, line.trimEnd().length)),
-    );
-    const endCol = rawEndCol > region.x ? rawEndCol : Math.min(regionEndCol, region.x + 1);
-    this.#selection = null;
-    this.#selectionOwner = region.owner;
-    this.#semanticSelection = {
-      startRow: localY,
-      endRow: localY,
-      startCol: region.x,
-      endCol,
-    };
-    this.paintAndRequestRender();
-    return true;
+    const ownerId = this.#selectionOverlays[0]?.ownerId ?? this.#activeSelectionOwnerId;
+    return ownerId === "terminal" || ownerId === "dialogue" ? ownerId : null;
   }
 
   protected paintAndRequestRender(): void {
@@ -376,46 +338,19 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     return this.#lastPaintStats;
   }
 
-  protected plainLineAt(row: number): string {
-    const source = this.resolveSelectionSourceForRow(row);
-    if (!source) {
-      return this.#lines[row]?.spans.map((span) => span.text).join("") ?? "";
-    }
-    const localRow = row - source.row;
-    const line = source.lines[localRow]?.spans.map((span) => span.text).join("") ?? "";
-    return `${" ".repeat(source.col)}${line}`;
-  }
-
-  protected resolveSelectionRange(): { startRow: number; endRow: number; startCol: number; endCol: number } | null {
-    if (this.#semanticSelection) {
-      return this.#semanticSelection;
-    }
-    const selection = this.#selection;
-    if (!selection?.isActive) {
-      return null;
-    }
-    const region = this.resolveActiveSelectionRegion();
-    if (region.width <= 0 || region.height <= 0) {
-      return null;
-    }
-    const maxRow = Math.max(region.y, region.y + region.height - 1);
-    const maxCol = Math.max(region.x, region.x + region.width - 1);
-    const anchorRow = Math.max(region.y, Math.min(maxRow, Math.trunc(selection.anchorY)));
-    const focusRow = Math.max(region.y, Math.min(maxRow, Math.trunc(selection.focusY)));
-    const anchorCol = Math.max(region.x, Math.min(maxCol, Math.trunc(selection.anchorX)));
-    const focusCol = Math.max(region.x, Math.min(maxCol, Math.trunc(selection.focusX)));
-    if (anchorRow === focusRow && anchorCol === focusCol) {
-      return null;
-    }
-    const startBeforeFocus = anchorRow < focusRow || (anchorRow === focusRow && anchorCol <= focusCol);
-    const startRow = startBeforeFocus ? anchorRow : focusRow;
-    const endRow = startBeforeFocus ? focusRow : anchorRow;
-    const startCol = startBeforeFocus ? anchorCol : focusCol;
-    const endCol = (startBeforeFocus ? focusCol : anchorCol) + 1;
-    if (startRow > endRow || (startRow === endRow && startCol >= endCol)) {
-      return null;
-    }
-    return { startRow, endRow, startCol, endCol };
+  protected isCellRangeSelected(row: number, startCol: number, endCol: number): boolean {
+    return this.#selectionOverlays.some((overlay) => {
+      const source = this.resolveSelectionSourceForOwner(overlay.ownerId);
+      const sourceRow = source?.row ?? 0;
+      const sourceCol = source?.col ?? 0;
+      const backendStartRow = source?.sourceStartRow ?? 0;
+      return overlay.rows.some((overlayRow) => {
+        const screenRow = sourceRow + (overlayRow.row - backendStartRow);
+        const screenStartCol = sourceCol + overlayRow.startCol;
+        const screenEndCol = sourceCol + overlayRow.endCol;
+        return screenRow === row && startCol < screenEndCol && endCol > screenStartCol;
+      });
+    });
   }
 
   protected resolveSelectionRegionForPoint(
@@ -439,34 +374,6 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     return this.resolveFallbackSelectionRegion();
   }
 
-  protected resolveActiveSelectionRegion(): {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    owner: CliShellSelectionRegion["owner"] | null;
-  } {
-    if (this.#selectionOwner) {
-      const match = this.#selectionRegions.find((region) => region.owner === this.#selectionOwner);
-      if (match) {
-        return this.normalizeSelectionRegion(match);
-      }
-    }
-    return this.resolveFallbackSelectionRegion();
-  }
-
-  protected resolveSelectionSourceForRow(row: number): CliShellSelectionSource | null {
-    const owner = this.#selectionOwner;
-    if (!owner) {
-      return null;
-    }
-    return (
-      this.#selectionSources.find(
-        (source) => source.owner === owner && row >= source.row && row < source.row + source.height,
-      ) ?? null
-    );
-  }
-
   protected resolveFallbackSelectionRegion(): {
     x: number;
     y: number;
@@ -476,10 +383,10 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
   } {
     const region = this.#selectionRegion;
     if (!region) {
-      return { x: 0, y: 0, width: this.width, height: this.height, owner: null };
+      return { x: 0, y: 0, width: this.width, height: this.height, owner: "terminal" };
     }
     return this.normalizeSelectionRegion({
-      owner: null,
+      owner: "terminal",
       row: region.y,
       col: region.x,
       width: region.width,
@@ -501,43 +408,53 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     return { x, y, width, height, owner: region.owner };
   }
 
-  protected isCellRangeSelected(row: number, startCol: number, endCol: number): boolean {
-    const range = this.resolveSelectionRange();
-    if (!range || row < range.startRow || row > range.endRow) {
+  private routeSelectionChange(selection: LocalSelectionBounds | null): boolean {
+    if (!selection?.isActive) {
       return false;
     }
-    const { startCol: selectionStartCol, endCol: selectionEndCol } = this.resolveSelectedColumnsForRow(range, row);
-    return startCol < selectionEndCol && endCol > selectionStartCol;
+    const anchor = this.localToOwnerCoordinate(selection.anchorX, selection.anchorY, this.#activeSelectionOwnerId);
+    const focus = this.localToOwnerCoordinate(selection.focusX, selection.focusY, anchor?.ownerId ?? null);
+    if (!anchor || !focus || anchor.ownerId !== focus.ownerId) {
+      return false;
+    }
+    this.#activeSelectionOwnerId = anchor.ownerId;
+    this.#lastSelectionPoint = focus;
+    return this.#onSelectionUpdate?.(focus) ?? false;
   }
 
-  protected resolveSelectedColumnsForRow(
-    range: { startRow: number; endRow: number; startCol: number; endCol: number },
-    row: number,
-  ): { startCol: number; endCol: number } {
-    const region = this.resolveActiveSelectionRegion();
-    const regionStartCol = region.x;
-    const regionEndCol = region.x + region.width;
+  private globalToOwnerCoordinate(globalX: number, globalY: number): TerminalTransportOwnerCoordinate | null {
+    return this.localToOwnerCoordinate(Math.trunc(globalX - this.x), Math.trunc(globalY - this.y), null);
+  }
+
+  private localToOwnerCoordinate(
+    localX: number,
+    localY: number,
+    expectedOwnerId: string | null,
+  ): TerminalTransportOwnerCoordinate | null {
+    const x = Math.trunc(localX);
+    const y = Math.trunc(localY);
+    const region = this.resolveSelectionRegionForPoint(x, y);
+    if (!this.isPointInsideRegion(x, y, region)) {
+      return null;
+    }
+    const ownerId = region.owner ?? DEFAULT_OWNER_ID;
+    if (expectedOwnerId !== null && ownerId !== expectedOwnerId) {
+      return null;
+    }
+    const source = this.resolveSelectionSourceForOwner(ownerId);
+    const sourceRow = Math.max(0, Math.trunc(source?.sourceStartRow ?? 0));
+    const sourceLocalRow = source ? y - source.row : y - region.y;
+    const sourceLocalCol = source ? x - source.col : x - region.x;
+    const maxCol = Math.max(0, Math.trunc((source?.width ?? region.width) - 1));
     return {
-      startCol: row === range.startRow ? range.startCol : regionStartCol,
-      endCol: row === range.endRow ? range.endCol : regionEndCol,
+      ownerId,
+      row: Math.max(0, sourceRow + sourceLocalRow),
+      col: Math.max(0, Math.min(maxCol, sourceLocalCol)),
     };
   }
 
-  protected sliceLineByColumns(line: string, startCol: number, endCol: number): string {
-    let result = "";
-    let col = 0;
-    for (const char of Array.from(line)) {
-      const width = Math.max(1, measureTerminalText(char));
-      const nextCol = col + width;
-      if (nextCol > startCol && col < endCol) {
-        result += char;
-      }
-      if (nextCol >= endCol) {
-        break;
-      }
-      col = nextCol;
-    }
-    return result;
+  private resolveSelectionSourceForOwner(ownerId: string): CliShellSelectionSource | null {
+    return this.#selectionSources.find((source) => source.owner === ownerId) ?? null;
   }
 
   private handleSemanticMouseDown(event: MouseEvent): void {
@@ -546,34 +463,50 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     }
     const localX = Math.trunc(event.x - this.x);
     const localY = Math.trunc(event.y - this.y);
-    const clickCount = this.resolveClickCount(event, localX, localY);
-    if (clickCount >= 3 && this.#interactionProfile.semanticRowSelection && this.selectRowAt(localX, localY)) {
+    const point = this.localToOwnerCoordinate(localX, localY, null);
+    if (!point) {
+      this.#lastClick = null;
+      return;
+    }
+    const clickCount = this.resolveClickCount(event, localX, localY, point);
+    if (clickCount >= 3 && this.#interactionProfile.semanticRowSelection && this.#onSelectLineAt?.(point)) {
       event.preventDefault();
       return;
     }
-    if (clickCount === 2 && this.#interactionProfile.semanticWordSelection && this.selectWordAt(localX, localY)) {
+    if (clickCount === 2 && this.#interactionProfile.semanticWordSelection && this.#onSelectWordAt?.(point)) {
       event.preventDefault();
     }
   }
 
-  private resolveClickCount(event: MouseEvent, localX: number, localY: number): number {
-    const providedClickCount = this.readProvidedClickCount(event);
-    if (providedClickCount !== null) {
-      return providedClickCount;
-    }
+  private resolveClickCount(
+    event: MouseEvent,
+    localX: number,
+    localY: number,
+    point: TerminalTransportOwnerCoordinate,
+  ): number {
     const now = performance.now();
     const previous = this.#lastClick;
+    const providedClickCount = this.readProvidedClickCount(event);
     const sameClickCluster =
       previous !== null &&
       previous.button === event.button &&
+      previous.ownerId === point.ownerId &&
+      previous.row === point.row &&
       now - previous.timeMs <= SEMANTIC_CLICK_MAX_MS &&
-      Math.abs(previous.x - localX) <= SEMANTIC_CLICK_MAX_DISTANCE &&
-      Math.abs(previous.y - localY) <= SEMANTIC_CLICK_MAX_DISTANCE;
-    const nextCount = sameClickCluster ? previous.count + 1 : 1;
+      Math.abs(previous.x - localX) <= this.#semanticClickMaxDistanceCells &&
+      previous.y === localY;
+    const nextCount =
+      sameClickCluster && providedClickCount !== null
+        ? Math.max(previous.count + 1, providedClickCount)
+        : sameClickCluster
+          ? previous.count + 1
+          : 1;
     this.#lastClick = {
       timeMs: now,
       x: localX,
       y: localY,
+      ownerId: point.ownerId,
+      row: point.row,
       button: event.button,
       count: Math.min(nextCount, 3),
     };
@@ -602,5 +535,4 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
       localY < Math.min(this.height, this.#lines.length)
     );
   }
-
 }

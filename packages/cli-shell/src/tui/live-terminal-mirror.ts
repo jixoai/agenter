@@ -8,8 +8,11 @@ import {
   type TerminalTransportClientConnectionState,
   type TerminalTransportClientSession,
   type TerminalTransportClientSessionEvents,
+  type TerminalTransportOwnerCoordinate,
   type TerminalTransportFramePatch,
   type TerminalTransportFramePayload,
+  type TerminalTransportInteractionFrameState,
+  type TerminalTransportSelectionRange,
   type TerminalTransportRowCacheDecoder,
   type TerminalTransportServerMessage,
   type TerminalTransportSnapshot,
@@ -27,6 +30,7 @@ export interface CliShellLiveTerminalView {
   viewportStart: number;
   viewportEnd: number;
   scrollbackRows: number;
+  interaction?: TerminalTransportInteractionFrameState;
   running: boolean;
   connected: boolean;
 }
@@ -42,6 +46,14 @@ export interface CliShellLiveTerminalMirror {
   scrollViewport(deltaRows: number): boolean;
   setViewportStart(viewportStart: number): boolean;
   followCursor(): boolean;
+  selectionStart(point: TerminalTransportOwnerCoordinate): boolean;
+  selectionUpdate(point: TerminalTransportOwnerCoordinate): boolean;
+  selectionEnd(point: TerminalTransportOwnerCoordinate): boolean;
+  selectWordAt(point: TerminalTransportOwnerCoordinate): boolean;
+  selectLineAt(point: TerminalTransportOwnerCoordinate): boolean;
+  selectRange(range: TerminalTransportSelectionRange): boolean;
+  copySelection(ownerId?: string): boolean;
+  clearSelection(ownerId?: string): boolean;
   subscribe(listener: () => void): () => void;
 }
 
@@ -211,6 +223,7 @@ const normalizeViewportFrame = (
   const safeCols = Math.max(1, Math.trunc(frame.cols));
   const viewportStart = Math.max(0, Math.trunc(frame.scrollback.viewportOffset));
   const cursorVisible = frame.cursor.visible ?? true;
+  const cursorAbsY = Math.max(0, Math.trunc(frame.cursor.absY ?? frame.cursor.y));
   const canSliceViewport = frame.lines.length > safeRows && viewportStart + safeRows <= frame.lines.length;
   const totalLines = canSliceViewport
     ? Math.max(frame.scrollback.totalLines, frame.lines.length, viewportStart + safeRows, safeRows)
@@ -247,7 +260,7 @@ const normalizeViewportFrame = (
           screenLines: safeRows,
         },
       },
-      cursorAbsRow: viewportStart + localCursorY,
+      cursorAbsRow: Math.max(0, Math.trunc(frame.cursor.absY ?? viewportStart + localCursorY)),
       cursorVisible,
     };
   }
@@ -284,7 +297,7 @@ const normalizeViewportFrame = (
         screenLines: safeRows,
       },
     },
-    cursorAbsRow: Math.max(0, Math.trunc(frame.cursor.y)),
+    cursorAbsRow: cursorAbsY,
     cursorVisible,
   };
 };
@@ -308,6 +321,7 @@ const viewFromSnapshot = (input: {
       viewportStart: 0,
       viewportEnd: 24,
       scrollbackRows: 24,
+      interaction: undefined,
       running: input.running,
       connected: input.connected,
     };
@@ -333,6 +347,7 @@ const viewFromSnapshot = (input: {
     viewportStart,
     viewportEnd,
     scrollbackRows: Math.max(frame.scrollback.totalLines, viewportEnd),
+    interaction: frame.interaction ? structuredClone(frame.interaction) : undefined,
     running: input.running,
     connected: input.connected,
   };
@@ -350,6 +365,7 @@ export const createCliShellLiveTerminalMirror = (input: {
   debugTrace?: boolean;
   pacing?: CliShellLiveTerminalPacingOptions;
   requestPaint?: () => void;
+  onSelectionText?: (event: { ownerId?: string; text: string }) => void;
   createTransportSession?: CliShellLiveTerminalTransportSessionFactory;
 }): CliShellLiveTerminalMirror => {
   let session: TerminalTransportClientSession | null = null;
@@ -742,6 +758,17 @@ export const createCliShellLiveTerminalMirror = (input: {
       emit();
       return;
     }
+    if (message.type === "selectionText") {
+      trace("selection-text-received", {
+        ownerId: message.ownerId ?? "terminal",
+        textLength: message.text.length,
+      });
+      input.onSelectionText?.({
+        ownerId: message.ownerId,
+        text: message.text,
+      });
+      return;
+    }
   };
 
   return {
@@ -850,26 +877,94 @@ export const createCliShellLiveTerminalMirror = (input: {
       return sent;
     },
     followCursor(): boolean {
-      const view = viewFromSnapshot({
-        snapshot: latestSnapshot,
-        running,
-        connected: connectionState === "connected",
-      });
-      if (!view.cursorVisible) {
-        return false;
-      }
-      const target = Math.max(0, view.cursorAbsRow - Math.max(1, view.rows) + 1);
-      if (target === view.viewportStart) {
-        return false;
-      }
-      trace("viewport-target", {
+      const sent = session?.followCursor() ?? false;
+      trace("follow-cursor-sent", {
         source: "follow-cursor",
-        viewportStart: target,
-        previousViewportStart: view.viewportStart,
-        cursorAbsRow: view.cursorAbsRow,
-        rows: view.rows,
+        sent,
+        pullMode: resolvePullMode(),
+        currentViewportStart: latestSnapshot?.scrollback.viewportOffset ?? null,
+        totalLines: latestSnapshot?.scrollback.totalLines ?? null,
+        screenLines: latestSnapshot?.scrollback.screenLines ?? null,
       });
-      return session?.setViewportStart(target) ?? false;
+      return sent;
+    },
+    selectionStart(point): boolean {
+      const sent = session?.selectionStart(point) ?? false;
+      trace("selection-start-sent", {
+        ownerId: point.ownerId,
+        row: point.row,
+        col: point.col,
+        sent,
+      });
+      return sent;
+    },
+    selectionUpdate(point): boolean {
+      const sent = session?.selectionUpdate(point) ?? false;
+      trace("selection-update-sent", {
+        ownerId: point.ownerId,
+        row: point.row,
+        col: point.col,
+        sent,
+      });
+      return sent;
+    },
+    selectionEnd(point): boolean {
+      const sent = session?.selectionEnd(point) ?? false;
+      trace("selection-end-sent", {
+        ownerId: point.ownerId,
+        row: point.row,
+        col: point.col,
+        sent,
+      });
+      return sent;
+    },
+    selectWordAt(point): boolean {
+      const sent = session?.selectWordAt(point) ?? false;
+      trace("semantic-selection-word-sent", {
+        ownerId: point.ownerId,
+        row: point.row,
+        col: point.col,
+        sent,
+      });
+      return sent;
+    },
+    selectLineAt(point): boolean {
+      const sent = session?.selectLineAt(point) ?? false;
+      trace("semantic-selection-line-sent", {
+        ownerId: point.ownerId,
+        row: point.row,
+        col: point.col,
+        sent,
+      });
+      return sent;
+    },
+    selectRange(range): boolean {
+      const sent = session?.selectRange(range) ?? false;
+      trace("selection-range-sent", {
+        ownerId: range.ownerId,
+        startRow: range.startRow,
+        startCol: range.startCol,
+        endRow: range.endRow,
+        endCol: range.endCol,
+        sent,
+      });
+      return sent;
+    },
+    copySelection(ownerId): boolean {
+      const sent = session?.copySelection(ownerId) ?? false;
+      trace("selection-copy-requested", {
+        ownerId: ownerId ?? "terminal",
+        sent,
+      });
+      return sent;
+    },
+    clearSelection(ownerId): boolean {
+      const sent = session?.clearSelection(ownerId) ?? false;
+      trace("selection-clear-sent", {
+        ownerId: ownerId ?? "terminal",
+        sent,
+      });
+      return sent;
     },
     resize(cols: number, rows: number): boolean {
       const changed = updatePullGeometry(cols, rows);

@@ -24,6 +24,7 @@ export interface BackendTerminalFrameBridge {
   scrollViewport(deltaRows: number): boolean;
   setViewportStart(viewportStart: number): boolean;
   followCursor?: () => boolean;
+  copySelection?: (ownerId?: string) => boolean;
 }
 
 export interface BackendTerminalFrameUpdateResult {
@@ -140,11 +141,7 @@ export class BackendTerminalFrameRenderable extends BoxRenderable {
   }
 
   copySelectionViaOsc52(): boolean {
-    const selectedText = this.ctx.getSelection()?.getSelectedText() ?? "";
-    if (selectedText.length === 0) {
-      return false;
-    }
-    return this.writeOsc52Clipboard(selectedText);
+    return this.#bridge.copySelection?.("terminal") ?? false;
   }
 
   pasteText(text: string): boolean {
@@ -220,11 +217,4 @@ export class BackendTerminalFrameRenderable extends BoxRenderable {
     this.requestRender();
   }
 
-  private writeOsc52Clipboard(text: string): boolean {
-    const candidate = this.ctx as { copyToClipboardOSC52?: unknown };
-    if (typeof candidate.copyToClipboardOSC52 !== "function") {
-      return false;
-    }
-    return candidate.copyToClipboardOSC52(text) === true;
-  }
 }
