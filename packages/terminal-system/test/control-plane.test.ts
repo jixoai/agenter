@@ -19,6 +19,7 @@ import {
 } from "@agenter/terminal-transport-protocol";
 
 import {
+  chooseTerminalFramePatch,
   projectTerminalSnapshotFramePayload,
   TerminalControlPlane,
   type ManagedTerminalSnapshot,
@@ -276,6 +277,132 @@ describe("Feature: terminal control plane", () => {
       viewportOffset: 30,
       totalLines: 42,
       screenLines: 12,
+    });
+  });
+
+  test("Scenario: Given backend selection is anchored to a scrollback row When projecting a scrolled viewport Then overlay rows stay absolute", () => {
+    const lines = Array.from({ length: 10 }, (_, index) => `line-${index}`);
+    const snapshot: ManagedTerminalSnapshot = {
+      seq: 5,
+      timestamp: 5,
+      cols: 20,
+      rows: 4,
+      lines,
+      richLines: lines.map((line) => ({ spans: [{ text: line }] })),
+      cursor: { x: 0, y: 5, visible: true },
+      scrollback: {
+        viewportOffset: 0,
+        totalLines: lines.length,
+        screenLines: 4,
+      },
+      interaction: {
+        activeOwnerId: "terminal",
+        selectionOverlays: [
+          {
+            ownerId: "terminal",
+            ownership: "backend-native",
+            rows: [{ row: 5, startCol: 10, endCol: 12 }],
+            selectedText: "ne",
+          },
+        ],
+      },
+    };
+
+    const frame = projectTerminalSnapshotFramePayload(snapshot, {
+      cols: 20,
+      rows: 4,
+      viewportStart: 2,
+    });
+
+    expect(frame.lines).toEqual(["line-2", "line-3", "line-4", "line-5"]);
+    expect(frame.interaction?.selectionOverlays?.[0]?.rows).toEqual([{ row: 5, startCol: 10, endCol: 12 }]);
+  });
+
+  test("Scenario: Given a rows frame patch contains only selection truth changes When encoded as rows patch Then interaction state is preserved", () => {
+    const baseFrame: TerminalTransportFramePayload = {
+      seq: 1,
+      timestamp: 1,
+      cols: 20,
+      rows: 2,
+      lines: ["row-0", "row-1"],
+      richLines: [{ spans: [{ text: "row-0" }] }, { spans: [{ text: "row-1" }] }],
+      cursor: { x: 0, y: 0, visible: true },
+      scrollback: { viewportOffset: 0, totalLines: 2, screenLines: 2 },
+    };
+    const currentFrame: TerminalTransportFramePayload = {
+      ...baseFrame,
+      seq: 2,
+      interaction: {
+        activeOwnerId: "terminal",
+        selectionOverlays: [
+          {
+            ownerId: "terminal",
+            ownership: "backend-native",
+            rows: [{ row: 1, startCol: 0, endCol: 5 }],
+            selectedText: "row-1",
+          },
+        ],
+      },
+    };
+
+    const patch = chooseTerminalFramePatch({
+      baseFrame,
+      currentFrame,
+      lastAppliedFrameSeq: baseFrame.seq,
+    });
+
+    expect(patch.type).toBe("rows");
+    if (patch.type !== "rows") {
+      throw new Error("expected rows patch");
+    }
+    expect(patch.interaction?.selectionOverlays?.[0]).toMatchObject({
+      ownerId: "terminal",
+      rows: [{ row: 1, startCol: 0, endCol: 5 }],
+    });
+  });
+
+  test("Scenario: Given a scrollRows frame patch also changes selection truth When encoded as scrollRows patch Then interaction state is preserved", () => {
+    const baseFrame: TerminalTransportFramePayload = {
+      seq: 10,
+      timestamp: 10,
+      cols: 20,
+      rows: 3,
+      lines: ["row-0", "row-1", "row-2"],
+      richLines: [{ spans: [{ text: "row-0" }] }, { spans: [{ text: "row-1" }] }, { spans: [{ text: "row-2" }] }],
+      cursor: { x: 0, y: 2, visible: true },
+      scrollback: { viewportOffset: 0, totalLines: 3, screenLines: 3 },
+    };
+    const currentFrame: TerminalTransportFramePayload = {
+      ...baseFrame,
+      seq: 11,
+      lines: ["row-1", "row-2", "row-3"],
+      richLines: [{ spans: [{ text: "row-1" }] }, { spans: [{ text: "row-2" }] }, { spans: [{ text: "row-3" }] }],
+      interaction: {
+        activeOwnerId: "terminal",
+        selectionOverlays: [
+          {
+            ownerId: "terminal",
+            ownership: "backend-native",
+            rows: [{ row: 2, startCol: 0, endCol: 5 }],
+            selectedText: "row-2",
+          },
+        ],
+      },
+    };
+
+    const patch = chooseTerminalFramePatch({
+      baseFrame,
+      currentFrame,
+      lastAppliedFrameSeq: baseFrame.seq,
+    });
+
+    expect(patch.type).toBe("scrollRows");
+    if (patch.type !== "scrollRows") {
+      throw new Error("expected scrollRows patch");
+    }
+    expect(patch.interaction?.selectionOverlays?.[0]).toMatchObject({
+      ownerId: "terminal",
+      rows: [{ row: 2, startCol: 0, endCol: 5 }],
     });
   });
 

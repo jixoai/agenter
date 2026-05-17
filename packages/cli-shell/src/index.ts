@@ -150,6 +150,7 @@ export { startCliShellStartupTui, type CliShellStartupTuiController, type CliShe
 export {
   BackendFrameRenderable,
   type BackendFramePaintStats,
+  type BackendFrameInteractionTraceEvent,
   type BackendFrameProjectionUpdate,
   type BackendFrameRenderableOptions,
 } from "./tui/backend-frame-renderable";

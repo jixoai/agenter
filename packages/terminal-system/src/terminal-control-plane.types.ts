@@ -525,6 +525,14 @@ export interface TerminalComposedProductSurfaceState {
   heartbeatLabel: string;
   terminalLines: string[];
   terminalRichLines?: ManagedTerminalSnapshot["richLines"];
+  selectionSources?: Array<{
+    owner: "terminal" | "dialogue";
+    row: number;
+    col: number;
+    width: number;
+    height: number;
+    sourceStartRow?: number;
+  }>;
   cursor: ManagedTerminalSnapshot["cursor"];
   scrollback: ManagedTerminalSnapshot["scrollback"];
 }

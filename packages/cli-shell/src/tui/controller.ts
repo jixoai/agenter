@@ -44,6 +44,16 @@ const setStatus = (ctx: CliShellTuiControllerContext, statusNotice: string | nul
   }));
 };
 
+const clearTerminalSelectionAnchor = (ctx: CliShellTuiControllerContext): void => {
+  if (!ctx.getViewState().terminalSelectionAnchor) {
+    return;
+  }
+  ctx.updateViewState((current) => ({
+    ...current,
+    terminalSelectionAnchor: undefined,
+  }));
+};
+
 const isPlainReturnShortcut = (input: CliShellTuiKeybindings["sendDialogue"]): boolean =>
   input.key === "return" &&
   !input.command &&
@@ -71,8 +81,19 @@ export const setCliShellDialogueDraft = (ctx: CliShellTuiControllerContext, draf
   }));
 };
 
-const sendTerminalInput = (ctx: CliShellTuiControllerContext, text: string): void => {
+const sendTerminalInput = (
+  ctx: CliShellTuiControllerContext,
+  text: string,
+  options: { preserveSelectionAnchor?: boolean } = {},
+): void => {
+  const shouldClearSelection = options.preserveSelectionAnchor !== true;
+  if (options.preserveSelectionAnchor !== true) {
+    clearTerminalSelectionAnchor(ctx);
+  }
   const mirror = ctx.getLiveMirror?.();
+  if (shouldClearSelection) {
+    mirror?.clearSelection?.("terminal");
+  }
   if (mirror?.sendInputBytes(new TextEncoder().encode(text))) {
     let followed = false;
     if (ctx.getModel().interactionProfile?.followCursorOnInput !== false) {
@@ -112,25 +133,84 @@ const repeatTerminalKey = (key: "\u001b[C" | "\u001b[D", count: number): string 
 
 type OptionWordNavigationDirection = "left" | "right";
 
-const resolveOptionWordNavigationDirection = (key: KeyEvent): OptionWordNavigationDirection | null => {
+interface TerminalWordBoundaryResolution {
+  direction: OptionWordNavigationDirection;
+  line: string;
+  localCursorRow: number;
+  viewportStart: number;
+  cursorAbsRow: number;
+  cursorCol: number;
+  cursorIndex: number;
+  targetIndex: number;
+  targetCol: number;
+  delta: number;
+}
+
+interface TerminalModifiedArrowKey {
+  direction: OptionWordNavigationDirection;
+  shift: boolean;
+  option: boolean;
+}
+
+interface TerminalOptionWordKey {
+  direction: OptionWordNavigationDirection;
+  shift: boolean;
+  option: boolean;
+}
+
+const resolveModifiedArrowKey = (key: KeyEvent): TerminalModifiedArrowKey | null => {
   const sequence = key.sequence || key.raw;
+  const match = /^\u001b\[1;(\d+)([CD])$/.exec(sequence);
+  if (!match) {
+    return null;
+  }
+  const modifierValue = Number(match[1]);
+  if (!Number.isInteger(modifierValue) || modifierValue <= 1) {
+    return null;
+  }
+  const modifier = modifierValue - 1;
+  return {
+    direction: match[2] === "D" ? "left" : "right",
+    shift: (modifier & 1) !== 0,
+    option: (modifier & 2) !== 0,
+  };
+};
+
+const resolveOptionWordKey = (key: KeyEvent): TerminalOptionWordKey | null => {
+  const sequence = key.sequence || key.raw;
+  const modifiedArrow = resolveModifiedArrowKey(key);
+  if (modifiedArrow?.option) {
+    return modifiedArrow;
+  }
   if (sequence === "\u001bb") {
-    return "left";
+    return { direction: "left", shift: key.shift === true, option: true };
   }
   if (sequence === "\u001bf") {
-    return "right";
+    return { direction: "right", shift: key.shift === true, option: true };
+  }
+  if (sequence === "\u001bB") {
+    return { direction: "left", shift: true, option: true };
+  }
+  if (sequence === "\u001bF") {
+    return { direction: "right", shift: true, option: true };
   }
   if ((key.name === "left" || key.name === "right") && (key.option === true || key.meta === true)) {
-    return key.name;
+    return { direction: key.name, shift: key.shift === true, option: true };
   }
   return null;
 };
+
+const resolveOptionWordNavigationDirection = (key: KeyEvent): OptionWordNavigationDirection | null =>
+  resolveOptionWordKey(key)?.direction ?? null;
 
 const isOptionWordNavigationKey = (key: KeyEvent): boolean => {
   return resolveOptionWordNavigationDirection(key) !== null;
 };
 
-const resolveOptionWordNavigationInput = (ctx: CliShellTuiControllerContext, key: KeyEvent): string | null => {
+const resolveOptionWordBoundary = (
+  ctx: CliShellTuiControllerContext,
+  key: KeyEvent,
+): TerminalWordBoundaryResolution | null => {
   const direction = resolveOptionWordNavigationDirection(key);
   if (!direction) {
     return null;
@@ -184,22 +264,90 @@ const resolveOptionWordNavigationInput = (ctx: CliShellTuiControllerContext, key
     });
     return null;
   }
+  return {
+    direction,
+    line,
+    localCursorRow,
+    viewportStart: model.terminalView.viewportStart,
+    cursorAbsRow: model.terminalView.cursorAbsRow,
+    cursorCol,
+    cursorIndex,
+    targetIndex,
+    targetCol,
+    delta,
+  };
+};
+
+const resolveOptionWordNavigationInput = (ctx: CliShellTuiControllerContext, key: KeyEvent): string | null => {
+  const boundary = resolveOptionWordBoundary(ctx, key);
+  if (!boundary) {
+    return null;
+  }
   ctx.trace?.record({
     kind: "terminal-key-word-navigation",
     detail: {
       keyName: key.name,
-      localCursorRow,
-      viewportStart: model.terminalView.viewportStart,
-      cursorAbsRow: model.terminalView.cursorAbsRow,
-      cursorCol,
-      cursorIndex,
-      targetIndex,
-      targetCol,
-      delta,
-      line,
+      ...boundary,
     },
   });
+  const delta = boundary.delta;
   return delta > 0 ? repeatTerminalKey("\u001b[C", delta) : repeatTerminalKey("\u001b[D", Math.abs(delta));
+};
+
+const routeOptionShiftWordSelection = (ctx: CliShellTuiControllerContext, key: KeyEvent): boolean => {
+  const optionWordKey = resolveOptionWordKey(key);
+  if (!optionWordKey?.option || !optionWordKey.shift) {
+    return false;
+  }
+  const boundary = resolveOptionWordBoundary(ctx, key);
+  if (!boundary) {
+    return false;
+  }
+  const currentAnchor = ctx.getViewState().terminalSelectionAnchor;
+  const anchor =
+    currentAnchor && currentAnchor.row === boundary.cursorAbsRow
+      ? currentAnchor
+      : { row: boundary.cursorAbsRow, col: boundary.cursorCol };
+  const startCol = Math.min(anchor.col, boundary.targetCol);
+  const endCol = Math.max(anchor.col, boundary.targetCol);
+  if (startCol === endCol) {
+    clearTerminalSelectionAnchor(ctx);
+    return false;
+  }
+  const sent = ctx.getLiveMirror?.()?.selectRange({
+    ownerId: "terminal",
+    startRow: anchor.row,
+    startCol,
+    endRow: boundary.cursorAbsRow,
+    endCol,
+  }) ?? false;
+  const cursorInput =
+    sent && boundary.delta > 0
+      ? repeatTerminalKey("\u001b[C", boundary.delta)
+      : sent && boundary.delta < 0
+        ? repeatTerminalKey("\u001b[D", Math.abs(boundary.delta))
+        : null;
+  if (cursorInput) {
+    ctx.updateViewState((current) => ({
+      ...current,
+      terminalSelectionAnchor: anchor,
+    }));
+    sendTerminalInput(ctx, cursorInput, { preserveSelectionAnchor: true });
+  }
+  ctx.trace?.record({
+    kind: "terminal-key-word-selection",
+    detail: {
+      keyName: key.name,
+      sent,
+      cursorMoved: cursorInput !== null,
+      ...boundary,
+      anchorRow: anchor.row,
+      anchorCol: anchor.col,
+      startCol,
+      endCol,
+    },
+  });
+  return sent;
 };
 
 const toggleManaged = async (ctx: CliShellTuiControllerContext): Promise<void> => {
@@ -437,6 +585,10 @@ export const routeCliShellKey = (ctx: CliShellTuiControllerContext, key: KeyEven
   }
   if (matchCliShellShortcut(key, ctx.keybindings.toggleManaged)) {
     routeCliShellPointerAction(ctx, "toggleManaged");
+    return true;
+  }
+
+  if (routeOptionShiftWordSelection(ctx, key)) {
     return true;
   }
 

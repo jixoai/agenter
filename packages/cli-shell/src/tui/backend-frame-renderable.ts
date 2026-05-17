@@ -75,11 +75,37 @@ export interface BackendFrameRenderableOptions extends FrameBufferOptions {
   onSelectionStart?: (point: TerminalTransportOwnerCoordinate) => boolean;
   onSelectionUpdate?: (point: TerminalTransportOwnerCoordinate) => boolean;
   onSelectionEnd?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  onClearSelection?: (point: TerminalTransportOwnerCoordinate) => boolean;
   onSelectWordAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
   onSelectLineAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  onInteractionTrace?: (event: BackendFrameInteractionTraceEvent) => void;
   onMouseDown?: (event: MouseEvent) => void;
   onMouseDrag?: (event: MouseEvent) => void;
+  onMouseDragEnd?: (event: MouseEvent) => void;
+  onMouseUp?: (event: MouseEvent) => void;
   onMouseScroll?: (event: MouseEvent) => void;
+}
+
+export interface BackendFrameInteractionTraceEvent {
+  kind:
+    | "selection-mouse-captured"
+    | "selection-opentui-changed"
+    | "selection-drag-pending"
+    | "selection-drag-started"
+    | "selection-drag-updated"
+    | "selection-drag-ended"
+    | "selection-drag-cancelled"
+    | "selection-clear-requested";
+  detail: {
+    eventType?: string;
+    button?: number;
+    x?: number;
+    y?: number;
+    ownerId?: string;
+    row?: number;
+    col?: number;
+    reason?: string;
+  };
 }
 
 export interface BackendFramePaintStats {
@@ -110,6 +136,8 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
   #semanticClickMaxDistanceCells: number;
   #activeSelectionOwnerId: string | null = null;
   #lastSelectionPoint: TerminalTransportOwnerCoordinate | null = null;
+  #pendingDragAnchor: TerminalTransportOwnerCoordinate | null = null;
+  #dragBridgeActive = false;
   #lastClick: BackendFrameClickTracker | null = null;
   #lastPaintStats: BackendFramePaintStats = {
     durationMs: 0,
@@ -120,8 +148,10 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
   #onSelectionStart?: (point: TerminalTransportOwnerCoordinate) => boolean;
   #onSelectionUpdate?: (point: TerminalTransportOwnerCoordinate) => boolean;
   #onSelectionEnd?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  #onClearSelection?: (point: TerminalTransportOwnerCoordinate) => boolean;
   #onSelectWordAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
   #onSelectLineAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
+  #onInteractionTrace?: (event: BackendFrameInteractionTraceEvent) => void;
 
   constructor(ctx: RenderContext, options: BackendFrameRenderableOptions) {
     super(ctx, options);
@@ -139,16 +169,30 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     this.#onSelectionStart = options.onSelectionStart;
     this.#onSelectionUpdate = options.onSelectionUpdate;
     this.#onSelectionEnd = options.onSelectionEnd;
+    this.#onClearSelection = options.onClearSelection;
     this.#onSelectWordAt = options.onSelectWordAt;
     this.#onSelectLineAt = options.onSelectLineAt;
+    this.#onInteractionTrace = options.onInteractionTrace;
     const userMouseDown = options.onMouseDown;
     const userMouseDrag = options.onMouseDrag;
+    const userMouseDragEnd = options.onMouseDragEnd;
+    const userMouseUp = options.onMouseUp;
     this.onMouseDown = (event) => {
       this.handleSemanticMouseDown(event);
+      this.handleBackendDragMouseDown(event);
       userMouseDown?.(event);
     };
     this.onMouseDrag = (event) => {
+      this.handleBackendDragMouseDrag(event);
       userMouseDrag?.(event);
+    };
+    this.onMouseDragEnd = (event) => {
+      this.handleBackendDragMouseEnd(event);
+      userMouseDragEnd?.(event);
+    };
+    this.onMouseUp = (event) => {
+      this.handleBackendDragMouseEnd(event);
+      userMouseUp?.(event);
     };
     this.paintBackendFrame();
   }
@@ -235,22 +279,35 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     if (!point) {
       return false;
     }
+    this.#pendingDragAnchor = point;
     this.#activeSelectionOwnerId = point.ownerId;
-    this.#lastSelectionPoint = point;
-    this.#onSelectionStart?.(point);
+    this.#lastSelectionPoint = null;
     return true;
   }
 
   onSelectionChanged(selection: Selection | null): boolean {
+    if (this.#pendingDragAnchor || this.#dragBridgeActive) {
+      return this.hasSelection();
+    }
+    this.traceSelectionChange(selection);
     const localSelection =
       selection?.isDragging || (selection?.isActive && !selection.isStart)
         ? convertGlobalToLocalSelection(selection, this.x, this.y)
         : null;
     const sent = this.routeSelectionChange(localSelection);
-    if (!selection?.isActive && this.#lastSelectionPoint) {
-      const ended = this.#onSelectionEnd?.(this.#lastSelectionPoint) ?? false;
+    if (!selection?.isActive || selection.isDragging === false) {
+      const ended = this.#lastSelectionPoint ? (this.#onSelectionEnd?.(this.#lastSelectionPoint) ?? false) : false;
+      if (ended && this.#lastSelectionPoint) {
+        this.traceInteraction("selection-drag-ended", {
+          type: "drag-end",
+          button: MouseButton.LEFT,
+          x: this.x + this.#lastSelectionPoint.col,
+          y: this.y + this.#lastSelectionPoint.row,
+        }, this.#lastSelectionPoint, { reason: "opentui-selection-finished" });
+      }
       this.#activeSelectionOwnerId = null;
       this.#lastSelectionPoint = null;
+      this.#pendingDragAnchor = null;
       return sent || ended || this.hasSelection();
     }
     return sent || this.hasSelection();
@@ -417,6 +474,14 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     if (!anchor || !focus || anchor.ownerId !== focus.ownerId) {
       return false;
     }
+    const moved = focus.row !== anchor.row || focus.col !== anchor.col;
+    if (!moved && this.#pendingDragAnchor) {
+      return false;
+    }
+    if (!this.#lastSelectionPoint) {
+      this.#onSelectionStart?.(anchor);
+    }
+    this.#pendingDragAnchor = null;
     this.#activeSelectionOwnerId = anchor.ownerId;
     this.#lastSelectionPoint = focus;
     return this.#onSelectionUpdate?.(focus) ?? false;
@@ -476,6 +541,132 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     if (clickCount === 2 && this.#interactionProfile.semanticWordSelection && this.#onSelectWordAt?.(point)) {
       event.preventDefault();
     }
+  }
+
+  private handleBackendDragMouseDown(event: MouseEvent): void {
+    if (event.button !== MouseButton.LEFT) {
+      return;
+    }
+    const point = this.eventToOwnerCoordinate(event, null);
+    this.traceInteraction("selection-mouse-captured", event, point, {
+      reason: point ? "pending" : "outside-owner",
+    });
+    this.#pendingDragAnchor = point;
+    this.#dragBridgeActive = false;
+    if (point) {
+      this.#activeSelectionOwnerId = point.ownerId;
+      this.#lastSelectionPoint = null;
+    }
+  }
+
+  private handleBackendDragMouseDrag(event: MouseEvent): void {
+    if (event.button !== MouseButton.LEFT) {
+      return;
+    }
+    const anchor = this.#pendingDragAnchor;
+    if (!anchor) {
+      this.traceInteraction("selection-drag-cancelled", event, null, { reason: "no-anchor" });
+      return;
+    }
+    const focus = this.eventToOwnerCoordinate(event, anchor.ownerId);
+    if (!focus) {
+      this.traceInteraction("selection-drag-cancelled", event, anchor, { reason: "outside-anchor-owner" });
+      return;
+    }
+    const moved = focus.row !== anchor.row || focus.col !== anchor.col;
+    if (!moved && !this.#dragBridgeActive) {
+      this.traceInteraction("selection-drag-pending", event, focus, { reason: "same-cell" });
+      return;
+    }
+    if (!this.#dragBridgeActive) {
+      this.#activeSelectionOwnerId = anchor.ownerId;
+      this.#lastSelectionPoint = anchor;
+      this.#onSelectionStart?.(anchor);
+      this.#dragBridgeActive = true;
+      this.traceInteraction("selection-drag-started", event, anchor);
+    }
+    this.#lastSelectionPoint = focus;
+    this.#onSelectionUpdate?.(focus);
+    this.traceInteraction("selection-drag-updated", event, focus);
+    event.preventDefault();
+  }
+
+  private handleBackendDragMouseEnd(event: MouseEvent): void {
+    const focus = this.#lastSelectionPoint;
+    if (this.#dragBridgeActive && focus) {
+      this.#onSelectionEnd?.(focus);
+      this.traceInteraction("selection-drag-ended", event, focus);
+      event.preventDefault();
+    } else if (this.#pendingDragAnchor) {
+      const anchor = this.#pendingDragAnchor;
+      this.traceInteraction("selection-drag-cancelled", event, anchor, { reason: "released-before-drag" });
+      if (this.hasSelection() && this.#onClearSelection?.(anchor)) {
+        this.traceInteraction("selection-clear-requested", event, anchor);
+        event.preventDefault();
+      }
+    }
+    this.#pendingDragAnchor = null;
+    this.#dragBridgeActive = false;
+  }
+
+  private eventToOwnerCoordinate(
+    event: MouseEvent,
+    expectedOwnerId: string | null,
+  ): TerminalTransportOwnerCoordinate | null {
+    return this.localToOwnerCoordinate(Math.trunc(event.x - this.x), Math.trunc(event.y - this.y), expectedOwnerId);
+  }
+
+  private traceInteraction(
+    kind: BackendFrameInteractionTraceEvent["kind"],
+    event: Pick<MouseEvent, "type" | "button" | "x" | "y">,
+    point: TerminalTransportOwnerCoordinate | null,
+    extra: Partial<BackendFrameInteractionTraceEvent["detail"]> = {},
+  ): void {
+    this.#onInteractionTrace?.({
+      kind,
+      detail: {
+        eventType: event.type,
+        button: event.button,
+        x: event.x,
+        y: event.y,
+        ...(point
+          ? {
+              ownerId: point.ownerId,
+              row: point.row,
+              col: point.col,
+            }
+          : null),
+        ...extra,
+      },
+    });
+  }
+
+  private traceSelectionChange(selection: Selection | null): void {
+    const anchor = selection ? this.globalToOwnerCoordinate(selection.anchor.x, selection.anchor.y) : null;
+    const focus = selection ? this.globalToOwnerCoordinate(selection.focus.x, selection.focus.y) : null;
+    this.#onInteractionTrace?.({
+      kind: "selection-opentui-changed",
+      detail: {
+        eventType: selection
+          ? selection.isStart
+            ? "start"
+            : selection.isDragging
+              ? "drag"
+              : "end"
+          : "clear",
+        ownerId: focus?.ownerId ?? anchor?.ownerId,
+        row: focus?.row ?? anchor?.row,
+        col: focus?.col ?? anchor?.col,
+        reason:
+          selection === null
+            ? "selection-null"
+            : selection.isStart
+              ? "selection-start"
+              : selection.isDragging
+                ? "selection-dragging"
+                : "selection-finished",
+      },
+    });
   }
 
   private resolveClickCount(

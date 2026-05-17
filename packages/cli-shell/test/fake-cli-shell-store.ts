@@ -568,6 +568,7 @@ export class FakeCliShellStore implements CliShellStore {
         composedUnreadLabel: input.surface.unreadLabel,
         composedHeartbeatLabel: input.surface.heartbeatLabel,
         composedShellSnapshotSeq: input.surface.shellSnapshotSeq,
+        composedSelectionSources: input.surface.selectionSources?.map((source) => ({ ...source })),
       },
       snapshot: {
         seq: (current.snapshot?.seq ?? 0) + 1,

@@ -3,6 +3,7 @@ import type {
   GlobalTerminalEntry,
   RuntimeClientState,
 } from "@agenter/client-sdk";
+import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import {
   BoxRenderable,
   CliRenderEvents,
@@ -66,6 +67,8 @@ import {
 import type {
   CliShellComposedSurfaceState,
   CliShellObservationReadyBaseline,
+  CliShellSelectionSource,
+  CliShellSelectionSourceDescriptor,
   CliShellTuiModel,
   CliShellTuiStore,
   CliShellTuiViewState,
@@ -147,6 +150,29 @@ const viewFromGlobalTerminalEntry = (entry: GlobalTerminalEntry | null): CliShel
   };
 };
 
+const hydrateSelectionSourcesForVisibleLines = (input: {
+  descriptors: readonly CliShellSelectionSourceDescriptor[] | undefined;
+  fallback: readonly CliShellSelectionSource[];
+  visibleLines: readonly TerminalRenderRichLine[];
+}): readonly CliShellSelectionSource[] => {
+  if (!input.descriptors || input.descriptors.length === 0) {
+    return input.fallback;
+  }
+  return input.descriptors.map((descriptor) => {
+    const fallback = input.fallback.find((source) => source.owner === descriptor.owner);
+    const start = Math.max(0, Math.trunc(descriptor.row));
+    const end = Math.max(start, start + Math.max(0, Math.trunc(descriptor.height)));
+    return {
+      ...descriptor,
+      lines:
+        fallback?.lines ??
+        input.visibleLines.slice(start, end).map((line) => ({
+          spans: line.spans.map((span) => ({ ...span })),
+        })),
+    };
+  });
+};
+
 export class CliShellCoreApp {
   readonly #props: CliShellCoreAppProps;
   readonly #renderer: CliRenderer;
@@ -225,6 +251,8 @@ export class CliShellCoreApp {
       onSelectionEnd: (point) => this.#routeSelectionEnd(point),
       onSelectWordAt: (point) => this.#routeSelectWordAtForPoint(point),
       onSelectLineAt: (point) => this.#routeSelectLineAtForPoint(point),
+      onClearSelection: (point) => this.#routeClearSelectionForPoint(point),
+      onInteractionTrace: (event) => this.#perfTracer.record(event),
       interactionProfile: props.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
     });
     if (this.#debugBar) {
@@ -442,9 +470,15 @@ export class CliShellCoreApp {
       : null;
     const visibleProjection = (() => {
       if (localComposedSurface) {
+        const lines = richLinesFromComposedSurface(localComposedSurface);
         return {
           source: "terminal-2-local-frame" as const,
-          lines: richLinesFromComposedSurface(localComposedSurface),
+          lines,
+          selectionSources: hydrateSelectionSourcesForVisibleLines({
+            descriptors: localComposedSurface.selectionSources,
+            fallback: frame.selectionSources,
+            visibleLines: lines,
+          }),
           cursor: localComposedSurface.cursor,
         };
       }
@@ -452,6 +486,11 @@ export class CliShellCoreApp {
         return {
           source: "visible-snapshot" as const,
           lines: visibleSnapshotLines,
+          selectionSources: hydrateSelectionSourcesForVisibleLines({
+            descriptors: publishedSurfaceState.surface?.selectionSources,
+            fallback: frame.selectionSources,
+            visibleLines: visibleSnapshotLines,
+          }),
           cursor: resolveComposedSurfaceCursorCellPosition({
             x: terminalEntry.snapshot.cursor.x,
             y: terminalEntry.snapshot.cursor.y,
@@ -463,6 +502,7 @@ export class CliShellCoreApp {
       return {
         source: "terminal-2-bootstrap-frame" as const,
         lines: frame.styledLines,
+        selectionSources: frame.selectionSources,
         cursor: resolveVisibleCursorCellPosition({ model, width, height: contentHeight }),
       };
     })();
@@ -482,7 +522,7 @@ export class CliShellCoreApp {
         }
       : null,
       selectionRegions: interactionLayout.selectionRegions,
-      selectionSources: frame.selectionSources,
+      selectionSources: visibleProjection.selectionSources,
       selectionOverlays: this.#resolveSelectionOverlays(model.terminalView.interaction),
       interactionProfile: model.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
     });
@@ -897,6 +937,18 @@ export class CliShellCoreApp {
     }
     this.#activateSelectionOwner(owner);
     return this.#routeSelectLineAt(point);
+  }
+
+  #routeClearSelectionForPoint(point: TerminalTransportOwnerCoordinate): boolean {
+    const owner = this.#normalizeSelectionOwner(point);
+    if (!owner) {
+      return false;
+    }
+    this.#perfTracer.record({
+      kind: "selection-clear-routed",
+      detail: { ownerId: owner, row: point.row, col: point.col },
+    });
+    return this.#clearSelectionForOwner(owner);
   }
 
   #handleTerminalScroll(event: MouseEvent): void {

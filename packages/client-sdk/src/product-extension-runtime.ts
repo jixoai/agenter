@@ -51,6 +51,14 @@ export interface ProductTerminalComposedSurfaceState {
       inverse?: boolean;
     }>;
   }>;
+  selectionSources?: Array<{
+    owner: "terminal" | "dialogue";
+    row: number;
+    col: number;
+    width: number;
+    height: number;
+    sourceStartRow?: number;
+  }>;
   cursor: { x: number; y: number; visible?: boolean };
   scrollback: {
     viewportOffset: number;

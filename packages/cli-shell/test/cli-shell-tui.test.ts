@@ -15,12 +15,13 @@ import type {
   TerminalTransportClientMessage,
   TerminalTransportServerMessage,
 } from "@agenter/terminal-transport-protocol";
-import { KeyEvent } from "@opentui/core";
+import { KeyEvent, MouseEvent as OpenTuiMouseEvent, parseKeypress } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 
 import {
   BackendScrollbarRenderable,
   BackendFrameRenderable,
+  type BackendFrameInteractionTraceEvent,
   BackendTerminalFrameRenderable,
   buildCliShellComposedSurface,
   buildCliShellHostingContextId,
@@ -381,6 +382,7 @@ const createManagedState = (input: { shellName?: string; managed?: boolean } = {
 interface TuiStoreHarness {
   store: CliShellTuiStore;
   replaceGlobalTerminals(nextTerminals: GlobalTerminalEntry[]): void;
+  setPublishComposedSurfaceEnabled(enabled: boolean): void;
   inputs: Array<{ terminalId: string; text: string }>;
   terminalConfigs: Array<{ terminalId: string; cols?: number; rows?: number }>;
   sentMessages: Array<{ chatId: string; text: string }>;
@@ -399,6 +401,7 @@ const createTuiStore = (input: {
   const sentMessages: Array<{ chatId: string; text: string }> = [];
   let lastPublishedComposedSurface: TuiStoreHarness["lastPublishedComposedSurface"] = null;
   let delegations: ProductDelegationRecord[] = [];
+  let publishComposedSurfaceEnabled = true;
   const authSession: AuthSessionOutput = {
     token: "superadmin-token",
     issuedAt: new Date(0).toISOString(),
@@ -497,6 +500,10 @@ const createTuiStore = (input: {
       terminalId: string;
       surface: NonNullable<TuiStoreHarness["lastPublishedComposedSurface"]>;
     }) => {
+      if (!publishComposedSurfaceEnabled) {
+        lastPublishedComposedSurface = structuredClone(payload.surface);
+        return state.globalTerminals.data.find((entry) => entry.terminalId === payload.terminalId)!;
+      }
       const index = state.globalTerminals.data.findIndex((entry) => entry.terminalId === payload.terminalId);
       if (index === -1) {
         throw new Error(`terminal missing: ${payload.terminalId}`);
@@ -515,6 +522,7 @@ const createTuiStore = (input: {
           composedUnreadLabel: payload.surface.unreadLabel,
           composedHeartbeatLabel: payload.surface.heartbeatLabel,
           composedShellSnapshotSeq: payload.surface.shellSnapshotSeq,
+          composedSelectionSources: payload.surface.selectionSources?.map((source) => ({ ...source })),
         },
         snapshot: {
           seq: (current.snapshot?.seq ?? 0) + 1,
@@ -578,6 +586,9 @@ const createTuiStore = (input: {
   return {
     store: store as unknown as CliShellTuiStore,
     replaceGlobalTerminals,
+    setPublishComposedSurfaceEnabled(enabled: boolean) {
+      publishComposedSurfaceEnabled = enabled;
+    },
     inputs,
     terminalConfigs,
     sentMessages,
@@ -710,6 +721,37 @@ const createBackendTerminalFrameTestSetup = async (
   return { ...setup, frame };
 };
 
+const dispatchRenderableMouseEvent = (
+  target: ShellTerminalViewRenderable,
+  input: {
+    type: "down" | "drag" | "drag-end" | "up";
+    x: number;
+    y: number;
+    button?: number;
+  },
+): void => {
+  target.processMouseEvent(
+    new OpenTuiMouseEvent(target, {
+      type: input.type,
+      x: input.x,
+      y: input.y,
+      button: input.button ?? 0,
+      modifiers: { shift: false, alt: false, ctrl: false },
+    }),
+  );
+};
+
+const selectedSpanCells = (
+  setup: Pick<Awaited<ReturnType<typeof createTestRenderer>>, "captureSpans">,
+) =>
+  setup
+    .captureSpans()
+    .lines.flatMap((line, row) =>
+      line.spans
+        .filter((span) => span.bg.toString() === "rgba(0.15, 0.39, 0.92, 1.00)")
+        .map((span) => ({ row, text: span.text })),
+    );
+
 describe("Feature: cli-shell interactive TUI", () => {
   test("Scenario: Given backend interaction recommendations When cli-shell resolves profiles Then every supported backend has explicit enhancement decisions", () => {
     expect(CLI_SHELL_BACKEND_INTERACTION_RECOMMENDATIONS.xterm).toEqual({
@@ -771,8 +813,8 @@ describe("Feature: cli-shell interactive TUI", () => {
     }
     expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "home", sequence: "\u001b[1~" }))).toBe("\u001b[1~");
     expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "end", sequence: "\u001b[4~" }))).toBe("\u001b[4~");
-    expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "home" }))).toBe("\u001b[H");
-    expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "end" }))).toBe("\u001b[F");
+    expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "home" }))).toBe("\x01");
+    expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "end" }))).toBe("\x05");
     expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "home" }), { homeEndFallback: false })).toBeNull();
     expect(encodeCliShellTerminalKey(createTestKeyEvent({ name: "f13" }))).toBeNull();
   });
@@ -996,6 +1038,7 @@ describe("Feature: cli-shell interactive TUI", () => {
     await setup.renderOnce();
     expect(selectionEvents[0]).toEqual({ type: "start", ownerId: "terminal", row: 0, col: 0 });
     expect(selectionEvents.some((event) => event.type === "update" && event.ownerId === "terminal")).toBe(true);
+    expect(selectionEvents.at(-1)).toEqual({ type: "end", ownerId: "terminal", row: 1, col: 7 });
     expect(setup.renderer.getSelection()?.getSelectedText() ?? "").toBe("");
     setup.renderer.destroy();
   });
@@ -1030,15 +1073,64 @@ describe("Feature: cli-shell interactive TUI", () => {
   });
 
   test("Scenario: Given shell-terminal-view projected cells When the user only clicks terminal text Then native selection stays empty until a real drag happens", async () => {
+    const selectionEvents: Array<{ type: string; ownerId: string; row: number; col: number }> = [];
     const setup = await createShellTerminalViewTestSetup({
       width: 20,
       height: 2,
       lines: [{ spans: [{ text: "$ echo hello" }] }, { spans: [{ text: "shell prompt" }] }],
+      onSelectionStart: (point) => {
+        selectionEvents.push({ type: "start", ...point });
+        return true;
+      },
+      onSelectionUpdate: (point) => {
+        selectionEvents.push({ type: "update", ...point });
+        return true;
+      },
+      onSelectionEnd: (point) => {
+        selectionEvents.push({ type: "end", ...point });
+        return true;
+      },
     });
 
     await setup.renderOnce();
     await setup.mockMouse.click(2, 0);
     await setup.renderOnce();
+    expect(selectionEvents).toEqual([]);
+    expect(setup.renderer.getSelection()?.getSelectedText() ?? "").toBe("");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given native renderable mouse events When the user drags terminal text Then shell-terminal-view bridges selection to the backend owner", async () => {
+    const selectionEvents: Array<{ type: string; ownerId: string; row: number; col: number }> = [];
+    const setup = await createShellTerminalViewTestSetup({
+      width: 20,
+      height: 2,
+      lines: [{ spans: [{ text: "$ echo hello" }] }, { spans: [{ text: "shell prompt" }] }],
+      onSelectionStart: (point) => {
+        selectionEvents.push({ type: "start", ...point });
+        return true;
+      },
+      onSelectionUpdate: (point) => {
+        selectionEvents.push({ type: "update", ...point });
+        return true;
+      },
+      onSelectionEnd: (point) => {
+        selectionEvents.push({ type: "end", ...point });
+        return true;
+      },
+    });
+
+    await setup.renderOnce();
+    dispatchRenderableMouseEvent(setup.view, { type: "down", x: 1, y: 0 });
+    dispatchRenderableMouseEvent(setup.view, { type: "drag", x: 7, y: 0 });
+    dispatchRenderableMouseEvent(setup.view, { type: "drag-end", x: 7, y: 0 });
+    dispatchRenderableMouseEvent(setup.view, { type: "up", x: 7, y: 0 });
+
+    expect(selectionEvents).toEqual([
+      { type: "start", ownerId: "terminal", row: 0, col: 1 },
+      { type: "update", ownerId: "terminal", row: 0, col: 7 },
+      { type: "end", ownerId: "terminal", row: 0, col: 7 },
+    ]);
     expect(setup.renderer.getSelection()?.getSelectedText() ?? "").toBe("");
     setup.renderer.destroy();
   });
@@ -1233,6 +1325,663 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(selectedCells.some((cell) => cell.row === 1 && cell.text.includes("line-12"))).toBe(false);
     expect(setup.view.getSelectionOwner()).toBe("terminal");
     setup.renderer.destroy();
+  });
+
+  test("Scenario: Given selected backend text is visible after a scroll round trip When projection updates Then the same content remains highlighted", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 20,
+      height: 2,
+      selectionRegions: [{ owner: "terminal", row: 0, col: 0, width: 20, height: 2 }],
+      selectionSources: [
+        {
+          owner: "terminal",
+          row: 0,
+          col: 0,
+          width: 20,
+          height: 2,
+          sourceStartRow: 2,
+          lines: [{ spans: [{ text: "line-2" }] }, { spans: [{ text: "line-3" }] }],
+        },
+      ],
+      lines: [{ spans: [{ text: "line-2" }] }, { spans: [{ text: "line-3" }] }],
+      selectionOverlays: [
+        {
+          ownerId: "terminal",
+          ownership: "backend-native",
+          rows: [{ row: 3, startCol: 0, endCol: 6 }],
+          selectedText: "line-3",
+        },
+      ],
+    });
+
+    await setup.renderOnce();
+    expect(selectedSpanCells(setup)).toContainEqual({ row: 1, text: "line-3" });
+
+    setup.view.updateProjection({
+      lines: [{ spans: [{ text: "line-0" }] }, { spans: [{ text: "line-1" }] }],
+      selectionSources: [
+        {
+          owner: "terminal",
+          row: 0,
+          col: 0,
+          width: 20,
+          height: 2,
+          sourceStartRow: 0,
+          lines: [{ spans: [{ text: "line-0" }] }, { spans: [{ text: "line-1" }] }],
+        },
+      ],
+      selectionOverlays: [
+        {
+          ownerId: "terminal",
+          ownership: "backend-native",
+          rows: [{ row: 3, startCol: 0, endCol: 6 }],
+          selectedText: "line-3",
+        },
+      ],
+    });
+    await setup.renderOnce();
+    expect(selectedSpanCells(setup)).toEqual([]);
+
+    setup.view.updateProjection({
+      lines: [{ spans: [{ text: "line-2" }] }, { spans: [{ text: "line-3" }] }],
+      selectionSources: [
+        {
+          owner: "terminal",
+          row: 0,
+          col: 0,
+          width: 20,
+          height: 2,
+          sourceStartRow: 2,
+          lines: [{ spans: [{ text: "line-2" }] }, { spans: [{ text: "line-3" }] }],
+        },
+      ],
+      selectionOverlays: [
+        {
+          ownerId: "terminal",
+          ownership: "backend-native",
+          rows: [{ row: 3, startCol: 0, endCol: 6 }],
+          selectedText: "line-3",
+        },
+      ],
+    });
+    await setup.renderOnce();
+    expect(selectedSpanCells(setup)).toContainEqual({ row: 1, text: "line-3" });
+    expect(setup.view.getSelectionOwner()).toBe("terminal");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given backend selection is active When the user single-clicks without dragging Then shell-terminal-view requests backend clear selection", async () => {
+    const traces: BackendFrameInteractionTraceEvent[] = [];
+    const clearRequests: Array<{ ownerId: string; row: number; col: number }> = [];
+    const setup = await createShellTerminalViewTestSetup({
+      width: 20,
+      height: 2,
+      selectionRegions: [{ owner: "terminal", row: 0, col: 0, width: 20, height: 2 }],
+      selectionSources: [
+        {
+          owner: "terminal",
+          row: 0,
+          col: 0,
+          width: 20,
+          height: 2,
+          sourceStartRow: 0,
+          lines: [{ spans: [{ text: "line-0" }] }, { spans: [{ text: "line-1" }] }],
+        },
+      ],
+      lines: [{ spans: [{ text: "line-0" }] }, { spans: [{ text: "line-1" }] }],
+      selectionOverlays: [
+        {
+          ownerId: "terminal",
+          ownership: "backend-native",
+          rows: [{ row: 0, startCol: 0, endCol: 6 }],
+        },
+      ],
+      onInteractionTrace: (event) => traces.push(event),
+      onClearSelection: (point) => {
+        clearRequests.push(point);
+        return true;
+      },
+    });
+
+    await setup.renderOnce();
+    await setup.mockMouse.click(3, 0);
+    await setup.renderOnce();
+
+    expect(traces).toContainEqual({
+      kind: "selection-clear-requested",
+      detail: {
+        eventType: "up",
+        button: 0,
+        x: 3,
+        y: 0,
+        ownerId: "terminal",
+        row: 0,
+        col: 3,
+      },
+    });
+    expect(clearRequests).toEqual([{ ownerId: "terminal", row: 0, col: 3 }]);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given backend selection is active in cli-shell When the user single-clicks without dragging Then cli-shell forwards clearSelection to the backend owner", async () => {
+    const shellLines = ["row-0", "row-1", "row-2"];
+    const state = createRuntimeState({ heartbeat: [], lines: [], roomMessages: [], unread: 0 });
+    const shellTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines),
+      snapshot: {
+        ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines).snapshot!,
+        rows: 3,
+        cols: 20,
+        cursor: { x: 0, y: 2, visible: true },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: shellLines.length,
+          screenLines: 3,
+        },
+        interaction: {
+          activeOwnerId: "terminal",
+          selectionOverlays: [
+            {
+              ownerId: "terminal",
+              ownership: "backend-native",
+              rows: [{ row: 1, startCol: 0, endCol: 5 }],
+              selectedText: "row-1",
+            },
+          ],
+        },
+      },
+    };
+    const visibleTerminalEntry = createCliShellTerminal2Entry({
+      terminalId: "shell-1:terminal-2",
+      shellTerminalId: "shell-1:terminal-1",
+      lines: ["product"],
+      cols: 20,
+      rows: 4,
+    });
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const sentMessages: TerminalTransportClientMessage[] = [];
+    const setup = await createCoreAppTestSetup({
+      state,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 20,
+      height: 4,
+      createTransportSession: ({ events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+          },
+          disconnect() {},
+          send(message) {
+            sentMessages.push(message);
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+    expect(selectedSpanCells(setup)).toContainEqual({ row: 1, text: "row-1" });
+    await setup.mockMouse.click(3, 1);
+    await setup.renderOnce();
+
+    expect(sentMessages).toContainEqual({ type: "clearSelection", ownerId: "terminal" });
+    setup.destroy();
+  });
+
+  test("Scenario: Given shell viewport is scrolled When the user drags visible rows Then backend selection receives absolute scrollback rows", async () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["row-0", "row-1", "row-2", "row-3", "row-4"],
+      roomMessages: [],
+      unread: 0,
+    });
+    const viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const model = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: viewState,
+      keybindings: resolveCliShellTuiKeybindings(null),
+      width: 20,
+      height: 3,
+    });
+    const scrolledModel = {
+      ...model,
+      terminalView: {
+        ...model.terminalView,
+        richLines: model.terminalView.richLines.slice(2, 5),
+        plainLines: model.terminalView.plainLines.slice(2, 5),
+        viewportStart: 2,
+        viewportEnd: 5,
+        scrollbackRows: 5,
+        rows: 3,
+      },
+    };
+    const frame = layoutCliShellTuiFrame({
+      model: scrolledModel,
+      width: 20,
+      height: 3,
+      renderToolbar: false,
+    });
+    const selectionEvents: Array<{ type: string; ownerId: string; row: number; col: number }> = [];
+    const setup = await createShellTerminalViewTestSetup({
+      width: 20,
+      height: 3,
+      lines: frame.styledLines,
+      selectionRegions: [{ owner: "terminal", row: 0, col: 0, width: 20, height: 3 }],
+      selectionSources: frame.selectionSources,
+      onSelectionStart: (point) => {
+        selectionEvents.push({ type: "start", ...point });
+        return true;
+      },
+      onSelectionUpdate: (point) => {
+        selectionEvents.push({ type: "update", ...point });
+        return true;
+      },
+      onSelectionEnd: (point) => {
+        selectionEvents.push({ type: "end", ...point });
+        return true;
+      },
+    });
+
+    await setup.renderOnce();
+    await setup.mockMouse.drag(0, 0, 4, 1);
+    await setup.renderOnce();
+
+    expect(selectionEvents[0]).toEqual({ type: "start", ownerId: "terminal", row: 2, col: 0 });
+    expect(selectionEvents.at(-1)).toEqual({ type: "end", ownerId: "terminal", row: 3, col: 4 });
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given cli-shell displays a scrolled shell backend When the user drags visible terminal rows Then selection messages include the backend viewport offset", async () => {
+    const shellLines = ["row-0", "row-1", "row-2", "row-3", "row-4"];
+    const state = createRuntimeState({ heartbeat: [], lines: [], roomMessages: [], unread: 0 });
+    const shellTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines),
+      snapshot: {
+        ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines).snapshot!,
+        rows: 3,
+        cols: 20,
+        cursor: { x: 0, y: 4, visible: true },
+        scrollback: {
+          viewportOffset: 2,
+          totalLines: shellLines.length,
+          screenLines: 3,
+        },
+      },
+    };
+    const visibleTerminalEntry = createCliShellTerminal2Entry({
+      terminalId: "shell-1:terminal-2",
+      shellTerminalId: "shell-1:terminal-1",
+      lines: ["product"],
+      cols: 20,
+      rows: 4,
+    });
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const sentMessages: TerminalTransportClientMessage[] = [];
+    const setup = await createCoreAppTestSetup({
+      state,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 20,
+      height: 4,
+      createTransportSession: ({ events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+          },
+          disconnect() {},
+          send(message) {
+            sentMessages.push(message);
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+    await setup.mockMouse.drag(0, 0, 4, 1);
+    await setup.renderOnce();
+
+    expect(sentMessages).toContainEqual({ type: "selectionStart", point: { ownerId: "terminal", row: 2, col: 0 } });
+    expect(sentMessages).toContainEqual({ type: "selectionEnd", point: { ownerId: "terminal", row: 3, col: 4 } });
+    setup.destroy();
+  });
+
+  test("Scenario: Given terminal-2 publishes a scrolled composed shell frame When terminal-1 mirror is stale Then dragging visible shell text still uses terminal-2 selection source rows", async () => {
+    const shellLines = ["row-0", "row-1", "row-2", "row-3", "row-4"];
+    const state = createRuntimeState({ heartbeat: [], lines: [], roomMessages: [], unread: 0 });
+    const staleShellTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines),
+      snapshot: {
+        ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines).snapshot!,
+        seq: 2,
+        rows: 3,
+        cols: 20,
+        cursor: { x: 0, y: 0, visible: true },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: shellLines.length,
+          screenLines: 3,
+        },
+      },
+    };
+    const publishedVisibleTerminalEntry: GlobalTerminalEntry = {
+      ...createCliShellTerminal2Entry({
+        terminalId: "shell-1:terminal-2",
+        shellTerminalId: "shell-1:terminal-1",
+        lines: ["row-2", "row-3", "row-4"],
+        cols: 20,
+        rows: 4,
+        metadata: {
+          composedBottomLine: "row-4",
+          composedDialogueOpen: false,
+          composedDialoguePlacement: null,
+          composedDialogueDraft: "",
+          composedManagedLabel: "托管 off",
+          composedUnreadLabel: "✉ 0 ⌘J",
+          composedHeartbeatLabel: "ready",
+          composedShellSnapshotSeq: 10,
+          composedSelectionSources: [
+            {
+              owner: "terminal",
+              row: 0,
+              col: 0,
+              width: 19,
+              height: 3,
+              sourceStartRow: 2,
+            },
+          ],
+        },
+      }),
+      snapshot: {
+        ...createGlobalTerminalEntry("shell-1:terminal-2", ["row-2", "row-3", "row-4"]).snapshot!,
+        seq: 3,
+        cols: 20,
+        rows: 4,
+        lines: ["row-2", "row-3", "row-4", ""],
+        richLines: ["row-2", "row-3", "row-4", ""].map((text) => ({ spans: text ? [{ text }] : [] })),
+        cursor: { x: 0, y: 0, visible: true },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: 4,
+          screenLines: 4,
+        },
+      },
+    };
+    state.globalTerminals = createCached([staleShellTerminalEntry, publishedVisibleTerminalEntry]);
+    const sentMessages: TerminalTransportClientMessage[] = [];
+    const harness = createTuiStore({ state });
+    harness.setPublishComposedSurfaceEnabled(false);
+    const setup = await createCoreAppTestSetup({
+      state,
+      harness,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 20,
+      height: 4,
+      createTransportSession: ({ events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+          },
+          disconnect() {},
+          send(message) {
+            sentMessages.push(message);
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("row-2");
+    await setup.mockMouse.drag(0, 0, 4, 1);
+    await setup.renderOnce();
+
+    expect(sentMessages).toContainEqual({ type: "selectionStart", point: { ownerId: "terminal", row: 2, col: 0 } });
+    expect(sentMessages).toContainEqual({ type: "selectionEnd", point: { ownerId: "terminal", row: 3, col: 4 } });
+    setup.destroy();
+  });
+
+  test("Scenario: Given debug bar shifts cli-shell content and shell viewport is scrolled When the user drags visible terminal rows Then backend selection still receives visible rows plus viewport offset", async () => {
+    const shellLines = ["row-0", "row-1", "row-2", "row-3", "row-4"];
+    const state = createRuntimeState({ heartbeat: [], lines: [], roomMessages: [], unread: 0 });
+    const shellTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines),
+      snapshot: {
+        ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines).snapshot!,
+        rows: 3,
+        cols: 20,
+        cursor: { x: 0, y: 4, visible: true },
+        scrollback: {
+          viewportOffset: 2,
+          totalLines: shellLines.length,
+          screenLines: 3,
+        },
+      },
+    };
+    const visibleTerminalEntry = createCliShellTerminal2Entry({
+      terminalId: "shell-1:terminal-2",
+      shellTerminalId: "shell-1:terminal-1",
+      lines: ["product"],
+      cols: 20,
+      rows: 3,
+    });
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const sentMessages: TerminalTransportClientMessage[] = [];
+    const setup = await createCoreAppTestSetup({
+      state,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 20,
+      height: 4,
+      debug: true,
+      createTransportSession: ({ events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+          },
+          disconnect() {},
+          send(message) {
+            sentMessages.push(message);
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+    await setup.mockMouse.drag(0, 1, 4, 2);
+    await setup.renderOnce();
+
+    expect(sentMessages).toContainEqual({ type: "selectionStart", point: { ownerId: "terminal", row: 2, col: 0 } });
+    expect(sentMessages).toContainEqual({ type: "selectionEnd", point: { ownerId: "terminal", row: 3, col: 4 } });
+    setup.destroy();
+  });
+
+  test("Scenario: Given cli-shell displays a scrolled shell backend When backend selection overlay arrives Then highlight is projected onto the visible content row", async () => {
+    const shellLines = ["row-0", "row-1", "row-2", "row-3", "row-4"];
+    const state = createRuntimeState({ heartbeat: [], lines: [], roomMessages: [], unread: 0 });
+    const shellTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines),
+      snapshot: {
+        ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines).snapshot!,
+        seq: 10,
+        rows: 3,
+        cols: 20,
+        cursor: { x: 0, y: 4, visible: true },
+        scrollback: {
+          viewportOffset: 2,
+          totalLines: shellLines.length,
+          screenLines: 3,
+        },
+      },
+    };
+    const visibleTerminalEntry = createCliShellTerminal2Entry({
+      terminalId: "shell-1:terminal-2",
+      shellTerminalId: "shell-1:terminal-1",
+      lines: ["product"],
+      cols: 20,
+      rows: 4,
+    });
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const setup = await createCoreAppTestSetup({
+      state,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 20,
+      height: 4,
+      createTransportSession: ({ terminalId, events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+            if (terminalId === "shell-1:terminal-1") {
+              events.onMessage({
+                type: "frame",
+                terminalId,
+                frameSeq: 11,
+                status: "IDLE",
+                patch: {
+                  type: "full",
+                  frame: {
+                    ...shellTerminalEntry.snapshot!,
+                    seq: 11,
+                    interaction: {
+                      activeOwnerId: "terminal",
+                      selectionOverlays: [
+                        {
+                          ownerId: "terminal",
+                          ownership: "backend-adapter-owned",
+                          rows: [{ row: 2, startCol: 0, endCol: 5 }],
+                        },
+                      ],
+                    },
+                  },
+                },
+              });
+            }
+          },
+          disconnect() {},
+          send() {
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+
+    const selectedCells = setup
+      .captureSpans()
+      .lines.flatMap((line, row) =>
+        line.spans
+          .filter((span) => span.bg.toString() === "rgba(0.15, 0.39, 0.92, 1.00)")
+          .map((span) => ({ row, text: span.text })),
+      );
+    expect(selectedCells.some((cell) => cell.row === 0 && cell.text.includes("row-2"))).toBe(true);
+    expect(selectedCells.some((cell) => cell.row === 2 && cell.text.includes("row-4"))).toBe(false);
+    setup.destroy();
+  });
+
+  test("Scenario: Given backend selection changes without drawable text changes When a new frame arrives Then cli-shell still projects the selection truth", async () => {
+    const shellLines = ["row-0", "row-1", "row-2"];
+    const state = createRuntimeState({ heartbeat: [], lines: [], roomMessages: [], unread: 0 });
+    const shellTerminalEntry: GlobalTerminalEntry = {
+      ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines),
+      snapshot: {
+        ...createGlobalTerminalEntry("shell-1:terminal-1", shellLines).snapshot!,
+        seq: 10,
+        rows: 3,
+        cols: 20,
+        cursor: { x: 0, y: 2, visible: true },
+        scrollback: {
+          viewportOffset: 0,
+          totalLines: shellLines.length,
+          screenLines: 3,
+        },
+      },
+    };
+    const visibleTerminalEntry = createCliShellTerminal2Entry({
+      terminalId: "shell-1:terminal-2",
+      shellTerminalId: "shell-1:terminal-1",
+      lines: ["product"],
+      cols: 20,
+      rows: 4,
+    });
+    state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+    const setup = await createCoreAppTestSetup({
+      state,
+      fallbackTerminalId: "shell-1:terminal-2",
+      width: 20,
+      height: 4,
+      createTransportSession: ({ terminalId, events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+            if (terminalId === "shell-1:terminal-1") {
+              events.onMessage({
+                type: "frame",
+                terminalId,
+                frameSeq: 11,
+                status: "IDLE",
+                patch: {
+                  type: "full",
+                  frame: {
+                    ...shellTerminalEntry.snapshot!,
+                    seq: 11,
+                    interaction: {
+                      activeOwnerId: "terminal",
+                      selectionOverlays: [
+                        {
+                          ownerId: "terminal",
+                          ownership: "backend-native",
+                          rows: [{ row: 1, startCol: 0, endCol: 5 }],
+                          selectedText: "row-1",
+                        },
+                      ],
+                    },
+                  },
+                },
+              });
+            }
+          },
+          disconnect() {},
+          send() {
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    await setup.renderOnce();
+
+    expect(selectedSpanCells(setup)).toContainEqual({ row: 1, text: "row-1" });
+    setup.destroy();
   });
 
   test("Scenario: Given shell-terminal-view has separate owner regions When the user triple-clicks a dialogue row Then projection routes line selection to the dialogue owner", async () => {
@@ -3009,7 +3758,7 @@ describe("Feature: cli-shell interactive TUI", () => {
     for (const key of ["left", "right", "home", "end"]) {
       expect(routeCliShellKey(ctx, createTestKeyEvent({ name: key }))).toBe(true);
     }
-    expect(sentInput).toEqual(["\u001b[D", "\u001b[C", "\u001b[H", "\u001b[F"]);
+    expect(sentInput).toEqual(["\u001b[D", "\u001b[C", "\x01", "\x05"]);
     expect(followCursorCount).toBe(4);
   });
 
@@ -3141,6 +3890,628 @@ describe("Feature: cli-shell interactive TUI", () => {
     };
     expect(routeCliShellKey(escRightSequenceCtx, createTestKeyEvent({ name: "f", sequence: "\u001bf" }))).toBe(true);
     expect(sentInput.at(-1)).toBe("\u001b[C".repeat(expectedRightCells));
+  });
+
+  test("Scenario: Given word navigation enhancement is enabled When Option Shift Left Right is pressed Then cli-shell extends backend-owned selection by word", () => {
+    const wordLine = "$ echo hello world ok";
+    const state = createRuntimeState({ heartbeat: [], lines: [wordLine], roomMessages: [], unread: 0 });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const ranges: Array<{ ownerId: string; startCol: number; endCol: number }> = [];
+    const sentInput: string[] = [];
+    let followCursorCount = 0;
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const baseModel = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: viewState,
+      keybindings,
+      width: 120,
+      height: 40,
+      interactionProfile: {
+        semanticWordSelection: true,
+        semanticRowSelection: true,
+        wordNavigation: true,
+        followCursorOnInput: true,
+        homeEndFallback: true,
+      },
+    });
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () => ({
+        ...baseModel,
+        terminalView: {
+          ...baseModel.terminalView,
+          plainLines: [wordLine],
+          cursorAbsRow: 0,
+          viewportStart: 0,
+          cursorCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("ok")),
+        },
+      }),
+      getLiveMirror: () =>
+        ({
+          sendInputBytes: (data: Uint8Array) => {
+            sentInput.push(new TextDecoder().decode(data));
+            return true;
+          },
+          followCursor: () => {
+            followCursorCount += 1;
+            return true;
+          },
+          selectRange: (range: { ownerId: string; startCol: number; endCol: number }) => {
+            ranges.push({ ownerId: range.ownerId, startCol: range.startCol, endCol: range.endCol });
+            return true;
+          },
+        }) as never,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" }))).toBe(true);
+    expect(ranges).toEqual([
+      {
+        ownerId: "terminal",
+        startCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world")),
+        endCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("ok")),
+      },
+    ]);
+    expect(sentInput).toEqual([
+      "\u001b[D".repeat(
+        stringIndexToTerminalColumn(wordLine, wordLine.indexOf("ok")) -
+          stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world")),
+      ),
+    ]);
+    expect(followCursorCount).toBe(1);
+
+    const rightCtx = {
+      ...ctx,
+      getModel: () => ({
+        ...baseModel,
+        terminalView: {
+          ...baseModel.terminalView,
+          plainLines: [wordLine],
+          cursorAbsRow: 0,
+          viewportStart: 0,
+          cursorCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world")),
+        },
+      }),
+    };
+    expect(routeCliShellKey(rightCtx, createTestKeyEvent({ name: "right", option: true, shift: true, sequence: "\u001bf" }))).toBe(true);
+    expect(ranges.at(-1)).toEqual({
+      ownerId: "terminal",
+      startCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world") + "world".length),
+      endCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("ok")),
+    });
+    expect(sentInput.at(-1)).toBe(
+      "\u001b[C".repeat(
+        stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world") + "world".length) -
+          stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world")),
+      ),
+    );
+    expect(followCursorCount).toBe(2);
+  });
+
+  test("Scenario: Given word selection is already anchored When Option Shift Left is pressed again Then cli-shell preserves the original anchor and moves only the focus", () => {
+    const wordLine = "$ echo alpha beta gamma";
+    const state = createRuntimeState({ heartbeat: [], lines: [wordLine], roomMessages: [], unread: 0 });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const ranges: Array<{ ownerId: string; startCol: number; endCol: number }> = [];
+    const sentInput: string[] = [];
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const baseModel = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: viewState,
+      keybindings,
+      width: 120,
+      height: 40,
+      interactionProfile: {
+        semanticWordSelection: true,
+        semanticRowSelection: true,
+        wordNavigation: true,
+        followCursorOnInput: true,
+        homeEndFallback: true,
+      },
+    });
+    let cursorCol = stringIndexToTerminalColumn(wordLine, wordLine.indexOf("gamma"));
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () => ({
+        ...baseModel,
+        terminalView: {
+          ...baseModel.terminalView,
+          plainLines: [wordLine],
+          cursorAbsRow: 0,
+          viewportStart: 0,
+          cursorCol,
+        },
+      }),
+      getLiveMirror: () =>
+        ({
+          sendInputBytes: (data: Uint8Array) => {
+            const input = new TextDecoder().decode(data);
+            sentInput.push(input);
+            cursorCol -= input.split("\u001b[D").length - 1;
+            return true;
+          },
+          followCursor: () => true,
+          selectRange: (range: { ownerId: string; startCol: number; endCol: number }) => {
+            ranges.push({ ownerId: range.ownerId, startCol: range.startCol, endCol: range.endCol });
+            return true;
+          },
+        }) as never,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" }))).toBe(true);
+    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" }))).toBe(true);
+
+    expect(ranges.at(0)).toEqual({
+      ownerId: "terminal",
+      startCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("beta")),
+      endCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("gamma")),
+    });
+    expect(ranges.at(1)).toEqual({
+      ownerId: "terminal",
+      startCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("alpha")),
+      endCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("gamma")),
+    });
+    expect(sentInput.length).toBe(2);
+  });
+
+  test("Scenario: Given the shell viewport is scrolled When Option Shift Left selects by word Then cli-shell sends the absolute backend row", () => {
+    const visibleLine = "$ echo alpha beta gamma";
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["row-0", "row-1", visibleLine, "row-3"],
+      roomMessages: [],
+      unread: 0,
+    });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const ranges: Array<{ ownerId: string; startRow: number; startCol: number; endRow: number; endCol: number }> = [];
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const baseModel = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: viewState,
+      keybindings,
+      width: 120,
+      height: 40,
+      interactionProfile: {
+        semanticWordSelection: true,
+        semanticRowSelection: true,
+        wordNavigation: true,
+        followCursorOnInput: true,
+        homeEndFallback: true,
+      },
+    });
+    const cursorCol = stringIndexToTerminalColumn(visibleLine, visibleLine.indexOf("gamma"));
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () => ({
+        ...baseModel,
+        terminalView: {
+          ...baseModel.terminalView,
+          plainLines: [visibleLine],
+          cursorAbsRow: 3,
+          viewportStart: 3,
+          cursorCol,
+        },
+      }),
+      getLiveMirror: () =>
+        ({
+          sendInputBytes: () => true,
+          followCursor: () => true,
+          selectRange: (range: {
+            ownerId: string;
+            startRow: number;
+            startCol: number;
+            endRow: number;
+            endCol: number;
+          }) => {
+            ranges.push(range);
+            return true;
+          },
+        }) as never,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" }))).toBe(true);
+
+    expect(ranges).toEqual([
+      {
+        ownerId: "terminal",
+        startRow: 3,
+        startCol: stringIndexToTerminalColumn(visibleLine, visibleLine.indexOf("beta")),
+        endRow: 3,
+        endCol: stringIndexToTerminalColumn(visibleLine, visibleLine.indexOf("gamma")),
+      },
+    ]);
+  });
+
+  test("Scenario: Given word selection has an anchor When plain terminal input is routed Then cli-shell resets the keyboard selection anchor", () => {
+    const wordLine = "$ echo alpha beta gamma";
+    const state = createRuntimeState({ heartbeat: [], lines: [wordLine], roomMessages: [], unread: 0 });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+      terminalSelectionAnchor: {
+        row: 0,
+        col: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("gamma")),
+      },
+    };
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const baseModel = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: viewState,
+      keybindings,
+      width: 120,
+      height: 40,
+    });
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () => baseModel,
+      getLiveMirror: () =>
+        ({
+          sendInputBytes: () => true,
+          followCursor: () => true,
+        }) as never,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "a", sequence: "a", raw: "a" }))).toBe(true);
+
+    expect(viewState.terminalSelectionAnchor).toBeUndefined();
+  });
+
+  test("Scenario: Given backend selection is active When plain terminal input is routed Then cli-shell clears backend selection before sending input bytes", () => {
+    const state = createRuntimeState({ heartbeat: [], lines: ["$ echo hello"], roomMessages: [], unread: 0 });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const actions: string[] = [];
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const baseModel = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: viewState,
+      keybindings,
+      width: 120,
+      height: 40,
+    });
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () => baseModel,
+      getLiveMirror: () =>
+        ({
+          clearSelection: (ownerId?: string) => {
+            actions.push(`clear:${ownerId ?? "all"}`);
+            return true;
+          },
+          sendInputBytes: (data: Uint8Array) => {
+            actions.push(`input:${new TextDecoder().decode(data)}`);
+            return true;
+          },
+          followCursor: () => {
+            actions.push("follow");
+            return true;
+          },
+        }) as never,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "a", sequence: "a", raw: "a" }))).toBe(true);
+
+    expect(actions).toEqual(["clear:terminal", "input:a", "follow"]);
+  });
+
+  test("Scenario: Given Option Shift selection is extending When cursor movement bytes are routed Then cli-shell keeps backend selection active", () => {
+    const wordLine = "$ echo alpha beta";
+    const state = createRuntimeState({ heartbeat: [], lines: [wordLine], roomMessages: [], unread: 0 });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: false,
+      focusTarget: "terminal",
+      requestedPlacement: "smart",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const actions: string[] = [];
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const cursorCol = stringIndexToTerminalColumn(wordLine, wordLine.indexOf("beta"));
+    const baseModel = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: viewState,
+      keybindings,
+      width: 120,
+      height: 40,
+      interactionProfile: {
+        semanticWordSelection: true,
+        semanticRowSelection: true,
+        wordNavigation: true,
+        followCursorOnInput: true,
+        homeEndFallback: true,
+      },
+    });
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () => ({
+        ...baseModel,
+        terminalView: {
+          ...baseModel.terminalView,
+          plainLines: [wordLine],
+          cursorAbsRow: 0,
+          viewportStart: 0,
+          cursorCol,
+        },
+      }),
+      getLiveMirror: () =>
+        ({
+          clearSelection: (ownerId?: string) => {
+            actions.push(`clear:${ownerId ?? "all"}`);
+            return true;
+          },
+          selectRange: () => {
+            actions.push("select-range");
+            return true;
+          },
+          sendInputBytes: (data: Uint8Array) => {
+            actions.push(`input:${new TextDecoder().decode(data)}`);
+            return true;
+          },
+          followCursor: () => {
+            actions.push("follow");
+            return true;
+          },
+        }) as never,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" }))).toBe(true);
+
+    expect(actions).toEqual(["select-range", `input:${"\u001b[D".repeat(6)}`, "follow"]);
+  });
+
+  test("Scenario: Given real terminal Shift Option Left Right sequences When routed through key input Then cli-shell sends backend selection ranges instead of plain word jumps", async () => {
+    const wordLine = "$ echo hello world ok";
+    const state = createRuntimeState({ heartbeat: [], lines: [wordLine], roomMessages: [], unread: 0 });
+    const lineStartCol = stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world"));
+    const lineEndCol = stringIndexToTerminalColumn(wordLine, wordLine.indexOf("ok"));
+    const shellEntry = createGlobalTerminalEntry("shell-1", [wordLine]);
+    state.globalTerminals = createCached([
+      {
+        ...shellEntry,
+        snapshot: shellEntry.snapshot
+          ? {
+              ...shellEntry.snapshot,
+              cursor: { ...shellEntry.snapshot.cursor, x: lineEndCol, y: 0, visible: true, absY: 0 },
+            }
+          : shellEntry.snapshot,
+      },
+    ]);
+    const sentMessages: TerminalTransportClientMessage[] = [];
+    const setup = await createCoreAppTestSetup({
+      state,
+      width: 120,
+      height: 8,
+      createTransportSession: ({ events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+          },
+          disconnect() {},
+          send(message) {
+            sentMessages.push(message);
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    setup.renderer.keyInput.processParsedKey({
+      name: "left",
+      ctrl: false,
+      meta: true,
+      shift: true,
+      option: true,
+      sequence: "\x1b[1;4D",
+      raw: "\x1b[1;4D",
+      number: false,
+      eventType: "press",
+      source: "raw",
+    });
+
+    expect(sentMessages).toContainEqual({
+      type: "selectRange",
+      range: {
+        ownerId: "terminal",
+        startRow: 0,
+        startCol: lineStartCol,
+        endRow: 0,
+        endCol: lineEndCol,
+      },
+    });
+    expect(sentMessages.some((message) => message.type === "inputBytes")).toBe(true);
+    setup.destroy();
+  });
+
+  test("Scenario: Given OpenTUI parses Option Shift as meta uppercase letters When routed through key input Then cli-shell extends backend selection instead of plain word jumps", async () => {
+    const wordLine = "$ echo hello world ok";
+    const state = createRuntimeState({ heartbeat: [], lines: [wordLine], roomMessages: [], unread: 0 });
+    const lineStartCol = stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world"));
+    const lineEndCol = stringIndexToTerminalColumn(wordLine, wordLine.indexOf("ok"));
+    const shellEntry = createGlobalTerminalEntry("shell-1", [wordLine]);
+    state.globalTerminals = createCached([
+      {
+        ...shellEntry,
+        snapshot: shellEntry.snapshot
+          ? {
+              ...shellEntry.snapshot,
+              cursor: { ...shellEntry.snapshot.cursor, x: lineEndCol, y: 0, visible: true, absY: 0 },
+            }
+          : shellEntry.snapshot,
+      },
+    ]);
+    const sentMessages: TerminalTransportClientMessage[] = [];
+    const setup = await createCoreAppTestSetup({
+      state,
+      width: 120,
+      height: 8,
+      createTransportSession: ({ events }) =>
+        createTestTransportSession({
+          async connect() {
+            events.onOpen();
+          },
+          disconnect() {},
+          send(message) {
+            sentMessages.push(message);
+            return true;
+          },
+          getConnectionState() {
+            return "connected";
+          },
+        }),
+    });
+
+    await setup.renderOnce();
+    const parsed = parseKeypress("\x1bB", { useKittyKeyboard: true });
+    expect(parsed).toMatchObject({ name: "left", meta: true, shift: false, sequence: "\x1bB" });
+    setup.renderer.keyInput.processParsedKey(parsed!);
+
+    expect(sentMessages).toContainEqual({
+      type: "selectRange",
+      range: {
+        ownerId: "terminal",
+        startRow: 0,
+        startCol: lineStartCol,
+        endRow: 0,
+        endCol: lineEndCol,
+      },
+    });
+    setup.destroy();
   });
 
   test("Scenario: Given terminal input is rejected by a live mirror When a key is routed Then cli-shell does not request backend cursor follow", () => {

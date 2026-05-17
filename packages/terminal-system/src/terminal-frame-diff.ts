@@ -54,12 +54,7 @@ const projectInteractionFrameState = (
   const selectionOverlays = cloned.selectionOverlays
     .map((overlay) => ({
       ...overlay,
-      rows: overlay.rows
-        .map((row) => ({
-          ...row,
-          row: row.row - input.viewportStart,
-        }))
-        .filter((row) => row.row >= 0 && row.row < input.requestedRows),
+      rows: overlay.rows.filter((row) => row.row >= input.viewportStart && row.row < input.viewportStart + input.requestedRows),
     }))
     .filter((overlay) => overlay.rows.length > 0);
   return {
@@ -194,6 +189,7 @@ const buildRowsPatch = (
   rows: current.rows,
   cursor: { ...current.cursor },
   scrollback: { ...current.scrollback },
+  interaction: cloneInteractionFrameState(current.interaction),
   timestamp: current.timestamp,
 });
 
@@ -257,6 +253,7 @@ const buildScrollRowsPatch = (
     rows: current.rows,
     cursor: { ...current.cursor },
     scrollback: { ...current.scrollback },
+    interaction: cloneInteractionFrameState(current.interaction),
     timestamp: current.timestamp,
   };
 };

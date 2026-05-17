@@ -45,6 +45,14 @@ export const buildCliShellComposedSurface = (input: {
     terminalRichLines: frame.styledLines.map((line) => ({
       spans: line.spans.map((span) => ({ ...span })),
     })),
+    selectionSources: frame.selectionSources.map((source) => ({
+      owner: source.owner,
+      row: source.row,
+      col: source.col,
+      width: source.width,
+      height: source.height,
+      sourceStartRow: source.sourceStartRow,
+    })),
     cursor: {
       x: cursor.x,
       y: cursor.y,

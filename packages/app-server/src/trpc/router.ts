@@ -165,6 +165,18 @@ const terminalComposedSurfaceSchema = z.object({
         }),
       )
       .optional(),
+    selectionSources: z
+      .array(
+        z.object({
+          owner: z.enum(["terminal", "dialogue"]),
+          row: z.number().int().nonnegative(),
+          col: z.number().int().nonnegative(),
+          width: z.number().int().nonnegative(),
+          height: z.number().int().nonnegative(),
+          sourceStartRow: z.number().int().nonnegative().optional(),
+        }),
+      )
+      .optional(),
     cursor: z.object({
       x: z.number().int().nonnegative(),
       y: z.number().int().nonnegative(),

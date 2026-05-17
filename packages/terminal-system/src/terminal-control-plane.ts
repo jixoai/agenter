@@ -2750,6 +2750,7 @@ export class TerminalControlPlane {
       composedUnreadLabel: input.surface.unreadLabel,
       composedHeartbeatLabel: input.surface.heartbeatLabel,
       composedShellSnapshotSeq: input.surface.shellSnapshotSeq,
+      composedSelectionSources: input.surface.selectionSources?.map((source) => ({ ...source })),
     };
     managed.record = this.db.updateTerminal(input.terminalId, {
       metadata: metadataPatch,

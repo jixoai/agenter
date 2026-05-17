@@ -78,14 +78,17 @@ export interface CliShellSelectionRegion extends CliShellScrollRegion {
   owner: "terminal" | "dialogue";
 }
 
-export interface CliShellSelectionSource extends CliShellSelectionRegion {
-  lines: readonly TerminalRenderRichLine[];
+export interface CliShellSelectionSourceDescriptor extends CliShellSelectionRegion {
   /**
    * Absolute row in the owner's backend buffer that corresponds to `row`.
    * Selection state is anchored to backend content coordinates so highlights can
    * be re-projected after viewport scrolling instead of sticking to screen rows.
    */
   sourceStartRow?: number;
+}
+
+export interface CliShellSelectionSource extends CliShellSelectionSourceDescriptor {
+  lines: readonly TerminalRenderRichLine[];
 }
 
 export interface CliShellTuiInteractionLayout {
@@ -98,6 +101,10 @@ export interface CliShellTuiViewState {
   dialogueOpen: boolean;
   focusTarget: "terminal" | "dialogue";
   activeFocusTarget?: "terminal" | "dialogue";
+  terminalSelectionAnchor?: {
+    row: number;
+    col: number;
+  };
   requestedPlacement: CliShellDialoguePlacementRequest;
   dialogueDraft: string;
   dialogueScrollOffset?: number;

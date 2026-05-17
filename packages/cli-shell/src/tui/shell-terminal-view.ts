@@ -25,8 +25,12 @@ export interface ShellTerminalViewOptions extends FrameBufferOptions {
   onSelectionEnd?: ConstructorParameters<typeof BackendFrameRenderable>[1]["onSelectionEnd"];
   onSelectWordAt?: ConstructorParameters<typeof BackendFrameRenderable>[1]["onSelectWordAt"];
   onSelectLineAt?: ConstructorParameters<typeof BackendFrameRenderable>[1]["onSelectLineAt"];
+  onClearSelection?: ConstructorParameters<typeof BackendFrameRenderable>[1]["onClearSelection"];
+  onInteractionTrace?: ConstructorParameters<typeof BackendFrameRenderable>[1]["onInteractionTrace"];
   onMouseDown?: BackendFrameRenderable["onMouseDown"];
   onMouseDrag?: BackendFrameRenderable["onMouseDrag"];
+  onMouseDragEnd?: BackendFrameRenderable["onMouseDragEnd"];
+  onMouseUp?: BackendFrameRenderable["onMouseUp"];
   onMouseScroll?: BackendFrameRenderable["onMouseScroll"];
 }
 

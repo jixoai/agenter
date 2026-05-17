@@ -7,14 +7,15 @@ const arrowMap: Record<string, string> = {
   down: "\u001b[B",
   right: "\u001b[C",
   left: "\u001b[D",
-  home: "\u001b[H",
-  end: "\u001b[F",
+  home: "\x01",
+  end: "\x05",
   delete: "\u001b[3~",
   pageup: "\u001b[5~",
   pagedown: "\u001b[6~",
 };
 
 const isHomeOrEndKey = (name: string): boolean => name === "home" || name === "end";
+const isFallbackLineMovementKey = (name: string): boolean => name === "home" || name === "end";
 
 const nativeSequence = (key: KeyEvent): string | null => {
   if (key.sequence.length > 0) {
@@ -61,7 +62,7 @@ export const encodeCliShellTerminalKey = (
   }
 
   if (arrowMap[key.name]) {
-    if (isHomeOrEndKey(key.name) && options.homeEndFallback === false) {
+    if (isFallbackLineMovementKey(key.name) && options.homeEndFallback === false) {
       return null;
     }
     return arrowMap[key.name];

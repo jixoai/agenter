@@ -44,6 +44,23 @@ describe("Feature: ghostty-native backend-owned terminal interaction", () => {
     }
   });
 
+  test("Scenario: Given viewport is scrolled When selecting a visible row by backend coordinate Then copied text matches that visible row", () => {
+    const backend = createGhosttyNativeBackend({ cols: 12, rows: 3, scrollbackLimit: 100 });
+    try {
+      backend.feed(encoder.encode("zero\r\none\r\ntwo\r\nthree\r\nfour\r\n"));
+      backend.scrollViewport(-2);
+      const scrollback = backend.getScrollback();
+      const visibleTopText = lineText(backend, scrollback.viewportOffset);
+
+      expect(scrollback.viewportOffset).toBeGreaterThan(0);
+      expect(backend.selectLineAt({ ownerId: "terminal", row: scrollback.viewportOffset, col: 0 })).toBe(true);
+      expect(backend.copySelection("terminal")).toBe(visibleTopText);
+      expect(backend.getSelectionOverlay("terminal")?.rows[0]?.row).toBe(scrollback.viewportOffset);
+    } finally {
+      backend.destroy();
+    }
+  });
+
   test("Scenario: Given word and line selection requests When routed to ghostty-native Then backend APIs compute the selection", () => {
     const backend = createGhosttyNativeBackend({ cols: 20, rows: 4, scrollbackLimit: 100 });
     try {

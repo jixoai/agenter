@@ -99,6 +99,11 @@ const linesToRichLines = (lines: readonly string[]): TerminalRenderRichLine[] =>
 
 const cloneFrame = (frame: TerminalTransportFramePayload): TerminalTransportFramePayload => structuredClone(frame);
 
+const framesShareInteractionTruth = (
+  left: TerminalTransportFramePayload,
+  right: TerminalTransportFramePayload,
+): boolean => JSON.stringify(left.interaction ?? null) === JSON.stringify(right.interaction ?? null);
+
 const framesShareVisibleTruth = (
   left: TerminalTransportFramePayload,
   right: TerminalTransportFramePayload,
@@ -114,7 +119,8 @@ const framesShareVisibleTruth = (
     left.scrollback.totalLines !== right.scrollback.totalLines ||
     left.scrollback.screenLines !== right.scrollback.screenLines ||
     left.lines.length !== right.lines.length ||
-    (left.richLines?.length ?? 0) !== (right.richLines?.length ?? 0)
+    (left.richLines?.length ?? 0) !== (right.richLines?.length ?? 0) ||
+    !framesShareInteractionTruth(left, right)
   ) {
     return false;
   }
@@ -158,7 +164,8 @@ const framesShareDrawableCells = (
     left.scrollback.totalLines !== right.scrollback.totalLines ||
     left.scrollback.screenLines !== right.scrollback.screenLines ||
     left.lines.length !== right.lines.length ||
-    (left.richLines?.length ?? 0) !== (right.richLines?.length ?? 0)
+    (left.richLines?.length ?? 0) !== (right.richLines?.length ?? 0) ||
+    !framesShareInteractionTruth(left, right)
   ) {
     return false;
   }

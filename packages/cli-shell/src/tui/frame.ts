@@ -392,16 +392,20 @@ const renderTerminalRegion = (input: {
     return;
   }
   const carriesFullScrollback = input.model.richLines.length >= input.model.scrollbackRows;
-  const projection = projectTerminalViewport({
-    lines: input.model.richLines,
-    cursorAbsRow: carriesFullScrollback
-      ? input.model.cursorAbsRow
-      : Math.max(0, input.model.cursorAbsRow - input.model.viewportStart),
-    cursorCol: input.model.cursorCol,
-    cursorVisible: false,
-    viewportRows: input.height,
-    viewportStart: carriesFullScrollback ? input.model.viewportStart : undefined,
-  });
+  const projection = carriesFullScrollback
+    ? projectTerminalViewport({
+        lines: input.model.richLines,
+        cursorAbsRow: input.model.cursorAbsRow,
+        cursorCol: input.model.cursorCol,
+        cursorVisible: false,
+        viewportRows: input.height,
+        viewportStart: input.model.viewportStart,
+      })
+    : {
+        lines: input.model.richLines.slice(0, input.height).map((line) => ({
+          spans: line.spans.map((span) => ({ ...span })),
+        })),
+      };
   for (let index = 0; index < input.height; index += 1) {
     const targetRow = input.row + index;
     fillCanvasRow(input.canvas, {
@@ -475,21 +479,30 @@ export const layoutCliShellTuiFrame = (input: {
   });
   if (terminalScrollRegion) {
     const carriesFullScrollback = input.model.terminalView.richLines.length >= input.model.terminalView.scrollbackRows;
-    const terminalProjection = projectTerminalViewport({
-      lines: input.model.terminalView.richLines,
-      cursorAbsRow: carriesFullScrollback
-        ? input.model.terminalView.cursorAbsRow
-        : Math.max(0, input.model.terminalView.cursorAbsRow - input.model.terminalView.viewportStart),
-      cursorCol: input.model.terminalView.cursorCol,
-      cursorVisible: false,
-      viewportRows: terminalScrollRegion.height,
-      viewportStart: carriesFullScrollback ? input.model.terminalView.viewportStart : undefined,
-    });
+    const terminalProjection = carriesFullScrollback
+      ? projectTerminalViewport({
+          lines: input.model.terminalView.richLines,
+          cursorAbsRow: input.model.terminalView.cursorAbsRow,
+          cursorCol: input.model.terminalView.cursorCol,
+          cursorVisible: false,
+          viewportRows: terminalScrollRegion.height,
+          viewportStart: input.model.terminalView.viewportStart,
+        })
+      : {
+          lines: input.model.terminalView.richLines.slice(0, terminalScrollRegion.height).map((line) => ({
+            spans: line.spans.map((span) => ({ ...span })),
+          })),
+          viewport: {
+            start: 0,
+          },
+        };
     selectionSources.push({
       owner: "terminal",
       ...terminalScrollRegion,
       lines: terminalProjection.lines,
-      sourceStartRow: terminalProjection.viewport.start,
+      sourceStartRow: carriesFullScrollback
+        ? terminalProjection.viewport.start
+        : input.model.terminalView.viewportStart + terminalProjection.viewport.start,
     });
   }
   renderShellScrollbar({

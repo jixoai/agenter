@@ -20,6 +20,7 @@ import type {
   ProductDelegationRecord,
   RuntimeClientState,
   SessionEntry,
+  ProductTerminalComposedSurfaceState,
 } from "@agenter/client-sdk";
 import type { CliShellTuiStore, CliShellTuiViewState } from "../src";
 
@@ -616,6 +617,7 @@ function createTuiHarnessStore(
         unreadLabel: string;
         heartbeatLabel: string;
         shellSnapshotSeq: number;
+        selectionSources?: ProductTerminalComposedSurfaceState["selectionSources"];
       };
     }) => {
       publishSurfaceCalls += 1;
@@ -637,6 +639,7 @@ function createTuiHarnessStore(
           composedUnreadLabel: payload.surface.unreadLabel,
           composedHeartbeatLabel: payload.surface.heartbeatLabel,
           composedShellSnapshotSeq: payload.surface.shellSnapshotSeq,
+          composedSelectionSources: payload.surface.selectionSources?.map((source) => ({ ...source })),
         },
         snapshot: {
           seq: (entry.snapshot?.seq ?? 0) + 1,

@@ -1,7 +1,7 @@
 import type { GlobalTerminalEntry } from "@agenter/client-sdk";
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
 
-import type { CliShellComposedSurfaceState } from "./types";
+import type { CliShellComposedSurfaceState, CliShellSelectionSourceDescriptor } from "./types";
 
 export const cloneSnapshotRichLines = (
   snapshot: NonNullable<GlobalTerminalEntry["snapshot"]>["richLines"],
@@ -60,7 +60,41 @@ const hasExplicitComposedMetadata = (entry: GlobalTerminalEntry | null): boolean
   typeof entry?.metadata?.composedManagedLabel === "string" ||
   typeof entry?.metadata?.composedUnreadLabel === "string" ||
   typeof entry?.metadata?.composedHeartbeatLabel === "string" ||
-  typeof entry?.metadata?.composedShellSnapshotSeq === "number";
+  typeof entry?.metadata?.composedShellSnapshotSeq === "number" ||
+  Array.isArray(entry?.metadata?.composedSelectionSources);
+
+const readComposedSelectionSource = (
+  source: unknown,
+): CliShellSelectionSourceDescriptor | null => {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+  const record = source as {
+    owner?: unknown;
+    row?: unknown;
+    col?: unknown;
+    width?: unknown;
+    height?: unknown;
+    sourceStartRow?: unknown;
+  };
+  if (
+    (record.owner !== "terminal" && record.owner !== "dialogue") ||
+    typeof record.row !== "number" ||
+    typeof record.col !== "number" ||
+    typeof record.width !== "number" ||
+    typeof record.height !== "number"
+  ) {
+    return null;
+  }
+  return {
+    owner: record.owner,
+    row: record.row,
+    col: record.col,
+    width: record.width,
+    height: record.height,
+    sourceStartRow: typeof record.sourceStartRow === "number" ? record.sourceStartRow : undefined,
+  };
+};
 
 export const snapshotsShareVisibleBody = (
   left: GlobalTerminalEntry["snapshot"] | null | undefined,
@@ -109,6 +143,12 @@ export const resolvePublishedComposedSurface = (input: {
       snapshot.richLines?.map((line) => ({
         spans: line.spans.map((span) => ({ ...span })),
       })) ?? undefined,
+    selectionSources: Array.isArray(entry.metadata?.composedSelectionSources)
+      ? entry.metadata.composedSelectionSources.flatMap((source) => {
+          const selectionSource = readComposedSelectionSource(source);
+          return selectionSource ? [selectionSource] : [];
+        })
+      : undefined,
     cursor: { ...snapshot.cursor },
     scrollback: { ...snapshot.scrollback },
   };
@@ -138,6 +178,14 @@ export const resolveComposedSurfaceKey = (surface: CliShellComposedSurfaceState)
     surface.scrollback.viewportOffset,
     surface.scrollback.totalLines,
     surface.scrollback.screenLines,
+    surface.selectionSources?.map((source) => [
+      source.owner,
+      source.row,
+      source.col,
+      source.width,
+      source.height,
+      source.sourceStartRow ?? "",
+    ].join(",")).join("|") ?? "",
   ].join("\u001f");
 
 export const richLinesFromComposedSurface = (surface: CliShellComposedSurfaceState): TerminalRenderRichLine[] =>

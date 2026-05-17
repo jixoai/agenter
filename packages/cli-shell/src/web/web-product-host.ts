@@ -165,6 +165,7 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
       bottomLine: surface.bottomLine,
       cursor: surface.cursor,
       scrollback: surface.scrollback,
+      selectionSources: surface.selectionSources,
       lines: surface.terminalLines,
       richLines: surface.terminalRichLines,
     });
