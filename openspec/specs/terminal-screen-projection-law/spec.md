@@ -37,6 +37,11 @@ The shell offscreen renderer SHALL emit shell content, scrollbar, focus, selecti
 - **THEN** the selection visual and copy extraction SHALL belong to the shell offscreen renderer path
 - **AND** terminal-2 SHALL NOT maintain a second shell selection truth
 
+#### Scenario: Selection overlay row survives viewport projection
+- **WHEN** backend selection covers row 5 and the projected viewport starts at row 2
+- **THEN** the projected frame SHALL still publish the selection overlay row as 5
+- **AND** the view renderer SHALL be responsible for mapping that backend row onto the visible screen row using its selection source metadata
+
 #### Scenario: Scrollbar stays inside shell frame ownership
 - **WHEN** the shell region renders a visible scrollbar
 - **THEN** the scrollbar SHALL be part of the shell offscreen renderer frame
@@ -231,6 +236,34 @@ When word-navigation enhancement is enabled, Option+Left and Option+Right SHALL 
 - **WHEN** the user presses Option+Up or Option+Down
 - **THEN** cli-shell SHALL NOT invent product-specific word navigation semantics
 - **AND** it SHALL pass through backend/native terminal input when a native sequence is available
+
+### Requirement: Offscreen terminal word selection SHALL support Option Shift arrows
+
+When word navigation enhancement is enabled, Option+Shift+Left and Option+Shift+Right SHALL extend backend-owned selection from the current cursor to the nearest previous or next terminal word boundary.
+
+#### Scenario: Option Shift Left extends selection to previous word
+- **WHEN** the user presses Option+Shift+Left in the shell region
+- **THEN** cli-shell SHALL compute the previous word boundary using the shared backend-aware terminal word helper
+- **AND** it SHALL route a backend selection range to the shell owner
+- **AND** it SHALL NOT store selected text in OpenTUI projection state
+
+#### Scenario: Option Shift Right extends selection to next word
+- **WHEN** the user presses Option+Shift+Right in the shell region
+- **THEN** cli-shell SHALL compute the next word boundary using the shared backend-aware terminal word helper
+- **AND** it SHALL route a backend selection range to the shell owner
+- **AND** it SHALL NOT store selected text in OpenTUI projection state
+
+#### Scenario: Option Shift selection preserves one anchor until ordinary input
+- **WHEN** a user extends selection by word with Option+Shift and repeats or reverses direction
+- **THEN** cli-shell SHALL preserve the original selection anchor
+- **AND** it SHALL move only the focus endpoint to the latest backend cursor target
+- **AND** ordinary terminal input SHALL reset that keyboard selection anchor before routing bytes
+
+#### Scenario: Ordinary input clears backend-owned selection before typing
+- **WHEN** shell focus is active and ordinary terminal input is routed
+- **THEN** cli-shell SHALL ask the terminal backend owner to clear active selection before sending input bytes
+- **AND** this behavior SHALL use the backend interaction bridge so supported xterm and ghostty-native owners share the same interaction law
+- **AND** Option+Shift selection-extension cursor movement SHALL preserve selection instead of clearing it
 
 ### Requirement: Supported terminal key behavior SHALL be covered by BDD matrix tests
 

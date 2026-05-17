@@ -33,6 +33,16 @@ cli-shell SHALL include focused tests that verify backend interaction recommenda
 - **THEN** the focused recommendation test SHALL fail until the expected profile is updated
 - **AND** the update SHALL document which interaction behavior is now provided by the backend, by a backend interaction adapter, or by no supported path
 
+#### Scenario: Recommendation includes line movement fallback
+- **WHEN** cli-shell resolves the interaction profile for a supported backend
+- **THEN** the profile SHALL make Home/End fallback behavior explicit
+- **AND** focused tests SHALL fail if that decision is removed accidentally
+
+#### Scenario: Recommendation includes word selection extension
+- **WHEN** cli-shell resolves the interaction profile for a supported backend
+- **THEN** the profile SHALL make word navigation and word selection extension behavior explicit
+- **AND** focused tests SHALL fail if Option+Shift word selection loses the backend-owned path
+
 #### Scenario: Ghostty-native recommendation prefers backend-native selection
 - **WHEN** cli-shell resolves recommendations for `ghostty-native`
 - **THEN** shell selection and copy SHALL be marked backend-native once the wrapper exposes Ghostty terminal-core selection APIs
@@ -56,3 +66,13 @@ cli-shell SHALL route shell-region selection and dialogue-region selection to th
 - **WHEN** the user selects text and then scrolls the same owner region
 - **THEN** cli-shell SHALL render the backend-published selection overlay for the new viewport
 - **AND** it SHALL NOT keep the selected background fixed to old host rows
+
+#### Scenario: Repeated Option+Shift movement preserves selection anchor
+- **WHEN** a user presses Option+Shift+Left or Option+Shift+Right repeatedly
+- **THEN** cli-shell SHALL keep the original selection anchor fixed
+- **AND** each later keypress SHALL update only the selection focus endpoint after moving the backend cursor
+
+#### Scenario: Option+Shift range uses scrollback row while scrolled
+- **WHEN** the shell viewport is scrolled and a user presses Option+Shift+Left or Option+Shift+Right
+- **THEN** cli-shell SHALL send the backend absolute scrollback row in the selection range
+- **AND** it SHALL NOT treat the visible screen row as the backend row

@@ -37,6 +37,20 @@ Terminal selection state SHALL be represented in backend-owned coordinates tied 
 - **THEN** the selection SHALL remain owned by the dialogue or terminal-chat backend interaction path
 - **AND** shell selection and shell cursor truth SHALL NOT change from that dialogue drag
 
+### Requirement: Backend interaction SHALL accept keyboard-driven selection ranges
+
+Backend interaction owners SHALL accept selection ranges produced by keyboard editing gestures such as Option+Shift+Left and Option+Shift+Right when the product enables those gestures.
+
+#### Scenario: Keyboard range selection remains backend-owned
+- **WHEN** a projection host turns a keyboard selection gesture into a `selectRange` event
+- **THEN** the backend interaction owner SHALL store and publish that selected range in backend coordinates
+- **AND** copy SHALL read selected text from the backend owner
+
+#### Scenario: Unsupported owner rejects range selection
+- **WHEN** a `selectRange` event targets a different owner than the backend interaction controller owns
+- **THEN** the backend interaction owner SHALL reject the event
+- **AND** host projection SHALL NOT fabricate a fallback selected text range
+
 ### Requirement: Terminal backends SHALL expose selected-text extraction
 
 The selected-text extraction path SHALL read from the backend or backend interaction adapter that owns the active selection. Product or projection code SHALL NOT reconstruct selected text from host-local rendered glyph snapshots as the durable copy truth.
