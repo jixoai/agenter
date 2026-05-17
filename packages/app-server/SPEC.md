@@ -88,6 +88,9 @@
 - semantic judge 如果出现 empty / malformed / disagreeing outputs，必须暴露 per-attempt diagnostics；单次低 token judge 的脆弱输出不能直接成为最终验收真相。
 - real-AI integration tests 对 meaning-level 行为必须优先使用 semantic-judge-backed checks 或结构化行为提取；只有 deliberate protocol literal 才允许继续使用 exact-string assertions。
 - runtime model call 只暴露三个 direct tools：`workspace_list`、`root_bash`、`workspace_bash`。message / workspace / terminal / attention 的操作都必须通过 `root_bash` 中的 runtime-local CLI 命令或 `workspace_bash` 的纯工作区 shell 完成。
+- MCP 操作也不得升级成 direct model tools：`mcpSystem` 由 app-server 作为 runtime atom 组合，提供 `mcp` runtime-local CLI/API、SQLite fact store、官方 MCP SDK transport adapters、project-scoped lifecycle lock、project-local snapshots 与显式 action facts；模型只能经由 root-workspace `mcp` CLI 和 `agenter-mcp` skill 使用它。
+- mcpSystem 持久化根属于 session/runtime private authority：global configs、project enablements、instance recovery state、snapshots 与 action facts 落在 runtime-owned SQLite；`mcp query` 只读投影 `mcp_installed` / `mcp_enabled`，不暴露 raw durable tables 或第三张 capability table。
+- mcpSystem 的 stdio server process env 来自 root-workspace runtime env，并被 literal global env 与 transport env 覆盖；当前不引入 secret-reference layer。Transport 支持 `stdio`、`streamable-http` 与 `sse`，均通过官方 MCP SDK client transports 接入。
 - runtime `systemPrompt` 只保留稳定 attention law 与共享身份槽位；runtime-generated `skills.list` 必须通过 attention-backed readonly slot 注入，而不是重新拼回 `systemPrompt`；`SYSTEMS_GUIDE` 一类 provider-owned bootstrap guide 必须保持为空。
 - runtime 必须为 root workspace shell 注入 loopback-local API 环境：CLI 通过 runtime-local base URL + avatar private key 访问 attention / message / workspace / terminal contract。private key 就是 runtime identity。
 - shared terminal 不是 root-workspace shell：runtime-created 与 recovery-created terminal 默认都保持 real-home collaboration semantics，不得因为 `cwd` 在 avatar root workspace 就注入 root-workspace-exclusive env/CLI。

@@ -5,12 +5,12 @@ Define the runtime's explicit workspace tool surface, progressive skill discover
 ## Requirements
 ### Requirement: Runtime SHALL expose explicit workspace primitives as model tools
 
-Each AI model round SHALL receive `workspace_list`, `root_bash`, and `workspace_bash` as the only direct tools. Message, terminal, workspace, and attention system operations SHALL be performed through CLI commands inside `root_bash` instead of through direct model tool injection. `root_bash` SHALL execute as the fixed `root-workspace` shell surface on top of one session-owned durable root-workspace `just-bash` world and MAY rewrite `HOME` to the avatar root workspace while mounting root-exclusive runtime CLI/env. `workspace_bash` SHALL stay a pure `public-workspace` shell selected by `workspaceId` and SHALL NOT synthesize avatar-root `HOME` or mount root-workspace-exclusive CLI helpers.
+Each AI model round SHALL receive `workspace_list`, `root_bash`, and `workspace_bash` as the only direct tools. Message, terminal, workspace, MCP, and attention system operations SHALL be performed through CLI commands inside `root_bash` instead of through direct model tool injection. `root_bash` SHALL execute as the fixed `root-workspace` shell surface on top of one session-owned durable root-workspace `just-bash` world and MAY rewrite `HOME` to the avatar root workspace while mounting root-exclusive runtime CLI/env. `workspace_bash` SHALL stay a pure `public-workspace` shell selected by `workspaceId` and SHALL NOT synthesize avatar-root `HOME` or mount root-workspace-exclusive CLI helpers.
 
 #### Scenario: Model receives only the explicit workspace direct tools
 - **WHEN** the runtime prepares a model call
 - **THEN** the direct tool list contains `workspace_list`, `root_bash`, and `workspace_bash`
-- **AND** it does not include `attention_*`, `message_*`, or `terminal_*` direct tools
+- **AND** it does not include `attention_*`, `message_*`, `terminal_*`, or `mcp_*` direct tools
 
 #### Scenario: Root bash keeps avatar-root home semantics
 - **WHEN** the AI executes `root_bash`
@@ -19,7 +19,7 @@ Each AI model round SHALL receive `workspace_list`, `root_bash`, and `workspace_
 
 #### Scenario: Root bash exposes root-exclusive runtime CLI
 - **WHEN** the AI executes `root_bash`
-- **THEN** runtime-local CLI commands such as `attention`, `message`, `workspace`, `terminal`, `skill`, and `tool` are available inside that shell
+- **THEN** runtime-local CLI commands such as `attention`, `message`, `workspace`, `terminal`, `mcp`, `skill`, and `tool` are available inside that shell
 - **AND** those commands are treated as root-workspace-only shell affordances rather than public-workspace defaults
 
 #### Scenario: Workspace bash does not inherit root-workspace semantics
@@ -74,10 +74,10 @@ Each started runtime SHALL expose a loopback-local API surface for attention, me
 
 ### Requirement: Root bash SHALL expose runtime CLI commands in-shell
 
-The shell environment behind `root_bash` SHALL provide CLI commands for `attention`, `message`, `workspace`, `terminal`, `skill`, and `tool`.
+The shell environment behind `root_bash` SHALL provide CLI commands for `attention`, `message`, `workspace`, `terminal`, `mcp`, `skill`, and `tool`.
 
 #### Scenario: Shell exposes CLI commands as normal command names
-- **WHEN** the AI runs `which attention`, `which workspace`, or `which skill` inside `root_bash`
+- **WHEN** the AI runs `which attention`, `which workspace`, `which mcp`, or `which skill` inside `root_bash`
 - **THEN** each command is discoverable and executable from that shell session
 - **AND** each command obeys the same mount and credential boundaries as the runtime
 
@@ -390,4 +390,3 @@ The dedicated management CLI SHALL share descriptor parsing and acceptance mecha
 - **AND** Avatar-B sends Avatar-A a terminal invitation descriptor for a terminal hosted by agenter-B
 - **THEN** Avatar-A can accept that descriptor from agenter-A without locally re-hosting the terminal authority
 - **THEN** the acceptance still resolves against agenter-B's terminal backend as the authority that owns the invitation truth
-

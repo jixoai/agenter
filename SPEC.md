@@ -58,6 +58,9 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - provider continuation 可以在 TanStack/adapter 的同步 loop strategy 中追加已提交 attention projection，但该 strategy 只能消费已经由统一 commit API 产出的 projection，不能在同步 provider loop 内执行 source drain、read ack 或 attention commit。
 - LoopBus 的模型表面必须保持极小：稳定 attention law、attention-backed `skills.list` 摘要、以及 `workspace_list` / `root_bash` / `workspace_bash` 三个显式 workspace 原语。message / workspace / terminal / future systems 的操作统一经由 runtime-local CLI/API 自助发现，不再直接注入成 model tools。
 - runtime-local CLI/API 的 tool surface 必须遵守单一信源：`attention` / `message` / `workspace` / `terminal` 的 route、description、`inputSchema`、`--help` 与 canonical examples 都由共享 descriptor registry 派生；AI-facing shell 不再接受 positional/natural-form 参数，只接受空输入、单个 JSON argv 或 JSON stdin，且当前唯一的特殊非 JSON 标记就是 `--help`。
+- MCP system 是 root-workspace runtime atom，不是 provider-side hidden tool injection：MCP 全局配置、项目启用、实例生命周期、project-local discovery snapshot、SQL 查询与 tool 调用都由 mcpSystem 统一拥有；模型只通过 root-workspace `mcp` CLI/API 和 `agenter-mcp` skill 渐进发现并显式调用。
+- MCP global config 与 project enablement 必须分离：`mcp add/remove` 只管理 global，`mcp enable/disable/list/start/stop/restart/call` 都要求显式 exact project path；新增 global 在所有 project 中默认 disabled，project 之间不继承 enablement、live instance 或 snapshot。
+- `mcp query` 是只读 SQL 投影面，只暴露 `mcp_installed` 与 `mcp_enabled` 两张临时表并永远返回 JSON rows；能力信息只能作为 project-local snapshot JSON 出现在 `mcp_enabled` 行上，不能另建 capability truth 或跨 project 共享。
 - 当某个系统需要把 authority 共享给别的 runtime/client 时，平台优先复用 `system backend + endpoint/token/proof client frontend` 法则：
   - durable truth 与 lifecycle mutation 继续留在 owning backend system
   - frontend client 只负责 transport projection、proof submission 与 accepted seat 的本地投影缓存
