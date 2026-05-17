@@ -112,6 +112,7 @@ const isRuntimeNamespace = (value: string): value is RuntimeToolNamespace =>
   value === "workspace" ||
   value === "terminal" ||
   value === "terminal-manage" ||
+  value === "mcp" ||
   value === "skill";
 
 const executeInProcessRootBashCommand = async (input: {

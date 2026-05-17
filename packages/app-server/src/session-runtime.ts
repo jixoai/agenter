@@ -170,6 +170,7 @@ import {
   type LoopTaskSourceRef,
   type LoopTerminalSourceRef,
 } from "./loopbus-plugin-runtime";
+import { McpSystem } from "./mcp-system/system";
 import { type ManagedTerminalSnapshot, type TerminalRuntime } from "./managed-terminal";
 import { summarizeMessageChannelPresence } from "./message-channel-presence";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
@@ -1804,6 +1805,7 @@ export class SessionRuntime {
   private readonly terminalSystemCleanup: Array<() => void> = [];
   private agent: AgenterAI | null = null;
   private runtimeLocalApi: RuntimeLocalApiHandle | null = null;
+  private mcpSystem: McpSystem | null = null;
   private runtimeSkillSystem: RuntimeSkillSystem | null = null;
   private rootWorkspaceShellWorld: RootWorkspaceShellWorld | null = null;
   private readonly terminalControlPlane: TerminalControlPlane;
@@ -2265,6 +2267,25 @@ export class SessionRuntime {
       },
     });
     return this.runtimeSkillSystem;
+  }
+
+  private ensureMcpSystem(): McpSystem {
+    if (this.mcpSystem) {
+      return this.mcpSystem;
+    }
+    this.mcpSystem = new McpSystem({
+      dbPath: join(this.options.sessionRoot, "mcp-system", "mcp-system.sqlite"),
+      rootWorkspacePath: this.getRootWorkspacePath(),
+      runtimeEnv: buildRootWorkspaceShellEnvironment({
+        rootWorkspacePath: this.getRootWorkspacePath(),
+        homeDir: this.getHomeDir(),
+        apiBaseUrl: this.runtimeLocalApi?.baseUrl ?? "",
+        managedSeatAuthorityUrl: this.options.managedSeatAuthorityUrl,
+        privateKey: this.options.avatarPrivateKey ?? "",
+        principalId: this.options.avatarPrincipalId,
+      }),
+    });
+    return this.mcpSystem;
   }
 
   private getAttentionContextMatch(contextId: string): AttentionActiveContextMatch | null {
@@ -4885,6 +4906,7 @@ export class SessionRuntime {
       throw new Error("runtime avatar private key missing");
     }
     const runtimeSkillSystem = this.ensureRuntimeSkillSystem();
+    const mcpSystem = this.ensureMcpSystem();
     this.runtimeLocalApi = await startRuntimeLocalApi({
       expectedPrincipalId: this.options.avatarPrincipalId,
       handlers: {
@@ -5031,6 +5053,7 @@ export class SessionRuntime {
             ...applied,
           });
         },
+        mcp: mcpSystem,
       },
     });
   }
@@ -7396,6 +7419,8 @@ export class SessionRuntime {
       this.messageSystem.setActorPresence(this.messageActorId, false);
       this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
       this.runtimeSkillSystem?.dispose();
+      this.mcpSystem?.close();
+      this.mcpSystem = null;
     }
     this.sessionStore?.setLifecycle({ status });
   }
@@ -7436,6 +7461,8 @@ export class SessionRuntime {
     this.runtimeKernelHost.dispose();
     await this.runtimeLocalApi?.stop().catch(() => {});
     this.runtimeLocalApi = null;
+    this.mcpSystem?.close();
+    this.mcpSystem = null;
     this.runtimeSkillSystem?.dispose();
     this.runtimeSkillSystem = null;
     this.skillKernelAdapter.reset();

@@ -14,6 +14,16 @@ import type {
 import { toJSONSchema, z, type ZodTypeAny } from "zod";
 
 import type {
+  McpAddInput,
+  McpCallInput,
+  McpDisableInput,
+  McpListInput,
+  McpProjectInput,
+  McpQueryInput,
+  McpRemoveInput,
+  McpSystemSurface,
+} from "./mcp-system/types";
+import type {
   RuntimeAttentionActiveView,
   RuntimeAttentionContextView,
   RuntimeMessageChannelView,
@@ -238,6 +248,7 @@ export interface RuntimeLocalApiHandlers {
     rootKind?: "shared" | "global" | "avatar";
   }) => Promise<RuntimeSkillMutationView> | RuntimeSkillMutationView;
   skillRefresh: () => Promise<RuntimeSkillMutationView> | RuntimeSkillMutationView;
+  mcp: McpSystemSurface;
 }
 
 export type RuntimeToolNamespace =
@@ -247,7 +258,8 @@ export type RuntimeToolNamespace =
   | "workspace"
   | "terminal"
   | "terminal-manage"
-  | "skill";
+  | "skill"
+  | "mcp";
 
 type MessageInvitationLike = {
   invitationId: string;
@@ -718,6 +730,87 @@ const skillSetConfigSchema = z.object({
 const skillRemoveSchema = z.object({
   name: z.string().trim().min(1),
   rootKind: skillRootKindSchema.optional(),
+});
+
+const mcpNameSchema = z.string().trim().regex(/^[a-zA-Z0-9_.-]+$/u, {
+  message: "mcp name must contain only letters, numbers, dot, underscore, or dash",
+});
+
+const mcpEnvRecordSchema = z.record(z.string(), z.string());
+
+const mcpTransportSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("stdio"),
+      command: z.string().trim().min(1),
+      args: z.array(z.string()).optional(),
+      env: mcpEnvRecordSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("streamable-http"),
+      url: z.string().trim().url(),
+      headers: mcpEnvRecordSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("sse"),
+      url: z.string().trim().url(),
+      headers: mcpEnvRecordSchema.optional(),
+    })
+    .strict(),
+]);
+
+const mcpAddSchema = z
+  .object({
+    name: mcpNameSchema,
+    title: z.string().trim().min(1).optional(),
+    description: z.string().trim().min(1).optional(),
+    transport: mcpTransportSchema,
+    env: mcpEnvRecordSchema.optional(),
+  })
+  .strict();
+
+const mcpRemoveSchema = z
+  .object({
+    name: mcpNameSchema,
+    stop: z.boolean().optional(),
+  })
+  .strict();
+
+const mcpProjectSchema = z
+  .object({
+    name: mcpNameSchema,
+    projectPath: z.string().trim().min(1),
+  })
+  .strict();
+
+const mcpDisableSchema = mcpProjectSchema.extend({
+  stop: z.boolean().optional(),
+});
+
+const mcpListSchema = z
+  .object({
+    projectPath: z.string().trim().min(1),
+    includeSnapshots: z.boolean().optional(),
+  })
+  .strict();
+
+const mcpQuerySchema = z
+  .object({
+    sql: z.string().trim().min(1),
+    params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+    projectPath: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
+const mcpCallSchema = mcpProjectSchema.extend({
+  toolName: z.string().trim().min(1),
+  arguments: z.record(z.string(), z.unknown()).optional(),
+  autoStart: z.boolean().optional(),
+  autoEnable: z.boolean().optional(),
 });
 
 const defineRuntimeToolDescriptor = <TInput extends ZodTypeAny>(
@@ -1208,6 +1301,181 @@ export const runtimeToolDescriptors = [
     examples: [{ kind: "none" }],
     handler: async (_input, handlers) => ({
       result: await handlers.skillRefresh(),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "add",
+    route: "/v1/mcp/add",
+    description: "Install or update one global MCP config. This never enables or starts any project.",
+    inputSchema: mcpAddSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          name: "thinking",
+          title: "Sequential Thinking",
+          description: "Structured reasoning helper",
+          transport: {
+            kind: "stdio",
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+          },
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      result: handlers.mcp.add(input satisfies McpAddInput),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "remove",
+    route: "/v1/mcp/remove",
+    description: "Remove one global MCP config. Defaults to stop:false, so running project instances block removal.",
+    helpNotes: [
+      "`stop:false` is the default confirmation gate. If removal reports blockedProjects and you still intend to remove it, retry with `stop:true`.",
+    ],
+    inputSchema: mcpRemoveSchema,
+    examples: [
+      { kind: "stdin", payload: { name: "thinking" } },
+      { kind: "argv", payload: { name: "thinking", stop: true } },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.mcp.remove(input satisfies McpRemoveInput),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "enable",
+    route: "/v1/mcp/enable",
+    description: "Enable one installed global MCP for one exact project path without starting it.",
+    inputSchema: mcpProjectSchema,
+    examples: [{ kind: "stdin", payload: { name: "thinking", projectPath: "/repo/app" } }],
+    handler: async (input, handlers) => ({
+      result: handlers.mcp.enable(input satisfies McpProjectInput),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "disable",
+    route: "/v1/mcp/disable",
+    description: "Disable one MCP for one exact project path. Defaults to stop:true to release a running instance.",
+    inputSchema: mcpDisableSchema,
+    examples: [
+      { kind: "stdin", payload: { name: "thinking", projectPath: "/repo/app" } },
+      { kind: "argv", payload: { name: "thinking", projectPath: "/repo/app", stop: false } },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.mcp.disable(input satisfies McpDisableInput),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "list",
+    route: "/v1/mcp/list",
+    description: "List enabled MCPs for one exact project path, including lifecycle and latest project-local snapshot when available.",
+    inputSchema: mcpListSchema,
+    examples: [{ kind: "stdin", payload: { projectPath: "/repo/app" } }],
+    handler: async (input, handlers) => ({
+      rows: handlers.mcp.list(input satisfies McpListInput),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "query",
+    route: "/v1/mcp/query",
+    description: "Run read-only SQL over mcp_installed and mcp_enabled temporary tables. Execution always returns JSON rows.",
+    helpNotes: [
+      "Execution always returns `{ rows: Array<Record<string, string | number | null>> }`; there is no table or text output mode.",
+      "Allowed SQL starts with SELECT, WITH, or EXPLAIN QUERY PLAN. Mutating statements, PRAGMA, comments, and multi-statement payloads are rejected.",
+      "`mcp_installed(name,title,description,transport_kind,command,args_json,url,headers_json,env_json,created_at,updated_at)` exposes globals created by `mcp add`.",
+      "`mcp_enabled(name,project_path,enabled,enabled_source,title,description,transport_kind,lifecycle,last_error,server_name,server_version,protocol_version,snapshot_at,tools_json,resources_json,prompts_json,snapshot_json,created_at,updated_at,last_used_at)` exposes project enablement and project-local runtime snapshots.",
+      "When `projectPath` is passed, `mcp_enabled` projects every installed global for that exact project and marks missing enablement as `enabled=0, enabled_source='default'`.",
+      "Without `projectPath`, `mcp_enabled` only contains explicit project enablement records and does not invent default-disabled rows.",
+      "Examples: `select * from mcp_installed order by name`; `select * from mcp_enabled where project_path=$projectPath and enabled=1`; `select name from mcp_enabled where enabled=0 and enabled_source='default'`; `select name from mcp_enabled where lifecycle='running'`; `select name from mcp_enabled where tools_json like $pattern`.",
+    ],
+    inputSchema: mcpQuerySchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          projectPath: "/repo/app",
+          sql: "select name, enabled, enabled_source, lifecycle from mcp_enabled order by name",
+        },
+      },
+      {
+        kind: "argv",
+        payload: {
+          sql: "select name, transport_kind from mcp_installed order by name",
+        },
+      },
+    ],
+    handler: async (input, handlers) => ({
+      rows: handlers.mcp.query(input satisfies McpQueryInput).rows,
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "start",
+    route: "/v1/mcp/start",
+    description: "Start one enabled MCP instance for one exact project path and persist a fresh discovery snapshot.",
+    inputSchema: mcpProjectSchema,
+    examples: [{ kind: "stdin", payload: { name: "thinking", projectPath: "/repo/app" } }],
+    handler: async (input, handlers) => ({
+      result: await handlers.mcp.start(input satisfies McpProjectInput),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "stop",
+    route: "/v1/mcp/stop",
+    description: "Stop one running MCP instance for one exact project path while keeping global config and project enablement.",
+    inputSchema: mcpProjectSchema,
+    examples: [{ kind: "stdin", payload: { name: "thinking", projectPath: "/repo/app" } }],
+    handler: async (input, handlers) => ({
+      result: await handlers.mcp.stop(input satisfies McpProjectInput),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "restart",
+    route: "/v1/mcp/restart",
+    description: "Restart one MCP instance for one exact project path and persist a fresh discovery snapshot.",
+    inputSchema: mcpProjectSchema,
+    examples: [{ kind: "stdin", payload: { name: "thinking", projectPath: "/repo/app" } }],
+    handler: async (input, handlers) => ({
+      result: await handlers.mcp.restart(input satisfies McpProjectInput),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "mcp",
+    name: "call",
+    route: "/v1/mcp/call",
+    description: "Call one MCP tool through an exact project/global pair. Defaults to autoStart:true and autoEnable:false.",
+    helpNotes: [
+      "`autoStart:true` means an enabled but stopped MCP starts automatically before the tool call.",
+      "`autoEnable:false` means disabled MCPs reject by default. Set `autoEnable:true` only when you intentionally want to enable the project first.",
+    ],
+    inputSchema: mcpCallSchema,
+    examples: [
+      {
+        kind: "stdin",
+        payload: {
+          name: "thinking",
+          projectPath: "/repo/app",
+          toolName: "sequentialthinking",
+          arguments: {
+            thought: "Break the task into observable steps.",
+            nextThoughtNeeded: false,
+            thoughtNumber: 1,
+            totalThoughts: 1,
+          },
+        },
+      },
+    ],
+    handler: async (input, handlers, context) => ({
+      result: await handlers.mcp.call(input satisfies McpCallInput, { signal: context?.signal }),
     }),
   }),
   defineRuntimeToolDescriptor({

@@ -38,19 +38,24 @@ describe("Feature: runtime built-in skills", () => {
     const collaboration = skills.find((skill) => skill.name === "agenter-collaboration");
     const attention = skills.find((skill) => skill.name === "agenter-attention");
     const message = skills.find((skill) => skill.name === "agenter-message");
+    const mcp = skills.find((skill) => skill.name === "agenter-mcp");
     const terminal = skills.find((skill) => skill.name === "agenter-terminal");
     const runtime = skills.find((skill) => skill.name === "agenter-runtime");
     expect(collaboration).toBeTruthy();
     expect(attention).toBeTruthy();
     expect(message).toBeTruthy();
+    expect(mcp).toBeTruthy();
     expect(terminal).toBeTruthy();
     expect(runtime).toBeTruthy();
     expect(collaboration?.summary).toContain("shared room");
     expect(attention?.summary).toContain("attention debt");
+    expect(mcp?.summary).toContain("Install, enable, query, call");
     expect(collaboration?.path).toBe(join(repoRoot, "packages", "app-server", "skills", "collaboration", "SKILL.md"));
     expect(attention?.path).toBe(join(repoRoot, "packages", "attention-system", "skills", "attention", "SKILL.md"));
+    expect(mcp?.path).toBe(join(repoRoot, "packages", "app-server", "skills", "mcp", "SKILL.md"));
     const skillsList = buildRuntimeSkillsList(skills);
     expect(skillsList).toContain("agenter-collaboration");
+    expect(skillsList).toContain("agenter-mcp");
     expect(skillsList).toContain("Use `skill info <skill>`");
     expect(skillsList).toContain("real filesystem path");
     expect(skillsList).toContain("references/*.md");
@@ -127,6 +132,22 @@ describe("Feature: runtime built-in skills", () => {
     expect(messageContent).toContain("references/chat-attention-items.md");
     expect(messageContent).not.toContain("127.0.0.1");
     expect(messageContent).not.toContain("APP-URL:");
+
+    const mcpContent = readRuntimeSkillContent(mcp!);
+    expect(mcpContent).toContain("mcp --help");
+    expect(mcpContent).toContain("`mcp add` and `mcp remove` are global-only");
+    expect(mcpContent).toContain("project-facing and require explicit `projectPath`");
+    expect(mcpContent).toContain("disabled in every project by default");
+    expect(mcpContent).toContain("mcp_installed");
+    expect(mcpContent).toContain("mcp_enabled");
+    expect(mcpContent).toContain("always returns JSON rows");
+    expect(mcpContent).toContain("Put `LIMIT` in the SQL");
+    expect(mcpContent).toContain("`autoStart: true` and `autoEnable: false`");
+    expect(mcpContent).toContain("`mcp disable` defaults to `stop: true`");
+    expect(mcpContent).toContain("`mcp remove` defaults to `stop: false`");
+    expect(mcpContent).toContain("@modelcontextprotocol/server-sequential-thinking");
+    expect(mcpContent).toContain("Snapshots are project-local");
+    expect(mcpContent).toContain("stdio`, `streamable-http`, and `sse`");
 
     const terminalContent = readRuntimeSkillContent(terminal!);
     expect(terminalContent).toContain("A runtime does not start with a terminal by default.");

@@ -103,7 +103,24 @@ const shellQuote = (value: string): string => {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 };
 
-const buildEnvDumpCommand = (doneValue = "1"): string =>
+const buildEnvDumpCommand = (input: { doneValue?: string; runtimeBinDir?: string } = {}): string => {
+  const doneValue = input.doneValue ?? "1";
+  const runtimeBinDir = input.runtimeBinDir ?? "/__AGT_RUNTIME_BIN_SENTINEL__";
+  return [
+    `marker_prefix=__AGT`,
+    `runtime_bin=${shellQuote(runtimeBinDir)}`,
+    `printf '%s_HOME__=%s\\n' "$marker_prefix" "$HOME"`,
+    `printf '%s_ROOT__=%s\\n' "$marker_prefix" "\${AGENTER_ROOT_WORKSPACE-}"`,
+    `printf '%s_HOME_DIR__=%s\\n' "$marker_prefix" "\${AGENTER_HOME_DIR-}"`,
+    `printf '%s_PRIVATE__=%s\\n' "$marker_prefix" "\${AGENTER_AVATAR_PRIVATE_KEY-}"`,
+    `printf '%s_PATH_HASH__=%s\\n' "$marker_prefix" "$(printf '%s' "$PATH" | shasum -a 256 | awk '{print $1}')"`,
+    `case ":$PATH:" in *":$runtime_bin:"*) path_has_runtime=1 ;; *) path_has_runtime=0 ;; esac`,
+    `printf '%s_PATH_HAS_RUNTIME__=%s\\n' "$marker_prefix" "$path_has_runtime"`,
+    `printf '%s_DONE__=%s\\n' "$marker_prefix" ${shellQuote(doneValue)}`,
+  ].join("; ");
+};
+
+const buildRootEnvDumpCommand = (doneValue = "1"): string =>
   [
     `marker_prefix=__AGT`,
     `printf '%s_HOME__=%s\\n' "$marker_prefix" "$HOME"`,
@@ -222,12 +239,13 @@ const collectSharedTerminalEnvValues = async (
   kernel: AppKernel,
   sessionId: string,
   terminalId: string,
+  input: { runtimeBinDir: string },
 ): Promise<{
   home: string;
   root: string;
   homeDir: string;
   privateKey: string;
-  path: string;
+  pathHasRuntime: boolean;
 }> => {
   await waitForTerminalInteractive(kernel, sessionId, terminalId);
   const runtimeTerminal = getRuntimeTerminalApi(kernel, sessionId);
@@ -255,7 +273,7 @@ const collectSharedTerminalEnvValues = async (
     });
     const wrote = await runtimeTerminal.inputRuntimeTerminal({
       terminalId,
-      text: `<raw>${buildEnvDumpCommand(doneValue)}</raw><key data="enter"/>`,
+      text: `<raw>${buildEnvDumpCommand({ doneValue, runtimeBinDir: input.runtimeBinDir })}</raw><key data="enter"/>`,
       readRecordActivity: false,
     });
     if (!wrote.ok) {
@@ -277,7 +295,7 @@ const collectSharedTerminalEnvValues = async (
     matchEvidence: awaitedResult.match?.matches,
   });
   const values = collectMarkedValues(evidenceText);
-  for (const key of ["HOME", "ROOT", "HOME_DIR", "PRIVATE", "PATH"] as const) {
+  for (const key of ["HOME", "ROOT", "HOME_DIR", "PRIVATE", "PATH_HASH", "PATH_HAS_RUNTIME"] as const) {
     if (!(key in values)) {
       throw new Error(`terminal env evidence missing ${key} for ${terminalId}: ${evidenceText}`);
     }
@@ -288,7 +306,7 @@ const collectSharedTerminalEnvValues = async (
     root: values.ROOT ?? "",
     homeDir: values.HOME_DIR ?? "",
     privateKey: values.PRIVATE ?? "",
-    path: values.PATH ?? "",
+    pathHasRuntime: values.PATH_HAS_RUNTIME === "1",
   };
 };
 
@@ -916,7 +934,7 @@ describe("Feature: workspace system kernel integration", () => {
       });
       const rootWorkspacePath = getRuntimeRootWorkspacePath(kernel, session.id);
       const result = await execRootWorkspaceBash(kernel, session.id, {
-        command: buildEnvDumpCommand(),
+        command: buildRootEnvDumpCommand(),
         env: {
           HOME: "/tmp/not-the-root-workspace",
           PATH: "/tmp/root-shell-path",
@@ -967,7 +985,7 @@ describe("Feature: workspace system kernel integration", () => {
       const runtimeBinDir = resolveRuntimeShellBinDir(rootWorkspacePath);
       const result = await execWorkspaceBash(kernel, session.id, {
         workspaceId: workspaceMount.runtimeWorkspaceId,
-        command: buildEnvDumpCommand(),
+        command: buildRootEnvDumpCommand(),
         env: {
           HOME: "/tmp/public-workspace-home",
           PATH: "/tmp/public-workspace-path",
@@ -1189,7 +1207,7 @@ describe("Feature: workspace system kernel integration", () => {
       }
       await waitForTerminalRunning(kernel, session.id, terminalId);
 
-      const envValues = await collectSharedTerminalEnvValues(kernel, session.id, terminalId);
+      const envValues = await collectSharedTerminalEnvValues(kernel, session.id, terminalId, { runtimeBinDir });
       expect(envValues.home).not.toBe(rootWorkspacePath);
       if (process.env.HOME) {
         expect(envValues.home, `shared terminal HOME=${envValues.home}`).toBe(process.env.HOME);
@@ -1197,7 +1215,7 @@ describe("Feature: workspace system kernel integration", () => {
       expect(envValues.root).toBe("");
       expect(envValues.homeDir).toBe("");
       expect(envValues.privateKey).toBe("");
-      expect(envValues.path.includes(runtimeBinDir)).toBeFalse();
+      expect(envValues.pathHasRuntime).toBeFalse();
       await kernel.stopGlobalTerminal({ terminalId, actorId: "session:owner" }).catch(() => undefined);
     } finally {
       await kernel.stop();
@@ -1241,7 +1259,7 @@ describe("Feature: workspace system kernel integration", () => {
       });
       expect(recovered.ok).toBeTrue();
 
-      const envValues = await collectSharedTerminalEnvValues(kernel, session.id, configuredTerminalId);
+      const envValues = await collectSharedTerminalEnvValues(kernel, session.id, configuredTerminalId, { runtimeBinDir });
       expect(envValues.home).not.toBe(rootWorkspacePath);
       if (process.env.HOME) {
         expect(envValues.home, `shared terminal HOME=${envValues.home}`).toBe(process.env.HOME);
@@ -1249,7 +1267,7 @@ describe("Feature: workspace system kernel integration", () => {
       expect(envValues.root).toBe("");
       expect(envValues.homeDir).toBe("");
       expect(envValues.privateKey).toBe("");
-      expect(envValues.path.includes(runtimeBinDir)).toBeFalse();
+      expect(envValues.pathHasRuntime).toBeFalse();
       await kernel.stopGlobalTerminal({ terminalId: configuredTerminalId, actorId: "session:owner" }).catch(
         () => undefined,
       );
@@ -1298,7 +1316,7 @@ describe("Feature: workspace system kernel integration", () => {
       }
       await waitForTerminalRunning(kernel, session.id, terminalId);
 
-      const envValues = await collectSharedTerminalEnvValues(kernel, session.id, terminalId);
+      const envValues = await collectSharedTerminalEnvValues(kernel, session.id, terminalId, { runtimeBinDir });
       expect(envValues.home).not.toBe(rootWorkspacePath);
       if (process.env.HOME) {
         expect(envValues.home, `shared terminal HOME=${envValues.home}`).toBe(process.env.HOME);
@@ -1306,7 +1324,7 @@ describe("Feature: workspace system kernel integration", () => {
       expect(envValues.root).toBe("");
       expect(envValues.homeDir).toBe("");
       expect(envValues.privateKey).toBe("");
-      expect(envValues.path.includes(runtimeBinDir)).toBeFalse();
+      expect(envValues.pathHasRuntime).toBeFalse();
       await kernel.stopGlobalTerminal({ terminalId, actorId: "session:owner" }).catch(() => undefined);
     } finally {
       await kernel.stop();

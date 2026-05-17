@@ -6,9 +6,11 @@ import {
 } from "@agenter/message-system";
 import {
   applyTerminalFramePatch,
+  createTerminalTransportRowCacheDecoder,
   decodeTerminalTransportServerMessage,
   encodeTerminalTransportClientMessage,
   type TerminalTransportFramePayload,
+  type TerminalTransportRowCacheDecoder,
   type TerminalTransportServerMessage,
 } from "@agenter/terminal-transport-protocol";
 import { SessionDb } from "@agenter/session-system";
@@ -85,11 +87,24 @@ const encodeTerminalClientFrame = (message: Parameters<typeof encodeTerminalTran
   return buffer;
 };
 
+const rowCacheDecodersBySocket = new WeakMap<WebSocket, TerminalTransportRowCacheDecoder>();
+
+const resolveRowCacheDecoder = (socket: WebSocket): TerminalTransportRowCacheDecoder => {
+  const existing = rowCacheDecodersBySocket.get(socket);
+  if (existing) {
+    return existing;
+  }
+  const next = createTerminalTransportRowCacheDecoder();
+  rowCacheDecodersBySocket.set(socket, next);
+  return next;
+};
+
 const pullTerminalFrame = async (input: {
   socket: WebSocket;
   messages: TerminalTransportServerMessage[];
   lastFrame: TerminalTransportFramePayload | null;
 }): Promise<TerminalTransportFramePayload> => {
+  const messageStart = input.messages.length;
   input.socket.send(
     encodeTerminalClientFrame({
       type: "pullFrame",
@@ -100,13 +115,18 @@ const pullTerminalFrame = async (input: {
   );
   for (let attempt = 0; attempt < 30; attempt += 1) {
     await Bun.sleep(25);
-    const frameMessage = input.messages.findLast(
+    const frameMessage = input.messages.slice(messageStart).findLast(
       (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
     );
     if (!frameMessage) {
       continue;
     }
-    const nextFrame = applyTerminalFramePatch(input.lastFrame, frameMessage.patch, frameMessage.frameSeq);
+    const nextFrame = applyTerminalFramePatch(
+      input.lastFrame,
+      frameMessage.patch,
+      frameMessage.frameSeq,
+      resolveRowCacheDecoder(input.socket),
+    );
     if (nextFrame) {
       return nextFrame;
     }

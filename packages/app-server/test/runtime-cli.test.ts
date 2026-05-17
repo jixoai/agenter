@@ -759,6 +759,101 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(api.getRequests()).toHaveLength(0);
   });
 
+  test("Scenario: Given MCP descriptor help probes When mcp query --help runs Then SQL table schemas and JSON row output are documented locally", async () => {
+    const api = await startMockRuntimeApi();
+    const mcp = createRuntimeCommand(api.baseUrl, "mcp");
+
+    const result = await mcp.execute(["query", "--help"], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Run read-only SQL over mcp_installed and mcp_enabled");
+    expect(result.stdout).toContain("Execution always returns `{ rows:");
+    expect(result.stdout).toContain("mcp_installed(name,title,description,transport_kind");
+    expect(result.stdout).toContain("mcp_enabled(name,project_path,enabled,enabled_source");
+    expect(result.stdout).toContain("enabled=0, enabled_source='default'");
+    expect(result.stdout).toContain("Without `projectPath`");
+    expect(result.stdout).toContain("tools_json like $pattern");
+    expect(result.stdout).toContain("command: `mcp query`");
+    expect(result.stdout).toContain("Preferred default through `root_bash`");
+    expect(api.getRequests()).toHaveLength(0);
+  });
+
+  test("Scenario: Given MCP CLI commands When add and call execute Then they post descriptor-backed JSON to runtime API", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/mcp/add": {
+        result: {
+          name: "thinking",
+        },
+      },
+      "/v1/mcp/call": {
+        result: {
+          instance: {
+            name: "thinking",
+            projectPath: "/repo/app",
+            lifecycle: "running",
+          },
+          result: {
+            content: [{ type: "text", text: "ok" }],
+          },
+        },
+      },
+    });
+    const mcp = createRuntimeCommand(api.baseUrl, "mcp");
+
+    const add = await mcp.execute(
+      ["add"],
+      createCommandContext(
+        JSON.stringify({
+          name: "thinking",
+          transport: {
+            kind: "stdio",
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+          },
+        }),
+      ),
+    );
+    const call = await mcp.execute(
+      ["call"],
+      createCommandContext(
+        JSON.stringify({
+          name: "thinking",
+          projectPath: "/repo/app",
+          toolName: "sequentialthinking",
+          arguments: {
+            thought: "test",
+            nextThoughtNeeded: false,
+            thoughtNumber: 1,
+            totalThoughts: 1,
+          },
+        }),
+      ),
+    );
+
+    expect(add.exitCode).toBe(0);
+    expect(call.exitCode).toBe(0);
+    expect(api.getRequests().map((request) => request.url)).toEqual(["/v1/mcp/add", "/v1/mcp/call"]);
+    expect(api.getRequests()[0]?.body).toEqual({
+      name: "thinking",
+      transport: {
+        kind: "stdio",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      },
+    });
+    expect(api.getRequests()[1]?.body).toEqual({
+      name: "thinking",
+      projectPath: "/repo/app",
+      toolName: "sequentialthinking",
+      arguments: {
+        thought: "test",
+        nextThoughtNeeded: false,
+        thoughtNumber: 1,
+        totalThoughts: 1,
+      },
+    });
+  });
+
   test("Scenario: Given descriptor help probe When terminal input --help runs Then the mixed-mode contract is returned locally", async () => {
     const api = await startMockRuntimeApi();
     const terminal = createRuntimeCommand(api.baseUrl, "terminal");
@@ -1035,6 +1130,7 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(payload.groups[0]?.entries.some((entry) => entry.commandLabel === "cd")).toBeTrue();
     expect(payload.groups[1]?.entries.some((entry) => entry.commandLabel === "message send")).toBeTrue();
     expect(payload.groups[1]?.entries.some((entry) => entry.commandLabel === "workspace list")).toBeTrue();
+    expect(payload.groups[1]?.entries.some((entry) => entry.commandLabel === "mcp query")).toBeTrue();
   });
 
   test("Scenario: Given built-in skills When skill list runs Then the shell output teaches progressive discovery through real paths and references through the local API", async () => {
@@ -1046,6 +1142,15 @@ describe("Feature: runtime descriptor CLI", () => {
             summary: "runtime shell guidance",
             path: "/repo/packages/app-server/skills/runtime/SKILL.md",
             root: "/repo/packages/app-server/skills/runtime",
+            rootKind: "builtin",
+            writable: false,
+            packageName: "@agenter/app-server",
+          },
+          {
+            name: "agenter-mcp",
+            summary: "Install, enable, query, call, and recover MCP servers through the root runtime CLI.",
+            path: "/repo/packages/app-server/skills/mcp/SKILL.md",
+            root: "/repo/packages/app-server/skills/mcp",
             rootKind: "builtin",
             writable: false,
             packageName: "@agenter/app-server",
@@ -1065,7 +1170,48 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("real filesystem path");
     expect(result.stdout).toContain("references/*.md");
     expect(result.stdout).toContain("agenter-runtime");
+    expect(result.stdout).toContain("agenter-mcp");
     expect(api.getLastRequest()?.url).toBe("/v1/skill/list");
+  });
+
+  test("Scenario: Given skill info for the MCP skill When the shell command runs Then the MCP usage law is rendered from its built-in path", async () => {
+    const api = await startMockRuntimeApi({
+      "/v1/skill/info": {
+        result: {
+          skill: {
+            name: "agenter-mcp",
+            summary: "Install, enable, query, call, and recover MCP servers through the root runtime CLI.",
+            path: "/repo/packages/app-server/skills/mcp/SKILL.md",
+            root: "/repo/packages/app-server/skills/mcp",
+            rootKind: "builtin",
+            writable: false,
+            packageName: "@agenter/app-server",
+          },
+          content: [
+            "# agenter-mcp",
+            "",
+            "Run `mcp --help` or `mcp <command> --help` before guessing an argument shape.",
+            "`mcp query` always returns JSON rows.",
+            "`mcp call` defaults are `autoStart: true` and `autoEnable: false`.",
+          ].join("\n"),
+        },
+      },
+    });
+    const rootWorkspacePath = createTempRoot();
+    const skill = createRuntimeCommand(api.baseUrl, "skill", {
+      rootWorkspacePath,
+      homeDir: createTempRoot(),
+    });
+
+    const result = await skill.execute(["info", "agenter-mcp"], createCommandContext());
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("# agenter-mcp");
+    expect(result.stdout).toContain("/repo/packages/app-server/skills/mcp/SKILL.md");
+    expect(result.stdout).toContain("mcp --help");
+    expect(result.stdout).toContain("always returns JSON rows");
+    expect(existsSync(join(rootWorkspacePath, "skills", "agenter-mcp", "SKILL.md"))).toBeFalse();
+    expect(api.getLastRequest()?.url).toBe("/v1/skill/info");
   });
 
   test("Scenario: Given skill info for a built-in skill When the shell command runs Then the real SKILL path and reference index are rendered without materializing built-ins into workspace storage", async () => {

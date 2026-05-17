@@ -13,6 +13,7 @@ describe("Feature: runtime built-in skill catalog generation", () => {
     expect(rebuilt.map((entry) => entry.name)).toEqual([
       "agenter-attention",
       "agenter-collaboration",
+      "agenter-mcp",
       "agenter-message",
       "agenter-runtime",
       "agenter-terminal",

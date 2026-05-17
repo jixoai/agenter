@@ -872,6 +872,34 @@ const createRuntimeLocalHandlers = (input: {
   skillSetConfig: async () => buildMockSkillMutation(),
   skillRemove: async () => buildMockSkillMutation(),
   skillRefresh: async () => buildMockSkillMutation(),
+  mcp: {
+    add: () => {
+      throw new Error("mcp add not configured");
+    },
+    remove: async () => {
+      throw new Error("mcp remove not configured");
+    },
+    enable: () => {
+      throw new Error("mcp enable not configured");
+    },
+    disable: async () => {
+      throw new Error("mcp disable not configured");
+    },
+    list: () => [],
+    query: () => ({ rows: [] }),
+    start: async () => {
+      throw new Error("mcp start not configured");
+    },
+    stop: async () => {
+      throw new Error("mcp stop not configured");
+    },
+    restart: async () => {
+      throw new Error("mcp restart not configured");
+    },
+    call: async () => {
+      throw new Error("mcp call not configured");
+    },
+  },
 });
 
 const createToolProviders = (

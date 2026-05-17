@@ -27,10 +27,12 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
   test("Scenario: Given atomic built-in skills When their overviews are read Then exact-host and delivery-workaround copy stays out of the overview body", () => {
     const catalog = buildRuntimeBuiltinSkillCatalog(repoRoot);
     const message = catalog.find((entry) => entry.name === "agenter-message");
+    const mcp = catalog.find((entry) => entry.name === "agenter-mcp");
     const terminal = catalog.find((entry) => entry.name === "agenter-terminal");
     const attention = catalog.find((entry) => entry.name === "agenter-attention");
 
     expect(message?.template).toBeTruthy();
+    expect(mcp?.template).toBeTruthy();
     expect(terminal?.template).toBeTruthy();
     expect(attention?.template).toBeTruthy();
     expect(message?.template).toContain("`message send` returns `recentMessages`");
@@ -44,6 +46,13 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(message?.template).not.toContain("127.0.0.1");
     expect(message?.template).not.toContain("APP-URL:");
     expect(message?.template).not.toContain("curl");
+
+    expect(mcp?.template).toContain("mcp --help");
+    expect(mcp?.template).toContain("mcp query");
+    expect(mcp?.template).toContain("always returns JSON rows");
+    expect(mcp?.template).toContain("project-local");
+    expect(mcp?.template).toContain("autoEnable: false");
+    expect(mcp?.template).not.toContain("bindingName");
 
     expect(terminal?.template).not.toContain("127.0.0.1");
     expect(terminal?.template).not.toContain("APP-URL:");

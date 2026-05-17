@@ -20,6 +20,7 @@ const RUNTIME_SHELL_COMMANDS = [
   "workspace",
   "terminal",
   "terminal-manage",
+  "mcp",
   "skill",
   "tool",
 ] as const;
