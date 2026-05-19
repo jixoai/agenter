@@ -5,9 +5,9 @@ import type {
   GlobalRoomEntry,
   GlobalRoomMessage,
   GlobalRoomSnapshotOutput,
+  GlobalTerminalApprovalRequest,
   GlobalTerminalEntry,
   HeartbeatGroupItem,
-  ProductDelegationRecord,
   RuntimeClientState,
   SessionEntry,
 } from "@agenter/client-sdk";
@@ -357,37 +357,41 @@ const createRuntimeState = (input: {
 const createManagedState = (input: { shellName?: string; managed?: boolean } = {}): CliShellManagedState => ({
   contextId: buildCliShellHostingContextId(input.shellName ?? "shell-1"),
   hostingMatches: [],
-  hostingActive: false,
-  activeDelegation:
-    input.managed === true
-      ? ({
-          delegationId: "delegation:cli-shell:shell-1",
-          productId: "cli-shell",
-          resourceKey: "shell-1",
-          runtimeId: "runtime:shell-assistant",
-          avatarActorId: "auth:shell-assistant",
-          grantedByActorId: "auth:root-superadmin",
-          terminalId: "shell-1",
-          roomId: "room-shell-1",
-          enabledAt: 100,
-          expiresAt: 100 + 30 * 60 * 1000,
-          policy: { mode: "write" },
-          provenance: { source: "cli-shell" },
-          status: "active",
-        } as ProductDelegationRecord)
-      : null,
+  hostingActive: input.managed ?? false,
   managed: input.managed ?? false,
+});
+
+const createTerminalPermissionRequest = (
+  input: Partial<GlobalTerminalApprovalRequest> = {},
+): GlobalTerminalApprovalRequest => ({
+  requestId: input.requestId ?? "approval-shell-1",
+  terminalId: input.terminalId ?? "shell-1",
+  participantId: input.participantId ?? "auth:shell-assistant",
+  assignedAdminId: input.assignedAdminId ?? "auth:admin",
+  status: input.status ?? "pending",
+  requestedInput: input.requestedInput ?? {
+    mode: "raw",
+    text: "echo guarded && pwd",
+  },
+  createdAt: input.createdAt ?? 1_714_560_000_000,
+  expiresAt: input.expiresAt ?? 1_714_560_090_000,
+  decidedAt: input.decidedAt,
+  decidedBy: input.decidedBy,
+  leaseId: input.leaseId,
 });
 
 interface TuiStoreHarness {
   store: CliShellTuiStore;
   replaceGlobalTerminals(nextTerminals: GlobalTerminalEntry[]): void;
+  replaceTerminalPermissionRequests(terminalId: string, requests: GlobalTerminalApprovalRequest[]): void;
   setPublishComposedSurfaceEnabled(enabled: boolean): void;
   inputs: Array<{ terminalId: string; text: string }>;
   terminalConfigs: Array<{ terminalId: string; cols?: number; rows?: number }>;
   sentMessages: Array<{ chatId: string; text: string }>;
+  approvedRequests: Array<{ terminalId: string; requestId: string; durationMs: number }>;
+  deniedRequests: Array<{ terminalId: string; requestId: string }>;
+  retainedPermissionRequestStreams: Array<{ terminalId?: string; released: boolean }>;
   lastPublishedComposedSurface: Parameters<CliShellTuiStore["publishGlobalTerminalComposedSurface"]>[0]["surface"] | null;
-  delegations: ProductDelegationRecord[];
 }
 
 const createTuiStore = (input: {
@@ -399,8 +403,10 @@ const createTuiStore = (input: {
   const inputs: Array<{ terminalId: string; text: string }> = [];
   const terminalConfigs: Array<{ terminalId: string; cols?: number; rows?: number }> = [];
   const sentMessages: Array<{ chatId: string; text: string }> = [];
+  const approvedRequests: Array<{ terminalId: string; requestId: string; durationMs: number }> = [];
+  const deniedRequests: Array<{ terminalId: string; requestId: string }> = [];
+  const retainedPermissionRequestStreams: Array<{ terminalId?: string; released: boolean }> = [];
   let lastPublishedComposedSurface: TuiStoreHarness["lastPublishedComposedSurface"] = null;
-  let delegations: ProductDelegationRecord[] = [];
   let publishComposedSurfaceEnabled = true;
   const authSession: AuthSessionOutput = {
     token: "superadmin-token",
@@ -444,6 +450,20 @@ const createTuiStore = (input: {
     emit();
   };
 
+  const replaceTerminalPermissionRequests = (
+    terminalId: string,
+    requests: GlobalTerminalApprovalRequest[],
+  ): void => {
+    state = {
+      ...state,
+      globalTerminalApprovalsById: {
+        ...state.globalTerminalApprovalsById,
+        [terminalId]: createCached(requests),
+      },
+    };
+    emit();
+  };
+
   const store = {
     getState: () => state,
     subscribe: (listener: () => void) => {
@@ -454,6 +474,13 @@ const createTuiStore = (input: {
     disconnect: () => {},
     hydrateSessionArtifacts: async () => undefined,
     retainGlobalTerminals: () => () => {},
+    retainTerminalPermissionRequests: (payload?: { terminalId?: string }) => {
+      const record = { terminalId: payload?.terminalId, released: false };
+      retainedPermissionRequestStreams.push(record);
+      return () => {
+        record.released = true;
+      };
+    },
     hydrateGlobalTerminals: async () => state.globalTerminals.data,
     readGlobalTerminal: async (payload: { terminalId: string }) => {
       const terminal = state.globalTerminals.data.find((entry) => entry.terminalId === payload.terminalId);
@@ -514,23 +541,17 @@ const createTuiStore = (input: {
         seq: current.seq + 1,
         metadata: {
           ...current.metadata,
-          composedBottomLine: payload.surface.bottomLine,
-          composedDialogueOpen: payload.surface.dialogueOpen,
-          composedDialoguePlacement: payload.surface.dialoguePlacement,
-          composedDialogueDraft: payload.surface.dialogueDraft,
-          composedManagedLabel: payload.surface.managedLabel,
-          composedUnreadLabel: payload.surface.unreadLabel,
-          composedHeartbeatLabel: payload.surface.heartbeatLabel,
-          composedShellSnapshotSeq: payload.surface.shellSnapshotSeq,
+          composedFrameSeq: payload.surface.seq ?? (current.snapshot?.seq ?? 0) + 1,
+          composedFrameMetadata: payload.surface.metadata ? { ...payload.surface.metadata } : {},
           composedSelectionSources: payload.surface.selectionSources?.map((source) => ({ ...source })),
         },
         snapshot: {
-          seq: (current.snapshot?.seq ?? 0) + 1,
+          seq: payload.surface.seq ?? (current.snapshot?.seq ?? 0) + 1,
           timestamp: Date.now(),
           cols: payload.surface.cols,
           rows: payload.surface.rows,
-          lines: [...payload.surface.terminalLines],
-          richLines: payload.surface.terminalRichLines?.map((line) => ({
+          lines: [...payload.surface.lines],
+          richLines: payload.surface.richLines?.map((line) => ({
             spans: line.spans.map((span) => ({ ...span })),
           })),
           cursor: { ...payload.surface.cursor },
@@ -562,41 +583,47 @@ const createTuiStore = (input: {
     queryAttention: async () => [],
     commitAttention: async (payload: { contextId: string }) => ({ commit: payload }),
     settleAttention: async (payload: { contextId: string }) => ({ commit: payload }),
-    listProductDelegations: async () => delegations,
-    createProductDelegation: async (payload: Omit<ProductDelegationRecord, "delegationId" | "status">) => {
-      const delegation = {
-        ...payload,
-        delegationId: `delegation:${payload.productId}:${payload.resourceKey}`,
-        status: "active",
-      } as ProductDelegationRecord;
-      delegations = [...delegations.filter((item) => item.status !== "active"), delegation];
-      return delegation;
+    approveGlobalTerminalRequest: async (payload: { terminalId: string; requestId: string; durationMs: number }) => {
+      approvedRequests.push(payload);
+      replaceTerminalPermissionRequests(
+        payload.terminalId,
+        state.globalTerminalApprovalsById[payload.terminalId]?.data.filter(
+          (request) => request.requestId !== payload.requestId,
+        ) ?? [],
+      );
+      return {
+        leaseId: `lease:${payload.requestId}`,
+        participantId: "auth:shell-assistant",
+        expiresAt: Date.now() + payload.durationMs,
+      };
     },
-    revokeProductDelegation: async (payload: { delegationId: string; revokedAt: number; revokedReason: string }) => {
-      const delegation = delegations.find((item) => item.delegationId === payload.delegationId);
-      if (!delegation) {
-        throw new Error("delegation not found");
-      }
-      const revoked = { ...delegation, status: "revoked", revokedAt: payload.revokedAt, revokedReason: payload.revokedReason } as ProductDelegationRecord;
-      delegations = delegations.map((item) => (item.delegationId === payload.delegationId ? revoked : item));
-      return revoked;
+    denyGlobalTerminalRequest: async (payload: { terminalId: string; requestId: string }) => {
+      deniedRequests.push(payload);
+      replaceTerminalPermissionRequests(
+        payload.terminalId,
+        state.globalTerminalApprovalsById[payload.terminalId]?.data.filter(
+          (request) => request.requestId !== payload.requestId,
+        ) ?? [],
+      );
+      return { ok: true as const };
     },
   };
 
   return {
     store: store as unknown as CliShellTuiStore,
     replaceGlobalTerminals,
+    replaceTerminalPermissionRequests,
     setPublishComposedSurfaceEnabled(enabled: boolean) {
       publishComposedSurfaceEnabled = enabled;
     },
     inputs,
     terminalConfigs,
     sentMessages,
+    approvedRequests,
+    deniedRequests,
+    retainedPermissionRequestStreams,
     get lastPublishedComposedSurface() {
       return lastPublishedComposedSurface;
-    },
-    get delegations() {
-      return delegations;
     },
   };
 };
@@ -643,6 +670,7 @@ const createCoreAppTestSetup = async (input: {
   height?: number;
   fallbackTerminalId?: string;
   debug?: boolean;
+  managed?: CliShellManagedState;
   createTransportSession?: CliShellLiveTerminalTransportSessionFactory;
   harness?: TuiStoreHarness;
 }): Promise<CoreAppTestSetup> => {
@@ -663,7 +691,7 @@ const createCoreAppTestSetup = async (input: {
     roomAccessToken: "tok:room-shell-1",
     runtimeId: "runtime:shell-assistant",
     avatarActorId: "auth:shell-assistant",
-    managed: createManagedState(),
+    managed: input.managed ?? createManagedState(),
     keybindings: resolveCliShellTuiKeybindings(null),
     onQuit: () => {},
     debug: input.debug ?? false,
@@ -923,6 +951,94 @@ describe("Feature: cli-shell interactive TUI", () => {
     setup.renderer.destroy();
   });
 
+  test("Scenario: Given shell-terminal-view receives a pending terminal permission request When rendered Then the default TopLayer overlay stays above terminal cells", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 72,
+      height: 12,
+      terminalId: "shell-1",
+      lines: [
+        { spans: [{ text: "$ pnpm test" }] },
+        { spans: [{ text: "terminal output remains visible behind approval" }] },
+      ],
+      permissionRequests: [
+        createTerminalPermissionRequest({
+          requestId: "approval-overlay",
+          terminalId: "shell-1",
+          requestedInput: { mode: "raw", text: "pnpm test -- --runInBand" },
+        }),
+      ],
+    });
+
+    await setup.renderOnce();
+    const frame = setup.captureCharFrame();
+    expect(frame).toContain("Terminal write approval");
+    expect(frame).toContain("auth:shell-assistant requests raw access");
+    expect(frame).toContain("pnpm test -- --runInBand");
+    expect(frame).toContain("[ Deny ]");
+    expect(frame).toContain("[ Approve ]");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given a host handles shell terminal permission requests When the callback returns true Then the default TopLayer overlay is suppressed", async () => {
+    const handledRequests: string[] = [];
+    const setup = await createShellTerminalViewTestSetup({
+      width: 72,
+      height: 12,
+      terminalId: "shell-1",
+      lines: [{ spans: [{ text: "$ pnpm test" }] }],
+      permissionRequests: [
+        createTerminalPermissionRequest({
+          requestId: "approval-custom",
+          terminalId: "shell-1",
+        }),
+      ],
+      onRequestPermissions: (detail) => {
+        handledRequests.push(detail.request.requestId);
+        return true;
+      },
+    });
+
+    await setup.renderOnce();
+    expect(handledRequests).toEqual(["approval-custom"]);
+    expect(setup.captureCharFrame()).not.toContain("Terminal write approval");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given an equivalent shell terminal permission request is refreshed When projection updates Then one overlay is updated instead of duplicated", async () => {
+    const setup = await createShellTerminalViewTestSetup({
+      width: 72,
+      height: 12,
+      terminalId: "shell-1",
+      lines: [{ spans: [{ text: "$ pnpm test" }] }],
+      permissionRequests: [
+        createTerminalPermissionRequest({
+          requestId: "approval-refresh",
+          terminalId: "shell-1",
+          requestedInput: { mode: "raw", text: "echo old" },
+        }),
+      ],
+    });
+
+    await setup.renderOnce();
+    setup.view.updateProjection({
+      permissionRequests: [
+        createTerminalPermissionRequest({
+          requestId: "approval-refresh",
+          terminalId: "shell-1",
+          requestedInput: { mode: "raw", text: "echo refreshed" },
+          expiresAt: 1_714_560_120_000,
+        }),
+      ],
+    });
+    await setup.renderOnce();
+
+    const frame = setup.captureCharFrame();
+    expect(frame.match(/Terminal write approval/g)?.length).toBe(1);
+    expect(frame).toContain("echo refreshed");
+    expect(frame).not.toContain("echo old");
+    setup.renderer.destroy();
+  });
+
   test("Scenario: Given CliShellCoreApp debug mode is enabled When the product renders Then the debug bar owns the top row and shell projection starts below it", async () => {
     const previousTraceEnv = process.env.AGENTER_CLI_SHELL_TRACE;
     const tracePath = `/tmp/agenter-cli-shell-debug-bar-${Date.now()}-${Math.random().toString(36).slice(2)}.ndjson`;
@@ -959,6 +1075,77 @@ describe("Feature: cli-shell interactive TUI", () => {
     const rows = setup.captureCharFrame().split("\n");
     expect(rows[0]).toContain("normal-shell-row");
     expect(rows[0]).not.toContain("dirty");
+    setup.destroy();
+  });
+
+  test("Scenario: Given cli-shell native host observes a terminal-scoped permission request When the overlay approves it Then TerminalSystem authority is called without mutating managed state", async () => {
+    const shellLines = ["$ pnpm test", "shell-1:~/project $"];
+    const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages: [], unread: 0 });
+    const pendingRequest = createTerminalPermissionRequest({
+      requestId: "approval-native-approve",
+      terminalId: "shell-1",
+      requestedInput: { mode: "raw", text: "pnpm test" },
+    });
+    state.globalTerminalApprovalsById = {
+      "shell-1": createCached([pendingRequest]),
+    };
+    const harness = createTuiStore({ state });
+    const setup = await createCoreAppTestSetup({ state, harness, width: 80, height: 14 });
+
+    await setup.renderOnce();
+    expect(harness.retainedPermissionRequestStreams).toEqual([{ terminalId: "shell-1", released: false }]);
+    expect(setup.captureCharFrame()).toContain("Terminal write approval");
+    await setup.mockMouse.click(58, 8);
+    await setup.renderOnce();
+
+    expect(harness.approvedRequests).toEqual([
+      {
+        terminalId: "shell-1",
+        requestId: "approval-native-approve",
+        durationMs: 30 * 60 * 1000,
+      },
+    ]);
+    expect(harness.deniedRequests).toEqual([]);
+    expect(setup.captureCharFrame()).not.toContain("Terminal write approval");
+    expect(harness.store.getState().globalTerminalApprovalsById["shell-1"]?.data).toEqual([]);
+    setup.destroy();
+    expect(harness.retainedPermissionRequestStreams[0]?.released).toBe(true);
+  });
+
+  test("Scenario: Given cli-shell managed state is active When a native permission overlay is denied Then only TerminalSystem denial runs and hosting attention is unchanged", async () => {
+    const shellLines = ["$ cargo run", "shell-1:~/project $"];
+    const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages: [], unread: 0 });
+    state.globalTerminalApprovalsById = {
+      "shell-1": createCached([
+        createTerminalPermissionRequest({
+          requestId: "approval-native-deny",
+          terminalId: "shell-1",
+          requestedInput: { mode: "raw", text: "cargo run" },
+        }),
+      ]),
+    };
+    const harness = createTuiStore({ state });
+    const setup = await createCoreAppTestSetup({
+      state,
+      harness,
+      width: 80,
+      height: 14,
+      managed: createManagedState({ managed: true }),
+    });
+
+    await setup.renderOnce();
+    expect(setup.captureCharFrame()).toContain("Terminal write approval");
+    await setup.mockMouse.click(47, 8);
+    await setup.renderOnce();
+
+    expect(harness.deniedRequests).toEqual([
+      {
+        terminalId: "shell-1",
+        requestId: "approval-native-deny",
+      },
+    ]);
+    expect(harness.approvedRequests).toEqual([]);
+    expect(setup.captureCharFrame()).not.toContain("Terminal write approval");
     setup.destroy();
   });
 
@@ -2387,13 +2574,13 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(harness.lastPublishedComposedSurface).not.toBeNull();
     expect(harness.lastPublishedComposedSurface?.terminalId).toBe("shell-1:terminal-2");
     expect(harness.lastPublishedComposedSurface?.shellTerminalId).toBe("shell-1:terminal-1");
-    expect(harness.lastPublishedComposedSurface?.dialogueOpen).toBe(false);
+    expect(harness.lastPublishedComposedSurface?.metadata?.cliShellFrame).toBe(true);
+    expect(harness.lastPublishedComposedSurface?.lines.join("\n")).toContain("$ agenter shell");
 
     setup.mockInput.pressKey("j", { meta: true });
     await setup.renderOnce();
     await setup.renderOnce();
-    expect(harness.lastPublishedComposedSurface?.dialogueOpen).toBe(true);
-    expect(harness.lastPublishedComposedSurface?.dialoguePlacement).toBe("right");
+    expect(harness.lastPublishedComposedSurface?.lines.join("\n")).toContain("┌layout");
     setup.destroy();
   });
 
@@ -2428,9 +2615,8 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(collapsedSurface?.shellTerminalId).toBe("shell-1:terminal-1");
     expect(collapsedSurface?.cols).toBe(90);
     expect(collapsedSurface?.rows).toBe(22);
-    expect(collapsedSurface?.dialogueOpen).toBe(false);
-    expect(collapsedSurface?.terminalLines.join("\n")).toContain("$ agenter shell");
-    expect(collapsedSurface?.terminalLines.at(-1)).toContain("◉ terminal");
+    expect(collapsedSurface?.lines.join("\n")).toContain("$ agenter shell");
+    expect(collapsedSurface?.lines.at(-1)).toContain("◉ terminal");
 
     setup.mockInput.pressKey("j", { meta: true });
     await setup.renderOnce();
@@ -2440,10 +2626,8 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(openSurface?.shellTerminalId).toBe("shell-1:terminal-1");
     expect(openSurface?.cols).toBe(90);
     expect(openSurface?.rows).toBe(22);
-    expect(openSurface?.dialogueOpen).toBe(true);
-    expect(openSurface?.dialoguePlacement).toBe("right");
-    expect(normalizeAsciiLetters(openSurface?.terminalLines.join("") ?? "")).toContain("dialoguebackendbody");
-    expect(openSurface?.terminalLines.at(-1)).toContain("◉ terminal");
+    expect(normalizeAsciiLetters(openSurface?.lines.join("") ?? "")).toContain("dialoguebackendbody");
+    expect(openSurface?.lines.at(-1)).toContain("◉ terminal");
     setup.destroy();
   });
 
@@ -2482,6 +2666,8 @@ describe("Feature: cli-shell interactive TUI", () => {
     });
 
     await setup.renderOnce();
+    setup.mockInput.pressKey("j", { meta: true });
+    await setup.renderOnce();
     setup.resize(100, 30);
     await setup.renderOnce();
     await setup.renderOnce();
@@ -2489,11 +2675,10 @@ describe("Feature: cli-shell interactive TUI", () => {
     const resizedSurface = harness.lastPublishedComposedSurface;
     expect(resizedSurface?.cols).toBe(100);
     expect(resizedSurface?.rows).toBe(30);
-    expect(resizedSurface?.dialogueOpen).toBe(true);
-    expect(resizedSurface?.terminalLines).toHaveLength(30);
-    expect(resizedSurface?.terminalLines.join("\n")).toContain("resize target");
-    expect(normalizeAsciiLetters(resizedSurface?.terminalLines.join("") ?? "")).toContain("dialogueresizebody");
-    expect(resizedSurface?.terminalLines.join("\n")).not.toContain("old terminal-2 row");
+    expect(resizedSurface?.lines).toHaveLength(30);
+    expect(resizedSurface?.lines.join("\n")).toContain("resize target");
+    expect(normalizeAsciiLetters(resizedSurface?.lines.join("") ?? "")).toContain("dialogueresizebody");
+    expect(resizedSurface?.lines.join("\n")).not.toContain("old terminal-2 row");
 
     const model = buildCliShellTuiModel({
       state: harness.store.getState(),
@@ -4596,18 +4781,14 @@ describe("Feature: cli-shell interactive TUI", () => {
 
     const draftSurface = harness.lastPublishedComposedSurface;
     expect(draftSurface?.terminalId).toBe("shell-1:terminal-2");
-    expect(draftSurface?.dialogueOpen).toBe(true);
-    expect(draftSurface?.dialogueDraft).toBe("hi");
-    expect(draftSurface?.terminalLines.join("\n")).toContain("> hi");
+    expect(draftSurface?.lines.join("\n")).toContain("> hi");
 
     setup.mockInput.pressEnter();
     await setup.renderOnce();
     await setup.renderOnce();
 
     expect(harness.sentMessages).toEqual([{ chatId: "room-shell-1", text: "hi" }]);
-    expect(harness.lastPublishedComposedSurface?.dialogueOpen).toBe(true);
-    expect(harness.lastPublishedComposedSurface?.dialogueDraft).toBe("");
-    expect(harness.lastPublishedComposedSurface?.terminalLines.join("\n")).not.toContain("> hi");
+    expect(harness.lastPublishedComposedSurface?.lines.join("\n")).not.toContain("> hi");
     setup.destroy();
   });
 });

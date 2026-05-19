@@ -4,16 +4,14 @@ import { z } from "zod";
 
 import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
 import type { MessageActorId } from "@agenter/message-system";
+import { isPrincipalId } from "@agenter/principal-crypto";
 import {
   productAttentionCommitInputSchema,
   productAttentionQueryInputSchema,
   productAttentionSettleInputSchema,
-  productDelegationCreateInputSchema,
-  productDelegationLookupSchema,
-  productDelegationRevokeInputSchema,
+  productAvatarPromptSeedInputSchema,
   productPrivateTextAssetEnsureInputSchema,
 } from "@agenter/product-extension-runtime";
-import { isPrincipalId } from "@agenter/principal-crypto";
 import { TERMINAL_BACKEND_KINDS, type TerminalActorId } from "@agenter/terminal-system";
 import {
   authDraftCreateInputSchema,
@@ -138,18 +136,11 @@ const terminalComposedSurfaceSchema = z.object({
   surface: z.object({
     shellTerminalId: z.string().min(1),
     terminalId: z.string().min(1),
-    shellSnapshotSeq: z.number().int(),
     cols: z.number().int().positive(),
     rows: z.number().int().positive(),
-    bottomLine: z.string(),
-    dialogueOpen: z.boolean(),
-    dialoguePlacement: z.enum(["left", "right", "floating"]).nullable(),
-    dialogueDraft: z.string(),
-    managedLabel: z.string(),
-    unreadLabel: z.string(),
-    heartbeatLabel: z.string(),
-    terminalLines: z.array(z.string()),
-    terminalRichLines: z
+    seq: z.number().int().optional(),
+    lines: z.array(z.string()),
+    richLines: z
       .array(
         z.object({
           spans: z.array(
@@ -168,7 +159,7 @@ const terminalComposedSurfaceSchema = z.object({
     selectionSources: z
       .array(
         z.object({
-          owner: z.enum(["terminal", "dialogue"]),
+          owner: z.string().min(1),
           row: z.number().int().nonnegative(),
           col: z.number().int().nonnegative(),
           width: z.number().int().nonnegative(),
@@ -177,6 +168,7 @@ const terminalComposedSurfaceSchema = z.object({
         }),
       )
       .optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     cursor: z.object({
       x: z.number().int().nonnegative(),
       y: z.number().int().nonnegative(),
@@ -1419,22 +1411,18 @@ export const appRouter = t.router({
             ...resolveTerminalCallerScope(ctx.auth),
           }),
       ),
-    globalSetConfig: authProcedure
-      .input(terminalConfigPatchSchema)
-      .mutation(({ ctx, input }) => ({
-        result: ctx.kernel.setGlobalTerminalConfig({
-          ...input,
-          ...resolveTerminalCallerScope(ctx.auth),
-        }),
-      })),
-    globalPublishComposedSurface: authProcedure
-      .input(terminalComposedSurfaceSchema)
-      .mutation(({ ctx, input }) => ({
-        result: ctx.kernel.publishGlobalTerminalComposedSurface({
-          ...input,
-          ...resolveTerminalCallerScope(ctx.auth),
-        }),
-      })),
+    globalSetConfig: authProcedure.input(terminalConfigPatchSchema).mutation(({ ctx, input }) => ({
+      result: ctx.kernel.setGlobalTerminalConfig({
+        ...input,
+        ...resolveTerminalCallerScope(ctx.auth),
+      }),
+    })),
+    globalPublishComposedSurface: authProcedure.input(terminalComposedSurfaceSchema).mutation(({ ctx, input }) => ({
+      result: ctx.kernel.publishGlobalTerminalComposedSurface({
+        ...input,
+        ...resolveTerminalCallerScope(ctx.auth),
+      }),
+    })),
     activityPage: authProcedure
       .input(
         z.object({
@@ -1537,7 +1525,7 @@ export const appRouter = t.router({
       .input(
         z.object({
           terminalId: z.string().min(1),
-          role: z.enum(["admin", "writer", "requester", "readonly"]),
+          role: z.enum(["admin", "writer", "guard", "readonly"]),
           participantId: terminalActorIdSchema,
           label: z.string().trim().min(1).optional(),
           accessTokenHint: z
@@ -1582,6 +1570,48 @@ export const appRouter = t.router({
           ...resolveTerminalCallerScope(ctx.auth),
         }),
       })),
+    permissionRequests: authProcedure
+      .input(
+        z
+          .object({
+            terminalId: z.string().min(1).optional(),
+            statuses: z.array(z.enum(["pending", "approved", "denied", "expired"])).optional(),
+          })
+          .optional(),
+      )
+      .subscription(({ ctx, input }) => {
+        return observable<
+          | { type: "snapshot"; items: ReturnType<typeof ctx.kernel.listObservableGlobalTerminalApprovalRequests> }
+          | { type: "request"; request: ReturnType<typeof ctx.kernel.listObservableGlobalTerminalApprovalRequests>[number] }
+        >((emit) => {
+          const terminalScope = resolveTerminalCallerScope(ctx.auth);
+          const listInput = {
+            terminalId: input?.terminalId,
+            statuses: input?.statuses ?? ["pending"],
+            ...terminalScope,
+          };
+          emit.next({
+            type: "snapshot",
+            items: ctx.kernel.listObservableGlobalTerminalApprovalRequests(listInput),
+          });
+          const unsubscribe = ctx.kernel.onObservableGlobalTerminalApprovalRequest(
+            {
+              terminalId: input?.terminalId,
+              ...terminalScope,
+            },
+            (payload) => {
+              if (input?.statuses && !input.statuses.includes(payload.request.status)) {
+                return;
+              }
+              emit.next({
+                type: "request",
+                request: payload.request,
+              });
+            },
+          );
+          return unsubscribe;
+        });
+      }),
     approveRequest: authProcedure
       .input(
         z.object({
@@ -1643,21 +1673,9 @@ export const appRouter = t.router({
       ),
   }),
   productExtension: t.router({
-    listDelegations: superadminProcedure
-      .input(productDelegationLookupSchema)
-      .query(({ ctx, input }) => ({
-        items: ctx.kernel.listProductDelegations(input),
-      })),
-    createDelegation: superadminProcedure
-      .input(productDelegationCreateInputSchema)
-      .mutation(({ ctx, input }) => ({
-        delegation: ctx.kernel.createProductDelegation(input),
-      })),
-    revokeDelegation: superadminProcedure
-      .input(productDelegationRevokeInputSchema)
-      .mutation(({ ctx, input }) => ({
-        delegation: ctx.kernel.revokeProductDelegation(input),
-      })),
+    ensureAvatarPromptSeed: superadminProcedure
+      .input(productAvatarPromptSeedInputSchema)
+      .mutation(({ ctx, input }) => ctx.kernel.ensureAvatarPromptSeed(input)),
   }),
   draft: t.router({
     resolve: superadminProcedure
@@ -2195,7 +2213,7 @@ export const appRouter = t.router({
           avatar: z.string().min(1),
           terminalId: z.string().min(1),
           accessToken: z.string().min(1),
-          accessRole: z.enum(["admin", "writer", "requester", "readonly"]),
+          accessRole: z.enum(["admin", "writer", "guard", "readonly"]),
           state: z.enum(["active", "credential-invalid"]).optional(),
         }),
       )

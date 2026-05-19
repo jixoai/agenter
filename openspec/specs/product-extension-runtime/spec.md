@@ -1,7 +1,7 @@
 # product-extension-runtime Specification
 
 ## Purpose
-Define the generic contracts ordinary-user products use to bind backend resources, initialize assistants, project attention, and manage delegated autonomy without polluting core runtime modules.
+Define the generic contracts ordinary-user products use to bind backend resources, initialize assistants, and project attention without polluting core runtime modules.
 
 ## Requirements
 
@@ -28,7 +28,7 @@ Agenter core SHALL provide programmable extension contracts for ordinary-user pr
 
 #### Scenario: Future products reuse the same extension law
 - **WHEN** another first-party product is added later
-- **THEN** it can declare a product descriptor and consume the same launch, resource binding, assistant initialization, attention, and delegation APIs
+- **THEN** it can declare a product descriptor and consume the same launch, resource binding, assistant initialization, and attention APIs
 - **AND** core does not need a new product-specific runtime branch equivalent to `if product is cli-shell`
 
 ### Requirement: Product extensions SHALL initialize assistant resources through generic APIs
@@ -97,7 +97,7 @@ The extension runtime SHALL expose generic APIs that let a product ensure or loo
 - **AND** unrelated global-only focus state does not count as sufficient runtime focus truth
 
 #### Scenario: Binding outputs preserve session actor truth for later attribution
-- **WHEN** a product bootstrap needs actor identity later for delegation attribution, unread projection, managed-mode state, or reconnect behavior
+- **WHEN** a product bootstrap needs actor identity later for terminal activity attribution, unread projection, managed-mode state, or reconnect behavior
 - **THEN** the binding/bootstrap flow preserves the session runtime actor truth in its outputs
 - **AND** later product behavior does not re-derive actor identity from catalog metadata alone
 
@@ -112,7 +112,7 @@ The extension runtime SHALL let products publish product-scoped attention facts 
 - **AND** it does not create a second toolbar-owned event log as truth
 
 #### Scenario: Product ingress creates attention, not kernel branches
-- **WHEN** cli-shell observes product-relevant facts such as unread room messages, terminal idle-ready state, or delegation status changes
+- **WHEN** cli-shell observes product-relevant facts such as unread room messages, terminal idle-ready state, or hosting attention changes
 - **THEN** it expresses required AI follow-up through product-scoped attention contexts or items
 - **AND** LoopBus scheduling consumes those attention facts through the normal attention law
 - **AND** the kernel does not gain cli-shell-specific scheduling rules
@@ -125,7 +125,7 @@ The extension runtime SHALL let products publish product-scoped attention facts 
 
 #### Scenario: Product metadata stays projection-safe
 - **WHEN** a product-scoped attention item references product state
-- **THEN** product id, resource key, terminal id, room id, delegation id, and hosting memory role ids may appear as provenance metadata
+- **THEN** product id, resource key, terminal id, room id, and hosting memory role ids may appear as provenance metadata
 - **AND** AI-visible instructions or obligations appear in the attention body
 - **AND** metadata does not become a hidden side channel for product behavior
 
@@ -145,7 +145,7 @@ The extension runtime SHALL expose enough generic attention operations for produ
 - **THEN** the loop may use product-scoped attention to schedule reflection or memory work
 - **AND** it does not require `scores: {"hosting": 1000}`
 - **AND** it does not grant terminal write authority
-- **AND** any terminal write still requires the normal delegation or terminal-native approval law
+- **AND** any terminal write still requires TerminalSystem-native writer authority, guard approval, or an active terminal write lease
 
 #### Scenario: Future products reuse programmable attention operations
 - **WHEN** another product needs a recurring learning, reflection, or maintenance loop
@@ -153,34 +153,32 @@ The extension runtime SHALL expose enough generic attention operations for produ
 - **AND** core does not gain a product-specific branch for that product's named ritual
 - **AND** if recurring watch/schedule behavior is needed, it belongs to the follow-up `extend-attention-cli-self-evolution-runtime` change
 
-### Requirement: Product delegation SHALL be an attention-backed bounded lease
+### Requirement: Product hosting SHALL remain separate from terminal authority
 
-Products SHALL model terminal write autonomy as explicit delegation facts tied to attention and resource authority. A delegation SHALL name the granting user, target Avatar, target resources, expiry, policy, and revocation state. It SHALL NOT be represented only by local UI state, prompt text, or a permanent writer grant. Positive hosting attention may schedule the Avatar, but it SHALL NOT grant terminal write authority by itself.
+Products SHALL model hosting and managed continuity as product-scoped attention facts. Positive hosting attention may schedule or wake the Avatar, but it SHALL NOT grant terminal write authority, mint terminal write leases, create permanent writer grants, or introduce product-owned write delegation as a second authorization truth. Terminal mutation SHALL return to TerminalSystem-native grants, guard approval requests, and timeboxed write leases.
 
-#### Scenario: Managed toggle creates hosting attention and write-capable bounded delegation by default
+#### Scenario: Managed toggle creates hosting attention only
 - **WHEN** the user enables cli-shell managed/takeover mode
 - **THEN** cli-shell commits positive hosting attention for the current product terminal and room
-- **AND** cli-shell requests a product delegation for terminal write autonomy by default
-- **AND** the delegation records the granting user principal, summoned Avatar principal, product id, shell name, terminal id, room id, enabled time, expiry, and policy
-- **AND** the delegated terminal write authority is represented by a bounded terminal write lease or equivalent terminal-native authority
+- **AND** no product write delegation, terminal write lease, or permanent writer grant is created only because hosting was enabled
+- **AND** the attention content records the granting user principal, summoned Avatar principal, product id, shell name, terminal id, room id, enabled time, and current objective
 
-#### Scenario: Managed toggle revoke removes only delegated authority
+#### Scenario: Managed toggle off settles hosting attention only
 - **WHEN** the user disables cli-shell managed/takeover mode
-- **THEN** the active product delegation is revoked
-- **AND** cli-shell commits a hosting attention update with `scores: {"hosting": 0}` and reason `user_disabled`
-- **AND** terminal write leases created by that delegation are revoked or allowed to expire
+- **THEN** cli-shell commits a hosting attention update with `scores: {"hosting": 0}` and reason `user_disabled`
+- **AND** terminal grants, guard approval requests, and write leases remain governed only by TerminalSystem authority
 - **AND** unrelated terminal grants, room grants, and user manual terminal input remain valid
 
-#### Scenario: Autonomous terminal effects are attributed to the Avatar and delegation
+#### Scenario: Autonomous terminal effects are attributed to the Avatar and terminal authority
 - **WHEN** the Avatar writes terminal input while cli-shell managed/takeover is active
 - **THEN** the terminal write is submitted with the Avatar actor identity
-- **AND** the terminal activity record carries enough provenance to resolve the delegation and lease that authorized the write
+- **AND** the terminal activity record carries enough provenance to resolve the TerminalSystem grant, guard approval request, or lease that authorized the write
 - **AND** superadmin bootstrap authority is not used as the hidden actor for autonomous terminal effects
 
 #### Scenario: Managed off keeps attention but blocks autonomous writes
 - **WHEN** cli-shell managed/takeover mode is off
 - **THEN** the Avatar may observe terminal and room context, answer in the room, and request approval
-- **AND** it must not autonomously write to the terminal without a valid delegation or terminal-native approval
+- **AND** it must not autonomously write to the terminal without TerminalSystem-native writer authority, guard approval, or an active terminal write lease
 - **AND** terminal idle/dirty observations do not self-drive takeover work solely because the toolbar exists
 
 #### Scenario: Hosting attention can remain open for watch tasks
@@ -189,7 +187,7 @@ Products SHALL model terminal write autonomy as explicit delegation facts tied t
 - **AND** it records progress and watch policy as durable memory or attention facts
 - **AND** the runtime does not force `hosting` to zero merely because one model round ended
 
-#### Scenario: Delegation policy prevents no-progress loops
-- **WHEN** a delegation is active and repeated model rounds produce no terminal progress or equivalent failures
-- **THEN** the extension runtime records backoff, blocked, expired, or revoked state as explicit attention/delegation facts
-- **AND** LoopBus does not spin indefinitely only because the delegation remains enabled
+#### Scenario: Hosting policy prevents no-progress loops
+- **WHEN** hosting attention is active and repeated model rounds produce no terminal progress or equivalent failures
+- **THEN** the extension runtime records backoff, blocked, expired, or settled state as explicit attention facts
+- **AND** LoopBus does not spin indefinitely only because hosting remains enabled

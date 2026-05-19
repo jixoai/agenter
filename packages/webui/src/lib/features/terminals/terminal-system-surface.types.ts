@@ -7,6 +7,9 @@ import type {
 } from "@agenter/client-sdk";
 import type {
   TerminalViewElement,
+  TerminalViewApprovalActionDetail,
+  TerminalViewPermissionRequest,
+  TerminalViewRequestPermissionsHandler,
   TerminalViewPresentationReadyDetail,
   TerminalViewScreenMetrics,
   TerminalViewSnapshot,
@@ -21,7 +24,7 @@ import type {
   TerminalThemeName,
 } from "@agenter/terminal-view";
 
-export type TerminalSystemGrantRole = "admin" | "writer" | "requester" | "readonly";
+export type TerminalSystemGrantRole = "admin" | "writer" | "guard" | "readonly";
 export type TerminalSystemReadMode = "auto" | "diff" | "snapshot";
 export type TerminalLifecycleIntent = "bootstrap" | "stop";
 export type TerminalLifecycleAction = TerminalLifecycleIntent;
@@ -114,6 +117,9 @@ export interface TerminalViewportProps {
   theme?: TerminalThemeName;
   cursor?: TerminalCursorStyle;
   font?: TerminalFontProfile;
+  permissionRequests?: TerminalViewPermissionRequest[];
+  onRequestPermissions?: TerminalViewRequestPermissionsHandler | null;
+  onApprovalAction?: (detail: TerminalViewApprovalActionDetail) => void;
   onScreenMetrics?: (metrics: TerminalViewScreenMetrics) => void;
   onPresentationReady?: (detail: TerminalViewPresentationReadyDetail) => void;
   elementRef?: (HTMLElement &
@@ -123,6 +129,8 @@ export interface TerminalViewportProps {
       projectionScale?: number;
       projectionOffsetX?: number;
       projectionOffsetY?: number;
+      permissionRequests?: TerminalViewPermissionRequest[];
+      onRequestPermissions?: TerminalViewRequestPermissionsHandler | null;
       screenMetrics?: TerminalViewScreenMetrics | null;
     }) | null;
   class?: string;

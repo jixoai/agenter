@@ -65,7 +65,7 @@ The `Terminals` page SHALL render attached actors through an AvatarGroup that en
 
 #### Scenario: Border colors reflect terminal grant state
 - **WHEN** the page renders attached actors for a terminal
-- **THEN** border colors distinguish `readonly`, `requester`, `writer`, and `admin`
+- **THEN** border colors distinguish `readonly`, `guard`, `writer`, and `admin`
 - **THEN** the user can identify write authority without opening a secondary inspector first
 
 #### Scenario: Users panel shows per-seat focus state
@@ -79,4 +79,4 @@ When a terminal configuration action would leave more than one actor with `write
 #### Scenario: Multiple writers trigger a downgrade prompt
 - **WHEN** the user grants `writer` access to an actor while another actor already has `writer`
 - **THEN** the UI warns that shared unrestricted writers can conflict
-- **THEN** the prompt offers a downgrade path that changes the other writer to `requester` before confirming
+- **THEN** the prompt offers a downgrade path that changes the other writer to `guard` before confirming

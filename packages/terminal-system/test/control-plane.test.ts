@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -759,17 +759,10 @@ describe("Feature: terminal control plane", () => {
       surface: {
         shellTerminalId: source.terminalId,
         terminalId: composed.terminalId,
-        shellSnapshotSeq: sourceRuntime.getSnapshot().seq,
+        seq: sourceRuntime.getSnapshot().seq,
         cols: 80,
         rows: 20,
-        bottomLine: "托管 off",
-        dialogueOpen: true,
-        dialoguePlacement: "right",
-        dialogueDraft: "",
-        managedLabel: "托管 off",
-        unreadLabel: "✉ 0 M-J",
-        heartbeatLabel: "Avatar started；等待新的 terminal 变化…",
-        terminalLines: [
+        lines: [
           "$ agenter shell",
           "shell-1:~/project $",
           "",
@@ -777,7 +770,7 @@ describe("Feature: terminal control plane", () => {
           "",
           "托管 off  ✉ 0 M-J",
         ],
-        terminalRichLines: [
+        richLines: [
           { spans: [{ text: "$ agenter shell", fg: "#00ff00" }] },
           { spans: [{ text: "shell-1:~/project $", fg: "#ffffff" }] },
           { spans: [] },
@@ -836,22 +829,15 @@ describe("Feature: terminal control plane", () => {
       surface: {
         shellTerminalId: source.terminalId,
         terminalId: composed.terminalId,
-        shellSnapshotSeq: 0,
+        seq: 0,
         cols: 32,
         rows: 8,
-        bottomLine: "Avatar started",
-        dialogueOpen: false,
-        dialoguePlacement: null,
-        dialogueDraft: "",
-        managedLabel: "托管 off",
-        unreadLabel: "✉ 0",
-        heartbeatLabel: "Avatar started",
-        terminalLines: [
+        lines: [
           "terminal-2 composed screen",
           "no child PTY process",
           "Avatar started",
         ],
-        terminalRichLines: [
+        richLines: [
           { spans: [{ text: "terminal-2 composed screen", fg: "#f8fafc" }] },
           { spans: [{ text: "no child PTY process", fg: "#93c5fd" }] },
           { spans: [{ text: "Avatar started", fg: "#facc15" }] },
@@ -2702,7 +2688,7 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
-  test("Scenario: Given requester and readonly grants When writes require approval Then readonly stays blocked and approved leases unlock requester writes", async () => {
+  test("Scenario: Given guard and readonly grants When writes require approval Then readonly stays blocked and approved leases unlock guard writes", async () => {
     const plane = createPlane();
     plane.setActorPresence("session:admin", true);
     const created = await plane.create({
@@ -2711,11 +2697,11 @@ describe("Feature: terminal control plane", () => {
       bootstrapRole: "admin",
     });
 
-    const requester = plane.issueGrantAuthorized({
+    const guard = plane.issueGrantAuthorized({
       terminalId: created.terminalId,
       actorId: "session:admin",
-      participantId: "session:requester",
-      role: "requester",
+      participantId: "session:guard",
+      role: "guard",
     });
     plane.issueGrantAuthorized({
       terminalId: created.terminalId,
@@ -2735,7 +2721,7 @@ describe("Feature: terminal control plane", () => {
     const pending = await plane.write({
       terminalId: created.terminalId,
       text: "needs-lease",
-      actorId: "session:requester",
+      actorId: "session:guard",
     });
     expect(pending.ok).toBe(false);
     expect(pending.approvalRequest?.assignedAdminId).toBe("session:admin");
@@ -2755,20 +2741,20 @@ describe("Feature: terminal control plane", () => {
       durationMs: 60_000,
       actorId: "session:admin",
     });
-    expect(lease.participantId).toBe("session:requester");
+    expect(lease.participantId).toBe("session:guard");
 
     const approved = await plane.write({
       terminalId: created.terminalId,
       text: "needs-lease",
-      actorId: "session:requester",
-      accessToken: requester.accessToken,
+      actorId: "session:guard",
+      accessToken: guard.accessToken,
     });
     expect(approved.ok).toBe(true);
 
     await plane.dispose();
   });
 
-  test("Scenario: Given a requester seat with a direct managed lease When it writes and later the lease is revoked Then terminal write events keep avatar actor identity and lease provenance", async () => {
+  test("Scenario: Given a guard seat with a direct managed lease When it writes and later the lease is revoked Then terminal write events keep avatar actor identity and lease provenance", async () => {
     const plane = createPlane();
     plane.setActorPresence("session:admin", true);
     const created = await plane.create({
@@ -2781,7 +2767,7 @@ describe("Feature: terminal control plane", () => {
       terminalId: created.terminalId,
       actorId: "session:admin",
       participantId: "session:avatar",
-      role: "requester",
+      role: "guard",
     });
 
     const lease = plane.grantWriteLeaseAuthorized({
@@ -2813,7 +2799,7 @@ describe("Feature: terminal control plane", () => {
         ?.actors?.find((actor) => actor.actorId === "session:avatar"),
     ).toMatchObject({
       actorId: "session:avatar",
-      role: "requester",
+      role: "guard",
       leaseId: lease.leaseId,
     });
 
@@ -2860,7 +2846,7 @@ describe("Feature: terminal control plane", () => {
       terminalId: created.terminalId,
       actorId: "session:alpha",
       participantId: "session:charlie",
-      role: "requester",
+      role: "guard",
     });
 
     const initialRequest = await plane.write({
@@ -2934,7 +2920,7 @@ describe("Feature: terminal control plane", () => {
       terminalId: created.terminalId,
       actorId: "session:alpha",
       participantId: "session:charlie",
-      role: "requester",
+      role: "guard",
     });
 
     plane.updateTerminalAuthorized({
@@ -2981,26 +2967,26 @@ describe("Feature: terminal control plane", () => {
     plane.issueGrantAuthorized({
       terminalId: created.terminalId,
       actorId: "session:admin",
-      participantId: "session:requester-a",
-      role: "requester",
+      participantId: "session:guard-a",
+      role: "guard",
     });
     plane.issueGrantAuthorized({
       terminalId: created.terminalId,
       actorId: "session:admin",
-      participantId: "session:requester-b",
-      role: "requester",
+      participantId: "session:guard-b",
+      role: "guard",
     });
 
     const pendingA = await plane.write({
       terminalId: created.terminalId,
       text: "approved request",
-      actorId: "session:requester-a",
+      actorId: "session:guard-a",
       createApprovalRequest: true,
     });
     const pendingB = await plane.write({
       terminalId: created.terminalId,
       text: "denied request",
-      actorId: "session:requester-b",
+      actorId: "session:guard-b",
       createApprovalRequest: true,
     });
     const approvedRequestId = pendingA.approvalRequest?.requestId;
@@ -3043,6 +3029,233 @@ describe("Feature: terminal control plane", () => {
         statuses: ["pending"],
       }),
     ).toHaveLength(0);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given live guard approval requests When listeners subscribe globally or by terminal Then each listener receives only its requested terminal scope", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const alpha = await plane.create({
+      terminalId: "approval-scope-alpha",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+    const bravo = await plane.create({
+      terminalId: "approval-scope-bravo",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: alpha.terminalId,
+      actorId: "session:admin",
+      participantId: "session:guard",
+      role: "guard",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: bravo.terminalId,
+      actorId: "session:admin",
+      participantId: "session:guard",
+      role: "guard",
+    });
+
+    const globalEvents: Array<{ terminalId: string; requestId?: string }> = [];
+    const alphaEvents: Array<{ terminalId: string; requestId?: string }> = [];
+    const releaseGlobal = plane.onApprovalRequest((event) => {
+      globalEvents.push({ terminalId: event.terminalId, requestId: event.request.requestId });
+    });
+    const releaseAlpha = plane.onApprovalRequest(
+      (event) => {
+        alphaEvents.push({ terminalId: event.terminalId, requestId: event.request.requestId });
+      },
+      { terminalId: alpha.terminalId },
+    );
+
+    const alphaWrite = await plane.write({
+      terminalId: alpha.terminalId,
+      text: "alpha approval",
+      actorId: "session:guard",
+    });
+    const bravoWrite = await plane.write({
+      terminalId: bravo.terminalId,
+      text: "bravo approval",
+      actorId: "session:guard",
+    });
+
+    expect(globalEvents).toEqual([
+      { terminalId: alpha.terminalId, requestId: alphaWrite.approvalRequest?.requestId },
+      { terminalId: bravo.terminalId, requestId: bravoWrite.approvalRequest?.requestId },
+    ]);
+    expect(alphaEvents).toEqual([
+      { terminalId: alpha.terminalId, requestId: alphaWrite.approvalRequest?.requestId },
+    ]);
+
+    releaseGlobal();
+    releaseAlpha();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given observable approval requests When callers lack terminal read access Then unauthorized previews are filtered before delivery", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const alpha = await plane.create({
+      terminalId: "approval-visible-alpha",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+    const bravo = await plane.create({
+      terminalId: "approval-visible-bravo",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: alpha.terminalId,
+      actorId: "session:admin",
+      participantId: "session:observer",
+      role: "readonly",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: alpha.terminalId,
+      actorId: "session:admin",
+      participantId: "session:guard",
+      role: "guard",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: bravo.terminalId,
+      actorId: "session:admin",
+      participantId: "session:guard",
+      role: "guard",
+    });
+
+    const alphaWrite = await plane.write({
+      terminalId: alpha.terminalId,
+      text: "observable alpha",
+      actorId: "session:guard",
+    });
+    if (!alphaWrite.approvalRequest) {
+      throw new Error("expected alpha guard write to create an approval request");
+    }
+    await plane.write({
+      terminalId: bravo.terminalId,
+      text: "hidden bravo",
+      actorId: "session:guard",
+    });
+
+    expect(
+      plane
+        .listObservableApprovalRequests({
+          actorId: "session:observer",
+          statuses: ["pending"],
+        })
+        .map((request) => request.requestId),
+    ).toEqual([alphaWrite.approvalRequest.requestId]);
+    expect(() =>
+      plane.listObservableApprovalRequests({
+        terminalId: bravo.terminalId,
+        actorId: "session:observer",
+        statuses: ["pending"],
+      }),
+    ).toThrow("terminal access denied");
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given repeated equivalent guard writes When a request is still pending Then the control plane refreshes one approval row", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "approval-coalesced",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      participantId: "session:guard",
+      role: "guard",
+    });
+
+    const events: Array<string | undefined> = [];
+    const release = plane.onApprovalRequest((event) => {
+      events.push(event.request.requestId);
+    });
+    const first = await plane.input({
+      terminalId: created.terminalId,
+      text: "\r",
+      actorId: "session:guard",
+    });
+    const second = await plane.input({
+      terminalId: created.terminalId,
+      text: "\r",
+      actorId: "session:guard",
+    });
+    const changed = await plane.input({
+      terminalId: created.terminalId,
+      text: "different\r",
+      actorId: "session:guard",
+    });
+
+    expect(second.approvalRequest?.requestId).toBe(first.approvalRequest?.requestId);
+    expect(changed.approvalRequest?.requestId).not.toBe(first.approvalRequest?.requestId);
+    expect(
+      plane.listApprovalRequests({
+        terminalId: created.terminalId,
+        statuses: ["pending"],
+      }),
+    ).toHaveLength(2);
+    expect(events).toEqual([
+      first.approvalRequest?.requestId,
+      first.approvalRequest?.requestId,
+      changed.approvalRequest?.requestId,
+    ]);
+
+    release();
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a pending guard approval When the terminal is killed and bootstrapped Then the stale request cannot mint a lease for the new live instance", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "approval-stale-after-rebootstrap",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      participantId: "session:guard",
+      role: "guard",
+    });
+    const pending = await plane.write({
+      terminalId: created.terminalId,
+      text: "old live input",
+      actorId: "session:guard",
+    });
+    const requestId = pending.approvalRequest?.requestId;
+    if (!requestId) {
+      throw new Error("expected approval request");
+    }
+
+    await plane.stop(created.terminalId);
+    plane.bootstrap(created.terminalId);
+
+    expect(
+      plane
+        .listApprovalRequests({
+          terminalId: created.terminalId,
+          statuses: ["expired"],
+        })
+        .map((request) => request.requestId),
+    ).toContain(requestId);
+    expect(() =>
+      plane.approveRequestAuthorized({
+        terminalId: created.terminalId,
+        actorId: "session:admin",
+        requestId,
+        durationMs: 60_000,
+      }),
+    ).toThrow("unknown pending terminal approval request");
 
     await plane.dispose();
   });
@@ -3112,7 +3325,7 @@ describe("Feature: terminal control plane", () => {
     }
   });
 
-  test("Scenario: Given requester transport input When no lease exists Then websocket input is rejected until an admin approves a write lease through the durable path", async () => {
+  test("Scenario: Given guard transport input When no lease exists Then websocket input is rejected until an admin approves a write lease through the durable path", async () => {
     const plane = createPlane();
     plane.setActorPresence("session:admin", true);
     const created = await plane.create({
@@ -3120,14 +3333,14 @@ describe("Feature: terminal control plane", () => {
       bootstrapActorId: "session:admin",
       bootstrapRole: "admin",
     });
-    const requester = plane.issueGrantAuthorized({
+    const guard = plane.issueGrantAuthorized({
       terminalId: created.terminalId,
       actorId: "session:admin",
-      participantId: "session:requester",
-      role: "requester",
+      participantId: "session:guard",
+      role: "guard",
     });
     const transport = await plane.startTransport({ port: 0 });
-    const endpoint = plane.getTransportEndpoint(created.terminalId, requester.accessToken);
+    const endpoint = plane.getTransportEndpoint(created.terminalId, guard.accessToken);
 
     expect(transport.port).not.toBeNull();
     expect(endpoint?.url).toContain("token=");
@@ -3152,15 +3365,15 @@ describe("Feature: terminal control plane", () => {
     expect(
       plane.listApprovalRequests({
         terminalId: created.terminalId,
-        participantId: "session:requester",
+        participantId: "session:guard",
       }),
     ).toHaveLength(0);
 
     const writePending = await plane.write({
       terminalId: created.terminalId,
       text: "lease me",
-      actorId: "session:requester",
-      accessToken: requester.accessToken,
+      actorId: "session:guard",
+      accessToken: guard.accessToken,
     });
     const pending = writePending.approvalRequest;
     if (!pending) {
@@ -3203,6 +3416,43 @@ describe("Feature: terminal control plane", () => {
 
     const endpoint = plane.getTransportEndpoint(created.terminalId);
     expect(endpoint?.url).toContain(`/pty/${created.terminalId}?token=`);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given a deleted deterministic terminal id When creating it again Then the tombstone does not block recreation or leak old grants", async () => {
+    const plane = createPlane();
+    const terminalId = "reusable-terminal-id";
+    const created = await plane.create({
+      terminalId,
+      bootstrapActorId: "session:admin-a",
+      bootstrapRole: "admin",
+      start: false,
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin-a",
+      participantId: "session:guard",
+      role: "guard",
+    });
+
+    const deleted = await plane.deleteAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin-a",
+    });
+    const recreated = await plane.create({
+      terminalId,
+      bootstrapActorId: "session:admin-b",
+      bootstrapRole: "admin",
+      start: false,
+    });
+
+    expect(deleted.ok).toBe(true);
+    expect(recreated.terminalId).toBe(terminalId);
+    expect(plane.listForActor("session:guard", { touchPresence: false })).toHaveLength(0);
+    expect(plane.listForActor("session:admin-b", { touchPresence: false }).map((entry) => entry.terminalId)).toEqual([
+      terminalId,
+    ]);
 
     await plane.dispose();
   });
@@ -3269,7 +3519,7 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
-  test("Scenario: Given requester transport live input bytes When no write lease exists Then the client receives an error without creating approval work", async () => {
+  test("Scenario: Given guard transport live input bytes When no write lease exists Then the client receives an error without creating approval work", async () => {
     const plane = createPlane();
     plane.setActorPresence("session:admin", true);
     const created = await plane.create({
@@ -3277,14 +3527,14 @@ describe("Feature: terminal control plane", () => {
       bootstrapActorId: "session:admin",
       bootstrapRole: "admin",
     });
-    const requester = plane.issueGrantAuthorized({
+    const guard = plane.issueGrantAuthorized({
       terminalId: created.terminalId,
       actorId: "session:admin",
-      participantId: "session:requester",
-      role: "requester",
+      participantId: "session:guard",
+      role: "guard",
     });
     await plane.startTransport({ port: 0 });
-    const endpoint = plane.getTransportEndpoint(created.terminalId, requester.accessToken);
+    const endpoint = plane.getTransportEndpoint(created.terminalId, guard.accessToken);
     const socket = new WebSocket(endpoint!.url);
     const messages: TerminalTransportServerMessage[] = [];
     const opened = new Promise<void>((resolve, reject) => {
@@ -3306,7 +3556,7 @@ describe("Feature: terminal control plane", () => {
     expect(
       plane.listApprovalRequests({
         terminalId: created.terminalId,
-        participantId: "session:requester",
+        participantId: "session:guard",
       }),
     ).toHaveLength(0);
 
@@ -3643,5 +3893,23 @@ describe("Feature: terminal control plane", () => {
     ).rejects.toThrow(/not pending: revoked/u);
 
     await plane.dispose();
+  });
+
+  test("Scenario: Given TerminalSystem source is inspected When composed surface code is checked Then cli-shell chrome tokens stay outside core", () => {
+    const sourceRoot = resolve(import.meta.dir, "..", "src");
+    const sourceText = readdirSync(sourceRoot, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+      .map((entry) => readFileSync(join(sourceRoot, entry.name), "utf8"))
+      .join("\n");
+
+    expect(sourceText).not.toContain("managedLabel");
+    expect(sourceText).not.toContain("dialogueDraft");
+    expect(sourceText).not.toContain("unreadLabel");
+    expect(sourceText).not.toContain("heartbeatLabel");
+    expect(sourceText).not.toContain("托管 off");
+    expect(sourceText).not.toContain("composedDialogue");
+    expect(sourceText).not.toContain("composedManaged");
+    expect(sourceText).not.toContain("composedUnread");
+    expect(sourceText).not.toContain("composedHeartbeat");
   });
 });

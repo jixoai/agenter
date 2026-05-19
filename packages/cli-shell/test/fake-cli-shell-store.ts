@@ -1,5 +1,3 @@
-import type { ProductDelegationCreateInput } from "@agenter/product-extension-runtime";
-import type { TerminalBackendKind } from "@agenter/termless-core";
 import type {
   AttentionQueryItem,
   AuthSessionOutput,
@@ -13,12 +11,12 @@ import type {
   GlobalTerminalEntry,
   GlobalTerminalGrantEntry,
   ProductEnsureTerminalBindingInput,
-  ProductDelegationRecord,
   ProductTerminalComposedSurfaceState,
   RuntimeClientState,
   SessionEntry,
   WorkspacePrivateTextAssetEnsureOutput,
 } from "@agenter/client-sdk";
+import type { TerminalBackendKind } from "@agenter/termless-core";
 
 import type { CliShellProductHostStore, CliShellStore } from "../src";
 
@@ -117,11 +115,7 @@ const createTerminalEntry = (
   metadata,
 });
 
-const createRoomEntry = (
-  chatId: string,
-  metadata: Record<string, unknown> = {},
-  title = chatId,
-): GlobalRoomEntry => ({
+const createRoomEntry = (chatId: string, metadata: Record<string, unknown> = {}, title = chatId): GlobalRoomEntry => ({
   chatId,
   kind: "room",
   title,
@@ -173,10 +167,13 @@ export class FakeCliShellStore implements CliShellStore {
   focusRoomCalls: string[][] = [];
   inputs: Array<{ terminalId: string; text: string }> = [];
   sentMessages: Array<{ chatId: string; text: string }> = [];
+  deletedSessions: string[] = [];
+  deletedTerminalIds: string[] = [];
+  deletedRoomIds: string[] = [];
   private listeners = new Set<() => void>();
   privateAssets = new Map<string, WorkspacePrivateTextAssetEnsureOutput>();
-  delegations: ProductDelegationRecord[] = [];
   promptFiles = new Map<string, { path: string; content: string; mtimeMs: number }>();
+  avatarPromptFiles = new Map<string, { path: string; content: string; mtimeMs: number }>();
   attentionQueryItems: AttentionQueryItem[] = [];
   lastAttentionCommit: Record<string, unknown> | null = null;
   lastAttentionSettle: Record<string, unknown> | null = null;
@@ -195,9 +192,7 @@ export class FakeCliShellStore implements CliShellStore {
   private createRuntimeState(): RuntimeClientState {
     const session = this.createDefaultSession();
     const terminalSnapshots = Object.fromEntries(
-      this.terminals
-        .filter((entry) => entry.snapshot)
-        .map((entry) => [entry.terminalId, entry.snapshot!]),
+      this.terminals.filter((entry) => entry.snapshot).map((entry) => [entry.terminalId, entry.snapshot!]),
     );
     return {
       connected: true,
@@ -380,7 +375,12 @@ export class FakeCliShellStore implements CliShellStore {
     this.authToken = token?.trim() || null;
   }
 
-  async createSession(input: { cwd: string; name?: string; avatar?: string; autoStart?: boolean }): Promise<SessionEntry> {
+  async createSession(input: {
+    cwd: string;
+    name?: string;
+    avatar?: string;
+    autoStart?: boolean;
+  }): Promise<SessionEntry> {
     const avatar = input.avatar ?? "default";
     const key = `${input.cwd}:${avatar}`;
     const existing = this.sessions.get(key);
@@ -393,6 +393,31 @@ export class FakeCliShellStore implements CliShellStore {
     return created;
   }
 
+  async startSession(sessionId: string): Promise<void> {
+    const entry = [...this.sessions.entries()].find(([, session]) => session.id === sessionId);
+    if (!entry) {
+      throw new Error(`session not found: ${sessionId}`);
+    }
+    const [key, session] = entry;
+    this.sessions.set(key, {
+      ...session,
+      status: "running",
+    });
+  }
+
+  async listSessions(): Promise<SessionEntry[]> {
+    return [...this.sessions.values()];
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    this.deletedSessions.push(sessionId);
+    for (const [key, session] of [...this.sessions.entries()]) {
+      if (session.id === sessionId) {
+        this.sessions.delete(key);
+      }
+    }
+  }
+
   async hydrateGlobalAvatarCatalog(_input?: { force?: boolean }): Promise<GlobalAvatarCatalogEntry[]> {
     return [...this.avatars];
   }
@@ -402,21 +427,25 @@ export class FakeCliShellStore implements CliShellStore {
     displayName?: string | null;
     classify?: GlobalAvatarCatalogEntry["classify"];
   }): Promise<GlobalAvatarCatalogEntry> {
-    const created = { ...createAvatarEntry(input.nickname), displayName: input.displayName ?? input.nickname, classify: input.classify ?? null };
+    const created = {
+      ...createAvatarEntry(input.nickname),
+      displayName: input.displayName ?? input.nickname,
+      classify: input.classify ?? null,
+    };
     this.avatars.push(created);
     return created;
   }
 
   async readSettings(
     sessionId: string,
-    _kind: "settings" | "agenter" | "system" | "template" | "contract",
+    _kind: "settings" | "agenter",
   ): Promise<{ path: string; content: string; mtimeMs: number }> {
     return this.promptFiles.get(sessionId) ?? { path: `/tmp/${sessionId}/AGENTER.mdx`, content: "", mtimeMs: 0 };
   }
 
   async saveSettings(input: {
     sessionId: string;
-    kind: "settings" | "agenter" | "system" | "template" | "contract";
+    kind: "settings" | "agenter";
     content: string;
     baseMtimeMs: number;
   }) {
@@ -427,6 +456,32 @@ export class FakeCliShellStore implements CliShellStore {
     const saved = { path: current.path, content: input.content, mtimeMs: Date.now() };
     this.promptFiles.set(input.sessionId, saved);
     return { ok: true as const, file: saved };
+  }
+
+  async ensureAvatarPromptSeed(input: {
+    avatarPrincipalId: string;
+    workspacePath?: string;
+    kind: "agenter";
+    seedContent: string;
+  }): Promise<{ seeded: boolean; file: { path: string; content: string; mtimeMs: number } }> {
+    const key = `${input.workspacePath ?? "~"}:${input.avatarPrincipalId}:${input.kind}`;
+    const current = this.avatarPromptFiles.get(key);
+    if (current) {
+      return {
+        seeded: false,
+        file: current,
+      };
+    }
+    const saved = {
+      path: `${input.workspacePath ?? "/home"}/.agenter/avatars/by-principal/${input.avatarPrincipalId}/AGENTER.mdx`,
+      content: input.seedContent,
+      mtimeMs: Date.now(),
+    };
+    this.avatarPromptFiles.set(key, saved);
+    return {
+      seeded: true,
+      file: saved,
+    };
   }
 
   async listGlobalTerminals(): Promise<GlobalTerminalEntry[]> {
@@ -470,11 +525,9 @@ export class FakeCliShellStore implements CliShellStore {
     void input.focus;
     const isComposedTerminal = input.metadata?.terminalRuntimeKind === "composed";
     const sourceTerminalId =
-      typeof input.metadata?.projectionSourceTerminalId === "string"
-        ? input.metadata.projectionSourceTerminalId
-        : null;
+      typeof input.metadata?.projectionSourceTerminalId === "string" ? input.metadata.projectionSourceTerminalId : null;
     const sourceTerminal = sourceTerminalId
-      ? this.terminals.find((entry) => entry.terminalId === sourceTerminalId) ?? null
+      ? (this.terminals.find((entry) => entry.terminalId === sourceTerminalId) ?? null)
       : null;
     const terminal = createTerminalEntry(
       input.terminalId ?? `terminal-${this.terminals.length + 1}`,
@@ -482,8 +535,7 @@ export class FakeCliShellStore implements CliShellStore {
       sourceTerminal?.command ?? input.command ?? (isComposedTerminal ? [] : ["/bin/bash"]),
       sourceTerminal?.launchCwd ?? input.cwd ?? "/repo",
       input.backend ?? "xterm",
-      input.processKind ??
-        (isComposedTerminal ? "product" : "shell"),
+      input.processKind ?? (isComposedTerminal ? "product" : "shell"),
     );
     if (sourceTerminal?.snapshot) {
       terminal.snapshot = structuredClone(sourceTerminal.snapshot);
@@ -560,23 +612,17 @@ export class FakeCliShellStore implements CliShellStore {
       seq: current.seq + 1,
       metadata: {
         ...current.metadata,
-        composedBottomLine: input.surface.bottomLine,
-        composedDialogueOpen: input.surface.dialogueOpen,
-        composedDialoguePlacement: input.surface.dialoguePlacement,
-        composedDialogueDraft: input.surface.dialogueDraft,
-        composedManagedLabel: input.surface.managedLabel,
-        composedUnreadLabel: input.surface.unreadLabel,
-        composedHeartbeatLabel: input.surface.heartbeatLabel,
-        composedShellSnapshotSeq: input.surface.shellSnapshotSeq,
+        composedFrameSeq: input.surface.seq ?? (current.snapshot?.seq ?? 0) + 1,
+        composedFrameMetadata: input.surface.metadata ? { ...input.surface.metadata } : {},
         composedSelectionSources: input.surface.selectionSources?.map((source) => ({ ...source })),
       },
       snapshot: {
-        seq: (current.snapshot?.seq ?? 0) + 1,
+        seq: input.surface.seq ?? (current.snapshot?.seq ?? 0) + 1,
         timestamp: Date.now(),
         cols: input.surface.cols,
         rows: input.surface.rows,
-        lines: [...input.surface.terminalLines],
-        richLines: input.surface.terminalRichLines?.map((line) => ({
+        lines: [...input.surface.lines],
+        richLines: input.surface.richLines?.map((line) => ({
           spans: line.spans.map((span) => ({ ...span })),
         })),
         cursor: { ...input.surface.cursor },
@@ -605,13 +651,23 @@ export class FakeCliShellStore implements CliShellStore {
     return { ok: true, message: "terminal bootstrapped", terminal };
   }
 
+  async deleteGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string }> {
+    const before = this.terminals.length;
+    this.terminals = this.terminals.filter((entry) => entry.terminalId !== input.terminalId);
+    this.deletedTerminalIds.push(input.terminalId);
+    return {
+      ok: this.terminals.length < before,
+      message: this.terminals.length < before ? "terminal deleted" : "unknown terminal",
+    };
+  }
+
   async listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]> {
     return [...(this.terminalGrants.get(terminalId) ?? [])];
   }
 
   async issueGlobalTerminalGrant(input: {
     terminalId: string;
-    role: "admin" | "writer" | "requester" | "readonly";
+    role: "admin" | "writer" | "guard" | "readonly";
     participantId: GlobalTerminalActorId;
     label?: string;
     accessTokenHint?: string;
@@ -620,7 +676,14 @@ export class FakeCliShellStore implements CliShellStore {
     void input.accessTokenHint;
     void input.adminCandidateRank;
     const grants = this.terminalGrants.get(input.terminalId) ?? [];
-    grants.push({ grantId: `grant:${input.terminalId}:${input.participantId}`, terminalId: input.terminalId, role: input.role, participantId: input.participantId, label: input.label, createdAt: Date.now() });
+    grants.push({
+      grantId: `grant:${input.terminalId}:${input.participantId}`,
+      terminalId: input.terminalId,
+      role: input.role,
+      participantId: input.participantId,
+      label: input.label,
+      createdAt: Date.now(),
+    });
     this.terminalGrants.set(input.terminalId, grants);
     return { ok: true, accessToken: `grant-token:${input.terminalId}:${input.participantId}` };
   }
@@ -741,7 +804,15 @@ export class FakeCliShellStore implements CliShellStore {
     void input.accessToken;
     void input.accessTokenHint;
     const grants = this.roomGrants.get(input.chatId) ?? [];
-    grants.push({ grantId: `grant:${input.chatId}:${input.participantId}`, chatId: input.chatId, role: input.role, participantId: input.participantId, label: input.label, accessToken: `grant-token:${input.chatId}:${input.participantId}`, createdAt: Date.now() });
+    grants.push({
+      grantId: `grant:${input.chatId}:${input.participantId}`,
+      chatId: input.chatId,
+      role: input.role,
+      participantId: input.participantId,
+      label: input.label,
+      accessToken: `grant-token:${input.chatId}:${input.participantId}`,
+      createdAt: Date.now(),
+    });
     this.roomGrants.set(input.chatId, grants);
     return { ok: true, accessToken: `grant-token:${input.chatId}:${input.participantId}` };
   }
@@ -770,24 +841,31 @@ export class FakeCliShellStore implements CliShellStore {
     return this.createRoomSnapshot(room);
   }
 
-  async sendGlobalRoomMessage(input: {
-    chatId: string;
-    text: string;
-  }): Promise<{ ok: true }> {
+  async sendGlobalRoomMessage(input: { chatId: string; text: string }): Promise<{ ok: true }> {
     this.sentMessages.push({ chatId: input.chatId, text: input.text });
     this.emit();
     return { ok: true };
   }
 
-  async inputGlobalTerminal(input: {
-    terminalId: string;
-    text: string;
-  }): Promise<{ ok: true }> {
+  async deleteGlobalRoom(input: { chatId: string }): Promise<GlobalRoomEntry> {
+    const room = this.rooms.find((entry) => entry.chatId === input.chatId) ?? createRoomEntry(input.chatId);
+    this.rooms = this.rooms.filter((entry) => entry.chatId !== input.chatId);
+    this.deletedRoomIds.push(input.chatId);
+    return room;
+  }
+
+  async inputGlobalTerminal(input: { terminalId: string; text: string }): Promise<{ ok: true }> {
     this.inputs.push({ terminalId: input.terminalId, text: input.text });
     return { ok: true };
   }
 
-  async ensureWorkspacePrivateTextAsset(input: { workspacePath: string; avatarNickname: string; assetKind: "skills" | "memory" | "tools" | "archive"; relativePath: string; seedContent: string }): Promise<WorkspacePrivateTextAssetEnsureOutput> {
+  async ensureWorkspacePrivateTextAsset(input: {
+    workspacePath: string;
+    avatarNickname: string;
+    assetKind: "skills" | "memory" | "tools" | "archive";
+    relativePath: string;
+    seedContent: string;
+  }): Promise<WorkspacePrivateTextAssetEnsureOutput> {
     const key = `${input.workspacePath}:${input.avatarNickname}:${input.assetKind}:${input.relativePath}`;
     const current = this.privateAssets.get(key);
     if (current) {
@@ -798,7 +876,12 @@ export class FakeCliShellStore implements CliShellStore {
     return created;
   }
 
-  async queryAttention(input: { sessionId: string; query: string; offset?: number; limit?: number }): Promise<AttentionQueryItem[]> {
+  async queryAttention(input: {
+    sessionId: string;
+    query: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<AttentionQueryItem[]> {
     void input;
     return [...this.attentionQueryItems];
   }
@@ -811,33 +894,6 @@ export class FakeCliShellStore implements CliShellStore {
   async settleAttention(input: { sessionId: string; contextId: string }): Promise<{ commit: unknown }> {
     this.lastAttentionSettle = input;
     return { commit: { contextId: input.contextId } };
-  }
-
-  async listProductDelegations(input: {
-    productId: string;
-    resourceKey?: string;
-    runtimeId?: string;
-    avatarActorId?: string;
-    includeRevoked?: boolean;
-  }): Promise<ProductDelegationRecord[]> {
-    void input;
-    return [...this.delegations];
-  }
-
-  async createProductDelegation(input: ProductDelegationCreateInput): Promise<ProductDelegationRecord> {
-    const created: ProductDelegationRecord = { ...input, delegationId: `delegation:${input.productId}:${input.resourceKey}`, status: "active" };
-    this.delegations.push(created);
-    return created;
-  }
-
-  async revokeProductDelegation(input: { delegationId: string; revokedAt: number; revokedReason: string }): Promise<ProductDelegationRecord> {
-    const current = this.delegations.find((record) => record.delegationId === input.delegationId);
-    if (!current) {
-      throw new Error(`unknown delegation: ${input.delegationId}`);
-    }
-    const revoked = { ...current, status: "revoked" as const, revokedAt: input.revokedAt, revokedReason: input.revokedReason };
-    this.delegations = this.delegations.map((record) => (record.delegationId === input.delegationId ? revoked : record));
-    return revoked;
   }
 }
 

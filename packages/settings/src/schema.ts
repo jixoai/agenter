@@ -153,14 +153,8 @@ export const settingsSchema = z.object({
     .describe("Loop scheduling policies.")
     .optional(),
   prompt: z
-    .object({
-      rootDir: z.string().min(1).describe("Root directory for prompt sources.").optional(),
-      agenterPath: z.string().min(1).describe("User prompt path for AGENTER.mdx.").optional(),
-      internalSystemPath: z.string().min(1).describe("Internal system prompt path.").optional(),
-      systemTemplatePath: z.string().min(1).describe("System template prompt path.").optional(),
-      responseContractPath: z.string().min(1).describe("Response contract prompt path.").optional(),
-    })
-    .describe("Prompt source paths.")
+    .object({})
+    .describe("Prompt source paths are principal-root assets; settings may not override prompt file paths.")
     .optional(),
   tasks: z
     .object({

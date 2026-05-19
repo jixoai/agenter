@@ -85,7 +85,6 @@ const toAbsMaybeUri = (value: string | undefined, projectRoot: string, homeDir: 
 };
 
 const normalizeSettingsPaths = (settings: AgenterSettings, projectRoot: string, homeDir: string): AgenterSettings => {
-  const prompt = settings.prompt;
   const terminal = settings.terminal;
   const tasks = settings.tasks;
 
@@ -113,16 +112,6 @@ const normalizeSettingsPaths = (settings: AgenterSettings, projectRoot: string, 
 
   return {
     ...settings,
-    prompt: prompt
-      ? {
-          ...prompt,
-          rootDir: toAbsMaybeUri(prompt.rootDir, projectRoot, homeDir),
-          agenterPath: toAbsMaybeUri(prompt.agenterPath, projectRoot, homeDir),
-          internalSystemPath: toAbsMaybeUri(prompt.internalSystemPath, projectRoot, homeDir),
-          systemTemplatePath: toAbsMaybeUri(prompt.systemTemplatePath, projectRoot, homeDir),
-          responseContractPath: toAbsMaybeUri(prompt.responseContractPath, projectRoot, homeDir),
-        }
-      : undefined,
     terminal: terminal
       ? {
           ...terminal,

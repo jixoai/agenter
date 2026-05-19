@@ -1,11 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  ProductExtensionRuntimeClient,
-  type ProductEnsureRoomBindingInput,
-  type ProductEnsureTerminalBindingInput,
-  type ProductExtensionRuntimeStore,
-} from "../src";
 import type {
   GlobalAvatarCatalogEntry,
   GlobalRoomActorId,
@@ -14,9 +8,13 @@ import type {
   GlobalTerminalActorId,
   GlobalTerminalEntry,
   GlobalTerminalGrantEntry,
-  ProductDelegationRecord,
   SessionEntry,
   WorkspacePrivateTextAssetEnsureOutput,
+} from "../src";
+import {
+  ProductExtensionRuntimeClient,
+  type ProductEnsureTerminalBindingInput,
+  type ProductExtensionRuntimeStore,
 } from "../src";
 
 const createSessionEntry = (workspacePath: string, avatar: string, name = avatar): SessionEntry => {
@@ -138,7 +136,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   readonly rooms: GlobalRoomEntry[] = [];
   readonly roomGrants = new Map<string, GlobalRoomGrantEntry[]>();
   readonly privateAssets = new Map<string, WorkspacePrivateTextAssetEnsureOutput>();
-  readonly delegations: ProductDelegationRecord[] = [];
+  readonly avatarPromptFiles = new Map<string, { path: string; content: string; mtimeMs: number }>();
   readonly focusTerminalCalls: string[][] = [];
   readonly focusRoomCalls: string[][] = [];
   lastAttentionCommit: Record<string, unknown> | null = null;
@@ -148,6 +146,14 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   forcePromptContent(sessionId: string, content: string): void {
     this.settings.set(sessionId, {
       path: `/tmp/${sessionId}/AGENTER.mdx`,
+      content,
+      mtimeMs: Date.now(),
+    });
+  }
+
+  forceAvatarPromptContent(avatarPrincipalId: string, content: string, workspacePath?: string): void {
+    this.avatarPromptFiles.set(`${workspacePath ?? "~"}:${avatarPrincipalId}:agenter`, {
+      path: `${workspacePath ?? "/home"}/.agenter/avatars/by-principal/${avatarPrincipalId}/AGENTER.mdx`,
       content,
       mtimeMs: Date.now(),
     });
@@ -166,7 +172,12 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     });
   }
 
-  async createSession(input: { cwd: string; name?: string; avatar?: string; autoStart?: boolean }): Promise<SessionEntry> {
+  async createSession(input: {
+    cwd: string;
+    name?: string;
+    avatar?: string;
+    autoStart?: boolean;
+  }): Promise<SessionEntry> {
     const avatar = input.avatar ?? "default";
     const key = `${input.cwd}:${avatar}`;
     const existing = this.sessions.get(key);
@@ -181,6 +192,20 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
       mtimeMs: 0,
     });
     return created;
+  }
+
+  async listSessions(): Promise<SessionEntry[]> {
+    return [...this.sessions.values()];
+  }
+
+  async startSession(_sessionId: string): Promise<void> {}
+
+  async deleteSession(sessionId: string): Promise<void> {
+    for (const [key, session] of [...this.sessions.entries()]) {
+      if (session.id === sessionId) {
+        this.sessions.delete(key);
+      }
+    }
   }
 
   async hydrateGlobalAvatarCatalog(): Promise<GlobalAvatarCatalogEntry[]> {
@@ -203,18 +228,20 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
 
   async readSettings(
     sessionId: string,
-    _kind: "settings" | "agenter" | "system" | "template" | "contract",
+    _kind: "settings" | "agenter",
   ): Promise<{ path: string; content: string; mtimeMs: number }> {
-    return this.settings.get(sessionId) ?? {
-      path: `/tmp/${sessionId}/AGENTER.mdx`,
-      content: "",
-      mtimeMs: 0,
-    };
+    return (
+      this.settings.get(sessionId) ?? {
+        path: `/tmp/${sessionId}/AGENTER.mdx`,
+        content: "",
+        mtimeMs: 0,
+      }
+    );
   }
 
   async saveSettings(input: {
     sessionId: string;
-    kind: "settings" | "agenter" | "system" | "template" | "contract";
+    kind: "settings" | "agenter";
     content: string;
     baseMtimeMs: number;
   }): Promise<
@@ -241,6 +268,32 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     };
   }
 
+  async ensureAvatarPromptSeed(input: {
+    avatarPrincipalId: string;
+    workspacePath?: string;
+    kind: "agenter";
+    seedContent: string;
+  }): Promise<{ seeded: boolean; file: { path: string; content: string; mtimeMs: number } }> {
+    const key = `${input.workspacePath ?? "~"}:${input.avatarPrincipalId}:${input.kind}`;
+    const current = this.avatarPromptFiles.get(key);
+    if (current) {
+      return {
+        seeded: false,
+        file: current,
+      };
+    }
+    const saved = {
+      path: `${input.workspacePath ?? "/home"}/.agenter/avatars/by-principal/${input.avatarPrincipalId}/AGENTER.mdx`,
+      content: input.seedContent,
+      mtimeMs: Date.now(),
+    };
+    this.avatarPromptFiles.set(key, saved);
+    return {
+      seeded: true,
+      file: saved,
+    };
+  }
+
   async listGlobalTerminals(): Promise<GlobalTerminalEntry[]> {
     return [...this.terminals];
   }
@@ -256,16 +309,34 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     start?: boolean;
     focus?: boolean;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
-    const terminal = createTerminalEntry(input.terminalId ?? `terminal-${this.terminals.length + 1}`, input.metadata ?? {});
+    const terminal = createTerminalEntry(
+      input.terminalId ?? `terminal-${this.terminals.length + 1}`,
+      input.metadata ?? {},
+    );
     this.terminals.push(terminal);
     return { ok: true, message: "terminal created", terminal };
+  }
+
+  async deleteGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string }> {
+    const before = this.terminals.length;
+    this.terminals.splice(
+      0,
+      this.terminals.length,
+      ...this.terminals.filter((entry) => entry.terminalId !== input.terminalId),
+    );
+    return {
+      ok: this.terminals.length < before,
+      message: this.terminals.length < before ? "terminal deleted" : "unknown terminal",
+    };
   }
 
   async listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]> {
     return [...(this.terminalGrants.get(terminalId) ?? [])];
   }
 
-  async bootstrapGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
+  async bootstrapGlobalTerminal(input: {
+    terminalId: string;
+  }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
     this.bootstrapTerminalCalls.push(input.terminalId);
     const index = this.terminals.findIndex((entry) => entry.terminalId === input.terminalId);
     if (index === -1) {
@@ -345,7 +416,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
 
   async issueGlobalTerminalGrant(input: {
     terminalId: string;
-    role: "admin" | "writer" | "requester" | "readonly";
+    role: "admin" | "writer" | "guard" | "readonly";
     participantId: GlobalTerminalActorId;
     label?: string;
     accessTokenHint?: string;
@@ -405,6 +476,17 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   }): Promise<GlobalRoomEntry> {
     const room = createRoomEntry(input.chatId ?? `room-${this.rooms.length + 1}`, input.metadata ?? {});
     this.rooms.push(room);
+    return room;
+  }
+
+  async deleteGlobalRoom(input: { chatId: string; accessToken?: string }): Promise<GlobalRoomEntry> {
+    void input.accessToken;
+    const room = this.rooms.find((entry) => entry.chatId === input.chatId) ?? createRoomEntry(input.chatId);
+    this.rooms.splice(
+      0,
+      this.rooms.length,
+      ...this.rooms.filter((entry) => entry.chatId !== input.chatId),
+    );
     return room;
   }
 
@@ -493,66 +575,6 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     return { commit: { contextId: input.contextId } };
   }
 
-  async listProductDelegations(input: {
-    productId: string;
-    resourceKey?: string;
-    runtimeId?: string;
-    avatarActorId?: string;
-    includeRevoked?: boolean;
-  }): Promise<ProductDelegationRecord[]> {
-    return this.delegations.filter((record) => record.productId === input.productId);
-  }
-
-  async createProductDelegation(input: {
-    productId: string;
-    resourceKey: string;
-    runtimeId: string;
-    avatarActorId: string;
-    grantedByActorId: string;
-    terminalId: string;
-    roomId: string;
-    enabledAt: number;
-    expiresAt: number;
-    policy: {
-      mode: "observe" | "write" | "confirm-before-write";
-      maxWriteBytes?: number;
-    };
-    provenance: {
-      source: string;
-      attentionContextId?: string;
-      attentionCommitId?: string;
-      terminalLeaseId?: string;
-      notes?: string;
-    };
-  }): Promise<ProductDelegationRecord> {
-    const created: ProductDelegationRecord = {
-      ...input,
-      delegationId: `delegation:${input.productId}:${input.resourceKey}`,
-      status: "active",
-    };
-    this.delegations.push(created);
-    return created;
-  }
-
-  async revokeProductDelegation(input: {
-    delegationId: string;
-    revokedAt: number;
-    revokedReason: string;
-  }): Promise<ProductDelegationRecord> {
-    const current = this.delegations.find((record) => record.delegationId === input.delegationId);
-    if (!current) {
-      throw new Error(`unknown delegation: ${input.delegationId}`);
-    }
-    const revoked = {
-      ...current,
-      status: "revoked" as const,
-      revokedAt: input.revokedAt,
-      revokedReason: input.revokedReason,
-    };
-    const index = this.delegations.findIndex((record) => record.delegationId === input.delegationId);
-    this.delegations.splice(index, 1, revoked);
-    return revoked;
-  }
 }
 
 describe("Feature: product extension runtime client", () => {
@@ -591,8 +613,14 @@ describe("Feature: product extension runtime client", () => {
       workspacePath: "/repo",
       avatarNickname: "shell-assistant",
     });
-    const firstPrompt = await client.ensurePromptSeedIfMissing({
-      sessionId: session.id,
+    expect(session.avatarPrincipalId).toBe("auth:shell-assistant");
+    const avatarPrincipalId = session.avatarPrincipalId;
+    if (!avatarPrincipalId) {
+      throw new Error("test session missing avatar principal id");
+    }
+    const firstPrompt = await client.ensureAvatarPromptSeedIfMissing({
+      avatarPrincipalId,
+      workspacePath: "/repo",
       kind: "agenter",
       seedContent: "# Seeded prompt\n",
     });
@@ -608,11 +636,12 @@ describe("Feature: product extension runtime client", () => {
       ],
     });
 
-    store.forcePromptContent(session.id, "# User-edited prompt\n");
+    store.forceAvatarPromptContent(avatarPrincipalId, "# User-edited prompt\n", "/repo");
     store.forcePrivateAssetContent("/repo:shell-assistant:memory:pairing-playbook.md", "# User-edited playbook\n");
 
-    const secondPrompt = await client.ensurePromptSeedIfMissing({
-      sessionId: session.id,
+    const secondPrompt = await client.ensureAvatarPromptSeedIfMissing({
+      avatarPrincipalId,
+      workspacePath: "/repo",
       kind: "agenter",
       seedContent: "# Replacement prompt\n",
     });
@@ -630,6 +659,7 @@ describe("Feature: product extension runtime client", () => {
 
     expect(assistant.nickname).toBe("shell-assistant");
     expect(firstPrompt.seeded).toBe(true);
+    expect(firstPrompt.file.path).toBe("/repo/.agenter/avatars/by-principal/auth:shell-assistant/AGENTER.mdx");
     expect(memory[0]?.created).toBe(true);
     expect(secondPrompt.seeded).toBe(false);
     expect(secondPrompt.file.content).toBe("# User-edited prompt\n");
@@ -935,7 +965,7 @@ describe("Feature: product extension runtime client", () => {
     expect(ensuredTerminal.entry.backend).toBe("ghostty-native");
   });
 
-  test("Scenario: Given self-evolution attention and explicit delegations When invoking the runtime client Then attention does not implicitly create hosting leases", async () => {
+  test("Scenario: Given self-evolution attention When invoking the runtime client Then attention does not expose product delegation authority", async () => {
     const store = new FakeProductRuntimeStore();
     const client = new ProductExtensionRuntimeClient(store);
 
@@ -945,29 +975,8 @@ describe("Feature: product extension runtime client", () => {
       summary: "Learned a user preference from evidence.",
     });
     expect(store.lastAttentionCommit?.scores).toBeUndefined();
-    expect(store.delegations).toHaveLength(0);
-
-    const created = await client.createDelegation({
-      productId: "cli-shell",
-      resourceKey: "shell-1",
-      runtimeId: "runtime-shell-assistant",
-      avatarActorId: "auth:shell-assistant",
-      grantedByActorId: "auth:user",
-      terminalId: "shell-1",
-      roomId: "room-shell-1",
-      enabledAt: 10,
-      expiresAt: 20,
-      policy: { mode: "write" },
-      provenance: { source: "product-extension-runtime" },
-    });
-    const revoked = await client.revokeDelegation({
-      delegationId: created.delegationId,
-      revokedAt: 30,
-      revokedReason: "user_disabled",
-    });
-
-    expect(created.status).toBe("active");
-    expect(revoked.status).toBe("revoked");
-    expect(revoked.revokedReason).toBe("user_disabled");
+    expect("createDelegation" in client).toBe(false);
+    expect("revokeDelegation" in client).toBe(false);
+    expect("listDelegations" in client).toBe(false);
   });
 });

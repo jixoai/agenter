@@ -60,6 +60,7 @@ import type {
   TerminalAccessProjection,
   TerminalActorId,
   TerminalAdminCandidateRecord,
+  TerminalApprovalRequestEvent,
   TerminalApprovalRequestRecord,
   TerminalAutomationInputMode,
   TerminalAwaitInput,
@@ -415,7 +416,7 @@ const roleRank = (role: TerminalGrantRole): number => {
       return 3;
     case "writer":
       return 2;
-    case "requester":
+    case "guard":
       return 1;
     default:
       return 0;
@@ -818,11 +819,18 @@ export class TerminalControlPlane {
   }
 
   onApprovalRequest(
-    listener: (payload: { terminalId: string; request: TerminalApprovalRequestRecord }) => void,
+    listener: (payload: TerminalApprovalRequestEvent) => void,
+    filter: { terminalId?: string } = {},
   ): () => void {
-    this.approvalRequestListeners.add(listener);
+    const filtered = (payload: TerminalApprovalRequestEvent): void => {
+      if (filter.terminalId && payload.terminalId !== filter.terminalId) {
+        return;
+      }
+      listener(payload);
+    };
+    this.approvalRequestListeners.add(filtered);
     return () => {
-      this.approvalRequestListeners.delete(listener);
+      this.approvalRequestListeners.delete(filtered);
     };
   }
 
@@ -974,6 +982,7 @@ export class TerminalControlPlane {
     this.setLifecycleTransition(terminalId, "bootstrapping");
     try {
       if (!entry.terminal.isRunning()) {
+        this.cancelPendingApprovalRequestsForTerminal(terminalId);
         entry.terminal.start();
       }
     } finally {
@@ -1010,6 +1019,7 @@ export class TerminalControlPlane {
         this.clearLifecycleTransition(terminalId, "killing");
       }
     }
+    this.cancelPendingApprovalRequestsForTerminal(terminalId);
     return { ok: true, message: "terminal PTY stopped" };
   }
 
@@ -1034,6 +1044,7 @@ export class TerminalControlPlane {
         this.clearLifecycleTransition(terminalId, "killing");
       }
     }
+    this.cancelPendingApprovalRequestsForTerminal(terminalId);
     this.lifecycleTransitions.delete(terminalId);
     this.entries.delete(terminalId);
     const existed = this.db.removeTerminal(terminalId);
@@ -1744,7 +1755,7 @@ export class TerminalControlPlane {
         input.createApprovalRequest === false ||
         !approvalActorId ||
         !decision.grant ||
-        decision.grant.role !== "requester"
+        decision.grant.role !== "guard"
       ) {
         return { ok: false, message };
       }
@@ -2742,14 +2753,8 @@ export class TerminalControlPlane {
       throw new Error(`composed terminal runtime missing publish surface support: ${input.terminalId}`);
     }
     const metadataPatch: Record<string, unknown> = {
-      composedBottomLine: input.surface.bottomLine,
-      composedDialogueOpen: input.surface.dialogueOpen,
-      composedDialoguePlacement: input.surface.dialoguePlacement,
-      composedDialogueDraft: input.surface.dialogueDraft,
-      composedManagedLabel: input.surface.managedLabel,
-      composedUnreadLabel: input.surface.unreadLabel,
-      composedHeartbeatLabel: input.surface.heartbeatLabel,
-      composedShellSnapshotSeq: input.surface.shellSnapshotSeq,
+      composedFrameSeq: input.surface.seq ?? managed.terminal.getSnapshot().seq + 1,
+      composedFrameMetadata: input.surface.metadata ? { ...input.surface.metadata } : {},
       composedSelectionSources: input.surface.selectionSources?.map((source) => ({ ...source })),
     };
     managed.record = this.db.updateTerminal(input.terminalId, {
@@ -2757,12 +2762,12 @@ export class TerminalControlPlane {
     });
     managed.terminal.publishComposedSurface({
       snapshot: {
-        seq: managed.terminal.getSnapshot().seq + 1,
+        seq: input.surface.seq ?? managed.terminal.getSnapshot().seq + 1,
         timestamp: Date.now(),
         cols: input.surface.cols,
         rows: input.surface.rows,
-        lines: [...input.surface.terminalLines],
-        richLines: input.surface.terminalRichLines?.map((line) => ({
+        lines: [...input.surface.lines],
+        richLines: input.surface.richLines?.map((line) => ({
           spans: line.spans.map((span) => ({ ...span })),
         })),
         cursor: { ...input.surface.cursor },
@@ -3048,6 +3053,32 @@ export class TerminalControlPlane {
     });
   }
 
+  listObservableApprovalRequests(input: {
+    terminalId?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+    statuses?: Array<TerminalApprovalRequestRecord["status"]>;
+  } = {}): TerminalApprovalRequestRecord[] {
+    const terminalIds = input.terminalId
+      ? [input.terminalId]
+      : input.superadminActorId || !input.actorId
+        ? this.db.listTerminals().map((record) => record.terminalId)
+        : this.listForActor(input.actorId, { touchPresence: false }).map((entry) => entry.terminalId);
+    if (input.terminalId) {
+      this.authorizeRead({
+        terminalId: input.terminalId,
+        actorId: input.actorId,
+        superadminActorId: input.superadminActorId,
+      });
+    }
+    return terminalIds.flatMap((terminalId) =>
+      this.listApprovalRequests({
+        terminalId,
+        statuses: input.statuses,
+      }),
+    );
+  }
+
   approveRequestAuthorized(input: {
     terminalId: string;
     requestId: string;
@@ -3300,33 +3331,7 @@ export class TerminalControlPlane {
   }
 
   private readComposedBottomLine(record: TerminalRecord): string {
-    const bottom = record.metadata?.composedBottomLine;
-    if (typeof bottom === "string" && bottom.trim().length > 0) {
-      return bottom;
-    }
-    const managedLabel = typeof record.metadata?.composedManagedLabel === "string" ? record.metadata.composedManagedLabel : "托管 off";
-    const unreadLabel = typeof record.metadata?.composedUnreadLabel === "string" ? record.metadata.composedUnreadLabel : "✉ 0";
-    const heartbeatLabel = typeof record.metadata?.composedHeartbeatLabel === "string" ? record.metadata.composedHeartbeatLabel : record.terminalId;
-    return `${record.profile.title ?? record.terminalId} │ ${heartbeatLabel} │ ${managedLabel} │ ${unreadLabel}`;
-  }
-
-  private readComposedDialogueOpen(record: TerminalRecord): boolean {
-    return record.metadata?.composedDialogueOpen === true;
-  }
-
-  private readComposedDialoguePlacement(record: TerminalRecord): "left" | "right" | "floating" | null {
-    const value = record.metadata?.composedDialoguePlacement;
-    return value === "left" || value === "right" || value === "floating" ? value : null;
-  }
-
-  private readComposedDialogueDraft(record: TerminalRecord): string {
-    const value = record.metadata?.composedDialogueDraft;
-    return typeof value === "string" ? value : "";
-  }
-
-  private readComposedShellSnapshotSeq(record: TerminalRecord): number {
-    const value = record.metadata?.composedShellSnapshotSeq;
-    return typeof value === "number" && Number.isInteger(value) ? value : -1;
+    return record.profile.title ?? record.terminalId;
   }
 
   private bindTerminalListeners(entry: ManagedEntry): void {
@@ -3342,6 +3347,9 @@ export class TerminalControlPlane {
       this.emitChange({ terminalId: entry.record.terminalId, reason: "lifecycle" });
     });
     entry.terminal.onStatus((running, status) => {
+      if (!running) {
+        this.cancelPendingApprovalRequestsForTerminal(entry.record.terminalId);
+      }
       this.emitStatus({ terminalId: entry.record.terminalId, running, status });
       this.emitChange({ terminalId: entry.record.terminalId, reason: "status" });
     });
@@ -3583,7 +3591,7 @@ export class TerminalControlPlane {
     }
   }
 
-  private emitApprovalRequest(payload: { terminalId: string; request: TerminalApprovalRequestRecord }): void {
+  private emitApprovalRequest(payload: TerminalApprovalRequestEvent): void {
     for (const listener of this.approvalRequestListeners) {
       listener(payload);
     }
@@ -3921,6 +3929,14 @@ export class TerminalControlPlane {
         adminCandidateRank: Number.MAX_SAFE_INTEGER / 2,
       };
     }
+    if (seatClass === "GUARD") {
+      return {
+        seatClass,
+        role: "guard",
+        label,
+        adminCandidateRank: null,
+      };
+    }
     return {
       seatClass,
       role: seatClass === "RW" ? "writer" : "readonly",
@@ -4196,7 +4212,7 @@ export class TerminalControlPlane {
       return { ok: true, grant, lease: null };
     }
     const currentAdminId = this.resolveCurrentAdminActorId(input.terminalId);
-    const currentAdminWritesDirect = currentAdminId === grant.participantId && grant.role === "requester";
+    const currentAdminWritesDirect = currentAdminId === grant.participantId && grant.role === "guard";
     if (grant.role === "admin" || grant.role === "writer" || currentAdminWritesDirect) {
       return { ok: true, grant, lease: null };
     }
@@ -4235,6 +4251,18 @@ export class TerminalControlPlane {
     requestedInput?: TerminalApprovalRequestRecord["requestedInput"];
   }): TerminalApprovalRequestRecord {
     const expiresAt = Date.now() + (this.config.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS);
+    const existing = this.db.findEquivalentPendingApprovalRequest({
+      terminalId: input.terminalId,
+      participantId: input.actorId,
+      requestedInput: input.requestedInput,
+    });
+    if (existing) {
+      const refreshed = this.db.updateApprovalRequest(input.terminalId, existing.requestId, {
+        assignedAdminId: this.resolveCurrentAdminActorId(input.terminalId) ?? null,
+      });
+      this.emitApprovalRequest({ terminalId: input.terminalId, request: refreshed });
+      return refreshed;
+    }
     const request = this.db.createApprovalRequest({
       terminalId: input.terminalId,
       participantId: input.actorId,
@@ -4249,6 +4277,17 @@ export class TerminalControlPlane {
       actorId: input.actorId,
     });
     return request;
+  }
+
+  private cancelPendingApprovalRequestsForTerminal(terminalId: string): void {
+    for (const request of this.db.cancelPendingApprovalRequests(terminalId)) {
+      this.emitApprovalRequest({ terminalId, request });
+      this.emitChange({
+        terminalId,
+        reason: "approval",
+        actorId: request.participantId,
+      });
+    }
   }
 
   private requirePendingApprovalRequest(terminalId: string, requestId: string): TerminalApprovalRequestRecord {

@@ -1,6 +1,6 @@
 import type {
+  GlobalTerminalApprovalRequest,
   GlobalRoomSnapshotOutput,
-  ProductTerminalComposedSurfaceState,
   RuntimeStore,
 } from "@agenter/client-sdk";
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
@@ -126,14 +126,9 @@ export type CliShellTuiStore = Pick<
   CliShellStore,
   | "readSettings"
   | "getAuthSession"
-  | "grantGlobalTerminalWriteLease"
-  | "revokeGlobalTerminalWriteLease"
   | "queryAttention"
   | "commitAttention"
   | "settleAttention"
-  | "listProductDelegations"
-  | "createProductDelegation"
-  | "revokeProductDelegation"
 > &
   Pick<
     RuntimeStore,
@@ -151,6 +146,49 @@ export type CliShellTuiStore = Pick<
     | "inputGlobalTerminal"
     | "setGlobalTerminalConfig"
     | "publishGlobalTerminalComposedSurface"
+    | "retainTerminalPermissionRequests"
+    | "approveGlobalTerminalRequest"
+    | "denyGlobalTerminalRequest"
   >;
 
-export type CliShellComposedSurfaceState = ProductTerminalComposedSurfaceState;
+export type CliShellTerminalPermissionRequest = GlobalTerminalApprovalRequest;
+
+export interface CliShellTerminalPermissionRequestDetail {
+  terminalId: string;
+  request: CliShellTerminalPermissionRequest;
+}
+
+export interface CliShellTerminalApprovalActionDetail {
+  terminalId: string;
+  requestId: string;
+  action: "approve" | "deny";
+  durationMs?: number;
+}
+
+export type CliShellTerminalRequestPermissionsHandler = (
+  detail: CliShellTerminalPermissionRequestDetail,
+) => boolean | void;
+
+export interface CliShellComposedSurfaceState {
+  shellTerminalId: string;
+  terminalId: string;
+  shellSnapshotSeq: number;
+  cols: number;
+  rows: number;
+  dialogueOpen: boolean;
+  dialoguePlacement: CliShellDialoguePlacement | null;
+  dialogueDraft: string;
+  bottomLine: string;
+  managedLabel: string;
+  unreadLabel: string;
+  heartbeatLabel: string;
+  terminalLines: string[];
+  terminalRichLines?: TerminalRenderRichLine[];
+  selectionSources?: CliShellSelectionSourceDescriptor[];
+  cursor: { x: number; y: number; visible?: boolean };
+  scrollback: {
+    viewportOffset: number;
+    totalLines: number;
+    screenLines: number;
+  };
+}

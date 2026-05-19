@@ -72,7 +72,7 @@
 	let actionsDetailOpen = $state(true);
 	let usersDialogOpen = $state(false);
 	let grantParticipantId = $state('');
-	let grantRole: 'admin' | 'writer' | 'requester' | 'readonly' = $state('writer');
+	let grantRole: 'admin' | 'writer' | 'guard' | 'readonly' = $state('writer');
 	let grantBusy = $state(false);
 	let grantError: string | null = $state(null);
 	let writeText = $state('');
@@ -796,9 +796,17 @@
 						viewportMode={selectedViewportMode}
 						{lifecycleBusy}
 						{lifecycleIntent}
+						permissionRequests={terminalApprovalsState.data}
 						onRequestLifecycleAction={handleRequestLifecycleAction}
 						onToggleViewportMode={handleToggleViewportMode}
 						onPresentationConfigChange={onPresentationConfigChange}
+						onApprovalAction={(detail) => {
+							if (detail.action === 'approve') {
+								void onApproveRequest({ requestId: detail.requestId });
+								return;
+							}
+							void onDenyRequest({ requestId: detail.requestId });
+						}}
 						onLiveResize={({ width, height, cols, rows }) => {
 							liveViewportSizeByTerminalId = {
 								...liveViewportSizeByTerminalId,

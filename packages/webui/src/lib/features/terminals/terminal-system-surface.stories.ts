@@ -323,7 +323,7 @@ export const UsersPaneCompactActionsStayBehaviorallyAligned = {
 } satisfies Story;
 
 export const ApprovalLifecycleStaysInUsersPane = {
-  name: "Scenario: Given a pending write approval When the users dialog approves it Then the requester lease surfaces without rebuilding local seat truth",
+  name: "Scenario: Given a pending write approval When the users dialog approves it Then the guard lease surfaces without rebuilding local seat truth",
   args: {
     writeBehavior: "approval",
     initialCallerToken: "token:term-story:reviewer",
@@ -348,7 +348,7 @@ export const ApprovalLifecycleStaysInUsersPane = {
 } satisfies Story;
 
 export const DeniedApprovalLeavesSeatWithoutLease = {
-  name: "Scenario: Given a pending write approval When the users dialog denies it Then the requester seat stays lease-free and the denial remains visible",
+  name: "Scenario: Given a pending write approval When the users dialog denies it Then the guard seat stays lease-free and the denial remains visible",
   args: {
     writeBehavior: "approval",
     initialCallerToken: "token:term-story:reviewer",

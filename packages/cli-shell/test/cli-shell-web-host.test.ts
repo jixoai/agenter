@@ -1,14 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import type { ProductTerminalComposedSurfaceState } from "@agenter/client-sdk";
 import type {
   TerminalTransportClientMessage,
   TerminalTransportServerMessage,
   TerminalTransportSnapshot,
 } from "@agenter/terminal-transport-protocol";
 
-import type { CliShellBootstrapResult, CliShellLiveTerminalTransportSessionFactory } from "../src";
+import type {
+  CliShellBootstrapResult,
+  CliShellComposedSurfaceState,
+  CliShellLiveTerminalTransportSessionFactory,
+} from "../src";
 import { resolveCliShellTuiKeybindings } from "../src";
+import { toProductTerminalComposedSurface } from "../src/tui/composed-surface";
 import { startCliShellWebHost } from "../src/web";
 import { startCliShellWebProductHost } from "../src/web/web-product-host";
 import { createFakeCliShellProductHostStore } from "./fake-cli-shell-store";
@@ -50,7 +54,6 @@ const createAttachedFixture = (input: {
     managed: {
       managed: false,
       hostingActive: false,
-      activeDelegation: null,
       contextId: `ctx-hosting-${input.visibleTerminalId}`,
       hostingMatches: [],
     },
@@ -62,7 +65,7 @@ const createSurfaceFixture = (input: {
   dialogueOpen: boolean;
   bodyLine: string;
   dialogueLine?: string;
-}): ProductTerminalComposedSurfaceState => {
+}): CliShellComposedSurfaceState => {
   const lines = [
     input.bodyLine,
     input.dialogueOpen ? (input.dialogueLine ?? "│ dialogue frame │") : "shell-only row",
@@ -238,7 +241,6 @@ describe("Feature: cli-shell web host", () => {
       managed: {
         managed: false,
         hostingActive: false,
-        activeDelegation: null,
         contextId: "ctx-hosting-shell-1",
         hostingMatches: [],
       },
@@ -346,7 +348,6 @@ describe("Feature: cli-shell web host", () => {
       managed: {
         managed: false,
         hostingActive: false,
-        activeDelegation: null,
         contextId: "ctx-hosting-shell-stale",
         hostingMatches: [],
       },
@@ -419,17 +420,19 @@ describe("Feature: cli-shell web host", () => {
       body: JSON.stringify({ type: "resize", cols: 96, rows: 28 }),
     });
     expect(resizeResponse.status).toBe(200);
+    const resizeState = await resizeResponse.json();
 
     const stateResponse = await fetch(new URL("/product-state.json", controller.url));
     expect(stateResponse.status).toBe(200);
     const productState = await stateResponse.json();
-    expect(productState.surface.dialogueOpen).toBe(true);
-    expect(productState.surface.dialogueDraft).toBe("web says hi");
+    expect(resizeState.surface.dialogueOpen).toBe(true);
+    expect(resizeState.surface.dialogueDraft).toBe("web says hi");
     expect(productState.surface.cols).toBe(96);
     expect(productState.surface.rows).toBe(28);
     expect(productState.textEvidence).toContain("web says hi");
     expect(store.lastPublishedComposedSurface?.terminalId).toBe("shell-web-events:terminal-2");
-    expect(store.lastPublishedComposedSurface?.dialogueOpen).toBe(true);
+    expect(store.lastPublishedComposedSurface?.metadata?.cliShellFrame).toBe(true);
+    expect(store.lastPublishedComposedSurface?.lines.join("\n")).toContain("web says hi");
   });
 
   test("Scenario: Given a projection-only browser host When the page boots Then it advertises DOM renderer law and shell viewport sizing", async () => {
@@ -468,7 +471,6 @@ describe("Feature: cli-shell web host", () => {
       managed: {
         managed: false,
         hostingActive: false,
-        activeDelegation: null,
         contextId: "ctx-hosting-shell-2",
         hostingMatches: [],
       },
@@ -524,24 +526,17 @@ describe("Feature: cli-shell web host", () => {
       surface: {
         shellTerminalId: "shell-2-product:terminal-1",
         terminalId: "shell-2-product",
-        shellSnapshotSeq: 1,
+        seq: 1,
         cols: 80,
         rows: 24,
-        bottomLine: "◉ terminal-2 bottom",
-        dialogueOpen: true,
-        dialoguePlacement: "right",
-        dialogueDraft: "draft from backend",
-        managedLabel: "托管 off",
-        unreadLabel: "✉ 0",
-        heartbeatLabel: "ready",
-        terminalLines: [
+        lines: [
           "terminal-2 top line",
           "┌layout M-L M-R M-F │ right                                              x",
           "│ backend dialogue body                                                  │",
           "│ > draft from backend                                           [Send] │",
           "◉ terminal-2 bottom",
         ].concat(Array.from({ length: 19 }, () => "")),
-        terminalRichLines: [
+        richLines: [
           { spans: [{ text: "terminal-2 top line" }] },
           { spans: [{ text: "┌layout M-L M-R M-F │ right                                              x" }] },
           { spans: [{ text: "│ backend dialogue body                                                  │" }] },
@@ -585,7 +580,6 @@ describe("Feature: cli-shell web host", () => {
       managed: {
         managed: false,
         hostingActive: false,
-        activeDelegation: null,
         contextId: "ctx-hosting-shell-2-product",
         hostingMatches: [],
       },
@@ -638,7 +632,7 @@ describe("Feature: cli-shell web host", () => {
       });
       await store.publishGlobalTerminalComposedSurface({
         terminalId: visibleTerminalId,
-        surface: terminal2Surface,
+        surface: toProductTerminalComposedSurface(terminal2Surface),
       });
       const attached = createAttachedFixture({
         sessionId: `session-${mode}`,
@@ -659,7 +653,6 @@ describe("Feature: cli-shell web host", () => {
       const snapshot = await snapshotResponse.json();
       expect(snapshot.cols).toBe(terminal2Surface.cols);
       expect(snapshot.rows).toBe(terminal2Surface.rows);
-      expect(snapshot.lines).toEqual(terminal2Surface.terminalLines);
       expect(snapshot.cursor).toEqual(terminal2Surface.cursor);
       expect(snapshot.scrollback).toEqual(terminal2Surface.scrollback);
       expect(snapshot.lines.join("\n")).toContain(`terminal-2 ${mode} shell body`);
@@ -775,7 +768,6 @@ describe("Feature: cli-shell web host", () => {
       managed: {
         managed: false,
         hostingActive: false,
-        activeDelegation: null,
         contextId: "ctx-hosting-shell-3",
         hostingMatches: [],
       },
@@ -871,7 +863,6 @@ describe("Feature: cli-shell web host", () => {
       managed: {
         managed: false,
         hostingActive: false,
-        activeDelegation: null,
         contextId: "ctx-hosting-shell-4",
         hostingMatches: [],
       },

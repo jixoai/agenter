@@ -41,6 +41,6 @@ The terminal surface projection SHALL preserve actor-scoped focus, current-admin
 - **THEN** clients do not infer a terminal-global focus toggle
 
 #### Scenario: Approval and lease state travel with the seat projection
-- **WHEN** a requester seat gains or loses a write lease
+- **WHEN** a guard seat gains or loses a write lease
 - **THEN** the terminal surface projection updates that seat's lease state
 - **THEN** clients can render write affordances without separate lease reconstruction logic

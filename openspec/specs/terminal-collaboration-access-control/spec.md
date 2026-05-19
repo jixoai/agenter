@@ -7,7 +7,7 @@ Define actor-scoped grants, admin-group failover, approval routing, and write le
 
 ### Requirement: Terminal resources SHALL enforce actor-scoped grants
 
-The terminal collaboration control plane SHALL enforce grants bound to auth actors or session actors with roles `admin`, `writer`, `requester`, and `readonly`. Focus state SHALL also remain actor-scoped and SHALL be mutated only through that actor's terminal authority or a valid superadmin recovery path. A valid global superadmin claim MAY administer any terminal regardless of local grants.
+The terminal collaboration control plane SHALL enforce grants bound to auth actors or session actors with roles `admin`, `writer`, `guard`, and `readonly`. Focus state SHALL also remain actor-scoped and SHALL be mutated only through that actor's terminal authority or a valid superadmin recovery path. A valid global superadmin claim MAY administer any terminal regardless of local grants.
 
 #### Scenario: Readonly actor can observe but not write
 - **WHEN** an auth actor or session actor holds a `readonly` grant for a terminal
@@ -55,24 +55,24 @@ Each terminal SHALL expose one current local admin at a time, while an ordered a
 
 ### Requirement: Admin-group promotion SHALL preserve the actor's base write semantics
 
-Promotion into the current-admin slot SHALL preserve the candidate's base write semantics. A candidate that is `readonly` outside the admin slot SHALL remain read-only after promotion, while a candidate that is `requester` outside the admin slot SHALL gain effective direct write ability once promoted and SHALL NOT need to self-approve its own writes.
+Promotion into the current-admin slot SHALL preserve the candidate's base write semantics. A candidate that is `readonly` outside the admin slot SHALL remain read-only after promotion, while a candidate that is `guard` outside the admin slot SHALL gain effective direct write ability once promoted and SHALL NOT need to self-approve its own writes.
 
 #### Scenario: Readonly candidate becomes a readonly admin
 - **WHEN** a candidate with readonly write semantics is promoted into the current-admin slot
 - **THEN** that actor becomes the current admin for grant and approval routing
 - **THEN** its own PTY write semantics remain readonly unless separately elevated
 
-#### Scenario: Requester candidate becomes directly writable after promotion
-- **WHEN** a candidate with requester-style write semantics is promoted into the current-admin slot
+#### Scenario: Guard candidate becomes directly writable after promotion
+- **WHEN** a candidate with guard-style write semantics is promoted into the current-admin slot
 - **THEN** that actor becomes the current admin for grant and approval routing
 - **THEN** its own writes no longer require a self-issued approval round-trip
 
-### Requirement: Requester writes SHALL create approval requests
+### Requirement: Guard writes SHALL create approval requests
 
-Actors with the `requester` role SHALL NOT write directly to the PTY. Instead, each blocked write attempt SHALL create an approval request with an explicit, configurable expiry whose default is `90s`, and SHALL remain rejected until approved.
+Actors with the `guard` role SHALL NOT write directly to the PTY. Instead, each blocked write attempt SHALL create an approval request with an explicit, configurable expiry whose default is `90s`, and SHALL remain rejected until approved.
 
-#### Scenario: Requester submit creates approval request
-- **WHEN** a requester attempts to submit terminal input without a valid write lease
+#### Scenario: Guard submit creates approval request
+- **WHEN** a guard attempts to submit terminal input without a valid write lease
 - **THEN** the control plane rejects the write
 - **THEN** it creates an approval request targeted at the current terminal admin
 
@@ -88,10 +88,10 @@ Actors with the `requester` role SHALL NOT write directly to the PTY. Instead, e
 
 ### Requirement: Approved requests SHALL mint timeboxed write leases
 
-When an admin approves a requester write flow, the control plane SHALL mint a timeboxed write lease with an explicit expiry, and every terminal input path, including transport input and raw writes, SHALL enforce that lease before reaching the PTY.
+When an admin approves a guard write flow, the control plane SHALL mint a timeboxed write lease with an explicit expiry, and every terminal input path, including transport input and raw writes, SHALL enforce that lease before reaching the PTY.
 
 #### Scenario: Approved lease unlocks raw and mixed terminal input
-- **WHEN** an admin approves a requester's write request for a `30m`, `2h`, or `24h` duration
+- **WHEN** an admin approves a guard's write request for a `30m`, `2h`, or `24h` duration
 - **THEN** the control plane grants a write lease valid until the computed expiry
 - **THEN** both raw terminal writes and mixed terminal input are accepted until that lease expires
 

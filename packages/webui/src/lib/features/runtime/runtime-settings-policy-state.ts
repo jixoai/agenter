@@ -22,11 +22,6 @@ export interface RuntimeSettingsPolicyDraft {
   retryResetOnExternalInput: boolean;
   retryResetOnProgress: boolean;
   lang: string | null;
-  promptRootDir: string | null;
-  promptAgenterPath: string | null;
-  promptAgenterSystemPath: string | null;
-  promptSystemTemplatePath: string | null;
-  promptResponseContractPath: string | null;
 }
 
 export interface RuntimeSettingsPolicyBinding {
@@ -96,11 +91,6 @@ const defaultDraft = (): RuntimeSettingsPolicyDraft => ({
   retryResetOnExternalInput: DEFAULT_LOOP_RETRY_POLICY.resetOnExternalInput,
   retryResetOnProgress: DEFAULT_LOOP_RETRY_POLICY.resetOnProgress,
   lang: null,
-  promptRootDir: null,
-  promptAgenterPath: null,
-  promptAgenterSystemPath: null,
-  promptSystemTemplatePath: null,
-  promptResponseContractPath: null,
 });
 
 const pickEditableSettingsLayer = (graph: ScopedSettingsOutput | null) => {
@@ -182,7 +172,6 @@ export const readRuntimeSettingsPolicyBinding = (
       : (Object.keys(providers ?? {})[0] ?? null);
   const provider = activeProviderId ? toRecord(providers?.[activeProviderId]) : null;
   const loop = toRecord(effective?.loop);
-  const prompt = toRecord(effective?.prompt);
   const retryPolicy = readEffectiveRetryPolicy(loop?.retryPolicy);
   const compactPolicy = readEffectiveCompactPolicy(loop?.compactPolicy);
   const legacyCompactThreshold = readLegacyCompactThreshold(provider?.compactThreshold);
@@ -220,11 +209,6 @@ export const readRuntimeSettingsPolicyBinding = (
       retryResetOnExternalInput: retryPolicy.resetOnExternalInput,
       retryResetOnProgress: retryPolicy.resetOnProgress,
       lang: toStringOrNull(effective?.lang),
-      promptRootDir: toStringOrNull(prompt?.rootDir),
-      promptAgenterPath: toStringOrNull(prompt?.agenterPath),
-      promptAgenterSystemPath: toStringOrNull(prompt?.internalSystemPath),
-      promptSystemTemplatePath: toStringOrNull(prompt?.systemTemplatePath),
-      promptResponseContractPath: toStringOrNull(prompt?.responseContractPath),
     },
   };
 };
@@ -302,8 +286,6 @@ export const writeRuntimeSettingsPolicyLayer = (input: {
     const compactPolicy = ensureJsonObject(loop, "compactPolicy");
     const threshold = ensureJsonObject(compactPolicy, "threshold");
     const recovery = ensureJsonObject(compactPolicy, "recovery");
-    const prompt = ensureJsonObject(root, "prompt");
-
     setOrDelete(provider, "maxRetries", input.draft.transportMaxRetries);
     setOrDelete(provider, "compactThreshold", null);
 
@@ -326,11 +308,7 @@ export const writeRuntimeSettingsPolicyLayer = (input: {
     setOrDelete(recovery, "timeout", input.draft.compactOnTimeout);
 
     setOrDelete(root, "lang", input.draft.lang);
-    setOrDelete(prompt, "rootDir", input.draft.promptRootDir);
-    setOrDelete(prompt, "agenterPath", input.draft.promptAgenterPath);
-    setOrDelete(prompt, "internalSystemPath", input.draft.promptAgenterSystemPath);
-    setOrDelete(prompt, "systemTemplatePath", input.draft.promptSystemTemplatePath);
-    setOrDelete(prompt, "responseContractPath", input.draft.promptResponseContractPath);
+    delete root.prompt;
 
     return `${JSON.stringify(root, null, 2)}\n`;
   }
@@ -348,8 +326,6 @@ export const writeRuntimeSettingsPolicyLayer = (input: {
   const compactPolicy = ensureMap(loop, "compactPolicy");
   const threshold = ensureMap(compactPolicy, "threshold");
   const recovery = ensureMap(compactPolicy, "recovery");
-  const prompt = ensureMap(root, "prompt");
-
   setOrDelete(provider, "maxRetries", input.draft.transportMaxRetries);
   setOrDelete(provider, "compactThreshold", null);
 
@@ -368,11 +344,7 @@ export const writeRuntimeSettingsPolicyLayer = (input: {
   setOrDelete(recovery, "timeout", input.draft.compactOnTimeout);
 
   setOrDelete(root, "lang", input.draft.lang);
-  setOrDelete(prompt, "rootDir", input.draft.promptRootDir);
-  setOrDelete(prompt, "agenterPath", input.draft.promptAgenterPath);
-  setOrDelete(prompt, "internalSystemPath", input.draft.promptAgenterSystemPath);
-  setOrDelete(prompt, "systemTemplatePath", input.draft.promptSystemTemplatePath);
-  setOrDelete(prompt, "responseContractPath", input.draft.promptResponseContractPath);
+  root.delete("prompt");
 
   return String(document);
 };

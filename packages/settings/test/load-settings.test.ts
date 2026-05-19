@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { loadSettings } from "../src/load-settings";
 import { ResourceLoader } from "../src/resource-loader";
@@ -108,6 +109,7 @@ describe("@agenter/settings", () => {
       lang: "zh-Hans",
       prompt: {
         agenterPath: "~/.agenter/AGENTER.mdx",
+        internalSystemPath: "~/.agenter/AGENTER_SYSTEM.mdx",
       },
       terminal: {
         helpSources: {
@@ -160,7 +162,8 @@ describe("@agenter/settings", () => {
     expect(loaded.settings.ai?.providers?.proj?.apiStandard).toBe("openai-chat");
     expect(loaded.settings.ai?.providers?.proj?.vendor).toBe("deepseek");
     expect(loaded.settings.ai?.providers?.proj?.profile).toBe("compatible");
-    expect(loaded.settings.prompt?.agenterPath).toBe(join(homeDir, ".agenter", "AGENTER.mdx"));
+    expect(loaded.settings.prompt).not.toHaveProperty("agenterPath");
+    expect(loaded.settings.prompt).not.toHaveProperty("internalSystemPath");
     expect(loaded.settings.terminal?.helpSources?.iflow).toBe(join(homeDir, ".agenter", "man", "iflow.md"));
     expect(loaded.settings.terminal?.presets?.iflow?.cwd).toBe(resolve(projectRoot, "./tmp-workspace"));
     expect(loaded.settings.terminal?.presets?.iflow?.helpSource).toBe(resolve(projectRoot, "./.agenter/man/iflow.md"));
@@ -413,5 +416,26 @@ describe("@agenter/settings", () => {
 
     const text = await loader.readText("remote");
     expect(text).toBe('{"lang":"en"}');
+  });
+
+  test("resource loader reads standard file URLs with escaped path characters", async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), "agenter settings url-"));
+    const settingsPath = join(baseDir, "space dir", "settings.json");
+    await writeJson(settingsPath, { lang: "en" });
+
+    const loader = new ResourceLoader({
+      context: {
+        projectRoot: baseDir,
+        cwd: baseDir,
+        homeDir: join(baseDir, "home"),
+      },
+    });
+
+    const url = pathToFileURL(settingsPath).toString();
+    const resource = loader.resolve(url, { forSettings: true });
+
+    expect(resource.uri).toBe(url);
+    expect(resource.path).toBe(settingsPath);
+    await expect(loader.readText(url)).resolves.toContain('"lang": "en"');
   });
 });

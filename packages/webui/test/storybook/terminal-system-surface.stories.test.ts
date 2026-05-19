@@ -61,11 +61,11 @@ describe('Feature: Storybook DOM contract for terminal system surface', () => {
 		await UsersPaneCompactActionsStayBehaviorallyAligned.run();
 	});
 
-	test('Scenario: Given a pending write approval When the users pane approves it Then the requester lease surfaces without rebuilding local seat truth', async () => {
+	test('Scenario: Given a pending write approval When the users pane approves it Then the guard lease surfaces without rebuilding local seat truth', async () => {
 		await ApprovalLifecycleStaysInUsersPane.run();
 	});
 
-	test('Scenario: Given a pending write approval When the users pane denies it Then the requester seat stays lease-free and the denial remains visible', async () => {
+	test('Scenario: Given a pending write approval When the users pane denies it Then the guard seat stays lease-free and the denial remains visible', async () => {
 		await DeniedApprovalLeavesSeatWithoutLease.run();
 	});
 

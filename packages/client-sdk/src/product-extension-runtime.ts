@@ -5,11 +5,9 @@ import {
   type ProductAttentionCommitInput,
   type ProductAttentionQueryInput,
   type ProductAttentionSettleInput,
+  type ProductAvatarPromptSeedInput,
   type ProductBindingMetadata,
-  type ProductDelegationCreateInput,
-  type ProductDelegationLookup,
   type ProductMemoryPackEnsureInput,
-  type ProductPromptSeedInput,
   type ProductResourceBindingInput,
 } from "@agenter/product-extension-runtime";
 
@@ -22,7 +20,6 @@ import type {
   GlobalTerminalActorId,
   GlobalTerminalEntry,
   GlobalTerminalGrantEntry,
-  ProductDelegationRecord,
   SessionEntry,
   WorkspacePrivateTextAssetEnsureOutput,
 } from "./types";
@@ -30,18 +27,11 @@ import type {
 export interface ProductTerminalComposedSurfaceState {
   shellTerminalId: string;
   terminalId: string;
-  shellSnapshotSeq: number;
   cols: number;
   rows: number;
-  bottomLine: string;
-  dialogueOpen: boolean;
-  dialoguePlacement: "left" | "right" | "floating" | null;
-  dialogueDraft: string;
-  managedLabel: string;
-  unreadLabel: string;
-  heartbeatLabel: string;
-  terminalLines: string[];
-  terminalRichLines?: Array<{
+  seq?: number;
+  lines: string[];
+  richLines?: Array<{
     spans: Array<{
       text: string;
       fg?: string;
@@ -52,7 +42,7 @@ export interface ProductTerminalComposedSurfaceState {
     }>;
   }>;
   selectionSources?: Array<{
-    owner: "terminal" | "dialogue";
+    owner: string;
     row: number;
     col: number;
     width: number;
@@ -65,10 +55,14 @@ export interface ProductTerminalComposedSurfaceState {
     totalLines: number;
     screenLines: number;
   };
+  metadata?: Record<string, unknown>;
 }
 
 export interface ProductExtensionRuntimeStore {
+  listSessions(): Promise<SessionEntry[]>;
   createSession(input: { cwd: string; name?: string; avatar?: string; autoStart?: boolean }): Promise<SessionEntry>;
+  startSession(sessionId: string): Promise<void>;
+  deleteSession(sessionId: string): Promise<void>;
   hydrateGlobalAvatarCatalog(input?: { force?: boolean }): Promise<GlobalAvatarCatalogEntry[]>;
   createGlobalAvatar(input: {
     nickname: string;
@@ -77,17 +71,21 @@ export interface ProductExtensionRuntimeStore {
   }): Promise<GlobalAvatarCatalogEntry>;
   readSettings(
     sessionId: string,
-    kind: "settings" | "agenter" | "system" | "template" | "contract",
+    kind: "settings" | "agenter",
   ): Promise<{ path: string; content: string; mtimeMs: number }>;
   saveSettings(input: {
     sessionId: string;
-    kind: "settings" | "agenter" | "system" | "template" | "contract";
+    kind: "settings" | "agenter";
     content: string;
     baseMtimeMs: number;
   }): Promise<
     | { ok: true; file: { path: string; content: string; mtimeMs: number } }
     | { ok: false; reason: "conflict"; latest: { path: string; content: string; mtimeMs: number } }
   >;
+  ensureAvatarPromptSeed(input: ProductAvatarPromptSeedInput): Promise<{
+    seeded: boolean;
+    file: { path: string; content: string; mtimeMs: number };
+  }>;
   listGlobalTerminals(): Promise<GlobalTerminalEntry[]>;
   createGlobalTerminal(input: {
     terminalId?: string;
@@ -110,6 +108,7 @@ export interface ProductExtensionRuntimeStore {
     start?: boolean;
     focus?: boolean;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }>;
+  deleteGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string }>;
   bootstrapGlobalTerminal(input: {
     terminalId: string;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }>;
@@ -148,7 +147,7 @@ export interface ProductExtensionRuntimeStore {
   listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]>;
   issueGlobalTerminalGrant(input: {
     terminalId: string;
-    role: "admin" | "writer" | "requester" | "readonly";
+    role: "admin" | "writer" | "guard" | "readonly";
     participantId: GlobalTerminalActorId;
     label?: string;
     accessTokenHint?: string;
@@ -197,6 +196,7 @@ export interface ProductExtensionRuntimeStore {
     op: "add" | "remove" | "replace" | "clear";
     channels: Array<{ chatId: string; accessToken?: string }>;
   }): Promise<{ ok: boolean; message: string; focusedChatIds: string[] }>;
+  deleteGlobalRoom(input: { chatId: string; accessToken?: string }): Promise<GlobalRoomEntry>;
   ensureWorkspacePrivateTextAsset(input: {
     workspacePath: string;
     avatarNickname: string;
@@ -204,16 +204,14 @@ export interface ProductExtensionRuntimeStore {
     relativePath: string;
     seedContent: string;
   }): Promise<WorkspacePrivateTextAssetEnsureOutput>;
-  queryAttention(input: { sessionId: string; query: string; offset?: number; limit?: number }): Promise<AttentionQueryItem[]>;
+  queryAttention(input: {
+    sessionId: string;
+    query: string;
+    offset?: number;
+    limit?: number;
+  }): Promise<AttentionQueryItem[]>;
   commitAttention(input: { sessionId: string } & ProductAttentionCommitInput): Promise<{ commit: unknown }>;
   settleAttention(input: { sessionId: string } & ProductAttentionSettleInput): Promise<{ commit: unknown }>;
-  listProductDelegations(input: ProductDelegationLookup): Promise<ProductDelegationRecord[]>;
-  createProductDelegation(input: ProductDelegationCreateInput): Promise<ProductDelegationRecord>;
-  revokeProductDelegation(input: {
-    delegationId: string;
-    revokedAt: number;
-    revokedReason: string;
-  }): Promise<ProductDelegationRecord>;
 }
 
 export interface ProductEnsureRuntimeInput {
@@ -247,7 +245,7 @@ export interface ProductEnsureTerminalBindingInput {
   terminalId?: string;
   participantId?: GlobalTerminalActorId;
   participantLabel?: string;
-  grantRole?: "admin" | "writer" | "requester" | "readonly";
+  grantRole?: "admin" | "writer" | "guard" | "readonly";
   focus?: boolean;
   createInput?: {
     processKind?: string;
@@ -280,8 +278,6 @@ export interface ProductEnsureRoomBindingInput {
   grantRole?: "admin" | "member" | "readonly";
   focus?: boolean;
 }
-
-const hasDurableContent = (file: { mtimeMs: number }): boolean => file.mtimeMs > 0;
 
 const isAvatarClassify = (
   value: string | null | undefined,
@@ -432,6 +428,10 @@ export class ProductExtensionRuntimeClient {
     });
   }
 
+  async startRuntime(sessionId: string): Promise<void> {
+    await this.store.startSession(sessionId);
+  }
+
   async ensureAssistant(input: ProductAssistantEnsureInput): Promise<GlobalAvatarCatalogEntry> {
     const catalog = await this.store.hydrateGlobalAvatarCatalog({ force: true });
     const existing = catalog.find((entry) => entry.nickname === input.avatarNickname);
@@ -445,35 +445,15 @@ export class ProductExtensionRuntimeClient {
     });
   }
 
-  async ensurePromptSeedIfMissing(
-    input: ProductPromptSeedInput,
+  async ensureAvatarPromptSeedIfMissing(
+    input: ProductAvatarPromptSeedInput,
   ): Promise<{ seeded: boolean; file: { path: string; content: string; mtimeMs: number } }> {
-    const current = await this.store.readSettings(input.sessionId, input.kind);
-    if (hasDurableContent(current)) {
-      return {
-        seeded: false,
-        file: current,
-      };
-    }
-    const saved = await this.store.saveSettings({
-      sessionId: input.sessionId,
-      kind: input.kind,
-      content: input.seedContent,
-      baseMtimeMs: current.mtimeMs,
-    });
-    if (!saved.ok) {
-      return {
-        seeded: false,
-        file: saved.latest,
-      };
-    }
-    return {
-      seeded: true,
-      file: saved.file,
-    };
+    return await this.store.ensureAvatarPromptSeed(input);
   }
 
-  async ensureMemoryPackIfMissing(input: ProductMemoryPackEnsureInput): Promise<WorkspacePrivateTextAssetEnsureOutput[]> {
+  async ensureMemoryPackIfMissing(
+    input: ProductMemoryPackEnsureInput,
+  ): Promise<WorkspacePrivateTextAssetEnsureOutput[]> {
     const results: WorkspacePrivateTextAssetEnsureOutput[] = [];
     for (const role of input.roles) {
       results.push(
@@ -489,7 +469,9 @@ export class ProductExtensionRuntimeClient {
     return results;
   }
 
-  async ensureTerminalBinding(input: ProductEnsureTerminalBindingInput): Promise<ProductEnsureBindingResult<GlobalTerminalEntry>> {
+  async ensureTerminalBinding(
+    input: ProductEnsureTerminalBindingInput,
+  ): Promise<ProductEnsureBindingResult<GlobalTerminalEntry>> {
     const { bindingMetadata, metadata } = mergeBindingMetadata(input.binding);
     const sessionActorId = requireSessionActorId(input.session);
     const terminalId = input.terminalId ?? input.binding.resourceKey;
@@ -644,8 +626,7 @@ export class ProductExtensionRuntimeClient {
     if (focused) {
       if (!input.participantId || input.participantId === sessionActorId) {
         const accessToken =
-          focusedAccessToken ??
-          (entry.accessToken && entry.accessRole !== "readonly" ? entry.accessToken : undefined);
+          focusedAccessToken ?? (entry.accessToken && entry.accessRole !== "readonly" ? entry.accessToken : undefined);
         if (accessToken) {
           await this.store.focusMessageChannels({
             sessionId: input.session.id,
@@ -692,21 +673,6 @@ export class ProductExtensionRuntimeClient {
     return await this.store.settleAttention(input);
   }
 
-  async listDelegations(input: ProductDelegationLookup): Promise<ProductDelegationRecord[]> {
-    return await this.store.listProductDelegations(input);
-  }
-
-  async createDelegation(input: ProductDelegationCreateInput): Promise<ProductDelegationRecord> {
-    return await this.store.createProductDelegation(input);
-  }
-
-  async revokeDelegation(input: {
-    delegationId: string;
-    revokedAt: number;
-    revokedReason: string;
-  }): Promise<ProductDelegationRecord> {
-    return await this.store.revokeProductDelegation(input);
-  }
 }
 
 export const createProductExtensionRuntimeClient = (

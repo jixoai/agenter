@@ -6,7 +6,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 import { resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
 import type { MessageControlPlane } from "@agenter/message-system";
-import type { TerminalActorId, TerminalControlPlane } from "@agenter/terminal-system";
+import type { TerminalActorId, TerminalApprovalRequestRecord, TerminalControlPlane } from "@agenter/terminal-system";
 import { AppKernel, SessionDb, appRouter, createTrpcContext } from "../src";
 import { UsageAnalyticsDb } from "../src/usage-analytics-db";
 import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "../src/usage-analytics-paths";
@@ -52,6 +52,38 @@ const createRootSuperadminCaller = async (kernel: AppKernel) => {
     descriptor,
     session,
   };
+};
+
+const createWalletAuthCaller = async (kernel: AppKernel) => {
+  const anonymousCaller = appRouter.createCaller(await createTrpcContext(kernel));
+  const account = privateKeyToAccount(generatePrivateKey());
+  const authId = account.address.toLowerCase();
+  const challenge = await anonymousCaller.auth.challengeStart({ authId });
+  const session = await anonymousCaller.auth.challengeVerify({
+    challengeId: challenge.challengeId,
+    signature: await account.signMessage({ message: challenge.challengeText }),
+  });
+  const caller = appRouter.createCaller(
+    await createTrpcContext({
+      kernel,
+      authorizationHeader: `Bearer ${session.token}`,
+    }),
+  );
+  return {
+    account,
+    authId,
+    actorId: `auth:${authId}` as TerminalActorId,
+    caller,
+    session,
+  };
+};
+
+type TestObservable<T> = {
+  subscribe(observer: {
+    next?: (value: T) => void;
+    error?: (error: unknown) => void;
+    complete?: () => void;
+  }): { unsubscribe(): void };
 };
 
 describe("Feature: app-server trpc procedures", () => {
@@ -1178,7 +1210,7 @@ describe("Feature: app-server trpc procedures", () => {
 
     const issued = await caller.terminal.issueGrant({
       terminalId,
-      role: "requester",
+      role: "guard",
       participantId: "session:avatar-pair",
       label: "Pair operator",
     });
@@ -1275,7 +1307,7 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given managed terminal lease routes When a requester avatar writes under the granted lease Then app-server preserves avatar actor identity and lease provenance without hidden superadmin writes", async () => {
+  test("Scenario: Given managed terminal lease routes When a guard avatar writes under the granted lease Then app-server preserves avatar actor identity and lease provenance without hidden superadmin writes", async () => {
     const root = makeTempDir();
     const avatarActorId: TerminalActorId = "auth:shell-assistant";
     const kernel = new AppKernel({
@@ -1301,7 +1333,7 @@ describe("Feature: app-server trpc procedures", () => {
 
     await caller.terminal.issueGrant({
       terminalId,
-      role: "requester",
+      role: "guard",
       participantId: avatarActorId,
       label: "Shell assistant",
     });
@@ -1363,6 +1395,149 @@ describe("Feature: app-server trpc procedures", () => {
     expect(blockedAgain.ok).toBeFalse();
     expect(blockedAgain.message).toContain("approval");
 
+    await kernel.stop();
+  });
+
+  test("Scenario: Given terminal permission request subscribers When guard writes occur Then TRPC delivers authorized global and terminal-scoped approval facts only", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      authService: {
+        rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+      },
+    });
+    await kernel.start();
+    const { caller: superadminCaller } = await createRootSuperadminCaller(kernel);
+    const observer = await createWalletAuthCaller(kernel);
+    const hidden = await createWalletAuthCaller(kernel);
+    const alpha = await superadminCaller.terminal.globalCreate({
+      terminalId: "permission-sub-alpha",
+      processKind: "shell",
+      cwd: root,
+      focus: false,
+    });
+    const bravo = await superadminCaller.terminal.globalCreate({
+      terminalId: "permission-sub-bravo",
+      processKind: "shell",
+      cwd: root,
+      focus: false,
+    });
+    const alphaId = alpha.result.terminal?.terminalId;
+    const bravoId = bravo.result.terminal?.terminalId;
+    if (!alphaId || !bravoId) {
+      throw new Error("expected terminal ids");
+    }
+    await superadminCaller.terminal.issueGrant({
+      terminalId: alphaId,
+      role: "readonly",
+      participantId: observer.actorId,
+    });
+    await superadminCaller.terminal.issueGrant({
+      terminalId: alphaId,
+      role: "guard",
+      participantId: "session:guard",
+    });
+    await superadminCaller.terminal.issueGrant({
+      terminalId: bravoId,
+      role: "guard",
+      participantId: "session:guard",
+    });
+
+    const terminalSystem = Reflect.get(kernel, "terminalControlPlane") as TerminalControlPlane;
+    const initial = await terminalSystem.write({
+      terminalId: alphaId,
+      text: "initial pending",
+      actorId: "session:guard",
+    });
+    const initialRequestId = initial.approvalRequest?.requestId;
+    if (!initialRequestId) {
+      throw new Error("expected initial approval request");
+    }
+
+    const globalEvents: Array<
+      | { type: "snapshot"; items: TerminalApprovalRequestRecord[] }
+      | { type: "request"; request: TerminalApprovalRequestRecord }
+    > = [];
+    const alphaEvents: Array<
+      | { type: "snapshot"; items: TerminalApprovalRequestRecord[] }
+      | { type: "request"; request: TerminalApprovalRequestRecord }
+    > = [];
+    const hiddenEvents: Array<
+      | { type: "snapshot"; items: TerminalApprovalRequestRecord[] }
+      | { type: "request"; request: TerminalApprovalRequestRecord }
+    > = [];
+
+    const globalSubscription = (
+      await observer.caller.terminal.permissionRequests()
+    ).subscribe({
+      next: (event) => {
+        globalEvents.push(event);
+      },
+    });
+    const alphaSubscription = (
+      await observer.caller.terminal.permissionRequests({ terminalId: alphaId })
+    ).subscribe({
+      next: (event) => {
+        alphaEvents.push(event);
+      },
+    });
+    const hiddenSubscription = (
+      await hidden.caller.terminal.permissionRequests()
+    ).subscribe({
+      next: (event) => {
+        hiddenEvents.push(event);
+      },
+    });
+
+    expect(globalEvents).toEqual([
+      {
+        type: "snapshot",
+        items: [expect.objectContaining({ terminalId: alphaId, requestId: initialRequestId })],
+      },
+    ]);
+    expect(alphaEvents).toEqual([
+      {
+        type: "snapshot",
+        items: [expect.objectContaining({ terminalId: alphaId, requestId: initialRequestId })],
+      },
+    ]);
+    expect(hiddenEvents).toEqual([{ type: "snapshot", items: [] }]);
+
+    const alphaFollowup = await terminalSystem.write({
+      terminalId: alphaId,
+      text: "followup pending",
+      actorId: "session:guard",
+    });
+    const bravoHidden = await terminalSystem.write({
+      terminalId: bravoId,
+      text: "bravo hidden",
+      actorId: "session:guard",
+    });
+
+    expect(globalEvents.at(-1)).toMatchObject({
+      type: "request",
+      request: {
+        terminalId: alphaId,
+        requestId: alphaFollowup.approvalRequest?.requestId,
+      },
+    });
+    expect(alphaEvents.at(-1)).toMatchObject({
+      type: "request",
+      request: {
+        terminalId: alphaId,
+        requestId: alphaFollowup.approvalRequest?.requestId,
+      },
+    });
+    expect(globalEvents.some((event) => event.type === "request" && event.request.terminalId === bravoId)).toBeFalse();
+    expect(alphaEvents.some((event) => event.type === "request" && event.request.terminalId === bravoId)).toBeFalse();
+    expect(hiddenEvents).toEqual([{ type: "snapshot", items: [] }]);
+    expect(bravoHidden.approvalRequest?.terminalId).toBe(bravoId);
+
+    globalSubscription.unsubscribe();
+    alphaSubscription.unsubscribe();
+    hiddenSubscription.unsubscribe();
     await kernel.stop();
   });
 

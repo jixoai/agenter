@@ -3,7 +3,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { AppKernel, appRouter, createTrpcContext, resolveWorkspaceAvatarAssetRoot } from "../src";
+import { resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
+import {
+  AppKernel,
+  appRouter,
+  createTrpcContext,
+  resolveWorkspaceAvatarAssetRoot,
+  resolveWorkspaceAvatarCanonicalRoot,
+} from "../src";
 
 const tempDirs: string[] = [];
 
@@ -39,6 +46,98 @@ const createRootSuperadminCaller = async (kernel: AppKernel) => {
 };
 
 describe("Feature: product extension runtime platform contracts", () => {
+  test("Scenario: Given product-owned assistant prompt seed When the product extension route is used Then AGENTER.mdx is created under the avatar principal root and later edits remain truth", async () => {
+    const root = makeTempDir();
+    const homeDir = join(root, "home");
+    const principalId = "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66";
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir,
+    });
+    await kernel.start();
+    const caller = await createRootSuperadminCaller(kernel);
+
+    const first = await caller.productExtension.ensureAvatarPromptSeed({
+      avatarPrincipalId: principalId,
+      kind: "agenter",
+      seedContent: "# Seeded Shell Assistant\n",
+    });
+    const promptPath = join(resolveGlobalAvatarCanonicalRoot(principalId, homeDir), "AGENTER.mdx");
+    writeFileSync(promptPath, "# User-edited Shell Assistant\n", "utf8");
+    const second = await caller.productExtension.ensureAvatarPromptSeed({
+      avatarPrincipalId: principalId,
+      kind: "agenter",
+      seedContent: "# Replacement Shell Assistant\n",
+    });
+
+    expect(first.seeded).toBe(true);
+    expect(first.file.path).toBe(promptPath);
+    expect(second.seeded).toBe(false);
+    expect(second.file.content).toBe("# User-edited Shell Assistant\n");
+    expect(readFileSync(promptPath, "utf8")).toBe("# User-edited Shell Assistant\n");
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given product-owned assistant prompt seed names a workspace When the product extension route is used Then AGENTER.mdx is created under the workspace principal root", async () => {
+    const root = makeTempDir();
+    const homeDir = join(root, "home");
+    const workspacePath = join(root, "workspace");
+    const principalId = "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66";
+    mkdirSync(workspacePath, { recursive: true });
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir,
+    });
+    await kernel.start();
+    const caller = await createRootSuperadminCaller(kernel);
+
+    const first = await caller.productExtension.ensureAvatarPromptSeed({
+      avatarPrincipalId: principalId,
+      workspacePath,
+      kind: "agenter",
+      seedContent: "# Workspace Shell Assistant\n",
+    });
+    const promptPath = join(resolveWorkspaceAvatarCanonicalRoot(workspacePath, principalId, homeDir), "AGENTER.mdx");
+    const globalPromptPath = join(resolveGlobalAvatarCanonicalRoot(principalId, homeDir), "AGENTER.mdx");
+
+    expect(first.seeded).toBe(true);
+    expect(first.file.path).toBe(promptPath);
+    expect(readFileSync(promptPath, "utf8")).toBe("# Workspace Shell Assistant\n");
+    expect(() => readFileSync(globalPromptPath, "utf8")).toThrow();
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given product-owned assistant prompt seed targets a non-principal path When the product extension route is used Then the route rejects it before filesystem mutation", async () => {
+    const root = makeTempDir();
+    const homeDir = join(root, "home");
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir,
+    });
+    await kernel.start();
+    const caller = await createRootSuperadminCaller(kernel);
+
+    await expect(
+      caller.productExtension.ensureAvatarPromptSeed({
+        avatarPrincipalId: "../shell-assistant",
+        kind: "agenter",
+        seedContent: "# Seeded Shell Assistant\n",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given a missing avatar-private text asset When the workspace route ensures it twice Then seeding happens only once and later user edits remain intact", async () => {
     const root = makeTempDir();
     const workspace = join(root, "workspace");
@@ -62,7 +161,10 @@ describe("Feature: product extension runtime platform contracts", () => {
       seedContent: "# Pairing playbook\n",
     });
 
-    const assetPath = join(resolveWorkspaceAvatarAssetRoot(workspace, "shell-assistant", "memory", homeDir), "pairing-playbook.md");
+    const assetPath = join(
+      resolveWorkspaceAvatarAssetRoot(workspace, "shell-assistant", "memory", homeDir),
+      "pairing-playbook.md",
+    );
     writeFileSync(assetPath, "# User-edited playbook\n", "utf8");
 
     const second = await caller.workspace.ensurePrivateTextAsset({
@@ -82,7 +184,7 @@ describe("Feature: product extension runtime platform contracts", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given product delegations are created listed and revoked When the generic route is used Then durable lease facts keep product provenance and revocation separate from terminal authority", async () => {
+  test("Scenario: Given product extension routes When inspected Then product delegation is not exposed as terminal authority", async () => {
     const root = makeTempDir();
     const kernel = new AppKernel({
       globalSessionRoot: join(root, "sessions"),
@@ -93,40 +195,7 @@ describe("Feature: product extension runtime platform contracts", () => {
     await kernel.start();
     const caller = await createRootSuperadminCaller(kernel);
 
-    const created = await caller.productExtension.createDelegation({
-      productId: "cli-shell",
-      resourceKey: "shell-1",
-      runtimeId: "runtime-shell-assistant",
-      avatarActorId: "auth:shell-assistant",
-      grantedByActorId: "auth:user",
-      terminalId: "shell-1",
-      roomId: "room-shell-1",
-      enabledAt: Date.now(),
-      expiresAt: Date.now() + 60_000,
-      policy: { mode: "write" },
-      provenance: {
-        source: "product-extension-runtime",
-        attentionContextId: "ctx-hosting-shell-1",
-      },
-    });
-    const active = await caller.productExtension.listDelegations({
-      productId: "cli-shell",
-    });
-    const revoked = await caller.productExtension.revokeDelegation({
-      delegationId: created.delegation.delegationId,
-      revokedAt: 20,
-      revokedReason: "user_disabled",
-    });
-    const withRevoked = await caller.productExtension.listDelegations({
-      productId: "cli-shell",
-      includeRevoked: true,
-    });
-
-    expect(created.delegation.status).toBe("active");
-    expect(active.items.map((record) => record.delegationId)).toEqual([created.delegation.delegationId]);
-    expect(revoked.delegation.status).toBe("revoked");
-    expect(revoked.delegation.provenance.attentionContextId).toBe("ctx-hosting-shell-1");
-    expect(withRevoked.items[0]?.revokedReason).toBe("user_disabled");
+    expect(Object.keys(caller.productExtension)).toEqual(["ensureAvatarPromptSeed"]);
 
     await kernel.stop();
   });
@@ -167,11 +236,6 @@ describe("Feature: product extension runtime platform contracts", () => {
       sessionId: session.session.id,
       query: "minscore:0",
     });
-    const noDelegations = await caller.productExtension.listDelegations({
-      productId: "cli-shell",
-      includeRevoked: true,
-    });
-
     await caller.runtime.attentionSettle({
       sessionId: session.session.id,
       contextId: "ctx-self-evolution",
@@ -184,7 +248,6 @@ describe("Feature: product extension runtime platform contracts", () => {
 
     expect(committed.snapshot.contexts.some((context) => context.contextId === "ctx-self-evolution")).toBe(true);
     expect(queried.items.some((item) => item.contextId === "ctx-self-evolution")).toBe(true);
-    expect(noDelegations.items).toEqual([]);
     expect(settled.active.some((context) => context.contextId === "ctx-self-evolution")).toBe(false);
 
     await kernel.stop();

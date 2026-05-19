@@ -10,6 +10,7 @@ export interface AgenterAvatarInit {
 
 export interface ResolveAvatarInput {
   nickname?: string;
+  principalId?: string;
   homeDir: string;
 }
 

@@ -1,22 +1,34 @@
-import { describe, expect, test } from "bun:test";
 import type { GlobalRoomActorId, GlobalTerminalActorId } from "@agenter/client-sdk";
+import { describe, expect, test } from "bun:test";
 
 import {
   CLI_SHELL_DEFAULT_AVATAR,
   bootstrapCliShell,
   buildShellAssistantPromptSeed,
+  cleanupCliShellResources,
   disableCliShellManagedMode,
   enableCliShellManagedMode,
+  formatCliShellCleanupResult,
+  hasCliShellCleanupFailures,
   isCliShellMetadataOnlyArgv,
   normalizeShellName,
+  planCliShellCleanup,
   parseCliShellArgs,
   shellAssistantMemoryRoles,
 } from "../src";
 import { FakeCliShellStore } from "./fake-cli-shell-store";
 
+const parseAttachArgs = (...args: Parameters<typeof parseCliShellArgs>) => {
+  const parsed = parseCliShellArgs(...args);
+  if (parsed.command !== "attach") {
+    throw new Error("expected attach args");
+  }
+  return parsed;
+};
+
 describe("Feature: cli-shell orchestration", () => {
   test("Scenario: Given bare argv When parsing cli-shell args Then the product defaults to shell-assistant on shell-1", () => {
-    const parsed = parseCliShellArgs([]);
+    const parsed = parseAttachArgs([]);
     expect(parsed.avatarNickname).toBe(CLI_SHELL_DEFAULT_AVATAR);
     expect(parsed.shellName).toBe("shell-1");
     expect(parsed.backend).toBeUndefined();
@@ -26,7 +38,7 @@ describe("Feature: cli-shell orchestration", () => {
   });
 
   test("Scenario: Given explicit avatar session and backend When parsing cli-shell args Then avatar override shell name normalization and backend truth stay product-local", () => {
-    const parsed = parseCliShellArgs([
+    const parsed = parseAttachArgs([
       "@default",
       "--session=prod",
       "--backend=ghostty-native",
@@ -44,27 +56,27 @@ describe("Feature: cli-shell orchestration", () => {
   });
 
   test("Scenario: Given debug argv When parsing cli-shell args Then debug display is an explicit startup flag", () => {
-    expect(parseCliShellArgs(["--debug"]).debug).toBe(true);
-    expect(parseCliShellArgs(["--debug"]).debugFilters).toEqual([]);
-    expect(parseCliShellArgs(["--debug=false"]).debug).toBe(false);
-    expect(parseCliShellArgs(["--debug=false"]).debugFilters).toEqual([]);
-    expect(parseCliShellArgs(["--debug=key,selection,follow"])).toMatchObject({
+    expect(parseAttachArgs(["--debug"]).debug).toBe(true);
+    expect(parseAttachArgs(["--debug"]).debugFilters).toEqual([]);
+    expect(parseAttachArgs(["--debug=false"]).debug).toBe(false);
+    expect(parseAttachArgs(["--debug=false"]).debugFilters).toEqual([]);
+    expect(parseAttachArgs(["--debug=key,selection,follow"])).toMatchObject({
       debug: true,
       debugFilters: ["key", "selection", "follow"],
     });
-    expect(parseCliShellArgs(["--debug=*key*,*follow*"])).toMatchObject({
+    expect(parseAttachArgs(["--debug=*key*,*follow*"])).toMatchObject({
       debug: true,
       debugFilters: ["key", "follow"],
     });
   });
 
   test("Scenario: Given dynamic refresh argv When parsing cli-shell args Then dynamic pacing is explicit and experimental", () => {
-    expect(parseCliShellArgs(["--experimental-dynamic-refresh"]).experimentalDynamicRefresh).toBe(true);
-    expect(parseCliShellArgs(["--experimental-dynamic-refresh=false"]).experimentalDynamicRefresh).toBe(false);
+    expect(parseAttachArgs(["--experimental-dynamic-refresh"]).experimentalDynamicRefresh).toBe(true);
+    expect(parseAttachArgs(["--experimental-dynamic-refresh=false"]).experimentalDynamicRefresh).toBe(false);
   });
 
   test("Scenario: Given launcher-owned daemon env When parsing cli-shell args Then the product consumes daemon context without inventing a local port authority", () => {
-    const parsed = parseCliShellArgs([], {
+    const parsed = parseAttachArgs([], {
       AGENTER_DAEMON_HOST: "127.0.0.9",
       AGENTER_DAEMON_PORT: "4999",
       AGENTER_AUTH_SERVICE_ENDPOINT: "http://127.0.0.1:4591",
@@ -75,11 +87,24 @@ describe("Feature: cli-shell orchestration", () => {
   });
 
   test("Scenario: Given cli-shell web host argv When parsing args Then web mode stays a host flag instead of becoming the default backend mode", () => {
-    expect(parseCliShellArgs(["--web"]).webPort).toBe(0);
-    expect(parseCliShellArgs(["--web=3210"]).webPort).toBe(3210);
-    expect(parseCliShellArgs(["--web", "3211"]).webPort).toBe(3211);
-    expect(parseCliShellArgs(["--web", "@default"]).avatarNickname).toBe("default");
-    expect(parseCliShellArgs(["--web", "@default"]).webPort).toBe(0);
+    expect(parseAttachArgs(["--web"]).webPort).toBe(0);
+    expect(parseAttachArgs(["--web=3210"]).webPort).toBe(3210);
+    expect(parseAttachArgs(["--web", "3211"]).webPort).toBe(3211);
+    expect(parseAttachArgs(["--web", "@default"]).avatarNickname).toBe("default");
+    expect(parseAttachArgs(["--web", "@default"]).webPort).toBe(0);
+  });
+
+  test("Scenario: Given cleanup argv When parsing cli-shell args Then cleanup is a product-local management command", () => {
+    expect(parseCliShellArgs(["cleanup"])).toMatchObject({
+      command: "cleanup",
+      shellName: undefined,
+      confirm: false,
+    });
+    expect(parseCliShellArgs(["cleanup", "--session=3", "--confirm"])).toMatchObject({
+      command: "cleanup",
+      shellName: "shell-3",
+      confirm: true,
+    });
   });
 
   test("Scenario: Given an unsupported backend flag When parsing cli-shell args Then the product rejects it explicitly", () => {
@@ -118,6 +143,141 @@ describe("Feature: cli-shell orchestration", () => {
     );
   });
 
+  test("Scenario: Given cli-shell resources When cleanup is planned and confirmed Then only product-bound terminals rooms and shell assistant sessions are removed", async () => {
+    const store = new FakeCliShellStore();
+    await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+    await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-2",
+    });
+    await store.createGlobalTerminal({
+      terminalId: "ordinary-terminal",
+      metadata: {
+        owner: "manual",
+      },
+    });
+    await store.createGlobalRoom({
+      chatId: "ordinary-room",
+      title: "ordinary",
+      metadata: {
+        owner: "manual",
+      },
+    });
+
+    const dryRun = await planCliShellCleanup(store, { shellName: "shell-1" });
+    expect(dryRun.targets).toEqual([
+      {
+        shellName: "shell-1",
+        terminalIds: ["shell-1:terminal-1", "shell-1:terminal-2"],
+        roomIds: ["room-1"],
+      },
+    ]);
+    expect(dryRun.sessionIds).toEqual([]);
+
+    const result = await cleanupCliShellResources(store, { confirm: true });
+
+    expect(result.deleted.terminals).toEqual([
+      "shell-1:terminal-1",
+      "shell-1:terminal-2",
+      "shell-2:terminal-1",
+      "shell-2:terminal-2",
+    ]);
+    expect(result.deleted.rooms).toEqual(["room-1", "room-2"]);
+    expect(result.deleted.sessions).toEqual(["session:/repo:shell-assistant"]);
+    expect(store.terminals.map((entry) => entry.terminalId)).toEqual(["ordinary-terminal"]);
+    expect(store.rooms.map((entry) => entry.chatId)).toEqual(["ordinary-room"]);
+  });
+
+  test("Scenario: Given legacy cli-shell single terminal resources When cleanup is planned Then product metadata still selects them by shell name", async () => {
+    const store = new FakeCliShellStore();
+    await store.createGlobalTerminal({
+      terminalId: "shell-legacy",
+      metadata: {
+        productId: "cli-shell",
+        resourceKey: "shell-legacy",
+        ownerSystem: "terminal-system",
+      },
+    });
+
+    const dryRun = await planCliShellCleanup(store, { shellName: "shell-legacy" });
+
+    expect(dryRun.targets).toEqual([
+      {
+        shellName: "shell-legacy",
+        terminalIds: ["shell-legacy"],
+        roomIds: [],
+      },
+    ]);
+  });
+
+  test("Scenario: Given terminal deletion interrupts the daemon When cleanup is confirmed Then rooms and sessions are removed first and remaining terminals are reported", async () => {
+    const store = new FakeCliShellStore();
+    await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+    await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-2",
+    });
+    const order: string[] = [];
+    const originalDeleteRoom = store.deleteGlobalRoom.bind(store);
+    const originalDeleteSession = store.deleteSession.bind(store);
+    store.deleteGlobalRoom = async (input) => {
+      order.push(`room:${input.chatId}`);
+      return await originalDeleteRoom(input);
+    };
+    store.deleteSession = async (sessionId) => {
+      order.push(`session:${sessionId}`);
+      return await originalDeleteSession(sessionId);
+    };
+    store.deleteGlobalTerminal = async (input) => {
+      order.push(`terminal:${input.terminalId}`);
+      if (input.terminalId === "shell-1:terminal-1") {
+        throw new Error("Unable to transform response from server");
+      }
+      return { ok: true, message: "terminal deleted" };
+    };
+
+    const result = await cleanupCliShellResources(store, { confirm: true });
+
+    expect(order.slice(0, 3)).toEqual(["room:room-1", "room:room-2", "session:session:/repo:shell-assistant"]);
+    expect(order[3]).toBe("terminal:shell-1:terminal-1");
+    expect(result.deleted.rooms).toEqual(["room-1", "room-2"]);
+    expect(result.deleted.sessions).toEqual(["session:/repo:shell-assistant"]);
+    expect(result.failed.terminals).toEqual([
+      {
+        terminalId: "shell-1:terminal-1",
+        message: "Unable to transform response from server",
+      },
+      {
+        terminalId: "shell-1:terminal-2",
+        message: "cleanup interrupted after terminal deletion disconnected the daemon; rerun cleanup after daemon restart",
+      },
+      {
+        terminalId: "shell-2:terminal-1",
+        message: "cleanup interrupted after terminal deletion disconnected the daemon; rerun cleanup after daemon restart",
+      },
+      {
+        terminalId: "shell-2:terminal-2",
+        message: "cleanup interrupted after terminal deletion disconnected the daemon; rerun cleanup after daemon restart",
+      },
+    ]);
+    expect(hasCliShellCleanupFailures(result)).toBe(true);
+    expect(formatCliShellCleanupResult(result)).toContain("cli-shell cleanup incomplete");
+  });
+
   test("Scenario: Given cli-shell bootstraps terminal-2 When inspecting terminal creation Then terminal-2 is a composed product terminal without a shell child command", async () => {
     const store = new FakeCliShellStore();
     const attached = await bootstrapCliShell({
@@ -126,8 +286,12 @@ describe("Feature: cli-shell orchestration", () => {
       avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
       shellName: "shell-1",
     });
-    const shellTerminal = store.terminals.find((entry) => entry.terminalId === attached.shellTruthTerminal.entry.terminalId);
-    const visibleTerminal = store.terminals.find((entry) => entry.terminalId === attached.visibleTerminal.entry.terminalId);
+    const shellTerminal = store.terminals.find(
+      (entry) => entry.terminalId === attached.shellTruthTerminal.entry.terminalId,
+    );
+    const visibleTerminal = store.terminals.find(
+      (entry) => entry.terminalId === attached.visibleTerminal.entry.terminalId,
+    );
 
     expect(shellTerminal?.processKind).toBe("shell");
     expect(shellTerminal?.command).toEqual([process.env.SHELL ?? "bash", "-i"]);
@@ -152,7 +316,12 @@ describe("Feature: cli-shell orchestration", () => {
     }
     store.promptFiles.set(first.session.id, { ...promptFile, content: "# user edited prompt\n", mtimeMs: Date.now() });
     const memoryKey = `/repo:${CLI_SHELL_DEFAULT_AVATAR}:memory:user-model.md`;
-    store.privateAssets.set(memoryKey, { path: "user-model.md", created: false, content: "# user memory\n", mtimeMs: Date.now() });
+    store.privateAssets.set(memoryKey, {
+      path: "user-model.md",
+      created: false,
+      content: "# user memory\n",
+      mtimeMs: Date.now(),
+    });
 
     const second = await bootstrapCliShell({
       store,
@@ -219,7 +388,7 @@ describe("Feature: cli-shell orchestration", () => {
     ).rejects.toThrow("terminal backend mismatch");
   });
 
-  test("Scenario: Given cli-shell managed mode is enabled and later disabled When the product uses runtime attention and delegation helpers Then hosting facts and delegated authority stay platform-backed", async () => {
+  test("Scenario: Given cli-shell managed mode is enabled and later disabled When the product toggles hosting Then only attention state changes and terminal authority is untouched", async () => {
     const store = new FakeCliShellStore();
     store.setAuthToken("superadmin-token");
 
@@ -236,9 +405,6 @@ describe("Feature: cli-shell orchestration", () => {
 
     expect(enabled.contextId).toBe("ctx-hosting-shell-1");
     expect(enabled.grantedByActorId).toBe("auth:root-superadmin");
-    expect(enabled.delegation.policy.mode).toBe("write");
-    expect(enabled.delegation.provenance.attentionContextId).toBe("ctx-hosting-shell-1");
-    expect(enabled.delegation.provenance.terminalLeaseId).toBeDefined();
     expect(store.lastAttentionCommit).toMatchObject({
       contextId: "ctx-hosting-shell-1",
       scores: { hosting: 1000 },
@@ -249,12 +415,7 @@ describe("Feature: cli-shell orchestration", () => {
         roomId: "room-shell-1",
       },
     });
-    expect(store.delegations).toHaveLength(1);
-    expect(
-      store.terminalWriteLeases.find(
-        (lease) => lease.terminalId === "shell-1" && lease.participantId === "auth:shell-assistant" && lease.revokedAt === undefined,
-      )?.leaseId,
-    ).toBe(enabled.delegation.provenance.terminalLeaseId);
+    expect(store.terminalWriteLeases).toHaveLength(0);
 
     const disabled = await disableCliShellManagedMode({
       store,
@@ -267,8 +428,6 @@ describe("Feature: cli-shell orchestration", () => {
     });
 
     expect(disabled.contextId).toBe("ctx-hosting-shell-1");
-    expect(disabled.revokedDelegations).toHaveLength(1);
-    expect(disabled.revokedDelegations[0]?.status).toBe("revoked");
     expect(store.lastAttentionSettle).toMatchObject({
       contextId: "ctx-hosting-shell-1",
       scores: { hosting: 0 },
@@ -278,11 +437,7 @@ describe("Feature: cli-shell orchestration", () => {
         resourceKey: "shell-1",
       },
     });
-    expect(
-      store.terminalWriteLeases.every(
-        (lease) => lease.participantId !== "auth:shell-assistant" || lease.revokedAt !== undefined,
-      ),
-    ).toBe(true);
+    expect(store.terminalWriteLeases).toHaveLength(0);
   });
 
   test("Scenario: Given repeated attach and reconnect flows When reusing shell-1 and later opening shell-2 Then runtime identity stays avatar-scoped while terminal and room bindings stay shell-scoped", async () => {
@@ -380,6 +535,11 @@ describe("Feature: cli-shell orchestration", () => {
     expect(attached.avatar.avatarPrincipalId).toBe("auth:catalog-shell-assistant");
     expect(attached.session.avatarPrincipalId).toBe("auth:shell-assistant");
     expect(attached.avatarActorId).toBe("auth:shell-assistant");
+    expect(store.avatarPromptFiles.get("/repo:auth:shell-assistant:agenter")?.path).toBe(
+      "/repo/.agenter/avatars/by-principal/auth:shell-assistant/AGENTER.mdx",
+    );
+    expect(store.avatarPromptFiles.get("/repo:auth:catalog-shell-assistant:agenter")).toBeUndefined();
+    expect(store.promptFiles.get(attached.session.id)?.content).toBe("");
     expect(store.terminalGrants.get("shell-1:terminal-1")?.[0]?.participantId).toBe("auth:shell-assistant");
     expect(store.terminalGrants.get("shell-1:terminal-2")?.[0]?.participantId).toBe("auth:shell-assistant");
     expect(store.roomGrants.get(attached.room.entry.chatId)?.[0]?.participantId).toBe("auth:shell-assistant");
@@ -392,6 +552,15 @@ describe("Feature: cli-shell orchestration", () => {
     expect(prompt).toContain("playful or companion-like");
     expect(prompt).toContain("auto-dream");
     expect(prompt).toContain("seed-if-missing user assets");
+    expect(prompt).toContain("the visible product world is the current Terminal instance plus its MessageRoom");
+    expect(prompt).toContain("Treat any MessageRoom conversation as being about the TerminalSystem instance");
+    expect(prompt).toContain("Keep the root workspace hidden from the conversation model");
+    expect(prompt).toContain("act on the current room's TerminalSystem instance through terminal APIs");
+    expect(prompt).toContain("Do not run an equivalent command in `root_bash` or `workspace_bash`");
+    expect(prompt).toContain("Use `workspace_bash` only for explicit one-shot workspace inspection");
+    expect(prompt).toContain("Use terminal system commands as the normal bridge to that product world");
+    expect(prompt).toContain("Start with `terminal list`");
+    expect(prompt).toContain("act on the Terminal that belongs to the same cli-shell resource key");
     for (const role of shellAssistantMemoryRoles) {
       expect(prompt).toContain(role.path);
     }

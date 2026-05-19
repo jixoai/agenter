@@ -273,7 +273,7 @@ import type {
 		};
 	};
 
-	const handleGrantSeat = async (input: { participantId: string; role: 'admin' | 'writer' | 'requester' | 'readonly' }): Promise<void> => {
+	const handleGrantSeat = async (input: { participantId: string; role: 'admin' | 'writer' | 'guard' | 'readonly' }): Promise<void> => {
 		const terminal = selectedTerminal;
 		const participantId = asTerminalActorId(input.participantId);
 		if (!terminal || !participantId) {
@@ -396,7 +396,7 @@ import type {
 				terminalId: terminal.terminalId,
 				accessToken,
 				text: input.text,
-				createApprovalRequest: selectedSeat?.role === 'requester',
+				createApprovalRequest: selectedSeat?.role === 'guard',
 				returnRead: false,
 			});
 			if (isTerminalWriteResult(result) && result.approvalRequest) {
@@ -523,6 +523,9 @@ import type {
 		}
 		const releaseGrants = controller.runtimeStore.retainGlobalTerminalGrants(currentTerminalId);
 		const releaseApprovals = controller.runtimeStore.retainGlobalTerminalApprovals(currentTerminalId);
+		const releasePermissionRequests = controller.runtimeStore.retainTerminalPermissionRequests({
+			terminalId: currentTerminalId,
+		});
 		const releaseActivity = controller.runtimeStore.retainGlobalTerminalActivity(currentTerminalId);
 		void controller.runtimeStore.hydrateGlobalTerminalGrants({ terminalId: currentTerminalId }).catch(() => undefined);
 		void controller.runtimeStore
@@ -533,6 +536,7 @@ import type {
 			.catch(() => undefined);
 		return () => {
 			releaseActivity();
+			releasePermissionRequests();
 			releaseApprovals();
 			releaseGrants();
 		};

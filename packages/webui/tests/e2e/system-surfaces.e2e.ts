@@ -192,17 +192,14 @@ const chooseSelectOptionByText = async (page: Page, trigger: Locator, optionText
 
 const setRangeValue = async (locator: Locator, value: number): Promise<void> => {
   await expect(locator).toBeVisible({ timeout: 15_000 });
-  await locator.evaluate(
-    (element, nextValue) => {
-      if (!(element instanceof HTMLInputElement)) {
-        throw new Error("Expected range input");
-      }
-      element.value = String(nextValue);
-      element.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
-      element.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
-    },
-    value,
-  );
+  await locator.evaluate((element, nextValue) => {
+    if (!(element instanceof HTMLInputElement)) {
+      throw new Error("Expected range input");
+    }
+    element.value = String(nextValue);
+    element.dispatchEvent(new Event("input", { bubbles: true, cancelable: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true, cancelable: true }));
+  }, value);
 };
 
 const chooseFirstSelectOption = async (
@@ -258,6 +255,23 @@ const activateUntil = async (locator: Locator, predicate: () => Promise<boolean>
       .then(() => true)
       .catch(() => false);
     if (activatedByForceClick) {
+      return;
+    }
+
+    await locator
+      .evaluate((element) => {
+        if (!(element instanceof HTMLElement)) {
+          throw new Error("Expected HTMLElement");
+        }
+        element.click();
+      })
+      .catch(() => undefined);
+    const activatedByDomClick = await expect
+      .poll(predicate, { timeout: 1_500 })
+      .toBeTruthy()
+      .then(() => true)
+      .catch(() => false);
+    if (activatedByDomClick) {
       return;
     }
   }
@@ -585,7 +599,8 @@ const countTerminalViewOccurrences = async (page: Page, text: string): Promise<n
   const terminalView = page.locator("terminal-view").first();
   await terminalView.waitFor({ state: "visible", timeout: 15_000 });
   return await terminalView.evaluate((element, expected) => {
-    const shadowText = "textEvidence" in element && typeof element.textEvidence === "string" ? element.textEvidence : "";
+    const shadowText =
+      "textEvidence" in element && typeof element.textEvidence === "string" ? element.textEvidence : "";
     if (expected.length === 0) {
       return 0;
     }
@@ -756,7 +771,7 @@ const issueGlobalTerminalGrantViaApi = async (
   input: {
     terminalId: string;
     participantId: string;
-    role: "admin" | "writer" | "requester" | "readonly";
+    role: "admin" | "writer" | "guard" | "readonly";
     label?: string;
   },
 ): Promise<{ grant: { accessToken?: string | null } }> => {
@@ -806,31 +821,6 @@ const writeGlobalTerminalViaApi = async (
     throw new Error(`terminal.write failed: ${response.status()} ${await response.text()}`);
   }
   return await parseTrpcBatchJson<unknown>(response);
-};
-
-const approveGlobalTerminalRequestViaApi = async (
-  page: Page,
-  input: {
-    terminalId: string;
-    requestId: string;
-    durationMs: number;
-  },
-): Promise<void> => {
-  const token = await readAuthToken(page);
-  const response = await page.request.post("/trpc/terminal.approveRequest?batch=1", {
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    data: {
-      "0": {
-        json: input,
-      },
-    },
-  });
-  if (!response.ok()) {
-    throw new Error(`terminal.approveRequest failed: ${response.status()} ${await response.text()}`);
-  }
 };
 
 const trackFinishedRequests = (
@@ -1040,6 +1030,24 @@ const closeTerminalUsersDialog = async (page: Page): Promise<void> => {
   await clickStable(dialog.getByRole("button", { name: "Close", exact: true }));
   await expect(dialog).not.toBeVisible({ timeout: 15_000 });
   await expectBodyInteractive(page);
+};
+
+const expectTerminalPermissionPopover = async (
+  page: Page,
+  input: {
+    requestId: string;
+    requestedInput: string;
+  },
+): Promise<Locator> => {
+  const terminalView = page.locator("terminal-view").first();
+  await terminalView.waitFor({ state: "visible", timeout: 15_000 });
+  const popover = terminalView.locator(
+    `[data-terminal-permission-popover="true"][data-terminal-permission-request-id="${input.requestId}"]`,
+  );
+  await expect(popover).toBeVisible({ timeout: 15_000 });
+  await expect(popover).toContainText("Terminal write approval", { timeout: 15_000 });
+  await expect(popover).toContainText(input.requestedInput, { timeout: 15_000 });
+  return popover;
 };
 
 const resolveVisibleRoomViewerTrigger = async (scope: Page | Locator): Promise<Locator | null> => {
@@ -1945,9 +1953,7 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect
       .poll(async () => {
         return await terminalWindow.evaluate((windowSurface) => {
-          return windowSurface
-            .getAnimations({ subtree: true })
-            .some((animation) => animation.playState === "running");
+          return windowSurface.getAnimations({ subtree: true }).some((animation) => animation.playState === "running");
         });
       })
       .toBeFalsy();
@@ -2058,28 +2064,41 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(themeDialog).toBeHidden({ timeout: 15_000 });
     await expect
       .poll(async () => {
-        return await page.locator("terminal-view").first().evaluate((element) => {
-          return "theme" in element ? element.theme : null;
-        });
+        return await page
+          .locator("terminal-view")
+          .first()
+          .evaluate((element) => {
+            return "theme" in element ? element.theme : null;
+          });
       })
       .toBe("default-light");
     await expect
       .poll(async () => {
-        return await page.locator('[data-terminal-window-body="true"]').first().evaluate((element) => {
-          return getComputedStyle(element).backgroundColor;
-        });
+        return await page
+          .locator('[data-terminal-window-body="true"]')
+          .first()
+          .evaluate((element) => {
+            return getComputedStyle(element).backgroundColor;
+          });
       })
       .toBe("rgb(248, 250, 252)");
 
     const rendererDialog = await openTerminalConfigDialog(page);
-    await chooseSelectOptionByText(page, rendererDialog.getByTestId("terminal-config-renderer-select"), "WTerm (Experimental)");
+    await chooseSelectOptionByText(
+      page,
+      rendererDialog.getByTestId("terminal-config-renderer-select"),
+      "WTerm (Experimental)",
+    );
     await clickStable(rendererDialog.getByTestId("terminal-config-apply"));
     await expect(rendererDialog).toBeHidden({ timeout: 15_000 });
     await expect
       .poll(async () => {
-        return await page.locator("terminal-view").first().evaluate((element) => {
-          return "resolvedRenderer" in element ? element.resolvedRenderer : null;
-        });
+        return await page
+          .locator("terminal-view")
+          .first()
+          .evaluate((element) => {
+            return "resolvedRenderer" in element ? element.resolvedRenderer : null;
+          });
       })
       .toBe("wterm");
 
@@ -2090,12 +2109,15 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expect(fontDialog).toBeHidden({ timeout: 15_000 });
     await expect
       .poll(async () => {
-        return await page.locator("terminal-view").first().evaluate((element) => {
-          return {
-            font: "font" in element ? element.font : null,
-            renderer: "resolvedRenderer" in element ? element.resolvedRenderer : null,
-          };
-        });
+        return await page
+          .locator("terminal-view")
+          .first()
+          .evaluate((element) => {
+            return {
+              font: "font" in element ? element.font : null,
+              renderer: "resolvedRenderer" in element ? element.resolvedRenderer : null,
+            };
+          });
       })
       .toMatchObject({
         renderer: "wterm",
@@ -2119,18 +2141,25 @@ test.describe("Feature: Svelte system surfaces", () => {
     });
 
     const fontDialog = await openTerminalConfigDialog(page);
-    await chooseSelectOptionByText(page, fontDialog.getByTestId("terminal-config-font-family-select"), "JetBrains Mono");
+    await chooseSelectOptionByText(
+      page,
+      fontDialog.getByTestId("terminal-config-font-family-select"),
+      "JetBrains Mono",
+    );
     await clickStable(fontDialog.getByTestId("terminal-config-apply"));
     await expect(fontDialog).toBeHidden({ timeout: 15_000 });
 
     await expect
       .poll(async () => {
-        return await page.locator("terminal-view").first().evaluate((element) => {
-          return {
-            font: "font" in element ? element.font : null,
-            renderer: "resolvedRenderer" in element ? element.resolvedRenderer : null,
-          };
-        });
+        return await page
+          .locator("terminal-view")
+          .first()
+          .evaluate((element) => {
+            return {
+              font: "font" in element ? element.font : null,
+              renderer: "resolvedRenderer" in element ? element.resolvedRenderer : null,
+            };
+          });
       })
       .toMatchObject({
         renderer: "ghostty-web",
@@ -2140,29 +2169,32 @@ test.describe("Feature: Svelte system surfaces", () => {
       });
 
     await expect
-      .poll(async () => {
-        return await page.evaluate(() => {
-          const styleMarkers = Array.from(document.querySelectorAll('style[data-terminal-font-asset]')).map((style) =>
-            style.getAttribute("data-terminal-font-asset"),
-          );
-          const fontStatuses = Array.from(document.fonts)
-            .filter((font) => /JetBrains Mono/i.test(font.family))
-            .map((font) => ({
-              family: font.family,
-              status: font.status,
-              weight: font.weight,
-            }));
-          const fontResources = performance
-            .getEntriesByType("resource")
-            .map((entry) => entry.name)
-            .filter((name) => /jetbrains-mono-.*\.woff2(?:$|\?)/i.test(name));
-          return {
-            styleMarkers,
-            fontStatuses,
-            fontResources,
-          };
-        });
-      }, { timeout: 20_000 })
+      .poll(
+        async () => {
+          return await page.evaluate(() => {
+            const styleMarkers = Array.from(document.querySelectorAll("style[data-terminal-font-asset]")).map((style) =>
+              style.getAttribute("data-terminal-font-asset"),
+            );
+            const fontStatuses = Array.from(document.fonts)
+              .filter((font) => /JetBrains Mono/i.test(font.family))
+              .map((font) => ({
+                family: font.family,
+                status: font.status,
+                weight: font.weight,
+              }));
+            const fontResources = performance
+              .getEntriesByType("resource")
+              .map((entry) => entry.name)
+              .filter((name) => /jetbrains-mono-.*\.woff2(?:$|\?)/i.test(name));
+            return {
+              styleMarkers,
+              fontStatuses,
+              fontResources,
+            };
+          });
+        },
+        { timeout: 20_000 },
+      )
       .toMatchObject({
         styleMarkers: expect.arrayContaining(["agenter-terminal-font-jetbrains-mono"]),
         fontStatuses: expect.arrayContaining([
@@ -2203,33 +2235,33 @@ test.describe("Feature: Svelte system surfaces", () => {
     await expectLocatorMissingOrDisabled(page.getByRole("button", { name: "Delete terminal", exact: true }));
   });
 
-  test("Scenario: Given an authenticated superadmin When granting requester access and approving a pending terminal write Then the users rail and actions rail stay synchronized after refresh", async ({
+  test("Scenario: Given an authenticated superadmin When granting Guard access and approving a pending terminal write inline Then the users rail and actions rail stay synchronized after refresh", async ({
     page,
   }, testInfo) => {
     test.setTimeout(75_000);
     const terminalId = `playwright-approval-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
     const pendingWrite = `echo terminal-approval-${testInfo.project.name}`;
     const leasedWrite = `echo terminal-lease-${testInfo.project.name}`;
-    const requesterAvatarName = `playwright-requester-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
-    let requesterActorId = "";
-    let requesterAccessToken = "";
-    let requesterRuntimeUrl: string | null = null;
+    const guardAvatarName = `playwright-guard-${testInfo.project.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`;
+    let guardActorId = "";
+    let guardAccessToken = "";
+    let guardRuntimeUrl: string | null = null;
 
     try {
       await navigateToSystem(page, "Avatars");
       const copyDialog = await openCopyAvatarDialog(page);
-      await copyDialog.getByLabel("New avatar nickname").fill(requesterAvatarName);
+      await copyDialog.getByLabel("New avatar nickname").fill(guardAvatarName);
       await activateUntil(copyDialog.getByRole("button", { name: "Copy avatar" }), async () => {
         return !(await copyDialog.isVisible().catch(() => false));
       });
 
-      await selectAvatarCatalogEntry(page, requesterAvatarName);
+      await selectAvatarCatalogEntry(page, guardAvatarName);
       const startAvatarButton = page.getByRole("button", { name: "Start avatar" });
       await expect(startAvatarButton).toBeEnabled({ timeout: 60_000 });
       await clickStable(startAvatarButton);
       await expect(page).toHaveURL(/\/avatars\/runtime\/.+\/attention$/, { timeout: 30_000 });
-      requesterRuntimeUrl = page.url();
-      requesterActorId = await readRuntimeAvatarPrincipalId(page);
+      guardRuntimeUrl = page.url();
+      guardActorId = await readRuntimeAvatarPrincipalId(page);
 
       await navigateToSystem(page, "Terminals");
       await createTerminalAndOpenDetail(page, {
@@ -2238,25 +2270,26 @@ test.describe("Feature: Svelte system surfaces", () => {
       });
 
       await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
-      expect(requesterActorId).not.toBe("");
+      expect(guardActorId).not.toBe("");
       const grantOutput = await issueGlobalTerminalGrantViaApi(page, {
         terminalId,
-        participantId: requesterActorId,
-        role: "requester",
-        label: requesterAvatarName,
+        participantId: guardActorId,
+        role: "guard",
+        label: guardAvatarName,
       });
-      requesterAccessToken = grantOutput.grant.accessToken ?? "";
-      expect(requesterAccessToken).not.toBe("");
+      guardAccessToken = grantOutput.grant.accessToken ?? "";
+      expect(guardAccessToken).not.toBe("");
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
       await openTerminalUsersDialog(page);
-      const grantedSeat = page.getByTestId(`terminal-seat-${requesterActorId}`);
+      const grantedSeat = page.getByTestId(`terminal-seat-${guardActorId}`);
       await expect(grantedSeat).toBeVisible({ timeout: 15_000 });
-      await expect(grantedSeat).toContainText(requesterActorId);
-      await expect(grantedSeat).toContainText("requester");
+      await expect(grantedSeat).toContainText(guardActorId);
+      await expect(grantedSeat).toContainText("guard");
+      await closeTerminalUsersDialog(page);
       const pendingWriteOutput = await writeGlobalTerminalViaApi(page, {
         terminalId,
-        accessToken: requesterAccessToken,
+        accessToken: guardAccessToken,
         text: pendingWrite,
         createApprovalRequest: true,
       });
@@ -2271,23 +2304,17 @@ test.describe("Feature: Svelte system surfaces", () => {
           ? pendingWriteOutput.approvalRequest.requestId
           : "";
       expect(pendingRequestId).not.toBe("");
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
-      await openTerminalUsersDialog(page);
-      await expect(page.getByText("Pending approvals", { exact: true })).toBeVisible({ timeout: 15_000 });
-      await expect(page.getByText(new RegExp(escapeRegExp(pendingWrite)))).toBeVisible({ timeout: 15_000 });
-      await approveGlobalTerminalRequestViaApi(page, {
-        terminalId,
+      const inlineApproval = await expectTerminalPermissionPopover(page, {
         requestId: pendingRequestId,
-        durationMs: 30 * 60 * 1000,
+        requestedInput: pendingWrite,
       });
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
+      await clickStable(inlineApproval.getByRole("button", { name: "Approve", exact: true }));
+      await expect(inlineApproval).toHaveCount(0, { timeout: 15_000 });
       await openTerminalUsersDialog(page);
       await expect(page.getByText(/Lease until/)).toBeVisible({ timeout: 15_000 });
       const leasedWriteOutput = await writeGlobalTerminalViaApi(page, {
         terminalId,
-        accessToken: requesterAccessToken,
+        accessToken: guardAccessToken,
         text: leasedWrite,
       });
       expect(leasedWriteOutput).toBeTruthy();
@@ -2297,11 +2324,11 @@ test.describe("Feature: Svelte system surfaces", () => {
       await expect(page.getByText(new RegExp(escapeRegExp(terminalId))).first()).toBeVisible({ timeout: 15_000 });
       await expectTerminalActionPanelText(page, leasedWrite);
       await openTerminalUsersDialog(page);
-      await expect(page.getByTestId(`terminal-seat-${requesterActorId}`)).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId(`terminal-seat-${guardActorId}`)).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText(/Lease until/)).toBeVisible({ timeout: 15_000 });
     } finally {
-      if (requesterRuntimeUrl) {
-        await page.goto(requesterRuntimeUrl, { waitUntil: "domcontentloaded" }).catch(() => undefined);
+      if (guardRuntimeUrl) {
+        await page.goto(guardRuntimeUrl, { waitUntil: "domcontentloaded" }).catch(() => undefined);
         await stopRuntimeIfRunning(page);
       }
     }

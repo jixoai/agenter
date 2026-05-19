@@ -15,6 +15,7 @@
 - `session.workspacePath` 只表达创建时的 bootstrap workspace，不代表 runtime 当前完整 mount 列表。
 - `session.create` / `session.start` 的 cold boot 不会自动挂 workspace、room、terminal；这些 authority 必须来自显式 durable facts。
 - 每个 runtime 固定拥有一个 principal-address root workspace：`~/.agenter/avatars/by-principal/<principalId>`。它是 avatar 的 canonical private home，不替代 dynamic workspace mounts。
+- Avatar prompt source resolution 必须优先使用 session/runtime 的 `avatarPrincipalId` canonical root；nickname alias 只用于发现和兼容迁移，不能在已知 principal 的运行时覆盖 prompt 真源。
 - 前端或其他调用方如果要知道 runtime 当前可访问哪些 workspace，必须查询 `workspace.runtimeMounts(runtimeId)`。
 - WorkspaceSystem 是 workspace access 的唯一 authority，负责：
   - mount / detach
@@ -46,7 +47,7 @@
 - stopped 或 cold session 的 attention/notification projection 读取 `sessionRoot/attention-system` 下的 persisted facts。
 - notification 不是独立 registry；它只是 unconsumed attention push 的投影。
 - attention commit 对外必须遵守二分法：`meta` 只暴露 provenance，`summary + change` 承载 AI/inspection 可读主体；可见外部效果必须走显式 system mutation 或 dispatch/receipt 事实，调用方不得再依赖开放 metadata bag。
-- product-scoped hosting work 也是 attention scheduler fact：它可以用固定 score key `hosting` 表示未结 obligation，但不得因为 score 为正就自动获得 terminal write authority；写权限仍要回到 terminal delegation / lease truth。
+- product-scoped hosting work 也是 attention scheduler fact：它可以用固定 score key `hosting` 表示未结 obligation，但不得因为 score 为正就自动获得 terminal write authority；写权限仍要回到 TerminalSystem grant、guard approval 和 timeboxed write lease truth。
 - `EffectLedger` 是 visible external mutation 的唯一可追责面。至少要能把 `actionId`、`actorId`、`target`、`effectRecordId`、`timestamp` 以及可用时的 `cycle/model-call refs` 串起来；room message creation 这类外部效果不得再通过隐式 fallback 或 transport side channel 解释。
 - `notification.snapshot`、`notification.setChatVisibility`、`notification.setTerminalVisibility`、`notification.consume` 都必须遵守同一条法则：有 runtime 读 runtime，无 runtime 读 persisted attention。
 - `session.stop` 与 `session.abort` 都必须让 runtime 从 kernel ownership 中消失；`snapshot.runtimes[sessionId]` 对 stopped session 返回空是正确行为，不是数据丢失。
@@ -128,6 +129,10 @@
 - runtime-local terminal config descriptor 只暴露 AI/tool-managed launch/config truth；durable `rendererPreference` 与 terminal `theme/cursor` 仍属于 terminal-system owned profile law，不得作为 AI-facing mutable字段重新开放。
 - browser-authenticated global terminal config mutation 才拥有 durable presentation profile 写权限：`rendererPreference + theme + cursor + font` 允许在 authenticated operator boundary 内更新，但 `resolvedRenderer` 仍然是前端局部解析事实，不经 app-server 回写成 durable truth。
 - runtime-facing prompt / skill / error guidance 必须保持 stateless：当命令参数不匹配时，只能客观说明当前 contract、并引导 AI 使用 `<command> --help` 或 `skill info <skill>` 获取详情；不得暗示“旧语法”“之前的规则”或“记忆残留”。
+- Avatar-authored prompt 真源只有 `AGENTER.mdx`，并且必须来自 principal canonical root：global workspace 使用 `~/.agenter/avatars/by-principal/<principalId>/AGENTER.mdx`，普通 workspace 使用 `<workspace>/.agenter/avatars/by-principal/<principalId>/AGENTER.mdx`。workspace root `.agenter/AGENTER.mdx`、nickname alias、session-local prompt、settings prompt path 都不得成为 runtime prompt 真源。
+- Prompt 混合只能通过 MDX `<Slot src="..."/>` 完成。`src` 必须按 URL 解析：`private:` 指向当前层 `<.agenter>/avatars/by-principal/<principalId>`，`public:` 指向当前层 `<.agenter>`，`super:` 指向父层同类 root；标准 `file://`、`http://`、`https://` 等协议由 resource loader 处理。空 `super:` 表示当前文件在父层 root 下的同相对路径。
+- 空 prompt 文件是有效事实，不得 fallback 到模板或上层；需要继承上层内容时必须显式写 `<Slot src="super:" />`。
+- `AGENTER_SYSTEM`、`SYSTEM_TEMPLATE`、`RESPONSE_CONTRACT` 是平台内置 prompt 文档，不是用户 settings path 真源；Avatar 若要扩展或覆盖人格/行为，必须写入 `AGENTER.mdx` 并用 Slot 组合外部文件。
 - runtime built-in skills 必须由 owning package 在 `skills/**/SKILL.md` 中维护，并通过 app-server build step 聚合成 generated catalog；runtime 不得再把这些 built-ins materialize 到 `<rootWorkspace>/skills`。
 - runtime skill system 的 durable truth 是可见 skill 的 on-disk files，而不是 prompt glue：shared / global / avatar-private skills 直接读盘；indexed built-in skills 在 source path 存在时也必须优先读当前磁盘文件，generated catalog 只负责 discovery baseline。
 - runtime built-in `SKILL.md` 必须保持 concise overview-first，并把 deeper material 下沉到同目录 `references/*.md`；attention-backed runtime skill snapshot 与全局提示必须把 `skills.list -> skill info <skill> -> 只读所需 reference file` 作为 canonical discovery path。

@@ -44,6 +44,7 @@ export type {
   TerminalAccessProjection,
   TerminalActorId,
   TerminalAdminCandidateRecord,
+  TerminalApprovalRequestEvent,
   TerminalAwaitInput,
   TerminalAwaitMatchEvidence,
   TerminalAwaitMatchOptions,

@@ -62,6 +62,7 @@ const waitForSignal = async (cleanup?: () => Promise<void> | void): Promise<void
 const healthUrl = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
 const webUrl = (args: { host: string; port: number }): string => `http://${args.host}:${args.port}`;
 const resolveLauncherHomeDir = (): string => process.env.HOME || homedir();
+const resolveLauncherOwnedAuthServiceDataDir = (): string => join(resolveLauncherHomeDir(), ".agenter", "launcher-auth-service");
 const resolveDaemonHealthLabel = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
 
 const isHttpHealthAlive = async (urlString: string): Promise<boolean> => {
@@ -120,6 +121,23 @@ const resolveAuthServiceBridgeOptions = (args: AuthServiceBridgeCliArgs): AuthSe
     dataDir,
     host,
     port,
+  };
+};
+
+const resolveProductDaemonAuthServiceOptions = (
+  args: AuthServiceBridgeCliArgs,
+): AuthServiceBridgeCliArgs => {
+  if (
+    args.authServiceEndpoint?.trim() ||
+    args.authServiceDataDir?.trim() ||
+    args.authServiceHost?.trim() ||
+    typeof args.authServicePort === "number"
+  ) {
+    return args;
+  }
+  return {
+    ...args,
+    authServiceDataDir: resolveLauncherOwnedAuthServiceDataDir(),
   };
 };
 
@@ -308,10 +326,12 @@ export const launchProductCommandForTest = async (
       } else {
         localDaemon = await dependencies.startDaemon({
           ...common,
-          authServiceEndpoint: routed.launcherOptions.authServiceEndpoint,
-          authServiceDataDir: routed.launcherOptions.authServiceDataDir,
-          authServiceHost: routed.launcherOptions.authServiceHost,
-          authServicePort: routed.launcherOptions.authServicePort,
+          ...resolveProductDaemonAuthServiceOptions({
+            authServiceEndpoint: routed.launcherOptions.authServiceEndpoint,
+            authServiceDataDir: routed.launcherOptions.authServiceDataDir,
+            authServiceHost: routed.launcherOptions.authServiceHost,
+            authServicePort: routed.launcherOptions.authServicePort,
+          }),
         });
         resolvedDaemonAuthority = {
           host: localDaemon.host,

@@ -22,28 +22,16 @@ index a107b505b2f489f8577a19e1f031a35ba7a1242e..38b4920720f46679f9408da9caaef106
        result.push(getLine(row))
      }
      return result
-@@ -354,9 +354,9 @@ export function createXtermBackend(opts?: Partial<TerminalOptions>): TerminalBac
-     const t = ensureTerm()
-     return {
-       x: t.buffer.active.cursorX,
+@@ -357,3 +357,3 @@ export function createXtermBackend(opts?: Partial<TerminalOptions>): TerminalBac
 -      y: t.buffer.active.cursorY,
 -      visible: true, // DECTCEM not available in headless mode
 -      style: "block", // default — headless doesn't expose cursor style
 +      y: t.buffer.active.baseY + t.buffer.active.cursorY,
 +      visible: !(t as any)._core.coreService.isCursorHidden,
 +      style: null
-     }
-   }
- 
-@@ -367,7 +367,7 @@ export function createXtermBackend(opts?: Partial<TerminalOptions>): TerminalBac
-       case "altScreen":
-         return t.buffer.active.type === "alternate"
-       case "cursorVisible":
--        return true // not easily trackable in headless mode
+@@ -370 +370 @@ export function createXtermBackend(opts?: Partial<TerminalOptions>): TerminalBac
+-        return true // not easily trackable in headless
 +        return !(t as any)._core.coreService.isCursorHidden
-       case "bracketedPaste":
-         return t.modes.bracketedPasteMode
-       case "applicationCursor":
 diff --git a/src/index.ts b/src/index.ts
 index 1fb2dc2e1b2a95be2dfdbd01322249ce42680f50..7db346cf4216d10bb4ea6c5f751223502feb5407 100644
 --- a/src/index.ts

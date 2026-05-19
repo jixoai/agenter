@@ -284,11 +284,11 @@ git-log 约束：
   - direct write
   - raw write
   - websocket transport input bytes
-- product-managed autonomy 也必须回到同一 gate：ordinary-user product 只能通过显式 delegation / lease 获得 timeboxed terminal write authority，不能绕过 terminal-system 自己发明 hidden write path。
+- product-managed autonomy 也必须回到同一 gate：ordinary-user product 只能通过 TerminalSystem grant、guard approval request、timeboxed write lease 或等价 terminal authority fact 获得 terminal write authority，不能绕过 terminal-system 自己发明 hidden write path。
 - websocket transport 是独立的 live terminal session protocol，不承载 automation durable truth：
   - live websocket `inputBytes` 归属真人交互 forwarding，必须经过同一 write policy gate，但授权后低延迟直写 PTY，不创建 pending file、approval request 或 `terminal_write` activity
   - automation `terminal.write` / `terminal.input` 继续走 control-plane durable path，保留 pending inbox、approval request 与 `terminal_write` activity
-- grant 固定四级：`admin | writer | requester | readonly`
+- grant 固定四级：`admin | writer | guard | readonly`
 - superadmin 可以越过 local grant 做恢复性管理，但不改变 terminal-local durable truth 的 owner。
 
 ### 7.1 Single Current Admin
@@ -303,18 +303,18 @@ git-log 约束：
 
 - admin routing authority 与 actor 自身的基础写能力是两个独立维度。
 - `readonly` candidate 被升格为 current admin 后，仍然保持 readonly PTY write 语义。
-- `requester` candidate 被升格为 current admin 后，可以直接写自己的 terminal，不需要给自己走审批回路。
+- `guard` candidate 被升格为 current admin 后，可以直接写自己的 terminal，不需要给自己走审批回路。
 
 ### 7.3 Approval and Lease
 
-- `requester` 写入失败时必须创建 approval request，而不是直接透传到 PTY。
+- `guard` 写入失败时必须创建 approval request，而不是直接透传到 PTY。
 - approval timeout 默认 `90s`，并且属于 terminal authority 的状态机，不属于 attention item。
 - attention 只允许投影 approval work，不能成为 approval durable owner。
 - approval history 必须保留 `pending | approved | denied | expired` 的 durable 状态转移；审批查询读取的是历史事实，而不是只看当前 pending 队列。
 - approved request 必须 mint timeboxed write lease。
 - lease 过期后，所有输入路径立即恢复拒绝。
-- product delegation 创建的 write-capable autonomy 也必须最终落到 terminal-native lease 或等价 authority fact；hosting attention 本身不得替代 lease。
-- autonomous terminal write 的 activity / effect ledger 必须保留 Avatar actor identity 与 delegation / lease provenance，不能把 superadmin bootstrap actor 当成 hidden writer。
+- product hosting attention 本身不得替代 TerminalSystem lease、approval 或 grant。
+- autonomous terminal write 的 activity / effect ledger 必须保留 Avatar actor identity 与 terminal authority provenance，不能把 superadmin bootstrap actor 当成 hidden writer。
 
 ### 7.4 Session Projection and UI Contract
 
@@ -362,8 +362,8 @@ git-log 约束：
 - WebUI 的 `Terminals` 页面是 terminal-system 的正式消费面：
   - 顶层 tabs 表示 global terminal catalog
   - terminal-local toolbar 承载 focus / viewport / access / approval 操作
-  - AvatarGroup 用 badge color 表示 offline / online / focused，用 border color 表示 `readonly / requester / writer / admin`
-  - 当授予第二个 `writer` 时，UI 必须先给出 downgrade prompt，允许把旧 writer 降级成 requester
+  - AvatarGroup 用 badge color 表示 offline / online / focused，用 border color 表示 `readonly / guard / writer / admin`
+  - 当授予第二个 `writer` 时，UI 必须先给出 downgrade prompt，允许把旧 writer 降级成 guard
 
 ### 7.5 Await Observation
 

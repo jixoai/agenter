@@ -71,7 +71,7 @@ Any terminal input sent through websocket transport SHALL respect the same grant
 - **THEN** the transport path does not bypass collaboration policy
 
 #### Scenario: Transport input is accepted during an active lease
-- **WHEN** a requester has a valid active write lease for that terminal
+- **WHEN** a guard has a valid active write lease for that terminal
 - **THEN** transport input is accepted until the lease expires
 - **THEN** expiry immediately restores transport-side rejection for further input
 - **AND** transport remains a collaboration-governed raw forwarding path rather than a bypass around the raw/mixed terminal authority model
@@ -88,8 +88,8 @@ Any terminal input sent through websocket transport SHALL respect the same grant
 - **AND** terminal-system does not create a pending input file
 - **AND** terminal-system does not append a `terminal_write` activity fact for that live frame
 
-#### Scenario: Requester live bytes without lease do not create approval work
-- **WHEN** a requester websocket client sends live terminal input bytes without an active write lease
+#### Scenario: Guard live bytes without lease do not create approval work
+- **WHEN** a guard websocket client sends live terminal input bytes without an active write lease
 - **THEN** terminal-system rejects the frame before it reaches the PTY
 - **AND** terminal-system does not create an approval request from that interactive session traffic
 

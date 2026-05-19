@@ -14,7 +14,7 @@ import {
 
 import type { CliShellManagedState } from "../managed";
 import { measureTerminalText } from "./cell-width";
-import { buildCliShellComposedSurface } from "./composed-surface";
+import { buildCliShellComposedSurface, toProductTerminalComposedSurface } from "./composed-surface";
 import {
   routeCliShellKey,
   routeCliShellMouseScroll,
@@ -69,6 +69,7 @@ import type {
   CliShellObservationReadyBaseline,
   CliShellSelectionSource,
   CliShellSelectionSourceDescriptor,
+  CliShellTerminalApprovalActionDetail,
   CliShellTuiModel,
   CliShellTuiStore,
   CliShellTuiViewState,
@@ -198,10 +199,10 @@ export class CliShellCoreApp {
   #renderNowCount = 0;
   #composedSurfaceKey = "";
   #localComposedSurface: CliShellComposedSurfaceState | null = null;
-  #restoredPublishedSurfaceKey = "";
   #releaseStore: (() => void) | null = null;
   #releaseRoom: (() => void) | null = null;
   #releaseTerminals: (() => void) | null = null;
+  #releasePermissionRequests: (() => void) | null = null;
   #releaseSourceMirror: (() => void) | null = null;
   #disposed = false;
   #lastModel: CliShellTuiModel | null = null;
@@ -241,8 +242,12 @@ export class CliShellCoreApp {
       left: 0,
       width: Math.max(1, this.#renderer.width),
       height: Math.max(1, this.#contentHeight()),
+      terminalId: props.fallbackTerminalId,
       focused: true,
       lines: [],
+      onApprovalAction: (detail) => {
+        this.#handleApprovalAction(detail);
+      },
       onMouseDown: (event) => this.#handleShellMouseDown(event),
       onMouseDrag: (event) => this.#handleShellMouseDrag(event),
       onMouseScroll: (event) => this.#handleTerminalScroll(event),
@@ -281,6 +286,9 @@ export class CliShellCoreApp {
       .catch(() => undefined);
     this.#releaseTerminals = this.#props.store.retainGlobalTerminals();
     if (this.#props.fallbackTerminalId.trim().length > 0) {
+      this.#releasePermissionRequests = this.#props.store.retainTerminalPermissionRequests({
+        terminalId: this.#props.fallbackTerminalId,
+      });
       void this.#props.store
         .hydrateGlobalTerminals({ force: true })
         .then(async (terminals) => {
@@ -323,6 +331,8 @@ export class CliShellCoreApp {
     this.#releaseRoom = null;
     this.#releaseTerminals?.();
     this.#releaseTerminals = null;
+    this.#releasePermissionRequests?.();
+    this.#releasePermissionRequests = null;
     this.#releaseSourceMirror?.();
     this.#releaseSourceMirror = null;
     this.#sourceMirror?.disconnect();
@@ -410,7 +420,6 @@ export class CliShellCoreApp {
       interactionProfile: this.#props.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
     });
     this.#lastModel = model;
-    this.#restorePublishedSurface({ publishedSurface: publishedSurfaceState.surface });
     this.#syncActiveFocus();
     this.#projectToolbarHeartbeat({ model, width });
     const interactionLayout = resolveCliShellTuiInteractionLayout({ model, width, height: contentHeight });
@@ -511,8 +520,14 @@ export class CliShellCoreApp {
     this.#terminalView.left = 0;
     this.#terminalView.width = width;
     this.#terminalView.height = contentHeight;
+    const terminalPermissionRequests = state.globalTerminalApprovalsById[activeTerminalId]?.data ?? [];
     const terminalPaintStats = this.#terminalView.updateProjection({
+      terminalId: activeTerminalId,
       lines: visibleProjection.lines,
+      permissionRequests: terminalPermissionRequests,
+      onApprovalAction: (detail) => {
+        this.#handleApprovalAction(detail);
+      },
       selectionRegion: interactionLayout.terminalScrollRegion
       ? {
           x: interactionLayout.terminalScrollRegion.col,
@@ -1104,6 +1119,35 @@ export class CliShellCoreApp {
     }
   }
 
+  #handleApprovalAction(detail: CliShellTerminalApprovalActionDetail): void {
+    const task =
+      detail.action === "approve"
+        ? this.#props.store.approveGlobalTerminalRequest({
+            terminalId: detail.terminalId,
+            requestId: detail.requestId,
+            durationMs: detail.durationMs ?? 30 * 60 * 1000,
+          })
+        : this.#props.store.denyGlobalTerminalRequest({
+            terminalId: detail.terminalId,
+            requestId: detail.requestId,
+          });
+    void task
+      .then(() => {
+        this.#viewState = {
+          ...this.#viewState,
+          statusNotice: detail.action === "approve" ? "终端授权已批准" : "终端授权已拒绝",
+        };
+        this.renderNow("terminal-permission-decision");
+      })
+      .catch((error) => {
+        this.#viewState = {
+          ...this.#viewState,
+          statusNotice: `终端授权处理失败: ${error instanceof Error ? error.message : String(error)}`,
+        };
+        this.renderNow("terminal-permission-decision-error");
+      });
+  }
+
   #bumpLiveTerminalRevision(trigger = "manual"): void {
     if (this.#liveTerminalRenderInFlight) {
       this.#liveTerminalRenderPending = true;
@@ -1207,44 +1251,6 @@ export class CliShellCoreApp {
     }
   }
 
-  #restorePublishedSurface(input: { publishedSurface: CliShellComposedSurfaceState | null }): void {
-    const publishedSurface = input.publishedSurface;
-    if (!publishedSurface) {
-      return;
-    }
-    if (this.#localComposedInteractionDirty && this.#viewState.activeFocusTarget === "dialogue") {
-      return;
-    }
-    const preserveFocusedDraft =
-      this.#viewState.activeFocusTarget === "dialogue" &&
-      publishedSurface.dialogueDraft !== this.#viewState.dialogueDraft;
-    const draftForRestore = preserveFocusedDraft ? this.#viewState.dialogueDraft : publishedSurface.dialogueDraft;
-    const restoreKey = JSON.stringify({
-      dialogueOpen: publishedSurface.dialogueOpen,
-      dialoguePlacement: publishedSurface.dialoguePlacement,
-      dialogueDraft: draftForRestore,
-    });
-    if (restoreKey === this.#restoredPublishedSurfaceKey) {
-      return;
-    }
-    this.#restoredPublishedSurfaceKey = restoreKey;
-    this.#composedSurfaceKey = resolveComposedSurfaceKey(publishedSurface);
-    const requestedPlacement = publishedSurface.dialoguePlacement ?? this.#viewState.requestedPlacement;
-    if (
-      this.#viewState.dialogueOpen === publishedSurface.dialogueOpen &&
-      this.#viewState.requestedPlacement === requestedPlacement &&
-      this.#viewState.dialogueDraft === draftForRestore
-    ) {
-      return;
-    }
-    this.#viewState = {
-      ...this.#viewState,
-      dialogueOpen: publishedSurface.dialogueOpen,
-      requestedPlacement,
-      dialogueDraft: draftForRestore,
-    };
-  }
-
   #syncActiveFocus(): void {
     if (this.#viewState.activeFocusTarget === this.#viewState.focusTarget) {
       return;
@@ -1339,7 +1345,7 @@ export class CliShellCoreApp {
     void this.#props.store
       .publishGlobalTerminalComposedSurface({
         terminalId: input.model.terminalId,
-        surface,
+        surface: toProductTerminalComposedSurface(surface),
       })
       .then(() => {
         this.#localComposedInteractionDirty = false;

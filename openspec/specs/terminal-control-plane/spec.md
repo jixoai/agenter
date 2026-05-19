@@ -273,7 +273,7 @@ The terminal control plane SHALL let the current local admin or superadmin creat
 
 - **WHEN** principal `P` successfully accepts a terminal invitation for `T` with class `RW`
 - **THEN** the resulting terminal-native payload is the direct-write seat
-- **THEN** `P` can operate the terminal immediately without entering the requester approval path
+- **THEN** `P` can operate the terminal immediately without entering the guard approval path
 
 #### Scenario: Accepted terminal invitation activates the seat
 
@@ -286,7 +286,7 @@ The terminal control plane SHALL let the current local admin or superadmin creat
 
 - **WHEN** current local admin `A` sends principal `B` a pending terminal invitation descriptor through messageSystem and `B` accepts it with terminal authority `RW`
 - **THEN** `B` can read the same shared terminal `T`
-- **THEN** `B` can write to `T` immediately without entering requester approval
+- **THEN** `B` can write to `T` immediately without entering guard approval
 - **THEN** subsequent reads by both `A` and `B` can observe the terminal state that results from `B`'s write under the native terminal read law
 
 #### Scenario: Cross-agenter invite preserves remote terminal authority
@@ -319,4 +319,3 @@ Terminal `config` and `revoke` operations SHALL remain unilateral actions for th
 - **THEN** any active terminal grant for `P` on `T` is revoked
 - **THEN** any pending invitation for `P` on `T` becomes invalid
 - **THEN** any active write lease for `P` on `T` no longer authorizes new writes
-

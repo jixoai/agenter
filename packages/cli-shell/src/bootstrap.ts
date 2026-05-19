@@ -1,11 +1,10 @@
 import type {
-  AttentionQueryItem,
   AuthSessionOutput,
   GlobalAvatarCatalogEntry,
   GlobalRoomActorId,
   GlobalRoomEntry,
-  GlobalTerminalEntry,
   GlobalTerminalActorId,
+  GlobalTerminalEntry,
   ProductEnsureBindingResult,
   ProductExtensionRuntimeStore,
   RuntimeStore,
@@ -16,7 +15,11 @@ import type { TerminalBackendKind } from "@agenter/termless-core";
 
 import { readCliShellManagedState, type CliShellManagedState } from "./managed";
 import { CLI_SHELL_DEFAULT_AVATAR, CLI_SHELL_PRODUCT_ID, createCliShellProductRuntimeClient } from "./product";
-import { SHELL_ASSISTANT_DISPLAY_NAME, buildShellAssistantPromptSeed, shellAssistantMemoryRoles } from "./shell-assistant-seeds";
+import {
+  SHELL_ASSISTANT_DISPLAY_NAME,
+  buildShellAssistantPromptSeed,
+  shellAssistantMemoryRoles,
+} from "./shell-assistant-seeds";
 import type { CliShellTuiStore } from "./tui/types";
 
 export type CliShellAutoLoginResult =
@@ -24,9 +27,7 @@ export type CliShellAutoLoginResult =
   | { ok: false; reason: string; message: string };
 
 export interface CliShellStore extends ProductExtensionRuntimeStore {
-  autoLogin(): Promise<
-    CliShellAutoLoginResult
-  >;
+  autoLogin(): Promise<CliShellAutoLoginResult>;
   getAuthSession(): Promise<AuthSessionOutput | null>;
   setAuthToken(token: string | null | undefined): void;
   grantGlobalTerminalWriteLease(input: {
@@ -42,10 +43,7 @@ export interface CliShellStore extends ProductExtensionRuntimeStore {
 }
 
 export type CliShellInteractiveHostStore = CliShellStore &
-  Pick<
-    RuntimeStore,
-    "connect" | "disconnect" | "getState" | "hydrateSessionArtifacts" | "hydrateGlobalTerminals"
-  >;
+  Pick<RuntimeStore, "connect" | "disconnect" | "getState" | "hydrateSessionArtifacts" | "hydrateGlobalTerminals">;
 
 export type CliShellProductHostStore = CliShellInteractiveHostStore & CliShellTuiStore;
 
@@ -132,16 +130,16 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
   const session = await runtimeClient.ensureRuntime({
     workspacePath: input.workspacePath,
     avatarNickname: avatar.nickname,
-    autoStart: true,
+    autoStart: false,
   });
-  input.onProgress?.("observation-pending");
   const avatarActorId = toTerminalActorId(requireSessionAvatarPrincipalId(session));
 
   let promptSeeded = false;
   let memoryFiles: WorkspacePrivateTextAssetEnsureOutput[] = [];
   if (avatar.nickname === CLI_SHELL_DEFAULT_AVATAR) {
-    const prompt = await runtimeClient.ensurePromptSeedIfMissing({
-      sessionId: session.id,
+    const prompt = await runtimeClient.ensureAvatarPromptSeedIfMissing({
+      avatarPrincipalId: requireSessionAvatarPrincipalId(session),
+      workspacePath: input.workspacePath,
       kind: "agenter",
       seedContent: buildShellAssistantPromptSeed(),
     });
@@ -152,6 +150,8 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
       roles: [...shellAssistantMemoryRoles],
     });
   }
+  await runtimeClient.startRuntime(session.id);
+  input.onProgress?.("observation-pending");
 
   const shellTruthTerminal = await runtimeClient.ensureTerminalBinding({
     session,
@@ -163,7 +163,7 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
     },
     participantId: avatarActorId,
     participantLabel: avatar.displayName ?? avatar.nickname,
-    grantRole: "requester",
+    grantRole: "guard",
     focus: true,
     createInput: {
       processKind: "shell",
@@ -188,7 +188,7 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
     },
     participantId: avatarActorId,
     participantLabel: avatar.displayName ?? avatar.nickname,
-    grantRole: "requester",
+    grantRole: "guard",
     focus: true,
     createInput: {
       backend: input.backend,

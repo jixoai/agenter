@@ -12,7 +12,7 @@
 
 ## 2. 长期法则
 
-- product packages 通过 `client-sdk` 消费 runtime、room、terminal、attention、delegation projection；不得因为共仓开发就回退到 import server internals。
+- product packages 通过 `client-sdk` 消费 runtime、room、terminal、attention 与 TerminalSystem authorization projection；不得因为共仓开发就回退到 import server internals。
 - runtime store 只缓存或投影后端可观察事实；local view-model、toolbar state、product memory 不是 client-sdk 的 durable truth。
 - product-extension-runtime client 固定暴露 generic ensure/query/mutate surface；cli-shell-specific naming、managed UX、prompt policy 留在 product package。
 - typed router coupling 只允许服务于 shared contract discoverability；authority grammar 与 durable truth 始终由 server-side systems 拥有。

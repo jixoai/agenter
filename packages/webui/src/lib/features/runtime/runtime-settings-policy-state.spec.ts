@@ -24,8 +24,6 @@ const graph = {
     value: {
       lang: "zh-Hans",
       prompt: {
-        rootDir: "/repo/.agenter/prompts",
-        agenterPath: "/repo/.agenter/prompts/AGENTER.mdx",
         internalSystemPath: "/repo/.agenter/prompts/AGENTER_SYSTEM.mdx",
         systemTemplatePath: "/repo/.agenter/prompts/SYSTEM_TEMPLATE.mdx",
         responseContractPath: "/repo/.agenter/prompts/RESPONSE_CONTRACT.mdx",
@@ -115,11 +113,6 @@ describe("Feature: Runtime settings policy state", () => {
       retryResetOnExternalInput: true,
       retryResetOnProgress: false,
       lang: "zh-Hans",
-      promptRootDir: "/repo/.agenter/prompts",
-      promptAgenterPath: "/repo/.agenter/prompts/AGENTER.mdx",
-      promptAgenterSystemPath: "/repo/.agenter/prompts/AGENTER_SYSTEM.mdx",
-      promptSystemTemplatePath: "/repo/.agenter/prompts/SYSTEM_TEMPLATE.mdx",
-      promptResponseContractPath: "/repo/.agenter/prompts/RESPONSE_CONTRACT.mdx",
     });
   });
 
@@ -179,11 +172,6 @@ describe("Feature: Runtime settings policy state", () => {
         retryResetOnExternalInput: true,
         retryResetOnProgress: true,
         lang: "en",
-        promptRootDir: "/runtime/prompts",
-        promptAgenterPath: "/runtime/prompts/AGENTER.mdx",
-        promptAgenterSystemPath: "/runtime/prompts/AGENTER_SYSTEM.mdx",
-        promptSystemTemplatePath: "/runtime/prompts/SYSTEM_TEMPLATE.mdx",
-        promptResponseContractPath: "/runtime/prompts/RESPONSE_CONTRACT.mdx",
       },
     });
 
@@ -226,12 +214,35 @@ describe("Feature: Runtime settings policy state", () => {
       },
     });
     expect(parsed.lang).toBe("en");
-    expect(parsed.prompt).toMatchObject({
-      rootDir: "/runtime/prompts",
-      agenterPath: "/runtime/prompts/AGENTER.mdx",
-      internalSystemPath: "/runtime/prompts/AGENTER_SYSTEM.mdx",
-      systemTemplatePath: "/runtime/prompts/SYSTEM_TEMPLATE.mdx",
-      responseContractPath: "/runtime/prompts/RESPONSE_CONTRACT.mdx",
+    expect(parsed.prompt).toBeUndefined();
+  });
+
+  test("Scenario: Given legacy prompt path settings exist When writing runtime policy Then the editor removes them instead of preserving a stale prompt authority", () => {
+    const next = writeRuntimeSettingsPolicyLayer({
+      path: "/home/tester/.agenter/avatar/default/settings.json",
+      content:
+        '{\n  "prompt": {\n    "agenterPath": "/old/AGENTER.mdx",\n    "internalSystemPath": "/old/AGENTER_SYSTEM.mdx"\n  },\n  "ai": {\n    "providers": {\n      "default": {\n        "model": "deepseek-chat"\n      }\n    }\n  }\n}\n',
+      activeProviderId: "default",
+      draft: {
+        transportMaxRetries: null,
+        compactThresholdEnabled: true,
+        compactThresholdPromptFraction: 0.9,
+        compactOnAttentionRetry: true,
+        compactOnContextOverflow: true,
+        compactOnExternalContinuationLimit: false,
+        compactOnTimeout: false,
+        retryMaxAttempts: 5,
+        retryInitialBackoffMs: 800,
+        retryMultiplier: 1.8,
+        retryMaxBackoffMs: 12000,
+        retryResetOnExternalInput: true,
+        retryResetOnProgress: true,
+        lang: "en",
+      },
     });
+
+    const parsed = JSON.parse(next) as { prompt?: Record<string, unknown> };
+
+    expect(parsed.prompt).toBeUndefined();
   });
 });

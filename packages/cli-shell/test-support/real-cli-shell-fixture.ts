@@ -1,8 +1,11 @@
-import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
+import { createAgenterClient, createRuntimeStore, type RuntimeStore } from "@agenter/client-sdk";
+import { resolveWorkspaceAvatarAssetRoot } from "../../app-server/src";
+import { REAL_MODEL_PROJECT_ROOT, waitForRealValue } from "../../app-server/test-support/real-kernel-harness";
 import {
   canProxyRealModelConfig,
   resolveRealModelConfig,
@@ -10,9 +13,6 @@ import {
   type CachedModelProxyHandle,
   type RealModelConfig,
 } from "../../app-server/test-support/real-model-cache";
-import { waitForRealValue, REAL_MODEL_PROJECT_ROOT } from "../../app-server/test-support/real-kernel-harness";
-import { resolveWorkspaceAvatarAssetRoot } from "../../app-server/src";
-import { createAgenterClient, createRuntimeStore, type RuntimeStore } from "@agenter/client-sdk";
 
 import { startTrpcServer, type TrpcServerHandle } from "../../cli/src/trpc-server";
 import {
@@ -22,6 +22,8 @@ import {
   type CliShellBootstrapInput,
   type CliShellBootstrapResult,
 } from "../src";
+
+type CliShellApprovalRequest = Awaited<ReturnType<RuntimeStore["listGlobalTerminalApprovalRequests"]>>[number];
 
 const DEFAULT_TIMEOUT_MS = 240_000;
 const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
@@ -51,10 +53,7 @@ const findFreePort = async (): Promise<number> =>
     });
   });
 
-const writeProviderSettings = (input: {
-  homeDir: string;
-  config: RealModelConfig;
-}): void => {
+const writeProviderSettings = (input: { homeDir: string; config: RealModelConfig }): void => {
   const settingsPath = join(input.homeDir, ".agenter", "settings.json");
   mkdirSync(join(input.homeDir, ".agenter"), { recursive: true });
   writeFileSync(
@@ -143,15 +142,41 @@ export interface RealCliShellFixture {
     label: string;
     timeoutMs?: number;
   }) => Promise<{ messageId: number; content: string; senderActorId?: string; from: string; createdAt: number }>;
+  readShellTruthTerminal: (input?: {
+    mode?: "auto" | "diff" | "snapshot";
+    remark?: boolean;
+    recordActivity?: boolean;
+  }) => Promise<Awaited<ReturnType<RuntimeStore["readGlobalTerminal"]>>>;
+  readVisibleTerminal: (input?: {
+    mode?: "auto" | "diff" | "snapshot";
+    remark?: boolean;
+    recordActivity?: boolean;
+  }) => Promise<Awaited<ReturnType<RuntimeStore["readGlobalTerminal"]>>>;
+  createVisibleTerminalApprovalRequest: (input: {
+    text: string;
+    mode?: "raw" | "mixed";
+  }) => Promise<CliShellApprovalRequest>;
+  approveVisibleTerminalApprovalRequest: (input: {
+    requestId: string;
+    durationMs?: number;
+  }) => Promise<Awaited<ReturnType<RuntimeStore["approveGlobalTerminalRequest"]>>>;
+  listVisibleTerminalApprovalRequests: (input?: {
+    statuses?: CliShellApprovalRequest["status"][];
+  }) => Promise<CliShellApprovalRequest[]>;
+  denyVisibleTerminalApprovalRequest: (requestId: string) => Promise<unknown>;
+  expireVisibleTerminalApprovalRequest: (requestId: string) => Promise<CliShellApprovalRequest>;
   requestManualCompact: (timeoutMs?: number) => Promise<{ cycleId: number }>;
   reconnect: () => Promise<CliShellBootstrapResult>;
   readMemoryPack: () => Record<string, string>;
   readPromptFile: () => string;
-  listRecentModelCalls: () => Promise<Awaited<ReturnType<TrpcServerHandle["kernel"]["inspectModelDebug"]>>["recentModelCalls"]>;
+  listRecentModelCalls: () => Promise<
+    Awaited<ReturnType<TrpcServerHandle["kernel"]["inspectModelDebug"]>>["recentModelCalls"]
+  >;
   stop: () => Promise<void>;
 }
 
-export const resolveRealCliShellModelConfig = (): RealModelConfig | null => resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT);
+export const resolveRealCliShellModelConfig = (): RealModelConfig | null =>
+  resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT);
 
 const isRetryableBootstrapError = (error: unknown): boolean =>
   error instanceof Error && error.message.includes(RETRYABLE_BOOTSTRAP_ERROR);
@@ -238,8 +263,21 @@ export const createRealCliShellFixture = async (): Promise<RealCliShellFixture |
       limit: 200,
     }).items;
 
+  const resolveAssistantActorId = (): string => attached.avatarActorId;
+
   const countAssistantRoomMessages = () =>
-    readRoomMessages().filter((message) => message.senderActorId === attached.avatar.avatarPrincipalId).length;
+    readRoomMessages().filter((message) => message.senderActorId === resolveAssistantActorId()).length;
+
+  const resolveVisibleTerminalGuardAccessToken = async (): Promise<string> => {
+    const grants = await connection.store.listGlobalTerminalGrants(attached.visibleTerminal.entry.terminalId);
+    const grant = grants.find(
+      (candidate) => candidate.participantId === resolveAssistantActorId() && candidate.role === "guard",
+    );
+    if (!grant?.accessToken) {
+      throw new Error(`expected visible terminal guard grant for ${resolveAssistantActorId()}`);
+    }
+    return grant.accessToken;
+  };
 
   return {
     rootDir,
@@ -252,7 +290,7 @@ export const createRealCliShellFixture = async (): Promise<RealCliShellFixture |
     store: connection.store,
     roomChatId: attached.room.entry.chatId,
     roomAccessToken: attached.room.entry.accessToken,
-    assistantActorId: attached.avatar.avatarPrincipalId ?? "",
+    assistantActorId: resolveAssistantActorId(),
     writeWorkspaceFile: (relativePath, content) => {
       const absolutePath = join(workspacePath, relativePath);
       mkdirSync(dirname(absolutePath), { recursive: true });
@@ -308,7 +346,9 @@ export const createRealCliShellFixture = async (): Promise<RealCliShellFixture |
       }
       return await waitForRealValue(
         () => {
-          const next = readRoomMessages().find((message) => message.messageId > beforeMessageId && message.content === content);
+          const next = readRoomMessages().find(
+            (message) => message.messageId > beforeMessageId && message.content === content,
+          );
           return next
             ? {
                 messageId: next.messageId,
@@ -327,7 +367,9 @@ export const createRealCliShellFixture = async (): Promise<RealCliShellFixture |
     waitForAssistantRoomMessage: async (input) =>
       await waitForRealValue(
         () => {
-          const assistantMessages = readRoomMessages().filter((message) => message.senderActorId === attached.avatar.avatarPrincipalId);
+          const assistantMessages = readRoomMessages().filter(
+            (message) => message.senderActorId === resolveAssistantActorId(),
+          );
           const message = assistantMessages[input.afterCount];
           return message
             ? {
@@ -344,6 +386,81 @@ export const createRealCliShellFixture = async (): Promise<RealCliShellFixture |
           timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         },
       ),
+    readShellTruthTerminal: async (input = {}) =>
+      await connection.store.readGlobalTerminal({
+        terminalId: attached.shellTruthTerminal.entry.terminalId,
+        mode: input.mode ?? "snapshot",
+        remark: input.remark ?? false,
+        recordActivity: input.recordActivity ?? false,
+      }),
+    readVisibleTerminal: async (input = {}) =>
+      await connection.store.readGlobalTerminal({
+        terminalId: attached.visibleTerminal.entry.terminalId,
+        mode: input.mode ?? "snapshot",
+        remark: input.remark ?? false,
+        recordActivity: input.recordActivity ?? false,
+      }),
+    createVisibleTerminalApprovalRequest: async (input) => {
+      const terminalId = attached.visibleTerminal.entry.terminalId;
+      const accessToken = await resolveVisibleTerminalGuardAccessToken();
+      const result =
+        input.mode === "mixed"
+          ? await connection.store.inputGlobalTerminal({
+              terminalId,
+              accessToken,
+              text: input.text,
+              createApprovalRequest: true,
+              returnRead: false,
+            })
+          : await connection.store.writeGlobalTerminal({
+              terminalId,
+              accessToken,
+              text: input.text,
+              createApprovalRequest: true,
+              returnRead: false,
+            });
+      if (result.ok || !("approvalRequest" in result) || !result.approvalRequest) {
+        throw new Error(`expected guard approval request, got ${JSON.stringify(result)}`);
+      }
+      return result.approvalRequest;
+    },
+    approveVisibleTerminalApprovalRequest: async (input) =>
+      await connection.store.approveGlobalTerminalRequest({
+        terminalId: attached.visibleTerminal.entry.terminalId,
+        requestId: input.requestId,
+        durationMs: input.durationMs ?? 60_000,
+      }),
+    listVisibleTerminalApprovalRequests: async (input = {}) =>
+      await connection.store.listGlobalTerminalApprovalRequests({
+        terminalId: attached.visibleTerminal.entry.terminalId,
+        statuses: input.statuses,
+      }),
+    denyVisibleTerminalApprovalRequest: async (requestId) =>
+      await connection.store.denyGlobalTerminalRequest({
+        terminalId: attached.visibleTerminal.entry.terminalId,
+        requestId,
+      }),
+    expireVisibleTerminalApprovalRequest: async (requestId) => {
+      const terminalId = attached.visibleTerminal.entry.terminalId;
+      await connection.store.stopGlobalTerminal({ terminalId });
+      const bootstrapped = await connection.store.bootstrapGlobalTerminal({ terminalId });
+      if (!bootstrapped.ok) {
+        throw new Error(`expected visible terminal bootstrap after expiry, got ${bootstrapped.message}`);
+      }
+      return await waitForRealValue(
+        async () => {
+          const requests = await connection.store.listGlobalTerminalApprovalRequests({
+            terminalId,
+            statuses: ["expired"],
+          });
+          return requests.find((request) => request.requestId === requestId) ?? null;
+        },
+        {
+          label: "expired visible terminal approval request",
+          timeoutMs: DEFAULT_TIMEOUT_MS,
+        },
+      );
+    },
     requestManualCompact: async (timeoutMs) => {
       const lastCycleId =
         handle.kernel
@@ -355,14 +472,16 @@ export const createRealCliShellFixture = async (): Promise<RealCliShellFixture |
       const cycle = await waitForRealValue(
         () => {
           return (
-            handle.kernel.listChatCycles(attached.session.id, 40).find(
-              (entry) =>
-                entry.kind === "compact" &&
-                entry.compactTrigger === "manual" &&
-                entry.status === "done" &&
-                typeof entry.cycleId === "number" &&
-                entry.cycleId > lastCycleId,
-            ) ?? null
+            handle.kernel
+              .listChatCycles(attached.session.id, 40)
+              .find(
+                (entry) =>
+                  entry.kind === "compact" &&
+                  entry.compactTrigger === "manual" &&
+                  entry.status === "done" &&
+                  typeof entry.cycleId === "number" &&
+                  entry.cycleId > lastCycleId,
+              ) ?? null
           );
         },
         {
@@ -408,7 +527,9 @@ export const createRealCliShellFixture = async (): Promise<RealCliShellFixture |
       );
     },
     readPromptFile: () => {
-      const promptPath = join(homeDir, ".agenter", "avatars", "by-nickname", CLI_SHELL_DEFAULT_AVATAR, "AGENTER.mdx");
+      const promptPath = attached.session.avatarPrincipalId
+        ? join(homeDir, ".agenter", "avatars", "by-principal", attached.session.avatarPrincipalId, "AGENTER.mdx")
+        : "";
       return existsSync(promptPath) ? readFileSync(promptPath, "utf8") : "";
     },
     listRecentModelCalls: async () => (await handle.kernel.inspectModelDebug(attached.session.id)).recentModelCalls,

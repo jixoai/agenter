@@ -28,7 +28,7 @@ import {
 } from "../tui/live-terminal-mirror";
 import { buildCliShellTuiModel } from "../tui/model";
 import { resolvePublishedComposedSurface, snapshotsShareVisibleBody } from "../tui/app-projection";
-import { buildCliShellComposedSurface } from "../tui/composed-surface";
+import { buildCliShellComposedSurface, toProductTerminalComposedSurface } from "../tui/composed-surface";
 import { createCliShellPerfTracer, type CliShellPerfTracer } from "../tui/perf-trace";
 import type {
   CliShellComposedSurfaceState,
@@ -332,7 +332,7 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
     void input.store
       .publishGlobalTerminalComposedSurface({
         terminalId: context.model.terminalId,
-        surface,
+        surface: toProductTerminalComposedSurface(surface),
       })
       .then(() => {
         localComposedInteractionDirty = false;

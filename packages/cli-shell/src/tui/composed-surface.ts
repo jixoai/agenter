@@ -2,7 +2,7 @@ import type { ProductTerminalComposedSurfaceState } from "@agenter/client-sdk";
 
 import { layoutCliShellTuiFrame, resolveCliShellTerminalRegion } from "./frame";
 import { resolveVisibleCursorCellPosition } from "./native-projection";
-import type { CliShellTuiModel } from "./types";
+import type { CliShellComposedSurfaceState, CliShellTuiModel } from "./types";
 
 export const buildCliShellComposedSurface = (input: {
   shellTerminalId: string;
@@ -10,7 +10,7 @@ export const buildCliShellComposedSurface = (input: {
   model: CliShellTuiModel;
   width: number;
   height: number;
-}): ProductTerminalComposedSurfaceState => {
+}): CliShellComposedSurfaceState => {
   const frame = layoutCliShellTuiFrame({
     model: input.model,
     width: input.width,
@@ -65,3 +65,23 @@ export const buildCliShellComposedSurface = (input: {
     },
   };
 };
+
+export const toProductTerminalComposedSurface = (
+  surface: CliShellComposedSurfaceState,
+): ProductTerminalComposedSurfaceState => ({
+  shellTerminalId: surface.shellTerminalId,
+  terminalId: surface.terminalId,
+  seq: surface.shellSnapshotSeq,
+  cols: surface.cols,
+  rows: surface.rows,
+  lines: [...surface.terminalLines],
+  richLines: surface.terminalRichLines?.map((line) => ({
+    spans: line.spans.map((span) => ({ ...span })),
+  })),
+  selectionSources: surface.selectionSources?.map((source) => ({ ...source })),
+  cursor: { ...surface.cursor },
+  scrollback: { ...surface.scrollback },
+  metadata: {
+    cliShellFrame: true,
+  },
+});

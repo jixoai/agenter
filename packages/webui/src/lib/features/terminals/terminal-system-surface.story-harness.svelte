@@ -27,7 +27,7 @@
 
 	type StorySeatGrantSeed = {
 		participantId: string;
-		role: 'admin' | 'writer' | 'requester' | 'readonly';
+		role: 'admin' | 'writer' | 'guard' | 'readonly';
 	};
 
 	const actorCatalog: ActorDirectoryEntry[] = [
@@ -554,7 +554,7 @@
 
 	const handleGrantSeat = async (input: {
 		participantId: string;
-		role: 'admin' | 'writer' | 'requester' | 'readonly';
+		role: 'admin' | 'writer' | 'guard' | 'readonly';
 	}): Promise<void> => {
 		const terminal = selectedTerminal;
 		if (!terminal) {
@@ -705,7 +705,7 @@
 		}
 		const lease = (terminalSeatStatesById[terminal.terminalId] ?? []).find((seat) => seat.actorId === caller.participantId)
 			?.leaseExpiresAt;
-		if (writeBehavior === 'approval' || (caller.role === 'requester' && (!lease || lease <= Date.now()))) {
+		if (writeBehavior === 'approval' || (caller.role === 'guard' && (!lease || lease <= Date.now()))) {
 			const requestId = `approval-${Date.now()}`;
 			terminalApprovalsById = {
 				...terminalApprovalsById,

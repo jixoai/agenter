@@ -14,7 +14,6 @@ import {
   productAttentionProjectionSchema,
   productAttentionSettleInputSchema,
   productCommandDescriptorSchema,
-  productDelegationCreateInputSchema,
   productPrivateTextAssetEnsureInputSchema,
 } from "../src";
 
@@ -43,13 +42,13 @@ describe("Feature: product extension runtime contracts", () => {
         interactive: true,
         foregroundProcess: true,
         requiresDaemon: true,
-        runtimePlanes: ["launch", "resources", "assistant", "attention", "delegation"],
+        runtimePlanes: ["launch", "resources", "assistant", "attention"],
       },
     });
 
     expect(descriptor.sourcePolicy.resolutionOrder).toEqual(["workspace", "installed", "remote"]);
     expect(descriptor.bin.mainExport).toBe("runCliShell");
-    expect(descriptor.capabilityHints.runtimePlanes).toContain("delegation");
+    expect(descriptor.capabilityHints.runtimePlanes).not.toContain("delegation");
   });
 
   test("Scenario: Given product-owned resource metadata When matching bindings Then product identity stays generic and cli-shell naming stays outside core law", () => {
@@ -69,28 +68,6 @@ describe("Feature: product extension runtime contracts", () => {
     expect(PRODUCT_HOSTING_ENABLED_SCORES).toEqual({ hosting: 1000 });
     expect(PRODUCT_HOSTING_DISABLED_SCORES).toEqual({ hosting: 0 });
     expect(PRODUCT_HOSTING_USER_DISABLED_REASON).toBe("user_disabled");
-  });
-
-  test("Scenario: Given a generic product delegation record When the contract is parsed Then write-capable provenance stays explicit and reusable by future products", () => {
-    const record = productDelegationCreateInputSchema.parse({
-      productId: "cli-shell",
-      resourceKey: "shell-1",
-      runtimeId: "runtime-shell-assistant",
-      avatarActorId: "auth:shell-assistant",
-      grantedByActorId: "auth:superadmin",
-      terminalId: "shell-1",
-      roomId: "room-shell-1",
-      enabledAt: 1_710_000_000_000,
-      expiresAt: 1_710_000_360_000,
-      policy: { mode: "write" },
-      provenance: {
-        source: "product-extension-runtime",
-        attentionContextId: "ctx-hosting-shell-1",
-      },
-    });
-
-    expect(record.policy.mode).toBe("write");
-    expect(record.provenance.attentionContextId).toBe("ctx-hosting-shell-1");
   });
 
   test("Scenario: Given product-owned attention projections When parsing them Then heartbeat unread terminal and lifecycle facts stay product-scoped data", () => {

@@ -1,12 +1,12 @@
 import { homedir } from "node:os";
-import { basename, isAbsolute, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 
-import { resolveAvatarPromptPaths, resolveAvatarSources } from "@agenter/avatar";
+import { resolveGlobalAvatarCanonicalRoot, resolveAvatarPromptPaths, resolveAvatarSources } from "@agenter/avatar";
 import {
   loadSettings,
-  type AiApiStandard,
   resolveLoopCompactPolicy,
   resolveLoopRetryPolicy,
+  type AiApiStandard,
   type ResolvedLoopCompactPolicy,
   type ResolvedLoopRetryPolicy,
   type TerminalBootEntry,
@@ -15,6 +15,8 @@ import {
 import { resolveDefaultInteractiveShellCommand } from "@agenter/terminal-system";
 
 import { DEFAULT_LANGUAGE, resolveLanguage } from "./i18n";
+import { resolveWorkspaceAvatarCanonicalRoot } from "./workspace-system";
+import { toWorkspacePath } from "./workspace-target";
 
 export interface SessionTerminalConfig {
   terminalId: string;
@@ -36,10 +38,11 @@ export interface ResolvedSessionConfig {
   agentCwd: string;
   prompt: {
     rootDir?: string;
+    publicRootDir?: string;
+    privateRootDir?: string;
+    globalPublicRootDir?: string;
+    globalPrivateRootDir?: string;
     agenterPath?: string;
-    agenterSystemPath?: string;
-    systemTemplatePath?: string;
-    responseContractPath?: string;
   };
   ai: {
     providerId: string;
@@ -167,6 +170,7 @@ export const resolveSessionConfig = async (
   cwd: string,
   options: {
     avatar?: string;
+    avatarPrincipalId?: string;
     homeDir?: string;
   } = {},
 ): Promise<ResolvedSessionConfig> => {
@@ -221,13 +225,22 @@ export const resolveSessionConfig = async (
   const bootTerminals = normalizeBootEntries(settings.features?.terminal?.bootTerminals, terminals, primaryTerminalId);
   const focusedTerminalIds = bootTerminals.filter((entry) => entry.focus).map((entry) => entry.terminalId);
 
-  const prompt = settings.prompt ?? {};
   const avatar = resolveAvatarSources({
     nickname: settings.avatar,
+    principalId: options.avatarPrincipalId,
     homeDir,
   });
   const avatarPromptPaths = resolveAvatarPromptPaths(avatar);
-  const promptRoot = prompt.rootDir ? toAbsolute(prompt.rootDir, cwd) : avatar.sources.at(-1)?.path;
+  const globalPrivateRoot = options.avatarPrincipalId
+    ? resolveGlobalAvatarCanonicalRoot(options.avatarPrincipalId, homeDir)
+    : avatar.sources.at(-1)?.path;
+  const workspacePath = toWorkspacePath(cwd, homeDir);
+  const workspacePrivateRoot = options.avatarPrincipalId
+    ? resolveWorkspaceAvatarCanonicalRoot(workspacePath, options.avatarPrincipalId, homeDir)
+    : undefined;
+  const promptRoot = workspacePrivateRoot ?? globalPrivateRoot;
+  const publicRootDir = resolve(cwd, ".agenter");
+  const globalPublicRootDir = join(homeDir, ".agenter");
   const ai = settings.ai ?? {};
   const providers = ai.providers ?? {};
   const defaultProviderId = ai.activeProvider ?? Object.keys(providers)[0] ?? "default";
@@ -252,10 +265,11 @@ export const resolveSessionConfig = async (
     agentCwd,
     prompt: {
       rootDir: promptRoot,
-      agenterPath: prompt.agenterPath ?? avatarPromptPaths.AGENTER,
-      agenterSystemPath: prompt.internalSystemPath ?? avatarPromptPaths.AGENTER_SYSTEM,
-      systemTemplatePath: prompt.systemTemplatePath ?? avatarPromptPaths.SYSTEM_TEMPLATE,
-      responseContractPath: prompt.responseContractPath ?? avatarPromptPaths.RESPONSE_CONTRACT,
+      publicRootDir,
+      privateRootDir: promptRoot,
+      globalPublicRootDir,
+      globalPrivateRootDir: globalPrivateRoot,
+      agenterPath: promptRoot ? join(promptRoot, "AGENTER.mdx") : avatarPromptPaths.AGENTER,
     },
     ai: {
       providerId: defaultProviderId,

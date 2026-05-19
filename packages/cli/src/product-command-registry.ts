@@ -18,7 +18,7 @@ const productCommandDescriptors = [
       interactive: true,
       foregroundProcess: true,
       requiresDaemon: true,
-      runtimePlanes: ["launch", "resources", "assistant", "attention", "delegation"],
+      runtimePlanes: ["launch", "resources", "assistant", "attention"],
     },
   }),
 ] as const satisfies readonly ProductCommandDescriptor[];

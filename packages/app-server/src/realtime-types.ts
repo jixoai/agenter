@@ -5,7 +5,7 @@ import type { SessionRuntimeSnapshot } from "./session-runtime";
 
 export const APP_PROTOCOL_VERSION = 1 as const;
 
-export const settingsKindSchema = z.enum(["settings", "agenter", "system", "template", "contract"]);
+export const settingsKindSchema = z.enum(["settings", "agenter"]);
 export type SettingsKind = z.infer<typeof settingsKindSchema>;
 
 export interface RuntimeSnapshotPayload {
@@ -52,6 +52,7 @@ export type RuntimeEventType =
   | "terminal.snapshot"
   | "terminal.status"
   | "terminal.surface.updated"
+  | "terminal.permissionRequest"
   | "message.room.updated"
   | "workspace.avatarCatalog.updated"
   | "task.updated"

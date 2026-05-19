@@ -21,6 +21,6 @@ Session runtimes SHALL record terminal-event refs, focus bindings, and approval-
 When a session actor is one of the administrators for a terminal, terminal approval requests MAY be projected into that session's attention system for handling, but the approval request lifecycle SHALL remain owned by the terminal authority.
 
 #### Scenario: Session admin receives approval work through attention
-- **WHEN** a session actor is configured as a terminal admin and a requester creates a write approval request
+- **WHEN** a session actor is configured as a terminal admin and a guard creates a write approval request
 - **THEN** the session may receive an attention item pointing to that request
 - **THEN** the terminal authority still owns the canonical approval status and timeout

@@ -24,43 +24,17 @@ export const resolveSnapshotRichLines = (
   }));
 };
 
-const readComposedMetadataString = (
-  entry: GlobalTerminalEntry | null,
-  key:
-    | "composedBottomLine"
-    | "composedDialogueDraft"
-    | "composedManagedLabel"
-    | "composedUnreadLabel"
-    | "composedHeartbeatLabel",
-): string | null => {
-  const value = entry?.metadata?.[key];
-  return typeof value === "string" ? value : null;
-};
-
-const readComposedMetadataPlacement = (
-  entry: GlobalTerminalEntry | null,
-): "left" | "right" | "floating" | null => {
-  const value = entry?.metadata?.composedDialoguePlacement;
-  return value === "left" || value === "right" || value === "floating" ? value : null;
-};
-
 const readComposedMetadataShellSnapshotSeq = (
   entry: GlobalTerminalEntry | null,
   fallback: number,
 ): number => {
-  const value = entry?.metadata?.composedShellSnapshotSeq;
+  const value = entry?.metadata?.composedFrameSeq;
   return typeof value === "number" && Number.isInteger(value) ? value : fallback;
 };
 
 const hasExplicitComposedMetadata = (entry: GlobalTerminalEntry | null): boolean =>
-  entry?.metadata?.composedDialogueOpen === true ||
-  typeof entry?.metadata?.composedDialoguePlacement === "string" ||
-  typeof entry?.metadata?.composedDialogueDraft === "string" ||
-  typeof entry?.metadata?.composedBottomLine === "string" ||
-  typeof entry?.metadata?.composedManagedLabel === "string" ||
-  typeof entry?.metadata?.composedUnreadLabel === "string" ||
-  typeof entry?.metadata?.composedHeartbeatLabel === "string" ||
-  typeof entry?.metadata?.composedShellSnapshotSeq === "number" ||
+  typeof entry?.metadata?.composedFrameSeq === "number" ||
+  typeof entry?.metadata?.composedFrameMetadata === "object" ||
   Array.isArray(entry?.metadata?.composedSelectionSources);
 
 const readComposedSelectionSource = (
@@ -131,13 +105,13 @@ export const resolvePublishedComposedSurface = (input: {
     shellSnapshotSeq: readComposedMetadataShellSnapshotSeq(entry, input.shellSnapshotSeqFallback),
     cols: snapshot.cols,
     rows: snapshot.rows,
-    bottomLine: readComposedMetadataString(entry, "composedBottomLine") ?? snapshot.lines.at(-1) ?? "",
-    dialogueOpen: entry.metadata?.composedDialogueOpen === true,
-    dialoguePlacement: readComposedMetadataPlacement(entry),
-    dialogueDraft: readComposedMetadataString(entry, "composedDialogueDraft") ?? "",
-    managedLabel: readComposedMetadataString(entry, "composedManagedLabel") ?? "",
-    unreadLabel: readComposedMetadataString(entry, "composedUnreadLabel") ?? "",
-    heartbeatLabel: readComposedMetadataString(entry, "composedHeartbeatLabel") ?? "",
+    bottomLine: snapshot.lines.at(-1) ?? "",
+    dialogueOpen: false,
+    dialoguePlacement: null,
+    dialogueDraft: "",
+    managedLabel: "",
+    unreadLabel: "",
+    heartbeatLabel: "",
     terminalLines: [...snapshot.lines],
     terminalRichLines:
       snapshot.richLines?.map((line) => ({

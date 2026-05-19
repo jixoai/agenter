@@ -23,8 +23,8 @@ export type TerminalFocusOp = "add" | "remove" | "replace" | "clear";
 export type TerminalReadMode = "auto" | "diff" | "snapshot";
 export type TerminalAwaitUntil = "changed" | "idle" | "match" | "absent";
 export type TerminalAwaitOutcome = "changed" | "idle" | "matched" | "absent" | "timeout" | "stopped" | "cancelled";
-export type TerminalGrantRole = "admin" | "writer" | "requester" | "readonly";
-export type TerminalManagedSeatClass = "RO" | "RW" | "TM";
+export type TerminalGrantRole = "admin" | "writer" | "guard" | "readonly";
+export type TerminalManagedSeatClass = "RO" | "GUARD" | "RW" | "TM";
 export type TerminalApprovalStatus = "pending" | "approved" | "denied" | "expired";
 export type TerminalRendererPreference = "auto" | "ghostty-web" | "wterm" | "xterm";
 export type TerminalResolvedRenderer = "ghostty-web" | "wterm" | "xterm";
@@ -344,6 +344,11 @@ export interface TerminalApprovalRequestRecord {
   leaseId?: string;
 }
 
+export interface TerminalApprovalRequestEvent {
+  terminalId: string;
+  request: TerminalApprovalRequestRecord;
+}
+
 export interface TerminalWriteLeaseRecord {
   leaseId: string;
   terminalId: string;
@@ -403,7 +408,7 @@ export interface TerminalIssueGrantInput {
 
 export interface TerminalManagedSeatPayload {
   seatClass: TerminalManagedSeatClass;
-  role: Exclude<TerminalGrantRole, "requester">;
+  role: TerminalGrantRole;
   label?: string;
   adminCandidateRank?: number | null;
 }
@@ -510,23 +515,16 @@ export interface TerminalPatchInput {
   metadata?: Record<string, unknown>;
 }
 
-export interface TerminalComposedProductSurfaceState {
+export interface TerminalComposedFrameSurfaceState {
   shellTerminalId: string;
   terminalId: string;
-  shellSnapshotSeq: number;
   cols: number;
   rows: number;
-  bottomLine: string;
-  dialogueOpen: boolean;
-  dialoguePlacement: "left" | "right" | "floating" | null;
-  dialogueDraft: string;
-  managedLabel: string;
-  unreadLabel: string;
-  heartbeatLabel: string;
-  terminalLines: string[];
-  terminalRichLines?: ManagedTerminalSnapshot["richLines"];
+  seq?: number;
+  lines: string[];
+  richLines?: ManagedTerminalSnapshot["richLines"];
   selectionSources?: Array<{
-    owner: "terminal" | "dialogue";
+    owner: string;
     row: number;
     col: number;
     width: number;
@@ -535,7 +533,10 @@ export interface TerminalComposedProductSurfaceState {
   }>;
   cursor: ManagedTerminalSnapshot["cursor"];
   scrollback: ManagedTerminalSnapshot["scrollback"];
+  metadata?: Record<string, unknown>;
 }
+
+export type TerminalComposedProductSurfaceState = TerminalComposedFrameSurfaceState;
 
 export interface TerminalConfigView {
   terminalId: string;

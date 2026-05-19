@@ -91,6 +91,7 @@ import {
   type TerminalControlPlaneConfig,
   type TerminalControlPlaneConfigPatch,
   type TerminalControlPlaneEntry,
+  type TerminalApprovalRequestRecord,
   type TerminalInvitationRecord,
   type TerminalManagedSeatClass,
   type TerminalPatchInput,
@@ -947,6 +948,12 @@ const buildRuntimeWatchReminderPresentation = (input: {
 };
 
 type TerminalReadPayload = ControlPlaneTerminalReadResult | { ok: false; reason: string };
+type RuntimeTerminalWriteResult = {
+  ok: boolean;
+  message: string;
+  read?: TerminalReadPayload;
+  approvalRequest?: TerminalApprovalRequestRecord;
+};
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException
@@ -4071,7 +4078,7 @@ export class SessionRuntime {
     returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
     readRecordActivity?: boolean;
     readMode?: "auto" | "diff" | "snapshot";
-  }): Promise<{ ok: boolean; message: string; read?: TerminalReadPayload }> {
+  }): Promise<RuntimeTerminalWriteResult> {
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(input.terminalId)) {
       const remoteSeat = this.resolveStoredTerminalSeat(input.terminalId);
@@ -4093,6 +4100,7 @@ export class SessionRuntime {
             returnRead: input.returnRead,
             readRecordActivity: input.readRecordActivity,
             readMode: input.readMode,
+            createApprovalRequest: true,
           },
         });
         return {
@@ -4114,6 +4122,7 @@ export class SessionRuntime {
         readRecordActivity: input.readRecordActivity,
         readMode: input.readMode,
         actorId: this.terminalActorId,
+        createApprovalRequest: true,
       });
       if (result.ok) {
         this.appendTerminalActivity({
@@ -4129,7 +4138,12 @@ export class SessionRuntime {
               },
         });
       }
-      return { ok: result.ok, message: result.message, ...(result.read ? { read: result.read } : {}) };
+      return {
+        ok: result.ok,
+        message: result.message,
+        ...(result.read ? { read: result.read } : {}),
+        ...(result.approvalRequest ? { approvalRequest: result.approvalRequest } : {}),
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.emit("error", { message: `terminal write failed (${input.terminalId}): ${message}` });
@@ -4143,7 +4157,7 @@ export class SessionRuntime {
     returnRead?: boolean | { throttleMs?: number; debounceMs?: number };
     readRecordActivity?: boolean;
     readMode?: "auto" | "diff" | "snapshot";
-  }): Promise<{ ok: boolean; message: string; read?: TerminalReadPayload }> {
+  }): Promise<RuntimeTerminalWriteResult> {
     const controlPlane = this.requireTerminalControlPlane();
     if (!controlPlane.has(input.terminalId)) {
       const remoteSeat = this.resolveStoredTerminalSeat(input.terminalId);
@@ -4165,6 +4179,7 @@ export class SessionRuntime {
             returnRead: input.returnRead,
             readRecordActivity: input.readRecordActivity,
             readMode: input.readMode,
+            createApprovalRequest: true,
           },
         });
         return {
@@ -4186,6 +4201,7 @@ export class SessionRuntime {
         readRecordActivity: input.readRecordActivity,
         readMode: input.readMode,
         actorId: this.terminalActorId,
+        createApprovalRequest: true,
       });
       if (result.ok) {
         this.appendTerminalActivity({
@@ -4201,7 +4217,12 @@ export class SessionRuntime {
               },
         });
       }
-      return { ok: result.ok, message: result.message, ...(result.read ? { read: result.read } : {}) };
+      return {
+        ok: result.ok,
+        message: result.message,
+        ...(result.read ? { read: result.read } : {}),
+        ...(result.approvalRequest ? { approvalRequest: result.approvalRequest } : {}),
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.emit("error", { message: `terminal input failed (${input.terminalId}): ${message}` });
@@ -7097,6 +7118,7 @@ export class SessionRuntime {
     this.terminalControlPlane.setActorPresence(this.terminalActorId, true);
     this.config = await resolveSessionConfig(this.options.cwd, {
       avatar: this.options.avatar,
+      avatarPrincipalId: this.options.avatarPrincipalId,
       homeDir: this.getHomeDir(),
     });
     this.focusedTerminalIds = this.requireTerminalControlPlane().getFocusedTerminalIds(this.terminalActorId);
@@ -7126,9 +7148,6 @@ export class SessionRuntime {
     }
     this.settingsEditor = new SettingsEditor(this.config.agentCwd, {
       agenterPath: this.config.prompt.agenterPath,
-      agenterSystemPath: this.config.prompt.agenterSystemPath,
-      systemTemplatePath: this.config.prompt.systemTemplatePath,
-      responseContractPath: this.config.prompt.responseContractPath,
     });
     await this.reloadSettingsLayers();
     try {
@@ -8029,7 +8048,7 @@ export class SessionRuntime {
   }
 
   listEditableKinds(): EditableKind[] {
-    return ["settings", "agenter", "system", "template", "contract"];
+    return ["settings", "agenter"];
   }
 
   getSettingsLayers(): SettingsLayersResult {
@@ -8114,6 +8133,7 @@ export class SessionRuntime {
     const previousConfigPayload = this.buildPersistedModelConfigPayload();
     const nextConfig = await resolveSessionConfig(this.options.cwd, {
       avatar: this.options.avatar,
+      avatarPrincipalId: this.options.avatarPrincipalId,
       homeDir: this.getHomeDir(),
     });
     const promptStore = this.createPromptStore(nextConfig);
@@ -10991,10 +11011,11 @@ export class SessionRuntime {
     return new FilePromptStore({
       lang: config.lang,
       rootDir: config.prompt.rootDir,
+      publicRootDir: config.prompt.publicRootDir,
+      privateRootDir: config.prompt.privateRootDir,
+      globalPublicRootDir: config.prompt.globalPublicRootDir,
+      globalPrivateRootDir: config.prompt.globalPrivateRootDir,
       agenterPath: config.prompt.agenterPath,
-      agenterSystemPath: config.prompt.agenterSystemPath,
-      systemTemplatePath: config.prompt.systemTemplatePath,
-      responseContractPath: config.prompt.responseContractPath,
       loader: resourceLoader,
     });
   }

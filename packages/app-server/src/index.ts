@@ -271,6 +271,7 @@ export {
   normalizeWorkspaceGrantSubjectPath,
   normalizeWorkspaceRuntimePath,
   resolveWorkspaceAvatarAssetRoot,
+  resolveWorkspaceAvatarCanonicalRoot,
   resolveWorkspaceAvatarPrivateRoot,
   resolveWorkspaceAvatarSeatPath,
   resolveWorkspaceGrantMode,

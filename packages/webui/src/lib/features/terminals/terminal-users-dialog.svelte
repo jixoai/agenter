@@ -89,7 +89,7 @@
 	);
 	const roleItems = [
 		{ value: 'writer', label: 'writer' },
-		{ value: 'requester', label: 'requester' },
+		{ value: 'guard', label: 'guard' },
 		{ value: 'readonly', label: 'readonly' },
 		{ value: 'admin', label: 'admin' },
 	] as const satisfies { value: TerminalSystemGrantRole; label: string }[];
@@ -178,7 +178,7 @@
 						<div class="grid gap-1">
 							<h3 class="text-sm font-semibold">Pending approvals</h3>
 							<p class="text-xs text-muted-foreground">
-								Requester seats can ask for temporary write approval without changing the durable seat list.
+									Guard seats can ask for temporary write approval without changing the durable seat list.
 							</p>
 						</div>
 						<div class="grid auto-rows-max gap-2.5">
@@ -312,7 +312,7 @@
 					<div class="grid gap-1">
 						<h3 class="text-sm font-semibold">Grant seat</h3>
 						<p class="text-xs text-muted-foreground">
-							Grant the smallest role the actor needs. Requester is the least-privileged write path.
+								Grant the smallest role the actor needs. Guard is the least-privileged write path.
 						</p>
 					</div>
 

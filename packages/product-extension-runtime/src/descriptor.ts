@@ -23,7 +23,7 @@ export type ProductSource = z.infer<typeof productSourceSchema>;
 
 export const defaultProductSourceOrder = ["workspace", "installed", "remote"] as const satisfies readonly ProductSource[];
 
-export const productLaunchPlaneSchema = z.enum(["launch", "resources", "assistant", "attention", "delegation"]);
+export const productLaunchPlaneSchema = z.enum(["launch", "resources", "assistant", "attention"]);
 export type ProductLaunchPlane = z.infer<typeof productLaunchPlaneSchema>;
 
 export const productBinDescriptorSchema = z.object({

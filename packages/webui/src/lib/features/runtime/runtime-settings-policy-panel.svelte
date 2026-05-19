@@ -46,11 +46,6 @@
 	let retryResetOnExternalInput = $state(false);
 	let retryResetOnProgress = $state(false);
 	let langValue = $state('');
-	let promptRootDirValue = $state('');
-	let promptAgenterPathValue = $state('');
-	let promptAgenterSystemPathValue = $state('');
-	let promptSystemTemplatePathValue = $state('');
-	let promptResponseContractPathValue = $state('');
 	let activeTab = $state<'transport' | 'compact' | 'retry' | 'prompt'>('transport');
 
 	const toInputValue = (value: number | null): string => (value === null ? '' : String(value));
@@ -71,11 +66,6 @@
 		retryResetOnExternalInput = binding.draft.retryResetOnExternalInput;
 		retryResetOnProgress = binding.draft.retryResetOnProgress;
 		langValue = toTextValue(binding.draft.lang);
-		promptRootDirValue = toTextValue(binding.draft.promptRootDir);
-		promptAgenterPathValue = toTextValue(binding.draft.promptAgenterPath);
-		promptAgenterSystemPathValue = toTextValue(binding.draft.promptAgenterSystemPath);
-		promptSystemTemplatePathValue = toTextValue(binding.draft.promptSystemTemplatePath);
-		promptResponseContractPathValue = toTextValue(binding.draft.promptResponseContractPath);
 	};
 
 	$effect(() => {
@@ -104,11 +94,6 @@
 			retryResetOnExternalInput,
 			retryResetOnProgress,
 			lang: parseRuntimeSettingsPolicyText(langValue),
-			promptRootDir: parseRuntimeSettingsPolicyText(promptRootDirValue),
-			promptAgenterPath: parseRuntimeSettingsPolicyText(promptAgenterPathValue),
-			promptAgenterSystemPath: parseRuntimeSettingsPolicyText(promptAgenterSystemPathValue),
-			promptSystemTemplatePath: parseRuntimeSettingsPolicyText(promptSystemTemplatePathValue),
-			promptResponseContractPath: parseRuntimeSettingsPolicyText(promptResponseContractPathValue),
 		});
 	};
 </script>
@@ -246,26 +231,6 @@
 				<div class="grid gap-2">
 					<Label for="runtime-policy-lang">Locale</Label>
 					<Input id="runtime-policy-lang" bind:value={langValue} placeholder="en / zh-Hans" />
-				</div>
-				<div class="grid gap-2">
-					<Label for="runtime-policy-prompt-root">Prompt root</Label>
-					<Input id="runtime-policy-prompt-root" bind:value={promptRootDirValue} placeholder="~/.agenter/prompts" />
-				</div>
-				<div class="grid gap-2">
-					<Label for="runtime-policy-agenter-path">AGENTER path</Label>
-					<Input id="runtime-policy-agenter-path" bind:value={promptAgenterPathValue} />
-				</div>
-				<div class="grid gap-2">
-					<Label for="runtime-policy-agenter-system-path">AGENTER_SYSTEM path</Label>
-					<Input id="runtime-policy-agenter-system-path" bind:value={promptAgenterSystemPathValue} />
-				</div>
-				<div class="grid gap-2">
-					<Label for="runtime-policy-system-template-path">SYSTEM_TEMPLATE path</Label>
-					<Input id="runtime-policy-system-template-path" bind:value={promptSystemTemplatePathValue} />
-				</div>
-				<div class="grid gap-2">
-					<Label for="runtime-policy-response-contract-path">RESPONSE_CONTRACT path</Label>
-					<Input id="runtime-policy-response-contract-path" bind:value={promptResponseContractPathValue} />
 				</div>
 			</div>
 		</Tabs.Content>

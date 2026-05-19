@@ -1,8 +1,6 @@
 import type {
   AttentionQueryItem,
   AuthSessionOutput,
-  GlobalTerminalActorId,
-  ProductDelegationRecord,
   ProductExtensionRuntimeStore,
 } from "@agenter/client-sdk";
 import {
@@ -19,24 +17,9 @@ type CliShellManagedStore = Pick<
   | "queryAttention"
   | "commitAttention"
   | "settleAttention"
-  | "listProductDelegations"
-  | "createProductDelegation"
-  | "revokeProductDelegation"
 > & {
   getAuthSession(): Promise<AuthSessionOutput | null>;
-  grantGlobalTerminalWriteLease(input: {
-    terminalId: string;
-    participantId: GlobalTerminalActorId;
-    durationMs: number;
-  }): Promise<{ leaseId: string; participantId: GlobalTerminalActorId; expiresAt: number }>;
-  revokeGlobalTerminalWriteLease(input: {
-    terminalId: string;
-    leaseId?: string;
-    participantId?: GlobalTerminalActorId;
-  }): Promise<{ ok: true; revokedCount: number }>;
 };
-
-export const CLI_SHELL_DEFAULT_DELEGATION_TTL_MS = 30 * 60 * 1_000;
 
 export interface CliShellManagedContext {
   sessionId: string;
@@ -51,7 +34,6 @@ export interface CliShellManagedEnableInput extends CliShellManagedContext {
   roomId: string;
   objective?: string;
   notes?: string;
-  delegationTtlMs?: number;
 }
 
 export interface CliShellManagedDisableInput extends CliShellManagedContext {
@@ -65,19 +47,16 @@ export interface CliShellManagedState {
   contextId: string;
   hostingMatches: AttentionQueryItem[];
   hostingActive: boolean;
-  activeDelegation: ProductDelegationRecord | null;
   managed: boolean;
 }
 
 export interface CliShellManagedEnableResult {
   contextId: string;
   grantedByActorId: string;
-  delegation: ProductDelegationRecord;
 }
 
 export interface CliShellManagedDisableResult {
   contextId: string;
-  revokedDelegations: ProductDelegationRecord[];
 }
 
 const resolveGrantedByActorId = (authSession: AuthSessionOutput | null): string => {
@@ -87,8 +66,6 @@ const resolveGrantedByActorId = (authSession: AuthSessionOutput | null): string 
   }
   return `auth:${authId}`;
 };
-
-const toTerminalActorId = (avatarActorId: string): GlobalTerminalActorId => avatarActorId as GlobalTerminalActorId;
 
 const buildManagedObjectiveBody = (input: {
   shellName: string;
@@ -129,13 +106,6 @@ const buildManagedDisableBody = (input: {
     .filter((line): line is string => Boolean(line))
     .join("\n");
 
-const resolveLatestActiveDelegation = (
-  delegations: readonly ProductDelegationRecord[],
-): ProductDelegationRecord | null =>
-  [...delegations]
-    .filter((record) => record.status === "active")
-    .sort((left, right) => right.enabledAt - left.enabledAt)[0] ?? null;
-
 export const buildCliShellHostingContextId = (shellName: string): string => `ctx-hosting-${shellName}`;
 
 export const readCliShellManagedState = async (input: {
@@ -147,19 +117,10 @@ export const readCliShellManagedState = async (input: {
 }): Promise<CliShellManagedState> => {
   const runtimeClient = input.store;
   const contextId = buildCliShellHostingContextId(input.shellName);
-  const [hostingMatches, delegations] = await Promise.all([
-    runtimeClient.queryAttention({
-      sessionId: input.sessionId,
-      query: `contextId:${contextId} minscore:1`,
-    }),
-    runtimeClient.listProductDelegations({
-      productId: CLI_SHELL_PRODUCT_ID,
-      resourceKey: input.shellName,
-      runtimeId: input.runtimeId,
-      avatarActorId: input.avatarActorId,
-    }),
-  ]);
-  const activeDelegation = resolveLatestActiveDelegation(delegations);
+  const hostingMatches = await runtimeClient.queryAttention({
+    sessionId: input.sessionId,
+    query: `contextId:${contextId} minscore:1`,
+  });
   const hostingActive = hostingMatches.some(
     (match) => match.contextId === contextId && (match.commit.scores[PRODUCT_HOSTING_SCORE_KEY] ?? 0) > 0,
   );
@@ -167,8 +128,7 @@ export const readCliShellManagedState = async (input: {
     contextId,
     hostingMatches,
     hostingActive,
-    activeDelegation,
-    managed: hostingActive && activeDelegation !== null,
+    managed: hostingActive,
   };
 };
 
@@ -176,21 +136,8 @@ export const enableCliShellManagedMode = async (input: CliShellManagedEnableInpu
   const runtimeClient = input.store;
   const contextId = buildCliShellHostingContextId(input.shellName);
   const grantedByActorId = resolveGrantedByActorId(await input.store.getAuthSession());
-  const delegationTtlMs = Math.max(1_000, input.delegationTtlMs ?? CLI_SHELL_DEFAULT_DELEGATION_TTL_MS);
-  const activeDelegation = resolveLatestActiveDelegation(
-    await runtimeClient.listProductDelegations({
-      productId: CLI_SHELL_PRODUCT_ID,
-      resourceKey: input.shellName,
-      runtimeId: input.runtimeId,
-      avatarActorId: input.avatarActorId,
-    }),
-  );
-  const terminalLease = await runtimeClient.grantGlobalTerminalWriteLease({
-    terminalId: input.terminalId,
-    participantId: toTerminalActorId(input.avatarActorId),
-    durationMs: delegationTtlMs,
-  });
-
+  // Managed/takeover is cli-shell hosting attention, not terminal authority.
+  // Terminal writes remain governed only by TerminalSystem grants, guard approval, and write leases.
   await runtimeClient.commitAttention({
     sessionId: input.sessionId,
     contextId,
@@ -215,69 +162,17 @@ export const enableCliShellManagedMode = async (input: CliShellManagedEnableInpu
     },
   });
 
-  if (activeDelegation) {
-    return {
-      contextId,
-      grantedByActorId,
-      delegation: activeDelegation,
-    };
-  }
-
-  const now = Date.now();
-  const delegation = await runtimeClient.createProductDelegation({
-    productId: CLI_SHELL_PRODUCT_ID,
-    resourceKey: input.shellName,
-    runtimeId: input.runtimeId,
-    avatarActorId: input.avatarActorId,
-    grantedByActorId,
-    terminalId: input.terminalId,
-    roomId: input.roomId,
-    enabledAt: now,
-    expiresAt: now + delegationTtlMs,
-    policy: {
-      mode: "write",
-    },
-    provenance: {
-      source: "cli-shell",
-      attentionContextId: contextId,
-      terminalLeaseId: terminalLease.leaseId,
-      notes: input.notes?.trim() || input.objective?.trim() || undefined,
-    },
-  });
   return {
     contextId,
     grantedByActorId,
-    delegation,
   };
 };
 
 export const disableCliShellManagedMode = async (input: CliShellManagedDisableInput): Promise<CliShellManagedDisableResult> => {
   const runtimeClient = input.store;
   const contextId = buildCliShellHostingContextId(input.shellName);
-  const activeDelegations = (await runtimeClient.listProductDelegations({
-    productId: CLI_SHELL_PRODUCT_ID,
-    resourceKey: input.shellName,
-    runtimeId: input.runtimeId,
-    avatarActorId: input.avatarActorId,
-  })).filter((record) => record.status === "active");
-
-  const revokedDelegations: ProductDelegationRecord[] = [];
-  for (const delegation of activeDelegations) {
-    revokedDelegations.push(
-      await runtimeClient.revokeProductDelegation({
-        delegationId: delegation.delegationId,
-        revokedAt: Date.now(),
-        revokedReason: PRODUCT_HOSTING_USER_DISABLED_REASON,
-      }),
-    );
-  }
-  if (input.terminalId) {
-    await runtimeClient.revokeGlobalTerminalWriteLease({
-      terminalId: input.terminalId,
-      participantId: toTerminalActorId(input.avatarActorId),
-    });
-  }
-
+  // Disabling hosting settles cli-shell attention only. It must not revoke unrelated
+  // TerminalSystem grants or leases created by explicit approval/admin action.
   await runtimeClient.settleAttention({
     sessionId: input.sessionId,
     contextId,
@@ -301,6 +196,5 @@ export const disableCliShellManagedMode = async (input: CliShellManagedDisableIn
 
   return {
     contextId,
-    revokedDelegations,
   };
 };

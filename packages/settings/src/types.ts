@@ -12,13 +12,7 @@ export interface SettingsSourceDescriptor {
   path: string;
 }
 
-export interface PromptSettings {
-  rootDir?: string;
-  agenterPath?: string;
-  internalSystemPath?: string;
-  systemTemplatePath?: string;
-  responseContractPath?: string;
-}
+export interface PromptSettings {}
 
 export interface TaskSettings {
   sources?: Array<{

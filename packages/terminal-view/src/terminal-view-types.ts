@@ -33,3 +33,36 @@ export interface TerminalViewGeometryAuthorityDetail {
   geometryAuthorityAttachmentId?: string;
   authorityReason?: string;
 }
+
+export type TerminalViewPermissionRequestStatus = "pending" | "approved" | "denied" | "expired";
+export type TerminalViewPermissionInputMode = "raw" | "mixed";
+
+export interface TerminalViewPermissionRequest {
+  requestId: string;
+  terminalId: string;
+  participantId: string;
+  assignedAdminId?: string;
+  createdAt: number;
+  expiresAt: number;
+  status: TerminalViewPermissionRequestStatus;
+  requestedInput?: {
+    mode: TerminalViewPermissionInputMode;
+    text: string;
+  };
+  decidedAt?: number;
+  decidedBy?: string;
+  leaseId?: string;
+}
+
+export interface TerminalViewPermissionRequestDetail {
+  terminalId: string;
+  request: TerminalViewPermissionRequest;
+}
+
+export interface TerminalViewApprovalActionDetail {
+  terminalId: string;
+  requestId: string;
+  action: "approve" | "deny";
+}
+
+export type TerminalViewRequestPermissionsHandler = (detail: TerminalViewPermissionRequestDetail) => boolean | void;

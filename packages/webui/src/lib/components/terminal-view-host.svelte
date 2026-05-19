@@ -9,7 +9,10 @@
 		type TerminalCursorStyle,
 		type TerminalFontProfile,
 		type TerminalRendererPreference,
+		type TerminalViewApprovalActionDetail,
 		type TerminalViewElement,
+		type TerminalViewPermissionRequest,
+		type TerminalViewRequestPermissionsHandler,
 		type TerminalViewPresentationReadyDetail,
 		type TerminalViewScreenMetrics,
 		type TerminalViewSnapshot,
@@ -34,6 +37,9 @@
 		theme = DEFAULT_TERMINAL_THEME,
 		cursor = DEFAULT_TERMINAL_CURSOR,
 		font = DEFAULT_TERMINAL_FONT,
+		permissionRequests = [],
+		onRequestPermissions = null,
+		onApprovalAction,
 		onScreenMetrics,
 		onPresentationReady,
 		elementRef = $bindable<TerminalViewHostElement | null>(null),
@@ -53,6 +59,9 @@
 		theme?: TerminalThemeName;
 		cursor?: TerminalCursorStyle;
 		font?: TerminalFontProfile;
+		permissionRequests?: TerminalViewPermissionRequest[];
+		onRequestPermissions?: TerminalViewRequestPermissionsHandler | null;
+		onApprovalAction?: (detail: TerminalViewApprovalActionDetail) => void;
 		onScreenMetrics?: (metrics: TerminalViewScreenMetrics) => void;
 		onPresentationReady?: (detail: TerminalViewPresentationReadyDetail) => void;
 		elementRef?: TerminalViewHostElement | null;
@@ -71,6 +80,8 @@
 			projectionScale?: number;
 			projectionOffsetX?: number;
 			projectionOffsetY?: number;
+			permissionRequests?: TerminalViewPermissionRequest[];
+			onRequestPermissions?: TerminalViewRequestPermissionsHandler | null;
 			screenMetrics?: TerminalViewScreenMetrics | null;
 		};
 
@@ -107,6 +118,8 @@
 		element.theme = theme;
 		element.cursor = cursor;
 		element.font = font;
+		element.permissionRequests = permissionRequests;
+		element.onRequestPermissions = onRequestPermissions;
 	};
 
 	const isTerminalViewScreenMetrics = (value: unknown): value is TerminalViewScreenMetrics =>
@@ -145,6 +158,23 @@
 		onPresentationReady?.(event.detail);
 	};
 
+	const isApprovalActionDetail = (value: unknown): value is TerminalViewApprovalActionDetail =>
+		typeof value === 'object' &&
+		value !== null &&
+		'terminalId' in value &&
+		'requestId' in value &&
+		'action' in value &&
+		typeof value.terminalId === 'string' &&
+		typeof value.requestId === 'string' &&
+		(value.action === 'approve' || value.action === 'deny');
+
+	const handleApprovalAction = (event: Event): void => {
+		if (!(event instanceof CustomEvent) || !isApprovalActionDetail(event.detail)) {
+			return;
+		}
+		onApprovalAction?.(event.detail);
+	};
+
 	const readElementScreenMetrics = (target: TerminalViewHostElement): void => {
 		if (!isTerminalViewScreenMetrics(target.screenMetrics)) {
 			return;
@@ -176,6 +206,7 @@
 		};
 		currentElement.addEventListener('terminal-view-screen-metrics', handleScreenMetrics);
 		currentElement.addEventListener('terminal-view-presentation-ready', handlePresentationReady);
+		currentElement.addEventListener('terminal-view-approval-action', handleApprovalAction);
 		readCurrentElementMetrics();
 		queueMicrotask(readCurrentElementMetrics);
 		if (typeof requestAnimationFrame === 'function') {
@@ -194,6 +225,7 @@
 			}
 			currentElement.removeEventListener('terminal-view-screen-metrics', handleScreenMetrics);
 			currentElement.removeEventListener('terminal-view-presentation-ready', handlePresentationReady);
+			currentElement.removeEventListener('terminal-view-approval-action', handleApprovalAction);
 		};
 	});
 </script>

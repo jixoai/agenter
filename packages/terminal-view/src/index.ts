@@ -54,6 +54,12 @@ export type {
   TerminalViewGeometryRole,
   TerminalViewPresentationReadyDetail,
   TerminalViewPresentationSettleReason,
+  TerminalViewApprovalActionDetail,
   TerminalViewScreenMetrics,
   TerminalViewSnapshot,
+  TerminalViewPermissionInputMode,
+  TerminalViewPermissionRequest,
+  TerminalViewPermissionRequestDetail,
+  TerminalViewPermissionRequestStatus,
+  TerminalViewRequestPermissionsHandler,
 } from "./terminal-view-types";

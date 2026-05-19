@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 
 import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
 
@@ -14,10 +14,13 @@ import {
   enableCliShellManagedMode,
   readCliShellManagedState,
 } from "../src";
+import { startMockModelServer, type MockModelServerHandle } from "../../app-server/test-support/mock-model-server";
 
 const tempDirs: string[] = [];
 const handles: TrpcServerHandle[] = [];
 const clients: Array<ReturnType<typeof createAgenterClient>> = [];
+const stores: Array<ReturnType<typeof createRuntimeStore>> = [];
+const mockModelServers: MockModelServerHandle[] = [];
 
 const isPresent = <T>(value: T | null | undefined): value is T => value != null;
 
@@ -42,21 +45,81 @@ const findFreePort = async (): Promise<number> =>
     });
   });
 
-const createRuntimeFixture = async (): Promise<{
+const waitForValue = async <T>(
+  read: () => T | null | Promise<T | null>,
+  input: {
+    label: string;
+    timeoutMs?: number;
+    pollMs?: number;
+  },
+): Promise<T> => {
+  const deadline = Date.now() + (input.timeoutMs ?? 30_000);
+  const pollMs = input.pollMs ?? 50;
+  while (Date.now() < deadline) {
+    const value = await read();
+    if (value !== null) {
+      return value;
+    }
+    await new Promise<void>((resolveReady) => setTimeout(resolveReady, pollMs));
+  }
+  throw new Error(`timed out waiting for ${input.label}`);
+};
+
+const writeMockProviderSettings = (input: { workspacePath: string; baseUrl: string }): void => {
+  mkdirSync(join(input.workspacePath, ".agenter"), { recursive: true });
+  writeFileSync(
+    join(input.workspacePath, ".agenter", "settings.local.json"),
+    `${JSON.stringify(
+      {
+        ai: {
+          activeProvider: "mock-live",
+          temperature: 0,
+          maxToken: 64_000,
+          providers: {
+            "mock-live": {
+              apiStandard: "openai-chat",
+              vendor: "mock",
+              profile: "compatible",
+              model: "mock-loopbus",
+              apiKey: "local-test",
+              baseUrl: input.baseUrl,
+              maxRetries: 0,
+              compactThreshold: 0.75,
+            },
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+};
+
+const createRuntimeFixture = async (input: { mockModelServer?: MockModelServerHandle } = {}): Promise<{
   workspacePath: string;
+  homeDir: string;
+  handle: TrpcServerHandle;
   store: ReturnType<typeof createRuntimeStore>;
 }> => {
   const root = mkdtempSync(join(tmpdir(), "agenter-cli-shell-integration-"));
   tempDirs.push(root);
   const workspacePath = join(root, "workspace");
+  const homeDir = join(root, "home");
   mkdirSync(workspacePath, { recursive: true });
+  if (input.mockModelServer) {
+    writeMockProviderSettings({
+      workspacePath,
+      baseUrl: input.mockModelServer.baseUrl,
+    });
+  }
   const port = await findFreePort();
   const handle = await startTrpcServer({
     host: "127.0.0.1",
     port,
     workspaceCwd: workspacePath,
     globalSessionRoot: join(root, "sessions"),
-    homeDir: join(root, "home"),
+    homeDir,
   });
   handles.push(handle);
 
@@ -70,18 +133,29 @@ const createRuntimeFixture = async (): Promise<{
   }
   client.setAuthToken(autoLogin.session.token);
 
+  const store = createRuntimeStore(client);
+  stores.push(store);
+
   return {
     workspacePath,
-    store: createRuntimeStore(client),
+    homeDir,
+    handle,
+    store,
   };
 };
 
 afterEach(async () => {
+  while (stores.length > 0) {
+    stores.pop()?.disconnect();
+  }
   while (clients.length > 0) {
     clients.pop()?.close();
   }
   while (handles.length > 0) {
     await handles.pop()?.stop();
+  }
+  while (mockModelServers.length > 0) {
+    await mockModelServers.pop()?.stop();
   }
   while (tempDirs.length > 0) {
     rmSync(tempDirs.pop()!, { recursive: true, force: true });
@@ -168,7 +242,7 @@ describe("Feature: cli-shell real daemon integration", () => {
     expect(roomGrantActors).toContain(defaultActorId);
   }, 45_000);
 
-  test("Scenario: Given managed mode is enabled on a real daemon When cli-shell reconnects the same avatar and shell Then hosting attention and delegation state are projected from platform truth", async () => {
+  test("Scenario: Given managed mode is enabled on a real daemon When cli-shell reconnects the same avatar and shell Then hosting attention is projected from platform truth", async () => {
     const fixture = await createRuntimeFixture();
 
     const attached = await bootstrapCliShell({
@@ -207,7 +281,6 @@ describe("Feature: cli-shell real daemon integration", () => {
 
     expect(enabled.contextId).toBe("ctx-hosting-shell-1");
     expect(projected.hostingActive).toBe(true);
-    expect(projected.activeDelegation?.status).toBe("active");
     expect(reconnect.managed.managed).toBe(true);
 
     const disabled = await disableCliShellManagedMode({
@@ -227,9 +300,7 @@ describe("Feature: cli-shell real daemon integration", () => {
       shellName: "shell-1",
     });
 
-    expect(disabled.revokedDelegations).toHaveLength(1);
     expect(afterDisable.hostingActive).toBe(false);
-    expect(afterDisable.activeDelegation).toBeNull();
     expect(afterDisable.managed).toBe(false);
   }, 45_000);
 
@@ -338,4 +409,78 @@ describe("Feature: cli-shell real daemon integration", () => {
     expect(runtime?.focusedTerminalIds).toContain("shell-1:terminal-1");
     expect(runtime?.focusedTerminalIds).toContain("shell-1:terminal-2");
   }, 45_000);
+
+  test("Scenario: Given a fresh shell-assistant session When a MessageRoom message wakes the runtime Then the first model request uses the principal-root Shell Assistant prompt", async () => {
+    const mockModelServer = await startMockModelServer();
+    mockModelServers.push(mockModelServer);
+    const fixture = await createRuntimeFixture({ mockModelServer });
+
+    const attached = await bootstrapCliShell({
+      store: fixture.store,
+      workspacePath: fixture.workspacePath,
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+    const avatarPrincipalId = attached.session.avatarPrincipalId;
+    if (!avatarPrincipalId) {
+      throw new Error("expected shell-assistant session principal id");
+    }
+    await fixture.handle.kernel.attachSessionPrimaryRoom(attached.session.id, { focus: true });
+    await fixture.store.connect();
+    await fixture.store.hydrateSessionArtifacts(attached.session.id, {
+      includeChatHistory: false,
+      observabilityMode: "heartbeat",
+    });
+
+    const promptPath = join(
+      fixture.workspacePath,
+      ".agenter",
+      "avatars",
+      "by-principal",
+      avatarPrincipalId,
+      "AGENTER.mdx",
+    );
+    const stalePrincipalRoot = join(
+      fixture.homeDir,
+      ".agenter",
+      "avatars",
+      "by-principal",
+      "0x0000000000000000000000000000000000000bad",
+    );
+    const nicknameAliasPath = join(fixture.homeDir, ".agenter", "avatars", "by-nickname", CLI_SHELL_DEFAULT_AVATAR);
+    expect(existsSync(promptPath)).toBe(true);
+    const promptContent = readFileSync(promptPath, "utf8");
+    expect(promptContent).toContain("the visible product world is the current Terminal instance plus its MessageRoom");
+    expect(promptContent).toContain("Do not run an equivalent command in `root_bash` or `workspace_bash`");
+    rmSync(nicknameAliasPath, { recursive: true, force: true });
+    mkdirSync(stalePrincipalRoot, { recursive: true });
+    writeFileSync(join(stalePrincipalRoot, "AGENTER.mdx"), "# stale nickname prompt\n\nroot workspace is the visible shell.\n", "utf8");
+    symlinkSync(relative(dirname(nicknameAliasPath), stalePrincipalRoot), nicknameAliasPath, "dir");
+
+    const send = await fixture.store.sendGlobalRoomMessage({
+      chatId: attached.room.entry.chatId,
+      accessToken: attached.room.entry.accessToken,
+      text: "请看一下当前 Terminal 里发生了什么，不要去 root workspace 另开命令。",
+    });
+    expect(send).toEqual({ ok: true });
+
+    const request = await waitForValue(
+      () => mockModelServer.requests.find((candidate) => (candidate.tools?.length ?? 0) > 0) ?? null,
+      {
+        label: "cli-shell model request",
+        timeoutMs: 45_000,
+      },
+    );
+    const systemPrompt = request.messages
+      .filter((message) => message.role === "system")
+      .map((message) => message.content ?? "")
+      .join("\n");
+
+    expect(systemPrompt).toContain("the visible product world is the current Terminal instance plus its MessageRoom");
+    expect(systemPrompt).toContain(
+      "Treat any MessageRoom conversation as being about the TerminalSystem instance bound to that cli-shell room by default",
+    );
+    expect(systemPrompt).toContain("Do not run an equivalent command in `root_bash` or `workspace_bash`");
+    expect(systemPrompt).not.toContain("root workspace is the visible shell");
+  }, 60_000);
 });

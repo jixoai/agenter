@@ -1623,6 +1623,10 @@ export const runtimeToolDescriptors = [
     helpNotes: [
       "A successful `terminal write` only confirms input delivery. Read the terminal again or inspect the resulting file/process state before assuming the command succeeded.",
       "`terminal write` is raw mode. If you need `<key .../>`, `<wait .../>`, or `<raw>...</raw>`, switch to `terminal input` instead of guessing.",
+      "For a Guard actor, set `createApprovalRequest:true` when the visible terminal write should wait for admin approval instead of failing silently.",
+      "An `approvalRequest` result means the bytes did not reach the PTY yet. Report or wait on that terminal-local approval; do not run the same visible terminal action through `root_bash` or `workspace_bash`.",
+      "A Guard actor cannot approve its own request through terminal input/write. Approval and deny are TerminalSystem admin/UI actions.",
+      "Denied or expired approval is a terminal authorization outcome: the requested terminal action did not happen, and repeating an equivalent pending request should update the existing request rather than create duplicate work.",
       "If the JSON fields or positional compact layout are still unclear after this help, run `skill info agenter-terminal` and expand only the reference file you need.",
       "For raw vs mixed strategy, open `references/input-modes.md` from that skill directory before sending a risky payload.",
     ],
@@ -1656,6 +1660,10 @@ export const runtimeToolDescriptors = [
     helpNotes: [
       "A successful `terminal input` only confirms that the mixed payload was accepted and applied. Read the terminal or inspect resulting files before assuming the process state.",
       "`terminal input` is mixed mode. Use it when you need semantic key presses, waits, or literal `<...>` text wrapped in `<raw>...</raw>`.",
+      "For a Guard actor, set `createApprovalRequest:true` when the visible terminal input should wait for admin approval instead of failing silently.",
+      "An `approvalRequest` result means the mixed input did not reach the PTY yet. Report or wait on that terminal-local approval; do not run the same visible terminal action through `root_bash` or `workspace_bash`.",
+      "A Guard actor cannot approve its own request through terminal input/write. Approval and deny are TerminalSystem admin/UI actions.",
+      "Denied or expired approval is a terminal authorization outcome: the requested terminal input did not happen, and repeating an equivalent pending request should update the existing request rather than create duplicate work.",
       "If you need a literal line such as `<key data=\"enter\"/>`, keep that line inside one `<raw>...</raw>` block. Ctrl combos use `ctrl=\"true\"`, for example `<key data=\"d\" ctrl=\"true\"/>` for EOF.",
       "If mixed syntax is unclear, run `skill info agenter-terminal` and read `references/input-modes.md` before guessing.",
     ],

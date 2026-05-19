@@ -274,9 +274,9 @@ Cli-shell's one-line toolbar SHALL expose assistant state through a status icon,
 - **AND** it renders a chat entry button with unread count
 - **AND** the chat entry supports a keyboard shortcut and mouse activation
 
-### Requirement: Cli-shell managed mode SHALL consume hosting attention and product delegation contracts
+### Requirement: Cli-shell managed mode SHALL consume hosting attention without owning terminal authority
 
-Cli-shell SHALL implement its managed/takeover toggle as a view and control over platform-hosted facts: a product-scoped hosting AttentionItem for scheduling and a generic product delegation lease for autonomous terminal write authority when allowed. It SHALL NOT store managed mode as local-only toolbar truth, and it SHALL NOT ask core modules for cli-shell-specific takeover behavior.
+Cli-shell SHALL implement its managed/takeover toggle as a view and control over platform-hosted facts: a product-scoped hosting AttentionItem for scheduling and continuity. Hosting attention SHALL NOT create product write delegation, terminal write lease, permanent writer grant, or TerminalSystem-owned managed metadata. Terminal writes SHALL remain governed only by TerminalSystem-native grants, guard approval requests, and write leases. Cli-shell SHALL NOT store managed mode as local-only toolbar truth, and it SHALL NOT ask core modules for cli-shell-specific takeover behavior.
 
 #### Scenario: Managed on creates hosting attention
 - **WHEN** the user turns managed/takeover on from the cli-shell toolbar
@@ -284,24 +284,22 @@ Cli-shell SHALL implement its managed/takeover toggle as a view and control over
 - **AND** the item body names `productId=cli-shell`, the current shell name, the bound terminal, the bound room, the granting user, and the current objective if known
 - **AND** hosting attention is represented as platform truth rather than local toolbar state
 
-#### Scenario: Managed on creates product delegation for terminal write autonomy
+#### Scenario: Managed on does not create terminal write authority
 - **WHEN** the user turns managed/takeover on from the cli-shell toolbar
-- **THEN** cli-shell requests a product delegation for `productId=cli-shell`, the current shell name, the bound terminal, the bound room, and the summoned Avatar
-- **AND** the default managed policy is write-capable terminal autonomy
-- **AND** the delegation is represented as platform truth with expiry and policy
-- **AND** terminal write authority is granted through terminal-native lease or approval law rather than through a cli-shell bypass
+- **THEN** cli-shell does not create product write delegation, terminal write lease, permanent writer grant, or TerminalSystem-owned managed metadata
+- **AND** the default managed policy is expressed as unresolved hosting attention, not terminal authority
+- **AND** later terminal writes still use the selected Avatar's existing TerminalSystem authority
 
-#### Scenario: Managed off revokes product delegation
+#### Scenario: Managed off settles hosting attention only
 - **WHEN** the user turns managed/takeover off from the cli-shell toolbar
-- **THEN** cli-shell revokes the active delegation it created
-- **AND** it commits a hosting attention update with `scores: {"hosting": 0}` and reason `user_disabled`
+- **THEN** cli-shell commits a hosting attention update with `scores: {"hosting": 0}` and reason `user_disabled`
 - **AND** it stops presenting terminal idle or dirty state as autonomous takeover work
-- **AND** it does not revoke unrelated room membership, terminal read access, or user manual terminal input
+- **AND** it does not revoke unrelated room membership, terminal read access, TerminalSystem approval leases, or user manual terminal input
 
 #### Scenario: Managed state survives cli-shell detach and reconnect
 - **GIVEN** cli-shell enabled managed/takeover and then detached
-- **WHEN** another cli-shell process reattaches to the same shell name before the delegation expires
-- **THEN** it reads managed/takeover state from platform hosting attention and delegation projections
+- **WHEN** another cli-shell process reattaches to the same shell name
+- **THEN** it reads managed/takeover state from platform hosting attention projections
 - **AND** it does not infer managed/takeover state from local process memory
 
 #### Scenario: Avatar may settle hosting when work is complete
@@ -316,17 +314,17 @@ Cli-shell SHALL implement its managed/takeover toggle as a view and control over
 - **THEN** it may keep the `hosting` score positive
 - **AND** it should record the watch policy and progress in durable hosting memory
 
-#### Scenario: Autonomous terminal writes are attributable
+#### Scenario: Managed terminal writes are attributable to terminal authority
 - **WHEN** the Avatar writes to the bound terminal while managed/takeover is active
 - **THEN** the terminal write uses the Avatar actor identity
-- **AND** terminal activity includes delegation or lease provenance
+- **AND** terminal activity includes the TerminalSystem grant, guard approval request, or lease provenance that authorized the write
 - **AND** superadmin product bootstrap authority is not the hidden actor for the write
 
 #### Scenario: Managed off blocks autonomous writes but preserves conversation
 - **WHEN** managed/takeover is off
 - **THEN** cli-shell still lets the Avatar observe context and answer in the product room
 - **AND** the Avatar may request approval or ask the user before terminal mutation
-- **AND** cli-shell does not let unresolved attention alone write terminal input without a valid delegation
+- **AND** cli-shell does not let unresolved attention alone write terminal input without valid TerminalSystem authority
 
 ### Requirement: Cli-shell SHALL provide an explicit TUI dialogue panel
 
@@ -563,3 +561,24 @@ Cli-shell process exit SHALL detach the shell-terminal host from product backend
 - **WHEN** one backend terminal resource for shell session `shell-1` stops
 - **THEN** cli-shell shows the stopped state in the bottom layer
 - **AND** it preserves the terminal record and room identity for reconnect or restart behavior
+
+### Requirement: Cli-shell SHALL provide product-local cleanup for stale shell resources
+
+Multiple cli-shell product sessions may exist at once. Cli-shell SHALL provide an explicit product-local cleanup command for stale cli-shell terminals, MessageRooms, and shell-assistant runtime sessions. Cleanup SHALL orchestrate only through generic session, message-system, and TerminalSystem APIs, and it SHALL NOT add cli-shell-specific delete branches to core systems.
+
+#### Scenario: Cleanup dry-run lists product-bound resources
+- **WHEN** the user runs `agenter shell cleanup` without confirmation
+- **THEN** cli-shell lists matching cli-shell terminal ids, MessageRoom ids, and shell-assistant session ids
+- **AND** it does not delete those resources
+- **AND** resources outside `productId=cli-shell` metadata are not targeted
+
+#### Scenario: Confirmed cleanup deletes rooms and sessions before terminals
+- **WHEN** the user runs `agenter shell cleanup --confirm`
+- **THEN** cli-shell deletes product-bound MessageRooms and shell-assistant runtime sessions first
+- **AND** it deletes matching TerminalSystem instances afterward
+- **AND** this order avoids deleting a terminal that may currently carry the daemon before cleanup has removed room and session truth
+
+#### Scenario: Cleanup can target one shell resource key
+- **WHEN** the user runs `agenter shell cleanup --session=2 --confirm`
+- **THEN** cli-shell cleans only resources whose product resource key resolves to `shell-2`
+- **AND** other cli-shell product sessions remain intact

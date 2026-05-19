@@ -4,6 +4,7 @@ import {
   resolveMessageControlDbPath,
   type MessageTransportServerMessage,
 } from "@agenter/message-system";
+import { SessionDb } from "@agenter/session-system";
 import {
   applyTerminalFramePatch,
   createTerminalTransportRowCacheDecoder,
@@ -13,7 +14,6 @@ import {
   type TerminalTransportRowCacheDecoder,
   type TerminalTransportServerMessage,
 } from "@agenter/terminal-transport-protocol";
-import { SessionDb } from "@agenter/session-system";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,6 +22,7 @@ import { join, resolve } from "node:path";
 import { MessageDb } from "../../message-system/src/message-db";
 import { AppKernel, type AnyRuntimeEvent } from "../src";
 import { formatMessageAttentionSrc } from "../src/attention-src";
+import { resolveWorkspaceAvatarCanonicalRoot } from "../src/workspace-system";
 
 const tempDirs: string[] = [];
 
@@ -80,7 +81,9 @@ const decodeTerminalTransportFrame = (data: MessageEvent["data"]): TerminalTrans
   return null;
 };
 
-const encodeTerminalClientFrame = (message: Parameters<typeof encodeTerminalTransportClientMessage>[0]): ArrayBuffer => {
+const encodeTerminalClientFrame = (
+  message: Parameters<typeof encodeTerminalTransportClientMessage>[0],
+): ArrayBuffer => {
   const bytes = encodeTerminalTransportClientMessage(message);
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
@@ -103,6 +106,7 @@ const pullTerminalFrame = async (input: {
   socket: WebSocket;
   messages: TerminalTransportServerMessage[];
   lastFrame: TerminalTransportFramePayload | null;
+  rowCacheDecoder: TerminalTransportRowCacheDecoder;
 }): Promise<TerminalTransportFramePayload> => {
   const messageStart = input.messages.length;
   input.socket.send(
@@ -125,7 +129,7 @@ const pullTerminalFrame = async (input: {
       input.lastFrame,
       frameMessage.patch,
       frameMessage.frameSeq,
-      resolveRowCacheDecoder(input.socket),
+      input.rowCacheDecoder,
     );
     if (nextFrame) {
       return nextFrame;
@@ -254,11 +258,12 @@ describe("Feature: app kernel event replay", () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
     tempDirs.push(root);
     const workspace = join(root, "workspace");
+    const homeDir = join(root, "home");
     mkdirSync(join(workspace, ".agenter"), { recursive: true });
-    writeFileSync(join(workspace, ".agenter", "AGENTER.mdx"), "# Persisted prompt\n", "utf8");
+    writeFileSync(join(workspace, ".agenter", "AGENTER.mdx"), "# Workspace fallback prompt\n", "utf8");
 
     const kernel = new AppKernel({
-      homeDir: join(root, "home"),
+      homeDir,
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
@@ -271,11 +276,17 @@ describe("Feature: app kernel event replay", () => {
       name: "persisted-editor",
       autoStart: false,
     });
+    if (!session.avatarPrincipalId) {
+      throw new Error("test session missing avatar principal id");
+    }
+    const promptRoot = resolveWorkspaceAvatarCanonicalRoot(workspace, session.avatarPrincipalId, homeDir);
+    mkdirSync(promptRoot, { recursive: true });
+    writeFileSync(join(promptRoot, "AGENTER.mdx"), "# Persisted prompt\n", "utf8");
 
     expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
 
     const original = await kernel.readSettings({ sessionId: session.id, kind: "agenter" });
-    expect(original.path).toBe(resolve(workspace, ".agenter", "AGENTER.mdx"));
+    expect(original.path).toBe(join(promptRoot, "AGENTER.mdx"));
     expect(original.content).toBe("# Persisted prompt\n");
     expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
 
@@ -288,13 +299,63 @@ describe("Feature: app kernel event replay", () => {
     expect(saved).toEqual({
       ok: true,
       file: {
-        path: resolve(workspace, ".agenter", "AGENTER.mdx"),
+        path: join(promptRoot, "AGENTER.mdx"),
         content: "# Updated prompt\n",
         mtimeMs: expect.any(Number),
       },
     });
-    expect(readFileSync(resolve(workspace, ".agenter", "AGENTER.mdx"), "utf8")).toBe("# Updated prompt\n");
+    expect(readFileSync(join(promptRoot, "AGENTER.mdx"), "utf8")).toBe("# Updated prompt\n");
+    expect(readFileSync(join(workspace, ".agenter", "AGENTER.mdx"), "utf8")).toBe("# Workspace fallback prompt\n");
     expect(kernel.getSnapshot().runtimes[session.id]).toBeUndefined();
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given a running session When only the avatar prompt is saved Then config request-aux facts are not created", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const workspace = join(root, "workspace");
+    const homeDir = join(root, "home");
+    mkdirSync(workspace, { recursive: true });
+
+    const kernel = new AppKernel({
+      homeDir,
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const session = await kernel.createSession({
+      cwd: workspace,
+      avatar: "prompt-config-boundary",
+      name: "prompt-config-boundary",
+      autoStart: false,
+    });
+    if (!session.avatarPrincipalId) {
+      throw new Error("test session missing avatar principal id");
+    }
+    const promptRoot = resolveWorkspaceAvatarCanonicalRoot(workspace, session.avatarPrincipalId, homeDir);
+    mkdirSync(promptRoot, { recursive: true });
+    writeFileSync(join(promptRoot, "AGENTER.mdx"), "# Original prompt\n", "utf8");
+    await kernel.startSession(session.id);
+
+    const original = await kernel.readSettings({ sessionId: session.id, kind: "agenter" });
+    const configAuxCountBeforeSave = kernel
+      .pageRequestAuxMessages(session.id, { limit: 10 })
+      .items.filter((message) => message.parts.some((part) => part.partType === "config")).length;
+    const saved = await kernel.saveSettings({
+      sessionId: session.id,
+      kind: "agenter",
+      content: "# Prompt-only change\n",
+      baseMtimeMs: original.mtimeMs,
+    });
+    const configAuxCountAfterSave = kernel
+      .pageRequestAuxMessages(session.id, { limit: 10 })
+      .items.filter((message) => message.parts.some((part) => part.partType === "config")).length;
+
+    expect(saved.ok).toBe(true);
+    expect(configAuxCountAfterSave).toBe(configAuxCountBeforeSave);
 
     await kernel.stop();
   });
@@ -498,10 +559,11 @@ describe("Feature: app kernel event replay", () => {
 
     await opened;
     let latestFrame: TerminalTransportFramePayload | null = null;
+    const rowCacheDecoder = createTerminalTransportRowCacheDecoder();
     const startAt = Date.now();
     while (Date.now() - startAt < 3_000) {
       if (messages.some((message) => message.type === "frameDirty")) {
-        latestFrame = await pullTerminalFrame({ socket, messages, lastFrame: latestFrame });
+        latestFrame = await pullTerminalFrame({ socket, messages, lastFrame: latestFrame, rowCacheDecoder });
         if (latestFrame.lines.join("\n").includes("second-frame")) {
           break;
         }

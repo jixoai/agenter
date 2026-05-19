@@ -1,8 +1,19 @@
 export type PromptSyntax = "md" | "mdx";
 
+export interface PromptDocumentSource {
+  uri: string;
+  scheme: string;
+  path?: string;
+  rootUri?: string;
+  relativePath?: string;
+  superRootUri?: string;
+  superUri?: string;
+}
+
 export interface PromptDocument {
   syntax: PromptSyntax;
   content: string;
+  source?: PromptDocumentSource;
 }
 
 export const PROMPT_DOC_KEYS = ["AGENTER", "AGENTER_SYSTEM", "SYSTEM_TEMPLATE", "RESPONSE_CONTRACT"] as const;

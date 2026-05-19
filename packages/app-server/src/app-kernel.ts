@@ -9,6 +9,7 @@ import {
   watch,
   type FSWatcher,
 } from "node:fs";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -61,7 +62,13 @@ import {
   type MessageSourceSubscriptionInput,
   type MessageSourceSubscriptionRecord,
 } from "@agenter/message-system";
-import { isPrincipalId } from "@agenter/principal-crypto";
+import { isPrincipalId, normalizePrincipalId } from "@agenter/principal-crypto";
+import type {
+  ProductAttentionCommitInput,
+  ProductAttentionSettleInput,
+  ProductAvatarPromptSeedInput,
+  ProductPrivateTextAssetEnsureInput,
+} from "@agenter/product-extension-runtime";
 import {
   SessionDb,
   type ReversePage,
@@ -73,13 +80,14 @@ import {
   TerminalControlPlane,
   type TerminalAccessProjection,
   type TerminalActorId,
+  type TerminalApprovalRequestEvent,
   type TerminalApprovalRequestRecord,
-  type TerminalControlPlaneEntry,
   type TerminalBackendKind,
   type TerminalComposedProductSurfaceState,
-  type TerminalGrantWriteLeaseInput,
+  type TerminalControlPlaneEntry,
   type TerminalGrantRecord,
   type TerminalGrantRole,
+  type TerminalGrantWriteLeaseInput,
   type TerminalInvitationRecord,
   type TerminalIssueGrantInput,
   type TerminalManagedSeatClass,
@@ -91,15 +99,6 @@ import {
   type TerminalWriteLeaseRecord,
   type TerminalWriteResult,
 } from "@agenter/terminal-system";
-import type {
-  ProductAttentionCommitInput,
-  ProductAttentionSettleInput,
-  ProductDelegationCreateInput,
-  ProductDelegationLookup,
-  ProductDelegationRecord,
-  ProductDelegationRevokeInput,
-  ProductPrivateTextAssetEnsureInput,
-} from "@agenter/product-extension-runtime";
 import { privateKeyToAccount } from "viem/accounts";
 import { AttentionSearchEngine, type AttentionSearchRequest } from "./attention-search";
 import { appAttentionSourceRegistry } from "./attention-src";
@@ -153,7 +152,6 @@ import { HEARTBEAT_INSPECTION_SCOPES, HEARTBEAT_MESSAGE_PART_SCOPE } from "./hea
 import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./local-env";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
-import { ProductExtensionDelegationStore } from "./product-extension-delegation-store";
 import {
   settingsKindSchema,
   type AnyRuntimeEvent,
@@ -217,6 +215,7 @@ import {
   executeWorkspaceBash,
   hasWorkspaceGrantRootAccess,
   resolveWorkspaceAvatarAssetRoot,
+  resolveWorkspaceAvatarCanonicalRoot,
   resolveWorkspaceGrantModeFromAbsolutePath,
   resolveWorkspacePublicAssetRoot,
   WorkspaceSystemStore,
@@ -683,7 +682,6 @@ export interface AppKernelOptions {
   archiveSessionRoot?: string;
   workspacesPath?: string;
   workspaceSystemStatePath?: string;
-  productDelegationStorePath?: string;
   homeDir?: string;
   initialWorkspace?: string;
   managedSeatAuthorityUrl?: string;
@@ -817,7 +815,6 @@ export class AppKernel {
   private readonly messageControlPlane: MessageControlPlane;
   private readonly terminalControlPlane: TerminalControlPlane;
   private readonly roomAssets: RoomAssetStore;
-  private readonly productExtensionDelegations: ProductExtensionDelegationStore;
   private readonly runtimes = new Map<string, SessionRuntime>();
   private readonly runtimeStopListeners = new Map<string, () => void>();
   private readonly listeners = new Set<KernelListener>();
@@ -862,11 +859,6 @@ export class AppKernel {
       dbPath: resolveMessageControlDbPath(join(this.sessions.getGlobalRoot(), "..", ".message")),
     });
     this.roomAssets = new RoomAssetStore(join(this.sessions.getGlobalRoot(), "..", ".message"));
-    this.productExtensionDelegations = new ProductExtensionDelegationStore({
-      filePath:
-        options.productDelegationStorePath ??
-        join(this.sessions.getGlobalRoot(), "..", ".product-extension", "delegations.json"),
-    });
     this.terminalControlPlane = new TerminalControlPlane({
       dbPath: join(this.sessions.getGlobalRoot(), "..", ".terminal", "terminal.db"),
       outputRoot: join(this.sessions.getGlobalRoot(), "..", ".terminal", "output"),
@@ -892,6 +884,20 @@ export class AppKernel {
 
   private getHomeDir(): string {
     return this.options.homeDir ?? homedir();
+  }
+
+  private isMissingFileError(error: unknown): boolean {
+    return (
+      typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT"
+    );
+  }
+
+  private resolveAvatarPromptSeedPath(input: ProductAvatarPromptSeedInput): string {
+    const principalId = normalizePrincipalId(input.avatarPrincipalId);
+    const root = input.workspacePath
+      ? resolveWorkspaceAvatarCanonicalRoot(toWorkspacePath(input.workspacePath, this.getHomeDir()), principalId, this.getHomeDir())
+      : resolveGlobalAvatarCanonicalRoot(principalId, this.getHomeDir());
+    return join(root, "AGENTER.mdx");
   }
 
   private rememberWorkspace(workspacePath: string): void {
@@ -1185,6 +1191,12 @@ export class AppKernel {
             });
             return;
         }
+      }),
+      this.terminalControlPlane.onApprovalRequest((payload) => {
+        if (!this.started) {
+          return;
+        }
+        this.emit("terminal.permissionRequest", payload);
       }),
     );
   }
@@ -2212,6 +2224,43 @@ export class AppKernel {
       relativePath: input.relativePath,
       seedContent: input.seedContent,
     });
+  }
+
+  async ensureAvatarPromptSeed(input: ProductAvatarPromptSeedInput): Promise<{
+    seeded: boolean;
+    file: { path: string; content: string; mtimeMs: number };
+  }> {
+    const promptPath = this.resolveAvatarPromptSeedPath(input);
+    try {
+      const [content, fileStat] = await Promise.all([readFile(promptPath, "utf8"), stat(promptPath)]);
+      if (fileStat.isDirectory()) {
+        throw new Error(`avatar prompt path is a directory: ${promptPath}`);
+      }
+      return {
+        seeded: false,
+        file: {
+          path: promptPath,
+          content,
+          mtimeMs: fileStat.mtimeMs,
+        },
+      };
+    } catch (error) {
+      if (!this.isMissingFileError(error)) {
+        throw error;
+      }
+    }
+
+    await mkdir(resolve(promptPath, ".."), { recursive: true });
+    await writeFile(promptPath, input.seedContent, "utf8");
+    const [content, fileStat] = await Promise.all([readFile(promptPath, "utf8"), stat(promptPath)]);
+    return {
+      seeded: true,
+      file: {
+        path: promptPath,
+        content,
+        mtimeMs: fileStat.mtimeMs,
+      },
+    };
   }
 
   async execRuntimeWorkspace(input: {
@@ -4172,6 +4221,49 @@ export class AppKernel {
     return this.terminalControlPlane.listApprovalRequestsAuthorized(input);
   }
 
+  listObservableGlobalTerminalApprovalRequests(input: {
+    terminalId?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+    statuses?: TerminalApprovalRequestRecord["status"][];
+  } = {}): TerminalApprovalRequestRecord[] {
+    return this.terminalControlPlane.listObservableApprovalRequests(input);
+  }
+
+  onObservableGlobalTerminalApprovalRequest(
+    input: {
+      terminalId?: string;
+      actorId?: TerminalActorId;
+      superadminActorId?: TerminalActorId;
+    },
+    listener: (payload: TerminalApprovalRequestEvent) => void,
+  ): () => void {
+    const canObserve = (terminalId: string): boolean => {
+      try {
+        this.terminalControlPlane.listObservableApprovalRequests({
+          terminalId,
+          actorId: input.actorId,
+          superadminActorId: input.superadminActorId,
+          statuses: ["pending"],
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    return this.terminalControlPlane.onApprovalRequest(
+      (payload) => {
+        if (!canObserve(payload.terminalId)) {
+          return;
+        }
+        listener(payload);
+      },
+      {
+        terminalId: input.terminalId,
+      },
+    );
+  }
+
   approveGlobalTerminalRequest(input: {
     terminalId: string;
     requestId: string;
@@ -4191,15 +4283,11 @@ export class AppKernel {
     return this.terminalControlPlane.denyRequestAuthorized(input);
   }
 
-  grantGlobalTerminalWriteLease(
-    input: TerminalGrantWriteLeaseInput,
-  ): TerminalWriteLeaseRecord {
+  grantGlobalTerminalWriteLease(input: TerminalGrantWriteLeaseInput): TerminalWriteLeaseRecord {
     return this.terminalControlPlane.grantWriteLeaseAuthorized(input);
   }
 
-  revokeGlobalTerminalWriteLease(
-    input: TerminalRevokeWriteLeaseInput,
-  ): { ok: true; revokedCount: number } {
+  revokeGlobalTerminalWriteLease(input: TerminalRevokeWriteLeaseInput): { ok: true; revokedCount: number } {
     return this.terminalControlPlane.revokeWriteLeaseAuthorized(input);
   }
 
@@ -5358,7 +5446,8 @@ export class AppKernel {
 
   async settleAttention(sessionId: string, input: ProductAttentionSettleInput) {
     const runtime = await this.ensureRuntime(sessionId);
-    const summary = input.summary ?? `Settled attention for ${input.contextId}${input.reason ? ` (${input.reason})` : ""}`;
+    const summary =
+      input.summary ?? `Settled attention for ${input.contextId}${input.reason ? ` (${input.reason})` : ""}`;
     const body = input.body ?? (input.reason ? `reason=${input.reason}` : undefined);
     return await runtime.settleAttention({
       contextId: input.contextId,
@@ -5368,18 +5457,6 @@ export class AppKernel {
       reason: input.reason,
       meta: input.meta,
     });
-  }
-
-  createProductDelegation(input: ProductDelegationCreateInput): ProductDelegationRecord {
-    return this.productExtensionDelegations.create(input);
-  }
-
-  listProductDelegations(input: ProductDelegationLookup): ProductDelegationRecord[] {
-    return this.productExtensionDelegations.list(input);
-  }
-
-  revokeProductDelegation(input: ProductDelegationRevokeInput): ProductDelegationRecord {
-    return this.productExtensionDelegations.revoke(input);
   }
 
   async inspectModelDebug(sessionId: string): Promise<ReturnType<SessionRuntime["inspectModelDebug"]>> {
@@ -5603,6 +5680,7 @@ export class AppKernel {
     const session = this.getSessionMetaOrThrow(sessionId);
     const config = await resolveSessionConfig(session.cwd, {
       avatar: session.avatar,
+      avatarPrincipalId: session.avatarPrincipalId,
       homeDir: this.getHomeDir(),
     });
     return new SettingsEditor(session.cwd, config.prompt);

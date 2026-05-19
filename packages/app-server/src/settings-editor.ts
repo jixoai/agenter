@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-export type EditableKind = "settings" | "agenter" | "system" | "template" | "contract";
+export type EditableKind = "settings" | "agenter";
 
 export interface EditableFileResult {
   path: string;
@@ -21,29 +21,25 @@ export interface EditableSaveResult {
   file: EditableFileResult;
 }
 
-const pathByKind = (
+export const resolveEditableSettingsPath = (
   cwd: string,
   kind: EditableKind,
   prompt: {
+    rootDir?: string;
     agenterPath?: string;
-    agenterSystemPath?: string;
-    systemTemplatePath?: string;
-    responseContractPath?: string;
   },
 ): string => {
   if (kind === "settings") {
     return resolve(cwd, ".agenter", "settings.json");
   }
   if (kind === "agenter") {
-    return prompt.agenterPath ?? resolve(cwd, ".agenter", "AGENTER.mdx");
+    const agenterPath = prompt.agenterPath ?? (prompt.rootDir ? resolve(prompt.rootDir, "AGENTER.mdx") : undefined);
+    if (!agenterPath) {
+      throw new Error("avatar AGENTER.mdx path is unavailable");
+    }
+    return agenterPath;
   }
-  if (kind === "system") {
-    return prompt.agenterSystemPath ?? resolve(cwd, ".agenter", "internal", "AGENTER_SYSTEM.mdx");
-  }
-  if (kind === "template") {
-    return prompt.systemTemplatePath ?? resolve(cwd, ".agenter", "internal", "SYSTEM_TEMPLATE.mdx");
-  }
-  return prompt.responseContractPath ?? resolve(cwd, ".agenter", "internal", "RESPONSE_CONTRACT.mdx");
+  return resolve(cwd, ".agenter", "settings.json");
 };
 
 const readMaybe = async (path: string): Promise<EditableFileResult> => {
@@ -67,15 +63,13 @@ export class SettingsEditor {
   constructor(
     private readonly cwd: string,
     private readonly promptPaths: {
+      rootDir?: string;
       agenterPath?: string;
-      agenterSystemPath?: string;
-      systemTemplatePath?: string;
-      responseContractPath?: string;
     },
   ) {}
 
   resolvePath(kind: EditableKind): string {
-    return pathByKind(this.cwd, kind, this.promptPaths);
+    return resolveEditableSettingsPath(this.cwd, kind, this.promptPaths);
   }
 
   async read(kind: EditableKind): Promise<EditableFileResult> {

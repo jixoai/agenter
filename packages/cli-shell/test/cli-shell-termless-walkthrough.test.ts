@@ -17,7 +17,6 @@ import type {
   GlobalRoomSnapshotOutput,
   GlobalTerminalActorId,
   GlobalTerminalEntry,
-  ProductDelegationRecord,
   RuntimeClientState,
   SessionEntry,
   ProductTerminalComposedSurfaceState,
@@ -334,24 +333,6 @@ function createManagedState(input: {
     contextId: buildCliShellHostingContextId(input.shellName ?? "shell-1"),
     hostingMatches: [],
     hostingActive: input.hostingActive ?? false,
-    activeDelegation:
-      input.managed === true
-        ? ({
-            delegationId: "delegation:cli-shell:shell-1",
-            productId: "cli-shell",
-            resourceKey: "shell-1",
-            runtimeId: "runtime:shell-assistant",
-            avatarActorId: "auth:shell-assistant",
-            grantedByActorId: "auth:root-superadmin",
-            terminalId: "shell-1:terminal-1",
-            roomId: "room-shell-1",
-            enabledAt: 100,
-            expiresAt: 100 + 30 * 60 * 1000,
-            policy: { mode: "write" },
-            provenance: { source: "cli-shell" },
-            status: "active",
-          } as ProductDelegationRecord)
-        : null,
     managed: input.managed ?? false,
   };
 }
@@ -364,12 +345,8 @@ interface TransportHarness {
   resizeCalls: Array<{ terminalId: string; cols: number; rows: number }>;
   shellInputBytes: string[];
   attentionScores: Record<string, number>;
-  delegations: ProductDelegationRecord[];
   publishSurfaceCalls: number;
-  lastBottomLine: string | null;
-  lastDialogueOpen: boolean | null;
-  lastDialoguePlacement: string | null;
-  lastManagedLabel: string | null;
+  lastPublishedComposedSurface: ProductTerminalComposedSurfaceState | null;
   lastCursorVisible: boolean | null;
 }
 
@@ -383,12 +360,8 @@ function createTuiHarnessStore(
   const resizeCalls: Array<{ terminalId: string; cols: number; rows: number }> = [];
   const shellInputBytes: string[] = [];
   const attentionScores: Record<string, number> = {};
-  let delegations: ProductDelegationRecord[] = [];
   let publishSurfaceCalls = 0;
-  let lastBottomLine: string | null = null;
-  let lastDialogueOpen: boolean | null = null;
-  let lastDialoguePlacement: string | null = null;
-  let lastManagedLabel: string | null = null;
+  let lastPublishedComposedSurface: ProductTerminalComposedSurfaceState | null = null;
   let lastCursorVisible: boolean | null = null;
   const authSession: AuthSessionOutput = {
     token: "superadmin-token",
@@ -474,23 +447,11 @@ function createTuiHarnessStore(
     resizeCalls,
     shellInputBytes,
     attentionScores,
-    get delegations() {
-      return delegations;
-    },
     get publishSurfaceCalls() {
       return publishSurfaceCalls;
     },
-    get lastBottomLine() {
-      return lastBottomLine;
-    },
-    get lastDialogueOpen() {
-      return lastDialogueOpen;
-    },
-    get lastDialoguePlacement() {
-      return lastDialoguePlacement;
-    },
-    get lastManagedLabel() {
-      return lastManagedLabel;
+    get lastPublishedComposedSurface() {
+      return lastPublishedComposedSurface;
     },
     get lastCursorVisible() {
       return lastCursorVisible;
@@ -509,6 +470,7 @@ function createTuiHarnessStore(
     disconnect: () => {},
     hydrateSessionArtifacts: async () => undefined,
     retainGlobalTerminals: () => () => {},
+    retainTerminalPermissionRequests: () => () => {},
     hydrateGlobalTerminals: async () => state.globalTerminals.data,
     readGlobalTerminal: async (payload) => {
       const terminal = state.globalTerminals.data.find((entry) => entry.terminalId === payload.terminalId);
@@ -598,56 +560,27 @@ function createTuiHarnessStore(
     },
     publishGlobalTerminalComposedSurface: async (payload: {
       terminalId: string;
-      surface: {
-        cols: number;
-        rows: number;
-        terminalLines: string[];
-        terminalRichLines?: Array<{ spans: Array<{ text: string; fg?: string; bg?: string }> }>;
-        cursor: { x: number; y: number; visible?: boolean };
-        scrollback: {
-          viewportOffset: number;
-          totalLines: number;
-          screenLines: number;
-        };
-        dialogueOpen: boolean;
-        dialoguePlacement: string | null;
-        dialogueDraft: string;
-        bottomLine: string;
-        managedLabel: string;
-        unreadLabel: string;
-        heartbeatLabel: string;
-        shellSnapshotSeq: number;
-        selectionSources?: ProductTerminalComposedSurfaceState["selectionSources"];
-      };
+      surface: ProductTerminalComposedSurfaceState;
     }) => {
       publishSurfaceCalls += 1;
-      lastBottomLine = payload.surface.bottomLine;
-      lastDialogueOpen = payload.surface.dialogueOpen;
-      lastDialoguePlacement = payload.surface.dialoguePlacement;
-      lastManagedLabel = payload.surface.managedLabel;
+      lastPublishedComposedSurface = structuredClone(payload.surface);
       lastCursorVisible = payload.surface.cursor.visible ?? null;
       updateVisibleTerminalSnapshot((entry) => ({
         ...entry,
         seq: entry.seq + 1,
         metadata: {
           ...entry.metadata,
-          composedDialogueOpen: payload.surface.dialogueOpen,
-          composedDialoguePlacement: payload.surface.dialoguePlacement,
-          composedDialogueDraft: payload.surface.dialogueDraft,
-          composedBottomLine: payload.surface.bottomLine,
-          composedManagedLabel: payload.surface.managedLabel,
-          composedUnreadLabel: payload.surface.unreadLabel,
-          composedHeartbeatLabel: payload.surface.heartbeatLabel,
-          composedShellSnapshotSeq: payload.surface.shellSnapshotSeq,
+          composedFrameSeq: payload.surface.seq ?? (entry.snapshot?.seq ?? 0) + 1,
+          composedFrameMetadata: payload.surface.metadata ? { ...payload.surface.metadata } : {},
           composedSelectionSources: payload.surface.selectionSources?.map((source) => ({ ...source })),
         },
         snapshot: {
-          seq: (entry.snapshot?.seq ?? 0) + 1,
+          seq: payload.surface.seq ?? (entry.snapshot?.seq ?? 0) + 1,
           timestamp: Date.now(),
           cols: payload.surface.cols,
           rows: payload.surface.rows,
-          lines: [...payload.surface.terminalLines],
-          richLines: payload.surface.terminalRichLines?.map((line) => ({
+          lines: [...payload.surface.lines],
+          richLines: payload.surface.richLines?.map((line) => ({
             spans: line.spans.map((span) => ({ ...span })),
           })),
           cursor: { ...payload.surface.cursor },
@@ -663,12 +596,6 @@ function createTuiHarnessStore(
       mtimeMs: 1,
     }),
     getAuthSession: async () => authSession,
-    grantGlobalTerminalWriteLease: async (payload) => ({
-      leaseId: `lease:${payload.terminalId}:${payload.participantId}`,
-      participantId: payload.participantId,
-      expiresAt: Date.now() + payload.durationMs,
-    }),
-    revokeGlobalTerminalWriteLease: async () => ({ ok: true as const, revokedCount: 1 }),
     queryAttention: async (payload: { sessionId: string; query: string }): Promise<AttentionQueryItem[]> => {
       void payload.sessionId;
       const contextId = payload.query.match(/contextId:([^\s]+)/)?.[1] ?? buildCliShellHostingContextId("shell-1");
@@ -693,31 +620,25 @@ function createTuiHarnessStore(
       attentionScores[payload.contextId] = payload.scores?.hosting ?? 0;
       return { commit: payload };
     },
-    listProductDelegations: async () => [...delegations],
-    createProductDelegation: async (payload: Omit<ProductDelegationRecord, "delegationId" | "status">) => {
-      const delegation =
-        ({
-        ...payload,
-        delegationId: `delegation:${payload.productId}:${payload.resourceKey}`,
-        status: "active",
-      }) as ProductDelegationRecord;
-      delegations = [...delegations.filter((item) => item.status !== "active"), delegation];
-      return delegation;
-    },
-    revokeProductDelegation: async (payload: { delegationId: string; revokedAt: number; revokedReason: string }) => {
-      const delegation = delegations.find((item) => item.delegationId === payload.delegationId);
-      if (!delegation) {
-        throw new Error(`unknown delegation: ${payload.delegationId}`);
-      }
-      const revoked = {
-        ...delegation,
-        status: "revoked",
-        revokedAt: payload.revokedAt,
-        revokedReason: payload.revokedReason,
-      } as ProductDelegationRecord;
-      delegations = delegations.map((item) => (item.delegationId === payload.delegationId ? revoked : item));
-      return revoked;
-    },
+    approveGlobalTerminalRequest: async (payload: { terminalId: string; requestId: string; durationMs: number }) => ({
+      leaseId: `lease:${payload.requestId}`,
+      terminalId: payload.terminalId,
+      participantId: "auth:shell-assistant" as GlobalTerminalActorId,
+      requestId: payload.requestId,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + payload.durationMs,
+    }),
+    denyGlobalTerminalRequest: async (payload: { terminalId: string; requestId: string }) => ({
+      requestId: payload.requestId,
+      terminalId: payload.terminalId,
+      participantId: "auth:shell-assistant" as GlobalTerminalActorId,
+      assignedAdminId: "auth:admin" as GlobalTerminalActorId,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 90_000,
+      status: "denied" as const,
+      decidedAt: Date.now(),
+      decidedBy: "auth:admin" as GlobalTerminalActorId,
+    }),
   };
 
   return { store, harness };
@@ -737,11 +658,7 @@ interface WalkthroughStateSnapshot {
   publishSurfaceCalls: number;
   shellInputBytes: string[];
   attentionScores: Record<string, number>;
-  delegations: Array<{ delegationId: string; status: string }>;
-  lastBottomLine: string | null;
-  lastDialogueOpen: boolean | null;
-  lastDialoguePlacement: string | null;
-  lastManagedLabel: string | null;
+  lastPublishedLines: string[];
   lastCursorVisible: boolean | null;
 }
 
@@ -1018,14 +935,7 @@ const emit = (tag) => {
     publishSurfaceCalls: harness.publishSurfaceCalls,
     shellInputBytes: harness.shellInputBytes,
     attentionScores: harness.attentionScores,
-    delegations: harness.delegations.map((delegation) => ({
-      delegationId: delegation.delegationId,
-      status: delegation.status,
-    })),
-    lastBottomLine: harness.lastBottomLine,
-    lastDialogueOpen: harness.lastDialogueOpen,
-    lastDialoguePlacement: harness.lastDialoguePlacement,
-    lastManagedLabel: harness.lastManagedLabel,
+    lastPublishedLines: harness.lastPublishedComposedSurface?.lines ?? [],
     lastCursorVisible: harness.lastCursorVisible,
   }), "utf8");
 };
@@ -1070,7 +980,6 @@ import type {
   GlobalRoomMessage,
   GlobalRoomSnapshotOutput,
   GlobalTerminalEntry,
-  ProductDelegationRecord,
   RuntimeClientState,
   SessionEntry,
 } from "@agenter/client-sdk";
@@ -1131,28 +1040,28 @@ export { createHarnessStore, createHarnessState, createManagedState, flushHarnes
     const startupState = await waitForWalkthroughSnapshot(
       statePath,
       (snapshot) =>
-        snapshot.lastDialogueOpen === false &&
-        snapshot.lastDialoguePlacement === null &&
-        (snapshot.lastBottomLine?.includes("Avatar started") ?? false) &&
-        (snapshot.lastBottomLine?.includes("托管 off") ?? false),
+        !snapshot.lastPublishedLines.join("\n").includes("layout") &&
+        (snapshot.lastPublishedLines.at(-1)?.includes("Avatar started") ?? false) &&
+        (snapshot.lastPublishedLines.at(-1)?.includes("托管 off") ?? false),
       {
         description: "collapsed startup shell-first state",
       },
     );
-    expect(startupState.lastBottomLine).toContain("Avatar started");
-    expect(startupState.lastBottomLine).toContain("托管 off");
-    expect(startupState.lastBottomLine).toContain("✉ 0 M-J");
+    const startupBottomLine = startupState.lastPublishedLines.at(-1) ?? "";
+    expect(startupBottomLine).toContain("Avatar started");
+    expect(startupBottomLine).toContain("托管 off");
+    expect(startupBottomLine).toContain("✉ 0 M-J");
     expect(term.screen.getText()).not.toContain("layout");
 
     term.press("Meta+j");
     const openedState = await waitForWalkthroughSnapshot(
       statePath,
-      (snapshot) => snapshot.lastDialogueOpen === true && snapshot.lastDialoguePlacement === "right",
+      (snapshot) => snapshot.lastPublishedLines.join("\n").includes("│ right"),
       {
         description: "dialogue open on right",
       },
     );
-    expect(openedState.lastDialogueOpen).toBe(true);
+    expect(openedState.lastPublishedLines.join("\n")).toContain("│ right");
     await term.waitFor("[Send]", 5_000);
 
     term.type("termless-message");
@@ -1195,16 +1104,14 @@ export { createHarnessStore, createHarnessState, createManagedState, flushHarnes
       statePath,
       (snapshot) =>
         snapshot.attentionScores[buildCliShellHostingContextId("shell-1")] === 1000 &&
-        snapshot.delegations.some((delegation) => delegation.status === "active") &&
         snapshot.publishSurfaceCalls > preManagedState.publishSurfaceCalls &&
-        (snapshot.lastBottomLine?.includes("托管 on") ?? false) &&
-        snapshot.lastManagedLabel === "托管 on",
+        snapshot.lastPublishedLines.join("\n").includes("托管 on"),
       {
         description: "managed mode enabled",
       },
     );
-    expect(managedOnState.lastManagedLabel).toBe("托管 on");
-    expect(managedOnState.lastBottomLine).toContain("✉ 0 M-J");
+    expect(managedOnState.lastPublishedLines.join("\n")).toContain("托管 on");
+    expect(managedOnState.lastPublishedLines.at(-1) ?? "").toContain("✉ 0 M-J");
     expect(term.screen.getText()).toContain("on");
 
     const preManagedOffState = await waitForWalkthroughSnapshot(statePath, () => true, {
@@ -1215,35 +1122,33 @@ export { createHarnessStore, createHarnessState, createManagedState, flushHarnes
       statePath,
       (snapshot) =>
         snapshot.attentionScores[buildCliShellHostingContextId("shell-1")] === 0 &&
-        snapshot.delegations.some((delegation) => delegation.status === "revoked") &&
         snapshot.publishSurfaceCalls > preManagedOffState.publishSurfaceCalls &&
-        snapshot.lastManagedLabel === "托管 off" &&
-        (snapshot.lastBottomLine?.includes("托管 off") ?? false),
+        snapshot.lastPublishedLines.join("\n").includes("托管 off"),
       {
         description: "managed mode disabled",
       },
     );
-    expect(managedOffState.lastManagedLabel).toBe("托管 off");
+    expect(managedOffState.lastPublishedLines.join("\n")).toContain("托管 off");
 
     term.press("Meta+l");
     const leftPlacementState = await waitForWalkthroughSnapshot(
       statePath,
-      (snapshot) => snapshot.lastDialogueOpen === true && snapshot.lastDialoguePlacement === "left",
+      (snapshot) => snapshot.lastPublishedLines.join("\n").includes("│ left"),
       {
         description: "dialogue placed left",
       },
     );
-    expect(leftPlacementState.lastDialoguePlacement).toBe("left");
+    expect(leftPlacementState.lastPublishedLines.join("\n")).toContain("│ left");
 
     term.press("Meta+f");
     const floatingPlacementState = await waitForWalkthroughSnapshot(
       statePath,
-      (snapshot) => snapshot.lastDialogueOpen === true && snapshot.lastDialoguePlacement === "floating",
+      (snapshot) => snapshot.lastPublishedLines.join("\n").includes("│ floating"),
       {
         description: "dialogue placed floating",
       },
     );
-    expect(floatingPlacementState.lastDialoguePlacement).toBe("floating");
+    expect(floatingPlacementState.lastPublishedLines.join("\n")).toContain("│ floating");
 
     const preCloseState = await waitForWalkthroughSnapshot(statePath, () => true, {
       description: "pre-close snapshot",
@@ -1253,25 +1158,22 @@ export { createHarnessStore, createHarnessState, createManagedState, flushHarnes
       statePath,
       (snapshot) =>
         snapshot.publishSurfaceCalls > preCloseState.publishSurfaceCalls &&
-        snapshot.lastDialogueOpen === false &&
-        snapshot.lastDialoguePlacement === null,
+        !snapshot.lastPublishedLines.join("\n").includes("layout"),
       {
         description: "dialogue closed",
       },
     );
-    expect(closedState.lastDialogueOpen).toBe(false);
-    expect(closedState.lastDialoguePlacement).toBeNull();
+    expect(closedState.lastPublishedLines.join("\n")).not.toContain("layout");
 
     term.press("Meta+j");
     const reopenedState = await waitForWalkthroughSnapshot(
       statePath,
-      (snapshot) => snapshot.lastDialogueOpen === true && snapshot.lastDialoguePlacement === "floating",
+      (snapshot) => snapshot.lastPublishedLines.join("\n").includes("│ floating"),
       {
         description: "dialogue reopened with preserved placement",
       },
     );
-    expect(reopenedState.lastDialogueOpen).toBe(true);
-    expect(reopenedState.lastDialoguePlacement).toBe("floating");
+    expect(reopenedState.lastPublishedLines.join("\n")).toContain("│ floating");
 
     const preScrollState = await waitForWalkthroughSnapshot(statePath, () => true, {
       description: "pre-scroll snapshot",

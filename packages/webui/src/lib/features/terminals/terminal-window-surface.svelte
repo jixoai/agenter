@@ -16,7 +16,9 @@
 		type TerminalFontProfile,
 		type TerminalRendererPreference,
 		type TerminalThemeName,
+		type TerminalViewApprovalActionDetail,
 		type TerminalViewElement,
+		type TerminalViewPermissionRequest,
 		type TerminalViewPresentationReadyDetail,
 		type TerminalViewScreenMetrics,
 	} from '@agenter/terminal-view';
@@ -34,11 +36,12 @@
 			projectionWidth?: number;
 			projectionHeight?: number;
 			projectionScale?: number;
-			projectionOffsetX?: number;
-			projectionOffsetY?: number;
-			screenMetrics?: TerminalViewScreenMetrics | null;
-			requestViewportResize?: (input: { cols: number; rows: number }) => boolean;
-		};
+		projectionOffsetX?: number;
+		projectionOffsetY?: number;
+		permissionRequests?: TerminalViewPermissionRequest[];
+		screenMetrics?: TerminalViewScreenMetrics | null;
+		requestViewportResize?: (input: { cols: number; rows: number }) => boolean;
+	};
 
 	type TerminalWindowMotionReason = 'mode-toggle' | 'resize-ack';
 
@@ -62,10 +65,12 @@
 		viewportMode,
 		lifecycleBusy = false,
 		lifecycleIntent = null,
+		permissionRequests = [],
 		onRequestLifecycleAction,
 		onToggleViewportMode,
 		onPresentationConfigChange,
 		onLiveResize,
+		onApprovalAction,
 	}: {
 		terminal: GlobalTerminalEntry;
 		terminalViewportComponent: TerminalViewportComponent;
@@ -73,6 +78,7 @@
 		viewportMode: 'fit' | 'cover';
 		lifecycleBusy?: boolean;
 		lifecycleIntent?: 'bootstrap' | 'stop' | null;
+		permissionRequests?: TerminalViewPermissionRequest[];
 		onRequestLifecycleAction?: (action: TerminalLifecycleAction) => void;
 		onToggleViewportMode: () => void;
 		onPresentationConfigChange?: (input: {
@@ -82,6 +88,7 @@
 			font?: TerminalFontProfile;
 		}) => Promise<void>;
 		onLiveResize?: (input: { width: number; height: number; cols: number; rows: number }) => void;
+		onApprovalAction?: (detail: TerminalViewApprovalActionDetail) => void;
 	} = $props();
 
 	const TerminalViewport = $derived(terminalViewportComponent);
@@ -1147,6 +1154,8 @@
 						theme={terminal.theme}
 						cursor={terminal.cursor}
 						font={terminalFont}
+						{permissionRequests}
+						{onApprovalAction}
 						onScreenMetrics={handleViewportScreenMetrics}
 						onPresentationReady={handlePresentationReady}
 					/>

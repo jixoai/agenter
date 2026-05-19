@@ -30,6 +30,8 @@ import type {
   GlobalRoomSnapshotOutput,
   GlobalTerminalActorId,
   GlobalTerminalApprovalRequest,
+  GlobalTerminalPermissionRequestEvent,
+  GlobalTerminalPermissionRequestsInput,
   GlobalTerminalEntry,
   GlobalTerminalGrantEntry,
   GlobalTerminalGrantIssueOutput,
@@ -42,7 +44,6 @@ import type {
   MessageSendSuccessOutput,
   ModelCallItem,
   NotificationSnapshotOutput,
-  ProductDelegationRecord,
   RuntimeAttentionDeliveryState,
   RuntimeAttentionState,
   RuntimeChatCycle,
@@ -69,10 +70,10 @@ import type {
   WorkspaceAvatarCatalogEntry,
   WorkspaceCliCatalogOutput,
   WorkspacePathSearchOutput,
+  WorkspacePrivateTextAssetEnsureOutput,
   WorkspaceSessionCounts,
   WorkspaceSessionEntry,
   WorkspaceSessionTab,
-  WorkspacePrivateTextAssetEnsureOutput,
   WorkspaceWorkbenchPreviewOutput,
   WorkspaceWorkbenchTreeOutput,
 } from "./types";
@@ -136,6 +137,7 @@ const createInitialState = (): RuntimeClientState => ({
 type Listener = (state: RuntimeClientState) => void;
 type SubscriptionHandle = { unsubscribe: () => void };
 type ApiCallStreamHandle = { count: number; sub: SubscriptionHandle | null; cursor: number };
+type TerminalPermissionRequestStreamHandle = { count: number; sub: SubscriptionHandle | null };
 type HistoryCursorValue = HistoryPageCursor | null;
 type SessionResourceHandle = { sessionId: string };
 type GlobalRoomSnapshotRefreshTask = {
@@ -898,6 +900,7 @@ export class RuntimeStore {
   private readonly globalTerminalGrantWatchCountById = new Map<string, number>();
   private readonly globalTerminalApprovalRefreshTasks = new Map<string, Promise<GlobalTerminalApprovalRequest[]>>();
   private readonly globalTerminalApprovalWatchCountById = new Map<string, number>();
+  private readonly terminalPermissionRequestStreams = new Map<string, TerminalPermissionRequestStreamHandle>();
   private readonly globalTerminalActivityRefreshTasks = new Map<string, GlobalTerminalActivityRefreshTask>();
   private readonly globalTerminalActivityWatchCountById = new Map<string, number>();
   private readonly apiCallStreams = new Map<string, ApiCallStreamHandle>();
@@ -2840,12 +2843,10 @@ export class RuntimeStore {
     return this.getBrowserOnlineState() === false ? "offline" : "reconnecting";
   }
 
-  private getBrowserEventTarget():
-    | {
-        addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
-        removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
-      }
-    | null {
+  private getBrowserEventTarget(): {
+    addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
+    removeEventListener: (type: string, listener: EventListenerOrEventListenerObject) => void;
+  } | null {
     if (
       typeof window === "undefined" ||
       typeof window.addEventListener !== "function" ||
@@ -2937,6 +2938,16 @@ export class RuntimeStore {
     return this.state;
   }
 
+  async listSessions(): Promise<SessionEntry[]> {
+    const output = await this.client.trpc.session.list.query();
+    this.state = {
+      ...this.state,
+      sessions: sortSessions(output.sessions),
+    };
+    this.emit();
+    return this.state.sessions;
+  }
+
   getRuntime(sessionId: string): RuntimeSnapshotEntry | null {
     return this.state.runtimes[sessionId] ?? null;
   }
@@ -2991,6 +3002,8 @@ export class RuntimeStore {
       stream.sub?.unsubscribe();
     }
     this.apiCallStreams.clear();
+    this.pauseRetainedTerminalPermissionRequestStreams();
+    this.terminalPermissionRequestStreams.clear();
     this.schedulerLogsAccessBySession.clear();
     this.observabilityTracesAccessBySession.clear();
     this.apiCallsAccessBySession.clear();
@@ -3219,6 +3232,7 @@ export class RuntimeStore {
         this.eventSub?.unsubscribe();
         this.eventSub = this.subscribeRuntimeEvents(snapshot.lastEventId);
         this.restoreRetainedApiCallStreams();
+        this.restoreRetainedTerminalPermissionRequestStreams();
         this.emit();
         if (previousState.globalAvatarCatalog.loaded || this.globalAvatarCatalogWatchCount > 0) {
           void this.hydrateGlobalAvatarCatalog({ force: true });
@@ -3331,6 +3345,7 @@ export class RuntimeStore {
     this.eventSub?.unsubscribe();
     this.eventSub = null;
     this.pauseRetainedApiCallStreams();
+    this.pauseRetainedTerminalPermissionRequestStreams();
     if (nextStatus === "offline") {
       this.clearReconnectTimer();
     }
@@ -3725,7 +3740,7 @@ export class RuntimeStore {
     avatar: string;
     terminalId: string;
     accessToken: string;
-    accessRole: "admin" | "writer" | "requester" | "readonly";
+    accessRole: "admin" | "writer" | "guard" | "readonly";
     state?: "active" | "credential-invalid";
   }) {
     return await this.client.trpc.workspace.saveAvatarTerminalSeat.mutate(input);
@@ -5125,7 +5140,7 @@ export class RuntimeStore {
 
   async issueGlobalTerminalGrant(input: {
     terminalId: string;
-    role: "admin" | "writer" | "requester" | "readonly";
+    role: "admin" | "writer" | "guard" | "readonly";
     participantId: GlobalTerminalActorId;
     label?: string;
     accessTokenHint?: string;
@@ -5202,6 +5217,37 @@ export class RuntimeStore {
       }
       this.globalTerminalApprovalWatchCountById.set(terminalId, current - 1);
     };
+  }
+
+  retainTerminalPermissionRequests(input: { terminalId?: string } = {}): () => void {
+    const key = RuntimeStore.resolveTerminalPermissionRequestStreamKey(input);
+    const existing = this.terminalPermissionRequestStreams.get(key);
+    if (existing) {
+      existing.count += 1;
+      if (!existing.sub && this.state.connected) {
+        existing.sub = this.subscribeTerminalPermissionRequests(input);
+      }
+      return () => this.releaseTerminalPermissionRequestStream(key);
+    }
+    const stream: TerminalPermissionRequestStreamHandle = {
+      count: 1,
+      sub: this.state.connected ? this.subscribeTerminalPermissionRequests(input) : null,
+    };
+    this.terminalPermissionRequestStreams.set(key, stream);
+    return () => this.releaseTerminalPermissionRequestStream(key);
+  }
+
+  private releaseTerminalPermissionRequestStream(key: string): void {
+    const current = this.terminalPermissionRequestStreams.get(key);
+    if (!current) {
+      return;
+    }
+    current.count -= 1;
+    if (current.count > 0) {
+      return;
+    }
+    current.sub?.unsubscribe();
+    this.terminalPermissionRequestStreams.delete(key);
   }
 
   async hydrateGlobalTerminalApprovals(input: {
@@ -5281,52 +5327,6 @@ export class RuntimeStore {
     return output;
   }
 
-  async listProductDelegations(input: {
-    productId: string;
-    resourceKey?: string;
-    runtimeId?: string;
-    avatarActorId?: string;
-    includeRevoked?: boolean;
-  }): Promise<ProductDelegationRecord[]> {
-    const output = await this.client.trpc.productExtension.listDelegations.query(input);
-    return output.items;
-  }
-
-  async createProductDelegation(input: {
-    productId: string;
-    resourceKey: string;
-    runtimeId: string;
-    avatarActorId: string;
-    grantedByActorId: string;
-    terminalId: string;
-    roomId: string;
-    enabledAt: number;
-    expiresAt: number;
-    policy: {
-      mode: "observe" | "write" | "confirm-before-write";
-      maxWriteBytes?: number;
-    };
-    provenance: {
-      source: string;
-      attentionContextId?: string;
-      attentionCommitId?: string;
-      terminalLeaseId?: string;
-      notes?: string;
-    };
-  }): Promise<ProductDelegationRecord> {
-    const output = await this.client.trpc.productExtension.createDelegation.mutate(input);
-    return output.delegation;
-  }
-
-  async revokeProductDelegation(input: {
-    delegationId: string;
-    revokedAt: number;
-    revokedReason: string;
-  }): Promise<ProductDelegationRecord> {
-    const output = await this.client.trpc.productExtension.revokeDelegation.mutate(input);
-    return output.delegation;
-  }
-
   async loadGlobalTerminalActivity(
     terminalId: string,
     before?: HistoryPageCursor | null,
@@ -5377,17 +5377,26 @@ export class RuntimeStore {
     return await this.refreshGlobalTerminalActivityInternal(input.terminalId, input);
   }
 
-  async readSettings(sessionId: string, kind: "settings" | "agenter" | "system" | "template" | "contract") {
+  async readSettings(sessionId: string, kind: "settings" | "agenter") {
     return await this.client.trpc.settings.read.query({ sessionId, kind });
   }
 
   async saveSettings(input: {
     sessionId: string;
-    kind: "settings" | "agenter" | "system" | "template" | "contract";
+    kind: "settings" | "agenter";
     content: string;
     baseMtimeMs: number;
   }) {
     return await this.client.trpc.settings.save.mutate(input);
+  }
+
+  async ensureAvatarPromptSeed(input: {
+    avatarPrincipalId: string;
+    workspacePath?: string;
+    kind: "agenter";
+    seedContent: string;
+  }) {
+    return await this.client.trpc.productExtension.ensureAvatarPromptSeed.mutate(input);
   }
 
   async listSettingsLayers(workspacePath: string) {
@@ -6203,6 +6212,91 @@ export class RuntimeStore {
     }
   }
 
+  private static resolveTerminalPermissionRequestStreamKey(input: {
+    terminalId?: string;
+  } = {}): string {
+    return input.terminalId ? `terminal:${input.terminalId}` : "all";
+  }
+
+  private applyTerminalPermissionRequest(request: GlobalTerminalApprovalRequest): void {
+    this.setGlobalTerminalApprovalsState(request.terminalId, (resource) => {
+      const withoutCurrent = resource.data.filter((candidate) => candidate.requestId !== request.requestId);
+      const data =
+        request.status === "pending"
+          ? [...withoutCurrent, request].sort((left, right) => {
+              if (left.createdAt !== right.createdAt) {
+                return left.createdAt - right.createdAt;
+              }
+              return left.requestId.localeCompare(right.requestId);
+            })
+          : withoutCurrent;
+      return {
+        ...resource,
+        data,
+        loaded: true,
+        loading: false,
+        refreshing: resource.loading || resource.refreshing,
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+    this.emit();
+  }
+
+  private applyTerminalPermissionRequestEvent(event: GlobalTerminalPermissionRequestEvent): void {
+    if (event.type === "snapshot") {
+      const byTerminalId = new Map<string, GlobalTerminalApprovalRequest[]>();
+      for (const request of event.items) {
+        const requests = byTerminalId.get(request.terminalId) ?? [];
+        requests.push(request);
+        byTerminalId.set(request.terminalId, requests);
+      }
+      for (const [terminalId, requests] of byTerminalId.entries()) {
+        this.setGlobalTerminalApprovalsState(terminalId, (resource) => ({
+          ...resource,
+          data: requests,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        }));
+      }
+      this.emit();
+      return;
+    }
+    this.applyTerminalPermissionRequest(event.request);
+  }
+
+  private subscribeTerminalPermissionRequests(input: GlobalTerminalPermissionRequestsInput = {}): SubscriptionHandle {
+    return this.client.trpc.terminal.permissionRequests.subscribe(input, {
+      onData: (event) => {
+        this.applyTerminalPermissionRequestEvent(event);
+      },
+      onError: () => {
+        // Stream recovery follows the shared transport reconnect path.
+      },
+    });
+  }
+
+  private pauseRetainedTerminalPermissionRequestStreams(): void {
+    for (const stream of this.terminalPermissionRequestStreams.values()) {
+      stream.sub?.unsubscribe();
+      stream.sub = null;
+    }
+  }
+
+  private restoreRetainedTerminalPermissionRequestStreams(): void {
+    for (const [key, stream] of this.terminalPermissionRequestStreams.entries()) {
+      if (stream.count <= 0 || stream.sub) {
+        continue;
+      }
+      stream.sub = this.subscribeTerminalPermissionRequests(
+        key === "all" ? {} : { terminalId: key.slice("terminal:".length) },
+      );
+    }
+  }
+
   retainApiCallStream(sessionId: string): () => void {
     const existing = this.apiCallStreams.get(sessionId);
     if (existing) {
@@ -6524,10 +6618,7 @@ export class RuntimeStore {
           if (current) {
             this.reconcileGlobalTerminalEntry({
               ...current,
-              seq:
-                typeof payload.result.seq === "number"
-                  ? payload.result.seq
-                  : current.seq,
+              seq: typeof payload.result.seq === "number" ? payload.result.seq : current.seq,
               snapshot: {
                 ...current.snapshot,
                 ...payload.result.snapshot,

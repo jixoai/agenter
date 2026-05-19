@@ -5,8 +5,10 @@ import { assertTerminalBackendKind, type TerminalBackendKind } from "@agenter/te
 import { CLI_SHELL_DEFAULT_AVATAR, CLI_SHELL_DEFAULT_SESSION } from "./product";
 
 const metadataOnlyTokens = new Set(["--help", "-h", "help", "--version", "-v", "version"]);
+const cleanupCommandTokens = new Set(["cleanup", "clean"]);
 
-export interface CliShellParsedArgs {
+export interface CliShellAttachArgs {
+  command: "attach";
   avatarNickname: string;
   shellName: string;
   backend?: TerminalBackendKind;
@@ -19,6 +21,17 @@ export interface CliShellParsedArgs {
   authServiceEndpoint?: string;
 }
 
+export interface CliShellCleanupArgs {
+  command: "cleanup";
+  shellName?: string;
+  confirm: boolean;
+  host: string;
+  port: number;
+  authServiceEndpoint?: string;
+}
+
+export type CliShellParsedArgs = CliShellAttachArgs | CliShellCleanupArgs;
+
 interface CliShellArgvParseResult {
   backend?: string;
   host: string;
@@ -27,6 +40,15 @@ interface CliShellArgvParseResult {
   session: string;
   debug?: boolean | string;
   experimentalDynamicRefresh?: boolean;
+  _: Array<string | number>;
+}
+
+interface CliShellCleanupArgvParseResult {
+  host: string;
+  port: number;
+  authServiceEndpoint?: string;
+  session?: string;
+  confirm?: boolean;
   _: Array<string | number>;
 }
 
@@ -52,6 +74,8 @@ export const normalizeShellName = (value: string | undefined): string => {
 
 export const isCliShellMetadataOnlyArgv = (argv: readonly string[]): boolean =>
   argv.some((token) => metadataOnlyTokens.has(token));
+
+export const isCliShellCleanupCommand = (argv: readonly string[]): boolean => cleanupCommandTokens.has(argv[0] ?? "");
 
 const parseOptionalWebPortToken = (value: string): number => {
   const trimmed = value.trim();
@@ -119,6 +143,44 @@ const normalizeDebugArg = (value: boolean | string | undefined): { debug: boolea
 };
 
 export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEnv = process.env): CliShellParsedArgs => {
+  if (isCliShellCleanupCommand(argv)) {
+    const parsed = yargs(argv.slice(1))
+      .scriptName("agenter-cli-shell cleanup")
+      .option("host", {
+        type: "string",
+        default: env.AGENTER_DAEMON_HOST?.trim() || "127.0.0.1",
+      })
+      .option("port", {
+        type: "number",
+        default: Number(env.AGENTER_DAEMON_PORT ?? "4580"),
+      })
+      .option("auth-service-endpoint", {
+        type: "string",
+        default: env.AGENTER_AUTH_SERVICE_ENDPOINT?.trim() || undefined,
+      })
+      .option("session", {
+        type: "string",
+      })
+      .option("confirm", {
+        type: "boolean",
+        default: false,
+      })
+      .strictOptions()
+      .exitProcess(false)
+      .help()
+      .parseSync() as CliShellCleanupArgvParseResult;
+    if (parsed._.length > 0) {
+      throw new Error(`unexpected cleanup argv: ${parsed._.map(String).join(" ")}`);
+    }
+    return {
+      command: "cleanup",
+      shellName: typeof parsed.session === "string" ? normalizeShellName(parsed.session) : undefined,
+      confirm: parsed.confirm === true,
+      host: String(parsed.host),
+      port: Number(parsed.port),
+      authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,
+    };
+  }
   const extracted = extractWebHostMode(argv);
   const parsed = yargs(normalizeDebugArgv(extracted.argv))
     .scriptName("agenter-cli-shell")
@@ -161,6 +223,7 @@ export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEn
   const debug = normalizeDebugArg(parsed.debug);
 
   return {
+    command: "attach",
     avatarNickname: normalizeAvatarMention(mentions[0]),
     shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
     backend: typeof parsed.backend === "string" ? assertTerminalBackendKind(parsed.backend) : undefined,

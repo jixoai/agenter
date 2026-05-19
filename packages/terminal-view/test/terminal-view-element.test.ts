@@ -1796,4 +1796,140 @@ describe("Feature: terminal-view WebComponent", () => {
     expect(shadowRoot.querySelector(".terminal-footer")).toBeNull();
     expect(shadowRoot.querySelector(".terminal-connection-badge")).toBeNull();
   });
+
+  test("Scenario: Given a terminal-scoped permission request When no host override handles it Then the default TopLayer popover emits approval intents", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "approval-inline";
+    element.liveTransportEnabled = false;
+    element.permissionRequests = [
+      {
+        requestId: "request-1",
+        terminalId: "approval-inline",
+        participantId: "auth:guard",
+        status: "pending",
+        createdAt: 1,
+        expiresAt: Date.now() + 60_000,
+        requestedInput: {
+          mode: "raw",
+          text: "echo inline",
+        },
+      },
+    ];
+    const actions: Array<import("../src").TerminalViewApprovalActionDetail> = [];
+    element.addEventListener("terminal-view-approval-action", (event) => {
+      actions.push((event as CustomEvent<import("../src").TerminalViewApprovalActionDetail>).detail);
+    });
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    const popover = shadowRoot.querySelector<HTMLElement>("[data-terminal-permission-popover]");
+    expect(popover?.getAttribute("data-terminal-permission-request-id")).toBe("request-1");
+    expect(popover?.textContent).toContain("echo inline");
+    popover?.querySelector<HTMLButtonElement>('[data-action="approve"]')?.click();
+
+    expect(actions).toEqual([
+      {
+        terminalId: "approval-inline",
+        requestId: "request-1",
+        action: "approve",
+      },
+    ]);
+  });
+
+  test("Scenario: Given a host permission callback handles a request When terminal-view receives it Then the default popover is replaced by the host callback", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    const handled: Array<import("../src").TerminalViewPermissionRequestDetail> = [];
+    element.terminalId = "custom-approval-inline";
+    element.liveTransportEnabled = false;
+    element.onRequestPermissions = (detail) => {
+      handled.push(detail);
+      return true;
+    };
+    element.permissionRequests = [
+      {
+        requestId: "request-custom",
+        terminalId: "custom-approval-inline",
+        participantId: "auth:guard",
+        status: "pending",
+        createdAt: 1,
+        expiresAt: Date.now() + 60_000,
+        requestedInput: {
+          mode: "raw",
+          text: "echo custom",
+        },
+      },
+    ];
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    expect(handled.map((detail) => detail.request.requestId)).toEqual(["request-custom"]);
+    expect(shadowRoot.querySelector("[data-terminal-permission-popover]")).toBeNull();
+  });
+
+  test("Scenario: Given a coalesced permission request update When the same request id changes Then terminal-view updates one approval surface", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    element.terminalId = "coalesced-approval-inline";
+    element.liveTransportEnabled = false;
+    element.permissionRequests = [
+      {
+        requestId: "request-coalesced",
+        terminalId: "coalesced-approval-inline",
+        participantId: "auth:guard",
+        status: "pending",
+        createdAt: 1,
+        expiresAt: Date.now() + 60_000,
+        requestedInput: {
+          mode: "raw",
+          text: "first preview",
+        },
+      },
+    ];
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    element.permissionRequests = [
+      {
+        ...element.permissionRequests[0]!,
+        expiresAt: Date.now() + 120_000,
+        requestedInput: {
+          mode: "raw",
+          text: "updated preview",
+        },
+      },
+    ];
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    const popovers = shadowRoot.querySelectorAll("[data-terminal-permission-popover]");
+    expect(popovers).toHaveLength(1);
+    expect(popovers[0]?.textContent).toContain("updated preview");
+  });
 });

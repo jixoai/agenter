@@ -148,7 +148,6 @@ const createAttachedResult = (avatar: GlobalAvatarCatalogEntry): CliShellBootstr
   managed: {
     managed: false,
     hostingActive: false,
-    activeDelegation: null,
     contextId: "ctx-hosting-shell-1",
     hostingMatches: [],
   },
@@ -339,6 +338,116 @@ describe("Feature: cli-shell startup sequencing", () => {
       experimentalDynamicRefresh: true,
     });
     expect(stopWebHost).toHaveBeenCalledTimes(1);
+    expect(clientClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("Scenario: Given cleanup mode When startup runs Then cli-shell performs resource cleanup without bootstrapping a shell", async () => {
+    const bootstrap = mock(async () =>
+      createAttachedResult({
+        avatarPrincipalId: "auth:shell-assistant",
+        runtimeId: "runtime:shell-assistant",
+        nickname: "shell-assistant",
+        displayName: "Shell Assistant",
+        classify: "assistant",
+        iconUrl: null,
+        defaultAvatar: false,
+        sourceScope: "global",
+        globalAvailable: true,
+        workspacePrivateSlotReady: false,
+        globalPath: "/global/shell-assistant",
+        workspacePrivatePath: "/workspace/.agenter/avatars/by-principal/shell-assistant",
+        effectivePath: "/global/shell-assistant",
+      }),
+    );
+    const clientClose = mock(() => {});
+    const deleteGlobalTerminal = mock(async () => ({ ok: true, message: "terminal deleted" }));
+    const deleteGlobalRoom = mock(async (input: { chatId: string }) => createRoomEntry(input.chatId));
+    const deleteSession = mock(async () => {});
+    const writes: string[] = [];
+    const write = mock((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const previousWrite = process.stdout.write;
+    process.stdout.write = write as unknown as typeof process.stdout.write;
+    try {
+      await runCliShellWithDependencies(["node", "agenter-cli-shell", "cleanup", "--confirm"], {
+        createClient: () =>
+          ({
+            trpc: {} as AgenterClient["trpc"],
+            wsUrl: "ws://127.0.0.1:13000/trpc",
+            httpUrl: "http://127.0.0.1:13000",
+            setAuthToken: mock(() => {}),
+            getAuthToken: mock(() => null),
+            subscribeTransport: mock(() => () => {}),
+            close: clientClose,
+          }) satisfies AgenterClient,
+        createStore: () =>
+          ({
+            autoLogin: async () => ({ ok: true, session: { token: "superadmin-token" } }),
+            setAuthToken: mock(() => {}),
+            listSessions: async () => [
+              {
+                ...createSession(),
+                primaryRoomId: "room-shell-1",
+              },
+            ],
+            listGlobalTerminals: async () => [
+              createTerminalEntry("shell-1:terminal-1", {
+                metadata: {
+                  productId: "cli-shell",
+                  resourceKey: "shell-1:terminal-1",
+                  ownerSystem: "terminal-system",
+                },
+              }),
+              createTerminalEntry("ordinary-terminal"),
+            ],
+            listGlobalRooms: async () => [
+              {
+                ...createRoomEntry("room-shell-1"),
+                metadata: {
+                  productId: "cli-shell",
+                  resourceKey: "shell-1",
+                  ownerSystem: "message-system",
+                },
+              },
+            ],
+            deleteGlobalTerminal,
+            deleteGlobalRoom,
+            deleteSession,
+          }) as unknown as ReturnType<CliShellRunDependencies["createStore"]>,
+        bootstrap,
+        loadStartupTui: async () => ({
+          startCliShellStartupTui: async () => ({
+            finished: Promise.resolve(),
+            destroy: mock(() => {}),
+            setHeartbeat: mock(() => {}),
+          }),
+        }),
+        loadCliShellTui: async () => ({
+          startCliShellTui: async () => ({
+            finished: Promise.resolve(),
+            destroy: mock(() => {}),
+          }),
+        }),
+        loadCliShellWebHost: async () => ({
+          startCliShellWebHost: async () => ({
+            url: "http://127.0.0.1:0/",
+            finished: Promise.resolve(),
+            stop: async () => {},
+          }),
+        }),
+        isInteractive: () => true,
+      } satisfies CliShellRunDependencies);
+    } finally {
+      process.stdout.write = previousWrite;
+    }
+
+    expect(bootstrap).not.toHaveBeenCalled();
+    expect(deleteGlobalTerminal).toHaveBeenCalledWith({ terminalId: "shell-1:terminal-1" });
+    expect(deleteGlobalRoom).toHaveBeenCalledWith({ chatId: "room-shell-1" });
+    expect(deleteSession).toHaveBeenCalledWith("session-1");
+    expect(writes.join("")).toContain("cli-shell cleanup executed");
     expect(clientClose).toHaveBeenCalledTimes(1);
   });
 

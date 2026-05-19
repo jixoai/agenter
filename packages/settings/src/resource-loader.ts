@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { isAbsolute, join, normalize, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export interface ResourceLoaderContext {
   projectRoot: string;
@@ -37,7 +38,7 @@ const toFilePath = (input: string, context: ResourceLoaderContext): string => {
   return normalize(resolve(context.cwd, expanded));
 };
 
-const resolveFileUri = (path: string): string => `file://${path}`;
+const resolveFileUri = (path: string): string => pathToFileURL(path).toString();
 
 const defaultFileHandler: ResourceProtocolHandler = {
   readText: async (resource) => {
@@ -106,7 +107,7 @@ export class ResourceLoader {
 
     if (source.startsWith("file://")) {
       const url = new URL(source);
-      let path = normalize(url.pathname);
+      let path = normalize(fileURLToPath(url));
       if (options?.forSettings && isDirectoryLike(path)) {
         path = join(path, "settings.json");
       }

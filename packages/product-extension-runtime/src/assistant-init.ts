@@ -2,6 +2,12 @@ import { z } from "zod";
 
 import { productIdSchema } from "./descriptor";
 
+const avatarPrincipalIdSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^0x[a-f0-9]{40}$/u, "avatarPrincipalId must be a canonical principal id");
+
 export const productAssistantEnsureInputSchema = z.object({
   productId: productIdSchema,
   workspacePath: z.string().trim().min(1),
@@ -11,15 +17,13 @@ export const productAssistantEnsureInputSchema = z.object({
 });
 export type ProductAssistantEnsureInput = z.infer<typeof productAssistantEnsureInputSchema>;
 
-export const productPromptKindSchema = z.enum(["agenter", "system", "template", "contract"]);
-export type ProductPromptKind = z.infer<typeof productPromptKindSchema>;
-
-export const productPromptSeedInputSchema = z.object({
-  sessionId: z.string().trim().min(1),
-  kind: productPromptKindSchema.default("agenter"),
+export const productAvatarPromptSeedInputSchema = z.object({
+  avatarPrincipalId: avatarPrincipalIdSchema,
+  workspacePath: z.string().trim().min(1).optional(),
+  kind: z.literal("agenter").default("agenter"),
   seedContent: z.string(),
 });
-export type ProductPromptSeedInput = z.infer<typeof productPromptSeedInputSchema>;
+export type ProductAvatarPromptSeedInput = z.infer<typeof productAvatarPromptSeedInputSchema>;
 
 export const productMemoryRoleSchema = z.object({
   role: z

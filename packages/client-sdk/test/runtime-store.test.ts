@@ -27,6 +27,10 @@ type ReversePageResult<T> = {
 type AttentionContextItem = RuntimeAttentionState["snapshot"]["contexts"][number];
 type AttentionCommitItem = AttentionContextItem["commits"][number];
 type SubscriptionHandlers = { onData?: (event: unknown) => void; onError?: () => void };
+type TerminalPermissionSubscriptionInput = {
+  terminalId?: string;
+  statuses?: Array<"pending" | "approved" | "denied" | "expired">;
+};
 
 const createUnauthorizedTrpcError = (): Error & { data: { code: string } } => {
   const error = new Error("auth token required") as Error & { data: { code: string } };
@@ -367,6 +371,10 @@ const createMockClient = (input: {
   apiCallsSubscribe?: (
     payload: { sessionId: string; afterId: number },
     handlers: { onData?: (payload: unknown) => void; onError?: () => void },
+  ) => { unsubscribe: () => void };
+  terminalPermissionRequestsSubscribe?: (
+    payload: TerminalPermissionSubscriptionInput | undefined,
+    handlers: SubscriptionHandlers,
   ) => { unsubscribe: () => void };
   createSessionResult?: RuntimeSnapshot["sessions"][number];
   workspaceRecentQuery?: () => Promise<{ items: string[] }>;
@@ -992,7 +1000,7 @@ const createMockClient = (input: {
   terminalListGrantsQuery?: (input: { terminalId: string }) => Promise<{ items: unknown[] }>;
   terminalIssueGrantMutate?: (input: {
     terminalId: string;
-    role: "admin" | "writer" | "requester" | "readonly";
+    role: "admin" | "writer" | "guard" | "readonly";
     participantId: string;
     label?: string;
     accessTokenHint?: string;
@@ -1785,7 +1793,7 @@ const createMockClient = (input: {
         issueGrant: {
           mutate: async (payload: {
             terminalId: string;
-            role: "admin" | "writer" | "requester" | "readonly";
+            role: "admin" | "writer" | "guard" | "readonly";
             participantId: string;
             label?: string;
             accessTokenHint?: string;
@@ -1806,6 +1814,15 @@ const createMockClient = (input: {
             input.terminalListApprovalRequestsQuery
               ? await input.terminalListApprovalRequestsQuery(payload)
               : { items: [] },
+        },
+        permissionRequests: {
+          subscribe: (
+            payload: TerminalPermissionSubscriptionInput | undefined,
+            handlers: SubscriptionHandlers,
+          ) =>
+            input.terminalPermissionRequestsSubscribe
+              ? input.terminalPermissionRequestsSubscribe(payload, handlers)
+              : { unsubscribe: () => {} },
         },
         approveRequest: {
           mutate: async (payload: { terminalId: string; requestId: string; durationMs: number }) =>
@@ -8311,7 +8328,7 @@ describe("Feature: runtime store synchronization", () => {
               {
                 requestId: `approval:${input.terminalId}`,
                 terminalId: input.terminalId,
-                participantId: "auth:requester",
+                participantId: "auth:guard",
                 assignedAdminId: "system:trusted-terminal-bootstrap",
                 status: "pending" as const,
                 requestedInput: {
@@ -8396,6 +8413,103 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
+  test("Scenario: Given terminal permission subscriptions When global and scoped streams deliver requests Then runtime store updates only observable approval rows without duplicates", async () => {
+    const terminalA = "term-permission-a";
+    const terminalB = "term-permission-b";
+    const pendingA: GlobalTerminalApprovalRequest = {
+      requestId: "approval-a",
+      terminalId: terminalA,
+      participantId: "auth:guard-a",
+      assignedAdminId: "auth:admin",
+      status: "pending",
+      requestedInput: { mode: "raw", text: "echo a" },
+      createdAt: 1,
+      expiresAt: 91_000,
+    };
+    const pendingB: GlobalTerminalApprovalRequest = {
+      requestId: "approval-b",
+      terminalId: terminalB,
+      participantId: "auth:guard-b",
+      assignedAdminId: "auth:admin",
+      status: "pending",
+      requestedInput: { mode: "mixed", text: "<raw>echo b</raw><key data=\"enter\"/>" },
+      createdAt: 2,
+      expiresAt: 92_000,
+    };
+    const subscriptions: Array<{
+      payload: TerminalPermissionSubscriptionInput | undefined;
+      handlers: SubscriptionHandlers;
+      closed: boolean;
+    }> = [];
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        terminalPermissionRequestsSubscribe: (payload, handlers) => {
+          const subscription = { payload, handlers, closed: false };
+          subscriptions.push(subscription);
+          if (payload?.terminalId === terminalA) {
+            handlers.onData?.({ type: "snapshot", items: [pendingA] });
+          } else if (payload?.terminalId === terminalB) {
+            handlers.onData?.({ type: "snapshot", items: [pendingB] });
+          } else {
+            handlers.onData?.({ type: "snapshot", items: [pendingA, pendingB] });
+          }
+          return {
+            unsubscribe: () => {
+              subscription.closed = true;
+            },
+          };
+        },
+      }),
+    );
+
+    await store.connect();
+    const releaseGlobal = store.retainTerminalPermissionRequests();
+    const releaseTerminalA = store.retainTerminalPermissionRequests({ terminalId: terminalA });
+
+    await waitFor(() => subscriptions.length === 2);
+    expect(subscriptions.map((subscription) => subscription.payload ?? {}).sort((left, right) =>
+      JSON.stringify(left).localeCompare(JSON.stringify(right)),
+    )).toEqual([{ terminalId: terminalA }, {}]);
+    expect(store.getState().globalTerminalApprovalsById[terminalA]?.data).toEqual([pendingA]);
+    expect(store.getState().globalTerminalApprovalsById[terminalB]?.data).toEqual([pendingB]);
+
+    subscriptions
+      .find((subscription) => subscription.payload?.terminalId === terminalA)
+      ?.handlers.onData?.({
+        type: "request",
+        request: {
+          ...pendingA,
+          expiresAt: 95_000,
+        },
+      });
+    expect(store.getState().globalTerminalApprovalsById[terminalA]?.data).toEqual([
+      {
+        ...pendingA,
+        expiresAt: 95_000,
+      },
+    ]);
+
+    subscriptions
+      .find((subscription) => subscription.payload?.terminalId === terminalA)
+      ?.handlers.onData?.({
+        type: "request",
+        request: {
+          ...pendingA,
+          status: "denied",
+          decidedAt: 3,
+          decidedBy: "auth:admin",
+        },
+      });
+    expect(store.getState().globalTerminalApprovalsById[terminalA]?.data).toEqual([]);
+    expect(store.getState().globalTerminalApprovalsById[terminalB]?.data).toEqual([pendingB]);
+
+    releaseTerminalA();
+    releaseGlobal();
+    expect(subscriptions.every((subscription) => subscription.closed)).toBe(true);
+    store.disconnect();
+  });
+
   test("Scenario: Given unauthenticated browser global terminal hydration When the terminal catalog is requested Then runtime store resolves an explicit auth-required state instead of throwing", async () => {
     const store = new RuntimeStore(
       createMockClient({
@@ -8448,7 +8562,7 @@ describe("Feature: runtime store synchronization", () => {
       listGrants?: { terminalId: string };
       issue?: {
         terminalId: string;
-        role: "admin" | "writer" | "requester" | "readonly";
+        role: "admin" | "writer" | "guard" | "readonly";
         participantId: string;
         label?: string;
         adminCandidateRank?: number | null;
@@ -8521,7 +8635,7 @@ describe("Feature: runtime store synchronization", () => {
     const pendingApproval: GlobalTerminalApprovalRequest = {
       requestId: "approval-1",
       terminalId: terminal.terminalId,
-      participantId: "auth:requester",
+      participantId: "auth:guard",
       assignedAdminId: "system:trusted-terminal-bootstrap",
       status: "pending" as const,
       requestedInput: {
@@ -8554,8 +8668,8 @@ describe("Feature: runtime store synchronization", () => {
       expiresAt: 65_000,
     };
     let pendingApprovals = [pendingApproval, deniedApproval];
-    let requesterGrantIssued = false;
-    let requesterLeaseActive = false;
+    let guardGrantIssued = false;
+    let guardLeaseActive = false;
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(0),
@@ -8566,19 +8680,19 @@ describe("Feature: runtime store synchronization", () => {
               {
                 ...terminal,
                 pendingRequestCount: pendingApprovals.length,
-                actors: requesterGrantIssued
+                actors: guardGrantIssued
                   ? [
                       ...(terminal.actors ?? []),
                       {
                         actorId: pendingApproval.participantId,
-                        role: "requester" as const,
-                        label: "Requester",
+                        role: "guard" as const,
+                        label: "Guard",
                         currentAdmin: false,
                         online: true,
                         focused: false,
                         invalidCredential: false,
-                        leaseId: requesterLeaseActive ? approvedLease.leaseId : undefined,
-                        leaseExpiresAt: requesterLeaseActive ? approvedLease.expiresAt : undefined,
+                        leaseId: guardLeaseActive ? approvedLease.leaseId : undefined,
+                        leaseExpiresAt: guardLeaseActive ? approvedLease.expiresAt : undefined,
                       },
                     ]
                   : terminal.actors,
@@ -8628,16 +8742,16 @@ describe("Feature: runtime store synchronization", () => {
         terminalListGrantsQuery: async (input) => {
           requests.listGrants = input;
           return {
-            items: requesterGrantIssued
+            items: guardGrantIssued
               ? [
                   initialGrant,
                   {
-                    grantId: "grant-requester",
+                    grantId: "grant-guard",
                     terminalId: input.terminalId,
-                    role: "requester" as const,
-                    label: "Requester",
+                    role: "guard" as const,
+                    label: "Guard",
                     participantId: pendingApproval.participantId,
-                    accessToken: "termtok_requester",
+                    accessToken: "termtok_guard",
                     currentAdmin: false,
                     adminCandidateRank: 2,
                     createdAt: 5,
@@ -8648,15 +8762,15 @@ describe("Feature: runtime store synchronization", () => {
         },
         terminalIssueGrantMutate: async (input) => {
           requests.issue = input;
-          requesterGrantIssued = true;
+          guardGrantIssued = true;
           return {
             grant: {
-              grantId: "grant-requester",
+              grantId: "grant-guard",
               terminalId: input.terminalId,
               role: input.role,
               label: input.label,
               participantId: input.participantId,
-              accessToken: "termtok_requester",
+              accessToken: "termtok_guard",
               currentAdmin: false,
               adminCandidateRank: input.adminCandidateRank ?? undefined,
               createdAt: 5,
@@ -8665,7 +8779,7 @@ describe("Feature: runtime store synchronization", () => {
         },
         terminalRevokeGrantMutate: async (input) => {
           requests.revoke = input;
-          requesterGrantIssued = false;
+          guardGrantIssued = false;
           return { ok: true };
         },
         terminalListApprovalRequestsQuery: async (input) => {
@@ -8675,7 +8789,7 @@ describe("Feature: runtime store synchronization", () => {
         terminalApproveRequestMutate: async (input) => {
           requests.approve = input;
           pendingApprovals = pendingApprovals.filter((request) => request.requestId !== input.requestId);
-          requesterLeaseActive = true;
+          guardLeaseActive = true;
           return approvedLease;
         },
         terminalDenyRequestMutate: async (input) => {
@@ -8769,8 +8883,8 @@ describe("Feature: runtime store synchronization", () => {
     expect(
       await store.writeGlobalTerminal({
         terminalId: terminal.terminalId,
-        accessToken: "termtok_requester",
-        text: "echo requester",
+        accessToken: "termtok_guard",
+        text: "echo guard",
         createApprovalRequest: true,
         returnRead: false,
       }),
@@ -8782,21 +8896,21 @@ describe("Feature: runtime store synchronization", () => {
 
     const issued = await store.issueGlobalTerminalGrant({
       terminalId: terminal.terminalId,
-      role: "requester",
-      participantId: "auth:requester",
-      label: "Requester",
+      role: "guard",
+      participantId: "auth:guard",
+      label: "Guard",
       adminCandidateRank: 2,
     });
     expect(issued).toMatchObject({
-      grantId: "grant-requester",
-      accessToken: "termtok_requester",
+      grantId: "grant-guard",
+      accessToken: "termtok_guard",
     });
     expect(
       store
         .getState()
         .globalTerminalGrantsById[terminal.terminalId]?.data.map((grant) => grant.grantId)
         .sort(),
-    ).toEqual(["grant-requester", "grant-reviewer"]);
+    ).toEqual(["grant-guard", "grant-reviewer"]);
 
     const releaseApprovals = store.retainGlobalTerminalApprovals(terminal.terminalId);
     await store.hydrateGlobalTerminalApprovals({ terminalId: terminal.terminalId });
@@ -8828,7 +8942,7 @@ describe("Feature: runtime store synchronization", () => {
 
     const revoked = await store.revokeGlobalTerminalGrant({
       terminalId: terminal.terminalId,
-      grantId: "grant-requester",
+      grantId: "grant-guard",
     });
     expect(revoked).toEqual({ ok: true });
     expect(store.getState().globalTerminalGrantsById[terminal.terminalId]?.data.map((grant) => grant.grantId)).toEqual([
@@ -8866,22 +8980,22 @@ describe("Feature: runtime store synchronization", () => {
     });
     expect(requests.write).toEqual({
       terminalId: terminal.terminalId,
-      accessToken: "termtok_requester",
-      text: "echo requester",
+      accessToken: "termtok_guard",
+      text: "echo guard",
       createApprovalRequest: true,
       returnRead: false,
     });
     expect(requests.listGrants).toEqual({ terminalId: terminal.terminalId });
     expect(requests.issue).toEqual({
       terminalId: terminal.terminalId,
-      role: "requester",
-      participantId: "auth:requester",
-      label: "Requester",
+      role: "guard",
+      participantId: "auth:guard",
+      label: "Guard",
       adminCandidateRank: 2,
     });
     expect(requests.revoke).toEqual({
       terminalId: terminal.terminalId,
-      grantId: "grant-requester",
+      grantId: "grant-guard",
     });
     expect(requests.listApprovals).toEqual({
       terminalId: terminal.terminalId,
@@ -8940,7 +9054,7 @@ describe("Feature: runtime store synchronization", () => {
 
     const output = await store.inputGlobalTerminal({
       terminalId,
-      accessToken: "token-requester",
+      accessToken: "token-guard",
       text: '<raw>echo mixed</raw><key data="enter"/>',
       createApprovalRequest: true,
       returnRead: false,
@@ -8949,7 +9063,7 @@ describe("Feature: runtime store synchronization", () => {
     expect(output).toEqual({ ok: true, message: "input accepted", eventId: 41 });
     expect(captured).toEqual({
       terminalId,
-      accessToken: "token-requester",
+      accessToken: "token-guard",
       text: '<raw>echo mixed</raw><key data="enter"/>',
       createApprovalRequest: true,
       returnRead: false,
@@ -8974,7 +9088,7 @@ describe("Feature: runtime store synchronization", () => {
     const pendingApproval: GlobalTerminalApprovalRequest = {
       requestId: "approval-refresh",
       terminalId,
-      participantId: "auth:requester",
+      participantId: "auth:guard",
       assignedAdminId: "system:trusted-terminal-bootstrap",
       status: "pending" as const,
       requestedInput: {
@@ -9098,7 +9212,7 @@ describe("Feature: runtime store synchronization", () => {
 
     await store.writeGlobalTerminal({
       terminalId,
-      accessToken: "token-requester",
+      accessToken: "token-guard",
       text: "echo pending refresh",
       createApprovalRequest: true,
       returnRead: false,

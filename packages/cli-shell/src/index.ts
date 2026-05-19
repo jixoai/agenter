@@ -15,7 +15,6 @@ export {
   type CliShellStore,
 } from "./bootstrap";
 export {
-  CLI_SHELL_DEFAULT_DELEGATION_TTL_MS,
   buildCliShellHostingContextId,
   disableCliShellManagedMode,
   enableCliShellManagedMode,
@@ -27,6 +26,16 @@ export {
   type CliShellManagedState,
 } from "./managed";
 export { isCliShellMetadataOnlyArgv, normalizeShellName, parseCliShellArgs, type CliShellParsedArgs } from "./argv";
+export {
+  cleanupCliShellResources,
+  formatCliShellCleanupResult,
+  hasCliShellCleanupFailures,
+  planCliShellCleanup,
+  type CliShellCleanupOptions,
+  type CliShellCleanupResult,
+  type CliShellCleanupStore,
+  type CliShellCleanupTarget,
+} from "./cleanup";
 export { runCliShell } from "./run-cli-shell";
 export { fitTerminalText, measureTerminalText } from "./tui/cell-width";
 export {
@@ -178,6 +187,7 @@ export type {
   CliShellDialogueBlock,
   CliShellDialoguePlacement,
   CliShellDialoguePlacementRequest,
+  CliShellComposedSurfaceState,
   CliShellPointerAction,
   CliShellScrollRegion,
   CliShellSelectionSource,

@@ -35,10 +35,14 @@ import { TERMINAL_PUBLIC_SCREEN_ATTRIBUTE, TERMINAL_PUBLIC_SCROLL_ATTRIBUTE } fr
 import { resolveTerminalScreenMetrics } from "./terminal-geometry";
 import type {
   TerminalViewConnectionState,
+  TerminalViewApprovalActionDetail,
   TerminalViewGeometryAuthorityDetail,
   TerminalViewGeometryRole,
+  TerminalViewPermissionRequest,
+  TerminalViewPermissionRequestDetail,
   TerminalViewPresentationReadyDetail,
   TerminalViewPresentationSettleReason,
+  TerminalViewRequestPermissionsHandler,
   TerminalViewScreenMetrics,
   TerminalViewSnapshot,
 } from "./terminal-view-types";
@@ -87,6 +91,69 @@ const templateStyles = `
     font-variant-ligatures: normal;
     font-feature-settings: "liga" 1, "calt" 1;
     text-rendering: optimizeLegibility;
+  }
+
+  .terminal-permission-popover {
+    box-sizing: border-box;
+    width: min(420px, calc(100vw - 32px));
+    border: 1px solid rgba(148, 163, 184, 0.34);
+    border-radius: 8px;
+    padding: 12px;
+    background: rgba(15, 23, 42, 0.96);
+    color: #f8fafc;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.34);
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .terminal-permission-popover::backdrop {
+    background: transparent;
+  }
+
+  .terminal-permission-title {
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .terminal-permission-meta,
+  .terminal-permission-status {
+    margin: 0;
+    color: rgba(226, 232, 240, 0.72);
+    font-size: 12px;
+  }
+
+  .terminal-permission-preview {
+    margin: 10px 0;
+    max-height: 120px;
+    overflow: auto;
+    white-space: pre-wrap;
+    border-radius: 6px;
+    background: rgba(2, 6, 23, 0.78);
+    padding: 8px;
+    font: 12px/1.45 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  .terminal-permission-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .terminal-permission-button {
+    min-width: 74px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 6px;
+    padding: 6px 10px;
+    background: rgba(30, 41, 59, 0.92);
+    color: #e2e8f0;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .terminal-permission-button[data-action="approve"] {
+    border-color: rgba(34, 197, 94, 0.38);
+    background: rgba(22, 101, 52, 0.92);
+    color: #dcfce7;
   }
 `;
 
@@ -186,9 +253,12 @@ export class TerminalViewElement extends LitElement {
   @property({ attribute: "projection-scale", type: Number }) accessor projectionScale = 1;
   @property({ attribute: "projection-offset-x", type: Number }) accessor projectionOffsetX = 0;
   @property({ attribute: "projection-offset-y", type: Number }) accessor projectionOffsetY = 0;
+  @property({ attribute: false }) accessor permissionRequests: TerminalViewPermissionRequest[] = [];
+  @property({ attribute: false }) accessor onRequestPermissions: TerminalViewRequestPermissionsHandler | null = null;
 
   @query("[data-terminal-stage]") private accessor stageHost!: HTMLDivElement;
   @query("[data-terminal-viewport]") private accessor viewportHost!: HTMLDivElement;
+  @query("[data-terminal-permission-popover]") private accessor permissionPopover!: HTMLElement;
 
   private terminalSession: TerminalRendererSession | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -224,6 +294,8 @@ export class TerminalViewElement extends LitElement {
   private textEvidenceNode: HTMLSpanElement | null = null;
   private pendingTerminalFocus = false;
   private lastResolvedRendererPreference: TerminalRendererPreference = DEFAULT_TERMINAL_RENDERER_PREFERENCE;
+  private permissionRequestHandlerFingerprints = new Map<string, string>();
+  private customHandledPermissionRequestIds = new Set<string>();
 
   // Canvas-first renderers such as ghostty-web do not surface visible terminal text
   // through DOM nodes. Keep one renderer-neutral text evidence surface for host probes
@@ -321,6 +393,8 @@ export class TerminalViewElement extends LitElement {
     this.upgradeProperty("projectionScale");
     this.upgradeProperty("projectionOffsetX");
     this.upgradeProperty("projectionOffsetY");
+    this.upgradeProperty("permissionRequests");
+    this.upgradeProperty("onRequestPermissions");
     this.syncSocket();
   }
 
@@ -390,6 +464,14 @@ export class TerminalViewElement extends LitElement {
         this.ensureRendererSession();
       });
     }
+    if (changed.has("permissionRequests") || changed.has("onRequestPermissions") || changed.has("terminalId")) {
+      queueMicrotask(() => {
+        if (!this.isConnected) {
+          return;
+        }
+        this.syncPermissionRequests();
+      });
+    }
   }
 
   render() {
@@ -415,6 +497,7 @@ export class TerminalViewElement extends LitElement {
     const appearance = this.resolveAppearance();
     const rendererStyles = resolveTerminalRendererStyles(this.resolveRendererState().resolvedRenderer);
     const combinedStyles = `${rendererStyles}\n${templateStyles}`;
+    const permissionRequest = this.resolveDefaultPermissionRequest();
 
     return html`
       <style>
@@ -444,6 +527,7 @@ export class TerminalViewElement extends LitElement {
           </section>
         </div>
       </div>
+      ${permissionRequest ? this.renderPermissionPopover(permissionRequest) : null}
     `;
   }
 
@@ -675,6 +759,8 @@ export class TerminalViewElement extends LitElement {
       | "projectionScale"
       | "projectionOffsetX"
       | "projectionOffsetY"
+      | "permissionRequests"
+      | "onRequestPermissions"
       | "screenMetrics",
   ): void {
     if (!Object.prototype.hasOwnProperty.call(this, name)) {
@@ -1175,6 +1261,142 @@ export class TerminalViewElement extends LitElement {
   private replaceTextEvidence(value: string): void {
     this.textEvidenceBuffer = this.clampTextEvidence(stripTerminalControlText(value));
     this.syncTextEvidenceNode();
+  }
+
+  private syncPermissionRequests(): void {
+    const activeRequestIds = new Set(this.permissionRequests.map((request) => request.requestId));
+    for (const requestId of [...this.permissionRequestHandlerFingerprints.keys()]) {
+      if (!activeRequestIds.has(requestId)) {
+        this.permissionRequestHandlerFingerprints.delete(requestId);
+        this.customHandledPermissionRequestIds.delete(requestId);
+      }
+    }
+    if (!this.onRequestPermissions) {
+      this.permissionRequestHandlerFingerprints.clear();
+      this.customHandledPermissionRequestIds.clear();
+      this.requestUpdate();
+      this.schedulePopoverSync();
+      return;
+    }
+    for (const request of this.permissionRequests) {
+      if (request.terminalId !== this.terminalId) {
+        continue;
+      }
+      const fingerprint = this.permissionRequestFingerprint(request);
+      if (this.permissionRequestHandlerFingerprints.get(request.requestId) === fingerprint) {
+        continue;
+      }
+      this.permissionRequestHandlerFingerprints.set(request.requestId, fingerprint);
+      const handled = this.onRequestPermissions({
+        terminalId: this.terminalId,
+        request,
+      });
+      if (handled === true) {
+        this.customHandledPermissionRequestIds.add(request.requestId);
+      } else {
+        this.customHandledPermissionRequestIds.delete(request.requestId);
+      }
+    }
+    this.requestUpdate();
+    this.schedulePopoverSync();
+  }
+
+  private permissionRequestFingerprint(request: TerminalViewPermissionRequest): string {
+    return JSON.stringify({
+      requestId: request.requestId,
+      terminalId: request.terminalId,
+      participantId: request.participantId,
+      assignedAdminId: request.assignedAdminId,
+      expiresAt: request.expiresAt,
+      status: request.status,
+      requestedInput: request.requestedInput,
+      decidedAt: request.decidedAt,
+      decidedBy: request.decidedBy,
+      leaseId: request.leaseId,
+    });
+  }
+
+  private resolveDefaultPermissionRequest(): TerminalViewPermissionRequest | null {
+    const requests = this.permissionRequests.filter(
+      (request) => request.terminalId === this.terminalId && !this.customHandledPermissionRequestIds.has(request.requestId),
+    );
+    return (
+      requests.find((request) => request.status === "pending") ??
+      requests.find((request) => request.status === "expired" || request.status === "denied") ??
+      null
+    );
+  }
+
+  private renderPermissionPopover(request: TerminalViewPermissionRequest) {
+    const preview = request.requestedInput?.text ?? "(no input preview)";
+    const expires = new Date(request.expiresAt).toLocaleTimeString();
+    return html`
+      <section
+        popover="manual"
+        class="terminal-permission-popover"
+        data-terminal-permission-popover="true"
+        data-terminal-permission-request-id=${request.requestId}
+        data-terminal-permission-status=${request.status}
+      >
+        <p class="terminal-permission-title">Terminal write approval</p>
+        <p class="terminal-permission-meta">${request.participantId} requests ${request.requestedInput?.mode ?? "input"} access</p>
+        <pre class="terminal-permission-preview">${preview}</pre>
+        ${request.status === "pending"
+          ? html`
+              <p class="terminal-permission-status">Pending until ${expires}</p>
+              <div class="terminal-permission-actions">
+                <button
+                  type="button"
+                  class="terminal-permission-button"
+                  data-action="deny"
+                  @click=${() => this.dispatchApprovalAction("deny", request)}
+                >
+                  Deny
+                </button>
+                <button
+                  type="button"
+                  class="terminal-permission-button"
+                  data-action="approve"
+                  @click=${() => this.dispatchApprovalAction("approve", request)}
+                >
+                  Approve
+                </button>
+              </div>
+            `
+          : html`<p class="terminal-permission-status">Request ${request.status}</p>`}
+      </section>
+    `;
+  }
+
+  private dispatchApprovalAction(action: TerminalViewApprovalActionDetail["action"], request: TerminalViewPermissionRequest): void {
+    const detail: TerminalViewApprovalActionDetail = {
+      terminalId: request.terminalId,
+      requestId: request.requestId,
+      action,
+    };
+    this.dispatchEvent(
+      new CustomEvent<TerminalViewApprovalActionDetail>("terminal-view-approval-action", {
+        detail,
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  private schedulePopoverSync(): void {
+    this.scheduleAfterUpdate(() => {
+      this.syncPermissionPopover();
+    });
+  }
+
+  private syncPermissionPopover(): void {
+    const popover = this.permissionPopover;
+    if (!popover || typeof popover.showPopover !== "function") {
+      return;
+    }
+    if (!popover.matches(":popover-open")) {
+      popover.showPopover();
+    }
   }
 
   private clampTextEvidence(value: string): string {

@@ -58,12 +58,15 @@ const dedupeSources = (sources: AvatarSource[]): AvatarSource[] => {
 export const resolveAvatarSources = (input: ResolveAvatarInput): ResolvedAvatar => {
   const nickname = sanitizeNickname(input.nickname ?? defaultAvatarNickname());
   const homeDir = input.homeDir || homedir();
+  const principalId = input.principalId?.trim().toLowerCase();
   return {
     nickname,
     sources: dedupeSources([
       {
         name: "user",
-        path: resolveGlobalAvatarRoot(nickname, homeDir),
+        path: principalId
+          ? resolveGlobalAvatarCanonicalRoot(principalId, homeDir)
+          : resolveGlobalAvatarRoot(nickname, homeDir),
       },
     ]),
   };

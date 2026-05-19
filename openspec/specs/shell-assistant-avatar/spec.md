@@ -52,20 +52,20 @@ The default `shell-assistant` `AGENTER.mdx` SHALL bias the Avatar toward underst
 
 #### Scenario: Senior-led collaboration is learned from evidence
 - **WHEN** a senior engineer primarily leads the terminal work and uses `shell-assistant` for review, explanation, or bounded operation
-- **THEN** the assistant is guided to keep the user in control unless evidence or delegation asks for more autonomy
+- **THEN** the assistant is guided to keep the user in control unless evidence or hosting attention asks for more autonomy
 - **AND** it records durable collaboration preferences in `user-model` or `pairing-playbook`
 - **AND** it does not treat senior-led behavior as a universal default for all users
 
 #### Scenario: Requirement-led collaboration is learned from evidence
 - **WHEN** a user mainly states needs and expects the assistant to drive more planning, implementation, and explanation
-- **THEN** the assistant is guided to take more initiative within product and delegation boundaries
+- **THEN** the assistant is guided to take more initiative within product and TerminalSystem authority boundaries
 - **AND** it records the learned autonomy level and explanation needs in `pairing-playbook`
 - **AND** it does not hard-code the user as novice or remove opportunities for the user to lead later
 
 #### Scenario: Playful collaboration preserves engineering boundaries
 - **WHEN** a user interacts with `shell-assistant` in a playful or companion-like style
 - **THEN** the assistant may adapt tone and cadence to the learned relationship
-- **AND** it still preserves terminal truth ownership, prompt/memory discipline, delegation requirements, and durable engineering constraints
+- **AND** it still preserves terminal truth ownership, prompt/memory discipline, TerminalSystem authority requirements, and durable engineering constraints
 - **AND** it records only operationally useful preferences rather than treating playfulness as a product mode
 
 #### Scenario: Self-evolution can run without managed mode through programmable attention
@@ -158,7 +158,7 @@ Cli-shell managed mode SHALL create or refresh a product-scoped AttentionItem fo
 - **WHEN** the user disables managed mode from cli-shell
 - **THEN** cli-shell commits an attention update with `scores: {"hosting": 0}`
 - **AND** the update records reason `user_disabled`
-- **AND** any terminal write delegation created by managed mode is revoked or allowed to expire according to delegation law
+- **AND** the update does not revoke unrelated TerminalSystem grants, guard approval requests, or write leases
 
 #### Scenario: Open-ended watch task can remain unresolved
 - **GIVEN** the user asked the assistant to watch the terminal and report problems to chat
@@ -176,4 +176,4 @@ Cli-shell managed mode SHALL create or refresh a product-scoped AttentionItem fo
 - **WHEN** a hosting AttentionItem has positive score
 - **THEN** it may wake or keep scheduling the Avatar
 - **AND** it does not by itself authorize terminal writes
-- **AND** terminal writes still require a valid delegation lease or terminal-native approval with Avatar actor provenance
+- **AND** terminal writes still require TerminalSystem-native writer authority, guard approval, or an active terminal write lease with Avatar actor provenance

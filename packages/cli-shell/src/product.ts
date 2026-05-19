@@ -26,7 +26,7 @@ export const cliShellProductDescriptor: ProductCommandDescriptor = {
     interactive: true,
     foregroundProcess: true,
     requiresDaemon: true,
-    runtimePlanes: ["launch", "resources", "assistant", "attention", "delegation"],
+    runtimePlanes: ["launch", "resources", "assistant", "attention"],
   },
 };
 

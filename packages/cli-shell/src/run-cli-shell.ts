@@ -7,6 +7,7 @@ import {
   type CliShellBootstrapResult,
   type CliShellProductHostStore,
 } from "./bootstrap";
+import { cleanupCliShellResources, formatCliShellCleanupResult, hasCliShellCleanupFailures } from "./cleanup";
 import { CLI_SHELL_HEARTBEAT_COPY } from "./tui/heartbeat";
 import type { CliShellStartupTuiController } from "./tui/startup-shell-tui";
 import type { CliShellTuiController } from "./tui/run-cli-shell-tui";
@@ -83,6 +84,17 @@ export const runCliShellWithDependencies = async (
 
   try {
     const store = dependencies.createStore(client);
+    if (args.command === "cleanup") {
+      const result = await cleanupCliShellResources(store, {
+        shellName: args.shellName,
+        confirm: args.confirm,
+      });
+      process.stdout.write(formatCliShellCleanupResult(result));
+      if (hasCliShellCleanupFailures(result)) {
+        process.exitCode = 1;
+      }
+      return;
+    }
     const startupTui = dependencies.isInteractive() && args.webPort === undefined
       ? await (await dependencies.loadStartupTui()).startCliShellStartupTui({
           shellName: args.shellName,

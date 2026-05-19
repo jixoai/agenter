@@ -229,6 +229,43 @@ describe("Feature: product command launcher", () => {
     expect(daemonChecks).toBe(0);
     expect(spawned).toBe(0);
   });
+
+  test("Scenario: Given product launch starts its own daemon When no auth authority is explicit Then the daemon gets a launcher-owned auth-service root", async () => {
+    const home = createTempDir();
+    const startedDaemons: Array<Parameters<ProductCommandLaunchDependencies["startDaemon"]>[0]> = [];
+    const previousHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const dependencies: ProductCommandLaunchDependencies = {
+        async isDaemonAlive() {
+          return false;
+        },
+        async discoverReusableDaemonAuthority() {
+          return null;
+        },
+        async startDaemon(input) {
+          startedDaemons.push(input);
+          throw new Error("stop after daemon input capture");
+        },
+        spawnProduct() {
+          throw new Error("product must not spawn after captured daemon startup");
+        },
+      };
+
+      await expect(launchProductCommandForTest(["shell", "--web=0"], dependencies)).rejects.toThrow(
+        "stop after daemon input capture",
+      );
+
+      expect(startedDaemons).toHaveLength(1);
+      expect(startedDaemons[0]?.authServiceDataDir).toBe(join(home, ".agenter", "launcher-auth-service"));
+    } finally {
+      if (typeof previousHome === "string") {
+        process.env.HOME = previousHome;
+      } else {
+        delete process.env.HOME;
+      }
+    }
+  });
 });
 
 afterAll(() => {

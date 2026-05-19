@@ -99,8 +99,10 @@ const normalizeGrantRole = (value: string | null): TerminalGrantRole => {
   switch (value) {
     case "admin":
     case "writer":
-    case "requester":
+    case "guard":
       return value;
+    case "requester":
+      return "guard";
     default:
       return "readonly";
   }
@@ -291,6 +293,7 @@ export class TerminalDb {
   }
 
   createTerminal(input: Omit<TerminalRecord, "createdAt" | "updatedAt">): TerminalRecord {
+    this.purgeRemovedTerminal(input.terminalId);
     const now = Date.now();
     if (this.hasLegacyCwdColumn) {
       this.db
@@ -477,7 +480,11 @@ export class TerminalDb {
     const result = this.db
       .query(`update terminal_catalog set removed_at = ?, updated_at = ? where terminal_id = ? and removed_at is null`)
       .run(Date.now(), Date.now(), terminalId);
-    return Number(result.changes) > 0;
+    const removed = Number(result.changes) > 0;
+    if (removed) {
+      this.deleteTerminalDependents(terminalId);
+    }
+    return removed;
   }
 
   issueGrant(input: TerminalIssueGrantInput & { terminalId: string; accessToken: string; tokenHash: string }): TerminalGrantRecord {
@@ -821,6 +828,27 @@ export class TerminalDb {
     return this.getApprovalRequest(input.terminalId, requestId)!;
   }
 
+  findEquivalentPendingApprovalRequest(input: {
+    terminalId: string;
+    participantId: string;
+    requestedInput?: TerminalApprovalRequestRecord["requestedInput"];
+    now?: number;
+  }): TerminalApprovalRequestRecord | undefined {
+    const rows = this.listApprovalRequests(input.terminalId, {
+      participantId: input.participantId,
+      statuses: ["pending"],
+    });
+    const now = input.now ?? Date.now();
+    return rows.find((row) => {
+      if (row.expiresAt <= now) {
+        return false;
+      }
+      const left = row.requestedInput;
+      const right = input.requestedInput;
+      return (left?.mode ?? null) === (right?.mode ?? null) && (left?.text ?? null) === (right?.text ?? null);
+    });
+  }
+
   getApprovalRequest(terminalId: string, requestId: string): TerminalApprovalRequestRecord | undefined {
     const row = this.db
       .query(
@@ -872,6 +900,19 @@ export class TerminalDb {
     return this.listApprovalRequests(terminalId, {
       statuses: ["pending"],
     });
+  }
+
+  cancelPendingApprovalRequests(terminalId: string, decidedAt = Date.now()): TerminalApprovalRequestRecord[] {
+    const cancelled: TerminalApprovalRequestRecord[] = [];
+    for (const request of this.listPendingApprovalRequests(terminalId)) {
+      cancelled.push(
+        this.updateApprovalRequest(terminalId, request.requestId, {
+          status: "expired",
+          decidedAt,
+        }),
+      );
+    }
+    return cancelled;
   }
 
   updateApprovalRequest(
@@ -1042,6 +1083,25 @@ export class TerminalDb {
 
   deleteReadCursors(terminalId: string): void {
     this.db.query(`delete from terminal_read_cursor where terminal_id = ?`).run(terminalId);
+  }
+
+  private purgeRemovedTerminal(terminalId: string): void {
+    const result = this.db
+      .query(`delete from terminal_catalog where terminal_id = ? and removed_at is not null`)
+      .run(terminalId);
+    if (Number(result.changes) > 0) {
+      this.deleteTerminalDependents(terminalId);
+    }
+  }
+
+  private deleteTerminalDependents(terminalId: string): void {
+    this.db.query(`delete from terminal_grant where terminal_id = ?`).run(terminalId);
+    this.db.query(`delete from terminal_invitation where terminal_id = ?`).run(terminalId);
+    this.db.query(`delete from terminal_admin_candidate where terminal_id = ?`).run(terminalId);
+    this.db.query(`delete from terminal_approval_request where terminal_id = ?`).run(terminalId);
+    this.db.query(`delete from terminal_write_lease where terminal_id = ?`).run(terminalId);
+    this.db.query(`delete from terminal_event where terminal_id = ?`).run(terminalId);
+    this.deleteReadCursors(terminalId);
   }
 
   getEvent(eventId: number): TerminalEventRecord | undefined {
@@ -1241,5 +1301,6 @@ export class TerminalDb {
       this.db.query(`update terminal_catalog set launch_cwd = coalesce(launch_cwd, cwd)`).run();
     }
     this.db.query(`update terminal_catalog set backend = coalesce(backend, 'xterm')`).run();
+    this.db.query(`update terminal_grant set role = 'guard' where role = 'requester'`).run();
   }
 }

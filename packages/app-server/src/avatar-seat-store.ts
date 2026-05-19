@@ -200,6 +200,7 @@ const normalizeTerminalSeatCredential = (value: unknown): AvatarTerminalSeatCred
     typeof raw.accessRole !== "string" ||
     (raw.accessRole !== "admin" &&
       raw.accessRole !== "writer" &&
+      raw.accessRole !== "guard" &&
       raw.accessRole !== "requester" &&
       raw.accessRole !== "readonly")
   ) {
@@ -207,7 +208,7 @@ const normalizeTerminalSeatCredential = (value: unknown): AvatarTerminalSeatCred
   }
   return {
     accessToken: raw.accessToken,
-    accessRole: raw.accessRole,
+    accessRole: raw.accessRole === "requester" ? "guard" : raw.accessRole,
     endpoint: normalizeSeatEndpoint(raw.endpoint),
     state: raw.state === "credential-invalid" ? "credential-invalid" : "active",
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : nowIso(),
