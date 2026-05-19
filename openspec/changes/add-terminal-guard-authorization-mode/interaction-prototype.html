@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Guard Authorization Interaction Prototype</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f7f2;
+        color: #202124;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px;
+      }
+
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        display: grid;
+        gap: 24px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 28px;
+        line-height: 1.1;
+      }
+
+      p {
+        color: #5f6368;
+        line-height: 1.5;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 18px;
+      }
+
+      .surface {
+        border: 1px solid #d7d4c8;
+        border-radius: 8px;
+        background: #ffffff;
+        min-height: 360px;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      .bar {
+        border-bottom: 1px solid #e5e1d7;
+        padding: 10px 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 13px;
+      }
+
+      .terminal {
+        position: relative;
+        background: #101412;
+        color: #d6f5df;
+        margin: 12px;
+        border-radius: 6px;
+        overflow: hidden;
+        font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .screen {
+        padding: 14px;
+        white-space: pre-wrap;
+      }
+
+      .popover {
+        position: absolute;
+        inset: auto 18px 52px 18px;
+        border: 1px solid #e8c36a;
+        background: #fff8e0;
+        color: #3b2b00;
+        border-radius: 8px;
+        box-shadow: 0 18px 45px rgb(0 0 0 / 0.26);
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .popover strong {
+        font-size: 14px;
+      }
+
+      .request {
+        border: 1px solid #edd48a;
+        background: #fffdfa;
+        border-radius: 6px;
+        padding: 8px;
+        font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+        color: #4b3710;
+      }
+
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      button {
+        border: 1px solid #c8c2b4;
+        background: #ffffff;
+        border-radius: 6px;
+        padding: 7px 10px;
+        font: inherit;
+      }
+
+      button.primary {
+        background: #155e47;
+        border-color: #155e47;
+        color: #ffffff;
+      }
+
+      .feed {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+      }
+
+      .event {
+        border: 1px solid #dfdbcf;
+        border-radius: 6px;
+        padding: 10px;
+        display: grid;
+        gap: 4px;
+      }
+
+      .tag {
+        width: fit-content;
+        border-radius: 999px;
+        padding: 2px 8px;
+        background: #e8f0fe;
+        color: #174ea6;
+        font-size: 12px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          background: #171814;
+          color: #f0f0ea;
+        }
+
+        .surface {
+          background: #20211d;
+          border-color: #3c3d36;
+        }
+
+        .bar {
+          border-color: #37382f;
+        }
+
+        p {
+          color: #b7b7ad;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Guard Authorization Interaction Prototype</h1>
+        <p>
+          Permission requests are live TerminalInstance state. Terminal-view components render the
+          affordance; TerminalSystem owns approval and leases.
+        </p>
+      </header>
+
+      <section class="grid">
+        <article class="surface">
+          <div class="bar">
+            <strong>web-terminal-view / scoped subscription</strong>
+            <span>terminalId: shell-1:terminal-1</span>
+          </div>
+          <div class="terminal">
+            <div class="screen">$ pnpm test
+packages/core test running...
+
+Shell Assistant requested guarded input.
+PTY unchanged until approval.</div>
+            <div class="popover">
+              <strong>Shell Assistant requests terminal write</strong>
+              <span>Actor: shell-assistant · expires in 84s</span>
+              <div class="request">echo "approve me"&lt;Enter&gt;</div>
+              <div class="actions">
+                <button>Deny</button>
+                <button class="primary">Approve</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="surface">
+          <div class="bar">
+            <strong>global subscription / notification</strong>
+            <span>filter: all terminals</span>
+          </div>
+          <div class="feed">
+            <div class="event">
+              <span class="tag">permission-requested</span>
+              <strong>shell-1:terminal-1 needs approval</strong>
+              <span>Shell Assistant wants to write: echo "approve me"</span>
+            </div>
+            <div class="event">
+              <span class="tag">route</span>
+              <strong>Open terminal detail</strong>
+              <span>No full terminal catalog hydration required.</span>
+            </div>
+            <div class="event">
+              <span class="tag">no auto approval</span>
+              <strong>Notification is observation only</strong>
+              <span>The admin still approves or denies from a terminal surface.</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="surface">
+          <div class="bar">
+            <strong>shell-terminal-view / OpenTUI TopLayer</strong>
+            <span>native cli-shell</span>
+          </div>
+          <div class="terminal">
+            <div class="screen">$ cargo run
+Compiling app...
+
+╭─ permission request ───────────────╮
+│ Shell Assistant wants input        │
+│ &lt;key name="Enter"/&gt;                │
+│ [Deny]                  [Approve]  │
+╰────────────────────────────────────╯
+
+managed on | heartbeat | chat</div>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
