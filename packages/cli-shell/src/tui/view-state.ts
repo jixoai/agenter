@@ -7,6 +7,7 @@ export const createInitialCliShellViewState = (managed: CliShellManagedState): C
   activeFocusTarget: "terminal",
   requestedPlacement: "smart",
   dialogueDraft: "",
+  dialogueScrollTop: 0,
   managed,
   statusNotice: null,
 });

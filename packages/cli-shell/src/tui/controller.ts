@@ -1,6 +1,14 @@
 import type { KeyEvent } from "@opentui/core";
 
 import { disableCliShellManagedMode, enableCliShellManagedMode, readCliShellManagedState } from "../managed";
+import {
+  CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM,
+  captureCliShellDialogueAnchor,
+  loadCliShellDialogueOlderMessages,
+  restoreCliShellDialoguePrependScrollTop,
+  type CliShellDialogueMessageWindow,
+  type CliShellDialogueScrollRow,
+} from "./dialogue-scrollbox";
 import { resolveCliShellTerminalRegion } from "./frame";
 import { matchCliShellShortcut, type CliShellTuiKeybindings } from "./keybindings";
 import type { CliShellLiveTerminalMirror } from "./live-terminal-mirror";
@@ -28,6 +36,10 @@ export interface CliShellTuiControllerContext {
   getViewState: () => CliShellTuiViewState;
   getModel: () => CliShellTuiModel;
   getLiveMirror?: () => CliShellLiveTerminalMirror | null;
+  getDialogueScrollRows?: () => readonly CliShellDialogueScrollRow[];
+  resolveDialogueScrollRows?: (
+    input: Pick<CliShellDialogueMessageWindow, "messages" | "messageIds">,
+  ) => readonly CliShellDialogueScrollRow[];
   trace?: CliShellPerfTracer;
   updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => void;
 }
@@ -406,7 +418,15 @@ export const submitCliShellDialogue = async (ctx: CliShellTuiControllerContext):
     ctx.updateViewState((current) => ({
       ...current,
       dialogueDraft: "",
-      dialogueScrollOffset: 0,
+      dialogueScrollTop: CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM,
+      dialogueWindow: current.dialogueWindow
+        ? {
+            ...current.dialogueWindow,
+            pinnedToBottom: true,
+            pendingNewMessageCount: 0,
+            anchor: null,
+          }
+        : current.dialogueWindow,
       statusNotice: "消息已发送",
     }));
   } catch (error) {
@@ -465,7 +485,15 @@ export const routeCliShellPointerAction = (ctx: CliShellTuiControllerContext, ac
       ...current,
       dialogueOpen: true,
       focusTarget: "dialogue",
-      dialogueScrollOffset: 0,
+      dialogueScrollTop: CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM,
+      dialogueWindow: current.dialogueWindow
+        ? {
+            ...current.dialogueWindow,
+            pinnedToBottom: true,
+            pendingNewMessageCount: 0,
+            anchor: null,
+          }
+        : current.dialogueWindow,
       statusNotice: null,
     }));
     return;
@@ -501,6 +529,91 @@ export const routeCliShellMouseScroll = (ctx: CliShellTuiControllerContext, inpu
   }
   const mirror = ctx.getLiveMirror?.();
   return mirror?.scrollViewport(deltaRows) ?? false;
+};
+
+const cloneDialogueWindowForMutation = (
+  window: NonNullable<CliShellTuiViewState["dialogueWindow"]>,
+  scroll: CliShellDialogueMessageWindow["scroll"],
+  pinnedToBottom: boolean,
+): CliShellDialogueMessageWindow => ({
+  messages: [...window.messages],
+  messageIds: [...window.messageIds],
+  nextBefore: window.nextBefore,
+  hasMoreBefore: window.hasMoreBefore,
+  loadingBefore: window.loadingBefore,
+  pinnedToBottom,
+  pendingNewMessageCount: window.pendingNewMessageCount,
+  anchor: window.anchor ? { ...window.anchor } : null,
+  scroll,
+  error: window.error,
+});
+
+const resolveDialogueRowsFromMessages = (messageIds: readonly number[]): CliShellDialogueScrollRow[] =>
+  messageIds.map((messageId) => ({ key: `message:${messageId}`, height: 1 }));
+
+export const loadOlderCliShellDialogueMessages = async (ctx: CliShellTuiControllerContext): Promise<void> => {
+  const model = ctx.getModel();
+  if (!model.dialogueWindow.hasMoreBefore || model.dialogueWindow.loadingBefore || !model.dialogueScroll.nearTop) {
+    return;
+  }
+  const rowsBefore = [...(ctx.getDialogueScrollRows?.() ?? model.dialogueScroll.rows)];
+  const viewScrollTop = Math.max(0, Math.trunc(ctx.getViewState().dialogueScrollTop ?? model.dialogueScroll.scrollTop));
+  const anchor =
+    model.dialogueWindow.anchor ??
+    captureCliShellDialogueAnchor({
+      rows: rowsBefore,
+      scrollTop: viewScrollTop,
+    });
+  const mutableWindow = cloneDialogueWindowForMutation(
+    model.dialogueWindow,
+    {
+      scrollTop: model.dialogueScroll.scrollTop,
+      viewportHeight: model.dialogueScroll.viewportHeight,
+      scrollHeight: model.dialogueScroll.scrollHeight,
+    },
+    model.dialogueScroll.pinnedToBottom,
+  );
+  ctx.updateViewState((current) => ({
+    ...current,
+    dialogueWindow: {
+      ...model.dialogueWindow,
+      loadingBefore: true,
+      anchor,
+      error: null,
+    },
+  }));
+  const nextWindow = await loadCliShellDialogueOlderMessages({
+    chatId: ctx.roomChatId,
+    accessToken: ctx.roomAccessToken,
+    window: mutableWindow,
+    pageMessages: (payload) => ctx.store.pageGlobalRoomMessages(payload),
+  });
+  ctx.updateViewState((current) => ({
+    ...current,
+    dialogueScrollTop: restoreCliShellDialoguePrependScrollTop({
+      rowsBefore,
+      rowsAfter:
+        ctx.resolveDialogueScrollRows?.({
+          messages: nextWindow.messages,
+          messageIds: nextWindow.messageIds,
+        }) ??
+        ctx.getDialogueScrollRows?.() ??
+        resolveDialogueRowsFromMessages(nextWindow.messageIds),
+      anchor,
+      previousScrollTop: viewScrollTop,
+    }),
+    dialogueWindow: {
+      messages: nextWindow.messages,
+      messageIds: nextWindow.messageIds,
+      nextBefore: nextWindow.nextBefore,
+      hasMoreBefore: nextWindow.hasMoreBefore,
+      loadingBefore: nextWindow.loadingBefore,
+      pinnedToBottom: nextWindow.pinnedToBottom,
+      pendingNewMessageCount: nextWindow.pendingNewMessageCount,
+      anchor,
+      error: nextWindow.error,
+    },
+  }));
 };
 
 export const routeCliShellViewportTarget = (

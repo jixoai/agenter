@@ -8,6 +8,7 @@ import {
   BoxRenderable,
   CliRenderEvents,
   type CliRenderer,
+  type RenderContext,
   type KeyEvent,
   type MouseEvent,
 } from "@opentui/core";
@@ -21,11 +22,17 @@ import {
   routeCliShellPaste,
   routeCliShellPointerAction,
   routeCliShellViewportTarget,
+  loadOlderCliShellDialogueMessages,
   submitCliShellDialogue,
   syncCliShellTerminalGeometry,
   type CliShellTuiControllerContext,
 } from "./controller";
 import { CliShellDebugBarRenderable } from "./debug-bar";
+import {
+  buildCliShellDialogueScrollRows,
+  createCliShellDialogueViewportOwner,
+  type CliShellDialogueViewportOwner,
+} from "./dialogue-surface";
 import {
   layoutCliShellTuiFrame,
   resolveCliShellTranscriptPanelLayout,
@@ -42,7 +49,7 @@ import {
   type CliShellLiveTerminalView,
 } from "./live-terminal-mirror";
 import { projectMarkdownLastLine } from "./markdown-projection";
-import { buildCliShellTuiModel } from "./model";
+import { buildCliShellDialogueBlocks, buildCliShellTuiModel } from "./model";
 import {
   isPointInsideDialoguePanel,
   resolveComposedSurfaceCursorCellPosition,
@@ -180,7 +187,8 @@ export class CliShellCoreApp {
   readonly #perfTracer: CliShellPerfTracer;
   readonly #root: BoxRenderable;
   readonly #terminalView: ShellTerminalViewRenderable;
-  readonly #dialogueBackend = new CliShellDialogueBackend();
+  readonly #dialogueViewportOwner: CliShellDialogueViewportOwner;
+  readonly #dialogueBackend: CliShellDialogueBackend;
   readonly #debugBar: CliShellDebugBarRenderable | null;
   #viewState: CliShellTuiViewState;
   #state: RuntimeClientState;
@@ -199,6 +207,7 @@ export class CliShellCoreApp {
   #renderNowCount = 0;
   #composedSurfaceKey = "";
   #localComposedSurface: CliShellComposedSurfaceState | null = null;
+  #dialogueLoadBeforeInFlight = false;
   #releaseStore: (() => void) | null = null;
   #releaseRoom: (() => void) | null = null;
   #releaseTerminals: (() => void) | null = null;
@@ -211,6 +220,16 @@ export class CliShellCoreApp {
     this.#props = props;
     this.#renderer = props.renderer;
     this.#perfTracer = createCliShellPerfTracer({ enabled: props.debug === true, filters: props.debugFilters });
+    this.#dialogueViewportOwner = createCliShellDialogueViewportOwner(this.#renderer as RenderContext, {
+      id: "cli-shell-dialogue-native-scrollbox",
+      width: 1,
+      height: 1,
+      rows: [],
+      initialScrollTop: 0,
+    });
+    this.#dialogueBackend = new CliShellDialogueBackend({
+      viewportOwner: this.#dialogueViewportOwner,
+    });
     this.#viewState = createInitialCliShellViewState(props.managed);
     this.#state = props.store.getState();
     this.#renderer.setGatherStats?.(this.#perfTracer.enabled);
@@ -420,6 +439,7 @@ export class CliShellCoreApp {
       interactionProfile: this.#props.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
     });
     this.#lastModel = model;
+    this.#syncDialogueViewStateFromModel(model);
     this.#syncActiveFocus();
     this.#projectToolbarHeartbeat({ model, width });
     const interactionLayout = resolveCliShellTuiInteractionLayout({ model, width, height: contentHeight });
@@ -444,6 +464,7 @@ export class CliShellCoreApp {
       width,
       height: contentHeight,
       renderToolbar: false,
+      dialogueViewportOwner: this.#dialogueViewportOwner,
     });
     this.#syncDialogueBackend({ model, width, height: contentHeight });
     const interactionFrame = layoutCliShellTuiFrame({
@@ -451,6 +472,7 @@ export class CliShellCoreApp {
       width,
       height: contentHeight,
       renderToolbar: true,
+      dialogueViewportOwner: this.#dialogueViewportOwner,
     });
     const visibleSnapshotLines = resolveSnapshotRichLines(terminalEntry?.snapshot);
     const visibleSnapshotMatchesFrame =
@@ -475,6 +497,7 @@ export class CliShellCoreApp {
           model,
           width,
           height: contentHeight,
+          dialogueViewportOwner: this.#dialogueViewportOwner,
         })
       : null;
     const visibleProjection = (() => {
@@ -603,6 +626,8 @@ export class CliShellCoreApp {
       getViewState: () => this.#viewState,
       getModel: () => this.#lastModel ?? this.#fallbackModel(),
       getLiveMirror: () => this.#sourceMirror,
+      getDialogueScrollRows: () => this.#resolveDialogueScrollRows(),
+      resolveDialogueScrollRows: (window) => this.#resolveDialogueScrollRowsForWindow(window),
       trace: this.#perfTracer,
       updateViewState: (updater) => {
         this.#localComposedInteractionDirty = true;
@@ -610,6 +635,26 @@ export class CliShellCoreApp {
         this.#viewState = next;
         this.renderNow("view-state-update");
       },
+    };
+  }
+
+  #syncDialogueViewStateFromModel(model: CliShellTuiModel): void {
+    const currentWindow = this.#viewState.dialogueWindow;
+    if (
+      currentWindow &&
+      currentWindow.messageIds.join(",") === model.dialogueWindow.messageIds.join(",") &&
+      currentWindow.nextBefore === model.dialogueWindow.nextBefore &&
+      currentWindow.hasMoreBefore === model.dialogueWindow.hasMoreBefore &&
+      currentWindow.loadingBefore === model.dialogueWindow.loadingBefore &&
+      currentWindow.pinnedToBottom === model.dialogueWindow.pinnedToBottom &&
+      currentWindow.pendingNewMessageCount === model.dialogueWindow.pendingNewMessageCount &&
+      currentWindow.error === model.dialogueWindow.error
+    ) {
+      return;
+    }
+    this.#viewState = {
+      ...this.#viewState,
+      dialogueWindow: model.dialogueWindow,
     };
   }
 
@@ -631,6 +676,36 @@ export class CliShellCoreApp {
       toolbarHeartbeatProjection: this.#toolbarHeartbeatProjection,
       observationReadyBaseline: this.#props.observationReadyBaseline,
       interactionProfile: this.#props.interactionProfile ?? CLI_SHELL_DEFAULT_INTERACTION_PROFILE,
+    });
+  }
+
+  #resolveDialogueScrollRows(model: CliShellTuiModel | null = this.#lastModel): ReturnType<typeof buildCliShellDialogueScrollRows> {
+    if (!model || !model.dialoguePlacement) {
+      return [];
+    }
+    const layout = resolveCliShellTranscriptPanelLayout({
+      model,
+      width: Math.max(1, this.#renderer.width),
+      height: this.#contentHeight(),
+    });
+    const contentWidth = Math.max(1, layout.width - 4);
+    return buildCliShellDialogueScrollRows({
+      model,
+      width: contentWidth,
+    });
+  }
+
+  #resolveDialogueScrollRowsForWindow(input: {
+    messages: CliShellTuiModel["dialogueWindow"]["messages"];
+    messageIds: CliShellTuiModel["dialogueWindow"]["messageIds"];
+  }): ReturnType<typeof buildCliShellDialogueScrollRows> {
+    const baseModel = this.#lastModel ?? this.#fallbackModel();
+    return this.#resolveDialogueScrollRows({
+      ...baseModel,
+      dialogueBlocks: buildCliShellDialogueBlocks({
+        messages: input.messages,
+        avatarActorId: this.#props.avatarActorId,
+      }),
     });
   }
 
@@ -1034,26 +1109,42 @@ export class CliShellCoreApp {
       layout,
       model: input.model,
     });
-    const nextOffset = Math.max(
-      0,
-      Math.min(
-        frame.viewport.maxOffsetFromBottom,
-        Math.trunc(input.model.dialogueScrollOffset) + Math.trunc(input.deltaRows),
-      ),
-    );
+    const scrollSnapshot = this.#dialogueViewportOwner.sync({
+      width: Math.max(1, layout.width - 4),
+      height: Math.max(1, frame.viewport.visibleRows),
+      rows: this.#resolveDialogueScrollRows(input.model),
+      scrollTop: frame.viewport.scrollTop + Math.trunc(input.deltaRows),
+    });
+    const nextScrollTop = scrollSnapshot.scrollTop;
+    const pinnedToBottom = scrollSnapshot.pinnedToBottom;
     this.#controllerContext().updateViewState((current) => ({
       ...current,
       dialogueOpen: true,
       focusTarget: "dialogue",
-      dialogueScrollOffset: nextOffset,
+      dialogueScrollTop: nextScrollTop,
+      dialogueWindow: current.dialogueWindow
+        ? {
+            ...current.dialogueWindow,
+            pinnedToBottom,
+            pendingNewMessageCount: pinnedToBottom ? 0 : current.dialogueWindow.pendingNewMessageCount,
+            anchor: pinnedToBottom ? null : current.dialogueWindow.anchor,
+          }
+        : current.dialogueWindow,
       statusNotice: null,
     }));
+    if (scrollSnapshot.nearTop && input.model.dialogueWindow.hasMoreBefore && !this.#dialogueLoadBeforeInFlight) {
+      this.#dialogueLoadBeforeInFlight = true;
+      const task = loadOlderCliShellDialogueMessages(this.#controllerContext()).finally(() => {
+        this.#dialogueLoadBeforeInFlight = false;
+      });
+      void task;
+    }
     this.#perfTracer.record({
       kind: "viewport-delta",
       detail: {
         source: "dialogue-wheel",
         deltaRows: input.deltaRows,
-        viewportStart: nextOffset,
+        viewportStart: nextScrollTop,
       },
     });
   }
@@ -1072,6 +1163,7 @@ export class CliShellCoreApp {
       width,
       height: contentHeight,
       renderToolbar: true,
+      dialogueViewportOwner: this.#dialogueViewportOwner,
     });
     const hit = actionFrame.actionRegions.find(
       (region) =>
@@ -1335,6 +1427,7 @@ export class CliShellCoreApp {
       model: input.model,
       width: input.width,
       height: input.height,
+      dialogueViewportOwner: this.#dialogueViewportOwner,
     });
     const nextKey = resolveComposedSurfaceKey(surface);
     if (nextKey === this.#composedSurfaceKey) {

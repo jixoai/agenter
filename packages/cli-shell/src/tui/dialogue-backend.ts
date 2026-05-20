@@ -6,7 +6,11 @@ import type {
 import { createBackendInteractionAdapter, type Cell, type TerminalInteractionController } from "@agenter/termless-core";
 
 import { measureTerminalText } from "./cell-width";
-import { buildCliShellDialogueSurface, type CliShellDialogueSurface } from "./dialogue-surface";
+import {
+  buildCliShellDialogueSurface,
+  type CliShellDialogueSurface,
+  type CliShellDialogueViewportOwner,
+} from "./dialogue-surface";
 import type { CliShellTranscriptPanelLayout } from "./frame";
 import type { CliShellTuiModel } from "./types";
 
@@ -20,6 +24,7 @@ export const projectCliShellDialogueBackendFrame = (input: {
   layout: Pick<CliShellTranscriptPanelLayout, "width" | "height">;
   model: CliShellTuiModel;
   renderFocusedDraft?: boolean;
+  viewportOwner?: CliShellDialogueViewportOwner;
 }): CliShellDialogueBackendFrame => {
   const surface = buildCliShellDialogueSurface(input);
   return {
@@ -75,16 +80,20 @@ export class CliShellDialogueBackend {
     actionRegions: [],
     cursor: { x: 0, y: 0, visible: false },
     viewport: {
-      offsetFromBottom: 0,
-      maxOffsetFromBottom: 0,
+      scrollTop: 0,
+      maxScrollTop: 0,
       totalRows: 0,
       visibleRows: 0,
+      nearTop: true,
+      pinnedToBottom: true,
     },
     chrome: { scrollbar: "visible" },
   };
   readonly #interaction: TerminalInteractionController;
+  readonly #viewportOwner: CliShellDialogueViewportOwner | undefined;
 
-  constructor() {
+  constructor(input: { viewportOwner?: CliShellDialogueViewportOwner } = {}) {
+    this.#viewportOwner = input.viewportOwner;
     this.#interaction = createBackendInteractionAdapter({
       ownerId: "dialogue",
       readable: {
@@ -103,7 +112,10 @@ export class CliShellDialogueBackend {
     model: CliShellTuiModel;
     renderFocusedDraft?: boolean;
   }): CliShellDialogueBackendFrame {
-    this.#frame = projectCliShellDialogueBackendFrame(input);
+    this.#frame = projectCliShellDialogueBackendFrame({
+      ...input,
+      viewportOwner: this.#viewportOwner,
+    });
     return this.#frame;
   }
 

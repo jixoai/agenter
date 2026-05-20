@@ -1,5 +1,6 @@
 import type { ProductTerminalComposedSurfaceState } from "@agenter/client-sdk";
 
+import type { CliShellDialogueViewportOwner } from "./dialogue-surface";
 import { layoutCliShellTuiFrame, resolveCliShellTerminalRegion } from "./frame";
 import { resolveVisibleCursorCellPosition } from "./native-projection";
 import type { CliShellComposedSurfaceState, CliShellTuiModel } from "./types";
@@ -10,12 +11,14 @@ export const buildCliShellComposedSurface = (input: {
   model: CliShellTuiModel;
   width: number;
   height: number;
+  dialogueViewportOwner?: CliShellDialogueViewportOwner;
 }): CliShellComposedSurfaceState => {
   const frame = layoutCliShellTuiFrame({
     model: input.model,
     width: input.width,
     height: input.height,
     renderToolbar: true,
+    dialogueViewportOwner: input.dialogueViewportOwner,
   });
   const terminalRegion = resolveCliShellTerminalRegion({
     model: input.model,

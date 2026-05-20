@@ -1,8 +1,15 @@
-import type { GlobalRoomSnapshotOutput, GlobalTerminalApprovalRequest, RuntimeStore } from "@agenter/client-sdk";
+import type {
+  GlobalRoomMessage,
+  GlobalRoomSnapshotOutput,
+  GlobalTerminalApprovalRequest,
+  HistoryPageCursor,
+  RuntimeStore,
+} from "@agenter/client-sdk";
 import type { TerminalTransportInteractionFrameState } from "@agenter/terminal-transport-protocol";
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import type { CliShellInteractionEnhancementProfile } from "./interaction-capabilities";
 import type { CliShellLiveTerminalView } from "./live-terminal-mirror";
+import type { CliShellDialogueScrollRow } from "./dialogue-scrollbox";
 
 import type { CliShellStore } from "../bootstrap";
 import type { CliShellManagedState } from "../managed";
@@ -10,12 +17,26 @@ export type CliShellDialoguePlacement = "left" | "right" | "floating" | "cover";
 export type CliShellDialoguePlacementRequest = CliShellDialoguePlacement | "smart";
 
 export interface CliShellDialogueBlock {
+  key?: string;
   kind: "message" | "date-divider";
   authoredByUser?: boolean;
   authorLabel?: string;
   timeLabel?: string;
   body?: string;
   dateLabel?: string;
+  messageId?: number;
+}
+
+export interface CliShellDialogueWindowState {
+  messages: GlobalRoomMessage[];
+  messageIds: number[];
+  nextBefore: HistoryPageCursor | null;
+  hasMoreBefore: boolean;
+  loadingBefore: boolean;
+  pinnedToBottom: boolean;
+  pendingNewMessageCount: number;
+  anchor: { key: string; offset: number } | null;
+  error: string | null;
 }
 
 export interface CliShellTuiModel {
@@ -48,7 +69,17 @@ export interface CliShellTuiModel {
   dialoguePlacement: CliShellDialoguePlacement | null;
   dialogueBlocks: CliShellDialogueBlock[];
   dialogueDraft: string;
-  dialogueScrollOffset: number;
+  dialogueScroll: {
+    scrollTop: number;
+    viewportHeight: number;
+    scrollHeight: number;
+    maxScrollTop: number;
+    nearTop: boolean;
+    pinnedToBottom: boolean;
+    pendingNewMessageCount: number;
+    rows: CliShellDialogueScrollRow[];
+  };
+  dialogueWindow: CliShellDialogueWindowState;
   dialogueTitle: string;
   interactionProfile?: CliShellInteractionEnhancementProfile;
 }
@@ -105,7 +136,8 @@ export interface CliShellTuiViewState {
   };
   requestedPlacement: CliShellDialoguePlacementRequest;
   dialogueDraft: string;
-  dialogueScrollOffset?: number;
+  dialogueScrollTop?: number;
+  dialogueWindow?: CliShellDialogueWindowState;
   managed: CliShellManagedState;
   statusNotice: string | null;
 }
@@ -136,6 +168,7 @@ export type CliShellTuiStore = Pick<
     | "readGlobalTerminal"
     | "retainGlobalRoomSnapshot"
     | "hydrateGlobalRoomSnapshot"
+    | "pageGlobalRoomMessages"
     | "sendGlobalRoomMessage"
     | "inputGlobalTerminal"
     | "setGlobalTerminalConfig"

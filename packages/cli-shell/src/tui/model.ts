@@ -12,6 +12,7 @@ import type { CliShellInteractionEnhancementProfile } from "./interaction-capabi
 import type { CliShellTuiKeybindings } from "./keybindings";
 import type {
   CliShellDialogueBlock,
+  CliShellDialogueWindowState,
   CliShellDialoguePlacement,
   CliShellDialoguePlacementRequest,
   CliShellObservationReadyBaseline,
@@ -19,6 +20,14 @@ import type {
   CliShellTuiModel,
   CliShellTuiViewState,
 } from "./types";
+import {
+  CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM,
+  createCliShellDialogueMessageWindowFromSnapshot,
+  dialogueMessageKey,
+  mergeCliShellDialogueIncomingMessages,
+  resolveCliShellDialogueScrollMetrics,
+  type CliShellDialogueMessageWindow,
+} from "./dialogue-scrollbox";
 
 const SHORT_TIME_FORMAT = new Intl.DateTimeFormat("en-GB", {
   hour: "2-digit",
@@ -200,29 +209,17 @@ const countUnreadRoomMessages = (
   ).length;
 };
 
-const buildDialogueBlocks = (input: {
-  projection: CliShellTuiAppProjection;
+export const buildCliShellDialogueBlocks = (input: {
+  messages: readonly GlobalRoomMessage[];
   avatarActorId: GlobalRoomMessage["unreadActorIds"][number];
 }): CliShellDialogueBlock[] => {
-  const snapshot = input.projection.roomSnapshot;
-  if (!snapshot) {
-    return [
-      {
-        kind: "message",
-        authoredByUser: false,
-        authorLabel: "@agenter",
-        timeLabel: "--:--",
-        body: "载入对话消息…",
-      },
-    ];
-  }
-
   const blocks: CliShellDialogueBlock[] = [];
   let previousDate: string | null = null;
-  for (const message of snapshot.items) {
+  for (const message of input.messages) {
     const dateLabel = resolveMessageDateLabel(message);
     if (dateLabel !== previousDate) {
       blocks.push({
+        key: `date:${dateLabel}`,
         kind: "date-divider",
         dateLabel,
       });
@@ -230,7 +227,9 @@ const buildDialogueBlocks = (input: {
     }
     const author = resolveAuthorLabel(message, input.avatarActorId);
     blocks.push({
+      key: dialogueMessageKey(message.messageId),
       kind: "message",
+      messageId: message.messageId,
       authoredByUser: author.authoredByUser,
       authorLabel: author.label,
       timeLabel: resolveMessageTimeLabel(message),
@@ -245,9 +244,68 @@ const buildDialogueBlocks = (input: {
           authoredByUser: false,
           authorLabel: "@agenter",
           timeLabel: "--:--",
-          body: "当前 room 还没有消息。",
+        body: "当前 room 还没有消息。",
+      },
+    ];
+};
+
+const toDialogueWindowState = (window: CliShellDialogueMessageWindow): CliShellDialogueWindowState => ({
+  messages: window.messages,
+  messageIds: window.messageIds,
+  nextBefore: window.nextBefore,
+  hasMoreBefore: window.hasMoreBefore,
+  loadingBefore: window.loadingBefore,
+  pinnedToBottom: window.pinnedToBottom,
+  pendingNewMessageCount: window.pendingNewMessageCount,
+  anchor: window.anchor,
+  error: window.error,
+});
+
+const resolveDialogueRowsFromWindow = (window: CliShellDialogueWindowState) =>
+  window.messageIds.map((messageId) => ({ key: dialogueMessageKey(messageId), height: 1 }));
+
+const resolveDialogueWindow = (input: {
+  snapshot: CliShellTuiAppProjection["roomSnapshot"];
+  current: CliShellTuiViewState["dialogueWindow"];
+  scrollTop: number;
+}): CliShellDialogueWindowState => {
+  if (!input.snapshot) {
+    return {
+      messages: [],
+      messageIds: [],
+      nextBefore: null,
+      hasMoreBefore: false,
+      loadingBefore: false,
+      pinnedToBottom: true,
+      pendingNewMessageCount: 0,
+      anchor: null,
+      error: null,
+    };
+  }
+  const base = input.current
+    ? ({
+        messages: input.current.messages,
+        messageIds: input.current.messageIds,
+        nextBefore: input.current.nextBefore,
+        hasMoreBefore: input.current.hasMoreBefore,
+        loadingBefore: input.current.loadingBefore,
+        pinnedToBottom: input.current.pinnedToBottom || input.scrollTop >= CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM,
+        pendingNewMessageCount: input.current.pendingNewMessageCount,
+        anchor: input.current.anchor,
+        scroll: {
+          scrollTop: input.scrollTop,
+          viewportHeight: 1,
+          scrollHeight: Math.max(1, input.current.messages.length),
         },
-      ];
+        error: input.current.error,
+      } satisfies CliShellDialogueMessageWindow)
+    : createCliShellDialogueMessageWindowFromSnapshot(input.snapshot);
+  if (input.current) {
+    mergeCliShellDialogueIncomingMessages(base, input.snapshot.items);
+    base.nextBefore = input.current.nextBefore ?? input.snapshot.nextBefore;
+    base.hasMoreBefore = input.current.hasMoreBefore || input.snapshot.hasMoreBefore;
+  }
+  return toDialogueWindowState(base);
 };
 
 const isSidePlacementViable = (width: number, bodyHeight: number): boolean =>
@@ -352,6 +410,23 @@ export const buildCliShellTuiModel = (input: {
         height: input.height,
       })
     : null;
+  const rawDialogueScrollTop = Math.max(0, Math.trunc(input.ui.dialogueScrollTop ?? 0));
+  const dialogueWindow = resolveDialogueWindow({
+    snapshot: input.projection.roomSnapshot,
+    current: input.ui.dialogueWindow,
+    scrollTop: rawDialogueScrollTop,
+  });
+  const dialogueScrollRows = resolveDialogueRowsFromWindow(dialogueWindow);
+  const dialogueScrollHeight = Math.max(1, dialogueScrollRows.length);
+  const dialogueScrollTop =
+    rawDialogueScrollTop >= CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM || dialogueWindow.pinnedToBottom
+      ? Math.max(0, dialogueScrollHeight - 1)
+      : rawDialogueScrollTop;
+  const dialogueScroll = resolveCliShellDialogueScrollMetrics({
+    scrollTop: dialogueScrollTop,
+    viewportHeight: 1,
+    scrollHeight: dialogueScrollHeight,
+  });
 
   return {
     terminalId,
@@ -373,12 +448,17 @@ export const buildCliShellTuiModel = (input: {
     toolbarUnread: `✉ ${unread}`,
     dialogueOpen: input.ui.dialogueOpen,
     dialoguePlacement,
-    dialogueBlocks: buildDialogueBlocks({
-      projection: input.projection,
+    dialogueBlocks: buildCliShellDialogueBlocks({
+      messages: dialogueWindow.messages,
       avatarActorId: input.avatarActorId,
     }),
     dialogueDraft: input.ui.dialogueDraft,
-    dialogueScrollOffset: Math.max(0, Math.trunc(input.ui.dialogueScrollOffset ?? 0)),
+    dialogueScroll: {
+      ...dialogueScroll,
+      pendingNewMessageCount: dialogueWindow.pendingNewMessageCount,
+      rows: dialogueScrollRows,
+    },
+    dialogueWindow,
     dialogueTitle: "Chat",
     interactionProfile: input.interactionProfile,
   };

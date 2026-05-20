@@ -488,6 +488,11 @@ function createTuiHarnessStore(initialState: RuntimeClientState): {
         hasMoreBefore: false,
         headVersion: "0",
       },
+    pageGlobalRoomMessages: async () => ({
+      items: [],
+      hasMore: false,
+      nextBefore: null,
+    }),
     sendGlobalRoomMessage: async (payload: { chatId: string; text: string }) => {
       sentMessages.push({ chatId: payload.chatId, text: payload.text });
       const nextMessage = createRoomMessage({

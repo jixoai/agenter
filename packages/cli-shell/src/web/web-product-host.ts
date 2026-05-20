@@ -377,10 +377,7 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
       ...viewState,
       dialogueOpen: true,
       focusTarget: "dialogue",
-      dialogueScrollOffset: Math.max(
-        0,
-        Math.min(frame.viewport.maxOffsetFromBottom, Math.trunc(viewState.dialogueScrollOffset ?? 0) + delta),
-      ),
+      dialogueScrollTop: Math.max(0, Math.min(frame.viewport.maxScrollTop, frame.viewport.scrollTop + delta)),
       statusNotice: null,
     };
     localComposedInteractionDirty = true;

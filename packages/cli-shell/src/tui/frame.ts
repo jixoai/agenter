@@ -11,6 +11,7 @@ import {
 } from "./canvas";
 import { fitTerminalText, measureTerminalText } from "./cell-width";
 import { projectCliShellDialogueBackendFrame } from "./dialogue-backend";
+import type { CliShellDialogueViewportOwner } from "./dialogue-surface";
 import type {
   CliShellScrollRegion,
   CliShellSelectionRegion,
@@ -485,6 +486,7 @@ export const layoutCliShellTuiFrame = (input: {
   width: number;
   height: number;
   renderToolbar?: boolean;
+  dialogueViewportOwner?: CliShellDialogueViewportOwner;
 }): CliShellTuiFrame => {
   const canvas = createTerminalCanvas(input.width, input.height);
   const actionRegions: CliShellActionHitRegion[] = [];
@@ -543,6 +545,7 @@ export const layoutCliShellTuiFrame = (input: {
     const dialogueSurface = projectCliShellDialogueBackendFrame({
       layout,
       model: input.model,
+      viewportOwner: input.dialogueViewportOwner,
     });
     dialogueSurface.styledLines.forEach((line, row) => {
       writeCanvasStyledText(canvas, {

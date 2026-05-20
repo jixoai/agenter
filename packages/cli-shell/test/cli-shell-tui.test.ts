@@ -14,7 +14,7 @@ import type {
   TerminalTransportClientMessage,
   TerminalTransportServerMessage,
 } from "@agenter/terminal-transport-protocol";
-import { KeyEvent, MouseEvent as OpenTuiMouseEvent, parseKeypress } from "@opentui/core";
+import { KeyEvent, MouseEvent as OpenTuiMouseEvent, parseKeypress, ScrollBoxRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 import { describe, expect, mock, test } from "bun:test";
 
@@ -22,7 +22,9 @@ import {
   BackendFrameRenderable,
   BackendScrollbarRenderable,
   BackendTerminalFrameRenderable,
+  CliShellDialogueScrollBoxController,
   buildCliShellComposedSurface,
+  buildCliShellDialogueScrollRows,
   buildCliShellHostingContextId,
   buildCliShellTuiModel,
   CLI_SHELL_BACKEND_INTERACTION_RECOMMENDATIONS,
@@ -36,17 +38,26 @@ import {
   findWordInTerminal,
   formatCliShellDebugBarLine,
   layoutCliShellTuiFrame,
+  loadCliShellDialogueOlderMessages,
   measureTerminalText,
   projectCliShellDialogueBackendFrame,
   renderCanvasLines,
+  captureCliShellDialogueAnchor,
+  createCliShellDialogueMessageWindowFromSnapshot,
   resolveCliShellDialoguePlacement,
+  mergeCliShellDialogueIncomingMessages,
   resolveCliShellInteractionEnhancementProfile,
+  prependCliShellDialogueMessagePage,
+  resolveCliShellDialogueScrollMetrics,
   resolveCliShellScrollbarPointerTarget,
   resolveCliShellShellScrollbarProjection,
   resolveCliShellTerminalRegion,
   resolveCliShellTranscriptPanelLayout,
   resolveCliShellTuiInteractionLayout,
+  resolveCliShellDialogueWheelDelta,
   resolveCliShellTuiKeybindings,
+  restoreCliShellDialogueAnchorScrollTop,
+  restoreCliShellDialoguePrependScrollTop,
   routeCliShellKey,
   routeCliShellMouseScroll,
   routeCliShellPaste,
@@ -55,6 +66,7 @@ import {
   ShellTerminalViewRenderable,
   stringIndexToTerminalColumn,
   submitCliShellDialogue,
+  loadOlderCliShellDialogueMessages,
   terminalColumnToStringIndex,
   writeCanvasStyledText,
   type BackendFrameInteractionTraceEvent,
@@ -394,9 +406,15 @@ interface TuiStoreHarness {
   inputs: Array<{ terminalId: string; text: string }>;
   terminalConfigs: Array<{ terminalId: string; cols?: number; rows?: number }>;
   sentMessages: Array<{ chatId: string; text: string }>;
+  roomPageCalls: Array<{ chatId: string; before: { beforeTimeMs: number; beforeId: number } | null; limit?: number }>;
   approvedRequests: Array<{ terminalId: string; requestId: string; durationMs: number }>;
   deniedRequests: Array<{ terminalId: string; requestId: string }>;
   retainedPermissionRequestStreams: Array<{ terminalId?: string; released: boolean }>;
+  enqueueRoomPage(page: {
+    items: GlobalRoomMessage[];
+    nextBefore: { beforeTimeMs: number; beforeId: number } | null;
+    hasMore: boolean;
+  }): void;
   lastPublishedComposedSurface:
     | Parameters<CliShellTuiStore["publishGlobalTerminalComposedSurface"]>[0]["surface"]
     | null;
@@ -408,9 +426,15 @@ const createTuiStore = (input: { state: RuntimeClientState; settingsContent?: st
   const inputs: Array<{ terminalId: string; text: string }> = [];
   const terminalConfigs: Array<{ terminalId: string; cols?: number; rows?: number }> = [];
   const sentMessages: Array<{ chatId: string; text: string }> = [];
+  const roomPageCalls: TuiStoreHarness["roomPageCalls"] = [];
   const approvedRequests: Array<{ terminalId: string; requestId: string; durationMs: number }> = [];
   const deniedRequests: Array<{ terminalId: string; requestId: string }> = [];
   const retainedPermissionRequestStreams: Array<{ terminalId?: string; released: boolean }> = [];
+  const queuedRoomPages: Array<{
+    items: GlobalRoomMessage[];
+    nextBefore: { beforeTimeMs: number; beforeId: number } | null;
+    hasMore: boolean;
+  }> = [];
   let lastPublishedComposedSurface: TuiStoreHarness["lastPublishedComposedSurface"] = null;
   let publishComposedSurfaceEnabled = true;
   const authSession: AuthSessionOutput = {
@@ -497,6 +521,22 @@ const createTuiStore = (input: { state: RuntimeClientState; settingsContent?: st
     },
     retainGlobalRoomSnapshot: () => () => {},
     hydrateGlobalRoomSnapshot: async () => getRoomSnapshot(),
+    pageGlobalRoomMessages: async (payload: {
+      chatId: string;
+      before?: { beforeTimeMs: number; beforeId: number } | null;
+      limit?: number;
+    }) => {
+      roomPageCalls.push({ chatId: payload.chatId, before: payload.before ?? null, limit: payload.limit });
+      const queuedPage = queuedRoomPages.shift();
+      if (queuedPage) {
+        return queuedPage;
+      }
+      return {
+        items: [],
+        hasMore: false,
+        nextBefore: null,
+      };
+    },
     sendGlobalRoomMessage: async (payload: { chatId: string; text: string }) => {
       sentMessages.push({ chatId: payload.chatId, text: payload.text });
       const snapshot = getRoomSnapshot();
@@ -625,9 +665,13 @@ const createTuiStore = (input: { state: RuntimeClientState; settingsContent?: st
     inputs,
     terminalConfigs,
     sentMessages,
+    roomPageCalls,
     approvedRequests,
     deniedRequests,
     retainedPermissionRequestStreams,
+    enqueueRoomPage(page) {
+      queuedRoomPages.push(page);
+    },
     get lastPublishedComposedSurface() {
       return lastPublishedComposedSurface;
     },
@@ -757,6 +801,21 @@ const createBackendTerminalFrameTestSetup = async (
   return { ...setup, frame };
 };
 
+const createDialogueScrollBoxTestSetup = async (
+  input: ConstructorParameters<typeof CliShellDialogueScrollBoxController>[1],
+) => {
+  const setup = await createTestRenderer({
+    width: typeof input.width === "number" ? input.width : 40,
+    height: typeof input.height === "number" ? input.height : 10,
+    useMouse: true,
+    exitOnCtrlC: false,
+  });
+  const controller = new CliShellDialogueScrollBoxController(setup.renderer, input);
+  setup.renderer.root.add(controller.scrollBox);
+  controller.scrollBox.focus();
+  return { ...setup, controller };
+};
+
 const dispatchRenderableMouseEvent = (
   target: ShellTerminalViewRenderable,
   input: {
@@ -787,6 +846,483 @@ const selectedSpanCells = (setup: Pick<Awaited<ReturnType<typeof createTestRende
     );
 
 describe("Feature: cli-shell interactive TUI", () => {
+  test("Scenario: Given native Chat uses OpenTUI scrolling When constructed Then ScrollBox owns the message-list viewport", async () => {
+    const setup = await createDialogueScrollBoxTestSetup({
+      width: 32,
+      height: 6,
+      rows: Array.from({ length: 12 }, (_, index) => ({
+        key: `row-${index}`,
+        text: `message row ${index}`,
+      })),
+    });
+
+    expect(setup.controller.scrollBox).toBeInstanceOf(ScrollBoxRenderable);
+    expect(setup.controller.scrollBox.verticalScrollBar).toBeDefined();
+    expect(setup.controller.snapshot().viewportHeight).toBe(6);
+    expect(setup.controller.snapshot().scrollHeight).toBeGreaterThan(setup.controller.snapshot().viewportHeight);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given native Chat backend projects terminal-2 cells When rendering Then it consumes the OpenTUI ScrollBox viewport owner", () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["shell"],
+      roomMessages: Array.from({ length: 10 }, (_, index) =>
+        createRoomMessage({
+          messageId: index + 1,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: `message row ${index + 1}`,
+          createdAt: Date.parse("2026-05-08T10:00:00+08:00") + index * 60_000,
+        }),
+      ),
+      unread: 0,
+    });
+    const model = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: true,
+        focusTarget: "dialogue",
+        activeFocusTarget: "dialogue",
+        requestedPlacement: "right",
+        dialogueDraft: "",
+        dialogueScrollTop: 3,
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings: resolveCliShellTuiKeybindings(null),
+      width: 80,
+      height: 24,
+    });
+    const syncCalls: Array<{ width: number; height: number; scrollTop: number; rowCount: number }> = [];
+    const viewportOwner = {
+      sync(input: { width: number; height: number; rows: readonly { key: string }[]; scrollTop: number }) {
+        syncCalls.push({
+          width: input.width,
+          height: input.height,
+          scrollTop: input.scrollTop,
+          rowCount: input.rows.length,
+        });
+        return {
+          scrollTop: 4,
+          viewportHeight: input.height,
+          scrollHeight: input.rows.length,
+          maxScrollTop: Math.max(0, input.rows.length - input.height),
+          nearTop: false,
+          pinnedToBottom: false,
+        };
+      },
+    };
+
+    const frame = projectCliShellDialogueBackendFrame({
+      layout: { width: 30, height: 10 },
+      model,
+      viewportOwner,
+    });
+
+    expect(syncCalls).toHaveLength(1);
+    expect(syncCalls[0]).toMatchObject({ width: 26, height: 6, scrollTop: model.dialogueScroll.scrollTop });
+    expect(syncCalls[0]!.rowCount).toBeGreaterThan(10);
+    expect(frame.viewport.scrollTop).toBe(4);
+  });
+
+  test("Scenario: Given native Chat scroll adapter When wheel directions are normalized Then down moves toward newer content and up moves toward older content", () => {
+    expect(resolveCliShellDialogueWheelDelta({ direction: "down", delta: 3 })).toBe(3);
+    expect(resolveCliShellDialogueWheelDelta({ direction: "up", delta: 2 })).toBe(-2);
+    expect(resolveCliShellDialogueWheelDelta({ direction: undefined, delta: 2 })).toBe(0);
+  });
+
+  test("Scenario: Given native Chat ScrollBox is away from the top When wheel down is applied Then it moves toward newer lower content", async () => {
+    const setup = await createDialogueScrollBoxTestSetup({
+      width: 32,
+      height: 5,
+      rows: Array.from({ length: 20 }, (_, index) => ({
+        key: `row-${index}`,
+        text: `message row ${index}`,
+      })),
+      initialScrollTop: 4,
+    });
+
+    const before = setup.controller.snapshot().scrollTop;
+    setup.controller.applyWheel({ direction: "down", delta: 3 });
+    const afterDown = setup.controller.snapshot().scrollTop;
+    setup.controller.applyWheel({ direction: "up", delta: 2 });
+    const afterUp = setup.controller.snapshot().scrollTop;
+
+    expect(afterDown).toBeGreaterThan(before);
+    expect(afterUp).toBeLessThan(afterDown);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given a room snapshot When cli-shell creates a Chat window Then it keeps MessageRoom pagination cursors without exposing dialogueScrollOffset", () => {
+    const snapshot = createRuntimeState({
+      heartbeat: [],
+      lines: ["shell"],
+      roomMessages: Array.from({ length: 4 }, (_, index) =>
+        createRoomMessage({
+          messageId: index + 1,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: `message ${index + 1}`,
+          createdAt: Date.parse("2026-05-08T10:00:00+08:00") + index * 60_000,
+        }),
+      ),
+    }).globalRoomSnapshotsById["room-shell-1"]!.data;
+    expect(snapshot).not.toBeNull();
+
+    const window = createCliShellDialogueMessageWindowFromSnapshot(snapshot!);
+
+    expect(window.messageIds).toEqual([1, 2, 3, 4]);
+    expect(window.nextBefore).toBe(snapshot!.nextBefore);
+    expect(window.hasMoreBefore).toBe(snapshot!.hasMoreBefore);
+    expect("dialogueScrollOffset" in window).toBe(false);
+  });
+
+  test("Scenario: Given near-top Chat scroll with older history When loading before Then cli-shell pages MessageRoom through nextBefore", async () => {
+    const before = { beforeTimeMs: 1_714_560_000_000, beforeId: 10 };
+    const window = {
+      ...createCliShellDialogueMessageWindowFromSnapshot({
+        channel: createRoomEntry("room-shell-1"),
+        items: [createRoomMessage({
+          messageId: 10,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: "newer",
+          createdAt: before.beforeTimeMs,
+        })],
+        nextBefore: before,
+        hasMoreBefore: true,
+        headVersion: "1",
+      }),
+      scroll: {
+        scrollTop: 1,
+        viewportHeight: 8,
+        scrollHeight: 40,
+      },
+    };
+    const calls: Array<{ chatId: string; before: typeof before | null; limit: number }> = [];
+
+    await loadCliShellDialogueOlderMessages({
+      chatId: "room-shell-1",
+      accessToken: "tok:room-shell-1",
+      window,
+      thresholdRows: 2,
+      limit: 25,
+      pageMessages: async (input) => {
+        calls.push({ chatId: input.chatId, before: input.before ?? null, limit: input.limit ?? 0 });
+        return {
+          items: [
+            createRoomMessage({
+              messageId: 9,
+              senderActorId: "auth:user",
+              from: "you",
+              content: "older",
+              createdAt: before.beforeTimeMs - 60_000,
+            }),
+          ],
+          nextBefore: null,
+          hasMore: false,
+        };
+      },
+    });
+
+    expect(calls).toEqual([{ chatId: "room-shell-1", before, limit: 25 }]);
+    expect(window.messageIds).toEqual([9, 10]);
+    expect(window.hasMoreBefore).toBe(false);
+  });
+
+  test("Scenario: Given controller loads older Chat history When messages are prepended Then it restores the captured visible anchor", async () => {
+    const before = { beforeTimeMs: 1_714_560_000_000, beforeId: 4 };
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["shell"],
+      roomMessages: [4, 5, 6].map((messageId) =>
+        createRoomMessage({
+          messageId,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: `message ${messageId}`,
+          createdAt: Date.parse("2026-05-08T10:00:00+08:00") + messageId * 60_000,
+        }),
+      ),
+      unread: 0,
+    });
+    state.globalRoomSnapshotsById["room-shell-1"] = createCached({
+      ...state.globalRoomSnapshotsById["room-shell-1"]!.data!,
+      nextBefore: before,
+      hasMoreBefore: true,
+    });
+    const harness = createTuiStore({ state });
+    harness.enqueueRoomPage({
+      items: [2, 3].map((messageId) =>
+        createRoomMessage({
+          messageId,
+          senderActorId: "auth:user",
+          from: "you",
+          content: `older ${messageId}`,
+          createdAt: Date.parse("2026-05-08T09:00:00+08:00") + messageId * 60_000,
+        }),
+      ),
+      nextBefore: null,
+      hasMore: false,
+    });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: true,
+      focusTarget: "dialogue",
+      requestedPlacement: "right",
+      dialogueDraft: "",
+      dialogueScrollTop: 3,
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const rowsBefore = [4, 5, 6].map((messageId) => ({ key: `message:${messageId}`, height: 2 }));
+    const rowsAfter = [2, 3, 4, 5, 6].map((messageId) => ({ key: `message:${messageId}`, height: 2 }));
+    let readRows = rowsBefore;
+    const model = () =>
+      buildCliShellTuiModel({
+        state: harness.store.getState(),
+        projection: { roomSnapshot: harness.store.getState().globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+        sessionId: "session-1",
+        shellName: "shell-1",
+        fallbackTerminalId: "shell-1",
+        avatarActorId: "auth:shell-assistant",
+        ui: viewState,
+        keybindings,
+        width: 120,
+        height: 40,
+      });
+    viewState = {
+      ...viewState,
+      dialogueWindow: model().dialogueWindow,
+    };
+    const ctx = {
+      store: harness.store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: model,
+      getDialogueScrollRows: () => readRows,
+      resolveDialogueScrollRows: () => rowsAfter,
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+        if (viewState.dialogueWindow?.messageIds.includes(2)) {
+          readRows = rowsAfter;
+        }
+      },
+    };
+
+    await loadOlderCliShellDialogueMessages(ctx);
+
+    expect(harness.roomPageCalls).toEqual([{ chatId: "room-shell-1", before, limit: 50 }]);
+    expect(viewState.dialogueWindow?.messageIds).toEqual([2, 3, 4, 5, 6]);
+    expect(viewState.dialogueScrollTop).toBe(7);
+  });
+
+  test("Scenario: Given older messages are prepended When anchor is restored Then the first visible message keeps its visual row", () => {
+    const window = createCliShellDialogueMessageWindowFromSnapshot({
+      channel: createRoomEntry("room-shell-1"),
+      items: [4, 5, 6].map((messageId) =>
+        createRoomMessage({
+          messageId,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: `message ${messageId}`,
+          createdAt: Date.parse("2026-05-08T10:00:00+08:00") + messageId * 60_000,
+        }),
+      ),
+      nextBefore: { beforeTimeMs: 1_714_560_000_000, beforeId: 4 },
+      hasMoreBefore: true,
+      headVersion: "1",
+    });
+    const rowsBefore = window.messageIds.map((messageId) => ({ key: `message:${messageId}`, height: 2 }));
+    const anchor = captureCliShellDialogueAnchor({
+      rows: rowsBefore,
+      scrollTop: 3,
+    });
+
+    prependCliShellDialogueMessagePage(window, {
+      items: [2, 3].map((messageId) =>
+        createRoomMessage({
+          messageId,
+          senderActorId: "auth:user",
+          from: "you",
+          content: `older ${messageId}`,
+          createdAt: Date.parse("2026-05-08T09:00:00+08:00") + messageId * 60_000,
+        }),
+      ),
+      nextBefore: null,
+      hasMore: false,
+    });
+    const rowsAfter = window.messageIds.map((messageId) => ({ key: `message:${messageId}`, height: 2 }));
+
+    expect(restoreCliShellDialogueAnchorScrollTop({ rows: rowsAfter, anchor })).toBe(7);
+    expect(
+      restoreCliShellDialoguePrependScrollTop({
+        rowsBefore,
+        rowsAfter,
+        anchor,
+        previousScrollTop: 3,
+      }),
+    ).toBe(7);
+  });
+
+  test("Scenario: Given Chat is pinned or scrolled up When new messages arrive Then pinned follows latest and scrolled-up preserves anchor", () => {
+    const baseSnapshot = {
+      channel: createRoomEntry("room-shell-1"),
+      items: [1, 2].map((messageId) =>
+        createRoomMessage({
+          messageId,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: `message ${messageId}`,
+          createdAt: Date.parse("2026-05-08T10:00:00+08:00") + messageId * 60_000,
+        }),
+      ),
+      nextBefore: null,
+      hasMoreBefore: false,
+      headVersion: "1",
+    };
+    const pinned = createCliShellDialogueMessageWindowFromSnapshot(baseSnapshot);
+    const scrolled = {
+      ...createCliShellDialogueMessageWindowFromSnapshot(baseSnapshot),
+      pinnedToBottom: false,
+      pendingNewMessageCount: 0,
+      anchor: { key: "message:1", offset: 0 },
+    };
+    const incoming = createRoomMessage({
+      messageId: 3,
+      senderActorId: "auth:user",
+      from: "you",
+      content: "new",
+      createdAt: Date.parse("2026-05-08T10:03:00+08:00"),
+    });
+
+    mergeCliShellDialogueIncomingMessages(pinned, [incoming]);
+    mergeCliShellDialogueIncomingMessages(scrolled, [incoming]);
+
+    expect(pinned.pinnedToBottom).toBe(true);
+    expect(pinned.pendingNewMessageCount).toBe(0);
+    expect(scrolled.anchor).toEqual({ key: "message:1", offset: 0 });
+    expect(scrolled.pendingNewMessageCount).toBe(1);
+  });
+
+  test("Scenario: Given Chat is bottom-pinned When the model rebuilds after new room messages Then it remains pinned to the latest content", () => {
+    const initialState = createRuntimeState({
+      heartbeat: [],
+      lines: ["shell"],
+      roomMessages: [1, 2].map((messageId) =>
+        createRoomMessage({
+          messageId,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: `message ${messageId}`,
+          createdAt: Date.parse("2026-05-08T10:00:00+08:00") + messageId * 60_000,
+        }),
+      ),
+      unread: 0,
+    });
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const initialModel = buildCliShellTuiModel({
+      state: initialState,
+      projection: { roomSnapshot: initialState.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: true,
+        focusTarget: "dialogue",
+        requestedPlacement: "right",
+        dialogueDraft: "",
+        dialogueScrollTop: Number.MAX_SAFE_INTEGER,
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings,
+      width: 120,
+      height: 40,
+    });
+    const nextState = createRuntimeState({
+      heartbeat: [],
+      lines: ["shell"],
+      roomMessages: [1, 2, 3].map((messageId) =>
+        createRoomMessage({
+          messageId,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: `message ${messageId}`,
+          createdAt: Date.parse("2026-05-08T10:00:00+08:00") + messageId * 60_000,
+        }),
+      ),
+      unread: 0,
+    });
+
+    const nextModel = buildCliShellTuiModel({
+      state: nextState,
+      projection: { roomSnapshot: nextState.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: true,
+        focusTarget: "dialogue",
+        requestedPlacement: "right",
+        dialogueDraft: "",
+        dialogueScrollTop: initialModel.dialogueScroll.scrollTop,
+        dialogueWindow: initialModel.dialogueWindow,
+        managed: createManagedState(),
+        statusNotice: null,
+      },
+      keybindings,
+      width: 120,
+      height: 40,
+    });
+
+    expect(initialModel.dialogueWindow.pinnedToBottom).toBe(true);
+    expect(nextModel.dialogueWindow.pinnedToBottom).toBe(true);
+    expect(nextModel.dialogueScroll.pinnedToBottom).toBe(true);
+    expect(nextModel.dialogueScroll.pendingNewMessageCount).toBe(0);
+    expect(nextModel.dialogueWindow.messageIds).toEqual([1, 2, 3]);
+  });
+
+  test("Scenario: Given ScrollBox metrics When semantic edges are resolved Then near-top loading and bottom-pinned state come from host viewport facts", () => {
+    expect(
+      resolveCliShellDialogueScrollMetrics({
+        scrollTop: 1,
+        viewportHeight: 10,
+        scrollHeight: 100,
+        edgeThresholdRows: 2,
+      }),
+    ).toMatchObject({
+      nearTop: true,
+      pinnedToBottom: false,
+    });
+    expect(
+      resolveCliShellDialogueScrollMetrics({
+        scrollTop: 90,
+        viewportHeight: 10,
+        scrollHeight: 100,
+        edgeThresholdRows: 2,
+      }),
+    ).toMatchObject({
+      nearTop: false,
+      pinnedToBottom: true,
+    });
+  });
+
   test("Scenario: Given backend interaction recommendations When cli-shell resolves profiles Then every supported backend has explicit enhancement decisions", () => {
     expect(CLI_SHELL_BACKEND_INTERACTION_RECOMMENDATIONS.xterm).toEqual({
       semanticWordSelection: true,
@@ -2315,7 +2851,7 @@ describe("Feature: cli-shell interactive TUI", () => {
         activeFocusTarget: "dialogue",
         requestedPlacement: "right",
         dialogueDraft: "中文 draft input wraps here",
-        dialogueScrollOffset: 2,
+        dialogueScrollTop: 2,
         managed: createManagedState(),
         statusNotice: null,
       },
@@ -2330,7 +2866,7 @@ describe("Feature: cli-shell interactive TUI", () => {
     });
 
     expect(frame.chrome.scrollbar).toBe("visible");
-    expect(frame.viewport.offsetFromBottom).toBeGreaterThan(0);
+    expect(frame.viewport.scrollTop).toBeGreaterThan(0);
     expect(frame.viewport.totalRows).toBeGreaterThan(frame.viewport.visibleRows);
     expect(frame.cursor.visible).toBe(true);
     expect(frame.lines.join("\n")).toContain("中文");
@@ -3889,7 +4425,7 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(harness.sentMessages).toEqual([{ chatId: "room-shell-1", text: "send once" }]);
     expect(viewState.dialogueOpen).toBe(true);
     expect(viewState.dialogueDraft).toBe("");
-    expect(viewState.dialogueScrollOffset).toBe(0);
+    expect(viewState.dialogueScrollTop).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   test("Scenario: Given Chat is scrolled up When a user message is sent Then cli-shell returns the transcript to bottom-pinned mode", async () => {
@@ -3913,7 +4449,7 @@ describe("Feature: cli-shell interactive TUI", () => {
       focusTarget: "dialogue",
       requestedPlacement: "right",
       dialogueDraft: "pin me",
-      dialogueScrollOffset: 5,
+      dialogueScrollTop: 5,
       managed: createManagedState(),
       statusNotice: null,
     };
@@ -3951,7 +4487,7 @@ describe("Feature: cli-shell interactive TUI", () => {
 
     expect(harness.sentMessages).toEqual([{ chatId: "room-shell-1", text: "pin me" }]);
     expect(viewState.dialogueDraft).toBe("");
-    expect(viewState.dialogueScrollOffset).toBe(0);
+    expect(viewState.dialogueScrollTop).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   test("Scenario: Given dialogue backend owns scroll When the wheel targets dialogue Then shell viewport is not changed by the event", async () => {

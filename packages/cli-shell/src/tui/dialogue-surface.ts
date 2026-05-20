@@ -11,6 +11,13 @@ import {
   type TerminalCanvasStyledLine,
 } from "./canvas";
 import { measureTerminalText } from "./cell-width";
+import {
+  CliShellDialogueScrollBoxController,
+  resolveCliShellDialogueScrollMetrics,
+  type CliShellDialogueScrollMetrics,
+  type CliShellDialogueScrollRow,
+  type CliShellDialogueScrollSnapshot,
+} from "./dialogue-scrollbox";
 import type { CliShellActionHitRegion, CliShellTranscriptPanelLayout } from "./frame";
 import type { CliShellTuiModel } from "./types";
 
@@ -20,21 +27,39 @@ export interface CliShellDialogueSurface {
   actionRegions: CliShellActionHitRegion[];
   cursor: { x: number; y: number; visible: boolean };
   viewport: {
-    offsetFromBottom: number;
-    maxOffsetFromBottom: number;
+    scrollTop: number;
+    maxScrollTop: number;
     totalRows: number;
     visibleRows: number;
+    nearTop: boolean;
+    pinnedToBottom: boolean;
   };
   chrome: {
     scrollbar: "visible" | "hidden";
   };
 }
 
+export interface CliShellDialogueViewportOwner {
+  sync(input: {
+    width: number;
+    height: number;
+    rows: readonly CliShellDialogueScrollRow[];
+    scrollTop: number;
+  }): CliShellDialogueScrollSnapshot;
+}
+
+export const createCliShellDialogueViewportOwner = (
+  ctx: ConstructorParameters<typeof CliShellDialogueScrollBoxController>[0],
+  options: ConstructorParameters<typeof CliShellDialogueScrollBoxController>[1],
+): CliShellDialogueViewportOwner => new CliShellDialogueScrollBoxController(ctx, options);
+
 const EMPTY_DIALOGUE_VIEWPORT: CliShellDialogueSurface["viewport"] = {
-  offsetFromBottom: 0,
-  maxOffsetFromBottom: 0,
+  scrollTop: 0,
+  maxScrollTop: 0,
   totalRows: 0,
   visibleRows: 0,
+  nearTop: true,
+  pinnedToBottom: true,
 };
 
 const PANEL_BG = "#101820";
@@ -112,9 +137,18 @@ const wrapDialogueStyledSpans = (
   return rows;
 };
 
-const buildDialogueBodyRows = (input: { model: CliShellTuiModel; width: number }): TerminalCanvasStyledLine[] => {
-  const rows: TerminalCanvasStyledLine[] = [];
+export const buildCliShellDialogueScrollRows = (input: {
+  model: CliShellTuiModel;
+  width: number;
+}): Array<{ key: string; height: number; line: TerminalCanvasStyledLine }> => {
+  const rows: Array<{ key: string; height: number; line: TerminalCanvasStyledLine }> = [];
   for (const block of input.model.dialogueBlocks) {
+    const blockKey =
+      block.key ??
+      (block.kind === "message" && typeof block.messageId === "number"
+        ? `message:${block.messageId}`
+        : `${block.kind}:${rows.length}`);
+    const before = rows.length;
     if (block.kind === "date-divider") {
       rows.push(
         ...wrapDialogueStyledSpans(
@@ -125,29 +159,35 @@ const buildDialogueBodyRows = (input: { model: CliShellTuiModel; width: number }
             },
           ],
           input.width,
-        ),
+        ).map((line) => ({ key: blockKey, height: 1, line })),
       );
-      continue;
+    } else {
+      const prefix = block.authoredByUser ? ">  " : `${block.authorLabel ?? "@agenter"}\n`;
+      rows.push(
+        ...wrapDialogueStyledSpans(
+          [
+            {
+              text: prefix,
+              fg: block.authoredByUser ? "#d1d5db" : MUTED_FG,
+              bg: block.authoredByUser ? USER_MESSAGE_BG : undefined,
+            },
+            {
+              text: block.body ?? "",
+              fg: TEXT_FG,
+              bg: block.authoredByUser ? USER_MESSAGE_BG : undefined,
+            },
+          ],
+          input.width,
+        ).map((line) => ({ key: blockKey, height: 1, line })),
+      );
+      rows.push({ key: `${blockKey}:spacer`, height: 1, line: { spans: [] } });
     }
-    const prefix = block.authoredByUser ? ">  " : `${block.authorLabel ?? "@agenter"}\n`;
-    rows.push(
-      ...wrapDialogueStyledSpans(
-        [
-          {
-            text: prefix,
-            fg: block.authoredByUser ? "#d1d5db" : MUTED_FG,
-            bg: block.authoredByUser ? USER_MESSAGE_BG : undefined,
-          },
-          {
-            text: block.body ?? "",
-            fg: TEXT_FG,
-            bg: block.authoredByUser ? USER_MESSAGE_BG : undefined,
-          },
-        ],
-        input.width,
-      ),
-    );
-    rows.push({ spans: [] });
+    for (let index = before; index < rows.length; index += 1) {
+      rows[index] = {
+        ...rows[index]!,
+        key: rows[index]!.key === blockKey ? `${blockKey}:row-${index - before}` : rows[index]!.key,
+      };
+    }
   }
   return rows;
 };
@@ -163,6 +203,8 @@ const renderPanelBackground = (canvas: ReturnType<typeof createTerminalCanvas>):
   }
 };
 
+// Terminal-2 still needs cell rows. This draws a projection of the OpenTUI
+// ScrollBox state; it is not the accepted Chat interaction owner.
 const renderDialogueScrollbar = (
   canvas: ReturnType<typeof createTerminalCanvas>,
   input: {
@@ -171,7 +213,7 @@ const renderDialogueScrollbar = (
     height: number;
     totalRows: number;
     visibleRows: number;
-    offsetFromBottom: number;
+    scrollTop: number;
   },
 ): void => {
   if (input.col < 0 || input.height <= 0) {
@@ -193,7 +235,7 @@ const renderDialogueScrollbar = (
       ? input.height
       : Math.max(1, Math.min(input.height, Math.ceil((viewportSize / scrollSize) * input.height)));
   const movableRows = Math.max(0, input.height - thumbSize);
-  const scrollFromTop = Math.max(0, maxOffset - Math.max(0, Math.min(maxOffset, input.offsetFromBottom)));
+  const scrollFromTop = Math.max(0, Math.min(maxOffset, input.scrollTop));
   const thumbStart =
     maxOffset === 0 || movableRows === 0
       ? 0
@@ -208,10 +250,38 @@ const renderDialogueScrollbar = (
   });
 };
 
+const resolveDialogueViewportMetrics = (input: {
+  owner?: CliShellDialogueViewportOwner;
+  rows: readonly CliShellDialogueScrollRow[];
+  width: number;
+  height: number;
+  scrollTop: number;
+}): CliShellDialogueScrollMetrics => {
+  if (input.owner) {
+    const snapshot = input.owner.sync({
+      width: input.width,
+      height: input.height,
+      rows: input.rows,
+      scrollTop: input.scrollTop,
+    });
+    return resolveCliShellDialogueScrollMetrics({
+      scrollTop: snapshot.scrollTop,
+      viewportHeight: snapshot.viewportHeight,
+      scrollHeight: snapshot.scrollHeight,
+    });
+  }
+  return resolveCliShellDialogueScrollMetrics({
+    scrollTop: input.scrollTop,
+    viewportHeight: input.height,
+    scrollHeight: input.rows.length,
+  });
+};
+
 export const buildCliShellDialogueSurface = (input: {
   layout: Pick<CliShellTranscriptPanelLayout, "width" | "height">;
   model: CliShellTuiModel;
   renderFocusedDraft?: boolean;
+  viewportOwner?: CliShellDialogueViewportOwner;
 }): CliShellDialogueSurface => {
   const canvas = createTerminalCanvas(input.layout.width, input.layout.height);
   const actionRegions: CliShellActionHitRegion[] = [];
@@ -298,20 +368,25 @@ export const buildCliShellDialogueSurface = (input: {
   const inputEndRow = height - 1;
   const bodyStartRow = 2;
   const bodyRows = Math.max(0, inputStartRow - bodyStartRow - 1);
-  const bodyProjectionRows = buildDialogueBodyRows({
+  const bodyProjectionRows = buildCliShellDialogueScrollRows({
     model,
     width: contentWidth,
   });
-  const maxScrollOffset = Math.max(0, bodyProjectionRows.length - bodyRows);
-  const scrollOffset = Math.max(0, Math.min(maxScrollOffset, Math.trunc(model.dialogueScrollOffset)));
-  const bodyStartIndex = Math.max(0, bodyProjectionRows.length - bodyRows - scrollOffset);
+  const metrics = resolveDialogueViewportMetrics({
+    owner: input.viewportOwner,
+    rows: bodyProjectionRows,
+    width: contentWidth,
+    height: Math.max(1, bodyRows),
+    scrollTop: model.dialogueScroll.scrollTop,
+  });
+  const bodyStartIndex = metrics.scrollTop;
   const visibleBodyRows = bodyRows > 0 ? bodyProjectionRows.slice(bodyStartIndex, bodyStartIndex + bodyRows) : [];
 
   for (const [bodyRowIndex, bodyLine] of visibleBodyRows.entries()) {
     writeCanvasStyledText(canvas, {
       row: bodyStartRow + bodyRowIndex,
       col: contentCol,
-      spans: bodyLine.spans,
+      spans: bodyLine.line.spans,
       width: contentWidth,
     });
   }
@@ -322,11 +397,11 @@ export const buildCliShellDialogueSurface = (input: {
     height: Math.max(1, inputStartRow - bodyStartRow - 1),
     totalRows: bodyProjectionRows.length,
     visibleRows: Math.max(1, bodyRows),
-    offsetFromBottom: scrollOffset,
+    scrollTop: metrics.scrollTop,
   });
 
-  if (scrollOffset > 0 && width >= 8 && bodyRows > 0) {
-    const stickLabel = `↓ ${Math.min(99, scrollOffset)}`;
+  if (!metrics.pinnedToBottom && width >= 8 && bodyRows > 0) {
+    const stickLabel = `↓ ${Math.min(99, Math.max(1, model.dialogueScroll.pendingNewMessageCount || metrics.maxScrollTop - metrics.scrollTop))}`;
     const stickWidth = measureTerminalText(stickLabel);
     const stickRow = Math.min(inputStartRow - 2, Math.max(bodyStartRow, inputStartRow - 5));
     const stickCol = Math.max(contentCol, width - stickWidth - 3);
@@ -411,10 +486,12 @@ export const buildCliShellDialogueSurface = (input: {
       visible: model.activeFocusTarget === "dialogue" && model.dialoguePlacement !== null,
     },
     viewport: {
-      offsetFromBottom: scrollOffset,
-      maxOffsetFromBottom: maxScrollOffset,
+      scrollTop: metrics.scrollTop,
+      maxScrollTop: metrics.maxScrollTop,
       totalRows: bodyProjectionRows.length,
       visibleRows: visibleBodyRows.length,
+      nearTop: metrics.nearTop,
+      pinnedToBottom: metrics.pinnedToBottom,
     },
     chrome: { scrollbar: "visible" },
   };

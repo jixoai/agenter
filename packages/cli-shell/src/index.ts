@@ -68,6 +68,7 @@ export {
   routeCliShellPaste,
   routeCliShellPointerAction,
   routeCliShellViewportTarget,
+  loadOlderCliShellDialogueMessages,
   setCliShellDialogueDraft,
   submitCliShellDialogue,
   syncCliShellTerminalGeometry,
@@ -86,8 +87,32 @@ export type {
 } from "./tui/projection-law";
 export {
   buildCliShellDialogueSurface,
+  buildCliShellDialogueScrollRows,
+  createCliShellDialogueViewportOwner,
   type CliShellDialogueSurface,
+  type CliShellDialogueViewportOwner,
 } from "./tui/dialogue-surface";
+export {
+  CliShellDialogueScrollBoxController,
+  captureCliShellDialogueAnchor,
+  createCliShellDialogueMessageWindowFromSnapshot,
+  dialogueMessageKey,
+  loadCliShellDialogueOlderMessages,
+  mergeCliShellDialogueIncomingMessages,
+  prependCliShellDialogueMessagePage,
+  resolveCliShellDialogueScrollMetrics,
+  resolveCliShellDialogueWheelDelta,
+  restoreCliShellDialogueAnchorScrollTop,
+  restoreCliShellDialoguePrependScrollTop,
+  CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM,
+  type CliShellDialogueAnchor,
+  type CliShellDialogueMessagePage,
+  type CliShellDialogueMessageWindow,
+  type CliShellDialoguePageMessages,
+  type CliShellDialogueScrollMetrics,
+  type CliShellDialogueScrollRow,
+  type CliShellDialogueScrollSnapshot,
+} from "./tui/dialogue-scrollbox";
 export {
   CliShellDialogueBackend,
   projectCliShellDialogueBackendFrame,
@@ -153,6 +178,7 @@ export { createCliShellPerfTracer, type CliShellPerfTraceEvent, type CliShellPer
 export { createInitialCliShellViewState } from "./tui/view-state";
 export { CliShellDebugBarRenderable, formatCliShellDebugBarLine, type CliShellDebugBarOptions } from "./tui/debug-bar";
 export { buildCliShellTuiModel, resolveCliShellDialoguePlacement } from "./tui/model";
+export { buildCliShellDialogueBlocks } from "./tui/model";
 export { CliShellCoreApp, type CliShellCoreAppProps } from "./tui/core-app";
 export { startCliShellTui, type CliShellTuiController } from "./tui/run-cli-shell-tui";
 export { startCliShellStartupTui, type CliShellStartupTuiController, type CliShellStartupAppProps } from "./tui/startup-shell-tui";
