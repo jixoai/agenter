@@ -1,12 +1,11 @@
-import { measureTerminalText } from "./cell-width";
 import { splitTerminalTextToWidth } from "./canvas";
 import { projectCliShellDialogueBackendFrame } from "./dialogue-backend";
 import {
   resolveCliShellTerminalRegion,
   resolveCliShellTranscriptPanelLayout,
   resolveCliShellTuiInteractionLayout,
-  type CliShellTerminalRegion,
   type CliShellActionHitRegion,
+  type CliShellTerminalRegion,
 } from "./frame";
 import type { CliShellTuiModel } from "./types";
 
@@ -49,8 +48,7 @@ export const resolveShellCursorCellPosition = (input: {
   }
   const localX = Math.max(0, Math.min(Math.max(0, terminalRegion.width - 1), input.model.terminalView.cursorCol));
   const cursorRowInBackendViewport = input.model.terminalView.cursorAbsRow - input.model.terminalView.viewportStart;
-  const carriesFullScrollback =
-    input.model.terminalView.richLines.length >= input.model.terminalView.scrollbackRows;
+  const carriesFullScrollback = input.model.terminalView.richLines.length >= input.model.terminalView.scrollbackRows;
   const localViewportStart = carriesFullScrollback
     ? 0
     : Math.max(
@@ -60,9 +58,7 @@ export const resolveShellCursorCellPosition = (input: {
           cursorRowInBackendViewport - terminalRegion.height + 1,
         ),
       );
-  const localY = carriesFullScrollback
-    ? cursorRowInBackendViewport
-    : cursorRowInBackendViewport - localViewportStart;
+  const localY = carriesFullScrollback ? cursorRowInBackendViewport : cursorRowInBackendViewport - localViewportStart;
   if (localY < 0 || localY >= terminalRegion.height) {
     return { x: 0, y: 0, visible: false };
   }
@@ -125,22 +121,21 @@ export const resolveDialogueInputRegion = (input: {
     return null;
   }
   const promptWidth = 2;
-  const sendWidth = measureTerminalText("[Send]");
-  const sendGap = 1;
-  const contentWidth = Math.max(0, layout.width - 2);
-  const draftWidth = Math.max(1, contentWidth - promptWidth - sendWidth - sendGap);
+  const contentCol = 2;
+  const contentWidth = Math.max(1, layout.width - contentCol - 2);
+  const draftWidth = Math.max(1, contentWidth - promptWidth);
   const draftRows = splitTerminalTextToWidth({
     text: input.model.dialogueDraft.length > 0 ? input.model.dialogueDraft : " ",
     width: draftWidth,
     maxRows: Math.max(1, Math.min(4, layout.height - 4)),
   });
-  const startRow = layout.row + Math.max(2, layout.height - 1 - draftRows.length);
-  const endRow = layout.row + Math.max(0, layout.height - 2);
+  const startRow = layout.row + Math.max(2, layout.height - draftRows.length);
+  const endRow = layout.row + Math.max(0, layout.height - 1);
   return {
     action: "focusDialogueInput",
     row: startRow,
-    col: layout.col + 1 + promptWidth,
-    width: Math.max(1, layout.width - 2 - promptWidth - sendWidth - sendGap),
+    col: layout.col + contentCol + promptWidth,
+    width: Math.max(1, contentWidth - promptWidth),
     height: Math.max(1, endRow - startRow + 1),
   };
 };

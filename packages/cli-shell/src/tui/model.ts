@@ -1,15 +1,15 @@
 import type { GlobalRoomMessage, RuntimeClientState } from "@agenter/client-sdk";
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
 
-import { formatCliShellShortcut, type CliShellTuiKeybindings } from "./keybindings";
 import {
   CLI_SHELL_HEARTBEAT_COPY,
-  resolveLatestCliShellHeartbeatTimestamp,
   resolveCliShellToolbarStatus,
   resolveCliShellToolbarStatusIcon,
+  resolveLatestCliShellHeartbeatTimestamp,
   summarizeCliShellHeartbeat,
 } from "./heartbeat";
 import type { CliShellInteractionEnhancementProfile } from "./interaction-capabilities";
+import type { CliShellTuiKeybindings } from "./keybindings";
 import type {
   CliShellDialogueBlock,
   CliShellDialoguePlacement,
@@ -37,6 +37,8 @@ const MIN_SIDE_PANEL_WIDTH = 44;
 const MIN_TERMINAL_WIDTH = 32;
 const MIN_FLOATING_WIDTH = 36;
 const MIN_FLOATING_HEIGHT = 12;
+const MIN_COVER_WIDTH = 24;
+const MIN_COVER_HEIGHT = 7;
 
 const resolveTerminalId = (input: {
   state: RuntimeClientState;
@@ -65,10 +67,7 @@ const resolveTerminalLines = (input: {
   const globalTerminalSnapshot = input.state.globalTerminals.data.find(
     (terminal) => terminal.terminalId === input.terminalId,
   )?.snapshot;
-  if (
-    globalTerminalSnapshot?.lines.length &&
-    globalTerminalSnapshot.lines.some((line) => line.length > 0)
-  ) {
+  if (globalTerminalSnapshot?.lines.length && globalTerminalSnapshot.lines.some((line) => line.length > 0)) {
     return globalTerminalSnapshot.lines;
   }
   return [`${input.terminalId || input.shellName}: waiting for terminal snapshot`];
@@ -124,7 +123,12 @@ const resolveTerminalView = (input: {
     cursorCol: terminalSnapshot?.cursor.x ?? 0,
     cursorVisible: (terminalSnapshot?.cursor.visible ?? false) && input.activeFocusTarget === "terminal",
     rows: terminalSnapshot?.scrollback.screenLines ?? terminalSnapshot?.rows ?? rows,
-    cols: terminalSnapshot?.cols ?? Math.max(1, plainLines.reduce((max, line) => Math.max(max, line.length), 0)),
+    cols:
+      terminalSnapshot?.cols ??
+      Math.max(
+        1,
+        plainLines.reduce((max, line) => Math.max(max, line.length), 0),
+      ),
     viewportStart,
     viewportEnd: viewportStart + (terminalSnapshot?.scrollback.screenLines ?? terminalSnapshot?.rows ?? rows),
     scrollbackRows: terminalSnapshot?.scrollback.totalLines ?? plainLines.length,
@@ -259,6 +263,9 @@ const resolveSmartPlacement = (width: number, bodyHeight: number): CliShellDialo
   if (isFloatingPlacementViable(width, bodyHeight)) {
     return "floating";
   }
+  if (width >= MIN_COVER_WIDTH && bodyHeight >= MIN_COVER_HEIGHT) {
+    return "cover";
+  }
   return null;
 };
 
@@ -277,7 +284,12 @@ export const resolveCliShellDialoguePlacement = (input: {
       ? input.requestedPlacement
       : resolveSmartPlacement(input.width, bodyHeight);
   }
-  return isFloatingPlacementViable(input.width, bodyHeight) ? "floating" : resolveSmartPlacement(input.width, bodyHeight);
+  if (input.requestedPlacement === "floating") {
+    return isFloatingPlacementViable(input.width, bodyHeight)
+      ? "floating"
+      : resolveSmartPlacement(input.width, bodyHeight);
+  }
+  return resolveSmartPlacement(input.width, bodyHeight);
 };
 
 export const buildCliShellTuiModel = (input: {
@@ -313,7 +325,10 @@ export const buildCliShellTuiModel = (input: {
           terminalObservationReadyAt > baseline.timestamp);
   const latestHeartbeatTimestamp = resolveLatestCliShellHeartbeatTimestamp(heartbeatGroups);
   const status = resolveCliShellToolbarStatus(heartbeatGroups);
-  const unread = countUnreadRoomMessages(input.projection.roomSnapshot, input.avatarActorId) ?? input.state.unreadBySession[input.sessionId] ?? 0;
+  const unread =
+    countUnreadRoomMessages(input.projection.roomSnapshot, input.avatarActorId) ??
+    input.state.unreadBySession[input.sessionId] ??
+    0;
   const startupReadyHeartbeat =
     terminalObservationReady &&
     (terminalObservationReadyAt === null ||
@@ -351,11 +366,11 @@ export const buildCliShellTuiModel = (input: {
       terminalId,
       shellName: input.shellName,
     }),
-    toolbarLeft: `${resolveCliShellToolbarStatusIcon(status)} terminal`,
+    toolbarLeft: resolveCliShellToolbarStatusIcon(status),
     toolbarHeartbeat,
     toolbarHeartbeatProjection: input.toolbarHeartbeatProjection ?? toolbarHeartbeat,
     toolbarManaged: resolveManagedLabel(input.ui.managed),
-    toolbarUnread: `✉ ${unread} ${formatCliShellShortcut(input.keybindings.openDialogue)}`,
+    toolbarUnread: `✉ ${unread}`,
     dialogueOpen: input.ui.dialogueOpen,
     dialoguePlacement,
     dialogueBlocks: buildDialogueBlocks({
@@ -364,7 +379,7 @@ export const buildCliShellTuiModel = (input: {
     }),
     dialogueDraft: input.ui.dialogueDraft,
     dialogueScrollOffset: Math.max(0, Math.trunc(input.ui.dialogueScrollOffset ?? 0)),
-    dialogueTitle: "Dialogue",
+    dialogueTitle: "Chat",
     interactionProfile: input.interactionProfile,
   };
 };

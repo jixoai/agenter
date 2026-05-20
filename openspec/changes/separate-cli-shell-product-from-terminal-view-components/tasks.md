@@ -65,6 +65,10 @@
 - [x] 4.8.2 Ensure native host and `--web` host both consume the same terminal-2 final product surface, so managed state, bottom heartbeat/actions, and transcript open/placement transitions are visible from both hosts without a second host-owned product truth.
 - [x] 4.8.3 If native host keeps OpenTUI/native click, focus, or scrollbar primitives for lawful interaction ownership, prove those primitives act only as control projections and that their accepted visible results are observable from terminal-2 publication rather than surviving solely as host-local state.
 - [x] 4.9 Add `--debug` as an explicit cli-shell startup flag and render a one-line top debug bar with frame timing, queue, patch, viewport, and FPS facts only when that flag is enabled.
+- [x] 4.10 Update the bottom row to the v9 compact status-bar contract: status icon, current streaming activity part, managed/takeover toggle, and Chat entry with unread count only; do not render the literal `Heartbeat` label or visible shortcut help in the row.
+- [x] 4.11 Update Chat transcript chrome to the v9 traditional chat-room scroll contract: pinned-at-bottom follows new messages and streaming parts; user scroll-up preserves anchor and shows a stick-to-bottom/new-message button; successful user send returns to bottom-pinned mode.
+- [x] 4.12 Ensure Chat transcript chrome always exposes a visible scrollbar column for message-list position, independent from the shell-terminal viewport scrollbar or viewport truth.
+- [x] 4.13 Ensure constrained-space Chat placement may cover the shell as a full panel when needed, while docked placements remain frameless and avoid full enclosing borders.
 
 ## 5. Validation
 
@@ -103,3 +107,5 @@
 - [ ] 5.16 Track the reopened `add-cli-shell-product` obligation corresponding to archived task `5.5` and rerun the real product walkthrough against the original reference effects after this corrective architecture change passes.
 - [x] 5.17 Record explicit architecture evidence proving why raw ANSI or VT transport is boundary-local only in this product, and why canonical multi-view sync instead follows backend screen truth rather than frontend terminal emulation truth.
 - [x] 5.18 Record automated evidence for scrollbar single-source behavior, client-paced pull-frame protocol cleanup, and the `--debug` performance bar in `.chat/separate-cli-shell-product-from-terminal-view-components/2026-05-13-scrollbar-debug-automation.md`.
+- [x] 5.19 Add v9 ChatTUI effect-confirmation assets under `openspec/changes/separate-cli-shell-product-from-terminal-view-components/assets/`, including PNG review images, SVG companions, TXT terminal-grid contracts, and a deterministic generator.
+- [x] 5.20 During final apply verification, compare the implemented collapsed, Chat-pinned, and Chat-scrolled-up states against the v9 reference images and record deviations with screenshot evidence.

@@ -2,8 +2,9 @@ import type { KeyEvent } from "@opentui/core";
 
 import { disableCliShellManagedMode, enableCliShellManagedMode, readCliShellManagedState } from "../managed";
 import { resolveCliShellTerminalRegion } from "./frame";
-import type { CliShellLiveTerminalMirror } from "./live-terminal-mirror";
 import { matchCliShellShortcut, type CliShellTuiKeybindings } from "./keybindings";
+import type { CliShellLiveTerminalMirror } from "./live-terminal-mirror";
+import type { CliShellPerfTracer } from "./perf-trace";
 import { encodeCliShellTerminalKey } from "./terminal-input";
 import {
   findNextTerminalWordBoundary,
@@ -11,13 +12,7 @@ import {
   stringIndexToTerminalColumn,
   terminalColumnToStringIndex,
 } from "./terminal-word-navigation";
-import type {
-  CliShellPointerAction,
-  CliShellTuiModel,
-  CliShellTuiStore,
-  CliShellTuiViewState,
-} from "./types";
-import type { CliShellPerfTracer } from "./perf-trace";
+import type { CliShellPointerAction, CliShellTuiModel, CliShellTuiStore, CliShellTuiViewState } from "./types";
 
 export interface CliShellTuiControllerContext {
   store: CliShellTuiStore;
@@ -55,13 +50,7 @@ const clearTerminalSelectionAnchor = (ctx: CliShellTuiControllerContext): void =
 };
 
 const isPlainReturnShortcut = (input: CliShellTuiKeybindings["sendDialogue"]): boolean =>
-  input.key === "return" &&
-  !input.command &&
-  !input.ctrl &&
-  !input.meta &&
-  !input.super &&
-  !input.alt &&
-  !input.shift;
+  input.key === "return" && !input.command && !input.ctrl && !input.meta && !input.super && !input.alt && !input.shift;
 
 const closeDialogue = (ctx: CliShellTuiControllerContext): void => {
   ctx.updateViewState((current) => ({
@@ -314,13 +303,14 @@ const routeOptionShiftWordSelection = (ctx: CliShellTuiControllerContext, key: K
     clearTerminalSelectionAnchor(ctx);
     return false;
   }
-  const sent = ctx.getLiveMirror?.()?.selectRange({
-    ownerId: "terminal",
-    startRow: anchor.row,
-    startCol,
-    endRow: boundary.cursorAbsRow,
-    endCol,
-  }) ?? false;
+  const sent =
+    ctx.getLiveMirror?.()?.selectRange({
+      ownerId: "terminal",
+      startRow: anchor.row,
+      startCol,
+      endRow: boundary.cursorAbsRow,
+      endCol,
+    }) ?? false;
   const cursorInput =
     sent && boundary.delta > 0
       ? repeatTerminalKey("\u001b[C", boundary.delta)
@@ -416,6 +406,7 @@ export const submitCliShellDialogue = async (ctx: CliShellTuiControllerContext):
     ctx.updateViewState((current) => ({
       ...current,
       dialogueDraft: "",
+      dialogueScrollOffset: 0,
       statusNotice: "消息已发送",
     }));
   } catch (error) {
@@ -469,6 +460,16 @@ export const routeCliShellPointerAction = (ctx: CliShellTuiControllerContext, ac
     }));
     return;
   }
+  if (action === "stickDialogueToBottom") {
+    ctx.updateViewState((current) => ({
+      ...current,
+      dialogueOpen: true,
+      focusTarget: "dialogue",
+      dialogueScrollOffset: 0,
+      statusNotice: null,
+    }));
+    return;
+  }
   if (action === "submitDialogue") {
     const task = submitCliShellDialogue(ctx);
     ctx.trackAsyncTask?.(task);
@@ -485,6 +486,10 @@ export const routeCliShellPointerAction = (ctx: CliShellTuiControllerContext, ac
   }
   if (action === "placeFloating") {
     setDialoguePlacement(ctx, "floating");
+    return;
+  }
+  if (action === "placeCover") {
+    setDialoguePlacement(ctx, "cover");
     return;
   }
 };
@@ -512,6 +517,7 @@ export const routeCliShellViewportTarget = (
 
 export const routeCliShellPaste = (ctx: CliShellTuiControllerContext, text: string): void => {
   if (ctx.getViewState().dialogueOpen && ctx.getViewState().focusTarget === "dialogue") {
+    setCliShellDialogueDraft(ctx, `${ctx.getViewState().dialogueDraft}${text}`);
     return;
   }
   sendTerminalInput(ctx, text);
@@ -535,7 +541,10 @@ export const routeCliShellKey = (ctx: CliShellTuiControllerContext, key: KeyEven
       closeDialogue(ctx);
       return true;
     }
-    if (matchCliShellShortcut(key, ctx.keybindings.sendDialogue) && !isPlainReturnShortcut(ctx.keybindings.sendDialogue)) {
+    if (
+      matchCliShellShortcut(key, ctx.keybindings.sendDialogue) &&
+      !isPlainReturnShortcut(ctx.keybindings.sendDialogue)
+    ) {
       const task = submitCliShellDialogue(ctx);
       ctx.trackAsyncTask?.(task);
       void task;

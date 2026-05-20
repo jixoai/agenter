@@ -1,3 +1,4 @@
+import { projectTerminalViewport } from "@agenter/termless-core";
 import {
   createTerminalCanvas,
   drawCanvasVerticalLine,
@@ -8,11 +9,9 @@ import {
   writeCanvasText,
   type TerminalCanvasStyledLine,
 } from "./canvas";
-import { projectTerminalViewport } from "@agenter/termless-core";
 import { fitTerminalText, measureTerminalText } from "./cell-width";
 import { projectCliShellDialogueBackendFrame } from "./dialogue-backend";
 import type {
-  CliShellDialoguePlacement,
   CliShellScrollRegion,
   CliShellSelectionRegion,
   CliShellSelectionSource,
@@ -70,6 +69,8 @@ export interface CliShellActionHitRegion {
     | "placeLeft"
     | "placeRight"
     | "placeFloating"
+    | "placeCover"
+    | "stickDialogueToBottom";
   row: number;
   col: number;
   width: number;
@@ -87,7 +88,7 @@ const buildToolbarLine = (model: CliShellTuiModel, width: number): string => {
     return "";
   }
 
-  const separator = " │ ";
+  const separator = "  ";
   const left = model.toolbarLeft;
   const managed = model.toolbarManaged;
   const unread = model.toolbarUnread;
@@ -102,7 +103,7 @@ const buildToolbarLine = (model: CliShellTuiModel, width: number): string => {
     return fitTerminalText(heartbeatSource, width, { ellipsis: true });
   }
 
-  const heartbeatWidth = Math.max(0, width - reserved - 1);
+  const heartbeatWidth = Math.max(0, width - reserved);
   const heartbeat = fitTerminalText(heartbeatSource, heartbeatWidth, { ellipsis: true });
   return `${left}${separator}${heartbeat}${separator}${managed}${separator}${unread}`;
 };
@@ -118,7 +119,7 @@ export const resolveCliShellToolbarLayout = (
     };
   }
 
-  const separator = " │ ";
+  const separator = "  ";
   const left = model.toolbarLeft;
   const managed = model.toolbarManaged;
   const unread = model.toolbarUnread;
@@ -143,7 +144,7 @@ export const resolveCliShellToolbarLayout = (
     };
   }
 
-  const heartbeatWidth = Math.max(0, width - reserved - 1);
+  const heartbeatWidth = Math.max(0, width - reserved);
   const heartbeat = fitTerminalText(model.toolbarHeartbeatProjection, heartbeatWidth, { ellipsis: true });
   const items: CliShellToolbarItem[] = [];
   let col = 0;
@@ -170,10 +171,15 @@ export const resolveCliShellToolbarLayout = (
     items,
   };
 };
-const resolveSidePanelWidth = (width: number): number => clamp(Math.floor((width - 1) * 0.37), MIN_SIDE_PANEL_WIDTH, Math.max(MIN_SIDE_PANEL_WIDTH, width - 20));
+const resolveSidePanelWidth = (width: number): number =>
+  clamp(Math.floor((width - 1) * 0.37), MIN_SIDE_PANEL_WIDTH, Math.max(MIN_SIDE_PANEL_WIDTH, width - 20));
 
 const resolveFloatingGeometry = (width: number, bodyHeight: number) => {
-  const panelWidth = clamp(Math.floor(width * 0.44), MIN_FLOATING_PANEL_WIDTH, Math.max(MIN_FLOATING_PANEL_WIDTH, width - 4));
+  const panelWidth = clamp(
+    Math.floor(width * 0.44),
+    MIN_FLOATING_PANEL_WIDTH,
+    Math.max(MIN_FLOATING_PANEL_WIDTH, width - 4),
+  );
   const panelHeight = clamp(
     Math.floor(bodyHeight * 0.58),
     MIN_FLOATING_PANEL_HEIGHT,
@@ -207,6 +213,12 @@ export const resolveCliShellTerminalRegion = (input: {
     const splitCol = input.width - panelWidth - 2;
     return {
       width: Math.max(0, splitCol),
+      height: bodyHeight,
+    };
+  }
+  if (placement === "cover") {
+    return {
+      width: input.width,
       height: bodyHeight,
     };
   }
@@ -250,6 +262,14 @@ export const resolveCliShellTranscriptPanelLayout = (input: {
       height: bodyHeight,
     };
   }
+  if (input.model.dialoguePlacement === "cover") {
+    return {
+      row: 0,
+      col: 0,
+      width: input.width,
+      height: bodyHeight,
+    };
+  }
 
   const geometry = resolveFloatingGeometry(input.width, bodyHeight);
   return {
@@ -270,6 +290,9 @@ export const resolveCliShellTerminalScrollRegion = (input: {
     return null;
   }
   const placement = input.model.dialoguePlacement;
+  if (placement === "cover") {
+    return null;
+  }
   if (placement === "left") {
     const panelWidth = resolveSidePanelWidth(input.width);
     return {
@@ -305,6 +328,9 @@ export const resolveCliShellTerminalScrollbarRegion = (input: {
     return null;
   }
   const placement = input.model.dialoguePlacement;
+  if (placement === "cover") {
+    return null;
+  }
   if (placement === "left") {
     const panelWidth = resolveSidePanelWidth(input.width);
     return {
@@ -466,8 +492,7 @@ export const layoutCliShellTuiFrame = (input: {
   const renderToolbar = input.renderToolbar ?? true;
   const bodyHeight = Math.max(0, renderToolbar ? input.height - 1 : input.height);
   const terminalRegion = resolveCliShellTerminalRegion(input);
-  const terminalCol =
-    input.model.dialoguePlacement === "left" ? Math.max(0, input.width - terminalRegion.width) : 0;
+  const terminalCol = input.model.dialoguePlacement === "left" ? Math.max(0, input.width - terminalRegion.width) : 0;
   const terminalScrollRegion = resolveCliShellTerminalScrollRegion(input);
   renderTerminalRegion({
     canvas,

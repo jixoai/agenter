@@ -83,5 +83,13 @@ export const toProductTerminalComposedSurface = (
   scrollback: { ...surface.scrollback },
   metadata: {
     cliShellFrame: true,
+    composedShellSnapshotSeq: surface.shellSnapshotSeq,
+    composedBottomLine: surface.bottomLine,
+    composedDialogueOpen: surface.dialogueOpen,
+    composedDialoguePlacement: surface.dialoguePlacement,
+    composedDialogueDraft: surface.dialogueDraft,
+    composedManagedLabel: surface.managedLabel,
+    composedUnreadLabel: surface.unreadLabel,
+    composedHeartbeatLabel: surface.heartbeatLabel,
   },
 });

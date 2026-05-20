@@ -1,6 +1,8 @@
 import {
   createTerminalCanvas,
-  drawCanvasRectangle,
+  drawCanvasHorizontalLine,
+  drawCanvasVerticalLine,
+  fillCanvasRow,
   renderCanvasLines,
   renderCanvasStyledLines,
   splitTerminalTextToWidth,
@@ -24,7 +26,7 @@ export interface CliShellDialogueSurface {
     visibleRows: number;
   };
   chrome: {
-    scrollbar: "hidden";
+    scrollbar: "visible" | "hidden";
   };
 }
 
@@ -34,6 +36,14 @@ const EMPTY_DIALOGUE_VIEWPORT: CliShellDialogueSurface["viewport"] = {
   totalRows: 0,
   visibleRows: 0,
 };
+
+const PANEL_BG = "#101820";
+const USER_MESSAGE_BG = "#1f2937";
+const TEXT_FG = "#e5e7eb";
+const MUTED_FG = "#94a3b8";
+const ACCENT_FG = "#93c5fd";
+const TRACK_FG = "#334155";
+const THUMB_FG = "#cbd5e1";
 
 const emptyDialogueSurface = (
   canvas: ReturnType<typeof createTerminalCanvas>,
@@ -102,10 +112,7 @@ const wrapDialogueStyledSpans = (
   return rows;
 };
 
-const buildDialogueBodyRows = (input: {
-  model: CliShellTuiModel;
-  width: number;
-}): TerminalCanvasStyledLine[] => {
+const buildDialogueBodyRows = (input: { model: CliShellTuiModel; width: number }): TerminalCanvasStyledLine[] => {
   const rows: TerminalCanvasStyledLine[] = [];
   for (const block of input.model.dialogueBlocks) {
     if (block.kind === "date-divider") {
@@ -113,8 +120,8 @@ const buildDialogueBodyRows = (input: {
         ...wrapDialogueStyledSpans(
           [
             {
-              text: block.dateLabel ?? "",
-              fg: "#94a3b8",
+              text: `──────── ${block.dateLabel ?? ""} ────────`,
+              fg: MUTED_FG,
             },
           ],
           input.width,
@@ -122,24 +129,83 @@ const buildDialogueBodyRows = (input: {
       );
       continue;
     }
-    const prefix = `${block.timeLabel ?? "--:--"} ${block.authorLabel ?? "@agenter"}: `;
+    const prefix = block.authoredByUser ? ">  " : `${block.authorLabel ?? "@agenter"}\n`;
     rows.push(
       ...wrapDialogueStyledSpans(
         [
           {
             text: prefix,
-            fg: block.authoredByUser ? "#93c5fd" : "#e2e8f0",
+            fg: block.authoredByUser ? "#d1d5db" : MUTED_FG,
+            bg: block.authoredByUser ? USER_MESSAGE_BG : undefined,
           },
           {
             text: block.body ?? "",
-            fg: "#e2e8f0",
+            fg: TEXT_FG,
+            bg: block.authoredByUser ? USER_MESSAGE_BG : undefined,
           },
         ],
         input.width,
       ),
     );
+    rows.push({ spans: [] });
   }
   return rows;
+};
+
+const renderPanelBackground = (canvas: ReturnType<typeof createTerminalCanvas>): void => {
+  for (let row = 0; row < canvas.height; row += 1) {
+    fillCanvasRow(canvas, {
+      row,
+      col: 0,
+      width: canvas.width,
+      bg: PANEL_BG,
+    });
+  }
+};
+
+const renderDialogueScrollbar = (
+  canvas: ReturnType<typeof createTerminalCanvas>,
+  input: {
+    row: number;
+    col: number;
+    height: number;
+    totalRows: number;
+    visibleRows: number;
+    offsetFromBottom: number;
+  },
+): void => {
+  if (input.col < 0 || input.height <= 0) {
+    return;
+  }
+  drawCanvasVerticalLine(canvas, {
+    row: input.row,
+    col: input.col,
+    height: input.height,
+    char: "░",
+    fg: TRACK_FG,
+    bg: PANEL_BG,
+  });
+  const viewportSize = Math.max(1, Math.min(input.visibleRows, input.height));
+  const scrollSize = Math.max(viewportSize, input.totalRows);
+  const maxOffset = Math.max(0, scrollSize - viewportSize);
+  const thumbSize =
+    maxOffset === 0
+      ? input.height
+      : Math.max(1, Math.min(input.height, Math.ceil((viewportSize / scrollSize) * input.height)));
+  const movableRows = Math.max(0, input.height - thumbSize);
+  const scrollFromTop = Math.max(0, maxOffset - Math.max(0, Math.min(maxOffset, input.offsetFromBottom)));
+  const thumbStart =
+    maxOffset === 0 || movableRows === 0
+      ? 0
+      : Math.max(0, Math.min(movableRows, Math.round((scrollFromTop / maxOffset) * movableRows)));
+  drawCanvasVerticalLine(canvas, {
+    row: input.row + thumbStart,
+    col: input.col,
+    height: thumbSize,
+    char: "█",
+    fg: THUMB_FG,
+    bg: PANEL_BG,
+  });
 };
 
 export const buildCliShellDialogueSurface = (input: {
@@ -157,73 +223,57 @@ export const buildCliShellDialogueSurface = (input: {
     return emptyDialogueSurface(canvas, actionRegions);
   }
 
-  drawCanvasRectangle(canvas, {
-    row: 0,
-    col: 0,
-    width,
-    height,
-    borderColor: model.dialogueOpen ? "#4fd1c5" : "#64748b",
-    fillColor: "#111827",
-    fillChar: " ",
-  });
-
+  renderPanelBackground(canvas);
   if (height < 4 || width < 6) {
     return emptyDialogueSurface(canvas, actionRegions);
   }
 
-  const title = "layout";
-  writeCanvasText(canvas, {
-    row: 0,
-    col: Math.min(1, width - 2),
-    text: title,
-    width: Math.max(0, width - 4),
-    fg: "#93c5fd",
-  });
-
-  let headerCol = Math.min(1 + measureTerminalText(title) + 1, width - 2);
-  for (const control of [
-    { label: "M-L", action: "placeLeft" as const },
-    { label: "M-R", action: "placeRight" as const },
-    { label: "M-F", action: "placeFloating" as const },
-  ]) {
-    if (headerCol >= width - 2) {
+  const title = model.dialogueTitle || "Chat";
+  const closeCol = Math.max(0, width - 2);
+  const toolbarControls = [
+    { label: "←", action: "placeLeft" as const },
+    { label: "→", action: "placeRight" as const },
+    { label: "◇", action: "placeFloating" as const },
+    { label: "▾", action: "placeCover" as const },
+  ];
+  let headerCol = 1;
+  for (const control of toolbarControls) {
+    if (headerCol >= Math.max(1, width - 8)) {
       break;
     }
     writeCanvasText(canvas, {
       row: 0,
       col: headerCol,
       text: control.label,
-      width: Math.max(0, width - headerCol - 1),
-      fg: "#f8fafc",
+      width: 1,
+      fg: "#cbd5e1",
+      bg: PANEL_BG,
     });
     actionRegions.push({
       action: control.action,
       row: 0,
       col: headerCol,
-      width: measureTerminalText(control.label),
+      width: 1,
       height: 1,
     });
-    headerCol += measureTerminalText(control.label) + 1;
+    headerCol += 3;
   }
-
-  const placementText = `│ ${model.dialoguePlacement ?? "floating"}`;
-  if (headerCol < width - 4) {
-    writeCanvasText(canvas, {
-      row: 0,
-      col: headerCol,
-      text: placementText,
-      width: Math.max(0, width - headerCol - 2),
-      fg: "#94a3b8",
-    });
-  }
-
-  const closeCol = Math.max(1, width - 2);
+  const titleWidth = measureTerminalText(title);
+  writeCanvasText(canvas, {
+    row: 0,
+    col: Math.max(headerCol, Math.floor((width - titleWidth) / 2)),
+    text: title,
+    width: Math.max(0, closeCol - Math.max(headerCol, Math.floor((width - titleWidth) / 2)) - 1),
+    fg: ACCENT_FG,
+    bg: PANEL_BG,
+  });
   writeCanvasText(canvas, {
     row: 0,
     col: closeCol,
-    text: "x",
+    text: "×",
     width: 1,
     fg: "#f8fafc",
+    bg: PANEL_BG,
   });
   actionRegions.push({
     action: "closeDialogue",
@@ -233,21 +283,21 @@ export const buildCliShellDialogueSurface = (input: {
     height: 1,
   });
 
-  const contentWidth = Math.max(0, width - 2);
-  const bodyStartRow = 2;
-  const sendLabel = "[Send]";
-  const sendWidth = measureTerminalText(sendLabel);
   const prompt = "> ";
   const promptWidth = measureTerminalText(prompt);
-  const draftWidth = Math.max(1, contentWidth - promptWidth - sendWidth - 1);
+  const gutterWidth = 2;
+  const scrollbarCol = Math.max(0, width - 1);
+  const contentCol = gutterWidth;
+  const contentWidth = Math.max(1, width - gutterWidth - 2);
   const draftRows = splitTerminalTextToWidth({
     text: model.dialogueDraft.length > 0 ? model.dialogueDraft : " ",
-    width: draftWidth,
+    width: Math.max(1, contentWidth - promptWidth),
     maxRows: Math.max(1, Math.min(4, height - 4)),
   });
-  const inputStartRow = Math.max(bodyStartRow, height - 1 - draftRows.length);
-  const inputEndRow = height - 2;
-  const bodyRows = Math.max(0, inputStartRow - bodyStartRow);
+  const inputStartRow = Math.max(2, height - draftRows.length);
+  const inputEndRow = height - 1;
+  const bodyStartRow = 2;
+  const bodyRows = Math.max(0, inputStartRow - bodyStartRow - 1);
   const bodyProjectionRows = buildDialogueBodyRows({
     model,
     width: contentWidth,
@@ -256,14 +306,55 @@ export const buildCliShellDialogueSurface = (input: {
   const scrollOffset = Math.max(0, Math.min(maxScrollOffset, Math.trunc(model.dialogueScrollOffset)));
   const bodyStartIndex = Math.max(0, bodyProjectionRows.length - bodyRows - scrollOffset);
   const visibleBodyRows = bodyRows > 0 ? bodyProjectionRows.slice(bodyStartIndex, bodyStartIndex + bodyRows) : [];
+
   for (const [bodyRowIndex, bodyLine] of visibleBodyRows.entries()) {
     writeCanvasStyledText(canvas, {
       row: bodyStartRow + bodyRowIndex,
-      col: 1,
+      col: contentCol,
       spans: bodyLine.spans,
       width: contentWidth,
     });
   }
+
+  renderDialogueScrollbar(canvas, {
+    row: bodyStartRow,
+    col: scrollbarCol,
+    height: Math.max(1, inputStartRow - bodyStartRow - 1),
+    totalRows: bodyProjectionRows.length,
+    visibleRows: Math.max(1, bodyRows),
+    offsetFromBottom: scrollOffset,
+  });
+
+  if (scrollOffset > 0 && width >= 8 && bodyRows > 0) {
+    const stickLabel = `↓ ${Math.min(99, scrollOffset)}`;
+    const stickWidth = measureTerminalText(stickLabel);
+    const stickRow = Math.min(inputStartRow - 2, Math.max(bodyStartRow, inputStartRow - 5));
+    const stickCol = Math.max(contentCol, width - stickWidth - 3);
+    writeCanvasText(canvas, {
+      row: stickRow,
+      col: stickCol,
+      text: stickLabel,
+      width: stickWidth,
+      fg: "#f8fafc",
+      bg: "#334155",
+    });
+    actionRegions.push({
+      action: "stickDialogueToBottom",
+      row: stickRow,
+      col: stickCol,
+      width: stickWidth,
+      height: 1,
+    });
+  }
+
+  drawCanvasHorizontalLine(canvas, {
+    row: Math.max(1, inputStartRow - 1),
+    col: 0,
+    width,
+    char: "─",
+    fg: TRACK_FG,
+    bg: PANEL_BG,
+  });
 
   const shouldRenderDraft = input.renderFocusedDraft ?? true;
   for (const [draftRowIndex, draftText] of draftRows.entries()) {
@@ -273,54 +364,49 @@ export const buildCliShellDialogueSurface = (input: {
     }
     writeCanvasStyledText(canvas, {
       row: draftRow,
-      col: 1,
+      col: contentCol,
       spans: [
         {
           text: draftRowIndex === 0 ? prompt : " ".repeat(promptWidth),
-          fg: model.dialogueOpen ? "#94a3b8" : "#64748b",
+          fg: model.dialogueOpen ? MUTED_FG : "#64748b",
+          bg: PANEL_BG,
         },
         {
           text: shouldRenderDraft ? draftText : " ",
-          fg: model.dialogueOpen ? "#f8fafc" : "#94a3b8",
+          fg: model.dialogueOpen ? "#f8fafc" : MUTED_FG,
+          bg: PANEL_BG,
         },
       ],
-      width: Math.max(0, contentWidth - sendWidth - 1),
+      width: Math.max(0, contentWidth),
     });
   }
   actionRegions.push({
     action: "focusDialogueInput",
     row: inputStartRow,
-    col: 1,
+    col: contentCol,
     width: Math.max(1, contentWidth),
     height: Math.max(1, inputEndRow - inputStartRow + 1),
-  });
-
-  const sendCol = Math.max(1, width - sendWidth - 1);
-  writeCanvasText(canvas, {
-    row: inputEndRow,
-    col: sendCol,
-    text: sendLabel,
-    width: sendWidth,
-    fg: "#111111",
-    bg: model.activeFocusTarget === "dialogue" ? "#67e8f9" : "#94a3b8",
   });
   actionRegions.push({
     action: "submitDialogue",
     row: inputEndRow,
-    col: sendCol,
-    width: sendWidth,
+    col: contentCol,
+    width: Math.max(1, contentWidth),
     height: 1,
   });
 
   const lastDraftRow = Math.max(0, Math.min(draftRows.length - 1, inputEndRow - inputStartRow));
-  const cursorCol = Math.min(draftWidth - 1, measureTerminalText(draftRows[lastDraftRow] ?? ""));
+  const cursorCol = Math.min(
+    Math.max(0, contentWidth - promptWidth - 1),
+    measureTerminalText(draftRows[lastDraftRow] ?? ""),
+  );
 
   return {
     lines: renderCanvasLines(canvas),
     styledLines: renderCanvasStyledLines(canvas),
     actionRegions,
     cursor: {
-      x: 1 + promptWidth + cursorCol,
+      x: contentCol + promptWidth + cursorCol,
       y: inputStartRow + lastDraftRow,
       visible: model.activeFocusTarget === "dialogue" && model.dialoguePlacement !== null,
     },
@@ -330,6 +416,6 @@ export const buildCliShellDialogueSurface = (input: {
       totalRows: bodyProjectionRows.length,
       visibleRows: visibleBodyRows.length,
     },
-    chrome: { scrollbar: "hidden" },
+    chrome: { scrollbar: "visible" },
   };
 };

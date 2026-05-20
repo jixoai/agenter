@@ -187,9 +187,9 @@ function createRuntimeState(input: {
       composedDialogueOpen: false,
       composedDialoguePlacement: "right",
       composedDialogueDraft: "",
-      composedBottomLine: "◉ terminal │ Avatar started │ 托管 off │ ✉ 0 M-J",
+      composedBottomLine: "◉  Avatar started  托管 off  ✉ 0",
       composedManagedLabel: "托管 off",
-      composedUnreadLabel: "✉ 0 M-J",
+      composedUnreadLabel: "✉ 0",
       composedHeartbeatLabel: "Avatar started",
       composedShellSnapshotSeq: shellTerminalEntry.snapshot?.seq ?? 0,
     },
@@ -644,6 +644,10 @@ interface WalkthroughStateSnapshot {
   shellInputBytes: string[];
   attentionScores: Record<string, number>;
   lastPublishedLines: string[];
+  lastBottomLine: string;
+  lastDialogueOpen: boolean;
+  lastDialoguePlacement: string | null;
+  lastManagedLabel: string;
   lastCursorVisible: boolean | null;
 }
 
@@ -908,6 +912,7 @@ app = new CliShellCoreApp({
 app.start();
 
 const emit = (tag) => {
+  const surfaceMetadata = harness.lastPublishedComposedSurface?.metadata ?? {};
   writeFileSync(statePath, JSON.stringify({
     tag,
     viewportStarts: harness.viewportStarts,
@@ -917,6 +922,14 @@ const emit = (tag) => {
     shellInputBytes: harness.shellInputBytes,
     attentionScores: harness.attentionScores,
     lastPublishedLines: harness.lastPublishedComposedSurface?.lines ?? [],
+    lastBottomLine:
+      typeof surfaceMetadata.composedBottomLine === "string"
+        ? surfaceMetadata.composedBottomLine
+        : harness.lastPublishedComposedSurface?.lines.at(-1) ?? "",
+    lastDialogueOpen: surfaceMetadata.composedDialogueOpen === true,
+    lastDialoguePlacement:
+      typeof surfaceMetadata.composedDialoguePlacement === "string" ? surfaceMetadata.composedDialoguePlacement : null,
+    lastManagedLabel: typeof surfaceMetadata.composedManagedLabel === "string" ? surfaceMetadata.composedManagedLabel : "",
     lastCursorVisible: harness.lastCursorVisible,
   }), "utf8");
 };
@@ -960,6 +973,7 @@ import type {
   GlobalRoomEntry,
   GlobalRoomMessage,
   GlobalRoomSnapshotOutput,
+  GlobalTerminalActorId,
   GlobalTerminalEntry,
   RuntimeClientState,
   SessionEntry,
@@ -1024,22 +1038,22 @@ export { createHarnessStore, createHarnessState, createManagedState, flushHarnes
         description: "collapsed startup shell-first state",
       },
     );
-    const startupBottomLine = startupState.lastPublishedLines.at(-1) ?? "";
-    expect(startupBottomLine).toContain("Avatar started");
-    expect(startupBottomLine).toContain("托管 off");
-    expect(startupBottomLine).toContain("✉ 0 M-J");
+    expect(startupState.lastBottomLine).toContain("Avatar started");
+    expect(startupState.lastBottomLine).toContain("托管 off");
+    expect(startupState.lastBottomLine).toContain("✉ 0");
+    expect(startupState.lastBottomLine).not.toContain("M-J");
     expect(term.screen.getText()).not.toContain("layout");
 
     term.press("Meta+j");
     const openedState = await waitForWalkthroughSnapshot(
       statePath,
-      (snapshot) => snapshot.lastPublishedLines.join("\n").includes("│ right"),
+      (snapshot) => snapshot.lastDialogueOpen,
       {
         description: "dialogue open on right",
       },
     );
-    expect(openedState.lastPublishedLines.join("\n")).toContain("│ right");
-    await term.waitFor("[Send]", 5_000);
+    expect(openedState.lastDialogueOpen).toBe(true);
+    await term.waitFor("Chat", 5_000);
 
     term.type("termless-message");
     try {
@@ -1087,9 +1101,9 @@ export { createHarnessStore, createHarnessState, createManagedState, flushHarnes
         description: "managed mode enabled",
       },
     );
-    expect(managedOnState.lastPublishedLines.join("\n")).toContain("托管 on");
-    expect(managedOnState.lastPublishedLines.at(-1) ?? "").toContain("✉ 0 M-J");
-    expect(term.screen.getText()).toContain("on");
+    expect(managedOnState.lastManagedLabel).toBe("托管 on");
+    expect(managedOnState.lastBottomLine).toContain("✉ 0");
+    expect(managedOnState.lastBottomLine).not.toContain("M-J");
 
     const preManagedOffState = await waitForWalkthroughSnapshot(statePath, () => true, {
       description: "pre-managed-off snapshot",
@@ -1110,22 +1124,22 @@ export { createHarnessStore, createHarnessState, createManagedState, flushHarnes
     term.press("Meta+l");
     const leftPlacementState = await waitForWalkthroughSnapshot(
       statePath,
-      (snapshot) => snapshot.lastPublishedLines.join("\n").includes("│ left"),
+      (snapshot) => snapshot.lastDialoguePlacement === "left",
       {
         description: "dialogue placed left",
       },
     );
-    expect(leftPlacementState.lastPublishedLines.join("\n")).toContain("│ left");
+    expect(leftPlacementState.lastDialoguePlacement).toBe("left");
 
     term.press("Meta+f");
     const floatingPlacementState = await waitForWalkthroughSnapshot(
       statePath,
-      (snapshot) => snapshot.lastPublishedLines.join("\n").includes("│ floating"),
+      (snapshot) => snapshot.lastDialoguePlacement === "floating",
       {
         description: "dialogue placed floating",
       },
     );
-    expect(floatingPlacementState.lastPublishedLines.join("\n")).toContain("│ floating");
+    expect(floatingPlacementState.lastDialoguePlacement).toBe("floating");
 
     const preCloseState = await waitForWalkthroughSnapshot(statePath, () => true, {
       description: "pre-close snapshot",
@@ -1145,12 +1159,12 @@ export { createHarnessStore, createHarnessState, createManagedState, flushHarnes
     term.press("Meta+j");
     const reopenedState = await waitForWalkthroughSnapshot(
       statePath,
-      (snapshot) => snapshot.lastPublishedLines.join("\n").includes("│ floating"),
+      (snapshot) => snapshot.lastDialogueOpen && snapshot.lastDialoguePlacement === "floating",
       {
         description: "dialogue reopened with preserved placement",
       },
     );
-    expect(reopenedState.lastPublishedLines.join("\n")).toContain("│ floating");
+    expect(reopenedState.lastDialoguePlacement).toBe("floating");
 
     const preScrollState = await waitForWalkthroughSnapshot(statePath, () => true, {
       description: "pre-scroll snapshot",

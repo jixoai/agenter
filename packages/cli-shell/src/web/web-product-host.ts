@@ -1,11 +1,8 @@
-import type {
-  GlobalRoomMessage,
-  GlobalTerminalEntry,
-  RuntimeClientState,
-} from "@agenter/client-sdk";
+import type { GlobalRoomMessage, GlobalTerminalEntry, RuntimeClientState } from "@agenter/client-sdk";
 import type { CliShellBootstrapResult } from "../bootstrap";
 import type { CliShellManagedState } from "../managed";
-import { resolveCliShellInteractionEnhancementProfile } from "../tui/interaction-capabilities";
+import { resolvePublishedComposedSurface, snapshotsShareVisibleBody } from "../tui/app-projection";
+import { buildCliShellComposedSurface, toProductTerminalComposedSurface } from "../tui/composed-surface";
 import {
   routeCliShellMouseScroll,
   routeCliShellPaste,
@@ -16,10 +13,13 @@ import {
   syncCliShellTerminalGeometry,
   type CliShellTuiControllerContext,
 } from "../tui/controller";
+import { projectCliShellDialogueBackendFrame } from "../tui/dialogue-backend";
 import {
   resolveCliShellScrollbarPointerTarget,
   resolveCliShellShellScrollbarProjection,
+  resolveCliShellTranscriptPanelLayout,
 } from "../tui/frame";
+import { resolveCliShellInteractionEnhancementProfile } from "../tui/interaction-capabilities";
 import type { CliShellTuiKeybindings } from "../tui/keybindings";
 import {
   createCliShellLiveTerminalMirror,
@@ -27,8 +27,6 @@ import {
   type CliShellLiveTerminalTransportSessionFactory,
 } from "../tui/live-terminal-mirror";
 import { buildCliShellTuiModel } from "../tui/model";
-import { resolvePublishedComposedSurface, snapshotsShareVisibleBody } from "../tui/app-projection";
-import { buildCliShellComposedSurface, toProductTerminalComposedSurface } from "../tui/composed-surface";
 import { createCliShellPerfTracer, type CliShellPerfTracer } from "../tui/perf-trace";
 import type {
   CliShellComposedSurfaceState,
@@ -149,7 +147,9 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
   let releaseVisibleMirror: (() => void) | null = null;
   let liveTerminalRevisionTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
-  const interactionProfile = resolveCliShellInteractionEnhancementProfile(input.attached.shellTruthTerminal.entry.backend);
+  const interactionProfile = resolveCliShellInteractionEnhancementProfile(
+    input.attached.shellTruthTerminal.entry.backend,
+  );
   const perfTracer = createCliShellPerfTracer({ enabled: input.debug === true, filters: input.debugFilters });
 
   const surfaceKey = (surface: CliShellComposedSurfaceState): string =>
@@ -234,10 +234,12 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
     shellSourceTerminalId: string | null;
   } => {
     const terminalEntry =
-      state.globalTerminals.data.find((entry) => entry.terminalId === input.attached.visibleTerminal.entry.terminalId) ?? null;
+      state.globalTerminals.data.find(
+        (entry) => entry.terminalId === input.attached.visibleTerminal.entry.terminalId,
+      ) ?? null;
     const shellSourceTerminalId = resolveShellSourceTerminalId(terminalEntry);
     const shellSourceEntry = shellSourceTerminalId
-      ? state.globalTerminals.data.find((entry) => entry.terminalId === shellSourceTerminalId) ?? null
+      ? (state.globalTerminals.data.find((entry) => entry.terminalId === shellSourceTerminalId) ?? null)
       : null;
     syncMirror({
       current: sourceMirror,
@@ -366,11 +368,19 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
     if (!Number.isFinite(delta) || delta === 0) {
       return;
     }
+    const model = lastModel ?? buildModel().model;
+    const frame = projectCliShellDialogueBackendFrame({
+      layout: resolveCliShellTranscriptPanelLayout({ model, width, height }),
+      model,
+    });
     viewState = {
       ...viewState,
       dialogueOpen: true,
       focusTarget: "dialogue",
-      dialogueScrollOffset: Math.max(0, Math.trunc(viewState.dialogueScrollOffset ?? 0) + delta),
+      dialogueScrollOffset: Math.max(
+        0,
+        Math.min(frame.viewport.maxOffsetFromBottom, Math.trunc(viewState.dialogueScrollOffset ?? 0) + delta),
+      ),
       statusNotice: null,
     };
     localComposedInteractionDirty = true;
@@ -454,7 +464,8 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
           estimatedFps: null,
           terminalPaintMs: Date.now() - renderStartedAt,
           terminalPaintRows: height,
-          terminalPaintSpans: lastSurface?.terminalRichLines?.reduce((total, line) => total + line.spans.length, 0) ?? 0,
+          terminalPaintSpans:
+            lastSurface?.terminalRichLines?.reduce((total, line) => total + line.spans.length, 0) ?? 0,
           terminalPaintGlyphs: lastSurface?.terminalLines.join("").length ?? 0,
           width,
           height,

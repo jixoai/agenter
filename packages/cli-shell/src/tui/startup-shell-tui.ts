@@ -1,13 +1,12 @@
 import { BoxRenderable, createCliRenderer, TextRenderable } from "@opentui/core";
 
 import { fitTerminalText, measureTerminalText } from "./cell-width";
-import { formatCliShellShortcut, resolveCliShellTuiKeybindings } from "./keybindings";
 import { projectMarkdownLastLine } from "./markdown-projection";
 import { ShellTerminalViewRenderable } from "./shell-terminal-view";
 
-const STARTUP_LEFT = "◉ terminal";
+const STARTUP_LEFT = "◉";
 const STARTUP_MANAGED = "托管 off";
-const STARTUP_UNREAD = `✉ 0 ${formatCliShellShortcut(resolveCliShellTuiKeybindings(null).openDialogue)}`;
+const STARTUP_UNREAD = "✉ 0";
 
 export interface CliShellStartupAppProps {
   shellName: string;
@@ -24,7 +23,7 @@ const buildToolbarLine = (heartbeat: string, width: number): string => {
   if (width <= 0) {
     return "";
   }
-  const separator = " │ ";
+  const separator = "  ";
   const reserved =
     measureTerminalText(STARTUP_LEFT) +
     measureTerminalText(STARTUP_MANAGED) +
@@ -104,7 +103,7 @@ export const startCliShellStartupTui = async (
   };
 
   const projectHeartbeat = (): void => {
-    const separator = " │ ";
+    const separator = "  ";
     const width = Math.max(1, renderer.width);
     const reserved =
       measureTerminalText(STARTUP_LEFT) +

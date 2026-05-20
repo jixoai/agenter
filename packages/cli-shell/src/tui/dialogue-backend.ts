@@ -1,13 +1,9 @@
-import {
-  createBackendInteractionAdapter,
-  type Cell,
-  type TerminalInteractionController,
-} from "@agenter/termless-core";
 import type {
   TerminalTransportInteractionFrameState,
   TerminalTransportOwnerCoordinate,
   TerminalTransportSelectionOverlay,
 } from "@agenter/terminal-transport-protocol";
+import { createBackendInteractionAdapter, type Cell, type TerminalInteractionController } from "@agenter/termless-core";
 
 import { measureTerminalText } from "./cell-width";
 import { buildCliShellDialogueSurface, type CliShellDialogueSurface } from "./dialogue-surface";
@@ -84,7 +80,7 @@ export class CliShellDialogueBackend {
       totalRows: 0,
       visibleRows: 0,
     },
-    chrome: { scrollbar: "hidden" },
+    chrome: { scrollbar: "visible" },
   };
   readonly #interaction: TerminalInteractionController;
 

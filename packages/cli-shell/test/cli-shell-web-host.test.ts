@@ -634,17 +634,17 @@ describe("Feature: cli-shell web host", () => {
         rows: 24,
         lines: [
           "terminal-2 top line",
-          "┌layout M-L M-R M-F │ right                                              x",
-          "│ backend dialogue body                                                  │",
-          "│ > draft from backend                                           [Send] │",
-          "◉ terminal-2 bottom",
+          "←  →  ◇  ▾        Chat                                            ×",
+          "  backend dialogue body                                             █",
+          "  > draft from backend                                               ",
+          "◉ ready 托管 off ✉ 0",
         ].concat(Array.from({ length: 19 }, () => "")),
         richLines: [
           { spans: [{ text: "terminal-2 top line" }] },
-          { spans: [{ text: "┌layout M-L M-R M-F │ right                                              x" }] },
-          { spans: [{ text: "│ backend dialogue body                                                  │" }] },
-          { spans: [{ text: "│ > draft from backend                                           [Send] │" }] },
-          { spans: [{ text: "◉ terminal-2 bottom" }] },
+          { spans: [{ text: "←  →  ◇  ▾        Chat                                            ×" }] },
+          { spans: [{ text: "  backend dialogue body                                             █" }] },
+          { spans: [{ text: "  > draft from backend                                               " }] },
+          { spans: [{ text: "◉ ready 托管 off ✉ 0" }] },
           ...Array.from({ length: 19 }, () => ({ spans: [] })),
         ],
         cursor: { x: 18, y: 3, visible: true },
@@ -652,6 +652,15 @@ describe("Feature: cli-shell web host", () => {
           viewportOffset: 0,
           totalLines: 24,
           screenLines: 24,
+        },
+        metadata: {
+          composedBottomLine: "◉ ready 托管 off ✉ 0",
+          composedDialogueOpen: true,
+          composedDialoguePlacement: "right",
+          composedDialogueDraft: "draft from backend",
+          composedManagedLabel: "托管 off",
+          composedUnreadLabel: "✉ 0",
+          composedHeartbeatLabel: "ready",
         },
       },
     });
@@ -700,8 +709,10 @@ describe("Feature: cli-shell web host", () => {
     const snapshot = await snapshotResponse.json();
     expect(snapshot.lines.join("\n")).toContain("terminal-2 top line");
     expect(snapshot.lines.join("\n")).toContain("backend dialogue body");
-    expect(snapshot.lines.join("\n")).toContain("◉ terminal-2 bottom");
-    expect(snapshot.richLines?.[1]?.spans?.[0]?.text).toContain("┌layout");
+    expect(snapshot.lines.join("\n")).toContain("◉ ready");
+    expect(snapshot.lines.join("\n")).toContain("Chat");
+    expect(snapshot.richLines?.[1]?.spans?.[0]?.text).not.toContain("┌layout");
+    expect(snapshot.lines.join("\n")).not.toContain("[Send]");
   });
 
   test("Scenario: Given terminal-2 publishes collapsed and dialogue-open product screens When cli-shell web host starts Then web consumes the same terminal-2 snapshots as native host adapters", async () => {

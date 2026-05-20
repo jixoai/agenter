@@ -6,7 +6,7 @@ import type { CliShellLiveTerminalView } from "./live-terminal-mirror";
 
 import type { CliShellStore } from "../bootstrap";
 import type { CliShellManagedState } from "../managed";
-export type CliShellDialoguePlacement = "left" | "right" | "floating";
+export type CliShellDialoguePlacement = "left" | "right" | "floating" | "cover";
 export type CliShellDialoguePlacementRequest = CliShellDialoguePlacement | "smart";
 
 export interface CliShellDialogueBlock {
@@ -61,7 +61,9 @@ export type CliShellPointerAction =
   | "submitDialogue"
   | "placeLeft"
   | "placeRight"
-  | "placeFloating";
+  | "placeFloating"
+  | "placeCover"
+  | "stickDialogueToBottom";
 
 export interface CliShellScrollRegion {
   row: number;

@@ -39,6 +39,7 @@ import {
   measureTerminalText,
   projectCliShellDialogueBackendFrame,
   renderCanvasLines,
+  resolveCliShellDialoguePlacement,
   resolveCliShellInteractionEnhancementProfile,
   resolveCliShellScrollbarPointerTarget,
   resolveCliShellShellScrollbarProjection,
@@ -49,8 +50,8 @@ import {
   routeCliShellKey,
   routeCliShellMouseScroll,
   routeCliShellPaste,
+  routeCliShellPointerAction,
   routeCliShellViewportTarget,
-  setCliShellDialogueDraft,
   ShellTerminalViewRenderable,
   stringIndexToTerminalColumn,
   submitCliShellDialogue,
@@ -1918,7 +1919,7 @@ describe("Feature: cli-shell interactive TUI", () => {
           composedDialoguePlacement: null,
           composedDialogueDraft: "",
           composedManagedLabel: "托管 off",
-          composedUnreadLabel: "✉ 0 ⌘J",
+          composedUnreadLabel: "✉ 0",
           composedHeartbeatLabel: "ready",
           composedShellSnapshotSeq: 10,
           composedSelectionSources: [
@@ -2285,7 +2286,7 @@ describe("Feature: cli-shell interactive TUI", () => {
     setup.renderer.destroy();
   });
 
-  test("Scenario: Given terminal-chat backend frame is active When dialogue text wraps and scrolls Then cursor selection and copy stay inside dialogue truth with hidden scrollbar chrome", async () => {
+  test("Scenario: Given terminal-chat backend frame is active When dialogue text wraps and scrolls Then cursor selection and copy stay inside dialogue truth with visible Chat scrollbar chrome", async () => {
     const messages = Array.from({ length: 8 }, (_, index) =>
       createRoomMessage({
         messageId: index + 1,
@@ -2328,11 +2329,13 @@ describe("Feature: cli-shell interactive TUI", () => {
       model,
     });
 
-    expect(frame.chrome.scrollbar).toBe("hidden");
+    expect(frame.chrome.scrollbar).toBe("visible");
     expect(frame.viewport.offsetFromBottom).toBeGreaterThan(0);
     expect(frame.viewport.totalRows).toBeGreaterThan(frame.viewport.visibleRows);
     expect(frame.cursor.visible).toBe(true);
     expect(frame.lines.join("\n")).toContain("中文");
+    expect(frame.lines.join("\n")).toContain("█");
+    expect(frame.lines.join("\n")).toContain("↓");
 
     expect(backend.selectionStart({ ownerId: "dialogue", row: 2, col: 1 })).toBe(true);
     expect(backend.selectionUpdate({ ownerId: "dialogue", row: 3, col: 18 })).toBe(true);
@@ -2384,6 +2387,100 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(projection?.region).toEqual({ row: 0, col: 11, width: 1, height: 4 });
     expect(projection?.state.scrollSize).toBeGreaterThan(projection?.state.viewportSize ?? 0);
     expect(resolveCliShellScrollbarPointerTarget({ projection: projection!, row: 3 })).toBeGreaterThan(0);
+  });
+
+  test("Scenario: Given v9 collapsed toolbar renders When projected into one bottom row Then it shows compact activity and action entries without Heartbeat text or shortcuts", () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell"],
+      roomMessages: [],
+      unread: 3,
+    });
+    const model = buildCliShellTuiModel({
+      state,
+      projection: { roomSnapshot: null },
+      sessionId: "session-1",
+      shellName: "shell-1",
+      fallbackTerminalId: "shell-1",
+      avatarActorId: "auth:shell-assistant",
+      ui: {
+        dialogueOpen: false,
+        focusTarget: "terminal",
+        requestedPlacement: "smart",
+        dialogueDraft: "",
+        managed: createManagedState({ managed: true }),
+        statusNotice: "运行 cli-shell TUI 回归：已更新 Chat 面板滚动契约",
+      },
+      keybindings: resolveCliShellTuiKeybindings(null),
+      width: 120,
+      height: 40,
+    });
+    const frame = layoutCliShellTuiFrame({ model, width: 120, height: 40 });
+    const bottomLine = frame.lines.at(-1) ?? "";
+
+    expect(bottomLine).toContain("托管 on");
+    expect(bottomLine).toContain("✉ 3");
+    expect(bottomLine).toContain("运行 cli-shell TUI 回归");
+    expect(bottomLine).not.toContain("Heartbeat");
+    expect(bottomLine).not.toContain("心跳");
+    expect(bottomLine).not.toContain("⌘");
+    expect(bottomLine).not.toContain("terminal");
+  });
+
+  test("Scenario: Given constrained cli-shell space When smart placement resolves Chat Then it may cover the shell as a full frameless panel", () => {
+    expect(resolveCliShellDialoguePlacement({ requestedPlacement: "smart", width: 34, height: 10 })).toBe("cover");
+  });
+
+  test("Scenario: Given Chat placement toolbar is visible When cover control is clicked Then the requested placement becomes cover", () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell"],
+      roomMessages: [],
+      unread: 0,
+    });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: true,
+      focusTarget: "dialogue",
+      requestedPlacement: "right",
+      dialogueDraft: "",
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const ctx = {
+      store: createTuiStore({ state }).store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () =>
+        buildCliShellTuiModel({
+          state,
+          projection: { roomSnapshot: state.globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+          sessionId: "session-1",
+          shellName: "shell-1",
+          fallbackTerminalId: "shell-1",
+          avatarActorId: "auth:shell-assistant",
+          ui: viewState,
+          keybindings,
+          width: 120,
+          height: 40,
+        }),
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    routeCliShellPointerAction(ctx, "placeCover");
+
+    expect(viewState.dialogueOpen).toBe(true);
+    expect(viewState.focusTarget).toBe("dialogue");
+    expect(viewState.requestedPlacement).toBe("cover");
   });
 
   test("Scenario: Given a shell selection exists When copy shortcut is pressed Then cli-shell copies the projected shell text through OSC52", async () => {
@@ -2537,8 +2634,11 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(surface.dialogueOpen).toBe(true);
     expect(surface.dialoguePlacement).toBe("right");
     expect(surface.dialogueDraft).toBe("status?");
-    expect(surface.terminalLines.join("\n")).toContain("┌layout");
-    expect(surface.terminalLines.join("\n")).toContain("[Send]");
+    expect(surface.terminalLines.join("\n")).toContain("Chat");
+    expect(surface.terminalLines.join("\n")).toContain("×");
+    expect(surface.terminalLines.join("\n")).toContain("█");
+    expect(surface.terminalLines.join("\n")).not.toContain("┌layout");
+    expect(surface.terminalLines.join("\n")).not.toContain("[Send]");
   });
 
   test("Scenario: Given terminal-chat backend is active When terminal-2 composes dialogue Then it consumes the backend frame instead of owning a replacement dialogue algorithm", () => {
@@ -2591,7 +2691,7 @@ describe("Feature: cli-shell interactive TUI", () => {
     for (const backendLine of backendFrame.lines.filter((line) => line.trim().length > 0)) {
       expect(surface.terminalLines.some((line) => line.includes(backendLine.trim()))).toBe(true);
     }
-    expect(backendFrame.chrome.scrollbar).toBe("hidden");
+    expect(backendFrame.chrome.scrollbar).toBe("visible");
     expect(surface.terminalLines.join("\n")).toContain("backend draft");
   });
 
@@ -2621,7 +2721,8 @@ describe("Feature: cli-shell interactive TUI", () => {
     setup.mockInput.pressKey("j", { meta: true });
     await setup.renderOnce();
     await setup.renderOnce();
-    expect(harness.lastPublishedComposedSurface?.lines.join("\n")).toContain("┌layout");
+    expect(harness.lastPublishedComposedSurface?.metadata?.composedDialogueOpen).toBe(true);
+    expect(harness.lastPublishedComposedSurface?.lines.join("\n")).toContain("Chat");
     setup.destroy();
   });
 
@@ -2657,7 +2758,10 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(collapsedSurface?.cols).toBe(90);
     expect(collapsedSurface?.rows).toBe(22);
     expect(collapsedSurface?.lines.join("\n")).toContain("$ agenter shell");
-    expect(collapsedSurface?.lines.at(-1)).toContain("◉ terminal");
+    expect(collapsedSurface?.metadata?.composedDialogueOpen).toBe(false);
+    expect(collapsedSurface?.lines.at(-1)).toContain("◉");
+    expect(collapsedSurface?.lines.at(-1)).not.toContain("◉ terminal");
+    expect(collapsedSurface?.lines.at(-1)).not.toContain("M-J");
 
     setup.mockInput.pressKey("j", { meta: true });
     await setup.renderOnce();
@@ -2668,7 +2772,11 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(openSurface?.cols).toBe(90);
     expect(openSurface?.rows).toBe(22);
     expect(normalizeAsciiLetters(openSurface?.lines.join("") ?? "")).toContain("dialoguebackendbody");
-    expect(openSurface?.lines.at(-1)).toContain("◉ terminal");
+    expect(openSurface?.metadata?.composedDialogueOpen).toBe(true);
+    expect(openSurface?.metadata?.composedDialoguePlacement).toBe("right");
+    expect(openSurface?.lines.at(-1)).toContain("◉");
+    expect(openSurface?.lines.at(-1)).not.toContain("◉ terminal");
+    expect(openSurface?.lines.at(-1)).not.toContain("M-J");
     setup.destroy();
   });
 
@@ -3781,6 +3889,69 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(harness.sentMessages).toEqual([{ chatId: "room-shell-1", text: "send once" }]);
     expect(viewState.dialogueOpen).toBe(true);
     expect(viewState.dialogueDraft).toBe("");
+    expect(viewState.dialogueScrollOffset).toBe(0);
+  });
+
+  test("Scenario: Given Chat is scrolled up When a user message is sent Then cli-shell returns the transcript to bottom-pinned mode", async () => {
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell", "shell-1:~/project $"],
+      roomMessages: Array.from({ length: 8 }, (_, index) =>
+        createRoomMessage({
+          messageId: index + 1,
+          senderActorId: "auth:shell-assistant",
+          from: "shell-assistant",
+          content: `history row ${index}`,
+          createdAt: Date.parse("2026-05-08T10:00:00+08:00") + index * 60_000,
+        }),
+      ),
+      unread: 0,
+    });
+    const harness = createTuiStore({ state });
+    let viewState: CliShellTuiViewState = {
+      dialogueOpen: true,
+      focusTarget: "dialogue",
+      requestedPlacement: "right",
+      dialogueDraft: "pin me",
+      dialogueScrollOffset: 5,
+      managed: createManagedState(),
+      statusNotice: null,
+    };
+    const keybindings = resolveCliShellTuiKeybindings(null);
+    const ctx = {
+      store: harness.store,
+      sessionId: "session-1",
+      shellName: "shell-1",
+      roomChatId: "room-shell-1",
+      roomAccessToken: "tok:room-shell-1",
+      runtimeId: "runtime:shell-assistant",
+      avatarActorId: "auth:shell-assistant",
+      keybindings,
+      onQuit: () => {},
+      getViewState: () => viewState,
+      getModel: () =>
+        buildCliShellTuiModel({
+          state: harness.store.getState(),
+          projection: { roomSnapshot: harness.store.getState().globalRoomSnapshotsById["room-shell-1"]?.data ?? null },
+          sessionId: "session-1",
+          shellName: "shell-1",
+          fallbackTerminalId: "shell-1",
+          avatarActorId: "auth:shell-assistant",
+          ui: viewState,
+          keybindings,
+          width: 120,
+          height: 40,
+        }),
+      updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
+        viewState = updater(viewState);
+      },
+    };
+
+    await submitCliShellDialogue(ctx);
+
+    expect(harness.sentMessages).toEqual([{ chatId: "room-shell-1", text: "pin me" }]);
+    expect(viewState.dialogueDraft).toBe("");
+    expect(viewState.dialogueScrollOffset).toBe(0);
   });
 
   test("Scenario: Given dialogue backend owns scroll When the wheel targets dialogue Then shell viewport is not changed by the event", async () => {
@@ -3897,7 +4068,7 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(viewState.dialogueOpen).toBe(true);
     routeCliShellPaste(ctx, "status?");
     expect(harness.inputs).toHaveLength(2);
-    setCliShellDialogueDraft(ctx, "status?");
+    expect(viewState.dialogueDraft).toBe("status?");
     await submitCliShellDialogue(ctx);
     expect(harness.sentMessages).toEqual([{ chatId: "room-shell-1", text: "status?" }]);
   });
