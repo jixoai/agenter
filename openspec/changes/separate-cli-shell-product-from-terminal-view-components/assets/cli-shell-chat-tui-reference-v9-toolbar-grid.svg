@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1280" viewBox="0 0 1920 1280">
+<title>Agenter cli-shell v9 one-line status toolbar</title>
+<desc>Collapsed shell-first state. Bottom row is status icon, current streaming part, managed toggle, and Chat entry only. Generated from paired TXT grid; terminal cells are 120 columns by 40 rows.</desc>
+<rect x="0" y="0" width="1920" height="1280" fill="#050a10"/>
+<rect x="0" y="1248" width="1920" height="32" fill="#151f28"/>
+<rect x="1600" y="1248" width="144" height="32" fill="#26313d" rx="4"/>
+<rect x="1776" y="1248" width="80" height="32" fill="#26313d" rx="4"/>
+<text x="0" y="24" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">$ agenter shell</text>
+<text x="0" y="56" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">shell-1:~/project $ pnpm test --filter @agenter/cli-shell</text>
+<text x="0" y="88" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">packages/cli-shell test: Feature: ChatTUI terminal projection</text>
+<text x="0" y="120" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">packages/cli-shell test: Scenario: Given terminal-2 When chat opens Then one product surface is shared</text>
+<text x="0" y="152" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">packages/terminal-system test: Feature: backend-owned viewport</text>
+<text x="0" y="216" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">PASS packages/cli-shell/test/cli-shell-tui.test.ts</text>
+<text x="0" y="248" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">PASS packages/terminal-system/test/control-plane.test.ts</text>
+<text x="0" y="312" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">shell-1:~/project $ git status --short</text>
+<text x="0" y="344" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed"> M openspec/changes/separate-cli-shell-product-from-terminal-view-components/design.md</text>
+<text x="0" y="376" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">?? openspec/changes/separate-cli-shell-product-from-terminal-view-components/assets/</text>
+<text x="0" y="440" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">shell-1:~/project $ _</text>
+<text x="0" y="1272" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="600" fill="#e9c46a">🛠</text>
+<text x="48" y="1272" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">运行 cli-shell TUI 回归：已更新 Chat 面板滚动契约，等待人工效果确认…</text>
+<text x="1616" y="1272" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="500" fill="#97d39d">托管 on</text>
+<text x="1792" y="1272" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="600" fill="#8fb7ff">✉ 3</text>
+</svg>

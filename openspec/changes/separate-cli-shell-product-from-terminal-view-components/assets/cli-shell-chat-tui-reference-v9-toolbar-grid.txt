@@ -1,0 +1,43 @@
+120 cols x 40 rows terminal-grid reference.
+Collapsed shell-first state. Bottom row is status icon, current streaming part, managed toggle, and Chat entry only.
+
+00  $ agenter shell
+01  shell-1:~/project $ pnpm test --filter @agenter/cli-shell
+02  packages/cli-shell test: Feature: ChatTUI terminal projection
+03  packages/cli-shell test: Scenario: Given terminal-2 When chat opens Then one product surface is shared
+04  packages/terminal-system test: Feature: backend-owned viewport
+05
+06  PASS packages/cli-shell/test/cli-shell-tui.test.ts
+07  PASS packages/terminal-system/test/control-plane.test.ts
+08
+09  shell-1:~/project $ git status --short
+10   M openspec/changes/separate-cli-shell-product-from-terminal-view-components/design.md
+11  ?? openspec/changes/separate-cli-shell-product-from-terminal-view-components/assets/
+12
+13  shell-1:~/project $ _
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39  🛠 运行 cli-shell TUI 回归：已更新 Chat 面板滚动契约，等待人工效果确认…                                                     托管 on      ✉ 3

@@ -20,6 +20,34 @@ This change therefore plays a narrow but important role in the overall history:
 - later acceptance found that the shipped implementation could not reliably satisfy that target
 - this change exists to repair the missing platform law before `add-cli-shell-product` can honestly be considered complete in practice
 
+## Current Visual Target
+
+This corrective change supersedes the archived v8 review images with the v9 ChatTUI references below. The v8 terminal-grid direction remains the ancestor, but the bottom status row and Chat scroll behavior are updated from the user's latest effect feedback.
+
+Collapsed shell-first state:
+
+![Cli-shell ChatTUI v9 toolbar](assets/cli-shell-chat-tui-reference-v9-toolbar-grid.png)
+
+Chat panel open, pinned at bottom:
+
+![Cli-shell ChatTUI v9 Chat panel pinned](assets/cli-shell-chat-tui-reference-v9-chat-right-pinned-grid.png)
+
+Chat panel open, user scrolled upward:
+
+![Cli-shell ChatTUI v9 Chat panel scrolled](assets/cli-shell-chat-tui-reference-v9-chat-right-scrolled-grid.png)
+
+Paired source and terminal-grid auxiliary references:
+
+- `assets/cli-shell-chat-tui-reference-v9-toolbar-grid.svg`
+- `assets/cli-shell-chat-tui-reference-v9-toolbar-grid.txt`
+- `assets/cli-shell-chat-tui-reference-v9-chat-right-pinned-grid.svg`
+- `assets/cli-shell-chat-tui-reference-v9-chat-right-pinned-grid.txt`
+- `assets/cli-shell-chat-tui-reference-v9-chat-right-scrolled-grid.svg`
+- `assets/cli-shell-chat-tui-reference-v9-chat-right-scrolled-grid.txt`
+- `assets/generate-chat-tui-references.ts`
+
+These files are the current effect-confirmation target for future apply work. The PNGs are review images, the SVG/TXT files are inspection companions, and the generator is the deterministic source for regenerating the set.
+
 ## Why This Architecture
 
 The opening architectural claim of this change is simple:
@@ -527,11 +555,45 @@ Implementation note:
 
 ### 9. The bottom extension remains orthogonal product chrome
 
-The bottom extension stays exactly one rendered line in collapsed mode. It may show Heartbeat, status, and actions, but it does not own terminal scrolling, cursor semantics, or lifecycle truth.
+The bottom extension stays exactly one rendered line in collapsed mode. Its information architecture is fixed as:
+
+1. status icon
+2. current streaming activity part
+3. managed/takeover toggle
+4. Chat entry with unread count
+
+It must not print the literal label "Heartbeat", must not show visible shortcut instructions in the row, and must not expand into backend status chips. The current streaming activity part is still sourced from the latest Heartbeat/message-part truth, but the UI text should read like a live terminal status fragment rather than a labelled dashboard field. Built-in `message`, `terminal`, and `attention` tool activity should be summarized for terminal scanning instead of dumping raw payloads.
+
+The bottom extension does not own terminal scrolling, cursor semantics, or lifecycle truth.
 
 Rationale:
 
 - `cli-shell` is a shell product with an extension line, not a dashboard that happens to contain a terminal.
+
+### 9.5 Chat panel is a traditional pinned chat room
+
+The explicit Chat panel is the product room surface. It remains optional chrome over the shell-first product and follows traditional chat-room scroll semantics:
+
+- if the transcript is pinned at the bottom, new messages and streaming message-parts keep the visible list at the bottom
+- if the user scrolls upward, the panel preserves the user's current scroll anchor and does not force-scroll on new output
+- while not pinned at the bottom, the panel shows a compact stick-to-bottom / new-message button
+- clicking that button, pressing the equivalent product action, or sending the user's own message returns the panel to bottom-pinned mode
+- the panel always owns a visible scrollbar column for its message list; the scrollbar reflects chat transcript position, not shell viewport position
+
+The Chat panel can use docked right/left/bottom or full-panel-cover/floating placement according to available space. Non-bottom placements must still expose a stick-to-bottom control whenever the transcript is not pinned. The old "temporary floating layer" idea is not required as a visual form; when space is insufficient, full panel cover is valid because the panel exists specifically for constrained terminal space.
+
+Visual discipline:
+
+- The panel is frameless in docked modes: use background, color, whitespace, one split line, gutters, and a scrollbar column rather than a full enclosing border.
+- The top toolbar owns placement actions on the left and close on the right.
+- The message list renders Markdown in terminal cells.
+- User messages use a muted background and the left gutter `>` marker.
+- The bottom input uses a muted background, a top divider line, the left gutter `>` marker, multiline-capable input, and a visible cursor when focused.
+
+Rationale:
+
+- Chat is a conversation surface, so its scroll behavior should match ordinary chat tools rather than terminal scrollback.
+- Separating chat transcript scroll from shell viewport scroll keeps the two terminal truths orthogonal.
 
 ### 10. Visible Avatar startup means active LoopBus terminal observation
 
@@ -586,7 +648,7 @@ The closing acceptance target for this change is the following observable end st
    - what the operator sees
    - what the terminal change log commits
    - what LoopBus observes
-   all come from the same backend terminal source
+     all come from the same backend terminal source
    - the terminal and room grants/focus that make those facts visible align to the same session runtime actor truth
 
 3. Same terminal means same visible world
@@ -655,6 +717,7 @@ Apply-ready execution for this change should produce one objective evidence pack
    - this evidence must come from a real native terminal program that owns the shell window; `tmux`, `cmux`, and similar multiplexer-hosted traces do not satisfy final native acceptance
 
 3. Shared terminal evidence
+
 - one walkthrough where `shell-terminal-view` and `web-terminal-view` attach to the same terminal at the same time
 - one step where pointer, wheel, or scrollbar-driven scroll in one attachment is reflected in the other
 - one step where input in one attachment produces visible output in the other

@@ -1,0 +1,43 @@
+120 cols x 40 rows terminal-grid reference.
+Chat panel is scrolled up. Scrollbar thumb leaves the bottom and a compact stick-to-bottom button appears.
+
+00  $ agenter shell                                                             ←  →  ◇  ▾        Chat                    ×
+01  shell-1:~/project $ pnpm test --filter @agenter/cli-shell
+02  packages/cli-shell test: Feature: ChatTUI terminal projection                         ──────── 2026-05-17 ────────
+03  packages/cli-shell test: Scenario: Given terminal-2 When chat opens Then
+04  packages/terminal-system test: Feature: backend-owned viewport                >  底部状态栏按最初设计改：
+05                                                                                   只要状态、当前片段、托管和 Chat。
+06  PASS packages/cli-shell/test/cli-shell-tui.test.ts
+07  PASS packages/terminal-system/test/control-plane.test.ts
+08                                                                                 @shell-assistant
+09  shell-1:~/project $ git status --short                                         已收敛到一行状态栏：
+10   M openspec/changes/separate-cli-shell-product-from-terminal-view-compon       - 状态 emoji 放最左侧
+11  ?? openspec/changes/separate-cli-shell-product-from-terminal-view-compon       - 当前流式片段居中延展
+12                                                                                 - 右侧只保留托管与 Chat 入口
+13  shell-1:~/project $ _
+14
+15
+16                                                                                >  Chat 要像传统聊天室一样贴底。
+17                                                                                   用户上滚时不要抢回底部。
+18
+19
+20
+21                                                                                 @shell-assistant
+22                                                                                 贴底规则会这样落：
+23                                                                                 1. 已在底部：新消息和流式输出自动跟随
+24                                                                                 2. 用户上滚：锁定当前锚点并显示 ↓ 按钮
+25                                                                                 3. 发送自己的消息：回到底部继续跟随
+26
+27
+28
+29
+30
+31                                                                                                               ↓ 3
+32                                                                                 用户正在看历史，新消息不强制滚动。
+33
+34
+35                                                                              ───────────────────────────────────────────
+36
+37                                                                                >  补充贴底按钮验收_
+38
+39  🛠 运行 cli-shell TUI 回归：已更新 Chat 面板滚动契约，等待人工效果确认…                                                     托管 on      ✉ 3
