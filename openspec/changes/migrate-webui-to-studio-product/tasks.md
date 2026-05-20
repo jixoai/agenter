@@ -38,4 +38,4 @@
 - [x] 6.4 Run `openspec validate migrate-webui-to-studio-product --strict`.
 - [x] 6.5 Run `openspec validate --specs --strict`.
 - [x] 6.6 Run `git diff --check`.
-- [ ] 6.7 Rebase the feature branch on the target ref, run merge simulation, land with the repository ff-only script, and clean the worktree after successful verification.
+- [x] 6.7 Rebase the feature branch on the target ref, run merge simulation, land with the repository ff-only script, and clean the worktree after successful verification.
