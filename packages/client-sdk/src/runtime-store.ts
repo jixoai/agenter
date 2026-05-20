@@ -931,6 +931,10 @@ export class RuntimeStore {
 
   constructor(private readonly client: AgenterClient) {}
 
+  private runBackgroundTask(task: Promise<unknown>): void {
+    void task.catch(() => undefined);
+  }
+
   private resolveHttpUrl(pathname: string): string {
     return `${withTrailingSlashTrimmed(this.client.httpUrl)}${pathname}`;
   }
@@ -3235,49 +3239,49 @@ export class RuntimeStore {
         this.restoreRetainedTerminalPermissionRequestStreams();
         this.emit();
         if (previousState.globalAvatarCatalog.loaded || this.globalAvatarCatalogWatchCount > 0) {
-          void this.hydrateGlobalAvatarCatalog({ force: true });
+          this.runBackgroundTask(this.hydrateGlobalAvatarCatalog({ force: true }));
         }
         for (const [workspacePath, resource] of Object.entries(previousState.workspaceAvatarCatalogByPath)) {
           if (!resource.loaded && !this.workspaceAvatarCatalogWatchCountByPath.has(workspacePath)) {
             continue;
           }
-          void this.hydrateWorkspaceAvatarCatalog(workspacePath, { force: true });
+          this.runBackgroundTask(this.hydrateWorkspaceAvatarCatalog(workspacePath, { force: true }));
         }
         if (previousState.globalRooms.loaded || this.globalRoomsWatchCount > 0) {
-          void this.hydrateGlobalRooms({ force: true });
+          this.runBackgroundTask(this.hydrateGlobalRooms({ force: true }));
         }
         for (const [chatId, resource] of Object.entries(previousState.globalRoomSnapshotsById)) {
           if (!resource.loaded && !this.globalRoomSnapshotWatchCountById.has(chatId)) {
             continue;
           }
-          void this.hydrateGlobalRoomSnapshot({ chatId, force: true });
+          this.runBackgroundTask(this.hydrateGlobalRoomSnapshot({ chatId, force: true }));
         }
         for (const [chatId, resource] of Object.entries(previousState.globalRoomGrantsById)) {
           if (!resource.loaded && !this.globalRoomGrantWatchCountById.has(chatId)) {
             continue;
           }
-          void this.hydrateGlobalRoomGrants({ chatId, force: true });
+          this.runBackgroundTask(this.hydrateGlobalRoomGrants({ chatId, force: true }));
         }
         if (previousState.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
-          void this.hydrateGlobalTerminals({ force: true });
+          this.runBackgroundTask(this.hydrateGlobalTerminals({ force: true }));
         }
         for (const [terminalId, resource] of Object.entries(previousState.globalTerminalGrantsById)) {
           if (!resource.loaded && !this.globalTerminalGrantWatchCountById.has(terminalId)) {
             continue;
           }
-          void this.hydrateGlobalTerminalGrants({ terminalId, force: true });
+          this.runBackgroundTask(this.hydrateGlobalTerminalGrants({ terminalId, force: true }));
         }
         for (const [terminalId, resource] of Object.entries(previousState.globalTerminalApprovalsById)) {
           if (!resource.loaded && !this.globalTerminalApprovalWatchCountById.has(terminalId)) {
             continue;
           }
-          void this.hydrateGlobalTerminalApprovals({ terminalId, force: true });
+          this.runBackgroundTask(this.hydrateGlobalTerminalApprovals({ terminalId, force: true }));
         }
         for (const [terminalId, resource] of Object.entries(previousState.globalTerminalActivityById)) {
           if (!resource.loaded && !this.globalTerminalActivityWatchCountById.has(terminalId)) {
             continue;
           }
-          void this.hydrateGlobalTerminalActivity({ terminalId, force: true });
+          this.runBackgroundTask(this.hydrateGlobalTerminalActivity({ terminalId, force: true }));
         }
 
         const scheduleSecondaryChrome = (run: () => void) => {
@@ -3519,7 +3523,7 @@ export class RuntimeStore {
     const output = await this.client.trpc.avatar.create.mutate(input);
     this.reconcileGlobalAvatarCatalogEntry(output.avatar);
     this.emit();
-    void this.hydrateGlobalAvatarCatalog({ force: true });
+    this.runBackgroundTask(this.hydrateGlobalAvatarCatalog({ force: true }));
     return output.avatar;
   }
 
@@ -3560,7 +3564,7 @@ export class RuntimeStore {
     const output = await this.client.trpc.workspace.forkAvatar.mutate(input);
     this.reconcileWorkspaceAvatarCatalogEntry(input.workspacePath, output.avatar);
     this.emit();
-    void this.hydrateWorkspaceAvatarCatalog(input.workspacePath, { force: true });
+    this.runBackgroundTask(this.hydrateWorkspaceAvatarCatalog(input.workspacePath, { force: true }));
     return output.avatar;
   }
 
@@ -3570,7 +3574,7 @@ export class RuntimeStore {
       const output = await this.client.trpc.workspace.copyAvatar.mutate(input);
       this.reconcileWorkspaceAvatarCatalogEntry(input.workspacePath, output.avatar, optimistic.optimisticNickname);
       this.emit();
-      void this.hydrateWorkspaceAvatarCatalog(input.workspacePath, { force: true });
+      this.runBackgroundTask(this.hydrateWorkspaceAvatarCatalog(input.workspacePath, { force: true }));
       return output.avatar;
     } catch (error) {
       if (optimistic.applied) {
@@ -4377,10 +4381,12 @@ export class RuntimeStore {
       if (!this.shouldRefreshGlobalRoomSnapshot(channel.chatId)) {
         continue;
       }
-      void this.hydrateGlobalRoomSnapshot({
-        chatId: channel.chatId,
-        force: true,
-      });
+      this.runBackgroundTask(
+        this.hydrateGlobalRoomSnapshot({
+          chatId: channel.chatId,
+          force: true,
+        }),
+      );
     }
     return output;
   }
@@ -4658,11 +4664,13 @@ export class RuntimeStore {
       refreshedAt: Date.now(),
     }));
     this.emit();
-    void this.hydrateGlobalRoomSnapshot({
-      chatId: input.chatId,
-      accessToken,
-      force: true,
-    }).catch(() => undefined);
+    this.runBackgroundTask(
+      this.hydrateGlobalRoomSnapshot({
+        chatId: input.chatId,
+        accessToken,
+        force: true,
+      }),
+    );
     return output.grant;
   }
 
@@ -4686,11 +4694,13 @@ export class RuntimeStore {
       refreshedAt: Date.now(),
     }));
     this.emit();
-    void this.hydrateGlobalRoomSnapshot({
-      chatId: input.chatId,
-      accessToken,
-      force: true,
-    }).catch(() => undefined);
+    this.runBackgroundTask(
+      this.hydrateGlobalRoomSnapshot({
+        chatId: input.chatId,
+        accessToken,
+        force: true,
+      }),
+    );
     return output;
   }
 
@@ -6434,25 +6444,25 @@ export class RuntimeStore {
         assetRoomIds?: string[];
       };
       if (payload.catalogChanged && (this.state.globalRooms.loaded || this.globalRoomsWatchCount > 0)) {
-        void this.hydrateGlobalRooms({ force: true });
+        this.runBackgroundTask(this.hydrateGlobalRooms({ force: true }));
       }
       for (const chatId of payload.snapshotRoomIds ?? []) {
         if (!this.shouldRefreshGlobalRoomSnapshot(chatId)) {
           continue;
         }
-        void this.hydrateGlobalRoomSnapshot({ chatId, force: true }).catch(() => undefined);
+        this.runBackgroundTask(this.hydrateGlobalRoomSnapshot({ chatId, force: true }));
       }
       for (const chatId of payload.grantRoomIds ?? []) {
         if (!this.shouldRefreshGlobalRoomGrants(chatId)) {
           continue;
         }
-        void this.hydrateGlobalRoomGrants({ chatId, force: true }).catch(() => undefined);
+        this.runBackgroundTask(this.hydrateGlobalRoomGrants({ chatId, force: true }));
       }
       for (const chatId of payload.assetRoomIds ?? []) {
         if (!this.shouldRefreshGlobalRoomAssets(chatId)) {
           continue;
         }
-        void this.hydrateGlobalRoomAssets({ chatId, force: true }).catch(() => undefined);
+        this.runBackgroundTask(this.hydrateGlobalRoomAssets({ chatId, force: true }));
       }
       return;
     }
@@ -6464,13 +6474,13 @@ export class RuntimeStore {
           workspacePath === "~/" &&
           (this.globalAvatarCatalogWatchCount > 0 || this.state.globalAvatarCatalog.loaded)
         ) {
-          void this.hydrateGlobalAvatarCatalog({ force: true });
+          this.runBackgroundTask(this.hydrateGlobalAvatarCatalog({ force: true }));
         }
         const resource = this.state.workspaceAvatarCatalogByPath[workspacePath];
         if (!resource && !this.workspaceAvatarCatalogWatchCountByPath.has(workspacePath)) {
           continue;
         }
-        void this.hydrateWorkspaceAvatarCatalog(workspacePath, { force: true });
+        this.runBackgroundTask(this.hydrateWorkspaceAvatarCatalog(workspacePath, { force: true }));
       }
       return;
     }

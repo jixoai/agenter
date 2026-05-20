@@ -63,6 +63,7 @@ export class ComposedTerminalRuntime implements TerminalRuntime {
   private observedIdentity: TerminalObservedIdentity = {};
   private running = false;
   private status: TerminalStatus = "IDLE";
+  private needsSourceReadRefresh = false;
 
   constructor(private readonly config: ComposedTerminalRuntimeConfig) {
     this.snapshot = this.config.resolveInitialSnapshot();
@@ -247,11 +248,19 @@ export class ComposedTerminalRuntime implements TerminalRuntime {
   }
 
   async write(input: string): Promise<TerminalPendingInputResult> {
-    return await this.requireShell().write(input);
+    const result = await this.requireShell().write(input);
+    if (result.ok) {
+      this.needsSourceReadRefresh = true;
+    }
+    return result;
   }
 
   async input(mixedInput: string): Promise<TerminalPendingInputResult> {
-    return await this.requireShell().input(mixedInput);
+    const result = await this.requireShell().input(mixedInput);
+    if (result.ok) {
+      this.needsSourceReadRefresh = true;
+    }
+    return result;
   }
 
   writeRaw(input: string): void {
@@ -263,6 +272,10 @@ export class ComposedTerminalRuntime implements TerminalRuntime {
   }
 
   async read(): Promise<ManagedTerminalSnapshot> {
+    if (this.needsSourceReadRefresh) {
+      this.needsSourceReadRefresh = false;
+      return await this.refreshFromShellRead();
+    }
     return this.snapshot;
   }
 
@@ -318,6 +331,21 @@ export class ComposedTerminalRuntime implements TerminalRuntime {
       throw new Error(`composed terminal missing shell source: ${this.config.terminalId}`);
     }
     return this.shell;
+  }
+
+  private async refreshFromShellRead(): Promise<ManagedTerminalSnapshot> {
+    const shellSnapshot = await this.requireShell().read();
+    return this.replaceWithShellSnapshot(shellSnapshot);
+  }
+
+  private replaceWithShellSnapshot(shellSnapshot: ManagedTerminalSnapshot): ManagedTerminalSnapshot {
+    this.snapshot = {
+      ...shellSnapshot,
+      lines: normalizeLines(shellSnapshot.lines, shellSnapshot.rows, shellSnapshot.cols),
+      richLines: normalizeRichLines(shellSnapshot.richLines, shellSnapshot.rows, shellSnapshot.cols),
+    };
+    this.emitSnapshot(this.snapshot);
+    return this.snapshot;
   }
 
   private attach(): void {

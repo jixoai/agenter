@@ -9,6 +9,7 @@ import {
   type ProductBindingMetadata,
   type ProductMemoryPackEnsureInput,
   type ProductResourceBindingInput,
+  type ProductRuntimeSessionClearInput,
 } from "@agenter/product-extension-runtime";
 
 import type {
@@ -153,6 +154,7 @@ export interface ProductExtensionRuntimeStore {
     accessTokenHint?: string;
     adminCandidateRank?: number | null;
   }): Promise<unknown>;
+  revokeGlobalTerminalGrant(input: { terminalId: string; grantId: string }): Promise<{ ok: boolean }>;
   focusTerminals(input: {
     sessionId: string;
     op: "add" | "remove" | "replace" | "clear";
@@ -219,6 +221,22 @@ export interface ProductEnsureRuntimeInput {
   avatarNickname: string;
   sessionName?: string;
   autoStart?: boolean;
+}
+
+export interface ProductRuntimeSessionClearResult {
+  clearedSessionIds: string[];
+}
+
+export interface ProductRuntimeTerminalFocusInput {
+  sessionId: string;
+  op: "add" | "remove" | "replace" | "clear";
+  terminalIds: string[];
+}
+
+export interface ProductRuntimeTerminalFocusResult {
+  ok: boolean;
+  message: string;
+  focusedTerminalIds: string[];
 }
 
 export interface ProductEnsureBindingResult<TEntry> {
@@ -430,6 +448,27 @@ export class ProductExtensionRuntimeClient {
 
   async startRuntime(sessionId: string): Promise<void> {
     await this.store.startSession(sessionId);
+  }
+
+  async clearRuntimeSession(input: ProductRuntimeSessionClearInput): Promise<ProductRuntimeSessionClearResult> {
+    const sessions = await this.store.listSessions();
+    // AvatarRuntime identity is Avatar-scoped; product shell labels must not become hidden runtime axes.
+    // Workspace scope is still part of the runtime session selection to avoid clearing another workspace's live context.
+    const matches = sessions.filter(
+      (session) => session.workspacePath === input.workspacePath && session.avatar === input.avatarNickname,
+    );
+    for (const session of matches) {
+      await this.store.deleteSession(session.id);
+    }
+    return {
+      clearedSessionIds: matches.map((session) => session.id),
+    };
+  }
+
+  async focusRuntimeTerminals(
+    input: ProductRuntimeTerminalFocusInput,
+  ): Promise<ProductRuntimeTerminalFocusResult> {
+    return await this.store.focusTerminals(input);
   }
 
   async ensureAssistant(input: ProductAssistantEnsureInput): Promise<GlobalAvatarCatalogEntry> {
@@ -672,7 +711,6 @@ export class ProductExtensionRuntimeClient {
   async settleAttention(input: { sessionId: string } & ProductAttentionSettleInput): Promise<{ commit: unknown }> {
     return await this.store.settleAttention(input);
   }
-
 }
 
 export const createProductExtensionRuntimeClient = (

@@ -801,6 +801,69 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
+  test("Scenario: Given a composed terminal is the current TerminalSystem target When writing through it without a host publish Then read returns the shell result through the same terminal id", async () => {
+    const plane = createDefaultShellPlane();
+    plane.setActorPresence("session:guard", true);
+    plane.setActorPresence("session:admin", true);
+    const source = await plane.create({
+      terminalId: "shell-current:terminal-1",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+    const composed = await plane.create({
+      terminalId: "shell-current:terminal-2",
+      metadata: {
+        terminalRuntimeKind: "composed",
+        composedShellTerminalId: source.terminalId,
+      },
+      bootstrapActorId: "session:guard",
+      bootstrapRole: "guard",
+      adminGroupCandidateIds: ["session:admin"],
+      profile: {
+        cols: 80,
+        rows: 20,
+      },
+    });
+
+    const pending = await plane.write({
+      terminalId: composed.terminalId,
+      actorId: "session:guard",
+      text: "printf 'composed-current-marker\\n'\n",
+      returnRead: true,
+      readMode: "snapshot",
+    });
+
+    expect(pending.ok).toBe(false);
+    expect(pending.message).toBe("terminal write requires approval");
+    expect(pending.approvalRequest?.terminalId).toBe(composed.terminalId);
+
+    plane.approveRequestAuthorized({
+      terminalId: composed.terminalId,
+      requestId: pending.approvalRequest!.requestId,
+      superadminActorId: "session:admin",
+      durationMs: 60_000,
+    });
+
+    const written = await plane.write({
+      terminalId: composed.terminalId,
+      actorId: "session:guard",
+      text: "printf 'composed-current-marker\\n'\n",
+      returnRead: {
+        debounceMs: 100,
+      },
+      readMode: "snapshot",
+    });
+    expect(written.ok).toBe(true);
+    expect(written.read?.terminalId).toBe(composed.terminalId);
+    expect(written.read?.snapshot?.lines.join("\n")).toContain("composed-current-marker");
+
+    const read = await plane.read(composed.terminalId, "snapshot", { recordActivity: false });
+    expect(read.terminalId).toBe(composed.terminalId);
+    expect(read.snapshot?.lines.join("\n")).toContain("composed-current-marker");
+
+    await plane.dispose();
+  });
+
   test("Scenario: Given a composed terminal-2 runtime When it is created without a child PTY command Then it still publishes terminal screen truth through the composed seam", async () => {
     const plane = createPlane();
     const source = await plane.create({ terminalId: "shell-no-pty:terminal-1" });

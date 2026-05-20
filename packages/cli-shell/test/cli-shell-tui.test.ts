@@ -1,4 +1,3 @@
-import { describe, expect, mock, test } from "bun:test";
 import type {
   AuthSessionOutput,
   CachedResourceState,
@@ -17,32 +16,32 @@ import type {
 } from "@agenter/terminal-transport-protocol";
 import { KeyEvent, MouseEvent as OpenTuiMouseEvent, parseKeypress } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
+import { describe, expect, mock, test } from "bun:test";
 
 import {
-  BackendScrollbarRenderable,
   BackendFrameRenderable,
-  type BackendFrameInteractionTraceEvent,
+  BackendScrollbarRenderable,
   BackendTerminalFrameRenderable,
   buildCliShellComposedSurface,
   buildCliShellHostingContextId,
   buildCliShellTuiModel,
-  CliShellDialogueBackend,
-  CliShellCoreApp,
   CLI_SHELL_BACKEND_INTERACTION_RECOMMENDATIONS,
+  CliShellCoreApp,
+  CliShellDialogueBackend,
   createCliShellPerfTracer,
   createTerminalCanvas,
   encodeCliShellTerminalKey,
-  formatCliShellDebugBarLine,
   findNextTerminalWordBoundary,
   findPreviousTerminalWordBoundary,
   findWordInTerminal,
+  formatCliShellDebugBarLine,
   layoutCliShellTuiFrame,
   measureTerminalText,
   projectCliShellDialogueBackendFrame,
   renderCanvasLines,
   resolveCliShellInteractionEnhancementProfile,
-  resolveCliShellShellScrollbarProjection,
   resolveCliShellScrollbarPointerTarget,
+  resolveCliShellShellScrollbarProjection,
   resolveCliShellTerminalRegion,
   resolveCliShellTranscriptPanelLayout,
   resolveCliShellTuiInteractionLayout,
@@ -57,6 +56,7 @@ import {
   submitCliShellDialogue,
   terminalColumnToStringIndex,
   writeCanvasStyledText,
+  type BackendFrameInteractionTraceEvent,
   type CliShellLiveTerminalTransportSessionFactory,
   type CliShellManagedState,
   type CliShellTuiStore,
@@ -64,7 +64,7 @@ import {
 } from "../src";
 import { createTestTransportSession } from "./test-transport-session";
 
-const createCached = <T,>(data: T): CachedResourceState<T> => ({
+const createCached = <T>(data: T): CachedResourceState<T> => ({
   data,
   loaded: true,
   loading: false,
@@ -162,14 +162,16 @@ const createGlobalTerminalEntry = (terminalId: string, lines: string[]): GlobalT
   metadata: {},
 });
 
-const createCliShellTerminal2Entry = (input: {
-  terminalId?: string;
-  shellTerminalId?: string;
-  lines?: string[];
-  cols?: number;
-  rows?: number;
-  metadata?: Record<string, unknown>;
-} = {}): GlobalTerminalEntry => {
+const createCliShellTerminal2Entry = (
+  input: {
+    terminalId?: string;
+    shellTerminalId?: string;
+    lines?: string[];
+    cols?: number;
+    rows?: number;
+    metadata?: Record<string, unknown>;
+  } = {},
+): GlobalTerminalEntry => {
   const terminalId = input.terminalId ?? "shell-1:terminal-2";
   const shellTerminalId = input.shellTerminalId ?? "shell-1:terminal-1";
   const entry = createGlobalTerminalEntry(terminalId, input.lines ?? []);
@@ -196,7 +198,10 @@ const createCliShellTerminal2Entry = (input: {
   };
 };
 
-const withoutTransportUrl = (entry: GlobalTerminalEntry): GlobalTerminalEntry => ({ ...entry, transportUrl: undefined });
+const withoutTransportUrl = (entry: GlobalTerminalEntry): GlobalTerminalEntry => ({
+  ...entry,
+  transportUrl: undefined,
+});
 
 const createRoomMessage = (input: {
   messageId: number;
@@ -391,13 +396,12 @@ interface TuiStoreHarness {
   approvedRequests: Array<{ terminalId: string; requestId: string; durationMs: number }>;
   deniedRequests: Array<{ terminalId: string; requestId: string }>;
   retainedPermissionRequestStreams: Array<{ terminalId?: string; released: boolean }>;
-  lastPublishedComposedSurface: Parameters<CliShellTuiStore["publishGlobalTerminalComposedSurface"]>[0]["surface"] | null;
+  lastPublishedComposedSurface:
+    | Parameters<CliShellTuiStore["publishGlobalTerminalComposedSurface"]>[0]["surface"]
+    | null;
 }
 
-const createTuiStore = (input: {
-  state: RuntimeClientState;
-  settingsContent?: string;
-}): TuiStoreHarness => {
+const createTuiStore = (input: { state: RuntimeClientState; settingsContent?: string }): TuiStoreHarness => {
   let state = input.state;
   const listeners = new Set<() => void>();
   const inputs: Array<{ terminalId: string; text: string }> = [];
@@ -450,10 +454,7 @@ const createTuiStore = (input: {
     emit();
   };
 
-  const replaceTerminalPermissionRequests = (
-    terminalId: string,
-    requests: GlobalTerminalApprovalRequest[],
-  ): void => {
+  const replaceTerminalPermissionRequests = (terminalId: string, requests: GlobalTerminalApprovalRequest[]): void => {
     state = {
       ...state,
       globalTerminalApprovalsById: {
@@ -574,7 +575,11 @@ const createTuiStore = (input: {
       mtimeMs: 1,
     }),
     getAuthSession: async () => authSession,
-    grantGlobalTerminalWriteLease: async (payload: { terminalId: string; participantId: string; durationMs: number }) => ({
+    grantGlobalTerminalWriteLease: async (payload: {
+      terminalId: string;
+      participantId: string;
+      durationMs: number;
+    }) => ({
       leaseId: `lease:${payload.terminalId}:${payload.participantId}`,
       participantId: payload.participantId,
       expiresAt: Date.now() + payload.durationMs,
@@ -708,7 +713,9 @@ const createCoreAppTestSetup = async (input: {
   };
 };
 
-const createShellTerminalViewTestSetup = async (input: ConstructorParameters<typeof ShellTerminalViewRenderable>[1]) => {
+const createShellTerminalViewTestSetup = async (
+  input: ConstructorParameters<typeof ShellTerminalViewRenderable>[1],
+) => {
   const setup = await createTestRenderer({
     width: typeof input.width === "number" ? input.width : 80,
     height: typeof input.height === "number" ? input.height : 24,
@@ -769,9 +776,7 @@ const dispatchRenderableMouseEvent = (
   );
 };
 
-const selectedSpanCells = (
-  setup: Pick<Awaited<ReturnType<typeof createTestRenderer>>, "captureSpans">,
-) =>
+const selectedSpanCells = (setup: Pick<Awaited<ReturnType<typeof createTestRenderer>>, "captureSpans">) =>
   setup
     .captureSpans()
     .lines.flatMap((line, row) =>
@@ -1061,7 +1066,9 @@ describe("Feature: cli-shell interactive TUI", () => {
       } else {
         process.env.AGENTER_CLI_SHELL_TRACE = previousTraceEnv;
       }
-      await Bun.file(tracePath).delete().catch(() => undefined);
+      await Bun.file(tracePath)
+        .delete()
+        .catch(() => undefined);
     }
   });
 
@@ -1149,6 +1156,29 @@ describe("Feature: cli-shell interactive TUI", () => {
     setup.destroy();
   });
 
+  test("Scenario: Given a guard request appears on another terminal When native cli-shell renders Then it keeps the visible surface bound to the current opened terminal only", async () => {
+    const shellLines = ["$ pnpm test", "shell-1:~/project $"];
+    const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages: [], unread: 0 });
+    state.globalTerminalApprovalsById = {
+      "shell-1": createCached([]),
+      "shell-1:hidden": createCached([
+        createTerminalPermissionRequest({
+          requestId: "approval-hidden",
+          terminalId: "shell-1:hidden",
+          requestedInput: { mode: "raw", text: "pnpm test" },
+        }),
+      ]),
+    };
+    const harness = createTuiStore({ state });
+    const setup = await createCoreAppTestSetup({ state, harness, width: 80, height: 14 });
+
+    await setup.renderOnce();
+
+    expect(harness.retainedPermissionRequestStreams).toEqual([{ terminalId: "shell-1", released: false }]);
+    expect(setup.captureCharFrame()).not.toContain("Terminal write approval");
+    setup.destroy();
+  });
+
   test("Scenario: Given composed terminal has no live transport When CliShellCoreApp renders repeatedly Then mirror lifecycle does not schedule self-feeding terminal revisions", async () => {
     const previousTraceEnv = process.env.AGENTER_CLI_SHELL_TRACE;
     const tracePath = `/tmp/agenter-cli-shell-no-transport-${Date.now()}-${Math.random().toString(36).slice(2)}.ndjson`;
@@ -1192,7 +1222,9 @@ describe("Feature: cli-shell interactive TUI", () => {
       } else {
         process.env.AGENTER_CLI_SHELL_TRACE = previousTraceEnv;
       }
-      await Bun.file(tracePath).delete().catch(() => undefined);
+      await Bun.file(tracePath)
+        .delete()
+        .catch(() => undefined);
     }
   });
 
@@ -1239,7 +1271,12 @@ describe("Feature: cli-shell interactive TUI", () => {
 
     await setup.renderOnce();
     let spans = setup.captureSpans().lines[0]?.spans ?? [];
-    expect(spans.map((span) => span.text).join("").replace(/\s+/g, "")).toContain("你a");
+    expect(
+      spans
+        .map((span) => span.text)
+        .join("")
+        .replace(/\s+/g, ""),
+    ).toContain("你a");
     expect(spans.find((span) => span.text.includes("你a"))?.width).toBe(3);
     expect(measureTerminalText("你a")).toBe(3);
 
@@ -2187,10 +2224,7 @@ describe("Feature: cli-shell interactive TUI", () => {
           col: 12,
           width: 20,
           height: 4,
-          lines: [
-            { spans: [{ text: "dialogue first row" }] },
-            { spans: [{ text: "dialogue second row" }] },
-          ],
+          lines: [{ spans: [{ text: "dialogue first row" }] }, { spans: [{ text: "dialogue second row" }] }],
         },
       ],
       lines: [
@@ -2353,8 +2387,18 @@ describe("Feature: cli-shell interactive TUI", () => {
   });
 
   test("Scenario: Given a shell selection exists When copy shortcut is pressed Then cli-shell copies the projected shell text through OSC52", async () => {
-    const exerciseCopyShortcut = async (shortcut: { meta?: boolean; super?: boolean; ctrl?: boolean; shift?: boolean }) => {
-      const state = createRuntimeState({ heartbeat: [], lines: ["$ echo hello", "copy target"], roomMessages: [], unread: 0 });
+    const exerciseCopyShortcut = async (shortcut: {
+      meta?: boolean;
+      super?: boolean;
+      ctrl?: boolean;
+      shift?: boolean;
+    }) => {
+      const state = createRuntimeState({
+        heartbeat: [],
+        lines: ["$ echo hello", "copy target"],
+        roomMessages: [],
+        unread: 0,
+      });
       const harness = createTuiStore({ state });
       const sentMessages: TerminalTransportClientMessage[] = [];
       const transportHooks: {
@@ -2441,10 +2485,7 @@ describe("Feature: cli-shell interactive TUI", () => {
     writeCanvasStyledText(canvas, {
       row: 0,
       col: 0,
-      spans: [
-        { text: "two" },
-        { text: "X" },
-      ],
+      spans: [{ text: "two" }, { text: "X" }],
       width: 6,
     });
     expect(renderCanvasLines(canvas)[0]).toBe("twoX  ");
@@ -2934,7 +2975,12 @@ describe("Feature: cli-shell interactive TUI", () => {
   });
 
   test("Scenario: Given an attached live mirror When terminal region scroll is requested through mouse interaction Then cli-shell forwards shared viewport movement to backend truth", () => {
-    const state = createRuntimeState({ heartbeat: [], lines: ["$ agenter shell", "shell-1:~/project $", "line-3"], roomMessages: [], unread: 0 });
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell", "shell-1:~/project $", "line-3"],
+      roomMessages: [],
+      unread: 0,
+    });
     let viewState: CliShellTuiViewState = {
       dialogueOpen: false,
       focusTarget: "terminal",
@@ -2968,7 +3014,7 @@ describe("Feature: cli-shell interactive TUI", () => {
           width: 120,
           height: 40,
         }),
-      getLiveMirror: () => ({ scrollViewport: (deltaRows: number) => (scrollCalls.push(deltaRows), true) } as never),
+      getLiveMirror: () => ({ scrollViewport: (deltaRows: number) => (scrollCalls.push(deltaRows), true) }) as never,
       updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
         viewState = updater(viewState);
       },
@@ -2979,7 +3025,12 @@ describe("Feature: cli-shell interactive TUI", () => {
   });
 
   test("Scenario: Given an attached live mirror When the native scrollbar targets an absolute viewport start Then cli-shell forwards backend-truth viewport targeting", () => {
-    const state = createRuntimeState({ heartbeat: [], lines: ["$ agenter shell", "shell-1:~/project $", "line-3", "line-4"], roomMessages: [], unread: 0 });
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell", "shell-1:~/project $", "line-3", "line-4"],
+      roomMessages: [],
+      unread: 0,
+    });
     let viewState: CliShellTuiViewState = {
       dialogueOpen: false,
       focusTarget: "terminal",
@@ -3013,7 +3064,8 @@ describe("Feature: cli-shell interactive TUI", () => {
           width: 120,
           height: 40,
         }),
-      getLiveMirror: () => ({ setViewportStart: (viewportStart: number) => (targetCalls.push(viewportStart), true) } as never),
+      getLiveMirror: () =>
+        ({ setViewportStart: (viewportStart: number) => (targetCalls.push(viewportStart), true) }) as never,
       updateViewState: (updater: (current: CliShellTuiViewState) => CliShellTuiViewState) => {
         viewState = updater(viewState);
       },
@@ -3084,7 +3136,12 @@ describe("Feature: cli-shell interactive TUI", () => {
     await setup.renderOnce();
     await setup.renderOnce();
     const before = setup.captureCharFrame();
-    expect(before.split("\n").slice(0, 10).some((line) => line.endsWith("█") || line.endsWith("░"))).toBe(true);
+    expect(
+      before
+        .split("\n")
+        .slice(0, 10)
+        .some((line) => line.endsWith("█") || line.endsWith("░")),
+    ).toBe(true);
     await setup.mockMouse.click(79, 8);
     await setup.mockMouse.drag(79, 2, 79, 9);
     await setup.renderOnce();
@@ -3211,12 +3268,7 @@ describe("Feature: cli-shell interactive TUI", () => {
       top: 0,
       left: 0,
       state: {
-        lines: [
-          { spans: [{ text: "copy target" }] },
-          { spans: [{ text: "next line" }] },
-          { spans: [] },
-          { spans: [] },
-        ],
+        lines: [{ spans: [{ text: "copy target" }] }, { spans: [{ text: "next line" }] }, { spans: [] }, { spans: [] }],
         cursorCol: 0,
         cursorAbsRow: 0,
         cursorVisible: true,
@@ -3576,7 +3628,9 @@ describe("Feature: cli-shell interactive TUI", () => {
       } else {
         process.env.AGENTER_CLI_SHELL_TRACE = previousTraceEnv;
       }
-      await Bun.file(tracePath).delete().catch(() => undefined);
+      await Bun.file(tracePath)
+        .delete()
+        .catch(() => undefined);
     }
   });
 
@@ -3607,7 +3661,9 @@ describe("Feature: cli-shell interactive TUI", () => {
       } else {
         process.env.AGENTER_CLI_SHELL_TRACE = previousTraceEnv;
       }
-      await Bun.file(tracePath).delete().catch(() => undefined);
+      await Bun.file(tracePath)
+        .delete()
+        .catch(() => undefined);
     }
   });
 
@@ -3669,12 +3725,19 @@ describe("Feature: cli-shell interactive TUI", () => {
       } else {
         process.env.AGENTER_CLI_SHELL_TRACE = previousTraceEnv;
       }
-      await Bun.file(tracePath).delete().catch(() => undefined);
+      await Bun.file(tracePath)
+        .delete()
+        .catch(() => undefined);
     }
   });
 
   test("Scenario: Given dialogue mode owns keyboard routing When Enter is pressed Then cli-shell submits exactly one room message without a second visible input", async () => {
-    const state = createRuntimeState({ heartbeat: [], lines: ["$ agenter shell", "shell-1:~/project $"], roomMessages: [], unread: 0 });
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell", "shell-1:~/project $"],
+      roomMessages: [],
+      unread: 0,
+    });
     const harness = createTuiStore({ state });
     let viewState: CliShellTuiViewState = {
       dialogueOpen: true,
@@ -3736,7 +3799,10 @@ describe("Feature: cli-shell interactive TUI", () => {
       roomMessages,
       unread: 0,
     });
-    const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", state.globalTerminals.data[0]?.snapshot?.lines ?? []);
+    const shellTerminalEntry = createGlobalTerminalEntry(
+      "shell-1:terminal-1",
+      state.globalTerminals.data[0]?.snapshot?.lines ?? [],
+    );
     const visibleTerminalEntry: GlobalTerminalEntry = {
       ...createGlobalTerminalEntry("shell-1:terminal-2", ["product"]),
       processKind: "product",
@@ -3779,7 +3845,12 @@ describe("Feature: cli-shell interactive TUI", () => {
   });
 
   test("Scenario: Given terminal mode and dialogue mode When keys are routed through the controller Then terminal input and room-message send each stay in their own backend contract", async () => {
-    const state = createRuntimeState({ heartbeat: [], lines: ["$ agenter shell", "shell-1:~/project $"], roomMessages: [], unread: 0 });
+    const state = createRuntimeState({
+      heartbeat: [],
+      lines: ["$ agenter shell", "shell-1:~/project $"],
+      roomMessages: [],
+      unread: 0,
+    });
     const harness = createTuiStore({ state });
     let viewState: CliShellTuiViewState = {
       dialogueOpen: false,
@@ -4037,11 +4108,12 @@ describe("Feature: cli-shell interactive TUI", () => {
         },
       }),
     };
-    expect(routeCliShellKey(rightCtx, createTestKeyEvent({ name: "right", option: true, sequence: "\u001bf" }))).toBe(true);
-    const expectedRightCells = stringIndexToTerminalColumn(
-      wordLine,
-      wordLine.indexOf("world") + "world".length,
-    ) - stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world"));
+    expect(routeCliShellKey(rightCtx, createTestKeyEvent({ name: "right", option: true, sequence: "\u001bf" }))).toBe(
+      true,
+    );
+    const expectedRightCells =
+      stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world") + "world".length) -
+      stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world"));
     expect(sentInput.at(-1)).toBe("\u001b[C".repeat(expectedRightCells));
 
     const escSequenceCtx = {
@@ -4152,7 +4224,9 @@ describe("Feature: cli-shell interactive TUI", () => {
       },
     };
 
-    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" }))).toBe(true);
+    expect(
+      routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" })),
+    ).toBe(true);
     expect(ranges).toEqual([
       {
         ownerId: "terminal",
@@ -4181,7 +4255,9 @@ describe("Feature: cli-shell interactive TUI", () => {
         },
       }),
     };
-    expect(routeCliShellKey(rightCtx, createTestKeyEvent({ name: "right", option: true, shift: true, sequence: "\u001bf" }))).toBe(true);
+    expect(
+      routeCliShellKey(rightCtx, createTestKeyEvent({ name: "right", option: true, shift: true, sequence: "\u001bf" })),
+    ).toBe(true);
     expect(ranges.at(-1)).toEqual({
       ownerId: "terminal",
       startCol: stringIndexToTerminalColumn(wordLine, wordLine.indexOf("world") + "world".length),
@@ -4270,8 +4346,12 @@ describe("Feature: cli-shell interactive TUI", () => {
       },
     };
 
-    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" }))).toBe(true);
-    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" }))).toBe(true);
+    expect(
+      routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" })),
+    ).toBe(true);
+    expect(
+      routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" })),
+    ).toBe(true);
 
     expect(ranges.at(0)).toEqual({
       ownerId: "terminal",
@@ -4365,7 +4445,9 @@ describe("Feature: cli-shell interactive TUI", () => {
       },
     };
 
-    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" }))).toBe(true);
+    expect(
+      routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" })),
+    ).toBe(true);
 
     expect(ranges).toEqual([
       {
@@ -4572,7 +4654,9 @@ describe("Feature: cli-shell interactive TUI", () => {
       },
     };
 
-    expect(routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" }))).toBe(true);
+    expect(
+      routeCliShellKey(ctx, createTestKeyEvent({ name: "left", option: true, shift: true, sequence: "\u001bb" })),
+    ).toBe(true);
 
     expect(actions).toEqual(["select-range", `input:${"\u001b[D".repeat(6)}`, "follow"]);
   });
@@ -4760,7 +4844,10 @@ describe("Feature: cli-shell interactive TUI", () => {
       roomMessages: [],
       unread: 0,
     });
-    const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", state.globalTerminals.data[0]?.snapshot?.lines ?? []);
+    const shellTerminalEntry = createGlobalTerminalEntry(
+      "shell-1:terminal-1",
+      state.globalTerminals.data[0]?.snapshot?.lines ?? [],
+    );
     const visibleTerminalEntry = createCliShellTerminal2Entry({ lines: ["initial terminal-2"] });
     state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
     const harness = createTuiStore({ state });

@@ -35,6 +35,7 @@ packages/i18n-zh-Hans/prompts.json
 
 # local notes
 CHAT.md
+*HANDOFF.md
 easy-spec/
 .agenter
 .chat/

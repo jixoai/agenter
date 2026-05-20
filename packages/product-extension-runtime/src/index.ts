@@ -63,3 +63,4 @@ export {
   type ProductResourceKind,
   type ProductResourceOwnerSystem,
 } from "./resource-binding";
+export { productRuntimeSessionClearInputSchema, type ProductRuntimeSessionClearInput } from "./runtime-session";

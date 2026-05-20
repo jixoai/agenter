@@ -137,6 +137,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   readonly roomGrants = new Map<string, GlobalRoomGrantEntry[]>();
   readonly privateAssets = new Map<string, WorkspacePrivateTextAssetEnsureOutput>();
   readonly avatarPromptFiles = new Map<string, { path: string; content: string; mtimeMs: number }>();
+  readonly deletedSessionIds: string[] = [];
   readonly focusTerminalCalls: string[][] = [];
   readonly focusRoomCalls: string[][] = [];
   lastAttentionCommit: Record<string, unknown> | null = null;
@@ -201,6 +202,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   async startSession(_sessionId: string): Promise<void> {}
 
   async deleteSession(sessionId: string): Promise<void> {
+    this.deletedSessionIds.push(sessionId);
     for (const [key, session] of [...this.sessions.entries()]) {
       if (session.id === sessionId) {
         this.sessions.delete(key);
@@ -436,6 +438,13 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     return { ok: true, accessToken: `grant-token:${input.terminalId}:${input.participantId}` };
   }
 
+  async revokeGlobalTerminalGrant(input: { terminalId: string; grantId: string }): Promise<{ ok: boolean }> {
+    const grants = this.terminalGrants.get(input.terminalId) ?? [];
+    const next = grants.filter((grant) => grant.grantId !== input.grantId);
+    this.terminalGrants.set(input.terminalId, next);
+    return { ok: next.length !== grants.length };
+  }
+
   async focusTerminals(input: {
     sessionId: string;
     op: "add" | "remove" | "replace" | "clear";
@@ -482,11 +491,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   async deleteGlobalRoom(input: { chatId: string; accessToken?: string }): Promise<GlobalRoomEntry> {
     void input.accessToken;
     const room = this.rooms.find((entry) => entry.chatId === input.chatId) ?? createRoomEntry(input.chatId);
-    this.rooms.splice(
-      0,
-      this.rooms.length,
-      ...this.rooms.filter((entry) => entry.chatId !== input.chatId),
-    );
+    this.rooms.splice(0, this.rooms.length, ...this.rooms.filter((entry) => entry.chatId !== input.chatId));
     return room;
   }
 
@@ -574,7 +579,6 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     this.lastAttentionSettle = input;
     return { commit: { contextId: input.contextId } };
   }
-
 }
 
 describe("Feature: product extension runtime client", () => {
@@ -597,6 +601,63 @@ describe("Feature: product extension runtime client", () => {
     expect(second.avatar).toBe("shell-assistant");
     expect(second.name).toBe("shell-1");
     expect(store.sessions.size).toBe(1);
+  });
+
+  test("Scenario: Given a selected Avatar runtime session When the product clears it Then generic session authority removes only that runtime context", async () => {
+    const store = new FakeProductRuntimeStore();
+    const client = new ProductExtensionRuntimeClient(store);
+    store.avatars.push(createAvatarEntry("review-4"));
+    await client.ensureRuntime({
+      workspacePath: "/repo",
+      avatarNickname: "review-4",
+    });
+    await client.ensureRuntime({
+      workspacePath: "/other-repo",
+      avatarNickname: "review-4",
+    });
+    await client.ensureTerminalBinding({
+      session: createSessionEntry("/repo", "review-4"),
+      binding: {
+        productId: "cli-shell",
+        resourceKey: "shell-4:terminal-2",
+        resourceKind: "terminal",
+        ownerSystem: "terminal-system",
+      },
+    });
+    await client.ensureRoomBinding({
+      session: createSessionEntry("/repo", "review-4"),
+      binding: {
+        productId: "cli-shell",
+        resourceKey: "shell-4",
+        resourceKind: "room",
+        ownerSystem: "message-system",
+      },
+    });
+    await client.ensureAvatarPromptSeedIfMissing({
+      avatarPrincipalId: "auth:review-4",
+      workspacePath: "/repo",
+      kind: "agenter",
+      seedContent: "# Existing prompt\n",
+    });
+    await client.ensureMemoryPackIfMissing({
+      workspacePath: "/repo",
+      avatarNickname: "review-4",
+      roles: [{ role: "memory", path: "memory.md", seedContent: "# Existing memory\n" }],
+    });
+
+    const cleared = await client.clearRuntimeSession({
+      workspacePath: "/repo",
+      avatarNickname: "review-4",
+    });
+
+    expect(cleared.clearedSessionIds).toEqual(["session:/repo:review-4"]);
+    expect(store.deletedSessionIds).toEqual(["session:/repo:review-4"]);
+    expect([...store.sessions.values()].map((session) => session.id)).toEqual(["session:/other-repo:review-4"]);
+    expect(store.avatars.map((entry) => entry.nickname)).toEqual(["review-4"]);
+    expect(store.terminals.map((entry) => entry.terminalId)).toEqual(["shell-4:terminal-2"]);
+    expect(store.rooms.map((entry) => entry.chatId)).toEqual(["room-1"]);
+    expect(store.avatarPromptFiles.get("/repo:auth:review-4:agenter")?.content).toBe("# Existing prompt\n");
+    expect(store.privateAssets.get("/repo:review-4:memory:memory.md")?.content).toBe("# Existing memory\n");
   });
 
   test("Scenario: Given a missing assistant prompt and memory pack When the client ensures them Then avatar creation and seed-if-missing stay generic and preserve later edits", async () => {

@@ -1,9 +1,15 @@
 import { describe, expect, mock, test } from "bun:test";
 
-import type { AgenterClient, GlobalAvatarCatalogEntry, GlobalRoomEntry, GlobalTerminalEntry, SessionEntry } from "@agenter/client-sdk";
+import type {
+  AgenterClient,
+  GlobalAvatarCatalogEntry,
+  GlobalRoomEntry,
+  GlobalTerminalEntry,
+  SessionEntry,
+} from "@agenter/client-sdk";
 import type { CliShellBootstrapResult } from "../src/bootstrap";
-import { CLI_SHELL_HEARTBEAT_COPY } from "../src/tui/heartbeat";
 import { runCliShellWithDependencies, type CliShellRunDependencies } from "../src/run-cli-shell";
+import { CLI_SHELL_HEARTBEAT_COPY } from "../src/tui/heartbeat";
 
 const createSession = (): SessionEntry => ({
   id: "session-1",
@@ -102,7 +108,9 @@ const createRoomEntry = (chatId: string): GlobalRoomEntry => ({
 
 const createAttachedResult = (avatar: GlobalAvatarCatalogEntry): CliShellBootstrapResult => ({
   avatar,
+  avatarCreated: false,
   session: createSession(),
+  clearedRuntimeSessionIds: [],
   avatarActorId: "auth:shell-assistant",
   shellTruthTerminal: {
     entry: createTerminalEntry("shell-1:terminal-1"),
@@ -540,5 +548,92 @@ describe("Feature: cli-shell startup sequencing", () => {
       shellName: "shell-1",
     });
     expect(clientClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("Scenario: Given non-interactive Avatar startup flags When cli-shell attaches Then bootstrap receives ordinary Avatar controls and stdout reports create and clear state", async () => {
+    const avatar = {
+      avatarPrincipalId: "auth:review-4",
+      runtimeId: "runtime:review-4",
+      nickname: "review-4",
+      displayName: "review-4",
+      classify: null,
+      iconUrl: null,
+      defaultAvatar: false,
+      sourceScope: "global",
+      globalAvailable: true,
+      workspacePrivateSlotReady: false,
+      globalPath: "/global/review-4",
+      workspacePrivatePath: "/workspace/.agenter/avatars/by-principal/review-4",
+      effectivePath: "/global/review-4",
+    } satisfies GlobalAvatarCatalogEntry;
+    const bootstrapInputs: Parameters<CliShellRunDependencies["bootstrap"]>[0][] = [];
+    const writes: string[] = [];
+    const previousLog = console.log;
+    console.log = (message?: unknown, ...optionalParams: unknown[]) => {
+      writes.push([message, ...optionalParams].map(String).join(" "));
+    };
+    try {
+      await runCliShellWithDependencies(
+        ["node", "agenter-cli-shell", "--avatar=review-4", "--session=4", "--create-avatar", "--clear-avatar"],
+        {
+          createClient: () =>
+            ({
+              trpc: {} as AgenterClient["trpc"],
+              wsUrl: "ws://127.0.0.1:13000/trpc",
+              httpUrl: "http://127.0.0.1:13000",
+              setAuthToken: mock(() => {}),
+              getAuthToken: mock(() => null),
+              subscribeTransport: mock(() => () => {}),
+              close: mock(() => {}),
+            }) satisfies AgenterClient,
+          createStore: () =>
+            ({
+              hydrateGlobalTerminals: async () => [],
+            }) as unknown as ReturnType<CliShellRunDependencies["createStore"]>,
+          bootstrap: async (input) => {
+            bootstrapInputs.push(input);
+            return {
+              ...createAttachedResult(avatar),
+              avatarCreated: true,
+              clearedRuntimeSessionIds: ["session:/repo:review-4"],
+            };
+          },
+          loadStartupTui: async () => ({
+            startCliShellStartupTui: async () => ({
+              finished: Promise.resolve(),
+              destroy: mock(() => {}),
+              setHeartbeat: mock(() => {}),
+            }),
+          }),
+          loadCliShellTui: async () => ({
+            startCliShellTui: async () => ({
+              finished: Promise.resolve(),
+              destroy: mock(() => {}),
+            }),
+          }),
+          loadCliShellWebHost: async () => ({
+            startCliShellWebHost: async () => ({
+              url: "http://127.0.0.1:0/",
+              finished: Promise.resolve(),
+              stop: async () => {},
+            }),
+          }),
+          isInteractive: () => false,
+        } satisfies CliShellRunDependencies,
+      );
+    } finally {
+      console.log = previousLog;
+    }
+
+    expect(bootstrapInputs).toHaveLength(1);
+    expect(bootstrapInputs[0]).toMatchObject({
+      avatarNickname: "review-4",
+      shellName: "shell-4",
+      createAvatar: true,
+      clearAvatar: true,
+    });
+    expect(writes).toContain("avatar: review-4");
+    expect(writes).toContain("avatarState: created");
+    expect(writes).toContain("runtimeSessionClear: cleared (session:/repo:review-4)");
   });
 });

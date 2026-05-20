@@ -1,12 +1,12 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   decodeTerminalTransportClientMessage,
   encodeTerminalTransportServerMessage,
   type TerminalTransportClientMessage,
+  type TerminalTransportRichLine,
   type TerminalTransportServerMessage,
   type TerminalTransportSnapshot,
-  type TerminalTransportRichLine,
 } from "@agenter/terminal-transport-protocol";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("@xterm/xterm/css/xterm.css?inline", () => ({ default: ".xterm { display: block; }" }));
 vi.mock("ghostty-web", () => {
@@ -641,7 +641,7 @@ describe("Feature: terminal-view WebComponent", () => {
 
     const shadowRoot = requireShadowRoot(element);
     expect(readTerminalScale(shadowRoot)).toBeCloseTo(0.538, 3);
-    expect(shadowRoot.querySelector('[data-terminal-stage]')?.getAttribute("style")).toContain("width:644px");
+    expect(shadowRoot.querySelector("[data-terminal-stage]")?.getAttribute("style")).toContain("width:644px");
     expect(element.screenMetrics).toEqual({ width: 1188, height: 760 });
   });
 
@@ -840,7 +840,7 @@ describe("Feature: terminal-view WebComponent", () => {
       authorityReason?: string;
     }> = [];
     element.addEventListener("terminal-view-geometry-authority", (event) => {
-      authorityEvents.push((event as CustomEvent<typeof authorityEvents[number]>).detail);
+      authorityEvents.push((event as CustomEvent<(typeof authorityEvents)[number]>).detail);
     });
 
     socket?.message(
@@ -1546,9 +1546,7 @@ describe("Feature: terminal-view WebComponent", () => {
     element.terminalId = "presentation-live-apply";
     element.rendererPreference = "xterm";
     element.addEventListener("terminal-view-presentation-ready", (event) => {
-      readyEvents.push(
-        (event as CustomEvent<{ terminalId: string; resolvedRenderer: string; reason: string }>).detail,
-      );
+      readyEvents.push((event as CustomEvent<{ terminalId: string; resolvedRenderer: string; reason: string }>).detail);
     });
 
     document.body.append(element);
@@ -1584,9 +1582,7 @@ describe("Feature: terminal-view WebComponent", () => {
     element.terminalId = "presentation-font-live-apply";
     element.rendererPreference = "xterm";
     element.addEventListener("terminal-view-presentation-ready", (event) => {
-      readyEvents.push(
-        (event as CustomEvent<{ terminalId: string; resolvedRenderer: string; reason: string }>).detail,
-      );
+      readyEvents.push((event as CustomEvent<{ terminalId: string; resolvedRenderer: string; reason: string }>).detail);
     });
 
     document.body.append(element);
@@ -1629,9 +1625,7 @@ describe("Feature: terminal-view WebComponent", () => {
     element.terminalId = "presentation-rebuild";
     element.rendererPreference = "ghostty-web";
     element.addEventListener("terminal-view-presentation-ready", (event) => {
-      readyEvents.push(
-        (event as CustomEvent<{ terminalId: string; resolvedRenderer: string; reason: string }>).detail,
-      );
+      readyEvents.push((event as CustomEvent<{ terminalId: string; resolvedRenderer: string; reason: string }>).detail);
     });
 
     document.body.append(element);
@@ -1676,7 +1670,9 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     const firstTerminal = mockGhosttyTerminals.at(-1);
-    expect(firstTerminal?.writes.some((entry) => typeof entry === "string" && entry.includes("hello rebuild"))).toBe(true);
+    expect(firstTerminal?.writes.some((entry) => typeof entry === "string" && entry.includes("hello rebuild"))).toBe(
+      true,
+    );
 
     element.theme = "default-light";
     await element.updateComplete;
@@ -1715,9 +1711,9 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     const xtermTerminal = mockTerminals.at(-1);
-    expect(xtermTerminal?.writes.some((entry) => typeof entry === "string" && entry.includes("switch renderer repaint"))).toBe(
-      true,
-    );
+    expect(
+      xtermTerminal?.writes.some((entry) => typeof entry === "string" && entry.includes("switch renderer repaint")),
+    ).toBe(true);
 
     element.rendererPreference = "ghostty-web";
     await element.updateComplete;
@@ -1726,9 +1722,9 @@ describe("Feature: terminal-view WebComponent", () => {
     await element.updateComplete;
 
     const rebuiltTerminal = mockGhosttyTerminals.at(-1);
-    expect(rebuiltTerminal?.writes.some((entry) => typeof entry === "string" && entry.includes("switch renderer repaint"))).toBe(
-      true,
-    );
+    expect(
+      rebuiltTerminal?.writes.some((entry) => typeof entry === "string" && entry.includes("switch renderer repaint")),
+    ).toBe(true);
     expect(rebuiltTerminal?.renderer.render).toHaveBeenCalled();
   });
 
@@ -1931,5 +1927,59 @@ describe("Feature: terminal-view WebComponent", () => {
     const popovers = shadowRoot.querySelectorAll("[data-terminal-permission-popover]");
     expect(popovers).toHaveLength(1);
     expect(popovers[0]?.textContent).toContain("updated preview");
+  });
+
+  test("Scenario: Given mixed terminal permission requests When terminal-view opens one terminal Then only the opened terminal request is projected", async () => {
+    const { TERMINAL_VIEW_TAG, defineTerminalView } = await import("../src");
+    defineTerminalView();
+    const element = document.createElement(TERMINAL_VIEW_TAG) as InstanceType<
+      typeof import("../src").TerminalViewElement
+    >;
+
+    const handled: Array<import("../src").TerminalViewPermissionRequestDetail> = [];
+    element.terminalId = "opened-terminal";
+    element.liveTransportEnabled = false;
+    element.onRequestPermissions = (detail) => {
+      handled.push(detail);
+      return false;
+    };
+    element.permissionRequests = [
+      {
+        requestId: "request-opened",
+        terminalId: "opened-terminal",
+        participantId: "auth:guard",
+        status: "pending",
+        createdAt: 1,
+        expiresAt: Date.now() + 60_000,
+        requestedInput: {
+          mode: "raw",
+          text: "echo opened",
+        },
+      },
+      {
+        requestId: "request-other",
+        terminalId: "other-terminal",
+        participantId: "auth:guard",
+        status: "pending",
+        createdAt: 1,
+        expiresAt: Date.now() + 60_000,
+        requestedInput: {
+          mode: "raw",
+          text: "echo other",
+        },
+      },
+    ];
+
+    document.body.append(element);
+    await element.updateComplete;
+    await waitForLifecycleFrame();
+    await element.updateComplete;
+
+    const shadowRoot = requireShadowRoot(element);
+    const popover = shadowRoot.querySelector<HTMLElement>("[data-terminal-permission-popover]");
+    expect(handled.map((detail) => detail.request.requestId)).toEqual(["request-opened"]);
+    expect(popover?.getAttribute("data-terminal-permission-request-id")).toBe("request-opened");
+    expect(popover?.textContent).toContain("echo opened");
+    expect(popover?.textContent).not.toContain("echo other");
   });
 });

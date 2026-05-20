@@ -175,6 +175,13 @@ export interface RealCliShellFixture {
   stop: () => Promise<void>;
 }
 
+export interface RealCliShellFixtureOptions {
+  avatarNickname?: string;
+  shellName?: string;
+  createAvatar?: boolean;
+  clearAvatar?: boolean;
+}
+
 export const resolveRealCliShellModelConfig = (): RealModelConfig | null =>
   resolveRealModelConfig(REAL_MODEL_PROJECT_ROOT);
 
@@ -199,11 +206,15 @@ const bootstrapCliShellWithRetry = async (input: CliShellBootstrapInput): Promis
     },
   );
 
-export const createRealCliShellFixture = async (): Promise<RealCliShellFixture | null> => {
+export const createRealCliShellFixture = async (
+  options: RealCliShellFixtureOptions = {},
+): Promise<RealCliShellFixture | null> => {
   const rawConfig = resolveRealCliShellModelConfig();
   if (!rawConfig) {
     return null;
   }
+  const avatarNickname = options.avatarNickname ?? CLI_SHELL_DEFAULT_AVATAR;
+  const shellName = options.shellName ?? "shell-1";
 
   const rootDir = mkdtempSync(join(tmpdir(), "agenter-real-cli-shell-"));
   const homeDir = join(rootDir, "home");
@@ -246,8 +257,10 @@ export const createRealCliShellFixture = async (): Promise<RealCliShellFixture |
   let attached = await bootstrapCliShellWithRetry({
     store: connection.store,
     workspacePath,
-    avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
-    shellName: "shell-1",
+    avatarNickname,
+    shellName,
+    createAvatar: options.createAvatar,
+    clearAvatar: options.clearAvatar,
   });
   await handle.kernel.attachSessionPrimaryRoom(attached.session.id, { focus: true });
   await connection.store.connect();
@@ -506,8 +519,10 @@ export const createRealCliShellFixture = async (): Promise<RealCliShellFixture |
       attached = await bootstrapCliShellWithRetry({
         store: connection.store,
         workspacePath,
-        avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
-        shellName: "shell-1",
+        avatarNickname,
+        shellName,
+        createAvatar: options.createAvatar,
+        clearAvatar: options.clearAvatar,
       });
       await handle.kernel.attachSessionPrimaryRoom(attached.session.id, { focus: true });
       await connection.store.connect();

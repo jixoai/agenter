@@ -6,6 +6,7 @@ import type {
   TerminalTransportSnapshot,
 } from "@agenter/terminal-transport-protocol";
 
+import type { GlobalTerminalApprovalRequest } from "@agenter/client-sdk";
 import type {
   CliShellBootstrapResult,
   CliShellComposedSurfaceState,
@@ -118,7 +119,27 @@ const createShellSnapshotFixture = (input: {
   },
 });
 
-const createProductHostTransportHarness = (initialSnapshot: TerminalTransportSnapshot): {
+const createPermissionRequestFixture = (input: {
+  terminalId: string;
+  requestId: string;
+  text: string;
+}): GlobalTerminalApprovalRequest => ({
+  requestId: input.requestId,
+  terminalId: input.terminalId,
+  participantId: "auth:shell-assistant",
+  assignedAdminId: "auth:admin",
+  status: "pending" as const,
+  createdAt: 1_714_560_000_000,
+  expiresAt: Date.now() + 60_000,
+  requestedInput: {
+    mode: "raw" as const,
+    text: input.text,
+  },
+});
+
+const createProductHostTransportHarness = (
+  initialSnapshot: TerminalTransportSnapshot,
+): {
   sent: TerminalTransportClientMessage[];
   createTransportSession: CliShellLiveTerminalTransportSessionFactory;
 } => {
@@ -435,6 +456,88 @@ describe("Feature: cli-shell web host", () => {
     expect(store.lastPublishedComposedSurface?.lines.join("\n")).toContain("web says hi");
   });
 
+  test("Scenario: Given cli-shell web host observes a current-terminal guard request When the browser approval endpoint approves it Then TerminalSystem authority receives the current terminal id", async () => {
+    const store = createFakeCliShellProductHostStore();
+    await store.createGlobalTerminal({
+      terminalId: "shell-web-approval:terminal-1",
+      backend: "xterm",
+      command: ["/bin/bash"],
+      cwd: "/repo",
+    });
+    await store.createGlobalTerminal({
+      terminalId: "shell-web-approval:terminal-2",
+      backend: "xterm",
+      command: [],
+      cwd: "/repo",
+      metadata: {
+        terminalRuntimeKind: "composed",
+        composedShellTerminalId: "shell-web-approval:terminal-1",
+      },
+    });
+    store.terminalApprovalRequests.set("shell-web-approval:terminal-2", [
+      createPermissionRequestFixture({
+        terminalId: "shell-web-approval:terminal-2",
+        requestId: "approval-web-current",
+        text: "pnpm test",
+      }),
+    ]);
+    store.terminalApprovalRequests.set("shell-web-approval:hidden", [
+      createPermissionRequestFixture({
+        terminalId: "shell-web-approval:hidden",
+        requestId: "approval-web-hidden",
+        text: "pnpm test --hidden",
+      }),
+    ]);
+    const attached = createAttachedFixture({
+      sessionId: "session-web-approval",
+      shellTerminalId: "shell-web-approval:terminal-1",
+      visibleTerminalId: "shell-web-approval:terminal-2",
+      roomChatId: "room-shell-web-approval",
+    });
+
+    const controller = await startCliShellWebHost({
+      store,
+      shellName: "shell-web-approval",
+      attached,
+      requestedPort: 0,
+    });
+    stopControllers.push(controller);
+
+    expect(store.retainedTerminalPermissionRequests).toEqual([
+      { terminalId: "shell-web-approval:terminal-2", released: false },
+    ]);
+    const listResponse = await fetch(new URL("/permission-requests.json", controller.url));
+    expect(listResponse.status).toBe(200);
+    const list = await listResponse.json();
+    expect(list.terminalId).toBe("shell-web-approval:terminal-2");
+    expect(list.items.map((item: { requestId: string }) => item.requestId)).toEqual(["approval-web-current"]);
+
+    const approveResponse = await fetch(new URL("/approval-action", controller.url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "approve",
+        terminalId: "shell-web-approval:terminal-2",
+        requestId: "approval-web-current",
+        durationMs: 12_000,
+      }),
+    });
+    expect(approveResponse.status).toBe(200);
+    expect(store.approvedTerminalRequests).toEqual([
+      {
+        terminalId: "shell-web-approval:terminal-2",
+        requestId: "approval-web-current",
+        durationMs: 12_000,
+      },
+    ]);
+    expect(store.deniedTerminalRequests).toEqual([]);
+    expect(store.terminalApprovalRequests.get("shell-web-approval:terminal-2")).toEqual([]);
+
+    await controller.stop();
+    stopControllers.pop();
+    expect(store.retainedTerminalPermissionRequests[0]?.released).toBe(true);
+  });
+
   test("Scenario: Given a projection-only browser host When the page boots Then it advertises DOM renderer law and shell viewport sizing", async () => {
     const store = createFakeCliShellProductHostStore();
     await store.createGlobalTerminal({
@@ -720,10 +823,10 @@ describe("Feature: cli-shell web host", () => {
       await host.dispatch({ type: "shell-scroll-target", viewportStart: 33 });
       host.renderNow();
 
-      expect(store.sentMessages).toEqual([
-        { chatId: "room-shell-owner", text: "backend-owned message" },
-      ]);
-      expect(transport.sent.some((message) => message.type === "viewportTarget" && message.viewportStart === 33)).toBe(true);
+      expect(store.sentMessages).toEqual([{ chatId: "room-shell-owner", text: "backend-owned message" }]);
+      expect(transport.sent.some((message) => message.type === "viewportTarget" && message.viewportStart === 33)).toBe(
+        true,
+      );
       expect(host.getSnapshot().surface?.terminalId).toBe("shell-owner:terminal-2");
       expect(host.getSnapshot().model?.terminalView.viewportStart).toBe(33);
       expect(host.getSnapshot().textEvidence).toContain("scrollback-33");

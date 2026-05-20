@@ -8,6 +8,7 @@ import { createRealCliShellFixture, resolveRealCliShellModelConfig } from "../te
 
 const hasRealModel = process.env.AGENTER_RUN_REAL_LOOPBUS === "1" && resolveRealCliShellModelConfig() !== null;
 const realTest = hasRealModel ? test : test.skip;
+const REAL_GUARD_AVATAR = "review-guard";
 const TARGET_TERMINAL_MARKER = "guard-approval-visible-terminal-marker";
 const DENIED_TERMINAL_MARKER = "guard-denied-visible-terminal-marker";
 const EXPIRED_TERMINAL_MARKER = "guard-expired-visible-terminal-marker";
@@ -82,11 +83,61 @@ const isMessageSystemCliCommand = (command: string | undefined): boolean => {
   return /(?:^|\s|\|)(?:\.\/)?(?:\.runtime-bin\/)?message(?:\s|$)/u.test(normalized);
 };
 
+const isTerminalWriteOrInputCommand = (command: string | undefined): boolean =>
+  isTerminalSystemCliCommand(command) && Boolean(command?.includes("terminal write") || command?.includes("terminal input"));
+
+const parseJsonObject = (value: string | undefined): Record<string, unknown> | null => {
+  if (!value) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const readRecord = (value: unknown): Record<string, unknown> | null =>
+  value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
+const jsonContainsText = (value: unknown, text: string): boolean => {
+  if (typeof value === "string") {
+    return value.includes(text);
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => jsonContainsText(item, text));
+  }
+  const record = readRecord(value);
+  return record ? Object.values(record).some((item) => jsonContainsText(item, text)) : false;
+};
+
+const terminalWriteReturnedReadWithMarker = (
+  run: ReturnType<typeof extractToolRuns>[number],
+  marker: string,
+): boolean => {
+  if (!isTerminalWriteOrInputCommand(run.command)) {
+    return false;
+  }
+  const stdout = parseJsonObject(run.stdout);
+  const result = readRecord(stdout?.result);
+  return result?.ok === true && jsonContainsText(result.read, marker);
+};
+
+const isTerminalReadEvidence = (run: ReturnType<typeof extractToolRuns>[number], marker: string): boolean =>
+  (isTerminalSystemCliCommand(run.command) &&
+    run.command?.includes("terminal read") === true &&
+    jsonContainsText(parseJsonObject(run.stdout)?.result, marker)) ||
+  terminalWriteReturnedReadWithMarker(run, marker);
+
 const isForbiddenBashMarkerExecution = (run: ReturnType<typeof extractToolRuns>[number]): boolean =>
   (run.tool === "root_bash" || run.tool === "workspace_bash") &&
   textIncludesTargetMarker(run.command) &&
   !isTerminalSystemCliCommand(run.command) &&
-  !isMessageSystemCliCommand(run.command);
+  !isMessageSystemCliCommand(run.command) &&
+  !/^(?:\.\/)?(?:\.runtime-bin\/)?attention(?:\s|$)/u.test(run.command?.trim() ?? "");
 
 const expectNoForbiddenBashMarkerExecution = async (
   fixture: NonNullable<Awaited<ReturnType<typeof createRealCliShellFixture>>>,
@@ -95,7 +146,9 @@ const expectNoForbiddenBashMarkerExecution = async (
 ): Promise<void> => {
   const forbidden = extractToolRuns(calls).filter(isForbiddenBashMarkerExecution);
   if (forbidden.length > 0) {
-    throw new Error(`${label} used forbidden root/workspace bash marker execution: ${JSON.stringify(forbidden, null, 2)}\nDiagnostics:\n${await formatRealAiDiagnostics(fixture)}`);
+    throw new Error(
+      `${label} used forbidden root/workspace bash marker execution: ${JSON.stringify(forbidden, null, 2)}\nDiagnostics:\n${await formatRealAiDiagnostics(fixture)}`,
+    );
   }
 };
 
@@ -120,13 +173,16 @@ const requestTextIncludes = (request: { requestedInput?: { text?: string } }, ma
 const formatRealAiDiagnostics = async (
   fixture: NonNullable<Awaited<ReturnType<typeof createRealCliShellFixture>>>,
 ): Promise<string> => {
-  const roomMessages = fixture.listRoomMessages().slice(-8).map((message) => ({
-    messageId: message.messageId,
-    from: message.from,
-    senderActorId: message.senderActorId,
-    content: clip(message.content),
-    recalledAt: message.recalledAt,
-  }));
+  const roomMessages = fixture
+    .listRoomMessages()
+    .slice(-8)
+    .map((message) => ({
+      messageId: message.messageId,
+      from: message.from,
+      senderActorId: message.senderActorId,
+      content: clip(message.content),
+      recalledAt: message.recalledAt,
+    }));
   const calls = (await fixture.listRecentModelCalls()).slice(-6).map((call) => ({
     id: call.id,
     cycleId: call.cycleId,
@@ -252,8 +308,8 @@ const expectShellAssistantUnderstandsCollaboration = async (
     facts: {
       approvalRequestCreated: boolean;
       adminSurrogateApproved: boolean;
-      terminal1ContainsMarker: boolean;
-      terminal2IsComposedProductSurface: boolean;
+      currentTerminalContainsMarker: boolean;
+      currentTerminalIsVisibleProductSurface: boolean;
       noForbiddenRootWorkspaceSubstitution: boolean;
     };
   },
@@ -312,14 +368,22 @@ const expectShellAssistantUnderstandsCollaboration = async (
 
 describe("Feature: real AI shell-assistant guard authorization", () => {
   realTest(
-    "Scenario: Given a room terminal task and admin approval When shell-assistant uses terminal system Then terminal-1 changes and terminal-2 remains the visible product surface",
+    "Scenario: Given a room terminal task and admin approval When shell-assistant uses terminal system Then the current opened terminal changes",
     async () => {
-      const fixture = await createRealCliShellFixture();
+      const fixture = await createRealCliShellFixture({
+        avatarNickname: REAL_GUARD_AVATAR,
+        shellName: "shell-guard",
+        createAvatar: true,
+        clearAvatar: true,
+      });
       if (!fixture) {
         throw new Error("expected real cli-shell fixture");
       }
 
       try {
+        expect(fixture.attached.avatar.nickname).toBe(REAL_GUARD_AVATAR);
+        expect(fixture.attached.avatarCreated).toBe(true);
+        expect(fixture.attached.clearedRuntimeSessionIds).toEqual([]);
         const firstTurnAssistantCount = fixture.countAssistantRoomMessages();
         const firstTurnModelCallId = (await fixture.listRecentModelCalls()).at(-1)?.id ?? 0;
         await fixture.sendUserRoomMessage(
@@ -335,9 +399,7 @@ describe("Feature: real AI shell-assistant guard authorization", () => {
         const pendingRequest = await waitForRealValue(
           async () => {
             const requests = await fixture.listVisibleTerminalApprovalRequests({ statuses: ["pending"] });
-            return (
-              requests.find((request) => requestTextIncludes(request, APPROVED_TERMINAL_MARKER)) ?? null
-            );
+            return requests.find((request) => requestTextIncludes(request, APPROVED_TERMINAL_MARKER)) ?? null;
           },
           {
             label: "shell-assistant creates guard approval for room-bound terminal action",
@@ -386,7 +448,7 @@ describe("Feature: real AI shell-assistant guard authorization", () => {
 
         const terminalRead = await waitForRealValue(
           async () => {
-            const read = await fixture.readShellTruthTerminal({
+            const read = await fixture.readVisibleTerminal({
               mode: "snapshot",
               remark: false,
               recordActivity: false,
@@ -395,7 +457,7 @@ describe("Feature: real AI shell-assistant guard authorization", () => {
             return text.includes(APPROVED_TERMINAL_MARKER) ? { read, text } : null;
           },
           {
-            label: "approved shell-assistant terminal write reaches terminal-1 shell truth",
+            label: "approved shell-assistant terminal write reaches the current opened terminal",
             timeoutMs: 240_000,
           },
         ).catch(async (error: unknown) => {
@@ -404,12 +466,7 @@ describe("Feature: real AI shell-assistant guard authorization", () => {
         });
         expect(terminalRead.text).toContain(APPROVED_TERMINAL_MARKER);
 
-        const visibleRead = await fixture.readVisibleTerminal({
-          mode: "snapshot",
-          remark: false,
-          recordActivity: false,
-        });
-        expect(visibleRead.terminalId).toBe(fixture.attached.visibleTerminal.entry.terminalId);
+        expect(terminalRead.read.terminalId).toBe(fixture.attached.visibleTerminal.entry.terminalId);
         expect(fixture.attached.visibleTerminal.entry.metadata?.terminalRuntimeKind).toBe("composed");
         expect(fixture.attached.visibleTerminal.entry.metadata?.composedShellTerminalId).toBe(
           fixture.attached.shellTruthTerminal.entry.terminalId,
@@ -422,35 +479,29 @@ describe("Feature: real AI shell-assistant guard authorization", () => {
         const secondTurnCalls = await waitForCompletedModelCallsAfter(fixture, {
           afterModelCallId: secondTurnModelCallId,
           label: "approved terminal collaboration completion",
-          evidence: (call) => {
-            const runs = extractToolRuns([call]);
-            return (
-              runs.some(
-                (run) =>
-                  isTerminalSystemCliCommand(run.command) &&
-                  (run.command?.includes("terminal write") || run.command?.includes("terminal input")),
-              ) &&
-              runs.some(
-                (run) => isTerminalSystemCliCommand(run.command) && run.command?.includes("terminal read"),
-              ) &&
-              runs.some((run) => isMessageSystemCliCommand(run.command))
-            );
-          },
         });
+        const allCalls = await fixture.listRecentModelCalls();
+        const collaborationCalls = allCalls.filter((call) => call.id > firstTurnModelCallId);
+        const collaborationRuns = extractToolRuns(collaborationCalls);
         const secondTurnRuns = extractToolRuns(secondTurnCalls);
-        await expectNoForbiddenBashMarkerExecution(fixture, secondTurnCalls, "approved terminal collaboration completion");
-        expect(secondTurnRuns.some((run) => isTerminalSystemCliCommand(run.command))).toBe(true);
-        expect(secondTurnRuns.some((run) => isMessageSystemCliCommand(run.command))).toBe(true);
+        await expectNoForbiddenBashMarkerExecution(
+          fixture,
+          collaborationCalls,
+          "approved terminal collaboration completion",
+        );
+        expect(collaborationRuns.some((run) => isTerminalWriteOrInputCommand(run.command))).toBe(true);
+        expect(collaborationRuns.some((run) => isTerminalReadEvidence(run, APPROVED_TERMINAL_MARKER))).toBe(true);
+        expect(collaborationRuns.some((run) => isMessageSystemCliCommand(run.command))).toBe(true);
 
         await expectShellAssistantUnderstandsCollaboration(fixture, {
           reply: secondTurnReply.content,
           terminalText: terminalRead.text,
-          toolRuns: [...extractToolRuns(firstTurnCalls), ...secondTurnRuns],
+          toolRuns: [...extractToolRuns(firstTurnCalls), ...collaborationRuns],
           facts: {
             approvalRequestCreated: pendingRequest.status === "pending",
             adminSurrogateApproved: true,
-            terminal1ContainsMarker: terminalRead.text.includes(APPROVED_TERMINAL_MARKER),
-            terminal2IsComposedProductSurface:
+            currentTerminalContainsMarker: terminalRead.text.includes(APPROVED_TERMINAL_MARKER),
+            currentTerminalIsVisibleProductSurface:
               fixture.attached.visibleTerminal.entry.metadata?.terminalRuntimeKind === "composed" &&
               fixture.attached.visibleTerminal.entry.metadata?.composedShellTerminalId ===
                 fixture.attached.shellTruthTerminal.entry.terminalId,
@@ -467,12 +518,20 @@ describe("Feature: real AI shell-assistant guard authorization", () => {
   realTest(
     "Scenario: Given guard approval facts and managed hosting When shell-assistant responds Then it does not move visible terminal work to root or workspace bash",
     async () => {
-      const fixture = await createRealCliShellFixture();
+      const fixture = await createRealCliShellFixture({
+        avatarNickname: REAL_GUARD_AVATAR,
+        shellName: "shell-guard",
+        createAvatar: true,
+        clearAvatar: true,
+      });
       if (!fixture) {
         throw new Error("expected real cli-shell fixture");
       }
 
       try {
+        expect(fixture.attached.avatar.nickname).toBe(REAL_GUARD_AVATAR);
+        expect(fixture.attached.avatarCreated).toBe(true);
+        expect(fixture.attached.clearedRuntimeSessionIds).toEqual([]);
         const pending = await fixture.createVisibleTerminalApprovalRequest({
           text: `echo ${TARGET_TERMINAL_MARKER}\n`,
         });

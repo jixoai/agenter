@@ -8,6 +8,7 @@ import type {
   GlobalRoomMessage,
   GlobalRoomSnapshotOutput,
   GlobalTerminalActorId,
+  GlobalTerminalApprovalRequest,
   GlobalTerminalEntry,
   GlobalTerminalGrantEntry,
   ProductEnsureTerminalBindingInput,
@@ -153,6 +154,10 @@ export class FakeCliShellStore implements CliShellStore {
   sessions = new Map<string, SessionEntry>();
   terminals: GlobalTerminalEntry[] = [];
   lastPublishedComposedSurface: ProductTerminalComposedSurfaceState | null = null;
+  terminalApprovalRequests = new Map<string, GlobalTerminalApprovalRequest[]>();
+  retainedTerminalPermissionRequests: Array<{ terminalId: string | undefined; released: boolean }> = [];
+  approvedTerminalRequests: Array<{ terminalId: string; requestId: string; durationMs: number }> = [];
+  deniedTerminalRequests: Array<{ terminalId: string; requestId: string }> = [];
   terminalGrants = new Map<string, GlobalTerminalGrantEntry[]>();
   terminalWriteLeases: Array<{
     leaseId: string;
@@ -279,7 +284,12 @@ export class FakeCliShellStore implements CliShellStore {
       globalRoomAssetsById: {},
       globalTerminals: this.createCached([...this.terminals]),
       globalTerminalGrantsById: {},
-      globalTerminalApprovalsById: {},
+      globalTerminalApprovalsById: Object.fromEntries(
+        [...this.terminalApprovalRequests.entries()].map(([terminalId, requests]) => [
+          terminalId,
+          this.createCached([...requests]),
+        ]),
+      ),
       globalTerminalActivityById: {},
       schedulerLogsBySession: { [session.id]: [] },
       observabilityTracesBySession: { [session.id]: [] },
@@ -357,6 +367,55 @@ export class FakeCliShellStore implements CliShellStore {
 
   retainGlobalTerminals(): () => void {
     return () => {};
+  }
+
+  retainTerminalPermissionRequests(input: { terminalId?: string } = {}): () => void {
+    const record = { terminalId: input.terminalId, released: false };
+    this.retainedTerminalPermissionRequests.push(record);
+    return () => {
+      record.released = true;
+    };
+  }
+
+  async hydrateGlobalTerminalApprovals(input: {
+    terminalId: string;
+    force?: boolean;
+  }): Promise<GlobalTerminalApprovalRequest[]> {
+    void input.force;
+    return [...(this.terminalApprovalRequests.get(input.terminalId) ?? [])];
+  }
+
+  async approveGlobalTerminalRequest(input: {
+    terminalId: string;
+    requestId: string;
+    durationMs: number;
+  }): Promise<{ leaseId: string; participantId: GlobalTerminalActorId; expiresAt: number }> {
+    this.approvedTerminalRequests.push(input);
+    const requests = this.terminalApprovalRequests.get(input.terminalId) ?? [];
+    this.terminalApprovalRequests.set(
+      input.terminalId,
+      requests.filter((request) => request.requestId !== input.requestId),
+    );
+    this.emit();
+    return {
+      leaseId: `lease:${input.terminalId}:${input.requestId}`,
+      participantId: "auth:shell-assistant" as GlobalTerminalActorId,
+      expiresAt: Date.now() + input.durationMs,
+    };
+  }
+
+  async denyGlobalTerminalRequest(input: {
+    terminalId: string;
+    requestId: string;
+  }): Promise<{ ok: true; requestId: string; terminalId: string }> {
+    this.deniedTerminalRequests.push(input);
+    const requests = this.terminalApprovalRequests.get(input.terminalId) ?? [];
+    this.terminalApprovalRequests.set(
+      input.terminalId,
+      requests.filter((request) => request.requestId !== input.requestId),
+    );
+    this.emit();
+    return { ok: true, requestId: input.requestId, terminalId: input.terminalId };
   }
 
   retainGlobalRoomSnapshot(_chatId: string): () => void {
@@ -443,12 +502,7 @@ export class FakeCliShellStore implements CliShellStore {
     return this.promptFiles.get(sessionId) ?? { path: `/tmp/${sessionId}/AGENTER.mdx`, content: "", mtimeMs: 0 };
   }
 
-  async saveSettings(input: {
-    sessionId: string;
-    kind: "settings" | "agenter";
-    content: string;
-    baseMtimeMs: number;
-  }) {
+  async saveSettings(input: { sessionId: string; kind: "settings" | "agenter"; content: string; baseMtimeMs: number }) {
     const current = await this.readSettings(input.sessionId, input.kind);
     if (current.mtimeMs !== input.baseMtimeMs) {
       return { ok: false as const, reason: "conflict" as const, latest: current };
@@ -686,6 +740,13 @@ export class FakeCliShellStore implements CliShellStore {
     });
     this.terminalGrants.set(input.terminalId, grants);
     return { ok: true, accessToken: `grant-token:${input.terminalId}:${input.participantId}` };
+  }
+
+  async revokeGlobalTerminalGrant(input: { terminalId: string; grantId: string }): Promise<{ ok: boolean }> {
+    const grants = this.terminalGrants.get(input.terminalId) ?? [];
+    const next = grants.filter((grant) => grant.grantId !== input.grantId);
+    this.terminalGrants.set(input.terminalId, next);
+    return { ok: next.length !== grants.length };
   }
 
   async focusTerminals(input: {

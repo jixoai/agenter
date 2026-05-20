@@ -12,8 +12,8 @@ import {
   hasCliShellCleanupFailures,
   isCliShellMetadataOnlyArgv,
   normalizeShellName,
-  planCliShellCleanup,
   parseCliShellArgs,
+  planCliShellCleanup,
   shellAssistantMemoryRoles,
 } from "../src";
 import { FakeCliShellStore } from "./fake-cli-shell-store";
@@ -35,6 +35,8 @@ describe("Feature: cli-shell orchestration", () => {
     expect(parsed.webPort).toBeUndefined();
     expect(parsed.debug).toBe(false);
     expect(parsed.experimentalDynamicRefresh).toBe(false);
+    expect(parsed.createAvatar).toBe(false);
+    expect(parsed.clearAvatar).toBe(false);
   });
 
   test("Scenario: Given explicit avatar session and backend When parsing cli-shell args Then avatar override shell name normalization and backend truth stay product-local", () => {
@@ -53,6 +55,25 @@ describe("Feature: cli-shell orchestration", () => {
     expect(parsed.host).toBe("127.0.0.2");
     expect(parsed.port).toBe(4600);
     expect(normalizeShellName("shell-2")).toBe("shell-2");
+  });
+
+  test("Scenario: Given explicit Avatar startup flags When parsing cli-shell args Then Avatar selection creation and runtime clearing stay separate from shell session", () => {
+    const parsed = parseAttachArgs(["--avatar=review-4", "--session=4", "--create-avatar", "--clear-avatar"]);
+
+    expect(parsed.avatarNickname).toBe("review-4");
+    expect(parsed.shellName).toBe("shell-4");
+    expect(parsed.createAvatar).toBe(true);
+    expect(parsed.clearAvatar).toBe(true);
+  });
+
+  test("Scenario: Given both Avatar selectors When they disagree Then cli-shell rejects the ambiguous startup before attach", () => {
+    expect(() => parseCliShellArgs(["@alpha", "--avatar=bravo"])).toThrow("conflicting avatar selectors");
+    expect(parseAttachArgs(["@alpha", "--avatar=alpha"]).avatarNickname).toBe("alpha");
+  });
+
+  test("Scenario: Given a rejected Avatar shortcut When parsing cli-shell args Then the system keeps only ordinary Avatar selection", () => {
+    expect(() => parseCliShellArgs(["--test-avatar=review-4"])).toThrow("unsupported cli-shell avatar selector");
+    expect(() => parseCliShellArgs(["--test-avatar"])).toThrow("unsupported cli-shell avatar selector");
   });
 
   test("Scenario: Given debug argv When parsing cli-shell args Then debug display is an explicit startup flag", () => {
@@ -128,12 +149,18 @@ describe("Feature: cli-shell orchestration", () => {
 
     expect(store.authToken).toBe("superadmin-token");
     expect(attached.avatar.nickname).toBe(CLI_SHELL_DEFAULT_AVATAR);
+    expect(attached.avatarCreated).toBe(true);
+    expect(attached.clearedRuntimeSessionIds).toEqual([]);
     expect(attached.session.avatar).toBe(CLI_SHELL_DEFAULT_AVATAR);
     expect(attached.shellTruthTerminal.entry.terminalId).toBe("shell-1:terminal-1");
     expect(attached.visibleTerminal.entry.terminalId).toBe("shell-1:terminal-2");
     expect(attached.visibleTerminal.entry.processKind).toBe("product");
     expect(attached.visibleTerminal.entry.metadata?.terminalRuntimeKind).toBe("composed");
     expect(attached.visibleTerminal.entry.metadata?.composedShellTerminalId).toBe("shell-1:terminal-1");
+    expect(store.terminalGrants.get("shell-1:terminal-1")).toBeUndefined();
+    expect(store.terminalGrants.get("shell-1:terminal-2")?.map((grant) => grant.participantId)).toEqual([
+      attached.session.avatarPrincipalId as GlobalTerminalActorId,
+    ]);
     expect(attached.room.entry.title).toBe("shell-1");
     expect(attached.room.entry.metadata?.resourceKey).toBe("shell-1");
     expect(attached.promptSeeded).toBe(true);
@@ -263,15 +290,18 @@ describe("Feature: cli-shell orchestration", () => {
       },
       {
         terminalId: "shell-1:terminal-2",
-        message: "cleanup interrupted after terminal deletion disconnected the daemon; rerun cleanup after daemon restart",
+        message:
+          "cleanup interrupted after terminal deletion disconnected the daemon; rerun cleanup after daemon restart",
       },
       {
         terminalId: "shell-2:terminal-1",
-        message: "cleanup interrupted after terminal deletion disconnected the daemon; rerun cleanup after daemon restart",
+        message:
+          "cleanup interrupted after terminal deletion disconnected the daemon; rerun cleanup after daemon restart",
       },
       {
         terminalId: "shell-2:terminal-2",
-        message: "cleanup interrupted after terminal deletion disconnected the daemon; rerun cleanup after daemon restart",
+        message:
+          "cleanup interrupted after terminal deletion disconnected the daemon; rerun cleanup after daemon restart",
       },
     ]);
     expect(hasCliShellCleanupFailures(result)).toBe(true);
@@ -300,6 +330,39 @@ describe("Feature: cli-shell orchestration", () => {
     expect(visibleTerminal?.metadata?.composedShellTerminalId).toBe(shellTerminal?.terminalId);
     expect(visibleTerminal?.command).not.toEqual(shellTerminal?.command);
     expect(visibleTerminal?.command).toEqual([]);
+  });
+
+  test("Scenario: Given a legacy Avatar grant on shell-truth terminal When bootstrapping cli-shell Then only the visible terminal remains actor-visible", async () => {
+    const store = new FakeCliShellStore();
+    await store.createGlobalTerminal({
+      terminalId: "shell-1:terminal-1",
+      processKind: "shell",
+      metadata: {
+        productId: "cli-shell",
+        resourceKey: "shell-1:terminal-1",
+        ownerSystem: "terminal-system",
+      },
+    });
+    await store.issueGlobalTerminalGrant({
+      terminalId: "shell-1:terminal-1",
+      role: "guard",
+      participantId: "auth:shell-assistant",
+      label: "legacy shell truth grant",
+    });
+
+    const attached = await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: CLI_SHELL_DEFAULT_AVATAR,
+      shellName: "shell-1",
+    });
+
+    expect(attached.shellTruthTerminal.entry.terminalId).toBe("shell-1:terminal-1");
+    expect(attached.visibleTerminal.entry.terminalId).toBe("shell-1:terminal-2");
+    expect(store.terminalGrants.get("shell-1:terminal-1")).toEqual([]);
+    expect(store.terminalGrants.get("shell-1:terminal-2")?.map((grant) => grant.participantId)).toEqual([
+      attached.avatarActorId,
+    ]);
   });
 
   test("Scenario: Given prompt and memory already exist When bootstrapping shell-assistant again Then cli-shell keeps user edits and reuses room and terminal resources", async () => {
@@ -352,6 +415,95 @@ describe("Feature: cli-shell orchestration", () => {
     expect(attached.promptSeeded).toBe(false);
     expect(attached.memoryFiles).toEqual([]);
     expect(store.avatars.some((entry) => entry.nickname === CLI_SHELL_DEFAULT_AVATAR)).toBe(false);
+  });
+
+  test("Scenario: Given a missing explicit Avatar without create permission When bootstrapping cli-shell Then it fails before runtime terminal or room mutation", async () => {
+    const store = new FakeCliShellStore();
+
+    await expect(
+      bootstrapCliShell({
+        store,
+        workspacePath: "/repo",
+        avatarNickname: "review-4",
+        shellName: "shell-4",
+      }),
+    ).rejects.toThrow("avatar not found: review-4");
+
+    expect(store.sessions.size).toBe(0);
+    expect(store.terminals).toEqual([]);
+    expect(store.rooms).toEqual([]);
+  });
+
+  test("Scenario: Given a missing explicit Avatar with create permission When bootstrapping cli-shell Then it creates an ordinary Avatar without shell-assistant seeds", async () => {
+    const store = new FakeCliShellStore();
+    const attached = await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: "review-4",
+      shellName: "shell-4",
+      createAvatar: true,
+    });
+
+    expect(attached.avatar.nickname).toBe("review-4");
+    expect(attached.avatarCreated).toBe(true);
+    expect(attached.avatar.classify).toBeNull();
+    expect(attached.session.avatar).toBe("review-4");
+    expect(attached.promptSeeded).toBe(false);
+    expect(attached.memoryFiles).toEqual([]);
+    expect(store.avatarPromptFiles.size).toBe(0);
+    expect(store.privateAssets.size).toBe(0);
+    expect(store.avatars.find((entry) => entry.nickname === "review-4")?.displayName).toBe("review-4");
+  });
+
+  test("Scenario: Given an explicit Avatar runtime already exists When bootstrapping with clear-avatar Then only runtime session context is deleted before replacement startup", async () => {
+    const store = new FakeCliShellStore();
+    store.avatars.push({
+      ...store.avatars[0]!,
+      nickname: "review-4",
+      runtimeId: "runtime:review-4",
+      displayName: "review-4",
+      avatarPrincipalId: "auth:review-4",
+    });
+    const first = await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: "review-4",
+      shellName: "shell-4",
+    });
+    store.avatarPromptFiles.set("/repo:auth:review-4:agenter", {
+      path: "/repo/.agenter/avatars/by-principal/auth:review-4/AGENTER.mdx",
+      content: "# Existing review prompt\n",
+      mtimeMs: Date.now(),
+    });
+    store.privateAssets.set("/repo:review-4:memory:user-model.md", {
+      path: "user-model.md",
+      created: false,
+      content: "# Existing review memory\n",
+      mtimeMs: Date.now(),
+    });
+
+    const second = await bootstrapCliShell({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: "review-4",
+      shellName: "shell-4",
+      clearAvatar: true,
+    });
+
+    expect(second.avatarCreated).toBe(false);
+    expect(second.clearedRuntimeSessionIds).toEqual([first.session.id]);
+    expect(store.deletedSessions).toEqual([first.session.id]);
+    expect(second.session.id).toBe(first.session.id);
+    expect(second.shellTruthTerminal.created).toBe(false);
+    expect(second.visibleTerminal.created).toBe(false);
+    expect(second.room.created).toBe(false);
+    expect(store.avatars.some((entry) => entry.nickname === "review-4")).toBe(true);
+    expect(store.terminals.map((entry) => entry.terminalId)).toEqual(["shell-4:terminal-1", "shell-4:terminal-2"]);
+    expect(store.rooms.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-4"]);
+    expect(store.avatarPromptFiles.get("/repo:auth:review-4:agenter")?.content).toBe("# Existing review prompt\n");
+    expect(store.privateAssets.get("/repo:review-4:memory:user-model.md")?.content).toBe("# Existing review memory\n");
+    expect(second.promptSeeded).toBe(false);
+    expect(second.memoryFiles).toEqual([]);
   });
 
   test("Scenario: Given explicit ghostty-native backend When bootstrapping cli-shell Then the terminal binding carries backend launch truth through the generic product contract", async () => {
@@ -483,13 +635,9 @@ describe("Feature: cli-shell orchestration", () => {
       "shell-2:terminal-2",
     ]);
     expect(store.focusTerminalCalls).toEqual([
-      ["shell-1:terminal-1"],
       ["shell-1:terminal-2"],
-      ["shell-1:terminal-1"],
       ["shell-1:terminal-2"],
-      ["shell-1:terminal-1"],
       ["shell-1:terminal-2"],
-      ["shell-2:terminal-1"],
       ["shell-2:terminal-2"],
     ]);
     expect(store.rooms.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-1", "shell-2"]);
@@ -500,10 +648,7 @@ describe("Feature: cli-shell orchestration", () => {
       [shellAssistantFirst.room.entry.chatId],
       [defaultShellTwo.room.entry.chatId],
     ]);
-    expect(store.terminalGrants.get("shell-1:terminal-1")?.map((grant) => grant.participantId)).toEqual([
-      shellAssistantFirst.session.avatarPrincipalId as GlobalTerminalActorId,
-      defaultSameShell.session.avatarPrincipalId as GlobalTerminalActorId,
-    ]);
+    expect(store.terminalGrants.get("shell-1:terminal-1")).toBeUndefined();
     expect(store.terminalGrants.get("shell-1:terminal-2")?.map((grant) => grant.participantId)).toEqual([
       shellAssistantFirst.session.avatarPrincipalId as GlobalTerminalActorId,
       defaultSameShell.session.avatarPrincipalId as GlobalTerminalActorId,
@@ -540,7 +685,7 @@ describe("Feature: cli-shell orchestration", () => {
     );
     expect(store.avatarPromptFiles.get("/repo:auth:catalog-shell-assistant:agenter")).toBeUndefined();
     expect(store.promptFiles.get(attached.session.id)?.content).toBe("");
-    expect(store.terminalGrants.get("shell-1:terminal-1")?.[0]?.participantId).toBe("auth:shell-assistant");
+    expect(store.terminalGrants.get("shell-1:terminal-1")).toBeUndefined();
     expect(store.terminalGrants.get("shell-1:terminal-2")?.[0]?.participantId).toBe("auth:shell-assistant");
     expect(store.roomGrants.get(attached.room.entry.chatId)?.[0]?.participantId).toBe("auth:shell-assistant");
   });
@@ -560,7 +705,9 @@ describe("Feature: cli-shell orchestration", () => {
     expect(prompt).toContain("Use `workspace_bash` only for explicit one-shot workspace inspection");
     expect(prompt).toContain("Use terminal system commands as the normal bridge to that product world");
     expect(prompt).toContain("Start with `terminal list`");
-    expect(prompt).toContain("act on the Terminal that belongs to the same cli-shell resource key");
+    expect(prompt).toContain("the current opened Terminal is the focused terminal reported by `terminal list`");
+    expect(prompt).toContain("Internal cli-shell implementation terminals are product plumbing");
+    expect(prompt).not.toContain("act on the Terminal that belongs to the same cli-shell resource key");
     for (const role of shellAssistantMemoryRoles) {
       expect(prompt).toContain(role.path);
     }

@@ -1,10 +1,6 @@
-import type {
-  GlobalTerminalApprovalRequest,
-  GlobalRoomSnapshotOutput,
-  RuntimeStore,
-} from "@agenter/client-sdk";
-import type { TerminalRenderRichLine } from "@agenter/termless-core";
+import type { GlobalRoomSnapshotOutput, GlobalTerminalApprovalRequest, RuntimeStore } from "@agenter/client-sdk";
 import type { TerminalTransportInteractionFrameState } from "@agenter/terminal-transport-protocol";
+import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import type { CliShellInteractionEnhancementProfile } from "./interaction-capabilities";
 import type { CliShellLiveTerminalView } from "./live-terminal-mirror";
 
@@ -124,11 +120,7 @@ export interface CliShellObservationReadyBaseline {
 
 export type CliShellTuiStore = Pick<
   CliShellStore,
-  | "readSettings"
-  | "getAuthSession"
-  | "queryAttention"
-  | "commitAttention"
-  | "settleAttention"
+  "readSettings" | "getAuthSession" | "queryAttention" | "commitAttention" | "settleAttention"
 > &
   Pick<
     RuntimeStore,
@@ -147,6 +139,7 @@ export type CliShellTuiStore = Pick<
     | "setGlobalTerminalConfig"
     | "publishGlobalTerminalComposedSurface"
     | "retainTerminalPermissionRequests"
+    | "hydrateGlobalTerminalApprovals"
     | "approveGlobalTerminalRequest"
     | "denyGlobalTerminalRequest"
   >;

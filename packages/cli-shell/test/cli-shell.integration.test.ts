@@ -6,6 +6,7 @@ import { dirname, join, relative } from "node:path";
 
 import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
 
+import { startMockModelServer, type MockModelServerHandle } from "../../app-server/test-support/mock-model-server";
 import { startTrpcServer, type TrpcServerHandle } from "../../cli/src/trpc-server";
 import {
   CLI_SHELL_DEFAULT_AVATAR,
@@ -14,7 +15,6 @@ import {
   enableCliShellManagedMode,
   readCliShellManagedState,
 } from "../src";
-import { startMockModelServer, type MockModelServerHandle } from "../../app-server/test-support/mock-model-server";
 
 const tempDirs: string[] = [];
 const handles: TrpcServerHandle[] = [];
@@ -96,7 +96,9 @@ const writeMockProviderSettings = (input: { workspacePath: string; baseUrl: stri
   );
 };
 
-const createRuntimeFixture = async (input: { mockModelServer?: MockModelServerHandle } = {}): Promise<{
+const createRuntimeFixture = async (
+  input: { mockModelServer?: MockModelServerHandle } = {},
+): Promise<{
   workspacePath: string;
   homeDir: string;
   handle: TrpcServerHandle;
@@ -163,6 +165,42 @@ afterEach(async () => {
 });
 
 describe("Feature: cli-shell real daemon integration", () => {
+  test("Scenario: Given a real daemon and an ordinary Avatar name When cli-shell starts with create-avatar and later clear-avatar Then only runtime session context is reset", async () => {
+    const fixture = await createRuntimeFixture();
+
+    const first = await bootstrapCliShell({
+      store: fixture.store,
+      workspacePath: fixture.workspacePath,
+      avatarNickname: "review-smoke",
+      shellName: "shell-smoke",
+      createAvatar: true,
+    });
+    const second = await bootstrapCliShell({
+      store: fixture.store,
+      workspacePath: fixture.workspacePath,
+      avatarNickname: "review-smoke",
+      shellName: "shell-smoke",
+      createAvatar: true,
+      clearAvatar: true,
+    });
+
+    expect(first.avatar.nickname).toBe("review-smoke");
+    expect(first.avatarCreated).toBe(true);
+    expect(first.avatar.classify).toBeNull();
+    expect(first.promptSeeded).toBe(false);
+    expect(first.memoryFiles).toEqual([]);
+    expect(second.avatarCreated).toBe(false);
+    expect(second.clearedRuntimeSessionIds).toEqual([first.session.id]);
+    expect(second.promptSeeded).toBe(false);
+    expect(second.memoryFiles).toEqual([]);
+    expect(second.shellTruthTerminal.entry.terminalId).toBe(first.shellTruthTerminal.entry.terminalId);
+    expect(second.visibleTerminal.entry.terminalId).toBe(first.visibleTerminal.entry.terminalId);
+    expect(second.room.entry.chatId).toBe(first.room.entry.chatId);
+    expect(second.shellTruthTerminal.created).toBe(false);
+    expect(second.visibleTerminal.created).toBe(false);
+    expect(second.room.created).toBe(false);
+  });
+
   test("Scenario: Given a real daemon When cli-shell reattaches shell-1, overrides @default, and opens shell-2 Then runtime identity stays avatar-scoped while terminal and room resources stay deduplicated by shell name", async () => {
     const fixture = await createRuntimeFixture();
 
@@ -208,9 +246,18 @@ describe("Feature: cli-shell real daemon integration", () => {
     const shellTruthTerminalGrants = await fixture.store.listGlobalTerminalGrants("shell-1:terminal-1");
     const visibleTerminalGrants = await fixture.store.listGlobalTerminalGrants("shell-1:terminal-2");
     const roomGrants = await fixture.store.listGlobalRoomGrants({ chatId: shellOneRoom.chatId });
-    const shellTruthGrantActors = shellTruthTerminalGrants.map((grant) => grant.participantId).filter(isPresent).map(String);
-    const visibleGrantActors = visibleTerminalGrants.map((grant) => grant.participantId).filter(isPresent).map(String);
-    const roomGrantActors = roomGrants.map((grant) => grant.participantId).filter(isPresent).map(String);
+    const shellTruthGrantActors = shellTruthTerminalGrants
+      .map((grant) => grant.participantId)
+      .filter(isPresent)
+      .map(String);
+    const visibleGrantActors = visibleTerminalGrants
+      .map((grant) => grant.participantId)
+      .filter(isPresent)
+      .map(String);
+    const roomGrantActors = roomGrants
+      .map((grant) => grant.participantId)
+      .filter(isPresent)
+      .map(String);
 
     expect(reconnect.session.id).toBe(first.session.id);
     expect(defaultShellTwo.session.id).toBe(defaultSameShell.session.id);
@@ -232,9 +279,7 @@ describe("Feature: cli-shell real daemon integration", () => {
         .filter(isPresent)
         .sort(),
     ).toEqual(["shell-1", "shell-2"]);
-    expect(shellTruthGrantActors).toHaveLength(2);
-    expect(shellTruthGrantActors).toContain(shellAssistantActorId);
-    expect(shellTruthGrantActors).toContain(defaultActorId);
+    expect(shellTruthGrantActors).toHaveLength(0);
     expect(visibleGrantActors).toHaveLength(2);
     expect(visibleGrantActors).toContain(shellAssistantActorId);
     expect(visibleGrantActors).toContain(defaultActorId);
@@ -404,10 +449,9 @@ describe("Feature: cli-shell real daemon integration", () => {
     const sessionActorId = first.session.avatarPrincipalId;
     expect(sessionActorId).toBeTruthy();
     expect(first.avatarActorId).toBe(sessionActorId as typeof first.avatarActorId);
-    expect(shellTruthTerminalGrants.some((grant) => grant.participantId === sessionActorId)).toBe(true);
+    expect(shellTruthTerminalGrants.some((grant) => grant.participantId === sessionActorId)).toBe(false);
     expect(visibleTerminalGrants.some((grant) => grant.participantId === sessionActorId)).toBe(true);
-    expect(runtime?.focusedTerminalIds).toContain("shell-1:terminal-1");
-    expect(runtime?.focusedTerminalIds).toContain("shell-1:terminal-2");
+    expect(runtime?.focusedTerminalIds).toEqual(["shell-1:terminal-2"]);
   }, 45_000);
 
   test("Scenario: Given a fresh shell-assistant session When a MessageRoom message wakes the runtime Then the first model request uses the principal-root Shell Assistant prompt", async () => {
@@ -454,7 +498,11 @@ describe("Feature: cli-shell real daemon integration", () => {
     expect(promptContent).toContain("Do not run an equivalent command in `root_bash` or `workspace_bash`");
     rmSync(nicknameAliasPath, { recursive: true, force: true });
     mkdirSync(stalePrincipalRoot, { recursive: true });
-    writeFileSync(join(stalePrincipalRoot, "AGENTER.mdx"), "# stale nickname prompt\n\nroot workspace is the visible shell.\n", "utf8");
+    writeFileSync(
+      join(stalePrincipalRoot, "AGENTER.mdx"),
+      "# stale nickname prompt\n\nroot workspace is the visible shell.\n",
+      "utf8",
+    );
     symlinkSync(relative(dirname(nicknameAliasPath), stalePrincipalRoot), nicknameAliasPath, "dir");
 
     const send = await fixture.store.sendGlobalRoomMessage({

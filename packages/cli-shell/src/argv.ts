@@ -11,6 +11,8 @@ export interface CliShellAttachArgs {
   command: "attach";
   avatarNickname: string;
   shellName: string;
+  createAvatar: boolean;
+  clearAvatar: boolean;
   backend?: TerminalBackendKind;
   webPort?: number;
   debug: boolean;
@@ -38,6 +40,9 @@ interface CliShellArgvParseResult {
   port: number;
   authServiceEndpoint?: string;
   session: string;
+  avatar?: string;
+  createAvatar?: boolean;
+  clearAvatar?: boolean;
   debug?: boolean | string;
   experimentalDynamicRefresh?: boolean;
   _: Array<string | number>;
@@ -65,6 +70,29 @@ const normalizeAvatarMention = (value: string | undefined): string => {
     throw new Error("avatar mention cannot be empty");
   }
   return nickname;
+};
+
+const normalizeAvatarNickname = (value: string | undefined, source: string): string | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new Error(`${source} cannot be empty`);
+  }
+  if (trimmed.startsWith("@")) {
+    throw new Error(`${source} must be an Avatar nickname without @`);
+  }
+  return trimmed;
+};
+
+const rejectUnsupportedAvatarShortcut = (argv: readonly string[]): void => {
+  const token = argv.find((item) => item === "--test-avatar" || item.startsWith("--test-avatar="));
+  if (token) {
+    throw new Error(
+      "unsupported cli-shell avatar selector: --test-avatar; use --avatar with --create-avatar if needed",
+    );
+  }
 };
 
 export const normalizeShellName = (value: string | undefined): string => {
@@ -137,12 +165,21 @@ const normalizeDebugArg = (value: boolean | string | undefined): { debug: boolea
     debug: true,
     debugFilters: trimmed
       .split(",")
-      .map((part) => part.trim().toLowerCase().replace(/^\*+|\*+$/g, ""))
+      .map((part) =>
+        part
+          .trim()
+          .toLowerCase()
+          .replace(/^\*+|\*+$/g, ""),
+      )
       .filter((part) => part.length > 0),
   };
 };
 
-export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEnv = process.env): CliShellParsedArgs => {
+export const parseCliShellArgs = (
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+): CliShellParsedArgs => {
+  rejectUnsupportedAvatarShortcut(argv);
   if (isCliShellCleanupCommand(argv)) {
     const parsed = yargs(argv.slice(1))
       .scriptName("agenter-cli-shell cleanup")
@@ -200,6 +237,17 @@ export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEn
       type: "string",
       default: CLI_SHELL_DEFAULT_SESSION,
     })
+    .option("avatar", {
+      type: "string",
+    })
+    .option("create-avatar", {
+      type: "boolean",
+      default: false,
+    })
+    .option("clear-avatar", {
+      type: "boolean",
+      default: false,
+    })
     .option("backend", {
       type: "string",
     })
@@ -220,12 +268,19 @@ export const parseCliShellArgs = (argv: readonly string[], env: NodeJS.ProcessEn
   if (mentions.length > 1) {
     throw new Error(`unexpected extra argv: ${mentions.slice(1).join(" ")}`);
   }
+  const mentionAvatar = mentions.length === 1 ? normalizeAvatarMention(mentions[0]) : undefined;
+  const flagAvatar = normalizeAvatarNickname(typeof parsed.avatar === "string" ? parsed.avatar : undefined, "--avatar");
+  if (mentionAvatar && flagAvatar && mentionAvatar !== flagAvatar) {
+    throw new Error(`conflicting avatar selectors: @${mentionAvatar} and --avatar=${flagAvatar}`);
+  }
   const debug = normalizeDebugArg(parsed.debug);
 
   return {
     command: "attach",
-    avatarNickname: normalizeAvatarMention(mentions[0]),
+    avatarNickname: flagAvatar ?? mentionAvatar ?? CLI_SHELL_DEFAULT_AVATAR,
     shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
+    createAvatar: parsed.createAvatar === true,
+    clearAvatar: parsed.clearAvatar === true,
     backend: typeof parsed.backend === "string" ? assertTerminalBackendKind(parsed.backend) : undefined,
     webPort: extracted.webPort,
     debug: debug.debug,

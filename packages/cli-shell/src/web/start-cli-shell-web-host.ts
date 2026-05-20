@@ -1,5 +1,5 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -19,6 +19,8 @@ const CLI_SHELL_WEB_GEOMETRY_AUTHORITY_CLAIM_PATH = "/geometry-authority/claim";
 const CLI_SHELL_WEB_GEOMETRY_AUTHORITY_RELEASE_PATH = "/geometry-authority/release";
 const CLI_SHELL_WEB_PRODUCT_STATE_PATH = "/product-state.json";
 const CLI_SHELL_WEB_PRODUCT_EVENT_PATH = "/product-event";
+const CLI_SHELL_WEB_PERMISSION_REQUESTS_PATH = "/permission-requests.json";
+const CLI_SHELL_WEB_APPROVAL_ACTION_PATH = "/approval-action";
 const TERMINAL_VIEW_SOURCE_PATH = resolve(import.meta.dir, "../../../terminal-view/src/index.ts");
 const TERMINAL_TRANSPORT_PROTOCOL_SOURCE_PATH = resolve(
   import.meta.dir,
@@ -39,6 +41,8 @@ interface CliShellBrowserHostConfig {
   snapshotUrl: string;
   productStateUrl: string;
   productEventUrl: string;
+  permissionRequestsUrl: string;
+  approvalActionUrl: string;
   requestedGeometryRole: "projection-only" | "authority";
   geometryAuthority: {
     enabled: boolean;
@@ -58,6 +62,10 @@ interface CliShellWebGeometryParticipationPayload {
   requestedGeometryRole: "projection-only" | "authority";
   geometryOrder?: number;
 }
+
+type CliShellWebApprovalActionPayload =
+  | { action: "approve"; terminalId: string; requestId: string; durationMs?: number }
+  | { action: "deny"; terminalId: string; requestId: string };
 
 const createCliShellWebGeometryAuthorityAdapterState = (
   enabled: boolean,
@@ -188,9 +196,35 @@ const isCliShellWebProductHostAction = (value: unknown): value is CliShellWebPro
   );
 };
 
-const buildHostHtml = (input: {
-  config: CliShellBrowserHostConfig;
-}): string => `<!doctype html>
+const isCliShellWebApprovalActionPayload = (value: unknown): value is CliShellWebApprovalActionPayload => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const payload = value as {
+    action?: unknown;
+    terminalId?: unknown;
+    requestId?: unknown;
+    durationMs?: unknown;
+  };
+  if (typeof payload.terminalId !== "string" || payload.terminalId.trim().length === 0) {
+    return false;
+  }
+  if (typeof payload.requestId !== "string" || payload.requestId.trim().length === 0) {
+    return false;
+  }
+  if (payload.action === "deny") {
+    return true;
+  }
+  if (payload.action !== "approve") {
+    return false;
+  }
+  return (
+    payload.durationMs === undefined ||
+    (typeof payload.durationMs === "number" && Number.isFinite(payload.durationMs) && payload.durationMs > 0)
+  );
+};
+
+const buildHostHtml = (input: { config: CliShellBrowserHostConfig }): string => `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -226,7 +260,10 @@ const buildHostHtml = (input: {
   </body>
 </html>`;
 
-const requireTerminalEntry = async (store: CliShellProductHostStore, terminalId: string): Promise<GlobalTerminalEntry> => {
+const requireTerminalEntry = async (
+  store: CliShellProductHostStore,
+  terminalId: string,
+): Promise<GlobalTerminalEntry> => {
   const terminals = await store.hydrateGlobalTerminals({ force: true });
   const entry = terminals.find((candidate: GlobalTerminalEntry) => candidate.terminalId === terminalId);
   if (!entry) {
@@ -260,6 +297,8 @@ interface CliShellBrowserHostConfig {
   snapshotUrl: string;
   productStateUrl: string;
   productEventUrl: string;
+  permissionRequestsUrl: string;
+  approvalActionUrl: string;
   requestedGeometryRole: "projection-only" | "authority";
   geometryAuthority: {
     enabled: boolean;
@@ -295,6 +334,26 @@ view.liveTransportEnabled = true;
 view.rendererPreference = config.rendererPreference;
 view.geometryRole = config.requestedGeometryRole;
 root.replaceChildren(view);
+
+const refreshPermissionRequests = async (): Promise<void> => {
+  const response = await fetch(config.permissionRequestsUrl);
+  if (!response.ok) {
+    return;
+  }
+  const payload = await response.json() as { items?: unknown[] };
+  view.permissionRequests = Array.isArray(payload.items) ? payload.items : [];
+};
+
+view.addEventListener("terminal-view-approval-action", (event) => {
+  const detail = (event as CustomEvent<{ terminalId: string; requestId: string; action: "approve" | "deny"; durationMs?: number }>).detail;
+  void fetch(config.approvalActionUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(detail),
+  }).then(() => refreshPermissionRequests());
+});
 
 const facts = document.createElement("pre");
 facts.setAttribute("data-cli-shell-product-facts", "true");
@@ -358,9 +417,10 @@ const scheduleProductFactsRefresh = (): void => {
     window.clearTimeout(productFactsTimer);
   }
   productFactsTimer = window.setTimeout(() => {
-    productFactsTimer = null;
-    void refreshProductFacts();
-  }, 40);
+      productFactsTimer = null;
+      void refreshProductFacts();
+      void refreshPermissionRequests();
+    }, 40);
 };
 
 Object.assign(window, {
@@ -529,6 +589,7 @@ view.addEventListener("terminal-view-geometry-authority", scheduleViewportProjec
 
 queueMicrotask(() => {
   view.focus();
+  void refreshPermissionRequests();
   void syncGeometryAuthority().then(() => {
     scheduleViewportProjectionSync();
   });
@@ -550,7 +611,10 @@ void fetch(config.snapshotUrl)
     console.warn(error instanceof Error ? error.message : "failed to load cli-shell snapshot");
   });
 
-window.setInterval(scheduleProductFactsRefresh, 250);
+window.setInterval(() => {
+  scheduleProductFactsRefresh();
+  void refreshPermissionRequests();
+}, 250);
 `,
     "utf8",
   );
@@ -562,6 +626,8 @@ const createCliShellWebViteServer = async (input: {
   geometryAuthority: CliShellWebGeometryAuthorityAdapterState;
   productHost: CliShellWebProductHost;
   terminalEntry: GlobalTerminalEntry;
+  store: CliShellProductHostStore;
+  currentTerminalId: string;
 }): Promise<import("vite").ViteDevServer> => {
   const { createServer } = await import("vite");
   type InlineConfig = import("vite").InlineConfig;
@@ -610,7 +676,11 @@ const createCliShellWebViteServer = async (input: {
             }
             if (request.method === "GET" && requestUrl?.pathname === "/terminal-snapshot.json") {
               input.productHost.renderNow();
-              writeJsonResponse(response, 200, toSnapshotPayloadFromProductHost(input.productHost, input.terminalEntry));
+              writeJsonResponse(
+                response,
+                200,
+                toSnapshotPayloadFromProductHost(input.productHost, input.terminalEntry),
+              );
               return;
             }
             if (request.method === "GET" && requestUrl?.pathname === CLI_SHELL_WEB_PRODUCT_STATE_PATH) {
@@ -621,6 +691,46 @@ const createCliShellWebViteServer = async (input: {
                 model: snapshot.model,
                 textEvidence: snapshot.textEvidence,
               });
+              return;
+            }
+            if (request.method === "GET" && requestUrl?.pathname === CLI_SHELL_WEB_PERMISSION_REQUESTS_PATH) {
+              const items = await input.store.hydrateGlobalTerminalApprovals({
+                terminalId: input.currentTerminalId,
+                force: true,
+              });
+              writeJsonResponse(response, 200, { terminalId: input.currentTerminalId, items });
+              return;
+            }
+            if (request.method === "POST" && requestUrl?.pathname === CLI_SHELL_WEB_APPROVAL_ACTION_PATH) {
+              try {
+                const body = await readJsonBody(request);
+                if (!isCliShellWebApprovalActionPayload(body)) {
+                  writeJsonResponse(response, 400, { error: "invalid cli-shell terminal approval action" });
+                  return;
+                }
+                if (body.terminalId !== input.currentTerminalId) {
+                  writeJsonResponse(response, 400, {
+                    error: "approval action terminal does not match current terminal",
+                  });
+                  return;
+                }
+                const result =
+                  body.action === "approve"
+                    ? await input.store.approveGlobalTerminalRequest({
+                        terminalId: body.terminalId,
+                        requestId: body.requestId,
+                        durationMs: body.durationMs ?? 30 * 60 * 1000,
+                      })
+                    : await input.store.denyGlobalTerminalRequest({
+                        terminalId: body.terminalId,
+                        requestId: body.requestId,
+                      });
+                writeJsonResponse(response, 200, result);
+              } catch (error) {
+                writeJsonResponse(response, 400, {
+                  error: error instanceof Error ? error.message : "invalid cli-shell terminal approval action payload",
+                });
+              }
               return;
             }
             if (request.method === "POST" && requestUrl?.pathname === CLI_SHELL_WEB_PRODUCT_EVENT_PATH) {
@@ -696,6 +806,8 @@ const renderHostHtml = (input: {
   snapshotUrl: string;
   productStateUrl: string;
   productEventUrl: string;
+  permissionRequestsUrl: string;
+  approvalActionUrl: string;
   requestedGeometryRole: "projection-only" | "authority";
   geometryAuthority: CliShellBrowserHostConfig["geometryAuthority"];
   rendererPreference: "auto" | "ghostty-web" | "wterm" | "xterm";
@@ -707,6 +819,8 @@ const renderHostHtml = (input: {
       snapshotUrl: input.snapshotUrl,
       productStateUrl: input.productStateUrl,
       productEventUrl: input.productEventUrl,
+      permissionRequestsUrl: input.permissionRequestsUrl,
+      approvalActionUrl: input.approvalActionUrl,
       requestedGeometryRole: input.requestedGeometryRole,
       geometryAuthority: input.geometryAuthority,
       rendererPreference: input.rendererPreference,
@@ -740,6 +854,8 @@ export const startCliShellWebHost = async (input: CliShellWebHostStartInput): Pr
   const snapshotUrl = "/terminal-snapshot.json";
   const productStateUrl = CLI_SHELL_WEB_PRODUCT_STATE_PATH;
   const productEventUrl = CLI_SHELL_WEB_PRODUCT_EVENT_PATH;
+  const permissionRequestsUrl = CLI_SHELL_WEB_PERMISSION_REQUESTS_PATH;
+  const approvalActionUrl = CLI_SHELL_WEB_APPROVAL_ACTION_PATH;
   const settingsFile = await input.store.readSettings(input.attached.session.id, "settings").catch(() => null);
   const keybindings = resolveCliShellTuiKeybindings(settingsFile?.content);
   await input.store.connect();
@@ -759,6 +875,7 @@ export const startCliShellWebHost = async (input: CliShellWebHostStartInput): Pr
     initialRows: terminalEntry.snapshot?.rows ?? 24,
   });
   productHost.start();
+  const releasePermissionRequests = input.store.retainTerminalPermissionRequests({ terminalId });
   await writeFile(
     join(tempDir, "index.html"),
     renderHostHtml({
@@ -767,6 +884,8 @@ export const startCliShellWebHost = async (input: CliShellWebHostStartInput): Pr
       snapshotUrl,
       productStateUrl,
       productEventUrl,
+      permissionRequestsUrl,
+      approvalActionUrl,
       requestedGeometryRole,
       geometryAuthority: {
         enabled: geometryAuthority.enabled,
@@ -785,6 +904,8 @@ export const startCliShellWebHost = async (input: CliShellWebHostStartInput): Pr
     geometryAuthority,
     productHost,
     terminalEntry,
+    store: input.store,
+    currentTerminalId: terminalId,
   });
   const resolvedUrl = resolveServerUrl(viteServer);
   let stopped = false;
@@ -802,6 +923,7 @@ export const startCliShellWebHost = async (input: CliShellWebHostStartInput): Pr
         return;
       }
       stopped = true;
+      releasePermissionRequests();
       productHost.dispose();
       input.store.disconnect();
       viteServer.ws.close();

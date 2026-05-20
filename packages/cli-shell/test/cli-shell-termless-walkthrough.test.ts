@@ -4,10 +4,6 @@ import { join } from "node:path";
 
 import { createTerminal, createXtermBackend, termlessMatchers } from "@agenter/termless-core";
 
-import {
-  buildCliShellHostingContextId,
-  type CliShellManagedState,
-} from "../src";
 import type {
   AttentionQueryItem,
   AuthSessionOutput,
@@ -17,11 +13,12 @@ import type {
   GlobalRoomSnapshotOutput,
   GlobalTerminalActorId,
   GlobalTerminalEntry,
+  ProductTerminalComposedSurfaceState,
   RuntimeClientState,
   SessionEntry,
-  ProductTerminalComposedSurfaceState,
 } from "@agenter/client-sdk";
-import type { CliShellTuiStore, CliShellTuiViewState } from "../src";
+import type { CliShellTuiStore } from "../src";
+import { buildCliShellHostingContextId, type CliShellManagedState } from "../src";
 
 expect.extend(termlessMatchers);
 
@@ -182,26 +179,22 @@ function createRuntimeState(input: {
   const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", input.shellLines, {
     viewportOffset: input.viewportOffset,
   });
-  const visibleTerminalEntry = createGlobalTerminalEntry(
-    "shell-1:terminal-2",
-    input.visibleLines ?? input.shellLines,
-    {
-      processKind: "product",
-      metadata: {
-        terminalRuntimeKind: "composed",
-        composedShellTerminalId: "shell-1:terminal-1",
-        composedDialogueOpen: false,
-        composedDialoguePlacement: "right",
-        composedDialogueDraft: "",
-        composedBottomLine: "◉ terminal │ Avatar started │ 托管 off │ ✉ 0 M-J",
-        composedManagedLabel: "托管 off",
-        composedUnreadLabel: "✉ 0 M-J",
-        composedHeartbeatLabel: "Avatar started",
-        composedShellSnapshotSeq: shellTerminalEntry.snapshot?.seq ?? 0,
-      },
-      viewportOffset: input.viewportOffset,
+  const visibleTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-2", input.visibleLines ?? input.shellLines, {
+    processKind: "product",
+    metadata: {
+      terminalRuntimeKind: "composed",
+      composedShellTerminalId: "shell-1:terminal-1",
+      composedDialogueOpen: false,
+      composedDialoguePlacement: "right",
+      composedDialogueDraft: "",
+      composedBottomLine: "◉ terminal │ Avatar started │ 托管 off │ ✉ 0 M-J",
+      composedManagedLabel: "托管 off",
+      composedUnreadLabel: "✉ 0 M-J",
+      composedHeartbeatLabel: "Avatar started",
+      composedShellSnapshotSeq: shellTerminalEntry.snapshot?.seq ?? 0,
     },
-  );
+    viewportOffset: input.viewportOffset,
+  });
   const terminalSnapshots = {
     "shell-1:terminal-1": shellTerminalEntry.snapshot!,
     "shell-1:terminal-2": visibleTerminalEntry.snapshot!,
@@ -324,11 +317,13 @@ function createRuntimeState(input: {
   };
 }
 
-function createManagedState(input: {
-  shellName?: string;
-  hostingActive?: boolean;
-  managed?: boolean;
-} = {}): CliShellManagedState {
+function createManagedState(
+  input: {
+    shellName?: string;
+    hostingActive?: boolean;
+    managed?: boolean;
+  } = {},
+): CliShellManagedState {
   return {
     contextId: buildCliShellHostingContextId(input.shellName ?? "shell-1"),
     hostingMatches: [],
@@ -350,9 +345,10 @@ interface TransportHarness {
   lastCursorVisible: boolean | null;
 }
 
-function createTuiHarnessStore(
-  initialState: RuntimeClientState,
-): { store: CliShellTuiStore; harness: TransportHarness } {
+function createTuiHarnessStore(initialState: RuntimeClientState): {
+  store: CliShellTuiStore;
+  harness: TransportHarness;
+} {
   let state = initialState;
   const listeners = new Set<(state: RuntimeClientState) => void>();
   const sentMessages: Array<{ chatId: string; text: string }> = [];
@@ -424,15 +420,11 @@ function createTuiHarnessStore(
     } satisfies AttentionQueryItem["commit"],
   });
 
-  const updateVisibleTerminalSnapshot = (
-    updater: (entry: GlobalTerminalEntry) => GlobalTerminalEntry,
-  ) => {
+  const updateVisibleTerminalSnapshot = (updater: (entry: GlobalTerminalEntry) => GlobalTerminalEntry) => {
     state = {
       ...state,
       globalTerminals: createCached(
-        state.globalTerminals.data.map((entry) =>
-          entry.terminalId === "shell-1:terminal-2" ? updater(entry) : entry
-        ),
+        state.globalTerminals.data.map((entry) => (entry.terminalId === "shell-1:terminal-2" ? updater(entry) : entry)),
       ),
     };
   };
@@ -471,6 +463,7 @@ function createTuiHarnessStore(
     hydrateSessionArtifacts: async () => undefined,
     retainGlobalTerminals: () => () => {},
     retainTerminalPermissionRequests: () => () => {},
+    hydrateGlobalTerminalApprovals: async () => [],
     hydrateGlobalTerminals: async () => state.globalTerminals.data,
     readGlobalTerminal: async (payload) => {
       const terminal = state.globalTerminals.data.find((entry) => entry.terminalId === payload.terminalId);
@@ -602,20 +595,12 @@ function createTuiHarnessStore(
       const score = attentionScores[contextId] ?? 0;
       return score > 0 ? [createAttentionItem(contextId, score)] : [];
     },
-    commitAttention: async (payload: {
-      sessionId: string;
-      contextId: string;
-      scores?: Record<string, number>;
-    }) => {
+    commitAttention: async (payload: { sessionId: string; contextId: string; scores?: Record<string, number> }) => {
       void payload.sessionId;
       attentionScores[payload.contextId] = payload.scores?.hosting ?? 0;
       return { commit: payload };
     },
-    settleAttention: async (payload: {
-      sessionId: string;
-      contextId: string;
-      scores?: Record<string, number>;
-    }) => {
+    settleAttention: async (payload: { sessionId: string; contextId: string; scores?: Record<string, number> }) => {
       void payload.sessionId;
       attentionScores[payload.contextId] = payload.scores?.hosting ?? 0;
       return { commit: payload };
@@ -727,11 +712,7 @@ async function waitForWalkthroughState(
   });
 }
 
-const createWalkthroughScript = (
-  filePath: string,
-  supportPath: string,
-  statePath: string,
-): void => {
+const createWalkthroughScript = (filePath: string, supportPath: string, statePath: string): void => {
   writeFileSync(
     filePath,
     `
@@ -1016,15 +997,11 @@ export { createHarnessStore, createHarnessState, createManagedState, flushHarnes
     });
 
     try {
-    await term.waitFor("Avatar started", 15_000);
-      await waitForWalkthroughSnapshot(
-        statePath,
-        (snapshot) => snapshot.tag === "ready" || snapshot.tag === "tick",
-        {
-          description: "startup state sidecar",
-          timeoutMs: 15_000,
-        },
-      );
+      await term.waitFor("Avatar started", 15_000);
+      await waitForWalkthroughSnapshot(statePath, (snapshot) => snapshot.tag === "ready" || snapshot.tag === "tick", {
+        description: "startup state sidecar",
+        timeoutMs: 15_000,
+      });
     } catch (error) {
       throw new Error(
         [

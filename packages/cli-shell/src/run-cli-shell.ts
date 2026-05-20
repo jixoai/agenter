@@ -9,12 +9,14 @@ import {
 } from "./bootstrap";
 import { cleanupCliShellResources, formatCliShellCleanupResult, hasCliShellCleanupFailures } from "./cleanup";
 import { CLI_SHELL_HEARTBEAT_COPY } from "./tui/heartbeat";
-import type { CliShellStartupTuiController } from "./tui/startup-shell-tui";
 import type { CliShellTuiController } from "./tui/run-cli-shell-tui";
+import type { CliShellStartupTuiController } from "./tui/startup-shell-tui";
 import type { CliShellObservationReadyBaseline, CliShellTuiStore } from "./tui/types";
 import type { CliShellWebHostController } from "./web";
 
 const formatCreatedState = (created: boolean): string => (created ? "created" : "reused");
+const formatRuntimeClearState = (sessionIds: readonly string[]): string =>
+  sessionIds.length > 0 ? `cleared (${sessionIds.join(", ")})` : "not-cleared";
 
 type CliShellClient = ReturnType<typeof createAgenterClient>;
 type CliShellRuntimeStore = ReturnType<typeof createRuntimeStore>;
@@ -24,10 +26,7 @@ export interface CliShellRunDependencies {
   createStore(client: CliShellClient): CliShellRuntimeStore;
   bootstrap(input: CliShellBootstrapInput): Promise<CliShellBootstrapResult>;
   loadStartupTui(): Promise<{
-    startCliShellStartupTui(input: {
-      shellName: string;
-      heartbeat: string;
-    }): Promise<CliShellStartupTuiController>;
+    startCliShellStartupTui(input: { shellName: string; heartbeat: string }): Promise<CliShellStartupTuiController>;
   }>;
   loadCliShellTui(): Promise<{
     startCliShellTui(input: {
@@ -95,12 +94,15 @@ export const runCliShellWithDependencies = async (
       }
       return;
     }
-    const startupTui = dependencies.isInteractive() && args.webPort === undefined
-      ? await (await dependencies.loadStartupTui()).startCliShellStartupTui({
-          shellName: args.shellName,
-          heartbeat: CLI_SHELL_HEARTBEAT_COPY.disconnected,
-        })
-      : null;
+    const startupTui =
+      dependencies.isInteractive() && args.webPort === undefined
+        ? await (
+            await dependencies.loadStartupTui()
+          ).startCliShellStartupTui({
+            shellName: args.shellName,
+            heartbeat: CLI_SHELL_HEARTBEAT_COPY.disconnected,
+          })
+        : null;
     if (startupTui) {
       activeTui = startupTui;
     }
@@ -110,6 +112,8 @@ export const runCliShellWithDependencies = async (
       workspacePath: process.cwd(),
       avatarNickname: args.avatarNickname,
       shellName: args.shellName,
+      createAvatar: args.createAvatar,
+      clearAvatar: args.clearAvatar,
       backend: args.backend,
       onProgress: (phase) => {
         if (phase === "observation-pending") {
@@ -119,7 +123,9 @@ export const runCliShellWithDependencies = async (
     });
 
     if (args.webPort !== undefined) {
-      activeWebHost = await (await dependencies.loadCliShellWebHost()).startCliShellWebHost({
+      activeWebHost = await (
+        await dependencies.loadCliShellWebHost()
+      ).startCliShellWebHost({
         store,
         shellName: args.shellName,
         attached,
@@ -130,6 +136,8 @@ export const runCliShellWithDependencies = async (
       });
       console.log(`cli-shell attached`);
       console.log(`avatar: ${attached.avatar.nickname}`);
+      console.log(`avatarState: ${formatCreatedState(attached.avatarCreated)}`);
+      console.log(`runtimeSessionClear: ${formatRuntimeClearState(attached.clearedRuntimeSessionIds)}`);
       console.log(`runtime: ${attached.avatar.runtimeId}`);
       console.log(
         `shellTruthTerminal: ${attached.shellTruthTerminal.entry.terminalId} (${formatCreatedState(attached.shellTruthTerminal.created)})`,
@@ -180,6 +188,8 @@ export const runCliShellWithDependencies = async (
 
     console.log(`cli-shell attached`);
     console.log(`avatar: ${attached.avatar.nickname}`);
+    console.log(`avatarState: ${formatCreatedState(attached.avatarCreated)}`);
+    console.log(`runtimeSessionClear: ${formatRuntimeClearState(attached.clearedRuntimeSessionIds)}`);
     console.log(`runtime: ${attached.avatar.runtimeId}`);
     console.log(
       `shellTruthTerminal: ${attached.shellTruthTerminal.entry.terminalId} (${formatCreatedState(attached.shellTruthTerminal.created)})`,
