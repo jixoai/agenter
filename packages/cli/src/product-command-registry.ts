@@ -21,6 +21,22 @@ const productCommandDescriptors = [
       runtimePlanes: ["launch", "resources", "assistant", "attention"],
     },
   }),
+  productCommandDescriptorSchema.parse({
+    productId: "studio",
+    command: "studio",
+    packageName: "@agenter/studio",
+    bin: {
+      name: "agenter-studio",
+      mainExport: "runStudio",
+    },
+    sourcePolicy: createLocalFirstProductSourcePolicy(),
+    capabilityHints: {
+      interactive: true,
+      foregroundProcess: true,
+      requiresDaemon: true,
+      runtimePlanes: ["launch", "resources", "assistant", "attention"],
+    },
+  }),
 ] as const satisfies readonly ProductCommandDescriptor[];
 
 const descriptorByCommand = new Map(productCommandDescriptors.map((descriptor) => [descriptor.command, descriptor] as const));

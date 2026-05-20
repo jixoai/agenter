@@ -20,7 +20,7 @@
 
 - **E2E**：跨进程/跨包关键链路（如 CLI -> daemon -> ws/http）。
 - **Integration**：模块协作与协议边界（runtime、registry、protocol）。
-- **DOM Contract**：WebUI 交互组件优先使用 **Storybook v10 + Vitest**，以 stories 作为组件状态真源，用真实 DOM 场景覆盖输入、弹层、列表、组合面板。
+- **DOM Contract**：Studio 交互组件优先使用 **Storybook v10 + Vitest**，以 stories 作为组件状态真源，用真实 DOM 场景覆盖输入、弹层、列表、组合面板。
 - **Unit**：纯逻辑与算法规则（解析、映射、状态机）。
 
 约束：
@@ -40,35 +40,35 @@
   - 组件真实交互：走 Storybook DOM；
   - 跨页面/跨进程链路：走 Playwright E2E。
 - **实现方式**：优先在 story 的 `play` 中描述用户行为与断言，再在 `test/storybook/*` 中以 `Story.run()` 复用。
-- **回归入口**：WebUI 至少维护 `bun run --filter '@agenter/webui' test:dom` 作为高价值 DOM 回归入口。
+- **回归入口**：Studio 至少维护 `bun run --filter '@agenter/studio' test:dom` 作为高价值 DOM 回归入口。
 - **串行执行纪律**：`Vitest browser`、`storybook dev`、`storybook:build` 不能并行运行；需要串行执行，避免浏览器会话与 Vite 端口资源冲突。
 
 ## 3.2) Storybook DOM 技能手册（上下文清空后直接照做）
 
 ### 3.2.1 目标
 
-- WebUI 组件的“真实交互”优先通过 Storybook stories 描述，再由 Vitest 在浏览器里执行。
+- Studio 组件的“真实交互”优先通过 Storybook stories 描述，再由 Vitest 在浏览器里执行。
 - stories 是组件交互状态的**单一真源**；不要再额外复制一份复杂测试夹具。
 - 这套方案主要解决 `CodeMirror`、弹窗、手风琴、虚拟列表、组合面板这类 jsdom 容易失真的问题。
 
 ### 3.2.2 当前仓库约定
 
-- Storybook 配置目录：`packages/webui/.storybook/`
-- Storybook 主配置：`packages/webui/.storybook/main.ts`
-- Storybook 全局预览：`packages/webui/.storybook/preview.tsx`
-- Storybook + Vitest 初始化：`packages/webui/.storybook/vitest.setup.ts`
-- Vitest 配置：`packages/webui/vitest.config.ts`
+- Storybook 配置目录：`packages/studio/.storybook/`
+- Storybook 主配置：`packages/studio/.storybook/main.ts`
+- Storybook 全局预览：`packages/studio/.storybook/preview.tsx`
+- Storybook + Vitest 初始化：`packages/studio/.storybook/vitest.setup.ts`
+- Vitest 配置：`packages/studio/vitest.config.ts`
 - stories 位置：优先与组件同目录，命名为 `*.stories.tsx`
-- Story 驱动的 DOM 测试位置：`packages/webui/test/storybook/*.test.tsx`
+- Story 驱动的 DOM 测试位置：`packages/studio/test/storybook/*.test.tsx`
 
 ### 3.2.3 命令
 
 ```bash
-bun run --filter '@agenter/webui' storybook
-bun run --filter '@agenter/webui' storybook:build
-bun run --filter '@agenter/webui' test:unit
-bun run --filter '@agenter/webui' test:dom
-bun run --filter '@agenter/webui' test
+bun run --filter '@agenter/studio' storybook
+bun run --filter '@agenter/studio' storybook:build
+bun run --filter '@agenter/studio' test:unit
+bun run --filter '@agenter/studio' test:dom
+bun run --filter '@agenter/studio' test
 ```
 
 - `test:unit`：保留 jsdom/unit 层，适合纯逻辑与轻交互。
@@ -136,14 +136,14 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 ### 3.2.8 经验结论（重要）
 
 - mocked jsdom 通过，不代表真实 DOM 会通过；`CodeMirror` 就是典型例子。
-- Storybook DOM 测试应被视为 WebUI 的**BDD 主战场**，而不是装饰性文档。
+- Storybook DOM 测试应被视为 Studio 的**BDD 主战场**，而不是装饰性文档。
 - 如果真实 DOM 测试失败，优先修组件真实行为，不要为了通过测试去改弱断言。
 
-## 3.3) WebUI 双端 viewport 契约
+## 3.3) Studio 双端 viewport 契约
 
-- **桌面端 + 移动端都是强制验收项**：WebUI 走查、Playwright E2E、关键 shell/layout 回归，默认都必须同时覆盖 desktop 和 mobile，不能只看桌面端。
+- **桌面端 + 移动端都是强制验收项**：Studio 走查、Playwright E2E、关键 shell/layout 回归，默认都必须同时覆盖 desktop 和 mobile，不能只看桌面端。
 - **移动端默认基线**：统一使用 `iPhone 14` 作为默认移动端环境；本项目当前的强制移动 viewport 基线就是 `390px` 宽。
-- **Playwright 默认双 project**：`packages/webui` 的 E2E 默认必须跑 `desktop-chromium` + `mobile-iphone14`；单 project 只允许本地调试，不算最终验收。
+- **Playwright 默认双 project**：`packages/studio` 的 E2E 默认必须跑 `desktop-chromium` + `mobile-iphone14`；单 project 只允许本地调试，不算最终验收。
 - **验收按能力，不按 DOM 同构**：桌面与移动可以有不同导航结构（如 sidebar vs sheet / tabs vs bottom nav），但关键能力与主路径必须双端都可达、可操作、可观察。
 - **高风险面板补 compact stories**：Quick Start、Workspace shell、Chat、Devtools、Settings 这类在移动端会折叠、重排或切换导航方式的界面，默认需要至少一个 compact Storybook DOM contract。
 
@@ -200,7 +200,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 
 ## 6) 用户协作方法论（必须遵守）
 
-- **先证据后结论**：先跑真实流程（CLI/TUI/WebUI/Browser），再下判断；不凭主观猜测解释问题。
+- **先证据后结论**：先跑真实流程（CLI/TUI/Studio/Browser），再下判断；不凭主观猜测解释问题。
 - **保持客观展示**：AI 输出不做“语义篡改/清洗/特化”；UI 只做结构化呈现。
 - **前端联调顺序固定**：先验证后端接口与 durable contract，再验证 store / 界面绑定，最后做真实浏览器走查；不要反过来靠 UI 盲测接口。
 - **国际化单一真源**：业务层不硬编码文案；统一通过 i18n 包与配置加载。
@@ -259,7 +259,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 
 - **纯前端任务先建标准 worktree，再碰界面**：页面布局、视觉打磨、响应式、交互走查这类纯前端任务，必须先用 `./.gemini/scripts/wt-setup.sh <topic>` 创建 `.worktree/<topic>`，禁止先在主 checkout 或仓库外 ad-hoc worktree 动手。
 - **before 截图先于实现**：开始改 UI 之前，先在该 worktree 内产出 worktree-local `.screenshot/before/*`，作为本轮对比基线；没有 before 证据，不算进入实现阶段。
-- **路由级证据优先于 Storybook 替身**：涉及 route/layout/shell 的纯前端任务，before/after 默认必须来自真实 WebUI dev server 的真实路由；Storybook 只能补充组件态验证，不能替代 route-level 证据。
+- **路由级证据优先于 Storybook 替身**：涉及 route/layout/shell 的纯前端任务，before/after 默认必须来自真实 Studio dev server 的真实路由；Storybook 只能补充组件态验证，不能替代 route-level 证据。
 - **截图端口必须属于当前 worktree**：拍 route-level screenshot 时，优先使用 fresh inactive port 让脚本从当前 worktree 拉起 dev server；如果端口已被占用，必须先确认进程确实属于当前 worktree，否则直接换新端口，不能盲信任意 localhost 页面。
 - **双端截图是默认验收项**：before/after 都必须至少覆盖 desktop 与 `iPhone 14` mobile 两套 viewport；如果任务只修一个端，也要显式展示另一端未回归。
 - **证据跟着 worktree 走**：截图统一放在该 worktree 的 `.screenshot/before` 与 `.screenshot/after`，不要散落在主 checkout、临时目录或仓库外路径。
@@ -279,11 +279,11 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 
 补充约束：
 
-- **双端硬约束**：WebUI 浏览器走查必须同时产出 desktop 和 mobile 两份证据。
+- **双端硬约束**：Studio 浏览器走查必须同时产出 desktop 和 mobile 两份证据。
 - **默认移动端设备**：若无特别说明，mobile 一律按 `iPhone 14` 的 viewport/safe-area/touch 环境走查。
 - **路径必须真实**：移动端必须走真实 compact 导航路径（如 `Open navigation`、drawer、bottom nav），不能用桌面端捷径替代移动端交互。
 
-### 7.2 默认回归用例（WebUI）
+### 7.2 默认回归用例（Studio）
 
 - **Case A / 启动可用性**：页面加载成功，关键入口可见（New session / Select workspace / Chat 输入框）。
 - **Case B / 会话创建**：可创建 session，主聊天区进入可输入状态。
@@ -301,9 +301,9 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - 不通过时必须附带最小复现步骤与日志位置。
 - 结果记录必须显式标注 viewport：`desktop` 或 `mobile`。
 
-## 8) WebUI 布局最佳实践（Flex）
+## 8) Studio 布局最佳实践（Flex）
 
-- **禁止使用 `min-h-0`**：在本项目 WebUI 中不再使用该 class 处理滚动/压缩。
+- **禁止使用 `min-h-0`**：在本项目 Studio 中不再使用该 class 处理滚动/压缩。
 - **`overflow-hidden` 不是默认布局工具**：禁止把 raw `overflow-hidden` 当作修复 flex/scroll 的通用手段；先修正布局层级与滚动所有权。
 - **移除 hidden 必须补 scroll owner**：一旦去掉祖先 `overflow-hidden`，必须同步为真正的内容区补上显式滚动拥有者；对 surface 级内容统一使用 `ScrollView`，不能只“去掉裁剪”却不恢复滚动。
 - **布局壳层禁止 raw clipping**：shell、route wrapper、panel wrapper 这类 layout surface 不允许直接写 raw `overflow-hidden`；应用级视口裁剪必须走 `ViewportMask`。
@@ -319,7 +319,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **谁裁剪，谁解释原因**：只有明确的内容 surface 才能同时拥有 `border-radius + clip + fill`；layout wrapper 只负责排布，不得顺手接管视觉裁剪。
 - **移除裁剪必须恢复滚动语义**：如果去掉某层 `overflow-hidden/ViewportMask/ClipSurface`，必须同步确认滚动是否仍有单一 owner；“视觉问题修了但内容不滚动”视为回归。
 
-## 8.1) Apple 风格信息架构（WebUI）
+## 8.1) Apple 风格信息架构（Studio）
 
 - **先分层，再做样式**：先确定 `App Shell / Workspace Shell / Route Surface / Content Body` 的职责，再决定视觉表现；不要靠改颜色和圆角掩盖信息重叠。
 - **单层单责**：`AppHeader` 只负责全局定位与全局导航；`WorkspaceShell` 只负责 workspace 上下文与 route 切换；`Chat/Devtools/Settings` 自己负责局部动作与局部提示。
@@ -335,7 +335,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **文案表达优先语义，不优先控件**：先问“这是一条定位信息、一个状态、一个动作、还是一个异常”，再决定用标题、正文、状态文本、按钮还是 banner。
 - **最小视口先验**：默认把 `375x667` 视为必须成立的移动端下限；任何新增 shell / route / panel 都要先回答“主滚动区是谁、固定 chrome 是谁、溢出后如何兜底”。
 
-## 9) 字体与排版最佳实践（WebUI）
+## 9) 字体与排版最佳实践（Studio）
 
 - **CJK 优先，不做中文特化**：字体方案按 CJK（zh/ja/ko）统一设计，不针对单一语言做硬编码分支。
 - **Google Fonts 统一入口**：在 `index.html` 注入字体；按语言选择 `.com` / `.googleapis.cn`，并配套 `preconnect`。
@@ -349,7 +349,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **变更验收要求**：字体改动后至少走查 Chat、LoopBus、Settings 三块，确认中英日文/韩文混排无明显抖动或 fallback 断层。
 - **技术面板密度优先**：Cycles / LoopBus / Model / Terminal 这类技术面板优先使用 `typo-caption`、`typo-code`、`typo-emphasis` 的紧凑组合；避免 oversized title、重复 chip 和高饱和大面积状态色。
 
-## 10) Icon 使用最佳实践（WebUI）
+## 10) Icon 使用最佳实践（Studio）
 
 - **统一来源**：所有可交互/状态型图标统一使用 `lucide-react`，禁止混用 Unicode 符号（如 `×/→/↓`）充当 UI 图标。
 - **语义优先**：图标用于表达动作或状态（关闭、方向、运行状态），不用于替代正文信息。
@@ -358,14 +358,14 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **文本并排规范**：纯内联片段才允许直接写 `inline-flex items-center gap-*`；只要元素同时承担“surface + 图标 + 文字”的职责，就必须走统一 affordance 组件，不允许在业务代码里手搓 `gap + px + py`。
 - **可访问性**：纯装饰图标不应影响可读内容；交互图标按钮必须有 `aria-label/title`。
 
-## 10.2) Tooltip 使用契约（WebUI）
+## 10.2) Tooltip 使用契约（Studio）
 
 - **tooltip 只隐藏非关键说明**：tooltip 适合 icon-only action、截断标识、补充解释；核心状态、错误、主导航、主动作不得只放在 tooltip 里。
 - **先可见再补充**：用户完成当前任务所必需的信息必须默认可见；tooltip 只补充“为什么/更多说明”，不能替代正文。
 - **列表里优先收纳噪音**：session rail、tooling list、icon action 这类高密度列表，优先用 tooltip 收纳长路径、二级解释和额外帮助，避免把主列表撑乱。
 - **移动端必须有替代路径**：如果某说明在移动端 hover 不可靠，就必须同时提供 `title`、长按菜单或可见文本兜底。
 
-## 10.1) Icon + Text Surface 契约（WebUI）
+## 10.1) Icon + Text Surface 契约（Studio）
 
 - **统一入口**：按钮使用 `ButtonLeadingVisual` / `ButtonLabel` / `ButtonTrailingVisual`；徽标使用 `BadgeLeadingVisual` / `BadgeLabel` / `BadgeTrailingVisual`；其余展示型 surface 使用 `InlineAffordance*`。
 - **显式 slot，不做猜测**：图标与文本的布局必须通过 slot 明确声明，不依赖 child 顺序推断业务语义。
@@ -374,7 +374,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **Button 语义优先于去装饰化**：只要控件的语义是 `Button`，尤其是 `variant="outline"` 或 `icon + text` 的 action button，就必须保留可见 border；密度优化只能减弱被动 surface，不能把按钮退化成无边框文字。
 - **回归测试要求**：新增或改动 icon+text surface 时，至少补一个 unit 或 Storybook DOM contract，断言 `data-inline-affordance-layout` 与关键 spacing class。
 
-## 10.3) Async / Adaptive / Signal Primitive 契约（WebUI）
+## 10.3) Async / Adaptive / Signal Primitive 契约（Studio）
 
 - **`AsyncSurface` 只负责状态，不负责容器语义**：所有 fetch-driven list/panel 默认复用 `AsyncSurface`；它只表达 `empty-loading / empty-idle / ready-loading / ready-idle`，不得顺手接管滚动、裁剪、背景或 padding 所有权。
 - **首屏加载与空态必须分离**：首次加载时显示 loading copy / skeleton；已有数据刷新时保留内容，只显示克制的 refresh signal；禁止把首次加载伪装成空列表，也禁止刷新时清空已有内容。
@@ -388,7 +388,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 ## 11) shadcn/ui Skill 入口
 
 - **官方 LLM 入口**：`https://ui.shadcn.com/llms.txt`
-- **执行约束**：涉及 WebUI 组件设计/实现时，先以该入口文档作为 shadcn/ui 的首要技能参考源。
+- **执行约束**：涉及 Studio 组件设计/实现时，先以该入口文档作为 shadcn/ui 的首要技能参考源。
 
 ## 11.1) ai-elements-svelte Skill 入口
 
@@ -401,7 +401,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **先封装再使用**：业务代码只使用 `src/components/ui/*`，避免在 feature 页面直接引入底层 primitives。
 - **风格统一**：交互状态统一用 data attributes（如 `data-[active]`、`data-[starting-style]`）驱动样式，减少运行时分支判断。
 
-## 13) Chat / Markdown 契约（WebUI）
+## 13) Chat / Markdown 契约（Studio）
 
 - **输入保真优先**：输入层只采集，不解释；用户输入什么，`session_block.content` 就落什么。`\n` 只有在用户真的输入反斜杠时才允许出现；renderer 禁止猜测性解码。
 - **消息原文单一真源**：`session_block.content` / chat message `content` 始终保存原始 Markdown 文本；preview 只是投影，不得覆盖或篡改原文。
@@ -425,7 +425,7 @@ describe("Feature: Storybook DOM contract for AI input", () => {
 - **Session 状态优先于残留 runtime**：当 `session.status` 已经进入 `stopped`/`error`，路由工具栏、notice、侧边 running rail 必须优先反映该 durable 状态，不能被尚未回收的 `runtime.started` 覆盖。
 - **停止态需要单一语义**：`Start/Stop` 主按钮、页面 notice、导航入口必须共享同一状态判断，避免出现“侧栏已停止、主面板仍显示运行中”的分裂体验。
 
-## 13.2) Profile Image 契约（WebUI / App Server）
+## 13.2) Profile Image 契约（Studio / App Server）
 
 - **语义 URL 固定**：session 图标与 avatar 图标必须各自拥有稳定的语义 URL（如 `/media/sessions/:id/icon`、`/media/avatars/:nickname/icon`），调用方不感知 fallback 或上传态差异。
 - **fallback 由服务端兜底**：前端可以把 fallback SVG 光栅化后回传 WebP，但渲染正确性不能依赖前端先上传；服务端必须始终能直接生成 deterministic fallback。

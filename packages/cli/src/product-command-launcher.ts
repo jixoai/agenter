@@ -11,7 +11,7 @@ const BUN_BIN = Bun.which("bun") ?? process.execPath;
 const DEFAULT_PRODUCT_PACKAGE_RUNNER = "bunx";
 const metadataOnlyTokens = new Set(["--help", "-h", "help", "--version", "-v", "version"]);
 
-const builtInCommands = new Set(["auth-service", "profile-service", "daemon", "web", "tui", "doctor", "help"]);
+const builtInCommands = new Set(["auth-service", "profile-service", "daemon", "tui", "doctor", "help"]);
 
 interface PackageJsonShape {
   name?: string;

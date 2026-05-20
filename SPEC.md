@@ -24,7 +24,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - LoopBus 是持续存在的 runtime core。它负责等待输入、收集输入、持久化 cycle、调用模型与协调 adapter side-effects，但不拥有 source-specific 业务语义。
 - Session DB 只存事实，不存可推导快照。projection、view model、UI 结构都属于派生层。
 - Heartbeat compact boundary 是 durable ledger fact：prompt-window compaction 发生时，session ledger 必须追加 `scope=heartbeat_part` 的 `partType=compact` 边界消息，UI 不得再从 cycles 或 assistant prose 猜测上下文重开位置。
-- Heartbeat inspection 的 durable truth 是一条 merged `message_part` stream：`scope=heartbeat_part` 负责 AI-visible request/response 与 compact boundary，`scope=request_aux` 负责 deduplicated `systemPrompt / tools / config`；客户端与 WebUI 不得再把 chat / request-aux / model-call 三条投影重新拼成“主 Heartbeat 时间线”。
+- Heartbeat inspection 的 durable truth 是一条 merged `message_part` stream：`scope=heartbeat_part` 负责 AI-visible request/response 与 compact boundary，`scope=request_aux` 负责 deduplicated `systemPrompt / tools / config`；客户端与 Studio 不得再把 chat / request-aux / model-call 三条投影重新拼成“主 Heartbeat 时间线”。
 - AvatarRuntime identity 是 avatar-first 的：一个 Avatar 只有一个 canonical runtime/session id；workspace membership 只能通过 WorkspaceSystem mount 附着，不能再成为 runtime identity 的一部分。
 - Room 历史的 durable truth 属于全局 `message-system`；session 只保留 room binding、message refs 与推理所需 projection facts，不复制 room history 当作自己的真源。
 - Room 文本消息对人类 transcript 默认立即可见；`attentionState=queued` 只表示它仍欠 AI/automation attention，不再表示“先隐藏，等 attention 后再显示”。
@@ -44,9 +44,9 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - LoopBus / source adapter 的 transport metadata 只允许承载调度、协议、持久化回溯所需的 facts；AI 需要理解的内容必须进 attention body 或 typed tool/query，不能靠 hidden metadata side channel。
 - LoopBus built-in source ref / read result contract 必须保持 protocol-native `src` law：message / terminal / task 都通过各自 namespace 的 typed `src` 寻址；message namespace 至少支持 room-scope `msg:<chatId>` 与 row-scope `msg:<chatId>/<messageId>`，其中可读的 room message source ref 仍使用 row-scope 形态；不得重新打开 `meta` 逃逸口。
 - 同轮 tool-result 边界的追加输入必须通过统一 attention commit API 完成：hook 只暴露“现在可 commit”的时机与 `ctx.commit...()` 能力，不得通过 hook return、provider adapter 私有字段或其它额外渠道把 user/attention payload 直接塞进模型请求；MessageRoom read ack、Terminal/Task consume 标记、trace 与 projection 必须和该 commit 同步发生。
-- WebUI actor-private preference persistence 属于独立的 auth-scoped KV plane，而不是 settings graph、runtime snapshot 或 runtime event stream 的附属字段；后端只理解 opaque key + `keys[] | prefix` filter，不理解 avatar/workspace 等业务 scope。
-- WebUI 中需要 resume / discard / complete lifecycle 的长寿命 create/edit draft 不得退化成 opaque KV；它们必须升级为 auth-scoped typed draft resources，并与 device-local workbench tabs 解耦。
-- WebUI 的用户可见滚动所有权必须统一委托给共享 scroll primitive：标准 surface 走 `ScrollView`，bottom-anchored conversation / timeline surface 走 `BottomAnchoredTimeline`；feature code 不得再直接以 raw `overflow-auto/scroll` 充当主滚动 owner。
+- Studio actor-private preference persistence 属于独立的 auth-scoped KV plane，而不是 settings graph、runtime snapshot 或 runtime event stream 的附属字段；后端只理解 opaque key + `keys[] | prefix` filter，不理解 avatar/workspace 等业务 scope。
+- Studio 中需要 resume / discard / complete lifecycle 的长寿命 create/edit draft 不得退化成 opaque KV；它们必须升级为 auth-scoped typed draft resources，并与 device-local workbench tabs 解耦。
+- Studio 的用户可见滚动所有权必须统一委托给共享 scroll primitive：标准 surface 走 `ScrollView`，bottom-anchored conversation / timeline surface 走 `BottomAnchoredTimeline`；feature code 不得再直接以 raw `overflow-auto/scroll` 充当主滚动 owner。
 - 共享 workbench chrome 的 `page_content` body 必须是页面级唯一 scroll owner：`tabs` 与 `page_toolbar` 永远固定在外层 chrome，route-root wrapper 只能用 `min-h-full` 等 stretch 语义填满 body，不能再用 `h-full`、raw clipping 或隐式 overflow 把 shared window body 锁死成不可滚动。
 - bottom-anchored transcript / timeline 的语义滚动法则固定为 `ScrollController + Named Trigger + Query + tx`：feature code 只能通过 installed program 读取 `query.<name>.*` 并在 `tx(...)` 中表达 scroll semantics，不得再持有第二套 `scrollTop` / `request(...)` / local observer graph ownership。
 - Search / FTS index 只能是可重建 projection，不能升级成 durable truth；删除索引后系统仍必须能从事实库或 attention durable state 重建搜索能力。
@@ -61,6 +61,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - MCP system 是 root-workspace runtime atom，不是 provider-side hidden tool injection：MCP 全局配置、项目启用、实例生命周期、project-local discovery snapshot、SQL 查询与 tool 调用都由 mcpSystem 统一拥有；模型只通过 root-workspace `mcp` CLI/API 和 `agenter-mcp` skill 渐进发现并显式调用。
 - MCP global config 与 project enablement 必须分离：`mcp add/remove` 只管理 global，`mcp enable/disable/list/start/stop/restart/call` 都要求显式 exact project path；新增 global 在所有 project 中默认 disabled，project 之间不继承 enablement、live instance 或 snapshot。
 - `mcp query` 是只读 SQL 投影面，只暴露 `mcp_installed` 与 `mcp_enabled` 两张临时表并永远返回 JSON rows；能力信息只能作为 project-local snapshot JSON 出现在 `mcp_enabled` 行上，不能另建 capability truth 或跨 project 共享。
+- Studio 是 descriptor-driven product package，而不是 core CLI 的内置 web mode：`agenter studio` 通过 product descriptor 启动 `@agenter/studio`，Studio 自己拥有 static/dev serving 与 product argv；core CLI 不再保留 `agenter web`、WebUI static-root 或 asset-copy 特权路径。
 - 当某个系统需要把 authority 共享给别的 runtime/client 时，平台优先复用 `system backend + endpoint/token/proof client frontend` 法则：
   - durable truth 与 lifecycle mutation 继续留在 owning backend system
   - frontend client 只负责 transport projection、proof submission 与 accepted seat 的本地投影缓存
@@ -78,10 +79,10 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - source adapter 与内核只通过协议、hook、tool provider、attention commit、message dispatch 这类明确边界协作，不能跨层偷写规则。
 - 当 source adapter 希望强化某类后续行为时，应优先提交额外的 typed attention items，并由该 system 自己的 skill 教 AI 如何理解和处理这些 items；不要把这类行为期待偷塞进全局 prompt 或内核特判。
 - source ref / read result 如果只承担 lookup hint，就只能服务 adapter 自身寻址；一旦某事实要进入 durable attention、prompt payload 或外部 UI 契约，就必须先提升为 typed draft field 或 attention body。
-- `@agenter/web-chat-view` 是 room transcript 的共享 transport surface，必须保持对 `@agenter/webui` 的包级正交；operator route 消费它，而不是重新发明一套 route-local transcript renderer。
+- `@agenter/web-chat-view` 是 room transcript 的共享 transport surface，必须保持对 `@agenter/studio` 的包级正交；operator route 消费它，而不是重新发明一套 route-local transcript renderer。
 - `Heartbeat` 与 `@agenter/web-chat-view` 这类 latest-anchored transcript surface 的 durable law 是“chronological storage, reverse-flow view boundary”: store / transport 仍保持时间正序 truth，reverse 映射只允许发生在共享 timeline primitive 边界，不得泄漏回 durable merge / pagination contract。
 - Auth identity 与 Avatar/business role 永远分层：auth 只表达“谁可以认证并持有授权声明”，Avatar 只表达 workspace/session 的业务角色与提示词行为。
-- `auth-service` 是 durable auth identity、profile projection、proof-bearing auth 与 icon/media fallback 的 canonical owner；`profile-service` 只保留为兼容别名。`app-server` 只负责 child-runtime 生命周期与 endpoint 发现，`client-sdk`、`webui` 必须直连该 service 的公开接口，不能重新引入第二套本地 authority。
+- `auth-service` 是 durable auth identity、profile projection、proof-bearing auth 与 icon/media fallback 的 canonical owner；`profile-service` 只保留为兼容别名。`app-server` 只负责 child-runtime 生命周期与 endpoint 发现，`client-sdk`、Studio 必须直连该 service 的公开接口，不能重新引入第二套本地 authority。
 - room / terminal seat credential 属于 Avatar seat 的本地状态，而不是 workspace root state；它们必须落在目标 Avatar 自己的 `settings.local.json` 中。
 - `app-server` 是 WorkspaceSystem、AvatarRuntime lifecycle 与 attention-derived notification projection 的组合根，但它不能偷当 room/terminal durable truth owner。
 - runtime shell surface 采用“固定原语 + 渐进发现”法则：模型先看到 root workspace 与 skills 索引，需要细节时再通过 `skill` 和各 system CLI 展开，而不是把 system guide 预注入到 bootstrap prompt。
@@ -106,7 +107,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - 共享 workbench window body 负责页面级滚动；如果 route 内还需要独立 stage/pane 滚动，必须显式声明次级 `ScrollView`，而不是靠 route 根容器的固定高度或隐藏裁剪去“碰巧可用”。
 - 当 route 需要 `main + right detail` 关系时，必须复用共享 split-detail law：desktop 以 ratio-driven resize handle 持久化，compact 以 container-width collapse 进入 right-sheet；禁止再用 route-local `detailMode + matchMedia + fixed drawer width` 自行拼装。
 - compact right detail 打开时，`page-toolbar` 只允许接管为 close-only view affordance；detail-local 的 save / reload / apply / create 等功能动作继续留在 page content，通常留在 left-side `bottom-area`。
-- WebUI 的 redirect-only route entry（如 `/`、`/avatars`、`/avatars/runtime/{sessionId}`）必须通过 route-layer canonical redirect 在 feature 渲染前收敛；禁止再用 mount-time `goto()` 或 feature glue 补入口跳转。
+- Studio 的 redirect-only route entry（如 `/`、`/avatars`、`/avatars/runtime/{sessionId}`）必须通过 route-layer canonical redirect 在 feature 渲染前收敛；禁止再用 mount-time `goto()` 或 feature glue 补入口跳转。
 - `Avatars` 是统一的全局 avatar catalog workbench；运行中的 avatar session 以动态 runtime tabs 追加在同一层，不再复用旧的 workspace/history/settings 子页心智。
 - `Skills` 是统一的只读 skill workbench：固定保留一个 catalog tab，并在其 `page-tabs` 中按继承顺序表达 `shared / built-in / global / avatars`；默认 `/skills` 落到 `shared`，旧 `view=avatar` 入口必须在 route 层收敛为 `view=avatars`。从 `avatars` overview 打开的专属 avatar skill browser 以 closable workbench tab 追加在同一层。
 - `Skills` 的 durable truth 永远来自 objective skill roots，而不是前端自行拼接 sibling path：`shared / built-in / global` 一律是 skill-list-first 的 accordion list-detail browser；`avatars` 一律是 avatar-list-first overview，detail 只预览 workspace-grouped avatar-private skill roots，真正的文件树浏览放进 dedicated avatar tab。
@@ -128,20 +129,20 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Avatar 是 durable active-session identity；再次启动同一 Avatar 时必须复用同一个稳定 runtime/session id，额外 workspace 通过 mount 追加，而不是创建第二个 `workspace + avatar` pair runtime。
 - `default` 是默认 avatar nickname，也是永远可见的空白起点；regular workspace 修改 global-source avatar 时，先完整复制再修改，不做 overlay 式局部覆盖。
 - Chat 是 conversation-first surface；cycle、tool trace、attention runtime 属于 Devtools / inspector surface。
-- Svelte WebUI feature code 只能使用 canonical shadcn-svelte multipart composition；`Card.Root/Header/Content`、`Tabs.Root/List/Trigger/Content` 这类显式 slot 是 durable contract，alias-style wrapper 不是。
-- WebUI route panel 必须通过显式 shell primitive 声明 `header + primary ScrollView body` 的结构；feature code 不得继续用 `p-0/py-0/min-h-0` 之类补丁去修复错误的容器语义。
+- Svelte Studio feature code 只能使用 canonical shadcn-svelte multipart composition；`Card.Root/Header/Content`、`Tabs.Root/List/Trigger/Content` 这类显式 slot 是 durable contract，alias-style wrapper 不是。
+- Studio route panel 必须通过显式 shell primitive 声明 `header + primary ScrollView body` 的结构；feature code 不得继续用 `p-0/py-0/min-h-0` 之类补丁去修复错误的容器语义。
 - `Terminals` 是 app-level global workbench，不是 session-private surface；session route 只允许链接或投影该工作台，不能重新定义第二套 terminal truth。
 - Devtools 是技术事实的独立检查面板，不把技术结构反向污染主聊天流。
 - regular workspace 与 global workspace 共用同一套 settings API shape：shared defaults 落到 `settings.json`，machine-local secret 落到 workspace/global `settings.local.json`，Avatar seat 的 room / terminal credential 落到 avatar-local `settings.local.json`。
 - Session / room / profile-avatar icon 必须通过 auth-service 的 typed semantic URL family 消费；`profile` 在这里是 media owner 类型，不是服务包名。owner type 不能混入无类型 bucket。fallback 由服务端统一解析（uploaded asset > eligible external fallback > deterministic renderer），默认读返回服务端光栅化结果，前端不得再承担 fallback rasterization authority。
-- 应用级品牌图标的 canonical source 固定在仓库根 `assets/source/master`；Web favicon、PWA、Apple、Android、macOS 等派生资产必须由统一脚本从该主源生成，`packages/webui/static` 只承载运行时消费副本，不得成为第二真源。
+- 应用级品牌图标的 canonical source 固定在仓库根 `assets/source/master`；Web favicon、PWA、Apple、Android、macOS 等派生资产必须由统一脚本从该主源生成，`packages/studio/static` 只承载运行时消费副本，不得成为第二真源。
 - 桌面端与移动端都是一等验收对象；能力必须双端可达，但导航结构可以不同。
 
 ## 6. 测试与验收法则
 
 - 默认工程实践是 BDD-first；TDD 是落地手段，不是替代行为描述。
-- 关键链路改动必须有 integration 或 e2e 证据；WebUI 复杂交互优先 Storybook DOM contract。
-- `@agenter/webui` 的 Storybook DOM contract 与 `storybook:build` 属于同一条工具链合同；静态 Storybook 构建不得在 DOM tests 仍然通过时继续处于崩溃状态。
+- 关键链路改动必须有 integration 或 e2e 证据；Studio 复杂交互优先 Storybook DOM contract。
+- `@agenter/studio` 的 Storybook DOM contract 与 `storybook:build` 属于同一条工具链合同；静态 Storybook 构建不得在 DOM tests 仍然通过时继续处于崩溃状态。
 - 真实流程优先于主观推断；对模型、终端、runtime 的判断必须先跑证据链。
 - durable 行为变化的完成标准包含：实现、测试、SPEC/AGENTS 同步，而不是只看代码通过。
 

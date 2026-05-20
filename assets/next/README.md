@@ -21,20 +21,20 @@
 ## 相关命令
 
 ```bash
-bun run --filter '@agenter/ui-studio' dev
+bun run --filter '@agenter/icon-studio' dev
 bun run build:icon-masters
 bun run build:icons
 ```
 
-- `@agenter/ui-studio dev`: 启动独立的 icon composer 项目
+- `@agenter/icon-studio dev`: 启动独立的 icon composer 项目
 - `build:icon-masters`: 从 `assets/next` 的 canonical SVG + token + preset 渲染 master SVG，并生成 `assets/source/master` 下的 light/dark PNG 主源
 - `build:icons`: 从新的 PNG 主源派生 favicon、Web、PWA、Apple、Android、macOS 产物
 
-## UI Studio
+## Icon Studio
 
 本地可视化组合工具现在是独立项目：
 
-- `packages/ui-studio`
+- `packages/icon-studio`
 
 它会直接读取这里的 canonical data，支持：
 

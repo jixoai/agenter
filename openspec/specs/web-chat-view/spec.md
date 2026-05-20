@@ -4,7 +4,7 @@
 Define the framework-agnostic room-backed Web chat transport contract, including websocket hydration, a reusable custom-element delivery surface, and reverse-time paging for long histories.
 ## Requirements
 ### Requirement: Web chat view SHALL connect to one chat channel over websocket
-The web chat view SHALL build its runtime state from one room transport websocket plus reverse-time history paging. The shared component SHALL be shipped as a framework-agnostic custom element with a Svelte host wrapper so multiple WebUI clients can reuse the same room transport contract. The component SHALL accept explicit viewer actor context instead of inferring viewer identity from room metadata or message labels, and it SHALL expose that transport state through one conversation-first surface instead of requiring host routes to rebuild transcript chrome around it.
+The web chat view SHALL build its runtime state from one room transport websocket plus reverse-time history paging. The shared component SHALL be shipped as a framework-agnostic custom element with a Svelte host wrapper so multiple Studio clients can reuse the same room transport contract. The component SHALL accept explicit viewer actor context instead of inferring viewer identity from room metadata or message labels, and it SHALL expose that transport state through one conversation-first surface instead of requiring host routes to rebuild transcript chrome around it.
 
 #### Scenario: Connect and hydrate a room
 - **WHEN** the component receives an authorized room transport URL
@@ -17,7 +17,7 @@ The web chat view SHALL build its runtime state from one room transport websocke
 - **THEN** the empty-state copy is shown until new messages arrive or the websocket pushes a later snapshot
 
 #### Scenario: Shared custom element is reusable
-- **WHEN** the operator WebUI mounts the shared chat view or another frontend mounts the exported custom element
+- **WHEN** the operator Studio mounts the shared chat view or another frontend mounts the exported custom element
 - **THEN** both consumers use the same room transport contract and transcript behavior
 - **THEN** the package does not require React-specific runtime dependencies to render the shared room experience
 
@@ -52,7 +52,7 @@ The shared room component SHALL render one durable conversation surface with tra
 - **WHEN** the shared chat package renders its transcript shell
 - **THEN** it uses `Scaffold` and `ScrollView` from `@agenter/svelte-components`
 - **THEN** chat-specific visuals and transport behavior remain local to `web-chat-view`
-- **THEN** the package still avoids any dependency on `@agenter/webui`
+- **THEN** the package still avoids any dependency on `@agenter/studio`
 
 ### Requirement: Web chat view SHALL expose a rich shared composer surface
 The shared chat package SHALL render a responsive CodeMirror-based composer surface with attachment previews, action/status toolbars, help hints, and host-driven send orchestration instead of a minimal textarea-only input.

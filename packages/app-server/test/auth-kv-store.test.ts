@@ -23,8 +23,8 @@ describe("Feature: auth-scoped kv store", () => {
   test("Scenario: Given two auth actors When both persist the same key Then snapshot and replay stay isolated per actor", () => {
     const store = createStore();
     try {
-      store.set("auth-a", { key: "webui/devtools/tab", value: "model" });
-      store.set("auth-b", { key: "webui/devtools/tab", value: "cycles" });
+      store.set("auth-a", { key: "studio/devtools/tab", value: "model" });
+      store.set("auth-b", { key: "studio/devtools/tab", value: "cycles" });
 
       const actorASnapshot = store.snapshot("auth-a");
       const actorBSnapshot = store.snapshot("auth-b");
@@ -32,7 +32,7 @@ describe("Feature: auth-scoped kv store", () => {
       expect(actorASnapshot.lastEventId).toBe(1);
       expect(actorASnapshot.items).toEqual([
         {
-          key: "webui/devtools/tab",
+          key: "studio/devtools/tab",
           value: "model",
           version: 1,
           updatedAt: actorASnapshot.items[0]?.updatedAt ?? 0,
@@ -41,7 +41,7 @@ describe("Feature: auth-scoped kv store", () => {
       expect(actorBSnapshot.lastEventId).toBe(2);
       expect(actorBSnapshot.items).toEqual([
         {
-          key: "webui/devtools/tab",
+          key: "studio/devtools/tab",
           value: "cycles",
           version: 1,
           updatedAt: actorBSnapshot.items[0]?.updatedAt ?? 0,
@@ -73,7 +73,7 @@ describe("Feature: auth-scoped kv store", () => {
     const store = createStore();
     try {
       const first = store.set("auth-a", {
-        key: "webui/runtime/toggle",
+        key: "studio/runtime/toggle",
         value: { enabled: true, order: ["a", "b"] },
       });
       expect(first).toMatchObject({
@@ -81,14 +81,14 @@ describe("Feature: auth-scoped kv store", () => {
         changed: true,
         eventId: 1,
         entry: {
-          key: "webui/runtime/toggle",
+          key: "studio/runtime/toggle",
           value: { enabled: true, order: ["a", "b"] },
           version: 1,
         },
       });
 
       const idempotent = store.set("auth-a", {
-        key: "webui/runtime/toggle",
+        key: "studio/runtime/toggle",
         value: { order: ["a", "b"], enabled: true },
       });
       expect(idempotent).toMatchObject({
@@ -96,13 +96,13 @@ describe("Feature: auth-scoped kv store", () => {
         changed: false,
         eventId: null,
         entry: {
-          key: "webui/runtime/toggle",
+          key: "studio/runtime/toggle",
           version: 1,
         },
       });
 
       const createConflict = store.set("auth-a", {
-        key: "webui/runtime/toggle",
+        key: "studio/runtime/toggle",
         value: false,
         baseVersion: null,
       });
@@ -110,13 +110,13 @@ describe("Feature: auth-scoped kv store", () => {
         ok: false,
         reason: "conflict",
         latest: {
-          key: "webui/runtime/toggle",
+          key: "studio/runtime/toggle",
           version: 1,
         },
       });
 
       const second = store.set("auth-a", {
-        key: "webui/runtime/toggle",
+        key: "studio/runtime/toggle",
         value: { enabled: false },
         baseVersion: 1,
       });
@@ -125,34 +125,34 @@ describe("Feature: auth-scoped kv store", () => {
         changed: true,
         eventId: 2,
         entry: {
-          key: "webui/runtime/toggle",
+          key: "studio/runtime/toggle",
           value: { enabled: false },
           version: 2,
         },
       });
 
       const deleteConflict = store.delete("auth-a", {
-        key: "webui/runtime/toggle",
+        key: "studio/runtime/toggle",
         baseVersion: 1,
       });
       expect(deleteConflict).toMatchObject({
         ok: false,
         reason: "conflict",
         latest: {
-          key: "webui/runtime/toggle",
+          key: "studio/runtime/toggle",
           version: 2,
         },
       });
 
       const removed = store.delete("auth-a", {
-        key: "webui/runtime/toggle",
+        key: "studio/runtime/toggle",
         baseVersion: 2,
       });
       expect(removed).toEqual({
         ok: true,
         removed: true,
         eventId: 3,
-        key: "webui/runtime/toggle",
+        key: "studio/runtime/toggle",
         version: 3,
       });
 
@@ -162,7 +162,7 @@ describe("Feature: auth-scoped kv store", () => {
       });
 
       const recreated = store.set("auth-a", {
-        key: "webui/runtime/toggle",
+        key: "studio/runtime/toggle",
         value: { enabled: "again" },
         baseVersion: null,
       });
@@ -171,7 +171,7 @@ describe("Feature: auth-scoped kv store", () => {
         changed: true,
         eventId: 4,
         entry: {
-          key: "webui/runtime/toggle",
+          key: "studio/runtime/toggle",
           value: { enabled: "again" },
           version: 4,
         },
@@ -193,14 +193,14 @@ describe("Feature: auth-scoped kv store", () => {
         });
       });
 
-      store.set("auth-a", { key: "webui/devtools/tab", value: "model" });
-      store.set("auth-a", { key: "webui/workspace/split", value: 0.4 });
-      store.delete("auth-a", { key: "webui/devtools/tab" });
+      store.set("auth-a", { key: "studio/devtools/tab", value: "model" });
+      store.set("auth-a", { key: "studio/workspace/split", value: 0.4 });
+      store.delete("auth-a", { key: "studio/devtools/tab" });
       unsubscribe();
 
       expect(
         store.getEventsAfter("auth-a", 0, {
-          prefix: "webui/devtools/",
+          prefix: "studio/devtools/",
         }),
       ).toEqual([
         {
@@ -208,7 +208,7 @@ describe("Feature: auth-scoped kv store", () => {
           timestamp: expect.any(Number),
           kind: "set",
           entry: {
-            key: "webui/devtools/tab",
+            key: "studio/devtools/tab",
             value: "model",
             version: 1,
             updatedAt: expect.any(Number),
@@ -218,14 +218,14 @@ describe("Feature: auth-scoped kv store", () => {
           eventId: 3,
           timestamp: expect.any(Number),
           kind: "delete",
-          key: "webui/devtools/tab",
+          key: "studio/devtools/tab",
           version: 2,
         },
       ]);
       expect(seen).toEqual([
-        { authId: "auth-a", kind: "set", key: "webui/devtools/tab" },
-        { authId: "auth-a", kind: "set", key: "webui/workspace/split" },
-        { authId: "auth-a", kind: "delete", key: "webui/devtools/tab" },
+        { authId: "auth-a", kind: "set", key: "studio/devtools/tab" },
+        { authId: "auth-a", kind: "set", key: "studio/workspace/split" },
+        { authId: "auth-a", kind: "delete", key: "studio/devtools/tab" },
       ]);
     } finally {
       store.close();

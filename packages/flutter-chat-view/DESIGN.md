@@ -4,7 +4,7 @@
 
 ## 1. Goal
 
-- `flutter-chat-view` 的目标不是复刻 `apple.com` 营销页，也不是把 `packages/webui` 翻译成 Flutter。
+- `flutter-chat-view` 的目标不是复刻 `apple.com` 营销页，也不是把 `packages/studio` 翻译成 Flutter。
 - phase 1 的目标是交付一个 **Web-first、Apple idiom、Cupertino-first** 的独立房间工作台。
 - 后续 iOS / Android / macOS 复用同一套 host-shell law，而不是各端重新长出一套页面语义。
 

@@ -1807,7 +1807,7 @@ describe("Feature: app-server trpc procedures", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given authenticated actors When they use kv procedures Then each actor only sees private WebUI memory facts", async () => {
+  test("Scenario: Given authenticated actors When they use kv procedures Then each actor only sees private Studio memory facts", async () => {
     const root = makeTempDir();
     const kernel = new AppKernel({
       globalSessionRoot: join(root, "sessions"),
@@ -1853,7 +1853,7 @@ describe("Feature: app-server trpc procedures", () => {
     );
 
     const saved = await callerA.kv.set({
-      key: "webui/devtools/tab",
+      key: "studio/devtools/tab",
       value: {
         tab: "model",
         pinned: true,
@@ -1863,7 +1863,7 @@ describe("Feature: app-server trpc procedures", () => {
       ok: true,
       changed: true,
       entry: {
-        key: "webui/devtools/tab",
+        key: "studio/devtools/tab",
         value: {
           tab: "model",
           pinned: true,
@@ -1876,7 +1876,7 @@ describe("Feature: app-server trpc procedures", () => {
     const actorBSnapshot = await callerB.kv.snapshot();
     expect(actorASnapshot.items).toHaveLength(1);
     expect(actorASnapshot.items[0]).toMatchObject({
-      key: "webui/devtools/tab",
+      key: "studio/devtools/tab",
       value: {
         tab: "model",
         pinned: true,
@@ -1889,7 +1889,7 @@ describe("Feature: app-server trpc procedures", () => {
     });
 
     const conflict = await callerA.kv.set({
-      key: "webui/devtools/tab",
+      key: "studio/devtools/tab",
       value: "cycle",
       baseVersion: null,
     });
@@ -1897,19 +1897,19 @@ describe("Feature: app-server trpc procedures", () => {
       ok: false,
       reason: "conflict",
       latest: {
-        key: "webui/devtools/tab",
+        key: "studio/devtools/tab",
         version: 1,
       },
     });
 
     const noopDelete = await callerB.kv.delete({
-      key: "webui/devtools/tab",
+      key: "studio/devtools/tab",
     });
     expect(noopDelete).toEqual({
       ok: true,
       removed: false,
       eventId: null,
-      key: "webui/devtools/tab",
+      key: "studio/devtools/tab",
       version: null,
     });
 

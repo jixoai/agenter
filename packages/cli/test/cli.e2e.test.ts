@@ -8,7 +8,7 @@ import { request as httpRequest } from "node:http";
 import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
 
 const CLI_ENTRY = resolve(import.meta.dir, "../src/bin/agenter.ts");
-const WEBUI_PACKAGE_DIR = resolve(import.meta.dir, "../../webui");
+const STUDIO_PACKAGE_DIR = resolve(import.meta.dir, "../../studio");
 const BUN_BIN = Bun.which("bun") ?? process.execPath;
 
 const readText = async (stream: ReadableStream<Uint8Array> | null): Promise<string> => {
@@ -196,7 +196,7 @@ const runPlaywrightProbe = async (url: string): Promise<{ url: string; body: str
   `;
   const probe = Bun.spawn({
     cmd: ["pnpm", "exec", "node", "--input-type=module", "-e", script],
-    cwd: WEBUI_PACKAGE_DIR,
+    cwd: STUDIO_PACKAGE_DIR,
     stdout: "pipe",
     stderr: "pipe",
     env: {
@@ -223,10 +223,20 @@ const runPlaywrightProbe = async (url: string): Promise<{ url: string; body: str
 const expectSvelteShellHtml = (html: string): void => {
   expect(html.includes("<!doctype html>")).toBe(true);
   expect(html.includes('data-sveltekit-preload-data="hover"')).toBe(true);
-  expect(html.includes("/_app/")).toBe(true);
+  expect(html.includes("/_app/") || html.includes("__sveltekit_dev")).toBe(true);
 };
 
-describe("Feature: cli daemon and web commands", () => {
+const startStudioDev = async (input: { host: string; home: string; webPort: number; daemonPort: number }) => {
+  const studio = spawnCli(
+    ["studio", "--dev", "--web-port", String(input.webPort), "--port", String(input.daemonPort)],
+    { HOME: input.home },
+  );
+  daemons.push(studio);
+  await readUntilMatch(studio.stdout, new RegExp(`agenter studio \\(dev\\) ui:\\s+http://${input.host}:${input.webPort}`, "u"), 90_000);
+  return studio;
+};
+
+describe("Feature: cli daemon and Studio commands", () => {
   test("Scenario: Given daemon command When doctor checks health Then exit code is 0", async () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
@@ -374,47 +384,40 @@ describe("Feature: cli daemon and web commands", () => {
     expect(stdout).not.toContain("Unable to transform response from server");
   }, 70_000);
 
-  test("Scenario: Given web command When reading root html Then the default entry serves the canonical Svelte shell", async () => {
-    const host = "127.0.0.1";
-    const port = await findFreePort();
+  test("Scenario: Given removed web command When invoking the old entry Then the CLI rejects it as an unsupported product", async () => {
     const home = createIsolatedHome();
-    const daemon = spawnCli(["web", "--host", host, "--port", String(port)], { HOME: home });
-    daemons.push(daemon);
+    const web = spawnCli(["web", "--help"], { HOME: home });
 
-    const healthy = await waitForHealth(host, port);
-    if (!healthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`web daemon failed to become healthy: ${stderr}`);
-    }
+    const code = await web.exited;
+    const stderr = await readText(web.stderr);
 
-    const response = await fetch(`http://${host}:${port}/`);
+    expect(code).toBe(1);
+    expect(stderr).toContain("unsupported product command: web");
+  }, 30_000);
+
+  test("Scenario: Given Studio product command When reading root html Then the product-owned dev server serves the canonical Svelte shell", async () => {
+    const host = "127.0.0.1";
+    const webPort = await findFreePort();
+    const daemonPort = await findFreePort();
+    const home = createIsolatedHome();
+    await startStudioDev({ host, home, webPort, daemonPort });
+
+    const response = await fetch(`http://${host}:${webPort}/`);
     const html = await response.text();
     expect(response.status).toBe(200);
     expectSvelteShellHtml(html);
 
-    const envResponse = await fetch(`http://${host}:${port}/_app/env.js`);
-    const envSource = await envResponse.text();
-    expect(envResponse.status).toBe(200);
-    expect(envSource).toBe("export const env={}\n");
-    expect(envSource).not.toContain("PUBLIC_AGENTER_WS_URL");
-
-    await waitForWsOpen(`ws://${host}:${port}/trpc`);
+    await waitForWsOpen(`ws://${host}:${daemonPort}/trpc`);
   }, 70_000);
 
-  test("Scenario: Given static web command When a browser opens the root entry Then it hydrates and redirects without HTML-as-JSON failure", async () => {
+  test("Scenario: Given Studio product command When a browser opens the root entry Then it hydrates and redirects without HTML-as-JSON failure", async () => {
     const host = "127.0.0.1";
-    const port = await findFreePort();
+    const webPort = await findFreePort();
+    const daemonPort = await findFreePort();
     const home = createIsolatedHome();
-    const daemon = spawnCli(["web", "--host", host, "--port", String(port)], { HOME: home });
-    daemons.push(daemon);
+    await startStudioDev({ host, home, webPort, daemonPort });
 
-    const healthy = await waitForHealth(host, port);
-    if (!healthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`web daemon failed to become healthy: ${stderr}`);
-    }
-
-    const probe = await runPlaywrightProbe(`http://${host}:${port}/`);
+    const probe = await runPlaywrightProbe(`http://${host}:${webPort}/`);
     const fatalErrors = probe.errors.filter(
       (error) => !/^console:Failed to load resource: the server responded with a status of 401 \(Unauthorized\)$/u.test(error),
     );
@@ -428,25 +431,19 @@ describe("Feature: cli daemon and web commands", () => {
     expect(probe.body.trim().length).toBeGreaterThan(0);
   }, 120_000);
 
-  test("Scenario: Given web command When refreshing room and attention deep links Then the default entry returns the same SPA shell instead of 404", async () => {
+  test("Scenario: Given Studio product command When refreshing room and attention deep links Then the default entry returns the same SPA shell instead of 404", async () => {
     const host = "127.0.0.1";
-    const port = await findFreePort();
+    const webPort = await findFreePort();
+    const daemonPort = await findFreePort();
     const home = createIsolatedHome();
-    const daemon = spawnCli(["web", "--host", host, "--port", String(port)], { HOME: home });
-    daemons.push(daemon);
+    await startStudioDev({ host, home, webPort, daemonPort });
 
-    const healthy = await waitForHealth(host, port);
-    if (!healthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`web daemon failed to become healthy: ${stderr}`);
-    }
-
-    const roomResponse = await fetch(`http://${host}:${port}/messages/room/test-room?sessionId=test-session`);
+    const roomResponse = await fetch(`http://${host}:${webPort}/messages/room/test-room?sessionId=test-session`);
     const roomHtml = await roomResponse.text();
     expect(roomResponse.status).toBe(200);
     expectSvelteShellHtml(roomHtml);
 
-    const attentionResponse = await fetch(`http://${host}:${port}/avatars/runtime/test-session/attention`);
+    const attentionResponse = await fetch(`http://${host}:${webPort}/avatars/runtime/test-session/attention`);
     const attentionHtml = await attentionResponse.text();
     expect(attentionResponse.status).toBe(200);
     expectSvelteShellHtml(attentionHtml);

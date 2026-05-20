@@ -4,12 +4,12 @@
 Define the shared Svelte structural package that owns durable scroll ownership and scaffold-family layout law across reusable Svelte clients.
 ## Requirements
 ### Requirement: Shared Svelte structural primitives SHALL live in @agenter/svelte-components
-The repository SHALL expose `@agenter/svelte-components` as the shared Svelte structural package for durable scroll ownership and scaffold-family layout law. Shared Svelte consumers SHALL import structural primitives from that package instead of reaching into product-local `webui` source. That package SHALL expose `ScrollView` for standard surfaces, the anchored virtual list scroll platform for WebChat-like virtual long lists, and the shared scaffold family through `Scaffold`, `DialogScaffold`, and `SidebarScaffold`. The anchored virtual list platform exported from this package SHALL own the full transaction runtime, ownership chain, and terminal viewport writer rather than leaving render-layer or consumer-layer code to complete scroll choreography privately.
+The repository SHALL expose `@agenter/svelte-components` as the shared Svelte structural package for durable scroll ownership and scaffold-family layout law. Shared Svelte consumers SHALL import structural primitives from that package instead of reaching into product-local `studio` source. That package SHALL expose `ScrollView` for standard surfaces, the anchored virtual list scroll platform for WebChat-like virtual long lists, and the shared scaffold family through `Scaffold`, `DialogScaffold`, and `SidebarScaffold`. The anchored virtual list platform exported from this package SHALL own the full transaction runtime, ownership chain, and terminal viewport writer rather than leaving render-layer or consumer-layer code to complete scroll choreography privately.
 
 #### Scenario: Shared Svelte consumer resolves one structural package
 - **WHEN** a shared Svelte package such as `web-chat-view` needs transcript scrolling or shell layout primitives
 - **THEN** it imports them from `@agenter/svelte-components`
-- **THEN** it does not depend on `@agenter/webui` to recover those primitives
+- **THEN** it does not depend on `@agenter/studio` to recover those primitives
 
 #### Scenario: Shared structural package exports standard and anchored scroll law together
 - **WHEN** engineers consume `@agenter/svelte-components`
@@ -38,7 +38,7 @@ The repository SHALL expose `@agenter/svelte-components` as the shared Svelte st
 #### Scenario: Shared consumer imports the split-detail primitive from one package
 - **WHEN** a Svelte route or shared client needs a persistent `main + right detail` shell
 - **THEN** it imports the split-detail primitive from `@agenter/svelte-components`
-- **THEN** it does not reach into `@agenter/webui` to recover resize or width-resolution math
+- **THEN** it does not reach into `@agenter/studio` to recover resize or width-resolution math
 
 #### Scenario: Structural package exports ratio-source contracts together
 - **WHEN** engineers consume the split-detail primitive

@@ -23,24 +23,37 @@ const createTempDir = (): string => {
   return dir;
 };
 
-const createCliLayout = (): string => {
+const createProductLayout = (input: {
+  packageSegment: string;
+  packageName: string;
+  binName: string;
+  binPath: string;
+}): string => {
   const root = createTempDir();
   const cliSourceDir = join(root, "packages", "cli", "src");
-  const packageDir = join(root, "packages", "cli-shell");
+  const packageDir = join(root, "packages", input.packageSegment);
   mkdirSync(cliSourceDir, { recursive: true });
   mkdirSync(join(packageDir, "src", "bin"), { recursive: true });
   writeFileSync(
     join(packageDir, "package.json"),
     JSON.stringify({
-      name: "@agenter/cli-shell",
+      name: input.packageName,
       bin: {
-        "agenter-cli-shell": "./src/bin/agenter-cli-shell.ts",
+        [input.binName]: input.binPath,
       },
     }),
   );
-  writeFileSync(join(packageDir, "src", "bin", "agenter-cli-shell.ts"), "console.log('ok')\n");
+  writeFileSync(join(packageDir, input.binPath), "console.log('ok')\n");
   return cliSourceDir;
 };
+
+const createCliLayout = (): string =>
+  createProductLayout({
+    packageSegment: "cli-shell",
+    packageName: "@agenter/cli-shell",
+    binName: "agenter-cli-shell",
+    binPath: "./src/bin/agenter-cli-shell.ts",
+  });
 
 describe("Feature: product command launcher", () => {
   test("Scenario: Given shell argv When resolving product invocation Then the registry stays descriptor-driven and preserves product argv", () => {
@@ -48,6 +61,15 @@ describe("Feature: product command launcher", () => {
     expect(routed?.descriptor.packageName).toBe("@agenter/cli-shell");
     expect(routed?.descriptor.bin.mainExport).toBe("runCliShell");
     expect(routed?.productArgv).toEqual(["@default", "--session=2"]);
+    expect(routed?.launcherOptions.host).toBe("127.0.0.2");
+    expect(routed?.launcherOptions.port).toBe(4600);
+  });
+
+  test("Scenario: Given studio argv When resolving product invocation Then Studio is descriptor-driven and keeps product-owned flags outside core", () => {
+    const routed = resolveProductCommandInvocation(["studio", "--dev", "--web-port", "4173", "--host", "127.0.0.2", "--port", "4600"]);
+    expect(routed?.descriptor.packageName).toBe("@agenter/studio");
+    expect(routed?.descriptor.bin.mainExport).toBe("runStudio");
+    expect(routed?.productArgv).toEqual(["--dev", "--web-port", "4173"]);
     expect(routed?.launcherOptions.host).toBe("127.0.0.2");
     expect(routed?.launcherOptions.port).toBe(4600);
   });
@@ -64,6 +86,27 @@ describe("Feature: product command launcher", () => {
     }
     expect(target.binPath.endsWith("packages/cli-shell/src/bin/agenter-cli-shell.ts")).toBe(true);
     expect(target.mainPath.endsWith("packages/cli-shell/src/index.ts")).toBe(true);
+  });
+
+  test("Scenario: Given a local workspace Studio package When resolving the launch target Then workspace wins before installed or remote fallback", () => {
+    const descriptor = resolveProductCommandDescriptor("studio");
+    if (!descriptor) {
+      throw new Error("missing studio descriptor");
+    }
+    const target = resolveProductLaunchTarget(descriptor, {
+      cliSourceDir: createProductLayout({
+        packageSegment: "studio",
+        packageName: "@agenter/studio",
+        binName: "agenter-studio",
+        binPath: "./src/bin/agenter-studio.ts",
+      }),
+    });
+    expect(target.source).toBe("workspace");
+    if (target.source !== "workspace") {
+      return;
+    }
+    expect(target.binPath.endsWith("packages/studio/src/bin/agenter-studio.ts")).toBe(true);
+    expect(target.mainPath.endsWith("packages/studio/src/index.ts")).toBe(true);
   });
 
   test("Scenario: Given no local package and a resolvable installed package When resolving the launch target Then installed metadata provides the bin path", () => {
@@ -146,6 +189,27 @@ describe("Feature: product command launcher", () => {
     expect(env.AGENTER_PRODUCT_SOURCE).toBe("workspace");
   });
 
+  test("Scenario: Given launcher-owned daemon context When building Studio env Then the child process receives explicit source and daemon metadata", () => {
+    const descriptor = resolveProductCommandDescriptor("studio");
+    if (!descriptor) {
+      throw new Error("missing studio descriptor");
+    }
+    const env = buildProductLaunchEnv({
+      descriptor,
+      source: "workspace",
+      launcherOptions: {
+        host: "127.0.0.1",
+        port: 4580,
+      },
+      baseEnv: {},
+    });
+    expect(env.AGENTER_DAEMON_HOST).toBe("127.0.0.1");
+    expect(env.AGENTER_DAEMON_PORT).toBe("4580");
+    expect(env.AGENTER_PRODUCT_COMMAND).toBe("studio");
+    expect(env.AGENTER_PRODUCT_PACKAGE).toBe("@agenter/studio");
+    expect(env.AGENTER_PRODUCT_SOURCE).toBe("workspace");
+  });
+
   test("Scenario: Given the launcher discovers a reused daemon authority When building product env Then the child process receives the resolved authority instead of the default request port", () => {
     const descriptor = resolveProductCommandDescriptor("shell");
     if (!descriptor) {
@@ -167,6 +231,7 @@ describe("Feature: product command launcher", () => {
   test("Scenario: Given unsupported input When classifying the command token Then built-ins remain separate and arbitrary package execution is rejected", () => {
     expect(readCommandToken(["unknown-product"])).toBe("unknown-product");
     expect(isBuiltInCommand("doctor")).toBe(true);
+    expect(isBuiltInCommand("web")).toBe(false);
     expect(isBuiltInCommand("unknown-product")).toBe(false);
     expect(resolveProductCommandInvocation(["unknown-product"])).toBeNull();
   });
@@ -190,7 +255,7 @@ describe("Feature: product command launcher", () => {
         expect(source).not.toContain(token);
       }
     }
-    expect(listProductCommandDescriptors().map((descriptor) => descriptor.command)).toContain("shell");
+    expect(listProductCommandDescriptors().map((descriptor) => descriptor.command)).toEqual(["shell", "studio"]);
   });
 
   test("Scenario: Given a local product declares an in-process entry When inspecting the launch path Then the launcher can preserve same-process data-plane laws before falling back to child stdio", () => {

@@ -10,8 +10,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "bun test --timeout 15000",
-    "build:assets": "bun run scripts/copy-webui-assets.ts"
+    "test": "bun test --timeout 15000"
   },
   "dependencies": {
     "@agenter/app-server": "workspace:*",

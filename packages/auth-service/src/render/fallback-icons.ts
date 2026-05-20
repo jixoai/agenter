@@ -1,4 +1,4 @@
-import { loadLucideIconAsset } from "../../../ui-studio/src/lib/icon-studio/lucide-slot-catalog.js";
+import { loadLucideIconAsset } from "../../../icon-studio/src/lib/icon-studio/lucide-slot-catalog.js";
 import type { AvatarClassify, AvatarIconSeed, ProfileIconSeed, RoomIconSeed, SessionIconSeed } from "../types";
 
 const toTrimmedOrFallback = (value: string | undefined, fallback: string): string => {

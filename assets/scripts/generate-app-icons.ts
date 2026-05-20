@@ -18,8 +18,8 @@ const outputs = {
 	ios: resolve(repoRoot, 'assets/app/apple/ios/AppIcon.appiconset'),
 	macos: resolve(repoRoot, 'assets/app/apple/macos'),
 	android: resolve(repoRoot, 'assets/app/android'),
-	webuiStatic: resolve(repoRoot, 'packages/webui/static'),
-	webuiIcons: resolve(repoRoot, 'packages/webui/static/icons'),
+	studioStatic: resolve(repoRoot, 'packages/studio/static'),
+	studioIcons: resolve(repoRoot, 'packages/studio/static/icons'),
 };
 const sourceFiles = {
 	core: resolve(sourceDir, 'icon-core.png'),
@@ -105,10 +105,10 @@ resetDir(outputs.pwa);
 resetDir(outputs.ios);
 resetDir(join(outputs.macos, 'AppIcon.iconset'));
 resetDir(outputs.android);
-ensureDir(outputs.webuiStatic);
-resetDir(outputs.webuiIcons);
-removeFile(join(outputs.webuiStatic, 'favicon.ico'));
-removeFile(join(outputs.webuiStatic, 'site.webmanifest'));
+ensureDir(outputs.studioStatic);
+resetDir(outputs.studioIcons);
+removeFile(join(outputs.studioStatic, 'favicon.ico'));
+removeFile(join(outputs.studioStatic, 'site.webmanifest'));
 
 for (const size of faviconSizes) {
 	resizePng(sourceFiles.favicon, join(outputs.favicon, `favicon-${size}.png`), size);
@@ -116,7 +116,7 @@ for (const size of faviconSizes) {
 writeIco(join(outputs.favicon, 'favicon.ico'), faviconSizes.map((size) => join(outputs.favicon, `favicon-${size}.png`)));
 
 copyFile(join(outputs.favicon, 'favicon.ico'), join(outputs.web, 'favicon.ico'));
-copyFile(join(outputs.favicon, 'favicon.ico'), join(outputs.webuiStatic, 'favicon.ico'));
+copyFile(join(outputs.favicon, 'favicon.ico'), join(outputs.studioStatic, 'favicon.ico'));
 
 for (const [themeName, themeSources] of Object.entries(themedSourceFiles) as Array<
 	[keyof typeof themedSourceFiles, (typeof themedSourceFiles)[keyof typeof themedSourceFiles]]
@@ -124,14 +124,14 @@ for (const [themeName, themeSources] of Object.entries(themedSourceFiles) as Arr
 	for (const size of [16, 32] as const) {
 		const filename = `favicon-${themeName}-${size}.png`;
 		resizePng(themeSources.favicon, join(outputs.web, filename), size);
-		copyFile(join(outputs.web, filename), join(outputs.webuiIcons, filename));
+		copyFile(join(outputs.web, filename), join(outputs.studioIcons, filename));
 	}
 }
 
 for (const icon of webIcons) {
 	const webPath = join(outputs.web, icon.filename);
 	const pwaPath = join(outputs.pwa, icon.filename);
-	const staticPath = join(outputs.webuiIcons, icon.filename);
+	const staticPath = join(outputs.studioIcons, icon.filename);
 	resizePng(icon.source, webPath, icon.size);
 	copyFile(webPath, pwaPath);
 	copyFile(webPath, staticPath);
@@ -139,7 +139,7 @@ for (const icon of webIcons) {
 
 writeJson(join(outputs.web, 'site.webmanifest'), manifest);
 writeJson(join(outputs.pwa, 'site.webmanifest'), manifest);
-writeJson(join(outputs.webuiStatic, 'site.webmanifest'), manifest);
+writeJson(join(outputs.studioStatic, 'site.webmanifest'), manifest);
 
 for (const icon of iosIcons) {
 	resizePng(sourceFiles.tile, join(outputs.ios, icon.filename), icon.pixels);
@@ -178,8 +178,8 @@ for (const relativePath of [
 	'assets/app/apple/ios/AppIcon.appiconset',
 	'assets/app/apple/macos/AppIcon.icns',
 	'assets/app/android',
-	'packages/webui/static/favicon.ico',
-	'packages/webui/static/site.webmanifest',
+	'packages/studio/static/favicon.ico',
+	'packages/studio/static/site.webmanifest',
 ]) {
 	console.log(`- ${relativePath}`);
 }

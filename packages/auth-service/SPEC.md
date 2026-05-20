@@ -21,7 +21,7 @@
 非目标：
 
 - 不接管 `@agenter/avatar` 的 prompt/persona 目录职责
-- 不让 WebUI 或 `app-server` 成为第二套 profile/icon authority
+- 不让 Studio 或 `app-server` 成为第二套 profile/icon authority
 - 不把 Avatar prompt/persona/workspace 行为写回 auth state
 - 不把任意临时字符串直接升级成 durable account
 
@@ -65,7 +65,7 @@
 - deterministic renderer 的 canonical source 是 SVG；PNG/JPEG 等 raster variant 必须由服务端通过 `bun:ffi + resvg bridge` 生成
 - 默认 icon read 对于 SVG-backed source 也必须返回服务端光栅化后的 raster bytes；只有显式 `format=svg` 才允许返回原始 SVG
 - 前端不得再为了“让后端有图可读”而先上传浏览器本地 rasterized fallback
-- 前端消费 avatar 图像时必须以 auth-service 返回的 `iconUrl` / raster variant 为唯一真源，不得在 WebUI、catalog、skills 或其他 feature 内发明第二套 avatar fallback renderer
+- 前端消费 avatar 图像时必须以 auth-service 返回的 `iconUrl` / raster variant 为唯一真源，不得在 Studio、catalog、skills 或其他 feature 内发明第二套 avatar fallback renderer
 
 ## 5. 存储与运行时法则
 

@@ -19,7 +19,6 @@ import {
 import type { AuthServiceHandle } from "@agenter/auth-service";
 import type { TrpcServerHandle } from "./trpc-server";
 import { readDaemonRuntimeDescriptor, type DaemonRuntimeDescriptor } from "./daemon-runtime-descriptor";
-import { resolveCanonicalWebUiAssetRoot } from "./webui-static-root";
 
 interface CommonArgs {
   host: string;
@@ -41,8 +40,6 @@ interface StandaloneAuthServiceCliArgs extends CommonArgs {
   dataDir?: string;
 }
 
-const BUN_BIN = Bun.which("bun") ?? process.execPath;
-
 const waitForSignal = async (cleanup?: () => Promise<void> | void): Promise<void> => {
   await new Promise<void>((resolve) => {
     const onSignal = async (): Promise<void> => {
@@ -60,7 +57,6 @@ const waitForSignal = async (cleanup?: () => Promise<void> | void): Promise<void
 };
 
 const healthUrl = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
-const webUrl = (args: { host: string; port: number }): string => `http://${args.host}:${args.port}`;
 const resolveLauncherHomeDir = (): string => process.env.HOME || homedir();
 const resolveLauncherOwnedAuthServiceDataDir = (): string => join(resolveLauncherHomeDir(), ".agenter", "launcher-auth-service");
 const resolveDaemonHealthLabel = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
@@ -185,44 +181,6 @@ const withAuthServiceBridgeOptions = <TBuilder extends ReturnType<typeof yargs>>
       type: "number",
       describe: "override the managed-local auth-service port when the daemon owns the child service",
     }) as unknown as TBuilder;
-
-const waitForHttpServer = async (url: string, timeoutMs = 30_000): Promise<void> => {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const alive = await isHttpHealthAlive(url);
-      if (alive) {
-        return;
-      }
-    } catch {
-      // ignore until timeout
-    }
-    await Bun.sleep(200);
-  }
-  throw new Error(`web dev server did not become ready: ${url}`);
-};
-
-const startWebDevServer = async (input: {
-  host: string;
-  webPort: number;
-  trpcHost: string;
-  trpcPort: number;
-}): Promise<Bun.Subprocess<"ignore", "inherit", "inherit">> => {
-  const webuiDir = join(import.meta.dir, "../../webui");
-  const proc = Bun.spawn({
-    cmd: [BUN_BIN, "run", "dev", "--host", input.host, "--port", String(input.webPort)],
-    cwd: webuiDir,
-    stdin: "ignore",
-    stdout: "inherit",
-    stderr: "inherit",
-    env: {
-      ...process.env,
-      PUBLIC_AGENTER_WS_URL: `ws://${input.trpcHost}:${input.trpcPort}/trpc`,
-    },
-  });
-  await waitForHttpServer(webUrl({ host: input.host, port: input.webPort }));
-  return proc;
-};
 
 export interface ProductCommandLaunchDependencies {
   isDaemonAlive(args: CommonArgs): Promise<boolean>;
@@ -458,61 +416,6 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
         });
         console.log(`agenter daemon listening on ${daemon.host}:${daemon.port}`);
         await waitForSignal(async () => {
-          await daemon.stop();
-        });
-      },
-    )
-    .command(
-      "web",
-      "start daemon with webui entry",
-      (builder) =>
-        withAuthServiceBridgeOptions(builder)
-          .option("dev", {
-            type: "boolean",
-            default: false,
-            describe: "run webui in vite dev mode (no build needed)",
-          })
-          .option("web-port", {
-            type: "number",
-            default: 4173,
-            describe: "webui port in --dev mode",
-          }),
-      async (args) => {
-        const host = String(args.host);
-        const port = Number(args.port);
-        const dev = Boolean(args.dev);
-        const webPort = Number(args.webPort);
-
-        const daemon = await startDaemon({
-          host,
-          port,
-          staticDir: dev ? undefined : resolveCanonicalWebUiAssetRoot(import.meta.dir).staticDir,
-          publicEnv: dev ? undefined : {},
-          authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
-          authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
-          authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
-          authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
-        });
-
-        if (!dev) {
-          console.log(`agenter web listening on http://${daemon.host}:${daemon.port}`);
-          await waitForSignal(async () => {
-            await daemon.stop();
-          });
-          return;
-        }
-
-        const webDev = await startWebDevServer({
-          host: String(args.host),
-          webPort,
-          trpcHost: daemon.host,
-          trpcPort: daemon.port,
-        });
-        console.log(`agenter web (dev) api: http://${daemon.host}:${daemon.port}`);
-        console.log(`agenter web (dev) ui:  http://${host}:${webPort}`);
-
-        await waitForSignal(async () => {
-          webDev.kill();
           await daemon.stop();
         });
       },

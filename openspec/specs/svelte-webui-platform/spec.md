@@ -2,44 +2,21 @@
 
 ## Purpose
 
-Define the active SvelteKit-based operator WebUI platform, including system-first navigation and the durable shell responsibilities that replace the archived React implementation.
+Define the active SvelteKit-based operator Studio platform, including system-first navigation and the durable shell responsibilities that replace the archived React implementation.
 ## Requirements
 ### Requirement: SvelteKit package SHALL be the active WebUI platform
 
-The repository SHALL expose `@agenter/webui` as a SvelteKit 2 + Svelte 5 package, and the previous React implementation SHALL be retained only as an inactive reference package.
+The repository SHALL expose `@agenter/studio` as the active SvelteKit 2 + Svelte 5 operator package, and the previous React implementation SHALL be retained only as an inactive reference package under a non-conflicting identity. The term WebUI remains historical wording for this capability only; active product identity SHALL be Studio.
 
 #### Scenario: Active package resolution
 
-- **WHEN** workspace package discovery resolves `@agenter/webui`
-- **THEN** it resolves to the SvelteKit package rather than the archived React package
+- **WHEN** workspace package discovery resolves `@agenter/studio`
+- **THEN** it resolves to the active SvelteKit operator package rather than the archived React package
 
 #### Scenario: Archived React package remains available
 
 - **WHEN** engineers need implementation reference from the previous UI
 - **THEN** the React package remains available under a non-conflicting package identity
-
-### Requirement: CLI delivery SHALL serve the SvelteKit app as static SPA assets
-
-The CLI WebUI delivery path SHALL resolve one canonical static asset root for the active `@agenter/webui` build and SHALL serve the root document, nested-route fallback document, and static asset files from that same root. Derived copied assets MAY exist for packaging, but the runtime SHALL NOT silently choose between divergent asset trees.
-
-#### Scenario: Root page request uses the canonical WebUI root
-
-- **WHEN** `agenter web` serves `/`
-- **THEN** the CLI returns the static WebUI entry document from the canonical asset root
-- **THEN** the default browser entry reflects the current WebUI build without requiring a second manual asset sync
-
-#### Scenario: Nested route refresh uses the same canonical root
-
-- **WHEN** a browser refreshes a client route such as `/messages/room/room-main` or `/avatars/runtime/session-1/attention`
-- **THEN** the CLI returns the SPA fallback document from that same canonical asset root instead of a 404
-- **THEN** the refreshed route sees the same build that the root page uses
-
-#### Scenario: Divergent asset roots do not silently mask a newer fix
-
-- **GIVEN** a current WebUI build exists and a stale copied CLI asset tree also exists
-- **WHEN** the operator starts `agenter web`
-- **THEN** the runtime serves only the canonical asset root or fails fast with rebuild guidance
-- **THEN** it does not silently serve the stale copied tree as an independent source of truth
 
 ### Requirement: The platform SHALL expose system-first navigation with nested secondary entries
 
@@ -137,7 +114,7 @@ The active Svelte WebUI SHALL consume multipart shadcn-svelte primitives through
 
 ### Requirement: Svelte WebUI SHALL place primary and secondary content through responsive shells
 
-The active Svelte WebUI SHALL model primary content, navigation, secondary context, and parallel tools through explicit responsive shells. Compact layouts SHALL collapse secondary content into `left-sidebar`, `right-sidebar`, `bottom-sheet`, `Dialog`, or `tabs`, while larger layouts MAY reveal those same surfaces by default without changing the primary task hierarchy. Shared structural shells such as `ScrollView`, `Scaffold`, `DialogScaffold`, and `SidebarScaffold` SHALL be consumed from `@agenter/svelte-components`, while shared workbench split-detail visibility host logic SHALL remain in the WebUI navigation layer instead of being reimplemented route-by-route.
+The active Svelte Studio surface SHALL model primary content, navigation, secondary context, and parallel tools through explicit responsive shells. Compact layouts SHALL collapse secondary content into `left-sidebar`, `right-sidebar`, `bottom-sheet`, `Dialog`, or `tabs`, while larger layouts MAY reveal those same surfaces by default without changing the primary task hierarchy. Shared structural shells such as `ScrollView`, `Scaffold`, `DialogScaffold`, and `SidebarScaffold` SHALL be consumed from `@agenter/svelte-components`, while shared workbench split-detail visibility host logic SHALL remain in the Studio navigation layer instead of being reimplemented route-by-route.
 
 #### Scenario: Compact route collapses secondary content first
 
@@ -151,11 +128,11 @@ The active Svelte WebUI SHALL model primary content, navigation, secondary conte
 - **THEN** the route may reveal sidebars or secondary panes by default
 - **THEN** those expanded surfaces remain visually and structurally secondary to the primary task stage
 
-#### Scenario: WebUI route consumes shared structural package
+#### Scenario: Studio route consumes shared structural package
 
-- **WHEN** a WebUI route or shell needs scrolling or scaffold-family layout
+- **WHEN** a Studio route or shell needs scrolling or scaffold-family layout
 - **THEN** it composes the shared primitives from `@agenter/svelte-components`
-- **THEN** `@agenter/webui` stays a product assembly layer instead of becoming the source of truth for shared layout law
+- **THEN** `@agenter/studio` stays a product assembly layer instead of becoming the source of truth for shared layout law
 
 ### Requirement: Compact workbench tabs SHALL preserve the primary running-tab hit target
 

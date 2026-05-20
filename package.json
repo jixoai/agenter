@@ -16,10 +16,9 @@
     "build:i18n": "bun run --filter '@agenter/i18n-*' build",
     "build:icon-masters": "bun run ./assets/scripts/build-icon-masters.ts",
     "build:icons": "bun run build:icon-masters && bun run ./assets/scripts/generate-app-icons.ts",
-    "build:ui-studio-lucide": "bun run ./assets/scripts/build-ui-studio-lucide-catalog.ts",
-    "build:ui-studio": "bun run --filter '@agenter/ui-studio' build",
-    "build:webui": "bun run --filter '@agenter/webui' build",
-    "build:ui": "bun run build:webui && bun run --filter '@agenter/cli' build:assets",
+    "build:icon-studio-lucide": "bun run ./assets/scripts/build-icon-studio-lucide-catalog.ts",
+    "build:icon-studio": "bun run --filter '@agenter/icon-studio' build",
+    "build:studio": "bun run --filter '@agenter/studio' build",
     "changeset": "changeset",
     "flutter-chat-view:web": "bun run packages/flutter-chat-view/example/scripts/run-web.ts",
     "format": "prettier --write .",
@@ -39,7 +38,7 @@
     "@codemirror/view": "6.41.0"
   },
   "dependencies": {
-    "@agenter/ui-studio": "workspace:*",
+    "@agenter/icon-studio": "workspace:*",
     "imagetracerjs": "^1.2.6",
     "pixelmatch": "^7.1.0",
     "pngjs": "^7.0.0",

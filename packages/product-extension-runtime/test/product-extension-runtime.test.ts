@@ -51,6 +51,34 @@ describe("Feature: product extension runtime contracts", () => {
     expect(descriptor.capabilityHints.runtimePlanes).not.toContain("delegation");
   });
 
+  test("Scenario: Given Studio is a GUI product When parsing descriptor data Then it reuses the same product-extension law as terminal products", () => {
+    const descriptor = productCommandDescriptorSchema.parse({
+      productId: "studio",
+      command: "studio",
+      packageName: "@agenter/studio",
+      bin: { name: "agenter-studio", mainExport: "runStudio" },
+      sourcePolicy: createLocalFirstProductSourcePolicy(),
+      capabilityHints: {
+        interactive: true,
+        foregroundProcess: true,
+        requiresDaemon: true,
+        runtimePlanes: ["launch", "resources", "assistant", "attention"],
+      },
+    });
+
+    expect(descriptor.sourcePolicy.resolutionOrder).toEqual(["workspace", "installed", "remote"]);
+    expect(descriptor.bin.mainExport).toBe("runStudio");
+    expect(descriptor.capabilityHints.runtimePlanes).toContain("launch");
+  });
+
+  test("Scenario: Given package identities are inspected When resolving product packages Then Studio and Icon Studio have distinct package atoms", () => {
+    const studioPkg = JSON.parse(readRepoFile("packages/studio/package.json")) as { name?: string };
+    const iconStudioPkg = JSON.parse(readRepoFile("packages/icon-studio/package.json")) as { name?: string };
+
+    expect(studioPkg.name).toBe("@agenter/studio");
+    expect(iconStudioPkg.name).toBe("@agenter/icon-studio");
+  });
+
   test("Scenario: Given product-owned resource metadata When matching bindings Then product identity stays generic and cli-shell naming stays outside core law", () => {
     const metadata = buildProductBindingMetadata({
       productId: "cli-shell",
@@ -131,6 +159,8 @@ describe("Feature: product extension runtime contracts", () => {
       };
       expect(pkg.dependencies?.["@agenter/cli-shell"]).toBeUndefined();
       expect(pkg.devDependencies?.["@agenter/cli-shell"]).toBeUndefined();
+      expect(pkg.dependencies?.["@agenter/studio"]).toBeUndefined();
+      expect(pkg.devDependencies?.["@agenter/studio"]).toBeUndefined();
     }
 
     const coreSourceRoots = ["packages/app-server/src", "packages/client-sdk/src", "packages/cli/src"] as const;
@@ -139,6 +169,8 @@ describe("Feature: product extension runtime contracts", () => {
         const source = readFileSync(filePath, "utf8");
         expect(source).not.toContain('from "@agenter/cli-shell"');
         expect(source).not.toContain("require(\"@agenter/cli-shell\")");
+        expect(source).not.toContain('from "@agenter/studio"');
+        expect(source).not.toContain("require(\"@agenter/studio\")");
       }
     }
   });

@@ -15,6 +15,12 @@ The core `agenter` CLI SHALL resolve controlled product commands to first-party 
 - **AND** it launches the package bin with the remaining arguments preserved
 - **AND** parsing optional `@avatar` grammar and the default `shell-assistant` policy remains the responsibility of `@agenter/cli-shell`
 
+#### Scenario: Studio command resolves to Studio package
+- **WHEN** a user runs `agenter studio`
+- **THEN** the core CLI resolves product command `studio` to package `@agenter/studio`
+- **AND** it launches the package bin with the remaining arguments preserved
+- **AND** Studio-specific flags remain product argv
+
 #### Scenario: Shell command preserves explicit Avatar argv
 - **WHEN** a user runs `agenter shell @default`
 - **THEN** the core CLI resolves product command `shell` to package `@agenter/cli-shell`
@@ -33,9 +39,16 @@ The core `agenter` CLI SHALL resolve controlled product commands to first-party 
 - **AND** the registry entry is descriptor data, not an import of cli-shell implementation code
 - **AND** user-provided command text cannot alter the package name or bin path
 
+#### Scenario: Web command is unsupported after Studio migration
+- **WHEN** a user runs `agenter web`
+- **THEN** the launcher rejects `web` as an unsupported command
+- **AND** it does not route to `@agenter/studio`
+- **AND** it does not start a daemon, static server, or dev server
+
 #### Scenario: Product command handling does not pollute core runtime
 - **WHEN** reviewers inspect core CLI and runtime modules after adding `shell`
 - **THEN** cli-shell-specific parsing, TUI state, toolbar state, resource naming, dialogue layout, and managed/takeover policy are absent from core runtime modules
+- **AND** Studio-specific static-root resolution, asset-copy code, Vite serving flags, and browser storage keys are absent from core runtime modules
 - **AND** the core launcher only handles descriptor lookup, daemon/auth context, package resolution, stdio, and process exit propagation
 
 ### Requirement: Product package resolution SHALL be local-first
@@ -47,6 +60,11 @@ The product command launcher SHALL resolve product packages from the current mon
 - **WHEN** a user runs `agenter shell` from the Agenter workspace
 - **THEN** the launcher uses the local workspace package bin
 - **AND** it does not require the package to be published to npm
+
+#### Scenario: Studio local workspace package wins during development
+- **GIVEN** `packages/studio/package.json` exists with name `@agenter/studio`
+- **WHEN** a user runs `agenter studio` from the Agenter workspace
+- **THEN** the launcher uses the local workspace package before installed or remote fallback sources
 
 #### Scenario: Remote npm fallback runs without install prompt
 - **GIVEN** no local or installed `@agenter/cli-shell` package is resolvable
@@ -85,6 +103,11 @@ The product command launcher SHALL ensure or reuse a local daemon and pass conne
 - **WHEN** the launcher starts `@agenter/cli-shell`
 - **THEN** the product process receives `AGENTER_DAEMON_HOST` and `AGENTER_DAEMON_PORT`
 - **AND** the product does not need to rediscover a second daemon independently
+
+#### Scenario: Studio receives launcher-owned runtime context
+- **WHEN** the launcher starts `@agenter/studio`
+- **THEN** the product process receives `AGENTER_DAEMON_HOST`, `AGENTER_DAEMON_PORT`, `AGENTER_PRODUCT_COMMAND=studio`, and `AGENTER_PRODUCT_PACKAGE=@agenter/studio`
+- **AND** Studio does not need to rediscover the daemon independently
 
 #### Scenario: Product does not create a second daemon discovery authority
 - **WHEN** the launcher starts `@agenter/cli-shell`

@@ -9,7 +9,6 @@ import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import { WebSocketServer, type WebSocket } from "ws";
 import { clearOwnedDaemonRuntimeDescriptor, writeDaemonRuntimeDescriptor } from "./daemon-runtime-descriptor";
-import { resolveWebUiEntryDocumentPath } from "./webui-static-root";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -25,6 +24,7 @@ const MIME_BY_EXT: Record<string, string> = {
   ".map": "application/json; charset=utf-8",
 };
 const MEDIA_AUTH_TOKEN_QUERY_KEY = "authToken";
+const STATIC_ENTRY_FILENAMES = ["index.html", "200.html"] as const;
 
 export interface TrpcServerOptions {
   host: string;
@@ -52,6 +52,16 @@ const sendJson = (res: ServerResponse, statusCode: number, body: Record<string, 
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.end(`${JSON.stringify(body)}
 `);
+};
+
+const resolveStaticEntryDocumentPath = (staticDir: string): string | null => {
+  for (const filename of STATIC_ENTRY_FILENAMES) {
+    const filePath = join(staticDir, filename);
+    if (existsSync(filePath)) {
+      return filePath;
+    }
+  }
+  return null;
 };
 
 const normalizeHost = (value: string): string => value.replace(/^\[(.*)\]$/u, "$1").toLowerCase();
@@ -389,7 +399,7 @@ const serveStatic = (req: IncomingMessage, res: ServerResponse, staticDir: strin
     return;
   }
   const safePath = normalize(reqPath).replace(/^\.\.+/, "");
-  const entryDocumentPath = resolveWebUiEntryDocumentPath(staticDir);
+  const entryDocumentPath = resolveStaticEntryDocumentPath(staticDir);
   const filePath = safePath === "/" ? (entryDocumentPath ?? join(staticDir, "index.html")) : join(staticDir, safePath);
   const resolvedPath = resolve(filePath);
   if (!resolvedPath.startsWith(resolve(staticDir))) {

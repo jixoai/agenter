@@ -1,14 +1,14 @@
 ## Purpose
 
-Define the explicit overflow and clipping ownership contract for WebUI layout, scroll, and visual surfaces.
+Define the explicit overflow and clipping ownership contract for Studio layout, scroll, and visual surfaces.
 
 ## Requirements
 
-### Requirement: WebUI overflow roles SHALL use explicit surface contracts
-The WebUI SHALL distinguish layout containment, scrolling, visual clipping, semantic background ownership, and animation masking as separate surface roles. Layout wrappers MUST NOT use raw `overflow-hidden` or own raw background color unless they are implemented through an approved surface primitive, and semantic surfaces that own rounded clipping MUST also own the fill required to avoid transparent bleed.
+### Requirement: Studio overflow roles SHALL use explicit surface contracts
+The Studio surface SHALL distinguish layout containment, scrolling, visual clipping, semantic background ownership, and animation masking as separate surface roles. Layout wrappers MUST NOT use raw `overflow-hidden` or own raw background color unless they are implemented through an approved surface primitive, and semantic surfaces that own rounded clipping MUST also own the fill required to avoid transparent bleed.
 
 #### Scenario: Layout wrapper uses the explicit contract
-- **WHEN** a WebUI shell or panel wrapper needs to size descendants without clipping them
+- **WHEN** a Studio shell or panel wrapper needs to size descendants without clipping them
 - **THEN** it does not use raw `overflow-hidden`
 - **THEN** scrolling and clipping are delegated to explicit child surfaces
 
@@ -22,8 +22,8 @@ The WebUI SHALL distinguish layout containment, scrolling, visual clipping, sema
 - **THEN** that same clipping surface owns the required background fill
 - **THEN** unrelated layout ancestors do not add compensating background color
 
-### Requirement: WebUI panels SHALL expose one primary scroll viewport
-Each major WebUI application surface SHALL provide exactly one deliberate primary scroll container for its main content region, while headers, tabs, fixed controls, and semantic chrome remain outside that viewport. Layout-critical surfaces SHALL express this ownership through the shared scaffold-family primitives so feature code no longer hand-authors the stretch shell for each page or dialog. When raw clipping is removed from layout wrappers, the replacement layout MUST explicitly restore scrolling through the shared `ScrollView` primitive on the real scroll owner.
+### Requirement: Studio panels SHALL expose one primary scroll viewport
+Each major Studio application surface SHALL provide exactly one deliberate primary scroll container for its main content region, while headers, tabs, fixed controls, and semantic chrome remain outside that viewport. Layout-critical surfaces SHALL express this ownership through the shared scaffold-family primitives so feature code no longer hand-authors the stretch shell for each page or dialog. When raw clipping is removed from layout wrappers, the replacement layout MUST explicitly restore scrolling through the shared `ScrollView` primitive on the real scroll owner.
 
 #### Scenario: Panel with long content remains operable
 - **WHEN** a panel contains content taller than the available viewport
@@ -55,8 +55,8 @@ Each major WebUI application surface SHALL provide exactly one deliberate primar
 - **THEN** the responsive column and row law is owned by package-local CSS/media rules
 - **THEN** first-level routes do not silently collapse into one stacked column because the consuming app failed to generate a shared utility class
 
-### Requirement: WebUI feature layout shells SHALL derive structure from explicit flex and grid ownership
-WebUI feature surfaces SHALL express one-dimensional layout with `flex` and two-dimensional layout with `grid`, and they SHALL size primary scroll regions from that explicit shell structure instead of compensating with patch classes that repair an incorrect container choice.
+### Requirement: Studio feature layout shells SHALL derive structure from explicit flex and grid ownership
+Studio feature surfaces SHALL express one-dimensional layout with `flex` and two-dimensional layout with `grid`, and they SHALL size primary scroll regions from that explicit shell structure instead of compensating with patch classes that repair an incorrect container choice.
 
 #### Scenario: Header plus scrolling body uses explicit shell structure
 - **WHEN** a route panel needs a fixed header and a scrolling body
@@ -69,20 +69,20 @@ WebUI feature surfaces SHALL express one-dimensional layout with `flex` and two-
 - **THEN** the layout does not rely on stacked patch classes to mimic a missing two-dimensional shell contract
 
 ### Requirement: Raw overflow-hidden usage SHALL be statically enforceable
-The WebUI source tree SHALL fail contract verification if raw `overflow-hidden` appears outside the approved primitive or animation-mask files, and it SHALL also fail if raw `bg-*` classes are introduced on non-semantic layout wrappers outside the approved allowlist.
+The Studio source tree SHALL fail contract verification if raw `overflow-hidden` appears outside the approved primitive or animation-mask files, and it SHALL also fail if raw `bg-*` classes are introduced on non-semantic layout wrappers outside the approved allowlist.
 
 #### Scenario: Unauthorized raw overflow-hidden is introduced
-- **WHEN** a source file in `packages/webui` uses raw `overflow-hidden` outside the approved allowlist
+- **WHEN** a source file in `packages/studio` uses raw `overflow-hidden` outside the approved allowlist
 - **THEN** the overflow source-contract test fails
 - **THEN** the regression is blocked before merge
 
 #### Scenario: Unauthorized raw background ownership is introduced
-- **WHEN** a source file in `packages/webui` adds raw `bg-*` ownership to a non-semantic layout wrapper outside the approved allowlist
+- **WHEN** a source file in `packages/studio` adds raw `bg-*` ownership to a non-semantic layout wrapper outside the approved allowlist
 - **THEN** the surface-contract test fails
 - **THEN** the regression is blocked before merge
 
 ### Requirement: Workspace shell routes SHALL declare scroll ownership per route type
-The WebUI SHALL declare scroll ownership per workspace route type instead of forcing Chat, Devtools, and Settings through one generic page-scrolling model. Shell scaffolds MAY size route regions, but they MUST NOT become the primary scroll owner for route content, and they MUST keep compact padding budgets from being duplicated across shell, route, and inner surface layers.
+The Studio surface SHALL declare scroll ownership per workspace route type instead of forcing Chat, Devtools, and Settings through one generic page-scrolling model. Shell scaffolds MAY size route regions, but they MUST NOT become the primary scroll owner for route content, and they MUST keep compact padding budgets from being duplicated across shell, route, and inner surface layers.
 
 #### Scenario: Chat keeps transcript-specific scrolling
 - **WHEN** the user opens a long Chat session
@@ -103,7 +103,7 @@ The WebUI SHALL declare scroll ownership per workspace route type instead of for
 Terminal renderer surfaces SHALL have one explicit scroll owner with visible scrollbar support, and embedding shells SHALL not wrap the renderer in competing nested scroll containers.
 
 #### Scenario: Terminal surface owns the only active scrollbar
-- **WHEN** a terminal renderer is embedded inside WebUI or another host
+- **WHEN** a terminal renderer is embedded inside Studio or another host
 - **THEN** the renderer viewport owns one active scroll container
 - **THEN** outer shells do not introduce a second competing vertical scroll area around the same terminal content
 

@@ -14,7 +14,7 @@ import {
 	type IconSlotPreset,
 	parseGeometryFromSvg,
 	renderIconSvg,
-} from '@agenter/ui-studio';
+} from '@agenter/icon-studio';
 
 const repoRoot = resolve(import.meta.dirname, '..', '..');
 const nextDir = resolve(repoRoot, 'assets', 'next');

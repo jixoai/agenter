@@ -2,7 +2,7 @@
 
 ## Objective
 
-Implement and evolve a Flutter room chat package that stays protocol-compatible with `message-system` while remaining independent from `packages/webui`.
+Implement and evolve a Flutter room chat package that stays protocol-compatible with `message-system` while remaining independent from `packages/studio`.
 
 ## Rules
 

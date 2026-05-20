@@ -7,7 +7,6 @@ import { createAgenterClient, type AuthDraftEvent, type AuthKvEvent } from "@age
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 import { startTrpcServer, type TrpcServerHandle } from "../src/trpc-server";
-import { readStaticDocumentTitle, resolveCanonicalWebUiAssetRoot } from "../src/webui-static-root";
 
 const tempDirs: string[] = [];
 const handles: TrpcServerHandle[] = [];
@@ -32,35 +31,6 @@ const writeStaticEntry = (staticDir: string, title: string): void => {
 const writeStaticEnv = (staticDir: string, publicWsUrl: string): void => {
   mkdirSync(join(staticDir, "_app"), { recursive: true });
   writeFileSync(join(staticDir, "_app", "env.js"), `export const env=${JSON.stringify({ PUBLIC_AGENTER_WS_URL: publicWsUrl })}\n`);
-};
-
-const createCliLayout = (input: { workspaceCheckout: boolean; workspaceBuild: boolean; packagedAssets: boolean }) => {
-  const dir = mkdtempSync(join(tmpdir(), "agenter-cli-layout-"));
-  tempDirs.push(dir);
-
-  const cliSourceDir = join(dir, "packages", "cli", "src");
-  mkdirSync(cliSourceDir, { recursive: true });
-
-  const workspaceWebUiDir = join(dir, "packages", "webui");
-  const workspaceBuildDir = join(workspaceWebUiDir, "build");
-  if (input.workspaceCheckout) {
-    mkdirSync(workspaceWebUiDir, { recursive: true });
-    writeFileSync(join(workspaceWebUiDir, "package.json"), JSON.stringify({ name: "@agenter/webui" }));
-  }
-  if (input.workspaceBuild) {
-    writeStaticEntry(workspaceBuildDir, "workspace build");
-  }
-
-  const packagedAssetDir = join(dir, "packages", "cli", "assets", "webui");
-  if (input.packagedAssets) {
-    writeStaticEntry(packagedAssetDir, "packaged assets");
-  }
-
-  return {
-    cliSourceDir,
-    workspaceBuildDir,
-    packagedAssetDir,
-  };
 };
 
 const waitFor = async (predicate: () => boolean, timeoutMs = 12_000): Promise<void> => {
@@ -192,21 +162,7 @@ afterEach(async () => {
 });
 
 describe("Feature: cli server contracts", () => {
-  test("Scenario: Given a workspace checkout When resolving the canonical webui root Then the fresh workspace build wins over packaged assets", () => {
-    const layout = createCliLayout({
-      workspaceCheckout: true,
-      workspaceBuild: true,
-      packagedAssets: true,
-    });
-
-    const resolved = resolveCanonicalWebUiAssetRoot(layout.cliSourceDir);
-
-    expect(resolved.kind).toBe("workspace-build");
-    expect(resolved.staticDir).toBe(layout.workspaceBuildDir);
-    expect(readStaticDocumentTitle(resolved.staticDir)).toBe("workspace build");
-  });
-
-  test("Scenario: Given static web assets with stale build-time env When serving _app env Then the CLI injects the live runtime websocket endpoint", async () => {
+  test("Scenario: Given static Studio assets with stale build-time env When serving _app env Then the server injects the live runtime websocket endpoint", async () => {
     const { dir } = createWorkspaceRoot();
     const staticDir = join(dir, "static");
     writeStaticEntry(staticDir, "runtime env");
@@ -233,7 +189,7 @@ describe("Feature: cli server contracts", () => {
     expect(source).not.toContain('ws://127.0.0.1:19190/trpc');
   });
 
-  test("Scenario: Given packaged web assets with stale build-time env When no explicit public websocket URL is configured Then runtime env keeps browser location fallback available", async () => {
+  test("Scenario: Given packaged Studio assets with stale build-time env When no explicit public websocket URL is configured Then runtime env keeps browser location fallback available", async () => {
     const { dir } = createWorkspaceRoot();
     const staticDir = join(dir, "static");
     writeStaticEntry(staticDir, "runtime env fallback");
@@ -257,42 +213,6 @@ describe("Feature: cli server contracts", () => {
     expect(source).toBe("export const env={}\n");
     expect(source).not.toContain("PUBLIC_AGENTER_WS_URL");
     expect(source).not.toContain("ws://127.0.0.1:19190/trpc");
-  });
-
-  test("Scenario: Given a workspace checkout without a build When resolving the canonical webui root Then startup fails fast with rebuild guidance", () => {
-    const layout = createCliLayout({
-      workspaceCheckout: true,
-      workspaceBuild: false,
-      packagedAssets: true,
-    });
-
-    let error: unknown;
-    try {
-      resolveCanonicalWebUiAssetRoot(layout.cliSourceDir);
-    } catch (caught) {
-      error = caught;
-    }
-
-    if (!(error instanceof Error)) {
-      throw new Error("expected canonical root resolution to throw an Error");
-    }
-
-    expect(error.message).toContain("run `bun run build:webui` before `agenter web`");
-    expect(error.message).toContain("`packages/cli/assets/webui` is packaging-only in a workspace checkout.");
-  });
-
-  test("Scenario: Given a packaged cli install When resolving the canonical webui root Then bundled assets are used", () => {
-    const layout = createCliLayout({
-      workspaceCheckout: false,
-      workspaceBuild: false,
-      packagedAssets: true,
-    });
-
-    const resolved = resolveCanonicalWebUiAssetRoot(layout.cliSourceDir);
-
-    expect(resolved.kind).toBe("packaged-assets");
-    expect(resolved.staticDir).toBe(layout.packagedAssetDir);
-    expect(readStaticDocumentTitle(resolved.staticDir)).toBe("packaged assets");
   });
 
   test("Scenario: Given session asset uploads When posting supported files Then image and file assets are persisted and retrievable", async () => {
@@ -650,7 +570,7 @@ describe("Feature: cli server contracts", () => {
     expect(await uploadedSessionIconResponse.text()).toContain("profile-service");
   });
 
-  test("Scenario: Given an authenticated kv subscription When the actor mutates WebUI memory Then websocket replay only delivers that actor's matching keys", async () => {
+  test("Scenario: Given an authenticated kv subscription When the actor mutates Studio memory Then websocket replay only delivers that actor's matching keys", async () => {
     const { dir } = createWorkspaceRoot();
     const handle = await startTrpcServer({
       host: "127.0.0.1",
@@ -686,32 +606,32 @@ describe("Feature: cli server contracts", () => {
     });
 
     const first = await client.trpc.kv.set.mutate({
-      key: "webui/devtools/tab",
+      key: "studio/devtools/tab",
       value: "model",
     });
     expect(first).toMatchObject({
       ok: true,
       changed: true,
       entry: {
-        key: "webui/devtools/tab",
+        key: "studio/devtools/tab",
         value: "model",
         version: 1,
       },
     });
 
     await client.trpc.kv.set.mutate({
-      key: "webui/workspace/split",
+      key: "studio/workspace/split",
       value: 0.4,
     });
     const removed = await client.trpc.kv.delete.mutate({
-      key: "webui/devtools/tab",
+      key: "studio/devtools/tab",
       baseVersion: 1,
     });
     expect(removed).toEqual({
       ok: true,
       removed: true,
       eventId: 3,
-      key: "webui/devtools/tab",
+      key: "studio/devtools/tab",
       version: 2,
     });
 
@@ -728,7 +648,7 @@ describe("Feature: cli server contracts", () => {
     const sub = replayClient.trpc.kv.events.subscribe(
       {
         afterEventId: baseline.lastEventId,
-        prefix: "webui/devtools/",
+        prefix: "studio/devtools/",
       },
       {
         onData: (event: AuthKvEvent) => {
@@ -745,12 +665,12 @@ describe("Feature: cli server contracts", () => {
     expect(received).toEqual([
       {
         kind: "set",
-        key: "webui/devtools/tab",
+        key: "studio/devtools/tab",
         version: 1,
       },
       {
         kind: "delete",
-        key: "webui/devtools/tab",
+        key: "studio/devtools/tab",
         version: 2,
       },
     ]);

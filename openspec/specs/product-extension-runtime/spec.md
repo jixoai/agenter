@@ -7,7 +7,7 @@ Define the generic contracts ordinary-user products use to bind backend resource
 
 ### Requirement: Core SHALL expose product-extension capabilities without importing product modules
 
-Agenter core SHALL provide programmable extension contracts for ordinary-user products. Product packages such as `@agenter/cli-shell` SHALL consume those contracts from outside core modules. Core packages SHALL NOT import product implementation packages or branch on product-specific UI, grammar, layout, or local state.
+Agenter core SHALL provide programmable extension contracts for ordinary-user products. Product packages such as `@agenter/cli-shell` and `@agenter/studio` SHALL consume those contracts from outside core modules. Core packages SHALL NOT import product implementation packages or branch on product-specific UI, grammar, layout, hosting, serving, or local state.
 
 #### Scenario: Product descriptor is data, not a core branch
 - **WHEN** the core launcher handles a product command such as `shell`
@@ -15,10 +15,21 @@ Agenter core SHALL provide programmable extension contracts for ordinary-user pr
 - **AND** the descriptor does not import `@agenter/cli-shell` implementation code
 - **AND** product-specific grammar such as optional `@avatar`, default `shell-assistant`, `--session`, or `shell-1` is parsed by the product package, not by core runtime modules
 
+#### Scenario: Studio descriptor is data, not a core branch
+- **WHEN** the core launcher handles product command `studio`
+- **THEN** it resolves descriptor data containing command name, package name, bin metadata, source policy, and capability hints
+- **AND** the descriptor does not import `@agenter/studio` implementation code
+- **AND** Studio-specific serving flags are parsed by the Studio package, not core runtime modules
+
 #### Scenario: Core remains product-agnostic after cli-shell is removed
 - **WHEN** the `@agenter/cli-shell` package is absent or disabled
 - **THEN** core terminal, room, AvatarRuntime, attention, and daemon modules remain valid
 - **AND** no core module requires cli-shell UI state, toolbar state, terminal-grid layout, or session-name normalization to start
+
+#### Scenario: Core remains valid when Studio is absent
+- **WHEN** the `@agenter/studio` package is absent or disabled
+- **THEN** core daemon, terminal, room, AvatarRuntime, attention, auth-service, and client-sdk modules remain valid
+- **AND** no core module requires Studio route state, SvelteKit build output, browser storage keys, or Storybook state to start
 
 #### Scenario: Product consumes runtime through daemon or client SDK
 - **WHEN** cli-shell runs as a local workspace package during tests or as a published package for users
