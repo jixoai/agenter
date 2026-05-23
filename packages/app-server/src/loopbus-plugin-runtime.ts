@@ -62,6 +62,7 @@ export interface AttentionDraft {
     bodyFormat?: string;
     changeType?: "update" | "diff";
   };
+  contextMutation?: AttentionCommit["contextMutation"];
   semanticHash?: string | null;
   versionHint?: string | null;
   supersedeActive?: {

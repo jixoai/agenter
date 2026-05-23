@@ -7,6 +7,7 @@ const createCommit = (index: number) => ({
   commitId: `commit-${index}`,
   contextId: "ctx-terminal-main",
   ingressType: "commit" as const,
+  contextMutation: "apply" as const,
   parentCommitIds: index > 0 ? [`commit-${index - 1}`] : [],
   meta: {
     author: "terminal:main",

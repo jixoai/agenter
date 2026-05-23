@@ -64,6 +64,7 @@ const hasNotificationTag = (meta: AttentionCommitMeta): boolean =>
 
 const cloneCommit = (commit: AttentionCommit): AttentionCommit => ({
   ...commit,
+  contextMutation: commit.contextMutation ?? "apply",
   target: commit.target,
   parentCommitIds: [...commit.parentCommitIds],
   meta: cloneMeta(commit.meta),
@@ -269,10 +270,12 @@ export const buildAttentionContextStateFromCommits = (input: {
   });
 
   for (const commit of input.commits) {
-    state = applyAttentionChange(state, commit.change, {
-      target: commit.target,
-      allowReadonly: true,
-    });
+    if ((commit.contextMutation ?? "apply") === "apply") {
+      state = applyAttentionChange(state, commit.change, {
+        target: commit.target,
+        allowReadonly: true,
+      });
+    }
     state = {
       ...state,
       scoreMap: normalizeAttentionStateScoreMap({
@@ -540,6 +543,7 @@ export class AttentionContext {
       commitId: generateCommitId(),
       contextId: this.contextId,
       ingressType: input.ingressType ?? "commit",
+      contextMutation: input.contextMutation ?? "apply",
       target: resolveAttentionCommitTarget(input.target),
       parentCommitIds: input.parentCommitIds?.length
         ? [...input.parentCommitIds]
@@ -560,10 +564,12 @@ export class AttentionContext {
     };
 
     let nextState = cloneState(this.state);
-    nextState = applyAttentionChange(nextState, commit.change, {
-      target: commit.target,
-      allowReadonly: options.allowReadonly,
-    });
+    if (commit.contextMutation === "apply") {
+      nextState = applyAttentionChange(nextState, commit.change, {
+        target: commit.target,
+        allowReadonly: options.allowReadonly,
+      });
+    }
     nextState = {
       ...nextState,
       scoreMap: normalizeAttentionStateScoreMap({

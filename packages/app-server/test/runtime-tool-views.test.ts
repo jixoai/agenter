@@ -32,6 +32,7 @@ describe("Feature: runtime tool public views", () => {
         commitId: `commit-${index}`,
         contextId: "ctx-chat-main",
         ingressType: "commit",
+        contextMutation: "apply",
         parentCommitIds: index === 1 ? [] : [`commit-${index - 1}`],
         meta: {
           author: "architect",

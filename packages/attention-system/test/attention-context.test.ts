@@ -45,6 +45,30 @@ describe("Feature: attention context commit log", () => {
     expect(followup.parentCommitIds).toEqual([root.commitId]);
   });
 
+  test("Scenario: Given a context-preserving commit When committed Then item detail and scores change without rewriting context", () => {
+    const context = new AttentionContext({
+      contextId: "ctx-room",
+      owner: "avatar:jane",
+      content: "Avatar summary: discussing release readiness",
+      contentFormat: "text/plain",
+    });
+
+    const { commit, context: snapshot } = context.commit({
+      contextMutation: "preserve",
+      meta: { author: "user:kzf", source: "message" },
+      scores: { hash1: 100 },
+      summary: "User asks for current status",
+      change: { type: "update", value: "what is the current status?", format: "text/plain" },
+    });
+
+    expect(commit.change).toEqual({ type: "update", value: "what is the current status?", format: "text/plain" });
+    expect(snapshot.scoreMap).toEqual({ hash1: 100 });
+    expect(snapshot.headCommitId).toBe(commit.commitId);
+    expect(snapshot.content).toBe("Avatar summary: discussing release readiness");
+    expect(snapshot.contentFormat).toBe("text/plain");
+    expect(snapshot.slots).toEqual({ default: "Avatar summary: discussing release readiness" });
+  });
+
   test("Scenario: Given linked hashes When related commits are queried Then transitive matches are returned", () => {
     const context = new AttentionContext({ contextId: "ctx-1", owner: "avatar:jane" });
     context.commit({ summary: "A", scores: { hash1: 100 }, change: { type: "update", value: "A" } });

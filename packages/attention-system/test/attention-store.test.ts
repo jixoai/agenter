@@ -92,6 +92,7 @@ describe("Feature: attention store persistence", () => {
               commitId: "commit-1",
               contextId: "ctx-1",
               ingressType: "push",
+              contextMutation: "apply",
               parentCommitIds: ["root-1"],
               meta: {
                 author: "avatar:jane",

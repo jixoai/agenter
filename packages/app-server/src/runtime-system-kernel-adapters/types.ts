@@ -20,6 +20,7 @@ export interface RuntimeSystemIngressEnvelope extends SystemIngressEnvelope {
   author: string;
   boundaryChannel: RuntimeBoundaryChannel;
   ingressType?: "commit" | "push";
+  contextMutation?: AttentionCommit["contextMutation"];
   changeType?: "update" | "diff";
   target?: string;
   commitMode?: "commit" | "system";

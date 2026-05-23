@@ -2,6 +2,7 @@ import type { AttentionCommitChange } from "./attention-types";
 
 export type AttentionFocusState = "focused" | "background" | "muted";
 export type AttentionIngressType = "commit" | "push";
+export type AttentionContextMutation = "apply" | "preserve";
 
 export interface AttentionCommitMeta {
   author: string;
@@ -15,6 +16,7 @@ export interface AttentionCommit {
   commitId: string;
   contextId: string;
   ingressType: AttentionIngressType;
+  contextMutation: AttentionContextMutation;
   target?: string;
   parentCommitIds: string[];
   meta: AttentionCommitMeta;
@@ -47,6 +49,7 @@ export interface AttentionContextSnapshot extends AttentionContextState {
 
 export interface AttentionCommitInput {
   ingressType?: AttentionIngressType;
+  contextMutation?: AttentionContextMutation;
   target?: string;
   parentCommitIds?: string[];
   meta?: Partial<AttentionCommitMeta>;

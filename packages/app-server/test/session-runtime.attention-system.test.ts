@@ -3413,6 +3413,31 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(getActiveItems(internal)[0]?.detail?.value).toContain("What time is it?");
   });
 
+  test("Scenario: Given an Avatar-owned room context When a user message is ingested Then message attention preserves the context summary", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+    internal.loopPluginRuntime = await internal.createLoopPluginRuntime();
+    appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
+      meta: { author: "avatar:tester", source: "attention" },
+      scores: {},
+      title: "Avatar summary",
+      detail: {
+        kind: "replace",
+        value: "Avatar topic summary: discussing release readiness",
+        format: "text/plain",
+      },
+    });
+
+    runtime.pushUserChat("Can you summarize what changed?");
+    await internal.collectLoopInputs();
+
+    const activeMessageItem = getActiveItems(internal).find((item) => item.meta.source === "message");
+    expect(activeMessageItem?.detail?.value).toContain("Can you summarize what changed?");
+    expect(getAttentionContextSnapshot(internal, PRIMARY_CONTEXT_ID)?.content).toBe(
+      "Avatar topic summary: discussing release readiness",
+    );
+  });
+
   test("Scenario: Given runtime-generated attention scores When semantic ingress commits Then score keys use short hash aliases instead of semantic labels", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;

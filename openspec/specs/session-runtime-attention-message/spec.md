@@ -8,13 +8,27 @@ Define the durable law for how room-backed work enters attention, how room-visib
 
 ### Requirement: Session runtime SHALL ingest room work as objective attention facts
 
-Session runtime SHALL ingest unread room work into attention, but the ingested model-visible room fact SHALL contain only objective room/message truth. It MUST NOT infer reply ownership, social etiquette state, or settlement conditions from punctuation, room shape, or sender identity.
+Session runtime SHALL ingest unread room work into attention, but the ingested model-visible room fact SHALL contain only objective room/message truth. It MUST NOT infer reply ownership, social etiquette state, settlement conditions, or Avatar-owned context-summary rewrites from punctuation, room shape, sender identity, or message content.
 
 #### Scenario: Unread room work enters attention without auto-replying
 
 - **WHEN** the runtime selects unread room work for a new round
-- **THEN** it converts that room work into attention state for the model
+- **THEN** it converts that room work into an attention item and score pressure for the model
 - **AND** no visible assistant room message is created until the model later performs an explicit message mutation
+
+#### Scenario: User message creates item without rewriting context
+
+- **GIVEN** a room attention context contains an Avatar-authored topic summary
+- **WHEN** a user room message is ingested into attention
+- **THEN** an active attention item for the message is created with scores and source refs
+- **AND** the room attention context content remains the Avatar-authored topic summary
+- **AND** the message detail remains queryable through attention item/commit history
+
+#### Scenario: Avatar may repair context after processing
+
+- **GIVEN** a message-backed attention item is active
+- **WHEN** the Avatar later commits its own attention update for the same context
+- **THEN** that Avatar commit may update scores and rewrite the room attention context
 
 #### Scenario: Punctuation-heavy ingress stays factual
 

@@ -138,6 +138,7 @@ const toContextSnapshot = (input: { contextId: string; owner: string; commits: A
   commits: input.commits.map((commit) => ({
     ...commit,
     ingressType: commit.ingressType,
+    contextMutation: commit.contextMutation ?? "apply",
     target: commit.target,
     parentCommitIds: [...commit.parentCommitIds],
     meta: sanitizeCommitMeta(asUnknownRecord(commit.meta)),
@@ -151,6 +152,7 @@ const migrateV1ToV4 = (legacy: LegacyAttentionSnapshot): AttentionSystemSnapshot
       commitId: `legacy-${record.id}`,
       contextId: "default",
       ingressType: "commit",
+      contextMutation: "apply",
       parentCommitIds: [],
       meta: {
         author: record.from,
@@ -175,6 +177,7 @@ const migrateV2ToV4 = (snapshot: PersistedV2): AttentionSystemSnapshot => ({
       commitId: item.id,
       contextId: context.id,
       ingressType: "commit",
+      contextMutation: "apply",
       parentCommitIds: [],
       meta: {
         author: item.meta.from,
@@ -199,6 +202,7 @@ const migrateV3ToV4 = (snapshot: PersistedV3): AttentionSystemSnapshot => ({
       commitId: item.id,
       contextId: context.id,
       ingressType: "commit",
+      contextMutation: "apply",
       parentCommitIds: [...item.parentIds],
       meta: {
         author: typeof item.meta.author === "string" ? item.meta.author : "legacy-v3",

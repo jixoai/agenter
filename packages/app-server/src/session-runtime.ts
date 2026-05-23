@@ -1331,6 +1331,7 @@ const stableAttentionDraftDigest = (draft: AttentionDraft): string => {
             content: draft.content,
             presentation: draft.presentation ?? null,
             provenance: draft.provenance ?? null,
+            contextMutation: draft.contextMutation ?? "apply",
           });
   return `${draft.sourceRef.src}:${semanticHint}`;
 };
@@ -4529,6 +4530,10 @@ export class SessionRuntime {
       tags: ["message", "room_ingress"],
       createdAt: message.updatedAt ?? message.createdAt,
       author: message.from,
+      // Room messages are source facts, not Avatar-authored context summaries.
+      // They must create AttentionItems/scores without rewriting the room
+      // attentionContext that the Avatar later repairs with its own commit.
+      contextMutation: "preserve",
       meta: envelopeMeta,
     };
   }
@@ -5615,6 +5620,10 @@ export class SessionRuntime {
           bodyFormat: "text/markdown",
           changeType: "update",
         },
+        // In message-system, attentionContext is the Avatar-authored summary of
+        // the current topic. User room messages are pure AttentionItems: they
+        // may create scores/history, but they must not rewrite that summary.
+        contextMutation: "preserve",
         versionHint:
           typeof result.toHash === "string"
             ? result.toHash
@@ -5896,6 +5905,7 @@ export class SessionRuntime {
       contextId,
       target: input.target,
       ingressType: input.ingressTypeOverride ?? this.resolveAttentionIngressType(contextId),
+      contextMutation: draft.contextMutation,
       meta: this.buildAttentionMeta(draft),
       scores: this.buildAttentionScores(draft),
       summary: presentation.summary,
@@ -6187,6 +6197,7 @@ export class SessionRuntime {
         bodyFormat: envelope.format,
         changeType: envelope.changeType ?? "update",
       },
+      contextMutation: envelope.contextMutation,
       ...(envelope.supersedeActiveSrc
         ? {
             supersedeActive: {
@@ -6237,6 +6248,7 @@ export class SessionRuntime {
     const { commit } = commitAction(contextId, {
       target: commitInput.target,
       parentCommitIds: commitInput.parentCommitIds,
+      contextMutation: commitInput.contextMutation,
       meta: commitInput.meta,
       scores: commitInput.scores,
       summary: commitInput.summary,
@@ -9778,6 +9790,7 @@ export class SessionRuntime {
                   bodyFormat: "text/plain",
                   changeType: "update",
                 },
+                contextMutation: "preserve",
               },
             ];
           });
