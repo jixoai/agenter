@@ -1,3 +1,7 @@
+> Superseded note:
+> This change is built on the older `terminal-1` / `terminal-2` cli-shell architecture and must not be applied directly.
+> Its web-host product goals may still be valuable, but the architecture must be rewritten under the boundary defined by `realign-cli-shell-with-core-system-boundaries`.
+
 ## Why
 
 `separate-cli-shell-product-from-terminal-view-components` already corrected the durable platform law once, but the current discussion refines that law further: cli-shell is one termless product with terminal-1 as shell truth and terminal-2 as the visible product surface. The earlier `add-cli-shell-web-host` draft intentionally stopped short of redesigning `agenter shell --web`; it only kept that future path open.

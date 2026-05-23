@@ -1,4 +1,5 @@
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
+import type { TerminalTransportSelectionOverlay } from "@agenter/terminal-transport-protocol";
 import { BoxRenderable, type BoxOptions, type MouseEvent, type PasteEvent, type RenderContext } from "@opentui/core";
 
 import { BackendScrollbarRenderable } from "./backend-scrollbar";
@@ -16,6 +17,7 @@ export interface BackendTerminalFrameState {
   cursorVisible: boolean;
   viewportStart: number;
   scrollbackRows: number;
+  selectionOverlays?: readonly TerminalTransportSelectionOverlay[];
 }
 
 export interface BackendTerminalFrameBridge {
@@ -100,10 +102,18 @@ export class BackendTerminalFrameRenderable extends BoxRenderable {
 
   updateBackendState(state: BackendTerminalFrameState): BackendTerminalFrameUpdateResult {
     this.#state = state;
+    const scrollbarState = this.resolveScrollbarState();
     const paintStats = this.terminalView.updateProjection({
       lines: state.lines,
+      cursor: {
+        row: state.cursorAbsRow - state.viewportStart,
+        col: state.cursorCol,
+        visible: state.cursorVisible,
+      },
+      selectionOverlays: state.selectionOverlays,
     });
-    this.scrollbar.applyBackendState(this.resolveScrollbarState());
+    this.scrollbar.applyBackendState(scrollbarState);
+    this.scrollbar.visible = this.shouldRenderScrollbar(scrollbarState);
     this.applyLayout();
     return {
       terminalPaintMs: paintStats.durationMs,
@@ -205,6 +215,7 @@ export class BackendTerminalFrameRenderable extends BoxRenderable {
   private applyLayout(): void {
     const width = normalizeDimension(this.width);
     const height = normalizeDimension(this.height);
+    const scrollbarState = this.resolveScrollbarState();
     this.terminalView.left = 0;
     this.terminalView.top = 0;
     this.terminalView.width = this.resolveTerminalWidth();
@@ -213,8 +224,12 @@ export class BackendTerminalFrameRenderable extends BoxRenderable {
     this.scrollbar.top = 0;
     this.scrollbar.width = 1;
     this.scrollbar.height = height;
-    this.scrollbar.visible = this.#scrollbarVisible;
+    this.scrollbar.visible = this.shouldRenderScrollbar(scrollbarState);
     this.requestRender();
+  }
+
+  private shouldRenderScrollbar(state: { scrollSize: number; viewportSize: number }): boolean {
+    return this.#scrollbarVisible && state.scrollSize > state.viewportSize;
   }
 
 }

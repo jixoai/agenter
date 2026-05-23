@@ -1,3 +1,7 @@
+> Superseded note:
+> Treat these completed checkboxes as historical record only.
+> This task list is based on the older `terminal-1` / `terminal-2` cli-shell architecture and must not be replayed directly after `realign-cli-shell-with-core-system-boundaries`.
+
 > These checkboxes are implementation-time obligations for adding `cli-shell --web` as an official product host mode without creating a second terminal authority.
 
 ## 0. Host Boundary

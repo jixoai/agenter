@@ -459,7 +459,122 @@ describe("Feature: cli-shell startup sequencing", () => {
     expect(clientClose).toHaveBeenCalledTimes(1);
   });
 
-  test("Scenario: Given cli-shell debug and experimental dynamic refresh flags When native startup takes over Then runtime TUI receives both flags explicitly", async () => {
+  test("Scenario: Given room-only mode When startup runs interactively Then cli-shell starts the MessageRoom TUI without starting the terminal TUI", async () => {
+    const avatar = {
+      avatarPrincipalId: "auth:bangeel",
+      runtimeId: "runtime:bangeel",
+      nickname: "bangeel",
+      displayName: "bangeel",
+      classify: null,
+      iconUrl: null,
+      defaultAvatar: false,
+      sourceScope: "global",
+      globalAvailable: true,
+      workspacePrivateSlotReady: false,
+      globalPath: "/global/bangeel",
+      workspacePrivatePath: "/workspace/.agenter/avatars/by-principal/bangeel",
+      effectivePath: "/global/bangeel",
+    } satisfies GlobalAvatarCatalogEntry;
+    const clientClose = mock(() => {});
+    const startStartupTui = mock(async () => ({
+      finished: Promise.resolve(),
+      destroy: mock(() => {}),
+      setHeartbeat: mock(() => {}),
+    }));
+    const startRuntimeTui = mock(async () => ({
+      finished: Promise.resolve(),
+      destroy: mock(() => {}),
+    }));
+    const roomDestroyed = mock(() => {});
+    type RoomTuiLoader = NonNullable<CliShellRunDependencies["loadCliShellRoomTui"]>;
+    type RoomBootstrap = NonNullable<CliShellRunDependencies["bootstrapRoom"]>;
+    type RoomTuiInput = Parameters<Awaited<ReturnType<RoomTuiLoader>>["startCliShellRoomTui"]>[0];
+    const roomTuiInputs: RoomTuiInput[] = [];
+    const bootstrapRoomInputs: Parameters<RoomBootstrap>[0][] = [];
+    const startRoomTui: Awaited<ReturnType<RoomTuiLoader>>["startCliShellRoomTui"] = async (input) => {
+      roomTuiInputs.push(input);
+      return {
+        finished: Promise.resolve(),
+        destroy: roomDestroyed,
+      };
+    };
+
+    await runCliShellWithDependencies(
+      ["node", "agenter-cli-shell", "room", "--session=5", "--avatar=bangeel", "--create-avatar", "--clear-avatar"],
+      {
+        createClient: () =>
+          ({
+            trpc: {} as AgenterClient["trpc"],
+            wsUrl: "ws://127.0.0.1:13000/trpc",
+            httpUrl: "http://127.0.0.1:13000",
+            setAuthToken: mock(() => {}),
+            getAuthToken: mock(() => null),
+            subscribeTransport: mock(() => () => {}),
+            close: clientClose,
+          }) satisfies AgenterClient,
+        createStore: () =>
+          ({
+            connect: async () => {},
+            disconnect: () => {},
+            getState: () => ({}) as ReturnType<ReturnType<CliShellRunDependencies["createStore"]>["getState"]>,
+            hydrateGlobalRoomSnapshot: async () => null,
+            retainGlobalRoomSnapshot: () => () => {},
+          }) as unknown as ReturnType<CliShellRunDependencies["createStore"]>,
+        bootstrap: async () => createAttachedResult(avatar),
+        bootstrapRoom: async (input) => {
+          bootstrapRoomInputs.push(input);
+          const attached = createAttachedResult(avatar);
+          return {
+            avatar: attached.avatar,
+            avatarCreated: true,
+            session: attached.session,
+            clearedRuntimeSessionIds: ["session:/repo:bangeel"],
+            avatarActorId: attached.avatarActorId,
+            room: attached.room,
+            promptSeeded: false,
+            memoryFiles: [],
+            managed: attached.managed,
+          };
+        },
+        loadStartupTui: async () => ({
+          startCliShellStartupTui: startStartupTui,
+        }),
+        loadCliShellRoomTui: async () => ({
+          startCliShellRoomTui: startRoomTui,
+        }),
+        loadCliShellTui: async () => ({
+          startCliShellTui: startRuntimeTui,
+        }),
+        loadCliShellWebHost: async () => ({
+          startCliShellWebHost: async () => ({
+            url: "http://127.0.0.1:0/",
+            finished: Promise.resolve(),
+            stop: async () => {},
+          }),
+        }),
+        isInteractive: () => true,
+      } satisfies CliShellRunDependencies,
+    );
+
+    expect(bootstrapRoomInputs).toHaveLength(1);
+    expect(bootstrapRoomInputs[0]).toMatchObject({
+      avatarNickname: "bangeel",
+      shellName: "shell-5",
+      createAvatar: true,
+      clearAvatar: true,
+    });
+    expect(startStartupTui).not.toHaveBeenCalled();
+    expect(startRuntimeTui).not.toHaveBeenCalled();
+    expect(roomTuiInputs).toHaveLength(1);
+    expect(roomTuiInputs[0]).toMatchObject({
+      shellName: "shell-5",
+      debug: false,
+    });
+    expect(roomDestroyed).toHaveBeenCalledTimes(1);
+    expect(clientClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("Scenario: Given cli-shell debug startup When native startup takes over Then runtime TUI receives product dynamic refresh by default", async () => {
     const avatar = {
       avatarPrincipalId: "auth:shell-assistant",
       runtimeId: "runtime:shell-assistant",
@@ -490,7 +605,7 @@ describe("Feature: cli-shell startup sequencing", () => {
     };
     const clientClose = mock(() => {});
 
-    await runCliShellWithDependencies(["node", "agenter-cli-shell", "--debug", "--experimental-dynamic-refresh"], {
+    await runCliShellWithDependencies(["node", "agenter-cli-shell", "--debug"], {
       createClient: () =>
         ({
           trpc: {} as AgenterClient["trpc"],
@@ -544,6 +659,96 @@ describe("Feature: cli-shell startup sequencing", () => {
     expect(runtimeTuiInputs[0]).toMatchObject({
       debug: true,
       experimentalDynamicRefresh: true,
+      preconnected: true,
+      shellName: "shell-1",
+    });
+    expect(clientClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("Scenario: Given cli-shell disables dynamic refresh When native startup takes over Then runtime TUI receives explicit fixed pacing", async () => {
+    const avatar = {
+      avatarPrincipalId: "auth:shell-assistant",
+      runtimeId: "runtime:shell-assistant",
+      nickname: "shell-assistant",
+      displayName: "Shell Assistant",
+      classify: "assistant",
+      iconUrl: null,
+      defaultAvatar: false,
+      sourceScope: "global",
+      globalAvailable: true,
+      workspacePrivateSlotReady: false,
+      globalPath: "/global/shell-assistant",
+      workspacePrivatePath: "/workspace/.agenter/avatars/by-principal/shell-assistant",
+      effectivePath: "/global/shell-assistant",
+    } satisfies GlobalAvatarCatalogEntry;
+    type RuntimeTuiInput = Parameters<
+      Awaited<ReturnType<CliShellRunDependencies["loadCliShellTui"]>>["startCliShellTui"]
+    >[0];
+    const runtimeTuiInputs: RuntimeTuiInput[] = [];
+    const startRuntimeTui: Awaited<ReturnType<CliShellRunDependencies["loadCliShellTui"]>>["startCliShellTui"] = async (
+      input,
+    ) => {
+      runtimeTuiInputs.push(input);
+      return {
+        finished: Promise.resolve(),
+        destroy: mock(() => {}),
+      };
+    };
+    const clientClose = mock(() => {});
+
+    await runCliShellWithDependencies(["node", "agenter-cli-shell", "--experimental-dynamic-refresh=false"], {
+      createClient: () =>
+        ({
+          trpc: {} as AgenterClient["trpc"],
+          wsUrl: "ws://127.0.0.1:13000/trpc",
+          httpUrl: "http://127.0.0.1:13000",
+          setAuthToken: mock(() => {}),
+          getAuthToken: mock(() => null),
+          subscribeTransport: mock(() => () => {}),
+          close: clientClose,
+        }) satisfies AgenterClient,
+      createStore: () =>
+        ({
+          connect: async () => {},
+          disconnect: () => {},
+          hydrateSessionArtifacts: async () => undefined,
+          getState: () => ({
+            runtimes: {
+              "session-1": {
+                schedulerSignals: {
+                  terminal: {
+                    version: 1,
+                    timestamp: Date.parse("2026-05-10T10:00:00+08:00"),
+                  },
+                },
+              },
+            },
+          }),
+        }) as unknown as ReturnType<CliShellRunDependencies["createStore"]>,
+      bootstrap: async () => createAttachedResult(avatar),
+      loadStartupTui: async () => ({
+        startCliShellStartupTui: async () => ({
+          finished: Promise.resolve(),
+          destroy: mock(() => {}),
+          setHeartbeat: mock(() => {}),
+        }),
+      }),
+      loadCliShellTui: async () => ({
+        startCliShellTui: startRuntimeTui,
+      }),
+      loadCliShellWebHost: async () => ({
+        startCliShellWebHost: async () => ({
+          url: "http://127.0.0.1:0/",
+          finished: Promise.resolve(),
+          stop: async () => {},
+        }),
+      }),
+      isInteractive: () => true,
+    } satisfies CliShellRunDependencies);
+
+    expect(runtimeTuiInputs).toHaveLength(1);
+    expect(runtimeTuiInputs[0]).toMatchObject({
+      experimentalDynamicRefresh: false,
       preconnected: true,
       shellName: "shell-1",
     });

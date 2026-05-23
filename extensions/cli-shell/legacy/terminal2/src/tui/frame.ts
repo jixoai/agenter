@@ -11,7 +11,7 @@ import {
 } from "./canvas";
 import { fitTerminalText, measureTerminalText } from "./cell-width";
 import { projectCliShellDialogueBackendFrame } from "./dialogue-backend";
-import type { CliShellDialogueViewportOwner } from "./dialogue-surface";
+import type { CliShellDialogueRowsCache, CliShellDialogueViewportOwner } from "./dialogue-surface";
 import type {
   CliShellScrollRegion,
   CliShellSelectionRegion,
@@ -25,6 +25,7 @@ export interface CliShellTuiFrame {
   styledLines: TerminalCanvasStyledLine[];
   actionRegions: CliShellActionHitRegion[];
   selectionSources: CliShellSelectionSource[];
+  cursor?: { x: number; y: number; visible?: boolean };
 }
 
 export interface CliShellToolbarItem {
@@ -487,10 +488,12 @@ export const layoutCliShellTuiFrame = (input: {
   height: number;
   renderToolbar?: boolean;
   dialogueViewportOwner?: CliShellDialogueViewportOwner;
+  dialogueRowsCache?: CliShellDialogueRowsCache;
 }): CliShellTuiFrame => {
   const canvas = createTerminalCanvas(input.width, input.height);
   const actionRegions: CliShellActionHitRegion[] = [];
   const selectionSources: CliShellSelectionSource[] = [];
+  let cursor: CliShellTuiFrame["cursor"];
   const renderToolbar = input.renderToolbar ?? true;
   const bodyHeight = Math.max(0, renderToolbar ? input.height - 1 : input.height);
   const terminalRegion = resolveCliShellTerminalRegion(input);
@@ -546,7 +549,15 @@ export const layoutCliShellTuiFrame = (input: {
       layout,
       model: input.model,
       viewportOwner: input.dialogueViewportOwner,
+      rowsCache: input.dialogueRowsCache,
     });
+    cursor = dialogueSurface.cursor.visible
+      ? {
+          x: layout.col + dialogueSurface.cursor.x,
+          y: layout.row + dialogueSurface.cursor.y,
+          visible: true,
+        }
+      : cursor;
     dialogueSurface.styledLines.forEach((line, row) => {
       writeCanvasStyledText(canvas, {
         row: layout.row + row,
@@ -597,6 +608,7 @@ export const layoutCliShellTuiFrame = (input: {
     styledLines: renderCanvasStyledLines(canvas),
     actionRegions,
     selectionSources,
+    cursor,
   };
 };
 

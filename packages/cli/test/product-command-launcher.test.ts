@@ -24,6 +24,7 @@ const createTempDir = (): string => {
 };
 
 const createProductLayout = (input: {
+  rootKind?: "packages" | "extensions";
   packageSegment: string;
   packageName: string;
   binName: string;
@@ -31,7 +32,7 @@ const createProductLayout = (input: {
 }): string => {
   const root = createTempDir();
   const cliSourceDir = join(root, "packages", "cli", "src");
-  const packageDir = join(root, "packages", input.packageSegment);
+  const packageDir = join(root, input.rootKind ?? "packages", input.packageSegment);
   mkdirSync(cliSourceDir, { recursive: true });
   mkdirSync(join(packageDir, "src", "bin"), { recursive: true });
   writeFileSync(
@@ -49,6 +50,7 @@ const createProductLayout = (input: {
 
 const createCliLayout = (): string =>
   createProductLayout({
+    rootKind: "extensions",
     packageSegment: "cli-shell",
     packageName: "@agenter/cli-shell",
     binName: "agenter-cli-shell",
@@ -74,7 +76,7 @@ describe("Feature: product command launcher", () => {
     expect(routed?.launcherOptions.port).toBe(4600);
   });
 
-  test("Scenario: Given a local workspace cli-shell package When resolving the launch target Then workspace wins before installed or remote fallback", () => {
+  test("Scenario: Given a local extension cli-shell package When resolving the launch target Then workspace wins before installed or remote fallback", () => {
     const descriptor = resolveProductCommandDescriptor("shell");
     if (!descriptor) {
       throw new Error("missing shell descriptor");
@@ -84,8 +86,8 @@ describe("Feature: product command launcher", () => {
     if (target.source !== "workspace") {
       return;
     }
-    expect(target.binPath.endsWith("packages/cli-shell/src/bin/agenter-cli-shell.ts")).toBe(true);
-    expect(target.mainPath.endsWith("packages/cli-shell/src/index.ts")).toBe(true);
+    expect(target.binPath.endsWith("extensions/cli-shell/src/bin/agenter-cli-shell.ts")).toBe(true);
+    expect(target.mainPath.endsWith("extensions/cli-shell/src/index.ts")).toBe(true);
   });
 
   test("Scenario: Given a local workspace Studio package When resolving the launch target Then workspace wins before installed or remote fallback", () => {

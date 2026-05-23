@@ -22,6 +22,7 @@ import {
 import { resolveCliShellInteractionEnhancementProfile } from "../tui/interaction-capabilities";
 import type { CliShellTuiKeybindings } from "../tui/keybindings";
 import {
+  CLI_SHELL_PRODUCT_DYNAMIC_QUIET_MS,
   createCliShellLiveTerminalMirror,
   type CliShellLiveTerminalMirror,
   type CliShellLiveTerminalTransportSessionFactory,
@@ -216,7 +217,8 @@ export const startCliShellWebProductHost = (input: CliShellWebProductHostInput):
       geometryRole: inputMirror.geometryRole,
       debugTrace: input.debug === true,
       pacing: {
-        mode: input.experimentalDynamicRefresh === true ? "dynamic" : "fixed",
+        mode: input.experimentalDynamicRefresh === false ? "fixed" : "dynamic",
+        dynamicQuietMs: CLI_SHELL_PRODUCT_DYNAMIC_QUIET_MS,
       },
       trace: perfTracer,
       createTransportSession: input.createTransportSession,

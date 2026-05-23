@@ -1,3 +1,7 @@
+> Superseded note:
+> This design is built on the older `terminal-1` / `terminal-2` cli-shell ontology and must not be treated as the current architecture.
+> A future cli-shell web host must be redesigned against the boundary in `realign-cli-shell-with-core-system-boundaries`.
+
 ## Context
 
 The refined platform law is now:

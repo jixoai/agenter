@@ -870,7 +870,7 @@ export const startCliShellWebHost = async (input: CliShellWebHostStartInput): Pr
     keybindings,
     debug: input.debug ?? false,
     debugFilters: input.debugFilters,
-    experimentalDynamicRefresh: input.experimentalDynamicRefresh ?? false,
+    experimentalDynamicRefresh: input.experimentalDynamicRefresh ?? true,
     initialCols: terminalEntry.snapshot?.cols ?? 80,
     initialRows: terminalEntry.snapshot?.rows ?? 24,
   });

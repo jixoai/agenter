@@ -6,6 +6,7 @@ import type {
   GlobalRoomSnapshotOutput,
   GlobalTerminalApprovalRequest,
   GlobalTerminalEntry,
+  ProductEnsureBindingResult,
   HeartbeatGroupItem,
   RuntimeClientState,
   SessionEntry,
@@ -14,7 +15,7 @@ import type {
   TerminalTransportClientMessage,
   TerminalTransportServerMessage,
 } from "@agenter/terminal-transport-protocol";
-import { KeyEvent, MouseEvent as OpenTuiMouseEvent, parseKeypress, ScrollBoxRenderable } from "@opentui/core";
+import { KeyEvent, MouseEvent as OpenTuiMouseEvent, parseKeypress, ScrollBoxRenderable, TextRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 import { describe, expect, mock, test } from "bun:test";
 
@@ -22,12 +23,14 @@ import {
   BackendFrameRenderable,
   BackendScrollbarRenderable,
   BackendTerminalFrameRenderable,
+  CliShellRoomApp,
   CliShellDialogueScrollBoxController,
   buildCliShellComposedSurface,
   buildCliShellDialogueScrollRows,
   buildCliShellHostingContextId,
   buildCliShellTuiModel,
   CLI_SHELL_BACKEND_INTERACTION_RECOMMENDATIONS,
+  CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM,
   CliShellCoreApp,
   CliShellDialogueBackend,
   createCliShellPerfTracer,
@@ -44,6 +47,7 @@ import {
   renderCanvasLines,
   captureCliShellDialogueAnchor,
   createCliShellDialogueMessageWindowFromSnapshot,
+  createCliShellDialogueRowsCache,
   resolveCliShellDialoguePlacement,
   mergeCliShellDialogueIncomingMessages,
   resolveCliShellInteractionEnhancementProfile,
@@ -72,6 +76,7 @@ import {
   type BackendFrameInteractionTraceEvent,
   type CliShellLiveTerminalTransportSessionFactory,
   type CliShellManagedState,
+  type CliShellRoomAppProps,
   type CliShellTuiStore,
   type CliShellTuiViewState,
 } from "../src";
@@ -87,6 +92,30 @@ const createCached = <T>(data: T): CachedResourceState<T> => ({
 });
 
 const normalizeAsciiLetters = (value: string): string => value.replace(/[^a-z]+/gi, "").toLowerCase();
+
+const waitForTuiCondition = async (predicate: () => boolean | Promise<boolean>, timeoutMs = 1_000): Promise<void> => {
+  const startedAt = Date.now();
+  while (!(await predicate())) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error("timed out waiting for TUI condition");
+    }
+    await Bun.sleep(10);
+  }
+};
+
+const waitForTuiConditionWithDebug = async (
+  predicate: () => boolean | Promise<boolean>,
+  debug: () => string | Promise<string>,
+  timeoutMs = 1_000,
+): Promise<void> => {
+  const startedAt = Date.now();
+  while (!(await predicate())) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`timed out waiting for TUI condition\n${await debug()}`);
+    }
+    await Bun.sleep(10);
+  }
+};
 
 const createSession = (): SessionEntry => ({
   id: "session-1",
@@ -401,6 +430,7 @@ const createTerminalPermissionRequest = (
 interface TuiStoreHarness {
   store: CliShellTuiStore;
   replaceGlobalTerminals(nextTerminals: GlobalTerminalEntry[]): void;
+  replaceGlobalRoomSnapshot(chatId: string, snapshot: GlobalRoomSnapshotOutput | null): void;
   replaceTerminalPermissionRequests(terminalId: string, requests: GlobalTerminalApprovalRequest[]): void;
   setPublishComposedSurfaceEnabled(enabled: boolean): void;
   inputs: Array<{ terminalId: string; text: string }>;
@@ -475,6 +505,17 @@ const createTuiStore = (input: { state: RuntimeClientState; settingsContent?: st
     state = {
       ...state,
       globalTerminals: createCached(nextTerminals),
+    };
+    emit();
+  };
+
+  const replaceGlobalRoomSnapshot = (chatId: string, snapshot: GlobalRoomSnapshotOutput | null): void => {
+    state = {
+      ...state,
+      globalRoomSnapshotsById: {
+        ...state.globalRoomSnapshotsById,
+        [chatId]: createCached(snapshot),
+      },
     };
     emit();
   };
@@ -658,6 +699,7 @@ const createTuiStore = (input: { state: RuntimeClientState; settingsContent?: st
   return {
     store: store as unknown as CliShellTuiStore,
     replaceGlobalTerminals,
+    replaceGlobalRoomSnapshot,
     replaceTerminalPermissionRequests,
     setPublishComposedSurfaceEnabled(enabled: boolean) {
       publishComposedSurfaceEnabled = enabled;
@@ -714,6 +756,91 @@ interface CoreAppTestSetup {
   destroy(): void;
 }
 
+interface RoomAppTestSetup {
+  renderer: Awaited<ReturnType<typeof createTestRenderer>>["renderer"];
+  mockMouse: Awaited<ReturnType<typeof createTestRenderer>>["mockMouse"];
+  renderOnce: Awaited<ReturnType<typeof createTestRenderer>>["renderOnce"];
+  captureCharFrame: Awaited<ReturnType<typeof createTestRenderer>>["captureCharFrame"];
+  app: CliShellRoomApp;
+  destroy(): void;
+}
+
+const createRoomAppTestSetup = async (input: {
+  state: RuntimeClientState;
+  harness?: TuiStoreHarness;
+  hydrateGlobalRoomSnapshot?: CliShellTuiStore["hydrateGlobalRoomSnapshot"];
+  width?: number;
+  height?: number;
+}): Promise<RoomAppTestSetup> => {
+  const testRenderer = await createTestRenderer({
+    width: input.width ?? 40,
+    height: input.height ?? 10,
+    useMouse: true,
+    exitOnCtrlC: false,
+  });
+  const harness = input.harness ?? createTuiStore({ state: input.state });
+  const store =
+    input.hydrateGlobalRoomSnapshot ?
+      ({
+        ...harness.store,
+        hydrateGlobalRoomSnapshot: input.hydrateGlobalRoomSnapshot,
+      } satisfies CliShellTuiStore)
+    : harness.store;
+  const roomBinding: ProductEnsureBindingResult<GlobalRoomEntry> = {
+    entry: createRoomEntry("room-shell-1"),
+    created: false,
+    granted: true,
+    focused: true,
+    bindingMetadata: {
+      productId: "cli-shell",
+      resourceKey: "shell-1",
+      ownerSystem: "message-system",
+    },
+  };
+  const attached: CliShellRoomAppProps["attached"] = {
+    session: createSession(),
+    avatarCreated: false,
+    clearedRuntimeSessionIds: [],
+    avatar: {
+      avatarPrincipalId: "auth:shell-assistant",
+      runtimeId: "runtime:shell-assistant",
+      nickname: "shell-assistant",
+      displayName: "Shell Assistant",
+      classify: "assistant",
+      iconUrl: null,
+      defaultAvatar: false,
+      sourceScope: "global",
+      globalAvailable: true,
+      workspacePrivateSlotReady: false,
+      globalPath: "/global/shell-assistant",
+      workspacePrivatePath: "/workspace/.agenter/avatars/by-principal/shell-assistant",
+      effectivePath: "/global/shell-assistant",
+    },
+    avatarActorId: "auth:shell-assistant",
+    room: roomBinding,
+    promptSeeded: false,
+    memoryFiles: [],
+    managed: createManagedState(),
+  };
+  const app = new CliShellRoomApp({
+    renderer: testRenderer.renderer,
+    store,
+    shellName: "shell-1",
+    attached,
+    keybindings: resolveCliShellTuiKeybindings(null),
+    onQuit: () => {},
+  });
+  app.start();
+  return {
+    ...testRenderer,
+    app,
+    destroy() {
+      app.dispose();
+      testRenderer.renderer.destroy();
+    },
+  };
+};
+
 const createCoreAppTestSetup = async (input: {
   state: RuntimeClientState;
   width?: number;
@@ -723,6 +850,7 @@ const createCoreAppTestSetup = async (input: {
   managed?: CliShellManagedState;
   createTransportSession?: CliShellLiveTerminalTransportSessionFactory;
   harness?: TuiStoreHarness;
+  experimentalDynamicRefresh?: boolean;
 }): Promise<CoreAppTestSetup> => {
   const testRenderer = await createTestRenderer({
     width: input.width ?? 80,
@@ -745,6 +873,7 @@ const createCoreAppTestSetup = async (input: {
     keybindings: resolveCliShellTuiKeybindings(null),
     onQuit: () => {},
     debug: input.debug ?? false,
+    experimentalDynamicRefresh: input.experimentalDynamicRefresh,
     createTransportSession: input.createTransportSession,
   });
   app.start();
@@ -863,6 +992,185 @@ describe("Feature: cli-shell interactive TUI", () => {
     setup.renderer.destroy();
   });
 
+  test("Scenario: Given native Chat ScrollBox receives unchanged rows When render sync repeats Then row renderables are preserved", async () => {
+    const rows = Array.from({ length: 12 }, (_, index) => ({
+      key: `row-${index}`,
+      text: `message row ${index}`,
+    }));
+    const setup = await createDialogueScrollBoxTestSetup({
+      width: 32,
+      height: 6,
+      rows,
+    });
+
+    const before = setup.controller.scrollBox.getChildren();
+    setup.controller.sync({
+      width: 32,
+      height: 6,
+      rows,
+      scrollTop: 2,
+    });
+    const after = setup.controller.scrollBox.getChildren();
+
+    expect(after).toHaveLength(before.length);
+    expect(after[0]).toBe(before[0]);
+    expect(setup.controller.snapshot().scrollTop).toBe(2);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given native Chat rows are cached When the same transcript renders again Then the same row projection is reused", () => {
+    const cache = createCliShellDialogueRowsCache();
+    const model = {
+      dialogueBlocks: Array.from({ length: 20 }, (_, index) => ({
+        key: `message:${index + 1}`,
+        kind: "message" as const,
+        messageId: index + 1,
+        authorLabel: index % 2 === 0 ? "you" : "@shell-assistant",
+        authoredByUser: index % 2 === 0,
+        body: `message ${index + 1} ${"long body ".repeat(8)}`,
+      })),
+    };
+
+    const firstRows = cache.getRows({ model, width: 32 });
+    const secondRows = cache.getRows({ model, width: 32 });
+    const resizedRows = cache.getRows({ model, width: 36 });
+
+    expect(secondRows).toBe(firstRows);
+    expect(resizedRows).not.toBe(firstRows);
+  });
+
+  test("Scenario: Given native Chat appends a message When row cache updates Then unchanged message rows keep identity", () => {
+    const cache = createCliShellDialogueRowsCache();
+    const firstMessage = {
+      key: "message:1",
+      kind: "message" as const,
+      messageId: 1,
+      authorLabel: "@shell-assistant",
+      authoredByUser: false,
+      body: "stable body ".repeat(20),
+    };
+    const firstRows = cache.getRows({
+      model: {
+        dialogueBlocks: [firstMessage],
+      },
+      width: 30,
+    });
+    const firstMessageRows = firstRows.filter((row) => row.key.startsWith("message:1:"));
+
+    const nextRows = cache.getRows({
+      model: {
+        dialogueBlocks: [
+          { ...firstMessage },
+          {
+            key: "message:2",
+            kind: "message" as const,
+            messageId: 2,
+            authorLabel: "you",
+            authoredByUser: true,
+            body: "new body",
+          },
+        ],
+      },
+      width: 30,
+    });
+    const nextFirstMessageRows = nextRows.filter((row) => row.key.startsWith("message:1:"));
+
+    expect(nextRows).not.toBe(firstRows);
+    expect(nextFirstMessageRows.map((row) => row.key)).toEqual(firstMessageRows.map((row) => row.key));
+    for (const [index, row] of nextFirstMessageRows.entries()) {
+      expect(row).toBe(firstMessageRows[index]);
+    }
+  });
+
+  test("Scenario: Given native Chat ScrollBox receives changed styled rows When render sync repeats Then only changed row content patches in place", async () => {
+    const setup = await createDialogueScrollBoxTestSetup({
+      width: 32,
+      height: 6,
+      rows: [
+        {
+          key: "row-1",
+          height: 1,
+          line: { spans: [{ text: "old", fg: "#94a3b8" }] },
+        },
+        {
+          key: "row-2",
+          height: 1,
+          text: "stable",
+        },
+      ],
+    });
+
+    const before = setup.controller.scrollBox.getChildren();
+    setup.controller.sync({
+      width: 32,
+      height: 6,
+      rows: [
+        {
+          key: "row-1",
+          height: 1,
+          line: { spans: [{ text: "new", fg: "#00ff00", bg: "#111111" }] },
+        },
+        {
+          key: "row-2",
+          height: 1,
+          text: "stable",
+        },
+      ],
+      scrollTop: 0,
+    });
+    const after = setup.controller.scrollBox.getChildren();
+
+    expect(after).toHaveLength(before.length);
+    expect(after[0]).toBe(before[0]);
+    expect(after[1]).toBe(before[1]);
+    expect(setup.controller.scrollBox.getChildren()[0]).toBe(before[0]);
+    expect(after[0]?.id).toBe("cli-shell-dialogue-scrollbox-row-1");
+    expect(after[0]).toBe(before[0]);
+    expect(after[0]).toBeInstanceOf(TextRenderable);
+    if (!(after[0] instanceof TextRenderable)) {
+      throw new Error("expected first Chat row to remain a TextRenderable");
+    }
+    expect(after[0].chunks[0]?.text).toBe("new");
+    expect(after[0].chunks[0]?.fg?.toString()).toBe("rgba(0.00, 1.00, 0.00, 1.00)");
+    expect(after[0].chunks[0]?.bg?.toString()).toBe("rgba(0.07, 0.07, 0.07, 1.00)");
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given native Chat ScrollBox rows are inserted or removed When render sync repeats Then unchanged row renderables keep identity", async () => {
+    const setup = await createDialogueScrollBoxTestSetup({
+      width: 32,
+      height: 6,
+      rows: [
+        { key: "row-1", text: "one" },
+        { key: "row-2", text: "two" },
+        { key: "row-3", text: "three" },
+      ],
+    });
+
+    const before = setup.controller.scrollBox.getChildren();
+    setup.controller.sync({
+      width: 32,
+      height: 6,
+      rows: [
+        { key: "row-0", text: "zero" },
+        { key: "row-2", text: "two" },
+        { key: "row-3", text: "three" },
+      ],
+      scrollTop: 0,
+    });
+    const after = setup.controller.scrollBox.getChildren();
+
+    expect(after).toHaveLength(3);
+    expect(after[1]).toBe(before[1]);
+    expect(after[2]).toBe(before[2]);
+    expect(after.map((child) => child.id)).toEqual([
+      "cli-shell-dialogue-scrollbox-row-0",
+      "cli-shell-dialogue-scrollbox-row-2",
+      "cli-shell-dialogue-scrollbox-row-3",
+    ]);
+    setup.renderer.destroy();
+  });
+
   test("Scenario: Given native Chat backend projects terminal-2 cells When rendering Then it consumes the OpenTUI ScrollBox viewport owner", () => {
     const state = createRuntimeState({
       heartbeat: [],
@@ -957,6 +1265,162 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(afterDown).toBeGreaterThan(before);
     expect(afterUp).toBeLessThan(afterDown);
     setup.renderer.destroy();
+  });
+
+  test("Scenario: Given native Chat ScrollBox was bottom-pinned When the user drags to the top and wheels Then it keeps the OpenTUI viewport as truth", async () => {
+    const rows = Array.from({ length: 30 }, (_, index) => ({
+      key: `row-${index}`,
+      text: `message row ${index}`,
+    }));
+    const setup = await createDialogueScrollBoxTestSetup({
+      width: 32,
+      height: 5,
+      rows,
+      initialScrollTop: CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM,
+    });
+
+    const bottom = setup.controller.snapshot().scrollTop;
+    setup.controller.scrollBox.scrollTop = 0;
+    const top = setup.controller.syncFromHostViewport().scrollTop;
+    setup.controller.sync({
+      width: 32,
+      height: 5,
+      rows,
+      scrollTop: top,
+    });
+
+    expect(bottom).toBeGreaterThan(top);
+    expect(setup.controller.snapshot().scrollTop).toBe(0);
+
+    setup.controller.applyWheel({ direction: "down", delta: 1 });
+
+    expect(setup.controller.snapshot().scrollTop).toBe(1);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given native Chat ScrollBox is near bottom When the user scrolls upward Then the stored position is not converted into forced bottom pinning", async () => {
+    const rows = Array.from({ length: 30 }, (_, index) => ({
+      key: `row-${index}`,
+      text: `message row ${index}`,
+    }));
+    const setup = await createDialogueScrollBoxTestSetup({
+      width: 32,
+      height: 5,
+      rows,
+      initialScrollTop: CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM,
+    });
+    const bottom = setup.controller.snapshot().scrollTop;
+
+    setup.controller.applyWheel({ direction: "up", delta: 1 });
+    const userScroll = setup.controller.snapshot();
+    setup.controller.sync({
+      width: 32,
+      height: 5,
+      rows,
+      scrollTop: userScroll.scrollTop,
+    });
+
+    expect(userScroll.pinnedToBottom).toBe(true);
+    expect(userScroll.scrollTop).toBe(bottom - 1);
+    expect(setup.controller.snapshot().scrollTop).toBe(bottom - 1);
+    setup.renderer.destroy();
+  });
+
+  test("Scenario: Given room-only startup hydrates after the first frame When no wheel input occurs Then MessageRoom content appears immediately", async () => {
+    const hydratedMessage = createRoomMessage({
+      messageId: 1,
+      senderActorId: "auth:shell-assistant",
+      from: "shell-assistant",
+      content: "hydrated without wheel",
+      createdAt: Date.parse("2026-05-08T10:00:00+08:00"),
+    });
+    const baseState = createRuntimeState({
+      heartbeat: [],
+      lines: [],
+      roomMessages: [],
+      unread: 0,
+    });
+    const hydratedState = createRuntimeState({
+      heartbeat: [],
+      lines: [],
+      roomMessages: [hydratedMessage],
+      unread: 0,
+    });
+    const harness = createTuiStore({ state: baseState });
+    const setup = await createRoomAppTestSetup({
+      state: baseState,
+      harness,
+      hydrateGlobalRoomSnapshot: async () => {
+        const snapshot = hydratedState.globalRoomSnapshotsById["room-shell-1"]!.data;
+        harness.replaceGlobalRoomSnapshot("room-shell-1", snapshot);
+        return snapshot;
+      },
+      width: 50,
+      height: 8,
+    });
+
+    await waitForTuiCondition(async () => {
+      await setup.renderOnce();
+      return setup.captureCharFrame().includes("hydrated without wheel");
+    });
+
+    expect(setup.captureCharFrame()).toContain("hydrated without wheel");
+    setup.destroy();
+  });
+
+  test("Scenario: Given room-only ScrollBox is dragged to the top When a later render occurs Then the room does not snap back to bottom", async () => {
+    const setup = await createRoomAppTestSetup({
+      state: createRuntimeState({
+        heartbeat: [],
+        lines: [],
+        roomMessages: Array.from({ length: 18 }, (_, index) =>
+          createRoomMessage({
+            messageId: index + 1,
+            senderActorId: "auth:shell-assistant",
+            from: "shell-assistant",
+            content: `room scroll row ${index + 1}`,
+            createdAt: Date.parse("2026-05-08T10:00:00+08:00") + index * 60_000,
+          }),
+        ),
+        unread: 0,
+      }),
+      width: 48,
+      height: 8,
+    });
+    await waitForTuiCondition(() => {
+      const scrollBox = setup.renderer.root.findDescendantById("cli-shell-room-scrollbox");
+      return scrollBox instanceof ScrollBoxRenderable && scrollBox.scrollTop > 0;
+    });
+    await waitForTuiCondition(async () => {
+      await setup.renderOnce();
+      return setup.captureCharFrame().includes("room scroll row");
+    });
+    const initialLines = setup.captureCharFrame().split("\n").map((line) => line.trim());
+    const initialFrame = initialLines.join("\n");
+    expect(initialFrame).toContain("room scroll row");
+    expect(initialLines).not.toContain("room scroll row 1");
+
+    const scrollBox = setup.renderer.root.findDescendantById("cli-shell-room-scrollbox");
+    expect(scrollBox).toBeInstanceOf(ScrollBoxRenderable);
+    const roomScrollBox = scrollBox as ScrollBoxRenderable;
+    expect(roomScrollBox.scrollTop).toBeGreaterThan(0);
+    roomScrollBox.scrollTop = 0;
+    roomScrollBox.verticalScrollBar.emit("change", { position: 0 });
+    await setup.renderOnce();
+    await waitForTuiCondition(async () => roomScrollBox.scrollTop === 0);
+    await waitForTuiConditionWithDebug(async () => {
+      await setup.renderOnce();
+      return setup.captureCharFrame().split("\n").map((line) => line.trim()).includes("room scroll row 1");
+    }, () => setup.captureCharFrame());
+    const topLines = setup.captureCharFrame().split("\n").map((line) => line.trim());
+    expect(topLines).toContain("room scroll row 1");
+
+    await setup.mockMouse.scroll(10, 2, "down");
+    await setup.renderOnce();
+
+    expect(roomScrollBox.scrollTop).toBeLessThan(5);
+    expect(setup.captureCharFrame().split("\n").map((line) => line.trim())).toContain("room scroll row 1");
+    setup.destroy();
   });
 
   test("Scenario: Given a room snapshot When cli-shell creates a Chat window Then it keeps MessageRoom pagination cursors without exposing dialogueScrollOffset", () => {
@@ -3559,6 +4023,125 @@ describe("Feature: cli-shell interactive TUI", () => {
     expect(openedTerminalIds).toEqual(["shell-1:terminal-1"]);
     expect(rendered).not.toContain("visible-live-row");
     setup.destroy();
+  });
+
+  test("Scenario: Given cli-shell source mirror receives unchanged frames When dynamic refresh is default Then it backs off to idle pacing", async () => {
+    const previousTraceEnv = process.env.AGENTER_CLI_SHELL_TRACE;
+    const tracePath = `/tmp/agenter-cli-shell-dynamic-pacing-${Date.now()}-${Math.random().toString(36).slice(2)}.ndjson`;
+    process.env.AGENTER_CLI_SHELL_TRACE = tracePath;
+    try {
+      const shellLines = ["$ agenter shell", "shell-1:~/project $"];
+      const state = createRuntimeState({ heartbeat: [], lines: shellLines, roomMessages: [], unread: 0 });
+      const shellTerminalEntry = createGlobalTerminalEntry("shell-1:terminal-1", shellLines);
+      const visibleTerminalEntry = createCliShellTerminal2Entry({
+        lines: shellLines,
+        cols: 80,
+        rows: 12,
+      });
+      state.globalTerminals = createCached([shellTerminalEntry, visibleTerminalEntry]);
+      const sourceFrame = {
+        ...shellTerminalEntry.snapshot!,
+        cols: 80,
+        rows: 12,
+        scrollback: {
+          ...shellTerminalEntry.snapshot!.scrollback,
+          screenLines: 12,
+        },
+      };
+      const setup = await createCoreAppTestSetup({
+        state,
+        fallbackTerminalId: "shell-1:terminal-2",
+        width: 80,
+        height: 12,
+        createTransportSession: ({ terminalId, events }) =>
+          createTestTransportSession({
+            async connect() {
+              events.onOpen();
+              if (terminalId === "shell-1:terminal-1") {
+                events.onMessage({
+                  type: "frame",
+                  terminalId,
+                  frameSeq: sourceFrame.seq,
+                  status: "IDLE",
+                  patch: { type: "full", frame: sourceFrame },
+                });
+              }
+            },
+            disconnect() {},
+            send(message) {
+              if (terminalId === "shell-1:terminal-1" && message.type === "pullFrame") {
+                events.onMessage({
+                  type: "frame",
+                  terminalId,
+                  frameSeq: sourceFrame.seq,
+                  status: "IDLE",
+                  patch: {
+                    type: "full",
+                    frame: {
+                      ...sourceFrame,
+                      cols: message.cols,
+                      rows: message.rows,
+                      scrollback: {
+                        ...sourceFrame.scrollback,
+                        screenLines: message.rows,
+                      },
+                    },
+                  },
+                });
+              }
+              return true;
+            },
+            getConnectionState() {
+              return "connected";
+            },
+          }),
+      });
+
+      const readTraceEvents = async (): Promise<Array<{ kind: string; detail?: Record<string, unknown> }>> => {
+        if (!(await Bun.file(tracePath).exists())) {
+          return [];
+        }
+        return (await Bun.file(tracePath).text())
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line) as { kind: string; detail?: Record<string, unknown> });
+      };
+
+      let traceEvents: Array<{ kind: string; detail?: Record<string, unknown> }> = [];
+      try {
+        await waitForTuiConditionWithDebug(async () => {
+          await setup.renderOnce();
+          traceEvents = await readTraceEvents();
+          return traceEvents.some((event) => event.kind === "dynamic-pacing-idle");
+        }, async () => JSON.stringify(traceEvents.slice(-20), null, 2), 1_500);
+      } finally {
+        setup.destroy();
+      }
+
+      expect(
+        traceEvents.some(
+          (event) => event.kind === "drawable-frame-changed" && event.detail?.pacingMode === "dynamic",
+        ),
+      ).toBe(true);
+      expect(
+        traceEvents.some(
+          (event) =>
+            event.kind === "dynamic-pacing-idle" &&
+            event.detail?.terminalId === "shell-1:terminal-1" &&
+            event.detail?.thresholdMs === 120,
+        ),
+      ).toBe(true);
+    } finally {
+      if (previousTraceEnv === undefined) {
+        delete process.env.AGENTER_CLI_SHELL_TRACE;
+      } else {
+        process.env.AGENTER_CLI_SHELL_TRACE = previousTraceEnv;
+      }
+      await Bun.file(tracePath)
+        .delete()
+        .catch(() => undefined);
+    }
   });
 
   test("Scenario: Given shell owner cursor is stored as an absolute scrollback row When CliShellCoreApp renders scrolled shell projection Then hardware cursor remains visible in the local viewport", async () => {

@@ -1,3 +1,7 @@
+> Superseded note:
+> This change is built on the older `terminal-1` / `terminal-2` cli-shell ontology and must not be resumed or applied directly.
+> Its useful product references and acceptance evidence now serve only as historical input for `realign-cli-shell-with-core-system-boundaries`.
+
 ## Why
 
 `add-cli-shell-product` already defined the product direction, terminal-first IA, one-line bottom bar, dialogue-panel references, and the broad end-user effect. Those product goals are not being replaced here.

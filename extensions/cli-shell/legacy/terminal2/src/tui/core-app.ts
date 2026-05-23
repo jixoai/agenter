@@ -29,10 +29,12 @@ import {
 } from "./controller";
 import { CliShellDebugBarRenderable } from "./debug-bar";
 import {
-  buildCliShellDialogueScrollRows,
   createCliShellDialogueViewportOwner,
+  createCliShellDialogueRowsCache,
+  type CliShellDialogueRowsCache,
   type CliShellDialogueViewportOwner,
 } from "./dialogue-surface";
+import type { CliShellDialogueScrollRow } from "./dialogue-scrollbox";
 import {
   layoutCliShellTuiFrame,
   resolveCliShellTranscriptPanelLayout,
@@ -43,6 +45,7 @@ import {
 import { CliShellDialogueBackend } from "./dialogue-backend";
 import type { CliShellTuiKeybindings } from "./keybindings";
 import {
+  CLI_SHELL_PRODUCT_DYNAMIC_QUIET_MS,
   createCliShellLiveTerminalMirror,
   type CliShellLiveTerminalMirror,
   type CliShellLiveTerminalTransportSessionFactory,
@@ -188,6 +191,7 @@ export class CliShellCoreApp {
   readonly #root: BoxRenderable;
   readonly #terminalView: ShellTerminalViewRenderable;
   readonly #dialogueViewportOwner: CliShellDialogueViewportOwner;
+  readonly #dialogueRowsCache: CliShellDialogueRowsCache;
   readonly #dialogueBackend: CliShellDialogueBackend;
   readonly #debugBar: CliShellDebugBarRenderable | null;
   #viewState: CliShellTuiViewState;
@@ -220,6 +224,7 @@ export class CliShellCoreApp {
     this.#props = props;
     this.#renderer = props.renderer;
     this.#perfTracer = createCliShellPerfTracer({ enabled: props.debug === true, filters: props.debugFilters });
+    this.#dialogueRowsCache = createCliShellDialogueRowsCache();
     this.#dialogueViewportOwner = createCliShellDialogueViewportOwner(this.#renderer as RenderContext, {
       id: "cli-shell-dialogue-native-scrollbox",
       width: 1,
@@ -229,6 +234,7 @@ export class CliShellCoreApp {
     });
     this.#dialogueBackend = new CliShellDialogueBackend({
       viewportOwner: this.#dialogueViewportOwner,
+      rowsCache: this.#dialogueRowsCache,
     });
     this.#viewState = createInitialCliShellViewState(props.managed);
     this.#state = props.store.getState();
@@ -449,30 +455,13 @@ export class CliShellCoreApp {
         interactionLayout.terminalScrollRegion.height,
       );
     }
-    this.#publishComposedSurface({
-      model,
-      shellSourceTerminalId,
-      sourceTerminal,
-      hasPublishedComposedTruth,
-      publishedSurface: publishedSurfaceState.surface,
-      width,
-      height: contentHeight,
-    });
-
     const frame = layoutCliShellTuiFrame({
       model,
       width,
       height: contentHeight,
       renderToolbar: false,
       dialogueViewportOwner: this.#dialogueViewportOwner,
-    });
-    this.#syncDialogueBackend({ model, width, height: contentHeight });
-    const interactionFrame = layoutCliShellTuiFrame({
-      model,
-      width,
-      height: contentHeight,
-      renderToolbar: true,
-      dialogueViewportOwner: this.#dialogueViewportOwner,
+      dialogueRowsCache: this.#dialogueRowsCache,
     });
     const visibleSnapshotLines = resolveSnapshotRichLines(terminalEntry?.snapshot);
     const visibleSnapshotMatchesFrame =
@@ -490,6 +479,16 @@ export class CliShellCoreApp {
         this.#viewState.activeFocusTarget === "dialogue" ||
         !publishedSurfaceState.surface ||
         (visibleSnapshotLines.length > 0 && !visibleSnapshotMatchesFrame));
+    const surfaceFrame = shouldBuildLocalTerminal2Surface
+      ? layoutCliShellTuiFrame({
+          model,
+          width,
+          height: contentHeight,
+          renderToolbar: true,
+          dialogueViewportOwner: this.#dialogueViewportOwner,
+          dialogueRowsCache: this.#dialogueRowsCache,
+        })
+      : null;
     const localComposedSurface = shouldBuildLocalTerminal2Surface
       ? buildCliShellComposedSurface({
           shellTerminalId: shellSourceTerminalId!,
@@ -498,8 +497,18 @@ export class CliShellCoreApp {
           width,
           height: contentHeight,
           dialogueViewportOwner: this.#dialogueViewportOwner,
+          dialogueRowsCache: this.#dialogueRowsCache,
+          frame: surfaceFrame ?? undefined,
+          cursor: surfaceFrame?.cursor,
         })
       : null;
+    this.#syncDialogueBackend({ model, width, height: contentHeight });
+    if (localComposedSurface) {
+      this.#publishComposedSurface({
+        model,
+        surface: localComposedSurface,
+      });
+    }
     const visibleProjection = (() => {
       if (localComposedSurface) {
         const lines = richLinesFromComposedSurface(localComposedSurface);
@@ -535,7 +544,7 @@ export class CliShellCoreApp {
         source: "terminal-2-bootstrap-frame" as const,
         lines: frame.styledLines,
         selectionSources: frame.selectionSources,
-        cursor: resolveVisibleCursorCellPosition({ model, width, height: contentHeight }),
+        cursor: frame.cursor ?? resolveVisibleCursorCellPosition({ model, width, height: contentHeight }),
       };
     })();
 
@@ -598,7 +607,6 @@ export class CliShellCoreApp {
       });
     }
     this.#renderNowDepth -= 1;
-    void interactionFrame;
   }
 
   #contentTop(): number {
@@ -679,7 +687,7 @@ export class CliShellCoreApp {
     });
   }
 
-  #resolveDialogueScrollRows(model: CliShellTuiModel | null = this.#lastModel): ReturnType<typeof buildCliShellDialogueScrollRows> {
+  #resolveDialogueScrollRows(model: CliShellTuiModel | null = this.#lastModel): CliShellDialogueScrollRow[] {
     if (!model || !model.dialoguePlacement) {
       return [];
     }
@@ -689,7 +697,7 @@ export class CliShellCoreApp {
       height: this.#contentHeight(),
     });
     const contentWidth = Math.max(1, layout.width - 4);
-    return buildCliShellDialogueScrollRows({
+    return this.#dialogueRowsCache.getRows({
       model,
       width: contentWidth,
     });
@@ -698,7 +706,7 @@ export class CliShellCoreApp {
   #resolveDialogueScrollRowsForWindow(input: {
     messages: CliShellTuiModel["dialogueWindow"]["messages"];
     messageIds: CliShellTuiModel["dialogueWindow"]["messageIds"];
-  }): ReturnType<typeof buildCliShellDialogueScrollRows> {
+  }): CliShellDialogueScrollRow[] {
     const baseModel = this.#lastModel ?? this.#fallbackModel();
     return this.#resolveDialogueScrollRows({
       ...baseModel,
@@ -1164,6 +1172,7 @@ export class CliShellCoreApp {
       height: contentHeight,
       renderToolbar: true,
       dialogueViewportOwner: this.#dialogueViewportOwner,
+      dialogueRowsCache: this.#dialogueRowsCache,
     });
     const hit = actionFrame.actionRegions.find(
       (region) =>
@@ -1322,7 +1331,8 @@ export class CliShellCoreApp {
         geometryRole: "authority",
         debugTrace: this.#props.debug === true && (this.#props.debugFilters?.length ?? 0) === 0,
         pacing: {
-          mode: this.#props.experimentalDynamicRefresh === true ? "dynamic" : "fixed",
+          mode: this.#props.experimentalDynamicRefresh === false ? "fixed" : "dynamic",
+          dynamicQuietMs: CLI_SHELL_PRODUCT_DYNAMIC_QUIET_MS,
         },
         trace: this.#perfTracer,
         requestPaint: () => this.#bumpLiveTerminalRevision("source-mirror.requestPaint"),
@@ -1398,37 +1408,8 @@ export class CliShellCoreApp {
     });
   }
 
-  #publishComposedSurface(input: {
-    model: CliShellTuiModel;
-    shellSourceTerminalId: string | null;
-    sourceTerminal: ReturnType<CliShellLiveTerminalMirror["getView"]> | null;
-    hasPublishedComposedTruth: boolean;
-    publishedSurface: CliShellComposedSurfaceState | null;
-    width: number;
-    height: number;
-  }): void {
-    if (!input.shellSourceTerminalId || input.width <= 0 || input.height <= 0) {
-      return;
-    }
-    const publishedGeometryMatches =
-      input.publishedSurface?.cols === input.width && input.publishedSurface.rows === input.height;
-    if (
-      input.hasPublishedComposedTruth &&
-      publishedGeometryMatches &&
-      !input.sourceTerminal?.connected &&
-      !this.#localComposedInteractionDirty &&
-      input.model.terminalView.snapshotSeq <= (input.publishedSurface?.shellSnapshotSeq ?? -1)
-    ) {
-      return;
-    }
-    const surface = buildCliShellComposedSurface({
-      shellTerminalId: input.shellSourceTerminalId,
-      terminalId: input.model.terminalId,
-      model: input.model,
-      width: input.width,
-      height: input.height,
-      dialogueViewportOwner: this.#dialogueViewportOwner,
-    });
+  #publishComposedSurface(input: { model: CliShellTuiModel; surface: CliShellComposedSurfaceState }): void {
+    const surface = input.surface;
     const nextKey = resolveComposedSurfaceKey(surface);
     if (nextKey === this.#composedSurfaceKey) {
       return;

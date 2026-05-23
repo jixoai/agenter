@@ -123,6 +123,11 @@ export interface BackendFrameProjectionUpdate {
   selectionOverlays?: readonly TerminalTransportSelectionOverlay[];
   selectionBg?: RGBA;
   interactionProfile?: CliShellInteractionEnhancementProfile;
+  cursor?: {
+    row: number;
+    col: number;
+    visible: boolean;
+  } | null;
 }
 
 export class BackendFrameRenderable extends FrameBufferRenderable {
@@ -134,6 +139,7 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
   #selectionBg: RGBA;
   #interactionProfile: CliShellInteractionEnhancementProfile;
   #semanticClickMaxDistanceCells: number;
+  #cursor: { row: number; col: number; visible: boolean } | null = null;
   #activeSelectionOwnerId: string | null = null;
   #lastSelectionPoint: TerminalTransportOwnerCoordinate | null = null;
   #pendingDragAnchor: TerminalTransportOwnerCoordinate | null = null;
@@ -260,6 +266,9 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
     }
     if (update.interactionProfile) {
       this.#interactionProfile = update.interactionProfile;
+    }
+    if ("cursor" in update) {
+      this.#cursor = update.cursor ?? null;
     }
     this.paintAndRequestRender();
     return this.#lastPaintStats;
@@ -393,6 +402,32 @@ export class BackendFrameRenderable extends FrameBufferRenderable {
       glyphs: glyphCount,
     };
     return this.#lastPaintStats;
+  }
+
+  override render(buffer: Parameters<FrameBufferRenderable["render"]>[0], deltaTime: number): void {
+    super.render(buffer, deltaTime);
+    this.syncNativeCursor();
+  }
+
+  protected syncNativeCursor(): void {
+    const cursor = this.#cursor;
+    if (!this.focused || !cursor?.visible) {
+      this.ctx.setCursorPosition(0, 0, false);
+      return;
+    }
+    const row = Math.trunc(cursor.row);
+    const col = Math.trunc(cursor.col);
+    if (row < 0 || row >= this.height || col < 0 || col >= this.width) {
+      this.ctx.setCursorPosition(0, 0, false);
+      return;
+    }
+    // OpenTUI's native cursor API addresses terminal cells in 1-based screen coordinates.
+    // cli-shell terminal projections keep cursor row/col in 0-based viewport-local cells.
+    // We previously handled this explicitly in the legacy native-projection/backend-frame path.
+    // If we pass the raw 0-based values here, the visible hardware cursor lands one cell up-left
+    // and can present as a (-1,-1)-style offset to the user.
+    this.ctx.setCursorStyle({ style: "block", blinking: false });
+    this.ctx.setCursorPosition(this.screenX + col + 1, this.screenY + row + 1, true);
   }
 
   protected isCellRangeSelected(row: number, startCol: number, endCol: number): boolean {

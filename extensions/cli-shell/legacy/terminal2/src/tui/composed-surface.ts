@@ -1,24 +1,30 @@
 import type { ProductTerminalComposedSurfaceState } from "@agenter/client-sdk";
 
-import type { CliShellDialogueViewportOwner } from "./dialogue-surface";
-import { layoutCliShellTuiFrame, resolveCliShellTerminalRegion } from "./frame";
+import type { CliShellDialogueRowsCache, CliShellDialogueViewportOwner } from "./dialogue-surface";
+import { layoutCliShellTuiFrame, resolveCliShellTerminalRegion, type CliShellTuiFrame } from "./frame";
 import { resolveVisibleCursorCellPosition } from "./native-projection";
 import type { CliShellComposedSurfaceState, CliShellTuiModel } from "./types";
 
-export const buildCliShellComposedSurface = (input: {
+export interface CliShellComposedSurfaceInput {
   shellTerminalId: string;
   terminalId: string;
   model: CliShellTuiModel;
   width: number;
   height: number;
   dialogueViewportOwner?: CliShellDialogueViewportOwner;
-}): CliShellComposedSurfaceState => {
-  const frame = layoutCliShellTuiFrame({
+  dialogueRowsCache?: CliShellDialogueRowsCache;
+  frame?: CliShellTuiFrame;
+  cursor?: { x: number; y: number; visible?: boolean };
+}
+
+export const buildCliShellComposedSurface = (input: CliShellComposedSurfaceInput): CliShellComposedSurfaceState => {
+  const frame = input.frame ?? layoutCliShellTuiFrame({
     model: input.model,
     width: input.width,
     height: input.height,
     renderToolbar: true,
     dialogueViewportOwner: input.dialogueViewportOwner,
+    dialogueRowsCache: input.dialogueRowsCache,
   });
   const terminalRegion = resolveCliShellTerminalRegion({
     model: input.model,
@@ -26,11 +32,13 @@ export const buildCliShellComposedSurface = (input: {
     height: input.height,
   });
   const productRows = Math.max(1, input.height);
-  const cursor = resolveVisibleCursorCellPosition({
-    model: input.model,
-    width: input.width,
-    height: input.height,
-  });
+  const cursor =
+    input.cursor ??
+    resolveVisibleCursorCellPosition({
+      model: input.model,
+      width: input.width,
+      height: input.height,
+    });
   return {
     shellTerminalId: input.shellTerminalId,
     terminalId: input.terminalId,

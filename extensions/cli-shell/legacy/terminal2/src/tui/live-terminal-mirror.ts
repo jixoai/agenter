@@ -84,6 +84,7 @@ const DEFAULT_FIXED_FPS = 30;
 const DEFAULT_ACTIVE_FPS = 30;
 const DEFAULT_IDLE_FPS = 1;
 const DEFAULT_DYNAMIC_QUIET_MS = 2_000;
+export const CLI_SHELL_PRODUCT_DYNAMIC_QUIET_MS = 120;
 
 const cloneRichLines = (lines: readonly TerminalRenderRichLine[]): TerminalRenderRichLine[] =>
   lines.map((line) => ({
@@ -717,7 +718,9 @@ export const createCliShellLiveTerminalMirror = (input: {
       pullInFlight = false;
       const appliedSnapshot = nextSnapshot ? applySnapshot(nextSnapshot) : { applied: false, drawableChanged: false };
       if (nextSnapshot && appliedSnapshot.applied) {
-        running = true;
+        // Terminal liveness is owned by explicit status/close events from the
+        // transport. A trailing frame may still arrive after the terminal has
+        // already stopped, so frame delivery must never resurrect running=true.
         paintInFlight = true;
         const geometry = resolvePullGeometry();
         if (nextSnapshot.cols === geometry.cols && nextSnapshot.rows === geometry.rows) {

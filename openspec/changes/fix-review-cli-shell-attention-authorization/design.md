@@ -1,10 +1,14 @@
+> Boundary note:
+> This design remains relevant for terminal authorization lifecycle and attention-item causality.
+> But any references to cli-shell-visible terminal identity must now be read through the boundary in `realign-cli-shell-with-core-system-boundaries`: cli-shell projects one bound TerminalSystem terminal rather than reviving a product-specific `terminal-2` truth.
+
 ## Context
 
 The current implementation already covers many product-level surfaces:
 
 - cli-shell parses `--avatar`, `--create-avatar`, `--clear-avatar`, and `--session` separately.
-- cli-shell binds a current visible terminal (`terminal-2`) and keeps internal shell truth (`terminal-1`) hidden from Shell Assistant terminal tools.
-- native cli-shell and `--web` subscribe to permission requests for the current opened terminal only.
+- cli-shell needs one current bound TerminalSystem terminal for the current product session, and Shell Assistant terminal tools must target that bound terminal rather than guessing from historical residue.
+- native cli-shell product surfaces subscribe to permission requests for the current bound terminal only.
 - TerminalSystem enforces `readonly`, `writer`, `guard`, and `admin` roles, stores approval request history, supports approval/denial, and emits approval request events.
 - session runtime can turn terminal observations into attention history through the terminal adapter path.
 
@@ -30,14 +34,14 @@ That explains the user-visible delay after approval. The UI is not merely slow; 
   - `guard` write waits for manager decision, then returns approved result, denial warning, or timeout action id.
 - Ensure authorization popup creation, approval, denial, timeout, cancel, and final result are committed as attention-item facts.
 - Keep live authorization authority bound to the live TerminalInstance, not a long-lived database row that can survive kill/bootstrap as actionable authority.
-- Keep cli-shell product code out of core laws. cli-shell only projects current-terminal requests and calls generic terminal APIs.
+- Keep cli-shell product code out of core laws. cli-shell only projects current-bound-terminal requests and calls generic terminal APIs.
 - Keep WebUI and cli-shell independent products over shared terminal-view/TerminalSystem primitives.
 
 **Non-Goals:**
 
 - Do not make managed/hosting imply terminal write authority.
 - Do not add cli-shell-specific branches to TerminalSystem, SessionRuntime, or WebUI.
-- Do not make root/workspace bash a fallback for a blocked visible-terminal action.
+- Do not make root/workspace bash a fallback for a blocked bound-terminal action.
 - Do not preserve backward compatibility for old approval-request/lease-only behavior.
 - Do not persist actionable guard approval authority across TerminalInstance death. Historical attention facts may remain durable, but actionable state dies with the instance.
 
@@ -112,7 +116,7 @@ Attention history remains durable, but it is history. It must not be enough to a
 
 cli-shell should:
 
-- subscribe only to the current opened visible terminal
+- subscribe only to the current bound terminal
 - render the default OpenTUI/HTML approval UI for that terminal
 - call generic approve/deny/cancel APIs
 - include reason entry where the host supports denial reasons
@@ -126,7 +130,7 @@ This keeps the product from polluting the platform and keeps WebUI independent.
 - [Risk] Existing approval request rows are database-backed while the desired pending action state is live-instance scoped. -> Mitigation: make actionable pending state live-instance owned, and keep only history/projection rows if needed for inspection.
 - [Risk] Hanging `terminal write` can tie up model/tool calls. -> Mitigation: require bounded approval wait timeout and `terminal wait/cancel` follow-up operations.
 - [Risk] Approval result may race with timeout. -> Mitigation: action state transitions must be atomic and idempotent; timeout returns a recoverable id, not a false final failure.
-- [Risk] Denial/cancel reason UX differs across native cli-shell, web-host, and WebUI. -> Mitigation: TerminalSystem accepts optional reason; hosts can initially pass a default reason and improve UI later.
+- [Risk] Denial/cancel reason UX differs across native cli-shell, other future hosts, and WebUI. -> Mitigation: TerminalSystem accepts optional reason; hosts can initially pass a default reason and improve UI later.
 - [Risk] Real AI tests can be slow and flaky. -> Mitigation: keep deterministic BDD coverage for state machines and use gated real AI tests as acceptance evidence for prompt/behavior.
 
 ## Migration Plan
@@ -136,8 +140,8 @@ This keeps the product from polluting the platform and keeps WebUI independent.
 3. Change approval/denial/cancel APIs to update action state and wake any waiters.
 4. Add attention-item commits for all action transitions through the terminal runtime adapter.
 5. Add `terminal wait` and `terminal cancel` descriptors, SDK methods, and CLI command coverage.
-6. Update native cli-shell and cli-shell web host to use the new action payloads while keeping current-terminal-only subscriptions.
-7. Update terminal-view component contracts and WebUI integration independently, without coupling WebUI to cli-shell.
+6. Update cli-shell native product surfaces to use the new action payloads while keeping current-bound-terminal-only subscriptions.
+7. Update terminal-view component contracts and any other product hosts independently, without coupling WebUI to cli-shell.
 8. Remove or demote old lease-only approval behavior from guard action approval.
 
 ## Open Questions
@@ -145,4 +149,3 @@ This keeps the product from polluting the platform and keeps WebUI independent.
 - Should approved guard actions ever grant an additional lease as an explicit manager choice, or should leases remain a separate admin command only?
 - What is the default approval wait timeout for model-facing `terminal write/input`: reuse the approval expiry, or use a shorter tool-call timeout?
 - Should `terminal cancel` denial/cancel reasons be required for manager-initiated cancellation, or optional for all callers?
-

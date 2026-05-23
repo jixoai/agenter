@@ -1,3 +1,7 @@
+> Boundary note:
+> This design remains relevant for Avatar selection/create/clear semantics and for the general rule that terminal approvals stay terminal-local.
+> But any cli-shell terminal-identity or browser-host wording must now be read through `realign-cli-shell-with-core-system-boundaries`: cli-shell uses one bound TerminalSystem terminal as shell truth, and browser-host experiments are not the current cli-shell product route.
+
 ## Physical Review
 
 The current platform law is correct and must stay intact:
@@ -5,7 +9,7 @@ The current platform law is correct and must stay intact:
 - AvatarRuntime identity is the Avatar identity, not `--session`.
 - cli-shell is an ordinary product package and must consume platform capabilities through generic contracts.
 - `--session=4` means product resource key `shell-4`; it does not create a clean Avatar context.
-- cli-shell may have internal terminal roles under one product session, but the product interaction is anchored on the currently opened TerminalSystem instance.
+- cli-shell may have implementation-local host structure under one product session, but product interaction is anchored on the bound TerminalSystem terminal.
 - TerminalSystem owns write authority. Guard approval is terminal authority, not cli-shell managed/takeover state.
 
 The current implementation is incomplete in three places:
@@ -29,7 +33,7 @@ The expected story is:
 3. If `--clear-avatar` is present, cli-shell deletes the selected Avatar's current runtime session for this workspace before creating or starting the replacement runtime.
 4. The Avatar's canonical assets stay in place. `AGENTER.mdx`, memory files, profile media, and principal identity are not deleted by a runtime clear.
 5. The created Avatar is an ordinary Avatar. cli-shell does not add a special prompt, memory pack, classify value, or hidden mode.
-6. The user sees one cli-shell surface. If Shell Assistant tries to write to the current opened terminal and TerminalSystem requires guard approval, the approval request appears on that same surface.
+6. The user sees one cli-shell surface. If Shell Assistant tries to write to the bound terminal and TerminalSystem requires guard approval, the approval request appears on that same surface.
 7. Approve/Deny acts on the real TerminalSystem request id and terminal id. The UI does not mint leases locally and does not mutate managed/takeover state.
 
 ## Flag Semantics
@@ -79,14 +83,14 @@ Nickname aliases are discovery paths only.
 
 The guard authorization popup is not complete just because `shell-terminal-view` and `web-terminal-view` have component tests. The product law is simpler than my earlier overreach:
 
-- cli-shell opens one current TerminalSystem instance for the user-facing conversation.
-- cli-shell subscribes to permission requests for that current opened terminal.
-- Shell Assistant terminal writes for that room must target that same current opened terminal.
+- cli-shell binds one TerminalSystem terminal for the user-facing conversation.
+- cli-shell subscribes to permission requests for that bound terminal.
+- Shell Assistant terminal writes for that room must target that same bound terminal.
 - If a permission request is created on a hidden/internal terminal instead, that is a target-resolution or binding bug.
 
 The fix must not widen subscriptions to a role set as a workaround. A wider subscription would hide the real bug and make terminal-view less orthogonal. The correct implementation path is:
 
-- identify the current opened terminal id as a first-class cli-shell product fact
+- identify the bound terminal id as a first-class cli-shell product fact
 - subscribe only to that terminal's permission request stream
 - ensure runtime-local `terminal write` / `terminal input` guidance and resource focus resolve to that terminal for cli-shell MessageRoom work
 - render the default approval overlay for requests on that terminal
@@ -94,27 +98,21 @@ The fix must not widen subscriptions to a role set as a workaround. A wider subs
 
 ## Product UI Details
 
-There are two cli-shell host surfaces to validate. WebUI is a separate product and is intentionally out of scope for this change.
+The native cli-shell host surface must validate this behavior. WebUI is a separate product and is intentionally out of scope for this change. Browser-host experiments do not define the current cli-shell product route.
 
 Native cli-shell:
 
 - default OpenTUI TopLayer approval overlay must appear over the visible shell surface
-- overlay must be driven by the current opened terminal's permission stream
+- overlay must be driven by the bound terminal's permission stream
 - Approve and Deny must call TerminalSystem authority with the request's original terminal id
 - overlay must not mutate managed/takeover state
 - repeated equivalent requests update one overlay instead of stacking
 
-cli-shell web host:
-
-- browser host must subscribe to the same current opened terminal as native cli-shell
-- default HTML Popover approval UI must appear if no host callback handles the request
-- custom host callbacks may replace the UI but not the TerminalSystem authority path
-
 ## Options Considered
 
-Option A, recommended: product-scoped startup flags plus current-terminal authorization projection.
+Option A, recommended: product-scoped startup flags plus current-bound-terminal authorization projection.
 
-This keeps `--session` product-local, keeps AvatarRuntime identity pure, and makes terminal-view components reusable. cli-shell owns the mapping from product session to current opened terminal; TerminalSystem owns request authority; terminal-view owns projection for that current terminal.
+This keeps `--session` product-local, keeps AvatarRuntime identity pure, and makes terminal-view components reusable. cli-shell owns the mapping from product session to the bound terminal; TerminalSystem owns request authority; terminal-view owns projection for that terminal.
 
 Option B, rejected: make `--session` part of runtime identity or create a cli-shell-specific core branch.
 
@@ -124,7 +122,7 @@ Option C, rejected: subscribe cli-shell to a whole terminal role set to make mis
 
 This hides the important bug: the model or runtime wrote to the wrong terminal. It also weakens the terminal-view contract by making a terminal viewport show requests for terminals it did not open.
 
-Option D, rejected: make WebUI carry cli-shell-specific launch or approval behavior.
+Option D, rejected: make WebUI or a browser-host experiment carry cli-shell-specific launch or approval behavior.
 
 WebUI and cli-shell are independent products. WebUI may have its own terminal approval surface, but this change must not add WebUI affordances that exist only to launch, configure, or patch cli-shell.
 

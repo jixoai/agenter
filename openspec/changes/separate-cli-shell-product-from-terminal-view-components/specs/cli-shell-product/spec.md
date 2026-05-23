@@ -1,3 +1,7 @@
+> Superseded note:
+> This delta spec is built on the older `terminal-1` / `terminal-2` cli-shell ontology.
+> It remains only as historical analysis and reference input. Current work must follow `realign-cli-shell-with-core-system-boundaries`.
+
 ## MODIFIED Requirements
 
 ### Requirement: Cli-shell SHALL compose `shell-terminal-view` as its primary shell surface

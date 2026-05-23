@@ -1,7 +1,11 @@
+> Boundary note:
+> The create/clear Avatar semantics in this task list remain valuable.
+> But completed browser-host items are historical input only, and any old “current opened terminal” wording must now be interpreted as the current bound TerminalSystem terminal under `realign-cli-shell-with-core-system-boundaries`.
+
 ## 1. OpenSpec And Documentation
 
 - [x] 1.1 Record the settled product decisions: use `--create-avatar` / `--clear-avatar`, clear only runtime session context, keep selected/created Avatars ordinary, and do not couple WebUI to cli-shell.
-- [x] 1.2 Update durable package specs after implementation: `packages/cli-shell/SPEC.md` and `packages/product-extension-runtime/SPEC.md`.
+- [x] 1.2 Update durable package specs after implementation: `extensions/cli-shell/SPEC.md` and `packages/product-extension-runtime/SPEC.md`.
 - [x] 1.3 Update user-facing README/help text for `--avatar`, `--create-avatar`, `--clear-avatar`, and the difference from `--session`.
 - [x] 1.4 Run `openspec validate complete-cli-shell-avatar-session-reset --strict`.
 
@@ -23,22 +27,22 @@
 - [x] 3.6 Ensure `--create-avatar` does not create a special prompt, memory pack, classify value, or mode solely because the Avatar is being used for cli-shell verification.
 - [x] 3.7 Ensure `--clear-avatar` preserves `AGENTER.mdx`, memory files, profile media, principal identity, workspace files, terminal resources, and room resources.
 
-## 4. Authorization Popup Current-Terminal Scope
+## 4. Authorization Popup Current-Bound-Terminal Scope
 
-- [x] 4.1 Identify and document the cli-shell current opened terminal id in bootstrap/host state.
-- [x] 4.2 Update native cli-shell to retain permission request streams for only the current opened terminal.
+- [x] 4.1 Identify and document the cli-shell bound terminal id in bootstrap/host state.
+- [x] 4.2 Update native cli-shell to retain permission request streams for only the current bound terminal.
 - [x] 4.3 Pass current-terminal request rows to `shell-terminal-view` without adding hidden/internal terminal subscriptions.
 - [x] 4.4 Verify `shell-terminal-view` renders only requests for its opened terminal id.
-- [x] 4.5 Ensure Approve/Deny calls `approveGlobalTerminalRequest` / `denyGlobalTerminalRequest` with the current opened terminal id and original request id.
+- [x] 4.5 Ensure Approve/Deny calls `approveGlobalTerminalRequest` / `denyGlobalTerminalRequest` with the bound terminal id and original request id.
 - [x] 4.6 Prove managed/takeover state is not mutated by rendering, approving, or denying a permission request.
-- [x] 4.7 Add a regression test that fails if Shell Assistant creates a guard write request on a terminal other than the cli-shell current opened terminal for room-bound terminal work.
+- [x] 4.7 Add a regression test that fails if Shell Assistant creates a guard write request on a terminal other than the cli-shell bound terminal for room-bound terminal work.
 
-## 5. Cli-shell Web Host
+## 5. Historical Browser-Host Experiments (Superseded)
 
-- [x] 5.1 Update cli-shell `--web` host to subscribe to the same current opened terminal as native cli-shell.
-- [x] 5.2 Verify `web-terminal-view` permission filtering remains terminal-local.
-- [x] 5.3 Ensure the default HTML Popover approval UI works for current-terminal requests and emits the current terminal id.
-- [x] 5.4 Do not add WebUI Avatar catalog or terminal-route controls that exist only to launch, configure, or repair cli-shell.
+- [x] 5.1 Record that browser-host experiments must not redefine cli-shell shell truth, room truth, or authorization truth.
+- [x] 5.2 Preserve the generic terminal-view rule that permission filtering remains terminal-local.
+- [x] 5.3 Preserve the generic rule that default HTML Popover approval UI, when used by some host, must emit the same terminal identity it projects.
+- [x] 5.4 Keep WebUI independent from cli-shell launcher, repair, or Avatar catalog controls.
 
 ## 6. Tests And Real-AI Acceptance
 
@@ -46,7 +50,7 @@
 - [x] 6.2 Add bootstrap tests for create-if-missing, fail-if-missing-without-create, clear-before-runtime-start, default shell-assistant seed-if-missing behavior, and ordinary explicit Avatar prompt/memory preservation.
 - [x] 6.3 Add product-extension tests proving clear uses generic session authority and does not delete Avatar assets.
 - [x] 6.4 Add native cli-shell tests where a current-opened-terminal permission request appears on the visible surface.
-- [x] 6.5 Add cli-shell web host tests for current-terminal permission popover rendering.
+- [x] 6.5 Preserve host-level permission popover coverage as historical evidence without making browser-host behavior current cli-shell truth.
 - [x] 6.6 Add terminal-view tests for terminal-local permission filtering, host callback replacement, default TopLayer UI, approve, deny, and coalesced updates.
 - [x] 6.7 Add or update real-AI cli-shell validation using a named ordinary Avatar, `--create-avatar`, and `--clear-avatar`; the scenario must prove the model uses the bound TerminalSystem, sees approval pending/approved/denied correctly, and does not perform equivalent visible terminal work through `root_bash` or `workspace_bash`.
 

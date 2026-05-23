@@ -70,6 +70,7 @@ export interface ProductLaunchEnvInput {
 export interface ProductCommandTargetResolverOptions {
   cliSourceDir: string;
   resolveInstalledPackageJsonPath?: (packageName: string) => string;
+  workspaceProductRoots?: readonly string[];
 }
 
 const readPackageJson = (packageJsonPath: string): PackageJsonShape =>
@@ -140,39 +141,57 @@ const resolvePackageBinRelativePath = (input: {
   );
 };
 
-const resolveWorkspacePackageDir = (cliSourceDir: string, packageName: string): string => {
+const resolveWorkspaceProductRoots = (
+  cliSourceDir: string,
+  configuredRoots?: readonly string[],
+): readonly string[] => {
+  if (configuredRoots && configuredRoots.length > 0) {
+    return configuredRoots.map((root) => resolve(root));
+  }
+  const repoRoot = resolve(cliSourceDir, "../../..");
+  return [resolve(repoRoot, "extensions"), resolve(repoRoot, "packages")];
+};
+
+const resolveWorkspacePackageDirs = (
+  cliSourceDir: string,
+  packageName: string,
+  configuredRoots?: readonly string[],
+): readonly string[] => {
   const packageSegment = packageName.split("/")[1];
   if (!packageSegment) {
     throw new Error(`invalid scoped package name: ${packageName}`);
   }
-  return resolve(cliSourceDir, "../../", packageSegment);
+  return resolveWorkspaceProductRoots(cliSourceDir, configuredRoots).map((root) => resolve(root, packageSegment));
 };
 
 const tryResolveWorkspaceTarget = (
   descriptor: ProductCommandDescriptor,
   cliSourceDir: string,
+  workspaceProductRoots?: readonly string[],
 ): LocalProductLaunchTarget | null => {
-  const packageDir = resolveWorkspacePackageDir(cliSourceDir, descriptor.packageName);
-  const packageJsonPath = join(packageDir, "package.json");
-  if (!existsSync(packageJsonPath)) {
-    return null;
+  for (const packageDir of resolveWorkspacePackageDirs(cliSourceDir, descriptor.packageName, workspaceProductRoots)) {
+    const packageJsonPath = join(packageDir, "package.json");
+    if (!existsSync(packageJsonPath)) {
+      continue;
+    }
+    const packageJson = readPackageJson(packageJsonPath);
+    if (packageJson.name !== descriptor.packageName) {
+      continue;
+    }
+    const binRelativePath = resolvePackageBinRelativePath({
+      descriptor,
+      packageJsonPath,
+      packageJson,
+    });
+    return {
+      source: "workspace",
+      packageDir,
+      packageJsonPath,
+      binPath: resolve(packageDir, binRelativePath),
+      mainPath: resolve(packageDir, "src", "index.ts"),
+    };
   }
-  const packageJson = readPackageJson(packageJsonPath);
-  if (packageJson.name !== descriptor.packageName) {
-    return null;
-  }
-  const binRelativePath = resolvePackageBinRelativePath({
-    descriptor,
-    packageJsonPath,
-    packageJson,
-  });
-  return {
-    source: "workspace",
-    packageDir,
-    packageJsonPath,
-    binPath: resolve(packageDir, binRelativePath),
-    mainPath: resolve(packageDir, "src", "index.ts"),
-  };
+  return null;
 };
 
 const defaultResolveInstalledPackageJsonPath = (packageName: string): string =>
@@ -240,7 +259,7 @@ export const resolveProductLaunchTarget = (
   const resolveInstalledPackageJsonPath = options.resolveInstalledPackageJsonPath ?? defaultResolveInstalledPackageJsonPath;
   for (const source of descriptor.sourcePolicy.resolutionOrder) {
     if (source === "workspace" && descriptor.sourcePolicy.allowWorkspace) {
-      const target = tryResolveWorkspaceTarget(descriptor, options.cliSourceDir);
+      const target = tryResolveWorkspaceTarget(descriptor, options.cliSourceDir, options.workspaceProductRoots);
       if (target) {
         return target;
       }

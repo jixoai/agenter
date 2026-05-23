@@ -11,7 +11,6 @@ import type {
   SessionEntry,
   WorkspacePrivateTextAssetEnsureOutput,
 } from "@agenter/client-sdk";
-import type { TerminalBackendKind } from "@agenter/termless-core";
 
 import { readCliShellManagedState, type CliShellManagedState } from "./managed";
 import { CLI_SHELL_DEFAULT_AVATAR, CLI_SHELL_PRODUCT_ID, createCliShellProductRuntimeClient } from "./product";
@@ -20,7 +19,6 @@ import {
   buildShellAssistantPromptSeed,
   shellAssistantMemoryRoles,
 } from "./shell-assistant-seeds";
-import type { CliShellTuiStore } from "./tui/types";
 
 export type CliShellAutoLoginResult =
   | { ok: true; session: { token: string } }
@@ -30,22 +28,28 @@ export interface CliShellStore extends ProductExtensionRuntimeStore {
   autoLogin(): Promise<CliShellAutoLoginResult>;
   getAuthSession(): Promise<AuthSessionOutput | null>;
   setAuthToken(token: string | null | undefined): void;
-  grantGlobalTerminalWriteLease(input: {
-    terminalId: string;
-    participantId: GlobalTerminalActorId;
-    durationMs: number;
-  }): Promise<{ leaseId: string; participantId: GlobalTerminalActorId; expiresAt: number }>;
-  revokeGlobalTerminalWriteLease(input: {
-    terminalId: string;
-    leaseId?: string;
-    participantId?: GlobalTerminalActorId;
-  }): Promise<{ ok: true; revokedCount: number }>;
+  queryAttention: ProductExtensionRuntimeStore["queryAttention"];
+  commitAttention: ProductExtensionRuntimeStore["commitAttention"];
+  settleAttention: ProductExtensionRuntimeStore["settleAttention"];
 }
 
 export type CliShellInteractiveHostStore = CliShellStore &
-  Pick<RuntimeStore, "connect" | "disconnect" | "getState" | "hydrateSessionArtifacts" | "hydrateGlobalTerminals">;
+  Pick<
+    RuntimeStore,
+    | "connect"
+    | "disconnect"
+    | "getState"
+    | "retainGlobalRoomSnapshot"
+    | "hydrateGlobalRoomSnapshot"
+    | "sendGlobalRoomMessage"
+    | "readSettings"
+    | "retainTerminalPermissionRequests"
+    | "hydrateGlobalTerminalApprovals"
+    | "approveGlobalTerminalRequest"
+    | "denyGlobalTerminalRequest"
+  >;
 
-export type CliShellProductHostStore = CliShellInteractiveHostStore & CliShellTuiStore;
+export type CliShellProductHostStore = CliShellInteractiveHostStore;
 
 export interface CliShellBootstrapInput {
   store: CliShellStore;
@@ -54,29 +58,38 @@ export interface CliShellBootstrapInput {
   shellName: string;
   createAvatar?: boolean;
   clearAvatar?: boolean;
-  backend?: TerminalBackendKind;
   onProgress?: (phase: CliShellBootstrapProgressPhase) => void;
 }
 
-export type CliShellBootstrapProgressPhase = "authenticating" | "observation-pending";
+export type CliShellBootstrapProgressPhase = "authenticating" | "terminal-ready" | "room-ready";
+
+export interface CliShellBindingProjection {
+  productId: typeof CLI_SHELL_PRODUCT_ID;
+  resourceKey: string;
+  terminalId: string;
+  roomId: string;
+  runtimeSessionId: string;
+  runtimeId: string;
+  avatarActorId: string;
+  hostingContextId: string;
+}
 
 export interface CliShellBootstrapResult {
   avatar: GlobalAvatarCatalogEntry;
   avatarCreated: boolean;
   session: SessionEntry;
   clearedRuntimeSessionIds: string[];
-  avatarActorId: GlobalTerminalActorId;
-  shellTruthTerminal: ProductEnsureBindingResult<GlobalTerminalEntry>;
-  visibleTerminal: ProductEnsureBindingResult<GlobalTerminalEntry>;
+  avatarActorId: string;
+  terminal: ProductEnsureBindingResult<GlobalTerminalEntry>;
   room: ProductEnsureBindingResult<GlobalRoomEntry>;
+  binding: CliShellBindingProjection;
   promptSeeded: boolean;
   memoryFiles: WorkspacePrivateTextAssetEnsureOutput[];
   managed: CliShellManagedState;
 }
 
-const toShellTruthResourceKey = (shellName: string): string => `${shellName}:terminal-1`;
-const toVisibleTerminalResourceKey = (shellName: string): string => `${shellName}:terminal-2`;
-const TERMINAL_RUNTIME_KIND_METADATA_KEY = "terminalRuntimeKind" as const;
+export type CliShellRoomBootstrapInput = CliShellBootstrapInput;
+export type CliShellRoomBootstrapResult = CliShellBootstrapResult;
 
 const requireSessionAvatarPrincipalId = (session: SessionEntry): NonNullable<SessionEntry["avatarPrincipalId"]> => {
   if (!session.avatarPrincipalId) {
@@ -85,15 +98,9 @@ const requireSessionAvatarPrincipalId = (session: SessionEntry): NonNullable<Ses
   return session.avatarPrincipalId;
 };
 
-const toTerminalActorId = (
-  avatarPrincipalId: NonNullable<GlobalAvatarCatalogEntry["avatarPrincipalId"]>,
-): GlobalTerminalActorId => avatarPrincipalId as GlobalTerminalActorId;
-
 const toRoomActorId = (
   avatarPrincipalId: NonNullable<GlobalAvatarCatalogEntry["avatarPrincipalId"]>,
 ): GlobalRoomActorId => avatarPrincipalId as GlobalRoomActorId;
-
-const resolveCliShellCommand = (): string[] => [process.env.SHELL ?? "bash", "-i"];
 
 const requireAutoLogin = async (store: CliShellStore): Promise<void> => {
   const autoLogin = await store.autoLogin();
@@ -101,22 +108,6 @@ const requireAutoLogin = async (store: CliShellStore): Promise<void> => {
     throw new Error(`cli-shell auto login failed: ${autoLogin.reason}: ${autoLogin.message}`);
   }
   store.setAuthToken(autoLogin.session.token);
-};
-
-const revokeParticipantTerminalGrants = async (
-  store: CliShellStore,
-  terminalId: string,
-  participantId: GlobalTerminalActorId,
-): Promise<void> => {
-  const grants = await store.listGlobalTerminalGrants(terminalId);
-  for (const grant of grants) {
-    if (grant.participantId === participantId) {
-      await store.revokeGlobalTerminalGrant({
-        terminalId,
-        grantId: grant.grantId,
-      });
-    }
-  }
 };
 
 const resolveSelectedAvatar = async (
@@ -131,31 +122,35 @@ const resolveSelectedAvatar = async (
   if (existing) {
     return { avatar: existing, created: false };
   }
-  if (avatarNickname !== CLI_SHELL_DEFAULT_AVATAR) {
-    if (createAvatar) {
-      const avatar = await runtimeClient.ensureAssistant({
-        productId: CLI_SHELL_PRODUCT_ID,
-        workspacePath,
-        avatarNickname,
-        displayName: avatarNickname,
-      });
-      return { avatar, created: true };
-    }
+  if (avatarNickname !== CLI_SHELL_DEFAULT_AVATAR && !createAvatar) {
     throw new Error(`avatar not found: ${avatarNickname}`);
   }
   const avatar = await runtimeClient.ensureAssistant({
     productId: CLI_SHELL_PRODUCT_ID,
     workspacePath,
     avatarNickname,
-    displayName: SHELL_ASSISTANT_DISPLAY_NAME,
-    classify: "assistant",
+    displayName: avatarNickname === CLI_SHELL_DEFAULT_AVATAR ? SHELL_ASSISTANT_DISPLAY_NAME : avatarNickname,
+    classify: avatarNickname === CLI_SHELL_DEFAULT_AVATAR ? "assistant" : undefined,
   });
   return { avatar, created: true };
 };
 
-export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<CliShellBootstrapResult> => {
-  input.onProgress?.("authenticating");
-  await requireAutoLogin(input.store);
+const resolveCliShellAvatarRuntime = async (input: {
+  store: CliShellStore;
+  workspacePath: string;
+  avatarNickname: string;
+  createAvatar?: boolean;
+  clearAvatar?: boolean;
+}): Promise<{
+  runtimeClient: ReturnType<typeof createCliShellProductRuntimeClient>;
+  avatar: GlobalAvatarCatalogEntry;
+  avatarCreated: boolean;
+  session: SessionEntry;
+  clearedRuntimeSessionIds: string[];
+  avatarActorId: string;
+  promptSeeded: boolean;
+  memoryFiles: WorkspacePrivateTextAssetEnsureOutput[];
+}> => {
   const runtimeClient = createCliShellProductRuntimeClient(input.store);
   const resolvedAvatar = await resolveSelectedAvatar(
     input.store,
@@ -173,13 +168,13 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
           })
         ).clearedSessionIds
       : [];
-  // This is intentionally a runtime reset only; cli-shell resource cleanup remains a separate product command.
+  // Runtime identity is Avatar-scoped. cli-shell session names select tmux/room resources only.
   const session = await runtimeClient.ensureRuntime({
     workspacePath: input.workspacePath,
     avatarNickname: avatar.nickname,
     autoStart: false,
   });
-  const avatarActorId = toTerminalActorId(requireSessionAvatarPrincipalId(session));
+  const avatarActorId = requireSessionAvatarPrincipalId(session);
 
   let promptSeeded = false;
   let memoryFiles: WorkspacePrivateTextAssetEnsureOutput[] = [];
@@ -198,61 +193,65 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
     });
   }
   await runtimeClient.startRuntime(session.id);
-  input.onProgress?.("observation-pending");
 
-  const shellTruthTerminal = await runtimeClient.ensureTerminalBinding({
+  return {
+    runtimeClient,
+    avatar,
+    avatarCreated: resolvedAvatar.created,
     session,
+    clearedRuntimeSessionIds,
+    avatarActorId,
+    promptSeeded,
+    memoryFiles,
+  };
+};
+
+const buildCliShellBindingProjection = (input: {
+  shellName: string;
+  session: SessionEntry;
+  avatar: GlobalAvatarCatalogEntry;
+  avatarActorId: string;
+  terminal: ProductEnsureBindingResult<GlobalTerminalEntry>;
+  room: ProductEnsureBindingResult<GlobalRoomEntry>;
+  managed: CliShellManagedState;
+}): CliShellBindingProjection => ({
+  productId: CLI_SHELL_PRODUCT_ID,
+  resourceKey: input.shellName,
+  terminalId: input.terminal.entry.terminalId,
+  roomId: input.room.entry.chatId,
+  runtimeSessionId: input.session.id,
+  runtimeId: input.avatar.runtimeId,
+  avatarActorId: input.avatarActorId,
+  hostingContextId: input.managed.contextId,
+});
+
+export const bootstrapCliShellRoom = async (
+  input: CliShellRoomBootstrapInput,
+): Promise<CliShellRoomBootstrapResult> => {
+  input.onProgress?.("authenticating");
+  await requireAutoLogin(input.store);
+  const resolved = await resolveCliShellAvatarRuntime(input);
+  const terminal = await resolved.runtimeClient.ensureTerminalBinding({
+    session: resolved.session,
     binding: {
       productId: CLI_SHELL_PRODUCT_ID,
-      resourceKey: toShellTruthResourceKey(input.shellName),
+      resourceKey: input.shellName,
       resourceKind: "terminal",
       ownerSystem: "terminal-system",
     },
-    // terminal-1 is product plumbing for the composed terminal. Do not grant the Avatar direct access
-    // to it, or runtime terminal tools will expose the internal shell as an alternative action target.
-    focus: false,
+    participantId: resolved.avatarActorId as GlobalTerminalActorId,
+    participantLabel: resolved.avatar.displayName ?? resolved.avatar.nickname,
+    focus: true,
     createInput: {
       processKind: "shell",
-      backend: input.backend,
-      command: resolveCliShellCommand(),
+      backend: "ghostty-native",
       cwd: input.workspacePath,
       start: true,
     },
   });
-  await revokeParticipantTerminalGrants(input.store, shellTruthTerminal.entry.terminalId, avatarActorId);
-
-  const visibleTerminal = await runtimeClient.ensureTerminalBinding({
-    session,
-    binding: {
-      productId: CLI_SHELL_PRODUCT_ID,
-      resourceKey: toVisibleTerminalResourceKey(input.shellName),
-      resourceKind: "terminal",
-      ownerSystem: "terminal-system",
-      metadata: {
-        [TERMINAL_RUNTIME_KIND_METADATA_KEY]: "composed",
-        composedShellTerminalId: shellTruthTerminal.entry.terminalId,
-      },
-    },
-    participantId: avatarActorId,
-    participantLabel: avatar.displayName ?? avatar.nickname,
-    grantRole: "guard",
-    focus: false,
-    createInput: {
-      backend: input.backend,
-    },
-  });
-  await runtimeClient.focusRuntimeTerminals({
-    sessionId: session.id,
-    op: "replace",
-    terminalIds: [visibleTerminal.entry.terminalId],
-  });
-  const focusedVisibleTerminal: ProductEnsureBindingResult<GlobalTerminalEntry> = {
-    ...visibleTerminal,
-    focused: true,
-  };
-
-  const room = await runtimeClient.ensureRoomBinding({
-    session,
+  input.onProgress?.("terminal-ready");
+  const room = await resolved.runtimeClient.ensureRoomBinding({
+    session: resolved.session,
     binding: {
       productId: CLI_SHELL_PRODUCT_ID,
       resourceKey: input.shellName,
@@ -260,31 +259,44 @@ export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<
       ownerSystem: "message-system",
       title: input.shellName,
     },
-    participantId: toRoomActorId(avatarActorId),
-    participantLabel: avatar.displayName ?? avatar.nickname,
+    participantId: toRoomActorId(resolved.avatarActorId as NonNullable<GlobalAvatarCatalogEntry["avatarPrincipalId"]>),
+    participantLabel: resolved.avatar.displayName ?? resolved.avatar.nickname,
     grantRole: "member",
     focus: true,
   });
+  input.onProgress?.("room-ready");
 
   const managed = await readCliShellManagedState({
     store: input.store,
-    sessionId: session.id,
-    runtimeId: avatar.runtimeId,
-    avatarActorId,
+    sessionId: resolved.session.id,
+    runtimeId: resolved.avatar.runtimeId,
+    avatarActorId: resolved.avatarActorId,
     shellName: input.shellName,
+  });
+  const binding = buildCliShellBindingProjection({
+    shellName: input.shellName,
+    session: resolved.session,
+    avatar: resolved.avatar,
+    avatarActorId: resolved.avatarActorId,
+    terminal,
+    room,
+    managed,
   });
 
   return {
-    avatar,
-    avatarCreated: resolvedAvatar.created,
-    session,
-    clearedRuntimeSessionIds,
-    avatarActorId,
-    shellTruthTerminal,
-    visibleTerminal: focusedVisibleTerminal,
+    avatar: resolved.avatar,
+    avatarCreated: resolved.avatarCreated,
+    session: resolved.session,
+    clearedRuntimeSessionIds: resolved.clearedRuntimeSessionIds,
+    avatarActorId: resolved.avatarActorId,
+    terminal,
     room,
-    promptSeeded,
-    memoryFiles,
+    binding,
+    promptSeeded: resolved.promptSeeded,
+    memoryFiles: resolved.memoryFiles,
     managed,
   };
 };
+
+export const bootstrapCliShell = async (input: CliShellBootstrapInput): Promise<CliShellBootstrapResult> =>
+  await bootstrapCliShellRoom(input);

@@ -4,6 +4,8 @@ import { describe, expect, test } from "bun:test";
 import {
   CLI_SHELL_DEFAULT_AVATAR,
   bootstrapCliShell,
+  bootstrapCliShellRoom,
+  buildCliShellRoomDialogueRows,
   buildShellAssistantPromptSeed,
   cleanupCliShellResources,
   disableCliShellManagedMode,
@@ -14,6 +16,7 @@ import {
   normalizeShellName,
   parseCliShellArgs,
   planCliShellCleanup,
+  resolveCliShellRoomMessageWindow,
   shellAssistantMemoryRoles,
 } from "../src";
 import { FakeCliShellStore } from "./fake-cli-shell-store";
@@ -26,6 +29,14 @@ const parseAttachArgs = (...args: Parameters<typeof parseCliShellArgs>) => {
   return parsed;
 };
 
+const parseRoomArgs = (...args: Parameters<typeof parseCliShellArgs>) => {
+  const parsed = parseCliShellArgs(...args);
+  if (parsed.command !== "room") {
+    throw new Error("expected room args");
+  }
+  return parsed;
+};
+
 describe("Feature: cli-shell orchestration", () => {
   test("Scenario: Given bare argv When parsing cli-shell args Then the product defaults to shell-assistant on shell-1", () => {
     const parsed = parseAttachArgs([]);
@@ -34,7 +45,7 @@ describe("Feature: cli-shell orchestration", () => {
     expect(parsed.backend).toBeUndefined();
     expect(parsed.webPort).toBeUndefined();
     expect(parsed.debug).toBe(false);
-    expect(parsed.experimentalDynamicRefresh).toBe(false);
+    expect(parsed.experimentalDynamicRefresh).toBe(true);
     expect(parsed.createAvatar).toBe(false);
     expect(parsed.clearAvatar).toBe(false);
   });
@@ -64,6 +75,17 @@ describe("Feature: cli-shell orchestration", () => {
     expect(parsed.shellName).toBe("shell-4");
     expect(parsed.createAvatar).toBe(true);
     expect(parsed.clearAvatar).toBe(true);
+  });
+
+  test("Scenario: Given room-only startup flags When parsing cli-shell args Then the product selects MessageRoom diagnostics without terminal backend flags", () => {
+    const parsed = parseRoomArgs(["room", "--avatar=bangeel", "--session=5", "--create-avatar", "--clear-avatar"]);
+
+    expect(parsed.avatarNickname).toBe("bangeel");
+    expect(parsed.shellName).toBe("shell-5");
+    expect(parsed.createAvatar).toBe(true);
+    expect(parsed.clearAvatar).toBe(true);
+    expect(parsed.debug).toBe(false);
+    expect("backend" in parsed).toBe(false);
   });
 
   test("Scenario: Given both Avatar selectors When they disagree Then cli-shell rejects the ambiguous startup before attach", () => {
@@ -168,6 +190,58 @@ describe("Feature: cli-shell orchestration", () => {
     expect(Array.from(store.privateAssets.keys())).toEqual(
       shellAssistantMemoryRoles.map((role) => `/repo:${CLI_SHELL_DEFAULT_AVATAR}:memory:${role.path}`),
     );
+  });
+
+  test("Scenario: Given room-only startup When bootstrapping cli-shell room Then only the runtime and MessageRoom binding are touched", async () => {
+    const store = new FakeCliShellStore();
+    const attached = await bootstrapCliShellRoom({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: "bangeel",
+      shellName: "shell-5",
+      createAvatar: true,
+      clearAvatar: true,
+    });
+
+    expect(attached.avatar.nickname).toBe("bangeel");
+    expect(attached.avatarCreated).toBe(true);
+    expect(attached.clearedRuntimeSessionIds).toEqual([]);
+    expect(attached.session.avatar).toBe("bangeel");
+    expect(attached.room.entry.title).toBe("shell-5");
+    expect(attached.room.entry.metadata?.resourceKey).toBe("shell-5");
+    expect(store.terminals).toEqual([]);
+    expect(store.focusTerminalCalls).toEqual([]);
+    expect(store.rooms.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-5"]);
+    expect(store.focusRoomCalls).toEqual([[attached.room.entry.chatId]]);
+    expect(attached.promptSeeded).toBe(false);
+    expect(attached.memoryFiles).toEqual([]);
+  });
+
+  test("Scenario: Given room-only projection When messages arrive Then chat rows are derived from MessageRoom state without terminal state", async () => {
+    const store = new FakeCliShellStore();
+    const attached = await bootstrapCliShellRoom({
+      store,
+      workspacePath: "/repo",
+      avatarNickname: "bangeel",
+      shellName: "shell-5",
+      createAvatar: true,
+    });
+    await store.sendGlobalRoomMessage({
+      chatId: attached.room.entry.chatId,
+      text: "只看这个 room",
+    });
+    const window = resolveCliShellRoomMessageWindow(store.getState(), attached.room.entry.chatId);
+    const rows = buildCliShellRoomDialogueRows({
+      messages: window.messages,
+      avatarActorId: attached.avatarActorId,
+      width: 40,
+    });
+
+    expect(window.messages.map((message) => message.content)).toEqual(["只看这个 room"]);
+    expect(rows.map((row) => row.line?.spans.map((span) => span.text).join("") ?? "").join("\n")).toContain(
+      "只看这个 room",
+    );
+    expect(store.terminals).toEqual([]);
   });
 
   test("Scenario: Given cli-shell resources When cleanup is planned and confirmed Then only product-bound terminals rooms and shell assistant sessions are removed", async () => {

@@ -1,10 +1,21 @@
 import type { GlobalRoomMessage, GlobalRoomSnapshotOutput, HistoryPageCursor } from "@agenter/client-sdk";
-import { ScrollBoxRenderable, TextRenderable, type RenderContext } from "@opentui/core";
+import {
+  parseColor,
+  ScrollBoxRenderable,
+  StyledText,
+  TextRenderable,
+  type RenderContext,
+  type TextChunk,
+} from "@opentui/core";
+
+import type { TerminalCanvasStyledLine } from "./canvas";
 
 export interface CliShellDialogueScrollRow {
   key: string;
+  signature?: string;
   text?: string;
   height?: number;
+  line?: TerminalCanvasStyledLine;
 }
 
 export interface CliShellDialogueScrollSnapshot {
@@ -58,6 +69,11 @@ export interface CliShellDialogueMessagePage {
   items: GlobalRoomMessage[];
   nextBefore: HistoryPageCursor | null;
   hasMore: boolean;
+}
+
+interface CliShellDialogueRenderedRow {
+  renderable: TextRenderable;
+  signature: string;
 }
 
 export type CliShellDialoguePageMessages = (input: {
@@ -218,6 +234,36 @@ export const restoreCliShellDialogueAnchorScrollTop = (input: {
 const resolveRowsHeight = (rows: readonly CliShellDialogueScrollRow[]): number =>
   rows.reduce((total, row) => total + resolveRowHeight(row), 0);
 
+const resolveDialogueScrollRowText = (row: CliShellDialogueScrollRow): string =>
+  row.text ?? row.line?.spans.map((span) => span.text).join("") ?? row.key;
+
+const resolveDialogueScrollRowContent = (row: CliShellDialogueScrollRow): string | StyledText => {
+  if (!row.line) {
+    return row.text ?? row.key;
+  }
+  const chunks: TextChunk[] = row.line.spans.map((span) => ({
+    __isChunk: true,
+    text: span.text,
+    fg: span.fg ? parseColor(span.fg) : undefined,
+    bg: span.bg ? parseColor(span.bg) : undefined,
+  }));
+  return chunks.length > 0 ? new StyledText(chunks) : "";
+};
+
+const resolveDialogueScrollRowSignature = (row: CliShellDialogueScrollRow): string => {
+  if (row.signature) {
+    return row.signature;
+  }
+  const lineSignature =
+    row.line?.spans.map((span) => `${span.text}\u0003${span.fg ?? ""}\u0003${span.bg ?? ""}`).join("\u0004") ?? "";
+  return [
+    row.key,
+    String(resolveRowHeight(row)),
+    row.text ?? "",
+    lineSignature,
+  ].join("\u0000");
+};
+
 export const restoreCliShellDialoguePrependScrollTop = (input: {
   rowsBefore: readonly CliShellDialogueScrollRow[];
   rowsAfter: readonly CliShellDialogueScrollRow[];
@@ -270,6 +316,8 @@ export class CliShellDialogueScrollBoxController {
   readonly scrollBox: ScrollBoxRenderable;
   readonly #ctx: RenderContext;
   #rows: CliShellDialogueScrollRow[];
+  #rowSignature = "";
+  #renderedRows = new Map<string, CliShellDialogueRenderedRow>();
   #scrollTop: number;
   #viewportHeight: number;
 
@@ -293,7 +341,8 @@ export class CliShellDialogueScrollBoxController {
       height: Math.max(1, Math.trunc(options.height)),
       scrollY: true,
       scrollX: false,
-      stickyScroll: options.initialScrollTop === undefined,
+      stickyScroll:
+        options.initialScrollTop === undefined || options.initialScrollTop >= CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM,
       stickyStart: "bottom",
       scrollbarOptions: {
         showArrows: false,
@@ -301,7 +350,7 @@ export class CliShellDialogueScrollBoxController {
     });
     this.renderRows();
     if (options.initialScrollTop !== undefined) {
-      this.scrollBox.scrollTop = Math.max(0, Math.trunc(options.initialScrollTop));
+      this.syncScrollTop(options.initialScrollTop);
     }
   }
 
@@ -350,18 +399,24 @@ export class CliShellDialogueScrollBoxController {
 
   syncScrollTop(scrollTop: number): CliShellDialogueScrollSnapshot {
     const maxScrollTop = Math.max(0, this.resolveScrollHeight() - this.#viewportHeight);
-    const nextScrollTop =
-      scrollTop >= CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM
-        ? maxScrollTop
-        : Math.max(0, Math.min(maxScrollTop, Math.trunc(scrollTop)));
+    const shouldStickToBottom = scrollTop >= CLI_SHELL_DIALOGUE_SCROLL_TO_BOTTOM;
+    const nextScrollTop = shouldStickToBottom ? maxScrollTop : Math.max(0, Math.min(maxScrollTop, Math.trunc(scrollTop)));
     this.#scrollTop = nextScrollTop;
+    this.scrollBox.stickyStart = "bottom";
+    this.scrollBox.stickyScroll = shouldStickToBottom;
     this.scrollBox.scrollTop = nextScrollTop;
+    return this.snapshot();
+  }
+
+  syncFromHostViewport(): CliShellDialogueScrollSnapshot {
+    const maxScrollTop = Math.max(0, this.resolveScrollHeight() - this.#viewportHeight);
+    this.#scrollTop = Math.max(0, Math.min(maxScrollTop, Math.trunc(this.scrollBox.scrollTop)));
     return this.snapshot();
   }
 
   snapshot(edgeThresholdRows = DEFAULT_EDGE_THRESHOLD_ROWS): CliShellDialogueScrollSnapshot {
     const metrics = resolveCliShellDialogueScrollMetrics({
-      scrollTop: Math.max(this.#scrollTop, this.scrollBox.scrollTop),
+      scrollTop: this.#scrollTop,
       viewportHeight: Math.max(this.#viewportHeight, this.scrollBox.viewport.height),
       scrollHeight: Math.max(this.resolveScrollHeight(), this.scrollBox.scrollHeight),
       edgeThresholdRows,
@@ -377,18 +432,44 @@ export class CliShellDialogueScrollBoxController {
   }
 
   private renderRows(): void {
-    for (const child of this.scrollBox.getChildren()) {
-      this.scrollBox.remove(child.id);
+    const nextSignature = this.#rows.map(resolveDialogueScrollRowSignature).join("\u0001");
+    if (nextSignature === this.#rowSignature) {
+      return;
     }
-    for (const row of this.#rows) {
-      this.scrollBox.add(
-        new TextRenderable(this.#ctx, {
-          id: `${this.scrollBox.id}-${row.key}`,
-          content: row.text ?? row.key,
-          width: "100%",
-          height: resolveRowHeight(row),
-        }),
-      );
+    this.#rowSignature = nextSignature;
+
+    const nextKeys = new Set<string>();
+    for (const [index, row] of this.#rows.entries()) {
+      nextKeys.add(row.key);
+      const rowSignature = resolveDialogueScrollRowSignature(row);
+      let rendered = this.#renderedRows.get(row.key);
+      if (!rendered) {
+        rendered = {
+          renderable: new TextRenderable(this.#ctx, {
+            id: `${this.scrollBox.id}-${row.key}`,
+            content: resolveDialogueScrollRowContent(row),
+            width: "100%",
+            height: resolveRowHeight(row),
+          }),
+          signature: rowSignature,
+        };
+        this.#renderedRows.set(row.key, rendered);
+      } else if (rendered.signature !== rowSignature) {
+        rendered.renderable.content = resolveDialogueScrollRowContent(row);
+        rendered.renderable.height = resolveRowHeight(row);
+        rendered.signature = rowSignature;
+      }
+
+      if (this.scrollBox.getChildren()[index] !== rendered.renderable) {
+        this.scrollBox.add(rendered.renderable, index);
+      }
+    }
+
+    for (const [key, rendered] of this.#renderedRows) {
+      if (!nextKeys.has(key)) {
+        this.scrollBox.remove(rendered.renderable.id);
+        this.#renderedRows.delete(key);
+      }
     }
   }
 

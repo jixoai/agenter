@@ -1,3 +1,7 @@
+> Boundary note:
+> The authorization action-lifecycle direction in this change is still valuable, but any cli-shell-specific terminal assumptions must now be interpreted through `realign-cli-shell-with-core-system-boundaries`.
+> In particular, current cli-shell Shell truth must be the TerminalSystem terminal bound to the product session, not a legacy `terminal-2` product ontology.
+
 ## Why
 
 Recent cli-shell guard-authorization testing showed a real product symptom: the approval popup appears, but after approval the requested terminal action does not happen immediately. The root cause is architectural, not visual: the current path creates a TerminalSystem approval request and later mints a write lease, while the original `terminal write/input` call has already returned and no waitable terminal action remains to resume.
@@ -15,7 +19,7 @@ This change turns the review findings into the next corrective OpenSpec. It keep
 - Add `terminal wait` and `terminal cancel` command/API coverage for pending or executing terminal actions.
 - Make approval UI creation, approval, denial, cancellation, timeout, and execution outcome flow through the shared attention-item/commit path.
 - Keep approval action state scoped to the live TerminalInstance. Killing, stopping, bootstrapping, or deleting that instance invalidates pending action authority; attention items preserve history but do not resurrect authority.
-- Keep cli-shell and WebUI separate products. cli-shell projects only the current opened terminal action request; WebUI may consume the generic terminal-view/TerminalSystem contracts independently.
+- Keep cli-shell and WebUI separate products. cli-shell projects only the current bound terminal action request; WebUI may consume the generic terminal-view/TerminalSystem contracts independently.
 - Add self-review and BDD coverage gates for cli-shell-related OpenSpec changes, especially around boundary behavior.
 
 ## Capabilities
@@ -27,7 +31,7 @@ This change turns the review findings into the next corrective OpenSpec. It keep
 - `terminal-collaboration-access-control`: Guard approval changes from lease-only unlock to a waitable one-action lifecycle with approval, denial, timeout, wait, cancel, and result states.
 - `terminal-control-plane`: Terminal input APIs gain action lifecycle, wait, cancel, and live-instance scoped cleanup semantics.
 - `runtime-system-kernel-adapters`: Terminal authorization transitions publish through the shared attention-item adapter law instead of product-specific prompt glue or direct UI-only events.
-- `cli-shell-product`: cli-shell authorization UI projects current-terminal attention-backed action requests and never changes managed/hosting state or hidden terminal subscriptions as a workaround.
+- `cli-shell-product`: cli-shell authorization UI projects current-bound-terminal attention-backed action requests and never changes managed/hosting state or hidden terminal subscriptions as a workaround.
 - `terminal-view-component`: terminal view components expose generic permission/action rendering callbacks without becoming the authorization authority.
 
 ## Impact
@@ -40,8 +44,7 @@ This change turns the review findings into the next corrective OpenSpec. It keep
 - `packages/app-server/src/runtime-tool-descriptors.ts`
 - `packages/app-server/src/trpc/router.ts`
 - `packages/client-sdk/src/runtime-store.ts`
-- `packages/cli-shell/src/tui/*`
-- `packages/cli-shell/src/web/*`
+- `extensions/cli-shell/src/tui/*`
+- `extensions/cli-shell/src/*`
 - `packages/terminal-view/*`
-- BDD tests in `packages/terminal-system/test`, `packages/app-server/test`, `packages/cli-shell/test`, and terminal-view/WebUI contract tests where applicable
-
+- BDD tests in `packages/terminal-system/test`, `packages/app-server/test`, `extensions/cli-shell/test`, and terminal-view/WebUI contract tests where applicable

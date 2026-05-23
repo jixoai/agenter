@@ -62,7 +62,7 @@ export const startCliShellTui = async (input: {
     observationReadyBaseline: input.observationReadyBaseline ?? null,
     debug: input.debug ?? false,
     debugFilters: input.debugFilters,
-    experimentalDynamicRefresh: input.experimentalDynamicRefresh ?? false,
+    experimentalDynamicRefresh: input.experimentalDynamicRefresh ?? true,
   });
   app.start();
 

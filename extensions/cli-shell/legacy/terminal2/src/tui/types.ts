@@ -11,8 +11,8 @@ import type { CliShellInteractionEnhancementProfile } from "./interaction-capabi
 import type { CliShellLiveTerminalView } from "./live-terminal-mirror";
 import type { CliShellDialogueScrollRow } from "./dialogue-scrollbox";
 
-import type { CliShellStore } from "../bootstrap";
-import type { CliShellManagedState } from "../managed";
+import type { CliShellStore } from "../../../../src/bootstrap";
+import type { CliShellManagedState } from "../../../../src/managed";
 export type CliShellDialoguePlacement = "left" | "right" | "floating" | "cover";
 export type CliShellDialoguePlacementRequest = CliShellDialoguePlacement | "smart";
 

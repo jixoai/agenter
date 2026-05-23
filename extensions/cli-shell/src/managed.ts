@@ -30,6 +30,7 @@ export interface CliShellManagedContext {
 
 export interface CliShellManagedEnableInput extends CliShellManagedContext {
   store: CliShellManagedStore;
+  surfaceId: string;
   terminalId: string;
   roomId: string;
   objective?: string;
@@ -38,6 +39,7 @@ export interface CliShellManagedEnableInput extends CliShellManagedContext {
 
 export interface CliShellManagedDisableInput extends CliShellManagedContext {
   store: CliShellManagedStore;
+  surfaceId?: string;
   terminalId?: string;
   roomId?: string;
   notes?: string;
@@ -69,6 +71,7 @@ const resolveGrantedByActorId = (authSession: AuthSessionOutput | null): string 
 
 const buildManagedObjectiveBody = (input: {
   shellName: string;
+  surfaceId: string;
   terminalId: string;
   roomId: string;
   avatarActorId: string;
@@ -79,6 +82,7 @@ const buildManagedObjectiveBody = (input: {
   [
     `productId=${CLI_SHELL_PRODUCT_ID}`,
     `shellName=${input.shellName}`,
+    `surfaceId=${input.surfaceId}`,
     `terminalId=${input.terminalId}`,
     `roomId=${input.roomId}`,
     `avatarActorId=${input.avatarActorId}`,
@@ -91,6 +95,7 @@ const buildManagedObjectiveBody = (input: {
 
 const buildManagedDisableBody = (input: {
   shellName: string;
+  surfaceId?: string;
   terminalId?: string;
   roomId?: string;
   notes?: string;
@@ -98,6 +103,7 @@ const buildManagedDisableBody = (input: {
   [
     `productId=${CLI_SHELL_PRODUCT_ID}`,
     `shellName=${input.shellName}`,
+    input.surfaceId?.trim() ? `surfaceId=${input.surfaceId.trim()}` : null,
     input.terminalId?.trim() ? `terminalId=${input.terminalId.trim()}` : null,
     input.roomId?.trim() ? `roomId=${input.roomId.trim()}` : null,
     `reason=${PRODUCT_HOSTING_USER_DISABLED_REASON}`,
@@ -136,14 +142,15 @@ export const enableCliShellManagedMode = async (input: CliShellManagedEnableInpu
   const runtimeClient = input.store;
   const contextId = buildCliShellHostingContextId(input.shellName);
   const grantedByActorId = resolveGrantedByActorId(await input.store.getAuthSession());
-  // Managed/takeover is cli-shell hosting attention, not terminal authority.
-  // Terminal writes remain governed only by TerminalSystem grants, guard approval, and write leases.
+  // Managed/takeover is cli-shell hosting attention, not shell authority.
+  // cli-shell is an extension product; its tmux host stays outside core TerminalSystem data structures.
   await runtimeClient.commitAttention({
     sessionId: input.sessionId,
     contextId,
     summary: `Managed hosting enabled for ${input.shellName}`,
     body: buildManagedObjectiveBody({
       shellName: input.shellName,
+      surfaceId: input.surfaceId,
       terminalId: input.terminalId,
       roomId: input.roomId,
       avatarActorId: input.avatarActorId,
@@ -155,6 +162,7 @@ export const enableCliShellManagedMode = async (input: CliShellManagedEnableInpu
     meta: {
       productId: CLI_SHELL_PRODUCT_ID,
       resourceKey: input.shellName,
+      surfaceId: input.surfaceId,
       terminalId: input.terminalId,
       roomId: input.roomId,
       avatarActorId: input.avatarActorId,
@@ -171,14 +179,14 @@ export const enableCliShellManagedMode = async (input: CliShellManagedEnableInpu
 export const disableCliShellManagedMode = async (input: CliShellManagedDisableInput): Promise<CliShellManagedDisableResult> => {
   const runtimeClient = input.store;
   const contextId = buildCliShellHostingContextId(input.shellName);
-  // Disabling hosting settles cli-shell attention only. It must not revoke unrelated
-  // TerminalSystem grants or leases created by explicit approval/admin action.
+  // Disabling hosting settles cli-shell attention only. It must not mutate unrelated platform authority.
   await runtimeClient.settleAttention({
     sessionId: input.sessionId,
     contextId,
     summary: `Managed hosting disabled for ${input.shellName}`,
     body: buildManagedDisableBody({
       shellName: input.shellName,
+      surfaceId: input.surfaceId,
       terminalId: input.terminalId,
       roomId: input.roomId,
       notes: input.notes,
@@ -188,6 +196,7 @@ export const disableCliShellManagedMode = async (input: CliShellManagedDisableIn
     meta: {
       productId: CLI_SHELL_PRODUCT_ID,
       resourceKey: input.shellName,
+      surfaceId: input.surfaceId,
       terminalId: input.terminalId,
       roomId: input.roomId,
       avatarActorId: input.avatarActorId,

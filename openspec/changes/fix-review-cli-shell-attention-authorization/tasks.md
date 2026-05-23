@@ -4,7 +4,7 @@
 - [ ] 1.2 Add failing TerminalSystem BDD tests for approve-resumes-original-action without requiring a second write call.
 - [ ] 1.3 Add failing TerminalSystem BDD tests for deny with optional reason, approval timeout with action id, `terminal wait`, and `terminal cancel`.
 - [ ] 1.4 Add failing runtime adapter BDD tests proving request, approve, deny, timeout, cancel, execution-start, and execution-result transitions commit attention items through the shared adapter path.
-- [ ] 1.5 Add failing cli-shell native and web-host BDD tests proving approve resumes the original pending terminal action and does not mutate managed/hosting state.
+- [ ] 1.5 Add failing cli-shell native BDD tests proving approve resumes the original pending terminal action and does not mutate managed/hosting state.
 - [ ] 1.6 Update the real AI guard authorization test so approval no longer requires a second user instruction that tells the assistant to retry the command.
 
 ## 2. TerminalSystem Action Lifecycle
@@ -35,7 +35,7 @@
 ## 5. Product Projection Updates
 
 - [ ] 5.1 Update native cli-shell authorization overlay to render terminal action identity, state, expiry, and optional denial reason affordance.
-- [ ] 5.2 Update cli-shell web host authorization routes/UI to approve, deny, and cancel terminal actions for the current opened terminal only.
+- [ ] 5.2 Update cli-shell native authorization UI to approve, deny, and cancel terminal actions for the current bound terminal only.
 - [ ] 5.3 Update terminal-view component contracts so default approval UIs stay TopLayer projections and custom host callbacks preserve terminal/action identity.
 - [ ] 5.4 Verify WebUI integration through generic terminal-view/TerminalSystem contracts without adding cli-shell coupling.
 
@@ -43,7 +43,7 @@
 
 - [ ] 6.1 Run focused TerminalSystem action lifecycle tests.
 - [ ] 6.2 Run focused app-server/runtime adapter attention tests.
-- [ ] 6.3 Run cli-shell unit, TUI, web-host, and termless walkthrough tests.
+- [ ] 6.3 Run cli-shell unit, TUI, and termless walkthrough tests.
 - [ ] 6.4 Run terminal-view component tests and WebUI DOM/browser contracts affected by the generic terminal-view authorization surface.
 - [ ] 6.5 Run the gated real AI cli-shell guard authorization suite with `AGENTER_RUN_REAL_LOOPBUS=1` and record evidence.
 - [ ] 6.6 Run `bun run typecheck`, `openspec validate fix-review-cli-shell-attention-authorization --strict`, `openspec validate --specs --strict`, and `git diff --check`.

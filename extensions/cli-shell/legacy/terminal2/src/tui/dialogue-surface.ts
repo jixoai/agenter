@@ -138,10 +138,10 @@ const wrapDialogueStyledSpans = (
 };
 
 export const buildCliShellDialogueScrollRows = (input: {
-  model: CliShellTuiModel;
+  model: Pick<CliShellTuiModel, "dialogueBlocks">;
   width: number;
-}): Array<{ key: string; height: number; line: TerminalCanvasStyledLine }> => {
-  const rows: Array<{ key: string; height: number; line: TerminalCanvasStyledLine }> = [];
+}): CliShellDialogueScrollRow[] => {
+  const rows: CliShellDialogueScrollRow[] = [];
   for (const block of input.model.dialogueBlocks) {
     const blockKey =
       block.key ??
@@ -183,13 +183,179 @@ export const buildCliShellDialogueScrollRows = (input: {
       rows.push({ key: `${blockKey}:spacer`, height: 1, line: { spans: [] } });
     }
     for (let index = before; index < rows.length; index += 1) {
+      const row = rows[index]!;
+      const key = row.key === blockKey ? `${blockKey}:row-${index - before}` : row.key;
       rows[index] = {
-        ...rows[index]!,
-        key: rows[index]!.key === blockKey ? `${blockKey}:row-${index - before}` : rows[index]!.key,
+        ...row,
+        key,
+        signature: [
+          key,
+          String(row.height ?? 1),
+          row.line?.spans.map((span) => `${span.text}\u0003${span.fg ?? ""}\u0003${span.bg ?? ""}`).join("\u0004") ?? "",
+        ].join("\u0000"),
       };
     }
   }
   return rows;
+};
+
+export interface CliShellDialogueRowsCache {
+  getRows(input: {
+    model: Pick<CliShellTuiModel, "dialogueBlocks">;
+    width: number;
+  }): CliShellDialogueScrollRow[];
+  clear(): void;
+}
+
+interface CliShellDialogueBlockRowsCacheEntry {
+  source: CliShellTuiModel["dialogueBlocks"][number];
+  width: number;
+  key: string;
+  rows: CliShellDialogueScrollRow[];
+}
+
+const resolveDialogueBlockBaseKey = (
+  block: CliShellTuiModel["dialogueBlocks"][number],
+  fallbackIndex: number,
+): string =>
+  block.key ??
+  (block.kind === "message" && typeof block.messageId === "number"
+    ? `message:${block.messageId}`
+    : `${block.kind}:${fallbackIndex}`);
+
+const dialogueBlocksShareRows = (
+  previous: CliShellTuiModel["dialogueBlocks"][number],
+  next: CliShellTuiModel["dialogueBlocks"][number],
+): boolean =>
+  previous === next ||
+  (previous.key === next.key &&
+    previous.kind === next.kind &&
+    previous.authoredByUser === next.authoredByUser &&
+    previous.authorLabel === next.authorLabel &&
+    previous.timeLabel === next.timeLabel &&
+    previous.dateLabel === next.dateLabel &&
+    previous.messageId === next.messageId &&
+    previous.body === next.body);
+
+const buildCliShellDialogueBlockScrollRows = (input: {
+  block: CliShellTuiModel["dialogueBlocks"][number];
+  baseKey: string;
+  width: number;
+}): CliShellDialogueScrollRow[] => {
+  if (input.block.kind === "date-divider") {
+    return wrapDialogueStyledSpans(
+      [
+        {
+          text: `──────── ${input.block.dateLabel ?? ""} ────────`,
+          fg: MUTED_FG,
+        },
+      ],
+      input.width,
+    ).map((line, index) => ({
+      key: `${input.baseKey}:row-${index}`,
+      signature: [
+        `${input.baseKey}:row-${index}`,
+        "1",
+        line.spans.map((span) => `${span.text}\u0003${span.fg ?? ""}\u0003${span.bg ?? ""}`).join("\u0004"),
+      ].join("\u0000"),
+      height: 1,
+      line,
+    }));
+  }
+
+  const prefix = input.block.authoredByUser ? ">  " : `${input.block.authorLabel ?? "@agenter"}\n`;
+  const rows: CliShellDialogueScrollRow[] = wrapDialogueStyledSpans(
+    [
+      {
+        text: prefix,
+        fg: input.block.authoredByUser ? "#d1d5db" : MUTED_FG,
+        bg: input.block.authoredByUser ? USER_MESSAGE_BG : undefined,
+      },
+      {
+        text: input.block.body ?? "",
+        fg: TEXT_FG,
+        bg: input.block.authoredByUser ? USER_MESSAGE_BG : undefined,
+      },
+    ],
+    input.width,
+  ).map((line, index) => ({
+    key: `${input.baseKey}:row-${index}`,
+    signature: [
+      `${input.baseKey}:row-${index}`,
+      "1",
+      line.spans.map((span) => `${span.text}\u0003${span.fg ?? ""}\u0003${span.bg ?? ""}`).join("\u0004"),
+    ].join("\u0000"),
+    height: 1,
+    line,
+  }));
+  rows.push({
+    key: `${input.baseKey}:spacer`,
+    signature: `${input.baseKey}:spacer\u00001\u0000`,
+    height: 1,
+    line: { spans: [] },
+  });
+  return rows;
+};
+
+export const createCliShellDialogueRowsCache = (): CliShellDialogueRowsCache => {
+  let cachedRows: CliShellDialogueScrollRow[] = [];
+  const blockRowsByKey = new Map<string, CliShellDialogueBlockRowsCacheEntry>();
+  let rowsKey = "";
+  return {
+    getRows(input) {
+      const blockKeys = input.model.dialogueBlocks.map((block, index) =>
+        resolveDialogueBlockBaseKey(block, index),
+      );
+      const nextRowsKey = `${input.width}\u0001${blockKeys.join("\u0001")}`;
+      if (nextRowsKey === rowsKey) {
+        const unchanged = input.model.dialogueBlocks.every((block, index) => {
+          const cached = blockRowsByKey.get(blockKeys[index]!);
+          return cached && cached.width === input.width && dialogueBlocksShareRows(cached.source, block);
+        });
+        if (unchanged) {
+          return cachedRows;
+        }
+      }
+
+      const nextRows: CliShellDialogueScrollRow[] = [];
+      const liveKeys = new Set<string>();
+      for (const [index, block] of input.model.dialogueBlocks.entries()) {
+        const key = blockKeys[index]!;
+        liveKeys.add(key);
+        const cached = blockRowsByKey.get(key);
+        if (cached && cached.width === input.width && dialogueBlocksShareRows(cached.source, block)) {
+          nextRows.push(...cached.rows);
+          continue;
+        }
+        const rows = buildCliShellDialogueBlockScrollRows({
+          block,
+          baseKey: key,
+          width: input.width,
+        });
+        blockRowsByKey.set(key, {
+          source: block,
+          width: input.width,
+          key,
+          rows,
+        });
+        nextRows.push(...rows);
+      }
+
+      for (const key of blockRowsByKey.keys()) {
+        if (!liveKeys.has(key)) {
+          blockRowsByKey.delete(key);
+        }
+      }
+      rowsKey = nextRowsKey;
+      cachedRows = nextRows;
+      return cachedRows;
+    },
+    clear() {
+      rowsKey = "";
+      cachedRows = [];
+      blockRowsByKey.clear();
+    },
+  };
 };
 
 const renderPanelBackground = (canvas: ReturnType<typeof createTerminalCanvas>): void => {
@@ -282,6 +448,7 @@ export const buildCliShellDialogueSurface = (input: {
   model: CliShellTuiModel;
   renderFocusedDraft?: boolean;
   viewportOwner?: CliShellDialogueViewportOwner;
+  rowsCache?: CliShellDialogueRowsCache;
 }): CliShellDialogueSurface => {
   const canvas = createTerminalCanvas(input.layout.width, input.layout.height);
   const actionRegions: CliShellActionHitRegion[] = [];
@@ -368,7 +535,7 @@ export const buildCliShellDialogueSurface = (input: {
   const inputEndRow = height - 1;
   const bodyStartRow = 2;
   const bodyRows = Math.max(0, inputStartRow - bodyStartRow - 1);
-  const bodyProjectionRows = buildCliShellDialogueScrollRows({
+  const bodyProjectionRows = (input.rowsCache ?? { getRows: buildCliShellDialogueScrollRows }).getRows({
     model,
     width: contentWidth,
   });
@@ -386,7 +553,7 @@ export const buildCliShellDialogueSurface = (input: {
     writeCanvasStyledText(canvas, {
       row: bodyStartRow + bodyRowIndex,
       col: contentCol,
-      spans: bodyLine.line.spans,
+      spans: bodyLine.line?.spans ?? [],
       width: contentWidth,
     });
   }

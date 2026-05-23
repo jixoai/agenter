@@ -1,41 +1,88 @@
 import yargs from "yargs";
 
-import { assertTerminalBackendKind, type TerminalBackendKind } from "@agenter/termless-core";
-
 import { CLI_SHELL_DEFAULT_AVATAR, CLI_SHELL_DEFAULT_SESSION } from "./product";
 
 const metadataOnlyTokens = new Set(["--help", "-h", "help", "--version", "-v", "version"]);
 const cleanupCommandTokens = new Set(["cleanup", "clean"]);
+const roomCommandTokens = new Set(["room", "chat"]);
+const topCommandTokens = new Set(["top", "notifications"]);
+const shellCommandTokens = new Set(["shell", "terminal"]);
+const tmuxActionCommandTokens = new Set(["tmux-action"]);
+const heartbeatStatusCommandTokens = new Set(["heartbeat-status"]);
 
-export interface CliShellAttachArgs {
-  command: "attach";
+interface CliShellBaseArgs {
   avatarNickname: string;
   shellName: string;
   createAvatar: boolean;
   clearAvatar: boolean;
-  backend?: TerminalBackendKind;
-  webPort?: number;
-  debug: boolean;
-  debugFilters: string[];
-  experimentalDynamicRefresh: boolean;
   host: string;
   port: number;
   authServiceEndpoint?: string;
+}
+
+export interface CliShellAttachArgs extends CliShellBaseArgs {
+  command: "attach";
+  tmux: string;
+}
+
+export interface CliShellRoomArgs extends CliShellBaseArgs {
+  command: "room";
+}
+
+export interface CliShellTopArgs extends CliShellBaseArgs {
+  command: "top";
+}
+
+export interface CliShellShellArgs extends CliShellBaseArgs {
+  command: "shell";
 }
 
 export interface CliShellCleanupArgs {
   command: "cleanup";
   shellName?: string;
   confirm: boolean;
+  tmux: string;
   host: string;
   port: number;
   authServiceEndpoint?: string;
 }
 
-export type CliShellParsedArgs = CliShellAttachArgs | CliShellCleanupArgs;
+export interface CliShellTmuxActionArgs {
+  command: "tmux-action";
+  action: string;
+  avatarNickname: string;
+  shellName: string;
+  runtimeSessionId: string;
+  workspacePath?: string;
+  tmux: string;
+  socket: string;
+  targetPane: string;
+  host: string;
+  port: number;
+  authServiceEndpoint?: string;
+}
+
+export interface CliShellHeartbeatStatusArgs {
+  command: "heartbeat-status";
+  avatarNickname: string;
+  shellName: string;
+  runtimeSessionId: string;
+  tmux: string;
+  host: string;
+  port: number;
+  authServiceEndpoint?: string;
+}
+
+export type CliShellParsedArgs =
+  | CliShellAttachArgs
+  | CliShellRoomArgs
+  | CliShellTopArgs
+  | CliShellShellArgs
+  | CliShellCleanupArgs
+  | CliShellTmuxActionArgs
+  | CliShellHeartbeatStatusArgs;
 
 interface CliShellArgvParseResult {
-  backend?: string;
   host: string;
   port: number;
   authServiceEndpoint?: string;
@@ -43,8 +90,7 @@ interface CliShellArgvParseResult {
   avatar?: string;
   createAvatar?: boolean;
   clearAvatar?: boolean;
-  debug?: boolean | string;
-  experimentalDynamicRefresh?: boolean;
+  tmux?: string;
   _: Array<string | number>;
 }
 
@@ -54,6 +100,33 @@ interface CliShellCleanupArgvParseResult {
   authServiceEndpoint?: string;
   session?: string;
   confirm?: boolean;
+  tmux?: string;
+  _: Array<string | number>;
+}
+
+interface CliShellTmuxActionArgvParseResult {
+  action: string;
+  host: string;
+  port: number;
+  authServiceEndpoint?: string;
+  session: string;
+  avatar?: string;
+  runtimeSessionId?: string;
+  workspacePath?: string;
+  tmux?: string;
+  socket?: string;
+  targetPane?: string;
+  _: Array<string | number>;
+}
+
+interface CliShellHeartbeatStatusArgvParseResult {
+  host: string;
+  port: number;
+  authServiceEndpoint?: string;
+  session: string;
+  avatar?: string;
+  runtimeSessionId: string;
+  tmux?: string;
   _: Array<string | number>;
 }
 
@@ -86,12 +159,25 @@ const normalizeAvatarNickname = (value: string | undefined, source: string): str
   return trimmed;
 };
 
-const rejectUnsupportedAvatarShortcut = (argv: readonly string[]): void => {
-  const token = argv.find((item) => item === "--test-avatar" || item.startsWith("--test-avatar="));
-  if (token) {
-    throw new Error(
-      "unsupported cli-shell avatar selector: --test-avatar; use --avatar with --create-avatar if needed",
-    );
+const normalizeTmuxExecutable = (value: string | undefined): string => {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : "tmux";
+};
+
+const rejectUnsupportedLegacyFlags = (argv: readonly string[]): void => {
+  const legacy = argv.find(
+    (item) =>
+      item === "--test-avatar" ||
+      item.startsWith("--test-avatar=") ||
+      item === "--backend" ||
+      item.startsWith("--backend=") ||
+      item === "--web" ||
+      item.startsWith("--web=") ||
+      item === "--experimental-dynamic-refresh" ||
+      item.startsWith("--experimental-dynamic-refresh="),
+  );
+  if (legacy) {
+    throw new Error(`unsupported cli-shell flag after tmux migration: ${legacy}`);
   }
 };
 
@@ -104,123 +190,30 @@ export const isCliShellMetadataOnlyArgv = (argv: readonly string[]): boolean =>
   argv.some((token) => metadataOnlyTokens.has(token));
 
 export const isCliShellCleanupCommand = (argv: readonly string[]): boolean => cleanupCommandTokens.has(argv[0] ?? "");
+export const isCliShellRoomCommand = (argv: readonly string[]): boolean => roomCommandTokens.has(argv[0] ?? "");
+export const isCliShellTopCommand = (argv: readonly string[]): boolean => topCommandTokens.has(argv[0] ?? "");
+export const isCliShellShellCommand = (argv: readonly string[]): boolean => shellCommandTokens.has(argv[0] ?? "");
+export const isCliShellTmuxActionCommand = (argv: readonly string[]): boolean =>
+  tmuxActionCommandTokens.has(argv[0] ?? "");
+export const isCliShellHeartbeatStatusCommand = (argv: readonly string[]): boolean =>
+  heartbeatStatusCommandTokens.has(argv[0] ?? "");
 
-const parseOptionalWebPortToken = (value: string): number => {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return 0;
+const parseAvatarSelection = (parsed: CliShellArgvParseResult): string => {
+  const mentions = parsed._.map(String);
+  if (mentions.length > 1) {
+    throw new Error(`unexpected extra argv: ${mentions.slice(1).join(" ")}`);
   }
-  const parsed = Number(trimmed);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(`invalid --web port: ${value}`);
+  const mentionAvatar = mentions.length === 1 ? normalizeAvatarMention(mentions[0]) : undefined;
+  const flagAvatar = normalizeAvatarNickname(typeof parsed.avatar === "string" ? parsed.avatar : undefined, "--avatar");
+  if (mentionAvatar && flagAvatar && mentionAvatar !== flagAvatar) {
+    throw new Error(`conflicting avatar selectors: @${mentionAvatar} and --avatar=${flagAvatar}`);
   }
-  return parsed;
+  return flagAvatar ?? mentionAvatar ?? CLI_SHELL_DEFAULT_AVATAR;
 };
 
-const extractWebHostMode = (argv: readonly string[]): { argv: string[]; webPort?: number } => {
-  const nextArgv: string[] = [];
-  let webPort: number | undefined;
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-    if (token === "--web") {
-      const nextToken = argv[index + 1];
-      if (typeof nextToken === "string" && /^\d+$/.test(nextToken.trim())) {
-        webPort = parseOptionalWebPortToken(nextToken);
-        index += 1;
-      } else {
-        webPort = 0;
-      }
-      continue;
-    }
-    if (token.startsWith("--web=")) {
-      webPort = parseOptionalWebPortToken(token.slice("--web=".length));
-      continue;
-    }
-    nextArgv.push(token);
-  }
-  return {
-    argv: nextArgv,
-    webPort,
-  };
-};
-
-const normalizeDebugArgv = (argv: readonly string[]): string[] =>
-  argv.map((token) => (token === "--debug" ? "--debug=true" : token));
-
-const normalizeDebugArg = (value: boolean | string | undefined): { debug: boolean; debugFilters: string[] } => {
-  if (value === true) {
-    return { debug: true, debugFilters: [] };
-  }
-  if (value === false || value === undefined) {
-    return { debug: false, debugFilters: [] };
-  }
-  const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed === "true" || trimmed === "1") {
-    return { debug: true, debugFilters: [] };
-  }
-  if (trimmed === "false" || trimmed === "0") {
-    return { debug: false, debugFilters: [] };
-  }
-  return {
-    debug: true,
-    debugFilters: trimmed
-      .split(",")
-      .map((part) =>
-        part
-          .trim()
-          .toLowerCase()
-          .replace(/^\*+|\*+$/g, ""),
-      )
-      .filter((part) => part.length > 0),
-  };
-};
-
-export const parseCliShellArgs = (
-  argv: readonly string[],
-  env: NodeJS.ProcessEnv = process.env,
-): CliShellParsedArgs => {
-  rejectUnsupportedAvatarShortcut(argv);
-  if (isCliShellCleanupCommand(argv)) {
-    const parsed = yargs(argv.slice(1))
-      .scriptName("agenter-cli-shell cleanup")
-      .option("host", {
-        type: "string",
-        default: env.AGENTER_DAEMON_HOST?.trim() || "127.0.0.1",
-      })
-      .option("port", {
-        type: "number",
-        default: Number(env.AGENTER_DAEMON_PORT ?? "4580"),
-      })
-      .option("auth-service-endpoint", {
-        type: "string",
-        default: env.AGENTER_AUTH_SERVICE_ENDPOINT?.trim() || undefined,
-      })
-      .option("session", {
-        type: "string",
-      })
-      .option("confirm", {
-        type: "boolean",
-        default: false,
-      })
-      .strictOptions()
-      .exitProcess(false)
-      .help()
-      .parseSync() as CliShellCleanupArgvParseResult;
-    if (parsed._.length > 0) {
-      throw new Error(`unexpected cleanup argv: ${parsed._.map(String).join(" ")}`);
-    }
-    return {
-      command: "cleanup",
-      shellName: typeof parsed.session === "string" ? normalizeShellName(parsed.session) : undefined,
-      confirm: parsed.confirm === true,
-      host: String(parsed.host),
-      port: Number(parsed.port),
-      authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,
-    };
-  }
-  const extracted = extractWebHostMode(argv);
-  const parsed = yargs(normalizeDebugArgv(extracted.argv))
-    .scriptName("agenter-cli-shell")
+const baseParser = (argv: readonly string[], env: NodeJS.ProcessEnv, scriptName: string) =>
+  yargs([...argv])
+    .scriptName(scriptName)
     .option("host", {
       type: "string",
       default: env.AGENTER_DAEMON_HOST?.trim() || "127.0.0.1",
@@ -248,44 +241,202 @@ export const parseCliShellArgs = (
       type: "boolean",
       default: false,
     })
-    .option("backend", {
-      type: "string",
-    })
-    .option("debug", {
-      type: "string",
-      default: "false",
-    })
-    .option("experimental-dynamic-refresh", {
-      type: "boolean",
-      default: false,
-    })
     .strictOptions()
     .exitProcess(false)
-    .help()
-    .parseSync() as CliShellArgvParseResult;
+    .help();
 
-  const mentions = parsed._.map(String);
-  if (mentions.length > 1) {
-    throw new Error(`unexpected extra argv: ${mentions.slice(1).join(" ")}`);
+export const parseCliShellArgs = (
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+): CliShellParsedArgs => {
+  rejectUnsupportedLegacyFlags(argv);
+  if (isCliShellRoomCommand(argv)) {
+    const parsed = baseParser(argv.slice(1), env, "agenter-cli-shell room").parseSync() as CliShellArgvParseResult;
+    return {
+      command: "room",
+      avatarNickname: parseAvatarSelection(parsed),
+      shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
+      createAvatar: parsed.createAvatar === true,
+      clearAvatar: parsed.clearAvatar === true,
+      host: String(parsed.host),
+      port: Number(parsed.port),
+      authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,
+    };
   }
-  const mentionAvatar = mentions.length === 1 ? normalizeAvatarMention(mentions[0]) : undefined;
-  const flagAvatar = normalizeAvatarNickname(typeof parsed.avatar === "string" ? parsed.avatar : undefined, "--avatar");
-  if (mentionAvatar && flagAvatar && mentionAvatar !== flagAvatar) {
-    throw new Error(`conflicting avatar selectors: @${mentionAvatar} and --avatar=${flagAvatar}`);
+  if (isCliShellTopCommand(argv)) {
+    const parsed = baseParser(argv.slice(1), env, "agenter-cli-shell top").parseSync() as CliShellArgvParseResult;
+    return {
+      command: "top",
+      avatarNickname: parseAvatarSelection(parsed),
+      shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
+      createAvatar: parsed.createAvatar === true,
+      clearAvatar: parsed.clearAvatar === true,
+      host: String(parsed.host),
+      port: Number(parsed.port),
+      authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,
+    };
   }
-  const debug = normalizeDebugArg(parsed.debug);
+  if (isCliShellShellCommand(argv)) {
+    const parsed = baseParser(argv.slice(1), env, "agenter-cli-shell shell").parseSync() as CliShellArgvParseResult;
+    return {
+      command: "shell",
+      avatarNickname: parseAvatarSelection(parsed),
+      shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
+      createAvatar: parsed.createAvatar === true,
+      clearAvatar: parsed.clearAvatar === true,
+      host: String(parsed.host),
+      port: Number(parsed.port),
+      authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,
+    };
+  }
+  if (isCliShellCleanupCommand(argv)) {
+    const parsed = yargs(argv.slice(1))
+      .scriptName("agenter-cli-shell cleanup")
+      .option("host", {
+        type: "string",
+        default: env.AGENTER_DAEMON_HOST?.trim() || "127.0.0.1",
+      })
+      .option("port", {
+        type: "number",
+        default: Number(env.AGENTER_DAEMON_PORT ?? "4580"),
+      })
+      .option("auth-service-endpoint", {
+        type: "string",
+        default: env.AGENTER_AUTH_SERVICE_ENDPOINT?.trim() || undefined,
+      })
+      .option("session", {
+        type: "string",
+      })
+      .option("confirm", {
+        type: "boolean",
+        default: false,
+      })
+      .option("tmux", {
+        type: "string",
+        default: "tmux",
+      })
+      .strictOptions()
+      .exitProcess(false)
+      .help()
+      .parseSync() as CliShellCleanupArgvParseResult;
+    if (parsed._.length > 0) {
+      throw new Error(`unexpected cleanup argv: ${parsed._.map(String).join(" ")}`);
+    }
+    return {
+      command: "cleanup",
+      shellName: typeof parsed.session === "string" ? normalizeShellName(parsed.session) : undefined,
+      confirm: parsed.confirm === true,
+      tmux: normalizeTmuxExecutable(parsed.tmux),
+      host: String(parsed.host),
+      port: Number(parsed.port),
+      authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,
+    };
+  }
+  if (isCliShellTmuxActionCommand(argv)) {
+    const parsed = baseParser(argv.slice(1), env, "agenter-cli-shell tmux-action")
+      .option("action", {
+        type: "string",
+        demandOption: true,
+      })
+      .option("runtime-session-id", {
+        type: "string",
+        demandOption: true,
+      })
+      .option("workspace-path", {
+        type: "string",
+      })
+      .option("tmux", {
+        type: "string",
+        default: "tmux",
+      })
+      .option("socket", {
+        type: "string",
+        default: "agenter-cli-shell",
+      })
+      .option("target-pane", {
+        type: "string",
+        demandOption: true,
+      })
+      .parseSync() as CliShellTmuxActionArgvParseResult;
+    if (parsed._.length > 0) {
+      throw new Error(`unexpected tmux-action argv: ${parsed._.map(String).join(" ")}`);
+    }
+    const action = parsed.action.trim();
+    if (action.length === 0) {
+      throw new Error("tmux-action --action cannot be empty");
+    }
+    const runtimeSessionId = parsed.runtimeSessionId?.trim();
+    if (!runtimeSessionId) {
+      throw new Error("tmux-action --runtime-session-id cannot be empty");
+    }
+    const workspacePath = parsed.workspacePath?.trim();
+    if (workspacePath !== undefined && workspacePath.length === 0) {
+      throw new Error("tmux-action --workspace-path cannot be empty");
+    }
+    const socket = parsed.socket?.trim() || "agenter-cli-shell";
+    const targetPane = parsed.targetPane?.trim();
+    if (!targetPane) {
+      throw new Error("tmux-action --target-pane cannot be empty");
+    }
+    return {
+      command: "tmux-action",
+      action,
+      avatarNickname: parseAvatarSelection(parsed),
+      shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
+      runtimeSessionId,
+      workspacePath,
+      tmux: normalizeTmuxExecutable(parsed.tmux),
+      socket,
+      targetPane,
+      host: String(parsed.host),
+      port: Number(parsed.port),
+      authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,
+    };
+  }
+  if (isCliShellHeartbeatStatusCommand(argv)) {
+    const parsed = baseParser(argv.slice(1), env, "agenter-cli-shell heartbeat-status")
+      .option("runtime-session-id", {
+        type: "string",
+        demandOption: true,
+      })
+      .option("tmux", {
+        type: "string",
+        default: "tmux",
+      })
+      .parseSync() as CliShellHeartbeatStatusArgvParseResult;
+    if (parsed._.length > 0) {
+      throw new Error(`unexpected heartbeat-status argv: ${parsed._.map(String).join(" ")}`);
+    }
+    const runtimeSessionId = parsed.runtimeSessionId?.trim();
+    if (!runtimeSessionId) {
+      throw new Error("heartbeat-status --runtime-session-id cannot be empty");
+    }
+    return {
+      command: "heartbeat-status",
+      avatarNickname: parseAvatarSelection(parsed),
+      shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
+      runtimeSessionId,
+      tmux: normalizeTmuxExecutable(parsed.tmux),
+      host: String(parsed.host),
+      port: Number(parsed.port),
+      authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,
+    };
+  }
+
+  const parsed = baseParser(argv, env, "agenter-cli-shell")
+    .option("tmux", {
+      type: "string",
+      default: "tmux",
+    })
+    .parseSync() as CliShellArgvParseResult;
 
   return {
     command: "attach",
-    avatarNickname: flagAvatar ?? mentionAvatar ?? CLI_SHELL_DEFAULT_AVATAR,
+    avatarNickname: parseAvatarSelection(parsed),
     shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
     createAvatar: parsed.createAvatar === true,
     clearAvatar: parsed.clearAvatar === true,
-    backend: typeof parsed.backend === "string" ? assertTerminalBackendKind(parsed.backend) : undefined,
-    webPort: extracted.webPort,
-    debug: debug.debug,
-    debugFilters: debug.debugFilters,
-    experimentalDynamicRefresh: parsed.experimentalDynamicRefresh === true,
+    tmux: normalizeTmuxExecutable(parsed.tmux),
     host: String(parsed.host),
     port: Number(parsed.port),
     authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,

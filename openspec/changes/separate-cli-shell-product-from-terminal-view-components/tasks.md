@@ -1,3 +1,7 @@
+> Superseded note:
+> Treat these checkboxes as historical record and evidence only.
+> This task list is built on the older `terminal-1` / `terminal-2` cli-shell architecture and must not be resumed directly after `realign-cli-shell-with-core-system-boundaries`.
+
 > These checkboxes are implementation-time obligations for applying this corrective supplement. Current dirty-workspace experiments, partial code changes, or `.chat` probes may inform the plan, but they do not count as completion truth until the repaired change is actually applied and re-verified.
 
 ## 0. Terminology And Boundaries

@@ -1,6 +1,7 @@
 import type { GlobalRoomEntry, GlobalTerminalEntry, SessionEntry } from "@agenter/client-sdk";
 
 import { CLI_SHELL_DEFAULT_AVATAR, CLI_SHELL_PRODUCT_ID } from "./product";
+import { CLI_SHELL_TMUX_SOCKET_NAME } from "./tmux-host";
 
 export interface CliShellCleanupStore {
   autoLogin(): Promise<{ ok: true; session: { token: string } } | { ok: false; reason: string; message: string }>;
@@ -16,6 +17,13 @@ export interface CliShellCleanupStore {
 export interface CliShellCleanupOptions {
   shellName?: string;
   confirm?: boolean;
+  tmux?: string;
+  tmuxExecutor?: CliShellCleanupTmuxExecutor;
+}
+
+export interface CliShellCleanupTmuxExecutor {
+  listSessions(tmux: string): Promise<string[]>;
+  killSession(tmux: string, sessionName: string): Promise<void>;
 }
 
 export interface CliShellCleanupTarget {
@@ -28,15 +36,18 @@ export interface CliShellCleanupResult {
   confirmed: boolean;
   targets: CliShellCleanupTarget[];
   sessionIds: string[];
+  tmuxSessionNames: string[];
   deleted: {
     sessions: string[];
     terminals: string[];
     rooms: string[];
+    tmuxSessions: string[];
   };
   failed: {
     sessions: Array<{ sessionId: string; message: string }>;
     terminals: Array<{ terminalId: string; message: string }>;
     rooms: Array<{ roomId: string; message: string }>;
+    tmuxSessions: Array<{ sessionName: string; message: string }>;
   };
 }
 
@@ -105,15 +116,57 @@ const isTransportInterrupted = (message: string): boolean =>
   message.includes("ECONNREFUSED") ||
   message.includes("Bad Gateway");
 
+const runTmuxCapture = async (tmux: string, args: readonly string[]): Promise<string> => {
+  const proc = Bun.spawn([tmux, ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (code !== 0) {
+    throw new Error(stderr.trim() || `${tmux} ${args.join(" ")} failed with ${code}`);
+  }
+  return stdout;
+};
+
+export const defaultCliShellCleanupTmuxExecutor: CliShellCleanupTmuxExecutor = {
+  async listSessions(tmux) {
+    const path = tmux.includes("/") ? tmux : Bun.which(tmux);
+    if (!path) {
+      return [];
+    }
+    const stdout = await runTmuxCapture(path, ["-L", CLI_SHELL_TMUX_SOCKET_NAME, "list-sessions", "-F", "#{session_name}"]).catch(
+      () => "",
+    );
+    return stdout
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  },
+  async killSession(tmux, sessionName) {
+    const path = tmux.includes("/") ? tmux : Bun.which(tmux);
+    if (!path) {
+      throw new Error("tmux executable not found");
+    }
+    await runTmuxCapture(path, ["-L", CLI_SHELL_TMUX_SOCKET_NAME, "kill-session", "-t", sessionName]);
+  },
+};
+
 export const planCliShellCleanup = async (
   store: Pick<CliShellCleanupStore, "listSessions" | "listGlobalTerminals" | "listGlobalRooms">,
   options: CliShellCleanupOptions = {},
-): Promise<{ targets: CliShellCleanupTarget[]; sessionIds: string[] }> => {
+): Promise<{ targets: CliShellCleanupTarget[]; sessionIds: string[]; tmuxSessionNames: string[] }> => {
   const shellFilter = resolveShellNameFilter(options.shellName);
-  const [sessions, terminals, rooms] = await Promise.all([
+  const tmux = options.tmux?.trim() || "tmux";
+  const tmuxExecutor = options.tmuxExecutor ?? defaultCliShellCleanupTmuxExecutor;
+  const [sessions, terminals, rooms, tmuxSessionNames] = await Promise.all([
     store.listSessions(),
     store.listGlobalTerminals(),
     store.listGlobalRooms({ includeArchived: true }),
+    tmuxExecutor.listSessions(tmux),
   ]);
   const targets = new Map<string, CliShellCleanupTarget>();
 
@@ -140,6 +193,9 @@ export const planCliShellCleanup = async (
   return {
     targets: [...targets.values()].sort((left, right) => left.shellName.localeCompare(right.shellName)),
     sessionIds,
+    tmuxSessionNames: uniqueSorted(
+      tmuxSessionNames.filter((sessionName) => sessionName.startsWith("shell-") && (!shellFilter || sessionName === shellFilter)),
+    ),
   };
 };
 
@@ -161,19 +217,33 @@ export const cleanupCliShellResources = async (
     confirmed: options.confirm === true,
     targets: plan.targets,
     sessionIds: plan.sessionIds,
+    tmuxSessionNames: plan.tmuxSessionNames,
     deleted: {
       sessions: [],
       terminals: [],
       rooms: [],
+      tmuxSessions: [],
     },
     failed: {
       sessions: [],
       terminals: [],
       rooms: [],
+      tmuxSessions: [],
     },
   };
   if (!options.confirm) {
     return result;
+  }
+
+  const tmux = options.tmux?.trim() || "tmux";
+  const tmuxExecutor = options.tmuxExecutor ?? defaultCliShellCleanupTmuxExecutor;
+  for (const sessionName of plan.tmuxSessionNames) {
+    try {
+      await tmuxExecutor.killSession(tmux, sessionName);
+      result.deleted.tmuxSessions.push(sessionName);
+    } catch (error) {
+      result.failed.tmuxSessions.push({ sessionName, message: errorMessage(error) });
+    }
   }
 
   for (const target of plan.targets) {
@@ -222,6 +292,7 @@ export const cleanupCliShellResources = async (
   result.deleted.sessions = uniqueSorted(result.deleted.sessions);
   result.deleted.terminals = uniqueSorted(result.deleted.terminals);
   result.deleted.rooms = uniqueSorted(result.deleted.rooms);
+  result.deleted.tmuxSessions = uniqueSorted(result.deleted.tmuxSessions);
   result.failed.sessions = result.failed.sessions.sort((left, right) =>
     left.sessionId.localeCompare(right.sessionId),
   );
@@ -229,11 +300,17 @@ export const cleanupCliShellResources = async (
     left.terminalId.localeCompare(right.terminalId),
   );
   result.failed.rooms = result.failed.rooms.sort((left, right) => left.roomId.localeCompare(right.roomId));
+  result.failed.tmuxSessions = result.failed.tmuxSessions.sort((left, right) =>
+    left.sessionName.localeCompare(right.sessionName),
+  );
   return result;
 };
 
 export const hasCliShellCleanupFailures = (result: CliShellCleanupResult): boolean =>
-  result.failed.sessions.length > 0 || result.failed.terminals.length > 0 || result.failed.rooms.length > 0;
+  result.failed.sessions.length > 0 ||
+  result.failed.terminals.length > 0 ||
+  result.failed.rooms.length > 0 ||
+  result.failed.tmuxSessions.length > 0;
 
 export const formatCliShellCleanupResult = (result: CliShellCleanupResult): string => {
   const lines = [
@@ -243,6 +320,7 @@ export const formatCliShellCleanupResult = (result: CliShellCleanupResult): stri
         : "cli-shell cleanup executed"
       : "cli-shell cleanup dry-run",
     `targets: ${result.targets.length}`,
+    `tmuxSessions: ${result.tmuxSessionNames.length}`,
   ];
   for (const target of result.targets) {
     lines.push(
@@ -258,14 +336,20 @@ export const formatCliShellCleanupResult = (result: CliShellCleanupResult): stri
   if (result.sessionIds.length > 0) {
     lines.push(`sessions: ${result.sessionIds.join(", ")}`);
   }
+  if (result.tmuxSessionNames.length > 0) {
+    lines.push(`tmux: ${result.tmuxSessionNames.join(", ")}`);
+  }
   if (result.confirmed) {
     lines.push(
-      `deleted: terminals=${result.deleted.terminals.length} rooms=${result.deleted.rooms.length} sessions=${result.deleted.sessions.length}`,
+      `deleted: tmux=${result.deleted.tmuxSessions.length} terminals=${result.deleted.terminals.length} rooms=${result.deleted.rooms.length} sessions=${result.deleted.sessions.length}`,
     );
     if (hasCliShellCleanupFailures(result)) {
       lines.push(
-        `failed: terminals=${result.failed.terminals.length} rooms=${result.failed.rooms.length} sessions=${result.failed.sessions.length}`,
+        `failed: tmux=${result.failed.tmuxSessions.length} terminals=${result.failed.terminals.length} rooms=${result.failed.rooms.length} sessions=${result.failed.sessions.length}`,
       );
+      for (const failure of result.failed.tmuxSessions) {
+        lines.push(`  tmux ${failure.sessionName}: ${failure.message}`);
+      }
       for (const failure of result.failed.terminals) {
         lines.push(`  terminal ${failure.terminalId}: ${failure.message}`);
       }

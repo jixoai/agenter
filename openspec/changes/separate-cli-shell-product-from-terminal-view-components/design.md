@@ -1,3 +1,7 @@
+> Superseded note:
+> This design preserves historical analysis and acceptance evidence, but its architecture still depends on the older `terminal-1` / `terminal-2` cli-shell worldview.
+> Current implementation or spec work must follow `realign-cli-shell-with-core-system-boundaries` instead of replaying this design.
+
 ## Context
 
 `add-cli-shell-product` already established `@agenter/cli-shell` as an external product package. `promote-ghostty-native-cli-shell` already established `--backend=<name>` and the one-line markdown bottom-rendering law. The unresolved problem is no longer command grammar. It is that the current shell-first draft still mixes product terminology and component terminology.

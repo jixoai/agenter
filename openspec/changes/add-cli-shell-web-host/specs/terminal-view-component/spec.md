@@ -1,3 +1,7 @@
+> Superseded note:
+> This delta spec is built on the older `terminal-1` / `terminal-2` cli-shell ontology.
+> It remains only as historical input. Any future Web-host product work must be redesigned under `realign-cli-shell-with-core-system-boundaries`.
+
 ## MODIFIED Requirements
 
 ### Requirement: The system SHALL let cli-shell Web host reuse `web-terminal-view` directly

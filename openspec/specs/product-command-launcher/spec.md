@@ -56,7 +56,7 @@ The core `agenter` CLI SHALL resolve controlled product commands to first-party 
 The product command launcher SHALL resolve product packages from the current monorepo workspace before falling back to installed packages or remote npm execution.
 
 #### Scenario: Local workspace package wins during development
-- **GIVEN** `packages/cli-shell/package.json` exists with name `@agenter/cli-shell`
+- **GIVEN** `extensions/cli-shell/package.json` exists with name `@agenter/cli-shell`
 - **WHEN** a user runs `agenter shell` from the Agenter workspace
 - **THEN** the launcher uses the local workspace package bin
 - **AND** it does not require the package to be published to npm
@@ -132,7 +132,7 @@ The product command launcher SHALL ensure or reuse a local daemon and pass conne
 
 #### Scenario: Launcher reuses healthy daemon authority for the same runtime root
 - **GIVEN** one healthy local daemon already owns the same runtime home root but is listening on a different loopback port than the launcher's default request
-- **WHEN** a user runs `agenter shell --web` through the default launcher path
+- **WHEN** a user runs `agenter shell --session=7 --avatar=bangeel` through the default launcher path
 - **THEN** the launcher discovers that same-root daemon authority before starting another local daemon
 - **AND** it forwards the discovered daemon host and port to `@agenter/cli-shell`
 - **AND** it does not start a competing second daemon writer for that runtime root

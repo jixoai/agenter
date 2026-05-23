@@ -3,16 +3,37 @@ import { createAgenterClient, createRuntimeStore } from "@agenter/client-sdk";
 import { isCliShellMetadataOnlyArgv, parseCliShellArgs } from "./argv";
 import {
   bootstrapCliShell,
+  bootstrapCliShellRoom,
   type CliShellBootstrapInput,
   type CliShellBootstrapResult,
-  type CliShellProductHostStore,
+  type CliShellRoomBootstrapInput,
+  type CliShellRoomBootstrapResult,
 } from "./bootstrap";
 import { cleanupCliShellResources, formatCliShellCleanupResult, hasCliShellCleanupFailures } from "./cleanup";
-import { CLI_SHELL_HEARTBEAT_COPY } from "./tui/heartbeat";
-import type { CliShellTuiController } from "./tui/run-cli-shell-tui";
-import type { CliShellStartupTuiController } from "./tui/startup-shell-tui";
-import type { CliShellObservationReadyBaseline, CliShellTuiStore } from "./tui/types";
-import type { CliShellWebHostController } from "./web";
+import { readCliShellHeartbeatStatus } from "./heartbeat-status";
+import {
+  disableCliShellManagedMode,
+  enableCliShellManagedMode,
+} from "./managed";
+import {
+  buildCliShellTmuxPlan,
+  describeCliShellTmuxAttachment,
+  refreshCliShellManagedTmuxStatus,
+  resolveCliShellCommandFromArgv,
+  runCliShellTmuxAction,
+  runCliShellTmuxHost,
+  type CliShellTmuxExecutor,
+  type CliShellTmuxPlan,
+} from "./tmux-host";
+import { startCliShellRoomTui } from "./tui/run-cli-shell-room-tui";
+import {
+  readCliShellKeybindings,
+  readCliShellSettings,
+  type CliShellKeybindings,
+  type CliShellSettings,
+} from "./tui/settings";
+import { startCliShellTopLayerTui } from "./tui/run-cli-shell-top-tui";
+import { startCliShellShellPaneTui } from "./tui/shell-pane-app";
 
 const formatCreatedState = (created: boolean): string => (created ? "created" : "reused");
 const formatRuntimeClearState = (sessionIds: readonly string[]): string =>
@@ -25,33 +46,20 @@ export interface CliShellRunDependencies {
   createClient(args: ReturnType<typeof parseCliShellArgs>): CliShellClient;
   createStore(client: CliShellClient): CliShellRuntimeStore;
   bootstrap(input: CliShellBootstrapInput): Promise<CliShellBootstrapResult>;
-  loadStartupTui(): Promise<{
-    startCliShellStartupTui(input: { shellName: string; heartbeat: string }): Promise<CliShellStartupTuiController>;
-  }>;
-  loadCliShellTui(): Promise<{
-    startCliShellTui(input: {
-      store: CliShellTuiStore;
-      shellName: string;
-      attached: CliShellBootstrapResult;
-      observationReadyBaseline?: CliShellObservationReadyBaseline | null;
-      preconnected?: boolean;
-      debug?: boolean;
-      debugFilters?: readonly string[];
-      experimentalDynamicRefresh?: boolean;
-    }): Promise<CliShellTuiController>;
-  }>;
-  loadCliShellWebHost(): Promise<{
-    startCliShellWebHost(input: {
-      store: CliShellProductHostStore;
-      shellName?: string;
-      attached: CliShellBootstrapResult;
-      requestedPort: number;
-      debug?: boolean;
-      debugFilters?: readonly string[];
-      experimentalDynamicRefresh?: boolean;
-    }): Promise<CliShellWebHostController>;
-  }>;
-  isInteractive(): boolean;
+  bootstrapRoom(input: CliShellRoomBootstrapInput): Promise<CliShellRoomBootstrapResult>;
+  startRoomTui(input: Parameters<typeof startCliShellRoomTui>[0] & { argv?: readonly string[] }): Promise<void>;
+  startTopLayerTui(input: Parameters<typeof startCliShellTopLayerTui>[0] & { argv?: readonly string[] }): Promise<void>;
+  startShellPaneTui(input: Parameters<typeof startCliShellShellPaneTui>[0]): Promise<void>;
+  readHeartbeatStatus(input: Parameters<typeof readCliShellHeartbeatStatus>[0]): Promise<string>;
+  buildTmuxPlan(input: Parameters<typeof buildCliShellTmuxPlan>[0]): CliShellTmuxPlan;
+  runTmuxHost(input: {
+    plan: CliShellTmuxPlan;
+    env?: NodeJS.ProcessEnv;
+    executor?: CliShellTmuxExecutor;
+  }): Promise<void>;
+  refreshManagedTmuxStatus(input: Parameters<typeof refreshCliShellManagedTmuxStatus>[0], managed: boolean): Promise<void>;
+  readCliShellSettings?(): Promise<CliShellSettings>;
+  readCliShellKeybindings?(): Promise<CliShellKeybindings>;
 }
 
 const defaultRunDependencies: CliShellRunDependencies = {
@@ -61,10 +69,94 @@ const defaultRunDependencies: CliShellRunDependencies = {
     }),
   createStore: (client) => createRuntimeStore(client),
   bootstrap: (input) => bootstrapCliShell(input),
-  loadStartupTui: async () => await import("./tui/startup-shell-tui"),
-  loadCliShellTui: async () => await import("./tui/run-cli-shell-tui"),
-  loadCliShellWebHost: async () => await import("./web"),
-  isInteractive: () => Boolean(process.stdout.isTTY && process.stdin.isTTY),
+  bootstrapRoom: (input) => bootstrapCliShellRoom(input),
+  startRoomTui: async (input) => {
+    const controller = await startCliShellRoomTui(input);
+    await controller.finished;
+  },
+  startTopLayerTui: async (input) => {
+    const controller = await startCliShellTopLayerTui(input);
+    await controller.finished;
+  },
+  startShellPaneTui: async (input) => {
+    const controller = await startCliShellShellPaneTui(input);
+    await controller.finished;
+  },
+  readHeartbeatStatus: async (input) => await readCliShellHeartbeatStatus(input),
+  buildTmuxPlan: (input) => buildCliShellTmuxPlan(input),
+  runTmuxHost: async (input) => await runCliShellTmuxHost(input),
+  refreshManagedTmuxStatus: async (input, managed) => await refreshCliShellManagedTmuxStatus(input, managed),
+  readCliShellSettings: async () => await readCliShellSettings(),
+  readCliShellKeybindings: async () => await readCliShellKeybindings(),
+};
+
+const writeRoomSummary = (attached: CliShellRoomBootstrapResult): void => {
+  console.log(`cli-shell room attached`);
+  console.log(`avatar: ${attached.avatar.nickname}`);
+  console.log(`avatarState: ${formatCreatedState(attached.avatarCreated)}`);
+  console.log(`runtimeSessionClear: ${formatRuntimeClearState(attached.clearedRuntimeSessionIds)}`);
+  console.log(`runtime: ${attached.avatar.runtimeId}`);
+  console.log(`terminal: ${attached.terminal.entry.terminalId} (${formatCreatedState(attached.terminal.created)})`);
+  console.log(`room: ${attached.room.entry.chatId} (${formatCreatedState(attached.room.created)})`);
+  console.log(`managed: ${attached.managed.managed ? "on" : "off"}`);
+  console.log(`source: ${process.env.AGENTER_PRODUCT_SOURCE?.trim() || "direct"}`);
+  console.log(`promptSeeded: ${attached.promptSeeded ? "yes" : "no"}`);
+  console.log(
+    `memorySeeds: ${attached.memoryFiles.map((file) => `${file.path}:${file.created ? "created" : "kept"}`).join(", ") || "none"}`,
+  );
+};
+
+const buildCliShellTmuxSurfaceId = (shellName: string): string => `tmux:${shellName}`;
+
+const toggleCliShellManagedFromTmuxAction = async (
+  input: {
+    store: CliShellRuntimeStore;
+    workspacePath: string;
+    shellName: string;
+    avatarNickname: string;
+    runtimeSessionId: string;
+    tmuxAction: Parameters<typeof refreshCliShellManagedTmuxStatus>[0];
+  },
+  dependencies: CliShellRunDependencies,
+): Promise<void> => {
+  const attached = await dependencies.bootstrapRoom({
+    store: input.store,
+    workspacePath: input.workspacePath,
+    avatarNickname: input.avatarNickname,
+    shellName: input.shellName,
+    createAvatar: false,
+    clearAvatar: false,
+  });
+  const managed = attached.managed.managed;
+  const localSurfaceId = buildCliShellTmuxSurfaceId(input.shellName);
+  if (managed) {
+    await disableCliShellManagedMode({
+      store: input.store,
+      sessionId: attached.session.id,
+      runtimeId: attached.avatar.runtimeId,
+      avatarActorId: attached.avatarActorId,
+      shellName: input.shellName,
+      surfaceId: localSurfaceId,
+      terminalId: attached.terminal.entry.terminalId,
+      roomId: attached.room.entry.chatId,
+      notes: "disabled from cli-shell tmux status bar",
+    });
+    await dependencies.refreshManagedTmuxStatus(input.tmuxAction, false);
+    return;
+  }
+  await enableCliShellManagedMode({
+    store: input.store,
+    sessionId: attached.session.id,
+    runtimeId: attached.avatar.runtimeId,
+    avatarActorId: attached.avatarActorId,
+    shellName: input.shellName,
+    surfaceId: localSurfaceId,
+    terminalId: attached.terminal.entry.terminalId,
+    roomId: attached.room.entry.chatId,
+    objective: "Continue hosting the current cli-shell terminal session.",
+    notes: "enabled from cli-shell tmux status bar",
+  });
+  await dependencies.refreshManagedTmuxStatus(input.tmuxAction, true);
 };
 
 export const runCliShellWithDependencies = async (
@@ -77,9 +169,72 @@ export const runCliShellWithDependencies = async (
     return;
   }
   const args = parseCliShellArgs(productArgv);
+  if (args.command === "tmux-action") {
+    if (args.action === "managed") {
+      const client = dependencies.createClient(args);
+      try {
+        const store = dependencies.createStore(client);
+        await toggleCliShellManagedFromTmuxAction(
+          {
+            store,
+            workspacePath: args.workspacePath ?? process.cwd(),
+            shellName: args.shellName,
+            avatarNickname: args.avatarNickname,
+            runtimeSessionId: args.runtimeSessionId,
+            tmuxAction: {
+              action: args.action,
+              shellName: args.shellName,
+              avatarNickname: args.avatarNickname,
+              runtimeSessionId: args.runtimeSessionId,
+              workspacePath: args.workspacePath,
+              targetPane: args.targetPane,
+              tmux: args.tmux,
+              socketName: args.socket,
+              cliShellCommand: resolveCliShellCommandFromArgv(argvInput),
+              daemonHost: args.host,
+              daemonPort: args.port,
+              authServiceEndpoint: args.authServiceEndpoint,
+            },
+          },
+          dependencies,
+        );
+        return;
+      } finally {
+        client.close();
+      }
+    }
+    await runCliShellTmuxAction({
+      action: args.action,
+      shellName: args.shellName,
+      avatarNickname: args.avatarNickname,
+      runtimeSessionId: args.runtimeSessionId,
+      workspacePath: args.workspacePath,
+      targetPane: args.targetPane,
+      tmux: args.tmux,
+      socketName: args.socket,
+      cliShellCommand: resolveCliShellCommandFromArgv(argvInput),
+      daemonHost: args.host,
+      daemonPort: args.port,
+      authServiceEndpoint: args.authServiceEndpoint,
+    });
+    return;
+  }
+  if (args.command === "heartbeat-status") {
+    const client = dependencies.createClient(args);
+    try {
+      const store = dependencies.createStore(client);
+      const status = await dependencies.readHeartbeatStatus({
+        store,
+        runtimeSessionId: args.runtimeSessionId,
+        shellName: args.shellName,
+      });
+      process.stdout.write(`${status}\n`);
+      return;
+    } finally {
+      client.close();
+    }
+  }
   const client = dependencies.createClient(args);
-  let activeTui: { finished: Promise<void>; destroy(): void } | null = null;
-  let activeWebHost: CliShellWebHostController | null = null;
 
   try {
     const store = dependencies.createStore(client);
@@ -87,6 +242,7 @@ export const runCliShellWithDependencies = async (
       const result = await cleanupCliShellResources(store, {
         shellName: args.shellName,
         confirm: args.confirm,
+        tmux: args.tmux,
       });
       process.stdout.write(formatCliShellCleanupResult(result));
       if (hasCliShellCleanupFailures(result)) {
@@ -94,17 +250,80 @@ export const runCliShellWithDependencies = async (
       }
       return;
     }
-    const startupTui =
-      dependencies.isInteractive() && args.webPort === undefined
-        ? await (
-            await dependencies.loadStartupTui()
-          ).startCliShellStartupTui({
-            shellName: args.shellName,
-            heartbeat: CLI_SHELL_HEARTBEAT_COPY.disconnected,
-          })
-        : null;
-    if (startupTui) {
-      activeTui = startupTui;
+
+    if (args.command === "room") {
+      const settings = await (dependencies.readCliShellSettings?.() ?? readCliShellSettings());
+      const keybindings = await (dependencies.readCliShellKeybindings?.() ?? readCliShellKeybindings());
+      const attached = await dependencies.bootstrapRoom({
+        store,
+        workspacePath: process.cwd(),
+        avatarNickname: args.avatarNickname,
+        shellName: args.shellName,
+        createAvatar: args.createAvatar,
+        clearAvatar: args.clearAvatar,
+      });
+      if (process.stdin.isTTY && process.stdout.isTTY) {
+        await dependencies.startRoomTui({
+          store,
+          shellName: args.shellName,
+          attached,
+          settings,
+          keybindings,
+          env: process.env,
+          argv: argvInput,
+        });
+        return;
+      }
+      writeRoomSummary(attached);
+      return;
+    }
+
+    if (args.command === "top") {
+      const attached = await dependencies.bootstrapRoom({
+        store,
+        workspacePath: process.cwd(),
+        avatarNickname: args.avatarNickname,
+        shellName: args.shellName,
+        createAvatar: args.createAvatar,
+        clearAvatar: args.clearAvatar,
+      });
+      if (process.stdin.isTTY && process.stdout.isTTY) {
+        await dependencies.startTopLayerTui({
+          store,
+          shellName: args.shellName,
+          attached,
+        });
+        return;
+      }
+      console.log(`cli-shell top attached`);
+      console.log(`avatar: ${args.avatarNickname}`);
+      console.log(`terminal: ${attached.terminal.entry.terminalId}`);
+      console.log(`tmux: ${args.shellName}`);
+      return;
+    }
+
+    if (args.command === "shell") {
+      const attached = await dependencies.bootstrapRoom({
+        store,
+        workspacePath: process.cwd(),
+        avatarNickname: args.avatarNickname,
+        shellName: args.shellName,
+        createAvatar: args.createAvatar,
+        clearAvatar: args.clearAvatar,
+      });
+      if (process.stdin.isTTY && process.stdout.isTTY) {
+        await dependencies.startShellPaneTui({
+          attached,
+        });
+        return;
+      }
+      console.log(`cli-shell shell attached`);
+      console.log(`avatar: ${args.avatarNickname}`);
+      console.log(`runtime: ${attached.avatar.runtimeId}`);
+      console.log(`terminal: ${attached.terminal.entry.terminalId} (${formatCreatedState(attached.terminal.created)})`);
+      console.log(`room: ${attached.room.entry.chatId} (${formatCreatedState(attached.room.created)})`);
+      console.log(`managed: ${attached.managed.managed ? "on" : "off"}`);
+      return;
     }
 
     const attached = await dependencies.bootstrap({
@@ -114,100 +333,32 @@ export const runCliShellWithDependencies = async (
       shellName: args.shellName,
       createAvatar: args.createAvatar,
       clearAvatar: args.clearAvatar,
-      backend: args.backend,
-      onProgress: (phase) => {
-        if (phase === "observation-pending") {
-          startupTui?.setHeartbeat(CLI_SHELL_HEARTBEAT_COPY.observationPending);
-        }
-      },
     });
-
-    if (args.webPort !== undefined) {
-      activeWebHost = await (
-        await dependencies.loadCliShellWebHost()
-      ).startCliShellWebHost({
+    const settings = await (dependencies.readCliShellSettings?.() ?? readCliShellSettings());
+    const plan = dependencies.buildTmuxPlan({
+      shellName: args.shellName,
+      avatarNickname: args.avatarNickname,
+      workspacePath: process.cwd(),
+      runtimeSessionId: attached.session.id,
+      cliShellCommand: resolveCliShellCommandFromArgv(argvInput),
+      tmux: args.tmux,
+      daemonHost: args.host,
+      daemonPort: args.port,
+      authServiceEndpoint: args.authServiceEndpoint,
+      managed: attached.managed.managed,
+      chatDefaultLayout: settings.chat.defaultLayout,
+      heartbeatStatus: await dependencies.readHeartbeatStatus({
         store,
+        runtimeSessionId: attached.session.id,
         shellName: args.shellName,
-        attached,
-        requestedPort: args.webPort,
-        debug: args.debug,
-        debugFilters: args.debugFilters,
-        experimentalDynamicRefresh: args.experimentalDynamicRefresh,
-      });
-      console.log(`cli-shell attached`);
-      console.log(`avatar: ${attached.avatar.nickname}`);
-      console.log(`avatarState: ${formatCreatedState(attached.avatarCreated)}`);
-      console.log(`runtimeSessionClear: ${formatRuntimeClearState(attached.clearedRuntimeSessionIds)}`);
-      console.log(`runtime: ${attached.avatar.runtimeId}`);
-      console.log(
-        `shellTruthTerminal: ${attached.shellTruthTerminal.entry.terminalId} (${formatCreatedState(attached.shellTruthTerminal.created)})`,
-      );
-      console.log(
-        `visibleTerminal: ${attached.visibleTerminal.entry.terminalId} (${formatCreatedState(attached.visibleTerminal.created)})`,
-      );
-      console.log(`backend: ${attached.shellTruthTerminal.entry.backend}`);
-      console.log(`room: ${attached.room.entry.chatId} (${formatCreatedState(attached.room.created)})`);
-      console.log(`managed: ${attached.managed.managed ? "on" : "off"}`);
-      console.log(`source: ${process.env.AGENTER_PRODUCT_SOURCE?.trim() || "direct"}`);
-      console.log(`promptSeeded: ${attached.promptSeeded ? "yes" : "no"}`);
-      console.log(
-        `memorySeeds: ${attached.memoryFiles.map((file) => `${file.path}:${file.created ? "created" : "kept"}`).join(", ") || "none"}`,
-      );
-      console.log(`web: ${activeWebHost.url}`);
-      await activeWebHost.finished;
-      return;
-    }
-
-    if (startupTui) {
-      await store.connect();
-      await store.hydrateSessionArtifacts(attached.session.id, {
-        includeChatHistory: false,
-        observabilityMode: "heartbeat",
-      });
-      const runtime = store.getState().runtimes[attached.session.id];
-      const observationReadyBaseline: CliShellObservationReadyBaseline = {
-        version: runtime?.schedulerSignals.terminal.version ?? 0,
-        timestamp: runtime?.schedulerSignals.terminal.timestamp ?? null,
-      };
-      startupTui.destroy();
-      activeTui = null;
-      const { startCliShellTui } = await dependencies.loadCliShellTui();
-      activeTui = await startCliShellTui({
-        store,
-        shellName: args.shellName,
-        attached,
-        observationReadyBaseline,
-        preconnected: true,
-        debug: args.debug,
-        debugFilters: args.debugFilters,
-        experimentalDynamicRefresh: args.experimentalDynamicRefresh,
-      });
-      await activeTui.finished;
-      return;
-    }
-
-    console.log(`cli-shell attached`);
-    console.log(`avatar: ${attached.avatar.nickname}`);
-    console.log(`avatarState: ${formatCreatedState(attached.avatarCreated)}`);
-    console.log(`runtimeSessionClear: ${formatRuntimeClearState(attached.clearedRuntimeSessionIds)}`);
-    console.log(`runtime: ${attached.avatar.runtimeId}`);
-    console.log(
-      `shellTruthTerminal: ${attached.shellTruthTerminal.entry.terminalId} (${formatCreatedState(attached.shellTruthTerminal.created)})`,
-    );
-    console.log(
-      `visibleTerminal: ${attached.visibleTerminal.entry.terminalId} (${formatCreatedState(attached.visibleTerminal.created)})`,
-    );
-    console.log(`backend: ${attached.shellTruthTerminal.entry.backend}`);
-    console.log(`room: ${attached.room.entry.chatId} (${formatCreatedState(attached.room.created)})`);
-    console.log(`managed: ${attached.managed.managed ? "on" : "off"}`);
-    console.log(`source: ${process.env.AGENTER_PRODUCT_SOURCE?.trim() || "direct"}`);
-    console.log(`promptSeeded: ${attached.promptSeeded ? "yes" : "no"}`);
-    console.log(
-      `memorySeeds: ${attached.memoryFiles.map((file) => `${file.path}:${file.created ? "created" : "kept"}`).join(", ") || "none"}`,
-    );
+      }),
+    });
+    console.log(describeCliShellTmuxAttachment({ attached, plan }));
+    await dependencies.runTmuxHost({
+      plan,
+      env: process.env,
+    });
   } finally {
-    activeTui?.destroy();
-    await activeWebHost?.stop();
     client.close();
   }
 };

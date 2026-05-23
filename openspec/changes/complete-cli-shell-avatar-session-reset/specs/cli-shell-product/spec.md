@@ -1,3 +1,7 @@
+> Boundary note:
+> The Avatar create/clear semantics in this delta spec remain valuable.
+> But terminal identity must now follow `realign-cli-shell-with-core-system-boundaries`: cli-shell targets the current bound TerminalSystem terminal, and old `terminal-1/terminal-2` or browser-host wording is historical input only.
+
 ## MODIFIED Requirements
 
 ### Requirement: Cli-shell SHALL parse explicit Avatar flags separately from product terminal name
@@ -63,22 +67,20 @@ Cli-shell SHALL treat every selected or created Avatar as an ordinary Avatar. It
 - **THEN** cli-shell keeps the existing prompt content
 - **AND** it does not restore or overwrite the prompt from product defaults
 
-### Requirement: Cli-shell SHALL show guard approval requests for the current opened terminal
+### Requirement: Cli-shell SHALL show guard approval requests for the current bound terminal
 
-Cli-shell SHALL render permission requests for the currently opened TerminalSystem instance. The current opened terminal is the user-facing terminal for the active cli-shell product session and MessageRoom. Cli-shell SHALL NOT widen subscriptions to hidden/internal terminal roles as a workaround for wrong write targeting.
+Cli-shell SHALL render permission requests for the TerminalSystem terminal currently bound to the active cli-shell product session and MessageRoom. Cli-shell SHALL NOT widen subscriptions to hidden/internal terminal roles as a workaround for wrong write targeting.
 
-#### Scenario: Internal shell truth stays hidden from Avatar terminal tools
+#### Scenario: Bound terminal is the only default Avatar target
 
-- **GIVEN** cli-shell session `shell-4` uses terminal `shell-4:terminal-1` as internal shell truth
-- **AND** terminal `shell-4:terminal-2` is the current opened terminal
-- **WHEN** cli-shell bootstraps or reuses those product resources for the selected Avatar
-- **THEN** the Avatar has terminal authority on `shell-4:terminal-2`
-- **AND** it does not retain direct terminal authority on `shell-4:terminal-1`
-- **AND** any stale selected-Avatar grant on `shell-4:terminal-1` is revoked during bootstrap
+- **GIVEN** cli-shell session `shell-4` is bound to terminal `T`
+- **WHEN** cli-shell bootstraps or reuses product resources for the selected Avatar
+- **THEN** the Avatar has terminal authority on `T`
+- **AND** stale grants on unrelated terminals are not treated as current cli-shell truth
 
 #### Scenario: Current terminal permission request appears in cli-shell
 
-- **GIVEN** cli-shell session `shell-4` has current opened terminal `T`
+- **GIVEN** cli-shell session `shell-4` has bound terminal `T`
 - **WHEN** Shell Assistant creates a guard approval request on terminal `T`
 - **THEN** the native cli-shell surface shows the default approval TopLayer overlay
 - **AND** the approve or deny action uses terminal `T` and the original request id
@@ -86,19 +88,13 @@ Cli-shell SHALL render permission requests for the currently opened TerminalSyst
 
 #### Scenario: Wrong terminal request is treated as routing bug
 
-- **GIVEN** cli-shell session `shell-4` has current opened terminal `T`
+- **GIVEN** cli-shell session `shell-4` has bound terminal `T`
 - **WHEN** a guard approval request is created on another terminal `U`
 - **THEN** cli-shell does not subscribe to `U` merely to make the popup appear
 - **AND** the implementation must fix the write target, focus, or runtime guidance so cli-shell terminal work targets `T`
 
-#### Scenario: Cli-shell web host uses the same current terminal
-
-- **WHEN** a user runs cli-shell in web host mode for `shell-4`
-- **THEN** the browser host subscribes to permission requests for the same current opened terminal as native cli-shell
-- **AND** the visible terminal projection can show the default approval UI for that terminal
-
 #### Scenario: Equivalent pending requests do not stack overlays
 
-- **WHEN** TerminalSystem refreshes an equivalent pending request for the current opened terminal
+- **WHEN** TerminalSystem refreshes an equivalent pending request for the bound terminal
 - **THEN** cli-shell updates the existing visible approval surface
 - **AND** it does not stack another popup for the same request id

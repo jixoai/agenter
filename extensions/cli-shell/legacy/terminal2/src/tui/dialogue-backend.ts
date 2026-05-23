@@ -9,6 +9,7 @@ import { measureTerminalText } from "./cell-width";
 import {
   buildCliShellDialogueSurface,
   type CliShellDialogueSurface,
+  type CliShellDialogueRowsCache,
   type CliShellDialogueViewportOwner,
 } from "./dialogue-surface";
 import type { CliShellTranscriptPanelLayout } from "./frame";
@@ -25,6 +26,7 @@ export const projectCliShellDialogueBackendFrame = (input: {
   model: CliShellTuiModel;
   renderFocusedDraft?: boolean;
   viewportOwner?: CliShellDialogueViewportOwner;
+  rowsCache?: CliShellDialogueRowsCache;
 }): CliShellDialogueBackendFrame => {
   const surface = buildCliShellDialogueSurface(input);
   return {
@@ -91,9 +93,11 @@ export class CliShellDialogueBackend {
   };
   readonly #interaction: TerminalInteractionController;
   readonly #viewportOwner: CliShellDialogueViewportOwner | undefined;
+  readonly #rowsCache: CliShellDialogueRowsCache | undefined;
 
-  constructor(input: { viewportOwner?: CliShellDialogueViewportOwner } = {}) {
+  constructor(input: { viewportOwner?: CliShellDialogueViewportOwner; rowsCache?: CliShellDialogueRowsCache } = {}) {
     this.#viewportOwner = input.viewportOwner;
+    this.#rowsCache = input.rowsCache;
     this.#interaction = createBackendInteractionAdapter({
       ownerId: "dialogue",
       readable: {
@@ -115,6 +119,7 @@ export class CliShellDialogueBackend {
     this.#frame = projectCliShellDialogueBackendFrame({
       ...input,
       viewportOwner: this.#viewportOwner,
+      rowsCache: this.#rowsCache,
     });
     return this.#frame;
   }

@@ -1,8 +1,6 @@
 # @agenter/cli-shell
 
-## Startup
-
-`agenter shell` starts the cli-shell product around one selected Avatar, one product-local shell name, one current opened Terminal, and one MessageRoom.
+`agenter shell` starts the cli-shell extension product around one selected Avatar, one product-local tmux session, and one MessageRoom.
 
 ```bash
 agenter shell --avatar=review-4 --session=4 --create-avatar --clear-avatar
@@ -11,42 +9,54 @@ agenter shell --avatar=review-4 --session=4 --create-avatar --clear-avatar
 Key options:
 
 - `--avatar=<nickname>` selects a normal Avatar. Positional `@nickname` is the shorthand; using both with different names fails before attach.
-- `--create-avatar` allows cli-shell to create the selected Avatar if it does not exist. The created Avatar is ordinary; no test Avatar kind, special prompt, special memory pack, or hidden mode is introduced.
-- `--clear-avatar` clears only the selected Avatar's runtime session for the current workspace before attach. It preserves `AGENTER.mdx`, memory files, principal identity, profile files, workspace files, terminals, and rooms.
-- `--session=<name>` selects the cli-shell product resource key. For example, `--session=4` maps to `shell-4`; it is not an AvatarRuntime identity and does not by itself create a clean Avatar context.
-- `--web[=<port>]` hosts the same cli-shell terminal-2 product surface in a browser. It is cli-shell's own browser host, not WebUI.
+- `--create-avatar` allows cli-shell to create the selected Avatar if it does not exist.
+- `--clear-avatar` clears only the selected Avatar's runtime session for the current workspace before attach.
+- `--session=<name>` selects the cli-shell product resource key. For example, `--session=4` maps to tmux session `shell-4`.
+- `--tmux=<path>` selects the tmux executable. It defaults to `tmux`.
 
-Guard authorization is terminal-local. cli-shell subscribes to permission requests for the currently opened Terminal and approves or denies through TerminalSystem authority.
+cli-shell is hosted by tmux, but tmux is only the local host shell. The actual shell target still comes from TerminalSystem through product binding, and MessageRoom still comes from MessageSystem.
 
-## Terminal-1 FrameBuffer experiment
+cli-shell uses a dedicated tmux socket named `agenter-cli-shell`. Its status bar and key bindings stay inside that product-owned tmux server instead of changing your normal tmux server.
 
-`experiments/terminal1-framebuffer-experiment.ts` is a focused diagnostic entry for the Terminal-1 projection path. It starts one shell backend, projects its viewport into an OpenTUI `FrameBufferRenderable`, and keeps the chat/composition product path out of the run. Use it when validating backend rendering speed, cursor behavior, selection/copy/paste, scroll handling, and large-output behavior such as `cat AGENTS.md`.
+## Tmux product shell
 
-Run from the repository root:
+The default attach opens the primary shell pane. Chat is not forced into a permanent right split.
 
-```bash
-bun --cwd packages/cli-shell experiments/terminal1-framebuffer-experiment.ts -- --backend=xterm --cwd=/Users/kzf/Dev/GitHub/jixoai-labs/agenter
+cli-shell installs a bottom tmux status bar. The left side identifies the current product session, and the right side keeps the clickable actions visible:
+
+```text
+cli-shell  shell-5  @bangeel  ◉ Avatar started; waiting for new Heartbeat...  managed:off                         Help  Chat
 ```
 
-Ghostty-native backend with trace logging:
+The default tmux window list is hidden in cli-shell sessions so it does not push the product actions off screen.
+
+Mouse:
+
+- Mouse is enabled by default so the status bar can be clicked.
+- Click `managed:on/off`, `Help`, or `Chat` in the status bar.
+- `Mouse` toggles tmux mouse capture. Turning it off restores native terminal text selection, but status clicks are disabled until Mouse is turned on again with `Ctrl+b`, then `m`.
+- The currently active surface is highlighted in the status bar instead of repeating shortcut text.
+- The left side also carries a compact Avatar Heartbeat preview so the product chrome still reflects assistant activity.
+- `Dock`, `Mouse`, `Shell`, and `Refresh` remain keyboard-accessible expert actions instead of visible right-side status entries.
+
+Default keys:
+
+- `Ctrl+b`, then `?`: open the controls panel.
+- `Ctrl+b`, then `c`: open Chat in a tmux popup.
+- `Ctrl+b`, then `C`: open Chat as a persistent dock pane.
+- `Ctrl+b`, then `m`: toggle Mouse.
+- `Ctrl+b`, then `s`: focus the primary shell pane.
+- `Ctrl+b`, then `r`: refresh the cli-shell status bar.
+- `Ctrl+b`, then `[`: enter copy-mode for page scrolling/search/copy. Press `q` to exit.
+
+Chat popups run the cli-shell OpenTUI MessageRoom surface. tmux only hosts the popup or dock pane; it is not the Chat UI implementation. The Chat titlebar has a close button. Its `◨`, `◧`, and `⿴` controls request tmux layouts: left dock, right dock, and cover popup. They do not resize Chat's internal OpenTUI layout.
+
+Chat is a singleton per cli-shell tmux session. If a docked Chat pane already exists, clicking `Chat` focuses that pane instead of opening a second popup. Switching to cover mode closes the dock pane first, then opens the popup.
+
+If the room command exits unexpectedly, the popup stays open and shows the exit status. A normal titlebar close exits immediately.
+
+Cleanup uses the same tmux socket namespace:
 
 ```bash
-bun --cwd packages/cli-shell experiments/terminal1-framebuffer-experiment.ts -- --debug --backend=ghostty-native --cwd=/Users/kzf/Dev/GitHub/jixoai-labs/agenter
+agenter shell cleanup --session=5 --confirm
 ```
-
-Useful options:
-
-- `--backend=xterm|ghostty-native`: choose the Terminal-1 backend.
-- `--debug`: write perf/render trace events.
-- `--fps=30`: set the OpenTUI renderer target FPS.
-- `--cwd=<path>`: set the shell working directory.
-- `--shell=<command>`: run a custom shell command instead of the login shell.
-- `--exit-after-ms=<ms>`: force the experiment to close after a timeout.
-- `--print-options`: print the parsed options and exit.
-
-Runtime notes:
-
-- `Ctrl+Q` exits the experiment.
-- If Terminal-1 exits, the experiment tears down the renderer/control-plane and the main process exits too.
-- The default debug trace path is `.chat/rebuild-cli-shell-terminal-projection-law/terminal1-framebuffer-trace.ndjson`.
-- Set `AGENTER_CLI_SHELL_TRACE=<path>` to override the trace path.
