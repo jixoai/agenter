@@ -38,6 +38,23 @@ The message control plane SHALL manage multiple global room resources independen
 - **THEN** the room history and room read-state remain available in the global message store
 - **THEN** a later actor reattaching to that room can still observe the current read progression without recomputing prior message membership
 
+### Requirement: Durable room writes SHALL survive stale room-database handles and expose explicit idempotency keys
+
+Room message writes SHALL recover from stale cached room-database handles by closing and reopening the room database before surfacing failure, and client-driven retry safety SHALL use an explicit durable `clientMessageId` contract rather than content guessing.
+
+#### Scenario: Stale cached room database handle is reopened on the next write
+- **GIVEN** a room already exists and its cached room database handle has gone stale
+- **WHEN** the next authorized room write targets that same room
+- **THEN** message-system closes the stale handle, reopens the room database, and retries the write once
+- **THEN** the durable room message is persisted without requiring product-specific retry glue
+
+#### Scenario: Retrying the same logical room send does not create a second durable row
+- **GIVEN** a caller sends an authorized room message with durable `clientMessageId = X`
+- **WHEN** the same caller retries the same logical room send with `clientMessageId = X`
+- **THEN** message-system returns the already persisted durable room message
+- **THEN** room history still contains exactly one durable row for `clientMessageId = X`
+- **AND** the retry is not treated as a second new-message event
+
 ### Requirement: Message control plane SHALL expose unread room summaries and unread subscriptions
 
 The message control plane SHALL expose authorized unread summary reads and actor-scoped unread subscriptions so runtimes can discover unread room work without scanning whole room histories.
@@ -336,4 +353,3 @@ Room `config` and `revoke` operations SHALL remain unilateral actions for the cu
 - **THEN** any active room grant for `P` on `R` is revoked
 - **THEN** any pending invitation for `P` on `R` becomes invalid
 - **THEN** room-local state for `P` is cleared when `P` no longer has any other active seat on `R`
-
