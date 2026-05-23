@@ -258,6 +258,92 @@ describe("Feature: cli daemon and Studio commands", () => {
     expect(doctorStdout.includes("healthy")).toBe(true);
   }, 70_000);
 
+  test("Scenario: Given daemon start and stop commands When stop is invoked Then the managed daemon exits and doctor reports unreachable", async () => {
+    const host = "127.0.0.1";
+    const port = await findFreePort();
+    const home = createIsolatedHome();
+    const daemon = spawnCli(["daemon", "start", "--host", host, "--port", String(port)], { HOME: home });
+    daemons.push(daemon);
+
+    const healthy = await waitForHealth(host, port);
+    if (!healthy) {
+      const stderr = await readText(daemon.stderr);
+      throw new Error(`daemon failed to become healthy: ${stderr}`);
+    }
+
+    const stop = spawnCli(["daemon", "stop", "--host", host, "--port", String(port)], { HOME: home });
+    const stopCode = await stop.exited;
+    const stopStdout = await readText(stop.stdout);
+
+    expect(stopCode).toBe(0);
+    expect(stopStdout).toContain(`stopped agenter daemon on ${host}:${port}`);
+    await waitFor(async () => !(await waitForHealth(host, port, 500)), 15_000);
+
+    const doctor = spawnCli(["doctor", "--host", host, "--port", String(port)], { HOME: home });
+    const doctorCode = await doctor.exited;
+    const doctorStdout = await readText(doctor.stdout);
+
+    expect(doctorCode).toBe(1);
+    expect(doctorStdout).toContain("not reachable");
+  }, 90_000);
+
+  test("Scenario: Given daemon restart command When restart is invoked Then the managed daemon returns on the same authority", async () => {
+    const host = "127.0.0.1";
+    const port = await findFreePort();
+    const home = createIsolatedHome();
+    const daemon = spawnCli(["daemon", "--host", host, "--port", String(port)], { HOME: home });
+    daemons.push(daemon);
+
+    const healthy = await waitForHealth(host, port);
+    if (!healthy) {
+      const stderr = await readText(daemon.stderr);
+      throw new Error(`daemon failed to become healthy: ${stderr}`);
+    }
+
+    const restart = spawnCli(["daemon", "restart", "--host", host, "--port", String(port)], { HOME: home });
+    daemons.push(restart);
+    const restartStdout = await readUntilMatch(
+      restart.stdout,
+      new RegExp(`agenter daemon listening on ${host}:${port}`, "u"),
+      45_000,
+    );
+    expect(restartStdout).toContain(`agenter daemon listening on ${host}:${port}`);
+
+    const restarted = await waitForHealth(host, port);
+    if (!restarted) {
+      const stderr = await readText(restart.stderr);
+      throw new Error(`daemon failed to restart healthy after listening: ${stderr}`);
+    }
+
+    const doctor = spawnCli(["doctor", "--host", host, "--port", String(port)], { HOME: home });
+    const doctorCode = await doctor.exited;
+    const doctorStdout = await readText(doctor.stdout);
+
+    expect(doctorCode).toBe(0);
+    expect(doctorStdout).toContain("healthy");
+  }, 90_000);
+
+  test("Scenario: Given daemon is already running on the requested authority When start is invoked again Then the command reports reuse instead of starting another writer", async () => {
+    const host = "127.0.0.1";
+    const port = await findFreePort();
+    const home = createIsolatedHome();
+    const daemon = spawnCli(["daemon", "--host", host, "--port", String(port)], { HOME: home });
+    daemons.push(daemon);
+
+    const healthy = await waitForHealth(host, port);
+    if (!healthy) {
+      const stderr = await readText(daemon.stderr);
+      throw new Error(`daemon failed to become healthy: ${stderr}`);
+    }
+
+    const secondStart = spawnCli(["daemon", "start", "--host", host, "--port", String(port)], { HOME: home });
+    const secondCode = await secondStart.exited;
+    const secondStdout = await readText(secondStart.stdout);
+
+    expect(secondCode).toBe(0);
+    expect(secondStdout).toContain(`agenter daemon already running on ${host}:${port}`);
+  }, 70_000);
+
   test("Scenario: Given a standalone auth-service endpoint When daemon reuses it Then auth descriptor stays external and the single writer is not started twice", async () => {
     const host = "127.0.0.1";
     const authPort = await findFreePort();

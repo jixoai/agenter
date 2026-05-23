@@ -18,7 +18,11 @@ import {
 } from "./product-command-launcher";
 import type { AuthServiceHandle } from "@agenter/auth-service";
 import type { TrpcServerHandle } from "./trpc-server";
-import { readDaemonRuntimeDescriptor, type DaemonRuntimeDescriptor } from "./daemon-runtime-descriptor";
+import {
+  clearOwnedDaemonRuntimeDescriptor,
+  readDaemonRuntimeDescriptor,
+  type DaemonRuntimeDescriptor,
+} from "./daemon-runtime-descriptor";
 
 interface CommonArgs {
   host: string;
@@ -39,6 +43,15 @@ interface AuthServiceBridgeCliArgs {
 interface StandaloneAuthServiceCliArgs extends CommonArgs {
   dataDir?: string;
 }
+
+type DaemonCommandAction = "start" | "stop" | "restart";
+
+type StopManagedDaemonResult =
+  | { kind: "missing" }
+  | { kind: "stale"; descriptor: DaemonRuntimeDescriptor }
+  | { kind: "foreign"; descriptor: DaemonRuntimeDescriptor }
+  | { kind: "stopped"; descriptor: DaemonRuntimeDescriptor }
+  | { kind: "timeout"; descriptor: DaemonRuntimeDescriptor };
 
 const waitForSignal = async (cleanup?: () => Promise<void> | void): Promise<void> => {
   await new Promise<void>((resolve) => {
@@ -89,6 +102,137 @@ const isDaemonAlive = async (args: CommonArgs): Promise<boolean> => await isHttp
 
 const isReusableDaemonDescriptorHealthy = async (descriptor: DaemonRuntimeDescriptor): Promise<boolean> =>
   await isHttpHealthAlive(`${descriptor.endpoint.replace(/\/$/u, "")}/health`);
+
+const waitFor = async (predicate: () => Promise<boolean> | boolean, timeoutMs: number, intervalMs = 100): Promise<boolean> => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await predicate()) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return false;
+};
+
+const isProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code === "ESRCH") {
+      return false;
+    }
+    if (code === "EPERM") {
+      return true;
+    }
+    throw error;
+  }
+};
+
+const sameDaemonAuthority = (
+  descriptor: Pick<DaemonRuntimeDescriptor, "host" | "port">,
+  requested: Pick<DaemonRuntimeDescriptor, "host" | "port">,
+): boolean => descriptor.host === requested.host && descriptor.port === requested.port;
+
+const resolveDaemonCommandAction = (value: unknown): DaemonCommandAction =>
+  value === "stop" || value === "restart" ? value : "start";
+
+const stopManagedDaemonForHomeRoot = async (): Promise<StopManagedDaemonResult> => {
+  const descriptor = readDaemonRuntimeDescriptor(resolveLauncherHomeDir());
+  if (!descriptor) {
+    return { kind: "missing" };
+  }
+
+  const processAlive = isProcessAlive(descriptor.pid);
+  const healthAlive = await isReusableDaemonDescriptorHealthy(descriptor);
+  if (!processAlive) {
+    if (!healthAlive) {
+      clearOwnedDaemonRuntimeDescriptor(descriptor);
+      return { kind: "stale", descriptor };
+    }
+    return { kind: "foreign", descriptor };
+  }
+
+  process.kill(descriptor.pid, "SIGTERM");
+  const stopped = await waitFor(async () => !isProcessAlive(descriptor.pid) && !(await isReusableDaemonDescriptorHealthy(descriptor)), 15_000);
+  if (!stopped) {
+    return { kind: "timeout", descriptor };
+  }
+  clearOwnedDaemonRuntimeDescriptor(descriptor);
+  return { kind: "stopped", descriptor };
+};
+
+const runDaemonStartCommand = async (
+  args: CommonArgs & AuthServiceBridgeCliArgs,
+): Promise<void> => {
+  const requested = {
+    host: args.host,
+    port: args.port,
+  };
+  const existing = readDaemonRuntimeDescriptor(resolveLauncherHomeDir());
+  if (existing) {
+    const existingHealthy = await isReusableDaemonDescriptorHealthy(existing);
+    if (existingHealthy) {
+      if (sameDaemonAuthority(existing, requested)) {
+        console.log(`agenter daemon already running on ${existing.host}:${existing.port}`);
+        return;
+      }
+      console.error(
+        `daemon already running at ${existing.host}:${existing.port} for this home root; stop or restart it before starting ${requested.host}:${requested.port}`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    if (!isProcessAlive(existing.pid)) {
+      clearOwnedDaemonRuntimeDescriptor(existing);
+    } else {
+      console.error(
+        `daemon process ${existing.pid} exists for this home root but is not healthy; use \`agenter daemon restart\` or \`agenter daemon stop\` first`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  const daemon = await startDaemon({
+    host: requested.host,
+    port: requested.port,
+    authServiceEndpoint: args.authServiceEndpoint,
+    authServiceDataDir: args.authServiceDataDir,
+    authServiceHost: args.authServiceHost,
+    authServicePort: args.authServicePort,
+  });
+  console.log(`agenter daemon listening on ${daemon.host}:${daemon.port}`);
+  await waitForSignal(async () => {
+    await daemon.stop();
+  });
+};
+
+const runDaemonStopCommand = async (): Promise<void> => {
+  const result = await stopManagedDaemonForHomeRoot();
+  switch (result.kind) {
+    case "missing":
+      console.log("agenter daemon is not running for this home root");
+      return;
+    case "stale":
+      console.log(`cleared stale daemon descriptor for ${result.descriptor.host}:${result.descriptor.port}`);
+      return;
+    case "foreign":
+      console.error(
+        `daemon descriptor points to a healthy server at ${result.descriptor.host}:${result.descriptor.port}, but pid ${result.descriptor.pid} is no longer alive`,
+      );
+      process.exitCode = 1;
+      return;
+    case "timeout":
+      console.error(`timed out stopping daemon ${result.descriptor.pid} at ${result.descriptor.host}:${result.descriptor.port}`);
+      process.exitCode = 1;
+      return;
+    case "stopped":
+      console.log(`stopped agenter daemon on ${result.descriptor.host}:${result.descriptor.port}`);
+      return;
+  }
+};
 
 const discoverReusableDaemonAuthority = async (): Promise<ResolvedDaemonAuthority | null> => {
   const descriptor = readDaemonRuntimeDescriptor(resolveLauncherHomeDir());
@@ -402,22 +546,36 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
       },
     )
     .command(
-      "daemon",
-      "start daemon server",
-      (builder) => withAuthServiceBridgeOptions(builder),
+      "daemon [action]",
+      "manage daemon server",
+      (builder) =>
+        withAuthServiceBridgeOptions(builder).positional("action", {
+          type: "string",
+          choices: ["start", "stop", "restart"],
+          default: "start",
+        }),
       async (args) => {
-        const daemon = await startDaemon({
+        const daemonArgs = {
           host: String(args.host),
           port: Number(args.port),
           authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
           authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
           authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
           authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
-        });
-        console.log(`agenter daemon listening on ${daemon.host}:${daemon.port}`);
-        await waitForSignal(async () => {
-          await daemon.stop();
-        });
+        };
+        const action = resolveDaemonCommandAction(args.action);
+        if (action === "stop") {
+          await runDaemonStopCommand();
+          return;
+        }
+        if (action === "restart") {
+          const result = await stopManagedDaemonForHomeRoot();
+          if (result.kind === "foreign" || result.kind === "timeout") {
+            await runDaemonStopCommand();
+            return;
+          }
+        }
+        await runDaemonStartCommand(daemonArgs);
       },
     )
     .command(
