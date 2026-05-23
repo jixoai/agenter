@@ -19,6 +19,7 @@ export const buildRuntimeSkillSnapshotIngress = (input: {
   tags: ["skill", "snapshot"],
   createdAt: input.createdAt,
   author: input.owner,
+  contextMutation: "apply",
   commitMode: "system",
 });
 
@@ -42,6 +43,7 @@ export const buildRuntimeSkillChangeIngresses = (input: {
     tags: ["notification", "skill-change", change.kind],
     createdAt: input.createdAt,
     author: input.owner,
+    contextMutation: "preserve",
     commitMode: "commit" as const,
     changeType: "diff" as const,
     meta: {

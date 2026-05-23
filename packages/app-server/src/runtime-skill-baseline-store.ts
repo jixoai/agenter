@@ -7,6 +7,7 @@ import {
   type RuntimeSkillDiffState,
   type RuntimeSkillTruthState,
 } from "./runtime-skill-truth";
+import { buildRuntimeSkillsOutline } from "./runtime-skills";
 
 const toDiffSnapshot = (snapshot: Map<string, RuntimeSkillDiffState>): Map<string, RuntimeSkillDiffState> =>
   new Map(
@@ -28,6 +29,17 @@ const toDiffSnapshot = (snapshot: Map<string, RuntimeSkillDiffState>): Map<strin
 
 export class RuntimeSkillBaselineStore {
   constructor(private readonly manifestPath?: string) {}
+
+  resolvePublishedOutline(previousTracked: Map<string, RuntimeSkillTruthState>): string | null {
+    if (!this.manifestPath) {
+      return buildRuntimeSkillsOutline([...previousTracked.values()].map((state) => state.skill));
+    }
+    const manifest = readRuntimeSkillFingerprintManifest(this.manifestPath);
+    if (manifest.kind === "ok") {
+      return buildRuntimeSkillsOutline([...manifest.trackedSkills.values()].map((state) => state.skill));
+    }
+    return null;
+  }
 
   resolveChangeBaseline(
     previousTracked: Map<string, RuntimeSkillTruthState>,

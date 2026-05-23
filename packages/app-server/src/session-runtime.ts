@@ -1331,7 +1331,7 @@ const stableAttentionDraftDigest = (draft: AttentionDraft): string => {
             content: draft.content,
             presentation: draft.presentation ?? null,
             provenance: draft.provenance ?? null,
-            contextMutation: draft.contextMutation ?? "apply",
+            contextMutation: draft.contextMutation ?? "preserve",
           });
   return `${draft.sourceRef.src}:${semanticHint}`;
 };
@@ -5905,7 +5905,7 @@ export class SessionRuntime {
       contextId,
       target: input.target,
       ingressType: input.ingressTypeOverride ?? this.resolveAttentionIngressType(contextId),
-      contextMutation: draft.contextMutation,
+      contextMutation: draft.contextMutation ?? "preserve",
       meta: this.buildAttentionMeta(draft),
       scores: this.buildAttentionScores(draft),
       summary: presentation.summary,
@@ -6197,7 +6197,7 @@ export class SessionRuntime {
         bodyFormat: envelope.format,
         changeType: envelope.changeType ?? "update",
       },
-      contextMutation: envelope.contextMutation,
+      contextMutation: envelope.contextMutation ?? "preserve",
       ...(envelope.supersedeActiveSrc
         ? {
             supersedeActive: {

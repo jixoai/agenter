@@ -645,6 +645,17 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a scheduled task fires When collectLoopInputs runs Then task ingress is committed as attention without raw task payload", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
+    const taskContextId = "ctx-task-trigger:workspace:time";
+    appendAttentionCommit(internal, taskContextId, {
+      meta: { author: "avatar:tester", source: "attention" },
+      scores: {},
+      title: "Task summary",
+      detail: {
+        kind: "replace",
+        value: "Avatar task summary: watch scheduled work",
+        format: "text/plain",
+      },
+    });
 
     internal.taskEngine.create({
       source: "workspace",
@@ -665,6 +676,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(activeTaskItems.some((item) => item.title.includes("Task trigger time"))).toBe(true);
     expect(activeTaskItems.some((item) => item.title.includes("Task heartbeat"))).toBe(true);
     expect(activeTaskItems.some((item) => item.detail?.value.includes("task-triggered"))).toBe(true);
+    expect(getAttentionContextSnapshot(internal, taskContextId)?.content).toBe(
+      "Avatar task summary: watch scheduled work",
+    );
   });
 
   test("Scenario: Given attention originates from a non-default chat channel When the runtime collects attention bootstrap Then replies still route back to that originating channel", async () => {
@@ -723,6 +737,16 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       title: "QA",
       focus: false,
     });
+    appendAttentionCommit(internal, `ctx-${room.chatId}`, {
+      meta: { author: "avatar:tester", source: "attention" },
+      scores: {},
+      title: "Room summary",
+      detail: {
+        kind: "replace",
+        value: "Avatar room summary: keep QA context",
+        format: "text/plain",
+      },
+    });
     runtime.updateMessageChannel({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -764,6 +788,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(
       internal.attentionSystem.listActiveContexts().some((match) => match.contextId === `ctx-${room.chatId}`),
     ).toBeFalse();
+    expect(roomContext.content).toBe("Avatar room summary: keep QA context");
   });
 
   test("Scenario: Given a shared room bus When the sender authored the room message and another actor is not granted or focused Then only the unread peer runtime can ingest it", async () => {
@@ -3864,6 +3889,16 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a focused terminal invalidation When plugin attention drafts flush Then terminal output is committed into attention history without active debt", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
+    appendAttentionCommit(internal, "ctx-terminal-iflow", {
+      meta: { author: "avatar:tester", source: "attention" },
+      scores: {},
+      title: "Terminal summary",
+      detail: {
+        kind: "replace",
+        value: "Avatar terminal summary: shell is ready",
+        format: "text/plain",
+      },
+    });
 
     internal.config = {
       terminals: {
@@ -3925,6 +3960,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(snapshotChange.value).toContain("```yaml");
     expect(snapshotChange.value).toContain("terminalId: iflow");
     expect(snapshotChange.value).toContain("```text");
+    expect(getAttentionContextSnapshot(internal, "ctx-terminal-iflow")?.content).toBe(
+      "Avatar terminal summary: shell is ready",
+    );
   });
 
   test("Scenario: Given a focused terminal snapshot with no semantic tail When plugin attention drafts flush Then the runtime does not create empty terminal attention debt", async () => {
@@ -3981,6 +4019,16 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a focused terminal diff invalidation When plugin attention drafts flush Then the committed attention history keeps patch semantics without active debt", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal;
+    appendAttentionCommit(internal, "ctx-terminal-iflow", {
+      meta: { author: "avatar:tester", source: "attention" },
+      scores: {},
+      title: "Terminal summary",
+      detail: {
+        kind: "replace",
+        value: "Avatar terminal summary: waiting for diff",
+        format: "text/plain",
+      },
+    });
 
     internal.config = {
       terminals: {
@@ -4039,6 +4087,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       throw new Error("expected diff terminal change");
     }
     expect(diffChange.value).toContain("```diff");
+    expect(getAttentionContextSnapshot(internal, "ctx-terminal-iflow")?.content).toBe(
+      "Avatar terminal summary: waiting for diff",
+    );
   });
 
   test("Scenario: Given a focused terminal invalidation with unchanged semantic content When plugin drafts flush twice Then no duplicate terminal history delta is committed", async () => {
@@ -5188,6 +5239,16 @@ describe("Feature: session runtime attention-system loop inputs", () => {
   test("Scenario: Given a sent acknowledgement arms follow-up reminder When the delay expires and no newer room message exists Then the runtime creates attention without auto-sending another room message", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeMessageEgressInternal;
+    appendAttentionCommit(internal, PRIMARY_CONTEXT_ID, {
+      meta: { author: "avatar:tester", source: "attention" },
+      scores: {},
+      title: "Room summary",
+      detail: {
+        kind: "replace",
+        value: "Avatar room summary: waiting on a follow-up check",
+        format: "text/plain",
+      },
+    });
 
     await runtime.start();
     const first = await internal.sendMessageTool({
@@ -5249,6 +5310,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
           effect.meta?.messageId === first.messageId,
       ),
     ).toBeTrue();
+    expect(getAttentionContextSnapshot(internal, PRIMARY_CONTEXT_ID)?.content).toBe(
+      "Avatar room summary: waiting on a follow-up check",
+    );
 
     await runtime.stop();
   });

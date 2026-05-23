@@ -26,6 +26,7 @@ const createSkillHost = (attention: AttentionSystem): RuntimeSystemKernelHost =>
     const { commit } = action(envelope.contextKey, {
       target: envelope.target,
       ingressType: envelope.ingressType,
+      contextMutation: envelope.contextMutation,
       meta: {
         author: envelope.author,
         source: envelope.system,
@@ -72,6 +73,7 @@ describe("Feature: runtime-skill-kernel-adapter", () => {
           tags: ["skill", "snapshot"],
           createdAt: 1,
           author: "avatar",
+          contextMutation: "apply",
           commitMode: "system",
         },
         {
@@ -87,6 +89,7 @@ describe("Feature: runtime-skill-kernel-adapter", () => {
           tags: ["notification", "skill-change", "updated"],
           createdAt: 1,
           author: "avatar",
+          contextMutation: "preserve",
           changeType: "diff",
         },
       ],
@@ -102,5 +105,6 @@ describe("Feature: runtime-skill-kernel-adapter", () => {
       "Refreshed runtime skill snapshot.",
       "Updated runtime skill live-sync.",
     ]);
+    expect(context?.getState().content).toBe("## skills.list");
   });
 });

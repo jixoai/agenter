@@ -1,0 +1,7 @@
+- [x] 1. Add OpenSpec requirements for runtime ingress context mutation defaults.
+- [x] 2. Make runtime source drafts and system envelopes preserve context by default.
+- [x] 3. Keep direct Avatar/tool attention commits able to apply context changes.
+- [x] 4. Make runtime skill outline ingress explicitly apply while skill change reminders preserve context.
+- [x] 5. Avoid publishing skill outline ingress when the generated name/description outline is unchanged.
+- [x] 6. Add BDD coverage for room reminder/lifecycle, task, terminal, and skill outline behavior.
+- [x] 7. Run focused tests and strict OpenSpec validation.

@@ -242,7 +242,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     });
     expect(duplicateCheck.changedSkills).toHaveLength(0);
     expect(duplicateCheck.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_change")).toHaveLength(0);
-    expect(duplicateCheck.publishedIngresses.some((ingress) => ingress.kind === "runtime_skill_snapshot")).toBeTrue();
+    expect(duplicateCheck.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_snapshot")).toHaveLength(0);
   });
 
   test("Scenario: Given a declared skill file changes while stopped When restart refreshes from the manifest Then the declared file is reported", () => {
@@ -268,6 +268,29 @@ describe("Feature: runtime skill watcher and config surface", () => {
     expect(result.changedSkills[0]?.name).toBe("offline-declared");
     expect(result.changedSkills[0]?.changedFiles).toContain(referencePath);
     expect(result.publishedIngresses.some((ingress) => ingress.summary.includes("references/guide.md"))).toBeTrue();
+    expect(result.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_snapshot")).toHaveLength(0);
+  });
+
+  test("Scenario: Given only watched skill internals change When refresh publishes reminders Then the skill outline context is not republished", () => {
+    const rootWorkspacePath = createTempRoot();
+    const skillDir = writeSkill(rootWorkspacePath, {
+      name: "outline-stable",
+      extraConfig: { files: ["references/*.md"] },
+    });
+    mkdirSync(join(skillDir, "references"), { recursive: true });
+    const referencePath = join(skillDir, "references", "guide.md");
+    writeFileSync(referencePath, "reference-v1\n", "utf8");
+    const fingerprintManifestPath = join(rootWorkspacePath, "session", "skill-system", "fingerprint-map.json");
+    const system = createSystem({ rootWorkspacePath, fingerprintManifestPath });
+    const baseline = system.refresh({ publishReminders: true });
+    expect(baseline.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_snapshot")).toHaveLength(1);
+
+    writeFileSync(referencePath, "reference-v2\n", "utf8");
+
+    const result = system.refresh({ publishReminders: true });
+    expect(result.changedSkills).toHaveLength(1);
+    expect(result.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_change")).toHaveLength(1);
+    expect(result.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_snapshot")).toHaveLength(0);
   });
 
   test("Scenario: Given an undeclared sibling file changes while stopped When restart refreshes from the manifest Then no skill reminder is emitted", () => {
@@ -285,7 +308,7 @@ describe("Feature: runtime skill watcher and config surface", () => {
     });
     expect(result.changedSkills).toHaveLength(0);
     expect(result.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_change")).toHaveLength(0);
-    expect(result.publishedIngresses.some((ingress) => ingress.kind === "runtime_skill_snapshot")).toBeTrue();
+    expect(result.publishedIngresses.filter((ingress) => ingress.kind === "runtime_skill_snapshot")).toHaveLength(0);
   });
 
   test("Scenario: Given a corrupt persisted fingerprint manifest When refresh runs Then it repairs the baseline without noisy reminders", () => {

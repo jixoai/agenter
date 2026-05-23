@@ -461,3 +461,22 @@ export const buildRuntimeSkillsList = (
   }
   return lines.join("\n");
 };
+
+export const buildRuntimeSkillsOutline = (
+  skills: readonly Pick<RuntimeSkillRecord, "name" | "summary">[],
+): string => {
+  const lines = [
+    "## skills.outline",
+    "",
+    "Use `skill info <skill>` to expand a skill when you need detailed instructions.",
+    "",
+  ];
+  if (skills.length === 0) {
+    lines.push("- none");
+    return lines.join("\n");
+  }
+  for (const skill of skills) {
+    lines.push(`- ${skill.name}: ${skill.summary}`);
+  }
+  return lines.join("\n");
+};

@@ -20,6 +20,7 @@ import {
 } from "./runtime-skill-truth";
 import { RuntimeSkillWatchService } from "./runtime-skill-watch-service";
 import {
+  buildRuntimeSkillsOutline,
   buildRuntimeSkillsList,
   findRuntimeSkill,
   getRuntimeSkillByName,
@@ -53,7 +54,7 @@ export class RuntimeSkillSystem {
   private skills: RuntimeSkillRecord[] = [];
   private trackedSkills = new Map<string, RuntimeSkillTruthState>();
   private initialized = false;
-  private publishedSnapshot = "";
+  private publishedOutline = "";
   private readonly baselineStore: RuntimeSkillBaselineStore;
   private readonly watchService: RuntimeSkillWatchService;
 
@@ -278,6 +279,7 @@ export class RuntimeSkillSystem {
     const skills = listRuntimeSkills(this.input);
     const tracked = this.buildTrackedSkills(skills);
     const snapshot = buildRuntimeSkillsList(skills);
+    const outline = buildRuntimeSkillsOutline(skills);
 
     this.skills = skills;
     this.trackedSkills = tracked;
@@ -285,16 +287,18 @@ export class RuntimeSkillSystem {
     this.watchService.clearPendingChanges();
 
     const publishedIngresses: RuntimeSystemIngressEnvelope[] = [];
-    if (this.publishedSnapshot !== snapshot) {
+    const baselineOutline = this.baselineStore.resolvePublishedOutline(previousTracked);
+    const lastPublishedOutline = this.publishedOutline || baselineOutline;
+    if (lastPublishedOutline !== outline) {
       publishedIngresses.push(
         buildRuntimeSkillSnapshotIngress({
-        owner: this.input.owner,
-        contextId: RUNTIME_SKILL_PUBLISH_CONTEXT_ID,
-        snapshot,
-        createdAt: Date.now(),
-      }),
+          owner: this.input.owner,
+          contextId: RUNTIME_SKILL_PUBLISH_CONTEXT_ID,
+          snapshot: outline,
+          createdAt: Date.now(),
+        }),
       );
-      this.publishedSnapshot = snapshot;
+      this.publishedOutline = outline;
     }
 
     const baselineTracked = this.baselineStore.resolveChangeBaseline(previousTracked, input.publishReminders);
