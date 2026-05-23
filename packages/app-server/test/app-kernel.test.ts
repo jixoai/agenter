@@ -1498,6 +1498,51 @@ describe("Feature: app kernel event replay", () => {
     await kernel.stop();
   });
 
+  test("Scenario: Given a retried global room send with the same clientMessageId When AppKernel forwards both attempts Then only one durable room message is stored", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
+    tempDirs.push(root);
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    await kernel.start();
+
+    const room = await kernel.createGlobalRoom({
+      title: "Idempotent global send room",
+    });
+    const clientMessageId = "global-room-client-1";
+
+    expect(
+      kernel.sendGlobalRoomMessage({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        text: "hello idempotent room",
+        clientMessageId,
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      kernel.sendGlobalRoomMessage({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        text: "hello idempotent room",
+        clientMessageId,
+      }),
+    ).toEqual({ ok: true });
+
+    const snapshot = kernel.snapshotGlobalRoom({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+    });
+    const matchingMessages = snapshot.items.filter((item) => item.clientMessageId === clientMessageId);
+
+    expect(matchingMessages).toHaveLength(1);
+    expect(matchingMessages[0]?.content).toBe("hello idempotent room");
+
+    await kernel.stop();
+  });
+
   test("Scenario: Given global room initial users When the kernel creates the room Then grants and focus are available without follow-up mutations", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));
     tempDirs.push(root);

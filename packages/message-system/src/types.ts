@@ -274,6 +274,12 @@ export interface MessageRecord {
   readActorIds: MessageActorId[];
   unreadActorIds: MessageActorId[];
   /**
+   * Durable client-side idempotency key for one logical send attempt.
+   * Reusing it means "return the same durable room message", not "create
+   * another row that happens to look similar".
+   */
+  clientMessageId?: string;
+  /**
    * Durable shared room truth only.
    * Sender-private reminder or scheduler state must not be serialized here.
    */
@@ -347,6 +353,11 @@ export interface MessageAppendInput {
   visibleAt?: number;
   readActorIds?: MessageActorId[];
   unreadActorIds?: MessageActorId[];
+  /**
+   * Durable idempotency key for one logical room write. Safe retry behavior
+   * belongs on this explicit contract instead of guessing from content.
+   */
+  clientMessageId?: string;
   /**
    * Durable shared room truth only.
    * Runtime-private follow-up reminders stay outside room message storage.

@@ -8258,6 +8258,7 @@ export class SessionRuntime {
       from: "User",
       kind: "text",
       content: input.text,
+      clientMessageId: input.clientMessageId,
       attachments: attachments.map((attachment) => ({
         assetId: attachment.assetId,
         kind: attachment.kind,
@@ -8361,6 +8362,7 @@ export class SessionRuntime {
       from: "User",
       kind: "text",
       content: input.text,
+      clientMessageId: input.clientMessageId,
       attachments: attachments.map((attachment) => ({
         assetId: attachment.assetId,
         kind: attachment.kind,
@@ -8390,6 +8392,7 @@ export class SessionRuntime {
       from: this.getAvatarName(),
       kind: "error",
       content: input.content,
+      clientMessageId: input.clientMessageId,
       payload: {
         error: input.error,
       },
@@ -8417,6 +8420,7 @@ export class SessionRuntime {
       from: this.getAvatarName(),
       kind: "interactive",
       content: input.content,
+      clientMessageId: input.clientMessageId,
       payload: {
         interactive: input.interactive,
       },

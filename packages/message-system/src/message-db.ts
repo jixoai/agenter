@@ -67,7 +67,7 @@ const resolvePageLimit = (limit: number | undefined, max = 500): number => Math.
 const MESSAGE_CONTROL_DB_BREAKING_RESET_VERSION = 6;
 const MESSAGE_CONTROL_DB_SCHEMA_VERSION = 7;
 const ROOM_MESSAGE_DB_BREAKING_RESET_VERSION = 2;
-const ROOM_MESSAGE_DB_SCHEMA_VERSION = 2;
+const ROOM_MESSAGE_DB_SCHEMA_VERSION = 3;
 const normalizeActorIds = (value: readonly MessageActorId[]): MessageActorId[] =>
   [...new Set(value)].sort((left, right) => left.localeCompare(right));
 const parseActorIds = (value: string | null): MessageActorId[] =>
@@ -130,6 +130,7 @@ const ROOM_MESSAGE_SELECT_SQL = `
   select
     id,
     ref_id,
+    client_message_id,
     sender_actor_id,
     from_id,
     kind,
@@ -150,6 +151,7 @@ const ROOM_MESSAGE_SELECT_SQL = `
 type StoredRoomMessageRow = {
   id: number;
   ref_id: number | null;
+  client_message_id: string | null;
   sender_actor_id: string | null;
   from_id: string;
   kind: string | null;
@@ -164,6 +166,13 @@ type StoredRoomMessageRow = {
   metadata_json: string | null;
   attachments_json: string | null;
   payload_json: string | null;
+};
+
+type AppendMessageResult = {
+  inserted: boolean;
+  message: MessageRecord;
+  readActorIds: MessageActorId[];
+  unreadActorIds: MessageActorId[];
 };
 
 const normalizeRoomMessageId = (value: number): number | null =>
@@ -286,6 +295,7 @@ const mapMessage = (chatId: string, row: StoredRoomMessageRow): MessageRecord =>
   recalledByActorId: (row.recalled_by_actor_id ?? undefined) as MessageActorId | undefined,
   readActorIds: parseActorIds(row.read_actor_ids_json),
   unreadActorIds: parseActorIds(row.unread_actor_ids_json),
+  ...(row.client_message_id ? { clientMessageId: row.client_message_id } : {}),
   metadata: parseJson<Record<string, unknown>>(row.metadata_json, {}),
   attachments: parseJson(row.attachments_json, []),
   payload: parseMessagePayload(normalizeMessageKind(row.kind), row.payload_json),
@@ -1544,6 +1554,10 @@ export class MessageDb {
   }
 
   appendMessage(input: MessageAppendInput): MessageRecord {
+    return this.appendMessageDetailed(input).message;
+  }
+
+  appendMessageDetailed(input: MessageAppendInput): AppendMessageResult {
     if (!this.getChannel(input.chatId)) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
@@ -1563,36 +1577,70 @@ export class MessageDb {
     const from = input.from ?? (input.senderActorId ? (input.senderActorId.split(":").at(-1) ?? "User") : "User");
     const readActorIds = normalizeActorIds(input.readActorIds ?? []);
     const unreadActorIds = normalizeActorIds(input.unreadActorIds ?? []);
-    const roomDb = this.getRoomDb(input.chatId, true);
-    if (!roomDb) {
-      throw new Error(`failed to open room message database: ${input.chatId}`);
-    }
+    const clientMessageId = normalizeOptionalText(input.clientMessageId);
     let rowId = 0;
     try {
-      const result = roomDb
-        .query(
-          `insert into chat_message (
-            ref_id, sender_actor_id, from_id, kind, content, created_at, updated_at, visible_at, read_actor_ids_json, unread_actor_ids_json, metadata_json, attachments_json, payload_json
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          input.ref ?? null,
-          input.senderActorId ?? null,
-          from,
-          kind,
-          input.content,
-          createdAt,
-          updatedAt,
-          visibleAt,
-          toJson(readActorIds),
-          toJson(unreadActorIds),
-          toJson(input.metadata ?? {}),
-          toJson(input.attachments ?? []),
-          toJson(input.payload ?? {}),
-        );
-      rowId = Number(result.lastInsertRowid);
+      const writeOutcome = this.withRecoverableRoomDbWrite(input.chatId, (roomDb) => {
+        try {
+          const result = roomDb
+            .query(
+              `insert into chat_message (
+                ref_id,
+                client_message_id,
+                sender_actor_id,
+                from_id,
+                kind,
+                content,
+                created_at,
+                updated_at,
+                visible_at,
+                read_actor_ids_json,
+                unread_actor_ids_json,
+                metadata_json,
+                attachments_json,
+                payload_json
+              ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              input.ref ?? null,
+              clientMessageId ?? null,
+              input.senderActorId ?? null,
+              from,
+              kind,
+              input.content,
+              createdAt,
+              updatedAt,
+              visibleAt,
+              toJson(readActorIds),
+              toJson(unreadActorIds),
+              toJson(input.metadata ?? {}),
+              toJson(input.attachments ?? []),
+              toJson(input.payload ?? {}),
+            );
+          rowId = Number(result.lastInsertRowid);
+          return { inserted: true as const };
+        } catch (error) {
+          if (clientMessageId && this.isClientMessageIdConflict(error)) {
+            const existing = this.getMessageRowByClientMessageIdInRoomDb(roomDb, clientMessageId);
+            if (existing) {
+              return { inserted: false as const, row: existing };
+            }
+          }
+          throw error;
+        }
+      });
+      if (!writeOutcome.inserted) {
+        const message = mapMessage(input.chatId, writeOutcome.row);
+        this.repairStoredRoomMessageMaterialization(input.chatId, message);
+        return {
+          inserted: false,
+          message,
+          readActorIds: message.readActorIds,
+          unreadActorIds: message.unreadActorIds,
+        };
+      }
       this.db.transaction(() => {
-        this.touchChannel(input.chatId, createdAt);
+        this.touchChannelAtLeast(input.chatId, createdAt);
         const visibleMessages = this.listActiveVisibleMessages(input.chatId);
         const trackedActorIds = normalizeActorIds([...readActorIds, ...unreadActorIds]);
         for (const actorId of trackedActorIds) {
@@ -1611,7 +1659,12 @@ export class MessageDb {
     }
     const message = mapMessage(input.chatId, row);
     this.syncMessageQueryMessage(input.chatId, message);
-    return message;
+    return {
+      inserted: true,
+      message,
+      readActorIds,
+      unreadActorIds,
+    };
   }
 
   editMessage(input: MessageEditInput): MessageRecord {
@@ -1627,18 +1680,16 @@ export class MessageDb {
     if (rowId === null) {
       throw new Error(`unknown message: ${input.messageId}`);
     }
-    const roomDb = this.getRoomDb(input.chatId, true);
-    if (!roomDb) {
-      throw new Error(`failed to open room message database: ${input.chatId}`);
-    }
-    roomDb
-      .query(
-        `update chat_message
-         set content = ?, updated_at = ?
-         where id = ?`,
-      )
-      .run(input.content, updatedAt, rowId);
-    this.touchChannel(input.chatId, updatedAt);
+    this.withRecoverableRoomDbWrite(input.chatId, (roomDb) => {
+      roomDb
+        .query(
+          `update chat_message
+           set content = ?, updated_at = ?
+           where id = ?`,
+        )
+        .run(input.content, updatedAt, rowId);
+    });
+    this.touchChannelAtLeast(input.chatId, updatedAt);
     const refreshed = this.getMessage(input.chatId, input.messageId);
     if (!refreshed) {
       throw new Error("failed to load updated message");
@@ -1664,26 +1715,24 @@ export class MessageDb {
     if (rowId === null) {
       throw new Error(`unknown message: ${input.messageId}`);
     }
-    const roomDb = this.getRoomDb(input.chatId, true);
-    if (!roomDb) {
-      throw new Error(`failed to open room message database: ${input.chatId}`);
-    }
     const touchedActorIds = normalizeActorIds([...current.readActorIds, ...current.unreadActorIds]);
     let unreadChangedActorIds: MessageActorId[] = [];
     this.db.transaction(() => {
-      roomDb
-        .query(
-          `update chat_message
-           set content = '',
-               updated_at = ?,
-               recalled_at = ?,
-               recalled_by_actor_id = ?,
-               attachments_json = '[]',
-               payload_json = null
-           where id = ?`,
-        )
-        .run(updatedAt, recalledAt, input.recalledByActorId ?? null, rowId);
-      this.touchChannel(input.chatId, updatedAt);
+      this.withRecoverableRoomDbWrite(input.chatId, (roomDb) => {
+        roomDb
+          .query(
+            `update chat_message
+             set content = '',
+                 updated_at = ?,
+                 recalled_at = ?,
+                 recalled_by_actor_id = ?,
+                 attachments_json = '[]',
+                 payload_json = null
+             where id = ?`,
+          )
+          .run(updatedAt, recalledAt, input.recalledByActorId ?? null, rowId);
+      });
+      this.touchChannelAtLeast(input.chatId, updatedAt);
       const activeMessages = this.listActiveVisibleMessages(input.chatId);
       unreadChangedActorIds = touchedActorIds.filter((actorId) =>
         this.reconcileActorRoomStateFromMessages(input.chatId, actorId, activeMessages),
@@ -1871,15 +1920,9 @@ export class MessageDb {
       return { changed: false };
     }
 
-    const markRead = roomDb.transaction(() => {
+    const markRead = this.db.transaction(() => {
       let changed = false;
       let removedUnreadCount = 0;
-      const updateReadState = roomDb.query(
-        `update chat_message
-         set read_actor_ids_json = ?, unread_actor_ids_json = ?
-         where id = ?`,
-      );
-
       for (const row of rows) {
         const message = mapMessage(input.chatId, row);
         const hasReadActor = message.readActorIds.includes(input.actorId);
@@ -1896,7 +1939,15 @@ export class MessageDb {
         ) {
           continue;
         }
-        updateReadState.run(toJson(nextReadActorIds), toJson(nextUnreadActorIds), message.rowId);
+        this.withRecoverableRoomDbWrite(input.chatId, (writableRoomDb) => {
+          writableRoomDb
+            .query(
+              `update chat_message
+               set read_actor_ids_json = ?, unread_actor_ids_json = ?
+               where id = ?`,
+            )
+            .run(toJson(nextReadActorIds), toJson(nextUnreadActorIds), message.rowId);
+        }, false);
         if (hasUnreadActor) {
           removedUnreadCount += 1;
         }
@@ -2254,6 +2305,31 @@ export class MessageDb {
     this.db.query(`update chat_channel set updated_at = ? where chat_id = ?`).run(updatedAt, chatId);
   }
 
+  private touchChannelAtLeast(chatId: string, updatedAt: number): void {
+    this.db
+      .query(
+        `update chat_channel
+         set updated_at = case when updated_at < ? then ? else updated_at end
+         where chat_id = ?`,
+      )
+      .run(updatedAt, updatedAt, chatId);
+  }
+
+  private repairStoredRoomMessageMaterialization(chatId: string, message: MessageRecord): void {
+    this.db.transaction(() => {
+      this.touchChannelAtLeast(chatId, message.updatedAt);
+      if (message.visibleAt === undefined || message.recalledAt !== undefined) {
+        return;
+      }
+      const visibleMessages = this.listActiveVisibleMessages(chatId);
+      const trackedActorIds = normalizeActorIds([...message.readActorIds, ...message.unreadActorIds]);
+      for (const actorId of trackedActorIds) {
+        this.reconcileActorRoomStateFromMessages(chatId, actorId, visibleMessages);
+      }
+    })();
+    this.syncMessageQueryMessage(chatId, message);
+  }
+
   private syncMessageQueryRoom(channel: MessageChannelRecord): void {
     try {
       this.messageQueryIndex.upsertRoom(channel);
@@ -2309,10 +2385,69 @@ export class MessageDb {
     return join(this.roomDbRoot, `${ROOM_MESSAGE_DB_PREFIX}${chatId}.db`);
   }
 
+  private withRecoverableRoomDbWrite<T>(
+    chatId: string,
+    run: (roomDb: Database) => T,
+    createIfMissing = true,
+  ): T {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const roomDb = this.getRoomDb(chatId, createIfMissing);
+        if (!roomDb) {
+          throw new Error(`failed to open room message database: ${chatId}`);
+        }
+        return run(roomDb);
+      } catch (error) {
+        lastError = error;
+        if (attempt === 0 && this.isRecoverableRoomDbError(error)) {
+          this.closeRoomDb(chatId);
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(`failed to access room message database: ${chatId}`);
+  }
+
+  private isRecoverableRoomDbError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    const code =
+      typeof (error as { code?: unknown }).code === "string" ? String((error as { code?: string }).code) : "";
+    if (code.startsWith("SQLITE_IOERR")) {
+      return true;
+    }
+    return /disk i\/o error|bad file descriptor|unable to open database file|readonly database|cannot use a closed database/i.test(
+      error.message,
+    );
+  }
+
+  private isClientMessageIdConflict(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    const code =
+      typeof (error as { code?: unknown }).code === "string" ? String((error as { code?: string }).code) : "";
+    return (
+      code === "SQLITE_CONSTRAINT_UNIQUE" ||
+      /unique constraint failed:\s*chat_message\.client_message_id/i.test(error.message)
+    );
+  }
+
   private getRoomDb(chatId: string, createIfMissing: boolean): Database | null {
     const existing = this.roomDbs.get(chatId);
     if (existing) {
-      return existing;
+      try {
+        existing.query(`select 1`).get();
+        return existing;
+      } catch (error) {
+        this.closeRoomDb(chatId);
+        if (!this.isRecoverableRoomDbError(error)) {
+          throw error;
+        }
+      }
     }
     const filePath = this.getRoomDbPath(chatId);
     if (!createIfMissing && !existsSync(filePath)) {
@@ -2332,7 +2467,11 @@ export class MessageDb {
     if (!roomDb) {
       return;
     }
-    roomDb.close();
+    try {
+      roomDb.close();
+    } catch {
+      // Ignore secondary close failures so stale cached handles can be evicted.
+    }
     this.roomDbs.delete(chatId);
   }
 
@@ -2345,7 +2484,13 @@ export class MessageDb {
   }
 
   private deleteRoomMessageByRowId(chatId: string, rowId: number): void {
-    this.getRoomDb(chatId, false)?.query(`delete from chat_message where id = ?`).run(rowId);
+    this.withRecoverableRoomDbWrite(
+      chatId,
+      (roomDb) => {
+        roomDb.query(`delete from chat_message where id = ?`).run(rowId);
+      },
+      false,
+    );
   }
 
   private clearRoomDbRoot(): void {
@@ -2381,6 +2526,12 @@ export class MessageDb {
     return roomDb.query(`${ROOM_MESSAGE_SELECT_SQL} where id = ?`).get(id) as StoredRoomMessageRow | null;
   }
 
+  private getMessageRowByClientMessageIdInRoomDb(roomDb: Database, clientMessageId: string): StoredRoomMessageRow | null {
+    return roomDb
+      .query(`${ROOM_MESSAGE_SELECT_SQL} where client_message_id = ? order by id desc limit 1`)
+      .get(clientMessageId) as StoredRoomMessageRow | null;
+  }
+
   private migrateRoomDb(roomDb: Database): void {
     const userVersionRow = roomDb.query(`pragma user_version`).get() as { user_version?: number } | null;
     const currentSchemaVersion = userVersionRow?.user_version ?? 0;
@@ -2392,6 +2543,7 @@ export class MessageDb {
       create table if not exists chat_message (
         id integer primary key autoincrement,
         ref_id integer,
+        client_message_id text,
         sender_actor_id text,
         from_id text not null,
         kind text not null default 'text',
@@ -2410,6 +2562,16 @@ export class MessageDb {
 
       create index if not exists idx_room_chat_message_created on chat_message(created_at desc, id desc);
       create index if not exists idx_room_chat_message_visible on chat_message(visible_at, id asc);
+    `);
+    const messageColumns = roomDb.query(`pragma table_info(chat_message)`).all() as Array<{ name: string }>;
+    const hasClientMessageId = messageColumns.some((column) => column.name === "client_message_id");
+    if (!hasClientMessageId) {
+      roomDb.exec(`alter table chat_message add column client_message_id text;`);
+    }
+    roomDb.exec(`
+      create unique index if not exists idx_room_chat_message_client_message
+      on chat_message(client_message_id)
+      where client_message_id is not null;
     `);
     roomDb.exec(`update chat_message set updated_at = coalesce(updated_at, created_at);`);
     roomDb.exec(`update chat_message set read_actor_ids_json = coalesce(read_actor_ids_json, '[]');`);

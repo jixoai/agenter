@@ -658,7 +658,7 @@ export class MessageControlPlane {
             unreadActorIds: input.unreadActorIds ?? [],
           }
         : this.createInitialReadMembership(input.chatId, input.senderActorId);
-    const message = this.db.appendMessage({
+    const result = this.db.appendMessageDetailed({
       ...input,
       from,
       createdAt,
@@ -666,8 +666,12 @@ export class MessageControlPlane {
       readActorIds: readMembership.readActorIds,
       unreadActorIds: readMembership.unreadActorIds,
     });
+    if (!result.inserted) {
+      return result.message;
+    }
+    const message = result.message;
     this.bumpVersion();
-    this.bumpUnreadVersions(readMembership.readActorIds, readMembership.unreadActorIds);
+    this.bumpUnreadVersions(result.readActorIds, result.unreadActorIds);
     for (const listener of this.messageListeners) {
       listener({ chatId: input.chatId, message });
     }
@@ -737,6 +741,7 @@ export class MessageControlPlane {
     return this.send({
       chatId: input.chatId,
       ref: input.ref,
+      clientMessageId: input.clientMessageId,
       senderActorId: sender.senderActorId,
       from: sender.from,
       kind: input.kind,
@@ -800,6 +805,7 @@ export class MessageControlPlane {
     return this.send({
       chatId: input.chatId,
       ref: input.ref,
+      clientMessageId: input.clientMessageId,
       senderActorId: sender.senderActorId,
       from: sender.from,
       kind: "error",
@@ -830,6 +836,7 @@ export class MessageControlPlane {
     return this.send({
       chatId: input.chatId,
       ref: input.ref,
+      clientMessageId: input.clientMessageId,
       senderActorId: sender.senderActorId,
       from: sender.from,
       kind: "interactive",

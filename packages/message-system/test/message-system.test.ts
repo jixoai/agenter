@@ -567,6 +567,81 @@ describe("Feature: message-chat-control-plane", () => {
     expect(readdirSync(roomDbRoot).some((entry) => entry.includes(unknownRoomId))).toBeFalse();
   });
 
+  test("Scenario: Given the same clientMessageId is retried When an authorized room send runs twice Then message-system keeps one durable row and one new-message effect", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const delivered: MessageTransportServerMessage[] = [];
+    const stopListening = plane.onMessage(({ chatId, message }) => {
+      delivered.push({
+        type: "messages",
+        chatId,
+        items: [message],
+        headVersion: "test",
+      });
+    });
+
+    const first = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderActorId: "auth:owner",
+      kind: "text",
+      content: "hello once",
+      clientMessageId: "room-client-1",
+    });
+    const second = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderActorId: "auth:owner",
+      kind: "text",
+      content: "hello once",
+      clientMessageId: "room-client-1",
+    });
+    stopListening();
+
+    const page = plane.queryMessagesAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+    });
+
+    expect(second.messageId).toBe(first.messageId);
+    expect(page.items.filter((message) => message.clientMessageId === "room-client-1")).toHaveLength(1);
+    expect(delivered).toHaveLength(1);
+  });
+
+  test("Scenario: Given a cached room database handle is stale When the next authorized send writes to that room Then message-system reopens the room database and persists the message", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const db = Reflect.get(plane, "db") as { roomDbs: Map<string, Database> };
+    const staleHandle = db.roomDbs.get(room.chatId);
+    if (!staleHandle) {
+      throw new Error("expected cached room database handle");
+    }
+    staleHandle.close();
+
+    const sent = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderActorId: "auth:owner",
+      kind: "text",
+      content: "reopened after stale handle",
+      clientMessageId: "room-client-reopen-1",
+    });
+
+    expect(sent.content).toBe("reopened after stale handle");
+    expect(db.roomDbs.get(room.chatId)).toBeTruthy();
+    expect(db.roomDbs.get(room.chatId)).not.toBe(staleHandle);
+    expect(
+      plane
+        .queryMessagesAuthorized({
+          chatId: room.chatId,
+          accessToken: room.accessToken,
+          limit: 20,
+        })
+        .items.find((message) => message.clientMessageId === "room-client-reopen-1")?.content,
+    ).toBe("reopened after stale handle");
+  });
+
   test("Scenario: Given a user joins after historical room traffic When they explicitly read old history Then frozen unread membership stays intact and read membership can still grow", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });

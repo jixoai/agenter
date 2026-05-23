@@ -3674,6 +3674,7 @@ export class AppKernel {
         accessToken: access.accessToken,
         kind: "text",
         content: input.text,
+        clientMessageId: input.clientMessageId,
         senderActorId: this.resolveGlobalRoomSenderActorId(input, access),
         attachments,
         metadata: input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,

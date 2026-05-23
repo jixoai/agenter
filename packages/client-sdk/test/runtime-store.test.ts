@@ -7763,6 +7763,7 @@ describe("Feature: runtime store synchronization", () => {
         accessToken: room.accessToken,
         text: "hello ops",
         assetIds: ["asset-1"],
+        clientMessageId: "client-room-1",
       }),
     ).toEqual({ ok: true });
     expect(
@@ -7828,6 +7829,7 @@ describe("Feature: runtime store synchronization", () => {
     });
     expect(requests.send?.text).toBe("hello ops");
     expect(requests.send?.assetIds).toEqual(["asset-1"]);
+    expect(requests.send?.clientMessageId).toBe("client-room-1");
     expect(requests.recall).toEqual({
       chatId: room.chatId,
       accessToken: room.accessToken,
