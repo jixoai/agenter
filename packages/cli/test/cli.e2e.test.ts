@@ -100,10 +100,39 @@ const spawnCli = (args: string[], envOverrides: Record<string, string> = {}) =>
 
 const daemons: Array<Bun.Subprocess<"ignore", "pipe", "pipe">> = [];
 
+const runCliToCompletion = async (args: string[], envOverrides: Record<string, string> = {}) => {
+  const child = spawnCli(args, envOverrides);
+  const code = await child.exited;
+  const stdout = await readText(child.stdout);
+  const stderr = await readText(child.stderr);
+  return { code, stdout, stderr };
+};
+
+const startManagedDaemon = async (input: { host: string; port: number; home: string; extraArgs?: string[] }) => {
+  const result = await runCliToCompletion(
+    ["daemon", "start", "--host", input.host, "--port", String(input.port), ...(input.extraArgs ?? [])],
+    { HOME: input.home },
+  );
+  if (result.code !== 0) {
+    throw new Error(`daemon start failed (${result.code}): ${result.stderr || result.stdout}`);
+  }
+  const healthy = await waitForHealth(input.host, input.port);
+  if (!healthy) {
+    throw new Error(`daemon failed to become healthy after start: ${result.stderr || result.stdout}`);
+  }
+  return result;
+};
+
+const stopManagedDaemon = async (input: { host: string; port: number; home: string }) =>
+  await runCliToCompletion(["daemon", "stop", "--host", input.host, "--port", String(input.port)], { HOME: input.home });
+
 afterEach(async () => {
   for (const daemon of daemons.splice(0)) {
     daemon.kill();
     await daemon.exited;
+  }
+  for (const home of tempHomes) {
+    await stopManagedDaemon({ host: "127.0.0.1", port: 0, home });
   }
   for (const home of tempHomes.splice(0)) {
     rmSync(home, { recursive: true, force: true });
@@ -241,14 +270,7 @@ describe("Feature: cli daemon and Studio commands", () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
     const home = createIsolatedHome();
-    const daemon = spawnCli(["daemon", "--host", host, "--port", String(port)], { HOME: home });
-    daemons.push(daemon);
-
-    const healthy = await waitForHealth(host, port);
-    if (!healthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`daemon failed to become healthy: ${stderr}`);
-    }
+    await startManagedDaemon({ host, port, home });
 
     const doctor = spawnCli(["doctor", "--host", host, "--port", String(port)], { HOME: home });
     const doctorCode = await doctor.exited;
@@ -262,21 +284,12 @@ describe("Feature: cli daemon and Studio commands", () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
     const home = createIsolatedHome();
-    const daemon = spawnCli(["daemon", "start", "--host", host, "--port", String(port)], { HOME: home });
-    daemons.push(daemon);
+    await startManagedDaemon({ host, port, home });
 
-    const healthy = await waitForHealth(host, port);
-    if (!healthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`daemon failed to become healthy: ${stderr}`);
-    }
+    const stopResult = await stopManagedDaemon({ host, port, home });
 
-    const stop = spawnCli(["daemon", "stop", "--host", host, "--port", String(port)], { HOME: home });
-    const stopCode = await stop.exited;
-    const stopStdout = await readText(stop.stdout);
-
-    expect(stopCode).toBe(0);
-    expect(stopStdout).toContain(`stopped agenter daemon on ${host}:${port}`);
+    expect(stopResult.code).toBe(0);
+    expect(stopResult.stdout).toContain(`stopped agenter daemon on ${host}:${port}`);
     await waitFor(async () => !(await waitForHealth(host, port, 500)), 15_000);
 
     const doctor = spawnCli(["doctor", "--host", host, "--port", String(port)], { HOME: home });
@@ -291,28 +304,15 @@ describe("Feature: cli daemon and Studio commands", () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
     const home = createIsolatedHome();
-    const daemon = spawnCli(["daemon", "--host", host, "--port", String(port)], { HOME: home });
-    daemons.push(daemon);
+    await startManagedDaemon({ host, port, home });
 
-    const healthy = await waitForHealth(host, port);
-    if (!healthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`daemon failed to become healthy: ${stderr}`);
-    }
-
-    const restart = spawnCli(["daemon", "restart", "--host", host, "--port", String(port)], { HOME: home });
-    daemons.push(restart);
-    const restartStdout = await readUntilMatch(
-      restart.stdout,
-      new RegExp(`agenter daemon listening on ${host}:${port}`, "u"),
-      45_000,
-    );
-    expect(restartStdout).toContain(`agenter daemon listening on ${host}:${port}`);
+    const restartResult = await runCliToCompletion(["daemon", "restart", "--host", host, "--port", String(port)], { HOME: home });
+    expect(restartResult.code).toBe(0);
+    expect(restartResult.stdout).toContain(`agenter daemon started in background on ${host}:${port}`);
 
     const restarted = await waitForHealth(host, port);
     if (!restarted) {
-      const stderr = await readText(restart.stderr);
-      throw new Error(`daemon failed to restart healthy after listening: ${stderr}`);
+      throw new Error(`daemon failed to restart healthy after background launch: ${restartResult.stderr}`);
     }
 
     const doctor = spawnCli(["doctor", "--host", host, "--port", String(port)], { HOME: home });
@@ -327,21 +327,12 @@ describe("Feature: cli daemon and Studio commands", () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
     const home = createIsolatedHome();
-    const daemon = spawnCli(["daemon", "--host", host, "--port", String(port)], { HOME: home });
-    daemons.push(daemon);
+    await startManagedDaemon({ host, port, home });
 
-    const healthy = await waitForHealth(host, port);
-    if (!healthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`daemon failed to become healthy: ${stderr}`);
-    }
+    const secondStart = await runCliToCompletion(["daemon", "start", "--host", host, "--port", String(port)], { HOME: home });
 
-    const secondStart = spawnCli(["daemon", "start", "--host", host, "--port", String(port)], { HOME: home });
-    const secondCode = await secondStart.exited;
-    const secondStdout = await readText(secondStart.stdout);
-
-    expect(secondCode).toBe(0);
-    expect(secondStdout).toContain(`agenter daemon already running on ${host}:${port}`);
+    expect(secondStart.code).toBe(0);
+    expect(secondStart.stdout).toContain(`agenter daemon already running on ${host}:${port}`);
   }, 70_000);
 
   test("Scenario: Given a standalone auth-service endpoint When daemon reuses it Then auth descriptor stays external and the single writer is not started twice", async () => {
@@ -358,17 +349,12 @@ describe("Feature: cli daemon and Studio commands", () => {
       throw new Error(`auth-service failed to become healthy: ${stderr}`);
     }
 
-    const daemon = spawnCli(
-      ["daemon", "--host", host, "--port", String(daemonPort), "--auth-service-endpoint", `http://${host}:${authPort}`],
-      { HOME: home },
-    );
-    daemons.push(daemon);
-
-    const daemonHealthy = await waitForHealth(host, daemonPort);
-    if (!daemonHealthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`daemon failed to become healthy: ${stderr}`);
-    }
+    await startManagedDaemon({
+      host,
+      port: daemonPort,
+      home,
+      extraArgs: ["--auth-service-endpoint", `http://${host}:${authPort}`],
+    });
 
     const client = createAgenterClient({
       wsUrl: `ws://${host}:${daemonPort}/trpc`,
@@ -398,14 +384,7 @@ describe("Feature: cli daemon and Studio commands", () => {
       throw new Error(`auth-service failed to become healthy: ${stderr}`);
     }
 
-    const daemon = spawnCli(["daemon", "--host", host, "--port", String(daemonPort)], { HOME: home });
-    daemons.push(daemon);
-
-    const daemonHealthy = await waitForHealth(host, daemonPort);
-    if (!daemonHealthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`daemon failed to become healthy: ${stderr}`);
-    }
+    await startManagedDaemon({ host, port: daemonPort, home });
 
     const client = createAgenterClient({
       wsUrl: `ws://${host}:${daemonPort}/trpc`,
@@ -425,14 +404,7 @@ describe("Feature: cli daemon and Studio commands", () => {
     const host = "127.0.0.1";
     const daemonPort = await findFreePort();
     const home = createIsolatedHome();
-    const daemon = spawnCli(["daemon", "--host", host, "--port", String(daemonPort)], { HOME: home });
-    daemons.push(daemon);
-
-    const daemonHealthy = await waitForHealth(host, daemonPort);
-    if (!daemonHealthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`daemon failed to become healthy: ${stderr}`);
-    }
+    await startManagedDaemon({ host, port: daemonPort, home });
 
     const shell = spawnCli(["shell", "--web=0"], { HOME: home });
     daemons.push(shell);
@@ -539,14 +511,7 @@ describe("Feature: cli daemon and Studio commands", () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
     const home = createIsolatedHome();
-    const daemon = spawnCli(["daemon", "--host", host, "--port", String(port)], { HOME: home });
-    daemons.push(daemon);
-
-    const healthy = await waitForHealth(host, port);
-    if (!healthy) {
-      const stderr = await readText(daemon.stderr);
-      throw new Error(`daemon failed to become healthy: ${stderr}`);
-    }
+    await startManagedDaemon({ host, port, home });
 
     const client = createAgenterClient({
       wsUrl: `ws://${host}:${port}/trpc`,

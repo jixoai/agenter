@@ -23,5 +23,6 @@
 - 如果 launcher 为 product command 临时启动了 daemon，则 launcher 负责在 product 退出后清理；若 daemon 先于 launcher 存在，则 launcher 不得接管其生命周期。
 - 本机 loopback auto-start 路径必须以 runtime home root 为单一 daemon authority discovery 作用域：先复用健康的 same-root daemon descriptor，再决定是否启动新的本地 daemon；product 不得自建第二套 daemon 发现真源。
 - `agenter daemon` 必须支持显式 `start` / `stop` / `restart` 生命周期动作；默认动作是 `start`。
+- `agenter daemon start` 必须只负责为当前 runtime home root 拉起后台 daemon、等待健康并立即把控制权还给调用终端；真正长期运行的 server 必须在独立后台进程中承载。
 - `stop` / `restart` 只允许操作当前 runtime home root 通过 descriptor 发现到的 daemon authority；CLI 不得跨 home root 猜测或扫描别人的 daemon。
 - 当同一 home root 上的 descriptor 已经指向健康 daemon，`start` 必须复用并直接返回，而不是再启动第二个 writer。

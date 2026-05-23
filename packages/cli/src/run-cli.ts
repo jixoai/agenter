@@ -1,8 +1,9 @@
 import { type AuthServiceBridgeOptions } from "@agenter/app-server";
+import { spawn as spawnChildProcess } from "node:child_process";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
@@ -46,6 +47,9 @@ interface StandaloneAuthServiceCliArgs extends CommonArgs {
 
 type DaemonCommandAction = "start" | "stop" | "restart";
 
+const INTERNAL_DAEMON_FOREGROUND_ENV = "AGENTER_INTERNAL_DAEMON_FOREGROUND";
+const MANAGED_DAEMON_START_TIMEOUT_MS = 15_000;
+
 type StopManagedDaemonResult =
   | { kind: "missing" }
   | { kind: "stale"; descriptor: DaemonRuntimeDescriptor }
@@ -73,6 +77,8 @@ const healthUrl = (args: CommonArgs): string => `http://${args.host}:${args.port
 const resolveLauncherHomeDir = (): string => process.env.HOME || homedir();
 const resolveLauncherOwnedAuthServiceDataDir = (): string => join(resolveLauncherHomeDir(), ".agenter", "launcher-auth-service");
 const resolveDaemonHealthLabel = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
+const resolveCliEntryPath = (): string => resolve(import.meta.dir, "bin", "agenter.ts");
+const resolveBunExecutable = (): string => Bun.which("bun") ?? process.execPath;
 
 const isHttpHealthAlive = async (urlString: string): Promise<boolean> => {
   const url = new URL(urlString);
@@ -138,6 +144,60 @@ const sameDaemonAuthority = (
 const resolveDaemonCommandAction = (value: unknown): DaemonCommandAction =>
   value === "stop" || value === "restart" ? value : "start";
 
+const isForegroundDaemonServeRequested = (): boolean => process.env[INTERNAL_DAEMON_FOREGROUND_ENV] === "1";
+
+const buildDaemonServeArgv = (args: CommonArgs & AuthServiceBridgeCliArgs): string[] => {
+  const argv = ["run", resolveCliEntryPath(), "daemon", "start", "--host", args.host, "--port", String(args.port)];
+  if (args.authServiceEndpoint) {
+    argv.push("--auth-service-endpoint", args.authServiceEndpoint);
+  }
+  if (args.authServiceDataDir) {
+    argv.push("--auth-service-data-dir", args.authServiceDataDir);
+  }
+  if (args.authServiceHost) {
+    argv.push("--auth-service-host", args.authServiceHost);
+  }
+  if (typeof args.authServicePort === "number") {
+    argv.push("--auth-service-port", String(args.authServicePort));
+  }
+  return argv;
+};
+
+const spawnManagedDaemonProcess = (args: CommonArgs & AuthServiceBridgeCliArgs): number => {
+  const child = spawnChildProcess(resolveBunExecutable(), buildDaemonServeArgv(args), {
+    cwd: process.cwd(),
+    detached: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      [INTERNAL_DAEMON_FOREGROUND_ENV]: "1",
+    },
+  });
+  child.unref();
+  if (typeof child.pid !== "number" || child.pid <= 0) {
+    throw new Error("failed to spawn background daemon process");
+  }
+  return child.pid;
+};
+
+const waitForManagedDaemonHealthy = async (
+  authority: CommonArgs,
+  pid: number,
+  timeoutMs = MANAGED_DAEMON_START_TIMEOUT_MS,
+): Promise<"healthy" | "exited" | "timeout"> => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await isDaemonAlive(authority)) {
+      return "healthy";
+    }
+    if (!isProcessAlive(pid)) {
+      return "exited";
+    }
+    await new Promise((resolveNext) => setTimeout(resolveNext, 100));
+  }
+  return "timeout";
+};
+
 const stopManagedDaemonForHomeRoot = async (): Promise<StopManagedDaemonResult> => {
   const descriptor = readDaemonRuntimeDescriptor(resolveLauncherHomeDir());
   if (!descriptor) {
@@ -161,6 +221,23 @@ const stopManagedDaemonForHomeRoot = async (): Promise<StopManagedDaemonResult> 
   }
   clearOwnedDaemonRuntimeDescriptor(descriptor);
   return { kind: "stopped", descriptor };
+};
+
+const runDaemonServeForeground = async (
+  args: CommonArgs & AuthServiceBridgeCliArgs,
+): Promise<void> => {
+  const daemon = await startDaemon({
+    host: args.host,
+    port: args.port,
+    authServiceEndpoint: args.authServiceEndpoint,
+    authServiceDataDir: args.authServiceDataDir,
+    authServiceHost: args.authServiceHost,
+    authServicePort: args.authServicePort,
+  });
+  console.log(`agenter daemon listening on ${daemon.host}:${daemon.port}`);
+  await waitForSignal(async () => {
+    await daemon.stop();
+  });
 };
 
 const runDaemonStartCommand = async (
@@ -195,18 +272,19 @@ const runDaemonStartCommand = async (
     }
   }
 
-  const daemon = await startDaemon({
-    host: requested.host,
-    port: requested.port,
-    authServiceEndpoint: args.authServiceEndpoint,
-    authServiceDataDir: args.authServiceDataDir,
-    authServiceHost: args.authServiceHost,
-    authServicePort: args.authServicePort,
-  });
-  console.log(`agenter daemon listening on ${daemon.host}:${daemon.port}`);
-  await waitForSignal(async () => {
-    await daemon.stop();
-  });
+  const pid = spawnManagedDaemonProcess(args);
+  const status = await waitForManagedDaemonHealthy(requested, pid);
+  if (status === "healthy") {
+    console.log(`agenter daemon started in background on ${requested.host}:${requested.port}`);
+    return;
+  }
+
+  console.error(
+    status === "exited"
+      ? `background daemon process ${pid} exited before becoming healthy on ${requested.host}:${requested.port}`
+      : `timed out waiting for background daemon ${pid} to become healthy on ${requested.host}:${requested.port}`,
+  );
+  process.exitCode = 1;
 };
 
 const runDaemonStopCommand = async (): Promise<void> => {
@@ -563,6 +641,10 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
           authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
           authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
         };
+        if (isForegroundDaemonServeRequested()) {
+          await runDaemonServeForeground(daemonArgs);
+          return;
+        }
         const action = resolveDaemonCommandAction(args.action);
         if (action === "stop") {
           await runDaemonStopCommand();
