@@ -38,6 +38,7 @@ describe("Feature: release bundle contract", () => {
     expect(buildScript).toContain("[name, `bin/${name}.js`]");
     expect(buildScript).toContain("process.env.AGENTER_BUNDLED_ASSETS_ROOT = resolve(packageRoot, \"assets\")");
     expect(buildScript).toContain("libprofile_resvg_bridge.${suffix}");
+    expect(buildScript).toContain("await chmod(binAbsolutePath, 0o755)");
     expect(buildScript).not.toContain('from: "packages/auth-service/native/resvg_bridge/target/release",');
   });
 

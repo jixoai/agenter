@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { suffix } from "bun:ffi";
 
@@ -132,6 +132,7 @@ const createBundledBinWrapper = async (input: {
       .filter((line) => line.length > 0)
       .join("\n"),
   );
+  await chmod(binAbsolutePath, 0o755);
 };
 
 const toWrapperBin = (

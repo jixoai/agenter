@@ -1,6 +1,7 @@
 import { type AuthServiceBridgeOptions } from "@agenter/app-server";
 import { spawn as spawnChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { homedir } from "node:os";
@@ -15,6 +16,7 @@ import {
   isBuiltInCommand,
   isLauncherMetadataOnlyCommand,
   isProductMetadataOnlyArgv,
+  applyProductCommandsToYargs,
   type LocalProductLaunchTarget,
   readCommandToken,
   resolveProductCommandInvocation,
@@ -53,6 +55,7 @@ type DaemonCommandAction = "start" | "stop" | "restart";
 const INTERNAL_DAEMON_FOREGROUND_ENV = "AGENTER_INTERNAL_DAEMON_FOREGROUND";
 const BUNDLED_ASSETS_ROOT_ENV = "AGENTER_BUNDLED_ASSETS_ROOT";
 const MANAGED_DAEMON_START_TIMEOUT_MS = 15_000;
+const packageJson = createRequire(import.meta.url)("../package.json") as { version?: string };
 
 type StopManagedDaemonResult =
   | { kind: "missing" }
@@ -600,18 +603,21 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
     return;
   }
 
-  const argv = await yargs(rawArgs)
-    .scriptName("agenter")
-    .option("host", {
-      type: "string",
-      default: "127.0.0.1",
-      describe: "daemon host",
-    })
-    .option("port", {
-      type: "number",
-      default: 4580,
-      describe: "daemon port",
-    })
+  const argv = await applyProductCommandsToYargs(
+    yargs(rawArgs)
+      .scriptName("agenter")
+      .version(packageJson.version ?? "unknown")
+      .option("host", {
+        type: "string",
+        default: "127.0.0.1",
+        describe: "daemon host",
+      })
+      .option("port", {
+        type: "number",
+        default: 4580,
+        describe: "daemon port",
+      }),
+  )
     .command(
       ["auth-service", "profile-service"],
       "start standalone auth-service (profile-service remains a deprecated compatibility alias)",

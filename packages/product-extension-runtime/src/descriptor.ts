@@ -55,6 +55,7 @@ export type ProductCapabilityHints = z.infer<typeof productCapabilityHintsSchema
 export const productCommandDescriptorSchema = z.object({
   productId: productIdSchema,
   command: productCommandSchema,
+  description: z.string().trim().min(1).optional(),
   packageName: productPackageNameSchema,
   bin: productBinDescriptorSchema,
   sourcePolicy: productSourcePolicySchema,

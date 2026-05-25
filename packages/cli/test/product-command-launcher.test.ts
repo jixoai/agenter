@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  applyProductCommandsToYargs,
   buildProductLaunchEnv,
   buildProductProcessCommand,
   isBuiltInCommand,
@@ -15,6 +16,7 @@ import {
 } from "../src/product-command-launcher";
 import { listProductCommandDescriptors, resolveProductCommandDescriptor } from "../src/product-command-registry";
 import { launchProductCommandForTest, type ProductCommandLaunchDependencies } from "../src/run-cli";
+import yargs from "yargs";
 
 const tempDirs: string[] = [];
 
@@ -239,6 +241,15 @@ describe("Feature: product command launcher", () => {
     expect(isLauncherMetadataOnlyCommand("--help")).toBe(true);
     expect(isLauncherMetadataOnlyCommand("--version")).toBe(true);
     expect(resolveProductCommandInvocation(["unknown-product"])).toBeNull();
+  });
+
+  test("Scenario: Given the top-level CLI help is rendered When product descriptors are applied Then shell and studio appear as orthogonal product commands", async () => {
+    const output = await applyProductCommandsToYargs(yargs([]).scriptName("agenter").exitProcess(false)).getHelp();
+
+    expect(String(output)).toContain("shell");
+    expect(String(output)).toContain("run cli-shell terminal workspace");
+    expect(String(output)).toContain("studio");
+    expect(String(output)).toContain("run Studio web UI");
   });
 
   test("Scenario: Given product metadata-only argv When classifying launcher bootstrap needs Then help and version requests stay out of daemon/runtime side effects", () => {

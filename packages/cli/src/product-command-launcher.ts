@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { type ProductCommandDescriptor, type ProductSource } from "@agenter/product-extension-runtime";
 import yargs from "yargs";
 
-import { resolveProductCommandDescriptor } from "./product-command-registry";
+import { listProductCommandDescriptors, resolveProductCommandDescriptor } from "./product-command-registry";
 
 const BUN_BIN = Bun.which("bun") ?? process.execPath;
 const DEFAULT_PRODUCT_PACKAGE_RUNNER = "bunx";
@@ -330,6 +330,21 @@ export const resolveProductPackageRunner = (env: NodeJS.ProcessEnv = process.env
 
 export const isProductMetadataOnlyArgv = (productArgv: readonly string[]): boolean =>
   productArgv.some((token) => metadataOnlyTokens.has(token));
+
+export const applyProductCommandsToYargs = <TBuilder extends ReturnType<typeof yargs>>(builder: TBuilder): TBuilder => {
+  let next = builder;
+  for (const descriptor of listProductCommandDescriptors()) {
+    next = next.command(
+      descriptor.command,
+      descriptor.description ?? `run ${descriptor.productId}`,
+      (commandBuilder) => commandBuilder,
+      () => {
+        // Product commands are routed before yargs command execution.
+      },
+    ) as TBuilder;
+  }
+  return next;
+};
 
 export const buildProductProcessCommand = (
   target: ProductLaunchTarget,

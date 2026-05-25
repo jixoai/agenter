@@ -35,6 +35,7 @@ describe("Feature: product extension runtime contracts", () => {
     const descriptor = productCommandDescriptorSchema.parse({
       productId: "cli-shell",
       command: "shell",
+      description: "run cli-shell terminal workspace",
       packageName: "agenter-ext-shell",
       bin: { name: "agenter-cli-shell", mainExport: "runCliShell" },
       sourcePolicy: createLocalFirstProductSourcePolicy(),
@@ -47,6 +48,7 @@ describe("Feature: product extension runtime contracts", () => {
     });
 
     expect(descriptor.sourcePolicy.resolutionOrder).toEqual(["workspace", "installed", "remote"]);
+    expect(descriptor.description).toBe("run cli-shell terminal workspace");
     expect(descriptor.bin.mainExport).toBe("runCliShell");
     expect(descriptor.capabilityHints.runtimePlanes).not.toContain("delegation");
   });
