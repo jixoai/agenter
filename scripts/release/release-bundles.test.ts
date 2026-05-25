@@ -118,10 +118,14 @@ describe("Feature: release bundle contract", () => {
 
     expect(ghosttyPkg.name).toBe("@jixo/ghostty-native");
     expect(ghosttyPkg.files).toContain("termless-ghostty-native.node");
+    expect(ghosttyPkg.files).not.toContain("build");
+    expect(ghosttyPkg.files).not.toContain("native");
+    expect(ghosttyPkg.files).not.toContain("vendor");
     expect(termlessCorePkg.dependencies?.["@jixo/ghostty-native"]).toBe("workspace:*");
     expect(termlessCorePkg.dependencies?.["@termless/ghostty-native"]).toBeUndefined();
     expect(ghosttySpec?.assets?.map((asset) => asset.to)).toContain("termless-ghostty-native.node");
-    expect(ghosttySpec?.assets?.map((asset) => asset.to)).toContain("native/zig-out/lib/termless-ghostty-native.node");
+    expect(ghosttySpec?.assets?.map((asset) => asset.to)).not.toContain("build");
+    expect(ghosttySpec?.assets?.map((asset) => asset.to)).not.toContain("native/zig-out/lib/termless-ghostty-native.node");
   });
 
   test("Scenario: Given GitHub trusted publishing is configured When inspecting the publish path Then npm provenance is mandatory and stale versions are skipped", () => {

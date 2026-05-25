@@ -21,7 +21,7 @@ describe("Feature: ghostty-native package boundary", () => {
 
     expect(pkg.name).toBe("@jixo/ghostty-native");
     expect(pkg.exports).toEqual({ ".": "./src/index.ts" });
-    expect(pkg.files).toEqual(["README.md", "src", "build", "native", "vendor", "termless-ghostty-native.node"]);
+    expect(pkg.files).toEqual(["README.md", "src", "termless-ghostty-native.node"]);
     expect(pkg.scripts).toEqual({
       "build:ghostty-native": "bash build/build.sh",
       typecheck: "bunx tsc -p tsconfig.typecheck.json --noEmit",

@@ -342,16 +342,7 @@ export const createBundlePackageSpecs = (): BundlePackageSpec[] => [
     assets: [
       { from: "packages/ghostty-native/README.md", to: "README.md" },
       { from: "packages/ghostty-native/src", to: "src" },
-      { from: "packages/ghostty-native/build", to: "build" },
-      { from: "packages/ghostty-native/native/build.zig", to: "native/build.zig" },
-      { from: "packages/ghostty-native/native/build.zig.zon", to: "native/build.zig.zon" },
-      { from: "packages/ghostty-native/native/src", to: "native/src" },
-      { from: "packages/ghostty-native/vendor", to: "vendor" },
       { from: "packages/ghostty-native/termless-ghostty-native.node", to: "termless-ghostty-native.node" },
-      {
-        from: `packages/ghostty-native/native/zig-out/lib/termless-ghostty-native.node`,
-        to: `native/zig-out/lib/termless-ghostty-native.node`,
-      },
     ],
   },
 ];

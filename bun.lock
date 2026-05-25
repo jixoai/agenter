@@ -59,7 +59,7 @@
     },
     "packages/agenter": {
       "name": "agenter",
-      "version": "0.0.4",
+      "version": "0.0.5",
       "bin": {
         "agenter": "./src/bin/agenter.ts",
       },
@@ -212,7 +212,7 @@
     },
     "packages/ghostty-native": {
       "name": "@jixo/ghostty-native",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "devDependencies": {
         "@types/bun": "latest",
         "@types/node": "^24",
