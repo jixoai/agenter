@@ -7,6 +7,8 @@ import { type TrpcServerHandle } from "../src/trpc-server";
 import {
   clearOwnedDaemonRuntimeDescriptor,
   readDaemonRuntimeDescriptor,
+  resolveDaemonLogDir,
+  resolveDaemonLogPath,
   resolveDaemonRuntimeDescriptorPath,
   writeDaemonRuntimeDescriptor,
 } from "../src/daemon-runtime-descriptor";
@@ -87,5 +89,19 @@ describe("Feature: daemon runtime descriptor lifecycle", () => {
     });
 
     expect(readDaemonRuntimeDescriptor(homeDir)).toEqual(foreignDescriptor);
+  });
+
+  test("Scenario: Given a background daemon launch When resolving its log path Then diagnostics stay under the runtime home root", () => {
+    const root = createRoot();
+    const homeDir = join(root, "home");
+    const startedAt = new Date("2026-05-25T04:03:02.001Z");
+
+    expect(resolveDaemonLogDir(homeDir)).toBe(join(homeDir, ".agenter", "logs", "daemon"));
+    expect(resolveDaemonLogPath(homeDir, { host: "127.0.0.1", port: 4580 }, startedAt)).toBe(
+      join(homeDir, ".agenter", "logs", "daemon", "2026-05-25T04-03-02-001Z-127.0.0.1-4580.log"),
+    );
+    expect(resolveDaemonLogPath(homeDir, { host: "::1", port: 4580 }, startedAt)).toBe(
+      join(homeDir, ".agenter", "logs", "daemon", "2026-05-25T04-03-02-001Z-__1-4580.log"),
+    );
   });
 });

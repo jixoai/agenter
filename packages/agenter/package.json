@@ -1,6 +1,6 @@
 {
   "name": "agenter",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "type": "module",
   "files": [
     "SPEC.md",
@@ -14,7 +14,8 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {
-    "@duckdb/node-api": "^1.5.1-r.1"
+    "@duckdb/node-api": "^1.5.1-r.1",
+    "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
     "@agenter/cli": "workspace:*",

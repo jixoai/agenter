@@ -49,6 +49,18 @@ const normalizeDaemonRuntimeDescriptor = (value: unknown): DaemonRuntimeDescript
 export const resolveDaemonRuntimeDescriptorPath = (homeDir: string): string =>
   join(resolve(homeDir), ".agenter", DAEMON_RUNTIME_DESCRIPTOR_FILENAME);
 
+export const resolveDaemonLogDir = (homeDir: string): string => join(resolve(homeDir), ".agenter", "logs", "daemon");
+
+export const resolveDaemonLogPath = (
+  homeDir: string,
+  authority: Pick<DaemonRuntimeDescriptor, "host" | "port">,
+  startedAt = new Date(),
+): string => {
+  const safeHost = authority.host.replace(/[^a-zA-Z0-9_.-]/gu, "_");
+  const safeStartedAt = startedAt.toISOString().replace(/[:.]/gu, "-");
+  return join(resolveDaemonLogDir(homeDir), `${safeStartedAt}-${safeHost}-${authority.port}.log`);
+};
+
 export const readDaemonRuntimeDescriptor = (homeDir: string): DaemonRuntimeDescriptor | null => {
   const filePath = resolveDaemonRuntimeDescriptorPath(homeDir);
   try {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -270,7 +270,7 @@ describe("Feature: cli daemon and Studio commands", () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
     const home = createIsolatedHome();
-    await startManagedDaemon({ host, port, home });
+    const startResult = await startManagedDaemon({ host, port, home });
 
     const doctor = spawnCli(["doctor", "--host", host, "--port", String(port)], { HOME: home });
     const doctorCode = await doctor.exited;
@@ -278,6 +278,11 @@ describe("Feature: cli daemon and Studio commands", () => {
 
     expect(doctorCode).toBe(0);
     expect(doctorStdout.includes("healthy")).toBe(true);
+    expect(startResult.stdout).toContain("daemon log: ");
+    const logPath = startResult.stdout.match(/daemon log: (.+)/u)?.[1]?.trim();
+    expect(logPath).toBeDefined();
+    expect(logPath?.startsWith(`${home}/.agenter/logs/daemon/`)).toBe(true);
+    expect(existsSync(logPath ?? "")).toBe(true);
   }, 70_000);
 
   test("Scenario: Given daemon start and stop commands When stop is invoked Then the managed daemon exits and doctor reports unreachable", async () => {

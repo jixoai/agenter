@@ -1,11 +1,11 @@
 import { type AuthServiceBridgeOptions } from "@agenter/app-server";
 import { spawn as spawnChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { suffix } from "bun:ffi";
 import yargs from "yargs";
@@ -27,6 +27,7 @@ import type { TrpcServerHandle } from "./trpc-server";
 import {
   clearOwnedDaemonRuntimeDescriptor,
   readDaemonRuntimeDescriptor,
+  resolveDaemonLogPath,
   type DaemonRuntimeDescriptor,
 } from "./daemon-runtime-descriptor";
 
@@ -85,6 +86,13 @@ const resolveLauncherHomeDir = (): string => process.env.HOME || homedir();
 const resolveLauncherOwnedAuthServiceDataDir = (): string => join(resolveLauncherHomeDir(), ".agenter", "launcher-auth-service");
 const resolveDaemonHealthLabel = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
 const resolveCliEntryPath = (): string => resolve(import.meta.dir, "bin", "agenter.ts");
+const resolveCurrentCliEntrypointArgv = (): string[] => {
+  const entrypoint = process.argv[1];
+  if (entrypoint && existsSync(entrypoint)) {
+    return [entrypoint];
+  }
+  return ["run", resolveCliEntryPath()];
+};
 const resolveBunExecutable = (): string => Bun.which("bun") ?? process.execPath;
 const resolveBundledAssetsRoot = (): string | null => process.env[BUNDLED_ASSETS_ROOT_ENV]?.trim() || null;
 const resolveBundledAssetPath = (...segments: string[]): string | undefined => {
@@ -163,7 +171,7 @@ const resolveDaemonCommandAction = (value: unknown): DaemonCommandAction =>
 const isForegroundDaemonServeRequested = (): boolean => process.env[INTERNAL_DAEMON_FOREGROUND_ENV] === "1";
 
 const buildDaemonServeArgv = (args: CommonArgs & AuthServiceBridgeCliArgs): string[] => {
-  const argv = ["run", resolveCliEntryPath(), "daemon", "start", "--host", args.host, "--port", String(args.port)];
+  const argv = [...resolveCurrentCliEntrypointArgv(), "daemon", "start", "--host", args.host, "--port", String(args.port)];
   if (args.authServiceEndpoint) {
     argv.push("--auth-service-endpoint", args.authServiceEndpoint);
   }
@@ -179,21 +187,47 @@ const buildDaemonServeArgv = (args: CommonArgs & AuthServiceBridgeCliArgs): stri
   return argv;
 };
 
-const spawnManagedDaemonProcess = (args: CommonArgs & AuthServiceBridgeCliArgs): number => {
-  const child = spawnChildProcess(resolveBunExecutable(), buildDaemonServeArgv(args), {
-    cwd: process.cwd(),
-    detached: true,
-    stdio: "ignore",
-    env: {
-      ...process.env,
-      [INTERNAL_DAEMON_FOREGROUND_ENV]: "1",
-    },
-  });
+interface ManagedDaemonProcessSpawn {
+  pid: number;
+  logPath: string;
+}
+
+const readLogTail = (path: string, maxBytes = 16_384): string => {
+  try {
+    const text = readFileSync(path, "utf8");
+    return text.length > maxBytes ? text.slice(-maxBytes) : text;
+  } catch {
+    return "";
+  }
+};
+
+const spawnManagedDaemonProcess = (args: CommonArgs & AuthServiceBridgeCliArgs): ManagedDaemonProcessSpawn => {
+  const logPath = resolveDaemonLogPath(resolveLauncherHomeDir(), args);
+  mkdirSync(dirname(logPath), { recursive: true });
+  const logFd = openSync(logPath, "a");
+  const child = (() => {
+    try {
+      return spawnChildProcess(resolveBunExecutable(), buildDaemonServeArgv(args), {
+        cwd: process.cwd(),
+        detached: true,
+        stdio: ["ignore", logFd, logFd],
+        env: {
+          ...process.env,
+          [INTERNAL_DAEMON_FOREGROUND_ENV]: "1",
+        },
+      });
+    } finally {
+      closeSync(logFd);
+    }
+  })();
   child.unref();
   if (typeof child.pid !== "number" || child.pid <= 0) {
     throw new Error("failed to spawn background daemon process");
   }
-  return child.pid;
+  return {
+    pid: child.pid,
+    logPath,
+  };
 };
 
 const waitForManagedDaemonHealthy = async (
@@ -288,10 +322,11 @@ const runDaemonStartCommand = async (
     }
   }
 
-  const pid = spawnManagedDaemonProcess(args);
+  const { pid, logPath } = spawnManagedDaemonProcess(args);
   const status = await waitForManagedDaemonHealthy(requested, pid);
   if (status === "healthy") {
     console.log(`agenter daemon started in background on ${requested.host}:${requested.port}`);
+    console.log(`daemon log: ${logPath}`);
     return;
   }
 
@@ -300,6 +335,12 @@ const runDaemonStartCommand = async (
       ? `background daemon process ${pid} exited before becoming healthy on ${requested.host}:${requested.port}`
       : `timed out waiting for background daemon ${pid} to become healthy on ${requested.host}:${requested.port}`,
   );
+  console.error(`daemon log: ${logPath}`);
+  const logTail = readLogTail(logPath).trim();
+  if (logTail.length > 0) {
+    console.error("daemon log tail:");
+    console.error(logTail);
+  }
   process.exitCode = 1;
 };
 

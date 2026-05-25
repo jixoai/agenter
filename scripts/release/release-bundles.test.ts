@@ -42,6 +42,32 @@ describe("Feature: release bundle contract", () => {
     expect(buildScript).not.toContain('from: "packages/auth-service/native/resvg_bridge/target/release",');
   });
 
+  test("Scenario: Given the npm CLI bundle starts daemon dependencies When inspecting the source bin Then reflect metadata is loaded before CLI imports", () => {
+    const agenterBin = readRepoFile("packages/agenter/src/bin/agenter.ts");
+    const cliBin = readRepoFile("packages/cli/src/bin/agenter.ts");
+    const sourcePkg = JSON.parse(readRepoFile("packages/agenter/package.json")) as {
+      dependencies?: Record<string, string>;
+    };
+    const cliPkg = JSON.parse(readRepoFile("packages/cli/package.json")) as {
+      dependencies?: Record<string, string>;
+    };
+
+    expect(agenterBin).toMatch(/import "reflect-metadata";\s*import \{ runCli \} from "@agenter\/cli";/u);
+    expect(cliBin).toMatch(/import "reflect-metadata";\s*import \{ runCli \} from "\.\.\/run-cli";/u);
+    expect(sourcePkg.dependencies?.["reflect-metadata"]).toBe("^0.2.2");
+    expect(cliPkg.dependencies?.["reflect-metadata"]).toBe("^0.2.2");
+  });
+
+  test("Scenario: Given npm daemon start forks a background child When inspecting the CLI source Then it reuses the current executable entrypoint", () => {
+    const cliSource = readRepoFile("packages/cli/src/run-cli.ts");
+
+    expect(cliSource).toContain("const resolveCurrentCliEntrypointArgv = (): string[] => {");
+    expect(cliSource).toContain('const entrypoint = process.argv[1];');
+    expect(cliSource).toContain('return ["run", resolveCliEntryPath()];');
+    expect(cliSource).toContain('const argv = [...resolveCurrentCliEntrypointArgv(), "daemon", "start"');
+    expect(cliSource).not.toContain('const argv = ["run", resolveCliEntryPath(), "daemon", "start"');
+  });
+
   test("Scenario: Given cli-shell uses OpenTUI native packages When bundling the JS entry Then platform native packages stay install-time dependencies", () => {
     const shellSpec = createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter-ext-shell");
 
