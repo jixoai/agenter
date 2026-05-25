@@ -45,6 +45,7 @@
     "@tanstack/ai-openai": "^0.6.0",
     "@trpc/client": "^11.7.1",
     "@trpc/server": "^11.7.1",
+    "ignore": "^5.3.2",
     "just-bash": "^2.14.0",
     "minimatch": "^10.2.5",
     "superjson": "^2.2.2",

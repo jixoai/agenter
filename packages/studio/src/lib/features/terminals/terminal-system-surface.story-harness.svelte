@@ -107,7 +107,7 @@
 		launchCwd: input.cwd,
 		workspace: null,
 		status: input.status,
-		processPhase: input.running ? 'running' : 'stopped',
+		processPhase: input.running ? 'running' : 'killed',
 		seq: 1,
 		snapshot: buildTerminalSnapshot(input.cwd, undefined, 1, {
 			cols: input.snapshotCols,
@@ -131,7 +131,7 @@
 			weightBold: '700',
 			ligatures: true,
 		},
-		// Transport discovery is durable across running/stopped states; live enablement is
+		// Transport discovery is durable across running/killed states; live enablement is
 		// modeled separately through processPhase in the viewport host.
 		transportUrl: `ws://localhost/mock-terminals/${input.terminalId}`,
 		currentAdminId: 'system:trusted-terminal-bootstrap',
@@ -484,7 +484,7 @@
 		}
 		updateTerminalEntry(terminal.terminalId, (entry) => ({
 			...entry,
-			processPhase: 'stopped',
+			processPhase: 'killed',
 			status: 'IDLE',
 			currentTitle: undefined,
 			currentPath: undefined,

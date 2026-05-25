@@ -123,6 +123,8 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   readonly avatars: GlobalAvatarCatalogEntry[] = [];
   readonly sessions = new Map<string, SessionEntry>();
   readonly terminals: GlobalTerminalEntry[] = [];
+  readonly terminalHistory: GlobalTerminalEntry[] = [];
+  readonly terminalArchive: GlobalTerminalEntry[] = [];
   readonly terminalGrants = new Map<string, GlobalTerminalGrantEntry[]>();
   readonly bootstrapTerminalCalls: string[] = [];
   readonly setTerminalConfigCalls: Array<{
@@ -300,6 +302,14 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     return [...this.terminals];
   }
 
+  async listGlobalTerminalHistory(): Promise<GlobalTerminalEntry[]> {
+    return [...this.terminalHistory];
+  }
+
+  async listGlobalTerminalArchive(): Promise<GlobalTerminalEntry[]> {
+    return [...this.terminalArchive];
+  }
+
   async createGlobalTerminal(input: {
     terminalId?: string;
     processKind?: string;
@@ -326,10 +336,33 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
       this.terminals.length,
       ...this.terminals.filter((entry) => entry.terminalId !== input.terminalId),
     );
+    this.terminalHistory.splice(
+      0,
+      this.terminalHistory.length,
+      ...this.terminalHistory.filter((entry) => entry.terminalId !== input.terminalId),
+    );
+    this.terminalArchive.splice(
+      0,
+      this.terminalArchive.length,
+      ...this.terminalArchive.filter((entry) => entry.terminalId !== input.terminalId),
+    );
     return {
       ok: this.terminals.length < before,
       message: this.terminals.length < before ? "terminal deleted" : "unknown terminal",
     };
+  }
+
+  async archiveGlobalTerminal(input: { terminalId: string }): Promise<GlobalTerminalEntry> {
+    const index = this.terminalHistory.findIndex((entry) => entry.terminalId === input.terminalId);
+    if (index === -1) {
+      throw new Error(`unknown terminal history: ${input.terminalId}`);
+    }
+    const archived = {
+      ...this.terminalHistory.splice(index, 1)[0]!,
+      archivedAt: Date.now(),
+    };
+    this.terminalArchive.push(archived);
+    return archived;
   }
 
   async listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]> {

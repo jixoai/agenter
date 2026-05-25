@@ -83,6 +83,7 @@ import type {
   TerminalGrantRole,
   TerminalInvitationRecord,
   TerminalInviteSeatInput,
+  TerminalInstanceProjection,
   TerminalIssueGrantInput,
   TerminalIssuedGrant,
   TerminalManagedSeatClass,
@@ -126,6 +127,8 @@ interface ManagedEntry {
   record: TerminalRecord;
   terminal: TerminalRuntime;
 }
+
+type TerminalKilledReason = "explicit_stop" | "natural_exit" | "daemon_recovery_killed";
 
 type TerminalRuntimeFactory = (input: {
   record: TerminalRecord;
@@ -884,7 +887,7 @@ export class TerminalControlPlane {
   }
 
   has(terminalId: string): boolean {
-    return Boolean(this.db.getTerminal(terminalId));
+    return Boolean(this.db.getTerminal(terminalId)) && !this.isHistoryRecord(this.db.getTerminal(terminalId)!);
   }
 
   getManagedTerminal(terminalId: string): TerminalRuntime | null {
@@ -893,22 +896,12 @@ export class TerminalControlPlane {
 
   list(): TerminalControlPlaneEntry[] {
     this.expireApprovalsAndLeases();
-    return this.db.listTerminals().map((record) =>
-      this.describeEntry(record, {
-        focused: this.getFocusedTerminalIds(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).includes(record.terminalId),
-        access: this.getTrustedBootstrapAccess(record.terminalId),
-      }),
-    );
+    return this.listByProjection("live", TRUSTED_BOOTSTRAP_PARTICIPANT_ID, { trustedBootstrapAccess: true });
   }
 
   listForTrustedBootstrap(): TerminalControlPlaneEntry[] {
     this.expireApprovalsAndLeases();
-    return this.db.listTerminals().map((record) =>
-      this.describeEntry(record, {
-        focused: this.getFocusedTerminalIds(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).includes(record.terminalId),
-        access: this.issueTrustedBootstrapAccess(record.terminalId),
-      }),
-    );
+    return this.listByProjection("live", TRUSTED_BOOTSTRAP_PARTICIPANT_ID, { trustedBootstrapAccess: false });
   }
 
   listForActor(actorId: TerminalActorId, input: { touchPresence?: boolean } = {}): TerminalControlPlaneEntry[] {
@@ -917,20 +910,49 @@ export class TerminalControlPlane {
       this.touchActorPresence(actorId);
     }
     this.expireApprovalsAndLeases();
-    const focused = new Set(this.getFocusedTerminalIds(actorId));
-    return this.db
-      .listTerminals()
-      .map((record) => {
-        const grant = this.getGrantForActor(record.terminalId, actorId);
-        if (!grant) {
-          return null;
-        }
-        return this.describeEntry(record, {
-          focused: focused.has(record.terminalId),
-          access: this.createAccessProjection(record.terminalId, grant),
-        });
-      })
-      .filter((entry): entry is TerminalControlPlaneEntry => entry !== null);
+    return this.listByProjection("live", actorId);
+  }
+
+  listHistory(): TerminalControlPlaneEntry[] {
+    this.expireApprovalsAndLeases();
+    return this.listByProjection("history", TRUSTED_BOOTSTRAP_PARTICIPANT_ID, { trustedBootstrapAccess: true });
+  }
+
+  listIndex(): TerminalControlPlaneEntry[] {
+    this.expireApprovalsAndLeases();
+    return this.listByProjection("index", TRUSTED_BOOTSTRAP_PARTICIPANT_ID, { trustedBootstrapAccess: true });
+  }
+
+  listHistoryForActor(actorId: TerminalActorId, input: { touchPresence?: boolean } = {}): TerminalControlPlaneEntry[] {
+    this.assertActorId(actorId);
+    if (input.touchPresence ?? true) {
+      this.touchActorPresence(actorId);
+    }
+    this.expireApprovalsAndLeases();
+    return this.listByProjection("history", actorId);
+  }
+
+  listIndexForActor(actorId: TerminalActorId, input: { touchPresence?: boolean } = {}): TerminalControlPlaneEntry[] {
+    this.assertActorId(actorId);
+    if (input.touchPresence ?? true) {
+      this.touchActorPresence(actorId);
+    }
+    this.expireApprovalsAndLeases();
+    return this.listByProjection("index", actorId);
+  }
+
+  listArchived(): TerminalControlPlaneEntry[] {
+    this.expireApprovalsAndLeases();
+    return this.listByProjection("archive", TRUSTED_BOOTSTRAP_PARTICIPANT_ID, { trustedBootstrapAccess: true });
+  }
+
+  listArchivedForActor(actorId: TerminalActorId, input: { touchPresence?: boolean } = {}): TerminalControlPlaneEntry[] {
+    this.assertActorId(actorId);
+    if (input.touchPresence ?? true) {
+      this.touchActorPresence(actorId);
+    }
+    this.expireApprovalsAndLeases();
+    return this.listByProjection("archive", actorId);
   }
 
   async create(input: TerminalCreateInput = {}): Promise<TerminalControlPlaneEntry> {
@@ -978,6 +1000,10 @@ export class TerminalControlPlane {
 
   bootstrap(terminalId: string): TerminalControlPlaneEntry {
     this.assertLifecycleTransitionIdle(terminalId, "bootstrap");
+    const record = this.requireRecord(terminalId);
+    if (record.archivedAt) {
+      throw new Error(`archived terminal requires unarchive before bootstrap: ${terminalId}`);
+    }
     const entry = this.ensureManagedEntry(terminalId);
     this.setLifecycleTransition(terminalId, "bootstrapping");
     try {
@@ -1011,6 +1037,9 @@ export class TerminalControlPlane {
     if (!record) {
       return { ok: false, message: `unknown terminal: ${terminalId}` };
     }
+    if (this.isHistoryRecord(record)) {
+      return { ok: true, message: "terminal already stopped" };
+    }
     if (entry?.terminal.isRunning()) {
       this.setLifecycleTransition(terminalId, "killing");
       try {
@@ -1019,7 +1048,13 @@ export class TerminalControlPlane {
         this.clearLifecycleTransition(terminalId, "killing");
       }
     }
-    this.cancelPendingApprovalRequestsForTerminal(terminalId);
+    this.finalizeKilledTerminal(terminalId, {
+      reason: "explicit_stop",
+      lastStopReason: record.lastStopReason ?? "killed",
+      lastExitCode: record.lastExitCode ?? null,
+      lastExitSignal: record.lastExitSignal ?? "SIGTERM",
+      lastStoppedAt: Date.now(),
+    });
     return { ok: true, message: "terminal PTY stopped" };
   }
 
@@ -1035,16 +1070,13 @@ export class TerminalControlPlane {
 
   async deleteTerminal(terminalId: string): Promise<{ ok: boolean; message: string }> {
     this.assertLifecycleTransitionIdle(terminalId, "delete");
-    const entry = this.entries.get(terminalId);
-    if (entry?.terminal.isRunning()) {
-      this.setLifecycleTransition(terminalId, "killing");
-      try {
-        await entry.terminal.stop();
-      } finally {
-        this.clearLifecycleTransition(terminalId, "killing");
-      }
+    const record = this.db.getTerminal(terminalId);
+    if (!record) {
+      return { ok: false, message: `unknown terminal: ${terminalId}` };
     }
-    this.cancelPendingApprovalRequestsForTerminal(terminalId);
+    if (!this.isHistoryRecord(record)) {
+      return { ok: false, message: "terminal delete requires a killed terminal; stop it first" };
+    }
     this.lifecycleTransitions.delete(terminalId);
     this.entries.delete(terminalId);
     const existed = this.db.removeTerminal(terminalId);
@@ -1060,6 +1092,29 @@ export class TerminalControlPlane {
     }
     this.emitChange({ terminalId, reason: "deleted" });
     return { ok: true, message: "terminal deleted" };
+  }
+
+  archiveTerminal(terminalId: string): TerminalControlPlaneEntry {
+    const record = this.requireRecord(terminalId);
+    if (!this.isKilledRecord(record)) {
+      throw new Error(`terminal archive requires a killed terminal: ${terminalId}`);
+    }
+    const archived = this.db.archiveTerminal(terminalId);
+    this.emitChange({ terminalId, reason: "updated" });
+    return this.describeEntry(archived, {
+      focused: false,
+      access: this.getTrustedBootstrapAccess(terminalId),
+    });
+  }
+
+  archiveAuthorized(input: {
+    terminalId: string;
+    accessToken?: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): TerminalControlPlaneEntry {
+    this.requireAdministrativeAuthority(input.terminalId, input);
+    return this.archiveTerminal(input.terminalId);
   }
 
   async deleteAuthorized(input: {
@@ -3231,6 +3286,9 @@ export class TerminalControlPlane {
       return existing;
     }
     const record = this.requireRecord(terminalId);
+    if (record.archivedAt) {
+      throw new Error(`archived terminal is not live-manageable: ${terminalId}`);
+    }
     const normalizedCwd = resolve(record.launchCwd);
     const outputRoot = join(
       this.options.outputRoot ?? join(homedir(), ".agenter", ".terminal", "output"),
@@ -3343,7 +3401,17 @@ export class TerminalControlPlane {
       this.emitChange({ terminalId: entry.record.terminalId, reason: "identity" });
     });
     entry.terminal.onLifecycle((event) => {
-      entry.record = this.db.updateLifecycle(entry.record.terminalId, event);
+      if (event.processPhase === "killed") {
+        entry.record = this.finalizeKilledTerminal(entry.record.terminalId, {
+          reason: "natural_exit",
+          lastStopReason: event.lastStopReason ?? "killed",
+          lastExitCode: event.lastExitCode ?? null,
+          lastExitSignal: event.lastExitSignal ?? null,
+          lastStoppedAt: event.lastStoppedAt ?? Date.now(),
+        });
+      } else {
+        entry.record = this.db.updateLifecycle(entry.record.terminalId, event);
+      }
       this.emitChange({ terminalId: entry.record.terminalId, reason: "lifecycle" });
     });
     entry.terminal.onStatus((running, status) => {
@@ -3483,6 +3551,8 @@ export class TerminalControlPlane {
       approvalTimeoutMs: this.config.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
       pendingRequestCount: this.db.listPendingApprovalRequests(record.terminalId).length,
       metadata: cloneMetadata(record.metadata),
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
       access: access ?? undefined,
       actors: this.listActorSeats(record.terminalId),
     };
@@ -3779,12 +3849,12 @@ export class TerminalControlPlane {
   }
 
   private normalizeRecoveredLifecycle(): void {
-    for (const record of this.db.listTerminals()) {
+    for (const record of this.db.listTerminalsByProjection("all")) {
       if (record.processPhase !== "running") {
         continue;
       }
-      this.db.updateLifecycle(record.terminalId, {
-        processPhase: "stopped",
+      this.finalizeKilledTerminal(record.terminalId, {
+        reason: "daemon_recovery_killed",
         lastStopReason: record.lastStopReason ?? "killed",
         lastExitCode: record.lastExitCode ?? null,
         lastExitSignal: record.lastExitSignal ?? null,
@@ -4288,6 +4358,85 @@ export class TerminalControlPlane {
         actorId: request.participantId,
       });
     }
+  }
+
+  private listByProjection(
+    projection: TerminalInstanceProjection,
+    actorId: TerminalActorId,
+    input: { trustedBootstrapAccess?: boolean } = {},
+  ): TerminalControlPlaneEntry[] {
+    const focused = new Set(this.getFocusedTerminalIds(actorId));
+    return this.db
+      .listTerminalsByProjection(projection)
+      .map((record) => {
+        if (actorId === TRUSTED_BOOTSTRAP_PARTICIPANT_ID) {
+          const access = input.trustedBootstrapAccess === false
+            ? this.issueTrustedBootstrapAccess(record.terminalId)
+            : this.getTrustedBootstrapAccess(record.terminalId);
+          return this.describeEntry(record, {
+            focused: focused.has(record.terminalId),
+            access,
+          });
+        }
+        const grant = this.getGrantForActor(record.terminalId, actorId);
+        if (!grant) {
+          return null;
+        }
+        return this.describeEntry(record, {
+          focused: focused.has(record.terminalId),
+          access: this.createAccessProjection(record.terminalId, grant),
+        });
+      })
+      .filter((entry): entry is TerminalControlPlaneEntry => entry !== null);
+  }
+
+  private isKilledRecord(record: TerminalRecord): boolean {
+    return record.processPhase === "killed";
+  }
+
+  private isHistoryRecord(record: TerminalRecord): boolean {
+    return this.isKilledRecord(record);
+  }
+
+  private finalizeKilledTerminal(
+    terminalId: string,
+    input: {
+      reason: TerminalKilledReason;
+      lastStopReason: TerminalRecord["lastStopReason"];
+      lastExitCode: TerminalRecord["lastExitCode"];
+      lastExitSignal: TerminalRecord["lastExitSignal"];
+      lastStoppedAt: number;
+    },
+  ): TerminalRecord {
+    const current = this.requireRecord(terminalId);
+    const updated = this.db.updateLifecycle(terminalId, {
+      processPhase: "killed",
+      archivedAt: null,
+      lastStopReason: input.lastStopReason ?? "killed",
+      lastExitCode: input.lastExitCode ?? null,
+      lastExitSignal: input.lastExitSignal ?? null,
+      lastStoppedAt: input.lastStoppedAt,
+    });
+    this.cancelPendingApprovalRequestsForTerminal(terminalId);
+    for (const grant of this.db.listActiveGrants(terminalId)) {
+      if (!grant.participantId) {
+        continue;
+      }
+      this.db.revokeActiveLeasesByParticipant(terminalId, grant.participantId, input.lastStoppedAt);
+    }
+    this.lifecycleTransitions.delete(terminalId);
+    this.entries.delete(terminalId);
+    for (const [actorId, focused] of this.focusedTerminalIdsByActor.entries()) {
+      if (!focused.delete(terminalId)) {
+        continue;
+      }
+      this.emitFocus(actorId as TerminalActorId);
+    }
+    this.emitChange({
+      terminalId,
+      reason: input.reason === "daemon_recovery_killed" ? "updated" : "lifecycle",
+    });
+    return updated;
   }
 
   private requirePendingApprovalRequest(terminalId: string, requestId: string): TerminalApprovalRequestRecord {

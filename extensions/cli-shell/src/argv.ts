@@ -6,6 +6,7 @@ const metadataOnlyTokens = new Set(["--help", "-h", "help", "--version", "-v", "
 const cleanupCommandTokens = new Set(["cleanup", "clean"]);
 const roomCommandTokens = new Set(["room", "chat"]);
 const topCommandTokens = new Set(["top", "notifications"]);
+const helpPanelCommandTokens = new Set(["help-panel"]);
 const shellCommandTokens = new Set(["shell", "terminal"]);
 const tmuxActionCommandTokens = new Set(["tmux-action"]);
 const heartbeatStatusCommandTokens = new Set(["heartbeat-status"]);
@@ -33,6 +34,10 @@ export interface CliShellTopArgs extends CliShellBaseArgs {
   command: "top";
 }
 
+export interface CliShellHelpPanelArgs extends CliShellBaseArgs {
+  command: "help-panel";
+}
+
 export interface CliShellShellArgs extends CliShellBaseArgs {
   command: "shell";
 }
@@ -57,6 +62,7 @@ export interface CliShellTmuxActionArgs {
   tmux: string;
   socket: string;
   targetPane: string;
+  targetClient?: string;
   host: string;
   port: number;
   authServiceEndpoint?: string;
@@ -77,6 +83,7 @@ export type CliShellParsedArgs =
   | CliShellAttachArgs
   | CliShellRoomArgs
   | CliShellTopArgs
+  | CliShellHelpPanelArgs
   | CliShellShellArgs
   | CliShellCleanupArgs
   | CliShellTmuxActionArgs
@@ -116,6 +123,7 @@ interface CliShellTmuxActionArgvParseResult {
   tmux?: string;
   socket?: string;
   targetPane?: string;
+  targetClient?: string;
   _: Array<string | number>;
 }
 
@@ -186,12 +194,23 @@ export const normalizeShellName = (value: string | undefined): string => {
   return trimmed.startsWith("shell-") ? trimmed : `shell-${trimmed}`;
 };
 
-export const isCliShellMetadataOnlyArgv = (argv: readonly string[]): boolean =>
-  argv.some((token) => metadataOnlyTokens.has(token));
+export const isCliShellMetadataOnlyArgv = (argv: readonly string[]): boolean => {
+  const firstToken = argv[0];
+  if (!firstToken) {
+    return false;
+  }
+  if (metadataOnlyTokens.has(firstToken)) {
+    return true;
+  }
+  const secondToken = argv[1];
+  return firstToken.startsWith("@") && secondToken !== undefined && metadataOnlyTokens.has(secondToken);
+};
 
 export const isCliShellCleanupCommand = (argv: readonly string[]): boolean => cleanupCommandTokens.has(argv[0] ?? "");
 export const isCliShellRoomCommand = (argv: readonly string[]): boolean => roomCommandTokens.has(argv[0] ?? "");
 export const isCliShellTopCommand = (argv: readonly string[]): boolean => topCommandTokens.has(argv[0] ?? "");
+export const isCliShellHelpPanelCommand = (argv: readonly string[]): boolean =>
+  helpPanelCommandTokens.has(argv[0] ?? "");
 export const isCliShellShellCommand = (argv: readonly string[]): boolean => shellCommandTokens.has(argv[0] ?? "");
 export const isCliShellTmuxActionCommand = (argv: readonly string[]): boolean =>
   tmuxActionCommandTokens.has(argv[0] ?? "");
@@ -267,6 +286,19 @@ export const parseCliShellArgs = (
     const parsed = baseParser(argv.slice(1), env, "agenter-cli-shell top").parseSync() as CliShellArgvParseResult;
     return {
       command: "top",
+      avatarNickname: parseAvatarSelection(parsed),
+      shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
+      createAvatar: parsed.createAvatar === true,
+      clearAvatar: parsed.clearAvatar === true,
+      host: String(parsed.host),
+      port: Number(parsed.port),
+      authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,
+    };
+  }
+  if (isCliShellHelpPanelCommand(argv)) {
+    const parsed = baseParser(argv.slice(1), env, "agenter-cli-shell help-panel").parseSync() as CliShellArgvParseResult;
+    return {
+      command: "help-panel",
       avatarNickname: parseAvatarSelection(parsed),
       shellName: normalizeShellName(typeof parsed.session === "string" ? parsed.session : undefined),
       createAvatar: parsed.createAvatar === true,
@@ -357,6 +389,9 @@ export const parseCliShellArgs = (
         type: "string",
         demandOption: true,
       })
+      .option("target-client", {
+        type: "string",
+      })
       .parseSync() as CliShellTmuxActionArgvParseResult;
     if (parsed._.length > 0) {
       throw new Error(`unexpected tmux-action argv: ${parsed._.map(String).join(" ")}`);
@@ -378,6 +413,7 @@ export const parseCliShellArgs = (
     if (!targetPane) {
       throw new Error("tmux-action --target-pane cannot be empty");
     }
+    const targetClient = parsed.targetClient?.trim();
     return {
       command: "tmux-action",
       action,
@@ -388,6 +424,7 @@ export const parseCliShellArgs = (
       tmux: normalizeTmuxExecutable(parsed.tmux),
       socket,
       targetPane,
+      targetClient: targetClient && targetClient.length > 0 ? targetClient : undefined,
       host: String(parsed.host),
       port: Number(parsed.port),
       authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,

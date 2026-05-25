@@ -306,6 +306,69 @@ describe("Feature: message-chat-control-plane", () => {
     expect(secondPage.items.map((item) => item.content)).toEqual(["message-1", "message-2"]);
   });
 
+  test("Scenario: Given room transcript and metadata changes When room truth is observed Then snapshots pages and change events carry durable revision anchors", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const changes: Array<{
+      reason: string;
+      roomRevision: string;
+      transcriptRevision: string;
+    }> = [];
+    const stop = plane.onChannelChanged((payload) => {
+      if (payload.chatId === room.chatId) {
+        changes.push({
+          reason: payload.reason,
+          roomRevision: payload.roomRevision,
+          transcriptRevision: payload.transcriptRevision,
+        });
+      }
+    });
+
+    const before = plane.snapshotAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      content: "hello revision",
+    });
+    plane.updateChannelAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      patch: { title: "revision room" },
+    });
+    const after = plane.snapshotAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    const page = plane.queryMessagesAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+    });
+    stop();
+    const relevantChanges = changes.filter((change) => change.reason === "message" || change.reason === "updated");
+
+    expect(Number(after.roomRevision)).toBe(Number(before.roomRevision) + 2);
+    expect(Number(after.transcriptRevision)).toBe(Number(before.transcriptRevision) + 1);
+    expect(after.channel.roomRevision).toBe(after.roomRevision);
+    expect(after.channel.transcriptRevision).toBe(after.transcriptRevision);
+    expect(page.roomRevision).toBe(after.roomRevision);
+    expect(page.transcriptRevision).toBe(after.transcriptRevision);
+    expect(relevantChanges).toHaveLength(2);
+    expect(relevantChanges[0]).toMatchObject({
+      reason: "message",
+      roomRevision: String(Number(before.roomRevision) + 1),
+      transcriptRevision: String(Number(before.transcriptRevision) + 1),
+    });
+    expect(relevantChanges[1]).toMatchObject({
+      reason: "updated",
+      roomRevision: String(Number(before.roomRevision) + 2),
+      transcriptRevision: String(Number(before.transcriptRevision) + 1),
+    });
+  });
+
   test("Scenario: Given readonly member and admin room grants When authorized APIs run Then actor-bound access follows the room matrix", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });

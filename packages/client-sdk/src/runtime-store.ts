@@ -117,6 +117,22 @@ const createInitialState = (): RuntimeClientState => ({
     error: null,
     refreshedAt: null,
   },
+  globalTerminalHistory: {
+    data: [],
+    loaded: false,
+    loading: false,
+    refreshing: false,
+    error: null,
+    refreshedAt: null,
+  },
+  globalTerminalArchive: {
+    data: [],
+    loaded: false,
+    loading: false,
+    refreshing: false,
+    error: null,
+    refreshedAt: null,
+  },
   globalTerminalGrantsById: {},
   globalTerminalApprovalsById: {},
   globalTerminalActivityById: {},
@@ -151,6 +167,15 @@ type GlobalRoomAssetsRefreshTask = {
 type GlobalTerminalActivityRefreshTask = {
   promise: Promise<TerminalActivityItem[]>;
   limit: number;
+};
+type GlobalRoomUpdateEvent = {
+  chatId: string;
+  roomRevision: string;
+  transcriptRevision: string;
+  refreshCatalog?: boolean;
+  refreshSnapshot?: boolean;
+  refreshGrants?: boolean;
+  refreshAssets?: boolean;
 };
 
 const sortSessions = (sessions: SessionEntry[]): SessionEntry[] => {
@@ -413,6 +438,37 @@ const normalizeOptionalAccessToken = (value: string | null | undefined): string 
 const buildGlobalRoomReadInflightKey = (input: { chatId: string; accessToken?: string; messageId?: number }): string =>
   [input.chatId, input.accessToken ?? "", input.messageId === undefined ? "" : String(input.messageId)].join("\u0000");
 
+const compareGlobalRoomMessage = (left: GlobalRoomMessage, right: GlobalRoomMessage): number => {
+  if (left.createdAt !== right.createdAt) {
+    return left.createdAt - right.createdAt;
+  }
+  if (left.rowId !== right.rowId) {
+    return left.rowId - right.rowId;
+  }
+  return left.messageId - right.messageId;
+};
+
+const mergeGlobalRoomMessages = (
+  base: readonly GlobalRoomMessage[],
+  pending: readonly GlobalRoomMessage[],
+): GlobalRoomMessage[] => {
+  if (pending.length === 0) {
+    return [...base];
+  }
+  const confirmedClientMessageIds = new Set(
+    base.map((message) => message.clientMessageId).filter((value): value is string => typeof value === "string" && value.length > 0),
+  );
+  const merged = [...base];
+  for (const message of pending) {
+    if (message.clientMessageId && confirmedClientMessageIds.has(message.clientMessageId)) {
+      continue;
+    }
+    merged.push(message);
+  }
+  merged.sort(compareGlobalRoomMessage);
+  return merged;
+};
+
 const mergeGlobalTerminalEntry = (
   current: GlobalTerminalEntry | undefined,
   incoming: GlobalTerminalEntry,
@@ -445,6 +501,38 @@ const mergeGlobalTerminalEntry = (
     actors: incoming.actors ?? current.actors,
   };
 };
+
+const isHistoryProjectionTerminal = (terminal: Pick<GlobalTerminalEntry, "processPhase" | "archivedAt">): boolean =>
+  terminal.processPhase === "killed" && terminal.archivedAt == null;
+
+const isArchivedProjectionTerminal = (terminal: Pick<GlobalTerminalEntry, "processPhase" | "archivedAt">): boolean =>
+  terminal.processPhase === "killed" && terminal.archivedAt != null;
+
+const isLiveProjectionTerminal = (terminal: Pick<GlobalTerminalEntry, "processPhase" | "archivedAt">): boolean =>
+  terminal.processPhase !== "killed" && terminal.archivedAt == null;
+
+const compareGlobalTerminalIndexEntries = (left: GlobalTerminalEntry, right: GlobalTerminalEntry): number => {
+  const leftKilled = isHistoryProjectionTerminal(left);
+  const rightKilled = isHistoryProjectionTerminal(right);
+  if (leftKilled !== rightKilled) {
+    return leftKilled ? 1 : -1;
+  }
+  if (leftKilled && rightKilled) {
+    const leftStoppedAt = left.lastStoppedAt ?? left.updatedAt ?? 0;
+    const rightStoppedAt = right.lastStoppedAt ?? right.updatedAt ?? 0;
+    if (leftStoppedAt !== rightStoppedAt) {
+      return rightStoppedAt - leftStoppedAt;
+    }
+  } else if (!leftKilled && !rightKilled) {
+    if (left.updatedAt !== right.updatedAt) {
+      return right.updatedAt - left.updatedAt;
+    }
+  }
+  return left.terminalId.localeCompare(right.terminalId);
+};
+
+const sortGlobalTerminalIndexEntries = (entries: readonly GlobalTerminalEntry[]): GlobalTerminalEntry[] =>
+  [...entries].sort(compareGlobalTerminalIndexEntries);
 
 const isTrpcErrorCode = (error: unknown, code: string): boolean =>
   Boolean(
@@ -489,7 +577,7 @@ const projectGlobalTerminalFromConfigMutation = (
           ligatures: boolean;
         };
       };
-      processPhase: "running" | "stopped" | "not_started";
+      processPhase: "running" | "killed" | "not_started";
     };
   },
 ): GlobalTerminalEntry => {
@@ -516,7 +604,7 @@ const projectGlobalTerminalFromConfigMutation = (
     workspace: current?.workspace ?? null,
     status: current?.status ?? "IDLE",
     processPhase:
-      result.config.processPhase === "not_started" ? (current?.processPhase ?? "stopped") : result.config.processPhase,
+      result.config.processPhase === "not_started" ? (current?.processPhase ?? "not_started") : result.config.processPhase,
     seq: current?.seq ?? 0,
     snapshot,
     focused: current?.focused ?? false,
@@ -543,6 +631,8 @@ const projectGlobalTerminalFromConfigMutation = (
     currentAdminId: current?.currentAdminId,
     approvalTimeoutMs: current?.approvalTimeoutMs,
     pendingRequestCount: current?.pendingRequestCount,
+    createdAt: current?.createdAt ?? 0,
+    updatedAt: current?.updatedAt ?? current?.createdAt ?? 0,
     access: current?.access,
     actors: current?.actors,
   };
@@ -896,6 +986,8 @@ export class RuntimeStore {
   private readonly globalRoomReadMutations = new Map<string, Promise<GlobalRoomEntry>>();
   private globalTerminalsRefreshTask: Promise<GlobalTerminalEntry[]> | null = null;
   private globalTerminalsWatchCount = 0;
+  private globalTerminalHistoryWatchCount = 0;
+  private globalTerminalArchiveWatchCount = 0;
   private readonly globalTerminalGrantRefreshTasks = new Map<string, Promise<GlobalTerminalGrantEntry[]>>();
   private readonly globalTerminalGrantWatchCountById = new Map<string, number>();
   private readonly globalTerminalApprovalRefreshTasks = new Map<string, Promise<GlobalTerminalApprovalRequest[]>>();
@@ -1570,6 +1662,52 @@ export class RuntimeStore {
     return next;
   }
 
+  private appendOptimisticGlobalRoomMessage(input: {
+    chatId: string;
+    text: string;
+    clientMessageId: string;
+  }): void {
+    const optimisticMessage: GlobalRoomMessage = {
+      rowId: Number.MAX_SAFE_INTEGER,
+      messageId: Number.MAX_SAFE_INTEGER,
+      chatId: input.chatId,
+      from: "You",
+      kind: "text",
+      content: input.text,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      readActorIds: [],
+      unreadActorIds: [],
+      clientMessageId: input.clientMessageId,
+      metadata: { optimistic: true },
+    };
+    this.setGlobalRoomSnapshotState(input.chatId, (resource) => {
+      if (!resource.data) {
+        return resource;
+      }
+      return {
+        ...resource,
+        data: {
+          ...resource.data,
+          items: mergeGlobalRoomMessages(resource.data.items, [optimisticMessage]),
+        },
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+  }
+
+  private getPendingOptimisticGlobalRoomMessages(chatId: string): GlobalRoomMessage[] {
+    const snapshot = this.state.globalRoomSnapshotsById[chatId]?.data;
+    if (!snapshot) {
+      return [];
+    }
+    return snapshot.items.filter((message) => message.metadata?.optimistic === true);
+  }
+
   private ensureGlobalRoomGrantsState(chatId: string): CachedResourceState<GlobalRoomGrantEntry[]> {
     return this.state.globalRoomGrantsById[chatId] ?? createCachedResourceState<GlobalRoomGrantEntry[]>([]);
   }
@@ -1783,7 +1921,7 @@ export class RuntimeStore {
     }
     const query = this.resolveGlobalRoomSnapshotQuery(chatId, input);
     const inflight = this.globalRoomSnapshotRefreshTasks.get(chatId);
-    if (inflight && this.sameGlobalRoomSnapshotQuery(inflight.query, query)) {
+    if (!input.force && inflight && this.sameGlobalRoomSnapshotQuery(inflight.query, query)) {
       return await inflight.promise;
     }
     this.setGlobalRoomSnapshotState(chatId, (resource) => ({
@@ -1801,10 +1939,18 @@ export class RuntimeStore {
         limit: query.limit,
       })
       .then((snapshot) => {
+        const latest = this.globalRoomSnapshotRefreshTasks.get(chatId);
+        if (latest?.promise !== task) {
+          return snapshot;
+        }
+        const optimisticMessages = this.getPendingOptimisticGlobalRoomMessages(chatId);
         this.reconcileGlobalRoomEntry(snapshot.channel);
         this.setGlobalRoomSnapshotState(chatId, (resource) => ({
           ...resource,
-          data: snapshot,
+          data: {
+            ...snapshot,
+            items: mergeGlobalRoomMessages(snapshot.items, optimisticMessages),
+          },
           loaded: true,
           loading: false,
           refreshing: false,
@@ -1815,6 +1961,10 @@ export class RuntimeStore {
         return snapshot;
       })
       .catch((error) => {
+        const latest = this.globalRoomSnapshotRefreshTasks.get(chatId);
+        if (latest?.promise !== task) {
+          throw error;
+        }
         const unauthorizedMessage = unauthorizedErrorMessage(error);
         if (unauthorizedMessage) {
           this.setGlobalRoomSnapshotState(chatId, (resource) => ({
@@ -2133,8 +2283,125 @@ export class RuntimeStore {
     return this.state.globalTerminals.data.find((terminal) => terminal.terminalId === terminalId) ?? null;
   }
 
+  private ensureGlobalTerminalHistoryState(): CachedResourceState<GlobalTerminalEntry[]> {
+    return this.state.globalTerminalHistory;
+  }
+
+  private ensureGlobalTerminalArchiveState(): CachedResourceState<GlobalTerminalEntry[]> {
+    return this.state.globalTerminalArchive;
+  }
+
+  private setGlobalTerminalHistoryState(
+    updater: (current: CachedResourceState<GlobalTerminalEntry[]>) => CachedResourceState<GlobalTerminalEntry[]>,
+  ): CachedResourceState<GlobalTerminalEntry[]> {
+    const next = updater(this.ensureGlobalTerminalHistoryState());
+    this.state.globalTerminalHistory = next;
+    return next;
+  }
+
+  private setGlobalTerminalArchiveState(
+    updater: (current: CachedResourceState<GlobalTerminalEntry[]>) => CachedResourceState<GlobalTerminalEntry[]>,
+  ): CachedResourceState<GlobalTerminalEntry[]> {
+    const next = updater(this.ensureGlobalTerminalArchiveState());
+    this.state.globalTerminalArchive = next;
+    return next;
+  }
+
   private reconcileGlobalTerminalEntry(entry: GlobalTerminalEntry): void {
+    if (isArchivedProjectionTerminal(entry)) {
+      this.removeGlobalTerminalEntry(entry.terminalId);
+      this.removeGlobalTerminalHistoryEntry(entry.terminalId);
+      this.reconcileGlobalTerminalArchiveEntry(entry);
+      return;
+    }
     this.setGlobalTerminalsState((resource) => {
+      const nextData = [...resource.data];
+      const index = nextData.findIndex((candidate) => candidate.terminalId === entry.terminalId);
+      if (!isLiveProjectionTerminal(entry)) {
+        if (index >= 0) {
+          nextData.splice(index, 1);
+        }
+        return {
+          ...resource,
+          data: nextData,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        };
+      }
+      if (index >= 0) {
+        nextData[index] = mergeGlobalTerminalEntry(nextData[index], entry);
+      } else {
+        nextData.unshift(entry);
+      }
+      return {
+        ...resource,
+        data: nextData,
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+    this.removeGlobalTerminalArchiveEntry(entry.terminalId);
+    this.reconcileGlobalTerminalHistoryEntry(entry);
+  }
+
+  private removeGlobalTerminalEntry(terminalId: string): void {
+    this.setGlobalTerminalsState((resource) => ({
+      ...resource,
+      data: resource.data.filter((candidate) => candidate.terminalId !== terminalId),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+  }
+
+  private reconcileGlobalTerminalHistoryEntry(entry: GlobalTerminalEntry): void {
+    if (isArchivedProjectionTerminal(entry)) {
+      this.removeGlobalTerminalHistoryEntry(entry.terminalId);
+      this.reconcileGlobalTerminalArchiveEntry(entry);
+      return;
+    }
+    this.setGlobalTerminalHistoryState((resource) => {
+      const nextData = [...resource.data];
+      const index = nextData.findIndex((candidate) => candidate.terminalId === entry.terminalId);
+      if (index >= 0) {
+        nextData[index] = mergeGlobalTerminalEntry(nextData[index], entry);
+      } else {
+        nextData.unshift(entry);
+      }
+      return {
+        ...resource,
+        data: sortGlobalTerminalIndexEntries(nextData),
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+  }
+
+  private removeGlobalTerminalHistoryEntry(terminalId: string): void {
+    this.setGlobalTerminalHistoryState((resource) => ({
+      ...resource,
+      data: resource.data.filter((candidate) => candidate.terminalId !== terminalId),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+  }
+
+  private reconcileGlobalTerminalArchiveEntry(entry: GlobalTerminalEntry): void {
+    this.setGlobalTerminalArchiveState((resource) => {
       const nextData = [...resource.data];
       const index = nextData.findIndex((candidate) => candidate.terminalId === entry.terminalId);
       if (index >= 0) {
@@ -2154,8 +2421,8 @@ export class RuntimeStore {
     });
   }
 
-  private removeGlobalTerminalEntry(terminalId: string): void {
-    this.setGlobalTerminalsState((resource) => ({
+  private removeGlobalTerminalArchiveEntry(terminalId: string): void {
+    this.setGlobalTerminalArchiveState((resource) => ({
       ...resource,
       data: resource.data.filter((candidate) => candidate.terminalId !== terminalId),
       loaded: true,
@@ -2187,6 +2454,8 @@ export class RuntimeStore {
     approvals?: boolean;
     activity?: boolean;
     catalog?: boolean;
+    history?: boolean;
+    archive?: boolean;
     force?: boolean;
   }): Array<Promise<unknown>> {
     const refreshes: Array<Promise<unknown>> = [];
@@ -2223,6 +2492,12 @@ export class RuntimeStore {
     if (input.catalog && (this.state.globalTerminals.loaded || this.globalTerminalsWatchCount > 0)) {
       refreshes.push(this.hydrateGlobalTerminals({ force }));
     }
+    if (input.history && (this.state.globalTerminalHistory.loaded || this.globalTerminalHistoryWatchCount > 0)) {
+      refreshes.push(this.hydrateGlobalTerminalHistory({ force }));
+    }
+    if (input.archive && (this.state.globalTerminalArchive.loaded || this.globalTerminalArchiveWatchCount > 0)) {
+      refreshes.push(this.hydrateGlobalTerminalArchive({ force }));
+    }
 
     return refreshes;
   }
@@ -2233,6 +2508,8 @@ export class RuntimeStore {
     approvals?: boolean;
     activity?: boolean;
     catalog?: boolean;
+    history?: boolean;
+    archive?: boolean;
     force?: boolean;
   }): Promise<void> {
     const refreshes = this.collectGlobalTerminalSurfaceRefreshes(input);
@@ -2248,6 +2525,8 @@ export class RuntimeStore {
     approvals?: boolean;
     activity?: boolean;
     catalog?: boolean;
+    history?: boolean;
+    archive?: boolean;
     force?: boolean;
   }): void {
     const refreshes = this.collectGlobalTerminalSurfaceRefreshes(input);
@@ -2277,9 +2556,10 @@ export class RuntimeStore {
     const task = this.client.trpc.terminal.globalList
       .query()
       .then((output) => {
+        const liveItems = output.items.filter(isLiveProjectionTerminal);
         this.setGlobalTerminalsState((resource) => ({
           ...resource,
-          data: output.items.map((entry) =>
+          data: liveItems.map((entry) =>
             mergeGlobalTerminalEntry(
               resource.data.find((candidate) => candidate.terminalId === entry.terminalId),
               entry,
@@ -2292,7 +2572,7 @@ export class RuntimeStore {
           refreshedAt: Date.now(),
         }));
         this.emit();
-        return output.items;
+        return liveItems;
       })
       .catch((error) => {
         const unauthorizedMessage = unauthorizedErrorMessage(error);
@@ -3214,6 +3494,8 @@ export class RuntimeStore {
           globalRoomSnapshotsById: previousState.globalRoomSnapshotsById,
           globalRoomGrantsById: previousState.globalRoomGrantsById,
           globalTerminals: previousState.globalTerminals,
+          globalTerminalHistory: previousState.globalTerminalHistory,
+          globalTerminalArchive: previousState.globalTerminalArchive,
           globalTerminalGrantsById: previousState.globalTerminalGrantsById,
           globalTerminalApprovalsById: previousState.globalTerminalApprovalsById,
           globalTerminalActivityById: previousState.globalTerminalActivityById,
@@ -3264,6 +3546,12 @@ export class RuntimeStore {
         }
         if (previousState.globalTerminals.loaded || this.globalTerminalsWatchCount > 0) {
           this.runBackgroundTask(this.hydrateGlobalTerminals({ force: true }));
+        }
+        if (previousState.globalTerminalHistory.loaded || this.globalTerminalHistoryWatchCount > 0) {
+          this.runBackgroundTask(this.hydrateGlobalTerminalHistory({ force: true }));
+        }
+        if (previousState.globalTerminalArchive.loaded || this.globalTerminalArchiveWatchCount > 0) {
+          this.runBackgroundTask(this.hydrateGlobalTerminalArchive({ force: true }));
         }
         for (const [terminalId, resource] of Object.entries(previousState.globalTerminalGrantsById)) {
           if (!resource.loaded && !this.globalTerminalGrantWatchCountById.has(terminalId)) {
@@ -4471,6 +4759,9 @@ export class RuntimeStore {
     items: GlobalRoomMessage[];
     hasMore: boolean;
     nextBefore: HistoryPageCursor | null;
+    roomRevision: string;
+    transcriptRevision: string;
+    headVersion: string;
   }> {
     const output = await this.client.trpc.message.globalPage.query({
       chatId: input.chatId,
@@ -4482,6 +4773,9 @@ export class RuntimeStore {
       items: output.items,
       hasMore: output.hasMoreBefore,
       nextBefore: output.nextBefore,
+      roomRevision: output.roomRevision,
+      transcriptRevision: output.transcriptRevision,
+      headVersion: output.headVersion,
     };
   }
 
@@ -4493,8 +4787,16 @@ export class RuntimeStore {
     assetIds?: string[];
     clientMessageId?: string;
   }): Promise<{ ok: boolean; reason?: string }> {
+    const clientMessageId = input.clientMessageId ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.appendOptimisticGlobalRoomMessage({
+      chatId: input.chatId,
+      text: input.text,
+      clientMessageId,
+    });
+    this.emit();
     return await this.client.trpc.message.globalSend.mutate({
       ...input,
+      clientMessageId,
       accessToken: normalizeOptionalAccessToken(input.accessToken),
     });
   }
@@ -4712,7 +5014,7 @@ export class RuntimeStore {
       launchCwd: string;
       workspace: string | null;
       status: "IDLE" | "BUSY";
-      processPhase: "not_started" | "running" | "stopped";
+      processPhase: "not_started" | "running" | "killed";
       seq: number;
       focused: boolean;
       icon?: string;
@@ -4781,12 +5083,152 @@ export class RuntimeStore {
     };
   }
 
+  retainGlobalTerminalHistory(): () => void {
+    this.globalTerminalHistoryWatchCount += 1;
+    return () => {
+      this.globalTerminalHistoryWatchCount = Math.max(0, this.globalTerminalHistoryWatchCount - 1);
+    };
+  }
+
+  retainGlobalTerminalArchive(): () => void {
+    this.globalTerminalArchiveWatchCount += 1;
+    return () => {
+      this.globalTerminalArchiveWatchCount = Math.max(0, this.globalTerminalArchiveWatchCount - 1);
+    };
+  }
+
   async hydrateGlobalTerminals(input: { force?: boolean } = {}): Promise<GlobalTerminalEntry[]> {
     return await this.refreshGlobalTerminalsInternal(input);
   }
 
   async listGlobalTerminals(): Promise<GlobalTerminalEntry[]> {
     return await this.hydrateGlobalTerminals({ force: true });
+  }
+
+  async hydrateGlobalTerminalHistory(input: { force?: boolean } = {}): Promise<GlobalTerminalEntry[]> {
+    const current = this.ensureGlobalTerminalHistoryState();
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+
+    this.setGlobalTerminalHistoryState((resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    try {
+      const output = await this.client.trpc.terminal.globalHistory.query();
+      this.setGlobalTerminalHistoryState((resource) => ({
+        ...resource,
+        data: output.items.map((entry) =>
+          mergeGlobalTerminalEntry(
+            resource.data.find((candidate) => candidate.terminalId === entry.terminalId),
+            entry,
+          ),
+        ),
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      }));
+      this.emit();
+      return output.items;
+    } catch (error) {
+      const unauthorizedMessage = unauthorizedErrorMessage(error);
+      if (unauthorizedMessage) {
+        this.setGlobalTerminalHistoryState((resource) => ({
+          ...resource,
+          data: [],
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: unauthorizedMessage,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return [];
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      this.setGlobalTerminalHistoryState((resource) => ({
+        ...resource,
+        loading: false,
+        refreshing: false,
+        error: message,
+      }));
+      this.emit();
+      throw error;
+    }
+  }
+
+  async listGlobalTerminalHistory(): Promise<GlobalTerminalEntry[]> {
+    return await this.hydrateGlobalTerminalHistory({ force: true });
+  }
+
+  async hydrateGlobalTerminalArchive(input: { force?: boolean } = {}): Promise<GlobalTerminalEntry[]> {
+    const current = this.ensureGlobalTerminalArchiveState();
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+
+    this.setGlobalTerminalArchiveState((resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    try {
+      const output = await this.client.trpc.terminal.globalArchiveList.query();
+      this.setGlobalTerminalArchiveState((resource) => ({
+        ...resource,
+        data: output.items.map((entry) =>
+          mergeGlobalTerminalEntry(
+            resource.data.find((candidate) => candidate.terminalId === entry.terminalId),
+            entry,
+          ),
+        ),
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      }));
+      this.emit();
+      return output.items;
+    } catch (error) {
+      const unauthorizedMessage = unauthorizedErrorMessage(error);
+      if (unauthorizedMessage) {
+        this.setGlobalTerminalArchiveState((resource) => ({
+          ...resource,
+          data: [],
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: unauthorizedMessage,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return [];
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      this.setGlobalTerminalArchiveState((resource) => ({
+        ...resource,
+        loading: false,
+        refreshing: false,
+        error: message,
+      }));
+      this.emit();
+      throw error;
+    }
+  }
+
+  async listGlobalTerminalArchive(): Promise<GlobalTerminalEntry[]> {
+    return await this.hydrateGlobalTerminalArchive({ force: true });
   }
 
   async createGlobalTerminal(input: {
@@ -4836,8 +5278,17 @@ export class RuntimeStore {
         catalog: true,
         force: true,
       });
+      void this.hydrateGlobalTerminalHistory({ force: true }).catch(() => undefined);
     }
     return output.result;
+  }
+
+  async archiveGlobalTerminal(input: { terminalId: string }): Promise<GlobalTerminalEntry> {
+    const output = await this.client.trpc.terminal.globalArchive.mutate(input);
+    this.removeGlobalTerminalHistoryEntry(input.terminalId);
+    this.reconcileGlobalTerminalArchiveEntry(output.terminal);
+    this.emit();
+    return output.terminal;
   }
 
   async focusGlobalTerminals(input: {
@@ -4857,6 +5308,7 @@ export class RuntimeStore {
     const output = await this.client.trpc.terminal.globalDelete.mutate(input);
     if (output.ok) {
       this.removeGlobalTerminalEntry(input.terminalId);
+      this.removeGlobalTerminalHistoryEntry(input.terminalId);
       this.setGlobalTerminalGrantsState(input.terminalId, (resource) => ({
         ...resource,
         data: [],
@@ -6416,6 +6868,8 @@ export class RuntimeStore {
       };
       this.invalidateGlobalTerminalSurface({
         catalog: payload.catalogChanged ?? false,
+        history: payload.catalogChanged ?? false,
+        archive: payload.catalogChanged ?? false,
         force: true,
       });
       this.invalidateGlobalTerminalSurface({
@@ -6439,30 +6893,24 @@ export class RuntimeStore {
     if (event.type === "message.room.updated") {
       const payload = event.payload as {
         catalogChanged?: boolean;
-        snapshotRoomIds?: string[];
-        grantRoomIds?: string[];
-        assetRoomIds?: string[];
+        changes: GlobalRoomUpdateEvent[];
       };
-      if (payload.catalogChanged && (this.state.globalRooms.loaded || this.globalRoomsWatchCount > 0)) {
+      const changes = payload.changes;
+      const shouldRefreshCatalog =
+        payload.catalogChanged || changes.some((change) => change.refreshCatalog === true);
+      if (shouldRefreshCatalog && (this.state.globalRooms.loaded || this.globalRoomsWatchCount > 0)) {
         this.runBackgroundTask(this.hydrateGlobalRooms({ force: true }));
       }
-      for (const chatId of payload.snapshotRoomIds ?? []) {
-        if (!this.shouldRefreshGlobalRoomSnapshot(chatId)) {
-          continue;
+      for (const change of changes) {
+        if (change.refreshSnapshot && this.shouldRefreshGlobalRoomSnapshot(change.chatId)) {
+          this.runBackgroundTask(this.hydrateGlobalRoomSnapshot({ chatId: change.chatId, force: true }));
         }
-        this.runBackgroundTask(this.hydrateGlobalRoomSnapshot({ chatId, force: true }));
-      }
-      for (const chatId of payload.grantRoomIds ?? []) {
-        if (!this.shouldRefreshGlobalRoomGrants(chatId)) {
-          continue;
+        if (change.refreshGrants && this.shouldRefreshGlobalRoomGrants(change.chatId)) {
+          this.runBackgroundTask(this.hydrateGlobalRoomGrants({ chatId: change.chatId, force: true }));
         }
-        this.runBackgroundTask(this.hydrateGlobalRoomGrants({ chatId, force: true }));
-      }
-      for (const chatId of payload.assetRoomIds ?? []) {
-        if (!this.shouldRefreshGlobalRoomAssets(chatId)) {
-          continue;
+        if (change.refreshAssets && this.shouldRefreshGlobalRoomAssets(change.chatId)) {
+          this.runBackgroundTask(this.hydrateGlobalRoomAssets({ chatId: change.chatId, force: true }));
         }
-        this.runBackgroundTask(this.hydrateGlobalRoomAssets({ chatId, force: true }));
       }
       return;
     }
@@ -6549,7 +6997,7 @@ export class RuntimeStore {
       } else if (event.type === "terminal.status") {
         const payload = event.payload as {
           terminalId: string;
-          processPhase: "running" | "stopped";
+          processPhase: "running" | "killed";
           status: "IDLE" | "BUSY";
         };
         runtime.terminals = runtime.terminals.map((item) =>

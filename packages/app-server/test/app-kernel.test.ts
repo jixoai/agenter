@@ -646,7 +646,7 @@ describe("Feature: app kernel event replay", () => {
         accessToken: room.accessToken,
         limit: 4,
       })
-      .items.find((message) => message.content === "hello before jane starts");
+      .items.find((message: { content: string }) => message.content === "hello before jane starts");
     expect(before?.unreadActorIds).toContain(session.avatarPrincipalId as `0x${string}`);
 
     await kernel.startSession(session.id);
@@ -661,7 +661,7 @@ describe("Feature: app kernel event replay", () => {
             accessToken: room.accessToken,
             limit: 4,
           })
-          .items.find((message) => message.content === "hello before jane starts") ?? null;
+          .items.find((message: { content: string }) => message.content === "hello before jane starts") ?? null;
       if (
         loaded &&
         loaded.readActorIds.includes(session.avatarPrincipalId as `0x${string}`) &&
@@ -734,7 +734,7 @@ describe("Feature: app kernel event replay", () => {
         accessToken: room.accessToken,
         limit: 4,
       })
-      .items.find((message) => message.content === "hello legacy jane");
+      .items.find((message: { content: string }) => message.content === "hello legacy jane");
     expect(before?.unreadActorIds).toContain(legacyActorId);
     expect(before?.unreadActorIds).not.toContain(session.avatarPrincipalId as `0x${string}`);
     expect(
@@ -775,7 +775,7 @@ describe("Feature: app kernel event replay", () => {
             accessToken: room.accessToken,
             limit: 4,
           })
-          .items.find((message) => message.content === "hello legacy jane") ?? null;
+          .items.find((message: { content: string }) => message.content === "hello legacy jane") ?? null;
       if (
         loaded &&
         loaded.readActorIds.includes(session.avatarPrincipalId as `0x${string}`) &&
@@ -1423,8 +1423,8 @@ describe("Feature: app kernel event replay", () => {
       accessToken: room.accessToken,
       limit: 20,
     });
-    expect(page.items.some((item) => item.content === "global hello")).toBeTrue();
-    expect(page.items.find((item) => item.content === "pair operator hello")?.senderActorId).toBe(
+    expect(page.items.some((item: { content: string }) => item.content === "global hello")).toBeTrue();
+    expect(page.items.find((item: { content: string; senderActorId?: string }) => item.content === "pair operator hello")?.senderActorId).toBe(
       "session:avatar-pair",
     );
 

@@ -291,6 +291,7 @@ export interface RuntimeTerminalView {
   workspace: string | null;
   status: "IDLE" | "BUSY";
   processPhase: TerminalControlPlaneEntry["processPhase"];
+  archivedAt?: number | null;
   lifecycleTransition?: TerminalControlPlaneEntry["lifecycleTransition"];
   focused: boolean;
   icon?: string;
@@ -511,6 +512,7 @@ export const projectRuntimeTerminal = (terminal: TerminalControlPlaneEntry): Run
   workspace: terminal.workspace,
   status: terminal.status,
   processPhase: terminal.processPhase,
+  archivedAt: terminal.archivedAt ?? null,
   lifecycleTransition: terminal.lifecycleTransition,
   focused: terminal.focused,
   icon: terminal.icon,

@@ -778,6 +778,7 @@ const createRuntimeLocalHandlers = (input: {
     },
   }),
   terminalList: () => input.terminalGateway?.list() ?? [],
+  terminalHistory: () => [],
   terminalGetConfig: ({ terminalId }) => buildMockTerminalConfig(terminalId),
   terminalSetConfig: async ({ terminalId, ...patch }) => ({
     config: {
@@ -839,6 +840,49 @@ const createRuntimeLocalHandlers = (input: {
     }
     return await input.terminalGateway.stop(request);
   },
+  terminalArchive: async ({ terminalId }) => ({
+    terminal: {
+      ...buildMockTerminalConfig(terminalId),
+      processPhase: "killed" as const,
+      archivedAt: Date.now(),
+      lastStopReason: "killed" as const,
+      lastExitCode: null,
+      lastExitSignal: null,
+      lastStoppedAt: Date.now(),
+      status: "IDLE" as const,
+      seq: 0,
+      focused: false,
+      snapshot: undefined,
+      configuredTitle: terminalId,
+      currentTitle: undefined,
+      currentPath: undefined,
+      shortcuts: undefined,
+      transportUrl: undefined,
+      currentAdminId: null,
+      approvalTimeoutMs: 90_000,
+      pendingRequestCount: 0,
+      access: undefined,
+      actors: [],
+      backend: "xterm" as const,
+      command: ["bash"],
+      launchCwd: ROOT_WORKSPACE_PATH,
+      workspace: null,
+      processKind: "shell",
+      rendererPreference: "auto" as const,
+      theme: "default-dark" as const,
+      cursor: "block" as const,
+      font: {
+        family: "ui-monospace",
+        sizePx: 14,
+        lineHeight: 1,
+        letterSpacing: 0,
+        weight: "400",
+        weightBold: "700",
+        ligatures: true,
+      },
+      lifecycleTransition: null,
+    },
+  }),
   terminalManageInvite: async () => {
     throw new Error("terminal manage invite not configured");
   },

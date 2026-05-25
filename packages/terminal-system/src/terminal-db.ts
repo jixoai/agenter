@@ -72,6 +72,7 @@ const mapTerminal = (row: {
   last_exit_code: number | null;
   last_exit_signal: string | null;
   last_stopped_at: number | null;
+  archived_at: number | null;
   created_at: number;
   updated_at: number;
 }): TerminalRecord => ({
@@ -82,8 +83,8 @@ const mapTerminal = (row: {
   launchCwd: row.launch_cwd,
   profile: parseJson(row.profile_json, {}),
   metadata: parseJson(row.metadata_json, {}),
-  processPhase:
-    row.process_phase === "running" || row.process_phase === "stopped" ? row.process_phase : "not_started",
+  processPhase: row.process_phase === "running" || row.process_phase === "killed" ? row.process_phase : "not_started",
+  archivedAt: row.archived_at ?? null,
   lastStopReason:
     row.last_stop_reason === "killed" || row.last_stop_reason === "exited" || row.last_stop_reason === "startup_failed"
       ? row.last_stop_reason
@@ -300,7 +301,34 @@ export class TerminalDb {
         .query(
           `insert into terminal_catalog (
             terminal_id, process_kind, backend, command_json, cwd, launch_cwd, profile_json, metadata_json,
-            process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at,
+            process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at, archived_at,
+            created_at, updated_at, removed_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)`,
+        )
+        .run(
+          input.terminalId,
+          input.processKind,
+          input.backend,
+          toJson(input.command),
+          input.launchCwd,
+          input.launchCwd,
+          toJson(input.profile),
+          toJson(input.metadata),
+          input.processPhase,
+          input.lastStopReason ?? null,
+          input.lastExitCode ?? null,
+          input.lastExitSignal ?? null,
+          input.lastStoppedAt ?? null,
+          input.archivedAt ?? null,
+          now,
+          now,
+        );
+    } else {
+      this.db
+        .query(
+          `insert into terminal_catalog (
+            terminal_id, process_kind, backend, command_json, launch_cwd, profile_json, metadata_json,
+            process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at, archived_at,
             created_at, updated_at, removed_at
           ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)`,
         )
@@ -310,7 +338,6 @@ export class TerminalDb {
           input.backend,
           toJson(input.command),
           input.launchCwd,
-          input.launchCwd,
           toJson(input.profile),
           toJson(input.metadata),
           input.processPhase,
@@ -318,31 +345,7 @@ export class TerminalDb {
           input.lastExitCode ?? null,
           input.lastExitSignal ?? null,
           input.lastStoppedAt ?? null,
-          now,
-          now,
-        );
-    } else {
-      this.db
-        .query(
-          `insert into terminal_catalog (
-            terminal_id, process_kind, backend, command_json, launch_cwd, profile_json, metadata_json,
-            process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at,
-            created_at, updated_at, removed_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)`,
-        )
-        .run(
-          input.terminalId,
-          input.processKind,
-          input.backend,
-          toJson(input.command),
-          input.launchCwd,
-          toJson(input.profile),
-          toJson(input.metadata),
-          input.processPhase,
-          input.lastStopReason ?? null,
-          input.lastExitCode ?? null,
-          input.lastExitSignal ?? null,
-          input.lastStoppedAt ?? null,
+          input.archivedAt ?? null,
           now,
           now,
         );
@@ -355,7 +358,7 @@ export class TerminalDb {
       .query(
         `select terminal_id, process_kind, command_json, launch_cwd, profile_json, metadata_json,
                 backend,
-                process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at,
+                process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at, archived_at,
                 created_at, updated_at
          from terminal_catalog
          where terminal_id = ? and removed_at is null`,
@@ -365,15 +368,38 @@ export class TerminalDb {
   }
 
   listTerminals(): TerminalRecord[] {
+    return this.listTerminalsByProjection("live");
+  }
+
+  listTerminalsByProjection(projection: "live" | "history" | "archive" | "index" | "all"): TerminalRecord[] {
+    const whereClauses = ["removed_at is null"];
+    if (projection === "live") {
+      whereClauses.push("process_phase != 'killed'");
+      whereClauses.push("archived_at is null");
+    } else if (projection === "history") {
+      whereClauses.push("process_phase = 'killed'");
+      whereClauses.push("archived_at is null");
+    } else if (projection === "archive") {
+      whereClauses.push("process_phase = 'killed'");
+      whereClauses.push("archived_at is not null");
+    } else if (projection === "index") {
+      whereClauses.push("archived_at is null");
+    }
+    const orderBy =
+      projection === "index"
+        ? `case when process_phase = 'killed' then 1 else 0 end asc,
+           case when process_phase = 'killed' then coalesce(last_stopped_at, updated_at) else updated_at end desc,
+           terminal_id asc`
+        : "updated_at desc, terminal_id asc";
     const rows = this.db
       .query(
         `select terminal_id, process_kind, command_json, launch_cwd, profile_json, metadata_json,
                 backend,
-                process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at,
+                process_phase, last_stop_reason, last_exit_code, last_exit_signal, last_stopped_at, archived_at,
                 created_at, updated_at
          from terminal_catalog
-         where removed_at is null
-         order by updated_at desc, terminal_id asc`,
+         where ${whereClauses.join(" and ")}
+         order by ${orderBy}`,
       )
       .all() as Array<Parameters<typeof mapTerminal>[0]>;
     return rows.map(mapTerminal);
@@ -457,6 +483,7 @@ export class TerminalDb {
       .query(
         `update terminal_catalog
          set process_phase = ?,
+             archived_at = ?,
              last_stop_reason = ?,
              last_exit_code = ?,
              last_exit_signal = ?,
@@ -466,6 +493,7 @@ export class TerminalDb {
       )
       .run(
         patch.processPhase ?? current.processPhase,
+        patch.archivedAt === undefined ? current.archivedAt ?? null : (patch.archivedAt ?? null),
         patch.lastStopReason === undefined ? current.lastStopReason ?? null : (patch.lastStopReason ?? null),
         patch.lastExitCode === undefined ? current.lastExitCode ?? null : (patch.lastExitCode ?? null),
         patch.lastExitSignal === undefined ? current.lastExitSignal ?? null : (patch.lastExitSignal ?? null),
@@ -482,9 +510,40 @@ export class TerminalDb {
       .run(Date.now(), Date.now(), terminalId);
     const removed = Number(result.changes) > 0;
     if (removed) {
-      this.deleteTerminalDependents(terminalId);
+      this.purgeRemovedTerminal(terminalId);
     }
     return removed;
+  }
+
+  archiveTerminal(terminalId: string, archivedAt = Date.now()): TerminalRecord {
+    const current = this.getTerminal(terminalId);
+    if (!current) {
+      throw new Error(`unknown terminal: ${terminalId}`);
+    }
+    this.db
+      .query(
+        `update terminal_catalog
+         set archived_at = ?, updated_at = ?
+         where terminal_id = ? and removed_at is null`,
+      )
+      .run(archivedAt, archivedAt, terminalId);
+    return this.getTerminal(terminalId)!;
+  }
+
+  unarchiveTerminal(terminalId: string): TerminalRecord {
+    const current = this.getTerminal(terminalId);
+    if (!current) {
+      throw new Error(`unknown terminal: ${terminalId}`);
+    }
+    const now = Date.now();
+    this.db
+      .query(
+        `update terminal_catalog
+         set archived_at = null, updated_at = ?
+         where terminal_id = ? and removed_at is null`,
+      )
+      .run(now, terminalId);
+    return this.getTerminal(terminalId)!;
   }
 
   issueGrant(input: TerminalIssueGrantInput & { terminalId: string; accessToken: string; tokenHash: string }): TerminalGrantRecord {
@@ -1176,6 +1235,7 @@ export class TerminalDb {
         last_exit_code integer,
         last_exit_signal text,
         last_stopped_at integer,
+        archived_at integer,
         created_at integer not null,
         updated_at integer not null,
         removed_at integer
@@ -1296,6 +1356,9 @@ export class TerminalDb {
     }
     if (!columns.has("last_stopped_at")) {
       this.db.query(`alter table terminal_catalog add column last_stopped_at integer`).run();
+    }
+    if (!columns.has("archived_at")) {
+      this.db.query(`alter table terminal_catalog add column archived_at integer`).run();
     }
     if (this.hasLegacyCwdColumn) {
       this.db.query(`update terminal_catalog set launch_cwd = coalesce(launch_cwd, cwd)`).run();

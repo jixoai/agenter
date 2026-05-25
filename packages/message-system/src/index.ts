@@ -77,6 +77,7 @@ export type {
   MessageSourceSubscriptionInput,
   MessageSourceSubscriptionRecord,
   MessageSnapshot,
+  MessageTranscriptPage,
   MessageTransportClientMessage,
   MessageTransportConfig,
   MessageTransportEndpoint,

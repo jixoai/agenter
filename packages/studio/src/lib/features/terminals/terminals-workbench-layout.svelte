@@ -30,24 +30,44 @@
 	const controller = getAppControllerContext();
 	let dismissedTerminalIds = $state<string[]>(readDismissedWorkbenchTabIds('terminals'));
 
-	const activeTerminalId = $derived.by(() => {
+	const activeWorkbenchTabId = $derived.by(() => {
+		if (page.url.pathname === '/terminals/new') {
+			return 'new-terminal';
+		}
+		if (page.url.pathname === '/terminals/history') {
+			return 'terminal-history';
+		}
+		if (page.url.pathname === '/terminals/archive') {
+			return 'terminal-archive';
+		}
 		const match = /^\/terminals\/([^/]+)$/u.exec(page.url.pathname);
 		return match ? decodeURIComponent(match[1] ?? '') : null;
 	});
 
 	$effect(() => {
 		const release = controller.runtimeStore.retainGlobalTerminals();
+		const releaseHistory = controller.runtimeStore.retainGlobalTerminalHistory();
+		const releaseArchive = controller.runtimeStore.retainGlobalTerminalArchive();
 		void controller.runtimeStore.hydrateGlobalTerminals().catch(() => undefined);
+		void controller.runtimeStore.hydrateGlobalTerminalHistory().catch(() => undefined);
+		void controller.runtimeStore.hydrateGlobalTerminalArchive().catch(() => undefined);
 		return () => {
+			releaseArchive();
+			releaseHistory();
 			release();
 		};
 	});
 
 	$effect(() => {
-		if (!activeTerminalId) {
+		if (
+			!activeWorkbenchTabId ||
+			activeWorkbenchTabId === 'new-terminal' ||
+			activeWorkbenchTabId === 'terminal-history' ||
+			activeWorkbenchTabId === 'terminal-archive'
+		) {
 			return;
 		}
-		dismissedTerminalIds = restoreWorkbenchTabId('terminals', dismissedTerminalIds, activeTerminalId);
+		dismissedTerminalIds = restoreWorkbenchTabId('terminals', dismissedTerminalIds, activeWorkbenchTabId);
 	});
 
 	const visibleTerminals = $derived(
@@ -57,6 +77,8 @@
 			dismissedTerminalIds,
 		),
 	);
+	const historyTerminals = $derived(controller.runtimeState.globalTerminalHistory.data);
+	const archivedTerminals = $derived(controller.runtimeState.globalTerminalArchive.data);
 
 	const copyToClipboard = async (value: string): Promise<void> => {
 		if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
@@ -68,7 +90,7 @@
 	const closeTerminalTab = async (terminalId: string): Promise<void> => {
 		const nextTerminal = resolveAdjacentWorkbenchTab(visibleTerminals, (terminal) => terminal.terminalId, terminalId);
 		dismissedTerminalIds = dismissWorkbenchTabId('terminals', dismissedTerminalIds, terminalId);
-		if (activeTerminalId !== terminalId) {
+		if (activeWorkbenchTabId !== terminalId) {
 			return;
 		}
 		await goto(nextTerminal ? `/terminals/${encodeURIComponent(nextTerminal.terminalId)}` : '/terminals/new', {
@@ -111,6 +133,30 @@
 
 		return [
 			...terminalTabs,
+			...(historyTerminals.length > 0
+				? [
+						{
+							id: 'terminal-history',
+							href: '/terminals/history',
+							label: 'Index',
+							title: 'All terminals',
+							description: 'Live terminals appear first, then killed terminals in reverse stop order.',
+							badgeLabel: String(historyTerminals.length),
+						} satisfies WorkbenchTabItem,
+					]
+				: []),
+			...(archivedTerminals.length > 0
+				? [
+						{
+							id: 'terminal-archive',
+							href: '/terminals/archive',
+							label: 'Archive',
+							title: 'Archived terminals',
+							description: 'Review terminals that were removed from the default history queue.',
+							badgeLabel: String(archivedTerminals.length),
+						} satisfies WorkbenchTabItem,
+					]
+				: []),
 			{
 				id: 'new-terminal',
 				href: '/terminals/new',
@@ -126,7 +172,7 @@
 <div class="h-full" data-testid="terminals-workbench">
 	<WorkbenchWindow
 		ariaLabel="Terminal tabs"
-		value={activeTerminalId ?? 'new-terminal'}
+		value={activeWorkbenchTabId ?? 'new-terminal'}
 		{tabs}
 		bodyMode="fill"
 		bodyClass="rounded-none border-0 bg-transparent shadow-none"

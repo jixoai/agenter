@@ -60,6 +60,8 @@ const createRoomEntry = (chatId: string, metadata: Record<string, unknown>, titl
   metadata,
   createdAt: 1,
   updatedAt: 1,
+  roomRevision: "1",
+  transcriptRevision: "0",
   focused: true,
   accessRole: "admin",
   accessToken: `tok:${chatId}`,
@@ -114,6 +116,8 @@ const createTerminalEntry = (
   currentAdminId: null,
   approvalTimeoutMs: 90_000,
   pendingRequestCount: 0,
+  createdAt: 1,
+  updatedAt: 1,
   access: {
     role: "admin",
     accessToken: `tok:${terminalId}`,
@@ -131,6 +135,8 @@ export class FakeCliShellStore implements CliShellStore {
   rooms: GlobalRoomEntry[] = [];
   roomGrants = new Map<string, GlobalRoomGrantEntry[]>();
   terminals: GlobalTerminalEntry[] = [];
+  terminalHistory: GlobalTerminalEntry[] = [];
+  terminalArchive: GlobalTerminalEntry[] = [];
   terminalGrants = new Map<string, GlobalTerminalGrantEntry[]>();
   terminalApprovalRequests = new Map<string, GlobalTerminalApprovalRequest[]>();
   deletedSessions: string[] = [];
@@ -293,6 +299,14 @@ export class FakeCliShellStore implements CliShellStore {
     return [...this.terminals];
   }
 
+  async listGlobalTerminalHistory(): Promise<GlobalTerminalEntry[]> {
+    return [...this.terminalHistory];
+  }
+
+  async listGlobalTerminalArchive(): Promise<GlobalTerminalEntry[]> {
+    return [...this.terminalArchive];
+  }
+
   async createGlobalTerminal(input: {
     terminalId?: string;
     processKind?: string;
@@ -330,7 +344,22 @@ export class FakeCliShellStore implements CliShellStore {
   async deleteGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string }> {
     this.deletedTerminalIds.push(input.terminalId);
     this.terminals = this.terminals.filter((terminal) => terminal.terminalId !== input.terminalId);
+    this.terminalHistory = this.terminalHistory.filter((terminal) => terminal.terminalId !== input.terminalId);
     return { ok: true, message: "deleted" };
+  }
+
+  async archiveGlobalTerminal(input: { terminalId: string }): Promise<GlobalTerminalEntry> {
+    const index = this.terminalHistory.findIndex((terminal) => terminal.terminalId === input.terminalId);
+    if (index === -1) {
+      throw new Error(`terminal missing: ${input.terminalId}`);
+    }
+    const next = {
+      ...this.terminalHistory[index]!,
+      archivedAt: Date.now(),
+    } satisfies GlobalTerminalEntry;
+    this.terminalHistory.splice(index, 1);
+    this.terminalArchive.push(next);
+    return next;
   }
 
   async bootstrapGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
@@ -556,6 +585,7 @@ export class FakeCliShellStore implements CliShellStore {
         commitId: `commit:${input.contextId}`,
         contextId: input.contextId,
         ingressType: "commit",
+        contextMutation: "apply",
         parentCommitIds: [],
         scores: input.scores ?? {},
         meta: {
@@ -644,11 +674,20 @@ export class FakeCliShellStore implements CliShellStore {
       nextBefore: null,
       hasMoreBefore: false,
       headVersion: "0",
+      roomRevision: channel.roomRevision,
+      transcriptRevision: channel.transcriptRevision,
     };
   }
 
-  async pageGlobalRoomMessages(): Promise<{ items: GlobalRoomMessage[]; hasMore: boolean; nextBefore: null }> {
-    return { items: [], hasMore: false, nextBefore: null };
+  async pageGlobalRoomMessages(): Promise<{
+    items: GlobalRoomMessage[];
+    hasMore: boolean;
+    nextBefore: null;
+    roomRevision: string;
+    transcriptRevision: string;
+    headVersion: string;
+  }> {
+    return { items: [], hasMore: false, nextBefore: null, roomRevision: "1", transcriptRevision: "0", headVersion: "0" };
   }
 
   async sendGlobalRoomMessage(input: {

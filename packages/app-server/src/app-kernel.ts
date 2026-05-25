@@ -59,6 +59,7 @@ import {
   type MessageRecord,
   type MessageSeatStateProjection,
   type MessageSnapshot,
+  type MessageTranscriptPage,
   type MessageSourceSubscriptionInput,
   type MessageSourceSubscriptionRecord,
 } from "@agenter/message-system";
@@ -299,6 +300,16 @@ const isBuiltInMessageRoomMetadata = (metadata: Record<string, unknown> | undefi
 const isStandaloneMessageRoomEntry = (channel: { metadata?: Record<string, unknown> } | undefined): boolean =>
   !isBuiltInMessageRoomMetadata(channel?.metadata);
 
+type MessageRoomChangeRecord = {
+  chatId: string;
+  roomRevision: string;
+  transcriptRevision: string;
+  refreshCatalog?: boolean;
+  refreshSnapshot?: boolean;
+  refreshGrants?: boolean;
+  refreshAssets?: boolean;
+};
+
 const sanitizeGlobalRoomMetadata = (metadata?: Record<string, unknown>): Record<string, unknown> | undefined => {
   if (!metadata) {
     return undefined;
@@ -500,6 +511,7 @@ export type PublicRoomEntry = MessageControlPlaneEntry;
 export type PublicRoomMessageRecord = MessageRecord;
 
 export type PublicRoomSnapshot = MessageSnapshot;
+export type PublicRoomPage = MessageTranscriptPage;
 
 export type PublicRoomMessageQueryResult = MessageQueryResult;
 
@@ -524,7 +536,7 @@ const projectPublicRoomMessage = (message: MessageRecord): PublicRoomMessageReco
   messageId: toPublicRoomMessageId(message.messageId),
 });
 
-const projectPublicRoomPage = (page: ReversePage<MessageRecord>): ReversePage<PublicRoomMessageRecord> => ({
+const projectPublicRoomPage = (page: PublicRoomPage): PublicRoomPage => ({
   ...page,
   items: page.items.map(projectPublicRoomMessage),
 });
@@ -828,9 +840,7 @@ export class AppKernel {
   private readonly pendingAvatarCatalogInvalidations = new Set<string>();
   private readonly messageControlPlaneSubscriptions: Array<() => void> = [];
   private readonly terminalControlPlaneSubscriptions: Array<() => void> = [];
-  private readonly pendingMessageRoomSnapshotInvalidations = new Set<string>();
-  private readonly pendingMessageRoomGrantInvalidations = new Set<string>();
-  private readonly pendingMessageRoomAssetInvalidations = new Set<string>();
+  private readonly pendingMessageRoomChanges = new Map<string, MessageRoomChangeRecord>();
   private readonly pendingTerminalGrantInvalidations = new Set<string>();
   private readonly pendingTerminalApprovalInvalidations = new Set<string>();
   private readonly pendingTerminalActivityInvalidations = new Set<string>();
@@ -1012,45 +1022,37 @@ export class AppKernel {
     return isStandaloneMessageRoomEntry(this.messageControlPlane.getChannel(input.chatId, { includeArchived: true }));
   }
 
-  private queueMessageRoomInvalidation(input: {
-    catalogChanged?: boolean;
-    snapshotRoomIds?: string[];
-    grantRoomIds?: string[];
-    assetRoomIds?: string[];
-  }): void {
-    if (input.catalogChanged) {
-      this.pendingMessageRoomCatalogInvalidation = true;
-    }
-    for (const chatId of input.snapshotRoomIds ?? []) {
-      this.pendingMessageRoomSnapshotInvalidations.add(chatId);
-    }
-    for (const chatId of input.grantRoomIds ?? []) {
-      this.pendingMessageRoomGrantInvalidations.add(chatId);
-    }
-    for (const chatId of input.assetRoomIds ?? []) {
-      this.pendingMessageRoomAssetInvalidations.add(chatId);
+  private queueMessageRoomInvalidation(input: { changes: MessageRoomChangeRecord[] }): void {
+    for (const change of input.changes) {
+      const current = this.pendingMessageRoomChanges.get(change.chatId);
+      this.pendingMessageRoomChanges.set(change.chatId, {
+        chatId: change.chatId,
+        roomRevision: change.roomRevision,
+        transcriptRevision: change.transcriptRevision,
+        refreshCatalog: current?.refreshCatalog || change.refreshCatalog,
+        refreshSnapshot: current?.refreshSnapshot || change.refreshSnapshot,
+        refreshGrants: current?.refreshGrants || change.refreshGrants,
+        refreshAssets: current?.refreshAssets || change.refreshAssets,
+      });
+      if (change.refreshCatalog) {
+        this.pendingMessageRoomCatalogInvalidation = true;
+      }
     }
     if (this.messageRoomInvalidationTimer) {
       clearTimeout(this.messageRoomInvalidationTimer);
     }
     this.messageRoomInvalidationTimer = setTimeout(() => {
       const catalogChanged = this.pendingMessageRoomCatalogInvalidation;
-      const snapshotRoomIds = [...this.pendingMessageRoomSnapshotInvalidations];
-      const grantRoomIds = [...this.pendingMessageRoomGrantInvalidations];
-      const assetRoomIds = [...this.pendingMessageRoomAssetInvalidations];
+      const changes = [...this.pendingMessageRoomChanges.values()];
       this.pendingMessageRoomCatalogInvalidation = false;
-      this.pendingMessageRoomSnapshotInvalidations.clear();
-      this.pendingMessageRoomGrantInvalidations.clear();
-      this.pendingMessageRoomAssetInvalidations.clear();
+      this.pendingMessageRoomChanges.clear();
       this.messageRoomInvalidationTimer = null;
-      if (!catalogChanged && snapshotRoomIds.length === 0 && grantRoomIds.length === 0 && assetRoomIds.length === 0) {
+      if (!catalogChanged && changes.length === 0) {
         return;
       }
       this.emit("message.room.updated", {
         catalogChanged,
-        snapshotRoomIds,
-        grantRoomIds,
-        assetRoomIds,
+        changes,
       });
     }, MESSAGE_ROOM_INVALIDATION_DEBOUNCE_MS);
   }
@@ -1064,33 +1066,41 @@ export class AppKernel {
         if (!this.started || !this.isStandaloneMessageRoomChange(payload)) {
           return;
         }
+        const baseChange: MessageRoomChangeRecord = {
+          chatId: payload.chatId,
+          roomRevision: payload.roomRevision,
+          transcriptRevision: payload.transcriptRevision,
+        };
         switch (payload.reason) {
           case "created":
-            this.queueMessageRoomInvalidation({ catalogChanged: true });
+            this.queueMessageRoomInvalidation({
+              changes: [{ ...baseChange, refreshCatalog: true, refreshSnapshot: true }],
+            });
             return;
           case "updated":
           case "message":
           case "read":
             this.queueMessageRoomInvalidation({
-              catalogChanged: true,
-              snapshotRoomIds: [payload.chatId],
+              changes: [{ ...baseChange, refreshCatalog: true, refreshSnapshot: true }],
             });
             return;
           case "grant-issued":
           case "grant-revoked":
             this.queueMessageRoomInvalidation({
-              catalogChanged: true,
-              snapshotRoomIds: [payload.chatId],
-              grantRoomIds: [payload.chatId],
+              changes: [{ ...baseChange, refreshCatalog: true, refreshSnapshot: true, refreshGrants: true }],
             });
             return;
           case "archived":
           case "deleted":
-            this.queueMessageRoomInvalidation({ catalogChanged: true });
+            this.queueMessageRoomInvalidation({
+              changes: [{ ...baseChange, refreshCatalog: true }],
+            });
             return;
           case "focus":
           case "presence":
-            this.queueMessageRoomInvalidation({ snapshotRoomIds: [payload.chatId] });
+            this.queueMessageRoomInvalidation({
+              changes: [{ ...baseChange, refreshSnapshot: true }],
+            });
             return;
         }
       }),
@@ -1244,9 +1254,7 @@ export class AppKernel {
     }
     this.pendingAvatarCatalogInvalidations.clear();
     this.pendingMessageRoomCatalogInvalidation = false;
-    this.pendingMessageRoomSnapshotInvalidations.clear();
-    this.pendingMessageRoomGrantInvalidations.clear();
-    this.pendingMessageRoomAssetInvalidations.clear();
+    this.pendingMessageRoomChanges.clear();
     this.pendingTerminalCatalogInvalidation = false;
     this.pendingTerminalGrantInvalidations.clear();
     this.pendingTerminalApprovalInvalidations.clear();
@@ -3607,7 +3615,7 @@ export class AppKernel {
     accessToken?: string;
     actorId?: MessageActorId;
     superadminActorId?: MessageActorId;
-  }): ReversePage<PublicRoomMessageRecord> {
+  }): PublicRoomPage {
     const access = this.resolveGlobalRoomAccess(input);
     return projectPublicRoomPage(
       this.messageControlPlane.queryMessagesAuthorized({
@@ -3946,6 +3954,34 @@ export class AppKernel {
     });
   }
 
+  listGlobalTerminalHistory(
+    input: {
+      actorId?: TerminalActorId;
+      superadminActorId?: TerminalActorId;
+    } = {},
+  ): TerminalControlPlaneEntry[] {
+    if (input.superadminActorId || !input.actorId) {
+      return this.terminalControlPlane.listIndex();
+    }
+    return this.terminalControlPlane.listIndexForActor(input.actorId, {
+      touchPresence: false,
+    });
+  }
+
+  listGlobalTerminalArchive(
+    input: {
+      actorId?: TerminalActorId;
+      superadminActorId?: TerminalActorId;
+    } = {},
+  ): TerminalControlPlaneEntry[] {
+    if (input.superadminActorId || !input.actorId) {
+      return this.terminalControlPlane.listArchived();
+    }
+    return this.terminalControlPlane.listArchivedForActor(input.actorId, {
+      touchPresence: false,
+    });
+  }
+
   async createGlobalTerminal(input: {
     terminalId?: string;
     processKind?: string;
@@ -4056,6 +4092,14 @@ export class AppKernel {
     superadminActorId?: TerminalActorId;
   }): Promise<{ ok: boolean; message: string }> {
     return await this.terminalControlPlane.stopAuthorized(input);
+  }
+
+  archiveGlobalTerminal(input: {
+    terminalId: string;
+    actorId?: TerminalActorId;
+    superadminActorId?: TerminalActorId;
+  }): TerminalControlPlaneEntry {
+    return this.terminalControlPlane.archiveAuthorized(input);
   }
 
   async deleteGlobalTerminal(input: {
@@ -4741,7 +4785,17 @@ export class AppKernel {
       .uploadAssets(input.chatId, input.files, { uploadedByActorId })
       .map((asset) => this.projectGlobalRoomAsset(input.chatId, asset));
     if (items.length > 0) {
-      this.queueMessageRoomInvalidation({ assetRoomIds: [input.chatId] });
+      const channel = this.messageControlPlane.getChannel(input.chatId, { includeArchived: true });
+      this.queueMessageRoomInvalidation({
+        changes: [
+          {
+            chatId: input.chatId,
+            roomRevision: channel?.roomRevision ?? "0",
+            transcriptRevision: channel?.transcriptRevision ?? "0",
+            refreshAssets: true,
+          },
+        ],
+      });
     }
     return items;
   }

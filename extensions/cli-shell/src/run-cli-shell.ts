@@ -34,6 +34,7 @@ import {
 } from "./tui/settings";
 import { startCliShellTopLayerTui } from "./tui/run-cli-shell-top-tui";
 import { startCliShellShellPaneTui } from "./tui/shell-pane-app";
+import { startCliShellHelpPanelTui } from "./tui/run-cli-shell-help-panel-tui";
 
 const formatCreatedState = (created: boolean): string => (created ? "created" : "reused");
 const formatRuntimeClearState = (sessionIds: readonly string[]): string =>
@@ -49,6 +50,7 @@ export interface CliShellRunDependencies {
   bootstrapRoom(input: CliShellRoomBootstrapInput): Promise<CliShellRoomBootstrapResult>;
   startRoomTui(input: Parameters<typeof startCliShellRoomTui>[0] & { argv?: readonly string[] }): Promise<void>;
   startTopLayerTui(input: Parameters<typeof startCliShellTopLayerTui>[0] & { argv?: readonly string[] }): Promise<void>;
+  startHelpPanelTui(input: Parameters<typeof startCliShellHelpPanelTui>[0]): Promise<void>;
   startShellPaneTui(input: Parameters<typeof startCliShellShellPaneTui>[0]): Promise<void>;
   readHeartbeatStatus(input: Parameters<typeof readCliShellHeartbeatStatus>[0]): Promise<string>;
   buildTmuxPlan(input: Parameters<typeof buildCliShellTmuxPlan>[0]): CliShellTmuxPlan;
@@ -76,6 +78,10 @@ const defaultRunDependencies: CliShellRunDependencies = {
   },
   startTopLayerTui: async (input) => {
     const controller = await startCliShellTopLayerTui(input);
+    await controller.finished;
+  },
+  startHelpPanelTui: async (input) => {
+    const controller = await startCliShellHelpPanelTui(input);
     await controller.finished;
   },
   startShellPaneTui: async (input) => {
@@ -188,6 +194,7 @@ export const runCliShellWithDependencies = async (
               runtimeSessionId: args.runtimeSessionId,
               workspacePath: args.workspacePath,
               targetPane: args.targetPane,
+              targetClient: args.targetClient,
               tmux: args.tmux,
               socketName: args.socket,
               cliShellCommand: resolveCliShellCommandFromArgv(argvInput),
@@ -210,6 +217,7 @@ export const runCliShellWithDependencies = async (
       runtimeSessionId: args.runtimeSessionId,
       workspacePath: args.workspacePath,
       targetPane: args.targetPane,
+      targetClient: args.targetClient,
       tmux: args.tmux,
       socketName: args.socket,
       cliShellCommand: resolveCliShellCommandFromArgv(argvInput),
@@ -233,6 +241,19 @@ export const runCliShellWithDependencies = async (
     } finally {
       client.close();
     }
+  }
+  if (args.command === "help-panel") {
+    if (process.stdin.isTTY && process.stdout.isTTY) {
+      await dependencies.startHelpPanelTui({
+        shellName: args.shellName,
+        avatarNickname: args.avatarNickname,
+      });
+      return;
+    }
+    console.log(`cli-shell help attached`);
+    console.log(`avatar: ${args.avatarNickname}`);
+    console.log(`tmux: ${args.shellName}`);
+    return;
   }
   const client = dependencies.createClient(args);
 

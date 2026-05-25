@@ -26,6 +26,8 @@ const createRoomEntry = (chatId: string): GlobalRoomEntry => ({
   metadata: {},
   createdAt: 1,
   updatedAt: 1,
+  roomRevision: "1",
+  transcriptRevision: "0",
   focused: true,
   accessRole: "admin",
   accessToken: `tok:${chatId}`,
@@ -50,38 +52,47 @@ class RoomAppStore implements CliShellRoomAppStore {
   sentMessages: Array<{ chatId: string; text: string; accessToken?: string }> = [];
   hydrateCalls = 0;
   failHydrateAfterSend = false;
+  #listener: (() => void) | null = null;
+  #messages: GlobalRoomMessage[] = [
+    {
+      rowId: 1,
+      messageId: 1,
+      chatId: "room-shell-5",
+      from: "@bangeel",
+      senderActorId: "auth:bangeel",
+      kind: "text",
+      content: "hello from room",
+      createdAt: 1,
+      updatedAt: 1,
+      readActorIds: [],
+      unreadActorIds: [],
+    },
+  ];
 
   getState(): Pick<RuntimeClientState, "globalRoomSnapshotsById" | "globalTerminalApprovalsById"> {
     return {
       globalRoomSnapshotsById: {
         "room-shell-5": cached({
           channel: createRoomEntry("room-shell-5"),
-          items: [
-            {
-              rowId: 1,
-              messageId: 1,
-              chatId: "room-shell-5",
-              from: "@bangeel",
-              senderActorId: "auth:bangeel",
-              kind: "text",
-              content: "hello from room",
-              createdAt: 1,
-              updatedAt: 1,
-              readActorIds: [],
-              unreadActorIds: [],
-            },
-          ],
+          items: this.#messages,
           nextBefore: null,
           hasMoreBefore: false,
           headVersion: "1",
+          roomRevision: "2",
+          transcriptRevision: "1",
         }),
       },
       globalTerminalApprovalsById: {},
     };
   }
 
-  subscribe(): () => void {
-    return () => {};
+  subscribe(listener: () => void): () => void {
+    this.#listener = listener;
+    return () => {
+      if (this.#listener === listener) {
+        this.#listener = null;
+      }
+    };
   }
 
   retainGlobalRoomSnapshot(): () => void {
@@ -106,10 +117,36 @@ class RoomAppStore implements CliShellRoomAppStore {
     accessToken?: string;
   }): Promise<{ ok: boolean }> {
     this.sentMessages.push(input);
+    this.#messages = [
+      ...this.#messages,
+      {
+        rowId: Number.MAX_SAFE_INTEGER,
+        messageId: Number.MAX_SAFE_INTEGER,
+        chatId: input.chatId,
+        from: "You",
+        senderActorId: undefined,
+        kind: "text",
+        content: input.text,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        readActorIds: [],
+        unreadActorIds: [],
+        clientMessageId: `local-${this.sentMessages.length}`,
+        metadata: { optimistic: true },
+      },
+    ];
+    this.#listener?.();
     return { ok: true };
   }
 
-  async pageGlobalRoomMessages(): Promise<{ items: GlobalRoomMessage[]; hasMore: boolean; nextBefore: null }> {
+  async pageGlobalRoomMessages(): Promise<{
+    items: GlobalRoomMessage[];
+    hasMore: boolean;
+    nextBefore: null;
+    roomRevision: string;
+    transcriptRevision: string;
+    headVersion: string;
+  }> {
     return {
       items: [
         {
@@ -128,6 +165,9 @@ class RoomAppStore implements CliShellRoomAppStore {
       ],
       hasMore: false,
       nextBefore: null,
+      roomRevision: "2",
+      transcriptRevision: "1",
+      headVersion: "1",
     };
   }
 
@@ -230,6 +270,8 @@ const startRoom = async (input?: {
           currentAdminId: null,
           approvalTimeoutMs: 90_000,
           pendingRequestCount: 0,
+          createdAt: 1,
+          updatedAt: 1,
           access: {
             role: "admin",
             accessToken: "tok:terminal-shell-5",
@@ -400,6 +442,16 @@ describe("Feature: cli-shell OpenTUI room input", () => {
         text: "line 1\nline 2",
       },
     ]);
+  });
+
+  test("Scenario: Given the user sends a room message When the send succeeds Then the new message appears in Room immediately without waiting for a follow-up refresh", async () => {
+    const room = await startRoom();
+
+    await room.mockInput.typeText("send now");
+    room.mockInput.pressEnter();
+    await flushRoomAsync(room, 2);
+
+    expect(room.captureCharFrame()).toContain("send now");
   });
 
   test("Scenario: Given the current draft is empty When the user submits /history and accepts the selected item Then cli-shell inserts that history item into the textarea", async () => {

@@ -593,8 +593,40 @@ describe("Feature: terminal control plane", () => {
           item.lifecycleTransition === "killing",
       ),
     ).toBe(true);
-    expect(plane.list().find((item) => item.terminalId === created.terminalId)?.lifecycleTransition).toBeNull();
-    expect(plane.list().find((item) => item.terminalId === created.terminalId)?.processPhase).toBe("stopped");
+    expect(plane.list().find((item) => item.terminalId === created.terminalId)?.lifecycleTransition).toBeUndefined();
+    const historyEntry = plane.listHistory().find((item) => item.terminalId === created.terminalId);
+    expect(historyEntry?.processPhase).toBe("killed");
+    expect(historyEntry?.lifecycleTransition).toBeNull();
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given live and killed terminal instances When listing the index Then live records stay in front and killed records sort by stop time descending", async () => {
+    const plane = createPlane();
+    const liveOlder = await plane.create({ terminalId: "index-live-older" });
+    await Bun.sleep(5);
+    const liveNewer = await plane.create({ terminalId: "index-live-newer" });
+    const killedOlder = await plane.create({ terminalId: "index-killed-older" });
+    await Bun.sleep(5);
+    await plane.stop(killedOlder.terminalId);
+    await Bun.sleep(5);
+    const killedNewer = await plane.create({ terminalId: "index-killed-newer" });
+    await Bun.sleep(5);
+    await plane.stop(killedNewer.terminalId);
+
+    const index = plane.listIndex();
+    const history = plane.listHistory();
+
+    expect(index.map((entry) => entry.terminalId)).toEqual([
+      liveNewer.terminalId,
+      liveOlder.terminalId,
+      killedNewer.terminalId,
+      killedOlder.terminalId,
+    ]);
+    expect(history.map((entry) => entry.terminalId)).toEqual([killedNewer.terminalId, killedOlder.terminalId]);
+    expect(index.slice(0, 2).every((entry) => entry.processPhase !== "killed")).toBe(true);
+    expect(index.slice(2).every((entry) => entry.processPhase === "killed")).toBe(true);
+    expect(history.every((entry) => entry.processPhase === "killed")).toBe(true);
 
     await plane.dispose();
   });
@@ -1470,10 +1502,12 @@ describe("Feature: terminal control plane", () => {
     await plane.create({ terminalId: "demo" });
     expect(plane.list()).toHaveLength(1);
     await expect(plane.stop("demo")).resolves.toEqual({ ok: true, message: "terminal PTY stopped" });
-    expect(plane.list().find((entry) => entry.terminalId === "demo")?.processPhase).toBe("stopped");
-    expect(plane.list()).toHaveLength(1);
+    expect(plane.list().find((entry) => entry.terminalId === "demo")).toBeUndefined();
+    expect(plane.list()).toHaveLength(0);
+    expect(plane.listHistory().find((entry) => entry.terminalId === "demo")?.processPhase).toBe("killed");
     await expect(plane.deleteTerminal("demo")).resolves.toEqual({ ok: true, message: "terminal deleted" });
     expect(plane.list()).toHaveLength(0);
+    expect(plane.listHistory().find((entry) => entry.terminalId === "demo")).toBeUndefined();
 
     await plane.dispose();
   });
@@ -3499,6 +3533,10 @@ describe("Feature: terminal control plane", () => {
       role: "guard",
     });
 
+    const stopped = await plane.stopAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin-a",
+    });
     const deleted = await plane.deleteAuthorized({
       terminalId: created.terminalId,
       actorId: "session:admin-a",
@@ -3510,6 +3548,7 @@ describe("Feature: terminal control plane", () => {
       start: false,
     });
 
+    expect(stopped).toEqual({ ok: true, message: "terminal PTY stopped" });
     expect(deleted.ok).toBe(true);
     expect(recreated.terminalId).toBe(terminalId);
     expect(plane.listForActor("session:guard", { touchPresence: false })).toHaveLength(0);
@@ -3675,8 +3714,9 @@ describe("Feature: terminal control plane", () => {
         actorId: "session:admin",
       }),
     ).resolves.toEqual({ ok: true, message: "terminal PTY stopped" });
-    expect(plane.list().find((entry) => entry.terminalId === created.terminalId)?.processPhase).toBe("stopped");
-    expect(plane.list()).toHaveLength(1);
+    expect(plane.list().find((entry) => entry.terminalId === created.terminalId)).toBeUndefined();
+    expect(plane.list()).toHaveLength(0);
+    expect(plane.listHistory().find((entry) => entry.terminalId === created.terminalId)?.processPhase).toBe("killed");
 
     await plane.dispose();
   });

@@ -155,6 +155,8 @@ export type TerminalActivityOutput = RouterOutputs["runtime"]["terminalActivityP
 export type TerminalActivityItem = TerminalActivityOutput["items"][number];
 export type GlobalTerminalListOutput = RouterOutputs["terminal"]["globalList"];
 export type GlobalTerminalEntry = GlobalTerminalListOutput["items"][number];
+export type GlobalTerminalHistoryOutput = RouterOutputs["terminal"]["globalHistory"];
+export type GlobalTerminalArchiveOutput = RouterOutputs["terminal"]["globalArchiveList"];
 export type GlobalTerminalActivityOutput = RouterOutputs["terminal"]["activityPage"];
 export type GlobalTerminalGrantListOutput = RouterOutputs["terminal"]["listGrants"];
 export type GlobalTerminalGrantEntry = GlobalTerminalGrantListOutput["items"][number];
@@ -234,6 +236,8 @@ export interface RuntimeClientState {
   globalRoomGrantsById: Record<string, CachedResourceState<GlobalRoomGrantEntry[]>>;
   globalRoomAssetsById: Record<string, CachedResourceState<GlobalRoomAssetEntry[]>>;
   globalTerminals: CachedResourceState<GlobalTerminalEntry[]>;
+  globalTerminalHistory: CachedResourceState<GlobalTerminalEntry[]>;
+  globalTerminalArchive: CachedResourceState<GlobalTerminalEntry[]>;
   globalTerminalGrantsById: Record<string, CachedResourceState<GlobalTerminalGrantEntry[]>>;
   globalTerminalApprovalsById: Record<string, CachedResourceState<GlobalTerminalApprovalRequest[]>>;
   globalTerminalActivityById: Record<string, CachedResourceState<TerminalActivityItem[]>>;

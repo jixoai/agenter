@@ -272,7 +272,7 @@ export class ManagedTerminal implements TerminalRuntime {
       this.terminal = null;
       this.clearObservedIdentity();
       this.emitLifecycle({
-        processPhase: "stopped",
+        processPhase: "killed",
         lastStopReason: info.signal ? "killed" : "exited",
         lastExitCode: info.code,
         lastExitSignal: info.signal === null ? null : String(info.signal),
@@ -289,7 +289,7 @@ export class ManagedTerminal implements TerminalRuntime {
       void this.terminal.destroy(true).catch(() => {});
       this.terminal = null;
       this.emitLifecycle({
-        processPhase: "stopped",
+        processPhase: "killed",
         lastStopReason: "startup_failed",
         lastExitCode: null,
         lastExitSignal: null,
@@ -329,7 +329,7 @@ export class ManagedTerminal implements TerminalRuntime {
     this.running = false;
     this.clearObservedIdentity();
     this.emitLifecycle({
-      processPhase: "stopped",
+      processPhase: "killed",
       lastStopReason: "killed",
       lastExitCode: null,
       lastExitSignal: "SIGTERM",

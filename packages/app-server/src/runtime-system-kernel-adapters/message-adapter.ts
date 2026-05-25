@@ -209,7 +209,8 @@ export class RuntimeMessageKernelAdapter implements RuntimeSystemKernelAdapter {
       });
       selected.push(
         ...page.items.filter(
-          (message) => this.options.isUnreadInboundMessage(message) && !this.pendingUnreadMessageIds.has(message.messageId),
+          (message: MessageRecord) =>
+            this.options.isUnreadInboundMessage(message) && !this.pendingUnreadMessageIds.has(message.messageId),
         ),
       );
       before = page.nextBefore;

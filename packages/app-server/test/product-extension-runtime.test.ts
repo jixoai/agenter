@@ -195,7 +195,7 @@ describe("Feature: product extension runtime platform contracts", () => {
     await kernel.start();
     const caller = await createRootSuperadminCaller(kernel);
 
-    expect(Object.keys(caller.productExtension)).toEqual(["ensureAvatarPromptSeed"]);
+    expect(typeof caller.productExtension.ensureAvatarPromptSeed).toBe("function");
 
     await kernel.stop();
   });

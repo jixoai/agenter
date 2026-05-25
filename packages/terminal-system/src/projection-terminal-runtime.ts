@@ -115,7 +115,7 @@ export class ProjectionTerminalRuntime implements TerminalRuntime {
       listener({ ...this.observedIdentity });
     }
     this.emitLifecycle({
-      processPhase: this.isRunning() ? "running" : "stopped",
+      processPhase: this.isRunning() ? "running" : "killed",
       lastStopReason: null,
       lastExitCode: null,
       lastExitSignal: null,
@@ -131,7 +131,7 @@ export class ProjectionTerminalRuntime implements TerminalRuntime {
     this.stopped = true;
     this.detach();
     this.emitLifecycle({
-      processPhase: "stopped",
+      processPhase: "killed",
       lastStopReason: "killed",
       lastExitCode: null,
       lastExitSignal: null,

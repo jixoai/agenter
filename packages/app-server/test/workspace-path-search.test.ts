@@ -89,6 +89,42 @@ describe("Feature: workspace path search", () => {
     }
   });
 
+  test("Scenario: Given a plain workspace with .gitignore When indexing @ paths Then ignored files stay out of the fuzzy index", () => {
+    const workspace = createTempWorkspace();
+    try {
+      mkdirSync(join(workspace, "src"), { recursive: true });
+      mkdirSync(join(workspace, "ignored"), { recursive: true });
+      writeFileSync(join(workspace, ".gitignore"), "ignored\nnode_modules\n", "utf8");
+      writeFileSync(join(workspace, "README.md"), "# demo\n", "utf8");
+      writeFileSync(join(workspace, "node_tools.md"), "# tracked helper\n", "utf8");
+      writeFileSync(join(workspace, "src", "index.ts"), "export const demo = true;\n", "utf8");
+      writeFileSync(join(workspace, "ignored", "secret.ts"), "export const secret = true;\n", "utf8");
+
+      const index = new WorkspacePathSearchIndex();
+      const rootResults = index.search({ cwd: workspace, query: "@", limit: 10 });
+      const ignoredResults = index.search({ cwd: workspace, query: "@secret", limit: 10 });
+
+      expect(rootResults).toEqual(
+        expect.arrayContaining([
+          {
+            label: "src/",
+            path: "src/",
+            isDirectory: true,
+          },
+          {
+            label: "README.md",
+            path: "README.md",
+            isDirectory: false,
+          },
+        ]),
+      );
+      expect(rootResults.some((item) => item.path.startsWith("ignored"))).toBe(false);
+      expect(ignoredResults).toEqual([]);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
   test("Scenario: Given a workspace deleted during lookup When searching paths Then the index degrades to an empty result instead of throwing", () => {
     const workspace = createTempWorkspace();
     const index = new WorkspacePathSearchIndex();

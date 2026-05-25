@@ -1596,7 +1596,7 @@ export interface RuntimeEventMap {
   terminalRead: { terminalId: string; result: ControlPlaneTerminalReadResult };
   terminalStatus: {
     terminalId: string;
-    processPhase: "not_started" | "running" | "stopped";
+    processPhase: "not_started" | "running" | "killed";
     lifecycleTransition: "bootstrapping" | "killing" | null;
     status: "IDLE" | "BUSY";
   };
@@ -1661,7 +1661,8 @@ export interface SessionRuntimeSnapshot {
   terminals: Array<{
     terminalId: string;
     status: "IDLE" | "BUSY";
-    processPhase: "not_started" | "running" | "stopped";
+    processPhase: "not_started" | "running" | "killed";
+    archivedAt?: number | null;
     lifecycleTransition: "bootstrapping" | "killing" | null;
     seq: number;
     launchCwd: string;
@@ -1775,7 +1776,7 @@ export class SessionRuntime {
   private readonly terminalStatusById = new Map<
     string,
     {
-      processPhase: "not_started" | "running" | "stopped";
+      processPhase: "not_started" | "running" | "killed";
       lifecycleTransition: "bootstrapping" | "killing" | null;
       status: "IDLE" | "BUSY";
     }
@@ -3991,6 +3992,8 @@ export class SessionRuntime {
         font: { ...DEFAULT_TERMINAL_FONT },
         currentAdminId: null,
         pendingRequestCount: 0,
+        createdAt: 0,
+        updatedAt: 0,
         access: {
           role: seat.accessRole,
           accessToken: seat.accessToken,
@@ -4410,7 +4413,6 @@ export class SessionRuntime {
     }
     this.focusedTerminalIds = controlPlane.getFocusedTerminalIds(this.terminalActorId);
     this.emitFocusedTerminal();
-    await this.applyAttentionFocusState(this.getTerminalAttentionContextId(terminalId), "background");
     this.enqueueTerminalLifecycleAttentionCommit({
       terminalId,
       contextId: this.getTerminalAttentionContextId(terminalId),
@@ -4434,11 +4436,21 @@ export class SessionRuntime {
     if (!result.ok) {
       return result;
     }
-    const terminal = controlPlane.listForActor(this.terminalActorId).find((item) => item.terminalId === terminalId);
+    const terminal =
+      controlPlane.listHistoryForActor(this.terminalActorId, { touchPresence: false }).find((item) => item.terminalId === terminalId) ??
+      controlPlane.listForActor(this.terminalActorId, { touchPresence: false }).find((item) => item.terminalId === terminalId);
     return {
       ...result,
       ...(terminal ? { terminal } : {}),
     };
+  }
+
+  listRuntimeTerminalHistory(): TerminalControlPlaneEntry[] {
+    return this.requireTerminalControlPlane().listHistoryForActor(this.terminalActorId, { touchPresence: false });
+  }
+
+  archiveRuntimeTerminal(terminalId: string): TerminalControlPlaneEntry {
+    return this.requireTerminalControlPlane().archiveTerminal(terminalId);
   }
 
   private resolveMessageRole(message: MessageRecord): ChatMessage["role"] {
@@ -4666,6 +4678,14 @@ export class SessionRuntime {
     );
     this.terminalSystemCleanup.push(
       this.terminalControlPlane.onChanged(({ terminalId, reason }) => {
+        if (reason === "lifecycle") {
+          const historyEntry = this.terminalControlPlane
+            .listHistoryForActor(this.terminalActorId, { touchPresence: false })
+            .find((entry) => entry.terminalId === terminalId);
+          if (historyEntry?.processPhase === "killed") {
+            void this.handleKilledRuntimeTerminal(historyEntry);
+          }
+        }
         switch (reason) {
           case "created":
           case "updated":
@@ -4976,6 +4996,7 @@ export class SessionRuntime {
           };
         },
         terminalList: () => this.listRuntimeTerminals().map(projectRuntimeTerminal),
+        terminalHistory: () => this.listRuntimeTerminalHistory().map(projectRuntimeTerminal),
         terminalCreate: async (input) => {
           const result = await this.createRuntimeTerminal(input);
           if (!result.terminal) {
@@ -5021,6 +5042,9 @@ export class SessionRuntime {
             terminal: projectRuntimeTerminal(result.terminal),
           };
         },
+        terminalArchive: async (input) => ({
+          terminal: projectRuntimeTerminal(this.archiveRuntimeTerminal(input.terminalId)),
+        }),
         terminalManageInvite: async (input) => await this.inviteRuntimeTerminalSeat(input),
         terminalManageAccept: async (input) => await this.acceptRuntimeTerminalSeat(input),
         terminalManageConfig: async (input) => await this.configRuntimeTerminalSeat(input),
@@ -8603,7 +8627,7 @@ export class SessionRuntime {
         terminalId,
         terminal.getSnapshot(),
         terminal.getStatus(),
-        terminal.isRunning() ? "running" : "stopped",
+        terminal.isRunning() ? "running" : "killed",
       );
       const snapshotJson = JSON.stringify(snapshotPayload);
       const cursorHash = this.terminalReadCursorHashById[terminalId] ?? null;
@@ -8620,7 +8644,7 @@ export class SessionRuntime {
             diff: slice.diff,
             bytes: slice.bytes,
             status: terminal.getStatus(),
-            processPhase: terminal.isRunning() ? "running" : "stopped",
+            processPhase: terminal.isRunning() ? "running" : "killed",
           });
           const shouldUseDiff =
             input.mode === "diff" ||
@@ -8774,7 +8798,7 @@ export class SessionRuntime {
       const previous = this.terminalStatusById.get(terminalId);
       this.syncRuntimeTerminalStatus(terminalId, {
         fallback: {
-          processPhase: running ? "running" : "stopped",
+          processPhase: running ? "running" : "killed",
           status,
         },
       });
@@ -8794,7 +8818,7 @@ export class SessionRuntime {
     terminalId: string,
     input: {
       fallback?: {
-        processPhase: "not_started" | "running" | "stopped";
+        processPhase: "not_started" | "running" | "killed";
         status: "IDLE" | "BUSY";
       };
     } = {},
@@ -8826,6 +8850,31 @@ export class SessionRuntime {
       processPhase: next.processPhase,
       lifecycleTransition: next.lifecycleTransition,
       status: next.status,
+    });
+  }
+
+  private async handleKilledRuntimeTerminal(terminal: TerminalControlPlaneEntry): Promise<void> {
+    this.terminals.delete(terminal.terminalId);
+    delete this.terminalLatestSeq[terminal.terminalId];
+    delete this.terminalSnapshots[terminal.terminalId];
+    delete this.terminalReads[terminal.terminalId];
+    delete this.terminalReadCursorHashById[terminal.terminalId];
+    this.terminalStatusById.delete(terminal.terminalId);
+    this.terminalKernelAdapter.markTerminalConsumed(terminal.terminalId);
+    await this.applyAttentionFocusState(this.getTerminalAttentionContextId(terminal.terminalId), "muted");
+    this.enqueueTerminalLifecycleAttentionCommit({
+      terminalId: terminal.terminalId,
+      contextId: this.getTerminalAttentionContextId(terminal.terminalId),
+      event: "terminal_killed",
+      summary: `Terminal ${terminal.terminalId} was killed`,
+      boundaryChannel: "world_fact",
+      payload: {
+        processPhase: terminal.processPhase,
+        lastStopReason: terminal.lastStopReason ?? null,
+        lastExitCode: terminal.lastExitCode ?? null,
+        lastExitSignal: terminal.lastExitSignal ?? null,
+        lastStoppedAt: terminal.lastStoppedAt ?? null,
+      },
     });
   }
 

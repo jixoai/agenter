@@ -3,6 +3,7 @@ import type { GlobalTerminalEntry } from '@agenter/client-sdk';
 export type TerminalLifecycleTone = 'neutral' | 'accent' | 'positive' | 'warning' | 'critical';
 
 export type TerminalDisplayStatusFact = {
+	key: string;
 	label: string;
 	title: string;
 	tone: TerminalLifecycleTone;
@@ -42,6 +43,7 @@ export const resolveTerminalLifecycleFacts = (
 	if (!terminal) {
 		return [
 			{
+				key: 'none',
 				label: 'No terminal',
 				title: 'No shared terminal is selected.',
 				tone: 'neutral',
@@ -54,24 +56,27 @@ export const resolveTerminalLifecycleFacts = (
 		switch (terminal.processPhase) {
 			case 'running':
 				return {
+					key: 'lifecycle:running',
 					label: 'Running',
 					title: 'PTY is currently running.',
 					tone: 'positive',
 					caps: true,
 				} satisfies TerminalDisplayStatusFact;
-			case 'stopped': {
+			case 'killed': {
 				const stopReason = terminal.lastStopReason ?? 'exited';
 				const reasonLabel =
 					stopReason === 'killed' ? 'Killed' : stopReason === 'startup_failed' ? 'Failed' : 'Exited';
 				return {
-					label: 'Stopped',
-					title: `PTY is currently stopped (${reasonLabel.toLowerCase()}).`,
+					key: 'lifecycle:killed',
+					label: 'Killed',
+					title: `PTY is currently killed (${reasonLabel.toLowerCase()}).`,
 					tone: stopReason === 'startup_failed' ? 'critical' : 'warning',
 					caps: true,
 				} satisfies TerminalDisplayStatusFact;
 			}
 			default:
 				return {
+					key: 'lifecycle:provisioned',
 					label: 'Provisioned',
 					title: 'Terminal catalog entry exists but the PTY has not been started yet.',
 					tone: 'neutral',
@@ -88,6 +93,7 @@ export const resolveTerminalLifecycleFacts = (
 		return [
 			lifecycleFact,
 			{
+				key: `reason:${reason}`,
 				label: reason === 'killed' ? 'Killed' : reason === 'startup_failed' ? 'Failed' : 'Exited',
 				title:
 					reason === 'startup_failed'
@@ -103,6 +109,7 @@ export const resolveTerminalLifecycleFacts = (
 	return [
 		lifecycleFact,
 		{
+			key: `status:${terminal.status.toLowerCase()}`,
 			label: terminal.status === 'BUSY' ? 'Busy' : 'Idle',
 			title:
 				terminal.status === 'BUSY'
@@ -117,5 +124,5 @@ export const resolveTerminalTransportLabel = (terminal: GlobalTerminalEntry): st
 	if (!terminal.transportUrl) {
 		return 'No transport discovery';
 	}
-	return terminal.processPhase === 'running' ? 'Live websocket mirror' : 'Transport discoverable while stopped';
+	return terminal.processPhase === 'running' ? 'Live websocket mirror' : 'History transport reference';
 };

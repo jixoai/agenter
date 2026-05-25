@@ -88,6 +88,8 @@ export interface ProductExtensionRuntimeStore {
     file: { path: string; content: string; mtimeMs: number };
   }>;
   listGlobalTerminals(): Promise<GlobalTerminalEntry[]>;
+  listGlobalTerminalHistory(): Promise<GlobalTerminalEntry[]>;
+  listGlobalTerminalArchive(): Promise<GlobalTerminalEntry[]>;
   createGlobalTerminal(input: {
     terminalId?: string;
     processKind?: string;
@@ -110,6 +112,7 @@ export interface ProductExtensionRuntimeStore {
     focus?: boolean;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }>;
   deleteGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string }>;
+  archiveGlobalTerminal(input: { terminalId: string }): Promise<GlobalTerminalEntry>;
   bootstrapGlobalTerminal(input: {
     terminalId: string;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }>;

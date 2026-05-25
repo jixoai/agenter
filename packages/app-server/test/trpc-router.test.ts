@@ -843,6 +843,9 @@ describe("Feature: app-server trpc procedures", () => {
       limit: 20,
     });
     expect(snapshot.channel.chatId).toBe(room.chatId);
+    expect(snapshot.roomRevision).toMatch(/^\d+$/);
+    expect(snapshot.transcriptRevision).toMatch(/^\d+$/);
+    expect(snapshot.headVersion).toMatch(/^\d+$/);
     expect(snapshot.items.some((item) => item.content === "hello ops")).toBeTrue();
     const sentMessage = snapshot.items.find((item) => item.content === "hello ops");
     expect(sentMessage?.visibleAt).toBe(sentMessage?.createdAt);
@@ -859,6 +862,8 @@ describe("Feature: app-server trpc procedures", () => {
       accessToken: room.accessToken,
       limit: 20,
     });
+    expect(Number(snapshotAfterEdit.roomRevision)).toBeGreaterThanOrEqual(Number(snapshot.roomRevision));
+    expect(Number(snapshotAfterEdit.transcriptRevision)).toBeGreaterThan(Number(snapshot.transcriptRevision));
     expect(snapshotAfterEdit.items.some((item) => item.content === "hello ops corrected")).toBeTrue();
     const recalled = await caller.message.globalRecall({
       chatId: room.chatId,
@@ -901,7 +906,10 @@ describe("Feature: app-server trpc procedures", () => {
       accessToken: room.accessToken,
       limit: 20,
     });
-    const recalledMessage = page.items.find((item) => item.messageId === sentMessage?.messageId);
+    expect(page.roomRevision).toMatch(/^\d+$/);
+    expect(page.transcriptRevision).toMatch(/^\d+$/);
+    expect(page.headVersion).toMatch(/^\d+$/);
+    const recalledMessage = page.items.find((item: { messageId: number }) => item.messageId === sentMessage?.messageId);
     expect(recalledMessage?.content).toBe("");
     expect(recalledMessage?.recalledAt).toBeDefined();
 
@@ -1297,6 +1305,10 @@ describe("Feature: app-server trpc procedures", () => {
       terminalIds: [],
     });
     expect(focused.focusedTerminalIds).toEqual([]);
+
+    await caller.terminal.globalStop({
+      terminalId,
+    });
 
     const deleted = await caller.terminal.globalDelete({
       terminalId,

@@ -11,7 +11,7 @@ Quick start:
 1. Run `terminal list` first to inspect `processPhase`, `currentPath`, `currentTitle`, and prior stop facts before guessing lifecycle from stale output.
 2. Run `terminal create` when no suitable terminal exists yet. Public `terminal create` auto-bootstraps by default, so a fresh terminal may briefly show `lifecycleTransition = bootstrapping` before it settles into `processPhase = running`.
 3. If you need the durable launch command, launch cwd, geometry, or metadata, run `terminal get-config` instead of inferring config from observed runtime output.
-4. If `terminal list` shows `processPhase` as `not_started` or `stopped`, run `terminal bootstrap` before expecting read/write to work.
+4. If `terminal list` shows `processPhase` as `not_started`, run `terminal bootstrap` before expecting read/write to work. If the terminal was already killed, switch to `terminal history` and bootstrap it intentionally from there.
 5. If `terminal list` or `terminal get-config` shows `lifecycleTransition = bootstrapping` or `killing`, wait and reread instead of stacking another lifecycle or config mutation.
 6. Decide whether the next payload is `raw` or `mixed`.
 7. If the exact payload shape is unclear, run `terminal write --help` or `terminal input --help` first.
@@ -19,7 +19,7 @@ Quick start:
 9. Run `terminal await` when you need to wait for bounded evidence such as output change, idle state, or a deterministic text match.
 10. Run `terminal read` only for immediate inspection or recovery of current terminal state.
 11. Run `terminal set-config` when the durable terminal identity is correct but launch truth needs to change for the next bootstrap.
-12. Run `terminal stop` when you want to halt the PTY but keep the durable terminal identity for later bootstrap.
+12. Run `terminal stop` when you want to halt the PTY, remove it from the live list, and keep its durable history evidence for later bootstrap.
 
 Key laws:
 - A runtime does not start with a terminal by default.
@@ -28,7 +28,8 @@ Key laws:
 - Shared terminals keep real-home semantics and do not inherit root-workspace-exclusive env/CLI by default, even when `cwd` starts inside the avatar root workspace.
 - `terminal list` is the lifecycle and observed-identity inspection surface. Read `processPhase`, `currentPath`, `currentTitle`, and stop facts there before inferring state from raw output.
 - `terminal create` auto-bootstraps by default. A newly created terminal may briefly expose `lifecycleTransition = bootstrapping`; wait and reread instead of firing a redundant second bootstrap.
-- Stopped or provisioned terminals do not auto-start when you read or write. Use `terminal bootstrap` explicitly.
+- Provisioned terminals do not auto-start when you read or write. Use `terminal bootstrap` explicitly.
+- Killed terminals leave `terminal list`. Use `terminal history` to inspect dead-instance facts, and bootstrap only when you intentionally want to recover that same durable terminal.
 - `terminal read` consumes this actor's read cursor. Other actors keep independent cursors on the same shared terminal output.
 - Use `terminal read` deliberately: `remark:false` inspects without advancing your cursor, while normal reads advance only your actor's cursor.
 - `terminal await` is the bounded observation primitive. Use it instead of reconstructing waits with shell `sleep`, repeated `terminal read`, and `grep`.
@@ -44,7 +45,7 @@ Key laws:
 - In mixed mode, literal tag-like lines must stay inside `<raw>...</raw>`, and Ctrl combos use `ctrl="true"` such as `<key data="d" ctrl="true"/>`.
 - Interactive stdin programs usually split into two phases: start the program with `terminal write`, then feed content and special keys with `terminal input`.
 - `terminal write` and `terminal input` only prove that input delivery succeeded; they do not prove the process succeeded.
-- `terminal stop` halts the PTY while preserving the durable terminal record. Deletion is a different lifecycle action owned elsewhere.
+- `terminal stop` halts the PTY, removes the terminal from the live list, and preserves durable history evidence. `terminal archive` hides dead history from the default work queue, and `terminal delete` is the final destructive removal.
 - After starting a listener in `terminal`, inspect its real state and verify the exact promised URL or path before you tell a room or user that it is ready.
 - `terminal read` snapshots and "the process is still running" only describe terminal state; they do not prove the promised URL or API path actually responds.
 - When the task already names the workspace and delivery target, the normal next move is to create or recover the terminal, not to browse unrelated room or attention detail first.

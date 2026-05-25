@@ -16,4 +16,19 @@ describe("Feature: Terminals shell toolbar contract", () => {
     expect(terminalsWorkbenchLayoutSource).not.toContain("WorkbenchToolbarStatus");
     expect(terminalsWorkbenchLayoutSource).not.toContain("toolbar={terminalsToolbar}");
   });
+
+  test("Scenario: Given terminal history is now an explicit product surface When reading the workbench source Then the shell exposes a dedicated History tab and route-specific active tab ids", () => {
+    expect(terminalsWorkbenchLayoutSource).toContain("if (page.url.pathname === '/terminals/history')");
+    expect(terminalsWorkbenchLayoutSource).toContain("id: 'terminal-history'");
+    expect(terminalsWorkbenchLayoutSource).toContain("href: '/terminals/history'");
+    expect(terminalsWorkbenchLayoutSource).toContain("label: 'Index'");
+    expect(terminalsWorkbenchLayoutSource).toContain("Live terminals appear first, then killed terminals in reverse stop order.");
+    expect(terminalsWorkbenchLayoutSource).toContain("if (page.url.pathname === '/terminals/new')");
+  });
+
+  test("Scenario: Given archived terminals remain inspectable after leaving history When reading the workbench source Then the shell exposes a dedicated Archive tab instead of making archived evidence disappear", () => {
+    expect(terminalsWorkbenchLayoutSource).toContain("if (page.url.pathname === '/terminals/archive')");
+    expect(terminalsWorkbenchLayoutSource).toContain("id: 'terminal-archive'");
+    expect(terminalsWorkbenchLayoutSource).toContain("href: '/terminals/archive'");
+  });
 });

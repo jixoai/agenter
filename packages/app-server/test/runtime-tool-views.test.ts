@@ -73,6 +73,8 @@ describe("Feature: runtime tool public views", () => {
         createdAt: 1,
         updatedAt: 2,
         focused: true,
+        roomRevision: "1",
+        transcriptRevision: "1",
         accessRole: "member",
         accessToken: "msgtok-secret",
         currentAdmin: true,
@@ -105,6 +107,8 @@ describe("Feature: runtime tool public views", () => {
       ],
       nextBefore: null,
       hasMoreBefore: false,
+      roomRevision: "1",
+      transcriptRevision: "1",
       headVersion: "head-1",
     } satisfies MessageSnapshot;
 

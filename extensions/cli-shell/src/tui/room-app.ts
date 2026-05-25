@@ -72,7 +72,14 @@ export interface CliShellRoomAppStore {
     accessToken?: string;
     before?: HistoryPageCursor | null;
     limit?: number;
-  }): Promise<{ items: GlobalRoomMessage[]; hasMore: boolean; nextBefore: HistoryPageCursor | null }>;
+  }): Promise<{
+    items: GlobalRoomMessage[];
+    hasMore: boolean;
+    nextBefore: HistoryPageCursor | null;
+    roomRevision: string;
+    transcriptRevision: string;
+    headVersion: string;
+  }>;
   hydrateGlobalTerminalApprovals(input: { terminalId: string; force?: boolean }): Promise<GlobalTerminalApprovalRequest[]>;
   approveGlobalTerminalRequest(input: { terminalId: string; requestId: string; durationMs: number }): Promise<unknown>;
   denyGlobalTerminalRequest(input: { terminalId: string; requestId: string }): Promise<unknown>;

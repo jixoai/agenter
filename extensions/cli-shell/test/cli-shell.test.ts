@@ -6,6 +6,7 @@ import {
   CLI_SHELL_TMUX_SOCKET_NAME,
   bootstrapCliShell,
   cleanupCliShellResources,
+  isCliShellMetadataOnlyArgv,
   parseCliShellArgs,
   runCliShellWithDependencies,
   type CliShellRunDependencies,
@@ -65,6 +66,44 @@ describe("Feature: cli-shell tmux migration bootstrap", () => {
   test("Scenario: Given legacy terminal flags When parsing cli-shell argv Then the tmux migration rejects them before backend mutation", () => {
     expect(() => parseCliShellArgs(["--backend=ghostty-native"])).toThrow("unsupported cli-shell flag");
     expect(() => parseCliShellArgs(["--web=4321"])).toThrow("unsupported cli-shell flag");
+  });
+
+  test("Scenario: Given Help is launched as a product surface When parsing cli-shell argv Then help-panel is a dedicated command", () => {
+    expect(parseCliShellArgs(["help-panel", "--session=5", "--avatar=bangeel"])).toMatchObject({
+      command: "help-panel",
+      shellName: "shell-5",
+      avatarNickname: "bangeel",
+    });
+  });
+
+  test("Scenario: Given Help is a tmux action value When checking metadata-only argv Then cli-shell does not swallow the product action", () => {
+    expect(isCliShellMetadataOnlyArgv(["help"])).toBe(true);
+    expect(isCliShellMetadataOnlyArgv(["@bangeel", "--version"])).toBe(true);
+    expect(
+      isCliShellMetadataOnlyArgv([
+        "tmux-action",
+        "--action",
+        "help",
+        "--session=5",
+        "--avatar=bangeel",
+        "--runtime-session-id=session:/repo:bangeel",
+        "--target-pane=%0",
+      ]),
+    ).toBe(false);
+    expect(parseCliShellArgs([
+      "tmux-action",
+      "--action",
+      "help",
+      "--session=5",
+      "--avatar=bangeel",
+      "--runtime-session-id=session:/repo:bangeel",
+      "--target-pane=%0",
+    ])).toMatchObject({
+      command: "tmux-action",
+      action: "help",
+      shellName: "shell-5",
+      avatarNickname: "bangeel",
+    });
   });
 
   test("Scenario: Given active cli-shell runtime sources When inspected Then composed TerminalSystem publication stays out of the product path", () => {
@@ -157,6 +196,9 @@ describe("Feature: cli-shell tmux migration bootstrap", () => {
           startTopLayerTui: async () => {
             throw new Error("top layer TUI should not start for shell subcommand");
           },
+          startHelpPanelTui: async () => {
+            throw new Error("help panel TUI should not start for shell subcommand");
+          },
           startShellPaneTui: async (input) => {
             shellPaneCalls.push({
               terminalId: input.attached.terminal.entry.terminalId,
@@ -206,6 +248,94 @@ describe("Feature: cli-shell tmux migration bootstrap", () => {
     expect(store.terminals.map((entry) => entry.terminalId)).toEqual(["shell-5"]);
     expect(store.focusTerminalCalls).toEqual([["shell-5"]]);
   });
+
+  test("Scenario: Given the help-panel command starts When cli-shell runs in a tty Then the dedicated Help TUI starts without bootstrapping product resources", async () => {
+    const helpPanelCalls: Array<{ shellName: string; avatarNickname: string }> = [];
+
+    const stdin = process.stdin;
+    const stdout = process.stdout;
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(stdin, "isTTY");
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(stdout, "isTTY");
+
+    Object.defineProperty(stdin, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(stdout, "isTTY", {
+      configurable: true,
+      value: true,
+    });
+
+    try {
+      await runCliShellWithDependencies(
+        [
+          "bun",
+          "/repo/extensions/cli-shell/src/bin/agenter-cli-shell.ts",
+          "help-panel",
+          "--session=5",
+          "--avatar=bangeel",
+        ],
+        {
+          createClient: () => {
+            throw new Error("client should not be created for help-panel subcommand");
+          },
+          createStore: () => {
+            throw new Error("store should not be created for help-panel subcommand");
+          },
+          bootstrap: async () => {
+            throw new Error("attach bootstrap should not run for help-panel subcommand");
+          },
+          bootstrapRoom: async () => {
+            throw new Error("room bootstrap should not run for help-panel subcommand");
+          },
+          startRoomTui: async () => {
+            throw new Error("room TUI should not start for help-panel subcommand");
+          },
+          startTopLayerTui: async () => {
+            throw new Error("top layer TUI should not start for help-panel subcommand");
+          },
+          startHelpPanelTui: async (input) => {
+            helpPanelCalls.push({
+              shellName: input.shellName,
+              avatarNickname: input.avatarNickname,
+            });
+          },
+          startShellPaneTui: async () => {
+            throw new Error("shell pane TUI should not start for help-panel subcommand");
+          },
+          readHeartbeatStatus: async () => "unused",
+          buildTmuxPlan: () => {
+            throw new Error("tmux host plan should not run for help-panel subcommand");
+          },
+          runTmuxHost: async () => {
+            throw new Error("tmux host should not run for help-panel subcommand");
+          },
+          refreshManagedTmuxStatus: async () => {
+            throw new Error("managed refresh should not run for help-panel subcommand");
+          },
+        },
+      );
+    } finally {
+      if (stdinDescriptor) {
+        Object.defineProperty(stdin, "isTTY", stdinDescriptor);
+      } else {
+        Object.defineProperty(stdin, "isTTY", {
+          configurable: true,
+          value: undefined,
+        });
+      }
+      if (stdoutDescriptor) {
+        Object.defineProperty(stdout, "isTTY", stdoutDescriptor);
+      } else {
+        Object.defineProperty(stdout, "isTTY", {
+          configurable: true,
+          value: undefined,
+        });
+      }
+    }
+
+    expect(helpPanelCalls).toEqual([{ shellName: "shell-5", avatarNickname: "bangeel" }]);
+  });
 });
 
 describe("Feature: cli-shell tmux cleanup", () => {
@@ -224,6 +354,8 @@ describe("Feature: cli-shell tmux cleanup", () => {
       },
       createdAt: 1,
       updatedAt: 1,
+      roomRevision: "1",
+      transcriptRevision: "0",
       focused: true,
       accessRole: "admin",
       accessToken: "tok:room-shell-5",
@@ -293,6 +425,9 @@ describe("Feature: cli-shell tmux managed status action", () => {
         startTopLayerTui: async () => {
           throw new Error("top layer TUI should not start for tmux managed action");
         },
+        startHelpPanelTui: async () => {
+          throw new Error("help panel TUI should not start for tmux managed action");
+        },
         startShellPaneTui: async () => {
           throw new Error("shell pane TUI should not start for tmux managed action");
         },
@@ -341,6 +476,7 @@ describe("Feature: cli-shell tmux managed status action", () => {
         commitId: "commit:ctx-hosting-shell-5",
         contextId: "ctx-hosting-shell-5",
         ingressType: "commit",
+        contextMutation: "apply",
         parentCommitIds: [],
         scores: { hosting: 1000 },
         meta: { author: "cli-shell", source: "test" },
@@ -376,6 +512,9 @@ describe("Feature: cli-shell tmux managed status action", () => {
         },
         startTopLayerTui: async () => {
           throw new Error("top layer TUI should not start for tmux managed action");
+        },
+        startHelpPanelTui: async () => {
+          throw new Error("help panel TUI should not start for tmux managed action");
         },
         startShellPaneTui: async () => {
           throw new Error("shell pane TUI should not start for tmux managed action");

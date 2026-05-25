@@ -2182,16 +2182,17 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     await runtime.start();
     try {
+      const keepAliveCommand = [process.execPath, "-e", "setInterval(() => {}, 1_000_000)"] as const;
       const created1 = await runtime.createRuntimeTerminal({
         terminalId: "iflow-1",
         processKind: "shell",
-        command: [process.execPath, "-e", "void 0"],
+        command: keepAliveCommand,
         focus: true,
       });
       const created2 = await runtime.createRuntimeTerminal({
         terminalId: "iflow-2",
         processKind: "shell",
-        command: [process.execPath, "-e", "void 0"],
+        command: keepAliveCommand,
         focus: false,
       });
 
@@ -2265,18 +2266,19 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
       const stopped = await stopPromise;
       expect(stopped.ok).toBeTrue();
-      expect(
-        runtime.snapshot().terminals.find((item) => item.terminalId === "transition-no-attention")?.processPhase,
-      ).toBe("stopped");
+      expect(runtime.snapshot().terminals.find((item) => item.terminalId === "transition-no-attention")).toBeUndefined();
 
       const afterStopSnapshot = getAttentionContextSnapshot(internal, terminalContextId);
-      expect(afterStopSnapshot?.commits.length ?? 0).toBe(beforeCommitCount);
+      expect(afterStopSnapshot?.commits.length ?? 0).toBeGreaterThan(beforeCommitCount);
+      expect(afterStopSnapshot?.focusState).toBe("muted");
+      expect(afterStopSnapshot?.commits.some((commit) => commit.summary === "Terminal transition-no-attention was killed")).toBeTrue();
+      expect(getActiveItems(internal).filter((item) => isTerminalMeta(item.meta, "transition-no-attention"))).toHaveLength(0);
 
       const bootstrapped = await runtime.bootstrapRuntimeTerminal("transition-no-attention");
       expect(bootstrapped.ok).toBeTrue();
 
       const afterBootstrapSnapshot = getAttentionContextSnapshot(internal, terminalContextId);
-      expect(afterBootstrapSnapshot?.commits.length ?? 0).toBe(beforeCommitCount);
+      expect(afterBootstrapSnapshot?.commits.length ?? 0).toBeGreaterThan(beforeCommitCount);
       expect(
         runtime.snapshot().terminals.find((item) => item.terminalId === "transition-no-attention")?.lifecycleTransition,
       ).toBeNull();
@@ -2493,7 +2495,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       terminalStatusById: Map<
         string,
         {
-          processPhase: "not_started" | "running" | "stopped";
+          processPhase: "not_started" | "running" | "killed";
           lifecycleTransition: string | null;
           status: "IDLE" | "BUSY";
         }
@@ -2565,7 +2567,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       terminalStatusById: Map<
         string,
         {
-          processPhase: "not_started" | "running" | "stopped";
+          processPhase: "not_started" | "running" | "killed";
           lifecycleTransition: string | null;
           status: "IDLE" | "BUSY";
         }
@@ -4381,7 +4383,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       terminalStatusById: Map<
         string,
         {
-          processPhase: "not_started" | "running" | "stopped";
+          processPhase: "not_started" | "running" | "killed";
           lifecycleTransition: string | null;
           status: "IDLE" | "BUSY";
         }

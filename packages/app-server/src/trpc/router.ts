@@ -1340,6 +1340,12 @@ export const appRouter = t.router({
     globalList: authProcedure.query(({ ctx }) => ({
       items: ctx.kernel.listGlobalTerminals(resolveTerminalCallerScope(ctx.auth)),
     })),
+    globalHistory: authProcedure.query(({ ctx }) => ({
+      items: ctx.kernel.listGlobalTerminalHistory(resolveTerminalCallerScope(ctx.auth)),
+    })),
+    globalArchiveList: authProcedure.query(({ ctx }) => ({
+      items: ctx.kernel.listGlobalTerminalArchive(resolveTerminalCallerScope(ctx.auth)),
+    })),
     globalCreate: authProcedure
       .input(
         z.object({
@@ -1380,6 +1386,18 @@ export const appRouter = t.router({
       )
       .mutation(async ({ ctx, input }) => ({
         result: await ctx.kernel.stopGlobalTerminal({
+          ...input,
+          ...resolveTerminalCallerScope(ctx.auth),
+        }),
+      })),
+    globalArchive: authProcedure
+      .input(
+        z.object({
+          terminalId: z.string().min(1),
+        }),
+      )
+      .mutation(({ ctx, input }) => ({
+        terminal: ctx.kernel.archiveGlobalTerminal({
           ...input,
           ...resolveTerminalCallerScope(ctx.auth),
         }),

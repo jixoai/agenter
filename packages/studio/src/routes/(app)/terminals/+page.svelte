@@ -13,7 +13,22 @@
 		const nextTerminal = controller.runtimeState.globalTerminals.data.find(
 			(terminal) => !dismissedTerminalIds.has(terminal.terminalId),
 		);
-		const nextHref = nextTerminal ? `/terminals/${encodeURIComponent(nextTerminal.terminalId)}` : '/terminals/new';
+		if (nextTerminal) {
+			void goto(`/terminals/${encodeURIComponent(nextTerminal.terminalId)}`, {
+				replaceState: true,
+				noScroll: true,
+				keepFocus: true,
+			});
+			return;
+		}
+		if (
+			!controller.runtimeState.globalTerminalHistory.loaded &&
+			controller.runtimeState.globalTerminalHistory.error === null
+		) {
+			return;
+		}
+		const nextHref =
+			controller.runtimeState.globalTerminalHistory.data.length > 0 ? '/terminals/history' : '/terminals/new';
 		void goto(nextHref, {
 			replaceState: true,
 			noScroll: true,

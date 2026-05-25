@@ -4,6 +4,7 @@ import { RuntimeStore } from "../src/runtime-store";
 import type { AgenterClient, AgenterTransportEvent } from "../src/trpc-client";
 import type {
   GlobalAvatarCatalogEntry,
+  GlobalRoomSnapshotOutput,
   GlobalRoomMessage,
   GlobalTerminalApprovalRequest,
   GlobalTerminalEntry,
@@ -935,6 +936,7 @@ const createMockClient = (input: {
     terminalId: string;
   }) => Promise<{ ok: boolean; message: string }>;
   terminalGlobalListQuery?: (input?: { includeArchived?: boolean }) => Promise<{ items: unknown[] }>;
+  terminalGlobalHistoryQuery?: () => Promise<{ items: unknown[] }>;
   terminalGlobalCreateMutate?: (input: {
     terminalId?: string;
     processKind?: string;
@@ -948,6 +950,7 @@ const createMockClient = (input: {
     terminalIds: string[];
     accessToken?: string;
   }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
+  terminalGlobalArchiveMutate?: (input: { terminalId: string }) => Promise<{ terminal: unknown }>;
   terminalGlobalDeleteMutate?: (input: { terminalId: string }) => Promise<{ ok: boolean; message: string }>;
   terminalGlobalSetConfigMutation?: (input: { terminalId: string; cols?: number; rows?: number }) => Promise<{
     result: {
@@ -1539,6 +1542,8 @@ const createMockClient = (input: {
                   items: [],
                   nextBefore: null,
                   hasMoreBefore: false,
+                  roomRevision: "0",
+                  transcriptRevision: "0",
                   headVersion: "0",
                 },
         },
@@ -1555,7 +1560,14 @@ const createMockClient = (input: {
           }) =>
             input.messageGlobalPageQuery
               ? await input.messageGlobalPageQuery(payload)
-              : { items: [], nextBefore: null, hasMoreBefore: false },
+              : {
+                  items: [],
+                  nextBefore: null,
+                  hasMoreBefore: false,
+                  roomRevision: "0",
+                  transcriptRevision: "0",
+                  headVersion: "0",
+                },
         },
         globalSend: {
           mutate: async (payload: {
@@ -1659,6 +1671,9 @@ const createMockClient = (input: {
           query: async (payload: { includeArchived?: boolean } = {}) =>
             input.terminalGlobalListQuery ? await input.terminalGlobalListQuery(payload) : { items: [] },
         },
+        globalHistory: {
+          query: async () => (input.terminalGlobalHistoryQuery ? await input.terminalGlobalHistoryQuery() : { items: [] }),
+        },
         globalCreate: {
           mutate: async (payload: {
             terminalId?: string;
@@ -1681,6 +1696,12 @@ const createMockClient = (input: {
             input.terminalGlobalFocusMutate
               ? await input.terminalGlobalFocusMutate(payload)
               : { ok: true, message: "ok", focusedTerminalIds: payload.terminalIds },
+        },
+        globalArchive: {
+          mutate: async (payload: { terminalId: string }) =>
+            input.terminalGlobalArchiveMutate
+              ? await input.terminalGlobalArchiveMutate(payload)
+              : { terminal: null },
         },
         globalDelete: {
           mutate: async (payload: { terminalId: string }) =>
@@ -7601,6 +7622,8 @@ describe("Feature: runtime store synchronization", () => {
             ],
             nextBefore: { beforeTimeMs: 2, beforeId: 11 },
             hasMoreBefore: true,
+            roomRevision: "7",
+            transcriptRevision: "7",
             headVersion: "7",
           };
         },
@@ -7623,6 +7646,9 @@ describe("Feature: runtime store synchronization", () => {
             ],
             nextBefore: null,
             hasMoreBefore: false,
+            roomRevision: "7",
+            transcriptRevision: "7",
+            headVersion: "7",
           };
         },
         messageGlobalSendMutate: async (input) => {
@@ -7730,6 +7756,8 @@ describe("Feature: runtime store synchronization", () => {
       ],
       nextBefore: { beforeTimeMs: 2, beforeId: 11 },
       hasMoreBefore: true,
+      roomRevision: "7",
+      transcriptRevision: "7",
       headVersion: "7",
     });
     expect(
@@ -7756,6 +7784,9 @@ describe("Feature: runtime store synchronization", () => {
       ],
       hasMore: false,
       nextBefore: null,
+      roomRevision: "7",
+      transcriptRevision: "7",
+      headVersion: "7",
     });
     expect(
       await store.sendGlobalRoomMessage({
@@ -8002,6 +8033,72 @@ describe("Feature: runtime store synchronization", () => {
     });
   });
 
+  test("Scenario: Given a loaded global room snapshot When a room message is sent Then runtime store shows the optimistic message immediately until the server snapshot confirms it", async () => {
+    const room = {
+      chatId: "room-optimistic-send",
+      kind: "room" as const,
+      title: "Optimistic room",
+      owner: "ops-bot",
+      participants: [{ id: "auth:kzf", label: "kzf" }],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_optimistic",
+      transportUrl: "ws://127.0.0.1:7777/room/room-optimistic-send?token=msgtok_optimistic",
+    };
+    const requests: { send?: { clientMessageId?: string; text: string } } = {};
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        messageGlobalListQuery: async () => ({ items: [room] }),
+        messageGlobalSnapshotQuery: async () => ({
+          channel: room,
+          items: [
+            {
+              rowId: 1,
+              messageId: 1,
+              chatId: room.chatId,
+              from: "ops-bot",
+              kind: "text" as const,
+              content: "older message",
+              createdAt: 1,
+              updatedAt: 1,
+              readActorIds: [],
+              unreadActorIds: [],
+            },
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+          headVersion: "1",
+        }),
+        messageGlobalSendMutate: async (input) => {
+          requests.send = input;
+          return { ok: true };
+        },
+      }),
+    );
+
+    await store.listGlobalRooms();
+    await store.hydrateGlobalRoomSnapshot({ chatId: room.chatId, accessToken: room.accessToken, force: true });
+
+    await store.sendGlobalRoomMessage({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      text: "optimistic hello",
+    });
+
+    const items = store.getGlobalRoomSnapshotState(room.chatId).data?.items ?? [];
+    expect(items.map((item) => item.content)).toEqual(["older message", "optimistic hello"]);
+    expect(items[1]?.clientMessageId).toBe(requests.send?.clientMessageId);
+    expect(items[1]?.metadata).toMatchObject({ optimistic: true });
+
+    await store.hydrateGlobalRoomSnapshot({ chatId: room.chatId, accessToken: room.accessToken, force: true });
+
+    const refreshedItems = store.getGlobalRoomSnapshotState(room.chatId).data?.items ?? [];
+    expect(refreshedItems.map((item) => item.content)).toEqual(["older message", "optimistic hello"]);
+  });
+
   test("Scenario: Given retained room slices When a live room invalidation arrives Then runtime store refreshes only the retained room resources", async () => {
     const roomA = {
       chatId: "room-alpha",
@@ -8123,9 +8220,24 @@ describe("Feature: runtime store synchronization", () => {
       timestamp: Date.now(),
       type: "message.room.updated",
       payload: {
-        snapshotRoomIds: [roomA.chatId, roomB.chatId],
-        grantRoomIds: [roomA.chatId, roomB.chatId],
-        assetRoomIds: [roomA.chatId, roomB.chatId],
+        changes: [
+          {
+            chatId: roomA.chatId,
+            roomRevision: "2",
+            transcriptRevision: "1",
+            refreshSnapshot: true,
+            refreshGrants: true,
+            refreshAssets: true,
+          },
+          {
+            chatId: roomB.chatId,
+            roomRevision: "2",
+            transcriptRevision: "1",
+            refreshSnapshot: true,
+            refreshGrants: true,
+            refreshAssets: true,
+          },
+        ],
       },
     });
 
@@ -8221,6 +8333,120 @@ describe("Feature: runtime store synchronization", () => {
 
     releaseAssets();
     releaseGrants();
+    releaseSnapshot();
+    store.disconnect();
+  });
+
+  test("Scenario: Given a stale inflight room snapshot refresh When a live room invalidation forces reload Then runtime store bypasses the stale query and keeps the newest room truth", async () => {
+    const room = {
+      chatId: "room-stale-inflight",
+      kind: "room" as const,
+      title: "Stale inflight room",
+      owner: "ops-bot",
+      participants: [{ id: "auth:kzf", label: "kzf" }],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_stale",
+      transportUrl: "ws://127.0.0.1:7777/room/room-stale-inflight?token=msgtok_stale",
+      roomRevision: "1",
+      transcriptRevision: "0",
+    };
+    let eventHandlers: SubscriptionHandlers | null = null;
+    let resolveFirstSnapshot: ((value: GlobalRoomSnapshotOutput) => void) | null = null;
+    let snapshotCallCount = 0;
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        onSubscribe: (handlers) => {
+          eventHandlers = handlers;
+        },
+        messageGlobalListQuery: async () => ({ items: [room] }),
+        messageGlobalSnapshotQuery: async () => {
+          snapshotCallCount += 1;
+          if (snapshotCallCount === 1) {
+            return await new Promise<GlobalRoomSnapshotOutput>((resolve) => {
+              resolveFirstSnapshot = resolve;
+            });
+          }
+          return {
+            channel: {
+              ...room,
+              roomRevision: "2",
+              transcriptRevision: "1",
+            },
+            items: [
+              {
+                rowId: 2,
+                messageId: 2,
+                chatId: room.chatId,
+                from: "ops-bot",
+                kind: "text" as const,
+                content: "fresh room message",
+                createdAt: 2,
+                updatedAt: 2,
+                readActorIds: [],
+                unreadActorIds: [],
+              },
+            ],
+            nextBefore: null,
+            hasMoreBefore: false,
+            roomRevision: "2",
+            transcriptRevision: "1",
+            headVersion: "2",
+          };
+        },
+      }),
+    );
+
+    await store.connect();
+    await store.hydrateGlobalRooms();
+    const releaseSnapshot = store.retainGlobalRoomSnapshot(room.chatId);
+    const firstHydrate = store.hydrateGlobalRoomSnapshot({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 20,
+      force: true,
+    });
+    await Promise.resolve();
+
+    emitSubscriptionEvent(eventHandlers, {
+      version: 1,
+      eventId: 1,
+      timestamp: Date.now(),
+      type: "message.room.updated",
+      payload: {
+        changes: [
+          {
+            chatId: room.chatId,
+            roomRevision: "2",
+            transcriptRevision: "1",
+            refreshSnapshot: true,
+          },
+        ],
+      },
+    });
+
+    await waitFor(() => snapshotCallCount === 2);
+    resolveFirstSnapshot?.({
+      channel: room,
+      items: [],
+      nextBefore: null,
+      hasMoreBefore: false,
+      roomRevision: "1",
+      transcriptRevision: "0",
+      headVersion: "1",
+    });
+    await firstHydrate;
+    await waitFor(() => store.getGlobalRoomSnapshotState(room.chatId).data?.roomRevision === "2");
+
+    expect(store.getGlobalRoomSnapshotState(room.chatId).data).toMatchObject({
+      roomRevision: "2",
+      transcriptRevision: "1",
+      items: [expect.objectContaining({ content: "fresh room message" })],
+    });
+
     releaseSnapshot();
     store.disconnect();
   });
@@ -8669,39 +8895,51 @@ describe("Feature: runtime store synchronization", () => {
       createdAt: 5,
       expiresAt: 65_000,
     };
+    const killedTerminal = {
+      ...terminal,
+      terminalId: "term-ops-history",
+      processPhase: "killed" as const,
+      lastStopReason: "killed" as const,
+      lastExitCode: 130,
+      lastStoppedAt: 20,
+    };
     let pendingApprovals = [pendingApproval, deniedApproval];
     let guardGrantIssued = false;
     let guardLeaseActive = false;
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(0),
-        terminalGlobalListQuery: async (input) => {
-          requests.list = input;
-          return {
-            items: [
-              {
-                ...terminal,
-                pendingRequestCount: pendingApprovals.length,
-                actors: guardGrantIssued
-                  ? [
-                      ...(terminal.actors ?? []),
-                      {
-                        actorId: pendingApproval.participantId,
-                        role: "guard" as const,
-                        label: "Guard",
-                        currentAdmin: false,
-                        online: true,
-                        focused: false,
-                        invalidCredential: false,
-                        leaseId: guardLeaseActive ? approvedLease.leaseId : undefined,
-                        leaseExpiresAt: guardLeaseActive ? approvedLease.expiresAt : undefined,
-                      },
-                    ]
-                  : terminal.actors,
-              },
-            ],
-          };
-        },
+	        terminalGlobalListQuery: async (input) => {
+	          requests.list = input;
+	          return {
+	            items: [
+	              {
+	                ...terminal,
+	                pendingRequestCount: pendingApprovals.length,
+	                actors: guardGrantIssued
+	                  ? [
+	                      ...(terminal.actors ?? []),
+	                      {
+	                        actorId: pendingApproval.participantId,
+	                        role: "guard" as const,
+	                        label: "Guard",
+	                        currentAdmin: false,
+	                        online: true,
+	                        focused: false,
+	                        invalidCredential: false,
+	                        leaseId: guardLeaseActive ? approvedLease.leaseId : undefined,
+	                        leaseExpiresAt: guardLeaseActive ? approvedLease.expiresAt : undefined,
+	                      },
+	                    ]
+	                  : terminal.actors,
+	              },
+	              killedTerminal,
+	            ],
+	          };
+	        },
+	        terminalGlobalHistoryQuery: async () => ({
+	          items: [terminal, killedTerminal],
+	        }),
         terminalGlobalCreateMutate: async (input) => {
           requests.create = {
             terminalId: input.terminalId,
@@ -8808,6 +9046,15 @@ describe("Feature: runtime store synchronization", () => {
           requests.delete = input;
           return { ok: true, message: "deleted" };
         },
+        terminalGlobalArchiveMutate: async (input) => {
+          requests.archive = input;
+          return {
+            terminal: {
+              ...killedTerminal,
+              archivedAt: 42,
+            },
+          };
+        },
         terminalActivityPageQuery: async (input) => {
           requests.activity = { terminalId: input.terminalId, limit: input.limit };
           return {
@@ -8843,6 +9090,7 @@ describe("Feature: runtime store synchronization", () => {
     );
 
     expect(await store.listGlobalTerminals()).toEqual([terminal]);
+    expect(await store.listGlobalTerminalHistory()).toEqual([terminal, killedTerminal]);
     expect(
       await store.createGlobalTerminal({
         terminalId: terminal.terminalId,
@@ -8957,9 +9205,23 @@ describe("Feature: runtime store synchronization", () => {
       11, 12,
     ]);
 
+    const archived = await store.archiveGlobalTerminal({ terminalId: killedTerminal.terminalId });
+    expect(archived).toEqual({
+      ...killedTerminal,
+      archivedAt: 42,
+    });
+    expect(store.getState().globalTerminalHistory.data).toEqual([terminal]);
+    expect(store.getState().globalTerminalArchive.data).toEqual([
+      {
+        ...killedTerminal,
+        archivedAt: 42,
+      },
+    ]);
+
     const deleted = await store.deleteGlobalTerminal({ terminalId: terminal.terminalId });
     expect(deleted).toEqual({ ok: true, message: "deleted" });
     expect(store.getState().globalTerminals.data).toEqual([]);
+    expect(store.getState().globalTerminalHistory.data).toEqual([]);
     expect(store.getState().globalTerminalGrantsById[terminal.terminalId]?.data).toEqual([]);
     expect(store.getState().globalTerminalApprovalsById[terminal.terminalId]?.data).toEqual([]);
     expect(store.getState().globalTerminalActivityById[terminal.terminalId]?.data).toEqual([]);
@@ -9015,6 +9277,9 @@ describe("Feature: runtime store synchronization", () => {
     expect(requests.activity).toEqual({
       terminalId: terminal.terminalId,
       limit: 20,
+    });
+    expect(requests.archive).toEqual({
+      terminalId: killedTerminal.terminalId,
     });
     expect(requests.delete).toEqual({
       terminalId: terminal.terminalId,
@@ -9818,6 +10083,83 @@ describe("Feature: runtime store synchronization", () => {
       },
     });
     expect(entry?.snapshot?.lines).toEqual(["prompt$", "echo synced", "synced!"]);
+
+    store.disconnect();
+  });
+
+  test("Scenario: Given runtime truth reports a live terminal as killed When the terminal status event arrives Then the product store removes it from live catalog and projects it into terminal history", async () => {
+    let onData: ((event: unknown) => void) | undefined;
+    const terminalId = "term-history-projection";
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        onSubscribe: (handlers) => {
+          onData = handlers.onData;
+        },
+        terminalGlobalListQuery: async () => ({
+          items: [
+            {
+              terminalId,
+              processKind: "shell",
+              command: ["/bin/bash"],
+              launchCwd: "/repo/history",
+              workspace: null,
+              status: "IDLE" as const,
+              processPhase: "running" as const,
+              seq: 1,
+              snapshot: {
+                seq: 1,
+                timestamp: 1,
+                cols: 80,
+                rows: 24,
+                lines: ["prompt$"],
+                cursor: { x: 7, y: 0 },
+              },
+              focused: false,
+              icon: undefined,
+              configuredTitle: "History projection",
+              currentTitle: "History projection",
+              currentPath: "/repo/history",
+              shortcuts: undefined,
+              rendererPreference: "auto" as const,
+              theme: "default-dark" as const,
+              cursor: "block" as const,
+              transportUrl: undefined,
+              currentAdminId: null,
+              approvalTimeoutMs: 90_000,
+              pendingRequestCount: 0,
+              access: undefined,
+              actors: [],
+            },
+          ],
+        }),
+      }),
+    );
+
+    store.retainGlobalTerminals();
+    store.retainGlobalTerminalHistory();
+    await store.connect();
+    await store.hydrateGlobalTerminals({ force: true });
+
+    onData?.({
+      version: 1,
+      eventId: 21,
+      timestamp: Date.now(),
+      type: "terminal.status",
+      sessionId: "i-1",
+      payload: {
+        terminalId,
+        processPhase: "killed",
+        status: "IDLE",
+      },
+    });
+
+    expect(store.getState().globalTerminals.data.find((item) => item.terminalId === terminalId)).toBeUndefined();
+    expect(store.getState().globalTerminalHistory.data.find((item) => item.terminalId === terminalId)).toMatchObject({
+      terminalId,
+      processPhase: "killed",
+      status: "IDLE",
+    });
 
     store.disconnect();
   });

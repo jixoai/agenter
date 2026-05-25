@@ -609,7 +609,7 @@ describe("Feature: runtime descriptor CLI", () => {
             launchCwd: "/repo",
             workspace: null,
             status: "IDLE",
-            processPhase: "stopped",
+            processPhase: "killed",
             lifecycleTransition: null,
             focused: false,
             configuredTitle: "Chess Dev",
@@ -627,7 +627,7 @@ describe("Feature: runtime descriptor CLI", () => {
     const result = await terminal.execute(["list"], createCommandContext());
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('"processPhase": "stopped"');
+    expect(result.stdout).toContain('"processPhase": "killed"');
     expect(result.stdout).toContain('"currentTitle": "vite preview"');
     expect(result.stdout).toContain('"currentPath": "/repo/apps/web"');
     expect(result.stdout).toContain('"lastStopReason": "killed"');
@@ -1095,13 +1095,13 @@ describe("Feature: runtime descriptor CLI", () => {
     const result = await terminal.execute(["--help"], createCommandContext());
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("list: List terminals visible to this runtime, including lifecycle");
+    expect(result.stdout).toContain("list: List live terminals visible to this runtime, including lifecycle");
     expect(result.stdout).toContain("get-config: Read one terminal's durable launch/config truth");
     expect(result.stdout).toContain("set-config: Patch one terminal's durable launch/config truth");
-    expect(result.stdout).toContain("bootstrap: Bootstrap a provisioned or stopped runtime terminal by id.");
-    expect(result.stdout).toContain(
-      "stop: Stop a running runtime terminal PTY by id while preserving durable terminal identity.",
-    );
+    expect(result.stdout).toContain("history: List killed terminal instances retained as history for this runtime.");
+    expect(result.stdout).toContain("bootstrap: Bootstrap a provisioned or killed-history runtime terminal by id.");
+    expect(result.stdout).toContain("stop: Stop a running runtime terminal PTY by id and move it into terminal history.");
+    expect(result.stdout).toContain("archive: Archive a killed terminal history instance without deleting its retained evidence.");
     expect(result.stdout).not.toContain("kill: Kill a runtime terminal by id.");
     expect(api.getRequests()).toHaveLength(0);
   });

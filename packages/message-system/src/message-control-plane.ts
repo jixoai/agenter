@@ -61,6 +61,7 @@ import type {
   MessageSourceSubscriptionInput,
   MessageSourceSubscriptionRecord,
   MessageSnapshot,
+  MessageTranscriptPage,
   MessageTransportClientMessage,
   MessageTransportConfig,
   MessageTransportEndpoint,
@@ -115,6 +116,8 @@ interface MessageChannelChangePayload {
   chatId: string;
   reason: MessageChannelChangeReason;
   builtIn: boolean;
+  roomRevision: string;
+  transcriptRevision: string;
   actorId?: MessageActorId;
 }
 
@@ -442,6 +445,8 @@ export class MessageControlPlane {
       chatId: channel.chatId,
       reason: "created",
       builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      roomRevision: channel.roomRevision,
+      transcriptRevision: channel.transcriptRevision,
       actorId: input.bootstrapActorId,
     });
     const adminProjection = input.bootstrapActorId
@@ -529,10 +534,12 @@ export class MessageControlPlane {
     if (changedChatIds.length > 0) {
       this.bumpVersion();
       for (const chatId of changedChatIds) {
+        const revisions = this.db.bumpRoomRevision(chatId);
         this.emitChannelChanged({
           chatId,
           reason: "focus",
           builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(chatId)?.metadata),
+          ...revisions,
           actorId,
         });
       }
@@ -638,10 +645,12 @@ export class MessageControlPlane {
         continue;
       }
       seen.add(channel.chatId);
+      const revisions = this.db.bumpRoomRevision(channel.chatId);
       this.emitChannelChanged({
         chatId: channel.chatId,
         reason: "presence",
         builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+        ...revisions,
         actorId,
       });
     }
@@ -670,6 +679,10 @@ export class MessageControlPlane {
       return result.message;
     }
     const message = result.message;
+    const revisions = this.db.bumpRoomRevision(input.chatId, {
+      updatedAt: message.updatedAt,
+      transcriptChanged: true,
+    });
     this.bumpVersion();
     this.bumpUnreadVersions(result.readActorIds, result.unreadActorIds);
     for (const listener of this.messageListeners) {
@@ -679,12 +692,17 @@ export class MessageControlPlane {
       chatId: input.chatId,
       reason: "message",
       builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+      ...revisions,
     });
     return message;
   }
 
   edit(input: MessageEditInput): MessageRecord {
     const message = this.db.editMessage(input);
+    const revisions = this.db.bumpRoomRevision(input.chatId, {
+      updatedAt: message.updatedAt,
+      transcriptChanged: true,
+    });
     this.bumpVersion();
     for (const listener of this.messageListeners) {
       listener({ chatId: input.chatId, message });
@@ -693,6 +711,7 @@ export class MessageControlPlane {
       chatId: input.chatId,
       reason: "message",
       builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+      ...revisions,
     });
     return message;
   }
@@ -701,6 +720,10 @@ export class MessageControlPlane {
     // Recall preserves the transcript row as durable history, but it also
     // changes active unread projections; both version streams must be bumped.
     const { message, unreadChangedActorIds } = this.db.recallMessage(input);
+    const revisions = this.db.bumpRoomRevision(input.chatId, {
+      updatedAt: message.updatedAt,
+      transcriptChanged: true,
+    });
     this.bumpVersion();
     this.bumpUnreadVersions(unreadChangedActorIds);
     for (const listener of this.messageListeners) {
@@ -710,6 +733,7 @@ export class MessageControlPlane {
       chatId: input.chatId,
       reason: "message",
       builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+      ...revisions,
     });
     return message;
   }
@@ -866,8 +890,13 @@ export class MessageControlPlane {
     chatId: string;
     before?: ReverseTimeCursor | null;
     limit?: number;
-  }): ReversePage<MessageRecord> {
-    return this.db.pageMessages(input.chatId, { before: input.before, limit: input.limit });
+  }): MessageTranscriptPage {
+    const page = this.db.pageMessages(input.chatId, { before: input.before, limit: input.limit });
+    return {
+      ...page,
+      ...this.db.getRoomRevisionVector(input.chatId),
+      headVersion: this.getHeadVersion(),
+    };
   }
 
   queryActiveVisibleMessages(input: {
@@ -880,7 +909,7 @@ export class MessageControlPlane {
     return this.db.pageActiveVisibleMessages(input.chatId, { before: input.before, limit: input.limit });
   }
 
-  queryMessagesAuthorized(input: MessageAuthorizedPageInput): ReversePage<MessageRecord> {
+  queryMessagesAuthorized(input: MessageAuthorizedPageInput): MessageTranscriptPage {
     this.requireAccess(input.chatId, input.accessToken, "readonly");
     return this.queryMessages({ chatId: input.chatId, before: input.before, limit: input.limit });
   }
@@ -962,12 +991,14 @@ export class MessageControlPlane {
       targetRowId: target.rowId,
     });
     if (result.changed) {
+      const revisions = this.db.bumpRoomRevision(input.chatId);
       this.bumpVersion();
       this.bumpUnreadVersion(grant.participantId as MessageActorId);
       this.emitChannelChanged({
         chatId: input.chatId,
         reason: "read",
         builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+        ...revisions,
         actorId: grant.participantId as MessageActorId,
       });
     }
@@ -992,6 +1023,7 @@ export class MessageControlPlane {
       this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(chatId),
       limit,
     );
+    const revisions = this.db.getRoomRevisionVector(chatId);
     return {
       channel: this.withProjection(
         {
@@ -1003,6 +1035,7 @@ export class MessageControlPlane {
       items: snapshot.items,
       nextBefore: this.db.pageMessages(chatId, { limit }).nextBefore,
       hasMoreBefore: this.db.pageMessages(chatId, { limit }).hasMoreBefore,
+      ...revisions,
       headVersion: this.getHeadVersion(),
     };
   }
@@ -1017,6 +1050,7 @@ export class MessageControlPlane {
         : false,
       input.limit ?? 50,
     );
+    const revisions = this.db.getRoomRevisionVector(input.chatId);
     return {
       channel: this.withProjection(
         {
@@ -1033,6 +1067,7 @@ export class MessageControlPlane {
       items: page.items,
       nextBefore: page.nextBefore,
       hasMoreBefore: page.hasMoreBefore,
+      ...revisions,
       headVersion: this.getHeadVersion(),
     };
   }
@@ -1052,11 +1087,15 @@ export class MessageControlPlane {
         ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId)
         : false,
     );
+    const revisions = this.db.bumpRoomRevision(input.chatId, {
+      updatedAt: channel.updatedAt,
+    });
     this.bumpVersion();
     this.emitChannelChanged({
       chatId: input.chatId,
       reason: "updated",
       builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      ...revisions,
       actorId: grant.participantId as MessageActorId | undefined,
     });
     return this.withProjection(
@@ -1126,11 +1165,13 @@ export class MessageControlPlane {
       );
     }
     if (grantsChanged || messagesChanged || roomStateChanged || participantsChanged || metadataChanged) {
+      const revisions = this.db.bumpRoomRevision(input.chatId);
       this.bumpVersion();
       this.emitChannelChanged({
         chatId: input.chatId,
         reason: "updated",
         builtIn: this.isBuiltInChannelMetadata(nextMetadata),
+        ...revisions,
       });
     }
     const repaired = this.db.getChannel(input.chatId, focused)!;
@@ -1160,11 +1201,15 @@ export class MessageControlPlane {
     for (const focused of this.focusedChatIdsByActor.values()) {
       focused.delete(input.chatId);
     }
+    const revisions = this.db.bumpRoomRevision(input.chatId, {
+      updatedAt: channel.updatedAt,
+    });
     this.bumpVersion();
     this.emitChannelChanged({
       chatId: input.chatId,
       reason: "archived",
       builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      ...revisions,
       actorId: grant.participantId as MessageActorId | undefined,
     });
     return this.withProjection(
@@ -1209,6 +1254,8 @@ export class MessageControlPlane {
       chatId: input.chatId,
       reason: "deleted",
       builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      roomRevision: channel.roomRevision,
+      transcriptRevision: channel.transcriptRevision,
       actorId: grant.participantId as MessageActorId | undefined,
     });
     return this.withProjection(
@@ -1250,11 +1297,13 @@ export class MessageControlPlane {
       tokenHash: hashToken(accessToken),
     });
     this.db.initializeActorRoomState(input.chatId, input.participantId as MessageActorId);
+    const revisions = this.db.bumpRoomRevision(input.chatId);
     this.bumpVersion();
     this.emitChannelChanged({
       chatId: input.chatId,
       reason: "grant-issued",
       builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+      ...revisions,
       actorId: input.participantId as MessageActorId,
     });
     return {
@@ -1286,11 +1335,13 @@ export class MessageControlPlane {
           }
         }
       }
+      const revisions = this.db.bumpRoomRevision(input.chatId);
       this.bumpVersion();
       this.emitChannelChanged({
         chatId: input.chatId,
         reason: "grant-revoked",
         builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+        ...revisions,
       });
     }
     return { ok };
@@ -1330,11 +1381,13 @@ export class MessageControlPlane {
       }),
       expiresAt: input.expiresAt ?? Date.now() + DEFAULT_MANAGED_INVITATION_TTL_MS,
     });
+    const revisions = this.db.bumpRoomRevision(input.chatId);
     this.bumpVersion();
     this.emitChannelChanged({
       chatId: input.chatId,
       reason: "grant-issued",
       builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+      ...revisions,
       actorId: input.participantId,
     });
     return invitation;
@@ -1395,11 +1448,13 @@ export class MessageControlPlane {
       acceptedAt: Date.now(),
     });
     this.syncAdminAssignments();
+    const revisions = this.db.bumpRoomRevision(invitation.resourceId);
     this.bumpVersion();
     this.emitChannelChanged({
       chatId: invitation.resourceId,
       reason: "grant-issued",
       builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(invitation.resourceId)?.metadata),
+      ...revisions,
       actorId: invitation.inviteePrincipalId,
     });
     return {
@@ -1441,11 +1496,13 @@ export class MessageControlPlane {
       this.bumpUnreadVersion(input.participantId);
     }
     this.syncAdminAssignments();
+    const revisions = this.db.bumpRoomRevision(input.chatId);
     this.bumpVersion();
     this.emitChannelChanged({
       chatId: input.chatId,
       reason: "grant-revoked",
       builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
+      ...revisions,
       actorId: input.participantId,
     });
     return { ok: true };
@@ -1796,11 +1853,13 @@ export class MessageControlPlane {
               if (changedChatId !== chatId) {
                 return;
               }
+              const revisions = this.db.getRoomRevisionVector(chatId);
               socket.send(
                 JSON.stringify({
                   type: "messages",
                   chatId,
                   items: [message],
+                  ...revisions,
                   headVersion: this.getHeadVersion(),
                 } satisfies MessageTransportServerMessage),
               );
@@ -2547,11 +2606,13 @@ export class MessageControlPlane {
       [ROOM_PENDING_ADMIN_WORK_KEY]: [...this.readPendingAdminWork(metadata), item],
     });
     this.db.updateChannel(input.chatId, { metadata: nextMetadata }, false);
+    const revisions = this.db.bumpRoomRevision(input.chatId);
     this.bumpVersion();
     this.emitChannelChanged({
       chatId: input.chatId,
       reason: "updated",
       builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      ...revisions,
       actorId: input.requestedBy,
     });
     return item;
@@ -2588,10 +2649,12 @@ export class MessageControlPlane {
     if (changedChannels.length > 0) {
       this.bumpVersion();
       for (const channel of changedChannels) {
+        const revisions = this.db.bumpRoomRevision(channel.chatId);
         this.emitChannelChanged({
           chatId: channel.chatId,
           reason: "presence",
           builtIn: channel.builtIn,
+          ...revisions,
         });
       }
     }

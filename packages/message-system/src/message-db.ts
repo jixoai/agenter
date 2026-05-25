@@ -65,9 +65,9 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
 const toJson = (value: unknown): string => JSON.stringify(value ?? null);
 const resolvePageLimit = (limit: number | undefined, max = 500): number => Math.max(1, Math.min(limit ?? 100, max));
 const MESSAGE_CONTROL_DB_BREAKING_RESET_VERSION = 6;
-const MESSAGE_CONTROL_DB_SCHEMA_VERSION = 7;
-const ROOM_MESSAGE_DB_BREAKING_RESET_VERSION = 2;
-const ROOM_MESSAGE_DB_SCHEMA_VERSION = 3;
+const MESSAGE_CONTROL_DB_SCHEMA_VERSION = 8;
+const ROOM_MESSAGE_DB_BREAKING_RESET_VERSION = 3;
+const ROOM_MESSAGE_DB_SCHEMA_VERSION = 4;
 const normalizeActorIds = (value: readonly MessageActorId[]): MessageActorId[] =>
   [...new Set(value)].sort((left, right) => left.localeCompare(right));
 const parseActorIds = (value: string | null): MessageActorId[] =>
@@ -168,6 +168,22 @@ type StoredRoomMessageRow = {
   payload_json: string | null;
 };
 
+type StoredChannelRow = {
+  chat_id: string;
+  kind: string;
+  title: string;
+  owner: string;
+  context_id: string | null;
+  participants_json: string;
+  metadata_json: string | null;
+  created_at: number;
+  updated_at: number;
+  archived_at: number | null;
+  archived_by: string | null;
+  room_revision: number;
+  transcript_revision: number;
+};
+
 type AppendMessageResult = {
   inserted: boolean;
   message: MessageRecord;
@@ -179,19 +195,7 @@ const normalizeRoomMessageId = (value: number): number | null =>
   Number.isSafeInteger(value) && value > 0 ? value : null;
 
 const mapChannel = (
-  row: {
-    chat_id: string;
-    kind: string;
-    title: string;
-    owner: string;
-    context_id: string | null;
-    participants_json: string;
-    metadata_json: string | null;
-    created_at: number;
-    updated_at: number;
-    archived_at: number | null;
-    archived_by: string | null;
-  },
+  row: StoredChannelRow,
   focused: boolean,
 ): MessageChannelRecord => ({
   chatId: row.chat_id,
@@ -206,6 +210,8 @@ const mapChannel = (
   archivedAt: row.archived_at ?? undefined,
   archivedBy: row.archived_by ?? undefined,
   focused,
+  roomRevision: String(row.room_revision),
+  transcriptRevision: String(row.transcript_revision),
 });
 
 const mapGrant = (row: {
@@ -477,8 +483,8 @@ export class MessageDb {
     this.db
       .query(
         `insert into chat_channel (
-          chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at, archived_at, archived_by
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, null)`,
+          chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at, archived_at, archived_by, room_revision, transcript_revision
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, null, 1, 0)`,
       )
       .run(
         input.chatId,
@@ -506,22 +512,22 @@ export class MessageDb {
   getChannel(chatId: string, focused = false): MessageChannelRecord | undefined {
     const row = this.db
       .query(
-        `select chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at, archived_at, archived_by
+        `select chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at, archived_at, archived_by, room_revision, transcript_revision
          from chat_channel where chat_id = ?`,
       )
-      .get(chatId) as Parameters<typeof mapChannel>[0] | null;
+      .get(chatId) as StoredChannelRow | null;
     return row ? mapChannel(row, focused) : undefined;
   }
 
   listChannels(focusedIds: Set<string>, includeArchived = false): MessageChannelRecord[] {
     const rows = this.db
       .query(
-        `select chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at, archived_at, archived_by
+        `select chat_id, kind, title, owner, context_id, participants_json, metadata_json, created_at, updated_at, archived_at, archived_by, room_revision, transcript_revision
          from chat_channel
          where (? = 1 or archived_at is null)
          order by updated_at desc, chat_id asc`,
       )
-      .all(includeArchived ? 1 : 0) as Array<Parameters<typeof mapChannel>[0]>;
+      .all(includeArchived ? 1 : 0) as StoredChannelRow[];
     return rows.map((row) => mapChannel(row, focusedIds.has(row.chat_id)));
   }
 
@@ -2315,6 +2321,39 @@ export class MessageDb {
       .run(updatedAt, updatedAt, chatId);
   }
 
+  getRoomRevisionVector(chatId: string): { roomRevision: string; transcriptRevision: string } {
+    const row = this.db
+      .query(`select room_revision, transcript_revision from chat_channel where chat_id = ?`)
+      .get(chatId) as { room_revision?: number; transcript_revision?: number } | null;
+    if (!row) {
+      throw new Error(`unknown chat channel: ${chatId}`);
+    }
+    return {
+      roomRevision: String(row.room_revision ?? 0),
+      transcriptRevision: String(row.transcript_revision ?? 0),
+    };
+  }
+
+  bumpRoomRevision(
+    chatId: string,
+    input: {
+      updatedAt?: number;
+      transcriptChanged?: boolean;
+    } = {},
+  ): { roomRevision: string; transcriptRevision: string } {
+    const updatedAt = input.updatedAt ?? Date.now();
+    this.db
+      .query(
+        `update chat_channel
+         set updated_at = case when updated_at < ? then ? else updated_at end,
+             room_revision = room_revision + 1,
+             transcript_revision = transcript_revision + ?
+         where chat_id = ?`,
+      )
+      .run(updatedAt, updatedAt, input.transcriptChanged ? 1 : 0, chatId);
+    return this.getRoomRevisionVector(chatId);
+  }
+
   private repairStoredRoomMessageMaterialization(chatId: string, message: MessageRecord): void {
     this.db.transaction(() => {
       this.touchChannelAtLeast(chatId, message.updatedAt);
@@ -2617,7 +2656,9 @@ export class MessageDb {
         created_at integer not null,
         updated_at integer not null,
         archived_at integer,
-        archived_by text
+        archived_by text,
+        room_revision integer not null default 1,
+        transcript_revision integer not null default 0
       );
 
       create table if not exists chat_channel_grant (
@@ -2752,6 +2793,14 @@ export class MessageDb {
     const hasArchivedBy = channelColumns.some((column) => column.name === "archived_by");
     if (!hasArchivedBy) {
       this.db.exec(`alter table chat_channel add column archived_by text;`);
+    }
+    const hasRoomRevision = channelColumns.some((column) => column.name === "room_revision");
+    if (!hasRoomRevision) {
+      this.db.exec(`alter table chat_channel add column room_revision integer not null default 1;`);
+    }
+    const hasTranscriptRevision = channelColumns.some((column) => column.name === "transcript_revision");
+    if (!hasTranscriptRevision) {
+      this.db.exec(`alter table chat_channel add column transcript_revision integer not null default 0;`);
     }
 
     const grantColumns = this.db.query(`pragma table_info(chat_channel_grant)`).all() as Array<{ name: string }>;

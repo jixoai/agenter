@@ -1,7 +1,19 @@
 import { spawn } from "node:child_process";
 
+import {
+  buildTmuxStatusBarMouseBinding,
+  defaultTmuxExecutor,
+  readTmuxStatusUserRangeId,
+  TmuxClient,
+  TmuxCommandError,
+  type TmuxExecutor,
+  type TmuxPane,
+} from "@agenter/tmux-client";
+
 import type { CliShellBootstrapResult } from "./bootstrap";
+import { buildCliShellStatusBarOptionCommands, CLI_SHELL_TMUX_STATUS_STYLE } from "./tmux-statusbar";
 import type { CliShellChatDefaultLayout } from "./tui/settings";
+import { CLI_SHELL_HELP_PANEL_TEXT } from "./tui/help-panel-content";
 
 export interface CliShellTmuxPlanInput {
   shellName: string;
@@ -26,17 +38,20 @@ export interface CliShellTmuxActionInput {
   runtimeSessionId?: string;
   workspacePath?: string;
   targetPane: string;
+  targetClient?: string;
   tmux?: string;
   socketName?: string;
   cliShellCommand?: readonly string[];
   daemonHost?: string;
   daemonPort?: number;
   authServiceEndpoint?: string;
+  sourceSurface?: CliShellChatSurface;
 }
 
 export interface CliShellTmuxActionRuntimeOptions {
   input: CliShellTmuxActionInput;
   executor?: CliShellTmuxExecutor;
+  tmuxExecutor?: TmuxExecutor;
 }
 
 export type CliShellTmuxActionResult =
@@ -109,7 +124,6 @@ const joinTmuxCommand = (command: readonly string[]): string => command.map(quot
 const deferNestedTmuxFormat = (value: string): string => value.replace(/#\{/g, "##{");
 
 export const CLI_SHELL_TMUX_SOCKET_NAME = "agenter-cli-shell";
-const CLI_SHELL_TMUX_STATUS_STYLE = "fg=colour252,bg=colour234,nobold,noitalics,nounderscore,noreverse,nodim,noblink";
 const CLI_SHELL_TMUX_STATUS_RESET = `#[${CLI_SHELL_TMUX_STATUS_STYLE}]`;
 const CLI_SHELL_TMUX_STATUS_ACTIVE = "#[fg=colour16,bg=colour220,bold]";
 
@@ -178,79 +192,21 @@ const buildTmuxActionShellCommand = (
     "#{q:@agenter_cli_shell_workspace_path}",
     "--target-pane",
     "#{q:pane_id}",
+    "--target-client",
+    "#{q:client_name}",
     "--socket",
     quoteShellArg(CLI_SHELL_TMUX_SOCKET_NAME),
     "--tmux",
     quoteShellArg(input.tmux?.trim() || "tmux"),
   ].join(" ");
 
-const activeStatusStyle = (name: string): string =>
-  `#{?#{==:#{@agenter_cli_shell_active_action},${name}},#[fg=colour16 bg=colour220 bold],#[fg=colour159 bg=colour234 nobold]}`;
-
-const statusRange = (name: string, label: string): string =>
-  `#[range=user|${name}]${activeStatusStyle(name)} ${label} ${CLI_SHELL_TMUX_STATUS_RESET}#[norange]`;
-
 const CLI_SHELL_DEFAULT_HEARTBEAT_STATUS = "◉ 等待 Avatar Heartbeat...";
 
-const buildCliShellStatusLeft = (input: CliShellTmuxPlanInput): string =>
-  [
-    `${CLI_SHELL_TMUX_STATUS_RESET}#[fg=colour51,bold]cli-shell${CLI_SHELL_TMUX_STATUS_RESET}`,
-    `#[fg=colour252]${input.shellName}${CLI_SHELL_TMUX_STATUS_RESET}`,
-    `#[fg=colour229]@${input.avatarNickname}${CLI_SHELL_TMUX_STATUS_RESET}`,
-    `#[fg=colour159]#{@agenter_cli_shell_heartbeat_status}${CLI_SHELL_TMUX_STATUS_RESET}`,
-    statusRange("managed", "managed:#{@agenter_cli_shell_managed}"),
-  ].join("  ");
+export const CLI_SHELL_TMUX_HELP_TEXT = CLI_SHELL_HELP_PANEL_TEXT;
 
-const buildCliShellStatusRight = (): string =>
-  [
-    statusRange("help", "Help"),
-    statusRange("chat", "Chat"),
-  ].join("  ");
-
-export const CLI_SHELL_TMUX_HELP_TEXT = [
-  "cli-shell controls",
-  "",
-  "Status bar:",
-  "  Click managed:on/off, Help, or Chat in the bottom bar.",
-  "  The highlighted item shows the current cli-shell surface.",
-  "",
-  "Actions:",
-  "  managed toggles cli-shell hosting attention for the selected Avatar.",
-  "  Help   opens this panel.",
-  "  Chat   opens the MessageRoom as a floating popup.",
-  "  Hidden expert keys still provide Dock, Mouse, Shell, and Refresh.",
-  "",
-  "How to press a tmux shortcut:",
-  "  Press Ctrl+b, release both keys, then press the next key.",
-  "  Example: Ctrl+b, then c opens Chat.",
-  "",
-  "Keyboard:",
-  "  Ctrl+b, then c  open Chat popup",
-  "  Ctrl+b, then C  open persistent Chat dock",
-  "  Ctrl+b, then m  toggle Mouse",
-  "  Ctrl+b, then s  focus shell pane",
-  "  Ctrl+b, then r  refresh status bar",
-  "  Ctrl+b, then ?  show this help",
-  "  Ctrl+b, then [  enter copy-mode for page scroll/search/copy",
-  "",
-  "Copy-mode:",
-  "  PageUp/PageDown or arrow keys scroll",
-  "  q exits copy-mode",
-  "",
-  "Popup:",
-  "  Help closes with Enter",
-  "  Chat closes with Esc or Ctrl-c",
-].join("\n");
-
-const buildHelpShellCommand = (text: string): string =>
-  [
-    `printf %s ${quoteShellArg(text)}`,
-    "printf '\\n\\nPress Enter to close.'",
-    "IFS= read -r _",
-  ].join("; ");
-
-const buildPopupCommand = (title: string, command: string, targetPane?: string): string[] => [
+const buildPopupCommand = (title: string, command: string, targetPane?: string, targetClient?: string): string[] => [
   "display-popup",
+  ...(targetClient ? ["-c", targetClient] : []),
   ...(targetPane ? ["-t", targetPane] : []),
   "-E",
   "-w",
@@ -268,8 +224,11 @@ const tmuxShellPrefix = (input: CliShellTmuxActionInput): string =>
 const tmuxShellCommand = (input: CliShellTmuxActionInput, args: readonly string[]): string =>
   `${tmuxShellPrefix(input)} ${args.map(quoteShellArg).join(" ")}`;
 
-const buildHelpPopupCommand = (): string[] =>
-  buildPopupCommand("cli-shell-help", buildHelpShellCommand(CLI_SHELL_TMUX_HELP_TEXT));
+const buildClosePopupCommand = (input: CliShellTmuxActionInput): string[] => [
+  "display-popup",
+  ...(input.targetClient ? ["-c", input.targetClient] : []),
+  "-C",
+];
 
 const buildInteractiveSurfaceShellCommand = (
   surfaceName: string,
@@ -291,26 +250,43 @@ const buildInteractiveSurfaceShellCommand = (
 const buildPaneExitCleanupCommands = (input: CliShellTmuxActionInput): string[] => {
   const prefix = tmuxShellPrefix(input);
   return [
-    `${prefix} select-pane -t ${quoteShellArg(input.targetPane)} >/dev/null 2>&1 || true`,
-    `${prefix} set-option -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_surface ${quoteShellArg("none")} >/dev/null 2>&1 || true`,
-    `${prefix} set-option -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_pane ${quoteShellArg("")} >/dev/null 2>&1 || true`,
-    `${prefix} set-option -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_active_action ${quoteShellArg("shell")} >/dev/null 2>&1 || true`,
-    `${prefix} refresh-client -S >/dev/null 2>&1 || true`,
+    'current_chat_pane="${TMUX_PANE:-}"',
+    `chat_owner="$(${prefix} show-options -qv -t ${quoteShellArg(input.shellName)} ${CHAT_OWNER_OPTION} 2>/dev/null || true)"`,
+    `if [ -n "$current_chat_pane" ]; then ${[
+      `${prefix} select-pane -t ${quoteShellArg(input.targetPane)} >/dev/null 2>&1 || true`,
+      `if [ "$chat_owner" = "$current_chat_pane" ]; then ${[
+        `${prefix} set-option -t ${quoteShellArg(input.shellName)} ${CHAT_SURFACE_OPTION} ${quoteShellArg("none")} >/dev/null 2>&1 || true`,
+        `${prefix} set-option -t ${quoteShellArg(input.shellName)} ${CHAT_PANE_OPTION} ${quoteShellArg("")} >/dev/null 2>&1 || true`,
+        `${prefix} set-option -t ${quoteShellArg(input.shellName)} ${CHAT_OWNER_OPTION} ${quoteShellArg("")} >/dev/null 2>&1 || true`,
+        `${prefix} set-option -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_active_action ${quoteShellArg("shell")} >/dev/null 2>&1 || true`,
+        `${prefix} refresh-client -S >/dev/null 2>&1 || true`,
+      ].join("; ")}; fi`,
+      `${prefix} kill-pane -t "$current_chat_pane" >/dev/null 2>&1 || true`,
+    ].join("; ")}; fi`,
   ];
 };
 
 const buildRoomShellCommand = (roomCommand: string, cleanupCommands: readonly string[] = []): string =>
   buildInteractiveSurfaceShellCommand("Chat", roomCommand, cleanupCommands);
 
+const buildHelpShellCommand = (helpCommand: string, cleanupCommands: readonly string[] = []): string =>
+  buildInteractiveSurfaceShellCommand("Help", helpCommand, cleanupCommands);
+
 const buildTopShellCommand = (topCommand: string): string =>
   buildInteractiveSurfaceShellCommand("Top layer", topCommand);
 
 type CliShellChatSurface = "popup" | "pane";
+type CliShellChatSurfaceState = CliShellChatSurface | "none";
+type CliShellRoomLayoutAction = "layout-left" | "layout-right" | "layout-cover";
+
+const CHAT_SURFACE_OPTION = "@agenter_cli_shell_chat_surface";
+const CHAT_PANE_OPTION = "@agenter_cli_shell_chat_pane";
+const CHAT_OWNER_OPTION = "@agenter_cli_shell_chat_owner";
 
 const buildChatPaneDiscoveryShell = (input: CliShellTmuxActionInput): string[] => {
   const prefix = tmuxShellPrefix(input);
   return [
-    `chat_pane="$(${prefix} show-options -qv -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_pane 2>/dev/null || true)"`,
+    `chat_pane="$(${prefix} show-options -qv -t ${quoteShellArg(input.shellName)} ${CHAT_PANE_OPTION} 2>/dev/null || true)"`,
     `if [ -n "$chat_pane" ] && ! ${prefix} display-message -p -t "$chat_pane" '${deferNestedTmuxFormat("#{pane_id}")}' >/dev/null 2>&1; then chat_pane=""; fi`,
     [
       `if [ -z "$chat_pane" ]; then chat_pane="$(${prefix}`,
@@ -348,13 +324,20 @@ const buildRefreshStatusShell = (input: CliShellTmuxActionInput): string[] => [
   `${tmuxShellPrefix(input)} refresh-client -S >/dev/null 2>&1 || true`,
 ];
 
+const buildHelpPopupExitCleanupCommands = (
+  input: CliShellTmuxActionInput,
+  restoreAction: "chat" | "shell",
+): string[] => [
+  ...buildSetActiveActionShell(input, restoreAction),
+  ...buildRefreshStatusShell(input),
+];
+
 const buildFocusExistingChatPaneShell = (input: CliShellTmuxActionInput): string[] => {
   const prefix = tmuxShellPrefix(input);
   return [
     `if [ -n "$chat_pane" ]; then ${[
       `${prefix} select-pane -t "$chat_pane"`,
-      `${prefix} set-option -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_surface pane`,
-      `${prefix} set-option -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_pane "$chat_pane"`,
+      ...buildSetChatSurfaceShell(input, "pane", '"$chat_pane"', '"$chat_pane"'),
       ...buildSetActiveActionShell(input, "chat"),
       ...buildRefreshStatusShell(input),
       `${prefix} display-message ${quoteShellArg("cli-shell Chat pane focused")}`,
@@ -368,20 +351,35 @@ const buildKillExistingChatPaneShell = (input: CliShellTmuxActionInput): string[
   return [
     `if [ -n "$chat_pane" ] && [ "$chat_pane" != ${quoteShellArg(input.targetPane)} ]; then ${[
       `${prefix} kill-pane -t "$chat_pane"`,
-      "chat_pane=\"\"",
+      'chat_pane=""',
+      ...buildSetChatSurfaceShell(input, "none", quoteShellArg("")),
+    ].join("; ")}; fi`,
+  ];
+};
+
+const buildKillContradictoryPopupPaneShell = (input: CliShellTmuxActionInput): string[] => {
+  const prefix = tmuxShellPrefix(input);
+  return [
+    `if [ "$chat_surface" = "popup" ] && [ -n "$chat_pane" ]; then ${[
+      `${prefix} kill-pane -t "$chat_pane"`,
+      'chat_pane=""',
+      `${prefix} set-option -t ${quoteShellArg(input.shellName)} ${CHAT_PANE_OPTION} ${quoteShellArg("")}`,
+      `${prefix} set-option -t ${quoteShellArg(input.shellName)} ${CHAT_OWNER_OPTION} ${quoteShellArg("popup")}`,
     ].join("; ")}; fi`,
   ];
 };
 
 const buildSetChatSurfaceShell = (
   input: CliShellTmuxActionInput,
-  surface: CliShellChatSurface | "none",
+  surface: CliShellChatSurfaceState,
   paneValue: string,
+  ownerValue = quoteShellArg(""),
 ): string[] => {
   const prefix = tmuxShellPrefix(input);
   return [
-    `${prefix} set-option -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_surface ${quoteShellArg(surface)}`,
-    `${prefix} set-option -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_pane ${paneValue}`,
+    `${prefix} set-option -t ${quoteShellArg(input.shellName)} ${CHAT_SURFACE_OPTION} ${quoteShellArg(surface)}`,
+    `${prefix} set-option -t ${quoteShellArg(input.shellName)} ${CHAT_PANE_OPTION} ${paneValue}`,
+    `${prefix} set-option -t ${quoteShellArg(input.shellName)} ${CHAT_OWNER_OPTION} ${ownerValue}`,
   ];
 };
 
@@ -392,11 +390,17 @@ const buildSetChatDefaultLayoutShell = (
   `${tmuxShellPrefix(input)} set-option -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_default_layout ${quoteShellArg(layout)}`,
 ];
 
+const buildReadChatSurfaceShell = (input: CliShellTmuxActionInput): string[] => [
+  `chat_surface="$(${tmuxShellPrefix(input)} show-options -qv -t ${quoteShellArg(input.shellName)} ${CHAT_SURFACE_OPTION} 2>/dev/null || true)"`,
+  `if [ -z "$chat_surface" ]; then chat_surface="none"; fi`,
+];
+
 const buildRestoreShellIfPopupStillOwnsSurface = (input: CliShellTmuxActionInput): string[] => {
   const prefix = tmuxShellPrefix(input);
   return [
-    `chat_surface="$(${prefix} show-options -qv -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_surface 2>/dev/null || true)"`,
-    `if [ "$chat_surface" = "popup" ] || [ -z "$chat_surface" ]; then ${[
+    ...buildReadChatSurfaceShell(input),
+    `chat_owner="$(${prefix} show-options -qv -t ${quoteShellArg(input.shellName)} ${CHAT_OWNER_OPTION} 2>/dev/null || true)"`,
+    `if [ "$chat_surface" = "popup" ] && [ "$chat_owner" = "popup" ]; then ${[
       ...buildSetChatSurfaceShell(input, "none", quoteShellArg("")),
       ...buildSetActiveActionShell(input, "shell"),
       ...buildRefreshStatusShell(input),
@@ -404,9 +408,12 @@ const buildRestoreShellIfPopupStillOwnsSurface = (input: CliShellTmuxActionInput
   ];
 };
 
+const buildPopupExitCleanupCommands = (input: CliShellTmuxActionInput): string[] =>
+  buildRestoreShellIfPopupStillOwnsSurface(input);
+
 const buildNormalizeStaleChatSurfaceShell = (input: CliShellTmuxActionInput): string[] => {
-  const prefix = tmuxShellPrefix(input);
   return [
+    'if [ "$chat_surface" = "none" ] || [ -z "$chat_surface" ]; then if [ -n "$chat_pane" ]; then chat_surface="pane"; fi; fi',
     `if [ "$chat_surface" = "pane" ] && [ -z "$chat_pane" ]; then ${[
       ...buildSetChatSurfaceShell(input, "none", quoteShellArg("")),
       ...buildSetActiveActionShell(input, "shell"),
@@ -426,7 +433,7 @@ const buildCloseVisibleChatSurfaceShell = (input: CliShellTmuxActionInput): stri
   const prefix = tmuxShellPrefix(input);
   return [
     `if [ "$chat_surface" = "popup" ]; then ${[
-      `${prefix} display-popup -C >/dev/null 2>&1 || true`,
+      `${tmuxShellCommand(input, buildClosePopupCommand(input))} >/dev/null 2>&1 || true`,
       ...buildSetChatSurfaceShell(input, "none", quoteShellArg("")),
       ...buildSetActiveActionShell(input, "shell"),
       ...buildRefreshStatusShell(input),
@@ -435,8 +442,7 @@ const buildCloseVisibleChatSurfaceShell = (input: CliShellTmuxActionInput): stri
     `if [ "$chat_surface" = "pane" ] && [ -n "$chat_pane" ]; then ${[
       ...buildResolveFallbackPaneShell(input),
       `${prefix} kill-pane -t "$chat_pane"`,
-      'if [ -n "$fallback_pane" ]; then ' +
-        `${prefix} select-pane -t "$fallback_pane" >/dev/null 2>&1 || true; fi`,
+      'if [ -n "$fallback_pane" ]; then ' + `${prefix} select-pane -t "$fallback_pane" >/dev/null 2>&1 || true; fi`,
       ...buildSetChatSurfaceShell(input, "none", quoteShellArg("")),
       ...buildSetActiveActionShell(input, "shell"),
       ...buildRefreshStatusShell(input),
@@ -448,21 +454,29 @@ const buildCloseVisibleChatSurfaceShell = (input: CliShellTmuxActionInput): stri
 const buildChatPopupShell = (input: CliShellTmuxActionInput): string =>
   [
     ...buildChatPaneDiscoveryShell(input),
-    `chat_surface="$(${tmuxShellPrefix(input)} show-options -qv -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_surface 2>/dev/null || true)"`,
+    ...buildReadChatSurfaceShell(input),
     ...buildNormalizeStaleChatSurfaceShell(input),
+    ...buildKillContradictoryPopupPaneShell(input),
     ...buildCloseVisibleChatSurfaceShell(input),
-    ...buildFocusExistingChatPaneShell(input),
     ...buildSetActiveActionShell(input, "chat"),
-    ...buildSetChatSurfaceShell(input, "popup", quoteShellArg("")),
+    ...buildSetChatSurfaceShell(input, "popup", quoteShellArg(""), quoteShellArg("popup")),
     ...buildRefreshStatusShell(input),
     tmuxShellCommand(
       input,
-      buildPopupCommand("cli-shell-chat", buildRoomShellCommand(buildTmuxActionRoomCommand(input, "popup")), input.targetPane),
+      buildPopupCommand(
+        "cli-shell-chat",
+        buildRoomShellCommand(buildTmuxActionRoomCommand(input, "popup")),
+        input.targetPane,
+        input.targetClient,
+      ),
     ),
     ...buildRestoreShellIfPopupStillOwnsSurface(input),
   ].join("; ");
 
-const buildSingleChatPopupCommand = (input: CliShellTmuxActionInput): string[] => ["run-shell", buildChatPopupShell(input)];
+const buildSingleChatPopupCommand = (input: CliShellTmuxActionInput): string[] => [
+  "run-shell",
+  buildChatPopupShell(input),
+];
 
 const buildChatPaneShell = (input: CliShellTmuxActionInput, position: "left" | "right"): string =>
   [
@@ -485,9 +499,9 @@ const buildChatPaneShell = (input: CliShellTmuxActionInput, position: "left" | "
       quoteShellArg(
         buildRoomShellCommand(buildTmuxActionRoomCommand(input, "pane"), buildPaneExitCleanupCommands(input)),
       ),
-      ")\"",
+      ')"',
     ].join(" "),
-    ...buildSetChatSurfaceShell(input, "pane", '"$new_pane"'),
+    ...buildSetChatSurfaceShell(input, "pane", '"$new_pane"', '"$new_pane"'),
     ...buildSetActiveActionShell(input, "chat"),
     `${tmuxShellPrefix(input)} select-pane -t "$new_pane"`,
     ...buildRefreshStatusShell(input),
@@ -502,9 +516,14 @@ const buildSwitchChatPaneCommand = (input: CliShellTmuxActionInput, position: "l
   const shell = [
     ...buildSetChatDefaultLayoutShell(input, position),
     ...buildChatPaneDiscoveryShell(input),
+    ...buildReadChatSurfaceShell(input),
+    `if [ "$chat_surface" = "popup" ]; then ${[
+      `${tmuxShellCommand(input, buildClosePopupCommand(input))} >/dev/null 2>&1 || true`,
+      ...buildSetChatSurfaceShell(input, "none", quoteShellArg("")),
+    ].join("; ")}; fi`,
     `if [ -n "$chat_pane" ]; then ${[
       `${tmuxShellPrefix(input)} move-pane -d -h ${position === "left" ? "-b " : ""}-s "$chat_pane" -t ${quoteShellArg(input.targetPane)} -l 42%`,
-      ...buildSetChatSurfaceShell(input, "pane", '"$chat_pane"'),
+      ...buildSetChatSurfaceShell(input, "pane", '"$chat_pane"', '"$chat_pane"'),
       ...buildSetActiveActionShell(input, "chat"),
       `${tmuxShellPrefix(input)} select-pane -t "$chat_pane"`,
       ...buildRefreshStatusShell(input),
@@ -527,9 +546,9 @@ const buildSwitchChatPaneCommand = (input: CliShellTmuxActionInput, position: "l
       quoteShellArg(
         buildRoomShellCommand(buildTmuxActionRoomCommand(input, "pane"), buildPaneExitCleanupCommands(input)),
       ),
-      ")\"",
+      ')"',
     ].join(" "),
-    ...buildSetChatSurfaceShell(input, "pane", '"$new_pane"'),
+    ...buildSetChatSurfaceShell(input, "pane", '"$new_pane"', '"$new_pane"'),
     ...buildSetActiveActionShell(input, "chat"),
     `${tmuxShellPrefix(input)} select-pane -t "$new_pane"`,
     ...buildRefreshStatusShell(input),
@@ -541,7 +560,15 @@ const buildTopLayerPopupCommand = (input: CliShellTmuxActionInput): string[] => 
   const shell = [
     ...buildSetActiveActionShell(input, "chat"),
     ...buildRefreshStatusShell(input),
-    tmuxShellCommand(input, buildPopupCommand("cli-shell-top", buildTopShellCommand(buildTmuxActionTopCommand(input)), input.targetPane)),
+    tmuxShellCommand(
+      input,
+      buildPopupCommand(
+        "cli-shell-top",
+        buildTopShellCommand(buildTmuxActionTopCommand(input)),
+        input.targetPane,
+        input.targetClient,
+      ),
+    ),
     ...buildSetActiveActionShell(input, "shell"),
     ...buildRefreshStatusShell(input),
   ].join("; ");
@@ -552,13 +579,25 @@ const buildSwitchChatPopupCommand = (input: CliShellTmuxActionInput): string[] =
   const shell = [
     ...buildSetChatDefaultLayoutShell(input, "cover"),
     ...buildChatPaneDiscoveryShell(input),
+    ...buildReadChatSurfaceShell(input),
+    ...buildKillContradictoryPopupPaneShell(input),
+    `if [ "$chat_surface" = "popup" ]; then ${[
+      ...buildSetActiveActionShell(input, "chat"),
+      ...buildRefreshStatusShell(input),
+      "exit 0",
+    ].join("; ")}; fi`,
     ...buildKillExistingChatPaneShell(input),
     ...buildSetActiveActionShell(input, "chat"),
-    ...buildSetChatSurfaceShell(input, "popup", quoteShellArg("")),
+    ...buildSetChatSurfaceShell(input, "popup", quoteShellArg(""), quoteShellArg("popup")),
     ...buildRefreshStatusShell(input),
     tmuxShellCommand(
       input,
-      buildPopupCommand("cli-shell-chat", buildRoomShellCommand(buildTmuxActionRoomCommand(input, "popup")), input.targetPane),
+      buildPopupCommand(
+        "cli-shell-chat",
+        buildRoomShellCommand(buildTmuxActionRoomCommand(input, "popup")),
+        input.targetPane,
+        input.targetClient,
+      ),
     ),
     ...buildRestoreShellIfPopupStillOwnsSurface(input),
   ].join("; ");
@@ -568,6 +607,10 @@ const buildSwitchChatPopupCommand = (input: CliShellTmuxActionInput): string[] =
 const buildDefaultChatCommand = (input: CliShellTmuxActionInput): string[] => {
   const prefix = tmuxShellPrefix(input);
   const shell = [
+    ...buildChatPaneDiscoveryShell(input),
+    ...buildReadChatSurfaceShell(input),
+    ...buildNormalizeStaleChatSurfaceShell(input),
+    ...buildCloseVisibleChatSurfaceShell(input),
     `default_layout="$(${prefix} show-options -qv -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_default_layout 2>/dev/null || true)"`,
     `if [ "$default_layout" = "left" ]; then ${buildChatPaneShell(input, "left")}; exit 0; fi`,
     `if [ "$default_layout" = "right" ]; then ${buildChatPaneShell(input, "right")}; exit 0; fi`,
@@ -595,6 +638,298 @@ const buildHeartbeatRefreshCommand = (input: CliShellTmuxActionInput, statusComm
   ].join("; "),
 ];
 
+interface CliShellResolvedChatState {
+  surface: "closed" | "popup" | "pane";
+  paneId: string | null;
+}
+
+const createActionTmuxClient = (input: CliShellTmuxActionInput, tmuxExecutor?: TmuxExecutor): TmuxClient =>
+  new TmuxClient({
+    executable: input.tmux?.trim() || "tmux",
+    socketName: input.socketName ?? CLI_SHELL_TMUX_SOCKET_NAME,
+    executor: tmuxExecutor,
+  });
+
+const setTmuxSessionOption = async (
+  client: TmuxClient,
+  input: CliShellTmuxActionInput,
+  name: string,
+  value: string,
+): Promise<void> => {
+  await client.setOption({ target: input.shellName, name, value });
+};
+
+const refreshTmuxStatusBestEffort = async (client: TmuxClient): Promise<void> => {
+  await client.exec(["refresh-client", "-S"], { allowFailure: true });
+};
+
+const setCliShellActiveAction = async (
+  client: TmuxClient,
+  input: CliShellTmuxActionInput,
+  action: "chat" | "help" | "shell" | "pane" | "mouse" | "refresh",
+): Promise<void> => {
+  await setTmuxSessionOption(client, input, "@agenter_cli_shell_active_action", action);
+};
+
+const listCliShellPanes = async (client: TmuxClient, input: CliShellTmuxActionInput): Promise<TmuxPane[]> => {
+  try {
+    return await client.listPanes({ target: input.shellName });
+  } catch {
+    return [];
+  }
+};
+
+const isCliShellRoomPane = (pane: TmuxPane, input: CliShellTmuxActionInput): boolean =>
+  pane.startCommand.includes("room") &&
+  pane.startCommand.includes("--session") &&
+  pane.startCommand.includes(input.shellName) &&
+  pane.startCommand.includes("--avatar") &&
+  pane.startCommand.includes(input.avatarNickname);
+
+const resolveCliShellChatPaneId = async (
+  client: TmuxClient,
+  input: CliShellTmuxActionInput,
+  storedPaneId: string | null,
+): Promise<string | null> => {
+  const panes = await listCliShellPanes(client, input);
+  if (storedPaneId && panes.some((pane) => pane.paneId === storedPaneId)) {
+    return storedPaneId;
+  }
+  return panes.find((pane) => isCliShellRoomPane(pane, input))?.paneId ?? null;
+};
+
+const readCliShellChatState = async (
+  client: TmuxClient,
+  input: CliShellTmuxActionInput,
+): Promise<CliShellResolvedChatState> => {
+  const surfaceOption = (await client.getOption({ target: input.shellName, name: CHAT_SURFACE_OPTION })) ?? "none";
+  const storedPaneId = ((await client.getOption({ target: input.shellName, name: CHAT_PANE_OPTION })) ?? "").trim();
+  const paneId = await resolveCliShellChatPaneId(client, input, storedPaneId || null);
+  if (surfaceOption === "popup") {
+    if (paneId) {
+      await client.killPane(paneId).catch(() => undefined);
+      await setTmuxSessionOption(client, input, CHAT_PANE_OPTION, "");
+      await setTmuxSessionOption(client, input, CHAT_OWNER_OPTION, "popup");
+    }
+    return { surface: "popup", paneId: null };
+  }
+  if (surfaceOption === "pane" || (!surfaceOption || surfaceOption === "none")) {
+    if (paneId) {
+      return { surface: "pane", paneId };
+    }
+  }
+  if (surfaceOption === "pane" && !paneId) {
+    await setTmuxSessionOption(client, input, CHAT_SURFACE_OPTION, "none");
+    await setTmuxSessionOption(client, input, CHAT_PANE_OPTION, "");
+    await setTmuxSessionOption(client, input, CHAT_OWNER_OPTION, "");
+    await setCliShellActiveAction(client, input, "shell");
+    await refreshTmuxStatusBestEffort(client);
+  }
+  return { surface: "closed", paneId: null };
+};
+
+const setCliShellChatSurfaceState = async (
+  client: TmuxClient,
+  input: CliShellTmuxActionInput,
+  state: CliShellResolvedChatState,
+): Promise<void> => {
+  if (state.surface === "closed") {
+    await setTmuxSessionOption(client, input, CHAT_SURFACE_OPTION, "none");
+    await setTmuxSessionOption(client, input, CHAT_PANE_OPTION, "");
+    await setTmuxSessionOption(client, input, CHAT_OWNER_OPTION, "");
+    return;
+  }
+  if (state.surface === "popup") {
+    await setTmuxSessionOption(client, input, CHAT_SURFACE_OPTION, "popup");
+    await setTmuxSessionOption(client, input, CHAT_PANE_OPTION, "");
+    await setTmuxSessionOption(client, input, CHAT_OWNER_OPTION, "popup");
+    return;
+  }
+  await setTmuxSessionOption(client, input, CHAT_SURFACE_OPTION, "pane");
+  await setTmuxSessionOption(client, input, CHAT_PANE_OPTION, state.paneId ?? "");
+  await setTmuxSessionOption(client, input, CHAT_OWNER_OPTION, state.paneId ?? "");
+};
+
+const selectFallbackPane = async (client: TmuxClient, input: CliShellTmuxActionInput, excludedPaneId: string): Promise<void> => {
+  const fallbackPane = (await listCliShellPanes(client, input)).find((pane) => pane.paneId !== excludedPaneId);
+  await client.selectPane(fallbackPane?.paneId ?? input.targetPane).catch(() => undefined);
+};
+
+const closeCliShellChatPane = async (
+  client: TmuxClient,
+  input: CliShellTmuxActionInput,
+  paneId: string,
+): Promise<void> => {
+  await selectFallbackPane(client, input, paneId);
+  await client.killPane(paneId).catch(() => undefined);
+  await setCliShellChatSurfaceState(client, input, { surface: "closed", paneId: null });
+  await setCliShellActiveAction(client, input, "shell");
+  await refreshTmuxStatusBestEffort(client);
+};
+
+const closeCliShellChatPopup = async (client: TmuxClient, input: CliShellTmuxActionInput): Promise<void> => {
+  await client.closePopup({ targetClient: input.targetClient }).catch(() => undefined);
+  await setCliShellChatSurfaceState(client, input, { surface: "closed", paneId: null });
+  await setCliShellActiveAction(client, input, "shell");
+  await refreshTmuxStatusBestEffort(client);
+};
+
+const restoreCliShellChatState = async (
+  client: TmuxClient,
+  input: CliShellTmuxActionInput,
+  state: CliShellResolvedChatState,
+): Promise<void> => {
+  await setCliShellChatSurfaceState(client, input, state);
+  await setCliShellActiveAction(client, input, state.surface === "closed" ? "shell" : "chat");
+  await refreshTmuxStatusBestEffort(client);
+};
+
+const openCliShellChatPane = async (
+  client: TmuxClient,
+  input: CliShellTmuxActionInput,
+  position: "left" | "right",
+): Promise<string> => {
+  const paneId = await client.splitPane({
+    target: input.targetPane,
+    direction: position,
+    cwd: "#{pane_current_path}",
+    size: "42%",
+    command: buildRoomShellCommand(buildTmuxActionRoomCommand(input, "pane"), buildPaneExitCleanupCommands(input)),
+  });
+  await setCliShellChatSurfaceState(client, input, { surface: "pane", paneId });
+  await setCliShellActiveAction(client, input, "chat");
+  await client.selectPane(paneId).catch(() => undefined);
+  await refreshTmuxStatusBestEffort(client);
+  return paneId;
+};
+
+const moveCliShellChatPane = async (
+  client: TmuxClient,
+  input: CliShellTmuxActionInput,
+  paneId: string,
+  position: "left" | "right",
+): Promise<void> => {
+  await client.movePane({ source: paneId, target: input.targetPane, direction: position, size: "42%", detached: true });
+  await setCliShellChatSurfaceState(client, input, { surface: "pane", paneId });
+  await setCliShellActiveAction(client, input, "chat");
+  await client.selectPane(paneId).catch(() => undefined);
+  await refreshTmuxStatusBestEffort(client);
+};
+
+const openCliShellChatPopup = async (
+  client: TmuxClient,
+  input: CliShellTmuxActionInput,
+  mode: "foreground" | "tmux-server" = "foreground",
+  rollbackState: CliShellResolvedChatState = { surface: "closed", paneId: null },
+): Promise<void> => {
+  const command = buildRoomShellCommand(buildTmuxActionRoomCommand(input, "popup"), buildPopupExitCleanupCommands(input));
+  await setCliShellChatSurfaceState(client, input, { surface: "popup", paneId: null });
+  await setCliShellActiveAction(client, input, "chat");
+  await refreshTmuxStatusBestEffort(client);
+  try {
+    if (mode === "tmux-server") {
+      await client.exec([
+        "run-shell",
+        "-b",
+        tmuxShellCommand(input, buildPopupCommand("cli-shell-chat", command, input.targetPane, input.targetClient)),
+      ]);
+      return;
+    }
+    await client.displayPopup({
+      target: input.targetPane,
+      targetClient: input.targetClient,
+      title: "cli-shell-chat",
+      width: "80%",
+      height: "80%",
+      closeOnExit: true,
+      command,
+    });
+  } catch (error) {
+    await restoreCliShellChatState(client, input, rollbackState);
+    throw error;
+  }
+  await closeCliShellChatPopup(client, input);
+};
+
+const runCliShellChatActionWithClient = async (
+  input: CliShellTmuxActionInput,
+  tmuxExecutor?: TmuxExecutor,
+): Promise<CliShellTmuxActionResult> => {
+  const client = createActionTmuxClient(input, tmuxExecutor);
+  const state = await readCliShellChatState(client, input);
+  if (state.surface === "popup") {
+    await closeCliShellChatPopup(client, input);
+    return { ok: true, action: "chat" };
+  }
+  if (state.surface === "pane" && state.paneId) {
+    await closeCliShellChatPane(client, input, state.paneId);
+    return { ok: true, action: "chat" };
+  }
+  const defaultLayout =
+    ((await client.getOption({ target: input.shellName, name: "@agenter_cli_shell_chat_default_layout" })) ??
+      "cover") as CliShellChatDefaultLayout;
+  if (defaultLayout === "left" || defaultLayout === "right") {
+    await openCliShellChatPane(client, input, defaultLayout);
+    return { ok: true, action: "chat" };
+  }
+  await openCliShellChatPopup(client, input);
+  return { ok: true, action: "chat" };
+};
+
+const runCliShellPaneActionWithClient = async (
+  input: CliShellTmuxActionInput,
+  tmuxExecutor?: TmuxExecutor,
+): Promise<CliShellTmuxActionResult> => {
+  const client = createActionTmuxClient(input, tmuxExecutor);
+  const state = await readCliShellChatState(client, input);
+  if (state.surface === "pane" && state.paneId) {
+    await setCliShellChatSurfaceState(client, input, { surface: "pane", paneId: state.paneId });
+    await setCliShellActiveAction(client, input, "chat");
+    await client.selectPane(state.paneId).catch(() => undefined);
+    await refreshTmuxStatusBestEffort(client);
+    return { ok: true, action: "pane" };
+  }
+  if (state.surface === "popup") {
+    await closeCliShellChatPopup(client, input);
+  }
+  await openCliShellChatPane(client, input, "right");
+  return { ok: true, action: "pane" };
+};
+
+const runCliShellLayoutActionWithClient = async (
+  input: CliShellTmuxActionInput,
+  layout: CliShellRoomLayoutAction,
+  tmuxExecutor?: TmuxExecutor,
+): Promise<CliShellTmuxActionResult> => {
+  const client = createActionTmuxClient(input, tmuxExecutor);
+  const targetDefaultLayout: CliShellChatDefaultLayout =
+    layout === "layout-left" ? "left" : layout === "layout-right" ? "right" : "cover";
+  await setTmuxSessionOption(client, input, "@agenter_cli_shell_chat_default_layout", targetDefaultLayout);
+  const state = await readCliShellChatState(client, input);
+  if (layout === "layout-cover") {
+    if (state.surface === "pane" && state.paneId) {
+      if (input.sourceSurface === "pane") {
+        await openCliShellChatPopup(client, input, "tmux-server", state);
+        return { ok: true, action: layout, closeCurrentSurface: true };
+      }
+      await closeCliShellChatPane(client, input, state.paneId);
+      await openCliShellChatPopup(client, input);
+      return { ok: true, action: layout, closeCurrentSurface: false };
+    }
+    if (state.surface !== "popup") {
+      await openCliShellChatPopup(client, input);
+    }
+    return { ok: true, action: layout, closeCurrentSurface: false };
+  }
+  const position = layout === "layout-left" ? "left" : "right";
+  if (state.surface === "pane" && state.paneId) {
+    await moveCliShellChatPane(client, input, state.paneId, position);
+    return { ok: true, action: layout, closeCurrentSurface: false };
+  }
+  await openCliShellChatPane(client, input, position);
+  return { ok: true, action: layout, closeCurrentSurface: input.sourceSurface === "popup" };
+};
+
 const joinTmuxSequence = (commands: readonly (readonly string[])[]): string =>
   commands.map((command) => joinTmuxCommand(command)).join(" ; ");
 
@@ -610,15 +945,10 @@ const buildActiveActionSequence = (
   buildStatusRefreshCommand(),
 ];
 
-const buildActiveActionArgs = (
-  actionShellCommand: string,
-): string[] => ["run-shell", actionShellCommand];
+const buildActiveActionArgs = (actionShellCommand: string): string[] => ["run-shell", actionShellCommand];
 
-const buildActiveActionString = (
-  activeAction: string,
-  command: readonly string[],
-  restoreAction = "shell",
-): string => joinTmuxSequence(buildActiveActionSequence(activeAction, command, restoreAction));
+const buildActiveActionString = (activeAction: string, command: readonly string[], restoreAction = "shell"): string =>
+  joinTmuxSequence(buildActiveActionSequence(activeAction, command, restoreAction));
 
 const buildMouseToggleCommand = (): string[] => [
   "if-shell",
@@ -635,24 +965,6 @@ const buildMouseToggleCommand = (): string[] => [
     buildStatusRefreshCommand(),
   ]),
 ];
-
-const buildMouseDispatchString = (
-  entries: readonly { range: string; command: string }[],
-  fallback: string,
-): string =>
-  entries.reduceRight(
-    (nextCommand, entry) =>
-      joinTmuxCommand([
-        "if-shell",
-        "-F",
-        `#{==:#{mouse_status_range},${entry.range}}`,
-        entry.command,
-        nextCommand,
-      ]),
-    fallback,
-  );
-
-const buildMouseStatusDispatchCommand = (actionShellCommand: string): string[] => ["run-shell", actionShellCommand];
 
 export const buildCliShellTmuxPlan = (input: CliShellTmuxPlanInput): CliShellTmuxPlan => {
   const tmux = input.tmux?.trim() || "tmux";
@@ -675,17 +987,18 @@ export const buildCliShellTmuxPlan = (input: CliShellTmuxPlanInput): CliShellTmu
         daemonPort: input.daemonPort,
         authServiceEndpoint: input.authServiceEndpoint,
       },
-      [
-        ...cliShellCommand,
-        "shell",
-        `--session=${input.shellName}`,
-        `--avatar=${input.avatarNickname}`,
-      ],
+      [...cliShellCommand, "shell", `--session=${input.shellName}`, `--avatar=${input.avatarNickname}`],
     ),
   );
   const heartbeatStatus = input.heartbeatStatus?.trim() || CLI_SHELL_DEFAULT_HEARTBEAT_STATUS;
-  const statusLeft = buildCliShellStatusLeft(input);
-  const statusRight = buildCliShellStatusRight();
+  const statusOptionSteps: CliShellTmuxStep[] = buildCliShellStatusBarOptionCommands({
+    shellName: input.shellName,
+    avatarNickname: input.avatarNickname,
+  }).map((command) => ({
+    command: tmux,
+    args: tmuxArgs(command.args),
+    productRole: "status" as const,
+  }));
   return {
     sessionName: input.shellName,
     tmux,
@@ -726,13 +1039,7 @@ export const buildCliShellTmuxPlan = (input: CliShellTmuxPlanInput): CliShellTmu
       },
       {
         command: tmux,
-        args: tmuxArgs([
-          "set-option",
-          "-t",
-          input.shellName,
-          "@agenter_cli_shell_heartbeat_status",
-          heartbeatStatus,
-        ]),
+        args: tmuxArgs(["set-option", "-t", input.shellName, "@agenter_cli_shell_heartbeat_status", heartbeatStatus]),
         productRole: "session-option",
       },
       {
@@ -800,61 +1107,7 @@ export const buildCliShellTmuxPlan = (input: CliShellTmuxPlanInput): CliShellTmu
         args: tmuxArgs(["set-option", "-t", input.shellName, "mouse", "on"]),
         productRole: "mouse",
       },
-      {
-        command: tmux,
-        args: tmuxArgs(["set-option", "-t", input.shellName, "status", "on"]),
-        productRole: "status",
-      },
-      {
-        command: tmux,
-        args: tmuxArgs(["set-option", "-t", input.shellName, "status-position", "bottom"]),
-        productRole: "status",
-      },
-      {
-        command: tmux,
-        args: tmuxArgs(["set-option", "-t", input.shellName, "status-style", CLI_SHELL_TMUX_STATUS_STYLE]),
-        productRole: "status",
-      },
-      {
-        command: tmux,
-        args: tmuxArgs(["set-option", "-t", input.shellName, "status-left-style", CLI_SHELL_TMUX_STATUS_STYLE]),
-        productRole: "status",
-      },
-      {
-        command: tmux,
-        args: tmuxArgs(["set-option", "-t", input.shellName, "status-right-style", CLI_SHELL_TMUX_STATUS_STYLE]),
-        productRole: "status",
-      },
-      {
-        command: tmux,
-        args: tmuxArgs(["set-option", "-t", input.shellName, "status-left", statusLeft]),
-        productRole: "status",
-      },
-      {
-        command: tmux,
-        args: tmuxArgs(["set-option", "-t", input.shellName, "status-left-length", "80"]),
-        productRole: "status",
-      },
-      {
-        command: tmux,
-        args: tmuxArgs(["set-option", "-t", input.shellName, "status-right-length", "120"]),
-        productRole: "status",
-      },
-      {
-        command: tmux,
-        args: tmuxArgs(["set-option", "-t", input.shellName, "status-right", statusRight]),
-        productRole: "status",
-      },
-      {
-        command: tmux,
-        args: tmuxArgs(["set-option", "-t", input.shellName, "window-status-format", ""]),
-        productRole: "status",
-      },
-      {
-        command: tmux,
-        args: tmuxArgs(["set-option", "-t", input.shellName, "window-status-current-format", ""]),
-        productRole: "status",
-      },
+      ...statusOptionSteps,
       {
         command: tmux,
         args: tmuxArgs(["bind-key", "?", ...buildActiveActionArgs(helpActionCommand)]),
@@ -887,7 +1140,13 @@ export const buildCliShellTmuxPlan = (input: CliShellTmuxPlanInput): CliShellTmu
       },
       {
         command: tmux,
-        args: tmuxArgs(["bind-key", "-T", "root", "MouseDown1Status", ...buildMouseStatusDispatchCommand(clickedActionCommand)]),
+        args: tmuxArgs(
+          buildTmuxStatusBarMouseBinding({
+            table: "root",
+            command: clickedActionCommand,
+            unknownRangeCommand: "display-message cli-shell: ignored status range",
+          }),
+        ),
         productRole: "mouse-dispatch",
       },
       {
@@ -911,7 +1170,8 @@ export const findCliShellTmuxBinding = (
     CliShellTmuxStepRole,
     "help-popup" | "chat-popup" | "chat-pane" | "mouse-toggle" | "focus-shell" | "refresh-status"
   >,
-): CliShellTmuxStep | undefined => plan.steps.find((step) => step.productRole === role && findTmuxCommand(step) === "bind-key");
+): CliShellTmuxStep | undefined =>
+  plan.steps.find((step) => step.productRole === role && findTmuxCommand(step) === "bind-key");
 
 export const findCliShellTmuxStatusStep = (plan: CliShellTmuxPlan): CliShellTmuxStep | undefined =>
   plan.steps.find(
@@ -960,6 +1220,33 @@ const waitForChild = async (
     });
   });
 
+const extractTmuxSocketAndArgs = (args: readonly string[]): {
+  socketName: string | undefined;
+  args: readonly string[];
+} => {
+  if (args[0] === "-L" && typeof args[1] === "string") {
+    return {
+      socketName: args[1],
+      args: args.slice(2),
+    };
+  }
+  return {
+    socketName: undefined,
+    args,
+  };
+};
+
+const runTmuxClientStep = async (step: CliShellTmuxStep, env?: NodeJS.ProcessEnv): Promise<void> => {
+  const { socketName, args } = extractTmuxSocketAndArgs(step.args);
+  const client = new TmuxClient({
+    executable: step.command,
+    socketName,
+    env,
+  });
+  await client.assertAvailable();
+  await client.exec(args);
+};
+
 const runTmuxActionStep = async (
   input: CliShellTmuxActionInput,
   args: readonly string[],
@@ -978,7 +1265,7 @@ const runTmuxActionStep = async (
     await executor.run({ ...step, command: tmuxPath });
     return;
   }
-  await waitForChild(command, step.args, { stdio: "ignore" });
+  await runTmuxClientStep(step);
 };
 
 const runOptionalTmuxActionStep = async (
@@ -993,6 +1280,11 @@ const runOptionalTmuxActionStep = async (
     // The product truth is the session option update; refresh is only a best-effort projection nudge.
   }
 };
+
+const isTmuxPopupDismissedError = (error: unknown): boolean =>
+  error instanceof TmuxCommandError &&
+  error.result.exitCode === 129 &&
+  error.command.args.some((arg) => arg === "display-popup");
 
 const buildTmuxActionRoomCommand = (input: CliShellTmuxActionInput, surface: CliShellChatSurface): string => {
   const cliShellCommand = input.cliShellCommand ?? resolveCliShellCommandFromArgv();
@@ -1012,6 +1304,7 @@ const buildTmuxActionRoomCommand = (input: CliShellTmuxActionInput, surface: Cli
         `AGENTER_CLI_SHELL_TMUX_SESSION=${input.shellName}`,
         `AGENTER_CLI_SHELL_TMUX_SOCKET=${input.socketName ?? CLI_SHELL_TMUX_SOCKET_NAME}`,
         `AGENTER_CLI_SHELL_TMUX_TARGET_PANE=${input.targetPane}`,
+        ...(input.targetClient ? [`AGENTER_CLI_SHELL_TMUX_TARGET_CLIENT=${input.targetClient}`] : []),
         `AGENTER_CLI_SHELL_TMUX_SURFACE=${surface}`,
         ...cliShellCommand,
         "room",
@@ -1040,8 +1333,37 @@ const buildTmuxActionTopCommand = (input: CliShellTmuxActionInput): string => {
         `AGENTER_CLI_SHELL_TMUX_SESSION=${input.shellName}`,
         `AGENTER_CLI_SHELL_TMUX_SOCKET=${input.socketName ?? CLI_SHELL_TMUX_SOCKET_NAME}`,
         `AGENTER_CLI_SHELL_TMUX_TARGET_PANE=${input.targetPane}`,
+        ...(input.targetClient ? [`AGENTER_CLI_SHELL_TMUX_TARGET_CLIENT=${input.targetClient}`] : []),
         ...cliShellCommand,
         "top",
+        `--session=${input.shellName}`,
+        `--avatar=${input.avatarNickname}`,
+      ],
+    ),
+  );
+};
+
+const buildTmuxActionHelpCommand = (input: CliShellTmuxActionInput): string => {
+  const cliShellCommand = input.cliShellCommand ?? resolveCliShellCommandFromArgv();
+  return joinShellCommand(
+    withDaemonEnv(
+      {
+        shellName: input.shellName,
+        avatarNickname: input.avatarNickname,
+        runtimeSessionId: input.runtimeSessionId,
+        workspacePath: "",
+        daemonHost: input.daemonHost,
+        daemonPort: input.daemonPort,
+        authServiceEndpoint: input.authServiceEndpoint,
+      },
+      [
+        "env",
+        `AGENTER_CLI_SHELL_TMUX_SESSION=${input.shellName}`,
+        `AGENTER_CLI_SHELL_TMUX_SOCKET=${input.socketName ?? CLI_SHELL_TMUX_SOCKET_NAME}`,
+        `AGENTER_CLI_SHELL_TMUX_TARGET_PANE=${input.targetPane}`,
+        ...(input.targetClient ? [`AGENTER_CLI_SHELL_TMUX_TARGET_CLIENT=${input.targetClient}`] : []),
+        ...cliShellCommand,
+        "help-panel",
         `--session=${input.shellName}`,
         `--avatar=${input.avatarNickname}`,
       ],
@@ -1090,7 +1412,16 @@ type NormalizedTmuxAction =
   | "layout-cover";
 
 const normalizeTmuxAction = (action: string): NormalizedTmuxAction | null => {
-  const normalized = action.trim();
+  const trimmed = action.trim();
+  const normalized = trimmed.includes("|")
+    ? (() => {
+        try {
+          return readTmuxStatusUserRangeId(trimmed);
+        } catch {
+          return null;
+        }
+      })()
+    : trimmed;
   if (
     normalized === "help" ||
     normalized === "chat" ||
@@ -1116,15 +1447,64 @@ const runActiveTmuxAction = async (
   restoreAction: "shell" | "pane" = "shell",
   executor?: CliShellTmuxExecutor,
 ): Promise<void> => {
-  await runTmuxActionStep(input, ["set-option", "-t", input.shellName, "@agenter_cli_shell_active_action", action], executor);
-  await runOptionalTmuxActionStep(input, buildStatusRefreshCommand(), executor);
-  await runTmuxActionStep(input, command, executor);
   await runTmuxActionStep(
     input,
-    ["set-option", "-t", input.shellName, "@agenter_cli_shell_active_action", restoreAction],
+    ["set-option", "-t", input.shellName, "@agenter_cli_shell_active_action", action],
     executor,
   );
   await runOptionalTmuxActionStep(input, buildStatusRefreshCommand(), executor);
+  try {
+    await runTmuxActionStep(input, command, executor);
+  } catch (error) {
+    if (!isTmuxPopupDismissedError(error)) {
+      throw error;
+    }
+  } finally {
+    await runTmuxActionStep(
+      input,
+      ["set-option", "-t", input.shellName, "@agenter_cli_shell_active_action", restoreAction],
+      executor,
+    );
+    await runOptionalTmuxActionStep(input, buildStatusRefreshCommand(), executor);
+  }
+};
+
+const runCliShellHelpActionWithClient = async (
+  input: CliShellTmuxActionInput,
+  tmuxExecutor?: TmuxExecutor,
+): Promise<CliShellTmuxActionResult> => {
+  const client = createActionTmuxClient(input, tmuxExecutor);
+  const chatStateBeforeHelp = await readCliShellChatState(client, input);
+  await client.closePopup({ targetClient: input.targetClient }).catch(() => undefined);
+  if (chatStateBeforeHelp.surface === "popup") {
+    await setCliShellChatSurfaceState(client, input, { surface: "closed", paneId: null });
+  }
+  const restoreAction = chatStateBeforeHelp.surface === "pane" ? "chat" : "shell";
+  const helpCommand = buildHelpShellCommand(
+    buildTmuxActionHelpCommand(input),
+    buildHelpPopupExitCleanupCommands(input, restoreAction),
+  );
+  await setCliShellActiveAction(client, input, "help");
+  await refreshTmuxStatusBestEffort(client);
+  try {
+    await client.displayPopup({
+      target: input.targetPane,
+      targetClient: input.targetClient,
+      title: "cli-shell-help",
+      width: "80%",
+      height: "80%",
+      closeOnExit: true,
+      command: helpCommand,
+    });
+  } catch (error) {
+    if (!isTmuxPopupDismissedError(error)) {
+      throw error;
+    }
+  } finally {
+    await setCliShellActiveAction(client, input, restoreAction);
+    await refreshTmuxStatusBestEffort(client);
+  }
+  return { ok: true, action: "help" };
 };
 
 export const refreshCliShellManagedTmuxStatus = async (
@@ -1146,40 +1526,59 @@ export const runCliShellTmuxAction = async (
 ): Promise<CliShellTmuxActionResult> => {
   const input = "input" in options ? options.input : options;
   const executor = "input" in options ? options.executor : undefined;
+  const tmuxExecutor = "input" in options ? options.tmuxExecutor : undefined;
   const action = normalizeTmuxAction(input.action);
   if (!action) {
     await runTmuxActionStep(input, ["display-message", `cli-shell: unknown action ${input.action}`], executor);
     return { ok: false, action: input.action, reason: "unknown-action" };
   }
   if (action === "help") {
+    if (!executor) {
+      return await runCliShellHelpActionWithClient(input, tmuxExecutor);
+    }
     await runActiveTmuxAction(
       input,
       action,
-      buildPopupCommand("cli-shell-help", buildHelpShellCommand(CLI_SHELL_TMUX_HELP_TEXT), input.targetPane),
+      buildPopupCommand("cli-shell-help", buildTmuxActionHelpCommand(input), input.targetPane, input.targetClient),
       "shell",
       executor,
     );
     return { ok: true, action };
   }
   if (action === "chat") {
+    if (!executor) {
+      return await runCliShellChatActionWithClient(input, tmuxExecutor);
+    }
     await runTmuxActionStep(input, buildDefaultChatCommand(input), executor);
     return { ok: true, action };
   }
   if (action === "pane") {
+    if (!executor) {
+      return await runCliShellPaneActionWithClient(input, tmuxExecutor);
+    }
     await runTmuxActionStep(input, buildSingleChatPaneCommand(input, "right"), executor);
     return { ok: true, action };
   }
   if (action === "layout-left") {
+    if (!executor) {
+      return await runCliShellLayoutActionWithClient(input, action, tmuxExecutor);
+    }
     await runTmuxActionStep(input, buildSwitchChatPaneCommand(input, "left"), executor);
     return { ok: true, action, closeCurrentSurface: false };
   }
   if (action === "layout-right") {
+    if (!executor) {
+      return await runCliShellLayoutActionWithClient(input, action, tmuxExecutor);
+    }
     await runTmuxActionStep(input, buildSwitchChatPaneCommand(input, "right"), executor);
     return { ok: true, action, closeCurrentSurface: false };
   }
   if (action === "layout-cover") {
+    if (!executor) {
+      return await runCliShellLayoutActionWithClient(input, action, tmuxExecutor);
+    }
     await runTmuxActionStep(input, buildSwitchChatPopupCommand(input), executor);
-    return { ok: true, action };
+    return { ok: true, action, closeCurrentSurface: false };
   }
   if (action === "top") {
     await runTmuxActionStep(input, buildTopLayerPopupCommand(input), executor);
@@ -1190,7 +1589,11 @@ export const runCliShellTmuxAction = async (
     return { ok: true, action };
   }
   if (action === "refresh") {
-    await runTmuxActionStep(input, buildHeartbeatRefreshCommand(input, buildTmuxActionHeartbeatStatusCommand(input)), executor);
+    await runTmuxActionStep(
+      input,
+      buildHeartbeatRefreshCommand(input, buildTmuxActionHeartbeatStatusCommand(input)),
+      executor,
+    );
     await runOptionalTmuxActionStep(input, buildStatusRefreshCommand(), executor);
     return { ok: true, action };
   }
@@ -1199,13 +1602,7 @@ export const runCliShellTmuxAction = async (
     return { ok: false, action, reason: "managed-runtime-required" };
   }
   if (action === "shell") {
-    await runActiveTmuxAction(
-      input,
-      action,
-      ["select-pane", "-t", input.targetPane],
-      "shell",
-      executor,
-    );
+    await runActiveTmuxAction(input, action, ["select-pane", "-t", input.targetPane], "shell", executor);
     return { ok: true, action, closeCurrentSurface: true };
   }
   await runActiveTmuxAction(input, action, ["select-pane", "-t", input.targetPane], "shell", executor);
@@ -1214,17 +1611,17 @@ export const runCliShellTmuxAction = async (
 
 export const defaultCliShellTmuxExecutor: CliShellTmuxExecutor = {
   async which(command) {
-    if (command.includes("/")) {
-      return command;
-    }
-    const path = Bun.which(command);
-    return path ?? null;
+    return (await defaultTmuxExecutor.which?.(command)) ?? null;
   },
   async run(step, env) {
-    await waitForChild(step.command, step.args, {
-      env,
-      stdio: step.foreground ? "inherit" : "ignore",
-    });
+    if (step.foreground) {
+      await waitForChild(step.command, step.args, {
+        env,
+        stdio: "inherit",
+      });
+      return;
+    }
+    await runTmuxClientStep(step, env);
   },
 };
 

@@ -4,6 +4,7 @@ import type { GlobalTerminalEntry } from '@agenter/client-sdk';
 import {
 	resolveTerminalIdentitySubtitle,
 	resolveTerminalInstanceName,
+	resolveTerminalLifecycleFacts,
 	resolveTerminalWindowTitle,
 } from './terminal-display';
 
@@ -56,11 +57,23 @@ describe('Feature: terminal display law', () => {
 
 	test('Scenario: Given no configured instance name exists When labels resolve Then terminal identity falls back to terminal id without inventing a subtitle', () => {
 		const terminal = createTerminalEntry({
-			processPhase: 'stopped',
+			processPhase: 'killed',
 		});
 
 		expect(resolveTerminalInstanceName(terminal)).toBe('term-qa');
 		expect(resolveTerminalWindowTitle(terminal)).toBe('term-qa');
 		expect(resolveTerminalIdentitySubtitle(terminal)).toBe('');
+	});
+
+	test('Scenario: Given a killed terminal with a stop reason When lifecycle facts resolve Then every rendered badge key stays unique', () => {
+		const facts = resolveTerminalLifecycleFacts(
+			createTerminalEntry({
+				processPhase: 'killed',
+				lastStopReason: 'killed',
+			}),
+		);
+
+		expect(facts.map((fact) => fact.key)).toEqual(['lifecycle:killed', 'reason:killed']);
+		expect(new Set(facts.map((fact) => fact.key)).size).toBe(facts.length);
 	});
 });

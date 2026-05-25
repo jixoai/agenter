@@ -47,6 +47,7 @@
         "@agenter/product-extension-runtime": "workspace:*",
         "@agenter/terminal-transport-protocol": "workspace:*",
         "@agenter/termless-core": "workspace:*",
+        "@agenter/tmux-client": "workspace:*",
         "@opentui/core": "latest",
         "yargs": "^17.7.2",
       },
@@ -104,6 +105,7 @@
         "@tanstack/ai-openai": "^0.6.0",
         "@trpc/client": "^11.7.1",
         "@trpc/server": "^11.7.1",
+        "ignore": "^5.3.2",
         "just-bash": "^2.14.0",
         "minimatch": "^10.2.5",
         "superjson": "^2.2.2",
@@ -546,6 +548,13 @@
         "typescript": "latest",
       },
     },
+    "packages/tmux-client": {
+      "name": "@agenter/tmux-client",
+      "version": "0.0.0",
+      "devDependencies": {
+        "typescript": "latest",
+      },
+    },
     "packages/tui": {
       "name": "@agenter/tui",
       "version": "0.0.0",
@@ -774,6 +783,8 @@
     "@agenter/terminal-view": ["@agenter/terminal-view@workspace:packages/terminal-view"],
 
     "@agenter/termless-core": ["@agenter/termless-core@workspace:packages/termless-core"],
+
+    "@agenter/tmux-client": ["@agenter/tmux-client@workspace:packages/tmux-client"],
 
     "@agenter/tui": ["@agenter/tui@workspace:packages/tui"],
 

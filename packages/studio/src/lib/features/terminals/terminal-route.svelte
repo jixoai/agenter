@@ -10,26 +10,33 @@
 	import { goto } from '$app/navigation';
 
 	import { getAppControllerContext } from '$lib/app/controller-context';
-	import {
-	buildActorDirectory,
-	buildActorDirectoryMap,
-	isPrincipalActorId,
-} from '$lib/features/collaboration/actor-directory';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import TerminalViewHost from '$lib/components/terminal-view-host.svelte';
+	import WorkbenchScaffold from '$lib/features/navigation/workbench-scaffold.svelte';
+	import {
+		buildActorDirectory,
+		buildActorDirectoryMap,
+		isPrincipalActorId,
+	} from '$lib/features/collaboration/actor-directory';
 
-import TerminalSystemSurface from './terminal-system-surface.svelte';
-import {
-	buildTerminalCallAsOptions,
-	buildTerminalSeatStates,
-	resolveSelectedCallerToken,
-} from './terminal-route.projection';
-import type {
-	TerminalSystemCallAsOption,
-	TerminalSystemNotice,
-	TerminalSystemResizeToolResult,
-	TerminalSystemSeatState,
-	TerminalSystemWriteToolResult,
-} from './terminal-system-surface.types';
+	import {
+		resolveTerminalIdentitySubtitle,
+		resolveTerminalInstanceName,
+		resolveTerminalLifecycleFacts,
+	} from './terminal-display';
+	import {
+		buildTerminalCallAsOptions,
+		buildTerminalSeatStates,
+		resolveSelectedCallerToken,
+	} from './terminal-route.projection';
+	import TerminalSystemSurface from './terminal-system-surface.svelte';
+	import type {
+		TerminalSystemCallAsOption,
+		TerminalSystemNotice,
+		TerminalSystemResizeToolResult,
+		TerminalSystemSeatState,
+		TerminalSystemWriteToolResult,
+	} from './terminal-system-surface.types';
 
 	let {
 		terminalId,
@@ -83,7 +90,15 @@ import type {
 	const actorDirectoryMap = $derived(buildActorDirectoryMap(actorDirectory));
 	const selectableActors = $derived(actorDirectory.filter((actor) => actor.actorKind !== 'system'));
 	const terminals = $derived(controller.runtimeState.globalTerminals.data);
+	const terminalHistory = $derived(controller.runtimeState.globalTerminalHistory.data);
+	const terminalArchive = $derived(controller.runtimeState.globalTerminalArchive.data);
 	const selectedTerminal = $derived(terminals.find((terminal) => terminal.terminalId === terminalId) ?? null);
+	const selectedHistoryTerminal = $derived(
+		terminalHistory.find((terminal) => terminal.terminalId === terminalId) ?? null,
+	);
+	const selectedArchivedTerminal = $derived(
+		terminalArchive.find((terminal) => terminal.terminalId === terminalId) ?? null,
+	);
 	const selectedTerminalGrantsState = $derived(
 		terminalId ? (controller.runtimeState.globalTerminalGrantsById[terminalId] ?? emptyTerminalGrantState) : emptyTerminalGrantState,
 	);
@@ -202,6 +217,20 @@ import type {
 		const nextTerminal = terminals.find((terminal) => terminal.terminalId !== removedTerminalId) ?? null;
 		if (nextTerminal) {
 			await navigateToTerminal(nextTerminal.terminalId);
+			return;
+		}
+		if (
+			!controller.runtimeState.globalTerminalHistory.loaded &&
+			controller.runtimeState.globalTerminalHistory.error === null
+		) {
+			return;
+		}
+		if (controller.runtimeState.globalTerminalHistory.data.length > 0) {
+			await goto('/terminals/history', {
+				replaceState: true,
+				noScroll: true,
+				keepFocus: true,
+			});
 			return;
 		}
 		await goto('/terminals/new', {
@@ -510,7 +539,16 @@ import type {
 		if (!controller.runtimeState.globalTerminals.loaded) {
 			return;
 		}
-		if (selectedTerminal || controller.runtimeState.globalTerminals.loading) {
+		if (
+			selectedTerminal ||
+			selectedHistoryTerminal ||
+			selectedArchivedTerminal ||
+			controller.runtimeState.globalTerminals.loading ||
+			(!controller.runtimeState.globalTerminalHistory.loaded &&
+				controller.runtimeState.globalTerminalHistory.error === null) ||
+			(!controller.runtimeState.globalTerminalArchive.loaded &&
+				controller.runtimeState.globalTerminalArchive.error === null)
+		) {
 			return;
 		}
 		void navigateToFallbackTerminal(terminalId);
@@ -543,29 +581,144 @@ import type {
 	});
 </script>
 
-<TerminalSystemSurface
-	{selectedTerminal}
-	terminalViewportComponent={TerminalViewHost}
-	{selectedTransportUrl}
-	terminalGrantsState={selectedTerminalGrantsState}
-	terminalApprovalsState={selectedTerminalApprovalsState}
-	terminalActivityState={selectedTerminalActivityState}
-	routeNotice={terminalNotice}
-	{selectableActors}
-	{callAsOptions}
-	{selectedCallerToken}
-	seatStates={terminalSeatStates}
-	onChangeCallerToken={handleChangeCallerToken}
-	onBootstrapTerminal={handleBootstrapTerminal}
-	onStopTerminal={handleStopTerminal}
-	onDeleteTerminal={handleDeleteTerminal}
-	onGrantSeat={handleGrantSeat}
-	onToggleSeatFocus={handleToggleSeatFocus}
-	onRevokeSeat={handleRevokeSeat}
-	onApproveRequest={handleApproveRequest}
-	onDenyRequest={handleDenyRequest}
-	onWriteToolCall={handleWriteToolCall}
-	onReadToolCall={handleReadToolCall}
-	onResizeToolCall={handleResizeToolCall}
-	onPresentationConfigChange={handlePresentationConfigChange}
-/>
+{#if selectedTerminal}
+	<TerminalSystemSurface
+		{selectedTerminal}
+		terminalViewportComponent={TerminalViewHost}
+		{selectedTransportUrl}
+		terminalGrantsState={selectedTerminalGrantsState}
+		terminalApprovalsState={selectedTerminalApprovalsState}
+		terminalActivityState={selectedTerminalActivityState}
+		routeNotice={terminalNotice}
+		{selectableActors}
+		{callAsOptions}
+		{selectedCallerToken}
+		seatStates={terminalSeatStates}
+		onChangeCallerToken={handleChangeCallerToken}
+		onBootstrapTerminal={handleBootstrapTerminal}
+		onStopTerminal={handleStopTerminal}
+		onDeleteTerminal={handleDeleteTerminal}
+		onGrantSeat={handleGrantSeat}
+		onToggleSeatFocus={handleToggleSeatFocus}
+		onRevokeSeat={handleRevokeSeat}
+		onApproveRequest={handleApproveRequest}
+		onDenyRequest={handleDenyRequest}
+		onWriteToolCall={handleWriteToolCall}
+		onReadToolCall={handleReadToolCall}
+		onResizeToolCall={handleResizeToolCall}
+		onPresentationConfigChange={handlePresentationConfigChange}
+	/>
+{:else if selectedHistoryTerminal}
+	<WorkbenchScaffold
+		tone="page"
+		body="scroll"
+		contentClass="grid gap-5"
+		data-testid="terminal-history-detail-route"
+	>
+		{#snippet header()}
+			<div class="grid gap-2">
+				<h1 class="text-base font-semibold">{resolveTerminalInstanceName(selectedHistoryTerminal)}</h1>
+				<p class="text-sm text-muted-foreground">
+					This terminal is no longer live. It has moved into terminal history and can only be archived or deleted.
+				</p>
+			</div>
+		{/snippet}
+
+		<div class="grid gap-4 rounded-[1rem] border border-border/60 bg-background/45 p-4 md:p-5">
+			{#if terminalNotice}
+				<div>
+					<div class="rounded-[0.9rem] border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+						{terminalNotice.message}
+					</div>
+				</div>
+			{/if}
+			<div class="grid gap-1">
+				<div class="text-sm font-medium">{selectedHistoryTerminal.terminalId}</div>
+				<div class="text-xs text-muted-foreground">
+					{resolveTerminalIdentitySubtitle(selectedHistoryTerminal) || 'No live path is available because the terminal has already been killed.'}
+				</div>
+			</div>
+			<div class="flex flex-wrap gap-2">
+				{#each resolveTerminalLifecycleFacts(selectedHistoryTerminal) as fact (fact.key)}
+					<div class="rounded-full border px-2 py-1 text-[11px] text-muted-foreground">{fact.label}</div>
+				{/each}
+			</div>
+			<div class="flex flex-wrap gap-2">
+				<Button variant="outline" size="sm" onclick={() => void goto('/terminals/history', { noScroll: true, keepFocus: true })}>
+					Back to history
+				</Button>
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={async () => {
+						try {
+							await controller.runtimeStore.archiveGlobalTerminal({ terminalId: selectedHistoryTerminal.terminalId });
+							await goto('/terminals/history', { replaceState: true, noScroll: true, keepFocus: true });
+						} catch (error) {
+							routeNotice = describeTerminalError(error, 'terminal archive failed');
+						}
+					}}
+				>
+					Archive
+				</Button>
+				<Button
+					variant="outline"
+					size="sm"
+					class="text-destructive"
+					onclick={async () => {
+						try {
+							await controller.runtimeStore.deleteGlobalTerminal({ terminalId: selectedHistoryTerminal.terminalId });
+							await goto('/terminals/history', { replaceState: true, noScroll: true, keepFocus: true });
+						} catch (error) {
+							routeNotice = describeTerminalError(error, 'terminal delete failed');
+						}
+					}}
+				>
+					Delete
+				</Button>
+			</div>
+		</div>
+	</WorkbenchScaffold>
+{:else if selectedArchivedTerminal}
+	<WorkbenchScaffold
+		tone="page"
+		body="scroll"
+		contentClass="grid gap-5"
+		data-testid="terminal-archive-detail-route"
+	>
+		{#snippet header()}
+			<div class="grid gap-2">
+				<h1 class="text-base font-semibold">{resolveTerminalInstanceName(selectedArchivedTerminal)}</h1>
+				<p class="text-sm text-muted-foreground">
+					This terminal has already been archived. It is retained for inspection but removed from the default history queue.
+				</p>
+			</div>
+		{/snippet}
+
+		<div class="grid gap-4 rounded-[1rem] border border-border/60 bg-background/45 p-4 md:p-5">
+			{#if terminalNotice}
+				<div>
+					<div class="rounded-[0.9rem] border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+						{terminalNotice.message}
+					</div>
+				</div>
+			{/if}
+			<div class="grid gap-1">
+				<div class="text-sm font-medium">{selectedArchivedTerminal.terminalId}</div>
+				<div class="text-xs text-muted-foreground">
+					{resolveTerminalIdentitySubtitle(selectedArchivedTerminal) || 'No live path is available because the terminal has already been archived.'}
+				</div>
+			</div>
+			<div class="flex flex-wrap gap-2">
+				{#each resolveTerminalLifecycleFacts(selectedArchivedTerminal) as fact (fact.key)}
+					<div class="rounded-full border px-2 py-1 text-[11px] text-muted-foreground">{fact.label}</div>
+				{/each}
+			</div>
+			<div class="flex flex-wrap gap-2">
+				<Button variant="outline" size="sm" onclick={() => void goto('/terminals/archive', { noScroll: true, keepFocus: true })}>
+					Back to archive
+				</Button>
+			</div>
+		</div>
+	</WorkbenchScaffold>
+{/if}

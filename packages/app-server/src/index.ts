@@ -45,6 +45,7 @@ export {
   AppKernel,
   type AppKernelOptions,
   type PublicRoomEntry,
+  type PublicRoomPage,
   type PublicRoomMessageQueryResult,
   type PublicRoomMessageRecord,
   type PublicRoomSnapshot,

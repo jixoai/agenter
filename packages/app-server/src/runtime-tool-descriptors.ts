@@ -119,6 +119,7 @@ export interface RuntimeLocalApiHandlers {
     workspace: RuntimeWorkspaceSurface;
   }>;
   terminalList: () => RuntimeTerminalView[];
+  terminalHistory: () => RuntimeTerminalView[];
   terminalCreate: (input: {
     terminalId?: string;
     processKind?: string;
@@ -195,6 +196,9 @@ export interface RuntimeLocalApiHandlers {
     ok: boolean;
     message: string;
     terminal?: RuntimeTerminalView;
+  }>;
+  terminalArchive: (input: { terminalId: string }) => Promise<{
+    terminal: RuntimeTerminalView;
   }>;
   terminalManageInvite: (input: {
     terminalId: string;
@@ -646,6 +650,10 @@ const terminalFocusSchema = z.object({
 });
 
 const terminalLifecycleMutationSchema = z.object({
+  terminalId: z.string(),
+});
+
+const terminalArchiveSchema = z.object({
   terminalId: z.string(),
 });
 
@@ -1483,11 +1491,23 @@ export const runtimeToolDescriptors = [
     name: "list",
     route: "/v1/terminal/list",
     description:
-      "List terminals visible to this runtime, including lifecycle, observed identity, and stop facts.",
+      "List live terminals visible to this runtime, including lifecycle, observed identity, and stop facts.",
     inputSchema: emptyObjectSchema,
     examples: [{ kind: "none" }],
     handler: async (_input, handlers) => ({
       terminals: handlers.terminalList(),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "terminal",
+    name: "history",
+    route: "/v1/terminal/history",
+    description:
+      "List killed terminal instances retained as history for this runtime.",
+    inputSchema: emptyObjectSchema,
+    examples: [{ kind: "none" }],
+    handler: async (_input, handlers) => ({
+      terminals: handlers.terminalHistory(),
     }),
   }),
   defineRuntimeToolDescriptor({
@@ -1558,7 +1578,8 @@ export const runtimeToolDescriptors = [
       "`remark:false` performs non-consuming inspection and does not advance this actor's read cursor.",
       "`recordActivity:false` suppresses activity history; it is independent from cursor consumption.",
       "It does not bootstrap stopped terminals for you.",
-      "If `terminal list` shows `processPhase` as `not_started` or `stopped`, run `terminal bootstrap` before expecting read/write to work.",
+      "If `terminal list` shows `processPhase` as `not_started`, run `terminal bootstrap` before expecting read/write to work.",
+      "If the terminal was already killed, inspect it through `terminal history` instead of expecting it to stay in the live list.",
     ],
     inputSchema: terminalReadSchema,
     examples: [
@@ -1706,10 +1727,10 @@ export const runtimeToolDescriptors = [
     namespace: "terminal",
     name: "bootstrap",
     route: "/v1/terminal/bootstrap",
-    description: "Bootstrap a provisioned or stopped runtime terminal by id.",
+    description: "Bootstrap a provisioned or killed-history runtime terminal by id.",
     helpNotes: [
       "Use `terminal list` first when you need to inspect `processPhase`, `currentPath`, `currentTitle`, or prior stop facts.",
-      "`terminal bootstrap` starts the PTY from durable launch truth. It is the explicit lifecycle edge for `not_started` and `stopped` terminals.",
+      "`terminal bootstrap` starts the PTY from durable launch truth. It is the explicit lifecycle edge for `not_started` terminals and for killed terminals you intentionally recover.",
       "If `lifecycleTransition` is already `bootstrapping` or `killing`, wait and reread `terminal list` instead of stacking another lifecycle mutation.",
     ],
     inputSchema: terminalLifecycleMutationSchema,
@@ -1725,10 +1746,10 @@ export const runtimeToolDescriptors = [
     namespace: "terminal",
     name: "stop",
     route: "/v1/terminal/stop",
-    description: "Stop a running runtime terminal PTY by id while preserving durable terminal identity.",
+    description: "Stop a running runtime terminal PTY by id and move it into terminal history.",
     helpNotes: [
-      "`terminal stop` halts the PTY but does not delete the terminal catalog entry.",
-      "After stop, use `terminal list` to inspect `processPhase` and stop facts. Use `terminal bootstrap` when you want to start that same terminal again.",
+      "`terminal stop` halts the PTY and removes the instance from the live terminal list while preserving durable history evidence.",
+      "After stop, use `terminal history` to inspect stop facts. Use `terminal bootstrap` when you intentionally want to start that same terminal again.",
       "If `lifecycleTransition` is already `bootstrapping` or `killing`, wait and reread `terminal list` instead of stacking another lifecycle mutation.",
     ],
     inputSchema: terminalLifecycleMutationSchema,
@@ -1738,6 +1759,20 @@ export const runtimeToolDescriptors = [
     ],
     handler: async (input, handlers) => ({
       result: await handlers.terminalStop(input),
+    }),
+  }),
+  defineRuntimeToolDescriptor({
+    namespace: "terminal",
+    name: "archive",
+    route: "/v1/terminal/archive",
+    description: "Archive a killed terminal history instance without deleting its retained evidence.",
+    inputSchema: terminalArchiveSchema,
+    examples: [
+      { kind: "stdin", payload: { terminalId: "term-1" } },
+      { kind: "argv", payload: { terminalId: "term-1" } },
+    ],
+    handler: async (input, handlers) => ({
+      result: await handlers.terminalArchive(input),
     }),
   }),
   defineRuntimeToolDescriptor({

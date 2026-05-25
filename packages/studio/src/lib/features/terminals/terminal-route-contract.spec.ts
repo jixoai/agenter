@@ -26,4 +26,17 @@ describe('Feature: Terminal route activity hydration contract', () => {
 		expect(terminalRouteSource).toContain('const selectedTransportUrl = $derived(buildTransportUrlForToken(selectedCallerToken));');
 		expect(terminalRouteSource).toContain('{selectedTransportUrl}');
 	});
+
+	test('Scenario: Given a live terminal disappears into history When reading the route source Then the route must acknowledge the history projection instead of silently treating the terminal as missing', () => {
+		expect(terminalRouteSource).toContain('const selectedHistoryTerminal = $derived(');
+		expect(terminalRouteSource).toContain('selectedArchivedTerminal');
+		expect(terminalRouteSource).toContain("await goto('/terminals/history', {");
+		expect(terminalRouteSource).toContain('data-testid="terminal-history-detail-route"');
+	});
+
+	test('Scenario: Given a terminal was already archived When reading the route source Then detail routing must preserve an explicit archive projection instead of dropping the record entirely', () => {
+		expect(terminalRouteSource).toContain('const selectedArchivedTerminal = $derived(');
+		expect(terminalRouteSource).toContain('data-testid="terminal-archive-detail-route"');
+		expect(terminalRouteSource).toContain("void goto('/terminals/archive'");
+	});
 });

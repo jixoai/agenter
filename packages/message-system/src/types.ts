@@ -204,6 +204,8 @@ export interface MessageChannelRecord {
   archivedAt?: number;
   archivedBy?: string;
   focused: boolean;
+  roomRevision: string;
+  transcriptRevision: string;
 }
 
 export interface MessageChannelAccessProjection {
@@ -299,6 +301,14 @@ export interface ReversePage<T> {
   hasMoreBefore: boolean;
 }
 
+export interface MessageRoomRevisionVector {
+  roomRevision: string;
+  transcriptRevision: string;
+  headVersion: string;
+}
+
+export interface MessageTranscriptPage extends ReversePage<MessageRecord>, MessageRoomRevisionVector {}
+
 export interface MessageControlPlaneEntry extends MessageChannelRecord, MessageChannelAccessProjection {
   seatStates?: MessageSeatStateProjection[];
 }
@@ -311,6 +321,8 @@ export interface MessageSnapshot {
   items: MessageRecord[];
   nextBefore: ReverseTimeCursor | null;
   hasMoreBefore: boolean;
+  roomRevision: string;
+  transcriptRevision: string;
   headVersion: string;
 }
 
@@ -508,12 +520,14 @@ export type MessageTransportServerMessage =
       type: "messages";
       chatId: string;
       items: MessageRecord[];
+      roomRevision: string;
+      transcriptRevision: string;
       headVersion: string;
     }
   | {
       type: "page";
       chatId: string;
-      page: ReversePage<MessageRecord>;
+      page: MessageTranscriptPage;
     }
   | {
       type: "focus";

@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, type Dirent, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, type Dirent, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+
+import ignore from "ignore";
 
 import { toWorkspaceCwd } from "./workspace-target";
 
@@ -34,6 +36,14 @@ const isMissingWorkspaceError = (error: unknown): boolean =>
   error instanceof Error &&
   "code" in error &&
   (error.code === "ENOENT" || error.code === "ENOTDIR");
+
+const resolveComparablePath = (path: string): string => {
+  try {
+    return resolve(realpathSync(path));
+  } catch {
+    return resolve(path);
+  }
+};
 
 const normalizeRelativePath = (value: string): string => value.split(sep).join("/");
 
@@ -146,13 +156,14 @@ const readCommandOutput = (command: string, args: string[], cwd: string): string
 
 const resolveGitWorkspaceContext = (workspacePath: string): GitWorkspaceContext | null => {
   try {
-    const repoRoot = resolve(
+    const repoRoot = resolveComparablePath(
       readCommandOutput("git", ["-C", workspacePath, "rev-parse", "--show-toplevel"], workspacePath).trim(),
     );
-    if (!isInsideRoot(repoRoot, workspacePath)) {
+    const canonicalWorkspacePath = resolveComparablePath(workspacePath);
+    if (!isInsideRoot(repoRoot, canonicalWorkspacePath)) {
       return null;
     }
-    const scopePath = normalizeRelativePath(relative(repoRoot, workspacePath)).replace(/^\.\/?/, "");
+    const scopePath = normalizeRelativePath(relative(repoRoot, canonicalWorkspacePath)).replace(/^\.\/?/, "");
     return {
       repoRoot,
       scopePath,
@@ -186,6 +197,27 @@ const loadWorkspaceFilePathsWithGit = (workspacePath: string): string[] => {
 
 const loadWorkspaceFilePathsWithRg = (workspacePath: string): string[] =>
   parseNullSeparatedLines(readCommandOutput("rg", ["--files", "--hidden", "--no-require-git", "-0"], workspacePath));
+
+const loadWorkspaceIgnoreFilter = (workspacePath: string): ((pathname: string) => boolean) | null => {
+  const gitignorePath = join(workspacePath, ".gitignore");
+  if (!existsSync(gitignorePath)) {
+    return null;
+  }
+  try {
+    const patterns = readFileSync(gitignorePath, "utf8");
+    if (patterns.trim().length === 0) {
+      return null;
+    }
+    return ignore({ allowRelativePaths: true }).add(patterns).createFilter();
+  } catch {
+    return null;
+  }
+};
+
+const filterWorkspaceIgnoredPaths = (workspacePath: string, paths: string[]): string[] => {
+  const ignoreFilter = loadWorkspaceIgnoreFilter(workspacePath);
+  return ignoreFilter ? paths.filter(ignoreFilter) : paths;
+};
 
 const loadWorkspaceFilePathsByWalk = (workspacePath: string): string[] => {
   const queue = [workspacePath];
@@ -230,9 +262,9 @@ const loadWorkspaceFilePaths = (workspacePath: string): string[] => {
     return loadWorkspaceFilePathsWithGit(workspacePath);
   } catch {
     try {
-      return loadWorkspaceFilePathsWithRg(workspacePath);
+      return filterWorkspaceIgnoredPaths(workspacePath, loadWorkspaceFilePathsWithRg(workspacePath));
     } catch {
-      return loadWorkspaceFilePathsByWalk(workspacePath);
+      return filterWorkspaceIgnoredPaths(workspacePath, loadWorkspaceFilePathsByWalk(workspacePath));
     }
   }
 };

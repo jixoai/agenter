@@ -41,6 +41,7 @@ export const startCliShellRoomTui = async (input: {
   const env = input.env ?? process.env;
   let currentSettings = input.settings ?? defaultCliShellSettings();
   const targetPane = env.AGENTER_CLI_SHELL_TMUX_TARGET_PANE?.trim();
+  const targetClient = env.AGENTER_CLI_SHELL_TMUX_TARGET_CLIENT?.trim();
   const sourceSurface: CliShellRoomSurfaceKind = env.AGENTER_CLI_SHELL_TMUX_SURFACE?.trim() === "pane" ? "pane" : "popup";
   const onLayoutRequest =
     targetPane && targetPane.length > 0
@@ -52,8 +53,10 @@ export const startCliShellRoomTui = async (input: {
             avatarNickname: input.attached.avatar.nickname,
             runtimeSessionId: input.attached.session.id,
             targetPane,
+            targetClient: targetClient && targetClient.length > 0 ? targetClient : undefined,
             tmux: env.AGENTER_CLI_SHELL_TMUX ?? "tmux",
             socketName: env.AGENTER_CLI_SHELL_TMUX_SOCKET?.trim() || CLI_SHELL_TMUX_SOCKET_NAME,
+            sourceSurface,
             cliShellCommand: resolveCliShellCommandFromArgv(input.argv ?? process.argv),
             daemonHost: env.AGENTER_DAEMON_HOST,
             daemonPort: Number.isFinite(daemonPort) ? daemonPort : undefined,
@@ -71,9 +74,10 @@ export const startCliShellRoomTui = async (input: {
           };
           currentSettings = nextSettings;
           await saveCliShellSettings(nextSettings).catch(() => undefined);
-          const closeCurrentSurface =
-            mode === "cover" ? true : sourceSurface === "popup" ? true : result.closeCurrentSurface !== false;
-          return { closeCurrentSurface };
+          const targetSurface: CliShellRoomSurfaceKind = mode === "cover" ? "popup" : "pane";
+          return {
+            closeCurrentSurface: sourceSurface !== targetSurface || result.closeCurrentSurface === true,
+          };
         }
       : undefined;
   const onTopLayerRequest =
@@ -86,6 +90,7 @@ export const startCliShellRoomTui = async (input: {
             avatarNickname: input.attached.avatar.nickname,
             runtimeSessionId: input.attached.session.id,
             targetPane,
+            targetClient: targetClient && targetClient.length > 0 ? targetClient : undefined,
             tmux: env.AGENTER_CLI_SHELL_TMUX ?? "tmux",
             socketName: env.AGENTER_CLI_SHELL_TMUX_SOCKET?.trim() || CLI_SHELL_TMUX_SOCKET_NAME,
             cliShellCommand: resolveCliShellCommandFromArgv(input.argv ?? process.argv),

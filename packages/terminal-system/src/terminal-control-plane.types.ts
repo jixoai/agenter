@@ -488,6 +488,8 @@ export interface TerminalControlPlaneEntry {
   approvalTimeoutMs?: number;
   pendingRequestCount?: number;
   metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
   access?: TerminalAccessProjection;
   actors?: TerminalSeatProjection[];
 }
@@ -547,6 +549,7 @@ export interface TerminalConfigView {
   profile: TerminalProcessProfile;
   metadata: Record<string, unknown>;
   processPhase: TerminalProcessPhase;
+  archivedAt?: number | null;
   lifecycleTransition?: TerminalLifecycleTransition | null;
 }
 
@@ -569,6 +572,8 @@ export interface TerminalRecord {
 }
 
 export interface TerminalRecord extends TerminalLifecycleState {}
+
+export type TerminalInstanceProjection = "live" | "history" | "archive" | "index";
 
 export interface TerminalAdminCandidateRecord {
   terminalId: string;

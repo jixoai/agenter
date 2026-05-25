@@ -69,6 +69,10 @@ export { startCliShellRoomTui, type CliShellRoomTuiController } from "./tui/run-
 export { startCliShellTopLayerApp, type CliShellTopLayerApp, type CliShellTopLayerAppInput } from "./tui/top-layer-app";
 export { startCliShellTopLayerTui, type CliShellTopLayerTuiController } from "./tui/run-cli-shell-top-tui";
 export {
+  startCliShellHelpPanelTui,
+  type CliShellHelpPanelTuiController,
+} from "./tui/run-cli-shell-help-panel-tui";
+export {
   startCliShellTerminalInstancePanel,
   type CliShellTerminalInstancePanelController,
   type CliShellTerminalInstancePanelInput,
