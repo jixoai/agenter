@@ -2,12 +2,12 @@
 
 ### Requirement: Studio SHALL be the active operator product package
 
-The active SvelteKit operator product SHALL be published and resolved as `@agenter/studio` from `packages/studio`. The package SHALL own Studio-specific CLI grammar, static serving, dev serving, route assets, Storybook workflow, and browser-facing lifecycle.
+The active SvelteKit operator product SHALL be published and resolved as `agenter-ext-studio` from `packages/studio`. The package SHALL own Studio-specific CLI grammar, static serving, dev serving, route assets, Storybook workflow, and browser-facing lifecycle.
 
 #### Scenario: Workspace package resolves as Studio
 
 - **WHEN** workspace package discovery resolves the active operator product
-- **THEN** it resolves package `@agenter/studio`
+- **THEN** it resolves package `agenter-ext-studio`
 - **AND** it resolves from `packages/studio`
 - **AND** it does not resolve the active product from `@agenter/webui` or `packages/webui`
 
@@ -15,16 +15,16 @@ The active SvelteKit operator product SHALL be published and resolved as `@agent
 
 - **WHEN** a user runs `agenter studio --dev --web-port 4173`
 - **THEN** core CLI forwards `--dev --web-port 4173` as product argv
-- **AND** `@agenter/studio` parses those flags
+- **AND** `agenter-ext-studio` parses those flags
 - **AND** core CLI does not parse Studio-specific static or dev-server flags
 
 ### Requirement: Studio SHALL consume launcher-owned daemon context
 
-`@agenter/studio` SHALL consume daemon and auth-service context through the product launcher environment contract. Studio SHALL NOT discover or persist a second daemon authority, and SHALL NOT import core runtime internals because it is colocated in the monorepo.
+`agenter-ext-studio` SHALL consume daemon and auth-service context through the product launcher environment contract. Studio SHALL NOT discover or persist a second daemon authority, and SHALL NOT import core runtime internals because it is colocated in the monorepo.
 
 #### Scenario: Studio receives daemon env from the launcher
 
-- **WHEN** the product launcher starts `@agenter/studio`
+- **WHEN** the product launcher starts `agenter-ext-studio`
 - **THEN** the product receives `AGENTER_DAEMON_HOST` and `AGENTER_DAEMON_PORT`
 - **AND** browser runtime configuration points to that daemon's `/trpc` endpoint
 - **AND** Studio does not independently start a competing daemon
@@ -37,12 +37,12 @@ The active SvelteKit operator product SHALL be published and resolved as `@agent
 
 ### Requirement: Studio SHALL own static and dev serving
 
-`@agenter/studio` SHALL serve its own built static assets in normal mode and SHALL start its own Vite dev server in dev mode. Static and dev serving are product lifecycle responsibilities, not core launcher responsibilities.
+`agenter-ext-studio` SHALL serve its own built static assets in normal mode and SHALL start its own Vite dev server in dev mode. Static and dev serving are product lifecycle responsibilities, not core launcher responsibilities.
 
 #### Scenario: Static Studio serves its package build
 
 - **WHEN** a user runs `agenter studio`
-- **THEN** the launcher resolves and starts `@agenter/studio`
+- **THEN** the launcher resolves and starts `agenter-ext-studio`
 - **AND** Studio serves the package-owned SvelteKit build
 - **AND** it prints the resolved browser URL
 

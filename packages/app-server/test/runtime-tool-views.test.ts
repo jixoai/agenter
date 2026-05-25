@@ -135,6 +135,8 @@ describe("Feature: runtime tool public views", () => {
       transportUrl: "ws://127.0.0.1/terminal/term-1",
       approvalTimeoutMs: 30_000,
       pendingRequestCount: 2,
+      createdAt: 1_711_000_000_000,
+      updatedAt: 1_711_000_001_000,
       access: {
         role: "writer",
         accessToken: "termtok-secret",

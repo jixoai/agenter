@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@termless/core": ["./src/termless-core-shim.d.ts"]
     }

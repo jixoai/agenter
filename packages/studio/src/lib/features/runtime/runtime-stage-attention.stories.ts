@@ -24,6 +24,8 @@ const channels: MessageChannelEntry[] = [
 		createdAt: baseTimestamp,
 		updatedAt: baseTimestamp + 1_000,
 		focused: true,
+		roomRevision: '0',
+		transcriptRevision: '0',
 		accessRole: 'admin',
 		accessToken: 'room-main-token',
 	},
@@ -38,6 +40,8 @@ const channels: MessageChannelEntry[] = [
 		createdAt: baseTimestamp,
 		updatedAt: baseTimestamp + 2_000,
 		focused: false,
+		roomRevision: '0',
+		transcriptRevision: '0',
 		accessRole: 'admin',
 		accessToken: 'room-side-token',
 	},
@@ -147,10 +151,11 @@ const runtime: RuntimeSnapshotEntry = {
 					consumedPushCommitIds: [],
 					commits: [
 						{
-							commitId: 'commit-room-main-1',
-							contextId: 'ctx-room-main',
-							ingressType: 'commit',
-							parentCommitIds: [],
+								commitId: 'commit-room-main-1',
+								contextId: 'ctx-room-main',
+								ingressType: 'commit',
+								contextMutation: 'apply',
+								parentCommitIds: [],
 							meta: {
 								author: 'auth:user-main',
 								source: 'message',
@@ -165,10 +170,11 @@ const runtime: RuntimeSnapshotEntry = {
 							createdAt: new Date(baseTimestamp + 2_000).toISOString(),
 						},
 						{
-							commitId: 'commit-room-main-2',
-							contextId: 'ctx-room-main',
-							ingressType: 'commit',
-							parentCommitIds: ['commit-room-main-1'],
+								commitId: 'commit-room-main-2',
+								contextId: 'ctx-room-main',
+								ingressType: 'commit',
+								contextMutation: 'apply',
+								parentCommitIds: ['commit-room-main-1'],
 							meta: {
 								author: 'runtime-watch',
 								source: 'watch',
@@ -198,10 +204,11 @@ const runtime: RuntimeSnapshotEntry = {
 					consumedPushCommitIds: [],
 					commits: [
 						{
-							commitId: 'commit-room-side-1',
-							contextId: 'ctx-room-side',
-							ingressType: 'commit',
-							parentCommitIds: [],
+								commitId: 'commit-room-side-1',
+								contextId: 'ctx-room-side',
+								ingressType: 'commit',
+								contextMutation: 'apply',
+								parentCommitIds: [],
 							meta: {
 								author: 'auth:user-relay',
 								source: 'message',
@@ -231,10 +238,11 @@ const runtime: RuntimeSnapshotEntry = {
 					consumedPushCommitIds: [],
 					commits: [
 						{
-							commitId: 'commit-terminal-main-1',
-							contextId: 'ctx-terminal-terminal-main',
-							ingressType: 'commit',
-							parentCommitIds: [],
+								commitId: 'commit-terminal-main-1',
+								contextId: 'ctx-terminal-terminal-main',
+								ingressType: 'commit',
+								contextMutation: 'apply',
+								parentCommitIds: [],
 							meta: {
 								author: 'terminal',
 								source: 'terminal',
@@ -270,10 +278,11 @@ const runtime: RuntimeSnapshotEntry = {
 				},
 				recentCommits: [
 					{
-						commitId: 'commit-room-main-2',
-						contextId: 'ctx-room-main',
-						ingressType: 'commit',
-						parentCommitIds: ['commit-room-main-1'],
+							commitId: 'commit-room-main-2',
+							contextId: 'ctx-room-main',
+							ingressType: 'commit',
+							contextMutation: 'apply',
+							parentCommitIds: ['commit-room-main-1'],
 						meta: {
 							author: 'runtime-watch',
 							source: 'watch',
@@ -288,10 +297,11 @@ const runtime: RuntimeSnapshotEntry = {
 						createdAt: new Date(baseTimestamp + 8_000).toISOString(),
 					},
 					{
-						commitId: 'commit-room-main-1',
-						contextId: 'ctx-room-main',
-						ingressType: 'commit',
-						parentCommitIds: [],
+							commitId: 'commit-room-main-1',
+							contextId: 'ctx-room-main',
+							ingressType: 'commit',
+							contextMutation: 'apply',
+							parentCommitIds: [],
 						meta: {
 							author: 'auth:user-main',
 							source: 'message',

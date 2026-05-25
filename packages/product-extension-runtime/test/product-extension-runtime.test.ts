@@ -35,7 +35,7 @@ describe("Feature: product extension runtime contracts", () => {
     const descriptor = productCommandDescriptorSchema.parse({
       productId: "cli-shell",
       command: "shell",
-      packageName: "@agenter/cli-shell",
+      packageName: "agenter-ext-shell",
       bin: { name: "agenter-cli-shell", mainExport: "runCliShell" },
       sourcePolicy: createLocalFirstProductSourcePolicy(),
       capabilityHints: {
@@ -55,7 +55,7 @@ describe("Feature: product extension runtime contracts", () => {
     const descriptor = productCommandDescriptorSchema.parse({
       productId: "studio",
       command: "studio",
-      packageName: "@agenter/studio",
+      packageName: "agenter-ext-studio",
       bin: { name: "agenter-studio", mainExport: "runStudio" },
       sourcePolicy: createLocalFirstProductSourcePolicy(),
       capabilityHints: {
@@ -75,7 +75,7 @@ describe("Feature: product extension runtime contracts", () => {
     const studioPkg = JSON.parse(readRepoFile("packages/studio/package.json")) as { name?: string };
     const iconStudioPkg = JSON.parse(readRepoFile("packages/icon-studio/package.json")) as { name?: string };
 
-    expect(studioPkg.name).toBe("@agenter/studio");
+    expect(studioPkg.name).toBe("agenter-ext-studio");
     expect(iconStudioPkg.name).toBe("@agenter/icon-studio");
   });
 
@@ -157,20 +157,20 @@ describe("Feature: product extension runtime contracts", () => {
         dependencies?: Record<string, string>;
         devDependencies?: Record<string, string>;
       };
-      expect(pkg.dependencies?.["@agenter/cli-shell"]).toBeUndefined();
-      expect(pkg.devDependencies?.["@agenter/cli-shell"]).toBeUndefined();
-      expect(pkg.dependencies?.["@agenter/studio"]).toBeUndefined();
-      expect(pkg.devDependencies?.["@agenter/studio"]).toBeUndefined();
+      expect(pkg.dependencies?.["agenter-ext-shell"]).toBeUndefined();
+      expect(pkg.devDependencies?.["agenter-ext-shell"]).toBeUndefined();
+      expect(pkg.dependencies?.["agenter-ext-studio"]).toBeUndefined();
+      expect(pkg.devDependencies?.["agenter-ext-studio"]).toBeUndefined();
     }
 
     const coreSourceRoots = ["packages/app-server/src", "packages/client-sdk/src", "packages/cli/src"] as const;
     for (const root of coreSourceRoots) {
       for (const filePath of listTypeScriptFiles(join(repoRoot, root))) {
         const source = readFileSync(filePath, "utf8");
-        expect(source).not.toContain('from "@agenter/cli-shell"');
-        expect(source).not.toContain("require(\"@agenter/cli-shell\")");
-        expect(source).not.toContain('from "@agenter/studio"');
-        expect(source).not.toContain("require(\"@agenter/studio\")");
+        expect(source).not.toContain('from "agenter-ext-shell"');
+        expect(source).not.toContain('require("agenter-ext-shell")');
+        expect(source).not.toContain('from "agenter-ext-studio"');
+        expect(source).not.toContain('require("agenter-ext-studio")');
       }
     }
   });

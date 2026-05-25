@@ -7,6 +7,7 @@ import {
   buildProductLaunchEnv,
   buildProductProcessCommand,
   isBuiltInCommand,
+  isLauncherMetadataOnlyCommand,
   isProductMetadataOnlyArgv,
   readCommandToken,
   resolveProductCommandInvocation,
@@ -52,7 +53,7 @@ const createCliLayout = (): string =>
   createProductLayout({
     rootKind: "extensions",
     packageSegment: "cli-shell",
-    packageName: "@agenter/cli-shell",
+    packageName: "agenter-ext-shell",
     binName: "agenter-cli-shell",
     binPath: "./src/bin/agenter-cli-shell.ts",
   });
@@ -60,7 +61,7 @@ const createCliLayout = (): string =>
 describe("Feature: product command launcher", () => {
   test("Scenario: Given shell argv When resolving product invocation Then the registry stays descriptor-driven and preserves product argv", () => {
     const routed = resolveProductCommandInvocation(["shell", "@default", "--session=2", "--host", "127.0.0.2", "--port", "4600"]);
-    expect(routed?.descriptor.packageName).toBe("@agenter/cli-shell");
+    expect(routed?.descriptor.packageName).toBe("agenter-ext-shell");
     expect(routed?.descriptor.bin.mainExport).toBe("runCliShell");
     expect(routed?.productArgv).toEqual(["@default", "--session=2"]);
     expect(routed?.launcherOptions.host).toBe("127.0.0.2");
@@ -69,7 +70,7 @@ describe("Feature: product command launcher", () => {
 
   test("Scenario: Given studio argv When resolving product invocation Then Studio is descriptor-driven and keeps product-owned flags outside core", () => {
     const routed = resolveProductCommandInvocation(["studio", "--dev", "--web-port", "4173", "--host", "127.0.0.2", "--port", "4600"]);
-    expect(routed?.descriptor.packageName).toBe("@agenter/studio");
+    expect(routed?.descriptor.packageName).toBe("agenter-ext-studio");
     expect(routed?.descriptor.bin.mainExport).toBe("runStudio");
     expect(routed?.productArgv).toEqual(["--dev", "--web-port", "4173"]);
     expect(routed?.launcherOptions.host).toBe("127.0.0.2");
@@ -98,7 +99,7 @@ describe("Feature: product command launcher", () => {
     const target = resolveProductLaunchTarget(descriptor, {
       cliSourceDir: createProductLayout({
         packageSegment: "studio",
-        packageName: "@agenter/studio",
+        packageName: "agenter-ext-studio",
         binName: "agenter-studio",
         binPath: "./src/bin/agenter-studio.ts",
       }),
@@ -114,13 +115,13 @@ describe("Feature: product command launcher", () => {
   test("Scenario: Given no local package and a resolvable installed package When resolving the launch target Then installed metadata provides the bin path", () => {
     const root = createTempDir();
     const cliSourceDir = join(root, "packages", "cli", "src");
-    const installedDir = join(root, "node_modules", "@agenter", "cli-shell");
+    const installedDir = join(root, "node_modules", "agenter-ext-shell");
     mkdirSync(cliSourceDir, { recursive: true });
     mkdirSync(join(installedDir, "src", "bin"), { recursive: true });
     writeFileSync(
       join(installedDir, "package.json"),
       JSON.stringify({
-        name: "@agenter/cli-shell",
+        name: "agenter-ext-shell",
         bin: {
           "agenter-cli-shell": "./src/bin/agenter-cli-shell.ts",
         },
@@ -139,8 +140,8 @@ describe("Feature: product command launcher", () => {
     if (target.source !== "installed") {
       return;
     }
-    expect(target.binPath.endsWith("node_modules/@agenter/cli-shell/src/bin/agenter-cli-shell.ts")).toBe(true);
-    expect(target.mainPath.endsWith("node_modules/@agenter/cli-shell/src/index.ts")).toBe(true);
+    expect(target.binPath.endsWith("node_modules/agenter-ext-shell/src/bin/agenter-cli-shell.ts")).toBe(true);
+    expect(target.mainPath.endsWith("node_modules/agenter-ext-shell/src/index.ts")).toBe(true);
   });
 
   test("Scenario: Given no resolvable local or installed package When building the remote fallback command Then the configured runner is honored without changing the controlled package name", () => {
@@ -161,7 +162,7 @@ describe("Feature: product command launcher", () => {
     expect(command).toEqual([
       "mock-runner",
       "--package",
-      "@agenter/cli-shell",
+      "agenter-ext-shell",
       "agenter-cli-shell",
       "@default",
       "--session=2",
@@ -187,7 +188,7 @@ describe("Feature: product command launcher", () => {
     expect(env.AGENTER_DAEMON_PORT).toBe("4580");
     expect(env.AGENTER_AUTH_SERVICE_ENDPOINT).toBe("http://127.0.0.1:4591");
     expect(env.AGENTER_PRODUCT_COMMAND).toBe("shell");
-    expect(env.AGENTER_PRODUCT_PACKAGE).toBe("@agenter/cli-shell");
+    expect(env.AGENTER_PRODUCT_PACKAGE).toBe("agenter-ext-shell");
     expect(env.AGENTER_PRODUCT_SOURCE).toBe("workspace");
   });
 
@@ -208,7 +209,7 @@ describe("Feature: product command launcher", () => {
     expect(env.AGENTER_DAEMON_HOST).toBe("127.0.0.1");
     expect(env.AGENTER_DAEMON_PORT).toBe("4580");
     expect(env.AGENTER_PRODUCT_COMMAND).toBe("studio");
-    expect(env.AGENTER_PRODUCT_PACKAGE).toBe("@agenter/studio");
+    expect(env.AGENTER_PRODUCT_PACKAGE).toBe("agenter-ext-studio");
     expect(env.AGENTER_PRODUCT_SOURCE).toBe("workspace");
   });
 
@@ -235,6 +236,8 @@ describe("Feature: product command launcher", () => {
     expect(isBuiltInCommand("doctor")).toBe(true);
     expect(isBuiltInCommand("web")).toBe(false);
     expect(isBuiltInCommand("unknown-product")).toBe(false);
+    expect(isLauncherMetadataOnlyCommand("--help")).toBe(true);
+    expect(isLauncherMetadataOnlyCommand("--version")).toBe(true);
     expect(resolveProductCommandInvocation(["unknown-product"])).toBeNull();
   });
 

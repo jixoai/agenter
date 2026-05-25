@@ -1,10 +1,10 @@
-# @agenter/studio SPEC
+# agenter-ext-studio SPEC
 
 > 本文件记录 Studio operator product 的长期职责与边界。
 
 ## 1. 角色
 
-`@agenter/studio` 是 Agenter 的 active SvelteKit operator product：
+`agenter-ext-studio` 是 Agenter 的 active SvelteKit operator product：
 
 - 通过 `agenter studio` 由 product command launcher 启动。
 - 拥有 Studio-specific CLI grammar、static serving、Vite dev serving、route assets、Storybook workflow 与 browser lifecycle。

@@ -2,7 +2,7 @@
 Collapsed shell-first state. Bottom row is status icon, current streaming part, managed toggle, and Chat entry only.
 
 00  $ agenter shell
-01  shell-1:~/project $ pnpm test --filter @agenter/cli-shell
+01  shell-1:~/project $ pnpm test --filter agenter-ext-shell
 02  packages/cli-shell test: Feature: ChatTUI terminal projection
 03  packages/cli-shell test: Scenario: Given terminal-2 When chat opens Then one product surface is shared
 04  packages/terminal-system test: Feature: backend-owned viewport

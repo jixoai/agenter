@@ -9,7 +9,7 @@ The repository SHALL expose `@agenter/svelte-components` as the shared Svelte st
 #### Scenario: Shared Svelte consumer resolves one structural package
 - **WHEN** a shared Svelte package such as `web-chat-view` needs transcript scrolling or shell layout primitives
 - **THEN** it imports them from `@agenter/svelte-components`
-- **THEN** it does not depend on `@agenter/studio` to recover those primitives
+- **THEN** it does not depend on `agenter-ext-studio` to recover those primitives
 
 #### Scenario: Shared structural package exports standard and anchored scroll law together
 - **WHEN** engineers consume `@agenter/svelte-components`
@@ -38,7 +38,7 @@ The repository SHALL expose `@agenter/svelte-components` as the shared Svelte st
 #### Scenario: Shared consumer imports the split-detail primitive from one package
 - **WHEN** a Svelte route or shared client needs a persistent `main + right detail` shell
 - **THEN** it imports the split-detail primitive from `@agenter/svelte-components`
-- **THEN** it does not reach into `@agenter/studio` to recover resize or width-resolution math
+- **THEN** it does not reach into `agenter-ext-studio` to recover resize or width-resolution math
 
 #### Scenario: Structural package exports ratio-source contracts together
 - **WHEN** engineers consume the split-detail primitive

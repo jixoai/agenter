@@ -49,9 +49,9 @@
 - [x] 4.7 Add BDD tests for tmux socket isolation and session-local binding context.
 - [x] 4.8 Add BDD tests for cleanup using the product-owned tmux socket.
 - [x] 4.9 Add BDD tests for visible action rail status layout.
-- [x] 4.10 Run `bun run --filter '@agenter/cli-shell' test`.
-- [x] 4.11 Run `bun run --filter '@agenter/cli-shell' typecheck`.
-- [x] 4.12 Run `bun run --filter '@agenter/cli-shell' test` after the product-shell interaction revision.
+- [x] 4.10 Run `bun run --filter 'agenter-ext-shell' test`.
+- [x] 4.11 Run `bun run --filter 'agenter-ext-shell' typecheck`.
+- [x] 4.12 Run `bun run --filter 'agenter-ext-shell' test` after the product-shell interaction revision.
 - [x] 4.13 Run `openspec validate refine-cli-shell-tmux-product-shell --strict` after the product-shell interaction revision.
 - [x] 4.14 Run a real tmux smoke for mouse default, status labels, active action option, and Chat command construction.
 - [x] 4.15 Add BDD coverage and smoke evidence for Avatar Heartbeat preview in the tmux bottom bar.
@@ -69,4 +69,4 @@
 - [x] 4.27 Replace Room draft text rendering with an OpenTUI input surface.
 - [x] 4.28 Move approval rendering/actions into an independent OpenTUI `shell top` surface.
 - [x] 4.29 Wire tmux `top` action and Room pending-approval nudge without embedding approval UI in Room.
-- [x] 4.30 Verify `bun run --filter '@agenter/cli-shell' test`, `typecheck`, OpenSpec validation, and a real tmux smoke for layout/top/managed interactions.
+- [x] 4.30 Verify `bun run --filter 'agenter-ext-shell' test`, `typecheck`, OpenSpec validation, and a real tmux smoke for layout/top/managed interactions.

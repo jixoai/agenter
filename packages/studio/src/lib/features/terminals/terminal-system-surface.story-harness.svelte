@@ -134,11 +134,13 @@
 		// Transport discovery is durable across running/killed states; live enablement is
 		// modeled separately through processPhase in the viewport host.
 		transportUrl: `ws://localhost/mock-terminals/${input.terminalId}`,
-		currentAdminId: 'system:trusted-terminal-bootstrap',
-		approvalTimeoutMs: 90_000,
-		pendingRequestCount: input.pendingRequestCount,
-		access: {
-			role: 'admin',
+			currentAdminId: 'system:trusted-terminal-bootstrap',
+			approvalTimeoutMs: 90_000,
+			pendingRequestCount: input.pendingRequestCount,
+			createdAt: 1_710_000_000_000,
+			updatedAt: 1_710_000_000_000 + input.pendingRequestCount,
+			access: {
+				role: 'admin',
 			accessToken: `token:${input.terminalId}:admin`,
 			participantId: 'system:trusted-terminal-bootstrap',
 			currentAdmin: true,

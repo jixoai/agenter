@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import { type ProductCommandDescriptor, type ProductSource } from "@agenter/product-extension-runtime";
@@ -154,14 +154,21 @@ const resolveWorkspaceProductRoots = (
 
 const resolveWorkspacePackageDirs = (
   cliSourceDir: string,
-  packageName: string,
+  _packageName: string,
   configuredRoots?: readonly string[],
 ): readonly string[] => {
-  const packageSegment = packageName.split("/")[1];
-  if (!packageSegment) {
-    throw new Error(`invalid scoped package name: ${packageName}`);
+  const packageDirs: string[] = [];
+  for (const root of resolveWorkspaceProductRoots(cliSourceDir, configuredRoots)) {
+    if (!existsSync(root)) {
+      continue;
+    }
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        packageDirs.push(resolve(root, entry.name));
+      }
+    }
   }
-  return resolveWorkspaceProductRoots(cliSourceDir, configuredRoots).map((root) => resolve(root, packageSegment));
+  return packageDirs;
 };
 
 const tryResolveWorkspaceTarget = (
@@ -251,6 +258,8 @@ export const resolveProductCommandInvocation = (args: readonly string[]): Produc
 export const readCommandToken = (args: readonly string[]): string | null => resolveLauncherRouting(args).positionals[0] ?? null;
 
 export const isBuiltInCommand = (command: string): boolean => builtInCommands.has(command);
+
+export const isLauncherMetadataOnlyCommand = (command: string): boolean => metadataOnlyTokens.has(command);
 
 export const resolveProductLaunchTarget = (
   descriptor: ProductCommandDescriptor,

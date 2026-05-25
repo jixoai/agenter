@@ -25,6 +25,8 @@
 	} = $props();
 
 	const baseTimestamp = 1_710_000_000_000;
+	const storyRoomRevision = '0';
+	const storyTranscriptRevision = '0';
 	const channel = {
 		chatId: 'room-story',
 		kind: 'room',
@@ -37,6 +39,8 @@
 		createdAt: baseTimestamp,
 		updatedAt: baseTimestamp + 1_000,
 		focused: true,
+		roomRevision: storyRoomRevision,
+		transcriptRevision: storyTranscriptRevision,
 		accessRole: 'admin',
 		accessToken: 'room-token-admin',
 		participantId: 'system:trusted-bootstrap',
@@ -191,6 +195,9 @@
 							items: pageItems,
 							nextBefore: null,
 							hasMoreBefore: false,
+							roomRevision: storyRoomRevision,
+							transcriptRevision: storyTranscriptRevision,
+							headVersion: String(this.currentMessages.at(-1)?.rowId ?? 0),
 						},
 					});
 				});
@@ -211,6 +218,8 @@
 				this.emitTransport({
 					type: 'messages',
 					chatId: this.roomChannel.chatId,
+					roomRevision: storyRoomRevision,
+					transcriptRevision: storyTranscriptRevision,
 					headVersion: String(nextMessage.rowId),
 					items: [nextMessage],
 				});
@@ -234,16 +243,18 @@
 				snapshot: {
 					channel: this.roomChannel,
 					items: this.currentMessages,
-					nextBefore:
-						this.olderPage.length > 0
-							? {
+						nextBefore:
+							this.olderPage.length > 0
+								? {
 									beforeTimeMs: this.currentMessages[0]?.createdAt ?? baseTimestamp,
 									beforeId: this.currentMessages[0]?.rowId ?? 0,
 								}
-							: null,
-					hasMoreBefore: this.olderPage.length > 0,
-					headVersion: String(this.currentMessages.at(-1)?.rowId ?? 0),
-				},
+								: null,
+						hasMoreBefore: this.olderPage.length > 0,
+						roomRevision: storyRoomRevision,
+						transcriptRevision: storyTranscriptRevision,
+						headVersion: String(this.currentMessages.at(-1)?.rowId ?? 0),
+					},
 			});
 		}
 

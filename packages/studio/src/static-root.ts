@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const STUDIO_ENTRY_FILENAMES = ["index.html", "200.html"] as const;
+const BUNDLED_ASSETS_ROOT_ENV = "AGENTER_BUNDLED_ASSETS_ROOT";
 
 export interface StudioStaticRoot {
   kind: "package-build";
@@ -35,8 +36,9 @@ export const resolveStudioEntryDocumentPath = (staticDir: string): string | null
   findStudioEntryDocumentPath(staticDir);
 
 export const resolveStudioStaticRoot = (packageSourceDir = import.meta.dir): StudioStaticRoot => {
-  const buildDir = resolve(packageSourceDir, "..", "build");
-  assertStudioStaticDir(buildDir, "run `bun run --filter '@agenter/studio' build` before `agenter studio`.");
+  const bundledRoot = process.env[BUNDLED_ASSETS_ROOT_ENV]?.trim();
+  const buildDir = bundledRoot ? resolve(bundledRoot, "studio", "build") : resolve(packageSourceDir, "..", "build");
+  assertStudioStaticDir(buildDir, "run `bun run --filter 'agenter-ext-studio' build` before `agenter studio`.");
   return {
     kind: "package-build",
     staticDir: buildDir,

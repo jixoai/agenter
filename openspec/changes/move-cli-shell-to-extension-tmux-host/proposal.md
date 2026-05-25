@@ -10,7 +10,7 @@ This change makes the boundary explicit and destructive: cli-shell moves to `ext
 
 ## What Changes
 
-- Move `@agenter/cli-shell` from `packages/cli-shell` to `extensions/cli-shell`. **BREAKING**
+- Move `agenter-ext-shell` from `packages/cli-shell` to `extensions/cli-shell`. **BREAKING**
 - Add `extensions/*` as a first-class workspace product root for local-first product command resolution. **BREAKING**
 - Change `agenter shell` workspace resolution so extension packages are found without product-specific path branches. **BREAKING**
 - Replace cli-shell's `terminal-1` / `terminal-2` / composed TerminalSystem runtime with an extension-local tmux host. **BREAKING**

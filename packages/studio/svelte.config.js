@@ -14,7 +14,7 @@ const config = {
       const isAgenterWorkspacePackage =
         normalizedPath.includes("@agenter/web-chat-view") ||
         normalizedPath.includes("@agenter/web-components") ||
-        normalizedPath.includes("@agenter/studio");
+        normalizedPath.includes("agenter-ext-studio");
 
       return isNodeModules && !isAgenterWorkspacePackage ? undefined : true;
     },

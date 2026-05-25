@@ -11,19 +11,19 @@ The core `agenter` CLI SHALL resolve controlled product commands to first-party 
 
 #### Scenario: Shell command resolves to cli-shell package
 - **WHEN** a user runs `agenter shell`
-- **THEN** the core CLI resolves product command `shell` to package `@agenter/cli-shell`
+- **THEN** the core CLI resolves product command `shell` to package `agenter-ext-shell`
 - **AND** it launches the package bin with the remaining arguments preserved
-- **AND** parsing optional `@avatar` grammar and the default `shell-assistant` policy remains the responsibility of `@agenter/cli-shell`
+- **AND** parsing optional `@avatar` grammar and the default `shell-assistant` policy remains the responsibility of `agenter-ext-shell`
 
 #### Scenario: Studio command resolves to Studio package
 - **WHEN** a user runs `agenter studio`
-- **THEN** the core CLI resolves product command `studio` to package `@agenter/studio`
+- **THEN** the core CLI resolves product command `studio` to package `agenter-ext-studio`
 - **AND** it launches the package bin with the remaining arguments preserved
 - **AND** Studio-specific flags remain product argv
 
 #### Scenario: Shell command preserves explicit Avatar argv
 - **WHEN** a user runs `agenter shell @default`
-- **THEN** the core CLI resolves product command `shell` to package `@agenter/cli-shell`
+- **THEN** the core CLI resolves product command `shell` to package `agenter-ext-shell`
 - **AND** it forwards `@default` as product argv
 - **AND** it does not parse or reinterpret that Avatar mention in core runtime modules
 
@@ -35,14 +35,14 @@ The core `agenter` CLI SHALL resolve controlled product commands to first-party 
 #### Scenario: Product registry owns package metadata
 - **WHEN** the launcher handles product command `shell`
 - **THEN** it resolves command metadata from a controlled registry entry
-- **AND** that entry contains package name `@agenter/cli-shell`
+- **AND** that entry contains package name `agenter-ext-shell`
 - **AND** the registry entry is descriptor data, not an import of cli-shell implementation code
 - **AND** user-provided command text cannot alter the package name or bin path
 
 #### Scenario: Web command is unsupported after Studio migration
 - **WHEN** a user runs `agenter web`
 - **THEN** the launcher rejects `web` as an unsupported command
-- **AND** it does not route to `@agenter/studio`
+- **AND** it does not route to `agenter-ext-studio`
 - **AND** it does not start a daemon, static server, or dev server
 
 #### Scenario: Product command handling does not pollute core runtime
@@ -56,24 +56,24 @@ The core `agenter` CLI SHALL resolve controlled product commands to first-party 
 The product command launcher SHALL resolve product packages from the current monorepo workspace before falling back to installed packages or remote npm execution.
 
 #### Scenario: Local workspace package wins during development
-- **GIVEN** `extensions/cli-shell/package.json` exists with name `@agenter/cli-shell`
+- **GIVEN** `extensions/cli-shell/package.json` exists with name `agenter-ext-shell`
 - **WHEN** a user runs `agenter shell` from the Agenter workspace
 - **THEN** the launcher uses the local workspace package bin
 - **AND** it does not require the package to be published to npm
 
 #### Scenario: Studio local workspace package wins during development
-- **GIVEN** `packages/studio/package.json` exists with name `@agenter/studio`
+- **GIVEN** `packages/studio/package.json` exists with name `agenter-ext-studio`
 - **WHEN** a user runs `agenter studio` from the Agenter workspace
 - **THEN** the launcher uses the local workspace package before installed or remote fallback sources
 
 #### Scenario: Remote npm fallback runs without install prompt
-- **GIVEN** no local or installed `@agenter/cli-shell` package is resolvable
+- **GIVEN** no local or installed `agenter-ext-shell` package is resolvable
 - **WHEN** a user runs `agenter shell`
-- **THEN** the launcher automatically invokes the configured package runner for `@agenter/cli-shell`
+- **THEN** the launcher automatically invokes the configured package runner for `agenter-ext-shell`
 - **AND** it does not stop to ask the user to install the package manually
 
 #### Scenario: Installed package bin is read from package metadata
-- **GIVEN** an installed `@agenter/cli-shell` package is resolvable
+- **GIVEN** an installed `agenter-ext-shell` package is resolvable
 - **WHEN** a user runs `agenter shell`
 - **THEN** the launcher resolves the bin from that package's `package.json`
 - **AND** it does not guess an executable path from user input
@@ -83,46 +83,46 @@ The product command launcher SHALL resolve product packages from the current mon
 The product command launcher SHALL use a controlled package-runner abstraction for remote npm fallback. In the current Bun-based CLI, the default remote runner MAY be `bunx`, but the runner command SHALL be configurable for tests and future runtimes.
 
 #### Scenario: Default Bun runner constructs remote command
-- **GIVEN** no local or installed `@agenter/cli-shell` package is resolvable
+- **GIVEN** no local or installed `agenter-ext-shell` package is resolvable
 - **AND** no package runner override is configured
 - **WHEN** a user runs `agenter shell`
-- **THEN** the launcher constructs a remote runner command for package `@agenter/cli-shell`
+- **THEN** the launcher constructs a remote runner command for package `agenter-ext-shell`
 - **AND** it forwards the original product argv after the package/bin boundary
 
 #### Scenario: Package runner override is honored
 - **GIVEN** a package runner override is configured for tests or a non-Bun runtime
 - **WHEN** remote fallback is required
 - **THEN** the launcher uses the configured package runner
-- **AND** the controlled package name remains `@agenter/cli-shell`
+- **AND** the controlled package name remains `agenter-ext-shell`
 
 ### Requirement: Product launcher SHALL pass daemon connection context to products
 
 The product command launcher SHALL ensure or reuse a local daemon and pass connection context to the launched product through explicit environment variables. Product packages MAY expose matching CLI flags for direct test entry, but the launcher-owned env contract is canonical.
 
 #### Scenario: Product receives daemon host and port
-- **WHEN** the launcher starts `@agenter/cli-shell`
+- **WHEN** the launcher starts `agenter-ext-shell`
 - **THEN** the product process receives `AGENTER_DAEMON_HOST` and `AGENTER_DAEMON_PORT`
 - **AND** the product does not need to rediscover a second daemon independently
 
 #### Scenario: Studio receives launcher-owned runtime context
-- **WHEN** the launcher starts `@agenter/studio`
-- **THEN** the product process receives `AGENTER_DAEMON_HOST`, `AGENTER_DAEMON_PORT`, `AGENTER_PRODUCT_COMMAND=studio`, and `AGENTER_PRODUCT_PACKAGE=@agenter/studio`
+- **WHEN** the launcher starts `agenter-ext-studio`
+- **THEN** the product process receives `AGENTER_DAEMON_HOST`, `AGENTER_DAEMON_PORT`, `AGENTER_PRODUCT_COMMAND=studio`, and `AGENTER_PRODUCT_PACKAGE=agenter-ext-studio`
 - **AND** Studio does not need to rediscover the daemon independently
 
 #### Scenario: Product does not create a second daemon discovery authority
-- **WHEN** the launcher starts `@agenter/cli-shell`
+- **WHEN** the launcher starts `agenter-ext-shell`
 - **THEN** cli-shell consumes the launcher-owned daemon context
 - **AND** it does not independently write or treat a product-local `~/.agenter` port file as canonical daemon truth
 
 #### Scenario: Product receives auth-service bridge context
-- **WHEN** the launcher starts `@agenter/cli-shell` against a daemon that uses an external auth-service endpoint
+- **WHEN** the launcher starts `agenter-ext-shell` against a daemon that uses an external auth-service endpoint
 - **THEN** the product process receives `AGENTER_AUTH_SERVICE_ENDPOINT`
 - **AND** the product does not start a competing auth-service bridge
 
 #### Scenario: Product receives source metadata
-- **WHEN** the launcher starts `@agenter/cli-shell`
+- **WHEN** the launcher starts `agenter-ext-shell`
 - **THEN** the product process receives `AGENTER_PRODUCT_COMMAND=shell`
-- **AND** it receives `AGENTER_PRODUCT_PACKAGE=@agenter/cli-shell`
+- **AND** it receives `AGENTER_PRODUCT_PACKAGE=agenter-ext-shell`
 - **AND** it receives `AGENTER_PRODUCT_SOURCE` as `workspace`, `installed`, or `remote`
 
 #### Scenario: Launcher cleans up daemon it owns
@@ -134,7 +134,7 @@ The product command launcher SHALL ensure or reuse a local daemon and pass conne
 - **GIVEN** one healthy local daemon already owns the same runtime home root but is listening on a different loopback port than the launcher's default request
 - **WHEN** a user runs `agenter shell --session=7 --avatar=bangeel` through the default launcher path
 - **THEN** the launcher discovers that same-root daemon authority before starting another local daemon
-- **AND** it forwards the discovered daemon host and port to `@agenter/cli-shell`
+- **AND** it forwards the discovered daemon host and port to `agenter-ext-shell`
 - **AND** it does not start a competing second daemon writer for that runtime root
 
 #### Scenario: Stale daemon descriptor is ignored during auto-start
@@ -148,7 +148,7 @@ The product command launcher SHALL ensure or reuse a local daemon and pass conne
 The product command launcher SHALL run product bins as foreground interactive processes with inherited stdio and exit status propagation.
 
 #### Scenario: Product TUI owns the foreground terminal
-- **WHEN** `@agenter/cli-shell` starts an interactive TUI
+- **WHEN** `agenter-ext-shell` starts an interactive TUI
 - **THEN** the product receives the current terminal stdin/stdout/stderr
 - **AND** keyboard interaction is handled by the product process
 

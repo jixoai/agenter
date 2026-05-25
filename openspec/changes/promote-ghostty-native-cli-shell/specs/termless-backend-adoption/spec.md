@@ -13,7 +13,7 @@ Agenter terminal products and runtime code SHALL treat official Termless package
 #### Scenario: Explicit ghostty-native backend resolves through the official Termless package
 
 - **WHEN** a production Agenter package explicitly requests backend `ghostty-native`
-- **THEN** it consumes official Termless backend entrypoints such as `@termless/ghostty-native`
+- **THEN** it consumes official Termless backend entrypoints such as `@jixo/ghostty-native`
 - **AND** it does not introduce a second package such as `@agenter/termless-ghostty-native-backend`
 
 ### Requirement: The current default backend SHALL remain xterm until a later parity change
@@ -29,7 +29,7 @@ Adding explicit `ghostty-native` support SHALL NOT silently change the current d
 #### Scenario: Explicit ghostty-native opt-in does not promote the default
 
 - **WHEN** one cli-shell launch explicitly requests `backend = ghostty-native`
-- **THEN** that terminal uses the official `@termless/ghostty-native` backend
+- **THEN** that terminal uses the official `@jixo/ghostty-native` backend
 - **AND** later terminals created without explicit backend override still default to official xterm
 
 #### Scenario: Explicit ghostty-native failure does not fall back silently

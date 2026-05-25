@@ -131,18 +131,18 @@ Rejected alternative:
 
 `cli-shell --web` remains a product host mode under launcher-owned daemon law. That means the default `agenter shell --web` path cannot assume "local daemon authority" is always `127.0.0.1:4580`.
 
-When the requested local daemon endpoint is absent, the launcher must first check whether the same runtime root already publishes one healthy daemon authority. If so, the launcher reuses that authority and forwards the discovered host/port to `@agenter/cli-shell`. Only when no healthy same-root authority exists may the launcher bootstrap a new local daemon.
+When the requested local daemon endpoint is absent, the launcher must first check whether the same runtime root already publishes one healthy daemon authority. If so, the launcher reuses that authority and forwards the discovered host/port to `agenter-ext-shell`. Only when no healthy same-root authority exists may the launcher bootstrap a new local daemon.
 
 Implementation notes:
 
-- discovery fact belongs to the launcher/daemon layer, not to `@agenter/cli-shell`
+- discovery fact belongs to the launcher/daemon layer, not to `agenter-ext-shell`
 - the daemon should publish one runtime descriptor under the runtime home root and remove it on owned shutdown
 - duplicate local startup attempts for the same runtime root should fail or fall back through launcher-owned authority discovery, not proceed until SQLite/message-system locks surface indirectly
 - product env must carry the resolved daemon authority actually in use, not merely the originally requested default port
 
 Rejected alternative:
 
-- make `@agenter/cli-shell` discover or persist daemon ports itself
+- make `agenter-ext-shell` discover or persist daemon ports itself
   - rejected because that would create a second daemon discovery authority outside the launcher contract
 
 ## Architecture

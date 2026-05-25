@@ -68,7 +68,7 @@ test("parseRuntimeConfig exposes default provider config", async () => {
   expect(config.ai.baseUrl).toBe("https://api.deepseek.com/v1");
 });
 
-test("parseRuntimeConfig infers prompt root from settings source directory", async () => {
+test("parseRuntimeConfig keeps prompt ownership out of the demo projection", async () => {
   const root = join("/tmp", `agenter-settings-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
   mkdirSync(root, { recursive: true });
   writeFileSync(
@@ -81,7 +81,7 @@ test("parseRuntimeConfig infers prompt root from settings source directory", asy
     "utf8",
   );
   const config = await parseRuntimeConfig([`--settings-source=${root}`], "/tmp/demo");
-  expect(config.prompt.rootDir).toBe(root);
+  expect(Object.prototype.hasOwnProperty.call(config, "prompt")).toBe(false);
 });
 
 test("parseRuntimeConfig supports terminal presets + feature bootTerminals", async () => {

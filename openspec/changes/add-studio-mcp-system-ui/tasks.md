@@ -25,6 +25,6 @@
 
 - [ ] 4.1 Add Storybook DOM stories/tests for no-runtime, global-only, default-disabled project, enabled stopped, running, failed, blocked-remove, and test-call states.
 - [ ] 4.2 Add route-level smoke tests for `/mcp` desktop and iPhone 14 compact navigation reachability.
-- [ ] 4.3 Run `bun run --filter '@agenter/studio' test:unit`, `bun run --filter '@agenter/studio' test:dom`, and focused client-sdk/app-server tests.
+- [ ] 4.3 Run `bun run --filter 'agenter-ext-studio' test:unit`, `bun run --filter 'agenter-ext-studio' test:dom`, and focused client-sdk/app-server tests.
 - [ ] 4.4 Update `openspec/specs/studio-product/spec.md`, `openspec/specs/client-runtime-store/spec.md`, and package-level durable docs before archive.
 - [ ] 4.5 Run `openspec validate add-studio-mcp-system-ui --strict` and `openspec validate --specs --strict`.

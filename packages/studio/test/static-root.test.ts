@@ -40,7 +40,7 @@ describe("Feature: Studio static root", () => {
     const layout = createPackageLayout({ build: false });
 
     expect(() => resolveStudioStaticRoot(layout.sourceDir)).toThrow(
-      "run `bun run --filter '@agenter/studio' build` before `agenter studio`",
+      "run `bun run --filter 'agenter-ext-studio' build` before `agenter studio`",
     );
   });
 

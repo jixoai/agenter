@@ -4,7 +4,7 @@
 
 ## Context
 
-`add-cli-shell-product` already established `@agenter/cli-shell` as an external product package. `promote-ghostty-native-cli-shell` already established `--backend=<name>` and the one-line markdown bottom-rendering law. The unresolved problem is no longer command grammar. It is that the current shell-first draft still mixes product terminology and component terminology.
+`add-cli-shell-product` already established `agenter-ext-shell` as an external product package. `promote-ghostty-native-cli-shell` already established `--backend=<name>` and the one-line markdown bottom-rendering law. The unresolved problem is no longer command grammar. It is that the current shell-first draft still mixes product terminology and component terminology.
 
 The durable split now needs to be:
 

@@ -1,4 +1,4 @@
-# @termless/ghostty-native
+# @jixo/ghostty-native
 
 Native [Ghostty](https://ghostty.org/) backend for [termless](https://termless.dev/) — headless terminal emulation using libghostty-vt via Zig N-API bindings.
 
@@ -34,7 +34,7 @@ TypeScript backend (src/backend.ts)
 ## API
 
 ```typescript
-import { createGhosttyNativeBackend } from "@termless/ghostty-native"
+import { createGhosttyNativeBackend } from "@jixo/ghostty-native"
 
 const backend = createGhosttyNativeBackend({ cols: 80, rows: 24 })
 backend.feed(new TextEncoder().encode("Hello, world!\r\n"))

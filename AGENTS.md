@@ -40,7 +40,7 @@
   - 组件真实交互：走 Storybook DOM；
   - 跨页面/跨进程链路：走 Playwright E2E。
 - **实现方式**：优先在 story 的 `play` 中描述用户行为与断言，再在 `test/storybook/*` 中以 `Story.run()` 复用。
-- **回归入口**：Studio 至少维护 `bun run --filter '@agenter/studio' test:dom` 作为高价值 DOM 回归入口。
+- **回归入口**：Studio 至少维护 `bun run --filter 'agenter-ext-studio' test:dom` 作为高价值 DOM 回归入口。
 - **串行执行纪律**：`Vitest browser`、`storybook dev`、`storybook:build` 不能并行运行；需要串行执行，避免浏览器会话与 Vite 端口资源冲突。
 
 ## 3.2) Storybook DOM 技能手册（上下文清空后直接照做）
@@ -64,11 +64,11 @@
 ### 3.2.3 命令
 
 ```bash
-bun run --filter '@agenter/studio' storybook
-bun run --filter '@agenter/studio' storybook:build
-bun run --filter '@agenter/studio' test:unit
-bun run --filter '@agenter/studio' test:dom
-bun run --filter '@agenter/studio' test
+bun run --filter 'agenter-ext-studio' storybook
+bun run --filter 'agenter-ext-studio' storybook:build
+bun run --filter 'agenter-ext-studio' test:unit
+bun run --filter 'agenter-ext-studio' test:dom
+bun run --filter 'agenter-ext-studio' test
 ```
 
 - `test:unit`：保留 jsdom/unit 层，适合纯逻辑与轻交互。

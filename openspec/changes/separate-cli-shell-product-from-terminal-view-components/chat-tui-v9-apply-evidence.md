@@ -118,7 +118,7 @@ Failure signal:
   - Result: pass, `1 pass`, `0 fail`.
 - `bun test packages/terminal-system/test/control-plane.test.ts --timeout 120000 --test-name-pattern "composed terminal-2"`
   - Result: pass, `3 pass`, `63 filtered out`, `0 fail`.
-- `bun run --filter '@agenter/cli-shell' typecheck`
+- `bun run --filter 'agenter-ext-shell' typecheck`
   - Result: pass, exited with code `0`.
 - `openspec validate separate-cli-shell-product-from-terminal-view-components --strict`
   - Result: pass.

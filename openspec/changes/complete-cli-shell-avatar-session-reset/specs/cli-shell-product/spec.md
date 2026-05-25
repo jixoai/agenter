@@ -6,7 +6,7 @@
 
 ### Requirement: Cli-shell SHALL parse explicit Avatar flags separately from product terminal name
 
-The `@agenter/cli-shell` product SHALL parse the selected Avatar, creation permission, clearing permission, and product terminal name as separate concerns. `--avatar` and positional `@avatar` select Avatar identity. `--session` selects only the product shell resource key. `--create-avatar` and `--clear-avatar` control missing-Avatar creation and runtime-session clearing without changing runtime identity topology.
+The `agenter-ext-shell` product SHALL parse the selected Avatar, creation permission, clearing permission, and product terminal name as separate concerns. `--avatar` and positional `@avatar` select Avatar identity. `--session` selects only the product shell resource key. `--create-avatar` and `--clear-avatar` control missing-Avatar creation and runtime-session clearing without changing runtime identity topology.
 
 #### Scenario: Avatar flag selects explicit Avatar
 

@@ -1,6 +1,6 @@
 {
-  "name": "@agenter/studio",
-  "version": "0.0.0",
+  "name": "agenter-ext-studio",
+  "version": "0.0.1",
   "type": "module",
   "files": [
     "SPEC.md",

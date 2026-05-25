@@ -1,4 +1,4 @@
-# @agenter/cli-shell
+# agenter-ext-shell
 
 `agenter shell` starts the cli-shell extension product around one selected Avatar, one product-local tmux session, and one MessageRoom.
 

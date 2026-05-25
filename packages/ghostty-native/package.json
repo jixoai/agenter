@@ -1,6 +1,6 @@
 {
-  "name": "@termless/ghostty-native",
-  "version": "0.3.1",
+  "name": "@jixo/ghostty-native",
+  "version": "0.3.2",
   "description": "Native Ghostty backend for termless — libghostty-vt via Zig napigen N-API bindings",
   "keywords": [
     "ghostty",
@@ -30,7 +30,8 @@
     "src",
     "build",
     "native",
-    "vendor"
+    "vendor",
+    "termless-ghostty-native.node"
   ],
   "type": "module",
   "exports": {
@@ -44,7 +45,8 @@
     "typecheck": "bunx tsc -p tsconfig.typecheck.json --noEmit"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/node": "^24"
   },
   "peerDependencies": {
     "@termless/core": "*"

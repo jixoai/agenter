@@ -8,7 +8,7 @@ import {
   type TerminalPresetSettings,
   type TerminalSettings,
 } from "@agenter/settings";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { basename, isAbsolute, resolve } from "node:path";
 
 export interface TerminalRuntimeConfig {
   terminalId: string;
@@ -40,13 +40,6 @@ export interface RuntimeConfig {
   }>;
   terminals: Record<string, TerminalRuntimeConfig>;
   terminal: TerminalRuntimeConfig;
-  prompt: {
-    rootDir?: string;
-    agenterPath?: string;
-    agenterSystemPath?: string;
-    systemTemplatePath?: string;
-    responseContractPath?: string;
-  };
   ai: {
     providerId: string;
     apiStandard: AiApiStandard;
@@ -179,16 +172,6 @@ const parseGitLogArg = (value: string | undefined): false | "normal" | "verbose"
     return normalized;
   }
   return null;
-};
-
-const derivePromptRootFromSettingsPath = (value: string): string => {
-  if (value.startsWith("file://")) {
-    return dirname(new URL(value).pathname);
-  }
-  if (isUriLike(value)) {
-    return value.replace(/\/[^/]*$/, "/");
-  }
-  return dirname(value);
 };
 
 interface CliOverrides {
@@ -454,14 +437,6 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
   const bootTerminals = normalizeBootEntries(configuredBoot, terminals, primaryTerminalId);
   const focusedTerminalIds = bootTerminals.filter((entry) => entry.focus).map((entry) => entry.terminalId);
 
-  const prompt = settings.prompt ?? {};
-  const firstSettingsPath = loadedSettings.meta.sources.find((source) => source.exists)?.path;
-  const promptRoot = prompt.rootDir
-    ? toAbsolute(prompt.rootDir, baseDir)
-    : firstSettingsPath
-      ? derivePromptRootFromSettingsPath(firstSettingsPath)
-      : undefined;
-
   const ai: DemoAiSettings = settings.ai ?? {};
   const providers = ai.providers ?? {};
   const providerId = ai.activeProvider ?? Object.keys(providers)[0] ?? "default";
@@ -476,20 +451,6 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
   };
   const apiKey = provider.apiKey ?? (provider.apiKeyEnv ? process.env[provider.apiKeyEnv] : undefined);
 
-  const promptConfig = {
-    rootDir: promptRoot,
-    agenterPath: prompt.agenterPath ?? (promptRoot ? `${promptRoot.replace(/\/$/, "")}/AGENTER.mdx` : undefined),
-    agenterSystemPath:
-      prompt.internalSystemPath ??
-      (promptRoot ? `${promptRoot.replace(/\/$/, "")}/internal/AGENTER_SYSTEM.mdx` : undefined),
-    systemTemplatePath:
-      prompt.systemTemplatePath ??
-      (promptRoot ? `${promptRoot.replace(/\/$/, "")}/internal/SYSTEM_TEMPLATE.mdx` : undefined),
-    responseContractPath:
-      prompt.responseContractPath ??
-      (promptRoot ? `${promptRoot.replace(/\/$/, "")}/internal/RESPONSE_CONTRACT.mdx` : undefined),
-  };
-
   return {
     lang: resolveLanguage(settings.lang ?? DEFAULT_LANGUAGE),
     agentCwd,
@@ -498,7 +459,6 @@ export const parseRuntimeConfig = async (argv: string[], baseDir: string): Promi
     bootTerminals,
     terminals,
     terminal: terminals[primaryTerminalId],
-    prompt: promptConfig,
     ai: {
       providerId,
       apiStandard: provider.apiStandard,

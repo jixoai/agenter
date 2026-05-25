@@ -18,7 +18,7 @@
 
 ## 2. 架构与模块
 
-- official backend ownership 固定属于 Termless：`@termless/core` 定义 backend contract，`@termless/xtermjs` 提供当前默认 xterm backend，后续如 `@termless/ghostty-native` 也必须复用同一 ownership slot。
+- official backend ownership 固定属于 Termless：`@termless/core` 定义 backend contract，`@termless/xtermjs` 提供当前默认 xterm backend，后续如 `@jixo/ghostty-native` 也必须复用同一 ownership slot。
 - Agenter 只拥有 adapter/projection law：`@agenter/termless-core` 与 `@agenter/terminal-system` 可以包装 official backend instance，但不得重新声明 backend package identity，也不得把 browser `resolvedRenderer` 冒充成 backend authority。
 - terminal lifecycle truth 固定是一张 `terminal_instance` durable record：live/history/archive 只是投影，不允许再引入第二张 `terminal_history` 表或“stopped terminal 仍默认属于 live catalog”的旧法则。
 - terminal death 必须收敛到统一 killed flow：显式 stop、自然退出、daemon 冷启动补偿都要复用同一条流程，负责把实例标记为 `killed`、移出 live registry、清理 live focus/lease/approval 副作用，并保留 terminal-owned output evidence 给 history/archive/delete 使用。

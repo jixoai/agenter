@@ -45,7 +45,7 @@ interface GhosttyNativeModule {
 const require = createRequire(import.meta.url);
 
 const loadGhosttyNativeModule = (): GhosttyNativeModule => {
-  return require("@termless/ghostty-native") as GhosttyNativeModule;
+  return require("@jixo/ghostty-native") as GhosttyNativeModule;
 };
 
 const resolveInstalledPackageRoot = (packageName: string): string | null => {
@@ -81,7 +81,7 @@ const hasGhosttyNativeArtifact = (packageRoot: string): boolean =>
   existsSync(join(packageRoot, "native", "zig-out", "lib", "termless-ghostty-native.node"));
 
 const ensureGhosttyNativeWorkspaceBuild = (): void => {
-  const packageRoot = resolveInstalledPackageRoot("@termless/ghostty-native");
+  const packageRoot = resolveInstalledPackageRoot("@jixo/ghostty-native");
   if (!packageRoot || hasGhosttyNativeArtifact(packageRoot)) {
     return;
   }

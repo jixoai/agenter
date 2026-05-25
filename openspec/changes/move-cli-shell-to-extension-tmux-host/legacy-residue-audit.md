@@ -1,7 +1,7 @@
 ## Legacy Residue And Cleanup Risk Audit
 
 This audit records old `terminal-2` / composed TerminalSystem residue after moving
-`@agenter/cli-shell` to `extensions/cli-shell` and making tmux the active host.
+`agenter-ext-shell` to `extensions/cli-shell` and making tmux the active host.
 
 The architectural rule is strict: cli-shell is an extension product. It may use
 generic room, avatar, runtime, and attention APIs, but it must not make core
@@ -51,8 +51,8 @@ or `terminal-2` as its product UI. The shell pane and room pane are tmux panes.
 
 ## Verification Evidence
 
-- `bun run --filter '@agenter/cli-shell' test`
-- `bun run --filter '@agenter/cli-shell' typecheck`
+- `bun run --filter 'agenter-ext-shell' test`
+- `bun run --filter 'agenter-ext-shell' typecheck`
 - `bun test packages/cli/test/product-command-launcher.test.ts packages/product-extension-runtime/test/product-extension-runtime.test.ts`
 - `openspec validate move-cli-shell-to-extension-tmux-host --strict`
 

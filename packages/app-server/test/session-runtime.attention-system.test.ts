@@ -2182,7 +2182,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
 
     await runtime.start();
     try {
-      const keepAliveCommand = [process.execPath, "-e", "setInterval(() => {}, 1_000_000)"] as const;
+      const keepAliveCommand = [process.execPath, "-e", "setInterval(() => {}, 1_000_000)"];
       const created1 = await runtime.createRuntimeTerminal({
         terminalId: "iflow-1",
         processKind: "shell",

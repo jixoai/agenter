@@ -38,7 +38,7 @@
 
 - [x] 6.1 Run focused cli-shell TUI tests for Chat scrolling, pagination, anchor preservation, and bottom pinning.
 - [x] 6.2 Run focused cli-shell web-host tests only where shared room pagination helpers changed; do not add WebUI coupling.
-- [x] 6.3 Run `bun run --filter '@agenter/cli-shell' typecheck`.
+- [x] 6.3 Run `bun run --filter 'agenter-ext-shell' typecheck`.
 - [x] 6.4 Run `openspec validate refine-cli-shell-chat-scrollbox --strict`.
 - [x] 6.5 Run `openspec validate --specs --strict`.
 - [x] 6.6 Run `git diff --check`.

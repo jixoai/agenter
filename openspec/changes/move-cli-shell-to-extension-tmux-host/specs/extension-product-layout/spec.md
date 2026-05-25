@@ -6,7 +6,7 @@ The product command launcher SHALL treat `extensions/*` as a first-class local w
 
 #### Scenario: Shell command resolves cli-shell from extensions
 
-- **GIVEN** `extensions/cli-shell/package.json` exists with name `@agenter/cli-shell`
+- **GIVEN** `extensions/cli-shell/package.json` exists with name `agenter-ext-shell`
 - **WHEN** the launcher resolves product command `shell`
 - **THEN** it resolves the local workspace target from `extensions/cli-shell`
 - **AND** it does not require `packages/cli-shell` to exist

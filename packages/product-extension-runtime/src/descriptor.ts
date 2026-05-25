@@ -16,7 +16,10 @@ export const productPackageNameSchema = z
   .string()
   .trim()
   .min(1)
-  .regex(/^@[a-z0-9][a-z0-9-_]*\/[a-z0-9][a-z0-9-_]*$/u, "package name must be scoped");
+  .regex(
+    /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u,
+    "package name must be a valid lowercase npm package name",
+  );
 
 export const productSourceSchema = z.enum(["workspace", "installed", "remote"]);
 export type ProductSource = z.infer<typeof productSourceSchema>;

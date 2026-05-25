@@ -14,6 +14,8 @@ const createGlobalRoom = (input: { chatId: string; title: string }): GlobalRoomE
   createdAt: 1,
   updatedAt: 2,
   focused: true,
+  roomRevision: "0",
+  transcriptRevision: "0",
   accessRole: "admin",
   accessToken: `${input.chatId}-token`,
 });
@@ -31,6 +33,8 @@ const createSessionRoom = (input: { chatId: string; title: string; contextId?: s
   createdAt: 1,
   updatedAt: 2,
   focused: true,
+  roomRevision: "0",
+  transcriptRevision: "0",
   accessRole: "admin",
   accessToken: `${input.chatId}-token`,
 });

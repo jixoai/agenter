@@ -30,9 +30,11 @@ const createTerminalEntry = (overrides: Partial<GlobalTerminalEntry> = {}): Glob
 		weight: '400',
 		weightBold: '700',
 		ligatures: true,
-	},
-	...overrides,
-});
+		},
+		...overrides,
+		createdAt: overrides.createdAt ?? 0,
+		updatedAt: overrides.updatedAt ?? 0,
+	});
 
 describe('Feature: terminal display law', () => {
 	test('Scenario: Given a PTY changes its observed title When tab and toolbar labels resolve Then terminal instance surfaces stay on the configured instance name', () => {

@@ -1,10 +1,10 @@
-# @agenter/cli-shell SPEC
+# agenter-ext-shell SPEC
 
-> 本文件记录 `@agenter/cli-shell` 作为 extension product 的长期职责。
+> 本文件记录 `agenter-ext-shell` 作为 extension product 的长期职责。
 
 ## 1. 角色
 
-`@agenter/cli-shell` 是社区/extension 级 terminal product：
+`agenter-ext-shell` 是社区/extension 级 terminal product：
 
 - 通过 `agenter shell` 被 descriptor-driven launcher 启动
 - 代码位置属于 `extensions/cli-shell`，不属于 core packages

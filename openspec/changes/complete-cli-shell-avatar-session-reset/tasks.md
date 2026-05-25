@@ -61,5 +61,5 @@
 - [x] 7.3 Run focused product-extension/client-sdk tests for session clear and permission subscriptions.
 - [x] 7.4 Run real cli-shell startup smoke with a new named ordinary Avatar.
 - [x] 7.5 Run real-AI validation with the cleared ordinary Avatar runtime session.
-- [x] 7.6 Run `bun run --filter '@agenter/cli-shell' typecheck`.
+- [x] 7.6 Run `bun run --filter 'agenter-ext-shell' typecheck`.
 - [x] 7.7 Run `openspec validate --changes --strict` and `openspec validate --specs --strict`.

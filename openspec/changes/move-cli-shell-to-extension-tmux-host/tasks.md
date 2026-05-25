@@ -10,7 +10,7 @@
 ## 2. Workspace And Launcher
 
 - [x] 2.1 Add `extensions/*` to root workspace configuration.
-- [x] 2.2 Move `@agenter/cli-shell` from `packages/cli-shell` to `extensions/cli-shell`.
+- [x] 2.2 Move `agenter-ext-shell` from `packages/cli-shell` to `extensions/cli-shell`.
 - [x] 2.3 Update product command launcher local-first resolution to search product workspace roots without cli-shell-specific branches.
 - [x] 2.4 Update launcher BDD tests for extension-local cli-shell and package-local Studio fallback.
 
@@ -34,7 +34,7 @@
 - [x] 5.2 Add BDD tests proving attach startup launches a tmux session with shell and room panes.
 - [x] 5.3 Add source boundary tests proving active cli-shell runtime does not import or call composed TerminalSystem publication.
 - [x] 5.4 Update package boundary tests after moving cli-shell to `extensions/cli-shell`.
-- [x] 5.5 Run targeted tests for `@agenter/cli`, `@agenter/product-extension-runtime`, and `@agenter/cli-shell`.
+- [x] 5.5 Run targeted tests for `@agenter/cli`, `@agenter/product-extension-runtime`, and `agenter-ext-shell`.
 
 ## 6. Build And Delivery
 

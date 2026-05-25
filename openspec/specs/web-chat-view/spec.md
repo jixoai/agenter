@@ -52,7 +52,7 @@ The shared room component SHALL render one durable conversation surface with tra
 - **WHEN** the shared chat package renders its transcript shell
 - **THEN** it uses `Scaffold` and `ScrollView` from `@agenter/svelte-components`
 - **THEN** chat-specific visuals and transport behavior remain local to `web-chat-view`
-- **THEN** the package still avoids any dependency on `@agenter/studio`
+- **THEN** the package still avoids any dependency on `agenter-ext-studio`
 
 ### Requirement: Web chat view SHALL expose a rich shared composer surface
 The shared chat package SHALL render a responsive CodeMirror-based composer surface with attachment previews, action/status toolbars, help hints, and host-driven send orchestration instead of a minimal textarea-only input.

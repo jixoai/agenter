@@ -68,7 +68,7 @@ Alternatives considered:
 
 ### 3. Official Termless packages remain the only backend ownership layer
 
-`@agenter/termless-core` will grow a backend factory/adapter layer that selects between official backend packages such as `@termless/xtermjs` and `@termless/ghostty-native`. Agenter-local code may wrap those backends behind bridge contracts, but backend identity stays owned by official Termless packages.
+`@agenter/termless-core` will grow a backend factory/adapter layer that selects between official backend packages such as `@termless/xtermjs` and `@jixo/ghostty-native`. Agenter-local code may wrap those backends behind bridge contracts, but backend identity stays owned by official Termless packages.
 
 Rationale:
 
@@ -131,4 +131,4 @@ Rollback:
 
 ## Open Questions
 
-- No contract-level open questions remain for the spec phase. If `@termless/ghostty-native` exposes packaging or host-environment constraints during implementation, that should be recorded as implementation evidence, not kept as a spec ambiguity.
+- No contract-level open questions remain for the spec phase. If `@jixo/ghostty-native` exposes packaging or host-environment constraints during implementation, that should be recorded as implementation evidence, not kept as a spec ambiguity.

@@ -8,7 +8,7 @@ const productCommandDescriptors = [
   productCommandDescriptorSchema.parse({
     productId: "cli-shell",
     command: "shell",
-    packageName: "@agenter/cli-shell",
+    packageName: "agenter-ext-shell",
     bin: {
       name: "agenter-cli-shell",
       mainExport: "runCliShell",
@@ -24,7 +24,7 @@ const productCommandDescriptors = [
   productCommandDescriptorSchema.parse({
     productId: "studio",
     command: "studio",
-    packageName: "@agenter/studio",
+    packageName: "agenter-ext-studio",
     bin: {
       name: "agenter-studio",
       mainExport: "runStudio",

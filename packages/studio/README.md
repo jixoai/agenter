@@ -1,4 +1,4 @@
-# @agenter/studio
+# agenter-ext-studio
 
 SvelteKit 2 + Svelte 5 Studio for Agenter. This package is the active Studio surface; the previous React implementation lives in `packages/webui-bak`.
 
@@ -13,11 +13,11 @@ SvelteKit 2 + Svelte 5 Studio for Agenter. This package is the active Studio sur
 ## Commands
 
 ```sh
-pnpm --filter @agenter/studio dev
-pnpm --filter @agenter/studio typecheck
-pnpm --filter @agenter/studio test
-pnpm --filter @agenter/studio build
-pnpm --filter @agenter/studio preview
+pnpm --filter agenter-ext-studio dev
+pnpm --filter agenter-ext-studio typecheck
+pnpm --filter agenter-ext-studio test
+pnpm --filter agenter-ext-studio build
+pnpm --filter agenter-ext-studio preview
 ```
 
 ## Runtime

@@ -1,4 +1,5 @@
 import { copyFile, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,6 +25,7 @@ interface LoadPromptDocsByLangOptions {
 }
 
 const APP_SERVER_PACKAGE_JSON_PATH = decodeURIComponent(new URL("../package.json", import.meta.url).pathname);
+const BUNDLED_ASSETS_ROOT_ENV = "AGENTER_BUNDLED_ASSETS_ROOT";
 export const DEFAULT_LANGUAGE = "en";
 
 const LANG_PACKAGES: Record<string, LanguagePackageConfig> = {
@@ -95,6 +97,13 @@ const loadAppServerPackageMeta = async (): Promise<AppServerPackageMeta> => {
 };
 
 const readWorkspacePrompts = async (config: LanguagePackageConfig): Promise<PromptDocRecord> => {
+  const bundledRoot = process.env[BUNDLED_ASSETS_ROOT_ENV]?.trim();
+  if (bundledRoot) {
+    const promptsDir = join(bundledRoot, config.workspaceDirName, "prompts");
+    if (existsSync(promptsDir)) {
+      return buildPromptDocsFromDir(promptsDir);
+    }
+  }
   const promptsDir = decodeURIComponent(new URL(`../../${config.workspaceDirName}/prompts`, import.meta.url).pathname);
   return buildPromptDocsFromDir(promptsDir);
 };

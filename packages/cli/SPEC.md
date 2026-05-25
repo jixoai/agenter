@@ -15,7 +15,7 @@
 
 - product command 只能通过受控 descriptor 解析到 first-party package；不得把用户输入当成任意 npm package 名执行。
 - launcher 只拥有 descriptor lookup、package resolution、stdio/exit propagation、daemon/auth context 注入；不得解析 product grammar，也不得 import product implementation。
-- `studio` 是 descriptor-driven product command，解析到 `@agenter/studio` / `agenter-studio` / `runStudio`；Studio-specific flags、static serving 与 dev serving 都属于 `@agenter/studio`。
+- `studio` 是 descriptor-driven product command，解析到 `agenter-ext-studio` / `agenter-studio` / `runStudio`；Studio-specific flags、static serving 与 dev serving 都属于 `agenter-ext-studio`。
 - `web` 不再是 core built-in、product alias 或兼容 shim；`agenter web` 必须走 unsupported-command 路径。
 - CLI package 不拥有 active Studio static asset root、Vite dev-server startup 或 asset-copy pipeline。
 - product package resolution 固定遵守 `workspace > installed package > configured remote runner`。

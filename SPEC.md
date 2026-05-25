@@ -63,7 +63,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - MCP system 是 root-workspace runtime atom，不是 provider-side hidden tool injection：MCP 全局配置、项目启用、实例生命周期、project-local discovery snapshot、SQL 查询与 tool 调用都由 mcpSystem 统一拥有；模型只通过 root-workspace `mcp` CLI/API 和 `agenter-mcp` skill 渐进发现并显式调用。
 - MCP global config 与 project enablement 必须分离：`mcp add/remove` 只管理 global，`mcp enable/disable/list/start/stop/restart/call` 都要求显式 exact project path；新增 global 在所有 project 中默认 disabled，project 之间不继承 enablement、live instance 或 snapshot。
 - `mcp query` 是只读 SQL 投影面，只暴露 `mcp_installed` 与 `mcp_enabled` 两张临时表并永远返回 JSON rows；能力信息只能作为 project-local snapshot JSON 出现在 `mcp_enabled` 行上，不能另建 capability truth 或跨 project 共享。
-- Studio 是 descriptor-driven product package，而不是 core CLI 的内置 web mode：`agenter studio` 通过 product descriptor 启动 `@agenter/studio`，Studio 自己拥有 static/dev serving 与 product argv；core CLI 不再保留 `agenter web`、WebUI static-root 或 asset-copy 特权路径。
+- Studio 是 descriptor-driven product package，而不是 core CLI 的内置 web mode：`agenter studio` 通过 product descriptor 启动 `agenter-ext-studio`，Studio 自己拥有 static/dev serving 与 product argv；core CLI 不再保留 `agenter web`、WebUI static-root 或 asset-copy 特权路径。
 - 当某个系统需要把 authority 共享给别的 runtime/client 时，平台优先复用 `system backend + endpoint/token/proof client frontend` 法则：
   - durable truth 与 lifecycle mutation 继续留在 owning backend system
   - frontend client 只负责 transport projection、proof submission 与 accepted seat 的本地投影缓存
@@ -81,7 +81,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - source adapter 与内核只通过协议、hook、tool provider、attention commit、message dispatch 这类明确边界协作，不能跨层偷写规则。
 - 当 source adapter 希望强化某类后续行为时，应优先提交额外的 typed attention items，并由该 system 自己的 skill 教 AI 如何理解和处理这些 items；不要把这类行为期待偷塞进全局 prompt 或内核特判。
 - source ref / read result 如果只承担 lookup hint，就只能服务 adapter 自身寻址；一旦某事实要进入 durable attention、prompt payload 或外部 UI 契约，就必须先提升为 typed draft field 或 attention body。
-- `@agenter/web-chat-view` 是 room transcript 的共享 transport surface，必须保持对 `@agenter/studio` 的包级正交；operator route 消费它，而不是重新发明一套 route-local transcript renderer。
+- `@agenter/web-chat-view` 是 room transcript 的共享 transport surface，必须保持对 `agenter-ext-studio` 的包级正交；operator route 消费它，而不是重新发明一套 route-local transcript renderer。
 - `Heartbeat` 与 `@agenter/web-chat-view` 这类 latest-anchored transcript surface 的 durable law 是“chronological storage, reverse-flow view boundary”: store / transport 仍保持时间正序 truth，reverse 映射只允许发生在共享 timeline primitive 边界，不得泄漏回 durable merge / pagination contract。
 - Auth identity 与 Avatar/business role 永远分层：auth 只表达“谁可以认证并持有授权声明”，Avatar 只表达 workspace/session 的业务角色与提示词行为。
 - `auth-service` 是 durable auth identity、profile projection、proof-bearing auth 与 icon/media fallback 的 canonical owner；`profile-service` 只保留为兼容别名。`app-server` 只负责 child-runtime 生命周期与 endpoint 发现，`client-sdk`、Studio 必须直连该 service 的公开接口，不能重新引入第二套本地 authority。
@@ -144,7 +144,7 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 
 - 默认工程实践是 BDD-first；TDD 是落地手段，不是替代行为描述。
 - 关键链路改动必须有 integration 或 e2e 证据；Studio 复杂交互优先 Storybook DOM contract。
-- `@agenter/studio` 的 Storybook DOM contract 与 `storybook:build` 属于同一条工具链合同；静态 Storybook 构建不得在 DOM tests 仍然通过时继续处于崩溃状态。
+- `agenter-ext-studio` 的 Storybook DOM contract 与 `storybook:build` 属于同一条工具链合同；静态 Storybook 构建不得在 DOM tests 仍然通过时继续处于崩溃状态。
 - 真实流程优先于主观推断；对模型、终端、runtime 的判断必须先跑证据链。
 - durable 行为变化的完成标准包含：实现、测试、SPEC/AGENTS 同步，而不是只看代码通过。
 

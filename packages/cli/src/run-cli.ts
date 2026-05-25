@@ -1,16 +1,19 @@
 import { type AuthServiceBridgeOptions } from "@agenter/app-server";
 import { spawn as spawnChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { suffix } from "bun:ffi";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import {
   buildProductLaunchEnv,
   buildProductProcessCommand,
   isBuiltInCommand,
+  isLauncherMetadataOnlyCommand,
   isProductMetadataOnlyArgv,
   type LocalProductLaunchTarget,
   readCommandToken,
@@ -48,6 +51,7 @@ interface StandaloneAuthServiceCliArgs extends CommonArgs {
 type DaemonCommandAction = "start" | "stop" | "restart";
 
 const INTERNAL_DAEMON_FOREGROUND_ENV = "AGENTER_INTERNAL_DAEMON_FOREGROUND";
+const BUNDLED_ASSETS_ROOT_ENV = "AGENTER_BUNDLED_ASSETS_ROOT";
 const MANAGED_DAEMON_START_TIMEOUT_MS = 15_000;
 
 type StopManagedDaemonResult =
@@ -79,6 +83,15 @@ const resolveLauncherOwnedAuthServiceDataDir = (): string => join(resolveLaunche
 const resolveDaemonHealthLabel = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
 const resolveCliEntryPath = (): string => resolve(import.meta.dir, "bin", "agenter.ts");
 const resolveBunExecutable = (): string => Bun.which("bun") ?? process.execPath;
+const resolveBundledAssetsRoot = (): string | null => process.env[BUNDLED_ASSETS_ROOT_ENV]?.trim() || null;
+const resolveBundledAssetPath = (...segments: string[]): string | undefined => {
+  const root = resolveBundledAssetsRoot();
+  if (!root) {
+    return undefined;
+  }
+  const path = join(root, ...segments);
+  return existsSync(path) ? path : undefined;
+};
 
 const isHttpHealthAlive = async (urlString: string): Promise<boolean> => {
   const url = new URL(urlString);
@@ -382,6 +395,8 @@ const startStandaloneAuthService = async (
     host: args.host,
     port: args.port,
     dataDir: args.dataDir,
+    resvgLibraryPath: resolveBundledAssetPath("auth-service", "native", "resvg_bridge", "target", "release", `libprofile_resvg_bridge.${suffix}`),
+    webauthnUiDir: resolveBundledAssetPath("auth-service", "webauthn-ui"),
   });
 };
 
@@ -476,6 +491,9 @@ export const launchProductCommandForTest = async (
   const routed = resolveProductCommandInvocation(argvInput);
   if (!routed) {
     const commandToken = readCommandToken(argvInput);
+    if (commandToken && isLauncherMetadataOnlyCommand(commandToken)) {
+      return false;
+    }
     if (commandToken && !isBuiltInCommand(commandToken)) {
       console.error(`unsupported product command: ${commandToken}`);
       process.exitCode = 1;

@@ -18,7 +18,7 @@ Agenter terminal products and runtime code SHALL treat official Termless package
 
 #### Scenario: Future ghostty-native adoption reuses the same ownership slot
 
-- **WHEN** a future change adopts `@termless/ghostty-native`
+- **WHEN** a future change adopts `@jixo/ghostty-native`
 - **THEN** that backend plugs into the same official Termless backend slot
 - **AND** Agenter does not introduce a second package such as `@agenter/termless-ghostty-native-backend`
 

@@ -2,17 +2,17 @@
 
 The repository currently has two different product delivery laws:
 
-1. `agenter shell` is a descriptor-driven product command. Core CLI resolves the controlled descriptor, ensures or reuses daemon/auth authority, injects explicit environment variables, and lets `@agenter/cli-shell` own product grammar and UI lifecycle.
+1. `agenter shell` is a descriptor-driven product command. Core CLI resolves the controlled descriptor, ensures or reuses daemon/auth authority, injects explicit environment variables, and lets `agenter-ext-shell` own product grammar and UI lifecycle.
 2. `agenter web` is a core built-in command. Core CLI imports WebUI static-root helpers, directly resolves `packages/webui/build`, starts the Vite dev server from `packages/webui`, and copies WebUI assets into CLI packaging.
 
-The second law makes the Web operator surface look like a core subsystem even though it is product UI. The requested migration intentionally breaks compatibility: the active operator product becomes `@agenter/studio`, started by `agenter studio`; the old `web` command is removed; the existing `@agenter/ui-studio` icon composer is renamed to `@agenter/icon-studio` so names are unambiguous.
+The second law makes the Web operator surface look like a core subsystem even though it is product UI. The requested migration intentionally breaks compatibility: the active operator product becomes `agenter-ext-studio`, started by `agenter studio`; the old `web` command is removed; the existing `@agenter/ui-studio` icon composer is renamed to `@agenter/icon-studio` so names are unambiguous.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
 - Make `studio` obey the same descriptor-driven product command law as `shell`.
-- Move Studio product lifecycle, static serving, dev serving, and user-facing CLI grammar into `@agenter/studio`.
+- Move Studio product lifecycle, static serving, dev serving, and user-facing CLI grammar into `agenter-ext-studio`.
 - Remove core CLI ownership of WebUI assets and the `web` built-in command.
 - Preserve launcher-owned daemon/auth authority as the single runtime bootstrap law.
 - Rename the old `ui-studio` icon composer to `icon-studio` without mixing it into the operator product.
@@ -34,7 +34,7 @@ The second law makes the Web operator surface look like a core subsystem even th
 
 - `productId=studio`
 - `command=studio`
-- `packageName=@agenter/studio`
+- `packageName=agenter-ext-studio`
 - `bin.name=agenter-studio`
 - `bin.mainExport=runStudio`
 - `requiresDaemon=true`
@@ -57,7 +57,7 @@ Rationale:
 
 ### 3. Studio owns both static and dev serving
 
-`@agenter/studio` will expose product CLI grammar such as:
+`agenter-ext-studio` will expose product CLI grammar such as:
 
 - default/static mode: start or reuse daemon through launcher env, serve the built Studio build, and print a URL
 - dev mode: start a Vite dev server from the Studio package, inject `PUBLIC_AGENTER_WS_URL` for the launcher-provided daemon, and print API/UI URLs
@@ -101,14 +101,14 @@ Durable specs and package specs should use Studio for the active SvelteKit opera
 ## Migration Plan
 
 1. Write BDD tests that fail for:
-   - `studio` descriptor resolution to `@agenter/studio`
+   - `studio` descriptor resolution to `agenter-ext-studio`
    - `web` removed from built-ins
    - Studio product launch receives daemon env and owns old dev/static flags
    - package identity renames for Studio and icon-studio
 2. Move `packages/webui` to `packages/studio` and update package metadata, bin, exports, scripts, README, Svelte/Vite/Storybook/Playwright configs, and active product namespaces.
 3. Move `packages/ui-studio` to `packages/icon-studio` and update package metadata, scripts, imports, docs, and root build commands.
 4. Delete CLI WebUI static-root/copy ownership and the built-in `web` command.
-5. Add the `studio` descriptor and implement `@agenter/studio` product runner.
+5. Add the `studio` descriptor and implement `agenter-ext-studio` product runner.
 6. Update durable specs and package specs.
 7. Run OpenSpec validation, CLI/product targeted tests, Studio/icon-studio typecheck/build/tests, and merge verification before landing.
 

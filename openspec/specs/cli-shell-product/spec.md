@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define `@agenter/cli-shell` as an extension TUI product that binds and renders core-system resources without redefining Shell, Room, prompt, or authorization truth.
+Define `agenter-ext-shell` as an extension TUI product that binds and renders core-system resources without redefining Shell, Room, prompt, or authorization truth.
 ## Requirements
 ### Requirement: Cli-shell SHALL parse Avatar selection and product session separately
 

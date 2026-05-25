@@ -18,6 +18,7 @@ const createCommit = (input: {
   commitId: input.commitId,
   contextId: input.contextId,
   ingressType: "commit",
+  contextMutation: "apply",
   parentCommitIds: [],
   meta: {
     author: "system",
@@ -118,6 +119,8 @@ const channels = [
     createdAt: 0,
     updatedAt: 0,
     focused: true,
+    roomRevision: "0",
+    transcriptRevision: "0",
     accessRole: "admin",
     accessToken: "room-alpha-token",
   } satisfies MessageChannelEntry,

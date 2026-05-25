@@ -87,7 +87,7 @@ export class ContextClass {
   }
 }
 
-const CONTEXT_KEY = Symbol.for("@agenter/studio/ai-elements/context");
+const CONTEXT_KEY = Symbol.for("agenter-ext-studio/ai-elements/context");
 
 export function setContextValue(contextInstance: ContextClass) {
   setContext(CONTEXT_KEY, contextInstance);

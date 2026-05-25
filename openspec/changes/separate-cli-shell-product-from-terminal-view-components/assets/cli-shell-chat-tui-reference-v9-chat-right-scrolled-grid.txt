@@ -2,7 +2,7 @@
 Chat panel is scrolled up. Scrollbar thumb leaves the bottom and a compact stick-to-bottom button appears.
 
 00  $ agenter shell                                                             ←  →  ◇  ▾        Chat                    ×
-01  shell-1:~/project $ pnpm test --filter @agenter/cli-shell
+01  shell-1:~/project $ pnpm test --filter agenter-ext-shell
 02  packages/cli-shell test: Feature: ChatTUI terminal projection                         ──────── 2026-05-17 ────────
 03  packages/cli-shell test: Scenario: Given terminal-2 When chat opens Then
 04  packages/terminal-system test: Feature: backend-owned viewport                >  底部状态栏按最初设计改：

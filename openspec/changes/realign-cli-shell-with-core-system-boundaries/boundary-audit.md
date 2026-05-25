@@ -38,7 +38,7 @@
 
 当前状态：
 
-- 已改写为：`@agenter/cli-shell` 是 extension product
+- 已改写为：`agenter-ext-shell` 是 extension product
 - 明确区分 core truth 与 presentation-local truth
 - 明确规定 `AGENTER.mdx` 是唯一提示词真源
 

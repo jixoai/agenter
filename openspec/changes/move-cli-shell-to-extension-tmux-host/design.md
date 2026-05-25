@@ -35,7 +35,7 @@ Keeping terminal-2 would preserve the wrong product physics: cli-shell would kee
 
 For `agenter shell --session=5 --avatar=bangeel`:
 
-1. Core CLI resolves product command `shell` to `@agenter/cli-shell`.
+1. Core CLI resolves product command `shell` to `agenter-ext-shell`.
 2. Local-first launcher searches `extensions/cli-shell` before installed/remote packages.
 3. cli-shell bootstraps the selected AvatarRuntime and MessageRoom through generic APIs.
 4. cli-shell starts or attaches a tmux session named from the product session key.

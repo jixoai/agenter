@@ -34,5 +34,5 @@
 ## 6. Validation
 
 - [x] 6.1 Run focused cli-shell tests.
-- [x] 6.2 Run `bun run --filter '@agenter/cli-shell' typecheck`.
+- [x] 6.2 Run `bun run --filter 'agenter-ext-shell' typecheck`.
 - [x] 6.3 Run `openspec validate finish-cli-shell-room-composer-and-cursor-reliability --strict`.

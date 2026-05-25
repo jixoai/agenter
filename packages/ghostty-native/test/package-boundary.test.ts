@@ -19,9 +19,9 @@ describe("Feature: ghostty-native package boundary", () => {
     const entrySource = readFileSync(join(packageRoot, "src", "index.ts"), "utf8");
     const backendSource = readFileSync(join(packageRoot, "src", "backend.ts"), "utf8");
 
-    expect(pkg.name).toBe("@termless/ghostty-native");
+    expect(pkg.name).toBe("@jixo/ghostty-native");
     expect(pkg.exports).toEqual({ ".": "./src/index.ts" });
-    expect(pkg.files).toEqual(["README.md", "src", "build", "native", "vendor"]);
+    expect(pkg.files).toEqual(["README.md", "src", "build", "native", "vendor", "termless-ghostty-native.node"]);
     expect(pkg.scripts).toEqual({
       "build:ghostty-native": "bash build/build.sh",
       typecheck: "bunx tsc -p tsconfig.typecheck.json --noEmit",

@@ -84,7 +84,7 @@ function rect(row: number, col: number, rows: number, cols: number, fill: string
 function shellContent(grid: string[], runs: TextRun[], maxCol = COLS) {
   const lines: Array<[number, string, string?]> = [
     [0, "$ agenter shell"],
-    [1, "shell-1:~/project $ pnpm test --filter @agenter/cli-shell"],
+    [1, "shell-1:~/project $ pnpm test --filter agenter-ext-shell"],
     [2, "packages/cli-shell test: Feature: ChatTUI terminal projection"],
     [3, "packages/cli-shell test: Scenario: Given terminal-2 When chat opens Then one product surface is shared"],
     [4, "packages/terminal-system test: Feature: backend-owned viewport"],

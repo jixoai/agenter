@@ -1,6 +1,6 @@
 {
-  "name": "@agenter/cli-shell",
-  "version": "0.0.0",
+  "name": "agenter-ext-shell",
+  "version": "0.0.1",
   "type": "module",
   "files": [
     "SPEC.md",

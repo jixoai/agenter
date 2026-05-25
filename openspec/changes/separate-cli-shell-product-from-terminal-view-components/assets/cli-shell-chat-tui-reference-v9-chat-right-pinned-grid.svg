@@ -16,7 +16,7 @@
 <rect x="1600" y="1248" width="144" height="32" fill="#294238" rx="4"/>
 <rect x="1776" y="1248" width="80" height="32" fill="#31445a" rx="4"/>
 <text x="0" y="24" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">$ agenter shell</text>
-<text x="0" y="56" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">shell-1:~/project $ pnpm test --filter @agenter/cli-shell</text>
+<text x="0" y="56" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">shell-1:~/project $ pnpm test --filter agenter-ext-shell</text>
 <text x="0" y="88" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">packages/cli-shell test: Feature: ChatTUI terminal projection</text>
 <text x="0" y="120" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">packages/cli-shell test: Scenario: Given terminal-2 When chat opens Then</text>
 <text x="0" y="152" font-family="Menlo, Monaco, 'Apple Color Emoji', 'Noto Color Emoji', monospace" font-size="23" font-weight="400" fill="#d8e1ed">packages/terminal-system test: Feature: backend-owned viewport</text>

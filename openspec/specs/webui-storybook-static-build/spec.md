@@ -6,11 +6,11 @@ Define the durable Storybook static-build contract for the active Svelte Studio 
 
 ### Requirement: WebUI Storybook toolchain SHALL keep DOM and static builds aligned
 
-The `@agenter/studio` package SHALL keep its official Storybook DOM workflow and static Storybook build on one compatible dependency line. The repository MUST NOT accept a state where Storybook DOM tests pass while `pnpm --filter '@agenter/studio' storybook:build` crashes under the same lockfile.
+The `agenter-ext-studio` package SHALL keep its official Storybook DOM workflow and static Storybook build on one compatible dependency line. The repository MUST NOT accept a state where Storybook DOM tests pass while `pnpm --filter 'agenter-ext-studio' storybook:build` crashes under the same lockfile.
 
 #### Scenario: Static Storybook build succeeds for the active WebUI package
 
-- **WHEN** the operator runs `pnpm --filter '@agenter/studio' storybook:build`
+- **WHEN** the operator runs `pnpm --filter 'agenter-ext-studio' storybook:build`
 - **THEN** Storybook exits successfully without a runtime crash
 - **THEN** the generated static artifact includes the current workbench, workspace, and runtime stories
 
