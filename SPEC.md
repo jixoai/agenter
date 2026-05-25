@@ -27,10 +27,12 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Heartbeat inspection 的 durable truth 是一条 merged `message_part` stream：`scope=heartbeat_part` 负责 AI-visible request/response 与 compact boundary，`scope=request_aux` 负责 deduplicated `systemPrompt / tools / config`；客户端与 Studio 不得再把 chat / request-aux / model-call 三条投影重新拼成“主 Heartbeat 时间线”。
 - AvatarRuntime identity 是 avatar-first 的：一个 Avatar 只有一个 canonical runtime/session id；workspace membership 只能通过 WorkspaceSystem mount 附着，不能再成为 runtime identity 的一部分。
 - Room 历史的 durable truth 属于全局 `message-system`；session 只保留 room binding、message refs 与推理所需 projection facts，不复制 room history 当作自己的真源。
+- Room transcript 同步必须使用 `message-system` 拥有的 revision 坐标：`roomRevision` 表达 room metadata/grant/read/presence 等 surface 变化，`transcriptRevision` 表达 transcript 行变化，snapshot、reverse page、transport message 与 app-server realtime `message.room.updated` 都必须携带同一套坐标；客户端收到“有变化”后必须基于该坐标重新拉取 page/snapshot，不能再依赖无版本的 room id invalidation。
 - Room 文本消息对人类 transcript 默认立即可见；`attentionState=queued` 只表示它仍欠 AI/automation attention，不再表示“先隐藏，等 attention 后再显示”。
 - Room 级 read progress / read receipt 的 durable truth 属于全局 `message-system`，并以消息级冻结成员数组 `readActorIds` / `unreadActorIds` 维护，而不是退化成 session unread badge 或可变 seat cursor。
 - Room transcript/history 与 active scheduler/readiness projection 必须分离：recalled row 可以继续存在于历史 transcript 与冻结 read/unread 数组中，但 unread counters、runtime readiness、active latest、watch predicates 与 scheduler summaries 只能基于 active-visible rows（`visible_at is not null` 且未 recalled）计算。
 - Terminal truth、grant、approval、lease、activity history 的 durable truth 属于全局 `terminal-system`；session 只保留 terminal binding、focus refs、approval subscription 与推理所需 projection facts，不复制 terminal history 当作自己的真源。
+- Terminal live/history/archive 必须是同一张 `terminal_instance` durable truth 的投影：`terminal list` 只返回 live terminals；killed terminals 离开 live registry 并进入 explicit history；archive 只是把 killed evidence 进一步移出默认 history work queue，不能重新发明第二张 history 真表。
 - Terminal 长时观察必须通过独立的 `terminal await` 原语表达；它等待 TerminalSystem 拥有的稳定 snapshot / status / commit truth，返回 bounded clean lines 与 post-mortem evidence，不把等待、匹配或 debounce 语义塞进 `terminal read`。
 - Terminal focus truth 属于 actor-scoped seat state；inspection tab、UI 选中态、以及别的 actor 的 focus 都不能被错误投影成当前 session actor 的 terminal attention 输入。
 - Terminal profile 的 renderer/theme/cursor truth 属于 `terminal-system` 的 declarative durable config：后端只发布 `rendererPreference + theme + cursor`，前端按环境把 `auto` 解析成 `resolvedRenderer`；AI-facing terminal config mutation 不得拥有 renderer/theme 改写权。

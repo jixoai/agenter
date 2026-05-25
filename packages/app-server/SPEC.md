@@ -8,6 +8,8 @@
 - `app-server` 可以持有 session catalog、runtime lifecycle、tRPC surface 与 projection cache，但不能成为 `message-system` 或 `terminal-system` 的 durable truth owner。
 - remote `message-system` search / contact-request / accept-contact HTTP bridge 固定属于 `app-server`；`message-system` 只保存 actor-private source metadata 与 contact truth，不直接拥有远端 transport/auth 调用。
 - stopped / cold sessions 的 attention、notification、history inspection 必须回到磁盘事实，而不是依赖残留内存对象。
+- terminal live/history/archive 仍是 `terminal-system` 投影真相：`app-server` 只能查询、发布和组合这些投影，不能把 killed terminal 继续缓存在 live runtime attachment 里，也不能绕过 terminal-owned killed flow 自己重写终端生命周期。
+- room transcript / snapshot revision 仍是 `message-system` 投影真相：`app-server` 的 `message.room.updated` 事件只发布 `{ catalogChanged, changes[] }` 这种 revision-bearing invalidation，每个 change 必须携带 `roomRevision` 与 `transcriptRevision`；`app-server` 不得重新发明无版本的 `snapshotRoomIds/grantRoomIds/assetRoomIds` fallback。
 
 ## 2. AvatarRuntime 与 WorkspaceSystem Contract
 
