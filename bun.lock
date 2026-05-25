@@ -21,7 +21,7 @@
     },
     "demo": {
       "name": "@agenter/demo",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@agenter/app-server": "workspace:*",
         "@agenter/settings": "workspace:*",
@@ -38,7 +38,7 @@
     },
     "extensions/cli-shell": {
       "name": "agenter-ext-shell",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "bin": {
         "agenter-cli-shell": "./src/bin/agenter-cli-shell.ts",
       },
@@ -59,7 +59,7 @@
     },
     "packages/agenter": {
       "name": "agenter",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "bin": {
         "agenter": "./src/bin/agenter.ts",
       },
@@ -74,7 +74,7 @@
     },
     "packages/app-server": {
       "name": "@agenter/app-server",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@agenter/attention-system": "workspace:*",
         "@agenter/auth-service": "workspace:*",
@@ -172,7 +172,7 @@
     },
     "packages/cli": {
       "name": "@agenter/cli",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "bin": {
         "agenter": "./src/bin/agenter.ts",
       },
@@ -196,7 +196,7 @@
     },
     "packages/client-sdk": {
       "name": "@agenter/client-sdk",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@agenter/app-server": "workspace:*",
         "@agenter/product-extension-runtime": "workspace:*",
@@ -210,7 +210,7 @@
     },
     "packages/ghostty-native": {
       "name": "@jixo/ghostty-native",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "devDependencies": {
         "@types/bun": "latest",
         "@types/node": "^24",
@@ -381,7 +381,7 @@
     },
     "packages/studio": {
       "name": "agenter-ext-studio",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "bin": {
         "agenter-studio": "./src/bin/agenter-studio.ts",
       },
@@ -482,7 +482,7 @@
     },
     "packages/terminal-system": {
       "name": "@agenter/terminal-system",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "bin": {
         "ati": "./src/bin/ati.ts",
       },
@@ -538,7 +538,7 @@
     },
     "packages/termless-core": {
       "name": "@agenter/termless-core",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@jixo/ghostty-native": "workspace:*",
         "@termless/core": "^0.6.0",
@@ -558,7 +558,7 @@
     },
     "packages/tui": {
       "name": "@agenter/tui",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@agenter/client-sdk": "workspace:*",
         "@opentui/core": "latest",
@@ -643,7 +643,7 @@
     },
     "packages/webui-bak": {
       "name": "@agenter/webui-bak",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@agenter/client-sdk": "workspace:*",
         "@agenter/search-syntax": "workspace:*",
