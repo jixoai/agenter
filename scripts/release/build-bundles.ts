@@ -16,6 +16,11 @@ interface PackageJson {
   peerDependencies?: Record<string, string>;
   engines?: Record<string, string>;
   publishConfig?: Record<string, string>;
+  repository?: {
+    type: string;
+    url: string;
+    directory?: string;
+  };
 }
 
 interface BundleAssetSpec {
@@ -40,6 +45,7 @@ interface BundlePackageSpec {
 
 const repoRoot = resolve(import.meta.dir, "../..");
 const bundleRoot = join(repoRoot, "bundle");
+const releaseRepositoryUrl = "git+https://github.com/jixoai/agenter.git";
 const expectedZigVersion = "0.15.2";
 const releaseZigRoot = `/tmp/zig-${expectedZigVersion}`;
 const releaseZigBin = join(releaseZigRoot, "zig");
@@ -195,6 +201,11 @@ const buildBundle = async (input: BundlePackageSpec): Promise<void> => {
       : undefined,
     peerDependencies: input.peerDependencies,
     engines: sourcePkg.engines ?? { bun: ">=1.3.10" },
+    repository: {
+      type: "git",
+      url: releaseRepositoryUrl,
+      directory: input.sourcePackageDir,
+    },
     publishConfig: { access: "public" },
   });
 };

@@ -59,6 +59,15 @@ describe("Feature: release bundle contract", () => {
     expect(buildScript).toContain('"@jixo/ghostty-native", "build:ghostty-native"');
   });
 
+  test("Scenario: Given npm provenance validates repository identity When writing bundle package manifests Then every publishable atom points at the agenter repository", () => {
+    const buildScript = readRepoFile("scripts/release/build-bundles.ts");
+
+    expect(buildScript).toContain('const releaseRepositoryUrl = "git+https://github.com/jixoai/agenter.git"');
+    expect(buildScript).toContain("repository: {");
+    expect(buildScript).toContain("url: releaseRepositoryUrl");
+    expect(buildScript).toContain("directory: input.sourcePackageDir");
+  });
+
   test("Scenario: Given ghostty-native is published under Jixo When inspecting source and release specs Then the native artifact and package name stay explicit", () => {
     const ghosttyPkg = JSON.parse(readRepoFile("packages/ghostty-native/package.json")) as {
       files?: string[];
