@@ -86,6 +86,10 @@ describe("Feature: release bundle contract", () => {
     expect(publishScript).toContain("isPackageVersionPublished");
     expect(workflow).toContain("id-token: write");
     expect(workflow).toContain("environment: npm-release");
+    expect(workflow).toContain("actions/setup-node@v4");
+    expect(workflow).toContain('node-version: "24"');
+    expect(workflow).toContain('registry-url: "https://registry.npmjs.org"');
+    expect(workflow).toContain("npm --version");
     expect(workflow).toContain("changesets/action@v1");
     expect(workflow).toContain("publish: bun run release-packages");
   });
