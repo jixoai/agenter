@@ -282,6 +282,11 @@ type CliShellRoomLayoutAction = "layout-left" | "layout-right" | "layout-cover";
 const CHAT_SURFACE_OPTION = "@agenter_cli_shell_chat_surface";
 const CHAT_PANE_OPTION = "@agenter_cli_shell_chat_pane";
 const CHAT_OWNER_OPTION = "@agenter_cli_shell_chat_owner";
+const DEFAULT_CHAT_DOCK_LAYOUT: Exclude<CliShellChatDefaultLayout, "cover"> = "right";
+
+const resolveStartupChatDockLayout = (
+  layout: CliShellChatDefaultLayout | undefined,
+): Exclude<CliShellChatDefaultLayout, "cover"> => (layout === "left" ? "left" : DEFAULT_CHAT_DOCK_LAYOUT);
 
 const buildChatPaneDiscoveryShell = (input: CliShellTmuxActionInput): string[] => {
   const prefix = tmuxShellPrefix(input);
@@ -389,6 +394,21 @@ const buildSetChatDefaultLayoutShell = (
 ): string[] => [
   `${tmuxShellPrefix(input)} set-option -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_default_layout ${quoteShellArg(layout)}`,
 ];
+
+const buildPlanActionInput = (input: CliShellTmuxPlanInput): CliShellTmuxActionInput => ({
+  action: "chat",
+  shellName: input.shellName,
+  avatarNickname: input.avatarNickname,
+  runtimeSessionId: input.runtimeSessionId,
+  workspacePath: input.workspacePath,
+  targetPane: `${input.shellName}:0.0`,
+  tmux: input.tmux,
+  socketName: CLI_SHELL_TMUX_SOCKET_NAME,
+  cliShellCommand: input.cliShellCommand,
+  daemonHost: input.daemonHost,
+  daemonPort: input.daemonPort,
+  authServiceEndpoint: input.authServiceEndpoint,
+});
 
 const buildReadChatSurfaceShell = (input: CliShellTmuxActionInput): string[] => [
   `chat_surface="$(${tmuxShellPrefix(input)} show-options -qv -t ${quoteShellArg(input.shellName)} ${CHAT_SURFACE_OPTION} 2>/dev/null || true)"`,
@@ -512,6 +532,21 @@ const buildSingleChatPaneCommand = (input: CliShellTmuxActionInput, position: "l
   buildChatPaneShell(input, position),
 ];
 
+const buildAutoOpenChatPaneSteps = (
+  input: CliShellTmuxPlanInput,
+  tmux: string,
+  position: "left" | "right",
+): CliShellTmuxStep[] => {
+  const actionInput = buildPlanActionInput(input);
+  return [
+    {
+      command: tmux,
+      args: tmuxArgs(buildSingleChatPaneCommand(actionInput, position)),
+      productRole: "chat-pane",
+    },
+  ];
+};
+
 const buildSwitchChatPaneCommand = (input: CliShellTmuxActionInput, position: "left" | "right"): string[] => {
   const shell = [
     ...buildSetChatDefaultLayoutShell(input, position),
@@ -613,8 +648,8 @@ const buildDefaultChatCommand = (input: CliShellTmuxActionInput): string[] => {
     ...buildCloseVisibleChatSurfaceShell(input),
     `default_layout="$(${prefix} show-options -qv -t ${quoteShellArg(input.shellName)} @agenter_cli_shell_chat_default_layout 2>/dev/null || true)"`,
     `if [ "$default_layout" = "left" ]; then ${buildChatPaneShell(input, "left")}; exit 0; fi`,
-    `if [ "$default_layout" = "right" ]; then ${buildChatPaneShell(input, "right")}; exit 0; fi`,
-    buildChatPopupShell(input),
+    `if [ "$default_layout" = "cover" ]; then ${buildChatPopupShell(input)}; exit 0; fi`,
+    buildChatPaneShell(input, "right"),
   ].join("; ");
   return ["run-shell", shell];
 };
@@ -867,7 +902,7 @@ const runCliShellChatActionWithClient = async (
   }
   const defaultLayout =
     ((await client.getOption({ target: input.shellName, name: "@agenter_cli_shell_chat_default_layout" })) ??
-      "cover") as CliShellChatDefaultLayout;
+      DEFAULT_CHAT_DOCK_LAYOUT) as CliShellChatDefaultLayout;
   if (defaultLayout === "left" || defaultLayout === "right") {
     await openCliShellChatPane(client, input, defaultLayout);
     return { ok: true, action: "chat" };
@@ -1093,7 +1128,7 @@ export const buildCliShellTmuxPlan = (input: CliShellTmuxPlanInput): CliShellTmu
           "-t",
           input.shellName,
           "@agenter_cli_shell_chat_default_layout",
-          input.chatDefaultLayout ?? "cover",
+          input.chatDefaultLayout ?? DEFAULT_CHAT_DOCK_LAYOUT,
         ]),
         productRole: "session-option",
       },
@@ -1149,6 +1184,14 @@ export const buildCliShellTmuxPlan = (input: CliShellTmuxPlanInput): CliShellTmu
         ),
         productRole: "mouse-dispatch",
       },
+      ...buildAutoOpenChatPaneSteps(
+        {
+          ...input,
+          cliShellCommand,
+        },
+        tmux,
+        resolveStartupChatDockLayout(input.chatDefaultLayout),
+      ),
       {
         command: tmux,
         args: tmuxArgs(["select-pane", "-t", `${input.shellName}:0.0`]),

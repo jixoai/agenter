@@ -30,6 +30,7 @@ describe("Feature: cli-shell OpenTUI help panel", () => {
 
     expect(help.captureCharFrame()).toContain("cli-shell Help | shell-5 | @bangeel");
     expect(help.captureCharFrame()).toContain("Click managed:on/off, Help, or Chat");
+    expect(help.captureCharFrame()).toContain("cover Chat, tmux popup owns mouse focus");
     expect(help.captureCharFrame()).toContain("Ctrl+b, then c  toggle Chat");
     expect(help.captureCharFrame()).toContain("Esc/q/Ctrl+Q close");
   });

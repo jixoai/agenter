@@ -44,7 +44,7 @@ export interface CliShellSettingsStorageOptions {
 
 const DEFAULT_SETTINGS: CliShellSettings = {
   chat: {
-    defaultLayout: "cover",
+    defaultLayout: "right",
   },
   startup: {
     lastShellName: null,

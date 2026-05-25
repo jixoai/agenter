@@ -124,7 +124,7 @@ class FakeTmuxExecutor implements TmuxExecutor {
 }
 
 describe("Feature: cli-shell tmux host", () => {
-  test("Scenario: Given a cli-shell session When planning tmux host Then shell starts as the primary pane without a permanent Chat split", () => {
+  test("Scenario: Given a cli-shell session When planning tmux host Then shell starts with Chat open on the right", () => {
     const plan = buildCliShellTmuxPlan({
       shellName: "shell-5",
       avatarNickname: "bangeel",
@@ -170,6 +170,7 @@ describe("Feature: cli-shell tmux host", () => {
       "bind-key",
       "bind-key",
       "bind-key",
+      "run-shell",
       "select-pane",
       "attach-session",
     ]);
@@ -177,7 +178,16 @@ describe("Feature: cli-shell tmux host", () => {
     expect(plan.steps[1]?.args.join(" ")).toContain("agenter-cli-shell.ts");
     expect(plan.steps[1]?.args.join(" ")).toContain("'shell'");
     expect(findCliShellTmuxShellPaneStep(plan)?.args.join(" ")).toContain("shell");
-    expect(plan.steps.some((step) => readTmuxCommand(step) === "split-window")).toBe(false);
+    const autoChatPane = plan.steps.find(
+      (step) => step.productRole === "chat-pane" && readTmuxCommand(step) === "run-shell" && step.args.join(" ").includes("split-window"),
+    );
+    expect(autoChatPane?.args.join(" ")).toContain("-h");
+    expect(autoChatPane?.args.join(" ")).toContain("-l 42%");
+    expect(autoChatPane?.args.join(" ")).toContain("'room'");
+    expect(autoChatPane?.args.join(" ")).toContain("'--session=shell-5'");
+    expect(autoChatPane?.args.join(" ")).toContain("'--avatar=bangeel'");
+    expect(autoChatPane?.args.join(" ")).toContain("@agenter_cli_shell_chat_surface 'pane'");
+    expect(autoChatPane?.args.join(" ")).toContain("@agenter_cli_shell_active_action 'chat'");
     expect(plan.steps.at(-1)?.foreground).toBe(true);
   });
 
@@ -526,7 +536,7 @@ describe("Feature: cli-shell tmux host", () => {
     expect(dispatch?.args.join(" ")).not.toContain("\\;");
   });
 
-  test("Scenario: Given popup is not enough When planning tmux host Then Chat pane fallback is bound but not executed during attach", () => {
+  test("Scenario: Given Chat opens by default When planning tmux host Then the explicit pane fallback remains a key binding", () => {
     const plan = buildCliShellTmuxPlan({
       shellName: "shell-5",
       avatarNickname: "bangeel",
@@ -538,7 +548,7 @@ describe("Feature: cli-shell tmux host", () => {
     expect(binding ? readTmuxCommandArgs(binding)[1] : undefined).toBe("C");
     expect(binding?.args.join(" ")).toContain("tmux-action");
     expect(binding?.args.join(" ")).toContain("--action pane");
-    expect(plan.steps.filter((step) => readTmuxCommand(step) === "split-window")).toEqual([]);
+    expect(plan.steps.filter((step) => step.productRole === "chat-pane" && readTmuxCommand(step) === "run-shell")).toHaveLength(1);
   });
 
   test("Scenario: Given tmux product shell controls When planning tmux host Then product-local key bindings are installed", () => {
@@ -586,7 +596,7 @@ describe("Feature: cli-shell tmux host", () => {
     expect(pane?.args.join(" ")).toContain("--action pane");
   });
 
-  test("Scenario: Given a product action command runs When Chat is selected Then cli-shell opens the room through tmux instead of leaking formats to shell", async () => {
+  test("Scenario: Given a product action command runs without saved layout When Chat is selected Then cli-shell opens the room as the default right pane", async () => {
     const executed: CliShellTmuxStep[] = [];
     const executor = {
       which: async () => "/bin/tmux-test",
@@ -617,9 +627,15 @@ describe("Feature: cli-shell tmux host", () => {
     expect(executed[0]?.args.join(" ")).toContain("@agenter_cli_shell_chat_default_layout");
     expect(executed[0]?.args.join(" ")).toContain("@agenter_cli_shell_chat_pane");
     expect(executed[0]?.args.join(" ")).toContain('if [ "$chat_surface" = "pane" ] && [ -n "$chat_pane" ]; then');
-    expect(executed[0]?.args.join(" ")).toContain("set-option -t 'shell-5' @agenter_cli_shell_active_action 'chat'");
-    expect(executed[0]?.args.join(" ")).toContain("display-popup");
-    expect(executed[0]?.args.join(" ")).toContain("set-option -t 'shell-5' @agenter_cli_shell_active_action 'shell'");
+    const shell = executed[0]?.args.join(" ") ?? "";
+    expect(shell).toContain("set-option -t 'shell-5' @agenter_cli_shell_active_action 'chat'");
+    expect(shell).toContain('if [ "$default_layout" = "cover" ]; then');
+    expect(shell).toContain("display-popup");
+    expect(shell).toContain("split-window");
+    expect(shell).toContain("-h");
+    expect(shell).toContain("-l 42%");
+    expect(shell).toContain("@agenter_cli_shell_chat_surface 'pane'");
+    expect(shell.lastIndexOf("split-window")).toBeGreaterThan(shell.indexOf('if [ "$default_layout" = "cover" ]; then'));
     expect(executed[0]?.args.join(" ")).toContain("room");
     expect(executed[0]?.args.join(" ")).toContain("--session=shell-5");
     expect(executed[0]?.args.join(" ")).toContain("--avatar=bangeel");
@@ -637,6 +653,37 @@ describe("Feature: cli-shell tmux host", () => {
     expect(executed[0]?.args.join(" ")).toContain("grep -F -- 'bangeel'");
     expect(executed[0]?.args.join(" ")).not.toContain("grep -F -- '--session=shell-5'");
     expect(executed[0]?.args.join(" ")).not.toContain("--session=#{");
+  });
+
+  test("Scenario: Given no Chat tmux option exists When real Chat action runs Then cli-shell opens a right pane instead of cover popup", async () => {
+    const tmuxExecutor = new FakeTmuxExecutor();
+
+    const result = await runCliShellTmuxAction({
+      input: {
+        action: "chat",
+        shellName: "shell-5",
+        avatarNickname: "bangeel",
+        runtimeSessionId: "session:/repo:bangeel",
+        targetPane: "%0",
+        targetClient: "client-1",
+        socketName: "agenter-cli-shell",
+        tmux: "tmux-test",
+        cliShellCommand: ["bun", "/repo/extensions/cli-shell/src/bin/agenter-cli-shell.ts"],
+        daemonHost: "127.0.0.1",
+        daemonPort: 4580,
+      },
+      tmuxExecutor,
+    });
+
+    const verbs = tmuxExecutor.commands.map((command) => command.args[2] ?? command.args[0]);
+    const split = tmuxExecutor.commands.find((command) => command.args.includes("split-window"));
+    expect(result).toEqual({ ok: true, action: "chat" });
+    expect(verbs).toContain("split-window");
+    expect(verbs).not.toContain("display-popup");
+    expect(split?.args).toContain("-h");
+    expect(split?.args).not.toContain("-b");
+    expect(split?.args).toContain("-l");
+    expect(split?.args).toContain("42%");
   });
 
   test("Scenario: Given Chat pane already exists When Chat is selected Then the action toggles the singleton pane closed before opening another surface", async () => {
@@ -668,7 +715,7 @@ describe("Feature: cli-shell tmux host", () => {
     expect(shell).toContain('kill-pane -t "$chat_pane"');
     expect(shell).toContain("@agenter_cli_shell_chat_surface 'none'");
     expect(shell).toContain("exit 0");
-    expect(shell).toContain("display-popup");
+    expect(shell).toContain("split-window");
   });
 
   test("Scenario: Given tmux returns user range payloads When product action runs Then cli-shell normalizes known actions and rejects unknown payloads", async () => {

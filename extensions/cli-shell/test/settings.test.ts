@@ -24,6 +24,7 @@ describe("Feature: cli-shell product settings", () => {
   test("Scenario: Given settings file is missing or empty When cli-shell parses settings Then it falls back to the default Chat layout", () => {
     expect(parseCliShellSettings("")).toEqual(defaultCliShellSettings());
     expect(parseCliShellSettings(undefined)).toEqual(defaultCliShellSettings());
+    expect(defaultCliShellSettings().chat.defaultLayout).toBe("right");
   });
 
   test("Scenario: Given settings contain a persisted Chat default layout When parsed Then cli-shell uses that layout for future Chat reopen", () => {
