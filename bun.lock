@@ -59,7 +59,7 @@
     },
     "packages/agenter": {
       "name": "agenter",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "bin": {
         "agenter": "./src/bin/agenter.ts",
       },

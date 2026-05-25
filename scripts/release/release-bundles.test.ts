@@ -68,6 +68,16 @@ describe("Feature: release bundle contract", () => {
     expect(cliSource).not.toContain('const argv = ["run", resolveCliEntryPath(), "daemon", "start"');
   });
 
+  test("Scenario: Given npm daemon start runs after a cold install When inspecting the CLI source Then startup health probes stay short and the cold-start window is explicit", () => {
+    const cliSource = readRepoFile("packages/cli/src/run-cli.ts");
+
+    expect(cliSource).toContain("const HEALTH_REQUEST_TIMEOUT_MS = 5_000;");
+    expect(cliSource).toContain("const MANAGED_DAEMON_START_TIMEOUT_MS = 60_000;");
+    expect(cliSource).toContain("const MANAGED_DAEMON_START_HEALTH_REQUEST_TIMEOUT_MS = 1_000;");
+    expect(cliSource).toContain("await isDaemonAlive(authority, MANAGED_DAEMON_START_HEALTH_REQUEST_TIMEOUT_MS)");
+    expect(cliSource).not.toContain("const MANAGED_DAEMON_START_TIMEOUT_MS = 15_000;");
+  });
+
   test("Scenario: Given cli-shell uses OpenTUI native packages When bundling the JS entry Then platform native packages stay install-time dependencies", () => {
     const shellSpec = createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter-ext-shell");
 

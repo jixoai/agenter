@@ -55,7 +55,9 @@ type DaemonCommandAction = "start" | "stop" | "restart";
 
 const INTERNAL_DAEMON_FOREGROUND_ENV = "AGENTER_INTERNAL_DAEMON_FOREGROUND";
 const BUNDLED_ASSETS_ROOT_ENV = "AGENTER_BUNDLED_ASSETS_ROOT";
-const MANAGED_DAEMON_START_TIMEOUT_MS = 15_000;
+const HEALTH_REQUEST_TIMEOUT_MS = 5_000;
+const MANAGED_DAEMON_START_TIMEOUT_MS = 60_000;
+const MANAGED_DAEMON_START_HEALTH_REQUEST_TIMEOUT_MS = 1_000;
 const packageJson = createRequire(import.meta.url)("../package.json") as { version?: string };
 
 type StopManagedDaemonResult =
@@ -104,7 +106,7 @@ const resolveBundledAssetPath = (...segments: string[]): string | undefined => {
   return existsSync(path) ? path : undefined;
 };
 
-const isHttpHealthAlive = async (urlString: string): Promise<boolean> => {
+const isHttpHealthAlive = async (urlString: string, timeoutMs = HEALTH_REQUEST_TIMEOUT_MS): Promise<boolean> => {
   const url = new URL(urlString);
   const request = url.protocol === "https:" ? httpsRequest : httpRequest;
   return await new Promise<boolean>((resolve) => {
@@ -112,7 +114,7 @@ const isHttpHealthAlive = async (urlString: string): Promise<boolean> => {
       url,
       {
         method: "GET",
-        timeout: 5_000,
+        timeout: timeoutMs,
       },
       (response) => {
         response.resume();
@@ -128,7 +130,8 @@ const isHttpHealthAlive = async (urlString: string): Promise<boolean> => {
   });
 };
 
-const isDaemonAlive = async (args: CommonArgs): Promise<boolean> => await isHttpHealthAlive(healthUrl(args));
+const isDaemonAlive = async (args: CommonArgs, timeoutMs?: number): Promise<boolean> =>
+  await isHttpHealthAlive(healthUrl(args), timeoutMs);
 
 const isReusableDaemonDescriptorHealthy = async (descriptor: DaemonRuntimeDescriptor): Promise<boolean> =>
   await isHttpHealthAlive(`${descriptor.endpoint.replace(/\/$/u, "")}/health`);
@@ -237,7 +240,7 @@ const waitForManagedDaemonHealthy = async (
 ): Promise<"healthy" | "exited" | "timeout"> => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    if (await isDaemonAlive(authority)) {
+    if (await isDaemonAlive(authority, MANAGED_DAEMON_START_HEALTH_REQUEST_TIMEOUT_MS)) {
       return "healthy";
     }
     if (!isProcessAlive(pid)) {
