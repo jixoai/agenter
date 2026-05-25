@@ -574,6 +574,7 @@ export interface TerminalRecord {
 export interface TerminalRecord extends TerminalLifecycleState {}
 
 export type TerminalInstanceProjection = "live" | "history" | "archive" | "index";
+export type TerminalBootstrapRecoveryIntent = "killed-history";
 
 export interface TerminalAdminCandidateRecord {
   terminalId: string;

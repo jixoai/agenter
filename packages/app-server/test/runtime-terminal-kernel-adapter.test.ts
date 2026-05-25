@@ -157,4 +157,56 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
 
     expect(committed).toEqual([]);
   });
+
+  test("Scenario: Given terminal lifecycle ingress carries a boundary channel When adapter commits it Then the envelope preserves that channel", async () => {
+    const committed: RuntimeSystemIngressEnvelope[] = [];
+    const adapter = new RuntimeTerminalKernelAdapter({
+      isLoopPaused: () => false,
+      listFocusedTerminalIds: () => [],
+      isTerminalRunning: () => false,
+      getTerminalStatus: () => null,
+      getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
+      isTerminalActionable: () => false,
+      readTerminalIngress: async () => null,
+      buildLifecycleIngressEnvelope: (input) => ({
+        system: "terminal",
+        boundaryChannel: input.boundaryChannel ?? "scheduler_signal",
+        sourceId: `tty:${input.terminalId}`,
+        contextKey: input.contextId,
+        kind: input.event,
+        summary: input.summary,
+        content: input.summary,
+        format: "text/plain",
+        score: input.score ?? 0,
+        tags: ["terminal", "lifecycle", input.event],
+        createdAt: 1,
+        author: "avatar",
+      }),
+      onTerminalActionableSignal: () => {},
+    });
+    const host: RuntimeSystemKernelHost = {
+      registerCommitRef: (input) => ({ ...input, createdAt: 1 }),
+      getDeliveryProjection: () => null,
+      listDeliveryProjections: () => [],
+      queryAttentionDeliveryTimeline: () => ({ dispatches: [], receipts: [] }),
+      signalIngress: () => {},
+      commitIngress: async (input) => {
+        committed.push(input);
+        return null;
+      },
+    };
+    adapter.mount(host);
+
+    adapter.commitLifecycleIngress({
+      terminalId: "iflow",
+      contextId: "ctx-terminal-iflow",
+      event: "terminal_killed",
+      summary: "Terminal iflow was killed",
+      boundaryChannel: "world_fact",
+    });
+    await adapter.bootstrap();
+
+    expect(committed).toHaveLength(1);
+    expect(committed[0]?.boundaryChannel).toBe("world_fact");
+  });
 });

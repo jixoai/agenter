@@ -125,6 +125,14 @@ const createInitialState = (): RuntimeClientState => ({
     error: null,
     refreshedAt: null,
   },
+  globalTerminalIndex: {
+    data: [],
+    loaded: false,
+    loading: false,
+    refreshing: false,
+    error: null,
+    refreshedAt: null,
+  },
   globalTerminalArchive: {
     data: [],
     loaded: false,
@@ -987,6 +995,7 @@ export class RuntimeStore {
   private globalTerminalsRefreshTask: Promise<GlobalTerminalEntry[]> | null = null;
   private globalTerminalsWatchCount = 0;
   private globalTerminalHistoryWatchCount = 0;
+  private globalTerminalIndexWatchCount = 0;
   private globalTerminalArchiveWatchCount = 0;
   private readonly globalTerminalGrantRefreshTasks = new Map<string, Promise<GlobalTerminalGrantEntry[]>>();
   private readonly globalTerminalGrantWatchCountById = new Map<string, number>();
@@ -2162,6 +2171,29 @@ export class RuntimeStore {
     return next;
   }
 
+  private patchGlobalTerminalIndexEntry(
+    terminalId: string,
+    updater: (entry: GlobalTerminalEntry) => GlobalTerminalEntry,
+  ): void {
+    this.setGlobalTerminalIndexState((resource) => {
+      const index = resource.data.findIndex((terminal) => terminal.terminalId === terminalId);
+      if (index < 0) {
+        return resource;
+      }
+      const data = [...resource.data];
+      data[index] = updater(data[index]!);
+      return {
+        ...resource,
+        data: sortGlobalTerminalIndexEntries(data),
+        loaded: resource.loaded,
+        loading: false,
+        refreshing: resource.loading || resource.refreshing,
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+  }
+
   private ensureGlobalTerminalGrantsState(terminalId: string): CachedResourceState<GlobalTerminalGrantEntry[]> {
     return this.state.globalTerminalGrantsById[terminalId] ?? createCachedResourceState<GlobalTerminalGrantEntry[]>([]);
   }
@@ -2276,15 +2308,38 @@ export class RuntimeStore {
       error: null,
       refreshedAt: Date.now(),
     }));
+    this.patchGlobalTerminalIndexEntry(input.terminalId, (terminal) => ({
+      ...terminal,
+      pendingRequestCount: Math.max(0, (terminal.pendingRequestCount ?? 0) - 1),
+      actors: (terminal.actors ?? []).map((actor) =>
+        actor.actorId === input.lease.participantId
+          ? {
+              ...actor,
+              leaseId: input.lease.leaseId,
+              leaseExpiresAt: input.lease.expiresAt,
+            }
+          : actor,
+      ),
+    }));
     this.emit();
   }
 
   private resolveGlobalTerminalEntry(terminalId: string): GlobalTerminalEntry | null {
-    return this.state.globalTerminals.data.find((terminal) => terminal.terminalId === terminalId) ?? null;
+    return (
+      this.state.globalTerminals.data.find((terminal) => terminal.terminalId === terminalId) ??
+      this.state.globalTerminalIndex.data.find((terminal) => terminal.terminalId === terminalId) ??
+      this.state.globalTerminalHistory.data.find((terminal) => terminal.terminalId === terminalId) ??
+      this.state.globalTerminalArchive.data.find((terminal) => terminal.terminalId === terminalId) ??
+      null
+    );
   }
 
   private ensureGlobalTerminalHistoryState(): CachedResourceState<GlobalTerminalEntry[]> {
     return this.state.globalTerminalHistory;
+  }
+
+  private ensureGlobalTerminalIndexState(): CachedResourceState<GlobalTerminalEntry[]> {
+    return this.state.globalTerminalIndex;
   }
 
   private ensureGlobalTerminalArchiveState(): CachedResourceState<GlobalTerminalEntry[]> {
@@ -2299,6 +2354,14 @@ export class RuntimeStore {
     return next;
   }
 
+  private setGlobalTerminalIndexState(
+    updater: (current: CachedResourceState<GlobalTerminalEntry[]>) => CachedResourceState<GlobalTerminalEntry[]>,
+  ): CachedResourceState<GlobalTerminalEntry[]> {
+    const next = updater(this.ensureGlobalTerminalIndexState());
+    this.state.globalTerminalIndex = next;
+    return next;
+  }
+
   private setGlobalTerminalArchiveState(
     updater: (current: CachedResourceState<GlobalTerminalEntry[]>) => CachedResourceState<GlobalTerminalEntry[]>,
   ): CachedResourceState<GlobalTerminalEntry[]> {
@@ -2307,10 +2370,48 @@ export class RuntimeStore {
     return next;
   }
 
+  private reconcileGlobalTerminalIndexEntry(entry: GlobalTerminalEntry): void {
+    if (isArchivedProjectionTerminal(entry)) {
+      this.removeGlobalTerminalIndexEntry(entry.terminalId);
+      return;
+    }
+    this.setGlobalTerminalIndexState((resource) => {
+      const nextData = [...resource.data];
+      const index = nextData.findIndex((candidate) => candidate.terminalId === entry.terminalId);
+      if (index >= 0) {
+        nextData[index] = mergeGlobalTerminalEntry(nextData[index], entry);
+      } else {
+        nextData.unshift(entry);
+      }
+      return {
+        ...resource,
+        data: sortGlobalTerminalIndexEntries(nextData),
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      };
+    });
+  }
+
+  private removeGlobalTerminalIndexEntry(terminalId: string): void {
+    this.setGlobalTerminalIndexState((resource) => ({
+      ...resource,
+      data: resource.data.filter((candidate) => candidate.terminalId !== terminalId),
+      loaded: true,
+      loading: false,
+      refreshing: false,
+      error: null,
+      refreshedAt: Date.now(),
+    }));
+  }
+
   private reconcileGlobalTerminalEntry(entry: GlobalTerminalEntry): void {
     if (isArchivedProjectionTerminal(entry)) {
       this.removeGlobalTerminalEntry(entry.terminalId);
       this.removeGlobalTerminalHistoryEntry(entry.terminalId);
+      this.removeGlobalTerminalIndexEntry(entry.terminalId);
       this.reconcileGlobalTerminalArchiveEntry(entry);
       return;
     }
@@ -2348,6 +2449,7 @@ export class RuntimeStore {
     });
     this.removeGlobalTerminalArchiveEntry(entry.terminalId);
     this.reconcileGlobalTerminalHistoryEntry(entry);
+    this.reconcileGlobalTerminalIndexEntry(entry);
   }
 
   private removeGlobalTerminalEntry(terminalId: string): void {
@@ -2371,6 +2473,20 @@ export class RuntimeStore {
     this.setGlobalTerminalHistoryState((resource) => {
       const nextData = [...resource.data];
       const index = nextData.findIndex((candidate) => candidate.terminalId === entry.terminalId);
+      if (!isHistoryProjectionTerminal(entry)) {
+        if (index >= 0) {
+          nextData.splice(index, 1);
+        }
+        return {
+          ...resource,
+          data: nextData,
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: null,
+          refreshedAt: Date.now(),
+        };
+      }
       if (index >= 0) {
         nextData[index] = mergeGlobalTerminalEntry(nextData[index], entry);
       } else {
@@ -2378,7 +2494,7 @@ export class RuntimeStore {
       }
       return {
         ...resource,
-        data: sortGlobalTerminalIndexEntries(nextData),
+        data: sortGlobalTerminalIndexEntries(nextData).filter(isHistoryProjectionTerminal),
         loaded: true,
         loading: false,
         refreshing: false,
@@ -2455,6 +2571,7 @@ export class RuntimeStore {
     activity?: boolean;
     catalog?: boolean;
     history?: boolean;
+    index?: boolean;
     archive?: boolean;
     force?: boolean;
   }): Array<Promise<unknown>> {
@@ -2495,6 +2612,9 @@ export class RuntimeStore {
     if (input.history && (this.state.globalTerminalHistory.loaded || this.globalTerminalHistoryWatchCount > 0)) {
       refreshes.push(this.hydrateGlobalTerminalHistory({ force }));
     }
+    if (input.index && (this.state.globalTerminalIndex.loaded || this.globalTerminalIndexWatchCount > 0)) {
+      refreshes.push(this.hydrateGlobalTerminalIndex({ force }));
+    }
     if (input.archive && (this.state.globalTerminalArchive.loaded || this.globalTerminalArchiveWatchCount > 0)) {
       refreshes.push(this.hydrateGlobalTerminalArchive({ force }));
     }
@@ -2509,6 +2629,7 @@ export class RuntimeStore {
     activity?: boolean;
     catalog?: boolean;
     history?: boolean;
+    index?: boolean;
     archive?: boolean;
     force?: boolean;
   }): Promise<void> {
@@ -2526,6 +2647,7 @@ export class RuntimeStore {
     activity?: boolean;
     catalog?: boolean;
     history?: boolean;
+    index?: boolean;
     archive?: boolean;
     force?: boolean;
   }): void {
@@ -3327,6 +3449,9 @@ export class RuntimeStore {
     this.globalRoomAssetQueryById.clear();
     this.globalTerminalsRefreshTask = null;
     this.globalTerminalsWatchCount = 0;
+    this.globalTerminalHistoryWatchCount = 0;
+    this.globalTerminalIndexWatchCount = 0;
+    this.globalTerminalArchiveWatchCount = 0;
     this.globalTerminalGrantRefreshTasks.clear();
     this.globalTerminalGrantWatchCountById.clear();
     this.globalTerminalApprovalRefreshTasks.clear();
@@ -3495,6 +3620,7 @@ export class RuntimeStore {
           globalRoomGrantsById: previousState.globalRoomGrantsById,
           globalTerminals: previousState.globalTerminals,
           globalTerminalHistory: previousState.globalTerminalHistory,
+          globalTerminalIndex: previousState.globalTerminalIndex,
           globalTerminalArchive: previousState.globalTerminalArchive,
           globalTerminalGrantsById: previousState.globalTerminalGrantsById,
           globalTerminalApprovalsById: previousState.globalTerminalApprovalsById,
@@ -3549,6 +3675,9 @@ export class RuntimeStore {
         }
         if (previousState.globalTerminalHistory.loaded || this.globalTerminalHistoryWatchCount > 0) {
           this.runBackgroundTask(this.hydrateGlobalTerminalHistory({ force: true }));
+        }
+        if (previousState.globalTerminalIndex.loaded || this.globalTerminalIndexWatchCount > 0) {
+          this.runBackgroundTask(this.hydrateGlobalTerminalIndex({ force: true }));
         }
         if (previousState.globalTerminalArchive.loaded || this.globalTerminalArchiveWatchCount > 0) {
           this.runBackgroundTask(this.hydrateGlobalTerminalArchive({ force: true }));
@@ -5090,6 +5219,13 @@ export class RuntimeStore {
     };
   }
 
+  retainGlobalTerminalIndex(): () => void {
+    this.globalTerminalIndexWatchCount += 1;
+    return () => {
+      this.globalTerminalIndexWatchCount = Math.max(0, this.globalTerminalIndexWatchCount - 1);
+    };
+  }
+
   retainGlobalTerminalArchive(): () => void {
     this.globalTerminalArchiveWatchCount += 1;
     return () => {
@@ -5121,14 +5257,17 @@ export class RuntimeStore {
 
     try {
       const output = await this.client.trpc.terminal.globalHistory.query();
+      const historyItems = output.items.filter(isHistoryProjectionTerminal);
       this.setGlobalTerminalHistoryState((resource) => ({
         ...resource,
-        data: output.items.map((entry) =>
-          mergeGlobalTerminalEntry(
-            resource.data.find((candidate) => candidate.terminalId === entry.terminalId),
-            entry,
+        data: sortGlobalTerminalIndexEntries(
+          historyItems.map((entry) =>
+            mergeGlobalTerminalEntry(
+              resource.data.find((candidate) => candidate.terminalId === entry.terminalId),
+              entry,
+            ),
           ),
-        ),
+        ).filter(isHistoryProjectionTerminal),
         loaded: true,
         loading: false,
         refreshing: false,
@@ -5136,7 +5275,7 @@ export class RuntimeStore {
         refreshedAt: Date.now(),
       }));
       this.emit();
-      return output.items;
+      return historyItems;
     } catch (error) {
       const unauthorizedMessage = unauthorizedErrorMessage(error);
       if (unauthorizedMessage) {
@@ -5168,6 +5307,74 @@ export class RuntimeStore {
     return await this.hydrateGlobalTerminalHistory({ force: true });
   }
 
+  async hydrateGlobalTerminalIndex(input: { force?: boolean } = {}): Promise<GlobalTerminalEntry[]> {
+    const current = this.ensureGlobalTerminalIndexState();
+    if (!input.force && current.loaded && !current.refreshing && !current.loading) {
+      return current.data;
+    }
+
+    this.setGlobalTerminalIndexState((resource) => ({
+      ...resource,
+      loading: !resource.loaded,
+      refreshing: resource.loaded,
+      error: null,
+    }));
+    this.emit();
+
+    try {
+      const output = await this.client.trpc.terminal.globalIndex.query();
+      const indexItems = output.items.filter(
+        (entry) => isLiveProjectionTerminal(entry) || isHistoryProjectionTerminal(entry),
+      );
+      this.setGlobalTerminalIndexState((resource) => ({
+        ...resource,
+        data: sortGlobalTerminalIndexEntries(
+          indexItems.map((entry) =>
+            mergeGlobalTerminalEntry(
+              resource.data.find((candidate) => candidate.terminalId === entry.terminalId),
+              entry,
+            ),
+          ),
+        ),
+        loaded: true,
+        loading: false,
+        refreshing: false,
+        error: null,
+        refreshedAt: Date.now(),
+      }));
+      this.emit();
+      return indexItems;
+    } catch (error) {
+      const unauthorizedMessage = unauthorizedErrorMessage(error);
+      if (unauthorizedMessage) {
+        this.setGlobalTerminalIndexState((resource) => ({
+          ...resource,
+          data: [],
+          loaded: true,
+          loading: false,
+          refreshing: false,
+          error: unauthorizedMessage,
+          refreshedAt: Date.now(),
+        }));
+        this.emit();
+        return [];
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      this.setGlobalTerminalIndexState((resource) => ({
+        ...resource,
+        loading: false,
+        refreshing: false,
+        error: message,
+      }));
+      this.emit();
+      throw error;
+    }
+  }
+
+  async listGlobalTerminalIndex(): Promise<GlobalTerminalEntry[]> {
+    return await this.hydrateGlobalTerminalIndex({ force: true });
+  }
+
   async hydrateGlobalTerminalArchive(input: { force?: boolean } = {}): Promise<GlobalTerminalEntry[]> {
     const current = this.ensureGlobalTerminalArchiveState();
     if (!input.force && current.loaded && !current.refreshing && !current.loading) {
@@ -5184,9 +5391,10 @@ export class RuntimeStore {
 
     try {
       const output = await this.client.trpc.terminal.globalArchiveList.query();
+      const archiveItems = output.items.filter(isArchivedProjectionTerminal);
       this.setGlobalTerminalArchiveState((resource) => ({
         ...resource,
-        data: output.items.map((entry) =>
+        data: archiveItems.map((entry) =>
           mergeGlobalTerminalEntry(
             resource.data.find((candidate) => candidate.terminalId === entry.terminalId),
             entry,
@@ -5199,7 +5407,7 @@ export class RuntimeStore {
         refreshedAt: Date.now(),
       }));
       this.emit();
-      return output.items;
+      return archiveItems;
     } catch (error) {
       const unauthorizedMessage = unauthorizedErrorMessage(error);
       if (unauthorizedMessage) {
@@ -5262,6 +5470,7 @@ export class RuntimeStore {
 
   async bootstrapGlobalTerminal(input: {
     terminalId: string;
+    recoveryIntent?: "killed-history";
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
     const output = await this.client.trpc.terminal.globalBootstrap.mutate(input);
     if (output.result.terminal) {
@@ -5276,16 +5485,19 @@ export class RuntimeStore {
     if (output.result.ok) {
       this.invalidateGlobalTerminalSurface({
         catalog: true,
+        history: true,
+        index: true,
         force: true,
       });
-      void this.hydrateGlobalTerminalHistory({ force: true }).catch(() => undefined);
     }
     return output.result;
   }
 
   async archiveGlobalTerminal(input: { terminalId: string }): Promise<GlobalTerminalEntry> {
     const output = await this.client.trpc.terminal.globalArchive.mutate(input);
+    this.removeGlobalTerminalEntry(input.terminalId);
     this.removeGlobalTerminalHistoryEntry(input.terminalId);
+    this.removeGlobalTerminalIndexEntry(input.terminalId);
     this.reconcileGlobalTerminalArchiveEntry(output.terminal);
     this.emit();
     return output.terminal;
@@ -5299,6 +5511,7 @@ export class RuntimeStore {
     const output = await this.client.trpc.terminal.globalFocus.mutate(input);
     this.invalidateGlobalTerminalSurface({
       catalog: true,
+      index: true,
       force: true,
     });
     return output;
@@ -5309,6 +5522,8 @@ export class RuntimeStore {
     if (output.ok) {
       this.removeGlobalTerminalEntry(input.terminalId);
       this.removeGlobalTerminalHistoryEntry(input.terminalId);
+      this.removeGlobalTerminalIndexEntry(input.terminalId);
+      this.removeGlobalTerminalArchiveEntry(input.terminalId);
       this.setGlobalTerminalGrantsState(input.terminalId, (resource) => ({
         ...resource,
         data: [],
@@ -6869,6 +7084,7 @@ export class RuntimeStore {
       this.invalidateGlobalTerminalSurface({
         catalog: payload.catalogChanged ?? false,
         history: payload.catalogChanged ?? false,
+        index: payload.catalogChanged ?? false,
         archive: payload.catalogChanged ?? false,
         force: true,
       });

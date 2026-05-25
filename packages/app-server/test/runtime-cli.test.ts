@@ -1099,7 +1099,9 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(result.stdout).toContain("get-config: Read one terminal's durable launch/config truth");
     expect(result.stdout).toContain("set-config: Patch one terminal's durable launch/config truth");
     expect(result.stdout).toContain("history: List killed terminal instances retained as history for this runtime.");
-    expect(result.stdout).toContain("bootstrap: Bootstrap a provisioned or killed-history runtime terminal by id.");
+    expect(result.stdout).toContain(
+      "bootstrap: Bootstrap a provisioned terminal, or explicitly recover a killed-history terminal by id.",
+    );
     expect(result.stdout).toContain("stop: Stop a running runtime terminal PTY by id and move it into terminal history.");
     expect(result.stdout).toContain("archive: Archive a killed terminal history instance without deleting its retained evidence.");
     expect(result.stdout).not.toContain("kill: Kill a runtime terminal by id.");

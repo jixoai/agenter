@@ -1812,6 +1812,7 @@ export class SessionRuntime {
   private readonly skillKernelAdapter: RuntimeSkillKernelAdapter;
   private readonly messageSystemCleanup: Array<() => void> = [];
   private readonly terminalSystemCleanup: Array<() => void> = [];
+  private readonly killedTerminalWorkById = new Map<string, Promise<void>>();
   private agent: AgenterAI | null = null;
   private runtimeLocalApi: RuntimeLocalApiHandle | null = null;
   private mcpSystem: McpSystem | null = null;
@@ -2016,6 +2017,7 @@ export class SessionRuntime {
           payload: input.payload,
           score: input.score,
           ingressType: input.ingressType,
+          boundaryChannel: input.boundaryChannel,
         }),
       onTerminalActionableSignal: () => {
         this.notifyInput("terminal");
@@ -2598,7 +2600,7 @@ export class SessionRuntime {
     patch: TerminalControlPlaneConfigPatch,
   ): Promise<TerminalControlPlaneConfig> {
     const updated = await this.requireTerminalControlPlane().setConfig(patch);
-    this.enqueueTerminalLifecycleAttentionCommit({
+    await this.enqueueTerminalLifecycleAttentionCommit({
       terminalId: "control-plane",
       contextId: this.getTerminalControlPlaneAttentionContextId(),
       event: "terminal_config_update",
@@ -4255,7 +4257,7 @@ export class SessionRuntime {
         if (!created.ok) {
           return created;
         }
-        controlPlane.bootstrap(targetTerminalId);
+        controlPlane.bootstrap({ terminalId: targetTerminalId });
         if (this.config.terminals[targetTerminalId]?.gitLog) {
           await controlPlane.markDirty(targetTerminalId, this.terminalActorId);
         }
@@ -4289,7 +4291,7 @@ export class SessionRuntime {
         (input.focus ?? true) ? "focused" : "background",
       );
 
-      this.enqueueTerminalLifecycleAttentionCommit({
+      await this.enqueueTerminalLifecycleAttentionCommit({
         terminalId: createdTerminalId,
         contextId: this.getTerminalAttentionContextId(createdTerminalId),
         event: "terminal_create",
@@ -4331,7 +4333,10 @@ export class SessionRuntime {
     }
   }
 
-  async bootstrapRuntimeTerminal(terminalId: string): Promise<{
+  async bootstrapRuntimeTerminal(
+    terminalId: string,
+    input: { recoveryIntent?: "killed-history" } = {},
+  ): Promise<{
     ok: boolean;
     message: string;
     terminal?: TerminalControlPlaneEntry;
@@ -4341,6 +4346,7 @@ export class SessionRuntime {
       const terminal = controlPlane.bootstrapAuthorized({
         terminalId,
         actorId: this.terminalActorId,
+        recoveryIntent: input.recoveryIntent,
       });
       const managed = controlPlane.getManagedTerminal(terminalId);
       if (managed) {
@@ -4413,7 +4419,7 @@ export class SessionRuntime {
     }
     this.focusedTerminalIds = controlPlane.getFocusedTerminalIds(this.terminalActorId);
     this.emitFocusedTerminal();
-    this.enqueueTerminalLifecycleAttentionCommit({
+    await this.enqueueTerminalLifecycleAttentionCommit({
       terminalId,
       contextId: this.getTerminalAttentionContextId(terminalId),
       event: "terminal_delete",
@@ -4439,6 +4445,9 @@ export class SessionRuntime {
     const terminal =
       controlPlane.listHistoryForActor(this.terminalActorId, { touchPresence: false }).find((item) => item.terminalId === terminalId) ??
       controlPlane.listForActor(this.terminalActorId, { touchPresence: false }).find((item) => item.terminalId === terminalId);
+    if (terminal?.processPhase === "killed") {
+      await this.scheduleKilledRuntimeTerminal(terminal);
+    }
     return {
       ...result,
       ...(terminal ? { terminal } : {}),
@@ -4683,7 +4692,7 @@ export class SessionRuntime {
             .listHistoryForActor(this.terminalActorId, { touchPresence: false })
             .find((entry) => entry.terminalId === terminalId);
           if (historyEntry?.processPhase === "killed") {
-            void this.handleKilledRuntimeTerminal(historyEntry);
+            void this.scheduleKilledRuntimeTerminal(historyEntry);
           }
         }
         switch (reason) {
@@ -4707,7 +4716,7 @@ export class SessionRuntime {
         if (!isAdminWork && !isRequesterUpdate) {
           return;
         }
-        this.enqueueTerminalLifecycleAttentionCommit({
+        void this.enqueueTerminalLifecycleAttentionCommit({
           terminalId,
           contextId: this.getTerminalControlPlaneAttentionContextId(),
           event: isAdminWork ? "terminal_write_request" : "terminal_write_request_update",
@@ -5021,7 +5030,9 @@ export class SessionRuntime {
         terminalInput: async (input) => await this.inputRuntimeTerminal(input),
         terminalFocus: async (input) => await this.focusRuntimeTerminals(input),
         terminalBootstrap: async (input) => {
-          const result = await this.bootstrapRuntimeTerminal(input.terminalId);
+          const result = await this.bootstrapRuntimeTerminal(input.terminalId, {
+            recoveryIntent: input.recoveryIntent,
+          });
           if (!result.terminal) {
             return { ok: result.ok, message: result.message };
           }
@@ -6062,7 +6073,7 @@ export class SessionRuntime {
     );
   }
 
-  private enqueueTerminalLifecycleAttentionCommit(input: {
+  private async enqueueTerminalLifecycleAttentionCommit(input: {
     terminalId: string;
     contextId: string;
     event: string;
@@ -6071,8 +6082,8 @@ export class SessionRuntime {
     score?: number;
     ingressType?: "commit" | "push";
     boundaryChannel?: RuntimeSystemIngressEnvelope["boundaryChannel"];
-  }): void {
-    this.terminalKernelAdapter.commitLifecycleIngress(input);
+  }): Promise<void> {
+    await this.terminalKernelAdapter.commitLifecycleIngress(input);
   }
 
   private buildContextPreservingChange(contextId: string): AttentionCommitChange {
@@ -6145,6 +6156,9 @@ export class SessionRuntime {
     if (input.notifyLoop && externalAttentionIngress && wakeableAttentionIngress) {
       this.notifyInput("attention");
     }
+    if (this.isTerminalKilledCommit(commit)) {
+      await this.applyAttentionFocusState(contextId, "muted");
+    }
     const contextState = this.attentionSystem.getContext(contextId)?.getState();
     if (!contextState) {
       return;
@@ -6156,6 +6170,14 @@ export class SessionRuntime {
     for (const result of hookResults ?? []) {
       this.recordAttentionHook(contextId, commit.commitId, result);
     }
+  }
+
+  private isTerminalKilledCommit(commit: AttentionCommit): boolean {
+    return (
+      commit.meta.source === "terminal" &&
+      commit.meta.tags?.includes("lifecycle") === true &&
+      commit.meta.tags.includes("terminal_killed")
+    );
   }
 
   private async notifyAttentionDispatchedHooks(input: AttentionDispatchedInput): Promise<AttentionCommitHookResult[]> {
@@ -7181,6 +7203,9 @@ export class SessionRuntime {
     }
     if (this.terminalSystemCleanup.length === 0) {
       this.bindTerminalSystem();
+    }
+    for (const recovered of this.terminalControlPlane.replayRecoveredLifecycle()) {
+      await this.scheduleKilledRuntimeTerminal(recovered);
     }
     this.settingsEditor = new SettingsEditor(this.config.agentCwd, {
       agenterPath: this.config.prompt.agenterPath,
@@ -8853,6 +8878,18 @@ export class SessionRuntime {
     });
   }
 
+  private scheduleKilledRuntimeTerminal(terminal: TerminalControlPlaneEntry): Promise<void> {
+    const existing = this.killedTerminalWorkById.get(terminal.terminalId);
+    if (existing) {
+      return existing;
+    }
+    const work = this.handleKilledRuntimeTerminal(terminal).finally(() => {
+      this.killedTerminalWorkById.delete(terminal.terminalId);
+    });
+    this.killedTerminalWorkById.set(terminal.terminalId, work);
+    return work;
+  }
+
   private async handleKilledRuntimeTerminal(terminal: TerminalControlPlaneEntry): Promise<void> {
     this.terminals.delete(terminal.terminalId);
     delete this.terminalLatestSeq[terminal.terminalId];
@@ -8861,8 +8898,7 @@ export class SessionRuntime {
     delete this.terminalReadCursorHashById[terminal.terminalId];
     this.terminalStatusById.delete(terminal.terminalId);
     this.terminalKernelAdapter.markTerminalConsumed(terminal.terminalId);
-    await this.applyAttentionFocusState(this.getTerminalAttentionContextId(terminal.terminalId), "muted");
-    this.enqueueTerminalLifecycleAttentionCommit({
+    await this.enqueueTerminalLifecycleAttentionCommit({
       terminalId: terminal.terminalId,
       contextId: this.getTerminalAttentionContextId(terminal.terminalId),
       event: "terminal_killed",

@@ -937,6 +937,8 @@ const createMockClient = (input: {
   }) => Promise<{ ok: boolean; message: string }>;
   terminalGlobalListQuery?: (input?: { includeArchived?: boolean }) => Promise<{ items: unknown[] }>;
   terminalGlobalHistoryQuery?: () => Promise<{ items: unknown[] }>;
+  terminalGlobalIndexQuery?: () => Promise<{ items: unknown[] }>;
+  terminalGlobalArchiveListQuery?: () => Promise<{ items: unknown[] }>;
   terminalGlobalCreateMutate?: (input: {
     terminalId?: string;
     processKind?: string;
@@ -1673,6 +1675,13 @@ const createMockClient = (input: {
         },
         globalHistory: {
           query: async () => (input.terminalGlobalHistoryQuery ? await input.terminalGlobalHistoryQuery() : { items: [] }),
+        },
+        globalIndex: {
+          query: async () => (input.terminalGlobalIndexQuery ? await input.terminalGlobalIndexQuery() : { items: [] }),
+        },
+        globalArchiveList: {
+          query: async () =>
+            input.terminalGlobalArchiveListQuery ? await input.terminalGlobalArchiveListQuery() : { items: [] },
         },
         globalCreate: {
           mutate: async (payload: {
@@ -8909,37 +8918,39 @@ describe("Feature: runtime store synchronization", () => {
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(0),
-	        terminalGlobalListQuery: async (input) => {
-	          requests.list = input;
-	          return {
-	            items: [
-	              {
-	                ...terminal,
-	                pendingRequestCount: pendingApprovals.length,
-	                actors: guardGrantIssued
-	                  ? [
-	                      ...(terminal.actors ?? []),
-	                      {
-	                        actorId: pendingApproval.participantId,
-	                        role: "guard" as const,
-	                        label: "Guard",
-	                        currentAdmin: false,
-	                        online: true,
-	                        focused: false,
-	                        invalidCredential: false,
-	                        leaseId: guardLeaseActive ? approvedLease.leaseId : undefined,
-	                        leaseExpiresAt: guardLeaseActive ? approvedLease.expiresAt : undefined,
-	                      },
-	                    ]
-	                  : terminal.actors,
-	              },
-	              killedTerminal,
-	            ],
-	          };
-	        },
-	        terminalGlobalHistoryQuery: async () => ({
-	          items: [terminal, killedTerminal],
-	        }),
+        terminalGlobalListQuery: async (input) => {
+          requests.list = input;
+          return {
+            items: [
+              {
+                ...terminal,
+                pendingRequestCount: pendingApprovals.length,
+                actors: guardGrantIssued
+                  ? [
+                      ...(terminal.actors ?? []),
+                      {
+                        actorId: pendingApproval.participantId,
+                        role: "guard" as const,
+                        label: "Guard",
+                        currentAdmin: false,
+                        online: true,
+                        focused: false,
+                        invalidCredential: false,
+                        leaseId: guardLeaseActive ? approvedLease.leaseId : undefined,
+                        leaseExpiresAt: guardLeaseActive ? approvedLease.expiresAt : undefined,
+                      },
+                    ]
+                  : terminal.actors,
+              },
+            ],
+          };
+        },
+        terminalGlobalHistoryQuery: async () => ({
+          items: [killedTerminal],
+        }),
+        terminalGlobalIndexQuery: async () => ({
+          items: [terminal, killedTerminal],
+        }),
         terminalGlobalCreateMutate: async (input) => {
           requests.create = {
             terminalId: input.terminalId,
@@ -9090,7 +9101,8 @@ describe("Feature: runtime store synchronization", () => {
     );
 
     expect(await store.listGlobalTerminals()).toEqual([terminal]);
-    expect(await store.listGlobalTerminalHistory()).toEqual([terminal, killedTerminal]);
+    expect(await store.listGlobalTerminalHistory()).toEqual([killedTerminal]);
+    expect(await store.listGlobalTerminalIndex()).toEqual([terminal, killedTerminal]);
     expect(
       await store.createGlobalTerminal({
         terminalId: terminal.terminalId,
@@ -9210,7 +9222,8 @@ describe("Feature: runtime store synchronization", () => {
       ...killedTerminal,
       archivedAt: 42,
     });
-    expect(store.getState().globalTerminalHistory.data).toEqual([terminal]);
+    expect(store.getState().globalTerminalHistory.data).toEqual([]);
+    expect(store.getState().globalTerminalIndex.data.map((entry) => entry.terminalId)).toEqual([terminal.terminalId]);
     expect(store.getState().globalTerminalArchive.data).toEqual([
       {
         ...killedTerminal,
@@ -9222,6 +9235,7 @@ describe("Feature: runtime store synchronization", () => {
     expect(deleted).toEqual({ ok: true, message: "deleted" });
     expect(store.getState().globalTerminals.data).toEqual([]);
     expect(store.getState().globalTerminalHistory.data).toEqual([]);
+    expect(store.getState().globalTerminalIndex.data).toEqual([]);
     expect(store.getState().globalTerminalGrantsById[terminal.terminalId]?.data).toEqual([]);
     expect(store.getState().globalTerminalApprovalsById[terminal.terminalId]?.data).toEqual([]);
     expect(store.getState().globalTerminalActivityById[terminal.terminalId]?.data).toEqual([]);
@@ -10138,6 +10152,7 @@ describe("Feature: runtime store synchronization", () => {
 
     store.retainGlobalTerminals();
     store.retainGlobalTerminalHistory();
+    store.retainGlobalTerminalIndex();
     await store.connect();
     await store.hydrateGlobalTerminals({ force: true });
 
@@ -10156,6 +10171,11 @@ describe("Feature: runtime store synchronization", () => {
 
     expect(store.getState().globalTerminals.data.find((item) => item.terminalId === terminalId)).toBeUndefined();
     expect(store.getState().globalTerminalHistory.data.find((item) => item.terminalId === terminalId)).toMatchObject({
+      terminalId,
+      processPhase: "killed",
+      status: "IDLE",
+    });
+    expect(store.getState().globalTerminalIndex.data.find((item) => item.terminalId === terminalId)).toMatchObject({
       terminalId,
       processPhase: "killed",
       status: "IDLE",

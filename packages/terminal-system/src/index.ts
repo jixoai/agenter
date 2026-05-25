@@ -30,6 +30,9 @@ export {
   type TerminalTransportFramePayload,
 } from "./terminal-frame-diff";
 export {
+  TerminalDb,
+} from "./terminal-db";
+export {
   TerminalControlPlane,
 } from "./terminal-control-plane";
 export {

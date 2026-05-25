@@ -69,6 +69,7 @@ import type {
   TerminalAwaitOutcome,
   TerminalAwaitResult,
   TerminalAwaitUntil,
+  TerminalBootstrapRecoveryIntent,
   TerminalControlPlaneConfig,
   TerminalControlPlaneConfigPatch,
   TerminalControlPlaneEntry,
@@ -795,7 +796,6 @@ export class TerminalControlPlane {
     };
     this.db = new TerminalDb(options.dbPath ?? join(homedir(), ".agenter", ".terminal", "terminal.db"));
     this.terminalRuntimeFactory = options.terminalRuntimeFactory ?? ((input) => this.createDefaultTerminalRuntime(input));
-    this.normalizeRecoveredLifecycle();
   }
 
   onSnapshot(listener: (payload: { terminalId: string; snapshot: ManagedTerminalSnapshot }) => void): () => void {
@@ -955,6 +955,29 @@ export class TerminalControlPlane {
     return this.listByProjection("archive", actorId);
   }
 
+  replayRecoveredLifecycle(): TerminalControlPlaneEntry[] {
+    const recovered: TerminalControlPlaneEntry[] = [];
+    for (const record of this.db.listTerminalsByProjection("all")) {
+      if (record.processPhase !== "running" || this.entries.has(record.terminalId)) {
+        continue;
+      }
+      const updated = this.finalizeKilledTerminal(record.terminalId, {
+        reason: "daemon_recovery_killed",
+        lastStopReason: record.lastStopReason ?? "killed",
+        lastExitCode: record.lastExitCode ?? null,
+        lastExitSignal: record.lastExitSignal ?? null,
+        lastStoppedAt: record.lastStoppedAt ?? Date.now(),
+      });
+      recovered.push(
+        this.describeEntry(updated, {
+          focused: false,
+          access: this.getTrustedBootstrapAccess(updated.terminalId),
+        }),
+      );
+    }
+    return recovered;
+  }
+
   async create(input: TerminalCreateInput = {}): Promise<TerminalControlPlaneEntry> {
     const bootstrapActorId = input.bootstrapActorId ?? TRUSTED_BOOTSTRAP_PARTICIPANT_ID;
     const bootstrapRole = input.bootstrapRole ?? "admin";
@@ -969,7 +992,7 @@ export class TerminalControlPlane {
     this.db.setAdminGroup(created.terminalId, adminGroup);
     this.syncAdminAssignments(created.terminalId);
     if (input.start !== false) {
-      this.bootstrap(created.terminalId);
+      this.bootstrap({ terminalId: created.terminalId });
     }
     this.emitChange({
       terminalId: created.terminalId,
@@ -998,11 +1021,15 @@ export class TerminalControlPlane {
     });
   }
 
-  bootstrap(terminalId: string): TerminalControlPlaneEntry {
+  bootstrap(input: { terminalId: string; recoveryIntent?: TerminalBootstrapRecoveryIntent }): TerminalControlPlaneEntry {
+    const { terminalId, recoveryIntent } = input;
     this.assertLifecycleTransitionIdle(terminalId, "bootstrap");
     const record = this.requireRecord(terminalId);
     if (record.archivedAt) {
       throw new Error(`archived terminal requires unarchive before bootstrap: ${terminalId}`);
+    }
+    if (this.isKilledRecord(record) && recoveryIntent !== "killed-history") {
+      throw new Error(`killed terminal requires explicit killed-history recovery intent before bootstrap: ${terminalId}`);
     }
     const entry = this.ensureManagedEntry(terminalId);
     this.setLifecycleTransition(terminalId, "bootstrapping");
@@ -1010,6 +1037,17 @@ export class TerminalControlPlane {
       if (!entry.terminal.isRunning()) {
         this.cancelPendingApprovalRequestsForTerminal(terminalId);
         entry.terminal.start();
+        if (this.isKilledRecord(record)) {
+          entry.record = this.db.updateLifecycle(terminalId, {
+            processPhase: "running",
+            archivedAt: null,
+            lastStopReason: null,
+            lastExitCode: null,
+            lastExitSignal: null,
+            lastStoppedAt: null,
+          });
+          this.emitChange({ terminalId, reason: "lifecycle" });
+        }
       }
     } finally {
       this.clearLifecycleTransition(terminalId, "bootstrapping");
@@ -1025,9 +1063,13 @@ export class TerminalControlPlane {
     accessToken?: string;
     actorId?: TerminalActorId;
     superadminActorId?: TerminalActorId;
+    recoveryIntent?: TerminalBootstrapRecoveryIntent;
   }): TerminalControlPlaneEntry {
     this.requireAdministrativeAuthority(input.terminalId, input);
-    return this.bootstrap(input.terminalId);
+    return this.bootstrap({
+      terminalId: input.terminalId,
+      recoveryIntent: input.recoveryIntent,
+    });
   }
 
   async stop(terminalId: string): Promise<{ ok: boolean; message: string }> {
@@ -3411,8 +3453,8 @@ export class TerminalControlPlane {
         });
       } else {
         entry.record = this.db.updateLifecycle(entry.record.terminalId, event);
+        this.emitChange({ terminalId: entry.record.terminalId, reason: "lifecycle" });
       }
-      this.emitChange({ terminalId: entry.record.terminalId, reason: "lifecycle" });
     });
     entry.terminal.onStatus((running, status) => {
       if (!running) {
@@ -3846,21 +3888,6 @@ export class TerminalControlPlane {
       return;
     }
     throw new Error(`terminal ${terminalId} is already ${transition}; wait before ${action}`);
-  }
-
-  private normalizeRecoveredLifecycle(): void {
-    for (const record of this.db.listTerminalsByProjection("all")) {
-      if (record.processPhase !== "running") {
-        continue;
-      }
-      this.finalizeKilledTerminal(record.terminalId, {
-        reason: "daemon_recovery_killed",
-        lastStopReason: record.lastStopReason ?? "killed",
-        lastExitCode: record.lastExitCode ?? null,
-        lastExitSignal: record.lastExitSignal ?? null,
-        lastStoppedAt: record.lastStoppedAt ?? Date.now(),
-      });
-    }
   }
 
   private assertActorId(actorId: string): void {
@@ -4409,14 +4436,17 @@ export class TerminalControlPlane {
     },
   ): TerminalRecord {
     const current = this.requireRecord(terminalId);
-    const updated = this.db.updateLifecycle(terminalId, {
-      processPhase: "killed",
-      archivedAt: null,
-      lastStopReason: input.lastStopReason ?? "killed",
-      lastExitCode: input.lastExitCode ?? null,
-      lastExitSignal: input.lastExitSignal ?? null,
-      lastStoppedAt: input.lastStoppedAt,
-    });
+    const alreadyKilled = this.isKilledRecord(current);
+    const updated = alreadyKilled
+      ? current
+      : this.db.updateLifecycle(terminalId, {
+          processPhase: "killed",
+          archivedAt: null,
+          lastStopReason: input.lastStopReason ?? "killed",
+          lastExitCode: input.lastExitCode ?? null,
+          lastExitSignal: input.lastExitSignal ?? null,
+          lastStoppedAt: input.lastStoppedAt,
+        });
     this.cancelPendingApprovalRequestsForTerminal(terminalId);
     for (const grant of this.db.listActiveGrants(terminalId)) {
       if (!grant.participantId) {
@@ -4432,10 +4462,12 @@ export class TerminalControlPlane {
       }
       this.emitFocus(actorId as TerminalActorId);
     }
-    this.emitChange({
-      terminalId,
-      reason: input.reason === "daemon_recovery_killed" ? "updated" : "lifecycle",
-    });
+    if (!alreadyKilled) {
+      this.emitChange({
+        terminalId,
+        reason: "lifecycle",
+      });
+    }
     return updated;
   }
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -126,6 +126,37 @@ const startManagedDaemon = async (input: { host: string; port: number; home: str
 const stopManagedDaemon = async (input: { host: string; port: number; home: string }) =>
   await runCliToCompletion(["daemon", "stop", "--host", input.host, "--port", String(input.port)], { HOME: input.home });
 
+const readManagedDaemonDescriptor = (home: string): { pid: number } => {
+  const descriptor = JSON.parse(readFileSync(resolve(home, ".agenter", "daemon.runtime.json"), "utf8")) as {
+    pid?: unknown;
+  };
+  if (typeof descriptor.pid !== "number" || !Number.isInteger(descriptor.pid) || descriptor.pid <= 0) {
+    throw new Error("daemon descriptor does not contain a valid pid");
+  }
+  return {
+    pid: descriptor.pid,
+  };
+};
+
+const killManagedDaemonAbruptly = async (home: string): Promise<void> => {
+  const descriptor = readManagedDaemonDescriptor(home);
+  try {
+    process.kill(descriptor.pid, "SIGKILL");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code !== "ESRCH") {
+      throw error;
+    }
+  }
+  await waitFor(() => {
+    try {
+      process.kill(descriptor.pid, 0);
+      return false;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException | undefined)?.code === "ESRCH";
+    }
+  }, 15_000);
+};
+
 afterEach(async () => {
   for (const daemon of daemons.splice(0)) {
     daemon.kill();
@@ -191,7 +222,7 @@ const waitForWsOpen = async (url: string, timeoutMs = 15_000): Promise<void> => 
   socket.close();
 };
 
-const waitFor = async (predicate: () => boolean, timeoutMs = 12_000): Promise<void> => {
+const waitFor = async (predicate: () => boolean | Promise<boolean>, timeoutMs = 12_000): Promise<void> => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     if (predicate()) {
@@ -328,6 +359,62 @@ describe("Feature: cli daemon and Studio commands", () => {
     expect(doctorStdout).toContain("healthy");
   }, 90_000);
 
+  test("Scenario: Given a live terminal and abrupt daemon death When daemon starts again Then stale terminal leaves live projection and enters killed history", async () => {
+    const host = "127.0.0.1";
+    const port = await findFreePort();
+    const home = createIsolatedHome();
+    await startManagedDaemon({ host, port, home });
+
+    const client = createAgenterClient({
+      wsUrl: `ws://${host}:${port}/trpc`,
+    });
+    try {
+      const autoLogin = await client.trpc.auth.autoLogin.mutate();
+      if (!autoLogin.ok) {
+        throw new Error(`expected daemon auto login to succeed, got ${autoLogin.reason}: ${autoLogin.message}`);
+      }
+      client.setAuthToken(autoLogin.session.token);
+
+      const terminalId = "daemon-abrupt-recovery";
+      const created = await client.trpc.terminal.globalCreate.mutate({
+        terminalId,
+        command: ["sh", "-lc", "sleep 300"],
+        start: true,
+        focus: false,
+      });
+      expect(created.result.ok).toBe(true);
+      expect((await client.trpc.terminal.globalList.query()).items.some((item) => item.terminalId === terminalId)).toBe(true);
+    } finally {
+      client.close();
+    }
+
+    await killManagedDaemonAbruptly(home);
+    await startManagedDaemon({ host, port, home });
+
+    const recoveredClient = createAgenterClient({
+      wsUrl: `ws://${host}:${port}/trpc`,
+    });
+    try {
+      const autoLogin = await recoveredClient.trpc.auth.autoLogin.mutate();
+      if (!autoLogin.ok) {
+        throw new Error(`expected daemon auto login to succeed, got ${autoLogin.reason}: ${autoLogin.message}`);
+      }
+      recoveredClient.setAuthToken(autoLogin.session.token);
+
+      const live = await recoveredClient.trpc.terminal.globalList.query();
+      const history = await recoveredClient.trpc.terminal.globalHistory.query();
+      const index = await recoveredClient.trpc.terminal.globalIndex.query();
+      const archive = await recoveredClient.trpc.terminal.globalArchiveList.query();
+
+      expect(live.items.some((item) => item.terminalId === "daemon-abrupt-recovery")).toBe(false);
+      expect(history.items.find((item) => item.terminalId === "daemon-abrupt-recovery")?.processPhase).toBe("killed");
+      expect(index.items.find((item) => item.terminalId === "daemon-abrupt-recovery")?.processPhase).toBe("killed");
+      expect(archive.items.some((item) => item.terminalId === "daemon-abrupt-recovery")).toBe(false);
+    } finally {
+      recoveredClient.close();
+    }
+  }, 120_000);
+
   test("Scenario: Given daemon is already running on the requested authority When start is invoked again Then the command reports reuse instead of starting another writer", async () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
@@ -405,23 +492,28 @@ describe("Feature: cli daemon and Studio commands", () => {
     }
   }, 70_000);
 
-  test("Scenario: Given a healthy daemon already owns the runtime root on a different port When `agenter shell --web` starts through the default launcher path Then the launcher reuses that daemon authority instead of booting a competing writer", async () => {
+  test("Scenario: Given a healthy daemon already owns the runtime root on a different port When `agenter shell shell` starts through the default launcher path Then the launcher reuses that daemon authority instead of booting a competing writer", async () => {
     const host = "127.0.0.1";
     const daemonPort = await findFreePort();
     const home = createIsolatedHome();
     await startManagedDaemon({ host, port: daemonPort, home });
 
-    const shell = spawnCli(["shell", "--web=0"], { HOME: home });
-    daemons.push(shell);
+    const shell = spawnCli(["shell", "shell", "--session=e2e-reuse", "--avatar=e2e-reuse", "--create-avatar"], {
+      HOME: home,
+    });
 
-    const stdout = await readUntilMatch(shell.stdout, /web: http:\/\/127\.0\.0\.1:\d+\//u);
-    expect(stdout).toContain("cli-shell attached");
-    expect(stdout).toContain(`web: http://${host}:`);
-    expect(stdout).not.toContain("Unable to transform response from server");
+    const code = await shell.exited;
+    const stdout = await readText(shell.stdout);
+    const stderr = await readText(shell.stderr);
+    expect(code).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toContain("cli-shell shell attached");
+    expect(stdout).toContain("avatar: e2e-reuse");
   }, 70_000);
 
-  test("Scenario: Given the runtime root contains a stale daemon descriptor When `agenter shell --web` starts Then launcher bootstrap ignores the stale descriptor and still serves the shell host", async () => {
+  test("Scenario: Given the runtime root contains a stale daemon descriptor When `agenter shell shell` starts Then launcher bootstrap ignores the stale descriptor and still reaches the selected shell", async () => {
     const host = "127.0.0.1";
+    const port = await findFreePort();
     const home = createIsolatedHome();
     const staleDir = resolve(home, ".agenter");
     mkdirSync(staleDir, { recursive: true });
@@ -438,13 +530,18 @@ describe("Feature: cli daemon and Studio commands", () => {
       "utf8",
     );
 
-    const shell = spawnCli(["shell", "--web=0"], { HOME: home });
-    daemons.push(shell);
+    const shell = spawnCli(
+      ["shell", "shell", "--port", String(port), "--session=e2e-stale", "--avatar=e2e-stale", "--create-avatar"],
+      { HOME: home },
+    );
 
-    const stdout = await readUntilMatch(shell.stdout, /web: http:\/\/127\.0\.0\.1:\d+\//u);
-    expect(stdout).toContain("cli-shell attached");
-    expect(stdout).toContain(`web: http://${host}:`);
-    expect(stdout).not.toContain("Unable to transform response from server");
+    const code = await shell.exited;
+    const stdout = await readText(shell.stdout);
+    const stderr = await readText(shell.stderr);
+    expect(code).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toContain("cli-shell shell attached");
+    expect(stdout).toContain("avatar: e2e-stale");
   }, 70_000);
 
   test("Scenario: Given removed web command When invoking the old entry Then the CLI rejects it as an unsupported product", async () => {

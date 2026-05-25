@@ -26,8 +26,12 @@ import type { AuthServiceHandle } from "@agenter/auth-service";
 import type { TrpcServerHandle } from "./trpc-server";
 import {
   clearOwnedDaemonRuntimeDescriptor,
+  normalizeDaemonHealthPayload,
   readDaemonRuntimeDescriptor,
   resolveDaemonLogPath,
+  sameDaemonLauncherIdentity,
+  type DaemonHealthPayload,
+  type DaemonLauncherIdentity,
   type DaemonRuntimeDescriptor,
 } from "./daemon-runtime-descriptor";
 
@@ -58,7 +62,23 @@ const BUNDLED_ASSETS_ROOT_ENV = "AGENTER_BUNDLED_ASSETS_ROOT";
 const HEALTH_REQUEST_TIMEOUT_MS = 5_000;
 const MANAGED_DAEMON_START_TIMEOUT_MS = 60_000;
 const MANAGED_DAEMON_START_HEALTH_REQUEST_TIMEOUT_MS = 1_000;
-const packageJson = createRequire(import.meta.url)("../package.json") as { version?: string };
+const cliPackageJson = createRequire(import.meta.url)("../package.json") as { name?: string; version?: string };
+
+interface DaemonCompatibilityMismatch {
+  expected: DaemonLauncherIdentity;
+  actual: DaemonLauncherIdentity | null;
+  endpoint: string;
+}
+
+class DaemonCompatibilityError extends Error {
+  constructor(readonly mismatch: DaemonCompatibilityMismatch) {
+    super(formatDaemonCompatibilityMessage(mismatch));
+  }
+}
+
+type DaemonHealthProbe =
+  | { reachable: false }
+  | { reachable: true; payload: DaemonHealthPayload | null };
 
 type StopManagedDaemonResult =
   | { kind: "missing" }
@@ -88,6 +108,18 @@ const resolveLauncherHomeDir = (): string => process.env.HOME || homedir();
 const resolveLauncherOwnedAuthServiceDataDir = (): string => join(resolveLauncherHomeDir(), ".agenter", "launcher-auth-service");
 const resolveDaemonHealthLabel = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
 const resolveCliEntryPath = (): string => resolve(import.meta.dir, "bin", "agenter.ts");
+const resolveCurrentLauncherIdentity = (): DaemonLauncherIdentity => {
+  const entrypoint = process.argv[1] && existsSync(process.argv[1]) ? resolve(process.argv[1]) : resolveCliEntryPath();
+  const packageName = cliPackageJson.name ?? "@agenter/cli";
+  const packageVersion = cliPackageJson.version ?? "unknown";
+  const sourceKind = entrypoint.includes("/node_modules/") ? "package" : "workspace";
+  return {
+    packageName,
+    packageVersion,
+    sourceKind,
+    entrypoint: sourceKind === "package" ? `${packageName}@${packageVersion}` : entrypoint,
+  };
+};
 const resolveCurrentCliEntrypointArgv = (): string[] => {
   const entrypoint = process.argv[1];
   if (entrypoint && existsSync(entrypoint)) {
@@ -106,10 +138,53 @@ const resolveBundledAssetPath = (...segments: string[]): string | undefined => {
   return existsSync(path) ? path : undefined;
 };
 
-const isHttpHealthAlive = async (urlString: string, timeoutMs = HEALTH_REQUEST_TIMEOUT_MS): Promise<boolean> => {
+const fetchDaemonHealthProbe = async (
+  urlString: string,
+  timeoutMs = HEALTH_REQUEST_TIMEOUT_MS,
+): Promise<DaemonHealthProbe> => {
   const url = new URL(urlString);
   const request = url.protocol === "https:" ? httpsRequest : httpRequest;
-  return await new Promise<boolean>((resolve) => {
+  return await new Promise<DaemonHealthProbe>((resolve) => {
+    const req = request(
+      url,
+      {
+        method: "GET",
+        timeout: timeoutMs,
+      },
+      (response) => {
+        const chunks: Uint8Array[] = [];
+        response.on("data", (chunk) => {
+          chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+        });
+        response.on("end", () => {
+          if (response.statusCode === undefined || response.statusCode < 200 || response.statusCode >= 300) {
+            resolve({ reachable: false });
+            return;
+          }
+          try {
+            resolve({
+              reachable: true,
+              payload: normalizeDaemonHealthPayload(JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown),
+            });
+          } catch {
+            resolve({ reachable: true, payload: null });
+          }
+        });
+      },
+    );
+    req.on("error", () => resolve({ reachable: false }));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve({ reachable: false });
+    });
+    req.end();
+  });
+};
+
+const isHttpHealthAlive = async (urlString: string, timeoutMs = HEALTH_REQUEST_TIMEOUT_MS): Promise<boolean> =>
+  await new Promise<boolean>((resolve) => {
+    const url = new URL(urlString);
+    const request = url.protocol === "https:" ? httpsRequest : httpRequest;
     const req = request(
       url,
       {
@@ -128,13 +203,85 @@ const isHttpHealthAlive = async (urlString: string, timeoutMs = HEALTH_REQUEST_T
     });
     req.end();
   });
-};
 
 const isDaemonAlive = async (args: CommonArgs, timeoutMs?: number): Promise<boolean> =>
   await isHttpHealthAlive(healthUrl(args), timeoutMs);
 
 const isReusableDaemonDescriptorHealthy = async (descriptor: DaemonRuntimeDescriptor): Promise<boolean> =>
   await isHttpHealthAlive(`${descriptor.endpoint.replace(/\/$/u, "")}/health`);
+
+const assertCompatibleDaemonHealth = async (
+  authority: CommonArgs,
+  expected: DaemonLauncherIdentity,
+): Promise<ResolvedDaemonAuthority | null> => {
+  const endpoint = `http://${authority.host}:${authority.port}`;
+  const health = await fetchDaemonHealthProbe(`${endpoint}/health`);
+  if (!health.reachable) {
+    return null;
+  }
+  if (!health.payload) {
+    throw new DaemonCompatibilityError({
+      expected,
+      actual: null,
+      endpoint,
+    });
+  }
+  if (!sameDaemonLauncherIdentity(expected, health.payload.launcher)) {
+    throw new DaemonCompatibilityError({
+      expected,
+      actual: health.payload.launcher,
+      endpoint,
+    });
+  }
+  return {
+    host: authority.host,
+    port: authority.port,
+  };
+};
+
+const assertCompatibleDaemonDescriptor = async (
+  descriptor: DaemonRuntimeDescriptor,
+  expected: DaemonLauncherIdentity,
+): Promise<ResolvedDaemonAuthority | null> => {
+  const health = await fetchDaemonHealthProbe(`${descriptor.endpoint.replace(/\/$/u, "")}/health`);
+  if (!health.reachable) {
+    return null;
+  }
+  if (!health.payload) {
+    throw new DaemonCompatibilityError({
+      expected,
+      actual: null,
+      endpoint: descriptor.endpoint,
+    });
+  }
+  if (
+    !sameDaemonLauncherIdentity(expected, descriptor.launcher) ||
+    !sameDaemonLauncherIdentity(expected, health.payload.launcher)
+  ) {
+    throw new DaemonCompatibilityError({
+      expected,
+      actual: health.payload.launcher,
+      endpoint: descriptor.endpoint,
+    });
+  }
+  return {
+    host: descriptor.host,
+    port: descriptor.port,
+  };
+};
+
+const formatDaemonCompatibilityMessage = (input: DaemonCompatibilityMismatch): string => {
+  const actual = input.actual
+    ? `${input.actual.packageName}@${input.actual.packageVersion} (${input.actual.sourceKind}, ${input.actual.entrypoint})`
+    : "unknown daemon launcher";
+  const expected = `${input.expected.packageName}@${input.expected.packageVersion} (${input.expected.sourceKind}, ${input.expected.entrypoint})`;
+  return [
+    `daemon at ${input.endpoint} was started by a different agenter launcher`,
+    `expected: ${expected}`,
+    `actual: ${actual}`,
+    "run `agenter daemon restart` from the same agenter command you are using now, then retry",
+  ].join("\n");
+};
 
 const waitFor = async (predicate: () => Promise<boolean> | boolean, timeoutMs: number, intervalMs = 100): Promise<boolean> => {
   const startedAt = Date.now();
@@ -304,6 +451,18 @@ const runDaemonStartCommand = async (
   if (existing) {
     const existingHealthy = await isReusableDaemonDescriptorHealthy(existing);
     if (existingHealthy) {
+      const expectedLauncherIdentity = resolveCurrentLauncherIdentity();
+      if (!sameDaemonLauncherIdentity(expectedLauncherIdentity, existing.launcher)) {
+        console.error(
+          formatDaemonCompatibilityMessage({
+            expected: expectedLauncherIdentity,
+            actual: existing.launcher.sourceKind === "unknown" ? null : existing.launcher,
+            endpoint: existing.endpoint,
+          }),
+        );
+        process.exitCode = 1;
+        return;
+      }
       if (sameDaemonAuthority(existing, requested)) {
         console.log(`agenter daemon already running on ${existing.host}:${existing.port}`);
         return;
@@ -372,18 +531,14 @@ const runDaemonStopCommand = async (): Promise<void> => {
   }
 };
 
-const discoverReusableDaemonAuthority = async (): Promise<ResolvedDaemonAuthority | null> => {
+const discoverCompatibleDaemonAuthority = async (
+  expected: DaemonLauncherIdentity,
+): Promise<ResolvedDaemonAuthority | null> => {
   const descriptor = readDaemonRuntimeDescriptor(resolveLauncherHomeDir());
   if (!descriptor) {
     return null;
   }
-  if (!(await isReusableDaemonDescriptorHealthy(descriptor))) {
-    return null;
-  }
-  return {
-    host: descriptor.host,
-    port: descriptor.port,
-  };
+  return await assertCompatibleDaemonDescriptor(descriptor, expected);
 };
 
 const resolveAuthServiceBridgeOptions = (args: AuthServiceBridgeCliArgs): AuthServiceBridgeOptions | undefined => {
@@ -430,6 +585,7 @@ const startDaemon = async (
     staticDir: args.staticDir,
     publicEnv: args.publicEnv,
     homeDir: resolveLauncherHomeDir(),
+    launcherIdentity: resolveCurrentLauncherIdentity(),
     authService: resolveAuthServiceBridgeOptions(args),
   });
 };
@@ -467,8 +623,8 @@ const withAuthServiceBridgeOptions = <TBuilder extends ReturnType<typeof yargs>>
     }) as unknown as TBuilder;
 
 export interface ProductCommandLaunchDependencies {
-  isDaemonAlive(args: CommonArgs): Promise<boolean>;
-  discoverReusableDaemonAuthority(): Promise<ResolvedDaemonAuthority | null>;
+  resolveDaemonAuthority(args: CommonArgs, expected: DaemonLauncherIdentity): Promise<ResolvedDaemonAuthority | null>;
+  discoverReusableDaemonAuthority(expected: DaemonLauncherIdentity): Promise<ResolvedDaemonAuthority | null>;
   startDaemon(
     args: CommonArgs & AuthServiceBridgeCliArgs & { staticDir?: string; publicEnv?: Record<string, string> },
   ): Promise<TrpcServerHandle>;
@@ -481,8 +637,8 @@ export interface ProductCommandLaunchDependencies {
 }
 
 const defaultProductCommandLaunchDependencies: ProductCommandLaunchDependencies = {
-  isDaemonAlive,
-  discoverReusableDaemonAuthority,
+  resolveDaemonAuthority: assertCompatibleDaemonHealth,
+  discoverReusableDaemonAuthority: discoverCompatibleDaemonAuthority,
   startDaemon,
   spawnProduct(input) {
     return Bun.spawn({
@@ -558,16 +714,18 @@ export const launchProductCommandForTest = async (
   };
   const needsRuntimeBootstrap =
     routed.descriptor.capabilityHints.requiresDaemon && !isProductMetadataOnlyArgv(routed.productArgv);
+  const expectedLauncherIdentity = resolveCurrentLauncherIdentity();
 
   let localDaemon: TrpcServerHandle | null = null;
   let resolvedDaemonAuthority: ResolvedDaemonAuthority = { ...common };
   if (needsRuntimeBootstrap) {
-    if (await dependencies.isDaemonAlive(common)) {
-      resolvedDaemonAuthority = { ...common };
+    const reusableAuthority = await dependencies.discoverReusableDaemonAuthority(expectedLauncherIdentity);
+    if (reusableAuthority) {
+      resolvedDaemonAuthority = reusableAuthority;
     } else {
-      const reusableAuthority = await dependencies.discoverReusableDaemonAuthority();
-      if (reusableAuthority) {
-        resolvedDaemonAuthority = reusableAuthority;
+      const daemonAuthority = await dependencies.resolveDaemonAuthority(common, expectedLauncherIdentity);
+      if (daemonAuthority) {
+        resolvedDaemonAuthority = daemonAuthority;
       } else {
         localDaemon = await dependencies.startDaemon({
           ...common,
@@ -643,14 +801,25 @@ const launchProductCommand = async (argvInput: readonly string[]): Promise<boole
 
 export const runCli = async (argvInput = process.argv): Promise<void> => {
   const rawArgs = hideBin(argvInput);
-  if (await launchProductCommand(rawArgs)) {
-    return;
+  try {
+    if (await launchProductCommand(rawArgs)) {
+      return;
+    }
+  } catch (error) {
+    if (error instanceof DaemonCompatibilityError) {
+      console.error(error.message);
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
   }
 
-  const argv = await applyProductCommandsToYargs(
-    yargs(rawArgs)
-      .scriptName("agenter")
-      .version(packageJson.version ?? "unknown")
+  let argv: Awaited<ReturnType<ReturnType<typeof yargs>["parseAsync"]>>;
+  try {
+    argv = await applyProductCommandsToYargs(
+      yargs(rawArgs)
+        .scriptName("agenter")
+        .version(cliPackageJson.version ?? "unknown")
       .option("host", {
         type: "string",
         default: "127.0.0.1",
@@ -739,12 +908,14 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
         };
 
         let localDaemon: TrpcServerHandle | null = null;
-        if (!(await isDaemonAlive(common))) {
-          const reusableAuthority = await discoverReusableDaemonAuthority();
-          if (reusableAuthority) {
-            common.host = reusableAuthority.host;
-            common.port = reusableAuthority.port;
-          } else {
+        const expectedLauncherIdentity = resolveCurrentLauncherIdentity();
+        const reusableAuthority = await discoverCompatibleDaemonAuthority(expectedLauncherIdentity);
+        if (reusableAuthority) {
+          common.host = reusableAuthority.host;
+          common.port = reusableAuthority.port;
+        } else {
+          const daemonAuthority = await assertCompatibleDaemonHealth(common, expectedLauncherIdentity);
+          if (!daemonAuthority) {
             localDaemon = await startDaemon({
               ...common,
               authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
@@ -754,6 +925,9 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
             });
             common.host = localDaemon.host;
             common.port = localDaemon.port;
+          } else {
+            common.host = daemonAuthority.host;
+            common.port = daemonAuthority.port;
           }
         }
 
@@ -782,10 +956,18 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
         console.log(`daemon is healthy at ${resolveDaemonHealthLabel(common)}`);
       },
     )
-    .demandCommand(1)
-    .strict()
-    .help()
-    .parseAsync();
+      .demandCommand(1)
+      .strict()
+      .help()
+      .parseAsync();
+  } catch (error) {
+    if (error instanceof DaemonCompatibilityError) {
+      console.error(error.message);
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
+  }
 
   if (!argv._.length) {
     process.exitCode = 1;

@@ -89,6 +89,7 @@ export interface ProductExtensionRuntimeStore {
   }>;
   listGlobalTerminals(): Promise<GlobalTerminalEntry[]>;
   listGlobalTerminalHistory(): Promise<GlobalTerminalEntry[]>;
+  listGlobalTerminalIndex(): Promise<GlobalTerminalEntry[]>;
   listGlobalTerminalArchive(): Promise<GlobalTerminalEntry[]>;
   createGlobalTerminal(input: {
     terminalId?: string;
@@ -115,6 +116,7 @@ export interface ProductExtensionRuntimeStore {
   archiveGlobalTerminal(input: { terminalId: string }): Promise<GlobalTerminalEntry>;
   bootstrapGlobalTerminal(input: {
     terminalId: string;
+    recoveryIntent?: "killed-history";
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }>;
   setGlobalTerminalConfig(input: {
     terminalId: string;
@@ -365,6 +367,11 @@ const isComposedTerminalBinding = (metadata: Record<string, unknown> | undefined
 const isDerivedTerminalBinding = (metadata: Record<string, unknown> | undefined): boolean =>
   isProjectionTerminalBinding(metadata) || isComposedTerminalBinding(metadata);
 
+const isExplicitTerminalBinding = (
+  metadata: Record<string, unknown> | undefined,
+  bindingMetadata: ProductBindingMetadata,
+): boolean => matchesProductBindingMetadata(metadata, bindingMetadata) || isDerivedTerminalBinding(metadata);
+
 const buildTerminalReusePatch = (
   entry: GlobalTerminalEntry,
   input: ProductEnsureTerminalBindingInput,
@@ -468,9 +475,7 @@ export class ProductExtensionRuntimeClient {
     };
   }
 
-  async focusRuntimeTerminals(
-    input: ProductRuntimeTerminalFocusInput,
-  ): Promise<ProductRuntimeTerminalFocusResult> {
+  async focusRuntimeTerminals(input: ProductRuntimeTerminalFocusInput): Promise<ProductRuntimeTerminalFocusResult> {
     return await this.store.focusTerminals(input);
   }
 
@@ -516,12 +521,19 @@ export class ProductExtensionRuntimeClient {
   ): Promise<ProductEnsureBindingResult<GlobalTerminalEntry>> {
     const { bindingMetadata, metadata } = mergeBindingMetadata(input.binding);
     const sessionActorId = requireSessionActorId(input.session);
-    const terminalId = input.terminalId ?? input.binding.resourceKey;
+    // Product resource keys are product-owned binding names, not TerminalSystem ids.
+    // Reusing the key as a terminal id makes killed/history rows collide with new live bindings.
+    const terminalId = input.terminalId;
     const shouldStart = input.createInput?.start ?? false;
     const terminals = await this.store.listGlobalTerminals();
     let entry =
       terminals.find((candidate) => matchesProductBindingMetadata(candidate.metadata, bindingMetadata)) ??
-      terminals.find((candidate) => candidate.terminalId === terminalId);
+      (terminalId
+        ? terminals.find(
+            (candidate) =>
+              candidate.terminalId === terminalId || isExplicitTerminalBinding(candidate.metadata, bindingMetadata),
+          )
+        : undefined);
     let created = false;
     const requestedBackend = input.createInput?.backend;
     if (!entry) {

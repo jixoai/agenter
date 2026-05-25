@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -20,7 +22,7 @@ import {
   type MessageRecord,
 } from "@agenter/message-system";
 import { SessionDb } from "@agenter/session-system";
-import { TerminalControlPlane, type TerminalActorId } from "@agenter/terminal-system";
+import { DEFAULT_TERMINAL_BACKEND, TerminalControlPlane, TerminalDb, type TerminalActorId } from "@agenter/terminal-system";
 import {
   formatMessageAttentionSrc,
   formatTerminalAttentionSrc,
@@ -480,6 +482,52 @@ const createTerminalSystem = (root: string): TerminalControlPlane =>
     dbPath: join(root, "terminal.db"),
     outputRoot: join(root, "terminals"),
   });
+
+const seedRunningTerminalRecord = (input: { outputRoot: string; terminalId: string; stoppedAt?: number }): void => {
+  const db = new TerminalDb(join(input.outputRoot, "terminal.db"));
+  db.createTerminal({
+    terminalId: input.terminalId,
+    processKind: "shell",
+    backend: DEFAULT_TERMINAL_BACKEND,
+    command: [process.execPath, "-e", "setInterval(() => {}, 1_000_000)"],
+    launchCwd: input.outputRoot,
+    profile: {},
+    metadata: {},
+    processPhase: "running",
+    lastStopReason: null,
+    lastExitCode: null,
+    lastExitSignal: null,
+    lastStoppedAt: input.stoppedAt ?? null,
+    archivedAt: null,
+  });
+  db.close();
+};
+
+const seedTerminalGrant = (input: {
+  outputRoot: string;
+  terminalId: string;
+  participantId: string;
+  role: "admin" | "writer" | "guard" | "readonly";
+  accessToken?: string;
+}): string => {
+  const accessToken = input.accessToken ?? `test-token-${randomUUID().replaceAll("-", "")}`;
+  const db = new Database(join(input.outputRoot, "terminal.db"), { create: true, strict: true });
+  db.query(
+    `insert into terminal_grant (
+      grant_id, terminal_id, role, label, participant_id, access_token, token_hash, created_at, revoked_at
+    ) values (?, ?, ?, null, ?, ?, ?, ?, null)`,
+  ).run(
+    `term-grant-${randomUUID()}`,
+    input.terminalId,
+    input.role,
+    input.participantId,
+    accessToken,
+    createHash("sha256").update(accessToken).digest("hex"),
+    Date.now(),
+  );
+  db.close();
+  return accessToken;
+};
 
 const attachPrimaryRoom = (runtime: SessionRuntime): void => {
   const messageSystem = Reflect.get(runtime, "messageSystem") as MessageControlPlane;
@@ -2274,7 +2322,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(afterStopSnapshot?.commits.some((commit) => commit.summary === "Terminal transition-no-attention was killed")).toBeTrue();
       expect(getActiveItems(internal).filter((item) => isTerminalMeta(item.meta, "transition-no-attention"))).toHaveLength(0);
 
-      const bootstrapped = await runtime.bootstrapRuntimeTerminal("transition-no-attention");
+      const bootstrapped = await runtime.bootstrapRuntimeTerminal("transition-no-attention", {
+        recoveryIntent: "killed-history",
+      });
       expect(bootstrapped.ok).toBeTrue();
 
       const afterBootstrapSnapshot = getAttentionContextSnapshot(internal, terminalContextId);
@@ -2282,6 +2332,65 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(
         runtime.snapshot().terminals.find((item) => item.terminalId === "transition-no-attention")?.lifecycleTransition,
       ).toBeNull();
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given daemon recovery kills a focused terminal When runtime starts after observers bind Then AttentionContext is muted through lifecycle ingress", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-session-runtime-recovery-"));
+    const sessionId = `recovery-${Date.now()}`;
+    const terminalActorId = resolveSessionRoomActorId(sessionId) as TerminalActorId;
+    seedRunningTerminalRecord({
+      outputRoot: root,
+      terminalId: "daemon-attention",
+    });
+    seedTerminalGrant({
+      outputRoot: root,
+      terminalId: "daemon-attention",
+      participantId: terminalActorId,
+      role: "admin",
+    });
+
+    const recoveredTerminalSystem = createTerminalSystem(root);
+    const runtime = new SessionRuntime({
+      sessionId,
+      cwd: root,
+      sessionRoot: join(root, "session"),
+      sessionName: "test",
+      storeTarget: "workspace",
+      primaryRoomId: PRIMARY_ROOM_ID,
+      allocateRoomId: createRuntimeRoomAllocator(),
+      terminalSystem: recoveredTerminalSystem,
+      terminalActorId,
+      avatarPrincipalId: TEST_AVATAR_PRINCIPAL_ID,
+      avatarPrivateKey: TEST_AVATAR_PRIVATE_KEY,
+      homeDir: root,
+      rootWorkspacePath: root,
+      resolveRuntimeTerminalCwd: async (input) => ({
+        ok: true,
+        cwd: input.cwd ?? root,
+      }),
+    });
+    attachPrimaryRoom(runtime);
+    const internal = runtime as unknown as RuntimeInternal;
+
+    await runtime.start();
+    try {
+      const context = getAttentionContextSnapshot(internal, "ctx-terminal-daemon-attention");
+      expect(recoveredTerminalSystem.listForActor(terminalActorId, { touchPresence: false })).toEqual([]);
+      expect(
+        recoveredTerminalSystem
+          .listHistoryForActor(terminalActorId, { touchPresence: false })
+          .find((entry) => entry.terminalId === "daemon-attention")?.processPhase,
+      ).toBe("killed");
+      expect(context?.focusState).toBe("muted");
+      expect(context?.commits.some((commit) => commit.summary === "Terminal daemon-attention was killed")).toBeTrue();
+      expect(context?.commits.at(-1)?.meta).toMatchObject({
+        source: "terminal",
+        src: "tty:daemon-attention",
+      });
+      expect(context?.commits.at(-1)?.meta.tags).toContain("terminal_killed");
     } finally {
       await runtime.stop();
     }

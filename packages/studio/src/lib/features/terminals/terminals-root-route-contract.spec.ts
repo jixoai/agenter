@@ -12,7 +12,8 @@ describe("Feature: Terminal root route contract", () => {
   test("Scenario: Given /terminals is the live-only entrypoint When reading the source Then it redirects to the first visible live terminal or to the history index when none remain", () => {
     expect(terminalsRootRouteSource).toContain("readDismissedWorkbenchTabIds('terminals')");
     expect(terminalsRootRouteSource).toContain("controller.runtimeState.globalTerminals.data.find(");
-    expect(terminalsRootRouteSource).toContain("controller.runtimeState.globalTerminalHistory.loaded");
+    expect(terminalsRootRouteSource).toContain("controller.runtimeState.globalTerminalIndex.loaded");
+    expect(terminalsRootRouteSource).toContain("controller.runtimeState.globalTerminalIndex.data.length");
     expect(terminalsRootRouteSource).toContain("'/terminals/history'");
     expect(terminalsRootRouteSource).toContain("'/terminals/new'");
   });

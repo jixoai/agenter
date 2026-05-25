@@ -8,6 +8,10 @@ export interface CliShellSettings {
   chat: {
     defaultLayout: CliShellChatDefaultLayout;
   };
+  startup: {
+    lastShellName: string | null;
+    lastAvatarNickname: string | null;
+  };
 }
 
 export interface CliShellKeybindings {
@@ -42,6 +46,10 @@ const DEFAULT_SETTINGS: CliShellSettings = {
   chat: {
     defaultLayout: "cover",
   },
+  startup: {
+    lastShellName: null,
+    lastAvatarNickname: null,
+  },
 };
 
 const DEFAULT_KEYBINDINGS: CliShellKeybindings = {
@@ -66,6 +74,14 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 
 const normalizeLayout = (value: unknown): CliShellChatDefaultLayout =>
   value === "left" || value === "right" || value === "cover" ? value : DEFAULT_SETTINGS.chat.defaultLayout;
+
+const normalizeOptionalText = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
 
 export const defaultCliShellSettings = (): CliShellSettings => structuredClone(DEFAULT_SETTINGS);
 export const defaultCliShellKeybindings = (): CliShellKeybindings => structuredClone(DEFAULT_KEYBINDINGS);
@@ -102,9 +118,14 @@ export const parseCliShellSettings = (raw: string | null | undefined): CliShellS
       return defaultCliShellSettings();
     }
     const chat = isObject(parsed.chat) ? parsed.chat : {};
+    const startup = isObject(parsed.startup) ? parsed.startup : {};
     return {
       chat: {
         defaultLayout: normalizeLayout(chat.defaultLayout),
+      },
+      startup: {
+        lastShellName: normalizeOptionalText(startup.lastShellName),
+        lastAvatarNickname: normalizeOptionalText(startup.lastAvatarNickname),
       },
     };
   } catch {

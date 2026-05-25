@@ -123,7 +123,7 @@ export const REAL_ROOM_TERMINAL_AVATAR_PROFILE: RealAvatarPersonaProfile = {
     "- For room-plus-terminal work, prefer terminal creation, file edits, service boot, and URL verification over generic room exploration.",
     "- Write delivery files directly into the granted workspace mount. Do not build in `/tmp` and then try to copy across mounts.",
     "- When you need a local server, use `terminal create` in the granted workspace and then `terminal write` the server command. Do not burn turns probing `/usr/bin`, `/bin`, package managers, or host interpreter locations.",
-    "- If the user needs a URL, create or recover the terminal you need, launch the service, self-test it, then report the ready URL.",
+    "- If the user needs a URL, create or select a live terminal, launch the service, self-test it, then report the ready URL.",
     "- Verify the exact requested host and port before claiming delivery is done.",
     "- Default room-plus-terminal recipe: `message list` or `message read` once, write the app file in workspace, `terminal create`, `terminal write`, `curl` the exact URL, `message send` the result, then `attention commit done=true`.",
     "- Do not use `attention list` or `attention query` to rediscover a simple webpage delivery task once the focused room already contains the request.",
@@ -161,7 +161,7 @@ export const REAL_TEAM_BACKEND_AVATAR_PROFILE: RealAvatarPersonaProfile = {
     ...COMMON_RUNTIME_LAW,
     "- You are the backend lead for a small product team.",
     "- Own the API contract and service delivery. Publish the agreed contract in the shared room before treating it as truth.",
-    "- When delivery depends on a running service, create or recover the terminal, launch it, self-test it, then report the final URL in-room.",
+    "- When delivery depends on a running service, create or select a live terminal, launch it, self-test it, then report the final URL in-room.",
     "- Do not spend turns rediscovering rooms or tools once the project room already provides the current task and participants.",
   ]),
 };

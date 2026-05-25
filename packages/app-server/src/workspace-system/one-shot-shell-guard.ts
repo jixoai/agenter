@@ -1,7 +1,7 @@
 import { parse } from "just-bash";
 
 const ONE_SHOT_BACKGROUND_ERROR =
-  "one-shot bash cannot keep background processes alive; create or recover a terminal and run the long-lived command there";
+  "one-shot bash cannot keep background processes alive; create or select a live terminal and run the long-lived command there";
 
 const readLiteralWord = (parts: Array<{ type: string; value?: string }>): string =>
   parts.map((part) => ("value" in part ? part.value ?? "" : "")).join("");

@@ -30,6 +30,20 @@ export {
 } from "./managed";
 export { isCliShellMetadataOnlyArgv, normalizeShellName, parseCliShellArgs, type CliShellParsedArgs } from "./argv";
 export {
+  buildCliShellNavigationAvatarItems,
+  buildCliShellNavigationModel,
+  buildCliShellNavigationShellItems,
+  normalizeNewAvatarNickname,
+  type CliShellNavigationAvatarItem,
+  type CliShellNavigationAvatarOption,
+  type CliShellNavigationModel,
+  type CliShellNavigationNewAvatarOption,
+  type CliShellNavigationNewShellOption,
+  type CliShellNavigationShellItem,
+  type CliShellNavigationShellOption,
+  type CliShellNavigationStore,
+} from "./navigation-model";
+export {
   formatCliShellHeartbeatStatus,
   readCliShellHeartbeatStatus,
   resolveCliShellToolbarStatus,
@@ -66,6 +80,10 @@ export {
 } from "./tmux-host";
 export { startCliShellRoomApp, type CliShellRoomApp, type CliShellRoomAppInput } from "./tui/room-app";
 export { startCliShellRoomTui, type CliShellRoomTuiController } from "./tui/run-cli-shell-room-tui";
+export {
+  startCliShellNavigationTui,
+  type CliShellNavigationTuiController,
+} from "./tui/run-cli-shell-navigation-tui";
 export { startCliShellTopLayerApp, type CliShellTopLayerApp, type CliShellTopLayerAppInput } from "./tui/top-layer-app";
 export { startCliShellTopLayerTui, type CliShellTopLayerTuiController } from "./tui/run-cli-shell-top-tui";
 export {

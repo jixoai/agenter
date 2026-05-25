@@ -7,12 +7,50 @@ export interface DaemonRuntimeDescriptor {
   port: number;
   endpoint: string;
   homeDir: string;
+  launcher: DaemonLauncherIdentity;
   updatedAt: string;
 }
 
 export const DAEMON_RUNTIME_DESCRIPTOR_FILENAME = "daemon.runtime.json";
 
+export interface DaemonLauncherIdentity {
+  packageName: string;
+  packageVersion: string;
+  sourceKind: "workspace" | "package" | "unknown";
+  entrypoint: string;
+}
+
+export interface DaemonHealthPayload {
+  ok: true;
+  port: number;
+  launcher: DaemonLauncherIdentity;
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
+
+const normalizeDaemonLauncherIdentity = (value: unknown): DaemonLauncherIdentity | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (typeof value.packageName !== "string" || value.packageName.length === 0) {
+    return null;
+  }
+  if (typeof value.packageVersion !== "string" || value.packageVersion.length === 0) {
+    return null;
+  }
+  if (value.sourceKind !== "workspace" && value.sourceKind !== "package" && value.sourceKind !== "unknown") {
+    return null;
+  }
+  if (typeof value.entrypoint !== "string" || value.entrypoint.length === 0) {
+    return null;
+  }
+  return {
+    packageName: value.packageName,
+    packageVersion: value.packageVersion,
+    sourceKind: value.sourceKind,
+    entrypoint: value.entrypoint,
+  };
+};
 
 const normalizeDaemonRuntimeDescriptor = (value: unknown): DaemonRuntimeDescriptor | null => {
   if (!isRecord(value)) {
@@ -33,6 +71,15 @@ const normalizeDaemonRuntimeDescriptor = (value: unknown): DaemonRuntimeDescript
   if (typeof value.homeDir !== "string" || value.homeDir.length === 0) {
     return null;
   }
+  // Descriptors written before launcher identity existed can still be stopped,
+  // but they are never reusable by identity-aware product launches.
+  const launcher =
+    normalizeDaemonLauncherIdentity(value.launcher) ?? {
+      packageName: "unknown",
+      packageVersion: "unknown",
+      sourceKind: "unknown",
+      entrypoint: "unknown",
+    };
   if (typeof value.updatedAt !== "string" || value.updatedAt.length === 0) {
     return null;
   }
@@ -42,6 +89,7 @@ const normalizeDaemonRuntimeDescriptor = (value: unknown): DaemonRuntimeDescript
     port: value.port,
     endpoint: value.endpoint,
     homeDir: value.homeDir,
+    launcher,
     updatedAt: value.updatedAt,
   };
 };
@@ -77,17 +125,18 @@ export const writeDaemonRuntimeDescriptor = (descriptor: DaemonRuntimeDescriptor
 };
 
 const sameDaemonRuntimeDescriptorOwner = (
-  left: Pick<DaemonRuntimeDescriptor, "pid" | "host" | "port" | "endpoint" | "homeDir">,
-  right: Pick<DaemonRuntimeDescriptor, "pid" | "host" | "port" | "endpoint" | "homeDir">,
+  left: Pick<DaemonRuntimeDescriptor, "pid" | "host" | "port" | "endpoint" | "homeDir" | "launcher">,
+  right: Pick<DaemonRuntimeDescriptor, "pid" | "host" | "port" | "endpoint" | "homeDir" | "launcher">,
 ): boolean =>
   left.pid === right.pid &&
   left.host === right.host &&
   left.port === right.port &&
   left.endpoint === right.endpoint &&
-  left.homeDir === right.homeDir;
+  left.homeDir === right.homeDir &&
+  sameDaemonLauncherIdentity(left.launcher, right.launcher);
 
 export const clearOwnedDaemonRuntimeDescriptor = (
-  owner: Pick<DaemonRuntimeDescriptor, "pid" | "host" | "port" | "endpoint" | "homeDir">,
+  owner: Pick<DaemonRuntimeDescriptor, "pid" | "host" | "port" | "endpoint" | "homeDir" | "launcher">,
 ): void => {
   const current = readDaemonRuntimeDescriptor(owner.homeDir);
   if (!current || !sameDaemonRuntimeDescriptorOwner(current, owner)) {
@@ -98,4 +147,34 @@ export const clearOwnedDaemonRuntimeDescriptor = (
   } catch {
     // Best effort only. Stale descriptors are ignored unless health checks pass.
   }
+};
+
+export const sameDaemonLauncherIdentity = (
+  left: DaemonLauncherIdentity,
+  right: DaemonLauncherIdentity,
+): boolean =>
+  left.packageName === right.packageName &&
+  left.packageVersion === right.packageVersion &&
+  left.sourceKind === right.sourceKind &&
+  left.entrypoint === right.entrypoint;
+
+export const normalizeDaemonHealthPayload = (value: unknown): DaemonHealthPayload | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+  if (value.ok !== true) {
+    return null;
+  }
+  if (typeof value.port !== "number" || !Number.isInteger(value.port) || value.port <= 0) {
+    return null;
+  }
+  const launcher = normalizeDaemonLauncherIdentity(value.launcher);
+  if (!launcher) {
+    return null;
+  }
+  return {
+    ok: true,
+    port: value.port,
+    launcher,
+  };
 };

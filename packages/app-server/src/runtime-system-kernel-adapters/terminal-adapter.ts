@@ -8,6 +8,7 @@ export interface RuntimeTerminalLifecycleIngressInput {
   payload?: Record<string, unknown>;
   score?: number;
   ingressType?: "commit" | "push";
+  boundaryChannel?: RuntimeSystemIngressEnvelope["boundaryChannel"];
 }
 
 export interface RuntimeTerminalFocusTransitionInput {
@@ -115,7 +116,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
     }
   }
 
-  commitLifecycleIngress(input: RuntimeTerminalLifecycleIngressInput): void {
+  async commitLifecycleIngress(input: RuntimeTerminalLifecycleIngressInput): Promise<void> {
     if (
       input.event === "terminal_focus" ||
       input.event === "terminal_unfocus" ||
@@ -124,7 +125,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
       return;
     }
     this.pendingLifecycleIngress.push(this.options.buildLifecycleIngressEnvelope(input));
-    void this.flushPendingLifecycleIngress();
+    await this.flushPendingLifecycleIngress();
   }
 
   async drainIngress(): Promise<RuntimeSystemIngressEnvelope[] | undefined> {

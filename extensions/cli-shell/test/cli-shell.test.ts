@@ -6,6 +6,7 @@ import {
   CLI_SHELL_TMUX_SOCKET_NAME,
   bootstrapCliShell,
   cleanupCliShellResources,
+  defaultCliShellSettings,
   isCliShellMetadataOnlyArgv,
   parseCliShellArgs,
   runCliShellWithDependencies,
@@ -34,6 +35,85 @@ const seedAvatar = (store: FakeCliShellStore, nickname: string): void => {
   });
 };
 
+const withPatchedTty = async (stdinTty: boolean, stdoutTty: boolean, run: () => Promise<void>): Promise<void> => {
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+  const stdinDescriptor = Object.getOwnPropertyDescriptor(stdin, "isTTY");
+  const stdoutDescriptor = Object.getOwnPropertyDescriptor(stdout, "isTTY");
+
+  Object.defineProperty(stdin, "isTTY", {
+    configurable: true,
+    value: stdinTty,
+  });
+  Object.defineProperty(stdout, "isTTY", {
+    configurable: true,
+    value: stdoutTty,
+  });
+
+  try {
+    await run();
+  } finally {
+    if (stdinDescriptor) {
+      Object.defineProperty(stdin, "isTTY", stdinDescriptor);
+    } else {
+      Object.defineProperty(stdin, "isTTY", {
+        configurable: true,
+        value: undefined,
+      });
+    }
+    if (stdoutDescriptor) {
+      Object.defineProperty(stdout, "isTTY", stdoutDescriptor);
+    } else {
+      Object.defineProperty(stdout, "isTTY", {
+        configurable: true,
+        value: undefined,
+      });
+    }
+  }
+};
+
+const createCliShellRunTestDependencies = (input: {
+  store: FakeCliShellStore;
+  navigation?: CliShellRunDependencies["startNavigationTui"];
+  savedSettings?: CliShellRunDependencies["saveCliShellSettings"];
+  builtPlans?: CliShellTmuxPlan[];
+}): CliShellRunDependencies => ({
+  createClient: () => ({ close() {} }) as ReturnType<typeof import("@agenter/client-sdk").createAgenterClient>,
+  createStore: () => input.store as unknown as CliShellRunStore,
+  bootstrap: async (bootstrapInput) => await bootstrapCliShell(bootstrapInput),
+  bootstrapRoom: async (bootstrapInput) => await bootstrapCliShell(bootstrapInput),
+  startRoomTui: async () => {
+    throw new Error("room TUI should not start for attach navigation tests");
+  },
+  startNavigationTui: input.navigation,
+  startTopLayerTui: async () => {
+    throw new Error("top layer TUI should not start for attach navigation tests");
+  },
+  startHelpPanelTui: async () => {
+    throw new Error("help panel TUI should not start for attach navigation tests");
+  },
+  startShellPaneTui: async () => {
+    throw new Error("shell pane TUI should not start for attach navigation tests");
+  },
+  readHeartbeatStatus: async () => "heartbeat ok",
+  buildTmuxPlan: (planInput) => {
+    const plan = {
+      sessionName: planInput.shellName,
+      tmux: planInput.tmux ?? "tmux-test",
+      socketName: "agenter-cli-shell",
+      steps: [],
+    } satisfies CliShellTmuxPlan;
+    input.builtPlans?.push(plan);
+    return plan;
+  },
+  runTmuxHost: async () => undefined,
+  refreshManagedTmuxStatus: async () => {
+    throw new Error("managed refresh should not run for attach navigation tests");
+  },
+  readCliShellSettings: async () => defaultCliShellSettings(),
+  saveCliShellSettings: input.savedSettings,
+});
+
 describe("Feature: cli-shell tmux migration bootstrap", () => {
   test("Scenario: Given cli-shell attach bootstrap When resources are ensured Then a bound TerminalSystem terminal and MessageSystem room are created for the product binding", async () => {
     const store = new FakeCliShellStore();
@@ -47,7 +127,7 @@ describe("Feature: cli-shell tmux migration bootstrap", () => {
     });
 
     expect(attached.avatar.nickname).toBe("bangeel");
-    expect(attached.terminal.entry.terminalId).toBe("shell-5");
+    expect(attached.terminal.entry.terminalId).toBe("terminal-1");
     expect(attached.terminal.entry.backend).toBe("ghostty-native");
     expect(attached.terminal.entry.metadata?.productId).toBe("cli-shell");
     expect(attached.terminal.entry.metadata?.resourceKey).toBe("shell-5");
@@ -55,12 +135,13 @@ describe("Feature: cli-shell tmux migration bootstrap", () => {
     expect(attached.room.entry.metadata?.resourceKey).toBe("shell-5");
     expect(attached.binding.productId).toBe("cli-shell");
     expect(attached.binding.resourceKey).toBe("shell-5");
-    expect(attached.binding.terminalId).toBe("shell-5");
+    expect(attached.binding.terminalId).toBe("terminal-1");
     expect(attached.binding.roomId).toBe(attached.room.entry.chatId);
     expect(attached.binding.runtimeSessionId).toBe(attached.session.id);
-    expect(store.terminals.map((entry) => entry.terminalId)).toEqual(["shell-5"]);
+    expect(store.terminals.map((entry) => entry.terminalId)).toEqual(["terminal-1"]);
+    expect(store.terminals.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-5"]);
     expect(store.terminals.map((entry) => entry.backend)).toEqual(["ghostty-native"]);
-    expect(store.focusTerminalCalls).toEqual([["shell-5"]]);
+    expect(store.focusTerminalCalls).toEqual([["terminal-1"]]);
   });
 
   test("Scenario: Given legacy terminal flags When parsing cli-shell argv Then the tmux migration rejects them before backend mutation", () => {
@@ -74,6 +155,54 @@ describe("Feature: cli-shell tmux migration bootstrap", () => {
       shellName: "shell-5",
       avatarNickname: "bangeel",
     });
+  });
+
+  test("Scenario: Given cli-shell attach argv is empty When parsed Then Shell and Avatar are marked implicit for startup navigation", () => {
+    const parsed = parseCliShellArgs([]);
+
+    expect(parsed).toMatchObject({
+      command: "attach",
+      shellName: "shell-1",
+      avatarNickname: "shell-assistant",
+    });
+    expect(parsed.command === "attach" ? parsed.sessionExplicit : true).toBe(false);
+    expect(parsed.command === "attach" ? parsed.avatarExplicit : true).toBe(false);
+  });
+
+  test("Scenario: Given cli-shell attach argv selects only a Shell When parsed Then only Avatar remains implicit", () => {
+    const parsed = parseCliShellArgs(["--session=5"]);
+
+    expect(parsed).toMatchObject({
+      command: "attach",
+      shellName: "shell-5",
+      avatarNickname: "shell-assistant",
+    });
+    expect(parsed.command === "attach" ? parsed.sessionExplicit : false).toBe(true);
+    expect(parsed.command === "attach" ? parsed.avatarExplicit : true).toBe(false);
+  });
+
+  test("Scenario: Given cli-shell attach argv selects only an Avatar When parsed Then only Shell remains implicit", () => {
+    const parsed = parseCliShellArgs(["--avatar=bangeel"]);
+
+    expect(parsed).toMatchObject({
+      command: "attach",
+      shellName: "shell-1",
+      avatarNickname: "bangeel",
+    });
+    expect(parsed.command === "attach" ? parsed.sessionExplicit : true).toBe(false);
+    expect(parsed.command === "attach" ? parsed.avatarExplicit : false).toBe(true);
+  });
+
+  test("Scenario: Given cli-shell attach argv selects Shell and Avatar When parsed Then startup navigation is skipped", () => {
+    const parsed = parseCliShellArgs(["@bangeel", "--session=5"]);
+
+    expect(parsed).toMatchObject({
+      command: "attach",
+      shellName: "shell-5",
+      avatarNickname: "bangeel",
+    });
+    expect(parsed.command === "attach" ? parsed.sessionExplicit : false).toBe(true);
+    expect(parsed.command === "attach" ? parsed.avatarExplicit : false).toBe(true);
   });
 
   test("Scenario: Given Help is a tmux action value When checking metadata-only argv Then cli-shell does not swallow the product action", () => {
@@ -90,15 +219,17 @@ describe("Feature: cli-shell tmux migration bootstrap", () => {
         "--target-pane=%0",
       ]),
     ).toBe(false);
-    expect(parseCliShellArgs([
-      "tmux-action",
-      "--action",
-      "help",
-      "--session=5",
-      "--avatar=bangeel",
-      "--runtime-session-id=session:/repo:bangeel",
-      "--target-pane=%0",
-    ])).toMatchObject({
+    expect(
+      parseCliShellArgs([
+        "tmux-action",
+        "--action",
+        "help",
+        "--session=5",
+        "--avatar=bangeel",
+        "--runtime-session-id=session:/repo:bangeel",
+        "--target-pane=%0",
+      ]),
+    ).toMatchObject({
       command: "tmux-action",
       action: "help",
       shellName: "shell-5",
@@ -173,13 +304,7 @@ describe("Feature: cli-shell tmux migration bootstrap", () => {
 
     try {
       await runCliShellWithDependencies(
-        [
-          "bun",
-          "/repo/extensions/cli-shell/src/bin/agenter-cli-shell.ts",
-          "shell",
-          "--session=5",
-          "--avatar=bangeel",
-        ],
+        ["bun", "/repo/extensions/cli-shell/src/bin/agenter-cli-shell.ts", "shell", "--session=5", "--avatar=bangeel"],
         {
           createClient: () =>
             ({
@@ -240,13 +365,13 @@ describe("Feature: cli-shell tmux migration bootstrap", () => {
     const expectedRuntimeSessionId = `session:${process.cwd()}:bangeel`;
     expect(shellPaneCalls).toEqual([
       {
-        terminalId: "shell-5",
+        terminalId: "terminal-1",
         roomId: "room-1",
         runtimeSessionId: expectedRuntimeSessionId,
       },
     ]);
-    expect(store.terminals.map((entry) => entry.terminalId)).toEqual(["shell-5"]);
-    expect(store.focusTerminalCalls).toEqual([["shell-5"]]);
+    expect(store.terminals.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-5"]);
+    expect(store.focusTerminalCalls).toEqual([["terminal-1"]]);
   });
 
   test("Scenario: Given the help-panel command starts When cli-shell runs in a tty Then the dedicated Help TUI starts without bootstrapping product resources", async () => {
@@ -335,6 +460,179 @@ describe("Feature: cli-shell tmux migration bootstrap", () => {
     }
 
     expect(helpPanelCalls).toEqual([{ shellName: "shell-5", avatarNickname: "bangeel" }]);
+  });
+
+  test("Scenario: Given attach starts without selectors in a TTY When navigation completes Then cli-shell bootstraps the selected Shell and Avatar", async () => {
+    const store = new FakeCliShellStore();
+    seedAvatar(store, "bangeel");
+    const navigationCalls: Array<{
+      needsShell: boolean;
+      needsAvatar: boolean;
+      initialShellName?: string;
+      initialAvatarNickname?: string;
+    }> = [];
+    const savedStartup: Array<{ shellName: string | null; avatarNickname: string | null }> = [];
+    const builtPlans: CliShellTmuxPlan[] = [];
+
+    await withPatchedTty(true, true, async () => {
+      await runCliShellWithDependencies(
+        ["bun", "/repo/extensions/cli-shell/src/bin/agenter-cli-shell.ts"],
+        createCliShellRunTestDependencies({
+          store,
+          builtPlans,
+          navigation: async (input) => {
+            expect(store.authToken).toBe("superadmin-token");
+            navigationCalls.push({
+              needsShell: input.needsShell,
+              needsAvatar: input.needsAvatar,
+              initialShellName: input.initialShellName,
+              initialAvatarNickname: input.initialAvatarNickname,
+            });
+            return {
+              shellName: "shell-8",
+              avatarNickname: "bangeel",
+              createAvatar: false,
+            };
+          },
+          savedSettings: async (settings) => {
+            savedStartup.push({
+              shellName: settings.startup.lastShellName,
+              avatarNickname: settings.startup.lastAvatarNickname,
+            });
+          },
+        }),
+      );
+    });
+
+    expect(navigationCalls).toEqual([{ needsShell: true, needsAvatar: true }]);
+    expect(store.terminals.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-8"]);
+    expect(store.rooms.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-8"]);
+    expect(builtPlans.map((plan) => plan.sessionName)).toEqual(["shell-8"]);
+    expect(savedStartup.at(-1)).toEqual({ shellName: "shell-8", avatarNickname: "bangeel" });
+    expect(store.autoLoginCalls).toBe(1);
+  });
+
+  test("Scenario: Given attach starts with explicit Shell only When navigation completes Then cli-shell only asks for an Avatar", async () => {
+    const store = new FakeCliShellStore();
+    seedAvatar(store, "bangeel");
+    const navigationCalls: Array<{
+      needsShell: boolean;
+      needsAvatar: boolean;
+      initialShellName?: string;
+      initialAvatarNickname?: string;
+    }> = [];
+
+    await withPatchedTty(true, true, async () => {
+      await runCliShellWithDependencies(
+        ["bun", "/repo/extensions/cli-shell/src/bin/agenter-cli-shell.ts", "--session=5"],
+        createCliShellRunTestDependencies({
+          store,
+          navigation: async (input) => {
+            navigationCalls.push({
+              needsShell: input.needsShell,
+              needsAvatar: input.needsAvatar,
+              initialShellName: input.initialShellName,
+              initialAvatarNickname: input.initialAvatarNickname,
+            });
+            return {
+              shellName: "shell-99",
+              avatarNickname: "bangeel",
+              createAvatar: false,
+            };
+          },
+        }),
+      );
+    });
+
+    expect(navigationCalls).toEqual([
+      {
+        needsShell: false,
+        needsAvatar: true,
+        initialShellName: "shell-5",
+      },
+    ]);
+    expect(store.terminals.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-5"]);
+  });
+
+  test("Scenario: Given attach starts with explicit Avatar only When navigation completes Then cli-shell only asks for a Shell", async () => {
+    const store = new FakeCliShellStore();
+    seedAvatar(store, "bangeel");
+    const navigationCalls: Array<{
+      needsShell: boolean;
+      needsAvatar: boolean;
+      initialShellName?: string;
+      initialAvatarNickname?: string;
+    }> = [];
+
+    await withPatchedTty(true, true, async () => {
+      await runCliShellWithDependencies(
+        ["bun", "/repo/extensions/cli-shell/src/bin/agenter-cli-shell.ts", "--avatar=bangeel"],
+        createCliShellRunTestDependencies({
+          store,
+          navigation: async (input) => {
+            navigationCalls.push({
+              needsShell: input.needsShell,
+              needsAvatar: input.needsAvatar,
+              initialShellName: input.initialShellName,
+              initialAvatarNickname: input.initialAvatarNickname,
+            });
+            return {
+              shellName: "shell-9",
+              avatarNickname: "ignored",
+              createAvatar: false,
+            };
+          },
+        }),
+      );
+    });
+
+    expect(navigationCalls).toEqual([
+      {
+        needsShell: true,
+        needsAvatar: false,
+        initialAvatarNickname: "bangeel",
+      },
+    ]);
+    expect(store.terminals.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-9"]);
+    expect([...store.sessions.values()].map((entry) => entry.avatar)).toEqual(["bangeel"]);
+  });
+
+  test("Scenario: Given attach starts with explicit Shell and Avatar When running in a TTY Then navigation is skipped", async () => {
+    const store = new FakeCliShellStore();
+    seedAvatar(store, "bangeel");
+
+    await withPatchedTty(true, true, async () => {
+      await runCliShellWithDependencies(
+        ["bun", "/repo/extensions/cli-shell/src/bin/agenter-cli-shell.ts", "--session=5", "--avatar=bangeel"],
+        createCliShellRunTestDependencies({
+          store,
+          navigation: async () => {
+            throw new Error("navigation should not start when both selectors are explicit");
+          },
+        }),
+      );
+    });
+
+    expect(store.terminals.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-5"]);
+  });
+
+  test("Scenario: Given attach starts without selectors outside a TTY When running Then cli-shell fails before assuming shell-1", async () => {
+    const store = new FakeCliShellStore();
+
+    await expect(
+      withPatchedTty(false, false, async () => {
+        await runCliShellWithDependencies(
+          ["bun", "/repo/extensions/cli-shell/src/bin/agenter-cli-shell.ts"],
+          createCliShellRunTestDependencies({
+            store,
+            navigation: async () => {
+              throw new Error("navigation should not start outside TTY");
+            },
+          }),
+        );
+      }),
+    ).rejects.toThrow("cli-shell requires --session and --avatar when stdin/stdout is not a TTY");
+    expect(store.terminals).toHaveLength(0);
   });
 });
 
@@ -432,7 +730,8 @@ describe("Feature: cli-shell tmux managed status action", () => {
           throw new Error("shell pane TUI should not start for tmux managed action");
         },
         readHeartbeatStatus: async () => "unused",
-        buildTmuxPlan: () => ({ sessionName: "unused", tmux: "tmux-test", socketName: "unused", steps: [] }) satisfies CliShellTmuxPlan,
+        buildTmuxPlan: () =>
+          ({ sessionName: "unused", tmux: "tmux-test", socketName: "unused", steps: [] }) satisfies CliShellTmuxPlan,
         runTmuxHost: async () => {
           throw new Error("tmux host should not attach for tmux managed action");
         },
@@ -447,11 +746,11 @@ describe("Feature: cli-shell tmux managed status action", () => {
     expect(store.attentionCommits[0]?.contextId).toBe("ctx-hosting-shell-5");
     expect(store.attentionCommits[0]?.scores).toEqual({ hosting: 1000 });
     expect(store.attentionCommits[0]?.body).toContain("surfaceId=tmux:shell-5");
-    expect(store.attentionCommits[0]?.body).toContain("terminalId=shell-5");
+    expect(store.attentionCommits[0]?.body).toContain("terminalId=terminal-1");
     expect(store.attentionCommits[0]?.body).toContain("roomId=room-1");
     expect(store.attentionCommits[0]?.meta?.surfaceId).toBe("tmux:shell-5");
-    expect(store.attentionCommits[0]?.meta?.terminalId).toBe("shell-5");
-    expect(store.terminals.map((entry) => entry.terminalId)).toEqual(["shell-5"]);
+    expect(store.attentionCommits[0]?.meta?.terminalId).toBe("terminal-1");
+    expect(store.terminals.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-5"]);
     expect(refreshed).toEqual([true]);
   });
 
@@ -520,7 +819,8 @@ describe("Feature: cli-shell tmux managed status action", () => {
           throw new Error("shell pane TUI should not start for tmux managed action");
         },
         readHeartbeatStatus: async () => "unused",
-        buildTmuxPlan: () => ({ sessionName: "unused", tmux: "tmux-test", socketName: "unused", steps: [] }) satisfies CliShellTmuxPlan,
+        buildTmuxPlan: () =>
+          ({ sessionName: "unused", tmux: "tmux-test", socketName: "unused", steps: [] }) satisfies CliShellTmuxPlan,
         runTmuxHost: async () => {
           throw new Error("tmux host should not attach for tmux managed action");
         },
@@ -535,8 +835,8 @@ describe("Feature: cli-shell tmux managed status action", () => {
     expect(store.attentionSettles[0]?.scores).toEqual({ hosting: 0 });
     expect(store.attentionSettles[0]?.reason).toBe("user_disabled");
     expect(store.attentionSettles[0]?.meta?.surfaceId).toBe("tmux:shell-5");
-    expect(store.attentionSettles[0]?.meta?.terminalId).toBe("shell-5");
-    expect(store.terminals.map((entry) => entry.terminalId)).toEqual(["shell-5"]);
+    expect(store.attentionSettles[0]?.meta?.terminalId).toBe("terminal-1");
+    expect(store.terminals.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-5"]);
     expect(refreshed).toEqual([false]);
   });
 });

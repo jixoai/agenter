@@ -26,3 +26,6 @@
 - `agenter daemon start` 必须只负责为当前 runtime home root 拉起后台 daemon、等待健康并立即把控制权还给调用终端；真正长期运行的 server 必须在独立后台进程中承载。
 - `stop` / `restart` 只允许操作当前 runtime home root 通过 descriptor 发现到的 daemon authority；CLI 不得跨 home root 猜测或扫描别人的 daemon。
 - 当同一 home root 上的 descriptor 已经指向健康 daemon，`start` 必须复用并直接返回，而不是再启动第二个 writer。
+- daemon descriptor 与 `/health` 必须暴露 launcher identity（package、version、source kind、entrypoint/source id），让 CLI 能判断自己是否正在连接同一套启动来源。
+- product launcher 与 core TUI 在复用 daemon 前必须校验 launcher identity；如果当前 CLI 与已运行 daemon 不同源、旧 daemon 缺少 identity，必须给出明确错误并要求用户用当前命令执行 `agenter daemon restart`，不得静默连到错误 server。
+- legacy descriptor 只能作为 stop/restart 的定位事实使用；缺少 identity 的 daemon 不得作为 product runtime authority 被复用。

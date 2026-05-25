@@ -24,6 +24,8 @@ interface CliShellBaseArgs {
 export interface CliShellAttachArgs extends CliShellBaseArgs {
   command: "attach";
   tmux: string;
+  sessionExplicit: boolean;
+  avatarExplicit: boolean;
 }
 
 export interface CliShellRoomArgs extends CliShellBaseArgs {
@@ -93,7 +95,7 @@ interface CliShellArgvParseResult {
   host: string;
   port: number;
   authServiceEndpoint?: string;
-  session: string;
+  session?: string;
   avatar?: string;
   createAvatar?: boolean;
   clearAvatar?: boolean;
@@ -116,7 +118,7 @@ interface CliShellTmuxActionArgvParseResult {
   host: string;
   port: number;
   authServiceEndpoint?: string;
-  session: string;
+  session?: string;
   avatar?: string;
   runtimeSessionId?: string;
   workspacePath?: string;
@@ -131,7 +133,7 @@ interface CliShellHeartbeatStatusArgvParseResult {
   host: string;
   port: number;
   authServiceEndpoint?: string;
-  session: string;
+  session?: string;
   avatar?: string;
   runtimeSessionId: string;
   tmux?: string;
@@ -247,7 +249,6 @@ const baseParser = (argv: readonly string[], env: NodeJS.ProcessEnv, scriptName:
     })
     .option("session", {
       type: "string",
-      default: CLI_SHELL_DEFAULT_SESSION,
     })
     .option("avatar", {
       type: "string",
@@ -474,6 +475,9 @@ export const parseCliShellArgs = (
     createAvatar: parsed.createAvatar === true,
     clearAvatar: parsed.clearAvatar === true,
     tmux: normalizeTmuxExecutable(parsed.tmux),
+    sessionExplicit: typeof parsed.session === "string",
+    avatarExplicit:
+      typeof parsed.avatar === "string" || parsed._.some((value) => typeof value === "string" && String(value).trim().startsWith("@")),
     host: String(parsed.host),
     port: Number(parsed.port),
     authServiceEndpoint: typeof parsed.authServiceEndpoint === "string" ? parsed.authServiceEndpoint : undefined,

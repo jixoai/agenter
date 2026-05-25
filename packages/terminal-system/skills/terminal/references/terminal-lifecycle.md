@@ -5,7 +5,7 @@ Use `terminal` when process continuity matters.
 Typical flow:
 
 1. `terminal list`
-2. Recover an existing terminal id or run `terminal create` with JSON `stdin`
+2. Select an existing live terminal id or run `terminal create` with JSON `stdin`
 3. If create just returned and `lifecycleTransition` is `bootstrapping`, wait and reread `terminal list`
 4. If `processPhase` is `not_started` or `stopped`, run `terminal bootstrap`
 5. Decide whether the next payload is raw or mixed
@@ -16,7 +16,8 @@ Typical flow:
 
 Rules:
 
-- recover an existing terminal before creating a second one for the same work
+- select an existing live terminal before creating a second one for the same work
+- killed terminals are dead history evidence; prefer `terminal create` for normal follow-up work and bootstrap a killed id only for explicit forensic recovery
 - use `terminal list` to inspect `processPhase`, `currentPath`, `currentTitle`, and stop facts before guessing lifecycle
 - public `terminal create` auto-bootstraps new terminals by default
 - if `lifecycleTransition` is `bootstrapping` or `killing`, wait and reread instead of stacking another lifecycle mutation
@@ -28,7 +29,7 @@ Rules:
 - prefer `terminal await`'s command-level `wait.timeoutMs`; external shell `timeout` can still cancel the command before post-mortem JSON is delivered
 - `terminal read` consumes only your actor read cursor; other actors keep independent read progress for the same shared terminal output
 - use `remark:false` only when you need non-consuming inspection, not when you are claiming that you handled the current output
-- `terminal stop` halts the PTY while preserving the terminal record for later bootstrap
+- `terminal stop` halts the PTY while preserving the terminal record as history evidence; later bootstrap is an explicit forensic recovery path, not the normal follow-up path
 - if you need durable launch truth instead of observed runtime truth, switch to `terminal get-config`
 - keep long-lived or interactive processes in terminals instead of one-shot bash
 - anything that binds a port or serves HTTP belongs in a terminal, even if the first attempt is just a quick local experiment

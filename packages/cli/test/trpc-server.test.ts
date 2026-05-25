@@ -6,11 +6,30 @@ import { join } from "node:path";
 import { createAgenterClient, type AuthDraftEvent, type AuthKvEvent } from "@agenter/client-sdk";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
-import { startTrpcServer, type TrpcServerHandle } from "../src/trpc-server";
+import { type DaemonLauncherIdentity } from "../src/daemon-runtime-descriptor";
+import {
+  startTrpcServer as startRawTrpcServer,
+  type TrpcServerHandle,
+  type TrpcServerOptions,
+} from "../src/trpc-server";
 
 const tempDirs: string[] = [];
 const handles: TrpcServerHandle[] = [];
 const clients: Array<ReturnType<typeof createAgenterClient>> = [];
+const testLauncherIdentity: DaemonLauncherIdentity = {
+  packageName: "@agenter/cli",
+  packageVersion: "0.0.0-test",
+  sourceKind: "workspace",
+  entrypoint: "/repo/packages/cli/src/bin/agenter.ts",
+};
+
+const startTrpcServer = async (
+  options: Omit<TrpcServerOptions, "launcherIdentity"> & Partial<Pick<TrpcServerOptions, "launcherIdentity">>,
+): Promise<TrpcServerHandle> =>
+  await startRawTrpcServer({
+    launcherIdentity: testLauncherIdentity,
+    ...options,
+  });
 
 const createWorkspaceRoot = () => {
   const dir = mkdtempSync(join(tmpdir(), "agenter-cli-server-"));

@@ -1215,6 +1215,7 @@ export class AppKernel {
     this.started = true;
     this.bindMessageControlPlaneEvents();
     this.bindTerminalControlPlaneEvents();
+    this.terminalControlPlane.replayRecoveredLifecycle();
     if (this.options.initialWorkspace) {
       this.rememberWorkspace(this.options.initialWorkspace);
     }
@@ -3961,6 +3962,20 @@ export class AppKernel {
     } = {},
   ): TerminalControlPlaneEntry[] {
     if (input.superadminActorId || !input.actorId) {
+      return this.terminalControlPlane.listHistory();
+    }
+    return this.terminalControlPlane.listHistoryForActor(input.actorId, {
+      touchPresence: false,
+    });
+  }
+
+  listGlobalTerminalIndex(
+    input: {
+      actorId?: TerminalActorId;
+      superadminActorId?: TerminalActorId;
+    } = {},
+  ): TerminalControlPlaneEntry[] {
+    if (input.superadminActorId || !input.actorId) {
       return this.terminalControlPlane.listIndex();
     }
     return this.terminalControlPlane.listIndexForActor(input.actorId, {
@@ -4069,6 +4084,7 @@ export class AppKernel {
 
   bootstrapGlobalTerminal(input: {
     terminalId: string;
+    recoveryIntent?: "killed-history";
     actorId?: TerminalActorId;
     superadminActorId?: TerminalActorId;
   }): { ok: boolean; message: string; terminal?: TerminalControlPlaneEntry } {

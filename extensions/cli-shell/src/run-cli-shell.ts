@@ -11,10 +11,7 @@ import {
 } from "./bootstrap";
 import { cleanupCliShellResources, formatCliShellCleanupResult, hasCliShellCleanupFailures } from "./cleanup";
 import { readCliShellHeartbeatStatus } from "./heartbeat-status";
-import {
-  disableCliShellManagedMode,
-  enableCliShellManagedMode,
-} from "./managed";
+import { disableCliShellManagedMode, enableCliShellManagedMode } from "./managed";
 import {
   buildCliShellTmuxPlan,
   describeCliShellTmuxAttachment,
@@ -25,16 +22,18 @@ import {
   type CliShellTmuxExecutor,
   type CliShellTmuxPlan,
 } from "./tmux-host";
+import { startCliShellHelpPanelTui } from "./tui/run-cli-shell-help-panel-tui";
+import { startCliShellNavigationTui, type CliShellNavigationSelection } from "./tui/run-cli-shell-navigation-tui";
 import { startCliShellRoomTui } from "./tui/run-cli-shell-room-tui";
+import { startCliShellTopLayerTui } from "./tui/run-cli-shell-top-tui";
 import {
   readCliShellKeybindings,
   readCliShellSettings,
+  saveCliShellSettings,
   type CliShellKeybindings,
   type CliShellSettings,
 } from "./tui/settings";
-import { startCliShellTopLayerTui } from "./tui/run-cli-shell-top-tui";
 import { startCliShellShellPaneTui } from "./tui/shell-pane-app";
-import { startCliShellHelpPanelTui } from "./tui/run-cli-shell-help-panel-tui";
 
 const formatCreatedState = (created: boolean): string => (created ? "created" : "reused");
 const formatRuntimeClearState = (sessionIds: readonly string[]): string =>
@@ -49,6 +48,7 @@ export interface CliShellRunDependencies {
   bootstrap(input: CliShellBootstrapInput): Promise<CliShellBootstrapResult>;
   bootstrapRoom(input: CliShellRoomBootstrapInput): Promise<CliShellRoomBootstrapResult>;
   startRoomTui(input: Parameters<typeof startCliShellRoomTui>[0] & { argv?: readonly string[] }): Promise<void>;
+  startNavigationTui?(input: Parameters<typeof startCliShellNavigationTui>[0]): Promise<CliShellNavigationSelection>;
   startTopLayerTui(input: Parameters<typeof startCliShellTopLayerTui>[0] & { argv?: readonly string[] }): Promise<void>;
   startHelpPanelTui(input: Parameters<typeof startCliShellHelpPanelTui>[0]): Promise<void>;
   startShellPaneTui(input: Parameters<typeof startCliShellShellPaneTui>[0]): Promise<void>;
@@ -59,8 +59,12 @@ export interface CliShellRunDependencies {
     env?: NodeJS.ProcessEnv;
     executor?: CliShellTmuxExecutor;
   }): Promise<void>;
-  refreshManagedTmuxStatus(input: Parameters<typeof refreshCliShellManagedTmuxStatus>[0], managed: boolean): Promise<void>;
+  refreshManagedTmuxStatus(
+    input: Parameters<typeof refreshCliShellManagedTmuxStatus>[0],
+    managed: boolean,
+  ): Promise<void>;
   readCliShellSettings?(): Promise<CliShellSettings>;
+  saveCliShellSettings?(settings: CliShellSettings): Promise<void>;
   readCliShellKeybindings?(): Promise<CliShellKeybindings>;
 }
 
@@ -75,6 +79,10 @@ const defaultRunDependencies: CliShellRunDependencies = {
   startRoomTui: async (input) => {
     const controller = await startCliShellRoomTui(input);
     await controller.finished;
+  },
+  startNavigationTui: async (input) => {
+    const controller = await startCliShellNavigationTui(input);
+    return await controller.finished;
   },
   startTopLayerTui: async (input) => {
     const controller = await startCliShellTopLayerTui(input);
@@ -93,6 +101,7 @@ const defaultRunDependencies: CliShellRunDependencies = {
   runTmuxHost: async (input) => await runCliShellTmuxHost(input),
   refreshManagedTmuxStatus: async (input, managed) => await refreshCliShellManagedTmuxStatus(input, managed),
   readCliShellSettings: async () => await readCliShellSettings(),
+  saveCliShellSettings: async (settings) => await saveCliShellSettings(settings),
   readCliShellKeybindings: async () => await readCliShellKeybindings(),
 };
 
@@ -113,6 +122,86 @@ const writeRoomSummary = (attached: CliShellRoomBootstrapResult): void => {
 };
 
 const buildCliShellTmuxSurfaceId = (shellName: string): string => `tmux:${shellName}`;
+
+const ensureCliShellAuthenticated = async (
+  store: Pick<CliShellRuntimeStore, "autoLogin" | "setAuthToken" | "getAuthToken">,
+): Promise<void> => {
+  if (store.getAuthToken()) {
+    return;
+  }
+  const autoLogin = await store.autoLogin();
+  if (!autoLogin.ok) {
+    throw new Error(`cli-shell auto login failed: ${autoLogin.reason}: ${autoLogin.message}`);
+  }
+  store.setAuthToken(autoLogin.session.token);
+};
+
+const ensureAttachSelection = async (
+  input: {
+    args: Extract<ReturnType<typeof parseCliShellArgs>, { command: "attach" }>;
+    store: CliShellRuntimeStore;
+    settings: CliShellSettings;
+    tty: boolean;
+  },
+  dependencies: CliShellRunDependencies,
+): Promise<{
+  args: Extract<ReturnType<typeof parseCliShellArgs>, { command: "attach" }>;
+  settings: CliShellSettings;
+}> => {
+  if (input.args.sessionExplicit && input.args.avatarExplicit) {
+    return {
+      args: input.args,
+      settings: input.settings,
+    };
+  }
+  if (!input.tty) {
+    throw new Error("cli-shell requires --session and --avatar when stdin/stdout is not a TTY");
+  }
+  await ensureCliShellAuthenticated(input.store);
+  const navigationInput: Parameters<typeof startCliShellNavigationTui>[0] = {
+    store: input.store,
+    settings: input.settings,
+    needsShell: !input.args.sessionExplicit,
+    needsAvatar: !input.args.avatarExplicit,
+    initialShellName: input.args.sessionExplicit ? input.args.shellName : undefined,
+    initialAvatarNickname: input.args.avatarExplicit ? input.args.avatarNickname : undefined,
+  };
+  const selection = dependencies.startNavigationTui
+    ? await dependencies.startNavigationTui(navigationInput)
+    : await (
+        await startCliShellNavigationTui(navigationInput)
+      ).finished;
+  const nextArgs = {
+    ...input.args,
+    shellName: input.args.sessionExplicit ? input.args.shellName : selection.shellName,
+    avatarNickname: input.args.avatarExplicit ? input.args.avatarNickname : selection.avatarNickname,
+    createAvatar: input.args.createAvatar || selection.createAvatar,
+    sessionExplicit: true,
+    avatarExplicit: true,
+  };
+  const nextSettings: CliShellSettings = {
+    ...input.settings,
+    startup: {
+      lastShellName: nextArgs.shellName,
+      lastAvatarNickname: nextArgs.avatarNickname,
+    },
+  };
+  await (dependencies.saveCliShellSettings?.(nextSettings) ?? saveCliShellSettings(nextSettings));
+  return {
+    args: nextArgs,
+    settings: nextSettings,
+  };
+};
+
+const buildSelectedCliShellArgv = (
+  argvInput: readonly string[],
+  args: Extract<ReturnType<typeof parseCliShellArgs>, { command: "attach" }>,
+): readonly string[] => [
+  argvInput[0] ?? process.execPath,
+  argvInput[1] ?? "agenter-cli-shell",
+  `--session=${args.shellName}`,
+  `--avatar=${args.avatarNickname}`,
+];
 
 const toggleCliShellManagedFromTmuxAction = async (
   input: {
@@ -347,31 +436,53 @@ export const runCliShellWithDependencies = async (
       return;
     }
 
+    let attachArgs = args;
+    let settings = await (dependencies.readCliShellSettings?.() ?? readCliShellSettings());
+    const selection = await ensureAttachSelection(
+      {
+        args,
+        store,
+        settings,
+        tty: process.stdin.isTTY === true && process.stdout.isTTY === true,
+      },
+      dependencies,
+    );
+    attachArgs = selection.args;
+    settings = selection.settings;
+    const selectedArgv = buildSelectedCliShellArgv(argvInput, attachArgs);
     const attached = await dependencies.bootstrap({
       store,
       workspacePath: process.cwd(),
-      avatarNickname: args.avatarNickname,
-      shellName: args.shellName,
-      createAvatar: args.createAvatar,
-      clearAvatar: args.clearAvatar,
+      avatarNickname: attachArgs.avatarNickname,
+      shellName: attachArgs.shellName,
+      createAvatar: attachArgs.createAvatar,
+      clearAvatar: attachArgs.clearAvatar,
     });
-    const settings = await (dependencies.readCliShellSettings?.() ?? readCliShellSettings());
+    const nextStartupSettings: CliShellSettings = {
+      ...settings,
+      startup: {
+        lastShellName: attachArgs.shellName,
+        lastAvatarNickname: attachArgs.avatarNickname,
+      },
+    };
+    await (dependencies.saveCliShellSettings?.(nextStartupSettings) ?? saveCliShellSettings(nextStartupSettings));
+    settings = nextStartupSettings;
     const plan = dependencies.buildTmuxPlan({
-      shellName: args.shellName,
-      avatarNickname: args.avatarNickname,
+      shellName: attachArgs.shellName,
+      avatarNickname: attachArgs.avatarNickname,
       workspacePath: process.cwd(),
       runtimeSessionId: attached.session.id,
-      cliShellCommand: resolveCliShellCommandFromArgv(argvInput),
-      tmux: args.tmux,
-      daemonHost: args.host,
-      daemonPort: args.port,
-      authServiceEndpoint: args.authServiceEndpoint,
+      cliShellCommand: resolveCliShellCommandFromArgv(selectedArgv),
+      tmux: attachArgs.tmux,
+      daemonHost: attachArgs.host,
+      daemonPort: attachArgs.port,
+      authServiceEndpoint: attachArgs.authServiceEndpoint,
       managed: attached.managed.managed,
       chatDefaultLayout: settings.chat.defaultLayout,
       heartbeatStatus: await dependencies.readHeartbeatStatus({
         store,
         runtimeSessionId: attached.session.id,
-        shellName: args.shellName,
+        shellName: attachArgs.shellName,
       }),
     });
     console.log(describeCliShellTmuxAttachment({ attached, plan }));

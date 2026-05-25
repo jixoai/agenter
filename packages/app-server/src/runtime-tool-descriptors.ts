@@ -187,7 +187,7 @@ export interface RuntimeLocalApiHandlers {
     op: "add" | "remove" | "replace" | "clear";
     terminalIds: string[];
   }) => Promise<{ ok: boolean; message: string; focusedTerminalIds: string[] }>;
-  terminalBootstrap: (input: { terminalId: string }) => Promise<{
+  terminalBootstrap: (input: { terminalId: string; recoveryIntent?: "killed-history" }) => Promise<{
     ok: boolean;
     message: string;
     terminal?: RuntimeTerminalView;
@@ -651,6 +651,7 @@ const terminalFocusSchema = z.object({
 
 const terminalLifecycleMutationSchema = z.object({
   terminalId: z.string(),
+  recoveryIntent: z.enum(["killed-history"]).optional(),
 });
 
 const terminalArchiveSchema = z.object({
@@ -1727,10 +1728,12 @@ export const runtimeToolDescriptors = [
     namespace: "terminal",
     name: "bootstrap",
     route: "/v1/terminal/bootstrap",
-    description: "Bootstrap a provisioned or killed-history runtime terminal by id.",
+    description: "Bootstrap a provisioned terminal, or explicitly recover a killed-history terminal by id.",
     helpNotes: [
       "Use `terminal list` first when you need to inspect `processPhase`, `currentPath`, `currentTitle`, or prior stop facts.",
-      "`terminal bootstrap` starts the PTY from durable launch truth. It is the explicit lifecycle edge for `not_started` terminals and for killed terminals you intentionally recover.",
+      "`terminal bootstrap` starts the PTY from durable launch truth. It is the normal lifecycle edge for `not_started` terminals.",
+      "Killed terminals are dead history evidence. Prefer `terminal create` for normal new work; bootstrap a killed terminal only when you explicitly need forensic recovery of that same durable id.",
+      "Set `recoveryIntent:\"killed-history\"` only for explicit forensic recovery of a killed terminal. Do not set it for ordinary live `not_started` bootstrap.",
       "If `lifecycleTransition` is already `bootstrapping` or `killing`, wait and reread `terminal list` instead of stacking another lifecycle mutation.",
     ],
     inputSchema: terminalLifecycleMutationSchema,
@@ -1749,7 +1752,7 @@ export const runtimeToolDescriptors = [
     description: "Stop a running runtime terminal PTY by id and move it into terminal history.",
     helpNotes: [
       "`terminal stop` halts the PTY and removes the instance from the live terminal list while preserving durable history evidence.",
-      "After stop, use `terminal history` to inspect stop facts. Use `terminal bootstrap` when you intentionally want to start that same terminal again.",
+      "After stop, use `terminal history` to inspect stop facts. Prefer `terminal create` for normal follow-up work; use `terminal bootstrap` only for explicit forensic recovery of that same durable id.",
       "If `lifecycleTransition` is already `bootstrapping` or `killing`, wait and reread `terminal list` instead of stacking another lifecycle mutation.",
     ],
     inputSchema: terminalLifecycleMutationSchema,

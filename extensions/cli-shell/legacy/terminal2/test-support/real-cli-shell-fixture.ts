@@ -456,7 +456,10 @@ export const createRealCliShellFixture = async (
     expireVisibleTerminalApprovalRequest: async (requestId) => {
       const terminalId = attached.visibleTerminal.entry.terminalId;
       await connection.store.stopGlobalTerminal({ terminalId });
-      const bootstrapped = await connection.store.bootstrapGlobalTerminal({ terminalId });
+      const bootstrapped = await connection.store.bootstrapGlobalTerminal({
+        terminalId,
+        recoveryIntent: "killed-history",
+      });
       if (!bootstrapped.ok) {
         throw new Error(`expected visible terminal bootstrap after expiry, got ${bootstrapped.message}`);
       }

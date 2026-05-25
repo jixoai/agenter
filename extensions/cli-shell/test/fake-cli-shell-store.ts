@@ -130,6 +130,7 @@ const createTerminalEntry = (
 
 export class FakeCliShellStore implements CliShellStore {
   authToken: string | null = null;
+  autoLoginCalls = 0;
   avatars: GlobalAvatarCatalogEntry[] = [createAvatarEntry("default")];
   sessions = new Map<string, SessionEntry>();
   rooms: GlobalRoomEntry[] = [];
@@ -187,6 +188,7 @@ export class FakeCliShellStore implements CliShellStore {
   };
 
   async autoLogin(): Promise<{ ok: true; session: { token: string } }> {
+    this.autoLoginCalls += 1;
     return { ok: true, session: { token: this.authSession.token } };
   }
 
@@ -196,6 +198,10 @@ export class FakeCliShellStore implements CliShellStore {
 
   setAuthToken(token: string | null | undefined): void {
     this.authToken = token ?? null;
+  }
+
+  getAuthToken(): string | null {
+    return this.authToken;
   }
 
   async listSessions(): Promise<SessionEntry[]> {
@@ -303,6 +309,10 @@ export class FakeCliShellStore implements CliShellStore {
     return [...this.terminalHistory];
   }
 
+  async listGlobalTerminalIndex(): Promise<GlobalTerminalEntry[]> {
+    return [...this.terminals, ...this.terminalHistory];
+  }
+
   async listGlobalTerminalArchive(): Promise<GlobalTerminalEntry[]> {
     return [...this.terminalArchive];
   }
@@ -362,7 +372,10 @@ export class FakeCliShellStore implements CliShellStore {
     return next;
   }
 
-  async bootstrapGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
+  async bootstrapGlobalTerminal(input: {
+    terminalId: string;
+    recoveryIntent?: "killed-history";
+  }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
     const index = this.terminals.findIndex((entry) => entry.terminalId === input.terminalId);
     if (index === -1) {
       return { ok: false, message: "terminal missing" };

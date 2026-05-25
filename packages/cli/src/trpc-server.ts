@@ -8,7 +8,11 @@ import { z } from "zod";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import { WebSocketServer, type WebSocket } from "ws";
-import { clearOwnedDaemonRuntimeDescriptor, writeDaemonRuntimeDescriptor } from "./daemon-runtime-descriptor";
+import {
+  clearOwnedDaemonRuntimeDescriptor,
+  type DaemonLauncherIdentity,
+  writeDaemonRuntimeDescriptor,
+} from "./daemon-runtime-descriptor";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -35,6 +39,7 @@ export interface TrpcServerOptions {
   staticDir?: string;
   publicEnv?: Record<string, string>;
   homeDir?: string;
+  launcherIdentity: DaemonLauncherIdentity;
   authService?: AppKernelOptions["authService"];
   /** @deprecated Use authService. */
   profileService?: AppKernelOptions["profileService"];
@@ -487,6 +492,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
       sendJson(res, 200, {
         ok: true,
         port: (server.address() as { port?: number } | null)?.port ?? options.port,
+        launcher: options.launcherIdentity,
       });
       return;
     }
@@ -1020,6 +1026,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
     port: actualPort,
     endpoint: `http://${options.host}:${actualPort}`,
     homeDir,
+    launcher: options.launcherIdentity,
     updatedAt: new Date().toISOString(),
   });
 
@@ -1048,6 +1055,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
           port: actualPort,
           endpoint: `http://${options.host}:${actualPort}`,
           homeDir,
+          launcher: options.launcherIdentity,
         });
       }
     },

@@ -46,14 +46,17 @@
 
 	$effect(() => {
 		const release = controller.runtimeStore.retainGlobalTerminals();
+		const releaseIndex = controller.runtimeStore.retainGlobalTerminalIndex();
 		const releaseHistory = controller.runtimeStore.retainGlobalTerminalHistory();
 		const releaseArchive = controller.runtimeStore.retainGlobalTerminalArchive();
 		void controller.runtimeStore.hydrateGlobalTerminals().catch(() => undefined);
+		void controller.runtimeStore.hydrateGlobalTerminalIndex().catch(() => undefined);
 		void controller.runtimeStore.hydrateGlobalTerminalHistory().catch(() => undefined);
 		void controller.runtimeStore.hydrateGlobalTerminalArchive().catch(() => undefined);
 		return () => {
 			releaseArchive();
 			releaseHistory();
+			releaseIndex();
 			release();
 		};
 	});
@@ -77,7 +80,7 @@
 			dismissedTerminalIds,
 		),
 	);
-	const historyTerminals = $derived(controller.runtimeState.globalTerminalHistory.data);
+	const indexTerminals = $derived(controller.runtimeState.globalTerminalIndex.data);
 	const archivedTerminals = $derived(controller.runtimeState.globalTerminalArchive.data);
 
 	const copyToClipboard = async (value: string): Promise<void> => {
@@ -133,7 +136,7 @@
 
 		return [
 			...terminalTabs,
-			...(historyTerminals.length > 0
+			...(indexTerminals.length > 0
 				? [
 						{
 							id: 'terminal-history',
@@ -141,7 +144,7 @@
 							label: 'Index',
 							title: 'All terminals',
 							description: 'Live terminals appear first, then killed terminals in reverse stop order.',
-							badgeLabel: String(historyTerminals.length),
+							badgeLabel: String(indexTerminals.length),
 						} satisfies WorkbenchTabItem,
 					]
 				: []),

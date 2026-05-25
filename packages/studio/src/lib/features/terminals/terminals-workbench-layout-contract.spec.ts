@@ -22,6 +22,8 @@ describe("Feature: Terminals shell toolbar contract", () => {
     expect(terminalsWorkbenchLayoutSource).toContain("id: 'terminal-history'");
     expect(terminalsWorkbenchLayoutSource).toContain("href: '/terminals/history'");
     expect(terminalsWorkbenchLayoutSource).toContain("label: 'Index'");
+    expect(terminalsWorkbenchLayoutSource).toContain("controller.runtimeState.globalTerminalIndex.data");
+    expect(terminalsWorkbenchLayoutSource).toContain("badgeLabel: String(indexTerminals.length)");
     expect(terminalsWorkbenchLayoutSource).toContain("Live terminals appear first, then killed terminals in reverse stop order.");
     expect(terminalsWorkbenchLayoutSource).toContain("if (page.url.pathname === '/terminals/new')");
   });

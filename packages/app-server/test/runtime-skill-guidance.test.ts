@@ -69,6 +69,10 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(terminal?.template).toContain("`lifecycleTransition` is a coordination lock");
     expect(terminal?.template).toContain("`terminal set-config`");
     expect(terminal?.template).toContain("Run `terminal stop` when you want to halt the PTY");
+    expect(terminal?.template).toContain("Killed terminals leave `terminal list`.");
+    expect(terminal?.template).toContain("dead history evidence");
+    expect(terminal?.template).toContain("explicit forensic recovery");
+    expect(terminal?.template).toContain("prefer `terminal create` for normal follow-up work");
     expect(terminal?.template).toContain("run `terminal write --help` or `terminal input --help` first");
     expect(terminal?.template).toContain("run `skill info agenter-terminal`");
     expect(terminal?.template).toContain("references/terminal-config.md");

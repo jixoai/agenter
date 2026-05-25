@@ -125,6 +125,10 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
   readonly terminals: GlobalTerminalEntry[] = [];
   readonly terminalHistory: GlobalTerminalEntry[] = [];
   readonly terminalArchive: GlobalTerminalEntry[] = [];
+  readonly createTerminalCalls: Array<{
+    terminalId?: string;
+    metadata?: Record<string, unknown>;
+  }> = [];
   readonly terminalGrants = new Map<string, GlobalTerminalGrantEntry[]>();
   readonly bootstrapTerminalCalls: string[] = [];
   readonly setTerminalConfigCalls: Array<{
@@ -306,6 +310,10 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     return [...this.terminalHistory];
   }
 
+  async listGlobalTerminalIndex(): Promise<GlobalTerminalEntry[]> {
+    return [...this.terminals, ...this.terminalHistory];
+  }
+
   async listGlobalTerminalArchive(): Promise<GlobalTerminalEntry[]> {
     return [...this.terminalArchive];
   }
@@ -321,6 +329,17 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     start?: boolean;
     focus?: boolean;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
+    this.createTerminalCalls.push({
+      terminalId: input.terminalId,
+      metadata: input.metadata,
+    });
+    if (
+      [...this.terminals, ...this.terminalHistory, ...this.terminalArchive].some(
+        (entry) => entry.terminalId === input.terminalId,
+      )
+    ) {
+      return { ok: false, message: `terminal already exists: ${input.terminalId}` };
+    }
     const terminal = createTerminalEntry(
       input.terminalId ?? `terminal-${this.terminals.length + 1}`,
       input.metadata ?? {},
@@ -371,6 +390,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
 
   async bootstrapGlobalTerminal(input: {
     terminalId: string;
+    recoveryIntent?: "killed-history";
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
     this.bootstrapTerminalCalls.push(input.terminalId);
     const index = this.terminals.findIndex((entry) => entry.terminalId === input.terminalId);
@@ -687,7 +707,7 @@ describe("Feature: product extension runtime client", () => {
     expect(store.deletedSessionIds).toEqual(["session:/repo:review-4"]);
     expect([...store.sessions.values()].map((session) => session.id)).toEqual(["session:/other-repo:review-4"]);
     expect(store.avatars.map((entry) => entry.nickname)).toEqual(["review-4"]);
-    expect(store.terminals.map((entry) => entry.terminalId)).toEqual(["shell-4:terminal-2"]);
+    expect(store.terminals.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-4:terminal-2"]);
     expect(store.rooms.map((entry) => entry.chatId)).toEqual(["room-1"]);
     expect(store.avatarPromptFiles.get("/repo:auth:review-4:agenter")?.content).toBe("# Existing prompt\n");
     expect(store.privateAssets.get("/repo:review-4:memory:memory.md")?.content).toBe("# Existing memory\n");
@@ -791,11 +811,70 @@ describe("Feature: product extension runtime client", () => {
     expect(terminal.created).toBe(true);
     expect(terminal.granted).toBe(true);
     expect(terminal.entry.backend).toBe("xterm");
+    expect(terminal.entry.terminalId).not.toBe("shell-1");
+    expect(store.createTerminalCalls).toEqual([
+      {
+        terminalId: undefined,
+        metadata: {
+          productId: "cli-shell",
+          resourceKey: "shell-1",
+          ownerSystem: "terminal-system",
+        },
+      },
+    ]);
     expect(terminal.bindingMetadata.resourceKey).toBe("shell-1");
     expect(terminal.entry.metadata?.productId).toBe("cli-shell");
     expect(room.created).toBe(true);
     expect(room.granted).toBe(true);
     expect(room.entry.metadata?.resourceKey).toBe("shell-1");
+  });
+
+  test("Scenario: Given a killed terminal kept in history When ensuring a product binding with the same resource key Then the runtime client creates a fresh TerminalSystem id instead of colliding with history", async () => {
+    const store = new FakeProductRuntimeStore();
+    store.terminalHistory.push(
+      createTerminalEntry(
+        "shell-1",
+        {
+          productId: "cli-shell",
+          resourceKey: "shell-1",
+          ownerSystem: "terminal-system",
+        },
+        "killed",
+      ),
+    );
+    const client = new ProductExtensionRuntimeClient(store);
+
+    const ensuredTerminal = await client.ensureTerminalBinding({
+      session: createSessionEntry("/repo", "shell-assistant"),
+      binding: {
+        productId: "cli-shell",
+        resourceKey: "shell-1",
+        resourceKind: "terminal",
+        ownerSystem: "terminal-system",
+      },
+      createInput: {
+        processKind: "shell",
+        start: true,
+      },
+    });
+
+    expect(ensuredTerminal.created).toBe(true);
+    expect(ensuredTerminal.entry.terminalId).not.toBe("shell-1");
+    expect(ensuredTerminal.entry.metadata).toMatchObject({
+      productId: "cli-shell",
+      resourceKey: "shell-1",
+      ownerSystem: "terminal-system",
+    });
+    expect(store.createTerminalCalls).toEqual([
+      {
+        terminalId: undefined,
+        metadata: {
+          productId: "cli-shell",
+          resourceKey: "shell-1",
+          ownerSystem: "terminal-system",
+        },
+      },
+    ]);
   });
 
   test("Scenario: Given existing bound resources When ensuring them again Then product metadata reuses the resources and skips duplicate grants", async () => {
@@ -913,6 +992,7 @@ describe("Feature: product extension runtime client", () => {
         resourceKind: "terminal",
         ownerSystem: "terminal-system",
       },
+      terminalId: "shell-1",
       createInput: {
         processKind: "shell",
         command: ["/bin/zsh", "-i"],
@@ -960,6 +1040,7 @@ describe("Feature: product extension runtime client", () => {
         resourceKind: "terminal",
         ownerSystem: "terminal-system",
       },
+      terminalId: "shell-1",
       createInput: {
         processKind: "shell",
         backend: "ghostty-native",
@@ -1002,6 +1083,7 @@ describe("Feature: product extension runtime client", () => {
           resourceKind: "terminal",
           ownerSystem: "terminal-system",
         },
+        terminalId: "shell-1",
         createInput: {
           backend: "ghostty-native",
           start: true,

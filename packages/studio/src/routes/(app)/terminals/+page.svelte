@@ -22,13 +22,12 @@
 			return;
 		}
 		if (
-			!controller.runtimeState.globalTerminalHistory.loaded &&
-			controller.runtimeState.globalTerminalHistory.error === null
+			!controller.runtimeState.globalTerminalIndex.loaded &&
+			controller.runtimeState.globalTerminalIndex.error === null
 		) {
 			return;
 		}
-		const nextHref =
-			controller.runtimeState.globalTerminalHistory.data.length > 0 ? '/terminals/history' : '/terminals/new';
+		const nextHref = controller.runtimeState.globalTerminalIndex.data.length > 0 ? '/terminals/history' : '/terminals/new';
 		void goto(nextHref, {
 			replaceState: true,
 			noScroll: true,

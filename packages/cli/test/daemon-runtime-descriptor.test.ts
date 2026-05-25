@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { type TrpcServerHandle } from "../src/trpc-server";
 import {
   clearOwnedDaemonRuntimeDescriptor,
+  type DaemonLauncherIdentity,
   readDaemonRuntimeDescriptor,
   resolveDaemonLogDir,
   resolveDaemonLogPath,
@@ -16,6 +17,12 @@ import { startTrpcServer } from "../src/trpc-server";
 
 const tempDirs: string[] = [];
 const handles: TrpcServerHandle[] = [];
+const testLauncherIdentity: DaemonLauncherIdentity = {
+  packageName: "@agenter/cli",
+  packageVersion: "0.0.0-test",
+  sourceKind: "workspace",
+  entrypoint: "/repo/packages/cli/src/bin/agenter.ts",
+};
 
 const createRoot = (): string => {
   const root = mkdtempSync(join(tmpdir(), "agenter-daemon-runtime-descriptor-"));
@@ -44,6 +51,7 @@ describe("Feature: daemon runtime descriptor lifecycle", () => {
       globalSessionRoot: join(root, "sessions"),
       workspacesPath: join(root, "workspaces.yaml"),
       homeDir,
+      launcherIdentity: testLauncherIdentity,
     });
     handles.push(handle);
 
@@ -55,9 +63,15 @@ describe("Feature: daemon runtime descriptor lifecycle", () => {
       port: handle.port,
       endpoint: `http://${handle.host}:${handle.port}`,
       homeDir,
+      launcher: testLauncherIdentity,
     });
     expect(Number.isNaN(Date.parse(descriptor?.updatedAt ?? ""))).toBe(false);
     expect(existsSync(descriptorPath)).toBe(true);
+    expect(await (await fetch(`http://${handle.host}:${handle.port}/health`)).json()).toMatchObject({
+      ok: true,
+      port: handle.port,
+      launcher: testLauncherIdentity,
+    });
 
     await handle.stop();
     handles.pop();
@@ -75,6 +89,12 @@ describe("Feature: daemon runtime descriptor lifecycle", () => {
       port: 7999,
       endpoint: "http://127.0.0.1:7999",
       homeDir,
+      launcher: {
+        packageName: "agenter",
+        packageVersion: "99.0.0",
+        sourceKind: "package",
+        entrypoint: "agenter@99.0.0",
+      },
       updatedAt: new Date().toISOString(),
     } as const;
 
@@ -86,6 +106,7 @@ describe("Feature: daemon runtime descriptor lifecycle", () => {
       port: 4580,
       endpoint: "http://127.0.0.1:4580",
       homeDir,
+      launcher: testLauncherIdentity,
     });
 
     expect(readDaemonRuntimeDescriptor(homeDir)).toEqual(foreignDescriptor);

@@ -10,6 +10,7 @@ describe("Feature: Terminal history index route contract", () => {
     expect(terminalHistoryRouteSource).toContain("const liveHistoryTerminals = $derived(");
     expect(terminalHistoryRouteSource).toContain("const killedHistoryTerminals = $derived(");
     expect(terminalHistoryRouteSource).toContain("const selectedTerminal = $derived(");
+    expect(terminalHistoryRouteSource).toContain("controller.runtimeState.globalTerminalIndex.data");
     expect(terminalHistoryRouteSource).toContain("terminal.processPhase !== 'killed'");
     expect(terminalHistoryRouteSource).toContain("terminal.processPhase === 'killed'");
     expect(terminalHistoryRouteSource).toContain("<WorkbenchSplitDetailHost");

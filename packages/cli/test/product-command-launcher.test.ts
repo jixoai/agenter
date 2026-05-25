@@ -288,7 +288,7 @@ describe("Feature: product command launcher", () => {
     let daemonChecks = 0;
     let spawned = 0;
     const dependencies: ProductCommandLaunchDependencies = {
-      async isDaemonAlive() {
+      async resolveDaemonAuthority() {
         daemonChecks += 1;
         throw new Error("metadata-only product launch must not check daemon health");
       },
@@ -318,8 +318,8 @@ describe("Feature: product command launcher", () => {
     process.env.HOME = home;
     try {
       const dependencies: ProductCommandLaunchDependencies = {
-        async isDaemonAlive() {
-          return false;
+        async resolveDaemonAuthority() {
+          return null;
         },
         async discoverReusableDaemonAuthority() {
           return null;
@@ -346,6 +346,27 @@ describe("Feature: product command launcher", () => {
         delete process.env.HOME;
       }
     }
+  });
+
+  test("Scenario: Given a reachable daemon belongs to another launcher When launching a product Then the product is not started against the wrong server", async () => {
+    const dependencies: ProductCommandLaunchDependencies = {
+      async resolveDaemonAuthority() {
+        throw new Error("daemon launcher mismatch");
+      },
+      async discoverReusableDaemonAuthority() {
+        return null;
+      },
+      async startDaemon() {
+        throw new Error("incompatible daemon must not be replaced implicitly");
+      },
+      spawnProduct() {
+        throw new Error("product must not start against an incompatible daemon");
+      },
+    };
+
+    await expect(launchProductCommandForTest(["shell", "--web=0"], dependencies)).rejects.toThrow(
+      "daemon launcher mismatch",
+    );
   });
 });
 

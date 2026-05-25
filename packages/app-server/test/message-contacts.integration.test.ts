@@ -4,10 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { appRouter, createTrpcContext } from "../src";
+import { type DaemonLauncherIdentity } from "../../cli/src/daemon-runtime-descriptor";
 import { startTrpcServer, type TrpcServerHandle } from "../../cli/src/trpc-server";
 
 const tempDirs: string[] = [];
 const handles: TrpcServerHandle[] = [];
+const testLauncherIdentity: DaemonLauncherIdentity = {
+  packageName: "@agenter/cli",
+  packageVersion: "0.0.0-test",
+  sourceKind: "workspace",
+  entrypoint: "/repo/packages/cli/src/bin/agenter.ts",
+};
 
 const makeTempDir = (): string => {
   const dir = mkdtempSync(join(tmpdir(), "agenter-message-contacts-"));
@@ -42,6 +49,7 @@ const startHandle = async (privateKey: string): Promise<TrpcServerHandle> => {
     globalSessionRoot: join(root, "sessions"),
     workspacesPath: join(root, "workspaces.yaml"),
     homeDir: join(root, "home"),
+    launcherIdentity: testLauncherIdentity,
     authService: {
       rootAuthPrivateKey: privateKey as `0x${string}`,
     },

@@ -1,17 +1,17 @@
 ---
 name: agenter-terminal
-description: Create, recover, and drive durable terminal sessions. Use this when work needs a long-lived or interactive process.
+description: Create and drive durable terminal sessions. Use this when work needs a long-lived or interactive process; killed-terminal recovery is an explicit forensic path.
 ---
 
 # agenter-terminal
 
-Use this skill when work needs a durable process, an interactive shell, or recoverable terminal context.
+Use this skill when work needs a durable process or an interactive shell. Killed terminal instances are dead history evidence; recover one only when you explicitly need that exact durable id.
 
 Quick start:
 1. Run `terminal list` first to inspect `processPhase`, `currentPath`, `currentTitle`, and prior stop facts before guessing lifecycle from stale output.
 2. Run `terminal create` when no suitable terminal exists yet. Public `terminal create` auto-bootstraps by default, so a fresh terminal may briefly show `lifecycleTransition = bootstrapping` before it settles into `processPhase = running`.
 3. If you need the durable launch command, launch cwd, geometry, or metadata, run `terminal get-config` instead of inferring config from observed runtime output.
-4. If `terminal list` shows `processPhase` as `not_started`, run `terminal bootstrap` before expecting read/write to work. If the terminal was already killed, switch to `terminal history` and bootstrap it intentionally from there.
+4. If `terminal list` shows `processPhase` as `not_started`, run `terminal bootstrap` before expecting read/write to work. If the terminal was already killed, switch to `terminal history`; prefer `terminal create` for normal follow-up work and bootstrap the killed id only for explicit forensic recovery.
 5. If `terminal list` or `terminal get-config` shows `lifecycleTransition = bootstrapping` or `killing`, wait and reread instead of stacking another lifecycle or config mutation.
 6. Decide whether the next payload is `raw` or `mixed`.
 7. If the exact payload shape is unclear, run `terminal write --help` or `terminal input --help` first.
@@ -29,7 +29,7 @@ Key laws:
 - `terminal list` is the lifecycle and observed-identity inspection surface. Read `processPhase`, `currentPath`, `currentTitle`, and stop facts there before inferring state from raw output.
 - `terminal create` auto-bootstraps by default. A newly created terminal may briefly expose `lifecycleTransition = bootstrapping`; wait and reread instead of firing a redundant second bootstrap.
 - Provisioned terminals do not auto-start when you read or write. Use `terminal bootstrap` explicitly.
-- Killed terminals leave `terminal list`. Use `terminal history` to inspect dead-instance facts, and bootstrap only when you intentionally want to recover that same durable terminal.
+- Killed terminals leave `terminal list`. Use `terminal history` to inspect dead-instance facts. Prefer `terminal create` for normal follow-up work; bootstrap a killed id only when you intentionally need forensic recovery of that same durable terminal.
 - `terminal read` consumes this actor's read cursor. Other actors keep independent cursors on the same shared terminal output.
 - Use `terminal read` deliberately: `remark:false` inspects without advancing your cursor, while normal reads advance only your actor's cursor.
 - `terminal await` is the bounded observation primitive. Use it instead of reconstructing waits with shell `sleep`, repeated `terminal read`, and `grep`.
@@ -48,7 +48,7 @@ Key laws:
 - `terminal stop` halts the PTY, removes the terminal from the live list, and preserves durable history evidence. `terminal archive` hides dead history from the default work queue, and `terminal delete` is the final destructive removal.
 - After starting a listener in `terminal`, inspect its real state and verify the exact promised URL or path before you tell a room or user that it is ready.
 - `terminal read` snapshots and "the process is still running" only describe terminal state; they do not prove the promised URL or API path actually responds.
-- When the task already names the workspace and delivery target, the normal next move is to create or recover the terminal, not to browse unrelated room or attention detail first.
+- When the task already names the workspace and delivery target, the normal next move is to create or select a live terminal, not to browse unrelated room or attention detail first.
 - If a one-shot shell hits binding or sandbox errors while you are trying to make a service reachable, stop and switch to `terminal`.
 - When more than one workspace is mounted, choose an explicit absolute `cwd`.
 - `terminal create`, `terminal write`, `terminal await`, and `terminal read` are JSON-first commands. Through `root_bash`, default to `command=<bare terminal action>` plus JSON `stdin`.

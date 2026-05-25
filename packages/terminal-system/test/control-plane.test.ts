@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -20,12 +21,14 @@ import {
 
 import {
   chooseTerminalFramePatch,
+  DEFAULT_TERMINAL_BACKEND,
   projectTerminalSnapshotFramePayload,
   TerminalControlPlane,
   type ManagedTerminalSnapshot,
   type TerminalRuntime,
   type TerminalTransportServerMessage,
 } from "../src";
+import { TerminalDb } from "../src/terminal-db";
 
 const workspaces: string[] = [];
 
@@ -64,6 +67,52 @@ const createDefaultShellPlane = () => {
       },
     },
   });
+};
+
+const seedRunningTerminalRecord = (input: { outputRoot: string; terminalId: string; stoppedAt?: number }): void => {
+  const db = new TerminalDb(join(input.outputRoot, "terminal.db"));
+  db.createTerminal({
+    terminalId: input.terminalId,
+    processKind: "shell",
+    backend: DEFAULT_TERMINAL_BACKEND,
+    command: ["sh", "-lc", "cat"],
+    launchCwd: input.outputRoot,
+    profile: {},
+    metadata: {},
+    processPhase: "running",
+    lastStopReason: null,
+    lastExitCode: null,
+    lastExitSignal: null,
+    lastStoppedAt: input.stoppedAt ?? null,
+    archivedAt: null,
+  });
+  db.close();
+};
+
+const seedTerminalGrant = (input: {
+  outputRoot: string;
+  terminalId: string;
+  participantId: string;
+  role: "admin" | "writer" | "guard" | "readonly";
+  accessToken?: string;
+}): string => {
+  const accessToken = input.accessToken ?? `test-token-${randomUUID().replaceAll("-", "")}`;
+  const db = new Database(join(input.outputRoot, "terminal.db"), { create: true, strict: true });
+  db.query(
+    `insert into terminal_grant (
+      grant_id, terminal_id, role, label, participant_id, access_token, token_hash, created_at, revoked_at
+    ) values (?, ?, ?, null, ?, ?, ?, ?, null)`,
+  ).run(
+    `term-grant-${randomUUID()}`,
+    input.terminalId,
+    input.role,
+    input.participantId,
+    accessToken,
+    createHash("sha256").update(accessToken).digest("hex"),
+    Date.now(),
+  );
+  db.close();
+  return accessToken;
 };
 
 const decodeServerFrame = (data: MessageEvent["data"]): TerminalTransportServerMessage | null => {
@@ -631,6 +680,110 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
+  test("Scenario: Given daemon cold-start finds a stale running terminal When recovery is replayed after observers bind Then killed lifecycle leaves live projection", async () => {
+    const outputRoot = mkdtempSync(join(tmpdir(), "ati-control-plane-recovery-"));
+    workspaces.push(outputRoot);
+    seedRunningTerminalRecord({
+      outputRoot,
+      terminalId: "daemon-recovered",
+    });
+    const plane = new TerminalControlPlane({
+      dbPath: join(outputRoot, "terminal.db"),
+      outputRoot,
+      defaultShellCommand: ["sh", "-lc", "cat"],
+      initialConfig: {
+        defaults: {
+          cols: 80,
+          rows: 20,
+        },
+        transport: {
+          port: null,
+        },
+      },
+    });
+    const observed: Array<{
+      reason: string;
+      processPhase: string | undefined;
+    }> = [];
+    plane.onChanged(({ terminalId, reason }) => {
+      if (terminalId !== "daemon-recovered") {
+        return;
+      }
+      observed.push({
+        reason,
+        processPhase: plane.listIndex().find((entry) => entry.terminalId === terminalId)?.processPhase,
+      });
+    });
+
+    const recovered = plane.replayRecoveredLifecycle();
+    const replayAgain = plane.replayRecoveredLifecycle();
+
+    expect(recovered.map((entry) => entry.terminalId)).toEqual(["daemon-recovered"]);
+    expect(replayAgain).toEqual([]);
+    expect(plane.list().find((entry) => entry.terminalId === "daemon-recovered")).toBeUndefined();
+    expect(plane.listHistory().find((entry) => entry.terminalId === "daemon-recovered")?.processPhase).toBe("killed");
+    expect(observed).toEqual([
+      {
+        reason: "lifecycle",
+        processPhase: "killed",
+      },
+    ]);
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given daemon recovery kills a focused terminal When lifecycle replay runs Then actor focus is cleaned with one lifecycle consequence", async () => {
+    const outputRoot = mkdtempSync(join(tmpdir(), "ati-control-plane-recovery-focus-"));
+    workspaces.push(outputRoot);
+    const actorId = "session:daemon-owner";
+    seedRunningTerminalRecord({
+      outputRoot,
+      terminalId: "daemon-focused",
+    });
+    const accessToken = seedTerminalGrant({
+      outputRoot,
+      terminalId: "daemon-focused",
+      participantId: actorId,
+      role: "admin",
+    });
+    const plane = new TerminalControlPlane({
+      dbPath: join(outputRoot, "terminal.db"),
+      outputRoot,
+      defaultShellCommand: ["sh", "-lc", "cat"],
+      initialConfig: {
+        transport: {
+          port: null,
+        },
+      },
+    });
+    const focusEvents: string[][] = [];
+    const changeReasons: string[] = [];
+    plane.onFocus((event) => {
+      if (event.actorId === actorId) {
+        focusEvents.push(event.terminalIds);
+      }
+    });
+    plane.onChanged(({ terminalId, reason }) => {
+      if (terminalId === "daemon-focused") {
+        changeReasons.push(reason);
+      }
+    });
+
+    expect(plane.focusAuthorized("replace", [{ terminalId: "daemon-focused", accessToken }])).toEqual([
+      "daemon-focused",
+    ]);
+    expect(plane.getFocusedTerminalIds(actorId)).toEqual(["daemon-focused"]);
+
+    plane.replayRecoveredLifecycle();
+
+    expect(plane.getFocusedTerminalIds(actorId)).toEqual([]);
+    expect(focusEvents.at(-1)).toEqual([]);
+    expect(changeReasons.filter((reason) => reason === "lifecycle")).toHaveLength(1);
+    expect(changeReasons).not.toContain("updated");
+
+    await plane.dispose();
+  });
+
   test("Scenario: Given a kill transition is in flight When another lifecycle or config mutation arrives Then the control plane rejects the overlap", async () => {
     const plane = createPlane();
     plane.setActorPresence("session:owner", true);
@@ -659,7 +812,7 @@ describe("Feature: terminal control plane", () => {
         title: "Blocked during kill",
       }),
     ).toThrow("already killing");
-    expect(() => plane.bootstrap(created.terminalId)).toThrow("already killing");
+    expect(() => plane.bootstrap({ terminalId: created.terminalId })).toThrow("already killing");
 
     await stopPromise;
     await plane.dispose();
@@ -1572,6 +1725,7 @@ describe("Feature: terminal control plane", () => {
     plane.bootstrapAuthorized({
       terminalId: created.terminalId,
       actorId: "session:owner",
+      recoveryIntent: "killed-history",
     });
     await Bun.sleep(120);
     const restarted = await plane.snapshot(created.terminalId);
@@ -3335,7 +3489,7 @@ describe("Feature: terminal control plane", () => {
     }
 
     await plane.stop(created.terminalId);
-    plane.bootstrap(created.terminalId);
+    plane.bootstrap({ terminalId: created.terminalId, recoveryIntent: "killed-history" });
 
     expect(
       plane
@@ -3353,6 +3507,39 @@ describe("Feature: terminal control plane", () => {
         durationMs: 60_000,
       }),
     ).toThrow("unknown pending terminal approval request");
+
+    await plane.dispose();
+  });
+
+  test("Scenario: Given killed terminal history When bootstrap lacks recovery intent Then it stays dead until explicit killed-history recovery", async () => {
+    const plane = createPlane();
+    plane.setActorPresence("session:admin", true);
+    const created = await plane.create({
+      terminalId: "explicit-history-recovery",
+      bootstrapActorId: "session:admin",
+      bootstrapRole: "admin",
+    });
+
+    await plane.stop(created.terminalId);
+
+    expect(() =>
+      plane.bootstrapAuthorized({
+        terminalId: created.terminalId,
+        actorId: "session:admin",
+      }),
+    ).toThrow("explicit killed-history recovery intent");
+    expect(plane.list().some((entry) => entry.terminalId === created.terminalId)).toBeFalse();
+    expect(plane.listHistory().find((entry) => entry.terminalId === created.terminalId)?.processPhase).toBe("killed");
+
+    const recovered = plane.bootstrapAuthorized({
+      terminalId: created.terminalId,
+      actorId: "session:admin",
+      recoveryIntent: "killed-history",
+    });
+
+    expect(recovered.processPhase).toBe("running");
+    expect(plane.list().find((entry) => entry.terminalId === created.terminalId)?.processPhase).toBe("running");
+    expect(plane.listHistory().some((entry) => entry.terminalId === created.terminalId)).toBeFalse();
 
     await plane.dispose();
   });

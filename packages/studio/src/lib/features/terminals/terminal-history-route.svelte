@@ -27,10 +27,10 @@
 	let detailCompact = $state(false);
 	let detailOpen = $state(true);
 
-	const historyTerminals = $derived(controller.runtimeState.globalTerminalHistory.data);
-	const historyLoaded = $derived(controller.runtimeState.globalTerminalHistory.loaded);
-	const historyLoading = $derived(controller.runtimeState.globalTerminalHistory.loading);
-	const historyError = $derived(controller.runtimeState.globalTerminalHistory.error);
+	const historyTerminals = $derived(controller.runtimeState.globalTerminalIndex.data);
+	const historyLoaded = $derived(controller.runtimeState.globalTerminalIndex.loaded);
+	const historyLoading = $derived(controller.runtimeState.globalTerminalIndex.loading);
+	const historyError = $derived(controller.runtimeState.globalTerminalIndex.error);
 	const liveHistoryTerminals = $derived(historyTerminals.filter((terminal) => terminal.processPhase !== 'killed'));
 	const killedHistoryTerminals = $derived(historyTerminals.filter((terminal) => terminal.processPhase === 'killed'));
 	const selectedTerminal = $derived(

@@ -28,6 +28,7 @@ export interface CliShellStore extends ProductExtensionRuntimeStore {
   autoLogin(): Promise<CliShellAutoLoginResult>;
   getAuthSession(): Promise<AuthSessionOutput | null>;
   setAuthToken(token: string | null | undefined): void;
+  getAuthToken?(): string | null;
   queryAttention: ProductExtensionRuntimeStore["queryAttention"];
   commitAttention: ProductExtensionRuntimeStore["commitAttention"];
   settleAttention: ProductExtensionRuntimeStore["settleAttention"];
@@ -103,6 +104,9 @@ const toRoomActorId = (
 ): GlobalRoomActorId => avatarPrincipalId as GlobalRoomActorId;
 
 const requireAutoLogin = async (store: CliShellStore): Promise<void> => {
+  if (store.getAuthToken?.()) {
+    return;
+  }
   const autoLogin = await store.autoLogin();
   if (!autoLogin.ok) {
     throw new Error(`cli-shell auto login failed: ${autoLogin.reason}: ${autoLogin.message}`);

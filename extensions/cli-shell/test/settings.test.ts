@@ -32,6 +32,22 @@ describe("Feature: cli-shell product settings", () => {
     expect(parseCliShellSettings(JSON.stringify({ chat: { defaultLayout: "cover" } })).chat.defaultLayout).toBe("cover");
   });
 
+  test("Scenario: Given settings contain startup selection When parsed Then cli-shell remembers the last selected Shell and Avatar", () => {
+    expect(
+      parseCliShellSettings(
+        JSON.stringify({
+          startup: {
+            lastShellName: " shell-7 ",
+            lastAvatarNickname: " bangeel ",
+          },
+        }),
+      ).startup,
+    ).toEqual({
+      lastShellName: "shell-7",
+      lastAvatarNickname: "bangeel",
+    });
+  });
+
   test("Scenario: Given keybindings file is missing or invalid When cli-shell parses keybindings Then it falls back to product defaults", () => {
     expect(parseCliShellKeybindings("")).toEqual(defaultCliShellKeybindings());
     expect(parseCliShellKeybindings("{not-json")).toEqual(defaultCliShellKeybindings());
@@ -66,8 +82,13 @@ describe("Feature: cli-shell product settings", () => {
 
     await saveCliShellSettings(
       {
+        ...defaultCliShellSettings(),
         chat: {
           defaultLayout: "left",
+        },
+        startup: {
+          lastShellName: "shell-5",
+          lastAvatarNickname: "bangeel",
         },
       },
       { baseDir: dir },
@@ -81,7 +102,12 @@ describe("Feature: cli-shell product settings", () => {
       { baseDir: dir },
     );
 
-    expect((await readCliShellSettings({ baseDir: dir })).chat.defaultLayout).toBe("left");
+    const settings = await readCliShellSettings({ baseDir: dir });
+    expect(settings.chat.defaultLayout).toBe("left");
+    expect(settings.startup).toEqual({
+      lastShellName: "shell-5",
+      lastAvatarNickname: "bangeel",
+    });
     expect((await readCliShellKeybindings({ baseDir: dir })).textarea?.submit).toEqual(["ctrl+return"]);
   });
 });

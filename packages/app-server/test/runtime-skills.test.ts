@@ -165,7 +165,10 @@ describe("Feature: runtime built-in skills", () => {
       "If a one-shot shell hits binding or sandbox errors while you are trying to make a service reachable",
     );
     expect(terminalContent).toContain("do not prove the promised URL or API path actually responds");
-    expect(terminalContent).toContain("the normal next move is to create or recover the terminal");
+    expect(terminalContent).toContain("Killed terminals leave `terminal list`.");
+    expect(terminalContent).toContain("Killed terminal instances are dead history evidence");
+    expect(terminalContent).toContain("explicit forensic recovery");
+    expect(terminalContent).toContain("the normal next move is to create or select a live terminal");
     expect(terminalContent).toContain("Decide whether the next payload is `raw` or `mixed`.");
     expect(terminalContent).toContain("default to `command=<bare terminal action>` plus JSON `stdin`");
     expect(terminalContent).toContain("accepts `--compact` positional arrays");

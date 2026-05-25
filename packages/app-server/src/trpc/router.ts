@@ -1343,6 +1343,9 @@ export const appRouter = t.router({
     globalHistory: authProcedure.query(({ ctx }) => ({
       items: ctx.kernel.listGlobalTerminalHistory(resolveTerminalCallerScope(ctx.auth)),
     })),
+    globalIndex: authProcedure.query(({ ctx }) => ({
+      items: ctx.kernel.listGlobalTerminalIndex(resolveTerminalCallerScope(ctx.auth)),
+    })),
     globalArchiveList: authProcedure.query(({ ctx }) => ({
       items: ctx.kernel.listGlobalTerminalArchive(resolveTerminalCallerScope(ctx.auth)),
     })),
@@ -1370,6 +1373,7 @@ export const appRouter = t.router({
       .input(
         z.object({
           terminalId: z.string().min(1),
+          recoveryIntent: z.enum(["killed-history"]).optional(),
         }),
       )
       .mutation(({ ctx, input }) => ({

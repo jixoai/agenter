@@ -548,6 +548,10 @@ export class FakeCliShellStore implements CliShellStore {
     return [...this.terminalHistory];
   }
 
+  async listGlobalTerminalIndex(): Promise<GlobalTerminalEntry[]> {
+    return [...this.terminals, ...this.terminalHistory];
+  }
+
   async listGlobalTerminalArchive(): Promise<GlobalTerminalEntry[]> {
     return [...this.terminalArchive];
   }
@@ -701,6 +705,7 @@ export class FakeCliShellStore implements CliShellStore {
 
   async bootstrapGlobalTerminal(input: {
     terminalId: string;
+    recoveryIntent?: "killed-history";
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
     const index = this.terminals.findIndex((entry) => entry.terminalId === input.terminalId);
     if (index === -1) {

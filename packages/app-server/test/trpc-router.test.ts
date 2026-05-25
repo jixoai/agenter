@@ -6,7 +6,13 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 import { resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
 import type { MessageControlPlane } from "@agenter/message-system";
-import type { TerminalActorId, TerminalApprovalRequestRecord, TerminalControlPlane } from "@agenter/terminal-system";
+import {
+  DEFAULT_TERMINAL_BACKEND,
+  TerminalDb,
+  type TerminalActorId,
+  type TerminalApprovalRequestRecord,
+  type TerminalControlPlane,
+} from "@agenter/terminal-system";
 import { AppKernel, SessionDb, appRouter, createTrpcContext } from "../src";
 import { UsageAnalyticsDb } from "../src/usage-analytics-db";
 import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "../src/usage-analytics-paths";
@@ -21,6 +27,31 @@ const makeTempDir = (): string => {
   const dir = mkdtempSync(join(tmpdir(), "agenter-trpc-router-"));
   tempDirs.push(dir);
   return dir;
+};
+
+const seedGlobalRunningTerminalRecord = (input: {
+  stateRoot: string;
+  terminalId: string;
+  cwd: string;
+  stoppedAt?: number;
+}): void => {
+  const db = new TerminalDb(join(input.stateRoot, ".terminal", "terminal.db"));
+  db.createTerminal({
+    terminalId: input.terminalId,
+    processKind: "shell",
+    backend: DEFAULT_TERMINAL_BACKEND,
+    command: ["sh", "-lc", "cat"],
+    launchCwd: input.cwd,
+    profile: {},
+    metadata: {},
+    processPhase: "running",
+    lastStopReason: null,
+    lastExitCode: null,
+    lastExitSignal: null,
+    lastStoppedAt: input.stoppedAt ?? null,
+    archivedAt: null,
+  });
+  db.close();
 };
 
 afterEach(async () => {
@@ -1309,12 +1340,57 @@ describe("Feature: app-server trpc procedures", () => {
     await caller.terminal.globalStop({
       terminalId,
     });
+    const liveAfterStop = await caller.terminal.globalList();
+    const historyAfterStop = await caller.terminal.globalHistory();
+    const indexAfterStop = await caller.terminal.globalIndex();
+    const archiveAfterStop = await caller.terminal.globalArchiveList();
+    expect(liveAfterStop.items.some((item) => item.terminalId === terminalId)).toBeFalse();
+    expect(historyAfterStop.items.find((item) => item.terminalId === terminalId)?.processPhase).toBe("killed");
+    expect(indexAfterStop.items.find((item) => item.terminalId === terminalId)?.processPhase).toBe("killed");
+    expect(archiveAfterStop.items.some((item) => item.terminalId === terminalId)).toBeFalse();
 
     const deleted = await caller.terminal.globalDelete({
       terminalId,
     });
     expect(deleted.ok).toBeTrue();
     expect((await caller.terminal.globalList()).items.some((item) => item.terminalId === terminalId)).toBeFalse();
+
+    await kernel.stop();
+  });
+
+  test("Scenario: Given daemon cold-start finds stale global terminals When the app kernel starts Then live history index and archive projections stay separated", async () => {
+    const root = makeTempDir();
+    const stateRoot = join(root, "state");
+    const terminalId = "daemon-recovered-global";
+    seedGlobalRunningTerminalRecord({
+      stateRoot,
+      terminalId,
+      cwd: root,
+      stoppedAt: Date.now() - 1_000,
+    });
+
+    const kernel = new AppKernel({
+      globalSessionRoot: join(stateRoot, "sessions"),
+      archiveSessionRoot: join(stateRoot, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      authService: {
+        rootAuthPrivateKey: ROOT_AUTH_PRIVATE_KEY,
+      },
+    });
+    await kernel.start();
+    const { caller } = await createRootSuperadminCaller(kernel);
+
+    const live = await caller.terminal.globalList();
+    const history = await caller.terminal.globalHistory();
+    const index = await caller.terminal.globalIndex();
+    const archive = await caller.terminal.globalArchiveList();
+
+    expect(live.items.some((item) => item.terminalId === terminalId)).toBeFalse();
+    expect(history.items.find((item) => item.terminalId === terminalId)?.processPhase).toBe("killed");
+    expect(index.items.find((item) => item.terminalId === terminalId)?.processPhase).toBe("killed");
+    expect(archive.items.some((item) => item.terminalId === terminalId)).toBeFalse();
+    expect(history.items.every((item) => item.processPhase === "killed")).toBeTrue();
+    expect(index.items.filter((item) => item.terminalId === terminalId)).toHaveLength(1);
 
     await kernel.stop();
   });
