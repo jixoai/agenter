@@ -20,7 +20,7 @@ cli-shell uses a dedicated tmux socket named `agenter-cli-shell`. Its status bar
 
 ## Tmux product shell
 
-The default attach opens the primary shell pane. Chat is not forced into a permanent right split.
+The default attach opens the primary shell pane and a right-side Chat dock pane. Chat is still a cli-shell singleton surface over MessageRoom truth; tmux only hosts the local pane or popup.
 
 cli-shell installs a bottom tmux status bar. The left side identifies the current product session, and the right side keeps the clickable actions visible:
 
@@ -38,20 +38,21 @@ Mouse:
 - The currently active surface is highlighted in the status bar instead of repeating shortcut text.
 - The left side also carries a compact Avatar Heartbeat preview so the product chrome still reflects assistant activity.
 - `Dock`, `Mouse`, `Shell`, and `Refresh` remain keyboard-accessible expert actions instead of visible right-side status entries.
+- In cover/floating Chat, tmux popup mode owns mouse focus. The status bar may remain visible, but status-bar clicks are not the reliable primary control path until you close or switch out of cover mode from the Chat titlebar or keyboard.
 
 Default keys:
 
 - `Ctrl+b`, then `?`: open the controls panel.
-- `Ctrl+b`, then `c`: open Chat in a tmux popup.
-- `Ctrl+b`, then `C`: open Chat as a persistent dock pane.
+- `Ctrl+b`, then `c`: toggle Chat using the saved layout. The built-in default is the right dock pane.
+- `Ctrl+b`, then `C`: open or focus Chat as a dock pane.
 - `Ctrl+b`, then `m`: toggle Mouse.
 - `Ctrl+b`, then `s`: focus the primary shell pane.
 - `Ctrl+b`, then `r`: refresh the cli-shell status bar.
 - `Ctrl+b`, then `[`: enter copy-mode for page scrolling/search/copy. Press `q` to exit.
 
-Chat popups run the cli-shell OpenTUI MessageRoom surface. tmux only hosts the popup or dock pane; it is not the Chat UI implementation. The Chat titlebar has a close button. Its `◨`, `◧`, and `⿴` controls request tmux layouts: left dock, right dock, and cover popup. They do not resize Chat's internal OpenTUI layout.
+Chat runs the cli-shell OpenTUI MessageRoom surface. tmux only hosts the dock pane or popup; it is not the Chat UI implementation. The Chat titlebar has a close button. Its `◨`, `◧`, and `⿴` controls request tmux layouts: left dock, right dock, and cover popup. They do not resize Chat's internal OpenTUI layout.
 
-Chat is a singleton per cli-shell tmux session. If a docked Chat pane already exists, clicking `Chat` focuses that pane instead of opening a second popup. Switching to cover mode closes the dock pane first, then opens the popup.
+Chat is a singleton per cli-shell tmux session. If a docked Chat pane already exists, default attach and layout actions reuse that pane instead of opening a second Room. Switching to cover mode closes the dock pane first, then opens the popup.
 
 If the room command exits unexpectedly, the popup stays open and shows the exit status. A normal titlebar close exits immediately.
 
