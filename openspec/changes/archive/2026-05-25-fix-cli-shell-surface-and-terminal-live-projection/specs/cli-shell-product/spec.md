@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Cli-shell SHALL use normalized tmux product actions for status clicks
 

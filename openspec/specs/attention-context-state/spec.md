@@ -2,9 +2,7 @@
 
 ## Purpose
 TBD - created by archiving change attention-context-commit-kernel-vnext. Update Purpose after archive.
-
 ## Requirements
-
 ### Requirement: Context owns mutable attention state
 The system MUST model each attention context as mutable state with a stable `contextId`, current content, current unresolved score map, `headCommitId`, and durable focus state. The current context score map SHALL project only unresolved positive scores; explicit zero-valued settlement patches SHALL remain part of immutable commit history instead of lingering in the current-state snapshot.
 
@@ -74,3 +72,19 @@ The attention system SHALL interpret unresolved push scores through the context 
 - **WHEN** a context in `muted` receives a normal push with unresolved scores
 - **THEN** the context does not report active debt from that push alone
 - **AND** the push still remains in durable history for later inspection
+
+### Requirement: Terminal death SHALL mute the bound attention context through durable lifecycle consequence
+When a terminal instance that owns or anchors an attention context dies through the terminal killed flow, the system SHALL move the bound attention context to `muted` as a durable consequence of that lifecycle event rather than as an ad hoc product-side patch.
+
+#### Scenario: Killed terminal mutes its bound attention context
+- **WHEN** a terminal instance completes the killed flow
+- **AND** that instance is bound to an attention context
+- **THEN** the bound attention context is moved to `muted`
+- **AND** later runtime scheduling treats that context according to normal muted law
+
+#### Scenario: Unrelated attention contexts stay unchanged
+- **WHEN** one terminal instance completes the killed flow
+- **AND** other attention contexts are not bound to that terminal instance
+- **THEN** those unrelated contexts keep their current focus state
+- **AND** terminal death does not globally mute unrelated work
+

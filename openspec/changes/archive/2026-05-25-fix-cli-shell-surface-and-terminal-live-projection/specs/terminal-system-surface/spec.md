@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Terminal-system SHALL present live terminals by default and history as an explicit index
 

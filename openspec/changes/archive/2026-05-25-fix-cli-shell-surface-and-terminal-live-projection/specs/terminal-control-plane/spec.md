@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Terminal control plane SHALL expose live and history projections over one terminal instance truth
 

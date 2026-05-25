@@ -246,39 +246,33 @@ Built-in terminal guidance SHALL teach `terminal await` as the default active ob
 - **AND** it explains that shell-level timeout may still cancel the command and must not be relied on for post-mortem evidence
 
 ### Requirement: Built-in terminal skill SHALL teach explicit lifecycle control
+The built-in `agenter-terminal` skill and its lifecycle references SHALL teach runtime terminal lifecycle through `create or recover`, `bootstrap`, `read`, `write/input`, `stop`, `history`, `archive`, and `delete`. The guidance SHALL describe `stop` as the live-to-history transition and SHALL reserve `delete` for final destructive removal.
 
-The built-in `agenter-terminal` skill and its lifecycle references SHALL teach runtime terminal lifecycle through `create or recover`, `bootstrap`, `read`, `write/input`, and `stop` instead of keeping legacy `kill` wording as the primary lifecycle law.
-
-#### Scenario: Terminal skill teaches bootstrap before stopped-terminal work
-
-- **WHEN** the runtime renders the built-in terminal skill for a stopped or not-started terminal workflow
+#### Scenario: Terminal skill teaches bootstrap before not-started terminal work
+- **WHEN** the runtime renders the built-in terminal skill for a not-started terminal workflow
 - **THEN** the guidance instructs the caller to inspect `terminal list` and use `terminal bootstrap` before expecting read/write to work
 - **AND** it does not imply that opening or reading the terminal will auto-start the PTY
 
-#### Scenario: Terminal skill distinguishes stop from delete semantics
-
-- **WHEN** the runtime renders lifecycle guidance for terminal shutdown
-- **THEN** the skill explains that `terminal stop` halts the PTY while preserving durable terminal identity
-- **AND** it does not teach the old `kill means delete` mental model
+#### Scenario: Terminal skill distinguishes stop, history, and delete semantics
+- **WHEN** the runtime renders lifecycle guidance for terminal shutdown and cleanup
+- **THEN** the skill explains that `terminal stop` halts the PTY and moves the instance into history
+- **AND** it explains that `terminal history` is the place to inspect dead-instance evidence
+- **AND** it explains that `terminal delete` is the final destructive removal path
 
 ### Requirement: Built-in terminal skills SHALL teach transition-aware lifecycle law
-
-Built-in runtime terminal skill guidance and lifecycle references SHALL teach the current create/bootstrap/stop law, including transient transition handling for collaborative terminals.
+Built-in runtime terminal skill guidance and lifecycle references SHALL teach the current create/bootstrap/stop/history law, including the fact that dead terminals leave the default live list.
 
 #### Scenario: Terminal skill teaches create auto-bootstrap
-
 - **WHEN** the runtime renders the built-in `agenter-terminal` skill
 - **THEN** the guidance explains that `terminal create` auto-bootstraps new terminals by default
-- **AND** the caller is not told to run a redundant second bootstrap for a freshly created terminal unless the create result still shows a transition or stopped state
+- **AND** the caller is not told to run a redundant second bootstrap for a freshly created terminal unless the create result still shows a transition or not-started state
 
-#### Scenario: Terminal skill teaches stopped-terminal explicit bootstrap
-
-- **WHEN** the runtime renders lifecycle recovery guidance for an existing terminal whose `processPhase` is `not_started` or `stopped`
-- **THEN** the guidance tells the AI to run `terminal bootstrap`
-- **AND** it distinguishes that path from fresh create
+#### Scenario: Terminal skill teaches dead terminals are history-only
+- **WHEN** the runtime renders lifecycle recovery guidance for an existing terminal that has already been killed
+- **THEN** the guidance tells the AI to use `terminal history` to inspect it
+- **AND** it does not teach the AI that the dead terminal remains part of the normal `terminal list`
 
 #### Scenario: Terminal skill teaches transition wait instead of mutation stacking
-
 - **WHEN** the runtime renders lifecycle guidance for a terminal whose `lifecycleTransition` is `bootstrapping` or `killing`
 - **THEN** the guidance tells the AI to wait and reread lifecycle state
 - **AND** it does not teach the AI to stack another bootstrap or stop command on top of the in-flight mutation
@@ -390,3 +384,4 @@ The dedicated management CLI SHALL share descriptor parsing and acceptance mecha
 - **AND** Avatar-B sends Avatar-A a terminal invitation descriptor for a terminal hosted by agenter-B
 - **THEN** Avatar-A can accept that descriptor from agenter-A without locally re-hosting the terminal authority
 - **THEN** the acceptance still resolves against agenter-B's terminal backend as the authority that owns the invitation truth
+

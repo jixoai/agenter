@@ -4,15 +4,15 @@
 Define the durable WebUI contract for the standalone terminal-system route, including its shared split-detail shell, route-owned toolbar, actor-bearing tool composers, and live action-management surfaces.
 ## Requirements
 ### Requirement: Terminal-system SHALL present global terminals as a standalone product surface
-
-The WebUI SHALL expose a dedicated terminal-system route that lists global terminals, renders the selected terminal transcript, and provides lifecycle-aware actions without reconstructing terminal identity from stale catalog fields.
+The WebUI SHALL expose a dedicated terminal-system route that lists live global terminals, renders the selected live terminal transcript, and provides lifecycle-aware actions without reconstructing terminal identity from stale catalog fields. Dead terminals SHALL be managed through explicit history/archive surfaces instead of remaining selectable in the main live route.
 
 #### Scenario: Global terminal navigation
 - **WHEN** the operator opens the terminal-system route
-- **THEN** they can browse and select global terminals directly
+- **THEN** they can browse and select live global terminals directly
+- **AND** killed terminals do not remain in that default live navigation list
 
 #### Scenario: Terminal detail layout
-- **WHEN** a terminal is selected on a width that can satisfy the split-detail minimums
+- **WHEN** a live terminal is selected on a width that can satisfy the split-detail minimums
 - **THEN** the route shows the terminal transcript in the main pane and a resizable right detail rail for `Actions`
 - **THEN** terminal user and seat management remains reachable through a dedicated toolbar-opened dialog
 - **THEN** the bottom tool panel lets the operator invoke terminal actions as an explicit seat
@@ -29,8 +29,7 @@ The WebUI SHALL expose a dedicated terminal-system route that lists global termi
 - **THEN** terminal user management remains reachable through the toolbar dialog even after the split collapses
 
 #### Scenario: Selected terminal page owns the page-toolbar
-
-- **WHEN** the operator opens a concrete shared terminal route
+- **WHEN** the operator opens a concrete live terminal route
 - **THEN** the toolbar identity resolves from `configured title ?? terminal id`
 - **AND** the toolbar second line prefers runtime observed current path instead of fixed launch cwd
 - **AND** if no runtime path is available, the route falls back to terminal id or nothing rather than pretending launch cwd is current path
@@ -42,7 +41,7 @@ The WebUI SHALL expose a dedicated terminal-system route that lists global termi
 - **THEN** the right detail rail remains focused on `Actions` instead of repeating a second local tab strip or inline users pane
 
 #### Scenario: Terminal workbench body stays neutral
-- **WHEN** the selected terminal route renders inside the workbench window
+- **WHEN** the selected live terminal route renders inside the workbench window
 - **THEN** the outer window body stays visually neutral instead of wrapping both panes in a second oversized rounded card
 - **THEN** the terminal stage pane and the detail pane remain the only visible content surfaces
 
@@ -74,8 +73,7 @@ The WebUI SHALL expose a dedicated terminal-system route that lists global termi
 - **THEN** the structured preview remains readable without introducing a terminal-only renderer fork
 
 #### Scenario: Terminal window titlebar may follow observed PTY title independently
-
-- **WHEN** the selected terminal emits an observed PTY title different from its configured terminal instance name
+- **WHEN** the selected live terminal emits an observed PTY title different from its configured terminal instance name
 - **THEN** tabs, toolbar, and dialog identity keep using the terminal instance name
 - **AND** the inner terminal window titlebar may separately resolve `observed title ?? configured title ?? terminal id`
 
@@ -335,3 +333,43 @@ The integrated terminal window SHALL size fit/cover projection from renderer-mea
 - **WHEN** a live renderer session reports native terminal content metrics in cover mode
 - **THEN** the terminal window body, scroll container, and terminal content remain aligned to the same native content box
 - **AND** cover mode does not invent extra spacing between `terminal-content` and `terminal-window`
+
+### Requirement: Terminal-system SHALL expose explicit history management separate from the live workbench
+The WebUI terminal-system product SHALL separate live terminal work from dead terminal history management. Killed terminals SHALL leave the main live workbench and remain accessible only through explicit history or archive surfaces.
+
+#### Scenario: Killed terminal leaves the live workbench list
+- **WHEN** the selected live terminal is killed
+- **THEN** it is removed from the default live terminal navigation list
+- **AND** the operator must use explicit history management to inspect its retained evidence
+
+#### Scenario: History surface lists dead terminal evidence
+- **WHEN** the operator opens the terminal-system history surface
+- **THEN** they can browse killed terminal instances and their retained evidence
+- **AND** the history surface does not imply those instances are still live shells
+
+### Requirement: Terminal-system SHALL present live terminals by default and history as an explicit index
+
+The Studio terminal-system workbench SHALL treat `/terminals` and live terminal detail tabs as live projections only. Killed terminal instances SHALL NOT appear as ordinary live tabs or the default live redirect target. The explicit history/index route SHALL show live instances first, followed by killed non-archived instances sorted by killed time, so operators can discover both active and dead terminal instances without confusing dead records for live sessions.
+
+#### Scenario: Default terminal route selects only live terminal
+
+- **GIVEN** Studio has loaded one live terminal and one killed terminal
+- **WHEN** the operator opens `/terminals`
+- **THEN** the redirect target is the live terminal detail route
+- **AND** the killed terminal is not selected as the default live terminal
+
+#### Scenario: Live workbench tabs exclude killed terminals
+
+- **GIVEN** Studio has loaded live and killed terminal projections
+- **WHEN** the terminal workbench renders live terminal tabs
+- **THEN** only live terminals appear as ordinary terminal tabs
+- **AND** killed terminals are reachable through the History tab or index route
+
+#### Scenario: History index shows active first then killed by killed time
+
+- **GIVEN** Studio has loaded live terminals and killed non-archived terminals
+- **WHEN** the operator opens `/terminals/history`
+- **THEN** the route lists live terminals before killed terminals
+- **AND** killed terminals are sorted by killed time descending
+- **AND** each killed row still supports archive and delete actions
+
