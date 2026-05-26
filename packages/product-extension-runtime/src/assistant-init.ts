@@ -17,12 +17,13 @@ export const productAssistantEnsureInputSchema = z.object({
 });
 export type ProductAssistantEnsureInput = z.infer<typeof productAssistantEnsureInputSchema>;
 
-export const productAvatarPromptSeedInputSchema = z.object({
-  avatarPrincipalId: avatarPrincipalIdSchema,
-  workspacePath: z.string().trim().min(1).optional(),
-  kind: z.literal("agenter").default("agenter"),
-  seedContent: z.string(),
-});
+export const productAvatarPromptSeedInputSchema = z
+  .object({
+    avatarPrincipalId: avatarPrincipalIdSchema,
+    kind: z.literal("agenter").default("agenter"),
+    seedContent: z.string(),
+  })
+  .strict();
 export type ProductAvatarPromptSeedInput = z.infer<typeof productAvatarPromptSeedInputSchema>;
 
 export const productMemoryRoleSchema = z.object({

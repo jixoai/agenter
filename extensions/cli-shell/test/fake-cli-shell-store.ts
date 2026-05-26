@@ -208,7 +208,12 @@ export class FakeCliShellStore implements CliShellStore {
     return [...this.sessions.values()];
   }
 
-  async createSession(input: { cwd: string; name?: string; avatar?: string; autoStart?: boolean }): Promise<SessionEntry> {
+  async createSession(input: {
+    cwd: string;
+    name?: string;
+    avatar?: string;
+    autoStart?: boolean;
+  }): Promise<SessionEntry> {
     void input.autoStart;
     const avatar = input.avatar ?? input.name ?? "shell-assistant";
     const key = `${input.cwd}:${avatar}`;
@@ -250,7 +255,10 @@ export class FakeCliShellStore implements CliShellStore {
     return avatar;
   }
 
-  async readSettings(_sessionId: string, _kind: "settings" | "agenter"): Promise<{ path: string; content: string; mtimeMs: number }> {
+  async readSettings(
+    _sessionId: string,
+    _kind: "settings" | "agenter",
+  ): Promise<{ path: string; content: string; mtimeMs: number }> {
     return { path: "/tmp/settings.json", content: "{}", mtimeMs: 1 };
   }
 
@@ -259,19 +267,17 @@ export class FakeCliShellStore implements CliShellStore {
   }
 
   async ensureAvatarPromptSeed(input: {
-    workspacePath?: string;
     avatarPrincipalId: string;
     kind: "agenter";
     seedContent: string;
   }): Promise<{ seeded: boolean; file: { path: string; content: string; mtimeMs: number } }> {
-    const workspacePath = input.workspacePath ?? "/repo";
-    const key = `${workspacePath}:${input.avatarPrincipalId}:${input.kind}`;
+    const key = `~:${input.avatarPrincipalId}:${input.kind}`;
     const existing = this.promptFiles.get(key);
     if (existing) {
       return { seeded: false, file: existing };
     }
     const file = {
-      path: `${workspacePath}/.agenter/avatars/by-principal/${input.avatarPrincipalId}/AGENTER.mdx`,
+      path: `/home/.agenter/avatars/by-principal/${input.avatarPrincipalId}/AGENTER.mdx`,
       content: input.seedContent,
       mtimeMs: Date.now(),
     };
@@ -339,7 +345,11 @@ export class FakeCliShellStore implements CliShellStore {
     focus?: boolean;
   }): Promise<{ ok: boolean; message: string; terminal?: GlobalTerminalEntry }> {
     const terminal = {
-      ...createTerminalEntry(input.terminalId ?? `terminal-${this.terminals.length + 1}`, input.metadata ?? {}, input.start === false ? "not_started" : "running"),
+      ...createTerminalEntry(
+        input.terminalId ?? `terminal-${this.terminals.length + 1}`,
+        input.metadata ?? {},
+        input.start === false ? "not_started" : "running",
+      ),
       processKind: input.processKind ?? "shell",
       backend: input.backend ?? "xterm",
       command: input.command ?? input.profile?.command ?? [process.env.SHELL?.trim() || "bash", "-i"],
@@ -510,7 +520,11 @@ export class FakeCliShellStore implements CliShellStore {
     focus?: boolean;
   }): Promise<GlobalRoomEntry> {
     void input.focus;
-    const room = createRoomEntry(input.chatId ?? `room-${this.rooms.length + 1}`, input.metadata ?? {}, input.title ?? "room");
+    const room = createRoomEntry(
+      input.chatId ?? `room-${this.rooms.length + 1}`,
+      input.metadata ?? {},
+      input.title ?? "room",
+    );
     this.rooms.push(room);
     return room;
   }
@@ -700,7 +714,14 @@ export class FakeCliShellStore implements CliShellStore {
     transcriptRevision: string;
     headVersion: string;
   }> {
-    return { items: [], hasMore: false, nextBefore: null, roomRevision: "1", transcriptRevision: "0", headVersion: "0" };
+    return {
+      items: [],
+      hasMore: false,
+      nextBefore: null,
+      roomRevision: "1",
+      transcriptRevision: "0",
+      headVersion: "0",
+    };
   }
 
   async sendGlobalRoomMessage(input: {
@@ -713,17 +734,26 @@ export class FakeCliShellStore implements CliShellStore {
     return { ok: true };
   }
 
-  async hydrateGlobalTerminalApprovals(input: { terminalId: string; force?: boolean }): Promise<GlobalTerminalApprovalRequest[]> {
+  async hydrateGlobalTerminalApprovals(input: {
+    terminalId: string;
+    force?: boolean;
+  }): Promise<GlobalTerminalApprovalRequest[]> {
     void input.force;
     return [...(this.terminalApprovalRequests.get(input.terminalId) ?? [])];
   }
 
-  async approveGlobalTerminalRequest(input: { terminalId: string; requestId: string; durationMs: number }): Promise<unknown> {
+  async approveGlobalTerminalRequest(input: {
+    terminalId: string;
+    requestId: string;
+    durationMs: number;
+  }): Promise<unknown> {
     void input.durationMs;
     const current = this.terminalApprovalRequests.get(input.terminalId) ?? [];
     this.terminalApprovalRequests.set(
       input.terminalId,
-      current.map((request) => (request.requestId === input.requestId ? { ...request, status: "approved" as const } : request)),
+      current.map((request) =>
+        request.requestId === input.requestId ? { ...request, status: "approved" as const } : request,
+      ),
     );
     return { ok: true };
   }
@@ -732,7 +762,9 @@ export class FakeCliShellStore implements CliShellStore {
     const current = this.terminalApprovalRequests.get(input.terminalId) ?? [];
     this.terminalApprovalRequests.set(
       input.terminalId,
-      current.map((request) => (request.requestId === input.requestId ? { ...request, status: "denied" as const } : request)),
+      current.map((request) =>
+        request.requestId === input.requestId ? { ...request, status: "denied" as const } : request,
+      ),
     );
     return { ok: true };
   }

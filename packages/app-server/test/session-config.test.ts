@@ -45,8 +45,8 @@ describe("Feature: session config provider resolution", () => {
     });
 
     expect(config.avatar.sources[0]?.path).toBe(globalSessionRoot);
-    expect(config.prompt.rootDir).toBe(sessionRoot);
-    expect(config.prompt.agenterPath).toBe(join(sessionRoot, "AGENTER.mdx"));
+    expect(config.prompt.rootDir).toBe(globalSessionRoot);
+    expect(config.prompt.agenterPath).toBe(join(globalSessionRoot, "AGENTER.mdx"));
     expect(config.prompt.globalPrivateRootDir).toBe(globalSessionRoot);
   });
 

@@ -185,7 +185,6 @@ const resolveCliShellAvatarRuntime = async (input: {
   if (avatar.nickname === CLI_SHELL_DEFAULT_AVATAR) {
     const prompt = await runtimeClient.ensureAvatarPromptSeedIfMissing({
       avatarPrincipalId: requireSessionAvatarPrincipalId(session),
-      workspacePath: input.workspacePath,
       kind: "agenter",
       seedContent: buildShellAssistantPromptSeed(),
     });

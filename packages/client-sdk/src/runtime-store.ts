@@ -30,11 +30,11 @@ import type {
   GlobalRoomSnapshotOutput,
   GlobalTerminalActorId,
   GlobalTerminalApprovalRequest,
-  GlobalTerminalPermissionRequestEvent,
-  GlobalTerminalPermissionRequestsInput,
   GlobalTerminalEntry,
   GlobalTerminalGrantEntry,
   GlobalTerminalGrantIssueOutput,
+  GlobalTerminalPermissionRequestEvent,
+  GlobalTerminalPermissionRequestsInput,
   HeartbeatGroupItem,
   HeartbeatPartItem,
   HistoryPageCursor,
@@ -464,7 +464,9 @@ const mergeGlobalRoomMessages = (
     return [...base];
   }
   const confirmedClientMessageIds = new Set(
-    base.map((message) => message.clientMessageId).filter((value): value is string => typeof value === "string" && value.length > 0),
+    base
+      .map((message) => message.clientMessageId)
+      .filter((value): value is string => typeof value === "string" && value.length > 0),
   );
   const merged = [...base];
   for (const message of pending) {
@@ -612,7 +614,9 @@ const projectGlobalTerminalFromConfigMutation = (
     workspace: current?.workspace ?? null,
     status: current?.status ?? "IDLE",
     processPhase:
-      result.config.processPhase === "not_started" ? (current?.processPhase ?? "not_started") : result.config.processPhase,
+      result.config.processPhase === "not_started"
+        ? (current?.processPhase ?? "not_started")
+        : result.config.processPhase,
     seq: current?.seq ?? 0,
     snapshot,
     focused: current?.focused ?? false,
@@ -1671,11 +1675,7 @@ export class RuntimeStore {
     return next;
   }
 
-  private appendOptimisticGlobalRoomMessage(input: {
-    chatId: string;
-    text: string;
-    clientMessageId: string;
-  }): void {
+  private appendOptimisticGlobalRoomMessage(input: { chatId: string; text: string; clientMessageId: string }): void {
     const optimisticMessage: GlobalRoomMessage = {
       rowId: Number.MAX_SAFE_INTEGER,
       messageId: Number.MAX_SAFE_INTEGER,
@@ -6058,21 +6058,11 @@ export class RuntimeStore {
     return await this.client.trpc.settings.read.query({ sessionId, kind });
   }
 
-  async saveSettings(input: {
-    sessionId: string;
-    kind: "settings" | "agenter";
-    content: string;
-    baseMtimeMs: number;
-  }) {
+  async saveSettings(input: { sessionId: string; kind: "settings" | "agenter"; content: string; baseMtimeMs: number }) {
     return await this.client.trpc.settings.save.mutate(input);
   }
 
-  async ensureAvatarPromptSeed(input: {
-    avatarPrincipalId: string;
-    workspacePath?: string;
-    kind: "agenter";
-    seedContent: string;
-  }) {
+  async ensureAvatarPromptSeed(input: { avatarPrincipalId: string; kind: "agenter"; seedContent: string }) {
     return await this.client.trpc.productExtension.ensureAvatarPromptSeed.mutate(input);
   }
 
@@ -6889,9 +6879,11 @@ export class RuntimeStore {
     }
   }
 
-  private static resolveTerminalPermissionRequestStreamKey(input: {
-    terminalId?: string;
-  } = {}): string {
+  private static resolveTerminalPermissionRequestStreamKey(
+    input: {
+      terminalId?: string;
+    } = {},
+  ): string {
     return input.terminalId ? `terminal:${input.terminalId}` : "all";
   }
 
@@ -7112,8 +7104,7 @@ export class RuntimeStore {
         changes: GlobalRoomUpdateEvent[];
       };
       const changes = payload.changes;
-      const shouldRefreshCatalog =
-        payload.catalogChanged || changes.some((change) => change.refreshCatalog === true);
+      const shouldRefreshCatalog = payload.catalogChanged || changes.some((change) => change.refreshCatalog === true);
       if (shouldRefreshCatalog && (this.state.globalRooms.loaded || this.globalRoomsWatchCount > 0)) {
         this.runBackgroundTask(this.hydrateGlobalRooms({ force: true }));
       }

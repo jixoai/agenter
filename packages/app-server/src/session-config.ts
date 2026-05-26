@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 
-import { resolveGlobalAvatarCanonicalRoot, resolveAvatarPromptPaths, resolveAvatarSources } from "@agenter/avatar";
+import { resolveAvatarPromptPaths, resolveAvatarSources, resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
 import {
   loadSettings,
   resolveLoopCompactPolicy,
@@ -15,8 +15,6 @@ import {
 import { resolveDefaultInteractiveShellCommand } from "@agenter/terminal-system";
 
 import { DEFAULT_LANGUAGE, resolveLanguage } from "./i18n";
-import { resolveWorkspaceAvatarCanonicalRoot } from "./workspace-system";
-import { toWorkspacePath } from "./workspace-target";
 
 export interface SessionTerminalConfig {
   terminalId: string;
@@ -234,11 +232,7 @@ export const resolveSessionConfig = async (
   const globalPrivateRoot = options.avatarPrincipalId
     ? resolveGlobalAvatarCanonicalRoot(options.avatarPrincipalId, homeDir)
     : avatar.sources.at(-1)?.path;
-  const workspacePath = toWorkspacePath(cwd, homeDir);
-  const workspacePrivateRoot = options.avatarPrincipalId
-    ? resolveWorkspaceAvatarCanonicalRoot(workspacePath, options.avatarPrincipalId, homeDir)
-    : undefined;
-  const promptRoot = workspacePrivateRoot ?? globalPrivateRoot;
+  const promptRoot = globalPrivateRoot;
   const publicRootDir = resolve(cwd, ".agenter");
   const globalPublicRootDir = join(homeDir, ".agenter");
   const ai = settings.ai ?? {};

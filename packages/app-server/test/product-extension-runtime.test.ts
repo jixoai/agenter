@@ -4,13 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
-import {
-  AppKernel,
-  appRouter,
-  createTrpcContext,
-  resolveWorkspaceAvatarAssetRoot,
-  resolveWorkspaceAvatarCanonicalRoot,
-} from "../src";
+import { productAvatarPromptSeedInputSchema } from "@agenter/product-extension-runtime";
+import { AppKernel, appRouter, createTrpcContext, resolveWorkspaceAvatarAssetRoot } from "../src";
 
 const tempDirs: string[] = [];
 
@@ -81,12 +76,15 @@ describe("Feature: product extension runtime platform contracts", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given product-owned assistant prompt seed names a workspace When the product extension route is used Then AGENTER.mdx is created under the workspace principal root", async () => {
+  test("Scenario: Given workspace prompt residue exists When product prompt seed runs Then AGENTER.mdx is created under the global avatar root", async () => {
     const root = makeTempDir();
     const homeDir = join(root, "home");
     const workspacePath = join(root, "workspace");
     const principalId = "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66";
     mkdirSync(workspacePath, { recursive: true });
+    const workspacePromptPath = join(workspacePath, ".agenter", "avatars", "by-principal", principalId, "AGENTER.mdx");
+    mkdirSync(join(workspacePromptPath, ".."), { recursive: true });
+    writeFileSync(workspacePromptPath, "# Stale Workspace Shell Assistant\n", "utf8");
     const kernel = new AppKernel({
       globalSessionRoot: join(root, "sessions"),
       archiveSessionRoot: join(root, "archive", "sessions"),
@@ -98,19 +96,28 @@ describe("Feature: product extension runtime platform contracts", () => {
 
     const first = await caller.productExtension.ensureAvatarPromptSeed({
       avatarPrincipalId: principalId,
-      workspacePath,
       kind: "agenter",
       seedContent: "# Workspace Shell Assistant\n",
     });
-    const promptPath = join(resolveWorkspaceAvatarCanonicalRoot(workspacePath, principalId, homeDir), "AGENTER.mdx");
     const globalPromptPath = join(resolveGlobalAvatarCanonicalRoot(principalId, homeDir), "AGENTER.mdx");
 
     expect(first.seeded).toBe(true);
-    expect(first.file.path).toBe(promptPath);
-    expect(readFileSync(promptPath, "utf8")).toBe("# Workspace Shell Assistant\n");
-    expect(() => readFileSync(globalPromptPath, "utf8")).toThrow();
+    expect(first.file.path).toBe(globalPromptPath);
+    expect(readFileSync(globalPromptPath, "utf8")).toBe("# Workspace Shell Assistant\n");
+    expect(readFileSync(workspacePromptPath, "utf8")).toBe("# Stale Workspace Shell Assistant\n");
 
     await kernel.stop();
+  });
+
+  test("Scenario: Given legacy prompt seed input includes workspacePath When parsed Then the product contract rejects the old prompt root field", () => {
+    expect(
+      productAvatarPromptSeedInputSchema.safeParse({
+        avatarPrincipalId: "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66",
+        workspacePath: "/repo",
+        kind: "agenter",
+        seedContent: "# Shell Assistant\n",
+      }).success,
+    ).toBe(false);
   });
 
   test("Scenario: Given product-owned assistant prompt seed targets a non-principal path When the product extension route is used Then the route rejects it before filesystem mutation", async () => {

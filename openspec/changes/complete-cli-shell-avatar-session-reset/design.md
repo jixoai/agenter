@@ -74,7 +74,7 @@ Therefore:
 The canonical prompt path remains:
 
 ```text
-[~|<workspace>]/.agenter/avatars/by-principal/<principalId>/AGENTER.mdx
+~/.agenter/avatars/by-principal/<principalId>/AGENTER.mdx
 ```
 
 Nickname aliases are discovery paths only.

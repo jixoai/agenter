@@ -158,9 +158,9 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     });
   }
 
-  forceAvatarPromptContent(avatarPrincipalId: string, content: string, workspacePath?: string): void {
-    this.avatarPromptFiles.set(`${workspacePath ?? "~"}:${avatarPrincipalId}:agenter`, {
-      path: `${workspacePath ?? "/home"}/.agenter/avatars/by-principal/${avatarPrincipalId}/AGENTER.mdx`,
+  forceAvatarPromptContent(avatarPrincipalId: string, content: string): void {
+    this.avatarPromptFiles.set(`~:${avatarPrincipalId}:agenter`, {
+      path: `/home/.agenter/avatars/by-principal/${avatarPrincipalId}/AGENTER.mdx`,
       content,
       mtimeMs: Date.now(),
     });
@@ -278,11 +278,10 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
 
   async ensureAvatarPromptSeed(input: {
     avatarPrincipalId: string;
-    workspacePath?: string;
     kind: "agenter";
     seedContent: string;
   }): Promise<{ seeded: boolean; file: { path: string; content: string; mtimeMs: number } }> {
-    const key = `${input.workspacePath ?? "~"}:${input.avatarPrincipalId}:${input.kind}`;
+    const key = `~:${input.avatarPrincipalId}:${input.kind}`;
     const current = this.avatarPromptFiles.get(key);
     if (current) {
       return {
@@ -291,7 +290,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
       };
     }
     const saved = {
-      path: `${input.workspacePath ?? "/home"}/.agenter/avatars/by-principal/${input.avatarPrincipalId}/AGENTER.mdx`,
+      path: `/home/.agenter/avatars/by-principal/${input.avatarPrincipalId}/AGENTER.mdx`,
       content: input.seedContent,
       mtimeMs: Date.now(),
     };
@@ -688,7 +687,6 @@ describe("Feature: product extension runtime client", () => {
     });
     await client.ensureAvatarPromptSeedIfMissing({
       avatarPrincipalId: "auth:review-4",
-      workspacePath: "/repo",
       kind: "agenter",
       seedContent: "# Existing prompt\n",
     });
@@ -709,7 +707,7 @@ describe("Feature: product extension runtime client", () => {
     expect(store.avatars.map((entry) => entry.nickname)).toEqual(["review-4"]);
     expect(store.terminals.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-4:terminal-2"]);
     expect(store.rooms.map((entry) => entry.chatId)).toEqual(["room-1"]);
-    expect(store.avatarPromptFiles.get("/repo:auth:review-4:agenter")?.content).toBe("# Existing prompt\n");
+    expect(store.avatarPromptFiles.get("~:auth:review-4:agenter")?.content).toBe("# Existing prompt\n");
     expect(store.privateAssets.get("/repo:review-4:memory:memory.md")?.content).toBe("# Existing memory\n");
   });
 
@@ -734,7 +732,6 @@ describe("Feature: product extension runtime client", () => {
     }
     const firstPrompt = await client.ensureAvatarPromptSeedIfMissing({
       avatarPrincipalId,
-      workspacePath: "/repo",
       kind: "agenter",
       seedContent: "# Seeded prompt\n",
     });
@@ -750,12 +747,11 @@ describe("Feature: product extension runtime client", () => {
       ],
     });
 
-    store.forceAvatarPromptContent(avatarPrincipalId, "# User-edited prompt\n", "/repo");
+    store.forceAvatarPromptContent(avatarPrincipalId, "# User-edited prompt\n");
     store.forcePrivateAssetContent("/repo:shell-assistant:memory:pairing-playbook.md", "# User-edited playbook\n");
 
     const secondPrompt = await client.ensureAvatarPromptSeedIfMissing({
       avatarPrincipalId,
-      workspacePath: "/repo",
       kind: "agenter",
       seedContent: "# Replacement prompt\n",
     });
@@ -773,7 +769,7 @@ describe("Feature: product extension runtime client", () => {
 
     expect(assistant.nickname).toBe("shell-assistant");
     expect(firstPrompt.seeded).toBe(true);
-    expect(firstPrompt.file.path).toBe("/repo/.agenter/avatars/by-principal/auth:shell-assistant/AGENTER.mdx");
+    expect(firstPrompt.file.path).toBe("/home/.agenter/avatars/by-principal/auth:shell-assistant/AGENTER.mdx");
     expect(memory[0]?.created).toBe(true);
     expect(secondPrompt.seeded).toBe(false);
     expect(secondPrompt.file.content).toBe("# User-edited prompt\n");

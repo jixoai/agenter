@@ -1,4 +1,5 @@
 import { AttentionStore, AttentionSystem } from "@agenter/attention-system";
+import { resolveGlobalAvatarCanonicalRoot } from "@agenter/avatar";
 import {
   MessageControlPlane,
   resolveMessageControlDbPath,
@@ -22,7 +23,6 @@ import { join, resolve } from "node:path";
 import { MessageDb } from "../../message-system/src/message-db";
 import { AppKernel, type AnyRuntimeEvent } from "../src";
 import { formatMessageAttentionSrc } from "../src/attention-src";
-import { resolveWorkspaceAvatarCanonicalRoot } from "../src/workspace-system";
 
 const tempDirs: string[] = [];
 
@@ -119,9 +119,11 @@ const pullTerminalFrame = async (input: {
   );
   for (let attempt = 0; attempt < 30; attempt += 1) {
     await Bun.sleep(25);
-    const frameMessage = input.messages.slice(messageStart).findLast(
-      (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
-    );
+    const frameMessage = input.messages
+      .slice(messageStart)
+      .findLast(
+        (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
+      );
     if (!frameMessage) {
       continue;
     }
@@ -279,7 +281,7 @@ describe("Feature: app kernel event replay", () => {
     if (!session.avatarPrincipalId) {
       throw new Error("test session missing avatar principal id");
     }
-    const promptRoot = resolveWorkspaceAvatarCanonicalRoot(workspace, session.avatarPrincipalId, homeDir);
+    const promptRoot = resolveGlobalAvatarCanonicalRoot(session.avatarPrincipalId, homeDir);
     mkdirSync(promptRoot, { recursive: true });
     writeFileSync(join(promptRoot, "AGENTER.mdx"), "# Persisted prompt\n", "utf8");
 
@@ -335,7 +337,7 @@ describe("Feature: app kernel event replay", () => {
     if (!session.avatarPrincipalId) {
       throw new Error("test session missing avatar principal id");
     }
-    const promptRoot = resolveWorkspaceAvatarCanonicalRoot(workspace, session.avatarPrincipalId, homeDir);
+    const promptRoot = resolveGlobalAvatarCanonicalRoot(session.avatarPrincipalId, homeDir);
     mkdirSync(promptRoot, { recursive: true });
     writeFileSync(join(promptRoot, "AGENTER.mdx"), "# Original prompt\n", "utf8");
     await kernel.startSession(session.id);
@@ -1424,9 +1426,10 @@ describe("Feature: app kernel event replay", () => {
       limit: 20,
     });
     expect(page.items.some((item: { content: string }) => item.content === "global hello")).toBeTrue();
-    expect(page.items.find((item: { content: string; senderActorId?: string }) => item.content === "pair operator hello")?.senderActorId).toBe(
-      "session:avatar-pair",
-    );
+    expect(
+      page.items.find((item: { content: string; senderActorId?: string }) => item.content === "pair operator hello")
+        ?.senderActorId,
+    ).toBe("session:avatar-pair");
 
     const superadminSendAs = kernel.sendGlobalRoomMessage({
       chatId: room.chatId,

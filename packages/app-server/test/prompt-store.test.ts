@@ -7,11 +7,11 @@ import { pathToFileURL } from "node:url";
 import { FilePromptStore } from "../src/prompt-store";
 
 describe("Feature: prompt store URL Slot composition", () => {
-  test("Scenario: Given workspace prompt files use URL Slots When AGENTER.mdx is rendered Then public private super and file sources compose from the correct roots", async () => {
+  test("Scenario: Given prompt files use URL Slots When AGENTER.mdx is rendered Then public private super and file sources compose from the configured roots", async () => {
     const baseDir = await mkdtemp(join(tmpdir(), "agenter-prompt-store-"));
-    const workspaceRoot = join(baseDir, "workspace");
+    const layerRoot = join(baseDir, "layer");
     const homeRoot = join(baseDir, "home");
-    const publicRoot = join(workspaceRoot, ".agenter");
+    const publicRoot = join(layerRoot, ".agenter");
     const globalPublicRoot = join(homeRoot, ".agenter");
     const principalId = "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66";
     const privateRoot = join(publicRoot, "avatars", "by-principal", principalId);
@@ -22,15 +22,15 @@ describe("Feature: prompt store URL Slot composition", () => {
     await mkdir(globalPrivateRoot, { recursive: true });
     await mkdir(publicRoot, { recursive: true });
     await writeFile(join(globalPrivateRoot, "AGENTER.mdx"), "global-private", "utf8");
-    await writeFile(join(publicRoot, "workspace.md"), "workspace-public", "utf8");
-    await writeFile(join(privateRoot, "private.md"), "workspace-private", "utf8");
+    await writeFile(join(publicRoot, "layer.md"), "layer-public", "utf8");
+    await writeFile(join(privateRoot, "private.md"), "layer-private", "utf8");
     await writeFile(fileSlotPath, "file-slot", "utf8");
     await writeFile(
       join(privateRoot, "AGENTER.mdx"),
       [
         "local-private",
         '<Slot src="super:" />',
-        '<Slot src="public:workspace.md" />',
+        '<Slot src="public:layer.md" />',
         '<Slot src="private:private.md" />',
         `<Slot src="${pathToFileURL(fileSlotPath).toString()}" />`,
       ].join("\n"),
@@ -51,8 +51,8 @@ describe("Feature: prompt store URL Slot composition", () => {
 
     expect(rendered).toContain("local-private");
     expect(rendered).toContain("global-private");
-    expect(rendered).toContain("workspace-public");
-    expect(rendered).toContain("workspace-private");
+    expect(rendered).toContain("layer-public");
+    expect(rendered).toContain("layer-private");
     expect(rendered).toContain("file-slot");
   });
 

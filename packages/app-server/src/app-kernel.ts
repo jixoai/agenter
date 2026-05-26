@@ -59,9 +59,9 @@ import {
   type MessageRecord,
   type MessageSeatStateProjection,
   type MessageSnapshot,
-  type MessageTranscriptPage,
   type MessageSourceSubscriptionInput,
   type MessageSourceSubscriptionRecord,
+  type MessageTranscriptPage,
 } from "@agenter/message-system";
 import { isPrincipalId, normalizePrincipalId } from "@agenter/principal-crypto";
 import type {
@@ -142,6 +142,7 @@ import {
   readAvatarSeatDocument,
   saveAvatarMessageSeatCredential,
   saveAvatarTerminalSeatCredential,
+  type AvatarPrincipalRecord,
   type AvatarSeatState,
 } from "./avatar-seat-store";
 import { type ChatCycle } from "./chat-cycles";
@@ -216,7 +217,6 @@ import {
   executeWorkspaceBash,
   hasWorkspaceGrantRootAccess,
   resolveWorkspaceAvatarAssetRoot,
-  resolveWorkspaceAvatarCanonicalRoot,
   resolveWorkspaceGrantModeFromAbsolutePath,
   resolveWorkspacePublicAssetRoot,
   WorkspaceSystemStore,
@@ -904,9 +904,7 @@ export class AppKernel {
 
   private resolveAvatarPromptSeedPath(input: ProductAvatarPromptSeedInput): string {
     const principalId = normalizePrincipalId(input.avatarPrincipalId);
-    const root = input.workspacePath
-      ? resolveWorkspaceAvatarCanonicalRoot(toWorkspacePath(input.workspacePath, this.getHomeDir()), principalId, this.getHomeDir())
-      : resolveGlobalAvatarCanonicalRoot(principalId, this.getHomeDir());
+    const root = resolveGlobalAvatarCanonicalRoot(principalId, this.getHomeDir());
     return join(root, "AGENTER.mdx");
   }
 
@@ -1223,7 +1221,7 @@ export class AppKernel {
     const boundSessions = await Promise.all(
       this.sessions
         .list()
-        .map(async (session) => this.bindSessionPrimaryRoomId(this.bindSessionAvatarPrincipal(session))),
+        .map(async (session) => this.bindSessionPrimaryRoomId(await this.bindSessionAvatarPrincipal(session))),
     );
     this.repairLegacySessionMessageActors(boundSessions);
     this.syncAvatarCatalogWatchers();
@@ -1292,12 +1290,45 @@ export class AppKernel {
     });
   }
 
-  private bindSessionAvatarPrincipal(session: SessionMeta): SessionMeta {
-    const principal = ensureAvatarSeatPrincipal({
-      workspacePath: session.workspacePath,
-      avatar: session.avatar,
-      homeDir: this.getHomeDir(),
+  private async ensureRuntimeAvatarPrincipal(avatar: string): Promise<AvatarPrincipalRecord> {
+    const record = await this.ensureGlobalAvatarPrincipal({
+      nickname: avatar,
+      displayName:
+        resolveBuiltInAvatarProfile(avatar)?.displayName ??
+        (avatar === defaultAvatarNickname() ? formatAvatarDisplayName(avatar) : null),
+      classify: resolveBuiltInAvatarProfile(avatar)?.classify ?? null,
+      createMissing: true,
     });
+    if (!record) {
+      throw new Error(`failed to resolve global avatar principal: ${avatar}`);
+    }
+    const managed = await this.authService.revealManagedPrincipal(record.principal.principalId);
+    if (!managed) {
+      throw new Error(`global avatar private key unavailable: ${record.principal.principalId}`);
+    }
+    return {
+      principalId: managed.principalId,
+      algorithm: managed.algorithm,
+      publicKey: managed.publicKey,
+      privateKey: managed.privateKey,
+    };
+  }
+
+  private async revealRuntimeAvatarPrincipal(principalId: string): Promise<AvatarPrincipalRecord> {
+    const managed = await this.authService.revealManagedPrincipal(principalId);
+    if (!managed) {
+      throw new Error(`global avatar private key unavailable: ${principalId}`);
+    }
+    return {
+      principalId: managed.principalId,
+      algorithm: managed.algorithm,
+      publicKey: managed.publicKey,
+      privateKey: managed.privateKey,
+    };
+  }
+
+  private async bindSessionAvatarPrincipal(session: SessionMeta): Promise<SessionMeta> {
+    const principal = await this.ensureRuntimeAvatarPrincipal(session.avatar);
     if (session.avatarPrincipalId === principal.principalId) {
       return session;
     }
@@ -2784,11 +2815,7 @@ export class AppKernel {
       homeDir: this.getHomeDir(),
     });
     const workspacePath = workspace.workspacePath;
-    const avatarPrincipal = ensureAvatarSeatPrincipal({
-      workspacePath,
-      avatar: resolved.avatar.nickname,
-      homeDir: this.getHomeDir(),
-    });
+    const avatarPrincipal = await this.ensureRuntimeAvatarPrincipal(resolved.avatar.nickname);
     this.rememberWorkspace(workspacePath);
     const existing = this.sessions.findByAvatar(resolved.avatar.nickname);
     if (existing) {
@@ -2883,16 +2910,12 @@ export class AppKernel {
     if (existingMeta.storageState === "archived") {
       throw new Error(`session is archived: ${sessionId}`);
     }
-    const avatarBoundMeta = this.bindSessionAvatarPrincipal(existingMeta);
+    const avatarBoundMeta = await this.bindSessionAvatarPrincipal(existingMeta);
     const meta = await this.bindSessionPrimaryRoomId(avatarBoundMeta);
     if (!meta.avatarPrincipalId) {
       throw new Error(`session avatar principal missing: ${meta.id}`);
     }
-    const avatarSeat = ensureAvatarSeatPrincipal({
-      workspacePath: meta.workspacePath,
-      avatar: meta.avatar,
-      homeDir: this.getHomeDir(),
-    });
+    const avatarPrincipal = await this.revealRuntimeAvatarPrincipal(meta.avatarPrincipalId);
     const rootWorkspacePath = this.ensureRuntimeAvatarRootWorkspace({
       runtimeId: meta.id,
       avatarPrincipalId: meta.avatarPrincipalId,
@@ -2924,7 +2947,7 @@ export class AppKernel {
       sessionName: meta.name,
       storeTarget: meta.storeTarget,
       avatarPrincipalId: meta.avatarPrincipalId,
-      avatarPrivateKey: avatarSeat.privateKey,
+      avatarPrivateKey: avatarPrincipal.privateKey,
       homeDir: this.getHomeDir(),
       rootWorkspacePath,
       managedSeatAuthorityUrl: this.getManagedSeatAuthorityUrl() ?? undefined,
@@ -3017,7 +3040,7 @@ export class AppKernel {
     if (!existingSession) {
       return [];
     }
-    const session = this.bindSessionAvatarPrincipal(existingSession);
+    const session = existingSession;
     return this.messageControlPlane.listChannelsForActor(this.resolveSessionMessageActorId(session), {
       includeArchived: input.includeArchived,
       touchPresence: false,
@@ -3033,7 +3056,7 @@ export class AppKernel {
     if (!existingSession) {
       throw new Error(`session not found: ${sessionId}`);
     }
-    const avatarBound = this.bindSessionAvatarPrincipal(existingSession);
+    const avatarBound = await this.bindSessionAvatarPrincipal(existingSession);
     const session = await this.bindSessionPrimaryRoomId(avatarBound);
     const room = this.ensureSessionPrimaryRoom(session);
     if (input.focus ?? true) {
@@ -4282,12 +4305,14 @@ export class AppKernel {
     return this.terminalControlPlane.listApprovalRequestsAuthorized(input);
   }
 
-  listObservableGlobalTerminalApprovalRequests(input: {
-    terminalId?: string;
-    actorId?: TerminalActorId;
-    superadminActorId?: TerminalActorId;
-    statuses?: TerminalApprovalRequestRecord["status"][];
-  } = {}): TerminalApprovalRequestRecord[] {
+  listObservableGlobalTerminalApprovalRequests(
+    input: {
+      terminalId?: string;
+      actorId?: TerminalActorId;
+      superadminActorId?: TerminalActorId;
+      statuses?: TerminalApprovalRequestRecord["status"][];
+    } = {},
+  ): TerminalApprovalRequestRecord[] {
     return this.terminalControlPlane.listObservableApprovalRequests(input);
   }
 

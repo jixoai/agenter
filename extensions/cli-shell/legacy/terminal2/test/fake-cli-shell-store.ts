@@ -516,11 +516,10 @@ export class FakeCliShellStore implements CliShellStore {
 
   async ensureAvatarPromptSeed(input: {
     avatarPrincipalId: string;
-    workspacePath?: string;
     kind: "agenter";
     seedContent: string;
   }): Promise<{ seeded: boolean; file: { path: string; content: string; mtimeMs: number } }> {
-    const key = `${input.workspacePath ?? "~"}:${input.avatarPrincipalId}:${input.kind}`;
+    const key = `~:${input.avatarPrincipalId}:${input.kind}`;
     const current = this.avatarPromptFiles.get(key);
     if (current) {
       return {
@@ -529,7 +528,7 @@ export class FakeCliShellStore implements CliShellStore {
       };
     }
     const saved = {
-      path: `${input.workspacePath ?? "/home"}/.agenter/avatars/by-principal/${input.avatarPrincipalId}/AGENTER.mdx`,
+      path: `/home/.agenter/avatars/by-principal/${input.avatarPrincipalId}/AGENTER.mdx`,
       content: input.seedContent,
       mtimeMs: Date.now(),
     };

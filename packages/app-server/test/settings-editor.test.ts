@@ -9,7 +9,7 @@ describe("Feature: settings editor prompt path authority", () => {
   });
 
   test("Scenario: Given a canonical prompt root When resolving AGENTER.mdx Then the editor uses the avatar root", () => {
-    const principalRoot = join("/repo", ".agenter", "avatars", "by-principal", "0xabc");
+    const principalRoot = join("/home", ".agenter", "avatars", "by-principal", "0xabc");
 
     expect(resolveEditableSettingsPath("/repo", "agenter", { rootDir: principalRoot })).toBe(
       join(principalRoot, "AGENTER.mdx"),
