@@ -168,6 +168,12 @@ type GlobalRoomSnapshotRefreshTask = {
   promise: Promise<GlobalRoomSnapshotOutput | null>;
   query: { accessToken?: string; limit?: number };
 };
+const hasBrowserFrameLoop = (): boolean =>
+  typeof window !== "undefined" &&
+  typeof window.requestAnimationFrame === "function" &&
+  typeof window.cancelAnimationFrame === "function" &&
+  typeof document !== "undefined" &&
+  typeof document.createElement === "function";
 type GlobalRoomAssetsRefreshTask = {
   promise: Promise<GlobalRoomAssetEntry[]>;
   query: { accessToken?: string };
@@ -7528,7 +7534,7 @@ export class RuntimeStore {
   }
 
   private emit(): void {
-    if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+    if (!hasBrowserFrameLoop()) {
       this.flushListeners();
       return;
     }

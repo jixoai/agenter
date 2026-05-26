@@ -14,5 +14,6 @@
 
 - product packages 通过 `client-sdk` 消费 runtime、room、terminal、attention 与 TerminalSystem authorization projection；不得因为共仓开发就回退到 import server internals。
 - runtime store 只缓存或投影后端可观察事实；local view-model、toolbar state、product memory 不是 client-sdk 的 durable truth。
+- runtime store 的订阅发布必须在非浏览器 runtime 中同步落地；只有同时提供 DOM `document`、`requestAnimationFrame` 与 `cancelAnimationFrame` 的真实浏览器帧环境才允许做 frame batching，OpenTUI/TTY 这类 synthetic window 不得等待输入事件才发布 room/terminal/runtime 事实。
 - product-extension-runtime client 固定暴露 generic ensure/query/mutate surface；cli-shell-specific naming、managed UX、prompt policy 留在 product package。
 - typed router coupling 只允许服务于 shared contract discoverability；authority grammar 与 durable truth 始终由 server-side systems 拥有。

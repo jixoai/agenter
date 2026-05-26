@@ -4,8 +4,8 @@ import { RuntimeStore } from "../src/runtime-store";
 import type { AgenterClient, AgenterTransportEvent } from "../src/trpc-client";
 import type {
   GlobalAvatarCatalogEntry,
-  GlobalRoomSnapshotOutput,
   GlobalRoomMessage,
+  GlobalRoomSnapshotOutput,
   GlobalTerminalApprovalRequest,
   GlobalTerminalEntry,
   GlobalTerminalGrantEntry,
@@ -1674,7 +1674,8 @@ const createMockClient = (input: {
             input.terminalGlobalListQuery ? await input.terminalGlobalListQuery(payload) : { items: [] },
         },
         globalHistory: {
-          query: async () => (input.terminalGlobalHistoryQuery ? await input.terminalGlobalHistoryQuery() : { items: [] }),
+          query: async () =>
+            input.terminalGlobalHistoryQuery ? await input.terminalGlobalHistoryQuery() : { items: [] },
         },
         globalIndex: {
           query: async () => (input.terminalGlobalIndexQuery ? await input.terminalGlobalIndexQuery() : { items: [] }),
@@ -1708,9 +1709,7 @@ const createMockClient = (input: {
         },
         globalArchive: {
           mutate: async (payload: { terminalId: string }) =>
-            input.terminalGlobalArchiveMutate
-              ? await input.terminalGlobalArchiveMutate(payload)
-              : { terminal: null },
+            input.terminalGlobalArchiveMutate ? await input.terminalGlobalArchiveMutate(payload) : { terminal: null },
         },
         globalDelete: {
           mutate: async (payload: { terminalId: string }) =>
@@ -1846,10 +1845,7 @@ const createMockClient = (input: {
               : { items: [] },
         },
         permissionRequests: {
-          subscribe: (
-            payload: TerminalPermissionSubscriptionInput | undefined,
-            handlers: SubscriptionHandlers,
-          ) =>
+          subscribe: (payload: TerminalPermissionSubscriptionInput | undefined, handlers: SubscriptionHandlers) =>
             input.terminalPermissionRequestsSubscribe
               ? input.terminalPermissionRequestsSubscribe(payload, handlers)
               : { unsubscribe: () => {} },
@@ -2371,6 +2367,7 @@ const withAnimationFrameWindow = async (
   const eventTarget = new EventTarget();
   const originalWindow = globalThis.window;
   const originalNavigator = globalThis.navigator;
+  const originalDocument = globalThis.document;
   const frameCallbacks = new Map<number, FrameRequestCallback>();
   let nextHandle = 1;
 
@@ -2388,6 +2385,13 @@ const withAnimationFrameWindow = async (
       cancelAnimationFrame: (handle: number) => {
         frameCallbacks.delete(handle);
       },
+    },
+  });
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      nodeType: 9,
+      createElement: (tagName: string) => ({ tagName }),
     },
   });
   Object.defineProperty(globalThis, "navigator", {
@@ -2410,9 +2414,83 @@ const withAnimationFrameWindow = async (
       configurable: true,
       value: originalWindow,
     });
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: originalDocument,
+    });
     Object.defineProperty(globalThis, "navigator", {
       configurable: true,
       value: originalNavigator,
+    });
+  }
+};
+
+const withHeadlessAnimationFrameWindow = async (
+  callback: (controls: { flushFrame: (time?: number) => void }) => Promise<void>,
+): Promise<void> => {
+  const eventTarget = new EventTarget();
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const frameCallbacks = new Map<number, FrameRequestCallback>();
+  let nextHandle = 1;
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      addEventListener: eventTarget.addEventListener.bind(eventTarget),
+      removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
+      dispatchEvent: eventTarget.dispatchEvent.bind(eventTarget),
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        const handle = nextHandle++;
+        frameCallbacks.set(handle, callback);
+        return handle;
+      },
+      cancelAnimationFrame: (handle: number) => {
+        frameCallbacks.delete(handle);
+      },
+    },
+  });
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: undefined,
+  });
+
+  try {
+    await callback({
+      flushFrame: (time = 0) => {
+        const callbacks = [...frameCallbacks.values()];
+        frameCallbacks.clear();
+        for (const callback of callbacks) {
+          callback(time);
+        }
+      },
+    });
+  } finally {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: originalWindow,
+    });
+    Object.defineProperty(globalThis, "document", {
+      configurable: true,
+      value: originalDocument,
+    });
+  }
+};
+
+const withSyntheticTuiWindow = async (callback: () => Promise<void>): Promise<void> => {
+  const originalWindow = globalThis.window;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      requestAnimationFrame: (_callback: FrameRequestCallback) => 1,
+    },
+  });
+  try {
+    await callback();
+  } finally {
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: originalWindow,
     });
   }
 };
@@ -2472,6 +2550,126 @@ describe("Feature: runtime store synchronization", () => {
 
       store.disconnect();
     });
+  });
+
+  test("Scenario: Given an OpenTUI synthetic window When a retained room snapshot changes Then listeners are published synchronously without waiting for textarea input", async () => {
+    const room = {
+      chatId: "room-tui-sync",
+      kind: "room" as const,
+      title: "TUI room",
+      owner: "ops-bot",
+      participants: [{ id: "auth:kzf", label: "kzf" }],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_tui",
+      transportUrl: "ws://127.0.0.1:7777/room/room-tui-sync?token=msgtok_tui",
+      roomRevision: "1",
+      transcriptRevision: "0",
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        messageGlobalSnapshotQuery: async () => ({
+          channel: room,
+          items: [
+            {
+              rowId: 1,
+              messageId: 1,
+              chatId: room.chatId,
+              from: "ops-bot",
+              kind: "text" as const,
+              content: "fresh tui message",
+              createdAt: 1,
+              updatedAt: 1,
+              readActorIds: [],
+              unreadActorIds: [],
+            },
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+          roomRevision: "1",
+          transcriptRevision: "1",
+          headVersion: "1",
+        }),
+      }),
+    );
+    let publishCount = 0;
+    store.subscribe(() => {
+      publishCount += 1;
+    });
+
+    await withSyntheticTuiWindow(async () => {
+      await store.hydrateGlobalRoomSnapshot({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        force: true,
+      });
+    });
+
+    expect(publishCount).toBe(2);
+    expect(store.getGlobalRoomSnapshotState(room.chatId).data?.items[0]?.content).toBe("fresh tui message");
+  });
+
+  test("Scenario: Given a headless animation-frame shim When a retained room snapshot changes Then listeners are published synchronously without waiting for an input repaint", async () => {
+    const room = {
+      chatId: "room-headless-raf",
+      kind: "room" as const,
+      title: "Headless RAF room",
+      owner: "ops-bot",
+      participants: [{ id: "auth:kzf", label: "kzf" }],
+      createdAt: 1,
+      updatedAt: 1,
+      focused: true,
+      accessRole: "admin" as const,
+      accessToken: "msgtok_headless",
+      transportUrl: "ws://127.0.0.1:7777/room/room-headless-raf?token=msgtok_headless",
+      roomRevision: "1",
+      transcriptRevision: "0",
+    };
+    const store = new RuntimeStore(
+      createMockClient({
+        snapshotQuery: async () => createSnapshot(0),
+        messageGlobalSnapshotQuery: async () => ({
+          channel: room,
+          items: [
+            {
+              rowId: 1,
+              messageId: 1,
+              chatId: room.chatId,
+              from: "ops-bot",
+              kind: "text" as const,
+              content: "fresh headless message",
+              createdAt: 1,
+              updatedAt: 1,
+              readActorIds: [],
+              unreadActorIds: [],
+            },
+          ],
+          nextBefore: null,
+          hasMoreBefore: false,
+          roomRevision: "1",
+          transcriptRevision: "1",
+          headVersion: "1",
+        }),
+      }),
+    );
+    let publishCount = 0;
+    store.subscribe(() => {
+      publishCount += 1;
+    });
+
+    await withHeadlessAnimationFrameWindow(async () => {
+      await store.hydrateGlobalRoomSnapshot({
+        chatId: room.chatId,
+        accessToken: room.accessToken,
+        force: true,
+      });
+    });
+
+    expect(store.getGlobalRoomSnapshotState(room.chatId).data?.items[0]?.content).toBe("fresh headless message");
+    expect(publishCount).toBe(2);
   });
 
   test("Scenario: Given subscription events When applying updates Then state stays ordered and deduped", async () => {
@@ -8669,7 +8867,7 @@ describe("Feature: runtime store synchronization", () => {
       participantId: "auth:guard-b",
       assignedAdminId: "auth:admin",
       status: "pending",
-      requestedInput: { mode: "mixed", text: "<raw>echo b</raw><key data=\"enter\"/>" },
+      requestedInput: { mode: "mixed", text: '<raw>echo b</raw><key data="enter"/>' },
       createdAt: 2,
       expiresAt: 92_000,
     };
@@ -8705,9 +8903,11 @@ describe("Feature: runtime store synchronization", () => {
     const releaseTerminalA = store.retainTerminalPermissionRequests({ terminalId: terminalA });
 
     await waitFor(() => subscriptions.length === 2);
-    expect(subscriptions.map((subscription) => subscription.payload ?? {}).sort((left, right) =>
-      JSON.stringify(left).localeCompare(JSON.stringify(right)),
-    )).toEqual([{ terminalId: terminalA }, {}]);
+    expect(
+      subscriptions
+        .map((subscription) => subscription.payload ?? {})
+        .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+    ).toEqual([{ terminalId: terminalA }, {}]);
     expect(store.getState().globalTerminalApprovalsById[terminalA]?.data).toEqual([pendingA]);
     expect(store.getState().globalTerminalApprovalsById[terminalB]?.data).toEqual([pendingB]);
 

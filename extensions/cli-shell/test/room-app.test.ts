@@ -1,7 +1,13 @@
-import type { CachedResourceState, GlobalRoomEntry, GlobalRoomMessage, RuntimeClientState, SessionEntry } from "@agenter/client-sdk";
-import { afterEach, describe, expect, test } from "bun:test";
+import type {
+  CachedResourceState,
+  GlobalRoomEntry,
+  GlobalRoomMessage,
+  RuntimeClientState,
+  SessionEntry,
+} from "@agenter/client-sdk";
 import { TextareaRenderable } from "@opentui/core";
 import { createTestRenderer, type TestRenderer } from "@opentui/core/testing";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import { startCliShellRoomApp, type CliShellRoomAppStore, type CliShellRoomLayoutMode } from "../src/tui/room-app";
 import type { CliShellKeybindings } from "../src/tui/settings";
@@ -69,6 +75,42 @@ class RoomAppStore implements CliShellRoomAppStore {
     },
   ];
 
+  seedExternalMessages(count: number): void {
+    this.#messages = Array.from({ length: count }, (_, index) => ({
+      rowId: index + 1,
+      messageId: index + 1,
+      chatId: "room-shell-5",
+      from: "@bangeel",
+      senderActorId: "auth:bangeel",
+      kind: "text",
+      content: `seed room message ${index + 1}`,
+      createdAt: index + 1,
+      updatedAt: index + 1,
+      readActorIds: [],
+      unreadActorIds: [],
+    }));
+  }
+
+  pushExternalMessage(text: string): void {
+    this.#messages = [
+      ...this.#messages,
+      {
+        rowId: 100 + this.#messages.length,
+        messageId: 100 + this.#messages.length,
+        chatId: "room-shell-5",
+        from: "@bangeel",
+        senderActorId: "auth:bangeel",
+        kind: "text",
+        content: text,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        readActorIds: [],
+        unreadActorIds: [],
+      },
+    ];
+    this.#listener?.();
+  }
+
   getState(): Pick<RuntimeClientState, "globalRoomSnapshotsById" | "globalTerminalApprovalsById"> {
     return {
       globalRoomSnapshotsById: {
@@ -111,11 +153,7 @@ class RoomAppStore implements CliShellRoomAppStore {
     return null;
   }
 
-  async sendGlobalRoomMessage(input: {
-    chatId: string;
-    text: string;
-    accessToken?: string;
-  }): Promise<{ ok: boolean }> {
+  async sendGlobalRoomMessage(input: { chatId: string; text: string; accessToken?: string }): Promise<{ ok: boolean }> {
     this.sentMessages.push(input);
     this.#messages = [
       ...this.#messages,
@@ -452,6 +490,26 @@ describe("Feature: cli-shell OpenTUI room input", () => {
     await flushRoomAsync(room, 2);
 
     expect(room.captureCharFrame()).toContain("send now");
+  });
+
+  test("Scenario: Given a room message arrives outside the textarea When the store publishes it Then Room repaints without user input", async () => {
+    const room = await startRoom();
+
+    room.store.pushExternalMessage("external fresh message");
+    await room.renderer.idle();
+
+    expect(room.captureCharFrame()).toContain("external fresh message");
+  });
+
+  test("Scenario: Given Room is already scrollable and pinned to the latest message When a room message arrives outside the textarea Then Room keeps the latest message visible without user input", async () => {
+    const store = new RoomAppStore();
+    store.seedExternalMessages(30);
+    const room = await startRoom({ store });
+
+    room.store.pushExternalMessage("external overflow message");
+    await room.renderer.idle();
+
+    expect(room.captureCharFrame()).toContain("external overflow message");
   });
 
   test("Scenario: Given the current draft is empty When the user submits /history and accepts the selected item Then cli-shell inserts that history item into the textarea", async () => {
