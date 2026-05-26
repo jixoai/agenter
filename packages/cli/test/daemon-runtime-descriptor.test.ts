@@ -3,17 +3,18 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { type TrpcServerHandle } from "../src/trpc-server";
 import {
   clearOwnedDaemonRuntimeDescriptor,
+  compatibleDaemonLauncherIdentity,
   type DaemonLauncherIdentity,
   readDaemonRuntimeDescriptor,
   resolveDaemonLogDir,
   resolveDaemonLogPath,
   resolveDaemonRuntimeDescriptorPath,
+  sameDaemonLauncherIdentity,
   writeDaemonRuntimeDescriptor,
 } from "../src/daemon-runtime-descriptor";
-import { startTrpcServer } from "../src/trpc-server";
+import { startTrpcServer, type TrpcServerHandle } from "../src/trpc-server";
 
 const tempDirs: string[] = [];
 const handles: TrpcServerHandle[] = [];
@@ -124,5 +125,32 @@ describe("Feature: daemon runtime descriptor lifecycle", () => {
     expect(resolveDaemonLogPath(homeDir, { host: "::1", port: 4580 }, startedAt)).toBe(
       join(homeDir, ".agenter", "logs", "daemon", "2026-05-25T04-03-02-001Z-__1-4580.log"),
     );
+  });
+
+  test("Scenario: Given two workspace checkouts expose the same agenter CLI package When comparing launcher identity Then daemon reuse allows worktree path drift without weakening package boundaries", () => {
+    const current: DaemonLauncherIdentity = {
+      packageName: "@agenter/cli",
+      packageVersion: "0.0.1",
+      sourceKind: "workspace",
+      entrypoint: "/repo/packages/cli/src/bin/agenter.ts",
+    };
+    const worktree: DaemonLauncherIdentity = {
+      ...current,
+      entrypoint: "/repo/.worktree/fix-cli-shell-chat-refresh/packages/cli/src/bin/agenter.ts",
+    };
+    const installedPackage: DaemonLauncherIdentity = {
+      ...current,
+      sourceKind: "package",
+      entrypoint: "@agenter/cli@0.0.1",
+    };
+    const differentVersion: DaemonLauncherIdentity = {
+      ...worktree,
+      packageVersion: "0.0.2",
+    };
+
+    expect(sameDaemonLauncherIdentity(current, worktree)).toBe(false);
+    expect(compatibleDaemonLauncherIdentity(current, worktree)).toBe(true);
+    expect(compatibleDaemonLauncherIdentity(current, installedPackage)).toBe(false);
+    expect(compatibleDaemonLauncherIdentity(current, differentVersion)).toBe(false);
   });
 });

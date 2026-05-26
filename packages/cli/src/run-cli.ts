@@ -1,39 +1,39 @@
 import { type AuthServiceBridgeOptions } from "@agenter/app-server";
+import type { AuthServiceHandle } from "@agenter/auth-service";
+import { suffix } from "bun:ffi";
 import { spawn as spawnChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { suffix } from "bun:ffi";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import {
+  clearOwnedDaemonRuntimeDescriptor,
+  compatibleDaemonLauncherIdentity,
+  normalizeDaemonHealthPayload,
+  readDaemonRuntimeDescriptor,
+  resolveDaemonLogPath,
+  type DaemonHealthPayload,
+  type DaemonLauncherIdentity,
+  type DaemonRuntimeDescriptor,
+} from "./daemon-runtime-descriptor";
+import {
+  applyProductCommandsToYargs,
   buildProductLaunchEnv,
   buildProductProcessCommand,
   isBuiltInCommand,
   isLauncherMetadataOnlyCommand,
   isProductMetadataOnlyArgv,
-  applyProductCommandsToYargs,
-  type LocalProductLaunchTarget,
   readCommandToken,
   resolveProductCommandInvocation,
   resolveProductLaunchTarget,
+  type LocalProductLaunchTarget,
 } from "./product-command-launcher";
-import type { AuthServiceHandle } from "@agenter/auth-service";
 import type { TrpcServerHandle } from "./trpc-server";
-import {
-  clearOwnedDaemonRuntimeDescriptor,
-  normalizeDaemonHealthPayload,
-  readDaemonRuntimeDescriptor,
-  resolveDaemonLogPath,
-  sameDaemonLauncherIdentity,
-  type DaemonHealthPayload,
-  type DaemonLauncherIdentity,
-  type DaemonRuntimeDescriptor,
-} from "./daemon-runtime-descriptor";
 
 interface CommonArgs {
   host: string;
@@ -76,9 +76,7 @@ class DaemonCompatibilityError extends Error {
   }
 }
 
-type DaemonHealthProbe =
-  | { reachable: false }
-  | { reachable: true; payload: DaemonHealthPayload | null };
+type DaemonHealthProbe = { reachable: false } | { reachable: true; payload: DaemonHealthPayload | null };
 
 type StopManagedDaemonResult =
   | { kind: "missing" }
@@ -105,7 +103,8 @@ const waitForSignal = async (cleanup?: () => Promise<void> | void): Promise<void
 
 const healthUrl = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
 const resolveLauncherHomeDir = (): string => process.env.HOME || homedir();
-const resolveLauncherOwnedAuthServiceDataDir = (): string => join(resolveLauncherHomeDir(), ".agenter", "launcher-auth-service");
+const resolveLauncherOwnedAuthServiceDataDir = (): string =>
+  join(resolveLauncherHomeDir(), ".agenter", "launcher-auth-service");
 const resolveDaemonHealthLabel = (args: CommonArgs): string => `http://${args.host}:${args.port}/health`;
 const resolveCliEntryPath = (): string => resolve(import.meta.dir, "bin", "agenter.ts");
 const resolveCurrentLauncherIdentity = (): DaemonLauncherIdentity => {
@@ -226,7 +225,7 @@ const assertCompatibleDaemonHealth = async (
       endpoint,
     });
   }
-  if (!sameDaemonLauncherIdentity(expected, health.payload.launcher)) {
+  if (!compatibleDaemonLauncherIdentity(expected, health.payload.launcher)) {
     throw new DaemonCompatibilityError({
       expected,
       actual: health.payload.launcher,
@@ -255,8 +254,8 @@ const assertCompatibleDaemonDescriptor = async (
     });
   }
   if (
-    !sameDaemonLauncherIdentity(expected, descriptor.launcher) ||
-    !sameDaemonLauncherIdentity(expected, health.payload.launcher)
+    !compatibleDaemonLauncherIdentity(expected, descriptor.launcher) ||
+    !compatibleDaemonLauncherIdentity(expected, health.payload.launcher)
   ) {
     throw new DaemonCompatibilityError({
       expected,
@@ -283,7 +282,11 @@ const formatDaemonCompatibilityMessage = (input: DaemonCompatibilityMismatch): s
   ].join("\n");
 };
 
-const waitFor = async (predicate: () => Promise<boolean> | boolean, timeoutMs: number, intervalMs = 100): Promise<boolean> => {
+const waitFor = async (
+  predicate: () => Promise<boolean> | boolean,
+  timeoutMs: number,
+  intervalMs = 100,
+): Promise<boolean> => {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     if (await predicate()) {
@@ -321,7 +324,15 @@ const resolveDaemonCommandAction = (value: unknown): DaemonCommandAction =>
 const isForegroundDaemonServeRequested = (): boolean => process.env[INTERNAL_DAEMON_FOREGROUND_ENV] === "1";
 
 const buildDaemonServeArgv = (args: CommonArgs & AuthServiceBridgeCliArgs): string[] => {
-  const argv = [...resolveCurrentCliEntrypointArgv(), "daemon", "start", "--host", args.host, "--port", String(args.port)];
+  const argv = [
+    ...resolveCurrentCliEntrypointArgv(),
+    "daemon",
+    "start",
+    "--host",
+    args.host,
+    "--port",
+    String(args.port),
+  ];
   if (args.authServiceEndpoint) {
     argv.push("--auth-service-endpoint", args.authServiceEndpoint);
   }
@@ -415,7 +426,10 @@ const stopManagedDaemonForHomeRoot = async (): Promise<StopManagedDaemonResult> 
   }
 
   process.kill(descriptor.pid, "SIGTERM");
-  const stopped = await waitFor(async () => !isProcessAlive(descriptor.pid) && !(await isReusableDaemonDescriptorHealthy(descriptor)), 15_000);
+  const stopped = await waitFor(
+    async () => !isProcessAlive(descriptor.pid) && !(await isReusableDaemonDescriptorHealthy(descriptor)),
+    15_000,
+  );
   if (!stopped) {
     return { kind: "timeout", descriptor };
   }
@@ -423,9 +437,7 @@ const stopManagedDaemonForHomeRoot = async (): Promise<StopManagedDaemonResult> 
   return { kind: "stopped", descriptor };
 };
 
-const runDaemonServeForeground = async (
-  args: CommonArgs & AuthServiceBridgeCliArgs,
-): Promise<void> => {
+const runDaemonServeForeground = async (args: CommonArgs & AuthServiceBridgeCliArgs): Promise<void> => {
   const daemon = await startDaemon({
     host: args.host,
     port: args.port,
@@ -440,9 +452,7 @@ const runDaemonServeForeground = async (
   });
 };
 
-const runDaemonStartCommand = async (
-  args: CommonArgs & AuthServiceBridgeCliArgs,
-): Promise<void> => {
+const runDaemonStartCommand = async (args: CommonArgs & AuthServiceBridgeCliArgs): Promise<void> => {
   const requested = {
     host: args.host,
     port: args.port,
@@ -452,7 +462,7 @@ const runDaemonStartCommand = async (
     const existingHealthy = await isReusableDaemonDescriptorHealthy(existing);
     if (existingHealthy) {
       const expectedLauncherIdentity = resolveCurrentLauncherIdentity();
-      if (!sameDaemonLauncherIdentity(expectedLauncherIdentity, existing.launcher)) {
+      if (!compatibleDaemonLauncherIdentity(expectedLauncherIdentity, existing.launcher)) {
         console.error(
           formatDaemonCompatibilityMessage({
             expected: expectedLauncherIdentity,
@@ -522,7 +532,9 @@ const runDaemonStopCommand = async (): Promise<void> => {
       process.exitCode = 1;
       return;
     case "timeout":
-      console.error(`timed out stopping daemon ${result.descriptor.pid} at ${result.descriptor.host}:${result.descriptor.port}`);
+      console.error(
+        `timed out stopping daemon ${result.descriptor.pid} at ${result.descriptor.host}:${result.descriptor.port}`,
+      );
       process.exitCode = 1;
       return;
     case "stopped":
@@ -557,9 +569,7 @@ const resolveAuthServiceBridgeOptions = (args: AuthServiceBridgeCliArgs): AuthSe
   };
 };
 
-const resolveProductDaemonAuthServiceOptions = (
-  args: AuthServiceBridgeCliArgs,
-): AuthServiceBridgeCliArgs => {
+const resolveProductDaemonAuthServiceOptions = (args: AuthServiceBridgeCliArgs): AuthServiceBridgeCliArgs => {
   if (
     args.authServiceEndpoint?.trim() ||
     args.authServiceDataDir?.trim() ||
@@ -590,15 +600,20 @@ const startDaemon = async (
   });
 };
 
-const startStandaloneAuthService = async (
-  args: StandaloneAuthServiceCliArgs,
-): Promise<AuthServiceHandle> => {
+const startStandaloneAuthService = async (args: StandaloneAuthServiceCliArgs): Promise<AuthServiceHandle> => {
   const { startAuthServiceServer } = await import("@agenter/auth-service");
   return await startAuthServiceServer({
     host: args.host,
     port: args.port,
     dataDir: args.dataDir,
-    resvgLibraryPath: resolveBundledAssetPath("auth-service", "native", "resvg_bridge", "target", "release", `libprofile_resvg_bridge.${suffix}`),
+    resvgLibraryPath: resolveBundledAssetPath(
+      "auth-service",
+      "native",
+      "resvg_bridge",
+      "target",
+      "release",
+      `libprofile_resvg_bridge.${suffix}`,
+    ),
     webauthnUiDir: resolveBundledAssetPath("auth-service", "webauthn-ui"),
   });
 };
@@ -668,7 +683,7 @@ const runLocalProductInProcess = async (input: {
     }
   }
   try {
-    const mod = await import(pathToFileURL(input.target.mainPath).href) as Record<string, unknown>;
+    const mod = (await import(pathToFileURL(input.target.mainPath).href)) as Record<string, unknown>;
     const runner = mod[input.mainExport];
     if (typeof runner !== "function") {
       return false;
@@ -820,142 +835,143 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
       yargs(rawArgs)
         .scriptName("agenter")
         .version(cliPackageJson.version ?? "unknown")
-      .option("host", {
-        type: "string",
-        default: "127.0.0.1",
-        describe: "daemon host",
-      })
-      .option("port", {
-        type: "number",
-        default: 4580,
-        describe: "daemon port",
-      }),
-  )
-    .command(
-      ["auth-service", "profile-service"],
-      "start standalone auth-service (profile-service remains a deprecated compatibility alias)",
-      (builder) =>
-        builder
-          .option("port", {
-            type: "number",
-            default: 4591,
-            describe: "auth-service port",
-          })
-          .option("data-dir", {
-            type: "string",
-            describe: "auth-service data directory; defaults to ~/.agenter/auth-service",
-          }),
-      async (args) => {
-        if (String(args._[0]) === "profile-service") {
-          console.warn("[deprecated] use `agenter auth-service` instead of `agenter profile-service`.");
-        }
-        const handle = await startStandaloneAuthService({
-          host: String(args.host),
-          port: Number(args.port),
-          dataDir: typeof args.dataDir === "string" ? args.dataDir : undefined,
-        });
-        console.log(`agenter auth-service listening on http://${handle.host}:${handle.port}`);
-        await waitForSignal(async () => {
-          await handle.stop();
-        });
-      },
-    )
-    .command(
-      "daemon [action]",
-      "manage daemon server",
-      (builder) =>
-        withAuthServiceBridgeOptions(builder).positional("action", {
+        .option("host", {
           type: "string",
-          choices: ["start", "stop", "restart"],
-          default: "start",
+          default: "127.0.0.1",
+          describe: "daemon host",
+        })
+        .option("port", {
+          type: "number",
+          default: 4580,
+          describe: "daemon port",
         }),
-      async (args) => {
-        const daemonArgs = {
-          host: String(args.host),
-          port: Number(args.port),
-          authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
-          authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
-          authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
-          authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
-        };
-        if (isForegroundDaemonServeRequested()) {
-          await runDaemonServeForeground(daemonArgs);
-          return;
-        }
-        const action = resolveDaemonCommandAction(args.action);
-        if (action === "stop") {
-          await runDaemonStopCommand();
-          return;
-        }
-        if (action === "restart") {
-          const result = await stopManagedDaemonForHomeRoot();
-          if (result.kind === "foreign" || result.kind === "timeout") {
+    )
+      .command(
+        ["auth-service", "profile-service"],
+        "start standalone auth-service (profile-service remains a deprecated compatibility alias)",
+        (builder) =>
+          builder
+            .option("port", {
+              type: "number",
+              default: 4591,
+              describe: "auth-service port",
+            })
+            .option("data-dir", {
+              type: "string",
+              describe: "auth-service data directory; defaults to ~/.agenter/auth-service",
+            }),
+        async (args) => {
+          if (String(args._[0]) === "profile-service") {
+            console.warn("[deprecated] use `agenter auth-service` instead of `agenter profile-service`.");
+          }
+          const handle = await startStandaloneAuthService({
+            host: String(args.host),
+            port: Number(args.port),
+            dataDir: typeof args.dataDir === "string" ? args.dataDir : undefined,
+          });
+          console.log(`agenter auth-service listening on http://${handle.host}:${handle.port}`);
+          await waitForSignal(async () => {
+            await handle.stop();
+          });
+        },
+      )
+      .command(
+        "daemon [action]",
+        "manage daemon server",
+        (builder) =>
+          withAuthServiceBridgeOptions(builder).positional("action", {
+            type: "string",
+            choices: ["start", "stop", "restart"],
+            default: "start",
+          }),
+        async (args) => {
+          const daemonArgs = {
+            host: String(args.host),
+            port: Number(args.port),
+            authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
+            authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
+            authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
+            authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
+          };
+          if (isForegroundDaemonServeRequested()) {
+            await runDaemonServeForeground(daemonArgs);
+            return;
+          }
+          const action = resolveDaemonCommandAction(args.action);
+          if (action === "stop") {
             await runDaemonStopCommand();
             return;
           }
-        }
-        await runDaemonStartCommand(daemonArgs);
-      },
-    )
-    .command(
-      "tui",
-      "run tui client (auto-start daemon when absent)",
-      (builder) => withAuthServiceBridgeOptions(builder),
-      async (args) => {
-        const common: CommonArgs = {
-          host: String(args.host),
-          port: Number(args.port),
-        };
-
-        let localDaemon: TrpcServerHandle | null = null;
-        const expectedLauncherIdentity = resolveCurrentLauncherIdentity();
-        const reusableAuthority = await discoverCompatibleDaemonAuthority(expectedLauncherIdentity);
-        if (reusableAuthority) {
-          common.host = reusableAuthority.host;
-          common.port = reusableAuthority.port;
-        } else {
-          const daemonAuthority = await assertCompatibleDaemonHealth(common, expectedLauncherIdentity);
-          if (!daemonAuthority) {
-            localDaemon = await startDaemon({
-              ...common,
-              authServiceEndpoint: typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
-              authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
-              authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
-              authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
-            });
-            common.host = localDaemon.host;
-            common.port = localDaemon.port;
-          } else {
-            common.host = daemonAuthority.host;
-            common.port = daemonAuthority.port;
+          if (action === "restart") {
+            const result = await stopManagedDaemonForHomeRoot();
+            if (result.kind === "foreign" || result.kind === "timeout") {
+              await runDaemonStopCommand();
+              return;
+            }
           }
-        }
+          await runDaemonStartCommand(daemonArgs);
+        },
+      )
+      .command(
+        "tui",
+        "run tui client (auto-start daemon when absent)",
+        (builder) => withAuthServiceBridgeOptions(builder),
+        async (args) => {
+          const common: CommonArgs = {
+            host: String(args.host),
+            port: Number(args.port),
+          };
 
-        const { runTuiClient } = await import("@agenter/tui");
-        await runTuiClient(common);
-        if (localDaemon) {
-          await localDaemon.stop();
-        }
-      },
-    )
-    .command(
-      "doctor",
-      "check daemon connectivity",
-      (builder) => builder,
-      async (args) => {
-        const common: CommonArgs = {
-          host: String(args.host),
-          port: Number(args.port),
-        };
-        const alive = await isDaemonAlive(common);
-        if (!alive) {
-          console.log(`daemon is not reachable at ${resolveDaemonHealthLabel(common)}`);
-          process.exitCode = 1;
-          return;
-        }
-        console.log(`daemon is healthy at ${resolveDaemonHealthLabel(common)}`);
-      },
-    )
+          let localDaemon: TrpcServerHandle | null = null;
+          const expectedLauncherIdentity = resolveCurrentLauncherIdentity();
+          const reusableAuthority = await discoverCompatibleDaemonAuthority(expectedLauncherIdentity);
+          if (reusableAuthority) {
+            common.host = reusableAuthority.host;
+            common.port = reusableAuthority.port;
+          } else {
+            const daemonAuthority = await assertCompatibleDaemonHealth(common, expectedLauncherIdentity);
+            if (!daemonAuthority) {
+              localDaemon = await startDaemon({
+                ...common,
+                authServiceEndpoint:
+                  typeof args.authServiceEndpoint === "string" ? args.authServiceEndpoint : undefined,
+                authServiceDataDir: typeof args.authServiceDataDir === "string" ? args.authServiceDataDir : undefined,
+                authServiceHost: typeof args.authServiceHost === "string" ? args.authServiceHost : undefined,
+                authServicePort: typeof args.authServicePort === "number" ? args.authServicePort : undefined,
+              });
+              common.host = localDaemon.host;
+              common.port = localDaemon.port;
+            } else {
+              common.host = daemonAuthority.host;
+              common.port = daemonAuthority.port;
+            }
+          }
+
+          const { runTuiClient } = await import("@agenter/tui");
+          await runTuiClient(common);
+          if (localDaemon) {
+            await localDaemon.stop();
+          }
+        },
+      )
+      .command(
+        "doctor",
+        "check daemon connectivity",
+        (builder) => builder,
+        async (args) => {
+          const common: CommonArgs = {
+            host: String(args.host),
+            port: Number(args.port),
+          };
+          const alive = await isDaemonAlive(common);
+          if (!alive) {
+            console.log(`daemon is not reachable at ${resolveDaemonHealthLabel(common)}`);
+            process.exitCode = 1;
+            return;
+          }
+          console.log(`daemon is healthy at ${resolveDaemonHealthLabel(common)}`);
+        },
+      )
       .demandCommand(1)
       .strict()
       .help()

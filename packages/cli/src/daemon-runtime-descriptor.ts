@@ -73,13 +73,12 @@ const normalizeDaemonRuntimeDescriptor = (value: unknown): DaemonRuntimeDescript
   }
   // Descriptors written before launcher identity existed can still be stopped,
   // but they are never reusable by identity-aware product launches.
-  const launcher =
-    normalizeDaemonLauncherIdentity(value.launcher) ?? {
-      packageName: "unknown",
-      packageVersion: "unknown",
-      sourceKind: "unknown",
-      entrypoint: "unknown",
-    };
+  const launcher = normalizeDaemonLauncherIdentity(value.launcher) ?? {
+    packageName: "unknown",
+    packageVersion: "unknown",
+    sourceKind: "unknown",
+    entrypoint: "unknown",
+  };
   if (typeof value.updatedAt !== "string" || value.updatedAt.length === 0) {
     return null;
   }
@@ -149,14 +148,28 @@ export const clearOwnedDaemonRuntimeDescriptor = (
   }
 };
 
-export const sameDaemonLauncherIdentity = (
-  left: DaemonLauncherIdentity,
-  right: DaemonLauncherIdentity,
-): boolean =>
+export const sameDaemonLauncherIdentity = (left: DaemonLauncherIdentity, right: DaemonLauncherIdentity): boolean =>
   left.packageName === right.packageName &&
   left.packageVersion === right.packageVersion &&
   left.sourceKind === right.sourceKind &&
   left.entrypoint === right.entrypoint;
+
+export const compatibleDaemonLauncherIdentity = (
+  left: DaemonLauncherIdentity,
+  right: DaemonLauncherIdentity,
+): boolean => {
+  if (
+    left.packageName !== right.packageName ||
+    left.packageVersion !== right.packageVersion ||
+    left.sourceKind !== right.sourceKind
+  ) {
+    return false;
+  }
+  if (left.sourceKind === "workspace") {
+    return true;
+  }
+  return left.entrypoint === right.entrypoint;
+};
 
 export const normalizeDaemonHealthPayload = (value: unknown): DaemonHealthPayload | null => {
   if (!isRecord(value)) {
