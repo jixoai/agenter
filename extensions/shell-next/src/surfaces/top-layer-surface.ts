@@ -1,0 +1,431 @@
+import { BoxRenderable, TextRenderable, type CliRenderer, type KeyEvent, type MouseEvent } from "@opentui/core";
+
+import { markShellNextKeyHandled } from "../app/key-event-scope";
+import { buildShellNextPaneBorderTitle, type ShellNextPaneChromeHitRegion } from "../renderable-mux/pane-chrome";
+
+export const SHELL_NEXT_APPROVAL_LEASE_MS = 5 * 60_000;
+
+export interface ShellNextApprovalRequest {
+  readonly requestId: string;
+  readonly terminalId: string;
+  readonly participantId: string;
+  readonly status: "pending" | "approved" | "denied" | "expired";
+  readonly requestedInput?: {
+    readonly mode?: string;
+    readonly text?: string;
+  };
+  readonly createdAt: number;
+}
+
+export interface ShellNextApprovalStore {
+  getPendingApproval(): ShellNextApprovalRequest | null;
+  approve(input: { terminalId: string; requestId: string; durationMs: number }): Promise<void> | void;
+  deny(input: { terminalId: string; requestId: string }): Promise<void> | void;
+  refresh?(): Promise<void> | void;
+  subscribe?(listener: () => void): () => void;
+}
+
+export interface ShellNextCloseConfirmState {
+  readonly title: string;
+  readonly onBackgroundRun: () => void | Promise<void>;
+  readonly onTerminate: () => void | Promise<void>;
+}
+
+export interface ShellNextTopLayerSurfaceInput {
+  renderer: CliRenderer;
+  store: ShellNextApprovalStore;
+  shellName: string;
+  onClose?: () => void;
+}
+
+type OverlayMode = "approval" | "close-confirm" | "empty";
+type ActionName = "approve" | "deny" | "close" | "background-run" | "terminate";
+
+interface ActionRegion {
+  readonly action: ActionName;
+  readonly row: number;
+  readonly col: number;
+  readonly width: number;
+}
+
+const readKeyEvent = (value: unknown): KeyEvent | null =>
+  typeof value === "object" && value !== null ? (value as KeyEvent) : null;
+
+const clipLine = (text: string, width: number): string => text.slice(0, Math.max(1, width));
+
+export class ShellNextTopLayerSurface {
+  readonly #renderer: CliRenderer;
+  readonly #store: ShellNextApprovalStore;
+  readonly #shellName: string;
+  readonly #onClose: (() => void) | undefined;
+  readonly #root: BoxRenderable;
+  readonly #title: TextRenderable;
+  readonly #actor: TextRenderable;
+  readonly #preview: TextRenderable;
+  readonly #actions: TextRenderable;
+  readonly #status: TextRenderable;
+  #releaseStore: (() => void) | null = null;
+  #actionRegions: ActionRegion[] = [];
+  #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
+  #statusNotice: string | null = null;
+  #visible = false;
+  #closeConfirm: ShellNextCloseConfirmState | null = null;
+
+  constructor(input: ShellNextTopLayerSurfaceInput) {
+    this.#renderer = input.renderer;
+    this.#store = input.store;
+    this.#shellName = input.shellName;
+    this.#onClose = input.onClose;
+    this.#root = new BoxRenderable(this.#renderer, {
+      id: "shell-next-top-layer",
+      position: "absolute",
+      top: 1,
+      left: 2,
+      width: 1,
+      height: 1,
+      backgroundColor: "#111827",
+      border: true,
+      borderStyle: "rounded",
+      borderColor: "#93c5fd",
+      zIndex: 100,
+      visible: false,
+      focusable: true,
+    });
+    this.#root.onMouseDown = (event) => this.#handleMouseDown(event);
+    this.#title = this.#createText("shell-next-top-title", 1, "#f8fafc");
+    this.#actor = this.#createText("shell-next-top-actor", 3, "#cbd5e1");
+    this.#preview = this.#createText("shell-next-top-preview", 5, "#f8fafc");
+    this.#actions = this.#createText("shell-next-top-actions", 7, "#f8fafc");
+    this.#status = this.#createText("shell-next-top-status", 9, "#facc15");
+    this.#root.add(this.#title);
+    this.#root.add(this.#actor);
+    this.#root.add(this.#preview);
+    this.#root.add(this.#actions);
+    this.#root.add(this.#status);
+  }
+
+  get root(): BoxRenderable {
+    return this.#root;
+  }
+
+  get visible(): boolean {
+    return this.#visible;
+  }
+
+  start(): void {
+    this.#releaseStore = this.#store.subscribe?.(() => this.render()) ?? null;
+    void this.#store.refresh?.();
+    this.render();
+  }
+
+  show(): void {
+    this.#visible = true;
+    this.render();
+    this.#root.focus();
+  }
+
+  hide(): void {
+    this.#visible = false;
+    this.#closeConfirm = null;
+    this.#root.visible = false;
+    this.#renderer.requestRender();
+  }
+
+  toggle(): void {
+    if (this.#visible) {
+      this.hide();
+      return;
+    }
+    this.show();
+  }
+
+  showCloseConfirm(input: ShellNextCloseConfirmState): void {
+    this.#closeConfirm = input;
+    this.show();
+  }
+
+  handleKeypress(value: unknown): boolean {
+    const key = readKeyEvent(value);
+    if (!this.#visible || !key) {
+      return false;
+    }
+    this.#consumeKey(key);
+    return true;
+  }
+
+  render(): void {
+    if (!this.#visible) {
+      return;
+    }
+    const width = Math.max(36, Math.min(this.#renderer.width - 4, 80));
+    const height = Math.max(10, Math.min(this.#renderer.height - 2, 14));
+    const left = Math.max(0, Math.floor((this.#renderer.width - width) / 2));
+    const top = Math.max(0, Math.floor((this.#renderer.height - height) / 2));
+    const contentWidth = Math.max(1, width - 4);
+    this.#actionRegions = [];
+    this.#root.visible = true;
+    this.#root.left = left;
+    this.#root.top = top;
+    this.#root.width = width;
+    this.#root.height = height;
+    this.#chromeRegions = [];
+    for (const child of [this.#title, this.#actor, this.#preview, this.#actions, this.#status]) {
+      child.left = 2;
+      child.width = contentWidth;
+    }
+    this.#status.top = Math.max(9, height - 2);
+
+    const mode = this.#resolveMode();
+    if (mode === "close-confirm") {
+      this.#syncBorderChrome({
+        title: this.#closeConfirm?.title ?? "Close shell pane",
+        closeable: true,
+        left,
+        top,
+        width,
+      });
+      this.#renderCloseConfirm(left, top, contentWidth);
+      this.#renderer.requestRender();
+      return;
+    }
+    if (mode === "approval") {
+      this.#syncBorderChrome({ title: "Terminal write approval", closeable: false, left, top, width });
+      this.#renderApproval(left, top, contentWidth);
+      this.#renderer.requestRender();
+      return;
+    }
+    this.#syncBorderChrome({ title: `shell-next top | ${this.#shellName}`, closeable: false, left, top, width });
+    this.#title.content = "";
+    this.#actor.content = "No pending terminal approvals";
+    this.#preview.content = "";
+    this.#actions.content = "[ Close ]";
+    this.#status.content = this.#statusNotice ?? "Esc close";
+    this.#actionRegions.push({
+      action: "close",
+      row: top + Number(this.#actions.top),
+      col: left + Number(this.#actions.left),
+      width: "[ Close ]".length,
+    });
+    this.#renderer.requestRender();
+  }
+
+  destroy(): void {
+    this.#releaseStore?.();
+    this.#releaseStore = null;
+    this.#root.destroyRecursively();
+  }
+
+  #resolveMode(): OverlayMode {
+    if (this.#closeConfirm) {
+      return "close-confirm";
+    }
+    if (this.#store.getPendingApproval()) {
+      return "approval";
+    }
+    return "empty";
+  }
+
+  #renderApproval(left: number, top: number, contentWidth: number): void {
+    const request = this.#store.getPendingApproval();
+    if (!request) {
+      return;
+    }
+    const deny = "[ Deny ]";
+    const approve = "[ Approve ]";
+    const gap = "  ";
+    this.#title.content = "";
+    this.#actor.content = clipLine(
+      `${request.participantId} requests ${request.requestedInput?.mode ?? "input"} access`,
+      contentWidth,
+    );
+    this.#preview.content = clipLine(request.requestedInput?.text ?? "(no input preview)", contentWidth);
+    this.#actions.content = `${deny}${gap}${approve}`;
+    this.#status.content = this.#statusNotice ?? "A approve | D deny | Esc close";
+    const actionRow = top + Number(this.#actions.top);
+    const actionCol = left + Number(this.#actions.left);
+    this.#actionRegions.push(
+      { action: "deny", row: actionRow, col: actionCol, width: deny.length },
+      { action: "approve", row: actionRow, col: actionCol + deny.length + gap.length, width: approve.length },
+    );
+  }
+
+  #renderCloseConfirm(left: number, top: number, contentWidth: number): void {
+    const confirm = this.#closeConfirm;
+    if (!confirm) {
+      return;
+    }
+    this.#title.content = "";
+    this.#actor.content = "Close this shell pane?";
+    this.#preview.content = "Run in background keeps the PTY alive. Terminate terminal kills the PTY.";
+    const backgroundRun = "[ Run in background ]";
+    const terminate = "[ Terminate terminal ]";
+    const gap = "  ";
+    this.#actions.content = `${backgroundRun}${gap}${terminate}`;
+    this.#status.content = this.#statusNotice ?? "Esc cancel";
+    this.#actionRegions.push(
+      {
+        action: "background-run",
+        row: top + Number(this.#actions.top),
+        col: left + Number(this.#actions.left),
+        width: backgroundRun.length,
+      },
+      {
+        action: "terminate",
+        row: top + Number(this.#actions.top),
+        col: left + Number(this.#actions.left) + backgroundRun.length + gap.length,
+        width: terminate.length,
+      },
+    );
+  }
+
+  #syncBorderChrome(input: { title: string; closeable: boolean; left: number; top: number; width: number }): void {
+    const actions = input.closeable ? [{ id: "close" as const, label: "x" }] : [];
+    const borderTitle = buildShellNextPaneBorderTitle({
+      state: {
+        title: input.title,
+        actions,
+      },
+      width: input.width,
+    });
+    this.#root.titleAlignment = "left";
+    this.#root.title = borderTitle;
+    this.#chromeRegions = actions.map((action) => {
+      const width = Bun.stringWidth(action.label);
+      return {
+        actionId: action.id,
+        x: input.left + 2 + Math.max(0, Bun.stringWidth(borderTitle) - width),
+        y: input.top,
+        width,
+      };
+    });
+  }
+
+  #createText(id: string, top: number, fg: string): TextRenderable {
+    return new TextRenderable(this.#renderer, {
+      id,
+      position: "absolute",
+      top,
+      left: 2,
+      width: 1,
+      height: 1,
+      content: "",
+      fg,
+      bg: "#111827",
+      wrapMode: "word",
+    });
+  }
+
+  #handleMouseDown(event: MouseEvent): void {
+    if (!this.#visible) {
+      return;
+    }
+    const chromeAction = this.#chromeRegions.find(
+      (candidate) =>
+        Math.trunc(event.y) === candidate.y &&
+        Math.trunc(event.x) >= candidate.x &&
+        Math.trunc(event.x) < candidate.x + candidate.width,
+    );
+    if (chromeAction) {
+      event.preventDefault();
+      void this.#handleRegion("close");
+      return;
+    }
+    const region = this.#actionRegions.find(
+      (candidate) =>
+        Math.trunc(event.y) === candidate.row &&
+        Math.trunc(event.x) >= candidate.col &&
+        Math.trunc(event.x) < candidate.col + candidate.width,
+    );
+    if (!region) {
+      return;
+    }
+    event.preventDefault();
+    void this.#handleRegion(region.action);
+  }
+
+  #consumeKey(key: KeyEvent): void {
+    if (key.name === "escape") {
+      const wasCloseConfirm = this.#resolveMode() === "close-confirm";
+      markShellNextKeyHandled(key, "top-layer");
+      this.hide();
+      if (!wasCloseConfirm) {
+        this.#onClose?.();
+      }
+      return;
+    }
+    if (this.#resolveMode() === "approval") {
+      if (key.name === "a") {
+        markShellNextKeyHandled(key, "top-layer");
+        void this.#handleRegion("approve");
+        return;
+      }
+      if (key.name === "d") {
+        markShellNextKeyHandled(key, "top-layer");
+        void this.#handleRegion("deny");
+        return;
+      }
+    }
+    markShellNextKeyHandled(key, "top-layer");
+  }
+
+  async #handleRegion(action: ActionName): Promise<void> {
+    if (action === "close") {
+      const shouldNotifyClose = this.#closeConfirm === null;
+      this.hide();
+      if (shouldNotifyClose) {
+        this.#onClose?.();
+      }
+      return;
+    }
+    if (action === "background-run") {
+      const confirm = this.#closeConfirm;
+      this.hide();
+      if (confirm) {
+        await confirm.onBackgroundRun();
+      }
+      return;
+    }
+    if (action === "terminate") {
+      const confirm = this.#closeConfirm;
+      this.hide();
+      if (confirm) {
+        await confirm.onTerminate();
+      }
+      return;
+    }
+    const request = this.#store.getPendingApproval();
+    if (!request) {
+      this.#statusNotice = "no pending approval";
+      this.render();
+      return;
+    }
+    this.#statusNotice = action === "approve" ? "approving terminal write..." : "denying terminal write...";
+    this.render();
+    try {
+      if (action === "approve") {
+        await this.#store.approve({
+          terminalId: request.terminalId,
+          requestId: request.requestId,
+          durationMs: SHELL_NEXT_APPROVAL_LEASE_MS,
+        });
+      } else {
+        await this.#store.deny({
+          terminalId: request.terminalId,
+          requestId: request.requestId,
+        });
+      }
+      await this.#store.refresh?.();
+      this.#statusNotice = action === "approve" ? "terminal write approved" : "terminal write denied";
+      this.render();
+    } catch (error) {
+      this.#statusNotice = `approval failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render();
+    }
+  }
+}
+
+export const createEmptyShellNextApprovalStore = (): ShellNextApprovalStore => ({
+  getPendingApproval: () => null,
+  approve: () => undefined,
+  deny: () => undefined,
+});

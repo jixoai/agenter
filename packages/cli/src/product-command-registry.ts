@@ -23,6 +23,26 @@ const productCommandDescriptors = [
     },
   }),
   productCommandDescriptorSchema.parse({
+    productId: "shell-next",
+    command: "shell2",
+    description: "run shell-next renderable mux incubation",
+    packageName: "agenter-ext-shell-next",
+    bin: {
+      name: "agenter-shell-next",
+      mainExport: "runShellNext",
+    },
+    sourcePolicy: createLocalFirstProductSourcePolicy({
+      allowInstalled: false,
+      allowRemote: false,
+    }),
+    capabilityHints: {
+      interactive: true,
+      foregroundProcess: true,
+      requiresDaemon: true,
+      runtimePlanes: ["launch", "resources", "assistant", "attention"],
+    },
+  }),
+  productCommandDescriptorSchema.parse({
     productId: "studio",
     command: "studio",
     description: "run Studio web UI",

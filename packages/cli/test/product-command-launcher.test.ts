@@ -60,6 +60,15 @@ const createCliLayout = (): string =>
     binPath: "./src/bin/agenter-cli-shell.ts",
   });
 
+const createShellNextLayout = (): string =>
+  createProductLayout({
+    rootKind: "extensions",
+    packageSegment: "shell-next",
+    packageName: "agenter-ext-shell-next",
+    binName: "agenter-shell-next",
+    binPath: "./src/bin/agenter-shell-next.ts",
+  });
+
 describe("Feature: product command launcher", () => {
   test("Scenario: Given shell argv When resolving product invocation Then the registry stays descriptor-driven and preserves product argv", () => {
     const routed = resolveProductCommandInvocation(["shell", "@default", "--session=2", "--host", "127.0.0.2", "--port", "4600"]);
@@ -75,6 +84,24 @@ describe("Feature: product command launcher", () => {
     expect(routed?.descriptor.packageName).toBe("agenter-ext-studio");
     expect(routed?.descriptor.bin.mainExport).toBe("runStudio");
     expect(routed?.productArgv).toEqual(["--dev", "--web-port", "4173"]);
+    expect(routed?.launcherOptions.host).toBe("127.0.0.2");
+    expect(routed?.launcherOptions.port).toBe(4600);
+  });
+
+  test("Scenario: Given shell2 argv When resolving product invocation Then shell-next stays descriptor-driven and local-only", () => {
+    const routed = resolveProductCommandInvocation(["shell2", "renderer-grid-demo", "--host", "127.0.0.2", "--port", "4600"]);
+    expect(routed?.descriptor.packageName).toBe("agenter-ext-shell-next");
+    expect(routed?.descriptor.bin.mainExport).toBe("runShellNext");
+    expect(routed?.descriptor.sourcePolicy.allowInstalled).toBe(false);
+    expect(routed?.descriptor.sourcePolicy.allowRemote).toBe(false);
+    expect(routed?.descriptor.capabilityHints?.requiresDaemon).toBe(true);
+    expect(routed?.descriptor.capabilityHints?.runtimePlanes).toEqual([
+      "launch",
+      "resources",
+      "assistant",
+      "attention",
+    ]);
+    expect(routed?.productArgv).toEqual(["renderer-grid-demo"]);
     expect(routed?.launcherOptions.host).toBe("127.0.0.2");
     expect(routed?.launcherOptions.port).toBe(4600);
   });
@@ -112,6 +139,20 @@ describe("Feature: product command launcher", () => {
     }
     expect(target.binPath.endsWith("packages/studio/src/bin/agenter-studio.ts")).toBe(true);
     expect(target.mainPath.endsWith("packages/studio/src/index.ts")).toBe(true);
+  });
+
+  test("Scenario: Given a local shell-next package When resolving shell2 Then workspace is required and no remote fallback is allowed", () => {
+    const descriptor = resolveProductCommandDescriptor("shell2");
+    if (!descriptor) {
+      throw new Error("missing shell2 descriptor");
+    }
+    const target = resolveProductLaunchTarget(descriptor, { cliSourceDir: createShellNextLayout() });
+    expect(target.source).toBe("workspace");
+    if (target.source !== "workspace") {
+      return;
+    }
+    expect(target.binPath.endsWith("extensions/shell-next/src/bin/agenter-shell-next.ts")).toBe(true);
+    expect(target.mainPath.endsWith("extensions/shell-next/src/index.ts")).toBe(true);
   });
 
   test("Scenario: Given no local package and a resolvable installed package When resolving the launch target Then installed metadata provides the bin path", () => {
@@ -271,7 +312,7 @@ describe("Feature: product command launcher", () => {
         expect(source).not.toContain(token);
       }
     }
-    expect(listProductCommandDescriptors().map((descriptor) => descriptor.command)).toEqual(["shell", "studio"]);
+    expect(listProductCommandDescriptors().map((descriptor) => descriptor.command)).toEqual(["shell", "shell2", "studio"]);
   });
 
   test("Scenario: Given a local product declares an in-process entry When inspecting the launch path Then the launcher can preserve same-process data-plane laws before falling back to child stdio", () => {
