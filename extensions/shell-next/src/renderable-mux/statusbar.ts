@@ -1,4 +1,14 @@
-import { TextRenderable, type CliRenderer, type MouseEvent } from "@opentui/core";
+import {
+  RGBA,
+  StyledText,
+  TextAttributes,
+  TextRenderable,
+  type CliRenderer,
+  type MouseEvent,
+  type TextChunk,
+} from "@opentui/core";
+
+import { shellNextPaneActionAttributes, shellNextPaneButtonLabel } from "./pane-chrome";
 
 export interface ShellNextRuntimeStatusSummary {
   readonly label: string;
@@ -22,6 +32,7 @@ export interface ShellNextStatusbarState {
   readonly attention?: ShellNextAttentionContextSummary;
   readonly aiContext?: ShellNextAiContextSummary;
   readonly actions?: readonly string[];
+  readonly activeActions?: readonly ShellNextStatusbarAction[];
 }
 
 export interface ShellNextStatusbarRenderableInput {
@@ -41,6 +52,13 @@ export interface ShellNextStatusbarLayout {
 
 const statusSeparator = " · ";
 const defaultActions = ["Help", "Chat"] as const;
+const actionGap = " ";
+const statusbarFg = {
+  left: RGBA.fromHex("#cbd5e1"),
+  center: RGBA.fromHex("#38bdf8"),
+  right: RGBA.fromHex("#f8fafc"),
+  hover: RGBA.fromHex("#facc15"),
+};
 
 const clampCount = (value: number): number => Math.max(0, Math.trunc(value));
 
@@ -77,8 +95,21 @@ export const buildShellNextStatusbarCenter = (state: ShellNextStatusbarState): s
   return `Context ${formatPercent(usedPercent)} used`;
 };
 
+const normalizeActionName = (value: string): ShellNextStatusbarAction | null => {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "help" || normalized === "[help]") {
+    return "help";
+  }
+  if (normalized === "chat" || normalized === "[chat]") {
+    return "chat";
+  }
+  return null;
+};
+
+const buildActionLabel = (value: string): string => shellNextPaneButtonLabel(value);
+
 export const buildShellNextStatusbarRight = (state: ShellNextStatusbarState): string =>
-  (state.actions ?? defaultActions).join("  ");
+  (state.actions ?? defaultActions).map(buildActionLabel).join(actionGap);
 
 export const buildShellNextStatusbarLayout = (state: ShellNextStatusbarState, width: number): ShellNextStatusbarLayout => {
   const safeWidth = Math.max(1, Math.trunc(width));
@@ -130,6 +161,7 @@ export class ShellNextStatusbarRenderable {
   #y: number;
   #helpRegion: { row: number; col: number; width: number } | null = null;
   #chatRegion: { row: number; col: number; width: number } | null = null;
+  #hoveredAction: ShellNextStatusbarAction | null = null;
 
   constructor(input: ShellNextStatusbarRenderableInput) {
     this.#renderer = input.renderer;
@@ -143,6 +175,7 @@ export class ShellNextStatusbarRenderable {
     this.#right = this.#createText("shell-next-statusbar-right", "#f8fafc");
     for (const node of [this.#left, this.#center, this.#right]) {
       node.onMouseDown = (event) => this.#handleMouseDown(event);
+      node.onMouseMove = (event) => this.#handleMouseMove(event);
     }
     this.sync({
       state: input.state,
@@ -225,30 +258,88 @@ export class ShellNextStatusbarRenderable {
     this.#right.top = this.#y;
     this.#right.width = Math.max(1, right.length || 1);
     this.#right.content = right;
+    this.#right.content = this.#buildRightStyledText(right);
+    this.#right.fg = this.#hoveredAction ? "#facc15" : "#f8fafc";
 
-    const helpIndex = right.indexOf("Help");
-    const chatIndex = right.indexOf("Chat");
+    const helpIndex = right.indexOf("[Help]");
+    const chatIndex = right.indexOf("[Chat]");
     this.#helpRegion =
       helpIndex >= 0
-        ? { row: this.#y, col: rightStart + helpIndex, width: "Help".length }
+        ? { row: this.#y, col: rightStart + helpIndex, width: "[Help]".length }
         : null;
     this.#chatRegion =
       chatIndex >= 0
-        ? { row: this.#y, col: rightStart + chatIndex, width: "Chat".length }
+        ? { row: this.#y, col: rightStart + chatIndex, width: "[Chat]".length }
         : null;
   }
 
+  #buildRightStyledText(right: string): StyledText {
+    const chunks: TextChunk[] = [];
+    let cursor = 0;
+    for (const actionLabel of ["[Help]", "[Chat]"] as const) {
+      const index = right.indexOf(actionLabel, cursor);
+      if (index < 0) {
+        continue;
+      }
+      if (index > cursor) {
+        chunks.push(this.#chunk(right.slice(cursor, index), statusbarFg.right, TextAttributes.NONE));
+      }
+      const action = normalizeActionName(actionLabel);
+      const hovered = action !== null && this.#hoveredAction === action;
+      const active = action !== null && (this.#state.activeActions ?? []).includes(action);
+      chunks.push(
+        this.#chunk(
+          actionLabel,
+          hovered ? statusbarFg.hover : statusbarFg.right,
+          shellNextPaneActionAttributes({ active, hovered }),
+        ),
+      );
+      cursor = index + actionLabel.length;
+    }
+    if (cursor < right.length) {
+      chunks.push(this.#chunk(right.slice(cursor), statusbarFg.right, TextAttributes.NONE));
+    }
+    return new StyledText(chunks.length > 0 ? chunks : [this.#chunk(right, statusbarFg.right, TextAttributes.NONE)]);
+  }
+
+  #chunk(text: string, fg: RGBA, attributes: number): TextChunk {
+    return {
+      __isChunk: true,
+      text,
+      fg,
+      attributes,
+    };
+  }
+
   #handleMouseDown(event: MouseEvent): void {
+    const action = this.#resolveActionAt(event);
+    if (action) {
+      event.preventDefault();
+      this.#onAction?.(action);
+    }
+  }
+
+  #handleMouseMove(event: MouseEvent): void {
+    const action = this.#resolveActionAt(event);
+    if (action !== this.#hoveredAction) {
+      this.#hoveredAction = action;
+      this.#applyLayout(buildShellNextStatusbarLayout(this.#state, this.#width));
+      this.#renderer.requestRender();
+    }
+    if (action) {
+      event.preventDefault();
+    }
+  }
+
+  #resolveActionAt(event: MouseEvent): ShellNextStatusbarAction | null {
     const x = Math.trunc(event.x);
     const y = Math.trunc(event.y);
     if (this.#helpRegion && y === this.#helpRegion.row && x >= this.#helpRegion.col && x < this.#helpRegion.col + this.#helpRegion.width) {
-      event.preventDefault();
-      this.#onAction?.("help");
-      return;
+      return "help";
     }
     if (this.#chatRegion && y === this.#chatRegion.row && x >= this.#chatRegion.col && x < this.#chatRegion.col + this.#chatRegion.width) {
-      event.preventDefault();
-      this.#onAction?.("chat");
+      return "chat";
     }
+    return null;
   }
 }

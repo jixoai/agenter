@@ -103,6 +103,70 @@ const resolveRuntimeMacroLabel = (heartbeat: string): string => {
   return "Active";
 };
 
+type ShellNextTerminalEntry = RuntimeClientState["globalTerminals"]["data"][number];
+
+const resolveTerminalTitleFromState = (
+  state: Partial<RuntimeClientState>,
+  terminalId: string,
+): string | null => {
+  const terminalLists: readonly (readonly ShellNextTerminalEntry[] | undefined)[] = [
+    state.globalTerminals?.data,
+    state.globalTerminalIndex?.data,
+    state.globalTerminalHistory?.data,
+    state.globalTerminalArchive?.data,
+  ];
+  for (const terminals of terminalLists) {
+    const terminal = terminals?.find((item) => item.terminalId === terminalId);
+    const title =
+      terminal?.currentTitle?.trim() ||
+      terminal?.configuredTitle?.trim() ||
+      null;
+    if (title) {
+      return title;
+    }
+  }
+  return null;
+};
+
+const buildLiveStatus = (input: {
+  state: Partial<RuntimeClientState>;
+  sessionId: string;
+  initial: NonNullable<ShellNextAppInput["initialStatus"]>;
+}): NonNullable<ShellNextAppInput["initialStatus"]> => {
+  const activity = input.state.activityBySession?.[input.sessionId];
+  return {
+    ...input.initial,
+    runtime: {
+      label: activity === undefined ? input.initial.runtime.label : activity === "active" ? "Active" : "Idle",
+    },
+    aiContext: resolveAiContextSummary(input.state, input.sessionId) ?? input.initial.aiContext,
+  };
+};
+
+const createAttachedStatusProvider = (input: {
+  store: ShellNextRuntimeStore;
+  attached: ShellNextRoomBootstrapResult;
+  initialStatus: NonNullable<ShellNextAppInput["initialStatus"]>;
+}): NonNullable<ShellNextAppInput["statusProvider"]> => {
+  let current = buildLiveStatus({
+    state: input.store.getState(),
+    sessionId: input.attached.session.id,
+    initial: input.initialStatus,
+  });
+  return {
+    getStatus: () => current,
+    subscribe: (listener) =>
+      input.store.subscribe(() => {
+        current = buildLiveStatus({
+          state: input.store.getState(),
+          sessionId: input.attached.session.id,
+          initial: input.initialStatus,
+        });
+        listener();
+      }),
+  };
+};
+
 const ensureAttachSelection = async (
   input: {
     args: ShellNextAttachArgs;
@@ -154,27 +218,30 @@ const ensureAttachSelection = async (
 
 const createAttachedTerminalSourcePolicy = (input: {
   attached: ShellNextRoomBootstrapResult;
+  store: ShellNextRuntimeStore;
   dependencies: ShellNextProductRunDependencies;
 }): NonNullable<ShellNextAppInput["terminalSourcePolicy"]> => {
   return {
     createInitialSource: (sourceInput): PaneSource => {
-    const terminalId = input.attached.terminal.entry.terminalId;
-    const transportUrl = input.attached.terminal.entry.transportUrl;
-    if (!transportUrl) {
-      throw new Error(`attached terminal missing transportUrl: ${terminalId}`);
-    }
-    return input.dependencies.createLiveTerminalSource({
-      id: sourceInput.id,
-      terminalId,
-      transportUrl,
-      initialSnapshot: input.attached.terminal.entry.snapshot ?? null,
-      initialTitle:
-        input.attached.terminal.entry.currentTitle ??
-        input.attached.terminal.entry.configuredTitle ??
-        input.attached.terminal.entry.terminalId,
-      configuredTitle: input.attached.terminal.entry.configuredTitle ?? null,
-      currentTitle: input.attached.terminal.entry.currentTitle ?? null,
-    });
+      const terminalId = input.attached.terminal.entry.terminalId;
+      const transportUrl = input.attached.terminal.entry.transportUrl;
+      if (!transportUrl) {
+        throw new Error(`attached terminal missing transportUrl: ${terminalId}`);
+      }
+      return input.dependencies.createLiveTerminalSource({
+        id: sourceInput.id,
+        terminalId,
+        transportUrl,
+        initialSnapshot: input.attached.terminal.entry.snapshot ?? null,
+        initialTitle:
+          input.attached.terminal.entry.currentTitle ??
+          input.attached.terminal.entry.configuredTitle ??
+          input.attached.terminal.entry.terminalId,
+        configuredTitle: input.attached.terminal.entry.configuredTitle ?? null,
+        currentTitle: input.attached.terminal.entry.currentTitle ?? null,
+        readTitle: () =>
+          resolveTerminalTitleFromState(input.store.getState(), terminalId),
+      });
     },
     describeSplitUnavailable: () => "Product-bound terminal split is not implemented",
   };
@@ -190,7 +257,7 @@ const buildInitialStatus = async (input: {
     runtimeSessionId: input.attached.session.id,
     shellName: input.attached.binding.resourceKey,
   });
-  const state = input.store.getState() as Partial<RuntimeClientState>;
+  const state = input.store.getState();
   const attention = await input.store
     .queryAttention({
       sessionId: input.attached.session.id,
@@ -285,6 +352,11 @@ export const runShellNextProductAttach = async (
       clearAvatar: selection.args.clearAvatar,
     });
     const status = await buildInitialStatus({ store, attached, dependencies });
+    const statusProvider = createAttachedStatusProvider({
+      store,
+      attached,
+      initialStatus: status,
+    });
     if (!dependencies.stdinIsTty() || !dependencies.stdoutIsTty()) {
       writeAttachSummary(attached, dependencies.stdout);
       return { exitCode: 0 };
@@ -294,6 +366,7 @@ export const runShellNextProductAttach = async (
       rootPane: buildRootPaneForView(args.view),
       terminalSourcePolicy: createAttachedTerminalSourcePolicy({
         attached,
+        store,
         dependencies,
       }),
       approvalStore: createShellNextRuntimeApprovalStore({
@@ -302,6 +375,7 @@ export const runShellNextProductAttach = async (
       }),
       room: buildAttachedRoomInput({ store, attached, settings: selection.settings, keybindings }),
       initialStatus: status,
+      statusProvider,
       showStatusbar: args.view === "none",
       syncStatusbarWithLayout: false,
       initialSurfaces: args.view === "none" ? [] : [],

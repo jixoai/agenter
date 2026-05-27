@@ -99,6 +99,8 @@ const createPaneNode = (pane: LayoutPaneInput): LayoutPaneTreeNode => ({
   rect: { x: 0, y: 0, width: 1, height: 1 },
 });
 
+const cloneTree = (node: LayoutTreeNode): LayoutTreeNode => structuredClone(node) as LayoutTreeNode;
+
 const createSplitNode = (id: string, axis: LayoutAxis, children: LayoutSplitBranch[]): LayoutSplitTreeNode => ({
   kind: "split",
   id,
@@ -334,6 +336,39 @@ export const createRootLayout = (rect: LayoutRect, nodes: readonly LayoutPaneInp
       }
       root = insertSplit(root, found, direction, pane);
       focusedId = pane.id;
+      recompute();
+      return true;
+    },
+    movePane(nodeId, anchorNodeId, direction) {
+      if (nodeId === anchorNodeId || children.length <= 1) {
+        return false;
+      }
+      const moving = findPane(root, nodeId);
+      const anchor = findPane(root, anchorNodeId);
+      if (!moving || !anchor) {
+        return false;
+      }
+      const previousRoot = cloneTree(root);
+      const previousFocusedId = focusedId;
+      const movingPane = { ...moving.node.pane };
+      const removed = removePane(root, nodeId);
+      if (!removed.removed || !removed.node) {
+        root = previousRoot;
+        focusedId = previousFocusedId;
+        recompute();
+        return false;
+      }
+      root = removed.node;
+      recompute();
+      const nextAnchor = findPane(root, anchorNodeId);
+      if (!nextAnchor || !canSplitRect(nextAnchor.node.rect, direction)) {
+        root = previousRoot;
+        focusedId = previousFocusedId;
+        recompute();
+        return false;
+      }
+      root = insertSplit(root, nextAnchor, direction, movingPane);
+      focusedId = movingPane.id;
       recompute();
       return true;
     },

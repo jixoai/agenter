@@ -23,6 +23,8 @@ export interface ShellNextLiveTerminalProtocolSourceInput {
   readonly initialTitle?: string | null;
   readonly configuredTitle?: string | null;
   readonly currentTitle?: string | null;
+  readonly readTitle?: () => string | null;
+  readonly onSelectionText?: (event: { ownerId?: string; text: string }) => void;
   readonly geometryRole?: "projection-only" | "authority";
   readonly pacing?: OpenComposeLiveTerminalPacingOptions;
   readonly createTransportSession?: OpenComposeLiveTerminalTransportSessionFactory;
@@ -38,6 +40,8 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
   readonly #configuredTitle: string | null;
   readonly #currentTitle: string | null;
   readonly #initialTitle: string | null;
+  readonly #readTitle: (() => string | null) | undefined;
+  readonly #selectionTextListeners = new Set<(event: { ownerId?: string; text: string }) => void>();
   #disposed = false;
 
   constructor(input: ShellNextLiveTerminalProtocolSourceInput) {
@@ -45,6 +49,7 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     this.#initialTitle = input.initialTitle ?? null;
     this.#configuredTitle = input.configuredTitle ?? null;
     this.#currentTitle = input.currentTitle ?? null;
+    this.#readTitle = input.readTitle;
     this.#mirror = createOpenComposeLiveTerminalMirror({
       terminalId: input.terminalId,
       transportUrl: input.transportUrl,
@@ -55,6 +60,10 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
         dynamicQuietMs: OPENCOMPOSE_PRODUCT_DYNAMIC_QUIET_MS,
       },
       createTransportSession: input.createTransportSession,
+      onSelectionText: (event) => {
+        input.onSelectionText?.(event);
+        this.#emitSelectionText(event);
+      },
       requestPaint: () => this.#emit(),
     });
     this.#releaseMirror = this.#mirror.subscribe(() => this.#emit());
@@ -86,7 +95,10 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
   }
 
   readTitle(): string | null {
-    return this.#currentTitle ?? this.#configuredTitle ?? this.#initialTitle ?? this.id.value;
+    const liveTitle = this.#readTitle?.()?.trim();
+    return liveTitle && liveTitle.length > 0
+      ? liveTitle
+      : (this.#currentTitle ?? this.#configuredTitle ?? this.#initialTitle ?? this.id.value);
   }
 
   writeInput(chunk: TerminalInputChunk): void {
@@ -144,6 +156,13 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     return !this.#disposed && this.#mirror.copySelection(ownerId);
   }
 
+  subscribeSelectionText(listener: (event: { ownerId?: string; text: string }) => void): () => void {
+    this.#selectionTextListeners.add(listener);
+    return () => {
+      this.#selectionTextListeners.delete(listener);
+    };
+  }
+
   notifyPaintCommitted(): void {
     if (this.#disposed) {
       return;
@@ -164,6 +183,7 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     }
     this.#disposed = true;
     this.#listeners.clear();
+    this.#selectionTextListeners.clear();
     this.#releaseMirror();
     this.#mirror.disconnect();
   }
@@ -174,6 +194,15 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     }
     for (const listener of this.#listeners) {
       listener();
+    }
+  }
+
+  #emitSelectionText(event: { ownerId?: string; text: string }): void {
+    if (this.#disposed) {
+      return;
+    }
+    for (const listener of this.#selectionTextListeners) {
+      listener(event);
     }
   }
 }

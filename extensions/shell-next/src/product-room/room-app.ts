@@ -20,6 +20,15 @@ import {
 } from "@opentui/core";
 
 import type { ShellNextRoomBootstrapResult } from "../product/bootstrap";
+import {
+  resolveShellNextPaneChromeClick,
+  shellNextPaneButtonLabel,
+  shellNextPaneCloseAction,
+  syncShellNextPaneChrome,
+  type ShellNextPaneChromeHitRegion,
+  type ShellNextPaneTitleAction,
+  type ShellNextPaneTitleActionId,
+} from "../renderable-mux/pane-chrome";
 import { resolvePendingTerminalApproval } from "./approval-model";
 import type {
   ShellNextComposerMode,
@@ -68,7 +77,8 @@ export interface ShellNextRoomHostNode {
 
 export interface ShellNextRoomHostChrome {
   title: string;
-  closeLabel?: string;
+  actions?: readonly ShellNextRoomHostChromeAction[];
+  layoutMode?: ShellNextRoomLayoutMode;
 }
 
 export interface ShellNextRoomAppStore {
@@ -109,20 +119,15 @@ export interface ShellNextRoomAppStore {
 }
 
 const ROOM_SCROLL_BOTTOM = Number.MAX_SAFE_INTEGER;
-export type ShellNextRoomLayoutMode = "left" | "right" | "cover";
+export type ShellNextRoomLayoutMode = "left" | "right" | "float";
+export type ShellNextRoomHostChromeAction = "close" | "layout-left" | "layout-right" | "layout-float";
+
 export interface ShellNextRoomLayoutRequestResult {
   closeCurrentSurface: boolean;
 }
 
 interface RoomActionRegion {
-  action: "close" | "layout-left" | "layout-right" | "layout-cover";
-  row: number;
-  col: number;
-  width: number;
-}
-
-interface RoomChromeRegion {
-  action: "close";
+  action: ShellNextRoomHostChromeAction;
   row: number;
   col: number;
   width: number;
@@ -150,7 +155,53 @@ const layoutModeTitle = (mode: ShellNextRoomLayoutMode): string => {
   if (mode === "right") {
     return "right";
   }
-  return "cover";
+  return "float";
+};
+
+const defaultRoomChromeActions = ["layout-left", "layout-right", "layout-float", "close"] as const;
+
+const roomChromeActionToTitleAction = (
+  action: ShellNextRoomHostChromeAction,
+  layoutMode?: ShellNextRoomLayoutMode,
+): ShellNextPaneTitleAction => {
+  if (action === "close") {
+    return shellNextPaneCloseAction();
+  }
+  if (action === "layout-left") {
+    const active = layoutMode === "left";
+    return {
+      id: action,
+      label: shellNextPaneButtonLabel("←"),
+      active,
+    };
+  }
+  if (action === "layout-right") {
+    const active = layoutMode === "right";
+    return {
+      id: action,
+      label: shellNextPaneButtonLabel("→"),
+      active,
+    };
+  }
+  const active = layoutMode === "float";
+  return {
+    id: action,
+    label: shellNextPaneButtonLabel("⿻"),
+    active,
+  };
+};
+
+const roomChromeActionToLayoutMode = (action: ShellNextPaneTitleActionId | null): ShellNextRoomLayoutMode | null => {
+  if (action === "layout-left") {
+    return "left";
+  }
+  if (action === "layout-right") {
+    return "right";
+  }
+  if (action === "layout-float") {
+    return "float";
+  }
+  return null;
 };
 
 export class ShellNextRoomApp {
@@ -176,7 +227,9 @@ export class ShellNextRoomApp {
   #renderedRows = new Map<string, TextRenderable>();
   #rowsSignature = "";
   #actionRegions: RoomActionRegion[] = [];
-  #chromeRegions: RoomChromeRegion[] = [];
+  #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
+  #hostChrome: ShellNextRoomHostChrome | undefined;
+  #hoveredChromeAction: string | null = null;
   #lastTopLayerRequestKey: string | null = null;
   #disposed = false;
   #hostNode: ShellNextRoomHostNode | null;
@@ -202,6 +255,7 @@ export class ShellNextRoomApp {
     this.#settings = input.settings;
     this.#keybindings = input.keybindings;
     this.#hostNode = input.hostNode ?? null;
+    this.#hostChrome = input.hostChrome;
     this.#root = new BoxRenderable(this.#renderer, {
       id: "shell-next-room-root",
       width: "100%",
@@ -217,6 +271,7 @@ export class ShellNextRoomApp {
       focusable: this.#hostNode !== null,
     });
     this.#root.onMouseDown = (event) => this.#handleMouseDown(event);
+    this.#root.onMouseMove = (event) => this.#handleMouseMove(event);
     this.#titleLine = new TextRenderable(this.#renderer, {
       id: "shell-next-room-title",
       position: "absolute",
@@ -369,6 +424,11 @@ export class ShellNextRoomApp {
     }
   }
 
+  syncHostChrome(chrome: ShellNextRoomHostChrome | undefined): void {
+    this.#hostChrome = chrome;
+    this.render("host-chrome");
+  }
+
   focus(): void {
     this.#draftInput.focus();
   }
@@ -443,7 +503,7 @@ export class ShellNextRoomApp {
     const borderCells = host ? 1 : 0;
     const contentWidth = Math.max(1, rootWidth - borderCells * 2);
     const contentHeight = Math.max(3, rootHeight - borderCells * 2);
-    const usesHostChrome = host !== null && this.#input.hostChrome !== undefined;
+    const usesHostChrome = host !== null && this.#hostChrome !== undefined;
     const composerHeight = this.#composerMode === "textarea" ? 3 : 3;
     const bodyHeight = Math.max(1, contentHeight - composerHeight - (usesHostChrome ? 1 : 2));
     this.#actionRegions = [];
@@ -501,15 +561,15 @@ export class ShellNextRoomApp {
   }
 
   #renderTitle(width: number): void {
-    if (this.#hostNode !== null && this.#input.hostChrome !== undefined) {
+    if (this.#hostNode !== null && this.#hostChrome !== undefined) {
       this.#titleLine.content = "";
       return;
     }
     const controls = [
-      { action: "close" as const, label: "[x]" },
-      { action: "layout-left" as const, label: " ◨ " },
-      { action: "layout-right" as const, label: " ◧ " },
-      { action: "layout-cover" as const, label: " ⿴ " },
+      { action: "layout-left" as const, label: shellNextPaneButtonLabel("←") },
+      { action: "layout-right" as const, label: shellNextPaneButtonLabel("→") },
+      { action: "layout-float" as const, label: shellNextPaneButtonLabel("⿻") },
+      { action: "close" as const, label: shellNextPaneButtonLabel("x") },
     ];
     let content = " Chat ";
     for (const control of controls) {
@@ -527,29 +587,23 @@ export class ShellNextRoomApp {
   }
 
   #syncHostChrome(): void {
-    const chrome = this.#input.hostChrome;
+    const chrome = this.#hostChrome;
     const host = this.#hostNode;
     if (!chrome || !host) {
       this.#root.title = "";
       return;
     }
-    const closeLabel = chrome.closeLabel ?? "x";
-    const availableWidth = Math.max(1, Math.trunc(host.rect.width) - 4);
-    const suffixWidth = Bun.stringWidth(closeLabel);
-    const titleWidth = Math.max(1, availableWidth - suffixWidth - 1);
-    const title =
-      chrome.title.length > titleWidth ? chrome.title.slice(0, Math.max(1, titleWidth - 3)) + "..." : chrome.title;
-    this.#root.titleAlignment = "left";
-    this.#root.title = `${title} ${closeLabel}`;
-    const closeCol = Math.trunc(host.rect.x) + 2 + Bun.stringWidth(title) + 1;
-    this.#chromeRegions = [
-      {
-        action: "close",
-        row: Math.trunc(host.rect.y),
-        col: closeCol,
-        width: suffixWidth,
+    this.#chromeRegions = syncShellNextPaneChrome({
+      root: this.#root,
+      rect: host.rect,
+      state: {
+        title: chrome.title,
+        hoveredActionId: this.#hoveredChromeAction,
+        actions: (chrome.actions ?? defaultRoomChromeActions).map((action) =>
+          roomChromeActionToTitleAction(action, chrome.layoutMode),
+        ),
       },
-    ];
+    });
   }
 
   #renderRows(rows: readonly ShellNextRoomRenderRow[], width: number): void {
@@ -664,15 +718,16 @@ export class ShellNextRoomApp {
   }
 
   #handleMouseDown(event: MouseEvent): void {
-    const chromeRegion = this.#chromeRegions.find(
-      (candidate) =>
-        Math.trunc(event.y) === candidate.row &&
-        Math.trunc(event.x) >= candidate.col &&
-        Math.trunc(event.x) < candidate.col + candidate.width,
-    );
-    if (chromeRegion) {
+    const chromeAction = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
+    if (chromeAction === "close") {
       event.preventDefault();
       this.#input.onQuit?.();
+      return;
+    }
+    const chromeMode = roomChromeActionToLayoutMode(chromeAction);
+    if (chromeMode) {
+      event.preventDefault();
+      this.#requestHostLayout(chromeMode);
       return;
     }
     const region = this.#actionRegions.find(
@@ -703,9 +758,20 @@ export class ShellNextRoomApp {
       this.#requestHostLayout("right");
       return;
     }
-    if (region.action === "layout-cover") {
-      this.#requestHostLayout("cover");
+    if (region.action === "layout-float") {
+      this.#requestHostLayout("float");
       return;
+    }
+  }
+
+  #handleMouseMove(event: MouseEvent): void {
+    const chromeAction = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
+    if (chromeAction !== this.#hoveredChromeAction) {
+      this.#hoveredChromeAction = chromeAction;
+      this.render("chrome-hover");
+    }
+    if (chromeAction) {
+      event.preventDefault();
     }
   }
 
@@ -778,7 +844,7 @@ export class ShellNextRoomApp {
     }
     if (key.ctrl && key.name === "up") {
       key.preventDefault();
-      this.#requestHostLayout("cover");
+      this.#requestHostLayout("float");
       return true;
     }
     if (key.name === "up" || key.name === "down") {
@@ -1047,6 +1113,7 @@ export const startShellNextRoomApp = async (
     (await createCliRenderer({
       exitOnCtrlC: false,
       useMouse: true,
+      enableMouseMovement: true,
       useKittyKeyboard: { events: true },
     }));
   const app = new ShellNextRoomApp({

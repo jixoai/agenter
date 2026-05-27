@@ -1,7 +1,11 @@
 import { BoxRenderable, TextRenderable, type CliRenderer, type KeyEvent, type MouseEvent } from "@opentui/core";
 
 import { markShellNextKeyHandled } from "../app/key-event-scope";
-import { buildShellNextPaneBorderTitle, type ShellNextPaneChromeHitRegion } from "../renderable-mux/pane-chrome";
+import {
+  buildShellNextPaneBorderTitle,
+  shellNextPaneCloseAction,
+  type ShellNextPaneChromeHitRegion,
+} from "../renderable-mux/pane-chrome";
 
 export const SHELL_NEXT_APPROVAL_LEASE_MS = 5 * 60_000;
 
@@ -53,6 +57,9 @@ const readKeyEvent = (value: unknown): KeyEvent | null =>
 
 const clipLine = (text: string, width: number): string => text.slice(0, Math.max(1, width));
 
+const absoluteChildRow = (top: number, child: TextRenderable): number => top + 1 + Number(child.top);
+const absoluteChildCol = (left: number, child: TextRenderable): number => left + 1 + Number(child.left);
+
 export class ShellNextTopLayerSurface {
   readonly #renderer: CliRenderer;
   readonly #store: ShellNextApprovalStore;
@@ -67,6 +74,7 @@ export class ShellNextTopLayerSurface {
   #releaseStore: (() => void) | null = null;
   #actionRegions: ActionRegion[] = [];
   #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
+  #hoveredChromeAction: string | null = null;
   #statusNotice: string | null = null;
   #visible = false;
   #closeConfirm: ShellNextCloseConfirmState | null = null;
@@ -92,6 +100,7 @@ export class ShellNextTopLayerSurface {
       focusable: true,
     });
     this.#root.onMouseDown = (event) => this.#handleMouseDown(event);
+    this.#root.onMouseMove = (event) => this.#handleMouseMove(event);
     this.#title = this.#createText("shell-next-top-title", 1, "#f8fafc");
     this.#actor = this.#createText("shell-next-top-actor", 3, "#cbd5e1");
     this.#preview = this.#createText("shell-next-top-preview", 5, "#f8fafc");
@@ -202,8 +211,8 @@ export class ShellNextTopLayerSurface {
     this.#status.content = this.#statusNotice ?? "Esc close";
     this.#actionRegions.push({
       action: "close",
-      row: top + Number(this.#actions.top),
-      col: left + Number(this.#actions.left),
+      row: absoluteChildRow(top, this.#actions),
+      col: absoluteChildCol(left, this.#actions),
       width: "[ Close ]".length,
     });
     this.#renderer.requestRender();
@@ -241,8 +250,8 @@ export class ShellNextTopLayerSurface {
     this.#preview.content = clipLine(request.requestedInput?.text ?? "(no input preview)", contentWidth);
     this.#actions.content = `${deny}${gap}${approve}`;
     this.#status.content = this.#statusNotice ?? "A approve | D deny | Esc close";
-    const actionRow = top + Number(this.#actions.top);
-    const actionCol = left + Number(this.#actions.left);
+    const actionRow = absoluteChildRow(top, this.#actions);
+    const actionCol = absoluteChildCol(left, this.#actions);
     this.#actionRegions.push(
       { action: "deny", row: actionRow, col: actionCol, width: deny.length },
       { action: "approve", row: actionRow, col: actionCol + deny.length + gap.length, width: approve.length },
@@ -265,25 +274,26 @@ export class ShellNextTopLayerSurface {
     this.#actionRegions.push(
       {
         action: "background-run",
-        row: top + Number(this.#actions.top),
-        col: left + Number(this.#actions.left),
+        row: absoluteChildRow(top, this.#actions),
+        col: absoluteChildCol(left, this.#actions),
         width: backgroundRun.length,
       },
       {
         action: "terminate",
-        row: top + Number(this.#actions.top),
-        col: left + Number(this.#actions.left) + backgroundRun.length + gap.length,
+        row: absoluteChildRow(top, this.#actions),
+        col: absoluteChildCol(left, this.#actions) + backgroundRun.length + gap.length,
         width: terminate.length,
       },
     );
   }
 
   #syncBorderChrome(input: { title: string; closeable: boolean; left: number; top: number; width: number }): void {
-    const actions = input.closeable ? [{ id: "close" as const, label: "x" }] : [];
+    const actions = input.closeable ? [shellNextPaneCloseAction()] : [];
     const borderTitle = buildShellNextPaneBorderTitle({
       state: {
         title: input.title,
         actions,
+        hoveredActionId: this.#hoveredChromeAction,
       },
       width: input.width,
     });
@@ -341,6 +351,34 @@ export class ShellNextTopLayerSurface {
     }
     event.preventDefault();
     void this.#handleRegion(region.action);
+  }
+
+  #handleMouseMove(event: MouseEvent): void {
+    if (!this.#visible) {
+      return;
+    }
+    const chromeAction = this.#chromeRegions.find(
+      (candidate) =>
+        Math.trunc(event.y) === candidate.y &&
+        Math.trunc(event.x) >= candidate.x &&
+        Math.trunc(event.x) < candidate.x + candidate.width,
+    );
+    const hoversAction = this.#actionRegions.some(
+      (candidate) =>
+        Math.trunc(event.y) === candidate.row &&
+        Math.trunc(event.x) >= candidate.col &&
+        Math.trunc(event.x) < candidate.col + candidate.width,
+    );
+    if ((chromeAction?.actionId ?? null) !== this.#hoveredChromeAction) {
+      this.#hoveredChromeAction = chromeAction?.actionId ?? null;
+      this.render();
+    }
+    this.#root.borderColor = "#93c5fd";
+    this.#actions.fg = hoversAction ? "#ffffff" : "#f8fafc";
+    if (chromeAction || hoversAction) {
+      event.preventDefault();
+      this.#renderer.requestRender();
+    }
   }
 
   #consumeKey(key: KeyEvent): void {

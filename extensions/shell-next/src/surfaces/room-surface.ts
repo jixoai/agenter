@@ -4,6 +4,7 @@ import { BoxRenderable, TextRenderable, type CliRenderer, type KeyEvent } from "
 import type { ChildLayoutNode } from "../renderable-mux/layout";
 import {
   resolveShellNextPaneChromeClick,
+  shellNextPaneCloseAction,
   syncShellNextPaneChrome,
   type ShellNextPaneChromeHitRegion,
 } from "../renderable-mux/pane-chrome";
@@ -69,6 +70,7 @@ export class ShellNextRoomSurface implements OpenTuiRenderableSurface {
   readonly #onClose: ((paneId: string) => void) | undefined;
   #node: ChildLayoutNode;
   #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
+  #hoveredChromeAction: string | null = null;
   #releaseRoom: (() => void) | null = null;
   #releaseStore: (() => void) | null = null;
   #messages: readonly GlobalRoomMessage[] = [];
@@ -105,6 +107,16 @@ export class ShellNextRoomSurface implements OpenTuiRenderableSurface {
       this.#onFocus?.(this.#node.id);
       this.focus();
     };
+    this.#root.onMouseMove = (event) => {
+      const action = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
+      if (action !== this.#hoveredChromeAction) {
+        this.#hoveredChromeAction = action;
+        this.syncNode(this.#node);
+      }
+      if (action) {
+        event.preventDefault();
+      }
+    };
     this.#content = this.#createText(`${input.node.id}-room-content`, 1, "#e5e7eb");
     this.#draft = this.#createText(`${input.node.id}-room-draft`, 1, "#f8fafc");
     this.#status = this.#createText(`${input.node.id}-room-status`, 1, "#facc15");
@@ -133,7 +145,8 @@ export class ShellNextRoomSurface implements OpenTuiRenderableSurface {
       rect: node.rect,
       state: {
         title: "Chat",
-        actions: [{ id: "close", label: "x" }],
+        hoveredActionId: this.#hoveredChromeAction,
+        actions: [shellNextPaneCloseAction()],
       },
     });
     this.#renderContent();

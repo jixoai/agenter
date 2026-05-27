@@ -94,6 +94,17 @@ const createKeyEvent = (input: { name: string; sequence?: string; raw?: string }
   return key as unknown as KeyEvent;
 };
 
+const findTextPosition = (frame: string, text: string): { x: number; y: number } | null => {
+  const rows = frame.split("\n");
+  for (let y = 0; y < rows.length; y += 1) {
+    const x = rows[y].indexOf(text);
+    if (x >= 0) {
+      return { x, y };
+    }
+  }
+  return null;
+};
+
 describe("Feature: shell-next OpenTUI top layer", () => {
   test("Scenario: Given a terminal approval is pending When top layer renders Then it shows approval outside mux panes", async () => {
     const { setup } = await startSurface();
@@ -148,7 +159,7 @@ describe("Feature: shell-next OpenTUI top layer", () => {
     await setup.renderOnce();
 
     expect(setup.captureCharFrame()).toContain("Close this shell pane?");
-    expect(setup.captureCharFrame()).toContain("demo shell x");
+    expect(setup.captureCharFrame()).toContain("demo shell [x]");
     expect(setup.captureCharFrame()).toContain("[ Run in background ]");
     expect(setup.captureCharFrame()).toContain("[ Terminate terminal ]");
   });
@@ -189,7 +200,14 @@ describe("Feature: shell-next OpenTUI top layer", () => {
       },
     });
     await setup.renderOnce();
-    await setup.mockMouse.click(5, 9);
+    const background = findTextPosition(setup.captureCharFrame(), "[ Run in background ]");
+    expect(background).not.toBeNull();
+
+    await setup.mockMouse.click(background?.x ?? 0, Math.max(0, (background?.y ?? 0) - 1));
+    await setup.renderOnce();
+    expect(actions).toEqual([]);
+
+    await setup.mockMouse.click((background?.x ?? 0) + 2, background?.y ?? 0);
     await setup.renderOnce();
 
     surface.showCloseConfirm({
@@ -202,7 +220,10 @@ describe("Feature: shell-next OpenTUI top layer", () => {
       },
     });
     await setup.renderOnce();
-    await setup.mockMouse.click(29, 9);
+    const terminate = findTextPosition(setup.captureCharFrame(), "[ Terminate terminal ]");
+    expect(terminate).not.toBeNull();
+
+    await setup.mockMouse.click((terminate?.x ?? 0) + 2, terminate?.y ?? 0);
     await setup.renderOnce();
 
     expect(actions).toEqual(["background", "terminate"]);

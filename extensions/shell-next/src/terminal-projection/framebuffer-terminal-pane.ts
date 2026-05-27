@@ -6,8 +6,9 @@ import { readSystemClipboardText } from "../app/system-clipboard";
 import type { ChildLayoutNode, LayoutRect } from "../renderable-mux/layout";
 import type { TerminalPaneFactory, TerminalPaneFactoryInput } from "../renderable-mux/mux-renderable";
 import {
+  ShellNextPaneChromeController,
   resolveShellNextPaneChromeClick,
-  syncShellNextPaneChrome,
+  shellNextPaneCloseAction,
   type ShellNextPaneChromeHitRegion,
 } from "../renderable-mux/pane-chrome";
 import { PANE_CONTENT_ORIGIN, resolveBorderedPaneContentSize } from "../renderable-mux/pane-content-geometry";
@@ -47,6 +48,8 @@ const sanitizeSize = (rect: LayoutRect): TerminalPaneSize => {
   };
 };
 
+const TERMINAL_BACKEND_RESIZE_DEBOUNCE_MS = 25;
+
 export interface ShellNextFrameBufferTerminalPaneInput {
   readonly renderer: CliRenderer;
   readonly node: ChildLayoutNode;
@@ -63,12 +66,17 @@ export class ShellNextFrameBufferTerminalPane {
   readonly #source: TerminalProtocolPaneSource;
   readonly #root: BoxRenderable;
   readonly #frame: OpenComposeTerminalFrameRenderable;
+  readonly #chrome: ShellNextPaneChromeController;
   readonly #input: Omit<ShellNextFrameBufferTerminalPaneInput, "renderer" | "node" | "source">;
   #node: ChildLayoutNode;
   #lastSize: TerminalPaneSize | null = null;
+  #lastDeliveredSize: TerminalPaneSize | null = null;
+  #pendingResize: TerminalPaneSize | null = null;
+  #resizeTimer: ReturnType<typeof setTimeout> | null = null;
   #disposed = false;
   #title: string;
   #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
+  #hoveredChromeAction: string | null = null;
 
   constructor(input: ShellNextFrameBufferTerminalPaneInput) {
     this.#renderer = input.renderer;
@@ -76,6 +84,13 @@ export class ShellNextFrameBufferTerminalPane {
     this.#node = input.node;
     this.#input = input;
     this.#title = input.title;
+    this.#chrome = new ShellNextPaneChromeController({
+      renderer: this.#renderer,
+      id: `${input.node.id}-framebuffer-terminal-chrome`,
+      bg: "#020617",
+      onMouseDown: (event) => this.#handleMouseDown(event),
+      onMouseMove: (event) => this.#handleMouseMove(event),
+    });
     const accentColor = input.accentColor ?? "#38bdf8";
     this.#root = new BoxRenderable(this.#renderer, {
       id: `${input.node.id}-framebuffer-terminal-root`,
@@ -89,6 +104,7 @@ export class ShellNextFrameBufferTerminalPane {
       focusable: true,
     });
     this.#root.onMouseDown = (event) => this.#handleMouseDown(event);
+    this.#root.onMouseMove = (event) => this.#handleMouseMove(event);
     this.#frame = new OpenComposeTerminalFrameRenderable(this.#renderer, {
       id: `${input.node.id}-framebuffer-terminal-frame`,
       position: "absolute",
@@ -153,7 +169,7 @@ export class ShellNextFrameBufferTerminalPane {
     const size = sanitizeSize(node.rect);
     if (!this.#lastSize || this.#lastSize.cols !== size.cols || this.#lastSize.rows !== size.rows) {
       this.#lastSize = size;
-      void this.#source.resize(size);
+      this.#scheduleBackendResize(size);
     }
     this.refresh();
   }
@@ -201,7 +217,13 @@ export class ShellNextFrameBufferTerminalPane {
       return;
     }
     this.#disposed = true;
+    if (this.#resizeTimer) {
+      clearTimeout(this.#resizeTimer);
+      this.#resizeTimer = null;
+    }
+    this.#pendingResize = null;
     this.#renderer.keyInput.off("paste", this.#handlePaste);
+    this.#chrome.destroy();
     this.#root.destroyRecursively();
     void this.#source.dispose();
   }
@@ -215,19 +237,67 @@ export class ShellNextFrameBufferTerminalPane {
     this.#input.onFocus?.(this.#node.id);
   }
 
+  #handleMouseMove(event: MouseEvent): void {
+    const action = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
+    if (action !== this.#hoveredChromeAction) {
+      this.#hoveredChromeAction = action;
+      this.#syncTitleChrome();
+      this.#renderer.requestRender();
+    }
+    this.#root.borderColor = this.#node.focused ? (this.#input.accentColor ?? "#38bdf8") : "#475569";
+    if (action) {
+      event.preventDefault();
+    }
+  }
+
   #syncTitleChrome(): void {
     const title = this.#source.readTitle?.() ?? this.#title;
     if (title && title !== this.#title) {
       this.#title = title;
     }
-    this.#chromeRegions = syncShellNextPaneChrome({
+    this.#chromeRegions = this.#chrome.sync({
       root: this.#root,
       rect: this.#node.rect,
       state: {
         title: this.#title,
-        actions: [{ id: "close", label: "x" }],
+        hoveredActionId: this.#hoveredChromeAction,
+        actions: [shellNextPaneCloseAction()],
       },
     });
+  }
+
+  #scheduleBackendResize(size: TerminalPaneSize): void {
+    if (this.#lastDeliveredSize === null) {
+      this.#deliverBackendResize(size);
+      return;
+    }
+    if (this.#lastDeliveredSize.cols === size.cols && this.#lastDeliveredSize.rows === size.rows) {
+      this.#pendingResize = null;
+      if (this.#resizeTimer) {
+        clearTimeout(this.#resizeTimer);
+        this.#resizeTimer = null;
+      }
+      return;
+    }
+    this.#pendingResize = size;
+    if (this.#resizeTimer) {
+      return;
+    }
+    this.#resizeTimer = setTimeout(() => {
+      this.#resizeTimer = null;
+      const pending = this.#pendingResize;
+      this.#pendingResize = null;
+      if (!pending || this.#disposed) {
+        return;
+      }
+      this.#deliverBackendResize(pending);
+      this.refresh();
+    }, TERMINAL_BACKEND_RESIZE_DEBOUNCE_MS);
+  }
+
+  #deliverBackendResize(size: TerminalPaneSize): void {
+    this.#lastDeliveredSize = size;
+    void this.#source.resize(size);
   }
 
   #copySelection(ownerId?: string): boolean {

@@ -3,6 +3,7 @@ import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core";
 import type { ChildLayoutNode } from "../renderable-mux/layout";
 import {
   resolveShellNextPaneChromeClick,
+  shellNextPaneCloseAction,
   syncShellNextPaneChrome,
   type ShellNextPaneChromeHitRegion,
 } from "../renderable-mux/pane-chrome";
@@ -65,6 +66,13 @@ export class ShellNextHelpSurface implements OpenTuiRenderableSurface {
       }
       this.#onFocus?.(this.#node.id);
     };
+    this.#root.onMouseMove = (event) => {
+      const hovered = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions }) === "close";
+      this.#root.borderColor = hovered ? "#facc15" : this.#node.focused ? "#facc15" : "#475569";
+      if (hovered) {
+        event.preventDefault();
+      }
+    };
     this.#content = new TextRenderable(this.#renderer, {
       id: `${input.node.id}-help-content`,
       position: "absolute",
@@ -100,7 +108,7 @@ export class ShellNextHelpSurface implements OpenTuiRenderableSurface {
       rect: node.rect,
       state: {
         title: "Help",
-        actions: [{ id: "close", label: "x" }],
+        actions: [shellNextPaneCloseAction()],
       },
     });
     const contentSize = resolveBorderedPaneContentSize(node.rect);

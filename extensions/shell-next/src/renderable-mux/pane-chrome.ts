@@ -1,4 +1,4 @@
-import type { BoxRenderable, MouseEvent } from "@opentui/core";
+import { TextAttributes, TextRenderable, type BoxRenderable, type CliRenderer, type MouseEvent } from "@opentui/core";
 
 import type { LayoutRect } from "./layout";
 
@@ -7,11 +7,13 @@ export type ShellNextPaneTitleActionId = "close" | (string & {});
 export interface ShellNextPaneTitleAction {
   readonly id: ShellNextPaneTitleActionId;
   readonly label: string;
+  readonly active?: boolean;
 }
 
 export interface ShellNextPaneChromeState {
   readonly title: string;
   readonly actions?: readonly ShellNextPaneTitleAction[];
+  readonly hoveredActionId?: ShellNextPaneTitleActionId | null;
 }
 
 export interface ShellNextPaneChromeClick {
@@ -26,9 +28,44 @@ export interface ShellNextPaneChromeHitRegion {
   readonly width: number;
 }
 
+interface ShellNextPaneChromeActionOverlay {
+  readonly actionId: ShellNextPaneTitleActionId;
+  readonly node: TextRenderable;
+}
+
+export interface ShellNextPaneChromeControllerInput {
+  readonly renderer: CliRenderer;
+  readonly id: string;
+  readonly zIndex?: number;
+  readonly fg?: string;
+  readonly bg?: string;
+  readonly onMouseDown?: (event: MouseEvent) => void;
+  readonly onMouseMove?: (event: MouseEvent) => void;
+}
+
 const DEFAULT_TITLE_GAP = " ";
 
 const stringWidth = (value: string): number => Bun.stringWidth(value);
+
+export const shellNextPaneButtonLabel = (label: string): string => {
+  const trimmed = label.trim();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    return trimmed;
+  }
+  return `[${trimmed}]`;
+};
+
+export const shellNextPaneCloseAction = (): ShellNextPaneTitleAction => ({
+  id: "close",
+  label: shellNextPaneButtonLabel("x"),
+});
+
+export const shellNextPaneActionAttributes = (input: {
+  readonly active?: boolean;
+  readonly hovered?: boolean;
+}): number =>
+  (input.active ? TextAttributes.UNDERLINE : TextAttributes.NONE) |
+  (input.hovered ? TextAttributes.BOLD : TextAttributes.NONE);
 
 const truncateCells = (value: string, width: number): string => {
   const safeWidth = Math.max(0, Math.trunc(width));
@@ -101,6 +138,106 @@ export const syncShellNextPaneChrome = (input: {
   }
   return regions;
 };
+
+export class ShellNextPaneChromeController {
+  readonly #renderer: CliRenderer;
+  readonly #id: string;
+  readonly #zIndex: number;
+  readonly #fg: string;
+  readonly #bg: string;
+  readonly #onMouseDown: ((event: MouseEvent) => void) | undefined;
+  readonly #onMouseMove: ((event: MouseEvent) => void) | undefined;
+  readonly #overlays = new Map<ShellNextPaneTitleActionId, ShellNextPaneChromeActionOverlay>();
+
+  constructor(input: ShellNextPaneChromeControllerInput) {
+    this.#renderer = input.renderer;
+    this.#id = input.id;
+    this.#zIndex = input.zIndex ?? 80;
+    this.#fg = input.fg ?? "#f8fafc";
+    this.#bg = input.bg ?? "#020617";
+    this.#onMouseDown = input.onMouseDown;
+    this.#onMouseMove = input.onMouseMove;
+  }
+
+  sync(input: {
+    readonly root: BoxRenderable;
+    readonly rect: LayoutRect;
+    readonly state: ShellNextPaneChromeState;
+  }): readonly ShellNextPaneChromeHitRegion[] {
+    const regions = syncShellNextPaneChrome({
+      ...input,
+      state: {
+        ...input.state,
+        actions: input.state.actions?.map((action) => ({
+          ...action,
+          label: " ".repeat(Math.max(1, stringWidth(action.label))),
+        })),
+      },
+    });
+    const actions = input.state.actions ?? [];
+    const actionById = new Map(actions.map((action) => [action.id, action]));
+    const liveActionIds = new Set(actions.map((action) => action.id));
+    for (const [actionId, overlay] of this.#overlays) {
+      if (!liveActionIds.has(actionId)) {
+        overlay.node.destroyRecursively();
+        this.#overlays.delete(actionId);
+      }
+    }
+    for (const region of regions) {
+      const action = actionById.get(region.actionId);
+      if (!action) {
+        continue;
+      }
+      const overlay = this.#overlays.get(region.actionId) ?? this.#createOverlay(region.actionId);
+      overlay.node.left = region.x;
+      overlay.node.top = region.y;
+      overlay.node.width = region.width;
+      overlay.node.height = 1;
+      overlay.node.content = action.label;
+      overlay.node.attributes = shellNextPaneActionAttributes({
+        active: action.active,
+        hovered: input.state.hoveredActionId === action.id,
+      });
+      overlay.node.visible = input.root.visible !== false;
+    }
+    return regions;
+  }
+
+  destroy(): void {
+    for (const overlay of this.#overlays.values()) {
+      overlay.node.destroyRecursively();
+    }
+    this.#overlays.clear();
+  }
+
+  hide(): void {
+    for (const overlay of this.#overlays.values()) {
+      overlay.node.visible = false;
+    }
+  }
+
+  #createOverlay(actionId: ShellNextPaneTitleActionId): ShellNextPaneChromeActionOverlay {
+    const node = new TextRenderable(this.#renderer, {
+      id: `${this.#id}-title-action-${String(actionId)}`,
+      position: "absolute",
+      left: 0,
+      top: 0,
+      width: 1,
+      height: 1,
+      content: "",
+      fg: this.#fg,
+      bg: this.#bg,
+      wrapMode: "none",
+      zIndex: this.#zIndex,
+    });
+    node.onMouseDown = (event) => this.#onMouseDown?.(event);
+    node.onMouseMove = (event) => this.#onMouseMove?.(event);
+    this.#renderer.root.add(node);
+    const overlay = { actionId, node };
+    this.#overlays.set(actionId, overlay);
+    return overlay;
+  }
+}
 
 export const resolveShellNextPaneChromeClick = (input: {
   readonly event: MouseEvent;

@@ -33,6 +33,11 @@ export interface TerminalFrameSnapshot {
 
 export type TerminalInputChunk = string | Uint8Array;
 
+export interface TerminalSelectionTextEvent {
+  readonly ownerId?: string;
+  readonly text: string;
+}
+
 export interface TerminalProtocolPaneSource {
   readonly kind: "terminal-protocol";
   readonly id: PaneSourceId;
@@ -50,6 +55,7 @@ export interface TerminalProtocolPaneSource {
   selectLineAt?(point: TerminalTransportOwnerCoordinate): boolean;
   clearSelection?(ownerId?: string): boolean;
   copySelection?(ownerId?: string): boolean | string;
+  subscribeSelectionText?(listener: (event: TerminalSelectionTextEvent) => void): () => void;
   notifyPaintCommitted?(): void;
   subscribe?(listener: () => void): () => void;
   dispose(): void | Promise<void>;

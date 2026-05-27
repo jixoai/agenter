@@ -49,11 +49,17 @@ export interface ShellNextTerminalSourcePolicy {
   describeSplitUnavailable?(): string;
 }
 
+export interface ShellNextStatusProvider {
+  getStatus(): ShellNextStatusbarState;
+  subscribe?(listener: () => void): () => void;
+}
+
 export interface ShellNextAppInput {
   readonly renderer?: CliRenderer;
   readonly cwd?: string;
   readonly command?: readonly string[];
   readonly initialStatus?: ShellNextStatusbarState;
+  readonly statusProvider?: ShellNextStatusProvider;
   readonly approvalStore?: ShellNextApprovalStore;
   readonly room?: ShellNextRoomInput;
   readonly rootPane?: ShellNextRootPaneDefinition;

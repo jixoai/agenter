@@ -3,6 +3,7 @@ import { createCliRenderer, type CliRenderer, type CliRendererConfig } from "@op
 export const shellNextRendererDefaults: CliRendererConfig = {
   exitOnCtrlC: false,
   useMouse: true,
+  enableMouseMovement: true,
   useKittyKeyboard: { events: true },
 };
 

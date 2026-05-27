@@ -107,6 +107,20 @@ describe("Feature: shell-next tmux-like layout mutations", () => {
     expect(layout.children.find((child) => child.focused)?.id).toBe("pane-d");
   });
 
+  test("Scenario: Given a renderer pane When moving it left of a terminal pane Then layout preserves pane identity and recomputes geometry", () => {
+    const layout = createRootLayout({ x: 0, y: 0, width: 80, height: 24 }, [
+      { id: "terminal", sourceKind: "terminal-protocol" },
+    ]);
+    layout.split("terminal", "right", { id: "chat", sourceKind: "opentui-renderable" });
+
+    expect(layout.movePane("chat", "terminal", "left")).toBe(true);
+
+    expect(layout.children.map((child) => [child.id, child.rect.x, child.rect.width, child.focused])).toEqual([
+      ["chat", 0, 40, true],
+      ["terminal", 40, 40, false],
+    ]);
+  });
+
   test("Scenario: Given the host resizes When reading pane geometry Then layout recomputes stable rectangles", () => {
     const layout = createFourPaneLayout({ x: 0, y: 0, width: 80, height: 24 });
 

@@ -15,6 +15,7 @@ export interface ShellNextRoomAppSurfaceInput {
   readonly onQuit?: () => void;
   readonly onLayoutRequest?: (mode: ShellNextRoomLayoutMode) => void | Promise<void | { closeCurrentSurface: boolean }>;
   readonly onTopLayerRequest?: () => void | Promise<void>;
+  readonly layoutMode?: ShellNextRoomLayoutMode;
 }
 
 const toHostNode = (node: ChildLayoutNode) => ({
@@ -25,10 +26,12 @@ const toHostNode = (node: ChildLayoutNode) => ({
 
 export class ShellNextRoomAppSurface implements OpenTuiRenderableSurface {
   readonly #app: ShellNextRoomApp;
+  #layoutMode: ShellNextRoomLayoutMode;
   #node: ChildLayoutNode;
 
   constructor(input: ShellNextRoomAppSurfaceInput) {
     this.#node = input.node;
+    this.#layoutMode = input.layoutMode ?? "right";
     this.#app = new ShellNextRoomApp({
       ...input.room,
       renderer: input.renderer,
@@ -37,7 +40,8 @@ export class ShellNextRoomAppSurface implements OpenTuiRenderableSurface {
       onHostFocus: input.onFocus,
       hostChrome: {
         title: "Chat",
-        closeLabel: "x",
+        layoutMode: this.#layoutMode,
+        actions: ["layout-left", "layout-right", "layout-float", "close"],
       },
       onQuit: input.onQuit,
       onLayoutRequest: input.onLayoutRequest,
@@ -54,6 +58,15 @@ export class ShellNextRoomAppSurface implements OpenTuiRenderableSurface {
   syncNode(node: ChildLayoutNode): void {
     this.#node = node;
     this.#app.syncHostNode(toHostNode(node));
+  }
+
+  setLayoutMode(mode: ShellNextRoomLayoutMode): void {
+    this.#layoutMode = mode;
+    this.#app.syncHostChrome({
+      title: "Chat",
+      layoutMode: mode,
+      actions: ["layout-left", "layout-right", "layout-float", "close"],
+    });
   }
 
   focus(): void {

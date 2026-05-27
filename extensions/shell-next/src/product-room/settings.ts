@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export type ShellNextChatDefaultLayout = "left" | "right" | "cover";
+export type ShellNextChatDefaultLayout = "left" | "right" | "float";
 
 export interface ShellNextSettings {
   chat: {
@@ -73,7 +73,7 @@ const DEFAULT_KEYBINDINGS: ShellNextKeybindings = {
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 const normalizeLayout = (value: unknown): ShellNextChatDefaultLayout =>
-  value === "left" || value === "right" || value === "cover" ? value : DEFAULT_SETTINGS.chat.defaultLayout;
+  value === "left" || value === "right" || value === "float" ? value : DEFAULT_SETTINGS.chat.defaultLayout;
 
 const normalizeOptionalText = (value: unknown): string | null => {
   if (typeof value !== "string") {

@@ -2,6 +2,7 @@ import type { CliRenderer, Renderable } from "@opentui/core";
 
 import type { ChildLayoutNode, FocusDirection, LayoutPaneInput, RootLayout, SplitDirection } from "./layout";
 import { PaneRenderable, type PaneFrameRenderEvent } from "./pane-renderable";
+import { ShellNextPaneResizeController } from "./pane-resize-controller";
 import {
   getPaneSourceLayoutKind,
   normalizeTerminalPaneSource,
@@ -35,12 +36,12 @@ export type TerminalPaneFactory = (input: TerminalPaneFactoryInput) => TerminalP
 interface MountedTerminalPane {
   readonly source: TerminalLikePaneSource;
   readonly pane: TerminalPaneRenderable;
-  readonly unsubscribe: (() => void) | null;
+  readonly unsubscribe: readonly (() => void)[];
 }
 
 interface MountedOpenTuiPane {
   readonly source: OpenTuiRenderablePaneSource;
-  readonly unsubscribe: null;
+  readonly unsubscribe: readonly [];
 }
 
 type MountedPane = MountedTerminalPane | MountedOpenTuiPane;
@@ -69,12 +70,18 @@ export class ShellNextMuxRenderable {
   readonly #mounted = new Map<string, MountedPane>();
   readonly #input: Omit<ShellNextMuxRenderableInput, "renderer" | "layout" | "sources">;
   readonly #terminalPaneFactory: TerminalPaneFactory;
+  readonly #resizeController: ShellNextPaneResizeController;
 
   constructor(input: ShellNextMuxRenderableInput) {
     this.#renderer = input.renderer;
     this.#layout = input.layout;
     this.#input = input;
     this.#terminalPaneFactory = input.terminalPaneFactory ?? defaultTerminalPaneFactory;
+    this.#resizeController = new ShellNextPaneResizeController({
+      renderer: this.#renderer,
+      layout: this.#layout,
+      onLayoutChanged: () => this.syncLayout(),
+    });
     for (const source of input.sources) {
       this.registerSource(source);
     }
@@ -102,7 +109,9 @@ export class ShellNextMuxRenderable {
       if (livePaneIds.has(paneId)) {
         continue;
       }
-      mounted.unsubscribe?.();
+      for (const unsubscribe of mounted.unsubscribe) {
+        unsubscribe();
+      }
       if ("pane" in mounted) {
         mounted.pane.destroy();
       } else {
@@ -120,6 +129,7 @@ export class ShellNextMuxRenderable {
       }
       this.#mountNode(node, source);
     }
+    this.#resizeController.sync();
     this.#renderer.requestRender();
   }
 
@@ -188,12 +198,44 @@ export class ShellNextMuxRenderable {
     return true;
   }
 
+  movePane(paneId: string, anchorPaneId: string, direction: SplitDirection): boolean {
+    const moved = this.#layout.movePane(paneId, anchorPaneId, direction);
+    if (!moved) {
+      return false;
+    }
+    this.syncLayout();
+    return true;
+  }
+
+  detachOpenTuiPane(paneId: string): OpenTuiRenderablePaneSource | null {
+    const mounted = this.#mounted.get(paneId);
+    if (!mounted || "pane" in mounted) {
+      return null;
+    }
+    const closed = this.#layout.close(paneId);
+    if (!closed) {
+      return null;
+    }
+    this.#renderer.root.remove(mounted.source.surface.root.id);
+    this.#mounted.delete(paneId);
+    this.syncLayout();
+    return mounted.source;
+  }
+
   getTerminalSource(paneId: string): TerminalProtocolPaneSource | null {
     const mounted = this.#mounted.get(paneId);
     if (!mounted || !("pane" in mounted)) {
       return null;
     }
     return normalizeTerminalPaneSource(mounted.source);
+  }
+
+  getOpenTuiSurface(paneId: string): OpenTuiRenderablePaneSource["surface"] | null {
+    const mounted = this.#mounted.get(paneId);
+    if (!mounted || "pane" in mounted) {
+      return null;
+    }
+    return mounted.source.surface;
   }
 
   dispatchFocusedPaneKey(key: Parameters<NonNullable<OpenTuiRenderablePaneSource["surface"]["handleKeypress"]>>[0]): boolean {
@@ -230,8 +272,11 @@ export class ShellNextMuxRenderable {
   }
 
   destroy(): void {
+    this.#resizeController.destroy();
     for (const mounted of this.#mounted.values()) {
-      mounted.unsubscribe?.();
+      for (const unsubscribe of mounted.unsubscribe) {
+        unsubscribe();
+      }
       if ("pane" in mounted) {
         mounted.pane.destroy();
       } else {
@@ -263,7 +308,14 @@ export class ShellNextMuxRenderable {
         onFrameRendered: this.#input.onFrameRendered,
       });
       this.#renderer.root.add(pane.root);
-      const unsubscribe = protocol.subscribe?.(() => this.refreshPane(node.id)) ?? null;
+      const unsubscribe = [
+        protocol.subscribe?.(() => this.refreshPane(node.id)),
+        protocol.subscribeSelectionText?.((event) => {
+          if (event.text.length > 0) {
+            this.#renderer.copyToClipboardOSC52(event.text);
+          }
+        }),
+      ].filter((candidate): candidate is () => void => typeof candidate === "function");
       this.#mounted.set(node.id, { source, pane, unsubscribe });
       return;
     }
@@ -272,7 +324,7 @@ export class ShellNextMuxRenderable {
     if (node.focused) {
       source.surface.focus?.();
     }
-    this.#mounted.set(node.id, { source, unsubscribe: null });
+    this.#mounted.set(node.id, { source, unsubscribe: [] });
   }
 
   #syncMounted(node: ChildLayoutNode, mounted: MountedPane): void {

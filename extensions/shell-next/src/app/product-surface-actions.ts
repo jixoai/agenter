@@ -12,6 +12,7 @@ import { ShellNextRoomAppSurface } from "../surfaces/shell-next-room-app-surface
 import { ShellNextHelpSurface } from "../surfaces/help-surface";
 import { ShellNextRoomSurface } from "../surfaces/room-surface";
 import type { ShellNextRoomInput } from "./shell-next-app-types";
+import type { ShellNextRoomLayoutMode } from "../product-room/room-app";
 
 export type ShellNextProductSurfaceKind = "help" | "chat";
 
@@ -23,7 +24,9 @@ export interface ToggleShellNextProductSurfaceInput {
   readonly node?: ChildLayoutNode;
   readonly room?: ShellNextRoomInput;
   readonly onClose?: (paneId: string) => void;
+  readonly onLayoutRequest?: (mode: ShellNextRoomLayoutMode) => void | Promise<void | { closeCurrentSurface: boolean }>;
   readonly onTopLayerRequest?: () => void | Promise<void>;
+  readonly layoutMode?: ShellNextRoomLayoutMode;
 }
 
 export const createShellNextProductSurface = (input: ToggleShellNextProductSurfaceInput): OpenTuiRenderableSurface => {
@@ -43,6 +46,7 @@ export const createShellNextProductSurface = (input: ToggleShellNextProductSurfa
     node,
     onFocus: (paneId: string) => input.mux?.focusPane(paneId),
     onClose: (paneId: string) => input.onClose?.(paneId),
+    onLayoutRequest: input.onLayoutRequest,
   };
   if (input.kind === "help") {
     return new ShellNextHelpSurface(common);
@@ -51,6 +55,7 @@ export const createShellNextProductSurface = (input: ToggleShellNextProductSurfa
     if (input.room.attached) {
       return new ShellNextRoomAppSurface({
         ...common,
+        layoutMode: input.layoutMode ?? "right",
         room: {
           store: input.room.store,
           shellName: input.room.shellName ?? input.room.attached.binding.resourceKey,
@@ -59,7 +64,7 @@ export const createShellNextProductSurface = (input: ToggleShellNextProductSurfa
           keybindings: input.room.keybindings,
         },
         onQuit: () => input.onClose?.(input.kind),
-        onLayoutRequest: async () => ({ closeCurrentSurface: false }),
+        onLayoutRequest: input.onLayoutRequest,
         onTopLayerRequest: input.onTopLayerRequest,
       });
     }
@@ -68,7 +73,7 @@ export const createShellNextProductSurface = (input: ToggleShellNextProductSurfa
       ...input.room,
     });
   }
-  return new ShellNextChatSurface(common);
+  return new ShellNextChatSurface({ ...common, layoutMode: input.layoutMode ?? "right" });
 };
 
 export const toggleShellNextProductSurface = (input: ToggleShellNextProductSurfaceInput): boolean => {

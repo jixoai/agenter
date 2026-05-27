@@ -175,7 +175,9 @@ export class FourPaneRendererGridDemo implements FourPaneRendererGridDemoControl
 export const startFourPaneRendererGridDemo = async (
   input: FourPaneRendererGridDemoInput = {},
 ): Promise<FourPaneRendererGridDemoController> => {
-  const renderer = input.renderer ?? (await createCliRenderer({ exitOnCtrlC: false, useMouse: true }));
+  const renderer =
+    input.renderer ??
+    (await createCliRenderer({ exitOnCtrlC: false, useMouse: true, enableMouseMovement: true }));
   const app = new FourPaneRendererGridDemo({
     ...input,
     renderer,

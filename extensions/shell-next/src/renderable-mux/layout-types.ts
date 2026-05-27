@@ -33,6 +33,7 @@ export interface RootLayout {
   focus(nodeId: string): boolean;
   focusAdjacent(direction: FocusDirection): boolean;
   split(nodeId: string, direction: SplitDirection, pane: LayoutPaneInput): boolean;
+  movePane(nodeId: string, anchorNodeId: string, direction: SplitDirection): boolean;
   close(nodeId: string): boolean;
   resizePane(nodeId: string, edge: ResizeEdge, delta: number): boolean;
   hitTest(x: number, y: number): ChildLayoutNode | null;

@@ -481,7 +481,9 @@ export class ShellNextNavigationApp {
 export const startShellNextNavigationApp = async (
   input: ShellNextNavigationAppInput,
 ): Promise<{ app: ShellNextNavigationApp; renderer: CliRenderer }> => {
-  const renderer = input.renderer ?? (await createCliRenderer({ exitOnCtrlC: false, useMouse: true }));
+  const renderer =
+    input.renderer ??
+    (await createCliRenderer({ exitOnCtrlC: false, useMouse: true, enableMouseMovement: true }));
   const app = new ShellNextNavigationApp({
     ...input,
     renderer,
