@@ -1,4 +1,4 @@
-import type { GlobalAvatarCatalogEntry } from "@agenter/client-sdk";
+import type { GlobalAvatarCatalogEntry, RuntimeClientState } from "@agenter/client-sdk";
 import { describe, expect, test } from "bun:test";
 
 import { bootstrapShellNextRoom } from "../src/product/bootstrap";
@@ -65,6 +65,7 @@ const createTestDependencies = (input: {
   savedSettings?: ShellNextSettings[];
   output?: string[];
   liveSourceCalls?: Array<{ id: string; terminalId: string; transportUrl: string }>;
+  readHeartbeatStatus?: ShellNextProductRunDependencies["readHeartbeatStatus"];
 }): ShellNextProductRunDependencies => ({
   createClient: () => ({ close() {} }) as ReturnType<ShellNextProductRunDependencies["createClient"]>,
   createStore: () => input.store as unknown as ReturnType<ShellNextProductRunDependencies["createStore"]>,
@@ -106,7 +107,7 @@ const createTestDependencies = (input: {
     input.savedSettings?.push(settings);
   },
   readKeybindings: async () => defaultShellNextKeybindings(),
-  readHeartbeatStatus: async () => "Idle · runtime heartbeat",
+  readHeartbeatStatus: input.readHeartbeatStatus ?? (async () => "Idle · runtime heartbeat"),
   stdout: {
     write: (chunk: string | Uint8Array) => {
       input.output?.push(String(chunk));
@@ -253,6 +254,61 @@ describe("Feature: shell-next product runtime bootstrap", () => {
       },
     ]);
     expect(store.getAuthToken()).toBe("superadmin-token");
+  });
+
+  test("Scenario: Given heartbeat has preview text and model calls have usage When starting app Then statusbar receives macro facts only", async () => {
+    const store = new FakeShellNextStore();
+    seedAvatar(store, "bangeel");
+    const dependencies = createTestDependencies({
+      store,
+      tty: true,
+      readHeartbeatStatus: async () => "✎ generating a detailed heartbeat preview",
+      bootstrap: async (bootstrapInput) => {
+        const attached = await bootstrapShellNextRoom(bootstrapInput);
+        store.modelCallsBySession[attached.session.id] = [
+          {
+            id: 1,
+            cycleId: 1,
+            roundIndex: 0,
+            kind: "model",
+            status: "done",
+            provider: "openai",
+            model: "gpt-test",
+            providerSnapshot: {
+              providerId: "openai-test",
+              apiStandard: "openai-responses",
+              vendor: "openai",
+              profile: null,
+              model: "gpt-test",
+              maxContextTokens: 100000,
+            },
+            requestUrl: "https://example.invalid/model",
+            request: {},
+            response: { usage: { inputTokens: 700, totalTokens: 900 } },
+            error: null,
+            outcome: null,
+            createdAt: 1,
+            updatedAt: 2,
+            completedAt: 2,
+            isComplete: true,
+          } satisfies RuntimeClientState["modelCallsBySession"][string][number],
+        ];
+        return attached;
+      },
+      startApp: async (input) => {
+        expect(input.initialStatus?.runtime.label).toBe("Active");
+        expect(input.initialStatus?.runtime.label).not.toContain("heartbeat preview");
+        expect(input.initialStatus?.aiContext).toEqual({ usedTokens: 700, maxTokens: 100000 });
+        return {
+          finished: Promise.resolve(),
+          destroy() {},
+        };
+      },
+    });
+
+    const result = await runShellNext(["bun", "agenter-shell-next"], dependencies);
+
+    expect(result.exitCode).toBe(0);
   });
 
   test("Scenario: Given single-view attach selection When starting app Then shell-next uses rootPane mode instead of top-layer or dock toggles", async () => {

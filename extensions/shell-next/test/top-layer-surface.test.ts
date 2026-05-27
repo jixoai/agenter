@@ -152,4 +152,59 @@ describe("Feature: shell-next OpenTUI top layer", () => {
     expect(setup.captureCharFrame()).toContain("[ Run in background ]");
     expect(setup.captureCharFrame()).toContain("[ Terminate terminal ]");
   });
+
+  test("Scenario: Given close confirmation is shown When clicking the border x Then it cancels without running close actions", async () => {
+    const { setup, surface } = await startSurface(new RecordingApprovalStore());
+    const actions: string[] = [];
+
+    surface.showCloseConfirm({
+      title: "demo shell",
+      onBackgroundRun: () => {
+        actions.push("background");
+      },
+      onTerminate: () => {
+        actions.push("terminate");
+      },
+    });
+    await setup.renderOnce();
+
+    await setup.mockMouse.click(15, 2);
+    await setup.renderOnce();
+
+    expect(actions).toEqual([]);
+    expect(setup.captureCharFrame()).not.toContain("[ Run in background ]");
+  });
+
+  test("Scenario: Given close confirmation is shown When clicking action labels Then hit regions trigger the correct callbacks", async () => {
+    const { setup, surface } = await startSurface(new RecordingApprovalStore());
+    const actions: string[] = [];
+
+    surface.showCloseConfirm({
+      title: "demo shell",
+      onBackgroundRun: () => {
+        actions.push("background");
+      },
+      onTerminate: () => {
+        actions.push("terminate");
+      },
+    });
+    await setup.renderOnce();
+    await setup.mockMouse.click(5, 9);
+    await setup.renderOnce();
+
+    surface.showCloseConfirm({
+      title: "demo shell",
+      onBackgroundRun: () => {
+        actions.push("background-again");
+      },
+      onTerminate: () => {
+        actions.push("terminate");
+      },
+    });
+    await setup.renderOnce();
+    await setup.mockMouse.click(29, 9);
+    await setup.renderOnce();
+
+    expect(actions).toEqual(["background", "terminate"]);
+  });
 });

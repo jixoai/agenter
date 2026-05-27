@@ -9,7 +9,7 @@
 - [x] 2.1 Surface terminal pane title from terminal source truth instead of synthetic `Shell pane-*` labels.
 - [x] 2.2 Add pane close affordance in the terminal title bar.
 - [x] 2.3 Generalize top-layer to handle both approval and close-confirm overlays.
-- [x] 2.4 Route close-confirm actions to `后台运行` and `结束终端`.
+- [x] 2.4 Route close-confirm actions to `Run in background` and `Terminate terminal`.
 
 ## 3. Input And Terminal Projection
 
@@ -43,3 +43,12 @@
 - [x] 6.4 Add focused BDD regressions for pane-scope key consumption and top-layer single consumption.
 - [x] 6.5 Record openmux as MIT reference material for layout/pane chrome/resize without adding it as a dependency.
 - [x] 6.6 Rerun OpenSpec validation, shell-next tests, shell-next typecheck, cli-shell focused safety tests, and diff checks.
+
+## 7. Focus Tree And Geometry Hardening
+
+- [x] 7.1 Replace the flat key dispatcher with a focusable node tree that supports capture, target, and bubble phases.
+- [x] 7.2 Move host split/close/focus layout actions behind `Ctrl+B` prefix and forward bare terminal chords to the focused terminal source.
+- [x] 7.3 Add BDD regressions for focus-tree phase order and key consumption.
+- [x] 7.4 Add BDD regressions for terminal title close hit regions, close-confirm hit regions, and first-row terminal selection coordinates.
+- [x] 7.5 Keep product attach statusbar macro-only by stripping Heartbeat preview labels and projecting available model-call context usage.
+- [x] 7.6 Rerun OpenSpec validation, shell-next tests, shell-next typecheck, cli-shell focused safety tests, and diff checks.

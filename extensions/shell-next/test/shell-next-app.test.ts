@@ -398,10 +398,11 @@ describe("Feature: shell-next app runtime", () => {
     expect(recordings[0].inputChunks).toEqual(["p", "w", "d"]);
   });
 
-  test("Scenario: Given a focused shell pane When Ctrl+N is pressed Then shell-next splits and focuses the new pane", async () => {
+  test("Scenario: Given a focused shell pane When Ctrl+B then N is pressed Then shell-next splits and focuses the new pane", async () => {
     const { setup, recordings } = await startApp();
 
-    setup.mockInput.pressKey("n", { ctrl: true });
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("n");
     await setup.renderOnce();
 
     expect(recordings).toHaveLength(2);
@@ -411,7 +412,7 @@ describe("Feature: shell-next app runtime", () => {
     expect(frame).toContain("source-2 frame 0");
   });
 
-  test("Scenario: Given a product-bound terminal policy without split capability When Ctrl+N is pressed Then shell-next does not create a local terminal substitute", async () => {
+  test("Scenario: Given a product-bound terminal policy without split capability When Ctrl+B then N is pressed Then shell-next does not create a local terminal substitute", async () => {
     setup = await createTestRenderer({ width: 64, height: 18, useMouse: true, kittyKeyboard: true });
     const recordings: RecordingSource[] = [];
     const notices: string[] = [];
@@ -434,7 +435,8 @@ describe("Feature: shell-next app runtime", () => {
     app.start();
     await setup.renderOnce();
 
-    setup.mockInput.pressKey("n", { ctrl: true });
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("n");
     await setup.renderOnce();
 
     expect(recordings).toHaveLength(1);
@@ -444,16 +446,42 @@ describe("Feature: shell-next app runtime", () => {
     expect(frame).not.toContain("source-2");
   });
 
-  test("Scenario: Given two panes When Shift+Left moves focus Then terminal input is routed to the adjacent pane", async () => {
+  test("Scenario: Given two panes When Ctrl+B then Left moves focus Then terminal input is routed to the adjacent pane", async () => {
     const { setup, recordings } = await startApp();
-    setup.mockInput.pressKey("n", { ctrl: true });
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("n");
     await setup.renderOnce();
 
-    setup.mockInput.pressArrow("left", { shift: true });
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressArrow("left");
     await setup.mockInput.typeText("x");
 
     expect(recordings[0].inputChunks).toEqual(["x"]);
     expect(recordings[1].inputChunks).toEqual([]);
+  });
+
+  test("Scenario: Given a focused terminal pane When bare Shift+Left is pressed Then shell-next forwards it to the terminal instead of moving focus", async () => {
+    const { setup, recordings } = await startApp();
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("n");
+    await setup.renderOnce();
+
+    setup.mockInput.pressArrow("left", { shift: true });
+    await setup.renderOnce();
+    await setup.mockInput.typeText("x");
+
+    expect(recordings[0].inputChunks).toEqual([]);
+    expect(recordings[1].inputChunks.at(-1)).toBe("x");
+  });
+
+  test("Scenario: Given a focused terminal pane When bare Ctrl+N is pressed Then it is forwarded as terminal input", async () => {
+    const { setup, recordings } = await startApp();
+
+    setup.mockInput.pressKey("n", { ctrl: true });
+    await setup.renderOnce();
+
+    expect(recordings).toHaveLength(1);
+    expect(recordings[0].inputChunks).toEqual(["\u000e"]);
   });
 
   test("Scenario: Given the host resizes When renderer resize fires Then pane source receives updated geometry", async () => {
@@ -473,6 +501,16 @@ describe("Feature: shell-next app runtime", () => {
     await setup.renderOnce();
 
     expect(setup.captureCharFrame()).toContain("vim README.md x");
+  });
+
+  test("Scenario: Given a terminal pane title bar When clicking its x affordance Then shell-next opens close confirmation in top layer", async () => {
+    const { setup } = await startApp();
+
+    await setup.mockMouse.click(11, 0);
+    await setup.renderOnce();
+
+    expect(setup.captureCharFrame()).toContain("[ Run in background ]");
+    expect(setup.captureCharFrame()).toContain("[ Terminate terminal ]");
   });
 
   test("Scenario: Given a terminal cursor is viewport-local When shell-next renders Then it commits the cursor on the first content row", async () => {
@@ -563,6 +601,7 @@ describe("Feature: shell-next app runtime", () => {
     expect(recordings[0].selectionEvents.map((event) => event.type)).toContain("update");
     expect(recordings[0].selectionEvents.map((event) => event.type)).toContain("end");
     expect(recordings[0].selectionEvents.every((event) => event.point.ownerId === "terminal")).toBe(true);
+    expect(recordings[0].selectionEvents[0]?.point).toEqual({ ownerId: "terminal", row: 0, col: 1 });
   });
 
   test("Scenario: Given a renderer pane selection When Super+C is pressed Then shell-next copies the selected text through OSC52", async () => {

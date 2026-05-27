@@ -16,7 +16,6 @@ import { createShellNextProductSurface, toggleShellNextProductSurface } from "./
 import { createShellNextRenderer } from "./renderer-defaults";
 import {
   defaultShellNextStatusbarState,
-  focusDirectionFromShiftArrow,
   readShellNextKeyEvent,
   shouldShellNextSkipKey,
 } from "./shell-next-app-helpers";
@@ -118,22 +117,44 @@ export class ShellNextApp implements ShellNextAppController {
       this.#resolveFinished = resolve;
     });
     this.#keyDispatcher.register({
+      id: "root",
+      scope: "global",
+      active: () => true,
+      focused: () => false,
+      onKeyCapture: (key) => this.#handleHostPrefixCapture(key),
+      onKey: (key) => this.#handleGlobalKeypress(key),
+      onKeyBubble: (key) => this.#handleGlobalKeypress(key),
+    });
+    this.#keyDispatcher.register({
       id: "top-layer",
+      parentId: "root",
       scope: "top-layer",
       active: () => this.#topLayer.visible,
+      focused: () => this.#topLayer.visible,
       onKey: (key) => this.#topLayer.handleKeypress(key),
     });
     this.#keyDispatcher.register({
-      id: "focused-pane",
+      id: "pane-container",
+      parentId: "root",
       scope: "pane",
       active: () => this.#topLayer.visible !== true && this.#prefixPending !== true,
+      focused: () => false,
+    });
+    this.#keyDispatcher.register({
+      id: "focused-pane",
+      parentId: "pane-container",
+      scope: "pane",
+      active: () => this.#topLayer.visible !== true && this.#prefixPending !== true,
+      focused: () => this.#mux.focusedNode?.sourceKind === "opentui-renderable",
       onKey: (key) => this.#mux.dispatchFocusedPaneKey(key),
     });
     this.#keyDispatcher.register({
-      id: "global",
-      scope: "global",
-      active: () => true,
-      onKey: (key) => this.#handleGlobalKeypress(key),
+      id: "terminal-input",
+      parentId: "pane-container",
+      scope: "pane",
+      active: () => this.#topLayer.visible !== true && this.#prefixPending !== true,
+      focused: () => this.#mux.focusedNode?.sourceKind === "terminal-protocol",
+      onKey: (key) => this.#handleTerminalKeypress(key),
     });
   }
 
@@ -354,41 +375,59 @@ export class ShellNextApp implements ShellNextAppController {
         this.#openCloseConfirm();
         return true;
       }
+      if (key.name === "n") {
+        key.preventDefault();
+        this.splitFocusedShellRight();
+        this.#syncStatusbar();
+        return true;
+      }
+      if (key.name === "w") {
+        key.preventDefault();
+        this.#mux.closeFocused();
+        this.#syncStatusbar();
+        return true;
+      }
+      if (key.name === "tab") {
+        key.preventDefault();
+        const children = this.#layout.children;
+        const focusedIndex = children.findIndex((node) => node.focused);
+        const next = children[(focusedIndex + 1) % children.length];
+        if (next) {
+          this.#mux.focusPane(next.id);
+        }
+        this.#syncStatusbar();
+        return true;
+      }
+      const prefixedDirection = key.name === "left" || key.name === "right" || key.name === "up" || key.name === "down" ? key.name : null;
+      if (prefixedDirection) {
+        key.preventDefault();
+        this.#mux.focusAdjacent(prefixedDirection);
+        this.#syncStatusbar();
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  #handleHostPrefixCapture(key: ReturnType<typeof readShellNextKeyEvent> & {}): boolean {
+    if (shouldShellNextSkipKey(key)) {
+      return false;
+    }
+    if (this.#topLayer.visible) {
+      return false;
     }
     if (key.ctrl && key.name === "b") {
       key.preventDefault();
       this.#prefixPending = true;
       return true;
     }
-    if (key.ctrl && key.name === "n") {
-      key.preventDefault();
-      this.splitFocusedShellRight();
-      this.#syncStatusbar();
-      return true;
-    }
-    if (key.ctrl && key.name === "w") {
-      key.preventDefault();
-      this.#mux.closeFocused();
-      this.#syncStatusbar();
-      return true;
-    }
-    if (key.name === "tab") {
-      key.preventDefault();
-      const children = this.#layout.children;
-      const focusedIndex = children.findIndex((node) => node.focused);
-      const next = children[(focusedIndex + 1) % children.length];
-      if (next) {
-        this.#mux.focusPane(next.id);
-      }
-      this.#syncStatusbar();
-      return true;
-    }
-    const direction = focusDirectionFromShiftArrow(key);
-    if (direction) {
-      key.preventDefault();
-      this.#mux.focusAdjacent(direction);
-      this.#syncStatusbar();
-      return true;
+    return false;
+  }
+
+  #handleTerminalKeypress(key: ReturnType<typeof readShellNextKeyEvent> & {}): boolean {
+    if (shouldShellNextSkipKey(key)) {
+      return false;
     }
     if (this.#mux.focusedNode?.sourceKind !== "terminal-protocol") {
       return false;

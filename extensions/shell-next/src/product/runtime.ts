@@ -1,4 +1,4 @@
-import type { AttentionQueryItem } from "@agenter/client-sdk";
+import type { AttentionQueryItem, RuntimeClientState } from "@agenter/client-sdk";
 import { ensureShellNextAuthenticated } from "./auth";
 import type { ShellNextRoomBootstrapResult } from "./bootstrap";
 import {
@@ -45,6 +45,62 @@ const attentionSummary = (items: readonly AttentionQueryItem[]): NonNullable<She
     }
   }
   return { focused, background, muted };
+};
+
+type ShellNextRuntimeModelCall = RuntimeClientState["modelCallsBySession"][string][number];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const readNonNegativeNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+
+const readUsageRecord = (value: unknown): Record<string, unknown> | null => {
+  const record = isRecord(value) ? value : null;
+  return record ? (isRecord(record.usage) ? record.usage : record) : null;
+};
+
+const readContextUsedTokens = (value: unknown): number | null => {
+  const usage = readUsageRecord(value);
+  if (!usage) {
+    return null;
+  }
+  return (
+    readNonNegativeNumber(usage.inputTokens) ??
+    readNonNegativeNumber(usage.promptTokens) ??
+    readNonNegativeNumber(usage.totalTokens)
+  );
+};
+
+const resolveAiContextSummary = (
+  state: Partial<RuntimeClientState>,
+  sessionId: string,
+): NonNullable<ShellNextAppInput["initialStatus"]>["aiContext"] => {
+  const calls: readonly ShellNextRuntimeModelCall[] = state.modelCallsBySession?.[sessionId] ?? [];
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const call = calls[index];
+    const maxTokens = readNonNegativeNumber(call.providerSnapshot?.maxContextTokens);
+    if (!maxTokens || maxTokens <= 0) {
+      continue;
+    }
+    const usedTokens = readContextUsedTokens(call.response) ?? readContextUsedTokens(call.outcome);
+    if (usedTokens === null) {
+      continue;
+    }
+    return {
+      usedTokens,
+      maxTokens,
+    };
+  }
+  return undefined;
+};
+
+const resolveRuntimeMacroLabel = (heartbeat: string): string => {
+  const normalized = heartbeat.trim();
+  if (!normalized || normalized.startsWith("Idle") || normalized.startsWith("\u25c9")) {
+    return "Idle";
+  }
+  return "Active";
 };
 
 const ensureAttachSelection = async (
@@ -134,6 +190,7 @@ const buildInitialStatus = async (input: {
     runtimeSessionId: input.attached.session.id,
     shellName: input.attached.binding.resourceKey,
   });
+  const state = input.store.getState() as Partial<RuntimeClientState>;
   const attention = await input.store
     .queryAttention({
       sessionId: input.attached.session.id,
@@ -146,8 +203,9 @@ const buildInitialStatus = async (input: {
       muted: 0,
     }));
   return {
-    runtime: { label: heartbeat.startsWith("Idle") ? "Idle" : heartbeat },
+    runtime: { label: resolveRuntimeMacroLabel(heartbeat) },
     attention,
+    aiContext: resolveAiContextSummary(state, input.attached.session.id),
     actions: ["Help", "Chat"],
   };
 };

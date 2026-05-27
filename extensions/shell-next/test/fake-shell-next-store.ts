@@ -140,6 +140,7 @@ export class FakeShellNextStore implements ShellNextStore {
   terminalArchive: GlobalTerminalEntry[] = [];
   terminalGrants = new Map<string, GlobalTerminalGrantEntry[]>();
   terminalApprovalRequests = new Map<string, GlobalTerminalApprovalRequest[]>();
+  modelCallsBySession: RuntimeClientState["modelCallsBySession"] = {};
   deletedSessions: string[] = [];
   deletedRoomIds: string[] = [];
   deletedTerminalIds: string[] = [];
@@ -650,7 +651,7 @@ export class FakeShellNextStore implements ShellNextStore {
     this.connected = false;
   }
 
-  getState(): Pick<RuntimeClientState, "globalRoomSnapshotsById" | "globalTerminalApprovalsById"> {
+  getState(): Pick<RuntimeClientState, "globalRoomSnapshotsById" | "globalTerminalApprovalsById" | "modelCallsBySession"> {
     const approvals = Object.fromEntries(
       [...this.terminalApprovalRequests.entries()].map(([terminalId, data]) => [
         terminalId,
@@ -667,6 +668,7 @@ export class FakeShellNextStore implements ShellNextStore {
     return {
       globalRoomSnapshotsById: {},
       globalTerminalApprovalsById: approvals,
+      modelCallsBySession: this.modelCallsBySession,
     };
   }
 
