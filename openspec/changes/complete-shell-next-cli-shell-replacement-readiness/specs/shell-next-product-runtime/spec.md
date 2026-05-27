@@ -76,7 +76,7 @@ Shell-next SHALL treat the attach-time `status` view as a single-view projection
 
 ### Requirement: Mixed host statusbar SHALL remain macro-only
 
-Shell-next mixed host mode SHALL not render Heartbeat preview detail in the bottom statusbar. The statusbar SHALL show macro attention/runtime facts and AI context usage, and SHALL expose Help/Chat as interactive actions.
+Shell-next mixed host mode SHALL not render Heartbeat preview detail in the bottom statusbar. The statusbar SHALL show macro attention/runtime facts and available AI context usage, and SHALL expose Help/Chat as interactive actions.
 
 #### Scenario: Mixed host statusbar omits Heartbeat preview prose
 
@@ -84,6 +84,13 @@ Shell-next mixed host mode SHALL not render Heartbeat preview detail in the bott
 - **THEN** the bottom statusbar shows `Idle · <focused> focused · <background> background · <muted> muted`
 - **AND** it may show `Context <percent> used`
 - **AND** it does not show AttentionItem preview strings or Heartbeat narrative text
+
+#### Scenario: Product attach strips Heartbeat preview text
+
+- **WHEN** product attach reads a non-idle Heartbeat preview and model call context facts
+- **THEN** shell-next projects a macro runtime label such as `Active`
+- **AND** it projects AI context usage from model-call token facts
+- **AND** it does not pass Heartbeat preview prose into the statusbar
 
 #### Scenario: Help and Chat are clickable statusbar actions
 
@@ -108,16 +115,22 @@ Terminal panes SHALL render a title bar derived from terminal source metadata an
 
 ### Requirement: Host shortcuts SHALL use Ctrl+B prefix
 
-Shell-next host actions SHALL reserve `Ctrl+B` as the default prefix key.
+Shell-next host actions SHALL reserve `Ctrl+B` as the default prefix key. Bare terminal chords SHALL be forwarded to the focused terminal pane unless a top-layer or focused renderer pane consumes them.
 
 #### Scenario: Prefix Help and Chat bindings
 
 - **WHEN** the user presses `Ctrl+B` then `H`, `?`, or `C`
 - **THEN** shell-next opens Help or Chat without forwarding those chords to the terminal pane
 
-### Requirement: Keyboard events SHALL route through a focus event path
+#### Scenario: Prefix layout bindings do not steal terminal chords
 
-Shell-next SHALL route keyboard events in this order: top-layer, focused pane, global host controls. A scope that handles a key SHALL mark it handled so later scopes cannot also consume it.
+- **WHEN** the user presses `Ctrl+B` then `N`, `W`, `Tab`, or an arrow key
+- **THEN** shell-next routes the corresponding split, close, or focus action through the host
+- **AND** when the user presses the same keys without the prefix, shell-next forwards them to the focused terminal pane
+
+### Requirement: Keyboard events SHALL route through a focusable event tree
+
+Shell-next SHALL route keyboard events through a DOM-like focusable node tree with capture, target, and bubble phases. Top-layer and pane content SHALL be target nodes, while global host controls SHALL live on the root capture/bubble node. A scope that handles a key SHALL mark it handled so later phases cannot also consume it.
 
 #### Scenario: Top-layer Esc does not leak to pane or global handlers
 
@@ -133,6 +146,12 @@ Shell-next SHALL route keyboard events in this order: top-layer, focused pane, g
 - **AND** the user presses `Esc`
 - **THEN** the Chat pane consumes the key and clears the draft
 - **AND** global host controls do not close or retarget the pane
+
+#### Scenario: Focus tree dispatch preserves phase ownership
+
+- **WHEN** shell-next dispatches a key to a focused nested pane node
+- **THEN** ancestor capture handlers run before the pane target
+- **AND** ancestor bubble handlers run only if the target did not consume the key
 
 ### Requirement: Shell-next testing SHALL prefer embedded compositor tests
 

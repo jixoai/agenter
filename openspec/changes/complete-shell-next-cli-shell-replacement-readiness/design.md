@@ -33,7 +33,7 @@ Therefore the correct architecture is:
 
 5. Statusbar is macro-only and action-oriented
 
-   Bottom statusbar no longer mirrors Heartbeat preview prose. It shows only macro runtime/attention facts on the left and AI context usage on the right side of the summary band. `Help` and `Chat` are explicit action targets, not inert text.
+   Bottom statusbar no longer mirrors Heartbeat preview prose. It shows only macro runtime/attention facts on the left and available AI context usage on the right side of the summary band. `Help` and `Chat` are explicit action targets, not inert text.
 
 6. Overlay is one plane, not separate ad-hoc dialogs
 
@@ -51,9 +51,9 @@ Therefore the correct architecture is:
 
    Shell-next terminal panes continue to use the copied terminal mirror and backend framebuffer renderable path. Paint commitment must flow back to the mirror, otherwise live projection can stall into a black pane even when snapshots exist.
 
-10. Event dispatch follows a focus path
+10. Event dispatch follows a focus tree
 
-   Keyboard events route through ordered scopes: top-layer first, focused pane second, global host controls last. Pane-scope handlers may consume Esc, composer keys, and renderer-pane copy/paste without leaking to global shortcuts. This is the first local equivalent of DOM capture/target/bubble, implemented with explicit focusable nodes rather than ad-hoc listeners on every surface. The next hardening step is to make that ordered path a real focus tree so nested dialog/pane/content nodes can register ownership without relying on flat priority.
+   Keyboard events route through a DOM-like focusable node tree. Root host law receives capture/bubble phases, while top-layer and pane content are target nodes. Pane-scope handlers may consume Esc, composer keys, and renderer-pane copy/paste without leaking to global shortcuts. Host controls use `Ctrl+B` prefix capture, so bare terminal chords remain terminal input instead of being stolen by the host.
 
 11. Testing standard stays local-first
 
