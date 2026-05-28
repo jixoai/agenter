@@ -25,6 +25,34 @@ const findSpan = (text: string) =>
     .lines.flatMap((line) => line.spans)
     .find((span) => span.text.includes(text));
 
+const readTextAttributesAt = (position: { x: number; y: number }, text: string): number => {
+  const line = activeRenderer?.captureSpans().lines[position.y];
+  let cursor = 0;
+  let attributes = 0;
+  for (const span of line?.spans ?? []) {
+    const spanStart = cursor;
+    const spanEnd = spanStart + span.width;
+    const targetStart = position.x;
+    const targetEnd = position.x + Bun.stringWidth(text);
+    if (spanEnd > targetStart && spanStart < targetEnd) {
+      attributes |= span.attributes;
+    }
+    cursor = spanEnd;
+  }
+  return attributes;
+};
+
+const findTextPosition = (frame: string, text: string): { x: number; y: number } | null => {
+  const rows = frame.split("\n");
+  for (let y = 0; y < rows.length; y += 1) {
+    const x = rows[y].indexOf(text);
+    if (x >= 0) {
+      return { x, y };
+    }
+  }
+  return null;
+};
+
 afterEach(() => {
   activeStatusbar?.destroy();
   activeStatusbar = null;
@@ -96,9 +124,16 @@ describe("Feature: shell-next macro statusbar", () => {
     await activeRenderer.mockMouse.moveTo(helpX, 2);
     await activeRenderer.renderOnce();
 
-    expect((findSpan("[Help]")?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
-    expect((findSpan("[Chat]")?.attributes ?? 0) & TextAttributes.BOLD).toBe(0);
-    expect(findSpan("[Help]")?.fg).toEqual(findSpan("[Chat]")?.fg);
+    const help = findTextPosition(activeRenderer.captureCharFrame(), "[Help]");
+    const chat = findTextPosition(activeRenderer.captureCharFrame(), "[Chat]");
+    expect(help).not.toBeNull();
+    expect(chat).not.toBeNull();
+
+    expect(readTextAttributesAt({ x: (help?.x ?? 0) + 1, y: help?.y ?? 0 }, "Help") & TextAttributes.BOLD).toBe(
+      TextAttributes.BOLD,
+    );
+    expect(readTextAttributesAt({ x: (chat?.x ?? 0) + 1, y: chat?.y ?? 0 }, "Chat") & TextAttributes.BOLD).toBe(0);
+    expect(findSpan("Help")?.fg).toEqual(findSpan("Chat")?.fg);
   });
 
   test("Scenario: Given a statusbar action is active When rendering Then the active button is underlined", async () => {
@@ -118,7 +153,41 @@ describe("Feature: shell-next macro statusbar", () => {
     }
     await activeRenderer.renderOnce();
 
-    expect((findSpan("[Chat]")?.attributes ?? 0) & TextAttributes.UNDERLINE).toBe(TextAttributes.UNDERLINE);
-    expect((findSpan("[Help]")?.attributes ?? 0) & TextAttributes.UNDERLINE).toBe(0);
+    const chat = findTextPosition(activeRenderer.captureCharFrame(), "[Chat]");
+    const help = findTextPosition(activeRenderer.captureCharFrame(), "[Help]");
+    expect(chat).not.toBeNull();
+    expect(help).not.toBeNull();
+
+    expect(readTextAttributesAt({ x: (chat?.x ?? 0) + 1, y: chat?.y ?? 0 }, "Chat") & TextAttributes.UNDERLINE).toBe(
+      TextAttributes.UNDERLINE,
+    );
+    expect(readTextAttributesAt({ x: (help?.x ?? 0) + 1, y: help?.y ?? 0 }, "Help") & TextAttributes.UNDERLINE).toBe(0);
+  });
+
+  test("Scenario: Given a statusbar action is active When rendering Then only the inner button content is underlined", async () => {
+    activeRenderer = await createTestRenderer({ width: 60, height: 3, useMouse: true });
+    activeStatusbar = new ShellNextStatusbarRenderable({
+      renderer: activeRenderer.renderer,
+      state: {
+        ...heartbeatState,
+        activeActions: ["help"],
+      },
+      x: 0,
+      y: 2,
+      width: 60,
+    });
+    for (const node of activeStatusbar.nodes) {
+      activeRenderer.renderer.root.add(node);
+    }
+    await activeRenderer.renderOnce();
+
+    const position = findTextPosition(activeRenderer.captureCharFrame(), "[Help]");
+    expect(position).not.toBeNull();
+
+    expect(readTextAttributesAt({ x: position?.x ?? 0, y: position?.y ?? 0 }, "[") & TextAttributes.UNDERLINE).toBe(0);
+    expect(readTextAttributesAt({ x: (position?.x ?? 0) + 1, y: position?.y ?? 0 }, "Help") & TextAttributes.UNDERLINE).toBe(
+      TextAttributes.UNDERLINE,
+    );
+    expect(readTextAttributesAt({ x: (position?.x ?? 0) + "[Help]".length - 1, y: position?.y ?? 0 }, "]") & TextAttributes.UNDERLINE).toBe(0);
   });
 });

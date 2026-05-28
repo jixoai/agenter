@@ -19,6 +19,7 @@ import type {
   TerminalPaneSize,
   TerminalProtocolPaneSource,
 } from "../renderable-mux/pane-source";
+import { ShellNextResizeSendScheduler } from "./resize-send-scheduler";
 
 const clampFrameWidth = (rect: LayoutRect): number => resolveBorderedPaneContentSize(rect).width;
 
@@ -63,6 +64,7 @@ export interface ShellNextFrameBufferTerminalPaneInput {
   readonly onFocus?: (paneId: string) => void;
   readonly onCloseRequest?: (paneId: string) => void;
   readonly onFrameRendered?: (event: PaneFrameRenderEvent) => void;
+  readonly resizeDebounceMs?: number;
 }
 
 export class ShellNextFrameBufferTerminalPane {
@@ -78,6 +80,7 @@ export class ShellNextFrameBufferTerminalPane {
   #title: string;
   #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
   #hoveredChromeAction: string | null = null;
+  readonly #resizeScheduler: ShellNextResizeSendScheduler;
 
   constructor(input: ShellNextFrameBufferTerminalPaneInput) {
     this.#renderer = input.renderer;
@@ -85,6 +88,10 @@ export class ShellNextFrameBufferTerminalPane {
     this.#node = input.node;
     this.#input = input;
     this.#title = input.title;
+    this.#resizeScheduler = new ShellNextResizeSendScheduler({
+      delayMs: input.resizeDebounceMs ?? 200,
+      send: (size) => this.#source.resize(size),
+    });
     this.#chrome = new ShellNextPaneChromeController({
       renderer: this.#renderer,
       id: `${input.node.id}-framebuffer-terminal-chrome`,
@@ -166,8 +173,13 @@ export class ShellNextFrameBufferTerminalPane {
     this.#frame.syncSize(frameWidth, frameHeight);
     const size = sanitizeSize(node.rect);
     if (!this.#lastSize || this.#lastSize.cols !== size.cols || this.#lastSize.rows !== size.rows) {
+      const firstSize = this.#lastSize === null;
       this.#lastSize = size;
-      void this.#source.resize(size);
+      if (firstSize) {
+        void this.#source.resize(size);
+      } else {
+        this.#resizeScheduler.schedule(size);
+      }
     }
     this.refresh();
   }
@@ -215,6 +227,7 @@ export class ShellNextFrameBufferTerminalPane {
       return;
     }
     this.#disposed = true;
+    this.#resizeScheduler.dispose();
     this.#chrome.destroy();
     this.#root.destroyRecursively();
     void this.#source.dispose();

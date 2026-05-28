@@ -67,6 +67,7 @@ export interface ShellNextAppInput {
   readonly showTopLayer?: boolean;
   readonly showStatusbar?: boolean;
   readonly syncStatusbarWithLayout?: boolean;
+  readonly terminalResizeDebounceMs?: number;
   readonly terminalPaneFactory?: TerminalPaneFactory;
   readonly terminalSourcePolicy?: ShellNextTerminalSourcePolicy;
   readonly onTerminalSplitUnavailable?: (reason: string) => void;

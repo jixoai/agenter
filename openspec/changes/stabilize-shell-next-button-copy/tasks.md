@@ -120,3 +120,34 @@
 - [x] 15.6 Run `git diff --check`.
 - [x] 15.7 Confirm `git diff -- extensions/cli-shell` is empty.
 - [x] 15.8 Commit the completed second rework and leave `git status --short` clean.
+
+## 16. Third Rework Reopen And BDD
+
+- [x] 16.1 Record the 2026-05-29 original intent verbatim in proposal/design/spec/audit, including: selection must not be owned in Shell view, Help/Chat active state drift, active style must not decorate bracket borders, and dual-layer resize law.
+- [x] 16.2 Re-open the change state explicitly instead of pretending the previous all-done status still matches the user intent.
+- [x] 16.3 Add failing BDD scenarios for top-layer `200ms` resize debounce combined with bottom-layer latest-only conflation.
+- [x] 16.4 Add failing BDD scenarios proving active button styling decorates inner content only, not bracket borders.
+- [x] 16.5 Add failing BDD scenarios proving ShellPane selection ownership no longer relies on Shell/OpenTUI view-layer state as durable truth.
+
+## 17. Third Rework Implementation
+
+- [x] 17.1 Introduce a product-facing resize send scheduler with `200ms` debounce above terminal source/backend conflation.
+- [x] 17.2 Keep bottom-layer latest-only resize conflation at the backend boundary and verify the two layers do not collapse into one responsibility.
+- [x] 17.3 Move remaining ShellPane selection gesture/state ownership out of the Shell/OpenTUI frame layer and into shell-next terminal-kernel-owned modules.
+- [x] 17.4 Fix shared Button rendering so hover/active styling decorates inner content only while brackets remain plain.
+- [x] 17.5 Apply that corrected Button law consistently to statusbar Help/Chat and pane/dialog title actions.
+
+## 18. Third Rework Verification And Self Review
+
+- [x] 18.1 Self review round 1: compare implementation against the user's five 2026-05-29 bullets in plain language.
+- [x] 18.2 Self review round 2: compare resize implementation against the exact top-layer debounce plus bottom-layer conflation wording.
+- [x] 18.3 Self review round 3: compare selection ownership against the "cannot solve scroll semantics in Shell layer" requirement.
+- [x] 18.4 Self review round 4: compare shared Button behavior across statusbar, pane titlebars, and dialogs.
+- [x] 18.5 Self review round 5: merge the round notes into one drift list and one encountered-problems list.
+- [x] 18.6 Run `openspec validate stabilize-shell-next-button-copy --strict`.
+- [x] 18.7 Run focused shell-next BDD covering resize, button rendering, and selection ownership.
+- [x] 18.8 Run `bun run --filter 'agenter-ext-shell-next' test`.
+- [x] 18.9 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
+- [x] 18.10 Run `git diff --check`.
+- [x] 18.11 Confirm `git diff -- extensions/cli-shell` is empty.
+- [ ] 18.12 Commit spec updates separately from implementation and leave `git status --short` clean after the final implementation commit.

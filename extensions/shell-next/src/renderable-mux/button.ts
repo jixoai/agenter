@@ -25,6 +25,12 @@ export interface ShellNextButtonTextInput {
 
 export type ShellNextButtonTextPart = string | ShellNextButtonTextInput;
 
+interface NormalizedShellNextButtonSegments {
+  readonly left: string;
+  readonly content: string;
+  readonly right: string;
+}
+
 export const normalizeShellNextButtonLabel = (label: string): string => {
   const trimmed = label.trim();
   if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
@@ -34,6 +40,22 @@ export const normalizeShellNextButtonLabel = (label: string): string => {
 };
 
 export const shellNextButtonWidth = (label: string): number => Bun.stringWidth(normalizeShellNextButtonLabel(label));
+
+export const splitShellNextButtonLabel = (label: string): NormalizedShellNextButtonSegments => {
+  const normalized = normalizeShellNextButtonLabel(label);
+  if (normalized.length < 2) {
+    return {
+      left: "",
+      content: normalized,
+      right: "",
+    };
+  }
+  return {
+    left: normalized[0] ?? "",
+    content: normalized.slice(1, -1),
+    right: normalized.at(-1) ?? "",
+  };
+};
 
 export const resolveShellNextButtonAttributes = (button: {
   readonly active?: boolean;
@@ -51,6 +73,21 @@ export const buildShellNextButtonChunk = (input: ShellNextButtonTextInput): Text
   attributes: resolveShellNextButtonAttributes(input.button),
 });
 
+export const buildShellNextButtonChunks = (input: ShellNextButtonTextInput): TextChunk[] => {
+  const segments = splitShellNextButtonLabel(input.button.label);
+  const attributes = resolveShellNextButtonAttributes(input.button);
+  return [
+    buildShellNextPlainChunk(segments.left, input.fg),
+    {
+      __isChunk: true,
+      text: segments.content,
+      fg: input.fg,
+      attributes,
+    },
+    buildShellNextPlainChunk(segments.right, input.fg),
+  ];
+};
+
 export const buildShellNextPlainChunk = (text: string, fg: RGBA): TextChunk => ({
   __isChunk: true,
   text,
@@ -63,9 +100,7 @@ export const buildShellNextButtonStyledText = (
   fallbackFg: RGBA,
 ): StyledText =>
   new StyledText(
-    parts.map((part) =>
-      typeof part === "string" ? buildShellNextPlainChunk(part, fallbackFg) : buildShellNextButtonChunk(part),
-    ),
+    parts.flatMap((part) => (typeof part === "string" ? [buildShellNextPlainChunk(part, fallbackFg)] : buildShellNextButtonChunks(part))),
   );
 
 export const resolveShellNextButtonAt = (

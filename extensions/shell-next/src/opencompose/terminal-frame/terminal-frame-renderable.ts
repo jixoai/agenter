@@ -4,7 +4,10 @@ import { BoxRenderable, type BoxOptions, type MouseEvent, type PasteEvent, type 
 
 import { OpenComposeScrollbarRenderable } from "./scrollbar-renderable";
 import { isOpenComposeImagePastePayload, readOpenComposePastePayload, type OpenComposePastePayload } from "./paste-input";
-import { OpenComposeTerminalViewRenderable } from "./terminal-view-renderable";
+import {
+  OpenComposeTerminalViewRenderable,
+  type OpenComposeTerminalSelectionPointHandler,
+} from "./terminal-view-renderable";
 
 export interface OpenComposeTerminalFrameState {
   lines: readonly TerminalRenderRichLine[];
@@ -23,12 +26,12 @@ export interface OpenComposeTerminalFrameBridge {
   setViewportStart(viewportStart: number): boolean;
   followCursor?: () => boolean;
   copySelection?: (ownerId?: string, target?: "clipboard" | "primary") => boolean;
-  selectionStart?: ConstructorParameters<typeof OpenComposeTerminalViewRenderable>[1]["onSelectionStart"];
-  selectionUpdate?: ConstructorParameters<typeof OpenComposeTerminalViewRenderable>[1]["onSelectionUpdate"];
-  selectionEnd?: ConstructorParameters<typeof OpenComposeTerminalViewRenderable>[1]["onSelectionEnd"];
+  selectionStart?: OpenComposeTerminalSelectionPointHandler;
+  selectionUpdate?: OpenComposeTerminalSelectionPointHandler;
+  selectionEnd?: OpenComposeTerminalSelectionPointHandler;
   selectWordAt?: ConstructorParameters<typeof OpenComposeTerminalViewRenderable>[1]["onSelectWordAt"];
   selectLineAt?: ConstructorParameters<typeof OpenComposeTerminalViewRenderable>[1]["onSelectLineAt"];
-  clearSelection?: ConstructorParameters<typeof OpenComposeTerminalViewRenderable>[1]["onClearSelection"];
+  clearSelection?: OpenComposeTerminalSelectionPointHandler;
 }
 
 export interface OpenComposeTerminalFrameUpdateResult {

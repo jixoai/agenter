@@ -66,4 +66,28 @@ describe("Feature: shell-next terminal source resize scheduling", () => {
     expect(delivered).toEqual([{ cols: 100, rows: 30 }]);
     dispatcher.dispose();
   });
+
+  test("Scenario: Given multiple resize requests inside a 200ms debounce window When no new request survives past the window Then nothing is delivered early", async () => {
+    const delivered: TerminalPaneSize[] = [];
+    const dispatcher = new ConflatedResizeDispatcher({
+      delayMs: 200,
+      deliver: (size) => {
+        delivered.push(size);
+      },
+    });
+
+    dispatcher.resize({ cols: 90, rows: 20 });
+    await wait(50);
+    dispatcher.resize({ cols: 92, rows: 20 });
+    await wait(50);
+    dispatcher.resize({ cols: 94, rows: 20 });
+    await wait(50);
+
+    expect(delivered).toEqual([]);
+
+    await wait(80);
+
+    expect(delivered).toEqual([{ cols: 94, rows: 20 }]);
+    dispatcher.dispose();
+  });
 });

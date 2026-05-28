@@ -3,12 +3,9 @@ import {
   MouseButton,
   RGBA,
   TextAttributes,
-  convertGlobalToLocalSelection,
   type FrameBufferOptions,
-  type LocalSelectionBounds,
   type MouseEvent,
   type RenderContext,
-  type Selection,
 } from "@opentui/core";
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import type {
@@ -72,10 +69,6 @@ export interface OpenComposeFrameRenderableOptions extends FrameBufferOptions {
   selectionBg?: RGBA;
   interactionProfile?: OpenComposeInteractionEnhancementProfile;
   semanticClickMaxDistanceCells?: number;
-  onSelectionStart?: (point: TerminalTransportOwnerCoordinate) => boolean;
-  onSelectionUpdate?: (point: TerminalTransportOwnerCoordinate) => boolean;
-  onSelectionEnd?: (point: TerminalTransportOwnerCoordinate) => boolean;
-  onClearSelection?: (point: TerminalTransportOwnerCoordinate) => boolean;
   onSelectWordAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
   onSelectLineAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
   onInteractionTrace?: (event: OpenComposeFrameInteractionTraceEvent) => void;
@@ -140,11 +133,6 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
   #interactionProfile: OpenComposeInteractionEnhancementProfile;
   #semanticClickMaxDistanceCells: number;
   #cursor: { row: number; col: number; visible: boolean } | null = null;
-  #activeSelectionOwnerId: string | null = null;
-  #lastSelectionPoint: TerminalTransportOwnerCoordinate | null = null;
-  #pendingDragAnchor: TerminalTransportOwnerCoordinate | null = null;
-  #dragBridgeActive = false;
-  #skipNextOpenTuiSelectionFinish = false;
   #lastClick: OpenComposeFrameClickTracker | null = null;
   #lastPaintStats: OpenComposeFramePaintStats = {
     durationMs: 0,
@@ -152,10 +140,6 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     spans: 0,
     glyphs: 0,
   };
-  #onSelectionStart?: (point: TerminalTransportOwnerCoordinate) => boolean;
-  #onSelectionUpdate?: (point: TerminalTransportOwnerCoordinate) => boolean;
-  #onSelectionEnd?: (point: TerminalTransportOwnerCoordinate) => boolean;
-  #onClearSelection?: (point: TerminalTransportOwnerCoordinate) => boolean;
   #onSelectWordAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
   #onSelectLineAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
   #onInteractionTrace?: (event: OpenComposeFrameInteractionTraceEvent) => void;
@@ -163,7 +147,7 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
   constructor(ctx: RenderContext, options: OpenComposeFrameRenderableOptions) {
     super(ctx, options);
     this.focusable = true;
-    this.selectable = true;
+    this.selectable = false;
     this.onMouseScroll = options.onMouseScroll;
     this.#lines = options.lines;
     this.#selectionRegion = options.selectionRegion ?? null;
@@ -173,34 +157,13 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     this.#selectionBg = options.selectionBg ?? DEFAULT_SELECTION_BG;
     this.#interactionProfile = options.interactionProfile ?? OPENCOMPOSE_DEFAULT_INTERACTION_PROFILE;
     this.#semanticClickMaxDistanceCells = normalizeSemanticClickMaxDistance(options.semanticClickMaxDistanceCells);
-    this.#onSelectionStart = options.onSelectionStart;
-    this.#onSelectionUpdate = options.onSelectionUpdate;
-    this.#onSelectionEnd = options.onSelectionEnd;
-    this.#onClearSelection = options.onClearSelection;
     this.#onSelectWordAt = options.onSelectWordAt;
     this.#onSelectLineAt = options.onSelectLineAt;
     this.#onInteractionTrace = options.onInteractionTrace;
-    const userMouseDown = options.onMouseDown;
-    const userMouseDrag = options.onMouseDrag;
-    const userMouseDragEnd = options.onMouseDragEnd;
-    const userMouseUp = options.onMouseUp;
-    this.onMouseDown = (event) => {
-      this.handleSemanticMouseDown(event);
-      this.handleBackendDragMouseDown(event);
-      userMouseDown?.(event);
-    };
-    this.onMouseDrag = (event) => {
-      this.handleBackendDragMouseDrag(event);
-      userMouseDrag?.(event);
-    };
-    this.onMouseDragEnd = (event) => {
-      this.handleBackendDragMouseEnd(event);
-      userMouseDragEnd?.(event);
-    };
-    this.onMouseUp = (event) => {
-      this.handleBackendDragMouseEnd(event);
-      userMouseUp?.(event);
-    };
+    this.onMouseDown = options.onMouseDown;
+    this.onMouseDrag = options.onMouseDrag;
+    this.onMouseDragEnd = options.onMouseDragEnd;
+    this.onMouseUp = options.onMouseUp;
     this.paintBackendFrame();
   }
 
@@ -216,9 +179,6 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
 
   set selectionRegions(selectionRegions: readonly OpenComposeSelectionRegion[] | undefined) {
     this.#selectionRegions = selectionRegions ?? [];
-    if (this.#activeSelectionOwnerId && !this.#selectionRegions.some((region) => region.owner === this.#activeSelectionOwnerId)) {
-      this.#activeSelectionOwnerId = null;
-    }
     this.paintAndRequestRender();
   }
 
@@ -229,7 +189,6 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
 
   set selectionOverlays(selectionOverlays: readonly TerminalTransportSelectionOverlay[] | undefined) {
     this.#selectionOverlays = selectionOverlays ?? [];
-    this.#activeSelectionOwnerId = this.#selectionOverlays[0]?.ownerId ?? null;
     this.paintAndRequestRender();
   }
 
@@ -251,16 +210,12 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     }
     if ("selectionRegions" in update) {
       this.#selectionRegions = update.selectionRegions ?? [];
-      if (this.#activeSelectionOwnerId && !this.#selectionRegions.some((region) => region.owner === this.#activeSelectionOwnerId)) {
-        this.#activeSelectionOwnerId = null;
-      }
     }
     if ("selectionSources" in update) {
       this.#selectionSources = update.selectionSources ?? [];
     }
     if ("selectionOverlays" in update) {
       this.#selectionOverlays = update.selectionOverlays ?? [];
-      this.#activeSelectionOwnerId = this.#selectionOverlays[0]?.ownerId ?? null;
     }
     if (update.selectionBg) {
       this.#selectionBg = update.selectionBg;
@@ -284,47 +239,12 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     this.paintBackendFrame();
   }
 
-  shouldStartSelection(x: number, y: number): boolean {
-    const point = this.globalToOwnerCoordinate(x, y);
-    if (!point) {
-      return false;
-    }
-    this.#pendingDragAnchor = point;
-    this.#activeSelectionOwnerId = point.ownerId;
-    this.#lastSelectionPoint = null;
+  shouldStartSelection(_x: number, _y: number): boolean {
     return true;
   }
 
-  onSelectionChanged(selection: Selection | null): boolean {
-    if (this.#pendingDragAnchor || this.#dragBridgeActive) {
-      return this.hasSelection();
-    }
-    if (this.#skipNextOpenTuiSelectionFinish && (!selection?.isActive || selection.isDragging === false)) {
-      this.#skipNextOpenTuiSelectionFinish = false;
-      return this.hasSelection();
-    }
-    this.traceSelectionChange(selection);
-    const localSelection =
-      selection?.isDragging || (selection?.isActive && !selection.isStart)
-        ? convertGlobalToLocalSelection(selection, this.x, this.y)
-        : null;
-    const sent = this.routeSelectionChange(localSelection);
-    if (!selection?.isActive || selection.isDragging === false) {
-      const ended = this.#lastSelectionPoint ? (this.#onSelectionEnd?.(this.#lastSelectionPoint) ?? false) : false;
-      if (ended && this.#lastSelectionPoint) {
-        this.traceInteraction("selection-drag-ended", {
-          type: "drag-end",
-          button: MouseButton.LEFT,
-          x: this.x + this.#lastSelectionPoint.col,
-          y: this.y + this.#lastSelectionPoint.row,
-        }, this.#lastSelectionPoint, { reason: "opentui-selection-finished" });
-      }
-      this.#activeSelectionOwnerId = null;
-      this.#lastSelectionPoint = null;
-      this.#pendingDragAnchor = null;
-      return sent || ended || this.hasSelection();
-    }
-    return sent || this.hasSelection();
+  onSelectionChanged(_selection: unknown): boolean {
+    return this.hasSelection();
   }
 
   hasSelection(): boolean {
@@ -332,7 +252,7 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
   }
 
   getSelectionOwner(): OpenComposeSelectionRegion["owner"] | null {
-    const ownerId = this.#selectionOverlays[0]?.ownerId ?? this.#activeSelectionOwnerId;
+    const ownerId = this.#selectionOverlays[0]?.ownerId ?? null;
     return ownerId === "terminal" || ownerId === "dialogue" ? ownerId : null;
   }
 
@@ -505,33 +425,11 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     return { x, y, width, height, owner: region.owner };
   }
 
-  private routeSelectionChange(selection: LocalSelectionBounds | null): boolean {
-    if (!selection?.isActive) {
-      return false;
-    }
-    const anchor = this.localToOwnerCoordinate(selection.anchorX, selection.anchorY, this.#activeSelectionOwnerId);
-    const focus = this.localToOwnerCoordinate(selection.focusX, selection.focusY, anchor?.ownerId ?? null);
-    if (!anchor || !focus || anchor.ownerId !== focus.ownerId) {
-      return false;
-    }
-    const moved = focus.row !== anchor.row || focus.col !== anchor.col;
-    if (!moved && this.#pendingDragAnchor) {
-      return false;
-    }
-    if (!this.#lastSelectionPoint) {
-      this.#onSelectionStart?.(anchor);
-    }
-    this.#pendingDragAnchor = null;
-    this.#activeSelectionOwnerId = anchor.ownerId;
-    this.#lastSelectionPoint = focus;
-    return this.#onSelectionUpdate?.(focus) ?? false;
-  }
-
-  private globalToOwnerCoordinate(globalX: number, globalY: number): TerminalTransportOwnerCoordinate | null {
+  protected globalToOwnerCoordinate(globalX: number, globalY: number): TerminalTransportOwnerCoordinate | null {
     return this.localToOwnerCoordinate(Math.trunc(globalX - this.x), Math.trunc(globalY - this.y), null);
   }
 
-  private localToOwnerCoordinate(
+  protected localToOwnerCoordinate(
     localX: number,
     localY: number,
     expectedOwnerId: string | null,
@@ -558,11 +456,11 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     };
   }
 
-  private resolveSelectionSourceForOwner(ownerId: string): OpenComposeSelectionSource | null {
+  protected resolveSelectionSourceForOwner(ownerId: string): OpenComposeSelectionSource | null {
     return this.#selectionSources.find((source) => source.owner === ownerId) ?? null;
   }
 
-  private handleSemanticMouseDown(event: MouseEvent): void {
+  protected handleSemanticMouseDown(event: MouseEvent): void {
     if (event.button !== MouseButton.LEFT) {
       return;
     }
@@ -583,83 +481,14 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     }
   }
 
-  private handleBackendDragMouseDown(event: MouseEvent): void {
-    if (event.button !== MouseButton.LEFT) {
-      return;
-    }
-    const point = this.eventToOwnerCoordinate(event, null);
-    this.traceInteraction("selection-mouse-captured", event, point, {
-      reason: point ? "pending" : "outside-owner",
-    });
-    this.#pendingDragAnchor = point;
-    this.#dragBridgeActive = false;
-    this.#skipNextOpenTuiSelectionFinish = false;
-    if (point) {
-      this.#activeSelectionOwnerId = point.ownerId;
-      this.#lastSelectionPoint = null;
-    }
-  }
-
-  private handleBackendDragMouseDrag(event: MouseEvent): void {
-    if (event.button !== MouseButton.LEFT) {
-      return;
-    }
-    const anchor = this.#pendingDragAnchor;
-    if (!anchor) {
-      this.traceInteraction("selection-drag-cancelled", event, null, { reason: "no-anchor" });
-      return;
-    }
-    const focus = this.eventToOwnerCoordinate(event, anchor.ownerId);
-    if (!focus) {
-      this.traceInteraction("selection-drag-cancelled", event, anchor, { reason: "outside-anchor-owner" });
-      return;
-    }
-    const moved = focus.row !== anchor.row || focus.col !== anchor.col;
-    if (!moved && !this.#dragBridgeActive) {
-      this.traceInteraction("selection-drag-pending", event, focus, { reason: "same-cell" });
-      return;
-    }
-    if (!this.#dragBridgeActive) {
-      this.#activeSelectionOwnerId = anchor.ownerId;
-      this.#lastSelectionPoint = anchor;
-      this.#onSelectionStart?.(anchor);
-      this.#dragBridgeActive = true;
-      this.traceInteraction("selection-drag-started", event, anchor);
-    }
-    this.#lastSelectionPoint = focus;
-    this.#onSelectionUpdate?.(focus);
-    this.traceInteraction("selection-drag-updated", event, focus);
-    event.preventDefault();
-  }
-
-  private handleBackendDragMouseEnd(event: MouseEvent): void {
-    const focus = this.#lastSelectionPoint;
-    if (this.#dragBridgeActive && focus) {
-      this.#onSelectionEnd?.(focus);
-      this.traceInteraction("selection-drag-ended", event, focus);
-      event.preventDefault();
-    } else if (this.#pendingDragAnchor) {
-      const anchor = this.#pendingDragAnchor;
-      this.traceInteraction("selection-drag-cancelled", event, anchor, { reason: "released-before-drag" });
-      if (this.hasSelection() && this.#onClearSelection?.(anchor)) {
-        this.traceInteraction("selection-clear-requested", event, anchor);
-        event.preventDefault();
-      }
-    }
-    this.#pendingDragAnchor = null;
-    this.#dragBridgeActive = false;
-    this.#lastSelectionPoint = null;
-    this.#skipNextOpenTuiSelectionFinish = true;
-  }
-
-  private eventToOwnerCoordinate(
+  protected eventToOwnerCoordinate(
     event: MouseEvent,
     expectedOwnerId: string | null,
   ): TerminalTransportOwnerCoordinate | null {
     return this.localToOwnerCoordinate(Math.trunc(event.x - this.x), Math.trunc(event.y - this.y), expectedOwnerId);
   }
 
-  private traceInteraction(
+  protected traceInteraction(
     kind: OpenComposeFrameInteractionTraceEvent["kind"],
     event: Pick<MouseEvent, "type" | "button" | "x" | "y">,
     point: TerminalTransportOwnerCoordinate | null,
@@ -680,34 +509,6 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
             }
           : null),
         ...extra,
-      },
-    });
-  }
-
-  private traceSelectionChange(selection: Selection | null): void {
-    const anchor = selection ? this.globalToOwnerCoordinate(selection.anchor.x, selection.anchor.y) : null;
-    const focus = selection ? this.globalToOwnerCoordinate(selection.focus.x, selection.focus.y) : null;
-    this.#onInteractionTrace?.({
-      kind: "selection-opentui-changed",
-      detail: {
-        eventType: selection
-          ? selection.isStart
-            ? "start"
-            : selection.isDragging
-              ? "drag"
-              : "end"
-          : "clear",
-        ownerId: focus?.ownerId ?? anchor?.ownerId,
-        row: focus?.row ?? anchor?.row,
-        col: focus?.col ?? anchor?.col,
-        reason:
-          selection === null
-            ? "selection-null"
-            : selection.isStart
-              ? "selection-start"
-              : selection.isDragging
-                ? "selection-dragging"
-                : "selection-finished",
       },
     });
   }

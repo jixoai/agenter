@@ -463,6 +463,7 @@ const startApp = async (
   };
   const app = new ShellNextApp({
     renderer: setup.renderer as TestRenderer,
+    terminalResizeDebounceMs: 25,
     terminalSourcePolicy: {
       createInitialSource: createTestTerminalSource,
       createSplitSource: createTestTerminalSource,
@@ -524,7 +525,7 @@ const readTextAttributesAt = (setup: TestSetup, position: { x: number; y: number
 };
 
 const waitForTerminalResizeDebounce = async (setup: TestSetup): Promise<void> => {
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await new Promise((resolve) => setTimeout(resolve, 80));
   await setup.renderOnce();
 };
 
@@ -1057,6 +1058,23 @@ describe("Feature: shell-next app runtime", () => {
     );
   });
 
+  test("Scenario: Given product surfaces are open When statusbar renders Then bracket borders stay plain while only inner content is active", async () => {
+    const { setup } = await startApp();
+
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("h");
+    await setup.renderOnce();
+
+    const help = findTextPosition(setup.captureCharFrame(), "[Help]");
+    expect(help).not.toBeNull();
+
+    expect(readTextAttributesAt(setup, { x: help?.x ?? 0, y: help?.y ?? 0 }, "[") & TextAttributes.UNDERLINE).toBe(0);
+    expect(readTextAttributesAt(setup, { x: (help?.x ?? 0) + 1, y: help?.y ?? 0 }, "Help") & TextAttributes.UNDERLINE).toBe(
+      TextAttributes.UNDERLINE,
+    );
+    expect(readTextAttributesAt(setup, { x: (help?.x ?? 0) + "[Help]".length - 1, y: help?.y ?? 0 }, "]") & TextAttributes.UNDERLINE).toBe(0);
+  });
+
   for (const shortcut of [
     { label: "Meta+C", options: { meta: true } },
     { label: "Super+C", options: { super: true } },
@@ -1116,6 +1134,15 @@ describe("Feature: shell-next app runtime", () => {
     expect(recordings[0].selectionEvents.map((event) => event.type)).toContain("end");
     expect(recordings[0].selectionEvents.every((event) => event.point.ownerId === "terminal")).toBe(true);
     expect(recordings[0].selectionEvents[0]?.point).toEqual({ ownerId: "terminal", row: 0, col: 1 });
+  });
+
+  test("Scenario: Given a shell pane terminal frame When rendered Then ShellPane selection does not rely on OpenTUI selectable state", async () => {
+    const { setup } = await startApp();
+    const terminalFrame = setup.renderer.root.findDescendantById("pane-1-framebuffer-terminal-frame") as
+      | OpenComposeTerminalFrameRenderable
+      | undefined;
+    expect(terminalFrame).toBeInstanceOf(OpenComposeTerminalFrameRenderable);
+    expect(terminalFrame?.terminalView.selectable).toBe(false);
   });
 
   test("Scenario: Given a shell pane drag selection When the backend selection ends Then shell-next mirrors it to the primary selection", async () => {

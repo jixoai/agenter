@@ -118,6 +118,7 @@ export class ShellNextApp implements ShellNextAppController {
             : node.id
           : node.id,
       terminalPaneFactory: input.terminalPaneFactory ?? createShellNextFrameBufferTerminalPane,
+      terminalResizeDebounceMs: input.terminalResizeDebounceMs,
       onFocus: () => {
         this.#floatingFocusId = null;
         this.#syncFloatingSurfaces();

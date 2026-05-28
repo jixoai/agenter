@@ -28,6 +28,7 @@ export interface TerminalPaneFactoryInput {
   readonly source: TerminalProtocolPaneSource;
   readonly title: string;
   readonly sendInputText?: (text: string) => boolean;
+  readonly resizeDebounceMs?: number;
   readonly onFocus: (paneId: string) => void;
   readonly onCloseRequest?: (paneId: string) => void;
   readonly onFrameRendered?: (event: PaneFrameRenderEvent) => void;
@@ -55,6 +56,7 @@ export interface ShellNextMuxRenderableInput {
   titleForPane?: (node: ChildLayoutNode, source: PaneSource) => string;
   terminalPaneFactory?: TerminalPaneFactory;
   sendTerminalInputText?: (paneId: string, text: string) => boolean;
+  terminalResizeDebounceMs?: number;
   onFocus?: (paneId: string) => void;
   onCloseRequest?: (paneId: string) => void;
   onFrameRendered?: (event: PaneFrameRenderEvent) => void;
@@ -307,6 +309,7 @@ export class ShellNextMuxRenderable {
         source: protocol,
         title: this.#input.titleForPane?.(node, source) ?? node.id,
         sendInputText: (text) => this.#input.sendTerminalInputText?.(node.id, text) ?? protocol.writeInput(text),
+        resizeDebounceMs: this.#input.terminalResizeDebounceMs,
         onFocus: (paneId) => this.focusPane(paneId),
         onCloseRequest: this.#input.onCloseRequest,
         onFrameRendered: this.#input.onFrameRendered,

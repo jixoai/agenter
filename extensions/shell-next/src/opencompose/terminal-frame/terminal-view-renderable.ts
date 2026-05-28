@@ -2,6 +2,7 @@ import { MouseButton, RGBA, TextAttributes, type FrameBufferOptions, type MouseE
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import type { TerminalTransportSelectionOverlay } from "@agenter/terminal-transport-protocol";
 
+import { ShellNextTerminalDragSelectionController } from "../../terminal-engine/drag-selection-controller";
 import { OpenComposeFrameRenderable } from "./frame-renderable";
 import { fitTerminalText } from "./cell-width";
 import type { OpenComposeInteractionEnhancementProfile } from "./interaction-capabilities";
@@ -21,6 +22,8 @@ const OVERLAY_ACTION_BG = RGBA.fromHex("#1e293b");
 const OVERLAY_APPROVE_BG = RGBA.fromHex("#166534");
 const OVERLAY_DENY_BG = RGBA.fromHex("#7f1d1d");
 const DEFAULT_APPROVAL_LEASE_DURATION_MS = 30 * 60 * 1000;
+
+export type OpenComposeTerminalSelectionPointHandler = (point: { ownerId: string; row: number; col: number }) => boolean;
 
 interface OpenComposeTerminalApprovalActionRegion {
   action: OpenComposeTerminalApprovalActionDetail["action"];
@@ -56,12 +59,12 @@ export interface OpenComposeTerminalViewOptions extends FrameBufferOptions {
   selectionOverlays?: readonly TerminalTransportSelectionOverlay[];
   interactionProfile?: OpenComposeInteractionEnhancementProfile;
   semanticClickMaxDistanceCells?: number;
-  onSelectionStart?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onSelectionStart"];
-  onSelectionUpdate?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onSelectionUpdate"];
-  onSelectionEnd?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onSelectionEnd"];
+  onSelectionStart?: OpenComposeTerminalSelectionPointHandler;
+  onSelectionUpdate?: OpenComposeTerminalSelectionPointHandler;
+  onSelectionEnd?: OpenComposeTerminalSelectionPointHandler;
   onSelectWordAt?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onSelectWordAt"];
   onSelectLineAt?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onSelectLineAt"];
-  onClearSelection?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onClearSelection"];
+  onClearSelection?: OpenComposeTerminalSelectionPointHandler;
   onInteractionTrace?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onInteractionTrace"];
   onMouseDown?: OpenComposeFrameRenderable["onMouseDown"];
   onMouseDrag?: OpenComposeFrameRenderable["onMouseDrag"];
@@ -78,9 +81,40 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
   #permissionRequestHandlerFingerprints = new Map<string, string>();
   #customHandledPermissionRequestIds = new Set<string>();
   #approvalActionRegions: OpenComposeTerminalApprovalActionRegion[] = [];
+  readonly #dragSelection: ShellNextTerminalDragSelectionController;
 
   constructor(ctx: RenderContext, options: OpenComposeTerminalViewOptions) {
     super(ctx, options);
+    this.#dragSelection = new ShellNextTerminalDragSelectionController({
+      hasSelection: () => this.hasSelection(),
+      eventToOwnerCoordinate: (event, expectedOwnerId) => this.eventToOwnerCoordinate(event as MouseEvent, expectedOwnerId),
+      onSelectionStart: options.onSelectionStart,
+      onSelectionUpdate: options.onSelectionUpdate,
+      onSelectionEnd: options.onSelectionEnd,
+      onClearSelection: options.onClearSelection,
+      trace: (kind, event, point, extra) => this.traceInteraction(kind, event, point, extra),
+    });
+    const userMouseDown = options.onMouseDown;
+    const userMouseDrag = options.onMouseDrag;
+    const userMouseDragEnd = options.onMouseDragEnd;
+    const userMouseUp = options.onMouseUp;
+    this.onMouseDown = (event) => {
+      this.handleSemanticMouseDown(event);
+      this.#dragSelection.handleMouseDown(event);
+      userMouseDown?.(event);
+    };
+    this.onMouseDrag = (event) => {
+      this.#dragSelection.handleMouseDrag(event);
+      userMouseDrag?.(event);
+    };
+    this.onMouseDragEnd = (event) => {
+      this.#dragSelection.handleMouseEnd(event);
+      userMouseDragEnd?.(event);
+    };
+    this.onMouseUp = (event) => {
+      this.#dragSelection.handleMouseEnd(event);
+      userMouseUp?.(event);
+    };
     this.#terminalId = options.terminalId ?? null;
     this.#permissionRequests = options.permissionRequests ?? [];
     this.#onRequestPermissions = options.onRequestPermissions;
