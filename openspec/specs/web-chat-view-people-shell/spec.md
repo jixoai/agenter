@@ -56,7 +56,7 @@ The Contacts destination SHALL render durable contacts from message-system conta
 #### Scenario: Contact list groups without merging source identities
 - **WHEN** two contacts share the same visible label but come from different `sourceId` values
 - **THEN** the contact list may group or sort them for readability
-- **THEN** each contact row still keeps distinct `ownerActorId + sourceId + remoteActorId` identity
+- **THEN** each contact row still keeps distinct `ownerContactId + sourceId + remoteContactId` identity
 - **THEN** the UI does not merge them into one durable person
 
 #### Scenario: Contact requests stay outside transcript history
@@ -70,7 +70,7 @@ Contact detail SHALL show remote identity, source provenance, request state, dir
 
 #### Scenario: Contact detail exposes source provenance
 - **WHEN** the operator opens a contact detail page
-- **THEN** the page shows label, subtitle, avatar, source label or id, remote actor id, and direct-room status
+- **THEN** the page shows label, subtitle, avatar, source label or id, remote Contact id, and direct-room status
 - **THEN** source provenance is visible enough to distinguish same-label contacts from different sources
 
 #### Scenario: Start chat is explicit
@@ -100,4 +100,3 @@ The change SHALL include blueprint artifacts for the redesigned app IA before im
 - **THEN** blueprint image artifacts exist for shell map, Messages/chat flow, Contacts/contact detail, and Me/source management
 - **THEN** those artifacts are grouped under `output/imagegen/flutter-chat-view-plan-mockups/iteration-11/`
 - **THEN** the OpenSpec change references the same surface set in implementation tasks
-

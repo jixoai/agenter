@@ -61,7 +61,7 @@ Runtime inspection publication SHALL expose dispatch and receipt truth as first-
 #### Scenario: Heartbeat reads delivery truth without message-read inference
 - **WHEN** Heartbeat or another runtime inspection consumer queries delivery state for a commit
 - **THEN** the returned delivery state comes from dispatch and receipt facts
-- **AND** it does not depend on `readActorIds`, `unreadActorIds`, or room-level read projections
+- **AND** it does not depend on `readContactIds`, `unreadContactIds`, or room-level read projections
 
 #### Scenario: Clients can observe delivery changes as they happen
 - **WHEN** a dispatch or receipt fact is appended for a hydrated session

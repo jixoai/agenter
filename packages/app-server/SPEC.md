@@ -5,9 +5,11 @@
 ## 1. 组合根职责
 
 - `app-server` 是 AvatarRuntime lifecycle、WorkspaceSystem、attention-derived notification projection 的组合根。
+- `app-server` / `SessionRuntime` 不是 attention durable truth owner。它们负责恢复、调度、推进和投影 attention，但外部系统写入 durable attention truth 不得依赖某个 runtime 实例先在线。
 - `app-server` 可以持有 session catalog、runtime lifecycle、tRPC surface 与 projection cache，但不能成为 `message-system` 或 `terminal-system` 的 durable truth owner。
-- remote `message-system` search / contact-request / accept-contact HTTP bridge 固定属于 `app-server`；`message-system` 只保存 actor-private source metadata 与 contact truth，不直接拥有远端 transport/auth 调用。
+- remote `message-system` search / contact-request / accept-contact HTTP bridge 固定属于 `app-server`；`message-system` 只保存 Contact-private source metadata 与 contact truth，不直接拥有远端 transport/auth 调用。
 - stopped / cold sessions 的 attention、notification、history inspection 必须回到磁盘事实，而不是依赖残留内存对象。
+- stopped / cold sessions 恢复 attention 时，必须接受“attention truth 可能是在 runtime 离线期间被外部系统追加”的事实；恢复流程应直接读取 durable attention state，而不是要求 source replay 或 runtime-local timer replay。
 - terminal live/history/archive 仍是 `terminal-system` 投影真相：`app-server` 只能查询、发布和组合这些投影，不能把 killed terminal 继续缓存在 live runtime attachment 里，也不能绕过 terminal-owned killed flow 自己重写终端生命周期。
 - room transcript / snapshot revision 仍是 `message-system` 投影真相：`app-server` 的 `message.room.updated` 事件只发布 `{ catalogChanged, changes[] }` 这种 revision-bearing invalidation，每个 change 必须携带 `roomRevision` 与 `transcriptRevision`；`app-server` 不得重新发明无版本的 `snapshotRoomIds/grantRoomIds/assetRoomIds` fallback。
 

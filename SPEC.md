@@ -20,17 +20,18 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 ## 2. 平台法则
 
 - Attention 是内核语义货币。外部熵增必须先被表达为 attention debt，再决定是否进入下一轮模型调用。
+- AttentionSystem 是独立 durable truth owner：它拥有 `AttentionContext` / `AttentionItem` 的持久化、commit 语义与恢复法则。`SessionRuntime` 可以消费、调度、推进 attention，但不得成为外部系统写入 durable attention truth 的唯一入口。
 - `*System` 必须面向 Attention 编程：当系统观察到新的事实、未完成义务、或 AI 行为方式不符合预期时，优先通过 attention commit 把这些事实与 obligation 显式化，而不是把“下一步该怎么做”硬编码进内核分支。
 - LoopBus 是持续存在的 runtime core。它负责等待输入、收集输入、持久化 cycle、调用模型与协调 adapter side-effects，但不拥有 source-specific 业务语义。
 - Session DB 只存事实，不存可推导快照。projection、view model、UI 结构都属于派生层。
 - Heartbeat compact boundary 是 durable ledger fact：prompt-window compaction 发生时，session ledger 必须追加 `scope=heartbeat_part` 的 `partType=compact` 边界消息，UI 不得再从 cycles 或 assistant prose 猜测上下文重开位置。
 - Heartbeat inspection 的 durable truth 是一条 merged `message_part` stream：`scope=heartbeat_part` 负责 AI-visible request/response 与 compact boundary，`scope=request_aux` 负责 deduplicated `systemPrompt / tools / config`；客户端与 Studio 不得再把 chat / request-aux / model-call 三条投影重新拼成“主 Heartbeat 时间线”。
 - AvatarRuntime identity 是 avatar-first 的：一个 Avatar 只有一个 canonical runtime/session id；workspace membership 只能通过 WorkspaceSystem mount 附着，不能再成为 runtime identity 的一部分。
-- Room 历史的 durable truth 属于全局 `message-system`；session 只保留 room binding、message refs 与推理所需 projection facts，不复制 room history 当作自己的真源。
-- Room transcript 同步必须使用 `message-system` 拥有的 revision 坐标：`roomRevision` 表达 room metadata/grant/read/presence 等 surface 变化，`transcriptRevision` 表达 transcript 行变化，snapshot、reverse page、transport message 与 app-server realtime `message.room.updated` 都必须携带同一套坐标；客户端收到“有变化”后必须基于该坐标重新拉取 page/snapshot，不能再依赖无版本的 room id invalidation。
+- Room durability 的 durable truth 属于 `room-management` 边界；`message-system` 是 superadmin-bound authority/runtime，负责 Contact、source subscription、signature/proof 与对 room-management 的授权调用，不再被视为私有 room 数据库 owner。
+- Room transcript 同步必须使用 room-management 拥有的 revision 坐标：`roomRevision` 表达 room metadata/grant/read/presence 等 surface 变化，`transcriptRevision` 表达 transcript 行变化，snapshot、reverse page、transport message 与 app-server realtime `message.room.updated` 都必须携带同一套坐标；客户端收到“有变化”后必须基于该坐标重新拉取 page/snapshot，不能再依赖无版本的 room id invalidation。
 - Room 文本消息对人类 transcript 默认立即可见；`attentionState=queued` 只表示它仍欠 AI/automation attention，不再表示“先隐藏，等 attention 后再显示”。
-- Room 级 read progress / read receipt 的 durable truth 属于全局 `message-system`，并以消息级冻结成员数组 `readActorIds` / `unreadActorIds` 维护，而不是退化成 session unread badge 或可变 seat cursor。
-- Room transcript/history 与 active scheduler/readiness projection 必须分离：recalled row 可以继续存在于历史 transcript 与冻结 read/unread 数组中，但 unread counters、runtime readiness、active latest、watch predicates 与 scheduler summaries 只能基于 active-visible rows（`visible_at is not null` 且未 recalled）计算。
+- Room 级 read progress / read receipt 的 durable truth 属于 room-management，并以消息级冻结成员数组 `readContactIds` / `unreadContactIds` 维护，而不是退化成 session unread badge 或可变 seat cursor。
+- Room transcript/history 与 active scheduler/readiness projection 必须分离：recalled row 可以继续存在于 room-management 历史 transcript 与冻结 read/unread 数组中，但 unread counters、runtime readiness、active latest、watch predicates 与 scheduler summaries 只能基于 active-visible rows（`visible_at is not null` 且未 recalled）计算。
 - Terminal truth、grant、approval、lease、activity history 的 durable truth 属于全局 `terminal-system`；session 只保留 terminal binding、focus refs、approval subscription 与推理所需 projection facts，不复制 terminal history 当作自己的真源。
 - Terminal live/history/archive 必须是同一张 `terminal_instance` durable truth 的投影：`terminal list` 只返回 live terminals；killed terminals 离开 live registry 并进入 explicit history；archive 只是把 killed evidence 进一步移出默认 history work queue，不能重新发明第二张 history 真表。
 - Terminal 长时观察必须通过独立的 `terminal await` 原语表达；它等待 TerminalSystem 拥有的稳定 snapshot / status / commit truth，返回 bounded clean lines 与 post-mortem evidence，不把等待、匹配或 debounce 语义塞进 `terminal read`。

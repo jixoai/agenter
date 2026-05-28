@@ -209,7 +209,7 @@ The client runtime store SHALL preserve room read truth in the same shape it is 
 
 - **WHEN** the browser already holds a warm room snapshot with message `m9`
 - **AND** a later room catalog refresh updates room metadata before the next forced room snapshot refresh completes
-- **THEN** the cached snapshot keeps `m9.readActorIds` and `m9.unreadActorIds` exactly as they came from the snapshot
+- **THEN** the cached snapshot keeps `m9.readContactIds` and `m9.unreadContactIds` exactly as they came from the snapshot
 - **AND** the store does not patch `m9` from any room-level latest-visible summary fields
 
 #### Scenario: Realtime room invalidation refreshes snapshot instead of synthesizing progress
