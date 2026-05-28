@@ -11,7 +11,10 @@ import {
 } from "../renderable-mux/pane-chrome";
 import { PANE_CONTENT_ORIGIN, resolveBorderedPaneContentSize } from "../renderable-mux/pane-content-geometry";
 import type { OpenTuiRenderableSurface } from "../renderable-mux/pane-source";
-import { preserveRendererSelectionOnMiddleClick } from "../renderable-mux/renderer-selection";
+import {
+  createShellNextRendererSelectionBehavior,
+  type ShellNextRendererSelectionBehavior,
+} from "../renderable-mux/renderer-selection";
 import type { ShellNextRoomLayoutMode } from "../product-room/room-app";
 
 export interface ShellNextChatSurfaceInput {
@@ -44,6 +47,7 @@ export class ShellNextChatSurface implements OpenTuiRenderableSurface {
     | undefined;
   readonly #chrome: ShellNextPaneChromeController;
   readonly #buttonPress: ShellNextButtonPressController<string>;
+  readonly #selectionBehavior: ShellNextRendererSelectionBehavior;
   readonly #title: string;
   #node: ChildLayoutNode;
   #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
@@ -56,6 +60,10 @@ export class ShellNextChatSurface implements OpenTuiRenderableSurface {
     this.#onFocus = input.onFocus;
     this.#onClose = input.onClose;
     this.#onLayoutRequest = input.onLayoutRequest;
+    this.#selectionBehavior = createShellNextRendererSelectionBehavior({
+      renderer: this.#renderer,
+      resolveTargets: () => [{ renderable: this.#content }],
+    });
     this.#buttonPress = new ShellNextButtonPressController({
       resolveAction: (event) => resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions }),
       onClick: (action, event) => {
@@ -186,7 +194,8 @@ export class ShellNextChatSurface implements OpenTuiRenderableSurface {
   }
 
   #handleMouseDown(event: MouseEvent): void {
-    if (preserveRendererSelectionOnMiddleClick(event)) {
+    if (this.#selectionBehavior.handleMouseDown(event)) {
+      this.#onFocus?.(this.#node.id);
       return;
     }
     if (this.#buttonPress.handleMouseDown(event)) {
@@ -196,6 +205,9 @@ export class ShellNextChatSurface implements OpenTuiRenderableSurface {
   }
 
   #handleMouseUp(event: MouseEvent): void {
+    if (this.#selectionBehavior.handleMouseUp(event)) {
+      return;
+    }
     this.#buttonPress.handleMouseUp(event);
   }
 

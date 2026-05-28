@@ -11,7 +11,10 @@ import {
 import { ShellNextButtonPressController } from "../renderable-mux/button-press-controller";
 import { PANE_CONTENT_ORIGIN, resolveBorderedPaneContentSize } from "../renderable-mux/pane-content-geometry";
 import type { OpenTuiRenderableSurface } from "../renderable-mux/pane-source";
-import { preserveRendererSelectionOnMiddleClick } from "../renderable-mux/renderer-selection";
+import {
+  createShellNextRendererSelectionBehavior,
+  type ShellNextRendererSelectionBehavior,
+} from "../renderable-mux/renderer-selection";
 
 export interface ShellNextRoomSurfaceStore {
   getState?(): Pick<RuntimeClientState, "globalRoomSnapshotsById">;
@@ -72,6 +75,7 @@ export class ShellNextRoomSurface implements OpenTuiRenderableSurface {
   readonly #onClose: ((paneId: string) => void) | undefined;
   readonly #chrome: ShellNextPaneChromeController;
   readonly #buttonPress: ShellNextButtonPressController<string>;
+  readonly #selectionBehavior: ShellNextRendererSelectionBehavior;
   #node: ChildLayoutNode;
   #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
   #hoveredChromeAction: string | null = null;
@@ -91,6 +95,10 @@ export class ShellNextRoomSurface implements OpenTuiRenderableSurface {
     this.#node = input.node;
     this.#onFocus = input.onFocus;
     this.#onClose = input.onClose;
+    this.#selectionBehavior = createShellNextRendererSelectionBehavior({
+      renderer: this.#renderer,
+      resolveTargets: () => [this.#content, this.#draft, this.#status].map((renderable) => ({ renderable })),
+    });
     this.#buttonPress = new ShellNextButtonPressController({
       resolveAction: (event) => resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions }),
       onClick: (_action, event) => {
@@ -181,7 +189,9 @@ export class ShellNextRoomSurface implements OpenTuiRenderableSurface {
   }
 
   #handleMouseDown(event: MouseEvent): void {
-    if (preserveRendererSelectionOnMiddleClick(event)) {
+    if (this.#selectionBehavior.handleMouseDown(event)) {
+      this.#onFocus?.(this.#node.id);
+      this.focus();
       return;
     }
     if (this.#buttonPress.handleMouseDown(event)) {
@@ -192,6 +202,9 @@ export class ShellNextRoomSurface implements OpenTuiRenderableSurface {
   }
 
   #handleMouseUp(event: MouseEvent): void {
+    if (this.#selectionBehavior.handleMouseUp(event)) {
+      return;
+    }
     this.#buttonPress.handleMouseUp(event);
   }
 

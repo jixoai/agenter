@@ -8,6 +8,7 @@ import {
   BoxRenderable,
   CliRenderEvents,
   createCliRenderer,
+  type Renderable,
   ScrollBoxRenderable,
   SelectRenderable,
   SelectRenderableEvents,
@@ -20,7 +21,10 @@ import {
 } from "@opentui/core";
 
 import type { ShellNextRoomBootstrapResult } from "../product/bootstrap";
-import { preserveRendererSelectionOnMiddleClick } from "../renderable-mux/renderer-selection";
+import {
+  createShellNextRendererSelectionBehavior,
+  type ShellNextRendererSelectionBehavior,
+} from "../renderable-mux/renderer-selection";
 import { ShellNextButtonPressController } from "../renderable-mux/button-press-controller";
 import {
   ShellNextPaneChromeController,
@@ -223,6 +227,7 @@ export class ShellNextRoomApp {
   readonly #confirmActions: TextRenderable;
   readonly #hostChromeController: ShellNextPaneChromeController;
   readonly #buttonPress: ShellNextButtonPressController<ShellNextRoomHostChromeAction>;
+  readonly #selectionBehavior: ShellNextRendererSelectionBehavior;
   #state: Pick<RuntimeClientState, "globalRoomSnapshotsById" | "globalTerminalApprovalsById">;
   #releaseStore: (() => void) | null = null;
   #releaseRoom: (() => void) | null = null;
@@ -261,6 +266,25 @@ export class ShellNextRoomApp {
     this.#keybindings = input.keybindings;
     this.#hostNode = input.hostNode ?? null;
     this.#hostChrome = input.hostChrome;
+    this.#selectionBehavior = createShellNextRendererSelectionBehavior({
+      renderer: this.#renderer,
+      // Only transcript/status text opts into semantic mouse selection here.
+      // The draft editor keeps plain renderer drag-selection until we intentionally
+      // add a wrapped-editor-specific selection policy.
+      resolveTargets: () => [
+        ...Array.from(this.#renderedRows.values(), (renderable) => ({
+          renderable,
+          resolveLocalPoint: (event: Pick<MouseEvent, "x" | "y">) => ({
+            row: 0,
+            col: Math.trunc(event.x) - renderable.screenX,
+            selectionY: Math.trunc(event.y),
+          }),
+        })),
+        { renderable: this.#statusLine },
+        { renderable: this.#confirmTitle },
+        { renderable: this.#confirmMessage },
+      ],
+    });
     this.#buttonPress = new ShellNextButtonPressController({
       resolveAction: (event) => this.#resolveMouseAction(event),
       onClick: (action, event) => {
@@ -751,7 +775,10 @@ export class ShellNextRoomApp {
   }
 
   #handleMouseDown(event: MouseEvent): void {
-    if (preserveRendererSelectionOnMiddleClick(event)) {
+    if (this.#selectionBehavior.handleMouseDown(event)) {
+      if (event.type === "down" && event.button === 0 && this.#hostNode) {
+        this.#input.onHostFocus?.(this.#hostNode.id);
+      }
       return;
     }
     if (this.#buttonPress.handleMouseDown(event)) {
@@ -762,13 +789,15 @@ export class ShellNextRoomApp {
         if (this.#hostNode) {
           this.#input.onHostFocus?.(this.#hostNode.id);
         }
-        this.#focusDraftLater();
+        if (!this.#isTranscriptSelectionTarget(event.target)) {
+          this.#focusDraftLater();
+        }
       }
     }
   }
 
   #handleMouseUp(event: MouseEvent): void {
-    if (preserveRendererSelectionOnMiddleClick(event)) {
+    if (this.#selectionBehavior.handleMouseUp(event)) {
       return;
     }
     this.#buttonPress.handleMouseUp(event);
@@ -787,6 +816,26 @@ export class ShellNextRoomApp {
           Math.trunc(event.x) < candidate.col + candidate.width,
       ) ?? null
     );
+  }
+
+  #isTranscriptSelectionTarget(renderable: Renderable | null): boolean {
+    if (!renderable) {
+      return false;
+    }
+    const targetIds = new Set<string>([
+      ...this.#renderedRows.values(),
+      this.#statusLine,
+      this.#confirmTitle,
+      this.#confirmMessage,
+    ].map((target) => target.id));
+    let cursor: Renderable | null = renderable;
+    while (cursor) {
+      if (targetIds.has(cursor.id)) {
+        return true;
+      }
+      cursor = cursor.parent;
+    }
+    return false;
   }
 
   #resolveMouseAction(event: MouseEvent): ShellNextRoomHostChromeAction | null {

@@ -8,6 +8,17 @@ type TestSetup = Awaited<ReturnType<typeof createTestRenderer>>;
 let setup: TestSetup | null = null;
 let activeDemo: FourPaneRendererGridDemo | null = null;
 
+const findTextPosition = (frame: string, text: string): { x: number; y: number } | null => {
+  const rows = frame.split("\n");
+  for (let y = 0; y < rows.length; y += 1) {
+    const x = rows[y].indexOf(text);
+    if (x >= 0) {
+      return { x, y };
+    }
+  }
+  return null;
+};
+
 afterEach(() => {
   activeDemo?.destroy();
   activeDemo = null;
@@ -55,5 +66,29 @@ describe("Feature: shell-next four-pane OpenTUI renderer mixing demo", () => {
 
     expect(demo.renderer.hasSelection).toBe(true);
     expect(demo.renderer.getSelectionContainer()?.id).toBe("pane-a-root");
+  });
+
+  test("Scenario: Given generic renderer panes do not install the semantic selection plugin When the user double-clicks selectable text Then pane composition does not implicitly select a whole word", async () => {
+    const demo = await startDemo();
+    const text = findTextPosition(demo.captureCharFrame(), "selectable text for demo");
+    expect(text).not.toBeNull();
+
+    await demo.mockMouse.doubleClick((text?.x ?? 0) + 1, text?.y ?? 0);
+    await demo.renderOnce();
+
+    expect(demo.renderer.getSelection()?.getSelectedText() ?? "").toBe("");
+  });
+
+  test("Scenario: Given generic renderer panes do not install the semantic selection plugin When the user triple-clicks selectable text Then pane composition does not implicitly select a whole line", async () => {
+    const demo = await startDemo();
+    const text = findTextPosition(demo.captureCharFrame(), "selectable text for demo");
+    expect(text).not.toBeNull();
+
+    await demo.mockMouse.click((text?.x ?? 0) + 1, text?.y ?? 0);
+    await demo.mockMouse.click((text?.x ?? 0) + 1, text?.y ?? 0);
+    await demo.mockMouse.click((text?.x ?? 0) + 1, text?.y ?? 0);
+    await demo.renderOnce();
+
+    expect(demo.renderer.getSelection()?.getSelectedText() ?? "").toBe("");
   });
 });
