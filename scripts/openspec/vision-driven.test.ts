@@ -93,6 +93,7 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
   test("Scenario: Given the project schema is loaded When inspecting the schema Then intent, specs, tasks, and self-review form the enforced workflow", () => {
     const schema = readRepoFile("openspec/schemas/vision-driven/schema.yaml");
     const config = readRepoFile("openspec/config.yaml");
+    const researchPlanTemplate = readRepoFile("openspec/schemas/vision-driven/templates/research-plan.md");
     const selfReviewTemplate = readRepoFile("openspec/schemas/vision-driven/templates/self-review.html");
     const tasksTemplate = readRepoFile("openspec/schemas/vision-driven/templates/tasks.md");
 
@@ -115,6 +116,10 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
     expect(schema).toContain("Investigate the relevant code before locking the plan.");
     expect(schema).toContain("Investigate the relevant existing OpenSpec changes/specs before locking the plan.");
     expect(schema).toContain("Make architecture design and data-structure design explicit");
+    expect(researchPlanTemplate).toContain("## Workflow Command Surface");
+    expect(researchPlanTemplate).toContain("bun run openspec:vision -- new <change>");
+    expect(researchPlanTemplate).toContain("bun run openspec:vision -- check <change>");
+    expect(researchPlanTemplate).not.toContain("openspec validate <change> --type change --strict");
     expect(selfReviewTemplate).toContain("<h2>Review State</h2>");
     expect(tasksTemplate).toContain("bun run openspec:vision -- validate <change>");
     expect(tasksTemplate).toContain("## 1. Alignment / Investigation");
