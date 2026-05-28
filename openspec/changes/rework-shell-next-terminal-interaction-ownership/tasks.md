@@ -17,6 +17,8 @@
 - [x] 3.2 Move remaining semantic click and durable drag-selection ownership out of the OpenCompose terminal frame/view path for custom terminal panes.
 - [x] 3.3 Keep the view path limited to raw event forwarding, coordinate translation, and visual projection.
 - [x] 3.4 Keep any temporary guards/comments/switches explicit so the code clearly shows the “single-layer first” collapse.
+- [x] 3.5 Move host keyboard and pointer input state machines into `packages/termless-core` and make terminal sources own them directly.
+- [x] 3.6 Delete the obsolete `extensions/shell-next/src/terminal-engine/*` path after the source-owned adapters are in place.
 
 ## 4. Renderer Selection Plugin Law
 
@@ -35,3 +37,4 @@
 - [x] 5.7 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
 - [x] 5.8 Run `git diff --check`.
 - [x] 5.9 Confirm `git diff -- extensions/cli-shell` is empty.
+- [x] 5.10 Verify `Run in Background` preserves product-bound terminal sources while `Terminate terminal` still disposes them.

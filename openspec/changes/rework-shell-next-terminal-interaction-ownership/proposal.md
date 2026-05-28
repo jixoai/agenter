@@ -35,7 +35,7 @@ This change exists to turn that architecture boundary into explicit product law 
 
 ## Impact
 
-- Affects `extensions/shell-next` terminal-engine, terminal projection, live terminal source/mirror, renderer-pane integration points, and tests.
+- Affects `packages/termless-core` terminal host-input law, `extensions/shell-next` terminal projection, live terminal source/mirror, renderer-pane integration points, and tests.
 - Adds OpenSpec artifacts under `openspec/changes/rework-shell-next-terminal-interaction-ownership`.
 - Does not modify `extensions/cli-shell`.
 - Does not promote terminal behavior into OpenCompose or a published `opencompose` package.

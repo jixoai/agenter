@@ -51,7 +51,7 @@ The design and self-review for this change must stay aligned to these exact user
 
 ### 1. Custom terminal panes get one interaction owner
 
-For terminal-protocol/custom terminal panes, durable interaction truth belongs to the shell-next Terminal Interaction Kernel boundary:
+For terminal-protocol/custom terminal panes, durable interaction truth belongs to one lower terminal kernel boundary, implemented in `packages/termless-core` and owned per source instance:
 
 - normal key input;
 - paste input;
@@ -66,6 +66,11 @@ The Shell/OpenCompose view path only does:
 - coordinate translation;
 - raw mouse/keyboard intent forwarding;
 - paint backend frame/cursor/selection overlays.
+
+The concrete owner after this rework is:
+
+- `packages/termless-core/src/terminal-host-input.ts` for host-side keyboard and pointer gesture law;
+- `extensions/shell-next/src/sources/bun-terminal-protocol-source.ts` and `extensions/shell-next/src/sources/shell-next-live-terminal-source.ts` as the source-owned adapters that bind that law to local Ghostty/Xterm and live transport mirrors.
 
 Alternative considered: keep semantic click and drag-selection state in the frame/view layer and only forward resulting callbacks. Rejected because it preserves split ownership and keeps scroll semantics in the wrong layer.
 
@@ -125,12 +130,13 @@ The new BDD has to prove:
 
 ## Implementation Shape
 
-1. Add a shell-next-internal Terminal Interaction Kernel module boundary.
-2. Route custom terminal pane mouse/keyboard intents into that boundary.
+1. Add a lower terminal host-input law in `packages/termless-core`.
+2. Route custom terminal pane mouse/keyboard intents into source-owned adapters that consume that law.
 3. Remove semantic click and durable drag-selection ownership from the OpenCompose terminal frame/view path for custom terminal panes.
-4. Introduce or formalize a renderer selection plugin contract for `cliRenderer` panes.
-5. Migrate Chat/Room renderer panes to that plugin if they need semantic word/line selection.
-6. Re-run BDD and self-review against the original wording above.
+4. Delete the obsolete shell-next `terminal-engine/*` path once source-owned routing replaces it.
+5. Introduce or formalize a renderer selection plugin contract for `cliRenderer` panes.
+6. Migrate Chat/Room renderer panes to that plugin if they need semantic word/line selection.
+7. Re-run BDD and self-review against the original wording above.
 
 ## Self-Review Discipline
 
