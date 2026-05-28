@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
-type Command = "backup-plan" | "review-state" | "check";
+type Command = "new" | "status" | "instructions" | "validate" | "backup-plan" | "review-state" | "check";
 
 interface ReviewState {
   change: string;
@@ -16,10 +16,15 @@ interface ReviewState {
 }
 
 const projectRoot = process.cwd();
+const visionSchema = "vision-driven";
 
 const usage = (): string =>
   [
     "Usage:",
+    "  bun run scripts/openspec/vision-driven.ts new <change>",
+    "  bun run scripts/openspec/vision-driven.ts status <change>",
+    "  bun run scripts/openspec/vision-driven.ts instructions <artifact> <change>",
+    "  bun run scripts/openspec/vision-driven.ts validate <change>",
     "  bun run scripts/openspec/vision-driven.ts backup-plan <change>",
     "  bun run scripts/openspec/vision-driven.ts review-state <change> [--issue <id>] [--max <n>] [--exit-condition <text>]",
     "  bun run scripts/openspec/vision-driven.ts check <change>",
@@ -43,9 +48,34 @@ const requireChange = (value: string | undefined): string => {
   return value;
 };
 
+const requireArtifact = (value: string | undefined): string => {
+  if (!value || value.startsWith("-")) {
+    throw new Error(`Missing artifact id.\n${usage()}`);
+  }
+  if (!/^[a-z][a-z0-9-]*$/.test(value)) {
+    throw new Error(`Invalid artifact id: ${value}`);
+  }
+  return value;
+};
+
 const changeDirOf = (change: string): string => join(projectRoot, "openspec", "changes", change);
 const planPathOf = (change: string): string => join(changeDirOf(change), "plans", "plan.md");
 const reviewStatePathOf = (change: string): string => join(changeDirOf(change), "review", "state.json");
+
+const runOpenspec = async (args: string[]): Promise<boolean> => {
+  const proc = Bun.spawn({
+    cmd: ["openspec", ...args],
+    cwd: projectRoot,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    process.exitCode = exitCode;
+    return false;
+  }
+  return true;
+};
 
 const assertChangeExists = (change: string): string => {
   const changeDir = changeDirOf(change);
@@ -206,10 +236,51 @@ const checkChange = async (change: string): Promise<void> => {
   console.log(JSON.stringify({ ok: true, change }, null, 2));
 };
 
+const createChange = async (change: string): Promise<void> => {
+  if (!(await runOpenspec(["new", "change", change, "--schema", visionSchema]))) {
+    return;
+  }
+  if (!(await runOpenspec(["status", "--change", change, "--schema", visionSchema]))) {
+    return;
+  }
+  await runOpenspec(["instructions", "research-plan", "--change", change, "--schema", visionSchema]);
+};
+
+const showStatus = async (change: string): Promise<void> => {
+  await runOpenspec(["status", "--change", change, "--schema", visionSchema]);
+};
+
+const showInstructions = async (artifact: string, change: string): Promise<void> => {
+  await runOpenspec(["instructions", artifact, "--change", change, "--schema", visionSchema]);
+};
+
+const validateChange = async (change: string): Promise<void> => {
+  await runOpenspec(["validate", change, "--type", "change", "--strict"]);
+};
+
 const main = async (): Promise<void> => {
-  const [commandValue, changeValue, ...rest] = Bun.argv.slice(2);
+  const [commandValue, firstValue, ...rest] = Bun.argv.slice(2);
   const command = commandValue as Command | undefined;
-  const change = requireChange(changeValue);
+  if (command === "instructions") {
+    const artifact = requireArtifact(firstValue);
+    const change = requireChange(rest[0]);
+    await showInstructions(artifact, change);
+    return;
+  }
+
+  const change = requireChange(firstValue);
+  if (command === "new") {
+    await createChange(change);
+    return;
+  }
+  if (command === "status") {
+    await showStatus(change);
+    return;
+  }
+  if (command === "validate") {
+    await validateChange(change);
+    return;
+  }
   if (command === "backup-plan") {
     await backupPlan(change);
     return;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { cp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -36,10 +36,15 @@ const copyVisionSchema = async (projectRoot: string): Promise<void> => {
   );
 };
 
-const runBun = async (args: string[], cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
+const runBun = async (
+  args: string[],
+  cwd: string,
+  env: Record<string, string | undefined> = process.env,
+): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
   const proc = Bun.spawn({
     cmd: ["bun", ...args],
     cwd,
+    env,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -50,6 +55,39 @@ const runBun = async (args: string[], cwd: string): Promise<{ exitCode: number; 
   ]);
   return { exitCode, stdout, stderr };
 };
+
+const createFakeOpenspec = async (
+  tmpRoot: string,
+): Promise<{ env: Record<string, string | undefined>; logPath: string }> => {
+  const binDir = join(tmpRoot, "bin");
+  const logPath = join(tmpRoot, "openspec.log");
+  await mkdir(binDir, { recursive: true });
+  const scriptPath = join(binDir, "openspec");
+  writeFileSync(
+    scriptPath,
+    [
+      "#!/bin/sh",
+      "printf '%s\\n' \"$*\" >> \"$VISION_TEST_LOG\"",
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(scriptPath, 0o755);
+  return {
+    env: {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+      VISION_TEST_LOG: logPath,
+    },
+    logPath,
+  };
+};
+
+const readLoggedCommands = (logPath: string): string[] =>
+  readFileSync(logPath, "utf8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 
 describe("Feature: vision-driven OpenSpec workflow contract", () => {
   test("Scenario: Given the project schema is loaded When inspecting the schema Then intent, specs, tasks, and self-review form the enforced workflow", () => {
@@ -70,14 +108,72 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
     expect(schema).toContain("id: self-review");
     expect(schema).toContain("generates: review/self-review.html");
     expect(schema).toContain("review/review-intent-and-tasks.md");
-    expect(schema).toContain("openspec validate <change> --type change --strict");
+    expect(schema).toContain("bun run openspec:vision -- status <change>");
+    expect(schema).toContain("bun run openspec:vision -- instructions <artifact> <change>");
+    expect(schema).toContain("bun run openspec:vision -- validate <change>");
     expect(schema).toContain("tracks: tasks.md");
     expect(schema).toContain("Investigate the relevant code before locking the plan.");
     expect(schema).toContain("Investigate the relevant existing OpenSpec changes/specs before locking the plan.");
     expect(schema).toContain("Make architecture design and data-structure design explicit");
     expect(selfReviewTemplate).toContain("<h2>Review State</h2>");
-    expect(tasksTemplate).toContain("openspec validate <change> --type change --strict");
+    expect(tasksTemplate).toContain("bun run openspec:vision -- validate <change>");
     expect(tasksTemplate).toContain("## 1. Alignment / Investigation");
+  });
+
+  test("Scenario: Given a new vision-driven change When the controller creates it Then creation, status, and first instructions stay schema-scoped", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
+    try {
+      const { env, logPath } = await createFakeOpenspec(tmpRoot);
+
+      const result = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "new", "demo-change"],
+        tmpRoot,
+        env,
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(readLoggedCommands(logPath)).toEqual([
+        "new change demo-change --schema vision-driven",
+        "status --change demo-change --schema vision-driven",
+        "instructions research-plan --change demo-change --schema vision-driven",
+      ]);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("Scenario: Given a vision-driven change When helper commands are used Then schema and validation arguments are explicit", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
+    try {
+      const { env, logPath } = await createFakeOpenspec(tmpRoot);
+
+      const statusResult = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "status", "demo-change"],
+        tmpRoot,
+        env,
+      );
+      const instructionsResult = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "instructions", "research-plan", "demo-change"],
+        tmpRoot,
+        env,
+      );
+      const validateResult = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "validate", "demo-change"],
+        tmpRoot,
+        env,
+      );
+
+      expect(statusResult.exitCode).toBe(0);
+      expect(instructionsResult.exitCode).toBe(0);
+      expect(validateResult.exitCode).toBe(0);
+      expect(readLoggedCommands(logPath)).toEqual([
+        "status --change demo-change --schema vision-driven",
+        "instructions research-plan --change demo-change --schema vision-driven",
+        "validate demo-change --type change --strict",
+      ]);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 
   test("Scenario: Given a plan already exists When backup-plan runs Then the previous SSOT is versioned instead of overwritten", async () => {
