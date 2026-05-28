@@ -24,11 +24,29 @@
 | ------ | ---- | -------------- |
 |        |      |                |
 
+### Existing OpenSpec Survey
+
+| File / change | Existing law or pattern | Reuse, extend, or break |
+| ------------- | ----------------------- | ----------------------- |
+|               |                         |                         |
+
+### User Language System
+
+| User phrase | Working meaning | Plain-language translation when needed |
+| ----------- | --------------- | -------------------------------------- |
+|             |                 |                                        |
+
 ### Demo / Spike Code
 
 | Path | Question it answers | Keep, migrate, or delete |
 | ---- | ------------------- | ------------------------ |
 |      |                     |                          |
+
+### Questions To Confirm With User
+
+| Question | Why this is the real question | Current inference before user answers |
+| -------- | ----------------------------- | ------------------------------------- |
+|          |                               |                                       |
 
 ## Intent
 
@@ -69,6 +87,12 @@ Describe durable facts, projections, and state that must not be confused.
 ### Architecture Shape
 
 Describe atoms, laws, ownership boundaries, and forbidden couplings.
+
+### User Confirmation Gates
+
+| Gate | Why confirmation is required | Default until user answers |
+| ---- | ---------------------------- | -------------------------- |
+|      |                              |                            |
 
 ## Intent-Driven Plan
 

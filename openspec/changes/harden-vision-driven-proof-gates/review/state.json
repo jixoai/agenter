@@ -1,0 +1,8 @@
+{
+  "change": "harden-vision-driven-proof-gates",
+  "iteration": 1,
+  "maxIterations": 5,
+  "recurringIssues": {},
+  "updatedAt": "2026-05-28T21:20:55.164Z",
+  "exitCondition": "Pass when fake review proof fails, real review proof passes, and strict OpenSpec validation stays green"
+}

@@ -93,6 +93,29 @@ const writeReviewState = async (state: ReviewState): Promise<void> => {
   await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`);
 };
 
+const parseReviewState = (raw: string): ReviewState | null => {
+  const parsed = JSON.parse(raw) as Partial<ReviewState>;
+  if (
+    typeof parsed.change !== "string" ||
+    !Number.isInteger(parsed.iteration) ||
+    !Number.isInteger(parsed.maxIterations) ||
+    typeof parsed.updatedAt !== "string" ||
+    typeof parsed.recurringIssues !== "object" ||
+    parsed.recurringIssues === null ||
+    Array.isArray(parsed.recurringIssues)
+  ) {
+    return null;
+  }
+  return {
+    change: parsed.change,
+    iteration: parsed.iteration,
+    maxIterations: parsed.maxIterations,
+    recurringIssues: parsed.recurringIssues,
+    exitCondition: typeof parsed.exitCondition === "string" ? parsed.exitCondition : undefined,
+    updatedAt: parsed.updatedAt,
+  };
+};
+
 const updateReviewState = async (change: string, args: string[]): Promise<void> => {
   assertChangeExists(change);
   const previous = await readReviewState(change);
@@ -135,6 +158,7 @@ const checkChange = async (change: string): Promise<void> => {
   const planPath = planPathOf(change);
   const tasksPath = join(changeDir, "tasks.md");
   const reviewHtmlPath = join(changeDir, "review", "self-review.html");
+  const reviewStatePath = reviewStatePathOf(change);
 
   const metadata = existsSync(metadataPath) ? await readFile(metadataPath, "utf-8") : "";
   const issues: string[] = [];
@@ -155,6 +179,23 @@ const checkChange = async (change: string): Promise<void> => {
   }
   if (!existsSync(reviewHtmlPath)) {
     issues.push("review/self-review.html is missing");
+  } else {
+    const reviewHtml = await readFile(reviewHtmlPath, "utf-8");
+    if (reviewHtml.trim().length === 0) {
+      issues.push("review/self-review.html is empty");
+    }
+  }
+  if (existsSync(reviewStatePath)) {
+    try {
+      const parsedState = parseReviewState(await readFile(reviewStatePath, "utf-8"));
+      if (!parsedState) {
+        issues.push("review/state.json is invalid");
+      } else if (parsedState.change !== change) {
+        issues.push(`review/state.json change mismatch: expected ${change}, got ${parsedState.change}`);
+      }
+    } catch {
+      issues.push("review/state.json is invalid");
+    }
   }
 
   if (issues.length > 0) {

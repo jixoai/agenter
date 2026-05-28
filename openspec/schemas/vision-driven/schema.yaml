@@ -12,7 +12,11 @@ artifacts:
       Persona: Max. Use the user's language system first. Think from final visible effect and operator mind model, then reverse-infer interfaces, data, and architecture. Do not start from code terminology unless the user already used it.
 
       Mandatory content:
+      - Investigate the relevant code before locking the plan.
+      - Investigate the relevant existing OpenSpec changes/specs before locking the plan.
       - Preserve the user's original requirement and every requirement-bearing Q&A as objective records.
+      - Make the user's language system visible: capture the phrases, metaphors, and product vocabulary the user actually uses.
+      - Surface the real questions you need to ask the user, plus your current inference before the user answers.
       - Separate facts, inferences, decisions, open questions, and rejected paths.
       - Explain whether this change is a regular atom under current platform laws or a law-breaking entity that needs a paradigm shift.
       - Describe the final visible effect, even for backend-only work, as what the operator will see, trust, or stop worrying about.
@@ -40,6 +44,7 @@ artifacts:
       Required workflow:
       - Read `plans/plan.md` first and keep every requirement traceable to intent.
       - Create one spec file per durable capability under `specs/<capability>/spec.md`.
+      - Make architecture design and data-structure design explicit instead of burying them in vague prose.
       - Follow OpenSpec delta format exactly:
         - `## ADDED Requirements`
         - `## MODIFIED Requirements`
@@ -68,10 +73,13 @@ artifacts:
       Persona: John Carmack. Be mechanical, precise, and edge-case obsessed. Each task must have a visible completion condition.
 
       Mandatory content:
+      - Start with alignment / investigation tasks when the intent still needs confirmation or repo truth still needs to be read.
       - Include BDD tasks before implementation tasks.
       - BDD scenarios must trace back to `plans/plan.md` and the relevant spec requirement.
       - Cover boundary conditions, migration/cleanup paths, destructive-update confirmation points, and regression checks.
+      - Add explicit tasks for user confirmation when breaking cleanup, migration, or state reset cannot be assumed safely.
       - Include controller checkpoints for plan backup, self-review loop state, and verification through `bun run openspec:vision -- ...`.
+      - When adding OpenSpec validation tasks for a change, prefer `openspec validate <change> --type change --strict` so validation does not depend on CLI ambiguity resolution.
       - Use checkbox format exactly: `- [ ] X.Y Task description`.
 
       Keep tasks atomic. If a task cannot be verified, split it.
@@ -95,10 +103,12 @@ artifacts:
       - Include screenshot/evidence references when the work has visible surface; for backend-only work include command/log/evidence paths.
       - Record iteration count, unresolved issue recurrence count, proposed next loop action, and exit-condition judgment.
       - If model capability or permission limits block full review, also prepare `review/review-intent-and-tasks.md` for the user-as-subagent path.
+      - Keep the HTML report structured and easy to scan, but do not reduce it to a rigid form just to satisfy the checker.
 
       Loop law:
       - Default maximum review iterations is 5.
-      - If the same issue survives 2 consecutive review rounds, record it with `bun run openspec:vision -- review-state <change> --issue <id>`, mark it as a spec/design failure, and route the next step back to `research-plan`.
+      - If the review enters a real loop, use `bun run openspec:vision -- review-state <change> [--issue <id>]` to persist iteration and recurrence state.
+      - If the same issue survives 2 consecutive review rounds, mark it as a spec/design failure and route the next step back to `research-plan`.
       - If the initial intent implies a different exit condition, state why iteration count should be raised, reduced, or bypassed.
 
       This artifact is a review presentation, not a victory note.
@@ -110,4 +120,4 @@ apply:
     - tasks
   tracks: tasks.md
   instruction: |
-    Implement pending tasks with BDD-first discipline. Keep `plans/plan.md` as the SSOT, update task checkboxes as work completes, and run `bun run openspec:vision -- check <change>` before claiming the workflow is complete.
+    Implement pending tasks with BDD-first discipline. Keep `plans/plan.md` as the SSOT, update task checkboxes as work completes, run `openspec validate <change> --type change --strict` when the task list calls for OpenSpec validation, and run `bun run openspec:vision -- check <change>` before claiming the workflow is complete.

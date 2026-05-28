@@ -6,6 +6,24 @@ import { join, resolve } from "node:path";
 
 const repoRoot = resolve(import.meta.dir, "../..");
 const readRepoFile = (relativePath: string): string => readFileSync(join(repoRoot, relativePath), "utf8");
+const validReviewHtml = `<!doctype html>
+<html lang="en">
+  <body>
+    <section><h2>Free-form review</h2><p>Deviation list, questions, and evidence live here.</p></section>
+  </body>
+</html>
+`;
+const validReviewState = `${JSON.stringify(
+  {
+    change: "demo-change",
+    iteration: 1,
+    maxIterations: 5,
+    recurringIssues: {},
+    updatedAt: "2026-05-29T00:00:00.000Z",
+  },
+  null,
+  2,
+)}\n`;
 
 const copyVisionSchema = async (projectRoot: string): Promise<void> => {
   await mkdir(join(projectRoot, "openspec", "schemas"), { recursive: true });
@@ -37,6 +55,8 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
   test("Scenario: Given the project schema is loaded When inspecting the schema Then intent, specs, tasks, and self-review form the enforced workflow", () => {
     const schema = readRepoFile("openspec/schemas/vision-driven/schema.yaml");
     const config = readRepoFile("openspec/config.yaml");
+    const selfReviewTemplate = readRepoFile("openspec/schemas/vision-driven/templates/self-review.html");
+    const tasksTemplate = readRepoFile("openspec/schemas/vision-driven/templates/tasks.md");
 
     expect(config).toMatch(/^schema: vision-driven$/m);
     expect(schema).toContain("name: vision-driven");
@@ -50,7 +70,14 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
     expect(schema).toContain("id: self-review");
     expect(schema).toContain("generates: review/self-review.html");
     expect(schema).toContain("review/review-intent-and-tasks.md");
+    expect(schema).toContain("openspec validate <change> --type change --strict");
     expect(schema).toContain("tracks: tasks.md");
+    expect(schema).toContain("Investigate the relevant code before locking the plan.");
+    expect(schema).toContain("Investigate the relevant existing OpenSpec changes/specs before locking the plan.");
+    expect(schema).toContain("Make architecture design and data-structure design explicit");
+    expect(selfReviewTemplate).toContain("<h2>Review State</h2>");
+    expect(tasksTemplate).toContain("openspec validate <change> --type change --strict");
+    expect(tasksTemplate).toContain("## 1. Alignment / Investigation");
   });
 
   test("Scenario: Given a plan already exists When backup-plan runs Then the previous SSOT is versioned instead of overwritten", async () => {
@@ -131,6 +158,55 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
     }
   });
 
+  test("Scenario: Given a free-form self-review HTML file When check runs Then the workflow gate accepts the report without rigid section policing", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
+    try {
+      await copyVisionSchema(tmpRoot);
+      const changeDir = join(tmpRoot, "openspec", "changes", "demo-change");
+      await mkdir(join(changeDir, "plans"), { recursive: true });
+      await mkdir(join(changeDir, "review"), { recursive: true });
+      writeFileSync(join(changeDir, ".openspec.yaml"), "schema: vision-driven\ncreated: 2026-05-28\n");
+      writeFileSync(join(changeDir, "plans", "plan.md"), "# Intent\n");
+      writeFileSync(join(changeDir, "tasks.md"), "- [x] 1.1 Do the thing\n");
+      writeFileSync(join(changeDir, "review", "self-review.html"), validReviewHtml);
+
+      const result = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "check", "demo-change"],
+        tmpRoot,
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('"ok": true');
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("Scenario: Given an invalid optional review state file When check runs Then the workflow gate rejects the malformed state", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
+    try {
+      await copyVisionSchema(tmpRoot);
+      const changeDir = join(tmpRoot, "openspec", "changes", "demo-change");
+      await mkdir(join(changeDir, "plans"), { recursive: true });
+      await mkdir(join(changeDir, "review"), { recursive: true });
+      writeFileSync(join(changeDir, ".openspec.yaml"), "schema: vision-driven\ncreated: 2026-05-28\n");
+      writeFileSync(join(changeDir, "plans", "plan.md"), "# Intent\n");
+      writeFileSync(join(changeDir, "tasks.md"), "- [x] 1.1 Do the thing\n");
+      writeFileSync(join(changeDir, "review", "self-review.html"), validReviewHtml);
+      writeFileSync(join(changeDir, "review", "state.json"), "{\n");
+
+      const result = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "check", "demo-change"],
+        tmpRoot,
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("review/state.json is invalid");
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
   test("Scenario: Given a complete vision-driven change When check runs Then the workflow gate passes", async () => {
     const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
     try {
@@ -141,7 +217,8 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
       writeFileSync(join(changeDir, ".openspec.yaml"), "schema: vision-driven\ncreated: 2026-05-28\n");
       writeFileSync(join(changeDir, "plans", "plan.md"), "# Intent\n");
       writeFileSync(join(changeDir, "tasks.md"), "- [x] 1.1 Do the thing\n");
-      writeFileSync(join(changeDir, "review", "self-review.html"), "<!doctype html><title>Review</title>\n");
+      writeFileSync(join(changeDir, "review", "self-review.html"), validReviewHtml);
+      writeFileSync(join(changeDir, "review", "state.json"), validReviewState);
 
       const result = await runBun(
         [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "check", "demo-change"],

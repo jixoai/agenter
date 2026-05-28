@@ -33,18 +33,18 @@ The `vision-driven` schema SHALL require specs after `research-plan`, and tasks 
 
 ### Requirement: Self-review SHALL be an explicit workflow artifact
 
-The `vision-driven` schema SHALL include a `self-review` artifact that generates `review/self-review.html`. The self-review artifact SHALL compare output against `plans/plan.md`, specs, and tasks, and SHALL record deviations plus user-confirmation questions.
+The `vision-driven` schema SHALL include a `self-review` artifact that generates `review/self-review.html`. The self-review artifact SHALL compare output against `plans/plan.md`, specs, and tasks, and SHALL record deviations plus user-confirmation questions. The HTML report SHALL stay structurally readable, but the workflow SHALL NOT require a rigid HTML section taxonomy just to satisfy the checker.
 
-#### Scenario: Review produces a presentation artifact
+#### Scenario: Review produces a structured but flexible presentation artifact
 
 - **GIVEN** a `vision-driven` change has completed tasks
 - **WHEN** self-review is requested
 - **THEN** the review output path is `review/self-review.html`
-- **AND** the report includes deviation and user-question sections
+- **AND** the report includes review state, deviations, user-confirmation questions, and evidence in a structured HTML presentation
 
 ### Requirement: Controller SHALL enforce revision and review loop mechanics
 
-The repository SHALL provide a controller entrypoint for workflow mechanics not expressible in OpenSpec schema metadata. The controller SHALL support backing up `plans/plan.md` to the next `plans/plan-vN.md`, recording review iteration state, signaling repeated issues after 2 occurrences, and checking required workflow artifacts.
+The repository SHALL provide a controller entrypoint for workflow mechanics not expressible in OpenSpec schema metadata. The controller SHALL support backing up `plans/plan.md` to the next `plans/plan-vN.md`, recording review iteration state in `review/state.json` when the review enters a real loop, signaling repeated issues after 2 occurrences, and checking required workflow artifacts. The `check` command SHALL validate workflow file presence and minimal format sanity, but SHALL NOT over-constrain the prose structure of `review/self-review.html`.
 
 #### Scenario: Plan backup preserves the current SSOT before revision
 
@@ -59,6 +59,18 @@ The repository SHALL provide a controller entrypoint for workflow mechanics not 
 - **WHEN** the controller records that issue again
 - **THEN** it reports the issue as repeated
 - **AND** it exits with a non-zero loop-back signal
+
+#### Scenario: Free-form self-review HTML is accepted
+
+- **GIVEN** a `vision-driven` change has `plans/plan.md`, `tasks.md`, and a non-empty `review/self-review.html`
+- **WHEN** the controller runs `check`
+- **THEN** it does not reject the review just because the HTML uses a different section layout
+
+#### Scenario: Optional review state is validated when present
+
+- **GIVEN** a `vision-driven` change includes `review/state.json`
+- **WHEN** the controller runs `check`
+- **THEN** the state file must be structurally valid for that change
 
 ### Requirement: Existing spec-driven changes SHALL remain valid
 

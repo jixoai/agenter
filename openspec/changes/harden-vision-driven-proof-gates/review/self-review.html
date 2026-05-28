@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vision-Driven Self Review</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        line-height: 1.5;
+        margin: 2rem;
+        max-width: 1100px;
+      }
+      section {
+        border-top: 1px solid #ddd;
+        padding-top: 1rem;
+        margin-top: 1.5rem;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 0.5rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      code {
+        background: #f4f4f4;
+        padding: 0.1rem 0.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Vision-Driven Self Review</h1>
+
+    <section>
+      <h2>Review State</h2>
+      <ul>
+        <li>Change: <code>harden-vision-driven-proof-gates</code></li>
+        <li>Iteration: 1 / 5</li>
+        <li>Recurring issue counts: none</li>
+        <li>
+          Exit-condition judgment: pass once OpenSpec artifact files validate strictly and the review HTML stays
+          free-form without being forced into a rigid grammar
+        </li>
+        <li>
+          Next loop action: validate the workflow, then port the accepted schema corrections back to the source feature
+          branch
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Intent Alignment</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Intent point</th>
+            <th>Evidence</th>
+            <th>Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Use a separate worktree to test the workflow on a real task.</td>
+            <td>
+              <code>.worktree/vision-driven-schema-eval</code> contains a full `vision-driven` change and implementation
+              diff.
+            </td>
+            <td>Met</td>
+          </tr>
+          <tr>
+            <td>Keep checks loose enough that AI still has room to think.</td>
+            <td>
+              The controller no longer rejects a review just because its HTML sections do not match a fixed taxonomy.
+            </td>
+            <td>Met</td>
+          </tr>
+          <tr>
+            <td>Keep generated OpenSpec change files conformant.</td>
+            <td>
+              The workflow now teaches explicit `openspec validate &lt;change&gt; --type change --strict`, keeps
+              `tasks.md` checkbox-trackable, and preserves the plan backup law.
+            </td>
+            <td>Met</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Deviations From Intent</h2>
+      <ol>
+        <li>
+          The previous iteration over-tightened `self-review` by making the checker judge HTML layout and require
+          `review/state.json`. That was stricter than the user's original schema prompt wanted.
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>New Questions For User</h2>
+      <ol>
+        <li>
+          Should we eventually wrap `openspec validate &lt;change&gt; --type change --strict` inside the controller?
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Evidence</h2>
+      <ul>
+        <li><code>bun test scripts/openspec/vision-driven.test.ts</code></li>
+        <li><code>bun run openspec:vision -- check harden-vision-driven-proof-gates</code></li>
+        <li><code>openspec validate harden-vision-driven-proof-gates --type change --strict</code></li>
+        <li><code>openspec/changes/harden-vision-driven-proof-gates/plans/plan.md</code></li>
+        <li><code>openspec/changes/harden-vision-driven-proof-gates/tasks.md</code></li>
+      </ul>
+    </section>
+  </body>
+</html>
