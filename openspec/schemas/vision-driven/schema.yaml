@@ -11,6 +11,11 @@ artifacts:
 
       Persona: Max. Use the user's language system first. Think from final visible effect and operator mind model, then reverse-infer interfaces, data, and architecture. Do not start from code terminology unless the user already used it.
 
+      Canonical workflow commands for this schema:
+      - Create a change with `bun run openspec:vision -- new <change>`.
+      - Check artifact status with `bun run openspec:vision -- status <change>`.
+      - Fetch artifact instructions with `bun run openspec:vision -- instructions <artifact> <change>`.
+
       Mandatory content:
       - Investigate the relevant code before locking the plan.
       - Investigate the relevant existing OpenSpec changes/specs before locking the plan.
@@ -79,7 +84,7 @@ artifacts:
       - Cover boundary conditions, migration/cleanup paths, destructive-update confirmation points, and regression checks.
       - Add explicit tasks for user confirmation when breaking cleanup, migration, or state reset cannot be assumed safely.
       - Include controller checkpoints for plan backup, self-review loop state, and verification through `bun run openspec:vision -- ...`.
-      - When adding OpenSpec validation tasks for a change, prefer `openspec validate <change> --type change --strict` so validation does not depend on CLI ambiguity resolution.
+      - When adding OpenSpec validation tasks for a change, prefer `bun run openspec:vision -- validate <change>`, which runs `openspec validate <change> --type change --strict` without schema ambiguity.
       - Use checkbox format exactly: `- [ ] X.Y Task description`.
 
       Keep tasks atomic. If a task cannot be verified, split it.
@@ -120,4 +125,4 @@ apply:
     - tasks
   tracks: tasks.md
   instruction: |
-    Implement pending tasks with BDD-first discipline. Keep `plans/plan.md` as the SSOT, update task checkboxes as work completes, run `openspec validate <change> --type change --strict` when the task list calls for OpenSpec validation, and run `bun run openspec:vision -- check <change>` before claiming the workflow is complete.
+    Implement pending tasks with BDD-first discipline. Keep `plans/plan.md` as the SSOT, update task checkboxes as work completes, use `bun run openspec:vision -- validate <change>` when the task list calls for OpenSpec validation, and run `bun run openspec:vision -- check <change>` before claiming the workflow is complete.

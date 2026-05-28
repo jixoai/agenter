@@ -42,9 +42,16 @@ The `vision-driven` schema SHALL include a `self-review` artifact that generates
 - **THEN** the review output path is `review/self-review.html`
 - **AND** the report includes review state, deviations, user-confirmation questions, and evidence in a structured HTML presentation
 
-### Requirement: Controller SHALL enforce revision and review loop mechanics
+### Requirement: Controller SHALL enforce schema-scoped entrypoints, revision, and review loop mechanics
 
-The repository SHALL provide a controller entrypoint for workflow mechanics not expressible in OpenSpec schema metadata. The controller SHALL support backing up `plans/plan.md` to the next `plans/plan-vN.md`, recording review iteration state in `review/state.json` when the review enters a real loop, signaling repeated issues after 2 occurrences, and checking required workflow artifacts. The `check` command SHALL validate workflow file presence and minimal format sanity, but SHALL NOT over-constrain the prose structure of `review/self-review.html`.
+The repository SHALL provide a controller entrypoint for workflow mechanics not expressible in OpenSpec schema metadata. The controller SHALL provide schema-scoped wrappers for creating a `vision-driven` change, checking artifact status, fetching artifact instructions, and strictly validating a change. The controller SHALL also support backing up `plans/plan.md` to the next `plans/plan-vN.md`, recording review iteration state in `review/state.json` when the review enters a real loop, signaling repeated issues after 2 occurrences, and checking required workflow artifacts. The `check` command SHALL validate workflow file presence and minimal format sanity, but SHALL NOT over-constrain the prose structure of `review/self-review.html`.
+
+#### Scenario: Schema-scoped workflow commands stay explicit
+
+- **GIVEN** generic OpenSpec CLI commands may resolve a different default workflow
+- **WHEN** the repository controller is used to create, inspect, instruct, or validate a `vision-driven` change
+- **THEN** the controller passes explicit `vision-driven` schema arguments where needed
+- **AND** strict change validation runs with `--type change --strict`
 
 #### Scenario: Plan backup preserves the current SSOT before revision
 

@@ -16,7 +16,7 @@
 ## 4. Verification
 
 - [ ] 4.1 Run targeted behavior tests.
-- [ ] 4.2 Run `openspec validate <change> --type change --strict` for this change.
+- [ ] 4.2 Run `bun run openspec:vision -- validate <change>` for this change.
 
 ## 5. Self-Review Loop
 
