@@ -213,3 +213,57 @@ Shell-next SHALL request primary clipboard writes through one host clipboard/OSC
 - **THEN** shell-next calls the single primary host clipboard path
 - **AND** the result is reported as success or unsupported by that path
 - **AND** no local primary buffer is written as a fallback
+
+### Requirement: ShellPane selection SHALL be kernel-owned instead of Shell-view-owned
+
+ShellPane selection intent may originate from pane-local mouse events, but durable selection gesture/state ownership SHALL live in the shell-next terminal kernel boundary, not in the Shell/OpenTUI view layer. The Shell view layer SHALL NOT be the long-lived authority for scroll-aware selection state.
+
+#### Scenario: Shell view only forwards selection intent
+- **WHEN** the user starts, updates, or ends ShellPane text selection
+- **THEN** the Shell/OpenTUI frame layer translates the gesture into terminal selection intent
+- **AND** durable selection state is stored and evolved by the shell-next terminal kernel/source path
+- **AND** ShellPane view code does not become the final authority for scroll-aware anchor/focus truth
+
+#### Scenario: Scroll-aware selection is not solved in the Shell view layer
+- **GIVEN** ShellPane selection semantics depend on terminal viewport and scrollback truth
+- **WHEN** shell-next handles selection updates
+- **THEN** the kernel/source path owns the scroll-aware interpretation
+- **AND** Shell/OpenTUI view code remains a projection/input adapter only
+
+### Requirement: Terminal resize SHALL use top-layer debounce and bottom-layer conflation
+
+Shell-next SHALL apply two separate resize laws with different responsibilities:
+
+- a top-layer `200ms` debounce that suppresses unnecessary resize sends during rapid drag;
+- a bottom-layer latest-only conflated backend queue that retains at most one newest pending size while an expensive backend resize is still running.
+
+#### Scenario: Upper-layer debounce suppresses noisy drag updates
+- **WHEN** a terminal pane receives several geometry changes inside `200ms`
+- **THEN** shell-next does not immediately send each geometry change to the backend boundary
+- **AND** only the latest geometry visible after the debounce window is handed to the backend resize queue
+
+#### Scenario: Lower-layer conflation prevents a resize backlog
+- **GIVEN** one backend resize is still running
+- **WHEN** newer debounced sizes arrive
+- **THEN** shell-next keeps only the newest pending size
+- **AND** after the running resize completes, shell-next performs at most one more resize for the newest pending size
+
+#### Scenario: Stopping drag leaves at most one final backend resize
+- **GIVEN** backend resize work is much slower than user drag updates
+- **WHEN** the user stops resizing
+- **THEN** shell-next may still have one newest pending resize left
+- **AND** after that final resize is processed there is no backlog of obsolete sizes
+
+### Requirement: Active button styling SHALL decorate inner content only
+
+Shell-next active and hover button styling SHALL not decorate the bracket border itself. The bracket border remains plain; only the inner content is bolded and/or underlined.
+
+#### Scenario: Statusbar active action underlines inner content only
+- **WHEN** `Help` or `Chat` is active in the statusbar
+- **THEN** only the `Help` or `Chat` text inside the brackets is underlined
+- **AND** the `[` and `]` cells remain undecorated
+
+#### Scenario: Pane title action active styling matches the same law
+- **WHEN** a pane title action is active or hovered
+- **THEN** only the inner glyph/text content is decorated
+- **AND** the bracket cells remain plain

@@ -150,3 +150,89 @@ Decision: reopen the change for a second rework. Keep `extensions/cli-shell` rea
 - `openspec validate stabilize-shell-next-button-copy --strict`: pass.
 - `git diff --check`: pass.
 - `git diff -- extensions/cli-shell`: empty.
+
+## Third Rework Trigger 2026-05-29
+
+The user clarified the remaining product law in plain terms and required that this wording remain the anchor for the next implementation round:
+
+1. `Shell的selection仍然有问题，你不能在Shell这一层做selection，得到内核层去做，你因为你在Shell这里考虑不到滚动的问题`
+2. `Shell移动关闭可以自动滚动到合适的位置了`
+3. `Help Chat 这里没有应用“激活状态”。ChatPaneTitlebar这里是有激活态的`
+4. `Button的激活状态不应该修饰[ ]border本身，只修饰border内部`
+5. `首先你应该理解了实时同步，并只吃合并后的最新尺寸。这个可能导致的结果是仍然是1s做一次resize(每次要做1s），但是只要停下resize，最多再做一次就行。这是底层自己的合并策略。`
+6. `其次再次基础上，仍然要做debounce(200ms)，目的是减少没必要的事件发送。这是上层自己的节流策略`
+
+Interpretation for this rework:
+
+- bullet 2 is already accepted and should stay working;
+- bullets 1, 3, 4, 5, and 6 become the active scope;
+- the resize law now explicitly has two independent layers with different ownership.
+
+## Third Rework Bound
+
+- This round is reopened from an `all_done` change state because repo truth no longer matches the user's accepted truth.
+- BDD stays mandatory.
+- Self-review is explicitly bounded to at most five rounds.
+- Final reporting must merge the rounds into:
+  - one drift list;
+  - one encountered-problems list.
+
+## Third Rework Progress
+
+- The upper resize layer is now explicit in `extensions/shell-next/src/terminal-projection/resize-send-scheduler.ts` with a product-default `200ms` debounce.
+- The lower resize layer remains explicit in source implementations through `ConflatedResizeDispatcher`, so blocked backend resize only retains the newest pending size.
+- Shared button rendering now decorates only inner content. `[` and `]` stay plain while hover uses bold and active uses underline on the inner text cells only.
+- Shell terminal drag selection no longer keeps durable truth in `OpenComposeFrameRenderable`. The generic frame is now `selectable = false`, and shell-next owns terminal drag-selection state through `terminal-engine/drag-selection-controller.ts`, attached in `OpenComposeTerminalViewRenderable`.
+- The new BDD check for this law is `Scenario: Given a shell pane terminal frame When rendered Then ShellPane selection does not rely on OpenTUI selectable state`.
+
+## Third Rework Self Review Round 1
+
+- The five 2026-05-29 bullets are now aligned at code level except for final full-suite verification and final reporting artifacts.
+- Shell selection ownership is no longer kept in the Shell/OpenTUI generic frame. Scroll semantics can continue to belong to backend/source layers because the generic frame only projects coordinates and paints overlays.
+- Help/Chat active state is already covered by visible-cell BDD on the mixed statusbar path and still stays active after this rework.
+- Button active state now decorates only inner content, and the bracket borders stay plain in the visible renderer assertions.
+- Dual-layer resize is now explicit rather than implied: top-layer pane debounce plus bottom-layer backend conflation.
+
+## Third Rework Self Review Round 2
+
+- The resize wording now matches the user's plain-language law:
+  - top layer reduces unnecessary sends with `200ms` debounce;
+  - bottom layer processes only the latest surviving size while a slow backend resize is still in flight.
+- The two responsibilities are now split across different modules and do not collapse into one timer:
+  - `resize-send-scheduler.ts`
+  - `conflated-resize-dispatcher.ts`
+
+## Third Rework Self Review Round 3
+
+- Shell selection no longer depends on OpenTUI's own selection lifecycle. That removes the previous false ownership where the Shell view had to infer drag finish and clear semantics from a UI-level selection object.
+- OpenCompose remains terminal-agnostic: the generic frame still owns coordinate projection, semantic double/triple click, and overlay painting, but not terminal drag state.
+
+## Third Rework Self Review Round 4
+
+- Shared Button behavior remains consistent across statusbar, pane titlebars, and dialogs because the rendering law stays centralized in `renderable-mux/button.ts`.
+- The most important regression caught during this round was not implementation but test timing: the 200ms pane-level debounce test only waited 130ms after the final resize schedule, so it failed for the wrong reason.
+
+## Third Rework Self Review Round 5
+
+### Drift List
+
+- I previously treated passing behavior tests as enough proof that selection ownership was correct. That was wrong because the generic frame was still carrying terminal drag state even while product behavior looked mostly right.
+- I previously over-trusted the first 200ms debounce test failure as an implementation bug. It was a bad test window.
+- I previously left terminal-view selection callback types piggybacking on the generic frame options. That blurred the boundary after selection ownership moved out of the generic frame.
+- I previously reported the third rework as "mostly about resize and button law", but the real unresolved core was still selection ownership.
+
+### Encountered Problems List
+
+- The hardest issue was false ownership: OpenTUI selection lifecycle and shell-next terminal drag lifecycle were partially overlapping, which made the Shell layer look correct while still owning the wrong truth.
+- The second recurring issue was timing ambiguity. Debounce tests are easy to write incorrectly if the assertion window is measured from the first event instead of the last event.
+- The third issue was type coupling after boundary cleanup. Once selection callbacks were removed from `OpenComposeFrameRenderableOptions`, terminal-view and terminal-frame needed their own explicit callback types.
+- Manual acceptance and test acceptance were not aligned earlier. The fix in this round was to add one direct BDD assertion that `terminalView.selectable === false` so the boundary itself is checked, not only downstream effects.
+
+## Third Rework Verification
+
+- `openspec validate stabilize-shell-next-button-copy --strict`: pass.
+- `bun test extensions/shell-next/test/resize-send-scheduler.test.ts extensions/shell-next/test/conflated-resize-dispatcher.test.ts extensions/shell-next/test/statusbar.test.ts extensions/shell-next/test/shell-next-app.test.ts`: 63 pass, 0 fail.
+- `bun run --filter 'agenter-ext-shell-next' test`: 121 pass, 0 fail.
+- `bun run --filter 'agenter-ext-shell-next' typecheck`: pass.
+- `git diff --check`: pass.
+- `git diff -- extensions/cli-shell`: empty.

@@ -53,3 +53,22 @@ Manual acceptance after `f4b7a687` showed only resize glyph direction and Option
 - Primary clipboard must stay KISS: one explicit primary-copy path, no app-owned primary register, and no dual fallback behavior.
 
 This second rework adds a shell-next-internal Terminal Engine boundary and moves the legacy `terminal2` interaction laws there while keeping `extensions/cli-shell` read-only.
+
+## Third Rework Trigger: Selection Ownership And Dual-Layer Resize 2026-05-29
+
+Manual acceptance after `d277bb79` clarified two remaining platform-law failures and one still-open shared-button law:
+
+- Shell selection is still unreliable because selection gesture/state is still interpreted partly by the Shell/OpenTUI frame layer. The user explicitly restated that Shell selection cannot be owned at the Shell view layer because that layer cannot correctly own scroll semantics.
+- Help/Chat statusbar actions still do not visually apply the shared active-state law the same way Chat titlebar actions do.
+- Button active state still decorates the whole bracketed token instead of only the inner content.
+- Terminal resize still needs the exact dual strategy the user restated in plain terms:
+  1. bottom layer keeps a strict latest-only conflated resize law so even if one backend resize takes a long time, stopping the drag only leaves at most one final resize to process;
+  2. top layer adds a separate `200ms` debounce so unnecessary resize sends are suppressed before they even reach the bottom-layer queue.
+
+This third rework keeps the existing architecture decisions:
+
+- `extensions/cli-shell` remains read-only reference material;
+- terminal-specific law stays inside `extensions/shell-next`, not OpenCompose;
+- OpenCompose remains terminal-agnostic;
+- the rework is BDD-first and must include multi-round self-review aligned to the user's original wording;
+- implementation is bounded to at most five explicit iteration rounds, with a final merged drift list and encountered-problems list.

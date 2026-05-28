@@ -129,3 +129,70 @@ The next tests must target the shell-next terminal engine and real product surfa
 3. Shift/Option selection preserves the keyboard selection anchor and does not clear backend selection;
 4. Room-backed Chat titlebar actions use the same pane chrome Button overlay behavior as direct Chat panes;
 5. primary copy requests are asserted as a capability request, while unsupported primary clipboard remains an explicit environment result rather than a product fallback.
+
+## Third Rework Design Notes
+
+Manual acceptance on 2026-05-29 clarified the exact remaining law corrections.
+
+### Original Intent To Preserve Verbatim
+
+This rework is anchored to the user's latest concrete intent:
+
+1. `Shell的selection仍然有问题，你不能在Shell这一层做selection，得到内核层去做，你因为你在Shell这里考虑不到滚动的问题`
+2. `Help Chat 这里没有应用“激活状态”。ChatPaneTitlebar这里是有激活态的`
+3. `Button的激活状态不应该修饰[ ]border本身，只修饰border内部`
+4. `首先你应该理解了实时同步，并只吃合并后的最新尺寸。这个可能导致的结果是仍然是1s做一次resize(每次要做1s），但是只要停下resize，最多再做一次就行。这是底层自己的合并策略。`
+5. `其次再次基础上，仍然要做debounce(200ms)，目的是减少没必要的事件发送。这是上层自己的节流策略`
+
+The implementation and self-review must compare against these sentences directly instead of collapsing them into generic summaries.
+
+### Selection Ownership Correction
+
+The current shell-next terminal frame already routes selection events to backend sources, but it still keeps selection gesture state in `OpenComposeFrameRenderable` (`pendingDragAnchor`, drag lifecycle, OpenTUI selection suppression). That is still too high in the stack for ShellPane selection truth because:
+
+- scroll ownership belongs to the terminal backend / mirror;
+- viewport-relative coordinates are only a projection, not the durable terminal selection truth;
+- drag-to-select across scrollback, follow-cursor, and future auto-scroll behavior cannot be solved correctly if the frame layer owns the selection gesture state machine.
+
+The third rework therefore tightens the law:
+
+- the Shell/OpenTUI frame layer may translate raw mouse events into terminal-intent commands only;
+- durable selection gesture state, scroll-aware anchor/focus evolution, and selection lifecycle truth belong to the shell-next terminal kernel boundary (`extensions/shell-next` internal terminal engine / source / mirror path), not to the pane view layer.
+
+This does **not** promote terminal behavior into OpenCompose. It only removes remaining terminal-state ownership from the OpenCompose-backed Shell view layer.
+
+### Dual-Layer Resize Law
+
+The previous resize implementation already had a conflated dispatcher at terminal source boundaries, but manual acceptance showed that this alone does not satisfy the user's intended contract.
+
+The exact law is now:
+
+1. **Bottom-layer latest-only conflation**
+   - lives at the terminal backend boundary;
+   - while one expensive backend resize is in flight, only the newest pending size is retained;
+   - when the in-flight resize finishes, at most one newest resize is sent next.
+
+2. **Top-layer `200ms` debounce**
+   - lives above the backend queue as the product-facing resize send policy;
+   - suppresses unnecessary intermediate resize sends during rapid drag;
+   - does not replace the bottom-layer conflation law.
+
+In plain terms: upper layer reduces noise, lower layer prevents backlog.
+
+### Button Active Decoration Law
+
+The shared Button primitive already centralizes hover/active attributes, but it still decorates the whole bracket token. The corrected law is:
+
+- border brackets remain plain;
+- only the inner label/glyph content receives active underline and hover bold;
+- this law must be shared by statusbar actions, pane title actions, and dialog actions.
+
+### Iteration And Review Bound
+
+This rework is intentionally bounded:
+
+- at most five explicit implementation/self-review rounds;
+- each round must leave a factual note in the change audit;
+- the final output must merge the rounds into:
+  - one drift list;
+  - one encountered-problems list.
