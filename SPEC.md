@@ -154,3 +154,4 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - 任何改变平台法则、系统边界、durable contract 的实现，在 archive OpenSpec change 之前必须同步更新 `SPEC.md` 或对应包级 `SPEC.md`。
 - `SPEC.md` 保持精简，不记录短期任务、阶段性收口状态、执行流水账。
 - 若 `openspec/changes/*` 与 durable spec 不一致，以“先补 durable spec，再 archive”为强制流程。
+- 新的 OpenSpec change 默认使用 project-local `vision-driven` schema：先以 `plans/plan.md` 作为 Intent Document SSOT 收敛用户意图与最终可见效果，再生成 specs、BDD tasks、实现与 `review/self-review.html`。`plans/plan.md` 发生实质修订前必须备份为 `plans/plan-vN.md`；连续 2 轮 self-review 未解决的问题必须回到 research-plan/specs 阶段，而不是在实现层继续打补丁。既有 `schema: spec-driven` change 保持原 schema 解析。
