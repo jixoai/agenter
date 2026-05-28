@@ -443,6 +443,7 @@ const startApp = async (
     roomStore?: RecordingRoomStore;
     showTopLayer?: boolean;
     statusProvider?: ShellNextStatusProvider;
+    syncStatusbarWithLayout?: boolean;
   } = {},
 ) => {
   setup = await createTestRenderer({ width: 64, height: 18, useMouse: true, kittyKeyboard: true });
@@ -471,6 +472,7 @@ const startApp = async (
     approvalStore: input.approvalStore,
     showTopLayer: input.showTopLayer,
     statusProvider: input.statusProvider,
+    syncStatusbarWithLayout: input.syncStatusbarWithLayout,
     room:
       input.room ??
       (input.roomStore
@@ -1044,6 +1046,26 @@ describe("Feature: shell-next app runtime", () => {
 
   test("Scenario: Given the mixed statusbar When Help and Chat are opened by mouse click Then the matching inner labels are underlined", async () => {
     const { setup } = await startApp();
+
+    await setup.mockMouse.click(55, 17);
+    await setup.renderOnce();
+    const help = findTextPosition(setup.captureCharFrame(), "[Help]");
+    expect(help).not.toBeNull();
+    expect(readTextAttributesAt(setup, { x: (help?.x ?? 0) + 1, y: help?.y ?? 0 }, "Help") & TextAttributes.UNDERLINE).toBe(
+      TextAttributes.UNDERLINE,
+    );
+
+    await setup.mockMouse.click(61, 17);
+    await setup.renderOnce();
+    const chat = findTextPosition(setup.captureCharFrame(), "[Chat]");
+    expect(chat).not.toBeNull();
+    expect(readTextAttributesAt(setup, { x: (chat?.x ?? 0) + 1, y: chat?.y ?? 0 }, "Chat") & TextAttributes.UNDERLINE).toBe(
+      TextAttributes.UNDERLINE,
+    );
+  });
+
+  test("Scenario: Given product runtime keeps layout-derived active actions local When layout attention sync is disabled Then Help and Chat still underline correctly", async () => {
+    const { setup } = await startApp({ syncStatusbarWithLayout: false });
 
     await setup.mockMouse.click(55, 17);
     await setup.renderOnce();

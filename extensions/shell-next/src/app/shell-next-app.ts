@@ -75,6 +75,7 @@ export class ShellNextApp implements ShellNextAppController {
   readonly finished: Promise<void>;
   #disposed = false;
   #paneCounter = 1;
+  #statusBase: ShellNextStatusbarState;
   #status: ShellNextStatusbarState;
   #prefixPending = false;
 
@@ -91,8 +92,9 @@ export class ShellNextApp implements ShellNextAppController {
     this.#showTopLayer = input.showTopLayer === true;
     this.#showStatusbar = input.showStatusbar !== false;
     this.#syncStatusbarWithLayout = input.syncStatusbarWithLayout !== false;
-    this.#status = input.statusProvider?.getStatus() ?? input.initialStatus ?? defaultShellNextStatusbarState;
+    this.#statusBase = input.statusProvider?.getStatus() ?? input.initialStatus ?? defaultShellNextStatusbarState;
     this.#layout = createRootLayout(this.#contentRect(), [this.#rootPane]);
+    this.#status = this.#composeStatusbarState(this.#statusBase);
     const initialNode = this.#layout.children[0];
     const initialSource =
       this.#rootPane.sourceKind === "terminal-protocol"
@@ -310,24 +312,9 @@ export class ShellNextApp implements ShellNextAppController {
 
   #syncStatusbar(): void {
     if (this.#input.statusProvider) {
-      this.#status = this.#input.statusProvider.getStatus();
+      this.#statusBase = this.#input.statusProvider.getStatus();
     }
-    if (this.#syncStatusbarWithLayout) {
-      const terminalCount = this.#layout.children.filter((node) => node.sourceKind === "terminal-protocol").length;
-      const activeActions = [
-        this.#layout.children.some((node) => node.id === "help") || this.#floatingPanes.has("help") ? "help" : null,
-        this.#layout.children.some((node) => node.id === "chat") || this.#floatingPanes.has("chat") ? "chat" : null,
-      ].filter((action): action is "help" | "chat" => action !== null);
-      this.#status = {
-        ...this.#status,
-        attention: {
-          focused: this.#mux.focusedNode ? 1 : 0,
-          background: Math.max(0, terminalCount - 1),
-          muted: this.#layout.children.filter((node) => node.sourceKind === "opentui-renderable").length,
-        },
-        activeActions,
-      };
-    }
+    this.#status = this.#composeStatusbarState(this.#statusBase);
     this.#statusbar.sync({
       state: this.#status,
       x: 0,
@@ -351,16 +338,16 @@ export class ShellNextApp implements ShellNextAppController {
     if (this.#disposed) {
       return;
     }
-    this.#status = {
-      ...this.#status,
+    this.#statusBase = {
+      ...this.#statusBase,
       runtime: { label: event.processExitCode === 0 ? "Idle" : "Stopped" },
     };
     this.#syncStatusbar();
   }
 
   #setRuntimeNotice(label: string): void {
-    this.#status = {
-      ...this.#status,
+    this.#statusBase = {
+      ...this.#statusBase,
       runtime: { label },
     };
     this.#syncStatusbar();
@@ -696,6 +683,33 @@ export class ShellNextApp implements ShellNextAppController {
       });
     }
     throw new Error(`unsupported shell-next root renderable source: ${sourceId}`);
+  }
+
+  #composeStatusbarState(base: ShellNextStatusbarState): ShellNextStatusbarState {
+    const next: ShellNextStatusbarState = {
+      ...base,
+      activeActions: this.#deriveActiveStatusbarActions(),
+    };
+    if (this.#syncStatusbarWithLayout) {
+      next.attention = this.#deriveLayoutAttentionSummary();
+    }
+    return next;
+  }
+
+  #deriveActiveStatusbarActions(): readonly ("help" | "chat")[] {
+    return [
+      this.#layout.children.some((node) => node.id === "help") || this.#floatingPanes.has("help") ? "help" : null,
+      this.#layout.children.some((node) => node.id === "chat") || this.#floatingPanes.has("chat") ? "chat" : null,
+    ].filter((action): action is "help" | "chat" => action !== null);
+  }
+
+  #deriveLayoutAttentionSummary(): NonNullable<ShellNextStatusbarState["attention"]> {
+    const terminalCount = this.#layout.children.filter((node) => node.sourceKind === "terminal-protocol").length;
+    return {
+      focused: this.#layout.children.some((node) => node.focused) ? 1 : 0,
+      background: Math.max(0, terminalCount - 1),
+      muted: this.#layout.children.filter((node) => node.sourceKind === "opentui-renderable").length,
+    };
   }
 
   #setDockedPaneLayoutMode(paneId: string, mode: ShellNextRoomLayoutMode): void {
