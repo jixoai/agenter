@@ -1,6 +1,5 @@
 import {
   FrameBufferRenderable,
-  MouseButton,
   RGBA,
   TextAttributes,
   type FrameBufferOptions,
@@ -14,28 +13,12 @@ import type {
 } from "@agenter/terminal-transport-protocol";
 
 import { measureTerminalText } from "./cell-width";
-import {
-  OPENCOMPOSE_DEFAULT_INTERACTION_PROFILE,
-  type OpenComposeInteractionEnhancementProfile,
-} from "./interaction-capabilities";
 import type { OpenComposeSelectionRegion, OpenComposeSelectionSource } from "./types";
 
 const DEFAULT_FG = RGBA.fromHex("#f3f6fb");
 const DEFAULT_BG = RGBA.fromHex("#111111");
 const DEFAULT_SELECTION_BG = RGBA.fromHex("#2563eb");
-const SEMANTIC_CLICK_MAX_MS = 450;
-const DEFAULT_SEMANTIC_CLICK_MAX_DISTANCE_CELLS = 1;
 const DEFAULT_OWNER_ID = "terminal";
-
-interface OpenComposeFrameClickTracker {
-  timeMs: number;
-  x: number;
-  y: number;
-  ownerId: string;
-  row: number;
-  button: number;
-  count: number;
-}
 
 const toColor = (color: string | undefined, fallback: RGBA): RGBA => {
   if (!color) {
@@ -46,13 +29,6 @@ const toColor = (color: string | undefined, fallback: RGBA): RGBA => {
   } catch {
     return fallback;
   }
-};
-
-const normalizeSemanticClickMaxDistance = (value: number | undefined): number => {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return DEFAULT_SEMANTIC_CLICK_MAX_DISTANCE_CELLS;
-  }
-  return Math.max(0, Math.trunc(value));
 };
 
 export interface OpenComposeFrameRenderableOptions extends FrameBufferOptions {
@@ -67,10 +43,6 @@ export interface OpenComposeFrameRenderableOptions extends FrameBufferOptions {
   selectionSources?: readonly OpenComposeSelectionSource[];
   selectionOverlays?: readonly TerminalTransportSelectionOverlay[];
   selectionBg?: RGBA;
-  interactionProfile?: OpenComposeInteractionEnhancementProfile;
-  semanticClickMaxDistanceCells?: number;
-  onSelectWordAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
-  onSelectLineAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
   onInteractionTrace?: (event: OpenComposeFrameInteractionTraceEvent) => void;
   onMouseDown?: (event: MouseEvent) => void;
   onMouseDrag?: (event: MouseEvent) => void;
@@ -115,7 +87,6 @@ export interface OpenComposeFrameProjectionUpdate {
   selectionSources?: readonly OpenComposeSelectionSource[];
   selectionOverlays?: readonly TerminalTransportSelectionOverlay[];
   selectionBg?: RGBA;
-  interactionProfile?: OpenComposeInteractionEnhancementProfile;
   cursor?: {
     row: number;
     col: number;
@@ -130,18 +101,13 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
   #selectionSources: readonly OpenComposeSelectionSource[];
   #selectionOverlays: readonly TerminalTransportSelectionOverlay[];
   #selectionBg: RGBA;
-  #interactionProfile: OpenComposeInteractionEnhancementProfile;
-  #semanticClickMaxDistanceCells: number;
   #cursor: { row: number; col: number; visible: boolean } | null = null;
-  #lastClick: OpenComposeFrameClickTracker | null = null;
   #lastPaintStats: OpenComposeFramePaintStats = {
     durationMs: 0,
     rows: 0,
     spans: 0,
     glyphs: 0,
   };
-  #onSelectWordAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
-  #onSelectLineAt?: (point: TerminalTransportOwnerCoordinate) => boolean;
   #onInteractionTrace?: (event: OpenComposeFrameInteractionTraceEvent) => void;
 
   constructor(ctx: RenderContext, options: OpenComposeFrameRenderableOptions) {
@@ -155,10 +121,6 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     this.#selectionSources = options.selectionSources ?? [];
     this.#selectionOverlays = options.selectionOverlays ?? [];
     this.#selectionBg = options.selectionBg ?? DEFAULT_SELECTION_BG;
-    this.#interactionProfile = options.interactionProfile ?? OPENCOMPOSE_DEFAULT_INTERACTION_PROFILE;
-    this.#semanticClickMaxDistanceCells = normalizeSemanticClickMaxDistance(options.semanticClickMaxDistanceCells);
-    this.#onSelectWordAt = options.onSelectWordAt;
-    this.#onSelectLineAt = options.onSelectLineAt;
     this.#onInteractionTrace = options.onInteractionTrace;
     this.onMouseDown = options.onMouseDown;
     this.onMouseDrag = options.onMouseDrag;
@@ -197,10 +159,6 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     this.paintAndRequestRender();
   }
 
-  set semanticClickMaxDistanceCells(value: number | undefined) {
-    this.#semanticClickMaxDistanceCells = normalizeSemanticClickMaxDistance(value);
-  }
-
   updateProjection(update: OpenComposeFrameProjectionUpdate): OpenComposeFramePaintStats {
     if (update.lines) {
       this.#lines = update.lines;
@@ -219,9 +177,6 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     }
     if (update.selectionBg) {
       this.#selectionBg = update.selectionBg;
-    }
-    if (update.interactionProfile) {
-      this.#interactionProfile = update.interactionProfile;
     }
     if ("cursor" in update) {
       this.#cursor = update.cursor ?? null;
@@ -460,27 +415,6 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     return this.#selectionSources.find((source) => source.owner === ownerId) ?? null;
   }
 
-  protected handleSemanticMouseDown(event: MouseEvent): void {
-    if (event.button !== MouseButton.LEFT) {
-      return;
-    }
-    const localX = Math.trunc(event.x - this.x);
-    const localY = Math.trunc(event.y - this.y);
-    const point = this.localToOwnerCoordinate(localX, localY, null);
-    if (!point) {
-      this.#lastClick = null;
-      return;
-    }
-    const clickCount = this.resolveClickCount(event, localX, localY, point);
-    if (clickCount >= 3 && this.#interactionProfile.semanticRowSelection && this.#onSelectLineAt?.(point)) {
-      event.preventDefault();
-      return;
-    }
-    if (clickCount === 2 && this.#interactionProfile.semanticWordSelection && this.#onSelectWordAt?.(point)) {
-      event.preventDefault();
-    }
-  }
-
   protected eventToOwnerCoordinate(
     event: MouseEvent,
     expectedOwnerId: string | null,
@@ -511,50 +445,6 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
         ...extra,
       },
     });
-  }
-
-  private resolveClickCount(
-    event: MouseEvent,
-    localX: number,
-    localY: number,
-    point: TerminalTransportOwnerCoordinate,
-  ): number {
-    const now = performance.now();
-    const previous = this.#lastClick;
-    const providedClickCount = this.readProvidedClickCount(event);
-    const sameClickCluster =
-      previous !== null &&
-      previous.button === event.button &&
-      previous.ownerId === point.ownerId &&
-      previous.row === point.row &&
-      now - previous.timeMs <= SEMANTIC_CLICK_MAX_MS &&
-      Math.abs(previous.x - localX) <= this.#semanticClickMaxDistanceCells &&
-      previous.y === localY;
-    const nextCount =
-      sameClickCluster && providedClickCount !== null
-        ? Math.max(previous.count + 1, providedClickCount)
-        : sameClickCluster
-          ? previous.count + 1
-          : 1;
-    this.#lastClick = {
-      timeMs: now,
-      x: localX,
-      y: localY,
-      ownerId: point.ownerId,
-      row: point.row,
-      button: event.button,
-      count: Math.min(nextCount, 3),
-    };
-    return this.#lastClick.count;
-  }
-
-  private readProvidedClickCount(event: MouseEvent): number | null {
-    const candidate = event as unknown as { clickCount?: unknown; detail?: unknown };
-    const value = typeof candidate.clickCount === "number" ? candidate.clickCount : candidate.detail;
-    if (typeof value !== "number" || !Number.isFinite(value)) {
-      return null;
-    }
-    return Math.max(1, Math.trunc(value));
   }
 
   private isPointInsideRegion(

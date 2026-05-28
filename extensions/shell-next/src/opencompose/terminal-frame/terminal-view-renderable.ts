@@ -2,10 +2,9 @@ import { MouseButton, RGBA, TextAttributes, type FrameBufferOptions, type MouseE
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import type { TerminalTransportSelectionOverlay } from "@agenter/terminal-transport-protocol";
 
-import { ShellNextTerminalDragSelectionController } from "../../terminal-engine/drag-selection-controller";
+import { ShellNextTerminalPointerSelectionController } from "../../terminal-engine/pointer-selection-controller";
 import { OpenComposeFrameRenderable } from "./frame-renderable";
 import { fitTerminalText } from "./cell-width";
-import type { OpenComposeInteractionEnhancementProfile } from "./interaction-capabilities";
 import type {
   OpenComposeSelectionRegion,
   OpenComposeSelectionSource,
@@ -57,13 +56,14 @@ export interface OpenComposeTerminalViewOptions extends FrameBufferOptions {
   selectionRegions?: readonly OpenComposeSelectionRegion[];
   selectionSources?: readonly OpenComposeSelectionSource[];
   selectionOverlays?: readonly TerminalTransportSelectionOverlay[];
-  interactionProfile?: OpenComposeInteractionEnhancementProfile;
   semanticClickMaxDistanceCells?: number;
+  semanticWordSelection?: boolean;
+  semanticRowSelection?: boolean;
   onSelectionStart?: OpenComposeTerminalSelectionPointHandler;
   onSelectionUpdate?: OpenComposeTerminalSelectionPointHandler;
   onSelectionEnd?: OpenComposeTerminalSelectionPointHandler;
-  onSelectWordAt?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onSelectWordAt"];
-  onSelectLineAt?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onSelectLineAt"];
+  onSelectWordAt?: OpenComposeTerminalSelectionPointHandler;
+  onSelectLineAt?: OpenComposeTerminalSelectionPointHandler;
   onClearSelection?: OpenComposeTerminalSelectionPointHandler;
   onInteractionTrace?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onInteractionTrace"];
   onMouseDown?: OpenComposeFrameRenderable["onMouseDown"];
@@ -81,17 +81,23 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
   #permissionRequestHandlerFingerprints = new Map<string, string>();
   #customHandledPermissionRequestIds = new Set<string>();
   #approvalActionRegions: OpenComposeTerminalApprovalActionRegion[] = [];
-  readonly #dragSelection: ShellNextTerminalDragSelectionController;
+  readonly #pointerSelection: ShellNextTerminalPointerSelectionController;
 
   constructor(ctx: RenderContext, options: OpenComposeTerminalViewOptions) {
     super(ctx, options);
-    this.#dragSelection = new ShellNextTerminalDragSelectionController({
+    // Custom terminal panes keep pointer selection state in the terminal-engine boundary.
+    this.#pointerSelection = new ShellNextTerminalPointerSelectionController({
       hasSelection: () => this.hasSelection(),
       eventToOwnerCoordinate: (event, expectedOwnerId) => this.eventToOwnerCoordinate(event as MouseEvent, expectedOwnerId),
       onSelectionStart: options.onSelectionStart,
       onSelectionUpdate: options.onSelectionUpdate,
       onSelectionEnd: options.onSelectionEnd,
       onClearSelection: options.onClearSelection,
+      onSelectWordAt: options.onSelectWordAt,
+      onSelectLineAt: options.onSelectLineAt,
+      semanticWordSelection: options.semanticWordSelection,
+      semanticRowSelection: options.semanticRowSelection,
+      semanticClickMaxDistanceCells: options.semanticClickMaxDistanceCells,
       trace: (kind, event, point, extra) => this.traceInteraction(kind, event, point, extra),
     });
     const userMouseDown = options.onMouseDown;
@@ -99,22 +105,19 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
     const userMouseDragEnd = options.onMouseDragEnd;
     const userMouseUp = options.onMouseUp;
     this.onMouseDown = (event) => {
-      this.handleSemanticMouseDown(event);
-      if (!event.defaultPrevented) {
-        this.#dragSelection.handleMouseDown(event);
-      }
+      this.#pointerSelection.handleMouseDown(event);
       userMouseDown?.(event);
     };
     this.onMouseDrag = (event) => {
-      this.#dragSelection.handleMouseDrag(event);
+      this.#pointerSelection.handleMouseDrag(event);
       userMouseDrag?.(event);
     };
     this.onMouseDragEnd = (event) => {
-      this.#dragSelection.handleMouseEnd(event);
+      this.#pointerSelection.handleMouseEnd(event);
       userMouseDragEnd?.(event);
     };
     this.onMouseUp = (event) => {
-      this.#dragSelection.handleMouseEnd(event);
+      this.#pointerSelection.handleMouseEnd(event);
       userMouseUp?.(event);
     };
     this.#terminalId = options.terminalId ?? null;
