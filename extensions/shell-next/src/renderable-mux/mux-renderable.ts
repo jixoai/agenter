@@ -19,7 +19,7 @@ export interface TerminalPaneRenderable {
   syncNode(node: ChildLayoutNode): void;
   refresh(): void;
   writeInput(chunk: TerminalInputChunk): boolean;
-  destroy(): void;
+  destroy(options?: { preserveSource?: boolean }): void;
 }
 
 export interface TerminalPaneFactoryInput {
@@ -276,14 +276,14 @@ export class ShellNextMuxRenderable {
     this.#renderer.requestRender();
   }
 
-  destroy(): void {
+  destroy(options?: { preserveTerminalSources?: boolean }): void {
     this.#resizeController.destroy();
     for (const mounted of this.#mounted.values()) {
       for (const unsubscribe of mounted.unsubscribe) {
         unsubscribe();
       }
       if ("pane" in mounted) {
-        mounted.pane.destroy();
+        mounted.pane.destroy({ preserveSource: options?.preserveTerminalSources === true });
       } else {
         void mounted.source.dispose();
       }

@@ -18,7 +18,6 @@ import type { LocalBunTerminalExitEvent } from "../sources/bun-terminal-protocol
 import { ShellNextStatusSurface } from "../surfaces/status-surface";
 import { ShellNextTopLayerSurface, createEmptyShellNextApprovalStore } from "../surfaces/top-layer-surface";
 import { createShellNextFrameBufferTerminalPane } from "../terminal-projection/framebuffer-terminal-pane";
-import { ShellNextTerminalEngine } from "../terminal-engine/terminal-engine";
 import type { ShellNextRoomLayoutMode } from "../product-room/room-app";
 import { createDefaultShellNextTerminalSourcePolicy } from "./default-shell-source";
 import { ShellNextFocusEventDispatcher } from "./focus-event-dispatcher";
@@ -67,7 +66,6 @@ export class ShellNextApp implements ShellNextAppController {
   readonly #showStatusbar: boolean;
   readonly #syncStatusbarWithLayout: boolean;
   readonly #keyDispatcher = new ShellNextFocusEventDispatcher();
-  readonly #terminalEngine = new ShellNextTerminalEngine();
   #releaseStatusProvider: (() => void) | null = null;
   readonly #floatingPanes = new Map<string, FloatingOpenTuiPane>();
   #floatingFocusId: string | null = null;
@@ -133,7 +131,7 @@ export class ShellNextApp implements ShellNextAppController {
       },
       sendTerminalInputText: (paneId, text) => {
         const source = this.#mux.getTerminalSource(paneId);
-        return source ? this.#terminalEngine.sendPasteText(source, text) : false;
+        return source ? (source.pasteText?.(text) ?? false) : false;
       },
     });
     this.#statusbar = new ShellNextStatusbarRenderable({
@@ -219,7 +217,7 @@ export class ShellNextApp implements ShellNextAppController {
     this.#syncStatusbar();
   }
 
-  destroy(): void {
+  destroy(options?: { preserveTerminalSources?: boolean }): void {
     if (this.#disposed) {
       return;
     }
@@ -237,7 +235,7 @@ export class ShellNextApp implements ShellNextAppController {
     this.#floatingFocusId = null;
     this.#topLayer.destroy();
     this.#statusbar.destroy();
-    this.#mux.destroy();
+    this.#mux.destroy({ preserveTerminalSources: options?.preserveTerminalSources === true });
     if (this.#ownsRenderer) {
       this.#renderer.destroy();
     }
@@ -369,7 +367,7 @@ export class ShellNextApp implements ShellNextAppController {
     this.#topLayer.showCloseConfirm({
       title,
       onBackgroundRun: () => {
-        this.destroy();
+        this.destroy({ preserveTerminalSources: true });
       },
       onTerminate: async () => {
         const current = this.#mux.focusedNode;
@@ -515,7 +513,7 @@ export class ShellNextApp implements ShellNextAppController {
     if (!source) {
       return false;
     }
-    if (!this.#terminalEngine.handleKey(source, key)) {
+    if (!source.handleKey?.(key)) {
       return false;
     }
     key.preventDefault();

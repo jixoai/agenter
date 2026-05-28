@@ -138,7 +138,7 @@ export class DemoPaneRenderable {
     });
   }
 
-  destroy(): void {
+  destroy(_options?: { preserveSource?: boolean }): void {
     this.#root.destroyRecursively();
   }
 
@@ -255,8 +255,10 @@ export class PaneRenderable {
     return this.#source.writeInput(chunk);
   }
 
-  destroy(): void {
-    void this.#source.dispose();
+  destroy(options?: { preserveSource?: boolean }): void {
+    if (options?.preserveSource !== true) {
+      void this.#source.dispose();
+    }
     this.#root.destroyRecursively();
   }
 }

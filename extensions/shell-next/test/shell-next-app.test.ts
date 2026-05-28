@@ -1,4 +1,9 @@
 import type { GlobalRoomEntry, GlobalRoomMessage, GlobalRoomSnapshotOutput } from "@agenter/client-sdk";
+import {
+  createBackendInteractionAdapter,
+  createTerminalHostInputController,
+  type TerminalHostInputTarget,
+} from "@agenter/termless-core";
 import type {
   TerminalTransportOwnerCoordinate,
   TerminalTransportSelectionRange,
@@ -76,19 +81,126 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
   let disposed = false;
   let revision = 0;
   let writeAccepted = true;
+  const hostInput = createTerminalHostInputController();
   const resizeDispatcher = new ConflatedResizeDispatcher({
     delayMs: 25,
     deliver: (size) => {
       resizeCalls.push(size);
     },
   });
+  const readLines = (): string[] => [`${id} frame ${revision}`, "$ echo alpha beta gamma ok"];
+  const interaction = createBackendInteractionAdapter({
+    ownerId: "terminal",
+    readable: {
+      getLine(row) {
+        return Array.from(readLines()[row] ?? "").map((char) => ({
+          char,
+          fg: null,
+          bg: null,
+          bold: false,
+          dim: false,
+          italic: false,
+          underline: false,
+          underlineColor: null,
+          strikethrough: false,
+          inverse: false,
+          blink: false,
+          hidden: false,
+          wide: Bun.stringWidth(char) > 1,
+          continuation: false,
+          hyperlink: null,
+        }));
+      },
+      getScrollback() {
+        return {
+          viewportOffset: 0,
+          totalLines: readLines().length,
+          screenLines: readLines().length,
+        };
+      },
+    },
+    followCursor: () => {
+      followCursorCount += 1;
+      return true;
+    },
+  });
+  const syncOverlayFromInteraction = (): void => {
+    selectionOverlays = interaction.getSelectionOverlay("terminal")
+      ? [interaction.getSelectionOverlay("terminal")!]
+      : [];
+  };
+  const inputTarget: TerminalHostInputTarget = {
+    readKeyboardInteractionView() {
+      return {
+        cursorAbsRow: Math.max(0, Math.trunc(cursor?.y ?? 0)),
+        cursorCol: Math.max(0, Math.trunc(cursor?.x ?? 0)),
+        viewportStart: 0,
+        plainLines: readLines(),
+      };
+    },
+    writeInput(chunk) {
+      if (!writeAccepted) {
+        return false;
+      }
+      inputChunks.push(chunk);
+      revision += 1;
+      return true;
+    },
+    followCursor() {
+      followCursorCount += 1;
+      return true;
+    },
+    startSelection(point) {
+      selectionEvents.push({ type: "start", point });
+      const selected = interaction.startSelection(point);
+      syncOverlayFromInteraction();
+      return selected;
+    },
+    updateSelection(point) {
+      selectionEvents.push({ type: "update", point });
+      const selected = interaction.updateSelection(point);
+      syncOverlayFromInteraction();
+      return selected;
+    },
+    endSelection(point) {
+      selectionEvents.push({ type: "end", point });
+      const selected = interaction.endSelection(point);
+      syncOverlayFromInteraction();
+      return selected;
+    },
+    selectRange(range) {
+      selectionRanges.push(range);
+      const selected = interaction.selectRange(range);
+      syncOverlayFromInteraction();
+      return selected;
+    },
+    selectWordAt(point) {
+      const selected = interaction.selectWordAt(point);
+      syncOverlayFromInteraction();
+      return selected;
+    },
+    selectLineAt(point) {
+      const selected = interaction.selectLineAt(point);
+      syncOverlayFromInteraction();
+      return selected;
+    },
+    clearSelection(ownerId) {
+      clearRequests.push(ownerId ?? "all");
+      const cleared = interaction.clearSelection(ownerId);
+      syncOverlayFromInteraction();
+      return cleared;
+    },
+    getSelectionOverlay(ownerId) {
+      return interaction.getSelectionOverlay(ownerId);
+    },
+  };
   const source: TerminalProtocolPaneSource = {
     kind: "terminal-protocol",
     id: createPaneSourceId(id),
     readTitle: () => title,
     readFrame: (): TerminalFrameSnapshot => ({
       size: resizeCalls.at(-1) ?? { cols: 40, rows: 10 },
-      lines: [`${id} frame ${revision}`, "$ echo alpha beta gamma ok"],
+      lines: readLines(),
       cursor,
       selectionOverlays,
       revision,
@@ -101,33 +213,43 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
       revision += 1;
       return true;
     },
+    handleKey: (key) => hostInput.handleKey(inputTarget, key),
+    pasteText: (text) => hostInput.pasteText(inputTarget, text),
+    pointerDown: (input) => {
+      const result = hostInput.handlePointerDown(inputTarget, input);
+      syncOverlayFromInteraction();
+      return result;
+    },
+    pointerDrag: (input) => {
+      const result = hostInput.handlePointerDrag(inputTarget, input);
+      syncOverlayFromInteraction();
+      return result;
+    },
+    pointerUp: (input) => {
+      const result = hostInput.handlePointerUp(inputTarget, input);
+      syncOverlayFromInteraction();
+      return result;
+    },
     resize: (size) => {
       resizeDispatcher.resize(size);
     },
-    selectionStart: (point) => {
-      selectionEvents.push({ type: "start", point });
-      return true;
-    },
-    selectionUpdate: (point) => {
-      selectionEvents.push({ type: "update", point });
-      return true;
-    },
-    selectionEnd: (point) => {
-      selectionEvents.push({ type: "end", point });
-      return true;
-    },
-    selectRange: (range) => {
-      selectionRanges.push(range);
-      return true;
-    },
+    selectionStart: (point) => inputTarget.startSelection(point),
+    selectionUpdate: (point) => inputTarget.updateSelection(point),
+    selectionEnd: (point) => inputTarget.endSelection(point),
+    selectRange: (range) => inputTarget.selectRange(range),
+    selectWordAt: (point) => inputTarget.selectWordAt(point),
+    selectLineAt: (point) => inputTarget.selectLineAt(point),
     copySelection: (ownerId, target = "clipboard") => {
       copyRequests.push(`${ownerId ?? ""}:${target}`);
-      return copyResult;
+      if (copyResult === false) {
+        return false;
+      }
+      if (typeof copyResult === "string") {
+        return copyResult;
+      }
+      return interaction.copySelection(ownerId);
     },
-    clearSelection: (ownerId) => {
-      clearRequests.push(ownerId ?? "all");
-      return true;
-    },
+    clearSelection: (ownerId) => inputTarget.clearSelection(ownerId),
     followCursor: () => {
       followCursorCount += 1;
       return true;
@@ -527,7 +649,7 @@ const readTextAttributesAt = (setup: TestSetup, position: { x: number; y: number
 };
 
 const waitForTerminalResizeDebounce = async (setup: TestSetup): Promise<void> => {
-  await new Promise((resolve) => setTimeout(resolve, 80));
+  await new Promise((resolve) => setTimeout(resolve, 140));
   await setup.renderOnce();
 };
 
@@ -709,6 +831,66 @@ describe("Feature: shell-next app runtime", () => {
 
     expect(setup.captureCharFrame()).toContain("[ Run in background ]");
     expect(setup.captureCharFrame()).toContain("[ Terminate terminal ]");
+  });
+
+  test("Scenario: Given a product-bound terminal pane When Run in background is clicked Then shell-next exits the UI without disposing the attached terminal source", async () => {
+    setup = await createTestRenderer({ width: 64, height: 18, useMouse: true, kittyKeyboard: true });
+    const recordings: RecordingSource[] = [];
+    const createProductBoundSource = (id: string): PaneSource => {
+      const recording = createRecordingProtocolSource(id);
+      recordings.push(recording);
+      return recording.source;
+    };
+    const app = new ShellNextApp({
+      renderer: setup.renderer as TestRenderer,
+      terminalSourcePolicy: {
+        createInitialSource: (input) => createProductBoundSource(input.id),
+      },
+    });
+    activeApp = app;
+    app.start();
+    await setup.renderOnce();
+
+    await setup.mockMouse.click(11, 0);
+    await setup.renderOnce();
+    const background = findTextPosition(setup.captureCharFrame(), "[ Run in background ]");
+    expect(background).not.toBeNull();
+
+    await setup.mockMouse.click((background?.x ?? 0) + 2, background?.y ?? 0);
+    await app.finished;
+
+    expect(recordings).toHaveLength(1);
+    expect(recordings[0]?.disposed()).toBe(false);
+  });
+
+  test("Scenario: Given a product-bound terminal pane When Terminate terminal is clicked Then shell-next disposes the attached terminal source before exiting", async () => {
+    setup = await createTestRenderer({ width: 64, height: 18, useMouse: true, kittyKeyboard: true });
+    const recordings: RecordingSource[] = [];
+    const createProductBoundSource = (id: string): PaneSource => {
+      const recording = createRecordingProtocolSource(id);
+      recordings.push(recording);
+      return recording.source;
+    };
+    const app = new ShellNextApp({
+      renderer: setup.renderer as TestRenderer,
+      terminalSourcePolicy: {
+        createInitialSource: (input) => createProductBoundSource(input.id),
+      },
+    });
+    activeApp = app;
+    app.start();
+    await setup.renderOnce();
+
+    await setup.mockMouse.click(11, 0);
+    await setup.renderOnce();
+    const terminate = findTextPosition(setup.captureCharFrame(), "[ Terminate terminal ]");
+    expect(terminate).not.toBeNull();
+
+    await setup.mockMouse.click((terminate?.x ?? 0) + 2, terminate?.y ?? 0);
+    await app.finished;
+
+    expect(recordings).toHaveLength(1);
+    expect(recordings[0]?.disposed()).toBe(true);
   });
 
   test("Scenario: Given a terminal cursor is viewport-local When shell-next renders Then it commits the cursor on the first content row", async () => {

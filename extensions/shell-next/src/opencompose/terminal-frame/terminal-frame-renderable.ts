@@ -6,7 +6,7 @@ import { OpenComposeScrollbarRenderable } from "./scrollbar-renderable";
 import { isOpenComposeImagePastePayload, readOpenComposePastePayload, type OpenComposePastePayload } from "./paste-input";
 import {
   OpenComposeTerminalViewRenderable,
-  type OpenComposeTerminalSelectionPointHandler,
+  type OpenComposeTerminalPointerHandler,
 } from "./terminal-view-renderable";
 
 export interface OpenComposeTerminalFrameState {
@@ -26,12 +26,9 @@ export interface OpenComposeTerminalFrameBridge {
   setViewportStart(viewportStart: number): boolean;
   followCursor?: () => boolean;
   copySelection?: (ownerId?: string, target?: "clipboard" | "primary") => boolean;
-  selectionStart?: OpenComposeTerminalSelectionPointHandler;
-  selectionUpdate?: OpenComposeTerminalSelectionPointHandler;
-  selectionEnd?: OpenComposeTerminalSelectionPointHandler;
-  selectWordAt?: ConstructorParameters<typeof OpenComposeTerminalViewRenderable>[1]["onSelectWordAt"];
-  selectLineAt?: ConstructorParameters<typeof OpenComposeTerminalViewRenderable>[1]["onSelectLineAt"];
-  clearSelection?: OpenComposeTerminalSelectionPointHandler;
+  pointerDown?: OpenComposeTerminalPointerHandler;
+  pointerDrag?: OpenComposeTerminalPointerHandler;
+  pointerUp?: OpenComposeTerminalPointerHandler;
 }
 
 export interface OpenComposeTerminalFrameUpdateResult {
@@ -83,12 +80,9 @@ export class OpenComposeTerminalFrameRenderable extends BoxRenderable {
       height: normalizeDimension(this.height),
       focused: true,
       lines: state.lines,
-      onSelectionStart: (point) => this.#bridge.selectionStart?.(point) ?? false,
-      onSelectionUpdate: (point) => this.#bridge.selectionUpdate?.(point) ?? false,
-      onSelectionEnd: (point) => this.#bridge.selectionEnd?.(point) ?? false,
-      onSelectWordAt: (point) => this.#bridge.selectWordAt?.(point) ?? false,
-      onSelectLineAt: (point) => this.#bridge.selectLineAt?.(point) ?? false,
-      onClearSelection: (point) => this.#bridge.clearSelection?.(point) ?? false,
+      onPointerDown: (input) => this.#bridge.pointerDown?.(input),
+      onPointerDrag: (input) => this.#bridge.pointerDrag?.(input),
+      onPointerUp: (input) => this.#bridge.pointerUp?.(input),
       onMouseScroll: (event) => this.handleTerminalMouseScroll(event),
       onPaste: (event) => this.handleTerminalPaste(event),
     });

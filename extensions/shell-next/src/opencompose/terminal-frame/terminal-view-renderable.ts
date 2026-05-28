@@ -1,8 +1,10 @@
 import { MouseButton, RGBA, TextAttributes, type FrameBufferOptions, type MouseEvent, type RenderContext } from "@opentui/core";
-import type { TerminalRenderRichLine } from "@agenter/termless-core";
+import type {
+  TerminalHostPointerDispatchResult,
+  TerminalHostPointerInput,
+  TerminalRenderRichLine,
+} from "@agenter/termless-core";
 import type { TerminalTransportSelectionOverlay } from "@agenter/terminal-transport-protocol";
-
-import { ShellNextTerminalPointerSelectionController } from "../../terminal-engine/pointer-selection-controller";
 import { OpenComposeFrameRenderable } from "./frame-renderable";
 import { fitTerminalText } from "./cell-width";
 import type {
@@ -23,6 +25,9 @@ const OVERLAY_DENY_BG = RGBA.fromHex("#7f1d1d");
 const DEFAULT_APPROVAL_LEASE_DURATION_MS = 30 * 60 * 1000;
 
 export type OpenComposeTerminalSelectionPointHandler = (point: { ownerId: string; row: number; col: number }) => boolean;
+export type OpenComposeTerminalPointerHandler = (
+  input: TerminalHostPointerInput,
+) => TerminalHostPointerDispatchResult | undefined;
 
 interface OpenComposeTerminalApprovalActionRegion {
   action: OpenComposeTerminalApprovalActionDetail["action"];
@@ -56,15 +61,9 @@ export interface OpenComposeTerminalViewOptions extends FrameBufferOptions {
   selectionRegions?: readonly OpenComposeSelectionRegion[];
   selectionSources?: readonly OpenComposeSelectionSource[];
   selectionOverlays?: readonly TerminalTransportSelectionOverlay[];
-  semanticClickMaxDistanceCells?: number;
-  semanticWordSelection?: boolean;
-  semanticRowSelection?: boolean;
-  onSelectionStart?: OpenComposeTerminalSelectionPointHandler;
-  onSelectionUpdate?: OpenComposeTerminalSelectionPointHandler;
-  onSelectionEnd?: OpenComposeTerminalSelectionPointHandler;
-  onSelectWordAt?: OpenComposeTerminalSelectionPointHandler;
-  onSelectLineAt?: OpenComposeTerminalSelectionPointHandler;
-  onClearSelection?: OpenComposeTerminalSelectionPointHandler;
+  onPointerDown?: OpenComposeTerminalPointerHandler;
+  onPointerDrag?: OpenComposeTerminalPointerHandler;
+  onPointerUp?: OpenComposeTerminalPointerHandler;
   onInteractionTrace?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onInteractionTrace"];
   onMouseDown?: OpenComposeFrameRenderable["onMouseDown"];
   onMouseDrag?: OpenComposeFrameRenderable["onMouseDrag"];
@@ -81,43 +80,33 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
   #permissionRequestHandlerFingerprints = new Map<string, string>();
   #customHandledPermissionRequestIds = new Set<string>();
   #approvalActionRegions: OpenComposeTerminalApprovalActionRegion[] = [];
-  readonly #pointerSelection: ShellNextTerminalPointerSelectionController;
+  readonly #onPointerDown?: OpenComposeTerminalPointerHandler;
+  readonly #onPointerDrag?: OpenComposeTerminalPointerHandler;
+  readonly #onPointerUp?: OpenComposeTerminalPointerHandler;
 
   constructor(ctx: RenderContext, options: OpenComposeTerminalViewOptions) {
     super(ctx, options);
-    // Custom terminal panes keep pointer selection state in the terminal-engine boundary.
-    this.#pointerSelection = new ShellNextTerminalPointerSelectionController({
-      hasSelection: () => this.hasSelection(),
-      eventToOwnerCoordinate: (event, expectedOwnerId) => this.eventToOwnerCoordinate(event as MouseEvent, expectedOwnerId),
-      onSelectionStart: options.onSelectionStart,
-      onSelectionUpdate: options.onSelectionUpdate,
-      onSelectionEnd: options.onSelectionEnd,
-      onClearSelection: options.onClearSelection,
-      onSelectWordAt: options.onSelectWordAt,
-      onSelectLineAt: options.onSelectLineAt,
-      semanticWordSelection: options.semanticWordSelection,
-      semanticRowSelection: options.semanticRowSelection,
-      semanticClickMaxDistanceCells: options.semanticClickMaxDistanceCells,
-      trace: (kind, event, point, extra) => this.traceInteraction(kind, event, point, extra),
-    });
+    this.#onPointerDown = options.onPointerDown;
+    this.#onPointerDrag = options.onPointerDrag;
+    this.#onPointerUp = options.onPointerUp;
     const userMouseDown = options.onMouseDown;
     const userMouseDrag = options.onMouseDrag;
     const userMouseDragEnd = options.onMouseDragEnd;
     const userMouseUp = options.onMouseUp;
     this.onMouseDown = (event) => {
-      this.#pointerSelection.handleMouseDown(event);
+      this.#dispatchPointer(this.#onPointerDown, event);
       userMouseDown?.(event);
     };
     this.onMouseDrag = (event) => {
-      this.#pointerSelection.handleMouseDrag(event);
+      this.#dispatchPointer(this.#onPointerDrag, event);
       userMouseDrag?.(event);
     };
     this.onMouseDragEnd = (event) => {
-      this.#pointerSelection.handleMouseEnd(event);
+      this.#dispatchPointer(this.#onPointerUp, event);
       userMouseDragEnd?.(event);
     };
     this.onMouseUp = (event) => {
-      this.#pointerSelection.handleMouseEnd(event);
+      this.#dispatchPointer(this.#onPointerUp, event);
       userMouseUp?.(event);
     };
     this.#terminalId = options.terminalId ?? null;
@@ -359,5 +348,43 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
       return;
     }
     super.processMouseEvent(event);
+  }
+
+  #dispatchPointer(handler: OpenComposeTerminalPointerHandler | undefined, event: MouseEvent): void {
+    if (!handler) {
+      return;
+    }
+    const point = this.eventToOwnerCoordinate(event, null);
+    const result = handler({
+      button: this.#resolvePointerButton(event.button),
+      point,
+      clickCount: this.#readClickCount(event),
+      timestampMs: performance.now(),
+    });
+    if (result?.preventDefault) {
+      event.preventDefault();
+    }
+  }
+
+  #resolvePointerButton(button: number): TerminalHostPointerInput["button"] {
+    if (button === MouseButton.LEFT) {
+      return "left";
+    }
+    if (button === MouseButton.MIDDLE) {
+      return "middle";
+    }
+    if (button === MouseButton.RIGHT) {
+      return "right";
+    }
+    return "unknown";
+  }
+
+  #readClickCount(event: MouseEvent): number | undefined {
+    const candidate = event as unknown as { clickCount?: unknown; detail?: unknown };
+    const value = typeof candidate.clickCount === "number" ? candidate.clickCount : candidate.detail;
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return undefined;
+    }
+    return Math.max(1, Math.trunc(value));
   }
 }

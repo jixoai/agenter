@@ -3,7 +3,17 @@ import type {
   TerminalTransportSelectionRange,
   TerminalTransportSelectionOverlay,
 } from "@agenter/terminal-transport-protocol";
-import { XtermBridge, renderStructuredViewportBuffer, type TerminalBackendKind } from "@agenter/termless-core";
+import {
+  XtermBridge,
+  createTerminalHostInputController,
+  renderStructuredViewportBuffer,
+  type TerminalBackendKind,
+  type TerminalHostInputTarget,
+  type TerminalHostKeyEvent,
+  type TerminalHostPointerDispatchResult,
+  type TerminalHostPointerInput,
+  type TerminalKeyboardInteractionView,
+} from "@agenter/termless-core";
 
 import {
   createBunPtyPaneSource,
@@ -107,6 +117,7 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
   #currentTitle: string | null = null;
   #releaseTitleListener: (() => void) | null = null;
   readonly #resizeDispatcher: ConflatedResizeDispatcher;
+  readonly #hostInput = createTerminalHostInputController();
 
   constructor(input: LocalBunTerminalProtocolSourceInput) {
     this.id = input.id;
@@ -193,6 +204,32 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
     }
     this.#terminal.write(chunk);
     return true;
+  }
+
+  handleKey(key: TerminalHostKeyEvent): boolean {
+    return this.#hostInput.handleKey(this.#inputTarget(), key);
+  }
+
+  pasteText(text: string): boolean {
+    return this.#hostInput.pasteText(this.#inputTarget(), text);
+  }
+
+  pointerDown(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
+    const result = this.#hostInput.handlePointerDown(this.#inputTarget(), input);
+    this.#emitSelectionFrame(result.handled);
+    return result;
+  }
+
+  pointerDrag(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
+    const result = this.#hostInput.handlePointerDrag(this.#inputTarget(), input);
+    this.#emitSelectionFrame(result.handled);
+    return result;
+  }
+
+  pointerUp(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
+    const result = this.#hostInput.handlePointerUp(this.#inputTarget(), input);
+    this.#emitSelectionFrame(result.handled);
+    return result;
   }
 
   resize(size: TerminalPaneSize): void {
@@ -303,6 +340,37 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
     }
     this.#revision += 1;
     this.#emitFrame();
+  }
+
+  #readKeyboardInteractionView(): TerminalKeyboardInteractionView | null {
+    const frame = this.readFrame();
+    const cursor = frame.cursor;
+    if (!cursor) {
+      return null;
+    }
+    const viewportStart = Math.max(0, Math.trunc(frame.viewportStart ?? 0));
+    return {
+      cursorAbsRow: viewportStart + Math.max(0, Math.trunc(cursor.y)),
+      cursorCol: Math.max(0, Math.trunc(cursor.x)),
+      viewportStart,
+      plainLines: frame.lines,
+    };
+  }
+
+  #inputTarget(): TerminalHostInputTarget {
+    return {
+      readKeyboardInteractionView: () => this.#readKeyboardInteractionView(),
+      writeInput: (chunk) => this.writeInput(chunk),
+      followCursor: () => this.#bridge.followCursor(),
+      startSelection: (point) => this.#bridge.startSelection(point),
+      updateSelection: (point) => this.#bridge.updateSelection(point),
+      endSelection: (point) => this.#bridge.endSelection(point),
+      selectRange: (range) => this.#bridge.selectRange(range),
+      selectWordAt: (point) => this.#bridge.selectWordAt(point),
+      selectLineAt: (point) => this.#bridge.selectLineAt(point),
+      clearSelection: (ownerId) => this.#bridge.clearSelection(ownerId),
+      getSelectionOverlay: (ownerId) => this.#bridge.getSelectionOverlay(ownerId),
+    };
   }
 
   #emitExitIfSettled(): void {

@@ -49,6 +49,15 @@ export {
   type TerminalSelectionRange,
   type TerminalSemanticSelectionKind,
 } from "./terminal-interaction.js";
+export {
+  createTerminalHostInputController,
+  type TerminalHostInputController,
+  type TerminalHostInputTarget,
+  type TerminalHostKeyEvent,
+  type TerminalHostPointerDispatchResult,
+  type TerminalHostPointerInput,
+  type TerminalKeyboardInteractionView,
+} from "./terminal-host-input.js";
 export type { TerminalRenderRichLine, TerminalRenderRichSpan, TerminalStructuredRender } from "./render-structured-buffer.js";
 export type { ProjectedTerminalViewport, TerminalViewportCursorSource } from "./project-terminal-viewport.js";
 export type { XtermBridgeReadable } from "./xterm-bridge.js";

@@ -4,6 +4,14 @@ import type {
   TerminalTransportSnapshot,
 } from "@agenter/terminal-transport-protocol";
 import {
+  createTerminalHostInputController,
+  type TerminalHostInputTarget,
+  type TerminalHostKeyEvent,
+  type TerminalHostPointerDispatchResult,
+  type TerminalHostPointerInput,
+  type TerminalKeyboardInteractionView,
+} from "@agenter/termless-core";
+import {
   OPENCOMPOSE_PRODUCT_DYNAMIC_QUIET_MS,
   createOpenComposeLiveTerminalMirror,
   type OpenComposeLiveTerminalMirror,
@@ -52,6 +60,7 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
   readonly #readTitle: (() => string | null) | undefined;
   readonly #selectionTextListeners = new Set<(event: TerminalSelectionTextEvent) => void>();
   readonly #resizeDispatcher: ConflatedResizeDispatcher;
+  readonly #hostInput = createTerminalHostInputController();
   #pendingCopyTarget: TerminalCopyTarget | null = null;
   #disposed = false;
 
@@ -129,6 +138,26 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     }
     const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk;
     return this.#mirror.sendInputBytes(bytes);
+  }
+
+  handleKey(key: TerminalHostKeyEvent): boolean {
+    return this.#hostInput.handleKey(this.#inputTarget(), key);
+  }
+
+  pasteText(text: string): boolean {
+    return this.#hostInput.pasteText(this.#inputTarget(), text);
+  }
+
+  pointerDown(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
+    return this.#hostInput.handlePointerDown(this.#inputTarget(), input);
+  }
+
+  pointerDrag(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
+    return this.#hostInput.handlePointerDrag(this.#inputTarget(), input);
+  }
+
+  pointerUp(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
+    return this.#hostInput.handlePointerUp(this.#inputTarget(), input);
   }
 
   resize(size: TerminalPaneSize): void {
@@ -239,5 +268,33 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     for (const listener of this.#selectionTextListeners) {
       listener(event);
     }
+  }
+
+  #readKeyboardInteractionView(): TerminalKeyboardInteractionView | null {
+    const view = this.#mirror.getView();
+    return {
+      cursorAbsRow: view.cursorAbsRow,
+      cursorCol: view.cursorCol,
+      viewportStart: view.viewportStart,
+      plainLines: view.plainLines,
+    };
+  }
+
+  #inputTarget(): TerminalHostInputTarget {
+    return {
+      readKeyboardInteractionView: () => this.#readKeyboardInteractionView(),
+      writeInput: (chunk) => this.writeInput(chunk),
+      followCursor: () => this.#mirror.followCursor(),
+      startSelection: (point) => this.#mirror.selectionStart(point),
+      updateSelection: (point) => this.#mirror.selectionUpdate(point),
+      endSelection: (point) => this.#mirror.selectionEnd(point),
+      selectRange: (range) => this.#mirror.selectRange(range),
+      selectWordAt: (point) => this.#mirror.selectWordAt(point),
+      selectLineAt: (point) => this.#mirror.selectLineAt(point),
+      clearSelection: (ownerId) => this.#mirror.clearSelection(ownerId),
+      getSelectionOverlay: (ownerId) =>
+        this.#mirror.getView().interaction?.selectionOverlays?.find((overlay) => ownerId === undefined || overlay.ownerId === ownerId) ??
+        null,
+    };
   }
 }

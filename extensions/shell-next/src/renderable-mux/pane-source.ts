@@ -3,7 +3,12 @@ import type {
   TerminalTransportSelectionRange,
   TerminalTransportSelectionOverlay,
 } from "@agenter/terminal-transport-protocol";
-import type { TerminalRenderRichLine } from "@agenter/termless-core";
+import type {
+  TerminalHostKeyEvent,
+  TerminalHostPointerDispatchResult,
+  TerminalHostPointerInput,
+  TerminalRenderRichLine,
+} from "@agenter/termless-core";
 import type { KeyEvent, Renderable } from "@opentui/core";
 
 import type { ChildLayoutNode, LayoutSourceKind } from "./layout-types";
@@ -48,6 +53,11 @@ export interface TerminalProtocolPaneSource {
   readFrame(): TerminalFrameSnapshot;
   readTitle?(): string | null;
   writeInput(chunk: TerminalInputChunk): boolean;
+  handleKey?(key: TerminalHostKeyEvent): boolean;
+  pasteText?(text: string): boolean;
+  pointerDown?(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult;
+  pointerDrag?(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult;
+  pointerUp?(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult;
   resize(size: TerminalPaneSize): void | Promise<void>;
   scrollViewport?(deltaRows: number): boolean;
   setViewportStart?(viewportStart: number): boolean;

@@ -75,5 +75,5 @@ export interface ShellNextAppInput {
 
 export interface ShellNextAppController {
   readonly finished: Promise<void>;
-  destroy(): void;
+  destroy(options?: { preserveTerminalSources?: boolean }): void;
 }

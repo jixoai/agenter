@@ -1,4 +1,4 @@
-import type { TerminalRenderRichLine } from "@agenter/termless-core";
+import type { TerminalHostPointerInput, TerminalRenderRichLine } from "@agenter/termless-core";
 import { BoxRenderable, type CliRenderer, type MouseEvent, type Renderable } from "@opentui/core";
 import { OpenComposeTerminalFrameRenderable } from "../opencompose/terminal-frame/terminal-frame-renderable";
 
@@ -149,12 +149,9 @@ export class ShellNextFrameBufferTerminalPane {
         scrollViewport: (deltaRows) => this.#source.scrollViewport?.(deltaRows) ?? false,
         setViewportStart: (viewportStart) => this.#source.setViewportStart?.(viewportStart) ?? false,
         followCursor: () => this.#source.followCursor?.() ?? false,
-        selectionStart: (point) => this.#source.selectionStart?.(point) ?? false,
-        selectionUpdate: (point) => this.#source.selectionUpdate?.(point) ?? false,
-        selectionEnd: (point) => this.#handleSelectionEnd(point),
-        selectWordAt: (point) => this.#source.selectWordAt?.(point) ?? false,
-        selectLineAt: (point) => this.#source.selectLineAt?.(point) ?? false,
-        clearSelection: (point) => this.#source.clearSelection?.(point.ownerId) ?? false,
+        pointerDown: (input) => this.#source.pointerDown?.(input),
+        pointerDrag: (input) => this.#source.pointerDrag?.(input),
+        pointerUp: (input) => this.#handlePointerUp(input),
         copySelection: (ownerId, target) => this.#copySelection(ownerId, target),
         handleUnsupportedMediaPaste: () => false,
       },
@@ -243,7 +240,7 @@ export class ShellNextFrameBufferTerminalPane {
     return this.#source.writeInput(chunk);
   }
 
-  destroy(): void {
+  destroy(options?: { preserveSource?: boolean }): void {
     if (this.#disposed) {
       return;
     }
@@ -251,7 +248,9 @@ export class ShellNextFrameBufferTerminalPane {
     this.#resizeScheduler.dispose();
     this.#chrome.destroy();
     this.#root.destroyRecursively();
-    void this.#source.dispose();
+    if (options?.preserveSource !== true) {
+      void this.#source.dispose();
+    }
   }
 
   #handleMouseDown(event: MouseEvent): void {
@@ -286,12 +285,12 @@ export class ShellNextFrameBufferTerminalPane {
     });
   }
 
-  #handleSelectionEnd(point: Parameters<NonNullable<TerminalProtocolPaneSource["selectionEnd"]>>[0]): boolean {
-    const ended = this.#source.selectionEnd?.(point) ?? false;
-    if (ended) {
-      this.#copySelection(point.ownerId, "primary");
+  #handlePointerUp(input: TerminalHostPointerInput) {
+    const result = this.#source.pointerUp?.(input);
+    if (result?.handled) {
+      this.#copySelection(input.point?.ownerId, "primary");
     }
-    return ended;
+    return result;
   }
 
   #copySelection(ownerId?: string, target: TerminalCopyTarget = "clipboard"): boolean {
