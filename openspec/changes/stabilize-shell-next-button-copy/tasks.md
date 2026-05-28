@@ -1,0 +1,52 @@
+## 1. OpenSpec And Reference Audit
+
+- [ ] 1.1 Validate `stabilize-shell-next-button-copy` artifacts before implementation.
+- [ ] 1.2 Confirm `git diff -- extensions/cli-shell` is empty and keep cli-shell read-only.
+- [ ] 1.3 Read legacy cli-shell selection/copy/paste paths and record the shell-next code that must copy the behavior.
+- [ ] 1.4 Record why OpenTUI does not give us a product Button and why shell-next needs its own Button primitive.
+
+## 2. BDD Regression Coverage
+
+- [ ] 2.1 Add failing BDD scenarios for one shared Button primitive: bold-only hover, underline-only active, no hover color shift, and visible-cell hit testing.
+- [ ] 2.2 Add failing BDD scenarios for ShellPane drag selection, visible overlay projection, backend copy, and async selected-text OSC52 delivery.
+- [ ] 2.3 Add failing BDD scenarios for ShellPane paste delivering one backend input write and one follow-cursor call.
+- [ ] 2.4 Add failing BDD scenarios for Chat/renderer primary selection not clearing visible selection or handling middle-click locally.
+- [ ] 2.5 Add failing BDD scenarios for terminal resize debounce plus conflated newest-size delivery.
+
+## 3. Button Platform Implementation
+
+- [ ] 3.1 Implement a typed shell-next Button primitive for bracketed labels, hit regions, hover, active, disabled, and event consumption.
+- [ ] 3.2 Migrate ShellPane titlebar, ChatPane titlebar, statusbar actions, and CloseConfirmDialog buttons to consume the shared Button primitive or adapter.
+- [ ] 3.3 Remove statusbar hover color changes and enforce bold-only hover everywhere.
+- [ ] 3.4 Fix active underline rendering so Chat layout actions and statusbar actions visibly use underline state.
+- [ ] 3.5 Add CloseConfirmDialog button hover and titlebar close hover through the same primitive.
+
+## 4. ShellPane Selection Copy Paste
+
+- [ ] 4.1 Copy the needed legacy terminal selection/copy/paste behavior into shell-next without importing from or editing cli-shell.
+- [ ] 4.2 Fix ShellPane drag selection coordinates and selection overlay refresh.
+- [ ] 4.3 Fix ShellPane copy shortcuts so selected text is delivered through OSC52 once and terminal input is not polluted.
+- [ ] 4.4 Fix ShellPane paste ownership so one paste event reaches the terminal backend exactly once.
+- [ ] 4.5 Fix Chat/renderer primary selection mirroring so it does not clear visible selection.
+
+## 5. Resize Delivery
+
+- [ ] 5.1 Replace resize debounce-only behavior with an explicit debounce plus conflated pending-size queue.
+- [ ] 5.2 Verify rapid resize delivers only the newest backend size and stable resize still delivers once.
+
+## 6. Multi-turn Self Review And Drift Control
+
+- [ ] 6.1 Self review round 1: compare implementation against the user's latest six feedback bullets and record the result.
+- [ ] 6.2 Self review round 2: compare implementation against earlier shell-next requirements for Button, copy/paste, resize, and clean workspace.
+- [ ] 6.3 Produce a plain-language drift list of what was previously over-claimed or incorrectly modeled.
+- [ ] 6.4 Produce a future task list for anything intentionally deferred after this change.
+
+## 7. Verification Commit And Clean Workspace
+
+- [ ] 7.1 Run `openspec validate stabilize-shell-next-button-copy --strict`.
+- [ ] 7.2 Run focused BDD tests for shell-next button, copy/paste, resize, statusbar, and top-layer behavior.
+- [ ] 7.3 Run `bun run --filter 'agenter-ext-shell-next' test`.
+- [ ] 7.4 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
+- [ ] 7.5 Run `git diff --check`.
+- [ ] 7.6 Commit OpenSpec artifacts separately from implementation.
+- [ ] 7.7 Resolve any pre-existing unrelated dirty workspace state explicitly so final `git status --short` is clean.

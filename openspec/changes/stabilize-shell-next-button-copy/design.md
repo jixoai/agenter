@@ -1,0 +1,78 @@
+## Context
+
+`shell-next` has the right architectural direction: an embedded OpenTUI mux with protocol-backed terminal panes and renderer panes. The current failures are caused by two places where that architecture is still leaky.
+
+First, OpenTUI gives us renderables and events, but it does not give us a Button component. The current code therefore builds "buttons" separately in pane chrome, Chat chrome, statusbar, and top-layer dialogs. Those local renderers disagree about hover colors, active underline, hit boxes, and titlebar overlays.
+
+Second, the ShellPane terminal projection partially copied the legacy cli-shell selection/paste model but did not preserve the whole event law. The legacy code treats terminal selection, copy, paste, and clear-selection as backend-owned facts. Shell-next must copy that behavior into its own modules instead of importing or editing `extensions/cli-shell`.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- Add a reusable shell-next Button primitive that owns bracketed labels, hover state, active underline, disabled state, hit-region geometry, and event consumption.
+- Replace all shell-next titlebar/statusbar/dialog button rendering with that primitive or a thin adapter over it.
+- Make hover styling bold-only and active styling underline-only across ShellPane, ChatPane, statusbar, and CloseConfirmDialog.
+- Restore ShellPane selection/copy/paste by copying the needed legacy behavior into `extensions/shell-next`.
+- Ensure paste is delivered exactly once to the focused terminal backend.
+- Ensure renderer/Chat primary copy does not clear the user-visible selection during middle-click validation.
+- Ensure terminal backend resize delivery is both debounced and conflated.
+- Add BDD scenarios for every manual failure and make the self-review artifacts compare implementation against the user's original wording.
+- Leave the workspace clean after final commit.
+
+**Non-Goals:**
+
+- Modify `extensions/cli-shell` source, tests, or OpenSpec artifacts.
+- Import cli-shell implementation into shell-next.
+- Add an OpenTUI upstream dependency or patch OpenTUI itself.
+- Archive this change before manual acceptance.
+
+## Decisions
+
+1. Button becomes a platform primitive, not another helper string builder
+
+   Shell-next will add a small `ShellNextButton` primitive under `renderable-mux`. It will expose pure builders for tests and renderable adapters for OpenTUI surfaces. The primitive owns one visual law:
+
+   - label is stable and bracketed;
+   - hover adds bold only;
+   - active adds underline only;
+   - no hover color shift;
+   - clickable coordinates match visible cells.
+
+   Alternative considered: keep `shellNextPaneActionAttributes` and fix each surface. That keeps four local "button" implementations alive and repeats the failure mode.
+
+2. Statusbar and titlebars consume the same Button state model
+
+   Pane titlebars need absolute overlay renderables because OpenTUI border titles do not provide independent per-button styling. Statusbar can use styled text chunks. Both should consume the same Button state and tests must inspect rendered spans rather than trusting helper output alone.
+
+   Alternative considered: force all buttons through a single `TextRenderable`. This does not fit border title overlays and would reintroduce coordinate drift.
+
+3. ShellPane copy/paste follows legacy backend ownership
+
+   The legacy cli-shell path uses backend-owned selection truth. Shell-next should copy that model:
+
+   - mouse drag routes pane-local owner coordinates to the terminal source;
+   - copy shortcuts call backend copy selection first;
+   - selected text returned asynchronously is written to OSC52 once;
+   - paste events are handled by the focused terminal frame once and then consumed.
+
+   Alternative considered: use OpenTUI renderer selection for terminal panes. That is wrong because terminal text selection is owned by termless/ghostty-native state, not by OpenTUI renderer text.
+
+4. Primary selection mirroring is best-effort and must not clear visual selection
+
+   Renderer pane primary copy should happen on selection completion and should not intercept middle-click paste. Shell-next must avoid local middle-click handlers and avoid using primary-copy calls that reset renderer selection state.
+
+   Alternative considered: manually emulate middle-click paste. That belongs to the terminal/OS, not shell-next.
+
+5. Resize delivery needs an explicit conflated queue
+
+   Debounce alone is not enough. The terminal projection will maintain a single pending size slot. Each rapid layout update replaces the slot; the timer delivers only the newest size. Stable changes still deliver after the debounce window.
+
+   Alternative considered: debounce mux layout. That makes cheap renderer panes lag and mixes product layout with terminal backend pressure.
+
+## Risks / Trade-offs
+
+- [Risk] OpenTUI span attributes may not render underline in some terminal backends. → Mitigation: tests assert both attribute state and captured visual behavior where the test renderer exposes spans; if the terminal backend cannot display underline, the primitive still keeps the state law centralized for a targeted renderer workaround.
+- [Risk] Primary clipboard behavior depends on terminal emulator support. → Mitigation: shell-next only emits the correct OSC52 primary request and does not own middle-click paste.
+- [Risk] Paste duplication may come from both app-level and frame-level listeners. → Mitigation: BDD must assert one paste event produces one backend input write and the implementation must keep one owner for terminal paste.
+- [Risk] Existing unrelated dirty files can prevent a clean final workspace. → Mitigation: inspect them separately; either commit, revert, or preserve them explicitly before final status, with no silent mixing into shell-next commits.
