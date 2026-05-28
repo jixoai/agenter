@@ -72,3 +72,20 @@ This third rework keeps the existing architecture decisions:
 - OpenCompose remains terminal-agnostic;
 - the rework is BDD-first and must include multi-round self-review aligned to the user's original wording;
 - implementation is bounded to at most five explicit iteration rounds, with a final merged drift list and encountered-problems list.
+
+## Fourth Rework Trigger: Button Click Law And Semantic Selection 2026-05-29
+
+Manual acceptance after the third rework closed resize, but it found that several interaction laws are still wrong in the real shell-next product path:
+
+1. `resize通过了`
+2. `help/chat这组按钮仍然没有“激活态”的样式（下划线）`
+3. `我发现所有的Button的click事件绑定不对，click需要是mousedown+mouseup，而不是现在只判断了mousedown`
+4. `Shell的Selection问题仍然没有解决`
+5. `发现一个新问题，Shell的双击应该要能选中文本，三击要能选中行。目前看到的效果是选中但是马上被取消选中了。所以我判断，你仍然在Shell-Next这边对Terminal做了太多事情，不够纯粹。这些都应该属于底层ghostty-native(vt)-backend的一些行为逻辑，属于底层内核，不该上升到 Shell-Next这一层。`
+
+This fourth rework keeps the current architecture direction but tightens two laws:
+
+- shared shell-next Buttons must commit actions on `mouseup` after a matching `mousedown`, instead of firing on press-down;
+- ShellPane semantic double/triple click selection must stay backend-owned and must not be immediately cleared by a Shell-view drag-selection lifecycle.
+
+The rework stays inside `extensions/shell-next` and OpenSpec artifacts. `extensions/cli-shell` remains read-only reference material.

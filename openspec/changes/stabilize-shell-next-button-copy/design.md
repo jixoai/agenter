@@ -196,3 +196,53 @@ This rework is intentionally bounded:
 - the final output must merge the rounds into:
   - one drift list;
   - one encountered-problems list.
+
+## Fourth Rework Design Notes
+
+Manual acceptance on 2026-05-29 after the third rework accepted resize, but it found two remaining law failures plus one visible statusbar symptom:
+
+1. `help/chat这组按钮仍然没有“激活态”的样式（下划线）`
+2. `我发现所有的Button的click事件绑定不对，click需要是mousedown+mouseup，而不是现在只判断了mousedown`
+3. `Shell的Selection问题仍然没有解决`
+4. `Shell的双击应该要能选中文本，三击要能选中行。目前看到的效果是选中但是马上被取消选中了`
+
+### Shared Button Click Commitment
+
+Shell-next Buttons already share rendering law, but they still do not share the correct click commitment law. The corrected law is:
+
+- hover state may react during mouse move;
+- a button becomes armed on `mousedown`;
+- the button action commits only on `mouseup` if the same visible button region is still under the pointer;
+- `mousedown` alone does not fire the action;
+- releasing on a different cell cancels the action.
+
+This law belongs to shell-next's shared Button interaction path and must be reused by:
+
+- statusbar `Help` / `Chat`;
+- pane title actions;
+- dialog/titlebar close buttons;
+- top-layer content buttons.
+
+### Semantic Selection Must Not Be Re-cleared By The Shell View
+
+The semantic double/triple click path is already a backend-intent path:
+
+- double click asks the backend/kernel for word selection;
+- triple click asks the backend/kernel for line selection.
+
+The current bug happens because the Shell view still arms its drag-selection lifecycle even after semantic selection already consumed the click and the backend selection overlay became visible. That causes an immediate clear-selection on release.
+
+The corrected law is:
+
+- if semantic selection consumed the mouse-down event, the Shell-view drag-selection controller must not arm for that click cluster;
+- backend/kernel-owned semantic selection overlay truth remains visible through mouse-up;
+- the Shell/OpenTUI terminal view stays an input adapter and overlay projector, not the owner that clears semantic selections after the backend already accepted them.
+
+### Verification Focus
+
+This rework must add focused BDD for:
+
+- mouse click commitment on the shared Button path;
+- statusbar `Help` / `Chat` active underline after mouse toggles;
+- semantic double-click word selection staying visible;
+- semantic triple-click line selection staying visible.

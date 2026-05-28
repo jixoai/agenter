@@ -21,6 +21,13 @@ Shell-next SHALL render all interactive text buttons through one shared Button p
 - **THEN** shell-next runs the matching button action
 - **AND** clicking the row or column adjacent to the visible button does not run the action
 
+#### Scenario: Button click commits on mouseup after a matching press
+- **GIVEN** a visible shell-next button cell is pressed with `mousedown`
+- **WHEN** the pointer is released with `mouseup` on that same button
+- **THEN** the matching action fires exactly once
+- **AND** `mousedown` alone does not fire the action
+- **AND** releasing on a different cell cancels the action
+
 ### Requirement: ShellPane selection, copy, and paste SHALL follow backend-owned terminal truth
 
 ShellPane SHALL treat terminal selection, selected text, clear-selection, copy, and paste as backend-owned terminal facts. Shell-next SHALL copy the needed legacy cli-shell behavior into shell-next modules without modifying or importing `extensions/cli-shell`.
@@ -230,6 +237,20 @@ ShellPane selection intent may originate from pane-local mouse events, but durab
 - **THEN** the kernel/source path owns the scroll-aware interpretation
 - **AND** Shell/OpenTUI view code remains a projection/input adapter only
 
+#### Scenario: Semantic double click selection is not re-cleared by the Shell view
+- **GIVEN** a ShellPane semantic double click is accepted by backend/kernel word selection
+- **AND** a backend-owned selection overlay becomes visible before the click sequence fully ends
+- **WHEN** the double-click sequence completes
+- **THEN** shell-next does not issue a Shell-view clear-selection for that semantic selection
+- **AND** the backend-owned selection remains visible
+
+#### Scenario: Semantic triple click selection is not re-cleared by the Shell view
+- **GIVEN** a ShellPane semantic triple click is accepted by backend/kernel line selection
+- **AND** a backend-owned selection overlay becomes visible before the click sequence fully ends
+- **WHEN** the triple-click sequence completes
+- **THEN** shell-next does not issue a Shell-view clear-selection for that semantic selection
+- **AND** the backend-owned selection remains visible
+
 ### Requirement: Terminal resize SHALL use top-layer debounce and bottom-layer conflation
 
 Shell-next SHALL apply two separate resize laws with different responsibilities:
@@ -262,6 +283,10 @@ Shell-next active and hover button styling SHALL not decorate the bracket border
 - **WHEN** `Help` or `Chat` is active in the statusbar
 - **THEN** only the `Help` or `Chat` text inside the brackets is underlined
 - **AND** the `[` and `]` cells remain undecorated
+
+#### Scenario: Mouse-toggled statusbar actions still show the active underline
+- **WHEN** `Help` or `Chat` is opened through a statusbar mouse click
+- **THEN** the matching inner label is underlined in the mixed statusbar path
 
 #### Scenario: Pane title action active styling matches the same law
 - **WHEN** a pane title action is active or hovered
