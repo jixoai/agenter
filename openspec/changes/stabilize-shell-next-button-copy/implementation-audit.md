@@ -124,3 +124,29 @@ The remaining failures are now treated as architecture-boundary failures:
 - OpenCompose stays terminal-agnostic and continues to provide only pane composition primitives.
 
 Decision: reopen the change for a second rework. Keep `extensions/cli-shell` read-only, copy the relevant `legacy/terminal2` laws into shell-next-owned terminal-engine modules, and make BDD target the real product paths that failed manual acceptance.
+
+## Second Rework Completion
+
+- Shell-next now has an internal `terminal-engine` boundary under `extensions/shell-next/src/terminal-engine`.
+- Normal terminal input, bracketed paste, Option word motion, Shift cell selection, and Shift+Option word selection now all route through one input transaction law: clear backend selection unless explicitly preserving, write once, and follow cursor only after accepted input.
+- `TerminalProtocolPaneSource.writeInput(...)` now returns an accepted/rejected boolean, so shell-next no longer lies about whether backend input was accepted.
+- Room-backed Chat host chrome now uses `ShellNextPaneChromeController`, so hover and active rendering match direct Chat panes instead of relying on string-only border titles.
+- Terminal drag selection primary copy no longer fires twice; backend-owned drag end now suppresses the duplicate OpenTUI selection-finished path.
+
+## Self Review Round 5
+
+- The architecture boundary is now correct: OpenCompose remains terminal-agnostic, while terminal input/selection/paste/follow-cursor behavior moved into shell-next-owned modules.
+- Manual feedback about normal input clearing selection and rejected input not following the cursor is now covered by focused BDD and implemented in the transaction layer.
+- Manual feedback about Shift/Option selection preservation is now handled by explicit `preserveSelectionAnchor` routing instead of app-level ad-hoc state changes.
+- Manual feedback about Room-backed Chat titlebar behavior is now closed; attached Room uses the same hover/underline overlay law as direct Chat panes.
+- Manual feedback about primary clipboard staying KISS is now closed at the product layer: shell-next uses one host clipboard/OSC52 primary capability path and does not maintain a local primary register.
+- The remaining residual risk is environment-only: a terminal emulator may ignore OSC52 primary even though shell-next emits the correct request.
+
+## Second Rework Verification
+
+- `bun test extensions/shell-next/test/shell-next-app.test.ts`: 48 pass, 0 fail.
+- `bun run --filter 'agenter-ext-shell-next' test`: 115 pass, 0 fail.
+- `bun run --filter 'agenter-ext-shell-next' typecheck`: pass.
+- `openspec validate stabilize-shell-next-button-copy --strict`: pass.
+- `git diff --check`: pass.
+- `git diff -- extensions/cli-shell`: empty.

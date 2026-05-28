@@ -32,7 +32,7 @@ const createProtocolSource = (id: string): TerminalProtocolPaneSource => {
     kind: "terminal-protocol",
     id: createPaneSourceId(id),
     readFrame: frame,
-    writeInput: () => undefined,
+    writeInput: () => true,
     resize: (nextSize) => {
       size = nextSize;
     },

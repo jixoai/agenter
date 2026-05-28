@@ -35,12 +35,14 @@ interface RecordingSource {
   readonly inputChunks: TerminalInputChunk[];
   readonly resizeCalls: TerminalPaneSize[];
   readonly copyRequests: string[];
+  readonly clearRequests: string[];
   readonly followCursorCalls: () => number;
   readonly selectionEvents: Array<{ type: "start" | "update" | "end"; point: TerminalTransportOwnerCoordinate }>;
   readonly selectionRanges: TerminalTransportSelectionRange[];
   emitFrame(): void;
   emitSelectionText(event: { ownerId?: string; text: string; target?: "clipboard" | "primary" }): void;
   copyResult: boolean | string;
+  writeAccepted: boolean;
   title: string;
   cursor: TerminalFrameSnapshot["cursor"] | undefined;
   selectionOverlays: readonly TerminalTransportSelectionOverlay[];
@@ -61,6 +63,7 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
   const inputChunks: TerminalInputChunk[] = [];
   const resizeCalls: TerminalPaneSize[] = [];
   const copyRequests: string[] = [];
+  const clearRequests: string[] = [];
   const selectionEvents: RecordingSource["selectionEvents"] = [];
   const selectionRanges: TerminalTransportSelectionRange[] = [];
   const listeners = new Set<() => void>();
@@ -72,6 +75,7 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
   let selectionOverlays: readonly TerminalTransportSelectionOverlay[] = [];
   let disposed = false;
   let revision = 0;
+  let writeAccepted = true;
   const resizeDispatcher = new ConflatedResizeDispatcher({
     delayMs: 25,
     deliver: (size) => {
@@ -90,8 +94,12 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
       revision,
     }),
     writeInput: (chunk) => {
+      if (!writeAccepted) {
+        return false;
+      }
       inputChunks.push(chunk);
       revision += 1;
+      return true;
     },
     resize: (size) => {
       resizeDispatcher.resize(size);
@@ -115,6 +123,10 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
     copySelection: (ownerId, target = "clipboard") => {
       copyRequests.push(`${ownerId ?? ""}:${target}`);
       return copyResult;
+    },
+    clearSelection: (ownerId) => {
+      clearRequests.push(ownerId ?? "all");
+      return true;
     },
     followCursor: () => {
       followCursorCount += 1;
@@ -142,6 +154,7 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
     inputChunks,
     resizeCalls,
     copyRequests,
+    clearRequests,
     followCursorCalls: () => followCursorCount,
     selectionEvents,
     selectionRanges,
@@ -161,6 +174,12 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
     },
     set copyResult(value: boolean | string) {
       copyResult = value;
+    },
+    get writeAccepted() {
+      return writeAccepted;
+    },
+    set writeAccepted(value: boolean) {
+      writeAccepted = value;
     },
     get title() {
       return title;
@@ -535,6 +554,27 @@ describe("Feature: shell-next app runtime", () => {
     expect(recordings[0].inputChunks).toEqual(["p", "w", "d"]);
   });
 
+  test("Scenario: Given a focused terminal pane has backend selection When typing text Then input clears selection and follows cursor once", async () => {
+    const { recordings, setup } = await startApp();
+
+    await setup.mockInput.typeText("x");
+
+    expect(recordings[0].clearRequests).toEqual(["terminal"]);
+    expect(recordings[0].inputChunks).toEqual(["x"]);
+    expect(recordings[0].followCursorCalls()).toBe(1);
+  });
+
+  test("Scenario: Given a terminal source rejects input When typing text Then shell-next does not follow cursor", async () => {
+    const { recordings, setup } = await startApp();
+    recordings[0].writeAccepted = false;
+
+    await setup.mockInput.typeText("x");
+
+    expect(recordings[0].clearRequests).toEqual(["terminal"]);
+    expect(recordings[0].inputChunks).toEqual([]);
+    expect(recordings[0].followCursorCalls()).toBe(0);
+  });
+
   test("Scenario: Given a focused shell pane When Ctrl+B then N is pressed Then shell-next splits and focuses the new pane", async () => {
     const { setup, recordings } = await startApp();
 
@@ -907,6 +947,7 @@ describe("Feature: shell-next app runtime", () => {
       endCol: 6,
     });
     expect(recordings[0].inputChunks.at(-1)).toBe("\u001b[C");
+    expect(recordings[0].clearRequests).toEqual([]);
     expect(recordings[0].followCursorCalls()).toBe(1);
   });
 
@@ -967,6 +1008,7 @@ describe("Feature: shell-next app runtime", () => {
       endRow: 1,
       endCol: gammaCol,
     });
+    expect(recordings[0].clearRequests).toEqual([]);
   });
 
   test("Scenario: Given a focused shell pane When one bracketed paste event arrives Then it reaches the backend once", async () => {
@@ -1108,6 +1150,22 @@ describe("Feature: shell-next app runtime", () => {
     expect(copied).toContain(`${SHELL_NEXT_CLIPBOARD_TARGETS.primary}:async primary text`);
   });
 
+  test("Scenario: Given primary selection completion When shell-next requests primary copy Then it uses one host capability path only", async () => {
+    const { setup, recordings } = await startApp();
+    const copied: string[] = [];
+    setup.renderer.copyToClipboardOSC52 = ((text: string, target?: ShellNextClipboardTarget) => {
+      copied.push(`${target ?? SHELL_NEXT_CLIPBOARD_TARGETS.clipboard}:${text}`);
+      return false;
+    }) as typeof setup.renderer.copyToClipboardOSC52;
+
+    recordings[0].copyResult = "selected shell text";
+    await setup.mockMouse.drag(2, 1, 10, 1);
+    await setup.renderOnce();
+
+    expect(recordings[0].copyRequests.every((request) => request === "terminal:primary")).toBe(true);
+    expect(copied).toEqual([`${SHELL_NEXT_CLIPBOARD_TARGETS.primary}:selected shell text`]);
+  });
+
   test("Scenario: Given backend selection overlay changes without text changes When frame refreshes Then ShellPane keeps selection visible", async () => {
     const { setup, recordings } = await startApp();
     const terminalFrame = setup.renderer.root.findDescendantById("pane-1-framebuffer-terminal-frame") as
@@ -1206,6 +1264,90 @@ describe("Feature: shell-next app runtime", () => {
     expect(frame).toContain("hi room");
     expect(roomStore.sentMessages).toEqual(["hi room"]);
     expect(recordings[0].inputChunks).toEqual([]);
+  });
+
+  test("Scenario: Given a Room-backed Chat pane titlebar When hovering close Then it uses the shared pane chrome bold-only hover", async () => {
+    const roomStore = new RecordingAttachedRoomStore();
+    const attached = createAttachedRoom(roomStore);
+    const { setup } = await startApp({
+      room: {
+        store: roomStore,
+        attached,
+        shellName: "shell-next-test",
+      },
+    });
+
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("c");
+    await setup.renderOnce();
+
+    const title = findTextPosition(setup.captureCharFrame(), "Chat [←] [→] [⿻] [x]");
+    expect(title).not.toBeNull();
+
+    await setup.mockMouse.moveTo((title?.x ?? 0) + "Chat [←] [→] [⿻] ".length + 1, title?.y ?? 0);
+    await setup.renderOnce();
+
+    expect(
+      readTextAttributesAt(
+        setup,
+        { x: (title?.x ?? 0) + "Chat [←] [→] [⿻] ".length, y: title?.y ?? 0 },
+        "[x]",
+      ) & TextAttributes.BOLD,
+    ).toBe(TextAttributes.BOLD);
+    expect(
+      readTextAttributesAt(setup, { x: (title?.x ?? 0) + "Chat ".length, y: title?.y ?? 0 }, "[←]") &
+        TextAttributes.BOLD,
+    ).toBe(0);
+  });
+
+  test("Scenario: Given a Room-backed Chat pane layout mode When moved left and float Then the shared pane chrome active action is underlined", async () => {
+    const roomStore = new RecordingAttachedRoomStore();
+    const attached = createAttachedRoom(roomStore);
+    const { setup } = await startApp({
+      room: {
+        store: roomStore,
+        attached,
+        shellName: "shell-next-test",
+      },
+    });
+
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("c");
+    await setup.renderOnce();
+
+    const rightDockedTitle = findTextPosition(setup.captureCharFrame(), "Chat [←] [→] [⿻] [x]");
+    expect(rightDockedTitle).not.toBeNull();
+    expect(
+      readTextAttributesAt(
+        setup,
+        { x: (rightDockedTitle?.x ?? 0) + "Chat [←] ".length, y: rightDockedTitle?.y ?? 0 },
+        "[→]",
+      ) & TextAttributes.UNDERLINE,
+    ).toBe(TextAttributes.UNDERLINE);
+
+    await setup.mockMouse.click((rightDockedTitle?.x ?? 0) + "Chat ".length + 1, rightDockedTitle?.y ?? 0);
+    await setup.renderOnce();
+    const leftDockedTitle = findTextPosition(setup.captureCharFrame(), "Chat [←] [→] [⿻] [x]");
+    expect(leftDockedTitle).not.toBeNull();
+    expect(
+      readTextAttributesAt(
+        setup,
+        { x: (leftDockedTitle?.x ?? 0) + "Chat ".length, y: leftDockedTitle?.y ?? 0 },
+        "[←]",
+      ) & TextAttributes.UNDERLINE,
+    ).toBe(TextAttributes.UNDERLINE);
+
+    await setup.mockMouse.click((leftDockedTitle?.x ?? 0) + "Chat [←] [→] ".length + 1, leftDockedTitle?.y ?? 0);
+    await setup.renderOnce();
+    const floatingTitle = findTextPosition(setup.captureCharFrame(), "Chat [←] [→] [⿻] [x]");
+    expect(floatingTitle).not.toBeNull();
+    expect(
+      readTextAttributesAt(
+        setup,
+        { x: (floatingTitle?.x ?? 0) + "Chat [←] [→] ".length, y: floatingTitle?.y ?? 0 },
+        "[⿻]",
+      ) & TextAttributes.UNDERLINE,
+    ).toBe(TextAttributes.UNDERLINE);
   });
 
   test("Scenario: Given a Room-backed Chat pane and close dialog When Esc cancels the dialog Then Chat remains mounted", async () => {

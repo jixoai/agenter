@@ -1,7 +1,5 @@
 import { CliRenderEvents, type CliRenderer, type Selection } from "@opentui/core";
 
-import { createShellNextTerminalInteractionController } from "../input/terminal-interaction-controller";
-import { encodeShellNextTerminalKey } from "../input/terminal-key";
 import {
   copyFinishedRendererSelectionToPrimary,
   copyRendererSelection,
@@ -12,8 +10,6 @@ import { createRootLayout, type ChildLayoutNode, type RootLayout } from "../rend
 import { ShellNextMuxRenderable } from "../renderable-mux/mux-renderable";
 import {
   createOpenTuiRenderablePaneSource,
-  type TerminalFrameSnapshot,
-  type TerminalProtocolPaneSource,
   type OpenTuiRenderablePaneSource,
   type OpenTuiRenderableSurface,
 } from "../renderable-mux/pane-source";
@@ -22,6 +18,7 @@ import type { LocalBunTerminalExitEvent } from "../sources/bun-terminal-protocol
 import { ShellNextStatusSurface } from "../surfaces/status-surface";
 import { ShellNextTopLayerSurface, createEmptyShellNextApprovalStore } from "../surfaces/top-layer-surface";
 import { createShellNextFrameBufferTerminalPane } from "../terminal-projection/framebuffer-terminal-pane";
+import { ShellNextTerminalEngine } from "../terminal-engine/terminal-engine";
 import type { ShellNextRoomLayoutMode } from "../product-room/room-app";
 import { createDefaultShellNextTerminalSourcePolicy } from "./default-shell-source";
 import { ShellNextFocusEventDispatcher } from "./focus-event-dispatcher";
@@ -70,6 +67,7 @@ export class ShellNextApp implements ShellNextAppController {
   readonly #showStatusbar: boolean;
   readonly #syncStatusbarWithLayout: boolean;
   readonly #keyDispatcher = new ShellNextFocusEventDispatcher();
+  readonly #terminalEngine = new ShellNextTerminalEngine();
   #releaseStatusProvider: (() => void) | null = null;
   readonly #floatingPanes = new Map<string, FloatingOpenTuiPane>();
   #floatingFocusId: string | null = null;
@@ -79,7 +77,6 @@ export class ShellNextApp implements ShellNextAppController {
   #paneCounter = 1;
   #status: ShellNextStatusbarState;
   #prefixPending = false;
-  #terminalSelectionAnchor: { ownerId: string; row: number; col: number } | null = null;
 
   constructor(input: ShellNextAppInput & { renderer: CliRenderer; ownsRenderer?: boolean }) {
     this.#input = input;
@@ -130,6 +127,10 @@ export class ShellNextApp implements ShellNextAppController {
         if (this.#mux.focusPane(paneId)) {
           this.#openCloseConfirm();
         }
+      },
+      sendTerminalInputText: (paneId, text) => {
+        const source = this.#mux.getTerminalSource(paneId);
+        return source ? this.#terminalEngine.sendPasteText(source, text) : false;
       },
     });
     this.#statusbar = new ShellNextStatusbarRenderable({
@@ -506,6 +507,9 @@ export class ShellNextApp implements ShellNextAppController {
   }
 
   #handleRendererSelection = (selection: Selection): void => {
+    if (this.#floatingFocusId === null && this.#mux.focusedNode?.sourceKind === "terminal-protocol") {
+      return;
+    }
     copyFinishedRendererSelectionToPrimary(this.#renderer, selection);
   };
 
@@ -520,52 +524,14 @@ export class ShellNextApp implements ShellNextAppController {
       return false;
     }
     const source = this.#mux.getTerminalSource(this.#mux.focusedNode.id);
-    if (source && this.#handleTerminalInteractionKey(key, source)) {
-      key.preventDefault();
-      return true;
-    }
-    const encoded = encodeShellNextTerminalKey(key);
-    if (!encoded) {
+    if (!source) {
       return false;
     }
-    this.#terminalSelectionAnchor = null;
-    void this.#mux.writeFocusedInput(encoded);
+    if (!this.#terminalEngine.handleKey(source, key)) {
+      return false;
+    }
     key.preventDefault();
     return true;
-  }
-
-  #handleTerminalInteractionKey(
-    key: ReturnType<typeof readShellNextKeyEvent> & {},
-    source: TerminalProtocolPaneSource,
-  ): boolean {
-    const frame = source.readFrame();
-    if (!frame.cursor || !source.selectRange) {
-      return false;
-    }
-    const controller = createShellNextTerminalInteractionController({
-      view: this.#readTerminalInteractionView(frame),
-      selectionState: { anchor: this.#terminalSelectionAnchor },
-      onSelectionAnchorChange: (anchor) => {
-        this.#terminalSelectionAnchor = anchor;
-      },
-      bridge: {
-        selectRange: (range) => source.selectRange?.(range) ?? false,
-        followCursor: () => source.followCursor?.() ?? false,
-        writeInput: (chunk) => source.writeInput(chunk),
-      },
-    });
-    return controller.handleKey(key);
-  }
-
-  #readTerminalInteractionView(frame: TerminalFrameSnapshot) {
-    const cursor = frame.cursor ?? { x: 0, y: 0, visible: false };
-    const viewportStart = Math.max(0, Math.trunc(frame.viewportStart ?? 0));
-    return {
-      cursorAbsRow: viewportStart + Math.max(0, Math.trunc(cursor.y)),
-      cursorCol: Math.max(0, Math.trunc(cursor.x)),
-      viewportStart,
-      plainLines: frame.lines,
-    };
   }
 
   #dispatchFocusedOpenTuiKey(key: ReturnType<typeof readShellNextKeyEvent> & {}): boolean {

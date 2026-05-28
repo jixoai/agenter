@@ -251,7 +251,7 @@ export class PaneRenderable {
     });
   }
 
-  writeInput(chunk: TerminalInputChunk): void | Promise<void> {
+  writeInput(chunk: TerminalInputChunk): boolean {
     return this.#source.writeInput(chunk);
   }
 

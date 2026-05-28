@@ -17,14 +17,7 @@ export interface ShellNextTerminalInteractionView {
 
 export interface ShellNextTerminalInteractionBridge {
   selectRange(range: TerminalTransportSelectionRange): boolean;
-  followCursor(): boolean;
-  writeInput(chunk: string): void | Promise<void>;
-}
-
-export interface ShellNextTerminalWordNavigationResult {
-  readonly encodedInput: string;
-  readonly selectionRange: TerminalTransportSelectionRange | null;
-  readonly selectionAnchor: TerminalTransportOwnerCoordinate;
+  sendInput(chunk: string, options?: { preserveSelectionAnchor?: boolean }): boolean;
 }
 
 const repeatTerminalKey = (key: "\u001b[C" | "\u001b[D", count: number): string | null => {
@@ -149,7 +142,7 @@ const resolveOptionWordKey = (key: KeyEvent): { direction: "left" | "right"; shi
 const resolveWordBoundary = (
   view: ShellNextTerminalInteractionView,
   key: KeyEvent,
-): { direction: "left" | "right"; cursorAbsRow: number; cursorCol: number; cursorIndex: number; targetCol: number; delta: number } | null => {
+): { direction: "left" | "right"; cursorAbsRow: number; cursorCol: number; targetCol: number; delta: number } | null => {
   const optionWordKey = resolveOptionWordKey(key);
   if (!optionWordKey) {
     return null;
@@ -174,7 +167,6 @@ const resolveWordBoundary = (
     direction: optionWordKey.direction,
     cursorAbsRow: view.cursorAbsRow,
     cursorCol,
-    cursorIndex,
     targetCol,
     delta,
   };
@@ -209,19 +201,23 @@ export const createShellNextTerminalInteractionController = (input: {
       input.onSelectionAnchorChange(null);
       return false;
     }
-    const sent = input.bridge.selectRange({
+    const selected = input.bridge.selectRange({
       ownerId: "terminal",
       startRow: anchor.row,
       startCol,
       endRow: cursorAbsRow,
       endCol,
     });
-    if (sent) {
-      input.onSelectionAnchorChange(anchor);
-      void input.bridge.writeInput(shiftArrow.direction === "left" ? "\u001b[D" : "\u001b[C");
-      void input.bridge.followCursor();
+    if (!selected) {
+      return false;
     }
-    return sent;
+    const moved = input.bridge.sendInput(shiftArrow.direction === "left" ? "\u001b[D" : "\u001b[C", {
+      preserveSelectionAnchor: true,
+    });
+    if (moved) {
+      input.onSelectionAnchorChange(anchor);
+    }
+    return moved;
   };
 
   const routeWordSelection = (key: KeyEvent): boolean => {
@@ -243,7 +239,7 @@ export const createShellNextTerminalInteractionController = (input: {
       input.onSelectionAnchorChange(null);
       return false;
     }
-    const sent = input.bridge.selectRange({
+    const selected = input.bridge.selectRange({
       ownerId: "terminal",
       startRow: anchor.row,
       startCol,
@@ -251,17 +247,19 @@ export const createShellNextTerminalInteractionController = (input: {
       endCol,
     });
     const cursorInput =
-      sent && boundary.delta > 0
+      selected && boundary.delta > 0
         ? repeatTerminalKey("\u001b[C", boundary.delta)
-        : sent && boundary.delta < 0
+        : selected && boundary.delta < 0
           ? repeatTerminalKey("\u001b[D", Math.abs(boundary.delta))
           : null;
-    if (cursorInput) {
-      input.onSelectionAnchorChange(anchor);
-      void input.bridge.writeInput(cursorInput);
-      void input.bridge.followCursor();
+    if (!cursorInput) {
+      return false;
     }
-    return sent;
+    const moved = input.bridge.sendInput(cursorInput, { preserveSelectionAnchor: true });
+    if (moved) {
+      input.onSelectionAnchorChange(anchor);
+    }
+    return moved;
   };
 
   const resolveOptionNavigation = (key: KeyEvent): string | null => {
@@ -269,8 +267,9 @@ export const createShellNextTerminalInteractionController = (input: {
     if (!boundary) {
       return null;
     }
-    const delta = boundary.delta;
-    return delta > 0 ? repeatTerminalKey("\u001b[C", delta) : repeatTerminalKey("\u001b[D", Math.abs(delta));
+    return boundary.delta > 0
+      ? repeatTerminalKey("\u001b[C", boundary.delta)
+      : repeatTerminalKey("\u001b[D", Math.abs(boundary.delta));
   };
 
   return {
@@ -285,9 +284,7 @@ export const createShellNextTerminalInteractionController = (input: {
       if (!encoded) {
         return false;
       }
-      void input.bridge.writeInput(encoded);
-      void input.bridge.followCursor();
-      return true;
+      return input.bridge.sendInput(encoded, { preserveSelectionAnchor: true });
     },
   };
 };

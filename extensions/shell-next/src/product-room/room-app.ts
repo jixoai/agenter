@@ -22,6 +22,7 @@ import {
 import type { ShellNextRoomBootstrapResult } from "../product/bootstrap";
 import { preserveRendererSelectionOnMiddleClick } from "../renderable-mux/renderer-selection";
 import {
+  ShellNextPaneChromeController,
   resolveShellNextPaneChromeClick,
   shellNextPaneButtonLabel,
   shellNextPaneCloseAction,
@@ -219,6 +220,7 @@ export class ShellNextRoomApp {
   readonly #confirmTitle: TextRenderable;
   readonly #confirmMessage: TextRenderable;
   readonly #confirmActions: TextRenderable;
+  readonly #hostChromeController: ShellNextPaneChromeController;
   #state: Pick<RuntimeClientState, "globalRoomSnapshotsById" | "globalTerminalApprovalsById">;
   #releaseStore: (() => void) | null = null;
   #releaseRoom: (() => void) | null = null;
@@ -257,6 +259,13 @@ export class ShellNextRoomApp {
     this.#keybindings = input.keybindings;
     this.#hostNode = input.hostNode ?? null;
     this.#hostChrome = input.hostChrome;
+    this.#hostChromeController = new ShellNextPaneChromeController({
+      renderer: this.#renderer,
+      id: "shell-next-room-host-chrome",
+      bg: "#101820",
+      onMouseDown: (event) => this.#handleMouseDown(event),
+      onMouseMove: (event) => this.#handleMouseMove(event),
+    });
     this.#root = new BoxRenderable(this.#renderer, {
       id: "shell-next-room-root",
       width: "100%",
@@ -484,6 +493,7 @@ export class ShellNextRoomApp {
       this.#renderer.keyInput.off("keypress", this.#handleKeypress);
     }
     this.#renderer.off(CliRenderEvents.RESIZE, this.#handleResize);
+    this.#hostChromeController.destroy();
     this.#root.destroyRecursively();
     if (this.#ownsRenderer) {
       this.#renderer.destroy();
@@ -592,9 +602,10 @@ export class ShellNextRoomApp {
     const host = this.#hostNode;
     if (!chrome || !host) {
       this.#root.title = "";
+      this.#hostChromeController.hide();
       return;
     }
-    this.#chromeRegions = syncShellNextPaneChrome({
+    this.#chromeRegions = this.#hostChromeController.sync({
       root: this.#root,
       rect: host.rect,
       state: {

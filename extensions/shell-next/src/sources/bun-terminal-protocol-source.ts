@@ -187,11 +187,12 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
     return this.#currentTitle ?? this.#configuredTitle;
   }
 
-  writeInput(chunk: TerminalInputChunk): void {
+  writeInput(chunk: TerminalInputChunk): boolean {
     if (this.#disposed || this.#terminal.closed) {
-      return;
+      return false;
     }
     this.#terminal.write(chunk);
+    return true;
   }
 
   resize(size: TerminalPaneSize): void {

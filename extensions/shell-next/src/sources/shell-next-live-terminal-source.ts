@@ -123,12 +123,12 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
       : (this.#currentTitle ?? this.#configuredTitle ?? this.#initialTitle ?? this.id.value);
   }
 
-  writeInput(chunk: TerminalInputChunk): void {
+  writeInput(chunk: TerminalInputChunk): boolean {
     if (this.#disposed) {
-      return;
+      return false;
     }
     const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk;
-    this.#mirror.sendInputBytes(bytes);
+    return this.#mirror.sendInputBytes(bytes);
   }
 
   resize(size: TerminalPaneSize): void {

@@ -97,7 +97,7 @@ const createTestDependencies = (input: {
         lines: ["live frame"],
         revision: 1,
       }),
-      writeInput: () => undefined,
+      writeInput: () => true,
       resize: () => undefined,
       dispose: () => undefined,
     };

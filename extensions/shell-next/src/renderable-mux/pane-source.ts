@@ -47,7 +47,7 @@ export interface TerminalProtocolPaneSource {
   readonly id: PaneSourceId;
   readFrame(): TerminalFrameSnapshot;
   readTitle?(): string | null;
-  writeInput(chunk: TerminalInputChunk): void | Promise<void>;
+  writeInput(chunk: TerminalInputChunk): boolean;
   resize(size: TerminalPaneSize): void | Promise<void>;
   scrollViewport?(deltaRows: number): boolean;
   setViewportStart?(viewportStart: number): boolean;

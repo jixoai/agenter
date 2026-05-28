@@ -18,7 +18,7 @@ export interface TerminalPaneRenderable {
   readonly root: Renderable;
   syncNode(node: ChildLayoutNode): void;
   refresh(): void;
-  writeInput(chunk: TerminalInputChunk): void | Promise<void>;
+  writeInput(chunk: TerminalInputChunk): boolean;
   destroy(): void;
 }
 
@@ -27,6 +27,7 @@ export interface TerminalPaneFactoryInput {
   readonly node: ChildLayoutNode;
   readonly source: TerminalProtocolPaneSource;
   readonly title: string;
+  readonly sendInputText?: (text: string) => boolean;
   readonly onFocus: (paneId: string) => void;
   readonly onCloseRequest?: (paneId: string) => void;
   readonly onFrameRendered?: (event: PaneFrameRenderEvent) => void;
@@ -53,6 +54,7 @@ export interface ShellNextMuxRenderableInput {
   sources: readonly PaneSource[];
   titleForPane?: (node: ChildLayoutNode, source: PaneSource) => string;
   terminalPaneFactory?: TerminalPaneFactory;
+  sendTerminalInputText?: (paneId: string, text: string) => boolean;
   onFocus?: (paneId: string) => void;
   onCloseRequest?: (paneId: string) => void;
   onFrameRendered?: (event: PaneFrameRenderEvent) => void;
@@ -251,14 +253,14 @@ export class ShellNextMuxRenderable {
     return mounted.source.surface.handleKeypress?.(key) === true;
   }
 
-  writeFocusedInput(chunk: TerminalInputChunk): void | Promise<void> {
+  writeFocusedInput(chunk: TerminalInputChunk): boolean {
     const focused = this.focusedNode;
     if (!focused) {
-      return undefined;
+      return false;
     }
     const mounted = this.#mounted.get(focused.id);
     if (!mounted || !("pane" in mounted)) {
-      return undefined;
+      return false;
     }
     return mounted.pane.writeInput(chunk);
   }
@@ -304,6 +306,7 @@ export class ShellNextMuxRenderable {
         node,
         source: protocol,
         title: this.#input.titleForPane?.(node, source) ?? node.id,
+        sendInputText: (text) => this.#input.sendTerminalInputText?.(node.id, text) ?? protocol.writeInput(text),
         onFocus: (paneId) => this.focusPane(paneId),
         onCloseRequest: this.#input.onCloseRequest,
         onFrameRendered: this.#input.onFrameRendered,

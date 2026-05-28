@@ -170,11 +170,7 @@ export class OpenComposeTerminalFrameRenderable extends BoxRenderable {
     if (text.length === 0) {
       return false;
     }
-    const sent = this.#bridge.sendInputText?.(text) ?? false;
-    if (sent) {
-      this.#bridge.followCursor?.();
-    }
-    return sent;
+    return this.#bridge.sendInputText?.(text) ?? false;
   }
 
   pastePayload(payload: OpenComposePastePayload): boolean {

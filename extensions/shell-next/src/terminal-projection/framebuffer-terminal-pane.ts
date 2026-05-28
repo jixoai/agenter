@@ -58,6 +58,7 @@ export interface ShellNextFrameBufferTerminalPaneInput {
   readonly node: ChildLayoutNode;
   readonly source: TerminalProtocolPaneSource;
   readonly title: string;
+  readonly sendInputText?: (text: string) => boolean;
   readonly accentColor?: string;
   readonly onFocus?: (paneId: string) => void;
   readonly onCloseRequest?: (paneId: string) => void;
@@ -113,11 +114,10 @@ export class ShellNextFrameBufferTerminalPane {
       width: clampFrameWidth(input.node.rect),
       height: Math.max(1, clampFrameHeight(input.node.rect)),
       state: emptyFrameState,
-        bridge: {
-          sendInputText: (text) => {
-            void this.writeInput(text);
-            return true;
-          },
+      bridge: {
+        sendInputText: (text) => {
+          return this.#input.sendInputText?.(text) ?? this.writeInput(text);
+        },
         scrollViewport: (deltaRows) => this.#source.scrollViewport?.(deltaRows) ?? false,
         setViewportStart: (viewportStart) => this.#source.setViewportStart?.(viewportStart) ?? false,
         followCursor: () => this.#source.followCursor?.() ?? false,
@@ -206,7 +206,7 @@ export class ShellNextFrameBufferTerminalPane {
     this.#source.notifyPaintCommitted?.();
   }
 
-  writeInput(chunk: TerminalInputChunk): void | Promise<void> {
+  writeInput(chunk: TerminalInputChunk): boolean {
     return this.#source.writeInput(chunk);
   }
 

@@ -144,6 +144,7 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
   #lastSelectionPoint: TerminalTransportOwnerCoordinate | null = null;
   #pendingDragAnchor: TerminalTransportOwnerCoordinate | null = null;
   #dragBridgeActive = false;
+  #skipNextOpenTuiSelectionFinish = false;
   #lastClick: OpenComposeFrameClickTracker | null = null;
   #lastPaintStats: OpenComposeFramePaintStats = {
     durationMs: 0,
@@ -296,6 +297,10 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
 
   onSelectionChanged(selection: Selection | null): boolean {
     if (this.#pendingDragAnchor || this.#dragBridgeActive) {
+      return this.hasSelection();
+    }
+    if (this.#skipNextOpenTuiSelectionFinish && (!selection?.isActive || selection.isDragging === false)) {
+      this.#skipNextOpenTuiSelectionFinish = false;
       return this.hasSelection();
     }
     this.traceSelectionChange(selection);
@@ -588,6 +593,7 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     });
     this.#pendingDragAnchor = point;
     this.#dragBridgeActive = false;
+    this.#skipNextOpenTuiSelectionFinish = false;
     if (point) {
       this.#activeSelectionOwnerId = point.ownerId;
       this.#lastSelectionPoint = null;
@@ -642,6 +648,8 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     }
     this.#pendingDragAnchor = null;
     this.#dragBridgeActive = false;
+    this.#lastSelectionPoint = null;
+    this.#skipNextOpenTuiSelectionFinish = true;
   }
 
   private eventToOwnerCoordinate(

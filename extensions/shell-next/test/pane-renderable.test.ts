@@ -40,6 +40,7 @@ const createRecordingProtocolSource = () => {
       }),
       writeInput: (chunk: TerminalInputChunk) => {
         inputChunks.push(chunk);
+        return true;
       },
       resize: (size: TerminalPaneSize) => {
         resizeCalls.push(size);
