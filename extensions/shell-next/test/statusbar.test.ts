@@ -98,6 +98,7 @@ describe("Feature: shell-next macro statusbar", () => {
 
     expect((findSpan("[Help]")?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
     expect((findSpan("[Chat]")?.attributes ?? 0) & TextAttributes.BOLD).toBe(0);
+    expect(findSpan("[Help]")?.fg).toEqual(findSpan("[Chat]")?.fg);
   });
 
   test("Scenario: Given a statusbar action is active When rendering Then the active button is underlined", async () => {

@@ -1,5 +1,5 @@
+import { TextAttributes, type KeyEvent } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
-import type { KeyEvent } from "@opentui/core";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
@@ -103,6 +103,23 @@ const findTextPosition = (frame: string, text: string): { x: number; y: number }
     }
   }
   return null;
+};
+
+const readTextAttributesAt = (setup: TestSetup, position: { x: number; y: number }, text: string): number => {
+  const line = setup.captureSpans().lines[position.y];
+  let cursor = 0;
+  let attributes = 0;
+  for (const span of line?.spans ?? []) {
+    const spanStart = cursor;
+    const spanEnd = spanStart + span.width;
+    const targetStart = position.x;
+    const targetEnd = position.x + Bun.stringWidth(text);
+    if (spanEnd > targetStart && spanStart < targetEnd) {
+      attributes |= span.attributes;
+    }
+    cursor = spanEnd;
+  }
+  return attributes;
 };
 
 describe("Feature: shell-next OpenTUI top layer", () => {
@@ -227,5 +244,42 @@ describe("Feature: shell-next OpenTUI top layer", () => {
     await setup.renderOnce();
 
     expect(actions).toEqual(["background", "terminate"]);
+  });
+
+  test("Scenario: Given close confirmation is shown When hovering content and title buttons Then only the hovered button is bolded", async () => {
+    const { setup, surface } = await startSurface(new RecordingApprovalStore());
+
+    surface.showCloseConfirm({
+      title: "demo shell",
+      onBackgroundRun: () => undefined,
+      onTerminate: () => undefined,
+    });
+    await setup.renderOnce();
+    const background = findTextPosition(setup.captureCharFrame(), "[ Run in background ]");
+    const terminate = findTextPosition(setup.captureCharFrame(), "[ Terminate terminal ]");
+    const close = findTextPosition(setup.captureCharFrame(), "demo shell [x]");
+    expect(background).not.toBeNull();
+    expect(terminate).not.toBeNull();
+    expect(close).not.toBeNull();
+
+    await setup.mockMouse.moveTo((background?.x ?? 0) + 2, background?.y ?? 0);
+    await setup.renderOnce();
+
+    expect(
+      readTextAttributesAt(setup, { x: background?.x ?? 0, y: background?.y ?? 0 }, "[ Run in background ]") &
+        TextAttributes.BOLD,
+    ).toBe(TextAttributes.BOLD);
+    expect(
+      readTextAttributesAt(setup, { x: terminate?.x ?? 0, y: terminate?.y ?? 0 }, "[ Terminate terminal ]") &
+        TextAttributes.BOLD,
+    ).toBe(0);
+
+    await setup.mockMouse.moveTo((close?.x ?? 0) + "demo shell ".length + 1, close?.y ?? 0);
+    await setup.renderOnce();
+
+    expect(
+      readTextAttributesAt(setup, { x: (close?.x ?? 0) + "demo shell ".length, y: close?.y ?? 0 }, "[x]") &
+        TextAttributes.BOLD,
+    ).toBe(TextAttributes.BOLD);
   });
 });

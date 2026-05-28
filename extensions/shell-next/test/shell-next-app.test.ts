@@ -1,6 +1,9 @@
 import type { GlobalRoomEntry, GlobalRoomMessage, GlobalRoomSnapshotOutput } from "@agenter/client-sdk";
-import type { TerminalTransportOwnerCoordinate } from "@agenter/terminal-transport-protocol";
-import { TextAttributes } from "@opentui/core";
+import type {
+  TerminalTransportOwnerCoordinate,
+  TerminalTransportSelectionOverlay,
+} from "@agenter/terminal-transport-protocol";
+import { MouseButton, TextAttributes } from "@opentui/core";
 import { createTestRenderer, type TestRenderer } from "@opentui/core/testing";
 import { afterEach, describe, expect, test } from "bun:test";
 
@@ -29,12 +32,14 @@ interface RecordingSource {
   readonly inputChunks: TerminalInputChunk[];
   readonly resizeCalls: TerminalPaneSize[];
   readonly copyRequests: string[];
+  readonly followCursorCalls: () => number;
   readonly selectionEvents: Array<{ type: "start" | "update" | "end"; point: TerminalTransportOwnerCoordinate }>;
   emitFrame(): void;
   emitSelectionText(event: { ownerId?: string; text: string }): void;
   copyResult: boolean | string;
   title: string;
   cursor: TerminalFrameSnapshot["cursor"] | undefined;
+  selectionOverlays: readonly TerminalTransportSelectionOverlay[];
   readonly disposed: () => boolean;
 }
 
@@ -58,6 +63,8 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
   let copyResult: boolean | string = true;
   let title = id;
   let cursor: TerminalFrameSnapshot["cursor"] | undefined;
+  let followCursorCount = 0;
+  let selectionOverlays: readonly TerminalTransportSelectionOverlay[] = [];
   let disposed = false;
   let revision = 0;
   const source: TerminalProtocolPaneSource = {
@@ -68,6 +75,7 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
       size: resizeCalls.at(-1) ?? { cols: 40, rows: 10 },
       lines: [`${id} frame ${revision}`],
       cursor,
+      selectionOverlays,
       revision,
     }),
     writeInput: (chunk) => {
@@ -93,6 +101,10 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
       copyRequests.push(ownerId ?? "");
       return copyResult;
     },
+    followCursor: () => {
+      followCursorCount += 1;
+      return true;
+    },
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -114,6 +126,7 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
     inputChunks,
     resizeCalls,
     copyRequests,
+    followCursorCalls: () => followCursorCount,
     selectionEvents,
     emitFrame() {
       revision += 1;
@@ -143,6 +156,12 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
     },
     set cursor(value: TerminalFrameSnapshot["cursor"] | undefined) {
       cursor = value;
+    },
+    get selectionOverlays() {
+      return selectionOverlays;
+    },
+    set selectionOverlays(value: readonly TerminalTransportSelectionOverlay[]) {
+      selectionOverlays = value;
     },
     disposed: () => disposed,
   };
@@ -799,6 +818,16 @@ describe("Feature: shell-next app runtime", () => {
     expect(recordings[0].resizeCalls.slice(beforeCalls)).toEqual([{ cols: 71, rows: 15 }]);
   });
 
+  test("Scenario: Given a focused shell pane When one bracketed paste event arrives Then it reaches the backend once", async () => {
+    const { setup, recordings } = await startApp();
+
+    await setup.mockInput.pasteBracketedText("pasted once");
+    await setup.renderOnce();
+
+    expect(recordings[0].inputChunks).toEqual(["pasted once"]);
+    expect(recordings[0].followCursorCalls()).toBe(1);
+  });
+
   test("Scenario: Given the mixed statusbar When Help and Chat are clicked Then shell-next toggles the corresponding panes", async () => {
     const { setup } = await startApp();
 
@@ -809,6 +838,30 @@ describe("Feature: shell-next app runtime", () => {
     await setup.mockMouse.click(61, 17);
     await setup.renderOnce();
     expect(setup.captureCharFrame()).toContain("shell-next chat");
+  });
+
+  test("Scenario: Given product surfaces are open When statusbar renders Then active actions are underlined", async () => {
+    const { setup } = await startApp();
+
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("h");
+    await setup.renderOnce();
+    const help = findTextPosition(setup.captureCharFrame(), "[Help]");
+    expect(help).not.toBeNull();
+
+    expect(readTextAttributesAt(setup, { x: help?.x ?? 0, y: help?.y ?? 0 }, "[Help]") & TextAttributes.UNDERLINE).toBe(
+      TextAttributes.UNDERLINE,
+    );
+
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("c");
+    await setup.renderOnce();
+    const chat = findTextPosition(setup.captureCharFrame(), "[Chat]");
+    expect(chat).not.toBeNull();
+
+    expect(readTextAttributesAt(setup, { x: chat?.x ?? 0, y: chat?.y ?? 0 }, "[Chat]") & TextAttributes.UNDERLINE).toBe(
+      TextAttributes.UNDERLINE,
+    );
   });
 
   for (const shortcut of [
@@ -872,6 +925,26 @@ describe("Feature: shell-next app runtime", () => {
     expect(recordings[0].selectionEvents[0]?.point).toEqual({ ownerId: "terminal", row: 0, col: 1 });
   });
 
+  test("Scenario: Given backend selection overlay changes without text changes When frame refreshes Then ShellPane keeps selection visible", async () => {
+    const { setup, recordings } = await startApp();
+    const terminalFrame = setup.renderer.root.findDescendantById("pane-1-framebuffer-terminal-frame") as
+      | OpenComposeTerminalFrameRenderable
+      | undefined;
+    expect(terminalFrame).toBeInstanceOf(OpenComposeTerminalFrameRenderable);
+
+    recordings[0].selectionOverlays = [
+      {
+        ownerId: "terminal",
+        ownership: "backend-native",
+        rows: [{ row: 0, startCol: 0, endCol: 8 }],
+      },
+    ];
+    recordings[0].emitFrame();
+    await setup.renderOnce();
+
+    expect(terminalFrame?.terminalView.hasSelection()).toBe(true);
+  });
+
   test("Scenario: Given a renderer pane selection When Super+C is pressed Then shell-next copies the selected text through OSC52", async () => {
     const { setup } = await startApp();
     const copied: string[] = [];
@@ -912,6 +985,23 @@ describe("Feature: shell-next app runtime", () => {
 
     expect(copied.some((entry) => entry.startsWith(`${SHELL_NEXT_CLIPBOARD_TARGETS.primary}:`))).toBe(true);
     setup.renderer.copyToClipboardOSC52 = originalCopy;
+  });
+
+  test("Scenario: Given renderer pane text is selected When middle-clicking Then shell-next does not clear the visible selection", async () => {
+    const { setup } = await startApp();
+
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("c");
+    await setup.renderOnce();
+    await setup.mockMouse.drag(34, 1, 46, 1);
+    await setup.renderOnce();
+    const selectedText = setup.renderer.getSelection()?.getSelectedText() ?? "";
+    expect(selectedText.length > 0).toBe(true);
+
+    await setup.mockMouse.click(36, 3, MouseButton.MIDDLE);
+    await setup.renderOnce();
+
+    expect(setup.renderer.getSelection()?.getSelectedText()).toBe(selectedText);
   });
 
   test("Scenario: Given Room-backed Chat is toggled When the user sends a draft Then MessageSystem store receives the message", async () => {

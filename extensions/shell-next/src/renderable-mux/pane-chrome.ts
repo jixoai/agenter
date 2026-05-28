@@ -1,6 +1,12 @@
-import { TextAttributes, TextRenderable, type BoxRenderable, type CliRenderer, type MouseEvent } from "@opentui/core";
+import { TextRenderable, type BoxRenderable, type CliRenderer, type MouseEvent } from "@opentui/core";
 
 import type { LayoutRect } from "./layout";
+import {
+  normalizeShellNextButtonLabel,
+  resolveShellNextButtonAt,
+  resolveShellNextButtonAttributes,
+  type ShellNextButtonRegion,
+} from "./button";
 
 export type ShellNextPaneTitleActionId = "close" | (string & {});
 
@@ -21,12 +27,7 @@ export interface ShellNextPaneChromeClick {
   readonly event: MouseEvent;
 }
 
-export interface ShellNextPaneChromeHitRegion {
-  readonly actionId: ShellNextPaneTitleActionId;
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-}
+export type ShellNextPaneChromeHitRegion = ShellNextButtonRegion & { readonly actionId: ShellNextPaneTitleActionId };
 
 interface ShellNextPaneChromeActionOverlay {
   readonly actionId: ShellNextPaneTitleActionId;
@@ -48,11 +49,7 @@ const DEFAULT_TITLE_GAP = " ";
 const stringWidth = (value: string): number => Bun.stringWidth(value);
 
 export const shellNextPaneButtonLabel = (label: string): string => {
-  const trimmed = label.trim();
-  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-    return trimmed;
-  }
-  return `[${trimmed}]`;
+  return normalizeShellNextButtonLabel(label);
 };
 
 export const shellNextPaneCloseAction = (): ShellNextPaneTitleAction => ({
@@ -63,9 +60,7 @@ export const shellNextPaneCloseAction = (): ShellNextPaneTitleAction => ({
 export const shellNextPaneActionAttributes = (input: {
   readonly active?: boolean;
   readonly hovered?: boolean;
-}): number =>
-  (input.active ? TextAttributes.UNDERLINE : TextAttributes.NONE) |
-  (input.hovered ? TextAttributes.BOLD : TextAttributes.NONE);
+}): number => resolveShellNextButtonAttributes(input);
 
 const truncateCells = (value: string, width: number): string => {
   const safeWidth = Math.max(0, Math.trunc(width));
@@ -129,6 +124,7 @@ export const syncShellNextPaneChrome = (input: {
     const width = stringWidth(action.label);
     cursor -= width;
     regions.unshift({
+      id: action.id,
       actionId: action.id,
       x: cursor,
       y: input.rect.y,
@@ -243,10 +239,6 @@ export const resolveShellNextPaneChromeClick = (input: {
   readonly event: MouseEvent;
   readonly regions: readonly ShellNextPaneChromeHitRegion[];
 }): ShellNextPaneTitleActionId | null => {
-  const x = Math.trunc(input.event.x);
-  const y = Math.trunc(input.event.y);
-  const region = input.regions.find(
-    (candidate) => y === candidate.y && x >= candidate.x && x < candidate.x + candidate.width,
-  );
-  return region?.actionId ?? null;
+  const id = resolveShellNextButtonAt(input.event, input.regions);
+  return input.regions.find((region) => region.id === id)?.actionId ?? null;
 };

@@ -2,7 +2,6 @@ import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import { BoxRenderable, type CliRenderer, type MouseEvent, type Renderable } from "@opentui/core";
 import { OpenComposeTerminalFrameRenderable } from "../opencompose/terminal-frame/terminal-frame-renderable";
 
-import { readSystemClipboardText } from "../app/system-clipboard";
 import type { ChildLayoutNode, LayoutRect } from "../renderable-mux/layout";
 import type { TerminalPaneFactory, TerminalPaneFactoryInput } from "../renderable-mux/mux-renderable";
 import {
@@ -113,12 +112,11 @@ export class ShellNextFrameBufferTerminalPane {
       width: clampFrameWidth(input.node.rect),
       height: Math.max(1, clampFrameHeight(input.node.rect)),
       state: emptyFrameState,
-      bridge: {
-        sendInputText: (text) => {
-          void this.writeInput(text);
-          this.#source.followCursor?.();
-          return true;
-        },
+        bridge: {
+          sendInputText: (text) => {
+            void this.writeInput(text);
+            return true;
+          },
         scrollViewport: (deltaRows) => this.#source.scrollViewport?.(deltaRows) ?? false,
         setViewportStart: (viewportStart) => this.#source.setViewportStart?.(viewportStart) ?? false,
         followCursor: () => this.#source.followCursor?.() ?? false,
@@ -133,7 +131,6 @@ export class ShellNextFrameBufferTerminalPane {
       },
     });
     this.#root.add(this.#frame);
-    this.#renderer.keyInput.on("paste", this.#handlePaste);
     this.syncNode(input.node);
   }
 
@@ -222,7 +219,6 @@ export class ShellNextFrameBufferTerminalPane {
       this.#resizeTimer = null;
     }
     this.#pendingResize = null;
-    this.#renderer.keyInput.off("paste", this.#handlePaste);
     this.#chrome.destroy();
     this.#root.destroyRecursively();
     void this.#source.dispose();
@@ -308,16 +304,6 @@ export class ShellNextFrameBufferTerminalPane {
     return copied;
   }
 
-  #handlePaste = async (): Promise<void> => {
-    if (this.#disposed || !this.#node.focused) {
-      return;
-    }
-    const text = await readSystemClipboardText();
-    if (!text) {
-      return;
-    }
-    this.#frame.pasteText(text);
-  };
 }
 
 export const createShellNextFrameBufferTerminalPane: TerminalPaneFactory = (input: TerminalPaneFactoryInput) =>

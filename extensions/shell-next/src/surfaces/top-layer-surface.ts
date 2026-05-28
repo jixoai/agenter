@@ -1,11 +1,19 @@
-import { BoxRenderable, TextRenderable, type CliRenderer, type KeyEvent, type MouseEvent } from "@opentui/core";
+import { BoxRenderable, RGBA, TextRenderable, type CliRenderer, type KeyEvent, type MouseEvent } from "@opentui/core";
 
 import { markShellNextKeyHandled } from "../app/key-event-scope";
 import {
-  buildShellNextPaneBorderTitle,
+  buildShellNextButtonStyledText,
+  normalizeShellNextButtonLabel,
+  resolveShellNextButtonAt,
+  type ShellNextButtonRegion,
+} from "../renderable-mux/button";
+import {
+  ShellNextPaneChromeController,
+  resolveShellNextPaneChromeClick,
   shellNextPaneCloseAction,
   type ShellNextPaneChromeHitRegion,
 } from "../renderable-mux/pane-chrome";
+import type { LayoutRect } from "../renderable-mux/layout";
 
 export const SHELL_NEXT_APPROVAL_LEASE_MS = 5 * 60_000;
 
@@ -46,6 +54,7 @@ type OverlayMode = "approval" | "close-confirm" | "empty";
 type ActionName = "approve" | "deny" | "close" | "background-run" | "terminate";
 
 interface ActionRegion {
+  readonly id: ActionName;
   readonly action: ActionName;
   readonly row: number;
   readonly col: number;
@@ -59,6 +68,8 @@ const clipLine = (text: string, width: number): string => text.slice(0, Math.max
 
 const absoluteChildRow = (top: number, child: TextRenderable): number => top + 1 + Number(child.top);
 const absoluteChildCol = (left: number, child: TextRenderable): number => left + 1 + Number(child.left);
+const topLayerActionFg = RGBA.fromHex("#f8fafc");
+const actionGap = "  ";
 
 export class ShellNextTopLayerSurface {
   readonly #renderer: CliRenderer;
@@ -71,9 +82,11 @@ export class ShellNextTopLayerSurface {
   readonly #preview: TextRenderable;
   readonly #actions: TextRenderable;
   readonly #status: TextRenderable;
+  readonly #chrome: ShellNextPaneChromeController;
   #releaseStore: (() => void) | null = null;
   #actionRegions: ActionRegion[] = [];
   #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
+  #hoveredAction: ActionName | null = null;
   #hoveredChromeAction: string | null = null;
   #statusNotice: string | null = null;
   #visible = false;
@@ -106,6 +119,14 @@ export class ShellNextTopLayerSurface {
     this.#preview = this.#createText("shell-next-top-preview", 5, "#f8fafc");
     this.#actions = this.#createText("shell-next-top-actions", 7, "#f8fafc");
     this.#status = this.#createText("shell-next-top-status", 9, "#facc15");
+    this.#chrome = new ShellNextPaneChromeController({
+      renderer: this.#renderer,
+      id: "shell-next-top-layer-chrome",
+      bg: "#111827",
+      zIndex: 101,
+      onMouseDown: (event) => this.#handleMouseDown(event),
+      onMouseMove: (event) => this.#handleMouseMove(event),
+    });
     this.#root.add(this.#title);
     this.#root.add(this.#actor);
     this.#root.add(this.#preview);
@@ -137,6 +158,7 @@ export class ShellNextTopLayerSurface {
     this.#visible = false;
     this.#closeConfirm = null;
     this.#root.visible = false;
+    this.#chrome.hide();
     this.#renderer.requestRender();
   }
 
@@ -208,19 +230,15 @@ export class ShellNextTopLayerSurface {
     this.#actor.content = "No pending terminal approvals";
     this.#preview.content = "";
     this.#actions.content = "[ Close ]";
+    this.#syncActionButtons(left, top, [{ action: "close", label: "[ Close ]" }]);
     this.#status.content = this.#statusNotice ?? "Esc close";
-    this.#actionRegions.push({
-      action: "close",
-      row: absoluteChildRow(top, this.#actions),
-      col: absoluteChildCol(left, this.#actions),
-      width: "[ Close ]".length,
-    });
     this.#renderer.requestRender();
   }
 
   destroy(): void {
     this.#releaseStore?.();
     this.#releaseStore = null;
+    this.#chrome.destroy();
     this.#root.destroyRecursively();
   }
 
@@ -241,21 +259,17 @@ export class ShellNextTopLayerSurface {
     }
     const deny = "[ Deny ]";
     const approve = "[ Approve ]";
-    const gap = "  ";
     this.#title.content = "";
     this.#actor.content = clipLine(
       `${request.participantId} requests ${request.requestedInput?.mode ?? "input"} access`,
       contentWidth,
     );
     this.#preview.content = clipLine(request.requestedInput?.text ?? "(no input preview)", contentWidth);
-    this.#actions.content = `${deny}${gap}${approve}`;
+    this.#syncActionButtons(left, top, [
+      { action: "deny", label: deny },
+      { action: "approve", label: approve },
+    ]);
     this.#status.content = this.#statusNotice ?? "A approve | D deny | Esc close";
-    const actionRow = absoluteChildRow(top, this.#actions);
-    const actionCol = absoluteChildCol(left, this.#actions);
-    this.#actionRegions.push(
-      { action: "deny", row: actionRow, col: actionCol, width: deny.length },
-      { action: "approve", row: actionRow, col: actionCol + deny.length + gap.length, width: approve.length },
-    );
   }
 
   #renderCloseConfirm(left: number, top: number, contentWidth: number): void {
@@ -268,46 +282,66 @@ export class ShellNextTopLayerSurface {
     this.#preview.content = "Run in background keeps the PTY alive. Terminate terminal kills the PTY.";
     const backgroundRun = "[ Run in background ]";
     const terminate = "[ Terminate terminal ]";
-    const gap = "  ";
-    this.#actions.content = `${backgroundRun}${gap}${terminate}`;
+    this.#syncActionButtons(left, top, [
+      { action: "background-run", label: backgroundRun },
+      { action: "terminate", label: terminate },
+    ]);
     this.#status.content = this.#statusNotice ?? "Esc cancel";
-    this.#actionRegions.push(
-      {
-        action: "background-run",
-        row: absoluteChildRow(top, this.#actions),
-        col: absoluteChildCol(left, this.#actions),
-        width: backgroundRun.length,
-      },
-      {
-        action: "terminate",
-        row: absoluteChildRow(top, this.#actions),
-        col: absoluteChildCol(left, this.#actions) + backgroundRun.length + gap.length,
-        width: terminate.length,
-      },
-    );
   }
 
   #syncBorderChrome(input: { title: string; closeable: boolean; left: number; top: number; width: number }): void {
     const actions = input.closeable ? [shellNextPaneCloseAction()] : [];
-    const borderTitle = buildShellNextPaneBorderTitle({
+    const rect: LayoutRect = {
+      x: input.left,
+      y: input.top,
+      width: input.width,
+      height: Math.max(1, Number(this.#root.height)),
+    };
+    this.#chromeRegions = this.#chrome.sync({
+      root: this.#root,
+      rect,
       state: {
         title: input.title,
         actions,
         hoveredActionId: this.#hoveredChromeAction,
       },
-      width: input.width,
     });
-    this.#root.titleAlignment = "left";
-    this.#root.title = borderTitle;
-    this.#chromeRegions = actions.map((action) => {
-      const width = Bun.stringWidth(action.label);
-      return {
-        actionId: action.id,
-        x: input.left + 2 + Math.max(0, Bun.stringWidth(borderTitle) - width),
-        y: input.top,
-        width,
-      };
+  }
+
+  #syncActionButtons(
+    left: number,
+    top: number,
+    buttons: readonly { readonly action: ActionName; readonly label: string }[],
+  ): void {
+    const row = absoluteChildRow(top, this.#actions);
+    let col = absoluteChildCol(left, this.#actions);
+    const parts: Array<string | { button: { id: ActionName; label: string; hovered: boolean }; fg: RGBA }> = [];
+    const regions: ActionRegion[] = [];
+    buttons.forEach((button, index) => {
+      if (index > 0) {
+        parts.push(actionGap);
+        col += actionGap.length;
+      }
+      const label = normalizeShellNextButtonLabel(button.label);
+      parts.push({
+        button: {
+          id: button.action,
+          label,
+          hovered: this.#hoveredAction === button.action,
+        },
+        fg: topLayerActionFg,
+      });
+      regions.push({
+        id: button.action,
+        action: button.action,
+        row,
+        col,
+        width: Bun.stringWidth(label),
+      });
+      col += Bun.stringWidth(label);
     });
+    this.#actions.content = buildShellNextButtonStyledText(parts, topLayerActionFg);
+    this.#actionRegions = regions;
   }
 
   #createText(id: string, top: number, fg: string): TextRenderable {
@@ -329,23 +363,13 @@ export class ShellNextTopLayerSurface {
     if (!this.#visible) {
       return;
     }
-    const chromeAction = this.#chromeRegions.find(
-      (candidate) =>
-        Math.trunc(event.y) === candidate.y &&
-        Math.trunc(event.x) >= candidate.x &&
-        Math.trunc(event.x) < candidate.x + candidate.width,
-    );
+    const chromeAction = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
     if (chromeAction) {
       event.preventDefault();
       void this.#handleRegion("close");
       return;
     }
-    const region = this.#actionRegions.find(
-      (candidate) =>
-        Math.trunc(event.y) === candidate.row &&
-        Math.trunc(event.x) >= candidate.col &&
-        Math.trunc(event.x) < candidate.col + candidate.width,
-    );
+    const region = this.#resolveActionRegionAt(event);
     if (!region) {
       return;
     }
@@ -357,28 +381,31 @@ export class ShellNextTopLayerSurface {
     if (!this.#visible) {
       return;
     }
-    const chromeAction = this.#chromeRegions.find(
-      (candidate) =>
-        Math.trunc(event.y) === candidate.y &&
-        Math.trunc(event.x) >= candidate.x &&
-        Math.trunc(event.x) < candidate.x + candidate.width,
-    );
-    const hoversAction = this.#actionRegions.some(
-      (candidate) =>
-        Math.trunc(event.y) === candidate.row &&
-        Math.trunc(event.x) >= candidate.col &&
-        Math.trunc(event.x) < candidate.col + candidate.width,
-    );
-    if ((chromeAction?.actionId ?? null) !== this.#hoveredChromeAction) {
-      this.#hoveredChromeAction = chromeAction?.actionId ?? null;
+    const chromeAction = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
+    const action = this.#resolveActionRegionAt(event)?.action ?? null;
+    const changed = chromeAction !== this.#hoveredChromeAction || action !== this.#hoveredAction;
+    this.#hoveredChromeAction = chromeAction;
+    this.#hoveredAction = action;
+    this.#root.borderColor = "#93c5fd";
+    this.#actions.fg = "#f8fafc";
+    if (changed) {
       this.render();
     }
-    this.#root.borderColor = "#93c5fd";
-    this.#actions.fg = hoversAction ? "#ffffff" : "#f8fafc";
-    if (chromeAction || hoversAction) {
+    if (chromeAction || action) {
       event.preventDefault();
       this.#renderer.requestRender();
     }
+  }
+
+  #resolveActionRegionAt(event: MouseEvent): ActionRegion | null {
+    const buttonRegions: ShellNextButtonRegion[] = this.#actionRegions.map((region) => ({
+      id: region.id,
+      x: region.col,
+      y: region.row,
+      width: region.width,
+    }));
+    const id = resolveShellNextButtonAt(event, buttonRegions);
+    return this.#actionRegions.find((region) => region.id === id) ?? null;
   }
 
   #consumeKey(key: KeyEvent): void {

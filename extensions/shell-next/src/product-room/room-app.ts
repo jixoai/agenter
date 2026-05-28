@@ -20,6 +20,7 @@ import {
 } from "@opentui/core";
 
 import type { ShellNextRoomBootstrapResult } from "../product/bootstrap";
+import { preserveRendererSelectionOnMiddleClick } from "../renderable-mux/renderer-selection";
 import {
   resolveShellNextPaneChromeClick,
   shellNextPaneButtonLabel,
@@ -718,6 +719,9 @@ export class ShellNextRoomApp {
   }
 
   #handleMouseDown(event: MouseEvent): void {
+    if (preserveRendererSelectionOnMiddleClick(event)) {
+      return;
+    }
     const chromeAction = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
     if (chromeAction === "close") {
       event.preventDefault();

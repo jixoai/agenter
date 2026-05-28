@@ -1,14 +1,17 @@
 import {
   RGBA,
   StyledText,
-  TextAttributes,
   TextRenderable,
   type CliRenderer,
   type MouseEvent,
-  type TextChunk,
 } from "@opentui/core";
 
-import { shellNextPaneActionAttributes, shellNextPaneButtonLabel } from "./pane-chrome";
+import {
+  buildShellNextButtonStyledText,
+  normalizeShellNextButtonLabel,
+  resolveShellNextButtonAt,
+  type ShellNextButtonRegion,
+} from "./button";
 
 export interface ShellNextRuntimeStatusSummary {
   readonly label: string;
@@ -57,7 +60,6 @@ const statusbarFg = {
   left: RGBA.fromHex("#cbd5e1"),
   center: RGBA.fromHex("#38bdf8"),
   right: RGBA.fromHex("#f8fafc"),
-  hover: RGBA.fromHex("#facc15"),
 };
 
 const clampCount = (value: number): number => Math.max(0, Math.trunc(value));
@@ -106,7 +108,7 @@ const normalizeActionName = (value: string): ShellNextStatusbarAction | null => 
   return null;
 };
 
-const buildActionLabel = (value: string): string => shellNextPaneButtonLabel(value);
+const buildActionLabel = (value: string): string => normalizeShellNextButtonLabel(value);
 
 export const buildShellNextStatusbarRight = (state: ShellNextStatusbarState): string =>
   (state.actions ?? defaultActions).map(buildActionLabel).join(actionGap);
@@ -159,8 +161,7 @@ export class ShellNextStatusbarRenderable {
   #width: number;
   #x: number;
   #y: number;
-  #helpRegion: { row: number; col: number; width: number } | null = null;
-  #chatRegion: { row: number; col: number; width: number } | null = null;
+  #actionRegions: ShellNextButtonRegion[] = [];
   #hoveredAction: ShellNextStatusbarAction | null = null;
 
   constructor(input: ShellNextStatusbarRenderableInput) {
@@ -257,24 +258,23 @@ export class ShellNextStatusbarRenderable {
     this.#right.left = rightStart;
     this.#right.top = this.#y;
     this.#right.width = Math.max(1, right.length || 1);
-    this.#right.content = right;
     this.#right.content = this.#buildRightStyledText(right);
-    this.#right.fg = this.#hoveredAction ? "#facc15" : "#f8fafc";
+    this.#right.fg = "#f8fafc";
 
     const helpIndex = right.indexOf("[Help]");
     const chatIndex = right.indexOf("[Chat]");
-    this.#helpRegion =
+    this.#actionRegions = [
       helpIndex >= 0
-        ? { row: this.#y, col: rightStart + helpIndex, width: "[Help]".length }
-        : null;
-    this.#chatRegion =
+        ? { id: "help", y: this.#y, x: rightStart + helpIndex, width: "[Help]".length }
+        : null,
       chatIndex >= 0
-        ? { row: this.#y, col: rightStart + chatIndex, width: "[Chat]".length }
-        : null;
+        ? { id: "chat", y: this.#y, x: rightStart + chatIndex, width: "[Chat]".length }
+        : null,
+    ].filter((region): region is ShellNextButtonRegion => region !== null);
   }
 
   #buildRightStyledText(right: string): StyledText {
-    const chunks: TextChunk[] = [];
+    const parts: Array<string | { button: { id: ShellNextStatusbarAction; label: string; hovered: boolean; active: boolean }; fg: RGBA }> = [];
     let cursor = 0;
     for (const actionLabel of ["[Help]", "[Chat]"] as const) {
       const index = right.indexOf(actionLabel, cursor);
@@ -282,33 +282,28 @@ export class ShellNextStatusbarRenderable {
         continue;
       }
       if (index > cursor) {
-        chunks.push(this.#chunk(right.slice(cursor, index), statusbarFg.right, TextAttributes.NONE));
+        parts.push(right.slice(cursor, index));
       }
       const action = normalizeActionName(actionLabel);
-      const hovered = action !== null && this.#hoveredAction === action;
-      const active = action !== null && (this.#state.activeActions ?? []).includes(action);
-      chunks.push(
-        this.#chunk(
-          actionLabel,
-          hovered ? statusbarFg.hover : statusbarFg.right,
-          shellNextPaneActionAttributes({ active, hovered }),
-        ),
-      );
+      if (action) {
+        parts.push({
+          button: {
+            id: action,
+            label: actionLabel,
+            hovered: this.#hoveredAction === action,
+            active: (this.#state.activeActions ?? []).includes(action),
+          },
+          fg: statusbarFg.right,
+        });
+      } else {
+        parts.push(actionLabel);
+      }
       cursor = index + actionLabel.length;
     }
     if (cursor < right.length) {
-      chunks.push(this.#chunk(right.slice(cursor), statusbarFg.right, TextAttributes.NONE));
+      parts.push(right.slice(cursor));
     }
-    return new StyledText(chunks.length > 0 ? chunks : [this.#chunk(right, statusbarFg.right, TextAttributes.NONE)]);
-  }
-
-  #chunk(text: string, fg: RGBA, attributes: number): TextChunk {
-    return {
-      __isChunk: true,
-      text,
-      fg,
-      attributes,
-    };
+    return buildShellNextButtonStyledText(parts.length > 0 ? parts : [right], statusbarFg.right);
   }
 
   #handleMouseDown(event: MouseEvent): void {
@@ -332,14 +327,7 @@ export class ShellNextStatusbarRenderable {
   }
 
   #resolveActionAt(event: MouseEvent): ShellNextStatusbarAction | null {
-    const x = Math.trunc(event.x);
-    const y = Math.trunc(event.y);
-    if (this.#helpRegion && y === this.#helpRegion.row && x >= this.#helpRegion.col && x < this.#helpRegion.col + this.#helpRegion.width) {
-      return "help";
-    }
-    if (this.#chatRegion && y === this.#chatRegion.row && x >= this.#chatRegion.col && x < this.#chatRegion.col + this.#chatRegion.width) {
-      return "chat";
-    }
-    return null;
+    const action = resolveShellNextButtonAt(event, this.#actionRegions);
+    return action === "help" || action === "chat" ? action : null;
   }
 }

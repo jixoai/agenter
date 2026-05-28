@@ -308,6 +308,10 @@ export class ShellNextApp implements ShellNextAppController {
     }
     if (this.#syncStatusbarWithLayout) {
       const terminalCount = this.#layout.children.filter((node) => node.sourceKind === "terminal-protocol").length;
+      const activeActions = [
+        this.#layout.children.some((node) => node.id === "help") || this.#floatingPanes.has("help") ? "help" : null,
+        this.#layout.children.some((node) => node.id === "chat") || this.#floatingPanes.has("chat") ? "chat" : null,
+      ].filter((action): action is "help" | "chat" => action !== null);
       this.#status = {
         ...this.#status,
         attention: {
@@ -315,6 +319,7 @@ export class ShellNextApp implements ShellNextAppController {
           background: Math.max(0, terminalCount - 1),
           muted: this.#layout.children.filter((node) => node.sourceKind === "opentui-renderable").length,
         },
+        activeActions,
       };
     }
     this.#statusbar.sync({

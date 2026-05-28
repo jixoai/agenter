@@ -10,6 +10,7 @@ import {
 } from "../renderable-mux/pane-chrome";
 import { PANE_CONTENT_ORIGIN, resolveBorderedPaneContentSize } from "../renderable-mux/pane-content-geometry";
 import type { OpenTuiRenderableSurface } from "../renderable-mux/pane-source";
+import { preserveRendererSelectionOnMiddleClick } from "../renderable-mux/renderer-selection";
 import type { ShellNextRoomLayoutMode } from "../product-room/room-app";
 
 export interface ShellNextChatSurfaceInput {
@@ -160,6 +161,9 @@ export class ShellNextChatSurface implements OpenTuiRenderableSurface {
   }
 
   #handleMouseDown(event: MouseEvent): void {
+    if (preserveRendererSelectionOnMiddleClick(event)) {
+      return;
+    }
     const action = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
     if (action === "close") {
       event.preventDefault();

@@ -9,6 +9,7 @@ import {
 } from "../renderable-mux/pane-chrome";
 import { PANE_CONTENT_ORIGIN, resolveBorderedPaneContentSize } from "../renderable-mux/pane-content-geometry";
 import type { OpenTuiRenderableSurface } from "../renderable-mux/pane-source";
+import { preserveRendererSelectionOnMiddleClick } from "../renderable-mux/renderer-selection";
 
 export interface ShellNextHelpSurfaceInput {
   renderer: CliRenderer;
@@ -59,6 +60,9 @@ export class ShellNextHelpSurface implements OpenTuiRenderableSurface {
       focusable: true,
     });
     this.#root.onMouseDown = (event) => {
+      if (preserveRendererSelectionOnMiddleClick(event)) {
+        return;
+      }
       if (resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions }) === "close") {
         event.preventDefault();
         this.#onClose?.(this.#node.id);

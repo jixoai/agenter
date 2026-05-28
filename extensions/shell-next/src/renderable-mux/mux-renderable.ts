@@ -1,5 +1,6 @@
 import type { CliRenderer, Renderable } from "@opentui/core";
 
+import { SHELL_NEXT_CLIPBOARD_TARGETS } from "./host-copy";
 import type { ChildLayoutNode, FocusDirection, LayoutPaneInput, RootLayout, SplitDirection } from "./layout";
 import { PaneRenderable, type PaneFrameRenderEvent } from "./pane-renderable";
 import { ShellNextPaneResizeController } from "./pane-resize-controller";
@@ -312,7 +313,7 @@ export class ShellNextMuxRenderable {
         protocol.subscribe?.(() => this.refreshPane(node.id)),
         protocol.subscribeSelectionText?.((event) => {
           if (event.text.length > 0) {
-            this.#renderer.copyToClipboardOSC52(event.text);
+            this.#renderer.copyToClipboardOSC52(event.text, SHELL_NEXT_CLIPBOARD_TARGETS.clipboard);
           }
         }),
       ].filter((candidate): candidate is () => void => typeof candidate === "function");
