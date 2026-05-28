@@ -49,4 +49,4 @@
 - [x] 7.4 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
 - [x] 7.5 Run `git diff --check`.
 - [x] 7.6 Commit OpenSpec artifacts separately from implementation.
-- [ ] 7.7 Resolve any pre-existing unrelated dirty workspace state explicitly so final `git status --short` is clean.
+- [x] 7.7 Resolve any pre-existing unrelated dirty workspace state explicitly so final `git status --short` is clean.
