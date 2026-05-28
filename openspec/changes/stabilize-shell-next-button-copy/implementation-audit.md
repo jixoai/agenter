@@ -44,3 +44,17 @@
 - Run manual TTY acceptance for ShellPane drag selection, OSC52 clipboard, and primary clipboard across the terminal emulators the team actually uses.
 - After shell-next is accepted, extract the mux/layout/Button/terminal-frame laws into the future `opencompose` package boundary.
 - Keep `cli-shell` read-only until it is deleted; do not add compatibility hooks back into the legacy product.
+
+## Rework Trigger 2026-05-28
+
+Manual acceptance found the previous pass was still incomplete:
+
+- ChatPane middle-click no longer clears selection, but primary clipboard is not working.
+- ShellPane copy/paste works, but primary clipboard is not working.
+- ShellPane is missing legacy Option/Shift arrow behavior for word movement and keyboard selection.
+- ChatPaneTitlebar buttons still do not behave like the shared Button.
+- Button active underline is still not visible.
+- Shell resize still feels blocked; debounce plus conflated behavior must be proven at the terminal source/backend boundary.
+- Resize handle click micro-adjustment only moves one way instead of following the clicked glyph.
+
+Decision: reopen this change as rework, write BDD for the missing behavior first, and keep all implementation inside `extensions/shell-next` unless evidence proves a lower package needs a separate discussed change.

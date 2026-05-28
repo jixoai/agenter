@@ -88,3 +88,62 @@ The final implementation pass SHALL commit the completed shell-next/OpenSpec cha
 - **WHEN** this change is complete
 - **THEN** `git diff -- extensions/cli-shell` is empty
 - **AND** no shell-next implementation imports from `extensions/cli-shell`
+
+### Requirement: Shell-next SHALL preserve legacy terminal keyboard selection affordances
+
+Shell-next SHALL support the terminal keyboard affordances previously validated by cli-shell without importing from or editing `extensions/cli-shell`: Option+Left/Right moves by word, Shift+Left/Right extends selection by cell, and Shift+Option+Left/Right extends selection by word. The behavior SHALL use backend-owned terminal range selection and source-owned input bytes.
+
+#### Scenario: Option arrows move by terminal word boundary
+- **GIVEN** a focused ShellPane has a visible backend line and cursor position
+- **WHEN** the user presses Option+Left or Option+Right
+- **THEN** shell-next calculates the previous or next word boundary from the visible terminal line
+- **AND** shell-next sends repeated left or right arrow bytes to the terminal source
+- **AND** shell-next follows the terminal cursor once
+
+#### Scenario: Shift arrows extend backend selection by one cell
+- **GIVEN** a focused ShellPane has a visible backend cursor position
+- **WHEN** the user presses Shift+Left or Shift+Right
+- **THEN** shell-next creates or updates a backend-owned selection anchor
+- **AND** shell-next asks the terminal source to select the range between the anchor and the new focus cell
+- **AND** shell-next sends the matching cursor movement byte to the terminal source
+
+#### Scenario: Shift Option arrows extend backend selection by word
+- **GIVEN** a focused ShellPane has a visible backend line and cursor position
+- **WHEN** the user presses Shift+Option+Left or Shift+Option+Right using either CSI modified arrows or OpenTUI's meta uppercase fallback
+- **THEN** shell-next selects the backend range between the original anchor and the resolved word boundary
+- **AND** repeated Shift+Option movement preserves the original anchor while moving only the focus
+
+#### Scenario: Plain terminal input clears keyboard selection anchor
+- **GIVEN** a ShellPane keyboard selection anchor exists
+- **WHEN** the user sends normal terminal input
+- **THEN** shell-next clears the keyboard selection anchor before routing the input bytes
+
+### Requirement: Terminal source resize SHALL be debounce plus conflated at the backend boundary
+
+Terminal source implementations SHALL own a debounce plus conflated resize dispatcher in addition to any pane-view size coalescing. The dispatcher SHALL keep only one pending size while the debounce timer or an async backend resize is in flight, and it SHALL deliver only the newest pending size.
+
+#### Scenario: Blocked source resize does not build an obsolete backlog
+- **GIVEN** a terminal source resize backend is still processing a previous resize
+- **WHEN** several newer sizes arrive
+- **THEN** shell-next keeps only the newest pending size
+- **AND** after the blocked backend resize resolves, shell-next delivers at most one follow-up resize with the newest size
+
+#### Scenario: Source resize still delivers stable size once
+- **WHEN** one terminal source size arrives and no newer size replaces it
+- **THEN** shell-next delivers that size to the backend once after the configured debounce window
+
+### Requirement: Resize handle click SHALL be glyph-directional
+
+Resize handles SHALL support drag resizing and click micro-adjustment. Clicking the left/up glyph SHALL resize by `-1`; clicking the right/down glyph SHALL resize by `+1`.
+
+#### Scenario: Horizontal resize handle click uses clicked glyph direction
+- **WHEN** a user clicks `◀` in a horizontal handle
+- **THEN** shell-next applies a `-1` pane resize delta
+- **WHEN** a user clicks `▶`
+- **THEN** shell-next applies a `+1` pane resize delta
+
+#### Scenario: Vertical resize handle click uses clicked glyph direction
+- **WHEN** a user clicks `▲` in a vertical handle
+- **THEN** shell-next applies a `-1` pane resize delta
+- **WHEN** a user clicks `▼`
+- **THEN** shell-next applies a `+1` pane resize delta

@@ -29,3 +29,16 @@ Manual acceptance showed that `shell-next` still fails the core interaction cont
 - Adds OpenSpec artifacts under `openspec/changes/stabilize-shell-next-button-copy`.
 - Uses `extensions/cli-shell` only as read-only reference material; this change must not modify cli-shell source or tests.
 - Does not change stable `agenter shell` routing, tmux/psmux/native-addon decisions, or OpenTUI upstream code.
+
+## Rework Trigger: Manual Acceptance 2026-05-28
+
+Manual acceptance after `2cb2ea38` showed this change was over-claimed. The implementation now needs another BDD-driven pass for the following concrete failures:
+
+- ChatPane and ShellPane no longer clear selection on middle-click, but primary clipboard still does not work in the real terminal.
+- ShellPane copy/paste works, but legacy terminal word movement and keyboard selection were not migrated.
+- ChatPane titlebar actions still do not behave like the shared Button primitive.
+- Button active state still is not visibly underlined.
+- Shell resize still feels blocked under rapid drag; the debounce plus conflated strategy must live at the terminal-source/backend boundary, not only at the pane view boundary.
+- Resize handle click micro-adjustment always moves in one direction; the clicked glyph must decide the direction.
+
+This rework keeps the same architectural direction: no `cli-shell` edits, no imports from `cli-shell`, and no OpenTUI upstream patch unless tests prove shell-next cannot work around the behavior locally.

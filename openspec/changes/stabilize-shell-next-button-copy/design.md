@@ -76,3 +76,16 @@ Second, the ShellPane terminal projection partially copied the legacy cli-shell 
 - [Risk] Primary clipboard behavior depends on terminal emulator support. → Mitigation: shell-next only emits the correct OSC52 primary request and does not own middle-click paste.
 - [Risk] Paste duplication may come from both app-level and frame-level listeners. → Mitigation: BDD must assert one paste event produces one backend input write and the implementation must keep one owner for terminal paste.
 - [Risk] Existing unrelated dirty files can prevent a clean final workspace. → Mitigation: inspect them separately; either commit, revert, or preserve them explicitly before final status, with no silent mixing into shell-next commits.
+
+## Rework Design Notes
+
+Manual acceptance exposed that several tests were too high-level or looked at helper output instead of the product node that receives real events. The rework changes the test law:
+
+1. Button tests must prove a titlebar action created by `ShellNextPaneChromeController` uses the same primitive state as statusbar/dialog buttons. Checking `buildShellNextButtonChunk(...)` alone is insufficient.
+2. Active underline must be asserted on the visible titlebar/statusbar cells after the surface renders, not only on the pure chunk builder.
+3. Clipboard tests must use OpenTUI's `ClipboardTarget` enum directly. The mapping is `Clipboard=0`, `Primary=1`, but shell-next must still prove selection completion asks for `Primary`; if the terminal emulator ignores OSC52 primary, that is a manual-environment boundary, not a shell-next target mapping bug.
+4. Terminal word navigation is not a key encoder concern alone. It needs a small terminal interaction controller that reads the current frame line/cursor, calculates word boundaries, optionally selects a backend range, and then sends the repeated arrow bytes to the source.
+5. Resize pressure belongs at the source/backend boundary. The pane view can still avoid redundant size calls, but each terminal source implementation must own a debounce plus conflated dispatcher so a blocked resize cannot accumulate a backlog of obsolete sizes.
+6. Resize handle clicks are glyph-sensitive. For horizontal handles, `◀` applies `-1` and `▶` applies `+1`; for vertical handles, `▲` applies `-1` and `▼` applies `+1`.
+
+The implementation should stay within `extensions/shell-next` unless evidence shows `ghostty-native` or OpenTUI itself is the only correct fix. If a lower package needs changes, pause and discuss before editing it.
