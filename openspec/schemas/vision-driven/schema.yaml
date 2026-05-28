@@ -1,0 +1,113 @@
+name: vision-driven
+version: 1
+description: Agenter workflow - intent SSOT and visual reasoning drive specs, BDD tasks, implementation, and review loops
+artifacts:
+  - id: research-plan
+    generates: plans/plan.md
+    description: Intent Document SSOT that captures research, user Q&A, visual target reasoning, and the intent-driven plan
+    template: research-plan.md
+    instruction: |
+      Create or update the Intent Document SSOT for this change.
+
+      Persona: Max. Use the user's language system first. Think from final visible effect and operator mind model, then reverse-infer interfaces, data, and architecture. Do not start from code terminology unless the user already used it.
+
+      Mandatory content:
+      - Preserve the user's original requirement and every requirement-bearing Q&A as objective records.
+      - Separate facts, inferences, decisions, open questions, and rejected paths.
+      - Explain whether this change is a regular atom under current platform laws or a law-breaking entity that needs a paradigm shift.
+      - Describe the final visible effect, even for backend-only work, as what the operator will see, trust, or stop worrying about.
+      - When useful, create change-local demo/spike code under `demos/` to collapse vague requirements before hardening specs.
+      - Prefer breaking changes by default, but record where user confirmation is required for destructive migration, cleanup, or state reset.
+      - Include an intent-driven plan that later specs and tasks can trace back to.
+
+      Revision law:
+      - The current SSOT is always `plans/plan.md`.
+      - Before materially changing an existing `plans/plan.md`, run `bun run openspec:vision -- backup-plan <change>` so the previous current plan becomes `plans/plan-vN.md`.
+      - Never fork competing current intent documents.
+
+      Use direct, product-architect language. This artifact is for the user and future agents, not just implementers.
+    requires: []
+
+  - id: specs
+    generates: specs/**/*.md
+    description: OpenSpec-compatible capability specs derived from the intent document
+    template: spec.md
+    instruction: |
+      Create specification files that define WHAT the system must do.
+
+      Persona: Linus. Be direct. Data structures and contracts matter more than decorative wording. If the Intent Document contains technically naive shape, flatten it into a cleaner contract without losing the user's intent.
+
+      Required workflow:
+      - Read `plans/plan.md` first and keep every requirement traceable to intent.
+      - Create one spec file per durable capability under `specs/<capability>/spec.md`.
+      - Follow OpenSpec delta format exactly:
+        - `## ADDED Requirements`
+        - `## MODIFIED Requirements`
+        - `## REMOVED Requirements`
+        - `## RENAMED Requirements`
+      - Every requirement uses `### Requirement: <name>`.
+      - Every scenario uses exactly `#### Scenario: <name>`.
+      - Use SHALL/MUST for normative contract.
+      - Include architecture and data-structure constraints in requirement prose when they are durable contract, not transient implementation notes.
+
+      Modified requirement discipline:
+      - Copy the full existing requirement block before editing it.
+      - Do not partially patch requirements.
+
+      Specs are not a mood board. They are the contract the implementation must obey.
+    requires:
+      - research-plan
+
+  - id: tasks
+    generates: tasks.md
+    description: Atomic execution checklist with BDD gates mapped to the intent and specs
+    template: tasks.md
+    instruction: |
+      Create the task list that turns intent and specs into executable work.
+
+      Persona: John Carmack. Be mechanical, precise, and edge-case obsessed. Each task must have a visible completion condition.
+
+      Mandatory content:
+      - Include BDD tasks before implementation tasks.
+      - BDD scenarios must trace back to `plans/plan.md` and the relevant spec requirement.
+      - Cover boundary conditions, migration/cleanup paths, destructive-update confirmation points, and regression checks.
+      - Include controller checkpoints for plan backup, self-review loop state, and verification through `bun run openspec:vision -- ...`.
+      - Use checkbox format exactly: `- [ ] X.Y Task description`.
+
+      Keep tasks atomic. If a task cannot be verified, split it.
+    requires:
+      - specs
+
+  - id: self-review
+    generates: review/self-review.html
+    description: Structured HTML review report comparing implementation against intent, with deviation and question lists
+    template: self-review.html
+    instruction: |
+      Create a self-review report after task execution.
+
+      Persona: Donald Knuth. Be rigorous, proof-oriented, and respectful of the user as a higher-dimensional reviewer.
+
+      Mandatory content:
+      - Compare implementation output against `plans/plan.md`, specs, and tasks.
+      - Produce two explicit lists:
+        1. Deviations from intent.
+        2. New questions requiring user confirmation.
+      - Include screenshot/evidence references when the work has visible surface; for backend-only work include command/log/evidence paths.
+      - Record iteration count, unresolved issue recurrence count, proposed next loop action, and exit-condition judgment.
+      - If model capability or permission limits block full review, also prepare `review/review-intent-and-tasks.md` for the user-as-subagent path.
+
+      Loop law:
+      - Default maximum review iterations is 5.
+      - If the same issue survives 2 consecutive review rounds, record it with `bun run openspec:vision -- review-state <change> --issue <id>`, mark it as a spec/design failure, and route the next step back to `research-plan`.
+      - If the initial intent implies a different exit condition, state why iteration count should be raised, reduced, or bypassed.
+
+      This artifact is a review presentation, not a victory note.
+    requires:
+      - tasks
+
+apply:
+  requires:
+    - tasks
+  tracks: tasks.md
+  instruction: |
+    Implement pending tasks with BDD-first discipline. Keep `plans/plan.md` as the SSOT, update task checkboxes as work completes, and run `bun run openspec:vision -- check <change>` before claiming the workflow is complete.
