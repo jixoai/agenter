@@ -1,5 +1,6 @@
 import type {
   TerminalTransportOwnerCoordinate,
+  TerminalTransportSelectionRange,
   TerminalTransportSelectionOverlay,
 } from "@agenter/terminal-transport-protocol";
 import { XtermBridge, renderStructuredViewportBuffer, type TerminalBackendKind } from "@agenter/termless-core";
@@ -17,9 +18,11 @@ import {
   type TerminalPaneSize,
   type TerminalProtocolPaneSource,
 } from "../renderable-mux/pane-source";
+import { ConflatedResizeDispatcher } from "./conflated-resize-dispatcher";
 
 const DEFAULT_SCROLLBACK_ROWS = 10_000;
 const DEFAULT_TERMINAL_NAME = "xterm-256color";
+const LOCAL_TERMINAL_BACKEND_RESIZE_DEBOUNCE_MS = 25;
 
 interface BunTerminalEnvironmentInput {
   readonly extra?: Readonly<Record<string, string>>;
@@ -103,6 +106,7 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
   #configuredTitle: string | null = null;
   #currentTitle: string | null = null;
   #releaseTitleListener: (() => void) | null = null;
+  readonly #resizeDispatcher: ConflatedResizeDispatcher;
 
   constructor(input: LocalBunTerminalProtocolSourceInput) {
     this.id = input.id;
@@ -115,6 +119,10 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
       input.backend ?? "ghostty-native",
     );
     this.#configuredTitle = input.launch.command;
+    this.#resizeDispatcher = new ConflatedResizeDispatcher({
+      delayMs: LOCAL_TERMINAL_BACKEND_RESIZE_DEBOUNCE_MS,
+      deliver: (size) => this.#deliverResize(size),
+    });
     this.#releaseTitleListener = this.#bridge.onTitleChange((title) => {
       const normalized = title.trim();
       this.#currentTitle = normalized.length > 0 ? normalized : null;
@@ -190,6 +198,13 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
     if (this.#disposed) {
       return;
     }
+    this.#resizeDispatcher.resize(size);
+  }
+
+  #deliverResize(size: TerminalPaneSize): void {
+    if (this.#disposed) {
+      return;
+    }
     const next = sanitizeSize(size);
     if (this.#size.cols === next.cols && this.#size.rows === next.rows) {
       return;
@@ -233,6 +248,12 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
     return selected;
   }
 
+  selectRange(range: TerminalTransportSelectionRange): boolean {
+    const selected = this.#bridge.selectRange(range);
+    this.#emitSelectionFrame(selected);
+    return selected;
+  }
+
   clearSelection(ownerId?: string): boolean {
     const cleared = this.#bridge.clearSelection(ownerId);
     this.#emitSelectionFrame(cleared);
@@ -256,6 +277,7 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
     }
     this.#disposed = true;
     this.#listeners.clear();
+    this.#resizeDispatcher.dispose();
     this.#releaseTitleListener?.();
     this.#releaseTitleListener = null;
     if (!this.#terminal.closed) {

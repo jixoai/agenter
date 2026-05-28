@@ -1,5 +1,6 @@
 import type {
   TerminalTransportOwnerCoordinate,
+  TerminalTransportSelectionRange,
   TerminalTransportSelectionOverlay,
 } from "@agenter/terminal-transport-protocol";
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
@@ -36,7 +37,10 @@ export type TerminalInputChunk = string | Uint8Array;
 export interface TerminalSelectionTextEvent {
   readonly ownerId?: string;
   readonly text: string;
+  readonly target?: TerminalCopyTarget;
 }
+
+export type TerminalCopyTarget = "clipboard" | "primary";
 
 export interface TerminalProtocolPaneSource {
   readonly kind: "terminal-protocol";
@@ -53,8 +57,9 @@ export interface TerminalProtocolPaneSource {
   selectionEnd?(point: TerminalTransportOwnerCoordinate): boolean;
   selectWordAt?(point: TerminalTransportOwnerCoordinate): boolean;
   selectLineAt?(point: TerminalTransportOwnerCoordinate): boolean;
+  selectRange?(range: TerminalTransportSelectionRange): boolean;
   clearSelection?(ownerId?: string): boolean;
-  copySelection?(ownerId?: string): boolean | string;
+  copySelection?(ownerId?: string, target?: TerminalCopyTarget): boolean | string;
   subscribeSelectionText?(listener: (event: TerminalSelectionTextEvent) => void): () => void;
   notifyPaintCommitted?(): void;
   subscribe?(listener: () => void): () => void;

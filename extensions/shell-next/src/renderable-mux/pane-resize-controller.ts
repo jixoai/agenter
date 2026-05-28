@@ -20,6 +20,7 @@ interface ActiveResize {
   readonly axis: "horizontal" | "vertical";
   readonly startedX: number;
   readonly startedY: number;
+  readonly clickDelta: number;
   lastX: number;
   lastY: number;
   dragged: boolean;
@@ -28,6 +29,7 @@ interface ActiveResize {
 interface ResizeHandleRenderables {
   readonly hitTarget: BoxRenderable;
   readonly visual: TextRenderable;
+  region: ResizeRegion;
 }
 
 export interface ShellNextPaneResizeControllerInput {
@@ -35,6 +37,19 @@ export interface ShellNextPaneResizeControllerInput {
   readonly layout: RootLayout;
   readonly onLayoutChanged: () => void;
 }
+
+export const resolveShellNextResizeHandleClickDelta = (input: {
+  readonly axis: "horizontal" | "vertical";
+  readonly regionX: number;
+  readonly regionY: number;
+  readonly eventX: number;
+  readonly eventY: number;
+}): number => {
+  if (input.axis === "horizontal") {
+    return Math.trunc(input.eventX) <= Math.trunc(input.regionX) ? -1 : 1;
+  }
+  return Math.trunc(input.eventY) <= Math.trunc(input.regionY) ? -1 : 1;
+};
 
 const rectEndX = (node: ChildLayoutNode): number => node.rect.x + node.rect.width;
 const rectEndY = (node: ChildLayoutNode): number => node.rect.y + node.rect.height;
@@ -179,18 +194,19 @@ export class ShellNextPaneResizeController {
       fg: "#94a3b8",
       zIndex: 30,
     });
-    hitTarget.onMouseMove = (event) => this.#handleMouseMove(region, event);
-    hitTarget.onMouseDown = (event) => this.#handleMouseDown(region, event);
-    hitTarget.onMouseDrag = (event) => this.#handleMouseDrag(event);
-    hitTarget.onMouseUp = (event) => this.#handleMouseUp(event);
     this.#renderer.root.add(visual);
     this.#renderer.root.add(hitTarget);
-    const handle = { hitTarget, visual };
+    const handle = { hitTarget, visual, region };
+    hitTarget.onMouseMove = (event) => this.#handleMouseMove(handle.region, event);
+    hitTarget.onMouseDown = (event) => this.#handleMouseDown(handle.region, event);
+    hitTarget.onMouseDrag = (event) => this.#handleMouseDrag(event);
+    hitTarget.onMouseUp = (event) => this.#handleMouseUp(event);
     this.#handles.set(region.id, handle);
     return handle;
   }
 
   #syncHandle(handle: ResizeHandleRenderables, region: ResizeRegion): void {
+    handle.region = region;
     const highlighted = this.#hoveredId === region.id || this.#active?.paneId === region.paneId;
     for (const renderable of [handle.hitTarget, handle.visual]) {
       renderable.left = region.x;
@@ -218,6 +234,13 @@ export class ShellNextPaneResizeController {
       axis: region.axis,
       startedX: Math.trunc(event.x),
       startedY: Math.trunc(event.y),
+      clickDelta: resolveShellNextResizeHandleClickDelta({
+        axis: region.axis,
+        regionX: region.x,
+        regionY: region.y,
+        eventX: event.x,
+        eventY: event.y,
+      }),
       lastX: Math.trunc(event.x),
       lastY: Math.trunc(event.y),
       dragged: false,
@@ -248,7 +271,7 @@ export class ShellNextPaneResizeController {
     const active = this.#active;
     if (active) {
       if (!active.dragged) {
-        const moved = this.#layout.resizePane(active.paneId, active.edge, 1);
+        const moved = this.#layout.resizePane(active.paneId, active.edge, active.clickDelta);
         if (moved) {
           this.#onLayoutChanged();
         }

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type {
   TerminalTransportClientMessage,
   TerminalTransportClientSession,
+  TerminalTransportServerMessage,
   TerminalTransportSnapshot,
 } from "@agenter/terminal-transport-protocol";
 import { createTestRenderer } from "@opentui/core/testing";
@@ -17,6 +18,8 @@ import {
   type TerminalProtocolPaneSource,
 } from "../src/renderable-mux/pane-source";
 import { ShellNextLiveTerminalProtocolSource } from "../src/sources/shell-next-live-terminal-source";
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const createProtocolSource = (id: string): TerminalProtocolPaneSource => {
   let size = { cols: 80, rows: 24 };
@@ -145,6 +148,9 @@ describe("Feature: shell-next pane source normalization", () => {
 
   test("Scenario: Given a shell-next live terminal channel When normalized as shell-next source Then rich protocol facts are preserved", async () => {
     const sentMessages: TerminalTransportClientMessage[] = [];
+    const session = {
+      deliverServerMessage: null as ((message: TerminalTransportServerMessage) => void) | null,
+    };
     let disconnected = false;
     const source = new ShellNextLiveTerminalProtocolSource({
       id: createPaneSourceId("terminal-live-1"),
@@ -160,6 +166,7 @@ describe("Feature: shell-next pane source normalization", () => {
       }),
       createTransportSession: (sessionInput) => {
         const { events } = sessionInput;
+        session.deliverServerMessage = events.onMessage;
         return createTestTransportSession({
           connect: async () => {
             events.onOpen();
@@ -184,8 +191,32 @@ describe("Feature: shell-next pane source normalization", () => {
     expect(frame.revision).toBe(7);
     expect(frame.lines).toEqual(["rich terminal", "", "", ""]);
     expect(frame.richLines?.[0]?.spans[0]).toMatchObject({ text: "rich terminal", fg: "#00ff00" });
-    expect(sentMessages).toContainEqual({ type: "resize", cols: 18, rows: 3 });
+    expect(sentMessages).not.toContainEqual({ type: "resize", cols: 18, rows: 3 });
     expect(sentMessages.some((message) => message.type === "inputBytes")).toBe(true);
+    await wait(30);
+    expect(sentMessages).toContainEqual({ type: "resize", cols: 18, rows: 3 });
+
+    const selectionTextEvents: Array<{ ownerId?: string; text: string; target?: "clipboard" | "primary" }> = [];
+    const unsubscribeSelectionText = source.subscribeSelectionText((event) => {
+      selectionTextEvents.push(event);
+    });
+    expect(source.copySelection("terminal", "primary")).toBe(true);
+    const deliverServerMessage = session.deliverServerMessage;
+    if (!deliverServerMessage) {
+      throw new Error("live terminal test session did not expose server message delivery");
+    }
+    deliverServerMessage({
+      type: "selectionText",
+      terminalId: "terminal-live-1",
+      ownerId: "terminal",
+      text: "async primary text",
+    });
+    expect(selectionTextEvents).toContainEqual({
+      ownerId: "terminal",
+      text: "async primary text",
+      target: "primary",
+    });
+    unsubscribeSelectionText();
 
     source.dispose();
     expect(disconnected).toBe(true);

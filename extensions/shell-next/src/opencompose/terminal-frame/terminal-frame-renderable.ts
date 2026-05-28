@@ -22,7 +22,7 @@ export interface OpenComposeTerminalFrameBridge {
   scrollViewport(deltaRows: number): boolean;
   setViewportStart(viewportStart: number): boolean;
   followCursor?: () => boolean;
-  copySelection?: (ownerId?: string) => boolean;
+  copySelection?: (ownerId?: string, target?: "clipboard" | "primary") => boolean;
   selectionStart?: ConstructorParameters<typeof OpenComposeTerminalViewRenderable>[1]["onSelectionStart"];
   selectionUpdate?: ConstructorParameters<typeof OpenComposeTerminalViewRenderable>[1]["onSelectionUpdate"];
   selectionEnd?: ConstructorParameters<typeof OpenComposeTerminalViewRenderable>[1]["onSelectionEnd"];
@@ -160,6 +160,10 @@ export class OpenComposeTerminalFrameRenderable extends BoxRenderable {
 
   copySelectionViaOsc52(): boolean {
     return this.#bridge.copySelection?.("terminal") ?? false;
+  }
+
+  copySelectionToPrimary(): boolean {
+    return this.#bridge.copySelection?.("terminal", "primary") ?? false;
   }
 
   pasteText(text: string): boolean {

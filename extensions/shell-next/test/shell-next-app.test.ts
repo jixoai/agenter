@@ -1,11 +1,13 @@
 import type { GlobalRoomEntry, GlobalRoomMessage, GlobalRoomSnapshotOutput } from "@agenter/client-sdk";
 import type {
   TerminalTransportOwnerCoordinate,
+  TerminalTransportSelectionRange,
   TerminalTransportSelectionOverlay,
 } from "@agenter/terminal-transport-protocol";
 import { MouseButton, TextAttributes } from "@opentui/core";
 import { createTestRenderer, type TestRenderer } from "@opentui/core/testing";
 import { afterEach, describe, expect, test } from "bun:test";
+import { parseKeypress } from "@opentui/core";
 
 import { ShellNextApp } from "../src/app/shell-next-app";
 import { OpenComposeTerminalFrameRenderable } from "../src/opencompose/terminal-frame/terminal-frame-renderable";
@@ -24,6 +26,7 @@ import type { ShellNextRoomBootstrapResult } from "../src/product/bootstrap";
 import type { ShellNextRoomInput, ShellNextStatusProvider } from "../src/app/shell-next-app-types";
 import type { ShellNextRoomSurfaceStore } from "../src/surfaces/room-surface";
 import type { ShellNextApprovalRequest, ShellNextApprovalStore } from "../src/surfaces/top-layer-surface";
+import { ConflatedResizeDispatcher } from "../src/sources/conflated-resize-dispatcher";
 
 type TestSetup = Awaited<ReturnType<typeof createTestRenderer>>;
 
@@ -34,8 +37,9 @@ interface RecordingSource {
   readonly copyRequests: string[];
   readonly followCursorCalls: () => number;
   readonly selectionEvents: Array<{ type: "start" | "update" | "end"; point: TerminalTransportOwnerCoordinate }>;
+  readonly selectionRanges: TerminalTransportSelectionRange[];
   emitFrame(): void;
-  emitSelectionText(event: { ownerId?: string; text: string }): void;
+  emitSelectionText(event: { ownerId?: string; text: string; target?: "clipboard" | "primary" }): void;
   copyResult: boolean | string;
   title: string;
   cursor: TerminalFrameSnapshot["cursor"] | undefined;
@@ -58,8 +62,9 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
   const resizeCalls: TerminalPaneSize[] = [];
   const copyRequests: string[] = [];
   const selectionEvents: RecordingSource["selectionEvents"] = [];
+  const selectionRanges: TerminalTransportSelectionRange[] = [];
   const listeners = new Set<() => void>();
-  const selectionTextListeners = new Set<(event: { ownerId?: string; text: string }) => void>();
+  const selectionTextListeners = new Set<(event: { ownerId?: string; text: string; target?: "clipboard" | "primary" }) => void>();
   let copyResult: boolean | string = true;
   let title = id;
   let cursor: TerminalFrameSnapshot["cursor"] | undefined;
@@ -67,13 +72,19 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
   let selectionOverlays: readonly TerminalTransportSelectionOverlay[] = [];
   let disposed = false;
   let revision = 0;
+  const resizeDispatcher = new ConflatedResizeDispatcher({
+    delayMs: 25,
+    deliver: (size) => {
+      resizeCalls.push(size);
+    },
+  });
   const source: TerminalProtocolPaneSource = {
     kind: "terminal-protocol",
     id: createPaneSourceId(id),
     readTitle: () => title,
     readFrame: (): TerminalFrameSnapshot => ({
       size: resizeCalls.at(-1) ?? { cols: 40, rows: 10 },
-      lines: [`${id} frame ${revision}`],
+      lines: [`${id} frame ${revision}`, "$ echo alpha beta gamma ok"],
       cursor,
       selectionOverlays,
       revision,
@@ -83,7 +94,7 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
       revision += 1;
     },
     resize: (size) => {
-      resizeCalls.push(size);
+      resizeDispatcher.resize(size);
     },
     selectionStart: (point) => {
       selectionEvents.push({ type: "start", point });
@@ -97,8 +108,12 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
       selectionEvents.push({ type: "end", point });
       return true;
     },
-    copySelection: (ownerId) => {
-      copyRequests.push(ownerId ?? "");
+    selectRange: (range) => {
+      selectionRanges.push(range);
+      return true;
+    },
+    copySelection: (ownerId, target = "clipboard") => {
+      copyRequests.push(`${ownerId ?? ""}:${target}`);
       return copyResult;
     },
     followCursor: () => {
@@ -119,6 +134,7 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
     },
     dispose: () => {
       disposed = true;
+      resizeDispatcher.dispose();
     },
   };
   return {
@@ -128,6 +144,7 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
     copyRequests,
     followCursorCalls: () => followCursorCount,
     selectionEvents,
+    selectionRanges,
     emitFrame() {
       revision += 1;
       for (const listener of listeners) {
@@ -447,6 +464,8 @@ const startApp = async (
   });
   activeApp = app;
   app.start();
+  await setup.renderOnce();
+  await new Promise((resolve) => setTimeout(resolve, 40));
   await setup.renderOnce();
   return { setup, app, recordings, exitCallbacks };
 };
@@ -793,13 +812,40 @@ describe("Feature: shell-next app runtime", () => {
     const handle = findTextPosition(setup.captureCharFrame(), "◀▶");
     expect(handle).not.toBeNull();
 
-    await setup.mockMouse.click(handle?.x ?? 0, handle?.y ?? 0);
+    await setup.mockMouse.click((handle?.x ?? 0) + 1, handle?.y ?? 0);
     await new Promise((resolve) => setTimeout(resolve, 0));
     await setup.renderOnce();
 
     await waitForTerminalResizeDebounce(setup);
 
     expect(recordings[0].resizeCalls.at(-1)?.cols).toBe(beforeCols + 1);
+  });
+
+  test("Scenario: Given Shell and Chat panes share a horizontal handle When clicking each glyph Then the pane moves in that glyph direction", async () => {
+    const { setup, recordings } = await startApp();
+
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("c");
+    await setup.renderOnce();
+    await waitForTerminalResizeDebounce(setup);
+    const handle = findTextPosition(setup.captureCharFrame(), "◀▶");
+    expect(handle).not.toBeNull();
+    const beforeCols = recordings[0].resizeCalls.at(-1)?.cols ?? 0;
+
+    await setup.mockMouse.click(handle?.x ?? 0, handle?.y ?? 0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await setup.renderOnce();
+    await waitForTerminalResizeDebounce(setup);
+    expect(recordings[0].resizeCalls.at(-1)?.cols).toBe(beforeCols - 1);
+
+    const nextHandle = findTextPosition(setup.captureCharFrame(), "◀▶");
+    expect(nextHandle).not.toBeNull();
+
+    await setup.mockMouse.click((nextHandle?.x ?? 0) + 1, nextHandle?.y ?? 0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await setup.renderOnce();
+    await waitForTerminalResizeDebounce(setup);
+    expect(recordings[0].resizeCalls.at(-1)?.cols).toBe(beforeCols);
   });
 
   test("Scenario: Given rapid Shell pane resize When layout syncs repeatedly Then backend resize delivery is coalesced to the newest size", async () => {
@@ -816,6 +862,111 @@ describe("Feature: shell-next app runtime", () => {
     await waitForTerminalResizeDebounce(setup);
 
     expect(recordings[0].resizeCalls.slice(beforeCalls)).toEqual([{ cols: 71, rows: 15 }]);
+  });
+
+  test("Scenario: Given a focused shell pane When Option arrows are pressed Then shell-next moves by terminal word boundary", async () => {
+    const { setup, recordings } = await startApp();
+    recordings[0].cursor = { x: "$ echo alpha beta gamma ok".indexOf("gamma"), y: 1, visible: true };
+    recordings[0].emitFrame();
+    await setup.renderOnce();
+
+    const leftOption = parseKeypress("\u001bb", { useKittyKeyboard: true });
+    expect(leftOption).not.toBeNull();
+    setup.renderer.keyInput.processParsedKey(leftOption!);
+    await setup.renderOnce();
+
+    expect(recordings[0].inputChunks.at(-1)).toBe("\u001b[D".repeat("gamma".length));
+    expect(recordings[0].followCursorCalls()).toBe(1);
+
+    recordings[0].cursor = { x: "$ echo alpha beta ".length, y: 1, visible: true };
+    recordings[0].emitFrame();
+    await setup.renderOnce();
+    const rightOption = parseKeypress("\u001bf", { useKittyKeyboard: true });
+    expect(rightOption).not.toBeNull();
+    setup.renderer.keyInput.processParsedKey(rightOption!);
+    await setup.renderOnce();
+
+    expect(recordings[0].inputChunks.at(-1)).toBe("\u001b[C".repeat("gamma".length));
+    expect(recordings[0].followCursorCalls()).toBe(2);
+  });
+
+  test("Scenario: Given a focused shell pane When Shift arrows are pressed Then shell-next extends backend selection by cell", async () => {
+    const { setup, recordings } = await startApp();
+    recordings[0].cursor = { x: 5, y: 1, visible: true };
+    recordings[0].emitFrame();
+    await setup.renderOnce();
+
+    setup.mockInput.pressArrow("right", { shift: true });
+    await setup.renderOnce();
+
+    expect(recordings[0].selectionRanges.at(-1)).toEqual({
+      ownerId: "terminal",
+      startRow: 1,
+      startCol: 5,
+      endRow: 1,
+      endCol: 6,
+    });
+    expect(recordings[0].inputChunks.at(-1)).toBe("\u001b[C");
+    expect(recordings[0].followCursorCalls()).toBe(1);
+  });
+
+  test("Scenario: Given a focused shell pane When Shift Option arrows are pressed Then shell-next extends backend selection by word", async () => {
+    const { setup, recordings } = await startApp();
+    const line = "$ echo alpha beta gamma ok";
+    const gammaCol = line.indexOf("gamma");
+    const betaCol = line.indexOf("beta");
+    const alphaCol = line.indexOf("alpha");
+    recordings[0].cursor = { x: gammaCol, y: 1, visible: true };
+    recordings[0].emitFrame();
+    await setup.renderOnce();
+
+    setup.renderer.keyInput.processParsedKey({
+      name: "left",
+      ctrl: false,
+      meta: true,
+      shift: true,
+      option: true,
+      sequence: "\x1b[1;4D",
+      raw: "\x1b[1;4D",
+      number: false,
+      eventType: "press",
+      source: "raw",
+    });
+    await setup.renderOnce();
+
+    expect(recordings[0].selectionRanges.at(-1)).toEqual({
+      ownerId: "terminal",
+      startRow: 1,
+      startCol: betaCol,
+      endRow: 1,
+      endCol: gammaCol,
+    });
+    expect(recordings[0].inputChunks.at(-1)).toBe("\u001b[D".repeat(gammaCol - betaCol));
+
+    recordings[0].cursor = { x: betaCol, y: 1, visible: true };
+    recordings[0].emitFrame();
+    await setup.renderOnce();
+    setup.renderer.keyInput.processParsedKey({
+      name: "left",
+      ctrl: false,
+      meta: true,
+      shift: false,
+      option: false,
+      sequence: "\x1bB",
+      raw: "\x1bB",
+      number: false,
+      eventType: "press",
+      source: "raw",
+    });
+    await setup.renderOnce();
+
+    expect(recordings[0].selectionRanges.at(-1)).toEqual({
+      ownerId: "terminal",
+      startRow: 1,
+      startCol: alphaCol,
+      endRow: 1,
+      endCol: gammaCol,
+    });
   });
 
   test("Scenario: Given a focused shell pane When one bracketed paste event arrives Then it reaches the backend once", async () => {
@@ -875,7 +1026,7 @@ describe("Feature: shell-next app runtime", () => {
       setup.mockInput.pressKey("c", shortcut.options);
       await setup.renderOnce();
 
-      expect(recordings[0].copyRequests).toEqual(["terminal"]);
+      expect(recordings[0].copyRequests).toEqual(["terminal:clipboard"]);
       expect(recordings[0].inputChunks).toEqual([]);
     });
   }
@@ -892,7 +1043,7 @@ describe("Feature: shell-next app runtime", () => {
     setup.mockInput.pressKey("c", { meta: true });
     await setup.renderOnce();
 
-    expect(recordings[0].copyRequests).toEqual(["terminal"]);
+    expect(recordings[0].copyRequests).toEqual(["terminal:clipboard"]);
     expect(copied).toEqual([`${SHELL_NEXT_CLIPBOARD_TARGETS.clipboard}:selected terminal text`]);
   });
 
@@ -908,7 +1059,7 @@ describe("Feature: shell-next app runtime", () => {
     recordings[0].emitSelectionText({ ownerId: "terminal", text: "async selected text" });
     await setup.renderOnce();
 
-    expect(recordings[0].copyRequests).toEqual(["terminal"]);
+    expect(recordings[0].copyRequests).toEqual(["terminal:clipboard"]);
     expect(copied).toContain(`${SHELL_NEXT_CLIPBOARD_TARGETS.clipboard}:async selected text`);
   });
 
@@ -923,6 +1074,38 @@ describe("Feature: shell-next app runtime", () => {
     expect(recordings[0].selectionEvents.map((event) => event.type)).toContain("end");
     expect(recordings[0].selectionEvents.every((event) => event.point.ownerId === "terminal")).toBe(true);
     expect(recordings[0].selectionEvents[0]?.point).toEqual({ ownerId: "terminal", row: 0, col: 1 });
+  });
+
+  test("Scenario: Given a shell pane drag selection When the backend selection ends Then shell-next mirrors it to the primary selection", async () => {
+    const { setup, recordings } = await startApp();
+    const copied: string[] = [];
+    recordings[0].copyResult = "selected shell text";
+    setup.renderer.copyToClipboardOSC52 = ((text: string, target?: ShellNextClipboardTarget) => {
+      copied.push(`${target ?? SHELL_NEXT_CLIPBOARD_TARGETS.clipboard}:${text}`);
+      return true;
+    }) as typeof setup.renderer.copyToClipboardOSC52;
+
+    await setup.mockMouse.drag(2, 1, 10, 1);
+    await setup.renderOnce();
+
+    expect(recordings[0].copyRequests).toContain("terminal:primary");
+    expect(copied).toContain(`${SHELL_NEXT_CLIPBOARD_TARGETS.primary}:selected shell text`);
+  });
+
+  test("Scenario: Given a live shell pane drag selection When async selected text arrives Then shell-next writes it to primary", async () => {
+    const { setup, recordings } = await startApp();
+    const copied: string[] = [];
+    setup.renderer.copyToClipboardOSC52 = ((text: string, target?: ShellNextClipboardTarget) => {
+      copied.push(`${target ?? SHELL_NEXT_CLIPBOARD_TARGETS.clipboard}:${text}`);
+      return true;
+    }) as typeof setup.renderer.copyToClipboardOSC52;
+
+    await setup.mockMouse.drag(2, 1, 10, 1);
+    recordings[0].emitSelectionText({ ownerId: "terminal", text: "async primary text", target: "primary" });
+    await setup.renderOnce();
+
+    expect(recordings[0].copyRequests).toContain("terminal:primary");
+    expect(copied).toContain(`${SHELL_NEXT_CLIPBOARD_TARGETS.primary}:async primary text`);
   });
 
   test("Scenario: Given backend selection overlay changes without text changes When frame refreshes Then ShellPane keeps selection visible", async () => {

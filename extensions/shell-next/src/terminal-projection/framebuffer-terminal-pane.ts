@@ -4,6 +4,7 @@ import { OpenComposeTerminalFrameRenderable } from "../opencompose/terminal-fram
 
 import type { ChildLayoutNode, LayoutRect } from "../renderable-mux/layout";
 import type { TerminalPaneFactory, TerminalPaneFactoryInput } from "../renderable-mux/mux-renderable";
+import { SHELL_NEXT_CLIPBOARD_TARGETS } from "../renderable-mux/host-copy";
 import {
   ShellNextPaneChromeController,
   resolveShellNextPaneChromeClick,
@@ -12,7 +13,12 @@ import {
 } from "../renderable-mux/pane-chrome";
 import { PANE_CONTENT_ORIGIN, resolveBorderedPaneContentSize } from "../renderable-mux/pane-content-geometry";
 import type { PaneFrameRenderEvent } from "../renderable-mux/pane-renderable";
-import type { TerminalInputChunk, TerminalPaneSize, TerminalProtocolPaneSource } from "../renderable-mux/pane-source";
+import type {
+  TerminalCopyTarget,
+  TerminalInputChunk,
+  TerminalPaneSize,
+  TerminalProtocolPaneSource,
+} from "../renderable-mux/pane-source";
 
 const clampFrameWidth = (rect: LayoutRect): number => resolveBorderedPaneContentSize(rect).width;
 
@@ -47,8 +53,6 @@ const sanitizeSize = (rect: LayoutRect): TerminalPaneSize => {
   };
 };
 
-const TERMINAL_BACKEND_RESIZE_DEBOUNCE_MS = 25;
-
 export interface ShellNextFrameBufferTerminalPaneInput {
   readonly renderer: CliRenderer;
   readonly node: ChildLayoutNode;
@@ -69,9 +73,6 @@ export class ShellNextFrameBufferTerminalPane {
   readonly #input: Omit<ShellNextFrameBufferTerminalPaneInput, "renderer" | "node" | "source">;
   #node: ChildLayoutNode;
   #lastSize: TerminalPaneSize | null = null;
-  #lastDeliveredSize: TerminalPaneSize | null = null;
-  #pendingResize: TerminalPaneSize | null = null;
-  #resizeTimer: ReturnType<typeof setTimeout> | null = null;
   #disposed = false;
   #title: string;
   #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
@@ -122,11 +123,11 @@ export class ShellNextFrameBufferTerminalPane {
         followCursor: () => this.#source.followCursor?.() ?? false,
         selectionStart: (point) => this.#source.selectionStart?.(point) ?? false,
         selectionUpdate: (point) => this.#source.selectionUpdate?.(point) ?? false,
-        selectionEnd: (point) => this.#source.selectionEnd?.(point) ?? false,
+        selectionEnd: (point) => this.#handleSelectionEnd(point),
         selectWordAt: (point) => this.#source.selectWordAt?.(point) ?? false,
         selectLineAt: (point) => this.#source.selectLineAt?.(point) ?? false,
         clearSelection: (point) => this.#source.clearSelection?.(point.ownerId) ?? false,
-        copySelection: (ownerId) => this.#copySelection(ownerId),
+        copySelection: (ownerId, target) => this.#copySelection(ownerId, target),
         handleUnsupportedMediaPaste: () => false,
       },
     });
@@ -166,7 +167,7 @@ export class ShellNextFrameBufferTerminalPane {
     const size = sanitizeSize(node.rect);
     if (!this.#lastSize || this.#lastSize.cols !== size.cols || this.#lastSize.rows !== size.rows) {
       this.#lastSize = size;
-      this.#scheduleBackendResize(size);
+      void this.#source.resize(size);
     }
     this.refresh();
   }
@@ -214,11 +215,6 @@ export class ShellNextFrameBufferTerminalPane {
       return;
     }
     this.#disposed = true;
-    if (this.#resizeTimer) {
-      clearTimeout(this.#resizeTimer);
-      this.#resizeTimer = null;
-    }
-    this.#pendingResize = null;
     this.#chrome.destroy();
     this.#root.destroyRecursively();
     void this.#source.dispose();
@@ -262,44 +258,24 @@ export class ShellNextFrameBufferTerminalPane {
     });
   }
 
-  #scheduleBackendResize(size: TerminalPaneSize): void {
-    if (this.#lastDeliveredSize === null) {
-      this.#deliverBackendResize(size);
-      return;
+  #handleSelectionEnd(point: Parameters<NonNullable<TerminalProtocolPaneSource["selectionEnd"]>>[0]): boolean {
+    const ended = this.#source.selectionEnd?.(point) ?? false;
+    if (ended) {
+      this.#copySelection(point.ownerId, "primary");
     }
-    if (this.#lastDeliveredSize.cols === size.cols && this.#lastDeliveredSize.rows === size.rows) {
-      this.#pendingResize = null;
-      if (this.#resizeTimer) {
-        clearTimeout(this.#resizeTimer);
-        this.#resizeTimer = null;
-      }
-      return;
-    }
-    this.#pendingResize = size;
-    if (this.#resizeTimer) {
-      return;
-    }
-    this.#resizeTimer = setTimeout(() => {
-      this.#resizeTimer = null;
-      const pending = this.#pendingResize;
-      this.#pendingResize = null;
-      if (!pending || this.#disposed) {
-        return;
-      }
-      this.#deliverBackendResize(pending);
-      this.refresh();
-    }, TERMINAL_BACKEND_RESIZE_DEBOUNCE_MS);
+    return ended;
   }
 
-  #deliverBackendResize(size: TerminalPaneSize): void {
-    this.#lastDeliveredSize = size;
-    void this.#source.resize(size);
-  }
-
-  #copySelection(ownerId?: string): boolean {
-    const copied = this.#source.copySelection?.(ownerId) ?? false;
+  #copySelection(ownerId?: string, target: TerminalCopyTarget = "clipboard"): boolean {
+    const copied = this.#source.copySelection?.(ownerId, target) ?? false;
     if (typeof copied === "string") {
-      return copied.length > 0 && this.#renderer.copyToClipboardOSC52(copied);
+      return (
+        copied.length > 0 &&
+        this.#renderer.copyToClipboardOSC52(
+          copied,
+          target === "primary" ? SHELL_NEXT_CLIPBOARD_TARGETS.primary : SHELL_NEXT_CLIPBOARD_TARGETS.clipboard,
+        )
+      );
     }
     return copied;
   }

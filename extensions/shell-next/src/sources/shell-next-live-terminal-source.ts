@@ -1,4 +1,8 @@
-import type { TerminalTransportOwnerCoordinate, TerminalTransportSnapshot } from "@agenter/terminal-transport-protocol";
+import type {
+  TerminalTransportOwnerCoordinate,
+  TerminalTransportSelectionRange,
+  TerminalTransportSnapshot,
+} from "@agenter/terminal-transport-protocol";
 import {
   OPENCOMPOSE_PRODUCT_DYNAMIC_QUIET_MS,
   createOpenComposeLiveTerminalMirror,
@@ -9,11 +13,16 @@ import {
 
 import type {
   PaneSourceId,
+  TerminalCopyTarget,
   TerminalFrameSnapshot,
+  TerminalSelectionTextEvent,
   TerminalInputChunk,
   TerminalPaneSize,
   TerminalProtocolPaneSource,
 } from "../renderable-mux/pane-source";
+import { ConflatedResizeDispatcher } from "./conflated-resize-dispatcher";
+
+const LIVE_TERMINAL_BACKEND_RESIZE_DEBOUNCE_MS = 25;
 
 export interface ShellNextLiveTerminalProtocolSourceInput {
   readonly id: PaneSourceId;
@@ -24,7 +33,7 @@ export interface ShellNextLiveTerminalProtocolSourceInput {
   readonly configuredTitle?: string | null;
   readonly currentTitle?: string | null;
   readonly readTitle?: () => string | null;
-  readonly onSelectionText?: (event: { ownerId?: string; text: string }) => void;
+  readonly onSelectionText?: (event: TerminalSelectionTextEvent) => void;
   readonly geometryRole?: "projection-only" | "authority";
   readonly pacing?: OpenComposeLiveTerminalPacingOptions;
   readonly createTransportSession?: OpenComposeLiveTerminalTransportSessionFactory;
@@ -41,7 +50,9 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
   readonly #currentTitle: string | null;
   readonly #initialTitle: string | null;
   readonly #readTitle: (() => string | null) | undefined;
-  readonly #selectionTextListeners = new Set<(event: { ownerId?: string; text: string }) => void>();
+  readonly #selectionTextListeners = new Set<(event: TerminalSelectionTextEvent) => void>();
+  readonly #resizeDispatcher: ConflatedResizeDispatcher;
+  #pendingCopyTarget: TerminalCopyTarget | null = null;
   #disposed = false;
 
   constructor(input: ShellNextLiveTerminalProtocolSourceInput) {
@@ -50,6 +61,14 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     this.#configuredTitle = input.configuredTitle ?? null;
     this.#currentTitle = input.currentTitle ?? null;
     this.#readTitle = input.readTitle;
+    this.#resizeDispatcher = new ConflatedResizeDispatcher({
+      delayMs: LIVE_TERMINAL_BACKEND_RESIZE_DEBOUNCE_MS,
+      deliver: (size) => {
+        if (!this.#disposed) {
+          this.#mirror.resize(size.cols, size.rows);
+        }
+      },
+    });
     this.#mirror = createOpenComposeLiveTerminalMirror({
       terminalId: input.terminalId,
       transportUrl: input.transportUrl,
@@ -61,8 +80,11 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
       },
       createTransportSession: input.createTransportSession,
       onSelectionText: (event) => {
-        input.onSelectionText?.(event);
-        this.#emitSelectionText(event);
+        const target = this.#pendingCopyTarget ?? "clipboard";
+        this.#pendingCopyTarget = null;
+        const targetedEvent = { ...event, target };
+        input.onSelectionText?.(targetedEvent);
+        this.#emitSelectionText(targetedEvent);
       },
       requestPaint: () => this.#emit(),
     });
@@ -113,7 +135,7 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     if (this.#disposed) {
       return;
     }
-    this.#mirror.resize(size.cols, size.rows);
+    this.#resizeDispatcher.resize(size);
   }
 
   scrollViewport(deltaRows: number): boolean {
@@ -148,15 +170,27 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     return !this.#disposed && this.#mirror.selectLineAt(point);
   }
 
+  selectRange(range: TerminalTransportSelectionRange): boolean {
+    return !this.#disposed && this.#mirror.selectRange(range);
+  }
+
   clearSelection(ownerId?: string): boolean {
     return !this.#disposed && this.#mirror.clearSelection(ownerId);
   }
 
-  copySelection(ownerId?: string): boolean {
-    return !this.#disposed && this.#mirror.copySelection(ownerId);
+  copySelection(ownerId?: string, target: TerminalCopyTarget = "clipboard"): boolean {
+    if (this.#disposed) {
+      return false;
+    }
+    this.#pendingCopyTarget = target;
+    const copied = this.#mirror.copySelection(ownerId);
+    if (!copied) {
+      this.#pendingCopyTarget = null;
+    }
+    return copied;
   }
 
-  subscribeSelectionText(listener: (event: { ownerId?: string; text: string }) => void): () => void {
+  subscribeSelectionText(listener: (event: TerminalSelectionTextEvent) => void): () => void {
     this.#selectionTextListeners.add(listener);
     return () => {
       this.#selectionTextListeners.delete(listener);
@@ -184,6 +218,7 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     this.#disposed = true;
     this.#listeners.clear();
     this.#selectionTextListeners.clear();
+    this.#resizeDispatcher.dispose();
     this.#releaseMirror();
     this.#mirror.disconnect();
   }
@@ -197,7 +232,7 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     }
   }
 
-  #emitSelectionText(event: { ownerId?: string; text: string }): void {
+  #emitSelectionText(event: TerminalSelectionTextEvent): void {
     if (this.#disposed) {
       return;
     }

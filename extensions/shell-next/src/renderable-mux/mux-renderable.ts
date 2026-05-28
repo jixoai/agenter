@@ -313,7 +313,10 @@ export class ShellNextMuxRenderable {
         protocol.subscribe?.(() => this.refreshPane(node.id)),
         protocol.subscribeSelectionText?.((event) => {
           if (event.text.length > 0) {
-            this.#renderer.copyToClipboardOSC52(event.text, SHELL_NEXT_CLIPBOARD_TARGETS.clipboard);
+            this.#renderer.copyToClipboardOSC52(
+              event.text,
+              event.target === "primary" ? SHELL_NEXT_CLIPBOARD_TARGETS.primary : SHELL_NEXT_CLIPBOARD_TARGETS.clipboard,
+            );
           }
         }),
       ].filter((candidate): candidate is () => void => typeof candidate === "function");

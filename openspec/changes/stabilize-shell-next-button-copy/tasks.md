@@ -59,27 +59,27 @@
 
 ## 9. BDD Rework Coverage
 
-- [ ] 9.1 Add failing BDD scenarios proving ChatPane titlebar actions use the shared Button primitive for bold hover and underline active state on visible titlebar cells.
-- [ ] 9.2 Add failing BDD scenarios proving ShellPane and ChatPane selection completion call OSC52 `ClipboardTarget.Primary` without clearing visible selection.
-- [ ] 9.3 Add failing BDD scenarios for ShellPane Option+Left/Right word movement, Shift+Left/Right cell selection, and Shift+Option+Left/Right word selection.
-- [ ] 9.4 Add failing BDD scenarios for a blocked terminal source resize dispatcher that debounces, conflates, and delivers only the newest pending backend size.
-- [ ] 9.5 Add failing BDD scenarios for horizontal and vertical resize handle click micro-adjustment by clicked glyph direction.
+- [x] 9.1 Add failing BDD scenarios proving ChatPane titlebar actions use the shared Button primitive for bold hover and underline active state on visible titlebar cells.
+- [x] 9.2 Add failing BDD scenarios proving ShellPane and ChatPane selection completion call OSC52 `ClipboardTarget.Primary` without clearing visible selection.
+- [x] 9.3 Add failing BDD scenarios for ShellPane Option+Left/Right word movement, Shift+Left/Right cell selection, and Shift+Option+Left/Right word selection.
+- [x] 9.4 Add failing BDD scenarios for a blocked terminal source resize dispatcher that debounces, conflates, and delivers only the newest pending backend size.
+- [x] 9.5 Add failing BDD scenarios for horizontal and vertical resize handle click micro-adjustment by clicked glyph direction.
 
 ## 10. Rework Implementation
 
-- [ ] 10.1 Replace local titlebar overlay behavior with a direct shared Button renderable adapter so ChatPane, ShellPane, Room, Help, Statusbar, and Dialog buttons share hover/active/click semantics.
-- [ ] 10.2 Use OpenTUI `ClipboardTarget` constants in shell-next clipboard helpers and route primary selection mirroring through that typed target.
-- [ ] 10.3 Copy legacy terminal word navigation and keyboard range-selection behavior into shell-next-owned modules without importing or editing cli-shell.
-- [ ] 10.4 Add source/backend-boundary resize scheduling for Bun terminal protocol source and live terminal source using debounce plus conflated pending-size delivery.
-- [ ] 10.5 Fix resize handle click direction so `◀/▲` apply `-1` and `▶/▼` apply `+1`.
+- [x] 10.1 Replace local titlebar overlay behavior with a direct shared Button renderable adapter so ChatPane, ShellPane, Room, Help, Statusbar, and Dialog buttons share hover/active/click semantics.
+- [x] 10.2 Use typed OSC52 target constants in shell-next clipboard helpers and route primary selection mirroring through that target without importing OpenTUI private subpaths.
+- [x] 10.3 Copy legacy terminal word navigation and keyboard range-selection behavior into shell-next-owned modules without importing or editing cli-shell.
+- [x] 10.4 Add source/backend-boundary resize scheduling for Bun terminal protocol source and live terminal source using debounce plus conflated pending-size delivery.
+- [x] 10.5 Fix resize handle click direction so `◀/▲` apply `-1` and `▶/▼` apply `+1`.
 
 ## 11. Rework Self Review Verification And Commit
 
-- [ ] 11.1 Self review round 3: compare implementation against the latest seven manual feedback bullets in plain language.
-- [ ] 11.2 Self review round 4: compare implementation against prior Button/copy/paste/resize requirements and record remaining environment-dependent risks.
-- [ ] 11.3 Run `openspec validate stabilize-shell-next-button-copy --strict`.
-- [ ] 11.4 Run focused BDD tests for button chrome, host copy/primary selection, terminal key selection, source resize scheduling, and resize handle clicks.
-- [ ] 11.5 Run `bun run --filter 'agenter-ext-shell-next' test`.
-- [ ] 11.6 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
-- [ ] 11.7 Run `git diff --check`.
-- [ ] 11.8 Commit the completed rework and leave `git status --short` clean.
+- [x] 11.1 Self review round 3: compare implementation against the latest seven manual feedback bullets in plain language.
+- [x] 11.2 Self review round 4: compare implementation against prior Button/copy/paste/resize requirements and record remaining environment-dependent risks.
+- [x] 11.3 Run `openspec validate stabilize-shell-next-button-copy --strict`.
+- [x] 11.4 Run focused BDD tests for button chrome, host copy/primary selection, terminal key selection, source resize scheduling, and resize handle clicks.
+- [x] 11.5 Run `bun run --filter 'agenter-ext-shell-next' test`.
+- [x] 11.6 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
+- [x] 11.7 Run `git diff --check`.
+- [x] 11.8 Commit the completed rework and leave `git status --short` clean.
