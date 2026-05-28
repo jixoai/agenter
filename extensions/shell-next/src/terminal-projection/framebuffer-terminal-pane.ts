@@ -3,6 +3,7 @@ import { BoxRenderable, type CliRenderer, type MouseEvent, type Renderable } fro
 import { OpenComposeTerminalFrameRenderable } from "../opencompose/terminal-frame/terminal-frame-renderable";
 
 import type { ChildLayoutNode, LayoutRect } from "../renderable-mux/layout";
+import { ShellNextButtonPressController } from "../renderable-mux/button-press-controller";
 import type { TerminalPaneFactory, TerminalPaneFactoryInput } from "../renderable-mux/mux-renderable";
 import { SHELL_NEXT_CLIPBOARD_TARGETS } from "../renderable-mux/host-copy";
 import {
@@ -81,6 +82,7 @@ export class ShellNextFrameBufferTerminalPane {
   #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
   #hoveredChromeAction: string | null = null;
   readonly #resizeScheduler: ShellNextResizeSendScheduler;
+  readonly #buttonPress: ShellNextButtonPressController<string>;
 
   constructor(input: ShellNextFrameBufferTerminalPaneInput) {
     this.#renderer = input.renderer;
@@ -88,6 +90,23 @@ export class ShellNextFrameBufferTerminalPane {
     this.#node = input.node;
     this.#input = input;
     this.#title = input.title;
+    this.#buttonPress = new ShellNextButtonPressController({
+      resolveAction: (event) => resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions }),
+      onClick: (action, event) => {
+        if (action === "close") {
+          event.preventDefault();
+          this.#input.onCloseRequest?.(this.#node.id);
+        }
+      },
+      onHoverChange: (action) => {
+        if (action === this.#hoveredChromeAction) {
+          return;
+        }
+        this.#hoveredChromeAction = action;
+        this.#syncTitleChrome();
+        this.#renderer.requestRender();
+      },
+    });
     this.#resizeScheduler = new ShellNextResizeSendScheduler({
       delayMs: input.resizeDebounceMs ?? 200,
       send: (size) => this.#source.resize(size),
@@ -97,6 +116,7 @@ export class ShellNextFrameBufferTerminalPane {
       id: `${input.node.id}-framebuffer-terminal-chrome`,
       bg: "#020617",
       onMouseDown: (event) => this.#handleMouseDown(event),
+      onMouseUp: (event) => this.#handleMouseUp(event),
       onMouseMove: (event) => this.#handleMouseMove(event),
     });
     const accentColor = input.accentColor ?? "#38bdf8";
@@ -112,6 +132,7 @@ export class ShellNextFrameBufferTerminalPane {
       focusable: true,
     });
     this.#root.onMouseDown = (event) => this.#handleMouseDown(event);
+    this.#root.onMouseUp = (event) => this.#handleMouseUp(event);
     this.#root.onMouseMove = (event) => this.#handleMouseMove(event);
     this.#frame = new OpenComposeTerminalFrameRenderable(this.#renderer, {
       id: `${input.node.id}-framebuffer-terminal-frame`,
@@ -234,25 +255,19 @@ export class ShellNextFrameBufferTerminalPane {
   }
 
   #handleMouseDown(event: MouseEvent): void {
-    if (resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions }) === "close") {
-      event.preventDefault();
-      this.#input.onCloseRequest?.(this.#node.id);
+    if (this.#buttonPress.handleMouseDown(event)) {
       return;
     }
     this.#input.onFocus?.(this.#node.id);
   }
 
+  #handleMouseUp(event: MouseEvent): void {
+    this.#buttonPress.handleMouseUp(event);
+  }
+
   #handleMouseMove(event: MouseEvent): void {
-    const action = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
-    if (action !== this.#hoveredChromeAction) {
-      this.#hoveredChromeAction = action;
-      this.#syncTitleChrome();
-      this.#renderer.requestRender();
-    }
+    this.#buttonPress.handleMouseMove(event);
     this.#root.borderColor = this.#node.focused ? (this.#input.accentColor ?? "#38bdf8") : "#475569";
-    if (action) {
-      event.preventDefault();
-    }
   }
 
   #syncTitleChrome(): void {

@@ -12,6 +12,7 @@ import {
   resolveShellNextButtonAt,
   type ShellNextButtonRegion,
 } from "./button";
+import { ShellNextButtonPressController } from "./button-press-controller";
 
 export interface ShellNextRuntimeStatusSummary {
   readonly label: string;
@@ -163,6 +164,7 @@ export class ShellNextStatusbarRenderable {
   #y: number;
   #actionRegions: ShellNextButtonRegion[] = [];
   #hoveredAction: ShellNextStatusbarAction | null = null;
+  readonly #pressController: ShellNextButtonPressController<ShellNextStatusbarAction>;
 
   constructor(input: ShellNextStatusbarRenderableInput) {
     this.#renderer = input.renderer;
@@ -174,8 +176,23 @@ export class ShellNextStatusbarRenderable {
     this.#left = this.#createText("shell-next-statusbar-left", "#cbd5e1");
     this.#center = this.#createText("shell-next-statusbar-center", "#38bdf8");
     this.#right = this.#createText("shell-next-statusbar-right", "#f8fafc");
+    this.#pressController = new ShellNextButtonPressController({
+      resolveAction: (event) => this.#resolveActionAt(event),
+      onClick: (action) => {
+        this.#onAction?.(action);
+      },
+      onHoverChange: (action) => {
+        if (action === this.#hoveredAction) {
+          return;
+        }
+        this.#hoveredAction = action;
+        this.#applyLayout(buildShellNextStatusbarLayout(this.#state, this.#width));
+        this.#renderer.requestRender();
+      },
+    });
     for (const node of [this.#left, this.#center, this.#right]) {
       node.onMouseDown = (event) => this.#handleMouseDown(event);
+      node.onMouseUp = (event) => this.#handleMouseUp(event);
       node.onMouseMove = (event) => this.#handleMouseMove(event);
     }
     this.sync({
@@ -307,23 +324,15 @@ export class ShellNextStatusbarRenderable {
   }
 
   #handleMouseDown(event: MouseEvent): void {
-    const action = this.#resolveActionAt(event);
-    if (action) {
-      event.preventDefault();
-      this.#onAction?.(action);
-    }
+    this.#pressController.handleMouseDown(event);
+  }
+
+  #handleMouseUp(event: MouseEvent): void {
+    this.#pressController.handleMouseUp(event);
   }
 
   #handleMouseMove(event: MouseEvent): void {
-    const action = this.#resolveActionAt(event);
-    if (action !== this.#hoveredAction) {
-      this.#hoveredAction = action;
-      this.#applyLayout(buildShellNextStatusbarLayout(this.#state, this.#width));
-      this.#renderer.requestRender();
-    }
-    if (action) {
-      event.preventDefault();
-    }
+    this.#pressController.handleMouseMove(event);
   }
 
   #resolveActionAt(event: MouseEvent): ShellNextStatusbarAction | null {

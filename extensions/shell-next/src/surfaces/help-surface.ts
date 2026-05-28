@@ -1,12 +1,13 @@
-import { BoxRenderable, TextRenderable, type CliRenderer } from "@opentui/core";
+import { BoxRenderable, TextRenderable, type CliRenderer, type MouseEvent } from "@opentui/core";
 
 import type { ChildLayoutNode } from "../renderable-mux/layout";
 import {
+  ShellNextPaneChromeController,
   resolveShellNextPaneChromeClick,
   shellNextPaneCloseAction,
-  syncShellNextPaneChrome,
   type ShellNextPaneChromeHitRegion,
 } from "../renderable-mux/pane-chrome";
+import { ShellNextButtonPressController } from "../renderable-mux/button-press-controller";
 import { PANE_CONTENT_ORIGIN, resolveBorderedPaneContentSize } from "../renderable-mux/pane-content-geometry";
 import type { OpenTuiRenderableSurface } from "../renderable-mux/pane-source";
 import { preserveRendererSelectionOnMiddleClick } from "../renderable-mux/renderer-selection";
@@ -40,14 +41,39 @@ export class ShellNextHelpSurface implements OpenTuiRenderableSurface {
   readonly #content: TextRenderable;
   readonly #onFocus: ((paneId: string) => void) | undefined;
   readonly #onClose: ((paneId: string) => void) | undefined;
+  readonly #chrome: ShellNextPaneChromeController;
+  readonly #buttonPress: ShellNextButtonPressController<string>;
   #node: ChildLayoutNode;
   #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
+  #hoveredChromeAction: string | null = null;
 
   constructor(input: ShellNextHelpSurfaceInput) {
     this.#renderer = input.renderer;
     this.#node = input.node;
     this.#onFocus = input.onFocus;
     this.#onClose = input.onClose;
+    this.#buttonPress = new ShellNextButtonPressController({
+      resolveAction: (event) => resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions }),
+      onClick: (_action, event) => {
+        event.preventDefault();
+        this.#onClose?.(this.#node.id);
+      },
+      onHoverChange: (action) => {
+        if (action === this.#hoveredChromeAction) {
+          return;
+        }
+        this.#hoveredChromeAction = action;
+        this.syncNode(this.#node);
+      },
+    });
+    this.#chrome = new ShellNextPaneChromeController({
+      renderer: this.#renderer,
+      id: `${input.node.id}-help-chrome`,
+      bg: "#111827",
+      onMouseDown: (event) => this.#handleMouseDown(event),
+      onMouseUp: (event) => this.#handleMouseUp(event),
+      onMouseMove: (event) => this.#handleMouseMove(event),
+    });
     this.#root = new BoxRenderable(this.#renderer, {
       id: `${input.node.id}-help-root`,
       position: "absolute",
@@ -59,24 +85,9 @@ export class ShellNextHelpSurface implements OpenTuiRenderableSurface {
       titleAlignment: "left",
       focusable: true,
     });
-    this.#root.onMouseDown = (event) => {
-      if (preserveRendererSelectionOnMiddleClick(event)) {
-        return;
-      }
-      if (resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions }) === "close") {
-        event.preventDefault();
-        this.#onClose?.(this.#node.id);
-        return;
-      }
-      this.#onFocus?.(this.#node.id);
-    };
-    this.#root.onMouseMove = (event) => {
-      const hovered = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions }) === "close";
-      this.#root.borderColor = hovered ? "#facc15" : this.#node.focused ? "#facc15" : "#475569";
-      if (hovered) {
-        event.preventDefault();
-      }
-    };
+    this.#root.onMouseDown = (event) => this.#handleMouseDown(event);
+    this.#root.onMouseUp = (event) => this.#handleMouseUp(event);
+    this.#root.onMouseMove = (event) => this.#handleMouseMove(event);
     this.#content = new TextRenderable(this.#renderer, {
       id: `${input.node.id}-help-content`,
       position: "absolute",
@@ -107,11 +118,12 @@ export class ShellNextHelpSurface implements OpenTuiRenderableSurface {
     this.#root.width = node.rect.width;
     this.#root.height = node.rect.height;
     this.#root.borderColor = node.focused ? "#facc15" : "#475569";
-    this.#chromeRegions = syncShellNextPaneChrome({
+    this.#chromeRegions = this.#chrome.sync({
       root: this.#root,
       rect: node.rect,
       state: {
         title: "Help",
+        hoveredActionId: this.#hoveredChromeAction,
         actions: [shellNextPaneCloseAction()],
       },
     });
@@ -134,6 +146,25 @@ export class ShellNextHelpSurface implements OpenTuiRenderableSurface {
   }
 
   dispose(): void {
+    this.#chrome.destroy();
     this.#root.destroyRecursively();
+  }
+
+  #handleMouseDown(event: MouseEvent): void {
+    if (preserveRendererSelectionOnMiddleClick(event)) {
+      return;
+    }
+    if (this.#buttonPress.handleMouseDown(event)) {
+      return;
+    }
+    this.#onFocus?.(this.#node.id);
+  }
+
+  #handleMouseUp(event: MouseEvent): void {
+    this.#buttonPress.handleMouseUp(event);
+  }
+
+  #handleMouseMove(event: MouseEvent): void {
+    this.#buttonPress.handleMouseMove(event);
   }
 }

@@ -1,6 +1,7 @@
 import { BoxRenderable, TextRenderable, type CliRenderer, type MouseEvent } from "@opentui/core";
 
 import type { ChildLayoutNode } from "../renderable-mux/layout";
+import { ShellNextButtonPressController } from "../renderable-mux/button-press-controller";
 import {
   ShellNextPaneChromeController,
   resolveShellNextPaneChromeClick,
@@ -42,6 +43,7 @@ export class ShellNextChatSurface implements OpenTuiRenderableSurface {
     | ((mode: ShellNextRoomLayoutMode) => void | Promise<void | { closeCurrentSurface: boolean }>)
     | undefined;
   readonly #chrome: ShellNextPaneChromeController;
+  readonly #buttonPress: ShellNextButtonPressController<string>;
   readonly #title: string;
   #node: ChildLayoutNode;
   #chromeRegions: readonly ShellNextPaneChromeHitRegion[] = [];
@@ -54,11 +56,33 @@ export class ShellNextChatSurface implements OpenTuiRenderableSurface {
     this.#onFocus = input.onFocus;
     this.#onClose = input.onClose;
     this.#onLayoutRequest = input.onLayoutRequest;
+    this.#buttonPress = new ShellNextButtonPressController({
+      resolveAction: (event) => resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions }),
+      onClick: (action, event) => {
+        event.preventDefault();
+        if (action === "close") {
+          this.#onClose?.(this.#node.id);
+          return;
+        }
+        if (action === "layout-left" || action === "layout-right" || action === "layout-float") {
+          const mode = action === "layout-left" ? "left" : action === "layout-right" ? "right" : "float";
+          void this.#onLayoutRequest?.(mode);
+        }
+      },
+      onHoverChange: (action) => {
+        if (action === this.#hoveredChromeAction) {
+          return;
+        }
+        this.#hoveredChromeAction = action;
+        this.syncNode(this.#node);
+      },
+    });
     this.#chrome = new ShellNextPaneChromeController({
       renderer: this.#renderer,
       id: `${input.node.id}-chat-chrome`,
       bg: "#0f172a",
       onMouseDown: (event) => this.#handleMouseDown(event),
+      onMouseUp: (event) => this.#handleMouseUp(event),
       onMouseMove: (event) => this.#handleMouseMove(event),
     });
     this.#title = input.title?.trim() || "Chat";
@@ -75,6 +99,7 @@ export class ShellNextChatSurface implements OpenTuiRenderableSurface {
       focusable: true,
     });
     this.#root.onMouseDown = (event) => this.#handleMouseDown(event);
+    this.#root.onMouseUp = (event) => this.#handleMouseUp(event);
     this.#root.onMouseMove = (event) => this.#handleMouseMove(event);
     this.#content = new TextRenderable(this.#renderer, {
       id: `${input.node.id}-chat-content`,
@@ -164,29 +189,17 @@ export class ShellNextChatSurface implements OpenTuiRenderableSurface {
     if (preserveRendererSelectionOnMiddleClick(event)) {
       return;
     }
-    const action = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
-    if (action === "close") {
-      event.preventDefault();
-      this.#onClose?.(this.#node.id);
-      return;
-    }
-    if (action === "layout-left" || action === "layout-right" || action === "layout-float") {
-      event.preventDefault();
-      const mode = action === "layout-left" ? "left" : action === "layout-right" ? "right" : "float";
-      void this.#onLayoutRequest?.(mode);
+    if (this.#buttonPress.handleMouseDown(event)) {
       return;
     }
     this.#onFocus?.(this.#node.id);
   }
 
+  #handleMouseUp(event: MouseEvent): void {
+    this.#buttonPress.handleMouseUp(event);
+  }
+
   #handleMouseMove(event: MouseEvent): void {
-    const action = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
-    if (action !== this.#hoveredChromeAction) {
-      this.#hoveredChromeAction = action;
-      this.syncNode(this.#node);
-    }
-    if (action) {
-      event.preventDefault();
-    }
+    this.#buttonPress.handleMouseMove(event);
   }
 }

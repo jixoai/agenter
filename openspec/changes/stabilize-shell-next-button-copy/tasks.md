@@ -151,3 +151,29 @@
 - [x] 18.10 Run `git diff --check`.
 - [x] 18.11 Confirm `git diff -- extensions/cli-shell` is empty.
 - [x] 18.12 Commit spec updates separately from implementation and leave `git status --short` clean after the final implementation commit.
+
+## 19. Fourth Rework Reopen And BDD
+
+- [x] 19.1 Record the latest 2026-05-29 manual acceptance bullets verbatim in proposal, design, spec, and audit artifacts.
+- [x] 19.2 Re-open the change state explicitly instead of leaving the previous `all_done` state unchallenged.
+- [x] 19.3 Add failing BDD scenarios for shared Button click commitment: `mousedown` arms, `mouseup` on the same button commits, `mousedown` alone does not commit, and `mouseup` elsewhere cancels.
+- [x] 19.4 Add failing BDD scenarios for statusbar mouse toggles proving `Help` / `Chat` show the active underline after mouse-driven open.
+- [x] 19.5 Add failing BDD scenarios for ShellPane semantic double-click word selection and triple-click line selection staying visible instead of being immediately cleared on release.
+
+## 20. Fourth Rework Implementation
+
+- [x] 20.1 Introduce one shared shell-next Button press/click controller so button actions commit on `mouseup` instead of raw `mousedown`.
+- [x] 20.2 Reuse that controller across statusbar, pane title actions, top-layer buttons, and close-confirm buttons without reintroducing per-surface click law drift.
+- [x] 20.3 Align pane-title button rendering with the shared Button styling law so active underline is visible on real titlebar cells instead of relying on raw whole-label attributes.
+- [x] 20.4 Prevent ShellPane drag-selection arming when semantic word/line selection already consumed the click and the backend owns the resulting overlay truth.
+
+## 21. Fourth Rework Verification And Self Review
+
+- [x] 21.1 Self review: compare the implementation against the latest five manual acceptance bullets in plain language.
+- [x] 21.2 Run `openspec validate stabilize-shell-next-button-copy --strict`.
+- [x] 21.3 Run focused shell-next BDD for button click commitment, statusbar active underline, and semantic double/triple click selection.
+- [x] 21.4 Run `bun run --filter 'agenter-ext-shell-next' test`.
+- [x] 21.5 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
+- [x] 21.6 Run `git diff --check`.
+- [x] 21.7 Confirm `git diff -- extensions/cli-shell` is empty.
+- [x] 21.8 Commit spec updates separately from implementation and leave `git status --short` clean again.

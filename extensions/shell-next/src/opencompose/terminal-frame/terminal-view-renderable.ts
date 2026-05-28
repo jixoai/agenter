@@ -100,7 +100,9 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
     const userMouseUp = options.onMouseUp;
     this.onMouseDown = (event) => {
       this.handleSemanticMouseDown(event);
-      this.#dragSelection.handleMouseDown(event);
+      if (!event.defaultPrevented) {
+        this.#dragSelection.handleMouseDown(event);
+      }
       userMouseDown?.(event);
     };
     this.onMouseDrag = (event) => {

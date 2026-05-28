@@ -1,7 +1,8 @@
-import { TextRenderable, type BoxRenderable, type CliRenderer, type MouseEvent } from "@opentui/core";
+import { RGBA, TextRenderable, type BoxRenderable, type CliRenderer, type MouseEvent } from "@opentui/core";
 
 import type { LayoutRect } from "./layout";
 import {
+  buildShellNextButtonStyledText,
   normalizeShellNextButtonLabel,
   resolveShellNextButtonAt,
   resolveShellNextButtonAttributes,
@@ -41,6 +42,7 @@ export interface ShellNextPaneChromeControllerInput {
   readonly fg?: string;
   readonly bg?: string;
   readonly onMouseDown?: (event: MouseEvent) => void;
+  readonly onMouseUp?: (event: MouseEvent) => void;
   readonly onMouseMove?: (event: MouseEvent) => void;
 }
 
@@ -140,8 +142,10 @@ export class ShellNextPaneChromeController {
   readonly #id: string;
   readonly #zIndex: number;
   readonly #fg: string;
+  readonly #fgColor: RGBA;
   readonly #bg: string;
   readonly #onMouseDown: ((event: MouseEvent) => void) | undefined;
+  readonly #onMouseUp: ((event: MouseEvent) => void) | undefined;
   readonly #onMouseMove: ((event: MouseEvent) => void) | undefined;
   readonly #overlays = new Map<ShellNextPaneTitleActionId, ShellNextPaneChromeActionOverlay>();
 
@@ -150,8 +154,10 @@ export class ShellNextPaneChromeController {
     this.#id = input.id;
     this.#zIndex = input.zIndex ?? 80;
     this.#fg = input.fg ?? "#f8fafc";
+    this.#fgColor = RGBA.fromHex(this.#fg);
     this.#bg = input.bg ?? "#020617";
     this.#onMouseDown = input.onMouseDown;
+    this.#onMouseUp = input.onMouseUp;
     this.#onMouseMove = input.onMouseMove;
   }
 
@@ -189,11 +195,21 @@ export class ShellNextPaneChromeController {
       overlay.node.top = region.y;
       overlay.node.width = region.width;
       overlay.node.height = 1;
-      overlay.node.content = action.label;
-      overlay.node.attributes = shellNextPaneActionAttributes({
-        active: action.active,
-        hovered: input.state.hoveredActionId === action.id,
-      });
+      overlay.node.content = buildShellNextButtonStyledText(
+        [
+          {
+            button: {
+              id: action.id,
+              label: action.label,
+              active: action.active,
+              hovered: input.state.hoveredActionId === action.id,
+            },
+            fg: this.#fgColor,
+          },
+        ],
+        this.#fgColor,
+      );
+      overlay.node.attributes = 0;
       overlay.node.visible = input.root.visible !== false;
     }
     return regions;
@@ -227,6 +243,7 @@ export class ShellNextPaneChromeController {
       zIndex: this.#zIndex,
     });
     node.onMouseDown = (event) => this.#onMouseDown?.(event);
+    node.onMouseUp = (event) => this.#onMouseUp?.(event);
     node.onMouseMove = (event) => this.#onMouseMove?.(event);
     this.#renderer.root.add(node);
     const overlay = { actionId, node };

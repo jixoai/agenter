@@ -236,3 +236,47 @@ Interpretation for this rework:
 - `bun run --filter 'agenter-ext-shell-next' typecheck`: pass.
 - `git diff --check`: pass.
 - `git diff -- extensions/cli-shell`: empty.
+
+## Fourth Rework Trigger 2026-05-29
+
+Latest manual acceptance after the third rework clarified five still-open product failures:
+
+1. `resize通过了`
+2. `help/chat这组按钮仍然没有“激活态”的样式（下划线）`
+3. `我发现所有的Button的click事件绑定不对，click需要是mousedown+mouseup，而不是现在只判断了mousedown`
+4. `Shell的Selection问题仍然没有解决`
+5. `Shell的双击应该要能选中文本，三击要能选中行。目前看到的效果是选中但是马上被取消选中了`
+
+Decision: reopen the same change again. Treat resize as accepted, then focus this round on shared button click commitment, real mixed-statusbar active underline after mouse open, and ShellPane semantic selection ownership.
+
+## Fourth Rework BDD Evidence
+
+- New BDD now proves the shared button click law directly: `mousedown` alone does not fire, `mouseup` on the same button commits once, `mouseup` elsewhere cancels.
+- New app-level BDD proves mouse-opened `Help` / `Chat` immediately show the active underline in the mixed statusbar path.
+- New terminal-view BDD proves semantic double-click word selection and triple-click line selection stay visible even when the backend selection overlay arrives before mouse-up.
+- New pane-chrome BDD proves active titlebar glyph underline decorates only the inner glyph cell, not the bracket cells.
+
+## Fourth Rework Implementation
+
+- Added `renderable-mux/button-press-controller.ts` so shell-next button actions now commit on `mouseup` after a matching `mousedown`.
+- Reused that controller across statusbar, pane title actions, terminal pane titlebars, Help/Room chrome, top-layer buttons, and attached Room host chrome.
+- Updated `ShellNextPaneChromeController` to render titlebar actions through the shared Button styled-text path instead of raw whole-label attributes, so inner-only underline now reaches real titlebar cells.
+- Tightened `OpenComposeTerminalViewRenderable` so the drag-selection controller does not arm after semantic word/line selection already consumed the mouse-down event.
+
+## Fourth Rework Self Review
+
+- `resize通过了`: preserved. No resize code was reopened in this round.
+- `help/chat这组按钮仍然没有“激活态”的样式（下划线）`: closed. Mouse-opened `Help` / `Chat` now have focused BDD on the mixed statusbar path and pass there.
+- `click需要是mousedown+mouseup`: closed. Shared button actions now arm on press and commit on release only when the same button is released.
+- `Shell的Selection问题仍然没有解决`: narrowed. The concrete semantic double/triple click cancel bug is fixed and covered. General drag/scroll ownership remains in the shell-next terminal-engine/source path, not OpenCompose.
+- `双击选中文本，三击选中行，目前看到的效果是选中但是马上被取消选中了`: closed for the reproduced path. The Shell view no longer clears a backend-owned semantic selection on release after that selection already consumed the click.
+
+## Fourth Rework Verification
+
+- `openspec validate stabilize-shell-next-button-copy --strict`: pass.
+- `bun test extensions/shell-next/test/button-press-controller.test.ts extensions/shell-next/test/statusbar.test.ts extensions/shell-next/test/terminal-view-renderable.test.ts`: pass.
+- `bun test extensions/shell-next/test/shell-next-app.test.ts extensions/shell-next/test/top-layer-surface.test.ts`: pass.
+- `bun run --filter 'agenter-ext-shell-next' test`: 126 pass, 0 fail.
+- `bun run --filter 'agenter-ext-shell-next' typecheck`: pass.
+- `git diff --check`: pass.
+- `git diff -- extensions/cli-shell`: empty.

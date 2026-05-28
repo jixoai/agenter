@@ -758,7 +758,15 @@ describe("Feature: shell-next app runtime", () => {
     await setup.renderOnce();
 
     expect(setup.captureCharFrame()).toContain("Chat [←] [→] [⿻] [x]");
-    expect((findSpan(setup, "[→]")?.attributes ?? 0) & TextAttributes.UNDERLINE).toBe(TextAttributes.UNDERLINE);
+    const initialTitle = findTextPosition(setup.captureCharFrame(), "Chat [←] [→] [⿻] [x]");
+    expect(initialTitle).not.toBeNull();
+    expect(
+      readTextAttributesAt(
+        setup,
+        { x: (initialTitle?.x ?? 0) + "Chat [←] ".length + 1, y: initialTitle?.y ?? 0 },
+        "→",
+      ) & TextAttributes.UNDERLINE,
+    ).toBe(TextAttributes.UNDERLINE);
 
     const rightDockedTitle = findTextPosition(setup.captureCharFrame(), "Chat [←] [→] [⿻] [x]");
     expect(rightDockedTitle).not.toBeNull();
@@ -771,8 +779,8 @@ describe("Feature: shell-next app runtime", () => {
     expect(
       readTextAttributesAt(
         setup,
-        { x: (leftDockedTitle?.x ?? 0) + "Chat ".length, y: leftDockedTitle?.y ?? 0 },
-        "[←]",
+        { x: (leftDockedTitle?.x ?? 0) + "Chat ".length + 1, y: leftDockedTitle?.y ?? 0 },
+        "←",
       ) & TextAttributes.UNDERLINE,
     ).toBe(TextAttributes.UNDERLINE);
     expect(leftFrame.indexOf("Chat [←] [→] [⿻] [x]")).toBeLessThan(leftFrame.indexOf("source-1 [x]"));
@@ -1032,6 +1040,26 @@ describe("Feature: shell-next app runtime", () => {
     await setup.mockMouse.click(61, 17);
     await setup.renderOnce();
     expect(setup.captureCharFrame()).toContain("shell-next chat");
+  });
+
+  test("Scenario: Given the mixed statusbar When Help and Chat are opened by mouse click Then the matching inner labels are underlined", async () => {
+    const { setup } = await startApp();
+
+    await setup.mockMouse.click(55, 17);
+    await setup.renderOnce();
+    const help = findTextPosition(setup.captureCharFrame(), "[Help]");
+    expect(help).not.toBeNull();
+    expect(readTextAttributesAt(setup, { x: (help?.x ?? 0) + 1, y: help?.y ?? 0 }, "Help") & TextAttributes.UNDERLINE).toBe(
+      TextAttributes.UNDERLINE,
+    );
+
+    await setup.mockMouse.click(61, 17);
+    await setup.renderOnce();
+    const chat = findTextPosition(setup.captureCharFrame(), "[Chat]");
+    expect(chat).not.toBeNull();
+    expect(readTextAttributesAt(setup, { x: (chat?.x ?? 0) + 1, y: chat?.y ?? 0 }, "Chat") & TextAttributes.UNDERLINE).toBe(
+      TextAttributes.UNDERLINE,
+    );
   });
 
   test("Scenario: Given product surfaces are open When statusbar renders Then active actions are underlined", async () => {
@@ -1371,10 +1399,37 @@ describe("Feature: shell-next app runtime", () => {
     expect(
       readTextAttributesAt(
         setup,
-        { x: (floatingTitle?.x ?? 0) + "Chat [←] [→] ".length, y: floatingTitle?.y ?? 0 },
-        "[⿻]",
+        { x: (floatingTitle?.x ?? 0) + "Chat [←] [→] ".length + 1, y: floatingTitle?.y ?? 0 },
+        "⿻",
       ) & TextAttributes.UNDERLINE,
     ).toBe(TextAttributes.UNDERLINE);
+  });
+
+  test("Scenario: Given a Room-backed Chat pane title action is active When rendered Then only the inner glyph is underlined", async () => {
+    const roomStore = new RecordingAttachedRoomStore();
+    const attached = createAttachedRoom(roomStore);
+    const { setup } = await startApp({
+      room: {
+        store: roomStore,
+        attached,
+        shellName: "shell-next-test",
+      },
+    });
+
+    setup.mockInput.pressKey("b", { ctrl: true });
+    setup.mockInput.pressKey("c");
+    await setup.renderOnce();
+
+    const rightDockedTitle = findTextPosition(setup.captureCharFrame(), "Chat [←] [→] [⿻] [x]");
+    expect(rightDockedTitle).not.toBeNull();
+    const rightActionX = (rightDockedTitle?.x ?? 0) + "Chat [←] ".length;
+    const titleY = rightDockedTitle?.y ?? 0;
+
+    expect(readTextAttributesAt(setup, { x: rightActionX, y: titleY }, "[") & TextAttributes.UNDERLINE).toBe(0);
+    expect(readTextAttributesAt(setup, { x: rightActionX + 1, y: titleY }, "→") & TextAttributes.UNDERLINE).toBe(
+      TextAttributes.UNDERLINE,
+    );
+    expect(readTextAttributesAt(setup, { x: rightActionX + 2, y: titleY }, "]") & TextAttributes.UNDERLINE).toBe(0);
   });
 
   test("Scenario: Given a Room-backed Chat pane and close dialog When Esc cancels the dialog Then Chat remains mounted", async () => {

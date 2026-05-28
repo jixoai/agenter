@@ -21,6 +21,7 @@ import {
 
 import type { ShellNextRoomBootstrapResult } from "../product/bootstrap";
 import { preserveRendererSelectionOnMiddleClick } from "../renderable-mux/renderer-selection";
+import { ShellNextButtonPressController } from "../renderable-mux/button-press-controller";
 import {
   ShellNextPaneChromeController,
   resolveShellNextPaneChromeClick,
@@ -221,6 +222,7 @@ export class ShellNextRoomApp {
   readonly #confirmMessage: TextRenderable;
   readonly #confirmActions: TextRenderable;
   readonly #hostChromeController: ShellNextPaneChromeController;
+  readonly #buttonPress: ShellNextButtonPressController<ShellNextRoomHostChromeAction>;
   #state: Pick<RuntimeClientState, "globalRoomSnapshotsById" | "globalTerminalApprovalsById">;
   #releaseStore: (() => void) | null = null;
   #releaseRoom: (() => void) | null = null;
@@ -259,11 +261,29 @@ export class ShellNextRoomApp {
     this.#keybindings = input.keybindings;
     this.#hostNode = input.hostNode ?? null;
     this.#hostChrome = input.hostChrome;
+    this.#buttonPress = new ShellNextButtonPressController({
+      resolveAction: (event) => this.#resolveMouseAction(event),
+      onClick: (action, event) => {
+        event.preventDefault();
+        this.#commitMouseAction(action);
+      },
+      onHoverChange: (action) => {
+        const hoveredChromeAction = defaultRoomChromeActions.includes(action as ShellNextRoomHostChromeAction)
+          ? action
+          : null;
+        if (hoveredChromeAction === this.#hoveredChromeAction) {
+          return;
+        }
+        this.#hoveredChromeAction = hoveredChromeAction;
+        this.render("chrome-hover");
+      },
+    });
     this.#hostChromeController = new ShellNextPaneChromeController({
       renderer: this.#renderer,
       id: "shell-next-room-host-chrome",
       bg: "#101820",
       onMouseDown: (event) => this.#handleMouseDown(event),
+      onMouseUp: (event) => this.#handleMouseUp(event),
       onMouseMove: (event) => this.#handleMouseMove(event),
     });
     this.#root = new BoxRenderable(this.#renderer, {
@@ -281,6 +301,7 @@ export class ShellNextRoomApp {
       focusable: this.#hostNode !== null,
     });
     this.#root.onMouseDown = (event) => this.#handleMouseDown(event);
+    this.#root.onMouseUp = (event) => this.#handleMouseUp(event);
     this.#root.onMouseMove = (event) => this.#handleMouseMove(event);
     this.#titleLine = new TextRenderable(this.#renderer, {
       id: "shell-next-room-title",
@@ -733,60 +754,62 @@ export class ShellNextRoomApp {
     if (preserveRendererSelectionOnMiddleClick(event)) {
       return;
     }
-    const chromeAction = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
-    if (chromeAction === "close") {
-      event.preventDefault();
-      this.#input.onQuit?.();
+    if (this.#buttonPress.handleMouseDown(event)) {
       return;
     }
-    const chromeMode = roomChromeActionToLayoutMode(chromeAction);
-    if (chromeMode) {
-      event.preventDefault();
-      this.#requestHostLayout(chromeMode);
-      return;
-    }
-    const region = this.#actionRegions.find(
-      (candidate) =>
-        Math.trunc(event.y) === candidate.row &&
-        Math.trunc(event.x) >= candidate.col &&
-        Math.trunc(event.x) < candidate.col + candidate.width,
-    );
-    if (!region) {
+    if (!this.#resolveActionRegionAt(event)) {
       if (event.type === "down" && event.button === 0) {
         if (this.#hostNode) {
           this.#input.onHostFocus?.(this.#hostNode.id);
         }
         this.#focusDraftLater();
       }
-      return;
-    }
-    event.preventDefault();
-    if (region.action === "close") {
-      this.#input.onQuit?.();
-      return;
-    }
-    if (region.action === "layout-left") {
-      this.#requestHostLayout("left");
-      return;
-    }
-    if (region.action === "layout-right") {
-      this.#requestHostLayout("right");
-      return;
-    }
-    if (region.action === "layout-float") {
-      this.#requestHostLayout("float");
-      return;
     }
   }
 
-  #handleMouseMove(event: MouseEvent): void {
-    const chromeAction = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
-    if (chromeAction !== this.#hoveredChromeAction) {
-      this.#hoveredChromeAction = chromeAction;
-      this.render("chrome-hover");
+  #handleMouseUp(event: MouseEvent): void {
+    if (preserveRendererSelectionOnMiddleClick(event)) {
+      return;
     }
-    if (chromeAction) {
-      event.preventDefault();
+    this.#buttonPress.handleMouseUp(event);
+  }
+
+  #handleMouseMove(event: MouseEvent): void {
+    this.#buttonPress.handleMouseMove(event);
+  }
+
+  #resolveActionRegionAt(event: MouseEvent): RoomActionRegion | null {
+    return (
+      this.#actionRegions.find(
+        (candidate) =>
+          Math.trunc(event.y) === candidate.row &&
+          Math.trunc(event.x) >= candidate.col &&
+          Math.trunc(event.x) < candidate.col + candidate.width,
+      ) ?? null
+    );
+  }
+
+  #resolveMouseAction(event: MouseEvent): ShellNextRoomHostChromeAction | null {
+    const chromeAction = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
+    if (
+      chromeAction === "close" ||
+      chromeAction === "layout-left" ||
+      chromeAction === "layout-right" ||
+      chromeAction === "layout-float"
+    ) {
+      return chromeAction as ShellNextRoomHostChromeAction;
+    }
+    return this.#resolveActionRegionAt(event)?.action ?? null;
+  }
+
+  #commitMouseAction(action: ShellNextRoomHostChromeAction): void {
+    if (action === "close") {
+      this.#input.onQuit?.();
+      return;
+    }
+    const chromeMode = roomChromeActionToLayoutMode(action);
+    if (chromeMode) {
+      this.#requestHostLayout(chromeMode);
     }
   }
 

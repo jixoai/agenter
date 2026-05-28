@@ -7,6 +7,7 @@ import {
   resolveShellNextButtonAt,
   type ShellNextButtonRegion,
 } from "../renderable-mux/button";
+import { ShellNextButtonPressController } from "../renderable-mux/button-press-controller";
 import {
   ShellNextPaneChromeController,
   resolveShellNextPaneChromeClick,
@@ -91,12 +92,30 @@ export class ShellNextTopLayerSurface {
   #statusNotice: string | null = null;
   #visible = false;
   #closeConfirm: ShellNextCloseConfirmState | null = null;
+  readonly #buttonPress: ShellNextButtonPressController<ActionName>;
 
   constructor(input: ShellNextTopLayerSurfaceInput) {
     this.#renderer = input.renderer;
     this.#store = input.store;
     this.#shellName = input.shellName;
     this.#onClose = input.onClose;
+    this.#buttonPress = new ShellNextButtonPressController({
+      resolveAction: (event) => this.#resolveMouseAction(event),
+      onClick: (action, event) => {
+        event.preventDefault();
+        void this.#handleRegion(action);
+      },
+      onHoverChange: (action) => {
+        const hoveredChromeAction = action === "close" ? "close" : null;
+        const hoveredAction = action === "close" ? null : action;
+        if (hoveredChromeAction === this.#hoveredChromeAction && hoveredAction === this.#hoveredAction) {
+          return;
+        }
+        this.#hoveredChromeAction = hoveredChromeAction;
+        this.#hoveredAction = hoveredAction;
+        this.render();
+      },
+    });
     this.#root = new BoxRenderable(this.#renderer, {
       id: "shell-next-top-layer",
       position: "absolute",
@@ -113,6 +132,7 @@ export class ShellNextTopLayerSurface {
       focusable: true,
     });
     this.#root.onMouseDown = (event) => this.#handleMouseDown(event);
+    this.#root.onMouseUp = (event) => this.#handleMouseUp(event);
     this.#root.onMouseMove = (event) => this.#handleMouseMove(event);
     this.#title = this.#createText("shell-next-top-title", 1, "#f8fafc");
     this.#actor = this.#createText("shell-next-top-actor", 3, "#cbd5e1");
@@ -125,6 +145,7 @@ export class ShellNextTopLayerSurface {
       bg: "#111827",
       zIndex: 101,
       onMouseDown: (event) => this.#handleMouseDown(event),
+      onMouseUp: (event) => this.#handleMouseUp(event),
       onMouseMove: (event) => this.#handleMouseMove(event),
     });
     this.#root.add(this.#title);
@@ -159,6 +180,7 @@ export class ShellNextTopLayerSurface {
     this.#closeConfirm = null;
     this.#root.visible = false;
     this.#chrome.hide();
+    this.#buttonPress.reset();
     this.#renderer.requestRender();
   }
 
@@ -363,38 +385,21 @@ export class ShellNextTopLayerSurface {
     if (!this.#visible) {
       return;
     }
-    const chromeAction = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
-    if (chromeAction) {
-      event.preventDefault();
-      void this.#handleRegion("close");
+    this.#buttonPress.handleMouseDown(event);
+  }
+
+  #handleMouseUp(event: MouseEvent): void {
+    if (!this.#visible) {
       return;
     }
-    const region = this.#resolveActionRegionAt(event);
-    if (!region) {
-      return;
-    }
-    event.preventDefault();
-    void this.#handleRegion(region.action);
+    this.#buttonPress.handleMouseUp(event);
   }
 
   #handleMouseMove(event: MouseEvent): void {
     if (!this.#visible) {
       return;
     }
-    const chromeAction = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
-    const action = this.#resolveActionRegionAt(event)?.action ?? null;
-    const changed = chromeAction !== this.#hoveredChromeAction || action !== this.#hoveredAction;
-    this.#hoveredChromeAction = chromeAction;
-    this.#hoveredAction = action;
-    this.#root.borderColor = "#93c5fd";
-    this.#actions.fg = "#f8fafc";
-    if (changed) {
-      this.render();
-    }
-    if (chromeAction || action) {
-      event.preventDefault();
-      this.#renderer.requestRender();
-    }
+    this.#buttonPress.handleMouseMove(event);
   }
 
   #resolveActionRegionAt(event: MouseEvent): ActionRegion | null {
@@ -406,6 +411,14 @@ export class ShellNextTopLayerSurface {
     }));
     const id = resolveShellNextButtonAt(event, buttonRegions);
     return this.#actionRegions.find((region) => region.id === id) ?? null;
+  }
+
+  #resolveMouseAction(event: MouseEvent): ActionName | null {
+    const chromeAction = resolveShellNextPaneChromeClick({ event, regions: this.#chromeRegions });
+    if (chromeAction === "close") {
+      return "close";
+    }
+    return this.#resolveActionRegionAt(event)?.action ?? null;
   }
 
   #consumeKey(key: KeyEvent): void {
