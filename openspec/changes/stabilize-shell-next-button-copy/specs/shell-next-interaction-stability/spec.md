@@ -147,3 +147,69 @@ Resize handles SHALL support drag resizing and click micro-adjustment. Clicking 
 - **THEN** shell-next applies a `-1` pane resize delta
 - **WHEN** a user clicks `▼`
 - **THEN** shell-next applies a `+1` pane resize delta
+
+### Requirement: Terminal interactions SHALL live in the shell-next Terminal Engine boundary
+
+Shell-next SHALL keep terminal-specific input, selection, viewport, copy, paste, and follow-cursor behavior inside a shell-next internal Terminal Engine boundary. OpenCompose SHALL remain a generic pane composition layer and SHALL NOT own terminal-specific behavior in this change.
+
+#### Scenario: OpenCompose pane boundary stays terminal-agnostic
+- **WHEN** terminal behavior is implemented for ShellPane
+- **THEN** OpenCompose still exposes only custom-rendered pane content and OpenTUI `CliRenderer` pane content
+- **AND** OpenCompose APIs do not gain terminal-specific methods such as `followCursor`, `selectRange`, or `copySelection`
+
+#### Scenario: ShellNextApp does not own terminal interaction laws
+- **WHEN** ShellPane receives normal key input, paste input, selection movement, or viewport interaction
+- **THEN** ShellNextApp delegates to the shell-next Terminal Engine boundary
+- **AND** ShellNextApp only keeps product decisions such as prefix shortcuts, Help/Chat toggles, statusbar, close confirmation, and Room binding
+
+### Requirement: Terminal input SHALL be one transaction
+
+The shell-next Terminal Engine SHALL route accepted terminal input through one transaction: clear backend terminal selection unless explicitly preserving it, write input bytes/text to the terminal source, and request backend cursor follow exactly once after the backend accepts the input.
+
+#### Scenario: Plain terminal input clears backend selection and follows cursor
+- **GIVEN** a focused ShellPane has a backend selection
+- **WHEN** the user sends normal terminal input
+- **THEN** shell-next clears the backend terminal selection before writing input
+- **AND** shell-next writes the input exactly once
+- **AND** shell-next requests follow-cursor exactly once after the write is accepted
+
+#### Scenario: Rejected terminal input does not follow cursor
+- **GIVEN** a terminal source rejects an input write
+- **WHEN** the user sends terminal input
+- **THEN** shell-next does not request follow-cursor
+
+#### Scenario: Selection-preserving movement does not clear backend selection
+- **GIVEN** Shift+Option word selection is extending a backend-owned terminal range
+- **WHEN** shell-next sends cursor movement bytes for that selection operation
+- **THEN** shell-next preserves the keyboard selection anchor
+- **AND** shell-next does not clear backend terminal selection before writing the movement bytes
+
+#### Scenario: Scrolled terminal input returns viewport to cursor
+- **GIVEN** the ShellPane backend viewport is scrolled away from the cursor
+- **WHEN** the user sends accepted terminal input or paste text
+- **THEN** shell-next requests backend follow-cursor after the write
+
+### Requirement: Room-backed Chat chrome SHALL use the shared pane chrome Button overlay
+
+Room-backed Chat panes SHALL use the same shared pane chrome Button overlay behavior as direct Chat panes. They SHALL NOT rely on unstyled string-only pane titles for layout actions.
+
+#### Scenario: Room-backed Chat titlebar hover is bold-only
+- **WHEN** a Room-backed Chat pane titlebar action is hovered
+- **THEN** only that bracketed action is bold
+- **AND** sibling actions are not bold
+- **AND** foreground color does not change because of hover
+
+#### Scenario: Room-backed Chat titlebar active state is underlined
+- **WHEN** a Room-backed Chat pane is docked left, docked right, or floating
+- **THEN** the matching titlebar action is underlined
+- **AND** inactive layout actions are not underlined
+
+### Requirement: Primary clipboard SHALL remain a single capability path
+
+Shell-next SHALL request primary clipboard writes through one host clipboard/OSC52 target path. Shell-next SHALL NOT maintain an app-owned primary selection register and SHALL NOT emulate middle-click paste as a fallback.
+
+#### Scenario: Primary copy reports capability result
+- **WHEN** ShellPane or renderer selection completion asks for primary copy
+- **THEN** shell-next calls the single primary host clipboard path
+- **AND** the result is reported as success or unsupported by that path
+- **AND** no local primary buffer is written as a fallback

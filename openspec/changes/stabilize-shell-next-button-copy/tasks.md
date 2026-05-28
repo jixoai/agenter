@@ -83,3 +83,40 @@
 - [x] 11.6 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
 - [x] 11.7 Run `git diff --check`.
 - [x] 11.8 Commit the completed rework and leave `git status --short` clean.
+
+## 12. Second Rework Architecture
+
+- [x] 12.1 Record the second manual acceptance failure: only resize glyph direction and Option+arrow cursor movement were actually solved.
+- [x] 12.2 Update proposal/design/spec so terminal behavior belongs to a shell-next internal Terminal Engine, not OpenCompose.
+- [x] 12.3 Record the KISS clipboard decision: one primary capability path, no app-owned primary register, no dual-track fallback.
+- [x] 12.4 Validate `stabilize-shell-next-button-copy` after reopening the change again.
+- [x] 12.5 Commit the second rework OpenSpec artifacts before implementation.
+
+## 13. Terminal Engine BDD
+
+- [ ] 13.1 Add failing BDD scenarios for terminal input transaction: clear backend selection, write once, follow cursor once after accepted input.
+- [ ] 13.2 Add failing BDD scenarios proving rejected terminal input does not follow cursor.
+- [ ] 13.3 Add failing BDD scenarios proving Shift/Option selection movement preserves the keyboard anchor and does not clear backend selection.
+- [ ] 13.4 Add failing BDD scenarios proving scrolled terminal input and paste request backend follow-cursor.
+- [ ] 13.5 Add failing BDD scenarios proving Room-backed Chat titlebar hover/active uses the shared pane chrome Button overlay.
+- [ ] 13.6 Add failing BDD scenarios proving primary copy uses a single capability path and does not write a local primary fallback.
+
+## 14. Terminal Engine Implementation
+
+- [ ] 14.1 Introduce a shell-next internal Terminal Engine boundary for input, selection, viewport, copy, paste, and follow-cursor behavior.
+- [ ] 14.2 Move terminal key input routing out of ShellNextApp into the Terminal Engine boundary.
+- [ ] 14.3 Route normal input, paste input, and cursor movement through one terminal input transaction.
+- [ ] 14.4 Preserve selection only for explicit selection movement operations.
+- [ ] 14.5 Keep primary clipboard as one host clipboard/OSC52 capability path and surface unsupported results without fallback.
+- [ ] 14.6 Move Room-backed Chat host chrome to the same pane chrome overlay/controller path as direct Chat panes.
+
+## 15. Second Rework Verification And Commit
+
+- [ ] 15.1 Self review round 5: compare implementation against the second manual acceptance feedback and architecture boundary correction.
+- [ ] 15.2 Run `openspec validate stabilize-shell-next-button-copy --strict`.
+- [ ] 15.3 Run focused BDD tests for Terminal Engine input transaction, follow-cursor, selection preservation, primary capability, and Room-backed Chat chrome.
+- [ ] 15.4 Run `bun run --filter 'agenter-ext-shell-next' test`.
+- [ ] 15.5 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
+- [ ] 15.6 Run `git diff --check`.
+- [ ] 15.7 Confirm `git diff -- extensions/cli-shell` is empty.
+- [ ] 15.8 Commit the completed second rework and leave `git status --short` clean.

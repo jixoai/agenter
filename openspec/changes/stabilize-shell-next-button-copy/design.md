@@ -89,3 +89,43 @@ Manual acceptance exposed that several tests were too high-level or looked at he
 6. Resize handle clicks are glyph-sensitive. For horizontal handles, `◀` applies `-1` and `▶` applies `+1`; for vertical handles, `▲` applies `-1` and `▼` applies `+1`.
 
 The implementation should stay within `extensions/shell-next` unless evidence shows `ghostty-native` or OpenTUI itself is the only correct fix. If a lower package needs changes, pause and discuss before editing it.
+
+## Second Rework Design Notes
+
+Manual acceptance after the first rework proved that the remaining failures are not isolated bugs. The implementation put terminal interaction behavior in the wrong layer and the BDD asserted mocked application calls instead of the real product paths.
+
+### Boundary Decision
+
+OpenCompose SHALL remain a generic pane composition layer. It owns layout, split/resize, pane chrome, shared Button rendering, focus/event dispatch, and two pane content shapes:
+
+- custom-rendered panes;
+- OpenTUI `CliRenderer` panes.
+
+OpenCompose SHALL NOT gain a Terminal Kernel in this change. Terminal input, terminal selection, terminal viewport scrolling, copy/paste, and follow-cursor semantics are shell-next terminal-engine responsibilities for now.
+
+### Shell-next Terminal Engine
+
+Shell-next will add an internal terminal-engine boundary that consumes OpenCompose custom-rendered panes and adapts terminal sources. This boundary owns the interaction laws copied from `legacy/terminal2`:
+
+- normal terminal input is a transaction: clear backend selection, write bytes, and follow cursor only after the backend accepts the input;
+- selection-preserving movement, such as Shift+Option word selection, must opt out of selection clearing explicitly;
+- mouse drag selection routes visible cells to backend owner coordinates and receives selection overlays from the backend for painting;
+- wheel and scrollbar events route to backend viewport operations;
+- paste is handled by the terminal frame and follows the cursor exactly once after accepted input;
+- copy routes through backend-selected text and a single OSC52 target request.
+
+ShellNextApp should only own product composition: prefix keybindings, pane toggles, Help/Chat/Statusbar, close confirmation, and Room binding.
+
+### Clipboard Decision
+
+Primary clipboard remains a single-path capability. Shell-next will request `primary` through the host clipboard/OSC52 path and report failure if the environment does not support it. Shell-next will not maintain a second local primary-selection register and will not emulate middle-click paste.
+
+### BDD Correction
+
+The next tests must target the shell-next terminal engine and real product surfaces:
+
+1. terminal input after a scrolled viewport calls `followCursor`;
+2. normal terminal input clears backend selection before writing bytes;
+3. Shift/Option selection preserves the keyboard selection anchor and does not clear backend selection;
+4. Room-backed Chat titlebar actions use the same pane chrome Button overlay behavior as direct Chat panes;
+5. primary copy requests are asserted as a capability request, while unsupported primary clipboard remains an explicit environment result rather than a product fallback.

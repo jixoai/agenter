@@ -42,3 +42,14 @@ Manual acceptance after `2cb2ea38` showed this change was over-claimed. The impl
 - Resize handle click micro-adjustment always moves in one direction; the clicked glyph must decide the direction.
 
 This rework keeps the same architectural direction: no `cli-shell` edits, no imports from `cli-shell`, and no OpenTUI upstream patch unless tests prove shell-next cannot work around the behavior locally.
+
+## Second Rework Trigger: Architecture Boundary 2026-05-28
+
+Manual acceptance after `f4b7a687` showed only resize glyph direction and Option+arrow cursor movement were actually solved. The remaining failures are now understood as an architecture boundary problem:
+
+- Terminal input, selection, scroll, copy, paste, and follow-cursor behavior were placed partly in `ShellNextApp` instead of a shell-next terminal engine.
+- OpenCompose must stay generic: it owns pane/layout/chrome/event composition and only knows about custom-rendered panes and OpenTUI renderer panes.
+- The terminal behavior must not be promoted into an OpenCompose terminal kernel yet. It belongs inside shell-next and the project-owned terminal rendering engine that consumes OpenCompose custom panes.
+- Primary clipboard must stay KISS: one explicit primary-copy path, no app-owned primary register, and no dual fallback behavior.
+
+This second rework adds a shell-next-internal Terminal Engine boundary and moves the legacy `terminal2` interaction laws there while keeping `extensions/cli-shell` read-only.

@@ -108,3 +108,19 @@ Decision: reopen this change as rework, write BDD for the missing behavior first
 - `bun run --filter 'agenter-ext-shell-next' test`: 110 pass, 0 fail.
 - `bun run --filter 'agenter-ext-shell-next' typecheck`: pass.
 - `git diff --check`: pass.
+
+## Second Rework Trigger 2026-05-28
+
+Manual acceptance after `f4b7a687` found that only two behaviors were actually fixed:
+
+- resize click micro-adjustment follows the clicked `◀/▶` glyph;
+- Option+arrow can move the ShellPane cursor by word.
+
+The remaining failures are now treated as architecture-boundary failures:
+
+- terminal input, selection, scroll, copy, paste, and follow-cursor behavior were spread into ShellNextApp and mocked tests instead of living in a shell-next internal Terminal Engine;
+- Room-backed Chat used string-only host chrome instead of the shared pane chrome Button overlay;
+- primary clipboard must remain a single host clipboard/OSC52 capability path, not an app-owned primary register or dual fallback path;
+- OpenCompose stays terminal-agnostic and continues to provide only pane composition primitives.
+
+Decision: reopen the change for a second rework. Keep `extensions/cli-shell` read-only, copy the relevant `legacy/terminal2` laws into shell-next-owned terminal-engine modules, and make BDD target the real product paths that failed manual acceptance.
