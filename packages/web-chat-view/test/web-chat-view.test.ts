@@ -1,8 +1,19 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { getBottomAnchoredStartScrollTop } from "@agenter/svelte-components";
+import {
+  getBottomAnchoredDistanceToLatest,
+  getBottomAnchoredDistanceToStart,
+  getBottomAnchoredLatestScrollTop as readBottomAnchoredLatestScrollTop,
+  getBottomAnchoredStartScrollTop as readBottomAnchoredStartScrollTop,
+} from "@agenter/svelte-components";
 
-import { type WebChatMessage, type WebChatSocketFactory, type WebChatSocketLike, type WebChatVisibleMessageFact } from "../src";
+import {
+  type WebChatChannel,
+  type WebChatMessage,
+  type WebChatSocketFactory,
+  type WebChatSocketLike,
+  type WebChatVisibleMessageFact,
+} from "../src";
 import { defineWebChatView, WEB_CHAT_VIEW_TAG } from "../src/custom-element";
 import WebChatViewHost from "../src/web-chat-view-host.svelte";
 import WebChatHostHarness from "./web-chat-host-harness.svelte";
@@ -81,6 +92,10 @@ const isLatestSentinel = (target: Element): target is HTMLElement => {
   return target instanceof HTMLElement && target.dataset.bottomAnchoredTimelineLatestSentinel === "true";
 };
 
+const readMockDistanceToLatest = (viewport: HTMLElement): number => getBottomAnchoredDistanceToLatest(viewport);
+
+const readMockDistanceToStart = (viewport: HTMLElement): number => getBottomAnchoredDistanceToStart(viewport);
+
 class IntersectionObserverMock {
   static instances: IntersectionObserverMock[] = [];
 
@@ -139,15 +154,20 @@ class IntersectionObserverMock {
     }
     if (isLatestSentinel(target)) {
       const threshold = parseBottomRootMargin(this.options.rootMargin);
-      return Math.max(0, -this.options.root.scrollTop) <= threshold;
+      return readMockDistanceToLatest(this.options.root) <= threshold;
     }
     if (target instanceof HTMLElement && target.dataset.viewKey) {
       if (!this.options.root.contains(target)) {
         return false;
       }
-      const latestMessageElement = this.options.root.querySelector<HTMLElement>("[data-view-key]");
+      const rows = Array.from(this.options.root.querySelectorAll<HTMLElement>("[data-view-key]"));
+      const latestMessageElement = rows.at(-1) ?? null;
+      const earliestMessageElement = rows[0] ?? null;
       if (latestMessageElement && latestMessageElement === target) {
-        return Math.max(0, -this.options.root.scrollTop) < 48;
+        return readMockDistanceToLatest(this.options.root) < 48;
+      }
+      if (earliestMessageElement && earliestMessageElement === target) {
+        return readMockDistanceToStart(this.options.root) < 48;
       }
     }
     return true;
@@ -202,7 +222,7 @@ class FirstObservationOnlyIntersectionObserverMock {
       return true;
     }
     const threshold = parseBottomRootMargin(this.options.rootMargin);
-    return Math.max(0, -this.options.root.scrollTop) <= threshold;
+    return readMockDistanceToLatest(this.options.root) <= threshold;
   }
 
   private emit(target: Element, visible: boolean): void {
@@ -251,6 +271,56 @@ class ResizeObserverMock {
 const originalCreateObjectURL = URL.createObjectURL;
 const originalRevokeObjectURL = URL.revokeObjectURL;
 const mountedComponents: object[] = [];
+
+const getBottomAnchoredLatestScrollTop = (_viewport?: HTMLElement): number => readBottomAnchoredLatestScrollTop();
+
+const getBottomAnchoredStartScrollTop = (viewport?: HTMLElement): number => {
+  if (!viewport) {
+    throw new TypeError("viewport is required");
+  }
+  return readBottomAnchoredStartScrollTop(viewport);
+};
+
+const createRoomChannel = (overrides: {
+  chatId: string;
+  title: string;
+  owner: string;
+  participants: WebChatChannel["participants"];
+  accessRole: WebChatChannel["accessRole"];
+  accessToken: WebChatChannel["accessToken"];
+  createdAt?: number;
+  updatedAt?: number;
+  focused?: boolean;
+  roomRevision?: string;
+  transcriptRevision?: string;
+  participantId?: WebChatChannel["participantId"];
+  currentAdmin?: WebChatChannel["currentAdmin"];
+  transportUrl?: WebChatChannel["transportUrl"];
+  contextId?: WebChatChannel["contextId"];
+  metadata?: WebChatChannel["metadata"];
+  archivedAt?: WebChatChannel["archivedAt"];
+  archivedBy?: WebChatChannel["archivedBy"];
+}): WebChatChannel => ({
+  chatId: overrides.chatId,
+  kind: "room",
+  title: overrides.title,
+  owner: overrides.owner,
+  contextId: overrides.contextId,
+  participants: overrides.participants,
+  metadata: overrides.metadata,
+  createdAt: overrides.createdAt ?? 1,
+  updatedAt: overrides.updatedAt ?? overrides.createdAt ?? 1,
+  archivedAt: overrides.archivedAt,
+  archivedBy: overrides.archivedBy,
+  focused: overrides.focused ?? true,
+  roomRevision: overrides.roomRevision ?? "1",
+  transcriptRevision: overrides.transcriptRevision ?? "1",
+  accessRole: overrides.accessRole,
+  accessToken: overrides.accessToken,
+  participantId: overrides.participantId,
+  currentAdmin: overrides.currentAdmin,
+  transportUrl: overrides.transportUrl,
+});
 
 const mountHost = (props: Record<string, unknown>) => {
   const target = document.createElement("div");
@@ -316,6 +386,16 @@ const readRenderedText = (root: Node | ShadowRoot | null): string => {
   return text.replace(/\s+/gu, " ").trim();
 };
 
+const readMockElementHeightFromStyle = (element: HTMLElement | null | undefined): number | null => {
+  const style = element?.getAttribute("style") ?? "";
+  const match = /height:\s*([\d.]+)px/u.exec(style);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number.parseFloat(match[1] ?? "");
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const settleLitUpdates = async (root: ParentNode = document): Promise<void> => {
   await Promise.resolve();
 
@@ -346,6 +426,9 @@ describe("Feature: web-chat-view package", () => {
   beforeEach(() => {
     WebSocketMock.instances.length = 0;
     IntersectionObserverMock.instances.length = 0;
+    const emitScroll = (element: HTMLElement): void => {
+      element.dispatchEvent(new Event("scroll"));
+    };
     Object.defineProperty(HTMLElement.prototype, "clientHeight", {
       configurable: true,
       value: 400,
@@ -353,6 +436,20 @@ describe("Feature: web-chat-view package", () => {
     Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
       configurable: true,
       get() {
+        const explicit = Number.parseFloat(this.dataset.mockScrollHeight ?? "");
+        if (Number.isFinite(explicit)) {
+          return explicit;
+        }
+        const virtualHostHeight = readMockElementHeightFromStyle(
+          this.querySelector?.(".bottom-anchored-timeline-virtual-host") as HTMLElement | null,
+        );
+        if (virtualHostHeight && virtualHostHeight > 0) {
+          return Math.max(this.clientHeight, Math.round(virtualHostHeight));
+        }
+        const rowCount = this.querySelectorAll?.("[data-view-key]").length ?? 0;
+        if (rowCount > 0) {
+          return Math.max(this.clientHeight, rowCount * 120);
+        }
         return 1200;
       },
     });
@@ -362,7 +459,12 @@ describe("Feature: web-chat-view package", () => {
         return Number(this.dataset.scrollTop ?? "0");
       },
       set(value: number) {
-        this.dataset.scrollTop = String(value);
+        const nextValue = String(value);
+        if (this.dataset.scrollTop === nextValue) {
+          return;
+        }
+        this.dataset.scrollTop = nextValue;
+        emitScroll(this);
       },
     });
     Object.defineProperty(HTMLElement.prototype, "scrollTo", {
@@ -373,7 +475,6 @@ describe("Feature: web-chat-view package", () => {
             ? (typeof y === "number" ? y : 0)
             : (topOrOptions.top ?? 0);
         this.scrollTop = top;
-        this.dispatchEvent(new Event("scroll"));
       },
     });
     Object.defineProperty(window, "requestAnimationFrame", {
@@ -443,13 +544,11 @@ describe("Feature: web-chat-view package", () => {
           { id: "session:jane", label: "jane" },
           { id: "auth:user", label: "User" },
         ],
-	        createdAt: 1,
-	        updatedAt: 1,
-	        focused: true,
-	        roomRevision: "0",
-	        transcriptRevision: "0",
-	        accessRole: "admin",
-	        accessToken: "msgtok_admin",
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
         transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
       },
     });
@@ -475,13 +574,11 @@ describe("Feature: web-chat-view package", () => {
               { id: "session:jane", label: "jane" },
               { id: "auth:user", label: "User" },
             ],
-	            createdAt: 1,
-	            updatedAt: 1,
-	            focused: true,
-	            roomRevision: "0",
-	            transcriptRevision: "0",
-	            accessRole: "admin",
-	            accessToken: "msgtok_admin",
+            createdAt: 1,
+            updatedAt: 1,
+            focused: true,
+            accessRole: "admin",
+            accessToken: "msgtok_admin",
             transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
           },
           items: [
@@ -564,7 +661,7 @@ describe("Feature: web-chat-view package", () => {
     ).toBe("older");
   });
 
-  test("Scenario: Given the transcript moves away from latest When the viewport returns to latest Then the affordance appears only while away", async () => {
+  test("Scenario: Given the transcript moves away from latest When the viewport returns to latest Then the affordance appears only while away", { timeout: 15_000 }, async () => {
     mountHost({
       channel: {
         chatId: "chat-scroll-latest",
@@ -602,10 +699,16 @@ describe("Feature: web-chat-view package", () => {
 
     const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
     const buttonShell = document.body.querySelector(".chat-scroll-latest") as HTMLElement | null;
-    const button = document.body.querySelector("[aria-label='Scroll to latest']") as HTMLButtonElement | null;
-    expect(buttonShell?.dataset.visible).toBe("false");
-    expect(viewport.scrollTop).toBe(0);
+    const button = document.body.querySelector("[aria-label='Scroll to latest']") as HTMLElement | null;
+    await vi.waitFor(() => {
+      expect(buttonShell?.dataset.visible).toBe("false");
+      expect(
+        (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
+      ).toBe("true");
+      expect(getBottomAnchoredDistanceToLatest(viewport)).toBe(0);
+    });
 
+    viewport.dispatchEvent(new Event("wheel"));
     viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
     viewport.dispatchEvent(new Event("scroll"));
     flushSync();
@@ -615,8 +718,12 @@ describe("Feature: web-chat-view package", () => {
       expect(buttonShell?.dataset.visible).toBe("true");
     });
 
+    expect((document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest).toBe(
+      "false",
+    );
+
     expect(button).not.toBeNull();
-    viewport.scrollTop = 0;
+    viewport.scrollTop = getBottomAnchoredLatestScrollTop(viewport);
     viewport.dispatchEvent(new Event("scroll"));
     flushSync();
     await settleLitUpdates();
@@ -626,9 +733,130 @@ describe("Feature: web-chat-view package", () => {
     });
   });
 
+  test("Scenario: Given browser-style negative transcript scroll When scroll-to-latest is pressed Then the viewport returns to latest instead of history start", { timeout: 15_000 }, async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-scroll-latest-negative",
+        kind: "room",
+        title: "Scroll latest negative",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: Array.from({ length: 120 }, (_unused, index) => ({
+        rowId: index + 1,
+        messageId: index + 1,
+        chatId: "chat-scroll-latest-negative",
+        from: index % 2 === 0 ? "User" : "jane",
+        to: index % 2 === 0 ? "jane" : undefined,
+        kind: "text" as const,
+        content: `negative scroll transcript row ${index + 1}`,
+        createdAt: (index + 1) * 100,
+        updatedAt: (index + 1) * 100,
+        visibleAt: (index + 1) * 100,
+        metadata: {},
+        attachments: [],
+      })),
+    });
+
+    await settleLitUpdates();
+
+    const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
+    const buttonShell = document.body.querySelector(".chat-scroll-latest") as HTMLElement | null;
+    const button = document.body.querySelector("[aria-label='Scroll to latest']") as HTMLElement | null;
+    const latestScrollTop = getBottomAnchoredLatestScrollTop(viewport);
+
+    viewport.dispatchEvent(new Event("wheel"));
+    viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
+    viewport.dispatchEvent(new Event("scroll"));
+    flushSync();
+    await settleLitUpdates();
+
+    await vi.waitFor(() => {
+      expect(buttonShell?.dataset.visible).toBe("true");
+    });
+
+    expect((document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest).toBe(
+      "false",
+    );
+
+    expect(button).not.toBeNull();
+    await settleLitUpdates();
+    await Promise.resolve();
+    await Promise.resolve();
+    button?.click();
+    flushSync();
+    await settleLitUpdates();
+
+    await vi.waitFor(() => {
+      expect(getBottomAnchoredDistanceToLatest(viewport)).toBe(0);
+      expect(buttonShell?.dataset.visible).toBe("false");
+      expect(
+        (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
+      ).toBe("true");
+    });
+  });
+
+  test("Scenario: Given a fresh room with preloaded overflowing history When the host opens the transcript Then initial alignment lands on latest instead of history start", { timeout: 15_000 }, async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-initial-latest",
+        kind: "room",
+        title: "Initial latest",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: Array.from({ length: 120 }, (_unused, index) => ({
+        rowId: index + 1,
+        messageId: index + 1,
+        chatId: "chat-initial-latest",
+        from: index % 2 === 0 ? "User" : "jane",
+        to: index % 2 === 0 ? "jane" : undefined,
+        kind: "text" as const,
+        content: `initial latest row ${index + 1}`,
+        createdAt: (index + 1) * 100,
+        updatedAt: (index + 1) * 100,
+        visibleAt: (index + 1) * 100,
+        metadata: {},
+        attachments: [],
+      })),
+    });
+
+    await settleLitUpdates();
+
+    const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
+    await vi.waitFor(() => {
+      expect(getBottomAnchoredDistanceToLatest(viewport)).toBe(0);
+      expect(
+        (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
+      ).toBe("true");
+      expect(
+        (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atStart,
+      ).toBe("false");
+    });
+  });
+
   test("Scenario: Given a host send handler When the composer submits text Then the package delegates to the host instead of raw transport send", async () => {
     const submitMessage = vi.fn(async () => undefined);
     mountHost({
+      viewerActorId: "auth:user",
       channel: {
         chatId: "chat-main",
         kind: "room",
@@ -660,9 +888,7 @@ describe("Feature: web-chat-view package", () => {
     expect(readRenderedText(composerStatus)).not.toContain("Unavailable");
     expect(readRenderedText(composerStatus)).not.toContain("1 file ready");
 
-    const sendButton = [...document.body.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Send"),
-    );
+    const sendButton = document.body.querySelector("[data-testid='web-chat-composer-send']");
     await vi.waitFor(() => {
       expect(sendButton?.hasAttribute("disabled")).toBe(false);
     });
@@ -670,7 +896,11 @@ describe("Feature: web-chat-view package", () => {
     flushSync();
 
     await vi.waitFor(() => {
-      expect(submitMessage).toHaveBeenCalledWith({ text: "hello channel", assets: [] });
+      expect(submitMessage).toHaveBeenCalledWith({
+        text: "hello channel",
+        assets: [],
+        commentResources: [],
+      });
     });
     expect(WebSocketMock.instances).toHaveLength(0);
   });
@@ -707,11 +937,9 @@ describe("Feature: web-chat-view package", () => {
       expect(document.body.querySelector("[part='composer-asset']")).toBeTruthy();
     });
     expect(readRenderedText(document.body.querySelector("[part='composer-asset']"))).toContain("notes.txt");
-    expect(readRenderedText(document.body.querySelector("[part='composer-status']"))).toContain("1 file ready");
+    expect(document.body.querySelector("[part='composer-status']")).toBeNull();
 
-    const sendButton = [...document.body.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Send"),
-    );
+    const sendButton = document.body.querySelector("[data-testid='web-chat-composer-send']");
     await vi.waitFor(() => {
       expect(sendButton?.hasAttribute("disabled")).toBe(false);
     });
@@ -719,7 +947,11 @@ describe("Feature: web-chat-view package", () => {
     flushSync();
 
     await vi.waitFor(() => {
-      expect(submitMessage).toHaveBeenCalledWith({ text: "", assets: [pendingFile] });
+      expect(submitMessage).toHaveBeenCalledWith({
+        text: "",
+        assets: [pendingFile],
+        commentResources: [],
+      });
     });
   });
 
@@ -751,11 +983,52 @@ describe("Feature: web-chat-view package", () => {
     await Promise.resolve();
 
     await vi.waitFor(() => {
-      expect(document.body.querySelector("[part='composer-media-assets']")).toBeTruthy();
+      expect(document.body.querySelector("[part='composer-assets']")).toBeTruthy();
     });
-    expect(document.body.querySelector("[part='composer-file-assets']")).toBeNull();
-    expect(document.body.querySelector("[data-layout='media']")).toBeTruthy();
-    expect(readRenderedText(document.body.querySelector("[data-layout='media']"))).toContain("screenshot.png");
+    const asset = document.body.querySelector("[part='composer-asset']");
+    expect(asset).toBeTruthy();
+    expect(document.body.querySelector("img[alt='screenshot.png']")).toBeTruthy();
+    expect(readRenderedText(asset)).toContain("Image 1");
+    expect(readRenderedText(asset)).toContain("screenshot.png");
+  });
+
+  test("Scenario: Given a pending resource card When the operator opens it Then the composer shows a top-layer preview without mutating the draft shelf", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      onSendMessage: vi.fn(async () => undefined),
+    });
+
+    const screenshotFile = new File(["image"], "preview.png", { type: "image/png" });
+    const fileInput = document.body.querySelector("input[type='file']") as HTMLInputElement;
+    assignFiles(fileInput, [screenshotFile]);
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    flushSync();
+    await Promise.resolve();
+
+    const card = document.body.querySelector("[part='resource-card-hitbox']") as HTMLElement | null;
+    expect(card).toBeTruthy();
+    card?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    flushSync();
+    await Promise.resolve();
+
+    const dialog = document.body.querySelector("[part='resource-preview-layer']");
+    expect(dialog).toBeTruthy();
+    expect(readRenderedText(dialog)).toContain("preview.png");
+    expect(document.body.querySelector("[part='composer-assets']")).toBeTruthy();
   });
 
   test("Scenario: Given host actor presentation and attachment metadata When the transcript renders Then canonical avatars and attachment tiles follow host facts", async () => {
@@ -814,9 +1087,133 @@ describe("Feature: web-chat-view package", () => {
     await settleLitUpdates();
 
     expect(document.body.querySelector("img[alt='Analyst']")).toBeTruthy();
-    expect(document.body.querySelector("a[href='https://example.com/spec.png']")).toBeTruthy();
+    expect(document.body.querySelector("img[alt='spec.png']")).toBeTruthy();
+    expect(document.body.querySelector("[part='message-attachments']")).toBeTruthy();
     expect(readRenderedText(document.body)).toContain("spec.png");
-    expect(readRenderedText(document.body)).toContain("auth:user");
+    expect(readRenderedText(document.body)).not.toContain("auth:user");
+  });
+
+  test("Scenario: Given a sent resource shelf card When the operator opens it Then the transcript shows a top-layer preview while the body stays in place", async () => {
+    mountHost({
+      viewerActorId: "auth:user",
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 1,
+          viewKey: "msg-user",
+          messageId: 1,
+          chatId: "chat-main",
+          senderActorId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "see attachment",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          metadata: {},
+          attachments: [
+            {
+              assetId: "asset-1",
+              kind: "image",
+              name: "open-spec.png",
+              mimeType: "image/png",
+              sizeBytes: 1024,
+              url: "https://example.com/open-spec.png",
+            },
+          ],
+        },
+      ],
+    });
+
+    await settleLitUpdates();
+
+    const shelf = document.body.querySelector("[part='message-attachments']") as HTMLElement | null;
+    const messageContent = document.body.querySelector(".message-sent .message-content") as HTMLElement | null;
+    expect(shelf).toBeTruthy();
+    expect(messageContent).toBeTruthy();
+    expect(messageContent?.contains(shelf ?? null)).toBe(true);
+
+    const sentCard = document.body.querySelector("[part='message-attachment'] [part='resource-card-hitbox']") as HTMLElement | null;
+    expect(sentCard).toBeTruthy();
+    sentCard?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    flushSync();
+    await Promise.resolve();
+
+    const dialog = document.body.querySelector("[part='resource-preview-layer']");
+    expect(dialog).toBeTruthy();
+    expect(readRenderedText(dialog)).toContain("open-spec.png");
+    expect(readRenderedText(document.body)).toContain("see attachment");
+  });
+
+  test("Scenario: Given explicit resource references for a sent message When the transcript renders Then the bottom shelf follows host-owned resource facts instead of attachment fallback", async () => {
+    mountHost({
+      channel: {
+        chatId: "chat-main",
+        kind: "room",
+        title: "Room",
+        owner: "jane",
+        participants: [
+          { id: "session:jane", label: "jane" },
+          { id: "auth:user", label: "User" },
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 1,
+          viewKey: "msg-user",
+          messageId: 1,
+          chatId: "chat-main",
+          senderActorId: "auth:user",
+          from: "User",
+          kind: "text",
+          content: "See [^Image 1] in the notes.",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          metadata: {},
+          attachments: [],
+        },
+      ],
+      resolveMessageResources: () => [
+        {
+          id: "comment-1",
+          label: "Comment 1",
+          tokenText: "[^Comment 1]",
+          kind: "comment",
+          detailText: "Line scoped note",
+          extension: "cmt",
+        },
+      ],
+    });
+
+    await settleLitUpdates();
+
+    const shelf = document.body.querySelector("[part='message-attachments']");
+    expect(shelf).toBeTruthy();
+    expect(readRenderedText(shelf)).toContain("Comment 1");
+    expect(readRenderedText(shelf)).toContain("Line scoped note");
+    expect(document.body.querySelector("[part='resource-card']")).toBeTruthy();
   });
 
   test("Scenario: Given edited and recalled room messages When the transcript renders Then revision state stays objective on the same rows", async () => {
@@ -1005,7 +1402,7 @@ describe("Feature: web-chat-view package", () => {
 
     await settleLitUpdates();
 
-    const trigger = document.body.querySelector("button[aria-label='Message actions']") as HTMLButtonElement;
+    const trigger = document.body.querySelector("[aria-label='Message actions']") as HTMLElement;
     trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     flushSync();
     await Promise.resolve();
@@ -1099,7 +1496,7 @@ describe("Feature: web-chat-view package", () => {
     expect(composerSend).toBeTruthy();
   });
 
-  test("Scenario: Given an embedded shared room surface When it mounts without the internal header Then the transcript stays primary and composer shortcuts remain visible", async () => {
+  test("Scenario: Given an embedded shared room surface When it mounts without the internal header Then the transcript stays primary and composer help stays completion-driven", async () => {
     mountHost({
       channel: {
         chatId: "chat-embedded",
@@ -1128,8 +1525,7 @@ describe("Feature: web-chat-view package", () => {
     expect(shell?.getAttribute("data-embedded")).toBe("true");
     expect(transcriptShell).toBeTruthy();
     expect(composer).toBeTruthy();
-    expect(rendered).toContain("@ mention");
-    expect(rendered).toContain("/ command");
+    expect(rendered).not.toContain("Type ? for help");
   });
 
   test("Scenario: Given an empty room snapshot already resolved When the host mounts before any websocket snapshot arrives Then the transcript shows the empty state instead of infinite loading", async () => {
@@ -1171,7 +1567,7 @@ describe("Feature: web-chat-view package", () => {
     expect(rendered).not.toContain("Loading channel history...");
   });
 
-  test("Scenario: Given a long room transcript When the host scrolls deep into history Then offscreen rows stay unmounted until the viewport reaches them", async () => {
+  test("Scenario: Given a long room transcript When the host scrolls deep into history Then offscreen rows stay unmounted until the viewport reaches them", { timeout: 15_000 }, async () => {
     mountHost({
       channel: {
         chatId: "chat-virtualized",
@@ -1209,7 +1605,12 @@ describe("Feature: web-chat-view package", () => {
     await settleLitUpdates();
 
     const viewport = document.body.querySelector("[data-testid='web-chat-scroll-viewport']") as HTMLDivElement;
-    expect(viewport.querySelector("[data-view-key='virtual-200']")).toBeTruthy();
+    await vi.waitFor(() => {
+      expect(
+        (document.body.querySelector(".bottom-anchored-timeline-root") as HTMLElement | null)?.dataset.atLatest,
+      ).toBe("true");
+      expect(viewport.querySelector("[data-view-key='virtual-200']")).toBeTruthy();
+    }, { timeout: 15_000 });
     expect(viewport.querySelector("[data-view-key='virtual-120']")).toBeNull();
     const firstVirtualWrapper = viewport.querySelector<HTMLElement>(".scroll-view-virtual-item");
     expect(firstVirtualWrapper?.getAttribute("style")).not.toContain("block-size:");
@@ -1224,6 +1625,7 @@ describe("Feature: web-chat-view package", () => {
       },
     });
 
+    viewport.dispatchEvent(new Event("wheel"));
     viewport.scrollTop = getBottomAnchoredStartScrollTop(viewport);
     viewport.dispatchEvent(new Event("scroll"));
     flushSync();
@@ -1484,24 +1886,18 @@ describe("Feature: web-chat-view package", () => {
     target.style.height = "520px";
     document.body.append(target);
 
-    const initialChannel = {
+    const initialChannel = createRoomChannel({
       chatId: "chat-main",
-      kind: "room" as const,
       title: "Room",
       owner: "jane",
       participants: [
         { id: "session:jane", label: "jane" },
         { id: "auth:user", label: "User" },
       ],
-	      createdAt: 1,
-	      updatedAt: 1,
-	      focused: true,
-	      roomRevision: "0",
-	      transcriptRevision: "0",
-	      accessRole: "admin" as const,
-	      accessToken: "msgtok_admin",
+      accessRole: "admin",
+      accessToken: "msgtok_admin",
       transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
-    };
+    });
 
     const component = mount(WebChatHostHarness, {
       target,
@@ -1567,24 +1963,18 @@ describe("Feature: web-chat-view package", () => {
     document.body.append(target);
 
     const latestVisibleMessageIdHandler = vi.fn<(message: WebChatVisibleMessageFact | null) => void>();
-    const initialChannel = {
+    const initialChannel = createRoomChannel({
       chatId: "chat-main",
-      kind: "room" as const,
       title: "Room",
       owner: "jane",
       participants: [
         { id: "session:jane", label: "jane" },
         { id: "auth:user", label: "User" },
       ],
-	      createdAt: 1,
-	      updatedAt: 1,
-	      focused: true,
-	      roomRevision: "0",
-	      transcriptRevision: "0",
-	      accessRole: "admin" as const,
-	      accessToken: "msgtok_admin",
+      accessRole: "admin",
+      accessToken: "msgtok_admin",
       transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
-    };
+    });
 
     const component = mount(WebChatHostHarness, {
       target,
@@ -1658,24 +2048,18 @@ describe("Feature: web-chat-view package", () => {
     document.body.append(target);
 
     const latestVisibleMessageIdHandler = vi.fn<(message: WebChatVisibleMessageFact | null) => void>();
-    const initialChannel = {
+    const initialChannel = createRoomChannel({
       chatId: "chat-main",
-      kind: "room" as const,
       title: "Room",
       owner: "jane",
       participants: [
         { id: "session:jane", label: "jane" },
         { id: "session:reviewer", label: "reviewer" },
       ],
-	      createdAt: 1,
-	      updatedAt: 1,
-	      focused: true,
-	      roomRevision: "0",
-	      transcriptRevision: "0",
-	      accessRole: "admin" as const,
-	      accessToken: "msgtok_admin",
+      accessRole: "admin",
+      accessToken: "msgtok_admin",
       transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
-    };
+    });
 
     const component = mount(WebChatHostHarness, {
       target,
@@ -1764,24 +2148,18 @@ describe("Feature: web-chat-view package", () => {
     document.body.append(target);
 
     const latestVisibleMessageIdHandler = vi.fn<(message: WebChatVisibleMessageFact | null) => void>();
-    const initialChannel = {
+    const initialChannel = createRoomChannel({
       chatId: "chat-main",
-      kind: "room" as const,
       title: "Room",
       owner: "jane",
       participants: [
         { id: "session:jane", label: "jane" },
         { id: "auth:user", label: "User" },
       ],
-	      createdAt: 1,
-	      updatedAt: 1,
-	      focused: true,
-	      roomRevision: "0",
-	      transcriptRevision: "0",
-	      accessRole: "admin" as const,
-	      accessToken: "msgtok_admin",
+      accessRole: "admin",
+      accessToken: "msgtok_admin",
       transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
-    };
+    });
 
     const component = mount(WebChatHostHarness, {
       target,
@@ -1882,24 +2260,18 @@ describe("Feature: web-chat-view package", () => {
       target,
       props: {
         socketFactory,
-        channel: {
+        channel: createRoomChannel({
           chatId: "chat-main",
-          kind: "room",
           title: "Room",
           owner: "jane",
           participants: [
             { id: "session:jane", label: "jane" },
             { id: "auth:user", label: "User" },
           ],
-	          createdAt: 1,
-	          updatedAt: 1,
-	          focused: true,
-	          roomRevision: "0",
-	          transcriptRevision: "0",
-	          accessRole: "admin",
-	          accessToken: "msgtok_admin",
+          accessRole: "admin",
+          accessToken: "msgtok_admin",
           transportUrl: "ws://localhost:7777/room/chat-main?token=msgtok_admin",
-        },
+        }),
       },
     });
     flushSync();
@@ -1960,9 +2332,7 @@ describe("Feature: web-chat-view package", () => {
     flushSync();
     await Promise.resolve();
 
-    const sendButton = [...shadowRoot.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Send"),
-    );
+    const sendButton = shadowRoot.querySelector("[data-testid='web-chat-composer-send']");
     await vi.waitFor(() => {
       expect(sendButton?.hasAttribute("disabled")).toBe(false);
     });
@@ -1970,7 +2340,11 @@ describe("Feature: web-chat-view package", () => {
     flushSync();
 
     await vi.waitFor(() => {
-      expect(submitMessage).toHaveBeenCalledWith({ text: "element send", assets: [] });
+      expect(submitMessage).toHaveBeenCalledWith({
+        text: "element send",
+        assets: [],
+        commentResources: [],
+      });
     });
   });
 

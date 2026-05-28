@@ -7,16 +7,23 @@
 
   import { cn } from "../ui/utils";
   import { messageMarkdownPreview } from "./message-markdown-preview";
+  import type { WebChatResourceReference } from "../types";
 
   let {
     value,
     class: className = "",
+    resources = [],
+    tone = "participant",
+    onOpenResource,
   }: {
     value: string;
     class?: string;
+    resources?: readonly WebChatResourceReference[];
+    tone?: "assistant" | "participant" | "viewer";
+    onOpenResource?: ((resource: WebChatResourceReference) => void) | undefined;
   } = $props();
 
-  const extensions: readonly Extension[] = [
+  const createExtensions = (): readonly Extension[] => [
     EditorState.readOnly.of(true),
     EditorView.editable.of(false),
     EditorView.lineWrapping,
@@ -24,7 +31,11 @@
       base: markdownLanguage,
       codeLanguages: languages,
     }),
-    messageMarkdownPreview(),
+    messageMarkdownPreview({
+      resources,
+      tone,
+      onOpenResource,
+    }),
     EditorView.theme({
       "&": {
         backgroundColor: "transparent",
@@ -66,9 +77,9 @@
         maxWidth: "100%",
         padding: "0",
         fontFamily: "var(--font-sans)",
-        fontSize: "13px",
-        lineHeight: "1.6",
-        "--md-source-line-height": "calc(13px * 1.6)",
+        fontSize: "var(--web-chat-body-font-size, 13px)",
+        lineHeight: "var(--web-chat-body-line-height, 1.45)",
+        "--md-source-line-height": "calc(var(--web-chat-body-font-size, 13px) * var(--web-chat-body-line-height, 1.45))",
         caretColor: "transparent",
         color: "inherit",
         overflowWrap: "anywhere",
@@ -117,7 +128,7 @@
       const view = new EditorView({
         state: EditorState.create({
           doc: value,
-          extensions,
+          extensions: createExtensions(),
         }),
         parent: hostRef,
       });
@@ -162,7 +173,7 @@
     white-space: pre-wrap;
     word-break: break-word;
     overflow-wrap: anywhere;
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: var(--web-chat-body-font-size, 13px);
+    line-height: var(--web-chat-body-line-height, 1.45);
   }
 </style>

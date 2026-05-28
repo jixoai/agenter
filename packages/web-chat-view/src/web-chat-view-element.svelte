@@ -22,6 +22,8 @@
     resolveActorPresentation,
     resolveMessageActions,
     resolveMessageReadProgress,
+    resolveMessageResources,
+    onCreateCommentDraft,
     composerCapabilities,
     submitMessage,
     latestVisibleAssistantViewKeyHandler,
@@ -50,6 +52,8 @@
   {resolveActorPresentation}
   {resolveMessageActions}
   {resolveMessageReadProgress}
+  {resolveMessageResources}
+  {onCreateCommentDraft}
   {composerCapabilities}
   {submitMessage}
   {latestVisibleAssistantViewKeyHandler}

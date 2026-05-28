@@ -31,6 +31,12 @@ export type WebChatViewElement = HTMLElement & {
   resolveMessageReadProgress?: (
     input: import("./types").WebChatMessageRenderInput,
   ) => import("./types").WebChatMessageReadProgress | null;
+  resolveMessageResources?: (
+    input: import("./types").WebChatMessageRenderInput,
+  ) => readonly import("./types").WebChatResourceReference[];
+  onCreateCommentDraft?: (
+    input: import("./types").WebChatCommentDraftRequest,
+  ) => void | Promise<void>;
   composerCapabilities?: import("./types").WebChatComposerCapabilities;
   submitMessage?: (payload: import("./types").WebChatComposerSubmitPayload) => Promise<void>;
   latestVisibleAssistantViewKeyHandler?: (viewKey: string | null) => void;

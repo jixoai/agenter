@@ -32,7 +32,7 @@
   {title}
   part={part}
   class={cn(
-    "relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/70 bg-slate-100 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-slate-600 shadow-[0_10px_26px_rgba(15,23,42,0.08)]",
+    "relative flex size-[1.625rem] shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/5 bg-[#d0d5dd] text-[0.58rem] font-semibold uppercase tracking-[0.01em] text-[#475467]",
     className,
   )}
 >

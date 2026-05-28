@@ -25,10 +25,12 @@ describe("Feature: message read disclosure sizing contract", () => {
     expect(messageReadIndicatorSource).not.toContain('w-[min(17rem,calc(100vw-1rem))]');
   });
 
-  test("Scenario: Given the message read disclosure surface When reading the source Then it composes shared card primitives instead of hand-rolling a detached container shell", () => {
-    expect(messageReadIndicatorSource).toContain('import * as Card from "./ui/card";');
-    expect(messageReadIndicatorSource).toContain("<Card.Root");
-    expect(messageReadIndicatorSource).toContain("<Card.Header");
-    expect(messageReadIndicatorSource).toContain("<Card.Content");
+  test("Scenario: Given the message read disclosure surface When reading the source Then it composes Framework7 list and block primitives instead of a custom card stack", () => {
+    expect(messageReadIndicatorSource).toContain('import { Badge, Block, BlockTitle, Link, List, ListItem, Popover } from "./framework7-components";');
+    expect(messageReadIndicatorSource).toContain("<Block");
+    expect(messageReadIndicatorSource).toContain("<BlockTitle");
+    expect(messageReadIndicatorSource).toContain("<List");
+    expect(messageReadIndicatorSource).toContain("<ListItem");
+    expect(messageReadIndicatorSource).not.toContain("<Card.Root");
   });
 });

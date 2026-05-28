@@ -1,15 +1,20 @@
 import { syntaxHighlighting, syntaxTree } from "@codemirror/language";
-import { StateField, type ChangeDesc, type EditorState, type Extension } from "@codemirror/state";
+import { Facet, StateField, type ChangeDesc, type EditorState, type Extension } from "@codemirror/state";
 import type { DecorationSet } from "@codemirror/view";
 import { Decoration, EditorView } from "@codemirror/view";
 import type { SyntaxNodeRef } from "@lezer/common";
 
+import type { WebChatResourceReference } from "../types";
 import { collectMarkdownStructuralProjectionState, type MarkdownProjectionRange } from "./message-markdown-hybrid-projection";
 import { markdownHighlightStyle, markdownPreviewTheme } from "./message-markdown-preview-theme";
 import {
   bulletDecoration,
+  inlineResourceTokenDecoration,
   orderedDecoration,
   revealStructuralSourceEffect,
+  resourceBarDecoration,
+  resolveDefinitionResourceReference,
+  resolveInlineResourceReference,
   structuralOverlayDecoration,
   taskMarkerDecoration,
 } from "./message-markdown-preview-widgets";
@@ -24,6 +29,28 @@ const fadedDecoration = Decoration.mark({ class: "cm-md-faded" });
 const taskFadedDecoration = Decoration.mark({ class: "cm-md-task-faded" });
 const inlineCodeDecoration = Decoration.mark({ class: "cm-md-inlinecode" });
 const structuralSourceHiddenDecoration = Decoration.mark({ class: "cm-md-structural-source-hidden" });
+const blockHiddenDecoration = Decoration.replace({ block: true });
+
+type MarkdownPreviewResourceContext = {
+  resources: readonly WebChatResourceReference[];
+  tone: "assistant" | "participant" | "viewer";
+  onOpenResource?: ((resource: WebChatResourceReference) => void) | undefined;
+};
+
+type ResourceDefinitionProjection = {
+  hiddenLineRanges: readonly MarkdownProjectionRange[];
+  aggregatedResources: readonly WebChatResourceReference[];
+};
+
+const defaultResourceContext: MarkdownPreviewResourceContext = {
+  resources: [],
+  tone: "participant",
+  onOpenResource: undefined,
+};
+
+const markdownPreviewResourceFacet = Facet.define<MarkdownPreviewResourceContext, MarkdownPreviewResourceContext>({
+  combine: (values) => values.at(-1) ?? defaultResourceContext,
+});
 
 const normalizeDecorationRange = (docLength: number, from: number, to: number): { from: number; to: number } | null => {
   const start = Math.max(0, Math.min(from, docLength));
@@ -63,13 +90,17 @@ const buildInlineDecorations = (
   state: EditorState,
   projectedRanges: readonly MarkdownProjectionRange[],
   revealedRanges: readonly MarkdownProjectionRange[],
+  resourceContext: MarkdownPreviewResourceContext,
+  hiddenDefinitionRanges: readonly MarkdownProjectionRange[],
 ): Array<{ from: number; to: number; decoration: Decoration }> => {
   const decorations: Array<{ from: number; to: number; decoration: Decoration }> = [];
-  const selectedLines = state.selection.ranges.map((range) => {
-    const lineFrom = state.doc.lineAt(range.from);
-    const lineTo = state.doc.lineAt(range.to);
-    return { from: Math.min(lineFrom.from, lineTo.from), to: Math.max(lineFrom.to, lineTo.to) };
-  });
+  const selectedLines = state.selection.ranges
+    .filter((range) => range.from !== range.to)
+    .map((range) => {
+      const lineFrom = state.doc.lineAt(range.from);
+      const lineTo = state.doc.lineAt(range.to);
+      return { from: Math.min(lineFrom.from, lineTo.from), to: Math.max(lineFrom.to, lineTo.to) };
+    });
   const listStack: number[] = [];
   const blockquoteLineStarts = new Set<number>();
 
@@ -77,6 +108,10 @@ const buildInlineDecorations = (
     from: 0,
     to: state.doc.length,
     enter: (node: SyntaxNodeRef) => {
+      if (rangeContains(hiddenDefinitionRanges, node.from, node.to)) {
+        return false;
+      }
+
       if ((node.name === "Table" || node.name === "FencedCode") && rangeContains(projectedRanges, node.from, node.to)) {
         return false;
       }
@@ -109,6 +144,18 @@ const buildInlineDecorations = (
 
       if (node.name === "Link") {
         const label = node.node.getChild("LinkLabel");
+        const labelFrom = label?.from ?? node.from;
+        const labelTo = label?.to ?? node.to;
+        const labelText = state.doc.sliceString(labelFrom, labelTo);
+        const resource = resolveInlineResourceReference(resourceContext.resources, labelText);
+        if (resource && !isSelectedLine) {
+          decorations.push({
+            from: node.from,
+            to: node.to,
+            decoration: inlineResourceTokenDecoration(resource, resourceContext.tone, resourceContext.onOpenResource),
+          });
+          return false;
+        }
         if (label) {
           decorations.push({ from: label.from, to: label.to, decoration: linkDecoration });
         }
@@ -202,8 +249,77 @@ const buildInlineDecorations = (
   return decorations;
 };
 
+const collectResourceDefinitionProjection = (
+  state: EditorState,
+  resourceContext: MarkdownPreviewResourceContext,
+): ResourceDefinitionProjection => {
+  const resourceIdsWithHiddenDefinitions = new Set<string>();
+  const hiddenLineRanges: MarkdownProjectionRange[] = [];
+
+  for (let lineNo = 1; lineNo <= state.doc.lines; lineNo += 1) {
+    const line = state.doc.line(lineNo);
+    const definitionMatch = /^\[\^(.+?)\]:/u.exec(line.text.trim());
+    if (!definitionMatch) {
+      continue;
+    }
+    const resource = resolveDefinitionResourceReference(resourceContext.resources, definitionMatch[1] ?? "");
+    if (!resource) {
+      continue;
+    }
+    resourceIdsWithHiddenDefinitions.add(resource.id);
+    hiddenLineRanges.push({
+      from: line.from,
+      to: Math.min(state.doc.length, line.to + (line.to < state.doc.length ? 1 : 0)),
+    });
+  }
+
+  const aggregatedResources = resourceContext.resources.filter((resource, index, resources) => {
+    if (resources.findIndex((candidate) => candidate.id === resource.id) !== index) {
+      return false;
+    }
+    return resourceIdsWithHiddenDefinitions.has(resource.id) || resource.tokenText.trim().length > 0;
+  });
+
+  return {
+    hiddenLineRanges,
+    aggregatedResources,
+  };
+};
+
+const buildResourceDefinitionDecorations = (
+  state: EditorState,
+  resourceContext: MarkdownPreviewResourceContext,
+  projection: ResourceDefinitionProjection,
+): Array<{ from: number; to: number; decoration: Decoration }> => {
+  const decorations: Array<{ from: number; to: number; decoration: Decoration }> = projection.hiddenLineRanges.map(
+    (range) => ({
+      from: range.from,
+      to: range.to,
+      decoration: blockHiddenDecoration,
+    }),
+  );
+
+  if (projection.aggregatedResources.length === 0) {
+    return decorations;
+  }
+
+  decorations.push({
+    from: state.doc.length,
+    to: state.doc.length,
+    decoration: resourceBarDecoration(
+      projection.aggregatedResources,
+      resourceContext.tone,
+      resourceContext.onOpenResource,
+    ),
+  });
+
+  return decorations;
+};
+
 const buildDecorationSet = (state: EditorState): DecorationSet => {
   const revealRanges = state.field(structuralRevealStateField);
+  const resourceContext = state.facet(markdownPreviewResourceFacet);
+  const resourceDefinitionProjection = collectResourceDefinitionProjection(state, resourceContext);
   const structuralState = collectMarkdownStructuralProjectionState(state, {
     selectionRanges: state.selection.ranges
       .filter((range) => range.from !== range.to)
@@ -228,7 +344,10 @@ const buildDecorationSet = (state: EditorState): DecorationSet => {
       state,
       structuralState.projected.map(({ from, to }) => ({ from, to })),
       structuralState.revealedRanges,
+      resourceContext,
+      resourceDefinitionProjection.hiddenLineRanges,
     ),
+    ...buildResourceDefinitionDecorations(state, resourceContext, resourceDefinitionProjection),
   ];
 
   widgets.sort((left, right) => left.from - right.from || left.to - right.to);
@@ -283,7 +402,10 @@ const markdownPreviewStateField = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field),
 });
 
-export const messageMarkdownPreview = (): Extension => [
+export const messageMarkdownPreview = (
+  resourceContext: MarkdownPreviewResourceContext = defaultResourceContext,
+): Extension => [
+  markdownPreviewResourceFacet.of(resourceContext),
   structuralRevealStateField,
   markdownPreviewStateField,
   syntaxHighlighting(markdownHighlightStyle),

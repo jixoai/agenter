@@ -4,7 +4,8 @@
   "workspaces": [
     "demo",
     "extensions/*",
-    "packages/*"
+    "packages/*",
+    "packages/*/*"
   ],
   "devDependencies": {
     "@changesets/cli": "^2.29.6",

@@ -1,45 +1,69 @@
 <script lang="ts" module>
   import type { HTMLAnchorAttributes, HTMLButtonAttributes } from "svelte/elements";
-  import { type VariantProps, tv } from "tailwind-variants";
 
-  import { cn, type WithElementRef } from "../utils";
+  import type { WithElementRef } from "../utils";
 
-  export const buttonVariants = tv({
-    base: "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-    variants: {
-      variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs",
-        destructive: "bg-destructive text-white hover:bg-destructive/90 shadow-xs",
-        outline: "bg-background border shadow-xs hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 shadow-xs",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
-      },
-      size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        sm: "h-8 rounded-md px-3 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-        icon: "size-9",
-        "icon-sm": "size-8",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
-    },
-  });
-
-  export type ButtonVariant = VariantProps<typeof buttonVariants>["variant"];
-  export type ButtonSize = VariantProps<typeof buttonVariants>["size"];
+  export type ButtonVariant = "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
+  export type ButtonSize = "default" | "sm" | "lg" | "icon" | "icon-sm";
   export type ButtonProps = WithElementRef<HTMLButtonAttributes> &
     WithElementRef<HTMLAnchorAttributes> & {
       variant?: ButtonVariant;
       size?: ButtonSize;
     };
+
+  export const buttonVariants = ({
+    variant = "default",
+    size = "default",
+  }: {
+    variant?: ButtonVariant;
+    size?: ButtonSize;
+  } = {}): string => {
+    const classes = ["button", "web-chat-f7-button"];
+
+    switch (variant) {
+      case "default":
+        classes.push("button-fill");
+        break;
+      case "destructive":
+        classes.push("button-fill", "color-red");
+        break;
+      case "outline":
+        classes.push("button-outline");
+        break;
+      case "secondary":
+        classes.push("button-tonal");
+        break;
+      case "ghost":
+        classes.push("web-chat-f7-button--ghost");
+        break;
+      case "link":
+        classes.push("web-chat-f7-button--link");
+        break;
+    }
+
+    switch (size) {
+      case "sm":
+        classes.push("button-small");
+        break;
+      case "lg":
+        classes.push("button-large");
+        break;
+      case "icon":
+        classes.push("web-chat-f7-button--icon");
+        break;
+      case "icon-sm":
+        classes.push("button-small", "web-chat-f7-button--icon");
+        break;
+    }
+
+    return classes.join(" ");
+  };
 </script>
 
 <script lang="ts">
   import type { Snippet } from "svelte";
+
+  import { cn } from "../utils";
 
   let {
     class: className,
@@ -48,7 +72,7 @@
     ref = $bindable(null),
     href = undefined,
     type = "button",
-    disabled,
+    disabled = false,
     children,
     ...restProps
   }: ButtonProps & { children?: Snippet | unknown } = $props();
@@ -58,15 +82,16 @@
   };
 
   const childSnippet = $derived.by(resolveChildren);
+  const resolvedClassName = $derived(cn(buttonVariants({ variant, size }), className));
 </script>
 
 {#if href}
   <a
     bind:this={ref}
     data-slot="button"
-    class={cn(buttonVariants({ variant, size }), className)}
+    class={resolvedClassName}
     href={disabled ? undefined : href}
-    aria-disabled={disabled}
+    aria-disabled={disabled ? "true" : undefined}
     role={disabled ? "link" : undefined}
     tabindex={disabled ? -1 : undefined}
     {...restProps}
@@ -77,11 +102,53 @@
   <button
     bind:this={ref}
     data-slot="button"
-    class={cn(buttonVariants({ variant, size }), className)}
-    {type}
-    {disabled}
+    class={resolvedClassName}
+    type={type ?? "button"}
+    disabled={disabled ?? false}
     {...restProps}
   >
     {@render childSnippet?.()}
   </button>
 {/if}
+
+<style>
+  :global(.web-chat-f7-button) {
+    gap: 0.45rem;
+    min-width: 0;
+    border-radius: 14px;
+    font-weight: 600;
+    box-shadow: none;
+  }
+
+  :global(.web-chat-f7-button.button) {
+    transition:
+      opacity 160ms ease,
+      transform 160ms ease;
+  }
+
+  :global(.web-chat-f7-button--ghost.button) {
+    background: transparent;
+    color: var(--f7-theme-color, #007aff);
+  }
+
+  :global(.web-chat-f7-button--ghost.button:not(.disabled):active) {
+    opacity: 0.72;
+  }
+
+  :global(.web-chat-f7-button--link.button) {
+    background: transparent;
+    color: var(--f7-theme-color, #007aff);
+    padding-inline: 0;
+  }
+
+  :global(.web-chat-f7-button--icon.button) {
+    width: 2.25rem;
+    min-width: 2.25rem;
+    padding-inline: 0;
+  }
+
+  :global(.web-chat-f7-button.button-small.web-chat-f7-button--icon) {
+    width: 1.9rem;
+    min-width: 1.9rem;
+  }
+</style>

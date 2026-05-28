@@ -4,7 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run --config vitest.config.ts",
+    "example": "bun run ./example/scripts/start-example.ts",
+    "storybook": "storybook dev --ci --no-open --port 6106",
+    "storybook:build": "storybook build",
+    "test:unit": "vitest run --config vitest.config.ts --project unit",
+    "test:dom": "vitest run --config vitest.config.ts --project storybook",
+    "test": "bun run test:unit && bun run test:dom",
     "typecheck": "svelte-check --tsconfig ./tsconfig.json"
   },
   "exports": {
@@ -34,13 +39,24 @@
     "@lucide/svelte": "^1.7.0",
     "bits-ui": "^2.16.3",
     "clsx": "^2.1.1",
+    "framework7": "^9.0.4",
+    "framework7-svelte": "^9.0.4",
     "highlight.js": "^11.11.1",
     "tailwind-merge": "^3.3.1",
     "tailwind-variants": "^3.2.2"
   },
   "devDependencies": {
+    "@chromatic-com/storybook": "^5.1.1",
+    "@storybook/addon-a11y": "^10.3.5",
+    "@storybook/addon-docs": "^10.3.5",
+    "@storybook/addon-svelte-csf": "^5.1.2",
+    "@storybook/addon-vitest": "^10.3.5",
+    "@storybook/svelte-vite": "^10.3.5",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@types/bun": "latest",
+    "@vitest/browser-playwright": "^4.1.0",
+    "playwright": "^1.59.0",
+    "storybook": "^10.3.5",
     "jsdom": "^26.1.0",
     "svelte": "^5.55.2",
     "svelte-check": "^4.4.2",

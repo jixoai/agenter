@@ -24,10 +24,7 @@
   <input
     bind:this={ref}
     data-slot={dataSlot}
-    class={cn(
-      "border-input flex h-9 w-full min-w-0 rounded-md border bg-transparent px-3 pt-1.5 text-sm font-medium shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50",
-      className,
-    )}
+    class={cn("input web-chat-f7-input web-chat-f7-input--file", className)}
     type="file"
     bind:files
     bind:value
@@ -37,12 +34,39 @@
   <input
     bind:this={ref}
     data-slot={dataSlot}
-    class={cn(
-      "border-input bg-background placeholder:text-muted-foreground flex h-9 w-full min-w-0 rounded-md border px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
-      className,
-    )}
+    class={cn("input web-chat-f7-input", className)}
     {type}
     bind:value
     {...restProps}
   />
 {/if}
+
+<style>
+  :global(.web-chat-f7-input) {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    height: 2.25rem;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--f7-list-outline-border-color, #cfd8e3) 88%, transparent);
+    background: color-mix(in srgb, var(--f7-card-bg-color, #fff) 94%, transparent);
+    padding: 0.5rem 0.75rem;
+    color: var(--f7-text-color, #111827);
+    box-shadow: none;
+    outline: none;
+  }
+
+  :global(.web-chat-f7-input::placeholder) {
+    color: var(--f7-text-color-secondary, #9ca3af);
+  }
+
+  :global(.web-chat-f7-input:focus-visible) {
+    border-color: color-mix(in srgb, var(--f7-theme-color, #007aff) 56%, white);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--f7-theme-color, #007aff) 18%, transparent);
+  }
+
+  :global(.web-chat-f7-input--file) {
+    padding-top: 0.55rem;
+    font-size: 0.92rem;
+  }
+</style>

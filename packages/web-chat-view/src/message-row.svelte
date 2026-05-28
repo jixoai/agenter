@@ -1,23 +1,30 @@
 <script lang="ts">
   import ChatAvatar from "./chat-avatar.svelte";
   import MessageMarkdownContent from "./components/message-markdown-content.svelte";
-  import MessageAttachmentStrip from "./message-attachment-strip.svelte";
   import MessageActionsContextMenu from "./message-actions-context-menu.svelte";
   import MessageActionsMenu, {
     type ResolvedMessageAction,
   } from "./message-actions-menu.svelte";
   import MessageReadIndicator from "./message-read-indicator.svelte";
-  import * as ContextMenu from "./ui/context-menu";
-  import { Button } from "./ui/button";
-  import { Input } from "./ui/input";
-  import { Textarea } from "./ui/textarea";
+  import MessageSourcePopup from "./message-source-popup.svelte";
+  import {
+    mergeResourceReferences,
+    resolveMessageResourceReferences,
+    serializeMessageSourceMarkdown,
+  } from "./resource-contract";
+  import ResourcePreviewLayer from "./resource-preview-layer.svelte";
+  import { writeClipboardText } from "./clipboard";
+  import { Button as Framework7Button, List, ListInput } from "./framework7-components";
+  import Framework7Message from "./ui/framework7-message.svelte";
   import type {
     WebChatActorPresentation,
     WebChatChannel,
     WebChatMessage,
     WebChatMessageAction,
+    WebChatCommentDraftRequest,
     WebChatMessageReference,
     WebChatMessageReadProgress,
+    WebChatResourceReference,
     WebChatMessageRenderInput,
   } from "./types";
   import {
@@ -25,6 +32,7 @@
     isAssistantMessage,
     isEditedMessage,
     isRecalledMessage,
+    resolveMessageActorId,
     isViewerOwnedMessage,
   } from "./message-utils";
 
@@ -32,15 +40,23 @@
     channel,
     viewerActorId,
     message,
+    groupFirst = true,
+    groupLast = true,
+    groupTail = true,
     referencedMessage = null,
     resolveActorPresentation,
     resolveMessageActions,
     resolveMessageReadProgress,
+    resolveMessageResources,
+    onCreateCommentDraft,
     onSubmitInteractive,
   }: {
     channel: WebChatChannel;
     viewerActorId: string | null;
     message: WebChatMessage;
+    groupFirst?: boolean;
+    groupLast?: boolean;
+    groupTail?: boolean;
     referencedMessage?: WebChatMessageReference | null;
     resolveActorPresentation?: (
       input: {
@@ -54,14 +70,24 @@
     ) => WebChatActorPresentation | null;
     resolveMessageActions?: (input: WebChatMessageRenderInput) => readonly WebChatMessageAction[];
     resolveMessageReadProgress?: (input: WebChatMessageRenderInput) => WebChatMessageReadProgress | null;
+    resolveMessageResources?: (input: WebChatMessageRenderInput) => readonly WebChatResourceReference[];
+    onCreateCommentDraft?: ((input: WebChatCommentDraftRequest) => void | Promise<void>) | undefined;
     onSubmitInteractive: (text: string) => Promise<void>;
   } = $props();
 
   let interactiveDraft: Record<string, string> = $state({});
   let interactiveSubmitting = $state(false);
+  let actionsOpen = $state(false);
+  let contextMenuOpen = $state(false);
+  let sourcePopupOpen = $state(false);
+  let previewingResourceId = $state<string | null>(null);
+  let commentDetailMode = $state<"view" | "edit">("view");
+  let contextMenuAnchorX = $state<number | null>(null);
+  let contextMenuAnchorY = $state<number | null>(null);
 
   const assistant = $derived(isAssistantMessage(channel, message));
-  const viewerOwned = $derived(isViewerOwnedMessage(viewerActorId, message));
+  const resolvedActorId = $derived(resolveMessageActorId(channel, message, viewerActorId));
+  const viewerOwned = $derived(isViewerOwnedMessage(viewerActorId, message, channel));
   const recalled = $derived(isRecalledMessage(message));
   const edited = $derived(isEditedMessage(message));
   const renderableContent = $derived(getRenderableMessageText(message));
@@ -83,25 +109,20 @@
         message,
         viewerActorId,
         role,
-        actorId: message.senderActorId ?? null,
+        actorId: resolvedActorId,
         fallbackLabel,
       }) ?? {
-        actorId: message.senderActorId ?? null,
+        actorId: resolvedActorId,
         label: fallbackLabel,
         subtitle: undefined,
         iconUrl: null,
-        kind: role,
+        kind: role as WebChatActorPresentation["kind"],
       }
     );
   });
 
   const tone = $derived(assistant ? "assistant" : viewerOwned ? "viewer" : "participant");
-  const formatTimestamp = (timestamp: number): string =>
-    new Intl.DateTimeFormat(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(new Date(timestamp));
-  const clipReferencePreview = (value: string, maxChars = 120): string => {
+  const clipReferencePreview = (value: string, maxChars = 92): string => {
     const normalized = value.replace(/\s+/gu, " ").trim();
     if (normalized.length <= maxChars) {
       return normalized;
@@ -149,22 +170,26 @@
     }
   };
 
-  const writeClipboardText = async (value: string): Promise<void> => {
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
+  const openSourcePopup = (): void => {
+    if (message.content.trim().length === 0) {
       return;
     }
-    const element = document.createElement("textarea");
-    element.value = value;
-    document.body.append(element);
-    element.select();
-    document.execCommand("copy");
-    element.remove();
+    actionsOpen = false;
+    contextMenuOpen = false;
+    sourcePopupOpen = true;
   };
 
   const builtInActions = $derived.by(() => {
     const actions: ResolvedMessageAction[] = [];
     if (message.content.trim().length > 0) {
+      actions.push({
+        id: "open-source",
+        label: "View source",
+        detail: "markdown",
+        onSelect: async () => {
+          openSourcePopup();
+        },
+      });
       actions.push({
         id: "copy-content",
         label: "Copy message",
@@ -207,6 +232,44 @@
     })),
   ]);
   const messageReadProgress = $derived(resolveMessageReadProgress?.(renderInput) ?? null);
+  const defaultMessageResources = $derived(
+    resolveMessageResourceReferences({
+      attachments: message.attachments ?? [],
+      metadata: message.metadata,
+      content: message.content,
+      messageId: message.messageId,
+      viewKey: message.viewKey,
+      senderActorId: resolvedActorId,
+      from: message.from,
+    }),
+  );
+  const messageResources = $derived(
+    mergeResourceReferences(defaultMessageResources, resolveMessageResources?.(renderInput) ?? []),
+  );
+  const previewingResource = $derived(messageResources.find((resource) => resource.id === previewingResourceId) ?? null);
+  const sourceMarkdown = $derived.by(() =>
+    renderableContent.trim().length > 0
+      ? serializeMessageSourceMarkdown({
+          chatId: message.chatId,
+          content: message.content,
+          attachments: message.attachments ?? [],
+          metadata: message.metadata,
+          resourceReferences: messageResources,
+          messageId: message.messageId,
+          viewKey: message.viewKey,
+          senderActorId: resolvedActorId,
+          from: message.from,
+        })
+      : renderableContent,
+  );
+  const bubbleMarkdown = $derived(renderableContent);
+
+  const openResource = (resource: WebChatResourceReference): void => {
+    previewingResourceId = resource.id;
+    if (resource.kind === "comment") {
+      commentDetailMode = "view";
+    }
+  };
 </script>
 
 <div
@@ -218,124 +281,140 @@
   data-message-author={viewerOwned ? "viewer" : assistant ? "assistant" : "participant"}
 >
   <div class="row-body" part="message-row-body">
-    <ChatAvatar
-      label={actorPresentation.label}
-      subtitle={actorPresentation.subtitle}
-      src={actorPresentation.iconUrl}
-      class={`avatar avatar-${tone}`}
-      part={`message-avatar message-avatar-${tone}`}
-    />
-
     <div class="message-cluster" part="message-cluster">
-      <ContextMenu.Root>
-        <ContextMenu.Trigger>
-          {#snippet child({ props })}
-            <article
-              {...props}
-              class="bubble group/bubble"
-              part={`message-bubble message-bubble-${tone}`}
-            >
-              {#if messageActions.length > 0}
-                <div class="bubble-actions">
-                  <MessageActionsMenu actions={messageActions} />
-                </div>
-              {/if}
-
-              <div class="meta" part="message-meta">
-                <div class="meta-copy">
-                  <div class="meta-head">
-                    <span class="author" part="message-author">{actorPresentation.label}</span>
-                    {#if recalled}
-                      <span class="revision-badge revision-badge-recalled">Recalled</span>
-                    {:else if edited}
-                      <span class="revision-badge">Edited</span>
-                    {/if}
-                  </div>
-                  {#if actorPresentation.subtitle}
-                    <span class="subtitle">{actorPresentation.subtitle}</span>
-                  {/if}
-                </div>
-                <span class="timestamp">{formatTimestamp(message.createdAt)}</span>
-              </div>
-
-              {#if referencedMessage && referencedPreviewText}
-                <div class="reference-preview" data-testid="message-ref-preview" part="message-reference">
-                  <span class="reference-label">{referencedMessage.from}</span>
-                  <p>{referencedPreviewText}</p>
-                </div>
-              {/if}
-
-              {#if recalled}
-                <div class="recall-block" part="message-recalled">
-                  <p>{renderableContent}</p>
-                </div>
-              {:else if message.kind === "error"}
-                <div class="error-block" part="message-error">
-                  <div class="error-title" part="message-error-title">{message.payload?.error?.title ?? "Error"}</div>
-                  <p>{message.content}</p>
-                  {#if message.payload?.error?.detail}
-                    <p class="error-detail">{message.payload.error.detail}</p>
-                  {/if}
-                </div>
-              {:else if message.kind === "interactive" && interactive}
-                <div class="interactive-block" part="message-interactive">
-                  <p class="interactive-title" part="message-interactive-title">{interactive.title}</p>
-                  {#if interactive.description}
-                    <p class="interactive-description">{interactive.description}</p>
-                  {/if}
-                  <div class="interactive-fields" part="message-interactive-fields">
-                    {#each interactive.fields as field (field.id)}
-                      <label class="interactive-field" part="message-interactive-field">
-                        <span>{field.label}</span>
-                        {#if field.multiline}
-                          <Textarea
-                            rows={3}
-                            value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
-                            placeholder={field.placeholder}
-                            oninput={(event) => {
-                              const target = event.currentTarget as HTMLTextAreaElement;
-                              interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
-                            }}
-                          />
-                        {:else}
-                          <Input
-                            value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
-                            placeholder={field.placeholder}
-                            oninput={(event) => {
-                              const target = event.currentTarget as HTMLInputElement;
-                              interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
-                            }}
-                          />
-                        {/if}
-                      </label>
-                    {/each}
-                  </div>
-                  <Button
-                    type="button"
-                    class="interactive-submit"
-                    part="message-interactive-submit"
-                    disabled={interactiveSubmitting}
-                    onclick={() => {
-                      void submitInteractive();
-                    }}
-                  >
-                    {interactiveSubmitting ? "Sending..." : interactive.submitLabel ?? "Submit"}
-                  </Button>
-                </div>
-              {:else if renderableContent.trim().length > 0}
-                <div class="content" part="message-content">
-                  <MessageMarkdownContent value={renderableContent} />
-                </div>
-              {/if}
-
-              <MessageAttachmentStrip attachments={message.attachments ?? []} {tone} />
-            </article>
+      <div class="message-shell">
+        <Framework7Message
+          type={viewerOwned && !assistant ? "sent" : "received"}
+          tail={groupTail}
+          first={groupFirst}
+          last={groupLast}
+          class={assistant ? "message-assistant" : ""}
+        >
+          {#snippet avatar()}
+            <ChatAvatar
+              label={actorPresentation.label}
+              subtitle={actorPresentation.subtitle}
+              src={actorPresentation.iconUrl}
+              class={`avatar avatar-${tone}`}
+              part={`message-avatar message-avatar-${tone}`}
+            />
           {/snippet}
-        </ContextMenu.Trigger>
-        {#if messageActions.length > 0}
-          <MessageActionsContextMenu actions={messageActions} />
-        {/if}
-      </ContextMenu.Root>
+
+          {#if !viewerOwned && groupFirst}
+            {#snippet name()}
+              {actorPresentation.label}
+            {/snippet}
+          {/if}
+
+          {#snippet header()}
+            {#if recalled || edited}
+              <div class="meta-head" part="message-meta">
+                {#if recalled}
+                  <span class="revision-badge revision-badge-recalled">Recalled</span>
+                {:else if edited}
+                  <span class="revision-badge">Edited</span>
+                {/if}
+              </div>
+            {/if}
+          {/snippet}
+
+          <div
+            class={`message-card ${messageActions.length > 0 ? "message-card-with-actions" : ""}`}
+            part={`message-bubble message-bubble-${tone}`}
+            role="presentation"
+            ondblclick={() => {
+              openSourcePopup();
+            }}
+            oncontextmenu={(event) => {
+              event.preventDefault();
+              contextMenuAnchorX = event.clientX;
+              contextMenuAnchorY = event.clientY;
+              contextMenuOpen = true;
+              actionsOpen = false;
+            }}
+          >
+            {#if referencedMessage && referencedPreviewText}
+              <div class="reference-preview" data-testid="message-ref-preview" part="message-reference">
+                <span class="reference-label">{referencedMessage.from}</span>
+                <p>{referencedPreviewText}</p>
+              </div>
+            {/if}
+
+            {#if recalled}
+              <div class="recall-block" part="message-recalled">
+                <p>{renderableContent}</p>
+              </div>
+            {:else if message.kind === "error"}
+              <div class="error-block" part="message-error">
+                <div class="error-title" part="message-error-title">{message.payload?.error?.title ?? "Error"}</div>
+                <p>{message.content}</p>
+                {#if message.payload?.error?.detail}
+                  <p class="error-detail">{message.payload.error.detail}</p>
+                {/if}
+              </div>
+            {:else if message.kind === "interactive" && interactive}
+              <div class="interactive-block" part="message-interactive">
+                <p class="interactive-title" part="message-interactive-title">{interactive.title}</p>
+                {#if interactive.description}
+                  <p class="interactive-description">{interactive.description}</p>
+                {/if}
+                <List class="interactive-fields" strongIos dividersIos part="message-interactive-fields">
+                  {#each interactive.fields as field (field.id)}
+                    <ListInput
+                      class="interactive-field"
+                      part="message-interactive-field"
+                      label={field.label}
+                      type={field.multiline ? "textarea" : "text"}
+                      resizable={field.multiline}
+                      placeholder={field.placeholder}
+                      value={interactiveDraft[field.id] ?? field.initialValue ?? ""}
+                      oninput={(event: Event) => {
+                        const target = event.currentTarget as HTMLInputElement | HTMLTextAreaElement;
+                        interactiveDraft = { ...interactiveDraft, [field.id]: target.value };
+                      }}
+                    />
+                  {/each}
+                </List>
+                <Framework7Button
+                  type="button"
+                  fill
+                  small
+                  round
+                  class="interactive-submit"
+                  part="message-interactive-submit"
+                  disabled={interactiveSubmitting}
+                  onclick={() => {
+                    void submitInteractive();
+                  }}
+                >
+                  {interactiveSubmitting ? "Sending..." : interactive.submitLabel ?? "Submit"}
+                </Framework7Button>
+              </div>
+            {:else if renderableContent.trim().length > 0}
+              <div class="content" part="message-content">
+                <MessageMarkdownContent
+                  value={bubbleMarkdown}
+                  resources={messageResources}
+                  {tone}
+                  onOpenResource={openResource}
+                />
+              </div>
+            {/if}
+
+            {#if messageActions.length > 0}
+              <div class={`bubble-actions ${actionsOpen ? "bubble-actions-open" : ""}`}>
+                <MessageActionsMenu bind:open={actionsOpen} actions={messageActions} />
+              </div>
+              <MessageActionsContextMenu
+                bind:open={contextMenuOpen}
+                actions={messageActions}
+                anchorX={contextMenuAnchorX}
+                anchorY={contextMenuAnchorY}
+              />
+            {/if}
+          </div>
+        </Framework7Message>
+      </div>
 
       {#if messageReadProgress}
         <MessageReadIndicator progress={messageReadProgress} />
@@ -344,12 +423,35 @@
   </div>
 </div>
 
+<MessageSourcePopup
+  message={message}
+  {actorPresentation}
+  resourceReferences={messageResources}
+  open={sourcePopupOpen}
+  onOpenChange={(next) => {
+    sourcePopupOpen = next;
+  }}
+  {onCreateCommentDraft}
+/>
+
+<ResourcePreviewLayer
+  resource={previewingResource}
+  open={Boolean(previewingResource)}
+  commentMode={commentDetailMode}
+  onCommentModeChange={(next) => {
+    commentDetailMode = next;
+  }}
+  onOpenChange={(next) => {
+    previewingResourceId = next ? previewingResourceId : null;
+  }}
+/>
+
 <style>
   .row {
     display: flex;
     justify-content: flex-start;
     width: 100%;
-    padding: 0.22rem 0;
+    padding: 0;
   }
 
   .row.viewer-owned {
@@ -358,181 +460,250 @@
 
   .row-body {
     display: flex;
-    align-items: flex-end;
-    gap: 0.55rem;
-    max-width: min(58rem, 100%);
+    align-items: flex-start;
+    width: 100%;
+    max-width: min(40rem, 100%);
+    padding-inline: 0.02rem;
+    box-sizing: border-box;
   }
 
   .message-cluster {
-    display: flex;
+    display: grid;
     min-width: 0;
-    align-items: flex-end;
-    gap: 0.35rem;
+    gap: 0.08rem;
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .message-shell {
+    display: grid;
+    position: relative;
+    min-width: 0;
+    overflow: visible;
   }
 
   .row.viewer-owned .row-body {
-    flex-direction: row-reverse;
+    justify-content: flex-end;
+  }
+
+  .row.viewer-owned .message-cluster,
+  .row.viewer-owned .message-shell {
+    justify-items: end;
+  }
+
+  :global(.message .message-content),
+  :global(.web-chat-f7-message-host .message-content) {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    position: relative;
   }
 
   :global(.avatar-viewer) {
-    border-color: rgba(15, 23, 42, 0.18);
-    background: linear-gradient(180deg, #0f172a, #1e293b);
-    color: white;
+    border-color: rgba(0, 0, 0, 0.08);
+    background: #d0d5dd;
+    color: #344054;
   }
 
   :global(.avatar-assistant) {
-    border-color: rgba(45, 212, 191, 0.26);
-    background: linear-gradient(180deg, rgba(240, 253, 250, 0.98), rgba(204, 251, 241, 0.92));
-    color: #0f766e;
+    border-color: rgba(0, 0, 0, 0.06);
+    background: #ffd76a;
+    color: #7a4d00;
   }
 
-  .bubble {
+  :global(.message .message-bubble) {
     position: relative;
     min-width: 0;
-    max-width: min(46rem, calc(100% - 2.7rem));
-    border-radius: 1.02rem;
-    padding: 0.68rem 0.82rem 0.74rem;
-    border: 1px solid rgba(203, 213, 225, 0.48);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.985), rgba(248, 250, 252, 0.94)),
-      radial-gradient(circle at top, rgba(15, 23, 42, 0.02), transparent 60%);
-    color: #0f172a;
+    max-width: 100%;
+    border-radius: var(--f7-message-bubble-border-radius, 16px);
+    padding: var(--f7-message-bubble-padding-vertical, 7px) var(--f7-message-bubble-padding-horizontal, 13px);
+    border: 0;
+    background: var(--f7-message-received-bg-color, #e5e5ea);
+    color: var(--f7-message-received-text-color, #111827);
+    box-shadow: none;
+    font-size: var(--f7-message-bubble-font-size, 15px);
+    line-height: var(--f7-message-bubble-line-height, 1.32);
+  }
+
+  .row.viewer-owned :global(.message .message-bubble) {
+    background: var(--f7-message-sent-bg-color, var(--f7-theme-color, #007aff));
+    color: var(--f7-message-sent-text-color, #fff);
     box-shadow: none;
   }
 
-  .row.viewer-owned .bubble {
-    border-color: rgba(15, 23, 42, 0.12);
-    background:
-      linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.96)),
-      radial-gradient(circle at top, rgba(255, 255, 255, 0.12), transparent 62%);
-    color: white;
-    box-shadow: none;
+  .row.viewer-owned :global(.message .message-content) {
+    align-items: stretch;
   }
 
-  .row.assistant .bubble {
-    border-color: rgba(45, 212, 191, 0.14);
-    background:
-      linear-gradient(180deg, rgba(240, 253, 250, 0.98), rgba(236, 253, 245, 0.95)),
-      radial-gradient(circle at top, rgba(20, 184, 166, 0.08), transparent 56%);
+  .row.assistant :global(.message .message-bubble) {
+    background: color-mix(in srgb, var(--f7-message-received-bg-color, #e5e5ea) 82%, #edf8f3);
   }
 
-  .row[data-kind="error"] .bubble {
-    border-color: rgba(251, 113, 133, 0.2);
-    background: linear-gradient(180deg, rgba(255, 241, 242, 0.98), rgba(255, 228, 230, 0.96));
+  .row[data-kind="error"] :global(.message .message-bubble) {
+    background: #ffe6eb;
     color: #881337;
+  }
+
+  .message-card {
+    display: grid;
+    gap: 0.1rem;
+    position: relative;
+    inline-size: fit-content;
+    max-inline-size: 100%;
+    justify-items: start;
+  }
+
+  .message-card-with-actions {
+    padding-inline-end: 0.98rem;
+  }
+
+  .row.viewer-owned .message-card {
+    justify-items: end;
   }
 
   .bubble-actions {
     position: absolute;
-    top: 0.4rem;
-    right: 0.4rem;
+    inset-block-start: -0.06rem;
+    inset-inline-end: -0.02rem;
     opacity: 0;
     transform: translateY(-2px);
     transition: opacity 120ms ease, transform 120ms ease;
+    z-index: 2;
   }
 
-  .bubble:hover .bubble-actions,
-  .bubble:focus-within .bubble-actions {
+  .message-card:hover .bubble-actions,
+  .message-card:focus-within .bubble-actions,
+  .bubble-actions-open {
     opacity: 1;
     transform: translateY(0);
-  }
-
-  .meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.55rem;
-    margin-bottom: 0.3rem;
-    padding-right: 1.6rem;
-  }
-
-  .meta-copy {
-    display: grid;
-    gap: 0.1rem;
-    min-width: 0;
   }
 
   .meta-head {
     display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.24rem;
     min-width: 0;
     flex-wrap: wrap;
   }
 
-  .author {
-    min-width: 0;
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.015em;
+  .row.viewer-owned .meta-head {
+    justify-content: flex-end;
+  }
+
+  .row :global(.message-header),
+  .row :global(.message-footer) {
+    display: flex;
+  }
+
+  .row.viewer-owned :global(.message-header),
+  .row.viewer-owned :global(.message-footer) {
+    justify-content: flex-end;
+  }
+
+  .row.viewer-owned :global(.message) {
+    margin-inline-start: auto;
   }
 
   .subtitle,
   .timestamp {
-    font-size: 0.64rem;
-    line-height: 1.28;
-    color: rgba(100, 116, 139, 0.92);
+    font-size: var(--f7-message-footer-font-size, 11px);
+    line-height: 1.18;
+    color: var(--f7-message-footer-text-color, #8e8e93);
+    white-space: nowrap;
   }
 
   .row.viewer-owned .subtitle,
   .row.viewer-owned .timestamp {
-    color: rgba(255, 255, 255, 0.68);
+    color: rgba(255, 255, 255, 0.74);
+  }
+
+  .subtitle-viewer-owned {
+    opacity: 0.72;
   }
 
   .reference-preview {
     display: grid;
-    gap: 0.18rem;
-    margin-bottom: 0.48rem;
-    padding: 0.5rem 0.62rem;
-    border-radius: 0.82rem;
-    border: 1px solid rgba(148, 163, 184, 0.24);
-    background: rgba(148, 163, 184, 0.08);
+    gap: 0.1rem;
+    padding: 0 0 0 0.34rem;
+    border-radius: 8px;
+    border: 0;
+    background: transparent;
+    position: relative;
+    margin-bottom: 0.06rem;
+  }
+
+  .reference-preview::before {
+    content: "";
+    position: absolute;
+    inset-block: 0.04rem;
+    inset-inline-start: 0;
+    width: 2px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.12);
   }
 
   .reference-label {
-    font-size: 0.64rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    color: rgba(51, 65, 85, 0.88);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: rgba(0, 0, 0, 0.5);
   }
 
   .reference-preview p {
     margin: 0;
-    font-size: 0.74rem;
-    line-height: 1.45;
-    color: rgba(71, 85, 105, 0.92);
-    word-break: break-word;
+    font-size: 11px;
+    line-height: 1.28;
+    color: rgba(0, 0, 0, 0.62);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .row.viewer-owned .reference-preview {
-    border-color: rgba(255, 255, 255, 0.16);
-    background: rgba(255, 255, 255, 0.08);
+    background: transparent;
+  }
+
+  .row.viewer-owned .reference-preview::before {
+    background: rgba(255, 255, 255, 0.28);
   }
 
   .row.viewer-owned .reference-label,
   .row.viewer-owned .reference-preview p {
-    color: rgba(255, 255, 255, 0.84);
+    color: rgba(255, 255, 255, 0.78);
   }
 
   .content {
     display: block;
+    inline-size: fit-content;
+    max-inline-size: 100%;
   }
 
   .content :global(.message-markdown-content),
   .content :global(.message-markdown-fallback) {
+    display: inline-block;
+    inline-size: fit-content;
+    max-inline-size: 100%;
     color: inherit;
+    text-align: left;
+    line-height: inherit;
+  }
+
+  .row.viewer-owned .content :global(.message-markdown-content),
+  .row.viewer-owned .content :global(.message-markdown-fallback) {
+    text-align: left;
   }
 
   .revision-badge {
     display: inline-flex;
     align-items: center;
     border-radius: 999px;
-    padding: 0.08rem 0.42rem;
-    background: rgba(148, 163, 184, 0.18);
-    color: rgba(51, 65, 85, 0.92);
-    font-size: 0.62rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    padding: 0.14rem 0.42rem;
+    background: rgba(0, 0, 0, 0.08);
+    color: rgba(0, 0, 0, 0.62);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0;
     text-transform: uppercase;
   }
 
@@ -542,7 +713,7 @@
   }
 
   .row.viewer-owned .revision-badge {
-    background: rgba(255, 255, 255, 0.14);
+    background: color-mix(in srgb, white 16%, transparent);
     color: rgba(255, 255, 255, 0.82);
   }
 
@@ -551,18 +722,11 @@
     color: rgba(255, 228, 230, 0.95);
   }
 
-  @media (pointer: coarse) {
-    .bubble-actions {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
   .error-block,
   .recall-block,
   .interactive-block {
     display: grid;
-    gap: 0.5rem;
+    gap: 0.42rem;
   }
 
   .error-block p,
@@ -576,7 +740,7 @@
 
   .recall-block {
     padding: 0.15rem 0 0.05rem;
-    color: rgba(71, 85, 105, 0.92);
+    color: rgba(0, 0, 0, 0.58);
     font-style: italic;
   }
 
@@ -586,7 +750,7 @@
 
   .error-title,
   .interactive-title {
-    font-size: 0.9rem;
+    font-size: 14px;
     font-weight: 700;
   }
 
@@ -596,43 +760,112 @@
   }
 
   .interactive-fields {
-    display: grid;
-    gap: 0.55rem;
+    margin: 0;
+    width: min(100%, 18.75rem);
+    --f7-list-bg-color: transparent;
+    --f7-list-strong-bg-color: rgba(255, 255, 255, 0.68);
+    --f7-list-inset-side-margin: 0;
+    --f7-list-item-border-color: rgba(15, 23, 42, 0.08);
+    --f7-list-item-padding-vertical: 0;
+    --f7-list-item-padding-horizontal: 0;
+    --f7-list-item-title-text-color: #334155;
   }
 
-  .interactive-field {
-    display: grid;
-    gap: 0.35rem;
-    font-size: 0.74rem;
+  :global(.interactive-fields.list .item-content) {
+    padding-inline: 0.66rem;
+  }
+
+  :global(.interactive-fields.list .item-inner) {
+    padding-block: 0.52rem;
+    gap: 0.26rem;
+  }
+
+  :global(.interactive-fields.list .item-label) {
+    font-size: 0.72rem;
+    font-weight: 600;
     color: #334155;
   }
 
-  .interactive-field span {
-    font-weight: 600;
+  :global(.interactive-fields.list .item-input-wrap input),
+  :global(.interactive-fields.list .item-input-wrap textarea) {
+    font-size: 0.78rem;
+    color: #0f172a;
   }
 
-  .interactive-field :global([data-slot="input"]),
-  .interactive-field :global([data-slot="textarea"]) {
-    width: 100%;
-    border-color: rgba(203, 213, 225, 0.9);
-    background: rgba(255, 255, 255, 0.9);
+  :global(.interactive-fields.list .item-input-wrap textarea) {
+    min-height: 3.6rem;
   }
 
   :global(.interactive-submit) {
     width: fit-content;
     border-radius: 999px;
+    min-height: 2rem;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   @container (max-width: 34rem) {
-    .row-body {
-      max-width: 100%;
-      gap: 0.45rem;
+    .message-card:hover .bubble-actions {
+      opacity: 0;
+      transform: translateY(-2px);
     }
 
-    .bubble {
-      max-width: calc(100% - 2.25rem);
-      padding: 0.62rem 0.72rem 0.68rem;
-      border-radius: 0.94rem;
+    .message-card:focus-within .bubble-actions,
+    .bubble-actions-open {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .row {
+      padding-inline: 0;
+    }
+
+    .row-body {
+      max-width: 100%;
+      padding-inline: 0;
+    }
+
+    :global(.message .message-bubble) {
+      padding: var(--f7-message-bubble-padding-vertical, 6px)
+        var(--f7-message-bubble-padding-horizontal, 11px);
+      border-radius: var(--f7-message-bubble-border-radius, 16px);
+    }
+
+    .message-card {
+      gap: 0.1rem;
+    }
+
+    .subtitle,
+    .timestamp {
+      font-size: 11px;
+    }
+
+    :global(.web-chat-f7-message-host .message) {
+      max-width: min(74%, 17.75rem);
+    }
+
+    .row.viewer-owned :global(.message-header),
+    .row.viewer-owned :global(.message-footer) {
+      padding-inline-end: 0.08rem;
+    }
+
+    .message-card-with-actions {
+      padding-inline-end: 1.12rem;
+    }
+
+    .bubble-actions {
+      inset-block-start: -0.04rem;
+      inset-inline-end: -0.01rem;
     }
   }
 </style>

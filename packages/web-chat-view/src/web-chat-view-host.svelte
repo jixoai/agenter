@@ -20,7 +20,10 @@
     resolveActorPresentation,
     resolveMessageActions,
     resolveMessageReadProgress,
+    resolveMessageResources,
+    onCreateCommentDraft,
     composerCapabilities,
+    resolveComposerMentionSuggestions,
     onSendMessage,
     onLatestVisibleAssistantViewKeyChange,
     onLatestVisibleMessageIdChange,
@@ -48,7 +51,10 @@
   {resolveActorPresentation}
   {resolveMessageActions}
   {resolveMessageReadProgress}
+  {resolveMessageResources}
+  {onCreateCommentDraft}
   {composerCapabilities}
+  {resolveComposerMentionSuggestions}
   submitMessage={onSendMessage}
   latestVisibleAssistantViewKeyHandler={onLatestVisibleAssistantViewKeyChange}
   latestVisibleMessageIdHandler={onLatestVisibleMessageIdChange}

@@ -1,4 +1,5 @@
 import type {
+  MessageAttachmentKind,
   MessageControlPlaneEntry,
   MessageRecord,
   MessageTransportServerMessage,
@@ -28,6 +29,45 @@ export type WebChatConnectionState = "idle" | "connecting" | "connected" | "clos
 export interface WebChatComposerSubmitPayload {
   text: string;
   assets: File[];
+  commentResources?: readonly WebChatCommentResourcePayload[];
+}
+
+export type WebChatResourceReferenceKind = MessageAttachmentKind | "comment";
+
+export interface WebChatCommentResourceAnchor {
+  sourceMessageId?: number;
+  sourceViewKey: string;
+  sourceLineNumber: number;
+  selectedText: string;
+  sourceActorId?: string | null;
+  sourceActorLabel?: string;
+  sourceUri?: string;
+}
+
+export interface WebChatCommentResourcePayload extends WebChatCommentResourceAnchor {
+  id: string;
+  label: string;
+  tokenText: string;
+  commentText: string;
+}
+
+export interface WebChatResourceReference {
+  id: string;
+  label: string;
+  tokenText: string;
+  kind: WebChatResourceReferenceKind;
+  detailText?: string;
+  fileName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  url?: string;
+  previewUrl?: string;
+  extension?: string;
+  assetId?: string;
+  aliases?: readonly string[];
+  iconUrl?: string | null;
+  commentText?: string;
+  commentAnchor?: WebChatCommentResourceAnchor;
 }
 
 export interface WebChatComposerCommandSuggestion {
@@ -43,9 +83,42 @@ export interface WebChatComposerMentionSuggestion {
   iconUrl?: string | null;
 }
 
+export type WebChatComposerCompletionTrigger = "@" | "^" | "/" | "?" | "？";
+export type WebChatComposerCompletionDetection = "boundary" | "embedded";
+
+export interface WebChatComposerCompletionItem {
+  id: string;
+  label: string;
+  insertText: string;
+  detail?: string;
+  aliases?: readonly string[];
+  fileName?: string;
+  iconUrl?: string | null;
+  resource?: WebChatResourceReference;
+}
+
+export interface WebChatComposerCompletionContext {
+  trigger: WebChatComposerCompletionTrigger;
+}
+
+export interface WebChatComposerCompletionProvider {
+  id: string;
+  trigger: WebChatComposerCompletionTrigger;
+  detection?: WebChatComposerCompletionDetection;
+  suggestions?: readonly WebChatComposerCompletionItem[];
+  resolveSuggestions?: (
+    query: string,
+    context: WebChatComposerCompletionContext,
+  ) =>
+    | readonly WebChatComposerCompletionItem[]
+    | Promise<readonly WebChatComposerCompletionItem[]>;
+}
+
 export interface WebChatComposerHelpItem {
   label: string;
   value: string;
+  insertText?: string;
+  aliases?: readonly string[];
 }
 
 export interface WebChatComposerCapabilities {
@@ -58,6 +131,8 @@ export interface WebChatComposerCapabilities {
   helpItems?: readonly WebChatComposerHelpItem[];
   commandSuggestions?: readonly WebChatComposerCommandSuggestion[];
   mentionSuggestions?: readonly WebChatComposerMentionSuggestion[];
+  resourceReferences?: readonly WebChatResourceReference[];
+  completionProviders?: readonly WebChatComposerCompletionProvider[];
   resolveMentionSuggestions?: (
     query: string,
   ) => readonly WebChatComposerMentionSuggestion[] | Promise<readonly WebChatComposerMentionSuggestion[]>;
@@ -70,7 +145,17 @@ export interface WebChatComposerRenderProps {
   connectionState: WebChatConnectionState;
   hintText: string;
   capabilities: WebChatComposerCapabilities;
+  liveResourceReferences?: readonly WebChatResourceReference[];
+  draftInsertions?: readonly WebChatComposerTextInsertion[];
+  commentResourceInsertions?: readonly WebChatCommentResourcePayload[];
+  onDraftInsertionApplied?: (id: string) => void;
+  onCommentResourceInsertionApplied?: (id: string) => void;
   onSubmit: (payload: WebChatComposerSubmitPayload) => Promise<void>;
+}
+
+export interface WebChatComposerTextInsertion {
+  id: string;
+  text: string;
 }
 
 export interface WebChatMessageRenderInput {
@@ -128,6 +213,11 @@ export interface WebChatMessageAction {
   onSelect?: (input: WebChatMessageRenderInput) => void | Promise<void>;
 }
 
+export interface WebChatCommentDraftRequest extends WebChatCommentResourceAnchor {
+  sourceMessage: WebChatMessage;
+  commentText: string;
+}
+
 export interface WebChatNotice {
   tone: "info" | "warning" | "destructive";
   message: string;
@@ -161,7 +251,15 @@ export interface WebChatViewBaseProps {
   resolveActorPresentation?: (input: WebChatActorResolveInput) => WebChatActorPresentation | null;
   resolveMessageActions?: (input: WebChatMessageRenderInput) => readonly WebChatMessageAction[];
   resolveMessageReadProgress?: (input: WebChatMessageRenderInput) => WebChatMessageReadProgress | null;
+  resolveMessageResources?: (input: WebChatMessageRenderInput) => readonly WebChatResourceReference[];
+  onCreateCommentDraft?: (input: WebChatCommentDraftRequest) => void | Promise<void>;
   composerCapabilities?: WebChatComposerCapabilities;
+  resolveComposerMentionSuggestions?: (
+    input: Pick<WebChatComposerRenderProps, "channel"> & {
+      viewerActorId: string | null;
+      query: string;
+    },
+  ) => readonly WebChatComposerMentionSuggestion[] | Promise<readonly WebChatComposerMentionSuggestion[]>;
   socketFactory?: WebChatSocketFactory;
 }
 

@@ -3,12 +3,21 @@ export type {
   WebChatActorPresentation,
   WebChatActorResolveInput,
   WebChatChannel,
+  WebChatCommentDraftRequest,
+  WebChatCommentResourceAnchor,
+  WebChatCommentResourcePayload,
   WebChatComposerCapabilities,
   WebChatComposerCommandSuggestion,
+  WebChatComposerCompletionContext,
+  WebChatComposerCompletionDetection,
+  WebChatComposerCompletionItem,
+  WebChatComposerCompletionProvider,
+  WebChatComposerCompletionTrigger,
   WebChatComposerHelpItem,
   WebChatComposerMentionSuggestion,
   WebChatComposerRenderProps,
   WebChatComposerSubmitPayload,
+  WebChatComposerTextInsertion,
   WebChatConnectionState,
   WebChatCursor,
   WebChatMessage,
@@ -19,6 +28,8 @@ export type {
   WebChatMessageReadProgress,
   WebChatMessageRenderInput,
   WebChatNotice,
+  WebChatResourceReference,
+  WebChatResourceReferenceKind,
   WebChatRootProps,
   WebChatSocketFactory,
   WebChatSocketLike,
@@ -27,4 +38,26 @@ export type {
   WebChatViewHostProps,
 } from "./types";
 export { resolveMessageIdentityKey, toWebChatMessage, toWebChatMessages } from "./message-utils";
+export { default as CommentAnchorBadge } from "./comment-anchor-badge.svelte";
+export { default as CommentInspector } from "./comment-inspector.svelte";
+export { default as CommentResourceLayer } from "./comment-resource-layer.svelte";
+export { default as MessageSourcePopup } from "./message-source-popup.svelte";
+export {
+  attachmentToResourceReference,
+  extractCommentResourcePayloads,
+  buildCommentResourceSourceUri,
+  commentResourceToReference,
+  createCommentResourcePayload,
+  formatAssetResourceDefinition,
+  formatCommentResourceDefinition,
+  mergeResourceReferences,
+  normalizeCommentResourcePayload,
+  normalizeResourceReferenceQuery,
+  parseAssetResourceDefinition,
+  parseCommentFootnoteDefinition,
+  pendingAssetToResourceReference,
+  resolveMessageResourceReferences,
+  resourceReferenceMatchesQuery,
+  serializeMessageSourceMarkdown,
+} from "./resource-contract";
 export { default as WebChatView, default as WebChatViewHost } from "./web-chat-view-host.svelte";

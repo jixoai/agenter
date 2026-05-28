@@ -2,6 +2,13 @@ import type { MessageActorId } from "@agenter/message-system/types";
 
 import type { WebChatChannel, WebChatMessage, WebChatMessageInput } from "./types";
 
+export interface WebChatTranscriptRenderModel {
+  message: WebChatMessage;
+  groupFirst: boolean;
+  groupLast: boolean;
+  groupTail: boolean;
+}
+
 const hasViewKey = (message: WebChatMessageInput): message is WebChatMessage =>
   "viewKey" in message && typeof message.viewKey === "string";
 
@@ -109,6 +116,26 @@ export const normalizeMessageRecords = (messages: readonly WebChatMessageInput[]
 
 export const fallbackActorLabel = (actorId: string): string => actorId.split(":").at(-1) ?? actorId;
 
+const normalizeActorLabel = (value: string | null | undefined): string =>
+  value?.trim().toLocaleLowerCase() ?? "";
+
+const resolveParticipantMatchByLabel = (
+  channel: WebChatChannel,
+  label: string | null | undefined,
+): WebChatChannel["participants"][number] | undefined => {
+  const normalizedLabel = normalizeActorLabel(label);
+  if (normalizedLabel.length === 0) {
+    return undefined;
+  }
+  return channel.participants.find((participant) => {
+    const participantLabel = normalizeActorLabel(participant.label);
+    if (participantLabel.length > 0 && participantLabel === normalizedLabel) {
+      return true;
+    }
+    return normalizeActorLabel(fallbackActorLabel(participant.id)) === normalizedLabel;
+  });
+};
+
 export const resolveViewerActorId = (
   channel: WebChatChannel | null,
   viewerActorId?: string | null,
@@ -137,6 +164,34 @@ export const resolveUserSender = (
   };
 };
 
+export const resolveMessageActorId = (
+  channel: WebChatChannel | null,
+  message: WebChatMessage,
+  viewerActorId?: string | null,
+): MessageActorId | null => {
+  if (message.senderActorId) {
+    return message.senderActorId;
+  }
+  if (!channel) {
+    return null;
+  }
+  if (message.from === channel.owner || message.from === `avatar:${channel.owner}`) {
+    const ownerParticipant = resolveParticipantMatchByLabel(channel, channel.owner);
+    return (ownerParticipant?.id ?? null) as MessageActorId | null;
+  }
+  const effectiveViewerActorId = resolveViewerActorId(channel, viewerActorId);
+  if (message.from === "You" && effectiveViewerActorId) {
+    return effectiveViewerActorId as MessageActorId;
+  }
+  const participant = resolveParticipantMatchByLabel(channel, message.from);
+  if (participant) {
+    return participant.id as MessageActorId;
+  }
+  return effectiveViewerActorId && message.from === channel.participantId
+    ? (effectiveViewerActorId as MessageActorId)
+    : null;
+};
+
 export const isAssistantMessage = (channel: WebChatChannel | null, message: WebChatMessage): boolean => {
   if (!channel) {
     return false;
@@ -147,11 +202,12 @@ export const isAssistantMessage = (channel: WebChatChannel | null, message: WebC
 export const isViewerOwnedMessage = (
   viewerActorId: string | null,
   message: WebChatMessage,
+  channel?: WebChatChannel | null,
 ): boolean => {
   if (!viewerActorId) {
     return false;
   }
-  return message.senderActorId === viewerActorId;
+  return resolveMessageActorId(channel ?? null, message, viewerActorId) === viewerActorId;
 };
 
 export const isRecalledMessage = (message: WebChatMessage): boolean => typeof message.recalledAt === "number";
@@ -161,6 +217,45 @@ export const isEditedMessage = (message: WebChatMessage): boolean =>
 
 export const getRenderableMessageText = (message: WebChatMessage): string =>
   isRecalledMessage(message) ? "This message was recalled." : message.content;
+
+const resolveTranscriptGroupKey = (
+  channel: WebChatChannel | null,
+  message: WebChatMessage,
+  viewerActorId: string | null,
+): string => {
+  if (isAssistantMessage(channel, message)) {
+    return `assistant:${channel?.owner ?? message.from}`;
+  }
+  const actorId = resolveMessageActorId(channel, message, viewerActorId);
+  if (actorId) {
+    return `actor:${actorId}`;
+  }
+  if (isViewerOwnedMessage(viewerActorId, message, channel)) {
+    return `viewer:${viewerActorId}`;
+  }
+  return `from:${message.from}:${message.kind}`;
+};
+
+export const buildTranscriptRenderModels = (
+  messages: readonly WebChatMessage[],
+  channel: WebChatChannel | null,
+  viewerActorId: string | null,
+): WebChatTranscriptRenderModel[] => {
+  const groupKeys = messages.map((message) => resolveTranscriptGroupKey(channel, message, viewerActorId));
+  return messages.map((message, index) => {
+    const previousGroupKey = index > 0 ? groupKeys[index - 1] : null;
+    const nextGroupKey = index < messages.length - 1 ? groupKeys[index + 1] : null;
+    const currentGroupKey = groupKeys[index] ?? null;
+    const groupFirst = previousGroupKey !== currentGroupKey;
+    const groupLast = nextGroupKey !== currentGroupKey;
+    return {
+      message,
+      groupFirst,
+      groupLast,
+      groupTail: groupLast,
+    };
+  });
+};
 
 export const estimateMessageRowSize = (message: WebChatMessage): number => {
   const baseHeight = 112;

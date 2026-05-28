@@ -3,9 +3,9 @@ import { EditorView } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 
 export const markdownHighlightStyle = HighlightStyle.define([
-  { tag: t.heading1, color: "var(--md-heading)", fontWeight: "700", fontSize: "1.18em", lineHeight: "1.35" },
-  { tag: t.heading2, color: "var(--md-heading)", fontWeight: "700", fontSize: "1.12em", lineHeight: "1.35" },
-  { tag: t.heading3, color: "var(--md-heading)", fontWeight: "700", fontSize: "1.06em", lineHeight: "1.35" },
+  { tag: t.heading1, color: "var(--md-heading)", fontWeight: "700", fontSize: "1.06em", lineHeight: "1.26" },
+  { tag: t.heading2, color: "var(--md-heading)", fontWeight: "700", fontSize: "1.03em", lineHeight: "1.26" },
+  { tag: t.heading3, color: "var(--md-heading)", fontWeight: "700", fontSize: "1.01em", lineHeight: "1.26" },
   { tag: [t.heading4, t.heading5], color: "var(--md-heading)", fontWeight: "700" },
   { tag: t.heading6, color: "var(--md-quote)", fontWeight: "700" },
   { tag: t.strong, fontWeight: "700" },
@@ -41,8 +41,26 @@ export const markdownPreviewTheme = EditorView.baseTheme({
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
   },
-  ".cm-md-link": { color: "var(--md-link)", textDecoration: "underline", cursor: "pointer" },
+  ".cm-md-link": {
+    color: "var(--md-link)",
+    textDecoration: "underline",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    display: "inline-block",
+    wordBreak: "normal",
+    overflowWrap: "normal",
+  },
   ".cm-md-image": { display: "inline-block" },
+  ".cm-md-resource-token-host": {
+    display: "inline",
+    maxWidth: "100%",
+    verticalAlign: "baseline",
+    whiteSpace: "normal",
+  },
+  ".cm-md-resource-bar-host": {
+    display: "block",
+    maxWidth: "100%",
+  },
   ".cm-md-olist": {
     color: "var(--md-quote)",
     fontVariantNumeric: "tabular-nums",

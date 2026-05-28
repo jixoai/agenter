@@ -3,13 +3,24 @@ import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, test } from "vitest";
 
 import MessageMarkdownContent from "../src/components/message-markdown-content.svelte";
+import type { WebChatResourceReference } from "../src/types";
 
-const mountMarkdownContent = (value: string) => {
+const mountMarkdownContent = (
+  value: string,
+  options?: {
+    resources?: readonly WebChatResourceReference[];
+    tone?: "assistant" | "participant" | "viewer";
+  },
+) => {
   const target = document.createElement("div");
   document.body.append(target);
   const component = mount(MessageMarkdownContent, {
     target,
-    props: { value },
+    props: {
+      value,
+      resources: options?.resources ?? [],
+      tone: options?.tone ?? "participant",
+    },
   });
   flushSync();
 
@@ -87,7 +98,9 @@ describe("Feature: Message markdown content preview", () => {
       expect(harness.target.querySelector('[data-markdown-structural="table"]')).toBeNull();
       expect(harness.target.querySelector(".cm-md-structural-source-hidden")).toBeNull();
       expect(
-        Array.from(harness.target.querySelectorAll(".cm-line")).some((line) => line.textContent?.includes("| QAQ | owner |") ?? false),
+        Array.from(harness.target.querySelectorAll(".cm-line")).some(
+          (line) => line.textContent?.includes("| QAQ | owner |") ?? false,
+        ),
       ).toBe(true);
     } finally {
       unmount(harness.component);
@@ -113,7 +126,9 @@ describe("Feature: Message markdown content preview", () => {
       expect(harness.target.querySelector('[data-markdown-structural="fenced-code"]')).toBeNull();
       expect(harness.target.querySelector(".cm-md-structural-source-hidden")).toBeNull();
       expect(
-        Array.from(harness.target.querySelectorAll(".cm-line")).some((line) => line.textContent?.includes("```") ?? false),
+        Array.from(harness.target.querySelectorAll(".cm-line")).some(
+          (line) => line.textContent?.includes("```") ?? false,
+        ),
       ).toBe(true);
     } finally {
       unmount(harness.component);
@@ -141,8 +156,61 @@ describe("Feature: Message markdown content preview", () => {
       expect(harness.target.querySelector('[data-markdown-structural="fenced-code"]')).toBeNull();
       expect(harness.target.querySelector(".cm-md-structural-source-hidden")).toBeNull();
       expect(
-        Array.from(harness.target.querySelectorAll(".cm-line")).some((line) => line.textContent?.includes("```") ?? false),
+        Array.from(harness.target.querySelectorAll(".cm-line")).some(
+          (line) => line.textContent?.includes("```") ?? false,
+        ),
       ).toBe(true);
+    } finally {
+      unmount(harness.component);
+    }
+  });
+
+  test("Scenario: Given footnote resource references When the message preview mounts Then inline tokens are replaced and the in-bubble resource bar renders aggregated resource tiles", () => {
+    const resources = [
+      {
+        id: "asset-image-1",
+        label: "Image 1",
+        tokenText: "[^Image 1]",
+        kind: "image",
+        detailText: "image resource",
+        fileName: "ios26-thread.png",
+        url: "https://assets.example/ios26-thread.png",
+        previewUrl: "https://assets.example/ios26-thread.png",
+        extension: "png",
+      },
+      {
+        id: "comment-1",
+        label: "Comment 1",
+        tokenText: "[^Comment 1]",
+        kind: "comment",
+        detailText: "Line scoped note",
+        commentText: "Line scoped note",
+        extension: "cmt",
+      },
+    ] satisfies WebChatResourceReference[];
+    const harness = mountMarkdownContent(
+      [
+        "Body stays light with [^Image 1] and [^Comment 1].",
+        "",
+        "[^Image 1]: [!ios26-thread.png](https://assets.example/ios26-thread.png)",
+        "[^Comment 1]: [Line scoped note](msg://room-1/1#L1)",
+      ].join("\n"),
+      { resources },
+    );
+
+    try {
+      const tokenButtons = harness.target.querySelectorAll("[part='message-resource-token']");
+      expect(tokenButtons).toHaveLength(2);
+      expect(Array.from(tokenButtons).map((element) => element.textContent)).toEqual(["[^Image 1]", "[^Comment 1]"]);
+      expect(harness.target.querySelector(".message-resource-token-icon")).toBeNull();
+      expect(harness.target.textContent).not.toContain("[^Image 1]:");
+      expect(harness.target.textContent).not.toContain("[^Comment 1]:");
+
+      const resourceBar = harness.target.querySelector("[part='message-attachments']");
+      expect(resourceBar).not.toBeNull();
+      expect(resourceBar?.textContent).toContain("PNG");
+      const commentIndex = resourceBar?.querySelector(".resource-card-comment-index");
+      expect(commentIndex?.textContent).toContain("1");
     } finally {
       unmount(harness.component);
     }

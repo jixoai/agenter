@@ -5,6 +5,7 @@
     startCompletion,
     type Completion,
     type CompletionSource,
+    type CompletionContext,
   } from "@codemirror/autocomplete";
   import { markdown } from "@codemirror/lang-markdown";
   import { EditorSelection, EditorState } from "@codemirror/state";
@@ -12,12 +13,12 @@
   import { EditorView, placeholder as placeholderExtension } from "@codemirror/view";
   import { onMount, untrack } from "svelte";
 
-  import { Textarea } from "../ui/textarea";
   import type { ResolvedWebChatComposerCapabilities } from "./composer-contract";
   import {
     COMPLETION_LIMIT,
-    findMentionToken,
-    findSlashCommandToken,
+    findCompletionToken,
+    padInsertedCompletion,
+    resolveCompletionProviders,
   } from "./composer-contract";
 
   let {
@@ -45,44 +46,54 @@
     typeof navigator !== "undefined" && !navigator.userAgent.toLowerCase().includes("jsdom"),
   );
 
-  const createSlashCompletionSource = (): CompletionSource => {
-    return async (context) => {
-      const token = findSlashCommandToken(context.state.doc.toString(), context.pos);
-      if (!token) {
-        return null;
+  const completionProviders = $derived(resolveCompletionProviders(capabilities));
+
+  const resolveActiveCompletionToken = (value: string, cursor: number) => {
+    for (const provider of completionProviders) {
+      const token = findCompletionToken(value, cursor, provider);
+      if (token) {
+        return { provider, token };
       }
-      const query = token.raw.toLowerCase();
-      const options = capabilities.commandSuggestions
-        .filter((item) => item.label.startsWith(query as `/${string}`))
-        .map<Completion>((item) => ({
-          label: item.label,
-          detail: item.detail,
-          type: "keyword",
-          apply: item.label,
-        }));
-      if (options.length === 0) {
-        return null;
-      }
-      return {
-        from: token.from,
-        to: token.to,
-        filter: false,
-        options,
-      };
-    };
+    }
+    return null;
   };
 
-  const createMentionCompletionSource = (): CompletionSource => {
-    return async (context) => {
-      const token = findMentionToken(context.state.doc.toString(), context.pos);
-      if (!token) {
+  const completionTypeForTrigger = (trigger: string): Completion["type"] => {
+    switch (trigger) {
+      case "/":
+      case "?":
+      case "？":
+        return "keyword";
+      case "^":
+        return "type";
+      default:
+        return "variable";
+    }
+  };
+
+  const completionLabelForItem = (
+    provider: ResolvedWebChatComposerCapabilities["completionProviders"][number],
+    item: {
+      label: string;
+    },
+  ): string => {
+    if (provider.trigger === "@" || provider.trigger === "^") {
+      return `${provider.trigger}${item.label}`;
+    }
+    return item.label;
+  };
+
+  const createCompletionSource = (): CompletionSource => {
+    return async (context: CompletionContext) => {
+      const value = context.state.doc.toString();
+      const resolved = resolveActiveCompletionToken(value, context.pos);
+      if (!resolved) {
         return null;
       }
-      const staticSuggestions = capabilities.mentionSuggestions.filter((item) =>
-        item.label.toLowerCase().includes(token.query.toLowerCase()),
-      );
-      const dynamicSuggestions = capabilities.resolveMentionSuggestions
-        ? await capabilities.resolveMentionSuggestions(token.query)
+      const { provider, token } = resolved;
+      const staticSuggestions = provider.suggestions ?? [];
+      const dynamicSuggestions = provider.resolveSuggestions
+        ? await provider.resolveSuggestions(token.query, { trigger: provider.trigger })
         : [];
       if (context.aborted) {
         return null;
@@ -97,10 +108,20 @@
           return true;
         })
         .map<Completion>((item) => ({
-          label: `@${item.label}`,
+          label: completionLabelForItem(provider, item),
           detail: item.detail,
-          type: "variable",
-          apply: item.apply ?? `@${item.label}`,
+          type: completionTypeForTrigger(provider.trigger),
+          apply: (view, completion, from, to) => {
+            const replacement = padInsertedCompletion(
+              view.state.doc.toString(),
+              { ...token, from, to },
+              item.insertText,
+            );
+            view.dispatch({
+              changes: { from, to, insert: replacement },
+              selection: { anchor: from + replacement.length },
+            });
+          },
         }));
       if (options.length === 0) {
         return null;
@@ -138,8 +159,7 @@
       return;
     }
 
-    const slashCompletionSource = createSlashCompletionSource();
-    const mentionCompletionSource = createMentionCompletionSource();
+    const completionSource = createCompletionSource();
     let view: EditorView;
     try {
       view = new EditorView({
@@ -157,9 +177,7 @@
               const nextValue = update.state.doc.toString();
               onChange(nextValue);
               const cursor = update.state.selection.main.head;
-              const mentionToken = findMentionToken(nextValue, cursor);
-              const slashToken = findSlashCommandToken(nextValue, cursor);
-              if (!mentionToken && !slashToken) {
+              if (!resolveActiveCompletionToken(nextValue, cursor)) {
                 return;
               }
               const status = completionStatusForState(update.state);
@@ -190,20 +208,20 @@
             }),
             EditorView.theme({
               "&": {
-                fontSize: "13px",
+                fontSize: "var(--web-chat-body-font-size, 13px)",
                 backgroundColor: "transparent",
               },
               ".cm-editor": {
-                minHeight: "var(--chat-draft-editor-min-height, 64px)",
+                minHeight: "var(--chat-draft-editor-min-height, 52px)",
                 backgroundColor: "transparent",
               },
               ".cm-scroller": {
                 fontFamily: "var(--font-sans, ui-sans-serif, system-ui, sans-serif)",
-                lineHeight: "1.5",
+                lineHeight: "var(--web-chat-body-line-height, 1.45)",
               },
               ".cm-content": {
-                minHeight: "var(--chat-draft-editor-content-min-height, 52px)",
-                padding: "7px 9px 6px",
+                minHeight: "var(--chat-draft-editor-content-min-height, 34px)",
+                padding: "7px 12px 5px",
               },
               ".cm-focused": {
                 outline: "none",
@@ -217,27 +235,77 @@
               ".cm-placeholder": {
                 color: "#94a3b8",
                 whiteSpace: "normal",
+                fontSize: "var(--web-chat-body-font-size, 13px)",
               },
               ".cm-tooltip-autocomplete": {
-                border: "1px solid rgba(226,232,240,0.9)",
-                borderRadius: "16px",
-                backgroundColor: "rgba(255,255,255,0.98)",
-                boxShadow: "0 18px 48px rgba(15,23,42,0.16)",
-                padding: "4px",
+                border:
+                  "1px solid color-mix(in srgb, var(--f7-messagebar-attachments-border-color, rgba(60,60,67,0.16)) 92%, transparent)",
+                borderRadius: "20px",
+                backgroundColor: "rgba(255,255,255,0.96)",
+                boxShadow:
+                  "0 16px 44px rgba(15,23,42,0.14), 0 0 0 1px rgba(255,255,255,0.28) inset",
+                backdropFilter: "saturate(180%) blur(24px)",
+                width: "min(22rem, calc(100vw - 1rem))",
+                maxWidth: "calc(100vw - 1rem)",
+                overflow: "hidden",
+                padding: "0.2rem",
+                zIndex: "24",
+                boxSizing: "border-box",
+              },
+              ".cm-tooltip-autocomplete ul": {
+                margin: "0",
+                padding: "0",
               },
               ".cm-tooltip-autocomplete ul li": {
-                borderRadius: "12px",
-                padding: "8px 10px",
+                borderRadius: "14px",
+                display: "grid",
+                gridTemplateColumns: "fit-content(8rem) minmax(0, 1fr)",
+                alignItems: "start",
+                columnGap: "0.56rem",
+                rowGap: "0.08rem",
+                padding: "0.5rem 0.74rem",
                 fontFamily: "var(--font-sans, ui-sans-serif, system-ui, sans-serif)",
-                fontSize: "12px",
+                fontSize: "13px",
+                lineHeight: "1.28",
               },
               ".cm-tooltip-autocomplete ul li[aria-selected]": {
-                backgroundColor: "rgba(20,184,166,0.12)",
-                color: "#0f766e",
+                backgroundColor:
+                  "color-mix(in srgb, var(--f7-theme-color, #007aff) 12%, rgba(255,255,255,0.98))",
+                color: "var(--f7-text-color, #111827)",
+              },
+              ".cm-tooltip-autocomplete ul li .cm-completionLabel": {
+                display: "inline-flex",
+                gridColumn: "1",
+                minWidth: "0",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                fontWeight: "700",
+                whiteSpace: "nowrap",
+              },
+              ".cm-tooltip-autocomplete ul li .cm-completionDetail": {
+                display: "block",
+                gridColumn: "2",
+                alignSelf: "center",
+                marginLeft: "0",
+                fontSize: "12px",
+                lineHeight: "1.32",
+                fontStyle: "normal",
+                whiteSpace: "normal",
+                color: "#475569",
+              },
+              ".cm-tooltip-autocomplete ul li[aria-selected] .cm-completionLabel": {
+                color: "var(--f7-theme-color, #007aff)",
+              },
+              ".cm-tooltip-autocomplete ul li[aria-selected] .cm-completionDetail": {
+                color: "#475569",
+              },
+              ".cm-tooltip-autocomplete ul li .cm-completionMatchedText": {
+                textDecoration: "none",
+                fontWeight: "700",
               },
             }),
             autocompletion({
-              override: [slashCompletionSource, mentionCompletionSource],
+              override: [completionSource],
               activateOnTyping: true,
               icons: false,
               maxRenderedOptions: COMPLETION_LIMIT,
@@ -285,23 +353,23 @@
 {#if useCodeMirror}
   <div
     bind:this={hostRef}
-    class="chat-draft-editor min-w-0 rounded-[0.9rem] border border-slate-200/72 bg-white/60 shadow-none transition-[color,box-shadow] focus-within:border-ring/60 focus-within:ring-ring/20 focus-within:ring-[2px]"
+    class="chat-draft-editor"
     data-testid="web-chat-draft-editor"
     part="composer-editor"
   ></div>
 {:else}
-  <Textarea
+  <textarea
     value={value}
     rows={4}
     disabled={disabled || submitting}
-    class="chat-draft-editor min-h-[var(--chat-draft-editor-min-height,4rem)] resize-none rounded-[0.9rem] border-slate-200/72 bg-white/60 px-2.25 py-1.75 text-[13px] leading-[1.5] shadow-none"
+    class="chat-draft-editor chat-draft-editor-fallback"
     data-testid="web-chat-draft-editor"
     part="composer-editor"
     {placeholder}
     oninput={(event) => {
-      onChange(event.currentTarget.value);
+      onChange((event.currentTarget as HTMLTextAreaElement).value);
     }}
-    onkeydown={(event) => {
+    onkeydown={(event: KeyboardEvent) => {
       if (
         event.key !== "Enter" ||
         event.shiftKey ||
@@ -315,19 +383,62 @@
       event.preventDefault();
       handleEditorSubmit();
     }}
-  />
+  ></textarea>
 {/if}
 
 <style>
   .chat-draft-editor {
-    --chat-draft-editor-min-height: 4rem;
-    --chat-draft-editor-content-min-height: 52px;
+    --chat-draft-editor-min-height: 2.42rem;
+    --chat-draft-editor-content-min-height: 28px;
+    position: relative;
+    overflow: visible;
+    isolation: isolate;
+    min-width: 0;
+    border-radius: var(--f7-messagebar-textarea-border-radius, 24px);
+    border: var(--f7-messagebar-textarea-border, none);
+    background: var(--f7-messagebar-textarea-bg-color, rgba(255, 255, 255, 0.96));
+    box-shadow: none;
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      background-color 160ms ease;
+  }
+
+  .chat-draft-editor:focus-within {
+    box-shadow: none;
+  }
+
+  :global(.chat-draft-editor-fallback) {
+    min-height: var(--chat-draft-editor-min-height, 4rem);
+    resize: none;
+    padding: 0.44rem 0.8rem 0.34rem;
+    font-size: var(--f7-messagebar-textarea-font-size, 15px);
+    line-height: var(--f7-messagebar-textarea-line-height, 20px);
+  }
+
+  :global(.chat-draft-editor .cm-editor) {
+    min-height: var(--chat-draft-editor-min-height, 4rem);
+    border-radius: inherit;
+    position: relative;
+    overflow: visible;
+  }
+
+  :global(.chat-draft-editor .cm-content) {
+    padding: 0.44rem 0.8rem 0.34rem;
+  }
+
+  :global(.chat-draft-editor .cm-scroller) {
+    overflow: visible;
+  }
+
+  :global(.chat-draft-editor .cm-focused) {
+    outline: none;
   }
 
   @container (max-width: 34rem) {
     .chat-draft-editor {
-      --chat-draft-editor-min-height: 2.95rem;
-      --chat-draft-editor-content-min-height: 38px;
+      --chat-draft-editor-min-height: 2.28rem;
+      --chat-draft-editor-content-min-height: 24px;
     }
   }
 </style>

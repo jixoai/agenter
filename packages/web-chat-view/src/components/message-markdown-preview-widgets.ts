@@ -1,10 +1,51 @@
 import hljs from "highlight.js";
+import { mount, unmount } from "svelte";
 import { StateEffect } from "@codemirror/state";
 import { Decoration, type EditorView, WidgetType } from "@codemirror/view";
 
+import MessageMarkdownResourceBar from "./message-markdown-resource-bar.svelte";
+import MessageMarkdownResourceToken from "./message-markdown-resource-token.svelte";
 import type { MarkdownFencedCodeProjection, MarkdownProjectionRange, MarkdownStructuralProjection, MarkdownTableProjection } from "./message-markdown-hybrid-projection";
+import type { WebChatResourceReference } from "../types";
 
 export const revealStructuralSourceEffect = StateEffect.define<MarkdownProjectionRange | null>();
+export const openMarkdownResourceEffect = StateEffect.define<string>();
+
+type MountedSvelteExports = Record<string, any>;
+
+const FOOTNOTE_REFERENCE_PATTERN = /^\[\^(.+?)\]$/u;
+
+const normalizeResourceLabel = (value: string): string =>
+  value
+    .trim()
+    .replace(/^\[\^/u, "")
+    .replace(/^\^/u, "")
+    .replace(/\]$/u, "");
+
+const findResourceByTokenText = (
+  resources: readonly WebChatResourceReference[],
+  tokenText: string,
+): WebChatResourceReference | null => {
+  const match = FOOTNOTE_REFERENCE_PATTERN.exec(tokenText.trim());
+  const label = normalizeResourceLabel(match?.[1] ?? tokenText);
+  const resource =
+    resources.find(
+      (candidate) =>
+        normalizeResourceLabel(candidate.tokenText) === label || normalizeResourceLabel(candidate.label) === label,
+    ) ?? null;
+  return resource;
+};
+
+const findResourceByDefinitionLabel = (
+  resources: readonly WebChatResourceReference[],
+  label: string,
+): WebChatResourceReference | null => {
+  return (
+    resources.find(
+      (candidate) => normalizeResourceLabel(candidate.label) === normalizeResourceLabel(label),
+    ) ?? null
+  );
+};
 
 class OrderedListNumberWidget extends WidgetType {
   constructor(
@@ -57,6 +98,91 @@ class TaskCheckboxWidget extends WidgetType {
     box.className = `cm-md-task ${this.checked ? "cm-md-task-checked" : ""}`;
     box.ariaHidden = "true";
     return box;
+  }
+}
+
+class InlineResourceTokenWidget extends WidgetType {
+  private component: MountedSvelteExports | null = null;
+
+  constructor(
+    private readonly resource: WebChatResourceReference,
+    private readonly tone: "assistant" | "participant" | "viewer",
+    private readonly onOpenResource?: ((resource: WebChatResourceReference) => void) | undefined,
+  ) {
+    super();
+  }
+
+  override eq(other: InlineResourceTokenWidget): boolean {
+    return (
+      this.resource.id === other.resource.id &&
+      this.tone === other.tone &&
+      this.onOpenResource === other.onOpenResource
+    );
+  }
+
+  override toDOM(): HTMLElement {
+    const host = document.createElement("span");
+    host.className = "cm-md-resource-token-host";
+    this.component = mount(MessageMarkdownResourceToken, {
+      target: host,
+      props: {
+        resource: this.resource,
+        tone: this.tone,
+        onOpen: () => {
+          this.onOpenResource?.(this.resource);
+        },
+      },
+    });
+    return host;
+  }
+
+  override destroy(): void {
+    if (this.component) {
+      void unmount(this.component);
+      this.component = null;
+    }
+  }
+}
+
+class ResourceBarWidget extends WidgetType {
+  private component: MountedSvelteExports | null = null;
+
+  constructor(
+    private readonly resources: readonly WebChatResourceReference[],
+    private readonly tone: "assistant" | "participant" | "viewer",
+    private readonly onOpenResource?: ((resource: WebChatResourceReference) => void) | undefined,
+  ) {
+    super();
+  }
+
+  override eq(other: ResourceBarWidget): boolean {
+    return (
+      this.tone === other.tone &&
+      this.onOpenResource === other.onOpenResource &&
+      this.resources.length === other.resources.length &&
+      this.resources.every((resource, index) => resource.id === other.resources[index]?.id)
+    );
+  }
+
+  override toDOM(): HTMLElement {
+    const host = document.createElement("div");
+    host.className = "cm-md-resource-bar-host";
+    this.component = mount(MessageMarkdownResourceBar, {
+      target: host,
+      props: {
+        resources: this.resources,
+        tone: this.tone,
+        onOpenResource: this.onOpenResource,
+      },
+    });
+    return host;
+  }
+
+  override destroy(): void {
+    if (this.component) {
+      void unmount(this.component);
+      this.component = null;
+    }
   }
 }
 
@@ -308,3 +434,27 @@ export const structuralOverlayDecoration = (projection: MarkdownStructuralProjec
     side: -1,
     widget: new StructuralProjectionOverlayWidget(projection),
   });
+
+export const inlineResourceTokenDecoration = (
+  resource: WebChatResourceReference,
+  tone: "assistant" | "participant" | "viewer",
+  onOpenResource?: ((resource: WebChatResourceReference) => void) | undefined,
+) =>
+  Decoration.replace({
+    inclusive: false,
+    widget: new InlineResourceTokenWidget(resource, tone, onOpenResource),
+  });
+
+export const resourceBarDecoration = (
+  resources: readonly WebChatResourceReference[],
+  tone: "assistant" | "participant" | "viewer",
+  onOpenResource?: ((resource: WebChatResourceReference) => void) | undefined,
+) =>
+  Decoration.widget({
+    side: 1,
+    block: true,
+    widget: new ResourceBarWidget(resources, tone, onOpenResource),
+  });
+
+export const resolveInlineResourceReference = findResourceByTokenText;
+export const resolveDefinitionResourceReference = findResourceByDefinitionLabel;
