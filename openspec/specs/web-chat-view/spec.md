@@ -4,7 +4,7 @@
 Define the framework-agnostic room-backed Web chat transport contract, including websocket hydration, a reusable custom-element delivery surface, and reverse-time paging for long histories.
 ## Requirements
 ### Requirement: Web chat view SHALL connect to one chat channel over websocket
-The web chat view SHALL build its runtime state from one room transport websocket plus reverse-time history paging. The shared component SHALL be shipped as a framework-agnostic custom element with a Svelte host wrapper so multiple Studio clients can reuse the same room transport contract. The component SHALL accept explicit viewer actor context instead of inferring viewer identity from room metadata or message labels, and it SHALL expose that transport state through one conversation-first surface instead of requiring host routes to rebuild transcript chrome around it.
+The web chat view SHALL build its runtime state from one room transport websocket plus reverse-time history paging. The shared component SHALL be shipped as a framework-agnostic custom element with a Svelte host wrapper so multiple WebUI clients can reuse the same room transport contract. The component SHALL accept explicit viewer actor context instead of inferring viewer identity from room metadata or message labels, and it SHALL expose that transport state through one conversation-first surface instead of requiring host routes to rebuild transcript chrome around it.
 
 #### Scenario: Connect and hydrate a room
 - **WHEN** the component receives an authorized room transport URL
@@ -17,7 +17,7 @@ The web chat view SHALL build its runtime state from one room transport websocke
 - **THEN** the empty-state copy is shown until new messages arrive or the websocket pushes a later snapshot
 
 #### Scenario: Shared custom element is reusable
-- **WHEN** the operator Studio mounts the shared chat view or another frontend mounts the exported custom element
+- **WHEN** the operator WebUI mounts the shared chat view or another frontend mounts the exported custom element
 - **THEN** both consumers use the same room transport contract and transcript behavior
 - **THEN** the package does not require React-specific runtime dependencies to render the shared room experience
 
@@ -25,6 +25,26 @@ The web chat view SHALL build its runtime state from one room transport websocke
 - **WHEN** the host passes an explicit viewer actor id to the shared chat view
 - **THEN** the component aligns "mine vs others" from that actor identity
 - **THEN** it does not guess viewer ownership from duplicate labels or unrelated room metadata
+
+### Requirement: Web chat view SHALL keep people shell responsibilities host-owned
+The shared `@agenter/web-chat-view` package SHALL remain the room transcript/composer primitive inside a larger people-aware host shell. Contact list, contact detail, source management, current actor profile, and global app navigation SHALL be host-owned responsibilities.
+
+#### Scenario: Host owns people navigation
+- **WHEN** a product shell needs Messages, Contacts, Me, contact detail, or source management pages
+- **THEN** the host builds those pages outside the shared room component
+- **THEN** the shared package remains mountable as the room chat child surface
+- **THEN** the package does not require a host to adopt the example app shell to render one room
+
+#### Scenario: Contact-backed mention suggestions use existing host hooks
+- **WHEN** the host has durable contact records for the current viewer actor
+- **THEN** the host may provide those contacts through the existing participant/mention suggestion provider surface
+- **THEN** the shared composer still treats suggestions as host-provided people references rather than reading message-system contacts directly
+
+#### Scenario: Room entry is explicit host orchestration
+- **WHEN** a contact detail page opens or creates a direct room
+- **THEN** the host resolves the authorized room transport URL and viewer actor context
+- **THEN** the shared chat view receives the same room websocket contract it already supports
+- **THEN** the package does not own source subscription or contact-request mutation APIs
 
 ### Requirement: Viewer changes SHALL replay the current visibility fact once
 When the host changes `viewerActorId`, the shared chat view SHALL treat that change as a new reader identity for read-ack projection. If the component already knows the current latest visible durable message, it SHALL re-emit that same visibility fact exactly once for the new viewer and SHALL stay idle afterwards until visibility advances again. The visibility fact SHALL carry the row `viewKey` plus the durable numeric `messageId` when one exists.
@@ -48,14 +68,19 @@ The shared room component SHALL render one durable conversation surface with tra
 - **THEN** the host can place surrounding metadata or management controls beside the component
 - **THEN** the shared component still owns the transcript/composer shell instead of requiring a second route-local transcript renderer
 
+#### Scenario: Short histories stay top-aligned inside the shared transcript
+- **WHEN** the transcript contains too few rows to overflow the visible stage
+- **THEN** the shared transcript keeps those rows aligned to the start edge of the viewport
+- **THEN** latest anchoring only governs follow behavior after overflow instead of bottom-floating sparse histories
+
 #### Scenario: Chat shell reuses shared Svelte layout law
 - **WHEN** the shared chat package renders its transcript shell
 - **THEN** it uses `Scaffold` and `ScrollView` from `@agenter/svelte-components`
 - **THEN** chat-specific visuals and transport behavior remain local to `web-chat-view`
-- **THEN** the package still avoids any dependency on `agenter-ext-studio`
+- **THEN** the package still avoids any dependency on `@agenter/webui`
 
 ### Requirement: Web chat view SHALL expose a rich shared composer surface
-The shared chat package SHALL render a responsive CodeMirror-based composer surface with attachment previews, action/status toolbars, help hints, and host-driven send orchestration instead of a minimal textarea-only input.
+The shared chat package SHALL render a responsive CodeMirror-based composer surface with attachment previews, action/status toolbars, help hints, host-driven send orchestration, and one unified completion/resource projection instead of a minimal textarea-only input. Participant suggestions, transcript-backed resource references, pending uploads, and drafted comment resources SHALL flow through the same composer completion surface rather than being split across separate draft-only and sent-only suggestion paths.
 
 #### Scenario: Composer shows rich pending attachment state
 - **WHEN** the host adds pending files, images, or screenshots to the shared composer
@@ -72,6 +97,22 @@ The shared chat package SHALL render a responsive CodeMirror-based composer surf
 - **THEN** the shared composer renders the host-provided hint text as-is
 - **THEN** transport-only copy such as `Waiting for channel transport` does not override that host-managed hint
 
+#### Scenario: Mixed completion merges participants and resources behind @
+- **WHEN** the operator types `@` in the shared composer
+- **THEN** the completion surface can return participant suggestions and resource references from the same provider
+- **THEN** resource references remain queryable by token label, alias, or file name instead of requiring a separate draft-only lookup
+
+#### Scenario: Pending and drafted resources join the same live completion law
+- **WHEN** the operator has pending uploads or drafted comment resources that are not yet sent
+- **THEN** those resources are merged into the same live completion reference set used by the shared composer
+- **THEN** `@` and `^` can resolve those pending resources before send without waiting for them to appear in transcript history
+
+#### Scenario: Help completion opens from ASCII and fullwidth question marks
+- **WHEN** the operator types `?` or `？` in the shared composer
+- **THEN** the shared completion surface opens help suggestions from the same trigger/provider contract used by other completions
+- **THEN** choosing a help item still applies whitespace-aware insertion
+- **THEN** the canonical review route can prove that interaction without host-local fallback logic
+
 ### Requirement: Web chat view SHALL render canonical avatar and message action affordances
 The shared chat package SHALL support host-provided canonical avatar/icon resolution for room and actor identity, and it SHALL expose local hover/context message action affordances from the shared message row implementation.
 
@@ -79,6 +120,11 @@ The shared chat package SHALL support host-provided canonical avatar/icon resolu
 - **WHEN** the host provides canonical icon or avatar URLs for the channel or participants
 - **THEN** the shared message rows render those canonical avatars in transcript presentation
 - **THEN** the chat package does not guess durable identity solely from visible labels
+
+#### Scenario: Human-facing transcript identity does not leak raw actor ids by default
+- **WHEN** the host resolves a participant presentation with canonical label, subtitle, and avatar facts
+- **THEN** the transcript prioritizes the human-facing presentation in the visible row chrome
+- **THEN** raw actor ids are not required to render as visible primary transcript text
 
 #### Scenario: Shared row exposes local message actions
 - **WHEN** the operator hovers or context-clicks a transcript row
@@ -193,6 +239,18 @@ The shared chat component SHALL delegate transcript scrolling to the shared anch
 - **WHEN** the operator activates the transcript's `Scroll to latest` affordance
 - **THEN** the chat surface raises an action trigger that the installed scroll program consumes
 - **AND** the feature code does not directly call the old request surface for that action
+
+#### Scenario: Scroll to latest returns to the latest edge on the real review route
+- **WHEN** the operator is away from latest on the real review route and activates `Scroll to latest`
+- **THEN** the installed trigger program pins the transcript to the latest edge
+- **AND** the interaction does not seek history start or otherwise move in the wrong direction
+- **AND** the affordance behavior is verified from route-level evidence, not only DOM-local mutation
+
+#### Scenario: Top-aligned underflow preserves bottom-anchored overflow physics
+- **WHEN** the transcript requests start-edge alignment for sparse underflow
+- **THEN** the shared anchored timeline keeps its reverse-flow viewport and content coordinate system
+- **AND** the underflow option changes only packing/alignment inside the shared primitive
+- **AND** `Scroll to latest` still pins the latest row to the visible bottom edge after the transcript overflows
 
 #### Scenario: Transport append while pinned follows latest through the installed program
 - **WHEN** newer room messages arrive while the transcript is effectively at latest
