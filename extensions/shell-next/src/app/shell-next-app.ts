@@ -690,10 +690,7 @@ export class ShellNextApp implements ShellNextAppController {
       ...base,
       activeActions: this.#deriveActiveStatusbarActions(),
     };
-    if (this.#syncStatusbarWithLayout) {
-      next.attention = this.#deriveLayoutAttentionSummary();
-    }
-    return next;
+    return this.#syncStatusbarWithLayout ? { ...next, attention: this.#deriveLayoutAttentionSummary() } : next;
   }
 
   #deriveActiveStatusbarActions(): readonly ("help" | "chat")[] {
