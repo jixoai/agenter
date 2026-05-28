@@ -150,4 +150,4 @@
 - [x] 18.9 Run `bun run --filter 'agenter-ext-shell-next' typecheck`.
 - [x] 18.10 Run `git diff --check`.
 - [x] 18.11 Confirm `git diff -- extensions/cli-shell` is empty.
-- [ ] 18.12 Commit spec updates separately from implementation and leave `git status --short` clean after the final implementation commit.
+- [x] 18.12 Commit spec updates separately from implementation and leave `git status --short` clean after the final implementation commit.
