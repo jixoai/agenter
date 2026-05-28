@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ClipSurface } from '@agenter/svelte-components';
+	import ArchiveIcon from '@lucide/svelte/icons/archive';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { goto } from '$app/navigation';
 
@@ -17,6 +18,7 @@
 		buildMessageWorkbenchRooms,
 		getMessageWorkbenchSessionRoomState,
 		resolveMessageWorkbenchRoom,
+		splitMessageWorkbenchRooms,
 	} from '$lib/features/messages/message-workbench-room-state';
 	import {
 		dismissWorkbenchTabId,
@@ -83,13 +85,25 @@
 			dismissedRoomIds,
 		),
 	);
+	const activeAndArchivedRooms = $derived(splitMessageWorkbenchRooms(visibleRooms));
+	const activeVisibleRooms = $derived(activeAndArchivedRooms.activeRooms);
+	const archivedVisibleRooms = $derived(activeAndArchivedRooms.archivedRooms);
+	const activeWorkbenchTabId = $derived.by(() => {
+		if (page.url.pathname === '/messages/new') {
+			return 'new-room';
+		}
+		if (page.url.pathname === '/messages/archive') {
+			return 'message-archive';
+		}
+		return activeRoomId;
+	});
 	const redirectHref = $derived.by(() => {
 		if (!controller.runtimeState.globalRooms.loaded) {
 			return null;
 		}
 
 		if (page.url.pathname === '/messages') {
-			const nextRoom = visibleRooms[0] ?? null;
+			const nextRoom = activeVisibleRooms[0] ?? archivedVisibleRooms[0] ?? null;
 			return nextRoom ? nextRoom.href : '/messages/new';
 		}
 
@@ -111,10 +125,13 @@
 				messageChannelsBySession: controller.runtimeState.messageChannelsBySession,
 			});
 			if (!activeRoom) {
-				const nextRoom = visibleRooms.find((room) => room.chatId !== activeRoomId) ?? null;
-				return nextRoom ? nextRoom.href : '/messages/new';
+					const nextRoom =
+						activeVisibleRooms.find((room) => room.chatId !== activeRoomId) ??
+						archivedVisibleRooms.find((room) => room.chatId !== activeRoomId) ??
+						null;
+					return nextRoom ? nextRoom.href : '/messages/new';
+				}
 			}
-		}
 
 		return null;
 	});
@@ -127,10 +144,10 @@
 	};
 
 	const closeRoomTab = async (chatId: string): Promise<void> => {
-		const nextRoom = resolveAdjacentWorkbenchTab(visibleRooms, (room) => room.chatId, chatId);
-		dismissedRoomIds = dismissWorkbenchTabId('messages', dismissedRoomIds, chatId);
-		if (activeRoomId !== chatId) {
-			return;
+			const nextRoom = resolveAdjacentWorkbenchTab(activeVisibleRooms, (room) => room.chatId, chatId);
+			dismissedRoomIds = dismissWorkbenchTabId('messages', dismissedRoomIds, chatId);
+			if (activeRoomId !== chatId) {
+				return;
 		}
 		await goto(nextRoom ? nextRoom.href : '/messages/new', {
 			replaceState: true,
@@ -141,11 +158,11 @@
 
 	const tabs = $derived.by(() => {
 		const duplicateTitles = new Set(
-			visibleRooms
+			activeVisibleRooms
 				.map((room) => resolveMessageRoomTabTitle(room))
 				.filter((title, index, values) => values.indexOf(title) !== index),
 		);
-		const roomTabs = visibleRooms.map((room) => ({
+		const roomTabs = activeVisibleRooms.map((room) => ({
 			id: room.chatId,
 			href: room.href,
 			label: resolveMessageRoomTabLabel(room, duplicateTitles),
@@ -172,6 +189,19 @@
 
 		return [
 			...roomTabs,
+			...(archivedVisibleRooms.length > 0
+				? [
+						{
+							id: 'message-archive',
+							href: '/messages/archive',
+							label: 'Archive',
+							icon: ArchiveIcon,
+							title: 'Archived rooms',
+							description: 'Review rooms that were removed from the default active list.',
+							badgeLabel: String(archivedVisibleRooms.length),
+						} satisfies WorkbenchTabItem,
+					]
+				: []),
 			{
 				id: 'new-room',
 				href: '/messages/new',
@@ -199,13 +229,13 @@
 	});
 </script>
 
-<div class="messages-workbench-window" data-testid="messages-workbench">
-	<WorkbenchTabStrip
-		ariaLabel="Message room tabs"
-		value={activeRoomId ?? 'new-room'}
-		{tabs}
-		fusedBelow
-	/>
+	<div class="messages-workbench-window" data-testid="messages-workbench">
+		<WorkbenchTabStrip
+			ariaLabel="Message room tabs"
+			value={activeWorkbenchTabId ?? 'new-room'}
+			{tabs}
+			fusedBelow
+		/>
 
 	<section
 		class="messages-workbench-window__toolbar border-b border-border/45 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background),white_12%)_0%,color-mix(in_srgb,var(--card),var(--background)_74%)_100%)]"

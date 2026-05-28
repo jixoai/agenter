@@ -89,4 +89,24 @@ describe("Feature: Room route hydration stability contract", () => {
     expect(messageRoomRouteSource).toContain("initialSnapshotResolved={initialRoomSnapshotResolved}");
     expect(messageRoomRouteSource).toContain("authenticated={isAuthenticated}");
   });
+
+  test("Scenario: Given archiving is now a visibility lifecycle instead of a forced navigation away When reading the room route source Then archived rooms stay in detail truth and no longer redirect to a fallback room", () => {
+    expect(messageRoomRouteSource).toContain("splitMessageWorkbenchRooms");
+    expect(messageRoomRouteSource).toContain("const archivedRoomCount = $derived(splitMessageWorkbenchRooms(rooms).archivedRooms.length);");
+    expect(messageRoomRouteSource).toContain("await controller.runtimeStore.archiveGlobalRoom({");
+    expect(messageRoomRouteSource).toContain("const handleArchiveRoom = async (): Promise<void> => {");
+    expect(messageRoomRouteSource).toContain("await controller.runtimeStore.archiveGlobalRoom({");
+    expect(messageRoomRouteSource).toContain("routeNotice = null;");
+    expect(messageRoomRouteSource).toContain("const handleDeleteRoom = async (): Promise<void> => {");
+    expect(messageRoomRouteSource).toContain("await navigateToFallbackRoom(room.chatId);");
+    expect(messageRoomRouteSource).toContain("{archivedRoomCount}");
+  });
+
+  test("Scenario: Given Studio must not forge a participant seat from bootstrap room control When reading the route source Then sending options and visible seats come only from durable room participants and grants", () => {
+    expect(messageRoomRouteSource).toContain("grant.role !== 'readonly'");
+    expect(messageRoomRouteSource).toContain("if (room.accessRole !== 'readonly' && isUserFacingRoomActorId(room.participantId))");
+    expect(messageRoomRouteSource).not.toContain("!grantOptions.some((option) => option.participantId === currentAuthActorId)");
+    expect(messageRoomRouteSource).not.toContain("!seats.has(currentAuthActorId)");
+    expect(messageRoomRouteSource).toContain("roomSeatTruthLoaded={selectedRoomGrantsState.loaded}");
+  });
 });

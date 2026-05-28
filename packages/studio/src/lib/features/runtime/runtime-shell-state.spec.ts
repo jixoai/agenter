@@ -80,6 +80,14 @@ const createRuntimeState = (sessions: SessionEntry[], unreadBySession: Record<st
     error: null,
     refreshedAt: null,
   },
+  globalTerminalIndex: {
+    data: [],
+    loaded: false,
+    loading: false,
+    refreshing: false,
+    error: null,
+    refreshedAt: null,
+  },
   globalTerminalArchive: {
     data: [],
     loaded: false,

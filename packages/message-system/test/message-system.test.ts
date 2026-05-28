@@ -1,40 +1,59 @@
-import { generatePrincipalKeyPair, type PrincipalId } from "@agenter/principal-crypto";
 import { signManagedInvitationAcceptProof } from "@agenter/managed-seat-invitation-handshake";
+import { generatePrincipalKeyPair, type PrincipalId } from "@agenter/principal-crypto";
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { AttentionSystem } from "@agenter/attention-system";
 import { MessageControlPlane, resolveMessageControlDbPath, type MessageTransportServerMessage } from "../src";
 
-const createPlaneHarness = (): { root: string; dbPath: string; plane: MessageControlPlane } => {
+const createPrincipal = (): PrincipalId => generatePrincipalKeyPair().principalId;
+
+const createPlaneHarness = (): {
+  root: string;
+  dbPath: string;
+  superadminContactId: PrincipalId;
+  plane: MessageControlPlane;
+} => {
   const root = mkdtempSync(join(tmpdir(), "agenter-message-system-"));
   const dbPath = resolveMessageControlDbPath(join(root, ".message"));
+  const superadminContactId = createPrincipal();
   return {
     root,
     dbPath,
-    plane: new MessageControlPlane({ dbPath }),
+    superadminContactId,
+    plane: new MessageControlPlane({ dbPath, superadminContactId }),
   };
 };
 
 const createPlane = (): MessageControlPlane => createPlaneHarness().plane;
 
-const createRoomId = (): PrincipalId => generatePrincipalKeyPair().principalId;
+const createRoomId = (): PrincipalId => createPrincipal();
+
+const buildFollowUp = (root: string, chatId: string, ownerSessionId: string, afterMs: number) => ({
+  afterMs,
+  ownerSessionId,
+  attentionRoot: join(root, "attention-system"),
+  attentionContextId: `ctx-${chatId}`,
+  attentionOwner: "avatar:jane",
+});
 
 const createRoom = (
   plane: MessageControlPlane,
   input: {
     chatId?: PrincipalId;
-    bootstrapActorId?: `auth:${string}` | `session:${string}` | `system:${string}`;
+    bootstrapContactId?: `auth:${string}` | `session:${string}` | `system:${string}`;
   } = {},
 ) =>
   plane.createChannel({
     chatId: input.chatId ?? createRoomId(),
     kind: "room",
     owner: "jane",
+    superKey: plane.getSystemIdentity().superadminContactId,
     participants: [{ id: "session:jane" }, { id: "auth:kzf" }],
-    bootstrapActorId: input.bootstrapActorId ?? "auth:owner",
+    bootstrapContactId: input.bootstrapContactId ?? "auth:owner",
   });
 
 const waitForSocketOutcome = async (
@@ -61,30 +80,37 @@ const listInvitations = (plane: MessageControlPlane, chatId: string) => {
   const db = Reflect.get(plane, "db") as {
     findLatestInvitationForParticipant: (input: {
       chatId: string;
-      inviteeActorId: string;
+      inviteeContactId: string;
       includeNonPending?: boolean;
-    }) => {
-      invitationId: string;
-      status: "pending" | "accepted" | "revoked" | "expired";
-      supersededByInvitationId?: string | null;
-      expiresAt: number;
-    } | undefined;
-    getInvitationById: (chatId: string, invitationId: string) => {
-      invitationId: string;
-      status: "pending" | "accepted" | "revoked" | "expired";
-      supersededByInvitationId?: string | null;
-      expiresAt: number;
-    } | undefined;
+    }) =>
+      | {
+          invitationId: string;
+          status: "pending" | "accepted" | "revoked" | "expired";
+          supersededByInvitationId?: string | null;
+          expiresAt: number;
+        }
+      | undefined;
+    getInvitationById: (
+      chatId: string,
+      invitationId: string,
+    ) =>
+      | {
+          invitationId: string;
+          status: "pending" | "accepted" | "revoked" | "expired";
+          supersededByInvitationId?: string | null;
+          expiresAt: number;
+        }
+      | undefined;
   };
   return {
     latestForParticipant: (participantId: string) =>
-      db.findLatestInvitationForParticipant({ chatId, inviteeActorId: participantId, includeNonPending: true }),
+      db.findLatestInvitationForParticipant({ chatId, inviteeContactId: participantId, includeNonPending: true }),
     byId: (invitationId: string) => db.getInvitationById(chatId, invitationId),
   };
 };
 
 describe("Feature: message-chat-control-plane", () => {
-  test("Scenario: Given room-only durability When rooms are created and listed for actors Then only room ids survive and same labels still get separate seats", async () => {
+  test("Scenario: Given room-only durability When rooms are created and listed for contacts Then only room ids survive and same labels still get separate seats", async () => {
     const plane = createPlane();
     await plane.startTransport({ port: 0 });
     const roomId = createRoomId();
@@ -99,7 +125,7 @@ describe("Feature: message-chat-control-plane", () => {
       plane.createChannel({
         chatId: "chat-legacy",
         kind: "room",
-        bootstrapActorId: "auth:owner",
+        bootstrapContactId: "auth:owner",
       }),
     ).toThrow("invalid room id: chat-legacy");
 
@@ -119,15 +145,15 @@ describe("Feature: message-chat-control-plane", () => {
     });
 
     expect(seatA.accessToken).not.toBe(seatB.accessToken);
-    expect(plane.listChannelsForActor("session:avatar-a")[0]?.accessToken).toBe(seatA.accessToken);
-    expect(plane.listChannelsForActor("session:avatar-b")[0]?.accessToken).toBe(seatB.accessToken);
+    expect(plane.listChannelsForContact("session:avatar-a")[0]?.accessToken).toBe(seatA.accessToken);
+    expect(plane.listChannelsForContact("session:avatar-b")[0]?.accessToken).toBe(seatB.accessToken);
     expect(plane.listChannels()[0]?.chatId).toBe(room.chatId);
     expect(plane.listChannels()[0]?.accessRole).toBe("admin");
     expect(plane.listChannels()[0]?.accessToken).toStartWith("msgtok_");
     plane.stopTransport();
   });
 
-  test("Scenario: Given legacy participant ids When a room is created or updated Then only canonical actor-backed seats remain in durable truth", () => {
+  test("Scenario: Given legacy participant ids When a room is created or updated Then only canonical contact-backed seats remain in durable truth", () => {
     const plane = createPlane();
     const created = plane.createChannel({
       chatId: createRoomId(),
@@ -138,7 +164,7 @@ describe("Feature: message-chat-control-plane", () => {
         { id: " session:relay ", label: " Relay " },
         { id: "user", label: "User" },
       ],
-      bootstrapActorId: "auth:owner",
+      bootstrapContactId: "auth:owner",
     });
 
     expect(created.participants).toEqual([{ id: "session:relay", label: "Relay" }]);
@@ -158,9 +184,9 @@ describe("Feature: message-chat-control-plane", () => {
     expect(updated.participants).toEqual([{ id: "auth:owner", label: "Owner" }]);
   });
 
-  test("Scenario: Given legacy session actor aliases When a room is repaired Then grants message authorship and read membership converge on the principal actor", () => {
+  test("Scenario: Given legacy session contact aliases When a room is repaired Then grants message authorship and read membership converge on the principal contact", () => {
     const plane = createPlane();
-    const principalActorId = generatePrincipalKeyPair().principalId;
+    const principalContactId = generatePrincipalKeyPair().principalId;
     const room = createRoom(plane, { chatId: createRoomId() });
 
     const legacySeat = plane.issueChannelGrantAuthorized({
@@ -173,21 +199,21 @@ describe("Feature: message-chat-control-plane", () => {
     plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       kind: "text",
       content: "hello legacy jane",
     });
     plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: legacySeat.accessToken,
-      senderActorId: "session:jane",
+      senderContactId: "session:jane",
       kind: "text",
       content: "legacy jane reply",
     });
 
-    const repaired = plane.repairChannelActorAliases({
+    const repaired = plane.repairChannelContactAliases({
       chatId: room.chatId,
-      aliases: [{ fromActorId: "session:jane", toActorId: principalActorId }],
+      aliases: [{ fromContactId: "session:jane", toContactId: principalContactId }],
     });
     const grants = plane.listChannelGrantsAuthorized({
       chatId: room.chatId,
@@ -201,26 +227,26 @@ describe("Feature: message-chat-control-plane", () => {
     const inbound = messages.find((message) => message.content === "hello legacy jane");
     const reply = messages.find((message) => message.content === "legacy jane reply");
 
-    expect(repaired?.participants).toEqual([{ id: principalActorId }, { id: "auth:kzf" }]);
-    expect(plane.listChannelsForActor("session:jane")).toHaveLength(0);
-    expect(plane.listChannelsForActor(principalActorId)[0]?.chatId).toBe(room.chatId);
+    expect(repaired?.participants).toEqual([{ id: principalContactId }, { id: "auth:kzf" }]);
+    expect(plane.listChannelsForContact("session:jane")).toHaveLength(0);
+    expect(plane.listChannelsForContact(principalContactId)[0]?.chatId).toBe(room.chatId);
     expect(grants.some((grant) => grant.participantId === "session:jane")).toBeFalse();
     expect(grants).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          participantId: principalActorId,
+          participantId: principalContactId,
           role: "member",
         }),
       ]),
     );
-    expect(inbound?.unreadActorIds).toContain(principalActorId);
-    expect(inbound?.unreadActorIds).not.toContain("session:jane");
-    expect(reply?.senderActorId).toBe(principalActorId);
-    expect(reply?.readActorIds).toContain(principalActorId);
-    expect(reply?.readActorIds).not.toContain("session:jane");
-    expect(plane.getActorUnreadState(principalActorId).unreadTotal).toBe(1);
-    expect(plane.getActorUnreadState("session:jane").unreadTotal).toBe(0);
-    expect(plane.listUnreadRoomSummaries(principalActorId).map((summary) => summary.chatId)).toContain(room.chatId);
+    expect(inbound?.unreadContactIds).toContain(principalContactId);
+    expect(inbound?.unreadContactIds).not.toContain("session:jane");
+    expect(reply?.senderContactId).toBe(principalContactId);
+    expect(reply?.readContactIds).toContain(principalContactId);
+    expect(reply?.readContactIds).not.toContain("session:jane");
+    expect(plane.getContactUnreadState(principalContactId).unreadTotal).toBe(1);
+    expect(plane.getContactUnreadState("session:jane").unreadTotal).toBe(0);
+    expect(plane.listUnreadRoomSummaries(principalContactId).map((summary) => summary.chatId)).toContain(room.chatId);
     expect(plane.listUnreadRoomSummaries("session:jane")).toHaveLength(0);
   });
 
@@ -230,22 +256,22 @@ describe("Feature: message-chat-control-plane", () => {
       chatId: createRoomId(),
       kind: "room",
       owner: "ops",
-      bootstrapActorId: "auth:owner",
+      bootstrapContactId: "auth:owner",
       initialUsers: [
         {
-          actorId: "auth:owner",
+          contactId: "auth:owner",
           label: "Owner",
           role: "member",
           focused: true,
         },
         {
-          actorId: "auth:viewer",
+          contactId: "auth:viewer",
           label: "Viewer",
           role: "readonly",
           focused: true,
         },
         {
-          actorId: "session:jj",
+          contactId: "session:jj",
           label: "JJ",
           role: "member",
           focused: false,
@@ -258,13 +284,13 @@ describe("Feature: message-chat-control-plane", () => {
       { id: "auth:viewer", label: "Viewer" },
       { id: "session:jj", label: "JJ" },
     ]);
-    expect(plane.getChannelForActor(room.chatId, "auth:owner")?.accessRole).toBe("admin");
-    expect(plane.listChannelsForActor("auth:viewer")[0]).toMatchObject({
+    expect(plane.getChannelForContact(room.chatId, "auth:owner")?.accessRole).toBe("admin");
+    expect(plane.listChannelsForContact("auth:viewer")[0]).toMatchObject({
       chatId: room.chatId,
       accessRole: "readonly",
       focused: true,
     });
-    expect(plane.listChannelsForActor("session:jj")[0]).toMatchObject({
+    expect(plane.listChannelsForContact("session:jj")[0]).toMatchObject({
       chatId: room.chatId,
       accessRole: "member",
       focused: false,
@@ -369,7 +395,7 @@ describe("Feature: message-chat-control-plane", () => {
     });
   });
 
-  test("Scenario: Given readonly member and admin room grants When authorized APIs run Then actor-bound access follows the room matrix", () => {
+  test("Scenario: Given readonly member and admin room grants When authorized APIs run Then contact-bound access follows the room matrix", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
 
@@ -396,7 +422,7 @@ describe("Feature: message-chat-control-plane", () => {
         label: "bad",
         participantId: "user:legacy-seat",
       }),
-    ).toThrow("room grant participantId must be a principal id or auth:/session:/system: actor id");
+    ).toThrow("room grant participantId must be a principal id or auth:/session:/system: contact id");
 
     const readonlySnapshot = plane.snapshotAuthorized({
       chatId: room.chatId,
@@ -404,8 +430,8 @@ describe("Feature: message-chat-control-plane", () => {
     });
     expect(readonlySnapshot.channel.accessRole).toBe("readonly");
     expect(readonlySnapshot.channel.accessToken).toBe(readonly.accessToken);
-    expect(plane.getChannelForActor(room.chatId, "auth:viewer")?.accessToken).toBe(readonly.accessToken);
-    expect(plane.getChannelForActor(room.chatId, "session:relay")?.accessToken).toBe(member.accessToken);
+    expect(plane.getChannelForContact(room.chatId, "auth:viewer")?.accessToken).toBe(readonly.accessToken);
+    expect(plane.getChannelForContact(room.chatId, "session:relay")?.accessToken).toBe(member.accessToken);
     expect(() =>
       plane.sendAuthorized({
         chatId: room.chatId,
@@ -423,8 +449,8 @@ describe("Feature: message-chat-control-plane", () => {
     });
     expect(sent.content).toBe("member message");
     expect(sent.visibleAt).toBe(sent.createdAt);
-    expect(sent.readActorIds).toContain("session:relay");
-    expect(sent.unreadActorIds).toEqual(expect.arrayContaining(["auth:owner", "auth:viewer"]));
+    expect(sent.readContactIds).toContain("session:relay");
+    expect(sent.unreadContactIds).toEqual(expect.arrayContaining(["auth:owner", "auth:viewer"]));
 
     const interactive = plane.sendAuthorized({
       chatId: room.chatId,
@@ -512,7 +538,7 @@ describe("Feature: message-chat-control-plane", () => {
     expect(grants.map((grant) => grant.participantId).sort()).toEqual(["auth:owner", "auth:viewer", "session:relay"]);
   });
 
-  test("Scenario: Given same-label room seats When authorized sends persist Then durable senderActorId survives snapshot and paging", () => {
+  test("Scenario: Given same-label room seats When authorized sends persist Then durable senderContactId survives snapshot and paging", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
     const seatA = plane.issueChannelGrantAuthorized({
@@ -541,8 +567,8 @@ describe("Feature: message-chat-control-plane", () => {
       content: "message from reviewer",
     });
 
-    expect(fromA.senderActorId).toBe("auth:analyst-a");
-    expect(fromB.senderActorId).toBe("session:reviewer");
+    expect(fromA.senderContactId).toBe("auth:analyst-a");
+    expect(fromB.senderContactId).toBe("session:reviewer");
     expect(fromA.from).toBe("Analyst");
     expect(fromB.from).toBe("Analyst");
 
@@ -550,10 +576,10 @@ describe("Feature: message-chat-control-plane", () => {
       chatId: room.chatId,
       accessToken: seatA.accessToken,
     });
-    expect(snapshot.items.find((item) => item.content === "message from analyst a")?.senderActorId).toBe(
+    expect(snapshot.items.find((item) => item.content === "message from analyst a")?.senderContactId).toBe(
       "auth:analyst-a",
     );
-    expect(snapshot.items.find((item) => item.content === "message from reviewer")?.senderActorId).toBe(
+    expect(snapshot.items.find((item) => item.content === "message from reviewer")?.senderContactId).toBe(
       "session:reviewer",
     );
 
@@ -562,8 +588,8 @@ describe("Feature: message-chat-control-plane", () => {
       accessToken: seatB.accessToken,
       limit: 20,
     });
-    expect(page.items.find((item) => item.messageId === fromA.messageId)?.senderActorId).toBe("auth:analyst-a");
-    expect(page.items.find((item) => item.messageId === fromB.messageId)?.senderActorId).toBe("session:reviewer");
+    expect(page.items.find((item) => item.messageId === fromA.messageId)?.senderContactId).toBe("auth:analyst-a");
+    expect(page.items.find((item) => item.messageId === fromB.messageId)?.senderContactId).toBe("session:reviewer");
   });
 
   test("Scenario: Given a room with grants transcript and read state When it is dissolved Then the room and its dependent facts disappear together", () => {
@@ -587,7 +613,7 @@ describe("Feature: message-chat-control-plane", () => {
       chatId: room.chatId,
       accessToken: relay.accessToken,
     });
-    plane.focusForActor("session:relay", "add", [room.chatId]);
+    plane.focusForContact("session:relay", "add", [room.chatId]);
 
     const deleted = plane.deleteChannelAuthorized({
       chatId: room.chatId,
@@ -596,11 +622,11 @@ describe("Feature: message-chat-control-plane", () => {
 
     expect(deleted.chatId).toBe(room.chatId);
     expect(plane.getChannel(room.chatId, { includeArchived: true })).toBeUndefined();
-    expect(plane.getChannelForActor(room.chatId, "session:relay", { includeArchived: true })).toBeUndefined();
+    expect(plane.getChannelForContact(room.chatId, "session:relay", { includeArchived: true })).toBeUndefined();
     expect(plane.listChannels({ includeArchived: true }).some((entry) => entry.chatId === room.chatId)).toBeFalse();
     expect(
       plane
-        .listChannelsForActor("session:relay", { includeArchived: true })
+        .listChannelsForContact("session:relay", { includeArchived: true })
         .some((entry) => entry.chatId === room.chatId),
     ).toBeFalse();
     expect(() =>
@@ -646,7 +672,7 @@ describe("Feature: message-chat-control-plane", () => {
     const first = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       kind: "text",
       content: "hello once",
       clientMessageId: "room-client-1",
@@ -654,7 +680,7 @@ describe("Feature: message-chat-control-plane", () => {
     const second = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       kind: "text",
       content: "hello once",
       clientMessageId: "room-client-1",
@@ -672,6 +698,208 @@ describe("Feature: message-chat-control-plane", () => {
     expect(delivered).toHaveLength(1);
   });
 
+  test("Scenario: Given a room reply reuses the same visible message When follow-up refresh runs twice Then one pending task is kept and the due time moves forward", async () => {
+    const harness = createPlaneHarness();
+    const plane = harness.plane;
+    const room = createRoom(plane, { chatId: createRoomId() });
+
+    const first = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderContactId: "auth:owner",
+      kind: "text",
+      content: "稍等，我确认一下。",
+      followUp: buildFollowUp(harness.root, room.chatId, "runtime-1", 30_000),
+    });
+
+    const originalTask = plane.listFollowUpTasks({ ownerSessionId: "runtime-1" })[0];
+    expect(originalTask?.messageId).toBe(first.messageId);
+    await Bun.sleep(5);
+
+    plane.refreshFollowUpAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      messageId: first.messageId,
+      followUp: buildFollowUp(harness.root, room.chatId, "runtime-1", 30_000),
+    });
+
+    const refreshedTasks = plane.listFollowUpTasks({ ownerSessionId: "runtime-1" });
+    expect(refreshedTasks).toHaveLength(1);
+    expect(refreshedTasks[0]?.messageId).toBe(first.messageId);
+    expect(refreshedTasks[0]?.dueAt ?? 0).toBeGreaterThan(originalTask?.dueAt ?? 0);
+  });
+
+  test("Scenario: Given a room message carries follow-up reminder When the control plane reopens before expiry Then the pending task reloads from room durability and fires once", async () => {
+    const harness = createPlaneHarness();
+    const room = createRoom(harness.plane, { chatId: createRoomId() });
+    const deliveries: Array<{ chatId: string; messageId: number; ownerSessionId: string }> = [];
+
+    const sent = harness.plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderContactId: "auth:owner",
+      kind: "text",
+      content: "这条消息需要稍后重新判断。",
+      followUp: buildFollowUp(harness.root, room.chatId, "runtime-reopen", 40),
+    });
+
+    expect(harness.plane.listFollowUpTasks({ ownerSessionId: "runtime-reopen" })).toHaveLength(1);
+    harness.plane.close();
+
+    const reopened = new MessageControlPlane({ dbPath: harness.dbPath });
+    reopened.registerFollowUpSink("runtime-reopen", async (task) => {
+      deliveries.push({
+        chatId: task.chatId,
+        messageId: task.messageId,
+        ownerSessionId: task.ownerSessionId,
+      });
+    });
+
+    expect(reopened.listFollowUpTasks({ ownerSessionId: "runtime-reopen" })).toHaveLength(1);
+
+    await Bun.sleep(80);
+
+    expect(deliveries).toEqual([
+      {
+        chatId: room.chatId,
+        messageId: sent.messageId,
+        ownerSessionId: "runtime-reopen",
+      },
+    ]);
+    expect(reopened.listFollowUpTasks({ ownerSessionId: "runtime-reopen" })).toHaveLength(0);
+
+    reopened.close();
+  });
+
+  test("Scenario: Given a due follow-up task has no registered sink When the due time passes Then message-system clears the task after persisting reminder attention", async () => {
+    const harness = createPlaneHarness();
+    const room = createRoom(harness.plane, { chatId: createRoomId() });
+    const attentionRoot = join(harness.root, "attention-system");
+    const sent = harness.plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderContactId: "auth:owner",
+      kind: "text",
+      content: "等 owner runtime 真正起来后再处理。",
+      followUp: buildFollowUp(harness.root, room.chatId, "runtime-dormant", 30),
+    });
+
+    await Bun.sleep(80);
+
+    const restored = AttentionSystem.fromSnapshot(await new (await import("@agenter/attention-system")).AttentionControlPlane({
+      root: attentionRoot,
+    }).loadSnapshot());
+    expect(harness.plane.listFollowUpTasks({ ownerSessionId: "runtime-dormant" })).toHaveLength(0);
+    expect(
+      restored
+        .query({ contextId: `ctx-${room.chatId}`, minScore: 0 })
+        .some((entry) => entry.commit.meta.src === `msg:${room.chatId}/${sent.messageId}`),
+    ).toBeTrue();
+
+    harness.plane.close();
+  });
+
+  test("Scenario: Given a due follow-up task while the owner runtime is offline When the due time passes Then message-system persists reminder attention through the attention control plane", async () => {
+    const harness = createPlaneHarness();
+    const room = createRoom(harness.plane, { chatId: createRoomId() });
+    const attentionRoot = join(harness.root, "attention-system");
+    harness.plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderContactId: "auth:owner",
+      kind: "text",
+      content: "这条消息到期后应直接写 attention。",
+      followUp: {
+        afterMs: 30,
+        ownerSessionId: "runtime-offline-attention",
+        attentionRoot,
+        attentionContextId: `ctx-${room.chatId}`,
+        attentionOwner: "avatar:jane",
+      },
+    });
+
+    await Bun.sleep(80);
+
+    const restored = AttentionSystem.fromSnapshot(await new (await import("@agenter/attention-system")).AttentionControlPlane({
+      root: attentionRoot,
+    }).loadSnapshot());
+    const matches = restored.query({ contextId: `ctx-${room.chatId}`, minScore: 0 });
+
+    expect(harness.plane.listFollowUpTasks({ ownerSessionId: "runtime-offline-attention" })).toHaveLength(0);
+    expect(matches.some((entry) => entry.commit.meta.src === `msg:${room.chatId}/1`)).toBeTrue();
+    expect(matches.some((entry) => entry.commit.summary.includes("Re-evaluate room follow-up"))).toBeTrue();
+
+    harness.plane.close();
+  });
+
+  test("Scenario: Given a newer visible room message lands before follow-up expiry When the due time passes Then message-system drops the stale reminder without calling the sink", async () => {
+    const harness = createPlaneHarness();
+    const plane = harness.plane;
+    const room = createRoom(plane, { chatId: createRoomId() });
+    const deliveries: Array<{ chatId: string; messageId: number }> = [];
+
+    plane.registerFollowUpSink("runtime-stale", async (task) => {
+      deliveries.push({
+        chatId: task.chatId,
+        messageId: task.messageId,
+      });
+    });
+
+    const first = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderContactId: "auth:owner",
+      kind: "text",
+      content: "我先确认一下。",
+      followUp: buildFollowUp(harness.root, room.chatId, "runtime-stale", 30),
+    });
+    plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderContactId: "auth:owner",
+      kind: "text",
+      content: "已经有更新消息了。",
+    });
+
+    await Bun.sleep(70);
+
+    expect(deliveries).toEqual([]);
+    expect(plane.listFollowUpTasks({ ownerSessionId: "runtime-stale" })).toHaveLength(0);
+    expect(plane.getMessage(room.chatId, first.messageId)?.content).toBe("我先确认一下。");
+  });
+
+  test("Scenario: Given a room is archived without being deleted When the control plane restores it Then the room re-enters active catalogs with the same transcript", () => {
+    const plane = createPlane();
+    const room = createRoom(plane, { chatId: createRoomId() });
+
+    const sent = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      senderContactId: "auth:owner",
+      kind: "text",
+      content: "archive should not erase me",
+    });
+    const archived = plane.archiveChannelAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      archivedBy: "ops-bot",
+    });
+
+    expect(archived.archivedAt).toEqual(expect.any(Number));
+    expect(plane.getChannel(room.chatId)).toBeUndefined();
+    expect(plane.getChannel(room.chatId, { includeArchived: true })?.chatId).toBe(room.chatId);
+
+    const restored = plane.unarchiveChannelAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+
+    expect(restored.archivedAt).toBeUndefined();
+    expect(plane.getChannel(room.chatId)?.chatId).toBe(room.chatId);
+    expect(plane.snapshot(room.chatId, 20).items.at(-1)?.messageId).toBe(sent.messageId);
+    expect(plane.snapshot(room.chatId, 20).items.at(-1)?.content).toBe("archive should not erase me");
+  });
+
   test("Scenario: Given a cached room database handle is stale When the next authorized send writes to that room Then message-system reopens the room database and persists the message", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
@@ -685,7 +913,7 @@ describe("Feature: message-chat-control-plane", () => {
     const sent = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       kind: "text",
       content: "reopened after stale handle",
       clientMessageId: "room-client-reopen-1",
@@ -708,14 +936,14 @@ describe("Feature: message-chat-control-plane", () => {
   test("Scenario: Given a user joins after historical room traffic When they explicitly read old history Then frozen unread membership stays intact and read membership can still grow", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
     const historical = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "hello before viewer joins",
     });
@@ -727,7 +955,7 @@ describe("Feature: message-chat-control-plane", () => {
       participantId: "auth:viewer",
     });
 
-    expect(historical.unreadActorIds).not.toContain("auth:viewer");
+    expect(historical.unreadContactIds).not.toContain("auth:viewer");
     expect(plane.listUnreadRoomSummaries("auth:viewer")).toHaveLength(0);
 
     const read = plane.markChannelReadAuthorized({
@@ -735,30 +963,30 @@ describe("Feature: message-chat-control-plane", () => {
       accessToken: viewer.accessToken,
       messageId: historical.messageId,
     });
-    const viewerState = read.seatStates?.find((state) => state.actorId === "auth:viewer");
+    const viewerState = read.seatStates?.find((state) => state.contactId === "auth:viewer");
     const refreshed = plane.getMessage(room.chatId, historical.messageId);
 
     expect(viewerState).toMatchObject({
-      actorId: "auth:viewer",
+      contactId: "auth:viewer",
       role: "readonly",
     });
     expect(Object.prototype.hasOwnProperty.call(read, "readProgress")).toBeFalse();
-    expect(refreshed?.readActorIds).toContain("auth:viewer");
-    expect(refreshed?.unreadActorIds).not.toContain("auth:viewer");
+    expect(refreshed?.readContactIds).toContain("auth:viewer");
+    expect(refreshed?.unreadContactIds).not.toContain("auth:viewer");
     expect(plane.listUnreadRoomSummaries("auth:viewer")).toHaveLength(0);
   });
 
   test("Scenario: Given a sender edits their own durable room message When the edit is authorized Then content changes but delivery membership stays intact", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
     const sent = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "first draft",
     });
@@ -775,21 +1003,21 @@ describe("Feature: message-chat-control-plane", () => {
     expect(edited.content).toBe("corrected draft");
     expect(edited.updatedAt).toBe(sent.updatedAt + 1);
     expect(edited.createdAt).toBe(sent.createdAt);
-    expect(edited.readActorIds).toEqual(sent.readActorIds);
-    expect(edited.unreadActorIds).toEqual(sent.unreadActorIds);
+    expect(edited.readContactIds).toEqual(sent.readContactIds);
+    expect(edited.unreadContactIds).toEqual(sent.unreadContactIds);
   });
 
   test("Scenario: Given a room reply points at another durable room message When the send is authorized Then the durable room fact stores same-room ref instead of runtime residue", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
     const prompt = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "Can you check the duplicate reply?",
     });
@@ -797,7 +1025,7 @@ describe("Feature: message-chat-control-plane", () => {
     const reply = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       ref: prompt.messageId,
       content: "I am checking it now.",
@@ -818,7 +1046,7 @@ describe("Feature: message-chat-control-plane", () => {
   test("Scenario: Given a different member tries to edit someone else's durable room message When the edit is authorized Then message-system rejects the mutation", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
@@ -832,7 +1060,7 @@ describe("Feature: message-chat-control-plane", () => {
     const sent = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "owner only",
     });
@@ -851,14 +1079,14 @@ describe("Feature: message-chat-control-plane", () => {
   test("Scenario: Given a sender recalls their own durable room message When the recall is authorized Then the same room fact stays in place with recalled truth", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
     const sent = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "draft to withdraw",
       attachments: [{ assetId: "asset-1", kind: "file", name: "draft.txt", mimeType: "text/plain", sizeBytes: 12 }],
@@ -875,11 +1103,11 @@ describe("Feature: message-chat-control-plane", () => {
     expect(recalled.createdAt).toBe(sent.createdAt);
     expect(recalled.updatedAt).toBe(sent.updatedAt + 2);
     expect(recalled.recalledAt).toBe(sent.updatedAt + 2);
-    expect(recalled.recalledByActorId).toBe("auth:owner");
+    expect(recalled.recalledByContactId).toBe("auth:owner");
     expect(recalled.content).toBe("");
     expect(recalled.attachments).toEqual([]);
-    expect(recalled.readActorIds).toEqual(sent.readActorIds);
-    expect(recalled.unreadActorIds).toEqual(sent.unreadActorIds);
+    expect(recalled.readContactIds).toEqual(sent.readContactIds);
+    expect(recalled.unreadContactIds).toEqual(sent.unreadContactIds);
   });
 
   test("Scenario: Given an unread room message is recalled before the receiver reads it When unread state is queried Then active unread truth settles to zero", async () => {
@@ -892,22 +1120,22 @@ describe("Feature: message-chat-control-plane", () => {
       label: "Viewer",
       participantId: "auth:viewer",
     });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
     const sent = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "viewer should not owe recalled work",
     });
 
-    expect(plane.getActorUnreadState("auth:viewer").unreadTotal).toBe(1);
+    expect(plane.getContactUnreadState("auth:viewer").unreadTotal).toBe(1);
     expect(plane.listUnreadRoomSummaries("auth:viewer")).toEqual([
       expect.objectContaining({
-        actorId: "auth:viewer",
+        contactId: "auth:viewer",
         chatId: room.chatId,
         unreadCount: 1,
         latestUnreadRowId: sent.rowId,
@@ -916,7 +1144,7 @@ describe("Feature: message-chat-control-plane", () => {
 
     const recallVersion = plane.getUnreadVersion("auth:viewer");
     const recallWait = plane.waitUnreadCommitted({
-      actorId: "auth:viewer",
+      contactId: "auth:viewer",
       fromVersion: recallVersion,
     });
     const recalled = plane.recallAuthorized({
@@ -927,11 +1155,11 @@ describe("Feature: message-chat-control-plane", () => {
     });
 
     await expect(recallWait.promise).resolves.toMatchObject({
-      actorId: "auth:viewer",
+      contactId: "auth:viewer",
       version: plane.getUnreadVersion("auth:viewer"),
     });
-    expect(recalled.unreadActorIds).toContain("auth:viewer");
-    expect(plane.getActorUnreadState("auth:viewer").unreadTotal).toBe(0);
+    expect(recalled.unreadContactIds).toContain("auth:viewer");
+    expect(plane.getContactUnreadState("auth:viewer").unreadTotal).toBe(0);
     expect(plane.listUnreadRoomSummaries("auth:viewer")).toHaveLength(0);
   });
 
@@ -945,14 +1173,14 @@ describe("Feature: message-chat-control-plane", () => {
       label: "Viewer",
       participantId: "auth:viewer",
     });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
     const older = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "older active unread",
       createdAt: 100,
@@ -960,7 +1188,7 @@ describe("Feature: message-chat-control-plane", () => {
     const newer = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "newer recalled unread",
       createdAt: 200,
@@ -973,10 +1201,10 @@ describe("Feature: message-chat-control-plane", () => {
       recalledAt: 250,
     });
 
-    expect(plane.getActorUnreadState("auth:viewer").unreadTotal).toBe(1);
+    expect(plane.getContactUnreadState("auth:viewer").unreadTotal).toBe(1);
     expect(plane.listUnreadRoomSummaries("auth:viewer")).toEqual([
       expect.objectContaining({
-        actorId: "auth:viewer",
+        contactId: "auth:viewer",
         chatId: room.chatId,
         unreadCount: 1,
         latestUnreadRowId: older.rowId,
@@ -988,14 +1216,14 @@ describe("Feature: message-chat-control-plane", () => {
   test("Scenario: Given a sender recalls the latest durable room message When resolving active latest visible content Then recalled history is excluded only from the active projection", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
     const first = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "stable answer",
       createdAt: 100,
@@ -1003,7 +1231,7 @@ describe("Feature: message-chat-control-plane", () => {
     const second = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "draft to withdraw",
       createdAt: 200,
@@ -1031,7 +1259,7 @@ describe("Feature: message-chat-control-plane", () => {
   test("Scenario: Given a different member tries to recall someone else's durable room message When the recall is authorized Then message-system rejects the mutation", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
@@ -1045,7 +1273,7 @@ describe("Feature: message-chat-control-plane", () => {
     const sent = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "owner only",
     });
@@ -1064,14 +1292,14 @@ describe("Feature: message-chat-control-plane", () => {
   test("Scenario: Given a recalled durable room message When the sender tries to edit it again Then message-system rejects the edit", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
     const sent = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "temporary",
     });
@@ -1092,7 +1320,7 @@ describe("Feature: message-chat-control-plane", () => {
     ).toThrow("cannot edit recalled message");
   });
 
-  test("Scenario: Given a runtime waits on actor unread state When unread room work arrives or settles Then unread summaries and wait handles resolve without polling room rows", async () => {
+  test("Scenario: Given a runtime waits on contact unread state When unread room work arrives or settles Then unread summaries and wait handles resolve without polling room rows", async () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
     const viewer = plane.issueChannelGrantAuthorized({
@@ -1105,29 +1333,29 @@ describe("Feature: message-chat-control-plane", () => {
 
     const initialUnreadVersion = plane.getUnreadVersion("auth:viewer");
     const unreadHandle = plane.waitUnreadCommitted({
-      actorId: "auth:viewer",
+      contactId: "auth:viewer",
       fromVersion: initialUnreadVersion,
     });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
     const sent = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "viewer now has unread work",
     });
 
     await expect(unreadHandle.promise).resolves.toMatchObject({
-      actorId: "auth:viewer",
+      contactId: "auth:viewer",
       version: plane.getUnreadVersion("auth:viewer"),
     });
-    expect(plane.getActorUnreadState("auth:viewer").unreadTotal).toBe(1);
+    expect(plane.getContactUnreadState("auth:viewer").unreadTotal).toBe(1);
     expect(plane.listUnreadRoomSummaries("auth:viewer")).toEqual([
       expect.objectContaining({
-        actorId: "auth:viewer",
+        contactId: "auth:viewer",
         chatId: room.chatId,
         unreadCount: 1,
         latestUnreadRowId: sent.rowId,
@@ -1136,7 +1364,7 @@ describe("Feature: message-chat-control-plane", () => {
 
     const settledVersion = plane.getUnreadVersion("auth:viewer");
     const settledHandle = plane.waitUnreadCommitted({
-      actorId: "auth:viewer",
+      contactId: "auth:viewer",
       fromVersion: settledVersion,
     });
     plane.markChannelReadAuthorized({
@@ -1146,19 +1374,19 @@ describe("Feature: message-chat-control-plane", () => {
     });
 
     await expect(settledHandle.promise).resolves.toMatchObject({
-      actorId: "auth:viewer",
+      contactId: "auth:viewer",
       version: plane.getUnreadVersion("auth:viewer"),
     });
-    expect(plane.getActorUnreadState("auth:viewer").unreadTotal).toBe(0);
+    expect(plane.getContactUnreadState("auth:viewer").unreadTotal).toBe(0);
     expect(plane.listUnreadRoomSummaries("auth:viewer")).toHaveLength(0);
   });
 
-  test("Scenario: Given an actor still has an older unread message When that actor sends a newer room message Then the room read floor does not jump across the unread hole", () => {
+  test("Scenario: Given an contact still has an older unread message When that contact sends a newer room message Then the room read floor does not jump across the unread hole", () => {
     interface MessagePlaneDbProbe {
       db: {
-        getActorRoomState: (
+        getContactRoomState: (
           chatId: string,
-          actorId: `auth:${string}` | `session:${string}` | `system:${string}` | `0x${string}`,
+          contactId: `auth:${string}` | `session:${string}` | `system:${string}` | `0x${string}`,
         ) =>
           | {
               unreadCount: number;
@@ -1178,26 +1406,26 @@ describe("Feature: message-chat-control-plane", () => {
       label: "Viewer",
       participantId: "auth:viewer",
     });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
     const unread = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "viewer still owes a read",
     });
     const outbound = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: viewer.accessToken,
-      senderActorId: "auth:viewer",
+      senderContactId: "auth:viewer",
       from: "viewer",
       content: "viewer sends before reading",
     });
 
-    const beforeReadState = (plane as unknown as MessagePlaneDbProbe).db.getActorRoomState(room.chatId, "auth:viewer");
+    const beforeReadState = (plane as unknown as MessagePlaneDbProbe).db.getContactRoomState(room.chatId, "auth:viewer");
     expect(beforeReadState).toMatchObject({
       unreadCount: 1,
       latestUnreadRowId: unread.rowId,
@@ -1210,7 +1438,7 @@ describe("Feature: message-chat-control-plane", () => {
       messageId: unread.messageId,
     });
 
-    const afterReadState = (plane as unknown as MessagePlaneDbProbe).db.getActorRoomState(room.chatId, "auth:viewer");
+    const afterReadState = (plane as unknown as MessagePlaneDbProbe).db.getContactRoomState(room.chatId, "auth:viewer");
     expect(afterReadState).toMatchObject({
       unreadCount: 0,
       lastReadRowId: outbound.rowId,
@@ -1244,10 +1472,10 @@ describe("Feature: message-chat-control-plane", () => {
         metadata: { topic: "ops" },
       },
     });
-    plane.setActorPresence("auth:bob", true);
-    plane.setActorPresence("auth:alice", true);
+    plane.setContactPresence("auth:bob", true);
+    plane.setContactPresence("auth:alice", true);
 
-    expect(plane.getChannelForActor(room.chatId, "auth:alice")?.metadata?.currentRoomAdminId).toBe("auth:alice");
+    expect(plane.getChannelForContact(room.chatId, "auth:alice")?.metadata?.currentRoomAdminId).toBe("auth:alice");
     expect(() =>
       plane.updateChannelAuthorized({
         chatId: room.chatId,
@@ -1265,8 +1493,8 @@ describe("Feature: message-chat-control-plane", () => {
     expect(pending.assignedAdminId).toBe("auth:alice");
     expect(plane.listPendingAdminWork(room.chatId)[0]?.assignedAdminId).toBe("auth:alice");
 
-    plane.setActorPresence("auth:alice", false);
-    expect(plane.getChannelForActor(room.chatId, "auth:bob")?.metadata?.currentRoomAdminId).toBe("auth:bob");
+    plane.setContactPresence("auth:alice", false);
+    expect(plane.getChannelForContact(room.chatId, "auth:bob")?.metadata?.currentRoomAdminId).toBe("auth:bob");
     expect(plane.listPendingAdminWork(room.chatId)[0]?.assignedAdminId).toBe("auth:bob");
 
     const bobUpdate = plane.updateChannelAuthorized({
@@ -1277,12 +1505,12 @@ describe("Feature: message-chat-control-plane", () => {
     expect(bobUpdate.title).toBe("Bob on duty");
     expect(bobUpdate.metadata?.topic).toBe("ops");
 
-    plane.setActorPresence("auth:alice", true);
-    expect(plane.getChannelForActor(room.chatId, "auth:alice")?.metadata?.currentRoomAdminId).toBe("auth:alice");
+    plane.setContactPresence("auth:alice", true);
+    expect(plane.getChannelForContact(room.chatId, "auth:alice")?.metadata?.currentRoomAdminId).toBe("auth:alice");
     expect(plane.listPendingAdminWork(room.chatId)[0]?.assignedAdminId).toBe("auth:alice");
   });
 
-  test("Scenario: Given multiple room seats When different actors mark the latest visible message Then durable message arrays and seat metadata stay actor-scoped", () => {
+  test("Scenario: Given multiple room seats When different contacts mark the latest visible message Then durable message arrays and seat metadata stay contact-scoped", () => {
     const plane = createPlane();
     const room = createRoom(plane, { chatId: createRoomId() });
     const viewer = plane.issueChannelGrantAuthorized({
@@ -1308,17 +1536,17 @@ describe("Feature: message-chat-control-plane", () => {
       visibleAt: 1_000,
     });
 
-    plane.setActorPresence("auth:owner", true);
-    plane.setActorPresence("auth:viewer", true);
-    plane.setActorPresence("session:relay", true);
-    plane.focusForActor("session:relay", "replace", [room.chatId]);
+    plane.setContactPresence("auth:owner", true);
+    plane.setContactPresence("auth:viewer", true);
+    plane.setContactPresence("session:relay", true);
+    plane.focusForContact("session:relay", "replace", [room.chatId]);
 
     const initial = plane.snapshotAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
     });
     expect(Object.prototype.hasOwnProperty.call(initial.channel, "readProgress")).toBeFalse();
-    expect(initial.channel.seatStates?.map((state) => state.actorId).sort()).toEqual([
+    expect(initial.channel.seatStates?.map((state) => state.contactId).sort()).toEqual([
       "auth:owner",
       "auth:viewer",
       "session:relay",
@@ -1329,34 +1557,34 @@ describe("Feature: message-chat-control-plane", () => {
       accessToken: relay.accessToken,
       messageId: visible.messageId,
     });
-    const relayState = relayRead.seatStates?.find((state) => state.actorId === "session:relay");
+    const relayState = relayRead.seatStates?.find((state) => state.contactId === "session:relay");
     const relayMessage = plane.getMessage(room.chatId, visible.messageId);
     expect(relayState).toMatchObject({
-      actorId: "session:relay",
+      contactId: "session:relay",
       focused: true,
       online: true,
     });
-    expect(relayMessage?.readActorIds).toContain("session:relay");
-    expect(relayMessage?.unreadActorIds).not.toContain("session:relay");
+    expect(relayMessage?.readContactIds).toContain("session:relay");
+    expect(relayMessage?.unreadContactIds).not.toContain("session:relay");
     expect(Object.prototype.hasOwnProperty.call(relayRead, "readProgress")).toBeFalse();
 
     const ownerRead = plane.markChannelReadAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
     });
-    const ownerState = ownerRead.seatStates?.find((state) => state.actorId === "auth:owner");
-    const viewerState = ownerRead.seatStates?.find((state) => state.actorId === "auth:viewer");
+    const ownerState = ownerRead.seatStates?.find((state) => state.contactId === "auth:owner");
+    const viewerState = ownerRead.seatStates?.find((state) => state.contactId === "auth:viewer");
     const ownerMessage = plane.getMessage(room.chatId, visible.messageId);
     expect(ownerState).toMatchObject({
-      actorId: "auth:owner",
+      contactId: "auth:owner",
       online: true,
     });
     expect(viewerState).toMatchObject({
-      actorId: "auth:viewer",
+      contactId: "auth:viewer",
       online: true,
     });
-    expect(ownerMessage?.readActorIds.sort()).toEqual(["auth:owner", "session:relay"]);
-    expect(ownerMessage?.unreadActorIds).toEqual(["auth:viewer"]);
+    expect(ownerMessage?.readContactIds.sort()).toEqual(["auth:owner", "session:relay"]);
+    expect(ownerMessage?.unreadContactIds).toEqual(["auth:viewer"]);
     expect(Object.prototype.hasOwnProperty.call(ownerRead, "readProgress")).toBeFalse();
     expect(
       Object.prototype.hasOwnProperty.call(
@@ -1404,8 +1632,8 @@ describe("Feature: message-chat-control-plane", () => {
       accessToken: viewer.accessToken,
     }).channel;
     expect(Object.prototype.hasOwnProperty.call(projected, "readProgress")).toBeFalse();
-    expect(projected.seatStates?.find((state) => state.actorId === "auth:viewer")).toMatchObject({
-      actorId: "auth:viewer",
+    expect(projected.seatStates?.find((state) => state.contactId === "auth:viewer")).toMatchObject({
+      contactId: "auth:viewer",
       invalidCredential: true,
     });
   });
@@ -1467,7 +1695,7 @@ describe("Feature: message-chat-control-plane", () => {
 
     const rescued = plane.issueChannelGrantAuthorized({
       chatId: room.chatId,
-      superadminActorId: "auth:superadmin",
+      superadminContactId: "auth:superadmin",
       role: "member",
       label: "Recovered member",
       participantId: "session:rescued",
@@ -1521,7 +1749,7 @@ describe("Feature: message-chat-control-plane", () => {
     plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       content: "orphan me",
     });
     plane.close();
@@ -1543,7 +1771,7 @@ describe("Feature: message-chat-control-plane", () => {
     }
   });
 
-  test("Scenario: Given a persisted actor-room unread hole When the control plane reopens Then startup repair recomputes the durable room floor from message truth", () => {
+  test("Scenario: Given a persisted contact-room unread hole When the control plane reopens Then startup repair recomputes the durable room floor from message truth", () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-message-system-repair-"));
     const dbPath = resolveMessageControlDbPath(join(root, ".message"));
     const plane = new MessageControlPlane({ dbPath });
@@ -1555,21 +1783,21 @@ describe("Feature: message-chat-control-plane", () => {
       label: "Viewer",
       participantId: "auth:viewer",
     });
-    const ownerRoom = plane.getChannelForActor(room.chatId, "auth:owner", {
+    const ownerRoom = plane.getChannelForContact(room.chatId, "auth:owner", {
       includeArchived: true,
       touchPresence: false,
     });
     const unread = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: ownerRoom?.accessToken ?? "",
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       from: "owner",
       content: "viewer owes a read",
     });
     const outbound = plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: viewer.accessToken,
-      senderActorId: "auth:viewer",
+      senderContactId: "auth:viewer",
       from: "viewer",
       content: "viewer self-read outbound",
     });
@@ -1578,13 +1806,13 @@ describe("Feature: message-chat-control-plane", () => {
     const corrupted = new Database(dbPath, { create: true, strict: true });
     corrupted
       .query(
-        `update actor_room_state
+        `update contact_room_state
          set unread_count = 1,
              last_read_row_id = ?,
              last_read_at = ?,
              latest_unread_row_id = null,
              latest_unread_at = null
-         where chat_id = ? and actor_id = ?`,
+         where chat_id = ? and contact_id = ?`,
       )
       .run(outbound.rowId, outbound.visibleAt ?? outbound.createdAt, room.chatId, "auth:viewer");
     corrupted.close();
@@ -1592,7 +1820,7 @@ describe("Feature: message-chat-control-plane", () => {
     const repaired = new MessageControlPlane({ dbPath });
     expect(repaired.listUnreadRoomSummaries("auth:viewer")).toEqual([
       expect.objectContaining({
-        actorId: "auth:viewer",
+        contactId: "auth:viewer",
         chatId: room.chatId,
         unreadCount: 1,
         latestUnreadRowId: unread.rowId,
@@ -1604,8 +1832,8 @@ describe("Feature: message-chat-control-plane", () => {
     const repairedRow = verified
       .query(
         `select unread_count, last_read_row_id, latest_unread_row_id
-         from actor_room_state
-         where chat_id = ? and actor_id = ?`,
+         from contact_room_state
+         where chat_id = ? and contact_id = ?`,
       )
       .get(room.chatId, "auth:viewer") as {
       unread_count: number;
@@ -1621,10 +1849,10 @@ describe("Feature: message-chat-control-plane", () => {
     });
   });
 
-  test("Scenario: Given actor-private sources and repeated contact requests When contact truth is managed Then subscriptions stay private and older pending requests are superseded", () => {
+  test("Scenario: Given contact-private sources and repeated contact requests When contact truth is managed Then subscriptions stay private and older pending requests are superseded", () => {
     const plane = createPlane();
     plane.upsertSourceSubscription({
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       sourceId: "remote-b",
       label: "Remote B",
       endpoint: "http://127.0.0.1:4100/",
@@ -1635,7 +1863,7 @@ describe("Feature: message-chat-control-plane", () => {
 
     expect(plane.listSourceSubscriptions("auth:owner")).toEqual([
       expect.objectContaining({
-        ownerActorId: "auth:owner",
+        ownerContactId: "auth:owner",
         sourceId: "remote-b",
         endpoint: "http://127.0.0.1:4100",
         callbackEndpoint: "http://127.0.0.1:4200",
@@ -1644,19 +1872,19 @@ describe("Feature: message-chat-control-plane", () => {
     expect(plane.listSourceSubscriptions("auth:other")).toEqual([]);
 
     const first = plane.createContactRequest({
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       direction: "outbound",
       sourceId: "remote-b",
-      remoteActorId: "auth:bob",
+      remoteContactId: "auth:bob",
       remoteLabel: "Bob",
       callbackSourceId: "local-a",
       callbackEndpoint: "http://127.0.0.1:4200",
     });
     const second = plane.createContactRequest({
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       direction: "outbound",
       sourceId: "remote-b",
-      remoteActorId: "auth:bob",
+      remoteContactId: "auth:bob",
       remoteLabel: "Bob",
       callbackSourceId: "local-a",
       callbackEndpoint: "http://127.0.0.1:4200",
@@ -1669,14 +1897,14 @@ describe("Feature: message-chat-control-plane", () => {
     expect(plane.getContactRequest("auth:owner", second.requestId)).toMatchObject({
       state: "pending",
       sourceId: "remote-b",
-      remoteActorId: "auth:bob",
+      remoteContactId: "auth:bob",
     });
   });
 
   test("Scenario: Given an expired or accepted contact request When contact state is queried Then expiry is materialized and acceptance creates source-scoped contact truth", () => {
     const plane = createPlane();
     plane.upsertSourceSubscription({
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       sourceId: "remote-b",
       label: "Remote B",
       endpoint: "http://127.0.0.1:4100",
@@ -1684,10 +1912,10 @@ describe("Feature: message-chat-control-plane", () => {
     });
 
     const expired = plane.createContactRequest({
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       direction: "outbound",
       sourceId: "remote-b",
-      remoteActorId: "auth:alice",
+      remoteContactId: "auth:alice",
       remoteLabel: "Alice",
       expiresAt: Date.now() - 1_000,
     });
@@ -1696,16 +1924,16 @@ describe("Feature: message-chat-control-plane", () => {
     });
 
     const inbound = plane.createContactRequest({
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       direction: "inbound",
       sourceId: "remote-b",
-      remoteActorId: "auth:bob",
+      remoteContactId: "auth:bob",
       remoteLabel: "Bob",
       remoteSubtitle: "auth:bob",
       remoteIconUrl: "https://example.com/bob.png",
     });
     const accepted = plane.acceptContactRequest({
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       requestId: inbound.requestId,
       localDirectChatId: "0xlocal",
       remoteDirectChatId: "0xremote",
@@ -1714,9 +1942,9 @@ describe("Feature: message-chat-control-plane", () => {
     expect(accepted.request.state).toBe("accepted");
     expect(plane.getContact("auth:owner", "remote-b", "auth:bob")).toEqual(
       expect.objectContaining({
-        ownerActorId: "auth:owner",
+        ownerContactId: "auth:owner",
         sourceId: "remote-b",
-        remoteActorId: "auth:bob",
+        remoteContactId: "auth:bob",
         label: "Bob",
         subtitle: "auth:bob",
         iconUrl: "https://example.com/bob.png",
@@ -1730,13 +1958,13 @@ describe("Feature: message-chat-control-plane", () => {
     const plane = createPlane();
     const admin = generatePrincipalKeyPair();
     const invitee = generatePrincipalKeyPair();
-    plane.setActorPresence(admin.principalId, true);
-    plane.setActorPresence(invitee.principalId, true);
+    plane.setContactPresence(admin.principalId, true);
+    plane.setContactPresence(invitee.principalId, true);
     const room = plane.createChannel({
       chatId: createRoomId(),
       kind: "room",
       owner: "principal-room",
-      bootstrapActorId: admin.principalId,
+      bootstrapContactId: admin.principalId,
       participants: [{ id: admin.principalId, label: "Admin" }],
     });
 
@@ -1748,7 +1976,7 @@ describe("Feature: message-chat-control-plane", () => {
       label: "Room member",
     });
 
-    expect(plane.getChannelForActor(room.chatId, invitee.principalId, { touchPresence: false })).toBeUndefined();
+    expect(plane.getChannelForContact(room.chatId, invitee.principalId, { touchPresence: false })).toBeUndefined();
 
     const accepted = await plane.acceptSeat({
       descriptor: invitation.descriptor.httpUrl ?? invitation.descriptor.deepLink,
@@ -1768,14 +1996,16 @@ describe("Feature: message-chat-control-plane", () => {
     expect(accepted.invitation.status).toBe("accepted");
     expect(accepted.access.accessRole).toBe("member");
     expect(accepted.seat).toMatchObject({
-      actorId: invitee.principalId,
+      contactId: invitee.principalId,
       role: "member",
       label: "Room member",
     });
     expect(
-      plane.getChannelForActor(room.chatId, invitee.principalId, { touchPresence: false })?.seatStates?.find((seat) => seat.actorId === invitee.principalId),
+      plane
+        .getChannelForContact(room.chatId, invitee.principalId, { touchPresence: false })
+        ?.seatStates?.find((seat) => seat.contactId === invitee.principalId),
     ).toMatchObject({
-      actorId: invitee.principalId,
+      contactId: invitee.principalId,
       role: "member",
       label: "Room member",
     });
@@ -1790,13 +2020,15 @@ describe("Feature: message-chat-control-plane", () => {
 
     expect("accessRole" in reconfigured ? reconfigured.accessRole : null).toBe("readonly");
     expect(
-      plane.getChannelForActor(room.chatId, invitee.principalId, { touchPresence: false })?.seatStates?.find((seat) => seat.actorId === invitee.principalId),
+      plane
+        .getChannelForContact(room.chatId, invitee.principalId, { touchPresence: false })
+        ?.seatStates?.find((seat) => seat.contactId === invitee.principalId),
     ).toMatchObject({
-      actorId: invitee.principalId,
+      contactId: invitee.principalId,
       role: "readonly",
       label: "Readonly member",
     });
-    const readonlyProjection = plane.getChannelForActor(room.chatId, invitee.principalId, {
+    const readonlyProjection = plane.getChannelForContact(room.chatId, invitee.principalId, {
       touchPresence: false,
     });
 
@@ -1804,7 +2036,7 @@ describe("Feature: message-chat-control-plane", () => {
       plane.sendAuthorized({
         chatId: room.chatId,
         accessToken: readonlyProjection?.accessToken ?? "",
-        senderActorId: invitee.principalId,
+        senderContactId: invitee.principalId,
         content: "blocked as readonly",
       }),
     ).toThrow("message channel member access required");
@@ -1816,20 +2048,20 @@ describe("Feature: message-chat-control-plane", () => {
         participantId: invitee.principalId,
       }),
     ).toEqual({ ok: true });
-    expect(plane.getChannelForActor(room.chatId, invitee.principalId, { touchPresence: false })).toBeUndefined();
+    expect(plane.getChannelForContact(room.chatId, invitee.principalId, { touchPresence: false })).toBeUndefined();
   });
 
   test("Scenario: Given a pending room admin invitation When the invited principal accepts Then room-native admin-candidate truth is materialized", async () => {
     const plane = createPlane();
     const admin = generatePrincipalKeyPair();
     const invitee = generatePrincipalKeyPair();
-    plane.setActorPresence(admin.principalId, true);
-    plane.setActorPresence(invitee.principalId, true);
+    plane.setContactPresence(admin.principalId, true);
+    plane.setContactPresence(invitee.principalId, true);
     const room = plane.createChannel({
       chatId: createRoomId(),
       kind: "room",
       owner: "principal-room",
-      bootstrapActorId: admin.principalId,
+      bootstrapContactId: admin.principalId,
       participants: [{ id: admin.principalId, label: "Admin" }],
     });
 
@@ -1858,14 +2090,16 @@ describe("Feature: message-chat-control-plane", () => {
 
     expect(accepted.access.accessRole).toBe("admin");
     expect(accepted.seat).toMatchObject({
-      actorId: invitee.principalId,
+      contactId: invitee.principalId,
       role: "admin",
       label: "Room admin",
     });
     expect(
-      plane.getChannelForActor(room.chatId, admin.principalId, { touchPresence: false })?.seatStates?.find((seat) => seat.actorId === invitee.principalId),
+      plane
+        .getChannelForContact(room.chatId, admin.principalId, { touchPresence: false })
+        ?.seatStates?.find((seat) => seat.contactId === invitee.principalId),
     ).toMatchObject({
-      actorId: invitee.principalId,
+      contactId: invitee.principalId,
       role: "admin",
       label: "Room admin",
     });
@@ -1875,13 +2109,13 @@ describe("Feature: message-chat-control-plane", () => {
     const plane = createPlane();
     const admin = generatePrincipalKeyPair();
     const invitee = generatePrincipalKeyPair();
-    plane.setActorPresence(admin.principalId, true);
-    plane.setActorPresence(invitee.principalId, true);
+    plane.setContactPresence(admin.principalId, true);
+    plane.setContactPresence(invitee.principalId, true);
     const room = plane.createChannel({
       chatId: createRoomId(),
       kind: "room",
       owner: "principal-room",
-      bootstrapActorId: admin.principalId,
+      bootstrapContactId: admin.principalId,
       participants: [{ id: admin.principalId, label: "Admin" }],
     });
 
@@ -1991,7 +2225,7 @@ describe("Feature: message-chat-control-plane", () => {
         owner: "ops",
         participants: [{ id: "auth:a" }, { id: "auth:b" }, { id: "auth:c" }],
         metadata: { roomMode: "direct" },
-        bootstrapActorId: "auth:a",
+        bootstrapContactId: "auth:a",
       }),
     ).toThrow("direct room cannot have more than two participants");
   });

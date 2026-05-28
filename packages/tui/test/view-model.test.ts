@@ -101,6 +101,7 @@ describe("Feature: tui view-model mapping", () => {
       globalRoomGrantsById: {},
       globalRoomAssetsById: {},
       globalTerminals: { data: [], loaded: true, loading: false, refreshing: false, error: null, refreshedAt: 1 },
+      globalTerminalIndex: { data: [], loaded: true, loading: false, refreshing: false, error: null, refreshedAt: 1 },
       globalTerminalHistory: { data: [], loaded: true, loading: false, refreshing: false, error: null, refreshedAt: 1 },
       globalTerminalArchive: { data: [], loaded: true, loading: false, refreshing: false, error: null, refreshedAt: 1 },
       globalTerminalGrantsById: {},

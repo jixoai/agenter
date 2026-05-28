@@ -10,7 +10,7 @@ export interface CliShellRoomConsoleInput {
 }
 
 const formatMessage = (message: GlobalRoomMessage): string => {
-  const sender = message.from ?? message.senderActorId ?? "unknown";
+  const sender = message.from ?? message.senderContactId ?? "unknown";
   const text = message.content ?? "";
   return `[${sender}] ${text}`;
 };

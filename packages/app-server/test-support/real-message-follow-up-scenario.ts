@@ -21,13 +21,13 @@ export interface RoomMessageEvidence {
   messageId: number;
   chatId: string;
   from: string;
-  senderActorId?: string;
+  senderContactId?: string;
   content: string;
   createdAt: number;
   updatedAt: number;
   visibleAt?: number;
   recalledAt?: number;
-  recalledByActorId?: string;
+  recalledByContactId?: string;
 }
 
 export interface RootWorkspaceBashRunEvidence {
@@ -68,13 +68,13 @@ const toRoomMessageEvidence = (message: MessageRecord): RoomMessageEvidence => (
   messageId: message.messageId,
   chatId: message.chatId,
   from: message.from,
-  senderActorId: message.senderActorId,
+  senderContactId: message.senderContactId,
   content: message.content,
   createdAt: message.createdAt,
   updatedAt: message.updatedAt,
   visibleAt: message.visibleAt,
   recalledAt: message.recalledAt,
-  recalledByActorId: message.recalledByActorId,
+  recalledByContactId: message.recalledByContactId,
 });
 
 const compareRoomMessages = (left: RoomMessageEvidence, right: RoomMessageEvidence): number => {

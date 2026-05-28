@@ -9,6 +9,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import RuntimeStageAttentionStoryHarness from './runtime-stage-attention.story-harness.svelte';
 
 const baseTimestamp = Date.UTC(2026, 3, 16, 9, 30, 0);
+const storySourceSystemId = '0x0000000000000000000000000000000000000001' as const;
 
 const attentionScores = (scores: Record<string, number>): Record<string, number> => scores;
 
@@ -18,6 +19,8 @@ const channels: MessageChannelEntry[] = [
 		kind: 'room',
 		title: 'Main room',
 		owner: 'message-system',
+		superKey: storySourceSystemId,
+		createdBySystemId: storySourceSystemId,
 		contextId: 'ctx-room-main',
 		participants: [],
 		metadata: {},
@@ -34,6 +37,8 @@ const channels: MessageChannelEntry[] = [
 		kind: 'room',
 		title: 'Relay room',
 		owner: 'message-system',
+		superKey: storySourceSystemId,
+		createdBySystemId: storySourceSystemId,
 		contextId: 'ctx-room-side',
 		participants: [],
 		metadata: {},
@@ -73,7 +78,7 @@ const notifications: SessionNotificationItem[] = [
 		attentionCommitId: 'commit-room-side-1',
 		workspacePath: '/repo/agenter',
 		sessionName: 'attention-demo',
-		content: 'Relay room received a queued follow-up for later handling.',
+		content: 'Relay room has a queued push projection that can be promoted explicitly.',
 		timestamp: baseTimestamp + 6_000,
 	},
 ] ;
@@ -215,10 +220,10 @@ const runtime: RuntimeSnapshotEntry = {
 								src: 'msg:room-side/12',
 							},
 								scores: attentionScores({ relay: 3 }),
-							summary: 'Relay room queued a later follow-up',
+								summary: 'Relay room queued a later push projection',
 							change: {
 								type: 'update',
-								value: 'This room is present as a queued push, not a platform-authored reply obligation.',
+								value: 'This room is present as a queued push projection, not an Attention-owned obligation.',
 							},
 							createdAt: new Date(baseTimestamp + 6_000).toISOString(),
 						},
@@ -289,10 +294,10 @@ const runtime: RuntimeSnapshotEntry = {
 							src: 'watch:room-main',
 						},
 							scores: attentionScores({ follow_up: 2 }),
-						summary: 'Reminder reopened the same room decision',
-						change: {
-							type: 'update',
-							value: 'The generic watch expired and asked the model to re-decide without mutating the room.',
+								summary: 'Legacy watch projection reopened the same room decision',
+							change: {
+								type: 'update',
+								value: 'A legacy watch projection expired and asked the model to re-decide without mutating the room.',
 						},
 						createdAt: new Date(baseTimestamp + 8_000).toISOString(),
 					},
@@ -382,7 +387,7 @@ const runtime: RuntimeSnapshotEntry = {
 				watchId: 'watch-room-main',
 				ownerActionId: 'action-watch-room-main',
 				ownerActionKind: 'message_follow_up',
-				ownerActorId: 'assistant',
+					ownerActorId: 'assistant',
 				ownerCycleId: 17,
 				ownerSessionModelCallId: 117,
 				target: 'room:room-main',
@@ -465,7 +470,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const DeliveryLedgerShowsObjectiveFacts = {
-	name: 'Scenario: Given room attention with a watch reminder and explicit effect When the stage renders Then delivery facts stay separate from queued pushes and scheduler metadata',
+	name: 'Scenario: Given room attention with legacy watch projections and explicit effects When the stage renders Then related projections stay clearly separate from Attention truth',
 	args: {
 		runtime,
 		channels,
@@ -475,17 +480,18 @@ export const DeliveryLedgerShowsObjectiveFacts = {
 		const canvas = within(canvasElement);
 
 		await expect(canvas.getByTestId('runtime-attention-selected-context')).toHaveTextContent('Main room');
-		await expect(canvas.getByTestId('runtime-attention-delivery-ledger')).toHaveTextContent('Current projection');
-		await expect(canvas.getByTestId('runtime-attention-delivery-ledger')).toHaveTextContent('completed');
-		await expect(canvas.getByTestId('runtime-attention-delivery-effects')).toHaveTextContent('message_row_created');
-		await expect(canvas.getByTestId('runtime-attention-delivery-watches')).toHaveTextContent(
-			'message_latest_visible',
-		);
-		await expect(canvas.getByTestId('runtime-attention-queue')).toHaveTextContent(
-			'Relay room received a queued follow-up for later handling.',
-		);
-	},
-} satisfies Story;
+			await expect(canvas.getByTestId('runtime-attention-delivery-ledger')).toHaveTextContent('Current projection');
+			await expect(canvas.getByTestId('runtime-attention-delivery-ledger')).toHaveTextContent('completed');
+			await expect(canvas.getByTestId('runtime-attention-delivery-effects')).toHaveTextContent('message_row_created');
+			await expect(canvas.getByTestId('runtime-attention-delivery-watches')).toHaveTextContent(
+				'message_latest_visible',
+			);
+			await expect(canvas.getByTestId('runtime-attention-queue')).toHaveTextContent(
+				'Relay room has a queued push projection that can be promoted explicitly.',
+			);
+			await expect(canvas.getByTestId('runtime-attention-statusbar')).toHaveTextContent('legacy watch projections');
+		},
+	} satisfies Story;
 
 export const QueueActionsStayExplicitInCompactViewport = {
 	name: 'Scenario: Given the compact runtime attention stage When a queued terminal push is promoted Then visibility and open actions stay explicit on mobile',

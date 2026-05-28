@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { isPrincipalId } from "@agenter/principal-crypto";
 import {
   buildManagedInvitationAcceptPayload,
   buildManagedInvitationShareDescriptor,
@@ -13,13 +12,22 @@ import {
   validateManagedInvitationRecipientBinding,
   verifyManagedInvitationAcceptProof,
 } from "@agenter/managed-seat-invitation-handshake";
+import { AttentionControlPlane } from "@agenter/attention-system";
+import {
+  generatePrincipalKeyPair,
+  isPrincipalId,
+  normalizePrincipalId,
+  type PrincipalId,
+} from "@agenter/principal-crypto";
 import { MessageDb } from "./message-db";
+import { MessageFollowUpRuntime, type MessageFollowUpSink } from "./message-follow-up-runtime";
 import { resolveDefaultMessageControlDbPath } from "./message-paths";
 import type { MessageAuthorizedQueryInput, MessageQueryResult } from "./message-query-types";
 import type {
   CommitWaitHandle,
-  MessageActorId,
-  MessageActorStateRecord,
+  MessageAcceptSeatInput,
+  MessageContactId,
+  MessageContactStateRecord,
   MessageAdminWorkItem,
   MessageAppendInput,
   MessageAuthorizedEditInput,
@@ -32,6 +40,7 @@ import type {
   MessageChannelAccessRole,
   MessageChannelGrantRecord,
   MessageChannelPatchInput,
+  MessageConfigSeatInput,
   MessageContactRecord,
   MessageContactRequestCreateInput,
   MessageContactRequestDirection,
@@ -45,22 +54,24 @@ import type {
   MessageCreateInput,
   MessageEditInput,
   MessageFocusOp,
-  MessageIssueGrantInput,
-  MessageIssuedGrant,
+  MessageFollowUpReminderPresentation,
+  MessageFollowUpRequest,
+  MessageFollowUpTaskRecord,
   MessageInvitationRecord,
   MessageInviteSeatInput,
+  MessageIssueGrantInput,
+  MessageIssuedGrant,
   MessageManagedSeatClass,
   MessageManagedSeatPayload,
-  MessageConfigSeatInput,
-  MessageAcceptSeatInput,
-  MessageRevokeSeatInput,
   MessageParticipant,
   MessageRecallInput,
   MessageRecord,
+  MessageRevokeSeatInput,
   MessageSeatStateProjection,
+  MessageSnapshot,
   MessageSourceSubscriptionInput,
   MessageSourceSubscriptionRecord,
-  MessageSnapshot,
+  MessageSystemIdentity,
   MessageTranscriptPage,
   MessageTransportClientMessage,
   MessageTransportConfig,
@@ -71,6 +82,45 @@ import type {
   ReverseTimeCursor,
 } from "./types";
 
+const truncateFollowUpTitle = (value: string, limit = 64): string => {
+  const trimmed = value.trim();
+  if (trimmed.length <= limit) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, limit - 1)}...`;
+};
+
+const toYamlLikeBlock = (input: Record<string, unknown>): string =>
+  Object.entries(input)
+    .map(([key, value]) => `${key}: ${String(value)}`)
+    .join("\n");
+
+const mdFence = (language: string, value: string): string => `\`\`\`${language}\n${value}\n\`\`\``;
+
+export const buildMessageFollowUpReminderPresentation = (input: {
+  chatId: string;
+  anchorMessageId: number;
+  dueAt: number;
+  messageContent: string;
+}): MessageFollowUpReminderPresentation => {
+  const trimmedContent = input.messageContent.trim();
+  const titleSuffix =
+    trimmedContent.length > 0 ? truncateFollowUpTitle(trimmedContent) : `message ${input.anchorMessageId}`;
+  const metaYaml = toYamlLikeBlock({
+    kind: "message-follow-up-reminder",
+    chatId: input.chatId,
+    anchorMessageId: input.anchorMessageId,
+    dueAt: new Date(input.dueAt).toISOString(),
+  });
+  const body = trimmedContent.length > 0 ? mdFence("text", input.messageContent) : "_empty room message_";
+  return {
+    title: `Re-evaluate room follow-up: ${titleSuffix}`,
+    detailValue: [mdFence("yaml", metaYaml), body].join("\n\n"),
+    detailFormat: "text/markdown",
+    detailKind: "replace",
+  };
+};
+
 interface Waiter {
   afterVersion: number;
   resolve: (value: { version: string }) => void;
@@ -79,22 +129,22 @@ interface Waiter {
 }
 
 interface UnreadWaiter {
-  actorId: MessageActorId;
+  contactId: MessageContactId;
   afterVersion: number;
-  resolve: (value: { actorId: MessageActorId; version: string }) => void;
+  resolve: (value: { contactId: MessageContactId; version: string }) => void;
   reject: (reason: unknown) => void;
   active: boolean;
 }
 
 interface MessageSocketData {
   chatId: string;
-  actorId: string | null;
+  contactId: string | null;
   accessRole: MessageChannelAccessRole;
   accessToken: string;
   cleanup: Array<() => void>;
 }
 
-interface ActorPresence {
+interface ContactPresence {
   online: boolean;
   expiresAt: number | null;
   invalidCredential: boolean;
@@ -118,15 +168,15 @@ interface MessageChannelChangePayload {
   builtIn: boolean;
   roomRevision: string;
   transcriptRevision: string;
-  actorId?: MessageActorId;
+  contactId?: MessageContactId;
 }
 
 const TRUSTED_BOOTSTRAP_LABEL = "Trusted bootstrap";
-const TRUSTED_BOOTSTRAP_PARTICIPANT_ID: MessageActorId = "system:trusted-bootstrap";
+const TRUSTED_BOOTSTRAP_PARTICIPANT_ID: MessageContactId = "system:trusted-bootstrap";
 const ROOM_ADMIN_GROUP_CANDIDATE_IDS_KEY = "roomAdminGroupCandidateIds";
 const ROOM_CURRENT_ADMIN_ID_KEY = "currentRoomAdminId";
 const ROOM_PENDING_ADMIN_WORK_KEY = "pendingAdminWork";
-const TRANSIENT_ACTOR_PRESENCE_TTL_MS = 90_000;
+const TRANSIENT_CONTACT_PRESENCE_TTL_MS = 90_000;
 const DEFAULT_MANAGED_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 const cloneTransport = (input?: MessageTransportConfig): MessageTransportConfig => ({
@@ -158,12 +208,12 @@ const parseVersion = (value?: string | null): number => {
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 const createOpaqueToken = (): string => `msgtok_${randomUUID().replace(/-/g, "")}`;
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
-const LEGACY_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
-const fallbackActorLabel = (actorId: string): string => actorId.split(":").at(-1) ?? actorId;
+const LEGACY_CONTACT_ID_PATTERN = /^(auth|session|system):.+$/;
+const fallbackContactLabel = (contactId: string): string => contactId.split(":").at(-1) ?? contactId;
 
-const isCanonicalActorId = (value: string): value is MessageActorId =>
+const isCanonicalContactId = (value: string): value is MessageContactId =>
   isPrincipalId(value) ||
-  (LEGACY_ACTOR_ID_PATTERN.test(value) &&
+  (LEGACY_CONTACT_ID_PATTERN.test(value) &&
     (value.startsWith("auth:") || value.startsWith("session:") || value.startsWith("system:")));
 
 const normalizeChannelParticipants = (participants?: MessageParticipant[]): MessageParticipant[] | undefined => {
@@ -174,7 +224,7 @@ const normalizeChannelParticipants = (participants?: MessageParticipant[]): Mess
   const normalized: MessageParticipant[] = [];
   for (const participant of participants) {
     const id = participant.id.trim();
-    if (!isCanonicalActorId(id) || seen.has(id)) {
+    if (!isCanonicalContactId(id) || seen.has(id)) {
       continue;
     }
     seen.add(id);
@@ -190,18 +240,18 @@ const normalizeCreateInitialUsers = (
   if (!initialUsers) {
     return undefined;
   }
-  const normalized = new Map<MessageActorId, MessageCreateInitialUserInput>();
+  const normalized = new Map<MessageContactId, MessageCreateInitialUserInput>();
   for (const user of initialUsers) {
-    const actorId = user.actorId.trim();
-    if (!isCanonicalActorId(actorId)) {
-      throw new Error("room initial user actorId must be a principal id or auth:/session:/system: actor id");
+    const contactId = user.contactId.trim();
+    if (!isCanonicalContactId(contactId)) {
+      throw new Error("room initial user contactId must be a principal id or auth:/session:/system: contact id");
     }
-    const current = normalized.get(actorId);
+    const current = normalized.get(contactId);
     const currentRank = current ? roleRank(current.role) : -1;
     const nextRank = roleRank(user.role);
     const label = user.label?.trim() || current?.label;
-    normalized.set(actorId, {
-      actorId,
+    normalized.set(contactId, {
+      contactId,
       label,
       role: nextRank >= currentRank ? user.role : current!.role,
       focused: Boolean(current?.focused || user.focused),
@@ -222,19 +272,19 @@ const mergeParticipantsWithInitialUsers = (
     merged.set(participant.id, participant);
   }
   for (const user of initialUsers ?? []) {
-    merged.set(user.actorId, user.label ? { id: user.actorId, label: user.label } : { id: user.actorId });
+    merged.set(user.contactId, user.label ? { id: user.contactId, label: user.label } : { id: user.contactId });
   }
   return [...merged.values()];
 };
-const remapActorId = (
-  actorId: MessageActorId | undefined,
-  actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
-): MessageActorId | undefined => (actorId ? (actorIdMap.get(actorId) ?? actorId) : undefined);
-const remapActorIds = (
-  actorIds: readonly MessageActorId[],
-  actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
-): MessageActorId[] =>
-  [...new Set(actorIds.map((actorId) => actorIdMap.get(actorId) ?? actorId))].sort((left, right) =>
+const remapContactId = (
+  contactId: MessageContactId | undefined,
+  contactIdMap: ReadonlyMap<MessageContactId, MessageContactId>,
+): MessageContactId | undefined => (contactId ? (contactIdMap.get(contactId) ?? contactId) : undefined);
+const remapContactIds = (
+  contactIds: readonly MessageContactId[],
+  contactIdMap: ReadonlyMap<MessageContactId, MessageContactId>,
+): MessageContactId[] =>
+  [...new Set(contactIds.map((contactId) => contactIdMap.get(contactId) ?? contactId))].sort((left, right) =>
     left.localeCompare(right),
   );
 
@@ -250,17 +300,19 @@ const roleRank = (role: MessageChannelAccessRole): number => {
 
 export class MessageControlPlane {
   private readonly db: MessageDb;
-  private readonly focusedChatIdsByActor = new Map<string, Set<string>>();
-  private readonly actorPresence = new Map<string, ActorPresence>();
+  private readonly followUpRuntime: MessageFollowUpRuntime;
+  private readonly identity: MessageSystemIdentity;
+  private readonly focusedChatIdsByContact = new Map<string, Set<string>>();
+  private readonly contactPresence = new Map<string, ContactPresence>();
   private readonly trustedBootstrapTokens = new Map<string, string>();
   private readonly messageListeners = new Set<(payload: { chatId: string; message: MessageRecord }) => void>();
   private readonly channelChangeListeners = new Set<(payload: MessageChannelChangePayload) => void>();
   private readonly focusListeners = new Set<
-    (payload: { actorId: string; chatIds: string[]; changedChatIds: string[] }) => void
+    (payload: { contactId: string; chatIds: string[]; changedChatIds: string[] }) => void
   >();
   private readonly waiters = new Set<Waiter>();
   private readonly unreadWaiters = new Set<UnreadWaiter>();
-  private readonly unreadVersionByActor = new Map<MessageActorId, number>();
+  private readonly unreadVersionByContact = new Map<MessageContactId, number>();
   private config: MessageControlPlaneConfig;
   private transportServer: Bun.Server<MessageSocketData> | null = null;
   private headVersion = 0;
@@ -269,19 +321,82 @@ export class MessageControlPlane {
     private readonly options: {
       dbPath?: string;
       initialConfig?: MessageControlPlaneConfig;
+      superadminContactId?: PrincipalId;
+      systemId?: PrincipalId;
+      roomManagementRoot?: string;
     } = {},
   ) {
+    const superadminContactId = options.superadminContactId
+      ? normalizePrincipalId(options.superadminContactId)
+      : generatePrincipalKeyPair().principalId;
+    const systemId = normalizePrincipalId(options.systemId ?? superadminContactId);
+    this.identity = {
+      systemId,
+      superadminContactId,
+      defaultLocal: systemId === superadminContactId,
+    };
     this.config = {
       defaultOwner: options.initialConfig?.defaultOwner ?? "agenter",
       transport: cloneTransport(options.initialConfig?.transport),
     };
     this.db = new MessageDb(options.dbPath ?? resolveDefaultMessageControlDbPath());
+    this.followUpRuntime = new MessageFollowUpRuntime({
+      db: this.db,
+      getMessage: (chatId, messageId) => this.db.getMessage(chatId, messageId),
+      resolveLatestActiveVisibleMessage: (chatId) => this.db.resolveLatestActiveVisibleMessage(chatId),
+      commitReminder: async (task) => {
+        const presentation = buildMessageFollowUpReminderPresentation({
+          chatId: task.chatId,
+          anchorMessageId: task.messageId,
+          dueAt: task.dueAt,
+          messageContent: task.message.content,
+        });
+        const plane = new AttentionControlPlane({
+          root: task.attentionRoot,
+        });
+        const result = await plane.commit({
+          context: {
+            contextId: task.attentionContextId,
+            owner: task.attentionOwner,
+          },
+          commit: {
+            ingressType: "commit",
+            contextMutation: "preserve",
+            meta: {
+              author: task.attentionOwner,
+              source: "message",
+              src: `msg:${task.chatId}/${task.messageId}`,
+              tags: ["message", "follow_up_reminder"],
+              createdAt: new Date(task.dueAt).toISOString(),
+            },
+            scores: {
+              [`msg:${task.chatId}/${task.messageId}`]: 100,
+            },
+            summary: presentation.title,
+            change: {
+              type: "update",
+              value: presentation.detailValue,
+              format: presentation.detailFormat,
+            },
+          },
+        });
+        return {
+          reminderContextId: result.context.contextId,
+          reminderCommitId: result.commit.commitId,
+        };
+      },
+    });
+  }
+
+  getSystemIdentity(): MessageSystemIdentity {
+    return { ...this.identity };
   }
 
   close(): void {
     this.stopTransport();
     this.trustedBootstrapTokens.clear();
-    this.unreadVersionByActor.clear();
+    this.unreadVersionByContact.clear();
+    this.followUpRuntime.close();
     this.db.close();
   }
 
@@ -295,68 +410,68 @@ export class MessageControlPlane {
     return () => this.channelChangeListeners.delete(listener);
   }
 
-  onFocus(listener: (payload: { actorId: string; chatIds: string[]; changedChatIds: string[] }) => void): () => void {
+  onFocus(listener: (payload: { contactId: string; chatIds: string[]; changedChatIds: string[] }) => void): () => void {
     this.focusListeners.add(listener);
     return () => this.focusListeners.delete(listener);
   }
 
-  setActorPresence(actorId: MessageActorId, input: { online: boolean; ttlMs?: number } | boolean): void {
-    this.assertActorId(actorId);
+  setContactPresence(contactId: MessageContactId, input: { online: boolean; ttlMs?: number } | boolean): void {
+    this.assertContactId(contactId);
     const online = typeof input === "boolean" ? input : input.online;
     const now = Date.now();
-    const current = this.actorPresence.get(actorId);
+    const current = this.contactPresence.get(contactId);
     if (!online) {
-      this.actorPresence.delete(actorId);
-      this.db.touchActorState(actorId, {
+      this.contactPresence.delete(contactId);
+      this.db.touchContactState(contactId, {
         lastActiveAt: now,
         online: false,
       });
       this.syncAdminAssignments();
       if (current) {
-        this.emitPresenceChanged(actorId);
+        this.emitPresenceChanged(contactId);
       }
       return;
     }
     const ttlMs = typeof input === "boolean" ? undefined : input.ttlMs;
-    this.actorPresence.set(actorId, {
+    this.contactPresence.set(contactId, {
       online: true,
       expiresAt: typeof ttlMs === "number" && ttlMs > 0 ? now + ttlMs : null,
       invalidCredential: current?.invalidCredential ?? false,
     });
-    this.db.touchActorState(actorId, {
+    this.db.touchContactState(contactId, {
       lastActiveAt: now,
       lastLoginAt: current?.online ? undefined : now,
       online: true,
     });
     this.syncAdminAssignments();
     if (!current?.online) {
-      this.emitPresenceChanged(actorId);
+      this.emitPresenceChanged(contactId);
     }
   }
 
-  setCredentialState(actorId: MessageActorId, input: { invalidCredential: boolean }): void {
-    this.assertActorId(actorId);
-    const current = this.actorPresence.get(actorId);
-    this.actorPresence.set(actorId, {
+  setCredentialState(contactId: MessageContactId, input: { invalidCredential: boolean }): void {
+    this.assertContactId(contactId);
+    const current = this.contactPresence.get(contactId);
+    this.contactPresence.set(contactId, {
       online: current?.online ?? false,
       expiresAt: current?.expiresAt ?? null,
       invalidCredential: input.invalidCredential,
     });
     if ((current?.invalidCredential ?? false) !== input.invalidCredential) {
-      this.emitPresenceChanged(actorId);
+      this.emitPresenceChanged(contactId);
     }
   }
 
-  listChannelsForActor(
-    actorId: MessageActorId,
+  listChannelsForContact(
+    contactId: MessageContactId,
     input: { includeArchived?: boolean; touchPresence?: boolean } = {},
   ): MessageControlPlaneEntry[] {
-    this.assertActorId(actorId);
+    this.assertContactId(contactId);
     if (input.touchPresence ?? true) {
-      this.touchActorPresence(actorId);
+      this.touchContactPresence(contactId);
     }
-    const focusedIds = this.getFocusedChatIdsForActor(actorId);
-    return this.db.listActorChannelAccess(actorId, input.includeArchived ?? false).map(({ channel, grant }) =>
+    const focusedIds = this.getFocusedChatIdsForContact(contactId);
+    return this.db.listContactChannelAccess(contactId, input.includeArchived ?? false).map(({ channel, grant }) =>
       this.withProjection(
         {
           ...channel,
@@ -366,24 +481,24 @@ export class MessageControlPlane {
         this.createProjection({
           chatId: channel.chatId,
           accessRole: grant.role,
-          accessToken: grant.accessToken ?? this.issueActorAccessToken(channel.chatId, actorId, grant.role),
-          participantId: grant.participantId as MessageActorId,
+          accessToken: grant.accessToken ?? this.issueContactAccessToken(channel.chatId, contactId, grant.role),
+          participantId: grant.participantId as MessageContactId,
         }),
       ),
     );
   }
 
-  getChannelForActor(
+  getChannelForContact(
     chatId: string,
-    actorId: MessageActorId,
+    contactId: MessageContactId,
     input: { includeArchived?: boolean; touchPresence?: boolean } = {},
   ): MessageControlPlaneEntry | undefined {
-    return this.listChannelsForActor(actorId, input).find((channel) => channel.chatId === chatId);
+    return this.listChannelsForContact(contactId, input).find((channel) => channel.chatId === chatId);
   }
 
   listChannels(input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry[] {
     return this.db
-      .listChannels(this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID), input.includeArchived ?? false)
+      .listChannels(this.getFocusedChatIdsForContact(TRUSTED_BOOTSTRAP_PARTICIPANT_ID), input.includeArchived ?? false)
       .map((channel) =>
         this.withProjection(
           {
@@ -398,7 +513,7 @@ export class MessageControlPlane {
   getChannel(chatId: string, input: { includeArchived?: boolean } = {}): MessageControlPlaneEntry | undefined {
     const channel = this.db.getChannel(
       chatId,
-      this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(chatId),
+      this.getFocusedChatIdsForContact(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(chatId),
     );
     if (!channel) {
       return undefined;
@@ -421,6 +536,14 @@ export class MessageControlPlane {
     return this.db.getMessage(chatId, messageId);
   }
 
+  registerFollowUpSink(ownerSessionId: string, sink: MessageFollowUpSink): () => void {
+    return this.followUpRuntime.registerSink(ownerSessionId, sink);
+  }
+
+  listFollowUpTasks(input: { chatId?: string; ownerSessionId?: string } = {}): MessageFollowUpTaskRecord[] {
+    return this.followUpRuntime.listTasks(input);
+  }
+
   createChannel(input: MessageCreateInput): MessageControlPlaneEntry {
     if (!isPrincipalId(input.chatId)) {
       throw new Error(`invalid room id: ${input.chatId}`);
@@ -436,9 +559,11 @@ export class MessageControlPlane {
         ...input,
         kind: "room",
         owner: input.owner ?? this.config.defaultOwner,
+        superKey: input.superKey ?? this.identity.superadminContactId,
+        systemId: input.systemId ?? this.identity.systemId,
         participants,
       },
-      this.getFocusedChatIdsForActor(input.bootstrapActorId ?? TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(input.chatId),
+      this.getFocusedChatIdsForContact(input.bootstrapContactId ?? TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(input.chatId),
     );
     this.bumpVersion();
     this.emitChannelChanged({
@@ -447,19 +572,19 @@ export class MessageControlPlane {
       builtIn: this.isBuiltInChannelMetadata(channel.metadata),
       roomRevision: channel.roomRevision,
       transcriptRevision: channel.transcriptRevision,
-      actorId: input.bootstrapActorId,
+      contactId: input.bootstrapContactId,
     });
-    const adminProjection = input.bootstrapActorId
-      ? this.ensureActorAccess(input.chatId, input.bootstrapActorId, "admin", input.adminToken)
+    const adminProjection = input.bootstrapContactId
+      ? this.ensureContactAccess(input.chatId, input.bootstrapContactId, "admin", input.adminToken)
       : this.issueTrustedBootstrapAccess(input.chatId, input.adminToken);
-    if (input.bootstrapActorId) {
-      this.focusForActor(input.bootstrapActorId, "add", [input.chatId]);
+    if (input.bootstrapContactId) {
+      this.focusForContact(input.bootstrapContactId, "add", [input.chatId]);
     }
 
     for (const user of initialUsers ?? []) {
-      if (input.bootstrapActorId && user.actorId === input.bootstrapActorId) {
+      if (input.bootstrapContactId && user.contactId === input.bootstrapContactId) {
         if (user.focused) {
-          this.focusForActor(user.actorId, "add", [input.chatId]);
+          this.focusForContact(user.contactId, "add", [input.chatId]);
         }
         continue;
       }
@@ -468,14 +593,14 @@ export class MessageControlPlane {
         accessToken: adminProjection.accessToken,
         role: user.role,
         label: user.label,
-        participantId: user.actorId,
+        participantId: user.contactId,
       });
       if (user.focused) {
         this.focusAuthorized("add", [{ chatId: input.chatId, accessToken: issued.accessToken }]);
       }
     }
 
-    if (input.bootstrapActorId) {
+    if (input.bootstrapContactId) {
       return this.withProjection(
         {
           ...channel,
@@ -495,16 +620,16 @@ export class MessageControlPlane {
   }
 
   focus(op: MessageFocusOp = "replace", chatIds: string[] = []): string[] {
-    return this.focusForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID, op, chatIds);
+    return this.focusForContact(TRUSTED_BOOTSTRAP_PARTICIPANT_ID, op, chatIds);
   }
 
-  focusForActor(actorId: MessageActorId, op: MessageFocusOp = "replace", chatIds: string[] = []): string[] {
-    this.assertActorId(actorId);
+  focusForContact(contactId: MessageContactId, op: MessageFocusOp = "replace", chatIds: string[] = []): string[] {
+    this.assertContactId(contactId);
     const validIds = chatIds.filter((chatId) => {
       const channel = this.db.getChannel(chatId);
       return Boolean(channel) && !channel?.archivedAt;
     });
-    const previous = new Set(this.getFocusedChatIdsForActor(actorId));
+    const previous = new Set(this.getFocusedChatIdsForContact(contactId));
     const current = new Set(previous);
     switch (op) {
       case "add":
@@ -527,7 +652,7 @@ export class MessageControlPlane {
         current.clear();
         break;
     }
-    this.focusedChatIdsByActor.set(actorId, current);
+    this.focusedChatIdsByContact.set(contactId, current);
     const changedChatIds = [
       ...new Set([...previous, ...current].filter((chatId) => previous.has(chatId) !== current.has(chatId))),
     ];
@@ -540,11 +665,11 @@ export class MessageControlPlane {
           reason: "focus",
           builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(chatId)?.metadata),
           ...revisions,
-          actorId,
+          contactId,
         });
       }
     }
-    const payload = { actorId, chatIds: [...current], changedChatIds };
+    const payload = { contactId, chatIds: [...current], changedChatIds };
     for (const listener of this.focusListeners) {
       listener(payload);
     }
@@ -553,8 +678,8 @@ export class MessageControlPlane {
 
   focusAuthorized(op: MessageFocusOp, access: Array<{ chatId: string; accessToken: string }>): string[] {
     const grants = access.map(({ chatId, accessToken }) => this.requireAccess(chatId, accessToken, "readonly"));
-    const actorId = grants[0]?.participantId;
-    if (!actorId || !isCanonicalActorId(actorId)) {
+    const contactId = grants[0]?.participantId;
+    if (!contactId || !isCanonicalContactId(contactId)) {
       return this.focus(
         op,
         grants.map((grant) => grant.chatId),
@@ -563,11 +688,11 @@ export class MessageControlPlane {
     const allowedChatIds = grants
       .map((grant) => grant.chatId)
       .filter((chatId, index, items) => items.indexOf(chatId) === index);
-    return this.focusForActor(actorId as MessageActorId, op, allowedChatIds);
+    return this.focusForContact(contactId as MessageContactId, op, allowedChatIds);
   }
 
-  getFocusedChatIds(actorId: MessageActorId = TRUSTED_BOOTSTRAP_PARTICIPANT_ID): string[] {
-    return [...this.getFocusedChatIdsForActor(actorId)];
+  getFocusedChatIds(contactId: MessageContactId = TRUSTED_BOOTSTRAP_PARTICIPANT_ID): string[] {
+    return [...this.getFocusedChatIdsForContact(contactId)];
   }
 
   private isBuiltInChannelMetadata(metadata: Record<string, unknown> | undefined): boolean {
@@ -581,8 +706,8 @@ export class MessageControlPlane {
         this.requireAccess(requested, input.accessToken, "readonly");
         return [requested];
       }
-      if (input.actorId && !input.superadminActorId) {
-        const room = this.getChannelForActor(requested, input.actorId, {
+      if (input.contactId && !input.superadminContactId) {
+        const room = this.getChannelForContact(requested, input.contactId, {
           includeArchived: false,
           touchPresence: false,
         });
@@ -602,8 +727,8 @@ export class MessageControlPlane {
       throw new Error("message query accessToken only supports a single room");
     }
 
-    if (input.actorId && !input.superadminActorId) {
-      const allowed = this.listChannelsForActor(input.actorId, {
+    if (input.contactId && !input.superadminContactId) {
+      const allowed = this.listChannelsForContact(input.contactId, {
         includeArchived: false,
         touchPresence: false,
       }).map((channel) => channel.chatId);
@@ -638,9 +763,9 @@ export class MessageControlPlane {
     }
   }
 
-  private emitPresenceChanged(actorId: MessageActorId): void {
+  private emitPresenceChanged(contactId: MessageContactId): void {
     const seen = new Set<string>();
-    for (const { channel } of this.db.listActorChannelAccess(actorId, true)) {
+    for (const { channel } of this.db.listContactChannelAccess(contactId, true)) {
       if (seen.has(channel.chatId)) {
         continue;
       }
@@ -651,7 +776,7 @@ export class MessageControlPlane {
         reason: "presence",
         builtIn: this.isBuiltInChannelMetadata(channel.metadata),
         ...revisions,
-        actorId,
+        contactId,
       });
     }
   }
@@ -659,32 +784,36 @@ export class MessageControlPlane {
   send(input: MessageAppendInput): MessageRecord {
     const createdAt = input.createdAt ?? Date.now();
     const visibleAt = input.visibleAt ?? createdAt;
-    const from = input.from?.trim() || (input.senderActorId ? fallbackActorLabel(input.senderActorId) : "User");
+    const from = input.from?.trim() || (input.senderContactId ? fallbackContactLabel(input.senderContactId) : "User");
     const readMembership =
-      input.readActorIds || input.unreadActorIds
+      input.readContactIds || input.unreadContactIds
         ? {
-            readActorIds: input.readActorIds ?? [],
-            unreadActorIds: input.unreadActorIds ?? [],
+            readContactIds: input.readContactIds ?? [],
+            unreadContactIds: input.unreadContactIds ?? [],
           }
-        : this.createInitialReadMembership(input.chatId, input.senderActorId);
+        : this.createInitialReadMembership(input.chatId, input.senderContactId);
     const result = this.db.appendMessageDetailed({
       ...input,
+      sourceSystemId: input.sourceSystemId ?? this.identity.systemId,
       from,
       createdAt,
       visibleAt,
-      readActorIds: readMembership.readActorIds,
-      unreadActorIds: readMembership.unreadActorIds,
+      readContactIds: readMembership.readContactIds,
+      unreadContactIds: readMembership.unreadContactIds,
     });
     if (!result.inserted) {
       return result.message;
     }
     const message = result.message;
+    if (result.followUpTask) {
+      this.followUpRuntime.upsertTask(result.followUpTask);
+    }
     const revisions = this.db.bumpRoomRevision(input.chatId, {
       updatedAt: message.updatedAt,
       transcriptChanged: true,
     });
     this.bumpVersion();
-    this.bumpUnreadVersions(result.readActorIds, result.unreadActorIds);
+    this.bumpUnreadVersions(result.readContactIds, result.unreadContactIds);
     for (const listener of this.messageListeners) {
       listener({ chatId: input.chatId, message });
     }
@@ -719,13 +848,13 @@ export class MessageControlPlane {
   recall(input: MessageRecallInput): MessageRecord {
     // Recall preserves the transcript row as durable history, but it also
     // changes active unread projections; both version streams must be bumped.
-    const { message, unreadChangedActorIds } = this.db.recallMessage(input);
+    const { message, unreadChangedContactIds } = this.db.recallMessage(input);
     const revisions = this.db.bumpRoomRevision(input.chatId, {
       updatedAt: message.updatedAt,
       transcriptChanged: true,
     });
     this.bumpVersion();
-    this.bumpUnreadVersions(unreadChangedActorIds);
+    this.bumpUnreadVersions(unreadChangedContactIds);
     for (const listener of this.messageListeners) {
       listener({ chatId: input.chatId, message });
     }
@@ -738,7 +867,10 @@ export class MessageControlPlane {
     return message;
   }
 
-  sendAuthorized(input: MessageAuthorizedWriteInput): MessageRecord {
+  sendAuthorized(input: MessageAuthorizedWriteInput | (Omit<MessageAuthorizedWriteInput, "accessToken"> & { superKey: PrincipalId })): MessageRecord {
+    if (!("accessToken" in input)) {
+      throw new Error("message channel participant member access required to send");
+    }
     if (input.kind === "error") {
       if (!input.payload?.error) {
         throw new Error("message channel error payload required");
@@ -759,26 +891,54 @@ export class MessageControlPlane {
     }
     const grant = this.requireAccess(input.chatId, input.accessToken, "member");
     const sender = this.resolveAuthorizedSender(input.chatId, grant, input);
-    const readMembership = this.createInitialReadMembership(input.chatId, sender.senderActorId);
+    const readMembership = this.createInitialReadMembership(input.chatId, sender.senderContactId);
     const createdAt = input.createdAt ?? Date.now();
     const visibleAt = input.visibleAt ?? createdAt;
     return this.send({
       chatId: input.chatId,
       ref: input.ref,
       clientMessageId: input.clientMessageId,
-      senderActorId: sender.senderActorId,
+      senderContactId: sender.senderContactId,
       from: sender.from,
       kind: input.kind,
       content: input.content,
       createdAt,
       updatedAt: input.updatedAt ?? createdAt,
       visibleAt,
-      readActorIds: readMembership.readActorIds,
-      unreadActorIds: readMembership.unreadActorIds,
+      readContactIds: readMembership.readContactIds,
+      unreadContactIds: readMembership.unreadContactIds,
       metadata: input.metadata,
+      followUp: input.followUp,
       attachments: input.attachments,
       payload: input.payload,
     });
+  }
+
+  refreshFollowUpAuthorized(input: {
+    chatId: string;
+    accessToken: string;
+    messageId: number;
+    followUp: MessageFollowUpRequest;
+  }): MessageFollowUpTaskRecord {
+    const grant = this.requireAccess(input.chatId, input.accessToken, "member");
+    const target = this.db.getMessage(input.chatId, input.messageId);
+    if (!target) {
+      throw new Error(`unknown message: ${input.messageId}`);
+    }
+    const contactId =
+      grant.participantId && isCanonicalContactId(grant.participantId)
+        ? (grant.participantId as MessageContactId)
+        : undefined;
+    if (contactId && !this.isTrustedBootstrapGrant(grant) && target.senderContactId !== contactId) {
+      throw new Error("message follow-up refresh requires original sender");
+    }
+    const task = this.db.upsertMessageFollowUpTask({
+      chatId: input.chatId,
+      messageId: input.messageId,
+      followUp: input.followUp,
+    });
+    this.followUpRuntime.upsertTask(task);
+    return task;
   }
 
   editAuthorized(input: MessageAuthorizedEditInput): MessageRecord {
@@ -787,11 +947,11 @@ export class MessageControlPlane {
     if (!target) {
       throw new Error(`unknown message: ${input.messageId}`);
     }
-    const editorActorId =
-      grant.participantId && isCanonicalActorId(grant.participantId)
-        ? (grant.participantId as MessageActorId)
+    const editorContactId =
+      grant.participantId && isCanonicalContactId(grant.participantId)
+        ? (grant.participantId as MessageContactId)
         : undefined;
-    if (editorActorId && !this.isTrustedBootstrapGrant(grant) && target.senderActorId !== editorActorId) {
+    if (editorContactId && !this.isTrustedBootstrapGrant(grant) && target.senderContactId !== editorContactId) {
       throw new Error("message edit requires original sender");
     }
     return this.edit(input);
@@ -803,16 +963,16 @@ export class MessageControlPlane {
     if (!target) {
       throw new Error(`unknown message: ${input.messageId}`);
     }
-    const recallActorId =
-      grant.participantId && isCanonicalActorId(grant.participantId)
-        ? (grant.participantId as MessageActorId)
+    const recallContactId =
+      grant.participantId && isCanonicalContactId(grant.participantId)
+        ? (grant.participantId as MessageContactId)
         : undefined;
-    if (recallActorId && !this.isTrustedBootstrapGrant(grant) && target.senderActorId !== recallActorId) {
+    if (recallContactId && !this.isTrustedBootstrapGrant(grant) && target.senderContactId !== recallContactId) {
       throw new Error("message recall requires original sender");
     }
     return this.recall({
       ...input,
-      recalledByActorId: input.recalledByActorId ?? recallActorId,
+      recalledByContactId: input.recalledByContactId ?? recallContactId,
     });
   }
 
@@ -825,21 +985,22 @@ export class MessageControlPlane {
   ): MessageRecord {
     const grant = this.requireAccess(input.chatId, input.accessToken, "admin");
     const sender = this.resolveAuthorizedSender(input.chatId, grant, input);
-    const readMembership = this.createInitialReadMembership(input.chatId, sender.senderActorId);
+    const readMembership = this.createInitialReadMembership(input.chatId, sender.senderContactId);
     return this.send({
       chatId: input.chatId,
       ref: input.ref,
       clientMessageId: input.clientMessageId,
-      senderActorId: sender.senderActorId,
+      senderContactId: sender.senderContactId,
       from: sender.from,
       kind: "error",
       content: input.content,
       createdAt: input.createdAt,
       updatedAt: input.updatedAt,
       visibleAt: input.visibleAt ?? input.createdAt ?? Date.now(),
-      readActorIds: readMembership.readActorIds,
-      unreadActorIds: readMembership.unreadActorIds,
+      readContactIds: readMembership.readContactIds,
+      unreadContactIds: readMembership.unreadContactIds,
       metadata: input.metadata,
+      followUp: input.followUp,
       attachments: input.attachments,
       payload: {
         error: input.payload.error,
@@ -856,21 +1017,22 @@ export class MessageControlPlane {
   ): MessageRecord {
     const grant = this.requireAccess(input.chatId, input.accessToken, "member");
     const sender = this.resolveAuthorizedSender(input.chatId, grant, input);
-    const readMembership = this.createInitialReadMembership(input.chatId, sender.senderActorId);
+    const readMembership = this.createInitialReadMembership(input.chatId, sender.senderContactId);
     return this.send({
       chatId: input.chatId,
       ref: input.ref,
       clientMessageId: input.clientMessageId,
-      senderActorId: sender.senderActorId,
+      senderContactId: sender.senderContactId,
       from: sender.from,
       kind: "interactive",
       content: input.content,
       createdAt: input.createdAt,
       updatedAt: input.updatedAt,
       visibleAt: input.visibleAt ?? input.createdAt ?? Date.now(),
-      readActorIds: readMembership.readActorIds,
-      unreadActorIds: readMembership.unreadActorIds,
+      readContactIds: readMembership.readContactIds,
+      unreadContactIds: readMembership.unreadContactIds,
       metadata: input.metadata,
+      followUp: input.followUp,
       attachments: input.attachments,
       payload: {
         interactive: input.payload.interactive,
@@ -886,11 +1048,7 @@ export class MessageControlPlane {
     return this.sendAuthorized(input);
   }
 
-  queryMessages(input: {
-    chatId: string;
-    before?: ReverseTimeCursor | null;
-    limit?: number;
-  }): MessageTranscriptPage {
+  queryMessages(input: { chatId: string; before?: ReverseTimeCursor | null; limit?: number }): MessageTranscriptPage {
     const page = this.db.pageMessages(input.chatId, { before: input.before, limit: input.limit });
     return {
       ...page,
@@ -925,10 +1083,7 @@ export class MessageControlPlane {
     });
   }
 
-  resolveLatestVisibleMessage(
-    chatId: string,
-    input: { includeRecalled?: boolean } = {},
-  ): MessageRecord | undefined {
+  resolveLatestVisibleMessage(chatId: string, input: { includeRecalled?: boolean } = {}): MessageRecord | undefined {
     return this.db.resolveLatestVisibleMessage(chatId, input);
   }
 
@@ -943,14 +1098,14 @@ export class MessageControlPlane {
     const channel = this.db.getChannel(
       input.chatId,
       grant.participantId
-        ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId)
+        ? this.getFocusedChatIdsForContact(grant.participantId as MessageContactId).has(input.chatId)
         : false,
     );
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
 
-    if (!grant.participantId || !isCanonicalActorId(grant.participantId) || this.isTrustedBootstrapGrant(grant)) {
+    if (!grant.participantId || !isCanonicalContactId(grant.participantId) || this.isTrustedBootstrapGrant(grant)) {
       return this.withProjection(
         {
           ...channel,
@@ -960,7 +1115,7 @@ export class MessageControlPlane {
           chatId: input.chatId,
           accessRole: grant.role,
           accessToken: input.accessToken,
-          participantId: grant.participantId as MessageActorId | undefined,
+          participantId: grant.participantId as MessageContactId | undefined,
         }),
       );
     }
@@ -981,25 +1136,25 @@ export class MessageControlPlane {
           chatId: input.chatId,
           accessRole: grant.role,
           accessToken: input.accessToken,
-          participantId: grant.participantId as MessageActorId,
+          participantId: grant.participantId as MessageContactId,
         }),
       );
     }
     const result = this.db.markMessagesReadUpTo({
       chatId: input.chatId,
-      actorId: grant.participantId as MessageActorId,
+      contactId: grant.participantId as MessageContactId,
       targetRowId: target.rowId,
     });
     if (result.changed) {
       const revisions = this.db.bumpRoomRevision(input.chatId);
       this.bumpVersion();
-      this.bumpUnreadVersion(grant.participantId as MessageActorId);
+      this.bumpUnreadVersion(grant.participantId as MessageContactId);
       this.emitChannelChanged({
         chatId: input.chatId,
         reason: "read",
         builtIn: this.isBuiltInChannelMetadata(channel.metadata),
         ...revisions,
-        actorId: grant.participantId as MessageActorId,
+        contactId: grant.participantId as MessageContactId,
       });
     }
 
@@ -1012,7 +1167,7 @@ export class MessageControlPlane {
         chatId: input.chatId,
         accessRole: grant.role,
         accessToken: input.accessToken,
-        participantId: grant.participantId as MessageActorId,
+        participantId: grant.participantId as MessageContactId,
       }),
     );
   }
@@ -1020,7 +1175,7 @@ export class MessageControlPlane {
   snapshot(chatId: string, limit = 50): MessageSnapshot {
     const snapshot = this.db.snapshot(
       chatId,
-      this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(chatId),
+      this.getFocusedChatIdsForContact(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(chatId),
       limit,
     );
     const revisions = this.db.getRoomRevisionVector(chatId);
@@ -1040,13 +1195,16 @@ export class MessageControlPlane {
     };
   }
 
-  snapshotAuthorized(input: MessageAuthorizedReadInput & { limit?: number }): MessageSnapshot {
-    const grant = this.requireAccess(input.chatId, input.accessToken, "readonly");
+  snapshotAuthorized(input: (MessageAuthorizedReadInput | { chatId: string; superKey: PrincipalId }) & { limit?: number }): MessageSnapshot {
+    const grant =
+      "superKey" in input
+        ? this.requireRoomControl(input.chatId, input.superKey, "readonly")
+        : this.requireAccess(input.chatId, input.accessToken, "readonly");
     const page = this.db.pageMessages(input.chatId, { limit: input.limit });
     const snapshot = this.db.snapshot(
       input.chatId,
       grant.participantId
-        ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId)
+        ? this.getFocusedChatIdsForContact(grant.participantId as MessageContactId).has(input.chatId)
         : false,
       input.limit ?? 50,
     );
@@ -1060,8 +1218,8 @@ export class MessageControlPlane {
         this.createProjection({
           chatId: input.chatId,
           accessRole: grant.role,
-          accessToken: input.accessToken,
-          participantId: grant.participantId as MessageActorId | undefined,
+          accessToken: grant.accessToken ?? ("accessToken" in input ? input.accessToken : ""),
+          participantId: grant.participantId as MessageContactId | undefined,
         }),
       ),
       items: page.items,
@@ -1075,16 +1233,19 @@ export class MessageControlPlane {
   updateChannelAuthorized(input: {
     chatId: string;
     accessToken?: string;
-    superadminActorId?: MessageActorId;
+    superadminContactId?: MessageContactId;
+    superKey?: PrincipalId;
     patch: MessageChannelPatchInput;
   }): MessageControlPlaneEntry {
-    const grant = this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    const grant = input.superKey
+      ? this.requireRoomControl(input.chatId, input.superKey)
+      : this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminContactId);
     const patch = this.normalizeChannelPatch(input.patch, input.chatId);
     const channel = this.db.updateChannel(
       input.chatId,
       patch,
       grant.participantId
-        ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId)
+        ? this.getFocusedChatIdsForContact(grant.participantId as MessageContactId).has(input.chatId)
         : false,
     );
     const revisions = this.db.bumpRoomRevision(input.chatId, {
@@ -1096,7 +1257,7 @@ export class MessageControlPlane {
       reason: "updated",
       builtIn: this.isBuiltInChannelMetadata(channel.metadata),
       ...revisions,
-      actorId: grant.participantId as MessageActorId | undefined,
+      contactId: grant.participantId as MessageContactId | undefined,
     });
     return this.withProjection(
       {
@@ -1107,32 +1268,32 @@ export class MessageControlPlane {
         chatId: input.chatId,
         accessRole: grant.role,
         accessToken: grant.accessToken ?? input.accessToken ?? "",
-        participantId: grant.participantId as MessageActorId | undefined,
+        participantId: grant.participantId as MessageContactId | undefined,
       }),
     );
   }
 
-  repairChannelActorAliases(input: {
+  repairChannelContactAliases(input: {
     chatId: string;
     aliases: Array<{
-      fromActorId: MessageActorId;
-      toActorId: MessageActorId;
+      fromContactId: MessageContactId;
+      toContactId: MessageContactId;
     }>;
   }): MessageControlPlaneEntry | undefined {
-    const actorIdMap = new Map<MessageActorId, MessageActorId>();
+    const contactIdMap = new Map<MessageContactId, MessageContactId>();
     for (const alias of input.aliases) {
-      this.assertActorId(alias.fromActorId);
-      this.assertActorId(alias.toActorId);
-      if (alias.fromActorId !== alias.toActorId) {
-        actorIdMap.set(alias.fromActorId, alias.toActorId);
+      this.assertContactId(alias.fromContactId);
+      this.assertContactId(alias.toContactId);
+      if (alias.fromContactId !== alias.toContactId) {
+        contactIdMap.set(alias.fromContactId, alias.toContactId);
       }
     }
-    const focused = this.getFocusedChatIdsForActor(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(input.chatId);
+    const focused = this.getFocusedChatIdsForContact(TRUSTED_BOOTSTRAP_PARTICIPANT_ID).has(input.chatId);
     const channel = this.db.getChannel(input.chatId, focused);
     if (!channel) {
       return undefined;
     }
-    if (actorIdMap.size === 0) {
+    if (contactIdMap.size === 0) {
       return this.withProjection(
         {
           ...channel,
@@ -1142,11 +1303,11 @@ export class MessageControlPlane {
       );
     }
 
-    const grantsChanged = this.repairActiveGrantsForActorAliases(input.chatId, actorIdMap);
-    const messagesChanged = this.db.repairMessageActorIds(input.chatId, actorIdMap).changed;
-    const roomStateChanged = this.db.repairActorRoomStateAliases(input.chatId, actorIdMap).changed;
-    const nextParticipants = this.repairChannelParticipants(channel.participants, actorIdMap);
-    const nextMetadata = this.withAdminState(input.chatId, this.repairChannelMetadata(channel.metadata, actorIdMap));
+    const grantsChanged = this.repairActiveGrantsForContactAliases(input.chatId, contactIdMap);
+    const messagesChanged = this.db.repairMessageContactIds(input.chatId, contactIdMap).changed;
+    const roomStateChanged = this.db.repairContactRoomStateAliases(input.chatId, contactIdMap).changed;
+    const nextParticipants = this.repairChannelParticipants(channel.participants, contactIdMap);
+    const nextMetadata = this.withAdminState(input.chatId, this.repairChannelMetadata(channel.metadata, contactIdMap));
     const participantsChanged =
       nextParticipants.length !== channel.participants.length ||
       nextParticipants.some((participant, index) => {
@@ -1187,18 +1348,21 @@ export class MessageControlPlane {
   archiveChannelAuthorized(input: {
     chatId: string;
     accessToken?: string;
-    superadminActorId?: MessageActorId;
+    superadminContactId?: MessageContactId;
+    superKey?: PrincipalId;
     archivedBy: string;
   }): MessageControlPlaneEntry {
-    const grant = this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    const grant = input.superKey
+      ? this.requireRoomControl(input.chatId, input.superKey)
+      : this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminContactId);
     const channel = this.db.archiveChannel(
       input.chatId,
       input.archivedBy,
       grant.participantId
-        ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId)
+        ? this.getFocusedChatIdsForContact(grant.participantId as MessageContactId).has(input.chatId)
         : false,
     );
-    for (const focused of this.focusedChatIdsByActor.values()) {
+    for (const focused of this.focusedChatIdsByContact.values()) {
       focused.delete(input.chatId);
     }
     const revisions = this.db.bumpRoomRevision(input.chatId, {
@@ -1210,7 +1374,7 @@ export class MessageControlPlane {
       reason: "archived",
       builtIn: this.isBuiltInChannelMetadata(channel.metadata),
       ...revisions,
-      actorId: grant.participantId as MessageActorId | undefined,
+      contactId: grant.participantId as MessageContactId | undefined,
     });
     return this.withProjection(
       {
@@ -1221,7 +1385,47 @@ export class MessageControlPlane {
         chatId: input.chatId,
         accessRole: grant.role,
         accessToken: grant.accessToken ?? input.accessToken ?? "",
-        participantId: grant.participantId as MessageActorId | undefined,
+        participantId: grant.participantId as MessageContactId | undefined,
+      }),
+    );
+  }
+
+  unarchiveChannelAuthorized(input: {
+    chatId: string;
+    accessToken?: string;
+    superadminContactId?: MessageContactId;
+    superKey?: PrincipalId;
+  }): MessageControlPlaneEntry {
+    const grant = input.superKey
+      ? this.requireRoomControl(input.chatId, input.superKey)
+      : this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminContactId);
+    const channel = this.db.unarchiveChannel(
+      input.chatId,
+      grant.participantId
+        ? this.getFocusedChatIdsForContact(grant.participantId as MessageContactId).has(input.chatId)
+        : false,
+    );
+    const revisions = this.db.bumpRoomRevision(input.chatId, {
+      updatedAt: channel.updatedAt,
+    });
+    this.bumpVersion();
+    this.emitChannelChanged({
+      chatId: input.chatId,
+      reason: "updated",
+      builtIn: this.isBuiltInChannelMetadata(channel.metadata),
+      ...revisions,
+      contactId: grant.participantId as MessageContactId | undefined,
+    });
+    return this.withProjection(
+      {
+        ...channel,
+        metadata: this.withAdminState(channel.chatId, channel.metadata),
+      },
+      this.createProjection({
+        chatId: input.chatId,
+        accessRole: grant.role,
+        accessToken: grant.accessToken ?? input.accessToken ?? "",
+        participantId: grant.participantId as MessageContactId | undefined,
       }),
     );
   }
@@ -1229,34 +1433,37 @@ export class MessageControlPlane {
   deleteChannelAuthorized(input: {
     chatId: string;
     accessToken?: string;
-    superadminActorId?: MessageActorId;
+    superadminContactId?: MessageContactId;
+    superKey?: PrincipalId;
   }): MessageControlPlaneEntry {
-    const grant = this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
-    const affectedActorIds = this.db
+    const grant = input.superKey
+      ? this.requireRoomControl(input.chatId, input.superKey)
+      : this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminContactId);
+    const affectedContactIds = this.db
       .listActiveGrants(input.chatId)
       .flatMap((activeGrant) =>
-        activeGrant.participantId && isCanonicalActorId(activeGrant.participantId)
-          ? [activeGrant.participantId as MessageActorId]
+        activeGrant.participantId && isCanonicalContactId(activeGrant.participantId)
+          ? [activeGrant.participantId as MessageContactId]
           : [],
       );
     const channel = this.db.deleteChannel(
       input.chatId,
       grant.participantId
-        ? this.getFocusedChatIdsForActor(grant.participantId as MessageActorId).has(input.chatId)
+        ? this.getFocusedChatIdsForContact(grant.participantId as MessageContactId).has(input.chatId)
         : false,
     );
-    for (const focused of this.focusedChatIdsByActor.values()) {
+    for (const focused of this.focusedChatIdsByContact.values()) {
       focused.delete(input.chatId);
     }
     this.bumpVersion();
-    this.bumpUnreadVersions(affectedActorIds);
+    this.bumpUnreadVersions(affectedContactIds);
     this.emitChannelChanged({
       chatId: input.chatId,
       reason: "deleted",
       builtIn: this.isBuiltInChannelMetadata(channel.metadata),
       roomRevision: channel.roomRevision,
       transcriptRevision: channel.transcriptRevision,
-      actorId: grant.participantId as MessageActorId | undefined,
+      contactId: grant.participantId as MessageContactId | undefined,
     });
     return this.withProjection(
       {
@@ -1267,24 +1474,24 @@ export class MessageControlPlane {
         chatId: input.chatId,
         accessRole: grant.role,
         accessToken: grant.accessToken ?? input.accessToken ?? "",
-        participantId: grant.participantId as MessageActorId | undefined,
+        participantId: grant.participantId as MessageContactId | undefined,
       }),
     );
   }
 
   listChannelGrantsAuthorized(
-    input: MessageAuthorizedReadInput & { superadminActorId?: MessageActorId },
+    input: MessageAuthorizedReadInput & { superadminContactId?: MessageContactId },
   ): MessageChannelGrantRecord[] {
-    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminContactId);
     return this.db.listActiveGrants(input.chatId).filter((grant) => !this.isTrustedBootstrapGrant(grant));
   }
 
   issueChannelGrantAuthorized(
-    input: MessageAuthorizedReadInput & MessageIssueGrantInput & { superadminActorId?: MessageActorId },
+    input: MessageAuthorizedReadInput & MessageIssueGrantInput & { superadminContactId?: MessageContactId },
   ): MessageIssuedGrant {
-    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
-    if (!input.participantId || !isCanonicalActorId(input.participantId)) {
-      throw new Error("room grant participantId must be a principal id or auth:/session:/system: actor id");
+    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminContactId);
+    if (!input.participantId || !isCanonicalContactId(input.participantId)) {
+      throw new Error("room grant participantId must be a principal id or auth:/session:/system: contact id");
     }
     const accessToken = this.resolveGrantAccessToken(input.accessTokenHint);
     this.db.revokeActiveGrantsByParticipant(input.chatId, input.participantId);
@@ -1296,7 +1503,7 @@ export class MessageControlPlane {
       accessToken,
       tokenHash: hashToken(accessToken),
     });
-    this.db.initializeActorRoomState(input.chatId, input.participantId as MessageActorId);
+    this.db.initializeContactRoomState(input.chatId, input.participantId as MessageContactId);
     const revisions = this.db.bumpRoomRevision(input.chatId);
     this.bumpVersion();
     this.emitChannelChanged({
@@ -1304,7 +1511,7 @@ export class MessageControlPlane {
       reason: "grant-issued",
       builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
       ...revisions,
-      actorId: input.participantId as MessageActorId,
+      contactId: input.participantId as MessageContactId,
     });
     return {
       ...grant,
@@ -1312,26 +1519,26 @@ export class MessageControlPlane {
         chatId: input.chatId,
         accessRole: grant.role,
         accessToken,
-        participantId: grant.participantId as MessageActorId | undefined,
+        participantId: grant.participantId as MessageContactId | undefined,
       }),
     };
   }
 
   revokeChannelGrantAuthorized(
-    input: MessageAuthorizedReadInput & { grantId: string; superadminActorId?: MessageActorId },
+    input: MessageAuthorizedReadInput & { grantId: string; superadminContactId?: MessageContactId },
   ): { ok: boolean } {
-    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminContactId);
     const revokedGrant = this.db.getGrantById(input.chatId, input.grantId);
     const ok = this.db.revokeGrant(input.chatId, input.grantId);
     if (ok) {
-      if (revokedGrant?.participantId && isCanonicalActorId(revokedGrant.participantId)) {
+      if (revokedGrant?.participantId && isCanonicalContactId(revokedGrant.participantId)) {
         const stillGranted = this.db
           .listActiveGrants(input.chatId)
           .some((grant) => grant.participantId === revokedGrant.participantId && grant.grantId !== input.grantId);
         if (!stillGranted) {
-          const cleared = this.db.clearActorRoomState(input.chatId, revokedGrant.participantId as MessageActorId);
+          const cleared = this.db.clearContactRoomState(input.chatId, revokedGrant.participantId as MessageContactId);
           if (cleared.changed) {
-            this.bumpUnreadVersion(revokedGrant.participantId as MessageActorId);
+            this.bumpUnreadVersion(revokedGrant.participantId as MessageContactId);
           }
         }
       }
@@ -1348,14 +1555,14 @@ export class MessageControlPlane {
   }
 
   inviteSeatAuthorized(input: MessageInviteSeatInput): MessageInvitationRecord {
-    const inviter = this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    const inviter = this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminContactId);
     if (!isPrincipalId(input.participantId)) {
       throw new Error("room managed seat participantId must be a principal id");
     }
     const invitationId = createManagedInvitationId();
     const previous = this.db.findLatestInvitationForParticipant({
       chatId: input.chatId,
-      inviteeActorId: input.participantId,
+      inviteeContactId: input.participantId,
     });
     if (previous?.status === "pending") {
       this.db.updateInvitationStatus(input.chatId, previous.invitationId, {
@@ -1369,8 +1576,8 @@ export class MessageControlPlane {
     const invitation = this.db.upsertInvitation({
       invitationId,
       chatId: input.chatId,
-      inviterActorId: this.resolveManagedSeatInviterPrincipalId(inviter.participantId, input.superadminActorId),
-      inviteeActorId: input.participantId,
+      inviterContactId: this.resolveManagedSeatInviterPrincipalId(inviter.participantId, input.superadminContactId),
+      inviteeContactId: input.participantId,
       nativePayload: payload,
       payloadDigest: digestManagedInvitationPayload(payload),
       acceptanceTokenHash: hashManagedInvitationToken(token),
@@ -1388,7 +1595,7 @@ export class MessageControlPlane {
       reason: "grant-issued",
       builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
       ...revisions,
-      actorId: input.participantId,
+      contactId: input.participantId,
     });
     return invitation;
   }
@@ -1442,7 +1649,11 @@ export class MessageControlPlane {
     if (input.proof.payload !== expectedProofPayload) {
       throw new Error("room invitation proof payload digest mismatch");
     }
-    const access = this.activateManagedSeatPayload(invitation.resourceId, invitation.inviteePrincipalId, invitation.payload);
+    const access = this.activateManagedSeatPayload(
+      invitation.resourceId,
+      invitation.inviteePrincipalId,
+      invitation.payload,
+    );
     const accepted = this.db.updateInvitationStatus(invitation.resourceId, invitation.invitationId, {
       status: "accepted",
       acceptedAt: Date.now(),
@@ -1455,18 +1666,22 @@ export class MessageControlPlane {
       reason: "grant-issued",
       builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(invitation.resourceId)?.metadata),
       ...revisions,
-      actorId: invitation.inviteePrincipalId,
+      contactId: invitation.inviteePrincipalId,
     });
     return {
       invitation: accepted,
       access,
-      seat: this.listSeatStateProjections(invitation.resourceId).find((seat) => seat.actorId === invitation.inviteePrincipalId),
+      seat: this.listSeatStateProjections(invitation.resourceId).find(
+        (seat) => seat.contactId === invitation.inviteePrincipalId,
+      ),
     };
   }
 
   configSeatAuthorized(input: MessageConfigSeatInput): MessageInvitationRecord | MessageChannelAccessProjection {
-    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
-    const existing = this.db.listActiveGrants(input.chatId).find((grant) => grant.participantId === input.participantId);
+    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminContactId);
+    const existing = this.db
+      .listActiveGrants(input.chatId)
+      .find((grant) => grant.participantId === input.participantId);
     if (existing) {
       return this.activateManagedSeatPayload(
         input.chatId,
@@ -1478,7 +1693,7 @@ export class MessageControlPlane {
   }
 
   revokeSeatAuthorized(input: MessageRevokeSeatInput): { ok: true } {
-    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminActorId);
+    this.requireAdministrativeGrant(input.chatId, input.accessToken, input.superadminContactId);
     this.db.revokePendingInvitationsByParticipant(input.chatId, input.participantId);
     this.db.revokeActiveGrantsByParticipant(input.chatId, input.participantId);
     const channel = this.db.getChannel(input.chatId);
@@ -1491,7 +1706,7 @@ export class MessageControlPlane {
       });
       this.db.updateChannel(input.chatId, { metadata: nextMetadata }, false);
     }
-    const cleared = this.db.clearActorRoomState(input.chatId, input.participantId);
+    const cleared = this.db.clearContactRoomState(input.chatId, input.participantId);
     if (cleared.changed) {
       this.bumpUnreadVersion(input.participantId);
     }
@@ -1503,77 +1718,81 @@ export class MessageControlPlane {
       reason: "grant-revoked",
       builtIn: this.isBuiltInChannelMetadata(this.db.getChannel(input.chatId)?.metadata),
       ...revisions,
-      actorId: input.participantId,
+      contactId: input.participantId,
     });
     return { ok: true };
   }
 
-  listSourceSubscriptions(ownerActorId: MessageActorId): MessageSourceSubscriptionRecord[] {
-    this.assertActorId(ownerActorId);
-    return this.db.listSourceSubscriptions(ownerActorId);
+  listSourceSubscriptions(ownerContactId: MessageContactId): MessageSourceSubscriptionRecord[] {
+    this.assertContactId(ownerContactId);
+    return this.db.listSourceSubscriptions(ownerContactId);
   }
 
-  getSourceSubscription(ownerActorId: MessageActorId, sourceId: string): MessageSourceSubscriptionRecord | undefined {
-    this.assertActorId(ownerActorId);
-    return this.db.getSourceSubscription(ownerActorId, sourceId);
+  getSourceSubscription(ownerContactId: MessageContactId, sourceId: string): MessageSourceSubscriptionRecord | undefined {
+    this.assertContactId(ownerContactId);
+    return this.db.getSourceSubscription(ownerContactId, sourceId);
   }
 
-  upsertSourceSubscription(input: {
-    ownerActorId: MessageActorId;
-  } & MessageSourceSubscriptionInput): MessageSourceSubscriptionRecord {
-    this.assertActorId(input.ownerActorId);
-    return this.db.upsertSourceSubscription(input.ownerActorId, input);
+  upsertSourceSubscription(
+    input: {
+      ownerContactId: MessageContactId;
+    } & MessageSourceSubscriptionInput,
+  ): MessageSourceSubscriptionRecord {
+    this.assertContactId(input.ownerContactId);
+    return this.db.upsertSourceSubscription(input.ownerContactId, input);
   }
 
-  deleteSourceSubscription(input: { ownerActorId: MessageActorId; sourceId: string }): { ok: boolean } {
-    this.assertActorId(input.ownerActorId);
+  deleteSourceSubscription(input: { ownerContactId: MessageContactId; sourceId: string }): { ok: boolean } {
+    this.assertContactId(input.ownerContactId);
     return {
-      ok: this.db.deleteSourceSubscription(input.ownerActorId, input.sourceId),
+      ok: this.db.deleteSourceSubscription(input.ownerContactId, input.sourceId),
     };
   }
 
-  listContacts(ownerActorId: MessageActorId): MessageContactRecord[] {
-    this.assertActorId(ownerActorId);
-    return this.db.listContacts(ownerActorId);
+  listContacts(ownerContactId: MessageContactId): MessageContactRecord[] {
+    this.assertContactId(ownerContactId);
+    return this.db.listContacts(ownerContactId);
   }
 
   getContact(
-    ownerActorId: MessageActorId,
+    ownerContactId: MessageContactId,
     sourceId: string,
-    remoteActorId: MessageActorId,
+    remoteContactId: MessageContactId,
   ): MessageContactRecord | undefined {
-    this.assertActorId(ownerActorId);
-    this.assertActorId(remoteActorId);
-    return this.db.getContact(ownerActorId, sourceId, remoteActorId);
+    this.assertContactId(ownerContactId);
+    this.assertContactId(remoteContactId);
+    return this.db.getContact(ownerContactId, sourceId, remoteContactId);
   }
 
-  upsertContact(input: { ownerActorId: MessageActorId } & MessageContactUpsertInput): MessageContactRecord {
-    this.assertActorId(input.ownerActorId);
-    this.assertActorId(input.remoteActorId);
-    return this.db.upsertContact(input.ownerActorId, input);
+  upsertContact(input: { ownerContactId: MessageContactId } & MessageContactUpsertInput): MessageContactRecord {
+    this.assertContactId(input.ownerContactId);
+    this.assertContactId(input.remoteContactId);
+    return this.db.upsertContact(input.ownerContactId, input);
   }
 
-  createContactRequest(input: {
-    ownerActorId: MessageActorId;
-  } & MessageContactRequestCreateInput): MessageContactRequestRecord {
-    this.assertActorId(input.ownerActorId);
-    this.assertActorId(input.remoteActorId);
-    if (input.direction === "outbound" && !this.db.getSourceSubscription(input.ownerActorId, input.sourceId)) {
+  createContactRequest(
+    input: {
+      ownerContactId: MessageContactId;
+    } & MessageContactRequestCreateInput,
+  ): MessageContactRequestRecord {
+    this.assertContactId(input.ownerContactId);
+    this.assertContactId(input.remoteContactId);
+    if (input.direction === "outbound" && !this.db.getSourceSubscription(input.ownerContactId, input.sourceId)) {
       throw new Error(`unknown message source subscription: ${input.sourceId}`);
     }
     const currentPending = this.db.findPendingContactRequests({
-      ownerActorId: input.ownerActorId,
+      ownerContactId: input.ownerContactId,
       direction: input.direction,
       sourceId: input.sourceId,
-      remoteActorId: input.remoteActorId,
+      remoteContactId: input.remoteContactId,
     });
-    const created = this.db.createContactRequest(input.ownerActorId, input);
+    const created = this.db.createContactRequest(input.ownerContactId, input);
     for (const pending of currentPending) {
       if (pending.requestId === created.requestId) {
         continue;
       }
       this.db.updateContactRequestState({
-        ownerActorId: input.ownerActorId,
+        ownerContactId: input.ownerContactId,
         requestId: pending.requestId,
         state: "superseded",
         respondedAt: Date.now(),
@@ -1584,24 +1803,26 @@ export class MessageControlPlane {
   }
 
   listContactRequests(
-    ownerActorId: MessageActorId,
+    ownerContactId: MessageContactId,
     input: {
       direction?: MessageContactRequestDirection;
       state?: MessageContactRequestState;
     } = {},
   ): MessageContactRequestRecord[] {
-    this.assertActorId(ownerActorId);
-    return this.db.listContactRequests(ownerActorId, input).map((request) => this.expireContactRequestIfNeeded(request));
+    this.assertContactId(ownerContactId);
+    return this.db
+      .listContactRequests(ownerContactId, input)
+      .map((request) => this.expireContactRequestIfNeeded(request));
   }
 
-  getContactRequest(ownerActorId: MessageActorId, requestId: string): MessageContactRequestRecord | undefined {
-    this.assertActorId(ownerActorId);
-    const current = this.db.getContactRequest(ownerActorId, requestId);
+  getContactRequest(ownerContactId: MessageContactId, requestId: string): MessageContactRequestRecord | undefined {
+    this.assertContactId(ownerContactId);
+    const current = this.db.getContactRequest(ownerContactId, requestId);
     return current ? this.expireContactRequestIfNeeded(current) : undefined;
   }
 
   acceptContactRequest(input: {
-    ownerActorId: MessageActorId;
+    ownerContactId: MessageContactId;
     requestId: string;
     label?: string;
     subtitle?: string;
@@ -1610,18 +1831,18 @@ export class MessageControlPlane {
     remoteDirectChatId?: string;
     metadata?: Record<string, unknown>;
   }): { request: MessageContactRequestRecord; contact: MessageContactRecord } {
-    this.assertActorId(input.ownerActorId);
-    const request = this.requirePendingContactRequest(input.ownerActorId, input.requestId);
+    this.assertContactId(input.ownerContactId);
+    const request = this.requirePendingContactRequest(input.ownerContactId, input.requestId);
     const accepted = this.db.updateContactRequestState({
-      ownerActorId: input.ownerActorId,
+      ownerContactId: input.ownerContactId,
       requestId: input.requestId,
       state: "accepted",
       respondedAt: Date.now(),
     });
-    const contact = this.db.upsertContact(input.ownerActorId, {
+    const contact = this.db.upsertContact(input.ownerContactId, {
       sourceId: request.sourceId,
-      remoteActorId: request.remoteActorId,
-      label: input.label?.trim() || request.remoteLabel || request.remoteActorId,
+      remoteContactId: request.remoteContactId,
+      label: input.label?.trim() || request.remoteLabel || request.remoteContactId,
       subtitle: input.subtitle ?? request.remoteSubtitle,
       iconUrl: input.iconUrl ?? request.remoteIconUrl,
       localDirectChatId: input.localDirectChatId,
@@ -1631,22 +1852,22 @@ export class MessageControlPlane {
     return { request: accepted, contact };
   }
 
-  rejectContactRequest(input: { ownerActorId: MessageActorId; requestId: string }): MessageContactRequestRecord {
-    this.assertActorId(input.ownerActorId);
-    this.requirePendingContactRequest(input.ownerActorId, input.requestId);
+  rejectContactRequest(input: { ownerContactId: MessageContactId; requestId: string }): MessageContactRequestRecord {
+    this.assertContactId(input.ownerContactId);
+    this.requirePendingContactRequest(input.ownerContactId, input.requestId);
     return this.db.updateContactRequestState({
-      ownerActorId: input.ownerActorId,
+      ownerContactId: input.ownerContactId,
       requestId: input.requestId,
       state: "rejected",
       respondedAt: Date.now(),
     });
   }
 
-  revokeContactRequest(input: { ownerActorId: MessageActorId; requestId: string }): MessageContactRequestRecord {
-    this.assertActorId(input.ownerActorId);
-    this.requirePendingContactRequest(input.ownerActorId, input.requestId);
+  revokeContactRequest(input: { ownerContactId: MessageContactId; requestId: string }): MessageContactRequestRecord {
+    this.assertContactId(input.ownerContactId);
+    this.requirePendingContactRequest(input.ownerContactId, input.requestId);
     return this.db.updateContactRequestState({
-      ownerActorId: input.ownerActorId,
+      ownerContactId: input.ownerContactId,
       requestId: input.requestId,
       state: "revoked",
       respondedAt: Date.now(),
@@ -1657,47 +1878,47 @@ export class MessageControlPlane {
     return String(this.headVersion);
   }
 
-  getActorUnreadState(actorId: MessageActorId): MessageActorStateRecord {
-    this.assertActorId(actorId);
-    return this.db.getActorState(actorId) ?? this.db.touchActorState(actorId);
+  getContactUnreadState(contactId: MessageContactId): MessageContactStateRecord {
+    this.assertContactId(contactId);
+    return this.db.getContactState(contactId) ?? this.db.touchContactState(contactId);
   }
 
-  listUnreadRoomSummaries(actorId: MessageActorId, input: { limit?: number } = {}): MessageUnreadRoomSummary[] {
-    this.assertActorId(actorId);
-    return this.db.listUnreadRoomSummaries(actorId, input.limit);
+  listUnreadRoomSummaries(contactId: MessageContactId, input: { limit?: number } = {}): MessageUnreadRoomSummary[] {
+    this.assertContactId(contactId);
+    return this.db.listUnreadRoomSummaries(contactId, input.limit);
   }
 
-  getUnreadVersion(actorId: MessageActorId): string {
-    return String(this.unreadVersionByActor.get(actorId) ?? 0);
+  getUnreadVersion(contactId: MessageContactId): string {
+    return String(this.unreadVersionByContact.get(contactId) ?? 0);
   }
 
   waitUnreadCommitted(input: {
-    actorId: MessageActorId;
+    contactId: MessageContactId;
     fromVersion?: string | null;
-  }): CommitWaitHandle<{ actorId: MessageActorId; version: string }> {
-    this.assertActorId(input.actorId);
+  }): CommitWaitHandle<{ contactId: MessageContactId; version: string }> {
+    this.assertContactId(input.contactId);
     const afterVersion = parseVersion(input.fromVersion);
-    const currentVersion = this.unreadVersionByActor.get(input.actorId) ?? 0;
+    const currentVersion = this.unreadVersionByContact.get(input.contactId) ?? 0;
     if (currentVersion > afterVersion) {
       return {
         promise: Promise.resolve({
-          actorId: input.actorId,
-          version: this.getUnreadVersion(input.actorId),
+          contactId: input.contactId,
+          version: this.getUnreadVersion(input.contactId),
         }),
         reject: () => {},
       };
     }
 
-    let resolveRef: ((value: { actorId: MessageActorId; version: string }) => void) | null = null;
+    let resolveRef: ((value: { contactId: MessageContactId; version: string }) => void) | null = null;
     let rejectRef: ((reason: unknown) => void) | null = null;
     const waiter: UnreadWaiter = {
-      actorId: input.actorId,
+      contactId: input.contactId,
       afterVersion,
       resolve: (value) => resolveRef?.(value),
       reject: (reason) => rejectRef?.(reason),
       active: true,
     };
-    const promise = new Promise<{ actorId: MessageActorId; version: string }>((resolve, reject) => {
+    const promise = new Promise<{ contactId: MessageContactId; version: string }>((resolve, reject) => {
       resolveRef = resolve;
       rejectRef = reject;
     }).finally(() => {
@@ -1829,7 +2050,7 @@ export class MessageControlPlane {
         const upgraded = server.upgrade(request, {
           data: {
             chatId,
-            actorId: grant.participantId ?? null,
+            contactId: grant.participantId ?? null,
             accessRole: grant.role,
             accessToken,
             cleanup: [],
@@ -1839,7 +2060,7 @@ export class MessageControlPlane {
       },
       websocket: {
         open: (socket) => {
-          const { chatId, accessRole, accessToken, actorId } = socket.data;
+          const { chatId, accessRole, accessToken, contactId } = socket.data;
           let snapshot: MessageSnapshot;
           try {
             snapshot = this.snapshotAuthorized({ chatId, accessToken });
@@ -1866,8 +2087,8 @@ export class MessageControlPlane {
             }),
           );
           cleanup.push(
-            this.onFocus(({ actorId: changedActorId, chatIds }) => {
-              if (actorId && changedActorId !== actorId) {
+            this.onFocus(({ contactId: changedContactId, chatIds }) => {
+              if (contactId && changedContactId !== contactId) {
                 return;
               }
               socket.send(
@@ -1974,7 +2195,7 @@ export class MessageControlPlane {
             chatId,
             accessRole: grant.role,
             accessToken: cachedAccessToken,
-            participantId: grant.participantId as MessageActorId | undefined,
+            participantId: grant.participantId as MessageContactId | undefined,
           });
         }
       }
@@ -1992,7 +2213,7 @@ export class MessageControlPlane {
       chatId,
       accessRole: grant.role,
       accessToken,
-      participantId: grant.participantId as MessageActorId | undefined,
+      participantId: grant.participantId as MessageContactId | undefined,
     });
   }
 
@@ -2010,8 +2231,8 @@ export class MessageControlPlane {
     };
   }
 
-  private isTrustedBootstrapActor(actorId: MessageActorId): boolean {
-    return actorId === TRUSTED_BOOTSTRAP_PARTICIPANT_ID;
+  private isTrustedBootstrapContact(contactId: MessageContactId): boolean {
+    return contactId === TRUSTED_BOOTSTRAP_PARTICIPANT_ID;
   }
 
   private isTrustedBootstrapGrant(grant: Pick<MessageChannelGrantRecord, "role" | "label" | "participantId">): boolean {
@@ -2026,13 +2247,13 @@ export class MessageControlPlane {
     chatId: string;
     accessRole: MessageChannelAccessRole;
     accessToken: string;
-    participantId?: MessageActorId;
+    participantId?: MessageContactId;
   }): MessageChannelAccessProjection {
     return {
       accessRole: input.accessRole,
       accessToken: input.accessToken,
       participantId: input.participantId,
-      currentAdmin: input.participantId ? this.resolveCurrentAdminActorId(input.chatId) === input.participantId : false,
+      currentAdmin: input.participantId ? this.resolveCurrentAdminContactId(input.chatId) === input.participantId : false,
       transportUrl: this.getTransportEndpoint(input.chatId, input.accessToken)?.url,
     };
   }
@@ -2049,27 +2270,27 @@ export class MessageControlPlane {
   }
 
   private listSeatStateProjections(chatId: string): MessageSeatStateProjection[] {
-    const currentAdminId = this.resolveCurrentAdminActorId(chatId);
-    const focusedByActor = new Map<string, boolean>();
-    for (const [actorId, focusedIds] of this.focusedChatIdsByActor.entries()) {
+    const currentAdminId = this.resolveCurrentAdminContactId(chatId);
+    const focusedByContact = new Map<string, boolean>();
+    for (const [contactId, focusedIds] of this.focusedChatIdsByContact.entries()) {
       if (focusedIds.has(chatId)) {
-        focusedByActor.set(actorId, true);
+        focusedByContact.set(contactId, true);
       }
     }
     const entries = this.db
       .listActiveGrants(chatId)
-      .filter((grant): grant is MessageChannelGrantRecord & { participantId: MessageActorId } => {
+      .filter((grant): grant is MessageChannelGrantRecord & { participantId: MessageContactId } => {
         return Boolean(grant.participantId) && !this.isTrustedBootstrapGrant(grant);
       })
       .map((grant) => {
-        const presence = this.actorPresence.get(grant.participantId);
+        const presence = this.contactPresence.get(grant.participantId);
         return {
-          actorId: grant.participantId,
+          contactId: grant.participantId,
           role: grant.role,
           label: grant.label,
           currentAdmin: currentAdminId === grant.participantId,
           online: presence?.online ?? false,
-          focused: focusedByActor.get(grant.participantId) ?? false,
+          focused: focusedByContact.get(grant.participantId) ?? false,
           invalidCredential: presence?.invalidCredential ?? false,
         } satisfies MessageSeatStateProjection;
       });
@@ -2081,39 +2302,39 @@ export class MessageControlPlane {
       if (roleDiff !== 0) {
         return roleDiff;
       }
-      return left.actorId.localeCompare(right.actorId);
+      return left.contactId.localeCompare(right.contactId);
     });
   }
 
   private createInitialReadMembership(
     chatId: string,
-    senderActorId?: MessageActorId,
-  ): { readActorIds: MessageActorId[]; unreadActorIds: MessageActorId[] } {
-    const participantActorIds = this.db
+    senderContactId?: MessageContactId,
+  ): { readContactIds: MessageContactId[]; unreadContactIds: MessageContactId[] } {
+    const participantContactIds = this.db
       .listActiveGrants(chatId)
-      .filter((grant): grant is MessageChannelGrantRecord & { participantId: MessageActorId } => {
+      .filter((grant): grant is MessageChannelGrantRecord & { participantId: MessageContactId } => {
         return Boolean(grant.participantId) && !this.isTrustedBootstrapGrant(grant);
       })
       .map((grant) => grant.participantId);
-    const readActorIds = senderActorId && participantActorIds.includes(senderActorId) ? [senderActorId] : [];
+    const readContactIds = senderContactId && participantContactIds.includes(senderContactId) ? [senderContactId] : [];
     return {
-      readActorIds,
-      unreadActorIds: participantActorIds.filter((actorId) => !readActorIds.includes(actorId)),
+      readContactIds,
+      unreadContactIds: participantContactIds.filter((contactId) => !readContactIds.includes(contactId)),
     };
   }
 
   private repairChannelParticipants(
     participants: MessageParticipant[],
-    actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
+    contactIdMap: ReadonlyMap<MessageContactId, MessageContactId>,
   ): MessageParticipant[] {
     return (
       normalizeChannelParticipants(
         participants.map((participant) => ({
           ...participant,
           id:
-            remapActorId(
-              isCanonicalActorId(participant.id) ? (participant.id as MessageActorId) : undefined,
-              actorIdMap,
+            remapContactId(
+              isCanonicalContactId(participant.id) ? (participant.id as MessageContactId) : undefined,
+              contactIdMap,
             ) ?? participant.id,
         })),
       ) ?? []
@@ -2122,13 +2343,13 @@ export class MessageControlPlane {
 
   private repairChannelMetadata(
     metadata: Record<string, unknown> | undefined,
-    actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
+    contactIdMap: ReadonlyMap<MessageContactId, MessageContactId>,
   ): Record<string, unknown> {
-    const candidateIds = remapActorIds(this.readAdminGroupCandidateIds(metadata), actorIdMap);
+    const candidateIds = remapContactIds(this.readAdminGroupCandidateIds(metadata), contactIdMap);
     const pendingAdminWork = this.readPendingAdminWork(metadata).map((item) => ({
       ...item,
-      requestedBy: remapActorId(item.requestedBy, actorIdMap) ?? item.requestedBy,
-      assignedAdminId: remapActorId(item.assignedAdminId, actorIdMap),
+      requestedBy: remapContactId(item.requestedBy, contactIdMap) ?? item.requestedBy,
+      assignedAdminId: remapContactId(item.assignedAdminId, contactIdMap),
     }));
     return {
       ...(metadata ?? {}),
@@ -2137,34 +2358,34 @@ export class MessageControlPlane {
     };
   }
 
-  private repairActiveGrantsForActorAliases(
+  private repairActiveGrantsForContactAliases(
     chatId: string,
-    actorIdMap: ReadonlyMap<MessageActorId, MessageActorId>,
+    contactIdMap: ReadonlyMap<MessageContactId, MessageContactId>,
   ): boolean {
-    if (actorIdMap.size === 0) {
+    if (contactIdMap.size === 0) {
       return false;
     }
     const activeGrants = this.db.listActiveGrants(chatId);
-    const sourceActorIds = new Set<MessageActorId>(
-      [...actorIdMap.keys()].filter((actorId) =>
-        activeGrants.some((grant) => grant.participantId === actorId && !this.isTrustedBootstrapGrant(grant)),
+    const sourceContactIds = new Set<MessageContactId>(
+      [...contactIdMap.keys()].filter((contactId) =>
+        activeGrants.some((grant) => grant.participantId === contactId && !this.isTrustedBootstrapGrant(grant)),
       ),
     );
-    if (sourceActorIds.size === 0) {
+    if (sourceContactIds.size === 0) {
       return false;
     }
-    const targetActorIds = new Set<MessageActorId>(
-      [...sourceActorIds].map((actorId) => actorIdMap.get(actorId)!).filter(Boolean),
+    const targetContactIds = new Set<MessageContactId>(
+      [...sourceContactIds].map((contactId) => contactIdMap.get(contactId)!).filter(Boolean),
     );
-    const grouped = new Map<MessageActorId, MessageChannelGrantRecord[]>();
+    const grouped = new Map<MessageContactId, MessageChannelGrantRecord[]>();
     for (const grant of activeGrants) {
       if (!grant.participantId || this.isTrustedBootstrapGrant(grant)) {
         continue;
       }
-      if (!sourceActorIds.has(grant.participantId) && !targetActorIds.has(grant.participantId)) {
+      if (!sourceContactIds.has(grant.participantId) && !targetContactIds.has(grant.participantId)) {
         continue;
       }
-      const participantId = actorIdMap.get(grant.participantId) ?? grant.participantId;
+      const participantId = contactIdMap.get(grant.participantId) ?? grant.participantId;
       const current = grouped.get(participantId);
       if (current) {
         current.push(grant);
@@ -2218,9 +2439,10 @@ export class MessageControlPlane {
     chatId: string,
     accessToken: string,
     minimumRole: MessageChannelAccessRole,
+    input: { includeArchived?: boolean } = {},
   ): MessageChannelGrantRecord {
-    const channel = this.db.getChannel(chatId);
-    if (!channel || channel.archivedAt) {
+    const channel = this.db.getChannel(chatId, input.includeArchived ?? true);
+    if (!channel) {
       throw new Error("message channel access denied");
     }
     if (!ACCESS_TOKEN_PATTERN.test(accessToken)) {
@@ -2230,8 +2452,8 @@ export class MessageControlPlane {
     if (!grant) {
       throw new Error("message room credential-invalid");
     }
-    if (grant.participantId && isCanonicalActorId(grant.participantId)) {
-      this.touchActorPresence(grant.participantId as MessageActorId);
+    if (grant.participantId && isCanonicalContactId(grant.participantId)) {
+      this.touchContactPresence(grant.participantId as MessageContactId);
     }
     if (roleRank(grant.role) < roleRank(minimumRole)) {
       throw new Error(
@@ -2248,36 +2470,36 @@ export class MessageControlPlane {
   private resolveAuthorizedSender(
     chatId: string,
     grant: MessageChannelGrantRecord,
-    input: Pick<MessageAppendInput, "senderActorId" | "from">,
-  ): { senderActorId?: MessageActorId; from: string } {
-    const senderActorId =
-      input.senderActorId ??
-      (grant.participantId && isCanonicalActorId(grant.participantId) ? grant.participantId : undefined);
+    input: Pick<MessageAppendInput, "senderContactId" | "from">,
+  ): { senderContactId?: MessageContactId; from: string } {
+    const senderContactId =
+      input.senderContactId ??
+      (grant.participantId && isCanonicalContactId(grant.participantId) ? grant.participantId : undefined);
     const channel = this.db.getChannel(chatId);
-    const participantLabel = senderActorId
-      ? channel?.participants.find((participant) => participant.id === senderActorId)?.label?.trim()
+    const participantLabel = senderContactId
+      ? channel?.participants.find((participant) => participant.id === senderContactId)?.label?.trim()
       : undefined;
     const from =
       participantLabel ||
       grant.label?.trim() ||
       input.from?.trim() ||
-      (senderActorId ? fallbackActorLabel(senderActorId) : "User");
-    return { senderActorId, from };
+      (senderContactId ? fallbackContactLabel(senderContactId) : "User");
+    return { senderContactId, from };
   }
 
   private requireAdministrativeGrant(
     chatId: string,
     accessToken?: string,
-    superadminActorId?: MessageActorId,
+    superadminContactId?: MessageContactId,
   ): MessageChannelGrantRecord {
-    if (superadminActorId) {
-      this.assertActorId(superadminActorId);
-      this.touchActorPresence(superadminActorId);
+    if (superadminContactId) {
+      this.assertContactId(superadminContactId);
+      this.touchContactPresence(superadminContactId);
       return {
-        grantId: `superadmin:${superadminActorId}`,
+        grantId: `superadmin:${superadminContactId}`,
         chatId,
         role: "admin",
-        participantId: superadminActorId,
+        participantId: superadminContactId,
         accessToken: "",
         createdAt: Date.now(),
       };
@@ -2285,12 +2507,31 @@ export class MessageControlPlane {
     if (!accessToken) {
       throw new Error("message channel admin access required");
     }
-    const grant = this.requireAccess(chatId, accessToken, "admin");
-    const currentAdminId = this.resolveCurrentAdminActorId(chatId);
+    const grant = this.requireAccess(chatId, accessToken, "admin", { includeArchived: true });
+    const currentAdminId = this.resolveCurrentAdminContactId(chatId);
     if (currentAdminId && grant.participantId !== currentAdminId) {
       throw new Error("message room current-admin required");
     }
     return grant;
+  }
+
+  private requireRoomControl(
+    chatId: string,
+    superKey: PrincipalId,
+    role: MessageChannelAccessRole = "admin",
+  ): MessageChannelGrantRecord {
+    const normalizedSuperKey = normalizePrincipalId(superKey);
+    const channel = this.db.getChannel(chatId, true);
+    if (!channel || channel.superKey !== normalizedSuperKey) {
+      throw new Error("message room superKey control required");
+    }
+    return {
+      grantId: `room-super-key:${chatId}:${normalizedSuperKey}`,
+      chatId,
+      role,
+      accessToken: "",
+      createdAt: Date.now(),
+    };
   }
 
   private resolveGrantAccessToken(input: string | undefined): string {
@@ -2315,9 +2556,9 @@ export class MessageControlPlane {
     return value;
   }
 
-  private assertActorId(actorId: string): void {
-    if (!isCanonicalActorId(actorId)) {
-      throw new Error(`invalid actor id: ${actorId}`);
+  private assertContactId(contactId: string): void {
+    if (!isCanonicalContactId(contactId)) {
+      throw new Error(`invalid contact id: ${contactId}`);
     }
   }
 
@@ -2326,18 +2567,15 @@ export class MessageControlPlane {
       return request;
     }
     return this.db.updateContactRequestState({
-      ownerActorId: request.ownerActorId,
+      ownerContactId: request.ownerContactId,
       requestId: request.requestId,
       state: "expired",
       respondedAt: request.expiresAt,
     });
   }
 
-  private requirePendingContactRequest(
-    ownerActorId: MessageActorId,
-    requestId: string,
-  ): MessageContactRequestRecord {
-    const current = this.db.getContactRequest(ownerActorId, requestId);
+  private requirePendingContactRequest(ownerContactId: MessageContactId, requestId: string): MessageContactRequestRecord {
+    const current = this.db.getContactRequest(ownerContactId, requestId);
     if (!current) {
       throw new Error(`unknown contact request: ${requestId}`);
     }
@@ -2348,51 +2586,51 @@ export class MessageControlPlane {
     return next;
   }
 
-  private getFocusedChatIdsForActor(actorId: string): Set<string> {
-    let focused = this.focusedChatIdsByActor.get(actorId);
+  private getFocusedChatIdsForContact(contactId: string): Set<string> {
+    let focused = this.focusedChatIdsByContact.get(contactId);
     if (!focused) {
       focused = new Set<string>();
-      this.focusedChatIdsByActor.set(actorId, focused);
+      this.focusedChatIdsByContact.set(contactId, focused);
     }
     return focused;
   }
 
-  private touchActorPresence(actorId: MessageActorId): void {
+  private touchContactPresence(contactId: MessageContactId): void {
     const now = Date.now();
-    const current = this.actorPresence.get(actorId);
-    this.actorPresence.set(actorId, {
+    const current = this.contactPresence.get(contactId);
+    this.contactPresence.set(contactId, {
       online: true,
-      expiresAt: actorId.startsWith("auth:") ? now + TRANSIENT_ACTOR_PRESENCE_TTL_MS : (current?.expiresAt ?? null),
+      expiresAt: contactId.startsWith("auth:") ? now + TRANSIENT_CONTACT_PRESENCE_TTL_MS : (current?.expiresAt ?? null),
       invalidCredential: current?.invalidCredential ?? false,
     });
-    this.db.touchActorState(actorId, {
+    this.db.touchContactState(contactId, {
       lastActiveAt: now,
       lastLoginAt: current?.online ? undefined : now,
       online: true,
     });
     this.syncAdminAssignments();
     if (!current?.online) {
-      this.emitPresenceChanged(actorId);
+      this.emitPresenceChanged(contactId);
     }
   }
 
-  private ensureActorAccess(
+  private ensureContactAccess(
     chatId: string,
-    actorId: MessageActorId,
+    contactId: MessageContactId,
     role: MessageChannelAccessRole,
     preferredToken?: string,
     label?: string,
   ): MessageChannelAccessProjection {
-    this.assertActorId(actorId);
-    if (!this.isTrustedBootstrapActor(actorId)) {
-      this.db.initializeActorRoomState(chatId, actorId);
+    this.assertContactId(contactId);
+    if (!this.isTrustedBootstrapContact(contactId)) {
+      this.db.initializeContactRoomState(chatId, contactId);
     }
-    const existing = this.db.findReusableGrant({ chatId, role, participantId: actorId });
+    const existing = this.db.findReusableGrant({ chatId, role, participantId: contactId });
     if (existing?.accessToken) {
       if ((existing.label ?? undefined) !== label) {
         this.db.updateGrant(chatId, existing.grantId, {
           role: existing.role,
-          participantId: actorId,
+          participantId: contactId,
           label,
         });
       }
@@ -2400,16 +2638,16 @@ export class MessageControlPlane {
         chatId,
         accessRole: existing.role,
         accessToken: existing.accessToken,
-        participantId: actorId,
+        participantId: contactId,
       });
     }
     const accessToken = this.resolveGrantAccessToken(preferredToken);
-    this.db.revokeActiveGrantsByParticipant(chatId, actorId);
+    this.db.revokeActiveGrantsByParticipant(chatId, contactId);
     const grant = this.db.issueGrant({
       chatId,
       role,
       label,
-      participantId: actorId,
+      participantId: contactId,
       accessToken,
       tokenHash: hashToken(accessToken),
     });
@@ -2417,7 +2655,7 @@ export class MessageControlPlane {
       chatId,
       accessRole: grant.role,
       accessToken,
-      participantId: actorId,
+      participantId: contactId,
     });
   }
 
@@ -2450,20 +2688,20 @@ export class MessageControlPlane {
 
   private activateManagedSeatPayload(
     chatId: string,
-    actorId: MessageActorId,
+    contactId: MessageContactId,
     payload: MessageManagedSeatPayload,
   ): MessageChannelAccessProjection {
-    const access = this.ensureActorAccess(chatId, actorId, payload.role, undefined, payload.label);
+    const access = this.ensureContactAccess(chatId, contactId, payload.role, undefined, payload.label);
     const channel = this.db.getChannel(chatId);
     if (channel && payload.role === "admin") {
       const currentCandidates = this.readAdminGroupCandidateIds(channel.metadata);
-      if (!currentCandidates.includes(actorId)) {
+      if (!currentCandidates.includes(contactId)) {
         this.db.updateChannel(
           chatId,
           {
             metadata: this.withAdminState(chatId, {
               ...(channel.metadata ?? {}),
-              [ROOM_ADMIN_GROUP_CANDIDATE_IDS_KEY]: [...currentCandidates, actorId],
+              [ROOM_ADMIN_GROUP_CANDIDATE_IDS_KEY]: [...currentCandidates, contactId],
             }),
           },
           false,
@@ -2474,18 +2712,18 @@ export class MessageControlPlane {
   }
 
   private resolveManagedSeatInviterPrincipalId(
-    actorId: string | undefined,
-    superadminActorId?: MessageActorId,
+    contactId: string | undefined,
+    superadminContactId?: MessageContactId,
   ): MessageInvitationRecord["inviterPrincipalId"] {
-    const candidate = (actorId ?? superadminActorId)?.trim();
+    const candidate = (contactId ?? superadminContactId)?.trim();
     if (!candidate || !isPrincipalId(candidate)) {
       throw new Error("room managed invitation inviter must resolve to a principal id");
     }
     return candidate;
   }
 
-  private issueActorAccessToken(chatId: string, actorId: MessageActorId, role: MessageChannelAccessRole): string {
-    return this.ensureActorAccess(chatId, actorId, role).accessToken;
+  private issueContactAccessToken(chatId: string, contactId: MessageContactId, role: MessageChannelAccessRole): string {
+    return this.ensureContactAccess(chatId, contactId, role).accessToken;
   }
 
   private normalizeChannelPatch(patch: MessageChannelPatchInput, chatId: string): MessageChannelPatchInput {
@@ -2525,7 +2763,7 @@ export class MessageControlPlane {
   }
 
   private withAdminState(chatId: string, metadata: Record<string, unknown> | undefined): Record<string, unknown> {
-    const currentAdminId = this.resolveCurrentAdminActorId(chatId, metadata);
+    const currentAdminId = this.resolveCurrentAdminContactId(chatId, metadata);
     const pendingAdminWork = this.reassignPendingAdminWork(chatId, metadata, currentAdminId);
     return {
       ...(metadata ?? {}),
@@ -2534,30 +2772,30 @@ export class MessageControlPlane {
     };
   }
 
-  private resolveCurrentAdminActorId(chatId: string, metadata?: Record<string, unknown>): MessageActorId | null {
+  private resolveCurrentAdminContactId(chatId: string, metadata?: Record<string, unknown>): MessageContactId | null {
     const channel = metadata ? { metadata } : this.db.getChannel(chatId);
     const candidateIds = this.readAdminGroupCandidateIds(channel?.metadata);
     if (candidateIds.length === 0) {
       return null;
     }
     this.pruneExpiredPresence();
-    for (const actorId of candidateIds) {
-      const presence = this.actorPresence.get(actorId);
+    for (const contactId of candidateIds) {
+      const presence = this.contactPresence.get(contactId);
       if (presence?.online) {
-        return actorId;
+        return contactId;
       }
     }
     return null;
   }
 
-  private readAdminGroupCandidateIds(metadata: Record<string, unknown> | undefined): MessageActorId[] {
+  private readAdminGroupCandidateIds(metadata: Record<string, unknown> | undefined): MessageContactId[] {
     const candidates = metadata?.[ROOM_ADMIN_GROUP_CANDIDATE_IDS_KEY];
     if (!Array.isArray(candidates)) {
       return [];
     }
     return candidates
-      .filter((value): value is string => typeof value === "string" && isCanonicalActorId(value))
-      .map((value) => value as MessageActorId);
+      .filter((value): value is string => typeof value === "string" && isCanonicalContactId(value))
+      .map((value) => value as MessageContactId);
   }
 
   private readPendingAdminWork(metadata: Record<string, unknown> | undefined): MessageAdminWorkItem[] {
@@ -2573,7 +2811,7 @@ export class MessageControlPlane {
   private reassignPendingAdminWork(
     chatId: string,
     metadata: Record<string, unknown> | undefined,
-    currentAdminId: MessageActorId | null,
+    currentAdminId: MessageContactId | null,
   ): MessageAdminWorkItem[] {
     return this.readPendingAdminWork(metadata).map((item) => ({
       ...item,
@@ -2583,7 +2821,7 @@ export class MessageControlPlane {
 
   queueAdminWork(input: {
     chatId: string;
-    requestedBy: MessageActorId;
+    requestedBy: MessageContactId;
     kind: MessageAdminWorkItem["kind"];
     payload?: Record<string, unknown>;
   }): MessageAdminWorkItem {
@@ -2592,7 +2830,7 @@ export class MessageControlPlane {
       throw new Error(`unknown room: ${input.chatId}`);
     }
     const metadata = channel.metadata ?? {};
-    const currentAdminId = this.resolveCurrentAdminActorId(input.chatId, metadata);
+    const currentAdminId = this.resolveCurrentAdminContactId(input.chatId, metadata);
     const item: MessageAdminWorkItem = {
       workId: `room-work-${randomUUID()}`,
       kind: input.kind,
@@ -2613,7 +2851,7 @@ export class MessageControlPlane {
       reason: "updated",
       builtIn: this.isBuiltInChannelMetadata(channel.metadata),
       ...revisions,
-      actorId: input.requestedBy,
+      contactId: input.requestedBy,
     });
     return item;
   }
@@ -2625,9 +2863,9 @@ export class MessageControlPlane {
 
   private pruneExpiredPresence(): void {
     const now = Date.now();
-    for (const [actorId, presence] of [...this.actorPresence.entries()]) {
+    for (const [contactId, presence] of [...this.contactPresence.entries()]) {
       if (presence.expiresAt !== null && presence.expiresAt <= now) {
-        this.actorPresence.delete(actorId);
+        this.contactPresence.delete(contactId);
       }
     }
   }
@@ -2660,31 +2898,31 @@ export class MessageControlPlane {
     }
   }
 
-  private bumpUnreadVersions(...actorGroups: ReadonlyArray<readonly MessageActorId[]>): void {
-    const uniqueActorIds = new Set<MessageActorId>();
-    for (const actorIds of actorGroups) {
-      for (const actorId of actorIds) {
-        if (isCanonicalActorId(actorId) && !this.isTrustedBootstrapActor(actorId)) {
-          uniqueActorIds.add(actorId);
+  private bumpUnreadVersions(...contactGroups: ReadonlyArray<readonly MessageContactId[]>): void {
+    const uniqueContactIds = new Set<MessageContactId>();
+    for (const contactIds of contactGroups) {
+      for (const contactId of contactIds) {
+        if (isCanonicalContactId(contactId) && !this.isTrustedBootstrapContact(contactId)) {
+          uniqueContactIds.add(contactId);
         }
       }
     }
-    for (const actorId of uniqueActorIds) {
-      this.bumpUnreadVersion(actorId);
+    for (const contactId of uniqueContactIds) {
+      this.bumpUnreadVersion(contactId);
     }
   }
 
-  private bumpUnreadVersion(actorId: MessageActorId): void {
-    const nextVersion = (this.unreadVersionByActor.get(actorId) ?? 0) + 1;
-    this.unreadVersionByActor.set(actorId, nextVersion);
+  private bumpUnreadVersion(contactId: MessageContactId): void {
+    const nextVersion = (this.unreadVersionByContact.get(contactId) ?? 0) + 1;
+    this.unreadVersionByContact.set(contactId, nextVersion);
     for (const waiter of [...this.unreadWaiters]) {
-      if (!waiter.active || waiter.actorId !== actorId || nextVersion <= waiter.afterVersion) {
+      if (!waiter.active || waiter.contactId !== contactId || nextVersion <= waiter.afterVersion) {
         continue;
       }
       waiter.active = false;
       this.unreadWaiters.delete(waiter);
       waiter.resolve({
-        actorId,
+        contactId,
         version: String(nextVersion),
       });
     }

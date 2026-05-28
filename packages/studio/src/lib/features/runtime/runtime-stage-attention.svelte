@@ -183,6 +183,24 @@
 			contextId: selectedContextId,
 		}),
 	);
+	const selectedContextStatusBar = $derived.by(() => {
+		if (!selectedContext) {
+			return `Contexts ${filteredContextItems.length} · Queue ${filteredQueueItems.length} · Hooks ${filteredHooks.length}`;
+		}
+		const parts = [
+			selectedContext.source === 'active' ? 'Active' : 'Tracked',
+			selectedContext.commitLabel,
+			`${selectedDeliveryReceipts.length} receipts`,
+			`${selectedDeliveryEffects.length} effects`,
+		];
+		if (selectedQueue) {
+			parts.push('queued push selected');
+		}
+		if (selectedWatchItems.length > 0) {
+			parts.push(`${selectedWatchItems.length} legacy watch projections`);
+		}
+		return parts.join(' · ');
+	});
 	const focusedStackItems = $derived(
 		activeContextItems.filter((item) => item.contextId !== selectedContextId),
 	);
@@ -398,8 +416,8 @@
 					<Card.Title>{activeContextItems.length > 0 ? 'Focused stack' : 'Tracked contexts'}</Card.Title>
 					<Card.Description>
 						{activeContextItems.length > 0
-							? 'Contexts below the selected one remain active but subordinate.'
-							: 'When no focused stack exists, tracked contexts remain available for inspection.'}
+							? 'The selected context is the current anchor. Other active and tracked contexts stay visible here instead of disappearing.'
+							: 'Tracked contexts remain visible here even when they are not the current anchor.'}
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="grid gap-2 pt-6" data-testid="runtime-attention-context-stack">
@@ -438,9 +456,9 @@
 
 			<Card.Root>
 				<Card.Header class="border-b">
-					<Card.Title>Queued push inbox</Card.Title>
+					<Card.Title>Queued context pushes</Card.Title>
 					<Card.Description>
-						Background notifications stay compact here until they are focused or consumed.
+						These are notification projections attached to attention contexts. They are not standalone Attention truth.
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="grid gap-2 pt-6" data-testid="runtime-attention-queue">
@@ -466,7 +484,7 @@
 						{/each}
 					{:else}
 						<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-							{hasSearchQuery ? `No queued pushes match “${searchQuery.trim()}”.` : 'No queued push notifications are waiting.'}
+							{hasSearchQuery ? `No queued context pushes match “${searchQuery.trim()}”.` : 'No queued context push is waiting.'}
 						</div>
 					{/if}
 				</Card.Content>
@@ -474,9 +492,9 @@
 
 			<Card.Root data-testid="runtime-attention-delivery-ledger">
 				<Card.Header class="border-b">
-					<Card.Title>Delivery ledger</Card.Title>
+					<Card.Title>Context projections</Card.Title>
 					<Card.Description>
-						Hook outcomes stay separate. This section shows projections, dispatch attempts, stream receipts, watch reminders, and explicit external effects.
+						This panel shows delivery-related projections around the selected context. It does not define Attention itself.
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="grid gap-4 pt-6">
@@ -510,7 +528,7 @@
 									{/if}
 								{:else}
 									<div class="text-sm text-muted-foreground">
-										This context has not produced any dispatch attempt yet, so delivery remains pending outside the queue.
+										This context has not produced any delivery projection yet.
 									</div>
 								{/if}
 							</section>
@@ -608,7 +626,7 @@
 									</div>
 								{:else}
 									<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-										No durable external effect is linked to the selected context yet.
+										No explicit external effect is linked to the selected context yet.
 									</div>
 								{/if}
 							</section>
@@ -618,7 +636,7 @@
 									class="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground"
 									data-testid="runtime-attention-delivery-watches-heading"
 								>
-									Watches
+									Legacy watch projections
 								</div>
 								{#if selectedWatchItems.length > 0}
 									<div class="grid gap-2" data-testid="runtime-attention-delivery-watches">
@@ -643,13 +661,13 @@
 									</div>
 								{:else}
 									<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-										No watch is currently linked to the selected context.
+										No legacy watch projection is linked to the selected context.
 									</div>
 								{/if}
 							</section>
 						{:else}
 							<div class="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-								Select one attention context first, then inspect its delivery facts and explicit effects here.
+								Select one attention context first, then inspect its related projections and explicit effects here.
 							</div>
 						{/if}
 					</Card.Content>
@@ -672,6 +690,12 @@
 						{selectedQueue
 							? 'Quick actions stay inside Attention instead of sending you to a separate notification page.'
 							: 'Queued notifications promote into focused attention only when explicitly selected.'}
+					</div>
+					<div
+						class="overflow-x-auto whitespace-nowrap text-[11px] text-muted-foreground"
+						data-testid="runtime-attention-statusbar"
+					>
+						{selectedContextStatusBar}
 					</div>
 				</div>
 
@@ -712,15 +736,12 @@
 
 	{#snippet drawer()}
 		{#snippet attentionDrawerSummary()}
-			<div><span class="font-medium text-foreground">Session:</span> {sessionId}</div>
-			<div><span class="font-medium text-foreground">Focused contexts:</span> {activeContextItems.length}</div>
-			<div><span class="font-medium text-foreground">Queued pushes:</span> {queueItems.length}</div>
-			<div><span class="font-medium text-foreground">Visible hooks:</span> {filteredHooks.length}</div>
+			<div>{selectedContextStatusBar}</div>
 		{/snippet}
 
 		<WorkbenchDetailDrawer
 			title="Attention detail"
-			description="Actionable selection facts stay first. Passive runtime metadata remains docked at the bottom."
+			description="Actionable selection facts stay first. Related projections remain explicitly labeled as projections."
 			summary={attentionDrawerSummary}
 		>
 			<section class="grid gap-2">
@@ -738,7 +759,7 @@
 			</section>
 
 			<section class="grid gap-2 border-t border-border/55 pt-4">
-				<h4 class="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Delivery contract</h4>
+				<h4 class="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Related projection</h4>
 				{#if selectedPrimaryDeliveryProjection}
 					<div class="flex flex-wrap items-center gap-2">
 						<div class="text-sm font-medium">{selectedPrimaryDeliveryProjection.commitId}</div>
@@ -760,13 +781,13 @@
 					<div class="text-sm font-medium">{selectedQueue.sourceType} · {selectedQueue.sourceId}</div>
 					<div class="text-sm text-muted-foreground">{selectedQueue.content || 'Notification summary unavailable.'}</div>
 					<div class="text-sm text-muted-foreground">
-						Queued at {formatRuntimeTimestamp(selectedQueue.timestamp)}
+						Projected at {formatRuntimeTimestamp(selectedQueue.timestamp)}
 					</div>
 				{:else if selectedContext?.jumpTarget}
 					<div class="text-sm font-medium">{selectedContext.jumpTarget.kind}</div>
 					<div class="text-sm text-muted-foreground">{selectedContext.jumpTarget.label}</div>
 				{:else}
-					<div class="text-sm text-muted-foreground">No queued delivery is selected right now.</div>
+					<div class="text-sm text-muted-foreground">No related projection is selected right now.</div>
 				{/if}
 			</section>
 

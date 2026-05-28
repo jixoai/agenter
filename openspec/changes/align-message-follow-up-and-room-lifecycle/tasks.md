@@ -1,0 +1,7 @@
+- [x] 1. Add delta specs for message follow-up ownership, remote deferral, and room/archive lifecycle.
+- [x] 2. Remove remaining session-runtime ownership of message follow-up watches and timers from session-runtime.
+- [x] 3. Replace runtime inspection wording that still presents legacy generic watches as the follow-up source of truth.
+- [x] 4. Add an explicit `AttentionContext -> room archive` lifecycle path for room-backed contexts becoming `muted`.
+- [x] 5. Make message-system consume that lifecycle change and project room status to `archived` without deleting room durability.
+- [x] 6. Split room catalog surfaces into active and archived lists in Studio and related message workbenches.
+- [x] 7. Add BDD coverage for local durable follow-up tasks, remote deferral, companion mute/archive transitions, and active/archived room presentation.

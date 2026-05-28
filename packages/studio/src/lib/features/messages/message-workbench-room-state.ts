@@ -10,6 +10,7 @@ export interface MessageWorkbenchRoom {
   source: "global" | "session";
   sessionId: string | null;
   href: string;
+  archived: boolean;
   projection: MessageWorkbenchRoomProjection;
 }
 
@@ -19,6 +20,7 @@ const toGlobalWorkbenchRoom = (room: GlobalRoomEntry): MessageWorkbenchRoom => (
   source: "global",
   sessionId: null,
   href: buildMessageRoomHref({ chatId: room.chatId }),
+  archived: Boolean(room.archivedAt),
   projection: room,
 });
 
@@ -28,6 +30,7 @@ const toSessionWorkbenchRoom = (sessionId: string, channel: MessageChannelEntry)
   source: "session",
   sessionId,
   href: buildMessageRoomHref({ chatId: channel.chatId, sessionId }),
+  archived: Boolean(channel.archivedAt),
   projection: channel,
 });
 
@@ -37,7 +40,7 @@ const findSessionWorkbenchRoom = (
   messageChannelsBySession: Record<string, CachedResourceState<MessageChannelEntry[]>>,
 ): MessageWorkbenchRoom | null => {
   const resource = messageChannelsBySession[sessionId];
-  const channel = resource?.data.find((entry) => entry.chatId === chatId && !entry.archivedAt);
+  const channel = resource?.data.find((entry) => entry.chatId === chatId);
   return channel ? toSessionWorkbenchRoom(sessionId, channel) : null;
 };
 
@@ -46,7 +49,7 @@ const findLoadedSessionWorkbenchRoom = (
   messageChannelsBySession: Record<string, CachedResourceState<MessageChannelEntry[]>>,
 ): MessageWorkbenchRoom | null => {
   for (const [sessionId, resource] of Object.entries(messageChannelsBySession)) {
-    const channel = resource.data.find((entry) => entry.chatId === chatId && !entry.archivedAt);
+    const channel = resource.data.find((entry) => entry.chatId === chatId);
     if (channel) {
       return toSessionWorkbenchRoom(sessionId, channel);
     }
@@ -106,3 +109,10 @@ export const buildMessageWorkbenchRooms = (input: {
   }
   return [...rooms, activeRoom];
 };
+
+export const splitMessageWorkbenchRooms = (
+  rooms: ReadonlyArray<MessageWorkbenchRoom>,
+): { activeRooms: MessageWorkbenchRoom[]; archivedRooms: MessageWorkbenchRoom[] } => ({
+  activeRooms: rooms.filter((room) => !room.archived),
+  archivedRooms: rooms.filter((room) => room.archived),
+});

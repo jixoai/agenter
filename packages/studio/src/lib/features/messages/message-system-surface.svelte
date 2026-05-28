@@ -34,6 +34,8 @@
 	let {
 		selectedRoom,
 		authenticated,
+		archivedRoomCount = 0,
+		roomSeatTruthLoaded = true,
 		selectedRoomIconUrl = null,
 		resolveProfileIconUrl,
 		disableManageDialogPortal = false,
@@ -78,6 +80,7 @@
 	let searchMatchIndex = $state(0);
 
 	const selectedRoomChatId = $derived(selectedRoom?.chatId ?? '');
+	const roomArchived = $derived(Boolean(selectedRoom?.archivedAt));
 	const editableTitle = $derived(
 		selectedRoomChatId ? (editableTitlesByRoomId[selectedRoomChatId] ?? selectedRoom?.title ?? '') : '',
 	);
@@ -90,6 +93,38 @@
 	);
 	const canSelectViewer = $derived(authenticated && roomSeatStates.length > 0);
 	const canSendForViewer = $derived(authenticated && Boolean(selectedCallerToken));
+	const roomSendCapabilityLabel = $derived.by(() => {
+		if (!authenticated) {
+			return 'Sign in to manage or send.';
+		}
+		if (!roomSeatTruthLoaded) {
+			return 'Loading room users…';
+		}
+		if (!selectedViewerSeat) {
+			return 'No sending seat';
+		}
+		if (!canSendForViewer) {
+			return selectedViewerSeat.role === 'readonly' ? 'Read-only seat selected' : 'Sending unavailable';
+		}
+		return null;
+	});
+	const roomSendCapabilityDetail = $derived.by(() => {
+		if (!authenticated) {
+			return 'Room transcript and controls require an authenticated superadmin session.';
+		}
+		if (!roomSeatTruthLoaded) {
+			return 'Waiting for durable room grants before exposing participant send controls.';
+		}
+		if (!selectedViewerSeat) {
+			return 'Transcript read and room management stay available, but sending requires a member or admin seat.';
+		}
+		if (!canSendForViewer) {
+			return selectedViewerSeat.role === 'readonly'
+				? 'Readonly room users can inspect transcript state but cannot send chat messages.'
+				: 'This room user does not currently expose a valid send token.';
+		}
+		return null;
+	});
 	const duplicateSeatLabels = $derived.by(() => {
 		const counts = new Map<string, number>();
 		for (const state of roomSeatStates) {
@@ -107,12 +142,12 @@
 	);
 	const selectedViewerOptionLabel = $derived(
 		viewerItems.find((item) => item.value === selectedViewerActorId)?.label ??
-			(canSelectViewer ? selectedViewerSeat?.label ?? 'Unset viewer' : 'No granted room user yet'),
+			(canSelectViewer ? selectedViewerSeat?.label ?? 'Unset viewer' : roomSendCapabilityLabel ?? 'No sending seat'),
 	);
 	const selectedViewerToolbarLabel = $derived.by(() => {
 		const seat = selectedViewerSeat;
 		if (!seat) {
-			return canSelectViewer ? selectedViewerOptionLabel : 'No granted room user yet';
+			return canSelectViewer ? selectedViewerOptionLabel : roomSendCapabilityLabel ?? 'No sending seat';
 		}
 		if (duplicateSeatLabels.has(seat.label)) {
 			return selectedViewerOptionLabel;
@@ -122,7 +157,9 @@
 	const selectedViewerToolbarSubtitle = $derived.by(() => {
 		const seat = selectedViewerSeat;
 		if (!seat) {
-			return canSelectViewer ? 'Choose the active room user.' : 'No granted room user yet.';
+			return canSelectViewer
+				? 'Choose the active room user.'
+				: roomSendCapabilityDetail ?? 'Transcript read and room management remain available.';
 		}
 		return [seat.role, seat.currentAdmin ? 'current admin' : null].filter(Boolean).join(' · ');
 	});
@@ -219,7 +256,7 @@
 	};
 
 	const resolveMessageActions = (input: WebChatMessageRenderInput): readonly WebChatMessageAction[] => {
-		if (!input.message.senderActorId) {
+		if (!input.message.senderContactId) {
 			return [];
 		}
 		return [
@@ -229,7 +266,7 @@
 				detail: 'actor',
 				onSelect: async () => {
 					if (navigator.clipboard?.writeText) {
-						await navigator.clipboard.writeText(input.message.senderActorId ?? '');
+						await navigator.clipboard.writeText(input.message.senderContactId ?? '');
 					}
 				},
 			},
@@ -259,8 +296,8 @@
 					} satisfies WebChatMessageReadActor;
 				});
 
-		const readActors = projectReadActors(input.message.readActorIds ?? []);
-		const unreadActors = projectReadActors(input.message.unreadActorIds ?? []);
+		const readActors = projectReadActors(input.message.readContactIds ?? []);
+		const unreadActors = projectReadActors(input.message.unreadContactIds ?? []);
 		const totalCount = readActors.length + unreadActors.length;
 		if (totalCount === 0) {
 			return null;
@@ -524,6 +561,29 @@
 	{/if}
 
 	<WorkbenchScaffold tone="page" bodyClass="h-full" data-testid="message-system-route">
+		{#if roomArchived && selectedRoom}
+			<div
+				class="mx-4 mt-4 rounded-2xl border border-border/70 bg-muted/35 px-4 py-3 text-sm text-muted-foreground"
+				data-testid="message-room-archived-banner"
+			>
+				<div class="font-medium text-foreground">This room is archived.</div>
+				<div class="mt-1">
+					It no longer appears in the default active list, but the transcript and room detail remain available here.
+					{#if archivedRoomCount > 0}
+						<span> Open the Archive tab to review other archived rooms.</span>
+					{/if}
+				</div>
+			</div>
+		{/if}
+		{#if roomSendCapabilityLabel && roomSendCapabilityDetail}
+			<div
+				class="mx-4 mt-4 rounded-2xl border border-border/60 bg-background/80 px-4 py-3 text-sm text-muted-foreground"
+				data-testid="message-room-send-capability-banner"
+			>
+				<div class="font-medium text-foreground">{roomSendCapabilityLabel}</div>
+				<div class="mt-1">{roomSendCapabilityDetail}</div>
+			</div>
+		{/if}
 		{#if bodyMode === 'assets'}
 			<RoomAssetsPane state={roomAssetsState} />
 		{:else}

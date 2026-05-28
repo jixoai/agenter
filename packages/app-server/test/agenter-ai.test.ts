@@ -6,7 +6,7 @@ import type {
 } from "@agenter/attention-system";
 import { AttentionSystem } from "@agenter/attention-system";
 import { DEFAULT_LOOP_COMPACT_POLICY } from "@agenter/settings";
-import type { MessageActorId } from "@agenter/message-system";
+import type { MessageContactId } from "@agenter/message-system";
 import type { TerminalProcessProfile } from "@agenter/terminal-system";
 import { describe, expect, test } from "bun:test";
 
@@ -1048,6 +1048,7 @@ const createAttentionGateway = () => {
 };
 
 const createMessageGateway = () => {
+  const sourceSystemId = "0x0000000000000000000000000000000000000001" as const;
   const sent: Array<{
     chatId: string;
     content: string;
@@ -1096,6 +1097,7 @@ const createMessageGateway = () => {
       messageId: number;
       chatId: string;
       ref?: number;
+      sourceSystemId: `0x${string}`;
       from: string;
       kind: "text";
       content: string;
@@ -1103,8 +1105,8 @@ const createMessageGateway = () => {
       updatedAt: number;
       visibleAt: number;
       recalledAt?: number;
-      readActorIds: MessageActorId[];
-      unreadActorIds: MessageActorId[];
+      readContactIds: MessageContactId[];
+      unreadContactIds: MessageContactId[];
     }>
   >([
     ["chat-main", []],
@@ -1115,14 +1117,15 @@ const createMessageGateway = () => {
           rowId: 1,
           messageId: 1,
           chatId: "room-qa",
+          sourceSystemId,
           from: "kzf",
           kind: "text",
           content: "budget incident alpha",
           createdAt: Date.now() - 2_000,
           updatedAt: Date.now() - 2_000,
           visibleAt: Date.now() - 2_000,
-          readActorIds: [],
-          unreadActorIds: [],
+          readContactIds: [],
+          unreadContactIds: [],
         },
       ],
     ],
@@ -1224,14 +1227,15 @@ const createMessageGateway = () => {
           messageId: nextMessageId,
           chatId: input.chatId,
           ref: input.ref,
+          sourceSystemId,
           from: input.from ?? "default",
           kind: "text" as const,
           content: input.content,
           createdAt: timestamp,
           updatedAt: timestamp,
           visibleAt: timestamp,
-          readActorIds: [],
-          unreadActorIds: [],
+          readContactIds: [],
+          unreadContactIds: [],
         };
         history.set(input.chatId, [...roomHistory, record]);
         sent.push({
@@ -2951,7 +2955,7 @@ describe("Feature: AgenterAI behavior", () => {
           chatTitle: "Team room",
           chatKind: "room",
           messageId: 41,
-          senderActorId: "session:jane",
+          senderContactId: "session:jane",
           senderLabel: "Jane",
           ref: null,
         },

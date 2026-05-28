@@ -526,7 +526,7 @@ class FakeProductRuntimeStore implements ProductExtensionRuntimeStore {
     title?: string;
     participants?: Array<{ id: string; label?: string }>;
     initialUsers?: Array<{
-      actorId: GlobalRoomActorId;
+      contactId: GlobalRoomActorId;
       label?: string;
       role: "admin" | "member" | "readonly";
       focused?: boolean;

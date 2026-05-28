@@ -8,6 +8,8 @@ import {
   type RuntimeContextTerminal,
 } from "./runtime-attention-contexts";
 
+const TEST_ROOM_DOMAIN_ID = "0x0000000000000000000000000000000000000001" as const;
+
 const createCommit = (input: {
   commitId: string;
   contextId: string;
@@ -113,6 +115,8 @@ const channels = [
     kind: "room",
     title: "Alpha room",
     owner: "message-system",
+    superKey: TEST_ROOM_DOMAIN_ID,
+    createdBySystemId: TEST_ROOM_DOMAIN_ID,
     contextId: "ctx-room-alpha",
     participants: [],
     metadata: {},
@@ -277,6 +281,75 @@ describe("Feature: Runtime attention helper contract", () => {
     expect(items[0]?.commitLabel).toBe("9 commits");
     expect(items[0]?.commitsTruncated).toBe(true);
     expect(items[0]?.jumpTarget?.targetId).toBe("room-alpha");
+  });
+
+  test("Scenario: Given active contexts and extra tracked snapshot contexts When building the list Then tracked contexts remain visible instead of disappearing behind the focused stack", () => {
+    const attention = createAttentionState({
+      active: [
+        {
+          contextId: "ctx-room-alpha",
+          context: createContextState({
+            contextId: "ctx-room-alpha",
+            owner: "messages",
+            updatedAt: "2026-04-06T08:00:00.000Z",
+            scoreMap: {
+              room: 8,
+            },
+          }),
+          recentCommits: [
+            createCommit({
+              commitId: "commit-room-1",
+              contextId: "ctx-room-alpha",
+              summary: "Room summary updated",
+              createdAt: "2026-04-06T08:00:00.000Z",
+              source: "chat",
+            }),
+          ],
+        },
+      ],
+      snapshotContexts: [
+        createSnapshotContext({
+          contextId: "ctx-room-alpha",
+          owner: "messages",
+          updatedAt: "2026-04-06T08:00:00.000Z",
+          commits: [
+            createCommit({
+              commitId: "commit-room-1",
+              contextId: "ctx-room-alpha",
+              summary: "Room summary updated",
+              createdAt: "2026-04-06T08:00:00.000Z",
+              source: "chat",
+            }),
+          ],
+        }),
+        createSnapshotContext({
+          contextId: "ctx-terminal-terminal-1",
+          owner: "terminal",
+          updatedAt: "2026-04-06T07:00:00.000Z",
+          commitCount: 3,
+          commits: [
+            createCommit({
+              commitId: "commit-terminal-1",
+              contextId: "ctx-terminal-terminal-1",
+              summary: "Background shell still has evidence",
+              createdAt: "2026-04-06T07:00:00.000Z",
+              source: "terminal",
+            }),
+          ],
+        }),
+      ],
+    });
+
+    const items = buildRuntimeAttentionContextItems({
+      attention,
+      channels,
+      terminals,
+    });
+
+    expect(items.map((item) => [item.contextId, item.source])).toEqual([
+      ["ctx-room-alpha", "active"],
+      ["ctx-terminal-terminal-1", "tracked"],
+    ]);
   });
 
   test("Scenario: Given scheduler facts When building compact chips Then idle noise disappears and only actionable signals remain", () => {

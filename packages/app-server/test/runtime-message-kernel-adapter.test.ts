@@ -17,30 +17,30 @@ describe("Feature: runtime-message-kernel-adapter", () => {
     const plane = new MessageControlPlane({
       dbPath: resolveMessageControlDbPath(join(root, ".message")),
     });
-    const messageActorId = "session:avatar";
+    const messageContactId = "session:avatar";
     const room = plane.createChannel({
       chatId: createRoomId(),
       kind: "room",
       owner: "avatar",
       participants: [{ id: "auth:user", label: "User" }],
-      bootstrapActorId: messageActorId,
+      bootstrapContactId: messageContactId,
     });
     const inbound = plane.send({
       chatId: room.chatId,
       from: "User",
       kind: "text",
       content: "hello from room",
-      senderActorId: "auth:user",
+      senderContactId: "auth:user",
     });
 
     const adapter = new RuntimeMessageKernelAdapter({
       messageSystem: plane,
-      messageActorId,
+      messageContactId,
       isLoopPaused: () => false,
       getMaxFocusedRoomCount: () => 3,
       getMaxBatchReadRoomMessageCount: () => 20,
       getActorRoom: (chatId) => (chatId === room.chatId ? room : undefined),
-      isUnreadInboundMessage: (message) => message.kind === "text" && message.unreadActorIds.includes(messageActorId),
+      isUnreadInboundMessage: (message) => message.kind === "text" && message.unreadContactIds.includes(messageContactId),
       buildMessageIngressEnvelope: ({ message, channel }) => ({
         system: "message",
         boundaryChannel: "world_fact",
@@ -80,12 +80,12 @@ describe("Feature: runtime-message-kernel-adapter", () => {
         author: "User",
       },
     ]);
-    expect(plane.listUnreadRoomSummaries(messageActorId)).toHaveLength(1);
+    expect(plane.listUnreadRoomSummaries(messageContactId)).toHaveLength(1);
 
     adapter.beginCycle();
     await adapter.commitActiveCycleReadAcks();
 
-    expect(plane.listUnreadRoomSummaries(messageActorId)).toHaveLength(0);
+    expect(plane.listUnreadRoomSummaries(messageContactId)).toHaveLength(0);
   });
 
   test("Scenario: Given room lifecycle ingress before host boot When adapter bootstraps Then lifecycle commits flush through the host API", async () => {
@@ -94,7 +94,7 @@ describe("Feature: runtime-message-kernel-adapter", () => {
       messageSystem: new MessageControlPlane({
         dbPath: resolveMessageControlDbPath(join(mkdtempSync(join(tmpdir(), "agenter-message-adapter-")), ".message")),
       }),
-      messageActorId: "session:avatar",
+      messageContactId: "session:avatar",
       isLoopPaused: () => false,
       getMaxFocusedRoomCount: () => 3,
       getMaxBatchReadRoomMessageCount: () => 20,

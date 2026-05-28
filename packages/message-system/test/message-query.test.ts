@@ -11,31 +11,41 @@ import {
   type MessageAttachment,
 } from "../src";
 
-const createPlaneHarness = (): { root: string; dbPath: string; plane: MessageControlPlane } => {
+const createPrincipal = (): PrincipalId => generatePrincipalKeyPair().principalId;
+
+const createPlaneHarness = (): {
+  root: string;
+  dbPath: string;
+  superadminContactId: PrincipalId;
+  plane: MessageControlPlane;
+} => {
   const root = mkdtempSync(join(tmpdir(), "agenter-message-query-"));
   const dbPath = resolveMessageControlDbPath(join(root, ".message"));
+  const superadminContactId = createPrincipal();
   return {
     root,
     dbPath,
-    plane: new MessageControlPlane({ dbPath }),
+    superadminContactId,
+    plane: new MessageControlPlane({ dbPath, superadminContactId }),
   };
 };
 
-const createRoomId = (): PrincipalId => generatePrincipalKeyPair().principalId;
+const createRoomId = (): PrincipalId => createPrincipal();
 
 const createRoom = (
   plane: MessageControlPlane,
   input: {
     chatId?: PrincipalId;
-    bootstrapActorId?: `auth:${string}` | `session:${string}` | `system:${string}`;
+    bootstrapContactId?: `auth:${string}` | `session:${string}` | `system:${string}`;
   } = {},
 ) =>
   plane.createChannel({
     chatId: input.chatId ?? createRoomId(),
     kind: "room",
     owner: "ops",
+    superKey: plane.getSystemIdentity().superadminContactId,
     participants: [{ id: "auth:viewer" }, { id: "auth:owner" }],
-    bootstrapActorId: input.bootstrapActorId ?? "auth:owner",
+    bootstrapContactId: input.bootstrapContactId ?? "auth:owner",
   });
 
 const logAttachment: MessageAttachment = {
@@ -54,7 +64,7 @@ describe("Feature: message query", () => {
     plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       kind: "text",
       content: "deploy failed in production",
     });
@@ -82,7 +92,7 @@ describe("Feature: message query", () => {
     reopened.close();
   });
 
-  test("Scenario: Given actor-scoped room grants When cross-room query runs Then only authorized rooms are searchable", () => {
+  test("Scenario: Given contact-scoped room grants When cross-room query runs Then only authorized rooms are searchable", () => {
     const { plane } = createPlaneHarness();
     const authorizedRoom = createRoom(plane, { chatId: createRoomId() });
     const forbiddenRoom = createRoom(plane, { chatId: createRoomId() });
@@ -98,21 +108,21 @@ describe("Feature: message query", () => {
     plane.sendAuthorized({
       chatId: authorizedRoom.chatId,
       accessToken: authorizedRoom.accessToken,
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       kind: "text",
       content: "incident report alpha",
     });
     plane.sendAuthorized({
       chatId: forbiddenRoom.chatId,
       accessToken: forbiddenRoom.accessToken,
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       kind: "text",
       content: "incident report beta",
     });
 
     const allowed = plane.queryAuthorized({
       chatId: "*",
-      actorId: "auth:viewer",
+      contactId: "auth:viewer",
       mode: "match",
       query: "incident report",
     });
@@ -126,7 +136,7 @@ describe("Feature: message query", () => {
     expect(() =>
       plane.queryAuthorized({
         chatId: [authorizedRoom.chatId, forbiddenRoom.chatId],
-        actorId: "auth:viewer",
+        contactId: "auth:viewer",
         mode: "match",
         query: "incident",
       }),
@@ -140,7 +150,7 @@ describe("Feature: message query", () => {
     plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       kind: "text",
       content: "incident report attached",
       attachments: [logAttachment],
@@ -148,7 +158,7 @@ describe("Feature: message query", () => {
     plane.sendAuthorized({
       chatId: room.chatId,
       accessToken: room.accessToken,
-      senderActorId: "auth:owner",
+      senderContactId: "auth:owner",
       kind: "text",
       content: "plain follow up",
     });

@@ -40,7 +40,7 @@ import { LoopBusKernel } from "@agenter/loopbus-kernel";
 import {
   MessageControlPlane,
   resolveMessageControlDbPath,
-  type MessageActorId,
+  type MessageContactId,
   type MessageChannelAccessProjection,
   type MessageChannelAccessRole,
   type MessageChannelGrantRecord,
@@ -1356,7 +1356,7 @@ export class AppKernel {
 
   private collectLegacySessionMessageActorAliases(
     sessions: Array<Pick<SessionMeta, "id" | "avatarPrincipalId">>,
-  ): Array<{ fromActorId: MessageActorId; toActorId: MessageActorId }> {
+  ): Array<{ fromContactId: MessageContactId; toContactId: MessageContactId }> {
     return sessions.flatMap((session) => {
       if (!session.avatarPrincipalId) {
         return [];
@@ -1364,7 +1364,7 @@ export class AppKernel {
       const legacyActorId = resolveSessionRoomActorId(session.id);
       return legacyActorId === session.avatarPrincipalId
         ? []
-        : [{ fromActorId: legacyActorId, toActorId: session.avatarPrincipalId as MessageActorId }];
+        : [{ fromContactId: legacyActorId, toContactId: session.avatarPrincipalId as MessageContactId }];
     });
   }
 
@@ -1374,15 +1374,15 @@ export class AppKernel {
       return;
     }
     for (const channel of this.messageControlPlane.listChannels({ includeArchived: true })) {
-      this.messageControlPlane.repairChannelActorAliases({
+      this.messageControlPlane.repairChannelContactAliases({
         chatId: channel.chatId,
         aliases,
       });
     }
   }
 
-  private resolveSessionMessageActorId(session: Pick<SessionMeta, "id" | "avatarPrincipalId">): MessageActorId {
-    return (session.avatarPrincipalId ?? resolveSessionRoomActorId(session.id)) as MessageActorId;
+  private resolveSessionMessageContactId(session: Pick<SessionMeta, "id" | "avatarPrincipalId">): MessageContactId {
+    return (session.avatarPrincipalId ?? resolveSessionRoomActorId(session.id)) as MessageContactId;
   }
 
   private resolveSessionTerminalActorId(session: Pick<SessionMeta, "id" | "avatarPrincipalId">): TerminalActorId {
@@ -1402,12 +1402,12 @@ export class AppKernel {
 
   private resolveGlobalRoomProjection(input: {
     chatId: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
     includeArchived?: boolean;
   }): MessageControlPlaneEntry {
-    if (input.actorId && !input.superadminActorId) {
-      const room = this.messageControlPlane.getChannelForActor(input.chatId, input.actorId, {
+    if (input.actorId && !input.superadminContactId) {
+      const room = this.messageControlPlane.getChannelForContact(input.chatId, input.actorId, {
         includeArchived: input.includeArchived,
         touchPresence: false,
       });
@@ -1428,8 +1428,8 @@ export class AppKernel {
   private resolveGlobalRoomAccess(input: {
     chatId: string;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
     includeArchived?: boolean;
   }): { room: MessageControlPlaneEntry; accessToken: string } {
     const room = this.resolveGlobalRoomProjection(input);
@@ -1439,7 +1439,7 @@ export class AppKernel {
     };
   }
 
-  private requireMessageSourceSubscription(actorId: MessageActorId, sourceId: string): MessageSourceSubscriptionRecord {
+  private requireMessageSourceSubscription(actorId: MessageContactId, sourceId: string): MessageSourceSubscriptionRecord {
     const source = this.messageControlPlane.getSourceSubscription(actorId, sourceId);
     if (!source) {
       throw new Error(`unknown message source subscription: ${sourceId}`);
@@ -1447,7 +1447,7 @@ export class AppKernel {
     return source;
   }
 
-  private requirePendingMessageContactRequest(actorId: MessageActorId, requestId: string): MessageContactRequestRecord {
+  private requirePendingMessageContactRequest(actorId: MessageContactId, requestId: string): MessageContactRequestRecord {
     const request = this.messageControlPlane.getContactRequest(actorId, requestId);
     if (!request) {
       throw new Error(`unknown contact request: ${requestId}`);
@@ -1459,7 +1459,7 @@ export class AppKernel {
   }
 
   private requireResponseSourceSubscription(
-    actorId: MessageActorId,
+    actorId: MessageContactId,
     request: MessageContactRequestRecord,
   ): MessageSourceSubscriptionRecord {
     const bySourceId = this.messageControlPlane.getSourceSubscription(actorId, request.sourceId);
@@ -1478,8 +1478,8 @@ export class AppKernel {
     throw new Error(`no response source subscription for contact request: ${request.requestId}`);
   }
 
-  private async resolveMessageActorDirectoryProjection(actorId: MessageActorId): Promise<{
-    actorId: MessageActorId;
+  private async resolveMessageActorDirectoryProjection(actorId: MessageContactId): Promise<{
+    actorId: MessageContactId;
     label: string;
     subtitle: string;
     iconUrl: string;
@@ -1506,50 +1506,50 @@ export class AppKernel {
 
   private async resolveRemoteMessageActorProjection(
     source: MessageSourceSubscriptionRecord,
-    remoteActorId: MessageActorId,
-  ): Promise<{ actorId: MessageActorId; label: string; subtitle: string; iconUrl: string }> {
+    remoteContactId: MessageContactId,
+  ): Promise<{ actorId: MessageContactId; label: string; subtitle: string; iconUrl: string }> {
     const client = createRemoteMessageSourceClient({
       endpoint: source.endpoint,
       authToken: source.authToken,
     });
     const items = await client.searchAuthCatalog({
-      query: remoteActorId,
+      query: remoteContactId,
     });
-    const projected = items.find((item) => item.actorId === remoteActorId);
+    const projected = items.find((item) => item.actorId === remoteContactId);
     if (projected) {
       return {
-        actorId: remoteActorId,
+        actorId: remoteContactId,
         label: projected.label,
         subtitle: projected.subtitle,
         iconUrl: projected.iconUrl,
       };
     }
     return {
-      actorId: remoteActorId,
-      label: remoteActorId.split(":").at(-1) ?? remoteActorId,
-      subtitle: remoteActorId,
+      actorId: remoteContactId,
+      label: remoteContactId.split(":").at(-1) ?? remoteContactId,
+      subtitle: remoteContactId,
       iconUrl: "",
     };
   }
 
   private async createLocalDirectContactRoom(input: {
-    actorId: MessageActorId;
+    actorId: MessageContactId;
     sourceId: string;
-    remoteActorId: MessageActorId;
+    remoteContactId: MessageContactId;
     remoteLabel?: string;
     remoteDirectChatId?: string;
   }): Promise<PublicRoomEntry> {
     return await this.createGlobalRoom({
       actorId: input.actorId,
-      title: input.remoteLabel?.trim() || (input.remoteActorId.split(":").at(-1) ?? input.remoteActorId),
+      title: input.remoteLabel?.trim() || (input.remoteContactId.split(":").at(-1) ?? input.remoteContactId),
       participants: [
         { id: input.actorId },
-        input.remoteLabel ? { id: input.remoteActorId, label: input.remoteLabel } : { id: input.remoteActorId },
+        input.remoteLabel ? { id: input.remoteContactId, label: input.remoteLabel } : { id: input.remoteContactId },
       ],
       metadata: {
         roomMode: "direct",
         directSourceId: input.sourceId,
-        directPeerActorId: input.remoteActorId,
+        directPeerActorId: input.remoteContactId,
         remoteDirectChatId: input.remoteDirectChatId,
       },
       focus: false,
@@ -1557,7 +1557,7 @@ export class AppKernel {
   }
 
   private patchDirectRoomPairing(input: {
-    actorId: MessageActorId;
+    actorId: MessageContactId;
     chatId: string;
     remoteDirectChatId: string;
   }): PublicRoomEntry {
@@ -1579,10 +1579,10 @@ export class AppKernel {
     });
   }
 
-  private appendDirectBootstrapMessage(chatId: string, senderActorId: MessageActorId, content: string): void {
+  private appendDirectBootstrapMessage(chatId: string, senderContactId: MessageContactId, content: string): void {
     this.messageControlPlane.send({
       chatId,
-      senderActorId,
+      senderContactId,
       kind: "text",
       content,
     });
@@ -1625,9 +1625,9 @@ export class AppKernel {
   private ensureSessionPrimaryRoom(
     session: Pick<SessionMeta, "id" | "avatar" | "avatarPrincipalId" | "primaryRoomId" | "createdAt" | "updatedAt">,
   ): MessageControlPlaneEntry {
-    const actorId = this.resolveSessionMessageActorId(session);
+    const actorId = this.resolveSessionMessageContactId(session);
     const roomId = this.resolvePersistedSessionPrimaryRoomId(session.id);
-    const existing = this.messageControlPlane.getChannelForActor(roomId, actorId, { touchPresence: false });
+    const existing = this.messageControlPlane.getChannelForContact(roomId, actorId, { touchPresence: false });
     if (existing) {
       return repairRoomParticipantsIfNeeded(this.messageControlPlane, existing);
     }
@@ -1642,7 +1642,7 @@ export class AppKernel {
         participantId: actorId,
       });
       return (
-        this.messageControlPlane.getChannelForActor(roomId, actorId, { includeArchived: true, touchPresence: false }) ??
+        this.messageControlPlane.getChannelForContact(roomId, actorId, { includeArchived: true, touchPresence: false }) ??
         repairedBootstrap
       );
     }
@@ -1658,7 +1658,7 @@ export class AppKernel {
         primaryRoom: true,
         sessionId: session.id,
       },
-      bootstrapActorId: actorId,
+      bootstrapContactId: actorId,
     });
   }
 
@@ -2407,8 +2407,8 @@ export class AppKernel {
   async inspectWorkspaceWelcome(input: {
     workspacePath: string;
     avatar?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
     terminalActorId?: TerminalActorId;
     superadminTerminalActorId?: TerminalActorId;
   }): Promise<WorkspaceWelcomeSnapshot> {
@@ -2420,13 +2420,13 @@ export class AppKernel {
       avatar,
       homeDir: this.getHomeDir(),
     });
-    const sessionRoomActorId = avatarPrincipal.principalId as MessageActorId;
+    const sessionRoomActorId = avatarPrincipal.principalId as MessageContactId;
     const sessionTerminalActorId = avatarPrincipal.principalId as TerminalActorId;
     const seatDoc = readAvatarSeatDocument(workspacePath, avatar, this.getHomeDir());
 
     const accessibleRoomIds = new Set(
       this.messageControlPlane
-        .listChannelsForActor(sessionRoomActorId, {
+        .listChannelsForContact(sessionRoomActorId, {
           includeArchived: true,
           touchPresence: false,
         })
@@ -2442,7 +2442,7 @@ export class AppKernel {
 
     const rooms = this.listGlobalRooms({
       actorId: input.actorId,
-      superadminActorId: input.superadminActorId,
+      superadminContactId: input.superadminContactId,
       includeArchived: true,
     }).map((channel) => {
       const seat = seatDoc.messageSeats[channel.chatId];
@@ -2960,7 +2960,7 @@ export class AppKernel {
           alias: input.alias,
         }),
       messageSystem: this.messageControlPlane,
-      messageActorId: this.resolveSessionMessageActorId(meta),
+      messageContactId: this.resolveSessionMessageContactId(meta),
       terminalSystem: this.terminalControlPlane,
       terminalActorId: this.resolveSessionTerminalActorId(meta),
       primaryRoomId,
@@ -3041,7 +3041,7 @@ export class AppKernel {
       return [];
     }
     const session = existingSession;
-    return this.messageControlPlane.listChannelsForActor(this.resolveSessionMessageActorId(session), {
+    return this.messageControlPlane.listChannelsForContact(this.resolveSessionMessageContactId(session), {
       includeArchived: input.includeArchived,
       touchPresence: false,
     });
@@ -3060,10 +3060,10 @@ export class AppKernel {
     const session = await this.bindSessionPrimaryRoomId(avatarBound);
     const room = this.ensureSessionPrimaryRoom(session);
     if (input.focus ?? true) {
-      this.messageControlPlane.focusForActor(this.resolveSessionMessageActorId(session), "add", [room.chatId]);
+      this.messageControlPlane.focusForContact(this.resolveSessionMessageContactId(session), "add", [room.chatId]);
     }
     return (
-      this.messageControlPlane.getChannelForActor(room.chatId, this.resolveSessionMessageActorId(session), {
+      this.messageControlPlane.getChannelForContact(room.chatId, this.resolveSessionMessageContactId(session), {
         includeArchived: true,
         touchPresence: false,
       }) ?? room
@@ -3199,17 +3199,17 @@ export class AppKernel {
     });
   }
 
-  listMessageSourceSubscriptions(input: { actorId: MessageActorId }): MessageSourceSubscriptionRecord[] {
+  listMessageSourceSubscriptions(input: { actorId: MessageContactId }): MessageSourceSubscriptionRecord[] {
     return this.messageControlPlane.listSourceSubscriptions(input.actorId);
   }
 
   saveMessageSourceSubscription(
     input: {
-      actorId: MessageActorId;
+      actorId: MessageContactId;
     } & MessageSourceSubscriptionInput,
   ): MessageSourceSubscriptionRecord {
     return this.messageControlPlane.upsertSourceSubscription({
-      ownerActorId: input.actorId,
+      ownerContactId: input.actorId,
       sourceId: input.sourceId,
       label: input.label,
       endpoint: normalizeRemoteEndpoint(input.endpoint),
@@ -3220,19 +3220,19 @@ export class AppKernel {
     });
   }
 
-  deleteMessageSourceSubscription(input: { actorId: MessageActorId; sourceId: string }): { ok: boolean } {
+  deleteMessageSourceSubscription(input: { actorId: MessageContactId; sourceId: string }): { ok: boolean } {
     return this.messageControlPlane.deleteSourceSubscription({
-      ownerActorId: input.actorId,
+      ownerContactId: input.actorId,
       sourceId: input.sourceId,
     });
   }
 
-  listMessageContacts(input: { actorId: MessageActorId }): MessageContactRecord[] {
+  listMessageContacts(input: { actorId: MessageContactId }): MessageContactRecord[] {
     return this.messageControlPlane.listContacts(input.actorId);
   }
 
   listMessageContactRequests(input: {
-    actorId: MessageActorId;
+    actorId: MessageContactId;
     direction?: "inbound" | "outbound";
     state?: "pending" | "accepted" | "rejected" | "revoked" | "expired" | "superseded";
   }): MessageContactRequestRecord[] {
@@ -3242,7 +3242,7 @@ export class AppKernel {
     });
   }
 
-  async searchMessageSourceActors(input: { actorId: MessageActorId; sourceId: string; query?: string }): Promise<
+  async searchMessageSourceActors(input: { actorId: MessageContactId; sourceId: string; query?: string }): Promise<
     Array<
       RemoteMessageSourceCatalogItem & {
         sourceId: string;
@@ -3268,20 +3268,20 @@ export class AppKernel {
   }
 
   async sendMessageContactRequest(input: {
-    actorId: MessageActorId;
+    actorId: MessageContactId;
     sourceId: string;
-    remoteActorId: MessageActorId;
+    remoteContactId: MessageContactId;
     message?: string;
     expiresAt?: number;
   }): Promise<MessageContactRequestRecord> {
     const source = this.requireMessageSourceSubscription(input.actorId, input.sourceId);
     const localActor = await this.resolveMessageActorDirectoryProjection(input.actorId);
-    const remoteActor = await this.resolveRemoteMessageActorProjection(source, input.remoteActorId);
+    const remoteActor = await this.resolveRemoteMessageActorProjection(source, input.remoteContactId);
     const request = this.messageControlPlane.createContactRequest({
-      ownerActorId: input.actorId,
+      ownerContactId: input.actorId,
       direction: "outbound",
       sourceId: source.sourceId,
-      remoteActorId: input.remoteActorId,
+      remoteContactId: input.remoteContactId,
       remoteLabel: remoteActor.label,
       remoteSubtitle: remoteActor.subtitle,
       remoteIconUrl: remoteActor.iconUrl,
@@ -3297,7 +3297,7 @@ export class AppKernel {
     await client.receiveContactRequest({
       requestId: request.requestId,
       sourceId: source.callbackSourceId ?? source.sourceId,
-      remoteActorId: input.actorId,
+      remoteContactId: input.actorId,
       remoteLabel: localActor.label,
       remoteSubtitle: localActor.subtitle,
       remoteIconUrl: localActor.iconUrl,
@@ -3309,10 +3309,10 @@ export class AppKernel {
   }
 
   receiveMessageContactRequest(input: {
-    actorId: MessageActorId;
+    actorId: MessageContactId;
     requestId: string;
     sourceId: string;
-    remoteActorId: MessageActorId;
+    remoteContactId: MessageContactId;
     remoteLabel?: string;
     remoteSubtitle?: string;
     remoteIconUrl?: string;
@@ -3321,11 +3321,11 @@ export class AppKernel {
     expiresAt?: number;
   }): MessageContactRequestRecord {
     return this.messageControlPlane.createContactRequest({
-      ownerActorId: input.actorId,
+      ownerContactId: input.actorId,
       requestId: input.requestId,
       direction: "inbound",
       sourceId: input.sourceId,
-      remoteActorId: input.remoteActorId,
+      remoteContactId: input.remoteContactId,
       remoteLabel: input.remoteLabel,
       remoteSubtitle: input.remoteSubtitle,
       remoteIconUrl: input.remoteIconUrl,
@@ -3336,7 +3336,7 @@ export class AppKernel {
   }
 
   async acceptMessageContactRequest(input: {
-    actorId: MessageActorId;
+    actorId: MessageContactId;
     requestId: string;
     firstChat?: string;
   }): Promise<{
@@ -3352,12 +3352,12 @@ export class AppKernel {
       localDirectRoom = await this.createLocalDirectContactRoom({
         actorId: input.actorId,
         sourceId: pending.sourceId,
-        remoteActorId: pending.remoteActorId,
+        remoteContactId: pending.remoteContactId,
         remoteLabel: pending.remoteLabel,
       });
     }
     const acceptedLocal = this.messageControlPlane.acceptContactRequest({
-      ownerActorId: input.actorId,
+      ownerContactId: input.actorId,
       requestId: input.requestId,
       label: pending.remoteLabel,
       subtitle: pending.remoteSubtitle,
@@ -3371,7 +3371,7 @@ export class AppKernel {
     });
     const remoteAccepted = await client.acceptContactRequestRemote({
       requestId: input.requestId,
-      remoteActorId: input.actorId,
+      remoteContactId: input.actorId,
       remoteLabel: localActor.label,
       remoteSubtitle: localActor.subtitle,
       remoteIconUrl: localActor.iconUrl,
@@ -3386,9 +3386,9 @@ export class AppKernel {
       });
       this.appendDirectBootstrapMessage(localDirectRoom.chatId, input.actorId, input.firstChat.trim());
       this.messageControlPlane.upsertContact({
-        ownerActorId: input.actorId,
+        ownerContactId: input.actorId,
         sourceId: pending.sourceId,
-        remoteActorId: pending.remoteActorId,
+        remoteContactId: pending.remoteContactId,
         label: acceptedLocal.contact.label,
         subtitle: acceptedLocal.contact.subtitle,
         iconUrl: acceptedLocal.contact.iconUrl,
@@ -3399,7 +3399,7 @@ export class AppKernel {
     return {
       request: this.messageControlPlane.getContactRequest(input.actorId, input.requestId) ?? acceptedLocal.request,
       contact:
-        this.messageControlPlane.getContact(input.actorId, pending.sourceId, pending.remoteActorId) ??
+        this.messageControlPlane.getContact(input.actorId, pending.sourceId, pending.remoteContactId) ??
         acceptedLocal.contact,
       localDirectChatId: localDirectRoom?.chatId,
       remoteDirectChatId: remoteAccepted.localDirectChatId ?? undefined,
@@ -3407,9 +3407,9 @@ export class AppKernel {
   }
 
   async acceptContactRequestRemote(input: {
-    actorId: MessageActorId;
+    actorId: MessageContactId;
     requestId: string;
-    remoteActorId: MessageActorId;
+    remoteContactId: MessageContactId;
     remoteLabel?: string;
     remoteSubtitle?: string;
     remoteIconUrl?: string;
@@ -3426,13 +3426,13 @@ export class AppKernel {
       localDirectRoom = await this.createLocalDirectContactRoom({
         actorId: input.actorId,
         sourceId: pending.sourceId,
-        remoteActorId: input.remoteActorId,
+        remoteContactId: input.remoteContactId,
         remoteLabel: input.remoteLabel,
         remoteDirectChatId: input.remoteDirectChatId,
       });
     }
     const accepted = this.messageControlPlane.acceptContactRequest({
-      ownerActorId: input.actorId,
+      ownerContactId: input.actorId,
       requestId: input.requestId,
       label: input.remoteLabel,
       subtitle: input.remoteSubtitle,
@@ -3441,20 +3441,20 @@ export class AppKernel {
       remoteDirectChatId: input.remoteDirectChatId,
     });
     if (localDirectRoom && input.firstChat?.trim()) {
-      this.appendDirectBootstrapMessage(localDirectRoom.chatId, input.remoteActorId, input.firstChat.trim());
+      this.appendDirectBootstrapMessage(localDirectRoom.chatId, input.remoteContactId, input.firstChat.trim());
     }
     return {
       request: accepted.request,
       contact:
-        this.messageControlPlane.getContact(input.actorId, pending.sourceId, input.remoteActorId) ?? accepted.contact,
+        this.messageControlPlane.getContact(input.actorId, pending.sourceId, input.remoteContactId) ?? accepted.contact,
       localDirectChatId: localDirectRoom?.chatId,
     };
   }
 
   async inviteAdditionalParticipantFromGlobalRoom(input: {
-    actorId: MessageActorId;
+    actorId: MessageContactId;
     chatId: string;
-    invitedActorId: MessageActorId;
+    invitedContactId: MessageContactId;
     invitedLabel?: string;
   }): Promise<PublicRoomEntry> {
     const room = this.resolveGlobalRoomProjection({
@@ -3468,7 +3468,9 @@ export class AppKernel {
         title: room.title,
         participants: [
           ...room.participants,
-          input.invitedLabel ? { id: input.invitedActorId, label: input.invitedLabel } : { id: input.invitedActorId },
+          input.invitedLabel
+            ? { id: input.invitedContactId, label: input.invitedLabel }
+            : { id: input.invitedContactId },
         ],
         metadata: {
           roomMode: "public",
@@ -3481,8 +3483,10 @@ export class AppKernel {
       chatId: input.chatId,
       patch: {
         participants: [
-          ...room.participants.filter((participant) => participant.id !== input.invitedActorId),
-          input.invitedLabel ? { id: input.invitedActorId, label: input.invitedLabel } : { id: input.invitedActorId },
+          ...room.participants.filter((participant) => participant.id !== input.invitedContactId),
+          input.invitedLabel
+            ? { id: input.invitedContactId, label: input.invitedLabel }
+            : { id: input.invitedContactId },
         ],
       },
     });
@@ -3490,14 +3494,14 @@ export class AppKernel {
 
   listGlobalRooms(
     input: {
-      actorId?: MessageActorId;
-      superadminActorId?: MessageActorId;
+      actorId?: MessageContactId;
+      superadminContactId?: MessageContactId;
       includeArchived?: boolean;
     } = {},
   ): PublicRoomEntry[] {
-    if (input.actorId && !input.superadminActorId) {
+    if (input.actorId && !input.superadminContactId) {
       return this.messageControlPlane
-        .listChannelsForActor(input.actorId, {
+        .listChannelsForContact(input.actorId, {
           includeArchived: input.includeArchived,
           touchPresence: false,
         })
@@ -3520,7 +3524,7 @@ export class AppKernel {
       label?: string;
     }>;
     initialUsers?: Array<{
-      actorId: MessageActorId;
+      contactId: MessageContactId;
       label?: string;
       role: MessageChannelAccessRole;
       focused?: boolean;
@@ -3528,27 +3532,27 @@ export class AppKernel {
     metadata?: Record<string, unknown>;
     adminToken?: string;
     focus?: boolean;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): Promise<PublicRoomEntry> {
     const shouldFocus = input.focus ?? true;
-    const creatorActorId = input.actorId ?? input.superadminActorId;
+    const creatorContactId = input.actorId ?? input.superadminContactId;
     const initialUsers =
-      creatorActorId || input.initialUsers?.length
+      creatorContactId || input.initialUsers?.length
         ? [
-            ...(creatorActorId
+            ...(creatorContactId
               ? [
                   {
-                    actorId: creatorActorId,
-                    label: input.initialUsers?.find((user) => user.actorId === creatorActorId)?.label,
+                    contactId: creatorContactId,
+                    label: input.initialUsers?.find((user) => user.contactId === creatorContactId)?.label,
                     role: "admin" as const,
                     focused:
                       shouldFocus ||
-                      input.initialUsers?.find((user) => user.actorId === creatorActorId)?.focused === true,
+                      input.initialUsers?.find((user) => user.contactId === creatorContactId)?.focused === true,
                   },
                 ]
               : []),
-            ...(input.initialUsers?.filter((user) => user.actorId !== creatorActorId) ?? []),
+            ...(input.initialUsers?.filter((user) => user.contactId !== creatorContactId) ?? []),
           ]
         : undefined;
     const room = this.messageControlPlane.createChannel({
@@ -3559,11 +3563,11 @@ export class AppKernel {
       initialUsers,
       metadata: sanitizeGlobalRoomMetadata(input.metadata),
       adminToken: input.adminToken,
-      bootstrapActorId: input.actorId && !input.superadminActorId ? input.actorId : undefined,
+      bootstrapContactId: input.actorId && !input.superadminContactId ? input.actorId : undefined,
     });
-    if (input.actorId && !input.superadminActorId) {
+    if (input.actorId && !input.superadminContactId) {
       if (!shouldFocus) {
-        this.messageControlPlane.focusForActor(input.actorId, "remove", [room.chatId]);
+        this.messageControlPlane.focusForContact(input.actorId, "remove", [room.chatId]);
       }
       return projectPublicRoomEntry(
         this.resolveGlobalRoomProjection({
@@ -3576,7 +3580,7 @@ export class AppKernel {
     return projectPublicRoomEntry(
       this.resolveGlobalRoomProjection({
         chatId: room.chatId,
-        superadminActorId: input.superadminActorId,
+        superadminContactId: input.superadminContactId,
         includeArchived: true,
       }),
     );
@@ -3586,8 +3590,8 @@ export class AppKernel {
     chatId: string;
     messageId?: number;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): PublicRoomEntry {
     const access = this.resolveGlobalRoomAccess(input);
     return projectPublicRoomEntry(
@@ -3602,8 +3606,8 @@ export class AppKernel {
   focusGlobalRooms(input: {
     op: MessageFocusOp;
     channels: Array<{ chatId: string; accessToken?: string }>;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): { ok: boolean; message: string; focusedChatIds: string[] } {
     const focusedChatIds =
       input.channels.length > 0 &&
@@ -3615,8 +3619,8 @@ export class AppKernel {
               accessToken: channel.accessToken!,
             })),
           )
-        : input.actorId && !input.superadminActorId
-          ? this.messageControlPlane.focusForActor(
+        : input.actorId && !input.superadminContactId
+          ? this.messageControlPlane.focusForContact(
               input.actorId,
               input.op,
               input.channels.map((channel) => channel.chatId),
@@ -3637,8 +3641,8 @@ export class AppKernel {
     before?: ReverseTimeCursor | null;
     limit?: number;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): PublicRoomPage {
     const access = this.resolveGlobalRoomAccess(input);
     return projectPublicRoomPage(
@@ -3655,8 +3659,8 @@ export class AppKernel {
     chatId: string;
     limit?: number;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): PublicRoomSnapshot {
     const access = this.resolveGlobalRoomAccess(input);
     return projectPublicRoomSnapshot(
@@ -3674,8 +3678,8 @@ export class AppKernel {
     query: string;
     offset?: number;
     limit?: number;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): PublicRoomMessageQueryResult {
     return this.messageControlPlane.queryAuthorized({
       chatId: input.chatId,
@@ -3683,8 +3687,8 @@ export class AppKernel {
       query: input.query,
       offset: input.offset,
       limit: input.limit,
-      actorId: input.actorId,
-      superadminActorId: input.superadminActorId,
+      contactId: input.actorId,
+      superadminContactId: input.superadminContactId,
     });
   }
 
@@ -3694,9 +3698,9 @@ export class AppKernel {
     assetIds?: string[];
     clientMessageId?: string;
     accessToken?: string;
-    sendAsActorId?: MessageActorId;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    sendAsActorId?: MessageContactId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): { ok: boolean; reason?: string } {
     try {
       const access = this.resolveGlobalRoomAccess(input);
@@ -3707,7 +3711,7 @@ export class AppKernel {
         kind: "text",
         content: input.text,
         clientMessageId: input.clientMessageId,
-        senderActorId: this.resolveGlobalRoomSenderActorId(input, access),
+        senderContactId: this.resolveGlobalRoomSenderActorId(input, access),
         attachments,
         metadata: input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,
       });
@@ -3725,8 +3729,8 @@ export class AppKernel {
     messageId: number;
     text: string;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): { ok: boolean; reason?: string; messageId?: number; updatedAt?: number } {
     try {
       const access = this.resolveGlobalRoomAccess(input);
@@ -3753,8 +3757,8 @@ export class AppKernel {
     chatId: string;
     messageId: number;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): { ok: boolean; reason?: string; messageId?: number; updatedAt?: number; recalledAt?: number } {
     try {
       const access = this.resolveGlobalRoomAccess(input);
@@ -3781,15 +3785,15 @@ export class AppKernel {
     chatId: string;
     patch: MessageChannelPatchInput;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): PublicRoomEntry {
     const access = this.resolveGlobalRoomAccess(input);
     return projectPublicRoomEntry(
       this.messageControlPlane.updateChannelAuthorized({
         chatId: input.chatId,
         accessToken: access.accessToken,
-        superadminActorId: input.superadminActorId,
+        superadminContactId: input.superadminContactId,
         patch: {
           ...input.patch,
           metadata: sanitizeGlobalRoomMetadata(input.patch.metadata),
@@ -3802,15 +3806,15 @@ export class AppKernel {
     chatId: string;
     archivedBy?: string;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): PublicRoomEntry {
     const access = this.resolveGlobalRoomAccess(input);
     return projectPublicRoomEntry(
       this.messageControlPlane.archiveChannelAuthorized({
         chatId: input.chatId,
         accessToken: access.accessToken,
-        superadminActorId: input.superadminActorId,
+        superadminContactId: input.superadminContactId,
         archivedBy: input.archivedBy ?? access.room.owner,
       }),
     );
@@ -3819,15 +3823,15 @@ export class AppKernel {
   deleteGlobalRoom(input: {
     chatId: string;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): PublicRoomEntry {
     const access = this.resolveGlobalRoomAccess(input);
     return projectPublicRoomEntry(
       this.messageControlPlane.deleteChannelAuthorized({
         chatId: input.chatId,
         accessToken: access.accessToken,
-        superadminActorId: input.superadminActorId,
+        superadminContactId: input.superadminContactId,
       }),
     );
   }
@@ -3835,14 +3839,14 @@ export class AppKernel {
   listGlobalRoomGrants(input: {
     chatId: string;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): MessageChannelGrantRecord[] {
     const access = this.resolveGlobalRoomAccess(input);
     return this.messageControlPlane.listChannelGrantsAuthorized({
       chatId: input.chatId,
       accessToken: access.accessToken,
-      superadminActorId: input.superadminActorId,
+      superadminContactId: input.superadminContactId,
     });
   }
 
@@ -3850,15 +3854,15 @@ export class AppKernel {
     input: {
       chatId: string;
       accessToken?: string;
-      actorId?: MessageActorId;
-      superadminActorId?: MessageActorId;
+      actorId?: MessageContactId;
+      superadminContactId?: MessageContactId;
     } & MessageIssueGrantInput,
   ): MessageIssuedGrant {
     const access = this.resolveGlobalRoomAccess(input);
     return this.messageControlPlane.issueChannelGrantAuthorized({
       chatId: input.chatId,
       accessToken: access.accessToken,
-      superadminActorId: input.superadminActorId,
+      superadminContactId: input.superadminContactId,
       role: input.role,
       label: input.label,
       participantId: input.participantId,
@@ -3870,14 +3874,14 @@ export class AppKernel {
     chatId: string;
     grantId: string;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): { ok: boolean } {
     const access = this.resolveGlobalRoomAccess(input);
     return this.messageControlPlane.revokeChannelGrantAuthorized({
       chatId: input.chatId,
       accessToken: access.accessToken,
-      superadminActorId: input.superadminActorId,
+      superadminContactId: input.superadminContactId,
       grantId: input.grantId,
     });
   }
@@ -3890,7 +3894,7 @@ export class AppKernel {
     expiresAt?: number;
     endpoint?: { authorityUrl: string; trpcPath?: string; acceptPath?: string };
     accessToken?: string;
-    superadminActorId?: MessageActorId;
+    superadminContactId?: MessageContactId;
   }): MessageInvitationRecord {
     if (!isPrincipalId(input.participantId)) {
       throw new Error("room managed seat participantId must be a principal id");
@@ -3938,7 +3942,7 @@ export class AppKernel {
     expiresAt?: number;
     endpoint?: { authorityUrl: string; trpcPath?: string; acceptPath?: string };
     accessToken?: string;
-    superadminActorId?: MessageActorId;
+    superadminContactId?: MessageContactId;
   }): MessageInvitationRecord | MessageChannelAccessProjection {
     if (!isPrincipalId(input.participantId)) {
       throw new Error("room managed seat participantId must be a principal id");
@@ -3953,7 +3957,7 @@ export class AppKernel {
     chatId: string;
     participantId: string;
     accessToken?: string;
-    superadminActorId?: MessageActorId;
+    superadminContactId?: MessageContactId;
   }): { ok: true } {
     if (!isPrincipalId(input.participantId)) {
       throw new Error("room managed seat participantId must be a principal id");
@@ -4731,13 +4735,13 @@ export class AppKernel {
     input: {
       chatId: string;
       accessToken?: string;
-      actorId?: MessageActorId;
-      superadminActorId?: MessageActorId;
+      actorId?: MessageContactId;
+      superadminContactId?: MessageContactId;
     },
     access: { room: MessageControlPlaneEntry; accessToken: string },
-  ): MessageActorId | undefined {
-    if (input.superadminActorId) {
-      return input.superadminActorId;
+  ): MessageContactId | undefined {
+    if (input.superadminContactId) {
+      return input.superadminContactId;
     }
     if (input.actorId) {
       return input.actorId;
@@ -4757,23 +4761,23 @@ export class AppKernel {
     input: {
       chatId: string;
       accessToken?: string;
-      sendAsActorId?: MessageActorId;
-      actorId?: MessageActorId;
-      superadminActorId?: MessageActorId;
+      sendAsActorId?: MessageContactId;
+      actorId?: MessageContactId;
+      superadminContactId?: MessageContactId;
     },
     access: { room: MessageControlPlaneEntry; accessToken: string },
-  ): MessageActorId | undefined {
+  ): MessageContactId | undefined {
     const targetToken = input.accessToken ?? access.accessToken;
 
     if (input.sendAsActorId) {
       if (
-        input.superadminActorId &&
-        input.sendAsActorId === input.superadminActorId &&
+        input.superadminContactId &&
+        input.sendAsActorId === input.superadminContactId &&
         (!input.accessToken || targetToken === access.room.accessToken)
       ) {
         return input.sendAsActorId;
       }
-      const requestedProjection = this.messageControlPlane.getChannelForActor(input.chatId, input.sendAsActorId, {
+      const requestedProjection = this.messageControlPlane.getChannelForContact(input.chatId, input.sendAsActorId, {
         includeArchived: true,
         touchPresence: false,
       });
@@ -4783,8 +4787,8 @@ export class AppKernel {
       return input.sendAsActorId;
     }
 
-    if (input.actorId && !input.superadminActorId) {
-      const actorProjection = this.messageControlPlane.getChannelForActor(input.chatId, input.actorId, {
+    if (input.actorId && !input.superadminContactId) {
+      const actorProjection = this.messageControlPlane.getChannelForContact(input.chatId, input.actorId, {
         includeArchived: true,
         touchPresence: false,
       });
@@ -4794,8 +4798,8 @@ export class AppKernel {
       return input.actorId;
     }
 
-    if (input.superadminActorId && (!input.accessToken || targetToken === access.room.accessToken)) {
-      return input.superadminActorId;
+    if (input.superadminContactId && (!input.accessToken || targetToken === access.room.accessToken)) {
+      return input.superadminContactId;
     }
 
     if (targetToken === access.room.accessToken && access.room.participantId) {
@@ -4808,7 +4812,7 @@ export class AppKernel {
     });
     return (
       grants.find((grant) => grant.accessToken === targetToken)?.participantId ??
-      input.superadminActorId ??
+      input.superadminContactId ??
       input.actorId
     );
   }
@@ -4817,8 +4821,8 @@ export class AppKernel {
     chatId: string;
     files: Array<{ name: string; mimeType: string; bytes: Uint8Array }>;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): Promise<RoomMediaAsset[]> {
     const access = this.resolveGlobalRoomAccess(input);
     const uploadedByActorId = this.resolveGlobalRoomUploaderActorId(input, access);
@@ -4844,8 +4848,8 @@ export class AppKernel {
   listGlobalRoomAssets(input: {
     chatId: string;
     accessToken?: string;
-    actorId?: MessageActorId;
-    superadminActorId?: MessageActorId;
+    actorId?: MessageContactId;
+    superadminContactId?: MessageContactId;
   }): RoomMediaAsset[] {
     this.resolveGlobalRoomAccess(input);
     return this.roomAssets.listAssets(input.chatId).map((asset) => this.projectGlobalRoomAsset(input.chatId, asset));

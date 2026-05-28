@@ -51,11 +51,15 @@ const createAvatarEntry = (nickname: string): GlobalAvatarCatalogEntry => ({
   effectivePath: `/global/${nickname}`,
 });
 
+const TEST_SYSTEM_ID = "0x0000000000000000000000000000000000000c15";
+
 const createRoomEntry = (chatId: string, metadata: Record<string, unknown>, title: string): GlobalRoomEntry => ({
   chatId,
   kind: "room",
   title,
   owner: "ops",
+  superKey: TEST_SYSTEM_ID,
+  createdBySystemId: TEST_SYSTEM_ID,
   participants: [],
   metadata,
   createdAt: 1,

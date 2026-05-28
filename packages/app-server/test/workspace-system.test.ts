@@ -826,8 +826,8 @@ describe("Feature: workspace system kernel integration", () => {
         };
         items?: Array<{
           content: string;
-          readActorIds?: unknown;
-          unreadActorIds?: unknown;
+          readContactIds?: unknown;
+          unreadContactIds?: unknown;
           metadata?: unknown;
         }>;
       };
@@ -839,8 +839,8 @@ describe("Feature: workspace system kernel integration", () => {
     expect(readPayload.snapshot?.channel?.seatStates).toBeUndefined();
     expect(readPayload.snapshot?.items?.some((item) => item.content === "通过 stdin 发送房间消息")).toBeTrue();
     const deliveredItem = readPayload.snapshot?.items?.find((item) => item.content === "通过 stdin 发送房间消息");
-    expect(deliveredItem?.readActorIds).toBeUndefined();
-    expect(deliveredItem?.unreadActorIds).toBeUndefined();
+    expect(deliveredItem?.readContactIds).toBeUndefined();
+    expect(deliveredItem?.unreadContactIds).toBeUndefined();
     expect(deliveredItem?.metadata).toBeUndefined();
 
     const sentUtf8Argv = await execRootWorkspaceBash(kernel, session.id, {
@@ -1825,8 +1825,8 @@ describe("Feature: workspace system kernel integration", () => {
       const room = await kernel.createGlobalRoom({
         title: "managed-seat-room",
         initialUsers: [
-          { actorId: aliceMeta.avatarPrincipalId as `0x${string}`, label: "Alice", role: "member", focused: true },
-          { actorId: bobMeta.avatarPrincipalId as `0x${string}`, label: "Bob", role: "member", focused: true },
+          { contactId: aliceMeta.avatarPrincipalId as `0x${string}`, label: "Alice", role: "member", focused: true },
+          { contactId: bobMeta.avatarPrincipalId as `0x${string}`, label: "Bob", role: "member", focused: true },
         ],
       });
 
@@ -1993,8 +1993,8 @@ describe("Feature: workspace system kernel integration", () => {
       const room = await kernel.createGlobalRoom({
         title: "managed-seat-collaboration",
         initialUsers: [
-          { actorId: aliceMeta.avatarPrincipalId as `0x${string}`, label: "Alice", role: "member", focused: true },
-          { actorId: bobMeta.avatarPrincipalId as `0x${string}`, label: "Bob", role: "member", focused: true },
+          { contactId: aliceMeta.avatarPrincipalId as `0x${string}`, label: "Alice", role: "member", focused: true },
+          { contactId: bobMeta.avatarPrincipalId as `0x${string}`, label: "Bob", role: "member", focused: true },
         ],
       });
 

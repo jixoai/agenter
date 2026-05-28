@@ -2583,8 +2583,8 @@ describe("Feature: runtime store synchronization", () => {
               content: "fresh tui message",
               createdAt: 1,
               updatedAt: 1,
-              readActorIds: [],
-              unreadActorIds: [],
+              readContactIds: [],
+              unreadContactIds: [],
             },
           ],
           nextBefore: null,
@@ -2643,8 +2643,8 @@ describe("Feature: runtime store synchronization", () => {
               content: "fresh headless message",
               createdAt: 1,
               updatedAt: 1,
-              readActorIds: [],
-              unreadActorIds: [],
+              readContactIds: [],
+              unreadContactIds: [],
             },
           ],
           nextBefore: null,
@@ -6990,7 +6990,7 @@ describe("Feature: runtime store synchronization", () => {
             watchId: "watch-room-main",
             ownerActionId: "action-watch-room-main",
             ownerActionKind: "message_follow_up",
-            ownerActorId: "assistant",
+            ownerContactId: "assistant",
             ownerCycleId: 12,
             ownerSessionModelCallId: 139,
             target: "room:room-main",
@@ -7823,8 +7823,8 @@ describe("Feature: runtime store synchronization", () => {
                 content: "snapshot",
                 createdAt: 2,
                 updatedAt: 2,
-                readActorIds: [],
-                unreadActorIds: [],
+                readContactIds: [],
+                unreadContactIds: [],
               } satisfies GlobalRoomMessage,
             ],
             nextBefore: { beforeTimeMs: 2, beforeId: 11 },
@@ -7847,8 +7847,8 @@ describe("Feature: runtime store synchronization", () => {
                 content: "older",
                 createdAt: 1,
                 updatedAt: 1,
-                readActorIds: [],
-                unreadActorIds: [],
+                readContactIds: [],
+                unreadContactIds: [],
               } satisfies GlobalRoomMessage,
             ],
             nextBefore: null,
@@ -7927,7 +7927,7 @@ describe("Feature: runtime store synchronization", () => {
         title: "Ops room",
         initialUsers: [
           {
-            actorId: "auth:observer",
+            contactId: "auth:observer",
             label: "Observer",
             role: "member",
             focused: true,
@@ -7957,8 +7957,8 @@ describe("Feature: runtime store synchronization", () => {
           content: "snapshot",
           createdAt: 2,
           updatedAt: 2,
-          readActorIds: [],
-          unreadActorIds: [],
+          readContactIds: [],
+          unreadContactIds: [],
         },
       ],
       nextBefore: { beforeTimeMs: 2, beforeId: 11 },
@@ -7985,8 +7985,8 @@ describe("Feature: runtime store synchronization", () => {
           content: "older",
           createdAt: 1,
           updatedAt: 1,
-          readActorIds: [],
-          unreadActorIds: [],
+          readContactIds: [],
+          unreadContactIds: [],
         },
       ],
       hasMore: false,
@@ -8042,12 +8042,12 @@ describe("Feature: runtime store synchronization", () => {
       accessToken: room.accessToken,
     });
 
-    expect(requests.list).toEqual({});
+    expect(requests.list).toEqual({ includeArchived: true });
     expect(requests.create).toMatchObject({
       title: "Ops room",
       initialUsers: [
         {
-          actorId: "auth:observer",
+          contactId: "auth:observer",
           label: "Observer",
           role: "member",
           focused: true,
@@ -8271,8 +8271,8 @@ describe("Feature: runtime store synchronization", () => {
               content: "older message",
               createdAt: 1,
               updatedAt: 1,
-              readActorIds: [],
-              unreadActorIds: [],
+              readContactIds: [],
+              unreadContactIds: [],
             },
           ],
           nextBefore: null,
@@ -8593,8 +8593,8 @@ describe("Feature: runtime store synchronization", () => {
                 content: "fresh room message",
                 createdAt: 2,
                 updatedAt: 2,
-                readActorIds: [],
-                unreadActorIds: [],
+                readContactIds: [],
+                unreadContactIds: [],
               },
             ],
             nextBefore: null,
@@ -10429,15 +10429,15 @@ describe("Feature: runtime store synchronization", () => {
       rowId: 12,
       messageId: 12,
       chatId: room.chatId,
-      senderActorId: "session:ops-bot",
+      senderContactId: "session:ops-bot",
       from: "ops-bot",
       kind: "text" as const,
       content: "hello ops",
       createdAt: 12,
       updatedAt: 12,
       visibleAt: 12,
-      readActorIds: [],
-      unreadActorIds: ["session:relay", "auth:viewer"],
+      readContactIds: [],
+      unreadContactIds: ["session:relay", "auth:viewer"],
     };
     let latestVisibleMessage = staleLatestVisibleMessage;
     const store = new RuntimeStore(
@@ -10474,8 +10474,8 @@ describe("Feature: runtime store synchronization", () => {
           requests.markRead = input;
           latestVisibleMessage = {
             ...staleLatestVisibleMessage,
-            readActorIds: ["session:relay"],
-            unreadActorIds: ["auth:viewer"],
+            readContactIds: ["session:relay"],
+            unreadContactIds: ["auth:viewer"],
           };
           return { channel: room };
         },
@@ -10508,8 +10508,8 @@ describe("Feature: runtime store synchronization", () => {
     });
     expect(store.getState().globalRoomSnapshotsById[room.chatId]?.data?.items[0]).toMatchObject({
       messageId: 12,
-      readActorIds: ["session:relay"],
-      unreadActorIds: ["auth:viewer"],
+      readContactIds: ["session:relay"],
+      unreadContactIds: ["auth:viewer"],
     });
     expect(store.getState().unreadBySession["i-1"]).toBe(1);
     expect(store.getState().notifications[0]?.src).toBe("msg:chat-main/9");

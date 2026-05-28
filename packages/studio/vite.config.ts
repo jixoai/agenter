@@ -38,7 +38,16 @@ const appSvelteDependencyExcludes = [
   '@agenter/web-components',
   '@lucide/svelte',
   'bits-ui',
+  'framework7-svelte',
+  'framework7/lite-bundle',
   'shadcn-svelte'
+];
+const appSvelteDependencyInline = [
+  'framework7',
+  'framework7-svelte',
+  'dom7',
+  'skeleton-elements',
+  'ssr-window'
 ];
 const storybookSvelteDependencyExcludes = [
   '@storybook/addon-svelte-csf',
@@ -82,6 +91,11 @@ const createConfig = async (): Promise<UserConfig & { test: InlineConfig }> => {
     test: {
       expect: {
         requireAssertions: true
+      },
+      server: {
+        deps: {
+          inline: appSvelteDependencyInline
+        }
       },
       projects: [{
         extends: true,

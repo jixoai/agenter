@@ -20,7 +20,7 @@ const buildTranscriptMarkdown = (messages: PublicRoomMessageRecord[]): string =>
   messages
     .map((message, index) =>
       [
-        `### ${index + 1}. ${message.from} | ${message.senderActorId ?? "unknown"} | ${formatTimestamp(message.createdAt)}`,
+        `### ${index + 1}. ${message.from} | ${message.senderContactId ?? "unknown"} | ${formatTimestamp(message.createdAt)}`,
         "",
         "```text",
         escapeFence(message.content),

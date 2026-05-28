@@ -74,13 +74,13 @@
 		/^(auth|session|system):.+$/u.test(value) || isPrincipalActorId(value);
 
 	const buildInitialUsers = (): Array<{
-		actorId: GlobalRoomActorId;
+		contactId: GlobalRoomActorId;
 		label: string;
 		role: MessageSystemGrantRole;
 		focused: true;
 	}> => {
 		const initialUsers: Array<{
-			actorId: GlobalRoomActorId;
+			contactId: GlobalRoomActorId;
 			label: string;
 			role: MessageSystemGrantRole;
 			focused: true;
@@ -90,7 +90,7 @@
 				continue;
 			}
 			initialUsers.push({
-				actorId: actor.actorId,
+				contactId: actor.actorId,
 				label: selectableActorMap.get(actor.actorId)?.label ?? actor.label,
 				role: readUserDraft(actor.actorId).role,
 				focused: true,

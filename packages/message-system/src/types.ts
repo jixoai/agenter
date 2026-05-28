@@ -1,10 +1,10 @@
-import type { PrincipalId } from "@agenter/principal-crypto";
 import type {
   ManagedInvitationAcceptProof,
   ManagedInvitationEndpointDescriptor,
   ManagedInvitationRecordBase,
   ManagedInvitationShareDescriptor,
 } from "@agenter/managed-seat-invitation-handshake";
+import type { PrincipalId } from "@agenter/principal-crypto";
 
 export interface MessageTransportConfig {
   host?: string;
@@ -22,6 +22,12 @@ export interface MessageControlPlaneConfigPatch {
   transport?: Partial<MessageTransportConfig>;
 }
 
+export interface MessageSystemIdentity {
+  systemId: PrincipalId;
+  superadminContactId: PrincipalId;
+  defaultLocal: boolean;
+}
+
 /**
  * message-system keeps "channel" as the generic product surface.
  * Today the only concrete channel kind is "room", which is the shared space
@@ -31,21 +37,15 @@ export type MessageChannelKind = "room";
 export type MessageFocusOp = "add" | "remove" | "replace" | "clear";
 export type MessageChannelAccessRole = "admin" | "member" | "readonly";
 export type MessageManagedSeatClass = MessageChannelAccessRole;
-export type MessageActorId = PrincipalId | `auth:${string}` | `session:${string}` | `system:${string}`;
+export type MessageContactId = PrincipalId | `auth:${string}` | `session:${string}` | `system:${string}`;
 export type MessageAdminWorkKind = "grant_issue" | "grant_revoke" | "metadata_update";
 export type MessageContactRequestDirection = "inbound" | "outbound";
-export type MessageContactRequestState =
-  | "pending"
-  | "accepted"
-  | "rejected"
-  | "revoked"
-  | "expired"
-  | "superseded";
+export type MessageContactRequestState = "pending" | "accepted" | "rejected" | "revoked" | "expired" | "superseded";
 
 export interface MessageParticipant {
   /**
    * Room participants only describe seat membership.
-   * Identity provenance stays in the actor id itself (`0x...` / `auth:` / `session:` / `system:`),
+   * Identity provenance stays in the contact id itself (`0x...` / `auth:` / `session:` / `system:`),
    * while room permission stays in grants/admin state.
    */
   id: string;
@@ -56,13 +56,13 @@ export interface MessageAdminWorkItem {
   workId: string;
   kind: MessageAdminWorkKind;
   createdAt: number;
-  requestedBy: MessageActorId;
-  assignedAdminId?: MessageActorId;
+  requestedBy: MessageContactId;
+  assignedAdminId?: MessageContactId;
   payload?: Record<string, unknown>;
 }
 
 export interface MessageSourceSubscriptionRecord {
-  ownerActorId: MessageActorId;
+  ownerContactId: MessageContactId;
   sourceId: string;
   label: string;
   endpoint: string;
@@ -85,9 +85,9 @@ export interface MessageSourceSubscriptionInput {
 }
 
 export interface MessageContactRecord {
-  ownerActorId: MessageActorId;
+  ownerContactId: MessageContactId;
   sourceId: string;
-  remoteActorId: MessageActorId;
+  remoteContactId: MessageContactId;
   label: string;
   subtitle?: string;
   iconUrl?: string;
@@ -100,7 +100,7 @@ export interface MessageContactRecord {
 
 export interface MessageContactUpsertInput {
   sourceId: string;
-  remoteActorId: MessageActorId;
+  remoteContactId: MessageContactId;
   label: string;
   subtitle?: string;
   iconUrl?: string;
@@ -110,11 +110,11 @@ export interface MessageContactUpsertInput {
 }
 
 export interface MessageContactRequestRecord {
-  ownerActorId: MessageActorId;
+  ownerContactId: MessageContactId;
   requestId: string;
   direction: MessageContactRequestDirection;
   sourceId: string;
-  remoteActorId: MessageActorId;
+  remoteContactId: MessageContactId;
   remoteLabel?: string;
   remoteSubtitle?: string;
   remoteIconUrl?: string;
@@ -134,7 +134,7 @@ export interface MessageContactRequestCreateInput {
   requestId?: string;
   direction: MessageContactRequestDirection;
   sourceId: string;
-  remoteActorId: MessageActorId;
+  remoteContactId: MessageContactId;
   remoteLabel?: string;
   remoteSubtitle?: string;
   remoteIconUrl?: string;
@@ -196,6 +196,8 @@ export interface MessageChannelRecord {
   kind: MessageChannelKind;
   title: string;
   owner: string;
+  superKey: PrincipalId;
+  createdBySystemId: PrincipalId;
   contextId?: string;
   participants: MessageParticipant[];
   metadata?: Record<string, unknown>;
@@ -211,13 +213,13 @@ export interface MessageChannelRecord {
 export interface MessageChannelAccessProjection {
   accessRole: MessageChannelAccessRole;
   accessToken: string;
-  participantId?: MessageActorId;
+  participantId?: MessageContactId;
   currentAdmin?: boolean;
   transportUrl?: string;
 }
 
 export interface MessageSeatStateProjection {
-  actorId: MessageActorId;
+  contactId: MessageContactId;
   role: MessageChannelAccessRole;
   label?: string;
   currentAdmin: boolean;
@@ -231,14 +233,14 @@ export interface MessageChannelGrantRecord {
   chatId: string;
   role: MessageChannelAccessRole;
   label?: string;
-  participantId?: MessageActorId;
+  participantId?: MessageContactId;
   accessToken?: string;
   createdAt: number;
   revokedAt?: number;
 }
 
-export interface MessageActorStateRecord {
-  actorId: MessageActorId;
+export interface MessageContactStateRecord {
+  contactId: MessageContactId;
   unreadTotal: number;
   lastActiveAt?: number;
   lastLoginAt?: number;
@@ -246,8 +248,8 @@ export interface MessageActorStateRecord {
   metadata?: Record<string, unknown>;
 }
 
-export interface MessageActorRoomStateRecord {
-  actorId: MessageActorId;
+export interface MessageContactRoomStateRecord {
+  contactId: MessageContactId;
   chatId: string;
   unreadCount: number;
   lastReadRowId?: number;
@@ -257,14 +259,15 @@ export interface MessageActorRoomStateRecord {
   metadata?: Record<string, unknown>;
 }
 
-export interface MessageUnreadRoomSummary extends MessageActorRoomStateRecord {}
+export interface MessageUnreadRoomSummary extends MessageContactRoomStateRecord {}
 
 export interface MessageRecord {
   rowId: number;
   messageId: number;
   chatId: string;
   ref?: number;
-  senderActorId?: MessageActorId;
+  sourceSystemId: PrincipalId;
+  senderContactId?: MessageContactId;
   from: string;
   kind: MessageKind;
   content: string;
@@ -272,9 +275,9 @@ export interface MessageRecord {
   updatedAt: number;
   visibleAt?: number;
   recalledAt?: number;
-  recalledByActorId?: MessageActorId;
-  readActorIds: MessageActorId[];
-  unreadActorIds: MessageActorId[];
+  recalledByContactId?: MessageContactId;
+  readContactIds: MessageContactId[];
+  unreadContactIds: MessageContactId[];
   /**
    * Durable client-side idempotency key for one logical send attempt.
    * Reusing it means "return the same durable room message", not "create
@@ -288,6 +291,67 @@ export interface MessageRecord {
   metadata?: Record<string, unknown>;
   attachments?: MessageAttachment[];
   payload?: MessagePayload;
+}
+
+export interface MessageFollowUpRequest {
+  /**
+   * One-shot reminder delay owned by the runtime that sent or explicitly
+   * reused the room message. This is scheduler input, not room truth.
+   */
+  afterMs: number;
+  /**
+   * Follow-up delivery is session-owned rather than room-owned so the global
+   * message-system can route later attention back to the correct runtime.
+   */
+  ownerSessionId: string;
+  /**
+   * Durable attention store root for this reminder's owner session.
+   * This lets message-system persist reminder attention even while the runtime
+   * instance is offline.
+   *
+   * TODO: This is an intentionally local-first bridge. Remote parity must come
+   * from a future AsyncContext + RPC ownership architecture rather than adding
+   * more ad-hoc transport fields here.
+   */
+  attentionRoot: string;
+  /**
+   * Stable attention context companion for the room message.
+   */
+  attentionContextId: string;
+  /**
+   * Attention owner recorded into the durable context if that context has not
+   * been created yet.
+   */
+  attentionOwner: string;
+}
+
+export interface MessageFollowUpTaskRecord {
+  taskId: string;
+  chatId: string;
+  messageId: number;
+  ownerSessionId: string;
+  attentionRoot: string;
+  attentionContextId: string;
+  attentionOwner: string;
+  dueAt: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MessageFollowUpDueInput extends MessageFollowUpTaskRecord {
+  message: MessageRecord;
+}
+
+export interface MessageFollowUpDeliveryReceipt {
+  reminderContextId?: string | null;
+  reminderCommitId?: string | null;
+}
+
+export interface MessageFollowUpReminderPresentation {
+  title: string;
+  detailValue: string;
+  detailFormat: string;
+  detailKind: "replace";
 }
 
 export interface ReverseTimeCursor {
@@ -338,16 +402,22 @@ export interface MessageCreateInput {
   kind: MessageChannelKind;
   title?: string;
   owner?: string;
+  /**
+   * Room control truth still persists a concrete superKey.
+   * Callers may omit it and let the control plane bind the current system superadmin.
+   */
+  superKey?: PrincipalId;
+  systemId?: PrincipalId;
   contextId?: string;
   participants?: MessageParticipant[];
   initialUsers?: MessageCreateInitialUserInput[];
   metadata?: Record<string, unknown>;
   adminToken?: string;
-  bootstrapActorId?: MessageActorId;
+  bootstrapContactId?: MessageContactId;
 }
 
 export interface MessageCreateInitialUserInput {
-  actorId: MessageActorId;
+  contactId: MessageContactId;
   label?: string;
   role: MessageChannelAccessRole;
   focused?: boolean;
@@ -356,15 +426,16 @@ export interface MessageCreateInitialUserInput {
 export interface MessageAppendInput {
   chatId: string;
   ref?: number;
-  senderActorId?: MessageActorId;
+  sourceSystemId?: PrincipalId;
+  senderContactId?: MessageContactId;
   from?: string;
   kind?: MessageKind;
   content: string;
   createdAt?: number;
   updatedAt?: number;
   visibleAt?: number;
-  readActorIds?: MessageActorId[];
-  unreadActorIds?: MessageActorId[];
+  readContactIds?: MessageContactId[];
+  unreadContactIds?: MessageContactId[];
   /**
    * Durable idempotency key for one logical room write. Safe retry behavior
    * belongs on this explicit contract instead of guessing from content.
@@ -375,6 +446,11 @@ export interface MessageAppendInput {
    * Runtime-private follow-up reminders stay outside room message storage.
    */
   metadata?: Record<string, unknown>;
+  /**
+   * Private reminder scheduling input. The task is stored outside the durable
+   * room row so later attention can be re-opened without mutating room truth.
+   */
+  followUp?: MessageFollowUpRequest;
   attachments?: MessageAttachment[];
   payload?: MessagePayload;
 }
@@ -391,7 +467,7 @@ export interface MessageRecallInput {
   messageId: number;
   updatedAt?: number;
   recalledAt?: number;
-  recalledByActorId?: MessageActorId;
+  recalledByContactId?: MessageContactId;
 }
 
 export interface MessageAuthorizedReadInput {
@@ -424,7 +500,7 @@ export interface MessageChannelPatchInput {
   title?: string;
   participants?: MessageParticipant[];
   metadata?: Record<string, unknown>;
-  adminGroupCandidateIds?: MessageActorId[];
+  adminGroupCandidateIds?: MessageContactId[];
 }
 
 export interface MessageIssueGrantInput {
@@ -456,7 +532,7 @@ export interface MessageInviteSeatInput {
   expiresAt?: number;
   endpoint?: ManagedInvitationEndpointDescriptor;
   accessToken?: string;
-  superadminActorId?: MessageActorId;
+  superadminContactId?: MessageContactId;
 }
 
 export interface MessageAcceptSeatInput {
@@ -472,14 +548,14 @@ export interface MessageConfigSeatInput {
   expiresAt?: number;
   endpoint?: ManagedInvitationEndpointDescriptor;
   accessToken?: string;
-  superadminActorId?: MessageActorId;
+  superadminContactId?: MessageContactId;
 }
 
 export interface MessageRevokeSeatInput {
   chatId: string;
   participantId: PrincipalId;
   accessToken?: string;
-  superadminActorId?: MessageActorId;
+  superadminContactId?: MessageContactId;
 }
 
 export interface CommitWaitHandle<T = unknown> {

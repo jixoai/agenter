@@ -51,7 +51,7 @@ export const submitReviewMessage = async (
     body: JSON.stringify({
       content: payload.text.trim(),
       attachments,
-      senderActorId: profile.viewerActorId,
+      senderContactId: profile.viewerActorId,
       metadata:
         (payload.commentResources?.length ?? 0) > 0
           ? {

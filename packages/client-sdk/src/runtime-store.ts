@@ -1682,24 +1682,26 @@ export class RuntimeStore {
   }
 
   private appendOptimisticGlobalRoomMessage(input: { chatId: string; text: string; clientMessageId: string }): void {
-    const optimisticMessage: GlobalRoomMessage = {
-      rowId: Number.MAX_SAFE_INTEGER,
-      messageId: Number.MAX_SAFE_INTEGER,
-      chatId: input.chatId,
-      from: "You",
-      kind: "text",
-      content: input.text,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      readActorIds: [],
-      unreadActorIds: [],
-      clientMessageId: input.clientMessageId,
-      metadata: { optimistic: true },
-    };
     this.setGlobalRoomSnapshotState(input.chatId, (resource) => {
       if (!resource.data) {
         return resource;
       }
+      const now = Date.now();
+      const optimisticMessage: GlobalRoomMessage = {
+        rowId: Number.MAX_SAFE_INTEGER,
+        messageId: Number.MAX_SAFE_INTEGER,
+        chatId: input.chatId,
+        sourceSystemId: resource.data.channel.createdBySystemId,
+        from: "You",
+        kind: "text",
+        content: input.text,
+        createdAt: now,
+        updatedAt: now,
+        readContactIds: [],
+        unreadContactIds: [],
+        clientMessageId: input.clientMessageId,
+        metadata: { optimistic: true },
+      };
       return {
         ...resource,
         data: {
@@ -1878,7 +1880,7 @@ export class RuntimeStore {
     this.emit();
 
     const task = this.client.trpc.message.globalList
-      .query({})
+      .query({ includeArchived: true })
       .then((output) => {
         const data = sortGlobalRooms(output.items);
         this.setGlobalRoomsState((resource) => ({
@@ -2940,7 +2942,7 @@ export class RuntimeStore {
     this.emit();
 
     const task = this.client.trpc.message.listChannels
-      .query({ sessionId })
+      .query({ sessionId, includeArchived: true })
       .then((output) => {
         this.setMessageChannelsState(sessionId, (resource) => ({
           ...resource,
@@ -4770,7 +4772,7 @@ export class RuntimeStore {
     title?: string;
     participants?: Array<{ id: string; label?: string }>;
     initialUsers?: Array<{
-      actorId: GlobalRoomActorId;
+      contactId: GlobalRoomActorId;
       label?: string;
       role: "admin" | "member" | "readonly";
       focused?: boolean;
@@ -4987,7 +4989,7 @@ export class RuntimeStore {
       ...input,
       accessToken: normalizeOptionalAccessToken(input.accessToken),
     });
-    this.removeGlobalRoomEntry(output.channel.chatId);
+    this.reconcileGlobalRoomEntry(output.channel);
     this.setGlobalRoomSnapshotState(output.channel.chatId, (resource) => ({
       ...resource,
       data: resource.data

@@ -1,5 +1,5 @@
 import type {
-  MessageActorId,
+  MessageContactId,
   MessageControlPlane,
   MessageControlPlaneEntry,
   MessageRecord,
@@ -21,7 +21,7 @@ interface PendingUnreadReadAck {
 
 export interface RuntimeMessageKernelAdapterOptions {
   messageSystem: MessageControlPlane;
-  messageActorId: MessageActorId;
+  messageContactId: MessageContactId;
   isLoopPaused: () => boolean;
   getMaxFocusedRoomCount: () => number;
   getMaxBatchReadRoomMessageCount: () => number;
@@ -65,7 +65,7 @@ export class RuntimeMessageKernelAdapter implements RuntimeSystemKernelAdapter {
   hasUnreadWork(): boolean {
     // This consumes message-system's materialized active-unread projection. Do
     // not recompute readiness here from raw transcript rows.
-    return this.options.messageSystem.getActorUnreadState(this.options.messageActorId).unreadTotal > this.pendingUnreadMessageIds.size;
+    return this.options.messageSystem.getContactUnreadState(this.options.messageContactId).unreadTotal > this.pendingUnreadMessageIds.size;
   }
 
   beginCycle(): void {
@@ -122,7 +122,7 @@ export class RuntimeMessageKernelAdapter implements RuntimeSystemKernelAdapter {
     }
 
     const roomSelections = this.options.messageSystem
-      .listUnreadRoomSummaries(this.options.messageActorId)
+      .listUnreadRoomSummaries(this.options.messageContactId)
       .map((summary) => ({
         summary,
         channel: this.options.getActorRoom(summary.chatId, {

@@ -27,11 +27,14 @@
 	const baseTimestamp = 1_710_000_000_000;
 	const storyRoomRevision = '0';
 	const storyTranscriptRevision = '0';
+	const storySourceSystemId = '0x0000000000000000000000000000000000000001' as const;
 	const channel = {
 		chatId: 'room-story',
 		kind: 'room',
 		title: 'Operator room',
 		owner: 'root',
+		superKey: storySourceSystemId,
+		createdBySystemId: storySourceSystemId,
 		participants: [
 			{ id: 'system:trusted-bootstrap', label: 'Bootstrap admin' },
 			{ id: 'auth:analyst', label: 'Analyst' },
@@ -55,17 +58,18 @@
 	}): StoryMessageRecord => {
 		const timestamp = baseTimestamp + input.rowId * 1_000;
 		return {
-			rowId: input.rowId,
-			messageId: input.rowId,
-			chatId: channel.chatId,
-			from: input.from,
+				rowId: input.rowId,
+				messageId: input.rowId,
+				chatId: channel.chatId,
+				sourceSystemId: storySourceSystemId,
+				from: input.from,
 			kind: 'text',
 			content: input.content,
 			createdAt: timestamp,
 			updatedAt: timestamp,
 			visibleAt: timestamp,
-			readActorIds: [],
-			unreadActorIds: [],
+			readContactIds: [],
+			unreadContactIds: [],
 			metadata: {},
 			attachments: [],
 		};

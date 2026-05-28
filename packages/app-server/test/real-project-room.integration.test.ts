@@ -39,20 +39,20 @@ describe("Feature: real AI multi-avatar project room collaboration", () => {
 
         expect(result.projectRoom.room.chatId).toBeTruthy();
         expect(result.backendContract.chatId).toBe(result.projectRoom.room.chatId);
-        expect(result.backendContract.senderActorId).toBe(harness.backendActorId);
+        expect(result.backendContract.senderContactId).toBe(harness.backendActorId);
         expect(result.backendContract.content).toContain("BACKEND-CONTRACT:");
         expect(result.frontendPlan.chatId).toBe(result.projectRoom.room.chatId);
-        expect(result.frontendPlan.senderActorId).toBe(harness.frontendActorId);
+        expect(result.frontendPlan.senderContactId).toBe(harness.frontendActorId);
         expect(result.frontendPlan.content).toContain("FRONTEND-PLAN:");
-        expect(result.apiQuestion.senderActorId).toBe(harness.frontendActorId);
+        expect(result.apiQuestion.senderContactId).toBe(harness.frontendActorId);
         expect(result.apiQuestion.content).toContain("API-QUESTION:");
-        expect(result.apiAnswer.senderActorId).toBe(harness.backendActorId);
+        expect(result.apiAnswer.senderContactId).toBe(harness.backendActorId);
         expect(result.apiAnswer.content).toContain("API-ANSWER:");
         expect(result.designSvg).toContain("DESIGN-SKETCH-V1");
-        expect(result.designAttachmentMessage.senderActorId).toBe(harness.frontendActorId);
+        expect(result.designAttachmentMessage.senderContactId).toBe(harness.frontendActorId);
         expect(result.designAttachmentMessage.content).toContain("DESIGN-ATTACHMENT: design.svg");
         expect(result.designAttachmentMessage.attachments?.[0]?.assetId).toBe(result.attachedAssetId);
-        expect(result.projectUrlMessage.senderActorId).toBe(harness.backendActorId);
+        expect(result.projectUrlMessage.senderContactId).toBe(harness.backendActorId);
         expect(result.projectUrlMessage.content).toContain("PROJECT-URL");
         expect(deliverySpan).not.toEqual({ start: 0, end: 0 });
         expect(result.projectUrlMessage.content.slice(deliverySpan.start, deliverySpan.end)).toBe(result.deliveryUrl);
@@ -75,7 +75,7 @@ describe("Feature: real AI multi-avatar project room collaboration", () => {
             ],
           }),
         ).toBe(true);
-        expect(result.userAcceptanceMessage.senderActorId).toBe(harness.userActorId);
+        expect(result.userAcceptanceMessage.senderContactId).toBe(harness.userActorId);
         expect(acceptanceSpan).not.toEqual({ start: 0, end: 0 });
         expect(result.userAcceptanceMessage.content.slice(acceptanceSpan.start, acceptanceSpan.end)).toBe(
           result.deliveryUrl,

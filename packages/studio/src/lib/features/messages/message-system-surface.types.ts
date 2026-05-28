@@ -39,7 +39,7 @@ export interface MessageSystemRoomAssetItem extends GlobalRoomAssetEntry {
 export interface MessageSystemCreateRoomInput {
   title?: string;
   initialUsers: Array<{
-    actorId: GlobalRoomActorId;
+    contactId: GlobalRoomActorId;
     role: MessageSystemGrantRole;
     focused?: boolean;
   }>;
@@ -64,6 +64,8 @@ export interface MessageSystemSeatRevokeInput {
 export interface MessageSystemSurfaceProps {
   selectedRoom: GlobalRoomEntry | MessageChannelEntry | null;
   authenticated: boolean;
+  archivedRoomCount?: number;
+  roomSeatTruthLoaded?: boolean;
   selectedRoomIconUrl?: string | null;
   resolveProfileIconUrl?: (reference: string) => string | null;
   resolveSessionIconUrl?: (sessionId: string) => string | null;

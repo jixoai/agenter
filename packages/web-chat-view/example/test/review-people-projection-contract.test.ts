@@ -1,5 +1,5 @@
 import type {
-  MessageActorId,
+  MessageContactId,
   MessageControlPlaneEntry,
   MessageSourceSubscriptionRecord,
 } from "@agenter/message-system";
@@ -13,13 +13,14 @@ import {
 } from "../src/lib/review-people.projection";
 
 const NOW = 1_773_000_000_000;
+const TEST_SYSTEM_ID = "0x0000000000000000000000000000000000000a11";
 
 const source = (
   sourceId: string,
   label: string,
-  ownerActorId: MessageActorId = "auth:owner",
+  ownerContactId: MessageContactId = "auth:owner",
 ): MessageSourceSubscriptionRecord => ({
-  ownerActorId,
+  ownerContactId,
   sourceId,
   label,
   endpoint: `https://${sourceId}.example.invalid/message-system`,
@@ -42,27 +43,27 @@ const peopleEnvelope = (): ReviewPeopleEnvelope => ({
   ],
   contacts: [
     {
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       sourceId: "remote-lab",
-      remoteActorId: "auth:kai",
+      remoteContactId: "auth:kai",
       label: "Kai",
       subtitle: "Remote lab reviewer",
       createdAt: NOW,
       updatedAt: NOW,
     },
     {
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       sourceId: "main-office",
-      remoteActorId: "auth:kai",
+      remoteContactId: "auth:kai",
       label: "Kai",
       subtitle: "Main office owner",
       createdAt: NOW,
       updatedAt: NOW,
     },
     {
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       sourceId: "local-review",
-      remoteActorId: "auth:lena",
+      remoteContactId: "auth:lena",
       label: "Lena",
       subtitle: "Local review room",
       localDirectChatId: "room-direct-lena",
@@ -72,11 +73,11 @@ const peopleEnvelope = (): ReviewPeopleEnvelope => ({
   ],
   contactRequests: [
     {
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       requestId: "request-mira",
       direction: "inbound",
       sourceId: "remote-lab",
-      remoteActorId: "auth:mira",
+      remoteContactId: "auth:mira",
       remoteLabel: "Mira",
       remoteSubtitle: "Product reviewer",
       message: "Requesting access to the mobile review room.",
@@ -85,11 +86,11 @@ const peopleEnvelope = (): ReviewPeopleEnvelope => ({
       updatedAt: NOW,
     },
     {
-      ownerActorId: "auth:owner",
+      ownerContactId: "auth:owner",
       requestId: "request-nora",
       direction: "outbound",
       sourceId: "main-office",
-      remoteActorId: "auth:nora",
+      remoteContactId: "auth:nora",
       remoteLabel: "Nora",
       state: "accepted",
       createdAt: NOW,
@@ -111,6 +112,8 @@ const activeChannel: MessageControlPlaneEntry = {
   kind: "room",
   title: "Canonical review room",
   owner: "Iris",
+  superKey: TEST_SYSTEM_ID,
+  createdBySystemId: TEST_SYSTEM_ID,
   participants: [],
   createdAt: NOW,
   updatedAt: NOW,

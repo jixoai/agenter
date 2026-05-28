@@ -233,7 +233,7 @@ const messageInviteBodySchema = z
     label: z.string().trim().min(1).optional(),
     expiresAt: z.number().int().positive().optional(),
     accessToken: z.string().trim().min(1).optional(),
-    superadminActorId: z.string().trim().min(1).optional(),
+    superadminContactId: z.string().trim().min(1).optional(),
     endpoint: managedSeatEndpointSchema.optional(),
   })
   .strict();
@@ -265,7 +265,7 @@ const messageConfigBodySchema = z
     label: z.string().trim().min(1).optional(),
     expiresAt: z.number().int().positive().optional(),
     accessToken: z.string().trim().min(1).optional(),
-    superadminActorId: z.string().trim().min(1).optional(),
+    superadminContactId: z.string().trim().min(1).optional(),
     endpoint: managedSeatEndpointSchema.optional(),
   })
   .strict();
@@ -275,7 +275,7 @@ const messageRevokeBodySchema = z
     chatId: z.string().trim().min(1),
     participantId: z.string().trim().min(1),
     accessToken: z.string().trim().min(1).optional(),
-    superadminActorId: z.string().trim().min(1).optional(),
+    superadminContactId: z.string().trim().min(1).optional(),
   })
   .strict();
 
@@ -612,7 +612,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
             label: body.label,
             expiresAt: body.expiresAt,
             accessToken: body.accessToken,
-            superadminActorId: body.superadminActorId as never,
+            superadminContactId: body.superadminContactId as never,
             endpoint: body.endpoint,
           });
           sendJson(res, 200, { ok: true, invitation });
@@ -670,7 +670,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
             label: body.label,
             expiresAt: body.expiresAt,
             accessToken: body.accessToken,
-            superadminActorId: body.superadminActorId as never,
+            superadminContactId: body.superadminContactId as never,
             endpoint: body.endpoint,
           });
           sendJson(res, 200, { ok: true, result });
@@ -690,7 +690,7 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
             chatId: body.chatId,
             participantId: body.participantId,
             accessToken: body.accessToken,
-            superadminActorId: body.superadminActorId as never,
+            superadminContactId: body.superadminContactId as never,
           });
           sendJson(res, 200, { ok: true, result });
         } catch (error) {

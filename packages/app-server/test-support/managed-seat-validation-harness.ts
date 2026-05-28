@@ -341,8 +341,8 @@ export const runManagedSeatSameInstanceScenario = async (
     const room = await kernel.createGlobalRoom({
       title: "managed-seat-same-instance",
       initialUsers: [
-        { actorId: alice.principalId, label: "Alice", role: "member", focused: true },
-        { actorId: bob.principalId, label: "Bob", role: "member", focused: true },
+        { contactId: alice.principalId, label: "Alice", role: "member", focused: true },
+        { contactId: bob.principalId, label: "Bob", role: "member", focused: true },
       ],
     });
     diagnostics.roomChatId = room.chatId;
@@ -694,7 +694,7 @@ export const runManagedSeatCrossInstanceScenario = async (
 
     const room = await left.kernel.createGlobalRoom({
       title: "cross-instance-room",
-      initialUsers: [{ actorId: alice.principalId, label: "Alice", role: "admin", focused: true }],
+      initialUsers: [{ contactId: alice.principalId, label: "Alice", role: "admin", focused: true }],
     });
     diagnostics.roomChatId = room.chatId;
     const roomInvite = await inviteRoomSeat({

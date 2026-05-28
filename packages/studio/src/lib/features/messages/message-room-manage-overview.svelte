@@ -38,6 +38,8 @@
 	const uid = $props.id();
 	const titleInputId = `${uid}-room-title`;
 	const lastUpdatedLabel = $derived(formatTimestamp(selectedRoom.updatedAt));
+	const archived = $derived(Boolean(selectedRoom.archivedAt));
+	const archivedAtLabel = $derived(selectedRoom.archivedAt ? formatTimestamp(selectedRoom.archivedAt) : null);
 </script>
 
 <div class="grid auto-rows-max gap-4" data-testid="room-manage-overview-section">
@@ -45,7 +47,14 @@
 		<Card.Header class="border-b">
 			<Card.Title>Room identity</Card.Title>
 			<Card.Description>
-				Rename the room or retire it when it is no longer needed. Last updated {lastUpdatedLabel}.
+				{#if archived}
+					This room is archived and hidden from the default active list. Last updated {lastUpdatedLabel}.
+					{#if archivedAtLabel}
+						<span> Archived {archivedAtLabel}.</span>
+					{/if}
+				{:else}
+					Rename the room or archive it when it should leave the default active list. Last updated {lastUpdatedLabel}.
+				{/if}
 			</Card.Description>
 		</Card.Header>
 		<Card.Content class="grid gap-4 pt-6">
@@ -70,15 +79,17 @@
 					</Button>
 				</div>
 			</div>
-		</Card.Content>
-		<Card.Footer class="flex flex-wrap justify-end gap-2 border-t pt-6">
-			<Button variant="outline" disabled={archiveBusy} onclick={onArchive}>
-				<ArchiveIcon class="size-4" />
-				Archive room
-			</Button>
-			<Button variant="destructive" disabled={deleteBusy} onclick={onDelete}>
-				<Trash2Icon class="size-4" />
-				Delete room
+			</Card.Content>
+			<Card.Footer class="flex flex-wrap justify-end gap-2 border-t pt-6">
+				{#if !archived}
+					<Button variant="outline" disabled={archiveBusy} onclick={onArchive}>
+						<ArchiveIcon class="size-4" />
+						Archive room
+					</Button>
+				{/if}
+				<Button variant="destructive" disabled={deleteBusy} onclick={onDelete}>
+					<Trash2Icon class="size-4" />
+					Delete room
 			</Button>
 		</Card.Footer>
 	</Card.Root>

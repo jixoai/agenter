@@ -350,7 +350,7 @@
           content: message.content,
           messageId: message.messageId,
           viewKey: message.viewKey,
-          senderActorId: message.senderActorId ?? null,
+          senderActorId: message.senderContactId ?? null,
           from: message.from,
         }),
         resolveMessageResources?.({
@@ -673,7 +673,7 @@
     const payload: MessageTransportClientMessage = {
       type: "send",
       message: {
-        senderActorId: sender.senderActorId,
+        senderContactId: sender.senderContactId,
         from: sender.from,
         content: normalized,
       },

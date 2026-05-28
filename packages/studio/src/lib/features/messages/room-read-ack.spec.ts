@@ -65,9 +65,9 @@ describe("Feature: room read acknowledgement remains monotonic", () => {
     expect(
       resolveRoomReadAckServerFloor(
         [
-          { rowId: 2, readActorIds: ["session:jane"] },
-          { rowId: 5, readActorIds: ["session:jj"] },
-          { rowId: 7, readActorIds: ["session:jane", "session:jj"] },
+          { rowId: 2, readContactIds: ["session:jane"] },
+          { rowId: 5, readContactIds: ["session:jj"] },
+          { rowId: 7, readContactIds: ["session:jane", "session:jj"] },
         ],
         "session:jane",
       ),

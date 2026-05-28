@@ -37,13 +37,13 @@ describe("Feature: real AI realistic project-room collaboration", () => {
         const finalUrlSpan = await judgeUrlSpan(semanticJudge, result.finalUrlMessage.content);
 
         expect(result.projectRoom.room.chatId).toBeTruthy();
-        expect(result.frontendCoordinationMessage.senderActorId).toBe(harness.frontendActorId);
-        expect(result.backendCoordinationMessage.senderActorId).toBe(harness.backendActorId);
+        expect(result.frontendCoordinationMessage.senderContactId).toBe(harness.frontendActorId);
+        expect(result.backendCoordinationMessage.senderContactId).toBe(harness.backendActorId);
         if (result.apiQuestionMessage) {
-          expect(result.apiQuestionMessage.senderActorId).toBe(harness.frontendActorId);
+          expect(result.apiQuestionMessage.senderContactId).toBe(harness.frontendActorId);
           expect(result.apiQuestionMessage.content).toContain("/api/status");
         }
-        expect(result.apiAnswerMessage.senderActorId).toBe(harness.backendActorId);
+        expect(result.apiAnswerMessage.senderContactId).toBe(harness.backendActorId);
         expect(/\/api\/status|READY-API|PROJECT-BOARD-V1/iu.test(result.apiAnswerMessage.content)).toBe(true);
         expect(result.designSvg).toContain("<svg");
         expect(
@@ -52,9 +52,9 @@ describe("Feature: real AI realistic project-room collaboration", () => {
             concepts: [{ key: "board_title", concept: "team project board title", aliases: ["小队项目看板"] }],
           }),
         ).toBe(true);
-        expect(result.designAttachmentMessage.senderActorId).toBe(harness.frontendActorId);
+        expect(result.designAttachmentMessage.senderContactId).toBe(harness.frontendActorId);
         expect(result.designAttachmentMessage.attachments?.[0]?.assetId).toBe(result.attachedAssetId);
-        expect(result.finalUrlMessage.senderActorId).toBe(harness.backendActorId);
+        expect(result.finalUrlMessage.senderContactId).toBe(harness.backendActorId);
         expect(finalUrlSpan).not.toEqual({ start: 0, end: 0 });
         expect(result.finalUrlMessage.content.slice(finalUrlSpan.start, finalUrlSpan.end)).toBe(result.deliveryUrl);
         expect(
@@ -76,7 +76,7 @@ describe("Feature: real AI realistic project-room collaboration", () => {
             ],
           }),
         ).toBe(true);
-        expect(result.userAcceptanceMessage.senderActorId).toBe(harness.userActorId);
+        expect(result.userAcceptanceMessage.senderContactId).toBe(harness.userActorId);
         expect(result.backendAttention.active).toHaveLength(0);
         expect(result.frontendAttention.active).toHaveLength(0);
         expect(result.backendModelCalls.some((call) => call.tools.includes("root_bash"))).toBe(true);

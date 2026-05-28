@@ -26,10 +26,10 @@ export interface ReviewConversationProjection {
 
 export interface ReviewContactProjection {
   key: string;
-  ownerActorId: string;
+  ownerContactId: string;
   sourceId: string;
   sourceLabel: string;
-  remoteActorId: string;
+  remoteContactId: string;
   label: string;
   subtitle: string;
   iconUrl: string | null;
@@ -44,7 +44,7 @@ export interface ReviewContactRequestProjection {
   state: MessageContactRequestRecord["state"];
   sourceId: string;
   sourceLabel: string;
-  remoteActorId: string;
+  remoteContactId: string;
   label: string;
   subtitle: string;
   iconUrl: string | null;
@@ -71,11 +71,11 @@ export interface ReviewPeopleProjection {
   pendingRequestCount: number;
 }
 
-export const createContactIdentity = (contact: Pick<MessageContactRecord, "ownerActorId" | "sourceId" | "remoteActorId">): string =>
-  `${contact.ownerActorId}::${contact.sourceId}::${contact.remoteActorId}`;
+export const createContactIdentity = (contact: Pick<MessageContactRecord, "ownerContactId" | "sourceId" | "remoteContactId">): string =>
+  `${contact.ownerContactId}::${contact.sourceId}::${contact.remoteContactId}`;
 
-export const createRequestIdentity = (request: Pick<MessageContactRequestRecord, "ownerActorId" | "requestId">): string =>
-  `${request.ownerActorId}::${request.requestId}`;
+export const createRequestIdentity = (request: Pick<MessageContactRequestRecord, "ownerContactId" | "requestId">): string =>
+  `${request.ownerContactId}::${request.requestId}`;
 
 export const createContactMentionSuggestions = (
   contacts: readonly ReviewContactProjection[],
@@ -84,7 +84,7 @@ export const createContactMentionSuggestions = (
     id: contact.key,
     label: contact.label,
     apply: `@${contact.label}`,
-    detail: `${contact.sourceLabel} · ${contact.remoteActorId}`,
+    detail: `${contact.sourceLabel} · ${contact.remoteContactId}`,
     iconUrl: contact.iconUrl ?? undefined,
   }));
 
@@ -199,12 +199,12 @@ export const buildReviewPeopleProjection = (input: {
       const sourceLabel = sourceLabels.get(contact.sourceId) ?? contact.sourceId;
       return {
         key: createContactIdentity(contact),
-        ownerActorId: contact.ownerActorId,
+        ownerContactId: contact.ownerContactId,
         sourceId: contact.sourceId,
         sourceLabel,
-        remoteActorId: contact.remoteActorId,
+        remoteContactId: contact.remoteContactId,
         label: contact.label,
-        subtitle: contact.subtitle ?? contact.remoteActorId,
+        subtitle: contact.subtitle ?? contact.remoteContactId,
         iconUrl: contact.iconUrl ?? null,
         directLabel: contact.localDirectChatId ? "direct" : "contact",
         localDirectChatId: contact.localDirectChatId ?? null,
@@ -219,8 +219,8 @@ export const buildReviewPeopleProjection = (input: {
     state: request.state,
     sourceId: request.sourceId,
     sourceLabel: sourceLabels.get(request.sourceId) ?? request.sourceId,
-    remoteActorId: request.remoteActorId,
-    label: request.remoteLabel ?? request.remoteActorId,
+    remoteContactId: request.remoteContactId,
+    label: request.remoteLabel ?? request.remoteContactId,
     subtitle: request.remoteSubtitle ?? `${request.direction} · ${request.state}`,
     iconUrl: request.remoteIconUrl ?? null,
     message: request.message ?? null,

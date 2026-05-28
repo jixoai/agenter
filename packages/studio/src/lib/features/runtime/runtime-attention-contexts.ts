@@ -190,12 +190,9 @@ export const buildRuntimeAttentionContextItems = (input: {
       jumpTarget,
     };
   });
-
-  if (activeItems.length > 0) {
-    return activeItems.sort(compareContextItems);
-  }
-
-  return attention.snapshot.contexts
+  const activeContextIds = new Set(activeItems.map((item) => item.contextId));
+  const trackedItems = attention.snapshot.contexts
+    .filter((context) => !activeContextIds.has(context.contextId))
     .map((context) => {
       const jumpTarget = resolveRuntimeContextJumpTarget(context.contextId, input.channels, input.terminals);
       const commitCount = context.commitCount ?? context.commits.length;
@@ -212,8 +209,9 @@ export const buildRuntimeAttentionContextItems = (input: {
         scores: toScoreEntries(context.scoreMap),
         jumpTarget,
       };
-    })
-    .sort(compareContextItems);
+    });
+
+  return [...activeItems.sort(compareContextItems), ...trackedItems.sort(compareContextItems)];
 };
 
 export const buildRuntimeSchedulerSignals = (input: {

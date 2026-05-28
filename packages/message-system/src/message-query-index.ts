@@ -25,7 +25,7 @@ type IndexedMessageRow = {
   room_archived_at: number | null;
   message_id: number;
   ref_id: number | null;
-  sender_actor_id: string | null;
+  sender_contact_id: string | null;
   from_id: string;
   kind: string;
   content: string;
@@ -71,7 +71,7 @@ const mapDocument = (row: IndexedMessageRow): MessageQueryDocument => ({
   contextId: row.context_id,
   messageId: row.message_id,
   ref: row.ref_id,
-  senderActorId: row.sender_actor_id,
+  senderContactId: row.sender_contact_id,
   from: row.from_id,
   kind: row.kind,
   content: row.content,
@@ -89,7 +89,7 @@ const buildSearchText = (channel: MessageChannelRecord, message: MessageRecord):
   [
     message.content,
     message.from,
-    message.senderActorId ?? "",
+    message.senderContactId ?? "",
     message.chatId,
     channel.title,
     channel.contextId ?? "",
@@ -109,7 +109,7 @@ const buildCandidateFilterSql = (
 ): { sql: string; params: Array<string | number> } => {
   if (filter.kind === "from") {
     return {
-      sql: `(lower(coalesce(doc.sender_actor_id, '')) = ? or instr(lower(doc.from_id), ?) > 0)`,
+      sql: `(lower(coalesce(doc.sender_contact_id, '')) = ? or instr(lower(doc.from_id), ?) > 0)`,
       params: [filter.value, filter.value],
     };
   }
@@ -264,7 +264,7 @@ export class MessageQueryIndex {
                context_id = ?,
                room_archived_at = ?,
                ref_id = ?,
-               sender_actor_id = ?,
+               sender_contact_id = ?,
                from_id = ?,
                kind = ?,
                content = ?,
@@ -283,7 +283,7 @@ export class MessageQueryIndex {
           channel.contextId ?? null,
           channel.archivedAt ?? null,
           message.ref ?? null,
-          message.senderActorId ?? null,
+          message.senderContactId ?? null,
           message.from,
           message.kind,
           message.content,
@@ -310,7 +310,7 @@ export class MessageQueryIndex {
           room_archived_at,
           message_id,
           ref_id,
-          sender_actor_id,
+          sender_contact_id,
           from_id,
           kind,
           content,
@@ -331,7 +331,7 @@ export class MessageQueryIndex {
         channel.archivedAt ?? null,
         message.messageId,
         message.ref ?? null,
-        message.senderActorId ?? null,
+        message.senderContactId ?? null,
         message.from,
         message.kind,
         message.content,
@@ -487,7 +487,7 @@ export class MessageQueryIndex {
         room_archived_at integer,
         message_id integer not null,
         ref_id integer,
-        sender_actor_id text,
+        sender_contact_id text,
         from_id text not null,
         kind text not null,
         content text not null,
@@ -501,7 +501,7 @@ export class MessageQueryIndex {
         attachment_count integer not null
       );
       create index idx_message_query_sql_chat_created on messages(chat_id, created_at desc, message_id desc);
-      create index idx_message_query_sql_sender on messages(sender_actor_id, created_at desc);
+      create index idx_message_query_sql_sender on messages(sender_contact_id, created_at desc);
       create index idx_message_query_sql_context on messages(context_id, created_at desc);
     `);
 
@@ -535,7 +535,7 @@ export class MessageQueryIndex {
             room_archived_at,
             message_id,
             ref_id,
-            sender_actor_id,
+            sender_contact_id,
             from_id,
             kind,
             content,
@@ -561,7 +561,7 @@ export class MessageQueryIndex {
               message.room_archived_at,
               message.message_id,
               message.ref_id,
-              message.sender_actor_id,
+              message.sender_contact_id,
               message.from_id,
               message.kind,
               message.content,
@@ -630,7 +630,7 @@ export class MessageQueryIndex {
         room_archived_at integer,
         message_id integer not null,
         ref_id integer,
-        sender_actor_id text,
+        sender_contact_id text,
         from_id text not null,
         kind text not null,
         content text not null,
@@ -653,7 +653,7 @@ export class MessageQueryIndex {
       );
 
       create index if not exists idx_message_doc_chat_created on message_doc(chat_id, created_at desc, message_id desc);
-      create index if not exists idx_message_doc_sender on message_doc(sender_actor_id, created_at desc, message_id desc);
+      create index if not exists idx_message_doc_sender on message_doc(sender_contact_id, created_at desc, message_id desc);
       create index if not exists idx_message_doc_context on message_doc(context_id, created_at desc, message_id desc);
       create index if not exists idx_message_doc_kind on message_doc(kind, created_at desc, message_id desc);
     `);

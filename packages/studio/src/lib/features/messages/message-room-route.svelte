@@ -45,6 +45,7 @@
 		buildMessageWorkbenchRooms,
 		getMessageWorkbenchSessionRoomState,
 		resolveMessageWorkbenchRoom,
+		splitMessageWorkbenchRooms,
 	} from './message-workbench-room-state';
 
 	let {
@@ -124,6 +125,7 @@
 			messageChannelsBySession: controller.runtimeState.messageChannelsBySession,
 		}),
 	);
+	const archivedRoomCount = $derived(splitMessageWorkbenchRooms(rooms).archivedRooms.length);
 	const selectedRoom = $derived(
 		resolveMessageWorkbenchRoom({
 			chatId: roomId,
@@ -193,7 +195,12 @@
 		}
 
 		const grantOptions = roomGrants
-			.filter((grant) => Boolean(grant.accessToken) && isUserFacingRoomActorId(grant.participantId))
+			.filter(
+				(grant) =>
+					Boolean(grant.accessToken) &&
+					grant.role !== 'readonly' &&
+					isUserFacingRoomActorId(grant.participantId),
+			)
 			.map((grant) => ({
 				accessToken: grant.accessToken ?? '',
 				participantId: grant.participantId,
@@ -204,34 +211,23 @@
 					fallbackActorLabel(grant.participantId ?? grant.grantId),
 			}));
 
-		const roomOption = (() => {
-			if (!room.accessToken) {
+			const roomOption = (() => {
+				if (!room.accessToken) {
+					return null;
+				}
+				if (room.accessRole !== 'readonly' && isUserFacingRoomActorId(room.participantId)) {
+					return {
+						accessToken: room.accessToken,
+						participantId: room.participantId,
+						role: room.accessRole,
+						label: actorDirectoryMap.get(room.participantId)?.label ?? fallbackActorLabel(room.participantId),
+					} satisfies MessageSystemSendAsOption;
+				}
 				return null;
-			}
-			if (isUserFacingRoomActorId(room.participantId)) {
-				return {
-					accessToken: room.accessToken,
-					participantId: room.participantId,
-					role: room.accessRole,
-					label: actorDirectoryMap.get(room.participantId)?.label ?? fallbackActorLabel(room.participantId),
-				} satisfies MessageSystemSendAsOption;
-			}
-			if (
-				currentAuthActorId &&
-				!grantOptions.some((option) => option.participantId === currentAuthActorId)
-			) {
-				return {
-					accessToken: room.accessToken,
-					participantId: currentAuthActorId,
-					role: room.accessRole,
-					label: actorDirectoryMap.get(currentAuthActorId)?.label ?? fallbackActorLabel(currentAuthActorId),
-				} satisfies MessageSystemSendAsOption;
-			}
-			return null;
-		})();
+			})();
 
-		return (roomOption ? [roomOption, ...grantOptions] : grantOptions).filter((option) => option.accessToken);
-	});
+			return (roomOption ? [roomOption, ...grantOptions] : grantOptions).filter((option) => option.accessToken);
+		});
 
 	const roomSeatStates = $derived.by(() => {
 		const room = selectedRoomProjection;
@@ -262,23 +258,6 @@
 				accessToken: room.accessToken,
 			});
 		}
-		if (
-			currentAuthActorId &&
-			room.accessToken &&
-			!seats.has(currentAuthActorId) &&
-			!isUserFacingRoomActorId(room.participantId)
-		) {
-			mergeSeat({
-				actorId: currentAuthActorId,
-				role: room.accessRole,
-				label: actorDirectoryMap.get(currentAuthActorId)?.label ?? fallbackActorLabel(currentAuthActorId),
-				currentAdmin: room.currentAdmin ?? room.accessRole === 'admin',
-				online: false,
-				focused: room.focused,
-				invalidCredential: false,
-				accessToken: room.accessToken,
-			});
-		}
 
 		for (const grant of roomGrants) {
 			if (!isUserFacingRoomActorId(grant.participantId)) {
@@ -298,11 +277,11 @@
 		}
 
 		for (const state of room.seatStates ?? []) {
-			if (isSystemActorId(state.actorId)) {
+			if (isSystemActorId(state.contactId)) {
 				continue;
 			}
 			mergeSeat({
-				actorId: state.actorId,
+				actorId: state.contactId,
 				role: state.role,
 				label: state.label,
 				currentAdmin: state.currentAdmin,
@@ -533,7 +512,6 @@
 			archivedBy: controller.authSession?.claims.authId ?? 'operator',
 		});
 		routeNotice = null;
-		await navigateToFallbackRoom(room.chatId);
 	};
 
 	const handleDeleteRoom = async (): Promise<void> => {
@@ -827,6 +805,8 @@
 	selectedRoom={selectedRoomProjection}
 	authenticated={isAuthenticated}
 	{selectedRoomIconUrl}
+	{archivedRoomCount}
+	roomSeatTruthLoaded={selectedRoomGrantsState.loaded}
 	resolveProfileIconUrl={(reference) => controller.runtimeStore.profileIconUrl(reference)}
 	resolveSessionIconUrl={(sessionId) => controller.runtimeStore.sessionIconUrl(sessionId)}
 	initialMessages={selectedRoomSnapshot?.items ?? []}

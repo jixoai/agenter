@@ -1,5 +1,18 @@
 export { AttentionStore } from "./attention-store";
 export {
+  applyAttentionCommitWithContext,
+  ensureAttentionContext,
+  type ApplyAttentionCommitInput,
+  type ApplyAttentionCommitResult,
+  type AttentionEnsureContextInput,
+} from "./attention-commit-application";
+export {
+  AttentionControlPlane,
+  type AttentionControlPlaneCommitInput,
+  type AttentionControlPlaneCommitResult,
+  type AttentionControlPlaneEnsureContextInput,
+} from "./attention-control-plane";
+export {
   DEFAULT_ATTENTION_CONTEXT_TEMPLATE,
   deriveAttentionContextContent,
   getAttentionContextTemplateSlot,

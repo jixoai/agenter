@@ -3,7 +3,7 @@ import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
-import type { MessageActorId, MessageControlPlaneEntry } from "@agenter/message-system";
+import type { MessageContactId, MessageControlPlaneEntry } from "@agenter/message-system";
 
 import {
   AppKernel,
@@ -65,8 +65,8 @@ export interface RealTeamKernelHarness {
   frontendSession: SessionMeta;
   backendAvatarPromptPath: string | null;
   frontendAvatarPromptPath: string | null;
-  backendActorId: MessageActorId;
-  frontendActorId: MessageActorId;
+  backendActorId: MessageContactId;
+  frontendActorId: MessageContactId;
   userActorId: `auth:${string}`;
   createProjectRoom: (input?: { title?: string; metadata?: Record<string, unknown> }) => Promise<RealTeamProjectRoom>;
   focusProjectRoom: (room: RealTeamProjectRoom, participants?: RealTeamParticipant[]) => Promise<void>;
@@ -202,8 +202,8 @@ export const createRealTeamKernelHarness = async (
     };
     const backendSession = await createParticipantSession("backend");
     const frontendSession = await createParticipantSession("frontend");
-    const backendActorId = backendSession.avatarPrincipalId as MessageActorId | undefined;
-    const frontendActorId = frontendSession.avatarPrincipalId as MessageActorId | undefined;
+    const backendActorId = backendSession.avatarPrincipalId as MessageContactId | undefined;
+    const frontendActorId = frontendSession.avatarPrincipalId as MessageContactId | undefined;
     if (!backendActorId) {
       throw new Error("expected backend avatar principal id");
     }
@@ -213,7 +213,7 @@ export const createRealTeamKernelHarness = async (
 
     const getSession = (participant: RealTeamParticipant): SessionMeta =>
       participant === "backend" ? backendSession : frontendSession;
-    const getActorId = (participant: RealTeamParticipant): MessageActorId =>
+    const getActorId = (participant: RealTeamParticipant): MessageContactId =>
       participant === "backend" ? backendActorId : frontendActorId;
     const updateProjectRoomFocus = async (
       room: RealTeamProjectRoom,
@@ -230,7 +230,7 @@ export const createRealTeamKernelHarness = async (
         });
       }
     };
-    const requireProjection = (chatId: string, actorId: MessageActorId): PublicRoomEntry => {
+    const requireProjection = (chatId: string, actorId: MessageContactId): PublicRoomEntry => {
       const projection = kernel
         .listGlobalRooms({ actorId, includeArchived: true })
         .find((item) => item.chatId === chatId);
@@ -258,23 +258,23 @@ export const createRealTeamKernelHarness = async (
         const room = await kernel.createGlobalRoom({
           title: roomInput.title ?? "real-team-project-room",
           metadata: roomInput.metadata ?? { scenario: "real-team-project-room" },
-          superadminActorId: input.userActorId ?? "auth:kzf",
+          superadminContactId: input.userActorId ?? "auth:kzf",
           focus: true,
           initialUsers: [
             {
-              actorId: input.userActorId ?? "auth:kzf",
+              contactId: input.userActorId ?? "auth:kzf",
               label: "user",
               role: "admin",
               focused: true,
             },
             {
-              actorId: backendActorId,
+              contactId: backendActorId,
               label: backendSession.avatar,
               role: "member",
               focused: false,
             },
             {
-              actorId: frontendActorId,
+              contactId: frontendActorId,
               label: frontendSession.avatar,
               role: "member",
               focused: false,
@@ -297,7 +297,7 @@ export const createRealTeamKernelHarness = async (
         kernel
           .snapshotGlobalRoom({
             chatId: room.room.chatId,
-            superadminActorId: input.userActorId ?? "auth:kzf",
+            superadminContactId: input.userActorId ?? "auth:kzf",
             limit,
           })
           .items.slice()
@@ -305,7 +305,7 @@ export const createRealTeamKernelHarness = async (
       listProjectRoomAssets: (room) =>
         kernel.listGlobalRoomAssets({
           chatId: room.room.chatId,
-          superadminActorId: input.userActorId ?? "auth:kzf",
+          superadminContactId: input.userActorId ?? "auth:kzf",
         }),
       bridgeWorkspaceFileToProjectRoomAttachment: async (bridgeInput) => {
         const bytes = new Uint8Array(await readFile(join(workspacePath, bridgeInput.relativePath)));

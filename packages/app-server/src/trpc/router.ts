@@ -3,7 +3,7 @@ import { observable } from "@trpc/server/observable";
 import { z } from "zod";
 
 import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
-import type { MessageActorId } from "@agenter/message-system";
+import type { MessageContactId } from "@agenter/message-system";
 import { isPrincipalId } from "@agenter/principal-crypto";
 import {
   productAttentionCommitInputSchema,
@@ -75,10 +75,10 @@ const messageQueryInputSchema = z.object({
   limit: z.number().int().positive().max(100).optional(),
 });
 const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
-const MESSAGE_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
+const MESSAGE_CONTACT_ID_PATTERN = /^(auth|session|system):.+$/;
 const TERMINAL_ACTOR_ID_PATTERN = /^(auth|session|system):.+$/;
-const messageActorIdSchema = z.custom<MessageActorId>(
-  (value) => typeof value === "string" && (MESSAGE_ACTOR_ID_PATTERN.test(value) || isPrincipalId(value)),
+const messageContactIdSchema = z.custom<MessageContactId>(
+  (value) => typeof value === "string" && (MESSAGE_CONTACT_ID_PATTERN.test(value) || isPrincipalId(value)),
   {
     message: "message actor id must be a principal id or start with auth:, session:, or system:",
   },
@@ -315,16 +315,16 @@ const resolveTerminalCallerScope = (
 
 const resolveMessageCallerScope = (
   auth: { claims: { authId: string; superadmin: boolean } } | null | undefined,
-): { actorId?: MessageActorId; superadminActorId?: MessageActorId } => {
+): { actorId?: MessageContactId; superadminContactId?: MessageContactId } => {
   if (!auth?.claims.authId) {
     return {};
   }
-  const actorId = `auth:${auth.claims.authId}` as MessageActorId;
-  return auth.claims.superadmin ? { superadminActorId: actorId } : { actorId };
+  const actorId = `auth:${auth.claims.authId}` as MessageContactId;
+  return auth.claims.superadmin ? { superadminContactId: actorId } : { actorId };
 };
 
-const resolveAuthedMessageActorId = (auth: { claims: { authId: string } }): MessageActorId =>
-  `auth:${auth.claims.authId}` as MessageActorId;
+const resolveAuthedMessageContactId = (auth: { claims: { authId: string } }): MessageContactId =>
+  `auth:${auth.claims.authId}` as MessageContactId;
 
 export const appRouter = t.router({
   auth: t.router({
@@ -900,7 +900,7 @@ export const appRouter = t.router({
           initialUsers: z
             .array(
               z.object({
-                actorId: messageActorIdSchema,
+                contactId: messageContactIdSchema,
                 label: z.string().trim().min(1).optional(),
                 role: z.enum(["admin", "member", "readonly"]),
                 focused: z.boolean().optional(),
@@ -1002,7 +1002,7 @@ export const appRouter = t.router({
         z.object({
           chatId: z.string().min(1),
           accessToken: z.string().min(1).optional(),
-          sendAsActorId: messageActorIdSchema.optional(),
+          sendAsActorId: messageContactIdSchema.optional(),
           text: z.string().min(1),
           assetIds: z.array(z.string().min(1)).optional(),
           clientMessageId: z.string().min(1).optional(),
@@ -1059,7 +1059,7 @@ export const appRouter = t.router({
               )
               .optional(),
             metadata: z.record(z.string(), z.unknown()).optional(),
-            adminGroupCandidateIds: z.array(messageActorIdSchema).optional(),
+            adminGroupCandidateIds: z.array(messageContactIdSchema).optional(),
           }),
         }),
       )
@@ -1129,7 +1129,7 @@ export const appRouter = t.router({
           accessToken: z.string().min(1).optional(),
           role: z.enum(["admin", "member", "readonly"]),
           label: z.string().trim().min(1).optional(),
-          participantId: messageActorIdSchema,
+          participantId: messageContactIdSchema,
           accessTokenHint: z
             .string()
             .trim()
@@ -1159,12 +1159,12 @@ export const appRouter = t.router({
       ),
     sourceList: authProcedure.query(({ ctx }) => ({
       items: ctx.kernel.listMessageSourceSubscriptions({
-        actorId: resolveAuthedMessageActorId(ctx.auth),
+        actorId: resolveAuthedMessageContactId(ctx.auth),
       }),
     })),
     sourceUpsert: authProcedure.input(messageSourceSubscriptionInputSchema).mutation(({ ctx, input }) => ({
       source: ctx.kernel.saveMessageSourceSubscription({
-        actorId: resolveAuthedMessageActorId(ctx.auth),
+        actorId: resolveAuthedMessageContactId(ctx.auth),
         ...input,
       }),
     })),
@@ -1176,13 +1176,13 @@ export const appRouter = t.router({
       )
       .mutation(({ ctx, input }) =>
         ctx.kernel.deleteMessageSourceSubscription({
-          actorId: resolveAuthedMessageActorId(ctx.auth),
+          actorId: resolveAuthedMessageContactId(ctx.auth),
           sourceId: input.sourceId,
         }),
       ),
     contactList: authProcedure.query(({ ctx }) => ({
       items: ctx.kernel.listMessageContacts({
-        actorId: resolveAuthedMessageActorId(ctx.auth),
+        actorId: resolveAuthedMessageContactId(ctx.auth),
       }),
     })),
     contactRequestList: authProcedure
@@ -1196,7 +1196,7 @@ export const appRouter = t.router({
       )
       .query(({ ctx, input }) => ({
         items: ctx.kernel.listMessageContactRequests({
-          actorId: resolveAuthedMessageActorId(ctx.auth),
+          actorId: resolveAuthedMessageContactId(ctx.auth),
           direction: input?.direction,
           state: input?.state,
         }),
@@ -1210,7 +1210,7 @@ export const appRouter = t.router({
       )
       .query(({ ctx, input }) =>
         ctx.kernel.searchMessageSourceActors({
-          actorId: resolveAuthedMessageActorId(ctx.auth),
+          actorId: resolveAuthedMessageContactId(ctx.auth),
           sourceId: input.sourceId,
           query: input.query,
         }),
@@ -1219,16 +1219,16 @@ export const appRouter = t.router({
       .input(
         z.object({
           sourceId: z.string().trim().min(1),
-          remoteActorId: messageActorIdSchema,
+          remoteContactId: messageContactIdSchema,
           message: z.string().trim().min(1).optional(),
           expiresAt: z.number().int().positive().optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => ({
         request: await ctx.kernel.sendMessageContactRequest({
-          actorId: resolveAuthedMessageActorId(ctx.auth),
+          actorId: resolveAuthedMessageContactId(ctx.auth),
           sourceId: input.sourceId,
-          remoteActorId: input.remoteActorId,
+          remoteContactId: input.remoteContactId,
           message: input.message,
           expiresAt: input.expiresAt,
         }),
@@ -1238,7 +1238,7 @@ export const appRouter = t.router({
         z.object({
           requestId: z.string().trim().min(1),
           sourceId: z.string().trim().min(1),
-          remoteActorId: messageActorIdSchema,
+          remoteContactId: messageContactIdSchema,
           remoteLabel: z.string().trim().min(1).optional(),
           remoteSubtitle: z.string().trim().min(1).optional(),
           remoteIconUrl: z.string().trim().min(1).optional(),
@@ -1249,7 +1249,7 @@ export const appRouter = t.router({
       )
       .mutation(({ ctx, input }) => ({
         request: ctx.kernel.receiveMessageContactRequest({
-          actorId: resolveAuthedMessageActorId(ctx.auth),
+          actorId: resolveAuthedMessageContactId(ctx.auth),
           ...input,
         }),
       })),
@@ -1262,7 +1262,7 @@ export const appRouter = t.router({
       )
       .mutation(async ({ ctx, input }) => ({
         result: await ctx.kernel.acceptMessageContactRequest({
-          actorId: resolveAuthedMessageActorId(ctx.auth),
+          actorId: resolveAuthedMessageContactId(ctx.auth),
           requestId: input.requestId,
           firstChat: input.firstChat,
         }),
@@ -1271,7 +1271,7 @@ export const appRouter = t.router({
       .input(
         z.object({
           requestId: z.string().trim().min(1),
-          remoteActorId: messageActorIdSchema,
+          remoteContactId: messageContactIdSchema,
           remoteLabel: z.string().trim().min(1).optional(),
           remoteSubtitle: z.string().trim().min(1).optional(),
           remoteIconUrl: z.string().trim().min(1).optional(),
@@ -1281,7 +1281,7 @@ export const appRouter = t.router({
       )
       .mutation(async ({ ctx, input }) => ({
         result: await ctx.kernel.acceptContactRequestRemote({
-          actorId: resolveAuthedMessageActorId(ctx.auth),
+          actorId: resolveAuthedMessageContactId(ctx.auth),
           ...input,
         }),
       })),
@@ -1289,13 +1289,13 @@ export const appRouter = t.router({
       .input(
         z.object({
           chatId: z.string().trim().min(1),
-          invitedActorId: messageActorIdSchema,
+          invitedContactId: messageContactIdSchema,
           invitedLabel: z.string().trim().min(1).optional(),
         }),
       )
       .mutation(async ({ ctx, input }) => ({
         room: await ctx.kernel.inviteAdditionalParticipantFromGlobalRoom({
-          actorId: resolveAuthedMessageActorId(ctx.auth),
+          actorId: resolveAuthedMessageContactId(ctx.auth),
           ...input,
         }),
       })),

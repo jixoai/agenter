@@ -1,10 +1,10 @@
-import { type MessageActorId, type MessageControlPlane, type MessageControlPlaneEntry } from "@agenter/message-system";
+import { type MessageContactId, type MessageControlPlane, type MessageControlPlaneEntry } from "@agenter/message-system";
 
-const isCanonicalMessageActorId = (value: string): value is MessageActorId =>
+const isCanonicalMessageContactId = (value: string): value is MessageContactId =>
   value.startsWith("auth:") || value.startsWith("session:") || value.startsWith("system:");
 
 export const roomNeedsParticipantRepair = (channel: Pick<MessageControlPlaneEntry, "participants">): boolean =>
-  channel.participants.some((participant) => !isCanonicalMessageActorId(participant.id.trim()));
+  channel.participants.some((participant) => !isCanonicalMessageContactId(participant.id.trim()));
 
 export const repairRoomParticipantsIfNeeded = (
   messageSystem: MessageControlPlane,

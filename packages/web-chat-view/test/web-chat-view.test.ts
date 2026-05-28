@@ -18,6 +18,8 @@ import { defineWebChatView, WEB_CHAT_VIEW_TAG } from "../src/custom-element";
 import WebChatViewHost from "../src/web-chat-view-host.svelte";
 import WebChatHostHarness from "./web-chat-host-harness.svelte";
 
+const TEST_SYSTEM_ID = "0x0000000000000000000000000000000000000a11";
+
 class WebSocketMock implements WebChatSocketLike {
   static readonly OPEN = 1;
   static readonly CLOSED = 3;
@@ -285,6 +287,8 @@ const createRoomChannel = (overrides: {
   chatId: string;
   title: string;
   owner: string;
+  superKey?: WebChatChannel["superKey"];
+  createdBySystemId?: WebChatChannel["createdBySystemId"];
   participants: WebChatChannel["participants"];
   accessRole: WebChatChannel["accessRole"];
   accessToken: WebChatChannel["accessToken"];
@@ -305,6 +309,8 @@ const createRoomChannel = (overrides: {
   kind: "room",
   title: overrides.title,
   owner: overrides.owner,
+  superKey: overrides.superKey ?? TEST_SYSTEM_ID,
+  createdBySystemId: overrides.createdBySystemId ?? overrides.superKey ?? TEST_SYSTEM_ID,
   contextId: overrides.contextId,
   participants: overrides.participants,
   metadata: overrides.metadata,
@@ -1055,7 +1061,7 @@ describe("Feature: web-chat-view package", () => {
           viewKey: "msg-user",
           messageId: 1,
           chatId: "chat-main",
-          senderActorId: "auth:user",
+          senderContactId: "auth:user",
           from: "User",
           kind: "text",
           content: "see attachment",
@@ -1118,7 +1124,7 @@ describe("Feature: web-chat-view package", () => {
           viewKey: "msg-user",
           messageId: 1,
           chatId: "chat-main",
-          senderActorId: "auth:user",
+          senderContactId: "auth:user",
           from: "User",
           kind: "text",
           content: "see attachment",
@@ -1184,7 +1190,7 @@ describe("Feature: web-chat-view package", () => {
           viewKey: "msg-user",
           messageId: 1,
           chatId: "chat-main",
-          senderActorId: "auth:user",
+          senderContactId: "auth:user",
           from: "User",
           kind: "text",
           content: "See [^Image 1] in the notes.",
@@ -1240,7 +1246,7 @@ describe("Feature: web-chat-view package", () => {
           viewKey: "msg-edited",
           messageId: 1,
           chatId: "chat-main",
-          senderActorId: "auth:user",
+          senderContactId: "auth:user",
           from: "User",
           kind: "text",
           content: "corrected answer",
@@ -1255,7 +1261,7 @@ describe("Feature: web-chat-view package", () => {
           viewKey: "msg-recalled",
           messageId: 2,
           chatId: "chat-main",
-          senderActorId: "auth:user",
+          senderContactId: "auth:user",
           from: "User",
           kind: "text",
           content: "",
@@ -1303,7 +1309,7 @@ describe("Feature: web-chat-view package", () => {
           viewKey: "msg-progress",
           messageId: 3,
           chatId: "chat-main",
-          senderActorId: "auth:user",
+          senderContactId: "auth:user",
           from: "User",
           kind: "text",
           content: "read me",
@@ -1380,7 +1386,7 @@ describe("Feature: web-chat-view package", () => {
           viewKey: "msg-user",
           messageId: 1,
           chatId: "chat-main",
-          senderActorId: "auth:user",
+          senderContactId: "auth:user",
           from: "User",
           kind: "text",
           content: "menu me",
@@ -1434,7 +1440,7 @@ describe("Feature: web-chat-view package", () => {
           viewKey: "msg-user",
           messageId: 1,
           chatId: "chat-main",
-          senderActorId: "auth:user",
+          senderContactId: "auth:user",
           from: "User",
           kind: "text",
           content: "context me",
@@ -1699,7 +1705,7 @@ describe("Feature: web-chat-view package", () => {
     expect(readRenderedText(document.body)).not.toContain("Pending for attention");
   });
 
-  test("Scenario: Given duplicate-label participants and an explicit viewer actor When the transcript renders Then ownership follows senderActorId instead of labels", async () => {
+  test("Scenario: Given duplicate-label participants and an explicit viewer actor When the transcript renders Then ownership follows senderContactId instead of labels", async () => {
     mountHost({
       channel: {
         chatId: "chat-duplicate-viewers",
@@ -1723,7 +1729,7 @@ describe("Feature: web-chat-view package", () => {
           viewKey: "msg-analyst-a",
           messageId: 1,
           chatId: "chat-duplicate-viewers",
-          senderActorId: "auth:analyst-a",
+          senderContactId: "auth:analyst-a",
           from: "Analyst",
           kind: "text",
           content: "first analyst",
@@ -1738,7 +1744,7 @@ describe("Feature: web-chat-view package", () => {
           viewKey: "msg-reviewer",
           messageId: 2,
           chatId: "chat-duplicate-viewers",
-          senderActorId: "session:reviewer",
+          senderContactId: "session:reviewer",
           from: "Analyst",
           kind: "text",
           content: "viewer analyst",
@@ -2089,7 +2095,7 @@ describe("Feature: web-chat-view package", () => {
               messageId: 1,
               chatId: "chat-main",
               from: "jane",
-              senderActorId: "session:jane",
+              senderContactId: "session:jane",
               kind: "text",
               content: "visibility anchor",
               createdAt: 100,
@@ -2152,6 +2158,8 @@ describe("Feature: web-chat-view package", () => {
       chatId: "chat-main",
       title: "Room",
       owner: "jane",
+      superKey: TEST_SYSTEM_ID,
+      createdBySystemId: TEST_SYSTEM_ID,
       participants: [
         { id: "session:jane", label: "jane" },
         { id: "auth:user", label: "User" },
@@ -2309,6 +2317,8 @@ describe("Feature: web-chat-view package", () => {
       createdAt: 1,
       updatedAt: 1,
       focused: true,
+      roomRevision: "1",
+      transcriptRevision: "1",
       accessRole: "admin",
       accessToken: "msgtok_admin",
     };
@@ -2382,15 +2392,16 @@ describe("Feature: web-chat-view package", () => {
         viewKey: "msg-progress",
         rowId: 1,
         chatId: "chat-main",
-        senderActorId: "auth:user",
+        sourceSystemId: TEST_SYSTEM_ID,
+        senderContactId: "auth:user",
         from: "User",
         kind: "text",
         content: "read me",
         createdAt: 100,
         updatedAt: 100,
         visibleAt: 100,
-        readActorIds: [],
-        unreadActorIds: [],
+        readContactIds: [],
+        unreadContactIds: [],
         metadata: {},
         attachments: [],
       },

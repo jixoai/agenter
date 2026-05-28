@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { AttentionSystem } from "../src/attention-system";
+import { AttentionControlPlane, AttentionSystem } from "../src";
 
 describe("Feature: attention system context scheduling", () => {
   test("Scenario: Given two contexts When querying by hash Then cross-context matches are returned", () => {
@@ -164,5 +167,143 @@ describe("Feature: attention system context scheduling", () => {
     expect(restored.getContext("ctx-1")?.getState().focusState).toBe("focused");
     expect(restored.getContext("ctx-1")?.getState().template).toBe('<Slot name="default"/>');
     expect(restored.getContext("ctx-1")?.getState().slots).toEqual({ default: "hello" });
+  });
+
+  test("Scenario: Given an offline durable writer When external ingress commits with preserve Then cold-start recovery sees unresolved work without rewriting Avatar summary", async () => {
+    const root = mkdtempSync(join(tmpdir(), "attn-control-plane-"));
+    const plane = new AttentionControlPlane({ root });
+
+    await plane.commit({
+      context: {
+        contextId: "ctx-room-1",
+        owner: "avatar:jane",
+        content: "Avatar summary: waiting for room follow-up",
+        contentFormat: "text/plain",
+      },
+      commit: {
+        meta: { author: "avatar:jane", source: "attention" },
+        scores: {},
+        summary: "seed summary",
+        change: { type: "update", value: "Avatar summary: waiting for room follow-up", format: "text/plain" },
+      },
+    });
+
+    const persisted = await plane.commit({
+      context: {
+        contextId: "ctx-room-1",
+        owner: "avatar:jane",
+      },
+      commit: {
+        contextMutation: "preserve",
+        meta: {
+          author: "avatar:jane",
+          source: "message",
+          src: "msg:room-1/42",
+          tags: ["message", "follow_up_reminder"],
+        },
+        scores: { "msg:room-1/42": 100 },
+        summary: "Re-evaluate room follow-up: room-1/42",
+        change: {
+          type: "update",
+          value: "follow-up reminder detail",
+          format: "text/plain",
+        },
+      },
+    });
+
+    expect(persisted.context.content).toBe("Avatar summary: waiting for room follow-up");
+    expect(persisted.context.focusState).toBe("focused");
+    expect(persisted.context.scoreMap).toEqual({ "msg:room-1/42": 100 });
+
+    const restored = AttentionSystem.fromSnapshot(await plane.loadSnapshot());
+    const restoredContext = restored.getContext("ctx-room-1")?.getState();
+    const active = restored.listActiveContexts();
+
+    expect(restoredContext?.content).toBe("Avatar summary: waiting for room follow-up");
+    expect(restoredContext?.scoreMap).toEqual({ "msg:room-1/42": 100 });
+    expect(
+      restored
+        .query({ contextId: "ctx-room-1", minScore: 0 })
+        .some((entry) => entry.commit.meta.src === "msg:room-1/42" && entry.commit.contextMutation === "preserve"),
+    ).toBeTrue();
+    expect(active.map((item) => item.contextId)).toEqual(["ctx-room-1"]);
+  });
+
+  test("Scenario: Given a background context created by the control plane When external ingress omits ingressType Then the durable commit follows the same push law as runtime", async () => {
+    const root = mkdtempSync(join(tmpdir(), "attn-control-plane-background-"));
+    const plane = new AttentionControlPlane({ root });
+
+    const result = await plane.commit({
+      context: {
+        contextId: "ctx-room-background",
+        owner: "avatar:jane",
+        focusState: "background",
+      },
+      commit: {
+        meta: {
+          author: "avatar:jane",
+          source: "message",
+          src: "msg:room-background/7",
+          tags: ["message", "follow_up_reminder"],
+        },
+        scores: { "msg:room-background/7": 100 },
+        summary: "Background reminder",
+        change: {
+          type: "update",
+          value: "background detail",
+          format: "text/plain",
+        },
+      },
+    });
+
+    const restored = AttentionSystem.fromSnapshot(await plane.loadSnapshot());
+    const restoredContext = restored.getContext("ctx-room-background")?.getState();
+    const restoredCommit = restored.query({ contextId: "ctx-room-background", minScore: 0 })[0]?.commit;
+
+    expect(result.context.focusState).toBe("background");
+    expect(result.commit.ingressType).toBe("push");
+    expect(restoredContext?.focusState).toBe("background");
+    expect(restoredCommit?.ingressType).toBe("push");
+    expect(restored.listPushCommits("ctx-room-background").map((commit) => commit.commitId)).toEqual([
+      restoredCommit?.commitId,
+    ]);
+  });
+
+  test("Scenario: Given a focused context created by the control plane When external ingress omits ingressType Then the durable commit follows the same commit law as runtime", async () => {
+    const root = mkdtempSync(join(tmpdir(), "attn-control-plane-focused-"));
+    const plane = new AttentionControlPlane({ root });
+
+    const result = await plane.commit({
+      context: {
+        contextId: "ctx-room-focused",
+        owner: "avatar:jane",
+        focusState: "focused",
+      },
+      commit: {
+        meta: {
+          author: "avatar:jane",
+          source: "message",
+          src: "msg:room-focused/11",
+          tags: ["message", "follow_up_reminder"],
+        },
+        scores: { "msg:room-focused/11": 100 },
+        summary: "Focused reminder",
+        change: {
+          type: "update",
+          value: "focused detail",
+          format: "text/plain",
+        },
+      },
+    });
+
+    const restored = AttentionSystem.fromSnapshot(await plane.loadSnapshot());
+    const restoredContext = restored.getContext("ctx-room-focused")?.getState();
+    const restoredCommit = restored.query({ contextId: "ctx-room-focused", minScore: 0 })[0]?.commit;
+
+    expect(result.context.focusState).toBe("focused");
+    expect(result.commit.ingressType).toBe("commit");
+    expect(restoredContext?.focusState).toBe("focused");
+    expect(restoredCommit?.ingressType).toBe("commit");
+    expect(restored.listPushCommits("ctx-room-focused")).toEqual([]);
   });
 });

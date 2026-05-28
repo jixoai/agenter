@@ -77,7 +77,7 @@ const createAuthedCaller = async (handle: TrpcServerHandle) => {
 const endpointOf = (handle: TrpcServerHandle): string => `http://${handle.host}:${handle.port}`;
 
 describe("Feature: message-system contacts over remote sources", () => {
-  test("Scenario: Given two subscribed remote sources When one actor searches and sends a contact request Then the remote inbox and both local contacts can complete without a preexisting shared room", async () => {
+  test("Scenario: Given two subscribed remote sources When one Contact searches and sends a contact request Then the remote inbox and both local contacts can complete without a preexisting shared room", async () => {
     const handleA = await startHandle(ROOT_AUTH_PRIVATE_KEY_A);
     const handleB = await startHandle(ROOT_AUTH_PRIVATE_KEY_B);
     const { caller: callerA, session: sessionA } = await createAuthedCaller(handleA);
@@ -117,7 +117,7 @@ describe("Feature: message-system contacts over remote sources", () => {
 
     const sent = await callerA.message.contactRequestSend({
       sourceId: "source-b",
-      remoteActorId: actorB,
+      remoteContactId: actorB,
       message: "please add me",
     });
     const inbox = await callerB.message.contactRequestList({
@@ -130,32 +130,32 @@ describe("Feature: message-system contacts over remote sources", () => {
         requestId: sent.request.requestId,
         direction: "inbound",
         sourceId: "source-a",
-        remoteActorId: actorA,
+        remoteContactId: actorA,
       }),
     ]);
 
     const accepted = await callerB.message.acceptContactRequest({
       requestId: sent.request.requestId,
     });
-    expect(accepted.result.contact.remoteActorId).toBe(actorA);
+    expect(accepted.result.contact.remoteContactId).toBe(actorA);
 
     const contactsA = await callerA.message.contactList();
     const contactsB = await callerB.message.contactList();
     expect(contactsA.items).toEqual([
       expect.objectContaining({
         sourceId: "source-b",
-        remoteActorId: actorB,
+        remoteContactId: actorB,
       }),
     ]);
     expect(contactsB.items).toEqual([
       expect.objectContaining({
         sourceId: "source-a",
-        remoteActorId: actorA,
+        remoteContactId: actorA,
       }),
     ]);
   });
 
-  test("Scenario: Given a contact request is accepted with firstChat When paired direct rooms bootstrap Then both sides see the first message and inviting a third actor branches into a public room", async () => {
+  test("Scenario: Given a contact request is accepted with firstChat When paired direct rooms bootstrap Then both sides see the first message and inviting a third Contact branches into a public room", async () => {
     const handleA = await startHandle(ROOT_AUTH_PRIVATE_KEY_A);
     const handleB = await startHandle(ROOT_AUTH_PRIVATE_KEY_B);
     const { caller: callerA, session: sessionA } = await createAuthedCaller(handleA);
@@ -182,7 +182,7 @@ describe("Feature: message-system contacts over remote sources", () => {
 
     const sent = await callerA.message.contactRequestSend({
       sourceId: "source-b",
-      remoteActorId: actorB,
+      remoteContactId: actorB,
     });
     const accepted = await callerB.message.acceptContactRequest({
       requestId: sent.request.requestId,
@@ -209,16 +209,16 @@ describe("Feature: message-system contacts over remote sources", () => {
     expect(snapshotB.channel.metadata?.remoteDirectChatId).toBe(directA);
     expect(snapshotA.items.at(-1)).toMatchObject({
       content: "hello from B",
-      senderActorId: actorB,
+      senderContactId: actorB,
     });
     expect(snapshotB.items.at(-1)).toMatchObject({
       content: "hello from B",
-      senderActorId: actorB,
+      senderContactId: actorB,
     });
 
     const invited = await callerA.message.inviteParticipant({
       chatId: directA,
-      invitedActorId: "auth:carol",
+      invitedContactId: "auth:carol",
       invitedLabel: "Carol",
     });
     expect(invited.room.chatId).not.toBe(directA);

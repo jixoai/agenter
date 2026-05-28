@@ -13,7 +13,7 @@ export interface MessageQueryDocument {
   contextId: string | null;
   messageId: number;
   ref: number | null;
-  senderActorId: string | null;
+  senderContactId: string | null;
   from: string;
   kind: string;
   content: string;
@@ -268,7 +268,7 @@ const evaluateText = (node: SearchSyntaxTextNode, document: MessageQueryDocument
   }
   if (field === "from" || field === "author" || field === "sender") {
     return (
-      normalize(document.senderActorId ?? "") === normalize(node.value) ||
+      normalize(document.senderContactId ?? "") === normalize(node.value) ||
       textContains(document.from, node.value, node.quoted)
     );
   }

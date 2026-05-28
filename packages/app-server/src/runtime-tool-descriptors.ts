@@ -291,7 +291,7 @@ type MessageManageAccessLike = {
 };
 
 type MessageManageSeatLike = {
-  actorId: string;
+  contactId: string;
   role: "admin" | "member" | "readonly";
   label?: string;
   currentAdmin: boolean;

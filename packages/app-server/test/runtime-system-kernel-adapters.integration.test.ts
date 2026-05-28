@@ -63,29 +63,29 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
     const plane = new MessageControlPlane({
       dbPath: resolveMessageControlDbPath(join(root, ".message")),
     });
-    const messageActorId = "session:avatar";
+    const messageContactId = "session:avatar";
     const room = plane.createChannel({
       chatId: createRoomId(),
       kind: "room",
       owner: "avatar",
       participants: [{ id: "auth:user", label: "User" }],
-      bootstrapActorId: messageActorId,
+      bootstrapContactId: messageContactId,
     });
     const inbound = plane.send({
       chatId: room.chatId,
       from: "User",
       kind: "text",
       content: "hello from room",
-      senderActorId: "auth:user",
+      senderContactId: "auth:user",
     });
     const messageAdapter = new RuntimeMessageKernelAdapter({
       messageSystem: plane,
-      messageActorId,
+      messageContactId,
       isLoopPaused: () => false,
       getMaxFocusedRoomCount: () => 3,
       getMaxBatchReadRoomMessageCount: () => 20,
       getActorRoom: (chatId) => (chatId === room.chatId ? room : undefined),
-      isUnreadInboundMessage: (message) => message.kind === "text" && message.unreadActorIds.includes(messageActorId),
+      isUnreadInboundMessage: (message) => message.kind === "text" && message.unreadContactIds.includes(messageContactId),
       buildMessageIngressEnvelope: ({ message, channel }) => ({
         system: "message",
         boundaryChannel: "world_fact",

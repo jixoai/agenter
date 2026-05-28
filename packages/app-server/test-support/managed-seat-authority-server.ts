@@ -138,8 +138,8 @@ export const startManagedSeatAuthorityServer = async (kernel: AppKernel): Promis
             label: typeof body.label === "string" ? body.label : undefined,
             expiresAt: typeof body.expiresAt === "number" ? body.expiresAt : undefined,
             accessToken: typeof body.accessToken === "string" ? body.accessToken : undefined,
-            superadminActorId:
-              typeof body.superadminActorId === "string" ? (body.superadminActorId as never) : undefined,
+            superadminContactId:
+              typeof body.superadminContactId === "string" ? (body.superadminContactId as never) : undefined,
             endpoint: readEndpoint(body.endpoint),
           });
           writeJson(response, 200, { ok: true, invitation });
@@ -175,8 +175,8 @@ export const startManagedSeatAuthorityServer = async (kernel: AppKernel): Promis
             label: typeof body.label === "string" ? body.label : undefined,
             expiresAt: typeof body.expiresAt === "number" ? body.expiresAt : undefined,
             accessToken: typeof body.accessToken === "string" ? body.accessToken : undefined,
-            superadminActorId:
-              typeof body.superadminActorId === "string" ? (body.superadminActorId as never) : undefined,
+            superadminContactId:
+              typeof body.superadminContactId === "string" ? (body.superadminContactId as never) : undefined,
             endpoint: readEndpoint(body.endpoint),
           });
           writeJson(response, 200, { ok: true, result });
@@ -188,8 +188,8 @@ export const startManagedSeatAuthorityServer = async (kernel: AppKernel): Promis
             chatId: String(body.chatId),
             participantId: String(body.participantId),
             accessToken: typeof body.accessToken === "string" ? body.accessToken : undefined,
-            superadminActorId:
-              typeof body.superadminActorId === "string" ? (body.superadminActorId as never) : undefined,
+            superadminContactId:
+              typeof body.superadminContactId === "string" ? (body.superadminContactId as never) : undefined,
           });
           writeJson(response, 200, { ok: true, result });
           return;

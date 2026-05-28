@@ -115,7 +115,7 @@ export class ReviewShellState {
           typeof message.messageId === "number"
             ? `message-${message.messageId}`
             : `seed-message-${message.rowId ?? index + 1}`,
-        senderActorId: message.senderActorId ?? null,
+        senderActorId: message.senderContactId ?? null,
         from: message.from,
       })) {
         resources.set(resource.id, resource);

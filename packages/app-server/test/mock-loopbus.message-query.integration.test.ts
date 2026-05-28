@@ -1,4 +1,4 @@
-import type { MessageActorId } from "@agenter/message-system";
+import type { MessageContactId } from "@agenter/message-system";
 import { describe, expect, test } from "bun:test";
 
 import { createMockKernelHarness } from "../test-support/mock-kernel-harness";
@@ -13,7 +13,7 @@ describe("Feature: mock-loopbus message query", () => {
 
       try {
         const primaryRoomId = harness.session.primaryRoomId;
-        const actorId = harness.session.avatarPrincipalId as MessageActorId | undefined;
+        const actorId = harness.session.avatarPrincipalId as MessageContactId | undefined;
         if (!primaryRoomId || !actorId) {
           throw new Error("expected primary room and avatar principal id");
         }

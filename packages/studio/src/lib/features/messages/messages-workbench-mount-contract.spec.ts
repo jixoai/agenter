@@ -59,6 +59,16 @@ describe("Feature: Messages workbench mount contract", () => {
     expect(messagesWorkbenchLayoutSource).not.toContain("overflow: clip;");
   });
 
+  test("Scenario: Given active and archived rooms must not collapse into one flat tab strip When reading the layout source Then archived rooms get a dedicated Archive entry instead of pretending to be active tabs", () => {
+    expect(messagesWorkbenchLayoutSource).toContain("splitMessageWorkbenchRooms");
+    expect(messagesWorkbenchLayoutSource).toContain("const activeVisibleRooms = $derived(activeAndArchivedRooms.activeRooms);");
+    expect(messagesWorkbenchLayoutSource).toContain("const archivedVisibleRooms = $derived(activeAndArchivedRooms.archivedRooms);");
+    expect(messagesWorkbenchLayoutSource).toContain("if (page.url.pathname === '/messages/archive')");
+    expect(messagesWorkbenchLayoutSource).toContain("id: 'message-archive'");
+    expect(messagesWorkbenchLayoutSource).toContain("href: '/messages/archive'");
+    expect(messagesWorkbenchLayoutSource).toContain("label: 'Archive'");
+  });
+
   test("Scenario: Given the room transcript is stable again When reading the chat root source Then the footer renders the composer instead of the debug placeholder", () => {
     expect(webChatViewRootSource).toContain("<DefaultComposer {...composerProps} />");
     expect(webChatViewRootSource).not.toContain("chat-footer-debug-placeholder");

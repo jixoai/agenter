@@ -1114,7 +1114,7 @@ describe("Feature: app-server trpc procedures", () => {
       accessToken: relay.grant.accessToken,
       messageId: latestMessageId,
     });
-    const relayReadState = relayRead.channel.seatStates?.find((state) => state.actorId === "session:relay");
+    const relayReadState = relayRead.channel.seatStates?.find((state) => state.contactId === "session:relay");
     const relaySnapshot = await superadminCaller.message.globalSnapshot({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -1122,11 +1122,11 @@ describe("Feature: app-server trpc procedures", () => {
     });
     const relayMessage = relaySnapshot.items.find((item) => item.messageId === latestMessageId);
     expect(relayReadState).toMatchObject({
-      actorId: "session:relay",
+      contactId: "session:relay",
       role: "member",
     });
-    expect(relayMessage?.readActorIds).toContain("session:relay");
-    expect(relayMessage?.unreadActorIds).not.toContain("session:relay");
+    expect(relayMessage?.readContactIds).toContain("session:relay");
+    expect(relayMessage?.unreadContactIds).not.toContain("session:relay");
     expect(Object.prototype.hasOwnProperty.call(relayRead.channel, "readProgress")).toBeFalse();
 
     const superadminRead = await superadminCaller.message.globalMarkRead({
@@ -1134,9 +1134,9 @@ describe("Feature: app-server trpc procedures", () => {
       messageId: latestMessageId,
     });
     expect(
-      superadminRead.channel.seatStates?.find((state) => state.actorId === `auth:${descriptor.rootAuthId}`),
+      superadminRead.channel.seatStates?.find((state) => state.contactId === `auth:${descriptor.rootAuthId}`),
     ).toMatchObject({
-      actorId: `auth:${descriptor.rootAuthId}`,
+      contactId: `auth:${descriptor.rootAuthId}`,
       role: "admin",
     });
     const superadminSnapshot = await superadminCaller.message.globalSnapshot({
@@ -1145,8 +1145,8 @@ describe("Feature: app-server trpc procedures", () => {
       limit: 20,
     });
     const superadminMessage = superadminSnapshot.items.find((item) => item.messageId === latestMessageId);
-    expect(superadminMessage?.readActorIds).toEqual(["session:relay"]);
-    expect(superadminMessage?.unreadActorIds.sort()).toEqual([`auth:${descriptor.rootAuthId}`, "auth:viewer"]);
+    expect(superadminMessage?.readContactIds).toEqual(["session:relay"]);
+    expect(superadminMessage?.unreadContactIds.sort()).toEqual([`auth:${descriptor.rootAuthId}`, "auth:viewer"]);
     expect(Object.prototype.hasOwnProperty.call(superadminRead.channel, "readProgress")).toBeFalse();
 
     const viewerRead = await superadminCaller.message.globalMarkRead({
@@ -1154,7 +1154,7 @@ describe("Feature: app-server trpc procedures", () => {
       accessToken: viewer.grant.accessToken,
       messageId: latestMessageId,
     });
-    const viewerReadState = viewerRead.channel.seatStates?.find((state) => state.actorId === "auth:viewer");
+    const viewerReadState = viewerRead.channel.seatStates?.find((state) => state.contactId === "auth:viewer");
     const viewerSnapshot = await superadminCaller.message.globalSnapshot({
       chatId: room.chatId,
       accessToken: room.accessToken,
@@ -1162,11 +1162,11 @@ describe("Feature: app-server trpc procedures", () => {
     });
     const viewerMessage = viewerSnapshot.items.find((item) => item.messageId === latestMessageId);
     expect(viewerReadState).toMatchObject({
-      actorId: "auth:viewer",
+      contactId: "auth:viewer",
       role: "readonly",
     });
-    expect(viewerMessage?.readActorIds.sort()).toEqual(["auth:viewer", "session:relay"]);
-    expect(viewerMessage?.unreadActorIds).toEqual([`auth:${descriptor.rootAuthId}`]);
+    expect(viewerMessage?.readContactIds.sort()).toEqual(["auth:viewer", "session:relay"]);
+    expect(viewerMessage?.unreadContactIds).toEqual([`auth:${descriptor.rootAuthId}`]);
     expect(Object.prototype.hasOwnProperty.call(viewerRead.channel, "readProgress")).toBeFalse();
 
     await kernel.stop();
@@ -1215,7 +1215,7 @@ describe("Feature: app-server trpc procedures", () => {
       limit: 20,
     });
     const message = snapshot.items.find((item) => item.content === "superadmin hello");
-    expect(message?.senderActorId).toBe(`auth:${descriptor.rootAuthId}`);
+    expect(message?.senderContactId).toBe(`auth:${descriptor.rootAuthId}`);
 
     await kernel.stop();
   });

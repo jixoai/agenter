@@ -2,7 +2,7 @@ import { createTRPCUntypedClient, httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
 import { z } from "zod";
 
-import type { MessageActorId } from "@agenter/message-system";
+import type { MessageContactId } from "@agenter/message-system";
 
 const normalizeBaseUrl = (value: string): string => value.trim().replace(/\/+$/u, "");
 
@@ -28,7 +28,7 @@ export type RemoteMessageSourceCatalogItem = z.infer<typeof remoteCatalogItemSch
 export interface RemoteReceiveContactRequestInput {
   requestId: string;
   sourceId: string;
-  remoteActorId: MessageActorId;
+  remoteContactId: MessageContactId;
   remoteLabel?: string;
   remoteSubtitle?: string;
   remoteIconUrl?: string;
@@ -39,7 +39,7 @@ export interface RemoteReceiveContactRequestInput {
 
 export interface RemoteAcceptContactRequestInput {
   requestId: string;
-  remoteActorId: MessageActorId;
+  remoteContactId: MessageContactId;
   remoteLabel?: string;
   remoteSubtitle?: string;
   remoteIconUrl?: string;

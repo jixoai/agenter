@@ -55,9 +55,7 @@
 	const activeTab = $derived(normalizeRuntimeTab(tab));
 	const session = $derived(controller.runtimeState.sessions.find((entry) => entry.id === sessionId) ?? null);
 	const runtime = $derived(session ? controller.runtimeState.runtimes[session.id] ?? null : null);
-	const channels = $derived(
-		controller.runtimeState.messageChannelsBySession[sessionId]?.data?.filter((channel) => !channel.archivedAt) ?? [],
-	);
+	const channels = $derived(controller.runtimeState.messageChannelsBySession[sessionId]?.data ?? []);
 	const heartbeatGroups = $derived(
 		controller.runtimeState.heartbeatGroupsBySession[sessionId] ?? {
 			data: [],

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { MessageActorId } from "@agenter/message-system/types";
+  import type { MessageContactId } from "@agenter/message-system/types";
   import type { WebChatMessage } from "../types";
 
   import MessageSourcePopup from "../message-source-popup.svelte";
@@ -20,8 +20,9 @@
     messageId: 12,
     chatId: "room-1",
     viewKey: "room-1:12",
+    sourceSystemId: "0x0000000000000000000000000000000000000001",
     from: "Kai",
-    senderActorId: "actor:kai" as MessageActorId,
+    senderContactId: "auth:kai" as MessageContactId,
     kind: "text",
     content: [
       "# Review checklist",
@@ -57,7 +58,7 @@
           sourceViewKey: "room-1:12",
           sourceLineNumber: 3,
           selectedText: "Use lightweight inline tokens like `[^Image 1]` inside the body.",
-          sourceActorId: "actor:kai" as MessageActorId,
+          sourceActorId: "auth:kai",
           sourceActorLabel: "Kai",
           sourceUri: "msg://room-1/12#L3",
         },
@@ -65,8 +66,8 @@
     },
     createdAt: new Date("2026-05-03T09:12:00Z").getTime(),
     updatedAt: new Date("2026-05-03T09:12:00Z").getTime(),
-    readActorIds: [],
-    unreadActorIds: [],
+    readContactIds: [],
+    unreadContactIds: [],
   } satisfies WebChatMessage;
 
   const actorPresentation = {

@@ -5,7 +5,7 @@ export interface RoomReadAckState {
 
 export interface RoomReadAckMessageLike {
   rowId: number;
-  readActorIds?: readonly string[];
+  readContactIds?: readonly string[];
 }
 
 export const EMPTY_ROOM_READ_ACK_STATE: RoomReadAckState = {
@@ -18,7 +18,7 @@ export const resolveRoomReadAckKey = (chatId: string, actorId: string): string =
 export const resolveRoomReadAckServerFloor = (messages: readonly RoomReadAckMessageLike[], actorId: string): number => {
   let latestReadRowId = 0;
   for (const message of messages) {
-    if (!message.readActorIds?.includes(actorId)) {
+    if (!message.readContactIds?.includes(actorId)) {
       continue;
     }
     latestReadRowId = Math.max(latestReadRowId, message.rowId);

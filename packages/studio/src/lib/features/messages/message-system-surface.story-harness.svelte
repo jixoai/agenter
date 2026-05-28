@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { CachedResourceState, GlobalRoomEntry, GlobalRoomSnapshotOutput } from '@agenter/client-sdk';
 	import type { WebChatNotice, WebChatVisibleMessageFact } from '@agenter/web-chat-view';
+	import { untrack } from 'svelte';
 
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import type { ActorDirectoryEntry } from '$lib/features/collaboration/actor-directory';
@@ -19,19 +20,23 @@
 		disableManageDialogPortal = false,
 		initialManageDialogSection = null,
 		surfaceClass = 'h-[52rem] w-full min-w-0 bg-background',
+		fixture = 'default',
 	}: {
 		disableManageDialogPortal?: boolean;
 		initialManageDialogSection?: MessageSystemManageSection | null;
 		surfaceClass?: string;
+		fixture?: HarnessFixture;
 	} = $props();
 
 	type RoomMessage = GlobalRoomSnapshotOutput['items'][number];
-	type RoomActorId = RoomMessage['readActorIds'][number];
+	type RoomActorId = RoomMessage['readContactIds'][number];
+	type HarnessFixture = 'default' | 'control-only' | 'readonly-viewer';
 
-	const isRoomActorId = (actorId: string): actorId is RoomActorId =>
-		actorId.startsWith('auth:') || actorId.startsWith('session:') || actorId.startsWith('system:');
-	const normalizeRoomActorIds = (actorIds: readonly string[]): RoomActorId[] =>
-		[...new Set(actorIds.filter(isRoomActorId))].sort();
+		const isRoomActorId = (actorId: string): actorId is RoomActorId =>
+			actorId.startsWith('auth:') || actorId.startsWith('session:') || actorId.startsWith('system:');
+		const normalizeRoomActorIds = (actorIds: readonly string[]): RoomActorId[] =>
+			[...new Set(actorIds.filter(isRoomActorId))].sort();
+		const storySourceSystemId = '0x0000000000000000000000000000000000000001' as const;
 
 	const createRoomEntry = (input: {
 		chatId: string;
@@ -40,10 +45,12 @@
 		updatedAt: number;
 	}): GlobalRoomEntry => ({
 		chatId: input.chatId,
-		kind: 'room',
-		title: input.title,
-		owner: 'root',
-		participants: input.participants,
+			kind: 'room',
+			title: input.title,
+			owner: 'root',
+			superKey: storySourceSystemId,
+			createdBySystemId: storySourceSystemId,
+			participants: input.participants,
 			createdAt: input.updatedAt - 1_000,
 			updatedAt: input.updatedAt,
 			focused: true,
@@ -85,17 +92,18 @@
 		[initialRoomId]: [
 			{
 				rowId: 1,
-				messageId: 1,
-				chatId: initialRoomId,
-				senderActorId: 'system:trusted-bootstrap',
+					messageId: 1,
+					chatId: initialRoomId,
+					sourceSystemId: storySourceSystemId,
+					senderContactId: 'system:trusted-bootstrap',
 				from: 'Bootstrap admin',
 				kind: 'text',
 				content: 'Current operator room is live.',
 				createdAt: 1_710_000_000_000,
 				updatedAt: 1_710_000_000_000,
 				visibleAt: 1_710_000_000_000,
-				readActorIds: normalizeRoomActorIds(['auth:analyst']),
-				unreadActorIds: normalizeRoomActorIds([]),
+				readContactIds: normalizeRoomActorIds(['auth:analyst']),
+				unreadContactIds: normalizeRoomActorIds([]),
 				metadata: {},
 				attachments: [],
 			},
@@ -119,34 +127,64 @@
 		],
 	};
 
-	const initialSeats = {
-		[initialRoomId]: [
-			{
-				actorId: 'auth:analyst',
-				actorKind: 'auth',
-				label: 'Analyst',
-				subtitle: 'auth:analyst',
-				iconUrl: null,
-				role: 'admin',
-				currentAdmin: true,
-				online: true,
-				focused: true,
-				invalidCredential: false,
-				accessToken: `token:${initialRoomId}:analyst`,
-				grantId: `${initialRoomId}:grant:analyst`,
-			},
-		],
-	} satisfies Record<string, MessageSystemRoomSeatState[]>;
+	const defaultInitialSeats = [
+		{
+			actorId: 'auth:analyst',
+			actorKind: 'auth',
+			label: 'Analyst',
+			subtitle: 'auth:analyst',
+			iconUrl: null,
+			role: 'admin',
+			currentAdmin: true,
+			online: true,
+			focused: true,
+			invalidCredential: false,
+			accessToken: `token:${initialRoomId}:analyst`,
+			grantId: `${initialRoomId}:grant:analyst`,
+		},
+	] satisfies MessageSystemRoomSeatState[];
+	const readonlyViewerSeats = [
+		...defaultInitialSeats,
+		{
+			actorId: 'auth:wallet_evm',
+			actorKind: 'auth',
+			label: 'Wallet Operator',
+			subtitle: 'auth:wallet_evm',
+			iconUrl: null,
+			role: 'readonly',
+			currentAdmin: false,
+			online: false,
+			focused: false,
+			invalidCredential: false,
+			accessToken: `token:${initialRoomId}:wallet-readonly`,
+			grantId: `${initialRoomId}:grant:wallet-readonly`,
+		},
+	] satisfies MessageSystemRoomSeatState[];
+	const initialFixture = untrack(() => fixture);
+	const createInitialViewerSelection = (currentFixture: HarnessFixture): Record<string, string> =>
+		currentFixture === 'control-only'
+			? {}
+			: {
+					[initialRoomId]: currentFixture === 'readonly-viewer' ? 'auth:wallet_evm' : 'auth:analyst',
+				};
+	const createInitialSeatState = (
+		currentFixture: HarnessFixture,
+	): Record<string, MessageSystemRoomSeatState[]> => ({
+		[initialRoomId]:
+			currentFixture === 'control-only'
+				? []
+				: currentFixture === 'readonly-viewer'
+					? [...readonlyViewerSeats]
+					: [...defaultInitialSeats],
+	});
 
 	let messageCounter = $state(2);
 	let selectedRoomId = $state(initialRoomId);
 	let routeNotice: WebChatNotice | null = $state(null);
-	let selectedViewerActorIdByRoomId: Record<string, string> = $state({
-		[initialRoomId]: 'auth:analyst',
-	});
+	let selectedViewerActorIdByRoomId = $state<Record<string, string>>(createInitialViewerSelection(initialFixture));
 	let roomMessagesById: Record<string, GlobalRoomSnapshotOutput['items']> = $state(initialMessages);
 	let roomAssetsById: Record<string, MessageSystemRoomAssetItem[]> = $state(initialRoomAssets);
-	let roomSeatsById: Record<string, MessageSystemRoomSeatState[]> = $state(initialSeats);
+	let roomSeatsById = $state<Record<string, MessageSystemRoomSeatState[]>>(createInitialSeatState(initialFixture));
 	let roomsState: CachedResourceState<GlobalRoomEntry[]> = $state({
 		data: [
 			createRoomEntry({
@@ -199,7 +237,7 @@
 		}
 		const options: MessageSystemSendAsOption[] = [];
 		for (const seat of roomSeatStates) {
-			if (!seat.accessToken || seat.actorId === room.participantId) {
+			if (!seat.accessToken || seat.role === 'readonly' || seat.actorId === room.participantId) {
 				continue;
 			}
 			options.push({
@@ -275,13 +313,19 @@
 		if (!room) {
 			return;
 		}
-		const nextRooms = roomsState.data.filter((entry) => entry.chatId !== room.chatId);
+		const nextRooms = roomsState.data.map((entry) =>
+			entry.chatId === room.chatId
+				? {
+						...entry,
+						archivedAt: Date.now(),
+					}
+				: entry,
+		);
 		roomsState = {
 			...roomsState,
 			data: nextRooms,
 			refreshedAt: Date.now(),
 		};
-		selectedRoomId = nextRooms[0]?.chatId ?? '';
 	};
 
 	const handleDeleteRoom = handleArchiveRoom;
@@ -361,8 +405,8 @@
 		messageCounter += 1;
 		const senderOption = sendAsOptions.find((option) => option.accessToken === selectedToken);
 		const sender = senderOption?.label ?? 'Bootstrap admin';
-		const senderActorId = (senderOption?.participantId ??
-			'system:trusted-bootstrap') as GlobalRoomSnapshotOutput['items'][number]['senderActorId'];
+		const senderContactId = (senderOption?.participantId ??
+			'system:trusted-bootstrap') as GlobalRoomSnapshotOutput['items'][number]['senderContactId'];
 		roomMessagesById = {
 			...roomMessagesById,
 			[room.chatId]: [
@@ -370,28 +414,29 @@
 					...message,
 				})),
 				{
-					rowId: messageCounter,
-					messageId: messageCounter,
-					chatId: room.chatId,
-					senderActorId,
+						rowId: messageCounter,
+						messageId: messageCounter,
+						chatId: room.chatId,
+						sourceSystemId: storySourceSystemId,
+						senderContactId,
 					from: sender,
 					kind: 'text',
 					content: input.text,
 					createdAt: 1_710_000_000_000 + messageCounter * 1_000,
 					updatedAt: 1_710_000_000_000 + messageCounter * 1_000,
 					visibleAt: 1_710_000_000_000 + messageCounter * 1_000,
-					readActorIds:
-						senderActorId === 'system:trusted-bootstrap'
+					readContactIds:
+						senderContactId === 'system:trusted-bootstrap'
 							? normalizeRoomActorIds([])
 							: normalizeRoomActorIds(
 									(roomSeatsById[room.chatId] ?? [])
-									.filter((seat) => seat.actorId === senderActorId)
+									.filter((seat) => seat.actorId === senderContactId)
 									.map((seat) => seat.actorId),
 								),
-					unreadActorIds: normalizeRoomActorIds(
+					unreadContactIds: normalizeRoomActorIds(
 						(roomSeatsById[room.chatId] ?? [])
 							.map((seat) => seat.actorId)
-							.filter((actorId) => actorId !== senderActorId),
+							.filter((actorId) => actorId !== senderContactId),
 					),
 					metadata: {},
 					attachments: [],
@@ -423,9 +468,9 @@
 					? message
 					: {
 							...message,
-							readActorIds: normalizeRoomActorIds([...(message.readActorIds ?? []), actorId]),
-							unreadActorIds: normalizeRoomActorIds(
-								(message.unreadActorIds ?? []).filter((candidateActorId) => candidateActorId !== actorId),
+							readContactIds: normalizeRoomActorIds([...(message.readContactIds ?? []), actorId]),
+							unreadContactIds: normalizeRoomActorIds(
+								(message.unreadContactIds ?? []).filter((candidateActorId) => candidateActorId !== actorId),
 							),
 						},
 			),
@@ -456,6 +501,8 @@
 			<MessageSystemSurface
 				{selectedRoom}
 				authenticated={true}
+				archivedRoomCount={roomsState.data.filter((room) => Boolean(room.archivedAt)).length}
+				roomSeatTruthLoaded={true}
 				{disableManageDialogPortal}
 				{initialManageDialogSection}
 				initialMessages={selectedMessages}

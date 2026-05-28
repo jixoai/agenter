@@ -25,7 +25,10 @@ const appSveltePackages = [
 	'@agenter/web-components',
 	'@lucide/svelte',
 	'bits-ui',
+	'framework7/lite-bundle',
+	'framework7-svelte',
 	'shadcn-svelte',
+	'skeleton-elements',
 ];
 
 const optimizeDepsInclude = [

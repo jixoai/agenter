@@ -66,7 +66,7 @@ export const listMessageSeatEntries = (channel: MessageControlPlaneEntry): Messa
   }
   for (const state of channel.seatStates ?? []) {
     upsertSeat(roster, {
-      actorId: state.actorId,
+      actorId: state.contactId,
       label: state.label,
       online: state.online,
       focused: state.focused,

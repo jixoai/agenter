@@ -304,7 +304,7 @@
       .map(([sourceLabel, contacts]) => [
         sourceLabel,
         contacts.filter((contact) => {
-          const haystack = [contact.label, contact.subtitle, contact.sourceLabel, contact.remoteActorId].join(" ").toLowerCase();
+          const haystack = [contact.label, contact.subtitle, contact.sourceLabel, contact.remoteContactId].join(" ").toLowerCase();
           return haystack.includes(query);
         }),
       ] as const)
@@ -340,7 +340,7 @@
       .map(([sourceLabel, contacts]) => [
         sourceLabel,
         contacts.filter((contact) => {
-          const haystack = [contact.label, contact.subtitle, contact.sourceLabel, contact.remoteActorId].join(" ").toLowerCase();
+          const haystack = [contact.label, contact.subtitle, contact.sourceLabel, contact.remoteContactId].join(" ").toLowerCase();
           return haystack.includes(query);
         }),
       ] as const)
@@ -961,7 +961,7 @@
     <BlockTitle>Details</BlockTitle>
     <List mediaList strongIos insetIos dividersIos>
       <ListItem title="Source" subtitle={shellState.selectedContact?.sourceLabel} after={shellState.selectedContact?.sourceId} />
-      <ListItem title="Remote actor" subtitle={shellState.selectedContact?.remoteActorId} />
+      <ListItem title="Remote contact" subtitle={shellState.selectedContact?.remoteContactId} />
       <ListItem
         title="Direct room"
         subtitle={shellState.selectedContact?.localDirectChatId ?? "No linked room yet"}
@@ -1022,7 +1022,7 @@
     <BlockTitle>Details</BlockTitle>
     <List mediaList strongIos insetIos dividersIos>
       <ListItem title="Source" subtitle={shellState.selectedContact?.sourceLabel} after={shellState.selectedContact?.sourceId} />
-      <ListItem title="Remote actor" subtitle={shellState.selectedContact?.remoteActorId} />
+      <ListItem title="Remote contact" subtitle={shellState.selectedContact?.remoteContactId} />
       <ListItem
         title="Direct room"
         subtitle={shellState.selectedContact?.localDirectChatId ?? "No linked room yet"}

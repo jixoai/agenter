@@ -2,13 +2,21 @@ import type { CachedResourceState, GlobalRoomEntry, MessageChannelEntry } from "
 import { describe, expect, test } from "vitest";
 
 import { buildMessageRoomHref } from "./message-room-location";
-import { buildMessageWorkbenchRooms, resolveMessageWorkbenchRoom } from "./message-workbench-room-state";
+import {
+  buildMessageWorkbenchRooms,
+  resolveMessageWorkbenchRoom,
+  splitMessageWorkbenchRooms,
+} from "./message-workbench-room-state";
 
-const createGlobalRoom = (input: { chatId: string; title: string }): GlobalRoomEntry => ({
+const TEST_ROOM_DOMAIN_ID = "0x0000000000000000000000000000000000000001" as const;
+
+const createGlobalRoom = (input: { chatId: string; title: string; archivedAt?: number }): GlobalRoomEntry => ({
   chatId: input.chatId,
   kind: "room",
   title: input.title,
   owner: "global-owner",
+  superKey: TEST_ROOM_DOMAIN_ID,
+  createdBySystemId: TEST_ROOM_DOMAIN_ID,
   participants: [],
   metadata: {},
   createdAt: 1,
@@ -18,13 +26,21 @@ const createGlobalRoom = (input: { chatId: string; title: string }): GlobalRoomE
   transcriptRevision: "0",
   accessRole: "admin",
   accessToken: `${input.chatId}-token`,
+  archivedAt: input.archivedAt,
 });
 
-const createSessionRoom = (input: { chatId: string; title: string; contextId?: string }): MessageChannelEntry => ({
+const createSessionRoom = (input: {
+  chatId: string;
+  title: string;
+  contextId?: string;
+  archivedAt?: number;
+}): MessageChannelEntry => ({
   chatId: input.chatId,
   kind: "room",
   title: input.title,
   owner: "session-owner",
+  superKey: TEST_ROOM_DOMAIN_ID,
+  createdBySystemId: TEST_ROOM_DOMAIN_ID,
   contextId: input.contextId,
   participants: [],
   metadata: {
@@ -37,6 +53,7 @@ const createSessionRoom = (input: { chatId: string; title: string; contextId?: s
   transcriptRevision: "0",
   accessRole: "admin",
   accessToken: `${input.chatId}-token`,
+  archivedAt: input.archivedAt,
 });
 
 const createChannelState = (
@@ -104,5 +121,43 @@ describe("Feature: Messages workbench room state contract", () => {
       sessionId: null,
       href: "/messages/room/room-shared",
     });
+  });
+
+  test("Scenario: Given an archived room deep link When resolving the current room Then the room stays reachable instead of disappearing from navigation truth", () => {
+    const resolved = resolveMessageWorkbenchRoom({
+      chatId: "room-archive",
+      sessionId: "session-1",
+      globalRooms: [createGlobalRoom({ chatId: "room-archive", title: "Archived room", archivedAt: 42 })],
+      messageChannelsBySession: {
+        "session-1": createChannelState([
+          createSessionRoom({
+            chatId: "room-archive",
+            title: "Archived mirror",
+            archivedAt: 42,
+          }),
+        ]),
+      },
+    });
+
+    expect(resolved).toMatchObject({
+      chatId: "room-archive",
+      source: "global",
+      archived: true,
+    });
+  });
+
+  test("Scenario: Given active and archived room projections When the workbench splits catalog sections Then archived rooms move to a dedicated archived list instead of being deleted from truth", () => {
+    const rooms = buildMessageWorkbenchRooms({
+      globalRooms: [
+        createGlobalRoom({ chatId: "room-active", title: "Active room" }),
+        createGlobalRoom({ chatId: "room-archived", title: "Archived room", archivedAt: 42 }),
+      ],
+      messageChannelsBySession: {},
+    });
+
+    const { activeRooms, archivedRooms } = splitMessageWorkbenchRooms(rooms);
+
+    expect(activeRooms.map((room) => room.chatId)).toEqual(["room-active"]);
+    expect(archivedRooms.map((room) => room.chatId)).toEqual(["room-archived"]);
   });
 });

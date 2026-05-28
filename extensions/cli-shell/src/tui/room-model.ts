@@ -92,7 +92,7 @@ const messageBody = (message: GlobalRoomMessage): string => {
 };
 
 const authorLabel = (message: GlobalRoomMessage, avatarActorId: string): string => {
-  if (message.senderActorId !== avatarActorId) {
+  if (message.senderContactId !== avatarActorId) {
     return "you";
   }
   const from = message.from.trim();

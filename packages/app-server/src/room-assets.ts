@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, posix as posixPath } from "node:path";
 
-import type { MessageActorId, MessageAttachmentKind } from "@agenter/message-system";
+import type { MessageContactId, MessageAttachmentKind } from "@agenter/message-system";
 
 import { buildSessionAssetRelativePath, resolveSessionAssetKind } from "./session-assets";
 import type { ChatSessionAsset } from "./types";
@@ -17,7 +17,7 @@ export interface RoomAssetRecord {
   relativePath: string;
   createdAt: number;
   updatedAt: number;
-  uploadedByActorId?: MessageActorId;
+  uploadedByActorId?: MessageContactId;
 }
 
 const ROOM_ASSET_INDEX_FILENAME = "index.json";
@@ -112,7 +112,7 @@ export class RoomAssetStore {
   uploadAssets(
     roomId: string,
     files: Array<{ name: string; mimeType: string; bytes: Uint8Array }>,
-    input: { uploadedByActorId?: MessageActorId } = {},
+    input: { uploadedByActorId?: MessageContactId } = {},
   ): RoomAssetRecord[] {
     const current = this.readIndex(roomId);
     const created: RoomAssetRecord[] = [];

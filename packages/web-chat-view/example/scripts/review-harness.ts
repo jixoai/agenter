@@ -6,10 +6,10 @@ import { dirname, join, posix as posixPath } from "node:path";
 import {
   MessageControlPlane,
   resolveMessageControlDbPath,
-  type MessageActorId,
   type MessageAttachment,
   type MessageAuthorizedWriteInput,
   type MessageChannelAccessRole,
+  type MessageContactId,
   type MessageControlPlaneEntry,
   type MessageIssuedGrant,
 } from "@agenter/message-system";
@@ -140,11 +140,11 @@ const createHarnessState = async (): Promise<HarnessState> => {
       { id: reviewerSeed.actorId, label: reviewerSeed.name },
       { id: designerSeed.actorId, label: designerSeed.name },
     ],
-    bootstrapActorId: ownerSeed.actorId,
+    bootstrapContactId: ownerSeed.actorId,
     initialUsers: [
-      { actorId: ownerSeed.actorId, label: OWNER_NAME, role: "admin", focused: true },
-      { actorId: reviewerSeed.actorId, label: reviewerSeed.name, role: "member", focused: true },
-      { actorId: designerSeed.actorId, label: designerSeed.name, role: "member", focused: false },
+      { contactId: ownerSeed.actorId, label: OWNER_NAME, role: "admin", focused: true },
+      { contactId: reviewerSeed.actorId, label: reviewerSeed.name, role: "member", focused: true },
+      { contactId: designerSeed.actorId, label: designerSeed.name, role: "member", focused: false },
     ],
   });
 
@@ -219,7 +219,7 @@ const seedMessages = (
   const first = plane.sendAuthorized({
     chatId,
     accessToken: owner.token,
-    senderActorId: owner.actorId,
+    senderContactId: owner.actorId,
     content: [
       "I grouped the north entry items here before we send the note out.",
       "The dusk photo is in [^Image 1], and the circulation markup is in [^File 2].",
@@ -229,20 +229,20 @@ const seedMessages = (
   plane.sendAuthorized({
     chatId,
     accessToken: owner.token,
-    senderActorId: owner.actorId,
+    senderContactId: owner.actorId,
     content: "The vestibule feels much calmer now. I would keep the note this short and let the supporting material sit underneath.",
   });
   plane.sendAuthorized({
     chatId,
     accessToken: reviewer.token,
-    senderActorId: reviewer.actorId,
+    senderContactId: reviewer.actorId,
     content: "This reads better. The sequence is easier to follow, and the backup files are still easy to reach if anyone needs them.",
     ref: first.messageId,
   });
   plane.sendAuthorized({
     chatId,
     accessToken: owner.token,
-    senderActorId: owner.actorId,
+    senderContactId: owner.actorId,
     content: "I left one line note on the lighting sentence so the warmer pendant callout stays attached to the right line.",
     metadata: {
       webChatCommentResources: [
@@ -265,31 +265,31 @@ const seedMessages = (
   plane.sendAuthorized({
     chatId,
     accessToken: designer.token,
-    senderActorId: designer.actorId,
+    senderContactId: designer.actorId,
     content: "The stair threshold also reads better in this export. I do not think the room note needs anything else.",
   });
   plane.sendAuthorized({
     chatId,
     accessToken: reviewer.token,
-    senderActorId: reviewer.actorId,
+    senderContactId: reviewer.actorId,
     content: "Agreed. I will keep the follow-up short in the thread and only pull the full source if someone asks for it.",
   });
   plane.sendAuthorized({
     chatId,
     accessToken: owner.token,
-    senderActorId: owner.actorId,
+    senderContactId: owner.actorId,
     content: "Perfect. Send it after dinner with the same wording and the same supporting files.",
   });
   plane.sendAuthorized({
     chatId,
     accessToken: designer.token,
-    senderActorId: designer.actorId,
+    senderContactId: designer.actorId,
     content: "One last note before I log off: the bench finish in the image is the approved one, so I would not add another swatch.",
   });
   plane.sendAuthorized({
     chatId,
     accessToken: reviewer.token,
-    senderActorId: reviewer.actorId,
+    senderContactId: reviewer.actorId,
     content: "Received. I will send the wrap-up after dinner and leave the attachments where they are.",
   });
 }
@@ -301,7 +301,7 @@ const seedPeople = (
 ): void => {
   for (const seat of seats) {
     plane.upsertSourceSubscription({
-      ownerActorId: seat.actorId,
+      ownerContactId: seat.actorId,
       sourceId: "local-review",
       label: "Local review",
       endpoint: `http://${DEFAULT_HOST}:${HTTP_PORT}`,
@@ -312,7 +312,7 @@ const seedPeople = (
       },
     });
     plane.upsertSourceSubscription({
-      ownerActorId: seat.actorId,
+      ownerContactId: seat.actorId,
       sourceId: "remote-lab",
       label: "Remote lab",
       endpoint: "https://remote-lab.example.invalid/message-system",
@@ -324,7 +324,7 @@ const seedPeople = (
       },
     });
     plane.upsertSourceSubscription({
-      ownerActorId: seat.actorId,
+      ownerContactId: seat.actorId,
       sourceId: "main-office",
       label: "Main office",
       endpoint: "https://main-office.example.invalid/message-system",
@@ -341,9 +341,9 @@ const seedPeople = (
         continue;
       }
       plane.upsertContact({
-        ownerActorId: seat.actorId,
+        ownerContactId: seat.actorId,
         sourceId: "local-review",
-        remoteActorId: contactSeat.actorId,
+        remoteContactId: contactSeat.actorId,
         label: contactSeat.name,
         subtitle: "Local review room",
         iconUrl: contactSeat.iconUrl,
@@ -355,9 +355,9 @@ const seedPeople = (
     }
 
     plane.upsertContact({
-      ownerActorId: seat.actorId,
+      ownerContactId: seat.actorId,
       sourceId: "remote-lab",
-      remoteActorId: "auth:kai",
+      remoteContactId: "auth:kai",
       label: "Kai",
       subtitle: "Remote lab reviewer",
       iconUrl: buildAvatarDataUrl("Kai remote"),
@@ -366,9 +366,9 @@ const seedPeople = (
       },
     });
     plane.upsertContact({
-      ownerActorId: seat.actorId,
+      ownerContactId: seat.actorId,
       sourceId: "remote-lab",
-      remoteActorId: "auth:mira",
+      remoteContactId: "auth:mira",
       label: "Mira",
       subtitle: "Remote lab product reviewer",
       iconUrl: buildAvatarDataUrl("Mira remote"),
@@ -377,9 +377,9 @@ const seedPeople = (
       },
     });
     plane.upsertContact({
-      ownerActorId: seat.actorId,
+      ownerContactId: seat.actorId,
       sourceId: "remote-lab",
-      remoteActorId: "auth:enzo",
+      remoteContactId: "auth:enzo",
       label: "Enzo",
       subtitle: "Remote lab design engineer",
       iconUrl: buildAvatarDataUrl("Enzo remote"),
@@ -388,9 +388,9 @@ const seedPeople = (
       },
     });
     plane.upsertContact({
-      ownerActorId: seat.actorId,
+      ownerContactId: seat.actorId,
       sourceId: "main-office",
-      remoteActorId: "auth:kai",
+      remoteContactId: "auth:kai",
       label: "Kai",
       subtitle: "Main office design owner",
       iconUrl: buildAvatarDataUrl("Kai office"),
@@ -399,9 +399,9 @@ const seedPeople = (
       },
     });
     plane.upsertContact({
-      ownerActorId: seat.actorId,
+      ownerContactId: seat.actorId,
       sourceId: "main-office",
-      remoteActorId: "auth:nora",
+      remoteContactId: "auth:nora",
       label: "Nora",
       subtitle: "Main office systems lead",
       iconUrl: buildAvatarDataUrl("Nora office"),
@@ -411,11 +411,11 @@ const seedPeople = (
     });
 
     plane.createContactRequest({
-      ownerActorId: seat.actorId,
+      ownerContactId: seat.actorId,
       requestId: `inbound-${seat.actorId}`,
       direction: "inbound",
       sourceId: "remote-lab",
-      remoteActorId: "auth:mira",
+      remoteContactId: "auth:mira",
       remoteLabel: "Mira",
       remoteSubtitle: "remote-lab · product reviewer",
       remoteIconUrl: buildAvatarDataUrl("Mira"),
@@ -424,11 +424,11 @@ const seedPeople = (
       callbackEndpoint: `http://${DEFAULT_HOST}:${HTTP_PORT}/api/review/people`,
     });
     plane.createContactRequest({
-      ownerActorId: seat.actorId,
+      ownerContactId: seat.actorId,
       requestId: `outbound-${seat.actorId}`,
       direction: "outbound",
       sourceId: "main-office",
-      remoteActorId: "auth:nora",
+      remoteContactId: "auth:nora",
       remoteLabel: "Nora",
       remoteSubtitle: "main-office · system designer",
       remoteIconUrl: buildAvatarDataUrl("Nora"),
@@ -678,9 +678,9 @@ const server = Bun.serve({
       };
       return Response.json({
         currentActor,
-        sources: state.plane.listSourceSubscriptions(viewerActorId as MessageActorId),
-        contacts: state.plane.listContacts(viewerActorId as MessageActorId),
-        contactRequests: state.plane.listContactRequests(viewerActorId as MessageActorId),
+        sources: state.plane.listSourceSubscriptions(viewerActorId as MessageContactId),
+        contacts: state.plane.listContacts(viewerActorId as MessageContactId),
+        contactRequests: state.plane.listContactRequests(viewerActorId as MessageContactId),
       });
     }
 
@@ -718,7 +718,7 @@ const server = Bun.serve({
       state.plane.sendAuthorized({
         chatId,
         accessToken,
-        senderActorId: body.senderActorId,
+        senderContactId: body.senderContactId,
         from: body.from,
         content,
         kind: body.kind,

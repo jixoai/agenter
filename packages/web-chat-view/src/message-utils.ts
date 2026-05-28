@@ -1,4 +1,4 @@
-import type { MessageActorId } from "@agenter/message-system/types";
+import type { MessageContactId } from "@agenter/message-system/types";
 
 import type { WebChatChannel, WebChatMessage, WebChatMessageInput } from "./types";
 
@@ -64,7 +64,7 @@ const sameAttachmentSet = (
 const sameSemanticMessage = (left: WebChatMessage, right: WebChatMessage): boolean => {
   return (
     left.chatId === right.chatId &&
-    (left.senderActorId ?? null) === (right.senderActorId ?? null) &&
+    (left.senderContactId ?? null) === (right.senderContactId ?? null) &&
     left.from === right.from &&
     left.content === right.content &&
     left.createdAt === right.createdAt &&
@@ -149,7 +149,7 @@ export const resolveViewerActorId = (
 export const resolveUserSender = (
   channel: WebChatChannel,
   viewerActorId?: string | null,
-): { from?: string; senderActorId?: MessageActorId } => {
+): { from?: string; senderContactId?: MessageContactId } => {
   const effectiveViewerActorId = resolveViewerActorId(channel, viewerActorId);
   const currentParticipant = effectiveViewerActorId
     ? channel.participants.find((participant) => participant.id === effectiveViewerActorId)
@@ -160,7 +160,7 @@ export const resolveUserSender = (
     channel.participants[0];
   return {
     from: fallbackParticipant?.label,
-    senderActorId: (effectiveViewerActorId ?? fallbackParticipant?.id) as MessageActorId | undefined,
+    senderContactId: (effectiveViewerActorId ?? fallbackParticipant?.id) as MessageContactId | undefined,
   };
 };
 
@@ -168,27 +168,27 @@ export const resolveMessageActorId = (
   channel: WebChatChannel | null,
   message: WebChatMessage,
   viewerActorId?: string | null,
-): MessageActorId | null => {
-  if (message.senderActorId) {
-    return message.senderActorId;
+): MessageContactId | null => {
+  if (message.senderContactId) {
+    return message.senderContactId;
   }
   if (!channel) {
     return null;
   }
   if (message.from === channel.owner || message.from === `avatar:${channel.owner}`) {
     const ownerParticipant = resolveParticipantMatchByLabel(channel, channel.owner);
-    return (ownerParticipant?.id ?? null) as MessageActorId | null;
+    return (ownerParticipant?.id ?? null) as MessageContactId | null;
   }
   const effectiveViewerActorId = resolveViewerActorId(channel, viewerActorId);
   if (message.from === "You" && effectiveViewerActorId) {
-    return effectiveViewerActorId as MessageActorId;
+    return effectiveViewerActorId as MessageContactId;
   }
   const participant = resolveParticipantMatchByLabel(channel, message.from);
   if (participant) {
-    return participant.id as MessageActorId;
+    return participant.id as MessageContactId;
   }
   return effectiveViewerActorId && message.from === channel.participantId
-    ? (effectiveViewerActorId as MessageActorId)
+    ? (effectiveViewerActorId as MessageContactId)
     : null;
 };
 

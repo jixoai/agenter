@@ -90,15 +90,35 @@
 		});
 	};
 
+	const expectComposerHidden = async (canvas: ReturnType<typeof within>): Promise<void> => {
+		await waitFor(() => {
+			expect(canvas.queryByTestId('web-chat-draft-editor')).toBeNull();
+			expect(canvas.queryByRole('button', { name: 'Send' })).toBeNull();
+		});
+	};
+
 	const chooseSelectOption = async (
 		canvas: ReturnType<typeof within>,
 		label: string,
 		optionMatcher: RegExp | string,
 	): Promise<string> => {
-		const trigger = canvas.getByLabelText(label) as HTMLButtonElement;
+		const resolveInteractiveTrigger = (): HTMLButtonElement => {
+			const candidates = canvas.getAllByLabelText(label) as HTMLButtonElement[];
+			const trigger = candidates.find((candidate) => {
+				if (candidate.closest('[hidden]') || candidate.closest('[inert]')) {
+					return false;
+				}
+				const style = getComputedStyle(candidate);
+				return style.pointerEvents !== 'none' && style.visibility !== 'hidden' && style.display !== 'none';
+			});
+			expect(trigger).toBeInstanceOf(HTMLButtonElement);
+			return trigger as HTMLButtonElement;
+		};
+		const trigger = resolveInteractiveTrigger();
 		await waitFor(() => {
-			expect(trigger.closest('[inert]')).toBeNull();
-			expect(getComputedStyle(trigger).pointerEvents).not.toBe('none');
+			const nextTrigger = resolveInteractiveTrigger();
+			expect(nextTrigger.closest('[inert]')).toBeNull();
+			expect(getComputedStyle(nextTrigger).pointerEvents).not.toBe('none');
 		});
 		await userEvent.click(trigger);
 		const option = await screen.findByRole('option', {
@@ -167,6 +187,29 @@
 </Story>
 
 <Story
+	name="Scenario: Given a control-only room When opened in Studio Then transcript and room management stay available while sending stays disabled"
+	asChild
+	play={async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const toolbar = getRoomToolbar(canvasElement);
+		await waitFor(() => {
+			expect(containsVisibleTextDeep(canvasElement, 'Current operator room is live.')).toBe(true);
+		});
+		await expect(await getRoomToolbarButton(toolbar, 'Manage room')).toBeInTheDocument();
+		await expect(await getRoomToolbarButton(toolbar, 'Add user')).toBeInTheDocument();
+		await expect(canvas.getByTestId('message-room-send-capability-banner')).toHaveTextContent('No sending seat');
+		await expectComposerHidden(canvas);
+		await userEvent.click(await getRoomToolbarButton(toolbar, 'Manage room'));
+		await waitFor(async () => {
+			await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
+			await expect(canvas.getByTestId('room-manage-nav-overview')).toHaveAttribute('aria-pressed', 'true');
+		});
+	}}
+>
+	<Harness disableManageDialogPortal fixture="control-only" />
+</Story>
+
+<Story
 	name="Scenario: Given the room toolbar add-user action When it is pressed Then room management lands on Users Add"
 	asChild
 	play={async ({ canvasElement }) => {
@@ -181,6 +224,21 @@
 	}}
 >
 	<Harness disableManageDialogPortal />
+</Story>
+
+<Story
+	name="Scenario: Given a readonly room user When selected as viewer Then transcript read stays available while send remains unavailable"
+	asChild
+	play={async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await waitFor(() => {
+			expect(canvas.getByTestId('message-room-send-capability-banner')).toHaveTextContent('Read-only seat selected');
+		});
+		await expectComposerHidden(canvas);
+		await expect(canvas.getByText('Current operator room is live.')).toBeInTheDocument();
+	}}
+>
+	<Harness disableManageDialogPortal fixture="readonly-viewer" />
 </Story>
 
 <Story
@@ -208,6 +266,32 @@
 			await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
 			await expect(canvas.getByTestId('room-manage-nav-overview')).toHaveAttribute('aria-pressed', 'true');
 		});
+	}}
+>
+	<Harness disableManageDialogPortal />
+</Story>
+
+<Story
+	name="Scenario: Given a room is archived from its own detail surface When the action completes Then the transcript stays visible and the page shows archived status instead of navigating away"
+	asChild
+	play={async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		const toolbar = getRoomToolbar(canvasElement);
+
+		await userEvent.click(await getRoomToolbarButton(toolbar, 'Manage room'));
+		await waitFor(async () => {
+			await expect(canvas.getByTestId('room-manage-shell')).toBeInTheDocument();
+		});
+		await expect(canvas.getByTestId('room-manage-nav-overview')).toHaveAttribute('aria-pressed', 'true');
+		await userEvent.click(canvas.getByRole('button', { name: 'Archive room' }));
+
+		await waitFor(async () => {
+			await expect(canvas.getByTestId('message-room-archived-banner')).toBeInTheDocument();
+		});
+		await expect(canvas.getByTestId('message-room-archived-banner')).toHaveTextContent(
+			'This room is archived.',
+		);
+		await expect(canvas.getByText('Current operator room is live.')).toBeInTheDocument();
 	}}
 >
 	<Harness disableManageDialogPortal />

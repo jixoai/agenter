@@ -97,7 +97,7 @@
       resourceReferences,
       messageId: activeMessage.messageId,
       viewKey: activeMessage.viewKey,
-      senderActorId: resolvedActor.actorId ?? activeMessage.senderActorId ?? null,
+      senderActorId: resolvedActor.actorId ?? activeMessage.senderContactId ?? null,
       from: activeMessage.from,
     });
   });
@@ -317,7 +317,7 @@
       sourceViewKey: activeMessage.viewKey,
       sourceLineNumber: anchor.lineNumber,
       selectedText: anchor.selectedText,
-      sourceActorId: resolvedActor.actorId ?? activeMessage.senderActorId ?? null,
+      sourceActorId: resolvedActor.actorId ?? activeMessage.senderContactId ?? null,
       sourceActorLabel: resolvedActor.label,
       sourceUri: anchor.sourceUri,
       commentText: trimmedDraft,

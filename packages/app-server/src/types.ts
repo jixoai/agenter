@@ -1,5 +1,5 @@
 import type { SessionAssetKind } from "@agenter/session-system";
-import type { MessageActorId, MessageKind, MessagePayload } from "@agenter/message-system";
+import type { MessageContactId, MessageKind, MessagePayload } from "@agenter/message-system";
 
 export type TaskStage = "idle" | "plan" | "act" | "observe" | "decide" | "done" | "error";
 
@@ -22,7 +22,7 @@ export interface ChatSessionAsset {
 export interface RoomMediaAsset extends ChatSessionAsset {
   createdAt: number;
   updatedAt: number;
-  uploadedByActorId?: MessageActorId;
+  uploadedByActorId?: MessageContactId;
 }
 
 export interface ModelCapabilities {

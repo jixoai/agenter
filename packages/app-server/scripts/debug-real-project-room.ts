@@ -156,7 +156,7 @@ const main = async (): Promise<void> => {
                 ? null
                 : {
                     chatId: latestRoomMessage.chatId,
-                    senderActorId: latestRoomMessage.senderActorId,
+                    senderContactId: latestRoomMessage.senderContactId,
                     content: latestRoomMessage.content,
                     createdAt: latestRoomMessage.createdAt,
                   },

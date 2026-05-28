@@ -1,4 +1,4 @@
-import type { MessageActorId, MessageRecord } from "./types";
+import type { MessageContactId, MessageRecord } from "./types";
 
 export type MessageQueryChatScope = string | string[] | "*";
 export type MessageQueryMode = "match" | "query" | "sql";
@@ -13,8 +13,8 @@ export interface MessageQueryRequest {
 
 export interface MessageAuthorizedQueryInput extends MessageQueryRequest {
   accessToken?: string;
-  actorId?: MessageActorId;
-  superadminActorId?: MessageActorId;
+  contactId?: MessageContactId;
+  superadminContactId?: MessageContactId;
 }
 
 export interface MessageQueryHit {

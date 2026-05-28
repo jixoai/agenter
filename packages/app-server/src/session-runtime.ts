@@ -1,6 +1,7 @@
 import {
   AttentionStore,
   AttentionSystem,
+  applyAttentionCommitWithContext,
   type AttentionActiveContextMatch,
   type AttentionCommit,
   type AttentionCommitChange,
@@ -32,7 +33,7 @@ import {
 import {
   MessageControlPlane,
   resolveMessageControlDbPath,
-  type MessageActorId,
+  type MessageContactId,
   type MessageChannelAccessProjection,
   type MessageChannelGrantRecord,
   type MessageChannelKind,
@@ -41,6 +42,8 @@ import {
   type MessageControlPlaneEntry,
   type MessageErrorPayload,
   type MessageFocusOp,
+  type MessageFollowUpDueInput,
+  type MessageFollowUpRequest,
   type MessageInteractivePayload,
   type MessageInvitationRecord,
   type MessageIssueGrantInput,
@@ -66,7 +69,6 @@ import {
   type SessionMessageUpsertInput,
   type SessionNotifyQuotaRecord,
   type SessionPromptWindowRecord,
-  type SessionRuntimeWatchPredicate,
   type SessionRuntimeWatchRecord,
   type SessionTerminalOutcome,
   type SessionTraceRef,
@@ -87,11 +89,11 @@ import {
   type TerminalReadResult as ControlPlaneTerminalReadResult,
   type TerminalAccessProjection,
   type TerminalActorId,
+  type TerminalApprovalRequestRecord,
   type TerminalAwaitInput,
   type TerminalControlPlaneConfig,
   type TerminalControlPlaneConfigPatch,
   type TerminalControlPlaneEntry,
-  type TerminalApprovalRequestRecord,
   type TerminalInvitationRecord,
   type TerminalManagedSeatClass,
   type TerminalPatchInput,
@@ -171,8 +173,8 @@ import {
   type LoopTaskSourceRef,
   type LoopTerminalSourceRef,
 } from "./loopbus-plugin-runtime";
-import { McpSystem } from "./mcp-system/system";
 import { type ManagedTerminalSnapshot, type TerminalRuntime } from "./managed-terminal";
+import { McpSystem } from "./mcp-system/system";
 import { summarizeMessageChannelPresence } from "./message-channel-presence";
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
@@ -235,7 +237,6 @@ import {
   type RuntimeWorkspaceSurface,
 } from "./runtime-tool-views";
 import { createSpanId, createTraceEvent, createTraceId, createTraceRef } from "./runtime-trace";
-import { RuntimeWatchStore, type RuntimeWatchRecord } from "./runtime-watch-store";
 import { buildSessionAssetRelativePath, resolveSessionAssetKind, toChatSessionAsset } from "./session-assets";
 import { resolveSessionRoomActorId } from "./session-chat-projection";
 import { resolveSessionConfig, type ResolvedSessionConfig, type SessionTerminalConfig } from "./session-config";
@@ -915,7 +916,7 @@ const buildTaskAttentionPresentation = (
   }
 };
 
-const buildRuntimeWatchReminderPresentation = (input: {
+const buildMessageFollowUpReminderPresentation = (input: {
   chatId: string;
   anchorMessageId: number;
   dueAt: number;
@@ -1296,7 +1297,7 @@ const buildMessageFactEnvelope = (input: {
     message: {
       messageId: message.messageId,
       ref: message.ref ?? null,
-      senderActorId: message.senderActorId ?? null,
+      senderContactId: message.senderContactId ?? null,
       senderLabel: message.from,
       kind: message.kind,
       createdAt: new Date(message.createdAt).toISOString(),
@@ -1474,12 +1475,6 @@ const cloneAttentionReceiptRecord = (receipt: AttentionReceiptRecord): Attention
   meta: receipt.meta ? structuredClone(receipt.meta) : undefined,
 });
 
-const cloneRuntimeWatchRecord = (watch: SessionRuntimeWatchRecord): SessionRuntimeWatchRecord => ({
-  ...watch,
-  predicate: structuredClone(watch.predicate),
-  meta: watch.meta ? structuredClone(watch.meta) : undefined,
-});
-
 const cloneEffectLedgerRecord = (record: SessionEffectLedgerRecord): SessionEffectLedgerRecord => ({
   ...record,
   meta: record.meta ? structuredClone(record.meta) : undefined,
@@ -1502,6 +1497,9 @@ export interface SessionRuntimeAttentionDeliveryState {
   projections: AttentionDeliveryProjection[];
   dispatches: AttentionDispatchRecord[];
   receipts: AttentionReceiptRecord[];
+  // Legacy generic runtime watches are no longer session-runtime owned for
+  // message follow-up. Keep the field temporarily as an empty compatibility
+  // projection until Studio migrates to dedicated follow-up task diagnostics.
   watches: SessionRuntimeWatchRecord[];
   effects: SessionEffectLedgerRecord[];
 }
@@ -1706,7 +1704,7 @@ export interface SessionRuntimeOptions {
   sessionName: string;
   storeTarget: "global" | "workspace";
   messageSystem?: MessageControlPlane;
-  messageActorId?: MessageActorId;
+  messageContactId?: MessageContactId;
   terminalSystem: TerminalControlPlane;
   terminalActorId?: TerminalActorId;
   primaryRoomId: string;
@@ -1784,7 +1782,6 @@ export class SessionRuntime {
   private readonly taskEngine = new TaskEngine();
   private readonly taskSourceMtime = new Map<string, number>();
   private readonly taskAttentionDraftQueue: AttentionDraft[] = [];
-  private readonly runtimeWatchStore = new RuntimeWatchStore();
   private readonly effectLedgerRecords = new Map<string, SessionEffectLedgerRecord>();
   private taskSources: TaskSourceResolved[] = [];
 
@@ -1802,7 +1799,7 @@ export class SessionRuntime {
   private attentionHashAliases = new AttentionHashAliasRegistry();
   private readonly messageSystem: MessageControlPlane;
   private readonly ownsMessageSystem: boolean;
-  private readonly messageActorId: MessageActorId;
+  private readonly messageContactId: MessageContactId;
   private readonly terminalActorId: TerminalActorId;
   private readonly primaryRoomId: string;
   private readonly inboundMessageQueue: LoopBusInput[] = [];
@@ -1811,6 +1808,7 @@ export class SessionRuntime {
   private readonly terminalKernelAdapter: RuntimeTerminalKernelAdapter;
   private readonly skillKernelAdapter: RuntimeSkillKernelAdapter;
   private readonly messageSystemCleanup: Array<() => void> = [];
+  private followUpSinkCleanup: (() => void) | null = null;
   private readonly terminalSystemCleanup: Array<() => void> = [];
   private readonly killedTerminalWorkById = new Map<string, Promise<void>>();
   private agent: AgenterAI | null = null;
@@ -1923,7 +1921,7 @@ export class SessionRuntime {
   private loopPluginRuntime: LoopBusPluginRuntime | null = null;
 
   constructor(private readonly options: SessionRuntimeOptions) {
-    this.messageActorId = options.messageActorId ?? resolveSessionRoomActorId(options.sessionId);
+    this.messageContactId = options.messageContactId ?? resolveSessionRoomActorId(options.sessionId);
     this.terminalActorId = options.terminalActorId ?? (resolveSessionRoomActorId(options.sessionId) as TerminalActorId);
     this.primaryRoomId = options.primaryRoomId;
     this.terminalControlPlane = options.terminalSystem;
@@ -1979,7 +1977,7 @@ export class SessionRuntime {
     });
     this.messageKernelAdapter = new RuntimeMessageKernelAdapter({
       messageSystem: this.messageSystem,
-      messageActorId: this.messageActorId,
+      messageContactId: this.messageContactId,
       isLoopPaused: () => this.isLoopPaused(),
       getMaxFocusedRoomCount: () => this.getMaxFocusedRoomCount(),
       getMaxBatchReadRoomMessageCount: () => this.getMaxBatchReadRoomMessageCount(),
@@ -2409,14 +2407,14 @@ export class SessionRuntime {
   private listActorRooms(
     input: { includeArchived?: boolean; touchPresence?: boolean } = {},
   ): MessageControlPlaneEntry[] {
-    return this.messageSystem.listChannelsForActor(this.messageActorId, input);
+    return this.messageSystem.listChannelsForContact(this.messageContactId, input);
   }
 
   private getActorRoom(
     chatId: string,
     input: { includeArchived?: boolean; touchPresence?: boolean } = {},
   ): MessageControlPlaneEntry | undefined {
-    return this.messageSystem.getChannelForActor(chatId, this.messageActorId, input);
+    return this.messageSystem.getChannelForContact(chatId, this.messageContactId, input);
   }
 
   private getDefaultAttentionContextId(chatId: string): string {
@@ -2450,10 +2448,6 @@ export class SessionRuntime {
 
   private resolveAttentionFocusState(contextId: string): AttentionFocusState {
     return this.attentionSystem.getContext(contextId)?.getState().focusState ?? "focused";
-  }
-
-  private resolveAttentionIngressType(contextId: string): "commit" | "push" {
-    return this.resolveAttentionFocusState(contextId) === "focused" ? "commit" : "push";
   }
 
   private isNotificationAttentionCommit(commit: AttentionCommit): boolean {
@@ -2549,6 +2543,7 @@ export class SessionRuntime {
     }
     const snapshot = this.attentionContextSnapshot.get(contextId);
     this.attentionSystem.setContextFocusState(contextId, focusState);
+    await this.syncCompanionRoomArchiveProjection(contextId, focusState);
     this.attentionFactsVersion += 1;
     await this.persistAttentionSystem();
     this.emitAttentionState();
@@ -2665,9 +2660,9 @@ export class SessionRuntime {
     }
     const created = repairRoomParticipantsIfNeeded(this.messageSystem, existing);
     if (this.resolveAttentionFocusState(context.contextId) === "focused") {
-      this.messageSystem.focusForActor(this.messageActorId, "add", [chatId]);
+      this.messageSystem.focusForContact(this.messageContactId, "add", [chatId]);
     } else {
-      this.messageSystem.focusForActor(this.messageActorId, "remove", [chatId]);
+      this.messageSystem.focusForContact(this.messageContactId, "remove", [chatId]);
     }
     return created;
   }
@@ -2712,7 +2707,7 @@ export class SessionRuntime {
           ? ({ ...(channel.metadata as Record<string, unknown>) } satisfies Record<string, unknown>)
           : {},
       seatStates: channel.seatStates?.map((state) => ({
-        actorId: state.actorId,
+        contactId: state.contactId,
         label: state.label,
         role: state.role,
         currentAdmin: state.currentAdmin,
@@ -2813,7 +2808,7 @@ export class SessionRuntime {
     contact: MessageContactRecord,
     visibleRooms: RuntimeVisibleMessageRoomView[],
   ): RuntimeReachableParticipantView {
-    const label = contact.label.trim() || contact.remoteActorId;
+    const label = contact.label.trim() || contact.remoteContactId;
     const rooms = visibleRooms
       .filter(
         (room) =>
@@ -2823,7 +2818,7 @@ export class SessionRuntime {
       .sort((left, right) => this.compareVisibleMessageRooms(left, right));
     return {
       kind: "contact",
-      actorId: contact.remoteActorId,
+      actorId: contact.remoteContactId,
       sourceId: contact.sourceId,
       label,
       rooms,
@@ -2834,7 +2829,7 @@ export class SessionRuntime {
     visibleRooms: RuntimeVisibleMessageRoomView[],
   ): RuntimeReachableParticipantView[] {
     const contacts = this.messageSystem
-      .listContacts(this.messageActorId)
+      .listContacts(this.messageContactId)
       .map((contact) => this.projectReachableMessageContact(contact, visibleRooms));
     const coveredLabels = new Set(contacts.map((contact) => contact.label));
     const directory = new Map<string, RuntimeVisibleMessageRoomView[]>();
@@ -2869,6 +2864,19 @@ export class SessionRuntime {
     return summarizeMessageChannelPresence(channel);
   }
 
+  private toMessageFollowUpRequest(chatId: string, followUpAfterMs?: number): MessageFollowUpRequest | undefined {
+    if (!Number.isInteger(followUpAfterMs) || followUpAfterMs === undefined || followUpAfterMs <= 0) {
+      return undefined;
+    }
+    return {
+      afterMs: followUpAfterMs,
+      ownerSessionId: this.options.sessionId,
+      attentionRoot: join(this.options.sessionRoot, "attention-system"),
+      attentionContextId: this.getDefaultAttentionContextId(chatId),
+      attentionOwner: this.getAvatarName(),
+    };
+  }
+
   private async sendMessageTool(input: {
     chatId: string;
     content: string;
@@ -2876,11 +2884,11 @@ export class SessionRuntime {
     from?: string;
     followUpAfterMs?: number;
   }): Promise<RuntimeMessageSendResult> {
-    const actorChannel = this.getActorRoom(input.chatId);
+    const actorChannel = this.getActorRoom(input.chatId, { includeArchived: true });
     if (!actorChannel) {
       const remoteSeat = this.resolveStoredMessageSeat(input.chatId);
       if (!remoteSeat) {
-        const channel = this.messageSystem.getChannel(input.chatId);
+        const channel = this.messageSystem.getChannel(input.chatId, { includeArchived: true });
         if (!channel) {
           throw new Error(`unknown chat channel: ${input.chatId}`);
         }
@@ -2898,6 +2906,11 @@ export class SessionRuntime {
           text: input.content,
         },
       });
+      // Intentionally do not forward `followUpAfterMs` through managed-seat RPC
+      // yet. The correct fix is not another optional transport field; it is a
+      // lower-level AsyncContext + RPC context-propagation law that can
+      // preserve follow-up ownership across authority boundaries without
+      // leaking runtime-local scheduler semantics into this bridge contract.
       if (response.ok !== true) {
         throw new Error(response.reason ?? `remote room send failed: ${input.chatId}`);
       }
@@ -2919,6 +2932,7 @@ export class SessionRuntime {
     const replyCycleId = this.activeCycleId;
     const author = input.from ?? this.getAvatarName();
     const actionId = this.createRuntimeActionId("message_send");
+    const followUp = this.toMessageFollowUpRequest(input.chatId, input.followUpAfterMs);
     const result = await this.deliverRuntimeMessageDispatch({
       actionId,
       chatId: input.chatId,
@@ -2926,25 +2940,8 @@ export class SessionRuntime {
       ref: input.ref,
       from: author,
       cycleId: replyCycleId,
+      followUp,
     });
-    if (
-      typeof input.followUpAfterMs === "number" &&
-      Number.isInteger(input.followUpAfterMs) &&
-      input.followUpAfterMs > 0
-    ) {
-      this.armRuntimeWatch({
-        watchId: `watch/message-follow-up/${input.chatId}/${result.messageId}/${this.messageActorId}`,
-        ownerActionId: actionId,
-        ownerActionKind: "message_send",
-        ownerActorId: this.messageActorId,
-        ownerCycleId: replyCycleId,
-        ownerSessionModelCallId: this.activeModelCallId,
-        target: `room:${input.chatId}`,
-        chatId: input.chatId,
-        anchorMessageId: result.messageId,
-        followUpAfterMs: input.followUpAfterMs,
-      });
-    }
     return result;
   }
 
@@ -2954,7 +2951,7 @@ export class SessionRuntime {
     content: string;
   }): Promise<{ ok: boolean; messageId: number; updatedAt: number }> {
     const actionId = this.createRuntimeActionId("message_edit");
-    const access = this.getActorRoom(input.chatId);
+    const access = this.getActorRoom(input.chatId, { includeArchived: true });
     if (!access?.accessToken) {
       const remoteSeat = this.resolveStoredMessageSeat(input.chatId);
       if (!remoteSeat) {
@@ -2993,7 +2990,7 @@ export class SessionRuntime {
     this.recordEffectLedger({
       actionId,
       actionKind: "message_edit",
-      actorId: this.messageActorId,
+      actorId: this.messageContactId,
       cycleId: this.activeCycleId,
       sessionModelCallId: this.activeModelCallId,
       target: `room:${input.chatId}`,
@@ -3017,7 +3014,7 @@ export class SessionRuntime {
     messageId: number;
   }): Promise<{ ok: boolean; messageId: number; updatedAt: number; recalledAt: number }> {
     const actionId = this.createRuntimeActionId("message_recall");
-    const access = this.getActorRoom(input.chatId);
+    const access = this.getActorRoom(input.chatId, { includeArchived: true });
     if (!access?.accessToken) {
       const remoteSeat = this.resolveStoredMessageSeat(input.chatId);
       if (!remoteSeat) {
@@ -3064,7 +3061,7 @@ export class SessionRuntime {
     this.recordEffectLedger({
       actionId,
       actionKind: "message_recall",
-      actorId: this.messageActorId,
+      actorId: this.messageContactId,
       cycleId: this.activeCycleId,
       sessionModelCallId: this.activeModelCallId,
       target: `room:${input.chatId}`,
@@ -3089,7 +3086,7 @@ export class SessionRuntime {
     if (chatId === this.getDefaultChatId()) {
       this.requireDefaultChatChannel();
     }
-    const actorChannel = this.getActorRoom(chatId);
+    const actorChannel = this.getActorRoom(chatId, { includeArchived: true });
     if (!actorChannel?.accessToken) {
       throw new Error(`runtime actor has no member grant for chat channel: ${chatId}`);
     }
@@ -3104,73 +3101,20 @@ export class SessionRuntime {
     content: string;
     ref?: number;
     from: string;
+    followUp?: MessageFollowUpRequest;
     metadata?: Record<string, unknown>;
   }): MessageRecord {
     const access = this.requireActorChannelWriteAccess(input.chatId);
     return this.messageSystem.replyAuthorized({
       chatId: access.chatId,
       accessToken: access.accessToken,
-      senderActorId: this.messageActorId,
+      senderContactId: this.messageContactId,
       ref: input.ref,
       from: input.from,
       content: input.content,
+      followUp: input.followUp,
       metadata: input.metadata,
     });
-  }
-
-  private armRuntimeWatch(input: {
-    watchId: string;
-    ownerActionId: string;
-    ownerActionKind: string;
-    ownerActorId: string;
-    ownerCycleId?: number | null;
-    ownerSessionModelCallId?: number | null;
-    target: string;
-    chatId: string;
-    anchorMessageId: number;
-    followUpAfterMs: number;
-  }): void {
-    const dueAt = Date.now() + input.followUpAfterMs;
-    const predicate: SessionRuntimeWatchPredicate = {
-      kind: "message_latest_visible",
-      chatId: input.chatId,
-      anchorMessageId: input.anchorMessageId,
-    };
-    const watch = this.runtimeWatchStore.upsert({
-      watchId: input.watchId,
-      ownerActionId: input.ownerActionId,
-      ownerActionKind: input.ownerActionKind,
-      ownerActorId: input.ownerActorId,
-      ownerCycleId: input.ownerCycleId ?? null,
-      ownerSessionModelCallId: input.ownerSessionModelCallId ?? null,
-      target: input.target,
-      predicate,
-      dueAt,
-      meta: {
-        compatibilityAlias: "followUpAfterMs",
-        chatId: input.chatId,
-        anchorMessageId: input.anchorMessageId,
-      },
-    });
-    this.sessionDb?.upsertRuntimeWatch({
-      watchId: watch.watchId,
-      ownerActionId: watch.ownerActionId,
-      ownerActionKind: watch.ownerActionKind,
-      ownerActorId: watch.ownerActorId,
-      ownerCycleId: watch.ownerCycleId,
-      ownerSessionModelCallId: watch.ownerSessionModelCallId,
-      target: watch.target,
-      predicate: watch.predicate,
-      dueAt: watch.dueAt,
-      status: watch.status,
-      createdAt: watch.createdAt,
-      updatedAt: watch.updatedAt,
-      resolvedAt: watch.resolvedAt,
-      reminderContextId: watch.reminderContextId,
-      reminderCommitId: watch.reminderCommitId,
-      meta: watch.meta,
-    });
-    this.emitAttentionDeliveryState();
   }
 
   private async deliverRuntimeMessageDispatch(input: {
@@ -3180,6 +3124,7 @@ export class SessionRuntime {
     ref?: number;
     from: string;
     cycleId: number | null;
+    followUp?: MessageFollowUpRequest;
   }): Promise<RuntimeMessageSendResult> {
     const redundant = this.findRedundantVisibleReply({
       chatId: input.chatId,
@@ -3187,6 +3132,16 @@ export class SessionRuntime {
       from: input.from,
     });
     if (redundant) {
+      if (input.followUp) {
+        const access = this.requireActorChannelWriteAccess(input.chatId);
+        this.messageSystem.refreshFollowUpAuthorized({
+          chatId: access.chatId,
+          accessToken: access.accessToken,
+          messageId: redundant.messageId,
+          followUp: input.followUp,
+        });
+        this.emitAttentionDeliveryState();
+      }
       this.markRuntimeDispatchDelivered(input.chatId, input.cycleId);
       return await this.buildRuntimeMessageSendResult({
         actionId: input.actionId,
@@ -3200,7 +3155,11 @@ export class SessionRuntime {
       ref: input.ref,
       from: input.from,
       content: input.content,
+      followUp: input.followUp,
     });
+    if (input.followUp) {
+      this.emitAttentionDeliveryState();
+    }
     this.markRuntimeDispatchDelivered(input.chatId, input.cycleId);
     return await this.buildRuntimeMessageSendResult({
       actionId: input.actionId,
@@ -3215,7 +3174,7 @@ export class SessionRuntime {
   }
 
   async readMessageChannel(input: { chatId: string; limit?: number }): Promise<MessageSnapshot> {
-    const access = this.getActorRoom(input.chatId);
+    const access = this.getActorRoom(input.chatId, { includeArchived: true });
     if (access?.accessToken) {
       return this.messageSystem.snapshotAuthorized({
         chatId: access.chatId,
@@ -3253,7 +3212,7 @@ export class SessionRuntime {
       query: input.query,
       offset: input.offset,
       limit: input.limit,
-      actorId: this.messageActorId,
+      contactId: this.messageContactId,
     });
   }
 
@@ -3275,51 +3234,12 @@ export class SessionRuntime {
     return projectRuntimeMessageOverview((await this.readMessageChannel(input)).items, input.limit);
   }
 
-  private getLatestVisibleMessageForRoom(chatId: string): MessageRecord | undefined {
-    return this.messageSystem.resolveLatestActiveVisibleMessage(chatId);
-  }
-
   private createRuntimeActionId(kind: string): string {
     return `action/${kind}/${createId()}`;
   }
 
   private createRuntimeEffectId(kind: string): string {
     return `effect/${kind}/${createId()}`;
-  }
-
-  private isRuntimeWatchPredicateStillRelevant(predicate: SessionRuntimeWatchPredicate): boolean {
-    switch (predicate.kind) {
-      case "message_latest_visible":
-        return this.getLatestVisibleMessageForRoom(predicate.chatId)?.messageId === predicate.anchorMessageId;
-      default:
-        return false;
-    }
-  }
-
-  private settleRuntimeWatch(
-    watchId: string,
-    input: {
-      status: "expired" | "satisfied";
-      updatedAt?: number;
-      resolvedAt?: number | null;
-      reminderContextId?: string | null;
-      reminderCommitId?: string | null;
-    },
-  ): RuntimeWatchRecord | null {
-    const watch = this.runtimeWatchStore.update(watchId, input);
-    if (!watch) {
-      return null;
-    }
-    this.sessionDb?.updateRuntimeWatch(watchId, {
-      status: watch.status,
-      updatedAt: watch.updatedAt,
-      resolvedAt: watch.resolvedAt,
-      reminderContextId: watch.reminderContextId ?? null,
-      reminderCommitId: watch.reminderCommitId ?? null,
-      meta: watch.meta,
-    });
-    this.emitAttentionDeliveryState();
-    return watch;
   }
 
   private recordEffectLedger(input: {
@@ -3355,83 +3275,42 @@ export class SessionRuntime {
     return record;
   }
 
-  private buildRuntimeWatchReminderIngress(watch: RuntimeWatchRecord): RuntimeSystemIngressEnvelope | null {
-    if (watch.predicate.kind !== "message_latest_visible") {
-      return null;
-    }
-    const anchorMessage = this.getLatestVisibleMessageForRoom(watch.predicate.chatId);
-    if (!anchorMessage || anchorMessage.messageId !== watch.predicate.anchorMessageId) {
-      return null;
-    }
+  private buildMessageFollowUpReminderIngress(task: MessageFollowUpDueInput): RuntimeSystemIngressEnvelope | null {
     const channel =
-      this.getActorRoom(watch.predicate.chatId, {
+      this.getActorRoom(task.chatId, {
         includeArchived: true,
         touchPresence: false,
-      }) ?? this.messageSystem.getChannel(watch.predicate.chatId, { includeArchived: true });
-    const presentation = buildRuntimeWatchReminderPresentation({
-      chatId: watch.predicate.chatId,
-      anchorMessageId: watch.predicate.anchorMessageId,
-      dueAt: watch.dueAt,
-      messageContent: anchorMessage.content,
+      }) ?? this.messageSystem.getChannel(task.chatId, { includeArchived: true });
+    const presentation = buildMessageFollowUpReminderPresentation({
+      chatId: task.chatId,
+      anchorMessageId: task.messageId,
+      dueAt: task.dueAt,
+      messageContent: task.message.content,
     });
     return {
       system: "message",
       boundaryChannel: "world_fact",
       sourceId: formatMessageAttentionSrc({
-        chatId: watch.predicate.chatId,
-        messageId: watch.predicate.anchorMessageId,
+        chatId: task.chatId,
+        messageId: task.messageId,
       }),
-      contextKey: channel?.contextId ?? this.getDefaultAttentionContextId(watch.predicate.chatId),
+      contextKey: channel?.contextId ?? this.getDefaultAttentionContextId(task.chatId),
       kind: "follow_up_reminder",
       summary: presentation.title,
       content: presentation.detailValue,
       format: presentation.detailFormat,
       score: 100,
       tags: ["message", "follow_up_reminder"],
-      createdAt: watch.dueAt,
+      createdAt: task.dueAt,
       author: this.getAvatarName(),
       meta: {
-        watchId: watch.watchId,
-        ownerActionId: watch.ownerActionId,
-        chatId: watch.predicate.chatId,
-        anchorMessageId: watch.predicate.anchorMessageId,
-        dueAt: watch.dueAt,
+        followUpTaskId: task.taskId,
+        chatId: task.chatId,
+        anchorMessageId: task.messageId,
+        dueAt: task.dueAt,
+        ownerSessionId: task.ownerSessionId,
       },
     };
-  }
-
-  private async pollRuntimeWatches(now = Date.now()): Promise<void> {
-    const dueWatches = this.runtimeWatchStore.list({ status: "pending" }).filter((watch) => watch.dueAt <= now);
-    for (const watch of dueWatches) {
-      const stillRelevant = this.isRuntimeWatchPredicateStillRelevant(watch.predicate);
-      if (!stillRelevant) {
-        this.settleRuntimeWatch(watch.watchId, {
-          status: "satisfied",
-          updatedAt: now,
-          resolvedAt: now,
-        });
-        continue;
-      }
-      const envelope = this.buildRuntimeWatchReminderIngress(watch);
-      if (!envelope) {
-        this.settleRuntimeWatch(watch.watchId, {
-          status: "satisfied",
-          updatedAt: now,
-          resolvedAt: now,
-        });
-        continue;
-      }
-      const committed = await this.runtimeKernelHost.commitIngress(envelope, {
-        notifyLoop: false,
-      });
-      this.settleRuntimeWatch(watch.watchId, {
-        status: "expired",
-        updatedAt: now,
-        resolvedAt: now,
-        reminderContextId: committed?.contextId ?? null,
-        reminderCommitId: committed?.commit.commitId ?? null,
-      });
-    }
   }
 
   private async buildRuntimeMessageSendResult(input: {
@@ -3445,7 +3324,7 @@ export class SessionRuntime {
       this.recordEffectLedger({
         actionId: input.actionId,
         actionKind: "message_send",
-        actorId: input.message.senderActorId ?? this.messageActorId,
+        actorId: input.message.senderContactId ?? this.messageContactId,
         cycleId: this.activeCycleId,
         sessionModelCallId: this.activeModelCallId,
         target: `room:${input.chatId}`,
@@ -3769,7 +3648,7 @@ export class SessionRuntime {
       participants: input.participants ?? [],
       metadata: input.metadata ?? { builtIn: false },
       adminToken: input.adminToken,
-      bootstrapActorId: this.messageActorId,
+      bootstrapContactId: this.messageContactId,
     });
     this.enqueueRoomLifecycleAttentionCommit({
       chatId,
@@ -3784,7 +3663,7 @@ export class SessionRuntime {
       },
     });
     if (input.focus ?? true) {
-      this.messageSystem.focusForActor(this.messageActorId, "replace", [chatId]);
+      this.messageSystem.focusForContact(this.messageContactId, "replace", [chatId]);
       this.enqueueRoomLifecycleAttentionCommit({
         chatId,
         contextId: context.contextId,
@@ -3799,7 +3678,7 @@ export class SessionRuntime {
       });
       return this.getActorRoom(chatId) ?? channel;
     }
-    this.messageSystem.focusForActor(this.messageActorId, "remove", [chatId]);
+    this.messageSystem.focusForContact(this.messageContactId, "remove", [chatId]);
     return this.getActorRoom(chatId) ?? channel;
   }
 
@@ -3807,7 +3686,7 @@ export class SessionRuntime {
     op: MessageFocusOp;
     channels: Array<{ chatId: string; accessToken: string }>;
   }): Promise<MessageControlPlaneEntry[]> {
-    const focusedBefore = new Set(this.messageSystem.getFocusedChatIds(this.messageActorId));
+    const focusedBefore = new Set(this.messageSystem.getFocusedChatIds(this.messageContactId));
     const focusedAfter = new Set(this.messageSystem.focusAuthorized(input.op, input.channels));
     const channels = this.listActorRooms();
     const touchedChatIds = new Set<string>([
@@ -4443,8 +4322,12 @@ export class SessionRuntime {
       return result;
     }
     const terminal =
-      controlPlane.listHistoryForActor(this.terminalActorId, { touchPresence: false }).find((item) => item.terminalId === terminalId) ??
-      controlPlane.listForActor(this.terminalActorId, { touchPresence: false }).find((item) => item.terminalId === terminalId);
+      controlPlane
+        .listHistoryForActor(this.terminalActorId, { touchPresence: false })
+        .find((item) => item.terminalId === terminalId) ??
+      controlPlane
+        .listForActor(this.terminalActorId, { touchPresence: false })
+        .find((item) => item.terminalId === terminalId);
     if (terminal?.processPhase === "killed") {
       await this.scheduleKilledRuntimeTerminal(terminal);
     }
@@ -4468,7 +4351,7 @@ export class SessionRuntime {
       metadata &&
       typeof metadata === "object" &&
       metadata.channel === "to_user" &&
-      message.senderActorId === this.messageActorId
+      message.senderContactId === this.messageContactId
     ) {
       return "assistant";
     }
@@ -4480,7 +4363,7 @@ export class SessionRuntime {
   }
 
   private isUnreadInboundMessage(message: MessageRecord): boolean {
-    return this.isInboundMessage(message) && message.unreadActorIds.includes(this.messageActorId);
+    return this.isInboundMessage(message) && message.unreadContactIds.includes(this.messageContactId);
   }
 
   private getMaxFocusedRoomCount(): number {
@@ -4524,7 +4407,7 @@ export class SessionRuntime {
       chatFocused: channel.focused,
       messageId: message.messageId,
       visibleAt: message.visibleAt ?? message.createdAt,
-      senderActorId: message.senderActorId ?? null,
+      senderContactId: message.senderContactId ?? null,
       senderLabel: message.from,
       ref: message.ref ?? null,
     } satisfies Record<string, unknown>;
@@ -4566,7 +4449,7 @@ export class SessionRuntime {
     const meta: Record<string, string | number | boolean | null> = {};
     meta.chatId = message.chatId;
     meta.messageId = message.messageId;
-    meta.senderActorId = message.senderActorId ?? null;
+    meta.senderContactId = message.senderContactId ?? null;
     meta.senderLabel = message.from;
     meta.ref = message.ref ?? null;
     if (channel) {
@@ -4632,19 +4515,6 @@ export class SessionRuntime {
   private bindMessageSystem(): void {
     this.messageSystemCleanup.push(
       this.messageSystem.onMessage(({ chatId, message }) => {
-        const superseded = this.runtimeWatchStore
-          .list({ status: "pending", target: `room:${chatId}` })
-          .filter(
-            (watch) =>
-              watch.predicate.kind === "message_latest_visible" && watch.predicate.anchorMessageId < message.messageId,
-          );
-        for (const watch of superseded) {
-          this.settleRuntimeWatch(watch.watchId, {
-            status: "satisfied",
-            updatedAt: message.updatedAt,
-            resolvedAt: message.updatedAt,
-          });
-        }
         const actorRoom = this.getActorRoom(chatId, {
           includeArchived: true,
           touchPresence: false,
@@ -4652,7 +4522,7 @@ export class SessionRuntime {
         if (!actorRoom) {
           return;
         }
-        const channel = this.messageSystem.getChannel(chatId);
+        const channel = this.messageSystem.getChannel(chatId, { includeArchived: true });
         if (!channel) {
           return;
         }
@@ -4662,6 +4532,38 @@ export class SessionRuntime {
       }),
     );
     this.messageSystemCleanup.push(this.messageSystem.onFocus(() => {}));
+  }
+
+  private ensureFollowUpSinkBound(): void {
+    if (this.followUpSinkCleanup) {
+      return;
+    }
+    this.followUpSinkCleanup = this.messageSystem.registerFollowUpSink(this.options.sessionId, async (task) => {
+      // Today the local runtime consumes due follow-up tasks through a
+      // session-owned sink. This is an adapter detail, not the long-term
+      // cross-RPC ownership law: managed-seat remote sends must eventually
+      // preserve follow-up ownership via AsyncContext + RPC context
+      // propagation instead of smuggling runtime-local scheduler state
+      // through today's authority bridge.
+      const envelope = this.buildMessageFollowUpReminderIngress(task);
+      if (!envelope) {
+        this.emitAttentionDeliveryState();
+        return;
+      }
+      const committed = await this.runtimeKernelHost.commitIngress(envelope, {
+        notifyLoop: false,
+      });
+      this.emitAttentionDeliveryState();
+      return {
+        reminderContextId: committed?.contextId ?? null,
+        reminderCommitId: committed?.commit.commitId ?? null,
+      };
+    });
+  }
+
+  private releaseFollowUpSink(): void {
+    this.followUpSinkCleanup?.();
+    this.followUpSinkCleanup = null;
   }
 
   private bindTerminalSystem(): void {
@@ -5580,7 +5482,7 @@ export class SessionRuntime {
       includeArchived: true,
       touchPresence: false,
     });
-    const channel = actorRoom ?? this.messageSystem.getChannel(chatId);
+    const channel = actorRoom ?? this.messageSystem.getChannel(chatId, { includeArchived: true });
     const content = message?.content ?? result.content;
     if (content.trim().length === 0 || content.trim() === "/compact") {
       return [];
@@ -5595,7 +5497,7 @@ export class SessionRuntime {
       chatFocused: channel?.focused ?? false,
       messageId: message?.messageId ?? sourceMessageId,
       visibleAt: message?.visibleAt ?? message?.createdAt ?? null,
-      senderActorId: message?.senderActorId ?? null,
+      senderContactId: message?.senderContactId ?? null,
       senderLabel: message?.from ?? from,
       ref: message?.ref ?? null,
     } satisfies Record<string, unknown>;
@@ -5634,15 +5536,16 @@ export class SessionRuntime {
               messageId: sourceMessageId,
               chatId,
               ref: undefined,
+              sourceSystemId: this.messageSystem.getSystemIdentity().systemId,
               from,
               kind: "text",
               content,
               createdAt: Date.now(),
               updatedAt: Date.now(),
               visibleAt: undefined,
-              readActorIds: [],
-              unreadActorIds: [],
-              senderActorId: undefined,
+              readContactIds: [],
+              unreadContactIds: [],
+              senderContactId: undefined,
               metadata: undefined,
               attachments: undefined,
             },
@@ -5939,7 +5842,7 @@ export class SessionRuntime {
     return {
       contextId,
       target: input.target,
-      ingressType: input.ingressTypeOverride ?? this.resolveAttentionIngressType(contextId),
+      ingressType: input.ingressTypeOverride,
       contextMutation: draft.contextMutation ?? "preserve",
       meta: this.buildAttentionMeta(draft),
       scores: this.buildAttentionScores(draft),
@@ -5981,30 +5884,6 @@ export class SessionRuntime {
       return "background";
     }
     return "background";
-  }
-
-  private ensureRuntimeIngressContext(envelope: RuntimeSystemIngressEnvelope, owner: string): AttentionContextState {
-    const existing = this.attentionSystem.getContext(envelope.contextKey);
-    if (existing) {
-      return existing.getState();
-    }
-    return this.attentionSystem
-      .createContext({
-        contextId: envelope.contextKey,
-        owner,
-        focusState: this.resolveRuntimeIngressInitialFocusState(envelope),
-      })
-      .getState();
-  }
-
-  private resolveRuntimeIngressType(
-    envelope: RuntimeSystemIngressEnvelope,
-    contextState: AttentionContextState,
-  ): AttentionCommit["ingressType"] {
-    if (envelope.ingressType) {
-      return envelope.ingressType;
-    }
-    return contextState.focusState === "focused" ? "commit" : "push";
   }
 
   private buildLifecycleIngressEnvelope(input: {
@@ -6259,6 +6138,7 @@ export class SessionRuntime {
     input: {
       notifyLoop: boolean;
       contextIdOverride?: string;
+      contextFocusState?: AttentionFocusState;
       recordSourceReadTrace?: boolean;
       target?: string;
       commitMode?: RuntimeSystemIngressEnvelope["commitMode"];
@@ -6275,30 +6155,30 @@ export class SessionRuntime {
     }
     this.attentionSourceDigests.set(sourceKey, digest);
     const contextId = input.contextIdOverride ?? this.resolveAttentionContextId(draft);
-    if (!this.attentionSystem.getContext(contextId)) {
-      this.attentionSystem.createContext({
-        contextId,
-        owner: draft.from,
-      });
-    }
     this.supersedeAttentionDraftItems(draft, contextId);
     const commitInput = this.buildAttentionCommitInput(draft, {
       contextIdOverride: contextId,
       target: input.target,
       ingressTypeOverride: input.ingressTypeOverride,
     });
-    const commitAction =
-      input.commitMode === "system"
-        ? this.attentionSystem.commitSystem.bind(this.attentionSystem)
-        : this.attentionSystem.commit.bind(this.attentionSystem);
-    const { commit } = commitAction(contextId, {
-      target: commitInput.target,
-      parentCommitIds: commitInput.parentCommitIds,
-      contextMutation: commitInput.contextMutation,
-      meta: commitInput.meta,
-      scores: commitInput.scores,
-      summary: commitInput.summary,
-      change: commitInput.change,
+    const { commit } = applyAttentionCommitWithContext({
+      system: this.attentionSystem,
+      context: {
+        contextId,
+        owner: draft.from,
+        focusState: input.contextFocusState,
+      },
+      commit: {
+        target: commitInput.target,
+        ingressType: commitInput.ingressType,
+        parentCommitIds: commitInput.parentCommitIds,
+        contextMutation: commitInput.contextMutation,
+        meta: commitInput.meta,
+        scores: commitInput.scores,
+        summary: commitInput.summary,
+        change: commitInput.change,
+      },
+      commitMode: input.commitMode,
     });
     if (input.recordSourceReadTrace ?? false) {
       this.recordDraftSourceReadTrace(draft, contextId, commit.commitId);
@@ -6319,14 +6199,14 @@ export class SessionRuntime {
     envelope: RuntimeSystemIngressEnvelope,
     input: { notifyLoop: boolean },
   ): Promise<RuntimeIngressCommitResult | null> {
-    const contextState = this.ensureRuntimeIngressContext(envelope, envelope.author);
     const { result } = await this.commitAttentionDraft(this.toAttentionDraftFromRuntimeSystemIngress(envelope), {
       notifyLoop: input.notifyLoop,
       contextIdOverride: envelope.contextKey,
+      contextFocusState: this.resolveRuntimeIngressInitialFocusState(envelope),
       recordSourceReadTrace: false,
       target: envelope.target,
       commitMode: envelope.commitMode,
-      ingressTypeOverride: this.resolveRuntimeIngressType(envelope, contextState),
+      ingressTypeOverride: envelope.ingressType,
     });
     return result;
   }
@@ -6378,7 +6258,7 @@ export class SessionRuntime {
       projections: this.runtimeKernelHost.listDeliveryProjections().map(cloneAttentionDeliveryProjection),
       dispatches: timeline.dispatches.map(cloneAttentionDispatchRecord),
       receipts: timeline.receipts.map(cloneAttentionReceiptRecord),
-      watches: this.runtimeWatchStore.list().map(cloneRuntimeWatchRecord),
+      watches: [],
       effects: [...this.effectLedgerRecords.values()]
         .sort((left, right) => left.timestamp - right.timestamp || left.id - right.id)
         .map(cloneEffectLedgerRecord),
@@ -6423,7 +6303,9 @@ export class SessionRuntime {
     if (!this.sessionDb) {
       return;
     }
-    this.runtimeWatchStore.load(this.sessionDb.listRuntimeWatches());
+    // Message follow-up ownership moved into message-system room durability.
+    // Legacy session-local runtime watches are intentionally ignored here so a
+    // restart cannot double-arm both schedulers at once.
     this.effectLedgerRecords.clear();
     for (const effect of this.sessionDb.listEffectLedger()) {
       this.effectLedgerRecords.set(effect.effectId, effect);
@@ -7172,7 +7054,7 @@ export class SessionRuntime {
       return;
     }
     this.abortWakeRequested = false;
-    this.messageSystem.setActorPresence(this.messageActorId, true);
+    this.messageSystem.setContactPresence(this.messageContactId, true);
     this.terminalControlPlane.setActorPresence(this.terminalActorId, true);
     this.config = await resolveSessionConfig(this.options.cwd, {
       avatar: this.options.avatar,
@@ -7201,6 +7083,7 @@ export class SessionRuntime {
     if (this.messageSystemCleanup.length === 0) {
       this.bindMessageSystem();
     }
+    this.ensureFollowUpSinkBound();
     if (this.terminalSystemCleanup.length === 0) {
       this.bindTerminalSystem();
     }
@@ -7496,8 +7379,9 @@ export class SessionRuntime {
     // Wake commit waiters so the paused loop can settle without waiting for new external input.
     this.notifyInput("attention");
     if (status === "stopped") {
-      this.messageSystem.setActorPresence(this.messageActorId, false);
+      this.messageSystem.setContactPresence(this.messageContactId, false);
       this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
+      this.releaseFollowUpSink();
       this.runtimeSkillSystem?.dispose();
       this.mcpSystem?.close();
       this.mcpSystem = null;
@@ -7509,8 +7393,9 @@ export class SessionRuntime {
     if (!this.started) {
       return;
     }
-    this.messageSystem.setActorPresence(this.messageActorId, true);
+    this.messageSystem.setContactPresence(this.messageContactId, true);
     this.terminalControlPlane.setActorPresence(this.terminalActorId, true);
+    this.ensureFollowUpSinkBound();
     this.runtime?.resume();
     this.loopSuspension = "active";
     this.sessionStore?.setLifecycle({ status: "running" });
@@ -7547,14 +7432,14 @@ export class SessionRuntime {
     this.runtimeSkillSystem = null;
     this.skillKernelAdapter.reset();
     this.rootWorkspaceShellWorld = null;
-    this.messageSystem.setActorPresence(this.messageActorId, false);
+    this.releaseFollowUpSink();
+    this.messageSystem.setContactPresence(this.messageContactId, false);
     this.terminalControlPlane.setActorPresence(this.terminalActorId, false);
     this.sessionStore?.setLifecycle({ status: "stopped" });
     this.apiCallRecordingRefCount = 0;
 
     this.terminals.clear();
     this.taskAttentionDraftQueue.length = 0;
-    this.runtimeWatchStore.clear();
     this.effectLedgerRecords.clear();
     this.inboundMessageQueue.length = 0;
     this.messageKernelAdapter.reset();
@@ -7906,7 +7791,7 @@ export class SessionRuntime {
         .map(cloneAttentionDeliveryProjection),
       dispatches: timeline.dispatches.map(cloneAttentionDispatchRecord),
       receipts: timeline.receipts.map(cloneAttentionReceiptRecord),
-      watches: this.runtimeWatchStore.list().map(cloneRuntimeWatchRecord),
+      watches: [],
       effects: [...this.effectLedgerRecords.values()]
         .sort((left, right) => left.timestamp - right.timestamp || left.id - right.id)
         .map(cloneEffectLedgerRecord),
@@ -8308,7 +8193,7 @@ export class SessionRuntime {
     clientMessageId?: string;
   }): Promise<RuntimeMessageSendResult> {
     const actionId = this.createRuntimeActionId("message_send");
-    const channel = this.messageSystem.getChannel(input.chatId);
+    const channel = this.messageSystem.getChannel(input.chatId, { includeArchived: true });
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
@@ -8353,7 +8238,7 @@ export class SessionRuntime {
     this.recordEffectLedger({
       actionId,
       actionKind: "message_edit",
-      actorId: message.senderActorId ?? "unknown",
+      actorId: message.senderContactId ?? "unknown",
       target: `room:${input.chatId}`,
       effectKind: "message_row_updated",
       effectRecordId: `${input.chatId}/${message.messageId}`,
@@ -8388,7 +8273,7 @@ export class SessionRuntime {
     this.recordEffectLedger({
       actionId,
       actionKind: "message_recall",
-      actorId: message.recalledByActorId ?? message.senderActorId ?? "unknown",
+      actorId: message.recalledByContactId ?? message.senderContactId ?? "unknown",
       target: `room:${input.chatId}`,
       effectKind: "message_row_recalled",
       effectRecordId: `${input.chatId}/${message.messageId}`,
@@ -8413,7 +8298,7 @@ export class SessionRuntime {
     assetIds?: string[];
     clientMessageId?: string;
   }): MessageRecord {
-    const channel = this.messageSystem.getChannel(input.chatId);
+    const channel = this.messageSystem.getChannel(input.chatId, { includeArchived: true });
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
@@ -8443,7 +8328,7 @@ export class SessionRuntime {
     error: MessageErrorPayload;
     clientMessageId?: string;
   }): void {
-    const channel = this.messageSystem.getChannel(input.chatId);
+    const channel = this.messageSystem.getChannel(input.chatId, { includeArchived: true });
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
@@ -8471,7 +8356,7 @@ export class SessionRuntime {
     interactive: MessageInteractivePayload;
     clientMessageId?: string;
   }): void {
-    const channel = this.messageSystem.getChannel(input.chatId);
+    const channel = this.messageSystem.getChannel(input.chatId, { includeArchived: true });
     if (!channel) {
       throw new Error(`unknown chat channel: ${input.chatId}`);
     }
@@ -9408,7 +9293,6 @@ export class SessionRuntime {
     if (this.isLoopStopped()) {
       return "stopped";
     }
-    const nextRuntimeWatchWakeAt = this.runtimeWatchStore.nextDueAt();
     const activeAttention = this.attentionSystem.listActiveContexts();
     if (activeAttention.length > 0) {
       const containment = this.summarizeAttentionContainment(activeAttention);
@@ -9437,14 +9321,8 @@ export class SessionRuntime {
     if (this.hasPendingAttentionInputs()) {
       return "ready_now";
     }
-    if (nextRuntimeWatchWakeAt !== null && nextRuntimeWatchWakeAt <= Date.now()) {
-      return "ready_now";
-    }
     if (activeAttention.length > 0) {
       return "attention_debt";
-    }
-    if (nextRuntimeWatchWakeAt !== null) {
-      return "runtime_watch_timer";
     }
     if (this.hasTimeBasedTask()) {
       return "task_timer";
@@ -9461,7 +9339,6 @@ export class SessionRuntime {
         }
         const hasPendingAttention = this.hasPendingAttentionInputs();
         const now = Date.now();
-        const nextRuntimeWatchWakeAt = this.runtimeWatchStore.nextDueAt();
         const retryPolicy = this.getAttentionRetryPolicy();
         const hasDueAttentionContainmentWake = this.attentionSystem.listActiveContexts().some((match) => {
           const entry = this.attentionContainment.get(match.contextId);
@@ -9498,11 +9375,6 @@ export class SessionRuntime {
           this.resetAttentionDebtBackoff();
           return "task";
         }
-        if (nextRuntimeWatchWakeAt !== null && nextRuntimeWatchWakeAt <= now) {
-          this.loopKernelLastWakeCause = "runtime_watch";
-          this.resetAttentionDebtBackoff();
-          return "attention";
-        }
         if (hasPendingAttention) {
           this.loopKernelLastWakeCause = "attention_signal";
           this.resetAttentionDebtBackoff();
@@ -9512,7 +9384,6 @@ export class SessionRuntime {
         const attentionContainment = this.summarizeAttentionContainment(activeAttention);
         return await new Promise<LoopInputKind>((resolve) => {
           let attentionDebtTimer: ReturnType<typeof setTimeout> | null = null;
-          let runtimeWatchTimer: ReturnType<typeof setTimeout> | null = null;
           const signalWaiters = (["user", "task", "attention"] as const).map((kind) => ({
             kind,
             ...this.inputSignals[kind].waitAfter(this.inputSignalCursor[kind]),
@@ -9520,9 +9391,6 @@ export class SessionRuntime {
           const settle = (kind: LoopInputKind): void => {
             if (attentionDebtTimer) {
               clearTimeout(attentionDebtTimer);
-            }
-            if (runtimeWatchTimer) {
-              clearTimeout(runtimeWatchTimer);
             }
             for (const waiter of signalWaiters) {
               waiter.cancel();
@@ -9547,13 +9415,6 @@ export class SessionRuntime {
             }, waitMs);
           } else {
             this.attentionDebtNextWakeAt = null;
-          }
-          if (nextRuntimeWatchWakeAt !== null) {
-            const waitMs = Math.max(0, nextRuntimeWatchWakeAt - now);
-            runtimeWatchTimer = setTimeout(() => {
-              this.loopKernelLastWakeCause = "runtime_watch";
-              settle("attention");
-            }, waitMs);
           }
           for (const waiter of signalWaiters) {
             void waiter.promise.then(() => {
@@ -9618,7 +9479,6 @@ export class SessionRuntime {
     const loopPaused = this.isLoopPaused();
     const hasPendingAttention = this.hasPendingAttentionInputs();
     const now = Date.now();
-    const nextRuntimeWatchWakeAt = this.runtimeWatchStore.nextDueAt();
     const retryPolicy = this.getAttentionRetryPolicy();
     const hasDueAttentionContainmentWake = this.attentionSystem.listActiveContexts().some((match) => {
       const entry = this.attentionContainment.get(match.contextId);
@@ -9660,11 +9520,6 @@ export class SessionRuntime {
       this.resetAttentionDebtBackoff();
       return "task";
     }
-    if (nextRuntimeWatchWakeAt !== null && nextRuntimeWatchWakeAt <= now) {
-      this.loopKernelLastWakeCause = "runtime_watch";
-      this.resetAttentionDebtBackoff();
-      return "attention";
-    }
     if (hasPendingAttention) {
       this.loopKernelLastWakeCause = "attention_signal";
       this.resetAttentionDebtBackoff();
@@ -9691,8 +9546,8 @@ export class SessionRuntime {
     const unreadHandle = loopPaused
       ? null
       : this.messageSystem.waitUnreadCommitted({
-          actorId: this.messageActorId,
-          fromVersion: this.messageSystem.getUnreadVersion(this.messageActorId),
+          contactId: this.messageContactId,
+          fromVersion: this.messageSystem.getUnreadVersion(this.messageContactId),
         });
 
     const promises: Array<Promise<{ kind: LoopInputKind }>> = [
@@ -9713,7 +9568,6 @@ export class SessionRuntime {
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     let attentionDebtTimer: ReturnType<typeof setTimeout> | null = null;
-    let runtimeWatchTimer: ReturnType<typeof setTimeout> | null = null;
     const activeAttention = this.attentionSystem.listActiveContexts();
     const attentionContainment = this.summarizeAttentionContainment(activeAttention);
     this.attentionDebtNextWakeAt = null;
@@ -9752,17 +9606,6 @@ export class SessionRuntime {
         }),
       );
     }
-    if (nextRuntimeWatchWakeAt !== null) {
-      const waitMs = Math.max(0, nextRuntimeWatchWakeAt - now);
-      promises.push(
-        new Promise<{ kind: LoopInputKind }>((resolve) => {
-          runtimeWatchTimer = setTimeout(() => {
-            this.loopKernelLastWakeCause = "runtime_watch";
-            resolve({ kind: "attention" });
-          }, waitMs);
-        }),
-      );
-    }
 
     const winner = await Promise.race(promises);
     if (timer) {
@@ -9770,9 +9613,6 @@ export class SessionRuntime {
     }
     if (attentionDebtTimer) {
       clearTimeout(attentionDebtTimer);
-    }
-    if (runtimeWatchTimer) {
-      clearTimeout(runtimeWatchTimer);
     }
     this.attentionDebtNextWakeAt = null;
     if (winner.kind === "attention" && this.attentionForceCollect) {
@@ -9810,7 +9650,6 @@ export class SessionRuntime {
     await this.pollTaskSources("watch");
     await this.pollTaskEventInbox();
     await this.collectUnreadRoomIngress();
-    await this.pollRuntimeWatches();
     await this.flushPluginAttentionDrafts();
     const triggered = this.taskEngine.pollTime();
     if (triggered.affected.length > 0) {
@@ -9919,7 +9758,6 @@ export class SessionRuntime {
   private async commitInterleavedAttentionItems(): Promise<LoopBusInput[] | undefined> {
     await this.flushPendingRuntimeSkillChanges();
     await this.collectUnreadRoomIngress();
-    await this.pollRuntimeWatches();
     const consumedUserInputs = this.drainInterleavedInboundQueue();
     const pluginChanged = await this.flushPluginAttentionDrafts();
     const pendingTaskDrafts = this.collectPendingTaskAttentionDrafts();
@@ -10015,7 +9853,12 @@ export class SessionRuntime {
   }
 
   private resolveMessageChannelForContext(contextId: string): MessageControlPlaneEntry | null {
-    return this.listActorRooms().find((entry) => entry.contextId === contextId) ?? null;
+    return (
+      this.listActorRooms({
+        includeArchived: true,
+        touchPresence: false,
+      }).find((entry) => (entry.contextId ?? this.getDefaultAttentionContextId(entry.chatId)) === contextId) ?? null
+    );
   }
 
   private resolveMessageChatIdForContext(contextId: string): string | null {
@@ -10027,6 +9870,68 @@ export class SessionRuntime {
       return contextId.slice(4);
     }
     return null;
+  }
+
+  private isCompanionLifecycleProtectedRoom(channel: Pick<MessageControlPlaneEntry, "chatId" | "metadata">): boolean {
+    if (channel.chatId === this.getDefaultChatId()) {
+      return true;
+    }
+    return Boolean(channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true);
+  }
+
+  private async syncCompanionRoomArchiveProjection(
+    contextId: string,
+    focusState: AttentionFocusState,
+  ): Promise<void> {
+    const channel = this.resolveMessageChannelForContext(contextId);
+    if (!channel) {
+      return;
+    }
+    if (this.isCompanionLifecycleProtectedRoom(channel)) {
+      // Default / built-in runtime rooms still rely on active actor-room lookup
+      // paths in multiple places. Companion mute -> archive is only safe for
+      // non-protected rooms until that broader runtime law is upgraded.
+      return;
+    }
+    if (focusState === "muted") {
+      if (channel.archivedAt) {
+        return;
+      }
+      const archived = this.messageSystem.archiveChannelAuthorized({
+        chatId: channel.chatId,
+        accessToken: channel.accessToken,
+        archivedBy: this.getAvatarName(),
+      });
+      this.enqueueRoomLifecycleAttentionCommit({
+        chatId: archived.chatId,
+        contextId: archived.contextId ?? this.getDefaultAttentionContextId(archived.chatId),
+        event: "channel_archive",
+        summary: `Archived chat channel ${archived.chatId}`,
+        payload: {
+          cause: "attention_context_muted",
+          archivedAt: archived.archivedAt ?? Date.now(),
+          channel: this.projectMessageChannelForAttention(archived),
+        },
+      });
+      return;
+    }
+    if (!channel.archivedAt) {
+      return;
+    }
+    const restored = this.messageSystem.unarchiveChannelAuthorized({
+      chatId: channel.chatId,
+      accessToken: channel.accessToken,
+    });
+    this.enqueueRoomLifecycleAttentionCommit({
+      chatId: restored.chatId,
+      contextId: restored.contextId ?? this.getDefaultAttentionContextId(restored.chatId),
+      event: "channel_restore",
+      summary: `Restored chat channel ${restored.chatId}`,
+      payload: {
+        cause: "attention_context_resumed",
+        channel: this.projectMessageChannelForAttention(restored),
+      },
+    });
   }
 
   private collectPendingTaskAttentionDrafts(): AttentionDraft[] {
@@ -10745,15 +10650,12 @@ export class SessionRuntime {
     const attentionDebt = this.buildAttentionDebtState();
     const attentionContainment = this.summarizeAttentionContainment(this.attentionSystem.listActiveContexts());
     const waitingReason = this.resolveLoopWaitingReason(input.phase, paused);
-    const nextRuntimeWatchWakeAt = this.runtimeWatchStore.nextDueAt();
     const nextAutoWakeAt =
       waitingReason === "attention_debt"
         ? (this.attentionDebtNextWakeAt ?? Date.now() + this.attentionDebtBackoffMs)
         : waitingReason === "attention_backoff"
           ? attentionContainment.nextWakeAt
-          : waitingReason === "runtime_watch_timer"
-            ? nextRuntimeWatchWakeAt
-            : null;
+          : null;
     const runtimeStatus: LoopBusKernelState["runtimeStatus"] = !this.started
       ? "idle"
       : this.isLoopStopped()
@@ -10794,9 +10696,7 @@ export class SessionRuntime {
       backoffMs:
         waitingReason === "attention_debt"
           ? this.attentionDebtBackoffMs
-          : waitingReason === "runtime_watch_timer" && nextAutoWakeAt !== null
-            ? Math.max(0, nextAutoWakeAt - Date.now())
-            : waitingReason === "attention_backoff" && nextAutoWakeAt !== null
+          : waitingReason === "attention_backoff" && nextAutoWakeAt !== null
               ? Math.max(0, nextAutoWakeAt - Date.now())
               : null,
       retryCount: attentionContainment.retryCount,

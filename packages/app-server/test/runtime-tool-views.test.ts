@@ -12,6 +12,8 @@ import {
   projectRuntimeWorkspaceSurface,
 } from "../src/runtime-tool-views";
 
+const TEST_SOURCE_SYSTEM_ID = "0x0000000000000000000000000000000000000001" as const;
+
 describe("Feature: runtime tool public views", () => {
   test("Scenario: Given an active attention context When projected Then only summary facts survive the runtime CLI boundary", () => {
     const active = {
@@ -67,6 +69,8 @@ describe("Feature: runtime tool public views", () => {
         kind: "room",
         title: "Room",
         owner: "architect",
+        superKey: TEST_SOURCE_SYSTEM_ID,
+        createdBySystemId: TEST_SOURCE_SYSTEM_ID,
         contextId: "ctx-room-1",
         participants: [{ id: "session:user", label: "User" }],
         metadata: { builtIn: true },
@@ -81,7 +85,7 @@ describe("Feature: runtime tool public views", () => {
         transportUrl: "http://127.0.0.1/message/room-1",
         seatStates: [
           {
-            actorId: "session:user",
+            contactId: "session:user",
             role: "member",
             currentAdmin: false,
             online: true,
@@ -95,13 +99,14 @@ describe("Feature: runtime tool public views", () => {
           rowId: 1,
           messageId: 1,
           chatId: "room-1",
+          sourceSystemId: TEST_SOURCE_SYSTEM_ID,
           from: "architect",
           kind: "text",
           content: "hello",
           createdAt: 10,
           updatedAt: 11,
-          readActorIds: ["session:user"],
-          unreadActorIds: [],
+          readContactIds: ["session:user"],
+          unreadContactIds: [],
           metadata: { source: "runtime_dispatch" },
         },
       ],
@@ -215,8 +220,8 @@ describe("Feature: runtime tool public views", () => {
     expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.channel, "metadata")).toBeFalse();
     expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.channel, "seatStates")).toBeFalse();
     expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.channel, "readProgress")).toBeFalse();
-    expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.items[0] ?? {}, "readActorIds")).toBeFalse();
-    expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.items[0] ?? {}, "unreadActorIds")).toBeFalse();
+    expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.items[0] ?? {}, "readContactIds")).toBeFalse();
+    expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.items[0] ?? {}, "unreadContactIds")).toBeFalse();
     expect(Object.prototype.hasOwnProperty.call(projectedSnapshot.items[0] ?? {}, "metadata")).toBeFalse();
 
     expect(projectedTerminal.terminalId).toBe("term-1");
@@ -240,38 +245,41 @@ describe("Feature: runtime tool public views", () => {
         rowId: 1,
         messageId: 1,
         chatId: "room-1",
+        sourceSystemId: TEST_SOURCE_SYSTEM_ID,
         from: "architect",
         kind: "text",
         content: "\n\n第一行会被忽略\n这也不会出现\n",
         createdAt: 10,
         updatedAt: 10,
-        readActorIds: [],
-        unreadActorIds: [],
+        readContactIds: [],
+        unreadContactIds: [],
       },
       {
         rowId: 2,
         messageId: 2,
         chatId: "room-1",
+        sourceSystemId: TEST_SOURCE_SYSTEM_ID,
         from: "architect",
         kind: "text",
         content:
           "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega",
         createdAt: 11,
         updatedAt: 11,
-        readActorIds: [],
-        unreadActorIds: [],
+        readContactIds: [],
+        unreadContactIds: [],
       },
       {
         rowId: 3,
         messageId: 3,
         chatId: "room-1",
+        sourceSystemId: TEST_SOURCE_SYSTEM_ID,
         from: "architect",
         kind: "interactive",
         content: "",
         createdAt: 12,
         updatedAt: 12,
-        readActorIds: [],
-        unreadActorIds: [],
+        readContactIds: [],
+        unreadContactIds: [],
         payload: {
           interactive: {
             version: "v1",

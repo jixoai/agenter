@@ -524,7 +524,7 @@ const buildPrivateDeliveryCorrectionReminder = (input: {
 const extractProjectUrl = (content: string): string | null => content.match(PROJECT_URL_PATTERN)?.[0] ?? null;
 const isProjectUrlMessage = (message: PublicRoomMessageRecord, actorId: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
-  message.senderActorId === actorId &&
+  message.senderContactId === actorId &&
   message.content.includes("PROJECT-URL") &&
   extractProjectUrl(message.content) !== null;
 
@@ -579,7 +579,7 @@ const buildPrivateProjectUrlReminder = (input: {
 const projectRoomMessagesWithActors = (messages: PublicRoomMessageRecord[]) =>
   messages.map((message) => ({
     messageId: message.messageId,
-    senderActorId: message.senderActorId ?? null,
+    senderContactId: message.senderContactId ?? null,
     from: message.from,
     content: message.content,
     createdAt: message.createdAt,
@@ -918,7 +918,7 @@ export const runRealProjectRoomCollaborationScenario = async (
           label: attempt === 0 ? "backend contract" : "backend corrected contract",
           predicate: (message) =>
             message.createdAt >= backendContractSearchAfter &&
-            message.senderActorId === harness.backendActorId &&
+            message.senderContactId === harness.backendActorId &&
             message.content.includes("BACKEND-CONTRACT:"),
         });
         if (isNonSpeculativeBackendContract(candidate.content)) {
@@ -965,7 +965,7 @@ export const runRealProjectRoomCollaborationScenario = async (
       label: "frontend plan",
       predicate: (message) =>
         message.createdAt >= kickoffAt &&
-        message.senderActorId === harness.frontendActorId &&
+        message.senderContactId === harness.frontendActorId &&
         message.content.includes("FRONTEND-PLAN:"),
     });
     let apiQuestion: PublicRoomMessageRecord | null = null;
@@ -977,7 +977,7 @@ export const runRealProjectRoomCollaborationScenario = async (
           label: attempt === 0 ? "frontend api question" : "frontend corrected api question",
           predicate: (message) =>
             message.createdAt >= apiQuestionSearchAfter &&
-            message.senderActorId === harness.frontendActorId &&
+            message.senderContactId === harness.frontendActorId &&
             message.content.includes("API-QUESTION:"),
         });
         if (isSingleSourceApiQuestion(candidate.content)) {
@@ -1029,7 +1029,7 @@ export const runRealProjectRoomCollaborationScenario = async (
           label: attempt === 0 ? "backend api answer" : "backend corrected api answer",
           predicate: (message) =>
             message.createdAt >= apiAnswerSearchAfter &&
-            message.senderActorId === harness.backendActorId &&
+            message.senderContactId === harness.backendActorId &&
             message.content.includes("API-ANSWER:"),
         });
         if (isSingleSourceApiAnswer(candidate.content)) {
@@ -1141,7 +1141,7 @@ export const runRealProjectRoomCollaborationScenario = async (
       label: "frontend design file message",
       predicate: (message) =>
         message.createdAt >= frontendReportAt &&
-        message.senderActorId === harness.frontendActorId &&
+        message.senderContactId === harness.frontendActorId &&
         message.content.includes(`DESIGN-FILE: ${DESIGN_FILE_PATH}`),
       timeoutMs: BACKEND_REPORT_TIMEOUT_MS / 2,
     }).catch(() => null);
@@ -1160,7 +1160,7 @@ export const runRealProjectRoomCollaborationScenario = async (
     const designAttachmentMessage = await waitForRoomMessage(harness, room, {
       label: "frontend design attachment message",
       predicate: (message) =>
-        message.senderActorId === harness.frontendActorId &&
+        message.senderContactId === harness.frontendActorId &&
         message.content.includes(`DESIGN-ATTACHMENT: ${DESIGN_FILE_PATH}`) &&
         message.attachments?.some((attachment) => attachment.assetId === bridge.asset.assetId) === true,
     });
@@ -1376,7 +1376,7 @@ export const runRealProjectRoomCollaborationScenario = async (
 
     const userAcceptanceMessage = await waitForRoomMessage(harness, room, {
       label: "user acceptance message",
-      predicate: (message) => message.senderActorId === harness.userActorId && message.content === acceptanceText,
+      predicate: (message) => message.senderContactId === harness.userActorId && message.content === acceptanceText,
     });
 
     const [backendAttention, frontendAttention, backendCalls, frontendCalls] = await Promise.all([

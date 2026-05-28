@@ -16,6 +16,7 @@ import {
 import { FakeCliShellStore } from "./fake-cli-shell-store";
 
 type CliShellRunStore = ReturnType<CliShellRunDependencies["createStore"]>;
+const TEST_SYSTEM_ID = "0x0000000000000000000000000000000000000c15";
 
 const seedAvatar = (store: FakeCliShellStore, nickname: string): void => {
   store.avatars.push({
@@ -644,6 +645,8 @@ describe("Feature: cli-shell tmux cleanup", () => {
       kind: "room",
       title: "shell-5",
       owner: "ops",
+      superKey: TEST_SYSTEM_ID,
+      createdBySystemId: TEST_SYSTEM_ID,
       participants: [],
       metadata: {
         productId: "cli-shell",

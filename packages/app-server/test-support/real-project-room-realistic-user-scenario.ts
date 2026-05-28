@@ -25,24 +25,24 @@ type ParticipantModelCall = Awaited<ReturnType<RealTeamKernelHarness["kernel"]["
 
 const isFrontendCoordinationMessage = (message: PublicRoomMessageRecord, actorId: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
-  message.senderActorId === actorId &&
+  message.senderContactId === actorId &&
   /页面|设计|草图|svg|\/api\/status|小队项目看板|接口状态/iu.test(message.content);
 
 const isApiQuestionMessage = (message: PublicRoomMessageRecord, actorId: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
-  message.senderActorId === actorId &&
+  message.senderContactId === actorId &&
   /\/api\/status/iu.test(message.content) &&
   /(接口|字段|返回|响应|status|json|contract|read)/iu.test(message.content) &&
   (/[?？]/u.test(message.content) || /(请问|想确认|能否|麻烦|告诉我|告诉下)/iu.test(message.content));
 
 const isBackendCoordinationMessage = (message: PublicRoomMessageRecord, actorId: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
-  message.senderActorId === actorId &&
+  message.senderContactId === actorId &&
   /(服务|接口|后端|server|\/api\/status|READY-API|PROJECT-BOARD-V1|地址|url)/iu.test(message.content);
 
 const isUrlMessage = (message: PublicRoomMessageRecord, actorId: string, expectedUrl: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
-  message.senderActorId === actorId &&
+  message.senderContactId === actorId &&
   message.content.includes(expectedUrl) &&
   extractProjectUrl(message.content) === expectedUrl;
 
@@ -65,7 +65,7 @@ export const isRealisticBackendApiAnswerContent = (content: string): boolean =>
 
 const isBackendApiAnswerMessage = (message: PublicRoomMessageRecord, actorId: string, afterTimestamp: number): boolean =>
   message.createdAt >= afterTimestamp &&
-  message.senderActorId === actorId &&
+  message.senderContactId === actorId &&
   isRealisticBackendApiAnswerContent(message.content);
 
 const extractProjectUrl = (content: string): string | null => content.match(REALISTIC_PROJECT_URL_PATTERN)?.[0] ?? null;
@@ -169,7 +169,7 @@ const readWorkspaceTextIfExists = async (workspacePath: string, relativePath: st
 const mapMessages = (messages: PublicRoomMessageRecord[]) =>
   messages.map((message) => ({
     messageId: message.messageId,
-    senderActorId: message.senderActorId ?? null,
+    senderContactId: message.senderContactId ?? null,
     from: message.from,
     content: message.content,
     createdAt: message.createdAt,
@@ -346,7 +346,7 @@ export const runRealProjectRoomRealisticUserScenario = async (
     const designAttachmentMessage = await waitForRoomMessage(harness, room, {
       label: "realistic design attachment message",
       predicate: (message) =>
-        message.senderActorId === harness.frontendActorId &&
+        message.senderContactId === harness.frontendActorId &&
         message.content.includes(DESIGN_FILE_NAME) &&
         message.attachments?.some((attachment) => attachment.assetId === bridge.asset.assetId) === true,
     });
@@ -400,7 +400,7 @@ export const runRealProjectRoomRealisticUserScenario = async (
 
     const userAcceptanceMessage = await waitForRoomMessage(harness, room, {
       label: "realistic user acceptance",
-      predicate: (message) => message.senderActorId === harness.userActorId && message.content === acceptanceText,
+      predicate: (message) => message.senderContactId === harness.userActorId && message.content === acceptanceText,
     });
 
     const [backendAttention, frontendAttention, backendCalls, frontendCalls] = await Promise.all([
