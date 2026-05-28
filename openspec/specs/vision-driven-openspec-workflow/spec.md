@@ -8,7 +8,7 @@ Define Agenter's project-local OpenSpec workflow where visible/product intent dr
 
 ### Requirement: Vision-driven schema SHALL make intent the first artifact
 
-The project SHALL provide a project-local OpenSpec schema named `vision-driven`. Its first artifact SHALL be `research-plan`, and that artifact SHALL generate `plans/plan.md` as the single current Intent Document. The research-plan stage MAY use change-local demo/spike code under `demos/` to collapse vague requirements before specs are hardened.
+The project SHALL provide a project-local OpenSpec schema named `vision-driven`. Its first artifact SHALL be `research-plan`, and that artifact SHALL generate `plans/plan.md` as the single current Intent Document. The research-plan artifact SHALL keep the canonical project-local workflow commands visible inside the template so the operator can recover the schema-scoped path from SSOT after the initial CLI output is gone. The research-plan stage MAY use change-local demo/spike code under `demos/` to collapse vague requirements before specs are hardened.
 
 #### Scenario: New change starts from intent
 
@@ -18,6 +18,13 @@ The project SHALL provide a project-local OpenSpec schema named `vision-driven`.
 - **AND** the first ready artifact is `research-plan`
 - **AND** the output path for that artifact is `plans/plan.md`
 - **AND** any demo/spike code used during intent research remains change-local under `demos/`
+
+#### Scenario: Intent document keeps workflow command surface visible
+
+- **GIVEN** an operator reopens `plans/plan.md` after the initial CLI output is gone
+- **WHEN** they inspect the research-plan template
+- **THEN** it lists the canonical `bun run openspec:vision` commands for create, status, instructions, validate, and check
+- **AND** it does not require raw generic `openspec` fallback commands to understand the flow
 
 ### Requirement: Vision-driven workflow SHALL derive specs and tasks from intent
 

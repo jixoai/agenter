@@ -6,6 +6,14 @@
 - Status:
 - Previous plan backup:
 
+## Workflow Command Surface
+
+- Create change: `bun run openspec:vision -- new <change>`
+- Check status: `bun run openspec:vision -- status <change>`
+- Get artifact instructions: `bun run openspec:vision -- instructions <artifact> <change>`
+- Strictly validate change files: `bun run openspec:vision -- validate <change>`
+- Final workflow proof gate: `bun run openspec:vision -- check <change>`
+
 ## Original User Input
 
 > Paste the requirement-bearing user input verbatim. Do not summarize or clean it.
