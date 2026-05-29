@@ -102,15 +102,17 @@ artifacts:
       - specs
 
   - id: self-review
-    generates: review/self-review.html
-    description: Structured HTML review report comparing implementation against intent, with deviation and question lists
-    template: self-review.html
+    generates: review/self-review.md
+    description: Markdown self-review reasoning record plus a separate HTML evidence report
+    template: self-review.md
     instruction: |
-      Create a self-review report after task execution.
+      Create a self-review record after task execution.
 
       Persona: Donald Knuth. Be rigorous, proof-oriented, and respectful of the user as a higher-dimensional reviewer.
 
       Mandatory content:
+      - Write the macro-level review thinking to `review/self-review.md`; this Markdown file is the conceptual review record.
+      - Also produce `review/self-review.html`; this separate HTML file is the structured presentation layer for screenshots, interaction evidence, and complex review information.
       - Compare implementation output against `plans/plan.md`, specs, and tasks.
       - Produce two explicit lists:
         1. Deviations from intent.
@@ -119,7 +121,7 @@ artifacts:
       - Include Git evidence: relevant commits, uncommitted paths if any, and whether task checkboxes were updated only for current-context work.
       - Record iteration count, unresolved issue recurrence count, proposed next loop action, and exit-condition judgment.
       - If model capability or permission limits block full review, also prepare `review/review-intent-and-tasks.md` for the user-as-subagent path.
-      - Keep the HTML report structured and easy to scan, but do not reduce it to a rigid form just to satisfy the checker.
+      - Keep the Markdown review useful as thinking, and keep the HTML report structured and easy to scan; do not reduce either file to a rigid form just to satisfy the checker.
 
       Loop law:
       - Default maximum review iterations is 5.
@@ -130,7 +132,7 @@ artifacts:
       - If the initial intent implies a different exit condition, state why iteration count should be raised, reduced, or bypassed.
       - If review exits normally, archive with `openspec archive <change>` and commit the archive result as the final archive evidence.
 
-      This artifact is a review presentation, not a victory note.
+      The Markdown file is the review mind; the HTML file is the review presentation. Neither is a victory note.
     requires:
       - tasks
 

@@ -9,7 +9,8 @@ Agenter's current OpenSpec workflow can describe proposal/spec/design/tasks, but
   - `research-plan` -> `plans/plan.md`
   - `specs` -> `specs/**/*.md`
   - `tasks` -> `tasks.md`
-  - `self-review` -> `review/self-review.html`
+  - `self-review` -> `review/self-review.md`
+  - `self-review` also requires separate `review/self-review.html` evidence presentation
 - Add a repo-owned controller script for platform rules the OpenSpec schema DAG cannot enforce by itself:
   - plan backup as `plans/plan-vN.md`
   - review iteration state

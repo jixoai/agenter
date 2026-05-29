@@ -87,6 +87,8 @@ const requireCommitPhase = (value: string | undefined): CommitPhase => {
 
 const changeDirOf = (change: string): string => join(projectRoot, "openspec", "changes", change);
 const planPathOf = (change: string): string => join(changeDirOf(change), "plans", "plan.md");
+const reviewMarkdownPathOf = (change: string): string => join(changeDirOf(change), "review", "self-review.md");
+const reviewHtmlPathOf = (change: string): string => join(changeDirOf(change), "review", "self-review.html");
 const reviewStatePathOf = (change: string): string => join(changeDirOf(change), "review", "state.json");
 const handoffPathOf = (change: string): string => join(changeDirOf(change), "HANDOFF.md");
 
@@ -261,7 +263,8 @@ const checkChange = async (change: string): Promise<void> => {
   const metadataPath = join(changeDir, ".openspec.yaml");
   const planPath = planPathOf(change);
   const tasksPath = join(changeDir, "tasks.md");
-  const reviewHtmlPath = join(changeDir, "review", "self-review.html");
+  const reviewMarkdownPath = reviewMarkdownPathOf(change);
+  const reviewHtmlPath = reviewHtmlPathOf(change);
   const reviewStatePath = reviewStatePathOf(change);
 
   const metadata = existsSync(metadataPath) ? await readFile(metadataPath, "utf-8") : "";
@@ -279,6 +282,14 @@ const checkChange = async (change: string): Promise<void> => {
     const tasks = await readFile(tasksPath, "utf-8");
     if (!/^[-*]\s+\[[ xX]\]\s+/m.test(tasks)) {
       issues.push("tasks.md has no trackable checkboxes");
+    }
+  }
+  if (!existsSync(reviewMarkdownPath)) {
+    issues.push("review/self-review.md is missing");
+  } else {
+    const reviewMarkdown = await readFile(reviewMarkdownPath, "utf-8");
+    if (reviewMarkdown.trim().length === 0) {
+      issues.push("review/self-review.md is empty");
     }
   }
   if (!existsSync(reviewHtmlPath)) {
@@ -394,7 +405,8 @@ const writeHandoff = async (change: string): Promise<void> => {
   const schema = await readOptionalFile(join(projectRoot, "openspec", "schemas", schemaName, "schema.yaml"));
   const plan = await readOptionalFile(planPathOf(change));
   const tasks = await readOptionalFile(join(changeDir, "tasks.md"));
-  const review = await readOptionalFile(join(changeDir, "review", "self-review.html"));
+  const reviewMarkdown = await readOptionalFile(reviewMarkdownPathOf(change));
+  const reviewHtml = await readOptionalFile(reviewHtmlPathOf(change));
   const status = await runCapture(["openspec", "status", "--change", change, "--schema", schemaName]);
   const gitStatus = await runCapture(["git", "status", "--short", "--branch"]);
   const latestCommit = await runCapture(["git", "log", "-1", "--oneline"]);
@@ -432,7 +444,8 @@ const writeHandoff = async (change: string): Promise<void> => {
     `- Schema definition was ${schema ? "found" : "not found"} for \`${schemaName}\`.`,
     `- Intent document was ${plan ? "found" : "not found"}.`,
     `- Tasks file was ${tasks ? "found" : "not found"}.`,
-    `- Self-review report was ${review ? "found" : "not found"}.`,
+    `- Self-review Markdown was ${reviewMarkdown ? "found" : "not found"}.`,
+    `- Self-review HTML report was ${reviewHtml ? "found" : "not found"}.`,
     "",
     "## What Didn't Work",
     "",

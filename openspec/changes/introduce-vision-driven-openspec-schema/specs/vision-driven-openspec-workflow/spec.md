@@ -25,16 +25,17 @@ The `vision-driven` schema SHALL require specs after `research-plan`, and tasks 
 - **AND** `tasks` is blocked by `specs`
 - **AND** apply tracking uses `tasks.md`
 
-### Requirement: Self-review SHALL be an explicit workflow artifact
+### Requirement: Self-review SHALL separate reasoning from presentation
 
-The `vision-driven` schema SHALL include a `self-review` artifact that generates `review/self-review.html`. The self-review artifact SHALL compare output against `plans/plan.md`, specs, and tasks, and SHALL record deviations plus user-confirmation questions.
+The `vision-driven` schema SHALL include a `self-review` artifact that generates `review/self-review.md` as the macro-level review reasoning record. The self-review stage SHALL also require a separate `review/self-review.html` presentation report for screenshots, interaction evidence, and structured review information. The self-review artifact SHALL compare output against `plans/plan.md`, specs, and tasks, and SHALL record deviations plus user-confirmation questions.
 
-#### Scenario: Review produces a presentation artifact
+#### Scenario: Review produces reasoning and presentation artifacts
 
 - **GIVEN** a `vision-driven` change has completed tasks
 - **WHEN** self-review is requested
-- **THEN** the review output path is `review/self-review.html`
-- **AND** the report includes deviation and user-question sections
+- **THEN** the OpenSpec artifact output path is `review/self-review.md`
+- **AND** `review/self-review.md` includes deviation and user-question sections
+- **AND** `review/self-review.html` exists as a separate evidence/report presentation
 
 ### Requirement: Controller SHALL enforce revision and review loop mechanics
 
@@ -137,4 +138,4 @@ Changing the project default schema to `vision-driven` SHALL NOT rewrite existin
 - **GIVEN** an existing change has `.openspec.yaml` with `schema: spec-driven`
 - **WHEN** OpenSpec loads status for that change after the default schema changes
 - **THEN** it resolves the change through `spec-driven`
-- **AND** it does not require `plans/plan.md` or `review/self-review.html`
+- **AND** it does not require `plans/plan.md`, `review/self-review.md`, or `review/self-review.html`

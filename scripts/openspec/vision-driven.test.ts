@@ -6,6 +6,16 @@ import { join, resolve } from "node:path";
 
 const repoRoot = resolve(import.meta.dir, "../..");
 const readRepoFile = (relativePath: string): string => readFileSync(join(repoRoot, relativePath), "utf8");
+const validReviewMarkdown = `# Self Review
+
+## Review State
+
+- Change: demo-change
+
+## Deviations From Intent
+
+1. None.
+`;
 const validReviewHtml = `<!doctype html>
 <html lang="en">
   <body>
@@ -109,7 +119,7 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
     const schema = readRepoFile("openspec/schemas/vision-driven/schema.yaml");
     const config = readRepoFile("openspec/config.yaml");
     const researchPlanTemplate = readRepoFile("openspec/schemas/vision-driven/templates/research-plan.md");
-    const selfReviewTemplate = readRepoFile("openspec/schemas/vision-driven/templates/self-review.html");
+    const selfReviewTemplate = readRepoFile("openspec/schemas/vision-driven/templates/self-review.md");
     const tasksTemplate = readRepoFile("openspec/schemas/vision-driven/templates/tasks.md");
 
     expect(config).toMatch(/^schema: vision-driven$/m);
@@ -122,7 +132,8 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
     expect(schema).toContain("id: tasks");
     expect(schema).toContain("requires:\n      - specs");
     expect(schema).toContain("id: self-review");
-    expect(schema).toContain("generates: review/self-review.html");
+    expect(schema).toContain("generates: review/self-review.md");
+    expect(schema).toContain("review/self-review.html");
     expect(schema).toContain("review/review-intent-and-tasks.md");
     expect(schema).toContain("bun run openspec:vision -- status <change>");
     expect(schema).toContain("bun run openspec:vision -- instructions <artifact> <change>");
@@ -142,11 +153,14 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
     expect(researchPlanTemplate).toContain("bun run openspec:vision -- check <change>");
     expect(researchPlanTemplate).not.toContain("openspec validate <change> --type change --strict");
     expect(researchPlanTemplate).toContain("### Git Evidence");
-    expect(selfReviewTemplate).toContain("<h2>Review State</h2>");
-    expect(selfReviewTemplate).toContain("<h2>Exit Handling</h2>");
+    expect(selfReviewTemplate).toContain("# Vision-Driven Self Review");
+    expect(selfReviewTemplate).toContain("## HTML Review Report");
+    expect(selfReviewTemplate).toContain("review/self-review.html");
     expect(tasksTemplate).toContain("bun run openspec:vision -- validate <change>");
     expect(tasksTemplate).toContain("only current-context completed task checkboxes");
     expect(tasksTemplate).toContain("## 1. Alignment / Investigation");
+    expect(tasksTemplate).toContain("review/self-review.md");
+    expect(tasksTemplate).toContain("review/self-review.html");
   });
 
   test("Scenario: Given a new vision-driven change When the controller creates it Then creation, status, and first instructions stay schema-scoped", async () => {
@@ -425,13 +439,14 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
       );
 
       expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("review/self-review.md is missing");
       expect(result.stderr).toContain("review/self-review.html is missing");
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true });
     }
   });
 
-  test("Scenario: Given a free-form self-review HTML file When check runs Then the workflow gate accepts the report without rigid section policing", async () => {
+  test("Scenario: Given self-review Markdown exists without HTML evidence When check runs Then the workflow gate rejects the missing presentation report", async () => {
     const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
     try {
       await copyVisionSchema(tmpRoot);
@@ -441,6 +456,31 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
       writeFileSync(join(changeDir, ".openspec.yaml"), "schema: vision-driven\ncreated: 2026-05-28\n");
       writeFileSync(join(changeDir, "plans", "plan.md"), "# Intent\n");
       writeFileSync(join(changeDir, "tasks.md"), "- [x] 1.1 Do the thing\n");
+      writeFileSync(join(changeDir, "review", "self-review.md"), validReviewMarkdown);
+
+      const result = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "check", "demo-change"],
+        tmpRoot,
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("review/self-review.html is missing");
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("Scenario: Given self-review Markdown and a free-form HTML report When check runs Then the workflow gate accepts both layers without rigid section policing", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
+    try {
+      await copyVisionSchema(tmpRoot);
+      const changeDir = join(tmpRoot, "openspec", "changes", "demo-change");
+      await mkdir(join(changeDir, "plans"), { recursive: true });
+      await mkdir(join(changeDir, "review"), { recursive: true });
+      writeFileSync(join(changeDir, ".openspec.yaml"), "schema: vision-driven\ncreated: 2026-05-28\n");
+      writeFileSync(join(changeDir, "plans", "plan.md"), "# Intent\n");
+      writeFileSync(join(changeDir, "tasks.md"), "- [x] 1.1 Do the thing\n");
+      writeFileSync(join(changeDir, "review", "self-review.md"), validReviewMarkdown);
       writeFileSync(join(changeDir, "review", "self-review.html"), validReviewHtml);
 
       const result = await runBun(
@@ -465,6 +505,7 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
       writeFileSync(join(changeDir, ".openspec.yaml"), "schema: vision-driven\ncreated: 2026-05-28\n");
       writeFileSync(join(changeDir, "plans", "plan.md"), "# Intent\n");
       writeFileSync(join(changeDir, "tasks.md"), "- [x] 1.1 Do the thing\n");
+      writeFileSync(join(changeDir, "review", "self-review.md"), validReviewMarkdown);
       writeFileSync(join(changeDir, "review", "self-review.html"), validReviewHtml);
       writeFileSync(join(changeDir, "review", "state.json"), "{\n");
 
@@ -490,6 +531,7 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
       writeFileSync(join(changeDir, ".openspec.yaml"), "schema: vision-driven\ncreated: 2026-05-28\n");
       writeFileSync(join(changeDir, "plans", "plan.md"), "# Intent\n");
       writeFileSync(join(changeDir, "tasks.md"), "- [x] 1.1 Do the thing\n");
+      writeFileSync(join(changeDir, "review", "self-review.md"), validReviewMarkdown);
       writeFileSync(join(changeDir, "review", "self-review.html"), validReviewHtml);
       writeFileSync(join(changeDir, "review", "state.json"), validReviewState);
 
