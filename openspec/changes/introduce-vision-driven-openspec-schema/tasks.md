@@ -30,15 +30,15 @@
 
 ## 6. Git Evidence Workflow
 
-- [ ] 6.1 Add schema and template rules requiring an OpenSpec commit before apply, task-progress commits during apply, and OpenSpec commits after self-review changes.
-- [ ] 6.2 Add workflow guidance that an agent may only check off tasks it completed and verified in the current working context.
-- [ ] 6.3 Add schema and template rules requiring concise intent comments at critical implementation effect points.
+- [x] 6.1 Add schema and template rules requiring an OpenSpec commit before apply, task-progress commits during apply, and OpenSpec commits after self-review changes.
+- [x] 6.2 Add workflow guidance that an agent may only check off tasks it completed and verified in the current working context.
+- [x] 6.3 Add schema and template rules requiring concise intent comments at critical implementation effect points.
 
 ## 7. Abnormal Exit And Realignment
 
 - [ ] 7.1 Add change-local `HANDOFF.md` generation for abnormal self-review exits, including `vN.HANDOFF.md` preservation.
 - [ ] 7.2 Add safe change rename support for discussion-driven realignment after self-review.
-- [ ] 7.3 Add normal-exit guidance to archive with `openspec archive <change>` and commit the archive result.
+- [x] 7.3 Add normal-exit guidance to archive with `openspec archive <change>` and commit the archive result.
 
 ## 8. Verification For Evidence Workflow
 

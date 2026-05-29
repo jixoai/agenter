@@ -15,6 +15,9 @@ artifacts:
       - Create a change with `bun run openspec:vision -- new <change>`.
       - Check artifact status with `bun run openspec:vision -- status <change>`.
       - Fetch artifact instructions with `bun run openspec:vision -- instructions <artifact> <change>`.
+      - Check commit evidence before phase transitions with `bun run openspec:vision -- commit-check <change> --phase <phase>`.
+      - Rename a change after intent realignment with `bun run openspec:vision -- rename <old-change> <new-change>`.
+      - Write abnormal-exit handoff with `bun run openspec:vision -- handoff <change>`.
 
       Mandatory content:
       - Investigate the relevant code before locking the plan.
@@ -33,6 +36,10 @@ artifacts:
       - The current SSOT is always `plans/plan.md`.
       - Before materially changing an existing `plans/plan.md`, run `bun run openspec:vision -- backup-plan <change>` so the previous current plan becomes `plans/plan-vN.md`.
       - Never fork competing current intent documents.
+
+      Git evidence law:
+      - Once `research-plan`, `specs`, and `tasks` are ready for apply, run `bun run openspec:vision -- commit-check <change> --phase research-plan` and commit the OpenSpec artifacts before product-code work starts.
+      - If self-review or renewed user discussion changes OpenSpec artifacts, commit those artifact updates before applying more implementation work.
 
       Use direct, product-architect language. This artifact is for the user and future agents, not just implementers.
     requires: []
@@ -85,6 +92,9 @@ artifacts:
       - Add explicit tasks for user confirmation when breaking cleanup, migration, or state reset cannot be assumed safely.
       - Include controller checkpoints for plan backup, self-review loop state, and verification through `bun run openspec:vision -- ...`.
       - When adding OpenSpec validation tasks for a change, prefer `bun run openspec:vision -- validate <change>`, which runs `openspec validate <change> --type change --strict` without schema ambiguity.
+      - Include Git evidence checkpoints: OpenSpec artifact commit before apply, task-progress commits during apply, OpenSpec commits after self-review updates, and archive commit after normal archive.
+      - State that an agent may only check off tasks it completed and verified in the current working context.
+      - Add implementation tasks for concise intent comments at critical effect points derived from `plans/plan.md`.
       - Use checkbox format exactly: `- [ ] X.Y Task description`.
 
       Keep tasks atomic. If a task cannot be verified, split it.
@@ -106,6 +116,7 @@ artifacts:
         1. Deviations from intent.
         2. New questions requiring user confirmation.
       - Include screenshot/evidence references when the work has visible surface; for backend-only work include command/log/evidence paths.
+      - Include Git evidence: relevant commits, uncommitted paths if any, and whether task checkboxes were updated only for current-context work.
       - Record iteration count, unresolved issue recurrence count, proposed next loop action, and exit-condition judgment.
       - If model capability or permission limits block full review, also prepare `review/review-intent-and-tasks.md` for the user-as-subagent path.
       - Keep the HTML report structured and easy to scan, but do not reduce it to a rigid form just to satisfy the checker.
@@ -113,8 +124,10 @@ artifacts:
       Loop law:
       - Default maximum review iterations is 5.
       - If the review enters a real loop, use `bun run openspec:vision -- review-state <change> [--issue <id>]` to persist iteration and recurrence state.
+      - If the review cannot exit normally because maximum iterations are exhausted or a repeated issue is unresolved, run `bun run openspec:vision -- handoff <change>` and commit the handoff/OpenSpec evidence before returning to user discussion.
       - If the same issue survives 2 consecutive review rounds, mark it as a spec/design failure and route the next step back to `research-plan`.
       - If the initial intent implies a different exit condition, state why iteration count should be raised, reduced, or bypassed.
+      - If review exits normally, archive with `openspec archive <change>` and commit the archive result as the final archive evidence.
 
       This artifact is a review presentation, not a victory note.
     requires:
@@ -125,4 +138,4 @@ apply:
     - tasks
   tracks: tasks.md
   instruction: |
-    Implement pending tasks with BDD-first discipline. Keep `plans/plan.md` as the SSOT, update task checkboxes as work completes, use `bun run openspec:vision -- validate <change>` when the task list calls for OpenSpec validation, and run `bun run openspec:vision -- check <change>` before claiming the workflow is complete.
+    Implement pending tasks with BDD-first discipline. Keep `plans/plan.md` as the SSOT. Before product-code work starts, run `bun run openspec:vision -- commit-check <change> --phase apply` and make sure OpenSpec artifacts have been committed. Update only task checkboxes completed and verified in the current working context, include concise intent comments at critical effect points derived from `plans/plan.md`, commit task updates with matching implementation/BDD evidence, use `bun run openspec:vision -- validate <change>` when the task list calls for OpenSpec validation, and run `bun run openspec:vision -- check <change>` before claiming the workflow is complete.

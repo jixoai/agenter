@@ -84,6 +84,21 @@
       <h2>Evidence</h2>
       <ul>
         <li>Screenshot / command / log path:</li>
+        <li>Git commits reviewed:</li>
+        <li>Uncommitted paths, if any:</li>
+        <li>Task checkboxes updated by this working context:</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Exit Handling</h2>
+      <ul>
+        <li>Normal exit: run <code>openspec archive &lt;change&gt;</code> and commit the archive result.</li>
+        <li>
+          Abnormal exit: run <code>bun run openspec:vision -- handoff &lt;change&gt;</code>, commit
+          <code>HANDOFF.md</code> evidence, then return to user discussion.
+        </li>
+        <li>Intent realignment: run <code>bun run openspec:vision -- rename &lt;old-change&gt; &lt;new-change&gt;</code> when the change id no longer matches the target.</li>
       </ul>
     </section>
   </body>

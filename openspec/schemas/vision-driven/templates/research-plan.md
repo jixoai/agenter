@@ -12,6 +12,9 @@
 - Check status: `bun run openspec:vision -- status <change>`
 - Get artifact instructions: `bun run openspec:vision -- instructions <artifact> <change>`
 - Strictly validate change files: `bun run openspec:vision -- validate <change>`
+- Check commit evidence: `bun run openspec:vision -- commit-check <change> --phase <phase>`
+- Rename after intent realignment: `bun run openspec:vision -- rename <old-change> <new-change>`
+- Write abnormal-exit handoff: `bun run openspec:vision -- handoff <change>`
 - Final workflow proof gate: `bun run openspec:vision -- check <change>`
 
 ## Original User Input
@@ -31,6 +34,16 @@
 | Source | Fact | Why it matters |
 | ------ | ---- | -------------- |
 |        |      |                |
+
+### Git Evidence
+
+| Checkpoint | Expected commit evidence | Current status |
+| ---------- | ------------------------ | -------------- |
+| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before product-code work starts | |
+| Task-progress commits | Commit containing current-context task checkbox updates plus matching code/BDD evidence | |
+| Self-review updates | Commit containing review output and any reopened or added OpenSpec tasks before the next apply loop | |
+| Normal archive | Commit containing `openspec archive <change>` result | |
+| Abnormal handoff | Commit containing `HANDOFF.md` / `vN.HANDOFF.md` evidence before returning to user discussion | |
 
 ### Existing OpenSpec Survey
 
