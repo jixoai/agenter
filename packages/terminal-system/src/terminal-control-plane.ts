@@ -2659,6 +2659,20 @@ export class TerminalControlPlane {
     return this.ensureManagedEntry(terminalId).terminal.getHeadHash();
   }
 
+  getReadCursorHashAuthorized(input: {
+    terminalId: string;
+    actorId?: TerminalActorId;
+    accessToken?: string;
+    superadminActorId?: TerminalActorId;
+  }): string | null {
+    this.authorizeRead(input);
+    const readerActorId = this.resolveReadCursorActorId(input);
+    if (!readerActorId) {
+      return null;
+    }
+    return this.db.getReadCursor(input.terminalId, readerActorId)?.cursorHash ?? null;
+  }
+
   async markDirty(
     terminalId: string,
     actorId?: TerminalActorId,

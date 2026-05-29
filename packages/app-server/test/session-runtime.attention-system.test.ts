@@ -249,6 +249,7 @@ interface RuntimeInternal {
         };
       };
       getStatus: () => "IDLE" | "BUSY";
+      getHeadHash?: () => string | null;
       sliceDirty: (input: { fromHash?: string | null; wait?: boolean }) => Promise<{
         ok: boolean;
         changed: boolean;
@@ -262,6 +263,7 @@ interface RuntimeInternal {
   focusedTerminalIds: string[];
   terminalDirtyState: Record<string, boolean>;
   terminalLatestSeq: Record<string, number>;
+  terminalReadCursorHashById: Record<string, string | null>;
   terminalReads: Record<string, { representation: string }>;
   attentionDebtBackoffMs: number;
   attentionContainment: Map<
@@ -4753,6 +4755,111 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       expect(ingress?.meta?.toHash).toBe("hash-9");
 
       expect(runtime.snapshot().schedulerSignals.terminal.version).toBe(beforeVersion + 1);
+    } finally {
+      await runtime.stop();
+    }
+  });
+
+  test("Scenario: Given focused terminal enters idle with unread git head When runtime handles the idle hook Then terminal attention is committed once", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal & {
+      terminalStatusById: Map<
+        string,
+        {
+          processPhase: "not_started" | "running" | "killed";
+          lifecycleTransition: string | null;
+          status: "IDLE" | "BUSY";
+        }
+      >;
+      terminalKernelAdapter: {
+        handleStatusChange: (input: {
+          terminalId: string;
+          previousStatus: "IDLE" | "BUSY" | null;
+          running: boolean;
+          status: "IDLE" | "BUSY";
+        }) => Promise<void>;
+      };
+    };
+
+    await runtime.start();
+    try {
+      internal.config = {
+        ...(internal.config ?? {}),
+        terminals: {
+          ...(internal.config?.terminals ?? {}),
+          main: {
+            terminalId: "main",
+            cwd: "/tmp",
+            command: ["bash"],
+            commandLabel: "bash",
+            gitLog: "normal",
+          },
+        },
+      };
+      internal.terminalReadCursorHashById.main = "hash-8";
+      internal.terminals.set("main", {
+        isRunning: () => true,
+        getSnapshot: () => ({
+          seq: 9,
+          cols: 80,
+          rows: 24,
+          cursor: { x: 0, y: 1 },
+          lines: ["echo ready", "raw transport line"],
+          scrollback: {
+            viewportOffset: 0,
+            totalLines: 24,
+            screenLines: 24,
+          },
+        }),
+        getStatus: () => "IDLE",
+        getHeadHash: () => "hash-9",
+        sliceDirty: async (input) => ({
+          ok: true,
+          changed: input.fromHash !== "hash-9",
+          fromHash: input.fromHash ?? "hash-8",
+          toHash: "hash-9",
+          diff: "+raw transport line",
+          bytes: 19,
+        }),
+      });
+      internal.focusedTerminalIds = ["main"];
+      internal.terminalStatusById.set("main", {
+        processPhase: "running",
+        lifecycleTransition: null,
+        status: "IDLE",
+      });
+
+      await internal.terminalKernelAdapter.handleStatusChange({
+        terminalId: "main",
+        previousStatus: "BUSY",
+        running: true,
+        status: "IDLE",
+      });
+      await waitForAttentionContextCommit(
+        internal,
+        "ctx-terminal-main",
+        (commit) => commit.summary === "Terminal main diff updated" && commit.meta.source === "terminal",
+      );
+
+      const context = getAttentionContextSnapshot(internal, "ctx-terminal-main");
+      const terminalCommits = context?.commits.filter((commit) => commit.meta.source === "terminal") ?? [];
+      expect(terminalCommits).toHaveLength(1);
+      expect(terminalCommits[0]?.change.type).toBe("diff");
+      expect(terminalCommits[0]?.change.type === "diff" ? terminalCommits[0].change.value : "").toContain(
+        "raw transport line",
+      );
+      expect(Object.values(terminalCommits[0]?.scores ?? {}).some((score) => score > 0)).toBeTrue();
+      expect(internal.terminalReadCursorHashById.main).toBe("hash-9");
+
+      await internal.terminalKernelAdapter.handleStatusChange({
+        terminalId: "main",
+        previousStatus: "BUSY",
+        running: true,
+        status: "IDLE",
+      });
+      expect(getAttentionContextSnapshot(internal, "ctx-terminal-main")?.commits.filter(
+        (commit) => commit.meta.source === "terminal",
+      )).toHaveLength(1);
     } finally {
       await runtime.stop();
     }

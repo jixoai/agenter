@@ -1999,6 +1999,8 @@ export class SessionRuntime {
       listFocusedTerminalIds: () => this.focusedTerminalIds,
       isTerminalRunning: (terminalId) => this.terminals.get(terminalId)?.isRunning() ?? false,
       getTerminalStatus: (terminalId) => this.terminalStatusById.get(terminalId)?.status ?? null,
+      getTerminalHeadHash: (terminalId) => this.getTerminalHeadHash(terminalId),
+      getTerminalReadCursorHash: (terminalId) => this.getTerminalReadCursorHash(terminalId),
       getTerminalContextId: (terminalId) =>
         terminalId === "control-plane"
           ? this.getTerminalControlPlaneAttentionContextId()
@@ -5727,6 +5729,24 @@ export class SessionRuntime {
     return status.status === "IDLE" || status.status === "BUSY";
   }
 
+  private getTerminalHeadHash(terminalId: string): string | null {
+    if (this.terminalControlPlane.has(terminalId)) {
+      return this.terminalControlPlane.getHeadHash(terminalId);
+    }
+    const terminal = this.terminals.get(terminalId) as Partial<Pick<TerminalRuntime, "getHeadHash">> | undefined;
+    return terminal?.getHeadHash?.() ?? null;
+  }
+
+  private getTerminalReadCursorHash(terminalId: string): string | null {
+    if (this.terminalControlPlane.has(terminalId)) {
+      return this.terminalControlPlane.getReadCursorHashAuthorized({
+        terminalId,
+        actorId: this.terminalActorId,
+      });
+    }
+    return this.terminalReadCursorHashById[terminalId] ?? null;
+  }
+
   private updateFocusedTerminals(op: TerminalFocusOp, terminalIds: string[] = []): string[] {
     const incoming = this.normalizeFocusedTerminalIds(terminalIds);
     const next = this.terminalControlPlane.focusForActor(this.terminalActorId, op, incoming);
@@ -8712,11 +8732,15 @@ export class SessionRuntime {
           status,
         },
       });
-      this.terminalKernelAdapter.handleStatusChange({
+      void this.terminalKernelAdapter.handleStatusChange({
         terminalId,
         previousStatus: previous?.status ?? null,
         running,
         status,
+      }).catch((error) => {
+        this.emit("error", {
+          message: `terminal idle bridge failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
       });
     });
 

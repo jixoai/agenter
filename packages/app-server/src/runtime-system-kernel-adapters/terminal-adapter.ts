@@ -1,5 +1,7 @@
 import type { RuntimeSystemIngressEnvelope, RuntimeSystemKernelAdapter, RuntimeSystemKernelHost } from "./types";
 
+const TERMINAL_IDLE_UNREAD_ATTENTION_SCORE = 100;
+
 export interface RuntimeTerminalLifecycleIngressInput {
   terminalId: string;
   contextId: string;
@@ -22,6 +24,8 @@ interface RuntimeTerminalKernelAdapterOptions {
   listFocusedTerminalIds: () => readonly string[];
   isTerminalRunning: (terminalId: string) => boolean;
   getTerminalStatus: (terminalId: string) => "IDLE" | "BUSY" | null;
+  getTerminalHeadHash: (terminalId: string) => string | null;
+  getTerminalReadCursorHash: (terminalId: string) => string | null;
   getTerminalContextId: (terminalId: string) => string;
   isTerminalActionable: (terminalId: string) => boolean;
   readTerminalIngress: (terminalId: string) => Promise<RuntimeSystemIngressEnvelope | null>;
@@ -35,6 +39,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
   private host: RuntimeSystemKernelHost | null = null;
   private readonly dirtyTerminalIds = new Set<string>();
   private readonly queuedTerminalIds = new Set<string>();
+  private readonly pendingIdleReadTerminalIds = new Set<string>();
   private readonly pendingLifecycleIngress: RuntimeSystemIngressEnvelope[] = [];
 
   constructor(private readonly options: RuntimeTerminalKernelAdapterOptions) {}
@@ -96,12 +101,15 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
     void input;
   }
 
-  handleStatusChange(input: {
+  async handleStatusChange(input: {
     terminalId: string;
     previousStatus: "IDLE" | "BUSY" | null;
     running: boolean;
     status: "IDLE" | "BUSY";
-  }): void {
+  }): Promise<void> {
+    if (input.previousStatus === "BUSY" && input.status === "IDLE" && input.running) {
+      await this.commitIdleUnreadTerminal(input.terminalId);
+    }
     if (
       input.previousStatus === "BUSY" &&
       input.status === "IDLE" &&
@@ -176,6 +184,50 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
     const sizeBefore = this.queuedTerminalIds.size;
     this.queuedTerminalIds.add(terminalId);
     return this.queuedTerminalIds.size > sizeBefore;
+  }
+
+  private async commitIdleUnreadTerminal(terminalId: string): Promise<void> {
+    if (
+      !this.host ||
+      this.pendingIdleReadTerminalIds.has(terminalId) ||
+      !this.getFocusedTerminalIds().includes(terminalId) ||
+      !this.options.isTerminalRunning(terminalId) ||
+      !this.options.isTerminalActionable(terminalId)
+    ) {
+      return;
+    }
+    const headHash = this.options.getTerminalHeadHash(terminalId);
+    if (!this.isUnreadHead(headHash, this.options.getTerminalReadCursorHash(terminalId))) {
+      return;
+    }
+    this.pendingIdleReadTerminalIds.add(terminalId);
+    try {
+      // Raw/live PTY traffic does not create terminal_write activity. The IDLE
+      // bridge therefore keys off terminal git truth and the actor read cursor.
+      const envelope = await this.options.readTerminalIngress(terminalId);
+      this.markTerminalConsumed(terminalId);
+      if (!envelope) {
+        return;
+      }
+      await this.host.commitIngress(this.promoteIdleUnreadEnvelope(envelope), {
+        notifyLoop: true,
+      });
+    } finally {
+      this.pendingIdleReadTerminalIds.delete(terminalId);
+    }
+  }
+
+  private isUnreadHead(headHash: string | null, readCursorHash: string | null): boolean {
+    return headHash !== null && headHash !== readCursorHash;
+  }
+
+  private promoteIdleUnreadEnvelope(envelope: RuntimeSystemIngressEnvelope): RuntimeSystemIngressEnvelope {
+    return {
+      ...envelope,
+      score: Math.max(envelope.score ?? 0, TERMINAL_IDLE_UNREAD_ATTENTION_SCORE),
+      ingressType: envelope.ingressType ?? "commit",
+      tags: [...(envelope.tags ?? []), "idle-unread"],
+    };
   }
 
   private async flushPendingLifecycleIngress(): Promise<void> {

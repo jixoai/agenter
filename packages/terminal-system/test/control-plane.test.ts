@@ -1659,6 +1659,66 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
+  test("Scenario: Given an actor read cursor When cursor hash is inspected Then no output is consumed and no activity is appended", async () => {
+    const plane = createPlane();
+    const owner = "session:owner" as const;
+    const reviewer = "session:reviewer" as const;
+    const observer = "session:observer" as const;
+    plane.setActorPresence(owner, true);
+    plane.setActorPresence(reviewer, true);
+    plane.setActorPresence(observer, true);
+    const created = await plane.create({
+      terminalId: "cursor-inspection",
+      bootstrapActorId: owner,
+      bootstrapRole: "admin",
+      profile: {
+        gitLog: "normal",
+      },
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: owner,
+      participantId: reviewer,
+      role: "readonly",
+    });
+    plane.issueGrantAuthorized({
+      terminalId: created.terminalId,
+      actorId: owner,
+      participantId: observer,
+      role: "readonly",
+    });
+    const reviewerMark = await plane.markDirty(created.terminalId, reviewer);
+    const beforeEvents = plane.pageEvents(created.terminalId, { limit: 10 }).items;
+
+    const inspected = plane.getReadCursorHashAuthorized({
+      terminalId: created.terminalId,
+      actorId: reviewer,
+    });
+    const missingActor = plane.getReadCursorHashAuthorized({
+      terminalId: created.terminalId,
+      actorId: observer,
+    });
+    const afterEvents = plane.pageEvents(created.terminalId, { limit: 10 }).items;
+
+    expect(inspected).toBe(reviewerMark.hash);
+    expect(missingActor).toBeNull();
+    expect(afterEvents).toHaveLength(beforeEvents.length);
+
+    const consumed = await plane.readAuthorized({
+      terminalId: created.terminalId,
+      actorId: reviewer,
+      mode: "snapshot",
+      remark: true,
+      recordActivity: false,
+    });
+    expect(consumed.readCursor).toBeDefined();
+    expect(plane.getReadCursorHashAuthorized({ terminalId: created.terminalId, actorId: reviewer })).toBe(
+      consumed.readCursor?.toHash ?? null,
+    );
+
+    await plane.dispose();
+  });
+
   test("Scenario: Given config updates When reading config and stopping then deleting terminals Then profile overrides are preserved while runtime stop stays separate from catalog delete", async () => {
     const plane = createPlane();
     const config = plane.setConfig({
