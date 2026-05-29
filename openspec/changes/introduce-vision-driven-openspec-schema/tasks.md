@@ -53,3 +53,10 @@
 - [x] 9.2 Add shared inline-document reading support and connect it to `handoff <change>`.
 - [x] 9.3 Add BDD tests proving `handoff <change> <<'END'` writes exact stdin content while preserving `vN.HANDOFF.md`.
 - [x] 9.4 Run focused controller tests and OpenSpec strict validation.
+
+## 10. Temp Worktree Acceptance
+
+- [ ] 10.1 In a temporary worktree, prove Here Document handoff files are not ignored and can become Git evidence.
+- [ ] 10.2 Add a BDD guard for repository ignore rules around change-local `HANDOFF.md` and `vN.HANDOFF.md`.
+- [ ] 10.3 Re-run focused controller tests and strict OpenSpec validation after the ignore-rule fix.
+- [ ] 10.4 Re-run the temporary worktree acceptance flow from the updated source HEAD.

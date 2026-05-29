@@ -92,6 +92,13 @@ If self-review cannot exit normally because maximum iterations are exhausted or 
 - **THEN** `openspec/changes/<change>/HANDOFF.md` contains Goal, Current Progress, What Worked, What Didn't Work, and Next Steps
 - **AND** any existing handoff is preserved as `vN.HANDOFF.md`
 
+#### Scenario: Handoff files remain commit-ready evidence
+
+- **GIVEN** the workflow writes `HANDOFF.md` or `vN.HANDOFF.md` under `openspec/changes/<change>/`
+- **WHEN** the agent checks Git status for evidence retention
+- **THEN** those change-local handoff files are not ignored by repository ignore rules
+- **AND** they can be committed with the self-review or abnormal-exit evidence checkpoint
+
 ### Requirement: File-writing controller commands SHALL accept Here Document input
 
 Controller commands that write user-visible files SHALL share a single inline-document input path. When `handoff <change>` receives non-empty stdin, such as shell Here Document content, the controller SHALL write that content to `HANDOFF.md` after applying the same `vN.HANDOFF.md` backup rule. When stdin is empty, `handoff <change>` SHALL generate the handoff from repository evidence.
