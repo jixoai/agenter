@@ -156,7 +156,7 @@ Debug 约束（用于定位 resize 问题）：
   - 再按 `log-style` 序列化到 `log.html`
   - 禁止通过“先 rich-html 再正则剥离标签”得到 plain
 - 结构化快照是内核唯一信源；`rich/plain` 都是转录视图
-- terminal interaction 是 backend/offscreen renderer capability：selection/copy/semantic selection/cursor-follow 必须通过 `TerminalInteractionEvent` 和 backend-owned `TerminalInteractionFrameState` 传播；host-projection-only 只能表示宿主能捕获事件，不能拥有 selected text 或 durable selection range
+- terminal interaction 是 backend/offscreen renderer capability：selection/copy/semantic selection/cursor-follow/mouse-tracking 必须通过 `TerminalInteractionEvent` 和 backend-owned `TerminalInteractionFrameState` 传播；host-projection-only 只能表示宿主能捕获事件，不能拥有 selected text、durable selection range 或全局 mouse ownership。投影层只能传入 backend-absolute selection 坐标与 viewport-local PTY mouse 坐标，并且只有 `selection-finalized` 这类明确 effect 才能触发 primary copy。
 - 必须基于绝对 scrollback 渲染（非仅 viewport）
 - 渲染阶段输出面向 UI 观察：不得提前裁剪可见样式空白（例如 trailing inverse）
 - 插入 `<cursor/>` 表示输入焦点（仅当 xterm `showCursor=true`）

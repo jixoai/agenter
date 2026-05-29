@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the generic terminal projection law that separates raw terminal transport from backend-authored screen projection without hard-coding one product's composed terminal topology.
-
 ## Requirements
-
 ### Requirement: Terminal projection SHALL distinguish raw transport from backend screen projection
 
 The system SHALL distinguish Protocol 1 raw terminal transport from Protocol 2 backend screen projection. Protocol 1 carries terminal control bytes to a target that understands terminal control semantics. Protocol 2 carries backend-authored screen cells, frames, or diffs to a renderer or compositor that does not own terminal interpretation.
@@ -173,3 +171,27 @@ Where Protocol 2 frames or diffs cross a host boundary, the backend SHALL publis
 - **WHEN** the dirty clock checks whether the visible terminal frame changed
 - **THEN** it uses backend text plus viewport and cursor facts as the comparison source
 - **AND** pure scrolling and cursor movement can still make the visible frame dirty
+
+### Requirement: Projection hosts SHALL project terminal pointer coordinates through backend row truth
+
+Projection hosts SHALL pass both backend-absolute selection coordinates and viewport-local PTY coordinates to the backend utility. Scrolled terminal views SHALL use the backend viewport start as `selectionSources.sourceStartRow` or an equivalent source-row projection so double-click, triple-click, drag, overlays, and copy text remain in backend row coordinates.
+
+#### Scenario: Scrolled double-click selects the absolute backend word
+
+- **GIVEN** a terminal viewport starts at backend row 20
+- **WHEN** the operator double-clicks local row 1
+- **THEN** the projection host sends backend row 21 to the selection controller
+- **AND** word segmentation still uses the backend `Intl.Segmenter` selection algorithm
+
+#### Scenario: Scrolled drag selection uses absolute backend rows
+
+- **GIVEN** a terminal viewport starts at backend row 10
+- **WHEN** the operator drags from local row 0 to local row 2
+- **THEN** the projection host sends selection start/update/end rows 10 through 12
+
+#### Scenario: Primary copy only follows finalized selection
+
+- **GIVEN** a pointer-up dispatch result is `pty-mouse`
+- **WHEN** the projection host handles the result
+- **THEN** it does not request primary selection copy
+- **AND** primary copy remains reserved for `selection-finalized`
