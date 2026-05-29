@@ -1303,7 +1303,7 @@
               label={effectiveChannelPresentation.label}
               subtitle={effectiveChannelPresentation.subtitle}
               src={effectiveChannelPresentation.iconUrl}
-              class="size-11 rounded-[1.2rem]"
+              class="chat-header-avatar"
             />
             <div class="min-w-0">
               <div class="chat-eyebrow" part="eyebrow">Room transcript</div>
@@ -1526,6 +1526,12 @@
 
   .chat-header-description {
     line-height: 1.45;
+  }
+
+  :global(.chat-header-avatar) {
+    --web-chat-avatar-size: 2.75rem;
+    --web-chat-avatar-radius: 1.2rem;
+    --web-chat-avatar-font-size: 0.82rem;
   }
 
   .chat-card-title {

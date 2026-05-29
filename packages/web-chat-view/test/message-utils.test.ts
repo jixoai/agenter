@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { resolveMessageActorId } from "../src/message-utils";
+import { estimateMessageRowSize, resolveMessageActorId } from "../src/message-utils";
 import type { WebChatChannel, WebChatMessage } from "../src/types";
 
 const TEST_SYSTEM_ID = "0x0000000000000000000000000000000000000a11";
@@ -47,5 +47,29 @@ describe("Feature: shared message contact identity resolution", () => {
     } satisfies WebChatMessage;
 
     expect(resolveMessageActorId(channel, message, "actor:kai")).toBe("actor:kai");
+  });
+});
+
+describe("Feature: shared message row size estimation", () => {
+  test("Scenario: Given a compact embedded transcript row When the virtual list estimates a short text message Then the estimate matches normal chat-row geometry", () => {
+    const message = {
+      rowId: 5,
+      viewKey: "message-5",
+      messageId: 5,
+      chatId: "chat-main",
+      sourceSystemId: TEST_SYSTEM_ID,
+      from: "Kai",
+      kind: "text",
+      content: "Transport append #1",
+      createdAt: 5,
+      updatedAt: 5,
+      visibleAt: 5,
+      readContactIds: [],
+      unreadContactIds: [],
+      metadata: {},
+      attachments: [],
+    } satisfies WebChatMessage;
+
+    expect(estimateMessageRowSize(message)).toBe(72);
   });
 });

@@ -7,6 +7,8 @@
 	} from '@agenter/svelte-components';
 	import type {
 		WebChatChannel,
+		WebChatActorPresentation,
+		WebChatActorResolveInput,
 		WebChatSocketFactory,
 		WebChatSocketLike,
 		WebChatTransportMessage,
@@ -19,15 +21,20 @@
 	let {
 		olderPageCount = 6,
 		seedMessageCount = 28,
+		useLargeAvatarImages = false,
 	}: {
 		olderPageCount?: number;
 		seedMessageCount?: number;
+		useLargeAvatarImages?: boolean;
 	} = $props();
 
 	const baseTimestamp = 1_710_000_000_000;
 	const storyRoomRevision = '0';
 	const storyTranscriptRevision = '0';
 	const storySourceSystemId = '0x0000000000000000000000000000000000000001' as const;
+	const largeAvatarImageUrl = `data:image/svg+xml,${encodeURIComponent(
+		'<svg xmlns="http://www.w3.org/2000/svg" width="420" height="420" viewBox="0 0 420 420"><rect width="420" height="420" rx="96" fill="#dbeafe"/><circle cx="210" cy="210" r="122" fill="#2563eb"/><text x="210" y="234" text-anchor="middle" font-family="serif" font-size="92" font-weight="700" fill="white">A</text></svg>',
+	)}`;
 	const channel = {
 		chatId: 'room-story',
 		kind: 'room',
@@ -50,6 +57,13 @@
 		currentAdmin: true,
 		transportUrl: 'ws://storybook.local/room-story?token=room-token-admin',
 	} satisfies WebChatChannel;
+
+	const resolveAvatarPresentation = (input: WebChatActorResolveInput): WebChatActorPresentation => ({
+		actorId: input.actorId ?? input.fallbackLabel,
+		label: input.fallbackLabel,
+		iconUrl: largeAvatarImageUrl,
+		kind: input.role === 'channel' ? 'room' : input.role,
+	});
 
 	const createMessage = (input: {
 		rowId: number;
@@ -487,6 +501,7 @@
 				bind:scrollControllerRef
 				bind:historyStartActionRef={seekHistoryStartButtonRef}
 				showHeader={false}
+				resolveActorPresentation={useLargeAvatarImages ? resolveAvatarPresentation : undefined}
 				onLatestVisibleMessageIdChange={(message) => {
 					latestVisibleMessage = message;
 				}}

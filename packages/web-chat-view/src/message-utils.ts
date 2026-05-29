@@ -258,7 +258,7 @@ export const buildTranscriptRenderModels = (
 };
 
 export const estimateMessageRowSize = (message: WebChatMessage): number => {
-  const baseHeight = 112;
+  const baseHeight = 52;
   const contentLength = Math.max(getRenderableMessageText(message).trim().length, 1);
   const estimatedTextLines = Math.min(10, Math.ceil(contentLength / 56));
   const textHeight = estimatedTextLines * 20;

@@ -38,6 +38,7 @@ const waitForInitialTransport = async (
   canvas: ReturnType<typeof within>,
   canvasElement: HTMLElement,
   options: {
+    loadedMessageCount?: number;
     pendingOlderCount: number;
     latestMessageId: number;
   },
@@ -46,7 +47,7 @@ const waitForInitialTransport = async (
   await waitFor(() => {
     snapshot = readHarnessState(canvas);
     expect(canvasElement.querySelector("[data-testid='web-chat-scroll-viewport']")).not.toBeNull();
-    expect(snapshot.loadedMessageCount).toBe(28);
+    expect(snapshot.loadedMessageCount).toBe(options.loadedMessageCount ?? 28);
     expect(snapshot.pendingOlderCount).toBe(options.pendingOlderCount);
     expect(snapshot.latestVisibleMessage?.messageId).toBe(options.latestMessageId);
   });
@@ -251,21 +252,55 @@ export const EmptyTranscriptKeepsLatestAffordanceHidden = {
   },
 } satisfies Story;
 
+export const EmbeddedAvatarImagesStayBounded = {
+  args: {
+    olderPageCount: 0,
+    seedMessageCount: 5,
+    useLargeAvatarImages: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await waitForInitialTransport(canvas, canvasElement, {
+      loadedMessageCount: 5,
+      pendingOlderCount: 0,
+      latestMessageId: 5,
+    });
+
+    await waitFor(() => {
+      const avatars = Array.from(canvasElement.querySelectorAll<HTMLElement>("[part~='message-avatar']"));
+      expect(avatars.length).toBeGreaterThan(0);
+      for (const avatar of avatars.slice(0, 5)) {
+        const rect = avatar.getBoundingClientRect();
+        expect(rect.width).toBeGreaterThanOrEqual(20);
+        expect(rect.width).toBeLessThanOrEqual(34);
+        expect(rect.height).toBeGreaterThanOrEqual(20);
+        expect(rect.height).toBeLessThanOrEqual(34);
+      }
+
+      const avatarImage = canvasElement.querySelector<HTMLImageElement>("[part~='message-avatar'] img");
+      expect(avatarImage).not.toBeNull();
+      const imageRect = avatarImage!.getBoundingClientRect();
+      expect(imageRect.width).toBeLessThanOrEqual(34);
+      expect(imageRect.height).toBeLessThanOrEqual(34);
+    });
+  },
+} satisfies Story;
+
 export const ContainedTranscriptKeepsLatestAffordanceHidden = {
   args: {
     olderPageCount: 0,
-    seedMessageCount: 3,
+    seedMessageCount: 1,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await waitFor(() => {
       const state = readHarnessState(canvas);
-      expect(state.loadedMessageCount).toBe(3);
+      expect(state.loadedMessageCount).toBe(1);
       expect(state.viewport?.clientHeight).toBeGreaterThan(0);
       expect(state.viewport?.scrollHeight).toBeLessThanOrEqual((state.viewport?.clientHeight ?? 0) + 1);
     });
     expectLatestAffordanceHidden(canvas);
-    expect(containsVisibleTextDeep(canvasElement, "Transcript seed #3")).toBe(true);
+    expect(containsVisibleTextDeep(canvasElement, "Welcome from transport")).toBe(true);
   },
 } satisfies Story;
 

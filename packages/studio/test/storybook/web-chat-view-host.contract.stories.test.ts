@@ -15,6 +15,7 @@ const EmptyTranscriptKeepsLatestAffordanceHidden = getPortableStory(
   stories,
   "EmptyTranscriptKeepsLatestAffordanceHidden",
 );
+const EmbeddedAvatarImagesStayBounded = getPortableStory(stories, "EmbeddedAvatarImagesStayBounded");
 const ContainedTranscriptKeepsLatestAffordanceHidden = getPortableStory(
   stories,
   "ContainedTranscriptKeepsLatestAffordanceHidden",
@@ -40,6 +41,10 @@ describe("Feature: Storybook DOM contract for web chat view host scroll ownershi
 
   test("Scenario: Given the room transcript is empty When the host surface settles Then Scroll to latest stays hidden because no latest target exists", async () => {
     await EmptyTranscriptKeepsLatestAffordanceHidden.run();
+  });
+
+  test("Scenario: Given Studio embeds large actor avatar images When the shared chat transcript renders Then message avatars stay bounded to chat-row geometry", async () => {
+    await EmbeddedAvatarImagesStayBounded.run();
   });
 
   test("Scenario: Given the room transcript fits inside the viewport When the host surface settles Then Scroll to latest stays hidden because the viewport is already contained", async () => {
