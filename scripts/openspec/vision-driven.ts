@@ -120,6 +120,26 @@ const runCapture = async (cmd: string[]): Promise<{ exitCode: number; stdout: st
   return { exitCode, stdout, stderr };
 };
 
+const readInlineDocument = async (): Promise<string | null> => {
+  if (process.stdin.isTTY) {
+    return null;
+  }
+  const content = await new Response(Bun.stdin.stream()).text();
+  return content.length > 0 ? content : null;
+};
+
+const writeVersionedDocument = async (
+  targetPath: string,
+  content: string,
+  nextBackupPath: () => string,
+): Promise<void> => {
+  if (existsSync(targetPath)) {
+    await rename(targetPath, nextBackupPath());
+  }
+  await mkdir(dirname(targetPath), { recursive: true });
+  await writeFile(targetPath, content);
+};
+
 const assertChangeExists = (change: string): string => {
   const changeDir = changeDirOf(change);
   if (!existsSync(changeDir)) {
@@ -360,8 +380,13 @@ const summarizeFile = (content: string | null, fallback: string): string => {
 const writeHandoff = async (change: string): Promise<void> => {
   const changeDir = assertChangeExists(change);
   const handoffPath = handoffPathOf(change);
-  if (existsSync(handoffPath)) {
-    await rename(handoffPath, nextHandoffBackupPath(change));
+  const inlineDocument = await readInlineDocument();
+  if (inlineDocument !== null) {
+    // Here Document input is an operator-supplied source of truth; write it exactly while
+    // preserving prior handoff evidence with the same versioning rule as generated handoffs.
+    await writeVersionedDocument(handoffPath, inlineDocument, () => nextHandoffBackupPath(change));
+    console.log(JSON.stringify({ ok: true, change, handoffPath, source: "stdin" }, null, 2));
+    return;
   }
 
   const metadata = await readOptionalFile(join(changeDir, ".openspec.yaml"));
@@ -422,8 +447,8 @@ const writeHandoff = async (change: string): Promise<void> => {
     "",
   ].join("\n");
 
-  await writeFile(handoffPath, handoff);
-  console.log(JSON.stringify({ ok: true, change, handoffPath }, null, 2));
+  await writeVersionedDocument(handoffPath, handoff, () => nextHandoffBackupPath(change));
+  console.log(JSON.stringify({ ok: true, change, handoffPath, source: "generated" }, null, 2));
 };
 
 const renameChange = async (oldChange: string, newChange: string): Promise<void> => {

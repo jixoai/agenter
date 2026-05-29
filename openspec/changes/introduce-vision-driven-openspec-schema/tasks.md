@@ -50,6 +50,6 @@
 ## 9. Inline Document Input
 
 - [x] 9.1 Add schema rules for controller file-writing commands to accept shell Here Document stdin.
-- [ ] 9.2 Add shared inline-document reading support and connect it to `handoff <change>`.
-- [ ] 9.3 Add BDD tests proving `handoff <change> <<'END'` writes exact stdin content while preserving `vN.HANDOFF.md`.
-- [ ] 9.4 Run focused controller tests and OpenSpec strict validation.
+- [x] 9.2 Add shared inline-document reading support and connect it to `handoff <change>`.
+- [x] 9.3 Add BDD tests proving `handoff <change> <<'END'` writes exact stdin content while preserving `vN.HANDOFF.md`.
+- [x] 9.4 Run focused controller tests and OpenSpec strict validation.

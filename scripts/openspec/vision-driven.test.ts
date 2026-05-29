@@ -289,6 +289,39 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
     }
   });
 
+  test("Scenario: Given handoff receives Here Document stdin When handoff runs Then it writes the inline content exactly", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
+    try {
+      const changeDir = join(tmpRoot, "openspec", "changes", "demo-change");
+      await mkdir(changeDir, { recursive: true });
+      writeFileSync(join(changeDir, ".openspec.yaml"), "schema: vision-driven\ncreated: 2026-05-29\n");
+      writeFileSync(join(changeDir, "HANDOFF.md"), "previous handoff\n");
+
+      const scriptPath = join(repoRoot, "scripts", "openspec", "vision-driven.ts");
+      const result = await runCommand(
+        [
+          "bash",
+          "-lc",
+          [
+            `bun ${scriptPath} handoff demo-change <<'END'`,
+            "# Manual Handoff",
+            "Exact operator content.",
+            "END",
+          ].join("\n"),
+        ],
+        tmpRoot,
+      );
+      const handoff = readFileSync(join(changeDir, "HANDOFF.md"), "utf8");
+
+      expect(result.exitCode).toBe(0);
+      expect(handoff).toBe("# Manual Handoff\nExact operator content.\n");
+      expect(readFileSync(join(changeDir, "v1.HANDOFF.md"), "utf8")).toBe("previous handoff\n");
+      expect(result.stdout).toContain('"source": "stdin"');
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
   test("Scenario: Given intent realignment renames a change When rename runs Then review state follows the new name", async () => {
     const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
     try {
