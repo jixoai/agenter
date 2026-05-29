@@ -159,12 +159,12 @@
   <body>
     <main>
       <header>
-        <span class="label">Exit judgment: pass</span>
+        <span class="label">Exit judgment: pass after Round 2</span>
         <h1>Studio Embedded Web Chat Style Review</h1>
         <p class="lede">
           The shared <code>@agenter/web-chat-view</code> package now owns avatar geometry through scoped Svelte CSS.
-          Studio embeds the component without route-local rescue CSS, and large avatar images stay bounded to
-          normal chat-row size.
+          Round 2 also fixes discloseable read-progress rings by moving trigger sizing to a package-global class that
+          survives the Framework7 <code>Link</code> component-root boundary.
         </p>
       </header>
 
@@ -177,11 +177,11 @@
           </div>
           <div class="card">
             <span class="label">DOM</span>
-            <p>Storybook DOM contract passed 8 scenarios, including large embedded actor avatar images.</p>
+            <p>Storybook DOM contract passed 9 scenarios, including large embedded actor avatar images and discloseable read indicators.</p>
           </div>
           <div class="card">
             <span class="label">Visual</span>
-            <p>Desktop and iPhone 14 screenshots both measured the first five message avatars at <code>26x26</code>.</p>
+            <p>Live Studio route screenshots measured two read indicators at <code>20x20</code> on desktop and iPhone 14.</p>
           </div>
           <div class="card">
             <span class="label warn">Deviation</span>
@@ -216,6 +216,11 @@
               <td>Row-size estimator adjusted after DOM contract exposed anchor drift.</td>
               <td>Pass</td>
             </tr>
+            <tr>
+              <td>Read-progress rings stay bounded in the real Studio route.</td>
+              <td>Live <code>127.0.0.1:4173/messages/room/...</code> metrics: two indicators, each <code>20x20</code>.</td>
+              <td>Pass</td>
+            </tr>
           </tbody>
         </table>
       </section>
@@ -231,13 +236,22 @@
             <img src="evidence/iphone14-embedded-avatar-bounds.png" alt="iPhone 14 embedded web chat avatar bounds" />
             <figcaption>iPhone 14 viewport: avatar geometry remains bounded inside the embedded chat surface.</figcaption>
           </figure>
+          <figure>
+            <img src="evidence/live-studio-route-read-indicator-bounds.png" alt="Desktop live Studio route read indicator bounds" />
+            <figcaption>Desktop live Studio route: read indicators and SVG rings measured <code>20x20</code>.</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/live-studio-route-read-indicator-bounds-iphone14.png" alt="iPhone 14 live Studio route read indicator bounds" />
+            <figcaption>iPhone 14 live Studio route: read indicators and SVG rings measured <code>20x20</code>.</figcaption>
+          </figure>
         </div>
       </section>
 
       <section>
         <h2>Deviations And Questions</h2>
         <ol>
-          <li>Live Studio route screenshots are deferred; current evidence targets the reusable embedded surface directly.</li>
+          <li>Round 1 missed the true remaining source: giant rings were read indicators, not avatars.</li>
+          <li>Round 2 added live Studio route screenshots for the exact room URL shown by the user.</li>
           <li>Storybook dev emitted a dependency pre-scan warning, while targeted DOM tests and iframe screenshots still succeeded.</li>
           <li>Future question: should this component eventually be isolated through iframe/custom element instead of direct Svelte embedding?</li>
         </ol>

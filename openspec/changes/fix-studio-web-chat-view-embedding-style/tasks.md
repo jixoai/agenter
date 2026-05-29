@@ -41,4 +41,4 @@
 - [x] 6.6 Run targeted Web Chat unit/contract tests.
 - [x] 6.7 Run targeted Studio Storybook DOM contract for `WebChatViewHost`.
 - [x] 6.8 Capture live Studio route evidence from `bun agenter studio --dev` or the active local dev URL when available.
-- [ ] 6.9 Update self-review with Round 2 deviations, screenshots, and exit judgment before committing the review update.
+- [x] 6.9 Update self-review with Round 2 deviations, screenshots, and exit judgment before committing the review update.
