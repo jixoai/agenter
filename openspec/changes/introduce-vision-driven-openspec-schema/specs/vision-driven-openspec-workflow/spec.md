@@ -54,6 +54,56 @@ The repository SHALL provide a controller entrypoint for workflow mechanics not 
 - **THEN** it reports the issue as repeated
 - **AND** it exits with a non-zero loop-back signal
 
+### Requirement: Workflow SHALL preserve Git evidence at every phase boundary
+
+The `vision-driven` workflow SHALL require Git evidence when durable work changes state. Once research-plan, specs, and tasks are ready for apply, the OpenSpec artifacts SHALL be committed before implementation starts. During apply, an agent SHALL update only tasks it has completed and verified in the current working context, then commit the task updates with the corresponding code and BDD evidence. Self-review updates to OpenSpec artifacts, including reopened or newly added tasks, SHALL be committed before the next implementation round.
+
+#### Scenario: OpenSpec artifacts are committed before apply
+
+- **GIVEN** a `vision-driven` change has research-plan, specs, and tasks ready for apply
+- **WHEN** implementation is about to start
+- **THEN** the agent records a Git commit containing the OpenSpec artifacts before changing product code
+
+#### Scenario: Task progress is committed by the agent that performed it
+
+- **GIVEN** a task is completed during apply
+- **WHEN** the agent updates `tasks.md`
+- **THEN** the same commit includes the matching implementation or verification evidence
+- **AND** the agent does not check off tasks completed only by a previous context without current evidence
+
+### Requirement: Implementation SHALL carry intent comments at critical effect points
+
+Implementation produced by the workflow SHALL include concise comments at critical effect points that trace back to the Intent Document. These comments SHALL preserve the user's original intent in plain language where code behavior could otherwise drift during review or context compression.
+
+#### Scenario: Intent comment supports lightweight review
+
+- **GIVEN** a task implements behavior derived from `plans/plan.md`
+- **WHEN** the implementation introduces a non-obvious decision or externally visible effect
+- **THEN** the code includes a concise comment linking the decision to the user's intent
+
+### Requirement: Abnormal exit SHALL produce change-local handoff evidence
+
+If self-review cannot exit normally because maximum iterations are exhausted or an issue survives repeated rounds, the workflow SHALL produce `HANDOFF.md` inside the active change directory. If `HANDOFF.md` already exists, the previous file SHALL be renamed to the next `vN.HANDOFF.md` before the new handoff is written. The handoff SHALL be built from schema metadata, generated artifacts, current status, Git state, and validation evidence instead of conversation memory alone.
+
+#### Scenario: Handoff preserves continuation state
+
+- **GIVEN** a `vision-driven` change cannot exit normally
+- **WHEN** the controller writes handoff evidence
+- **THEN** `openspec/changes/<change>/HANDOFF.md` contains Goal, Current Progress, What Worked, What Didn't Work, and Next Steps
+- **AND** any existing handoff is preserved as `vN.HANDOFF.md`
+
+### Requirement: Change rename SHALL support post-review intent realignment
+
+The controller SHALL provide a safe rename operation for active `vision-driven` changes. Rename SHALL validate both change ids, refuse to overwrite an existing target directory, move the change directory, and update controller-owned state that explicitly records the old change id.
+
+#### Scenario: Rename keeps active change evidence together
+
+- **GIVEN** discussion after self-review changes the target enough that the change id should be renamed
+- **WHEN** the controller renames the change
+- **THEN** the active change directory moves from the old id to the new id
+- **AND** `review/state.json` is updated when it exists
+- **AND** existing plan, specs, tasks, review, and handoff evidence remain inside the renamed change
+
 ### Requirement: Existing spec-driven changes SHALL remain valid
 
 Changing the project default schema to `vision-driven` SHALL NOT rewrite existing changes that explicitly declare `schema: spec-driven` in `.openspec.yaml`.
