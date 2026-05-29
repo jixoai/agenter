@@ -35,10 +35,10 @@
 
 - [x] 6.1 Back up the Round 1 intent document before changing `plans/plan.md`.
 - [x] 6.2 Record live Studio evidence that the remaining giant circles are read-progress SVG rings, not avatars.
-- [ ] 6.3 Add a failing BDD/source contract proving the read indicator trigger sizing works across a Framework7 component root boundary.
-- [ ] 6.4 Add or extend a Storybook DOM contract proving discloseable read indicators stay within normal inline bounds in an embedded Studio/Web Chat story.
-- [ ] 6.5 Fix `MessageReadIndicator` so trigger, SVG ring, and check icon geometry are package-owned and do not depend on Svelte scoped CSS attaching to an external component root.
-- [ ] 6.6 Run targeted Web Chat unit/contract tests.
-- [ ] 6.7 Run targeted Studio Storybook DOM contract for `WebChatViewHost`.
-- [ ] 6.8 Capture live Studio route evidence from `bun agenter studio --dev` or the active local dev URL when available.
+- [x] 6.3 Add a failing BDD/source contract proving the read indicator trigger sizing works across a Framework7 component root boundary.
+- [x] 6.4 Add or extend a Storybook DOM contract proving discloseable read indicators stay within normal inline bounds in an embedded Studio/Web Chat story.
+- [x] 6.5 Fix `MessageReadIndicator` so trigger, SVG ring, and check icon geometry are package-owned and do not depend on Svelte scoped CSS attaching to an external component root.
+- [x] 6.6 Run targeted Web Chat unit/contract tests.
+- [x] 6.7 Run targeted Studio Storybook DOM contract for `WebChatViewHost`.
+- [x] 6.8 Capture live Studio route evidence from `bun agenter studio --dev` or the active local dev URL when available.
 - [ ] 6.9 Update self-review with Round 2 deviations, screenshots, and exit judgment before committing the review update.

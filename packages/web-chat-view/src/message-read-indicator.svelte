@@ -63,7 +63,7 @@
   <div class="message-read-disclosure-anchor" bind:this={triggerHost}>
     <Link
       href="#"
-      class="message-read-indicator message-read-trigger"
+      class="web-chat-message-read-indicator web-chat-message-read-trigger message-read-indicator message-read-trigger"
       data-complete={complete ? "true" : "false"}
       data-testid="message-read-indicator"
       data-message-read-trigger
@@ -161,7 +161,7 @@
   </div>
 {:else}
   <div
-    class="message-read-indicator"
+    class="web-chat-message-read-indicator message-read-indicator"
     data-complete={complete ? "true" : "false"}
     data-testid="message-read-indicator"
     aria-label={title}
@@ -185,11 +185,11 @@
 {/if}
 
 <style>
-  .message-read-indicator {
+  :global(.web-chat-message-read-indicator) {
     position: relative;
     display: inline-flex;
-    width: 1.25rem;
-    height: 1.25rem;
+    inline-size: var(--web-chat-message-read-indicator-size, 1.25rem);
+    block-size: var(--web-chat-message-read-indicator-size, 1.25rem);
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
@@ -198,7 +198,7 @@
     color: #14b8a6;
   }
 
-  .message-read-trigger {
+  :global(.web-chat-message-read-trigger) {
     cursor: pointer;
     padding: 0;
     text-decoration: none;
@@ -375,8 +375,8 @@
     transition: stroke-dashoffset 180ms ease;
   }
 
-  .message-read-indicator[data-complete="true"] .message-read-track,
-  .message-read-indicator[data-complete="true"] .message-read-progress {
+  :global(.web-chat-message-read-indicator[data-complete="true"]) .message-read-track,
+  :global(.web-chat-message-read-indicator[data-complete="true"]) .message-read-progress {
     stroke: currentColor;
   }
 

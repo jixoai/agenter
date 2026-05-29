@@ -286,6 +286,41 @@ export const EmbeddedAvatarImagesStayBounded = {
   },
 } satisfies Story;
 
+export const EmbeddedReadIndicatorsStayBounded = {
+  args: {
+    olderPageCount: 0,
+    seedMessageCount: 5,
+    showReadProgress: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await waitForInitialTransport(canvas, canvasElement, {
+      loadedMessageCount: 5,
+      pendingOlderCount: 0,
+      latestMessageId: 5,
+    });
+
+    await waitFor(() => {
+      const indicators = Array.from(
+        canvasElement.querySelectorAll<HTMLElement>("[data-testid='message-read-indicator']"),
+      );
+      expect(indicators.length).toBeGreaterThan(0);
+      for (const indicator of indicators.slice(0, 5)) {
+        const rect = indicator.getBoundingClientRect();
+        expect(rect.width).toBeGreaterThanOrEqual(16);
+        expect(rect.width).toBeLessThanOrEqual(26);
+        expect(rect.height).toBeGreaterThanOrEqual(16);
+        expect(rect.height).toBeLessThanOrEqual(26);
+        const ring = indicator.querySelector<SVGElement>(".message-read-ring");
+        expect(ring).not.toBeNull();
+        const ringRect = ring!.getBoundingClientRect();
+        expect(ringRect.width).toBeLessThanOrEqual(26);
+        expect(ringRect.height).toBeLessThanOrEqual(26);
+      }
+    });
+  },
+} satisfies Story;
+
 export const ContainedTranscriptKeepsLatestAffordanceHidden = {
   args: {
     olderPageCount: 0,

@@ -9,6 +9,8 @@
 		WebChatChannel,
 		WebChatActorPresentation,
 		WebChatActorResolveInput,
+		WebChatMessageReadProgress,
+		WebChatMessageRenderInput,
 		WebChatSocketFactory,
 		WebChatSocketLike,
 		WebChatTransportMessage,
@@ -22,10 +24,12 @@
 		olderPageCount = 6,
 		seedMessageCount = 28,
 		useLargeAvatarImages = false,
+		showReadProgress = false,
 	}: {
 		olderPageCount?: number;
 		seedMessageCount?: number;
 		useLargeAvatarImages?: boolean;
+		showReadProgress?: boolean;
 	} = $props();
 
 	const baseTimestamp = 1_710_000_000_000;
@@ -64,6 +68,31 @@
 		iconUrl: largeAvatarImageUrl,
 		kind: input.role === 'channel' ? 'room' : input.role,
 	});
+
+	const resolveReadProgress = (_input: WebChatMessageRenderInput): WebChatMessageReadProgress | null =>
+		showReadProgress
+			? {
+					readCount: 1,
+					totalCount: 2,
+					title: '1/2 read',
+					readActors: [
+						{
+							actorId: 'auth:analyst',
+							label: 'Analyst',
+							subtitle: 'auth:analyst',
+							iconUrl: null,
+						},
+					],
+					unreadActors: [
+						{
+							actorId: 'system:trusted-bootstrap',
+							label: 'Bootstrap admin',
+							subtitle: 'system:trusted-bootstrap',
+							iconUrl: null,
+						},
+					],
+				}
+			: null;
 
 	const createMessage = (input: {
 		rowId: number;
@@ -502,6 +531,7 @@
 				bind:historyStartActionRef={seekHistoryStartButtonRef}
 				showHeader={false}
 				resolveActorPresentation={useLargeAvatarImages ? resolveAvatarPresentation : undefined}
+				resolveMessageReadProgress={showReadProgress ? resolveReadProgress : undefined}
 				onLatestVisibleMessageIdChange={(message) => {
 					latestVisibleMessage = message;
 				}}
