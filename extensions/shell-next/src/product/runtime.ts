@@ -241,6 +241,9 @@ const createAttachedTerminalSourcePolicy = (input: {
         currentTitle: input.attached.terminal.entry.currentTitle ?? null,
         readTitle: () =>
           resolveTerminalTitleFromState(input.store.getState(), terminalId),
+        terminateTerminal: async () => {
+          await input.store.stopGlobalTerminal({ terminalId });
+        },
       });
     },
     describeSplitUnavailable: () => "Product-bound terminal split is not implemented",
@@ -378,12 +381,12 @@ export const runShellNextProductAttach = async (
       statusProvider,
       showStatusbar: args.view === "none",
       syncStatusbarWithLayout: false,
+      backgroundRunTerminalSourceTeardown: "detach",
       initialSurfaces: args.view === "none" ? [] : [],
       showTopLayer: false,
     });
-    try {
-      await app.finished;
-    } finally {
+    const outcome = await app.finished;
+    if (outcome !== "background-run") {
       store.disconnect();
     }
     return { exitCode: 0 };

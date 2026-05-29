@@ -11,6 +11,7 @@ import {
   type PaneSource,
   type TerminalInputChunk,
   type TerminalLikePaneSource,
+  type TerminalPaneSourceTeardown,
   type TerminalProtocolPaneSource,
 } from "./pane-source";
 
@@ -19,7 +20,7 @@ export interface TerminalPaneRenderable {
   syncNode(node: ChildLayoutNode): void;
   refresh(): void;
   writeInput(chunk: TerminalInputChunk): boolean;
-  destroy(options?: { preserveSource?: boolean }): void;
+  destroy(options?: { preserveSource?: boolean; sourceTeardown?: TerminalPaneSourceTeardown }): void;
 }
 
 export interface TerminalPaneFactoryInput {
@@ -276,14 +277,16 @@ export class ShellNextMuxRenderable {
     this.#renderer.requestRender();
   }
 
-  destroy(options?: { preserveTerminalSources?: boolean }): void {
+  destroy(options?: { preserveTerminalSources?: boolean; terminalSourceTeardown?: TerminalPaneSourceTeardown }): void {
+    const sourceTeardown =
+      options?.preserveTerminalSources === true ? "preserve" : (options?.terminalSourceTeardown ?? "dispose");
     this.#resizeController.destroy();
     for (const mounted of this.#mounted.values()) {
       for (const unsubscribe of mounted.unsubscribe) {
         unsubscribe();
       }
       if ("pane" in mounted) {
-        mounted.pane.destroy({ preserveSource: options?.preserveTerminalSources === true });
+        mounted.pane.destroy({ sourceTeardown });
       } else {
         void mounted.source.dispose();
       }

@@ -39,6 +39,7 @@ export interface ShellNextProductRunDependencies {
     configuredTitle?: string | null;
     currentTitle?: string | null;
     readTitle?: () => string | null;
+    terminateTerminal?: () => void | Promise<void>;
   }): PaneSource;
   readSettings(): Promise<ShellNextSettings>;
   saveSettings(settings: ShellNextSettings): Promise<void>;
@@ -71,6 +72,7 @@ export const defaultShellNextProductRunDependencies: ShellNextProductRunDependen
       configuredTitle: input.configuredTitle,
       currentTitle: input.currentTitle,
       readTitle: input.readTitle,
+      terminateTerminal: input.terminateTerminal,
       geometryRole: "authority",
     }),
   readSettings: async () => await readShellNextSettings(),

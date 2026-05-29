@@ -323,6 +323,10 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
     this.#bridge.dispose();
   }
 
+  terminate(): void {
+    this.dispose();
+  }
+
   #emitFrame(): void {
     if (this.#disposed) {
       return;

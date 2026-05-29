@@ -144,6 +144,7 @@ export class FakeShellNextStore implements ShellNextStore {
   deletedSessions: string[] = [];
   deletedRoomIds: string[] = [];
   deletedTerminalIds: string[] = [];
+  stoppedTerminalIds: string[] = [];
   focusTerminalCalls: string[][] = [];
   focusRoomCalls: string[][] = [];
   sentMessages: Array<{ chatId: string; text: string }> = [];
@@ -367,6 +368,22 @@ export class FakeShellNextStore implements ShellNextStore {
     this.terminals = this.terminals.filter((terminal) => terminal.terminalId !== input.terminalId);
     this.terminalHistory = this.terminalHistory.filter((terminal) => terminal.terminalId !== input.terminalId);
     return { ok: true, message: "deleted" };
+  }
+
+  async stopGlobalTerminal(input: { terminalId: string }): Promise<{ ok: boolean; message: string }> {
+    this.stoppedTerminalIds.push(input.terminalId);
+    const index = this.terminals.findIndex((terminal) => terminal.terminalId === input.terminalId);
+    if (index === -1) {
+      return { ok: false, message: "terminal missing" };
+    }
+    const terminal = {
+      ...this.terminals[index]!,
+      processPhase: "killed" as const,
+      status: "IDLE" as const,
+    } satisfies GlobalTerminalEntry;
+    this.terminals.splice(index, 1);
+    this.terminalHistory.push(terminal);
+    return { ok: true, message: "stopped" };
   }
 
   async archiveGlobalTerminal(input: { terminalId: string }): Promise<GlobalTerminalEntry> {

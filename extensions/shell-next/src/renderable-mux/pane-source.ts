@@ -38,6 +38,7 @@ export interface TerminalFrameSnapshot {
 }
 
 export type TerminalInputChunk = string | Uint8Array;
+export type TerminalPaneSourceTeardown = "dispose" | "detach" | "preserve";
 
 export interface TerminalSelectionTextEvent {
   readonly ownerId?: string;
@@ -73,6 +74,8 @@ export interface TerminalProtocolPaneSource {
   subscribeSelectionText?(listener: (event: TerminalSelectionTextEvent) => void): () => void;
   notifyPaintCommitted?(): void;
   subscribe?(listener: () => void): () => void;
+  detach?(): void | Promise<void>;
+  terminate?(): void | Promise<void>;
   dispose(): void | Promise<void>;
 }
 

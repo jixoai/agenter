@@ -41,6 +41,7 @@ export interface ShellNextLiveTerminalProtocolSourceInput {
   readonly configuredTitle?: string | null;
   readonly currentTitle?: string | null;
   readonly readTitle?: () => string | null;
+  readonly terminateTerminal?: () => void | Promise<void>;
   readonly onSelectionText?: (event: TerminalSelectionTextEvent) => void;
   readonly geometryRole?: "projection-only" | "authority";
   readonly pacing?: OpenComposeLiveTerminalPacingOptions;
@@ -58,10 +59,12 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
   readonly #currentTitle: string | null;
   readonly #initialTitle: string | null;
   readonly #readTitle: (() => string | null) | undefined;
+  readonly #terminateTerminal: (() => void | Promise<void>) | undefined;
   readonly #selectionTextListeners = new Set<(event: TerminalSelectionTextEvent) => void>();
   readonly #resizeDispatcher: ConflatedResizeDispatcher;
   readonly #hostInput = createTerminalHostInputController();
   #pendingCopyTarget: TerminalCopyTarget | null = null;
+  #terminated = false;
   #disposed = false;
 
   constructor(input: ShellNextLiveTerminalProtocolSourceInput) {
@@ -70,6 +73,7 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     this.#configuredTitle = input.configuredTitle ?? null;
     this.#currentTitle = input.currentTitle ?? null;
     this.#readTitle = input.readTitle;
+    this.#terminateTerminal = input.terminateTerminal;
     this.#resizeDispatcher = new ConflatedResizeDispatcher({
       delayMs: LIVE_TERMINAL_BACKEND_RESIZE_DEBOUNCE_MS,
       deliver: (size) => {
@@ -250,6 +254,23 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     this.#resizeDispatcher.dispose();
     this.#releaseMirror();
     this.#mirror.disconnect();
+  }
+
+  detach(): void {
+    this.dispose();
+  }
+
+  async terminate(): Promise<void> {
+    if (this.#terminated) {
+      this.dispose();
+      return;
+    }
+    this.#terminated = true;
+    try {
+      await this.#terminateTerminal?.();
+    } finally {
+      this.dispose();
+    }
   }
 
   #emit(): void {

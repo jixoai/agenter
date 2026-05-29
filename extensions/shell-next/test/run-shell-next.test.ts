@@ -80,7 +80,8 @@ const createTestDependencies = (input: {
   startApp:
     input.startApp ??
     (async () => ({
-      finished: Promise.resolve(),
+      finished: Promise.resolve("normal" as const),
+      exitOutcome: "normal" as const,
       destroy() {},
     })),
   createLiveTerminalSource: (sourceInput): PaneSource => {
@@ -99,6 +100,8 @@ const createTestDependencies = (input: {
       }),
       writeInput: () => true,
       resize: () => undefined,
+      detach: () => undefined,
+      terminate: () => sourceInput.terminateTerminal?.(),
       dispose: () => undefined,
     };
   },
@@ -233,7 +236,8 @@ describe("Feature: shell-next product runtime bootstrap", () => {
         expect(input.initialStatus?.runtime.label).toBe("Idle");
         expect(input.syncStatusbarWithLayout).toBe(false);
         return {
-          finished: Promise.resolve(),
+          finished: Promise.resolve("normal" as const),
+          exitOutcome: "normal" as const,
           destroy() {},
         };
       },
@@ -254,6 +258,94 @@ describe("Feature: shell-next product runtime bootstrap", () => {
       },
     ]);
     expect(store.getAuthToken()).toBe("superadmin-token");
+  });
+
+  test("Scenario: Given background-run exits product attach When reconnecting Then shell-next reuses the still-live terminal binding", async () => {
+    class DisconnectDropsTerminalStore extends FakeShellNextStore {
+      createTerminalCalls = 0;
+      disconnectCalls = 0;
+
+      async createGlobalTerminal(input: Parameters<FakeShellNextStore["createGlobalTerminal"]>[0]) {
+        this.createTerminalCalls += 1;
+        return await super.createGlobalTerminal(input);
+      }
+
+      disconnect(): void {
+        this.disconnectCalls += 1;
+        this.terminals = [];
+        super.disconnect();
+      }
+    }
+
+    const store = new DisconnectDropsTerminalStore();
+    seedAvatar(store, "bangeel");
+    const firstDependencies = createTestDependencies({
+      store,
+      tty: true,
+      startApp: async (input) => {
+        expect(input.backgroundRunTerminalSourceTeardown).toBe("detach");
+        const source = input.terminalSourcePolicy?.createInitialSource({
+          id: "source-1",
+          cwd: "/repo",
+          node: testNode,
+          onExit: () => undefined,
+        });
+        if (source?.kind === "terminal-protocol") {
+          await source.detach?.();
+        }
+        return {
+          finished: Promise.resolve("background-run" as const),
+          exitOutcome: "background-run" as const,
+          destroy() {},
+        };
+      },
+    });
+
+    await runShellNext(["bun", "agenter-shell-next", "--session=5", "--avatar=bangeel"], firstDependencies);
+
+    expect(store.disconnectCalls).toBe(0);
+    expect(store.createTerminalCalls).toBe(1);
+    expect(store.stoppedTerminalIds).toEqual([]);
+    expect(store.terminals.map((terminal) => terminal.metadata?.resourceKey)).toEqual(["shell-5"]);
+
+    const output: string[] = [];
+    const secondDependencies = createTestDependencies({ store, tty: false, output });
+
+    await runShellNext(["bun", "agenter-shell-next", "--session=5", "--avatar=bangeel"], secondDependencies);
+
+    expect(store.createTerminalCalls).toBe(1);
+    expect(output.join("")).toContain("terminal: terminal-1 (reused)");
+  });
+
+  test("Scenario: Given product attach exits by terminate When the live source terminates Then shell-next stops the global terminal", async () => {
+    const store = new FakeShellNextStore();
+    seedAvatar(store, "bangeel");
+    const dependencies = createTestDependencies({
+      store,
+      tty: true,
+      startApp: async (input) => {
+        const source = input.terminalSourcePolicy?.createInitialSource({
+          id: "source-1",
+          cwd: "/repo",
+          node: testNode,
+          onExit: () => undefined,
+        });
+        if (source?.kind === "terminal-protocol") {
+          await source.terminate?.();
+        }
+        return {
+          finished: Promise.resolve("terminate" as const),
+          exitOutcome: "terminate" as const,
+          destroy() {},
+        };
+      },
+    });
+
+    await runShellNext(["bun", "agenter-shell-next", "--session=5", "--avatar=bangeel"], dependencies);
+
+    expect(store.stoppedTerminalIds).toEqual(["terminal-1"]);
+    expect(store.terminals).toHaveLength(0);
+    expect(store.terminalHistory.map((terminal) => terminal.terminalId)).toEqual(["terminal-1"]);
   });
 
   test("Scenario: Given heartbeat has preview text and model calls have usage When starting app Then statusbar receives macro facts only", async () => {
@@ -300,7 +392,8 @@ describe("Feature: shell-next product runtime bootstrap", () => {
         expect(input.initialStatus?.runtime.label).not.toContain("heartbeat preview");
         expect(input.initialStatus?.aiContext).toEqual({ usedTokens: 700, maxTokens: 100000 });
         return {
-          finished: Promise.resolve(),
+          finished: Promise.resolve("normal" as const),
+          exitOutcome: "normal" as const,
           destroy() {},
         };
       },
@@ -331,7 +424,8 @@ describe("Feature: shell-next product runtime bootstrap", () => {
           showTopLayer: input.showTopLayer,
         });
         return {
-          finished: Promise.resolve(),
+          finished: Promise.resolve("normal" as const),
+          exitOutcome: "normal" as const,
           destroy() {},
         };
       },
@@ -397,7 +491,8 @@ describe("Feature: shell-next product runtime bootstrap", () => {
           onExit: () => undefined,
         });
         return {
-          finished: Promise.resolve(),
+          finished: Promise.resolve("normal" as const),
+          exitOutcome: "normal" as const,
           destroy() {},
         };
       },

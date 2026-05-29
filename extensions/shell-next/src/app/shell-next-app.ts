@@ -28,7 +28,12 @@ import {
   readShellNextKeyEvent,
   shouldShellNextSkipKey,
 } from "./shell-next-app-helpers";
-import type { ShellNextAppController, ShellNextAppInput } from "./shell-next-app-types";
+import type {
+  ShellNextAppController,
+  ShellNextAppDestroyOptions,
+  ShellNextAppExitOutcome,
+  ShellNextAppInput,
+} from "./shell-next-app-types";
 
 export type { ShellNextAppController, ShellNextAppInput } from "./shell-next-app-types";
 
@@ -69,8 +74,9 @@ export class ShellNextApp implements ShellNextAppController {
   #releaseStatusProvider: (() => void) | null = null;
   readonly #floatingPanes = new Map<string, FloatingOpenTuiPane>();
   #floatingFocusId: string | null = null;
-  #resolveFinished: () => void = () => undefined;
-  readonly finished: Promise<void>;
+  #resolveFinished: (outcome: ShellNextAppExitOutcome) => void = () => undefined;
+  readonly finished: Promise<ShellNextAppExitOutcome>;
+  #exitOutcome: ShellNextAppExitOutcome = "normal";
   #disposed = false;
   #paneCounter = 1;
   #statusBase: ShellNextStatusbarState;
@@ -150,7 +156,7 @@ export class ShellNextApp implements ShellNextAppController {
       store: input.approvalStore ?? createEmptyShellNextApprovalStore(),
       shellName: "shell-next",
     });
-    this.finished = new Promise<void>((resolve) => {
+    this.finished = new Promise<ShellNextAppExitOutcome>((resolve) => {
       this.#resolveFinished = resolve;
     });
     this.#keyDispatcher.register({
@@ -217,11 +223,16 @@ export class ShellNextApp implements ShellNextAppController {
     this.#syncStatusbar();
   }
 
-  destroy(options?: { preserveTerminalSources?: boolean }): void {
+  get exitOutcome(): ShellNextAppExitOutcome {
+    return this.#exitOutcome;
+  }
+
+  destroy(options?: ShellNextAppDestroyOptions): void {
     if (this.#disposed) {
       return;
     }
     this.#disposed = true;
+    this.#exitOutcome = options?.exitOutcome ?? this.#exitOutcome;
     this.#renderer.keyInput.off("keypress", this.#dispatchKeypress);
     this.#renderer.off(CliRenderEvents.RESIZE, this.#handleResize);
     this.#renderer.off(CliRenderEvents.SELECTION, this.#handleRendererSelection);
@@ -235,11 +246,14 @@ export class ShellNextApp implements ShellNextAppController {
     this.#floatingFocusId = null;
     this.#topLayer.destroy();
     this.#statusbar.destroy();
-    this.#mux.destroy({ preserveTerminalSources: options?.preserveTerminalSources === true });
+    this.#mux.destroy({
+      preserveTerminalSources: options?.preserveTerminalSources === true,
+      terminalSourceTeardown: options?.terminalSourceTeardown,
+    });
     if (this.#ownsRenderer) {
       this.#renderer.destroy();
     }
-    this.#resolveFinished();
+    this.#resolveFinished(this.#exitOutcome);
   }
 
   splitFocusedShellRight(): boolean {
@@ -367,16 +381,17 @@ export class ShellNextApp implements ShellNextAppController {
     this.#topLayer.showCloseConfirm({
       title,
       onBackgroundRun: () => {
-        this.destroy({ preserveTerminalSources: true });
+        const terminalSourceTeardown = this.#input.backgroundRunTerminalSourceTeardown ?? "preserve";
+        this.destroy({ terminalSourceTeardown, exitOutcome: "background-run" });
       },
       onTerminate: async () => {
         const current = this.#mux.focusedNode;
         if (current?.sourceKind === "terminal-protocol") {
           const source = this.#mux.getTerminalSource(current.id);
-          await source?.dispose();
+          await (source?.terminate?.() ?? source?.dispose());
           this.#mux.closePane(current.id);
         }
-        this.destroy();
+        this.destroy({ exitOutcome: "terminate" });
       },
     });
   }
