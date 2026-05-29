@@ -27,6 +27,6 @@
 ## 5. Vision Self-Review
 
 - [x] 5.1 Run `bun run openspec:vision -- validate fix-studio-web-chat-view-embedding-style`.
-- [ ] 5.2 Run `bun run openspec:vision -- check fix-studio-web-chat-view-embedding-style` after implementation and review artifacts exist.
-- [ ] 5.3 Produce `review/self-review.html` with deviation list, new user-confirmation questions, screenshots/evidence paths, commit evidence, and exit judgment.
-- [ ] 5.4 Commit OpenSpec artifact updates separately from implementation changes, and only check off tasks completed and verified in the current context.
+- [x] 5.2 Run `bun run openspec:vision -- check fix-studio-web-chat-view-embedding-style` after implementation and review artifacts exist.
+- [x] 5.3 Produce `review/self-review.html` with deviation list, new user-confirmation questions, screenshots/evidence paths, commit evidence, and exit judgment.
+- [x] 5.4 Commit OpenSpec artifact updates separately from implementation changes, and only check off tasks completed and verified in the current context.

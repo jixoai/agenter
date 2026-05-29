@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Studio Web Chat Embedding Style Self Review</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #172033;
+        --muted: #667085;
+        --line: #d8dee9;
+        --paper: #fbfcff;
+        --panel: #ffffff;
+        --good: #047857;
+        --warn: #b45309;
+      }
+
+      body {
+        margin: 0;
+        background: linear-gradient(135deg, #f8fafc 0%, #eef4ff 100%);
+        color: var(--ink);
+        font-family:
+          "IBM Plex Sans",
+          "Noto Sans",
+          system-ui,
+          sans-serif;
+      }
+
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+
+      header,
+      section {
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: color-mix(in srgb, var(--panel) 92%, transparent);
+        box-shadow: 0 18px 54px rgba(15, 23, 42, 0.08);
+      }
+
+      header {
+        padding: 28px;
+      }
+
+      section {
+        margin-top: 18px;
+        padding: 22px;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        letter-spacing: -0.03em;
+      }
+
+      h1 {
+        font-size: clamp(2rem, 5vw, 4rem);
+        line-height: 0.98;
+      }
+
+      h2 {
+        font-size: 1.2rem;
+      }
+
+      p,
+      li,
+      td,
+      th {
+        line-height: 1.55;
+      }
+
+      .lede {
+        max-width: 780px;
+        margin: 16px 0 0;
+        color: var(--muted);
+        font-size: 1.02rem;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--paper);
+        padding: 16px;
+      }
+
+      .label {
+        display: inline-flex;
+        border-radius: 999px;
+        background: #ecfdf3;
+        color: var(--good);
+        padding: 0.22rem 0.6rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .label.warn {
+        background: #fff7ed;
+        color: var(--warn);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 10px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: #f1f5f9;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      figure {
+        margin: 0;
+      }
+
+      img {
+        display: block;
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: white;
+      }
+
+      figcaption {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      code {
+        border-radius: 6px;
+        background: #eef2ff;
+        padding: 0.12rem 0.32rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="label">Exit judgment: pass</span>
+        <h1>Studio Embedded Web Chat Style Review</h1>
+        <p class="lede">
+          The shared <code>@agenter/web-chat-view</code> package now owns avatar geometry through scoped Svelte CSS.
+          Studio embeds the component without route-local rescue CSS, and large avatar images stay bounded to
+          normal chat-row size.
+        </p>
+      </header>
+
+      <section>
+        <h2>Proof Summary</h2>
+        <div class="grid">
+          <div class="card">
+            <span class="label">BDD</span>
+            <p>Source contract failed first, then passed after <code>ChatAvatar</code> stopped relying on host Tailwind utilities.</p>
+          </div>
+          <div class="card">
+            <span class="label">DOM</span>
+            <p>Storybook DOM contract passed 8 scenarios, including large embedded actor avatar images.</p>
+          </div>
+          <div class="card">
+            <span class="label">Visual</span>
+            <p>Desktop and iPhone 14 screenshots both measured the first five message avatars at <code>26x26</code>.</p>
+          </div>
+          <div class="card">
+            <span class="label warn">Deviation</span>
+            <p>Evidence uses the embedded Storybook contract story, not a live backend-backed Studio route.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Intent Alignment</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Intent</th>
+              <th>Evidence</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Shared package owns avatar sizing and clipping.</td>
+              <td><code>chat-avatar.svelte</code> scoped CSS; BDD source contract.</td>
+              <td>Pass</td>
+            </tr>
+            <tr>
+              <td>Studio embed does not need emergency route CSS.</td>
+              <td>New Storybook contract passes through <code>WebChatViewHost</code>.</td>
+              <td>Pass</td>
+            </tr>
+            <tr>
+              <td>Bottom-anchored transcript remains stable.</td>
+              <td>Row-size estimator adjusted after DOM contract exposed anchor drift.</td>
+              <td>Pass</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Screenshot Evidence</h2>
+        <div class="grid">
+          <figure>
+            <img src="evidence/desktop-embedded-avatar-bounds.png" alt="Desktop embedded web chat avatar bounds" />
+            <figcaption>Desktop viewport: first five message avatars measured <code>26x26</code>.</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/iphone14-embedded-avatar-bounds.png" alt="iPhone 14 embedded web chat avatar bounds" />
+            <figcaption>iPhone 14 viewport: avatar geometry remains bounded inside the embedded chat surface.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section>
+        <h2>Deviations And Questions</h2>
+        <ol>
+          <li>Live Studio route screenshots are deferred; current evidence targets the reusable embedded surface directly.</li>
+          <li>Storybook dev emitted a dependency pre-scan warning, while targeted DOM tests and iframe screenshots still succeeded.</li>
+          <li>Future question: should this component eventually be isolated through iframe/custom element instead of direct Svelte embedding?</li>
+        </ol>
+      </section>
+    </main>
+  </body>
+</html>
