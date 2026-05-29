@@ -125,6 +125,7 @@ artifacts:
       - Default maximum review iterations is 5.
       - If the review enters a real loop, use `bun run openspec:vision -- review-state <change> [--issue <id>]` to persist iteration and recurrence state.
       - If the review cannot exit normally because maximum iterations are exhausted or a repeated issue is unresolved, run `bun run openspec:vision -- handoff <change>` and commit the handoff/OpenSpec evidence before returning to user discussion.
+      - If the handoff needs exact operator-authored content, provide it with shell Here Document stdin: `bun run openspec:vision -- handoff <change> <<'END' ... END`.
       - If the same issue survives 2 consecutive review rounds, mark it as a spec/design failure and route the next step back to `research-plan`.
       - If the initial intent implies a different exit condition, state why iteration count should be raised, reduced, or bypassed.
       - If review exits normally, archive with `openspec archive <change>` and commit the archive result as the final archive evidence.

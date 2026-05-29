@@ -98,6 +98,10 @@
           Abnormal exit: run <code>bun run openspec:vision -- handoff &lt;change&gt;</code>, commit
           <code>HANDOFF.md</code> evidence, then return to user discussion.
         </li>
+        <li>
+          Operator-authored handoff: use <code>bun run openspec:vision -- handoff &lt;change&gt; &lt;&lt;'END'</code>
+          with Here Document content when the exact handoff text must be supplied inline.
+        </li>
         <li>Intent realignment: run <code>bun run openspec:vision -- rename &lt;old-change&gt; &lt;new-change&gt;</code> when the change id no longer matches the target.</li>
       </ul>
     </section>

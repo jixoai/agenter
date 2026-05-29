@@ -46,3 +46,10 @@
 - [x] 8.2 Run `bun test scripts/openspec/vision-driven.test.ts`.
 - [x] 8.3 Run `openspec validate introduce-vision-driven-openspec-schema --type change --strict`.
 - [x] 8.4 Run `openspec validate --specs --strict`.
+
+## 9. Inline Document Input
+
+- [x] 9.1 Add schema rules for controller file-writing commands to accept shell Here Document stdin.
+- [ ] 9.2 Add shared inline-document reading support and connect it to `handoff <change>`.
+- [ ] 9.3 Add BDD tests proving `handoff <change> <<'END'` writes exact stdin content while preserving `vN.HANDOFF.md`.
+- [ ] 9.4 Run focused controller tests and OpenSpec strict validation.

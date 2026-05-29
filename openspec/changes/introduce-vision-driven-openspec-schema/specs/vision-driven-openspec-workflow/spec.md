@@ -92,6 +92,23 @@ If self-review cannot exit normally because maximum iterations are exhausted or 
 - **THEN** `openspec/changes/<change>/HANDOFF.md` contains Goal, Current Progress, What Worked, What Didn't Work, and Next Steps
 - **AND** any existing handoff is preserved as `vN.HANDOFF.md`
 
+### Requirement: File-writing controller commands SHALL accept Here Document input
+
+Controller commands that write user-visible files SHALL share a single inline-document input path. When `handoff <change>` receives non-empty stdin, such as shell Here Document content, the controller SHALL write that content to `HANDOFF.md` after applying the same `vN.HANDOFF.md` backup rule. When stdin is empty, `handoff <change>` SHALL generate the handoff from repository evidence.
+
+#### Scenario: Handoff accepts inline document content
+
+- **GIVEN** an operator runs `bun run openspec:vision -- handoff <change> <<'END'`
+- **WHEN** the Here Document body is provided on stdin
+- **THEN** the controller writes that body as `openspec/changes/<change>/HANDOFF.md`
+- **AND** any previous `HANDOFF.md` is preserved as `vN.HANDOFF.md`
+
+#### Scenario: Empty stdin keeps generated handoff behavior
+
+- **GIVEN** an operator runs `bun run openspec:vision -- handoff <change>` without inline content
+- **WHEN** the controller writes handoff evidence
+- **THEN** it generates the handoff from schema metadata, generated artifacts, OpenSpec status, Git state, and validation evidence
+
 ### Requirement: Change rename SHALL support post-review intent realignment
 
 The controller SHALL provide a safe rename operation for active `vision-driven` changes. Rename SHALL validate both change ids, refuse to overwrite an existing target directory, move the change directory, and update controller-owned state that explicitly records the old change id.
