@@ -2,9 +2,9 @@
 
 ## Current Round
 
-- Round: 2
-- Status: Intent reopened from live Studio route evidence
-- Previous plan backup: `plans/plan-v1.md`
+- Round: 1
+- Status: Intent locked from screenshot evidence and repo inspection
+- Previous plan backup: None
 
 ## Workflow Command Surface
 
@@ -34,7 +34,6 @@
 | 2 | User | Fix the problem that `web-chat-view` needs to be embedded into Studio. | The boundary is an embedding/style contract between `@agenter/web-chat-view` and `agenter-ext-studio`. |
 | 3 | User | The problem is especially styling, shown by Image #1. | The fix must be validated visually, not only by typecheck. |
 | 4 | User | Use the new OpenSpec `vision-driven` workflow. | This change must preserve `plans/plan.md` as the intent SSOT, then derive specs, tasks, implementation, and self-review. |
-| 5 | User | Live `bun agenter studio --dev` on current `main` still shows giant circular rings in the message transcript. | Round 1 did not cover the real route failure; reopen intent and add read-indicator geometry coverage. |
 
 ### Evidence Read
 
@@ -48,9 +47,6 @@
 | `openspec/specs/web-chat-view/spec.md` | The existing law says the shared package owns transcript/composer shell and canonical avatar rendering. | Extend this law: canonical avatar rendering must include package-owned geometry when embedded. |
 | `openspec/specs/message-system-surface/spec.md` | The existing Studio surface law says the room transcript is rendered through the shared chat component. | Extend this law: Studio must not add route-local emergency style patches for shared transcript geometry. |
 | `git status --short --branch` | Current `main` is ahead of `origin/main` and has a dirty `bun.lock` unrelated to this styling fix. | Do not revert or stage unrelated `bun.lock` changes. |
-| User Image #1 in Round 2 | The giant dark circles appear as standalone read-progress rings under message rows, while message avatars are already normal-sized. | The remaining visible failure is `MessageReadIndicator`, not `ChatAvatar`. |
-| `packages/web-chat-view/src/message-read-indicator.svelte` | The clickable read indicator uses Framework7 `Link` with class `message-read-indicator`, but the sizing CSS is component-scoped. Svelte scoped CSS does not reliably style a class forwarded to an external component root. | The trigger loses `width/height: 1.25rem`, and the child SVG ring can render at a huge default size inside Studio. |
-| `packages/studio/src/lib/features/messages/message-system-surface.svelte` | Studio provides `resolveMessageReadProgress`, so real rooms can render discloseable read indicators with read/unread actors. | Storybook evidence must include read progress, not only actor avatar images. |
 
 ### Git Evidence
 
@@ -96,7 +92,7 @@
 
 ### Surface Intent
 
-Studio should embed `web-chat-view` without the chat content exploding visually. Avatars, message bubbles, read indicators, icons, and composer controls should retain sane chat-product proportions inside the Studio messages page. Round 2 explicitly includes discloseable read-progress rings, because the live Studio route proved they can explode even after avatar geometry is bounded.
+Studio should embed `web-chat-view` without the chat content exploding visually. Avatars, message bubbles, read indicators, icons, and composer controls should retain sane chat-product proportions inside the Studio messages page.
 
 ### Underlying Drive
 
@@ -107,7 +103,6 @@ Studio should embed `web-chat-view` without the chat content exploding visually.
 When the operator opens a Studio room:
 
 - message avatars stay around normal chat-avatar size instead of expanding to natural image size
-- message read indicators stay around normal inline affordance size instead of becoming giant SVG rings
 - fallback icons/images stay clipped inside the avatar circle
 - bubbles remain compact and readable
 - the transcript remains the dominant viewport
@@ -152,7 +147,6 @@ No durable data change is required. This is presentation ownership:
 ### Architecture Shape
 
 - `@agenter/web-chat-view` owns its component-local CSS for avatar geometry.
-- `@agenter/web-chat-view` owns component-local or package-global CSS for classes passed through Framework7 component roots; scoped selectors alone are not enough when the DOM root is created by an external component.
 - Framework7 `Message` remains the chat row primitive.
 - Studio may tune composer density through public parts, but should not patch core transcript avatar sizing.
 - Do not add a Studio-only `.message-avatar img { ... }` fix unless the shared component cannot express the law.
@@ -169,9 +163,8 @@ No durable data change is required. This is presentation ownership:
 - [x] 1. Research and align intent.
 - [x] 2. Write specs from the intent.
 - [x] 3. Write BDD tasks from specs.
-- [x] 4. Implement tasks.
-- [x] 5. Self-review against intent and decide whether to loop.
-- [ ] 6. Round 2: add read-indicator BDD/DOM coverage, fix Framework7 Link styling boundary, and retake live-route evidence.
+- [ ] 4. Implement tasks.
+- [ ] 5. Self-review against intent and decide whether to loop.
 
 ## Open Questions
 

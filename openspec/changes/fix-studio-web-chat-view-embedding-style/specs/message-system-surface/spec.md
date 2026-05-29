@@ -12,7 +12,7 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 #### Scenario: Embedded shared chat keeps bounded row geometry
 - **WHEN** Studio renders a selected room through `WebChatViewHost`
 - **THEN** Studio does not need to add route-local sizing rules for shared transcript avatars or images
-- **AND** transcript avatars, message bubbles, row actions, and the composer stay visually bounded inside the room body
+- **AND** transcript avatars, read indicators, message bubbles, row actions, and the composer stay visually bounded inside the room body
 - **AND** the message stream remains readable on desktop and iPhone 14-sized viewports
 
 #### Scenario: Dense room transcript avoids decorative slack

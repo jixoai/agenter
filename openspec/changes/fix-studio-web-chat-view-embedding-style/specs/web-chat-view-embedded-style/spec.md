@@ -2,7 +2,7 @@
 
 ### Requirement: Web chat view SHALL render canonical avatar and message action affordances
 
-The shared chat package SHALL support host-provided canonical avatar/icon resolution for room and actor identity, and it SHALL expose local hover/context message action affordances from the shared message row implementation. The package SHALL own the CSS geometry for transcript avatars, fallback initials, icon wrappers, images, and message-local row controls so that hosts can embed the component without generating package-internal Tailwind utility classes. Natural image dimensions, host utility-class availability, or Studio route chrome SHALL NOT determine transcript avatar size.
+The shared chat package SHALL support host-provided canonical avatar/icon resolution for room and actor identity, and it SHALL expose local hover/context message action affordances from the shared message row implementation. The package SHALL own the CSS geometry for transcript avatars, fallback initials, icon wrappers, images, message-local row controls, and read-progress indicators so that hosts can embed the component without generating package-internal Tailwind utility classes. Natural image dimensions, forwarded classes on external component roots, host utility-class availability, or Studio route chrome SHALL NOT determine transcript avatar or read-indicator size.
 
 #### Scenario: Host resolves canonical avatars
 - **WHEN** the host provides canonical icon or avatar URLs for the channel or participants
@@ -17,6 +17,13 @@ The shared chat package SHALL support host-provided canonical avatar/icon resolu
 - **AND** the avatar bounding box stays within normal chat-row dimensions
 - **AND** the host does not need a Studio-only `.message-avatar` emergency patch
 - **AND** the result does not depend on the host generating Tailwind utility CSS for `@agenter/web-chat-view`
+
+#### Scenario: Embedded read indicators stay package-owned
+- **GIVEN** Studio embeds `WebChatViewHost` and supplies read/unread actor projections for transcript messages
+- **WHEN** a message row renders a discloseable read-progress trigger
+- **THEN** the read indicator and its SVG ring are bounded to normal inline affordance dimensions
+- **AND** the sizing rule works even when the trigger root is rendered by a Framework7 component
+- **AND** the host does not need a Studio-only `.message-read-indicator` emergency patch
 
 #### Scenario: Human-facing transcript identity does not leak raw actor ids by default
 - **WHEN** the host resolves a participant presentation with canonical label, subtitle, and avatar facts
@@ -41,7 +48,7 @@ The shared room component SHALL render one durable conversation surface with tra
 - **GIVEN** a host embeds the chat component inside fixed product chrome
 - **WHEN** message rows contain avatars, read indicators, icons, and bubbles
 - **THEN** those elements use bounded package-owned geometry
-- **AND** the transcript does not create large empty zones caused by unbounded images or unstyled utility classes
+- **AND** the transcript does not create large empty zones caused by unbounded images, unbounded SVG rings, forwarded component-root classes, or unstyled utility classes
 - **AND** the composer remains attached as the bottom chat action surface
 
 #### Scenario: Desktop host can reveal richer context without replacing the shared surface
