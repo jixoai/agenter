@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>repair-terminal-system-git-attention-hook self review</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 32px;
+        line-height: 1.5;
+      }
+      main {
+        max-width: 1040px;
+        margin: 0 auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 16px 0 24px;
+      }
+      th,
+      td {
+        border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+        padding: 10px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: color-mix(in srgb, currentColor 8%, transparent);
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .pass {
+        color: #16803c;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Terminal Idle Git Attention Bridge Review</h1>
+      <p>
+        The review target is backend-only. Evidence is command output, BDD coverage, typecheck results, and scoped git
+        commits.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Contract</th>
+            <th>Evidence</th>
+            <th>Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>BUSY -&gt; IDLE</code> hook compares terminal <code>HEAD</code> to actor read cursor.</td>
+            <td>Adapter tests cover equal hash no-op and ahead hash promotion.</td>
+            <td class="pass">Pass</td>
+          </tr>
+          <tr>
+            <td>Raw/live PTY output does not require <code>terminal_write</code>.</td>
+            <td>Adapter BDD calls only <code>handleStatusChange()</code>; session BDD commits a raw transport line.</td>
+            <td class="pass">Pass</td>
+          </tr>
+          <tr>
+            <td>TerminalSystem remains orthogonal.</td>
+            <td>Only non-consuming cursor inspection was added to terminal-control-plane.</td>
+            <td class="pass">Pass</td>
+          </tr>
+          <tr>
+            <td>Wakeable attention item is produced from terminal read content.</td>
+            <td>Idle bridge sets score <code>100</code>, <code>ingressType=commit</code>, and <code>notifyLoop=true</code>.</td>
+            <td class="pass">Pass</td>
+          </tr>
+        </tbody>
+      </table>
+      <h2>Verification Commands</h2>
+      <ul>
+        <li><code>bun test packages/app-server/test/runtime-terminal-kernel-adapter.test.ts</code></li>
+        <li><code>bun test packages/terminal-system/test/control-plane.test.ts --grep "cursor hash is inspected"</code></li>
+        <li><code>bun test packages/app-server/test/session-runtime.attention-system.test.ts --grep "focused terminal enters idle with unread git head"</code></li>
+        <li><code>bun test packages/app-server/test/runtime-system-kernel-adapters.integration.test.ts</code></li>
+        <li><code>bun run --filter '@agenter/app-server' typecheck</code></li>
+        <li><code>bun run --filter '@agenter/terminal-system' typecheck</code></li>
+        <li><code>bun run openspec:vision -- validate repair-terminal-system-git-attention-hook</code></li>
+      </ul>
+      <h2>Exit Judgment</h2>
+      <p>Implementation exits normally. Archive is deferred until manual acceptance of the daemon + shell2 path.</p>
+    </main>
+  </body>
+</html>

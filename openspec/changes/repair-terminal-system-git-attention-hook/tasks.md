@@ -32,10 +32,10 @@
 
 ## 5. Self-Review Loop
 
-- [ ] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md` and the latest manual raw/live failure.
-- [ ] 5.2 Generate separate `review/self-review.html` as structured evidence if the vision workflow requires it.
-- [ ] 5.3 If the review updates OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
+- [x] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md` and the latest manual raw/live failure.
+- [x] 5.2 Generate separate `review/self-review.html` as structured evidence if the vision workflow requires it.
+- [x] 5.3 If the review updates OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
 - [ ] 5.4 If the review enters a real loop, run `bun run openspec:vision -- review-state repair-terminal-system-git-attention-hook`.
 - [ ] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff repair-terminal-system-git-attention-hook` and commit the handoff evidence before returning to user discussion.
 - [ ] 5.6 If review exits normally, archive the change and commit the archive result only after the implementation is accepted.
-- [ ] 5.7 Run `bun run openspec:vision -- check repair-terminal-system-git-attention-hook` and decide whether to exit or return to `research-plan` with a backed-up plan revision.
+- [x] 5.7 Run `bun run openspec:vision -- check repair-terminal-system-git-attention-hook` and decide whether to exit or return to `research-plan` with a backed-up plan revision.
