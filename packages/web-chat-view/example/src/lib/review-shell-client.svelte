@@ -98,7 +98,7 @@
   };
 
   const appParameters = {
-    name: "web-chat-view-review-shell",
+    name: "web-chat-view-app-view",
     theme: "ios" as const,
     routes: [
       {
@@ -172,11 +172,11 @@
     }
     return mobileMessagesQuery;
   });
-  const summarizeActorId = (actorId: string): string =>
-    actorId.length > 16 ? `${actorId.slice(0, 8)}…${actorId.slice(-4)}` : actorId;
+  const summarizeContactId = (contactId: string): string =>
+    contactId.length > 16 ? `${contactId.slice(0, 8)}…${contactId.slice(-4)}` : contactId;
 
-  const summarizeActorIdTight = (actorId: string): string =>
-    actorId.length > 14 ? `${actorId.slice(0, 6)}…${actorId.slice(-4)}` : actorId;
+  const summarizeContactIdTight = (contactId: string): string =>
+    contactId.length > 14 ? `${contactId.slice(0, 6)}…${contactId.slice(-4)}` : contactId;
 
   const summarizeEndpoint = (endpoint: string): string => {
     try {
@@ -213,8 +213,8 @@
       return `${shellState.peopleProjection.contacts.length} contacts · ${shellState.peopleProjection.pendingRequestCount} pending`;
     }
     if (shellState.activeDestination === "me") {
-      return shellState.activeActorProfile?.actorId
-        ? summarizeActorId(shellState.activeActorProfile.actorId)
+      return shellState.activeContactProfile?.actorId
+        ? summarizeContactId(shellState.activeContactProfile.actorId)
         : shellState.activeProfileMeta;
     }
     return shellState.activeProfileSummary;
@@ -352,7 +352,7 @@
       return shellState.profiles;
     }
     return shellState.profiles.filter((profile) =>
-      [profile.name, profile.transportUrl, profile.viewerActorId].join(" ").toLowerCase().includes(query),
+      [profile.name, profile.transportUrl, profile.viewerContactId].join(" ").toLowerCase().includes(query),
     );
   });
   const filteredProfiles = $derived.by(() => {
@@ -361,7 +361,7 @@
       return shellState.profiles;
     }
     return shellState.profiles.filter((profile) =>
-      [profile.name, profile.transportUrl, profile.viewerActorId].join(" ").toLowerCase().includes(query),
+      [profile.name, profile.transportUrl, profile.viewerContactId].join(" ").toLowerCase().includes(query),
     );
   });
   const visibleDirectorySources = $derived(filteredSources);
@@ -544,6 +544,9 @@
     );
   };
   const syncMobileChildRoute = async (): Promise<void> => {
+    if (shellState.appViewMode === "room") {
+      return;
+    }
     if (mobileRouteSyncing) {
       return;
     }
@@ -1302,18 +1305,23 @@
         initialMessages={shellState.initialMessages}
         initialSnapshotResolved={shellState.initialSnapshotResolved}
         showHeader={false}
-        viewerActorId={shellState.activeProfile?.viewerActorId ?? null}
+        viewerActorId={shellState.activeProfile?.viewerContactId ?? null}
         resolveActorPresentation={
           shellState.actorResolver
             ? ({ actorId, fallbackLabel }: WebChatActorResolveInput) => shellState.actorResolver?.({ actorId, fallbackLabel }) ?? null
             : undefined
         }
-        onSendMessage={(payload) => shellState.sendMessage(payload)}
+        onSendMessage={shellState.activeProfile?.appViewMode === "room" ? undefined : (payload) => shellState.sendMessage(payload)}
+        onLatestVisibleMessageIdChange={(message) => {
+          if (message?.messageId && shellState.activeProfile?.appViewMode === "room") {
+            void shellState.markLatestVisibleMessageRead(message.messageId);
+          }
+        }}
         composerCapabilities={{
-          attachmentEnabled: true,
-          imageEnabled: true,
-          screenshotEnabled: true,
-          placeholder: "Message review room",
+          attachmentEnabled: shellState.activeProfile?.appViewMode !== "room",
+          imageEnabled: shellState.activeProfile?.appViewMode !== "room",
+          screenshotEnabled: shellState.activeProfile?.appViewMode !== "room",
+          placeholder: shellState.activeProfile?.appViewMode === "room" ? "Message room" : "Message review room",
           resourceReferences: shellState.resourceReferences,
         }}
         {resolveComposerMentionSuggestions}
@@ -1425,13 +1433,13 @@
   <BlockTitle>Current profile</BlockTitle>
   <List mediaList strongIos insetIos dividersIos>
     <ListItem
-      title={shellState.activeActorProfile?.label ?? shellState.activeProfileSummary}
-      subtitle={`${summarizeActorId(shellState.activeActorProfile?.actorId ?? shellState.activeProfileMeta)} · ${shellState.activeChannel ? "online" : "offline"}`}
+      title={shellState.activeContactProfile?.label ?? shellState.activeProfileSummary}
+      subtitle={`${summarizeContactId(shellState.activeContactProfile?.actorId ?? shellState.activeProfileMeta)} · ${shellState.activeChannel ? "online" : "offline"}`}
       after={shellState.activeChannel ? "active" : "offline"}
     >
       {#snippet media()}
         <span class="review-shell-contact-media review-shell-contact-media--profile">
-          {avatarText(shellState.activeActorProfile?.label ?? shellState.activeProfileSummary)}
+          {avatarText(shellState.activeContactProfile?.label ?? shellState.activeProfileSummary)}
         </span>
       {/snippet}
     </ListItem>
@@ -1463,7 +1471,7 @@
     <ListItem
       link
       title="Review Setup"
-      subtitle="Transport identity, token, and viewer actor"
+      subtitle="Transport identity, token, and viewer contact"
       onClick={() => (shellState.shellPanelOpen = true)}
     >
       {#snippet media()}
@@ -1485,7 +1493,7 @@
   <BlockTitle>Live state</BlockTitle>
   <List mediaList strongIos insetIos dividersIos>
     <ListItem title="Profile name" subtitle={shellState.activeProfile?.name ?? "none"} />
-    <ListItem title="Viewer actor" subtitle={shellState.activeProfileMeta} />
+    <ListItem title="Viewer contact" subtitle={shellState.activeProfileMeta} />
     <ListItem title="Connected room" subtitle={shellState.activeChannel?.title ?? "Waiting for bootstrap"} />
     <ListItem title="Pending requests" after={`${activePendingCount}`} />
   </List>
@@ -1500,7 +1508,7 @@
         <ListItem
           link
           title={profile.name}
-          subtitle={`${summarizeEndpoint(profile.transportUrl)} · ${summarizeActorId(profile.viewerActorId)}`}
+          subtitle={`${summarizeEndpoint(profile.transportUrl)} · ${summarizeContactId(profile.viewerContactId)}`}
           selected={shellState.selectedProfileId === profile.id}
           after={shellState.selectedProfileId === profile.id ? "Active" : undefined}
           onClick={() => {
@@ -1527,13 +1535,13 @@
     {@render shellStatusBlock()}
     <List mediaList strongIos insetIos dividersIos>
       <ListItem
-        title={shellState.activeActorProfile?.label ?? shellState.activeProfileSummary}
-        subtitle={`${summarizeActorId(shellState.activeActorProfile?.actorId ?? shellState.activeProfileMeta)} · ${shellState.activeChannel ? "online" : "offline"}`}
+        title={shellState.activeContactProfile?.label ?? shellState.activeProfileSummary}
+        subtitle={`${summarizeContactId(shellState.activeContactProfile?.actorId ?? shellState.activeProfileMeta)} · ${shellState.activeChannel ? "online" : "offline"}`}
         after={shellState.activeProfile ? "active" : "offline"}
       >
         {#snippet media()}
           <span class="review-shell-large-avatar review-shell-large-avatar--desktop">
-            {avatarText(shellState.activeActorProfile?.label ?? shellState.activeProfileSummary)}
+            {avatarText(shellState.activeContactProfile?.label ?? shellState.activeProfileSummary)}
           </span>
         {/snippet}
       </ListItem>
@@ -1568,7 +1576,7 @@
           <span class="review-shell-source-media">{@render reviewIcon("source", 18)}</span>
         {/snippet}
       </ListItem>
-      <ListItem link title="Review setup" subtitle="Transport URL, token, and viewer actor" onClick={() => (shellState.shellPanelOpen = true)}>
+      <ListItem link title="Review setup" subtitle="Transport URL, token, and viewer contact" onClick={() => (shellState.shellPanelOpen = true)}>
         {#snippet media()}
           <span class="review-shell-review-media">{@render reviewIcon("setup", 18)}</span>
         {/snippet}
@@ -1580,7 +1588,7 @@
           </span>
         {/snippet}
       </ListItem>
-      <ListItem link title="Share review link" subtitle="Copy URL with transport, token, and viewer actor" onClick={() => void shellState.shareActiveProfile()}>
+      <ListItem link title="Share review link" subtitle="Copy URL with transport, token, and viewer contact" onClick={() => void shellState.shareActiveProfile()}>
         {#snippet media()}
           <span class="review-shell-action-media">{@render reviewIcon("share", 17)}</span>
         {/snippet}
@@ -1744,7 +1752,7 @@
           <ListItem
             link
             title={profile.name}
-            subtitle={`${summarizeEndpoint(profile.transportUrl)} · ${summarizeActorId(profile.viewerActorId)}`}
+            subtitle={`${summarizeEndpoint(profile.transportUrl)} · ${summarizeContactId(profile.viewerContactId)}`}
             selected={shellState.selectedProfileId === profile.id}
             after={shellState.selectedProfileId === profile.id ? "Active" : undefined}
             onClick={() => {
@@ -1772,7 +1780,7 @@
             <span class="review-shell-source-media" data-review-me-entry="source-management">{@render reviewIcon("source", 18)}</span>
           {/snippet}
         </ListItem>
-        <ListItem link title="Edit review setup" subtitle="Transport URL, access token, and viewer actor" onClick={() => (shellState.shellPanelOpen = true)}>
+        <ListItem link title="Edit review setup" subtitle="Transport URL, access token, and viewer contact" onClick={() => (shellState.shellPanelOpen = true)}>
           {#snippet media()}
             <span class="review-shell-review-media">{@render reviewIcon("setup", 18)}</span>
           {/snippet}
@@ -2109,6 +2117,17 @@
   </Page>
 {/snippet}
 
+{#snippet embeddedRoomShellPage()}
+  <Page
+    name="web-chat-app-view-room"
+    pageContent={true}
+    messagesContent={true}
+    class="review-shell-room-page review-shell-embedded-room-page"
+  >
+    {@render roomChatSurface()}
+  </Page>
+{/snippet}
+
 {#snippet desktopShellPage()}
   <Page name="review-shell-home" pageContent={false}>
     {@render desktopSidebarPanel()}
@@ -2138,7 +2157,9 @@
       void syncMobileChildRoute();
     }}
   >
-    {#if isWideLayout}
+    {#if shellState.appViewMode === "room"}
+      {@render embeddedRoomShellPage()}
+    {:else if isWideLayout}
       {@render desktopShellPage()}
     {:else}
       {@render mobileRootShellPage()}

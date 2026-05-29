@@ -7,7 +7,7 @@ type ReviewBootstrapProfile = {
   name: string;
   transportUrl: string;
   accessToken: string;
-  viewerActorId: string;
+  viewerContactId: string;
 };
 
 type ReviewBootstrapPayload = {
@@ -101,7 +101,7 @@ const buildReviewUrl = (examplePort: number, profile: ReviewBootstrapProfile): s
   const url = new URL(`http://${HOST}:${examplePort}/`);
   url.searchParams.set("url", profile.transportUrl);
   url.searchParams.set("token", profile.accessToken);
-  url.searchParams.set("viewerActorId", profile.viewerActorId);
+  url.searchParams.set("viewer", profile.viewerContactId);
   url.searchParams.set("name", profile.name);
   return url.toString();
 };

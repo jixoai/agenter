@@ -1,4 +1,4 @@
-import type { MessageAttachment } from "@agenter/message-system";
+import type { MessageAttachment, MessageSnapshot } from "@agenter/message-system";
 import {
   type WebChatComposerSubmitPayload,
 } from "@agenter/web-chat-view";
@@ -12,10 +12,42 @@ import type {
 } from "./review-example.types";
 
 export const fetchReviewChannel = async (profile: ReviewProfile): Promise<ReviewChannelEnvelope> => {
+  if (profile.appViewMode === "room") {
+    const response = await fetch(buildApiUrl("/trpc/message.globalSnapshot"), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        chatId: resolveChatId(profile.transportUrl),
+        accessToken: profile.accessToken,
+        limit: 80,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(await readError(response));
+    }
+    const payload = (await response.json()) as { snapshot?: MessageSnapshot };
+    const snapshot = payload.snapshot;
+    if (!snapshot?.channel || !Array.isArray(snapshot.items)) {
+      throw new Error("room snapshot payload is missing channel or items");
+    }
+    return {
+      channel: {
+        ...snapshot.channel,
+        accessToken: profile.accessToken,
+        transportUrl: profile.transportUrl,
+      },
+      initialMessages: snapshot.items,
+      actorDirectory: buildRoomContactDirectory(snapshot.channel, profile),
+      resourceReferences: [],
+    };
+  }
+
   const response = await fetch(buildApiUrl(`/api/review/channel?${new URLSearchParams({
     transportUrl: profile.transportUrl,
     accessToken: profile.accessToken,
-    viewerActorId: profile.viewerActorId,
+    viewer: profile.viewerContactId,
   }).toString()}`));
   if (!response.ok) {
     throw new Error(await readError(response));
@@ -24,17 +56,49 @@ export const fetchReviewChannel = async (profile: ReviewProfile): Promise<Review
 };
 
 export const fetchReviewPeople = async (profile: ReviewProfile): Promise<ReviewPeopleEnvelope> => {
-  const response = await fetch(
-    buildApiUrl(
-      `/api/review/people?${new URLSearchParams({
-        viewerActorId: profile.viewerActorId,
-      }).toString()}`,
-    ),
-  );
+  if (profile.appViewMode === "room") {
+    return {
+      currentActor: {
+        actorId: profile.viewerContactId,
+        label: profile.name,
+      },
+      sources: [],
+      contacts: [],
+      contactRequests: [],
+    };
+  }
+
+	const response = await fetch(
+		buildApiUrl(
+			`/api/review/people?${new URLSearchParams({
+				viewer: profile.viewerContactId,
+			}).toString()}`,
+		),
+	);
   if (!response.ok) {
     throw new Error(await readError(response));
   }
   return normalizeReviewPeopleEnvelope(await response.json());
+};
+
+export const markReviewMessageRead = async (profile: ReviewProfile, messageId: number): Promise<void> => {
+  if (profile.appViewMode !== "room") {
+    return;
+  }
+  const response = await fetch(buildApiUrl("/trpc/message.globalMarkRead"), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      chatId: resolveChatId(profile.transportUrl),
+      accessToken: profile.accessToken,
+      messageId,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
 };
 
 export const submitReviewMessage = async (
@@ -51,7 +115,7 @@ export const submitReviewMessage = async (
     body: JSON.stringify({
       content: payload.text.trim(),
       attachments,
-      senderContactId: profile.viewerActorId,
+      senderContactId: profile.viewerContactId,
       metadata:
         (payload.commentResources?.length ?? 0) > 0
           ? {
@@ -95,6 +159,34 @@ const resolveChatId = (transportUrl: string): string => {
 };
 
 const buildApiUrl = (path: string): string => path;
+
+const buildRoomContactDirectory = (
+  channel: ReviewChannelEnvelope["channel"],
+  profile: ReviewProfile,
+): ReviewChannelEnvelope["actorDirectory"] => {
+  const directory: ReviewChannelEnvelope["actorDirectory"] = {
+    [profile.viewerContactId]: {
+      actorId: profile.viewerContactId,
+      label: profile.name,
+      kind: "viewer",
+    },
+  };
+  for (const participant of channel.participants ?? []) {
+    directory[participant.id] = {
+      actorId: participant.id,
+      label: participant.label ?? participant.id,
+      kind: participant.id === profile.viewerContactId ? "viewer" : "participant",
+    };
+  }
+  for (const seat of channel.seatStates ?? []) {
+    directory[seat.contactId] = {
+      actorId: seat.contactId,
+      label: seat.label ?? seat.contactId,
+      kind: seat.contactId === profile.viewerContactId ? "viewer" : "participant",
+    };
+  }
+  return directory;
+};
 
 const normalizeReviewChannelEnvelope = (value: unknown): ReviewChannelEnvelope => {
   if (!value || typeof value !== "object") {

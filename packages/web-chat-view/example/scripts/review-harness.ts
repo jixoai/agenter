@@ -624,32 +624,32 @@ const server = Bun.serve({
         return Response.json({ error: "missing room transport URL" }, { status: 500 });
       }
       return Response.json({
-        profiles: state.seats.map((seat, index) => ({
-          id: `seed-${index + 1}`,
-          name: `${seat.name} review`,
-          transportUrl: rewriteTransportToken(transportUrl, seat.token),
-          accessToken: seat.token,
-          viewerActorId: seat.actorId,
-        })),
-        recommendedProfileId: "seed-2",
-      });
+	        profiles: state.seats.map((seat, index) => ({
+	          id: `seed-${index + 1}`,
+	          name: `${seat.name} review`,
+	          transportUrl: rewriteTransportToken(transportUrl, seat.token),
+	          accessToken: seat.token,
+	          viewerContactId: seat.actorId,
+	        })),
+	        recommendedProfileId: "seed-2",
+	      });
     }
 
     if (url.pathname === "/api/review/channel") {
-      const transportUrl = url.searchParams.get("transportUrl")?.trim() ?? "";
-      const accessToken = url.searchParams.get("accessToken")?.trim() ?? "";
-      const viewerActorId = url.searchParams.get("viewerActorId")?.trim() ?? "";
-      if (!transportUrl || !accessToken || !viewerActorId) {
-        return Response.json({ error: "transportUrl, accessToken, and viewerActorId are required" }, { status: 400 });
-      }
-      const chatId = resolveChatIdFromTransportUrl(transportUrl);
-      if (chatId !== state.room.chatId) {
-        return Response.json({ error: "unknown room" }, { status: 404 });
-      }
-      const projected = state.plane.getChannelForActor(chatId, viewerActorId as PrincipalId, {
-        includeArchived: false,
-        touchPresence: false,
-      });
+	      const transportUrl = url.searchParams.get("transportUrl")?.trim() ?? "";
+	      const accessToken = url.searchParams.get("accessToken")?.trim() ?? "";
+	      const viewerContactId = url.searchParams.get("viewer")?.trim() ?? "";
+	      if (!transportUrl || !accessToken || !viewerContactId) {
+	        return Response.json({ error: "transportUrl, accessToken, and viewer contact are required" }, { status: 400 });
+	      }
+	      const chatId = resolveChatIdFromTransportUrl(transportUrl);
+	      if (chatId !== state.room.chatId) {
+	        return Response.json({ error: "unknown room" }, { status: 404 });
+	      }
+	      const projected = state.plane.getChannelForContact(chatId, viewerContactId as MessageContactId, {
+	        includeArchived: false,
+	        touchPresence: false,
+	      });
       if (!projected) {
         return Response.json({ error: "viewer seat not found" }, { status: 404 });
       }
@@ -665,24 +665,24 @@ const server = Bun.serve({
       });
     }
 
-    if (url.pathname === "/api/review/people") {
-      const viewerActorId = url.searchParams.get("viewerActorId")?.trim() ?? "";
-      if (!viewerActorId) {
-        return Response.json({ error: "viewerActorId is required" }, { status: 400 });
-      }
-      const actorDirectory = buildActorDirectory(state);
-      const currentActor = actorDirectory[viewerActorId] ?? {
-        actorId: viewerActorId,
-        label: viewerActorId,
-        iconUrl: buildAvatarDataUrl(viewerActorId),
-      };
-      return Response.json({
-        currentActor,
-        sources: state.plane.listSourceSubscriptions(viewerActorId as MessageContactId),
-        contacts: state.plane.listContacts(viewerActorId as MessageContactId),
-        contactRequests: state.plane.listContactRequests(viewerActorId as MessageContactId),
-      });
-    }
+	    if (url.pathname === "/api/review/people") {
+	      const viewerContactId = url.searchParams.get("viewer")?.trim() ?? "";
+	      if (!viewerContactId) {
+	        return Response.json({ error: "viewer contact is required" }, { status: 400 });
+	      }
+	      const actorDirectory = buildActorDirectory(state);
+	      const currentActor = actorDirectory[viewerContactId] ?? {
+	        actorId: viewerContactId,
+	        label: viewerContactId,
+	        iconUrl: buildAvatarDataUrl(viewerContactId),
+	      };
+	      return Response.json({
+	        currentActor,
+	        sources: state.plane.listSourceSubscriptions(viewerContactId as MessageContactId),
+	        contacts: state.plane.listContacts(viewerContactId as MessageContactId),
+	        contactRequests: state.plane.listContactRequests(viewerContactId as MessageContactId),
+	      });
+	    }
 
     const roomUploadMatch = url.pathname.match(/^\/api\/rooms\/([^/]+)\/assets$/u);
     if (request.method === "POST" && roomUploadMatch?.[1]) {

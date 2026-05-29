@@ -22,23 +22,15 @@ describe("Feature: Room route hydration stability contract", () => {
     expect(messageRoomRouteSource).toContain("limit: 120,");
   });
 
-  test("Scenario: Given the viewer changes while the transcript stays on the same latest message When reading the route source Then the route caches that visibility fact and replays read-ack work from the warm snapshot", () => {
-    expect(messageRoomRouteSource).toContain(
-      "let latestVisibleMessageByRoomId = $state<Record<string, WebChatVisibleMessageFact | null>>({});",
-    );
-    expect(messageRoomRouteSource).toContain(
-      "let latestVisibleReplayKeyByRoomId = $state<Record<string, string>>({});",
-    );
-    expect(messageRoomRouteSource).toContain(
-      "const buildVisibleReplayKey = (viewerActorId: string, visibleMessage: WebChatVisibleMessageFact): string =>",
-    );
-    expect(messageRoomRouteSource).toContain("const resolveLatestReplayVisibleMessage = (");
+  test("Scenario: Given app-view owns the embedded transcript When reading the route source Then Studio no longer forges chat send or read-ack effects outside the iframe", () => {
     expect(messageRoomRouteSource).toContain("const selectedViewerAccessToken = $derived.by(() => {");
-    expect(messageRoomRouteSource).toContain("const latestMessage = selectedRoomSnapshot?.items.at(-1) ?? null;");
-    expect(messageRoomRouteSource).toContain("viewKey: String(latestMessage.messageId),");
-    expect(messageRoomRouteSource).toContain("[room.chatId]: visibleMessage,");
-    expect(messageRoomRouteSource).toContain("if (!room || !viewerActorId || !viewerAccessToken) {");
-    expect(messageRoomRouteSource).toContain("void handleLatestVisibleMessageIdChange(latestVisibleMessage);");
+    expect(messageRoomRouteSource).toContain("{selectedViewerAccessToken}");
+    expect(messageRoomRouteSource).not.toContain("latestVisibleMessageByRoomId");
+    expect(messageRoomRouteSource).not.toContain("latestVisibleReplayKeyByRoomId");
+    expect(messageRoomRouteSource).not.toContain("handleLatestVisibleMessageIdChange");
+    expect(messageRoomRouteSource).not.toContain("markGlobalRoomRead");
+    expect(messageRoomRouteSource).not.toContain("sendGlobalRoomMessage");
+    expect(messageRoomRouteSource).not.toContain("uploadRoomAssets");
   });
 
   test("Scenario: Given room viewer selection should survive refresh When reading the route source Then the route hydrates and replays viewer preferences through the shared source instead of duplicating pending state locally", () => {
@@ -77,16 +69,14 @@ describe("Feature: Room route hydration stability contract", () => {
     expect(messageRoomRouteSource).toContain("const authReady = $derived(!controller.initializing);");
     expect(messageRoomRouteSource).toContain("const isAuthenticated = $derived(Boolean(controller.authSession));");
     expect(messageRoomRouteSource).toContain("const authRequired = $derived(authReady && !isAuthenticated);");
-    expect(messageRoomRouteSource).toContain(
-      "const initialRoomSnapshotResolved = $derived(selectedRoomSnapshotState.loaded || authRequired);",
-    );
     expect(messageRoomRouteSource).toContain("if (!isAuthenticated) {\n\t\t\treturn null;");
     expect(messageRoomRouteSource).toContain(
       "if (authRequired) {\n\t\t\treturn {\n\t\t\t\ttone: 'destructive',\n\t\t\t\tmessage: AUTH_REQUIRED_MESSAGE,",
     );
     expect(messageRoomRouteSource).toContain("const ensureAuthenticated = (): void => {");
     expect(messageRoomRouteSource).toContain("if (!isAuthenticated || !chatId || !accessToken) {");
-    expect(messageRoomRouteSource).toContain("initialSnapshotResolved={initialRoomSnapshotResolved}");
+    expect(messageRoomRouteSource).not.toContain("initialSnapshotResolved={");
+    expect(messageRoomRouteSource).not.toContain("initialMessages={");
     expect(messageRoomRouteSource).toContain("authenticated={isAuthenticated}");
   });
 

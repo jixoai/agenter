@@ -3,10 +3,9 @@ import type {
   GlobalRoomActorId,
   GlobalRoomAssetEntry,
   GlobalRoomEntry,
-  GlobalRoomSnapshotOutput,
   MessageChannelEntry,
 } from "@agenter/client-sdk";
-import type { WebChatComposerSubmitPayload, WebChatNotice, WebChatVisibleMessageFact } from "@agenter/web-chat-view";
+import type { WebChatNotice } from "@agenter/web-chat-view";
 
 import type { ActorDirectoryEntry } from "$lib/features/collaboration/actor-directory";
 
@@ -66,16 +65,12 @@ export interface MessageSystemSurfaceProps {
   authenticated: boolean;
   archivedRoomCount?: number;
   roomSeatTruthLoaded?: boolean;
-  selectedRoomIconUrl?: string | null;
-  resolveProfileIconUrl?: (reference: string) => string | null;
-  resolveSessionIconUrl?: (sessionId: string) => string | null;
   disableManageDialogPortal?: boolean;
   initialManageDialogSection?: MessageSystemManageSection | null;
-  initialMessages: GlobalRoomSnapshotOutput["items"];
-  initialSnapshotResolved: boolean;
   roomAssetsState: CachedResourceState<MessageSystemRoomAssetItem[]>;
   routeNotice: WebChatNotice | null;
   selectedCallerToken: string | null;
+  selectedViewerAccessToken: string | null;
   selectedViewerActorId: string | null;
   selectableActors: ActorDirectoryEntry[];
   roomSeatStates: MessageSystemRoomSeatState[];
@@ -86,6 +81,4 @@ export interface MessageSystemSurfaceProps {
   onGrantSeat: (input: MessageSystemGrantSeatInput) => Promise<void>;
   onToggleSeatFocus: (input: MessageSystemSeatFocusInput) => Promise<void>;
   onRevokeSeat: (input: MessageSystemSeatRevokeInput) => Promise<void>;
-  onSendMessage: (payload: WebChatComposerSubmitPayload) => Promise<void>;
-  onLatestVisibleMessageIdChange: (message: WebChatVisibleMessageFact | null) => Promise<void> | void;
 }

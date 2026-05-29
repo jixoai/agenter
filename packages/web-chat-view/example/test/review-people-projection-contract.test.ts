@@ -100,11 +100,11 @@ const peopleEnvelope = (): ReviewPeopleEnvelope => ({
 });
 
 const profile: ReviewProfile = {
-  id: "profile-review",
-  name: "Iris review",
-  transportUrl: "ws://127.0.0.1:4601/room/room-main",
-  accessToken: "token",
-  viewerActorId: "auth:owner",
+	id: "profile-review",
+	name: "Iris review",
+	transportUrl: "ws://127.0.0.1:4601/room/room-main",
+	accessToken: "token",
+	viewerContactId: "auth:owner",
 };
 
 const activeChannel: MessageControlPlaneEntry = {

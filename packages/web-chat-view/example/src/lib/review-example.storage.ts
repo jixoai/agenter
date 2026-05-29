@@ -25,11 +25,11 @@ const isReviewProfile = (value: unknown): value is ReviewProfile => {
     return false;
   }
   const candidate = value as Partial<ReviewProfile>;
-  return (
-    typeof candidate.id === "string" &&
-    typeof candidate.name === "string" &&
-    typeof candidate.transportUrl === "string" &&
-    typeof candidate.accessToken === "string" &&
-    typeof candidate.viewerActorId === "string"
-  );
+	return (
+		typeof candidate.id === "string" &&
+		typeof candidate.name === "string" &&
+		typeof candidate.transportUrl === "string" &&
+		typeof candidate.accessToken === "string" &&
+		typeof candidate.viewerContactId === "string"
+	);
 };

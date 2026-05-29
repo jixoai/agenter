@@ -122,16 +122,17 @@
 		)}
 		aria-label="Room actions"
 	>
-		<WorkbenchToolbarAction
-			type="button"
-			placement={toolbarState.placement}
-			label="Search messages"
-			title="Search messages"
-			disabled={!canSearch}
-			onclick={onSearchClick}
-		>
-			<SearchIcon class="size-4" />
-		</WorkbenchToolbarAction>
+		{#if canSearch}
+			<WorkbenchToolbarAction
+				type="button"
+				placement={toolbarState.placement}
+				label="Search messages"
+				title="Search messages"
+				onclick={onSearchClick}
+			>
+				<SearchIcon class="size-4" />
+			</WorkbenchToolbarAction>
+		{/if}
 		<WorkbenchToolbarAction
 			type="button"
 			placement={toolbarState.placement}

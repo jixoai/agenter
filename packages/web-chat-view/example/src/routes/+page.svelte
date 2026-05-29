@@ -6,7 +6,7 @@
 </script>
 
 <svelte:head>
-  <title>web-chat-view Framework7 review shell</title>
+  <title>web-chat-view app-view</title>
 </svelte:head>
 
 <ReviewShellClient />

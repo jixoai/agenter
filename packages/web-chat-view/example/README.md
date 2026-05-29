@@ -1,6 +1,6 @@
-# web-chat-view example
+# web-chat-view app-view
 
-Framework7 host-owned remote review shell for `@agenter/web-chat-view`.
+Framework7 host-owned app-view for `@agenter/web-chat-view`.
 
 ## Start
 
@@ -23,12 +23,13 @@ processes.
 
 ## Review flow
 
-The example owns review-shell concerns that do not belong in the shared package:
+The app-view owns review-shell concerns that do not belong in the shared package:
 
 - remote profile persistence
 - query-string import/share
 - Framework7 compact/mobile shell chrome
 - bootstrap room selection
+- partial room embedding for host products such as Studio
 
 `@agenter/web-chat-view` remains the owner of:
 
@@ -37,7 +38,7 @@ The example owns review-shell concerns that do not belong in the shared package:
 - composer behavior
 - resource completion / resource shelf / preview law
 
-The example now mirrors Framework7's app-shell law:
+The app-view now mirrors Framework7's app-shell law:
 
 - `App / View / Page` own the seeded review surface
 - `Toolbar` owns compact/mobile root destinations
@@ -56,7 +57,20 @@ Style law for this example is stricter than the UX blueprints:
 The example can preload the active review profile from query parameters:
 
 ```txt
-?url=<transportUrl>&token=<accessToken>&viewerActorId=<actorId>&name=<optional-name>
+?url=<transportUrl>&token=<accessToken>&viewer=<contactId>&name=<optional-name>
 ```
 
-The example keeps `viewerActorId` explicit. It does not infer viewer ownership from room labels.
+The app-view keeps the viewer contact explicit. It does not infer viewer ownership from room labels.
+
+## Partial room mode
+
+Studio embeds the same app-view through an iframe and selects a focused room route:
+
+```txt
+?mode=room&room=<chatId>&url=<transportUrl>&token=<viewer-token>&viewer=<contactId>&name=<room-name>
+```
+
+This is still app-view, not a lower-level widget API. The host controls iframe
+size with CSS and switches rooms by changing the URL. Normal transcript state
+flows through the backend/room transport; no resize bridge or event bridge is
+part of the embedding contract.

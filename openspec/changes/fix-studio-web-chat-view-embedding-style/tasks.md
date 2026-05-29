@@ -42,3 +42,18 @@
 - [x] 6.7 Run targeted Studio Storybook DOM contract for `WebChatViewHost`.
 - [x] 6.8 Capture live Studio route evidence from `bun agenter studio --dev` or the active local dev URL when available.
 - [x] 6.9 Update self-review with Round 2 deviations, screenshots, and exit judgment before committing the review update.
+
+## 7. Round 3 Architecture / Build-Style-Loss Investigation
+
+- [x] 7.1 Back up the Round 2 intent document before changing `plans/plan.md`.
+- [x] 7.2 Stop local CSS patching and record the user concern that the remaining issue may be Framework7 shell/build architecture, not individual component geometry.
+- [x] 7.3 Start the full `web-chat-view` review shell on current `main` and repair only non-visual harness API drift needed to make it enter chat state.
+- [x] 7.4 Capture desktop and iPhone 14 evidence from the full review shell.
+- [x] 7.5 Compare the full review shell component topology with Studio's `MessageSystemSurface` embed topology.
+- [x] 7.6 Add BDD/source contracts proving Studio must consume an explicit Web Chat island/shell boundary rather than mounting the leaf `WebChatViewHost` as a whole product surface.
+- [x] 7.7 Clean the lingering `Actor -> Contact` terminology residue in the Studio/Web Chat surface code and visible copy.
+- [x] 7.8 Decide with the user whether the implementation boundary is iframe/custom element or direct Svelte Framework7 island.
+- [x] 7.9 Implement the chosen boundary and remove any Studio-local style workarounds that become unnecessary.
+- [x] 7.10 Re-run desktop and iPhone 14 live-route evidence against Studio and compare it with the full review shell.
+- [x] 7.11 Normalize the `app-view` product name across the review shell entrypoint docs and visible title copy.
+- [x] 7.12 Update self-review with deviation list, retained/reverted Round 1/2 decisions, and future task list before committing.

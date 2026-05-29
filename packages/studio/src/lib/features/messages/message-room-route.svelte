@@ -6,7 +6,7 @@
 		GlobalRoomGrantEntry,
 		GlobalRoomSnapshotOutput,
 	} from '@agenter/client-sdk';
-	import type { WebChatNotice, WebChatVisibleMessageFact } from '@agenter/web-chat-view';
+	import type { WebChatNotice } from '@agenter/web-chat-view';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 
@@ -24,16 +24,6 @@
 	import MessageSystemSurface from './message-system-surface.svelte';
 	import { resolveRoomViewerResolution } from './message-room-viewer';
 	import { MessageRoomViewerPreferenceSource } from './message-room-viewer-preference-source';
-	import {
-		maybeStartRoomReadAck,
-		resolveRoomReadAckKey,
-		resolveRoomReadAckServerFloor,
-		settleRoomReadAckFailure,
-		settleRoomReadAckSuccess,
-		syncRoomReadAckState,
-		type RoomReadAckState,
-	} from './room-read-ack';
-
 	import type {
 		MessageSystemGrantRole,
 		MessageSystemRoomAssetItem,
@@ -98,9 +88,6 @@
 
 	let selectedViewerActorIdByRoomId = $state<Record<string, string>>({});
 	let viewerPreferenceHydrated = $state(false);
-	let latestMarkedReadBySeat = $state<Record<string, RoomReadAckState>>({});
-	let latestVisibleMessageByRoomId = $state<Record<string, WebChatVisibleMessageFact | null>>({});
-	let latestVisibleReplayKeyByRoomId = $state<Record<string, string>>({});
 	let routeNotice = $state<WebChatNotice | null>(null);
 
 	const actorDirectory = $derived(
@@ -141,9 +128,6 @@
 	const selectedRoomProjection = $derived(selectedRoomSnapshot?.channel ?? selectedRoom?.projection ?? null);
 	const selectedRoomChatId = $derived(selectedRoomProjection?.chatId ?? '');
 	const selectedRoomAccessToken = $derived(selectedRoomProjection?.accessToken ?? null);
-	const selectedRoomIconUrl = $derived(
-		selectedRoomProjection ? controller.runtimeStore.roomIconUrl(selectedRoomProjection.chatId) : null,
-	);
 	const selectedRoomGrantsState = $derived(
 		roomId ? (controller.runtimeState.globalRoomGrantsById[roomId] ?? emptyRoomGrantState) : emptyRoomGrantState,
 	);
@@ -154,7 +138,6 @@
 	const authReady = $derived(!controller.initializing);
 	const isAuthenticated = $derived(Boolean(controller.authSession));
 	const authRequired = $derived(authReady && !isAuthenticated);
-	const initialRoomSnapshotResolved = $derived(selectedRoomSnapshotState.loaded || authRequired);
 	const currentAuthActorId = $derived.by(() => {
 		const authId = controller.authSession?.claims.authId;
 		return authId ? (`auth:${authId}` as const) : null;
@@ -427,38 +410,6 @@
 		});
 	};
 
-	const sameVisibleMessageFact = (
-		left: WebChatVisibleMessageFact | null | undefined,
-		right: WebChatVisibleMessageFact | null | undefined,
-	): boolean => {
-		return (
-			(left?.viewKey ?? null) === (right?.viewKey ?? null) &&
-			(left?.messageId ?? null) === (right?.messageId ?? null) &&
-			(left?.rowId ?? null) === (right?.rowId ?? null)
-		);
-	};
-
-	const buildVisibleReplayKey = (viewerActorId: string, visibleMessage: WebChatVisibleMessageFact): string =>
-		`${viewerActorId}:${visibleMessage.viewKey}:${visibleMessage.rowId}`;
-
-	const resolveLatestReplayVisibleMessage = (
-		room: NonNullable<typeof selectedRoomProjection>,
-	): WebChatVisibleMessageFact | null => {
-		const trackedVisibleMessage = latestVisibleMessageByRoomId[room.chatId] ?? null;
-		if (trackedVisibleMessage) {
-			return trackedVisibleMessage;
-		}
-		const latestMessage = selectedRoomSnapshot?.items.at(-1) ?? null;
-		if (!latestMessage || latestMessage.rowId <= 0 || latestMessage.messageId <= 0) {
-			return null;
-		}
-		return {
-			viewKey: String(latestMessage.messageId),
-			messageId: latestMessage.messageId,
-			rowId: latestMessage.rowId,
-		};
-	};
-
 	const handleChangeViewerActorId = (actorId: string): void => {
 		const room = selectedRoomProjection;
 		if (!room) {
@@ -578,109 +529,6 @@
 		routeNotice = null;
 	};
 
-	const handleLatestVisibleMessageIdChange = async (
-		visibleMessage: WebChatVisibleMessageFact | null,
-	): Promise<void> => {
-		const room = selectedRoomProjection;
-		if (room) {
-			const currentVisibleMessage = latestVisibleMessageByRoomId[room.chatId] ?? null;
-			if (!sameVisibleMessageFact(currentVisibleMessage, visibleMessage)) {
-				latestVisibleMessageByRoomId = {
-					...latestVisibleMessageByRoomId,
-					[room.chatId]: visibleMessage,
-				};
-			}
-		}
-		const viewerActorId = selectedViewerActorId;
-		const accessToken = selectedViewerAccessToken;
-		if (!isAuthenticated || !room || !accessToken || !viewerActorId) {
-			return;
-		}
-		if (!visibleMessage) {
-			return;
-		}
-		if (visibleMessage.rowId <= 0) {
-			return;
-		}
-		const { messageId, rowId: targetRowId } = visibleMessage;
-		if (!messageId || messageId <= 0) {
-			return;
-		}
-		const markKey = resolveRoomReadAckKey(room.chatId, viewerActorId);
-		const serverFloor = resolveRoomReadAckServerFloor(selectedRoomSnapshot?.items ?? [], viewerActorId);
-		const currentAckState = syncRoomReadAckState(
-			latestMarkedReadBySeat[markKey],
-			serverFloor,
-		);
-		if (
-			currentAckState.ackedRowId !== (latestMarkedReadBySeat[markKey]?.ackedRowId ?? 0) ||
-			currentAckState.pendingRowId !== (latestMarkedReadBySeat[markKey]?.pendingRowId ?? null)
-		) {
-			latestMarkedReadBySeat = {
-				...latestMarkedReadBySeat,
-				[markKey]: currentAckState,
-			};
-		}
-		const nextAckState = maybeStartRoomReadAck(currentAckState, targetRowId);
-		if (!nextAckState) {
-			return;
-		}
-		latestMarkedReadBySeat = {
-			...latestMarkedReadBySeat,
-			[markKey]: nextAckState,
-		};
-		try {
-			await controller.runtimeStore.markGlobalRoomRead({
-				chatId: room.chatId,
-				accessToken,
-				messageId,
-			});
-			latestMarkedReadBySeat = {
-				...latestMarkedReadBySeat,
-				[markKey]: settleRoomReadAckSuccess(latestMarkedReadBySeat[markKey], targetRowId),
-			};
-		} catch (error) {
-			latestMarkedReadBySeat = {
-				...latestMarkedReadBySeat,
-				[markKey]: settleRoomReadAckFailure(latestMarkedReadBySeat[markKey], targetRowId),
-			};
-			routeNotice = {
-				tone: 'destructive',
-				message: error instanceof Error ? error.message : String(error),
-			};
-		}
-	};
-
-	const handleSendMessage = async (payload: { text: string; assets: File[] }): Promise<void> => {
-		ensureAuthenticated();
-		const room = selectedRoomProjection;
-		const accessToken = selectedCallerToken;
-		if (!room || !accessToken) {
-			throw new Error('message-system seat token is unavailable');
-		}
-		const uploadedAssets =
-			payload.assets.length > 0
-				? await controller.runtimeStore.uploadRoomAssets(room.chatId, accessToken, payload.assets)
-				: [];
-		const result = await controller.runtimeStore.sendGlobalRoomMessage({
-			chatId: room.chatId,
-			accessToken,
-			sendAsActorId:
-				(selectedViewerActorId ? asRoomActorId(selectedViewerActorId) : null) ?? undefined,
-			text: payload.text,
-			assetIds: uploadedAssets.map((asset) => asset.assetId),
-		});
-		if (!result.ok) {
-			const message = result.reason ?? 'message-system send failed';
-			routeNotice = {
-				tone: 'destructive',
-				message,
-			};
-			throw new Error(message);
-		}
-		routeNotice = null;
-	};
-
 	$effect(() => {
 		const sessionId = routeSessionId;
 		if (!sessionId) {
@@ -778,42 +626,17 @@
 		});
 	});
 
-	$effect(() => {
-		const room = selectedRoomProjection;
-		const viewerActorId = selectedViewerActorId;
-		const viewerAccessToken = selectedViewerAccessToken;
-		if (!room || !viewerActorId || !viewerAccessToken) {
-			return;
-		}
-		const latestVisibleMessage = resolveLatestReplayVisibleMessage(room);
-		if (!latestVisibleMessage) {
-			return;
-		}
-		const replayKey = buildVisibleReplayKey(viewerActorId, latestVisibleMessage);
-		if (latestVisibleReplayKeyByRoomId[room.chatId] === replayKey) {
-			return;
-		}
-		latestVisibleReplayKeyByRoomId = {
-			...latestVisibleReplayKeyByRoomId,
-			[room.chatId]: replayKey,
-		};
-		void handleLatestVisibleMessageIdChange(latestVisibleMessage);
-	});
 </script>
 
 <MessageSystemSurface
 	selectedRoom={selectedRoomProjection}
 	authenticated={isAuthenticated}
-	{selectedRoomIconUrl}
 	{archivedRoomCount}
 	roomSeatTruthLoaded={selectedRoomGrantsState.loaded}
-	resolveProfileIconUrl={(reference) => controller.runtimeStore.profileIconUrl(reference)}
-	resolveSessionIconUrl={(sessionId) => controller.runtimeStore.sessionIconUrl(sessionId)}
-	initialMessages={selectedRoomSnapshot?.items ?? []}
-	initialSnapshotResolved={initialRoomSnapshotResolved}
 	roomAssetsState={resolvedRoomAssetsState}
 	routeNotice={chatNotice}
 	{selectedCallerToken}
+	{selectedViewerAccessToken}
 	{selectedViewerActorId}
 	{selectableActors}
 	roomSeatStates={resolvedRoomSeatStates}
@@ -824,6 +647,4 @@
 	onGrantSeat={handleGrantSeat}
 	onToggleSeatFocus={handleToggleSeatFocus}
 	onRevokeSeat={handleRevokeSeat}
-	onSendMessage={handleSendMessage}
-	onLatestVisibleMessageIdChange={handleLatestVisibleMessageIdChange}
 />

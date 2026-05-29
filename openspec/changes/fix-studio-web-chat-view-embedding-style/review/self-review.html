@@ -3,22 +3,29 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Studio Web Chat Embedding Style Self Review</title>
+    <title>Studio Web Chat App-View Embedding Self Review</title>
     <style>
       :root {
         color-scheme: light;
         --ink: #172033;
         --muted: #667085;
         --line: #d8dee9;
-        --paper: #fbfcff;
+        --paper: #f6f8fb;
         --panel: #ffffff;
         --good: #047857;
         --warn: #b45309;
+        --bad: #b42318;
+      }
+
+      * {
+        box-sizing: border-box;
       }
 
       body {
         margin: 0;
-        background: linear-gradient(135deg, #f8fafc 0%, #eef4ff 100%);
+        background:
+          radial-gradient(circle at 16% 10%, rgba(20, 184, 166, 0.14), transparent 30rem),
+          linear-gradient(135deg, #f8fafc 0%, #eef4ff 100%);
         color: var(--ink);
         font-family:
           "IBM Plex Sans",
@@ -28,7 +35,7 @@
       }
 
       main {
-        max-width: 1120px;
+        max-width: 1180px;
         margin: 0 auto;
         padding: 32px 20px 48px;
       }
@@ -37,7 +44,7 @@
       section {
         border: 1px solid var(--line);
         border-radius: 22px;
-        background: color-mix(in srgb, var(--panel) 92%, transparent);
+        background: color-mix(in srgb, var(--panel) 94%, transparent);
         box-shadow: 0 18px 54px rgba(15, 23, 42, 0.08);
       }
 
@@ -51,18 +58,25 @@
       }
 
       h1,
-      h2 {
+      h2,
+      h3 {
         margin: 0;
         letter-spacing: -0.03em;
       }
 
       h1 {
+        max-width: 920px;
         font-size: clamp(2rem, 5vw, 4rem);
         line-height: 0.98;
       }
 
       h2 {
         font-size: 1.2rem;
+      }
+
+      h3 {
+        margin-top: 18px;
+        font-size: 1rem;
       }
 
       p,
@@ -73,119 +87,164 @@
       }
 
       .lede {
-        max-width: 780px;
+        max-width: 820px;
         margin: 16px 0 0;
         color: var(--muted);
         font-size: 1.02rem;
       }
 
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 22px;
+      }
+
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 7px 11px;
+        background: #fff;
+        color: var(--muted);
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .chip.pass {
+        border-color: color-mix(in srgb, var(--good), white 62%);
+        color: var(--good);
+      }
+
       .grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
         gap: 14px;
+        margin-top: 16px;
       }
 
       .card {
         border: 1px solid var(--line);
-        border-radius: 16px;
-        background: var(--paper);
+        border-radius: 18px;
         padding: 16px;
+        background: var(--paper);
       }
 
-      .label {
-        display: inline-flex;
-        border-radius: 999px;
-        background: #ecfdf3;
+      .card strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .status-pass {
         color: var(--good);
-        padding: 0.22rem 0.6rem;
-        font-size: 0.78rem;
-        font-weight: 700;
+        font-weight: 800;
       }
 
-      .label.warn {
-        background: #fff7ed;
+      .status-warn {
         color: var(--warn);
+        font-weight: 800;
       }
 
       table {
         width: 100%;
+        margin-top: 16px;
         border-collapse: collapse;
         overflow: hidden;
         border: 1px solid var(--line);
-        border-radius: 14px;
+        border-radius: 16px;
+        background: #fff;
       }
 
       th,
       td {
         border-bottom: 1px solid var(--line);
-        padding: 10px 12px;
+        padding: 12px;
         text-align: left;
         vertical-align: top;
-      }
-
-      th {
-        background: #f1f5f9;
       }
 
       tr:last-child td {
         border-bottom: 0;
       }
 
+      th {
+        color: var(--muted);
+        font-size: 0.76rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      code {
+        border-radius: 8px;
+        background: #eef2f7;
+        padding: 2px 6px;
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.86em;
+      }
+
+      .shots {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(220px, 0.36fr);
+        gap: 14px;
+        margin-top: 16px;
+        align-items: start;
+      }
+
       figure {
         margin: 0;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        overflow: hidden;
+        background: #fff;
       }
 
       img {
         display: block;
         width: 100%;
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        background: white;
+        height: auto;
       }
 
       figcaption {
-        margin-top: 8px;
+        padding: 10px 12px;
         color: var(--muted);
-        font-size: 0.9rem;
+        font-size: 0.84rem;
       }
 
-      code {
-        border-radius: 6px;
-        background: #eef2ff;
-        padding: 0.12rem 0.32rem;
+      @media (max-width: 760px) {
+        .shots {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
   <body>
     <main>
       <header>
-        <span class="label">Exit judgment: pass after Round 2</span>
-        <h1>Studio Embedded Web Chat Style Review</h1>
+        <h1>Studio now embeds Web Chat through app-view</h1>
         <p class="lede">
-          The shared <code>@agenter/web-chat-view</code> package now owns avatar geometry through scoped Svelte CSS.
-          Round 2 also fixes discloseable read-progress rings by moving trigger sizing to a package-global class that
-          survives the Framework7 <code>Link</code> component-root boundary.
+          Round 4 implements the user-confirmed app-view law: Web Chat is a product surface that can run as a full app or as a partial embedded room view, like Chrome vs Chrome WebView. Studio now loads the room chat through an iframe app-view boundary and keeps superadmin controls outside that boundary.
         </p>
+        <div class="chips">
+          <span class="chip pass">Exit: pass</span>
+          <span class="chip">Change: fix-studio-web-chat-view-embedding-style</span>
+          <span class="chip">Mode: iframe app-view</span>
+          <span class="chip">URL law: viewer=&lt;contactId&gt;</span>
+        </div>
       </header>
 
       <section>
-        <h2>Proof Summary</h2>
+        <h2>Architecture Result</h2>
         <div class="grid">
           <div class="card">
-            <span class="label">BDD</span>
-            <p>Source contract failed first, then passed after <code>ChatAvatar</code> stopped relying on host Tailwind utilities.</p>
+            <strong>Boundary</strong>
+            Studio no longer mounts <code>WebChatViewHost</code> directly as a product surface. It builds an app-view URL and renders <code>message-room-app-view-frame</code>.
           </div>
           <div class="card">
-            <span class="label">DOM</span>
-            <p>Storybook DOM contract passed 9 scenarios, including large embedded actor avatar images and discloseable read indicators.</p>
+            <strong>Runtime ownership</strong>
+            The iframe connects to the backend itself. Normal chat state, send, and read acknowledgement flow through app-view and backend state, not through a Studio event bridge.
           </div>
           <div class="card">
-            <span class="label">Visual</span>
-            <p>Live Studio route screenshots measured two read indicators at <code>20x20</code> on desktop and iPhone 14.</p>
-          </div>
-          <div class="card">
-            <span class="label warn">Deviation</span>
-            <p>Evidence uses the embedded Storybook contract story, not a live backend-backed Studio route.</p>
+            <strong>Terminology</strong>
+            App-view URL and visible copy now use contact language: <code>viewer=&lt;contactId&gt;</code>. The old viewer-actor query parameter is no longer emitted.
           </div>
         </div>
       </section>
@@ -202,24 +261,24 @@
           </thead>
           <tbody>
             <tr>
-              <td>Shared package owns avatar sizing and clipping.</td>
-              <td><code>chat-avatar.svelte</code> scoped CSS; BDD source contract.</td>
-              <td>Pass</td>
+              <td>Studio consumes the full Web Chat product shell instead of rebuilding Framework7 chat topology.</td>
+              <td>Live 4174 screenshot shows iframe src <code>http://127.0.0.1:4293/?mode=room&amp;...&amp;viewer=...</code> and app-view page class <code>review-shell-room-page review-shell-embedded-room-page page</code>.</td>
+              <td class="status-pass">Pass</td>
             </tr>
             <tr>
-              <td>Studio embed does not need emergency route CSS.</td>
-              <td>New Storybook contract passes through <code>WebChatViewHost</code>.</td>
-              <td>Pass</td>
+              <td>Desktop and iPhone 14 both render the embedded chat surface.</td>
+              <td>Desktop metrics: <code>.messages 1184x846</code>, <code>.messagebar 1180x58</code>. iPhone 14 metrics: <code>.messages 324x692</code>, <code>.messagebar 321x56</code>.</td>
+              <td class="status-pass">Pass</td>
             </tr>
             <tr>
-              <td>Bottom-anchored transcript remains stable.</td>
-              <td>Row-size estimator adjusted after DOM contract exposed anchor drift.</td>
-              <td>Pass</td>
+              <td>Studio does not forge iframe-internal chat effects.</td>
+              <td>Route contract asserts no outer <code>markGlobalRoomRead</code>, <code>sendGlobalRoomMessage</code>, or visible-message replay path remains in the Studio route.</td>
+              <td class="status-pass">Pass</td>
             </tr>
             <tr>
-              <td>Read-progress rings stay bounded in the real Studio route.</td>
-              <td>Live <code>127.0.0.1:4173/messages/room/...</code> metrics: two indicators, each <code>20x20</code>.</td>
-              <td>Pass</td>
+              <td>Round 1/2 CSS work does not become the main architectural answer.</td>
+              <td>Leaf geometry fixes stay as package guardrails, while the product embedding path is now app-view iframe.</td>
+              <td class="status-pass">Pass</td>
             </tr>
           </tbody>
         </table>
@@ -227,34 +286,45 @@
 
       <section>
         <h2>Screenshot Evidence</h2>
-        <div class="grid">
+        <div class="shots">
           <figure>
-            <img src="evidence/desktop-embedded-avatar-bounds.png" alt="Desktop embedded web chat avatar bounds" />
-            <figcaption>Desktop viewport: first five message avatars measured <code>26x26</code>.</figcaption>
+            <img src="evidence/studio-app-view-iframe-desktop.png" alt="Desktop Studio app-view iframe evidence" />
+            <figcaption>Desktop route: Studio chrome outside, app-view iframe owns transcript and messagebar.</figcaption>
           </figure>
           <figure>
-            <img src="evidence/iphone14-embedded-avatar-bounds.png" alt="iPhone 14 embedded web chat avatar bounds" />
-            <figcaption>iPhone 14 viewport: avatar geometry remains bounded inside the embedded chat surface.</figcaption>
-          </figure>
-          <figure>
-            <img src="evidence/live-studio-route-read-indicator-bounds.png" alt="Desktop live Studio route read indicator bounds" />
-            <figcaption>Desktop live Studio route: read indicators and SVG rings measured <code>20x20</code>.</figcaption>
-          </figure>
-          <figure>
-            <img src="evidence/live-studio-route-read-indicator-bounds-iphone14.png" alt="iPhone 14 live Studio route read indicator bounds" />
-            <figcaption>iPhone 14 live Studio route: read indicators and SVG rings measured <code>20x20</code>.</figcaption>
+            <img src="evidence/studio-app-view-iframe-iphone14.png" alt="iPhone 14 Studio app-view iframe evidence" />
+            <figcaption>iPhone 14 route: app-view partial room mode renders inside Studio compact shell.</figcaption>
           </figure>
         </div>
       </section>
 
       <section>
-        <h2>Deviations And Questions</h2>
+        <h2>Deviation And Future List</h2>
+        <h3>Plain-language deviations</h3>
         <ol>
-          <li>Round 1 missed the true remaining source: giant rings were read indicators, not avatars.</li>
-          <li>Round 2 added live Studio route screenshots for the exact room URL shown by the user.</li>
-          <li>Storybook dev emitted a dependency pre-scan warning, while targeted DOM tests and iframe screenshots still succeeded.</li>
-          <li>Future question: should this component eventually be isolated through iframe/custom element instead of direct Svelte embedding?</li>
+          <li>Rounds 1 and 2 fixed real leaf-geometry risks, but they were not the complete architecture fix.</li>
+          <li>The correct product law is app-view iframe embedding; Studio owns superadmin chrome, app-view owns chat.</li>
+          <li>The first live verification hit a stale 4292 app-view pointed at the review harness. Isolated 4174/4293 validation used the current daemon proxy and passed.</li>
+          <li>Some lower-level WebChat prop/type names still say actor; this change cleans the app-view and Studio boundary, not the entire public WebChat API.</li>
         </ol>
+        <h3>Future tasks</h3>
+        <ol>
+          <li>Add a stable Studio Messages e2e fixture for screenshot verification without relying on current daemon room data.</li>
+          <li>Open a separate breaking change if the shared WebChat public API should rename actor-facing types to contact-facing types.</li>
+          <li>Polish Studio mobile Messages shell density; the app-view iframe works, but the 66px Studio app rail is a separate Studio IA question.</li>
+          <li>Verify non-dev/static Studio hosting with <code>PUBLIC_WEB_CHAT_VIEW_APP_VIEW_URL</code> once production app-view deployment shape is available.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Verification Commands</h2>
+        <ul>
+          <li><code>bun run --filter '@agenter/web-chat-view-example' typecheck</code></li>
+          <li><code>bun run --filter 'agenter-ext-studio' typecheck</code></li>
+          <li><code>bun run --filter '@agenter/web-chat-view-example' test -- test/review-profile-query-contract.test.ts test/review-people-projection-contract.test.ts</code></li>
+          <li><code>bun run --filter 'agenter-ext-studio' test:unit -- src/lib/features/messages/message-app-view-url.spec.ts src/lib/features/messages/message-room-route-contract.spec.ts</code></li>
+          <li><code>bun agenter studio --dev --web-port 4174</code> plus Playwright screenshots against desktop and iPhone 14.</li>
+        </ul>
       </section>
     </main>
   </body>

@@ -10,17 +10,18 @@ import type { WebChatActorPresentation, WebChatResourceReference } from "@agente
 
 export interface ReviewProfile {
   id: string;
+  appViewMode?: "full" | "room";
   name: string;
   transportUrl: string;
   accessToken: string;
-  viewerActorId: string;
+  viewerContactId: string;
 }
 
 export interface ReviewProfileDraft {
   name: string;
   transportUrl: string;
   accessToken: string;
-  viewerActorId: string;
+  viewerContactId: string;
 }
 
 export interface ReviewBootstrapPayload {

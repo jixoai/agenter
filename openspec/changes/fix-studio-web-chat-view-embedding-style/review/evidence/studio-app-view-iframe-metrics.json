@@ -1,0 +1,72 @@
+{
+  "desktop": {
+    "name": "desktop-studio-app-view-4174",
+    "pageUrl": "http://127.0.0.1:4174/messages/room/0x7e1f461e6dd3fea5ad3945a65e6e16cd1b29dee6",
+    "iframeSrc": "http://127.0.0.1:4293/?mode=room&room=0x7e1f461e6dd3fea5ad3945a65e6e16cd1b29dee6&url=ws%3A%2F%2F127.0.0.1%3A50914%2Froom%2F0x7e1f461e6dd3fea5ad3945a65e6e16cd1b29dee6%3Ftoken%3Dmsgtok_610b2fec2e9645fe8f3c1b0a17bc31ee&token=msgtok_610b2fec2e9645fe8f3c1b0a17bc31ee&viewer=auth%3A0x4d09cd1bae93aaa22aac03258bf5bc665e6a647c&name=shell-15",
+    "iframeBox": {
+      "x": 256,
+      "y": 95,
+      "width": 1184,
+      "height": 905
+    },
+    "frameText": "SA\nTrusted bootstrap\n\n你好，现在几点？\n\n你好！现在是 2026-05-29 08:07 UTC（北京时间 16:07）。\nA\n你好，现在几点？\nMessage room\n\nEnter to send, Shift+Enter for newline\nSend",
+    "appViewFacts": {
+      "url": "http://127.0.0.1:4293/?mode=room&room=0x7e1f461e6dd3fea5ad3945a65e6e16cd1b29dee6&url=ws%3A%2F%2F127.0.0.1%3A50914%2Froom%2F0x7e1f461e6dd3fea5ad3945a65e6e16cd1b29dee6%3Ftoken%3Dmsgtok_610b2fec2e9645fe8f3c1b0a17bc31ee&token=msgtok_610b2fec2e9645fe8f3c1b0a17bc31ee&viewer=auth%3A0x4d09cd1bae93aaa22aac03258bf5bc665e6a647c&name=shell-15",
+      "title": "web-chat-view app-view",
+      "hasFramework7App": true,
+      "pageClass": "review-shell-room-page review-shell-embedded-room-page page",
+      "webChatHostRect": null,
+      "messagesRect": {
+        "width": 1184,
+        "height": 846
+      },
+      "messagebarRect": {
+        "width": 1180,
+        "height": 58
+      }
+    },
+    "logs": [
+      "debug: [vite] connecting...",
+      "debug: [vite] connected.",
+      "error: Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "debug: [vite] connecting...",
+      "debug: [vite] connected.",
+      "warning: Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information."
+    ]
+  },
+  "mobile": {
+    "name": "iphone14-studio-app-view-4174",
+    "pageUrl": "http://127.0.0.1:4174/messages/room/0xebbdffb989521177841d8bed3b62c88ad5761d3b",
+    "iframeSrc": "http://127.0.0.1:4293/?mode=room&room=0xebbdffb989521177841d8bed3b62c88ad5761d3b&url=ws%3A%2F%2F127.0.0.1%3A50914%2Froom%2F0xebbdffb989521177841d8bed3b62c88ad5761d3b%3Ftoken%3Dmsgtok_03da4fe553884e36887eae4f0085e049&token=msgtok_03da4fe553884e36887eae4f0085e049&viewer=auth%3A0x4d09cd1bae93aaa22aac03258bf5bc665e6a647c&name=shell-16",
+    "iframeBox": {
+      "x": 66,
+      "y": 95,
+      "width": 324,
+      "height": 749
+    },
+    "frameText": "No messages yet\n\nSend a message to start this chat channel.\n\nMessage room\n\nEnter to send, Shift+Enter for newline\nSend",
+    "appViewFacts": {
+      "url": "http://127.0.0.1:4293/?mode=room&room=0xebbdffb989521177841d8bed3b62c88ad5761d3b&url=ws%3A%2F%2F127.0.0.1%3A50914%2Froom%2F0xebbdffb989521177841d8bed3b62c88ad5761d3b%3Ftoken%3Dmsgtok_03da4fe553884e36887eae4f0085e049&token=msgtok_03da4fe553884e36887eae4f0085e049&viewer=auth%3A0x4d09cd1bae93aaa22aac03258bf5bc665e6a647c&name=shell-16",
+      "title": "web-chat-view app-view",
+      "hasFramework7App": true,
+      "pageClass": "review-shell-room-page review-shell-embedded-room-page page",
+      "webChatHostRect": null,
+      "messagesRect": {
+        "width": 324,
+        "height": 692
+      },
+      "messagebarRect": {
+        "width": 321,
+        "height": 56
+      }
+    },
+    "logs": [
+      "debug: [vite] connecting...",
+      "debug: [vite] connected.",
+      "error: Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "debug: [vite] connecting...",
+      "debug: [vite] connected.",
+      "warning: Lit is in dev mode. Not recommended for production! See https://lit.dev/msg/dev-mode for more information."
+    ]
+  }
+}

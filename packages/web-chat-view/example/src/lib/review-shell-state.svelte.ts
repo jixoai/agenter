@@ -12,7 +12,7 @@ import {
   type ReviewShellDestination,
   type ReviewSourceProjection,
 } from "./review-people.projection";
-import { fetchReviewChannel, fetchReviewPeople, submitReviewMessage } from "./review-example.api";
+import { fetchReviewChannel, fetchReviewPeople, markReviewMessageRead, submitReviewMessage } from "./review-example.api";
 import { resolveActorPresentation } from "./review-example.channel";
 import { buildShareQuery, parseImportedProfile } from "./review-example.query";
 import { clearStoredProfiles, loadStoredProfiles, saveStoredProfiles } from "./review-example.storage";
@@ -29,7 +29,7 @@ const defaultDraft = (): ReviewProfileDraft => ({
   name: "Local review room",
   transportUrl: "",
   accessToken: "",
-  viewerActorId: "",
+  viewerContactId: "",
 });
 
 const readErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -71,6 +71,7 @@ export class ReviewShellState {
   debugLastAction = $state("boot");
   shellPanelOpen = $state(false);
   activeDestination = $state<ReviewShellDestination>("messages");
+  appViewMode = $state<"full" | "room">("full");
   roomOpen = $state(false);
   selectedContactKey = $state<string | null>(null);
   sourcesOpen = $state(false);
@@ -161,14 +162,14 @@ export class ReviewShellState {
     }
     return "Messages";
   });
-  activeActorProfile = $derived.by(() => {
-    const actor = this.peopleEnvelope?.currentActor;
-    if (actor) {
-      return actor;
+  activeContactProfile = $derived.by(() => {
+    const contact = this.peopleEnvelope?.currentActor;
+    if (contact) {
+      return contact;
     }
     return this.activeProfile
       ? {
-          actorId: this.activeProfile.viewerActorId,
+          actorId: this.activeProfile.viewerContactId,
           label: this.activeProfile.name,
           iconUrl: undefined,
         }
@@ -178,17 +179,18 @@ export class ReviewShellState {
     createContactMentionSuggestions(this.peopleProjection.contacts),
   );
   activeProfileSummary = $derived(this.activeProfile?.name ?? "Connect a review room");
-  activeProfileMeta = $derived(this.activeProfile?.viewerActorId ?? "Transport URL + token + viewer actor id");
+  activeProfileMeta = $derived(this.activeProfile?.viewerContactId ?? "Transport URL + token + viewer contact id");
 
   private copiedResetHandle = 0;
 
   applyProfileToDraft(profile: ReviewProfile): void {
+    this.appViewMode = profile.appViewMode ?? "full";
     this.selectedProfileId = profile.id;
     this.draft = {
       name: profile.name,
       transportUrl: profile.transportUrl,
       accessToken: profile.accessToken,
-      viewerActorId: profile.viewerActorId,
+      viewerContactId: profile.viewerContactId,
     };
   }
 
@@ -238,10 +240,11 @@ export class ReviewShellState {
     try {
       const normalized: ReviewProfile = {
         id: this.selectedProfileId ?? crypto.randomUUID(),
+        appViewMode: "full",
         name: this.draft.name.trim() || "Review room",
         transportUrl: this.draft.transportUrl.trim(),
         accessToken: this.draft.accessToken.trim(),
-        viewerActorId: this.draft.viewerActorId.trim(),
+        viewerContactId: this.draft.viewerContactId.trim(),
       };
       const others = this.profiles.filter((profile) => profile.id !== normalized.id);
       await this.persistProfiles([normalized, ...others], normalized.id);
@@ -281,6 +284,7 @@ export class ReviewShellState {
 
   async resetProfiles(): Promise<void> {
     await clearStoredProfiles();
+    this.appViewMode = "full";
     this.profiles = [];
     this.selectedProfileId = null;
     this.draft = defaultDraft();
@@ -312,7 +316,17 @@ export class ReviewShellState {
     if (!this.activeProfile) {
       throw new Error("No active review profile");
     }
+    if (this.activeProfile.appViewMode === "room") {
+      throw new Error("Embedded app-view sends text through the room transport.");
+    }
     await submitReviewMessage(this.activeProfile, payload);
+  }
+
+  async markLatestVisibleMessageRead(messageId: number): Promise<void> {
+    if (!this.activeProfile) {
+      return;
+    }
+    await markReviewMessageRead(this.activeProfile, messageId);
   }
 
   openDestination(destination: ReviewShellDestination): void {
@@ -402,6 +416,17 @@ export class ReviewShellState {
     this.errorMessage = null;
     try {
       const imported = parseImportedProfile(currentUrl);
+      this.appViewMode = imported?.appViewMode ?? "full";
+      if (imported?.appViewMode === "room") {
+        this.profiles = [imported];
+        this.selectedProfileId = imported.id;
+        this.applyProfileToDraft(imported);
+        await this.refreshChannelFor(imported);
+        this.activeDestination = "messages";
+        this.roomOpen = true;
+        this.shellPanelOpen = false;
+        return;
+      }
       let stored: ReviewProfile[] = [];
       try {
         stored = await loadStoredProfiles();
@@ -433,6 +458,7 @@ export class ReviewShellState {
         return;
       }
       this.applyProfileToDraft(selected);
+      this.appViewMode = selected.appViewMode ?? "full";
       await this.refreshChannelFor(selected);
     } catch (error) {
       this.channelEnvelope = null;

@@ -295,6 +295,14 @@ const roomSendBodySchema = z
   })
   .strict();
 
+const roomMarkReadBodySchema = z
+  .object({
+    chatId: z.string().trim().min(1),
+    accessToken: z.string().trim().min(1),
+    messageId: z.number().int().positive(),
+  })
+  .strict();
+
 const roomEditBodySchema = z
   .object({
     chatId: z.string().trim().min(1),
@@ -731,6 +739,24 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
           sendJson(res, 200, result);
         } catch (error) {
           sendJson(res, 400, { ok: false, reason: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/trpc/message.globalMarkRead" && !isBatchedTrpcHttpRequest(url)) {
+      setCors(res, allowedOrigin);
+      void (async () => {
+        try {
+          const body = roomMarkReadBodySchema.parse(await readJsonBody(req));
+          const channel = kernel.markGlobalRoomRead({
+            chatId: body.chatId,
+            accessToken: body.accessToken,
+            messageId: body.messageId,
+          });
+          sendJson(res, 200, { channel });
+        } catch (error) {
+          sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
         }
       })();
       return;

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { CachedResourceState, GlobalRoomEntry, GlobalRoomSnapshotOutput } from '@agenter/client-sdk';
-	import type { WebChatNotice, WebChatVisibleMessageFact } from '@agenter/web-chat-view';
+	import type { CachedResourceState, GlobalRoomEntry } from '@agenter/client-sdk';
+	import type { WebChatNotice } from '@agenter/web-chat-view';
 	import { untrack } from 'svelte';
 
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
@@ -28,14 +28,8 @@
 		fixture?: HarnessFixture;
 	} = $props();
 
-	type RoomMessage = GlobalRoomSnapshotOutput['items'][number];
-	type RoomActorId = RoomMessage['readContactIds'][number];
 	type HarnessFixture = 'default' | 'control-only' | 'readonly-viewer';
 
-		const isRoomActorId = (actorId: string): actorId is RoomActorId =>
-			actorId.startsWith('auth:') || actorId.startsWith('session:') || actorId.startsWith('system:');
-		const normalizeRoomActorIds = (actorIds: readonly string[]): RoomActorId[] =>
-			[...new Set(actorIds.filter(isRoomActorId))].sort();
 		const storySourceSystemId = '0x0000000000000000000000000000000000000001' as const;
 
 	const createRoomEntry = (input: {
@@ -88,27 +82,6 @@
 	];
 
 	const initialRoomId = 'room-ops';
-	const initialMessages = {
-		[initialRoomId]: [
-			{
-				rowId: 1,
-					messageId: 1,
-					chatId: initialRoomId,
-					sourceSystemId: storySourceSystemId,
-					senderContactId: 'system:trusted-bootstrap',
-				from: 'Bootstrap admin',
-				kind: 'text',
-				content: 'Current operator room is live.',
-				createdAt: 1_710_000_000_000,
-				updatedAt: 1_710_000_000_000,
-				visibleAt: 1_710_000_000_000,
-				readContactIds: normalizeRoomActorIds(['auth:analyst']),
-				unreadContactIds: normalizeRoomActorIds([]),
-				metadata: {},
-				attachments: [],
-			},
-		],
-	} satisfies Record<string, GlobalRoomSnapshotOutput['items']>;
 	const initialRoomAssets: Record<string, MessageSystemRoomAssetItem[]> = {
 		[initialRoomId]: [
 			{
@@ -178,11 +151,9 @@
 					: [...defaultInitialSeats],
 	});
 
-	let messageCounter = $state(2);
 	let selectedRoomId = $state(initialRoomId);
 	let routeNotice: WebChatNotice | null = $state(null);
 	let selectedViewerActorIdByRoomId = $state<Record<string, string>>(createInitialViewerSelection(initialFixture));
-	let roomMessagesById: Record<string, GlobalRoomSnapshotOutput['items']> = $state(initialMessages);
 	let roomAssetsById: Record<string, MessageSystemRoomAssetItem[]> = $state(initialRoomAssets);
 	let roomSeatsById = $state<Record<string, MessageSystemRoomSeatState[]>>(createInitialSeatState(initialFixture));
 	let roomsState: CachedResourceState<GlobalRoomEntry[]> = $state({
@@ -218,7 +189,6 @@
 				}),
 			),
 	);
-	const selectedMessages = $derived(roomMessagesById[selectedRoomId] ?? []);
 	const roomSeatStates = $derived(roomSeatsById[selectedRoomId] ?? []);
 	const roomAssetsState = $derived(
 		({
@@ -267,6 +237,15 @@
 		}
 		return sendAsOptions.find((option) => option.participantId === viewerActorId)?.accessToken ?? null;
 	});
+	const selectedViewerAccessToken = $derived.by(() => {
+		const room = selectedRoom;
+		const viewerActorId = selectedViewerActorId;
+		if (!room || !viewerActorId) {
+			return null;
+		}
+		const viewerSeat = roomSeatStates.find((seat) => seat.actorId === viewerActorId) ?? null;
+		return viewerSeat?.accessToken ?? (room.participantId === viewerActorId ? room.accessToken ?? null : null);
+	});
 
 	const updateRoomEntry = (chatId: string, updater: (room: GlobalRoomEntry) => GlobalRoomEntry): void => {
 		roomsState = {
@@ -276,12 +255,10 @@
 		};
 	};
 
-	const syncRoomMetadata = (chatId: string): void => {
-		const messages = roomMessagesById[chatId] ?? [];
-		const latestMessage = messages.at(-1);
+	const bumpRoomUpdatedAt = (chatId: string): void => {
 		updateRoomEntry(chatId, (room) => ({
 			...room,
-			updatedAt: latestMessage?.updatedAt ?? room.updatedAt,
+			updatedAt: Date.now(),
 		}));
 	};
 
@@ -359,7 +336,7 @@
 				? entry.participants
 				: [...entry.participants, { id: input.participantId, label: actor.label }],
 		}));
-		syncRoomMetadata(room.chatId);
+		bumpRoomUpdatedAt(room.chatId);
 	};
 
 	const handleToggleSeatFocus = async (input: {
@@ -393,89 +370,7 @@
 			...roomSeatsById,
 			[room.chatId]: (roomSeatsById[room.chatId] ?? []).filter((seat) => seat.grantId !== input.grantId),
 		};
-		syncRoomMetadata(room.chatId);
-	};
-
-	const handleSendMessage = async (input: { text: string; assets: File[] }): Promise<void> => {
-		const room = selectedRoom;
-		const selectedToken = selectedCallerToken;
-		if (!room || !selectedToken) {
-			return;
-		}
-		messageCounter += 1;
-		const senderOption = sendAsOptions.find((option) => option.accessToken === selectedToken);
-		const sender = senderOption?.label ?? 'Bootstrap admin';
-		const senderContactId = (senderOption?.participantId ??
-			'system:trusted-bootstrap') as GlobalRoomSnapshotOutput['items'][number]['senderContactId'];
-		roomMessagesById = {
-			...roomMessagesById,
-			[room.chatId]: [
-				...(roomMessagesById[room.chatId] ?? []).map((message) => ({
-					...message,
-				})),
-				{
-						rowId: messageCounter,
-						messageId: messageCounter,
-						chatId: room.chatId,
-						sourceSystemId: storySourceSystemId,
-						senderContactId,
-					from: sender,
-					kind: 'text',
-					content: input.text,
-					createdAt: 1_710_000_000_000 + messageCounter * 1_000,
-					updatedAt: 1_710_000_000_000 + messageCounter * 1_000,
-					visibleAt: 1_710_000_000_000 + messageCounter * 1_000,
-					readContactIds:
-						senderContactId === 'system:trusted-bootstrap'
-							? normalizeRoomActorIds([])
-							: normalizeRoomActorIds(
-									(roomSeatsById[room.chatId] ?? [])
-									.filter((seat) => seat.actorId === senderContactId)
-									.map((seat) => seat.actorId),
-								),
-					unreadContactIds: normalizeRoomActorIds(
-						(roomSeatsById[room.chatId] ?? [])
-							.map((seat) => seat.actorId)
-							.filter((actorId) => actorId !== senderContactId),
-					),
-					metadata: {},
-					attachments: [],
-				},
-			],
-		};
-		syncRoomMetadata(room.chatId);
-	};
-
-	const handleLatestVisibleMessageIdChange = async (
-		visibleMessage: WebChatVisibleMessageFact | null,
-	): Promise<void> => {
-		const room = selectedRoom;
-		if (!room || !visibleMessage || !visibleMessage.messageId) {
-			return;
-		}
-		const actorId = selectedViewerActorId;
-		if (!actorId) {
-			return;
-		}
-		if (visibleMessage.rowId <= 0) {
-			return;
-		}
-		const targetRowId = visibleMessage.rowId;
-		roomMessagesById = {
-			...roomMessagesById,
-			[room.chatId]: (roomMessagesById[room.chatId] ?? []).map((message) =>
-				message.rowId > targetRowId
-					? message
-					: {
-							...message,
-							readContactIds: normalizeRoomActorIds([...(message.readContactIds ?? []), actorId]),
-							unreadContactIds: normalizeRoomActorIds(
-								(message.unreadContactIds ?? []).filter((candidateActorId) => candidateActorId !== actorId),
-							),
-						},
-			),
-		};
-		syncRoomMetadata(room.chatId);
+		bumpRoomUpdatedAt(room.chatId);
 	};
 
 	const handleViewerActorIdChange = (actorId: string): void => {
@@ -505,11 +400,10 @@
 				roomSeatTruthLoaded={true}
 				{disableManageDialogPortal}
 				{initialManageDialogSection}
-				initialMessages={selectedMessages}
-				initialSnapshotResolved={true}
-				{roomAssetsState}
+					{roomAssetsState}
 				{routeNotice}
 				{selectedCallerToken}
+				{selectedViewerAccessToken}
 				{selectedViewerActorId}
 				selectableActors={actorCatalog}
 				{roomSeatStates}
@@ -517,12 +411,10 @@
 				onSaveRoomTitle={handleSaveRoomTitle}
 				onArchiveRoom={handleArchiveRoom}
 				onDeleteRoom={handleDeleteRoom}
-				onGrantSeat={handleGrantSeat}
-				onToggleSeatFocus={handleToggleSeatFocus}
-				onRevokeSeat={handleRevokeSeat}
-				onSendMessage={handleSendMessage}
-				onLatestVisibleMessageIdChange={handleLatestVisibleMessageIdChange}
-			/>
+					onGrantSeat={handleGrantSeat}
+					onToggleSeatFocus={handleToggleSeatFocus}
+					onRevokeSeat={handleRevokeSeat}
+				/>
 		</WorkbenchWindow>
 	</div>
 </Tooltip.Provider>
