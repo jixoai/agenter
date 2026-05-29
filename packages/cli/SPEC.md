@@ -20,7 +20,7 @@
 - CLI package 不拥有 active Studio static asset root、Vite dev-server startup 或 asset-copy pipeline。
 - product package resolution 固定遵守 `workspace > installed package > configured remote runner`。
 - launcher 创建的 product 进程必须以前台交互模式运行，继承当前 shell-terminal 的 stdio，并传播原始退出码。
-- 如果 launcher 为 product command 临时启动了 daemon，则 launcher 负责在 product 退出后清理；若 daemon 先于 launcher 存在，则 launcher 不得接管其生命周期。
+- product command launcher 只负责确保或复用当前 runtime home root 的 managed daemon authority；product 前台进程退出不得停止 daemon 或 daemon-owned resources。daemon 关闭只属于显式 `agenter daemon stop` / `restart` 生命周期动作。
 - 本机 loopback auto-start 路径必须以 runtime home root 为单一 daemon authority discovery 作用域：先复用健康的 same-root daemon descriptor，再决定是否启动新的本地 daemon；product 不得自建第二套 daemon 发现真源。
 - `agenter daemon` 必须支持显式 `start` / `stop` / `restart` 生命周期动作；默认动作是 `start`。
 - `agenter daemon start` 必须只负责为当前 runtime home root 拉起后台 daemon、等待健康并立即把控制权还给调用终端；真正长期运行的 server 必须在独立后台进程中承载。

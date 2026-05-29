@@ -6,40 +6,44 @@ Shell-next currently has the right high-level split:
 - Terminal semantics already live in source-owned adapters and `@agenter/termless-backend-utils`.
 - Product-level app code still owns global shortcuts, top-layer orchestration, and attach/runtime lifecycle.
 
-The remaining gap is not “more generic input plumbing”. It is an exit-mode boundary:
+The remaining gap is not “more generic input plumbing”. It is an ownership boundary:
 
-- `Run in Background` must be a non-destructive exit mode.
+- `Run in Background` is the same as closing a native terminal window/tab: it closes the shell-next attach client.
 - `Terminate terminal` must remain the destructive exit mode.
+- Product command launch must not create an in-process daemon and stop it when the foreground product exits.
 
 The input-boundary question is smaller. It is a verification pass to ensure no terminal-specific semantic handling has leaked back up into shell-next app/view code.
 
 ## Goals
 
-- Make background exit and terminal termination two different product outcomes.
+- Make background exit a plain attach-client close, not a terminal/resource lifecycle action.
 - Keep attached terminals selectable after a background exit.
+- Ensure product commands run against a managed daemon authority whose lifecycle is explicit daemon start/stop/restart, not foreground product lifetime.
 - Keep terminal-specific input semantics owned by the terminal source/backend boundary.
 - Leave `extensions/cli-shell` untouched.
 
 ## Decisions
 
-### 1. Exit mode must be explicit
+### 1. Background close is not a resource lifecycle mode
 
-`ShellNextApp` should not just resolve `finished`; it should remember how it exited.
+`ShellNextApp` should only model the foreground UI attachment ending.
 
-- `background-run` means close the UI and preserve the attached terminal binding.
-- `background-run` may detach a product-bound view transport so the shell-next process can exit, but it must not stop the durable PTY.
-- `terminate` means close the UI and stop/kill the attached terminal.
+- `Run in Background` closes the UI and disposes only local renderer/source/client resources.
+- Product-bound live source `dispose()` disconnects the local mirror/transport; it does not stop the durable PTY.
+- Local Bun PTY source `dispose()` closes its local process because local mode has no daemon-owned durable terminal.
+- `Terminate terminal` is the only close-confirm action that calls terminal source `terminate()`.
 
-This avoids a future regression where both close buttons converge on the same teardown path.
+This avoids inventing a special `detach` lifecycle action in shell-next just to describe ordinary client close.
 
-### 2. Product runtime must branch on exit mode
+### 2. Product launcher owns daemon authority, not daemon shutdown
 
-The attach runtime should not infer lifecycle intent from `app.finished` alone.
+The real disappearing-selector failure came from the CLI product launcher starting an in-process daemon and stopping it when the product returned. That stopped TerminalSystem and removed live shell-next terminals.
 
-- Background exit should skip any destructive cleanup that would hide or kill the attached terminal.
-- Terminal termination should keep the current destructive cleanup.
+- Product command launch should ensure or reuse a managed background daemon authority.
+- Foreground product exit should never stop the daemon or daemon-owned terminals.
+- `agenter daemon stop` and `agenter daemon restart` remain the explicit daemon shutdown authorities.
 
-If the current server/client boundary does not yet expose a dedicated detach path, that gap must be named rather than hidden behind a generic close.
+The attach runtime can still call `store.disconnect()` and `client.close()` because those release local SDK transport/subscription resources, not daemon-owned PTYs.
 
 ### 3. Terminal input stays below the app layer
 
@@ -74,8 +78,8 @@ If any terminal-specific input logic is still found in shell-next app/view code,
 
 ## Implementation Shape
 
-1. Add an explicit shell-next exit-mode signal.
-2. Thread that signal through close-confirm and product runtime.
-3. Keep terminal termination destructive and background exit non-destructive.
+1. Change product command launch to ensure/reuse a managed daemon authority instead of owning an in-process daemon handle.
+2. Remove shell-next `background-run` detach/outcome plumbing.
+3. Let `Run in Background` call normal app destroy; let `Terminate terminal` explicitly call `terminate()` before app destroy.
 4. Audit shell-next input handlers and leave only product-global routing above the terminal boundary.
 5. Re-run focused BDD, then self-review the drift list in plain language.

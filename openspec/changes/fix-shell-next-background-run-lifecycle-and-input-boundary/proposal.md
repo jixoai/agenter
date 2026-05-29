@@ -16,9 +16,10 @@ This change exists to turn those statements into explicit behavior instead of le
 
 ## What Changes
 
-- Add an explicit shell-next exit outcome for `background-run` vs `terminate`.
+- Remove the old shell-next background-run lifecycle branch; background-run is just UI attach-client close.
 - Preserve the attached terminal binding when the user chooses `Run in Background`.
 - Keep terminal termination destructive only on the `Terminate terminal` path.
+- Ensure product command launch uses a managed daemon authority that is not stopped when the foreground product process exits.
 - Re-run the input ownership audit and keep terminal-specific mouse/keyboard semantics inside the terminal source/backend boundary.
 - Keep shell-next app/view code as product-global routing, raw event forwarding, and visual projection only.
 - Add BDD coverage for the lifecycle split and the boundary audit.
@@ -39,6 +40,6 @@ These user statements are the source of truth for this change:
 
 ## Impact
 
-- Affects `extensions/shell-next` product runtime, close-confirm flow, and terminal source ownership.
-- May touch `packages/client-sdk` or app-server lifecycle plumbing if the current attach/close path still collapses background and terminate into one shutdown mode.
+- Affects `packages/cli` product daemon bootstrap and `extensions/shell-next` attach-client close-confirm flow.
+- May touch `packages/client-sdk` or app-server lifecycle plumbing only if a real transport close is proven to stop daemon-owned resources.
 - Adds a focused regression story for the next OpenSpec pass.

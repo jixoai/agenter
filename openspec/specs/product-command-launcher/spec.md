@@ -125,10 +125,12 @@ The product command launcher SHALL ensure or reuse a local daemon and pass conne
 - **AND** it receives `AGENTER_PRODUCT_PACKAGE=agenter-ext-shell`
 - **AND** it receives `AGENTER_PRODUCT_SOURCE` as `workspace`, `installed`, or `remote`
 
-#### Scenario: Launcher cleans up daemon it owns
-- **WHEN** the launcher starts a daemon only for the product command
-- **THEN** it owns cleanup of that daemon after the product exits
-- **AND** it does not stop a daemon that was already running before product launch
+#### Scenario: Product foreground exit does not stop the managed daemon
+- **WHEN** the launcher ensures a managed daemon authority for a product command
+- **AND** the foreground product process exits
+- **THEN** the launcher does not stop the daemon
+- **AND** daemon-owned resources remain under daemon lifecycle control
+- **AND** explicit `agenter daemon stop` or `agenter daemon restart` owns daemon shutdown
 
 #### Scenario: Launcher reuses healthy daemon authority for the same runtime root
 - **GIVEN** one healthy local daemon already owns the same runtime home root but is listening on a different loopback port than the launcher's default request

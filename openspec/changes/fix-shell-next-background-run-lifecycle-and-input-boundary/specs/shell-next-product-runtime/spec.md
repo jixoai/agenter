@@ -2,14 +2,14 @@
 
 ### Requirement: Background close SHALL preserve the attached terminal binding
 
-When a user chooses `Run in Background`, shell-next SHALL close the current UI without disposing the attached terminal source or turning the attached terminal into dead history.
+When a user chooses `Run in Background`, shell-next SHALL close the current UI attachment without stopping the daemon-owned PTY or turning the attached terminal into dead history.
 
 #### Scenario: Background close preserves the attached terminal
 - **GIVEN** a product-bound terminal pane is open
 - **WHEN** the user opens close confirmation and chooses `Run in Background`
 - **THEN** shell-next exits the UI
 - **AND** the attached terminal source is not terminated
-- **AND** product-bound live sources may detach their view transport so the shell-next process can exit
+- **AND** product-bound live sources may dispose their local mirror/transport so the shell-next process can exit
 - **AND** the same terminal remains available on the next attach
 
 #### Scenario: Background close does not perform terminate cleanup
@@ -17,6 +17,17 @@ When a user chooses `Run in Background`, shell-next SHALL close the current UI w
 - **WHEN** the user chooses `Run in Background`
 - **THEN** shell-next does not run the terminate path
 - **AND** it does not kill the underlying PTY
+
+### Requirement: Product command foreground exit SHALL NOT stop daemon-owned resources
+
+Shell-next product commands SHALL run against a managed daemon authority whose lifecycle is independent from the foreground shell-next process.
+
+#### Scenario: Foreground shell-next process exits while daemon resources remain live
+- **GIVEN** a product command launch needs daemon-backed shell-next resources
+- **WHEN** the launcher ensures a managed daemon authority
+- **AND** the foreground shell-next process exits after a background close
+- **THEN** the launcher does not stop the daemon
+- **AND** daemon-owned TerminalSystem entries remain live and selectable on the next attach
 
 ### Requirement: Terminal termination SHALL remain destructive
 
