@@ -56,7 +56,7 @@
 
 ## 10. Temp Worktree Acceptance
 
-- [ ] 10.1 In a temporary worktree, prove Here Document handoff files are not ignored and can become Git evidence.
+- [x] 10.1 In a temporary worktree, prove Here Document handoff files are not ignored and can become Git evidence.
 - [x] 10.2 Add a BDD guard for repository ignore rules around change-local `HANDOFF.md` and `vN.HANDOFF.md`.
 - [x] 10.3 Re-run focused controller tests and strict OpenSpec validation after the ignore-rule fix.
-- [ ] 10.4 Re-run the temporary worktree acceptance flow from the updated source HEAD.
+- [x] 10.4 Re-run the temporary worktree acceptance flow from the updated source HEAD.
