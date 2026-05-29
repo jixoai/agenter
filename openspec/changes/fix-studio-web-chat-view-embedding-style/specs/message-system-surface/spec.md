@@ -27,3 +27,12 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 - **THEN** `chat` shows the shared transcript/composer surface
 - **THEN** `assets` shows the room-owned asset list
 - **THEN** the room body does not add a second room header or toolbar inside `page_content`
+
+#### Scenario: Studio embeds the Web Chat island, not only the leaf transcript
+- **WHEN** Studio renders a selected room in chat mode
+- **THEN** the room body loads the Web Chat app-view through an iframe app-view boundary
+- **AND** the iframe URL selects partial room mode with explicit room transport URL, viewer token, and viewer contact id
+- **AND** app-view owns the Framework7 `App/View/Page/messagesContent` responsibilities needed by the chat transcript and composer
+- **AND** Studio keeps room tabs, asset switching, search, and superadmin management controls outside that island
+- **AND** Studio does not rely on Workbench layout containers to impersonate Framework7 page topology
+- **AND** Studio does not introduce resize or event bridges for ordinary transcript state, because the backend is the shared source of truth
