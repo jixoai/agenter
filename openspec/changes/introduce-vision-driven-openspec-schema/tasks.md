@@ -44,5 +44,5 @@
 
 - [x] 8.1 Add BDD tests for Git evidence guidance, handoff generation, handoff versioning, and rename behavior.
 - [x] 8.2 Run `bun test scripts/openspec/vision-driven.test.ts`.
-- [ ] 8.3 Run `openspec validate introduce-vision-driven-openspec-schema --type change --strict`.
-- [ ] 8.4 Run `openspec validate --specs --strict`.
+- [x] 8.3 Run `openspec validate introduce-vision-driven-openspec-schema --type change --strict`.
+- [x] 8.4 Run `openspec validate --specs --strict`.
