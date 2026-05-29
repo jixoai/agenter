@@ -1,19 +1,17 @@
 import type {
   TerminalTransportOwnerCoordinate,
-  TerminalTransportSelectionRange,
   TerminalTransportSelectionOverlay,
+  TerminalTransportSelectionRange,
 } from "@agenter/terminal-transport-protocol";
 import {
-  XtermBridge,
   createTerminalHostInputController,
-  renderStructuredViewportBuffer,
-  type TerminalBackendKind,
   type TerminalHostInputTarget,
   type TerminalHostKeyEvent,
   type TerminalHostPointerDispatchResult,
   type TerminalHostPointerInput,
   type TerminalKeyboardInteractionView,
-} from "@agenter/termless-core";
+} from "@agenter/termless-backend-utils";
+import { XtermBridge, renderStructuredViewportBuffer, type TerminalBackendKind } from "@agenter/termless-core";
 
 import {
   createBunPtyPaneSource,

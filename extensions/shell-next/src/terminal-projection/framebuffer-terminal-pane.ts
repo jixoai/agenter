@@ -1,11 +1,12 @@
-import type { TerminalHostPointerInput, TerminalRenderRichLine } from "@agenter/termless-core";
+import type { TerminalHostPointerInput } from "@agenter/termless-backend-utils";
+import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import { BoxRenderable, type CliRenderer, type MouseEvent, type Renderable } from "@opentui/core";
 import { OpenComposeTerminalFrameRenderable } from "../opencompose/terminal-frame/terminal-frame-renderable";
 
-import type { ChildLayoutNode, LayoutRect } from "../renderable-mux/layout";
 import { ShellNextButtonPressController } from "../renderable-mux/button-press-controller";
-import type { TerminalPaneFactory, TerminalPaneFactoryInput } from "../renderable-mux/mux-renderable";
 import { SHELL_NEXT_CLIPBOARD_TARGETS } from "../renderable-mux/host-copy";
+import type { ChildLayoutNode, LayoutRect } from "../renderable-mux/layout";
+import type { TerminalPaneFactory, TerminalPaneFactoryInput } from "../renderable-mux/mux-renderable";
 import {
   ShellNextPaneChromeController,
   resolveShellNextPaneChromeClick,
@@ -306,7 +307,6 @@ export class ShellNextFrameBufferTerminalPane {
     }
     return copied;
   }
-
 }
 
 export const createShellNextFrameBufferTerminalPane: TerminalPaneFactory = (input: TerminalPaneFactoryInput) =>

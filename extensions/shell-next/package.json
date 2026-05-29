@@ -18,6 +18,7 @@
     "@agenter/client-sdk": "workspace:*",
     "@agenter/product-extension-runtime": "workspace:*",
     "@agenter/terminal-transport-protocol": "workspace:*",
+    "@agenter/termless-backend-utils": "workspace:*",
     "@agenter/termless-core": "workspace:*",
     "@opentui/core": "latest",
     "yargs": "^17.7.2"

@@ -1,4 +1,9 @@
-import type { TerminalInteractionController, TerminalOwnerCoordinate, TerminalPointerButton, TerminalSelectionRange } from "./terminal-interaction.js";
+import type {
+  TerminalInteractionController,
+  TerminalOwnerCoordinate,
+  TerminalPointerButton,
+  TerminalSelectionRange,
+} from "@agenter/termless-core";
 
 const CTRL_A_CODE = "a".charCodeAt(0);
 const DEFAULT_OWNER_ID = "terminal";
@@ -46,18 +51,17 @@ export interface TerminalHostPointerDispatchResult {
   readonly preventDefault: boolean;
 }
 
-export interface TerminalHostInputTarget
-  extends Pick<
-    TerminalInteractionController,
-    | "startSelection"
-    | "updateSelection"
-    | "endSelection"
-    | "selectRange"
-    | "selectWordAt"
-    | "selectLineAt"
-    | "clearSelection"
-    | "getSelectionOverlay"
-  > {
+export interface TerminalHostInputTarget extends Pick<
+  TerminalInteractionController,
+  | "startSelection"
+  | "updateSelection"
+  | "endSelection"
+  | "selectRange"
+  | "selectWordAt"
+  | "selectLineAt"
+  | "clearSelection"
+  | "getSelectionOverlay"
+> {
   readKeyboardInteractionView(): TerminalKeyboardInteractionView | null;
   writeInput(chunk: string | Uint8Array): boolean;
   followCursor?(): boolean;
@@ -66,9 +70,53 @@ export interface TerminalHostInputTarget
 export interface TerminalHostInputController {
   handleKey(target: TerminalHostInputTarget, key: TerminalHostKeyEvent): boolean;
   pasteText(target: TerminalHostInputTarget, text: string): boolean;
-  handlePointerDown(target: TerminalHostInputTarget, input: TerminalHostPointerInput): TerminalHostPointerDispatchResult;
-  handlePointerDrag(target: TerminalHostInputTarget, input: TerminalHostPointerInput): TerminalHostPointerDispatchResult;
+  handlePointerDown(
+    target: TerminalHostInputTarget,
+    input: TerminalHostPointerInput,
+  ): TerminalHostPointerDispatchResult;
+  handlePointerDrag(
+    target: TerminalHostInputTarget,
+    input: TerminalHostPointerInput,
+  ): TerminalHostPointerDispatchResult;
   handlePointerUp(target: TerminalHostInputTarget, input: TerminalHostPointerInput): TerminalHostPointerDispatchResult;
+}
+
+export interface TerminalHostKeyboardOptions {
+  readonly keyEncoding?: boolean;
+  readonly wordNavigation?: boolean;
+  readonly keyboardSelection?: boolean;
+  readonly clearSelectionOnInput?: boolean;
+  readonly followCursorOnInput?: boolean;
+}
+
+export interface TerminalHostPointerOptions {
+  readonly dragSelection?: boolean;
+  readonly semanticSelection?: boolean;
+  readonly clearSelectionOnClick?: boolean;
+}
+
+export interface TerminalHostInputControllerOptions {
+  readonly ownerId?: string;
+  readonly keyboard?: boolean | TerminalHostKeyboardOptions;
+  readonly pointer?: boolean | TerminalHostPointerOptions;
+  readonly semanticClickMaxDistanceCells?: number;
+  readonly semanticClickMaxMs?: number;
+}
+
+interface NormalizedKeyboardOptions {
+  readonly enabled: boolean;
+  readonly keyEncoding: boolean;
+  readonly wordNavigation: boolean;
+  readonly keyboardSelection: boolean;
+  readonly clearSelectionOnInput: boolean;
+  readonly followCursorOnInput: boolean;
+}
+
+interface NormalizedPointerOptions {
+  readonly enabled: boolean;
+  readonly dragSelection: boolean;
+  readonly semanticSelection: boolean;
+  readonly clearSelectionOnClick: boolean;
 }
 
 interface TerminalClickTracker {
@@ -170,6 +218,12 @@ const findNextTerminalWordBoundary = (line: string, charIndex: number): number |
 const isOptionWordNavigationKey = (key: TerminalHostKeyEvent): boolean =>
   key.name === "left" || key.name === "right" ? key.option === true || key.meta === true : false;
 
+const isDirectionalTerminalKey = (key: TerminalHostKeyEvent): boolean =>
+  key.name === "up" || key.name === "down" || key.name === "left" || key.name === "right";
+
+const isModifiedDirectionalTerminalKey = (key: TerminalHostKeyEvent): boolean =>
+  isDirectionalTerminalKey(key) && (key.shift || key.option || key.meta);
+
 const resolveModifiedArrowKey = (
   key: TerminalHostKeyEvent,
 ): { direction: "left" | "right"; shift: boolean; option: boolean } | null => {
@@ -238,6 +292,9 @@ const encodeTerminalHostKey = (key: TerminalHostKeyEvent): string | null => {
   if (key.name === "escape") {
     return "\u001b";
   }
+  if (isModifiedDirectionalTerminalKey(key)) {
+    return nativeSequence(key);
+  }
   if ((key.name === "home" || key.name === "end") && nativeSequence(key)) {
     return nativeSequence(key);
   }
@@ -264,12 +321,58 @@ const normalizeSemanticClickMaxDistance = (value: number | undefined): number =>
   return Math.max(0, Math.trunc(value));
 };
 
-export const createTerminalHostInputController = (options: {
-  readonly ownerId?: string;
-  readonly semanticClickMaxDistanceCells?: number;
-  readonly semanticClickMaxMs?: number;
-} = {}): TerminalHostInputController => {
+const normalizeKeyboardOptions = (
+  keyboard: boolean | TerminalHostKeyboardOptions | undefined,
+): NormalizedKeyboardOptions => {
+  if (keyboard === false) {
+    return {
+      enabled: false,
+      keyEncoding: false,
+      wordNavigation: false,
+      keyboardSelection: false,
+      clearSelectionOnInput: false,
+      followCursorOnInput: false,
+    };
+  }
+  const input = typeof keyboard === "object" ? keyboard : {};
+  return {
+    enabled: true,
+    keyEncoding: input.keyEncoding ?? true,
+    wordNavigation: input.wordNavigation ?? true,
+    keyboardSelection: input.keyboardSelection ?? true,
+    clearSelectionOnInput: input.clearSelectionOnInput ?? true,
+    followCursorOnInput: input.followCursorOnInput ?? true,
+  };
+};
+
+const normalizePointerOptions = (
+  pointer: boolean | TerminalHostPointerOptions | undefined,
+): NormalizedPointerOptions => {
+  if (pointer === false) {
+    return {
+      enabled: false,
+      dragSelection: false,
+      semanticSelection: false,
+      clearSelectionOnClick: false,
+    };
+  }
+  const input = typeof pointer === "object" ? pointer : {};
+  return {
+    enabled: true,
+    dragSelection: input.dragSelection ?? true,
+    semanticSelection: input.semanticSelection ?? true,
+    clearSelectionOnClick: input.clearSelectionOnClick ?? true,
+  };
+};
+
+const unhandledPointerResult = (): TerminalHostPointerDispatchResult => ({ handled: false, preventDefault: false });
+
+export const createTerminalHostInputController = (
+  options: TerminalHostInputControllerOptions = {},
+): TerminalHostInputController => {
   const ownerId = options.ownerId ?? DEFAULT_OWNER_ID;
+  const keyboardOptions = normalizeKeyboardOptions(options.keyboard);
+  const pointerOptions = normalizePointerOptions(options.pointer);
   const semanticClickMaxDistanceCells = normalizeSemanticClickMaxDistance(options.semanticClickMaxDistanceCells);
   const semanticClickMaxMs =
     typeof options.semanticClickMaxMs === "number" && Number.isFinite(options.semanticClickMaxMs)
@@ -290,10 +393,12 @@ export const createTerminalHostInputController = (options: {
   ): boolean => {
     if (inputOptions.preserveSelectionAnchor !== true) {
       clearKeyboardAnchor();
-      target.clearSelection(ownerId);
+      if (keyboardOptions.clearSelectionOnInput) {
+        target.clearSelection(ownerId);
+      }
     }
     const accepted = target.writeInput(chunk);
-    if (accepted) {
+    if (accepted && keyboardOptions.followCursorOnInput) {
       target.followCursor?.();
     }
     return accepted;
@@ -302,7 +407,13 @@ export const createTerminalHostInputController = (options: {
   const resolveWordBoundary = (
     view: TerminalKeyboardInteractionView,
     key: TerminalHostKeyEvent,
-  ): { direction: "left" | "right"; cursorAbsRow: number; cursorCol: number; targetCol: number; delta: number } | null => {
+  ): {
+    direction: "left" | "right";
+    cursorAbsRow: number;
+    cursorCol: number;
+    targetCol: number;
+    delta: number;
+  } | null => {
     const optionWordKey = resolveOptionWordKey(key);
     if (!optionWordKey) {
       return null;
@@ -337,7 +448,8 @@ export const createTerminalHostInputController = (options: {
     if (!view) {
       return false;
     }
-    if (resolveOptionWordKey(key)?.shift) {
+    const optionWordKey = resolveOptionWordKey(key);
+    if (optionWordKey?.shift && keyboardOptions.keyboardSelection && keyboardOptions.wordNavigation) {
       const boundary = resolveWordBoundary(view, key);
       if (!boundary) {
         return false;
@@ -373,7 +485,7 @@ export const createTerminalHostInputController = (options: {
       }
       return moved;
     }
-    if (resolveOptionWordKey(key)) {
+    if (optionWordKey && !optionWordKey.shift && keyboardOptions.wordNavigation) {
       const boundary = resolveWordBoundary(view, key);
       if (!boundary) {
         return false;
@@ -388,7 +500,7 @@ export const createTerminalHostInputController = (options: {
       return sendInput(target, encoded, { preserveSelectionAnchor: true });
     }
     const shiftArrow = resolveShiftArrowKey(key);
-    if (!shiftArrow) {
+    if (!shiftArrow || !keyboardOptions.keyboardSelection) {
       return false;
     }
     const cursorAbsRow = Math.max(0, Math.trunc(view.cursorAbsRow));
@@ -461,8 +573,14 @@ export const createTerminalHostInputController = (options: {
 
   return {
     handleKey(target, key): boolean {
+      if (!keyboardOptions.enabled) {
+        return false;
+      }
       if (handleSelectionKey(target, key)) {
         return true;
+      }
+      if (!keyboardOptions.keyEncoding) {
+        return false;
       }
       const encoded = encodeTerminalHostKey(key);
       if (!encoded) {
@@ -471,27 +589,33 @@ export const createTerminalHostInputController = (options: {
       return sendInput(target, encoded);
     },
     pasteText(target, text): boolean {
+      if (!keyboardOptions.enabled) {
+        return false;
+      }
       if (text.length === 0) {
         return false;
       }
       return sendInput(target, text);
     },
     handlePointerDown(target, input): TerminalHostPointerDispatchResult {
+      if (!pointerOptions.enabled) {
+        return unhandledPointerResult();
+      }
       if (input.button !== "left") {
-        return { handled: false, preventDefault: false };
+        return unhandledPointerResult();
       }
       if (!input.point) {
         dragState = { anchor: null, focus: null, active: false };
         lastClick = null;
-        return { handled: false, preventDefault: false };
+        return unhandledPointerResult();
       }
-      const clickCount = resolveNextClickCount(input);
+      const clickCount = pointerOptions.semanticSelection ? resolveNextClickCount(input) : 1;
       clearKeyboardAnchor();
-      if (clickCount >= 3 && target.selectLineAt(input.point)) {
+      if (pointerOptions.semanticSelection && clickCount >= 3 && target.selectLineAt(input.point)) {
         dragState = { anchor: null, focus: null, active: false };
         return { handled: true, preventDefault: true };
       }
-      if (clickCount === 2 && target.selectWordAt(input.point)) {
+      if (pointerOptions.semanticSelection && clickCount === 2 && target.selectWordAt(input.point)) {
         dragState = { anchor: null, focus: null, active: false };
         return { handled: true, preventDefault: true };
       }
@@ -500,25 +624,28 @@ export const createTerminalHostInputController = (options: {
         focus: null,
         active: false,
       };
-      return { handled: false, preventDefault: false };
+      return unhandledPointerResult();
     },
     handlePointerDrag(target, input): TerminalHostPointerDispatchResult {
+      if (!pointerOptions.enabled || !pointerOptions.dragSelection) {
+        return unhandledPointerResult();
+      }
       if (input.button !== "left") {
-        return { handled: false, preventDefault: false };
+        return unhandledPointerResult();
       }
       const anchor = dragState.anchor;
       const focus = input.point;
       if (!anchor || !focus || focus.ownerId !== anchor.ownerId) {
-        return { handled: false, preventDefault: false };
+        return unhandledPointerResult();
       }
       const moved = focus.row !== anchor.row || focus.col !== anchor.col;
       if (!moved && !dragState.active) {
-        return { handled: false, preventDefault: false };
+        return unhandledPointerResult();
       }
       if (!dragState.active) {
         if (!target.startSelection(anchor)) {
           dragState = { anchor: null, focus: null, active: false };
-          return { handled: false, preventDefault: false };
+          return unhandledPointerResult();
         }
         dragState = {
           anchor,
@@ -528,7 +655,7 @@ export const createTerminalHostInputController = (options: {
       }
       const updated = target.updateSelection(focus);
       if (!updated) {
-        return { handled: false, preventDefault: false };
+        return unhandledPointerResult();
       }
       dragState = {
         anchor,
@@ -538,6 +665,9 @@ export const createTerminalHostInputController = (options: {
       return { handled: true, preventDefault: true };
     },
     handlePointerUp(target, input): TerminalHostPointerDispatchResult {
+      if (!pointerOptions.enabled) {
+        return unhandledPointerResult();
+      }
       const anchor = dragState.anchor;
       const focus = dragState.focus;
       const active = dragState.active;
@@ -547,10 +677,10 @@ export const createTerminalHostInputController = (options: {
         const ended = target.endSelection(focus);
         return { handled: ended, preventDefault: ended };
       }
-      if (anchor && hasSelection(target) && target.clearSelection(ownerId)) {
+      if (anchor && pointerOptions.clearSelectionOnClick && hasSelection(target) && target.clearSelection(ownerId)) {
         return { handled: true, preventDefault: true };
       }
-      return { handled: false, preventDefault: false };
+      return unhandledPointerResult();
     },
   };
 };

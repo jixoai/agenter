@@ -10,7 +10,7 @@ import {
   type TerminalHostPointerDispatchResult,
   type TerminalHostPointerInput,
   type TerminalKeyboardInteractionView,
-} from "@agenter/termless-core";
+} from "@agenter/termless-backend-utils";
 import {
   OPENCOMPOSE_PRODUCT_DYNAMIC_QUIET_MS,
   createOpenComposeLiveTerminalMirror,
@@ -23,10 +23,10 @@ import type {
   PaneSourceId,
   TerminalCopyTarget,
   TerminalFrameSnapshot,
-  TerminalSelectionTextEvent,
   TerminalInputChunk,
   TerminalPaneSize,
   TerminalProtocolPaneSource,
+  TerminalSelectionTextEvent,
 } from "../renderable-mux/pane-source";
 import { ConflatedResizeDispatcher } from "./conflated-resize-dispatcher";
 
@@ -293,7 +293,9 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
       selectLineAt: (point) => this.#mirror.selectLineAt(point),
       clearSelection: (ownerId) => this.#mirror.clearSelection(ownerId),
       getSelectionOverlay: (ownerId) =>
-        this.#mirror.getView().interaction?.selectionOverlays?.find((overlay) => ownerId === undefined || overlay.ownerId === ownerId) ??
+        this.#mirror
+          .getView()
+          .interaction?.selectionOverlays?.find((overlay) => ownerId === undefined || overlay.ownerId === ownerId) ??
         null,
     };
   }

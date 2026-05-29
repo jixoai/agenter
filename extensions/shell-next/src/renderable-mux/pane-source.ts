@@ -1,14 +1,14 @@
 import type {
   TerminalTransportOwnerCoordinate,
-  TerminalTransportSelectionRange,
   TerminalTransportSelectionOverlay,
+  TerminalTransportSelectionRange,
 } from "@agenter/terminal-transport-protocol";
 import type {
   TerminalHostKeyEvent,
   TerminalHostPointerDispatchResult,
   TerminalHostPointerInput,
-  TerminalRenderRichLine,
-} from "@agenter/termless-core";
+} from "@agenter/termless-backend-utils";
+import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import type { KeyEvent, Renderable } from "@opentui/core";
 
 import type { ChildLayoutNode, LayoutSourceKind } from "./layout-types";

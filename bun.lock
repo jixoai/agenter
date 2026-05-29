@@ -67,6 +67,7 @@
         "@agenter/client-sdk": "workspace:*",
         "@agenter/product-extension-runtime": "workspace:*",
         "@agenter/terminal-transport-protocol": "workspace:*",
+        "@agenter/termless-backend-utils": "workspace:*",
         "@agenter/termless-core": "workspace:*",
         "@opentui/core": "latest",
         "yargs": "^17.7.2",
@@ -571,6 +572,17 @@
         "typescript": "latest",
       },
     },
+    "packages/termless-backend-utils": {
+      "name": "@agenter/termless-backend-utils",
+      "version": "0.0.0",
+      "dependencies": {
+        "@agenter/termless-core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "latest",
+      },
+    },
     "packages/tmux-client": {
       "name": "@agenter/tmux-client",
       "version": "0.0.0",
@@ -776,6 +788,8 @@
     "@agenter/terminal-transport-protocol": ["@agenter/terminal-transport-protocol@workspace:packages/terminal-transport-protocol"],
 
     "@agenter/terminal-view": ["@agenter/terminal-view@workspace:packages/terminal-view"],
+
+    "@agenter/termless-backend-utils": ["@agenter/termless-backend-utils@workspace:packages/termless-backend-utils"],
 
     "@agenter/termless-core": ["@agenter/termless-core@workspace:packages/termless-core"],
 

@@ -1,21 +1,19 @@
 import type { GlobalRoomEntry, GlobalRoomMessage, GlobalRoomSnapshotOutput } from "@agenter/client-sdk";
-import {
-  createBackendInteractionAdapter,
-  createTerminalHostInputController,
-  type TerminalHostInputTarget,
-} from "@agenter/termless-core";
 import type {
   TerminalTransportOwnerCoordinate,
-  TerminalTransportSelectionRange,
   TerminalTransportSelectionOverlay,
+  TerminalTransportSelectionRange,
 } from "@agenter/terminal-transport-protocol";
-import { MouseButton, TextAttributes } from "@opentui/core";
+import { createTerminalHostInputController, type TerminalHostInputTarget } from "@agenter/termless-backend-utils";
+import { createBackendInteractionAdapter } from "@agenter/termless-core";
+import { MouseButton, parseKeypress, TextAttributes } from "@opentui/core";
 import { createTestRenderer, type TestRenderer } from "@opentui/core/testing";
 import { afterEach, describe, expect, test } from "bun:test";
-import { parseKeypress } from "@opentui/core";
 
 import { ShellNextApp } from "../src/app/shell-next-app";
+import type { ShellNextRoomInput, ShellNextStatusProvider } from "../src/app/shell-next-app-types";
 import { OpenComposeTerminalFrameRenderable } from "../src/opencompose/terminal-frame/terminal-frame-renderable";
+import type { ShellNextRoomBootstrapResult } from "../src/product/bootstrap";
 import { SHELL_NEXT_CLIPBOARD_TARGETS, type ShellNextClipboardTarget } from "../src/renderable-mux/host-copy";
 import {
   createBunPtyPaneSource,
@@ -27,11 +25,9 @@ import {
   type TerminalProtocolPaneSource,
 } from "../src/renderable-mux/pane-source";
 import type { LocalBunTerminalExitEvent } from "../src/sources/bun-terminal-protocol-source";
-import type { ShellNextRoomBootstrapResult } from "../src/product/bootstrap";
-import type { ShellNextRoomInput, ShellNextStatusProvider } from "../src/app/shell-next-app-types";
+import { ConflatedResizeDispatcher } from "../src/sources/conflated-resize-dispatcher";
 import type { ShellNextRoomSurfaceStore } from "../src/surfaces/room-surface";
 import type { ShellNextApprovalRequest, ShellNextApprovalStore } from "../src/surfaces/top-layer-surface";
-import { ConflatedResizeDispatcher } from "../src/sources/conflated-resize-dispatcher";
 
 type TestSetup = Awaited<ReturnType<typeof createTestRenderer>>;
 
@@ -72,7 +68,9 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
   const selectionEvents: RecordingSource["selectionEvents"] = [];
   const selectionRanges: TerminalTransportSelectionRange[] = [];
   const listeners = new Set<() => void>();
-  const selectionTextListeners = new Set<(event: { ownerId?: string; text: string; target?: "clipboard" | "primary" }) => void>();
+  const selectionTextListeners = new Set<
+    (event: { ownerId?: string; text: string; target?: "clipboard" | "primary" }) => void
+  >();
   let copyResult: boolean | string = true;
   let title = id;
   let cursor: TerminalFrameSnapshot["cursor"] | undefined;
@@ -999,11 +997,8 @@ describe("Feature: shell-next app runtime", () => {
     await setup.renderOnce();
 
     expect(
-      readTextAttributesAt(
-        setup,
-        { x: (title?.x ?? 0) + "Chat [←] [→] [⿻] ".length, y: title?.y ?? 0 },
-        "[x]",
-      ) & TextAttributes.BOLD,
+      readTextAttributesAt(setup, { x: (title?.x ?? 0) + "Chat [←] [→] [⿻] ".length, y: title?.y ?? 0 }, "[x]") &
+        TextAttributes.BOLD,
     ).toBe(TextAttributes.BOLD);
     expect(
       readTextAttributesAt(setup, { x: (title?.x ?? 0) + "Chat ".length, y: title?.y ?? 0 }, "[←]") &
@@ -1233,17 +1228,17 @@ describe("Feature: shell-next app runtime", () => {
     await setup.renderOnce();
     const help = findTextPosition(setup.captureCharFrame(), "[Help]");
     expect(help).not.toBeNull();
-    expect(readTextAttributesAt(setup, { x: (help?.x ?? 0) + 1, y: help?.y ?? 0 }, "Help") & TextAttributes.UNDERLINE).toBe(
-      TextAttributes.UNDERLINE,
-    );
+    expect(
+      readTextAttributesAt(setup, { x: (help?.x ?? 0) + 1, y: help?.y ?? 0 }, "Help") & TextAttributes.UNDERLINE,
+    ).toBe(TextAttributes.UNDERLINE);
 
     await setup.mockMouse.click(61, 17);
     await setup.renderOnce();
     const chat = findTextPosition(setup.captureCharFrame(), "[Chat]");
     expect(chat).not.toBeNull();
-    expect(readTextAttributesAt(setup, { x: (chat?.x ?? 0) + 1, y: chat?.y ?? 0 }, "Chat") & TextAttributes.UNDERLINE).toBe(
-      TextAttributes.UNDERLINE,
-    );
+    expect(
+      readTextAttributesAt(setup, { x: (chat?.x ?? 0) + 1, y: chat?.y ?? 0 }, "Chat") & TextAttributes.UNDERLINE,
+    ).toBe(TextAttributes.UNDERLINE);
   });
 
   test("Scenario: Given product runtime keeps layout-derived active actions local When layout attention sync is disabled Then Help and Chat still underline correctly", async () => {
@@ -1253,17 +1248,17 @@ describe("Feature: shell-next app runtime", () => {
     await setup.renderOnce();
     const help = findTextPosition(setup.captureCharFrame(), "[Help]");
     expect(help).not.toBeNull();
-    expect(readTextAttributesAt(setup, { x: (help?.x ?? 0) + 1, y: help?.y ?? 0 }, "Help") & TextAttributes.UNDERLINE).toBe(
-      TextAttributes.UNDERLINE,
-    );
+    expect(
+      readTextAttributesAt(setup, { x: (help?.x ?? 0) + 1, y: help?.y ?? 0 }, "Help") & TextAttributes.UNDERLINE,
+    ).toBe(TextAttributes.UNDERLINE);
 
     await setup.mockMouse.click(61, 17);
     await setup.renderOnce();
     const chat = findTextPosition(setup.captureCharFrame(), "[Chat]");
     expect(chat).not.toBeNull();
-    expect(readTextAttributesAt(setup, { x: (chat?.x ?? 0) + 1, y: chat?.y ?? 0 }, "Chat") & TextAttributes.UNDERLINE).toBe(
-      TextAttributes.UNDERLINE,
-    );
+    expect(
+      readTextAttributesAt(setup, { x: (chat?.x ?? 0) + 1, y: chat?.y ?? 0 }, "Chat") & TextAttributes.UNDERLINE,
+    ).toBe(TextAttributes.UNDERLINE);
   });
 
   test("Scenario: Given product surfaces are open When statusbar renders Then active actions are underlined", async () => {
@@ -1301,10 +1296,13 @@ describe("Feature: shell-next app runtime", () => {
     expect(help).not.toBeNull();
 
     expect(readTextAttributesAt(setup, { x: help?.x ?? 0, y: help?.y ?? 0 }, "[") & TextAttributes.UNDERLINE).toBe(0);
-    expect(readTextAttributesAt(setup, { x: (help?.x ?? 0) + 1, y: help?.y ?? 0 }, "Help") & TextAttributes.UNDERLINE).toBe(
-      TextAttributes.UNDERLINE,
-    );
-    expect(readTextAttributesAt(setup, { x: (help?.x ?? 0) + "[Help]".length - 1, y: help?.y ?? 0 }, "]") & TextAttributes.UNDERLINE).toBe(0);
+    expect(
+      readTextAttributesAt(setup, { x: (help?.x ?? 0) + 1, y: help?.y ?? 0 }, "Help") & TextAttributes.UNDERLINE,
+    ).toBe(TextAttributes.UNDERLINE);
+    expect(
+      readTextAttributesAt(setup, { x: (help?.x ?? 0) + "[Help]".length - 1, y: help?.y ?? 0 }, "]") &
+        TextAttributes.UNDERLINE,
+    ).toBe(0);
   });
 
   for (const shortcut of [
@@ -1547,11 +1545,8 @@ describe("Feature: shell-next app runtime", () => {
     await setup.renderOnce();
 
     expect(
-      readTextAttributesAt(
-        setup,
-        { x: (title?.x ?? 0) + "Chat [←] [→] [⿻] ".length, y: title?.y ?? 0 },
-        "[x]",
-      ) & TextAttributes.BOLD,
+      readTextAttributesAt(setup, { x: (title?.x ?? 0) + "Chat [←] [→] [⿻] ".length, y: title?.y ?? 0 }, "[x]") &
+        TextAttributes.BOLD,
     ).toBe(TextAttributes.BOLD);
     expect(
       readTextAttributesAt(setup, { x: (title?.x ?? 0) + "Chat ".length, y: title?.y ?? 0 }, "[←]") &

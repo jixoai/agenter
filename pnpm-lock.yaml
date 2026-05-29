@@ -113,6 +113,40 @@ importers:
         specifier: latest
         version: 6.0.3
 
+  extensions/shell-next:
+    dependencies:
+      '@agenter/client-sdk':
+        specifier: workspace:*
+        version: link:../../packages/client-sdk
+      '@agenter/product-extension-runtime':
+        specifier: workspace:*
+        version: link:../../packages/product-extension-runtime
+      '@agenter/terminal-transport-protocol':
+        specifier: workspace:*
+        version: link:../../packages/terminal-transport-protocol
+      '@agenter/termless-backend-utils':
+        specifier: workspace:*
+        version: link:../../packages/termless-backend-utils
+      '@agenter/termless-core':
+        specifier: workspace:*
+        version: link:../../packages/termless-core
+      '@opentui/core':
+        specifier: latest
+        version: 0.2.15(typescript@6.0.3)(web-tree-sitter@0.25.10)
+      yargs:
+        specifier: ^17.7.2
+        version: 17.7.2
+    devDependencies:
+      '@types/bun':
+        specifier: latest
+        version: 1.3.14
+      '@types/yargs':
+        specifier: ^17.0.35
+        version: 17.0.35
+      typescript:
+        specifier: latest
+        version: 6.0.3
+
   packages/agenter:
     dependencies:
       '@duckdb/node-api':
@@ -948,6 +982,19 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.13)(@types/node@24.12.0)(@vitest/browser@3.2.4)(jiti@2.6.1)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(lightningcss@1.32.0)(yaml@2.8.3)
+
+  packages/termless-backend-utils:
+    dependencies:
+      '@agenter/termless-core':
+        specifier: workspace:*
+        version: link:../termless-core
+    devDependencies:
+      '@types/bun':
+        specifier: latest
+        version: 1.3.14
+      typescript:
+        specifier: latest
+        version: 6.0.3
 
   packages/termless-core:
     dependencies:

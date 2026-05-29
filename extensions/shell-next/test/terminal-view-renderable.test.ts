@@ -1,9 +1,5 @@
-import {
-  createBackendInteractionAdapter,
-  createTerminalHostInputController,
-  type TerminalHostInputTarget,
-  type TerminalRenderRichLine,
-} from "@agenter/termless-core";
+import { createTerminalHostInputController, type TerminalHostInputTarget } from "@agenter/termless-backend-utils";
+import { createBackendInteractionAdapter, type TerminalRenderRichLine } from "@agenter/termless-core";
 import { createTestRenderer } from "@opentui/core/testing";
 import { afterEach, describe, expect, test } from "bun:test";
 
@@ -85,9 +81,7 @@ describe("Feature: shell-next terminal semantic selection ownership", () => {
         }
         const result = hostInput.handlePointerDown(target, input);
         view.updateProjection({
-          selectionOverlays: target.getSelectionOverlay("terminal")
-            ? [target.getSelectionOverlay("terminal")!]
-            : [],
+          selectionOverlays: target.getSelectionOverlay("terminal") ? [target.getSelectionOverlay("terminal")!] : [],
         });
         return result;
       },
@@ -125,9 +119,7 @@ describe("Feature: shell-next terminal semantic selection ownership", () => {
         }
         const result = hostInput.handlePointerDown(target, input);
         view.updateProjection({
-          selectionOverlays: target.getSelectionOverlay("terminal")
-            ? [target.getSelectionOverlay("terminal")!]
-            : [],
+          selectionOverlays: target.getSelectionOverlay("terminal") ? [target.getSelectionOverlay("terminal")!] : [],
         });
         return result;
       },

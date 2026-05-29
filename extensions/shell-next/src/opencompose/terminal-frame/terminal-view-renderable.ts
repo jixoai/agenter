@@ -1,12 +1,16 @@
-import { MouseButton, RGBA, TextAttributes, type FrameBufferOptions, type MouseEvent, type RenderContext } from "@opentui/core";
-import type {
-  TerminalHostPointerDispatchResult,
-  TerminalHostPointerInput,
-  TerminalRenderRichLine,
-} from "@agenter/termless-core";
 import type { TerminalTransportSelectionOverlay } from "@agenter/terminal-transport-protocol";
-import { OpenComposeFrameRenderable } from "./frame-renderable";
+import type { TerminalHostPointerDispatchResult, TerminalHostPointerInput } from "@agenter/termless-backend-utils";
+import type { TerminalRenderRichLine } from "@agenter/termless-core";
+import {
+  MouseButton,
+  RGBA,
+  TextAttributes,
+  type FrameBufferOptions,
+  type MouseEvent,
+  type RenderContext,
+} from "@opentui/core";
 import { fitTerminalText } from "./cell-width";
+import { OpenComposeFrameRenderable } from "./frame-renderable";
 import type {
   OpenComposeSelectionRegion,
   OpenComposeSelectionSource,
@@ -24,7 +28,11 @@ const OVERLAY_APPROVE_BG = RGBA.fromHex("#166534");
 const OVERLAY_DENY_BG = RGBA.fromHex("#7f1d1d");
 const DEFAULT_APPROVAL_LEASE_DURATION_MS = 30 * 60 * 1000;
 
-export type OpenComposeTerminalSelectionPointHandler = (point: { ownerId: string; row: number; col: number }) => boolean;
+export type OpenComposeTerminalSelectionPointHandler = (point: {
+  ownerId: string;
+  row: number;
+  col: number;
+}) => boolean;
 export type OpenComposeTerminalPointerHandler = (
   input: TerminalHostPointerInput,
 ) => TerminalHostPointerDispatchResult | undefined;
@@ -117,7 +125,10 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
     this.repaintPermissionOverlay();
   }
 
-  override updateProjection(update: Parameters<OpenComposeFrameRenderable["updateProjection"]>[0] & OpenComposeTerminalViewPermissionProjectionUpdate) {
+  override updateProjection(
+    update: Parameters<OpenComposeFrameRenderable["updateProjection"]>[0] &
+      OpenComposeTerminalViewPermissionProjectionUpdate,
+  ) {
     if ("terminalId" in update) {
       this.#terminalId = update.terminalId ?? null;
     }
@@ -200,8 +211,7 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
       return null;
     }
     const requests = this.#permissionRequests.filter(
-      (request) =>
-        request.terminalId === terminalId && !this.#customHandledPermissionRequestIds.has(request.requestId),
+      (request) => request.terminalId === terminalId && !this.#customHandledPermissionRequestIds.has(request.requestId),
     );
     return (
       requests.find((request) => request.status === "pending") ??
@@ -324,10 +334,7 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
     const localX = Math.trunc(event.x - this.x);
     const localY = Math.trunc(event.y - this.y);
     const region = this.#approvalActionRegions.find(
-      (candidate) =>
-        localY === candidate.row &&
-        localX >= candidate.col &&
-        localX < candidate.col + candidate.width,
+      (candidate) => localY === candidate.row && localX >= candidate.col && localX < candidate.col + candidate.width,
     );
     if (!region) {
       return false;
