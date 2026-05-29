@@ -153,6 +153,7 @@ export class ShellNextFrameBufferTerminalPane {
         pointerDown: (input) => this.#source.pointerDown?.(input),
         pointerDrag: (input) => this.#source.pointerDrag?.(input),
         pointerUp: (input) => this.#handlePointerUp(input),
+        pointerScroll: (input) => this.#source.pointerScroll?.(input),
         copySelection: (ownerId, target) => this.#copySelection(ownerId, target),
         handleUnsupportedMediaPaste: () => false,
       },
@@ -286,7 +287,7 @@ export class ShellNextFrameBufferTerminalPane {
 
   #handlePointerUp(input: TerminalHostPointerInput) {
     const result = this.#source.pointerUp?.(input);
-    if (result?.handled) {
+    if (result?.effect === "selection-finalized") {
       this.#copySelection(input.point?.ownerId, "primary");
     }
     return result;

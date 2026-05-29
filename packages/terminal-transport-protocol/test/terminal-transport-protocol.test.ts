@@ -3,16 +3,16 @@ import { describe, expect, test } from "bun:test";
 import {
   applyTerminalFramePatch,
   binaryStringToBytes,
+  createTerminalTransportClientSession,
   createTerminalTransportRowCacheDecoder,
   createTerminalTransportRowCacheEncoder,
-  createTerminalTransportClientSession,
   decodeTerminalTransportClientMessage,
   decodeTerminalTransportServerMessage,
   encodeTerminalTransportClientMessage,
   encodeTerminalTransportServerMessage,
   getTerminalTransportDirectRegistry,
-  type TerminalTransportFramePayload,
   type TerminalTransportClientMessage,
+  type TerminalTransportFramePayload,
   type TerminalTransportServerMessage,
 } from "../src";
 
@@ -538,11 +538,11 @@ describe("Feature: terminal transport protocol", () => {
       type: "clearSelection",
       ownerId: "shell",
     });
-    expect(decodeTerminalTransportClientMessage(encodeTerminalTransportClientMessage({ type: "followCursor" }))).toEqual(
-      {
-        type: "followCursor",
-      },
-    );
+    expect(
+      decodeTerminalTransportClientMessage(encodeTerminalTransportClientMessage({ type: "followCursor" })),
+    ).toEqual({
+      type: "followCursor",
+    });
   });
 
   test("Scenario: Given backend interaction overlays When frame payloads roundtrip Then projection clients receive backend-owned selection state", () => {
@@ -552,11 +552,7 @@ describe("Feature: terminal transport protocol", () => {
       cols: 20,
       rows: 3,
       lines: ["alpha beta", "中文测试", ""],
-      richLines: [
-        { spans: [{ text: "alpha beta" }] },
-        { spans: [{ text: "中文测试", fg: "#ffffff" }] },
-        { spans: [] },
-      ],
+      richLines: [{ spans: [{ text: "alpha beta" }] }, { spans: [{ text: "中文测试", fg: "#ffffff" }] }, { spans: [] }],
       cursor: { x: 3, y: 1, visible: true, absY: 9 },
       scrollback: { viewportOffset: 8, totalLines: 11, screenLines: 3 },
       interaction: {
@@ -608,8 +604,16 @@ describe("Feature: terminal transport protocol", () => {
         frame: {
           ...frame,
           richLines: [
-            { spans: [{ text: "alpha beta", fg: undefined, bg: undefined, bold: false, underline: false, inverse: false }] },
-            { spans: [{ text: "中文测试", fg: "#ffffff", bg: undefined, bold: false, underline: false, inverse: false }] },
+            {
+              spans: [
+                { text: "alpha beta", fg: undefined, bg: undefined, bold: false, underline: false, inverse: false },
+              ],
+            },
+            {
+              spans: [
+                { text: "中文测试", fg: "#ffffff", bg: undefined, bold: false, underline: false, inverse: false },
+              ],
+            },
             { spans: [] },
           ],
         },
@@ -630,6 +634,146 @@ describe("Feature: terminal transport protocol", () => {
       ownerId: "shell",
       text: "alpha",
     });
+  });
+
+  test("Scenario: Given mouse tracking interaction truth When full and patch frames roundtrip Then every transport shape preserves it", () => {
+    const interaction: NonNullable<TerminalTransportFramePayload["interaction"]> = {
+      activeOwnerId: "terminal",
+      mouseTracking: { protocol: "drag", encoding: "sgr" },
+      capabilities: {
+        terminal: {
+          ownership: "backend-native",
+          selection: true,
+          copy: true,
+          semanticSelection: true,
+          cursorFollow: true,
+          overlay: true,
+        },
+      },
+    };
+    const frame: TerminalTransportFramePayload = {
+      seq: 31,
+      timestamp: 3100,
+      cols: 20,
+      rows: 3,
+      lines: ["alpha", "beta", "gamma"],
+      richLines: [{ spans: [{ text: "alpha" }] }, { spans: [{ text: "beta" }] }, { spans: [{ text: "gamma" }] }],
+      cursor: { x: 1, y: 1, visible: true, absY: 9 },
+      scrollback: { viewportOffset: 8, totalLines: 11, screenLines: 3 },
+      interaction,
+    };
+
+    const decodedFull = decodeTerminalTransportServerMessage(
+      encodeTerminalTransportServerMessage({
+        type: "frame",
+        terminalId: "term-demo",
+        frameSeq: frame.seq,
+        status: "IDLE",
+        patch: { type: "full", frame },
+      }),
+    );
+
+    expect(decodedFull).toMatchObject({
+      type: "frame",
+      patch: {
+        type: "full",
+        frame: {
+          interaction,
+        },
+      },
+    });
+
+    const rowsPatch = {
+      type: "rows" as const,
+      baseFrameSeq: frame.seq,
+      rowPatches: [{ row: 1, line: "BETA" }],
+      cols: frame.cols,
+      rows: frame.rows,
+      cursor: frame.cursor,
+      scrollback: frame.scrollback,
+      interaction: { ...interaction, mouseTracking: { protocol: "any" as const, encoding: "sgr" as const } },
+      timestamp: 3101,
+    };
+    const decodedRows = decodeTerminalTransportServerMessage(
+      encodeTerminalTransportServerMessage({
+        type: "frame",
+        terminalId: "term-demo",
+        frameSeq: 32,
+        status: "IDLE",
+        patch: rowsPatch,
+      }),
+    );
+    expect(decodedRows).toMatchObject({
+      type: "frame",
+      patch: {
+        type: "rows",
+        interaction: rowsPatch.interaction,
+      },
+    });
+    expect(applyTerminalFramePatch(frame, rowsPatch, 32)?.interaction?.mouseTracking).toEqual({
+      protocol: "any",
+      encoding: "sgr",
+    });
+
+    const scrollRowsPatch = {
+      type: "scrollRows" as const,
+      baseFrameSeq: 32,
+      deltaRows: 1,
+      insertedLines: ["delta"],
+      cols: frame.cols,
+      rows: frame.rows,
+      cursor: frame.cursor,
+      scrollback: { ...frame.scrollback, viewportOffset: 9 },
+      interaction: { ...interaction, mouseTracking: { protocol: "vt200" as const, encoding: "default" as const } },
+      timestamp: 3102,
+    };
+    const decodedScrollRows = decodeTerminalTransportServerMessage(
+      encodeTerminalTransportServerMessage({
+        type: "frame",
+        terminalId: "term-demo",
+        frameSeq: 33,
+        status: "IDLE",
+        patch: scrollRowsPatch,
+      }),
+    );
+    expect(decodedScrollRows).toMatchObject({
+      type: "frame",
+      patch: {
+        type: "scrollRows",
+        interaction: scrollRowsPatch.interaction,
+      },
+    });
+
+    const rowCachePatch = {
+      type: "rowCache" as const,
+      baseFrameSeq: 0,
+      cachedRows: [{ cid: 1, line: "alpha" }],
+      cols: 20,
+      rows: 1,
+      cursor: { x: 0, y: 0, visible: true },
+      scrollback: { viewportOffset: 0, totalLines: 1, screenLines: 1 },
+      interaction: { ...interaction, mouseTracking: { protocol: "none" as const, encoding: "default" as const } },
+      timestamp: 3103,
+    };
+    const decodedRowCache = decodeTerminalTransportServerMessage(
+      encodeTerminalTransportServerMessage({
+        type: "frame",
+        terminalId: "term-demo",
+        frameSeq: 34,
+        status: "IDLE",
+        patch: rowCachePatch,
+      }),
+    );
+    expect(decodedRowCache).toMatchObject({
+      type: "frame",
+      patch: {
+        type: "rowCache",
+        interaction: rowCachePatch.interaction,
+      },
+    });
+    expect(
+      applyTerminalFramePatch(null, rowCachePatch, 34, createTerminalTransportRowCacheDecoder())?.interaction,
+    ).toEqual(rowCachePatch.interaction);
   });
 
   test("Scenario: Given malformed binary or xterm binary strings When decoding Then invalid payloads are rejected and raw bytes stay lossless", () => {

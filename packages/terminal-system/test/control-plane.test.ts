@@ -1,16 +1,15 @@
 import { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
 import { signManagedInvitationAcceptProof } from "@agenter/managed-seat-invitation-handshake";
 import { generatePrincipalKeyPair } from "@agenter/principal-crypto";
 import {
   applyTerminalFramePatch,
-  createTerminalTransportRowCacheDecoder,
   createTerminalTransportClientSession,
+  createTerminalTransportRowCacheDecoder,
   decodeTerminalTransportServerMessage,
   encodeTerminalTransportClientMessage,
   getTerminalTransportDirectRegistry,
@@ -18,6 +17,7 @@ import {
   type TerminalTransportFramePayload,
   type TerminalTransportRowCacheDecoder,
 } from "@agenter/terminal-transport-protocol";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   chooseTerminalFramePatch,
@@ -137,7 +137,10 @@ const encodeClientFrame = (message: TerminalTransportClientMessage): ArrayBuffer
 
 const rowCacheDecodersBySocket = new WeakMap<WebSocket, TerminalTransportRowCacheDecoder>();
 
-const resolveRowCacheDecoder = (socket: WebSocket, decoder?: TerminalTransportRowCacheDecoder): TerminalTransportRowCacheDecoder => {
+const resolveRowCacheDecoder = (
+  socket: WebSocket,
+  decoder?: TerminalTransportRowCacheDecoder,
+): TerminalTransportRowCacheDecoder => {
   if (decoder) {
     return decoder;
   }
@@ -169,9 +172,11 @@ const pullLatestFrame = async (input: {
   );
   for (let attempt = 0; attempt < 20; attempt += 1) {
     await Bun.sleep(20);
-    const frameMessage = input.messages.slice(messageStart).findLast(
-      (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
-    );
+    const frameMessage = input.messages
+      .slice(messageStart)
+      .findLast(
+        (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
+      );
     if (!frameMessage) {
       continue;
     }
@@ -194,9 +199,7 @@ const waitForServerTrace = async <T extends Extract<TerminalTransportServerMessa
   predicate: (message: Extract<TerminalTransportServerMessage, { type: "trace" }>) => message is T,
 ): Promise<T> => {
   for (let attempt = 0; attempt < 80; attempt += 1) {
-    const trace = messages.findLast(
-      (message): message is T => message.type === "trace" && predicate(message),
-    );
+    const trace = messages.findLast((message): message is T => message.type === "trace" && predicate(message));
     if (trace) {
       return trace;
     }
@@ -210,6 +213,7 @@ const createSnapshotForFrameProjection = (input: {
   rows: number;
   viewportOffset: number;
   cursorY: number;
+  mouseTracking?: NonNullable<ManagedTerminalSnapshot["interaction"]>["mouseTracking"];
 }): ManagedTerminalSnapshot => ({
   seq: 7,
   timestamp: 10,
@@ -229,11 +233,19 @@ const createSnapshotForFrameProjection = (input: {
     totalLines: input.lineCount,
     screenLines: input.rows,
   },
+  interaction: input.mouseTracking
+    ? {
+        mouseTracking: input.mouseTracking,
+      }
+    : undefined,
 });
 
 const listInvitations = (plane: TerminalControlPlane, terminalId: string) => {
   const db = Reflect.get(plane, "db") as {
-    listInvitations: (terminalId: string, input?: { statuses?: Array<"pending" | "accepted" | "revoked" | "expired"> }) => Array<{
+    listInvitations: (
+      terminalId: string,
+      input?: { statuses?: Array<"pending" | "accepted" | "revoked" | "expired"> },
+    ) => Array<{
       invitationId: string;
       status: "pending" | "accepted" | "revoked" | "expired";
       supersededByInvitationId?: string | null;
@@ -365,6 +377,38 @@ describe("Feature: terminal control plane", () => {
 
     expect(frame.lines).toEqual(["line-2", "line-3", "line-4", "line-5"]);
     expect(frame.interaction?.selectionOverlays?.[0]?.rows).toEqual([{ row: 5, startCol: 10, endCol: 12 }]);
+  });
+
+  test("Scenario: Given backend mouse tracking is active When projecting a scrolled transport frame Then selection and mouse truth both survive projection", () => {
+    const snapshot = createSnapshotForFrameProjection({
+      lineCount: 12,
+      rows: 4,
+      viewportOffset: 2,
+      cursorY: 5,
+      mouseTracking: { protocol: "drag", encoding: "sgr" },
+    });
+    snapshot.interaction = {
+      ...snapshot.interaction,
+      activeOwnerId: "terminal",
+      selectionOverlays: [
+        {
+          ownerId: "terminal",
+          ownership: "backend-native",
+          rows: [{ row: 5, startCol: 0, endCol: 6 }],
+          selectedText: "line-5",
+        },
+      ],
+    };
+
+    const frame = projectTerminalSnapshotFramePayload(snapshot, {
+      cols: 80,
+      rows: 4,
+      viewportStart: 4,
+    });
+
+    expect(frame.lines).toEqual(["line-4", "line-5", "line-6", "line-7"]);
+    expect(frame.interaction?.mouseTracking).toEqual({ protocol: "drag", encoding: "sgr" });
+    expect(frame.interaction?.selectionOverlays?.[0]?.rows).toEqual([{ row: 5, startCol: 0, endCol: 6 }]);
   });
 
   test("Scenario: Given a rows frame patch contains only selection truth changes When encoded as rows patch Then interaction state is preserved", () => {
@@ -571,9 +615,7 @@ describe("Feature: terminal control plane", () => {
     expect(plane.getFocusedTerminalIds("session:reviewer")).toEqual(["left-seat", "right-seat"]);
 
     expect(
-      plane.focusAuthorized("remove", [
-        { terminalId: left.terminalId, accessToken: reviewerLeft.accessToken },
-      ]),
+      plane.focusAuthorized("remove", [{ terminalId: left.terminalId, accessToken: reviewerLeft.accessToken }]),
     ).toEqual(["right-seat"]);
     expect(plane.getFocusedTerminalIds("session:reviewer")).toEqual(["right-seat"]);
 
@@ -637,9 +679,7 @@ describe("Feature: terminal control plane", () => {
     expect(
       observed.some(
         (item) =>
-          item.reason === "transition" &&
-          item.processPhase === "running" &&
-          item.lifecycleTransition === "killing",
+          item.reason === "transition" && item.processPhase === "running" && item.lifecycleTransition === "killing",
       ),
     ).toBe(true);
     expect(plane.list().find((item) => item.terminalId === created.terminalId)?.lifecycleTransition).toBeUndefined();
@@ -947,14 +987,7 @@ describe("Feature: terminal control plane", () => {
         seq: sourceRuntime.getSnapshot().seq,
         cols: 80,
         rows: 20,
-        lines: [
-          "$ agenter shell",
-          "shell-1:~/project $",
-          "",
-          "dialogue right",
-          "",
-          "托管 off  ✉ 0 M-J",
-        ],
+        lines: ["$ agenter shell", "shell-1:~/project $", "", "dialogue right", "", "托管 off  ✉ 0 M-J"],
         richLines: [
           { spans: [{ text: "$ agenter shell", fg: "#00ff00" }] },
           { spans: [{ text: "shell-1:~/project $", fg: "#ffffff" }] },
@@ -1080,11 +1113,7 @@ describe("Feature: terminal control plane", () => {
         seq: 0,
         cols: 32,
         rows: 8,
-        lines: [
-          "terminal-2 composed screen",
-          "no child PTY process",
-          "Avatar started",
-        ],
+        lines: ["terminal-2 composed screen", "no child PTY process", "Avatar started"],
         richLines: [
           { spans: [{ text: "terminal-2 composed screen", fg: "#f8fafc" }] },
           { spans: [{ text: "no child PTY process", fg: "#93c5fd" }] },
@@ -2167,7 +2196,9 @@ describe("Feature: terminal control plane", () => {
       (message): message is Extract<TerminalTransportServerMessage, { type: "frame" }> => message.type === "frame",
     );
 
-    expect(messages.filter((message) => message.type === "frameDirty").length).toBeGreaterThanOrEqual(initialDirtyCount);
+    expect(messages.filter((message) => message.type === "frameDirty").length).toBeGreaterThanOrEqual(
+      initialDirtyCount,
+    );
     expect(latestFrame.lines.join("\n")).toContain("snapshot after connect");
     expect(frameMessages.every((message) => message.patch.type === "rowCache")).toBe(true);
     expect(
@@ -2825,7 +2856,8 @@ describe("Feature: terminal control plane", () => {
     await Bun.sleep(120);
 
     const secondHelloAck = secondMessages.findLast(
-      (message): message is Extract<TerminalTransportServerMessage, { type: "helloAck" }> => message.type === "helloAck",
+      (message): message is Extract<TerminalTransportServerMessage, { type: "helloAck" }> =>
+        message.type === "helloAck",
     );
     expect(secondHelloAck?.effectiveGeometryRole).toBe("authority");
     expect(secondHelloAck?.authorityReason).toBe("explicit-geometry-order");
@@ -2929,7 +2961,8 @@ describe("Feature: terminal control plane", () => {
     expect(authority?.authorityReason).toBe("backend-attach-order-fallback");
 
     const latestHelloAck = firstMessages.findLast(
-      (message): message is Extract<TerminalTransportServerMessage, { type: "helloAck" }> => message.type === "helloAck",
+      (message): message is Extract<TerminalTransportServerMessage, { type: "helloAck" }> =>
+        message.type === "helloAck",
     );
     expect(latestHelloAck?.authorityReason).toBe("backend-attach-order-fallback");
 
@@ -3337,9 +3370,7 @@ describe("Feature: terminal control plane", () => {
       { terminalId: alpha.terminalId, requestId: alphaWrite.approvalRequest?.requestId },
       { terminalId: bravo.terminalId, requestId: bravoWrite.approvalRequest?.requestId },
     ]);
-    expect(alphaEvents).toEqual([
-      { terminalId: alpha.terminalId, requestId: alphaWrite.approvalRequest?.requestId },
-    ]);
+    expect(alphaEvents).toEqual([{ terminalId: alpha.terminalId, requestId: alphaWrite.approvalRequest?.requestId }]);
 
     releaseGlobal();
     releaseAlpha();

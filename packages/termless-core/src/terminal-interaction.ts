@@ -10,7 +10,29 @@ export type TerminalInteractionOwnership =
   | "unavailable"
   | "host-projection-only";
 
-export type TerminalPointerButton = "left" | "middle" | "right" | "unknown";
+export type TerminalPointerButton =
+  | "left"
+  | "middle"
+  | "right"
+  | "wheel-up"
+  | "wheel-down"
+  | "wheel-left"
+  | "wheel-right"
+  | "unknown";
+
+export type TerminalMouseTrackingProtocol = "none" | "vt200" | "drag" | "any";
+
+export type TerminalMouseTrackingEncoding = "default" | "sgr";
+
+export interface TerminalMouseTrackingState {
+  readonly protocol: TerminalMouseTrackingProtocol;
+  readonly encoding: TerminalMouseTrackingEncoding;
+}
+
+export const TERMINAL_MOUSE_TRACKING_NONE: TerminalMouseTrackingState = Object.freeze({
+  protocol: "none",
+  encoding: "default",
+});
 
 export type TerminalSemanticSelectionKind = "word" | "line";
 
@@ -89,6 +111,7 @@ export interface TerminalInteractionCapabilities {
 
 export interface TerminalInteractionFrameState {
   activeOwnerId?: TerminalInteractionOwnerId;
+  mouseTracking?: TerminalMouseTrackingState;
   selectionOverlays?: TerminalSelectionOverlay[];
   capabilities?: Record<TerminalInteractionOwnerId, TerminalInteractionCapabilities>;
 }
@@ -109,6 +132,7 @@ export interface TerminalInteractionController {
   clearSelection(ownerId?: TerminalInteractionOwnerId): boolean;
   copySelection(ownerId?: TerminalInteractionOwnerId): string;
   getSelectionOverlay(ownerId?: TerminalInteractionOwnerId): TerminalSelectionOverlay | null;
+  getMouseTrackingState?(): TerminalMouseTrackingState;
   followCursor?(): boolean;
 }
 
@@ -216,6 +240,11 @@ export const cloneTerminalInteractionCapabilities = (
   capabilities: TerminalInteractionCapabilities,
 ): TerminalInteractionCapabilities => ({ ...capabilities });
 
+export const cloneTerminalMouseTrackingState = (
+  state: TerminalMouseTrackingState | null | undefined,
+): TerminalMouseTrackingState | undefined =>
+  state ? { protocol: state.protocol, encoding: state.encoding } : undefined;
+
 export const cloneTerminalInteractionFrameState = (
   state: TerminalInteractionFrameState | null | undefined,
 ): TerminalInteractionFrameState | undefined => {
@@ -224,6 +253,7 @@ export const cloneTerminalInteractionFrameState = (
   }
   return {
     activeOwnerId: state.activeOwnerId,
+    mouseTracking: cloneTerminalMouseTrackingState(state.mouseTracking),
     selectionOverlays: state.selectionOverlays
       ?.map((overlay) => cloneTerminalSelectionOverlay(overlay))
       .filter((overlay): overlay is TerminalSelectionOverlay => overlay !== null),
@@ -339,10 +369,7 @@ export const createBackendInteractionAdapter = (
       return false;
     }
     const normalized = normalizeRange(range);
-    if (
-      normalized.startRow === normalized.endRow &&
-      normalized.startCol === normalized.endCol
-    ) {
+    if (normalized.startRow === normalized.endRow && normalized.startCol === normalized.endCol) {
       selection = null;
       return false;
     }

@@ -27,6 +27,8 @@ import {
   serializeRenderLinesForLog,
   serializeStructuredLinesForLog,
 } from "./renderer";
+import { TerminalObservedIdentityTracker } from "./terminal-observed-identity";
+import type { TerminalObservedIdentity } from "./terminal-runtime-truth";
 import type {
   RenderResult,
   TerminalDirtyMarkResult,
@@ -42,8 +44,6 @@ import type {
 import { DEFAULTS } from "./types";
 import { createWorkspace, destroyWorkspace } from "./workspace";
 import { XtermBridge } from "./xterm-bridge";
-import { TerminalObservedIdentityTracker } from "./terminal-observed-identity";
-import type { TerminalObservedIdentity } from "./terminal-runtime-truth";
 
 export interface AgenticTerminalExitInfo {
   code: number | null;
@@ -1162,6 +1162,7 @@ export class AgenticTerminal {
     return (
       cloneTerminalInteractionFrameState({
         activeOwnerId: overlay ? ownerId : undefined,
+        mouseTracking: controller.getMouseTrackingState?.(),
         selectionOverlays: overlay ? [overlay] : undefined,
         capabilities: {
           [ownerId]: controller.interactionCapabilities,

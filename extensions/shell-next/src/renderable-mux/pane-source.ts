@@ -8,7 +8,7 @@ import type {
   TerminalHostPointerDispatchResult,
   TerminalHostPointerInput,
 } from "@agenter/termless-backend-utils";
-import type { TerminalRenderRichLine } from "@agenter/termless-core";
+import type { TerminalMouseTrackingState, TerminalRenderRichLine } from "@agenter/termless-core";
 import type { KeyEvent, Renderable } from "@opentui/core";
 
 import type { ChildLayoutNode, LayoutSourceKind } from "./layout-types";
@@ -33,6 +33,7 @@ export interface TerminalFrameSnapshot {
   };
   readonly viewportStart?: number;
   readonly scrollbackRows?: number;
+  readonly mouseTracking?: TerminalMouseTrackingState;
   readonly selectionOverlays?: readonly TerminalTransportSelectionOverlay[];
   readonly revision: number;
 }
@@ -58,6 +59,7 @@ export interface TerminalProtocolPaneSource {
   pointerDown?(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult;
   pointerDrag?(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult;
   pointerUp?(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult;
+  pointerScroll?(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult;
   resize(size: TerminalPaneSize): void | Promise<void>;
   scrollViewport?(deltaRows: number): boolean;
   setViewportStart?(viewportStart: number): boolean;

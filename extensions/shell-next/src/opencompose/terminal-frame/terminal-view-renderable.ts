@@ -72,6 +72,7 @@ export interface OpenComposeTerminalViewOptions extends FrameBufferOptions {
   onPointerDown?: OpenComposeTerminalPointerHandler;
   onPointerDrag?: OpenComposeTerminalPointerHandler;
   onPointerUp?: OpenComposeTerminalPointerHandler;
+  onPointerScroll?: OpenComposeTerminalPointerHandler;
   onInteractionTrace?: ConstructorParameters<typeof OpenComposeFrameRenderable>[1]["onInteractionTrace"];
   onMouseDown?: OpenComposeFrameRenderable["onMouseDown"];
   onMouseDrag?: OpenComposeFrameRenderable["onMouseDrag"];
@@ -91,16 +92,19 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
   readonly #onPointerDown?: OpenComposeTerminalPointerHandler;
   readonly #onPointerDrag?: OpenComposeTerminalPointerHandler;
   readonly #onPointerUp?: OpenComposeTerminalPointerHandler;
+  readonly #onPointerScroll?: OpenComposeTerminalPointerHandler;
 
   constructor(ctx: RenderContext, options: OpenComposeTerminalViewOptions) {
     super(ctx, options);
     this.#onPointerDown = options.onPointerDown;
     this.#onPointerDrag = options.onPointerDrag;
     this.#onPointerUp = options.onPointerUp;
+    this.#onPointerScroll = options.onPointerScroll;
     const userMouseDown = options.onMouseDown;
     const userMouseDrag = options.onMouseDrag;
     const userMouseDragEnd = options.onMouseDragEnd;
     const userMouseUp = options.onMouseUp;
+    const userMouseScroll = options.onMouseScroll;
     this.onMouseDown = (event) => {
       this.#dispatchPointer(this.#onPointerDown, event);
       userMouseDown?.(event);
@@ -116,6 +120,10 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
     this.onMouseUp = (event) => {
       this.#dispatchPointer(this.#onPointerUp, event);
       userMouseUp?.(event);
+    };
+    this.onMouseScroll = (event) => {
+      this.#dispatchPointer(this.#onPointerScroll, event);
+      userMouseScroll?.(event);
     };
     this.#terminalId = options.terminalId ?? null;
     this.#permissionRequests = options.permissionRequests ?? [];
@@ -362,9 +370,16 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
       return;
     }
     const point = this.eventToOwnerCoordinate(event, null);
+    const viewportPoint = this.eventToViewportCoordinate(event, null);
     const result = handler({
       button: this.#resolvePointerButton(event.button),
       point,
+      viewportPoint,
+      modifiers: {
+        alt: event.modifiers.alt,
+        ctrl: event.modifiers.ctrl,
+        shift: event.modifiers.shift,
+      },
       clickCount: this.#readClickCount(event),
       timestampMs: performance.now(),
     });
@@ -382,6 +397,18 @@ export class OpenComposeTerminalViewRenderable extends OpenComposeFrameRenderabl
     }
     if (button === MouseButton.RIGHT) {
       return "right";
+    }
+    if (button === MouseButton.WHEEL_UP || button === 64) {
+      return "wheel-up";
+    }
+    if (button === MouseButton.WHEEL_DOWN || button === 65) {
+      return "wheel-down";
+    }
+    if (button === 66) {
+      return "wheel-left";
+    }
+    if (button === 67) {
+      return "wheel-right";
     }
     return "unknown";
   }

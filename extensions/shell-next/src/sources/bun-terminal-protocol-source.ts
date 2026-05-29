@@ -187,6 +187,7 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
       },
       viewportStart: Math.max(0, Math.trunc(structured.scrollback.viewportOffset)),
       scrollbackRows: Math.max(structured.rows, Math.trunc(structured.scrollback.totalLines)),
+      mouseTracking: this.#bridge.getMouseTrackingState(),
       selectionOverlays: toTransportSelectionOverlays([this.#bridge.getSelectionOverlay("terminal")]),
       revision: this.#revision,
     };
@@ -214,19 +215,25 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
 
   pointerDown(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
     const result = this.#hostInput.handlePointerDown(this.#inputTarget(), input);
-    this.#emitSelectionFrame(result.handled);
+    this.#emitSelectionFrame(result.effect === "selection" || result.effect === "selection-finalized");
     return result;
   }
 
   pointerDrag(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
     const result = this.#hostInput.handlePointerDrag(this.#inputTarget(), input);
-    this.#emitSelectionFrame(result.handled);
+    this.#emitSelectionFrame(result.effect === "selection" || result.effect === "selection-finalized");
     return result;
   }
 
   pointerUp(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
     const result = this.#hostInput.handlePointerUp(this.#inputTarget(), input);
-    this.#emitSelectionFrame(result.handled);
+    this.#emitSelectionFrame(result.effect === "selection" || result.effect === "selection-finalized");
+    return result;
+  }
+
+  pointerScroll(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
+    const result = this.#hostInput.handlePointerScroll(this.#inputTarget(), input);
+    this.#emitSelectionFrame(result.effect === "selection" || result.effect === "selection-finalized");
     return result;
   }
 
@@ -362,6 +369,7 @@ export class LocalBunTerminalProtocolSource implements TerminalProtocolPaneSourc
   #inputTarget(): TerminalHostInputTarget {
     return {
       readKeyboardInteractionView: () => this.#readKeyboardInteractionView(),
+      readMouseTrackingState: () => this.#bridge.getMouseTrackingState(),
       writeInput: (chunk) => this.writeInput(chunk),
       followCursor: () => this.#bridge.followCursor(),
       startSelection: (point) => this.#bridge.startSelection(point),

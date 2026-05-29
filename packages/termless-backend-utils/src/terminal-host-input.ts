@@ -1,9 +1,11 @@
 import type {
   TerminalInteractionController,
+  TerminalMouseTrackingState,
   TerminalOwnerCoordinate,
   TerminalPointerButton,
   TerminalSelectionRange,
 } from "@agenter/termless-core";
+import { TERMINAL_MOUSE_TRACKING_NONE } from "@agenter/termless-core";
 
 const CTRL_A_CODE = "a".charCodeAt(0);
 const DEFAULT_OWNER_ID = "terminal";
@@ -42,13 +44,23 @@ export interface TerminalKeyboardInteractionView {
 export interface TerminalHostPointerInput {
   readonly button: TerminalPointerButton;
   readonly point: TerminalOwnerCoordinate | null;
+  readonly viewportPoint?: TerminalOwnerCoordinate | null;
+  readonly modifiers?: {
+    readonly alt?: boolean;
+    readonly ctrl?: boolean;
+    readonly meta?: boolean;
+    readonly shift?: boolean;
+  };
   readonly clickCount?: number;
   readonly timestampMs?: number;
 }
 
+export type TerminalHostPointerEffect = "none" | "selection" | "selection-finalized" | "pty-mouse";
+
 export interface TerminalHostPointerDispatchResult {
   readonly handled: boolean;
   readonly preventDefault: boolean;
+  readonly effect: TerminalHostPointerEffect;
 }
 
 export interface TerminalHostInputTarget extends Pick<
@@ -63,6 +75,7 @@ export interface TerminalHostInputTarget extends Pick<
   | "getSelectionOverlay"
 > {
   readKeyboardInteractionView(): TerminalKeyboardInteractionView | null;
+  readMouseTrackingState?(): TerminalMouseTrackingState;
   writeInput(chunk: string | Uint8Array): boolean;
   followCursor?(): boolean;
 }
@@ -79,6 +92,10 @@ export interface TerminalHostInputController {
     input: TerminalHostPointerInput,
   ): TerminalHostPointerDispatchResult;
   handlePointerUp(target: TerminalHostInputTarget, input: TerminalHostPointerInput): TerminalHostPointerDispatchResult;
+  handlePointerScroll(
+    target: TerminalHostInputTarget,
+    input: TerminalHostPointerInput,
+  ): TerminalHostPointerDispatchResult;
 }
 
 export interface TerminalHostKeyboardOptions {
@@ -365,7 +382,95 @@ const normalizePointerOptions = (
   };
 };
 
-const unhandledPointerResult = (): TerminalHostPointerDispatchResult => ({ handled: false, preventDefault: false });
+const pointerResult = (
+  handled: boolean,
+  preventDefault: boolean,
+  effect: TerminalHostPointerEffect,
+): TerminalHostPointerDispatchResult => ({
+  handled,
+  preventDefault,
+  effect,
+});
+
+const unhandledPointerResult = (): TerminalHostPointerDispatchResult => pointerResult(false, false, "none");
+
+const readMouseTrackingState = (target: TerminalHostInputTarget): TerminalMouseTrackingState =>
+  target.readMouseTrackingState?.() ?? TERMINAL_MOUSE_TRACKING_NONE;
+
+const isPtyMouseRoutingActive = (target: TerminalHostInputTarget, input: TerminalHostPointerInput): boolean =>
+  input.modifiers?.shift !== true && readMouseTrackingState(target).protocol !== "none";
+
+const resolveXtermMouseButtonCode = (
+  button: TerminalPointerButton,
+  eventKind: "down" | "drag" | "up" | "wheel",
+): number | null => {
+  if (eventKind === "wheel") {
+    switch (button) {
+      case "wheel-up":
+        return 64;
+      case "wheel-down":
+        return 65;
+      case "wheel-left":
+        return 66;
+      case "wheel-right":
+        return 67;
+      default:
+        return null;
+    }
+  }
+  const base = button === "left" ? 0 : button === "middle" ? 1 : button === "right" ? 2 : null;
+  if (base === null) {
+    return null;
+  }
+  return eventKind === "drag" ? base + 32 : base;
+};
+
+const modifierCode = (input: TerminalHostPointerInput): number => {
+  const modifiers = input.modifiers;
+  return (modifiers?.shift ? 4 : 0) | (modifiers?.alt || modifiers?.meta ? 8 : 0) | (modifiers?.ctrl ? 16 : 0);
+};
+
+const normalizeMouseCoordinate = (value: number): number => Math.max(1, Math.trunc(value) + 1);
+
+export const encodeXtermMouseInput = (
+  state: TerminalMouseTrackingState,
+  input: TerminalHostPointerInput,
+  eventKind: "down" | "drag" | "up" | "wheel",
+): string | null => {
+  const point = input.viewportPoint ?? input.point;
+  if (!point) {
+    return null;
+  }
+  const buttonCode = resolveXtermMouseButtonCode(input.button, eventKind);
+  if (buttonCode === null) {
+    return null;
+  }
+  const cb = buttonCode + modifierCode(input);
+  const col = normalizeMouseCoordinate(point.col);
+  const row = normalizeMouseCoordinate(point.row);
+  if (state.encoding === "sgr") {
+    return `\x1b[<${cb};${col};${row}${eventKind === "up" ? "m" : "M"}`;
+  }
+  const basicCol = Math.max(1, Math.min(223, col));
+  const basicRow = Math.max(1, Math.min(223, row));
+  const basicCb = eventKind === "up" ? 3 + modifierCode(input) : cb;
+  return `\x1b[M${String.fromCharCode(basicCb + 32)}${String.fromCharCode(basicCol + 32)}${String.fromCharCode(
+    basicRow + 32,
+  )}`;
+};
+
+const routePtyMouseInput = (
+  target: TerminalHostInputTarget,
+  input: TerminalHostPointerInput,
+  eventKind: "down" | "drag" | "up" | "wheel",
+): TerminalHostPointerDispatchResult => {
+  const encoded = encodeXtermMouseInput(readMouseTrackingState(target), input, eventKind);
+  if (!encoded) {
+    return unhandledPointerResult();
+  }
+  const written = target.writeInput(encoded);
+  return pointerResult(written, true, written ? "pty-mouse" : "none");
+};
 
 export const createTerminalHostInputController = (
   options: TerminalHostInputControllerOptions = {},
@@ -601,6 +706,11 @@ export const createTerminalHostInputController = (
       if (!pointerOptions.enabled) {
         return unhandledPointerResult();
       }
+      if (isPtyMouseRoutingActive(target, input)) {
+        clearKeyboardAnchor();
+        dragState = input.point ? { anchor: input.point, focus: input.point, active: false } : dragState;
+        return routePtyMouseInput(target, input, "down");
+      }
       if (input.button !== "left") {
         return unhandledPointerResult();
       }
@@ -613,11 +723,11 @@ export const createTerminalHostInputController = (
       clearKeyboardAnchor();
       if (pointerOptions.semanticSelection && clickCount >= 3 && target.selectLineAt(input.point)) {
         dragState = { anchor: null, focus: null, active: false };
-        return { handled: true, preventDefault: true };
+        return pointerResult(true, true, "selection");
       }
       if (pointerOptions.semanticSelection && clickCount === 2 && target.selectWordAt(input.point)) {
         dragState = { anchor: null, focus: null, active: false };
-        return { handled: true, preventDefault: true };
+        return pointerResult(true, true, "selection");
       }
       dragState = {
         anchor: input.point,
@@ -627,7 +737,13 @@ export const createTerminalHostInputController = (
       return unhandledPointerResult();
     },
     handlePointerDrag(target, input): TerminalHostPointerDispatchResult {
-      if (!pointerOptions.enabled || !pointerOptions.dragSelection) {
+      if (!pointerOptions.enabled) {
+        return unhandledPointerResult();
+      }
+      if (isPtyMouseRoutingActive(target, input)) {
+        return routePtyMouseInput(target, input, "drag");
+      }
+      if (!pointerOptions.dragSelection) {
         return unhandledPointerResult();
       }
       if (input.button !== "left") {
@@ -662,11 +778,16 @@ export const createTerminalHostInputController = (
         focus,
         active: true,
       };
-      return { handled: true, preventDefault: true };
+      return pointerResult(true, true, "selection");
     },
     handlePointerUp(target, input): TerminalHostPointerDispatchResult {
       if (!pointerOptions.enabled) {
         return unhandledPointerResult();
+      }
+      if (isPtyMouseRoutingActive(target, input)) {
+        dragState = { anchor: null, focus: null, active: false };
+        clearKeyboardAnchor();
+        return routePtyMouseInput(target, input, "up");
       }
       const anchor = dragState.anchor;
       const focus = dragState.focus;
@@ -675,12 +796,21 @@ export const createTerminalHostInputController = (
       clearKeyboardAnchor();
       if (active && focus) {
         const ended = target.endSelection(focus);
-        return { handled: ended, preventDefault: ended };
+        return pointerResult(ended, ended, ended ? "selection-finalized" : "none");
       }
       if (anchor && pointerOptions.clearSelectionOnClick && hasSelection(target) && target.clearSelection(ownerId)) {
-        return { handled: true, preventDefault: true };
+        return pointerResult(true, true, "selection");
       }
       return unhandledPointerResult();
+    },
+    handlePointerScroll(target, input): TerminalHostPointerDispatchResult {
+      if (!pointerOptions.enabled) {
+        return unhandledPointerResult();
+      }
+      if (!isPtyMouseRoutingActive(target, input)) {
+        return unhandledPointerResult();
+      }
+      return routePtyMouseInput(target, input, "wheel");
     },
   };
 };

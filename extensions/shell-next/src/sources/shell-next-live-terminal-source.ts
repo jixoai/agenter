@@ -11,6 +11,7 @@ import {
   type TerminalHostPointerInput,
   type TerminalKeyboardInteractionView,
 } from "@agenter/termless-backend-utils";
+import { TERMINAL_MOUSE_TRACKING_NONE } from "@agenter/termless-core";
 import {
   OPENCOMPOSE_PRODUCT_DYNAMIC_QUIET_MS,
   createOpenComposeLiveTerminalMirror,
@@ -124,6 +125,7 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
       },
       viewportStart: view.viewportStart,
       scrollbackRows: view.scrollbackRows,
+      mouseTracking: view.interaction?.mouseTracking,
       selectionOverlays: view.interaction?.selectionOverlays,
       revision: view.snapshotSeq,
     };
@@ -162,6 +164,10 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
 
   pointerUp(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
     return this.#hostInput.handlePointerUp(this.#inputTarget(), input);
+  }
+
+  pointerScroll(input: TerminalHostPointerInput): TerminalHostPointerDispatchResult {
+    return this.#hostInput.handlePointerScroll(this.#inputTarget(), input);
   }
 
   resize(size: TerminalPaneSize): void {
@@ -300,6 +306,7 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
   #inputTarget(): TerminalHostInputTarget {
     return {
       readKeyboardInteractionView: () => this.#readKeyboardInteractionView(),
+      readMouseTrackingState: () => this.#mirror.getView().interaction?.mouseTracking ?? TERMINAL_MOUSE_TRACKING_NONE,
       writeInput: (chunk) => this.writeInput(chunk),
       followCursor: () => this.#mirror.followCursor(),
       startSelection: (point) => this.#mirror.selectionStart(point),

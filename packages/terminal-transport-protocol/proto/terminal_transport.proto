@@ -43,10 +43,16 @@ message TerminalInteractionCapabilityEntry {
   TerminalInteractionCapabilities capabilities = 2;
 }
 
+message TerminalMouseTrackingState {
+  string protocol = 1;
+  string encoding = 2;
+}
+
 message TerminalInteractionFrameState {
   optional string active_owner_id = 1;
   repeated TerminalSelectionOverlay selection_overlays = 2;
   repeated TerminalInteractionCapabilityEntry capabilities = 3;
+  TerminalMouseTrackingState mouse_tracking = 4;
 }
 
 message TerminalRichSpan {

@@ -1,30 +1,32 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import {
+  TerminalGeometryRole as ProtoTerminalGeometryRole,
+  TerminalStatus as ProtoTerminalStatus,
   TerminalClientFrameSchema,
   TerminalFramePatchSchema,
   TerminalFramePayloadSchema,
-  TerminalGeometryRole as ProtoTerminalGeometryRole,
   TerminalInteractionCapabilitiesSchema,
   TerminalInteractionFrameStateSchema,
+  TerminalMouseTrackingStateSchema,
   TerminalOwnerActionSchema,
   TerminalOwnerCoordinateSchema,
-  TerminalServerFrameSchema,
   TerminalSelectionOverlaySchema,
+  TerminalSelectionPointActionSchema,
   TerminalSelectionRangeActionSchema,
   TerminalSelectionRangeSchema,
-  TerminalSelectionPointActionSchema,
-  TerminalStatus as ProtoTerminalStatus,
+  TerminalServerFrameSchema,
   TerminalTraceFieldSchema,
-  type TerminalClientFrame,
   type TerminalFramePatch as ProtoTerminalFramePatch,
   type TerminalFramePayload as ProtoTerminalFramePayload,
   type TerminalInteractionCapabilities as ProtoTerminalInteractionCapabilities,
   type TerminalInteractionFrameState as ProtoTerminalInteractionFrameState,
+  type TerminalMouseTrackingState as ProtoTerminalMouseTrackingState,
   type TerminalOwnerCoordinate as ProtoTerminalOwnerCoordinate,
   type TerminalSelectionOverlay as ProtoTerminalSelectionOverlay,
   type TerminalSelectionRange as ProtoTerminalSelectionRange,
   type TerminalTraceField as ProtoTerminalTraceField,
+  type TerminalClientFrame,
   type TerminalServerFrame,
 } from "./gen/proto/terminal_transport_pb";
 
@@ -137,10 +139,7 @@ export const estimateTerminalTransportPatchPayloadBytes = (patch: TerminalTransp
     return frameTextLength(patch.frame);
   }
   if (patch.type === "rows") {
-    return patch.rowPatches.reduce(
-      (total, row) => total + row.line.length + richLineTextLength(row.richLine),
-      0,
-    );
+    return patch.rowPatches.reduce((total, row) => total + row.line.length + richLineTextLength(row.richLine), 0);
   }
   if (patch.type === "scrollRows") {
     return (
@@ -148,10 +147,7 @@ export const estimateTerminalTransportPatchPayloadBytes = (patch: TerminalTransp
       (patch.insertedRichLines?.reduce((total, line) => total + richLineTextLength(line), 0) ?? 0)
     );
   }
-  return patch.cachedRows.reduce(
-    (total, row) => total + (row.line?.length ?? 0) + richLineTextLength(row.richLine),
-    0,
-  );
+  return patch.cachedRows.reduce((total, row) => total + (row.line?.length ?? 0) + richLineTextLength(row.richLine), 0);
 };
 
 export const estimateTerminalTransportFramePayloadBytes = (frame: TerminalTransportFramePayload): number =>
@@ -243,8 +239,17 @@ export interface TerminalTransportSelectionOverlay {
   selectedText?: string;
 }
 
+export type TerminalTransportMouseTrackingProtocol = "none" | "vt200" | "drag" | "any";
+export type TerminalTransportMouseTrackingEncoding = "default" | "sgr";
+
+export interface TerminalTransportMouseTrackingState {
+  protocol: TerminalTransportMouseTrackingProtocol;
+  encoding: TerminalTransportMouseTrackingEncoding;
+}
+
 export interface TerminalTransportInteractionFrameState {
   activeOwnerId?: string;
+  mouseTracking?: TerminalTransportMouseTrackingState;
   selectionOverlays?: TerminalTransportSelectionOverlay[];
   capabilities?: Record<string, TerminalTransportInteractionCapabilities>;
 }
@@ -336,13 +341,9 @@ const protoStatusFromDomain = (status: TerminalTransportStatus): ProtoTerminalSt
   status === "BUSY" ? ProtoTerminalStatus.BUSY : ProtoTerminalStatus.IDLE;
 
 const protoGeometryRoleFromDomain = (role: TerminalTransportGeometryRole | undefined): ProtoTerminalGeometryRole =>
-  role === "authority"
-    ? ProtoTerminalGeometryRole.AUTHORITY
-    : ProtoTerminalGeometryRole.PROJECTION_ONLY;
+  role === "authority" ? ProtoTerminalGeometryRole.AUTHORITY : ProtoTerminalGeometryRole.PROJECTION_ONLY;
 
-const domainGeometryRoleFromProto = (
-  role: ProtoTerminalGeometryRole,
-): TerminalTransportGeometryRole | undefined => {
+const domainGeometryRoleFromProto = (role: ProtoTerminalGeometryRole): TerminalTransportGeometryRole | undefined => {
   switch (role) {
     case ProtoTerminalGeometryRole.PROJECTION_ONLY:
       return "projection-only";
@@ -364,7 +365,8 @@ const domainStatusFromProto = (status: ProtoTerminalStatus): TerminalTransportSt
   }
 };
 
-const encodeJsonField = (value: unknown): string | undefined => (value === undefined ? undefined : JSON.stringify(value));
+const encodeJsonField = (value: unknown): string | undefined =>
+  value === undefined ? undefined : JSON.stringify(value);
 
 const decodeJsonField = (value: string | undefined): unknown => {
   if (!value) {
@@ -440,18 +442,27 @@ const isOverlayOwnership = (
 ): value is Extract<TerminalTransportInteractionOwnership, "backend-native" | "backend-adapter-owned"> =>
   value === "backend-native" || value === "backend-adapter-owned";
 
+const isMouseTrackingProtocol = (value: string): value is TerminalTransportMouseTrackingProtocol =>
+  value === "none" || value === "vt200" || value === "drag" || value === "any";
+
+const isMouseTrackingEncoding = (value: string): value is TerminalTransportMouseTrackingEncoding =>
+  value === "default" || value === "sgr";
+
 const cloneInteractionCapabilities = (
   capabilities: TerminalTransportInteractionCapabilities,
 ): TerminalTransportInteractionCapabilities => ({ ...capabilities });
 
-const cloneSelectionOverlay = (
-  overlay: TerminalTransportSelectionOverlay,
-): TerminalTransportSelectionOverlay => ({
+const cloneSelectionOverlay = (overlay: TerminalTransportSelectionOverlay): TerminalTransportSelectionOverlay => ({
   ownerId: overlay.ownerId,
   ownership: overlay.ownership,
   rows: overlay.rows.map((row) => ({ ...row })),
   selectedText: overlay.selectedText,
 });
+
+const cloneMouseTrackingState = (
+  state: TerminalTransportMouseTrackingState | undefined,
+): TerminalTransportMouseTrackingState | undefined =>
+  state ? { protocol: state.protocol, encoding: state.encoding } : undefined;
 
 const cloneInteractionFrameState = (
   state: TerminalTransportInteractionFrameState | undefined,
@@ -459,6 +470,7 @@ const cloneInteractionFrameState = (
   state
     ? {
         activeOwnerId: state.activeOwnerId,
+        mouseTracking: cloneMouseTrackingState(state.mouseTracking),
         selectionOverlays: state.selectionOverlays?.map(cloneSelectionOverlay),
         capabilities: state.capabilities
           ? Object.fromEntries(
@@ -529,10 +541,31 @@ const fromProtoSelectionOverlay = (
   };
 };
 
+const toProtoMouseTrackingState = (state: TerminalTransportMouseTrackingState | undefined) =>
+  state
+    ? create(TerminalMouseTrackingStateSchema, {
+        protocol: state.protocol,
+        encoding: state.encoding,
+      })
+    : undefined;
+
+const fromProtoMouseTrackingState = (
+  state: ProtoTerminalMouseTrackingState | undefined,
+): TerminalTransportMouseTrackingState | undefined => {
+  if (!state || !isMouseTrackingProtocol(state.protocol) || !isMouseTrackingEncoding(state.encoding)) {
+    return undefined;
+  }
+  return {
+    protocol: state.protocol,
+    encoding: state.encoding,
+  };
+};
+
 const toProtoInteractionFrameState = (state: TerminalTransportInteractionFrameState | undefined) =>
   state
     ? create(TerminalInteractionFrameStateSchema, {
         activeOwnerId: state.activeOwnerId,
+        mouseTracking: toProtoMouseTrackingState(state.mouseTracking),
         selectionOverlays: (state.selectionOverlays ?? []).map(toProtoSelectionOverlay),
         capabilities: Object.entries(state.capabilities ?? {}).map(([ownerId, capabilities]) => ({
           ownerId,
@@ -561,6 +594,7 @@ const fromProtoInteractionFrameState = (
     .filter((entry): entry is [string, TerminalTransportInteractionCapabilities] => entry !== null);
   return {
     activeOwnerId: state.activeOwnerId,
+    mouseTracking: fromProtoMouseTrackingState(state.mouseTracking),
     selectionOverlays: selectionOverlays.length > 0 ? selectionOverlays : undefined,
     capabilities: capabilityEntries.length > 0 ? Object.fromEntries(capabilityEntries) : undefined,
   };
@@ -639,7 +673,9 @@ const toProtoFramePayload = (frame: TerminalTransportFramePayload): ProtoTermina
     interaction: toProtoInteractionFrameState(frame.interaction),
   });
 
-const fromProtoRichLine = (line: NonNullable<ProtoTerminalFramePayload["richLines"]>[number]): TerminalTransportRichLine => ({
+const fromProtoRichLine = (
+  line: NonNullable<ProtoTerminalFramePayload["richLines"]>[number],
+): TerminalTransportRichLine => ({
   spans: line.spans.map((span) => ({
     text: span.text,
     fg: span.fg,
@@ -870,8 +906,7 @@ const richLineKey = (line: TerminalTransportRichLine | undefined): string =>
     ]) ?? [],
   );
 
-const isEmptyRichLine = (line: TerminalTransportRichLine | undefined): boolean =>
-  !line || line.spans.length === 0;
+const isEmptyRichLine = (line: TerminalTransportRichLine | undefined): boolean => !line || line.spans.length === 0;
 
 const isEmptyTransportRow = (line: string, richLine: TerminalTransportRichLine | undefined): boolean =>
   line.length === 0 && isEmptyRichLine(richLine);
@@ -889,10 +924,9 @@ const frameRowToCachedContent = (
 };
 
 export interface TerminalTransportRowCacheEncoder {
-  encode(frame: TerminalTransportFramePayload): Extract<
-    TerminalTransportFramePatch,
-    { type: "rowCache" } | { type: "notModified" }
-  >;
+  encode(
+    frame: TerminalTransportFramePayload,
+  ): Extract<TerminalTransportFramePatch, { type: "rowCache" } | { type: "notModified" }>;
   reset(): void;
 }
 
@@ -998,7 +1032,7 @@ export const createTerminalTransportRowCacheDecoder = (): TerminalTransportRowCa
             ? { line: "" }
             : hasContent
               ? { line: row.line ?? "", richLine: row.richLine }
-              : nextRowsByCid.get(cid) ?? previousRowsByCid.get(cid);
+              : (nextRowsByCid.get(cid) ?? previousRowsByCid.get(cid));
         if (!resolved) {
           return null;
         }
@@ -1364,52 +1398,52 @@ export const encodeTerminalTransportServerMessage = (message: TerminalTransportS
               },
             })
           : message.type === "status"
-          ? create(TerminalServerFrameSchema, {
-              body: {
-                case: "status",
-                value: {
-                  terminalId: message.terminalId,
-                  running: message.running,
-                  status: protoStatusFromDomain(message.status),
-                },
-              },
-            })
-          : message.type === "error"
             ? create(TerminalServerFrameSchema, {
                 body: {
-                  case: "error",
+                  case: "status",
                   value: {
                     terminalId: message.terminalId,
-                    message: message.message,
+                    running: message.running,
+                    status: protoStatusFromDomain(message.status),
                   },
                 },
               })
-            : message.type === "trace"
+            : message.type === "error"
               ? create(TerminalServerFrameSchema, {
                   body: {
-                    case: "trace",
+                    case: "error",
                     value: {
                       terminalId: message.terminalId,
-                      event: message.event,
-                      fields: Object.entries(message.fields).map(toProtoTraceField),
-                      timestamp: message.timestamp,
+                      message: message.message,
                     },
                   },
                 })
-              : create(TerminalServerFrameSchema, {
-                  body: {
-                    case: "helloAck",
-                    value: {
-                      terminalId: message.terminalId,
-                      attachmentId: message.attachmentId,
-                      effectiveGeometryRole: protoGeometryRoleFromDomain(message.effectiveGeometryRole),
-                      geometryAuthorityAttachmentId: message.geometryAuthorityAttachmentId,
-                      geometryOrder: message.geometryOrder,
-                      authorityReason: message.authorityReason,
-                      directJson: encodeJsonField(message.direct),
+              : message.type === "trace"
+                ? create(TerminalServerFrameSchema, {
+                    body: {
+                      case: "trace",
+                      value: {
+                        terminalId: message.terminalId,
+                        event: message.event,
+                        fields: Object.entries(message.fields).map(toProtoTraceField),
+                        timestamp: message.timestamp,
+                      },
                     },
-                  },
-                });
+                  })
+                : create(TerminalServerFrameSchema, {
+                    body: {
+                      case: "helloAck",
+                      value: {
+                        terminalId: message.terminalId,
+                        attachmentId: message.attachmentId,
+                        effectiveGeometryRole: protoGeometryRoleFromDomain(message.effectiveGeometryRole),
+                        geometryAuthorityAttachmentId: message.geometryAuthorityAttachmentId,
+                        geometryOrder: message.geometryOrder,
+                        authorityReason: message.authorityReason,
+                        directJson: encodeJsonField(message.direct),
+                      },
+                    },
+                  });
   return toBinary(TerminalServerFrameSchema, frame);
 };
 

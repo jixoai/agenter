@@ -1,7 +1,7 @@
 import type {
-  TerminalTransportInteractionFrameState,
-  TerminalTransportFramePayload,
   TerminalTransportFramePatch,
+  TerminalTransportFramePayload,
+  TerminalTransportInteractionFrameState,
   TerminalTransportRichLine,
 } from "@agenter/terminal-transport-protocol";
 import { cloneTerminalTransportFramePayload } from "@agenter/terminal-transport-protocol";
@@ -9,10 +9,7 @@ import type { TerminalInteractionFrameState } from "@agenter/termless-core";
 
 import type { ManagedTerminalSnapshot } from "./managed-terminal";
 
-export type {
-  TerminalTransportFramePayload,
-  TerminalTransportFramePatch,
-} from "@agenter/terminal-transport-protocol";
+export type { TerminalTransportFramePatch, TerminalTransportFramePayload } from "@agenter/terminal-transport-protocol";
 
 const textEncoder = new TextEncoder();
 
@@ -26,6 +23,7 @@ const cloneInteractionFrameState = (
   interaction
     ? {
         activeOwnerId: interaction.activeOwnerId,
+        mouseTracking: interaction.mouseTracking ? { ...interaction.mouseTracking } : undefined,
         selectionOverlays: interaction.selectionOverlays?.map((overlay) => ({
           ownerId: overlay.ownerId,
           ownership: overlay.ownership,
@@ -34,10 +32,7 @@ const cloneInteractionFrameState = (
         })),
         capabilities: interaction.capabilities
           ? Object.fromEntries(
-              Object.entries(interaction.capabilities).map(([ownerId, capabilities]) => [
-                ownerId,
-                { ...capabilities },
-              ]),
+              Object.entries(interaction.capabilities).map(([ownerId, capabilities]) => [ownerId, { ...capabilities }]),
             )
           : undefined,
       }
@@ -54,7 +49,9 @@ const projectInteractionFrameState = (
   const selectionOverlays = cloned.selectionOverlays
     .map((overlay) => ({
       ...overlay,
-      rows: overlay.rows.filter((row) => row.row >= input.viewportStart && row.row < input.viewportStart + input.requestedRows),
+      rows: overlay.rows.filter(
+        (row) => row.row >= input.viewportStart && row.row < input.viewportStart + input.requestedRows,
+      ),
     }))
     .filter((overlay) => overlay.rows.length > 0);
   return {
@@ -105,13 +102,13 @@ export const projectTerminalSnapshotFramePayload = (
     snapshot.scrollback.screenLines <= snapshot.lines.length &&
     requestedViewportStart >= snapshot.scrollback.viewportOffset &&
     requestedViewportStart < snapshot.scrollback.viewportOffset + snapshot.lines.length;
-  const totalLines = carriesFullScrollback || carriesBackendViewport
-    ? Math.max(advertisedTotalLines, snapshot.lines.length)
-    : Math.max(snapshot.lines.length, requestedRows);
+  const totalLines =
+    carriesFullScrollback || carriesBackendViewport
+      ? Math.max(advertisedTotalLines, snapshot.lines.length)
+      : Math.max(snapshot.lines.length, requestedRows);
   const maxStart = Math.max(0, totalLines - requestedRows);
-  const viewportStart = carriesFullScrollback || carriesBackendViewport
-    ? Math.max(0, Math.min(maxStart, requestedViewportStart))
-    : 0;
+  const viewportStart =
+    carriesFullScrollback || carriesBackendViewport ? Math.max(0, Math.min(maxStart, requestedViewportStart)) : 0;
   const sourceStart = carriesFullScrollback
     ? viewportStart
     : carriesBackendViewport
@@ -128,9 +125,8 @@ export const projectTerminalSnapshotFramePayload = (
       visibleRichLines.push({ spans: [] });
     }
   }
-  const cursorLocalY = carriesFullScrollback || carriesBackendViewport
-    ? snapshot.cursor.y - viewportStart
-    : snapshot.cursor.y;
+  const cursorLocalY =
+    carriesFullScrollback || carriesBackendViewport ? snapshot.cursor.y - viewportStart : snapshot.cursor.y;
   return {
     seq: snapshot.seq,
     timestamp: snapshot.timestamp,
@@ -235,8 +231,7 @@ const buildScrollRowsPatch = (
   if (deltaRows === 0) {
     return null;
   }
-  const insertedLines =
-    deltaRows > 0 ? current.lines.slice(-deltaRows) : current.lines.slice(0, Math.abs(deltaRows));
+  const insertedLines = deltaRows > 0 ? current.lines.slice(-deltaRows) : current.lines.slice(0, Math.abs(deltaRows));
   const insertedRichLines =
     current.richLines && base.richLines
       ? deltaRows > 0

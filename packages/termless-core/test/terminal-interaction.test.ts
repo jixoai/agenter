@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import {
   TERMINAL_INTERACTION_HOST_PROJECTION_ONLY,
   TERMINAL_INTERACTION_UNAVAILABLE,
+  TERMINAL_MOUSE_TRACKING_NONE,
+  XtermBridge,
   createBackendInteractionAdapter,
   createTerminalInteractionCapabilities,
   isBackendOwnedTerminalInteraction,
@@ -42,6 +44,33 @@ const createReadable = (lines: string[]): TerminalInteractionReadable => ({
 });
 
 describe("Feature: backend-owned terminal interaction capability facts", () => {
+  test("Scenario: Given PTY output toggles xterm mouse modes When the bridge parses DECSET and DECRST Then per-terminal mouse tracking truth is exposed", () => {
+    const bridge = new XtermBridge(20, 4, 100, "xterm");
+
+    expect(bridge.getMouseTrackingState()).toEqual(TERMINAL_MOUSE_TRACKING_NONE);
+
+    bridge.writeSync("\x1b[?1000h");
+    expect(bridge.getMouseTrackingState()).toEqual({ protocol: "vt200", encoding: "default" });
+
+    bridge.writeSync("\x1b[?1002h\x1b[?1006h");
+    expect(bridge.getMouseTrackingState()).toEqual({ protocol: "drag", encoding: "sgr" });
+
+    bridge.writeSync("\x1b[?1003h");
+    expect(bridge.getMouseTrackingState()).toEqual({ protocol: "any", encoding: "sgr" });
+
+    bridge.writeSync("\x1b[?1003l");
+    expect(bridge.getMouseTrackingState()).toEqual({ protocol: "drag", encoding: "sgr" });
+
+    bridge.writeSync("\x1b[?1002l\x1b[?1000l\x1b[?1006l");
+    expect(bridge.getMouseTrackingState()).toEqual(TERMINAL_MOUSE_TRACKING_NONE);
+
+    bridge.writeSync("\x1b[?10");
+    bridge.writeSync("02h");
+    expect(bridge.getMouseTrackingState()).toEqual({ protocol: "drag", encoding: "default" });
+
+    bridge.dispose();
+  });
+
   test("Scenario: Given capability facts When checking ownership Then native adapter unavailable and host projection-only are not conflated", () => {
     const native = createTerminalInteractionCapabilities("backend-native");
     const adapter = createTerminalInteractionCapabilities("backend-adapter-owned");

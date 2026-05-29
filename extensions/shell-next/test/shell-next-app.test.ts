@@ -5,7 +5,11 @@ import type {
   TerminalTransportSelectionRange,
 } from "@agenter/terminal-transport-protocol";
 import { createTerminalHostInputController, type TerminalHostInputTarget } from "@agenter/termless-backend-utils";
-import { createBackendInteractionAdapter } from "@agenter/termless-core";
+import {
+  createBackendInteractionAdapter,
+  TERMINAL_MOUSE_TRACKING_NONE,
+  type TerminalMouseTrackingState,
+} from "@agenter/termless-core";
 import { MouseButton, parseKeypress, TextAttributes } from "@opentui/core";
 import { createTestRenderer, type TestRenderer } from "@opentui/core/testing";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -46,6 +50,7 @@ interface RecordingSource {
   writeAccepted: boolean;
   title: string;
   cursor: TerminalFrameSnapshot["cursor"] | undefined;
+  mouseTracking: TerminalMouseTrackingState;
   selectionOverlays: readonly TerminalTransportSelectionOverlay[];
   readonly terminated: () => boolean;
   readonly disposed: () => boolean;
@@ -75,6 +80,7 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
   let copyResult: boolean | string = true;
   let title = id;
   let cursor: TerminalFrameSnapshot["cursor"] | undefined;
+  let mouseTracking: TerminalMouseTrackingState = TERMINAL_MOUSE_TRACKING_NONE;
   let followCursorCount = 0;
   let selectionOverlays: readonly TerminalTransportSelectionOverlay[] = [];
   let disposed = false;
@@ -150,6 +156,9 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
       followCursorCount += 1;
       return true;
     },
+    readMouseTrackingState() {
+      return mouseTracking;
+    },
     startSelection(point) {
       selectionEvents.push({ type: "start", point });
       const selected = interaction.startSelection(point);
@@ -202,6 +211,7 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
       size: resizeCalls.at(-1) ?? { cols: 40, rows: 10 },
       lines: readLines(),
       cursor,
+      mouseTracking,
       selectionOverlays,
       revision,
     }),
@@ -319,6 +329,12 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
     },
     set cursor(value: TerminalFrameSnapshot["cursor"] | undefined) {
       cursor = value;
+    },
+    get mouseTracking() {
+      return mouseTracking;
+    },
+    set mouseTracking(value: TerminalMouseTrackingState) {
+      mouseTracking = value;
     },
     get selectionOverlays() {
       return selectionOverlays;
@@ -1399,6 +1415,24 @@ describe("Feature: shell-next app runtime", () => {
 
     expect(recordings[0].copyRequests).toContain("terminal:primary");
     expect(copied).toContain(`${SHELL_NEXT_CLIPBOARD_TARGETS.primary}:selected shell text`);
+  });
+
+  test("Scenario: Given a mouse-aware TUI handles drag release When Shell-Next receives pty-mouse pointer effects Then it does not mirror primary selection", async () => {
+    const { setup, recordings } = await startApp();
+    const copied: string[] = [];
+    recordings[0].mouseTracking = { protocol: "drag", encoding: "sgr" };
+    recordings[0].copyResult = "selected shell text";
+    setup.renderer.copyToClipboardOSC52 = ((text: string, target?: ShellNextClipboardTarget) => {
+      copied.push(`${target ?? SHELL_NEXT_CLIPBOARD_TARGETS.clipboard}:${text}`);
+      return true;
+    }) as typeof setup.renderer.copyToClipboardOSC52;
+
+    await setup.mockMouse.drag(2, 1, 10, 1);
+    await setup.renderOnce();
+
+    expect(recordings[0].inputChunks).toContain("\x1b[<0;2;1M");
+    expect(recordings[0].copyRequests).not.toContain("terminal:primary");
+    expect(copied).not.toContain(`${SHELL_NEXT_CLIPBOARD_TARGETS.primary}:selected shell text`);
   });
 
   test("Scenario: Given a live shell pane drag selection When async selected text arrives Then shell-next writes it to primary", async () => {

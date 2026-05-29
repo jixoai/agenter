@@ -1,22 +1,46 @@
 import { createTerminalBackend, DEFAULT_TERMINAL_BACKEND, type TerminalBackendKind } from "./backend-factory.js";
 import type { TerminalLinesRangeReadable } from "./render-structured-buffer.js";
 import {
-  TERMINAL_INTERACTION_DEFAULT_OWNER_ID,
+  cloneTerminalMouseTrackingState,
   createBackendInteractionAdapter,
   isTerminalInteractionController,
+  TERMINAL_INTERACTION_DEFAULT_OWNER_ID,
+  TERMINAL_MOUSE_TRACKING_NONE,
   type TerminalInteractionCapabilities,
   type TerminalInteractionController,
+  type TerminalMouseTrackingEncoding,
+  type TerminalMouseTrackingProtocol,
+  type TerminalMouseTrackingState,
   type TerminalOwnerCoordinate,
   type TerminalSelectionOverlay,
   type TerminalSelectionRange,
 } from "./terminal-interaction.js";
-import type { Cell, CursorState, ScrollbackState, TerminalBackend, TerminalMode, TerminalReadable } from "./termless-types.js";
+import type {
+  Cell,
+  CursorState,
+  ScrollbackState,
+  TerminalBackend,
+  TerminalMode,
+  TerminalReadable,
+} from "./termless-types.js";
 
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 30;
 const DEFAULT_SCROLLBACK = 10_000;
 
 const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+type XtermMouseProtocolMode = 1000 | 1002 | 1003;
+
+const protocolByDecPrivateMode = new Map<number, TerminalMouseTrackingProtocol>([
+  [1000, "vt200"],
+  [1002, "drag"],
+  [1003, "any"],
+]);
+
+const resolveMouseTrackingProtocol = (modes: ReadonlySet<XtermMouseProtocolMode>): TerminalMouseTrackingProtocol =>
+  modes.has(1003) ? "any" : modes.has(1002) ? "drag" : modes.has(1000) ? "vt200" : "none";
 
 interface TerminalBackendWithRangeReads extends TerminalBackend {
   getLinesRange?: (startRow: number, rowCount: number) => Cell[][];
@@ -33,6 +57,7 @@ export interface XtermBridgeReadable extends TerminalReadable, TerminalLinesRang
   scrollViewport(delta: number): void;
   setViewportStart(viewportStart: number): void;
   followCursor(options?: { viewportRows?: number }): boolean;
+  getMouseTrackingState(): TerminalMouseTrackingState;
   reset(): void;
   dispose(): void;
   onTitleChange(listener: (title: string) => void): () => void;
@@ -46,6 +71,9 @@ export class XtermReadableBridge implements XtermBridgeReadable, TerminalInterac
   private colsValue: number;
   private rowsValue: number;
   private readonly backendKindValue: TerminalBackendKind;
+  private readonly mouseProtocolModes = new Set<XtermMouseProtocolMode>();
+  private mouseTrackingEncoding: TerminalMouseTrackingEncoding = "default";
+  private mouseTrackingScanBuffer = "";
 
   constructor(
     cols: number = DEFAULT_COLS,
@@ -77,6 +105,7 @@ export class XtermReadableBridge implements XtermBridgeReadable, TerminalInterac
   }
 
   writeSync(data: string | Uint8Array): void {
+    this.updateMouseTrackingState(typeof data === "string" ? data : textDecoder.decode(data));
     this.backend.feed(typeof data === "string" ? textEncoder.encode(data) : data);
     this.flushTitle();
   }
@@ -111,7 +140,8 @@ export class XtermReadableBridge implements XtermBridgeReadable, TerminalInterac
     const cursor = this.backend.getCursor();
     const scrollback = this.backend.getScrollback();
     const requestedRows = Math.trunc(options.viewportRows ?? scrollback.screenLines);
-    const viewportSize = Number.isFinite(requestedRows) && requestedRows > 0 ? requestedRows : Math.max(1, scrollback.screenLines);
+    const viewportSize =
+      Number.isFinite(requestedRows) && requestedRows > 0 ? requestedRows : Math.max(1, scrollback.screenLines);
     const target = Math.max(0, Math.trunc(cursor.y) - viewportSize + 1);
     this.setViewportStart(target);
     return true;
@@ -157,8 +187,20 @@ export class XtermReadableBridge implements XtermBridgeReadable, TerminalInterac
     return this.interaction.getSelectionOverlay(ownerId);
   }
 
+  getMouseTrackingState(): TerminalMouseTrackingState {
+    return (
+      cloneTerminalMouseTrackingState({
+        protocol: resolveMouseTrackingProtocol(this.mouseProtocolModes),
+        encoding: this.mouseTrackingEncoding,
+      }) ?? TERMINAL_MOUSE_TRACKING_NONE
+    );
+  }
+
   reset(): void {
     this.backend.reset();
+    this.mouseProtocolModes.clear();
+    this.mouseTrackingEncoding = "default";
+    this.mouseTrackingScanBuffer = "";
     this.flushTitle();
   }
 
@@ -190,8 +232,10 @@ export class XtermReadableBridge implements XtermBridgeReadable, TerminalInterac
   getLinesRange(startRow: number, rowCount: number): Cell[][] {
     const safeStart = Math.max(0, Math.trunc(startRow));
     const safeRows = Math.max(1, Math.trunc(rowCount));
-    return this.backend.getLinesRange?.(safeStart, safeRows) ??
-      Array.from({ length: safeRows }, (_, index) => this.backend.getLine(safeStart + index));
+    return (
+      this.backend.getLinesRange?.(safeStart, safeRows) ??
+      Array.from({ length: safeRows }, (_, index) => this.backend.getLine(safeStart + index))
+    );
   }
 
   getViewportLines(): Cell[][] {
@@ -246,6 +290,37 @@ export class XtermReadableBridge implements XtermBridgeReadable, TerminalInterac
     for (const listener of this.titleListeners) {
       listener(nextTitle);
     }
+  }
+
+  private updateMouseTrackingState(data: string): void {
+    const scan = `${this.mouseTrackingScanBuffer}${data}`;
+    const sequencePattern = /\x1b\[\?([0-9;:]*)([hl])/g;
+    let lastConsumedIndex = 0;
+    for (const match of scan.matchAll(sequencePattern)) {
+      lastConsumedIndex = (match.index ?? 0) + match[0].length;
+      const enabled = match[2] === "h";
+      const modes = match[1]
+        .split(/[;:]/u)
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value));
+      for (const mode of modes) {
+        if (protocolByDecPrivateMode.has(mode)) {
+          if (enabled) {
+            this.mouseProtocolModes.add(mode as XtermMouseProtocolMode);
+          } else {
+            this.mouseProtocolModes.delete(mode as XtermMouseProtocolMode);
+          }
+          continue;
+        }
+        if (mode === 1006) {
+          this.mouseTrackingEncoding = enabled ? "sgr" : "default";
+        }
+      }
+    }
+    const trailing = scan.slice(lastConsumedIndex);
+    const incompleteStart = trailing.lastIndexOf("\x1b[?");
+    this.mouseTrackingScanBuffer =
+      incompleteStart >= 0 ? trailing.slice(incompleteStart).slice(-64) : trailing.slice(-16);
   }
 }
 

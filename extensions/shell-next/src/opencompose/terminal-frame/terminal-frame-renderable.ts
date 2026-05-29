@@ -2,12 +2,13 @@ import type { TerminalTransportSelectionOverlay } from "@agenter/terminal-transp
 import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import { BoxRenderable, type BoxOptions, type MouseEvent, type PasteEvent, type RenderContext } from "@opentui/core";
 
-import { OpenComposeScrollbarRenderable } from "./scrollbar-renderable";
-import { isOpenComposeImagePastePayload, readOpenComposePastePayload, type OpenComposePastePayload } from "./paste-input";
 import {
-  OpenComposeTerminalViewRenderable,
-  type OpenComposeTerminalPointerHandler,
-} from "./terminal-view-renderable";
+  isOpenComposeImagePastePayload,
+  readOpenComposePastePayload,
+  type OpenComposePastePayload,
+} from "./paste-input";
+import { OpenComposeScrollbarRenderable } from "./scrollbar-renderable";
+import { OpenComposeTerminalViewRenderable, type OpenComposeTerminalPointerHandler } from "./terminal-view-renderable";
 
 export interface OpenComposeTerminalFrameState {
   lines: readonly TerminalRenderRichLine[];
@@ -29,6 +30,7 @@ export interface OpenComposeTerminalFrameBridge {
   pointerDown?: OpenComposeTerminalPointerHandler;
   pointerDrag?: OpenComposeTerminalPointerHandler;
   pointerUp?: OpenComposeTerminalPointerHandler;
+  pointerScroll?: OpenComposeTerminalPointerHandler;
 }
 
 export interface OpenComposeTerminalFrameUpdateResult {
@@ -80,9 +82,11 @@ export class OpenComposeTerminalFrameRenderable extends BoxRenderable {
       height: normalizeDimension(this.height),
       focused: true,
       lines: state.lines,
+      selectionSources: this.resolveTerminalSelectionSources(),
       onPointerDown: (input) => this.#bridge.pointerDown?.(input),
       onPointerDrag: (input) => this.#bridge.pointerDrag?.(input),
       onPointerUp: (input) => this.#bridge.pointerUp?.(input),
+      onPointerScroll: (input) => this.#bridge.pointerScroll?.(input),
       onMouseScroll: (event) => this.handleTerminalMouseScroll(event),
       onPaste: (event) => this.handleTerminalPaste(event),
     });
@@ -115,6 +119,7 @@ export class OpenComposeTerminalFrameRenderable extends BoxRenderable {
         col: state.cursorCol,
         visible: state.cursorVisible,
       },
+      selectionSources: this.resolveTerminalSelectionSources(),
       selectionOverlays: state.selectionOverlays,
     });
     this.scrollbar.applyBackendState(scrollbarState);
@@ -181,6 +186,9 @@ export class OpenComposeTerminalFrameRenderable extends BoxRenderable {
   }
 
   private handleTerminalMouseScroll(event: MouseEvent): void {
+    if (event.defaultPrevented) {
+      return;
+    }
     const direction = event.scroll?.direction;
     const delta = event.scroll?.delta ?? 1;
     const signedDelta = direction === "up" ? -delta : direction === "down" ? delta : 0;
@@ -217,6 +225,20 @@ export class OpenComposeTerminalFrameRenderable extends BoxRenderable {
     };
   }
 
+  private resolveTerminalSelectionSources() {
+    return [
+      {
+        owner: "terminal" as const,
+        row: 0,
+        col: 0,
+        width: this.resolveTerminalWidth(),
+        height: normalizeDimension(this.height),
+        sourceStartRow: Math.max(0, Math.trunc(this.#state.viewportStart)),
+        lines: this.#state.lines,
+      },
+    ];
+  }
+
   private applyLayout(): void {
     const width = normalizeDimension(this.width);
     const height = normalizeDimension(this.height);
@@ -225,6 +247,7 @@ export class OpenComposeTerminalFrameRenderable extends BoxRenderable {
     this.terminalView.top = 0;
     this.terminalView.width = this.resolveTerminalWidth();
     this.terminalView.height = height;
+    this.terminalView.selectionSources = this.resolveTerminalSelectionSources();
     this.scrollbar.left = this.resolveScrollbarLeft();
     this.scrollbar.top = 0;
     this.scrollbar.width = 1;

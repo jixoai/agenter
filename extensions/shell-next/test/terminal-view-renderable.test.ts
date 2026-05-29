@@ -3,6 +3,7 @@ import { createBackendInteractionAdapter, type TerminalRenderRichLine } from "@a
 import { createTestRenderer } from "@opentui/core/testing";
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { OpenComposeTerminalFrameRenderable } from "../src/opencompose/terminal-frame/terminal-frame-renderable";
 import { OpenComposeTerminalViewRenderable } from "../src/opencompose/terminal-frame/terminal-view-renderable";
 
 let activeRenderer: Awaited<ReturnType<typeof createTestRenderer>> | null = null;
@@ -136,5 +137,107 @@ describe("Feature: shell-next terminal semantic selection ownership", () => {
     expect(semanticPoints).toContainEqual({ ownerId: "terminal", row: 1, col: 5 });
     expect(view.hasSelection()).toBe(true);
     expect(target.copySelection("terminal")).toBe("shell prompt");
+  });
+
+  test("Scenario: Given a scrolled terminal frame When a word is double clicked Then Shell-Next sends the absolute backend row to the selection controller", async () => {
+    activeRenderer = await createTestRenderer({ width: 40, height: 4, useMouse: true });
+    const hostInput = createTerminalHostInputController();
+    const absoluteLines = Array.from({ length: 25 }, (_, index) =>
+      index === 21 ? "$ echo alpha beta gamma" : `line ${index}`,
+    );
+    const semanticPoints: Array<{ ownerId: string; row: number; col: number }> = [];
+    const target = createInputTarget(absoluteLines);
+    const frame = new OpenComposeTerminalFrameRenderable(activeRenderer.renderer, {
+      id: "terminal-frame-scrolled-double-click",
+      position: "absolute",
+      top: 0,
+      left: 0,
+      width: 40,
+      height: 3,
+      scrollbarVisible: false,
+      state: {
+        lines: absoluteLines.slice(20, 23).map(createLine),
+        cursorCol: 0,
+        cursorAbsRow: 21,
+        cursorVisible: true,
+        viewportStart: 20,
+        scrollbackRows: absoluteLines.length,
+      },
+      bridge: {
+        scrollViewport: () => false,
+        setViewportStart: () => false,
+        pointerDown: (input) => {
+          if (input.point) {
+            semanticPoints.push(input.point);
+          }
+          return hostInput.handlePointerDown(target, input);
+        },
+        pointerUp: (input) => hostInput.handlePointerUp(target, input),
+      },
+    });
+    activeRenderer.renderer.root.add(frame);
+    await activeRenderer.renderOnce();
+
+    await activeRenderer.mockMouse.doubleClick(9, 1);
+    await activeRenderer.renderOnce();
+
+    expect(semanticPoints).toContainEqual({ ownerId: "terminal", row: 21, col: 9 });
+    expect(target.copySelection("terminal")).toBe("alpha");
+  });
+
+  test("Scenario: Given a scrolled terminal frame When the operator drags across visible rows Then Shell-Next sends absolute backend rows", async () => {
+    activeRenderer = await createTestRenderer({ width: 40, height: 5, useMouse: true });
+    const hostInput = createTerminalHostInputController();
+    const absoluteLines = Array.from({ length: 16 }, (_, index) => `line ${index} alpha beta`);
+    const baseTarget = createInputTarget(absoluteLines);
+    const selectionEvents: Array<{ type: "start" | "update" | "end"; row: number; col: number }> = [];
+    const target: TerminalHostInputTarget & { copySelection(ownerId?: string): string } = {
+      ...baseTarget,
+      startSelection(point) {
+        selectionEvents.push({ type: "start", row: point.row, col: point.col });
+        return baseTarget.startSelection(point);
+      },
+      updateSelection(point) {
+        selectionEvents.push({ type: "update", row: point.row, col: point.col });
+        return baseTarget.updateSelection(point);
+      },
+      endSelection(point) {
+        selectionEvents.push({ type: "end", row: point.row, col: point.col });
+        return baseTarget.endSelection(point);
+      },
+    };
+    const frame = new OpenComposeTerminalFrameRenderable(activeRenderer.renderer, {
+      id: "terminal-frame-scrolled-drag",
+      position: "absolute",
+      top: 0,
+      left: 0,
+      width: 40,
+      height: 3,
+      scrollbarVisible: false,
+      state: {
+        lines: absoluteLines.slice(10, 13).map(createLine),
+        cursorCol: 0,
+        cursorAbsRow: 12,
+        cursorVisible: true,
+        viewportStart: 10,
+        scrollbackRows: absoluteLines.length,
+      },
+      bridge: {
+        scrollViewport: () => false,
+        setViewportStart: () => false,
+        pointerDown: (input) => hostInput.handlePointerDown(target, input),
+        pointerDrag: (input) => hostInput.handlePointerDrag(target, input),
+        pointerUp: (input) => hostInput.handlePointerUp(target, input),
+      },
+    });
+    activeRenderer.renderer.root.add(frame);
+    await activeRenderer.renderOnce();
+
+    await activeRenderer.mockMouse.drag(2, 0, 10, 2);
+    await activeRenderer.renderOnce();
+
+    expect(selectionEvents).toContainEqual({ type: "start", row: 10, col: 2 });
+    expect(selectionEvents).toContainEqual({ type: "update", row: 12, col: 10 });
+    expect(selectionEvents).toContainEqual({ type: "end", row: 12, col: 10 });
   });
 });

@@ -1,3 +1,8 @@
+import type {
+  TerminalTransportOwnerCoordinate,
+  TerminalTransportSelectionOverlay,
+} from "@agenter/terminal-transport-protocol";
+import type { TerminalRenderRichLine } from "@agenter/termless-core";
 import {
   FrameBufferRenderable,
   RGBA,
@@ -6,11 +11,6 @@ import {
   type MouseEvent,
   type RenderContext,
 } from "@opentui/core";
-import type { TerminalRenderRichLine } from "@agenter/termless-core";
-import type {
-  TerminalTransportOwnerCoordinate,
-  TerminalTransportSelectionOverlay,
-} from "@agenter/terminal-transport-protocol";
 
 import { measureTerminalText } from "./cell-width";
 import type { OpenComposeSelectionRegion, OpenComposeSelectionSource } from "./types";
@@ -411,6 +411,32 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     };
   }
 
+  protected localToViewportCoordinate(
+    localX: number,
+    localY: number,
+    expectedOwnerId: string | null,
+  ): TerminalTransportOwnerCoordinate | null {
+    const x = Math.trunc(localX);
+    const y = Math.trunc(localY);
+    const region = this.resolveSelectionRegionForPoint(x, y);
+    if (!this.isPointInsideRegion(x, y, region)) {
+      return null;
+    }
+    const ownerId = region.owner ?? DEFAULT_OWNER_ID;
+    if (expectedOwnerId !== null && ownerId !== expectedOwnerId) {
+      return null;
+    }
+    const source = this.resolveSelectionSourceForOwner(ownerId);
+    const sourceLocalRow = source ? y - source.row : y - region.y;
+    const sourceLocalCol = source ? x - source.col : x - region.x;
+    const maxCol = Math.max(0, Math.trunc((source?.width ?? region.width) - 1));
+    return {
+      ownerId,
+      row: Math.max(0, sourceLocalRow),
+      col: Math.max(0, Math.min(maxCol, sourceLocalCol)),
+    };
+  }
+
   protected resolveSelectionSourceForOwner(ownerId: string): OpenComposeSelectionSource | null {
     return this.#selectionSources.find((source) => source.owner === ownerId) ?? null;
   }
@@ -420,6 +446,13 @@ export class OpenComposeFrameRenderable extends FrameBufferRenderable {
     expectedOwnerId: string | null,
   ): TerminalTransportOwnerCoordinate | null {
     return this.localToOwnerCoordinate(Math.trunc(event.x - this.x), Math.trunc(event.y - this.y), expectedOwnerId);
+  }
+
+  protected eventToViewportCoordinate(
+    event: MouseEvent,
+    expectedOwnerId: string | null,
+  ): TerminalTransportOwnerCoordinate | null {
+    return this.localToViewportCoordinate(Math.trunc(event.x - this.x), Math.trunc(event.y - this.y), expectedOwnerId);
   }
 
   protected traceInteraction(

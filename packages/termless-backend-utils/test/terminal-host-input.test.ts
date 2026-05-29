@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { createBackendInteractionAdapter, type Cell } from "@agenter/termless-core";
+import {
+  TERMINAL_MOUSE_TRACKING_NONE,
+  createBackendInteractionAdapter,
+  type Cell,
+  type TerminalMouseTrackingState,
+} from "@agenter/termless-core";
 import { createTerminalHostInputController, type TerminalHostInputTarget } from "../src/terminal-host-input.js";
 
 const emptyCell = (char: string): Cell => ({
@@ -24,6 +29,7 @@ const emptyCell = (char: string): Cell => ({
 const createKeyboardTarget = (input: {
   line: string;
   cursorCol: number;
+  mouseTracking?: TerminalMouseTrackingState;
 }): {
   target: TerminalHostInputTarget & { copySelection(ownerId?: string): string };
   writes: Array<string | Uint8Array>;
@@ -62,6 +68,9 @@ const createKeyboardTarget = (input: {
       writes.push(chunk);
       return true;
     },
+    readMouseTrackingState() {
+      return input.mouseTracking ?? TERMINAL_MOUSE_TRACKING_NONE;
+    },
     followCursor() {
       followCursorCalls += 1;
       return true;
@@ -77,6 +86,124 @@ const createKeyboardTarget = (input: {
 };
 
 describe("Feature: termless backend host input utilities", () => {
+  test("Scenario: Given a plain shell drag When pointer ownership stays in the backend Then drag selection finalizes explicitly", () => {
+    const controller = createTerminalHostInputController();
+    const target = createKeyboardTarget({ line: "$ echo alpha beta gamma", cursorCol: 0 }).target;
+
+    const down = controller.handlePointerDown(target, {
+      button: "left",
+      point: { ownerId: "terminal", row: 0, col: 2 },
+      viewportPoint: { ownerId: "terminal", row: 0, col: 2 },
+      timestampMs: 100,
+    });
+    const drag = controller.handlePointerDrag(target, {
+      button: "left",
+      point: { ownerId: "terminal", row: 0, col: 12 },
+      viewportPoint: { ownerId: "terminal", row: 0, col: 12 },
+      timestampMs: 110,
+    });
+    const up = controller.handlePointerUp(target, {
+      button: "left",
+      point: { ownerId: "terminal", row: 0, col: 12 },
+      viewportPoint: { ownerId: "terminal", row: 0, col: 12 },
+      timestampMs: 120,
+    });
+
+    expect(down).toEqual({ handled: false, preventDefault: false, effect: "none" });
+    expect(drag).toEqual({ handled: true, preventDefault: true, effect: "selection" });
+    expect(up).toEqual({ handled: true, preventDefault: true, effect: "selection-finalized" });
+    expect(target.copySelection("terminal")).toBe("echo alpha");
+  });
+
+  test("Scenario: Given a mouse-aware TUI requests SGR drag tracking When host pointer events arrive Then PTY bytes are written and selection is skipped", () => {
+    const controller = createTerminalHostInputController();
+    const targetState = createKeyboardTarget({
+      line: "$ echo alpha beta gamma",
+      cursorCol: 0,
+      mouseTracking: { protocol: "drag", encoding: "sgr" },
+    });
+
+    const down = controller.handlePointerDown(targetState.target, {
+      button: "left",
+      point: { ownerId: "terminal", row: 20, col: 4 },
+      viewportPoint: { ownerId: "terminal", row: 2, col: 4 },
+      timestampMs: 100,
+    });
+    const drag = controller.handlePointerDrag(targetState.target, {
+      button: "left",
+      point: { ownerId: "terminal", row: 21, col: 6 },
+      viewportPoint: { ownerId: "terminal", row: 3, col: 6 },
+      timestampMs: 110,
+    });
+    const up = controller.handlePointerUp(targetState.target, {
+      button: "left",
+      point: { ownerId: "terminal", row: 21, col: 6 },
+      viewportPoint: { ownerId: "terminal", row: 3, col: 6 },
+      timestampMs: 120,
+    });
+
+    expect(down).toEqual({ handled: true, preventDefault: true, effect: "pty-mouse" });
+    expect(drag).toEqual({ handled: true, preventDefault: true, effect: "pty-mouse" });
+    expect(up).toEqual({ handled: true, preventDefault: true, effect: "pty-mouse" });
+    expect(targetState.writes).toEqual(["\x1b[<0;5;3M", "\x1b[<32;7;4M", "\x1b[<0;7;4m"]);
+    expect(targetState.target.getSelectionOverlay("terminal")).toBeNull();
+  });
+
+  test("Scenario: Given default encoded mouse tracking When a wheel event arrives Then backend utilities write xterm default mouse bytes", () => {
+    const controller = createTerminalHostInputController();
+    const targetState = createKeyboardTarget({
+      line: "$ echo alpha beta gamma",
+      cursorCol: 0,
+      mouseTracking: { protocol: "vt200", encoding: "default" },
+    });
+
+    const result = controller.handlePointerScroll(targetState.target, {
+      button: "wheel-down",
+      point: { ownerId: "terminal", row: 10, col: 0 },
+      viewportPoint: { ownerId: "terminal", row: 0, col: 0 },
+      timestampMs: 100,
+    });
+
+    expect(result).toEqual({ handled: true, preventDefault: true, effect: "pty-mouse" });
+    expect(targetState.writes).toEqual(["\x1b[Ma!!"]);
+  });
+
+  test("Scenario: Given active PTY mouse tracking When Shift drag is delivered by the host Then the operator escape hatch still selects text", () => {
+    const controller = createTerminalHostInputController();
+    const targetState = createKeyboardTarget({
+      line: "$ echo alpha beta gamma",
+      cursorCol: 0,
+      mouseTracking: { protocol: "any", encoding: "sgr" },
+    });
+
+    controller.handlePointerDown(targetState.target, {
+      button: "left",
+      point: { ownerId: "terminal", row: 0, col: 2 },
+      viewportPoint: { ownerId: "terminal", row: 0, col: 2 },
+      modifiers: { shift: true },
+      timestampMs: 100,
+    });
+    const drag = controller.handlePointerDrag(targetState.target, {
+      button: "left",
+      point: { ownerId: "terminal", row: 0, col: 12 },
+      viewportPoint: { ownerId: "terminal", row: 0, col: 12 },
+      modifiers: { shift: true },
+      timestampMs: 110,
+    });
+    const up = controller.handlePointerUp(targetState.target, {
+      button: "left",
+      point: { ownerId: "terminal", row: 0, col: 12 },
+      viewportPoint: { ownerId: "terminal", row: 0, col: 12 },
+      modifiers: { shift: true },
+      timestampMs: 120,
+    });
+
+    expect(drag.effect).toBe("selection");
+    expect(up.effect).toBe("selection-finalized");
+    expect(targetState.writes).toEqual([]);
+    expect(targetState.target.copySelection("terminal")).toBe("echo alpha");
+  });
+
   test("Scenario: Given a semantic double click When the backend selects a word Then mouseup does not clear the backend-owned selection", () => {
     const controller = createTerminalHostInputController();
     const target = createKeyboardTarget({ line: "$ echo alpha beta gamma", cursorCol: 0 }).target;
@@ -248,8 +375,8 @@ describe("Feature: termless backend host input utilities", () => {
       timestampMs: 200,
     });
 
-    expect(down).toEqual({ handled: false, preventDefault: false });
-    expect(up).toEqual({ handled: false, preventDefault: false });
+    expect(down).toEqual({ handled: false, preventDefault: false, effect: "none" });
+    expect(up).toEqual({ handled: false, preventDefault: false, effect: "none" });
     expect(target.copySelection("terminal")).toBe("");
     expect(target.getSelectionOverlay("terminal")).toBeNull();
   });
@@ -292,8 +419,8 @@ describe("Feature: termless backend host input utilities", () => {
       timestampMs: 760,
     });
 
-    expect(drag).toEqual({ handled: false, preventDefault: false });
-    expect(semantic).toEqual({ handled: true, preventDefault: true });
+    expect(drag).toEqual({ handled: false, preventDefault: false, effect: "none" });
+    expect(semantic).toEqual({ handled: true, preventDefault: true, effect: "selection" });
     expect(target.copySelection("terminal")).toBe("alpha");
   });
 
