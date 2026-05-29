@@ -19,7 +19,6 @@ import type {
   TerminalCopyTarget,
   TerminalInputChunk,
   TerminalPaneSize,
-  TerminalPaneSourceTeardown,
   TerminalProtocolPaneSource,
 } from "../renderable-mux/pane-source";
 import { ShellNextResizeSendScheduler } from "./resize-send-scheduler";
@@ -242,7 +241,7 @@ export class ShellNextFrameBufferTerminalPane {
     return this.#source.writeInput(chunk);
   }
 
-  destroy(options?: { preserveSource?: boolean; sourceTeardown?: TerminalPaneSourceTeardown }): void {
+  destroy(): void {
     if (this.#disposed) {
       return;
     }
@@ -250,14 +249,6 @@ export class ShellNextFrameBufferTerminalPane {
     this.#resizeScheduler.dispose();
     this.#chrome.destroy();
     this.#root.destroyRecursively();
-    const teardown = options?.preserveSource === true ? "preserve" : (options?.sourceTeardown ?? "dispose");
-    if (teardown === "preserve") {
-      return;
-    }
-    if (teardown === "detach") {
-      void (this.#source.detach?.() ?? this.#source.dispose());
-      return;
-    }
     void this.#source.dispose();
   }
 

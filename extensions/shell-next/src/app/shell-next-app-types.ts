@@ -2,7 +2,7 @@ import type { CliRenderer } from "@opentui/core";
 
 import type { ChildLayoutNode } from "../renderable-mux/layout";
 import type { TerminalPaneFactory } from "../renderable-mux/mux-renderable";
-import type { PaneSource, TerminalPaneSourceTeardown } from "../renderable-mux/pane-source";
+import type { PaneSource } from "../renderable-mux/pane-source";
 import type { ShellNextStatusbarState } from "../renderable-mux/statusbar";
 import type { ShellNextRoomBootstrapResult } from "../product/bootstrap";
 import type { ShellNextRoomAppStore } from "../product-room/room-app";
@@ -54,14 +54,6 @@ export interface ShellNextStatusProvider {
   subscribe?(listener: () => void): () => void;
 }
 
-export type ShellNextAppExitOutcome = "normal" | "background-run" | "terminate";
-
-export interface ShellNextAppDestroyOptions {
-  readonly preserveTerminalSources?: boolean;
-  readonly terminalSourceTeardown?: TerminalPaneSourceTeardown;
-  readonly exitOutcome?: ShellNextAppExitOutcome;
-}
-
 export interface ShellNextAppInput {
   readonly renderer?: CliRenderer;
   readonly cwd?: string;
@@ -76,14 +68,12 @@ export interface ShellNextAppInput {
   readonly showStatusbar?: boolean;
   readonly syncStatusbarWithLayout?: boolean;
   readonly terminalResizeDebounceMs?: number;
-  readonly backgroundRunTerminalSourceTeardown?: Extract<TerminalPaneSourceTeardown, "detach" | "preserve">;
   readonly terminalPaneFactory?: TerminalPaneFactory;
   readonly terminalSourcePolicy?: ShellNextTerminalSourcePolicy;
   readonly onTerminalSplitUnavailable?: (reason: string) => void;
 }
 
 export interface ShellNextAppController {
-  readonly finished: Promise<ShellNextAppExitOutcome>;
-  readonly exitOutcome: ShellNextAppExitOutcome;
-  destroy(options?: ShellNextAppDestroyOptions): void;
+  readonly finished: Promise<void>;
+  destroy(): void;
 }

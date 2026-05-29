@@ -256,10 +256,6 @@ export class ShellNextLiveTerminalProtocolSource implements TerminalProtocolPane
     this.#mirror.disconnect();
   }
 
-  detach(): void {
-    this.dispose();
-  }
-
   async terminate(): Promise<void> {
     if (this.#terminated) {
       this.dispose();

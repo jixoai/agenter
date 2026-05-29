@@ -6,9 +6,9 @@
 
 ## 2. Exit-Mode Plumbing
 
-- [x] 2.1 Add an explicit shell-next exit outcome for close-confirm background vs terminate.
-- [x] 2.2 Thread that exit outcome through the product attach/runtime path so background exit and terminate do not share the same teardown path.
-- [x] 2.3 Keep background exit from performing destructive terminal cleanup.
+- [x] 2.1 Remove shell-next background-run detach/outcome plumbing so background close is ordinary attach-client shutdown.
+- [x] 2.2 Ensure product command launch uses managed daemon authority instead of an in-process daemon handle owned by product lifetime.
+- [x] 2.3 Keep background exit from performing destructive terminal cleanup while preserving normal local client cleanup.
 
 ## 3. Input-Boundary Audit
 

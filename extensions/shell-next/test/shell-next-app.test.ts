@@ -47,7 +47,6 @@ interface RecordingSource {
   title: string;
   cursor: TerminalFrameSnapshot["cursor"] | undefined;
   selectionOverlays: readonly TerminalTransportSelectionOverlay[];
-  readonly detached: () => boolean;
   readonly terminated: () => boolean;
   readonly disposed: () => boolean;
 }
@@ -79,7 +78,6 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
   let followCursorCount = 0;
   let selectionOverlays: readonly TerminalTransportSelectionOverlay[] = [];
   let disposed = false;
-  let detached = false;
   let terminated = false;
   let revision = 0;
   let writeAccepted = true;
@@ -272,11 +270,6 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
       disposed = true;
       resizeDispatcher.dispose();
     },
-    detach: () => {
-      detached = true;
-      disposed = true;
-      resizeDispatcher.dispose();
-    },
     terminate: () => {
       terminated = true;
       disposed = true;
@@ -333,7 +326,6 @@ const createRecordingProtocolSource = (id: string): RecordingSource => {
     set selectionOverlays(value: readonly TerminalTransportSelectionOverlay[]) {
       selectionOverlays = value;
     },
-    detached: () => detached,
     terminated: () => terminated,
     disposed: () => disposed,
   };
@@ -847,7 +839,7 @@ describe("Feature: shell-next app runtime", () => {
     expect(setup.captureCharFrame()).toContain("[ Terminate terminal ]");
   });
 
-  test("Scenario: Given a product-bound terminal pane When Run in background is clicked Then shell-next detaches the view without terminating the terminal", async () => {
+  test("Scenario: Given a product-bound terminal pane When Run in background is clicked Then shell-next only closes the UI attachment", async () => {
     setup = await createTestRenderer({ width: 64, height: 18, useMouse: true, kittyKeyboard: true });
     const recordings: RecordingSource[] = [];
     const createProductBoundSource = (id: string): PaneSource => {
@@ -857,7 +849,6 @@ describe("Feature: shell-next app runtime", () => {
     };
     const app = new ShellNextApp({
       renderer: setup.renderer as TestRenderer,
-      backgroundRunTerminalSourceTeardown: "detach",
       terminalSourcePolicy: {
         createInitialSource: (input) => createProductBoundSource(input.id),
       },
@@ -872,12 +863,10 @@ describe("Feature: shell-next app runtime", () => {
     expect(background).not.toBeNull();
 
     await setup.mockMouse.click((background?.x ?? 0) + 2, background?.y ?? 0);
-    const outcome = await app.finished;
+    await app.finished;
 
     expect(recordings).toHaveLength(1);
-    expect(outcome).toBe("background-run");
-    expect(app.exitOutcome).toBe("background-run");
-    expect(recordings[0]?.detached()).toBe(true);
+    expect(recordings[0]?.disposed()).toBe(true);
     expect(recordings[0]?.terminated()).toBe(false);
   });
 
@@ -905,11 +894,9 @@ describe("Feature: shell-next app runtime", () => {
     expect(terminate).not.toBeNull();
 
     await setup.mockMouse.click((terminate?.x ?? 0) + 2, terminate?.y ?? 0);
-    const outcome = await app.finished;
+    await app.finished;
 
     expect(recordings).toHaveLength(1);
-    expect(outcome).toBe("terminate");
-    expect(app.exitOutcome).toBe("terminate");
     expect(recordings[0]?.terminated()).toBe(true);
     expect(recordings[0]?.disposed()).toBe(true);
   });

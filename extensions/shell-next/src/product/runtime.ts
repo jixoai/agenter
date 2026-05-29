@@ -365,28 +365,28 @@ export const runShellNextProductAttach = async (
       return { exitCode: 0 };
     }
     await store.connect();
-    const app = await dependencies.startApp({
-      rootPane: buildRootPaneForView(args.view),
-      terminalSourcePolicy: createAttachedTerminalSourcePolicy({
-        attached,
-        store,
-        dependencies,
-      }),
-      approvalStore: createShellNextRuntimeApprovalStore({
-        store,
-        terminalId: attached.terminal.entry.terminalId,
-      }),
-      room: buildAttachedRoomInput({ store, attached, settings: selection.settings, keybindings }),
-      initialStatus: status,
-      statusProvider,
-      showStatusbar: args.view === "none",
-      syncStatusbarWithLayout: false,
-      backgroundRunTerminalSourceTeardown: "detach",
-      initialSurfaces: args.view === "none" ? [] : [],
-      showTopLayer: false,
-    });
-    const outcome = await app.finished;
-    if (outcome !== "background-run") {
+    try {
+      const app = await dependencies.startApp({
+        rootPane: buildRootPaneForView(args.view),
+        terminalSourcePolicy: createAttachedTerminalSourcePolicy({
+          attached,
+          store,
+          dependencies,
+        }),
+        approvalStore: createShellNextRuntimeApprovalStore({
+          store,
+          terminalId: attached.terminal.entry.terminalId,
+        }),
+        room: buildAttachedRoomInput({ store, attached, settings: selection.settings, keybindings }),
+        initialStatus: status,
+        statusProvider,
+        showStatusbar: args.view === "none",
+        syncStatusbarWithLayout: false,
+        initialSurfaces: args.view === "none" ? [] : [],
+        showTopLayer: false,
+      });
+      await app.finished;
+    } finally {
       store.disconnect();
     }
     return { exitCode: 0 };

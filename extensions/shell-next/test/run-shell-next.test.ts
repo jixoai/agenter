@@ -80,8 +80,7 @@ const createTestDependencies = (input: {
   startApp:
     input.startApp ??
     (async () => ({
-      finished: Promise.resolve("normal" as const),
-      exitOutcome: "normal" as const,
+      finished: Promise.resolve(),
       destroy() {},
     })),
   createLiveTerminalSource: (sourceInput): PaneSource => {
@@ -100,7 +99,6 @@ const createTestDependencies = (input: {
       }),
       writeInput: () => true,
       resize: () => undefined,
-      detach: () => undefined,
       terminate: () => sourceInput.terminateTerminal?.(),
       dispose: () => undefined,
     };
@@ -236,8 +234,7 @@ describe("Feature: shell-next product runtime bootstrap", () => {
         expect(input.initialStatus?.runtime.label).toBe("Idle");
         expect(input.syncStatusbarWithLayout).toBe(false);
         return {
-          finished: Promise.resolve("normal" as const),
-          exitOutcome: "normal" as const,
+          finished: Promise.resolve(),
           destroy() {},
         };
       },
@@ -261,7 +258,7 @@ describe("Feature: shell-next product runtime bootstrap", () => {
   });
 
   test("Scenario: Given background-run exits product attach When reconnecting Then shell-next reuses the still-live terminal binding", async () => {
-    class DisconnectDropsTerminalStore extends FakeShellNextStore {
+    class RecordingDisconnectStore extends FakeShellNextStore {
       createTerminalCalls = 0;
       disconnectCalls = 0;
 
@@ -272,18 +269,16 @@ describe("Feature: shell-next product runtime bootstrap", () => {
 
       disconnect(): void {
         this.disconnectCalls += 1;
-        this.terminals = [];
         super.disconnect();
       }
     }
 
-    const store = new DisconnectDropsTerminalStore();
+    const store = new RecordingDisconnectStore();
     seedAvatar(store, "bangeel");
     const firstDependencies = createTestDependencies({
       store,
       tty: true,
       startApp: async (input) => {
-        expect(input.backgroundRunTerminalSourceTeardown).toBe("detach");
         const source = input.terminalSourcePolicy?.createInitialSource({
           id: "source-1",
           cwd: "/repo",
@@ -291,11 +286,10 @@ describe("Feature: shell-next product runtime bootstrap", () => {
           onExit: () => undefined,
         });
         if (source?.kind === "terminal-protocol") {
-          await source.detach?.();
+          await source.dispose();
         }
         return {
-          finished: Promise.resolve("background-run" as const),
-          exitOutcome: "background-run" as const,
+          finished: Promise.resolve(),
           destroy() {},
         };
       },
@@ -303,7 +297,8 @@ describe("Feature: shell-next product runtime bootstrap", () => {
 
     await runShellNext(["bun", "agenter-shell-next", "--session=5", "--avatar=bangeel"], firstDependencies);
 
-    expect(store.disconnectCalls).toBe(0);
+    expect(store.disconnectCalls).toBe(1);
+    expect(store.connected).toBe(false);
     expect(store.createTerminalCalls).toBe(1);
     expect(store.stoppedTerminalIds).toEqual([]);
     expect(store.terminals.map((terminal) => terminal.metadata?.resourceKey)).toEqual(["shell-5"]);
@@ -334,8 +329,7 @@ describe("Feature: shell-next product runtime bootstrap", () => {
           await source.terminate?.();
         }
         return {
-          finished: Promise.resolve("terminate" as const),
-          exitOutcome: "terminate" as const,
+          finished: Promise.resolve(),
           destroy() {},
         };
       },
@@ -392,8 +386,7 @@ describe("Feature: shell-next product runtime bootstrap", () => {
         expect(input.initialStatus?.runtime.label).not.toContain("heartbeat preview");
         expect(input.initialStatus?.aiContext).toEqual({ usedTokens: 700, maxTokens: 100000 });
         return {
-          finished: Promise.resolve("normal" as const),
-          exitOutcome: "normal" as const,
+          finished: Promise.resolve(),
           destroy() {},
         };
       },
@@ -424,8 +417,7 @@ describe("Feature: shell-next product runtime bootstrap", () => {
           showTopLayer: input.showTopLayer,
         });
         return {
-          finished: Promise.resolve("normal" as const),
-          exitOutcome: "normal" as const,
+          finished: Promise.resolve(),
           destroy() {},
         };
       },
@@ -491,8 +483,7 @@ describe("Feature: shell-next product runtime bootstrap", () => {
           onExit: () => undefined,
         });
         return {
-          finished: Promise.resolve("normal" as const),
-          exitOutcome: "normal" as const,
+          finished: Promise.resolve(),
           destroy() {},
         };
       },

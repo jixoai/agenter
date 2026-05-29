@@ -336,8 +336,8 @@ describe("Feature: product command launcher", () => {
       async discoverReusableDaemonAuthority() {
         throw new Error("metadata-only product launch must not discover daemon authority");
       },
-      async startDaemon() {
-        throw new Error("metadata-only product launch must not start daemon");
+      async ensureManagedDaemonAuthority() {
+        throw new Error("metadata-only product launch must not ensure managed daemon authority");
       },
       spawnProduct() {
         spawned += 1;
@@ -352,9 +352,9 @@ describe("Feature: product command launcher", () => {
     expect(spawned).toBe(0);
   });
 
-  test("Scenario: Given product launch starts its own daemon When no auth authority is explicit Then the daemon gets a launcher-owned auth-service root", async () => {
+  test("Scenario: Given product launch ensures managed daemon authority When no auth authority is explicit Then the daemon gets a launcher-owned auth-service root", async () => {
     const home = createTempDir();
-    const startedDaemons: Array<Parameters<ProductCommandLaunchDependencies["startDaemon"]>[0]> = [];
+    const ensuredAuthorities: Array<Parameters<ProductCommandLaunchDependencies["ensureManagedDaemonAuthority"]>> = [];
     const previousHome = process.env.HOME;
     process.env.HOME = home;
     try {
@@ -365,9 +365,9 @@ describe("Feature: product command launcher", () => {
         async discoverReusableDaemonAuthority() {
           return null;
         },
-        async startDaemon(input) {
-          startedDaemons.push(input);
-          throw new Error("stop after daemon input capture");
+        async ensureManagedDaemonAuthority(...input) {
+          ensuredAuthorities.push(input);
+          throw new Error("stop after daemon authority input capture");
         },
         spawnProduct() {
           throw new Error("product must not spawn after captured daemon startup");
@@ -375,11 +375,11 @@ describe("Feature: product command launcher", () => {
       };
 
       await expect(launchProductCommandForTest(["shell", "--web=0"], dependencies)).rejects.toThrow(
-        "stop after daemon input capture",
+        "stop after daemon authority input capture",
       );
 
-      expect(startedDaemons).toHaveLength(1);
-      expect(startedDaemons[0]?.authServiceDataDir).toBe(join(home, ".agenter", "launcher-auth-service"));
+      expect(ensuredAuthorities).toHaveLength(1);
+      expect(ensuredAuthorities[0]?.[0].authServiceDataDir).toBe(join(home, ".agenter", "launcher-auth-service"));
     } finally {
       if (typeof previousHome === "string") {
         process.env.HOME = previousHome;
@@ -397,7 +397,7 @@ describe("Feature: product command launcher", () => {
       async discoverReusableDaemonAuthority() {
         return null;
       },
-      async startDaemon() {
+      async ensureManagedDaemonAuthority() {
         throw new Error("incompatible daemon must not be replaced implicitly");
       },
       spawnProduct() {

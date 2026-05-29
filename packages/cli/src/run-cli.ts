@@ -516,6 +516,49 @@ const runDaemonStartCommand = async (args: CommonArgs & AuthServiceBridgeCliArgs
   process.exitCode = 1;
 };
 
+const ensureManagedDaemonAuthority = async (
+  args: CommonArgs & AuthServiceBridgeCliArgs,
+  expected: DaemonLauncherIdentity,
+): Promise<ResolvedDaemonAuthority> => {
+  const requested = {
+    host: args.host,
+    port: args.port,
+  };
+  const existing = readDaemonRuntimeDescriptor(resolveLauncherHomeDir());
+  if (existing) {
+    const existingAuthority = await assertCompatibleDaemonDescriptor(existing, expected);
+    if (existingAuthority) {
+      return existingAuthority;
+    }
+    if (!isProcessAlive(existing.pid)) {
+      clearOwnedDaemonRuntimeDescriptor(existing);
+    } else {
+      throw new Error(
+        `daemon process ${existing.pid} exists for this home root but is not healthy; use \`agenter daemon restart\` or \`agenter daemon stop\` first`,
+      );
+    }
+  }
+
+  const { pid, logPath } = spawnManagedDaemonProcess(args);
+  const status = await waitForManagedDaemonHealthy(requested, pid);
+  if (status !== "healthy") {
+    const reason =
+      status === "exited"
+        ? `background daemon process ${pid} exited before becoming healthy on ${requested.host}:${requested.port}`
+        : `timed out waiting for background daemon ${pid} to become healthy on ${requested.host}:${requested.port}`;
+    const logTail = readLogTail(logPath).trim();
+    throw new Error(
+      [reason, `daemon log: ${logPath}`, logTail.length > 0 ? `daemon log tail:\n${logTail}` : ""]
+        .filter((line) => line.length > 0)
+        .join("\n"),
+    );
+  }
+  return {
+    host: requested.host,
+    port: requested.port,
+  };
+};
+
 const runDaemonStopCommand = async (): Promise<void> => {
   const result = await stopManagedDaemonForHomeRoot();
   switch (result.kind) {
@@ -640,9 +683,10 @@ const withAuthServiceBridgeOptions = <TBuilder extends ReturnType<typeof yargs>>
 export interface ProductCommandLaunchDependencies {
   resolveDaemonAuthority(args: CommonArgs, expected: DaemonLauncherIdentity): Promise<ResolvedDaemonAuthority | null>;
   discoverReusableDaemonAuthority(expected: DaemonLauncherIdentity): Promise<ResolvedDaemonAuthority | null>;
-  startDaemon(
-    args: CommonArgs & AuthServiceBridgeCliArgs & { staticDir?: string; publicEnv?: Record<string, string> },
-  ): Promise<TrpcServerHandle>;
+  ensureManagedDaemonAuthority(
+    args: CommonArgs & AuthServiceBridgeCliArgs,
+    expected: DaemonLauncherIdentity,
+  ): Promise<ResolvedDaemonAuthority>;
   spawnProduct(input: {
     target: Parameters<typeof buildProductProcessCommand>[0];
     descriptor: Parameters<typeof buildProductProcessCommand>[1];
@@ -654,7 +698,7 @@ export interface ProductCommandLaunchDependencies {
 const defaultProductCommandLaunchDependencies: ProductCommandLaunchDependencies = {
   resolveDaemonAuthority: assertCompatibleDaemonHealth,
   discoverReusableDaemonAuthority: discoverCompatibleDaemonAuthority,
-  startDaemon,
+  ensureManagedDaemonAuthority: ensureManagedDaemonAuthority,
   spawnProduct(input) {
     return Bun.spawn({
       cmd: buildProductProcessCommand(input.target, input.descriptor, input.productArgv, input.env),
@@ -731,7 +775,6 @@ export const launchProductCommandForTest = async (
     routed.descriptor.capabilityHints.requiresDaemon && !isProductMetadataOnlyArgv(routed.productArgv);
   const expectedLauncherIdentity = resolveCurrentLauncherIdentity();
 
-  let localDaemon: TrpcServerHandle | null = null;
   let resolvedDaemonAuthority: ResolvedDaemonAuthority = { ...common };
   if (needsRuntimeBootstrap) {
     const reusableAuthority = await dependencies.discoverReusableDaemonAuthority(expectedLauncherIdentity);
@@ -742,19 +785,18 @@ export const launchProductCommandForTest = async (
       if (daemonAuthority) {
         resolvedDaemonAuthority = daemonAuthority;
       } else {
-        localDaemon = await dependencies.startDaemon({
-          ...common,
-          ...resolveProductDaemonAuthServiceOptions({
-            authServiceEndpoint: routed.launcherOptions.authServiceEndpoint,
-            authServiceDataDir: routed.launcherOptions.authServiceDataDir,
-            authServiceHost: routed.launcherOptions.authServiceHost,
-            authServicePort: routed.launcherOptions.authServicePort,
-          }),
-        });
-        resolvedDaemonAuthority = {
-          host: localDaemon.host,
-          port: localDaemon.port,
-        };
+        resolvedDaemonAuthority = await dependencies.ensureManagedDaemonAuthority(
+          {
+            ...common,
+            ...resolveProductDaemonAuthServiceOptions({
+              authServiceEndpoint: routed.launcherOptions.authServiceEndpoint,
+              authServiceDataDir: routed.launcherOptions.authServiceDataDir,
+              authServiceHost: routed.launcherOptions.authServiceHost,
+              authServicePort: routed.launcherOptions.authServicePort,
+            }),
+          },
+          expectedLauncherIdentity,
+        );
       }
     }
   }
@@ -769,26 +811,14 @@ export const launchProductCommandForTest = async (
     },
   });
   if (target.source !== "remote" && routed.descriptor.bin.mainExport) {
-    try {
-      const handled = await runLocalProductInProcess({
-        target,
-        mainExport: routed.descriptor.bin.mainExport,
-        productArgv: routed.productArgv,
-        env,
-      });
-      if (handled) {
-        if (localDaemon) {
-          await localDaemon.stop();
-          localDaemon = null;
-        }
-        return true;
-      }
-    } catch (error) {
-      if (localDaemon) {
-        await localDaemon.stop();
-        localDaemon = null;
-      }
-      throw error;
+    const handled = await runLocalProductInProcess({
+      target,
+      mainExport: routed.descriptor.bin.mainExport,
+      productArgv: routed.productArgv,
+      env,
+    });
+    if (handled) {
+      return true;
     }
   }
 
@@ -799,14 +829,8 @@ export const launchProductCommandForTest = async (
     env,
   });
 
-  try {
-    const exitCode = await child.exited;
-    process.exitCode = exitCode;
-  } finally {
-    if (localDaemon) {
-      await localDaemon.stop();
-    }
-  }
+  const exitCode = await child.exited;
+  process.exitCode = exitCode;
 
   return true;
 };
