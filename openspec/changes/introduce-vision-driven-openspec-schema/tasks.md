@@ -36,13 +36,13 @@
 
 ## 7. Abnormal Exit And Realignment
 
-- [ ] 7.1 Add change-local `HANDOFF.md` generation for abnormal self-review exits, including `vN.HANDOFF.md` preservation.
-- [ ] 7.2 Add safe change rename support for discussion-driven realignment after self-review.
+- [x] 7.1 Add change-local `HANDOFF.md` generation for abnormal self-review exits, including `vN.HANDOFF.md` preservation.
+- [x] 7.2 Add safe change rename support for discussion-driven realignment after self-review.
 - [x] 7.3 Add normal-exit guidance to archive with `openspec archive <change>` and commit the archive result.
 
 ## 8. Verification For Evidence Workflow
 
-- [ ] 8.1 Add BDD tests for Git evidence guidance, handoff generation, handoff versioning, and rename behavior.
-- [ ] 8.2 Run `bun test scripts/openspec/vision-driven.test.ts`.
+- [x] 8.1 Add BDD tests for Git evidence guidance, handoff generation, handoff versioning, and rename behavior.
+- [x] 8.2 Run `bun test scripts/openspec/vision-driven.test.ts`.
 - [ ] 8.3 Run `openspec validate introduce-vision-driven-openspec-schema --type change --strict`.
 - [ ] 8.4 Run `openspec validate --specs --strict`.

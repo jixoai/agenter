@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { cp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -45,6 +45,21 @@ const runBun = async (
     cmd: ["bun", ...args],
     cwd,
     env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+};
+
+const runCommand = async (cmd: string[], cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> => {
+  const proc = Bun.spawn({
+    cmd,
+    cwd,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -112,16 +127,25 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
     expect(schema).toContain("bun run openspec:vision -- status <change>");
     expect(schema).toContain("bun run openspec:vision -- instructions <artifact> <change>");
     expect(schema).toContain("bun run openspec:vision -- validate <change>");
+    expect(schema).toContain("bun run openspec:vision -- commit-check <change> --phase <phase>");
+    expect(schema).toContain("bun run openspec:vision -- handoff <change>");
+    expect(schema).toContain("bun run openspec:vision -- rename <old-change> <new-change>");
     expect(schema).toContain("tracks: tasks.md");
     expect(schema).toContain("Investigate the relevant code before locking the plan.");
     expect(schema).toContain("Investigate the relevant existing OpenSpec changes/specs before locking the plan.");
     expect(schema).toContain("Make architecture design and data-structure design explicit");
+    expect(schema).toContain("only task checkboxes completed and verified in the current working context");
+    expect(schema).toContain("intent comments at critical effect points");
     expect(researchPlanTemplate).toContain("## Workflow Command Surface");
     expect(researchPlanTemplate).toContain("bun run openspec:vision -- new <change>");
+    expect(researchPlanTemplate).toContain("bun run openspec:vision -- commit-check <change> --phase <phase>");
     expect(researchPlanTemplate).toContain("bun run openspec:vision -- check <change>");
     expect(researchPlanTemplate).not.toContain("openspec validate <change> --type change --strict");
+    expect(researchPlanTemplate).toContain("### Git Evidence");
     expect(selfReviewTemplate).toContain("<h2>Review State</h2>");
+    expect(selfReviewTemplate).toContain("<h2>Exit Handling</h2>");
     expect(tasksTemplate).toContain("bun run openspec:vision -- validate <change>");
+    expect(tasksTemplate).toContain("only current-context completed task checkboxes");
     expect(tasksTemplate).toContain("## 1. Alignment / Investigation");
   });
 
@@ -181,6 +205,41 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
     }
   });
 
+  test("Scenario: Given a dirty change When commit-check runs Then it reports evidence guidance without committing", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
+    try {
+      await runCommand(["git", "init"], tmpRoot);
+      const changeDir = join(tmpRoot, "openspec", "changes", "demo-change");
+      await mkdir(join(changeDir, "plans"), { recursive: true });
+      writeFileSync(join(changeDir, ".openspec.yaml"), "schema: vision-driven\ncreated: 2026-05-29\n");
+      writeFileSync(join(changeDir, "plans", "plan.md"), "# Intent\n");
+
+      const result = await runBun(
+        [
+          join(repoRoot, "scripts", "openspec", "vision-driven.ts"),
+          "commit-check",
+          "demo-change",
+          "--phase",
+          "research-plan",
+        ],
+        tmpRoot,
+      );
+      const parsed = JSON.parse(result.stdout) as {
+        phase: string;
+        changePaths: string[];
+        suggestedCommands: string[];
+      };
+
+      expect(result.exitCode).toBe(0);
+      expect(parsed.phase).toBe("research-plan");
+      expect(parsed.changePaths.join("\n")).toContain("openspec/changes/demo-change/");
+      expect(parsed.suggestedCommands.join("\n")).toContain('git commit -m "docs(spec): prepare demo-change for apply"');
+      expect(existsSync(join(tmpRoot, ".git"))).toBe(true);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
   test("Scenario: Given a plan already exists When backup-plan runs Then the previous SSOT is versioned instead of overwritten", async () => {
     const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
     try {
@@ -196,6 +255,73 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
       expect(result.exitCode).toBe(0);
       expect(readFileSync(join(changeDir, "plans", "plan-v1.md"), "utf8")).toBe("current plan\n");
       expect(result.stdout).toContain("plan-v1.md");
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("Scenario: Given abnormal exit needs handoff When handoff runs twice Then the previous handoff is versioned", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
+    try {
+      await runCommand(["git", "init"], tmpRoot);
+      await copyVisionSchema(tmpRoot);
+      const { env } = await createFakeOpenspec(tmpRoot);
+      const changeDir = join(tmpRoot, "openspec", "changes", "demo-change");
+      await mkdir(join(changeDir, "plans"), { recursive: true });
+      writeFileSync(join(changeDir, ".openspec.yaml"), "schema: vision-driven\ncreated: 2026-05-29\n");
+      writeFileSync(join(changeDir, "plans", "plan.md"), "# Intent\n\nBuild the thing.\n");
+      writeFileSync(join(changeDir, "tasks.md"), "- [ ] 1.1 Continue the thing\n");
+
+      const first = await runBun([join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "handoff", "demo-change"], tmpRoot, env);
+      const second = await runBun([join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "handoff", "demo-change"], tmpRoot, env);
+      const handoff = readFileSync(join(changeDir, "HANDOFF.md"), "utf8");
+
+      expect(first.exitCode).toBe(0);
+      expect(second.exitCode).toBe(0);
+      expect(existsSync(join(changeDir, "v1.HANDOFF.md"))).toBe(true);
+      expect(handoff).toContain("## Goal");
+      expect(handoff).toContain("## Current Progress");
+      expect(handoff).toContain("## What Worked");
+      expect(handoff).toContain("## What Didn't Work");
+      expect(handoff).toContain("## Next Steps");
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("Scenario: Given intent realignment renames a change When rename runs Then review state follows the new name", async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
+    try {
+      const oldDir = join(tmpRoot, "openspec", "changes", "old-change");
+      await mkdir(join(oldDir, "review"), { recursive: true });
+      writeFileSync(join(oldDir, ".openspec.yaml"), "schema: vision-driven\ncreated: 2026-05-29\n");
+      writeFileSync(
+        join(oldDir, "review", "state.json"),
+        `${JSON.stringify(
+          {
+            change: "old-change",
+            iteration: 1,
+            maxIterations: 5,
+            recurringIssues: {},
+            updatedAt: "2026-05-29T00:00:00.000Z",
+          },
+          null,
+          2,
+        )}\n`,
+      );
+
+      const result = await runBun(
+        [join(repoRoot, "scripts", "openspec", "vision-driven.ts"), "rename", "old-change", "new-change"],
+        tmpRoot,
+      );
+      const state = JSON.parse(readFileSync(join(tmpRoot, "openspec", "changes", "new-change", "review", "state.json"), "utf8")) as {
+        change: string;
+      };
+
+      expect(result.exitCode).toBe(0);
+      expect(existsSync(oldDir)).toBe(false);
+      expect(existsSync(join(tmpRoot, "openspec", "changes", "new-change"))).toBe(true);
+      expect(state.change).toBe("new-change");
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true });
     }
