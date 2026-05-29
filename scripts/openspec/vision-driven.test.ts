@@ -322,6 +322,19 @@ describe("Feature: vision-driven OpenSpec workflow contract", () => {
     }
   });
 
+  test("Scenario: Given handoff files are workflow evidence When Git ignore rules are checked Then change-local handoffs stay commit-ready", async () => {
+    const rootHandoff = await runCommand(["git", "check-ignore", "HANDOFF.md"], repoRoot);
+    const currentHandoff = await runCommand(["git", "check-ignore", "openspec/changes/demo-change/HANDOFF.md"], repoRoot);
+    const versionedHandoff = await runCommand(["git", "check-ignore", "openspec/changes/demo-change/v1.HANDOFF.md"], repoRoot);
+    const ignoreRules = readRepoFile(".gitignore");
+
+    expect(rootHandoff.exitCode).toBe(0);
+    expect(currentHandoff.exitCode).toBe(1);
+    expect(versionedHandoff.exitCode).toBe(1);
+    expect(ignoreRules).toContain("!openspec/changes/**/HANDOFF.md");
+    expect(ignoreRules).toContain("!openspec/changes/**/v*.HANDOFF.md");
+  });
+
   test("Scenario: Given intent realignment renames a change When rename runs Then review state follows the new name", async () => {
     const tmpRoot = mkdtempSync(join(tmpdir(), "vision-driven-"));
     try {
