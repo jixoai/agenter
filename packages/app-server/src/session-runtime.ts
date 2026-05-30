@@ -4583,6 +4583,7 @@ export class SessionRuntime {
         }
         const next = this.normalizeFocusedTerminalIds(terminalIds);
         if (next.join("\u0000") === this.focusedTerminalIds.join("\u0000")) {
+          this.terminalKernelAdapter.syncFocusedDirtyTerminals();
           return;
         }
         const previous = [...this.focusedTerminalIds];
@@ -7136,6 +7137,7 @@ export class SessionRuntime {
     this.attentionSearchEngine = new AttentionSearchEngine(join(this.options.sessionRoot, "attention-search.duckdb"));
     await this.persistAttentionSystem();
     await this.runtimeKernelHost.bootstrap();
+    this.terminalKernelAdapter.syncFocusedDirtyTerminals();
     if (this.listAttentionVisibleContextMatches().length > 0) {
       this.attentionFactsVersion += 1;
       this.requestAttentionContextBoundaryRefresh();

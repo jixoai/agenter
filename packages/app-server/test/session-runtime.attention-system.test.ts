@@ -23,6 +23,10 @@ import {
 } from "@agenter/message-system";
 import { SessionDb } from "@agenter/session-system";
 import {
+  encodeTerminalTransportClientMessage,
+  type TerminalTransportClientMessage,
+} from "@agenter/terminal-transport-protocol";
+import {
   DEFAULT_TERMINAL_BACKEND,
   TerminalControlPlane,
   TerminalDb,
@@ -41,7 +45,7 @@ import type { AssistantDeliveryEvent, AssistantStreamUpdate } from "../src/model
 import type { RuntimeSkillSystem } from "../src/runtime-skill-system";
 import type { RuntimeMessageSendResult, RuntimeReachableParticipantView } from "../src/runtime-tool-views";
 import { resolveSessionRoomActorId } from "../src/session-chat-projection";
-import { SessionRuntime } from "../src/session-runtime";
+import { SessionRuntime, type RuntimeEvent } from "../src/session-runtime";
 
 interface RuntimeMessageSnapshotView {
   snapshot: (
@@ -363,15 +367,26 @@ const waitForAttentionContextCommit = async (
   internal: RuntimeInternal,
   contextId: string,
   predicate: (summary: NonNullable<ReturnType<typeof getAttentionContextSnapshot>>["commits"][number]) => boolean,
+  input: { timeoutMs?: number; intervalMs?: number } = {},
 ): Promise<void> => {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  const startedAt = Date.now();
+  const timeoutMs = input.timeoutMs ?? 200;
+  const intervalMs = input.intervalMs ?? 10;
+  while (Date.now() - startedAt < timeoutMs) {
     const context = getAttentionContextSnapshot(internal, contextId);
     if (context?.commits.some(predicate)) {
       return;
     }
-    await Bun.sleep(10);
+    await Bun.sleep(intervalMs);
   }
   throw new Error(`expected attention commit not observed for context: ${contextId}`);
+};
+
+const encodeTerminalClientFrame = (message: TerminalTransportClientMessage): ArrayBuffer => {
+  const bytes = encodeTerminalTransportClientMessage(message);
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
 };
 
 const waitForFollowUpTasksCleared = async (
@@ -2523,6 +2538,10 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     });
     attachPrimaryRoom(runtime);
     const internal = runtime as unknown as RuntimeInternal;
+    const events: RuntimeEvent[] = [];
+    const unsubscribe = runtime.onEvent((event) => {
+      events.push(event);
+    });
 
     await runtime.start();
     try {
@@ -2634,6 +2653,127 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     } finally {
       await runtime.stop();
       await terminalSystem.stop("prefocused-main").catch(() => ({ ok: false, message: "ignored" }));
+    }
+  });
+
+  test("Scenario: Given shell2-style focused terminal is already idle When raw inputBytes changes output Then runtime commits terminal attention", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-session-runtime-raw-idle-terminal-"));
+    const sessionId = `raw-idle-${Date.now()}`;
+    const terminalActorId = resolveSessionRoomActorId(sessionId) as TerminalActorId;
+    const terminalSystem = createTerminalSystem(root);
+    terminalSystem.setActorPresence(terminalActorId, true);
+    const created = await terminalSystem.createForActor(terminalActorId, {
+      terminalId: "raw-idle-main",
+      processKind: "shell",
+      command: ["sh", "-lc", "cat"],
+      cwd: root,
+      profile: {
+        gitLog: "normal",
+      },
+      start: true,
+    });
+    terminalSystem.focusForActor(terminalActorId, "replace", [created.terminalId]);
+    await terminalSystem.readAuthorized({
+      terminalId: created.terminalId,
+      actorId: terminalActorId,
+      mode: "snapshot",
+      remark: true,
+      recordActivity: false,
+    });
+    await terminalSystem.startTransport({ port: 0 });
+
+    const runtime = new SessionRuntime({
+      sessionId,
+      cwd: root,
+      sessionRoot: join(root, "session"),
+      sessionName: "test",
+      storeTarget: "workspace",
+      primaryRoomId: PRIMARY_ROOM_ID,
+      allocateRoomId: createRuntimeRoomAllocator(),
+      terminalSystem,
+      terminalActorId,
+      avatarPrincipalId: TEST_AVATAR_PRINCIPAL_ID,
+      avatarPrivateKey: TEST_AVATAR_PRIVATE_KEY,
+      homeDir: root,
+      rootWorkspacePath: root,
+      resolveRuntimeTerminalCwd: async (input) => ({
+        ok: true,
+        cwd: input.cwd ?? root,
+      }),
+    });
+    attachPrimaryRoom(runtime);
+    const internal = runtime as unknown as RuntimeInternal;
+    const events: RuntimeEvent[] = [];
+    const unsubscribe = runtime.onEvent((event) => {
+      events.push(event);
+    });
+    const endpoint = terminalSystem.getTransportEndpoint(created.terminalId, created.access?.accessToken);
+    if (!endpoint) {
+      throw new Error("expected terminal transport endpoint");
+    }
+    const socket = new WebSocket(endpoint.url);
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+
+    await runtime.start();
+    try {
+      expect(runtime.snapshot().focusedTerminalIds).toEqual([created.terminalId]);
+      expect(internal.terminals.has(created.terminalId)).toBeTrue();
+      expect((Reflect.get(runtime, "terminalStatusById") as Map<string, { processPhase: string; status: string }>).get(
+        created.terminalId,
+      )).toMatchObject({
+        processPhase: "running",
+        status: "IDLE",
+      });
+      expect(
+        (
+          Reflect.get(Reflect.get(runtime, "terminalKernelAdapter"), "idleCommitWaiters") as Map<string, unknown>
+        ).has(created.terminalId),
+      ).toBeTrue();
+      await opened;
+      socket.send(
+        encodeTerminalClientFrame({
+          type: "inputBytes",
+          data: new TextEncoder().encode("runtime raw idle line\n"),
+        }),
+      );
+
+      try {
+        await waitForAttentionContextCommit(
+          internal,
+          "ctx-terminal-raw-idle-main",
+          (commit) =>
+            commit.meta.source === "terminal" &&
+            commit.change.type !== "clean" &&
+            commit.change.value.includes("runtime raw idle line"),
+          { timeoutMs: 3_000, intervalMs: 25 },
+        );
+      } catch (error) {
+        const diagnostic = events
+          .filter((event) => event.type === "error" || event.type === "terminalRead" || event.type === "terminalStatus")
+          .map((event) => `${event.type}:${JSON.stringify(event.payload)}`)
+          .join("\n");
+        throw new Error(`${error instanceof Error ? error.message : String(error)}\n${diagnostic}`);
+      }
+
+      const context = getAttentionContextSnapshot(internal, "ctx-terminal-raw-idle-main");
+      const terminalCommits = context?.commits.filter((commit) => commit.meta.source === "terminal") ?? [];
+      expect(terminalCommits).toHaveLength(1);
+      expect(
+        terminalSystem.getReadCursorHashAuthorized({
+          terminalId: created.terminalId,
+          actorId: terminalActorId,
+        }),
+      ).toBeString();
+    } finally {
+      socket.close();
+      unsubscribe();
+      await runtime.stop();
+      terminalSystem.stopTransport();
+      await terminalSystem.stop(created.terminalId).catch(() => ({ ok: false, message: "ignored" }));
+      await terminalSystem.dispose();
     }
   });
 

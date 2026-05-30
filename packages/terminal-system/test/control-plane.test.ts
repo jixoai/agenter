@@ -3899,6 +3899,127 @@ describe("Feature: terminal control plane", () => {
     await plane.dispose();
   });
 
+  test("Scenario: Given git-log terminal and raw inputBytes When output changes while idle Then TerminalSystem advances commit waiters and read cursor without terminal_write activity", async () => {
+    const plane = createPlane();
+    const actor = "session:admin" as const;
+    plane.setActorPresence(actor, true);
+    const created = await plane.create({
+      terminalId: "transport-raw-git-truth",
+      bootstrapActorId: actor,
+      bootstrapRole: "admin",
+      profile: {
+        gitLog: "normal",
+      },
+    });
+    plane.focusForActor(actor, "replace", [created.terminalId]);
+
+    const initialRead = await plane.readAuthorized({
+      terminalId: created.terminalId,
+      actorId: actor,
+      mode: "snapshot",
+      remark: true,
+      recordActivity: false,
+    });
+    const initialReadToHash = initialRead.readCursor?.toHash;
+    expect(initialReadToHash).toBeString();
+    if (typeof initialReadToHash !== "string") {
+      throw new Error("expected initial read cursor hash");
+    }
+    const initialCursor = plane.getReadCursorHashAuthorized({
+      terminalId: created.terminalId,
+      actorId: actor,
+    });
+    expect(initialCursor).toBe(initialReadToHash);
+
+    const waitFrom = plane.getHeadHash(created.terminalId);
+    const waiter = plane.waitCommitted(created.terminalId, { fromHash: waitFrom });
+    const transport = await plane.startTransport({ port: 0 });
+    const endpoint = plane.getTransportEndpoint(created.terminalId, created.access?.accessToken);
+    expect(transport.port).not.toBeNull();
+
+    const socket = new WebSocket(endpoint!.url);
+    const messages: TerminalTransportServerMessage[] = [];
+    const opened = new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("websocket-open-failed")), { once: true });
+    });
+    socket.addEventListener("message", (event) => {
+      const frame = decodeServerFrame(event.data);
+      if (frame) {
+        messages.push(frame);
+      }
+    });
+    await opened;
+
+    socket.send(encodeClientFrame({ type: "inputBytes", data: new TextEncoder().encode("raw git truth\n") }));
+    const waiterResult = await Promise.race([
+      waiter.promise,
+      Bun.sleep(2_000).then(() => {
+        waiter.reject(new Error("timeout waiting raw input commit"));
+        throw new Error("timeout waiting raw input commit");
+      }),
+    ]);
+    expect(waiterResult.toHash).not.toBe(waitFrom);
+
+    let latestFrame: TerminalTransportFramePayload | null = null;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      latestFrame = await pullLatestFrame({ socket, messages, lastFrame: latestFrame });
+      if (latestFrame.lines.join("\n").includes("raw git truth")) {
+        break;
+      }
+      await Bun.sleep(25);
+    }
+    expect(latestFrame?.lines.join("\n")).toContain("raw git truth");
+
+    const sealed = await plane.sealIdleCommit(created.terminalId);
+    expect(sealed.ok).toBe(true);
+    expect(sealed.hash).toBeString();
+    expect(
+      plane.getReadCursorHashAuthorized({
+        terminalId: created.terminalId,
+        actorId: actor,
+      }),
+    ).toBe(initialCursor);
+
+    const consumed = await plane.readAuthorized({
+      terminalId: created.terminalId,
+      actorId: actor,
+      mode: "diff",
+      remark: true,
+      recordActivity: false,
+    });
+    expect(consumed.representation).toBe("diff");
+    expect(consumed.diff).toContain("raw git truth");
+    expect(consumed.readCursor).toMatchObject({
+      readerActorId: actor,
+      fromHash: initialCursor,
+      consumed: true,
+    });
+    const consumedToHash = consumed.readCursor?.toHash;
+    expect(consumedToHash).toBeString();
+    if (typeof consumedToHash !== "string") {
+      throw new Error("expected consumed read cursor hash");
+    }
+    expect(consumedToHash).not.toBe(initialCursor);
+    expect(
+      plane.getReadCursorHashAuthorized({
+        terminalId: created.terminalId,
+        actorId: actor,
+      }),
+    ).toBe(consumedToHash);
+    expect(
+      plane.pageEventsAuthorized({
+        terminalId: created.terminalId,
+        actorId: actor,
+        limit: 10,
+      }).items,
+    ).toHaveLength(0);
+
+    socket.close();
+    plane.stopTransport();
+    await plane.dispose();
+  });
+
   test("Scenario: Given guard transport live input bytes When no write lease exists Then the client receives an error without creating approval work", async () => {
     const plane = createPlane();
     plane.setActorPresence("session:admin", true);

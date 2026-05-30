@@ -54,22 +54,24 @@
 
 ## 6. Round 4 TerminalSystem-First BDD
 
-- [ ] 6.1 Add TerminalSystem control-plane BDD proving raw transport `inputBytes` advances `waitCommitted(...)`, seals to a git `HEAD`, consumes through `readAuthorized(... remark:true)`, advances actor read cursor, and does not append automation `terminal_write` activity.
-- [ ] 6.2 Add runtime adapter BDD proving an already-idle focused terminal can arm the same idle-window waiter without a fresh `BUSY -> IDLE`.
-- [ ] 6.3 Add SessionRuntime + TerminalSystem BDD proving shell2-style already-idle focused terminal raw input is promoted to terminal attention.
+- [x] 6.1 Add TerminalSystem control-plane BDD proving raw transport `inputBytes` advances `waitCommitted(...)`, seals to a git `HEAD`, consumes through `readAuthorized(... remark:true)`, advances actor read cursor, and does not append automation `terminal_write` activity.
+- [x] 6.2 Add runtime adapter BDD proving an already-idle focused terminal can arm the same idle-window waiter without a fresh `BUSY -> IDLE`.
+- [x] 6.3 Add SessionRuntime + TerminalSystem BDD proving shell2-style already-idle focused terminal raw input is promoted to terminal attention.
+- [x] 6.4 Add runtime adapter BDD proving a waiter canceled by `BUSY` resumes from the pre-BUSY baseline when output commits before the next idle wait is registered.
 
 ## 7. Round 4 Implementation
 
-- [ ] 7.1 Run the Round 4 BDD tests and capture the initial failing behavior before implementation.
-- [ ] 7.2 Add the smallest runtime adapter API needed to arm idle waiters from focus/attach/status hydration.
-- [ ] 7.3 Wire SessionRuntime focus/attach/status synchronization to arm already-idle focused terminal waiters.
-- [ ] 7.4 Preserve TerminalSystem purity: no AttentionSystem/LoopBus imports and no raw input modeled as `terminal_write`.
-- [ ] 7.5 Re-run targeted TerminalSystem, runtime adapter, and SessionRuntime tests.
+- [x] 7.1 Run the Round 4 BDD tests and capture the initial failing behavior before implementation.
+- [x] 7.2 Add the smallest runtime adapter API needed to arm idle waiters from focus/attach/status hydration.
+- [x] 7.3 Wire SessionRuntime focus/attach/status synchronization to arm already-idle focused terminal waiters.
+- [x] 7.4 Preserve TerminalSystem purity: no AttentionSystem/LoopBus imports and no raw input modeled as `terminal_write`.
+- [x] 7.5 Re-run targeted TerminalSystem, runtime adapter, and SessionRuntime tests.
 
 ## 8. Round 4 Verification
 
-- [ ] 8.1 Run `bun run --filter '@agenter/terminal-system' typecheck`.
-- [ ] 8.2 Run scoped `git diff --check` for touched files.
-- [ ] 8.3 Run `bun run openspec:vision -- validate repair-terminal-system-git-attention-hook`.
-- [ ] 8.4 Run `bun run openspec:vision -- check repair-terminal-system-git-attention-hook`.
-- [ ] 8.5 Update self-review evidence with the Round 4 red/green result and keep archive gated on user shell2 acceptance.
+- [x] 8.1 Run `bun run --filter '@agenter/terminal-system' typecheck`.
+- [x] 8.2 Run scoped `git diff --check` for touched files.
+- [x] 8.3 Run `bun run openspec:vision -- validate repair-terminal-system-git-attention-hook`.
+- [x] 8.4 Run `bun run openspec:vision -- check repair-terminal-system-git-attention-hook`.
+- [x] 8.5 Update self-review evidence with the Round 4 red/green result and keep archive gated on user shell2 acceptance.
+- [x] 8.6 Re-run adapter BDD after adding the pre-BUSY baseline regression.

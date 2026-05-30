@@ -41,6 +41,7 @@ interface RuntimeTerminalKernelAdapterOptions {
 }
 
 interface RuntimeTerminalIdleWaiter {
+  fromHash: string | null;
   reject: (reason: unknown) => void;
 }
 
@@ -52,6 +53,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
   private readonly queuedTerminalIds = new Set<string>();
   private readonly pendingIdleReadTerminalIds = new Set<string>();
   private readonly idleCommitWaiters = new Map<string, RuntimeTerminalIdleWaiter>();
+  private readonly idleCommitWaitBaselines = new Map<string, string | null>();
   private readonly pendingLifecycleIngress: RuntimeSystemIngressEnvelope[] = [];
 
   constructor(private readonly options: RuntimeTerminalKernelAdapterOptions) {}
@@ -68,6 +70,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
     this.dirtyTerminalIds.clear();
     this.queuedTerminalIds.clear();
     this.cancelAllIdleCommitWaiters();
+    this.idleCommitWaitBaselines.clear();
     this.pendingLifecycleIngress.length = 0;
   }
 
@@ -98,6 +101,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
   syncFocusedDirtyTerminals(): void {
     const actionableTerminalIds: string[] = [];
     for (const terminalId of this.getFocusedTerminalIds()) {
+      this.startIdleUnreadWait(terminalId);
       if (this.queueFocusedTerminal(terminalId)) {
         actionableTerminalIds.push(terminalId);
       }
@@ -121,10 +125,12 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
     status: "IDLE" | "BUSY";
   }): Promise<void> {
     if (input.status === "BUSY") {
-      this.cancelIdleCommitWaiter(input.terminalId);
+      this.cancelIdleCommitWaiter(input.terminalId, { preserveBaseline: true });
     }
-    if (input.previousStatus === "BUSY" && input.status === "IDLE" && input.running) {
-      await this.commitIdleUnreadTerminal(input.terminalId);
+    if (input.status === "IDLE" && input.running) {
+      if (input.previousStatus === "BUSY") {
+        await this.commitIdleUnreadTerminal(input.terminalId);
+      }
       this.startIdleUnreadWait(input.terminalId);
     }
     if (
@@ -248,49 +254,69 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
     );
   }
 
-  private async waitForIdleUnreadTerminal(terminalId: string): Promise<void> {
+  private async waitForIdleUnreadTerminalLoop(terminalId: string): Promise<void> {
     if (!this.options.waitTerminalCommitted || !this.isIdleWaitEligible(terminalId)) {
       return;
     }
-    this.cancelIdleCommitWaiter(terminalId);
-    const fromHash =
-      this.options.getTerminalCommitWaitHash?.(terminalId) ?? (await this.options.getTerminalHeadHash(terminalId));
-    if (!this.isIdleWaitEligible(terminalId)) {
-      return;
-    }
-    const handle = this.options.waitTerminalCommitted(terminalId, { fromHash });
-    const waiter: RuntimeTerminalIdleWaiter = {
-      reject: handle.reject,
-    };
-    this.idleCommitWaiters.set(terminalId, waiter);
-    try {
-      await handle.promise;
-    } catch (error) {
-      if (error === TERMINAL_IDLE_WAIT_CANCELLED) {
+    while (this.isIdleWaitEligible(terminalId)) {
+      const baselineFromHash = this.resolveIdleWaitFromHash(terminalId);
+      const fromHash =
+        baselineFromHash !== undefined
+          ? baselineFromHash
+          : (this.options.getTerminalCommitWaitHash?.(terminalId) ?? (await this.options.getTerminalHeadHash(terminalId)));
+      if (!this.isIdleWaitEligible(terminalId)) {
         return;
       }
-      throw error;
-    } finally {
-      if (this.idleCommitWaiters.get(terminalId) === waiter) {
-        this.idleCommitWaiters.delete(terminalId);
+      const handle = this.options.waitTerminalCommitted(terminalId, { fromHash });
+      const waiter: RuntimeTerminalIdleWaiter = {
+        fromHash,
+        reject: handle.reject,
+      };
+      this.idleCommitWaiters.set(terminalId, waiter);
+      try {
+        await handle.promise;
+      } catch (error) {
+        if (error === TERMINAL_IDLE_WAIT_CANCELLED) {
+          return;
+        }
+        throw error;
+      } finally {
+        if (this.idleCommitWaiters.get(terminalId) === waiter) {
+          this.idleCommitWaiters.delete(terminalId);
+        }
       }
+      if (!this.isIdleWaitEligible(terminalId)) {
+        return;
+      }
+      await this.commitIdleUnreadTerminal(terminalId);
     }
-    if (!this.isIdleWaitEligible(terminalId)) {
-      return;
-    }
-    await this.commitIdleUnreadTerminal(terminalId);
   }
 
   private startIdleUnreadWait(terminalId: string): void {
-    void this.waitForIdleUnreadTerminal(terminalId).catch((error) => {
+    if (this.idleCommitWaiters.has(terminalId)) {
+      return;
+    }
+    void this.waitForIdleUnreadTerminalLoop(terminalId).catch((error) => {
       this.options.onTerminalIdleBridgeError?.(error);
     });
   }
 
-  private cancelIdleCommitWaiter(terminalId: string): void {
+  private resolveIdleWaitFromHash(terminalId: string): string | null | undefined {
+    if (this.idleCommitWaitBaselines.has(terminalId)) {
+      const baseline = this.idleCommitWaitBaselines.get(terminalId) ?? null;
+      this.idleCommitWaitBaselines.delete(terminalId);
+      return baseline;
+    }
+    return undefined;
+  }
+
+  private cancelIdleCommitWaiter(terminalId: string, input: { preserveBaseline?: boolean } = {}): void {
     const waiter = this.idleCommitWaiters.get(terminalId);
     if (!waiter) {
       return;
+    }
+    if (input.preserveBaseline) {
+      this.idleCommitWaitBaselines.set(terminalId, waiter.fromHash);
     }
     this.idleCommitWaiters.delete(terminalId);
     waiter.reject(TERMINAL_IDLE_WAIT_CANCELLED);
