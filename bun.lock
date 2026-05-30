@@ -21,7 +21,7 @@
     },
     "apps/shell": {
       "name": "agenter-app-shell",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "bin": {
         "agenter-shell": "./src/bin/agenter-shell.ts",
       },
@@ -41,7 +41,7 @@
         "typescript": "latest",
       },
       "peerDependencies": {
-        "agenter": ">=0.0.0 <0.1.0",
+        "agenter": ">=0.0.7 <0.1.0",
       },
     },
     "apps/shell-old": {
@@ -67,7 +67,7 @@
     },
     "apps/studio": {
       "name": "agenter-app-studio",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "bin": {
         "agenter-studio": "./src/bin/agenter-studio.ts",
       },
@@ -137,7 +137,7 @@
         "vitest": "^4.1.0",
       },
       "peerDependencies": {
-        "agenter": ">=0.0.0 <0.1.0",
+        "agenter": ">=0.0.7 <0.1.0",
       },
     },
     "demo": {
@@ -159,7 +159,7 @@
     },
     "packages/agenter": {
       "name": "agenter",
-      "version": "0.0.6",
+      "version": "0.0.7",
       "bin": {
         "agenter": "./src/bin/agenter.ts",
       },

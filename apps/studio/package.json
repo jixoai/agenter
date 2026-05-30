@@ -1,6 +1,6 @@
 {
   "name": "agenter-app-studio",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "files": [
     "SPEC.md",
@@ -68,7 +68,7 @@
     "yargs": "^17.7.2"
   },
   "peerDependencies": {
-    "agenter": ">=0.0.0 <0.1.0"
+    "agenter": ">=0.0.7 <0.1.0"
   },
   "devDependencies": {
     "agenter": "workspace:*",
