@@ -2,9 +2,9 @@
 
 ## Current Round
 
-- Round: 3
-- Status: research-plan revised after manual shell2 acceptance failure
-- Previous plan backup: `plans/plan-v2.md`
+- Round: 2
+- Status: research-plan revised after user correction and git archaeology
+- Previous plan backup: `plans/plan-v1.md`
 
 ## Workflow Command Surface
 
@@ -40,16 +40,6 @@
 >
 > 如果没找到就意味着架构可能是比较干净的，你直接做这个新功能就行了。
 
-> 经过我测试，并不符合预期，我在终端中通过在终端输入内容，理论上应该经历了1.2.3.4.5 了才对，但是终端一直处于idle状态。
->
-> 除非你6这里有问题，这里的伪代码应该是：
-> `onIdle({signal}) { await terminal.waitUnread({signal}); signal.postTask(async()=>{ commitAttentionItem(await terminal.read()) }) }`
->
-> 所以我怀疑你的代码是：
-> `onIdle(){ if(await terminal.hasUnread()){ commitAttentionItem(await terminal.read()) } }`
->
-> 调查一下，是不是我说的这样
-
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -60,7 +50,6 @@
 | 2 | User | The task is simple: if terminal git HEAD HASH is ahead of current readed HASH, trigger automatic read, and commit the read result as an attention item. | The implementation must be a small bridge, not a scheduler redesign. |
 | 3 | User | "Existing hook" means when terminal enters `IDLE`. | The hook is terminal BUSY -> IDLE, not generic LoopBus pause/stop. |
 | 3 | User | Investigate whether a previous implementation existed and whether residual architecture needs cleanup. | Perform git/OpenSpec archaeology before implementation. |
-| 4 | User | Manual shell2 acceptance failed; the current code appears to be a one-shot `hasUnread()` check rather than an idle-scoped `waitUnread({ signal })`. | Reopen implementation. The idle hook must keep a cancellable unread wait alive while the terminal remains idle. |
 
 ### Evidence Read
 
@@ -71,10 +60,7 @@
 | `packages/terminal-system/src/terminal-db.ts` | `terminal_read_cursor` stores `(terminal_id, reader_actor_id, cursor_hash)`. | `readed HASH` is already modeled as actor-scoped cursor state. |
 | `packages/terminal-system/src/terminal-control-plane.ts` | `readAuthorized({ remark: true })` reads from the actor cursor and commits the cursor to the returned `toHash`. | Auto-read can use the existing consuming read path. |
 | `packages/app-server/src/runtime-system-kernel-adapters/terminal-adapter.ts` | Current `handleStatusChange()` only emits a terminal actionable signal for some IDLE transitions; it does not compare HEAD vs read cursor or auto-read. | This is the missing bridge location. |
-| `packages/app-server/src/runtime-system-kernel-adapters/terminal-adapter.ts` | The current repaired bridge still checks HEAD/cursor only once on `BUSY -> IDLE`; it does not register a terminal commit waiter for the idle window. | This explains the user's pseudocode concern. |
 | `packages/app-server/src/session-runtime.ts` | `buildTerminalSystemIngressEnvelope()` already turns `readTerminalRepresentation(... remark:true)` into a terminal world-fact attention envelope. | The read-result-to-attention path exists; it needs to be invoked at the IDLE hash comparison boundary. |
-| `packages/app-server/src/session-runtime.ts` | Runtime startup assigned `focusedTerminalIds` from TerminalControlPlane directly; focused terminals that already existed before runtime start were not normalized/attached. | Product-bound shell2 reuse can miss `terminal.onStatus()` and therefore never reach the adapter idle hook. |
-| `packages/terminal-system/src/managed-terminal.ts` | `ManagedTerminal.getHeadHash()` returns snapshot `seq`, while git-log reads/cursors are only committed when `profile.gitLog` is enabled. | This is a projection-vs-git-truth residual; the new fix must not deepen that leak. |
 | `openspec/changes/archive/2026-05-05-decouple-terminal-activity-from-runtime-loop/design.md` | The old runtime had two terminal wake paths: `markTerminalDirty -> notifyInput("terminal")` and scheduler `waitCommitted(...)`; that change intentionally separated physical terminal changes from runtime ingress. | This explains why broad terminal wake behavior was removed. |
 | `openspec/changes/archive/2026-05-05-decouple-terminal-activity-from-runtime-loop/specs/runtime-terminal-activity-bridge/spec.md` | The bridge may upgrade terminal changes to actionable ingress when an explicit action predicate matches. | `HEAD > readed HASH on IDLE` should be added as a named explicit action predicate. |
 | Commit `208e6948 fix(runtime): purify room and terminal attention boundaries` | Removed high-score `terminal_idle_ready` attention task text and made idle-ready scheduler-only. | Evidence that an older idle-triggered attention behavior existed but was intentionally removed because it was too semantic/noisy. |
@@ -129,8 +115,6 @@
 ### Surface Intent
 
 在 terminal 进入 `IDLE` 时，检查该 terminal 当前 git `HEAD` 是否比当前 reader actor 的 `readed HASH` 更新。如果更新，调用已有 terminal read，推进 read cursor，并把 read 结果 commit 成 attention item，从而让 LoopBus 继续工作。
-
-Round 3 correction: entering `IDLE` is not only a momentary if-check. While the terminal remains idle, the runtime bridge must keep a cancellable unread/commit wait alive so a delayed status-idle git commit can still trigger the same consuming read and attention commit.
 
 ### Underlying Drive
 
@@ -201,7 +185,6 @@ AI 执行一个终端任务后，终端输出在结束/稳定到 IDLE 时会自�
   - read terminal ingress,
   - attention commit host.
 - AttentionSystem only receives a normal committed terminal item.
-- Runtime startup/focus hydration must attach already-focused TerminalSystem terminals before relying on status hooks.
 
 ### User Confirmation Gates
 
@@ -214,28 +197,27 @@ AI 执行一个终端任务后，终端输出在结束/稳定到 IDLE 时会自�
 
 - [x] 1. Research and align intent.
 - [x] 1.1 Investigate prior implementation / removal evidence.
-- [x] 1.2 Investigate manual shell2 failure and one-shot idle suspicion.
-- [x] 2. Update specs from Round 3 intent.
-  - Add terminal idle-window wait predicate: on IDLE, keep a cancellable wait for unread terminal commit while status remains IDLE.
-  - Add runtime startup/focus hydration requirement: already-focused TerminalSystem terminals must be attached.
+- [ ] 2. Write specs from the intent.
+  - Add terminal activity bridge predicate: on IDLE, if HEAD is ahead of actor read cursor, auto-read and commit attention item.
   - Preserve passive observation and scheduler-only `terminal_idle_ready` wording laws.
-- [x] 3. Write BDD tasks from specs.
-  - Adapter/unit: HEAD equals read cursor at IDLE, then a later commit resolves the idle waiter and commits attention.
-  - Adapter/unit: BUSY cancels an idle waiter without committing stale attention.
-  - Session/runtime: a pre-focused control-plane terminal is attached during runtime start/focus hydration.
-- [x] 4. Implement tasks.
-  - Add a cancellable terminal commit waiter at the adapter idle boundary.
-  - Wire SessionRuntime to TerminalControlPlane `waitCommitted(...)` without importing AttentionSystem into TerminalSystem.
-  - Normalize focused terminals during runtime startup so reused shell2 bindings attach.
-  - Keep old broad scheduler terminal wake behavior removed.
-- [x] 5. Self-review against intent and decide whether to loop.
+- [ ] 3. Write BDD tasks from specs.
+  - Adapter/unit: HEAD equals read cursor => no read/commit.
+  - Adapter/unit: HEAD ahead of read cursor on IDLE => consuming read and attention commit.
+  - Session/runtime: terminal enters IDLE after output => terminal read result appears as attention item once.
+  - Regression: repeated IDLE with same HEAD does not duplicate attention item.
+- [ ] 4. Implement tasks.
+  - Add cursor/head comparison helper at the terminal bridge boundary.
+  - Reuse existing consuming read path.
+  - Reuse existing terminal attention presentation path.
+  - Keep old broad waitCommitted/dirty-wake behavior removed.
+- [ ] 5. Self-review against intent and decide whether to loop.
 
 ## Open Questions
 
 | Question | Why it matters | Default assumption until user answers |
 | -------- | -------------- | ------------------------------------- |
 | Should non-focused terminals auto-read on IDLE? | Could wake AI from unrelated shared terminal noise. | No. |
-| Should the read cursor comparison use ancestry or simple inequality? | Git history should normally be linear, but ancestry is more precise. | Use simple inequality for the current linear terminal log; null cursor means unread, equal means no-op. |
+| Should the read cursor comparison use ancestry or simple inequality? | Git history should normally be linear, but ancestry is more precise. | Use a robust helper: null cursor means unread; equal means no-op; otherwise treat as unread if git can diff from cursor to HEAD. |
 
 ## Rejected Paths
 

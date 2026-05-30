@@ -20,6 +20,18 @@ The terminal control plane SHALL expose a read-side inspection primitive that re
 - **THEN** the control plane returns `null`
 - **AND** the runtime adapter can treat non-null `HEAD` versus null cursor as unread terminal history
 
+### Requirement: Terminal control plane SHALL expose a cancellable terminal commit waiter
+
+The terminal control plane SHALL expose a terminal commit wait primitive that resolves when terminal output truth advances beyond a supplied head hash and can be rejected by its caller when the caller's lifecycle window ends. This primitive remains TerminalSystem-owned and MUST NOT commit attention or know about LoopBus; it only reports that terminal truth has advanced.
+
+#### Scenario: Idle bridge waits from the current terminal head
+
+- **GIVEN** the runtime adapter observes terminal `main` entering `IDLE`
+- **AND** terminal `HEAD = H1`
+- **WHEN** the adapter asks TerminalSystem to wait for commits after `H1`
+- **THEN** the returned wait handle resolves only after terminal truth advances beyond `H1`
+- **AND** the adapter may reject the handle if terminal `main` leaves `IDLE`
+
 ### Requirement: Terminal control plane SHALL preserve raw transport separation from automation activity
 
 Live PTY transport input SHALL remain a raw interaction channel and MUST NOT be modeled as automation `terminal_write` activity. Terminal output created by raw transport SHALL be observable through terminal snapshot/git commit truth and read cursor comparison.

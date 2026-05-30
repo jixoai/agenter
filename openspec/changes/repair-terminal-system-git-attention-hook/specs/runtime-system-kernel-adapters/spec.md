@@ -21,6 +21,22 @@ The terminal adapter SHALL treat a running focused terminal `BUSY -> IDLE` trans
 - **THEN** it first asks TerminalSystem to seal pending output into git
 - **AND** it compares the actor read cursor against that sealed terminal `HEAD`
 
+#### Scenario: Idle window waits for a later unread commit
+
+- **GIVEN** a focused running terminal changes from `BUSY` to `IDLE`
+- **AND** the sealed terminal `HEAD` initially equals the runtime actor's read cursor
+- **WHEN** TerminalSystem commits a newer terminal head while the terminal remains `IDLE`
+- **THEN** the terminal adapter consumes one terminal read from the previous cursor to the newer head
+- **AND** it commits that read payload as wakeable terminal attention ingress
+
+#### Scenario: Leaving idle cancels a pending unread wait
+
+- **GIVEN** a focused running terminal is `IDLE`
+- **AND** the terminal adapter is waiting for a newer terminal commit
+- **WHEN** the terminal changes back to `BUSY` before a newer commit is read
+- **THEN** the pending idle wait is cancelled
+- **AND** no stale terminal attention ingress is committed for that cancelled idle window
+
 #### Scenario: Repeated idle with already-read head is a no-op
 
 - **GIVEN** a focused running terminal has current git `HEAD = H2`
@@ -50,6 +66,17 @@ The terminal adapter MUST NOT restore `terminal_idle_ready` as a model-visible t
 - **AND** unread terminal output, if any, is represented by the terminal diff or snapshot payload instead
 
 ## MODIFIED Requirements
+
+### Requirement: Runtime terminal focus hydration SHALL attach already-focused TerminalSystem terminals
+
+When a runtime starts or receives a terminal focus synchronization, it SHALL normalize the focused terminal ids through the same attachment path used by explicit runtime terminal focus changes. A TerminalSystem terminal that is already focused before the runtime begins MUST be attached to `SessionRuntime` before the runtime relies on terminal snapshot/status hooks. This preserves shell2/product-bound terminal reuse without requiring a new focus event.
+
+#### Scenario: Runtime starts with an already-focused terminal
+
+- **GIVEN** TerminalSystem already contains a running terminal focused for the runtime actor
+- **WHEN** `SessionRuntime` starts
+- **THEN** the runtime attaches that managed terminal
+- **AND** later terminal status changes can reach the terminal adapter idle bridge
 
 ## REMOVED Requirements
 
