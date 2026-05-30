@@ -30,8 +30,8 @@
 
 ## 5. Self-Review Loop
 
-- [ ] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md` and all delta specs.
-- [ ] 5.2 Generate `review/self-review.html` as structured evidence for the behavior and verification results.
-- [ ] 5.3 If self-review reopens tasks or updates OpenSpec artifacts, keep those artifact changes separate from code changes.
-- [ ] 5.4 If review cannot exit normally, run `bun run openspec:vision -- handoff design-instance-focus-attention-lifecycle` before returning to user discussion.
-- [ ] 5.5 If review exits normally, run `bun run openspec:vision -- check design-instance-focus-attention-lifecycle` and prepare the change for archive.
+- [x] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md` and all delta specs.
+- [x] 5.2 Generate `review/self-review.html` as structured evidence for the behavior and verification results.
+- [x] 5.3 If self-review reopens tasks or updates OpenSpec artifacts, keep those artifact changes separate from code changes.
+- [x] 5.4 If review cannot exit normally, run `bun run openspec:vision -- handoff design-instance-focus-attention-lifecycle` before returning to user discussion.
+- [x] 5.5 If review exits normally, run `bun run openspec:vision -- check design-instance-focus-attention-lifecycle` and prepare the change for archive.

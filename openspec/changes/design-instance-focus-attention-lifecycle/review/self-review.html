@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>design-instance-focus-attention-lifecycle self review</title>
+    <style>
+      body {
+        margin: 0;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        color: #172026;
+        background: #f7f8fa;
+      }
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 32px;
+      }
+      h1,
+      h2 {
+        margin: 0 0 12px;
+      }
+      h1 {
+        font-size: 28px;
+      }
+      h2 {
+        font-size: 18px;
+      }
+      section {
+        margin-top: 20px;
+        border: 1px solid #d9dee5;
+        border-radius: 8px;
+        background: #ffffff;
+        padding: 18px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border-bottom: 1px solid #e6e9ee;
+        padding: 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #53606d;
+      }
+      code {
+        border-radius: 4px;
+        background: #eef1f5;
+        padding: 1px 4px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.92em;
+      }
+      .pass {
+        color: #0f7a3b;
+        font-weight: 650;
+      }
+      .warn {
+        color: #986a00;
+        font-weight: 650;
+      }
+      .muted {
+        color: #62717f;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Self Review: design-instance-focus-attention-lifecycle</h1>
+      <p class="muted">Iteration 1. Backend/product runtime evidence only; no screenshots were required.</p>
+
+      <section>
+        <h2>Alignment Matrix</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Requirement</th>
+              <th>Implementation Evidence</th>
+              <th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Room archive mutes room attention context.</td>
+              <td>
+                <code>SessionRuntime.applyArchivedMessageChannelLifecycle</code> commits room lifecycle and calls focus
+                mute.
+              </td>
+              <td class="pass">Pass</td>
+            </tr>
+            <tr>
+              <td>Room refs use <code>room:</code>; message contact refs use <code>msg:</code>.</td>
+              <td><code>attention-src.ts</code> registers separate namespace parse/format/bucket/compare rules.</td>
+              <td class="pass">Pass</td>
+            </tr>
+            <tr>
+              <td>Shell-next owns terminal-room reaction in product code.</td>
+              <td>
+                <code>extensions/shell-next/src/product/lifecycle-reaction.ts</code> subscribes through public store
+                APIs.
+              </td>
+              <td class="pass">Pass</td>
+            </tr>
+            <tr>
+              <td>Unrelated terminal kill does not archive bound room.</td>
+              <td>Negative BDD scenario in <code>run-shell-next.test.ts</code>.</td>
+              <td class="pass">Pass</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Command Evidence</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>bun test packages/app-server/test/attention-src-registry.test.ts ...</code></td>
+              <td class="pass">23 pass</td>
+            </tr>
+            <tr>
+              <td>
+                <code
+                  >bun test packages/app-server/test/session-runtime.attention-system.test.ts --test-name-pattern
+                  ...</code
+                >
+              </td>
+              <td class="pass">3 pass</td>
+            </tr>
+            <tr>
+              <td><code>bun test extensions/shell-next/test/run-shell-next.test.ts --test-name-pattern ...</code></td>
+              <td class="pass">3 pass</td>
+            </tr>
+            <tr>
+              <td>
+                <code>bun test packages/message-system/test/message-system.test.ts --test-name-pattern follow-up</code>
+              </td>
+              <td class="pass">5 pass</td>
+            </tr>
+            <tr>
+              <td>
+                <code
+                  >bun test packages/app-server/test/app-kernel.test.ts --test-name-pattern "global room
+                  authority|notification"</code
+                >
+              </td>
+              <td class="pass">2 pass</td>
+            </tr>
+            <tr>
+              <td><code>bun run openspec:vision -- validate design-instance-focus-attention-lifecycle</code></td>
+              <td class="pass">Pass</td>
+            </tr>
+            <tr>
+              <td><code>bun run --filter '@agenter/app-server' typecheck</code></td>
+              <td class="warn">Pre-existing module resolution failure in <code>../cli/src/trpc-server.ts</code>.</td>
+            </tr>
+            <tr>
+              <td><code>bun run --filter 'agenter-ext-shell-next' typecheck</code></td>
+              <td class="warn">Pre-existing message fixture type drift remains outside this change.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Review Judgment</h2>
+        <p>
+          The implementation follows the final architecture boundary: kernel lifecycle laws remain product-agnostic, and
+          shell-next owns only its application-specific binding reaction. The remaining questions are cleanup and
+          inactive runtime propagation scope, not blockers for this batch.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
