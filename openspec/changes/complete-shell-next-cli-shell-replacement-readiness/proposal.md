@@ -1,20 +1,20 @@
-# Complete shell-next replacement readiness
+# Complete shell replacement readiness
 
 ## Why
 
-`shell-next` already proves the OpenTUI mux/layout host and live terminal projection path, but the current implementation still contains product-surface and event-routing gaps. The correction for this stage is to stop treating `cli-shell` as a runtime dependency. Shell-next may copy proven Room, bootstrap, settings, heartbeat, approval, and terminal projection code during incubation, but the copied code must become shell-next-owned code with shell-next/opencompose naming. The durable boundary is: shell-next replaces tmux as the local compositor and remains removable from legacy cli-shell.
+The previous `shell-next` implementation has reached acceptance and should become the official Shell product. The old tmux-backed `cli-shell` remains as preserved legacy code only. The durable boundary is: `agenter shell` launches the OpenTUI/opencompose Shell product, while the old implementation is moved to `extensions/shell-old` and no longer owns the launcher command.
 
 ## What Changes
 
-- Localize the proven Room, product bootstrap, heartbeat, approval, and terminal projection atoms under `extensions/shell-next` instead of importing `agenter-ext-shell`.
-- Incubate the compositor as `opencompose` inside shell-next: layout, pane chrome, pane title, focus, resize, and renderer mixing stay product-agnostic.
-- Support two pane content families: OpenTUI renderer/renderable mixing and custom/terminal renderer content used by PTY + termless + ghostty-native projection.
-- Route keyboard input through a DOM-tree-like focus path so top-layer, focused pane, and global host controls cannot all consume the same key.
-- Model terminal creation through an explicit source policy so product-attached terminals and local BunPTY terminals are separate capabilities.
-- Preserve `agenter shell2` as the validation entry and leave stable `agenter shell` unchanged.
+- Rename `extensions/shell-next` to `extensions/shell` and publish it as `agenter-ext-shell` / `agenter-shell` / `runShell`.
+- Rename `extensions/cli-shell` to `extensions/shell-old` and keep it private so it cannot conflict with the official Shell package.
+- Route `agenter shell` to the new Shell descriptor.
+- Remove the `agenter shell2` product descriptor; `shell2` becomes an unsupported command.
+- Incubate the compositor as `opencompose` inside shell: layout, pane chrome, pane title, focus, resize, and renderer mixing stay product-agnostic.
+- Keep terminal creation behind the existing source policy so product-attached terminals and local BunPTY terminals remain separate capabilities.
 
 ## Impact
 
-- Affects `extensions/shell-next` and the `packages/cli` descriptor needed for the local-only `agenter shell2` entry.
-- Does not modify `extensions/cli-shell`; copied code is allowed, runtime imports are not.
-- Does not rename packages, publish shell-next, or switch the stable shell command.
+- Affects `extensions/shell`, `extensions/shell-old`, `packages/cli`, release bundle metadata, lockfiles, and shell-related tests/specs.
+- Does not change TerminalSystem, MessageSystem, AttentionSystem, or LoopBus architecture.
+- Removes the public `shell2` launcher surface.

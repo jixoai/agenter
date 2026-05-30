@@ -9,9 +9,10 @@ Define how the core `agenter` CLI launches first-party product command packages 
 
 The core `agenter` CLI SHALL resolve controlled product commands to first-party npm package names through product descriptors and launch the package bin while preserving the core daemon/auth-service bootstrap law. The launcher SHALL stay product-agnostic after descriptor lookup; product grammar and product UX belong to the launched package.
 
-#### Scenario: Shell command resolves to cli-shell package
+#### Scenario: Shell command resolves to Shell package
 - **WHEN** a user runs `agenter shell`
 - **THEN** the core CLI resolves product command `shell` to package `agenter-ext-shell`
+- **AND** it launches bin `agenter-shell`
 - **AND** it launches the package bin with the remaining arguments preserved
 - **AND** parsing optional `@avatar` grammar and the default `shell-assistant` policy remains the responsibility of `agenter-ext-shell`
 
@@ -32,11 +33,18 @@ The core `agenter` CLI SHALL resolve controlled product commands to first-party 
 - **THEN** the core CLI rejects the command with a clear unsupported-product error
 - **AND** it does not attempt to execute an arbitrary npm package name
 
+#### Scenario: Shell2 command is unsupported after Shell promotion
+- **WHEN** a user runs `agenter shell2`
+- **THEN** the core CLI rejects `shell2` as an unsupported product command
+- **AND** it does not route to the Shell package
+- **AND** it does not start a daemon for the removed incubation command
+
 #### Scenario: Product registry owns package metadata
 - **WHEN** the launcher handles product command `shell`
 - **THEN** it resolves command metadata from a controlled registry entry
 - **AND** that entry contains package name `agenter-ext-shell`
-- **AND** the registry entry is descriptor data, not an import of cli-shell implementation code
+- **AND** that entry contains bin `agenter-shell` and main export `runShell`
+- **AND** the registry entry is descriptor data, not an import of Shell implementation code
 - **AND** user-provided command text cannot alter the package name or bin path
 
 #### Scenario: Web command is unsupported after Studio migration
@@ -47,7 +55,7 @@ The core `agenter` CLI SHALL resolve controlled product commands to first-party 
 
 #### Scenario: Product command handling does not pollute core runtime
 - **WHEN** reviewers inspect core CLI and runtime modules after adding `shell`
-- **THEN** cli-shell-specific parsing, TUI state, toolbar state, resource naming, dialogue layout, and managed/takeover policy are absent from core runtime modules
+- **THEN** Shell-specific parsing, TUI state, toolbar state, resource naming, dialogue layout, and managed/takeover policy are absent from core runtime modules
 - **AND** Studio-specific static-root resolution, asset-copy code, Vite serving flags, and browser storage keys are absent from core runtime modules
 - **AND** the core launcher only handles descriptor lookup, daemon/auth context, package resolution, stdio, and process exit propagation
 
@@ -56,7 +64,7 @@ The core `agenter` CLI SHALL resolve controlled product commands to first-party 
 The product command launcher SHALL resolve product packages from the current monorepo workspace before falling back to installed packages or remote npm execution.
 
 #### Scenario: Local workspace package wins during development
-- **GIVEN** `extensions/cli-shell/package.json` exists with name `agenter-ext-shell`
+- **GIVEN** `extensions/shell/package.json` exists with name `agenter-ext-shell`
 - **WHEN** a user runs `agenter shell` from the Agenter workspace
 - **THEN** the launcher uses the local workspace package bin
 - **AND** it does not require the package to be published to npm
@@ -111,7 +119,7 @@ The product command launcher SHALL ensure or reuse a local daemon and pass conne
 
 #### Scenario: Product does not create a second daemon discovery authority
 - **WHEN** the launcher starts `agenter-ext-shell`
-- **THEN** cli-shell consumes the launcher-owned daemon context
+- **THEN** Shell consumes the launcher-owned daemon context
 - **AND** it does not independently write or treat a product-local `~/.agenter` port file as canonical daemon truth
 
 #### Scenario: Product receives auth-service bridge context

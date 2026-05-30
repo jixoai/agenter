@@ -77,7 +77,7 @@ Product/global terminal creation paths that are intended to participate in runti
 
 #### Scenario: Product terminal binding requests git-backed history
 
-- **GIVEN** shell-next creates a product global terminal binding
+- **GIVEN** Shell creates a product global terminal binding
 - **WHEN** it asks TerminalSystem to create that terminal
 - **THEN** the terminal creation request includes `gitLog: "normal"`
 

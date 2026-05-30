@@ -21,6 +21,7 @@
 - product package resolution 固定遵守 `workspace > installed package > configured remote runner`。
 - launcher 创建的 product 进程必须以前台交互模式运行，继承当前 shell-terminal 的 stdio，并传播原始退出码。
 - product command launcher 只负责确保或复用当前 runtime home root 的 managed daemon authority；product 前台进程退出不得停止 daemon 或 daemon-owned resources。daemon 关闭只属于显式 `agenter daemon stop` / `restart` 生命周期动作。
+- `shell` 是正式 Shell 产品入口，固定解析到 `agenter-ext-shell` / `agenter-shell` / `runShell`；旧 incubation 入口 `shell2` 不再是 product command，必须走 unsupported-command 路径。
 - 本机 loopback auto-start 路径必须以 runtime home root 为单一 daemon authority discovery 作用域：先复用健康的 same-root daemon descriptor，再决定是否启动新的本地 daemon；product 不得自建第二套 daemon 发现真源。
 - `agenter daemon` 必须支持显式 `start` / `stop` / `restart` 生命周期动作；默认动作是 `start`。
 - `agenter daemon start` 必须只负责为当前 runtime home root 拉起后台 daemon、等待健康并立即把控制权还给调用终端；真正长期运行的 server 必须在独立后台进程中承载。

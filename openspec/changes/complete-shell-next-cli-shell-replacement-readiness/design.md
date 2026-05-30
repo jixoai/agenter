@@ -2,22 +2,22 @@
 
 ## Platform Diagnosis
 
-The incomplete part is not a native tmux/psmux addon. The correct direction is an embedded OpenTUI compositor: shell-next owns pane layout, pane chrome, focus, overlays, renderer mixing, and terminal projection mounting.
+The accepted Shell is not a native tmux/psmux addon. The correct direction is an embedded OpenTUI compositor: shell owns pane layout, pane chrome, focus, overlays, renderer mixing, and terminal projection mounting.
 
-The earlier "reuse cli-shell product atoms" framing is now a documented deviation. `cli-shell` is legacy and will be removed after shell-next acceptance. Shell-next may copy proven code from cli-shell, but it must not import `agenter-ext-shell` at runtime and must not preserve legacy naming in the new architecture.
+The earlier "reuse cli-shell product atoms" framing is now a documented deviation. `cli-shell` is legacy and has moved to `extensions/shell-old`. Shell may preserve copied behavior, but it must not import `agenter-ext-shell-old` or `extensions/shell-old` at runtime and must not preserve legacy naming in the new architecture.
 
 Therefore the correct architecture is:
 
-- `shell-next` owns localized product atoms copied from cli-shell where useful: Room, bootstrap, settings, heartbeat, approval, cleanup, and terminal projection.
-- `opencompose` is incubated inside shell-next as the product-agnostic compositor law: layout, pane focus, pane chrome, terminal frame display, renderer-pane display, and resize.
-- Product attach uses shell-next-owned Room code. It does not mount or import the cli-shell Room atom.
-- The stable `agenter shell` route remains legacy until explicit acceptance; the incubation entry is still `agenter shell2`.
+- `shell` owns localized product atoms copied from cli-shell where useful: Room, bootstrap, settings, heartbeat, approval, cleanup, and terminal projection.
+- `opencompose` is incubated inside shell as the product-agnostic compositor law: layout, pane focus, pane chrome, terminal frame display, renderer-pane display, and resize.
+- Product attach uses shell-owned Room code. It does not mount or import the cli-shell Room atom.
+- The stable `agenter shell` route now resolves to the new Shell package; the incubation-only `shell2` route is removed.
 
 ## Key Decisions
 
 1. Copy proven cli-shell code, then own it
 
-   The old Room implementation already solved multiline composer, history panel, room hydration, live repaint, send/refresh separation, and approval detection. Shell-next should copy that behavior into `extensions/shell-next/src/product-room` and evolve it under shell-next naming. Runtime imports from `agenter-ext-shell` are forbidden because cli-shell is scheduled for removal.
+   The old Room implementation already solved multiline composer, history panel, room hydration, live repaint, send/refresh separation, and approval detection. Shell keeps that copied behavior inside `extensions/shell/src/product-room` and evolves it under shell naming. Runtime imports from `agenter-ext-shell-old` or `extensions/shell-old` are forbidden because shell-old is preserved legacy.
 
 2. Terminal source policy must be explicit
 
@@ -25,11 +25,11 @@ Therefore the correct architecture is:
 
 3. opencompose is the local compositor law
 
-   The shell-next compositor is incubated as `src/opencompose` plus `src/renderable-mux`. It is not extracted yet. Its pane API must support both OpenTUI renderer/renderable mixing and custom renderer content. Shell-next then uses that custom renderer path for PTY + termless + ghostty-native(vt)-backend projection.
+   The shell compositor is incubated as `src/opencompose` plus `src/renderable-mux`. It is not extracted yet. Its pane API must support both OpenTUI renderer/renderable mixing and custom renderer content. Shell then uses that custom renderer path for PTY + termless + ghostty-native(vt)-backend projection.
 
 4. View grammar is singular; management commands stay separate
 
-   `shell-next` view selection is one attach-time choice, not a family of positional subcommands. The runtime grammar should therefore converge to `--view=none|room|help|status|shell`, where `none` is the default mixed-view host mode. `status` means a single-view projection of the statusbar inline-start summary, not the approval top-layer. Non-view management operations such as `cleanup` stay as their own command because they operate on product-owned resources rather than opening a mux surface.
+   `shell` view selection is one attach-time choice, not a family of positional subcommands. The runtime grammar should therefore converge to `--view=none|room|help|status|shell`, where `none` is the default mixed-view host mode. `status` means a single-view projection of the statusbar inline-start summary, not the approval top-layer. Non-view management operations such as `cleanup` stay as their own command because they operate on product-owned resources rather than opening a mux surface.
 
 5. Statusbar is macro-only and action-oriented
 
@@ -41,15 +41,15 @@ Therefore the correct architecture is:
 
 7. Terminal pane title is source truth
 
-   Terminal pane headers must read terminal title metadata from the terminal source. Precedence is `currentTitle ?? configuredTitle ?? source identity`. `shell-next` should not invent placeholder titles once source truth exists.
+   Terminal pane headers must read terminal title metadata from the terminal source. Precedence is `currentTitle ?? configuredTitle ?? source identity`. `shell` should not invent placeholder titles once source truth exists.
 
 8. Prefix keymap belongs to the host law
 
-   Shell-next host controls converge under `Ctrl+B` prefix. MVP bindings are `Ctrl+B H|?` for Help, `Ctrl+B C` for Chat, and `Ctrl+B Q` for close/quit flow. This keeps host control distinct from terminal raw input.
+   Shell host controls converge under `Ctrl+B` prefix. MVP bindings are `Ctrl+B H|?` for Help, `Ctrl+B C` for Chat, and `Ctrl+B Q` for close/quit flow. This keeps host control distinct from terminal raw input.
 
 9. Terminal projection must reuse proven cli-shell truth
 
-   Shell-next terminal panes continue to use the copied terminal mirror and backend framebuffer renderable path. Paint commitment must flow back to the mirror, otherwise live projection can stall into a black pane even when snapshots exist.
+   Shell terminal panes continue to use the copied terminal mirror and backend framebuffer renderable path. Paint commitment must flow back to the mirror, otherwise live projection can stall into a black pane even when snapshots exist.
 
 10. Event dispatch follows a focus tree
 
@@ -57,8 +57,8 @@ Therefore the correct architecture is:
 
 11. Testing standard stays local-first
 
-   Default shell-next tests use OpenTUI `createTestRenderer` plus terminal protocol source fakes and termless/ghostty-backed projection tests where needed. Native tmux may be used only as an optional parity harness for layout behavior, and any harness must create unique sessions and destroy them in cleanup.
+   Default shell tests use OpenTUI `createTestRenderer` plus terminal protocol source fakes and termless/ghostty-backed projection tests where needed. Native tmux may be used only as an optional parity harness for layout behavior, and any harness must create unique sessions and destroy them in cleanup.
 
 12. openmux is reference material, not a dependency
 
-   `openmux` is MIT and useful reference material for pane border/title, focus routing, terminal mouse handling, and resize batching. It remains a tmux-like C/S product rather than shell-next's target architecture, so shell-next only borrows design ideas and keeps the lightweight embedded layout+pane model. Future extraction name is `opencompose`.
+   `openmux` is MIT and useful reference material for pane border/title, focus routing, terminal mouse handling, and resize batching. It remains a tmux-like C/S product rather than shell's target architecture, so shell only borrows design ideas and keeps the lightweight embedded layout+pane model. Future extraction name is `opencompose`.
