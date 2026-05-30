@@ -27,7 +27,7 @@
     "@agenter/mdx2md": "workspace:*",
     "@agenter/message-system": "workspace:*",
     "@agenter/principal-crypto": "workspace:*",
-    "@agenter/product-extension-runtime": "workspace:*",
+    "@agenter/app-runtime": "workspace:*",
     "@agenter/auth-service": "workspace:*",
     "@agenter/search-syntax": "workspace:*",
     "@agenter/session-system": "workspace:*",

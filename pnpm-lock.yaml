@@ -79,14 +79,14 @@ importers:
         specifier: latest
         version: 6.0.3
 
-  extensions/shell:
+  apps/shell:
     dependencies:
       '@agenter/client-sdk':
         specifier: workspace:*
         version: link:../../packages/client-sdk
-      '@agenter/product-extension-runtime':
+      '@agenter/app-runtime':
         specifier: workspace:*
-        version: link:../../packages/product-extension-runtime
+        version: link:../../packages/app-runtime
       '@agenter/terminal-transport-protocol':
         specifier: workspace:*
         version: link:../../packages/terminal-transport-protocol
@@ -113,14 +113,14 @@ importers:
         specifier: latest
         version: 6.0.3
 
-  extensions/shell-old:
+  apps/shell-old:
     dependencies:
       '@agenter/client-sdk':
         specifier: workspace:*
         version: link:../../packages/client-sdk
-      '@agenter/product-extension-runtime':
+      '@agenter/app-runtime':
         specifier: workspace:*
-        version: link:../../packages/product-extension-runtime
+        version: link:../../packages/app-runtime
       '@agenter/terminal-transport-protocol':
         specifier: workspace:*
         version: link:../../packages/terminal-transport-protocol
@@ -147,7 +147,7 @@ importers:
         specifier: latest
         version: 6.0.3
 
-  extensions/studio:
+  apps/studio:
     dependencies:
       '@agenter/client-sdk':
         specifier: workspace:*
@@ -388,9 +388,9 @@ importers:
       '@agenter/principal-crypto':
         specifier: workspace:*
         version: link:../principal-crypto
-      '@agenter/product-extension-runtime':
+      '@agenter/app-runtime':
         specifier: workspace:*
-        version: link:../product-extension-runtime
+        version: link:../app-runtime
       '@agenter/search-syntax':
         specifier: workspace:*
         version: link:../search-syntax
@@ -551,9 +551,9 @@ importers:
       '@agenter/auth-service':
         specifier: workspace:*
         version: link:../auth-service
-      '@agenter/product-extension-runtime':
+      '@agenter/app-runtime':
         specifier: workspace:*
-        version: link:../product-extension-runtime
+        version: link:../app-runtime
       '@agenter/tui':
         specifier: workspace:*
         version: link:../tui
@@ -594,9 +594,9 @@ importers:
       '@agenter/app-server':
         specifier: workspace:*
         version: link:../app-server
-      '@agenter/product-extension-runtime':
+      '@agenter/app-runtime':
         specifier: workspace:*
-        version: link:../product-extension-runtime
+        version: link:../app-runtime
       '@trpc/client':
         specifier: ^11.7.1
         version: 11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3)
@@ -798,7 +798,7 @@ importers:
         specifier: ^2.47.6
         version: 2.47.6(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)(zod@4.4.3)
 
-  packages/product-extension-runtime:
+  packages/app-runtime:
     dependencies:
       zod:
         specifier: ^4.0.0

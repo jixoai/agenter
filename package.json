@@ -3,7 +3,7 @@
   "private": true,
   "workspaces": [
     "demo",
-    "extensions/*",
+    "apps/*",
     "packages/*",
     "packages/*/*"
   ],
@@ -20,7 +20,7 @@
     "build:icons": "bun run build:icon-masters && bun run ./assets/scripts/generate-app-icons.ts",
     "build:icon-studio-lucide": "bun run ./assets/scripts/build-icon-studio-lucide-catalog.ts",
     "build:icon-studio": "bun run --filter '@agenter/icon-studio' build",
-    "build:studio": "bun run --filter 'agenter-ext-studio' build",
+    "build:studio": "bun run --filter 'agenter-app-studio' build",
     "changeset": "changeset",
     "flutter-chat-view:web": "bun run packages/flutter-chat-view/example/scripts/run-web.ts",
     "format": "prettier --write .",

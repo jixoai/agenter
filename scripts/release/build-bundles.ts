@@ -63,8 +63,8 @@ const bundleManifestFiles = [
 ] as const;
 const publishablePackageJsonPaths = [
   "packages/agenter/package.json",
-  "extensions/shell/package.json",
-  "extensions/studio/package.json",
+  "apps/shell/package.json",
+  "apps/studio/package.json",
   "packages/ghostty-native/package.json",
 ] as const;
 
@@ -243,7 +243,7 @@ const failMissingVersion = (packageName: string): never => {
 };
 
 const ensureStudioBuild = async (): Promise<void> => {
-  await run(["bun", "run", "--filter", "agenter-ext-studio", "build"]);
+  await run(["bun", "run", "--filter", "agenter-app-studio", "build"]);
 };
 
 const ensureI18nAssets = async (): Promise<void> => {
@@ -314,8 +314,8 @@ export const createBundlePackageSpecs = (): BundlePackageSpec[] => [
     ],
   },
   {
-    sourcePackageDir: "extensions/shell",
-    bundlePackageDir: "bundle/agenter-ext-shell",
+    sourcePackageDir: "apps/shell",
+    bundlePackageDir: "bundle/agenter-app-shell",
     entry: "src/bin/agenter-shell.ts",
     bin: { "agenter-shell": "./dist/agenter-shell.js" },
     optionalDependencies: {
@@ -328,12 +328,12 @@ export const createBundlePackageSpecs = (): BundlePackageSpec[] => [
     },
   },
   {
-    sourcePackageDir: "extensions/studio",
-    bundlePackageDir: "bundle/agenter-ext-studio",
+    sourcePackageDir: "apps/studio",
+    bundlePackageDir: "bundle/agenter-app-studio",
     entry: "src/bin/agenter-studio.ts",
     bin: { "agenter-studio": "./dist/agenter-studio.js" },
     bundledAssetsRoot: true,
-    assets: [{ from: "extensions/studio/build", to: "assets/studio/build" }],
+    assets: [{ from: "apps/studio/build", to: "assets/studio/build" }],
   },
   {
     sourcePackageDir: "packages/ghostty-native",

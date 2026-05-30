@@ -72,7 +72,7 @@ const normalizeDaemonRuntimeDescriptor = (value: unknown): DaemonRuntimeDescript
     return null;
   }
   // Descriptors written before launcher identity existed can still be stopped,
-  // but they are never reusable by identity-aware product launches.
+  // but they are never reusable by identity-aware app launches.
   const launcher = normalizeDaemonLauncherIdentity(value.launcher) ?? {
     packageName: "unknown",
     packageVersion: "unknown",

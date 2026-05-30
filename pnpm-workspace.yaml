@@ -1,6 +1,6 @@
 packages:
   - demo
-  - extensions/*
+  - apps/*
   - packages/*
   - packages/*/*
 

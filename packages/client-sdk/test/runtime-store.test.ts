@@ -10172,9 +10172,9 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
-  test("Scenario: Given live terminal snapshot and status events When runtime store updates one session Then global terminal truth stays synchronized for product consumers", async () => {
+  test("Scenario: Given live terminal snapshot and status events When runtime store updates one session Then global terminal truth stays synchronized for app consumers", async () => {
     let onData: ((event: unknown) => void) | undefined;
-    const terminalId = "term-product-truth";
+    const terminalId = "term-app-truth";
     const store = new RuntimeStore(
       createMockClient({
         snapshotQuery: async () => createSnapshot(0),
@@ -10187,7 +10187,7 @@ describe("Feature: runtime store synchronization", () => {
               terminalId,
               processKind: "shell",
               command: ["/bin/bash"],
-              launchCwd: "/repo/product-truth",
+              launchCwd: "/repo/app-truth",
               workspace: null,
               status: "IDLE" as const,
               processPhase: "running" as const,
@@ -10202,7 +10202,7 @@ describe("Feature: runtime store synchronization", () => {
               },
               focused: false,
               icon: undefined,
-              configuredTitle: "Product truth",
+              configuredTitle: "App truth",
               currentTitle: undefined,
               currentPath: undefined,
               shortcuts: undefined,
@@ -10278,7 +10278,7 @@ describe("Feature: runtime store synchronization", () => {
             cursor: { x: 7, y: 2 },
           },
           status: "IDLE",
-          title: "Product truth terminal",
+          title: "App truth terminal",
           running: true,
         },
       },
@@ -10301,7 +10301,7 @@ describe("Feature: runtime store synchronization", () => {
     store.disconnect();
   });
 
-  test("Scenario: Given runtime truth reports a live terminal as killed When the terminal status event arrives Then the product store removes it from live catalog and projects it into terminal history", async () => {
+  test("Scenario: Given runtime truth reports a live terminal as killed When the terminal status event arrives Then the app store removes it from live catalog and projects it into terminal history", async () => {
     let onData: ((event: unknown) => void) | undefined;
     const terminalId = "term-history-projection";
     const store = new RuntimeStore(

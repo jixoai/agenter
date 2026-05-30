@@ -15,14 +15,14 @@ describe("Feature: release bundle contract", () => {
 
     expect(specs.map((spec) => spec.bundlePackageDir)).toEqual([
       "bundle/agenter",
-      "bundle/agenter-ext-shell",
-      "bundle/agenter-ext-studio",
+      "bundle/agenter-app-shell",
+      "bundle/agenter-app-studio",
       "bundle/@jixo/ghostty-native",
     ]);
     expect(bundlePublishOrder).toEqual([
       "bundle/@jixo/ghostty-native",
-      "bundle/agenter-ext-shell",
-      "bundle/agenter-ext-studio",
+      "bundle/agenter-app-shell",
+      "bundle/agenter-app-studio",
       "bundle/agenter",
     ]);
   });
@@ -34,7 +34,7 @@ describe("Feature: release bundle contract", () => {
       .map((spec) => spec.bundlePackageDir);
     const buildScript = readRepoFile("scripts/release/build-bundles.ts");
 
-    expect(assetOwners).toEqual(["bundle/agenter", "bundle/agenter-ext-studio"]);
+    expect(assetOwners).toEqual(["bundle/agenter", "bundle/agenter-app-studio"]);
     expect(buildScript).toContain("[name, `bin/${name}.js`]");
     expect(buildScript).toContain("process.env.AGENTER_BUNDLED_ASSETS_ROOT = resolve(packageRoot, \"assets\")");
     expect(buildScript).toContain("libprofile_resvg_bridge.${suffix}");
@@ -79,7 +79,7 @@ describe("Feature: release bundle contract", () => {
   });
 
   test("Scenario: Given Shell uses OpenTUI native packages When bundling the JS entry Then platform native packages stay install-time dependencies", () => {
-    const shellSpec = createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter-ext-shell");
+    const shellSpec = createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter-app-shell");
 
     expect(shellSpec?.dependencies).toBeUndefined();
     expect(shellSpec?.optionalDependencies?.["@opentui/core-darwin-arm64"]).toBe("0.3.0");

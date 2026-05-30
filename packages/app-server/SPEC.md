@@ -27,7 +27,7 @@
   - shared public asset roots
   - avatar-private asset roots
   - non-interactive workspace exec
-- ordinary-user product 的 terminal / room / Avatar ensure flow 只能通过 typed product resource binding 协调进入这些 authority；`app-server` 可以提供 ensure/query surface，但不得把 product-local shell name 或 product UI state 变成新的 authority truth。
+- ordinary-user app 的 terminal / room / Avatar ensure flow 只能通过 typed app resource binding 协调进入这些 authority；`app-server` 可以提供 ensure/query surface，但不得把 app-local shell name 或 app UI state 变成新的 authority truth。
 - root workspace bash 与 workspace bash 必须共享同一套 overlay-rule filesystem authority；ordered glob grants、dynamic rule refresh 与 avatar-private sibling isolation 都在这层执行，不能由上层 route 或 shell surface 各自猜测。
 - shell profile law 必须显式区分 fixed `root-workspace` 与 mounted `public-workspace`：`root_bash` 允许 rewrite `HOME` 并携带 avatar-private runtime CLI/env；`workspace_bash` 只保留 public-workspace collaboration semantics，不得继承 root-workspace-exclusive env/CLI。
 - Workspace asset roots 分为：
@@ -51,7 +51,7 @@
 - stopped 或 cold session 的 attention/notification projection 读取 `sessionRoot/attention-system` 下的 persisted facts。
 - notification 不是独立 registry；它只是 unconsumed attention push 的投影。
 - attention commit 对外必须遵守二分法：`meta` 只暴露 provenance，`summary + change` 承载 AI/inspection 可读主体；可见外部效果必须走显式 system mutation 或 dispatch/receipt 事实，调用方不得再依赖开放 metadata bag。
-- product-scoped hosting work 也是 attention scheduler fact：它可以用固定 score key `hosting` 表示未结 obligation，但不得因为 score 为正就自动获得 terminal write authority；写权限仍要回到 TerminalSystem grant、guard approval 和 timeboxed write lease truth。
+- app-scoped hosting work 也是 attention scheduler fact：它可以用固定 score key `hosting` 表示未结 obligation，但不得因为 score 为正就自动获得 terminal write authority；写权限仍要回到 TerminalSystem grant、guard approval 和 timeboxed write lease truth。
 - `EffectLedger` 是 visible external mutation 的唯一可追责面。至少要能把 `actionId`、`actorId`、`target`、`effectRecordId`、`timestamp` 以及可用时的 `cycle/model-call refs` 串起来；room message creation 这类外部效果不得再通过隐式 fallback 或 transport side channel 解释。
 - `notification.snapshot`、`notification.setChatVisibility`、`notification.setTerminalVisibility`、`notification.consume` 都必须遵守同一条法则：有 runtime 读 runtime，无 runtime 读 persisted attention。
 - `session.stop` 与 `session.abort` 都必须让 runtime 从 kernel ownership 中消失；`snapshot.runtimes[sessionId]` 对 stopped session 返回空是正确行为，不是数据丢失。

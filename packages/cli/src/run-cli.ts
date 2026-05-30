@@ -22,17 +22,17 @@ import {
   type DaemonRuntimeDescriptor,
 } from "./daemon-runtime-descriptor";
 import {
-  applyProductCommandsToYargs,
-  buildProductLaunchEnv,
-  buildProductProcessCommand,
+  applyAppCommandsToYargs,
+  buildAppLaunchEnv,
+  buildAppProcessCommand,
   isBuiltInCommand,
+  isAppMetadataOnlyArgv,
   isLauncherMetadataOnlyCommand,
-  isProductMetadataOnlyArgv,
   readCommandToken,
-  resolveProductCommandInvocation,
-  resolveProductLaunchTarget,
-  type LocalProductLaunchTarget,
-} from "./product-command-launcher";
+  resolveAppCommandInvocation,
+  resolveAppLaunchTarget,
+  type LocalAppLaunchTarget,
+} from "./app-command-launcher";
 import type { TrpcServerHandle } from "./trpc-server";
 
 interface CommonArgs {
@@ -612,7 +612,7 @@ const resolveAuthServiceBridgeOptions = (args: AuthServiceBridgeCliArgs): AuthSe
   };
 };
 
-const resolveProductDaemonAuthServiceOptions = (args: AuthServiceBridgeCliArgs): AuthServiceBridgeCliArgs => {
+const resolveAppDaemonAuthServiceOptions = (args: AuthServiceBridgeCliArgs): AuthServiceBridgeCliArgs => {
   if (
     args.authServiceEndpoint?.trim() ||
     args.authServiceDataDir?.trim() ||
@@ -680,28 +680,28 @@ const withAuthServiceBridgeOptions = <TBuilder extends ReturnType<typeof yargs>>
       describe: "override the managed-local auth-service port when the daemon owns the child service",
     }) as unknown as TBuilder;
 
-export interface ProductCommandLaunchDependencies {
+export interface AppCommandLaunchDependencies {
   resolveDaemonAuthority(args: CommonArgs, expected: DaemonLauncherIdentity): Promise<ResolvedDaemonAuthority | null>;
   discoverReusableDaemonAuthority(expected: DaemonLauncherIdentity): Promise<ResolvedDaemonAuthority | null>;
   ensureManagedDaemonAuthority(
     args: CommonArgs & AuthServiceBridgeCliArgs,
     expected: DaemonLauncherIdentity,
   ): Promise<ResolvedDaemonAuthority>;
-  spawnProduct(input: {
-    target: Parameters<typeof buildProductProcessCommand>[0];
-    descriptor: Parameters<typeof buildProductProcessCommand>[1];
-    productArgv: readonly string[];
+  spawnApp(input: {
+    target: Parameters<typeof buildAppProcessCommand>[0];
+    descriptor: Parameters<typeof buildAppProcessCommand>[1];
+    appArgv: readonly string[];
     env: NodeJS.ProcessEnv;
   }): Bun.Subprocess<"inherit", "inherit", "inherit">;
 }
 
-const defaultProductCommandLaunchDependencies: ProductCommandLaunchDependencies = {
+const defaultAppCommandLaunchDependencies: AppCommandLaunchDependencies = {
   resolveDaemonAuthority: assertCompatibleDaemonHealth,
   discoverReusableDaemonAuthority: discoverCompatibleDaemonAuthority,
   ensureManagedDaemonAuthority: ensureManagedDaemonAuthority,
-  spawnProduct(input) {
+  spawnApp(input) {
     return Bun.spawn({
-      cmd: buildProductProcessCommand(input.target, input.descriptor, input.productArgv, input.env),
+      cmd: buildAppProcessCommand(input.target, input.descriptor, input.appArgv, input.env),
       cwd: process.cwd(),
       stdin: "inherit",
       stdout: "inherit",
@@ -711,10 +711,10 @@ const defaultProductCommandLaunchDependencies: ProductCommandLaunchDependencies 
   },
 };
 
-const runLocalProductInProcess = async (input: {
-  target: LocalProductLaunchTarget;
+const runLocalAppInProcess = async (input: {
+  target: LocalAppLaunchTarget;
   mainExport: string;
-  productArgv: readonly string[];
+  appArgv: readonly string[];
   env: NodeJS.ProcessEnv;
 }): Promise<boolean> => {
   const previousEnv = new Map<string, string | undefined>();
@@ -732,7 +732,7 @@ const runLocalProductInProcess = async (input: {
     if (typeof runner !== "function") {
       return false;
     }
-    const argv = [process.argv[0] ?? "bun", input.target.binPath, ...input.productArgv];
+    const argv = [process.argv[0] ?? "bun", input.target.binPath, ...input.appArgv];
     await (runner as (argv: string[]) => Promise<void> | void)(argv);
     return true;
   } finally {
@@ -746,25 +746,25 @@ const runLocalProductInProcess = async (input: {
   }
 };
 
-export const launchProductCommandForTest = async (
+export const launchAppCommandForTest = async (
   argvInput: readonly string[],
-  dependencies: ProductCommandLaunchDependencies = defaultProductCommandLaunchDependencies,
+  dependencies: AppCommandLaunchDependencies = defaultAppCommandLaunchDependencies,
 ): Promise<boolean> => {
-  const routed = resolveProductCommandInvocation(argvInput);
+  const routed = resolveAppCommandInvocation(argvInput);
   if (!routed) {
     const commandToken = readCommandToken(argvInput);
     if (commandToken && isLauncherMetadataOnlyCommand(commandToken)) {
       return false;
     }
     if (commandToken && !isBuiltInCommand(commandToken)) {
-      console.error(`unsupported product command: ${commandToken}`);
+      console.error(`unsupported app command: ${commandToken}`);
       process.exitCode = 1;
       return true;
     }
     return false;
   }
 
-  const target = resolveProductLaunchTarget(routed.descriptor, {
+  const target = resolveAppLaunchTarget(routed.descriptor, {
     cliSourceDir: import.meta.dir,
   });
   const common: CommonArgs = {
@@ -772,7 +772,7 @@ export const launchProductCommandForTest = async (
     port: routed.launcherOptions.port,
   };
   const needsRuntimeBootstrap =
-    routed.descriptor.capabilityHints.requiresDaemon && !isProductMetadataOnlyArgv(routed.productArgv);
+    routed.descriptor.capabilityHints.requiresDaemon && !isAppMetadataOnlyArgv(routed.appArgv);
   const expectedLauncherIdentity = resolveCurrentLauncherIdentity();
 
   let resolvedDaemonAuthority: ResolvedDaemonAuthority = { ...common };
@@ -788,7 +788,7 @@ export const launchProductCommandForTest = async (
         resolvedDaemonAuthority = await dependencies.ensureManagedDaemonAuthority(
           {
             ...common,
-            ...resolveProductDaemonAuthServiceOptions({
+            ...resolveAppDaemonAuthServiceOptions({
               authServiceEndpoint: routed.launcherOptions.authServiceEndpoint,
               authServiceDataDir: routed.launcherOptions.authServiceDataDir,
               authServiceHost: routed.launcherOptions.authServiceHost,
@@ -801,7 +801,7 @@ export const launchProductCommandForTest = async (
     }
   }
 
-  const env = buildProductLaunchEnv({
+  const env = buildAppLaunchEnv({
     descriptor: routed.descriptor,
     source: target.source,
     launcherOptions: {
@@ -811,10 +811,10 @@ export const launchProductCommandForTest = async (
     },
   });
   if (target.source !== "remote" && routed.descriptor.bin.mainExport) {
-    const handled = await runLocalProductInProcess({
+    const handled = await runLocalAppInProcess({
       target,
       mainExport: routed.descriptor.bin.mainExport,
-      productArgv: routed.productArgv,
+      appArgv: routed.appArgv,
       env,
     });
     if (handled) {
@@ -822,10 +822,10 @@ export const launchProductCommandForTest = async (
     }
   }
 
-  const child = dependencies.spawnProduct({
+  const child = dependencies.spawnApp({
     target,
     descriptor: routed.descriptor,
-    productArgv: routed.productArgv,
+    appArgv: routed.appArgv,
     env,
   });
 
@@ -835,13 +835,13 @@ export const launchProductCommandForTest = async (
   return true;
 };
 
-const launchProductCommand = async (argvInput: readonly string[]): Promise<boolean> =>
-  await launchProductCommandForTest(argvInput);
+const launchAppCommand = async (argvInput: readonly string[]): Promise<boolean> =>
+  await launchAppCommandForTest(argvInput);
 
 export const runCli = async (argvInput = process.argv): Promise<void> => {
   const rawArgs = hideBin(argvInput);
   try {
-    if (await launchProductCommand(rawArgs)) {
+    if (await launchAppCommand(rawArgs)) {
       return;
     }
   } catch (error) {
@@ -855,7 +855,7 @@ export const runCli = async (argvInput = process.argv): Promise<void> => {
 
   let argv: Awaited<ReturnType<ReturnType<typeof yargs>["parseAsync"]>>;
   try {
-    argv = await applyProductCommandsToYargs(
+    argv = await applyAppCommandsToYargs(
       yargs(rawArgs)
         .scriptName("agenter")
         .version(cliPackageJson.version ?? "unknown")

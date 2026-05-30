@@ -65,11 +65,11 @@ import {
 } from "@agenter/message-system";
 import { isPrincipalId, normalizePrincipalId } from "@agenter/principal-crypto";
 import type {
-  ProductAttentionCommitInput,
-  ProductAttentionSettleInput,
-  ProductAvatarPromptSeedInput,
-  ProductPrivateTextAssetEnsureInput,
-} from "@agenter/product-extension-runtime";
+  AppAttentionCommitInput,
+  AppAttentionSettleInput,
+  AppAvatarPromptSeedInput,
+  AppPrivateTextAssetEnsureInput,
+} from "@agenter/app-runtime";
 import {
   SessionDb,
   type ReversePage,
@@ -84,7 +84,7 @@ import {
   type TerminalApprovalRequestEvent,
   type TerminalApprovalRequestRecord,
   type TerminalBackendKind,
-  type TerminalComposedProductSurfaceState,
+  type TerminalComposedAppSurfaceState,
   type TerminalControlPlaneEntry,
   type TerminalGrantRecord,
   type TerminalGrantRole,
@@ -915,7 +915,7 @@ export class AppKernel {
     );
   }
 
-  private resolveAvatarPromptSeedPath(input: ProductAvatarPromptSeedInput): string {
+  private resolveAvatarPromptSeedPath(input: AppAvatarPromptSeedInput): string {
     const principalId = normalizePrincipalId(input.avatarPrincipalId);
     const root = resolveGlobalAvatarCanonicalRoot(principalId, this.getHomeDir());
     return join(root, "AGENTER.mdx");
@@ -2354,7 +2354,7 @@ export class AppKernel {
     });
   }
 
-  ensureWorkspacePrivateTextAsset(input: ProductPrivateTextAssetEnsureInput) {
+  ensureWorkspacePrivateTextAsset(input: AppPrivateTextAssetEnsureInput) {
     return ensureWorkspacePrivateTextAsset({
       workspacePath: toWorkspacePath(input.workspacePath),
       avatar: normalizeAvatarNickname(input.avatarNickname),
@@ -2364,7 +2364,7 @@ export class AppKernel {
     });
   }
 
-  async ensureAvatarPromptSeed(input: ProductAvatarPromptSeedInput): Promise<{
+  async ensureAvatarPromptSeed(input: AppAvatarPromptSeedInput): Promise<{
     seeded: boolean;
     file: { path: string; content: string; mtimeMs: number };
   }> {
@@ -4290,7 +4290,7 @@ export class AppKernel {
 
   publishGlobalTerminalComposedSurface(input: {
     terminalId: string;
-    surface: TerminalComposedProductSurfaceState;
+    surface: TerminalComposedAppSurfaceState;
     actorId?: TerminalActorId;
     superadminActorId?: TerminalActorId;
   }) {
@@ -5642,7 +5642,7 @@ export class AppKernel {
     });
   }
 
-  async commitAttention(sessionId: string, input: ProductAttentionCommitInput) {
+  async commitAttention(sessionId: string, input: AppAttentionCommitInput) {
     const runtime = await this.ensureRuntime(sessionId);
     const summary = input.summary ?? input.body ?? `Attention update for ${input.contextId}`;
     return await runtime.commitAttention({
@@ -5655,7 +5655,7 @@ export class AppKernel {
     });
   }
 
-  async settleAttention(sessionId: string, input: ProductAttentionSettleInput) {
+  async settleAttention(sessionId: string, input: AppAttentionSettleInput) {
     const runtime = await this.ensureRuntime(sessionId);
     const summary =
       input.summary ?? `Settled attention for ${input.contextId}${input.reason ? ` (${input.reason})` : ""}`;

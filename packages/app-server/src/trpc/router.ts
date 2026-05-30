@@ -6,12 +6,12 @@ import { AVATAR_CLASSIFY_VALUES } from "@agenter/auth-service";
 import type { MessageContactId } from "@agenter/message-system";
 import { isPrincipalId } from "@agenter/principal-crypto";
 import {
-  productAttentionCommitInputSchema,
-  productAttentionQueryInputSchema,
-  productAttentionSettleInputSchema,
-  productAvatarPromptSeedInputSchema,
-  productPrivateTextAssetEnsureInputSchema,
-} from "@agenter/product-extension-runtime";
+  appAttentionCommitInputSchema,
+  appAttentionQueryInputSchema,
+  appAttentionSettleInputSchema,
+  appAvatarPromptSeedInputSchema,
+  appPrivateTextAssetEnsureInputSchema,
+} from "@agenter/app-runtime";
 import { TERMINAL_BACKEND_KINDS, type TerminalActorId } from "@agenter/terminal-system";
 import {
   authDraftCreateInputSchema,
@@ -1697,9 +1697,9 @@ export const appRouter = t.router({
         }),
       ),
   }),
-  productExtension: t.router({
+  appRuntime: t.router({
     ensureAvatarPromptSeed: superadminProcedure
-      .input(productAvatarPromptSeedInputSchema)
+      .input(appAvatarPromptSeedInputSchema)
       .mutation(({ ctx, input }) => ctx.kernel.ensureAvatarPromptSeed(input)),
   }),
   draft: t.router({
@@ -1954,7 +1954,7 @@ export const appRouter = t.router({
         return await ctx.kernel.queryAttentionDeliveryTimeline(sessionId, query);
       }),
     attentionQuery: superadminProcedure
-      .input(sessionIdInput.extend(productAttentionQueryInputSchema.shape))
+      .input(sessionIdInput.extend(appAttentionQueryInputSchema.shape))
       .query(async ({ ctx, input }) => ({
         items: await ctx.kernel.queryAttention(input.sessionId, {
           query: input.query,
@@ -1963,7 +1963,7 @@ export const appRouter = t.router({
         }),
       })),
     attentionCommit: superadminProcedure
-      .input(sessionIdInput.extend(productAttentionCommitInputSchema.shape))
+      .input(sessionIdInput.extend(appAttentionCommitInputSchema.shape))
       .mutation(async ({ ctx, input }) => {
         const { sessionId, ...commit } = input;
         return {
@@ -1971,7 +1971,7 @@ export const appRouter = t.router({
         };
       }),
     attentionSettle: superadminProcedure
-      .input(sessionIdInput.extend(productAttentionSettleInputSchema.shape))
+      .input(sessionIdInput.extend(appAttentionSettleInputSchema.shape))
       .mutation(async ({ ctx, input }) => {
         const { sessionId, ...settle } = input;
         return {
@@ -2348,7 +2348,7 @@ export const appRouter = t.router({
       )
       .mutation(({ ctx, input }) => ctx.kernel.createWorkspacePrivateAsset(input)),
     ensurePrivateTextAsset: superadminProcedure
-      .input(productPrivateTextAssetEnsureInputSchema)
+      .input(appPrivateTextAssetEnsureInputSchema)
       .mutation(({ ctx, input }) => ctx.kernel.ensureWorkspacePrivateTextAsset(input)),
     exec: superadminProcedure
       .input(

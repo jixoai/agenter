@@ -1,16 +1,16 @@
 export {
-  ProductExtensionRuntimeClient,
-  createProductExtensionRuntimeClient,
-  type ProductEnsureBindingResult,
-  type ProductEnsureRoomBindingInput,
-  type ProductEnsureRuntimeInput,
-  type ProductEnsureTerminalBindingInput,
-  type ProductExtensionRuntimeStore,
-  type ProductRuntimeSessionClearResult,
-  type ProductRuntimeTerminalFocusInput,
-  type ProductRuntimeTerminalFocusResult,
-  type ProductTerminalComposedSurfaceState,
-} from "./product-extension-runtime";
+  AppRuntimeClient,
+  createAppRuntimeClient,
+  type AppEnsureBindingResult,
+  type AppEnsureRoomBindingInput,
+  type AppEnsureRuntimeInput,
+  type AppEnsureTerminalBindingInput,
+  type AppRuntimeStore,
+  type AppRuntimeSessionClearResult,
+  type AppRuntimeTerminalFocusInput,
+  type AppRuntimeTerminalFocusResult,
+  type AppTerminalComposedSurfaceState,
+} from "./app-runtime";
 export { RuntimeStore, createRuntimeStore } from "./runtime-store";
 export { createAgenterClient, type AgenterClient, type AgenterClientOptions } from "./trpc-client";
 export type {

@@ -5709,7 +5709,7 @@ export class RuntimeStore {
 
   async publishGlobalTerminalComposedSurface(input: {
     terminalId: string;
-    surface: import("./product-extension-runtime").ProductTerminalComposedSurfaceState;
+    surface: import("./app-runtime").AppTerminalComposedSurfaceState;
   }) {
     const output = await this.client.trpc.terminal.globalPublishComposedSurface.mutate(input);
     const current = this.resolveGlobalTerminalEntry(input.terminalId);
@@ -6071,7 +6071,7 @@ export class RuntimeStore {
   }
 
   async ensureAvatarPromptSeed(input: { avatarPrincipalId: string; kind: "agenter"; seedContent: string }) {
-    return await this.client.trpc.productExtension.ensureAvatarPromptSeed.mutate(input);
+    return await this.client.trpc.appRuntime.ensureAvatarPromptSeed.mutate(input);
   }
 
   async listSettingsLayers(workspacePath: string) {

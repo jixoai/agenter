@@ -677,8 +677,8 @@ describe("Feature: app kernel event replay", () => {
     await kernel.stop();
   });
 
-  test("Scenario: Given a product focused global terminal When BootstrapAdmin writes through TerminalSystem Then runtime commits terminal attention and wakes attention input", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-product-terminal-"));
+  test("Scenario: Given a app focused global terminal When BootstrapAdmin writes through TerminalSystem Then runtime commits terminal attention and wakes attention input", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-app-terminal-"));
     tempDirs.push(root);
     const workspace = join(root, "workspace");
     mkdirSync(workspace, { recursive: true });
@@ -694,14 +694,14 @@ describe("Feature: app kernel event replay", () => {
     const session = await kernel.createSession({
       cwd: workspace,
       avatar: "jane",
-      name: "jane-product-terminal",
+      name: "jane-app-terminal",
       autoStart: true,
     });
     if (!session.avatarPrincipalId) {
       throw new Error("expected avatar principal id");
     }
     const avatarActorId = session.avatarPrincipalId as TerminalActorId;
-    const terminalId = "product-global-main";
+    const terminalId = "app-global-main";
     const terminal = await kernel.createGlobalTerminal({
       terminalId,
       processKind: "shell",
@@ -740,7 +740,7 @@ describe("Feature: app kernel event replay", () => {
 
     const written = await kernel.writeGlobalTerminal({
       terminalId,
-      text: "product global write line\n",
+      text: "app global write line\n",
       superadminActorId: bootstrapAdminActorId,
     });
     expect(written.ok).toBeTrue();
@@ -751,7 +751,7 @@ describe("Feature: app kernel event replay", () => {
       (commit) =>
         commit.meta.source === "terminal" &&
         commit.change.type !== "clean" &&
-        commit.change.value.includes("product global write line"),
+        commit.change.value.includes("app global write line"),
       { timeoutMs: 4_000, intervalMs: 25 },
     );
     await waitForAttentionSignalVersion(runtime, beforeAttentionVersion, {

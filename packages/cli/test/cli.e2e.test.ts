@@ -544,7 +544,7 @@ describe("Feature: cli daemon and Studio commands", () => {
     expect(stdout).toContain("avatar: e2e-stale");
   }, 70_000);
 
-  test("Scenario: Given removed web command When invoking the old entry Then the CLI rejects it as an unsupported product", async () => {
+  test("Scenario: Given removed web command When invoking the old entry Then the CLI rejects it as an unsupported app", async () => {
     const home = createIsolatedHome();
     const web = spawnCli(["web", "--help"], { HOME: home });
 
@@ -552,10 +552,10 @@ describe("Feature: cli daemon and Studio commands", () => {
     const stderr = await readText(web.stderr);
 
     expect(code).toBe(1);
-    expect(stderr).toContain("unsupported product command: web");
+    expect(stderr).toContain("unsupported app command: web");
   }, 30_000);
 
-  test("Scenario: Given Studio product command When reading root html Then the product-owned dev server serves the canonical Svelte shell", async () => {
+  test("Scenario: Given Studio app command When reading root html Then the app-owned dev server serves the canonical Svelte shell", async () => {
     const host = "127.0.0.1";
     const webPort = await findFreePort();
     const daemonPort = await findFreePort();
@@ -570,7 +570,7 @@ describe("Feature: cli daemon and Studio commands", () => {
     await waitForWsOpen(`ws://${host}:${daemonPort}/trpc`);
   }, 70_000);
 
-  test("Scenario: Given Studio product command When a browser opens the root entry Then it hydrates and redirects without HTML-as-JSON failure", async () => {
+  test("Scenario: Given Studio app command When a browser opens the root entry Then it hydrates and redirects without HTML-as-JSON failure", async () => {
     const host = "127.0.0.1";
     const webPort = await findFreePort();
     const daemonPort = await findFreePort();
@@ -591,7 +591,7 @@ describe("Feature: cli daemon and Studio commands", () => {
     expect(probe.body.trim().length).toBeGreaterThan(0);
   }, 120_000);
 
-  test("Scenario: Given Studio product command When refreshing room and attention deep links Then the default entry returns the same SPA shell instead of 404", async () => {
+  test("Scenario: Given Studio app command When refreshing room and attention deep links Then the default entry returns the same SPA shell instead of 404", async () => {
     const host = "127.0.0.1";
     const webPort = await findFreePort();
     const daemonPort = await findFreePort();

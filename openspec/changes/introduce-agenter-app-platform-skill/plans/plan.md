@@ -3,7 +3,7 @@
 ## Current Round
 
 - Round: 1
-- Status: User confirmed public package rename and internal product/app vocabulary migration; ready for apply after OpenSpec update commit.
+- Status: User confirmed public package rename and internal app/app vocabulary migration; ready for apply after OpenSpec update commit.
 - Previous plan backup: `plans/plan-v1.md`
 
 ## Workflow Command Surface
@@ -51,23 +51,23 @@
 
 | Source | Fact | Why it matters |
 | ------ | ---- | -------------- |
-| `package.json` | Workspaces currently include `extensions/*`, `packages/*`, and `packages/*/*`; release scripts still target `agenter-ext-*`. | The folder rename is a workspace and release pipeline migration, not just a directory move. |
-| `pnpm-workspace.yaml` | Workspace discovery still includes `extensions/*`. | Both Bun workspace and pnpm/lerna-compatible workspace surfaces must migrate. |
-| `packages/product-extension-runtime/src/descriptor.ts` | The current descriptor law is `ProductCommandDescriptor` with `productId`, `command`, `packageName`, bin metadata, source policy, and capability hints. | There is already a descriptor atom that can become the app descriptor law instead of inventing a second parallel model. |
-| `packages/cli/src/product-command-registry.ts` | First-party commands are hardcoded to `agenter-ext-shell` and `agenter-ext-studio`. | First-party descriptors exist, but community app version resolution is not yet modeled. |
-| `packages/cli/src/product-command-launcher.ts` | Resolution order is local workspace -> installed package -> remote `bunx --package <package> <bin>`. Workspace roots default to `extensions` and `packages`. | The launcher already has the right source planes but needs the `apps` root and compatibility-aware package selection. |
-| `openspec/specs/product-command-launcher/spec.md` | Current spec says `agenter shell` resolves to `agenter-ext-shell`; local-first uses `extensions/shell`; remote fallback runs controlled package names through Bun runner abstraction. | Delta specs must intentionally replace extension naming and root paths rather than leave stale spec truth. |
-| `openspec/specs/product-extension-runtime/spec.md` | Current law says core exposes product-extension capabilities without importing product modules and future products reuse the same extension law. | The architectural boundary is good; the vocabulary and ecosystem discovery law are outdated. |
+| `package.json` | Workspaces currently include `apps/*`, `packages/*`, and `packages/*/*`; release scripts still target `agenter-ext-*`. | The folder rename is a workspace and release pipeline migration, not just a directory move. |
+| `pnpm-workspace.yaml` | Workspace discovery still includes `apps/*`. | Both Bun workspace and pnpm/lerna-compatible workspace surfaces must migrate. |
+| `packages/app-runtime/src/descriptor.ts` | The current descriptor law is `AppCommandDescriptor` with `appId`, `command`, `packageName`, bin metadata, source policy, and capability hints. | There is already a descriptor atom that can become the app descriptor law instead of inventing a second parallel model. |
+| `packages/cli/src/app-command-registry.ts` | First-party commands are hardcoded to `agenter-app-shell` and `agenter-app-studio`. | First-party descriptors exist, but community app version resolution is not yet modeled. |
+| `packages/cli/src/app-command-launcher.ts` | Resolution order is local workspace -> installed package -> remote `bunx --package <package> <bin>`. Workspace roots default to `extensions` and `packages`. | The launcher already has the right source planes but needs the `apps` root and compatibility-aware package selection. |
+| `openspec/specs/app-command-launcher/spec.md` | Current spec says `agenter shell` resolves to `agenter-app-shell`; local-first uses `apps/shell`; remote fallback runs controlled package names through Bun runner abstraction. | Delta specs must intentionally replace extension naming and root paths rather than leave stale spec truth. |
+| `openspec/specs/app-runtime/spec.md` | Current law says core exposes app capabilities without importing app modules and future apps reuse the same app law. | The architectural boundary is good; the vocabulary and ecosystem discovery law are now app-centered. |
 | `openspec/specs/runtime-skills-cli-surface/spec.md` | Runtime skills already use progressive discovery and command-backed expansion; scripts can sit behind skill guidance. | `create-agenter-app` should follow progressive disclosure: concise `SKILL.md`, script-backed deterministic scaffolding. |
-| `packages/cli/test/product-command-launcher.test.ts` | Existing BDD covers descriptor routing, `shell2` unsupported, local extension root, installed package metadata, remote `bunx`, env propagation. | This gives a direct test seam for `apps/*`, app package compatibility, and descriptor law migration. |
-| `packages/product-extension-runtime/test/product-extension-runtime.test.ts` | Existing BDD guards no core import of `agenter-ext-shell` / `agenter-ext-studio` and keeps product grammar out of core. | Tests should be migrated to the app vocabulary without weakening orthogonality. |
+| `packages/cli/test/app-command-launcher.test.ts` | Existing BDD covers descriptor routing, `shell2` unsupported, local extension root, installed package metadata, remote `bunx`, env propagation. | This gives a direct test seam for `apps/*`, app package compatibility, and descriptor law migration. |
+| `packages/app-runtime/test/app-runtime.test.ts` | Existing BDD guards no core import of `agenter-app-shell` / `agenter-app-studio` and keeps app grammar out of core. | Tests should be migrated to the app vocabulary without weakening orthogonality. |
 | `find skills ...` | The repository currently has no root `skills/` directory. | `skills/create-agenter-app` is a new project skill distribution surface, not an edit to an existing skill. |
 
 ### Git Evidence
 
 | Checkpoint | Expected commit evidence | Current status |
 | ---------- | ------------------------ | -------------- |
-| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before product-code work starts | Pending. |
+| OpenSpec artifacts before apply | Commit containing `plans/plan.md`, specs, and `tasks.md` before app-code work starts | Pending. |
 | Task-progress commits | Commit containing current-context task checkbox updates plus matching code/BDD evidence | Pending. |
 | Self-review updates | Commit containing review output and any reopened or added OpenSpec tasks before the next apply loop | Pending. |
 | Normal archive | Commit containing `openspec archive <change>` result | Pending. |
@@ -77,18 +77,18 @@
 
 | File / change | Existing law or pattern | Reuse, extend, or break |
 | ------------- | ----------------------- | ----------------------- |
-| `openspec/specs/product-command-launcher/spec.md` | Descriptor-driven first-party command launcher; local-first, installed, remote fallback; launcher-owned daemon env. | Extend and rename toward app-platform language. Break stale `extensions/*` and `agenter-ext-*` if user confirms public package rename. |
-| `openspec/specs/product-extension-runtime/spec.md` | Core remains product-agnostic; product descriptor is data; products bind resources through generic APIs. | Reuse the architecture; replace extension vocabulary with app vocabulary. |
+| `openspec/specs/app-command-launcher/spec.md` | Descriptor-driven first-party command launcher; local-first, installed, remote fallback; launcher-owned daemon env. | Extend and rename toward app-platform language. Break stale `extensions/*` and `agenter-ext-*` after user confirmation. |
+| `openspec/specs/app-runtime/spec.md` | Core remains app-agnostic; app descriptor is data; apps bind resources through generic APIs. | Reuse the architecture; replace extension vocabulary with app vocabulary. |
 | `openspec/specs/runtime-skills-cli-surface/spec.md` | Skills are progressively discovered and expanded; deterministic command surfaces are preferred for fragile workflows. | Extend with a project-local app-creation skill artifact and Bun script convention. |
-| `openspec/changes/move-cli-shell-to-extension-tmux-host` | Earlier move made Shell an extension product and preserved product-extension boundaries. | Supersede the `extension` naming outcome while keeping the product/core isolation principle. |
-| `scripts/release/build-bundles.ts` and `scripts/release/publish-bundles.ts` | Release bundles explicitly know `bundle/agenter-ext-shell` and `bundle/agenter-ext-studio`. | Must migrate with tests; otherwise the new app layout will not release. |
+| `openspec/changes/move-cli-shell-to-extension-tmux-host` | Earlier move made Shell an extension app and preserved app-extension boundaries. | Supersede the `extension` naming outcome while keeping the app/core isolation principle. |
+| `scripts/release/build-bundles.ts` and `scripts/release/publish-bundles.ts` | Release bundles explicitly know `bundle/agenter-app-shell` and `bundle/agenter-app-studio`. | Must migrate with tests; otherwise the new app layout will not release. |
 
 ### User Language System
 
 | User phrase | Working meaning | Plain-language translation when needed |
 | ----------- | --------------- | -------------------------------------- |
 | `反相过来查找` | Compatibility is discovered from app package metadata back toward the host, not from a host-owned lock table outward. | App declares `peerDependencies.agenter`; host filters app versions by that range. |
-| `agenter现在属于一个dev-platform` | Agenter is the platform that hosts user/community apps, not merely a CLI plus extensions. | Product vocabulary should support third-party app ecosystems. |
+| `agenter现在属于一个dev-platform` | Agenter is the platform that hosts user/community apps, not merely a CLI plus extensions. | App vocabulary should support third-party app ecosystems. |
 | `extension 这个关键词全面升级成 app` | User-facing and repo vocabulary should stop presenting apps as bolt-on extensions. | Rename extension-facing folders/docs/specs/code names unless a narrower internal term is explicitly kept. |
 | `本地的extensions文件夹也应该重命名成 apps` | Workspace root must become `apps/`. | Local first-party app source lives under `apps/*`. |
 | `skill中可以包含一些脚本，我们自己也能用` | The skill is an executable workflow artifact, not static instructions. | Put Bun scripts under `skills/create-agenter-app/scripts/`. |
@@ -106,7 +106,7 @@
 | Question | Why this is the real question | User decision |
 | -------- | ----------------------------- | ------------------------------------- |
 | Should public package names move from `agenter-ext-*` to `agenter-app-*` in this change? | `extension` vocabulary includes package names, but renaming published packages affects release, docs, and remote fallback. | Yes. Migrate public packages to `agenter-app-*`; do not preserve compatibility. User will handle unpublish and trusted publishing setup. |
-| Should internal `product-*` package/type names also be renamed to `app-*` now? | Existing architecture uses `product` for the platform law. The user explicitly targeted app-platform language, so `product-extension-runtime` would be stale if kept. | Yes. Rename internal `product-*` / `Product*` app-platform surfaces in this change. |
+| Should internal `app-*` package/type names also be renamed to `app-*` now? | Existing architecture uses `app` for the platform law. The user explicitly targeted app-platform language, so `app-runtime` would be stale if kept. | Yes. Rename internal `app-*` / `App*` app-platform surfaces in this change. |
 | Should Agenter discover arbitrary npm packages automatically or only resolve from catalogs/workspace/installed package roots? | npm has no cheap global reverse peerDependency query; a host needs a search/index surface. | Use package-owned peerDeps for compatibility and a controlled catalog/workspace/installed candidate surface for discovery; no global npm crawl. |
 
 ## Intent
@@ -126,8 +126,8 @@ An operator or community developer can say "create an Agenter app" and get a cle
 ## Platform Diagnosis
 
 - Current platform laws:
-  - Core command launcher is descriptor-driven and product-agnostic after lookup.
-  - Product/app packages own UI grammar and consume daemon/client-sdk/runtime contracts.
+  - Core command launcher is descriptor-driven and app-agnostic after lookup.
+  - App/app packages own UI grammar and consume daemon/client-sdk/runtime contracts.
   - Local-first resolution already exists across workspace, installed package, and remote runner sources.
   - Runtime skills already support progressive discovery and command-backed workflows.
 - Does this fit as a regular atom:
@@ -136,9 +136,9 @@ An operator or community developer can say "create an Agenter app" and get a cle
 - Does this require law upgrade:
   - Yes. "Extension" is a stale ontology. The platform law should become app-centered, and compatibility should be app-declared through `peerDependencies.agenter`.
 - Breaking update stance:
-  - Breaking cleanup is approved: `extensions/*` -> `apps/*`.
+  - Breaking cleanup is approved: `apps/*` -> `apps/*`.
   - Public packages move from `agenter-ext-*` to `agenter-app-*`; no compatibility shim.
-  - Internal platform surfaces move from `product-extension-runtime` / `Product*` to app vocabulary in this change.
+  - Internal platform surfaces move from `app-runtime` / `App*` to app vocabulary in this change.
 - User confirmations still required:
   - None for the current naming and compatibility scope.
 
@@ -206,7 +206,7 @@ Agenter then launches apps through the same descriptor law it uses today, but th
 | Gate | Why confirmation was required | Decision |
 | ---- | ---------------------------- | -------------------------- |
 | Public package rename from `agenter-ext-*` to `agenter-app-*` | Impacts npm release identity and remote fallback. | Approved. Rename, no compatibility. User will manage unpublish and trusted publish setup. |
-| Internal package/type rename from `product-extension-runtime` to app vocabulary | High blast radius but aligns ontology. | Approved. Rename in this change. |
+| Internal package/type rename from `app-runtime` to app vocabulary | High blast radius but aligns ontology. | Approved. Rename in this change. |
 | Catalog format for community discovery | npm cannot globally reverse-query peer dependencies. | Keep discovery separate from compatibility. Start with controlled catalog/workspace/installed candidates; no global npm crawl. |
 
 ## Intent-Driven Plan
@@ -237,4 +237,4 @@ Agenter then launches apps through the same descriptor law it uses today, but th
 
 - Default max review iterations: 3
 - Issue recurrence threshold: 3
-- Custom exit condition from intent: The change is ready when app-platform vocabulary, compatibility discovery, local `apps/*` layout, and `skills/create-agenter-app` Bun-script workflow are specified, implemented, tested, and self-reviewed without leaving stale extension terminology in active first-party surfaces except explicitly documented historical compatibility references.
+- Custom exit condition from intent: The change is ready when app-platform vocabulary, compatibility discovery, local `extensions/*` to `apps/*` layout migration, and `skills/create-agenter-app` Bun-script workflow are specified, implemented, tested, and self-reviewed without leaving stale extension terminology in active first-party surfaces except explicitly documented historical compatibility references.

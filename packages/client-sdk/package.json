@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@agenter/app-server": "workspace:*",
-    "@agenter/product-extension-runtime": "workspace:*",
+    "@agenter/app-runtime": "workspace:*",
     "@trpc/client": "^11.7.1",
     "@trpc/server": "^11.7.1",
     "superjson": "^2.2.2"

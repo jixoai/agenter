@@ -8,8 +8,8 @@ interface PackageJson {
 
 export const bundlePublishOrder = [
   "bundle/@jixo/ghostty-native",
-  "bundle/agenter-ext-shell",
-  "bundle/agenter-ext-studio",
+  "bundle/agenter-app-shell",
+  "bundle/agenter-app-studio",
   "bundle/agenter",
 ] as const;
 
