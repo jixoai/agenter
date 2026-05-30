@@ -40,7 +40,7 @@ const runCommand = async (cwd: string, command: string[]): Promise<string> => {
 };
 
 const renderViteConfig = (targetRoot: string): string => {
-  const bitsUiPluginPath = path.join(targetRoot, "packages/studio/vite.bits-ui-style-plugin.ts");
+  const bitsUiPluginPath = path.join(targetRoot, "extensions/studio/vite.bits-ui-style-plugin.ts");
   return `import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -59,10 +59,10 @@ export default defineConfig({
   plugins: [bitsUiVirtualStylePlugin(), tailwindcss(), svelte()],
   resolve: {
     alias: {
-      "$lib": path.join(targetRoot, "packages/studio/src/lib"),
-      "@perf-target-layout-css": path.join(targetRoot, "packages/studio/src/routes/layout.css"),
+      "$lib": path.join(targetRoot, "extensions/studio/src/lib"),
+      "@perf-target-layout-css": path.join(targetRoot, "extensions/studio/src/routes/layout.css"),
       "@perf-target-web-chat-view": path.join(targetRoot, "packages/web-chat-view/src"),
-      "@perf-target-studio-runtime": path.join(targetRoot, "packages/studio/src/lib/features/runtime"),
+      "@perf-target-studio-runtime": path.join(targetRoot, "extensions/studio/src/lib/features/runtime"),
     },
     dedupe: codemirrorDedupe,
   },

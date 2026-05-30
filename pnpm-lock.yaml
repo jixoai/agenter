@@ -650,7 +650,7 @@ importers:
         specifier: ^4.0.0
         version: 4.3.6
 
-  packages/studio:
+  extensions/studio:
     dependencies:
       '@agenter/client-sdk':
         specifier: workspace:*

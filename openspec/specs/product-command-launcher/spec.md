@@ -62,7 +62,7 @@ The product command launcher SHALL resolve product packages from the current mon
 - **AND** it does not require the package to be published to npm
 
 #### Scenario: Studio local workspace package wins during development
-- **GIVEN** `packages/studio/package.json` exists with name `agenter-ext-studio`
+- **GIVEN** `extensions/studio/package.json` exists with name `agenter-ext-studio`
 - **WHEN** a user runs `agenter studio` from the Agenter workspace
 - **THEN** the launcher uses the local workspace package before installed or remote fallback sources
 

@@ -13,7 +13,7 @@ The controller SHALL act as the stage state kernel and SHALL consume package-own
 #### Scenario: Flutter implementation starts from the package contract
 - **WHEN** a future engineer starts the next Flutter milestone
 - **THEN** `packages/flutter-chat-view` already exposes the canonical room transport and upload contract
-- **THEN** they do not need to reverse-engineer `packages/studio` to discover websocket paths or upload headers
+- **THEN** they do not need to reverse-engineer `extensions/studio` to discover websocket paths or upload headers
 
 #### Scenario: Controller derives room identity and upload base from transport URL
 - **WHEN** the host provides a room websocket URL and an optional overriding access token

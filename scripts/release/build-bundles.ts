@@ -63,7 +63,7 @@ const bundleManifestFiles = [
 const publishablePackageJsonPaths = [
   "packages/agenter/package.json",
   "extensions/cli-shell/package.json",
-  "packages/studio/package.json",
+  "extensions/studio/package.json",
   "packages/ghostty-native/package.json",
 ] as const;
 
@@ -327,12 +327,12 @@ export const createBundlePackageSpecs = (): BundlePackageSpec[] => [
     },
   },
   {
-    sourcePackageDir: "packages/studio",
+    sourcePackageDir: "extensions/studio",
     bundlePackageDir: "bundle/agenter-ext-studio",
     entry: "src/bin/agenter-studio.ts",
     bin: { "agenter-studio": "./dist/agenter-studio.js" },
     bundledAssetsRoot: true,
-    assets: [{ from: "packages/studio/build", to: "assets/studio/build" }],
+    assets: [{ from: "extensions/studio/build", to: "assets/studio/build" }],
   },
   {
     sourcePackageDir: "packages/ghostty-native",

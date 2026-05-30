@@ -35,11 +35,11 @@ This means the backend inspection surface still presents a cross-system delivery
 
 #### Studio / frontend residue
 
-- `packages/studio/src/lib/features/runtime/runtime-stage-heartbeat.svelte`
+- `extensions/studio/src/lib/features/runtime/runtime-stage-heartbeat.svelte`
   - renders a section literally titled `Attention delivery`
-- `packages/studio/src/lib/features/runtime/runtime-cycle-inspector-state.ts`
+- `extensions/studio/src/lib/features/runtime/runtime-cycle-inspector-state.ts`
   - still models `deliveryDispatches`, `deliveryReceipts`, and `deliveryEffects` as part of cycle detail
-- `packages/studio/src/lib/features/runtime/runtime-stage-attention.svelte`
+- `extensions/studio/src/lib/features/runtime/runtime-stage-attention.svelte`
   - still derives list/detail state from `runtime.attentionDelivery`
 - related stories/specs still encode the same old shape:
   - `runtime-stage-heartbeat.stories.ts`

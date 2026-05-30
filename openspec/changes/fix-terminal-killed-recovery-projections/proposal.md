@@ -34,7 +34,7 @@ We need a focused follow-up that makes terminal death converge through one obser
 
 ## Impact
 
-- Affected packages: `packages/terminal-system`, `packages/app-server`, `packages/client-sdk`, `packages/studio`, and `extensions/cli-shell`.
+- Affected packages: `packages/terminal-system`, `packages/app-server`, `packages/client-sdk`, `extensions/studio`, and `extensions/cli-shell`.
 - Affected APIs: terminal global list/history/index/archive queries, runtime terminal lifecycle descriptors, runtime terminal publications, product binding ensure/reuse behavior, and terminal skill text.
 - Affected durable behavior: stale running terminal rows found during daemon restart must complete the same killed post-workflow as live-observed terminal death, including AttentionContext muting and live projection invalidation.
 - Affected tests: terminal-system BDD, app-server runtime recovery/attention BDD, client-sdk projection tests, Studio terminal route DOM/contract tests, and cli-shell startup navigation tests.

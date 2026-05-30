@@ -403,7 +403,7 @@
         "zod": "^4.0.0",
       },
     },
-    "packages/studio": {
+    "extensions/studio": {
       "name": "agenter-ext-studio",
       "version": "0.0.1",
       "bin": {
@@ -1778,7 +1778,7 @@
 
     "agenter-ext-shell-next": ["agenter-ext-shell-next@workspace:extensions/shell-next"],
 
-    "agenter-ext-studio": ["agenter-ext-studio@workspace:packages/studio"],
+    "agenter-ext-studio": ["agenter-ext-studio@workspace:extensions/studio"],
 
     "agentkeepalive": ["agentkeepalive@4.6.0", "", { "dependencies": { "humanize-ms": "^1.2.1" } }, "sha512-kja8j7PjmncONqaTsB8fQ+wE2mSU2DJ9D4XKoJ5PFWIdRMa6SLSN1ff4mOr4jCbfRSsxR4keIiySJU0N9T5hIQ=="],
 

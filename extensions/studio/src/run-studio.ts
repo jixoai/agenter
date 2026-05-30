@@ -84,6 +84,9 @@ const pickAvailablePort = async (host: string, preferred: number): Promise<numbe
 const daemonEndpoint = (host: string, port: number): string => `http://${host}:${port}`;
 const daemonWsEndpoint = (host: string, port: number): string => `ws://${host}:${port}/trpc`;
 
+export const resolveWebChatAppViewExampleRoot = (sourceUrl = import.meta.url): string =>
+  fileURLToPath(new URL("../../../packages/web-chat-view/example/", sourceUrl));
+
 const startStudioDevServer = async (input: {
   webHost: string;
   webPort: number;
@@ -117,7 +120,7 @@ const startWebChatAppViewDevServer = async (input: {
   const url = `http://${input.webHost}:${port}`;
   const proc = Bun.spawn({
     cmd: [BUN_BIN, "run", "dev", "--host", input.webHost, "--port", String(port), "--strictPort"],
-    cwd: fileURLToPath(new URL("../../web-chat-view/example/", import.meta.url)),
+    cwd: resolveWebChatAppViewExampleRoot(),
     stdin: "ignore",
     stdout: "inherit",
     stderr: "inherit",

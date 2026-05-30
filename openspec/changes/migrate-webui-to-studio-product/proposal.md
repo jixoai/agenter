@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- Rename the active SvelteKit operator package from `@agenter/webui` / `packages/webui` to `agenter-ext-studio` / `packages/studio`. **BREAKING**
+- Rename the active SvelteKit operator package from `@agenter/webui` / `packages/webui` to `agenter-ext-studio` / `extensions/studio`. **BREAKING**
 - Remove the built-in `agenter web` command and its core-owned WebUI static asset resolution/copy path; `web` becomes an unsupported command instead of a compatibility alias. **BREAKING**
 - Add `studio` to the product command descriptor registry so `agenter studio` resolves `agenter-ext-studio` with the same local-first package law as `agenter shell`. **BREAKING**
 - Move Studio serving, static asset resolution, and dev-server startup into the `agenter-ext-studio` package, using launcher-provided daemon/auth context instead of importing core runtime internals. **BREAKING**
@@ -29,7 +29,7 @@
 ## Impact
 
 - CLI launcher and tests: `packages/cli/src/product-command-registry.ts`, `packages/cli/src/product-command-launcher.ts`, `packages/cli/src/run-cli.ts`, `packages/cli/test/*`.
-- Product packages: `packages/webui` becomes `packages/studio`; `packages/ui-studio` becomes `packages/icon-studio`.
+- Product packages: `packages/webui` becomes `extensions/studio`; `packages/ui-studio` becomes `packages/icon-studio`.
 - Build scripts and package metadata: root `package.json`, package scripts, icon scripts, asset docs, package imports.
 - Durable specs: `SPEC.md`, `packages/cli/SPEC.md`, `packages/product-extension-runtime/SPEC.md`, the renamed package specs, and affected OpenSpec capability specs.
 - Verification: BDD tests for descriptor routing and unsupported `web`, package typechecks, Studio build/test, icon-studio build/test, OpenSpec strict validation, and post-implementation merge verification.

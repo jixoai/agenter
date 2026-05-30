@@ -13,7 +13,7 @@ The core `agenter` CLI SHALL resolve product command `studio` to package `agente
 
 #### Scenario: Studio package resolution stays local-first
 
-- **GIVEN** `packages/studio/package.json` exists with name `agenter-ext-studio`
+- **GIVEN** `extensions/studio/package.json` exists with name `agenter-ext-studio`
 - **WHEN** a user runs `agenter studio` from the Agenter workspace
 - **THEN** the launcher uses the local workspace package before installed or remote fallback sources
 

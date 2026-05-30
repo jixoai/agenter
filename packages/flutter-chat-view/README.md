@@ -2,7 +2,7 @@
 
 `flutter-chat-view` is the Flutter-side room chat package for Agenter.
 
-Phase 1 is Web-first, but the package is intentionally renderer-neutral: the controller, models, merge logic, and composer plugin contract are shared laws that later Android, iOS, and macOS shells can reuse without inheriting any `packages/studio` coupling.
+Phase 1 is Web-first, but the package is intentionally renderer-neutral: the controller, models, merge logic, and composer plugin contract are shared laws that later Android, iOS, and macOS shells can reuse without inheriting any `extensions/studio` coupling.
 
 ## Current scope
 
@@ -25,7 +25,7 @@ The package does not invent a second transport protocol. It follows the same roo
 
 ## Phase 1 non-goals
 
-- No `packages/studio` embed
+- No `extensions/studio` embed
 - No native Android / iOS / macOS packaging yet
 - No final anchored virtualization runtime yet
 - No full plugin runtime beyond explicit trigger-plugin hooks

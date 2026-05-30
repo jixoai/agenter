@@ -4,7 +4,7 @@
 
 ## 1. Package ownership
 
-- `flutter-chat-view` 是 Agenter room chat surface 的 Flutter package，不是 `packages/studio` 的兼容层。
+- `flutter-chat-view` 是 Agenter room chat surface 的 Flutter package，不是 `extensions/studio` 的兼容层。
 - package 负责 Flutter 侧的 controller、model、message merge、composer plugin contract 与基础 widgets。
 - package 一次只绑定一个 room transport；room durability、ACL、message truth 与 room assets 仍由 `message-system` / app-server 持有。
 
@@ -49,7 +49,7 @@
 ## 7. Delivery boundary
 
 - phase 1 的 operator-facing delivery 是 `packages/flutter-chat-view/example` 独立产品壳。
-- 这个阶段禁止把产品壳直接嵌进 `packages/studio`。
+- 这个阶段禁止把产品壳直接嵌进 `extensions/studio`。
 - example 壳层必须遵守三态布局法则：`compact < 720`、`standard 720-1099`、`expanded >= 1100`。
 - compact active conversation 必须是 conversation-first route：底部归 transcript/composer，不允许持久 profile/chat/details bottom nav。
 - profile directory、room facts、participants、selected-message facts 必须通过二级/三级 route surface、sheet、popover/menu 或 persistent inspector projection 进入，而不是作为 compact peer tabs。

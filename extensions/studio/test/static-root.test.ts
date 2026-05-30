@@ -1,9 +1,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { readStudioStaticDocumentTitle, resolveStudioStaticRoot } from "../src/static-root";
+import { resolveWebChatAppViewExampleRoot } from "../src/run-studio";
 import { startStudioHost, type StudioHostHandle } from "../src/studio-host";
 
 const tempDirs: string[] = [];
@@ -67,6 +68,13 @@ describe("Feature: Studio static root", () => {
     expect(envResponse.status).toBe(200);
     expect(envSource).toContain("PUBLIC_AGENTER_WS_URL");
     expect(envSource).toContain("ws://127.0.0.1:4580/trpc");
+  });
+
+  test("Scenario: Given Studio lives under extensions When resolving the app-view dev root Then it points at the web-chat-view example package", () => {
+    const root = resolveWebChatAppViewExampleRoot();
+
+    expect(root.endsWith("packages/web-chat-view/example/")).toBe(true);
+    expect(existsSync(join(root, "package.json"))).toBe(true);
   });
 });
 

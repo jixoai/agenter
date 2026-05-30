@@ -124,6 +124,6 @@ describe("Feature: Workspace shell controller", () => {
   });
 
   test("Scenario: Given a long home-directory path When building the shell prompt Then the prompt prints only the current folder name", () => {
-    expect(resolveWorkspaceShellPromptFolderName("/Users/demo/projects/agenter/packages/studio")).toBe("studio");
+    expect(resolveWorkspaceShellPromptFolderName("/Users/demo/projects/agenter/extensions/studio")).toBe("studio");
   });
 });

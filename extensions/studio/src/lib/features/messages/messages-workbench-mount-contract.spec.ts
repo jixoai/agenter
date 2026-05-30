@@ -21,7 +21,7 @@ const messagesWorkbenchLayoutSource = readFileSync(
   "utf8",
 );
 const webChatViewRootSource = readFileSync(
-  resolve(import.meta.dirname, "../../../../../web-chat-view/src/web-chat-view-root.svelte"),
+  resolve(import.meta.dirname, "../../../../../../packages/web-chat-view/src/web-chat-view-root.svelte"),
   "utf8",
 );
 

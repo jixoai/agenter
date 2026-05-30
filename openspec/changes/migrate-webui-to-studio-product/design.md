@@ -105,7 +105,7 @@ Durable specs and package specs should use Studio for the active SvelteKit opera
    - `web` removed from built-ins
    - Studio product launch receives daemon env and owns old dev/static flags
    - package identity renames for Studio and icon-studio
-2. Move `packages/webui` to `packages/studio` and update package metadata, bin, exports, scripts, README, Svelte/Vite/Storybook/Playwright configs, and active product namespaces.
+2. Move `packages/webui` to `extensions/studio` and update package metadata, bin, exports, scripts, README, Svelte/Vite/Storybook/Playwright configs, and active product namespaces.
 3. Move `packages/ui-studio` to `packages/icon-studio` and update package metadata, scripts, imports, docs, and root build commands.
 4. Delete CLI WebUI static-root/copy ownership and the built-in `web` command.
 5. Add the `studio` descriptor and implement `agenter-ext-studio` product runner.

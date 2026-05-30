@@ -8,13 +8,13 @@ Define the active `agenter-ext-studio` operator product package, its launcher co
 
 ### Requirement: Studio SHALL be the active operator product package
 
-The active SvelteKit operator product SHALL be published and resolved as `agenter-ext-studio` from `packages/studio`. The package SHALL own Studio-specific CLI grammar, static serving, dev serving, route assets, Storybook workflow, and browser-facing lifecycle.
+The active SvelteKit operator product SHALL be published and resolved as `agenter-ext-studio` from `extensions/studio`. The package SHALL own Studio-specific CLI grammar, static serving, dev serving, route assets, Storybook workflow, and browser-facing lifecycle.
 
 #### Scenario: Workspace package resolves as Studio
 
 - **WHEN** workspace package discovery resolves the active operator product
 - **THEN** it resolves package `agenter-ext-studio`
-- **AND** it resolves from `packages/studio`
+- **AND** it resolves from `extensions/studio`
 - **AND** it does not resolve the active product from `@agenter/webui` or `packages/webui`
 
 #### Scenario: Studio owns product CLI grammar
@@ -55,7 +55,7 @@ The active SvelteKit operator product SHALL be published and resolved as `agente
 #### Scenario: Dev Studio starts a product-owned Vite server
 
 - **WHEN** a user runs `agenter studio --dev --web-port 4173`
-- **THEN** Studio starts a Vite dev server from `packages/studio`
+- **THEN** Studio starts a Vite dev server from `extensions/studio`
 - **AND** it injects the launcher-provided daemon `/trpc` endpoint through Studio-owned runtime env
 - **AND** core CLI does not start the Vite server for Studio
 

@@ -58,7 +58,7 @@ describe("Feature: Workspace shell launch cwd contract", () => {
 
     expect(formatWorkspaceShellPath(path)).toBe(path);
     expect(resolveWorkspaceShellPromptFolderName(path)).toBe("0x1269f34e1a88fe6a0314f777a049a7a0cf302622");
-    expect(resolveWorkspaceShellPromptFolderName("/Users/demo/projects/agenter/packages/studio")).toBe("studio");
+    expect(resolveWorkspaceShellPromptFolderName("/Users/demo/projects/agenter/extensions/studio")).toBe("studio");
   });
 
   test("Scenario: Given the root-workspace dialog is waiting on runtime boot When resolving runtime state helpers Then only running counts as exec-ready", () => {

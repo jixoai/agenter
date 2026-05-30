@@ -13,7 +13,7 @@
 
 ## 3. Studio Package Migration
 
-- [x] 3.1 Move `packages/webui` to `packages/studio` with package name `agenter-ext-studio`.
+- [x] 3.1 Move `packages/webui` to `extensions/studio` with package name `agenter-ext-studio`.
 - [x] 3.2 Add the Studio product bin and `runStudio` entrypoint that consume launcher env and own static/dev serving.
 - [x] 3.3 Rename active Studio source namespaces, storage keys, diagnostics, docs, scripts, test labels, and package filters from WebUI to Studio where they describe the active product.
 - [x] 3.4 Keep Studio runtime access through daemon/client-sdk contracts and avoid app-server/core runtime imports in Studio startup.

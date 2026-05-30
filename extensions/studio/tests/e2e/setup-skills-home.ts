@@ -2,8 +2,8 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import { AppKernel } from "../../../app-server/src";
-import { GLOBAL_WORKSPACE_PATH } from "../../../app-server/src/workspace-target";
+import { AppKernel } from "../../../../packages/app-server/src";
+import { GLOBAL_WORKSPACE_PATH } from "../../../../packages/app-server/src/workspace-target";
 import { resetSkillsHomeSandbox } from "../../src/lib/testing/skills-home-sandbox";
 
 const [, , homeArg] = process.argv;

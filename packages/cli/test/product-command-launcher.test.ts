@@ -137,8 +137,8 @@ describe("Feature: product command launcher", () => {
     if (target.source !== "workspace") {
       return;
     }
-    expect(target.binPath.endsWith("packages/studio/src/bin/agenter-studio.ts")).toBe(true);
-    expect(target.mainPath.endsWith("packages/studio/src/index.ts")).toBe(true);
+    expect(target.binPath.endsWith("extensions/studio/src/bin/agenter-studio.ts")).toBe(true);
+    expect(target.mainPath.endsWith("extensions/studio/src/index.ts")).toBe(true);
   });
 
   test("Scenario: Given a local shell-next package When resolving shell2 Then workspace is required and no remote fallback is allowed", () => {

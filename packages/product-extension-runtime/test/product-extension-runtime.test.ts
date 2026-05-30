@@ -74,7 +74,7 @@ describe("Feature: product extension runtime contracts", () => {
   });
 
   test("Scenario: Given package identities are inspected When resolving product packages Then Studio and Icon Studio have distinct package atoms", () => {
-    const studioPkg = JSON.parse(readRepoFile("packages/studio/package.json")) as { name?: string };
+    const studioPkg = JSON.parse(readRepoFile("extensions/studio/package.json")) as { name?: string };
     const iconStudioPkg = JSON.parse(readRepoFile("packages/icon-studio/package.json")) as { name?: string };
 
     expect(studioPkg.name).toBe("agenter-ext-studio");

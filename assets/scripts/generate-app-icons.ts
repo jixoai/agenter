@@ -18,8 +18,8 @@ const outputs = {
 	ios: resolve(repoRoot, 'assets/app/apple/ios/AppIcon.appiconset'),
 	macos: resolve(repoRoot, 'assets/app/apple/macos'),
 	android: resolve(repoRoot, 'assets/app/android'),
-	studioStatic: resolve(repoRoot, 'packages/studio/static'),
-	studioIcons: resolve(repoRoot, 'packages/studio/static/icons'),
+	studioStatic: resolve(repoRoot, 'extensions/studio/static'),
+	studioIcons: resolve(repoRoot, 'extensions/studio/static/icons'),
 };
 const sourceFiles = {
 	core: resolve(sourceDir, 'icon-core.png'),
@@ -178,8 +178,8 @@ for (const relativePath of [
 	'assets/app/apple/ios/AppIcon.appiconset',
 	'assets/app/apple/macos/AppIcon.icns',
 	'assets/app/android',
-	'packages/studio/static/favicon.ico',
-	'packages/studio/static/site.webmanifest',
+	'extensions/studio/static/favicon.ico',
+	'extensions/studio/static/site.webmanifest',
 ]) {
 	console.log(`- ${relativePath}`);
 }
