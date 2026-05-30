@@ -54,6 +54,39 @@ describe("Feature: canonical message source popup contract", () => {
     expect(inspectorSource).toContain(".comment-inspector-edit-shell");
   });
 
+  test("Scenario: Given Framework7 comment edit sheets When reading component CSS Then Sheet and Toolbar chrome stay owned by official Framework7 styles", () => {
+    const inspectorSource = readFileSync(
+      resolve(import.meta.dirname, "../src/comment-inspector.svelte"),
+      "utf8",
+    );
+    const sourceSheetRule =
+      /:global\(\.message-source-comment-editor-sheet\.sheet-modal\)\s*\{(?<body>[^}]*)\}/su.exec(
+        sourcePopupSource,
+      )?.groups?.body ?? "";
+    const sourceToolbarRule =
+      /:global\(\.message-source-comment-editor-toolbar\.toolbar\)\s*\{(?<body>[^}]*)\}/su.exec(
+        sourcePopupSource,
+      )?.groups?.body ?? "";
+    const inspectorSheetRule =
+      /:global\(\.comment-inspector-edit-sheet\.sheet-modal\)\s*\{(?<body>[^}]*)\}/su.exec(inspectorSource)
+        ?.groups?.body ?? "";
+    const inspectorToolbarRule =
+      /:global\(\.comment-inspector-edit-bar\.toolbar\)\s*\{(?<body>[^}]*)\}/su.exec(inspectorSource)
+        ?.groups?.body ?? "";
+
+    for (const rule of [sourceSheetRule, sourceToolbarRule, inspectorSheetRule, inspectorToolbarRule]) {
+      expect(rule).not.toMatch(/(?:^|;)\s*background(?:-color)?\s*:/u);
+      expect(rule).not.toMatch(/(?:^|;)\s*backdrop-filter\s*:/u);
+      expect(rule).not.toContain("--f7-toolbar-bg-color: transparent");
+      expect(rule).not.toContain("--f7-toolbar-height: auto");
+    }
+
+    expect(sourcePopupSource).toContain('<Toolbar class="message-source-comment-editor-toolbar">');
+    expect(sourcePopupSource).toContain('<PageContent class="message-source-comment-editor-content">');
+    expect(inspectorSource).toContain('<Toolbar class="comment-inspector-edit-bar">');
+    expect(inspectorSource).toContain('<PageContent class="comment-inspector-edit-content">');
+  });
+
   test("Scenario: Given Framework7 popup PageContent surfaces When reading component CSS Then general source and preview PageContent rules also avoid whole padding overrides", () => {
     const sourcePageContentRule =
       /:global\(\.message-source-page-content\.page-content\)\s*\{(?<body>[^}]*)\}/su.exec(sourcePopupSource)

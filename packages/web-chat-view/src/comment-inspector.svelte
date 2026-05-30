@@ -32,6 +32,7 @@
     canEdit = true,
     value = $bindable(""),
     onSave,
+    onClose,
     onOpenChange,
     onModeChange,
   }: {
@@ -46,6 +47,7 @@
     canEdit?: boolean;
     value?: string;
     onSave?: (() => void | Promise<void>) | undefined;
+    onClose?: (() => void | Promise<void>) | undefined;
     onOpenChange?: ((next: boolean) => void) | undefined;
     onModeChange?: ((next: "view" | "edit") => void) | undefined;
   } = $props();
@@ -85,7 +87,12 @@
     onModeChange?.(next);
   };
 
-  const handleEditSheetClosed = (): void => {
+  const finalizeEmptyAndClose = async (): Promise<void> => {
+    if (open && mode === "edit" && trimmedValue.length === 0) {
+      await onClose?.();
+      close();
+      return;
+    }
     if (open && mode === "edit") {
       setMode("view");
     }
@@ -96,6 +103,9 @@
       return;
     }
     await onSave?.();
+    if (trimmedValue.length === 0) {
+      close();
+    }
   };
 </script>
 
@@ -193,7 +203,9 @@
           outline
           aria-label={mode === "edit" ? "Cancel comment edit" : "Close comment"}
           title={mode === "edit" ? "Cancel" : "Close"}
-          onclick={close}
+          onclick={() => {
+            void finalizeEmptyAndClose();
+          }}
         >
           <X class="comment-inspector-action-icon" />
           <span>{mode === "edit" ? "Cancel" : "Close"}</span>
@@ -242,7 +254,7 @@
     swipeToClose
     backdrop={false}
     closeByOutsideClick={false}
-    onSheetClosed={handleEditSheetClosed}
+    onSheetClosed={finalizeEmptyAndClose}
   >
     <Toolbar class="comment-inspector-edit-bar">
       <Link
@@ -253,7 +265,7 @@
         title="Cancel"
         onclick={(event: MouseEvent) => {
           event.preventDefault();
-          setMode("view");
+          void finalizeEmptyAndClose();
         }}
       >
         <X class="comment-inspector-toolbar-icon" />
@@ -429,8 +441,6 @@
 
   :global(.comment-inspector-edit-sheet.sheet-modal) {
     --f7-sheet-border-radius: 22px 22px 0 0;
-    background: rgba(248, 248, 252, 0.96);
-    backdrop-filter: saturate(180%) blur(24px);
   }
 
   :global(.comment-inspector-edit-content.page-content) {
@@ -473,10 +483,7 @@
   }
 
   :global(.comment-inspector-edit-bar.toolbar) {
-    --f7-toolbar-bg-color: transparent;
-    --f7-toolbar-height: auto;
     margin: 0;
-    background: transparent;
   }
 
   :global(.comment-inspector-edit-bar .toolbar-inner) {

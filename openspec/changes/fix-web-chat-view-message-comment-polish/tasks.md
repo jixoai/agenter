@@ -56,3 +56,14 @@
 - [x] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff fix-web-chat-view-message-comment-polish` and commit the handoff evidence before returning to user discussion.
 - [x] 5.6 If review exits normally, run `bun run openspec:vision -- check fix-web-chat-view-message-comment-polish` and decide whether to archive after user acceptance.
 - [x] 5.7 Update self-review artifacts with Round 2 acceptance feedback, deviation list, and future tasks before asking for another visual acceptance pass.
+
+## 6. Round 3 Acceptance Feedback
+
+- [x] 6.1 Record Round 3 user feedback verbatim in `plans/plan.md` and extend specs/tasks before code edits.
+- [x] 6.2 Add BDD/source contracts proving empty comment save, close/cancel, and Framework7 `onSheetClosed` share one delete-and-close finalizer.
+- [x] 6.3 Add BDD/source contracts proving comment edit sheets retain official Framework7 `Sheet -> Toolbar -> PageContent` topology and do not repaint Sheet/Toolbar chrome as custom translucent panels.
+- [x] 6.4 Implement source comment editor finalization so empty save deletes the anchor and closes the panel, empty close/cancel deletes and closes, and `onSheetClosed` cannot leave an empty editor open.
+- [x] 6.5 Implement pending comment preview finalization so empty save or close removes the pending resource and closes the preview.
+- [x] 6.6 Remove over-custom Framework7 Sheet/Toolbar chrome overrides from the source and comment inspector edit sheets while preserving inner editor layout and accessible icon actions.
+- [x] 6.7 Re-run targeted Web Chat unit/layout tests and `@agenter/web-chat-view` typecheck.
+- [x] 6.8 Re-run OpenSpec vision validate/check and update self-review with Round 3 deviation/future-task notes.

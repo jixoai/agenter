@@ -233,13 +233,17 @@
     activateCommentAnchor(anchor, mode);
   };
 
-  const closeCommentEditor = (): void => {
+  const closeCommentEditor = ({ deleteIfEmpty = false }: { deleteIfEmpty?: boolean } = {}): void => {
+    if (deleteIfEmpty && commentDraft.trim().length === 0) {
+      deleteActiveCommentAnchor({ closePanel: true });
+      return;
+    }
     if (commentAnchorMode === "edit") {
       commentAnchorMode = "view";
     }
   };
 
-  const deleteActiveCommentAnchor = (): void => {
+  const deleteActiveCommentAnchor = ({ closePanel = false }: { closePanel?: boolean } = {}): void => {
     const anchor = activeCommentAnchor;
     if (!anchor) {
       return;
@@ -248,6 +252,13 @@
     activeCommentAnchorId = null;
     commentAnchorMode = null;
     commentDraft = "";
+    if (closePanel) {
+      selectionActionsOpen = false;
+    }
+  };
+
+  const finalizeEmptyCommentEditor = (): void => {
+    closeCommentEditor({ deleteIfEmpty: true });
   };
 
   const handleLineKeydown = (event: KeyboardEvent, lineNumber: number): void => {
@@ -323,7 +334,7 @@
       return;
     }
     if (trimmedDraft.length === 0) {
-      deleteActiveCommentAnchor();
+      finalizeEmptyCommentEditor();
       showTransientToast("空评论已删除");
       return;
     }
@@ -648,7 +659,7 @@
               <div class="message-source-comment-editor-actions">
                 <Link href="#" role="button" aria-label="Cancel comment edit" title="Cancel" onclick={(event: MouseEvent) => {
                   event.preventDefault();
-                  closeCommentEditor();
+                  closeCommentEditor({ deleteIfEmpty: true });
                 }}>
                   <X class="message-source-comment-editor-action-icon" />
                   <span>Cancel</span>
@@ -701,7 +712,7 @@
     swipeToClose
     backdrop={false}
     closeByOutsideClick={false}
-    onSheetClosed={closeCommentEditor}
+    onSheetClosed={finalizeEmptyCommentEditor}
   >
     <Toolbar class="message-source-comment-editor-toolbar">
       <Link
@@ -712,7 +723,7 @@
         title="Cancel"
         onclick={(event: MouseEvent) => {
           event.preventDefault();
-          closeCommentEditor();
+          closeCommentEditor({ deleteIfEmpty: true });
         }}
       >
         <X class="message-source-comment-editor-toolbar-icon" />
@@ -1105,13 +1116,6 @@
 
   :global(.message-source-comment-editor-sheet.sheet-modal) {
     --f7-sheet-border-radius: 22px 22px 0 0;
-    background: rgba(248, 248, 252, 0.96);
-    backdrop-filter: saturate(180%) blur(24px);
-  }
-
-  :global(.message-source-comment-editor-toolbar.toolbar) {
-    background: rgba(248, 248, 252, 0.92);
-    backdrop-filter: saturate(180%) blur(24px);
   }
 
   :global(.message-source-comment-editor-toolbar .toolbar-inner) {

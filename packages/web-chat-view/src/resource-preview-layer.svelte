@@ -25,6 +25,7 @@
     commentDraftValue = $bindable(""),
     onCommentModeChange,
     onCommentSave,
+    onCommentClose,
   }: {
     resource: WebChatResourceReference | null;
     open?: boolean;
@@ -34,6 +35,7 @@
     commentDraftValue?: string;
     onCommentModeChange?: (next: "view" | "edit") => void;
     onCommentSave?: (() => void | Promise<void>) | undefined;
+    onCommentClose?: (() => void | Promise<void>) | undefined;
   } = $props();
 
   let retainedResource = $state<WebChatResourceReference | null>(null);
@@ -144,6 +146,7 @@
       bind:value={commentDraftValue}
       onModeChange={onCommentModeChange}
       onSave={onCommentSave}
+      onClose={onCommentClose}
       onOpenChange={handleOpenChange}
     />
   </ResourcePreviewShell>

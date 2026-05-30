@@ -69,9 +69,24 @@ describe("Feature: comment resource reopen contract", () => {
 
     expect(messageSourcePopupSource).toContain("deleteActiveCommentAnchor");
     expect(messageSourcePopupSource).toContain("trimmedDraft.length === 0");
-    expect(messageSourcePopupSource).toContain("deleteActiveCommentAnchor()");
+    expect(messageSourcePopupSource).toContain("deleteActiveCommentAnchor({ closePanel: true })");
     expect(pendingAssetStripSource).toContain("onRemoveComment?.(previewingResource.id)");
     expect(commentInspectorSource).toContain("canSave = $derived(effectiveCanEdit)");
+  });
+
+  test("Scenario: Given an empty comment edit When save close or Sheet close ends the lifecycle Then one finalizer deletes the artifact and closes the panel", () => {
+    expect(messageSourcePopupSource).toContain("finalizeEmptyCommentEditor");
+    expect(messageSourcePopupSource).toContain("closeCommentEditor({ deleteIfEmpty: true })");
+    expect(messageSourcePopupSource).toContain("onSheetClosed={finalizeEmptyCommentEditor}");
+    expect(messageSourcePopupSource).toContain("deleteActiveCommentAnchor({ closePanel: true })");
+
+    expect(pendingAssetStripSource).toContain("finalizePendingCommentEdit");
+    expect(pendingAssetStripSource).toContain("onCommentClose={finalizePendingCommentEdit}");
+    expect(pendingAssetStripSource).toContain("onRemoveComment?.(previewingResource.id)");
+
+    expect(resourcePreviewLayerSource).toContain("onCommentClose");
+    expect(commentInspectorSource).toContain("finalizeEmptyAndClose");
+    expect(commentInspectorSource).toContain("onSheetClosed={finalizeEmptyAndClose}");
   });
 
   test("Scenario: Given image file and comment resources When reading the implementation Then image, document, and comment resources stay on one popup-shell preview family", () => {

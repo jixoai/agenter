@@ -12,6 +12,7 @@
     onOpenChange,
     onModeChange,
     onSave,
+    onClose,
   }: {
     resource: WebChatResourceReference | null;
     open?: boolean;
@@ -21,6 +22,7 @@
     onOpenChange?: (next: boolean) => void;
     onModeChange?: (next: "view" | "edit") => void;
     onSave?: (() => void | Promise<void>) | undefined;
+    onClose?: (() => void | Promise<void>) | undefined;
   } = $props();
 
   let retainedResource = $state<WebChatResourceReference | null>(null);
@@ -73,5 +75,6 @@
     onOpenChange={handleOpenChange}
     onModeChange={onModeChange}
     onSave={onSave}
+    onClose={onClose}
   />
 {/if}

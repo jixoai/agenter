@@ -56,6 +56,14 @@
       commentDraftValue = resource.commentText ?? resource.detailText ?? "";
     }
   };
+
+  const finalizePendingCommentEdit = (): void => {
+    if (!previewingResource || previewingResource.kind !== "comment" || commentDraftValue.trim().length > 0) {
+      return;
+    }
+    onRemoveComment?.(previewingResource.id);
+    previewingResourceId = null;
+  };
 </script>
 
 {#if resources.length > 0}
@@ -96,8 +104,7 @@
       if (previewingResource) {
         const trimmedDraft = commentDraftValue.trim();
         if (trimmedDraft.length === 0) {
-          onRemoveComment?.(previewingResource.id);
-          previewingResourceId = null;
+          finalizePendingCommentEdit();
           return;
         }
         onUpdateComment?.(previewingResource.id, trimmedDraft);
@@ -105,7 +112,11 @@
         commentDetailMode = "view";
       }
     }}
+    onCommentClose={finalizePendingCommentEdit}
     onOpenChange={(next) => {
+      if (!next) {
+        finalizePendingCommentEdit();
+      }
       previewingResourceId = next ? previewingResourceId : null;
     }}
   />
