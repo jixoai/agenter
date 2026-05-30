@@ -53,7 +53,7 @@
 - [x] 6.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, BDD evidence, and residual-term audit.
 - [x] 6.2 Generate `review/self-review.html` as structured evidence presentation if this change reaches user-facing or release workflow proof that benefits from HTML review.
 - [x] 6.3 If review updates OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
-- [ ] 6.4 If the review enters a real loop, run `bun run openspec:vision -- review-state introduce-agenter-app-platform-skill` to persist iteration and recurrence state.
-- [ ] 6.5 If review cannot exit normally, run `bun run openspec:vision -- handoff introduce-agenter-app-platform-skill` and commit the handoff evidence before returning to user discussion.
-- [ ] 6.6 If review exits normally, sync durable specs, archive the change, and commit the archive result.
-- [ ] 6.7 Run `bun run openspec:vision -- check introduce-agenter-app-platform-skill` and decide whether to exit or return to `research-plan` with a backed-up plan revision.
+- [x] 6.4 If the review enters a real loop, run `bun run openspec:vision -- review-state introduce-agenter-app-platform-skill` to persist iteration and recurrence state. N/A: no review loop was required.
+- [x] 6.5 If review cannot exit normally, run `bun run openspec:vision -- handoff introduce-agenter-app-platform-skill` and commit the handoff evidence before returning to user discussion. N/A: review exited normally.
+- [x] 6.6 If review exits normally, sync durable specs, archive the change, and commit the archive result.
+- [x] 6.7 Run `bun run openspec:vision -- check introduce-agenter-app-platform-skill` and decide whether to exit or return to `research-plan` with a backed-up plan revision.
