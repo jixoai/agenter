@@ -312,6 +312,30 @@ describe("Feature: shell-next product runtime bootstrap", () => {
     expect(output.join("")).toContain("terminal: terminal-1 (reused)");
   });
 
+  test("Scenario: Given shell-next bootstraps a product terminal When TerminalSystem creates the binding Then git-backed history is requested", async () => {
+    class RecordingCreateStore extends FakeShellNextStore {
+      createTerminalInputs: Array<Parameters<FakeShellNextStore["createGlobalTerminal"]>[0]> = [];
+
+      async createGlobalTerminal(input: Parameters<FakeShellNextStore["createGlobalTerminal"]>[0]) {
+        this.createTerminalInputs.push(input);
+        return await super.createGlobalTerminal(input);
+      }
+    }
+
+    const store = new RecordingCreateStore();
+    seedAvatar(store, "bangeel");
+
+    await bootstrapShellNextRoom({
+      store,
+      workspacePath: process.cwd(),
+      shellName: "shell-history",
+      avatarNickname: "bangeel",
+    });
+
+    expect(store.createTerminalInputs).toHaveLength(1);
+    expect(store.createTerminalInputs[0]?.profile?.gitLog).toBe("normal");
+  });
+
   test("Scenario: Given product attach exits by terminate When the live source terminates Then shell-next stops the global terminal", async () => {
     const store = new FakeShellNextStore();
     seedAvatar(store, "bangeel");

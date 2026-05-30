@@ -15,6 +15,7 @@ import {
   type TerminalTransportRowCacheDecoder,
   type TerminalTransportServerMessage,
 } from "@agenter/terminal-transport-protocol";
+import type { TerminalActorId } from "@agenter/terminal-system";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -91,6 +92,89 @@ const encodeTerminalClientFrame = (
 };
 
 const rowCacheDecodersBySocket = new WeakMap<WebSocket, TerminalTransportRowCacheDecoder>();
+
+interface KernelRuntimeProbe {
+  attentionSystem: AttentionSystem;
+  focusedTerminalIds: string[];
+  terminalStatusById: Map<
+    string,
+    {
+      processPhase: "not_started" | "running" | "killed";
+      lifecycleTransition: string | null;
+      status: "IDLE" | "BUSY";
+    }
+  >;
+  terminals: Map<string, unknown>;
+  snapshot: () => {
+    schedulerSignals: {
+      attention: {
+        version: number;
+      };
+    };
+  };
+}
+
+interface KernelRuntimeMapProbe {
+  runtimes: Map<string, KernelRuntimeProbe>;
+}
+
+const getAttentionContextSnapshot = (runtime: KernelRuntimeProbe, contextId: string) =>
+  runtime.attentionSystem.snapshot().contexts.find((context) => context.contextId === contextId) ?? null;
+
+const waitForAttentionContextCommit = async (
+  runtime: KernelRuntimeProbe,
+  contextId: string,
+  predicate: (commit: NonNullable<ReturnType<typeof getAttentionContextSnapshot>>["commits"][number]) => boolean,
+  input: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<void> => {
+  const startedAt = Date.now();
+  const timeoutMs = input.timeoutMs ?? 3_000;
+  const intervalMs = input.intervalMs ?? 25;
+  while (Date.now() - startedAt < timeoutMs) {
+    const context = getAttentionContextSnapshot(runtime, contextId);
+    if (context?.commits.some(predicate)) {
+      return;
+    }
+    await Bun.sleep(intervalMs);
+  }
+  const contexts = runtime.attentionSystem.snapshot().contexts.map((context) => ({
+    contextId: context.contextId,
+    commits: context.commits.map((commit) => ({
+      source: commit.meta.source,
+      changeType: commit.change.type,
+      value: commit.change.type === "clean" ? null : commit.change.value,
+      scores: commit.scores,
+      tags: commit.meta.tags,
+    })),
+  }));
+  throw new Error(
+    `expected attention commit not observed for context: ${contextId}\n${JSON.stringify(
+      {
+        terminalStatus: [...runtime.terminalStatusById.entries()],
+        contexts,
+      },
+      null,
+      2,
+    )}`,
+  );
+};
+
+const waitForAttentionSignalVersion = async (
+  runtime: KernelRuntimeProbe,
+  previousVersion: number,
+  input: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<void> => {
+  const startedAt = Date.now();
+  const timeoutMs = input.timeoutMs ?? 3_000;
+  const intervalMs = input.intervalMs ?? 25;
+  while (Date.now() - startedAt < timeoutMs) {
+    if (runtime.snapshot().schedulerSignals.attention.version > previousVersion) {
+      return;
+    }
+    await Bun.sleep(intervalMs);
+  }
+  throw new Error("expected attention scheduler signal version to advance");
+};
 
 const resolveRowCacheDecoder = (socket: WebSocket): TerminalTransportRowCacheDecoder => {
   const existing = rowCacheDecodersBySocket.get(socket);
@@ -592,6 +676,100 @@ describe("Feature: app kernel event replay", () => {
 
     await kernel.stop();
   });
+
+  test("Scenario: Given a product focused global terminal When BootstrapAdmin writes through TerminalSystem Then runtime commits terminal attention and wakes attention input", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-kernel-product-terminal-"));
+    tempDirs.push(root);
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace, { recursive: true });
+    const kernel = new AppKernel({
+      homeDir: join(root, "home"),
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+    });
+    const bootstrapAdminActorId = "auth:bootstrap-admin" as TerminalActorId;
+
+    await kernel.start();
+    const session = await kernel.createSession({
+      cwd: workspace,
+      avatar: "jane",
+      name: "jane-product-terminal",
+      autoStart: true,
+    });
+    if (!session.avatarPrincipalId) {
+      throw new Error("expected avatar principal id");
+    }
+    const avatarActorId = session.avatarPrincipalId as TerminalActorId;
+    const terminalId = "product-global-main";
+    const terminal = await kernel.createGlobalTerminal({
+      terminalId,
+      processKind: "shell",
+      command: ["sh", "-lc", "cat"],
+      cwd: workspace,
+      start: true,
+      focus: false,
+      superadminActorId: bootstrapAdminActorId,
+    });
+    expect(terminal.terminal?.terminalId).toBe(terminalId);
+    kernel.issueGlobalTerminalGrant({
+      terminalId,
+      role: "writer",
+      participantId: avatarActorId,
+      label: "jane",
+      superadminActorId: bootstrapAdminActorId,
+    });
+    const focused = await kernel.focusTerminals({
+      sessionId: session.id,
+      op: "add",
+      terminalIds: [terminalId],
+    });
+    expect(focused.ok).toBeTrue();
+    expect(focused.focusedTerminalIds).toContain(terminalId);
+    const runtime = (kernel as unknown as KernelRuntimeMapProbe).runtimes.get(session.id);
+    if (!runtime) {
+      throw new Error("expected running runtime");
+    }
+    expect(runtime.focusedTerminalIds).toContain(terminalId);
+    expect(runtime.terminals.has(terminalId)).toBeTrue();
+    expect(runtime.terminalStatusById.get(terminalId)).toMatchObject({
+      processPhase: "running",
+      status: "IDLE",
+    });
+    const beforeAttentionVersion = runtime.snapshot().schedulerSignals.attention.version;
+
+    const written = await kernel.writeGlobalTerminal({
+      terminalId,
+      text: "product global write line\n",
+      superadminActorId: bootstrapAdminActorId,
+    });
+    expect(written.ok).toBeTrue();
+
+    await waitForAttentionContextCommit(
+      runtime,
+      `ctx-terminal-${terminalId}`,
+      (commit) =>
+        commit.meta.source === "terminal" &&
+        commit.change.type !== "clean" &&
+        commit.change.value.includes("product global write line"),
+      { timeoutMs: 4_000, intervalMs: 25 },
+    );
+    await waitForAttentionSignalVersion(runtime, beforeAttentionVersion, {
+      timeoutMs: 4_000,
+      intervalMs: 25,
+    });
+    const cursorProbe = await kernel.readGlobalTerminal({
+      terminalId,
+      mode: "auto",
+      remark: false,
+      recordActivity: false,
+      actorId: avatarActorId,
+    });
+    expect(cursorProbe.readCursor?.readerActorId).toBe(avatarActorId);
+    expect(cursorProbe.readCursor?.toHash).toBeString();
+
+    await kernel.stop();
+  }, 10_000);
 
   test("Scenario: Given a room message is sent before a stopped avatar session starts When the kernel starts that session Then startup replay loads the unread room message for that avatar principal", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-"));

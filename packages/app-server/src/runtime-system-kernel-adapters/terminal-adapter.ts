@@ -34,7 +34,10 @@ interface RuntimeTerminalKernelAdapterOptions {
   ) => { promise: Promise<{ toHash: string | null }>; reject: (reason: unknown) => void };
   getTerminalContextId: (terminalId: string) => string;
   isTerminalActionable: (terminalId: string) => boolean;
-  readTerminalIngress: (terminalId: string) => Promise<RuntimeSystemIngressEnvelope | null>;
+  readTerminalIngress: (
+    terminalId: string,
+    input?: { mode?: "auto" | "diff" | "snapshot" },
+  ) => Promise<RuntimeSystemIngressEnvelope | null>;
   buildLifecycleIngressEnvelope: (input: RuntimeTerminalLifecycleIngressInput) => RuntimeSystemIngressEnvelope;
   onTerminalActionableSignal: (input: { terminalId: string; reason: string }) => void;
   onTerminalIdleBridgeError?: (error: unknown) => void;
@@ -182,7 +185,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
         this.queuedTerminalIds.add(terminalId);
         continue;
       }
-      const envelope = await this.options.readTerminalIngress(terminalId);
+      const envelope = await this.options.readTerminalIngress(terminalId, { mode: "diff" });
       this.markTerminalConsumed(terminalId);
       if (envelope) {
         envelopes.push(envelope);
@@ -227,7 +230,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
     try {
       // Raw/live PTY traffic does not create terminal_write activity. The IDLE
       // bridge therefore keys off terminal git truth and the actor read cursor.
-      const envelope = await this.options.readTerminalIngress(terminalId);
+      const envelope = await this.options.readTerminalIngress(terminalId, { mode: "diff" });
       this.markTerminalConsumed(terminalId);
       if (!envelope) {
         return;

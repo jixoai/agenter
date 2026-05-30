@@ -724,10 +724,29 @@ const truncateTerminalAttentionDetail = (value: string): string => {
 
 const getTerminalTail = (payload: Record<string, unknown>): string => {
   if (typeof payload.tail === "string") {
-    return payload.tail;
+    const tail = payload.tail;
+    if (tail.trim().length > 0) {
+      return tail;
+    }
   }
   if (Array.isArray(payload.tail)) {
-    return payload.tail.filter((line): line is string => typeof line === "string").join("\n");
+    const tail = payload.tail.filter((line): line is string => typeof line === "string").join("\n");
+    if (tail.trim().length > 0) {
+      return tail;
+    }
+  }
+  const snapshot = payload.snapshot;
+  if (snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)) {
+    const lines = (snapshot as { lines?: unknown }).lines;
+    if (Array.isArray(lines)) {
+      const semanticLines = lines
+        .filter((line): line is string => typeof line === "string")
+        .map((line) => line.trimEnd());
+      while (semanticLines.length > 0 && semanticLines[semanticLines.length - 1]!.trim().length === 0) {
+        semanticLines.pop();
+      }
+      return semanticLines.slice(-20).join("\n");
+    }
   }
   return "";
 };
@@ -2008,7 +2027,7 @@ export class SessionRuntime {
           ? this.getTerminalControlPlaneAttentionContextId()
           : this.getTerminalAttentionContextId(terminalId),
       isTerminalActionable: (terminalId) => this.isTerminalActionable(terminalId),
-      readTerminalIngress: async (terminalId) => await this.buildTerminalSystemIngressEnvelope(terminalId),
+      readTerminalIngress: async (terminalId, input) => await this.buildTerminalSystemIngressEnvelope(terminalId, input),
       buildLifecycleIngressEnvelope: (input) =>
         this.buildLifecycleIngressEnvelope({
           system: "terminal",
@@ -5650,9 +5669,24 @@ export class SessionRuntime {
     ];
   }
 
-  private async buildTerminalSystemIngressEnvelope(terminalId: string): Promise<RuntimeSystemIngressEnvelope | null> {
+  private async buildTerminalSystemIngressEnvelope(
+    terminalId: string,
+    input: { mode?: TerminalReadMode } = {},
+  ): Promise<RuntimeSystemIngressEnvelope | null> {
+    const previewPayload = await this.readTerminalRepresentation(terminalId, {
+      mode: input.mode ?? "auto",
+      remark: false,
+    });
+    if ("ok" in previewPayload) {
+      return null;
+    }
+    const previewContent = JSON.stringify(previewPayload);
+    if (!hasMeaningfulTerminalAttentionPayload(previewContent)) {
+      return null;
+    }
+
     const payload = await this.readTerminalRepresentation(terminalId, {
-      mode: "auto",
+      mode: input.mode ?? "auto",
       remark: true,
     });
     if ("ok" in payload) {

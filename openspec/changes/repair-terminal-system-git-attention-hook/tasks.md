@@ -75,3 +75,24 @@
 - [x] 8.4 Run `bun run openspec:vision -- check repair-terminal-system-git-attention-hook`.
 - [x] 8.5 Update self-review evidence with the Round 4 red/green result and keep archive gated on user shell2 acceptance.
 - [x] 8.6 Re-run adapter BDD after adding the pre-BUSY baseline regression.
+
+## 9. Round 5 Product/Global Red Tests
+
+- [x] 9.1 Add shell-next product bootstrap BDD proving the terminal binding requests git-backed terminal history by default, without relying on a hand-built test terminal profile.
+- [x] 9.2 Add AppKernel/SessionRuntime BDD proving a product-style focused global terminal written through `writeGlobalTerminal(...)` commits terminal attention and wakes the runtime through the attention signal.
+- [x] 9.3 Capture the initial failing behavior from the Round 5 BDD tests before product-code fixes.
+
+## 10. Round 5 Implementation
+
+- [x] 10.1 Fix the product/global terminal creation path at the correct layer so terminal git/read-cursor truth is present for shell-next and other product-bound terminals.
+- [x] 10.2 Fix the runtime/control-plane attachment or status synchronization path if the global terminal write path bypasses the idle bridge.
+- [x] 10.3 Preserve TerminalSystem purity: no AttentionSystem/LoopBus imports and no modeling raw transport input as `terminal_write`.
+
+## 11. Round 5 Verification
+
+- [x] 11.1 Re-run the new shell-next product bootstrap BDD.
+- [x] 11.2 Re-run the new AppKernel/SessionRuntime product/global BDD.
+- [x] 11.3 Re-run targeted TerminalSystem, runtime adapter, and SessionRuntime attention tests.
+- [x] 11.4 Run scoped typecheck and `git diff --check` for touched files.
+- [x] 11.5 Run `bun run openspec:vision -- validate repair-terminal-system-git-attention-hook` and `bun run openspec:vision -- check repair-terminal-system-git-attention-hook`.
+- [x] 11.6 Update self-review evidence with the Round 5 red/green result and keep archive gated on user shell2 acceptance.

@@ -249,6 +249,9 @@ export const bootstrapShellNextRoom = async (
       processKind: "shell",
       backend: "ghostty-native",
       cwd: input.workspacePath,
+      profile: {
+        gitLog: "normal",
+      },
       start: true,
     },
   });

@@ -880,6 +880,11 @@ export class AppKernel {
     this.terminalControlPlane = new TerminalControlPlane({
       dbPath: join(this.sessions.getGlobalRoot(), "..", ".terminal", "terminal.db"),
       outputRoot: join(this.sessions.getGlobalRoot(), "..", ".terminal", "output"),
+      initialConfig: {
+        defaults: {
+          gitLog: "normal",
+        },
+      },
     });
     this.authDraftStore = new AuthDraftStore(resolveAuthDraftDbPath(homeDir));
     this.authKvStore = new AuthKvStore(resolveAuthKvDbPath(homeDir));
