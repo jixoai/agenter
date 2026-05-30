@@ -132,6 +132,14 @@ The terminal adapter SHALL treat terminal observation and runtime ingress promot
 - **THEN** it may commit that lifecycle ingress directly through the host interface
 - **AND** ordinary snapshot or diff observations still remain subject to bridge classification
 
+#### Scenario: First unread read may be represented as a snapshot
+- **GIVEN** a focused running git-log backed terminal has visible output
+- **AND** the runtime actor has no existing read cursor for that terminal
+- **WHEN** the idle bridge reads the unread terminal fact
+- **THEN** the runtime MUST accept a meaningful snapshot payload as the terminal fact when TerminalSystem cannot produce a diff from a null cursor
+- **AND** the runtime MUST inspect visible snapshot lines when the physical bottom `tail` is blank
+- **AND** it MUST only advance the actor read cursor after that snapshot has been accepted as meaningful
+
 ### Requirement: Adapter wake signals SHALL be bridge-owned for terminal activity
 
 The terminal adapter SHALL NOT expose two independent runtime wake semantics for the same terminal change. Any low-level wait handle or dirty signal used for terminal observation SHALL funnel through one bridge-owned wake decision.

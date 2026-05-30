@@ -71,6 +71,22 @@ Terminal output SHALL remain a shared physical fact, but git-log/diff read progr
 - **THEN** the returned payload may describe the actor's current read cursor
 - **AND** the durable read cursor for that actor is not advanced
 
+### Requirement: Product-bound terminals SHALL request git-backed history
+
+Product/global terminal creation paths that are intended to participate in runtime attention SHALL create git-log backed terminals by default. This is the durable terminal truth required by the idle unread bridge; product bindings MUST NOT rely on hand-built test profiles to enable terminal history.
+
+#### Scenario: Product terminal binding requests git-backed history
+
+- **GIVEN** shell-next creates a product global terminal binding
+- **WHEN** it asks TerminalSystem to create that terminal
+- **THEN** the terminal creation request includes `gitLog: "normal"`
+
+#### Scenario: Daemon global terminals default to git-backed history
+
+- **GIVEN** a product or admin path creates a global terminal without an explicit `gitLog` profile
+- **WHEN** the daemon AppKernel provisions the shared TerminalControlPlane
+- **THEN** the created terminal still has git-backed history available for read cursor comparison
+
 ### Requirement: Terminal control plane SHALL own terminal lifecycle operations
 The terminal control plane SHALL expose lifecycle operations for listing, creating, bootstrapping, stopping, archiving, and deleting globally durable terminal instances through one canonical API family independent of session startup order. Terminal death and terminal deletion are distinct operations with distinct durable outcomes, and default listing SHALL expose only live actionable instances.
 
@@ -379,4 +395,3 @@ The terminal control plane SHALL expose live, history, archive, and all/index pr
 - **WHEN** the caller requests the default history/index projection
 - **THEN** the archived terminal is absent
 - **AND** it remains available only through the archive projection until delete
-
