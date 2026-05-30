@@ -22,6 +22,7 @@ import {
   MessagebarAttachment as Framework7MessagebarAttachment,
   MessagebarAttachments as Framework7MessagebarAttachments,
   MessagebarSheet as Framework7MessagebarSheet,
+  MessagebarSheetItem as Framework7MessagebarSheetItem,
   Messages as Framework7Messages,
   NavLeft as Framework7NavLeft,
   Navbar as Framework7Navbar,
@@ -72,6 +73,7 @@ export const Messagebar = loosen(Framework7Messagebar);
 export const MessagebarAttachment = loosen(Framework7MessagebarAttachment);
 export const MessagebarAttachments = loosen(Framework7MessagebarAttachments);
 export const MessagebarSheet = loosen(Framework7MessagebarSheet);
+export const MessagebarSheetItem = loosen(Framework7MessagebarSheetItem);
 export const Messages = loosen(Framework7Messages);
 export const NavLeft = loosen(Framework7NavLeft);
 export const Navbar = loosen(Framework7Navbar);

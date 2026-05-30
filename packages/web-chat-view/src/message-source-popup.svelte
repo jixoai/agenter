@@ -410,18 +410,12 @@
       <View>
         <Page class="message-source-page" pageContent={false} noSwipeback>
           <Navbar>
-            <NavLeft
-              class="message-source-navslot"
-              style="--f7-glass-bg-color: transparent; --f7-glass-shadow: none; backdrop-filter: none; border-radius: 0; min-width: 28px; width: 28px; height: 28px; margin: 0; padding: 0;"
-            >
+            <NavLeft class="message-source-navslot">
               <Link popupClose iconOnly aria-label="Close source" title="Close source">
                 <X class="size-4" />
               </Link>
             </NavLeft>
-            <NavRight
-              class="message-source-navslot"
-              style="--f7-glass-bg-color: transparent; --f7-glass-shadow: none; backdrop-filter: none; border-radius: 0; min-width: 28px; width: 28px; height: 28px; margin: 0; padding: 0;"
-            >
+            <NavRight class="message-source-navslot">
               <Link iconOnly aria-label="Copy source" title="Copy source" onclick={() => void copyFullText()}>
                 <Copy class="size-4" />
               </Link>
@@ -958,10 +952,7 @@
   }
 
   :global(.message-source-selection-toolbar.toolbar) {
-    min-height: calc(2.9rem + env(safe-area-inset-bottom));
     border-top: 1px solid rgba(60, 60, 67, 0.1);
-    background: rgba(248, 248, 252, 0.9);
-    backdrop-filter: saturate(180%) blur(24px);
   }
 
   :global(.message-source-selection-toolbar .toolbar-inner) {
@@ -969,7 +960,6 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.5rem;
     align-items: center;
-    padding: 0.34rem 0.64rem calc(0.34rem + env(safe-area-inset-bottom));
   }
 
   .message-source-toolbar-actions {
@@ -1124,11 +1114,6 @@
     height: 28px;
     margin: 0;
     padding: 0;
-    border-radius: 0 !important;
-    background: transparent !important;
-    background-color: transparent !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
   }
 
   :global(.message-source-page) {

@@ -10,6 +10,7 @@
 
   import type { WebChatComposerRenderProps } from "./types";
   import ChatDraftEditor from "./composer/chat-draft-editor.svelte";
+  import ComposerToolSheet from "./composer/composer-tool-sheet.svelte";
   import ComposerStatusBar from "./composer/composer-status-bar.svelte";
   import {
     resolveComposerCapabilities,
@@ -32,7 +33,7 @@
     mergeResourceReferences,
     pendingAssetToResourceReference,
   } from "./resource-contract";
-  import { Link, Messagebar, MessagebarSheet } from "./framework7-components";
+  import { Link, Messagebar, MessagebarSheetItem } from "./framework7-components";
   import type { WebChatCommentResourcePayload, WebChatResourceReference } from "./types";
 
   let {
@@ -481,28 +482,33 @@
     </Link>
   {/snippet}
 
-  {#if toolsSheetVisible}
-    <MessagebarSheet class="composer-tool-sheet" aria-label="Message tools">
-      {#each composerToolItems as item (item.key)}
-        <Link
-          href="#"
-          class={`composer-tool-sheet-item ${item.disabled ? "composer-tool-sheet-item-disabled" : ""}`}
-          aria-disabled={item.disabled}
-          tabindex={item.disabled ? -1 : undefined}
-          onclick={(event: MouseEvent) => {
-            event.preventDefault();
-            if (item.disabled) {
-              return;
-            }
-            item.action();
-          }}
-        >
-          <item.icon class="composer-tool-sheet-icon" />
-          <span>{item.label}</span>
-        </Link>
-      {/each}
-    </MessagebarSheet>
-  {/if}
+  <ComposerToolSheet ariaLabel="Message tools">
+    {#each composerToolItems as item (item.key)}
+      <MessagebarSheetItem
+        class={`composer-tool-sheet-item ${item.disabled ? "composer-tool-sheet-item-disabled" : ""}`}
+        aria-disabled={item.disabled}
+        tabindex={item.disabled ? -1 : undefined}
+        role="button"
+        onclick={(event: MouseEvent) => {
+          event.preventDefault();
+          if (item.disabled) {
+            return;
+          }
+          item.action();
+        }}
+        onkeydown={(event: KeyboardEvent) => {
+          if (item.disabled || (event.key !== "Enter" && event.key !== " ")) {
+            return;
+          }
+          event.preventDefault();
+          item.action();
+        }}
+      >
+        <item.icon class="composer-tool-sheet-icon" />
+        <span>{item.label}</span>
+      </MessagebarSheetItem>
+    {/each}
+  </ComposerToolSheet>
 </Messagebar>
 
 <style>
@@ -558,36 +564,13 @@
     pointer-events: none;
   }
 
-  :global(.composer-tool-sheet.messagebar-sheet) {
-    position: absolute;
-    inset-inline: 0;
-    bottom: calc(100% + 0.08rem);
-    z-index: 4;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1px;
-    box-sizing: border-box;
-    height: auto;
-    min-height: 0;
-    padding: 0.08rem 0.08rem calc(0.08rem + env(safe-area-inset-bottom));
-    border-top: 0;
-    background: var(--f7-messagebar-sheet-bg-color, rgba(247, 247, 250, 0.96));
-    backdrop-filter: saturate(180%) blur(20px);
-    border-radius: 10px;
-    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
-  }
-
   :global(.composer-tool-sheet-item) {
     display: grid;
     place-items: center;
     gap: 0.18rem;
     min-width: 0;
-    min-height: 2.34rem;
-    border-radius: 0;
-    background: rgba(255, 255, 255, 0.96);
+    cursor: pointer;
     color: var(--f7-text-color, #111827);
-    padding: 0.18rem 0.12rem 0.16rem;
-    box-shadow: none;
     text-decoration: none;
   }
 
@@ -733,9 +716,5 @@
       gap: 0.12rem;
     }
 
-    :global(.composer-tool-sheet.messagebar-sheet) {
-      padding-inline: 0.1rem;
-      padding-top: 0.1rem;
-    }
   }
 </style>

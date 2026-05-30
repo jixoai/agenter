@@ -104,10 +104,7 @@
         noSwipeback
       >
         <Navbar>
-          <NavLeft
-            class="resource-preview-shell-navslot"
-            style="--f7-glass-bg-color: transparent; --f7-glass-shadow: none; backdrop-filter: none; border-radius: 0; min-width: 28px; width: 28px; height: 28px; margin: 0; padding: 0;"
-          >
+          <NavLeft class="resource-preview-shell-navslot">
             <Link popupClose iconOnly aria-label="Close preview" title="Close preview">
               <X class="size-4" />
             </Link>
@@ -123,7 +120,6 @@
           </div>
           <NavRight
             class="resource-preview-shell-navslot resource-preview-shell-actions"
-            style="--f7-glass-bg-color: transparent; --f7-glass-shadow: none; backdrop-filter: none; border-radius: 0; min-width: 28px; width: 28px; height: 28px; margin: 0; padding: 0;"
           >
             {@render headerActions?.()}
           </NavRight>
@@ -220,12 +216,6 @@
     justify-content: center;
     padding: 1rem;
     background: rgba(15, 23, 42, 0.34);
-    backdrop-filter: blur(20px);
-  }
-
-  :global(.resource-preview-shell-popup) {
-    background: rgba(15, 23, 42, 0.34);
-    backdrop-filter: blur(20px);
   }
 
   :global(.resource-preview-shell-popup.modal-out),
@@ -262,14 +252,6 @@
       linear-gradient(180deg, rgba(70, 76, 92, 0.34), rgba(33, 38, 52, 0.88) 16%, rgba(19, 24, 35, 0.96) 34%, rgba(16, 20, 30, 0.98));
   }
 
-  :global(.resource-preview-shell-page .navbar) {
-    background: color-mix(in srgb, var(--f7-bars-bg-color, #f2f2f7) 82%, white);
-  }
-
-  :global(.resource-preview-shell-page[data-preview-tone="media"] .navbar) {
-    background: rgba(255, 255, 255, 0.04);
-  }
-
   :global(.resource-preview-shell-page .navbar .left.resource-preview-shell-navslot),
   :global(.resource-preview-shell-page .navbar .right.resource-preview-shell-navslot) {
     min-width: 28px;
@@ -277,11 +259,6 @@
     height: 28px;
     margin: 0;
     padding: 0;
-    border-radius: 0 !important;
-    background: transparent !important;
-    background-color: transparent !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
   }
 
   :global(.resource-preview-shell-page[data-preview-tone="media"] .link) {
@@ -385,17 +362,13 @@
   }
 
   :global(.resource-preview-shell-toolbar.toolbar) {
-    min-height: calc(2.82rem + env(safe-area-inset-bottom));
     border-top: 1px solid rgba(60, 60, 67, 0.12);
-    background: rgba(248, 248, 252, 0.9);
-    backdrop-filter: saturate(180%) blur(24px);
   }
 
   :global(.resource-preview-shell-toolbar .toolbar-inner) {
     display: flex;
     justify-content: center;
     gap: 0.38rem;
-    padding: 0.34rem 0.58rem calc(0.34rem + env(safe-area-inset-bottom));
   }
 
   :global(.resource-preview-shell-fallback-toolbar.card-footer) {
@@ -407,10 +380,6 @@
   }
 
   @media (max-width: 430px) {
-    :global(.resource-preview-shell-popup) {
-      padding: 0.25rem;
-    }
-
     .resource-preview-shell-layer {
       width: calc(100vw - 0.22rem);
       padding: 0.02rem 0.05rem 0.12rem;

@@ -86,3 +86,15 @@
 - [x] 8.3 Move `PendingAssetStrip` into the Framework7 `Messagebar` `beforeArea` slot so dynamic image/file/comment resources render in the resource rail above the draft field.
 - [x] 8.4 Re-run targeted Web Chat unit tests, `@agenter/web-chat-view` typecheck, OpenSpec validate/check, and live visual verification.
 - [x] 8.5 Update self-review with Round 5 evidence before asking for another visual acceptance pass.
+
+## 9. Round 6 Framework7 Modal Encapsulation
+
+- [x] 9.1 Record the latest user feedback in `plans/plan.md` and extend Framework7 visual-law specs before product-code edits.
+- [x] 9.2 Add BDD/source contracts proving composer tool trays use a shared Framework7 `MessagebarSheet` wrapper and do not repaint `.messagebar-sheet` chrome.
+- [x] 9.3 Add BDD/source contracts proving message/source contextual actions use one shared Framework7 Actions adapter instead of repeated `app.f7.actions.create(...)` implementations and blurred custom fallback surfaces.
+- [x] 9.4 Add BDD/source contracts proving resource/source popup shells do not repaint `.popup`, bottom `.toolbar`, or navbar slot chrome with custom blur/safe-area inline styles.
+- [x] 9.5 Implement the shared composer tool-sheet wrapper and migrate `default-composer.svelte` to Framework7 `MessagebarSheetItem` semantics.
+- [x] 9.6 Implement the shared Framework7 Actions adapter and migrate message action menu, context menu, and source selection action surface to it.
+- [x] 9.7 Remove direct modal chrome repainting from resource preview/source popup toolbar and navbar slots while preserving inner content layout.
+- [x] 9.8 Re-run targeted Web Chat unit/source contracts and `@agenter/web-chat-view` typecheck.
+- [x] 9.9 Re-run OpenSpec vision validate/check and update self-review with Round 6 deviation/future-task notes.

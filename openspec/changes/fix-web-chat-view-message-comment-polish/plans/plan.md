@@ -2,8 +2,8 @@
 
 ## Current Round
 
-- Round: 4
-- Status: Acceptance feedback loop opened after user reported Framework7 Sheet lifecycle runtime errors after empty comment deletion.
+- Round: 6
+- Status: Acceptance feedback loop reopened after user reported more Chatview modal surfaces still do not use official Framework7 styling and asked for a reusable best-practice encapsulation.
 - Previous plan backup: None.
 
 ## Workflow Command Surface
@@ -81,6 +81,10 @@
 
 > [Image #1] 为什么这里的评论会在发送按钮的旁边，这属于资源，应该在资源栏啊，我记得是在消息框的上方一条，可以放图片文件评论等资源
 
+## Round 6 User Acceptance Feedback
+
+> 目前这个 Chatview 还有很多 model 用的都不是Framework7 官方提供的样式。跟之前让你修复的一样，请你形成最佳实践，通过一种可靠的封装的方式去进行修复样式
+
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -103,6 +107,7 @@
 | 14 | User | Empty comment save, close button, and Sheet/Modal close callback should all trigger delete and close the panel. | Empty comment finalization must be one lifecycle action shared by Save, Cancel/Close, and Framework7 `onSheetClosed`. |
 | 15 | User | Many Modal Sheet surfaces do not look like Framework7 official demo sheets. | Treat Sheet styling as a framework-law issue: use official `Sheet -> Toolbar -> PageContent` topology and avoid repainting Sheet/Toolbar chrome as custom glass panels. |
 | 16 | User | Deleting an empty comment still leaves a non-closing Sheet and Framework7 throws `sheet.params` undefined errors from `swipeToClose` and `closeByBackdropClick` handlers. | Do not destroy a live Framework7 Sheet by removing the Svelte component while it is open or closing; first drive `opened=false`, then release the retained Sheet state after `onSheetClosed`. |
+| 17 | User | Chatview still has many modal surfaces whose styling is not provided by official Framework7; fix it through best practice and reliable encapsulation rather than another local patch. | Promote Framework7 modal/chrome ownership into a reusable Web Chat law: business code must enter Sheets, Popups, Messagebar sheets, and Actions through package-owned wrappers/helpers that preserve official chrome and limit custom CSS to inner content. |
 
 ### Evidence Read
 
@@ -123,6 +128,9 @@
 | `packages/web-chat-view/node_modules/framework7/components/sheet/sheet.less` | `.sheet-modal` owns background, radius, overflow, transition, and push/backdrop behavior through Framework7 variables. | Web Chat should not repaint sheet modal chrome with ad hoc background/backdrop filters when the goal is official Framework7 style. |
 | `packages/web-chat-view/node_modules/framework7-svelte/components/sheet.svelte` | `onDestroy` calls `f7Sheet.destroy()`, while the Framework7 sheet class owns touch/click handlers bound to the sheet/app lifecycle. | If Web Chat conditionally unmounts a Sheet while it is open, the instance can be destroyed before Framework7 has closed and unbound handlers. |
 | `packages/web-chat-view/node_modules/framework7/components/sheet/sheet-class.js` | `handleTouchStart` reads `sheet.params.swipeToClose`; `handleClick` reads `sheet.params.closeByBackdropClick`. | The reported undefined `params` errors are consistent with a destroyed sheet instance whose event handlers are still reachable. |
+| `packages/web-chat-view/src/default-composer.svelte` | Composer tool tray uses `MessagebarSheet`, but the component CSS directly repositions and repaints `.composer-tool-sheet.messagebar-sheet` with absolute positioning, custom background, blur, radius, shadow, and `env(safe-area-inset-bottom)` padding. Framework7 Svelte's `Messagebar` only hoists a sheet found under `.toolbar-inner` during messagebar initialization or when its internal update path runs. | This violates the same Framework7 chrome-ownership law as the earlier Sheet issue; tool tray should use Framework7 `MessagebarSheet` / `MessagebarSheetItem` through a wrapper, stay mounted for Framework7 initialization, and style only inner item content or Framework7 variables. |
+| `packages/web-chat-view/src/resource-preview-shell.svelte` | Shared preview popup already uses `Popup -> View -> Page -> Navbar -> PageContent`, but still repaints `.resource-preview-shell-popup`, nav slots, and bottom toolbar chrome with custom blur/background/safe-area padding. | The shell topology is correct, but its modal chrome is still not official; clean it without breaking the unified preview family. |
+| `packages/web-chat-view/src/message-actions-menu.svelte`, `message-actions-context-menu.svelte`, `selection-action-surface.svelte` | Each component repeats its own Framework7 `actions.create(...)` types and fallback custom popover/menu CSS with blurred self-drawn surfaces. | Contextual actions should be one package-owned Framework7 Actions adapter; business components should not each reinvent action modal creation and fallback chrome. |
 
 ### Git Evidence
 
@@ -191,6 +199,7 @@ The issue is a boundary-law problem plus leaf UI debt:
 - App-view is self-contained. It should receive identity presentation through backend/app-view contracts, not by reaching into Studio stores through the iframe.
 - Framework7 owns `PageContent` layout offsets. Web Chat can add spacing, but it must do so through Framework7 variables or inner content shells, not by overwriting `.page-content` padding.
 - Framework7 owns `Sheet` and `Toolbar` chrome. Web Chat can provide title/action content and inner body spacing, but should not repaint Sheet/Toolbar backgrounds, auto heights, or safe-area math when the product intent is the official Framework7 sheet style.
+- Framework7 owns modal chrome across the whole temporary-view family, not only comment edit Sheets. Web Chat can adapt action data, popup page content, and messagebar tool items, but business components should not repaint `.popup`, `.messagebar-sheet`, `.actions-modal`, `.toolbar`, or `.sheet-modal` directly.
 - Comment resources should be real resources. Empty drafts are not resources.
 
 ### Final Visible Effect
@@ -209,6 +218,7 @@ When the operator opens a Studio room embedded app-view:
 - saving an empty comment edit removes the local anchor or pending comment resource instead of leaving an empty comment artifact.
 - empty comment save, close/cancel, outside lifecycle close, and Framework7 `onSheetClosed` all delete the empty artifact and leave the editor panel closed.
 - comment edit sheets use Framework7's official Sheet chrome style by default instead of host-local translucent toolbar/sheet repainting.
+- messagebar tool sheets, resource preview popups/toolbars, and contextual action surfaces use reusable Framework7-owned wrappers/helpers instead of direct ad hoc modal chrome CSS.
 
 ## Platform Diagnosis
 
@@ -231,6 +241,8 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 - Comment resource components accept only non-empty comment bodies for visible comment detail.
 - Framework7 edit sheets keep `Toolbar` and `PageContent` as siblings and use `--f7-page-content-extra-padding-*` or inner shell padding for custom spacing.
 - Empty comment edit termination is one finalizer: if the trimmed draft is empty, delete the local comment artifact and close the owning panel; if non-empty, save or cancel according to the explicit action.
+- Temporary action menus are created through one Framework7 Actions adapter that owns `convertToPopover`, target anchoring, close lifecycle, and non-runtime test fallback. Leaf components only provide action data.
+- Messagebar tool tray is created through one composer tool-sheet wrapper that stays mounted inside `Messagebar` and uses Framework7 `MessagebarSheet` / `MessagebarSheetItem`; custom product style belongs inside each item, not on the sheet chrome.
 
 ### Data Shape
 
@@ -246,6 +258,8 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 - Comment UI fixes stay inside `packages/web-chat-view`, not in Studio route CSS.
 - Framework7 Sheet visuals should come from official Sheet/Toolbar defaults; Web Chat should avoid custom translucent sheet backgrounds unless a future design law explicitly authorizes a different product family.
 - Framework7 Sheet lifecycle must stay framework-owned. Web Chat may delete comment data immediately, but it must retain the Sheet component until the Framework7 close lifecycle reaches `onSheetClosed`.
+- Framework7 Actions visuals should come from official `Actions` / popover conversion; Web Chat may centralize action data mapping, but individual message/source components should not own separate modal factories or blurred fallback panels.
+- Framework7 Messagebar sheet visuals should come from official `MessagebarSheet` and Framework7 variables; Web Chat may choose compact height through variables, but should not conditionally mount the sheet after initialization, absolutely position it, or repaint the sheet chrome.
 
 ### User Confirmation Gates
 
@@ -266,6 +280,7 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 - [ ] 8. Round 2: fix nested PageContent, icon-only source toolbar actions, and empty-comment save deletion.
 - [ ] 9. Round 3: unify empty-comment finalization across save/close/Sheet callbacks and realign comment edit Sheet chrome with official Framework7 style.
 - [ ] 10. Round 4: retain comment edit Sheets through the Framework7 close lifecycle so empty deletion cannot destroy live Sheet instances or leave stale swipe/backdrop handlers.
+- [ ] 11. Round 6: encapsulate remaining Chatview temporary-view surfaces behind Framework7 modal helpers and remove direct modal chrome repainting.
 
 ## Open Questions
 

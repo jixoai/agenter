@@ -18,6 +18,16 @@ Composer, source-inspection, and comment-detail surfaces SHALL read as the same 
 - **AND** the resource rail appears above the draft field
 - **AND** resources do not render in the toolbar action row beside the send button
 
+#### Scenario: Composer tool tray uses Framework7 Messagebar sheet chrome
+
+- **GIVEN** the composer exposes a tool tray from the messagebar plus action
+- **WHEN** the tool tray is rendered
+- **THEN** it is composed through a package-owned Framework7 `MessagebarSheet` wrapper
+- **AND** tool entries use Framework7 `MessagebarSheetItem` semantics
+- **AND** the sheet remains mounted as a `Messagebar` child so Framework7 can hoist it during messagebar initialization while `sheetVisible` controls visibility
+- **AND** Web Chat does not directly repaint `.messagebar-sheet` with absolute positioning, custom blur, custom background, custom radius, or custom shadow
+- **AND** compact product sizing is expressed through Framework7 variables or inner item layout rather than replacing sheet chrome
+
 #### Scenario: Comment detail remains quiet and readable
 
 - **WHEN** the operator opens comment detail from a comment resource
@@ -40,6 +50,23 @@ Composer, source-inspection, and comment-detail surfaces SHALL read as the same 
 - **THEN** Web Chat first updates the Sheet `opened` prop to `false`
 - **AND** Web Chat retains the Sheet component until `onSheetClosed` runs
 - **AND** stale Framework7 swipe or backdrop click handlers cannot read a destroyed Sheet instance
+
+#### Scenario: Contextual actions use one Framework7 Actions adapter
+
+- **GIVEN** message rows or source selection expose contextual commands
+- **WHEN** an action surface opens in the live Framework7 runtime
+- **THEN** the surface is created through one shared Web Chat adapter for Framework7 `Actions`
+- **AND** the adapter owns action button mapping, `convertToPopover`, target anchoring, and close lifecycle
+- **AND** leaf components do not each call `app.f7.actions.create(...)`
+- **AND** non-runtime test fallback does not emulate product modal chrome with custom blur/glass panels
+
+#### Scenario: Popup shells keep official popup and toolbar chrome
+
+- **GIVEN** a resource preview or source inspector is implemented as `Popup -> View -> Page -> Navbar -> PageContent`
+- **WHEN** Web Chat applies custom visual design inside that popup
+- **THEN** custom styling is limited to page content, resource body, and leaf affordances
+- **AND** the implementation does not repaint `.popup` or bottom `.toolbar` chrome with custom backdrop filters, safe-area padding, or translucent panel backgrounds
+- **AND** navbar side slots do not rely on inline style blocks to erase Framework7 bar/glass chrome
 
 #### Scenario: Framework7 PageContent padding ownership is preserved
 

@@ -80,7 +80,7 @@
       <section>
         <h1>Web Chat Message Comment Polish Review</h1>
         <p class="ok">结论：实现与原始目标基本对齐，等待用户视觉验收后再 archive。</p>
-        <p>本轮修复 sender/avatar projection、comment resource 空值规则、comment icon/action 语义，以及 Framework7 PageContent padding 所有权。Round 2 追加修复：消除 source popup 双重 page-content、dense toolbar 改成 icon-only、空评论保存自动删除。Round 3/4 继续修复：空评论 save/close/SheetClosed 共用删除语义，并且删除业务数据时不再直接销毁 live Framework7 Sheet。Round 5 修复 composer resource rail：评论、图片、文件这类 pending resources 回到输入框上方资源栏，不再挤到发送按钮旁边。</p>
+        <p>本轮修复 sender/avatar projection、comment resource 空值规则、comment icon/action 语义，以及 Framework7 PageContent padding 所有权。Round 2 追加修复：消除 source popup 双重 page-content、dense toolbar 改成 icon-only、空评论保存自动删除。Round 3/4 继续修复：空评论 save/close/SheetClosed 共用删除语义，并且删除业务数据时不再直接销毁 live Framework7 Sheet。Round 5 修复 composer resource rail：评论、图片、文件这类 pending resources 回到输入框上方资源栏，不再挤到发送按钮旁边。Round 6 把 Chatview 剩余临时视图收敛为 Framework7 modal 封装：composer tool sheet、context actions、popup toolbar chrome 都不再由业务组件各自重绘。</p>
       </section>
 
       <section>
@@ -125,6 +125,18 @@
           <figure>
             <img src="evidence/round5-iphone14-composer-resource-rail.png" alt="Round 5 composer resource rail" />
             <figcaption>Round 5 iPhone 14：非空评论资源位于输入框上方资源栏，而不是发送按钮旁边。</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/round6-modal-encapsulation-after/composer-tool-sheet.png" alt="Round 6 composer tool sheet" />
+            <figcaption>Round 6 iPhone 14：MessagebarSheet 已恢复为完整资源区，不再在发送按钮右侧裁切。</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/round6-modal-encapsulation-after/message-actions.png" alt="Round 6 message actions" />
+            <figcaption>Round 6 iPhone 14：message actions 使用 Framework7 官方 Actions sheet。</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/round6-modal-encapsulation-after/source-popup.png" alt="Round 6 source popup" />
+            <figcaption>Round 6 iPhone 14：source popup 保持 Framework7 popup/page/toolbar chrome。</figcaption>
           </figure>
         </div>
       </section>
@@ -204,6 +216,15 @@
   "sendRect": { "x": 356, "y": 673, "width": 31, "height": 31, "bottom": 704 },
   "fatalLogs": []
 }</pre>
+        <p>Round 6 live visual evidence：隔离启动 <code>@agenter/web-chat-view</code> example harness，重新采集 <code>round6-modal-encapsulation-after</code>。</p>
+        <pre>{
+  "contracts": "test/framework7-modal-encapsulation-contract.test.ts: 3 passed",
+  "targetedRegression": "4 files / 10 passed / 38 skipped",
+  "typecheck": "0 errors / 0 warnings",
+  "composerToolSheet": "常驻 Messagebar 子树，由 sheetVisible 控制显示；Framework7 初始化后完整占据 messagebar sheet 区域",
+  "actions": "Framework7ActionSurface owns actions.create, convertToPopover, target anchoring, close lifecycle",
+  "popupChrome": "resource/source popup 不再重绘 .popup / bottom .toolbar / navbar slot chrome"
+}</pre>
       </section>
 
       <section>
@@ -220,6 +241,8 @@
           <li>Round 3 根因偏移：只修了业务 finalizer，没有区分删除评论数据和销毁 Framework7 Sheet 组件。</li>
           <li>Round 4 DOM 偏移：空保存后可能留下一个 `display:none` 的旧 Sheet DOM 节点，但它没有 `f7Modal/params`，不会继续作为 live Sheet 参与交互；后续应单独清理，不应回退到直接销毁 live Sheet。</li>
           <li>Round 5 根因偏移：之前依赖 Framework7 初始化时搬运 `.toolbar-inner > .messagebar-attachments`；动态插入的 comment resource 不稳定。本轮改为直接用 `beforeArea`，让资源栏天然属于 `.messagebar-area`。</li>
+          <li>Round 6 根因偏移：第一版封装移除了 sheet chrome 重绘，但延迟挂载 `MessagebarSheet`，导致它没有被 Framework7 初始化 hoist，仍留在 toolbar flex 行里。本轮改为常驻 sheet。</li>
+          <li>Round 6 范围偏移：没有清理 example/storybook blueprint harness 内的历史 blur/backdrop；它们不是当前 app-view runtime surface，后续需要单独 change。</li>
         </ul>
       </section>
 
@@ -233,6 +256,8 @@
           <li>单独研究 Framework7 Svelte Sheet moved-node 残留，清理旧 hidden sheet 节点但不破坏 close lifecycle。</li>
           <li>补 Storybook DOM contract，覆盖动态加入 comment resource 后仍位于输入框上方资源栏。</li>
           <li>继续对所有 Web Chat Sheet 做官方 Framework7 chrome audit，判断哪些自定义外观有明确产品授权。</li>
+          <li>补 DOM/Storybook contract：plus 展开后 `.messagebar-sheet` 已被 Framework7 hoist 到 messagebar 根节点，而不是留在 `.toolbar-inner`。</li>
+          <li>新增 modal 前先选封装入口，禁止业务组件直接重绘 `.sheet-modal` / `.popup` / `.actions-modal` / `.messagebar-sheet`。</li>
           <li>把 actor presentation projection 沉淀为更长期的 app-server/message-system contract。</li>
           <li>抽 shared avatar primitive，进一步统一 Studio/Auth/Web Chat 头像。</li>
           <li>用户验收后 archive 当前 OpenSpec change。</li>
