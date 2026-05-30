@@ -515,6 +515,14 @@ export type PublicRoomPage = MessageTranscriptPage;
 
 export type PublicRoomMessageQueryResult = MessageQueryResult;
 
+export interface PublicRoomActorPresentation {
+  actorId: MessageContactId;
+  label: string;
+  kind: "auth" | "participant" | "session" | "system";
+  subtitle?: string;
+  iconUrl?: string | null;
+}
+
 const emptyReversePage = <T>(): ReversePage<T> => ({
   items: [],
   nextBefore: null,
@@ -1437,6 +1445,83 @@ export class AppKernel {
       room,
       accessToken: input.accessToken ?? room.accessToken,
     };
+  }
+
+  private resolvePublicRoomActorKind(actorId: MessageContactId): PublicRoomActorPresentation["kind"] {
+    if (actorId.startsWith("auth:")) {
+      return "auth";
+    }
+    if (actorId.startsWith("system:")) {
+      return "system";
+    }
+    if (actorId.startsWith("session:")) {
+      return "session";
+    }
+    return "participant";
+  }
+
+  private async buildPublicRoomActorDirectory(input: {
+    snapshot: PublicRoomSnapshot;
+    viewerActorId?: MessageContactId;
+  }): Promise<Record<string, PublicRoomActorPresentation>> {
+    // Room access provenance can look like a sender label; transcript identity must prefer Auth/contact facts.
+    const directory: Record<string, PublicRoomActorPresentation> = {};
+    const put = (entry: PublicRoomActorPresentation): void => {
+      const current = directory[entry.actorId];
+      directory[entry.actorId] = {
+        ...current,
+        ...entry,
+        label: entry.label.trim() || current?.label || entry.actorId,
+        subtitle: entry.subtitle ?? current?.subtitle,
+        iconUrl: entry.iconUrl ?? current?.iconUrl ?? null,
+      };
+    };
+
+    const authActorById = new Map((await this.listAuthActors()).map((actor) => [actor.actorId, actor]));
+    const authBaseUrl = await this.authService.getBaseUrl();
+
+    const pushActor = (actorId: string | null | undefined, label?: string | null): void => {
+      if (!actorId) {
+        return;
+      }
+      const typedActorId = actorId as MessageContactId;
+      const current = directory[typedActorId];
+      const authActor = authActorById.get(typedActorId as `auth:${string}`);
+      const principalIconUrl = isPrincipalId(typedActorId) ? `${authBaseUrl}${buildAvatarIconUrl(typedActorId)}` : null;
+      put({
+        actorId: typedActorId,
+        label: authActor?.label ?? current?.label ?? label?.trim() ?? (typedActorId.split(":").at(-1) || typedActorId),
+        kind: authActor ? "auth" : current?.kind ?? this.resolvePublicRoomActorKind(typedActorId),
+        subtitle: authActor?.subtitle ?? current?.subtitle ?? typedActorId,
+        iconUrl: authActor?.iconUrl ?? current?.iconUrl ?? principalIconUrl,
+      });
+    };
+
+    pushActor(input.viewerActorId);
+    for (const participant of input.snapshot.channel.participants) {
+      pushActor(participant.id, participant.label);
+    }
+    for (const seat of input.snapshot.channel.seatStates ?? []) {
+      pushActor(seat.contactId, seat.label);
+    }
+    for (const item of input.snapshot.items) {
+      pushActor(item.senderContactId, item.from);
+      for (const contactId of item.readContactIds) {
+        pushActor(contactId);
+      }
+      for (const contactId of item.unreadContactIds) {
+        pushActor(contactId);
+      }
+    }
+
+    return directory;
+  }
+
+  async projectPublicRoomActorDirectory(input: {
+    snapshot: PublicRoomSnapshot;
+    viewerActorId?: MessageContactId;
+  }): Promise<Record<string, PublicRoomActorPresentation>> {
+    return await this.buildPublicRoomActorDirectory(input);
   }
 
   private requireMessageSourceSubscription(actorId: MessageContactId, sourceId: string): MessageSourceSubscriptionRecord {
@@ -3696,7 +3781,9 @@ export class AppKernel {
     chatId: string;
     text: string;
     assetIds?: string[];
+    attachments?: ChatSessionAsset[];
     clientMessageId?: string;
+    metadata?: Record<string, unknown>;
     accessToken?: string;
     sendAsActorId?: MessageContactId;
     actorId?: MessageContactId;
@@ -3704,7 +3791,7 @@ export class AppKernel {
   }): { ok: boolean; reason?: string } {
     try {
       const access = this.resolveGlobalRoomAccess(input);
-      const attachments = this.resolveGlobalRoomAttachments(input.chatId, input.assetIds ?? []);
+      const attachments = input.attachments ?? this.resolveGlobalRoomAttachments(input.chatId, input.assetIds ?? []);
       this.messageControlPlane.sendAuthorized({
         chatId: input.chatId,
         accessToken: access.accessToken,
@@ -3713,7 +3800,10 @@ export class AppKernel {
         clientMessageId: input.clientMessageId,
         senderContactId: this.resolveGlobalRoomSenderActorId(input, access),
         attachments,
-        metadata: input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,
+        metadata: {
+          ...(input.metadata ?? {}),
+          ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
+        },
       });
       return { ok: true };
     } catch (error) {

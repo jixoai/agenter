@@ -1,7 +1,9 @@
 <script lang="ts">
   import Eye from "@lucide/svelte/icons/eye";
   import FilePenLine from "@lucide/svelte/icons/file-pen-line";
-  import MessageSquareMore from "@lucide/svelte/icons/message-square-more";
+  import MessageSquareDot from "@lucide/svelte/icons/message-square-dot";
+  import Save from "@lucide/svelte/icons/save";
+  import X from "@lucide/svelte/icons/x";
 
   import {
     Block,
@@ -100,7 +102,7 @@
 {#snippet anchorCardContent()}
   <div class="comment-inspector-anchor-header">
     <div class="comment-inspector-anchor-badge">
-      <MessageSquareMore class="size-4" />
+      <MessageSquareDot class="comment-inspector-anchor-icon" />
     </div>
     <div class="comment-inspector-anchor-copy">
       <div class="comment-inspector-anchor-label">Selected text</div>
@@ -134,8 +136,8 @@
         {/snippet}
       </ListInput>
     </List>
-  {:else}
-    <div class="comment-inspector-view">{trimmedValue.length > 0 ? value : "No comment body yet."}</div>
+  {:else if trimmedValue.length > 0}
+    <div class="comment-inspector-view">{value}</div>
   {/if}
 {/snippet}
 
@@ -174,17 +176,42 @@
       {@render anchorCardContent()}
     </Block>
     <BlockTitle class="comment-inspector-block-title">Comment</BlockTitle>
-    <Block class="comment-inspector-comment-card" strongIos insetIos aria-label="Comment body">
-      {@render commentCardContent()}
-    </Block>
+    {#if mode === "edit" || trimmedValue.length > 0}
+      <Block class="comment-inspector-comment-card" strongIos insetIos aria-label="Comment body">
+        {@render commentCardContent()}
+      </Block>
+    {/if}
 
     {#if mode === "edit" && $framework7Runtime}
       <div class="comment-inspector-edit-sheet-spacer" aria-hidden="true"></div>
     {:else}
       <div class="comment-inspector-footer">
-        <Framework7Button type="button" small round outline onclick={close}>{mode === "edit" ? "Cancel" : "Close"}</Framework7Button>
+        <Framework7Button
+          type="button"
+          small
+          round
+          outline
+          aria-label={mode === "edit" ? "Cancel comment edit" : "Close comment"}
+          title={mode === "edit" ? "Cancel" : "Close"}
+          onclick={close}
+        >
+          <X class="comment-inspector-action-icon" />
+          <span>{mode === "edit" ? "Cancel" : "Close"}</span>
+        </Framework7Button>
         {#if mode === "edit"}
-          <Framework7Button type="button" small round fill disabled={!canSave} onclick={() => void save()}>Save comment</Framework7Button>
+          <Framework7Button
+            type="button"
+            small
+            round
+            fill
+            disabled={!canSave}
+            aria-label="Save comment"
+            title="Save comment"
+            onclick={() => void save()}
+          >
+            <Save class="comment-inspector-action-icon" />
+            <span>Save comment</span>
+          </Framework7Button>
         {/if}
       </div>
     {/if}
@@ -221,12 +248,15 @@
       <Link
         href="#"
         class="comment-inspector-edit-action"
+        iconOnly
+        aria-label="Cancel comment edit"
+        title="Cancel"
         onclick={(event: MouseEvent) => {
           event.preventDefault();
           setMode("view");
         }}
       >
-        Cancel
+        <X class="comment-inspector-toolbar-icon" />
       </Link>
       <div class="comment-inspector-edit-title">
         <div class="comment-inspector-anchor-label">Edit comment</div>
@@ -238,6 +268,9 @@
         href="#"
         role="button"
         class="comment-inspector-edit-action comment-inspector-edit-save"
+        iconOnly
+        aria-label="Save comment"
+        title="Save"
         aria-disabled={!canSave}
         tabindex={!canSave ? -1 : undefined}
         onclick={(event: MouseEvent) => {
@@ -248,7 +281,7 @@
           void save();
         }}
       >
-        Save
+        <Save class="comment-inspector-toolbar-icon" />
       </Link>
     </Toolbar>
     <PageContent class="comment-inspector-edit-content">
@@ -323,6 +356,13 @@
     color: white;
   }
 
+  :global(.comment-inspector-anchor-icon),
+  :global(.comment-inspector-action-icon),
+  :global(.comment-inspector-toolbar-icon) {
+    width: 0.92rem;
+    height: 0.92rem;
+  }
+
   .comment-inspector-anchor-copy {
     min-width: 0;
     display: grid;
@@ -395,12 +435,9 @@
 
   :global(.comment-inspector-edit-content.page-content) {
     --f7-page-toolbar-top-offset: var(--f7-toolbar-height);
+    --f7-page-content-extra-padding-top: 0.52rem;
+    --f7-page-content-extra-padding-bottom: 0.86rem;
     height: auto;
-    padding:
-      0.52rem
-      max(0.72rem, env(safe-area-inset-right))
-      calc(0.86rem + env(safe-area-inset-bottom))
-      max(0.72rem, env(safe-area-inset-left));
   }
 
   .comment-inspector-edit-shell {
@@ -408,6 +445,7 @@
     gap: 0.52rem;
     width: min(100%, 23rem);
     margin: 0 auto;
+    padding-inline: 0.72rem;
   }
 
   :global(.comment-inspector-edit-list.list) {
@@ -443,7 +481,7 @@
 
   :global(.comment-inspector-edit-bar .toolbar-inner) {
     display: grid;
-    grid-template-columns: minmax(3.9rem, max-content) minmax(0, 1fr) minmax(3.9rem, max-content);
+    grid-template-columns: minmax(2.4rem, max-content) minmax(0, 1fr) minmax(2.4rem, max-content);
     gap: 0.5rem;
     align-items: center;
     padding: 0;
@@ -459,13 +497,14 @@
 
   :global(.comment-inspector-edit-action.link) {
     justify-self: start;
-    min-width: 3.9rem;
+    min-width: 2.4rem;
     color: var(--f7-theme-color, #007aff);
     padding: 0.2rem 0.12rem;
     font-size: 0.76rem;
     font-weight: 600;
     text-align: start;
     text-decoration: none;
+    justify-content: flex-start;
   }
 
   :global(.comment-inspector-edit-save.link) {

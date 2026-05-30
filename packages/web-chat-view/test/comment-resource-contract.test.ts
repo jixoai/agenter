@@ -5,6 +5,7 @@ import {
   commentResourceToReference,
   createCommentResourcePayload,
   formatCommentResourceDefinition,
+  normalizeCommentResourcePayload,
   parseCommentFootnoteDefinition,
 } from "../src";
 
@@ -53,5 +54,28 @@ describe("Feature: comment resource serialization contract", () => {
         sourceLineNumber: 7,
       }),
     ).toBe("msg://room-1/42#L7");
+  });
+
+  test("Scenario: Given an empty comment draft When a comment resource is normalized or created Then no visible comment resource is produced", () => {
+    const emptyPayload = {
+      id: "comment-1",
+      label: "Comment 1",
+      tokenText: "[^Comment 1]",
+      commentText: "   ",
+      sourceViewKey: "msg-42",
+      sourceLineNumber: 3,
+      selectedText: "compact mobile composer",
+    };
+
+    expect(normalizeCommentResourcePayload(emptyPayload)).toBeNull();
+    expect(() =>
+      createCommentResourcePayload({
+        index: 1,
+        commentText: "   ",
+        sourceViewKey: "msg-42",
+        sourceLineNumber: 3,
+        selectedText: "compact mobile composer",
+      }),
+    ).toThrow("comment resource body must be non-empty");
   });
 });

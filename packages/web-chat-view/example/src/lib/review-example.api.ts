@@ -1,7 +1,5 @@
 import type { MessageAttachment, MessageSnapshot } from "@agenter/message-system";
-import {
-  type WebChatComposerSubmitPayload,
-} from "@agenter/web-chat-view";
+import type { WebChatActorPresentation, WebChatComposerSubmitPayload } from "@agenter/web-chat-view";
 
 import type {
   ReviewAssetUploadResponse,
@@ -27,7 +25,10 @@ export const fetchReviewChannel = async (profile: ReviewProfile): Promise<Review
     if (!response.ok) {
       throw new Error(await readError(response));
     }
-    const payload = (await response.json()) as { snapshot?: MessageSnapshot };
+    const payload = (await response.json()) as {
+      snapshot?: MessageSnapshot;
+      actorDirectory?: Record<string, WebChatActorPresentation>;
+    };
     const snapshot = payload.snapshot;
     if (!snapshot?.channel || !Array.isArray(snapshot.items)) {
       throw new Error("room snapshot payload is missing channel or items");
@@ -39,7 +40,7 @@ export const fetchReviewChannel = async (profile: ReviewProfile): Promise<Review
         transportUrl: profile.transportUrl,
       },
       initialMessages: snapshot.items,
-      actorDirectory: buildRoomContactDirectory(snapshot.channel, profile),
+      actorDirectory: buildRoomContactDirectory(snapshot.channel, profile, payload.actorDirectory),
       resourceReferences: [],
     };
   }
@@ -160,30 +161,37 @@ const resolveChatId = (transportUrl: string): string => {
 
 const buildApiUrl = (path: string): string => path;
 
-const buildRoomContactDirectory = (
+export const buildRoomContactDirectory = (
   channel: ReviewChannelEnvelope["channel"],
   profile: ReviewProfile,
+  snapshotDirectory: Record<string, WebChatActorPresentation> | undefined,
 ): ReviewChannelEnvelope["actorDirectory"] => {
   const directory: ReviewChannelEnvelope["actorDirectory"] = {
     [profile.viewerContactId]: {
+      ...snapshotDirectory?.[profile.viewerContactId],
       actorId: profile.viewerContactId,
-      label: profile.name,
+      label: snapshotDirectory?.[profile.viewerContactId]?.label ?? profile.name,
       kind: "viewer",
     },
   };
   for (const participant of channel.participants ?? []) {
     directory[participant.id] = {
+      ...snapshotDirectory?.[participant.id],
       actorId: participant.id,
-      label: participant.label ?? participant.id,
+      label: snapshotDirectory?.[participant.id]?.label ?? participant.label ?? participant.id,
       kind: participant.id === profile.viewerContactId ? "viewer" : "participant",
     };
   }
   for (const seat of channel.seatStates ?? []) {
     directory[seat.contactId] = {
+      ...snapshotDirectory?.[seat.contactId],
       actorId: seat.contactId,
-      label: seat.label ?? seat.contactId,
+      label: snapshotDirectory?.[seat.contactId]?.label ?? seat.label ?? seat.contactId,
       kind: seat.contactId === profile.viewerContactId ? "viewer" : "participant",
     };
+  }
+  for (const [actorId, presentation] of Object.entries(snapshotDirectory ?? {})) {
+    directory[actorId] ??= presentation;
   }
   return directory;
 };

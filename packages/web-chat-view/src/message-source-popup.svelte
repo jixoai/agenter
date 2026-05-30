@@ -1,5 +1,8 @@
 <script lang="ts">
   import Copy from "@lucide/svelte/icons/copy";
+  import Ellipsis from "@lucide/svelte/icons/ellipsis";
+  import MessageSquareDot from "@lucide/svelte/icons/message-square-dot";
+  import Save from "@lucide/svelte/icons/save";
   import X from "@lucide/svelte/icons/x";
   import { onDestroy, tick } from "svelte";
 
@@ -392,9 +395,7 @@
             </div>
           </Navbar>
 
-          <PageContent
-            class="message-source-page-content"
-          >
+          <PageContent class="message-source-page-content">
             <div
             bind:this={scrollSurfaceRef}
             class="message-source-page-content-inner"
@@ -458,23 +459,29 @@
                 href="#"
                 class="message-source-toolbar-action"
                 role="button"
+                aria-label="Open source line actions"
+                title="Actions"
                 onclick={(event: MouseEvent) => {
                   event.preventDefault();
                   selectionActionsOpen = !selectionActionsOpen;
                 }}
               >
-                Actions
+                <Ellipsis class="message-source-toolbar-action-icon" />
+                <span>Actions</span>
               </Link>
               <Link
                 href="#"
                 class="message-source-toolbar-action message-source-toolbar-action-primary"
                 role="button"
+                aria-label="Comment on selected source line"
+                title="Comment"
                 onclick={(event: MouseEvent) => {
                   event.preventDefault();
                   openCommentAnchor("edit");
                 }}
               >
-                Comment
+                <MessageSquareDot class="message-source-toolbar-action-icon" />
+                <span>Comment</span>
               </Link>
             </div>
           </Toolbar>
@@ -585,17 +592,21 @@
               <Link
                 href="#"
                 role="button"
+                aria-label="Open source line actions"
+                title="Actions"
                 onclick={(event: MouseEvent) => {
                   event.preventDefault();
                   selectionActionsOpen = !selectionActionsOpen;
                 }}
               >
+                <Ellipsis class="message-source-toolbar-action-icon" />
                 <span>Actions</span>
               </Link>
-              <Link href="#" role="button" onclick={(event: MouseEvent) => {
+              <Link href="#" role="button" aria-label="Comment on selected source line" title="Comment" onclick={(event: MouseEvent) => {
                 event.preventDefault();
                 openCommentAnchor("edit");
               }}>
+                <MessageSquareDot class="message-source-toolbar-action-icon" />
                 <span>Comment</span>
               </Link>
             </div>
@@ -623,15 +634,18 @@
                 </ListInput>
               </List>
               <div class="message-source-comment-editor-actions">
-                <Link href="#" role="button" onclick={(event: MouseEvent) => {
+                <Link href="#" role="button" aria-label="Cancel comment edit" title="Cancel" onclick={(event: MouseEvent) => {
                   event.preventDefault();
                   closeCommentEditor();
                 }}>
+                  <X class="message-source-comment-editor-action-icon" />
                   <span>Cancel</span>
                 </Link>
                 <Link
                   href="#"
                   role="button"
+                  aria-label="Save comment"
+                  title="Save"
                   aria-disabled={commentDraft.trim().length === 0}
                   tabindex={commentDraft.trim().length === 0 ? -1 : undefined}
                   onclick={(event: MouseEvent) => {
@@ -642,6 +656,7 @@
                     void saveCommentDraft();
                   }}
                 >
+                  <Save class="message-source-comment-editor-action-icon" />
                   <span>Save</span>
                 </Link>
               </div>
@@ -685,12 +700,15 @@
       <Link
         href="#"
         class="message-source-comment-editor-action message-source-comment-editor-cancel"
+        iconOnly
+        aria-label="Cancel comment edit"
+        title="Cancel"
         onclick={(event: MouseEvent) => {
           event.preventDefault();
           closeCommentEditor();
         }}
       >
-        Cancel
+        <X class="message-source-comment-editor-toolbar-icon" />
       </Link>
       <div class="message-source-comment-editor-title">
         <span>{activeCommentAnchor.label}</span>
@@ -700,6 +718,9 @@
         href="#"
         role="button"
         class="message-source-comment-editor-action message-source-comment-editor-save"
+        iconOnly
+        aria-label="Save comment"
+        title="Save"
         aria-disabled={commentDraft.trim().length === 0}
         tabindex={commentDraft.trim().length === 0 ? -1 : undefined}
         onclick={(event: MouseEvent) => {
@@ -710,7 +731,7 @@
           void saveCommentDraft();
         }}
       >
-        Save
+        <Save class="message-source-comment-editor-toolbar-icon" />
       </Link>
     </Toolbar>
     <PageContent class="message-source-comment-editor-content">
@@ -832,11 +853,13 @@
 
   :global(.message-source-page-content.page-content) {
     min-height: 0;
-    padding: 0.5rem 0.54rem calc(var(--f7-toolbar-height, 44px) + 0.74rem + env(safe-area-inset-bottom)) !important;
+    --f7-page-content-extra-padding-top: 0.5rem;
+    --f7-page-content-extra-padding-bottom: 0.74rem;
   }
 
   .message-source-page-content-inner {
     min-height: min-content;
+    padding-inline: 0.54rem;
   }
 
   .message-source-scroll-surface {
@@ -926,7 +949,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 3.6rem;
+    gap: 0.24rem;
+    min-width: 2.25rem;
     min-height: 1.9rem;
     border: 0;
     border-radius: 999px;
@@ -939,6 +963,13 @@
     box-shadow:
       inset 0 0 0 1px rgba(60, 60, 67, 0.08),
       inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+
+  :global(.message-source-toolbar-action-icon),
+  :global(.message-source-comment-editor-action-icon),
+  :global(.message-source-comment-editor-toolbar-icon) {
+    width: 0.92rem;
+    height: 0.92rem;
   }
 
   .message-source-toolbar-action-primary {
@@ -1084,26 +1115,24 @@
   :global(.message-source-comment-editor-toolbar .toolbar-inner) {
     display: grid;
     width: 100%;
-    grid-template-columns: minmax(3.9rem, max-content) minmax(0, 1fr) minmax(3.9rem, max-content);
+    grid-template-columns: minmax(2.4rem, max-content) minmax(0, 1fr) minmax(2.4rem, max-content);
     gap: 0.5rem;
     align-items: center;
-    padding-inline: max(0.72rem, env(safe-area-inset-left)) max(0.72rem, env(safe-area-inset-right));
   }
 
   :global(.message-source-comment-editor-content.page-content) {
+    /* Framework7 owns PageContent offset formulas; Web Chat only contributes extra spacing variables. */
     --f7-page-toolbar-top-offset: var(--f7-toolbar-height);
+    --f7-page-content-extra-padding-top: 0.52rem;
+    --f7-page-content-extra-padding-bottom: 0.86rem;
     height: auto;
-    padding:
-      0.52rem
-      max(0.72rem, env(safe-area-inset-right))
-      calc(0.86rem + env(safe-area-inset-bottom))
-      max(0.72rem, env(safe-area-inset-left));
   }
 
   .message-source-comment-editor-shell {
     display: grid;
     width: min(100%, 23rem);
     margin: 0 auto;
+    padding-inline: 0.72rem;
   }
 
   .message-source-comment-editor-shell :global(.web-chat-f7-textarea) {
@@ -1139,7 +1168,7 @@
 
   .message-source-comment-editor-action {
     justify-self: start;
-    min-width: 3.9rem;
+    min-width: 2.4rem;
     border: 0;
     background: transparent;
     color: var(--f7-theme-color, #007aff);

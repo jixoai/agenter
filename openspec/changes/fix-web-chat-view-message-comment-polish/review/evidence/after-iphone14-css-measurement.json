@@ -1,0 +1,99 @@
+{
+  "viewport": {
+    "width": 390,
+    "height": 664
+  },
+  "textarea": {
+    "className": "message-source-comment-editor-native-textarea svelte-jmh274",
+    "rect": {
+      "x": 39,
+      "y": 550,
+      "width": 313,
+      "height": 100,
+      "right": 351,
+      "bottom": 650
+    },
+    "padding": {
+      "top": "8px",
+      "right": "0px",
+      "bottom": "8px",
+      "left": "0px"
+    },
+    "vars": {
+      "toolbarTop": "64px",
+      "toolbarBottom": "",
+      "extraTop": "0.52rem",
+      "extraBottom": "0.86rem"
+    }
+  },
+  "save": {
+    "className": "message-source-comment-editor-action message-source-comment-editor-save link icon-only",
+    "rect": {
+      "x": 326,
+      "y": 466,
+      "width": 48,
+      "height": 48,
+      "right": 374,
+      "bottom": 514
+    },
+    "padding": {
+      "top": "0px",
+      "right": "0px",
+      "bottom": "0px",
+      "left": "0px"
+    },
+    "vars": {
+      "toolbarTop": "",
+      "toolbarBottom": "",
+      "extraTop": "",
+      "extraBottom": ""
+    }
+  },
+  "commentPageContent": {
+    "className": "message-source-comment-editor-content page-content",
+    "rect": {
+      "x": 0,
+      "y": 450,
+      "width": 390,
+      "height": 214,
+      "right": 390,
+      "bottom": 664
+    },
+    "padding": {
+      "top": "72.32px",
+      "right": "0px",
+      "bottom": "13.76px",
+      "left": "0px"
+    },
+    "vars": {
+      "toolbarTop": "64px",
+      "toolbarBottom": "",
+      "extraTop": "0.52rem",
+      "extraBottom": "0.86rem"
+    }
+  },
+  "sourcePageContent": {
+    "className": "message-source-page-content page-content",
+    "rect": {
+      "x": 0,
+      "y": 76,
+      "width": 390,
+      "height": 254,
+      "right": 390,
+      "bottom": 330
+    },
+    "padding": {
+      "top": "84px",
+      "right": "0px",
+      "bottom": "75.84px",
+      "left": "0px"
+    },
+    "vars": {
+      "toolbarTop": "",
+      "toolbarBottom": "64px",
+      "extraTop": "0.5rem",
+      "extraBottom": "0.74rem"
+    }
+  },
+  "visibleText": "no-placeholder"
+}

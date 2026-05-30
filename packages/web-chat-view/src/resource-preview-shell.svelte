@@ -355,11 +355,12 @@
   :global(.resource-preview-shell-page-content.page-content) {
     display: grid;
     align-content: start;
-    padding: 0;
+    --f7-page-content-extra-padding-top: 0px;
+    --f7-page-content-extra-padding-bottom: 0px;
   }
 
   :global(.resource-preview-shell-page[data-has-footer="true"] .resource-preview-shell-page-content.page-content) {
-    padding-bottom: calc(var(--f7-toolbar-height, 44px) + env(safe-area-inset-bottom));
+    --f7-page-content-extra-padding-bottom: 0.36rem;
   }
 
   :global(.resource-preview-shell-body) {

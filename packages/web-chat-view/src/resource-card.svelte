@@ -1,7 +1,7 @@
 <script lang="ts">
   import FileText from "@lucide/svelte/icons/file-text";
   import ImageIcon from "@lucide/svelte/icons/image";
-  import MessageSquareMore from "@lucide/svelte/icons/message-square-more";
+  import MessageSquareDot from "@lucide/svelte/icons/message-square-dot";
   import Video from "@lucide/svelte/icons/video";
   import X from "@lucide/svelte/icons/x";
 
@@ -28,7 +28,7 @@
       case "video":
         return Video;
       case "comment":
-        return MessageSquareMore;
+        return MessageSquareDot;
       default:
         return FileText;
     }

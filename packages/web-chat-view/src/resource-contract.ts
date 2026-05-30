@@ -171,6 +171,9 @@ export const normalizeCommentResourcePayload = (
   ) {
     return null;
   }
+  if (candidate.commentText.trim().length === 0) {
+    return null;
+  }
   return {
     id: candidate.id,
     label: candidate.label,
@@ -211,6 +214,9 @@ export const createCommentResourcePayload = (
     id?: string;
   },
 ): WebChatCommentResourcePayload => {
+  if (input.commentText.trim().length === 0) {
+    throw new Error("comment resource body must be non-empty");
+  }
   const label = buildCommentLabel(input.index);
   return {
     id: input.id ?? `comment-${input.index}`,

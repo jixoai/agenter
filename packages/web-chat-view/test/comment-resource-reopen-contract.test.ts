@@ -69,4 +69,30 @@ describe("Feature: comment resource reopen contract", () => {
     expect(commentInspectorSource).not.toContain('<div class="comment-inspector-edit-content">');
     expect(commentInspectorSource).not.toContain("<Popup");
   });
+
+  test("Scenario: Given comment anchor and inspector surfaces When reading the implementation Then empty comment bodies are absent instead of rendered as placeholder comments", () => {
+    expect(messageSourcePopupSource).not.toContain("No comment body yet");
+    expect(resourcePreviewLayerSource).not.toContain("No comment body yet");
+    expect(commentInspectorSource).not.toContain("No comment body yet");
+  });
+
+  test("Scenario: Given comment surfaces When reading the implementation Then the requested dot comment icon and accessible icon actions are used", () => {
+    for (const source of [
+      messageSourcePopupSource,
+      resourcePreviewLayerSource,
+      commentInspectorSource,
+      readFileSync(resolve(import.meta.dirname, "../src/comment-anchor-badge.svelte"), "utf8"),
+      readFileSync(resolve(import.meta.dirname, "../src/resource-card.svelte"), "utf8"),
+    ]) {
+      expect(source).toContain("MessageSquareDot");
+      expect(source).not.toContain("MessageSquareMore");
+    }
+
+    expect(messageSourcePopupSource).toContain('aria-label="Comment on selected source line"');
+    expect(messageSourcePopupSource).toContain('aria-label="Cancel comment edit"');
+    expect(messageSourcePopupSource).toContain('aria-label="Save comment"');
+    expect(commentInspectorSource).toContain('aria-label={mode === "edit" ? "Cancel comment edit" : "Close comment"}');
+    expect(commentInspectorSource).toContain('aria-label="Cancel comment edit"');
+    expect(commentInspectorSource).toContain('aria-label="Save comment"');
+  });
 });

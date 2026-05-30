@@ -554,10 +554,6 @@
     justify-items: start;
   }
 
-  .message-card-with-actions {
-    padding-inline-end: 0.98rem;
-  }
-
   .row.viewer-owned .message-card {
     justify-items: end;
   }
@@ -857,10 +853,6 @@
     .row.viewer-owned :global(.message-header),
     .row.viewer-owned :global(.message-footer) {
       padding-inline-end: 0.08rem;
-    }
-
-    .message-card-with-actions {
-      padding-inline-end: 1.12rem;
     }
 
     .bubble-actions {

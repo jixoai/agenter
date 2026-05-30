@@ -316,9 +316,6 @@ export class ReviewShellState {
     if (!this.activeProfile) {
       throw new Error("No active review profile");
     }
-    if (this.activeProfile.appViewMode === "room") {
-      throw new Error("Embedded app-view sends text through the room transport.");
-    }
     await submitReviewMessage(this.activeProfile, payload);
   }
 

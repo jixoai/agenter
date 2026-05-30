@@ -1,0 +1,100 @@
+{
+  "viewport": {
+    "width": 1440,
+    "height": 960
+  },
+  "textarea": {
+    "className": "message-source-comment-editor-native-textarea svelte-jmh274",
+    "rect": {
+      "x": 564,
+      "y": 846,
+      "width": 313,
+      "height": 100,
+      "right": 876,
+      "bottom": 946
+    },
+    "padding": {
+      "top": "8px",
+      "right": "0px",
+      "bottom": "8px",
+      "left": "0px"
+    },
+    "vars": {
+      "toolbarTop": "64px",
+      "toolbarBottom": "",
+      "extraTop": "0.52rem",
+      "extraBottom": "0.86rem"
+    }
+  },
+  "save": {
+    "className": "message-source-comment-editor-action message-source-comment-editor-save link icon-only",
+    "rect": {
+      "x": 1376,
+      "y": 762,
+      "width": 48,
+      "height": 48,
+      "right": 1424,
+      "bottom": 810
+    },
+    "padding": {
+      "top": "0px",
+      "right": "0px",
+      "bottom": "0px",
+      "left": "0px"
+    },
+    "vars": {
+      "toolbarTop": "",
+      "toolbarBottom": "",
+      "extraTop": "",
+      "extraBottom": ""
+    }
+  },
+  "commentPageContent": {
+    "className": "message-source-comment-editor-content page-content",
+    "rect": {
+      "x": 0,
+      "y": 746,
+      "width": 1440,
+      "height": 214,
+      "right": 1440,
+      "bottom": 960
+    },
+    "padding": {
+      "top": "72.32px",
+      "right": "0px",
+      "bottom": "13.76px",
+      "left": "0px"
+    },
+    "vars": {
+      "toolbarTop": "64px",
+      "toolbarBottom": "",
+      "extraTop": "0.52rem",
+      "extraBottom": "0.86rem"
+    }
+  },
+  "sourcePageContent": {
+    "className": "message-source-page-content page-content",
+    "rect": {
+      "x": 0,
+      "y": 76,
+      "width": 1440,
+      "height": 225,
+      "right": 1440,
+      "bottom": 301
+    },
+    "padding": {
+      "top": "84px",
+      "right": "0px",
+      "bottom": "75.84px",
+      "left": "0px"
+    },
+    "vars": {
+      "toolbarTop": "",
+      "toolbarBottom": "64px",
+      "extraTop": "0.5rem",
+      "extraBottom": "0.74rem"
+    }
+  },
+  "previewPageContent": null,
+  "visibleText": "no-placeholder"
+}

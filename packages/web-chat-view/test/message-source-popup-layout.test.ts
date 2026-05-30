@@ -7,6 +7,10 @@ const sourcePopupSource = readFileSync(
   resolve(import.meta.dirname, "../src/message-source-popup.svelte"),
   "utf8",
 );
+const resourcePreviewShellSource = readFileSync(
+  resolve(import.meta.dirname, "../src/resource-preview-shell.svelte"),
+  "utf8",
+);
 
 describe("Feature: canonical message source popup contract", () => {
   test("Scenario: Given the shared popup source When reading the implementation Then it carries sender identity, line anchors, and copy confirmation", () => {
@@ -16,5 +20,64 @@ describe("Feature: canonical message source popup contract", () => {
     expect(sourcePopupSource).toContain('aria-label={`Source for ${resolvedActor.label}`}');
     expect(sourcePopupSource).toContain("buildCommentResourceSourceUri");
     expect(sourcePopupSource).toContain("sourceUri: selectedSourceUri");
+  });
+
+  test("Scenario: Given Framework7 comment edit sheets When reading component CSS Then PageContent keeps Framework7 offset ownership and custom spacing moves to variables or inner shells", () => {
+    const inspectorSource = readFileSync(
+      resolve(import.meta.dirname, "../src/comment-inspector.svelte"),
+      "utf8",
+    );
+    const pageContentRule =
+      /:global\(\.message-source-comment-editor-content\.page-content\)\s*\{(?<body>[^}]*)\}/su.exec(
+        sourcePopupSource,
+      )?.groups?.body ?? "";
+    const inspectorPageContentRule =
+      /:global\(\.comment-inspector-edit-content\.page-content\)\s*\{(?<body>[^}]*)\}/su.exec(inspectorSource)
+        ?.groups?.body ?? "";
+    const toolbarRule =
+      /:global\(\.message-source-comment-editor-toolbar \.toolbar-inner\)\s*\{(?<body>[^}]*)\}/su.exec(
+        sourcePopupSource,
+      )?.groups?.body ?? "";
+
+    expect(pageContentRule).toContain("--f7-page-content-extra-padding-top");
+    expect(pageContentRule).toContain("--f7-page-content-extra-padding-bottom");
+    expect(pageContentRule).not.toMatch(/(?:^|;)\s*padding\s*:/u);
+    expect(pageContentRule).not.toContain("env(safe-area-inset");
+
+    expect(inspectorPageContentRule).toContain("--f7-page-content-extra-padding-top");
+    expect(inspectorPageContentRule).toContain("--f7-page-content-extra-padding-bottom");
+    expect(inspectorPageContentRule).not.toMatch(/(?:^|;)\s*padding\s*:/u);
+    expect(inspectorPageContentRule).not.toContain("env(safe-area-inset");
+
+    expect(toolbarRule).not.toContain("env(safe-area-inset");
+    expect(sourcePopupSource).toContain(".message-source-comment-editor-shell");
+    expect(inspectorSource).toContain(".comment-inspector-edit-shell");
+  });
+
+  test("Scenario: Given Framework7 popup PageContent surfaces When reading component CSS Then general source and preview PageContent rules also avoid whole padding overrides", () => {
+    const sourcePageContentRule =
+      /:global\(\.message-source-page-content\.page-content\)\s*\{(?<body>[^}]*)\}/su.exec(sourcePopupSource)
+        ?.groups?.body ?? "";
+    const previewPageContentRule =
+      /:global\(\.resource-preview-shell-page-content\.page-content\)\s*\{(?<body>[^}]*)\}/su.exec(
+        resourcePreviewShellSource,
+      )?.groups?.body ?? "";
+    const previewFooterRule =
+      /:global\(\.resource-preview-shell-page\[data-has-footer="true"\] \.resource-preview-shell-page-content\.page-content\)\s*\{(?<body>[^}]*)\}/su.exec(
+        resourcePreviewShellSource,
+      )?.groups?.body ?? "";
+
+    for (const rule of [sourcePageContentRule, previewPageContentRule, previewFooterRule]) {
+      expect(rule).not.toMatch(/(?:^|;)\s*padding(?:-[a-z-]+)?\s*:/u);
+      expect(rule).not.toContain("env(safe-area-inset");
+    }
+
+    expect(sourcePageContentRule).toContain("--f7-page-content-extra-padding-top");
+    expect(sourcePageContentRule).toContain("--f7-page-content-extra-padding-bottom");
+    expect(previewPageContentRule).toContain("--f7-page-content-extra-padding-top");
+    expect(previewPageContentRule).toContain("--f7-page-content-extra-padding-bottom");
+    expect(previewFooterRule).toContain("--f7-page-content-extra-padding-bottom");
+    expect(sourcePopupSource).toContain(".message-source-page-content-inner");
+    expect(resourcePreviewShellSource).toContain(".resource-preview-shell-body");
   });
 });

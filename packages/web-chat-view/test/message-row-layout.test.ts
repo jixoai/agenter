@@ -16,4 +16,10 @@ describe("Feature: shared message row read-trigger placement", () => {
     expect(messageRowSource).toContain('data-testid="message-ref-preview"');
     expect(messageRowSource).toContain('part="message-reference"');
   });
+
+  test("Scenario: Given compact sent and received rows with actions When reading the shared CSS Then bubble action spacing does not reserve one fixed logical end for every card", () => {
+    expect(messageRowSource).toContain("message-card-with-actions");
+    expect(messageRowSource).not.toMatch(/\.message-card-with-actions\s*\{[^}]*padding-inline-end/su);
+    expect(messageRowSource).not.toMatch(/@container[^{]*\{[^@]*\.message-card-with-actions\s*\{[^}]*padding-inline-end/su);
+  });
 });

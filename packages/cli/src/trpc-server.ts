@@ -4,6 +4,7 @@ import { extname, join, normalize, resolve } from "node:path";
 import { Readable } from "node:stream";
 
 import { AppKernel, appRouter, createTrpcContext, readBearerToken, type AppKernelOptions } from "@agenter/app-server";
+import type { MessageAttachment, MessageContactId } from "@agenter/message-system";
 import { z } from "zod";
 import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { applyWSSHandler } from "@trpc/server/adapters/ws";
@@ -292,6 +293,34 @@ const roomSendBodySchema = z
     chatId: z.string().trim().min(1),
     accessToken: z.string().trim().min(1),
     text: z.string().min(1),
+    senderContactId: z.string().trim().min(1).optional(),
+    attachments: z.array(z.custom<MessageAttachment>((value) => {
+      if (!value || typeof value !== "object") {
+        return false;
+      }
+      const candidate = value as Partial<MessageAttachment>;
+      return (
+        typeof candidate.assetId === "string" &&
+        (candidate.kind === "image" || candidate.kind === "video" || candidate.kind === "file") &&
+        typeof candidate.name === "string" &&
+        typeof candidate.mimeType === "string" &&
+        typeof candidate.sizeBytes === "number" &&
+        typeof candidate.url === "string"
+      );
+    })).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+
+const roomMessageBodySchema = z
+  .object({
+    content: z.string().default(""),
+    from: z.string().trim().min(1).optional(),
+    kind: z.literal("text").optional(),
+    ref: z.number().int().positive().optional(),
+    senderContactId: z.string().trim().min(1).optional(),
+    attachments: roomSendBodySchema.shape.attachments,
+    metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -718,7 +747,11 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
             accessToken: body.accessToken,
             limit: body.limit,
           });
-          sendJson(res, 200, { snapshot });
+          const actorDirectory = await kernel.projectPublicRoomActorDirectory({
+            snapshot,
+            viewerActorId: snapshot.channel.participantId as MessageContactId | undefined,
+          });
+          sendJson(res, 200, { snapshot, actorDirectory });
         } catch (error) {
           sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
         }
@@ -735,10 +768,42 @@ export const startTrpcServer = async (options: TrpcServerOptions): Promise<TrpcS
             chatId: body.chatId,
             accessToken: body.accessToken,
             text: body.text,
+            attachments: body.attachments,
+            metadata: body.metadata,
+            actorId: body.senderContactId as MessageContactId | undefined,
           });
           sendJson(res, 200, result);
         } catch (error) {
           sendJson(res, 400, { ok: false, reason: error instanceof Error ? error.message : String(error) });
+        }
+      })();
+      return;
+    }
+
+    const roomMessageMatch = decodePathMatch(pathname, /^\/api\/rooms\/([^/]+)\/messages$/);
+    if (req.method === "POST" && roomMessageMatch) {
+      setCors(res, allowedOrigin);
+      const [chatId] = roomMessageMatch;
+      const accessToken = readRequestHeader(req.headers["x-agenter-room-access-token"])?.trim() ?? "";
+      void (async () => {
+        try {
+          const body = roomMessageBodySchema.parse(await readJsonBody(req));
+          const content = body.content.trim();
+          if (content.length === 0 && (body.attachments?.length ?? 0) === 0) {
+            sendJson(res, 400, { ok: false, error: "message content or attachments required" });
+            return;
+          }
+          const result = kernel.sendGlobalRoomMessage({
+            chatId,
+            accessToken,
+            text: content,
+            attachments: body.attachments,
+            metadata: body.metadata,
+            actorId: body.senderContactId as MessageContactId | undefined,
+          });
+          sendJson(res, result.ok ? 200 : 400, result.ok ? { ok: true } : { ok: false, error: result.reason });
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
         }
       })();
       return;

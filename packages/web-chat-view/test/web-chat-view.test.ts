@@ -10,6 +10,7 @@ import {
 import {
   type WebChatChannel,
   type WebChatMessage,
+  type WebChatActorResolveInput,
   type WebChatSocketFactory,
   type WebChatSocketLike,
   type WebChatVisibleMessageFact,
@@ -1766,6 +1767,63 @@ describe("Feature: web-chat-view package", () => {
     const viewerRow = rows.find((row) => readRenderedText(row).includes("viewer analyst")) ?? null;
     expect(participantRow?.dataset.messageAuthor).toBe("participant");
     expect(viewerRow?.dataset.messageAuthor).toBe("viewer");
+  });
+
+  test("Scenario: Given canonical sender presentation and bootstrap provenance When the transcript renders Then the row shows the sender name and avatar instead of Trusted bootstrap", async () => {
+    mountHost({
+      viewerActorId: "auth:viewer",
+      channel: {
+        chatId: "chat-bootstrap-provenance",
+        kind: "room",
+        title: "Bootstrap provenance",
+        owner: "Trusted bootstrap",
+        participants: [{ id: "auth:kai", label: "Trusted bootstrap" }],
+        createdAt: 1,
+        updatedAt: 1,
+        focused: true,
+        accessRole: "admin",
+        accessToken: "msgtok_admin",
+      },
+      initialSnapshotResolved: true,
+      initialMessages: [
+        {
+          rowId: 1,
+          viewKey: "msg-kai",
+          messageId: 1,
+          chatId: "chat-bootstrap-provenance",
+          senderContactId: "auth:kai",
+          from: "Trusted bootstrap",
+          kind: "text",
+          content: "canonical sender hello",
+          createdAt: 100,
+          updatedAt: 100,
+          visibleAt: 100,
+          metadata: {},
+          attachments: [],
+        },
+      ],
+      resolveActorPresentation: ({ actorId, fallbackLabel }: WebChatActorResolveInput) =>
+        actorId === "auth:kai"
+          ? {
+              actorId,
+              label: "Kai",
+              subtitle: "auth:kai",
+              iconUrl: "https://example.com/kai-avatar.png",
+              kind: "auth",
+            }
+          : {
+              actorId,
+              label: fallbackLabel,
+            },
+    });
+
+    await settleLitUpdates();
+
+    expect(readRenderedText(document.body)).toContain("canonical sender hello");
+    expect(readRenderedText(document.body)).not.toContain("Trusted bootstrap");
+    const avatar = document.body.querySelector("[part~='message-avatar']") as HTMLElement | null;
+    expect(avatar?.getAttribute("title")).toBe("Kai · auth:kai");
+    expect(document.body.querySelector("img[alt='Kai']")).toBeTruthy();
   });
 
   test("Scenario: Given bootstrap transcript rows mirror the transport snapshot with legacy ids When the websocket snapshot arrives Then the view collapses semantic duplicates into one transcript", async () => {

@@ -365,6 +365,78 @@ describe("Feature: cli server contracts", () => {
     expect(snapshot.items.some((item) => item.content === "batch hello")).toBe(true);
   });
 
+  test("Scenario: Given app-view room mode posts a message When the daemon direct endpoint handles it Then sender contact and comment metadata are preserved", async () => {
+    const { dir } = createWorkspaceRoot();
+    const handle = await startTrpcServer({
+      host: "127.0.0.1",
+      port: 0,
+      globalSessionRoot: join(dir, "sessions"),
+      workspacesPath: join(dir, "workspaces.yaml"),
+      homeDir: join(dir, "home"),
+    });
+    handles.push(handle);
+
+    const { client } = await createSuperadminClient(handle);
+    const created = await client.trpc.message.globalCreate.mutate({
+      kind: "room",
+      title: "app-view-room",
+    });
+    const room = created.channel;
+    const issued = await client.trpc.message.globalIssueGrant.mutate({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      role: "member",
+      participantId: "auth:kai",
+      label: "Kai",
+    });
+
+    const response = await fetch(
+      `http://${handle.host}:${handle.port}/api/rooms/${encodeURIComponent(room.chatId)}/messages`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-agenter-room-access-token": issued.grant.accessToken,
+        },
+        body: JSON.stringify({
+          content: "app-view sender message",
+          senderContactId: "auth:kai",
+          metadata: {
+            webChatCommentResources: [
+              {
+                id: "comment-1",
+                label: "Comment 1",
+                tokenText: "[^Comment 1]",
+                commentText: "Use the compact layout",
+                sourceViewKey: "msg-source",
+                sourceLineNumber: 2,
+                selectedText: "compact layout",
+              },
+            ],
+          },
+        }),
+      },
+    );
+    const payload = (await response.json()) as { ok?: boolean; error?: string };
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({ ok: true });
+
+    const snapshot = await client.trpc.message.globalSnapshot.query({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      limit: 10,
+    });
+    const message = snapshot.items.find((item) => item.content === "app-view sender message");
+    expect(message?.senderContactId).toBe("auth:kai");
+    expect(message?.metadata?.webChatCommentResources).toEqual([
+      expect.objectContaining({
+        commentText: "Use the compact layout",
+        selectedText: "compact layout",
+      }),
+    ]);
+  });
+
   test("Scenario: Given two agenters on different ports and one shared room When agenter-B shares its terminal to agenter-A Then agenter-A accepts and both sides verify the same terminal collaboration truth", async () => {
     const a = createWorkspaceRoot();
     const b = createWorkspaceRoot();

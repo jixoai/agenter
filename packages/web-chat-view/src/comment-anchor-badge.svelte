@@ -1,7 +1,7 @@
 <script lang="ts">
   import Eye from "@lucide/svelte/icons/eye";
   import FilePenLine from "@lucide/svelte/icons/file-pen-line";
-  import MessageSquareMore from "@lucide/svelte/icons/message-square-more";
+  import MessageSquareDot from "@lucide/svelte/icons/message-square-dot";
 
   import { Button as Framework7Button, Link, Segmented } from "./framework7-components";
 
@@ -40,7 +40,7 @@
         onView?.();
       }}
     >
-      <MessageSquareMore class="comment-anchor-icon" />
+      <MessageSquareDot class="comment-anchor-icon" />
       <span>{indexLabel}</span>
     </Link>
 
@@ -78,10 +78,10 @@
     </Segmented>
   </div>
 
-  {#if mode === "view"}
+  {#if mode === "view" && hasComment}
     <section class="comment-anchor-detail" aria-label={`${label} detail`}>
       <div class="comment-anchor-detail-meta">{sourceSummary || selectedText}</div>
-      <p>{hasComment ? commentText : "No comment body yet."}</p>
+      <p>{commentText}</p>
     </section>
   {/if}
 </div>
@@ -129,9 +129,11 @@
     inset: 0;
     display: grid;
     place-items: center;
-    font-size: 0.56rem;
+    font-size: 1rem;
     font-weight: 760;
     letter-spacing: 0;
+    scale: 0.46;
+    top: -0.15rem;
   }
 
   :global(.comment-anchor-actions.segmented) {

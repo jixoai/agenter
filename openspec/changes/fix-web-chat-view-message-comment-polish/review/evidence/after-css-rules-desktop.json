@@ -1,0 +1,149 @@
+{
+  "pageContentSourceLaw": "Framework7 .page-content uses padding-top/padding-bottom formulas with --f7-page-* offsets and extra padding variables; local evidence also checked node_modules/framework7/components/page/page.less and toolbar.less.",
+  "rules": [
+    {
+      "href": null,
+      "cssText": ".page-content { overflow: auto; box-sizing: border-box; height: 100%; position: relative; z-index: 1; padding-top: calc(var(--f7-page-navbar-offset, 0px) + var(--f7-page-toolbar-top-offset, 0px) + var(--f7-page-subnavbar-offset, 0px) + var(--f7-page-searchbar-offset, 0px) + var(--f7-page-content-extra-padding-top, 0px)); padding-bottom: calc(var(--f7-page-toolbar-bottom-offset, 0px) + var(--f7-safe-area-bottom) + var(--f7-page-content-extra-padding-bottom, 0px)); }"
+    },
+    {
+      "href": null,
+      "cssText": "html:has(.dialog.modal-in) .page-content { overflow: hidden; }"
+    },
+    {
+      "href": null,
+      "cssText": "html:has(.popup.modal-in) .framework7-root > .views .page-content, html:has(.popup.modal-in) .framework7-root > .view .page-content, html:has(.popup.modal-in) .framework7-root > .panel .page-content { overflow: hidden; }"
+    },
+    {
+      "href": null,
+      "cssText": ".login-screen-page .page-content, .login-screen > .view > .page .page-content, .login-screen > .page .page-content, .login-screen-page .login-screen-content, .login-screen > .view > .page .login-screen-content, .login-screen > .page .login-screen-content { margin-top: auto; margin-bottom: auto; height: auto; max-height: 100%; width: 100%; }"
+    },
+    {
+      "href": null,
+      "cssText": ".sheet-modal-top .page-content { padding-top: var(--f7-safe-area-top); }"
+    },
+    {
+      "href": null,
+      "cssText": ".md .sheet-modal .toolbar + .sheet-modal-inner .page-content { --f7-page-toolbar-top-offset: 0px; --f7-page-toolbar-bottom-offset: 0px; }"
+    },
+    {
+      "href": null,
+      "cssText": "html.with-modal-preloader .page-content, .with-modal-preloader .page-content, .with-modal-preloader.page-content { overflow: hidden; }"
+    },
+    {
+      "href": null,
+      "cssText": "html.with-panel .framework7-root > .views .page-content, html.with-panel .framework7-root > .view .page-content { overflow: hidden; }"
+    },
+    {
+      "href": null,
+      "cssText": ".page.with-panel-left-reveal > .page-content, .page.with-panel-right-reveal > .page-content, .page.with-panel-left-push > .page-content, .page.with-panel-right-push > .page-content, .page.with-panel-closing > .page-content, .page.with-panel-left-reveal > .tabs, .page.with-panel-right-reveal > .tabs, .page.with-panel-left-push > .tabs, .page.with-panel-right-push > .tabs, .page.with-panel-closing > .tabs { transition-duration: var(--f7-panel-transition-duration); transition-property: transform; transition-timing-function: var(--f7-panel-transition-timing-function); }"
+    },
+    {
+      "href": null,
+      "cssText": ".page.with-panel-left-reveal > .page-content, .page.with-panel-left-push > .page-content, .page.with-panel-left-reveal > .tabs, .page.with-panel-left-push > .tabs { transform: translate3d(var(--f7-panel-left-width, var(--f7-panel-width)), 0, 0); }"
+    },
+    {
+      "href": null,
+      "cssText": ".page.with-panel-right-reveal > .page-content, .page.with-panel-right-push > .page-content, .page.with-panel-right-reveal > .tabs, .page.with-panel-right-push > .tabs { transform: translate3d(calc(-1 * var(--f7-panel-right-width, var(--f7-panel-width))), 0, 0); }"
+    },
+    {
+      "href": null,
+      "cssText": ".panel-left.panel-in-collapsed ~ .views, .panel-left.panel-in-collapsed ~ .view, .panel-left.panel-in-collapsed ~ .page-content, .panel-left.panel-in-collapsed ~ .tabs { margin-left: var(--f7-panel-left-collapsed-width, var(--f7-panel-collapsed-width)); }"
+    },
+    {
+      "href": null,
+      "cssText": ".page.with-panel-left-reveal .panel-left.panel-in-collapsed ~ .page-content, .page.with-panel-left-reveal .panel-left.panel-in-collapsed ~ .tabs, html.with-panel-left-reveal .panel-left.panel-in-collapsed ~ .views, html.with-panel-left-reveal .panel-left.panel-in-collapsed ~ .view { transform: translate3d(calc(var(--f7-panel-left-width, var(--f7-panel-width)) - var(--f7-panel-left-collapsed-width, var(--f7-panel-collapsed-width))), 0, 0); }"
+    },
+    {
+      "href": null,
+      "cssText": ".panel-right.panel-in-collapsed ~ .views, .panel-right.panel-in-collapsed ~ .view, .panel-right.panel-in-collapsed ~ .page-content, .panel-right.panel-in-collapsed ~ .tabs { margin-right: var(--f7-panel-right-collapsed-width, var(--f7-panel-collapsed-width)); }"
+    },
+    {
+      "href": null,
+      "cssText": ".page.with-panel-right-reveal .panel-right.panel-in-collapsed ~ .page-content, .page.with-panel-right-reveal .panel-right.panel-in-collapsed ~ .tabs, html.with-panel-right-reveal .panel-right.panel-in-collapsed ~ .views, html.with-panel-right-reveal .panel-right.panel-in-collapsed ~ .view { transform: translate3d(calc(var(--f7-panel-right-collapsed-width, var(--f7-panel-collapsed-width)) - var(--f7-panel-right-width, var(--f7-panel-width))), 0, 0); }"
+    },
+    {
+      "href": null,
+      "cssText": ".page.page-with-card-opened .page-content { overflow: hidden; }"
+    },
+    {
+      "href": null,
+      "cssText": ".page-content .searchbar:not(.searchbar-inline) { border-radius: var(--f7-searchbar-in-page-content-border-radius); margin: var(--f7-searchbar-in-page-content-margin); width: auto; box-shadow: var(--f7-searchbar-in-page-content-box-shadow); }"
+    },
+    {
+      "href": null,
+      "cssText": ".page-content .searchbar:not(.searchbar-inline) .searchbar-inner, .page-content .searchbar:not(.searchbar-inline) input[type=\"text\"], .page-content .searchbar:not(.searchbar-inline) input[type=\"search\"] { border-radius: var(--f7-searchbar-in-page-content-input-border-radius, var(--f7-searchbar-input-border-radius)); }"
+    },
+    {
+      "href": null,
+      "cssText": ".page-content > .searchbar-backdrop { position: fixed; }"
+    },
+    {
+      "href": null,
+      "cssText": ".page-content.with-searchbar-expandable-enabled { height: calc(100% + var(--f7-navbar-large-title-height)); transform: translateY(calc(-1 * var(--f7-navbar-large-title-height))); transition-duration: 300ms; transition-property: transform; }"
+    },
+    {
+      "href": null,
+      "cssText": ".page-content.with-searchbar-expandable-closing { transition-duration: 300ms; }"
+    },
+    {
+      "href": null,
+      "cssText": ".page-with-navbar-large .page-content .searchbar { top: 0px; transform: none; }"
+    },
+    {
+      "href": null,
+      "cssText": ".color-picker-popup .page-content { padding-bottom: var(--f7-safe-area-bottom); }"
+    },
+    {
+      "href": null,
+      "cssText": ".color-picker-popover .toolbar ~ .page-content .color-picker-module-palette:first-child { border-top-left-radius: 0px; border-top-right-radius: 0px; }"
+    },
+    {
+      "href": null,
+      "cssText": ".color-picker-popup .page-content, .color-picker-popover .page-content, .color-picker-sheet-modal .page-content, .color-picker-page .page-content { display: flex; justify-content: flex-start; align-items: stretch; flex-direction: column; overflow-x: hidden; }"
+    },
+    {
+      "href": null,
+      "cssText": ".ios .color-picker-popover .color-picker, .ios .color-picker-popover .page-content { overflow: visible; }"
+    },
+    {
+      "href": null,
+      "cssText": ".page[data-name=\"review-shell-home\"] > .page-content { min-height: 0px; }"
+    },
+    {
+      "href": null,
+      "cssText": ".review-shell-room-page > .page-content { display: flex; flex-direction: column; min-height: 0px; }"
+    },
+    {
+      "href": null,
+      "cssText": ".review-shell-desktop-master > .page-content, .review-shell-desktop-detail > .page-content { flex: 1 1 auto; min-height: 0px; }"
+    },
+    {
+      "href": null,
+      "cssText": ".resource-preview-shell-page-content.page-content { display: grid; align-content: start; --f7-page-content-extra-padding-top: 0px; --f7-page-content-extra-padding-bottom: 0px; }"
+    },
+    {
+      "href": null,
+      "cssText": ".resource-preview-shell-page[data-has-footer=\"true\"] .resource-preview-shell-page-content.page-content { --f7-page-content-extra-padding-bottom: 0.36rem; }"
+    },
+    {
+      "href": null,
+      "cssText": ".resource-preview-shell-page[data-has-footer=\"true\"] .resource-preview-shell-body[data-preview-tone=\"media\"] { min-height: calc(100vh - 7.2rem - env(safe-area-inset-bottom)); }"
+    },
+    {
+      "href": null,
+      "cssText": ".comment-inspector-edit-content.page-content { --f7-page-toolbar-top-offset: var(--f7-toolbar-height); --f7-page-content-extra-padding-top: 0.52rem; --f7-page-content-extra-padding-bottom: 0.86rem; height: auto; }"
+    },
+    {
+      "href": null,
+      "cssText": ".message-source-page-content.page-content { min-height: 0px; --f7-page-content-extra-padding-top: 0.5rem; --f7-page-content-extra-padding-bottom: 0.74rem; }"
+    },
+    {
+      "href": null,
+      "cssText": ".message-source-comment-editor-toolbar .toolbar-inner { display: grid; width: 100%; grid-template-columns: minmax(2.4rem, max-content) minmax(0px, 1fr) minmax(2.4rem, max-content); gap: 0.5rem; align-items: center; }"
+    },
+    {
+      "href": null,
+      "cssText": ".message-source-comment-editor-content.page-content { --f7-page-toolbar-top-offset: var(--f7-toolbar-height); --f7-page-content-extra-padding-top: 0.52rem; --f7-page-content-extra-padding-bottom: 0.86rem; height: auto; }"
+    }
+  ]
+}

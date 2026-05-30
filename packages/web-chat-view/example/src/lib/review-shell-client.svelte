@@ -1311,7 +1311,7 @@
             ? ({ actorId, fallbackLabel }: WebChatActorResolveInput) => shellState.actorResolver?.({ actorId, fallbackLabel }) ?? null
             : undefined
         }
-        onSendMessage={shellState.activeProfile?.appViewMode === "room" ? undefined : (payload) => shellState.sendMessage(payload)}
+        onSendMessage={(payload) => shellState.sendMessage(payload)}
         onLatestVisibleMessageIdChange={(message) => {
           if (message?.messageId && shellState.activeProfile?.appViewMode === "room") {
             void shellState.markLatestVisibleMessageRead(message.messageId);
