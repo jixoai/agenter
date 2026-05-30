@@ -8,7 +8,7 @@ Define the durable operator-facing contract for the standalone message-system ro
 
 ### Requirement: Message-system SHALL present rooms as a standalone product surface
 
-The WebUI SHALL expose a dedicated message-system route that lists global rooms, renders one selected room transcript through the shared chat surface, and keeps the room transcript/composer workflow as the primary operator task. The route shell and room-management dialogs SHALL use the shared scaffold-family primitives so the transcript, management rail, and dialog detail stage no longer repeat their own stretch-layout contracts. The selected room view SHALL support explicit viewer selection, while room membership, metadata, and access administration move into a dedicated management surface instead of a permanently expanded inline rail.
+The WebUI SHALL expose a dedicated message-system route that lists global rooms, renders one selected room transcript through the shared chat surface, and keeps the room transcript/composer workflow as the primary operator task. The route shell and room-management dialogs SHALL use the shared scaffold-family primitives so the transcript, management rail, and dialog detail stage no longer repeat their own stretch-layout contracts. The selected room view SHALL support explicit viewer selection, while room membership, metadata, and access administration move into a dedicated management surface instead of a permanently expanded inline rail. Studio SHALL embed the Web Chat app-view through an iframe boundary for chat mode so the app-view owns Framework7 chat topology and backend room synchronization while Studio keeps room tabs, assets, search, and superadmin controls outside that island.
 
 #### Scenario: Room catalog navigation
 
@@ -98,6 +98,16 @@ The WebUI SHALL expose a dedicated message-system route that lists global rooms,
 - **THEN** `chat` shows the shared transcript/composer surface
 - **THEN** `assets` shows the room-owned asset list
 - **THEN** the room body does not add a second room header or toolbar inside `page_content`
+
+#### Scenario: Studio embeds the Web Chat app-view island
+
+- **WHEN** Studio renders a selected room in chat mode
+- **THEN** the room body loads the Web Chat app-view through an iframe boundary
+- **AND** the iframe URL selects partial room mode with explicit room transport URL, viewer token, and viewer contact id
+- **AND** app-view owns the Framework7 `App`, `View`, `Page messagesContent`, transcript, and composer responsibilities
+- **AND** Studio keeps room tabs, asset switching, search, and superadmin management controls outside that island
+- **AND** Studio does not rely on Workbench layout containers to impersonate Framework7 page topology
+- **AND** Studio does not introduce resize or event bridges for ordinary transcript state, because the backend is the shared source of truth
 
 #### Scenario: Room administration opens in a dialog-sidebar management shell
 
