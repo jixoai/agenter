@@ -38,7 +38,7 @@
     },
     "extensions/shell": {
       "name": "agenter-ext-shell",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "bin": {
         "agenter-shell": "./src/bin/agenter-shell.ts",
       },
@@ -151,7 +151,7 @@
     },
     "packages/agenter": {
       "name": "agenter",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "bin": {
         "agenter": "./src/bin/agenter.ts",
       },
