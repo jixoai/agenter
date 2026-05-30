@@ -80,7 +80,7 @@
       <section>
         <h1>Web Chat Message Comment Polish Review</h1>
         <p class="ok">结论：实现与原始目标基本对齐，等待用户视觉验收后再 archive。</p>
-        <p>本轮修复 sender/avatar projection、comment resource 空值规则、comment icon/action 语义，以及 Framework7 PageContent padding 所有权。Round 2 追加修复：消除 source popup 双重 page-content、dense toolbar 改成 icon-only、空评论保存自动删除。</p>
+        <p>本轮修复 sender/avatar projection、comment resource 空值规则、comment icon/action 语义，以及 Framework7 PageContent padding 所有权。Round 2 追加修复：消除 source popup 双重 page-content、dense toolbar 改成 icon-only、空评论保存自动删除。Round 3/4 继续修复：空评论 save/close/SheetClosed 共用删除语义，并且删除业务数据时不再直接销毁 live Framework7 Sheet。最新 live Studio iframe 验证确认：空保存和空取消都会关闭 Sheet，控制台没有 `sheet.params` / `swipeToClose` / `closeByBackdropClick` 报错。</p>
       </section>
 
       <section>
@@ -152,6 +152,43 @@
   ],
   "emptyCommentDeletion": "anchor count 0 -> 1 -> 0"
 }</pre>
+        <p>Round 4 源码契约证据：comment edit Sheet 现在先变成 <code>opened=false</code>，组件保留到 <code>onSheetClosed</code> 后再释放。</p>
+        <pre>{
+  "sourcePopup": {
+    "retainedState": "commentEditorSheetAnchor",
+    "closedHandler": "handleCommentEditorSheetClosed",
+    "releasePoint": "commentEditorSheetAnchor = null",
+    "directUnmountGuard": "not gated by activeCommentAnchor && resolvedOpen"
+  },
+  "commentInspector": {
+    "retainedState": "editSheetMounted",
+    "closedHandler": "handleEditSheetClosed",
+    "releasePoint": "editSheetMounted = false",
+    "directUnmountGuard": "not gated by open"
+  },
+  "framework7Chrome": {
+    "topology": "Sheet -> Toolbar -> PageContent",
+    "sheetRadiusOverride": "removed",
+    "toolbarPaddingOverride": "removed"
+  }
+}</pre>
+        <p>Round 4 live browser evidence：用户正在运行的 <code>bun agenter studio --dev</code>，Studio <code>4173</code> iframe 内 app-view <code>4293</code>。</p>
+        <pre>{
+  "emptySave": {
+    "path": "Message actions -> View source -> Comment -> Save empty",
+    "modalIn": 0,
+    "sourcePopupStillUsable": true,
+    "fatalConsole": []
+  },
+  "emptyCancel": {
+    "path": "Message actions -> View source -> Comment -> Cancel empty",
+    "visibleSheets": 0,
+    "modalIn": 0,
+    "modalOut": 0,
+    "fatalConsole": []
+  },
+  "knownResidual": "empty save can leave a display:none stale sheet node with no f7Modal/params; this is future cleanup, not the reported live-handler crash"
+}</pre>
       </section>
 
       <section>
@@ -165,6 +202,8 @@
           <li>工作区偏移：无关 `bun.lock` dirty 未提交。</li>
           <li>Round 2 验证偏移：第一次 Playwright 从仓库根运行找不到 `playwright`，改从 `packages/web-chat-view` 执行后通过。</li>
           <li>Round 2 验证偏移：最初使用 `[part="message-bubble"]` 等待失败，修正为 token selector `[part~="message-bubble"]` 后通过。</li>
+          <li>Round 3 根因偏移：只修了业务 finalizer，没有区分删除评论数据和销毁 Framework7 Sheet 组件。</li>
+          <li>Round 4 DOM 偏移：空保存后可能留下一个 `display:none` 的旧 Sheet DOM 节点，但它没有 `f7Modal/params`，不会继续作为 live Sheet 参与交互；后续应单独清理，不应回退到直接销毁 live Sheet。</li>
         </ul>
       </section>
 
@@ -174,6 +213,9 @@
           <li>做 remaining safe-area usage audit，区分 inner-shell spacing 和 Framework7-owned surface。</li>
           <li>补 Storybook DOM contract 覆盖 source comment roundtrip。</li>
           <li>如需非空评论删除能力，新增 destructive icon action，并在有内容时弹确认框。</li>
+          <li>补真实浏览器 interaction test：空保存关闭后继续点击页面，console 不再出现 `sheet.params` undefined。</li>
+          <li>单独研究 Framework7 Svelte Sheet moved-node 残留，清理旧 hidden sheet 节点但不破坏 close lifecycle。</li>
+          <li>继续对所有 Web Chat Sheet 做官方 Framework7 chrome audit，判断哪些自定义外观有明确产品授权。</li>
           <li>把 actor presentation projection 沉淀为更长期的 app-server/message-system contract。</li>
           <li>抽 shared avatar primitive，进一步统一 Studio/Auth/Web Chat 头像。</li>
           <li>用户验收后 archive 当前 OpenSpec change。</li>
