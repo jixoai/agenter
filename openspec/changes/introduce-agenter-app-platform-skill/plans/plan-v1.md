@@ -3,8 +3,8 @@
 ## Current Round
 
 - Round: 1
-- Status: User confirmed public package rename and internal product/app vocabulary migration; ready for apply after OpenSpec update commit.
-- Previous plan backup: `plans/plan-v1.md`
+- Status: Research-plan drafted from current repo evidence and latest user constraints.
+- Previous plan backup: None.
 
 ## Workflow Command Surface
 
@@ -101,13 +101,13 @@
 | ---- | ------------------- | ------------------------ |
 | None yet | No spike is needed before specs; existing tests expose the main seams. | N/A |
 
-### Questions Confirmed With User
+### Questions To Confirm With User
 
-| Question | Why this is the real question | User decision |
+| Question | Why this is the real question | Current inference before user answers |
 | -------- | ----------------------------- | ------------------------------------- |
-| Should public package names move from `agenter-ext-*` to `agenter-app-*` in this change? | `extension` vocabulary includes package names, but renaming published packages affects release, docs, and remote fallback. | Yes. Migrate public packages to `agenter-app-*`; do not preserve compatibility. User will handle unpublish and trusted publishing setup. |
-| Should internal `product-*` package/type names also be renamed to `app-*` now? | Existing architecture uses `product` for the platform law. The user explicitly targeted app-platform language, so `product-extension-runtime` would be stale if kept. | Yes. Rename internal `product-*` / `Product*` app-platform surfaces in this change. |
-| Should Agenter discover arbitrary npm packages automatically or only resolve from catalogs/workspace/installed package roots? | npm has no cheap global reverse peerDependency query; a host needs a search/index surface. | Use package-owned peerDeps for compatibility and a controlled catalog/workspace/installed candidate surface for discovery; no global npm crawl. |
+| Should public package names move from `agenter-ext-*` to `agenter-app-*` in this change? | `extension` vocabulary includes package names, but renaming published packages affects release, docs, and remote fallback. | Default to yes for new major app-platform line; keep old published `agenter-ext-*` lines only as historical compatibility for old Agenter hosts. |
+| Should internal `product-*` package/type names also be renamed to `app-*` now? | Existing architecture uses `product` for the platform law. The user explicitly targeted `extension`, but "app platform" may make `product-extension-runtime` stale. | Default to rename `product-extension-runtime` to an app runtime law unless the blast radius is too high for this iteration. |
+| Should Agenter discover arbitrary npm packages automatically or only resolve from catalogs/workspace/installed package roots? | npm has no cheap global reverse peerDependency query; a host needs a search/index surface. | Default to catalog-driven discovery plus workspace/installed package scanning; no global npm crawl. |
 
 ## Intent
 
@@ -136,11 +136,11 @@ An operator or community developer can say "create an Agenter app" and get a cle
 - Does this require law upgrade:
   - Yes. "Extension" is a stale ontology. The platform law should become app-centered, and compatibility should be app-declared through `peerDependencies.agenter`.
 - Breaking update stance:
-  - Breaking cleanup is approved: `extensions/*` -> `apps/*`.
-  - Public packages move from `agenter-ext-*` to `agenter-app-*`; no compatibility shim.
-  - Internal platform surfaces move from `product-extension-runtime` / `Product*` to app vocabulary in this change.
+  - Prefer breaking cleanup for source layout and specs: `extensions/*` -> `apps/*`.
+  - Prefer app package naming for new platform line if user confirms package rename.
 - User confirmations still required:
-  - None for the current naming and compatibility scope.
+  - Public package renaming scope.
+  - Internal `product-*` vocabulary migration scope.
 
 ## Reverse-Inferred Design
 
@@ -203,11 +203,11 @@ Agenter then launches apps through the same descriptor law it uses today, but th
 
 ### User Confirmation Gates
 
-| Gate | Why confirmation was required | Decision |
+| Gate | Why confirmation is required | Default until user answers |
 | ---- | ---------------------------- | -------------------------- |
-| Public package rename from `agenter-ext-*` to `agenter-app-*` | Impacts npm release identity and remote fallback. | Approved. Rename, no compatibility. User will manage unpublish and trusted publish setup. |
-| Internal package/type rename from `product-extension-runtime` to app vocabulary | High blast radius but aligns ontology. | Approved. Rename in this change. |
-| Catalog format for community discovery | npm cannot globally reverse-query peer dependencies. | Keep discovery separate from compatibility. Start with controlled catalog/workspace/installed candidates; no global npm crawl. |
+| Public package rename from `agenter-ext-*` to `agenter-app-*` | Impacts npm release identity and remote fallback. | Treat as intended for the next app-platform line; record old names as historical old-host packages. |
+| Internal package/type rename from `product-extension-runtime` to app vocabulary | High blast radius but aligns ontology. | Plan it as part of this change if tests stay manageable; otherwise split into a follow-up only after explicit user approval. |
+| Catalog format for community discovery | npm cannot globally reverse-query peer dependencies. | Use package-owned peerDeps for compatibility and a separate catalog/keyword source for discovery. |
 
 ## Intent-Driven Plan
 
@@ -221,6 +221,8 @@ Agenter then launches apps through the same descriptor law it uses today, but th
 
 | Question | Why it matters | Default assumption until user answers |
 | -------- | -------------- | ------------------------------------- |
+| Is `agenter-app-*` the desired public package prefix? | It completes the "extension -> app" vocabulary shift. | Yes for new releases. |
+| Does `@agenter/product-extension-runtime` become `@agenter/app-runtime` or another name? | This is the main internal vocabulary residue. | Rename if the change remains tractable; otherwise write a dedicated follow-up. |
 | Should the first app catalog be a local static registry, package keywords, or npm search abstraction? | PeerDeps solve compatibility, not candidate discovery. | Start with workspace/installed known apps and a controlled catalog abstraction; avoid broad npm search in this iteration. |
 | Should the skill script create only an external app package or also support first-party repo mode under `apps/*`? | The user explicitly wants community install and repo use. | Support both modes with a `--repo`/`--workspace` option or auto-detected repo mode. |
 

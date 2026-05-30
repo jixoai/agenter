@@ -2,9 +2,9 @@
 
 - [x] 1.1 Confirm `plans/plan.md` reflects the relevant code survey, existing OpenSpec survey, and user Q&A about app vocabulary, reverse peer dependency compatibility, and Bun-backed skill scripts.
 - [x] 1.2 Confirm current repo evidence for launcher roots, descriptors, release scripts, active package names, and absence of a root `skills/` directory.
-- [ ] 1.3 Confirm with the user whether public package names move from `agenter-ext-*` to `agenter-app-*` in this change, or whether only source/layout/spec vocabulary changes now.
-- [ ] 1.4 Confirm with the user whether internal `product-*` package/type names move to app vocabulary in this change or become a follow-up migration.
-- [ ] 1.5 Keep task checkboxes honest: only check off work completed and verified in the current working context.
+- [x] 1.3 Confirm with the user whether public package names move from `agenter-ext-*` to `agenter-app-*` in this change, or whether only source/layout/spec vocabulary changes now.
+- [x] 1.4 Confirm with the user whether internal `product-*` package/type names move to app vocabulary in this change or become a follow-up migration.
+- [x] 1.5 Keep task checkboxes honest: only check off work completed and verified in the current working context.
 
 ## 2. BDD Contract
 
@@ -20,9 +20,9 @@
 
 ## 3. OpenSpec / Git Evidence Gate
 
-- [ ] 3.1 Run `bun run openspec:vision -- validate introduce-agenter-app-platform-skill` after specs/tasks edits.
-- [ ] 3.2 Run `bun run openspec:vision -- commit-check introduce-agenter-app-platform-skill --phase research-plan` before product-code work starts.
-- [ ] 3.3 Commit the OpenSpec artifacts before implementation begins.
+- [x] 3.1 Run `bun run openspec:vision -- validate introduce-agenter-app-platform-skill` after specs/tasks edits.
+- [x] 3.2 Run `bun run openspec:vision -- commit-check introduce-agenter-app-platform-skill --phase research-plan` before product-code work starts.
+- [x] 3.3 Commit the OpenSpec artifacts before implementation begins.
 
 ## 4. Implementation
 
