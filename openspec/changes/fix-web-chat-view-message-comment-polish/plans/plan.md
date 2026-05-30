@@ -54,6 +54,11 @@
 > 2. [Image #2] 有图标就不要文字了
 > 3. 评论如果为空，自动删除。或者应直接给一个删除按钮，在preview|edit 这组按钮的旁边放一个 icon-button，空内容直接删除，有内容就弹出确认框删除。但是空内容，我建议在保存到时候检测，自动删除
 
+## Round 3 User Acceptance Feedback
+
+> 1. 如果是空内容，点击保存按钮或者点击关闭按钮（或者是因为Model关闭触发的回调），都会触发删除动作，并关闭面板。目前你制作了保存按钮会删除而不关闭
+> 2. 我发现很多Model Sheet和Framework7官方DEMO展示的Model Sheet的样式完全不一样，为什么不能用官方版本的风格？
+
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -73,6 +78,8 @@
 | 11 | User | Source popup shows nested `.page-content` wrappers. | Any Framework7 `Page` that manually renders `PageContent` must set `pageContent={false}` instead of accepting the default wrapper. |
 | 12 | User | Source toolbar actions show both icon and text. | Icon-bearing dense toolbar actions should be icon-only visually, with accessible labels/titles carrying text. |
 | 13 | User | Empty comments should auto-delete, preferably on save detection. | Saving an empty comment edit should remove the draft/comment resource instead of disabling save or retaining an empty anchor/card. |
+| 14 | User | Empty comment save, close button, and Sheet/Modal close callback should all trigger delete and close the panel. | Empty comment finalization must be one lifecycle action shared by Save, Cancel/Close, and Framework7 `onSheetClosed`. |
+| 15 | User | Many Modal Sheet surfaces do not look like Framework7 official demo sheets. | Treat Sheet styling as a framework-law issue: use official `Sheet -> Toolbar -> PageContent` topology and avoid repainting Sheet/Toolbar chrome as custom glass panels. |
 
 ### Evidence Read
 
@@ -89,6 +96,8 @@
 | `packages/web-chat-view/src/message-source-popup.svelte` | Source popup toolbar uses text-only `Actions`, `Comment`, `Cancel`, `Save`; edit `PageContent` overwrites whole padding with `env(safe-area-inset-*)`. | This is the concrete clipping and action-control target. |
 | `packages/web-chat-view/node_modules/framework7/components/page/page.less` | `.page-content` owns `padding-top` and `padding-bottom` via `--f7-page-navbar-offset`, toolbar offsets, searchbar offset, safe-area bottom, and extra padding variables. | Whole-property `padding` on `.page-content` destroys Framework7 offset law. |
 | `packages/web-chat-view/node_modules/framework7/components/toolbar/toolbar.less` | Toolbar sibling selectors set `--f7-page-toolbar-top-offset` / `--f7-page-toolbar-bottom-offset`. | The sheet editor should let Framework7 wire toolbar offset instead of hardcoding safe-area math. |
+| `packages/web-chat-view/node_modules/framework7-svelte/components/sheet.svelte` | Framework7 Svelte moves direct child `.navbar`, `.toolbar`, `.tabbar`, and `.searchbar` nodes from `.sheet-modal-inner` to fixed sheet chrome before creating the sheet instance. | The official Sheet topology requires toolbar/searchbar chrome to be direct Sheet children; nested or over-custom wrappers break the visual law. |
+| `packages/web-chat-view/node_modules/framework7/components/sheet/sheet.less` | `.sheet-modal` owns background, radius, overflow, transition, and push/backdrop behavior through Framework7 variables. | Web Chat should not repaint sheet modal chrome with ad hoc background/backdrop filters when the goal is official Framework7 style. |
 
 ### Git Evidence
 
@@ -123,6 +132,8 @@
 | `双重 page-content` | A Framework7 `Page` default wrapper is nesting around a hand-written `PageContent`. | If we own the `PageContent`, disable the automatic one on `Page`. |
 | `有图标就不要文字了` | Dense toolbar affordances should be icon-only visually. | Keep text only in `aria-label` / `title`, not in the rendered toolbar row. |
 | `评论如果为空，自动删除` | Empty body means the comment resource should be removed at save time. | Empty save deletes the local anchor or pending resource without confirmation. |
+| `点击保存按钮或者点击关闭按钮（或者是因为Model关闭触发的回调）` | Empty-body delete must be triggered by every way the edit lifecycle ends. | Save, close/cancel, and Framework7 sheet-close callbacks should call the same finalizer. |
+| `官方版本的风格` | Framework7 Sheet should look like its official component family, not a host-local glass panel. | Preserve F7 Sheet/Toolbar/PageContent ownership and only style inner content for product details. |
 
 ### Demo / Spike Code
 
@@ -151,6 +162,7 @@ The issue is a boundary-law problem plus leaf UI debt:
 - Identity projection must be canonical. Access-token provenance such as `Trusted bootstrap` is not the message author identity.
 - App-view is self-contained. It should receive identity presentation through backend/app-view contracts, not by reaching into Studio stores through the iframe.
 - Framework7 owns `PageContent` layout offsets. Web Chat can add spacing, but it must do so through Framework7 variables or inner content shells, not by overwriting `.page-content` padding.
+- Framework7 owns `Sheet` and `Toolbar` chrome. Web Chat can provide title/action content and inner body spacing, but should not repaint Sheet/Toolbar backgrounds, auto heights, or safe-area math when the product intent is the official Framework7 sheet style.
 - Comment resources should be real resources. Empty drafts are not resources.
 
 ### Final Visible Effect
@@ -167,10 +179,12 @@ When the operator opens a Studio room embedded app-view:
 - source popup and shared preview popup do not nest Framework7 `.page-content` wrappers;
 - source-line toolbar actions show only icons while keeping accessible labels/titles;
 - saving an empty comment edit removes the local anchor or pending comment resource instead of leaving an empty comment artifact.
+- empty comment save, close/cancel, outside lifecycle close, and Framework7 `onSheetClosed` all delete the empty artifact and leave the editor panel closed.
+- comment edit sheets use Framework7's official Sheet chrome style by default instead of host-local translucent toolbar/sheet repainting.
 
 ## Platform Diagnosis
 
-- Current platform laws: Studio owns outer operator chrome; app-view owns chat product UI; message-system stores room/message facts; AuthSystem/profile runtime owns canonical profile avatar facts; Framework7 owns Page/View/PageContent/Toolbar layout offsets.
+- Current platform laws: Studio owns outer operator chrome; app-view owns chat product UI; message-system stores room/message facts; AuthSystem/profile runtime owns canonical profile avatar facts; Framework7 owns Page/View/PageContent/Toolbar/Sheet layout offsets and chrome.
 - Does this fit as a regular atom: partly. Comment icon/action polish is a regular UI atom.
 - Does this require law upgrade: yes. Sender/avatar presentation and PageContent safe-area handling are platform-law fixes because they cross app-view/backend and framework-shell boundaries.
 - Breaking update stance: no durable data migration is needed; API shape can be extended. Do not preserve `No comment body yet` as compatibility because it is a wrong visible state.
@@ -188,6 +202,7 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 - Web Chat message rows resolve sender presentation from `senderContactId` first, then display `from` only as fallback.
 - Comment resource components accept only non-empty comment bodies for visible comment detail.
 - Framework7 edit sheets keep `Toolbar` and `PageContent` as siblings and use `--f7-page-content-extra-padding-*` or inner shell padding for custom spacing.
+- Empty comment edit termination is one finalizer: if the trimmed draft is empty, delete the local comment artifact and close the owning panel; if non-empty, save or cancel according to the explicit action.
 
 ### Data Shape
 
@@ -201,6 +216,7 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 - App-view should remain iframe self-sufficient: no Studio store imports, no event bridge for identity, no DOM reach-through.
 - Web Chat should expose reusable Svelte components with package-owned CSS, but Framework7 framework primitives remain the shell owner.
 - Comment UI fixes stay inside `packages/web-chat-view`, not in Studio route CSS.
+- Framework7 Sheet visuals should come from official Sheet/Toolbar defaults; Web Chat should avoid custom translucent sheet backgrounds unless a future design law explicitly authorizes a different product family.
 
 ### User Confirmation Gates
 
@@ -219,6 +235,7 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 - [ ] 6. Run BDD/typecheck/visual verification.
 - [ ] 7. Self-review against intent and decide whether to loop.
 - [ ] 8. Round 2: fix nested PageContent, icon-only source toolbar actions, and empty-comment save deletion.
+- [ ] 9. Round 3: unify empty-comment finalization across save/close/Sheet callbacks and realign comment edit Sheet chrome with official Framework7 style.
 
 ## Open Questions
 

@@ -17,6 +17,14 @@ Composer, source-inspection, and comment-detail surfaces SHALL read as the same 
 - **AND** long source identifiers do not dominate the primary reading surface
 - **AND** edit-mode controls and textarea content remain fully visible inside the mobile safe area
 
+#### Scenario: Comment edit sheets retain official Framework7 chrome
+
+- **GIVEN** a comment edit surface is implemented as a Framework7 `Sheet`
+- **WHEN** it needs cancel/save toolbar actions and editable content
+- **THEN** the component uses the official direct-child `Sheet -> Toolbar -> PageContent` topology
+- **AND** Web Chat does not repaint `.sheet-modal` or `.toolbar` with host-local translucent backgrounds or custom blur chrome
+- **AND** custom product spacing is limited to Framework7 variables or inner shells below `PageContent`
+
 #### Scenario: Framework7 PageContent padding ownership is preserved
 
 - **GIVEN** a comment edit surface uses Framework7 `Toolbar` followed by `PageContent`

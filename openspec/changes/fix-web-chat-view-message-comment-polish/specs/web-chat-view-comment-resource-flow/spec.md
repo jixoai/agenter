@@ -58,3 +58,11 @@ Creating a comment from source inspection and reopening that comment later from 
 - **WHEN** the operator opens a source-line comment editor and closes or cancels before saving non-empty text
 - **THEN** the source popup does not leave behind a visible empty comment card
 - **AND** later resource extraction does not expose that draft as a comment resource
+
+#### Scenario: Empty comment finalization deletes and closes from every exit path
+
+- **GIVEN** the operator has an open source or pending comment edit panel with an empty draft body
+- **WHEN** the operator saves, taps the close/cancel action, or Framework7 reports the Sheet/Modal closed
+- **THEN** the empty comment anchor or pending comment resource is deleted
+- **AND** the owning comment edit panel is closed
+- **AND** the implementation uses one shared finalization path so save and close callbacks cannot drift
