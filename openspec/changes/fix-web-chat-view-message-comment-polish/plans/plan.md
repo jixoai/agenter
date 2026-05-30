@@ -2,8 +2,8 @@
 
 ## Current Round
 
-- Round: 2
-- Status: Acceptance feedback loop opened after user found remaining Framework7 shell and comment action issues.
+- Round: 4
+- Status: Acceptance feedback loop opened after user reported Framework7 Sheet lifecycle runtime errors after empty comment deletion.
 - Previous plan backup: None.
 
 ## Workflow Command Surface
@@ -59,6 +59,24 @@
 > 1. 如果是空内容，点击保存按钮或者点击关闭按钮（或者是因为Model关闭触发的回调），都会触发删除动作，并关闭面板。目前你制作了保存按钮会删除而不关闭
 > 2. 我发现很多Model Sheet和Framework7官方DEMO展示的Model Sheet的样式完全不一样，为什么不能用官方版本的风格？
 
+## Round 4 User Acceptance Feedback
+
+> 删除后，无法关闭的问题还是存在，终端报错：
+> ```
+> Uncaught TypeError: Cannot read properties of undefined (reading 'swipeToClose')
+>     at HTMLDivElement.handleTouchStart (sheet-class.js:146:39)
+>     at HTMLDivElement.handleEvent (dom7.esm.js:377:14)Understand this error
+> 16:05:49.417 sheet-class.js:104 Uncaught TypeError: Cannot read properties of undefined (reading 'closeByBackdropClick')
+>     at Framework7.handleClick (sheet-class.js:104:26)
+>     at events-class.js:74:24
+>     at Array.forEach (<anonymous>)
+>     at events-class.js:73:18
+>     at Array.forEach (<anonymous>)
+>     at Framework7.emit (events-class.js:67:17)
+>     at emitAppTouchEvent (touch.js:358:9)
+>     at HTMLDocument.appClick (touch.js:364:5)
+> ```
+
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -80,6 +98,7 @@
 | 13 | User | Empty comments should auto-delete, preferably on save detection. | Saving an empty comment edit should remove the draft/comment resource instead of disabling save or retaining an empty anchor/card. |
 | 14 | User | Empty comment save, close button, and Sheet/Modal close callback should all trigger delete and close the panel. | Empty comment finalization must be one lifecycle action shared by Save, Cancel/Close, and Framework7 `onSheetClosed`. |
 | 15 | User | Many Modal Sheet surfaces do not look like Framework7 official demo sheets. | Treat Sheet styling as a framework-law issue: use official `Sheet -> Toolbar -> PageContent` topology and avoid repainting Sheet/Toolbar chrome as custom glass panels. |
+| 16 | User | Deleting an empty comment still leaves a non-closing Sheet and Framework7 throws `sheet.params` undefined errors from `swipeToClose` and `closeByBackdropClick` handlers. | Do not destroy a live Framework7 Sheet by removing the Svelte component while it is open or closing; first drive `opened=false`, then release the retained Sheet state after `onSheetClosed`. |
 
 ### Evidence Read
 
@@ -98,6 +117,8 @@
 | `packages/web-chat-view/node_modules/framework7/components/toolbar/toolbar.less` | Toolbar sibling selectors set `--f7-page-toolbar-top-offset` / `--f7-page-toolbar-bottom-offset`. | The sheet editor should let Framework7 wire toolbar offset instead of hardcoding safe-area math. |
 | `packages/web-chat-view/node_modules/framework7-svelte/components/sheet.svelte` | Framework7 Svelte moves direct child `.navbar`, `.toolbar`, `.tabbar`, and `.searchbar` nodes from `.sheet-modal-inner` to fixed sheet chrome before creating the sheet instance. | The official Sheet topology requires toolbar/searchbar chrome to be direct Sheet children; nested or over-custom wrappers break the visual law. |
 | `packages/web-chat-view/node_modules/framework7/components/sheet/sheet.less` | `.sheet-modal` owns background, radius, overflow, transition, and push/backdrop behavior through Framework7 variables. | Web Chat should not repaint sheet modal chrome with ad hoc background/backdrop filters when the goal is official Framework7 style. |
+| `packages/web-chat-view/node_modules/framework7-svelte/components/sheet.svelte` | `onDestroy` calls `f7Sheet.destroy()`, while the Framework7 sheet class owns touch/click handlers bound to the sheet/app lifecycle. | If Web Chat conditionally unmounts a Sheet while it is open, the instance can be destroyed before Framework7 has closed and unbound handlers. |
+| `packages/web-chat-view/node_modules/framework7/components/sheet/sheet-class.js` | `handleTouchStart` reads `sheet.params.swipeToClose`; `handleClick` reads `sheet.params.closeByBackdropClick`. | The reported undefined `params` errors are consistent with a destroyed sheet instance whose event handlers are still reachable. |
 
 ### Git Evidence
 
@@ -134,6 +155,8 @@
 | `评论如果为空，自动删除` | Empty body means the comment resource should be removed at save time. | Empty save deletes the local anchor or pending resource without confirmation. |
 | `点击保存按钮或者点击关闭按钮（或者是因为Model关闭触发的回调）` | Empty-body delete must be triggered by every way the edit lifecycle ends. | Save, close/cancel, and Framework7 sheet-close callbacks should call the same finalizer. |
 | `官方版本的风格` | Framework7 Sheet should look like its official component family, not a host-local glass panel. | Preserve F7 Sheet/Toolbar/PageContent ownership and only style inner content for product details. |
+| `删除后，无法关闭` | The visual close state and framework lifecycle are out of sync. | Business deletion must not directly remove the Sheet component before Framework7 receives `opened=false` and emits closed. |
+| `swipeToClose / closeByBackdropClick undefined` | Framework7 handlers are reading a destroyed Sheet instance. | Retain the Svelte Sheet component through the close lifecycle and disable unused backdrop-click handler registration for no-backdrop sheets. |
 
 ### Demo / Spike Code
 
@@ -217,6 +240,7 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 - Web Chat should expose reusable Svelte components with package-owned CSS, but Framework7 framework primitives remain the shell owner.
 - Comment UI fixes stay inside `packages/web-chat-view`, not in Studio route CSS.
 - Framework7 Sheet visuals should come from official Sheet/Toolbar defaults; Web Chat should avoid custom translucent sheet backgrounds unless a future design law explicitly authorizes a different product family.
+- Framework7 Sheet lifecycle must stay framework-owned. Web Chat may delete comment data immediately, but it must retain the Sheet component until the Framework7 close lifecycle reaches `onSheetClosed`.
 
 ### User Confirmation Gates
 
@@ -236,6 +260,7 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 - [ ] 7. Self-review against intent and decide whether to loop.
 - [ ] 8. Round 2: fix nested PageContent, icon-only source toolbar actions, and empty-comment save deletion.
 - [ ] 9. Round 3: unify empty-comment finalization across save/close/Sheet callbacks and realign comment edit Sheet chrome with official Framework7 style.
+- [ ] 10. Round 4: retain comment edit Sheets through the Framework7 close lifecycle so empty deletion cannot destroy live Sheet instances or leave stale swipe/backdrop handlers.
 
 ## Open Questions
 
@@ -252,6 +277,7 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 | Keep `No comment body yet` as an empty-state card | User explicitly says empty body means there is no comment. |
 | Replace Framework7 `PageContent` with a div to avoid padding conflicts | That discards the framework law instead of using it correctly. |
 | Pass Studio runtimeStore through iframe event bridge for avatars | The app-view already connects to backend; backend/app-view contract should be the single source. |
+| Fix the Sheet crash by disabling all Framework7 gestures globally | That hides the symptom but keeps the lifecycle bug. Gesture/backdrop parameters can be tightened per sheet, but the real fix is to stop destroying a live Sheet component before it closes. |
 
 ## Exit Conditions
 

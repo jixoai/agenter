@@ -66,3 +66,4 @@ Creating a comment from source inspection and reopening that comment later from 
 - **THEN** the empty comment anchor or pending comment resource is deleted
 - **AND** the owning comment edit panel is closed
 - **AND** the implementation uses one shared finalization path so save and close callbacks cannot drift
+- **AND** deleting the empty comment does not destroy the Framework7 Sheet component before the Sheet close lifecycle reaches `onSheetClosed`

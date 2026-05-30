@@ -25,6 +25,14 @@ Composer, source-inspection, and comment-detail surfaces SHALL read as the same 
 - **AND** Web Chat does not repaint `.sheet-modal` or `.toolbar` with host-local translucent backgrounds or custom blur chrome
 - **AND** custom product spacing is limited to Framework7 variables or inner shells below `PageContent`
 
+#### Scenario: Framework7 Sheet close lifecycle is not bypassed
+
+- **GIVEN** a comment edit surface is implemented as a swipeable Framework7 `Sheet`
+- **WHEN** an empty-comment delete or parent modal close makes the edit panel no longer needed
+- **THEN** Web Chat first updates the Sheet `opened` prop to `false`
+- **AND** Web Chat retains the Sheet component until `onSheetClosed` runs
+- **AND** stale Framework7 swipe or backdrop click handlers cannot read a destroyed Sheet instance
+
 #### Scenario: Framework7 PageContent padding ownership is preserved
 
 - **GIVEN** a comment edit surface uses Framework7 `Toolbar` followed by `PageContent`
