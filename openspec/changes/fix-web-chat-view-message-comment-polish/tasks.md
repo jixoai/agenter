@@ -36,13 +36,13 @@
 - [x] 4.4 Use agent-browser after implementation to capture after-fix desktop and iPhone 14 screenshots for sender/avatar, message action geometry, comment anchor/detail, and source-comment edit textarea visibility.
 - [x] 4.5 Save before/after CSS-rule evidence and screenshots under `openspec/changes/fix-web-chat-view-message-comment-polish/review/evidence/`.
 - [x] 4.6 Run `bun run openspec:vision -- validate fix-web-chat-view-message-comment-polish`.
-- [ ] 4.7 Run `bun run openspec:vision -- commit-check fix-web-chat-view-message-comment-polish --phase self-review` before writing final review evidence.
+- [x] 4.7 Run `bun run openspec:vision -- commit-check fix-web-chat-view-message-comment-polish --phase self-review` before writing final review evidence.
 
 ## 5. Self-Review Loop
 
-- [ ] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, and task evidence.
-- [ ] 5.2 Generate `review/self-review.html` as the screenshot / CSS-rule / interaction evidence presentation.
-- [ ] 5.3 Include an explicit deviation list and future task list in the review artifacts, written in plain language.
-- [ ] 5.4 If review finds a spec or plan drift, run `bun run openspec:vision -- review-state fix-web-chat-view-message-comment-polish`, back up/update `plans/plan.md`, and commit OpenSpec updates before another apply loop.
-- [ ] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff fix-web-chat-view-message-comment-polish` and commit the handoff evidence before returning to user discussion.
-- [ ] 5.6 If review exits normally, run `bun run openspec:vision -- check fix-web-chat-view-message-comment-polish` and decide whether to archive after user acceptance.
+- [x] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, and task evidence.
+- [x] 5.2 Generate `review/self-review.html` as the screenshot / CSS-rule / interaction evidence presentation.
+- [x] 5.3 Include an explicit deviation list and future task list in the review artifacts, written in plain language.
+- [x] 5.4 If review finds a spec or plan drift, run `bun run openspec:vision -- review-state fix-web-chat-view-message-comment-polish`, back up/update `plans/plan.md`, and commit OpenSpec updates before another apply loop.
+- [x] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff fix-web-chat-view-message-comment-polish` and commit the handoff evidence before returning to user discussion.
+- [x] 5.6 If review exits normally, run `bun run openspec:vision -- check fix-web-chat-view-message-comment-polish` and decide whether to archive after user acceptance.

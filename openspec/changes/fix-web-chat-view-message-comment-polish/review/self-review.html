@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Web Chat Message Comment Polish Review</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+        background: #f5f6f8;
+        color: #172033;
+      }
+      body {
+        margin: 0;
+        padding: 32px;
+      }
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        display: grid;
+        gap: 22px;
+      }
+      section {
+        border: 1px solid rgba(23, 32, 51, 0.1);
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.86);
+        box-shadow: 0 18px 60px rgba(23, 32, 51, 0.08);
+        padding: 22px;
+      }
+      h1,
+      h2 {
+        margin: 0 0 12px;
+      }
+      p,
+      li {
+        line-height: 1.55;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+      }
+      figure {
+        margin: 0;
+        display: grid;
+        gap: 8px;
+      }
+      img {
+        width: 100%;
+        border-radius: 16px;
+        border: 1px solid rgba(23, 32, 51, 0.12);
+        background: #e9edf4;
+      }
+      figcaption {
+        color: #667085;
+        font-size: 13px;
+      }
+      pre {
+        overflow: auto;
+        border-radius: 16px;
+        background: #111827;
+        color: #e5e7eb;
+        padding: 16px;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .ok {
+        color: #067647;
+        font-weight: 700;
+      }
+      .warn {
+        color: #b54708;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>Web Chat Message Comment Polish Review</h1>
+        <p class="ok">结论：实现与原始目标基本对齐，等待用户视觉验收后再 archive。</p>
+        <p>本轮修复 sender/avatar projection、comment resource 空值规则、comment icon/action 语义，以及 Framework7 PageContent padding 所有权。</p>
+      </section>
+
+      <section>
+        <h2>关键截图</h2>
+        <div class="grid">
+          <figure>
+            <img src="evidence/after-app-view-desktop-transcript.png" alt="Desktop transcript" />
+            <figcaption>Desktop transcript：sender/avatar 与 comment resource。</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/after-app-view-desktop-source-popup.png" alt="Desktop source popup" />
+            <figcaption>Desktop source popup：source actions 使用 icon affordance。</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/after-app-view-desktop-comment-editor.png" alt="Desktop comment editor" />
+            <figcaption>Desktop comment editor：textarea 未被 PageContent padding 截断。</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/after-app-view-iphone14-transcript.png" alt="iPhone 14 transcript" />
+            <figcaption>iPhone 14 transcript：移动端 transcript 和资源入口。</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/after-app-view-iphone14-source-popup.png" alt="iPhone 14 source popup" />
+            <figcaption>iPhone 14 source popup：移动端 source actions。</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/after-app-view-iphone14-comment-editor.png" alt="iPhone 14 comment editor" />
+            <figcaption>iPhone 14 comment editor：textarea 和 Save icon 在 viewport 内。</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/after-studio-embedded-desktop.png" alt="Studio embedded iframe" />
+            <figcaption>Studio embedded：iframe app-view 边界仍成立。</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section>
+        <h2>CSS 证据摘要</h2>
+        <p>桌面和 iPhone 14 的 measurement JSON 都显示 `visibleText = no-placeholder`，且 comment editor `PageContent` 通过 `--f7-page-toolbar-top-offset` 和 `--f7-page-content-extra-padding-*` 合成 padding。</p>
+        <pre>{
+  "desktop": {
+    "textareaRect": "x=564 y=846 width=313 height=100 bottom=946 / viewportHeight=960",
+    "pageContentPadding": "top=72.32px bottom=13.76px",
+    "vars": "toolbarTop=64px extraTop=0.52rem extraBottom=0.86rem"
+  },
+  "iphone14": {
+    "textareaRect": "x=39 y=550 width=313 height=100 bottom=650 / viewportHeight=664",
+    "pageContentPadding": "top=72.32px bottom=13.76px",
+    "vars": "toolbarTop=64px extraTop=0.52rem extraBottom=0.86rem"
+  }
+}</pre>
+      </section>
+
+      <section>
+        <h2>偏移清单</h2>
+        <ul>
+          <li>流程偏移：产品代码在本上下文开始前已存在为未提交改动；本轮重新验证并记录偏移。</li>
+          <li>证据偏移：用户当前 Studio 房间为空，所以完整行为证据来自当前 worktree 的 stable example harness。</li>
+          <li>操作偏移：移动端一次 agent-browser click 被 overlay 拦截，后续用同一元素的真实 DOM click 触发。</li>
+          <li>范围偏移：没有删除所有 safe-area 用法，只处理 Framework7-owned PageContent/toolbar 冲突点。</li>
+          <li>验证偏移：没有跑完整 Storybook DOM 套件。</li>
+          <li>工作区偏移：无关 `bun.lock` dirty 未提交。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>未来任务</h2>
+        <ul>
+          <li>做 remaining safe-area usage audit，区分 inner-shell spacing 和 Framework7-owned surface。</li>
+          <li>补 Storybook DOM contract 覆盖 source comment roundtrip。</li>
+          <li>把 actor presentation projection 沉淀为更长期的 app-server/message-system contract。</li>
+          <li>抽 shared avatar primitive，进一步统一 Studio/Auth/Web Chat 头像。</li>
+          <li>用户验收后 archive 当前 OpenSpec change。</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>
