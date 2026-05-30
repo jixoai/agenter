@@ -2001,6 +2001,8 @@ export class SessionRuntime {
       getTerminalStatus: (terminalId) => this.terminalStatusById.get(terminalId)?.status ?? null,
       getTerminalHeadHash: async (terminalId) => await this.getTerminalHeadHash(terminalId),
       getTerminalReadCursorHash: (terminalId) => this.getTerminalReadCursorHash(terminalId),
+      getTerminalCommitWaitHash: (terminalId) => this.getTerminalCommitWaitHash(terminalId),
+      waitTerminalCommitted: (terminalId, input) => this.waitTerminalCommitted(terminalId, input),
       getTerminalContextId: (terminalId) =>
         terminalId === "control-plane"
           ? this.getTerminalControlPlaneAttentionContextId()
@@ -2021,6 +2023,11 @@ export class SessionRuntime {
         }),
       onTerminalActionableSignal: () => {
         this.notifyInput("terminal");
+      },
+      onTerminalIdleBridgeError: (error) => {
+        this.emit("error", {
+          message: `terminal idle bridge failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
       },
     });
     this.skillKernelAdapter = new RuntimeSkillKernelAdapter();
@@ -5755,6 +5762,29 @@ export class SessionRuntime {
     return this.terminalReadCursorHashById[terminalId] ?? null;
   }
 
+  private getTerminalCommitWaitHash(terminalId: string): string | null {
+    if (this.terminalControlPlane.has(terminalId)) {
+      return this.terminalControlPlane.getHeadHash(terminalId);
+    }
+    return this.terminals.get(terminalId)?.getHeadHash() ?? null;
+  }
+
+  private waitTerminalCommitted(
+    terminalId: string,
+    input: { fromHash?: string | null } = {},
+  ): { promise: Promise<{ toHash: string | null }>; reject: (reason: unknown) => void } {
+    if (this.terminalControlPlane.has(terminalId)) {
+      return this.terminalControlPlane.waitCommitted(terminalId, input);
+    }
+    const terminal = this.terminals.get(terminalId);
+    return (
+      terminal?.waitCommitted(input) ?? {
+        promise: Promise.resolve({ toHash: null }),
+        reject: () => {},
+      }
+    );
+  }
+
   private updateFocusedTerminals(op: TerminalFocusOp, terminalIds: string[] = []): string[] {
     const incoming = this.normalizeFocusedTerminalIds(terminalIds);
     const next = this.terminalControlPlane.focusForActor(this.terminalActorId, op, incoming);
@@ -7089,7 +7119,9 @@ export class SessionRuntime {
       avatarPrincipalId: this.options.avatarPrincipalId,
       homeDir: this.getHomeDir(),
     });
-    this.focusedTerminalIds = this.requireTerminalControlPlane().getFocusedTerminalIds(this.terminalActorId);
+    this.focusedTerminalIds = this.normalizeFocusedTerminalIds(
+      this.requireTerminalControlPlane().getFocusedTerminalIds(this.terminalActorId),
+    );
     this.loopPluginRuntime = await this.createLoopPluginRuntime();
     await this.migrateLegacyAttentionStoreDir();
     const attentionRoot = join(this.options.sessionRoot, "attention-system");

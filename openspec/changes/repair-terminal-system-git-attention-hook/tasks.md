@@ -12,6 +12,9 @@
 - [x] 2.4 Add terminal-control-plane BDD for non-consuming actor read cursor hash inspection.
 - [x] 2.5 Add session/runtime BDD that simulates a focused terminal entering `IDLE` after unread git output and verifies terminal attention is committed once.
 - [x] 2.6 Add BDD for the IDLE timing boundary: stale pre-idle `getHeadHash()` must not suppress unread output when sealing produces a newer terminal head.
+- [x] 2.7 Add adapter BDD proving an idle terminal waits for a later commit when the first sealed head equals the read cursor.
+- [x] 2.8 Add adapter BDD proving a `BUSY` transition cancels an idle commit waiter without committing stale terminal attention.
+- [x] 2.9 Add session/runtime BDD proving a pre-focused TerminalSystem terminal is attached when `SessionRuntime` starts, covering reused shell2 bindings.
 
 ## 3. Implementation
 
@@ -23,6 +26,9 @@
 - [x] 3.6 Add concise intent comments at the idle bridge effect point so future edits do not collapse raw/live output back into `terminal_write` activity.
 - [x] 3.7 Update only current-context completed task checkboxes after matching code and BDD evidence are in place.
 - [x] 3.8 Ensure the idle bridge compares against a sealed terminal git head rather than a stale synchronous head.
+- [x] 3.9 Add a cancellable idle-window terminal commit waiter in the runtime terminal adapter.
+- [x] 3.10 Wire `SessionRuntime` to TerminalSystem `waitCommitted(...)` for control-plane terminals and local fallback terminals.
+- [x] 3.11 Normalize focused TerminalSystem terminals through the attach path during runtime startup/focus hydration.
 
 ## 4. Verification
 
@@ -32,13 +38,16 @@
 - [x] 4.4 Run `git diff --check` for touched files.
 - [x] 4.5 Run `bun run openspec:vision -- commit-check repair-terminal-system-git-attention-hook --phase self-review` before writing final review evidence.
 - [x] 4.6 Re-run targeted session/runtime attention tests after the sealed-head timing fix.
+- [x] 4.7 Run targeted adapter tests for idle wait/cancel behavior.
+- [x] 4.8 Run targeted session/runtime attention tests for reused focused terminal attach.
+- [x] 4.9 Re-run `bun run openspec:vision -- validate repair-terminal-system-git-attention-hook` and `bun run openspec:vision -- check repair-terminal-system-git-attention-hook`.
 
 ## 5. Self-Review Loop
 
 - [x] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md` and the latest manual raw/live failure.
 - [x] 5.2 Generate separate `review/self-review.html` as structured evidence if the vision workflow requires it.
 - [x] 5.3 If the review updates OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
-- [ ] 5.4 If the review enters a real loop, run `bun run openspec:vision -- review-state repair-terminal-system-git-attention-hook`.
+- [x] 5.4 If the review enters a real loop, run `bun run openspec:vision -- review-state repair-terminal-system-git-attention-hook`.
 - [ ] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff repair-terminal-system-git-attention-hook` and commit the handoff evidence before returning to user discussion.
 - [ ] 5.6 If review exits normally, archive the change and commit the archive result only after the implementation is accepted.
 - [x] 5.7 Run `bun run openspec:vision -- check repair-terminal-system-git-attention-hook` and decide whether to exit or return to `research-plan` with a backed-up plan revision.

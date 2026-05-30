@@ -1,6 +1,7 @@
 import type { RuntimeSystemIngressEnvelope, RuntimeSystemKernelAdapter, RuntimeSystemKernelHost } from "./types";
 
 const TERMINAL_IDLE_UNREAD_ATTENTION_SCORE = 100;
+const TERMINAL_IDLE_WAIT_CANCELLED = Symbol("terminal-idle-wait-cancelled");
 
 export interface RuntimeTerminalLifecycleIngressInput {
   terminalId: string;
@@ -26,11 +27,21 @@ interface RuntimeTerminalKernelAdapterOptions {
   getTerminalStatus: (terminalId: string) => "IDLE" | "BUSY" | null;
   getTerminalHeadHash: (terminalId: string) => Promise<string | null>;
   getTerminalReadCursorHash: (terminalId: string) => string | null;
+  getTerminalCommitWaitHash?: (terminalId: string) => string | null;
+  waitTerminalCommitted?: (
+    terminalId: string,
+    input: { fromHash?: string | null },
+  ) => { promise: Promise<{ toHash: string | null }>; reject: (reason: unknown) => void };
   getTerminalContextId: (terminalId: string) => string;
   isTerminalActionable: (terminalId: string) => boolean;
   readTerminalIngress: (terminalId: string) => Promise<RuntimeSystemIngressEnvelope | null>;
   buildLifecycleIngressEnvelope: (input: RuntimeTerminalLifecycleIngressInput) => RuntimeSystemIngressEnvelope;
   onTerminalActionableSignal: (input: { terminalId: string; reason: string }) => void;
+  onTerminalIdleBridgeError?: (error: unknown) => void;
+}
+
+interface RuntimeTerminalIdleWaiter {
+  reject: (reason: unknown) => void;
 }
 
 export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter {
@@ -40,6 +51,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
   private readonly dirtyTerminalIds = new Set<string>();
   private readonly queuedTerminalIds = new Set<string>();
   private readonly pendingIdleReadTerminalIds = new Set<string>();
+  private readonly idleCommitWaiters = new Map<string, RuntimeTerminalIdleWaiter>();
   private readonly pendingLifecycleIngress: RuntimeSystemIngressEnvelope[] = [];
 
   constructor(private readonly options: RuntimeTerminalKernelAdapterOptions) {}
@@ -55,6 +67,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
   reset(): void {
     this.dirtyTerminalIds.clear();
     this.queuedTerminalIds.clear();
+    this.cancelAllIdleCommitWaiters();
     this.pendingLifecycleIngress.length = 0;
   }
 
@@ -107,8 +120,12 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
     running: boolean;
     status: "IDLE" | "BUSY";
   }): Promise<void> {
+    if (input.status === "BUSY") {
+      this.cancelIdleCommitWaiter(input.terminalId);
+    }
     if (input.previousStatus === "BUSY" && input.status === "IDLE" && input.running) {
       await this.commitIdleUnreadTerminal(input.terminalId);
+      this.startIdleUnreadWait(input.terminalId);
     }
     if (
       input.previousStatus === "BUSY" &&
@@ -219,6 +236,70 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
 
   private isUnreadHead(headHash: string | null, readCursorHash: string | null): boolean {
     return headHash !== null && headHash !== readCursorHash;
+  }
+
+  private isIdleWaitEligible(terminalId: string): boolean {
+    return (
+      this.host !== null &&
+      this.getFocusedTerminalIds().includes(terminalId) &&
+      this.options.isTerminalRunning(terminalId) &&
+      this.options.isTerminalActionable(terminalId) &&
+      this.options.getTerminalStatus(terminalId) === "IDLE"
+    );
+  }
+
+  private async waitForIdleUnreadTerminal(terminalId: string): Promise<void> {
+    if (!this.options.waitTerminalCommitted || !this.isIdleWaitEligible(terminalId)) {
+      return;
+    }
+    this.cancelIdleCommitWaiter(terminalId);
+    const fromHash =
+      this.options.getTerminalCommitWaitHash?.(terminalId) ?? (await this.options.getTerminalHeadHash(terminalId));
+    if (!this.isIdleWaitEligible(terminalId)) {
+      return;
+    }
+    const handle = this.options.waitTerminalCommitted(terminalId, { fromHash });
+    const waiter: RuntimeTerminalIdleWaiter = {
+      reject: handle.reject,
+    };
+    this.idleCommitWaiters.set(terminalId, waiter);
+    try {
+      await handle.promise;
+    } catch (error) {
+      if (error === TERMINAL_IDLE_WAIT_CANCELLED) {
+        return;
+      }
+      throw error;
+    } finally {
+      if (this.idleCommitWaiters.get(terminalId) === waiter) {
+        this.idleCommitWaiters.delete(terminalId);
+      }
+    }
+    if (!this.isIdleWaitEligible(terminalId)) {
+      return;
+    }
+    await this.commitIdleUnreadTerminal(terminalId);
+  }
+
+  private startIdleUnreadWait(terminalId: string): void {
+    void this.waitForIdleUnreadTerminal(terminalId).catch((error) => {
+      this.options.onTerminalIdleBridgeError?.(error);
+    });
+  }
+
+  private cancelIdleCommitWaiter(terminalId: string): void {
+    const waiter = this.idleCommitWaiters.get(terminalId);
+    if (!waiter) {
+      return;
+    }
+    this.idleCommitWaiters.delete(terminalId);
+    waiter.reject(TERMINAL_IDLE_WAIT_CANCELLED);
+  }
+
+  private cancelAllIdleCommitWaiters(): void {
+    for (const terminalId of [...this.idleCommitWaiters.keys()]) {
+      this.cancelIdleCommitWaiter(terminalId);
+    }
   }
 
   private promoteIdleUnreadEnvelope(envelope: RuntimeSystemIngressEnvelope): RuntimeSystemIngressEnvelope {

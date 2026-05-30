@@ -2588,6 +2588,55 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     }
   });
 
+  test("Scenario: Given a TerminalSystem terminal is already focused When runtime starts Then it attaches the managed terminal", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenter-session-runtime-prefocused-terminal-"));
+    const sessionId = `prefocused-${Date.now()}`;
+    const terminalActorId = resolveSessionRoomActorId(sessionId) as TerminalActorId;
+    const terminalSystem = createTerminalSystem(root);
+    await terminalSystem.createForActor(terminalActorId, {
+      terminalId: "prefocused-main",
+      processKind: "shell",
+      command: [process.execPath, "-e", "setInterval(() => {}, 1_000_000)"],
+      cwd: root,
+      profile: {
+        gitLog: "normal",
+      },
+      start: true,
+    });
+    terminalSystem.focusForActor(terminalActorId, "replace", ["prefocused-main"]);
+
+    const runtime = new SessionRuntime({
+      sessionId,
+      cwd: root,
+      sessionRoot: join(root, "session"),
+      sessionName: "test",
+      storeTarget: "workspace",
+      primaryRoomId: PRIMARY_ROOM_ID,
+      allocateRoomId: createRuntimeRoomAllocator(),
+      terminalSystem,
+      terminalActorId,
+      avatarPrincipalId: TEST_AVATAR_PRINCIPAL_ID,
+      avatarPrivateKey: TEST_AVATAR_PRIVATE_KEY,
+      homeDir: root,
+      rootWorkspacePath: root,
+      resolveRuntimeTerminalCwd: async (input) => ({
+        ok: true,
+        cwd: input.cwd ?? root,
+      }),
+    });
+    attachPrimaryRoom(runtime);
+    const internal = runtime as unknown as RuntimeInternal;
+
+    await runtime.start();
+    try {
+      expect(runtime.snapshot().focusedTerminalIds).toEqual(["prefocused-main"]);
+      expect(internal.terminals.has("prefocused-main")).toBeTrue();
+    } finally {
+      await runtime.stop();
+      await terminalSystem.stop("prefocused-main").catch(() => ({ ok: false, message: "ignored" }));
+    }
+  });
+
   test("Scenario: Given terminal control-plane config changes When runtime updates config Then the change stays in history as world fact without becoming active debt", async () => {
     const runtime = createRuntime();
     const internal = runtime as unknown as RuntimeInternal & {

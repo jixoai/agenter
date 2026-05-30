@@ -79,6 +79,16 @@ const createRecordingHost = (
   },
 });
 
+const waitForCondition = async (predicate: () => boolean, message: string): Promise<void> => {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+    await Bun.sleep(10);
+  }
+  throw new Error(message);
+};
+
 describe("Feature: runtime-terminal-kernel-adapter", () => {
   test("Scenario: Given a focused dirty terminal When adapter drains Then terminal observations become neutral ingress", async () => {
     const signals: string[] = [];
@@ -458,5 +468,129 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
     expect(observedHeads).toEqual(["hash-2"]);
     expect(committed).toHaveLength(1);
     expect(committed[0]?.envelope.meta?.toHash).toBe("hash-2");
+  });
+
+  test("Scenario: Given idle head equals read cursor When a later terminal commit arrives Then idle bridge reads once", async () => {
+    const committed: Array<{ envelope: RuntimeSystemIngressEnvelope; notifyLoop: boolean | undefined }> = [];
+    const reads: string[] = [];
+    const waitInputs: Array<{ terminalId: string; fromHash: string | null | undefined }> = [];
+    let headHash = "hash-1";
+    let cursorHash = "hash-1";
+    let resolveWait: (value: { toHash: string | null }) => void = () => {
+      throw new Error("terminal wait was not registered");
+    };
+    const adapter = new RuntimeTerminalKernelAdapter({
+      isLoopPaused: () => false,
+      listFocusedTerminalIds: () => ["iflow"],
+      isTerminalRunning: () => true,
+      getTerminalStatus: () => "IDLE",
+      getTerminalHeadHash: async () => headHash,
+      getTerminalReadCursorHash: () => cursorHash,
+      waitTerminalCommitted: (terminalId, input) => {
+        waitInputs.push({ terminalId, fromHash: input.fromHash });
+        const promise = new Promise<{ toHash: string | null }>((resolve) => {
+          resolveWait = resolve;
+        });
+        return {
+          promise,
+          reject: () => {},
+        };
+      },
+      getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
+      isTerminalActionable: () => true,
+      readTerminalIngress: async (terminalId) => {
+        reads.push(terminalId);
+        cursorHash = headHash;
+        return terminalEnvelope({
+          sourceId: `tty:${terminalId}`,
+          content: "+late idle line",
+          meta: {
+            terminalId,
+            fromHash: "hash-1",
+            toHash: "hash-2",
+          },
+        });
+      },
+      buildLifecycleIngressEnvelope: lifecycleEnvelope,
+      onTerminalActionableSignal: () => {},
+    });
+    adapter.mount(createRecordingHost(committed));
+
+    await adapter.handleStatusChange({
+      terminalId: "iflow",
+      previousStatus: "BUSY",
+      running: true,
+      status: "IDLE",
+    });
+
+    expect(reads).toEqual([]);
+    expect(committed).toEqual([]);
+    expect(waitInputs).toEqual([{ terminalId: "iflow", fromHash: "hash-1" }]);
+
+    headHash = "hash-2";
+    resolveWait({ toHash: "hash-2" });
+    await waitForCondition(() => reads.length === 1, "expected idle waiter to read after later terminal commit");
+
+    expect(reads).toEqual(["iflow"]);
+    expect(committed).toHaveLength(1);
+    expect(committed[0]?.notifyLoop).toBeTrue();
+    expect(committed[0]?.envelope.tags).toContain("idle-unread");
+  });
+
+  test("Scenario: Given idle bridge is waiting When terminal becomes busy Then pending wait is cancelled without attention", async () => {
+    const committed: Array<{ envelope: RuntimeSystemIngressEnvelope; notifyLoop: boolean | undefined }> = [];
+    const reads: string[] = [];
+    const rejected: unknown[] = [];
+    let rejectWait: ((reason: unknown) => void) | null = null;
+    let status: "IDLE" | "BUSY" = "IDLE";
+    const adapter = new RuntimeTerminalKernelAdapter({
+      isLoopPaused: () => false,
+      listFocusedTerminalIds: () => ["iflow"],
+      isTerminalRunning: () => true,
+      getTerminalStatus: () => status,
+      getTerminalHeadHash: async () => "hash-1",
+      getTerminalReadCursorHash: () => "hash-1",
+      waitTerminalCommitted: () => {
+        const promise = new Promise<{ toHash: string | null }>((_resolve, reject) => {
+          rejectWait = reject;
+        });
+        return {
+          promise,
+          reject: (reason) => {
+            rejected.push(reason);
+            rejectWait?.(reason);
+          },
+        };
+      },
+      getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
+      isTerminalActionable: () => true,
+      readTerminalIngress: async (terminalId) => {
+        reads.push(terminalId);
+        return terminalEnvelope();
+      },
+      buildLifecycleIngressEnvelope: lifecycleEnvelope,
+      onTerminalActionableSignal: () => {},
+    });
+    adapter.mount(createRecordingHost(committed));
+
+    await adapter.handleStatusChange({
+      terminalId: "iflow",
+      previousStatus: "BUSY",
+      running: true,
+      status: "IDLE",
+    });
+
+    status = "BUSY";
+    await adapter.handleStatusChange({
+      terminalId: "iflow",
+      previousStatus: "IDLE",
+      running: true,
+      status: "BUSY",
+    });
+    await Bun.sleep(0);
+
+    expect(rejected).toHaveLength(1);
+    expect(reads).toEqual([]);
+    expect(committed).toEqual([]);
   });
 });
