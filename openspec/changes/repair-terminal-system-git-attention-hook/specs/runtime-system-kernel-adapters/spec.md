@@ -63,6 +63,15 @@ The terminal adapter SHALL treat a running focused terminal `BUSY -> IDLE` trans
 - **THEN** the adapter still promotes the unread terminal read into attention
 - **AND** the behavior does not depend on an automation `terminal_write` event
 
+#### Scenario: First unread read may be represented as a snapshot
+
+- **GIVEN** a focused running git-log backed terminal has visible output
+- **AND** the runtime actor has no existing read cursor for that terminal
+- **WHEN** the idle bridge reads the unread terminal fact
+- **THEN** the runtime MUST accept a meaningful snapshot payload as the terminal fact when TerminalSystem cannot produce a diff from a null cursor
+- **AND** the runtime MUST inspect visible snapshot lines when the physical bottom `tail` is blank
+- **AND** it MUST only advance the actor read cursor after that snapshot has been accepted as meaningful
+
 ### Requirement: Terminal adapter SHALL keep lifecycle wording scheduler-only
 
 The terminal adapter MUST NOT restore `terminal_idle_ready` as a model-visible task phrase. The only model-visible payload produced by the idle unread bridge SHALL be the terminal read result itself.

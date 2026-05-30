@@ -2,8 +2,8 @@
 
 ## Current Round
 
-- Round: 4
-- Status: research-plan revised after shell2 manual failure exposed missing terminalSystem-first tests
+- Round: 5
+- Status: Round 5 product/global path repaired and validated by targeted BDD; archive remains gated on real daemon + shell2 acceptance
 - Previous plan backup: `plans/plan-v3.md`
 
 ## Workflow Command Surface
@@ -66,6 +66,7 @@
 | 3 | User | Investigate whether a previous implementation existed and whether residual architecture needs cleanup. | Perform git/OpenSpec archaeology before implementation. |
 | 4 | User | Manual shell2 acceptance failed; the current code appears to be a one-shot `hasUnread()` check rather than an idle-scoped `waitUnread({ signal })`. | Reopen implementation. The idle hook must keep a cancellable unread wait alive while the terminal remains idle. |
 | 5 | User | Testing must focus on TerminalSystem itself first, then TerminalSystem integration, and only then LoopBus + TerminalSystem integration. | Reopen testing plan. Reproduce the bug from the TerminalSystem truth chain before fixing runtime/product integration. |
+| 6 | User | Real daemon + shell2 manual input still leaves LoopBus idle, and BootstrapAdmin `terminal write "!"` also leaves LoopBus idle; therefore the prior tests are wrong. | Reopen Round 5. Add tests for the real product/global path, not only hand-built TerminalSystem fixtures. |
 
 ### Evidence Read
 
@@ -81,6 +82,9 @@
 | `packages/app-server/src/runtime-system-kernel-adapters/terminal-adapter.ts` | The Round 3 waiter starts only after `handleStatusChange(previousStatus: BUSY, status: IDLE)`. It is not armed merely because a focused terminal is already `IDLE`. | This likely explains the latest shell2 screenshot: raw input can update an already-idle terminal without producing a new BUSY -> IDLE transition. |
 | `packages/app-server/src/session-runtime.ts` | `buildTerminalSystemIngressEnvelope()` already turns `readTerminalRepresentation(... remark:true)` into a terminal world-fact attention envelope. | The read-result-to-attention path exists; it needs to be invoked at the IDLE hash comparison boundary. |
 | `packages/app-server/src/session-runtime.ts` | Runtime startup assigned `focusedTerminalIds` from TerminalControlPlane directly; focused terminals that already existed before runtime start were not normalized/attached. | Product-bound shell2 reuse can miss `terminal.onStatus()` and therefore never reach the adapter idle hook. |
+| `extensions/shell-next/src/product/bootstrap.ts` | The shell-next product terminal binding did not request `profile.gitLog: "normal"`, while prior tests used hand-built terminals that did. | Product bindings could create terminals without git-backed history, so `HEAD > read cursor` had no durable read source. |
+| `packages/app-server/src/app-kernel.ts` | The daemon global `TerminalControlPlane` was created without a git-log default. | Other product/global terminal creation paths needed the same git-backed default instead of relying only on shell-next local profile wiring. |
+| `packages/app-server/src/session-runtime.ts` | The idle bridge now requests a diff read, but TerminalSystem legitimately returns a snapshot for an actor with no previous read cursor. The old runtime meaningful filter only inspected physical bottom `tail`, which can be blank while visible output exists near the top of the screen. | First unread terminal facts could be dropped before consuming read/cursor advancement, leaving LoopBus idle even though TerminalSystem had a newer git head. |
 | `packages/terminal-system/src/managed-terminal.ts` | `ManagedTerminal.getHeadHash()` returns snapshot `seq`, while git-log reads/cursors are only committed when `profile.gitLog` is enabled. | This is a projection-vs-git-truth residual; the new fix must not deepen that leak. |
 | `openspec/changes/archive/2026-05-05-decouple-terminal-activity-from-runtime-loop/design.md` | The old runtime had two terminal wake paths: `markTerminalDirty -> notifyInput("terminal")` and scheduler `waitCommitted(...)`; that change intentionally separated physical terminal changes from runtime ingress. | This explains why broad terminal wake behavior was removed. |
 | `openspec/changes/archive/2026-05-05-decouple-terminal-activity-from-runtime-loop/specs/runtime-terminal-activity-bridge/spec.md` | The bridge may upgrade terminal changes to actionable ingress when an explicit action predicate matches. | `HEAD > readed HASH on IDLE` should be added as a named explicit action predicate. |
@@ -142,6 +146,10 @@
 Round 3 correction: entering `IDLE` is not only a momentary if-check. While the terminal remains idle, the runtime bridge must keep a cancellable unread/commit wait alive so a delayed status-idle git commit can still trigger the same consuming read and attention commit.
 
 Round 4 correction: tests must first prove the TerminalSystem truth chain. The product failure is likely not that raw `inputBytes` differs from manual input; it is that a focused terminal may already be `IDLE`, and raw output can advance TerminalSystem commits without a fresh `BUSY -> IDLE` transition to arm the runtime waiter.
+
+Round 5 correction: the previous BDD still overfit hand-built terminals. It manually enabled `profile.gitLog: "normal"` and asserted internal attention commits, but did not prove the actual shell-next/product binding path: shell-next creates a global terminal, focuses it into the avatar runtime, the user or BootstrapAdmin writes through the shared global TerminalControlPlane, and the runtime must convert the resulting unread terminal truth into wakeable attention. The new red tests must pin that product/global path before any production fix.
+
+Round 5 finding: the product/global path had two real gaps. First, product-bound global terminals did not consistently request git-backed history. Second, a first unread read for an actor with no read cursor can return a snapshot rather than a diff; if terminal output is above the bottom viewport rows, the snapshot's physical `tail` can be blank even though `snapshot.lines` contains the terminal fact. Runtime attention ingestion must treat that snapshot semantic tail as meaningful before it performs the consuming read.
 
 ### Underlying Drive
 
@@ -244,15 +252,26 @@ AI 执行一个终端任务后，终端输出在结束/稳定到 IDLE 时会自�
   - Normalize focused terminals during runtime startup so reused shell2 bindings attach.
   - Keep old broad scheduler terminal wake behavior removed.
 - [x] 5. Self-review against intent and decide whether to loop.
-- [ ] 6. Round 4 terminalSystem-first testing.
+- [x] 6. Round 4 terminalSystem-first testing.
   - Add TerminalSystem control-plane BDD: raw transport `inputBytes` advances `waitCommitted(...)`, can be sealed into a git head, and consuming `readAuthorized(... remark:true)` advances the actor read cursor without creating `terminal_write` activity.
   - Add Runtime adapter BDD: already-idle focused terminal arms an idle-window waiter without requiring `BUSY -> IDLE`.
   - Add SessionRuntime + TerminalSystem BDD: shell2-style already-idle focused terminal receives raw transport input and commits terminal attention through the existing read path.
-- [ ] 7. Round 4 implementation.
+- [x] 7. Round 4 implementation.
   - Add the smallest runtime adapter API needed to arm idle waits from focus/attach/status hydration.
   - Keep TerminalSystem pure; do not import AttentionSystem or LoopBus.
   - Keep raw transport separated from automation activity.
-- [ ] 8. Round 4 self-review and product acceptance gate.
+- [x] 8. Round 4 self-review and product acceptance gate.
+- [x] 9. Round 5 product/global red tests.
+  - Add shell-next product bootstrap BDD proving the terminal binding requests git-backed history.
+  - Add AppKernel/SessionRuntime BDD proving a product-style focused global terminal written through `writeGlobalTerminal(...)` commits terminal attention and advances the attention signal.
+  - Record the red failures: shell-next binding omitted `profile.gitLog`, and the product/global runtime path did not produce terminal attention.
+- [x] 10. Round 5 implementation.
+  - Default daemon global TerminalControlPlane terminals to `gitLog: "normal"`.
+  - Request `gitLog: "normal"` from the shell-next product binding.
+  - Make runtime terminal attention ingestion use diff reads with a non-consuming preview, and treat snapshot lines as semantic tail when the physical bottom tail is blank.
+- [ ] 11. Round 5 verification and product acceptance gate.
+  - Targeted BDD and low-level regressions pass in this working context.
+  - Archive remains gated on user validation in the real daemon + `bun agenter shell2` path.
 
 ## Open Questions
 
