@@ -79,6 +79,8 @@ describe("Feature: canonical message source popup contract", () => {
       expect(rule).not.toMatch(/(?:^|;)\s*backdrop-filter\s*:/u);
       expect(rule).not.toContain("--f7-toolbar-bg-color: transparent");
       expect(rule).not.toContain("--f7-toolbar-height: auto");
+      expect(rule).not.toContain("--f7-sheet-border-radius");
+      expect(rule).not.toMatch(/(?:^|;)\s*padding\s*:/u);
     }
 
     expect(sourcePopupSource).toContain('<Toolbar class="message-source-comment-editor-toolbar">');

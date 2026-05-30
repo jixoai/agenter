@@ -77,7 +77,7 @@ describe("Feature: comment resource reopen contract", () => {
   test("Scenario: Given an empty comment edit When save close or Sheet close ends the lifecycle Then one finalizer deletes the artifact and closes the panel", () => {
     expect(messageSourcePopupSource).toContain("finalizeEmptyCommentEditor");
     expect(messageSourcePopupSource).toContain("closeCommentEditor({ deleteIfEmpty: true })");
-    expect(messageSourcePopupSource).toContain("onSheetClosed={finalizeEmptyCommentEditor}");
+    expect(messageSourcePopupSource).toContain("onSheetClosed={handleCommentEditorSheetClosed}");
     expect(messageSourcePopupSource).toContain("deleteActiveCommentAnchor({ closePanel: true })");
 
     expect(pendingAssetStripSource).toContain("finalizePendingCommentEdit");
@@ -86,7 +86,21 @@ describe("Feature: comment resource reopen contract", () => {
 
     expect(resourcePreviewLayerSource).toContain("onCommentClose");
     expect(commentInspectorSource).toContain("finalizeEmptyAndClose");
-    expect(commentInspectorSource).toContain("onSheetClosed={finalizeEmptyAndClose}");
+    expect(commentInspectorSource).toContain("onSheetClosed={handleEditSheetClosed}");
+  });
+
+  test("Scenario: Given Framework7 owns a comment edit Sheet When empty delete closes it Then Svelte retains the component until SheetClosed", () => {
+    expect(messageSourcePopupSource).toContain("commentEditorSheetAnchor");
+    expect(messageSourcePopupSource).toContain("{#if $framework7Runtime && commentEditorSheetAnchor}");
+    expect(messageSourcePopupSource).toContain("commentEditorSheetAnchor = null");
+    expect(messageSourcePopupSource).toContain("closeByBackdropClick={false}");
+    expect(messageSourcePopupSource).not.toContain("{#if $framework7Runtime && activeCommentAnchor && resolvedOpen}");
+
+    expect(commentInspectorSource).toContain("editSheetMounted");
+    expect(commentInspectorSource).toContain("{#if $framework7Runtime && effectiveCanEdit && editSheetMounted}");
+    expect(commentInspectorSource).toContain("editSheetMounted = false");
+    expect(commentInspectorSource).toContain("closeByBackdropClick={false}");
+    expect(commentInspectorSource).not.toContain("{#if $framework7Runtime && effectiveCanEdit && open}");
   });
 
   test("Scenario: Given image file and comment resources When reading the implementation Then image, document, and comment resources stay on one popup-shell preview family", () => {

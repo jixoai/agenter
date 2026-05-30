@@ -67,3 +67,14 @@
 - [x] 6.6 Remove over-custom Framework7 Sheet/Toolbar chrome overrides from the source and comment inspector edit sheets while preserving inner editor layout and accessible icon actions.
 - [x] 6.7 Re-run targeted Web Chat unit/layout tests and `@agenter/web-chat-view` typecheck.
 - [x] 6.8 Re-run OpenSpec vision validate/check and update self-review with Round 3 deviation/future-task notes.
+
+## 7. Round 4 Acceptance Feedback
+
+- [x] 7.1 Record the reported `sheet.params` undefined runtime stack in `plans/plan.md` and extend the comment/Framework7 specs before code edits.
+- [x] 7.2 Add BDD/source contracts proving source comment and pending comment edit Sheets are retained until Framework7 `onSheetClosed`.
+- [x] 7.3 Implement retained Sheet mount state for source popup comment editing so empty save/close deletes data, drives `opened=false`, and releases the Sheet only after `onSheetClosed`.
+- [x] 7.4 Implement retained Sheet mount state for pending/comment inspector editing so resource removal or popup close cannot directly destroy a live Sheet.
+- [x] 7.5 Tighten Sheet backdrop parameters and remove remaining Sheet chrome overrides that fight official Framework7 defaults.
+- [x] 7.6 Re-run targeted Web Chat unit/layout tests and `@agenter/web-chat-view` typecheck.
+- [x] 7.7 Update self-review with Round 4 deviation/future-task notes and explain why the official Framework7 Sheet style is the correct default.
+- [x] 7.8 Run live Studio iframe/app-view browser verification for empty source comment save and cancel, confirming the Sheet visibly closes and no `sheet.params` / `swipeToClose` / `closeByBackdropClick` runtime error is emitted.

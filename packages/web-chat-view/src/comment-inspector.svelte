@@ -56,6 +56,7 @@
   const trimmedValue = $derived(value.trim());
   const canSave = $derived(effectiveCanEdit);
   const framework7Runtime = useFramework7Runtime();
+  let editSheetMounted = $state(false);
   const editSheetOpen = $derived(open && mode === "edit" && effectiveCanEdit);
   const shellTitle = $derived(title);
   const shellAriaLabel = $derived(mode === "edit" ? `Edit ${title}` : title);
@@ -107,6 +108,17 @@
       close();
     }
   };
+
+  const handleEditSheetClosed = async (): Promise<void> => {
+    await finalizeEmptyAndClose();
+    editSheetMounted = false;
+  };
+
+  $effect(() => {
+    if (editSheetOpen) {
+      editSheetMounted = true;
+    }
+  });
 </script>
 
 {#snippet anchorCardContent()}
@@ -245,7 +257,7 @@
   {@render inspectorBody()}
 {/if}
 
-{#if $framework7Runtime && effectiveCanEdit && open}
+{#if $framework7Runtime && effectiveCanEdit && editSheetMounted}
   <Sheet
     class="comment-inspector-edit-sheet"
     opened={editSheetOpen}
@@ -254,7 +266,8 @@
     swipeToClose
     backdrop={false}
     closeByOutsideClick={false}
-    onSheetClosed={finalizeEmptyAndClose}
+    closeByBackdropClick={false}
+    onSheetClosed={handleEditSheetClosed}
   >
     <Toolbar class="comment-inspector-edit-bar">
       <Link
@@ -439,10 +452,6 @@
     gap: 0.75rem;
   }
 
-  :global(.comment-inspector-edit-sheet.sheet-modal) {
-    --f7-sheet-border-radius: 22px 22px 0 0;
-  }
-
   :global(.comment-inspector-edit-content.page-content) {
     --f7-page-toolbar-top-offset: var(--f7-toolbar-height);
     --f7-page-content-extra-padding-top: 0.52rem;
@@ -487,15 +496,13 @@
   }
 
   :global(.comment-inspector-edit-bar .toolbar-inner) {
-    display: grid;
-    grid-template-columns: minmax(2.4rem, max-content) minmax(0, 1fr) minmax(2.4rem, max-content);
     gap: 0.5rem;
-    align-items: center;
-    padding: 0;
+    justify-content: space-between;
   }
 
   .comment-inspector-edit-title {
     min-width: 0;
+    flex: 1 1 auto;
     display: grid;
     justify-items: center;
     gap: 0.08rem;
@@ -503,19 +510,13 @@
   }
 
   :global(.comment-inspector-edit-action.link) {
-    justify-self: start;
     min-width: 2.4rem;
     color: var(--f7-theme-color, #007aff);
-    padding: 0.2rem 0.12rem;
-    font-size: 0.76rem;
-    font-weight: 600;
-    text-align: start;
     text-decoration: none;
-    justify-content: flex-start;
+    justify-content: center;
   }
 
   :global(.comment-inspector-edit-save.link) {
-    justify-self: end;
     text-align: end;
   }
 

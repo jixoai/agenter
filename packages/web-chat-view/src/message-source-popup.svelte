@@ -74,6 +74,7 @@
   let sourceCommentAnchors = $state<SourceCommentAnchor[]>([]);
   let activeCommentAnchorId = $state<string | null>(null);
   let commentAnchorMode = $state<"view" | "edit" | null>(null);
+  let commentEditorSheetAnchor = $state<SourceCommentAnchor | null>(null);
   let commentDraft = $state("");
   let lastOpenedKey = "";
   let selectionActionButtonRef = $state<HTMLElement | null>(null);
@@ -138,23 +139,30 @@
   const activeCommentAnchor = $derived(
     sourceCommentAnchors.find((anchor) => anchor.id === activeCommentAnchorId) ?? null,
   );
+  const commentEditorDisplayAnchor = $derived(activeCommentAnchor ?? commentEditorSheetAnchor);
   const commentEditorOpen = $derived(
     Boolean(resolvedOpen && activeCommentAnchor && commentAnchorMode === "edit"),
   );
   const commentEditorSourceSummary = $derived.by(() => {
-    if (!activeCommentAnchor) {
+    if (!commentEditorDisplayAnchor) {
       return "";
     }
-    return buildSourceSummary(activeCommentAnchor.lineNumber);
+    return buildSourceSummary(commentEditorDisplayAnchor.lineNumber);
   });
 
   const close = (): void => {
+    if (commentAnchorMode === "edit") {
+      closeCommentEditor({ deleteIfEmpty: true });
+    }
     selectionActionsOpen = false;
     commentAnchorMode = null;
     onOpenChange?.(false);
   };
 
   const handlePopupClosed = (): void => {
+    if (commentAnchorMode === "edit") {
+      closeCommentEditor({ deleteIfEmpty: true });
+    }
     selectionActionsOpen = false;
     commentAnchorMode = null;
     onOpenChange?.(false);
@@ -215,6 +223,10 @@
   const activateCommentAnchor = (anchor: SourceCommentAnchor, mode: "view" | "edit"): void => {
     const shouldClose = activeCommentAnchorId === anchor.id && commentAnchorMode === mode;
     if (shouldClose) {
+      if (mode === "edit") {
+        closeCommentEditor({ deleteIfEmpty: true });
+        return;
+      }
       activeCommentAnchorId = null;
       commentAnchorMode = null;
       return;
@@ -222,6 +234,9 @@
     activeCommentAnchorId = anchor.id;
     commentAnchorMode = mode;
     commentDraft = anchor.commentText;
+    if (mode === "edit") {
+      commentEditorSheetAnchor = anchor;
+    }
   };
 
   const openCommentAnchor = (mode: "view" | "edit" = "edit"): void => {
@@ -259,6 +274,11 @@
 
   const finalizeEmptyCommentEditor = (): void => {
     closeCommentEditor({ deleteIfEmpty: true });
+  };
+
+  const handleCommentEditorSheetClosed = (): void => {
+    finalizeEmptyCommentEditor();
+    commentEditorSheetAnchor = null;
   };
 
   const handleLineKeydown = (event: KeyboardEvent, lineNumber: number): void => {
@@ -334,7 +354,7 @@
       return;
     }
     if (trimmedDraft.length === 0) {
-      finalizeEmptyCommentEditor();
+      closeCommentEditor({ deleteIfEmpty: true });
       showTransientToast("空评论已删除");
       return;
     }
@@ -703,7 +723,7 @@
   }}
 />
 
-{#if $framework7Runtime && activeCommentAnchor && resolvedOpen}
+{#if $framework7Runtime && commentEditorSheetAnchor}
   <Sheet
     class="message-source-comment-editor-sheet"
     opened={commentEditorOpen}
@@ -712,7 +732,8 @@
     swipeToClose
     backdrop={false}
     closeByOutsideClick={false}
-    onSheetClosed={finalizeEmptyCommentEditor}
+    closeByBackdropClick={false}
+    onSheetClosed={handleCommentEditorSheetClosed}
   >
     <Toolbar class="message-source-comment-editor-toolbar">
       <Link
@@ -729,7 +750,7 @@
         <X class="message-source-comment-editor-toolbar-icon" />
       </Link>
       <div class="message-source-comment-editor-title">
-        <span>{activeCommentAnchor.label}</span>
+        <span>{commentEditorSheetAnchor.label}</span>
         <span>{commentEditorSourceSummary}</span>
       </div>
       <Link
@@ -1114,16 +1135,9 @@
     background: rgba(248, 248, 252, 0.96);
   }
 
-  :global(.message-source-comment-editor-sheet.sheet-modal) {
-    --f7-sheet-border-radius: 22px 22px 0 0;
-  }
-
   :global(.message-source-comment-editor-toolbar .toolbar-inner) {
-    display: grid;
-    width: 100%;
-    grid-template-columns: minmax(2.4rem, max-content) minmax(0, 1fr) minmax(2.4rem, max-content);
     gap: 0.5rem;
-    align-items: center;
+    justify-content: space-between;
   }
 
   :global(.message-source-comment-editor-content.page-content) {
@@ -1149,6 +1163,7 @@
 
   .message-source-comment-editor-title {
     min-width: 0;
+    flex: 1 1 auto;
     display: grid;
     justify-items: center;
     gap: 0.08rem;
@@ -1173,7 +1188,6 @@
   }
 
   .message-source-comment-editor-action {
-    justify-self: start;
     min-width: 2.4rem;
     border: 0;
     background: transparent;
@@ -1185,15 +1199,10 @@
   }
 
   :global(.message-source-comment-editor-action.link) {
-    width: auto;
-    height: auto;
-    min-height: 2rem;
-    justify-content: flex-start;
-    padding-inline: 0.12rem;
+    justify-content: center;
   }
 
   .message-source-comment-editor-save {
-    justify-self: end;
     text-align: end;
   }
 
