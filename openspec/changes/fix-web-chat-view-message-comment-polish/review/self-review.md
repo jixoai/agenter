@@ -2,7 +2,7 @@
 
 ## 结论
 
-本轮实现和证据与原始目标基本对齐，可以进入用户验收。核心问题已经收口：`Trusted bootstrap` 不再作为正常发送者名泄漏；app-view room mode 可以拿到自包含的 sender/avatar directory；空评论不会渲染成 `No comment body yet`；评论图标统一为 `MessageSquareDot`；评论/source 面板动作改成 icon affordance；Framework7 `PageContent` 的 padding offset 所有权恢复给 Framework7。Round 2 验收反馈也已收口：source popup 不再出现双重 `.page-content`，有图标的 dense toolbar 不再显示 `Actions` / `Comment` 文案，空评论保存会自动删除临时 anchor 或 pending comment resource。Round 3 验收反馈已修正空评论保存/关闭语义和 Sheet chrome 过度重绘。Round 4 修正了更底层的 Sheet 生命周期偏移：空评论删除只清业务数据并驱动 `opened=false`，Svelte 组件会保留到 Framework7 `onSheetClosed` 后再释放，避免销毁 live Sheet instance 后残留 `swipeToClose` / `closeByBackdropClick` handlers。
+本轮实现和证据与原始目标基本对齐，可以进入用户验收。核心问题已经收口：`Trusted bootstrap` 不再作为正常发送者名泄漏；app-view room mode 可以拿到自包含的 sender/avatar directory；空评论不会渲染成 `No comment body yet`；评论图标统一为 `MessageSquareDot`；评论/source 面板动作改成 icon affordance；Framework7 `PageContent` 的 padding offset 所有权恢复给 Framework7。Round 2 验收反馈也已收口：source popup 不再出现双重 `.page-content`，有图标的 dense toolbar 不再显示 `Actions` / `Comment` 文案，空评论保存会自动删除临时 anchor 或 pending comment resource。Round 3 验收反馈已修正空评论保存/关闭语义和 Sheet chrome 过度重绘。Round 4 修正了更底层的 Sheet 生命周期偏移：空评论删除只清业务数据并驱动 `opened=false`，Svelte 组件会保留到 Framework7 `onSheetClosed` 后再释放，避免销毁 live Sheet instance 后残留 `swipeToClose` / `closeByBackdropClick` handlers。Round 5 修正 composer resource rail 偏移：动态加入的图片、文件、评论资源现在直接挂到 `messagebar-area` 的 `beforeArea`，不会再出现在发送按钮旁边。
 
 ## 对齐清单
 
@@ -20,6 +20,7 @@
 - Framework7 Sheet 风格：source/comment edit sheet 保留直接 `Sheet -> Toolbar -> PageContent` 拓扑，移除了 `.sheet-modal` / `.toolbar` 上的自定义 background、backdrop-filter、transparent toolbar 变量覆盖，让官方 Sheet chrome 重新成为视觉来源。
 - Framework7 Sheet 生命周期：source comment editor 使用 `commentEditorSheetAnchor` 保留 Sheet 到 `onSheetClosed`；comment inspector 使用 `editSheetMounted` 保留 Sheet 到 `onSheetClosed`；删除空评论不会再通过 `{#if active/open}` 直接卸载 live Sheet。
 - Framework7 Sheet 官方风格：继续使用官方 `Sheet -> Toolbar -> PageContent` 直接子拓扑；移除了残留的 `--f7-sheet-border-radius` 覆盖和 toolbar inner `padding: 0` / grid 重写，让默认 Sheet radius、background、toolbar padding 由 Framework7 CSS 决定。我们只保留标题布局、图标按钮和 PageContent 内部 spacing。
+- Composer 资源栏：pending image/file/comment resources 统一通过 `Messagebar` 的 `beforeArea` 进入 `.messagebar-area`，位置稳定在 draft field 上方，不再依赖 Framework7 mount-time DOM 搬运，也不会落到 send button 的 toolbar pane 旁边。
 
 ## 证据
 
@@ -37,6 +38,11 @@
 - `bun run --filter '@agenter/web-chat-view' typecheck`：Round 4 复跑通过，0 errors / 0 warnings。
 - Round 4 live browser verification：在用户正在运行的 `bun agenter studio --dev` 上打开 `http://127.0.0.1:4173/messages/...`，进入 `127.0.0.1:4293` iframe app-view，走 `Message actions -> View source -> Comment -> Save empty`，结果 `modalIn=0`、source popup 仍可用、控制台没有 `sheet.params` / `swipeToClose` / `closeByBackdropClick` / `pageerror`。
 - Round 4 live browser verification：同一 live iframe 路径走 `Message actions -> View source -> Comment -> Cancel empty`，结果 `visibleSheets=0`、`modalIn=0`、`modalOut=0`，控制台没有 `sheet.params` / `swipeToClose` / `closeByBackdropClick` / `pageerror`。
+- Round 5 BDD red/green：`test/web-chat-view.test.ts -t "pending files in the shared composer"` 先失败，显示 `[part='composer-assets']` 的父级不是 `.messagebar-area`；将 `PendingAssetStrip` 移入 `beforeArea` 后通过。
+- Round 5 targeted tests：`bun run --filter '@agenter/web-chat-view' test:unit -- test/web-chat-view.test.ts -t "pending files in the shared composer"` 通过，1 test passed。
+- Round 5 regression tests：`bun run --filter '@agenter/web-chat-view' test:unit -- test/comment-resource-reopen-contract.test.ts test/message-source-popup-layout.test.ts` 通过，2 files / 15 tests passed。
+- Round 5 typecheck：`bun run --filter '@agenter/web-chat-view' typecheck` 通过，0 errors / 0 warnings。
+- Round 5 live browser verification：从 Studio `4173` 取得当前 app-view iframe URL，在 iPhone 14 viewport 直接打开 `4293` app-view，走 `Message actions -> View source -> Comment -> Save non-empty -> Close source`；结果 `shelfParentClass="messagebar-area"`、`shelfInMessagebarArea=true`、`shelfInSendPane=false`、`shelfRect.y=621`、`composerStageRect.y=666`、`sendRect.y=673`，控制台无 fatal log。截图：`review/evidence/round5-iphone14-composer-resource-rail.png`。
 - `agent-browser` route screenshots：desktop transcript/source/comment editor、iPhone 14 list/transcript/source/comment editor、Studio embedded desktop。
 - CSS measurement：desktop/iPhone 14 JSON 都显示 comment editor textarea 在 viewport 内，`visibleText` 为 `no-placeholder`。
 - CSS rule evidence：浏览器 CSSOM 记录 Framework7 `.page-content` 仍通过 `padding-top/padding-bottom` 公式和 `--f7-page-*` / `--f7-page-content-extra-padding-*` 变量计算 offset。
@@ -56,6 +62,7 @@
 - Round 3 视觉偏移：本轮没有重新拍浏览器截图，只做了 Framework7 source contract、targeted unit 和 typecheck。原因是用户这轮指出的是可由源码契约稳定覆盖的生命周期和官方 chrome ownership；若要确认最终观感，下一步仍建议在用户正在运行的 Studio/app-view 中目测 Sheet。
 - Round 4 根因偏移：Round 3 只统一了“业务 finalizer”，但没有区分“删除评论数据”和“销毁 Framework7 Sheet 组件”这两件事，导致空删除会直接让 `{#if active/open}` 卸载 live Sheet。Round 4 已把这两件事拆开。
 - Round 4 DOM 偏移：真实浏览器验证发现空保存后 Framework7/Svelte 会留下一个 `display:none` 的旧 `.message-source-comment-editor-sheet` 节点，且该节点已经没有 `f7Modal/params`，当前不会再触发用户报告的 handler 报错。这个属于 Framework7 把 Sheet 节点临时搬到容器后与 Svelte 卸载边界的残留，不应在本轮为了“清零 DOM”重写生命周期。
+- Round 5 根因偏移：之前把 `PendingAssetStrip` 作为 `Messagebar` children，依赖 Framework7 初始化时把 `.toolbar-inner > .messagebar-attachments` 搬进 `.messagebar-area`。但 comment resource 是后续动态插入的，父级不一定重新搬运，因此资源会留在 send button 旁边。本轮改为直接使用 `beforeArea`，不再依赖搬运副作用。
 
 ## 未来任务清单
 
@@ -65,6 +72,7 @@
 - 对所有 Web Chat `Sheet` 做一次官方 Framework7 chrome audit。Round 3 只修了 comment edit 相关两个 Sheet；example/review shell 里其它 Sheet 如果仍有自定义外观，需要逐个判断是产品授权还是历史残留。
 - 给 source/comment edit Sheet 增加真实浏览器 interaction test，覆盖“空保存 -> Sheet 关闭 -> 再点页面无 `sheet.params` undefined console error”。
 - 后续单独研究 Framework7 Svelte Sheet 的 moved-node 残留：目标是清理 `display:none` 的旧 Sheet 节点，但不能回退到直接销毁 live Sheet 的错误路径。
+- 给 composer resource rail 增加 Storybook DOM contract，覆盖动态加入 comment resource 后仍在输入框上方的资源栏，而不是 send row。
 - 考虑把 actor presentation projection 从 CLI plain endpoint 进一步沉淀为长期 message-system/app-server API contract，避免未来另一个 host 重复实现目录投影。
 - 如果要彻底统一头像组件，可以把 `ChatAvatar` 与 Studio/Auth profile avatar 的样式 token/尺寸契约沉淀到 shared avatar primitive。
 - 等用户验收视觉效果后，再 archive `fix-web-chat-view-message-comment-polish`，不要现在直接 archive。

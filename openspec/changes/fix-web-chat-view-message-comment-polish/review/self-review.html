@@ -80,7 +80,7 @@
       <section>
         <h1>Web Chat Message Comment Polish Review</h1>
         <p class="ok">结论：实现与原始目标基本对齐，等待用户视觉验收后再 archive。</p>
-        <p>本轮修复 sender/avatar projection、comment resource 空值规则、comment icon/action 语义，以及 Framework7 PageContent padding 所有权。Round 2 追加修复：消除 source popup 双重 page-content、dense toolbar 改成 icon-only、空评论保存自动删除。Round 3/4 继续修复：空评论 save/close/SheetClosed 共用删除语义，并且删除业务数据时不再直接销毁 live Framework7 Sheet。最新 live Studio iframe 验证确认：空保存和空取消都会关闭 Sheet，控制台没有 `sheet.params` / `swipeToClose` / `closeByBackdropClick` 报错。</p>
+        <p>本轮修复 sender/avatar projection、comment resource 空值规则、comment icon/action 语义，以及 Framework7 PageContent padding 所有权。Round 2 追加修复：消除 source popup 双重 page-content、dense toolbar 改成 icon-only、空评论保存自动删除。Round 3/4 继续修复：空评论 save/close/SheetClosed 共用删除语义，并且删除业务数据时不再直接销毁 live Framework7 Sheet。Round 5 修复 composer resource rail：评论、图片、文件这类 pending resources 回到输入框上方资源栏，不再挤到发送按钮旁边。</p>
       </section>
 
       <section>
@@ -121,6 +121,10 @@
           <figure>
             <img src="evidence/round2-iphone14-empty-comment-after-save.png" alt="Round 2 empty comment after save" />
             <figcaption>Round 2 iPhone 14：空评论保存后 anchor 自动删除。</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/round5-iphone14-composer-resource-rail.png" alt="Round 5 composer resource rail" />
+            <figcaption>Round 5 iPhone 14：非空评论资源位于输入框上方资源栏，而不是发送按钮旁边。</figcaption>
           </figure>
         </div>
       </section>
@@ -189,6 +193,17 @@
   },
   "knownResidual": "empty save can leave a display:none stale sheet node with no f7Modal/params; this is future cleanup, not the reported live-handler crash"
 }</pre>
+        <p>Round 5 live browser evidence：资源栏回到 <code>messagebar-area</code>，并在 draft field 上方。</p>
+        <pre>{
+  "shelfParentClass": "messagebar-area",
+  "shelfInMessagebarArea": true,
+  "shelfInSendPane": false,
+  "shelfText": "1  Comment 1 Round 5 resource rail comment",
+  "shelfRect": { "x": 37, "y": 621, "width": 317, "height": 41, "bottom": 663 },
+  "composerStageRect": { "x": 37, "y": 666, "width": 317, "height": 38, "bottom": 704 },
+  "sendRect": { "x": 356, "y": 673, "width": 31, "height": 31, "bottom": 704 },
+  "fatalLogs": []
+}</pre>
       </section>
 
       <section>
@@ -204,6 +219,7 @@
           <li>Round 2 验证偏移：最初使用 `[part="message-bubble"]` 等待失败，修正为 token selector `[part~="message-bubble"]` 后通过。</li>
           <li>Round 3 根因偏移：只修了业务 finalizer，没有区分删除评论数据和销毁 Framework7 Sheet 组件。</li>
           <li>Round 4 DOM 偏移：空保存后可能留下一个 `display:none` 的旧 Sheet DOM 节点，但它没有 `f7Modal/params`，不会继续作为 live Sheet 参与交互；后续应单独清理，不应回退到直接销毁 live Sheet。</li>
+          <li>Round 5 根因偏移：之前依赖 Framework7 初始化时搬运 `.toolbar-inner > .messagebar-attachments`；动态插入的 comment resource 不稳定。本轮改为直接用 `beforeArea`，让资源栏天然属于 `.messagebar-area`。</li>
         </ul>
       </section>
 
@@ -215,6 +231,7 @@
           <li>如需非空评论删除能力，新增 destructive icon action，并在有内容时弹确认框。</li>
           <li>补真实浏览器 interaction test：空保存关闭后继续点击页面，console 不再出现 `sheet.params` undefined。</li>
           <li>单独研究 Framework7 Svelte Sheet moved-node 残留，清理旧 hidden sheet 节点但不破坏 close lifecycle。</li>
+          <li>补 Storybook DOM contract，覆盖动态加入 comment resource 后仍位于输入框上方资源栏。</li>
           <li>继续对所有 Web Chat Sheet 做官方 Framework7 chrome audit，判断哪些自定义外观有明确产品授权。</li>
           <li>把 actor presentation projection 沉淀为更长期的 app-server/message-system contract。</li>
           <li>抽 shared avatar primitive，进一步统一 Studio/Auth/Web Chat 头像。</li>
