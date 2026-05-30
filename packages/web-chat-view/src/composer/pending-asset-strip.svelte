@@ -94,7 +94,14 @@
     }}
     onCommentSave={() => {
       if (previewingResource) {
-        onUpdateComment?.(previewingResource.id, commentDraftValue.trim());
+        const trimmedDraft = commentDraftValue.trim();
+        if (trimmedDraft.length === 0) {
+          onRemoveComment?.(previewingResource.id);
+          previewingResourceId = null;
+          return;
+        }
+        onUpdateComment?.(previewingResource.id, trimmedDraft);
+        commentDraftValue = trimmedDraft;
         commentDetailMode = "view";
       }
     }}

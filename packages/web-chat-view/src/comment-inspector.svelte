@@ -52,7 +52,7 @@
 
   const effectiveCanEdit = $derived(canEdit && typeof onSave === "function");
   const trimmedValue = $derived(value.trim());
-  const canSave = $derived(trimmedValue.length > 0 && effectiveCanEdit);
+  const canSave = $derived(effectiveCanEdit);
   const framework7Runtime = useFramework7Runtime();
   const editSheetOpen = $derived(open && mode === "edit" && effectiveCanEdit);
   const shellTitle = $derived(title);
@@ -206,11 +206,11 @@
             fill
             disabled={!canSave}
             aria-label="Save comment"
-            title="Save comment"
+            title={trimmedValue.length > 0 ? "Save comment" : "Delete empty comment"}
             onclick={() => void save()}
           >
             <Save class="comment-inspector-action-icon" />
-            <span>Save comment</span>
+            <span>{trimmedValue.length > 0 ? "Save comment" : "Delete empty comment"}</span>
           </Framework7Button>
         {/if}
       </div>
@@ -270,7 +270,7 @@
         class="comment-inspector-edit-action comment-inspector-edit-save"
         iconOnly
         aria-label="Save comment"
-        title="Save"
+        title={trimmedValue.length > 0 ? "Save" : "Delete empty comment"}
         aria-disabled={!canSave}
         tabindex={!canSave ? -1 : undefined}
         onclick={(event: MouseEvent) => {

@@ -14,6 +14,9 @@
 - [x] 2.5 Add a Framework7 CSS contract test: Given source/comment edit `PageContent` styles are inspected When component CSS is read Then no whole `padding` declaration on `.page-content` disables Framework7 padding formulas; custom spacing uses extra-padding variables or inner shells.
 - [x] 2.6 Add a message-row action-spacing contract test: Given compact sent and received rows with actions When CSS is inspected Then there is no unconditional compact `.message-card-with-actions { padding-inline-end: ... }` reservation that applies identically to both ownership directions.
 - [x] 2.7 Confirm each task checkbox is updated only after the current agent has implemented and verified that task in this working context.
+- [x] 2.8 Add a Framework7 shell contract test: Given a component renders explicit `PageContent` inside Framework7 `Page` When reading the Svelte source Then the parent `Page` disables automatic `pageContent` to prevent nested `.page-content`.
+- [x] 2.9 Add an icon-only toolbar contract test: Given source popup toolbar actions render icons When reading the implementation Then `Actions` and `Comment` text is not visible inside the dense toolbar controls.
+- [x] 2.10 Add an empty-comment deletion contract test: Given a pending/source comment edit is saved with an empty body When handlers run Then the local anchor or pending comment resource is removed instead of leaving an empty resource.
 
 ## 3. Implementation
 
@@ -27,6 +30,9 @@
 - [x] 3.8 Rework message action affordance spacing so compact sent/received bubbles do not reserve wrong-side padding; use ownership-aware placement or overlay geometry.
 - [x] 3.9 Add concise intent comments only at critical boundary points where future readers could confuse grant provenance with sender identity or Framework7 offset ownership with custom safe-area layout.
 - [x] 3.10 Update only current-context completed task checkboxes and commit them with matching implementation/BDD evidence.
+- [x] 3.11 Set `pageContent={false}` on Web Chat Framework7 `Page` instances that manually own explicit `PageContent`.
+- [x] 3.12 Convert source popup selection toolbar actions to visual icon-only controls while preserving `aria-label` and `title`.
+- [x] 3.13 Change source and pending comment save behavior so empty saved content deletes/cancels the comment resource rather than disabling save and leaving an empty artifact.
 
 ## 4. Verification
 
@@ -37,6 +43,9 @@
 - [x] 4.5 Save before/after CSS-rule evidence and screenshots under `openspec/changes/fix-web-chat-view-message-comment-polish/review/evidence/`.
 - [x] 4.6 Run `bun run openspec:vision -- validate fix-web-chat-view-message-comment-polish`.
 - [x] 4.7 Run `bun run openspec:vision -- commit-check fix-web-chat-view-message-comment-polish --phase self-review` before writing final review evidence.
+- [x] 4.8 Re-run targeted Web Chat unit/layout tests for Round 2 contracts.
+- [x] 4.9 Re-run `bun run --filter '@agenter/web-chat-view' typecheck`.
+- [x] 4.10 Re-run OpenSpec vision validate/check after Round 2 updates.
 
 ## 5. Self-Review Loop
 
@@ -46,3 +55,4 @@
 - [x] 5.4 If review finds a spec or plan drift, run `bun run openspec:vision -- review-state fix-web-chat-view-message-comment-polish`, back up/update `plans/plan.md`, and commit OpenSpec updates before another apply loop.
 - [x] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff fix-web-chat-view-message-comment-polish` and commit the handoff evidence before returning to user discussion.
 - [x] 5.6 If review exits normally, run `bun run openspec:vision -- check fix-web-chat-view-message-comment-polish` and decide whether to archive after user acceptance.
+- [x] 5.7 Update self-review artifacts with Round 2 acceptance feedback, deviation list, and future tasks before asking for another visual acceptance pass.

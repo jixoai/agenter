@@ -239,6 +239,17 @@
     }
   };
 
+  const deleteActiveCommentAnchor = (): void => {
+    const anchor = activeCommentAnchor;
+    if (!anchor) {
+      return;
+    }
+    sourceCommentAnchors = sourceCommentAnchors.filter((item) => item.id !== anchor.id);
+    activeCommentAnchorId = null;
+    commentAnchorMode = null;
+    commentDraft = "";
+  };
+
   const handleLineKeydown = (event: KeyboardEvent, lineNumber: number): void => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -308,7 +319,12 @@
   const saveCommentDraft = async (): Promise<void> => {
     const anchor = activeCommentAnchor;
     const trimmedDraft = commentDraft.trim();
-    if (!activeMessage || !anchor || anchor.selectedText.length === 0 || trimmedDraft.length === 0) {
+    if (!activeMessage || !anchor || anchor.selectedText.length === 0) {
+      return;
+    }
+    if (trimmedDraft.length === 0) {
+      deleteActiveCommentAnchor();
+      showTransientToast("空评论已删除");
       return;
     }
     sourceCommentAnchors = sourceCommentAnchors.map((item) =>
@@ -361,7 +377,7 @@
   {#if activeMessage}
     <Popup opened={resolvedOpen} containerEl="body" tabletFullscreen swipeToClose="to-bottom" onPopupClosed={handlePopupClosed}>
       <View>
-        <Page class="message-source-page" noSwipeback>
+        <Page class="message-source-page" pageContent={false} noSwipeback>
           <Navbar>
             <NavLeft
               class="message-source-navslot"
@@ -467,7 +483,6 @@
                 }}
               >
                 <Ellipsis class="message-source-toolbar-action-icon" />
-                <span>Actions</span>
               </Link>
               <Link
                 href="#"
@@ -481,7 +496,6 @@
                 }}
               >
                 <MessageSquareDot class="message-source-toolbar-action-icon" />
-                <span>Comment</span>
               </Link>
             </div>
           </Toolbar>
@@ -600,14 +614,12 @@
                 }}
               >
                 <Ellipsis class="message-source-toolbar-action-icon" />
-                <span>Actions</span>
               </Link>
               <Link href="#" role="button" aria-label="Comment on selected source line" title="Comment" onclick={(event: MouseEvent) => {
                 event.preventDefault();
                 openCommentAnchor("edit");
               }}>
                 <MessageSquareDot class="message-source-toolbar-action-icon" />
-                <span>Comment</span>
               </Link>
             </div>
           </div>
@@ -646,13 +658,8 @@
                   role="button"
                   aria-label="Save comment"
                   title="Save"
-                  aria-disabled={commentDraft.trim().length === 0}
-                  tabindex={commentDraft.trim().length === 0 ? -1 : undefined}
                   onclick={(event: MouseEvent) => {
                     event.preventDefault();
-                    if (commentDraft.trim().length === 0) {
-                      return;
-                    }
                     void saveCommentDraft();
                   }}
                 >
@@ -721,13 +728,8 @@
         iconOnly
         aria-label="Save comment"
         title="Save"
-        aria-disabled={commentDraft.trim().length === 0}
-        tabindex={commentDraft.trim().length === 0 ? -1 : undefined}
         onclick={(event: MouseEvent) => {
           event.preventDefault();
-          if (commentDraft.trim().length === 0) {
-            return;
-          }
           void saveCommentDraft();
         }}
       >

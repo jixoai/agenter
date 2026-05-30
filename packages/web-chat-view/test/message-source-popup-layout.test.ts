@@ -80,4 +80,11 @@ describe("Feature: canonical message source popup contract", () => {
     expect(sourcePopupSource).toContain(".message-source-page-content-inner");
     expect(resourcePreviewShellSource).toContain(".resource-preview-shell-body");
   });
+
+  test("Scenario: Given Framework7 Page manually renders PageContent When reading the popup shell Then automatic PageContent wrapping is disabled", () => {
+    expect(sourcePopupSource).toContain('<Page class="message-source-page" pageContent={false} noSwipeback>');
+    expect(resourcePreviewShellSource).toContain('pageContent={false}');
+    expect(sourcePopupSource).toContain('<PageContent class="message-source-page-content">');
+    expect(resourcePreviewShellSource).toContain('<PageContent class="resource-preview-shell-page-content">');
+  });
 });

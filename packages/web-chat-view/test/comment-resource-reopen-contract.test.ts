@@ -53,6 +53,27 @@ describe("Feature: comment resource reopen contract", () => {
     expect(messageSourcePopupSource).not.toContain('<div class="message-source-comment-editor-content">');
   });
 
+  test("Scenario: Given source toolbar actions have icons When reading the implementation Then dense action controls do not render visible text labels", () => {
+    expect(messageSourcePopupSource).toContain('aria-label="Open source line actions"');
+    expect(messageSourcePopupSource).toContain('aria-label="Comment on selected source line"');
+    expect(messageSourcePopupSource).not.toContain("<span>Actions</span>");
+    expect(messageSourcePopupSource).not.toContain("<span>Comment</span>");
+  });
+
+  test("Scenario: Given a source comment or pending comment edit is saved empty When reading the implementation Then empty save removes the comment artifact", () => {
+    const pendingAssetStripSource = readFileSync(
+      resolve(import.meta.dirname, "../src/composer/pending-asset-strip.svelte"),
+      "utf8",
+    );
+    const commentInspectorSource = readFileSync(resolve(import.meta.dirname, "../src/comment-inspector.svelte"), "utf8");
+
+    expect(messageSourcePopupSource).toContain("deleteActiveCommentAnchor");
+    expect(messageSourcePopupSource).toContain("trimmedDraft.length === 0");
+    expect(messageSourcePopupSource).toContain("deleteActiveCommentAnchor()");
+    expect(pendingAssetStripSource).toContain("onRemoveComment?.(previewingResource.id)");
+    expect(commentInspectorSource).toContain("canSave = $derived(effectiveCanEdit)");
+  });
+
   test("Scenario: Given image file and comment resources When reading the implementation Then image, document, and comment resources stay on one popup-shell preview family", () => {
     expect(resourcePreviewLayerSource).toContain('activeResource?.kind === "image"');
     expect(resourcePreviewLayerSource).toContain('activeResource?.kind === "comment"');

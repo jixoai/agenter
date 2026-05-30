@@ -100,6 +100,7 @@
         data-preview-tone={tone}
         data-has-footer={hasFooterActions ? "true" : "false"}
         noToolbar={!hasFooterActions}
+        pageContent={false}
         noSwipeback
       >
         <Navbar>
