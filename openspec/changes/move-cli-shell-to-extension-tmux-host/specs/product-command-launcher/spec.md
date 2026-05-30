@@ -11,9 +11,9 @@ The product command launcher SHALL resolve product packages from controlled loca
 - **THEN** it launches the extension-local package bin
 - **AND** it does not require `packages/cli-shell`
 
-#### Scenario: Local package Studio still resolves
+#### Scenario: Local extension Studio still resolves
 
-- **GIVEN** `packages/studio/package.json` exists with name `agenter-ext-studio`
+- **GIVEN** `extensions/studio/package.json` exists with name `agenter-ext-studio`
 - **WHEN** the launcher resolves `agenter studio`
-- **THEN** it launches the package-local Studio bin
+- **THEN** it launches the extension-local Studio bin
 - **AND** extension support does not add Studio-specific core code

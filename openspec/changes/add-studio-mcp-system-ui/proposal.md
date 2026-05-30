@@ -22,7 +22,7 @@
 
 ## Impact
 
-- Studio UI: `packages/studio/src/lib/features/mcp/**/*`, `packages/studio/src/routes/(app)/mcp/**/*`, and `packages/studio/src/lib/features/shell/app-shell.svelte`.
+- Studio UI: `extensions/studio/src/lib/features/mcp/**/*`, `extensions/studio/src/routes/(app)/mcp/**/*`, and `extensions/studio/src/lib/features/shell/app-shell.svelte`.
 - Client SDK/runtime store: `packages/client-sdk/src/runtime-store.ts` and exported MCP view/input types.
 - App server/trpc: browser-safe MCP routes or descriptor-backed bridge endpoints, implemented without exposing `mcpSystem` internals directly to Studio.
 - Tests: BDD unit/contract tests for runtime-store MCP facade, Studio app-shell navigation, MCP workbench layout, project filter behavior, lifecycle/action controls, and Storybook DOM coverage for the add/edit/remove and project detail interactions.

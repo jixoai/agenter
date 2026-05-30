@@ -183,9 +183,9 @@ Runtime snapshots and terminal realtime publications SHALL expose terminal launc
 
 #### Scenario: Launch cwd stays separate from observed current path
 
-- **WHEN** a terminal was created with launch cwd `/repo/app` but the running shell later `cd`s to `/repo/app/packages/studio`
+- **WHEN** a terminal was created with launch cwd `/repo/app` but the running shell later `cd`s to `/repo/app/extensions/studio`
 - **THEN** the runtime projection preserves `/repo/app` as launch truth
-- **AND** it publishes `/repo/app/packages/studio` as observed current path
+- **AND** it publishes `/repo/app/extensions/studio` as observed current path
 
 #### Scenario: Configured title stays separate from observed current title
 

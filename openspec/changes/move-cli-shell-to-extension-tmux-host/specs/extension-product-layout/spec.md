@@ -12,9 +12,9 @@ The product command launcher SHALL treat `extensions/*` as a first-class local w
 - **AND** it does not require `packages/cli-shell` to exist
 - **AND** the core launcher still does not import cli-shell implementation code
 
-#### Scenario: Package products remain supported
+#### Scenario: Non-shell extension products remain supported
 
-- **GIVEN** a product package still lives under `packages/studio`
+- **GIVEN** a product package lives under `extensions/studio`
 - **WHEN** the launcher resolves product command `studio`
-- **THEN** it may resolve that package from `packages/studio`
-- **AND** extension-root support does not force all products to move in one change
+- **THEN** it may resolve that package from `extensions/studio`
+- **AND** extension-root support stays descriptor-driven instead of hardcoding cli-shell-specific paths

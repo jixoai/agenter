@@ -8,7 +8,7 @@
 ## 2. Studio Workbench Shell
 
 - [ ] 2.1 Add `/mcp` route and app-shell `MCP` navigation item with active state for nested MCP routes.
-- [ ] 2.2 Create `packages/studio/src/lib/features/mcp/` module structure for state, mocked fixtures, workbench layout, list, detail, dialogs, and tests.
+- [ ] 2.2 Create `extensions/studio/src/lib/features/mcp/` module structure for state, mocked fixtures, workbench layout, list, detail, dialogs, and tests.
 - [ ] 2.3 Implement runtime selector and no-runtime empty state so MCP facts are always scoped to an explicit runtime authority.
 - [ ] 2.4 Implement project path filter/search with global-only and exact-project projection modes.
 
