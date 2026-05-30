@@ -45,8 +45,8 @@
     <main>
       <h1>Terminal Idle Git Attention Bridge Review</h1>
       <p>
-        The review target is backend-only. Round 3 was reopened after manual shell2 acceptance failed and now focuses on
-        the idle-window waiter plus startup focus hydration.
+        The review target is backend-only. Round 4 was reopened after manual shell2 acceptance failed again and now
+        proves TerminalSystem truth first, then runtime already-idle watcher behavior.
       </p>
       <table>
         <thead>
@@ -64,12 +64,22 @@
           </tr>
           <tr>
             <td>Idle is a cancellable window, not a one-shot check.</td>
-            <td>Adapter tests cover later commit resolution and BUSY cancellation.</td>
+            <td>Adapter tests cover later commit resolution, BUSY cancellation, and pre-BUSY baseline preservation.</td>
+            <td class="pass">Pass</td>
+          </tr>
+          <tr>
+            <td>TerminalSystem raw truth chain is covered before LoopBus integration.</td>
+            <td>Control-plane test covers raw inputBytes, waitCommitted, sealIdleCommit, read cursor, and no terminal_write activity.</td>
             <td class="pass">Pass</td>
           </tr>
           <tr>
             <td>Already-focused TerminalSystem terminals are attached on runtime start.</td>
             <td>Session/runtime BDD creates a pre-focused control-plane terminal and verifies attachment.</td>
+            <td class="pass">Pass</td>
+          </tr>
+          <tr>
+            <td>Already-idle focused terminals arm the same watcher.</td>
+            <td>Session/runtime BDD sends raw inputBytes through a shell2-style terminal and observes terminal attention.</td>
             <td class="pass">Pass</td>
           </tr>
           <tr>
@@ -92,8 +102,8 @@
       <h2>Verification Commands</h2>
       <ul>
         <li><code>bun test packages/app-server/test/runtime-terminal-kernel-adapter.test.ts</code></li>
-        <li><code>bun test packages/terminal-system/test/control-plane.test.ts --grep "cursor hash is inspected"</code></li>
-        <li><code>bun test packages/app-server/test/session-runtime.attention-system.test.ts --grep "focused terminal enters idle|already focused"</code></li>
+        <li><code>bun test packages/terminal-system/test/control-plane.test.ts --grep "raw inputBytes When output changes while idle|cursor hash is inspected"</code></li>
+        <li><code>bun test packages/app-server/test/session-runtime.attention-system.test.ts --grep "already focused|raw inputBytes changes output|focused terminal enters idle"</code></li>
         <li><code>bun test packages/app-server/test/runtime-system-kernel-adapters.integration.test.ts</code></li>
         <li><code>bun run --filter '@agenter/terminal-system' typecheck</code></li>
         <li><code>git diff --check -- ...touched terminal/OpenSpec paths...</code></li>
@@ -103,8 +113,8 @@
       <h2>External Blocker</h2>
       <p>
         <code>bun run --filter '@agenter/app-server' typecheck</code> is currently blocked by unrelated dirty
-        <code>packages/cli/src/trpc-server.ts</code> imports for <code>PublicRoomActorPresentation</code> and
-        <code>@agenter/message-system</code>. Those files are outside this terminal change.
+        <code>packages/cli/src/trpc-server.ts</code> import resolution for <code>@agenter/message-system</code>.
+        That file is outside this terminal change.
       </p>
       <h2>Exit Judgment</h2>
       <p>Implementation exits normally. Archive is deferred until manual acceptance of the daemon + shell2 path.</p>
