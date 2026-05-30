@@ -406,13 +406,15 @@
     </Link>
   {/snippet}
 
-  <PendingAssetStrip
-    assets={pendingAssets}
-    {commentResources}
-    onRemove={removePendingAsset}
-    onRemoveComment={removePendingCommentResource}
-    onUpdateComment={updatePendingCommentResource}
-  />
+  {#snippet beforeArea()}
+    <PendingAssetStrip
+      assets={pendingAssets}
+      {commentResources}
+      onRemove={removePendingAsset}
+      onRemoveComment={removePendingCommentResource}
+      onUpdateComment={updatePendingCommentResource}
+    />
+  {/snippet}
 
   {#snippet afterArea()}
     <div class="composer-stage" part="composer-frame">

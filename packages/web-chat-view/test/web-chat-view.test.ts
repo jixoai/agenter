@@ -943,10 +943,13 @@ describe("Feature: web-chat-view package", () => {
     await vi.waitFor(() => {
       expect(document.body.querySelector("[part='composer-asset']")).toBeTruthy();
     });
+    const resourceShelf = document.body.querySelector("[part='composer-assets']");
+    const sendButton = document.body.querySelector("[data-testid='web-chat-composer-send']");
     expect(readRenderedText(document.body.querySelector("[part='composer-asset']"))).toContain("notes.txt");
+    expect(resourceShelf?.parentElement?.classList.contains("messagebar-area")).toBe(true);
+    expect(sendButton?.closest(".toolbar-pane")?.contains(resourceShelf)).toBe(false);
     expect(document.body.querySelector("[part='composer-status']")).toBeNull();
 
-    const sendButton = document.body.querySelector("[data-testid='web-chat-composer-send']");
     await vi.waitFor(() => {
       expect(sendButton?.hasAttribute("disabled")).toBe(false);
     });

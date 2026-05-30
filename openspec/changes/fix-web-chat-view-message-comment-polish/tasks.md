@@ -78,3 +78,11 @@
 - [x] 7.6 Re-run targeted Web Chat unit/layout tests and `@agenter/web-chat-view` typecheck.
 - [x] 7.7 Update self-review with Round 4 deviation/future-task notes and explain why the official Framework7 Sheet style is the correct default.
 - [x] 7.8 Run live Studio iframe/app-view browser verification for empty source comment save and cancel, confirming the Sheet visibly closes and no `sheet.params` / `swipeToClose` / `closeByBackdropClick` runtime error is emitted.
+
+## 8. Round 5 Acceptance Feedback
+
+- [x] 8.1 Record the reported composer resource rail layout issue in `plans/plan.md` and extend Framework7 visual-law specs.
+- [x] 8.2 Add BDD coverage proving pending resources belong to `.messagebar-area` and are not contained by the send button toolbar pane.
+- [x] 8.3 Move `PendingAssetStrip` into the Framework7 `Messagebar` `beforeArea` slot so dynamic image/file/comment resources render in the resource rail above the draft field.
+- [x] 8.4 Re-run targeted Web Chat unit tests, `@agenter/web-chat-view` typecheck, OpenSpec validate/check, and live visual verification.
+- [x] 8.5 Update self-review with Round 5 evidence before asking for another visual acceptance pass.
