@@ -43,6 +43,18 @@ Live PTY transport input SHALL remain a raw interaction channel and MUST NOT be 
 - **THEN** the terminal git `HEAD` and read cursor state expose whether there is unread output
 - **AND** the activity log does not need a `terminal_write` record for the idle unread bridge to work
 
+#### Scenario: Raw input advances terminal truth and actor read cursor through the integrated TerminalSystem chain
+
+- **GIVEN** a git-log backed terminal is running and focused for actor `session:alpha`
+- **AND** the actor's read cursor is at terminal head `H1`
+- **AND** a control-plane commit waiter is waiting from the current terminal snapshot head
+- **WHEN** a live transport sends `inputBytes` and the PTY output changes while the terminal is already `IDLE`
+- **THEN** the control-plane commit waiter resolves with a newer terminal truth boundary
+- **AND** sealing the idle terminal exposes a non-null git `HEAD = H2`
+- **AND** consuming `readAuthorized(... remark: true)` reads from `H1` to `H2`
+- **AND** the actor read cursor becomes `H2`
+- **AND** no automation `terminal_write` activity is appended for the raw input
+
 ## MODIFIED Requirements
 
 ## REMOVED Requirements

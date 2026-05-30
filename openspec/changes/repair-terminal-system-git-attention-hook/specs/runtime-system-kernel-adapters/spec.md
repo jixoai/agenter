@@ -37,6 +37,15 @@ The terminal adapter SHALL treat a running focused terminal `BUSY -> IDLE` trans
 - **THEN** the pending idle wait is cancelled
 - **AND** no stale terminal attention ingress is committed for that cancelled idle window
 
+#### Scenario: Already-idle focused terminal arms the same unread wait
+
+- **GIVEN** a focused running terminal is already `IDLE` when the runtime attaches it or synchronizes focus
+- **AND** the terminal `HEAD` initially equals the runtime actor's read cursor
+- **WHEN** TerminalSystem commits a newer terminal head while the terminal remains `IDLE`
+- **THEN** the terminal adapter consumes one terminal read from the previous cursor to the newer head
+- **AND** it commits that read payload as wakeable terminal attention ingress
+- **AND** the behavior does not require observing a fresh `BUSY -> IDLE` transition
+
 #### Scenario: Repeated idle with already-read head is a no-op
 
 - **GIVEN** a focused running terminal has current git `HEAD = H2`

@@ -51,3 +51,25 @@
 - [ ] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff repair-terminal-system-git-attention-hook` and commit the handoff evidence before returning to user discussion.
 - [ ] 5.6 If review exits normally, archive the change and commit the archive result only after the implementation is accepted.
 - [x] 5.7 Run `bun run openspec:vision -- check repair-terminal-system-git-attention-hook` and decide whether to exit or return to `research-plan` with a backed-up plan revision.
+
+## 6. Round 4 TerminalSystem-First BDD
+
+- [ ] 6.1 Add TerminalSystem control-plane BDD proving raw transport `inputBytes` advances `waitCommitted(...)`, seals to a git `HEAD`, consumes through `readAuthorized(... remark:true)`, advances actor read cursor, and does not append automation `terminal_write` activity.
+- [ ] 6.2 Add runtime adapter BDD proving an already-idle focused terminal can arm the same idle-window waiter without a fresh `BUSY -> IDLE`.
+- [ ] 6.3 Add SessionRuntime + TerminalSystem BDD proving shell2-style already-idle focused terminal raw input is promoted to terminal attention.
+
+## 7. Round 4 Implementation
+
+- [ ] 7.1 Run the Round 4 BDD tests and capture the initial failing behavior before implementation.
+- [ ] 7.2 Add the smallest runtime adapter API needed to arm idle waiters from focus/attach/status hydration.
+- [ ] 7.3 Wire SessionRuntime focus/attach/status synchronization to arm already-idle focused terminal waiters.
+- [ ] 7.4 Preserve TerminalSystem purity: no AttentionSystem/LoopBus imports and no raw input modeled as `terminal_write`.
+- [ ] 7.5 Re-run targeted TerminalSystem, runtime adapter, and SessionRuntime tests.
+
+## 8. Round 4 Verification
+
+- [ ] 8.1 Run `bun run --filter '@agenter/terminal-system' typecheck`.
+- [ ] 8.2 Run scoped `git diff --check` for touched files.
+- [ ] 8.3 Run `bun run openspec:vision -- validate repair-terminal-system-git-attention-hook`.
+- [ ] 8.4 Run `bun run openspec:vision -- check repair-terminal-system-git-attention-hook`.
+- [ ] 8.5 Update self-review evidence with the Round 4 red/green result and keep archive gated on user shell2 acceptance.
