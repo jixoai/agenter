@@ -10,6 +10,14 @@ Composer, source-inspection, and comment-detail surfaces SHALL read as the same 
 - **THEN** the input, attachments rail, and action buttons keep compact mobile-first proportions
 - **AND** the draft field does not read like a detached desktop card
 
+#### Scenario: Composer pending resources stay in the messagebar resource rail
+
+- **GIVEN** pending image, file, or comment resources are added after the composer has mounted
+- **WHEN** the composer renders those resources
+- **THEN** the resources render inside Framework7 `MessagebarAttachments` within the `messagebar-area`
+- **AND** the resource rail appears above the draft field
+- **AND** resources do not render in the toolbar action row beside the send button
+
 #### Scenario: Comment detail remains quiet and readable
 
 - **WHEN** the operator opens comment detail from a comment resource

@@ -77,6 +77,10 @@
 >     at HTMLDocument.appClick (touch.js:364:5)
 > ```
 
+## Round 5 User Acceptance Feedback
+
+> [Image #1] 为什么这里的评论会在发送按钮的旁边，这属于资源，应该在资源栏啊，我记得是在消息框的上方一条，可以放图片文件评论等资源
+
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -157,6 +161,7 @@
 | `官方版本的风格` | Framework7 Sheet should look like its official component family, not a host-local glass panel. | Preserve F7 Sheet/Toolbar/PageContent ownership and only style inner content for product details. |
 | `删除后，无法关闭` | The visual close state and framework lifecycle are out of sync. | Business deletion must not directly remove the Sheet component before Framework7 receives `opened=false` and emits closed. |
 | `swipeToClose / closeByBackdropClick undefined` | Framework7 handlers are reading a destroyed Sheet instance. | Retain the Svelte Sheet component through the close lifecycle and disable unused backdrop-click handler registration for no-backdrop sheets. |
+| `评论会在发送按钮的旁边` | Dynamic comment resource insertion is rendering in the toolbar action row. | Pending resources must be owned by `messagebar-area` as the attachment/resource rail above the draft, not by the send button toolbar pane. |
 
 ### Demo / Spike Code
 
