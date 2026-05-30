@@ -1,6 +1,6 @@
 {
   "name": "agenter-ext-shell",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "files": [
     "SPEC.md",

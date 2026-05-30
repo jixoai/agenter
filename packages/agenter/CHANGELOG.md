@@ -1,5 +1,11 @@
 # agenter
 
+## 0.0.6
+
+### Patch Changes
+
+- 70d1e89: Promote Shell as the stable `agenter shell` product and remove the old `shell2` incubation command.
+
 ## 0.0.1
 
 ### Patch Changes
