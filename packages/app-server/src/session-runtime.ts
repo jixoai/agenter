@@ -33,11 +33,11 @@ import {
 import {
   MessageControlPlane,
   resolveMessageControlDbPath,
-  type MessageContactId,
   type MessageChannelAccessProjection,
   type MessageChannelGrantRecord,
   type MessageChannelKind,
   type MessageChannelPatchInput,
+  type MessageContactId,
   type MessageContactRecord,
   type MessageControlPlaneEntry,
   type MessageErrorPayload,
@@ -122,16 +122,17 @@ import { AttentionHashAliasRegistry, AttentionHashAliasStore } from "./attention
 import { projectAttentionCommitMatchForModel } from "./attention-model-view";
 import {
   MESSAGE_ATTENTION_NAMESPACE,
+  ROOM_ATTENTION_NAMESPACE,
   TASK_ATTENTION_NAMESPACE,
   TERMINAL_ATTENTION_NAMESPACE,
   appAttentionSourceRegistry,
-  formatMessageAttentionSrc,
+  formatRoomAttentionSrc,
   formatTaskAttentionSrc,
   formatTerminalAttentionSrc,
   parseMessageAttentionSrc,
+  parseRoomAttentionSrc,
   parseTaskAttentionSrc,
   parseTerminalAttentionSrc,
-  type MessageAttentionSrc,
   type TerminalAttentionSrc,
 } from "./attention-src";
 import {
@@ -1190,26 +1191,33 @@ const IGNORE_WAIT = Symbol("ignore-wait");
 const DEFAULT_MAX_FOCUSED_ROOM_COUNT = 3;
 const DEFAULT_MAX_BATCH_READ_ROOM_MESSAGE_COUNT = 20;
 
-const MESSAGE_SRC_NAMESPACE = MESSAGE_ATTENTION_NAMESPACE;
+const MESSAGE_SRC_NAMESPACE = ROOM_ATTENTION_NAMESPACE;
 const TERMINAL_SRC_NAMESPACE = TERMINAL_ATTENTION_NAMESPACE;
 const TASK_SRC_NAMESPACE = TASK_ATTENTION_NAMESPACE;
 
 type RuntimeSourceKind = "message" | "terminal" | "task" | "unknown";
 type LifecycleBridgeId = "message" | "terminal";
 
-type MessageSourceParts = MessageAttentionSrc & { messageId: number };
+type MessageSourceParts = {
+  chatId: string;
+  messageId: number;
+};
 
 type TerminalSourceParts = TerminalAttentionSrc;
 
 const formatMessageSourceSrc = (input: MessageSourceParts): LoopMessageSourceRef["src"] =>
-  `${MESSAGE_SRC_NAMESPACE}:${input.chatId}/${input.messageId}`;
+  formatRoomAttentionSrc({ roomId: input.chatId, entryId: input.messageId });
 
 const parseMessageSourceSrc = (src: string): MessageSourceParts | null => {
-  const parsed = parseMessageAttentionSrc(src);
-  return parsed && typeof parsed.messageId === "number"
+  const parsed = parseRoomAttentionSrc(src);
+  if (!parsed?.entryId) {
+    return null;
+  }
+  const messageId = Number(parsed.entryId);
+  return Number.isInteger(messageId) && messageId > 0
     ? {
-        chatId: parsed.chatId,
-        messageId: parsed.messageId,
+        chatId: parsed.roomId,
+        messageId,
       }
     : null;
 };
@@ -1241,7 +1249,7 @@ const resolveRuntimeSourceKind = (src: string | undefined): RuntimeSourceKind =>
 
 const resolveLifecycleBridgeId = (src: string): LifecycleBridgeId => {
   const namespace = appAttentionSourceRegistry.resolve(src)?.namespace;
-  if (namespace === MESSAGE_ATTENTION_NAMESPACE) {
+  if (namespace === ROOM_ATTENTION_NAMESPACE || namespace === MESSAGE_ATTENTION_NAMESPACE) {
     return "message";
   }
   if (namespace === TERMINAL_ATTENTION_NAMESPACE) {
@@ -1256,6 +1264,17 @@ const buildLifecycleAttentionDetail = (
   event: string,
   payload?: Record<string, unknown>,
 ): string => {
+  const roomSource = parseRoomAttentionSrc(src);
+  if (roomSource) {
+    return toYaml({
+      event,
+      bridgeId,
+      src,
+      chatId: roomSource.roomId,
+      messageId: roomSource.entryId ?? null,
+      ...payload,
+    });
+  }
   const messageSource = parseMessageAttentionSrc(src);
   if (messageSource) {
     return toYaml({
@@ -2027,7 +2046,8 @@ export class SessionRuntime {
           ? this.getTerminalControlPlaneAttentionContextId()
           : this.getTerminalAttentionContextId(terminalId),
       isTerminalActionable: (terminalId) => this.isTerminalActionable(terminalId),
-      readTerminalIngress: async (terminalId, input) => await this.buildTerminalSystemIngressEnvelope(terminalId, input),
+      readTerminalIngress: async (terminalId, input) =>
+        await this.buildTerminalSystemIngressEnvelope(terminalId, input),
       buildLifecycleIngressEnvelope: (input) =>
         this.buildLifecycleIngressEnvelope({
           system: "terminal",
@@ -3318,9 +3338,9 @@ export class SessionRuntime {
     return {
       system: "message",
       boundaryChannel: "world_fact",
-      sourceId: formatMessageAttentionSrc({
-        chatId: task.chatId,
-        messageId: task.messageId,
+      sourceId: formatRoomAttentionSrc({
+        roomId: task.chatId,
+        entryId: task.messageId,
       }),
       contextKey: channel?.contextId ?? this.getDefaultAttentionContextId(task.chatId),
       kind: "follow_up_reminder",
@@ -3775,7 +3795,11 @@ export class SessionRuntime {
     return updated;
   }
 
-  archiveMessageChannel(input: { chatId: string; accessToken: string; archivedBy?: string }): MessageControlPlaneEntry {
+  async archiveMessageChannel(input: {
+    chatId: string;
+    accessToken: string;
+    archivedBy?: string;
+  }): Promise<MessageControlPlaneEntry> {
     const channel =
       this.getActorRoom(input.chatId, { includeArchived: true }) ??
       this.messageSystem.getChannel(input.chatId, { includeArchived: true });
@@ -3793,17 +3817,41 @@ export class SessionRuntime {
       accessToken: input.accessToken,
       archivedBy: input.archivedBy ?? this.getAvatarName(),
     });
-    this.enqueueRoomLifecycleAttentionCommit({
-      chatId: archived.chatId,
-      contextId: archived.contextId ?? this.getDefaultAttentionContextId(archived.chatId),
-      event: "channel_archive",
-      summary: `Archived chat channel ${archived.chatId}`,
-      payload: {
-        archivedAt: archived.archivedAt ?? Date.now(),
-        channel: this.projectMessageChannelForAttention(archived),
-      },
+    await this.applyArchivedMessageChannelLifecycle(archived, {
+      archivedAt: archived.archivedAt ?? Date.now(),
+      channel: this.projectMessageChannelForAttention(archived),
     });
     return archived;
+  }
+
+  async handleArchivedMessageChannelLifecycle(input: { chatId: string }): Promise<void> {
+    const archived =
+      this.getActorRoom(input.chatId, { includeArchived: true }) ??
+      this.messageSystem.getChannel(input.chatId, { includeArchived: true });
+    if (!archived?.archivedAt || this.isCompanionLifecycleProtectedRoom(archived)) {
+      return;
+    }
+    await this.applyArchivedMessageChannelLifecycle(archived, {
+      cause: "room_management_archive",
+      archivedAt: archived.archivedAt,
+      channel: this.projectMessageChannelForAttention(archived),
+    });
+  }
+
+  private async applyArchivedMessageChannelLifecycle(
+    archived: MessageControlPlaneEntry,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const contextId = archived.contextId ?? this.getDefaultAttentionContextId(archived.chatId);
+    this.enqueueRoomLifecycleAttentionCommit({
+      chatId: archived.chatId,
+      contextId,
+      event: "channel_archive",
+      summary: `Archived chat channel ${archived.chatId}`,
+      payload,
+    });
+    // Room archive is a durable lifecycle fact; focus changes here while Avatar-authored context content stays intact.
+    await this.applyAttentionFocusState(contextId, "muted");
   }
 
   deleteMessageChannel(input: { chatId: string; accessToken: string }): MessageControlPlaneEntry {
@@ -5779,7 +5827,9 @@ export class SessionRuntime {
       }
       return this.terminalControlPlane.getHeadHash(terminalId);
     }
-    const terminal = this.terminals.get(terminalId) as Partial<Pick<TerminalRuntime, "getHeadHash" | "sealIdleCommit">> | undefined;
+    const terminal = this.terminals.get(terminalId) as
+      | Partial<Pick<TerminalRuntime, "getHeadHash" | "sealIdleCommit">>
+      | undefined;
     const sealed = await terminal?.sealIdleCommit?.();
     if (sealed?.ok) {
       return sealed.hash;
@@ -6033,7 +6083,7 @@ export class SessionRuntime {
     this.messageKernelAdapter.commitLifecycleIngress(
       this.buildLifecycleIngressEnvelope({
         system: "message",
-        src: formatMessageAttentionSrc({ chatId: input.chatId }),
+        src: formatRoomAttentionSrc({ roomId: input.chatId }),
         contextId: input.contextId,
         event: input.event,
         summary: input.summary,
@@ -8808,16 +8858,18 @@ export class SessionRuntime {
           status,
         },
       });
-      void this.terminalKernelAdapter.handleStatusChange({
-        terminalId,
-        previousStatus: previous?.status ?? null,
-        running,
-        status,
-      }).catch((error) => {
-        this.emit("error", {
-          message: `terminal idle bridge failed: ${error instanceof Error ? error.message : String(error)}`,
+      void this.terminalKernelAdapter
+        .handleStatusChange({
+          terminalId,
+          previousStatus: previous?.status ?? null,
+          running,
+          status,
+        })
+        .catch((error) => {
+          this.emit("error", {
+            message: `terminal idle bridge failed: ${error instanceof Error ? error.message : String(error)}`,
+          });
         });
-      });
     });
 
     this.terminals.set(terminalId, terminal);
@@ -9979,10 +10031,7 @@ export class SessionRuntime {
     return Boolean(channel.metadata && typeof channel.metadata === "object" && channel.metadata.builtIn === true);
   }
 
-  private async syncCompanionRoomArchiveProjection(
-    contextId: string,
-    focusState: AttentionFocusState,
-  ): Promise<void> {
+  private async syncCompanionRoomArchiveProjection(contextId: string, focusState: AttentionFocusState): Promise<void> {
     const channel = this.resolveMessageChannelForContext(contextId);
     if (!channel) {
       return;
@@ -10797,8 +10846,8 @@ export class SessionRuntime {
         waitingReason === "attention_debt"
           ? this.attentionDebtBackoffMs
           : waitingReason === "attention_backoff" && nextAutoWakeAt !== null
-              ? Math.max(0, nextAutoWakeAt - Date.now())
-              : null,
+            ? Math.max(0, nextAutoWakeAt - Date.now())
+            : null,
       retryCount: attentionContainment.retryCount,
       blockedReason: attentionContainment.blockedReason,
       lastProgressAt: this.lastAttentionProgressAt,

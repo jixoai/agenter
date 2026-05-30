@@ -1,6 +1,7 @@
 import type {
   AttentionQueryItem,
   AuthSessionOutput,
+  CachedResourceState,
   GlobalAvatarCatalogEntry,
   GlobalRoomActorId,
   GlobalRoomEntry,
@@ -19,6 +20,15 @@ import type {
 import type { ShellNextStore } from "../src";
 
 const nowIso = () => new Date().toISOString();
+
+const loadedResource = <T>(data: T): CachedResourceState<T> => ({
+  data,
+  loaded: true,
+  loading: false,
+  refreshing: false,
+  error: null,
+  refreshedAt: 1,
+});
 
 const createSessionEntry = (workspacePath: string, avatar: string): SessionEntry => ({
   id: `session:${workspacePath}:${avatar}`,
@@ -56,6 +66,8 @@ const createRoomEntry = (chatId: string, metadata: Record<string, unknown>, titl
   kind: "room",
   title,
   owner: "ops",
+  superKey: "0x0000000000000000000000000000000000000001",
+  createdBySystemId: "0x0000000000000000000000000000000000000001",
   participants: [],
   metadata,
   createdAt: 1,
@@ -143,6 +155,7 @@ export class FakeShellNextStore implements ShellNextStore {
   modelCallsBySession: RuntimeClientState["modelCallsBySession"] = {};
   deletedSessions: string[] = [];
   deletedRoomIds: string[] = [];
+  archivedRoomIds: string[] = [];
   deletedTerminalIds: string[] = [];
   stoppedTerminalIds: string[] = [];
   focusTerminalCalls: string[][] = [];
@@ -169,6 +182,7 @@ export class FakeShellNextStore implements ShellNextStore {
     meta?: Record<string, unknown>;
   }> = [];
   connected = false;
+  private readonly listeners = new Set<() => void>();
 
   readonly authSession: AuthSessionOutput = {
     token: "superadmin-token",
@@ -204,6 +218,12 @@ export class FakeShellNextStore implements ShellNextStore {
 
   getAuthToken(): string | null {
     return this.authToken;
+  }
+
+  private emit(): void {
+    for (const listener of this.listeners) {
+      listener();
+    }
   }
 
   async listSessions(): Promise<SessionEntry[]> {
@@ -360,6 +380,7 @@ export class FakeShellNextStore implements ShellNextStore {
       shortcuts: input.profile?.shortcuts,
     } satisfies GlobalTerminalEntry;
     this.terminals.push(terminal);
+    this.emit();
     return { ok: true, message: "created", terminal };
   }
 
@@ -367,6 +388,7 @@ export class FakeShellNextStore implements ShellNextStore {
     this.deletedTerminalIds.push(input.terminalId);
     this.terminals = this.terminals.filter((terminal) => terminal.terminalId !== input.terminalId);
     this.terminalHistory = this.terminalHistory.filter((terminal) => terminal.terminalId !== input.terminalId);
+    this.emit();
     return { ok: true, message: "deleted" };
   }
 
@@ -383,6 +405,7 @@ export class FakeShellNextStore implements ShellNextStore {
     } satisfies GlobalTerminalEntry;
     this.terminals.splice(index, 1);
     this.terminalHistory.push(terminal);
+    this.emit();
     return { ok: true, message: "stopped" };
   }
 
@@ -397,6 +420,7 @@ export class FakeShellNextStore implements ShellNextStore {
     } satisfies GlobalTerminalEntry;
     this.terminalHistory.splice(index, 1);
     this.terminalArchive.push(next);
+    this.emit();
     return next;
   }
 
@@ -544,6 +568,7 @@ export class FakeShellNextStore implements ShellNextStore {
       input.title ?? "room",
     );
     this.rooms.push(room);
+    this.emit();
     return room;
   }
 
@@ -590,11 +615,33 @@ export class FakeShellNextStore implements ShellNextStore {
     return { ok: true, message: "focused", focusedChatIds: [] };
   }
 
+  async archiveGlobalRoom(input: {
+    chatId: string;
+    accessToken?: string;
+    archivedBy?: string;
+  }): Promise<GlobalRoomEntry> {
+    void input.accessToken;
+    const existing = this.rooms.find((room) => room.chatId === input.chatId);
+    const archived = {
+      ...(existing ?? createRoomEntry(input.chatId, {}, input.chatId)),
+      archivedAt: Date.now(),
+      archivedBy: input.archivedBy ?? "shell-next",
+    } satisfies GlobalRoomEntry;
+    this.rooms = this.rooms.map((room) => (room.chatId === input.chatId ? archived : room));
+    if (!existing) {
+      this.rooms.push(archived);
+    }
+    this.archivedRoomIds.push(input.chatId);
+    this.emit();
+    return archived;
+  }
+
   async deleteGlobalRoom(input: { chatId: string; accessToken?: string }): Promise<GlobalRoomEntry> {
     void input.accessToken;
     const existing = this.rooms.find((room) => room.chatId === input.chatId);
     this.rooms = this.rooms.filter((room) => room.chatId !== input.chatId);
     this.deletedRoomIds.push(input.chatId);
+    this.emit();
     return existing ?? createRoomEntry(input.chatId, {}, input.chatId);
   }
 
@@ -668,7 +715,16 @@ export class FakeShellNextStore implements ShellNextStore {
     this.connected = false;
   }
 
-  getState(): Pick<RuntimeClientState, "globalRoomSnapshotsById" | "globalTerminalApprovalsById" | "modelCallsBySession"> {
+  getState(): Pick<
+    RuntimeClientState,
+    | "globalRoomSnapshotsById"
+    | "globalTerminalApprovalsById"
+    | "globalTerminals"
+    | "globalTerminalHistory"
+    | "globalTerminalIndex"
+    | "globalTerminalArchive"
+    | "modelCallsBySession"
+  > {
     const approvals = Object.fromEntries(
       [...this.terminalApprovalRequests.entries()].map(([terminalId, data]) => [
         terminalId,
@@ -685,12 +741,19 @@ export class FakeShellNextStore implements ShellNextStore {
     return {
       globalRoomSnapshotsById: {},
       globalTerminalApprovalsById: approvals,
+      globalTerminals: loadedResource([...this.terminals]),
+      globalTerminalHistory: loadedResource([...this.terminalHistory]),
+      globalTerminalIndex: loadedResource([...this.terminals, ...this.terminalHistory, ...this.terminalArchive]),
+      globalTerminalArchive: loadedResource([...this.terminalArchive]),
       modelCallsBySession: this.modelCallsBySession,
     };
   }
 
-  subscribe(): () => void {
-    return () => {};
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   retainGlobalRoomSnapshot(_chatId: string): () => void {

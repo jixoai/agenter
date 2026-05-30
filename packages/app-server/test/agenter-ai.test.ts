@@ -5,8 +5,8 @@ import type {
   AttentionContextDescriptor,
 } from "@agenter/attention-system";
 import { AttentionSystem } from "@agenter/attention-system";
-import { DEFAULT_LOOP_COMPACT_POLICY } from "@agenter/settings";
 import type { MessageContactId } from "@agenter/message-system";
+import { DEFAULT_LOOP_COMPACT_POLICY } from "@agenter/settings";
 import type { TerminalProcessProfile } from "@agenter/terminal-system";
 import { describe, expect, test } from "bun:test";
 
@@ -25,12 +25,10 @@ import { type LoopBusMessage } from "../src/loop-bus";
 import { ModelDecisionError, type AssistantDeliveryEvent, type ModelClient } from "../src/model-client";
 import type { PromptDocRecord } from "../src/prompt-docs";
 import { FilePromptStore } from "../src/prompt-store";
-import {
-  createInProcessWorkspaceToolProvider,
-} from "../src/workspace-tool-provider";
 import type { RuntimeLocalApiHandlers } from "../src/runtime-tool-descriptors";
 import { projectRuntimeAttentionActiveMatch } from "../src/runtime-tool-views";
 import type { AppServerLogger } from "../src/types";
+import { createInProcessWorkspaceToolProvider } from "../src/workspace-tool-provider";
 
 const createPromptDocs = (input: { legacySystemTemplate?: boolean } = {}): PromptDocRecord => ({
   AGENTER: { syntax: "mdx", content: "" },
@@ -177,12 +175,7 @@ const isCompactDecision = (
 ): value is {
   kind: "compact";
   summary: AgentPromptWindowCompactSummary;
-} =>
-  typeof value === "object" &&
-  value !== null &&
-  "kind" in value &&
-  value.kind === "compact" &&
-  "summary" in value;
+} => typeof value === "object" && value !== null && "kind" in value && value.kind === "compact" && "summary" in value;
 
 const createModelClient = (
   handler: (input: ModelRespondInput) => ReturnType<ModelClient["respondWithMeta"]>,
@@ -277,7 +270,10 @@ const createToolContext = (toolCallId: string) => ({
 });
 
 const findExecutableTool = (
-  tools: readonly { name: string; execute?: ((input: unknown, context: ReturnType<typeof createToolContext>) => unknown) | undefined }[],
+  tools: readonly {
+    name: string;
+    execute?: ((input: unknown, context: ReturnType<typeof createToolContext>) => unknown) | undefined;
+  }[],
   toolName: string,
 ) => {
   const tool = tools.find((entry) => entry.name === toolName);
@@ -291,8 +287,7 @@ const findExecutableTool = (
 const findWorkspaceListTool = (input: Pick<ModelRespondInput, "tools">) =>
   findExecutableTool(input.tools, "workspace_list");
 
-const findRootBashTool = (input: Pick<ModelRespondInput, "tools">) =>
-  findExecutableTool(input.tools, "root_bash");
+const findRootBashTool = (input: Pick<ModelRespondInput, "tools">) => findExecutableTool(input.tools, "root_bash");
 
 const buildRootBashInput = (command: string, payload?: unknown, cwd?: string) =>
   ({
@@ -657,7 +652,9 @@ const createRuntimeLocalHandlers = (input: {
     };
   },
   attentionQuery: async (request) =>
-    input.attentionGateway ? (await input.attentionGateway.query(request)).map(projectAttentionCommitMatchForModel) : [],
+    input.attentionGateway
+      ? (await input.attentionGateway.query(request)).map(projectAttentionCommitMatchForModel)
+      : [],
   attentionDeliveryState: () => ({
     projections: [],
     dispatches: [],
@@ -688,7 +685,9 @@ const createRuntimeLocalHandlers = (input: {
     }
     const resolvedScores = request.done
       ? (() => {
-          const activeContext = input.attentionGateway?.listActive().find((item) => item.contextId === request.contextId);
+          const activeContext = input.attentionGateway
+            ?.listActive()
+            .find((item) => item.contextId === request.contextId);
           if (!activeContext) {
             return undefined;
           }
@@ -1246,12 +1245,14 @@ const createMessageGateway = () => {
         return {
           ok: true as const,
           messageId: nextMessageId,
-          recentMessages: listRoomHistory(input.chatId).slice(-5).map((item) => ({
-            messageId: item.messageId,
-            from: item.from,
-            contentPreview: item.content,
-            sendTime: `20260418000000${String(item.messageId).padStart(3, "0")}`,
-          })),
+          recentMessages: listRoomHistory(input.chatId)
+            .slice(-5)
+            .map((item) => ({
+              messageId: item.messageId,
+              from: item.from,
+              contentPreview: item.content,
+              sendTime: `20260418000000${String(item.messageId).padStart(3, "0")}`,
+            })),
         };
       },
       edit: async (input: { chatId: string; messageId: number; content: string }) => {
@@ -2321,7 +2322,7 @@ describe("Feature: AgenterAI behavior", () => {
             meta: {
               author: "assistant",
               source: "test",
-              src: "msg:chat-main/1",
+              src: "room:chat-main#1",
             },
             scores: Object.fromEntries(Object.keys(tracked.scores).map((key) => [key, 0])),
             summary: "Reply with exactly PLAYWRIGHT-MOCK-REPLY",
@@ -2404,7 +2405,7 @@ describe("Feature: AgenterAI behavior", () => {
             meta: {
               author: "assistant",
               source: "test",
-              src: "msg:chat-main/1",
+              src: "room:chat-main#1",
             },
             scores: { hash_main: 0 },
             summary: "main reply delivered",
@@ -2424,7 +2425,7 @@ describe("Feature: AgenterAI behavior", () => {
             meta: {
               author: "assistant",
               source: "test",
-              src: "msg:chat-gaubee/1",
+              src: "room:chat-gaubee#1",
             },
             scores: { hash_gaubee: 0 },
             summary: "relay reply consumed",
@@ -3345,9 +3346,7 @@ describe("Feature: AgenterAI behavior", () => {
       throw new Error("expected completed model call");
     }
     expect(
-      extractUserReplay(completedModelCall.request.messages).filter((item) =>
-        item.includes("summary: 同轮补充条件"),
-      ),
+      extractUserReplay(completedModelCall.request.messages).filter((item) => item.includes("summary: 同轮补充条件")),
     ).toHaveLength(1);
   });
 
@@ -3712,10 +3711,7 @@ describe("Feature: AgenterAI behavior", () => {
     };
     expect(summary.decisions).toEqual(["preserve durable facts"]);
     expect(summary.keyFiles).toEqual(["packages/app-server/src/agenter-ai.ts"]);
-    expect(summary.keyFacts).toEqual([
-      "gaubee说中午吃蛋炒饭。",
-      "厦门未来 15 天天气请以 terminal 查询结果为准。",
-    ]);
+    expect(summary.keyFacts).toEqual(["gaubee说中午吃蛋炒饭。", "厦门未来 15 天天气请以 terminal 查询结果为准。"]);
     expect(summary.unresolvedWork).toEqual(["ctx-main pending"]);
     expect(summary.nextSteps).toEqual(["continue processing active attention"]);
     expect(summary.readyReplies).toBeUndefined();

@@ -786,14 +786,16 @@ describe("Feature: message-chat-control-plane", () => {
 
     await Bun.sleep(80);
 
-    const restored = AttentionSystem.fromSnapshot(await new (await import("@agenter/attention-system")).AttentionControlPlane({
-      root: attentionRoot,
-    }).loadSnapshot());
+    const restored = AttentionSystem.fromSnapshot(
+      await new (await import("@agenter/attention-system")).AttentionControlPlane({
+        root: attentionRoot,
+      }).loadSnapshot(),
+    );
     expect(harness.plane.listFollowUpTasks({ ownerSessionId: "runtime-dormant" })).toHaveLength(0);
     expect(
       restored
         .query({ contextId: `ctx-${room.chatId}`, minScore: 0 })
-        .some((entry) => entry.commit.meta.src === `msg:${room.chatId}/${sent.messageId}`),
+        .some((entry) => entry.commit.meta.src === `room:${room.chatId}#${sent.messageId}`),
     ).toBeTrue();
 
     harness.plane.close();
@@ -820,13 +822,15 @@ describe("Feature: message-chat-control-plane", () => {
 
     await Bun.sleep(80);
 
-    const restored = AttentionSystem.fromSnapshot(await new (await import("@agenter/attention-system")).AttentionControlPlane({
-      root: attentionRoot,
-    }).loadSnapshot());
+    const restored = AttentionSystem.fromSnapshot(
+      await new (await import("@agenter/attention-system")).AttentionControlPlane({
+        root: attentionRoot,
+      }).loadSnapshot(),
+    );
     const matches = restored.query({ contextId: `ctx-${room.chatId}`, minScore: 0 });
 
     expect(harness.plane.listFollowUpTasks({ ownerSessionId: "runtime-offline-attention" })).toHaveLength(0);
-    expect(matches.some((entry) => entry.commit.meta.src === `msg:${room.chatId}/1`)).toBeTrue();
+    expect(matches.some((entry) => entry.commit.meta.src === `room:${room.chatId}#1`)).toBeTrue();
     expect(matches.some((entry) => entry.commit.summary.includes("Re-evaluate room follow-up"))).toBeTrue();
 
     harness.plane.close();
@@ -1425,7 +1429,10 @@ describe("Feature: message-chat-control-plane", () => {
       content: "viewer sends before reading",
     });
 
-    const beforeReadState = (plane as unknown as MessagePlaneDbProbe).db.getContactRoomState(room.chatId, "auth:viewer");
+    const beforeReadState = (plane as unknown as MessagePlaneDbProbe).db.getContactRoomState(
+      room.chatId,
+      "auth:viewer",
+    );
     expect(beforeReadState).toMatchObject({
       unreadCount: 1,
       latestUnreadRowId: unread.rowId,

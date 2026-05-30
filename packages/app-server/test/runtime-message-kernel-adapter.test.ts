@@ -3,11 +3,14 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { MessageControlPlane, resolveMessageControlDbPath } from "@agenter/message-system";
 import { generatePrincipalKeyPair } from "@agenter/principal-crypto";
-import { MessageControlPlane, resolveMessageControlDbPath, type MessageControlPlaneEntry } from "@agenter/message-system";
 
 import { RuntimeMessageKernelAdapter } from "../src/runtime-system-kernel-adapters/message-adapter";
-import type { RuntimeSystemIngressEnvelope, RuntimeSystemKernelHost } from "../src/runtime-system-kernel-adapters/types";
+import type {
+  RuntimeSystemIngressEnvelope,
+  RuntimeSystemKernelHost,
+} from "../src/runtime-system-kernel-adapters/types";
 
 const createRoomId = (): string => generatePrincipalKeyPair().principalId;
 
@@ -40,11 +43,12 @@ describe("Feature: runtime-message-kernel-adapter", () => {
       getMaxFocusedRoomCount: () => 3,
       getMaxBatchReadRoomMessageCount: () => 20,
       getActorRoom: (chatId) => (chatId === room.chatId ? room : undefined),
-      isUnreadInboundMessage: (message) => message.kind === "text" && message.unreadContactIds.includes(messageContactId),
+      isUnreadInboundMessage: (message) =>
+        message.kind === "text" && message.unreadContactIds.includes(messageContactId),
       buildMessageIngressEnvelope: ({ message, channel }) => ({
         system: "message",
         boundaryChannel: "world_fact",
-        sourceId: `msg:${channel.chatId}/${message.messageId}`,
+        sourceId: `room:${channel.chatId}#${message.messageId}`,
         contextKey: channel.contextId ?? `ctx-${channel.chatId}`,
         kind: "room_ingress",
         summary: message.content,
@@ -68,7 +72,7 @@ describe("Feature: runtime-message-kernel-adapter", () => {
       {
         system: "message",
         boundaryChannel: "world_fact",
-        sourceId: `msg:${room.chatId}/${inbound.messageId}`,
+        sourceId: `room:${room.chatId}#${inbound.messageId}`,
         contextKey: room.contextId ?? `ctx-${room.chatId}`,
         kind: "room_ingress",
         summary: "hello from room",
@@ -110,7 +114,7 @@ describe("Feature: runtime-message-kernel-adapter", () => {
     const envelope: RuntimeSystemIngressEnvelope = {
       system: "message",
       boundaryChannel: "scheduler_signal",
-      sourceId: "msg:room-alpha",
+      sourceId: "room:room-alpha",
       contextKey: "ctx-room-alpha",
       kind: "channel_focus",
       summary: "Focused room",

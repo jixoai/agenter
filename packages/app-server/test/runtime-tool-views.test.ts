@@ -39,7 +39,7 @@ describe("Feature: runtime tool public views", () => {
         meta: {
           author: "architect",
           source: "runtime",
-          src: "msg:room-1/4",
+          src: "room:room-1#4",
         },
         summary: `summary-${index}`,
         scores: { delivery: Math.max(0, 100 - index * 10) },

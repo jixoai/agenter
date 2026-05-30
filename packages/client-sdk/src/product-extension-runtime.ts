@@ -203,6 +203,7 @@ export interface ProductExtensionRuntimeStore {
     op: "add" | "remove" | "replace" | "clear";
     channels: Array<{ chatId: string; accessToken?: string }>;
   }): Promise<{ ok: boolean; message: string; focusedChatIds: string[] }>;
+  archiveGlobalRoom(input: { chatId: string; accessToken?: string; archivedBy?: string }): Promise<GlobalRoomEntry>;
   deleteGlobalRoom(input: { chatId: string; accessToken?: string }): Promise<GlobalRoomEntry>;
   ensureWorkspacePrivateTextAsset(input: {
     workspacePath: string;
@@ -713,6 +714,10 @@ export class ProductExtensionRuntimeClient {
       focused,
       bindingMetadata,
     };
+  }
+
+  async archiveRoom(input: { chatId: string; accessToken?: string; archivedBy?: string }): Promise<GlobalRoomEntry> {
+    return await this.store.archiveGlobalRoom(input);
   }
 
   async queryAttention(input: { sessionId: string } & ProductAttentionQueryInput): Promise<AttentionQueryItem[]> {

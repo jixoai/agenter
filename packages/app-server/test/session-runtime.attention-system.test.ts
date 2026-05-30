@@ -23,20 +23,20 @@ import {
 } from "@agenter/message-system";
 import { SessionDb } from "@agenter/session-system";
 import {
-  encodeTerminalTransportClientMessage,
-  type TerminalTransportClientMessage,
-} from "@agenter/terminal-transport-protocol";
-import {
   DEFAULT_TERMINAL_BACKEND,
   TerminalControlPlane,
   TerminalDb,
   type TerminalActorId,
 } from "@agenter/terminal-system";
+import {
+  encodeTerminalTransportClientMessage,
+  type TerminalTransportClientMessage,
+} from "@agenter/terminal-transport-protocol";
 import { AttentionSearchEngine } from "../src/attention-search";
 import {
-  formatMessageAttentionSrc,
+  formatRoomAttentionSrc,
   formatTerminalAttentionSrc,
-  parseMessageAttentionSrc,
+  parseRoomAttentionSrc,
   parseTerminalAttentionSrc,
 } from "../src/attention-src";
 import type { LoopBusInput } from "../src/loop-bus";
@@ -411,12 +411,13 @@ const getAttentionProtocolKinds = (inputs: LoopBusInput[] | undefined): string[]
     ?.map((item) => item.meta?.attentionProtocolKind)
     .filter((value): value is string => typeof value === "string") ?? [];
 
-const createMessageSrc = (chatId: string, messageId: number) => formatMessageAttentionSrc({ chatId, messageId });
+const createMessageSrc = (chatId: string, messageId: number) =>
+  formatRoomAttentionSrc({ roomId: chatId, entryId: messageId });
 
 const createTerminalSrc = (terminalId: string, eventId?: number) => formatTerminalAttentionSrc({ terminalId, eventId });
 
 const isMessageMetaForChat = (meta: AttentionCommitMeta, chatId: string): boolean =>
-  parseMessageAttentionSrc(meta.src ?? "")?.chatId === chatId;
+  parseRoomAttentionSrc(meta.src ?? "")?.roomId === chatId;
 
 const isTerminalMeta = (meta: AttentionCommitMeta, terminalId?: string): boolean => {
   const parsed = parseTerminalAttentionSrc(meta.src ?? "");
@@ -866,7 +867,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         title: "QA 2",
       },
     });
-    runtime.archiveMessageChannel({
+    await runtime.archiveMessageChannel({
       chatId: room.chatId,
       accessToken: room.accessToken,
     });
@@ -876,7 +877,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     if (!roomContext) {
       return;
     }
-    const roomLifecycleSrc = formatMessageAttentionSrc({ chatId: room.chatId });
+    const roomLifecycleSrc = formatRoomAttentionSrc({ roomId: room.chatId });
     const lifecycleCommits = roomContext.commits.filter((commit) =>
       [
         `Created room ${room.chatId}`,
@@ -891,7 +892,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       roomLifecycleSrc,
     ]);
     expect(
-      lifecycleCommits.every((commit) => parseMessageAttentionSrc(commit.meta.src ?? "")?.messageId === undefined),
+      lifecycleCommits.every((commit) => parseRoomAttentionSrc(commit.meta.src ?? "")?.entryId === undefined),
     ).toBeTrue();
     expect(roomContext?.commits.some((commit) => commit.summary === `Created room ${room.chatId}`)).toBeTrue();
     expect(roomContext?.commits.some((commit) => commit.summary === `Updated chat channel ${room.chatId}`)).toBeTrue();
@@ -901,6 +902,38 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       internal.attentionSystem.listActiveContexts().some((match) => match.contextId === `ctx-${room.chatId}`),
     ).toBeFalse();
     expect(roomContext.content).toBe("Avatar room summary: keep QA context");
+  });
+
+  test("Scenario: Given a room-backed attention context is active When the room is archived Then the context is muted without rewriting the Avatar summary", async () => {
+    const runtime = createRuntime();
+    const internal = runtime as unknown as RuntimeInternal;
+
+    const room = await runtime.createMessageChannel({
+      kind: "room",
+      title: "Archive mutes attention",
+      focus: true,
+    });
+    const contextId = room.contextId ?? `ctx-${room.chatId}`;
+    appendAttentionCommit(internal, contextId, {
+      meta: { author: "avatar:tester", source: "attention" },
+      scores: {},
+      title: "Room summary",
+      detail: {
+        kind: "replace",
+        value: "Avatar-authored summary must survive archive",
+        format: "text/plain",
+      },
+    });
+
+    const archived = await runtime.archiveMessageChannel({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+
+    const roomContext = getAttentionContextSnapshot(internal, contextId);
+    expect(archived.archivedAt).toEqual(expect.any(Number));
+    expect(roomContext?.focusState).toBe("muted");
+    expect(roomContext?.content).toBe("Avatar-authored summary must survive archive");
   });
 
   test("Scenario: Given a room-backed AttentionContext becomes muted When runtime applies that lifecycle Then the companion room is archived without deleting transcript truth", async () => {
@@ -933,9 +966,12 @@ describe("Feature: session runtime attention-system loop inputs", () => {
       );
 
       const archivedRoom = internal.messageSystem.snapshot(room.chatId, 20);
-      const archivedProjection = (Reflect.get(runtime, "messageSystem") as MessageControlPlane).getChannel(room.chatId, {
-        includeArchived: true,
-      });
+      const archivedProjection = (Reflect.get(runtime, "messageSystem") as MessageControlPlane).getChannel(
+        room.chatId,
+        {
+          includeArchived: true,
+        },
+      );
       const roomContext = getAttentionContextSnapshot(internal, room.contextId ?? `ctx-${room.chatId}`);
 
       expect(archivedProjection?.archivedAt).toEqual(expect.any(Number));
@@ -968,8 +1004,9 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         focused: false,
       });
       expect(
-        (Reflect.get(runtime, "messageSystem") as MessageControlPlane).getChannel(room.chatId, { includeArchived: true })
-          ?.archivedAt,
+        (Reflect.get(runtime, "messageSystem") as MessageControlPlane).getChannel(room.chatId, {
+          includeArchived: true,
+        })?.archivedAt,
       ).toEqual(expect.any(Number));
 
       await runtime.setChatVisibility({
@@ -2721,16 +2758,18 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     try {
       expect(runtime.snapshot().focusedTerminalIds).toEqual([created.terminalId]);
       expect(internal.terminals.has(created.terminalId)).toBeTrue();
-      expect((Reflect.get(runtime, "terminalStatusById") as Map<string, { processPhase: string; status: string }>).get(
-        created.terminalId,
-      )).toMatchObject({
+      expect(
+        (Reflect.get(runtime, "terminalStatusById") as Map<string, { processPhase: string; status: string }>).get(
+          created.terminalId,
+        ),
+      ).toMatchObject({
         processPhase: "running",
         status: "IDLE",
       });
       expect(
-        (
-          Reflect.get(Reflect.get(runtime, "terminalKernelAdapter"), "idleCommitWaiters") as Map<string, unknown>
-        ).has(created.terminalId),
+        (Reflect.get(Reflect.get(runtime, "terminalKernelAdapter"), "idleCommitWaiters") as Map<string, unknown>).has(
+          created.terminalId,
+        ),
       ).toBeTrue();
       await opened;
       socket.send(
@@ -5051,9 +5090,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         running: true,
         status: "IDLE",
       });
-      expect(getAttentionContextSnapshot(internal, "ctx-terminal-main")?.commits.filter(
-        (commit) => commit.meta.source === "terminal",
-      )).toHaveLength(1);
+      expect(
+        getAttentionContextSnapshot(internal, "ctx-terminal-main")?.commits.filter(
+          (commit) => commit.meta.source === "terminal",
+        ),
+      ).toHaveLength(1);
     } finally {
       await runtime.stop();
     }
@@ -5845,7 +5886,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
     expect(messages).toHaveLength(1);
     expect(activeItems.some((item) => item.title.includes("Re-evaluate room follow-up"))).toBeTrue();
     expect(
-      activeItems.some((item) => parseMessageAttentionSrc(item.meta.src ?? "")?.messageId === first.messageId),
+      activeItems.some((item) => parseRoomAttentionSrc(item.meta.src ?? "")?.entryId === String(first.messageId)),
     ).toBeTrue();
     expect(getBootstrapInput(batch)).toBeDefined();
     expect(remainingTasks).toHaveLength(0);

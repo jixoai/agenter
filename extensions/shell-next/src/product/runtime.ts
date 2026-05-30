@@ -1,20 +1,17 @@
 import type { AttentionQueryItem, RuntimeClientState } from "@agenter/client-sdk";
+import type { ShellNextKeybindings, ShellNextSettings } from "../product-room/settings";
 import { ensureShellNextAuthenticated } from "./auth";
 import type { ShellNextRoomBootstrapResult } from "./bootstrap";
-import {
-  cleanupShellNextResources,
-  formatShellNextCleanupResult,
-  hasShellNextCleanupFailures,
-} from "./cleanup";
-import type { ShellNextKeybindings, ShellNextSettings } from "../product-room/settings";
+import { cleanupShellNextResources, formatShellNextCleanupResult, hasShellNextCleanupFailures } from "./cleanup";
 
 import type { ShellNextAppInput } from "../app/shell-next-app";
 import type { PaneSource } from "../renderable-mux/pane-source";
 import { createShellNextRuntimeApprovalStore } from "./approval-store";
-import type {
-  ShellNextAttachArgs,
-  ShellNextCleanupArgs,
-} from "./argv";
+import type { ShellNextAttachArgs, ShellNextCleanupArgs } from "./argv";
+import {
+  createShellNextTerminalRoomLifecycleReaction,
+  type ShellNextTerminalRoomLifecycleReaction,
+} from "./lifecycle-reaction";
 import {
   defaultShellNextProductRunDependencies,
   type ShellNextProductRunDependencies,
@@ -30,7 +27,9 @@ export interface ShellNextProductRunResult {
 
 const formatCreatedState = (created: boolean): string => (created ? "created" : "reused");
 
-const attentionSummary = (items: readonly AttentionQueryItem[]): NonNullable<ShellNextAppInput["initialStatus"]>["attention"] => {
+const attentionSummary = (
+  items: readonly AttentionQueryItem[],
+): NonNullable<ShellNextAppInput["initialStatus"]>["attention"] => {
   let focused = 0;
   let background = 0;
   let muted = 0;
@@ -105,10 +104,7 @@ const resolveRuntimeMacroLabel = (heartbeat: string): string => {
 
 type ShellNextTerminalEntry = RuntimeClientState["globalTerminals"]["data"][number];
 
-const resolveTerminalTitleFromState = (
-  state: Partial<RuntimeClientState>,
-  terminalId: string,
-): string | null => {
+const resolveTerminalTitleFromState = (state: Partial<RuntimeClientState>, terminalId: string): string | null => {
   const terminalLists: readonly (readonly ShellNextTerminalEntry[] | undefined)[] = [
     state.globalTerminals?.data,
     state.globalTerminalIndex?.data,
@@ -117,10 +113,7 @@ const resolveTerminalTitleFromState = (
   ];
   for (const terminals of terminalLists) {
     const terminal = terminals?.find((item) => item.terminalId === terminalId);
-    const title =
-      terminal?.currentTitle?.trim() ||
-      terminal?.configuredTitle?.trim() ||
-      null;
+    const title = terminal?.currentTitle?.trim() || terminal?.configuredTitle?.trim() || null;
     if (title) {
       return title;
     }
@@ -220,6 +213,7 @@ const createAttachedTerminalSourcePolicy = (input: {
   attached: ShellNextRoomBootstrapResult;
   store: ShellNextRuntimeStore;
   dependencies: ShellNextProductRunDependencies;
+  lifecycleReaction: ShellNextTerminalRoomLifecycleReaction;
 }): NonNullable<ShellNextAppInput["terminalSourcePolicy"]> => {
   return {
     createInitialSource: (sourceInput): PaneSource => {
@@ -239,10 +233,12 @@ const createAttachedTerminalSourcePolicy = (input: {
           input.attached.terminal.entry.terminalId,
         configuredTitle: input.attached.terminal.entry.configuredTitle ?? null,
         currentTitle: input.attached.terminal.entry.currentTitle ?? null,
-        readTitle: () =>
-          resolveTerminalTitleFromState(input.store.getState(), terminalId),
+        readTitle: () => resolveTerminalTitleFromState(input.store.getState(), terminalId),
         terminateTerminal: async () => {
-          await input.store.stopGlobalTerminal({ terminalId });
+          const result = await input.store.stopGlobalTerminal({ terminalId });
+          if (result.ok) {
+            await input.lifecycleReaction.archiveBoundRoom();
+          }
         },
       });
     },
@@ -365,6 +361,11 @@ export const runShellNextProductAttach = async (
       return { exitCode: 0 };
     }
     await store.connect();
+    const lifecycleReaction = createShellNextTerminalRoomLifecycleReaction({
+      store,
+      binding: attached.binding,
+      room: attached.room.entry,
+    });
     try {
       const app = await dependencies.startApp({
         rootPane: buildRootPaneForView(args.view),
@@ -372,6 +373,7 @@ export const runShellNextProductAttach = async (
           attached,
           store,
           dependencies,
+          lifecycleReaction,
         }),
         approvalStore: createShellNextRuntimeApprovalStore({
           store,
@@ -387,6 +389,7 @@ export const runShellNextProductAttach = async (
       });
       await app.finished;
     } finally {
+      lifecycleReaction.dispose();
       store.disconnect();
     }
     return { exitCode: 0 };

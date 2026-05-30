@@ -6,6 +6,7 @@ import {
   type MessageTransportServerMessage,
 } from "@agenter/message-system";
 import { SessionDb } from "@agenter/session-system";
+import type { TerminalActorId } from "@agenter/terminal-system";
 import {
   applyTerminalFramePatch,
   createTerminalTransportRowCacheDecoder,
@@ -15,7 +16,6 @@ import {
   type TerminalTransportRowCacheDecoder,
   type TerminalTransportServerMessage,
 } from "@agenter/terminal-transport-protocol";
-import type { TerminalActorId } from "@agenter/terminal-system";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,7 +23,7 @@ import { join, resolve } from "node:path";
 
 import { MessageDb } from "../../message-system/src/message-db";
 import { AppKernel, type AnyRuntimeEvent } from "../src";
-import { formatMessageAttentionSrc } from "../src/attention-src";
+import { formatRoomAttentionSrc } from "../src/attention-src";
 
 const tempDirs: string[] = [];
 
@@ -1083,7 +1083,7 @@ describe("Feature: app kernel event replay", () => {
       meta: {
         author: "assistant",
         source: "message",
-        src: formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }),
+        src: formatRoomAttentionSrc({ roomId: sessionMeta.primaryRoomId, entryId: 1 }),
       },
       scores: { persisted_ping: 100 },
       summary: "Persisted background ping",
@@ -1096,17 +1096,17 @@ describe("Feature: app kernel event replay", () => {
 
     const unreadSnapshot = await kernel.getNotificationSnapshot();
     expect(unreadSnapshot.unreadBySession[session.id]).toBe(1);
-    expect(unreadSnapshot.unreadByBucket[session.id]?.[`msg:${sessionMeta.primaryRoomId}`]).toBe(1);
+    expect(unreadSnapshot.unreadByBucket[session.id]?.[`room:${sessionMeta.primaryRoomId}`]).toBe(1);
     expect(unreadSnapshot.items[0]?.src).toBe(
-      formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }),
+      formatRoomAttentionSrc({ roomId: sessionMeta.primaryRoomId, entryId: 1 }),
     );
 
     const consumedSnapshot = await kernel.consumeNotifications({
       sessionId: session.id,
-      upToSrc: formatMessageAttentionSrc({ chatId: sessionMeta.primaryRoomId, messageId: 1 }),
+      upToSrc: formatRoomAttentionSrc({ roomId: sessionMeta.primaryRoomId, entryId: 1 }),
     });
     expect(consumedSnapshot.unreadBySession[session.id] ?? 0).toBe(0);
-    expect(consumedSnapshot.unreadByBucket[session.id]?.[`msg:${sessionMeta.primaryRoomId}`]).toBeUndefined();
+    expect(consumedSnapshot.unreadByBucket[session.id]?.[`room:${sessionMeta.primaryRoomId}`]).toBeUndefined();
   });
 
   test("Scenario: Given legacy or broken session preview store When listing workspace sessions Then page still renders without crashing", async () => {
@@ -1657,7 +1657,7 @@ describe("Feature: app kernel event replay", () => {
     });
     expect(revoked.ok).toBeTrue();
 
-    const archived = kernel.archiveGlobalRoom({
+    const archived = await kernel.archiveGlobalRoom({
       chatId: room.chatId,
       accessToken: room.accessToken,
       archivedBy: "ops-admin",

@@ -4,12 +4,15 @@ import { AttentionSystem, type AttentionCommitHookResult } from "@agenter/attent
 
 import { LoopBusPluginRuntime } from "../src/loopbus-plugin-runtime";
 import { RuntimeKernelHost } from "../src/runtime-kernel-host";
-import type { RuntimeSystemIngressEnvelope, RuntimeSystemKernelAdapter } from "../src/runtime-system-kernel-adapters/types";
+import type {
+  RuntimeSystemIngressEnvelope,
+  RuntimeSystemKernelAdapter,
+} from "../src/runtime-system-kernel-adapters/types";
 
 const createIngressEnvelope = (): RuntimeSystemIngressEnvelope => ({
   system: "message",
   boundaryChannel: "world_fact",
-  sourceId: "msg:room-alpha/1",
+  sourceId: "room:room-alpha#1",
   contextKey: "ctx-room-alpha",
   kind: "room_ingress",
   summary: "Need reply",
@@ -32,7 +35,8 @@ describe("Feature: runtime-kernel-host", () => {
 
     const host = new RuntimeKernelHost({
       commitIngress: async (envelope) => {
-        attention.getContext(envelope.contextKey) ?? attention.createContext({ contextId: envelope.contextKey, owner: "avatar" });
+        attention.getContext(envelope.contextKey) ??
+          attention.createContext({ contextId: envelope.contextKey, owner: "avatar" });
         const { commit } = attention.commit(envelope.contextKey, {
           meta: {
             author: envelope.author,
@@ -112,7 +116,8 @@ describe("Feature: runtime-kernel-host", () => {
 
     const host = new RuntimeKernelHost({
       commitIngress: async (envelope) => {
-        attention.getContext(envelope.contextKey) ?? attention.createContext({ contextId: envelope.contextKey, owner: "avatar" });
+        attention.getContext(envelope.contextKey) ??
+          attention.createContext({ contextId: envelope.contextKey, owner: "avatar" });
         const { commit } = attention.commit(envelope.contextKey, {
           meta: {
             author: envelope.author,

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import { AttentionControlPlane } from "@agenter/attention-system";
 import {
   buildManagedInvitationAcceptPayload,
   buildManagedInvitationShareDescriptor,
@@ -12,7 +13,6 @@ import {
   validateManagedInvitationRecipientBinding,
   verifyManagedInvitationAcceptProof,
 } from "@agenter/managed-seat-invitation-handshake";
-import { AttentionControlPlane } from "@agenter/attention-system";
 import {
   generatePrincipalKeyPair,
   isPrincipalId,
@@ -26,8 +26,6 @@ import type { MessageAuthorizedQueryInput, MessageQueryResult } from "./message-
 import type {
   CommitWaitHandle,
   MessageAcceptSeatInput,
-  MessageContactId,
-  MessageContactStateRecord,
   MessageAdminWorkItem,
   MessageAppendInput,
   MessageAuthorizedEditInput,
@@ -41,11 +39,13 @@ import type {
   MessageChannelGrantRecord,
   MessageChannelPatchInput,
   MessageConfigSeatInput,
+  MessageContactId,
   MessageContactRecord,
   MessageContactRequestCreateInput,
   MessageContactRequestDirection,
   MessageContactRequestRecord,
   MessageContactRequestState,
+  MessageContactStateRecord,
   MessageContactUpsertInput,
   MessageControlPlaneConfig,
   MessageControlPlaneConfigPatch,
@@ -96,6 +96,9 @@ const toYamlLikeBlock = (input: Record<string, unknown>): string =>
     .join("\n");
 
 const mdFence = (language: string, value: string): string => `\`\`\`${language}\n${value}\n\`\`\``;
+
+const formatRoomAttentionSrc = (input: { roomId: string; entryId?: string | number }): `room:${string}` =>
+  input.entryId === undefined ? `room:${input.roomId}` : `room:${input.roomId}#${String(input.entryId)}`;
 
 export const buildMessageFollowUpReminderPresentation = (input: {
   chatId: string;
@@ -365,12 +368,12 @@ export class MessageControlPlane {
             meta: {
               author: task.attentionOwner,
               source: "message",
-              src: `msg:${task.chatId}/${task.messageId}`,
+              src: formatRoomAttentionSrc({ roomId: task.chatId, entryId: task.messageId }),
               tags: ["message", "follow_up_reminder"],
               createdAt: new Date(task.dueAt).toISOString(),
             },
             scores: {
-              [`msg:${task.chatId}/${task.messageId}`]: 100,
+              [formatRoomAttentionSrc({ roomId: task.chatId, entryId: task.messageId })]: 100,
             },
             summary: presentation.title,
             change: {
@@ -867,7 +870,9 @@ export class MessageControlPlane {
     return message;
   }
 
-  sendAuthorized(input: MessageAuthorizedWriteInput | (Omit<MessageAuthorizedWriteInput, "accessToken"> & { superKey: PrincipalId })): MessageRecord {
+  sendAuthorized(
+    input: MessageAuthorizedWriteInput | (Omit<MessageAuthorizedWriteInput, "accessToken"> & { superKey: PrincipalId }),
+  ): MessageRecord {
     if (!("accessToken" in input)) {
       throw new Error("message channel participant member access required to send");
     }
@@ -1195,7 +1200,9 @@ export class MessageControlPlane {
     };
   }
 
-  snapshotAuthorized(input: (MessageAuthorizedReadInput | { chatId: string; superKey: PrincipalId }) & { limit?: number }): MessageSnapshot {
+  snapshotAuthorized(
+    input: (MessageAuthorizedReadInput | { chatId: string; superKey: PrincipalId }) & { limit?: number },
+  ): MessageSnapshot {
     const grant =
       "superKey" in input
         ? this.requireRoomControl(input.chatId, input.superKey, "readonly")
@@ -1728,7 +1735,10 @@ export class MessageControlPlane {
     return this.db.listSourceSubscriptions(ownerContactId);
   }
 
-  getSourceSubscription(ownerContactId: MessageContactId, sourceId: string): MessageSourceSubscriptionRecord | undefined {
+  getSourceSubscription(
+    ownerContactId: MessageContactId,
+    sourceId: string,
+  ): MessageSourceSubscriptionRecord | undefined {
     this.assertContactId(ownerContactId);
     return this.db.getSourceSubscription(ownerContactId, sourceId);
   }
@@ -2253,7 +2263,9 @@ export class MessageControlPlane {
       accessRole: input.accessRole,
       accessToken: input.accessToken,
       participantId: input.participantId,
-      currentAdmin: input.participantId ? this.resolveCurrentAdminContactId(input.chatId) === input.participantId : false,
+      currentAdmin: input.participantId
+        ? this.resolveCurrentAdminContactId(input.chatId) === input.participantId
+        : false,
       transportUrl: this.getTransportEndpoint(input.chatId, input.accessToken)?.url,
     };
   }
@@ -2574,7 +2586,10 @@ export class MessageControlPlane {
     });
   }
 
-  private requirePendingContactRequest(ownerContactId: MessageContactId, requestId: string): MessageContactRequestRecord {
+  private requirePendingContactRequest(
+    ownerContactId: MessageContactId,
+    requestId: string,
+  ): MessageContactRequestRecord {
     const current = this.db.getContactRequest(ownerContactId, requestId);
     if (!current) {
       throw new Error(`unknown contact request: ${requestId}`);

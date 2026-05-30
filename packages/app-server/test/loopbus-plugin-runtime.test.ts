@@ -2,23 +2,28 @@ import { describe, expect, test } from "bun:test";
 
 import { AttentionSystem } from "@agenter/attention-system";
 
-import { formatMessageAttentionSrc, parseMessageAttentionSrc } from "../src/attention-src";
+import { formatMessageContactAttentionSrc, formatRoomAttentionSrc, parseRoomAttentionSrc } from "../src/attention-src";
 import { LoopBusPluginRuntime, type LoopBusPlugin, type LoopMessageSourceRef } from "../src/loopbus-plugin-runtime";
 
 const createMessageRef = (chatId: string, messageId: number): LoopMessageSourceRef => ({
-  src: formatMessageAttentionSrc({ chatId, messageId }),
+  src: formatRoomAttentionSrc({ roomId: chatId, entryId: messageId }),
   reason: "message-committed",
 });
 
 describe("Feature: loopbus-attention-output-pipeline", () => {
-  test("Scenario: Given room-scope lifecycle refs When message attention sources are formatted and parsed Then room identity stays protocol-native without pretending to be a row ref", () => {
-    const roomSrc = formatMessageAttentionSrc({ chatId: "chat-alpha" });
-    const rowSrc = formatMessageAttentionSrc({ chatId: "chat-alpha", messageId: 7 });
+  test("Scenario: Given room-scope lifecycle refs When attention sources are formatted and parsed Then room identity stays protocol-native without using msg rows", () => {
+    const roomSrc = formatRoomAttentionSrc({ roomId: "chat-alpha" });
+    const rowSrc = formatRoomAttentionSrc({ roomId: "chat-alpha", entryId: 7 });
+    const contactSrc = formatMessageContactAttentionSrc({
+      superadminAddress: "root-superadmin",
+      contact: "auth:kzf",
+    });
 
-    expect(roomSrc).toBe("msg:chat-alpha");
-    expect(parseMessageAttentionSrc(roomSrc)).toEqual({ chatId: "chat-alpha" });
-    expect(rowSrc).toBe("msg:chat-alpha/7");
-    expect(parseMessageAttentionSrc(rowSrc)).toEqual({ chatId: "chat-alpha", messageId: 7 });
+    expect(roomSrc).toBe("room:chat-alpha");
+    expect(parseRoomAttentionSrc(roomSrc)).toEqual({ roomId: "chat-alpha" });
+    expect(rowSrc).toBe("room:chat-alpha#7");
+    expect(parseRoomAttentionSrc(rowSrc)).toEqual({ roomId: "chat-alpha", entryId: "7" });
+    expect(contactSrc).toBe("msg:root-superadmin/auth:kzf");
   });
 
   test("Scenario: Given two attention committed hooks When runtime notifies a commit Then structured hook results are collected in order", async () => {
@@ -61,7 +66,10 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
       change: { type: "update", value: "reply", format: "text/plain" },
     });
 
-    const results = await runtime.notifyAttentionCommitted({ contextId: "ctx-1", context, commit }, { contextId: "ctx-1" });
+    const results = await runtime.notifyAttentionCommitted(
+      { contextId: "ctx-1", context, commit },
+      { contextId: "ctx-1" },
+    );
     expect(results).toEqual([
       {
         hookId: "first-hook",
@@ -214,14 +222,14 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
         name: "message-source",
         setup: (api) => {
           api.registerSource({
-            namespace: "msg",
-            parse: parseMessageAttentionSrc,
-            format: formatMessageAttentionSrc,
-            key: formatMessageAttentionSrc,
-            bucket: (ref) => `msg:${ref.chatId}`,
+            namespace: "room",
+            parse: parseRoomAttentionSrc,
+            format: formatRoomAttentionSrc,
+            key: formatRoomAttentionSrc,
+            bucket: (ref) => `room:${ref.roomId}`,
             read: async (request) => ({
               kind: "snapshot",
-              content: messages.get(`${request.parsed.chatId}:${request.parsed.messageId}`) ?? "",
+              content: messages.get(`${request.parsed.roomId}:${request.parsed.entryId}`) ?? "",
               bytes: 0,
               fromHash: null,
               toHash: null,
@@ -266,14 +274,14 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
         name: "message-source",
         setup: (api) => {
           api.registerSource({
-            namespace: "msg",
-            parse: parseMessageAttentionSrc,
-            format: formatMessageAttentionSrc,
-            key: formatMessageAttentionSrc,
-            bucket: (ref) => `msg:${ref.chatId}`,
+            namespace: "room",
+            parse: parseRoomAttentionSrc,
+            format: formatRoomAttentionSrc,
+            key: formatRoomAttentionSrc,
+            bucket: (ref) => `room:${ref.roomId}`,
             read: async (request) => ({
               kind: "snapshot",
-              content: messages.get(`${request.parsed.chatId}:${request.parsed.messageId}`) ?? "",
+              content: messages.get(`${request.parsed.roomId}:${request.parsed.entryId}`) ?? "",
               bytes: 0,
               fromHash: null,
               toHash: null,
@@ -302,8 +310,8 @@ describe("Feature: loopbus-attention-output-pipeline", () => {
         src: draft.sourceRef.src,
       })),
     ).toEqual([
-      { content: "from alpha", src: "msg:chat-alpha/1" },
-      { content: "from beta", src: "msg:chat-beta/1" },
+      { content: "from alpha", src: "room:chat-alpha#1" },
+      { content: "from beta", src: "room:chat-beta#1" },
     ]);
   });
 });

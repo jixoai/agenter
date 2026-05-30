@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AttentionSystem } from "@agenter/attention-system";
-import { generatePrincipalKeyPair } from "@agenter/principal-crypto";
 import { MessageControlPlane, resolveMessageControlDbPath } from "@agenter/message-system";
+import { generatePrincipalKeyPair } from "@agenter/principal-crypto";
 
-import type { RuntimeSkillRefreshResult } from "../src/runtime-skill-system";
 import { RuntimeKernelHost } from "../src/runtime-kernel-host";
+import type { RuntimeSkillRefreshResult } from "../src/runtime-skill-system";
 import { RuntimeMessageKernelAdapter } from "../src/runtime-system-kernel-adapters/message-adapter";
 import { RuntimeSkillKernelAdapter } from "../src/runtime-system-kernel-adapters/skill-adapter";
 import { RuntimeTerminalKernelAdapter } from "../src/runtime-system-kernel-adapters/terminal-adapter";
@@ -85,11 +85,12 @@ describe("Feature: runtime-system-kernel-adapters integration", () => {
       getMaxFocusedRoomCount: () => 3,
       getMaxBatchReadRoomMessageCount: () => 20,
       getActorRoom: (chatId) => (chatId === room.chatId ? room : undefined),
-      isUnreadInboundMessage: (message) => message.kind === "text" && message.unreadContactIds.includes(messageContactId),
+      isUnreadInboundMessage: (message) =>
+        message.kind === "text" && message.unreadContactIds.includes(messageContactId),
       buildMessageIngressEnvelope: ({ message, channel }) => ({
         system: "message",
         boundaryChannel: "world_fact",
-        sourceId: `msg:${channel.chatId}/${message.messageId}`,
+        sourceId: `room:${channel.chatId}#${message.messageId}`,
         contextKey: channel.contextId ?? `ctx-${channel.chatId}`,
         kind: "room_ingress",
         summary: message.content,

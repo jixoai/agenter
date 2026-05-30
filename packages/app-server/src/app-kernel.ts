@@ -40,12 +40,12 @@ import { LoopBusKernel } from "@agenter/loopbus-kernel";
 import {
   MessageControlPlane,
   resolveMessageControlDbPath,
-  type MessageContactId,
   type MessageChannelAccessProjection,
   type MessageChannelAccessRole,
   type MessageChannelGrantRecord,
   type MessageChannelKind,
   type MessageChannelPatchInput,
+  type MessageContactId,
   type MessageContactRecord,
   type MessageContactRequestRecord,
   type MessageControlPlaneEntry,
@@ -1496,7 +1496,7 @@ export class AppKernel {
       put({
         actorId: typedActorId,
         label: authActor?.label ?? current?.label ?? label?.trim() ?? (typedActorId.split(":").at(-1) || typedActorId),
-        kind: authActor ? "auth" : current?.kind ?? this.resolvePublicRoomActorKind(typedActorId),
+        kind: authActor ? "auth" : (current?.kind ?? this.resolvePublicRoomActorKind(typedActorId)),
         subtitle: authActor?.subtitle ?? current?.subtitle ?? typedActorId,
         iconUrl: authActor?.iconUrl ?? current?.iconUrl ?? principalIconUrl,
       });
@@ -1529,7 +1529,10 @@ export class AppKernel {
     return await this.buildPublicRoomActorDirectory(input);
   }
 
-  private requireMessageSourceSubscription(actorId: MessageContactId, sourceId: string): MessageSourceSubscriptionRecord {
+  private requireMessageSourceSubscription(
+    actorId: MessageContactId,
+    sourceId: string,
+  ): MessageSourceSubscriptionRecord {
     const source = this.messageControlPlane.getSourceSubscription(actorId, sourceId);
     if (!source) {
       throw new Error(`unknown message source subscription: ${sourceId}`);
@@ -1537,7 +1540,10 @@ export class AppKernel {
     return source;
   }
 
-  private requirePendingMessageContactRequest(actorId: MessageContactId, requestId: string): MessageContactRequestRecord {
+  private requirePendingMessageContactRequest(
+    actorId: MessageContactId,
+    requestId: string,
+  ): MessageContactRequestRecord {
     const request = this.messageControlPlane.getContactRequest(actorId, requestId);
     if (!request) {
       throw new Error(`unknown contact request: ${requestId}`);
@@ -1732,8 +1738,10 @@ export class AppKernel {
         participantId: actorId,
       });
       return (
-        this.messageControlPlane.getChannelForContact(roomId, actorId, { includeArchived: true, touchPresence: false }) ??
-        repairedBootstrap
+        this.messageControlPlane.getChannelForContact(roomId, actorId, {
+          includeArchived: true,
+          touchPresence: false,
+        }) ?? repairedBootstrap
       );
     }
     return this.messageControlPlane.createChannel({
@@ -3215,17 +3223,17 @@ export class AppKernel {
     });
   }
 
-  archiveMessageChannel(input: {
+  async archiveMessageChannel(input: {
     sessionId: string;
     chatId: string;
     accessToken: string;
     archivedBy?: string;
-  }): MessageControlPlaneEntry {
+  }): Promise<MessageControlPlaneEntry> {
     const runtime = this.runtimes.get(input.sessionId);
     if (!runtime) {
       throw new Error("session runtime is not active");
     }
-    return runtime.archiveMessageChannel({
+    return await runtime.archiveMessageChannel({
       chatId: input.chatId,
       accessToken: input.accessToken,
       archivedBy: input.archivedBy,
@@ -3897,20 +3905,28 @@ export class AppKernel {
     );
   }
 
-  archiveGlobalRoom(input: {
+  async archiveGlobalRoom(input: {
     chatId: string;
     archivedBy?: string;
     accessToken?: string;
     actorId?: MessageContactId;
     superadminContactId?: MessageContactId;
-  }): PublicRoomEntry {
+  }): Promise<PublicRoomEntry> {
     const access = this.resolveGlobalRoomAccess(input);
-    return projectPublicRoomEntry(
-      this.messageControlPlane.archiveChannelAuthorized({
-        chatId: input.chatId,
-        accessToken: access.accessToken,
-        superadminContactId: input.superadminContactId,
-        archivedBy: input.archivedBy ?? access.room.owner,
+    const archived = this.messageControlPlane.archiveChannelAuthorized({
+      chatId: input.chatId,
+      accessToken: access.accessToken,
+      superadminContactId: input.superadminContactId,
+      archivedBy: input.archivedBy ?? access.room.owner,
+    });
+    await this.notifyRuntimesOfArchivedRoom(archived.chatId);
+    return projectPublicRoomEntry(archived);
+  }
+
+  private async notifyRuntimesOfArchivedRoom(chatId: string): Promise<void> {
+    await Promise.all(
+      [...this.runtimes.values()].map(async (runtime) => {
+        await runtime.handleArchivedMessageChannelLifecycle({ chatId });
       }),
     );
   }

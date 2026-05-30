@@ -22,7 +22,7 @@ export interface LoopSourceRef {
 }
 
 export interface LoopMessageSourceRef extends LoopSourceRef {
-  src: `msg:${string}/${number}`;
+  src: `room:${string}#${string}`;
 }
 
 export interface LoopTerminalSourceRef extends LoopSourceRef {

@@ -817,8 +817,8 @@ export const appRouter = t.router({
           archivedBy: z.string().trim().min(1).optional(),
         }),
       )
-      .mutation(({ ctx, input }) => ({
-        channel: ctx.kernel.archiveMessageChannel(input),
+      .mutation(async ({ ctx, input }) => ({
+        channel: await ctx.kernel.archiveMessageChannel(input),
       })),
     deleteChannel: superadminProcedure
       .input(
@@ -1077,8 +1077,8 @@ export const appRouter = t.router({
           archivedBy: z.string().trim().min(1).optional(),
         }),
       )
-      .mutation(({ ctx, input }) => ({
-        channel: ctx.kernel.archiveGlobalRoom({
+      .mutation(async ({ ctx, input }) => ({
+        channel: await ctx.kernel.archiveGlobalRoom({
           ...input,
           ...resolveMessageCallerScope(ctx.auth),
         }),
@@ -1604,7 +1604,10 @@ export const appRouter = t.router({
       .subscription(({ ctx, input }) => {
         return observable<
           | { type: "snapshot"; items: ReturnType<typeof ctx.kernel.listObservableGlobalTerminalApprovalRequests> }
-          | { type: "request"; request: ReturnType<typeof ctx.kernel.listObservableGlobalTerminalApprovalRequests>[number] }
+          | {
+              type: "request";
+              request: ReturnType<typeof ctx.kernel.listObservableGlobalTerminalApprovalRequests>[number];
+            }
         >((emit) => {
           const terminalScope = resolveTerminalCallerScope(ctx.auth);
           const listInput = {

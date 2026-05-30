@@ -1,20 +1,20 @@
 import type { GlobalAvatarCatalogEntry, RuntimeClientState } from "@agenter/client-sdk";
 import { describe, expect, test } from "bun:test";
 
-import { bootstrapShellNextRoom } from "../src/product/bootstrap";
 import {
   defaultShellNextKeybindings,
   defaultShellNextSettings,
   type ShellNextSettings,
 } from "../src/product-room/settings";
+import { bootstrapShellNextRoom } from "../src/product/bootstrap";
 
-import { FakeShellNextStore } from "./fake-shell-next-store";
 import { createShellNextRuntimeApprovalStore } from "../src/product/approval-store";
 import { parseShellNextArgs } from "../src/product/argv";
 import type { ShellNextProductRunDependencies } from "../src/product/runtime";
 import type { ChildLayoutNode } from "../src/renderable-mux/layout";
 import { createPaneSourceId, type PaneSource, type TerminalFrameSnapshot } from "../src/renderable-mux/pane-source";
 import { isShellNextMetadataOnlyArgv, runShellNext } from "../src/run-shell-next";
+import { FakeShellNextStore } from "./fake-shell-next-store";
 
 describe("Feature: shell-next argv metadata boundary", () => {
   test("Scenario: Given metadata flags When classifying argv Then help and version stay side-effect free", () => {
@@ -336,7 +336,7 @@ describe("Feature: shell-next product runtime bootstrap", () => {
     expect(store.createTerminalInputs[0]?.profile?.gitLog).toBe("normal");
   });
 
-  test("Scenario: Given product attach exits by terminate When the live source terminates Then shell-next stops the global terminal", async () => {
+  test("Scenario: Given product attach exits by terminate When the bound terminal is killed Then shell-next archives the bound room through public APIs", async () => {
     const store = new FakeShellNextStore();
     seedAvatar(store, "bangeel");
     const dependencies = createTestDependencies({
@@ -362,8 +362,37 @@ describe("Feature: shell-next product runtime bootstrap", () => {
     await runShellNext(["bun", "agenter-shell-next", "--session=5", "--avatar=bangeel"], dependencies);
 
     expect(store.stoppedTerminalIds).toEqual(["terminal-1"]);
+    expect(store.archivedRoomIds).toEqual(["room-1"]);
     expect(store.terminals).toHaveLength(0);
     expect(store.terminalHistory.map((terminal) => terminal.terminalId)).toEqual(["terminal-1"]);
+    expect(store.rooms.find((room) => room.chatId === "room-1")?.archivedAt).toEqual(expect.any(Number));
+  });
+
+  test("Scenario: Given shell-next binds terminal A to room R When unrelated terminal B is killed Then room R is not archived", async () => {
+    const store = new FakeShellNextStore();
+    seedAvatar(store, "bangeel");
+    const dependencies = createTestDependencies({
+      store,
+      tty: true,
+      startApp: async () => {
+        await store.createGlobalTerminal({
+          terminalId: "terminal-b",
+          start: true,
+        });
+        await store.stopGlobalTerminal({ terminalId: "terminal-b" });
+        await Bun.sleep(0);
+        return {
+          finished: Promise.resolve(),
+          destroy() {},
+        };
+      },
+    });
+
+    await runShellNext(["bun", "agenter-shell-next", "--session=5", "--avatar=bangeel"], dependencies);
+
+    expect(store.stoppedTerminalIds).toEqual(["terminal-b"]);
+    expect(store.archivedRoomIds).toEqual([]);
+    expect(store.rooms.find((room) => room.chatId === "room-1")?.archivedAt).toBeUndefined();
   });
 
   test("Scenario: Given heartbeat has preview text and model calls have usage When starting app Then statusbar receives macro facts only", async () => {

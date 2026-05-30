@@ -1,16 +1,16 @@
+import { AttentionSystem } from "@agenter/attention-system";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AttentionSystem } from "@agenter/attention-system";
 
-import { formatMessageAttentionSrc, formatTerminalAttentionSrc } from "../src/attention-src";
 import {
   listWorkspaceSettingsLayers,
   projectSessionNotificationSnapshot,
   readWorkspaceSettingsLayer,
   saveWorkspaceSettingsLayer,
 } from "../src";
+import { formatRoomAttentionSrc, formatTerminalAttentionSrc } from "../src/attention-src";
 
 const tempDirs: string[] = [];
 
@@ -81,7 +81,11 @@ describe("Feature: workspace settings and session notifications", () => {
     attention.createContext({ contextId: "ctx-chat-main", owner: "demo", focusState: "background" });
     const mainPush = attention.commit("ctx-chat-main", {
       ingressType: "push",
-      meta: { author: "assistant", source: "message", src: formatMessageAttentionSrc({ chatId: "chat-main", messageId: 9 }) },
+      meta: {
+        author: "assistant",
+        source: "message",
+        src: formatRoomAttentionSrc({ roomId: "chat-main", entryId: 9 }),
+      },
       scores: { hash1: 100 },
       summary: "hello",
       change: { type: "update", value: "hello" },
@@ -95,9 +99,9 @@ describe("Feature: workspace settings and session notifications", () => {
     });
 
     expect(hiddenSnapshot.unreadBySession["session-1"]).toBe(1);
-    expect(hiddenSnapshot.unreadByBucket["session-1"]?.["msg:chat-main"]).toBe(1);
-    expect(hiddenSnapshot.items[0]?.src).toBe(formatMessageAttentionSrc({ chatId: "chat-main", messageId: 9 }));
-    expect(hiddenSnapshot.items[0]?.sourceNamespace).toBe("msg");
+    expect(hiddenSnapshot.unreadByBucket["session-1"]?.["room:chat-main"]).toBe(1);
+    expect(hiddenSnapshot.items[0]?.src).toBe(formatRoomAttentionSrc({ roomId: "chat-main", entryId: 9 }));
+    expect(hiddenSnapshot.items[0]?.sourceNamespace).toBe("room");
     expect(hiddenSnapshot.items[0]?.sourceId).toBe("chat-main");
 
     attention.setContextFocusState("ctx-chat-main", "focused");
@@ -113,7 +117,11 @@ describe("Feature: workspace settings and session notifications", () => {
     attention.createContext({ contextId: "ctx-room-team", owner: "demo", focusState: "background" });
     attention.commit("ctx-room-team", {
       ingressType: "push",
-      meta: { author: "assistant", source: "message", src: formatMessageAttentionSrc({ chatId: "room-team", messageId: 11 }) },
+      meta: {
+        author: "assistant",
+        source: "message",
+        src: formatRoomAttentionSrc({ roomId: "room-team", entryId: 11 }),
+      },
       scores: { hash2: 100 },
       summary: "team reply",
       change: { type: "update", value: "team reply" },
@@ -125,9 +133,9 @@ describe("Feature: workspace settings and session notifications", () => {
       sessionName: "Demo",
       attention: attention.snapshot(),
     });
-    expect(consumedSnapshot.items.map((item) => item.bucketKey)).toEqual(["msg:room-team"]);
+    expect(consumedSnapshot.items.map((item) => item.bucketKey)).toEqual(["room:room-team"]);
     expect(consumedSnapshot.unreadBySession["session-1"]).toBe(1);
-    expect(consumedSnapshot.unreadByBucket["session-1"]?.["msg:room-team"]).toBe(1);
+    expect(consumedSnapshot.unreadByBucket["session-1"]?.["room:room-team"]).toBe(1);
   });
 
   test("Scenario: Given hidden terminal completion notifications When terminal visibility and consume change Then unread terminal badges stay scoped to that terminal", () => {
