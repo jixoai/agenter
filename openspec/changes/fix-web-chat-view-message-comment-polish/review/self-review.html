@@ -80,7 +80,7 @@
       <section>
         <h1>Web Chat Message Comment Polish Review</h1>
         <p class="ok">结论：实现与原始目标基本对齐，等待用户视觉验收后再 archive。</p>
-        <p>本轮修复 sender/avatar projection、comment resource 空值规则、comment icon/action 语义，以及 Framework7 PageContent padding 所有权。</p>
+        <p>本轮修复 sender/avatar projection、comment resource 空值规则、comment icon/action 语义，以及 Framework7 PageContent padding 所有权。Round 2 追加修复：消除 source popup 双重 page-content、dense toolbar 改成 icon-only、空评论保存自动删除。</p>
       </section>
 
       <section>
@@ -114,6 +114,14 @@
             <img src="evidence/after-studio-embedded-desktop.png" alt="Studio embedded iframe" />
             <figcaption>Studio embedded：iframe app-view 边界仍成立。</figcaption>
           </figure>
+          <figure>
+            <img src="evidence/round2-iphone14-source-popup.png" alt="Round 2 iPhone 14 source popup" />
+            <figcaption>Round 2 iPhone 14：source popup 只有一层 PageContent，toolbar 无可见文字。</figcaption>
+          </figure>
+          <figure>
+            <img src="evidence/round2-iphone14-empty-comment-after-save.png" alt="Round 2 empty comment after save" />
+            <figcaption>Round 2 iPhone 14：空评论保存后 anchor 自动删除。</figcaption>
+          </figure>
         </div>
       </section>
 
@@ -132,6 +140,18 @@
     "vars": "toolbarTop=64px extraTop=0.52rem extraBottom=0.86rem"
   }
 }</pre>
+        <p>Round 2 DOM 证据来自 <code>round2-iphone14-source-popup-contract.json</code>：</p>
+        <pre>{
+  "nestedSourcePageContent": false,
+  "ancestorPageContentCount": 1,
+  "sourceContentParentClass": "message-source-page page no-swipeback page-current",
+  "toolbarVisibleText": "",
+  "buttons": [
+    { "text": "", "ariaLabel": "Open source line actions", "title": "Actions" },
+    { "text": "", "ariaLabel": "Comment on selected source line", "title": "Comment" }
+  ],
+  "emptyCommentDeletion": "anchor count 0 -> 1 -> 0"
+}</pre>
       </section>
 
       <section>
@@ -143,6 +163,8 @@
           <li>范围偏移：没有删除所有 safe-area 用法，只处理 Framework7-owned PageContent/toolbar 冲突点。</li>
           <li>验证偏移：没有跑完整 Storybook DOM 套件。</li>
           <li>工作区偏移：无关 `bun.lock` dirty 未提交。</li>
+          <li>Round 2 验证偏移：第一次 Playwright 从仓库根运行找不到 `playwright`，改从 `packages/web-chat-view` 执行后通过。</li>
+          <li>Round 2 验证偏移：最初使用 `[part="message-bubble"]` 等待失败，修正为 token selector `[part~="message-bubble"]` 后通过。</li>
         </ul>
       </section>
 
@@ -151,6 +173,7 @@
         <ul>
           <li>做 remaining safe-area usage audit，区分 inner-shell spacing 和 Framework7-owned surface。</li>
           <li>补 Storybook DOM contract 覆盖 source comment roundtrip。</li>
+          <li>如需非空评论删除能力，新增 destructive icon action，并在有内容时弹确认框。</li>
           <li>把 actor presentation projection 沉淀为更长期的 app-server/message-system contract。</li>
           <li>抽 shared avatar primitive，进一步统一 Studio/Auth/Web Chat 头像。</li>
           <li>用户验收后 archive 当前 OpenSpec change。</li>

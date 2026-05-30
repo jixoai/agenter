@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "beforeMetrics": {
+    "sourcePageContentExists": true,
+    "nestedSourcePageContent": false,
+    "ancestorPageContentCount": 1,
+    "sourceContentParentClass": "message-source-page page no-swipeback page-current",
+    "toolbarVisibleText": "",
+    "buttons": [
+      {
+        "text": "",
+        "ariaLabel": "Open source line actions",
+        "title": "Actions"
+      },
+      {
+        "text": "",
+        "ariaLabel": "Comment on selected source line",
+        "title": "Comment"
+      }
+    ]
+  },
+  "emptyCommentDeletion": {
+    "beforeAnchorCount": 0,
+    "afterCreateAnchorCount": 1,
+    "afterDeleteAnchorCount": 0,
+    "commentEditorOpen": true,
+    "anchorCount": 0,
+    "fallbackToast": true
+  }
+}

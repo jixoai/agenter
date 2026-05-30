@@ -2,7 +2,7 @@
 
 ## 结论
 
-本轮实现和证据与原始目标基本对齐，可以进入用户验收。核心问题已经收口：`Trusted bootstrap` 不再作为正常发送者名泄漏；app-view room mode 可以拿到自包含的 sender/avatar directory；空评论不会渲染成 `No comment body yet`；评论图标统一为 `MessageSquareDot`；评论/source 面板动作改成 icon affordance；Framework7 `PageContent` 的 padding offset 所有权恢复给 Framework7。
+本轮实现和证据与原始目标基本对齐，可以进入用户验收。核心问题已经收口：`Trusted bootstrap` 不再作为正常发送者名泄漏；app-view room mode 可以拿到自包含的 sender/avatar directory；空评论不会渲染成 `No comment body yet`；评论图标统一为 `MessageSquareDot`；评论/source 面板动作改成 icon affordance；Framework7 `PageContent` 的 padding offset 所有权恢复给 Framework7。Round 2 验收反馈也已收口：source popup 不再出现双重 `.page-content`，有图标的 dense toolbar 不再显示 `Actions` / `Comment` 文案，空评论保存会自动删除临时 anchor 或 pending comment resource。
 
 ## 对齐清单
 
@@ -13,6 +13,9 @@
 - 动作按钮：source/comment panel 的主要 actions 使用图标按钮并保留 `aria-label/title`，不再用裸文字作为主动作 UI。
 - 气泡 padding：移除了 `.message-card-with-actions` 的无条件 `padding-inline-end`，不再让左右气泡都吃同一侧预留。
 - Framework7 padding：`.message-source-comment-editor-content.page-content`、`.comment-inspector-edit-content.page-content`、`.message-source-page-content.page-content`、`.resource-preview-shell-page-content.page-content` 不再写 whole `padding` / `padding-bottom` 覆盖 Framework7 公式。
+- Framework7 shell：`message-source-page` 与 `resource-preview-shell-page` 手写 `PageContent`，所以对应 `Page` 已设置 `pageContent={false}`，避免 Framework7 自动再包一层 `.page-content`。
+- Source toolbar：`Open source line actions` 与 `Comment on selected source line` 只保留 icon 可见内容，文字只保留在 `aria-label/title` 中。
+- 空评论删除：source popup 空保存会删除临时 comment anchor；pending comment resource 清空后保存会移除该 resource。
 
 ## 证据
 
@@ -20,13 +23,15 @@
 - OpenSpec self-review commit-check：通过，最新实现提交为 `69244435 fix: polish web chat message comments`。
 - `bun run --filter '@agenter/web-chat-view' typecheck`：通过，0 errors / 0 warnings。
 - `bun run --filter '@agenter/web-chat-view-example' typecheck`：通过，0 errors / 0 warnings。
-- `bun run --filter '@agenter/web-chat-view' test:unit -- test/comment-resource-contract.test.ts test/comment-resource-reopen-contract.test.ts test/message-row-layout.test.ts test/message-source-popup-layout.test.ts test/web-chat-view.test.ts`：5 files / 46 tests passed。
+- `bun run --filter '@agenter/web-chat-view' test:unit -- test/comment-resource-contract.test.ts test/comment-resource-reopen-contract.test.ts test/message-row-layout.test.ts test/message-source-popup-layout.test.ts test/web-chat-view.test.ts`：Round 2 复跑通过，5 files / 49 tests passed。
 - `cd packages/web-chat-view/example && bun run test -- test/review-room-actor-directory-contract.test.ts`：1 file / 2 tests passed。
 - `bun run --filter '@agenter/cli' test -- --grep "app-view room mode"`：1 test passed。
 - `bun run openspec:vision -- validate fix-web-chat-view-message-comment-polish`：valid。
 - `agent-browser` route screenshots：desktop transcript/source/comment editor、iPhone 14 list/transcript/source/comment editor、Studio embedded desktop。
 - CSS measurement：desktop/iPhone 14 JSON 都显示 comment editor textarea 在 viewport 内，`visibleText` 为 `no-placeholder`。
 - CSS rule evidence：浏览器 CSSOM 记录 Framework7 `.page-content` 仍通过 `padding-top/padding-bottom` 公式和 `--f7-page-*` / `--f7-page-content-extra-padding-*` 变量计算 offset。
+- Round 2 browser evidence：`round2-iphone14-source-popup-contract.json` 显示 `nestedSourcePageContent=false`、`ancestorPageContentCount=1`、toolbar `text=""` 但 `ariaLabel/title` 保留，空评论 anchor 数量 `0 -> 1 -> 0`。
+- Round 2 screenshots：`round2-iphone14-source-popup.png` 与 `round2-iphone14-empty-comment-after-save.png` 已保存。
 
 ## 偏移清单
 
@@ -36,11 +41,14 @@
 - 范围偏移：没有清理所有 `env(safe-area-inset-*)`。本轮只清理会覆盖 Framework7 `PageContent` / toolbar offset 的冲突点；保留了 composer sheet、preview body、toolbar inner、profile surface 等 inner-shell spacing 用法。
 - 验证偏移：没有运行完整 `@agenter/web-chat-view` Storybook DOM 套件；本轮用 targeted unit/typecheck、CLI contract、example contract、真实 route screenshot 和 CSSOM 证据收口。
 - 工作区偏移：`bun.lock` 保持 dirty 且未提交，因为它包含无关 terminal / backup package 变化，不属于本 change。
+- Round 2 验证偏移：第一次 Playwright 脚本从仓库根运行时找不到 `playwright`，因为依赖在 `packages/web-chat-view`；后续从包目录重跑通过。
+- Round 2 验证偏移：两次移动端浏览器脚本等待 `[part="message-bubble"]` 超时，根因是 `part` 是 token 列表，实际需要 `[part~="message-bubble"]`；修正选择器后通过。
 
 ## 未来任务清单
 
 - 把 remaining `env(safe-area-inset-*)` 用法整理成一个小型 visual-law audit，逐个确认是 inner-shell spacing 还是 Framework7-owned surface。
 - 给 comment/source popup 增加一个 Storybook DOM contract，用真实浏览器覆盖“打开 source -> 新建 comment -> 保存 -> reopen comment preview”的全流程。
+- 未来如果要给非空 comment 删除按钮，应把它作为明确 destructive icon action 加到 preview/edit controls，并在有内容时弹确认框；本轮只实现用户建议的空保存自动删除。
 - 考虑把 actor presentation projection 从 CLI plain endpoint 进一步沉淀为长期 message-system/app-server API contract，避免未来另一个 host 重复实现目录投影。
 - 如果要彻底统一头像组件，可以把 `ChatAvatar` 与 Studio/Auth profile avatar 的样式 token/尺寸契约沉淀到 shared avatar primitive。
 - 等用户验收视觉效果后，再 archive `fix-web-chat-view-message-comment-polish`，不要现在直接 archive。
