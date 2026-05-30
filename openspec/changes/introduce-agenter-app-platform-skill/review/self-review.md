@@ -33,4 +33,4 @@ No review loop is required for the implemented scope. The remaining dirty worksp
 
 - Full-repo `git diff --check` currently reports trailing whitespace in `openspec/changes/finish-cli-shell-room-composer-and-cursor-reliability/design.md`, which is outside this change's active implementation surface.
 - `plans/plan-v1.md` remains an earlier plan backup and still contains historical wording by design.
-- HTML review evidence is not generated because this change has no route-level UI or screenshot surface.
+- HTML review evidence is generated as a lightweight schema proof page; no route-level UI screenshots are needed for this change.

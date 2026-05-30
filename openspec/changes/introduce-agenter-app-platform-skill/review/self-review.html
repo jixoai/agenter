@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>introduce-agenter-app-platform-skill self review</title>
+    <style>
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        line-height: 1.5;
+        margin: 2rem auto;
+        max-width: 880px;
+        padding: 0 1rem;
+      }
+
+      code {
+        background: #f4f4f5;
+        border-radius: 4px;
+        padding: 0.1rem 0.25rem;
+      }
+
+      li {
+        margin: 0.35rem 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Self Review: introduce-agenter-app-platform-skill</h1>
+    <h2>Verdict</h2>
+    <p>
+      The app-platform migration is implemented for the active launcher,
+      runtime, release, and skill surfaces covered by this change. No review
+      loop is required for the implemented scope.
+    </p>
+
+    <h2>Evidence</h2>
+    <ul>
+      <li><code>bun test packages/cli/test/app-command-launcher.test.ts</code></li>
+      <li><code>bun test packages/app-runtime/test/app-runtime.test.ts</code></li>
+      <li><code>bun test packages/app-server/test/app-runtime.test.ts</code></li>
+      <li><code>bun test packages/client-sdk/test/app-runtime.test.ts</code></li>
+      <li><code>bun test scripts/release/release-bundles.test.ts</code></li>
+      <li><code>bun test skills/create-agenter-app/test/create-agenter-app.test.ts</code></li>
+      <li><code>bun run scripts/quality/audit-app-platform-vocabulary.ts</code></li>
+      <li><code>bun run openspec:vision -- validate introduce-agenter-app-platform-skill</code></li>
+      <li><code>bun run openspec:vision -- commit-check introduce-agenter-app-platform-skill --phase self-review</code></li>
+    </ul>
+
+    <h2>Residual Notes</h2>
+    <p>
+      Full-worktree unrelated historical edits remain outside this change and
+      are not used as review proof.
+    </p>
+  </body>
+</html>

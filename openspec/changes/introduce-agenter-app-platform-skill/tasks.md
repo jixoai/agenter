@@ -51,7 +51,7 @@
 ## 6. Self-Review Loop
 
 - [x] 6.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, BDD evidence, and residual-term audit.
-- [x] 6.2 Generate `review/self-review.html` as structured evidence presentation if this change reaches user-facing or release workflow proof that benefits from HTML review. N/A: no UI screenshot surface.
+- [x] 6.2 Generate `review/self-review.html` as structured evidence presentation if this change reaches user-facing or release workflow proof that benefits from HTML review.
 - [x] 6.3 If review updates OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
 - [ ] 6.4 If the review enters a real loop, run `bun run openspec:vision -- review-state introduce-agenter-app-platform-skill` to persist iteration and recurrence state.
 - [ ] 6.5 If review cannot exit normally, run `bun run openspec:vision -- handoff introduce-agenter-app-platform-skill` and commit the handoff evidence before returning to user discussion.
