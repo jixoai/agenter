@@ -51,29 +51,20 @@ const createProductLayout = (input: {
   return cliSourceDir;
 };
 
-const createCliLayout = (): string =>
+const createShellLayout = (): string =>
   createProductLayout({
     rootKind: "extensions",
-    packageSegment: "cli-shell",
+    packageSegment: "shell",
     packageName: "agenter-ext-shell",
-    binName: "agenter-cli-shell",
-    binPath: "./src/bin/agenter-cli-shell.ts",
-  });
-
-const createShellNextLayout = (): string =>
-  createProductLayout({
-    rootKind: "extensions",
-    packageSegment: "shell-next",
-    packageName: "agenter-ext-shell-next",
-    binName: "agenter-shell-next",
-    binPath: "./src/bin/agenter-shell-next.ts",
+    binName: "agenter-shell",
+    binPath: "./src/bin/agenter-shell.ts",
   });
 
 describe("Feature: product command launcher", () => {
   test("Scenario: Given shell argv When resolving product invocation Then the registry stays descriptor-driven and preserves product argv", () => {
     const routed = resolveProductCommandInvocation(["shell", "@default", "--session=2", "--host", "127.0.0.2", "--port", "4600"]);
     expect(routed?.descriptor.packageName).toBe("agenter-ext-shell");
-    expect(routed?.descriptor.bin.mainExport).toBe("runCliShell");
+    expect(routed?.descriptor.bin.mainExport).toBe("runShell");
     expect(routed?.productArgv).toEqual(["@default", "--session=2"]);
     expect(routed?.launcherOptions.host).toBe("127.0.0.2");
     expect(routed?.launcherOptions.port).toBe(4600);
@@ -88,36 +79,23 @@ describe("Feature: product command launcher", () => {
     expect(routed?.launcherOptions.port).toBe(4600);
   });
 
-  test("Scenario: Given shell2 argv When resolving product invocation Then shell-next stays descriptor-driven and local-only", () => {
-    const routed = resolveProductCommandInvocation(["shell2", "renderer-grid-demo", "--host", "127.0.0.2", "--port", "4600"]);
-    expect(routed?.descriptor.packageName).toBe("agenter-ext-shell-next");
-    expect(routed?.descriptor.bin.mainExport).toBe("runShellNext");
-    expect(routed?.descriptor.sourcePolicy.allowInstalled).toBe(false);
-    expect(routed?.descriptor.sourcePolicy.allowRemote).toBe(false);
-    expect(routed?.descriptor.capabilityHints?.requiresDaemon).toBe(true);
-    expect(routed?.descriptor.capabilityHints?.runtimePlanes).toEqual([
-      "launch",
-      "resources",
-      "assistant",
-      "attention",
-    ]);
-    expect(routed?.productArgv).toEqual(["renderer-grid-demo"]);
-    expect(routed?.launcherOptions.host).toBe("127.0.0.2");
-    expect(routed?.launcherOptions.port).toBe(4600);
+  test("Scenario: Given removed shell2 argv When resolving product invocation Then the launcher rejects the old incubation command", () => {
+    expect(resolveProductCommandInvocation(["shell2", "renderer-grid-demo"])).toBeNull();
+    expect(resolveProductCommandDescriptor("shell2")).toBeNull();
   });
 
-  test("Scenario: Given a local extension cli-shell package When resolving the launch target Then workspace wins before installed or remote fallback", () => {
+  test("Scenario: Given a local extension shell package When resolving the launch target Then workspace wins before installed or remote fallback", () => {
     const descriptor = resolveProductCommandDescriptor("shell");
     if (!descriptor) {
       throw new Error("missing shell descriptor");
     }
-    const target = resolveProductLaunchTarget(descriptor, { cliSourceDir: createCliLayout() });
+    const target = resolveProductLaunchTarget(descriptor, { cliSourceDir: createShellLayout() });
     expect(target.source).toBe("workspace");
     if (target.source !== "workspace") {
       return;
     }
-    expect(target.binPath.endsWith("extensions/cli-shell/src/bin/agenter-cli-shell.ts")).toBe(true);
-    expect(target.mainPath.endsWith("extensions/cli-shell/src/index.ts")).toBe(true);
+    expect(target.binPath.endsWith("extensions/shell/src/bin/agenter-shell.ts")).toBe(true);
+    expect(target.mainPath.endsWith("extensions/shell/src/index.ts")).toBe(true);
   });
 
   test("Scenario: Given a local workspace Studio package When resolving the launch target Then workspace wins before installed or remote fallback", () => {
@@ -127,6 +105,7 @@ describe("Feature: product command launcher", () => {
     }
     const target = resolveProductLaunchTarget(descriptor, {
       cliSourceDir: createProductLayout({
+        rootKind: "extensions",
         packageSegment: "studio",
         packageName: "agenter-ext-studio",
         binName: "agenter-studio",
@@ -141,20 +120,6 @@ describe("Feature: product command launcher", () => {
     expect(target.mainPath.endsWith("extensions/studio/src/index.ts")).toBe(true);
   });
 
-  test("Scenario: Given a local shell-next package When resolving shell2 Then workspace is required and no remote fallback is allowed", () => {
-    const descriptor = resolveProductCommandDescriptor("shell2");
-    if (!descriptor) {
-      throw new Error("missing shell2 descriptor");
-    }
-    const target = resolveProductLaunchTarget(descriptor, { cliSourceDir: createShellNextLayout() });
-    expect(target.source).toBe("workspace");
-    if (target.source !== "workspace") {
-      return;
-    }
-    expect(target.binPath.endsWith("extensions/shell-next/src/bin/agenter-shell-next.ts")).toBe(true);
-    expect(target.mainPath.endsWith("extensions/shell-next/src/index.ts")).toBe(true);
-  });
-
   test("Scenario: Given no local package and a resolvable installed package When resolving the launch target Then installed metadata provides the bin path", () => {
     const root = createTempDir();
     const cliSourceDir = join(root, "packages", "cli", "src");
@@ -166,11 +131,11 @@ describe("Feature: product command launcher", () => {
       JSON.stringify({
         name: "agenter-ext-shell",
         bin: {
-          "agenter-cli-shell": "./src/bin/agenter-cli-shell.ts",
+          "agenter-shell": "./src/bin/agenter-shell.ts",
         },
       }),
     );
-    writeFileSync(join(installedDir, "src", "bin", "agenter-cli-shell.ts"), "console.log('installed')\n");
+    writeFileSync(join(installedDir, "src", "bin", "agenter-shell.ts"), "console.log('installed')\n");
     const descriptor = resolveProductCommandDescriptor("shell");
     if (!descriptor) {
       throw new Error("missing shell descriptor");
@@ -183,7 +148,7 @@ describe("Feature: product command launcher", () => {
     if (target.source !== "installed") {
       return;
     }
-    expect(target.binPath.endsWith("node_modules/agenter-ext-shell/src/bin/agenter-cli-shell.ts")).toBe(true);
+    expect(target.binPath.endsWith("node_modules/agenter-ext-shell/src/bin/agenter-shell.ts")).toBe(true);
     expect(target.mainPath.endsWith("node_modules/agenter-ext-shell/src/index.ts")).toBe(true);
   });
 
@@ -206,7 +171,7 @@ describe("Feature: product command launcher", () => {
       "mock-runner",
       "--package",
       "agenter-ext-shell",
-      "agenter-cli-shell",
+      "agenter-shell",
       "@default",
       "--session=2",
     ]);
@@ -288,7 +253,7 @@ describe("Feature: product command launcher", () => {
     const output = await applyProductCommandsToYargs(yargs([]).scriptName("agenter").exitProcess(false)).getHelp();
 
     expect(String(output)).toContain("shell");
-    expect(String(output)).toContain("run cli-shell terminal workspace");
+    expect(String(output)).toContain("run Shell terminal workspace");
     expect(String(output)).toContain("studio");
     expect(String(output)).toContain("run Studio web UI");
   });
@@ -312,7 +277,7 @@ describe("Feature: product command launcher", () => {
         expect(source).not.toContain(token);
       }
     }
-    expect(listProductCommandDescriptors().map((descriptor) => descriptor.command)).toEqual(["shell", "shell2", "studio"]);
+    expect(listProductCommandDescriptors().map((descriptor) => descriptor.command)).toEqual(["shell", "studio"]);
   });
 
   test("Scenario: Given a local product declares an in-process entry When inspecting the launch path Then the launcher can preserve same-process data-plane laws before falling back to child stdio", () => {
@@ -325,7 +290,7 @@ describe("Feature: product command launcher", () => {
     expect(runCliSource).toContain("process.exitCode = exitCode");
   });
 
-  test("Scenario: Given workspace cli-shell has a main export When launching metadata-only shell Then it runs in-process and does not spawn a product child", async () => {
+  test("Scenario: Given workspace Shell has a main export When launching metadata-only shell Then it runs in-process and does not spawn a product child", async () => {
     let daemonChecks = 0;
     let spawned = 0;
     const dependencies: ProductCommandLaunchDependencies = {

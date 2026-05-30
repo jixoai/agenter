@@ -64,7 +64,7 @@ describe("Feature: release bundle contract", () => {
     expect(cliSource).toContain("const resolveCurrentCliEntrypointArgv = (): string[] => {");
     expect(cliSource).toContain('const entrypoint = process.argv[1];');
     expect(cliSource).toContain('return ["run", resolveCliEntryPath()];');
-    expect(cliSource).toContain('const argv = [...resolveCurrentCliEntrypointArgv(), "daemon", "start"');
+    expect(cliSource).toMatch(/const argv = \[\s*\.\.\.resolveCurrentCliEntrypointArgv\(\),\s*"daemon",\s*"start",/u);
     expect(cliSource).not.toContain('const argv = ["run", resolveCliEntryPath(), "daemon", "start"');
   });
 
@@ -78,13 +78,13 @@ describe("Feature: release bundle contract", () => {
     expect(cliSource).not.toContain("const MANAGED_DAEMON_START_TIMEOUT_MS = 15_000;");
   });
 
-  test("Scenario: Given cli-shell uses OpenTUI native packages When bundling the JS entry Then platform native packages stay install-time dependencies", () => {
+  test("Scenario: Given Shell uses OpenTUI native packages When bundling the JS entry Then platform native packages stay install-time dependencies", () => {
     const shellSpec = createBundlePackageSpecs().find((spec) => spec.bundlePackageDir === "bundle/agenter-ext-shell");
 
     expect(shellSpec?.dependencies).toBeUndefined();
-    expect(shellSpec?.optionalDependencies?.["@opentui/core-darwin-arm64"]).toBe("0.2.15");
-    expect(shellSpec?.optionalDependencies?.["@opentui/core-linux-x64"]).toBe("0.2.15");
-    expect(shellSpec?.optionalDependencies?.["@opentui/core-win32-x64"]).toBe("0.2.15");
+    expect(shellSpec?.optionalDependencies?.["@opentui/core-darwin-arm64"]).toBe("0.3.0");
+    expect(shellSpec?.optionalDependencies?.["@opentui/core-linux-x64"]).toBe("0.3.0");
+    expect(shellSpec?.optionalDependencies?.["@opentui/core-win32-x64"]).toBe("0.3.0");
   });
 
   test("Scenario: Given release CI starts from a clean checkout When building bundles Then generated prompt and native assets are built before copy", () => {

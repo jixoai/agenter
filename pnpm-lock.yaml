@@ -61,7 +61,7 @@ importers:
         version: link:../packages/terminal-system
       '@opentui/core':
         specifier: latest
-        version: 0.2.15(typescript@6.0.3)(web-tree-sitter@0.25.10)
+        version: 0.3.0(typescript@6.0.3)(web-tree-sitter@0.25.10)
       '@tanstack/ai':
         specifier: ^0.6.1
         version: 0.6.3
@@ -79,41 +79,7 @@ importers:
         specifier: latest
         version: 6.0.3
 
-  extensions/cli-shell:
-    dependencies:
-      '@agenter/client-sdk':
-        specifier: workspace:*
-        version: link:../../packages/client-sdk
-      '@agenter/product-extension-runtime':
-        specifier: workspace:*
-        version: link:../../packages/product-extension-runtime
-      '@agenter/terminal-transport-protocol':
-        specifier: workspace:*
-        version: link:../../packages/terminal-transport-protocol
-      '@agenter/termless-core':
-        specifier: workspace:*
-        version: link:../../packages/termless-core
-      '@agenter/tmux-client':
-        specifier: workspace:*
-        version: link:../../packages/tmux-client
-      '@opentui/core':
-        specifier: latest
-        version: 0.2.15(typescript@6.0.3)(web-tree-sitter@0.25.10)
-      yargs:
-        specifier: ^17.7.2
-        version: 17.7.2
-    devDependencies:
-      '@types/bun':
-        specifier: latest
-        version: 1.3.14
-      '@types/yargs':
-        specifier: ^17.0.35
-        version: 17.0.35
-      typescript:
-        specifier: latest
-        version: 6.0.3
-
-  extensions/shell-next:
+  extensions/shell:
     dependencies:
       '@agenter/client-sdk':
         specifier: workspace:*
@@ -132,7 +98,7 @@ importers:
         version: link:../../packages/termless-core
       '@opentui/core':
         specifier: latest
-        version: 0.2.15(typescript@6.0.3)(web-tree-sitter@0.25.10)
+        version: 0.3.0(typescript@6.0.3)(web-tree-sitter@0.25.10)
       yargs:
         specifier: ^17.7.2
         version: 17.7.2
@@ -147,11 +113,232 @@ importers:
         specifier: latest
         version: 6.0.3
 
+  extensions/shell-old:
+    dependencies:
+      '@agenter/client-sdk':
+        specifier: workspace:*
+        version: link:../../packages/client-sdk
+      '@agenter/product-extension-runtime':
+        specifier: workspace:*
+        version: link:../../packages/product-extension-runtime
+      '@agenter/terminal-transport-protocol':
+        specifier: workspace:*
+        version: link:../../packages/terminal-transport-protocol
+      '@agenter/termless-core':
+        specifier: workspace:*
+        version: link:../../packages/termless-core
+      '@agenter/tmux-client':
+        specifier: workspace:*
+        version: link:../../packages/tmux-client
+      '@opentui/core':
+        specifier: latest
+        version: 0.3.0(typescript@6.0.3)(web-tree-sitter@0.25.10)
+      yargs:
+        specifier: ^17.7.2
+        version: 17.7.2
+    devDependencies:
+      '@types/bun':
+        specifier: latest
+        version: 1.3.14
+      '@types/yargs':
+        specifier: ^17.0.35
+        version: 17.0.35
+      typescript:
+        specifier: latest
+        version: 6.0.3
+
+  extensions/studio:
+    dependencies:
+      '@agenter/client-sdk':
+        specifier: workspace:*
+        version: link:../../packages/client-sdk
+      '@agenter/settings':
+        specifier: workspace:*
+        version: link:../../packages/settings
+      '@agenter/svelte-components':
+        specifier: workspace:*
+        version: link:../../packages/svelte-components
+      '@agenter/terminal-view':
+        specifier: workspace:*
+        version: link:../../packages/terminal-view
+      '@agenter/web-chat-view':
+        specifier: workspace:*
+        version: link:../../packages/web-chat-view
+      '@agenter/web-components':
+        specifier: workspace:*
+        version: link:../../packages/web-components
+      '@codemirror/autocomplete':
+        specifier: ^6.20.1
+        version: 6.20.1
+      '@codemirror/lang-json':
+        specifier: ^6.0.2
+        version: 6.0.2
+      '@codemirror/lang-markdown':
+        specifier: ^6.5.0
+        version: 6.5.0
+      '@codemirror/lang-yaml':
+        specifier: ^6.1.3
+        version: 6.1.3
+      '@codemirror/language':
+        specifier: ^6.12.3
+        version: 6.12.3
+      '@codemirror/language-data':
+        specifier: ^6.5.1
+        version: 6.5.2
+      '@codemirror/state':
+        specifier: ^6.6.0
+        version: 6.6.0
+      '@codemirror/view':
+        specifier: ^6.41.0
+        version: 6.41.0
+      '@fontsource-variable/ibm-plex-sans':
+        specifier: ^5.2.6
+        version: 5.2.8
+      '@internationalized/date':
+        specifier: ^3.12.0
+        version: 3.12.0
+      '@lezer/highlight':
+        specifier: ^1.2.3
+        version: 1.2.3
+      '@lucide/svelte':
+        specifier: ^1.7.0
+        version: 1.7.0(svelte@5.55.2)
+      '@tanstack/svelte-virtual':
+        specifier: ^3.13.23
+        version: 3.13.23(svelte@5.55.2)
+      '@wterm/dom':
+        specifier: ^0.3.0
+        version: 0.3.0
+      '@wterm/ghostty':
+        specifier: ^0.3.0
+        version: 0.3.0
+      bits-ui:
+        specifier: ^2.16.3
+        version: 2.16.5(@internationalized/date@3.12.0)(@sveltejs/kit@2.56.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(svelte@5.55.2)(typescript@5.9.3)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(svelte@5.55.2)
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      highlight.js:
+        specifier: ^11.11.1
+        version: 11.11.1
+      idb-keyval:
+        specifier: ^6.2.2
+        version: 6.2.2
+      lit:
+        specifier: ^3.3.1
+        version: 3.3.2
+      markdown-it:
+        specifier: ^14.1.0
+        version: 14.1.1
+      pdfjs-dist:
+        specifier: ^5.7.284
+        version: 5.7.284
+      shadcn-svelte:
+        specifier: ^1.0.6
+        version: 1.2.6(svelte@5.55.2)
+      tailwind-merge:
+        specifier: ^3.3.1
+        version: 3.5.0
+      tailwind-variants:
+        specifier: ^3.2.2
+        version: 3.2.2(tailwind-merge@3.5.0)(tailwindcss@4.2.2)
+      tw-animate-css:
+        specifier: ^1.4.0
+        version: 1.4.0
+      viem:
+        specifier: ^2.47.6
+        version: 2.47.6(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.4.3)
+      yaml:
+        specifier: ^2.8.3
+        version: 2.8.3
+      yargs:
+        specifier: ^17.7.2
+        version: 17.7.2
+    devDependencies:
+      '@chromatic-com/storybook':
+        specifier: ^5.1.1
+        version: 5.1.1(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))
+      '@playwright/test':
+        specifier: ^1.58.2
+        version: 1.59.1
+      '@storybook/addon-a11y':
+        specifier: ^10.3.5
+        version: 10.3.5(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))
+      '@storybook/addon-docs':
+        specifier: ^10.3.5
+        version: 10.3.5(@types/react@19.2.14)(esbuild@0.27.5)(rollup@4.60.1)(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@storybook/addon-svelte-csf':
+        specifier: ^5.1.2
+        version: 5.1.2(patch_hash=eb4a5b6268b1593081cab763e1baec272394c0ecb4e62e0c05d329261a266355)(@storybook/svelte@10.3.5(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(svelte@5.55.2))(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@storybook/addon-vitest':
+        specifier: ^10.3.5
+        version: 10.3.5(@vitest/browser-playwright@4.1.2)(@vitest/browser@4.1.2(bufferutil@4.1.0)(utf-8-validate@6.0.6)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))(vitest@4.1.2))(@vitest/runner@4.1.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(vitest@4.1.2)
+      '@storybook/sveltekit':
+        specifier: ^10.3.5
+        version: 10.3.5(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(esbuild@0.27.5)(rollup@4.60.1)(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@sveltejs/adapter-static':
+        specifier: ^3.0.10
+        version: 3.0.10(@sveltejs/kit@2.56.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(svelte@5.55.2)(typescript@5.9.3)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))
+      '@sveltejs/kit':
+        specifier: ^2.56.1
+        version: 2.56.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(svelte@5.55.2)(typescript@5.9.3)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@sveltejs/vite-plugin-svelte':
+        specifier: ^7.0.0
+        version: 7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@tailwindcss/vite':
+        specifier: ^4.2.2
+        version: 4.2.2(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@types/bun':
+        specifier: latest
+        version: 1.3.14
+      '@types/node':
+        specifier: ^24
+        version: 24.12.0
+      '@types/yargs':
+        specifier: ^17.0.35
+        version: 17.0.35
+      '@vitest/browser-playwright':
+        specifier: ^4.1.0
+        version: 4.1.2(bufferutil@4.1.0)(playwright@1.59.1)(utf-8-validate@6.0.6)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))(vitest@4.1.2)
+      '@vitest/coverage-v8':
+        specifier: ^4.1.0
+        version: 4.1.2(@vitest/browser@4.1.2(bufferutil@4.1.0)(utf-8-validate@6.0.6)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))(vitest@4.1.2))(vitest@4.1.2)
+      oxlint:
+        specifier: ^1.58.0
+        version: 1.58.0
+      playwright:
+        specifier: ^1.59.0
+        version: 1.59.1
+      storybook:
+        specifier: ^10.3.5
+        version: 10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6)
+      svelte:
+        specifier: ^5.55.2
+        version: 5.55.2
+      svelte-check:
+        specifier: ^4.4.2
+        version: 4.4.6(picomatch@4.0.4)(svelte@5.55.2)(typescript@5.9.3)
+      tailwindcss:
+        specifier: ^4.2.2
+        version: 4.2.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^8.0.3
+        version: 8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@24.12.0)(@vitest/browser-playwright@4.1.2)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+
   packages/agenter:
     dependencies:
       '@duckdb/node-api':
         specifier: ^1.5.1-r.1
         version: 1.5.1-r.1
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
     devDependencies:
       '@agenter/cli':
         specifier: workspace:*
@@ -373,6 +560,9 @@ importers:
       '@trpc/server':
         specifier: ^11.7.1
         version: 11.16.0(typescript@6.0.3)
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
       ws:
         specifier: ^8.18.0
         version: 8.20.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
@@ -586,6 +776,9 @@ importers:
 
   packages/message-system:
     dependencies:
+      '@agenter/attention-system':
+        specifier: workspace:*
+        version: link:../attention-system
       '@agenter/managed-seat-invitation-handshake':
         specifier: workspace:*
         version: link:../managed-seat-invitation-handshake
@@ -649,190 +842,6 @@ importers:
       zod:
         specifier: ^4.0.0
         version: 4.3.6
-
-  extensions/studio:
-    dependencies:
-      '@agenter/client-sdk':
-        specifier: workspace:*
-        version: link:../client-sdk
-      '@agenter/settings':
-        specifier: workspace:*
-        version: link:../settings
-      '@agenter/svelte-components':
-        specifier: workspace:*
-        version: link:../svelte-components
-      '@agenter/terminal-view':
-        specifier: workspace:*
-        version: link:../terminal-view
-      '@agenter/web-chat-view':
-        specifier: workspace:*
-        version: link:../web-chat-view
-      '@agenter/web-components':
-        specifier: workspace:*
-        version: link:../web-components
-      '@codemirror/autocomplete':
-        specifier: ^6.20.1
-        version: 6.20.1
-      '@codemirror/lang-json':
-        specifier: ^6.0.2
-        version: 6.0.2
-      '@codemirror/lang-markdown':
-        specifier: ^6.5.0
-        version: 6.5.0
-      '@codemirror/lang-yaml':
-        specifier: ^6.1.3
-        version: 6.1.3
-      '@codemirror/language':
-        specifier: ^6.12.3
-        version: 6.12.3
-      '@codemirror/language-data':
-        specifier: ^6.5.1
-        version: 6.5.2
-      '@codemirror/state':
-        specifier: ^6.6.0
-        version: 6.6.0
-      '@codemirror/view':
-        specifier: ^6.41.0
-        version: 6.41.0
-      '@fontsource-variable/ibm-plex-sans':
-        specifier: ^5.2.6
-        version: 5.2.8
-      '@internationalized/date':
-        specifier: ^3.12.0
-        version: 3.12.0
-      '@lezer/highlight':
-        specifier: ^1.2.3
-        version: 1.2.3
-      '@lucide/svelte':
-        specifier: ^1.7.0
-        version: 1.7.0(svelte@5.55.2)
-      '@tanstack/svelte-virtual':
-        specifier: ^3.13.23
-        version: 3.13.23(svelte@5.55.2)
-      '@wterm/dom':
-        specifier: ^0.3.0
-        version: 0.3.0
-      '@wterm/ghostty':
-        specifier: ^0.3.0
-        version: 0.3.0
-      bits-ui:
-        specifier: ^2.16.3
-        version: 2.16.5(@internationalized/date@3.12.0)(@sveltejs/kit@2.56.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(svelte@5.55.2)(typescript@5.9.3)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(svelte@5.55.2)
-      clsx:
-        specifier: ^2.1.1
-        version: 2.1.1
-      highlight.js:
-        specifier: ^11.11.1
-        version: 11.11.1
-      idb-keyval:
-        specifier: ^6.2.2
-        version: 6.2.2
-      lit:
-        specifier: ^3.3.1
-        version: 3.3.2
-      markdown-it:
-        specifier: ^14.1.0
-        version: 14.1.1
-      pdfjs-dist:
-        specifier: ^5.7.284
-        version: 5.7.284
-      shadcn-svelte:
-        specifier: ^1.0.6
-        version: 1.2.6(svelte@5.55.2)
-      tailwind-merge:
-        specifier: ^3.3.1
-        version: 3.5.0
-      tailwind-variants:
-        specifier: ^3.2.2
-        version: 3.2.2(tailwind-merge@3.5.0)(tailwindcss@4.2.2)
-      tw-animate-css:
-        specifier: ^1.4.0
-        version: 1.4.0
-      viem:
-        specifier: ^2.47.6
-        version: 2.47.6(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.4.3)
-      yaml:
-        specifier: ^2.8.3
-        version: 2.8.3
-      yargs:
-        specifier: ^17.7.2
-        version: 17.7.2
-    devDependencies:
-      '@chromatic-com/storybook':
-        specifier: ^5.1.1
-        version: 5.1.1(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))
-      '@playwright/test':
-        specifier: ^1.58.2
-        version: 1.59.1
-      '@storybook/addon-a11y':
-        specifier: ^10.3.5
-        version: 10.3.5(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))
-      '@storybook/addon-docs':
-        specifier: ^10.3.5
-        version: 10.3.5(@types/react@19.2.14)(esbuild@0.27.5)(rollup@4.60.1)(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
-      '@storybook/addon-svelte-csf':
-        specifier: ^5.1.2
-        version: 5.1.2(patch_hash=eb4a5b6268b1593081cab763e1baec272394c0ecb4e62e0c05d329261a266355)(@storybook/svelte@10.3.5(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(svelte@5.55.2))(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
-      '@storybook/addon-vitest':
-        specifier: ^10.3.5
-        version: 10.3.5(@vitest/browser-playwright@4.1.2)(@vitest/browser@4.1.2(bufferutil@4.1.0)(utf-8-validate@6.0.6)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))(vitest@4.1.2))(@vitest/runner@4.1.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(vitest@4.1.2)
-      '@storybook/sveltekit':
-        specifier: ^10.3.5
-        version: 10.3.5(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(esbuild@0.27.5)(rollup@4.60.1)(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
-      '@sveltejs/adapter-static':
-        specifier: ^3.0.10
-        version: 3.0.10(@sveltejs/kit@2.56.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(svelte@5.55.2)(typescript@5.9.3)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))
-      '@sveltejs/kit':
-        specifier: ^2.56.1
-        version: 2.56.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(svelte@5.55.2)(typescript@5.9.3)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
-      '@sveltejs/vite-plugin-svelte':
-        specifier: ^7.0.0
-        version: 7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
-      '@tailwindcss/vite':
-        specifier: ^4.2.2
-        version: 4.2.2(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
-      '@types/bun':
-        specifier: latest
-        version: 1.3.14
-      '@types/node':
-        specifier: ^24
-        version: 24.12.0
-      '@types/yargs':
-        specifier: ^17.0.35
-        version: 17.0.35
-      '@vitest/browser-playwright':
-        specifier: ^4.1.0
-        version: 4.1.2(bufferutil@4.1.0)(playwright@1.59.1)(utf-8-validate@6.0.6)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))(vitest@4.1.2)
-      '@vitest/coverage-v8':
-        specifier: ^4.1.0
-        version: 4.1.2(@vitest/browser@4.1.2(bufferutil@4.1.0)(utf-8-validate@6.0.6)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))(vitest@4.1.2))(vitest@4.1.2)
-      oxlint:
-        specifier: ^1.58.0
-        version: 1.58.0
-      playwright:
-        specifier: ^1.59.0
-        version: 1.59.1
-      storybook:
-        specifier: ^10.3.5
-        version: 10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6)
-      svelte:
-        specifier: ^5.55.2
-        version: 5.55.2
-      svelte-check:
-        specifier: ^4.4.2
-        version: 4.4.6(picomatch@4.0.4)(svelte@5.55.2)(typescript@5.9.3)
-      tailwindcss:
-        specifier: ^4.2.2
-        version: 4.2.2
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-      vite:
-        specifier: ^8.0.3
-        version: 8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)
-      vitest:
-        specifier: ^4.1.0
-        version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@24.12.0)(@vitest/browser-playwright@4.1.2)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
 
   packages/svelte-components:
     dependencies:
@@ -900,7 +909,7 @@ importers:
         version: link:../termless-core
       '@opentui/core':
         specifier: latest
-        version: 0.2.15(typescript@6.0.3)(web-tree-sitter@0.25.10)
+        version: 0.3.0(typescript@6.0.3)(web-tree-sitter@0.25.10)
       yargs:
         specifier: ^17.7.2
         version: 17.7.2
@@ -1028,7 +1037,7 @@ importers:
         version: link:../client-sdk
       '@opentui/core':
         specifier: latest
-        version: 0.2.15(typescript@6.0.3)(web-tree-sitter@0.25.10)
+        version: 0.3.0(typescript@6.0.3)(web-tree-sitter@0.25.10)
     devDependencies:
       '@types/bun':
         specifier: latest
@@ -1081,6 +1090,12 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      framework7:
+        specifier: ^9.0.4
+        version: 9.0.5
+      framework7-svelte:
+        specifier: ^9.0.4
+        version: 9.0.5
       highlight.js:
         specifier: ^11.11.1
         version: 11.11.1
@@ -1091,15 +1106,42 @@ importers:
         specifier: ^3.2.2
         version: 3.2.2(tailwind-merge@3.5.0)(tailwindcss@4.2.2)
     devDependencies:
+      '@chromatic-com/storybook':
+        specifier: ^5.1.1
+        version: 5.1.1(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))
+      '@storybook/addon-a11y':
+        specifier: ^10.3.5
+        version: 10.3.5(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))
+      '@storybook/addon-docs':
+        specifier: ^10.3.5
+        version: 10.3.5(@types/react@19.2.14)(esbuild@0.27.5)(rollup@4.60.1)(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@storybook/addon-svelte-csf':
+        specifier: ^5.1.2
+        version: 5.1.2(patch_hash=eb4a5b6268b1593081cab763e1baec272394c0ecb4e62e0c05d329261a266355)(@storybook/svelte@10.3.5(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(svelte@5.55.2))(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@storybook/addon-vitest':
+        specifier: ^10.3.5
+        version: 10.3.5(@vitest/browser-playwright@4.1.2)(@vitest/browser@4.1.2(bufferutil@4.1.0)(utf-8-validate@6.0.6)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))(vitest@4.1.2))(@vitest/runner@4.1.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(vitest@4.1.2)
+      '@storybook/svelte-vite':
+        specifier: ^10.3.5
+        version: 10.3.5(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(esbuild@0.27.5)(rollup@4.60.1)(storybook@10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6))(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
       '@sveltejs/vite-plugin-svelte':
         specifier: ^7.0.0
         version: 7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
       '@types/bun':
         specifier: latest
         version: 1.3.14
+      '@vitest/browser-playwright':
+        specifier: ^4.1.0
+        version: 4.1.2(bufferutil@4.1.0)(playwright@1.59.1)(utf-8-validate@6.0.6)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))(vitest@4.1.2)
       jsdom:
         specifier: ^26.1.0
         version: 26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      playwright:
+        specifier: ^1.59.0
+        version: 1.59.1
+      storybook:
+        specifier: ^10.3.5
+        version: 10.3.5(@testing-library/dom@10.4.1)(bufferutil@4.1.0)(prettier@3.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(utf-8-validate@6.0.6)
       svelte:
         specifier: ^5.55.2
         version: 5.55.2
@@ -1164,6 +1206,73 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.13)(@types/node@24.12.0)(@vitest/browser@3.2.4)(jiti@2.6.1)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(lightningcss@1.32.0)(yaml@2.8.3)
+
+  packages/web-chat-view/example:
+    dependencies:
+      '@agenter/principal-crypto':
+        specifier: workspace:*
+        version: link:../../principal-crypto
+      '@agenter/web-chat-view':
+        specifier: workspace:*
+        version: link:..
+      '@fontsource-variable/inter':
+        specifier: ^5.2.8
+        version: 5.2.8
+      '@lucide/svelte':
+        specifier: ^1.7.0
+        version: 1.7.0(svelte@5.55.2)
+      dom7:
+        specifier: ^4.0.6
+        version: 4.0.6
+      framework7:
+        specifier: ^9.0.4
+        version: 9.0.5
+      framework7-icons:
+        specifier: ^5.0.5
+        version: 5.0.5
+      framework7-svelte:
+        specifier: ^9.0.4
+        version: 9.0.5
+      idb-keyval:
+        specifier: ^6.2.2
+        version: 6.2.2
+    devDependencies:
+      '@sveltejs/adapter-auto':
+        specifier: ^7.0.1
+        version: 7.0.1(@sveltejs/kit@2.57.0(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(svelte@5.55.2)(typescript@6.0.3)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))
+      '@sveltejs/kit':
+        specifier: ^2.57.0
+        version: 2.57.0(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)))(svelte@5.55.2)(typescript@6.0.3)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@sveltejs/vite-plugin-svelte':
+        specifier: ^7.0.0
+        version: 7.0.0(svelte@5.55.2)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@tailwindcss/vite':
+        specifier: ^4.2.2
+        version: 4.2.2(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
+      '@types/bun':
+        specifier: latest
+        version: 1.3.14
+      '@types/node':
+        specifier: ^24
+        version: 24.12.0
+      svelte:
+        specifier: ^5.55.2
+        version: 5.55.2
+      svelte-check:
+        specifier: ^4.4.6
+        version: 4.4.6(picomatch@4.0.4)(svelte@5.55.2)(typescript@6.0.3)
+      tailwindcss:
+        specifier: ^4.2.2
+        version: 4.2.2
+      typescript:
+        specifier: latest
+        version: 6.0.3
+      vite:
+        specifier: ^8.0.7
+        version: 8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3)
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@24.12.0)(@vitest/browser-playwright@4.1.2)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
 
   packages/web-components:
     dependencies:
@@ -2361,38 +2470,38 @@ packages:
     resolution: {integrity: sha512-cifvXDhcqMwwTlTK04GBNeIe7yyo28Mfby85QXFe1Yk8nmi36Ab/5UQwptOx84SsoGNRg+EVSjwzfSZMy6pmlw==}
     engines: {node: '>=14'}
 
-  '@opentui/core-darwin-arm64@0.2.15':
-    resolution: {integrity: sha512-s25f9GmZd6wxNM5ExRmwwnLT+NLCKxnTWuO9aObOlqsXfLMGHQZrb6YwgAn/PSTua98KmH7GJCVWdPgZ/P+0RQ==}
+  '@opentui/core-darwin-arm64@0.3.0':
+    resolution: {integrity: sha512-/eDfAcutAHJqR9spwHMLuo6LMqngymev/m+i6uqlk98gX1EJiJe2pJ16sKbp3RctgH/Gz/8TYOhVHpPGYJl7yQ==}
     cpu: [arm64]
     os: [darwin]
 
-  '@opentui/core-darwin-x64@0.2.15':
-    resolution: {integrity: sha512-GyaipN+nOcEr8rcTO2mqKTGmOBk0C300I69fLtubD3BadHcMI1DVNlQrcf/J1mkQEuMYbmBTi/1hT1ybWGr2Mw==}
+  '@opentui/core-darwin-x64@0.3.0':
+    resolution: {integrity: sha512-/j6EWAvdwhz1wU/mWfXepAf3+NuMYz2Ic5ozaid5LdwIpPomIkM9yCUDm76mQhRBbjsAl/7UeSeUA0qSCMSZBg==}
     cpu: [x64]
     os: [darwin]
 
-  '@opentui/core-linux-arm64@0.2.15':
-    resolution: {integrity: sha512-h+uyufselGT4afKMP8Lg4yUl5Kp+DJBlhu3XpWXhphE5Pnq5+f0uGBr4P+34CNcWxMsDnvagSQLFRCS4rGrOWA==}
+  '@opentui/core-linux-arm64@0.3.0':
+    resolution: {integrity: sha512-uUFVT3V35KkM1m8gaLmRcTV9dsJzXnxwM+dv6+NjScx0W/Y0CJKbW9wDYwnLyPnBNgaFUi171zmJra5gTtFTsw==}
     cpu: [arm64]
     os: [linux]
 
-  '@opentui/core-linux-x64@0.2.15':
-    resolution: {integrity: sha512-jx+NImPq4wSp3Apfe7tlixiEJNnRyECTRJRWhGF6ZJz4PwFfgK2UHZKYR0DZHbV8nYawoDNQPJDXEWcoZShnMg==}
+  '@opentui/core-linux-x64@0.3.0':
+    resolution: {integrity: sha512-73bNNNU2OaqZQLIlvzDOdAzQmzBAqf+cSilmJ+Y9JnybrBn1d6VShC66+V4xxIgonq1swk7BD+SUHYbwwGilQA==}
     cpu: [x64]
     os: [linux]
 
-  '@opentui/core-win32-arm64@0.2.15':
-    resolution: {integrity: sha512-2SQQLvf3sgmToxrNika9AdcccKrjPJEn5jW6sSv0oEixNBzUzW41vSZZG4LM/V3lL8eg0LoYDnRZeKLB4gwSqQ==}
+  '@opentui/core-win32-arm64@0.3.0':
+    resolution: {integrity: sha512-jg5KrV/4mVQ0mdkcL9CtQVtBk0NAtQ+2rCKoZ/jNHB6GxGK0ot9vDV6P3X68hZVkvpb2pdXfg6GRsZJ+Np4hZA==}
     cpu: [arm64]
     os: [win32]
 
-  '@opentui/core-win32-x64@0.2.15':
-    resolution: {integrity: sha512-SVMVgnC7LVEm+yVZKdmmhRBj/xAT94PanT+UCcHxaCWK+OLmv/AX+ohHq2m0odup6iXcEqj+7mAltO9fgJLFIg==}
+  '@opentui/core-win32-x64@0.3.0':
+    resolution: {integrity: sha512-kiM3C5bwQBTfrJKAOfb+L3U6MMkPSQlMhAERlLMjqSurc+llcyqygr/wbXSvfAqJtKlIpf3MKJRnVFTyfRIdng==}
     cpu: [x64]
     os: [win32]
 
-  '@opentui/core@0.2.15':
-    resolution: {integrity: sha512-YGHttdZWScMcSvtYgZkLR6VhUO1OoUiQzwYjZgIusf5eCkPLD8PapH+PTMVqAiX16CHO6JxfMlkHv5qDiHAccQ==}
+  '@opentui/core@0.3.0':
+    resolution: {integrity: sha512-wvNESYGYGRLuvarZ3QY4CTB+BziZ/j6Snd9qRKD4fQ7SF6G4UpYElLTFrg7uzRo1v7WJTqbquymcTvWEHMnpYA==}
     peerDependencies:
       web-tree-sitter: 0.25.10
 
@@ -4153,6 +4262,9 @@ packages:
   dom-serializer@2.0.0:
     resolution: {integrity: sha512-wIkAryiqt/nV5EQKqQpo3SToSOV9J0DnbJqwK7Wv/Trc92zIAYZ4FlMu+JPFW1DfGFt81ZTCGgDEabffXeLyJg==}
 
+  dom7@4.0.6:
+    resolution: {integrity: sha512-emjdpPLhpNubapLFdjNL9tP06Sr+GZkrIHEXLWvOGsytACUrkbeIdjO5g77m00BrHTznnlcNqgmn7pCN192TBA==}
+
   domelementtype@2.3.0:
     resolution: {integrity: sha512-OLETBj6w0OsagBwdXnPdN0cnMfF9opN69co+7ZrbfPGrdpPVNBUj02spi6B1N7wChLQiPn4CSH/zJvXw56gmHw==}
 
@@ -4391,6 +4503,16 @@ packages:
     resolution: {integrity: sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow==}
     engines: {node: '>= 0.6'}
 
+  framework7-icons@5.0.5:
+    resolution: {integrity: sha512-bvHMLyujV9TFuudehd3ORZ/EvNp19Ir3ckVzYAOf3MkLymHba/9oHLsgopCh0x5UsrYZUpkrE+fd7ggj5y4wRw==}
+    engines: {node: '>= 0.10.0'}
+
+  framework7-svelte@9.0.5:
+    resolution: {integrity: sha512-u7J33R4+GeCn6d2nXAoDGYeF7QnET2EkGvpRFxLcb4ZFxciZfrwQIGath2YcZZdd34htpMMTGl7mgKv0AXPlsQ==}
+
+  framework7@9.0.5:
+    resolution: {integrity: sha512-5fGDYRnVKmuHO0M7r7ecall/g/lXrnBlRq0ieRSyOIeg9Ch0GrD+Qp98Uvy+y4D1bCSWqMGXllK/mNbSjpNtRw==}
+
   fresh@2.0.0:
     resolution: {integrity: sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A==}
     engines: {node: '>= 0.8'}
@@ -4505,6 +4627,9 @@ packages:
   hono@4.12.10:
     resolution: {integrity: sha512-mx/p18PLy5og9ufies2GOSUqep98Td9q4i/EF6X7yJgAiIopxqdfIO3jbqsi3jRgTgw88jMDEzVKi+V2EF+27w==}
     engines: {node: '>=16.9.0'}
+
+  htm@3.1.1:
+    resolution: {integrity: sha512-983Vyg8NwUE7JkZ6NmOqpCZ+sh1bKv2iYTlUkzlWmA5JD2acKoxd4KVxbMmxX/85mtfdnDmTFoNKcg5DGAvxNQ==}
 
   html-encoding-sniffer@4.0.0:
     resolution: {integrity: sha512-Y22oTqIU4uuPgEemfz7NDJz6OeKf12Lsu+QC+s3BVpda64lTiMYCyGwg5ki4vFxkMwQdeZDl2adZoqUgdFuTgQ==}
@@ -5269,6 +5394,9 @@ packages:
     resolution: {integrity: sha512-3O/iVVsJAPsOnpwWIeD+d6z/7PmqApyQePUtCndjatj/9I5LylHvt5qluFaBT3I5h3r1ejfR056c+FCv+NnNXg==}
     engines: {node: 18 || 20 || >=22}
 
+  path-to-regexp@6.3.0:
+    resolution: {integrity: sha512-Yhpw4T9C6hPpgPeA28us07OJeqZ5EzQTkbfwuhsUg0c237RomFoETJgmp2sa3F/41gfLE6G5cqcYwznmeEeOlQ==}
+
   path-to-regexp@8.4.2:
     resolution: {integrity: sha512-qRcuIdP69NPm4qbACK+aDogI5CBDMi1jKe0ry5rSQJz8JVLsC7jV8XpiJjGRLLol3N+R5ihGYcrPLTno6pAdBA==}
 
@@ -5702,6 +5830,9 @@ packages:
     resolution: {integrity: sha512-2wcC/oGxHis/BoHkkPwldgiPSYcpZK3JU28WoMVv55yHJgcZ8rlXvuG9iZggz+sU1d4bRgIGASwyWqjxu3FM0g==}
     engines: {node: '>=18'}
 
+  skeleton-elements@4.0.1:
+    resolution: {integrity: sha512-T7YSF/Vu/raUcM6v3HiE4VSY/OvrNflg8Dur3Zza6VVJkq4slxm4pJRpGLNhoOfblIPZLQKh1cu7ADKveyqm/Q==}
+
   slash@3.0.0:
     resolution: {integrity: sha512-g9Q1haeby36OSStwb4ntCGGGaKsaVSjQ68fBxoQcutl5fS1vuY18H3wSt3jFyFtrkx+Kz0V1G85A4MyAdDMi2Q==}
     engines: {node: '>=8'}
@@ -5729,6 +5860,12 @@ packages:
 
   sql.js@1.14.1:
     resolution: {integrity: sha512-gcj8zBWU5cFsi9WUP+4bFNXAyF1iRpA3LLyS/DP5xlrNzGmPIizUeBggKa8DbDwdqaKwUcTEnChtd2grWo/x/A==}
+
+  ssr-window@4.0.2:
+    resolution: {integrity: sha512-ISv/Ch+ig7SOtw7G2+qkwfVASzazUnvlDTwypdLoPoySv+6MqlOV10VwPSE6EWkGjhW50lUmghPmpYZXMu/+AQ==}
+
+  ssr-window@5.0.1:
+    resolution: {integrity: sha512-WVXlhQsm54HC+FnJfEbccEgNF7mKXtnFUB8Xn7rx2dsWHOlBdqezdX88Vjh6pVGaa0ZvL+PoSu7rEcBuNmxt6g==}
 
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
@@ -5866,6 +6003,10 @@ packages:
     resolution: {integrity: sha512-XDpWUOPC6FEibaLzjfe0ucaV0YrOjYotGJO1WpF0Zd+n6ZGEQUsSugaoLq9QkEZtAfQIxT42UChcssDVPP3+/w==}
     engines: {node: '>=16'}
     hasBin: true
+
+  swiper@12.2.0:
+    resolution: {integrity: sha512-K8uXsBZU6ME97Ia3xbBge8IRCnR1lOmIILzvY/jGVic7dSTQ530s3uO8RvXbPUtkkXLWIwmZLRPbtDxRWVAFdg==}
+    engines: {node: '>= 4.7.0'}
 
   symbol-tree@3.2.4:
     resolution: {integrity: sha512-9QNk5KwDF+Bvz+PyObkmSYjI5ksVUYtjW7AU22r2NKcfLJcXp96hkDWU3+XndOsUb+AQ9QhfzfCT2O+CNWT5Tw==}
@@ -7632,25 +7773,25 @@ snapshots:
 
   '@opentelemetry/semantic-conventions@1.40.0': {}
 
-  '@opentui/core-darwin-arm64@0.2.15':
+  '@opentui/core-darwin-arm64@0.3.0':
     optional: true
 
-  '@opentui/core-darwin-x64@0.2.15':
+  '@opentui/core-darwin-x64@0.3.0':
     optional: true
 
-  '@opentui/core-linux-arm64@0.2.15':
+  '@opentui/core-linux-arm64@0.3.0':
     optional: true
 
-  '@opentui/core-linux-x64@0.2.15':
+  '@opentui/core-linux-x64@0.3.0':
     optional: true
 
-  '@opentui/core-win32-arm64@0.2.15':
+  '@opentui/core-win32-arm64@0.3.0':
     optional: true
 
-  '@opentui/core-win32-x64@0.2.15':
+  '@opentui/core-win32-x64@0.3.0':
     optional: true
 
-  '@opentui/core@0.2.15(typescript@6.0.3)(web-tree-sitter@0.25.10)':
+  '@opentui/core@0.3.0(typescript@6.0.3)(web-tree-sitter@0.25.10)':
     dependencies:
       bun-ffi-structs: 0.2.2(typescript@6.0.3)
       diff: 9.0.0
@@ -7660,12 +7801,12 @@ snapshots:
       web-tree-sitter: 0.25.10
       yoga-layout: 3.2.1
     optionalDependencies:
-      '@opentui/core-darwin-arm64': 0.2.15
-      '@opentui/core-darwin-x64': 0.2.15
-      '@opentui/core-linux-arm64': 0.2.15
-      '@opentui/core-linux-x64': 0.2.15
-      '@opentui/core-win32-arm64': 0.2.15
-      '@opentui/core-win32-x64': 0.2.15
+      '@opentui/core-darwin-arm64': 0.3.0
+      '@opentui/core-darwin-x64': 0.3.0
+      '@opentui/core-linux-arm64': 0.3.0
+      '@opentui/core-linux-x64': 0.3.0
+      '@opentui/core-win32-arm64': 0.3.0
+      '@opentui/core-win32-x64': 0.3.0
     transitivePeerDependencies:
       - typescript
 
@@ -9377,6 +9518,10 @@ snapshots:
       domhandler: 5.0.3
       entities: 4.5.0
 
+  dom7@4.0.6:
+    dependencies:
+      ssr-window: 4.0.2
+
   domelementtype@2.3.0: {}
 
   domhandler@5.0.3:
@@ -9651,6 +9796,19 @@ snapshots:
 
   forwarded@0.2.0: {}
 
+  framework7-icons@5.0.5: {}
+
+  framework7-svelte@9.0.5: {}
+
+  framework7@9.0.5:
+    dependencies:
+      dom7: 4.0.6
+      htm: 3.1.1
+      path-to-regexp: 6.3.0
+      skeleton-elements: 4.0.1
+      ssr-window: 5.0.1
+      swiper: 12.2.0
+
   fresh@2.0.0: {}
 
   fs-constants@1.0.0:
@@ -9773,6 +9931,8 @@ snapshots:
   highlight.js@11.11.1: {}
 
   hono@4.12.10: {}
+
+  htm@3.1.1: {}
 
   html-encoding-sniffer@4.0.0:
     dependencies:
@@ -10718,6 +10878,8 @@ snapshots:
       lru-cache: 11.2.7
       minipass: 7.1.3
 
+  path-to-regexp@6.3.0: {}
+
   path-to-regexp@8.4.2: {}
 
   path-type@4.0.0: {}
@@ -11230,6 +11392,8 @@ snapshots:
       mrmime: 2.0.1
       totalist: 3.0.1
 
+  skeleton-elements@4.0.1: {}
+
   slash@3.0.0: {}
 
   smol-toml@1.6.1: {}
@@ -11248,6 +11412,10 @@ snapshots:
   sprintf-js@1.1.3: {}
 
   sql.js@1.14.1: {}
+
+  ssr-window@4.0.2: {}
+
+  ssr-window@5.0.1: {}
 
   stackback@0.0.2: {}
 
@@ -11443,6 +11611,8 @@ snapshots:
       csso: 5.0.5
       picocolors: 1.1.1
       sax: 1.6.0
+
+  swiper@12.2.0: {}
 
   symbol-tree@3.2.4: {}
 

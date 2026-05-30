@@ -492,13 +492,13 @@ describe("Feature: cli daemon and Studio commands", () => {
     }
   }, 70_000);
 
-  test("Scenario: Given a healthy daemon already owns the runtime root on a different port When `agenter shell shell` starts through the default launcher path Then the launcher reuses that daemon authority instead of booting a competing writer", async () => {
+  test("Scenario: Given a healthy daemon already owns the runtime root on a different port When `agenter shell --view=shell` starts through the default launcher path Then the launcher reuses that daemon authority instead of booting a competing writer", async () => {
     const host = "127.0.0.1";
     const daemonPort = await findFreePort();
     const home = createIsolatedHome();
     await startManagedDaemon({ host, port: daemonPort, home });
 
-    const shell = spawnCli(["shell", "shell", "--session=e2e-reuse", "--avatar=e2e-reuse", "--create-avatar"], {
+    const shell = spawnCli(["shell", "--view=shell", "--session=e2e-reuse", "--avatar=e2e-reuse", "--create-avatar"], {
       HOME: home,
     });
 
@@ -507,11 +507,11 @@ describe("Feature: cli daemon and Studio commands", () => {
     const stderr = await readText(shell.stderr);
     expect(code).toBe(0);
     expect(stderr).toBe("");
-    expect(stdout).toContain("cli-shell shell attached");
+    expect(stdout).toContain("shell attached");
     expect(stdout).toContain("avatar: e2e-reuse");
   }, 70_000);
 
-  test("Scenario: Given the runtime root contains a stale daemon descriptor When `agenter shell shell` starts Then launcher bootstrap ignores the stale descriptor and still reaches the selected shell", async () => {
+  test("Scenario: Given the runtime root contains a stale daemon descriptor When `agenter shell --view=shell` starts Then launcher bootstrap ignores the stale descriptor and still reaches the selected shell", async () => {
     const host = "127.0.0.1";
     const port = await findFreePort();
     const home = createIsolatedHome();
@@ -531,7 +531,7 @@ describe("Feature: cli daemon and Studio commands", () => {
     );
 
     const shell = spawnCli(
-      ["shell", "shell", "--port", String(port), "--session=e2e-stale", "--avatar=e2e-stale", "--create-avatar"],
+      ["shell", "--view=shell", "--port", String(port), "--session=e2e-stale", "--avatar=e2e-stale", "--create-avatar"],
       { HOME: home },
     );
 
@@ -540,7 +540,7 @@ describe("Feature: cli daemon and Studio commands", () => {
     const stderr = await readText(shell.stderr);
     expect(code).toBe(0);
     expect(stderr).toBe("");
-    expect(stdout).toContain("cli-shell shell attached");
+    expect(stdout).toContain("shell attached");
     expect(stdout).toContain("avatar: e2e-stale");
   }, 70_000);
 

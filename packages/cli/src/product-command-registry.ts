@@ -6,35 +6,15 @@ import {
 
 const productCommandDescriptors = [
   productCommandDescriptorSchema.parse({
-    productId: "cli-shell",
+    productId: "shell",
     command: "shell",
-    description: "run cli-shell terminal workspace",
+    description: "run Shell terminal workspace",
     packageName: "agenter-ext-shell",
     bin: {
-      name: "agenter-cli-shell",
-      mainExport: "runCliShell",
+      name: "agenter-shell",
+      mainExport: "runShell",
     },
     sourcePolicy: createLocalFirstProductSourcePolicy(),
-    capabilityHints: {
-      interactive: true,
-      foregroundProcess: true,
-      requiresDaemon: true,
-      runtimePlanes: ["launch", "resources", "assistant", "attention"],
-    },
-  }),
-  productCommandDescriptorSchema.parse({
-    productId: "shell-next",
-    command: "shell2",
-    description: "run shell-next renderable mux incubation",
-    packageName: "agenter-ext-shell-next",
-    bin: {
-      name: "agenter-shell-next",
-      mainExport: "runShellNext",
-    },
-    sourcePolicy: createLocalFirstProductSourcePolicy({
-      allowInstalled: false,
-      allowRemote: false,
-    }),
     capabilityHints: {
       interactive: true,
       foregroundProcess: true,

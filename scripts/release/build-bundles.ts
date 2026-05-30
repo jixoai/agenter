@@ -47,6 +47,7 @@ const repoRoot = resolve(import.meta.dir, "../..");
 const bundleRoot = join(repoRoot, "bundle");
 const releaseRepositoryUrl = "git+https://github.com/jixoai/agenter.git";
 const expectedZigVersion = "0.15.2";
+const opentuiNativePackageVersion = "0.3.0";
 const releaseZigRoot = `/tmp/zig-${expectedZigVersion}`;
 const releaseZigBin = join(releaseZigRoot, "zig");
 const bundleManifestFiles = [
@@ -62,7 +63,7 @@ const bundleManifestFiles = [
 ] as const;
 const publishablePackageJsonPaths = [
   "packages/agenter/package.json",
-  "extensions/cli-shell/package.json",
+  "extensions/shell/package.json",
   "extensions/studio/package.json",
   "packages/ghostty-native/package.json",
 ] as const;
@@ -313,17 +314,17 @@ export const createBundlePackageSpecs = (): BundlePackageSpec[] => [
     ],
   },
   {
-    sourcePackageDir: "extensions/cli-shell",
+    sourcePackageDir: "extensions/shell",
     bundlePackageDir: "bundle/agenter-ext-shell",
-    entry: "src/bin/agenter-cli-shell.ts",
-    bin: { "agenter-cli-shell": "./dist/agenter-cli-shell.js" },
+    entry: "src/bin/agenter-shell.ts",
+    bin: { "agenter-shell": "./dist/agenter-shell.js" },
     optionalDependencies: {
-      "@opentui/core-darwin-arm64": "0.2.15",
-      "@opentui/core-darwin-x64": "0.2.15",
-      "@opentui/core-linux-arm64": "0.2.15",
-      "@opentui/core-linux-x64": "0.2.15",
-      "@opentui/core-win32-arm64": "0.2.15",
-      "@opentui/core-win32-x64": "0.2.15",
+      "@opentui/core-darwin-arm64": opentuiNativePackageVersion,
+      "@opentui/core-darwin-x64": opentuiNativePackageVersion,
+      "@opentui/core-linux-arm64": opentuiNativePackageVersion,
+      "@opentui/core-linux-x64": opentuiNativePackageVersion,
+      "@opentui/core-win32-arm64": opentuiNativePackageVersion,
+      "@opentui/core-win32-x64": opentuiNativePackageVersion,
     },
   },
   {
