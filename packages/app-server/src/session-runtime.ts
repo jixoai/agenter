@@ -1999,7 +1999,7 @@ export class SessionRuntime {
       listFocusedTerminalIds: () => this.focusedTerminalIds,
       isTerminalRunning: (terminalId) => this.terminals.get(terminalId)?.isRunning() ?? false,
       getTerminalStatus: (terminalId) => this.terminalStatusById.get(terminalId)?.status ?? null,
-      getTerminalHeadHash: (terminalId) => this.getTerminalHeadHash(terminalId),
+      getTerminalHeadHash: async (terminalId) => await this.getTerminalHeadHash(terminalId),
       getTerminalReadCursorHash: (terminalId) => this.getTerminalReadCursorHash(terminalId),
       getTerminalContextId: (terminalId) =>
         terminalId === "control-plane"
@@ -5729,11 +5729,19 @@ export class SessionRuntime {
     return status.status === "IDLE" || status.status === "BUSY";
   }
 
-  private getTerminalHeadHash(terminalId: string): string | null {
+  private async getTerminalHeadHash(terminalId: string): Promise<string | null> {
     if (this.terminalControlPlane.has(terminalId)) {
+      const sealed = await this.terminalControlPlane.sealIdleCommit(terminalId);
+      if (sealed.ok) {
+        return sealed.hash;
+      }
       return this.terminalControlPlane.getHeadHash(terminalId);
     }
-    const terminal = this.terminals.get(terminalId) as Partial<Pick<TerminalRuntime, "getHeadHash">> | undefined;
+    const terminal = this.terminals.get(terminalId) as Partial<Pick<TerminalRuntime, "getHeadHash" | "sealIdleCommit">> | undefined;
+    const sealed = await terminal?.sealIdleCommit?.();
+    if (sealed?.ok) {
+      return sealed.hash;
+    }
     return terminal?.getHeadHash?.() ?? null;
   }
 

@@ -183,6 +183,10 @@ export class ComposedTerminalRuntime implements TerminalRuntime {
     return this.requireShell().getHeadHash();
   }
 
+  async sealIdleCommit(): Promise<{ ok: boolean; hash: string | null; reason?: string }> {
+    return await this.requireShell().sealIdleCommit();
+  }
+
   waitCommitted(input: { fromHash?: string | null } = {}): TerminalCommitWaitHandle<{ toHash: string | null }> {
     return this.requireShell().waitCommitted(input);
   }

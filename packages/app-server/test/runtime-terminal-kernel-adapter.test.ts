@@ -101,7 +101,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
       listFocusedTerminalIds: () => ["iflow"],
       isTerminalRunning: () => true,
       getTerminalStatus: () => "IDLE",
-      getTerminalHeadHash: () => null,
+      getTerminalHeadHash: async () => null,
       getTerminalReadCursorHash: () => null,
       getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
       isTerminalActionable: () => false,
@@ -154,7 +154,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
       listFocusedTerminalIds: () => ["iflow"],
       isTerminalRunning: () => true,
       getTerminalStatus: () => "IDLE",
-      getTerminalHeadHash: () => null,
+      getTerminalHeadHash: async () => null,
       getTerminalReadCursorHash: () => null,
       getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
       isTerminalActionable: () => true,
@@ -193,7 +193,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
       listFocusedTerminalIds: () => [],
       isTerminalRunning: () => false,
       getTerminalStatus: () => null,
-      getTerminalHeadHash: () => null,
+      getTerminalHeadHash: async () => null,
       getTerminalReadCursorHash: () => null,
       getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
       isTerminalActionable: () => false,
@@ -247,7 +247,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
       listFocusedTerminalIds: () => [],
       isTerminalRunning: () => false,
       getTerminalStatus: () => null,
-      getTerminalHeadHash: () => null,
+      getTerminalHeadHash: async () => null,
       getTerminalReadCursorHash: () => null,
       getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
       isTerminalActionable: () => false,
@@ -303,7 +303,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
       listFocusedTerminalIds: () => ["iflow"],
       isTerminalRunning: () => true,
       getTerminalStatus: () => "IDLE",
-      getTerminalHeadHash: () => "hash-2",
+      getTerminalHeadHash: async () => "hash-2",
       getTerminalReadCursorHash: () => "hash-2",
       getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
       isTerminalActionable: () => true,
@@ -338,7 +338,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
       listFocusedTerminalIds: () => ["iflow"],
       isTerminalRunning: () => true,
       getTerminalStatus: () => "BUSY",
-      getTerminalHeadHash: () => "hash-2",
+      getTerminalHeadHash: async () => "hash-2",
       getTerminalReadCursorHash: () => "hash-1",
       getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
       isTerminalActionable: () => true,
@@ -386,7 +386,7 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
       listFocusedTerminalIds: () => ["iflow"],
       isTerminalRunning: () => true,
       getTerminalStatus: () => "IDLE",
-      getTerminalHeadHash: () => "raw-head",
+      getTerminalHeadHash: async () => "raw-head",
       getTerminalReadCursorHash: () => null,
       getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
       isTerminalActionable: () => true,
@@ -416,5 +416,47 @@ describe("Feature: runtime-terminal-kernel-adapter", () => {
     expect(reads).toEqual(["iflow"]);
     expect(committed).toHaveLength(1);
     expect(committed[0]?.envelope.content).toContain("typed raw transport");
+  });
+
+  test("Scenario: Given pre-idle HEAD is stale When sealing terminal output advances HEAD Then idle bridge compares the sealed head", async () => {
+    const committed: Array<{ envelope: RuntimeSystemIngressEnvelope; notifyLoop: boolean | undefined }> = [];
+    const observedHeads: string[] = [];
+    const adapter = new RuntimeTerminalKernelAdapter({
+      isLoopPaused: () => false,
+      listFocusedTerminalIds: () => ["iflow"],
+      isTerminalRunning: () => true,
+      getTerminalStatus: () => "IDLE",
+      getTerminalHeadHash: async () => {
+        observedHeads.push("hash-2");
+        return "hash-2";
+      },
+      getTerminalReadCursorHash: () => "hash-1",
+      getTerminalContextId: (terminalId) => `ctx-terminal-${terminalId}`,
+      isTerminalActionable: () => true,
+      readTerminalIngress: async (terminalId) =>
+        terminalEnvelope({
+          sourceId: `tty:${terminalId}`,
+          content: "+sealed line",
+          meta: {
+            terminalId,
+            fromHash: "hash-1",
+            toHash: "hash-2",
+          },
+        }),
+      buildLifecycleIngressEnvelope: lifecycleEnvelope,
+      onTerminalActionableSignal: () => {},
+    });
+    adapter.mount(createRecordingHost(committed));
+
+    await adapter.handleStatusChange({
+      terminalId: "iflow",
+      previousStatus: "BUSY",
+      running: true,
+      status: "IDLE",
+    });
+
+    expect(observedHeads).toEqual(["hash-2"]);
+    expect(committed).toHaveLength(1);
+    expect(committed[0]?.envelope.meta?.toHash).toBe("hash-2");
   });
 });

@@ -508,6 +508,21 @@ export class AgenticTerminal {
     await this.commitSnapshotNow("force");
   }
 
+  public async sealIdleCommit(): Promise<TerminalDirtyMarkResult> {
+    this.ensureStarted();
+    if (!this.isGitLogEnabled()) {
+      return { ok: false, hash: null, reason: "git-log-disabled" };
+    }
+    await this.renderQueue;
+    await this.commitSnapshotNow("status-idle");
+    await this.gitLogger?.flush();
+    const head = this.ensureGitHead();
+    if (!head.ok) {
+      return { ok: false, hash: null, reason: head.error };
+    }
+    return { ok: true, hash: head.hash };
+  }
+
   public async markDirty(): Promise<TerminalDirtyMarkResult> {
     this.ensureStarted();
     if (!this.isGitLogEnabled()) {

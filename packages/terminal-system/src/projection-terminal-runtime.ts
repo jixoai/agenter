@@ -176,6 +176,10 @@ export class ProjectionTerminalRuntime implements TerminalRuntime {
     return this.requireSource().getHeadHash();
   }
 
+  async sealIdleCommit(): Promise<{ ok: boolean; hash: string | null; reason?: string }> {
+    return await this.requireSource().sealIdleCommit();
+  }
+
   waitCommitted(input: { fromHash?: string | null } = {}): TerminalCommitWaitHandle<{ toHash: string | null }> {
     return this.requireSource().waitCommitted(input);
   }

@@ -2,7 +2,7 @@
 
 ### Requirement: Terminal adapter SHALL promote unread idle terminal git facts into attention
 
-The terminal adapter SHALL treat a running focused terminal `BUSY -> IDLE` transition as an explicit terminal action predicate. When the terminal git `HEAD` hash is newer than the current runtime actor's terminal read cursor, the adapter MUST perform one existing consuming terminal read, commit the read result as terminal attention ingress, and request LoopBus notification from that committed attention item. This bridge MUST remain owned by the runtime adapter layer: TerminalSystem MUST NOT import AttentionSystem or LoopBus, and the kernel MUST NOT add a terminal-specific scheduler branch.
+The terminal adapter SHALL treat a running focused terminal `BUSY -> IDLE` transition as an explicit terminal action predicate. When the terminal git `HEAD` hash is newer than the current runtime actor's terminal read cursor, the adapter MUST perform one existing consuming terminal read, commit the read result as terminal attention ingress, and request LoopBus notification from that committed attention item. The compared `HEAD` MUST be the TerminalSystem head after pending terminal output has been sealed into git, not a stale pre-idle hash observed before the status-idle snapshot is persisted. This bridge MUST remain owned by the runtime adapter layer: TerminalSystem MUST NOT import AttentionSystem or LoopBus, and the kernel MUST NOT add a terminal-specific scheduler branch.
 
 #### Scenario: Focused terminal becomes idle with unread git head
 
@@ -12,6 +12,14 @@ The terminal adapter SHALL treat a running focused terminal `BUSY -> IDLE` trans
 - **THEN** the terminal adapter consumes one terminal read from `H1` to `H2`
 - **AND** it commits the read payload as terminal `world_fact` attention ingress
 - **AND** the committed attention item is wakeable so LoopBus can continue from the terminal fact
+
+#### Scenario: Idle comparison waits for sealed terminal git truth
+
+- **GIVEN** a focused terminal emits `BUSY -> IDLE`
+- **AND** terminal output has changed but the status-idle git snapshot has not yet been observed by the runtime adapter
+- **WHEN** the adapter evaluates whether terminal `HEAD` is ahead of the actor read cursor
+- **THEN** it first asks TerminalSystem to seal pending output into git
+- **AND** it compares the actor read cursor against that sealed terminal `HEAD`
 
 #### Scenario: Repeated idle with already-read head is a no-op
 

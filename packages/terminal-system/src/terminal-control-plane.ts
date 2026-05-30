@@ -2659,6 +2659,10 @@ export class TerminalControlPlane {
     return this.ensureManagedEntry(terminalId).terminal.getHeadHash();
   }
 
+  async sealIdleCommit(terminalId: string): Promise<{ ok: boolean; hash: string | null; reason?: string }> {
+    return await this.ensureManagedEntry(terminalId).terminal.sealIdleCommit();
+  }
+
   getReadCursorHashAuthorized(input: {
     terminalId: string;
     actorId?: TerminalActorId;

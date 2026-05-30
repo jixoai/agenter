@@ -78,6 +78,7 @@ export interface TerminalRuntime {
   getObservedIdentity(): TerminalObservedIdentity;
   reconfigure(patch: ManagedTerminalConfigPatch): void;
   getHeadHash(): string | null;
+  sealIdleCommit(): Promise<{ ok: boolean; hash: string | null; reason?: string }>;
   waitCommitted(input?: { fromHash?: string | null }): TerminalCommitWaitHandle<{ toHash: string | null }>;
   getWorkspace(): string | null;
   getText(): string;
@@ -391,6 +392,13 @@ export class ManagedTerminal implements TerminalRuntime {
 
   getHeadHash(): string | null {
     return String(this.snapshot.seq);
+  }
+
+  async sealIdleCommit(): Promise<{ ok: boolean; hash: string | null; reason?: string }> {
+    if (!this.terminal) {
+      return { ok: false, hash: null, reason: "terminal-not-started" };
+    }
+    return await this.terminal.sealIdleCommit();
   }
 
   waitCommitted(input: { fromHash?: string | null } = {}): TerminalCommitWaitHandle<{ toHash: string | null }> {

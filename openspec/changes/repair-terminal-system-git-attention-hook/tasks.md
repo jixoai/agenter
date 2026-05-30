@@ -11,6 +11,7 @@
 - [x] 2.3 Add adapter BDD proving the idle bridge does not require `markTerminalDirty()` or `terminal_write`, covering the raw/live PTY path.
 - [x] 2.4 Add terminal-control-plane BDD for non-consuming actor read cursor hash inspection.
 - [x] 2.5 Add session/runtime BDD that simulates a focused terminal entering `IDLE` after unread git output and verifies terminal attention is committed once.
+- [x] 2.6 Add BDD for the IDLE timing boundary: stale pre-idle `getHeadHash()` must not suppress unread output when sealing produces a newer terminal head.
 
 ## 3. Implementation
 
@@ -21,6 +22,7 @@
 - [x] 3.5 Keep `terminal_idle_ready` lifecycle wording scheduler-only and do not restore direct scheduler `waitCommitted(...)` wake semantics.
 - [x] 3.6 Add concise intent comments at the idle bridge effect point so future edits do not collapse raw/live output back into `terminal_write` activity.
 - [x] 3.7 Update only current-context completed task checkboxes after matching code and BDD evidence are in place.
+- [x] 3.8 Ensure the idle bridge compares against a sealed terminal git head rather than a stale synchronous head.
 
 ## 4. Verification
 
@@ -29,6 +31,7 @@
 - [x] 4.3 Run `bun run openspec:vision -- validate repair-terminal-system-git-attention-hook`.
 - [x] 4.4 Run `git diff --check` for touched files.
 - [x] 4.5 Run `bun run openspec:vision -- commit-check repair-terminal-system-git-attention-hook --phase self-review` before writing final review evidence.
+- [x] 4.6 Re-run targeted session/runtime attention tests after the sealed-head timing fix.
 
 ## 5. Self-Review Loop
 

@@ -250,6 +250,7 @@ interface RuntimeInternal {
       };
       getStatus: () => "IDLE" | "BUSY";
       getHeadHash?: () => string | null;
+      sealIdleCommit?: () => Promise<{ ok: boolean; hash: string | null; reason?: string }>;
       sliceDirty: (input: { fromHash?: string | null; wait?: boolean }) => Promise<{
         ok: boolean;
         changed: boolean;
@@ -4812,7 +4813,11 @@ describe("Feature: session runtime attention-system loop inputs", () => {
           },
         }),
         getStatus: () => "IDLE",
-        getHeadHash: () => "hash-9",
+        getHeadHash: () => "hash-8",
+        sealIdleCommit: async () => ({
+          ok: true,
+          hash: "hash-9",
+        }),
         sliceDirty: async (input) => ({
           ok: true,
           changed: input.fromHash !== "hash-9",

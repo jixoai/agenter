@@ -24,7 +24,7 @@ interface RuntimeTerminalKernelAdapterOptions {
   listFocusedTerminalIds: () => readonly string[];
   isTerminalRunning: (terminalId: string) => boolean;
   getTerminalStatus: (terminalId: string) => "IDLE" | "BUSY" | null;
-  getTerminalHeadHash: (terminalId: string) => string | null;
+  getTerminalHeadHash: (terminalId: string) => Promise<string | null>;
   getTerminalReadCursorHash: (terminalId: string) => string | null;
   getTerminalContextId: (terminalId: string) => string;
   isTerminalActionable: (terminalId: string) => boolean;
@@ -196,7 +196,7 @@ export class RuntimeTerminalKernelAdapter implements RuntimeSystemKernelAdapter 
     ) {
       return;
     }
-    const headHash = this.options.getTerminalHeadHash(terminalId);
+    const headHash = await this.options.getTerminalHeadHash(terminalId);
     if (!this.isUnreadHead(headHash, this.options.getTerminalReadCursorHash(terminalId))) {
       return;
     }
