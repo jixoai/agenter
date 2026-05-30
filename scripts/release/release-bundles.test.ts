@@ -87,6 +87,24 @@ describe("Feature: release bundle contract", () => {
     expect(shellSpec?.optionalDependencies?.["@opentui/core-win32-x64"]).toBe("0.3.0");
   });
 
+  test("Scenario: Given app packages are published When inspecting release metadata Then host compatibility is app-owned peer data", () => {
+    const shellPkg = JSON.parse(readRepoFile("apps/shell/package.json")) as {
+      devDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+    const studioPkg = JSON.parse(readRepoFile("apps/studio/package.json")) as {
+      devDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+    const buildScript = readRepoFile("scripts/release/build-bundles.ts");
+
+    expect(shellPkg.peerDependencies?.agenter).toBe(">=0.0.0 <0.1.0");
+    expect(studioPkg.peerDependencies?.agenter).toBe(">=0.0.0 <0.1.0");
+    expect(shellPkg.devDependencies?.agenter).toBe("workspace:*");
+    expect(studioPkg.devDependencies?.agenter).toBe("workspace:*");
+    expect(buildScript).toContain("peerDependencies: input.peerDependencies ?? sourcePkg.peerDependencies");
+  });
+
   test("Scenario: Given release CI starts from a clean checkout When building bundles Then generated prompt and native assets are built before copy", () => {
     const buildScript = readRepoFile("scripts/release/build-bundles.ts");
 

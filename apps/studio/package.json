@@ -67,7 +67,11 @@
     "yaml": "^2.8.3",
     "yargs": "^17.7.2"
   },
+  "peerDependencies": {
+    "agenter": ">=0.0.0 <0.1.0"
+  },
   "devDependencies": {
+    "agenter": "workspace:*",
     "@chromatic-com/storybook": "^5.1.1",
     "@playwright/test": "^1.58.2",
     "@storybook/addon-a11y": "^10.3.5",

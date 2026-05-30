@@ -201,7 +201,7 @@ const buildBundle = async (input: BundlePackageSpec): Promise<void> => {
     optionalDependencies: input.optionalDependencies
       ? normalizeWorkspaceDependencies(input.optionalDependencies)
       : undefined,
-    peerDependencies: input.peerDependencies,
+    peerDependencies: input.peerDependencies ?? sourcePkg.peerDependencies,
     engines: sourcePkg.engines ?? { bun: ">=1.3.10" },
     repository: {
       type: "git",

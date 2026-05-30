@@ -48,45 +48,14 @@ importers:
         specifier: ^0.7.2
         version: 0.7.2(prettier-plugin-organize-imports@4.3.0(prettier@3.8.1)(typescript@6.0.3))(prettier@3.8.1)
 
-  demo:
-    dependencies:
-      '@agenter/app-server':
-        specifier: workspace:*
-        version: link:../packages/app-server
-      '@agenter/settings':
-        specifier: workspace:*
-        version: link:../packages/settings
-      '@agenter/terminal-system':
-        specifier: workspace:*
-        version: link:../packages/terminal-system
-      '@opentui/core':
-        specifier: latest
-        version: 0.3.0(typescript@6.0.3)(web-tree-sitter@0.25.10)
-      '@tanstack/ai':
-        specifier: ^0.6.1
-        version: 0.6.3
-      '@xterm/headless':
-        specifier: latest
-        version: 6.0.0
-      zod:
-        specifier: ^4.0.0
-        version: 4.3.6
-    devDependencies:
-      '@types/bun':
-        specifier: latest
-        version: 1.3.14
-      typescript:
-        specifier: latest
-        version: 6.0.3
-
   apps/shell:
     dependencies:
-      '@agenter/client-sdk':
-        specifier: workspace:*
-        version: link:../../packages/client-sdk
       '@agenter/app-runtime':
         specifier: workspace:*
         version: link:../../packages/app-runtime
+      '@agenter/client-sdk':
+        specifier: workspace:*
+        version: link:../../packages/client-sdk
       '@agenter/terminal-transport-protocol':
         specifier: workspace:*
         version: link:../../packages/terminal-transport-protocol
@@ -109,18 +78,21 @@ importers:
       '@types/yargs':
         specifier: ^17.0.35
         version: 17.0.35
+      agenter:
+        specifier: workspace:*
+        version: link:../../packages/agenter
       typescript:
         specifier: latest
         version: 6.0.3
 
   apps/shell-old:
     dependencies:
-      '@agenter/client-sdk':
-        specifier: workspace:*
-        version: link:../../packages/client-sdk
       '@agenter/app-runtime':
         specifier: workspace:*
         version: link:../../packages/app-runtime
+      '@agenter/client-sdk':
+        specifier: workspace:*
+        version: link:../../packages/client-sdk
       '@agenter/terminal-transport-protocol':
         specifier: workspace:*
         version: link:../../packages/terminal-transport-protocol
@@ -303,6 +275,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.0
         version: 4.1.2(@vitest/browser@4.1.2(bufferutil@4.1.0)(utf-8-validate@6.0.6)(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))(vitest@4.1.2))(vitest@4.1.2)
+      agenter:
+        specifier: workspace:*
+        version: link:../../packages/agenter
       oxlint:
         specifier: ^1.58.0
         version: 1.58.0
@@ -331,6 +306,37 @@ importers:
         specifier: ^4.1.0
         version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@24.12.0)(@vitest/browser-playwright@4.1.2)(jsdom@26.1.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(vite@8.0.8(@types/node@24.12.0)(esbuild@0.27.5)(jiti@2.6.1)(yaml@2.8.3))
 
+  demo:
+    dependencies:
+      '@agenter/app-server':
+        specifier: workspace:*
+        version: link:../packages/app-server
+      '@agenter/settings':
+        specifier: workspace:*
+        version: link:../packages/settings
+      '@agenter/terminal-system':
+        specifier: workspace:*
+        version: link:../packages/terminal-system
+      '@opentui/core':
+        specifier: latest
+        version: 0.3.0(typescript@6.0.3)(web-tree-sitter@0.25.10)
+      '@tanstack/ai':
+        specifier: ^0.6.1
+        version: 0.6.3
+      '@xterm/headless':
+        specifier: latest
+        version: 6.0.0
+      zod:
+        specifier: ^4.0.0
+        version: 4.3.6
+    devDependencies:
+      '@types/bun':
+        specifier: latest
+        version: 1.3.14
+      typescript:
+        specifier: latest
+        version: 6.0.3
+
   packages/agenter:
     dependencies:
       '@duckdb/node-api':
@@ -350,8 +356,17 @@ importers:
         specifier: latest
         version: 6.0.3
 
+  packages/app-runtime:
+    dependencies:
+      zod:
+        specifier: ^4.0.0
+        version: 4.3.6
+
   packages/app-server:
     dependencies:
+      '@agenter/app-runtime':
+        specifier: workspace:*
+        version: link:../app-runtime
       '@agenter/attention-system':
         specifier: workspace:*
         version: link:../attention-system
@@ -388,9 +403,6 @@ importers:
       '@agenter/principal-crypto':
         specifier: workspace:*
         version: link:../principal-crypto
-      '@agenter/app-runtime':
-        specifier: workspace:*
-        version: link:../app-runtime
       '@agenter/search-syntax':
         specifier: workspace:*
         version: link:../search-syntax
@@ -545,15 +557,15 @@ importers:
 
   packages/cli:
     dependencies:
+      '@agenter/app-runtime':
+        specifier: workspace:*
+        version: link:../app-runtime
       '@agenter/app-server':
         specifier: workspace:*
         version: link:../app-server
       '@agenter/auth-service':
         specifier: workspace:*
         version: link:../auth-service
-      '@agenter/app-runtime':
-        specifier: workspace:*
-        version: link:../app-runtime
       '@agenter/tui':
         specifier: workspace:*
         version: link:../tui
@@ -591,12 +603,12 @@ importers:
 
   packages/client-sdk:
     dependencies:
-      '@agenter/app-server':
-        specifier: workspace:*
-        version: link:../app-server
       '@agenter/app-runtime':
         specifier: workspace:*
         version: link:../app-runtime
+      '@agenter/app-server':
+        specifier: workspace:*
+        version: link:../app-server
       '@trpc/client':
         specifier: ^11.7.1
         version: 11.16.0(@trpc/server@11.16.0(typescript@6.0.3))(typescript@6.0.3)
@@ -797,12 +809,6 @@ importers:
       viem:
         specifier: ^2.47.6
         version: 2.47.6(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)(zod@4.4.3)
-
-  packages/app-runtime:
-    dependencies:
-      zod:
-        specifier: ^4.0.0
-        version: 4.3.6
 
   packages/profile-cli:
     dependencies:

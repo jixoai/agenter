@@ -23,7 +23,11 @@
     "@opentui/core": "latest",
     "yargs": "^17.7.2"
   },
+  "peerDependencies": {
+    "agenter": ">=0.0.0 <0.1.0"
+  },
   "devDependencies": {
+    "agenter": "workspace:*",
     "@types/bun": "latest",
     "@types/yargs": "^17.0.35",
     "typescript": "latest"
