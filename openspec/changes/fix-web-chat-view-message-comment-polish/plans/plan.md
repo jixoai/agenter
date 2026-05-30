@@ -2,8 +2,8 @@
 
 ## Current Round
 
-- Round: 1
-- Status: Research-plan locked for implementation planning; product code not started in this change.
+- Round: 2
+- Status: Acceptance feedback loop opened after user found remaining Framework7 shell and comment action issues.
 - Previous plan backup: None.
 
 ## Workflow Command Surface
@@ -48,6 +48,12 @@
 >
 > 仍然使用openspec vision推进（之前的如果有change，收尾并archive后再做新的开发）
 
+## Round 2 User Acceptance Feedback
+
+> 1. [Image #1] 出现了双重 page-content
+> 2. [Image #2] 有图标就不要文字了
+> 3. 评论如果为空，自动删除。或者应直接给一个删除按钮，在preview|edit 这组按钮的旁边放一个 icon-button，空内容直接删除，有内容就弹出确认框删除。但是空内容，我建议在保存到时候检测，自动删除
+
 ## Objective Record
 
 ### Requirement-Bearing Q&A
@@ -64,6 +70,9 @@
 | 8 | User | Textarea is clipped because `.message-source-comment-editor-content.page-content` overwrites Framework7 PageContent padding. | Preserve Framework7 PageContent padding ownership; move custom spacing to Framework7 variables or inner shells. |
 | 9 | User | Other `env(safe-area-inset-*)` usage may conflict with Framework7 defaults; use agent-browser to inspect actual CSS rules. | Real browser CSS rule evidence is part of the required investigation and self-review, not optional visual polish. |
 | 10 | User | Continue using OpenSpec vision; archive previous change first if it exists. | Previous iframe/app-view change has already been archived in `1c73ff75`; this change starts fresh. |
+| 11 | User | Source popup shows nested `.page-content` wrappers. | Any Framework7 `Page` that manually renders `PageContent` must set `pageContent={false}` instead of accepting the default wrapper. |
+| 12 | User | Source toolbar actions show both icon and text. | Icon-bearing dense toolbar actions should be icon-only visually, with accessible labels/titles carrying text. |
+| 13 | User | Empty comments should auto-delete, preferably on save detection. | Saving an empty comment edit should remove the draft/comment resource instead of disabling save or retaining an empty anchor/card. |
 
 ### Evidence Read
 
@@ -111,6 +120,9 @@
 | `偷懒只用了文字做按钮` | Text-only action links are not acceptable for dense mobile comment panels. | Use icon affordances with labels/ARIA, not bare text links. |
 | `Framework7默认的样式都失效了` | Custom CSS overwrote a framework-owned layout contract. | Preserve PageContent offsets and use the intended extension variables. |
 | `好好想象，更好的覆盖方案是什么` | Do not mechanically replace `env(...)`; reason about ownership and CSS cascade. | First inspect rules, then change the owner boundary. |
+| `双重 page-content` | A Framework7 `Page` default wrapper is nesting around a hand-written `PageContent`. | If we own the `PageContent`, disable the automatic one on `Page`. |
+| `有图标就不要文字了` | Dense toolbar affordances should be icon-only visually. | Keep text only in `aria-label` / `title`, not in the rendered toolbar row. |
+| `评论如果为空，自动删除` | Empty body means the comment resource should be removed at save time. | Empty save deletes the local anchor or pending resource without confirmation. |
 
 ### Demo / Spike Code
 
@@ -152,6 +164,9 @@ When the operator opens a Studio room embedded app-view:
 - comment/source panels use icon-first actions with accessible text and no bare text-only shortcuts as the primary action UI;
 - comment edit textareas are not clipped because Framework7 `PageContent` offset variables remain active;
 - browser evidence shows the relevant CSS rules before/after for the PageContent padding conflict.
+- source popup and shared preview popup do not nest Framework7 `.page-content` wrappers;
+- source-line toolbar actions show only icons while keeping accessible labels/titles;
+- saving an empty comment edit removes the local anchor or pending comment resource instead of leaving an empty comment artifact.
 
 ## Platform Diagnosis
 
@@ -203,6 +218,7 @@ The operator reads a room. Sender names look like people/contacts, not grants. A
 - [ ] 5. Implement identity/avatar projection, message action spacing, comment resource, and safe-area fixes.
 - [ ] 6. Run BDD/typecheck/visual verification.
 - [ ] 7. Self-review against intent and decide whether to loop.
+- [ ] 8. Round 2: fix nested PageContent, icon-only source toolbar actions, and empty-comment save deletion.
 
 ## Open Questions
 
