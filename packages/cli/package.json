@@ -16,6 +16,7 @@
     "@agenter/app-server": "workspace:*",
     "@agenter/auth-service": "workspace:*",
     "@agenter/app-runtime": "workspace:*",
+    "@agenter/message-system": "workspace:*",
     "@agenter/tui": "workspace:*",
     "@trpc/server": "^11.7.1",
     "reflect-metadata": "^0.2.2",

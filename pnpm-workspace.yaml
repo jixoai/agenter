@@ -1,9 +1,45 @@
 packages:
   - demo
-  - apps/*
-  - packages/*
-  - packages/*/*
+  - apps/shell
+  - apps/studio
+  - packages/agenter
+  - packages/app-runtime
+  - packages/app-server
+  - packages/attention-system
+  - packages/auth-cli
+  - packages/auth-service
+  - packages/avatar
+  - packages/cli
+  - packages/client-sdk
+  - packages/ghostty-native
+  - packages/i18n-core
+  - packages/i18n-en
+  - packages/i18n-zh-Hans
+  - packages/icon-studio
+  - packages/just-bash-overlay-rule-fs
+  - packages/loopbus-kernel
+  - packages/managed-seat-invitation-handshake
+  - packages/mdx2md
+  - packages/message-system
+  - packages/principal-crypto
+  - packages/profile-cli
+  - packages/profile-service
+  - packages/search-syntax
+  - packages/session-system
+  - packages/settings
+  - packages/svelte-components
+  - packages/task-system
+  - packages/terminal-system
+  - packages/terminal-transport-protocol
+  - packages/terminal-view
+  - packages/termless-backend-utils
+  - packages/termless-core
+  - packages/tmux-client
+  - packages/tui
+  - packages/web-chat-view
+  - packages/web-chat-view/example
+  - packages/web-components
 
 patchedDependencies:
-  '@storybook/addon-svelte-csf': patches/@storybook__addon-svelte-csf.patch
-  '@termless/xtermjs@0.3.1': patches/@termless+xtermjs@0.3.1.patch
+  "@storybook/addon-svelte-csf": patches/@storybook__addon-svelte-csf.patch
+  "@termless/xtermjs@0.3.1": patches/@termless+xtermjs@0.3.1.patch
