@@ -53,11 +53,15 @@ describe("Feature: read-only skill browser surface", () => {
     const builtins = kernel.listSkillBrowserCatalog({ rootKind: "builtin" });
     expect(builtins.some((entry) => entry.name === "agenter-runtime")).toBeTrue();
 
-    const sharedCatalog = kernel.listSkillBrowserCatalog({ rootKind: "shared" });
+    const sharedCatalog = kernel.listSkillBrowserCatalog({ rootKind: "skills-home" });
     expect(sharedCatalog.map((entry) => entry.name)).toEqual(["shared-handbook"]);
+    expect(sharedCatalog[0]).toMatchObject({
+      sourceEnv: "SKILLS_HOME",
+      sourcePath: sharedSkillsRoot,
+    });
 
     const sharedTree = kernel.listSkillBrowserCatalogTree({
-      rootKind: "shared",
+      rootKind: "skills-home",
       name: "shared-handbook",
       path: "/",
     });
@@ -69,14 +73,14 @@ describe("Feature: read-only skill browser surface", () => {
     ]);
 
     const referencesTree = kernel.listSkillBrowserCatalogTree({
-      rootKind: "shared",
+      rootKind: "skills-home",
       name: "shared-handbook",
       path: "/references",
     });
     expect(referencesTree.items.map((entry) => entry.path)).toEqual(["/references/usage.md"]);
 
     const textPreview = kernel.readSkillBrowserCatalogPreview({
-      rootKind: "shared",
+      rootKind: "skills-home",
       name: "shared-handbook",
       path: "/SKILL.md",
     });
@@ -84,7 +88,7 @@ describe("Feature: read-only skill browser surface", () => {
     expect(textPreview.textContent).toContain("Shared handbook body.");
 
     const pdfPreview = kernel.readSkillBrowserCatalogPreview({
-      rootKind: "shared",
+      rootKind: "skills-home",
       name: "shared-handbook",
       path: "/manual.pdf",
     });
@@ -93,7 +97,7 @@ describe("Feature: read-only skill browser surface", () => {
     expect(pdfPreview.mediaDataUrl?.startsWith("data:application/pdf;base64,")).toBeTrue();
 
     const binaryPreview = kernel.readSkillBrowserCatalogPreview({
-      rootKind: "shared",
+      rootKind: "skills-home",
       name: "shared-handbook",
       path: "/cover.bin",
     });
@@ -152,7 +156,9 @@ describe("Feature: read-only skill browser surface", () => {
     expect(architect?.groups.map((group) => group.workspacePath)).toEqual([GLOBAL_WORKSPACE_PATH, workspaceA]);
     expect(architect?.groups[0]?.workspaceLabel).toBe("Root workspace");
     expect(architect?.groups[0]?.skills.map((skill) => skill.name)).toEqual(["root-skill"]);
+    expect(architect?.groups[0]?.skills[0]?.sourceEnv).toBe("AVATAR_HOME");
     expect(architect?.groups[1]?.skills.map((skill) => skill.name)).toEqual(["workspace-skill"]);
+    expect(architect?.groups[1]?.skills[0]?.sourcePath).toBe(workspaceSkillRoot);
     expect(architect?.groups.some((group) => group.workspacePath === workspaceB)).toBeFalse();
 
     const avatarTree = kernel.listSkillBrowserAvatarTree({

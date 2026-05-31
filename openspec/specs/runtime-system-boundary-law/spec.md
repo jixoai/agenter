@@ -22,6 +22,12 @@ Every runtime system adapter SHALL classify its output as `WorldFact`, `Capabili
 - **THEN** the message system returns a `CapabilityProjection`
 - **AND** that projection is not treated as a new task obligation by default
 
+#### Scenario: Workspace CLI availability enters as a projection
+
+- **WHEN** WorkspaceSystem evaluates a workspace instance env such as `AVATAR_HOME` or `SKILLS_HOME`
+- **THEN** systems may publish available CLI bindings as `CapabilityProjection`
+- **AND** adding or removing that projected CLI binding does not itself create a message, terminal input, file write, note entry, or other external effect
+
 #### Scenario: Terminal idle enters as a scheduler signal
 
 - **WHEN** a terminal transitions from busy to idle

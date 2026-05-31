@@ -1194,6 +1194,29 @@ describe("Feature: runtime descriptor CLI", () => {
     expect(api.getLastRequest()?.url).toBe("/v1/skill/list");
   });
 
+  test("Scenario: Given system CLI projections omit note When runtime shell commands are created Then note is not registered while skill remains projected", async () => {
+    const api = await startMockRuntimeApi();
+    const commands = createRuntimeShellCommands({
+      baseUrl: api.baseUrl,
+      privateKey: "test-private-key",
+      rootWorkspacePath: createTempRoot(),
+      homeDir: createTempRoot(),
+      cliProjections: [
+        {
+          command: "skill",
+          systemId: "skillSystem",
+          capability: "workspace-pwd",
+          sourceEnv: "SKILLS_HOME",
+          sourcePaths: ["/repo/skills"],
+          workspacePath: "/repo",
+        },
+      ],
+    });
+
+    expect(commands.some((command) => command.name === "skill")).toBeTrue();
+    expect(commands.some((command) => command.name === "note")).toBeFalse();
+  });
+
   test("Scenario: Given skill info for the MCP skill When the shell command runs Then the MCP usage law is rendered from its built-in path", async () => {
     const api = await startMockRuntimeApi({
       "/v1/skill/info": {

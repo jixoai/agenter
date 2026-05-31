@@ -30,17 +30,16 @@
 
 	const controller = getAppControllerContext();
 	let catalogByRootKind = $state({
-		shared: createCatalogState(),
+		'skills-home': createCatalogState(),
 		'built-in': createCatalogState(),
-		global: createCatalogState(),
 	});
 
 	const catalogState = $derived(catalogByRootKind[rootKind]);
-	const browserTitle = $derived(rootKind === 'built-in' ? 'Built-in skills' : `${rootKind} skills`);
+	const browserTitle = $derived(rootKind === 'built-in' ? 'Built-in skills' : 'SKILLS_HOME skills');
 	const browserDescription = $derived(
 		rootKind === 'built-in'
 			? 'Read-only view over shipped skills. Expand one skill to inspect its objective file tree.'
-			: `Read-only view over ${rootKind} skills. Expand one skill to inspect its objective file tree.`,
+			: 'Read-only view over visible skills from the current SKILLS_HOME source order. Expand one skill to inspect its objective file tree.',
 	);
 	const sections = $derived([
 		{

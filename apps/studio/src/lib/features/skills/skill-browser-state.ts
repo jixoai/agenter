@@ -7,8 +7,8 @@ import type {
 	SkillTreeOutput,
 } from '@agenter/client-sdk';
 
-export type SkillCatalogSurfaceRootKind = 'built-in' | 'shared' | 'global';
-export type SkillCatalogTransportRootKind = 'builtin' | 'shared' | 'global';
+export type SkillCatalogSurfaceRootKind = 'built-in' | 'skills-home';
+export type SkillCatalogTransportRootKind = 'builtin' | 'skills-home';
 export type SkillPreviewRecord = SkillPreviewOutput | SkillAvatarPreviewOutput;
 export type SkillTreePage = SkillTreeOutput | SkillAvatarTreeOutput;
 export type SkillTreePages = Record<string, SkillTreePage>;

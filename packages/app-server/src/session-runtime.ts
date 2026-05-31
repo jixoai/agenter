@@ -254,6 +254,7 @@ import {
 } from "./session-notifications";
 import { SessionStore } from "./session-store";
 import { SettingsEditor, type EditableKind } from "./settings-editor";
+import { projectWorkspaceSystemClis, type SystemCliProjection } from "./system-cli-projection";
 import { buildTerminalSemanticFingerprint, buildTerminalViewFingerprint } from "./terminal-snapshot-fingerprint";
 import type { ChatMessage, ChatSessionAsset, ModelCapabilities, TaskStage } from "./types";
 import { UsageAnalyticsDb } from "./usage-analytics-db";
@@ -2334,6 +2335,32 @@ export class SessionRuntime {
     };
   }
 
+  private projectRootWorkspaceSystemClis(): SystemCliProjection[] {
+    const avatarRoot = this.listWorkspaceAuthorities().find((authority) => authority.mount.kind === "avatar-root");
+    return projectWorkspaceSystemClis({
+      mountId: avatarRoot?.mount.mountId,
+      runtimeId: this.options.sessionId,
+      runtimeWorkspaceId: avatarRoot?.mount.runtimeWorkspaceId,
+      workspacePath: avatarRoot?.mount.workspacePath ?? this.getRootWorkspacePath(),
+      workspaceAlias: avatarRoot?.mount.alias ?? "root",
+      defaultCwd: avatarRoot?.defaultCwd ?? this.getRootWorkspacePath(),
+      env: this.getRootWorkspaceCapabilityEnv(),
+    });
+  }
+
+  recomputeWorkspaceCliProjections(): void {
+    this.rootWorkspaceShellWorld = null;
+    if (!this.runtimeSkillSystem) {
+      return;
+    }
+    const result = this.runtimeSkillSystem.refresh({ publishReminders: false });
+    void this.handleRuntimeSkillRefreshResult(result, { notifyLoop: false }).catch((error) => {
+      this.emit("error", {
+        message: `runtime skill projection refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    });
+  }
+
   private ensureRuntimeSkillSystem(): RuntimeSkillSystem {
     if (this.runtimeSkillSystem) {
       return this.runtimeSkillSystem;
@@ -2458,6 +2485,7 @@ export class SessionRuntime {
           homeDir: this.getHomeDir(),
           rootWorkspacePath: this.getRootWorkspacePath(),
           principalId: this.options.avatarPrincipalId,
+          cliProjections: this.projectRootWorkspaceSystemClis(),
         }),
       ],
     });

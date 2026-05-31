@@ -358,7 +358,7 @@ describe("Feature: runtime built-in skills", () => {
     expect(readRuntimeSkillContent(message!)).toContain("This is the local override.");
   });
 
-  test("Scenario: Given the same skill name exists across every layer When runtime-visible skills are resolved Then precedence stays shared before built-in before global before avatar-private", () => {
+  test("Scenario: Given legacy fallback roots with the same skill name When runtime-visible skills are resolved Then broad-to-specific compatibility order is preserved", () => {
     const rootWorkspacePath = createTempRoot();
     const homeDir = createTempRoot();
     const skillName = "agenter-message";

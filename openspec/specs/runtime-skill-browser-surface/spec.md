@@ -8,20 +8,24 @@ Define the read-only, bounded skill browser surface that exposes objective skill
 
 ### Requirement: Browser skill browsing SHALL expose read-only bounded root catalogs
 
-The platform SHALL expose a browser-facing read-only skill browser surface that lists visible skill roots without granting arbitrary filesystem authority. `shared`, `built-in`, and `global` catalogs SHALL return one row per visible skill. `avatars` catalogs SHALL return one row per avatar plus workspace-grouped avatar-private skill roots for that avatar. The platform SHALL keep the same inheritance order for visible runtime skills: `shared < built-in < global < avatar-private`.
+The platform SHALL expose a browser-facing read-only skill browser surface that lists visible skill roots without granting arbitrary filesystem authority. `skills-home` and `built-in` catalogs SHALL return one row per visible skill. `skills-home` rows SHALL report the `SKILLS_HOME` source env and source path that produced the visible skill. `avatars` catalogs SHALL return one row per avatar plus workspace-grouped avatar-private skill roots for that avatar. The platform SHALL keep the runtime-visible source order explicit: built-in skills are the read-only baseline, and file-backed `SKILLS_HOME` sources override by last-wins source order.
 
 #### Scenario: Built-in catalog returns one visible skill row per skill
 - **WHEN** the browser requests the `built-in` skill catalog
 - **THEN** the surface returns one row per visible built-in skill
 - **AND** each row includes objective metadata such as `name`, `summary`, `rootKind`, and the real skill root identity needed for later tree reads
 
-#### Scenario: Runtime-visible skill precedence follows the catalog inheritance order
-- **WHEN** the platform resolves a skill name that exists in `shared`, `built-in`, `global`, and one avatar-private root
-- **THEN** the visible runtime skill comes from the avatar-private root
-- **AND** removing that avatar-private skill reveals the `global` version before the `built-in` version
-- **AND** removing the `global` version reveals the `built-in` version before the `shared` version
+#### Scenario: Skills-home catalog explains the visible source
+- **WHEN** the browser requests the `skills-home` skill catalog
+- **THEN** the surface returns one row per visible `SKILLS_HOME` skill
+- **AND** each row includes `sourceEnv = "SKILLS_HOME"` and the concrete source path that produced the visible skill
 
-#### Scenario: Avatar catalog groups skill roots by workspace
+#### Scenario: Runtime-visible skill precedence follows explicit source order
+- **WHEN** the platform resolves a skill name that exists in a built-in source and two `SKILLS_HOME` roots
+- **THEN** the visible runtime skill comes from the later `SKILLS_HOME` root
+- **AND** removing that later source reveals the earlier `SKILLS_HOME` version before the built-in version
+
+#### Scenario: Avatar catalog groups avatar-private skill roots by workspace
 - **WHEN** the browser requests avatar skill roots for one avatar nickname
 - **THEN** the response includes `Root workspace` first for the global avatar root
 - **AND** each additional workspace group represents only that workspace's avatar-private skill root

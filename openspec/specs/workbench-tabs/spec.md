@@ -17,9 +17,9 @@ The WebUI SHALL render the top edge of `Avatars`, `Skills`, `Messages`, `Workspa
 - **THEN** the fixed tab remains visible as part of the same chrome window
 - **THEN** each runtime, creation, or avatar skill flow opens as its own addable tab instead of replacing the fixed management tab
 
-#### Scenario: Skills catalog page-tabs mirror the runtime inheritance law
+#### Scenario: Skills catalog page-tabs mirror the runtime skill source law
 - **WHEN** the Skills workbench renders its fixed catalog tab
-- **THEN** the page-tabs appear in `shared / built-in / global / avatars` order
+- **THEN** the page-tabs appear in `SKILLS_HOME / built-in / avatars` order
 - **THEN** the first visible tab is also the default route selection
 - **THEN** the tab order is treated as a durable override contract rather than a cosmetic sort
 

@@ -25,9 +25,8 @@
 	// the default route and the user-visible override story, so keep this aligned
 	// with runtime skill precedence and the corresponding specs.
 	const pageTabs = [
-		{ value: 'shared', label: 'shared' },
+		{ value: 'skills-home', label: 'SKILLS_HOME' },
 		{ value: 'built-in', label: 'built-in' },
-		{ value: 'global', label: 'global' },
 		{ value: 'avatars', label: 'avatars' },
 	] as const satisfies WorkbenchPageTabItem[];
 
@@ -108,7 +107,7 @@
 {/snippet}
 
 {#snippet skillsToolbarIdentitySubtitle(_toolbarState: WorkbenchToolbarRenderState)}
-	<span class="truncate">Read-only browser over shared, built-in, global, and avatar-private skill roots.</span>
+	<span class="truncate">Read-only browser over SKILLS_HOME, built-in, and avatar-private skill roots.</span>
 {/snippet}
 
 <WorkbenchPageToolbar>

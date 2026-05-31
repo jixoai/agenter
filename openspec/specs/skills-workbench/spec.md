@@ -8,29 +8,29 @@ Define the Skills primary workbench, including its fixed catalog tab, avatar ski
 
 ### Requirement: Skills SHALL be a primary workbench with one fixed catalog tab
 
-The WebUI SHALL expose `Skills` as a primary workbench destination. The workbench SHALL keep one fixed catalog tab selected by the route, and that tab's `page-toolbar` SHALL expose `shared`, `built-in`, `global`, and `avatars` as `page-tabs`.
+The WebUI SHALL expose `Skills` as a primary workbench destination. The workbench SHALL keep one fixed catalog tab selected by the route, and that tab's `page-toolbar` SHALL expose `SKILLS_HOME`, `built-in`, and `avatars` as `page-tabs`.
 
 #### Scenario: Skills route opens on the fixed catalog tab
 - **WHEN** the operator opens `/skills`
 - **THEN** the shared workbench chrome renders one fixed Skills catalog tab
-- **AND** the route lands on the default `shared` page-tab unless a different catalog view is encoded in the route
+- **AND** the route lands on the default `skills-home` page-tab unless a different catalog view is encoded in the route
 
-#### Scenario: Legacy avatar page-tab links canonicalize to avatars
-- **WHEN** the operator opens `/skills?view=avatar`
-- **THEN** the route canonically rewrites to `/skills?view=avatars`
-- **AND** the `avatars` page-tab becomes active without duplicating the old key in state
+#### Scenario: Legacy catalog links canonicalize to current tabs
+- **WHEN** the operator opens `/skills?view=shared`, `/skills?view=global`, or `/skills?view=avatar`
+- **THEN** `shared` and `global` canonicalize to `skills-home`
+- **AND** `avatar` canonicalizes to `avatars` without duplicating the old key in state
 
 #### Scenario: Page-tabs stay inside the shared toolbar law
-- **WHEN** the operator switches between `shared`, `built-in`, `global`, and `avatars`
+- **WHEN** the operator switches between `skills-home`, `built-in`, and `avatars`
 - **THEN** the switch happens inside the shared `page-toolbar` page-tabs region
 - **AND** the route does not render a second detached local header for those modes
 
-### Requirement: Built-in, shared, and global catalogs SHALL use accordion list-detail browsing
+### Requirement: Built-in and SKILLS_HOME catalogs SHALL use accordion list-detail browsing
 
-The `built-in`, `shared`, and `global` page-tabs SHALL render one accordion item per skill. Expanding an item SHALL reveal a real file tree for that skill root, and selecting a file SHALL open the shared detail preview without leaving the current page-tab.
+The `built-in` and `skills-home` page-tabs SHALL render one accordion item per skill. Expanding an item SHALL reveal a real file tree for that skill root, and selecting a file SHALL open the shared detail preview without leaving the current page-tab. `skills-home` rows SHALL show the source env/path that produced the visible skill.
 
 #### Scenario: Skill accordion expands into a file tree
-- **WHEN** the operator expands one skill row inside `built-in`, `shared`, or `global`
+- **WHEN** the operator expands one skill row inside `built-in` or `skills-home`
 - **THEN** the route reveals that skill root's file tree inside the same list surface
 - **AND** collapsing the accordion hides the tree without losing the surrounding catalog state
 

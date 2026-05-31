@@ -78,7 +78,11 @@ export const resolveWorkspaceAvatarPrivateRoot = (
   if (isGlobalWorkspacePath(workspacePath, homeDir)) {
     return resolveGlobalAvatarRoot(avatar, homeDir);
   }
-  return resolveAliasTargetOrSelf(resolveWorkspaceAvatarAliasRoot(workspacePath, avatar, homeDir));
+  const aliasRoot = resolveWorkspaceAvatarAliasRoot(workspacePath, avatar, homeDir);
+  if (existsSync(aliasRoot)) {
+    return resolveAliasTargetOrSelf(aliasRoot);
+  }
+  return resolveWorkspaceAvatarCanonicalRoot(workspacePath, avatar, homeDir);
 };
 
 export const resolveWorkspaceAvatarAssetRoot = (

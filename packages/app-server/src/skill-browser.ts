@@ -3,6 +3,7 @@ import { extname, join, relative, resolve } from "node:path";
 
 import type { WorkspaceAvatarCatalogEntry } from "./avatar-catalog";
 import {
+  listRuntimeSkills,
   listRuntimeSkillsByRootKind,
   listRuntimeSkillsInRoot,
   type RuntimeSkillLookupInput,
@@ -10,10 +11,10 @@ import {
   type RuntimeSkillRoot,
   type RuntimeSkillRootKind,
 } from "./runtime-skills";
-import { resolveWorkspaceAvatarAssetRoot } from "./workspace-system";
+import { AVATAR_HOME_ENV, SKILLS_HOME_ENV, resolveWorkspaceAvatarAssetRoot } from "./workspace-system";
 import { GLOBAL_WORKSPACE_PATH, toWorkspacePath, workspaceDisplayName } from "./workspace-target";
 
-export type SkillBrowserCatalogRootKind = "builtin" | "shared" | "global";
+export type SkillBrowserCatalogRootKind = "builtin" | "shared" | "global" | "skills-home";
 export type SkillBrowserPreviewKind =
   | "directory"
   | "text"
@@ -32,6 +33,8 @@ export interface SkillBrowserCatalogEntry {
   skillDir: string;
   configPath: string;
   configExists: boolean;
+  sourceEnv: "builtin" | typeof AVATAR_HOME_ENV | typeof SKILLS_HOME_ENV;
+  sourcePath: string;
 }
 
 export interface SkillBrowserTreeEntry {
@@ -197,7 +200,12 @@ const resolveMimeType = (previewKind: SkillBrowserPreviewKind, absolutePath: str
   return null;
 };
 
-const projectSkillRecord = (skill: RuntimeSkillRecord): SkillBrowserCatalogEntry => ({
+const projectSkillRecord = (
+  skill: RuntimeSkillRecord,
+  input: {
+    sourceEnv?: SkillBrowserCatalogEntry["sourceEnv"];
+  } = {},
+): SkillBrowserCatalogEntry => ({
   name: skill.name,
   summary: skill.summary,
   rootKind: skill.rootKind,
@@ -205,6 +213,8 @@ const projectSkillRecord = (skill: RuntimeSkillRecord): SkillBrowserCatalogEntry
   skillDir: skill.skillDir,
   configPath: skill.configPath,
   configExists: skill.configExists,
+  sourceEnv: input.sourceEnv ?? (skill.rootKind === "builtin" ? "builtin" : SKILLS_HOME_ENV),
+  sourcePath: skill.root,
 });
 
 const findSkillByName = (skills: readonly RuntimeSkillRecord[], name: string): RuntimeSkillRecord => {
@@ -244,7 +254,7 @@ const buildAvatarWorkspaceGroup = (input: {
     kind: "avatar",
     path: resolveWorkspaceAvatarAssetRoot(input.workspacePath, input.avatarNickname, "skills", input.homeDir),
   };
-  const skills = listRuntimeSkillsInRoot(root).map(projectSkillRecord);
+  const skills = listRuntimeSkillsInRoot(root).map((skill) => projectSkillRecord(skill, { sourceEnv: AVATAR_HOME_ENV }));
   return {
     workspacePath: input.workspacePath,
     workspaceLabel: input.workspacePath === GLOBAL_WORKSPACE_PATH ? "Root workspace" : workspaceDisplayName(input.workspacePath),
@@ -278,8 +288,14 @@ const findAvatarWorkspaceGroup = (input: {
 export const listSkillBrowserCatalog = (input: {
   lookup: RuntimeSkillLookupInput;
   rootKind: SkillBrowserCatalogRootKind;
-}): SkillBrowserCatalogEntry[] =>
-  listRuntimeSkillsByRootKind(input.lookup, input.rootKind).map(projectSkillRecord);
+}): SkillBrowserCatalogEntry[] => {
+  if (input.rootKind === "skills-home") {
+    return listRuntimeSkills(input.lookup)
+      .filter((skill) => skill.rootKind !== "builtin")
+      .map((skill) => projectSkillRecord(skill));
+  }
+  return listRuntimeSkillsByRootKind(input.lookup, input.rootKind).map((skill) => projectSkillRecord(skill));
+};
 
 export const listSkillBrowserAvatarCatalog = (input: {
   avatars: readonly WorkspaceAvatarCatalogEntry[];
@@ -470,7 +486,11 @@ export const listSkillBrowserCatalogTree = (input: {
   offset?: number;
   limit?: number;
 }): SkillBrowserTreePage => {
-  const skill = findSkillByName(listRuntimeSkillsByRootKind(input.lookup, input.rootKind), input.name);
+  const skills =
+    input.rootKind === "skills-home"
+      ? listRuntimeSkills(input.lookup).filter((skill) => skill.rootKind !== "builtin")
+      : listRuntimeSkillsByRootKind(input.lookup, input.rootKind);
+  const skill = findSkillByName(skills, input.name);
   return listSkillBrowserTree({
     rootPath: skill.skillDir,
     path: input.path,
@@ -486,7 +506,11 @@ export const readSkillBrowserCatalogPreview = (input: {
   path: string;
   maxBytes?: number;
 }): SkillBrowserPreview => {
-  const skill = findSkillByName(listRuntimeSkillsByRootKind(input.lookup, input.rootKind), input.name);
+  const skills =
+    input.rootKind === "skills-home"
+      ? listRuntimeSkills(input.lookup).filter((skill) => skill.rootKind !== "builtin")
+      : listRuntimeSkillsByRootKind(input.lookup, input.rootKind);
+  const skill = findSkillByName(skills, input.name);
   return readSkillBrowserPreview({
     rootPath: skill.skillDir,
     path: input.path,

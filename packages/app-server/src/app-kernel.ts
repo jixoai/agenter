@@ -217,13 +217,14 @@ import {
 } from "./workspace-settings";
 import {
   AVATAR_HOME_ENV,
+  deriveEnvSkillsHome,
   executeWorkspaceBash,
   hasWorkspaceGrantRootAccess,
   resolveWorkspaceAvatarAssetRoot,
   resolveWorkspaceGrantModeFromAbsolutePath,
   resolveWorkspacePublicAssetRoot,
-  serializeEnvAvatarHome,
   WorkspaceSystemStore,
+  serializeEnvAvatarHome,
   type WorkspaceAssetRoots,
   type WorkspaceBashExecResult,
   type WorkspaceGrantInput,
@@ -1992,11 +1993,14 @@ export class AppKernel {
     });
   }
 
-  private buildSkillBrowserLookupInput(): { homeDir: string; rootWorkspacePath: string } {
+  private buildSkillBrowserLookupInput(): { homeDir: string; skillHomeRoots: string[] } {
     const homeDir = this.getHomeDir();
     return {
       homeDir,
-      rootWorkspacePath: homeDir,
+      skillHomeRoots: deriveEnvSkillsHome({
+        pwd: homeDir,
+        avatarHome: [],
+      }),
     };
   }
 
@@ -2085,22 +2089,26 @@ export class AppKernel {
   }): WorkspaceGrantRecord[] {
     const workspacePath = toWorkspacePath(input.workspacePath);
     this.rememberWorkspace(workspacePath);
-    return this.workspaceSystem.setRuntimeWorkspaceGrants({
+    const grants = this.workspaceSystem.setRuntimeWorkspaceGrants({
       runtimeId: input.runtimeId,
       workspacePath,
       grants: input.grants,
       env: this.buildInheritedWorkspaceInstanceEnv(input.runtimeId),
     });
+    this.runtimes.get(input.runtimeId)?.recomputeWorkspaceCliProjections();
+    return grants;
   }
 
   detachRuntimeWorkspace(input: { runtimeId: string; workspacePath: string }): { detached: boolean } {
-    return {
-      detached:
-        this.workspaceSystem.detachRuntimeWorkspace({
-          runtimeId: input.runtimeId,
-          workspacePath: toWorkspacePath(input.workspacePath),
-        }) !== null,
-    };
+    const detached =
+      this.workspaceSystem.detachRuntimeWorkspace({
+        runtimeId: input.runtimeId,
+        workspacePath: toWorkspacePath(input.workspacePath),
+      }) !== null;
+    if (detached) {
+      this.runtimes.get(input.runtimeId)?.recomputeWorkspaceCliProjections();
+    }
+    return { detached };
   }
 
   private listRuntimeWorkspaceAuthorities(runtimeId: string): Array<{

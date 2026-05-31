@@ -5,6 +5,18 @@ import { defineCommand } from "just-bash";
 
 import { createRootWorkspaceHelpcenterCommand } from "./cli-command-catalog";
 import { createNoteCommand } from "./note-system";
+import {
+  projectWorkspaceSystemClis,
+  type SystemCliCommandName,
+  type SystemCliProjection,
+} from "./system-cli-projection";
+import {
+  AVATAR_HOME_ENV,
+  SKILLS_HOME_ENV,
+  deriveEnvSkillsHome,
+  serializeEnvAvatarHome,
+  serializeEnvSkillsHome,
+} from "./workspace-system";
 import { buildRuntimeSkillsList } from "./runtime-skills";
 import {
   getRuntimeToolDescriptor,
@@ -401,6 +413,7 @@ export const createRuntimeShellCommands = (input: {
   homeDir?: string;
   rootWorkspacePath: string;
   principalId?: string;
+  cliProjections?: readonly SystemCliProjection[];
 }) => {
   materializeBuiltinRuntimeTools({
     rootWorkspacePath: input.rootWorkspacePath,
@@ -415,6 +428,24 @@ export const createRuntimeShellCommands = (input: {
       privateKey: input.privateKey,
     }),
   );
+  const cliProjections =
+    input.cliProjections ??
+    projectWorkspaceSystemClis({
+      workspacePath: input.rootWorkspacePath,
+      workspaceAlias: "root",
+      defaultCwd: input.rootWorkspacePath,
+      env: {
+        [AVATAR_HOME_ENV]: serializeEnvAvatarHome([input.rootWorkspacePath]),
+        [SKILLS_HOME_ENV]: serializeEnvSkillsHome(
+          deriveEnvSkillsHome({
+            pwd: input.rootWorkspacePath,
+            avatarHome: [input.rootWorkspacePath],
+          }),
+        ),
+      },
+    });
+  const hasProjectedCommand = (command: SystemCliCommandName): boolean =>
+    cliProjections.some((projection) => projection.command === command);
   const skill = createSkillCommand({
     baseUrl: input.baseUrl,
     privateKey: input.privateKey,
@@ -467,7 +498,13 @@ export const createRuntimeShellCommands = (input: {
     }
   });
 
-  return [...runtimeNamespaces, skill, note, helpcenter, tool];
+  return [
+    ...runtimeNamespaces,
+    ...(hasProjectedCommand("skill") ? [skill] : []),
+    ...(hasProjectedCommand("note") ? [note] : []),
+    helpcenter,
+    tool,
+  ];
 };
 
 export const listRuntimeShellCommandNames = (): string[] => [

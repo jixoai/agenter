@@ -259,6 +259,9 @@
 													/>
 													<div class="grid min-w-0 gap-1">
 														<div class="truncate text-sm font-semibold">{skill.name}</div>
+														<div class="break-all text-xs leading-5 text-muted-foreground">
+															{skill.sourceEnv}: {skill.sourcePath}
+														</div>
 														<div class="break-all text-xs leading-5 text-muted-foreground">{skill.skillPath}</div>
 														<p class="text-sm leading-6 text-muted-foreground">{skill.summary}</p>
 													</div>

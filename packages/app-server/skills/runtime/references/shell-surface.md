@@ -3,7 +3,7 @@
 The runtime gives you three direct tools:
 
 - `workspace_list`: inspect mounted project workspaces as `{ id, cwd, alias }`
-- `root_bash`: execute one-shot shell commands inside the fixed root-workspace
+- `root_bash`: execute one-shot shell commands inside the fixed root-workspace with runtime CLI projected from workspace capability env
 - `workspace_bash`: execute one-shot shell commands inside one mounted public-workspace selected by `workspaceId`
 
 Use shell CLI commands inside `root_bash` for system work:
@@ -13,14 +13,15 @@ Use shell CLI commands inside `root_bash` for system work:
 - `workspace`
 - `terminal`
 - `skill`
+- `note`
 - `tool`
 
 Boundary:
 
-- `root_bash` is the only surface that carries root-workspace `HOME` plus avatar-private runtime CLI/env by default.
+- `root_bash` is the current visible surface that carries root-workspace `HOME` plus runtime CLI projected from workspace capability env. In the default avatar-root instance, `AVATAR_HOME` and `SKILLS_HOME` usually project `skill` and `note`.
 - One-shot checks, inspection, short scripts, and outbound-network verification of current or external facts belong in `root_bash`.
-- Pure workspace file/command work can run through `workspace_bash`, but runtime-local system CLI stays behind `root_bash`.
-- `workspace_bash` and `terminal` are collaboration surfaces; they do not inherit root-workspace-exclusive env/CLI by default.
+- Pure workspace file/command work can run through `workspace_bash`, but runtime-local system CLI stays behind `root_bash` in the current visible shell surface.
+- `workspace_bash` and `terminal` are collaboration surfaces; they do not inherit runtime-local env/CLI merely because a project workspace is mounted or a cwd enters the avatar root.
 - Durable processes and interactive recovery belong in `terminal`.
 - For runtime-local CLI commands that accept JSON, default to `root_bash.command=<bare action>` plus JSON `stdin`.
 - Use a single argv JSON payload only when it is trivially short, single-line, and clearly cheaper in tokens.

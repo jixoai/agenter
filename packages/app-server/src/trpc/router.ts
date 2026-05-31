@@ -186,7 +186,7 @@ const workspaceGrantInputSchema = z.object({
   pattern: z.string().trim().min(1),
   mode: z.enum(["ro", "rw"]),
 });
-const skillCatalogRootKindSchema = z.enum(["builtin", "shared", "global"]);
+const skillCatalogRootKindSchema = z.enum(["builtin", "shared", "global", "skills-home"]);
 const skillTreeInputSchema = z.object({
   name: z.string().trim().min(1),
   path: z.string().optional(),

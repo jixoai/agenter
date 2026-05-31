@@ -57,11 +57,11 @@ export interface RuntimeSkillLookupInput {
 }
 
 /**
- * Visible runtime skills resolve from the broadest shared layer to the most
- * specific avatar-private root. The order is durable because both the CLI and
- * the Skills workbench rely on the same override law.
+ * Legacy callers without SKILLS_HOME still resolve through the historical
+ * broad-to-specific fallback. Env-derived SKILLS_HOME remains the authority
+ * whenever callers provide skillHomeRoots or resolveSkillHomeRoots.
  */
-const RUNTIME_SKILL_VISIBLE_LAYER_ORDER = ["shared", "builtin", "global", "avatar"] as const;
+const LEGACY_RUNTIME_SKILL_VISIBLE_LAYER_ORDER = ["shared", "builtin", "global", "avatar"] as const;
 
 const normalizeRuntimeSkillSourceRoot = (path: string): string => {
   if (!isAbsolute(path)) {
@@ -315,7 +315,7 @@ const listRuntimeSkillsByVisibleLayerOrder = (input: RuntimeSkillLookupInput): R
   const runtimeRoots = new Map(resolveRuntimeSkillRoots(input).map((root) => [root.kind, root] as const));
   const skills: RuntimeSkillRecord[] = [];
 
-  for (const layer of RUNTIME_SKILL_VISIBLE_LAYER_ORDER) {
+  for (const layer of LEGACY_RUNTIME_SKILL_VISIBLE_LAYER_ORDER) {
     if (layer === "builtin") {
       skills.push(...listBuiltinRuntimeSkills(input));
       continue;

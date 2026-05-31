@@ -71,6 +71,8 @@
 					skillDir: '/skills/reviewer',
 					configPath: '/skills/reviewer/ccski.config.json',
 					configExists: true,
+					sourceEnv: 'builtin',
+					sourcePath: '/skills',
 				},
 			],
 		},

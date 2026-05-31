@@ -8,14 +8,21 @@ Define the runtime skill system as the durable owner of runtime-visible skill tr
 
 ### Requirement: Runtime skill truth SHALL come from visible on-disk skill files
 
-The runtime skill system SHALL treat shared, global, avatar, and indexed built-in skill source files as the durable truth for runtime-visible skills. Generated built-in catalogs remain the discovery baseline, but existing built-in source paths stay live on disk. The runtime-facing facade SHALL keep catalog discovery, truth snapshot construction, diffing, baseline persistence, watcher dirtiness, and attention publication as separate internal atoms, while visible skill identity remains keyed only by `skill.name`.
+The runtime skill system SHALL treat file-backed skills from the current workspace `SKILLS_HOME` source order plus indexed built-in skill source files as the durable truth for runtime-visible skills. Generated built-in catalogs remain the discovery baseline, but existing built-in source paths stay live on disk. The runtime-facing facade SHALL keep catalog discovery, truth snapshot construction, diffing, baseline persistence, watcher dirtiness, and attention publication as separate internal atoms, while visible skill identity remains keyed only by `skill.name`.
 
 #### Scenario: Runtime-visible skill truth is rebuilt from disk
 
 - **WHEN** the runtime skill system refreshes its catalog
-- **THEN** it re-reads visible on-disk skill files for shared, global, avatar, and indexed built-in skills
+- **THEN** it re-reads visible on-disk skill files from the current `SKILLS_HOME` source order and indexed built-in skills
 - **AND** it rebuilds the canonical skill snapshot from those file-backed truths instead of from prompt glue
 - **AND** diff and override identity remain the visible `skill.name`
+
+#### Scenario: SKILLS_HOME source order is the file-backed authority
+
+- **GIVEN** two `SKILLS_HOME` source roots contain the same skill name
+- **WHEN** runtime skill truth is refreshed
+- **THEN** the later `SKILLS_HOME` source wins
+- **AND** the visible skill record reports the source root that produced the winning record
 
 #### Scenario: Internal atoms remain orthogonal behind the facade
 

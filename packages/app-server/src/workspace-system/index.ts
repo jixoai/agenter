@@ -5,6 +5,7 @@ export {
   deriveMultiWorkspaceSkillsHome,
   ENV_HOME_CANONICAL_DELIMITER,
   parseEnvAvatarHome,
+  parseEnvSkillsHome,
   serializeEnvAvatarHome,
   serializeEnvSkillsHome,
   SKILLS_HOME_ENV,

@@ -115,12 +115,12 @@ Runtime terminal realtime publications SHALL invalidate terminal surface resourc
 
 ### Requirement: Shared terminal environments SHALL preserve real home semantics
 
-When the runtime creates or recovers a shared terminal, it SHALL preserve the operator's real home-directory semantics unless the caller explicitly overrides `HOME`. Shared terminals are collaboration surfaces comparable to `public-workspace`, so the runtime MUST NOT rewrite `HOME` to the avatar root workspace and MUST NOT auto-mount root-workspace-exclusive CLI helpers or avatar-private control-plane env merely because the runtime has one fixed root workspace or one durable root-workspace shell world.
+When the runtime creates or recovers a shared terminal, it SHALL preserve the operator's real home-directory semantics unless the caller explicitly overrides `HOME`. Shared terminals are collaboration surfaces comparable to `public-workspace`, so the runtime MUST NOT rewrite `HOME` to the avatar root workspace and MUST NOT auto-mount runtime-local CLI helpers or avatar-private control-plane env merely because the runtime has one fixed avatar-root workspace or one durable root-workspace shell world.
 
 #### Scenario: New shared terminal keeps real home semantics
 - **WHEN** the AI creates a terminal without explicitly setting `HOME`
 - **THEN** the terminal environment preserves the real user home directory
-- **AND** the runtime does not inject root-workspace-exclusive CLI/env by default
+- **AND** the runtime does not inject runtime-local CLI/env by default
 
 #### Scenario: Recovered shared terminal keeps the same home law
 - **WHEN** the runtime recovers or recreates a previously attached terminal
@@ -132,9 +132,9 @@ When the runtime creates or recovers a shared terminal, it SHALL preserve the op
 - **THEN** the terminal still follows shared-terminal home semantics by default
 - **AND** root-workspace `HOME` rewrite remains reserved for `root_bash`
 
-#### Scenario: Shared terminal does not inherit root-exclusive CLI
+#### Scenario: Shared terminal does not inherit runtime-local CLI
 - **WHEN** a shared terminal is created for collaborative work
-- **THEN** root-workspace-only helper commands are not auto-mounted into that terminal
+- **THEN** runtime-local helper commands are not auto-mounted into that terminal
 - **AND** terminal collaboration does not depend on avatar-private runtime CLI exposure
 
 #### Scenario: Durable root-workspace shell world does not alter shared terminal law
@@ -387,4 +387,3 @@ Runtime recovery SHALL treat stale previously-running terminals as dead history 
 - **WHEN** runtime recovery encounters a terminal that daemon compensation moved through the killed flow
 - **THEN** runtime terminal publications do not reattach or republish that terminal as part of the live focused or attached set
 - **AND** callers must use explicit history surfaces to inspect it
-

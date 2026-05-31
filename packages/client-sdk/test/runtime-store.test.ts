@@ -491,17 +491,19 @@ const createMockClient = (input: {
     targetAvatar: string;
   }) => Promise<{ avatar: WorkspaceAvatarCatalogEntry }>;
   workspaceCleanMissingMutate?: () => Promise<{ removed: string[] }>;
-  skillCatalogQuery?: (input: { rootKind: "builtin" | "shared" | "global" }) => Promise<{ items: unknown[] }>;
+  skillCatalogQuery?: (input: {
+    rootKind: "builtin" | "shared" | "global" | "skills-home";
+  }) => Promise<{ items: unknown[] }>;
   skillAvatarCatalogQuery?: () => Promise<{ items: unknown[] }>;
   skillCatalogTreeQuery?: (input: {
-    rootKind: "builtin" | "shared" | "global";
+    rootKind: "builtin" | "shared" | "global" | "skills-home";
     name: string;
     path?: string;
     offset?: number;
     limit?: number;
   }) => Promise<unknown>;
   skillCatalogPreviewQuery?: (input: {
-    rootKind: "builtin" | "shared" | "global";
+    rootKind: "builtin" | "shared" | "global" | "skills-home";
     name: string;
     path: string;
     maxBytes?: number;
@@ -2108,7 +2110,7 @@ const createMockClient = (input: {
       },
       skill: {
         catalog: {
-          query: async (payload: { rootKind: "builtin" | "shared" | "global" }) =>
+          query: async (payload: { rootKind: "builtin" | "shared" | "global" | "skills-home" }) =>
             input.skillCatalogQuery ? await input.skillCatalogQuery(payload) : { items: [] },
         },
         avatarCatalog: {
@@ -2116,7 +2118,7 @@ const createMockClient = (input: {
         },
         catalogTree: {
           query: async (payload: {
-            rootKind: "builtin" | "shared" | "global";
+            rootKind: "builtin" | "shared" | "global" | "skills-home";
             name: string;
             path?: string;
             offset?: number;
@@ -2128,7 +2130,7 @@ const createMockClient = (input: {
         },
         catalogPreview: {
           query: async (payload: {
-            rootKind: "builtin" | "shared" | "global";
+            rootKind: "builtin" | "shared" | "global" | "skills-home";
             name: string;
             path: string;
             maxBytes?: number;
@@ -10765,11 +10767,13 @@ describe("Feature: runtime store synchronization", () => {
         {
           name: "shared-handbook",
           summary: "Shared handbook.",
-          rootKind: "shared" as const,
+          rootKind: "avatar" as const,
           skillPath: "/home/.agents/skills/shared-handbook/SKILL.md",
           skillDir: "/home/.agents/skills/shared-handbook",
           configPath: "/home/.agents/skills/shared-handbook/ccski.config.json",
           configExists: false,
+          sourceEnv: "SKILLS_HOME" as const,
+          sourcePath: "/home/.agents/skills",
         },
       ],
     };
@@ -10796,6 +10800,8 @@ describe("Feature: runtime store synchronization", () => {
                   skillDir: "/home/.agenter/avatars/by-principal/architect/skills/root-skill",
                   configPath: "/home/.agenter/avatars/by-principal/architect/skills/root-skill/ccski.config.json",
                   configExists: false,
+                  sourceEnv: "AVATAR_HOME" as const,
+                  sourcePath: "/home/.agenter/avatars/by-principal/architect/skills",
                 },
               ],
             },
@@ -10840,7 +10846,7 @@ describe("Feature: runtime store synchronization", () => {
       note: null,
     };
 
-    let catalogInput: { rootKind: "builtin" | "shared" | "global" } | null = null;
+    let catalogInput: { rootKind: "builtin" | "shared" | "global" | "skills-home" } | null = null;
     let avatarTreeInput: {
       avatarNickname: string;
       workspacePath: string;
@@ -10868,23 +10874,23 @@ describe("Feature: runtime store synchronization", () => {
       }),
     );
 
-    expect(await store.listSkillCatalog({ rootKind: "shared" })).toEqual(skillCatalog);
+    expect(await store.listSkillCatalog({ rootKind: "skills-home" })).toEqual(skillCatalog);
     if (!catalogInput) {
       throw new Error("expected skill catalog query input");
     }
-    expect(catalogInput).toEqual({ rootKind: "shared" });
+    expect(catalogInput).toEqual({ rootKind: "skills-home" });
 
     expect(await store.listSkillAvatarCatalog()).toEqual(avatarCatalog);
     expect(
       await store.listSkillCatalogTree({
-        rootKind: "shared",
+        rootKind: "skills-home",
         name: "shared-handbook",
         path: "/",
       }),
     ).toEqual(skillTree);
     expect(
       await store.readSkillCatalogPreview({
-        rootKind: "shared",
+        rootKind: "skills-home",
         name: "shared-handbook",
         path: "/manual.pdf",
       }),

@@ -51,14 +51,14 @@
 - [x] 4.2 Update runtime skill merge logic so all file-backed skills follow the derived source ordering and last-wins conflict law.
 - [x] 4.3 Keep built-in/plugin skills as explicit read-only providers merged through the same source ordering model.
 - [x] 4.4 Update `skill list/search/info/upsert/remove/config` commands to explain and use env-derived source paths.
-- [ ] 4.5 Update Skill Browser / Studio skill surfaces so visible skills report their `SKILLS_HOME` source instead of global/project grouping heuristics.
-- [ ] 4.6 Add migration notes for existing `rootWorkspacePath/skills` data so user-owned skills are not silently lost.
+- [x] 4.5 Update Skill Browser / Studio skill surfaces so visible skills report their `SKILLS_HOME` source instead of global/project grouping heuristics.
+- [x] 4.6 Add migration notes for existing `rootWorkspacePath/skills` data so user-owned skills are not silently lost.
 
 ## 5. NoteSystem And System CLI Projection
 
 - [x] 5.1 Define a typed system CLI projection contract over workspace instance env/capabilities.
-- [ ] 5.2 Add workspace lifecycle hooks for created/updated/detached workspace instances to recompute CLI projections.
-- [ ] 5.3 Project skill CLI through the new contract while preserving SkillSystem's special PWD-local discovery law.
+- [x] 5.2 Add workspace lifecycle hooks for created/updated/detached workspace instances to recompute CLI projections.
+- [x] 5.3 Project skill CLI through the new contract while preserving SkillSystem's special PWD-local discovery law.
 - [x] 5.4 Add NoteSystem storage primitives for Markdown + frontmatter pages under notebook / section / page paths.
 - [x] 5.5 Add `note` CLI projection only when the active workspace group has non-empty `AVATAR_HOME`.
 - [x] 5.6 Implement `note write --notebook --section --page --mode append|override`, including safe segment validation.
@@ -71,28 +71,28 @@
 
 ## 6. Durable Specs / Docs
 
-- [ ] 6.1 Sync the accepted Env-first law into the relevant durable `SPEC.md` files after implementation stabilizes.
-- [ ] 6.2 Update `openspec/specs/workspace-resource-ownership/spec.md` so root/private specialness is an env projection rather than an ownership label.
-- [ ] 6.3 Update package-level specs for WorkspaceSystem, SkillSystem/runtime skills, and runtime system boundary law as needed.
-- [ ] 6.4 Update Shell/product prompt guidance only where SkillSystem/NoteSystem wording changes; do not teach a `root_bash` rename in this change.
+- [x] 6.1 Sync the accepted Env-first law into the relevant durable `SPEC.md` files after implementation stabilizes.
+- [x] 6.2 Update `openspec/specs/workspace-resource-ownership/spec.md` so root/private specialness is an env projection rather than an ownership label.
+- [x] 6.3 Update package-level specs for WorkspaceSystem, SkillSystem/runtime skills, and runtime system boundary law as needed.
+- [x] 6.4 Update Shell/product prompt guidance only where SkillSystem/NoteSystem wording changes; do not teach a `root_bash` rename in this change.
 
 ## 7. Verification
 
-- [ ] 7.1 Run targeted env parser and WorkspaceSystem tests.
-- [ ] 7.2 Run targeted runtime skill tests and Skill Browser tests.
-- [ ] 7.3 Run targeted NoteSystem note CLI/storage/search tests.
-- [ ] 7.4 Run targeted runtime CLI/tool-provider tests proving existing `root_bash` naming remains stable while new capability projection tests pass.
-- [ ] 7.5 Run targeted Shell bootstrap/runtime tests proving project workspace remains a tool surface, not capability authority.
-- [ ] 7.6 Run `bun run --filter '@agenter/app-server' typecheck`.
-- [ ] 7.7 Run `bun run typecheck` if the implementation touches shared contracts.
-- [ ] 7.8 Run `bun run openspec:vision -- validate define-workspace-env-capability-projection`.
-- [ ] 7.9 Run `bun run openspec:vision -- check define-workspace-env-capability-projection`.
+- [x] 7.1 Run targeted env parser and WorkspaceSystem tests.
+- [x] 7.2 Run targeted runtime skill tests and Skill Browser tests.
+- [x] 7.3 Run targeted NoteSystem note CLI/storage/search tests.
+- [x] 7.4 Run targeted runtime CLI/tool-provider tests proving existing `root_bash` naming remains stable while new capability projection tests pass.
+- [x] 7.5 Run targeted Shell bootstrap/runtime tests proving project workspace remains a tool surface, not capability authority.
+- [x] 7.6 Run `bun run --filter '@agenter/app-server' typecheck`.
+- [x] 7.7 Run `bun run typecheck` if the implementation touches shared contracts.
+- [x] 7.8 Run `bun run openspec:vision -- validate define-workspace-env-capability-projection`.
+- [x] 7.9 Run `bun run openspec:vision -- check define-workspace-env-capability-projection`.
 
 ## 8. Self-Review Loop
 
-- [ ] 8.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, and tasks.
-- [ ] 8.2 Generate separate `review/self-review.html` for command evidence, source-order examples, and compatibility alias proof if applicable.
-- [ ] 8.3 If self-review changes OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
-- [ ] 8.4 If the review enters a real loop, run `bun run openspec:vision -- review-state define-workspace-env-capability-projection` to persist iteration / recurrence state.
-- [ ] 8.5 If review cannot exit normally, run `bun run openspec:vision -- handoff define-workspace-env-capability-projection` and commit the handoff evidence before returning to user discussion.
-- [ ] 8.6 If review exits normally, archive the change and commit the archive result.
+- [x] 8.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, and tasks.
+- [x] 8.2 Generate separate `review/self-review.html` for command evidence, source-order examples, and compatibility alias proof if applicable.
+- [x] 8.3 If self-review changes OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
+- [x] 8.4 If the review enters a real loop, run `bun run openspec:vision -- review-state define-workspace-env-capability-projection` to persist iteration / recurrence state.
+- [x] 8.5 If review cannot exit normally, run `bun run openspec:vision -- handoff define-workspace-env-capability-projection` and commit the handoff evidence before returning to user discussion.
+- [x] 8.6 If review exits normally, archive the change and commit the archive result.

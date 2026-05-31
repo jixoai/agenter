@@ -20,7 +20,7 @@ WorkspaceSystem SHALL distinguish shared public workspace assets from avatar-pri
 
 ### Requirement: Workspace mounts SHALL not transfer ownership of global rooms or terminals
 
-WorkspaceSystem SHALL treat rooms and terminals as attached cross-system resources rather than as workspace-owned topology. `public-workspace` and `terminal` are collaboration surfaces, while `root-workspace` is a special env/CLI profile with one durable avatar-private shell world rather than a blanket ownership wall. Mounting or selecting one fixed avatar-root workspace or one ordinary shared workspace SHALL NOT imply that a global terminal inherits ownership, identity, root-exclusive CLI, or user-home semantics from that workspace root.
+WorkspaceSystem SHALL treat rooms and terminals as attached cross-system resources rather than as workspace-owned topology. `public-workspace` and `avatar-root` are workspace instance surfaces whose available private capabilities are determined by explicit env/capability projection, not by blanket ownership transfer. Mounting or selecting one fixed avatar-root workspace or one ordinary shared workspace SHALL NOT imply that a global terminal inherits ownership, identity, avatar-private CLI, user-home semantics, or `AVATAR_HOME` from that workspace root.
 
 #### Scenario: Shared room spans multiple workspaces
 - **WHEN** avatars from different workspaces attach to the same room
@@ -35,16 +35,16 @@ WorkspaceSystem SHALL treat rooms and terminals as attached cross-system resourc
 #### Scenario: Terminal semantics do not transfer from one workspace root
 - **WHEN** a shared terminal is launched from or later visits one mounted workspace root, including the fixed avatar-root workspace
 - **THEN** that workspace root does not become the terminal's owner
-- **AND** terminal environment semantics such as `HOME` and root-exclusive CLI are not silently rewritten from that workspace root
+- **AND** terminal environment semantics such as `HOME`, `AVATAR_HOME`, and private CLI projection are not silently rewritten from that workspace root
 
-#### Scenario: Root-workspace specialness does not imply an absolute no-sharing rule
-- **WHEN** the system distinguishes `root-workspace` from collaboration-oriented `public-workspace` and shared terminals
-- **THEN** that distinction is expressed through env/CLI semantics rather than by claiming that root-workspace can never be visited or shared
-- **AND** ownership and grant law remain separate from the root-workspace labeling itself
+#### Scenario: Visible bash surface naming remains outside ownership transfer
+- **WHEN** the runtime exposes existing bash tool names such as `root_bash` or `workspace_bash`
+- **THEN** those names do not transfer ownership of rooms or terminals
+- **AND** this change does not require renaming or removing those visible tool names
 
-#### Scenario: Durable root-workspace shell world does not claim shared terminal ownership
-- **WHEN** the runtime keeps one durable root-workspace shell world for avatar-private shell execution
-- **THEN** that singleton world remains an implementation detail of the root-workspace surface
+#### Scenario: Durable shell world does not claim shared terminal ownership
+- **WHEN** the runtime keeps one durable shell world for an avatar-private workspace instance
+- **THEN** that singleton world remains an implementation detail of that workspace instance surface
 - **AND** it does not reclassify shared terminals as root-owned resources
 
 ### Requirement: Session-scoped workspace resources SHALL be owned by lifecycle handles instead of route-local component state

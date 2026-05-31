@@ -186,15 +186,15 @@ Runtime boot and recovery SHALL restore only durably attached workspace resource
 - **THEN** recovery restores only those persisted workspace mounts whose grant facts still exist
 - **AND** it does not synthesize extra workspace authority during restart
 
-### Requirement: WorkspaceSystem SHALL distinguish `root-workspace` and `public-workspace` shell semantics
+### Requirement: WorkspaceSystem SHALL distinguish shell surface compatibility from env capability authority
 
-WorkspaceSystem SHALL treat the fixed avatar-root mount as the `root-workspace` shell surface and SHALL treat ordinary mounted project workspaces as `public-workspace` shell surfaces. `root-workspace` SHALL own one session-scoped durable shell world and MAY mount avatar-exclusive env and CLI helpers. `public-workspace` SHALL remain collaboration-oriented by default and SHALL NOT inherit root-workspace-exclusive env or CLI merely because the runtime also owns a root-workspace. A `public-workspace` MAY still contain avatar-private workspace asset roots inside its file tree; that does not change its shell semantics.
+WorkspaceSystem SHALL keep existing `root-workspace` and `public-workspace` shell surfaces as visible command-surface compatibility, while private CLI availability SHALL be determined by workspace instance env and capability projection. The fixed avatar-root mount is normally the runtime's default avatar-private workspace instance and MAY carry `AVATAR_HOME` / `SKILLS_HOME`; ordinary mounted project workspaces remain collaboration-oriented by default and SHALL NOT inherit private env or CLI merely because the runtime also owns an avatar-root mount. A mounted workspace MAY still receive private capability through explicit workspace instance env.
 
 #### Scenario: Fixed avatar mount is the root-workspace surface
 
 - **WHEN** a runtime starts
 - **THEN** its fixed avatar-root mount is treated as `root-workspace`
-- **AND** root-workspace-exclusive env or CLI is only legal on that shell surface by default
+- **AND** its private CLI availability is explained by that workspace instance's env projection rather than by the visible `root-workspace` label alone
 
 #### Scenario: Mounted project workspace is a public-workspace surface
 
@@ -202,10 +202,10 @@ WorkspaceSystem SHALL treat the fixed avatar-root mount as the `root-workspace` 
 - **THEN** that mount is treated as a `public-workspace` shell surface
 - **AND** the presence of workspace avatar-private subtrees does not upgrade it into `root-workspace`
 
-#### Scenario: Public-workspace shell excludes root-exclusive CLI
+#### Scenario: Public-workspace shell excludes private CLI without env projection
 
 - **WHEN** the operator or AI executes a shell against a `public-workspace`
-- **THEN** root-workspace-exclusive CLI helpers are not auto-mounted into that shell
+- **THEN** avatar-private CLI helpers are not auto-mounted into that shell unless its workspace instance env projects that capability
 - **AND** the shell remains collaboration-safe by default
 
 #### Scenario: Root-workspace owns one durable shell world
@@ -213,6 +213,13 @@ WorkspaceSystem SHALL treat the fixed avatar-root mount as the `root-workspace` 
 - **WHEN** the runtime serves repeated `root_bash` calls
 - **THEN** those calls reuse the same root-workspace shell world for that runtime
 - **AND** the durable root-workspace shell world does not change the collaboration semantics of other shell surfaces
+
+#### Scenario: Non-root workspace with Avatar home can receive private CLI
+
+- **GIVEN** a mounted project workspace instance has non-empty `AVATAR_HOME`
+- **WHEN** systems evaluate workspace CLI projection
+- **THEN** systems that require avatar-private capability may project their CLI into that workspace
+- **AND** the workspace does not need to be renamed or reclassified as `root-workspace`
 
 #### Scenario: Public-workspace shell keeps collaboration-oriented environment semantics
 

@@ -8,10 +8,9 @@ import {
 } from './skill-browser-state';
 
 describe('Feature: Skills browser projection helpers', () => {
-	test('Scenario: Given a surface root kind When projecting transport input Then built-in maps to builtin while shared and global stay stable', () => {
+	test('Scenario: Given a surface root kind When projecting transport input Then built-in maps to builtin while SKILLS_HOME stays stable', () => {
 		expect(toSkillCatalogTransportRootKind('built-in')).toBe('builtin');
-		expect(toSkillCatalogTransportRootKind('shared')).toBe('shared');
-		expect(toSkillCatalogTransportRootKind('global')).toBe('global');
+		expect(toSkillCatalogTransportRootKind('skills-home')).toBe('skills-home');
 	});
 
 	test('Scenario: Given an expanded directory tree When building visible rows Then descendants only appear beneath expanded ancestors', () => {

@@ -1,4 +1,10 @@
-## ADDED Requirements
+# runtime-skill-home-projection Specification
+
+## Purpose
+
+Define `SKILLS_HOME` derivation, source expansion, visible skill precedence, and migration behavior for runtime-visible file-backed skills.
+
+## Requirements
 
 ### Requirement: SKILLS_HOME SHALL be derived from workspace-grouped PWD plus AVATAR_HOME
 

@@ -4048,7 +4048,9 @@ export class RuntimeStore {
     return await this.client.trpc.workspace.assetRoots.query(input);
   }
 
-  async listSkillCatalog(input: { rootKind: "builtin" | "shared" | "global" }): Promise<SkillCatalogOutput> {
+  async listSkillCatalog(input: {
+    rootKind: "builtin" | "shared" | "global" | "skills-home";
+  }): Promise<SkillCatalogOutput> {
     return await this.client.trpc.skill.catalog.query(input);
   }
 
@@ -4057,7 +4059,7 @@ export class RuntimeStore {
   }
 
   async listSkillCatalogTree(input: {
-    rootKind: "builtin" | "shared" | "global";
+    rootKind: "builtin" | "shared" | "global" | "skills-home";
     name: string;
     path?: string;
     offset?: number;
@@ -4067,7 +4069,7 @@ export class RuntimeStore {
   }
 
   async readSkillCatalogPreview(input: {
-    rootKind: "builtin" | "shared" | "global";
+    rootKind: "builtin" | "shared" | "global" | "skills-home";
     name: string;
     path: string;
     maxBytes?: number;

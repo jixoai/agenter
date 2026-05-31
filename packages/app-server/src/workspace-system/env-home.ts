@@ -113,6 +113,17 @@ export const serializeEnvAvatarHome = (
     platform: input.platform,
   });
 
+export const parseEnvSkillsHome = (
+  envValue?: string,
+  input: {
+    platform?: EnvHomePlatform;
+  } = {},
+): string[] =>
+  parseEnvHomePathList(envValue, {
+    envName: SKILLS_HOME_ENV,
+    platform: input.platform,
+  });
+
 export interface WorkspaceSkillsHomeGroup {
   pwd: string;
   avatarHome: readonly string[];

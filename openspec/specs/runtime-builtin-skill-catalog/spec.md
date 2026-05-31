@@ -45,11 +45,11 @@ For built-in skills already indexed by the generated catalog, the runtime SHALL 
 - **THEN** `skill info` and the canonical skill snapshot refresh from that on-disk source path
 - **AND** the runtime still does not materialize that built-in skill into `<rootWorkspace>/skills`
 
-### Requirement: On-disk skills SHALL override built-in catalog entries with the same name
-The runtime SHALL treat built-in catalog entries as the lowest-precedence baseline, so shared/global/avatar on-disk skills can override a built-in skill with the same name.
+### Requirement: On-disk SKILLS_HOME skills SHALL override built-in catalog entries with the same name
+The runtime SHALL treat built-in catalog entries as a read-only baseline, so file-backed skills from the current `SKILLS_HOME` source order can override a built-in skill with the same name.
 
-#### Scenario: Avatar-authored skill overrides a built-in entry
-- **WHEN** an on-disk runtime skill under shared, global, or avatar roots uses the same skill name as a built-in catalog entry
+#### Scenario: SKILLS_HOME skill overrides a built-in entry
+- **WHEN** an on-disk runtime skill from `SKILLS_HOME` uses the same skill name as a built-in catalog entry
 - **THEN** `skill list` and `skill info` resolve to the on-disk skill entry
 - **AND** the built-in entry remains available only as the baseline before that override is applied
 

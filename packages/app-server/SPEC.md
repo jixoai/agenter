@@ -31,7 +31,8 @@
   - non-interactive workspace exec
 - ordinary-user app 的 terminal / room / Avatar ensure flow 只能通过 typed app resource binding 协调进入这些 authority；`app-server` 可以提供 ensure/query surface，但不得把 app-local shell name 或 app UI state 变成新的 authority truth。
 - root workspace bash 与 workspace bash 必须共享同一套 overlay-rule filesystem authority；ordered glob grants、dynamic rule refresh 与 avatar-private sibling isolation 都在这层执行，不能由上层 route 或 shell surface 各自猜测。
-- shell profile law 必须显式区分 fixed `root-workspace` 与 mounted `public-workspace`：`root_bash` 允许 rewrite `HOME` 并携带 avatar-private runtime CLI/env；`workspace_bash` 只保留 public-workspace collaboration semantics，不得继承 root-workspace-exclusive env/CLI。
+- shell profile law 必须显式区分 fixed `root-workspace` 与 mounted `public-workspace`，但 private capability authority 来自 workspace instance env：`root_bash` 仍是兼容的 durable root shell surface，可默认携带 `AVATAR_HOME` / `SKILLS_HOME` 并 rewrite `HOME`；`workspace_bash` 保留 public-workspace collaboration semantics，除非显式 env/capability projection 授权，否则不得继承 private CLI。
+- `AVATAR_HOME` 是 workspace instance 的 ordered absolute path list，canonical 写入 delimiter 固定为 `;`，读取时在非 Windows 上兼容 OS path delimiter；空值表示没有 avatar-private capability。`SKILLS_HOME` 从 workspace-grouped `PWD + AVATAR_HOME` 派生，顺序为 `w1-pwd;w1-avatar-home;w2-pwd;w2-avatar-home;...`，后者覆盖前者。
 - Workspace asset roots 分为：
   - public: `<workspace>/.agenter/workspace/{skills,memory,tools,archive}`
   - private: `<workspace>/.agenter/avatars/by-principal/<principalId>/{skills,memory,tools,archive}`
@@ -141,15 +142,15 @@
 - 空 prompt 文件是有效事实，不得 fallback 到模板或上层；需要继承上层内容时必须显式写 `<Slot src="super:" />`。
 - `AGENTER_SYSTEM`、`SYSTEM_TEMPLATE`、`RESPONSE_CONTRACT` 是平台内置 prompt 文档，不是用户 settings path 真源；Avatar 若要扩展或覆盖人格/行为，必须写入 `AGENTER.mdx` 并用 Slot 组合外部文件。
 - runtime built-in skills 必须由 owning package 在 `skills/**/SKILL.md` 中维护，并通过 app-server build step 聚合成 generated catalog；runtime 不得再把这些 built-ins materialize 到 `<rootWorkspace>/skills`。
-- runtime skill system 的 durable truth 是可见 skill 的 on-disk files，而不是 prompt glue：shared / global / avatar-private skills 直接读盘；indexed built-in skills 在 source path 存在时也必须优先读当前磁盘文件，generated catalog 只负责 discovery baseline。
+- runtime skill system 的 durable truth 是可见 skill 的 on-disk files，而不是 prompt glue：file-backed skills 从当前 workspace 的 `SKILLS_HOME` source order 直接读盘；indexed built-in skills 在 source path 存在时也必须优先读当前磁盘文件，generated catalog 只负责 discovery baseline。
 - runtime built-in `SKILL.md` 必须保持 concise overview-first，并把 deeper material 下沉到同目录 `references/*.md`；attention-backed runtime skill snapshot 与全局提示必须把 `skills.list -> skill info <skill> -> 只读所需 reference file` 作为 canonical discovery path。
 - `ccski.config.json` 是 skill watcher 的唯一扩展入口：默认 live truth 只包含 `SKILL.md + ccski.config.json`，额外 watched files 只能来自 config `files[]` 声明；未声明 sibling file 的 churn 不得升级成 skill change。
 - watcher 事件只是 dirtiness hint；runtime 必须在下一次模型输入收集边界重新读盘并按 skill 聚合 attention reminder，空闲时再由 debounce fallback 触发同样的刷新；进程未运行期间发生的 skill 变更通过 `sessionRoot/skill-system/fingerprint-map.json` 的 session-local fingerprint baseline 在启动刷新时补齐 detection。
 - runtime skill facade 背后的 catalog discovery、truth snapshot、diff、baseline store、watch dirtiness 与 attention publishing 必须保持正交；同名覆盖与 diff identity 只使用 `skill.name`，不引入 root-qualified identity。
 - `skill get-config/set-config` 是受控 metadata surface：它只能暴露 config JSON、path metadata 与 resolved watch targets；built-in `set-config` 只有在 runtime 已拥有对应 package source path 的 workspace `rw` authority 时才允许写入。
 - browser-facing skill browsing 必须走 read-only bounded surface，而不是让前端从 `skill.path` 猜 sibling files：`catalog` 只列可见 skill roots，`tree` 只返回单个 skill root 下的 objective files，`preview` 只返回 bounded preview payload。
-- app-server 的 skill browser root model 固定分成四类 truth：
-  - `shared / builtin / global`：一行一个 visible skill，顺序同时表达最低到更高的 generic inheritance
+- app-server 的 skill browser root model 固定分成三类 truth：
+  - `skills-home / builtin`：一行一个 visible skill，`skills-home` 行必须报告产出该 visible skill 的 `SKILLS_HOME` source path
   - `avatars`：一行一个 avatar + workspace-grouped avatar-private skill roots
   - `Root workspace` 固定来自 global avatar root `skills`
   - 非 root workspace 只来自该 workspace 的 avatar-private `skills`，不使用 `effectivePath` 把 global skills 复制进每个 workspace group
@@ -158,7 +159,7 @@
 - 外部事实型任务的人格偏好必须落在 `AGENTER.mdx`：当事实依赖当前世界或外部网络且可能变化时，Avatar 先做简短确认，再通过 shell 或其它可观察工具查证，最后只回复查证后的结果；这里表达的是 general shell-first bias，不得把某个天气/搜索 recipe 写成唯一 workflow。
 - runtime shell guidance 必须把 `root_bash` 的 outbound network verification 明确成客观能力边界，而不是在 runtime skills 里塞满固定查询脚本。
 - system-owned skill 必须只解释本 system 的义务语义与操作风格，尤其是如何理解和处理该 system 提交的 attention items；例如 message skill 应该教 AI 何时确认、何时回复、何时不要刷屏，而不是代替 terminal / workspace / network 系统承载底层可靠性细节。
-- `skill list/info/search` 必须把 visible precedence 固化为 `shared < built-in < global < avatar-private`：`~/.agents/skills` 是最宽泛 baseline，built-in 只覆盖 shared，`~/.agenter/skills` 覆盖 built-in，而 runtime root-workspace 下的 avatar-private `skills` 最终覆盖前面所有同名层。
+- `skill list/info/search` 必须把 visible precedence 固化为 explicit source order：built-in 是只读 baseline，file-backed `SKILLS_HOME` sources 按声明顺序 last-wins 覆盖；既有 `<rootWorkspacePath>/skills` 只能通过 avatar-root `AVATAR_HOME -> SKILLS_HOME` 或 legacy fallback 继续可见，不能重新成为隐藏 authority。
 - real-provider 的外部事实验收必须使用测试专用 Avatar + 专用 `AGENTER.mdx`，并在失败时输出 durable diagnostics：room truth、recent model calls、tool trace，以及 Avatar / prompt source identity。
 
 ## 5. Reactive Contract

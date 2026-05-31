@@ -950,7 +950,7 @@ describe("Feature: workspace system kernel integration", () => {
     }
   });
 
-  test("Scenario: Given workspace_bash is a public-workspace shell When it inherits caller env Then it stays pass-through and never gains root-workspace-exclusive env or CLI", async () => {
+  test("Scenario: Given workspace_bash is a public-workspace shell When it inherits caller env Then it stays pass-through and never gains runtime-local env or CLI", async () => {
     const root = createTempRoot();
     const workspace = join(root, "workspace-a");
     mkdirSync(workspace, { recursive: true });

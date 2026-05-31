@@ -9,6 +9,7 @@ import {
   deriveEnvSkillsHome,
   deriveMultiWorkspaceSkillsHome,
   parseEnvAvatarHome,
+  parseEnvSkillsHome,
   serializeEnvAvatarHome,
   serializeEnvSkillsHome,
   WorkspaceSystemStore,
@@ -112,6 +113,10 @@ describe("Feature: workspace env capability projection", () => {
     expect(serializeEnvSkillsHome(["/repo/skills", "/avatar/skills"], { platform: "darwin" })).toBe(
       "/repo/skills;/avatar/skills",
     );
+    expect(parseEnvSkillsHome("/repo/skills:/avatar/skills", { platform: "darwin" })).toEqual([
+      "/repo/skills",
+      "/avatar/skills",
+    ]);
   });
 
   test("Scenario: Given a workspace instance with inherited Avatar home When getAvatarHome runs Then normalized paths are returned", () => {

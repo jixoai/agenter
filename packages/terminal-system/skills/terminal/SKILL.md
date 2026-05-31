@@ -25,7 +25,7 @@ Key laws:
 - A runtime does not start with a terminal by default.
 - Long-lived and interactive work belongs in terminals, not one-shot bash.
 - `terminal` is a collaborative process surface, not a root-workspace shell.
-- Shared terminals keep real-home semantics and do not inherit root-workspace-exclusive env/CLI by default, even when `cwd` starts inside the avatar root workspace.
+- Shared terminals keep real-home semantics and do not inherit runtime-local env/CLI by default, even when `cwd` starts inside the avatar root workspace.
 - `terminal list` is the lifecycle and observed-identity inspection surface. Read `processPhase`, `currentPath`, `currentTitle`, and stop facts there before inferring state from raw output.
 - `terminal create` auto-bootstraps by default. A newly created terminal may briefly expose `lifecycleTransition = bootstrapping`; wait and reread instead of firing a redundant second bootstrap.
 - Provisioned terminals do not auto-start when you read or write. Use `terminal bootstrap` explicitly.

@@ -1,4 +1,4 @@
-export type SkillsCatalogView = 'shared' | 'built-in' | 'global' | 'avatars';
+export type SkillsCatalogView = 'skills-home' | 'built-in' | 'avatars';
 
 export const SKILLS_CATALOG_VIEW_QUERY_PARAM = 'view';
 export const SKILLS_AVATAR_QUERY_PARAM = 'avatar';
@@ -14,13 +14,16 @@ const normalizeNonEmpty = (value: string | null | undefined): string | null => {
  * two durable spellings alive.
  */
 export const normalizeSkillsCatalogView = (value: string | null | undefined): SkillsCatalogView => {
-	if (value === 'built-in' || value === 'shared' || value === 'global' || value === 'avatars') {
+	if (value === 'built-in' || value === 'skills-home' || value === 'avatars') {
 		return value;
 	}
 	if (value === 'avatar') {
 		return 'avatars';
 	}
-	return 'shared';
+	if (value === 'shared' || value === 'global') {
+		return 'skills-home';
+	}
+	return 'skills-home';
 };
 
 export const readSkillsCatalogView = (searchParams: URLSearchParams): SkillsCatalogView =>
@@ -38,7 +41,7 @@ export const buildSkillsCatalogHref = (
 	const view = normalizeSkillsCatalogView(input.view);
 	const avatar = normalizeNonEmpty(input.avatar);
 	const params = new URLSearchParams();
-	if (view !== 'shared') {
+	if (view !== 'skills-home') {
 		params.set(SKILLS_CATALOG_VIEW_QUERY_PARAM, view);
 	}
 	if (view === 'avatars' && avatar) {

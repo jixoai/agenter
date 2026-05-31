@@ -113,7 +113,7 @@ import { resolveAdjacentWorkbenchTab } from '$lib/features/navigation/workbench-
 				label: 'Catalog',
 				icon: SparklesIcon,
 				title: 'Skills catalog',
-				description: 'Inspect shared, built-in, global, and avatar-private skills through one read-only workbench.',
+				description: 'Inspect SKILLS_HOME, built-in, and avatar-private skills through one read-only workbench.',
 			},
 		] satisfies WorkbenchTabItem[];
 
