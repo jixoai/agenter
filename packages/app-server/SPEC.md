@@ -16,10 +16,12 @@
 ## 2. AvatarRuntime 与 WorkspaceSystem Contract
 
 - runtime identity 由 Avatar identity 单独决定；`session.id` 就是 canonical AvatarRuntime id。
+- session id derivation and lookup APIs must be Avatar-scoped in both behavior and naming; workspace path may be stored as bootstrap metadata, but it must not be required to derive a runtime id.
 - `session.workspacePath` 只表达创建时的 bootstrap workspace，不代表 runtime 当前完整 mount 列表。
 - `session.create` / `session.start` 的 cold boot 不会自动挂 workspace、room、terminal；这些 authority 必须来自显式 durable facts。
 - 每个 runtime 固定拥有一个 principal-address root workspace：`~/.agenter/avatars/by-principal/<principalId>`。它是 avatar 的 canonical private home，不替代 dynamic workspace mounts。
 - Avatar prompt source resolution 必须优先使用 session/runtime 的 `avatarPrincipalId` canonical root；nickname alias 只用于发现和兼容迁移，不能在已知 principal 的运行时覆盖 prompt 真源。
+- app-owned assistant memory pack 与 prompt root 同轴：默认 memory roles 必须写入 `~/.agenter/avatars/by-principal/<principalId>/memory/*`，不得因为 `session.workspacePath` 或启动 cwd 是普通 project workspace 而写入 `<workspace>/.agenter/avatars/.../memory/*`。
 - 前端或其他调用方如果要知道 runtime 当前可访问哪些 workspace，必须查询 `workspace.runtimeMounts(runtimeId)`。
 - WorkspaceSystem 是 workspace access 的唯一 authority，负责：
   - mount / detach
@@ -33,6 +35,7 @@
 - Workspace asset roots 分为：
   - public: `<workspace>/.agenter/workspace/{skills,memory,tools,archive}`
   - private: `<workspace>/.agenter/avatars/by-principal/<principalId>/{skills,memory,tools,archive}`
+- Workspace private memory roots 只表达显式 workspace overlay/artifact。它们可由 WorkspaceSystem private text asset API 管理，但不得 shadow 或替代 app-owned global Avatar identity memory pack。
 - nickname alias 只用于 discoverability：
   - global: `~/.agenter/avatars/by-nickname/<nickname> -> ../by-principal/<principalId>`
   - workspace: `<workspace>/.agenter/avatars/by-nickname/<nickname> -> ../by-principal/<principalId>`

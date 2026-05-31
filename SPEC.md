@@ -27,6 +27,8 @@ Agenter 是一个 attention-first 的 Agent runtime platform。
 - Heartbeat compact boundary 是 durable ledger fact：prompt-window compaction 发生时，session ledger 必须追加 `scope=heartbeat_part` 的 `partType=compact` 边界消息，UI 不得再从 cycles 或 assistant prose 猜测上下文重开位置。
 - Heartbeat inspection 的 durable truth 是一条 merged `message_part` stream：`scope=heartbeat_part` 负责 AI-visible request/response 与 compact boundary，`scope=request_aux` 负责 deduplicated `systemPrompt / tools / config`；客户端与 Studio 不得再把 chat / request-aux / model-call 三条投影重新拼成“主 Heartbeat 时间线”。
 - AvatarRuntime identity 是 avatar-first 的：一个 Avatar 只有一个 canonical runtime/session id；workspace membership 只能通过 WorkspaceSystem mount 附着，不能再成为 runtime identity 的一部分。
+- App-owned assistant prompt 与 identity memory 也是 avatar-first 的：`AGENTER.mdx` 与默认 Memory pack 必须按 global Avatar principal root 寻址，project workspace 只能作为 cwd/mount/grant/workbench/exec/tool surface 或显式 workspace-private overlay，不能成为默认人格/关系记忆 owner。
+- `*-old` 与 `*-bak` 目录只作为参考代码或迁移快照，不属于 active workspace package/project set；根 workspace discovery、typecheck、test 与 release project 集合不得通过宽泛 glob 把它们重新纳入。
 - Room durability 的 durable truth 属于 `room-management` 边界；`message-system` 是 superadmin-bound authority/runtime，负责 Contact、source subscription、signature/proof 与对 room-management 的授权调用，不再被视为私有 room 数据库 owner。
 - Room transcript 同步必须使用 room-management 拥有的 revision 坐标：`roomRevision` 表达 room metadata/grant/read/presence 等 surface 变化，`transcriptRevision` 表达 transcript 行变化，snapshot、reverse page、transport message 与 app-server realtime `message.room.updated` 都必须携带同一套坐标；客户端收到“有变化”后必须基于该坐标重新拉取 page/snapshot，不能再依赖无版本的 room id invalidation。
 - Room 文本消息对人类 transcript 默认立即可见；`attentionState=queued` 只表示它仍欠 AI/automation attention，不再表示“先隐藏，等 attention 后再显示”。
