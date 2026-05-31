@@ -1,8 +1,8 @@
 ## 1. Alignment / Investigation
 
-- [ ] 1.1 Confirm the current `plans/plan.md` still reflects the code survey, `shell-1` DB evidence, existing OpenSpec survey, and user Q&A that approved the breaking update.
-- [ ] 1.2 Confirm the destructive cleanup assumption is already authorized by the user's "直接破坏性更新，矫正数据库结构" instruction, so no extra confirmation gate blocks implementation.
-- [ ] 1.3 Confirm each task checkbox is updated only by the agent that completed and verified that task in the current working context.
+- [x] 1.1 Confirm the current `plans/plan.md` still reflects the code survey, `shell-1` DB evidence, existing OpenSpec survey, and user Q&A that approved the breaking update.
+- [x] 1.2 Confirm the destructive cleanup assumption is already authorized by the user's "直接破坏性更新，矫正数据库结构" instruction, so no extra confirmation gate blocks implementation.
+- [x] 1.3 Confirm each task checkbox is updated only by the agent that completed and verified that task in the current working context.
 
 ## 2. BDD Contract
 
@@ -15,7 +15,7 @@
 
 ## 3. Implementation
 
-- [ ] 3.1 Run `bun run openspec:vision -- commit-check canonicalize-web-chat-resource-markdown-storage --phase apply` before app-code work starts and commit ready OpenSpec artifacts.
+- [x] 3.1 Run `bun run openspec:vision -- commit-check canonicalize-web-chat-resource-markdown-storage --phase apply` before app-code work starts and commit ready OpenSpec artifacts.
 - [ ] 3.2 Implement the WebChat Markdown serialization helper that converts pending image/file/video/comment resources into inline tokens plus footnote definition lines in raw `content`.
 - [ ] 3.3 Update app-view/shared send paths to call the Markdown serializer and stop emitting `metadata.webChatCommentResources`.
 - [ ] 3.4 Update sent-resource extraction so comment resources reconstruct from Markdown footnote definitions rather than `metadata.webChatCommentResources`.
