@@ -85,7 +85,8 @@ Durable rules:
 - inline tokens and resource tiles resolve through one resource-id keyed preview contract
 - comment resources reopen into a dedicated comment-detail stage inside the shared preview shell instead of the generic document stage
 - reopened comment detail preserves selected-text anchor context and supports explicit `view` / `edit` modes in one shared contract
-- Markdown footnotes remain an optional serialization carrier, not the primary UI metaphor
+- Markdown footnotes are the canonical storage carrier for sent WebChat image, file, video, and comment resource references
+- WebChat resource metadata such as `webChatCommentResources` is a frontend projection bug when persisted; sent resources must reconstruct from raw Markdown content plus platform attachment references
 
 ## 6. Runtime-Gated Temporary Views
 

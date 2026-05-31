@@ -49,7 +49,10 @@ const writeStaticEntry = (staticDir: string, title: string): void => {
 
 const writeStaticEnv = (staticDir: string, publicWsUrl: string): void => {
   mkdirSync(join(staticDir, "_app"), { recursive: true });
-  writeFileSync(join(staticDir, "_app", "env.js"), `export const env=${JSON.stringify({ PUBLIC_AGENTER_WS_URL: publicWsUrl })}\n`);
+  writeFileSync(
+    join(staticDir, "_app", "env.js"),
+    `export const env=${JSON.stringify({ PUBLIC_AGENTER_WS_URL: publicWsUrl })}\n`,
+  );
 };
 
 const waitFor = async (predicate: () => boolean, timeoutMs = 12_000): Promise<void> => {
@@ -204,8 +207,8 @@ describe("Feature: cli server contracts", () => {
     const source = await response.text();
 
     expect(response.status).toBe(200);
-    expect(source).toContain('ws://127.0.0.1:4580/trpc');
-    expect(source).not.toContain('ws://127.0.0.1:19190/trpc');
+    expect(source).toContain("ws://127.0.0.1:4580/trpc");
+    expect(source).not.toContain("ws://127.0.0.1:19190/trpc");
   });
 
   test("Scenario: Given packaged Studio assets with stale build-time env When no explicit public websocket URL is configured Then runtime env keeps browser location fallback available", async () => {
@@ -365,7 +368,7 @@ describe("Feature: cli server contracts", () => {
     expect(snapshot.items.some((item) => item.content === "batch hello")).toBe(true);
   });
 
-  test("Scenario: Given app-view room mode posts a message When the daemon direct endpoint handles it Then sender contact and comment metadata are preserved", async () => {
+  test("Scenario: Given app-view room mode posts a message When the daemon direct endpoint handles it Then sender contact and comment Markdown are preserved without WebChat metadata", async () => {
     const { dir } = createWorkspaceRoot();
     const handle = await startTrpcServer({
       host: "127.0.0.1",
@@ -399,9 +402,14 @@ describe("Feature: cli server contracts", () => {
           "x-agenter-room-access-token": issued.grant.accessToken,
         },
         body: JSON.stringify({
-          content: "app-view sender message",
+          content: [
+            "app-view sender message [^Comment 1]",
+            "",
+            '[^Comment 1]: [Use the compact layout](msg://app-view-room/msg-source#L2 "compact layout")',
+          ].join("\n"),
           senderContactId: "auth:kai",
           metadata: {
+            clientTraceId: "trace-1",
             webChatCommentResources: [
               {
                 id: "comment-1",
@@ -427,14 +435,10 @@ describe("Feature: cli server contracts", () => {
       accessToken: room.accessToken,
       limit: 10,
     });
-    const message = snapshot.items.find((item) => item.content === "app-view sender message");
+    const message = snapshot.items.find((item) => item.content.includes("app-view sender message"));
     expect(message?.senderContactId).toBe("auth:kai");
-    expect(message?.metadata?.webChatCommentResources).toEqual([
-      expect.objectContaining({
-        commentText: "Use the compact layout",
-        selectedText: "compact layout",
-      }),
-    ]);
+    expect(message?.content).toContain("[^Comment 1]: [Use the compact layout]");
+    expect(message?.metadata).toEqual({ clientTraceId: "trace-1" });
   });
 
   test("Scenario: Given two agenters on different ports and one shared room When agenter-B shares its terminal to agenter-A Then agenter-A accepts and both sides verify the same terminal collaboration truth", async () => {

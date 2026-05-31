@@ -1,12 +1,22 @@
 import { describe, expect, test } from "vitest";
 
-import {
-  serializeMessageSourceMarkdown,
-  type WebChatCommentResourcePayload,
-} from "../src";
+import { commentResourceToReference, serializeMessageSourceMarkdown, type WebChatCommentResourcePayload } from "../src";
 
 describe("Feature: canonical message source serialization", () => {
-  test("Scenario: Given a message with attachments and comment metadata When serializing source Then the popup source includes durable resource definitions", () => {
+  test("Scenario: Given a message with attachments and comment resources When serializing source Then the popup source includes durable Markdown definitions", () => {
+    const commentResource = {
+      id: "comment-1",
+      label: "Comment 1",
+      tokenText: "[^Comment 1]",
+      commentText: "Expose comment detail in view mode by default.",
+      sourceMessageId: 12,
+      sourceViewKey: "room-1:12",
+      sourceLineNumber: 1,
+      selectedText: "Body stays light with [^Image 1]",
+      sourceActorId: "actor:kai",
+      sourceActorLabel: "Kai",
+      sourceUri: "msg://room-1/12#L1",
+    } satisfies WebChatCommentResourcePayload;
     const source = serializeMessageSourceMarkdown({
       chatId: "room-1",
       content: "Body stays light with [^Image 1] and [^Comment 1].",
@@ -28,23 +38,7 @@ describe("Feature: canonical message source serialization", () => {
           url: "https://assets.example/resource-map.pdf",
         },
       ],
-      metadata: {
-        webChatCommentResources: [
-          {
-            id: "comment-1",
-            label: "Comment 1",
-            tokenText: "[^Comment 1]",
-            commentText: "Expose comment detail in view mode by default.",
-            sourceMessageId: 12,
-            sourceViewKey: "room-1:12",
-            sourceLineNumber: 1,
-            selectedText: "Body stays light with [^Image 1]",
-            sourceActorId: "actor:kai",
-            sourceActorLabel: "Kai",
-            sourceUri: "msg://room-1/12#L1",
-          } satisfies WebChatCommentResourcePayload,
-        ],
-      },
+      resourceReferences: [commentResourceToReference(commentResource)],
       messageId: 42,
       viewKey: "room-1:42",
       senderActorId: "actor:kai",
@@ -54,7 +48,9 @@ describe("Feature: canonical message source serialization", () => {
     expect(source).toContain("Body stays light with [^Image 1] and [^Comment 1].");
     expect(source).toContain("[^Image 1]: [!ios26-thread.png](https://assets.example/ios26-thread.png)");
     expect(source).toContain("[^File 2]: [!resource-map.pdf](https://assets.example/resource-map.pdf)");
-    expect(source).toContain("[^Comment 1]: [Expose comment detail in view mode by default.](msg://room-1/12#L1)");
+    expect(source).toContain(
+      '[^Comment 1]: [Expose comment detail in view mode by default.](msg://room-1/12#L1 "Body stays light with [^Image 1]")',
+    );
   });
 
   test("Scenario: Given a message that already contains footnote definitions When serializing source Then definitions are not duplicated", () => {

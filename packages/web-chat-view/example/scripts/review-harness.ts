@@ -243,24 +243,11 @@ const seedMessages = (
     chatId,
     accessToken: owner.token,
     senderContactId: owner.actorId,
-    content: "I left one line note on the lighting sentence so the warmer pendant callout stays attached to the right line.",
-    metadata: {
-      webChatCommentResources: [
-        {
-          id: "seed-comment-1",
-          label: "Comment 1",
-          tokenText: "[^Comment 1]",
-          commentText: "Keep the pendant row warmer than the stair landing so the entry still reads as one continuous threshold.",
-          sourceMessageId: first.messageId,
-          sourceViewKey: typeof first.messageId === "number" ? `message-${first.messageId}` : "seed-message-1",
-          sourceLineNumber: 2,
-          selectedText: "The dusk photo is in [^Image 1], and the circulation markup is in [^File 2].",
-          sourceActorId: owner.actorId,
-          sourceActorLabel: owner.name,
-          sourceUri: typeof first.messageId === "number" ? `msg://${chatId}/${first.messageId}#L4` : undefined,
-        },
-      ],
-    },
+    content: [
+      "I left one line note on the lighting sentence so the warmer pendant callout stays attached to the right line. [^Comment 1]",
+      "",
+      `[^Comment 1]: [Keep the pendant row warmer than the stair landing so the entry still reads as one continuous threshold.](msg://${chatId}/${first.messageId}#L4 "The dusk photo is in [^Image 1], and the circulation markup is in [^File 2].")`,
+    ].join("\n"),
   });
   plane.sendAuthorized({
     chatId,

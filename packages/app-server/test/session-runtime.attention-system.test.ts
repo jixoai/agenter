@@ -2107,14 +2107,20 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         accessToken: kzfRoom?.accessToken ?? "",
         senderContactId: "auth:kzf",
         from: "kzf",
-        content: "status update",
+        content: [
+          "status update [^Comment 1]",
+          "",
+          '[^Comment 1]: [Check compact layout before shipping](msg://room-source/42#L2 "compact layout")',
+        ].join("\n"),
       });
 
       const inputs = await janeInternal.collectLoopInputs();
       expect(getBootstrapInput(inputs)).toBeDefined();
-      const messageFact = parseMessageFactContext(
-        getActiveItems(janeInternal).find((item) => item.detail?.value.includes("status update"))?.detail?.value,
-      );
+      const activeMessageDetail = getActiveItems(janeInternal).find((item) =>
+        item.detail?.value.includes("status update"),
+      )?.detail?.value;
+      const messageFact = parseMessageFactContext(activeMessageDetail);
+      expect(activeMessageDetail).toContain("Check compact layout before shipping");
       expect(messageFact?.room?.kind).toBe("room");
       expect(messageFact?.room?.contextId).toBe(room.contextId);
       expect(messageFact?.room?.focused).toBe(true);
@@ -2123,7 +2129,7 @@ describe("Feature: session runtime attention-system loop inputs", () => {
         senderLabel: "kzf",
         kind: "text",
       });
-      expect(messageFact?.message?.sourceRef).toContain(`${room.chatId}/`);
+      expect(messageFact?.message?.sourceRef).toContain(`room:${room.chatId}#`);
 
       const projected = await janeInternal.readMessageChannelForTooling({
         chatId: room.chatId,

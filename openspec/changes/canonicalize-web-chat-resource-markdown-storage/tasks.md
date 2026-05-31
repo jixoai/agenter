@@ -6,31 +6,31 @@
 
 ## 2. BDD Contract
 
-- [ ] 2.1 Add or invert a room-send behavior test: Given WebChat sends comment resource data When the backend persists the message Then `content` contains the Markdown footnote definition and `metadata_json` does not contain `webChatCommentResources`.
-- [ ] 2.2 Add a backend boundary test: Given a caller submits forbidden `webChat*Resources` metadata When a room message is written Then snapshot/page/transport-visible message metadata omits that key.
-- [ ] 2.3 Add a WebChat resource parser test: Given pure Markdown content with a `[^Comment N]` token and definition When sent resources are resolved Then the comment resource opens from Markdown without metadata.
-- [ ] 2.4 Add a WebChat send-path test: Given pending source-comment state When app-view builds the send payload Then it emits canonical Markdown content and no `webChatCommentResources` metadata.
-- [ ] 2.5 Add a legacy cleanup test: Given a polluted row with inline token plus `metadata.webChatCommentResources` When repair runs twice Then the first run appends one canonical Markdown definition and strips metadata, and the second run is a no-op.
-- [ ] 2.6 Add a runtime ingress regression check: Given repaired/pure Markdown room content When runtime reads room messages Then the comment body is available through `message.content`.
+- [x] 2.1 Add or invert a room-send behavior test: Given WebChat sends comment resource data When the backend persists the message Then `content` contains the Markdown footnote definition and `metadata_json` does not contain `webChatCommentResources`.
+- [x] 2.2 Add a backend boundary test: Given a caller submits forbidden `webChat*Resources` metadata When a room message is written Then snapshot/page/transport-visible message metadata omits that key.
+- [x] 2.3 Add a WebChat resource parser test: Given pure Markdown content with a `[^Comment N]` token and definition When sent resources are resolved Then the comment resource opens from Markdown without metadata.
+- [x] 2.4 Add a WebChat send-path test: Given pending source-comment state When app-view builds the send payload Then it emits canonical Markdown content and no `webChatCommentResources` metadata.
+- [x] 2.5 Add a legacy cleanup test: Given a polluted row with inline token plus `metadata.webChatCommentResources` When repair runs twice Then the first run appends one canonical Markdown definition and strips metadata, and the second run is a no-op.
+- [x] 2.6 Add a runtime ingress regression check: Given repaired/pure Markdown room content When runtime reads room messages Then the comment body is available through `message.content`.
 
 ## 3. Implementation
 
 - [x] 3.1 Run `bun run openspec:vision -- commit-check canonicalize-web-chat-resource-markdown-storage --phase apply` before app-code work starts and commit ready OpenSpec artifacts.
-- [ ] 3.2 Implement the WebChat Markdown serialization helper that converts pending image/file/video/comment resources into inline tokens plus footnote definition lines in raw `content`.
-- [ ] 3.3 Update app-view/shared send paths to call the Markdown serializer and stop emitting `metadata.webChatCommentResources`.
-- [ ] 3.4 Update sent-resource extraction so comment resources reconstruct from Markdown footnote definitions rather than `metadata.webChatCommentResources`.
-- [ ] 3.5 Implement a typed backend metadata sanitizer that removes forbidden WebChat resource projection keys at the room write boundary without widening the metadata bag with `any`.
-- [ ] 3.6 Implement an idempotent legacy repair path for existing room DB rows that converts `metadata.webChatCommentResources` into Markdown footnote definitions and removes the legacy metadata key.
-- [ ] 3.7 Update long-lived package/root specs or implementation docs that still describe Markdown footnotes as optional rather than canonical storage for WebChat resources.
-- [ ] 3.8 Add concise intent comments only at the critical effect points where hidden metadata is stripped or legacy rows are rewritten, explaining that `message.content` is the durable truth.
-- [ ] 3.9 Update task checkboxes only after each current-context implementation and verification slice is complete, and commit matching task/code/BDD evidence.
+- [x] 3.2 Implement the WebChat Markdown serialization helper that converts pending image/file/video/comment resources into inline tokens plus footnote definition lines in raw `content`.
+- [x] 3.3 Update app-view/shared send paths to call the Markdown serializer and stop emitting `metadata.webChatCommentResources`.
+- [x] 3.4 Update sent-resource extraction so comment resources reconstruct from Markdown footnote definitions rather than `metadata.webChatCommentResources`.
+- [x] 3.5 Implement a typed backend metadata sanitizer that removes forbidden WebChat resource projection keys at the room write boundary without widening the metadata bag with `any`.
+- [x] 3.6 Implement an idempotent legacy repair path for existing room DB rows that converts `metadata.webChatCommentResources` into Markdown footnote definitions and removes the legacy metadata key.
+- [x] 3.7 Update long-lived package/root specs or implementation docs that still describe Markdown footnotes as optional rather than canonical storage for WebChat resources.
+- [x] 3.8 Add concise intent comments only at the critical effect points where hidden metadata is stripped or legacy rows are rewritten, explaining that `message.content` is the durable truth.
+- [x] 3.9 Update task checkboxes only after each current-context implementation and verification slice is complete, and commit matching task/code/BDD evidence.
 
 ## 4. Verification
 
-- [ ] 4.1 Run the targeted backend/message tests that cover room send metadata stripping and legacy repair.
-- [ ] 4.2 Run the targeted `@agenter/web-chat-view` tests that cover Markdown resource parsing and send serialization.
-- [ ] 4.3 Run the runtime ingress regression check proving comment text reaches model-facing content through `message.content`.
-- [ ] 4.4 Run `bun run openspec:vision -- validate canonicalize-web-chat-resource-markdown-storage`.
+- [x] 4.1 Run the targeted backend/message tests that cover room send metadata stripping and legacy repair.
+- [x] 4.2 Run the targeted `@agenter/web-chat-view` tests that cover Markdown resource parsing and send serialization.
+- [x] 4.3 Run the runtime ingress regression check proving comment text reaches model-facing content through `message.content`.
+- [x] 4.4 Run `bun run openspec:vision -- validate canonicalize-web-chat-resource-markdown-storage`.
 - [ ] 4.5 Run `bun run openspec:vision -- commit-check canonicalize-web-chat-resource-markdown-storage --phase self-review` before writing final review evidence.
 
 ## 5. Self-Review Loop

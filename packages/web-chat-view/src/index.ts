@@ -1,4 +1,26 @@
+export { default as CommentAnchorBadge } from "./comment-anchor-badge.svelte";
+export { default as CommentInspector } from "./comment-inspector.svelte";
+export { default as CommentResourceLayer } from "./comment-resource-layer.svelte";
 export { default as DefaultWebChatComposer } from "./default-composer.svelte";
+export { default as MessageSourcePopup } from "./message-source-popup.svelte";
+export { resolveMessageIdentityKey, toWebChatMessage, toWebChatMessages } from "./message-utils";
+export {
+  attachmentToResourceReference,
+  buildCommentResourceSourceUri,
+  commentResourceToReference,
+  createCommentResourcePayload,
+  formatAssetResourceDefinition,
+  formatCommentResourceDefinition,
+  mergeResourceReferences,
+  normalizeCommentResourcePayload,
+  normalizeResourceReferenceQuery,
+  parseAssetResourceDefinition,
+  parseCommentFootnoteDefinition,
+  pendingAssetToResourceReference,
+  resolveMessageResourceReferences,
+  resourceReferenceMatchesQuery,
+  serializeMessageSourceMarkdown,
+} from "./resource-contract";
 export type {
   WebChatActorPresentation,
   WebChatActorResolveInput,
@@ -21,11 +43,11 @@ export type {
   WebChatConnectionState,
   WebChatCursor,
   WebChatMessage,
-  WebChatMessageInput,
   WebChatMessageAction,
-  WebChatMessageReference,
+  WebChatMessageInput,
   WebChatMessageReadActor,
   WebChatMessageReadProgress,
+  WebChatMessageReference,
   WebChatMessageRenderInput,
   WebChatNotice,
   WebChatResourceReference,
@@ -34,30 +56,7 @@ export type {
   WebChatSocketFactory,
   WebChatSocketLike,
   WebChatTransportMessage,
-  WebChatVisibleMessageFact,
   WebChatViewHostProps,
+  WebChatVisibleMessageFact,
 } from "./types";
-export { resolveMessageIdentityKey, toWebChatMessage, toWebChatMessages } from "./message-utils";
-export { default as CommentAnchorBadge } from "./comment-anchor-badge.svelte";
-export { default as CommentInspector } from "./comment-inspector.svelte";
-export { default as CommentResourceLayer } from "./comment-resource-layer.svelte";
-export { default as MessageSourcePopup } from "./message-source-popup.svelte";
-export {
-  attachmentToResourceReference,
-  extractCommentResourcePayloads,
-  buildCommentResourceSourceUri,
-  commentResourceToReference,
-  createCommentResourcePayload,
-  formatAssetResourceDefinition,
-  formatCommentResourceDefinition,
-  mergeResourceReferences,
-  normalizeCommentResourcePayload,
-  normalizeResourceReferenceQuery,
-  parseAssetResourceDefinition,
-  parseCommentFootnoteDefinition,
-  pendingAssetToResourceReference,
-  resolveMessageResourceReferences,
-  resourceReferenceMatchesQuery,
-  serializeMessageSourceMarkdown,
-} from "./resource-contract";
 export { default as WebChatView, default as WebChatViewHost } from "./web-chat-view-host.svelte";

@@ -1,5 +1,6 @@
 import type { MessageAttachment, MessageSnapshot } from "@agenter/message-system";
-import type { WebChatActorPresentation, WebChatComposerSubmitPayload } from "@agenter/web-chat-view";
+import { commentResourceToReference, serializeMessageSourceMarkdown } from "../../../src/resource-contract";
+import type { WebChatActorPresentation, WebChatComposerSubmitPayload } from "../../../src/types";
 
 import type {
   ReviewAssetUploadResponse,
@@ -45,11 +46,15 @@ export const fetchReviewChannel = async (profile: ReviewProfile): Promise<Review
     };
   }
 
-  const response = await fetch(buildApiUrl(`/api/review/channel?${new URLSearchParams({
-    transportUrl: profile.transportUrl,
-    accessToken: profile.accessToken,
-    viewer: profile.viewerContactId,
-  }).toString()}`));
+  const response = await fetch(
+    buildApiUrl(
+      `/api/review/channel?${new URLSearchParams({
+        transportUrl: profile.transportUrl,
+        accessToken: profile.accessToken,
+        viewer: profile.viewerContactId,
+      }).toString()}`,
+    ),
+  );
   if (!response.ok) {
     throw new Error(await readError(response));
   }
@@ -69,13 +74,13 @@ export const fetchReviewPeople = async (profile: ReviewProfile): Promise<ReviewP
     };
   }
 
-	const response = await fetch(
-		buildApiUrl(
-			`/api/review/people?${new URLSearchParams({
-				viewer: profile.viewerContactId,
-			}).toString()}`,
-		),
-	);
+  const response = await fetch(
+    buildApiUrl(
+      `/api/review/people?${new URLSearchParams({
+        viewer: profile.viewerContactId,
+      }).toString()}`,
+    ),
+  );
   if (!response.ok) {
     throw new Error(await readError(response));
   }
@@ -107,22 +112,23 @@ export const submitReviewMessage = async (
   payload: WebChatComposerSubmitPayload,
 ): Promise<ReviewSendResponse> => {
   const attachments = payload.assets.length > 0 ? await uploadReviewAssets(profile, payload.assets) : [];
-  const response = await fetch(buildApiUrl(`/api/rooms/${encodeURIComponent(resolveChatId(profile.transportUrl))}/messages`), {
+  const chatId = resolveChatId(profile.transportUrl);
+  const content = serializeMessageSourceMarkdown({
+    chatId,
+    content: payload.text.trim(),
+    attachments,
+    resourceReferences: (payload.commentResources ?? []).map(commentResourceToReference),
+  }).trim();
+  const response = await fetch(buildApiUrl(`/api/rooms/${encodeURIComponent(chatId)}/messages`), {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-agenter-room-access-token": profile.accessToken,
     },
     body: JSON.stringify({
-      content: payload.text.trim(),
+      content,
       attachments,
       senderContactId: profile.viewerContactId,
-      metadata:
-        (payload.commentResources?.length ?? 0) > 0
-          ? {
-              webChatCommentResources: payload.commentResources,
-            }
-          : undefined,
     }),
   });
   if (!response.ok) {
@@ -136,13 +142,16 @@ const uploadReviewAssets = async (profile: ReviewProfile, files: readonly File[]
   for (const file of files) {
     form.append("files", file);
   }
-  const response = await fetch(buildApiUrl(`/api/rooms/${encodeURIComponent(resolveChatId(profile.transportUrl))}/assets`), {
-    method: "POST",
-    headers: {
-      "x-agenter-room-access-token": profile.accessToken,
+  const response = await fetch(
+    buildApiUrl(`/api/rooms/${encodeURIComponent(resolveChatId(profile.transportUrl))}/assets`),
+    {
+      method: "POST",
+      headers: {
+        "x-agenter-room-access-token": profile.accessToken,
+      },
+      body: form,
     },
-    body: form,
-  });
+  );
   if (!response.ok) {
     throw new Error(await readError(response));
   }

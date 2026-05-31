@@ -7,6 +7,7 @@ import {
   formatCommentResourceDefinition,
   normalizeCommentResourcePayload,
   parseCommentFootnoteDefinition,
+  resolveMessageResourceReferences,
 } from "../src";
 
 describe("Feature: comment resource serialization contract", () => {
@@ -41,6 +42,45 @@ describe("Feature: comment resource serialization contract", () => {
     expect(parseCommentFootnoteDefinition(line)).toEqual({
       label: "Comment 1",
       commentText: "Tighten the header density",
+      sourceUri: "msg://room-1/42#L2",
+    });
+  });
+
+  test("Scenario: Given pure Markdown comment footnotes When resolving sent resources Then comment detail is reconstructed without metadata", () => {
+    const resources = resolveMessageResourceReferences({
+      content: [
+        "Review [^Comment 1] before shipping.",
+        "",
+        '[^Comment 1]: [Tighten the header density](msg://room-1/42#L2 "header density")',
+      ].join("\n"),
+      metadata: {
+        webChatCommentResources: [
+          {
+            id: "legacy-comment-1",
+            label: "Comment 1",
+            tokenText: "[^Comment 1]",
+            commentText: "Wrong hidden payload",
+            sourceViewKey: "legacy",
+            sourceLineNumber: 1,
+            selectedText: "legacy",
+          },
+        ],
+      },
+    });
+
+    expect(resources).toHaveLength(1);
+    expect(resources[0]).toMatchObject({
+      id: "comment-1",
+      label: "Comment 1",
+      tokenText: "[^Comment 1]",
+      kind: "comment",
+      commentText: "Tighten the header density",
+    });
+    expect(resources[0]?.commentAnchor).toMatchObject({
+      sourceMessageId: 42,
+      sourceViewKey: "room-1:42",
+      sourceLineNumber: 2,
+      selectedText: "header density",
       sourceUri: "msg://room-1/42#L2",
     });
   });

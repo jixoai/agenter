@@ -3,6 +3,7 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import { isPrincipalId } from "@agenter/principal-crypto";
 import { Database } from "bun:sqlite";
+import { repairLegacyWebChatResourceMetadata, sanitizeRoomMessageMetadata } from "./message-metadata";
 import {
   pruneLegacyMessageControlDbFiles,
   resolveMessageQueryDbPath,
@@ -18,18 +19,18 @@ import type {
 } from "./message-query-types";
 
 import type {
-  MessageContactId,
-  MessageContactRoomStateRecord,
-  MessageContactStateRecord,
   MessageAppendInput,
   MessageChannelGrantRecord,
   MessageChannelPatchInput,
   MessageChannelRecord,
+  MessageContactId,
   MessageContactRecord,
   MessageContactRequestCreateInput,
   MessageContactRequestDirection,
   MessageContactRequestRecord,
   MessageContactRequestState,
+  MessageContactRoomStateRecord,
+  MessageContactStateRecord,
   MessageContactUpsertInput,
   MessageCreateInput,
   MessageEditInput,
@@ -632,7 +633,10 @@ export class MessageDb {
     return channel;
   }
 
-  repairMessageContactIds(chatId: string, contactIdMap: ReadonlyMap<MessageContactId, MessageContactId>): { changed: boolean } {
+  repairMessageContactIds(
+    chatId: string,
+    contactIdMap: ReadonlyMap<MessageContactId, MessageContactId>,
+  ): { changed: boolean } {
     if (contactIdMap.size === 0) {
       return { changed: false };
     }
@@ -715,7 +719,9 @@ export class MessageDb {
         const targetState = this.getContactRoomState(chatId, toContactId);
         const nextState = this.deriveRepairedContactRoomState(chatId, toContactId, messages, sourceState, targetState);
         if (sourceState) {
-          this.db.query(`delete from contact_room_state where chat_id = ? and contact_id = ?`).run(chatId, fromContactId);
+          this.db
+            .query(`delete from contact_room_state where chat_id = ? and contact_id = ?`)
+            .run(chatId, fromContactId);
           changed = true;
         }
         if (!nextState) {
@@ -1334,7 +1340,10 @@ export class MessageDb {
     return this.getSourceSubscription(ownerContactId, input.sourceId)!;
   }
 
-  getSourceSubscription(ownerContactId: MessageContactId, sourceId: string): MessageSourceSubscriptionRecord | undefined {
+  getSourceSubscription(
+    ownerContactId: MessageContactId,
+    sourceId: string,
+  ): MessageSourceSubscriptionRecord | undefined {
     const row = this.db
       .query(
         `select owner_contact_id, source_id, label, endpoint, auth_token, callback_source_id, callback_endpoint, created_at, updated_at, metadata_json
@@ -1684,7 +1693,9 @@ export class MessageDb {
     const readContactIds = normalizeContactIds(input.readContactIds ?? []);
     const unreadContactIds = normalizeContactIds(input.unreadContactIds ?? []);
     const sourceSystemId =
-      input.sourceSystemId ?? this.getChannel(input.chatId)?.createdBySystemId ?? this.getChannel(input.chatId)?.superKey;
+      input.sourceSystemId ??
+      this.getChannel(input.chatId)?.createdBySystemId ??
+      this.getChannel(input.chatId)?.superKey;
     if (!sourceSystemId) {
       throw new Error(`room message source system is missing for channel: ${input.chatId}`);
     }
@@ -1732,7 +1743,7 @@ export class MessageDb {
                 visibleAt,
                 toJson(readContactIds),
                 toJson(unreadContactIds),
-                toJson(input.metadata ?? {}),
+                toJson(sanitizeRoomMessageMetadata(input.metadata)),
                 toJson(input.attachments ?? []),
                 toJson(input.payload ?? {}),
               );
@@ -2092,7 +2103,9 @@ export class MessageDb {
     return this.pageActiveVisibleMessages(chatId, { limit: 1 }).items.at(-1);
   }
 
-  markMessagesReadUpTo(input: { chatId: string; contactId: MessageContactId; targetRowId: number }): { changed: boolean } {
+  markMessagesReadUpTo(input: { chatId: string; contactId: MessageContactId; targetRowId: number }): {
+    changed: boolean;
+  } {
     const roomDb = this.getRoomDb(input.chatId, false);
     if (!roomDb) {
       return { changed: false };
@@ -2452,7 +2465,9 @@ export class MessageDb {
       )
       .all() as Array<Parameters<typeof mapContactRoomState>[0]>;
     const contactIds = (
-      this.db.query(`select contact_id from contact_state order by contact_id asc`).all() as Array<{ contact_id: string }>
+      this.db.query(`select contact_id from contact_state order by contact_id asc`).all() as Array<{
+        contact_id: string;
+      }>
     ).map((row) => row.contact_id as MessageContactId);
     if (roomStateRows.length === 0 && contactIds.length === 0) {
       return;
@@ -2465,7 +2480,10 @@ export class MessageDb {
         messagesByChat.set(current.chatId, messages);
         this.reconcileContactRoomStateFromMessages(current.chatId, current.contactId, messages);
       }
-      for (const contactId of new Set([...contactIds, ...roomStateRows.map((row) => row.contact_id as MessageContactId)])) {
+      for (const contactId of new Set([
+        ...contactIds,
+        ...roomStateRows.map((row) => row.contact_id as MessageContactId),
+      ])) {
         this.reconcileContactUnreadTotal(contactId);
       }
     });
@@ -2680,7 +2698,7 @@ export class MessageDb {
     const roomDb = new Database(filePath, { create: true, strict: true });
     roomDb.exec(`pragma foreign_keys = on;`);
     roomDb.exec(`pragma journal_mode = WAL;`);
-    this.migrateRoomDb(roomDb);
+    this.migrateRoomDb(roomDb, chatId);
     this.roomDbs.set(chatId, roomDb);
     return roomDb;
   }
@@ -2831,7 +2849,38 @@ export class MessageDb {
     ).map((row) => row.chat_id);
   }
 
-  private migrateRoomDb(roomDb: Database): void {
+  private repairLegacyWebChatResourceMetadataRows(roomDb: Database, chatId: string): void {
+    const rows = roomDb
+      .query(
+        `select id, content, metadata_json
+         from chat_message
+         where metadata_json like '%webChat%Resources%'`,
+      )
+      .all() as Array<{ id: number; content: string; metadata_json: string | null }>;
+    if (rows.length === 0) {
+      return;
+    }
+    const update = roomDb.query(
+      `update chat_message
+       set content = ?, metadata_json = ?
+       where id = ?`,
+    );
+    roomDb.transaction(() => {
+      for (const row of rows) {
+        const repaired = repairLegacyWebChatResourceMetadata({
+          chatId,
+          content: row.content,
+          metadata: parseJson<Record<string, unknown>>(row.metadata_json, {}),
+        });
+        if (repaired.changed) {
+          // Migration-only repair: `message.content` is the durable resource truth, not WebChat metadata.
+          update.run(repaired.content, toJson(repaired.metadata), row.id);
+        }
+      }
+    })();
+  }
+
+  private migrateRoomDb(roomDb: Database, chatId: string): void {
     const userVersionRow = roomDb.query(`pragma user_version`).get() as { user_version?: number } | null;
     const currentSchemaVersion = userVersionRow?.user_version ?? 0;
     const hasLegacyMessageTable = this.hasTableIn(roomDb, "chat_message");
@@ -2888,7 +2937,9 @@ export class MessageDb {
     if (!hasClientMessageId) {
       roomDb.exec(`alter table chat_message add column client_message_id text;`);
     }
-    const followUpColumns = roomDb.query(`pragma table_info(chat_message_follow_up_task)`).all() as Array<{ name: string }>;
+    const followUpColumns = roomDb.query(`pragma table_info(chat_message_follow_up_task)`).all() as Array<{
+      name: string;
+    }>;
     if (!followUpColumns.some((column) => column.name === "attention_root")) {
       roomDb.exec(`alter table chat_message_follow_up_task add column attention_root text not null default '';`);
     }
@@ -2906,6 +2957,7 @@ export class MessageDb {
     roomDb.exec(`update chat_message set updated_at = coalesce(updated_at, created_at);`);
     roomDb.exec(`update chat_message set read_contact_ids_json = coalesce(read_contact_ids_json, '[]');`);
     roomDb.exec(`update chat_message set unread_contact_ids_json = coalesce(unread_contact_ids_json, '[]');`);
+    this.repairLegacyWebChatResourceMetadataRows(roomDb, chatId);
     roomDb.exec(`pragma user_version = ${ROOM_MESSAGE_DB_SCHEMA_VERSION};`);
   }
 

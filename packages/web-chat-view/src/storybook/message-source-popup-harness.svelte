@@ -27,7 +27,9 @@
     content: [
       "# Review checklist",
       "",
-      "Use lightweight inline tokens like `[^Image 1]` inside the body.",
+      "Use lightweight inline tokens like `[^Image 1]` inside the body. [^Comment 1]",
+      "",
+      '[^Comment 1]: [Expose comment detail in view mode by default.](msg://room-1/12#L3 "Use lightweight inline tokens like `[^Image 1]` inside the body.")',
     ].join("\n"),
     attachments: [
       {
@@ -47,23 +49,7 @@
         url: "https://assets.example/resource-map.pdf",
       },
     ],
-    metadata: {
-      webChatCommentResources: [
-        {
-          id: "comment-1",
-          label: "Comment 1",
-          tokenText: "[^Comment 1]",
-          commentText: "Expose comment detail in view mode by default.",
-          sourceMessageId: 12,
-          sourceViewKey: "room-1:12",
-          sourceLineNumber: 3,
-          selectedText: "Use lightweight inline tokens like `[^Image 1]` inside the body.",
-          sourceActorId: "auth:kai",
-          sourceActorLabel: "Kai",
-          sourceUri: "msg://room-1/12#L3",
-        },
-      ],
-    },
+    metadata: {},
     createdAt: new Date("2026-05-03T09:12:00Z").getTime(),
     updatedAt: new Date("2026-05-03T09:12:00Z").getTime(),
     readContactIds: [],

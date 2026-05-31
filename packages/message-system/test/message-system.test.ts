@@ -7,7 +7,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AttentionSystem } from "@agenter/attention-system";
-import { MessageControlPlane, resolveMessageControlDbPath, type MessageTransportServerMessage } from "../src";
+import {
+  MessageControlPlane,
+  ROOM_MESSAGE_DB_DIRNAME,
+  ROOM_MESSAGE_DB_PREFIX,
+  resolveMessageControlDbPath,
+  type MessageTransportServerMessage,
+} from "../src";
 
 const createPrincipal = (): PrincipalId => generatePrincipalKeyPair().principalId;
 
@@ -393,6 +399,92 @@ describe("Feature: message-chat-control-plane", () => {
       roomRevision: String(Number(before.roomRevision) + 2),
       transcriptRevision: String(Number(before.transcriptRevision) + 1),
     });
+  });
+
+  test("Scenario: Given WebChat resource metadata When a room message is written Then backend metadata keeps only platform facts", () => {
+    const plane = createPlane();
+    const room = createRoom(plane);
+
+    const sent = plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      from: "Kai",
+      content: "[^Comment 1]\n\n[^Comment 1]: [Use compact layout](msg://room/1#L2)",
+      metadata: {
+        clientTraceId: "trace-1",
+        webChatCommentResources: [
+          {
+            label: "Comment 1",
+            commentText: "Use compact layout",
+          },
+        ],
+      },
+    });
+
+    expect(sent.metadata).toEqual({ clientTraceId: "trace-1" });
+    const snapshot = plane.snapshotAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+    });
+    expect(snapshot.items.find((item) => item.messageId === sent.messageId)?.metadata).toEqual({
+      clientTraceId: "trace-1",
+    });
+  });
+
+  test("Scenario: Given a legacy WebChat comment metadata row When room DB opens Then content is repaired to Markdown once", () => {
+    const harness = createPlaneHarness();
+    const room = createRoom(harness.plane);
+    const sent = harness.plane.sendAuthorized({
+      chatId: room.chatId,
+      accessToken: room.accessToken,
+      from: "Kai",
+      content: "[^Comment 1]",
+    });
+    harness.plane.close();
+
+    const roomDbPath = join(
+      harness.root,
+      ".message",
+      ROOM_MESSAGE_DB_DIRNAME,
+      `${ROOM_MESSAGE_DB_PREFIX}${room.chatId}.db`,
+    );
+    const roomDb = new Database(roomDbPath);
+    roomDb.query(`update chat_message set metadata_json = ? where id = ?`).run(
+      JSON.stringify({
+        webChatCommentResources: [
+          {
+            label: "Comment 1",
+            commentText: "Use compact layout",
+            sourceUri: "msg://room-source/42#L2",
+            selectedText: "compact layout",
+          },
+        ],
+      }),
+      sent.messageId,
+    );
+    roomDb.close();
+
+    const reopened = new MessageControlPlane({
+      dbPath: harness.dbPath,
+      superadminContactId: harness.superadminContactId,
+    });
+    const repaired = reopened
+      .snapshotAuthorized({ chatId: room.chatId, accessToken: room.accessToken })
+      .items.find((item) => item.messageId === sent.messageId);
+    expect(repaired?.content).toContain('[^Comment 1]: [Use compact layout](msg://room-source/42#L2 "compact layout")');
+    expect(repaired?.metadata?.webChatCommentResources).toBeUndefined();
+    reopened.close();
+
+    const reopenedAgain = new MessageControlPlane({
+      dbPath: harness.dbPath,
+      superadminContactId: harness.superadminContactId,
+    });
+    const repairedAgain = reopenedAgain
+      .snapshotAuthorized({ chatId: room.chatId, accessToken: room.accessToken })
+      .items.find((item) => item.messageId === sent.messageId);
+    expect(repairedAgain?.content.match(/\[\^Comment 1\]:/gu)).toHaveLength(1);
+    expect(repairedAgain?.metadata?.webChatCommentResources).toBeUndefined();
+    reopenedAgain.close();
   });
 
   test("Scenario: Given readonly member and admin room grants When authorized APIs run Then contact-bound access follows the room matrix", () => {

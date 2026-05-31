@@ -1,11 +1,7 @@
 import type { MessageAttachment, MessageAttachmentKind } from "@agenter/message-system/types";
 
 import type { PendingAsset } from "./composer/pending-assets";
-import type {
-  WebChatCommentResourcePayload,
-  WebChatCommentResourceAnchor,
-  WebChatResourceReference,
-} from "./types";
+import type { WebChatCommentResourceAnchor, WebChatCommentResourcePayload, WebChatResourceReference } from "./types";
 
 const FALLBACK_RESOURCE_LABEL: Record<MessageAttachmentKind, string> = {
   image: "Image",
@@ -79,10 +75,7 @@ export const attachmentToResourceReference = (
   };
 };
 
-export const pendingAssetToResourceReference = (
-  asset: PendingAsset,
-  index: number,
-): WebChatResourceReference => {
+export const pendingAssetToResourceReference = (asset: PendingAsset, index: number): WebChatResourceReference => {
   const label = buildAssetLabel(asset.kind, index + 1);
   return {
     id: asset.id,
@@ -103,9 +96,7 @@ export const pendingAssetToResourceReference = (
   };
 };
 
-export const commentResourceToReference = (
-  input: WebChatCommentResourcePayload,
-): WebChatResourceReference => ({
+export const commentResourceToReference = (input: WebChatCommentResourcePayload): WebChatResourceReference => ({
   id: input.id,
   label: input.label,
   tokenText: input.tokenText,
@@ -129,17 +120,6 @@ export const commentResourceToReference = (
     ),
   }),
 });
-
-const readRawCommentResources = (value: unknown): readonly unknown[] => {
-  if (Array.isArray(value)) {
-    return value;
-  }
-  if (!value || typeof value !== "object") {
-    return [];
-  }
-  const candidate = value as { webChatCommentResources?: unknown };
-  return Array.isArray(candidate.webChatCommentResources) ? candidate.webChatCommentResources : [];
-};
 
 export const normalizeCommentResourcePayload = (
   value: unknown,
@@ -194,20 +174,6 @@ export const normalizeCommentResourcePayload = (
   };
 };
 
-export const extractCommentResourcePayloads = (
-  value: unknown,
-  fallback: Partial<
-    Pick<
-      WebChatCommentResourcePayload,
-      "sourceMessageId" | "sourceViewKey" | "sourceActorId" | "sourceActorLabel" | "sourceUri"
-    >
-  > = {},
-): WebChatCommentResourcePayload[] =>
-  readRawCommentResources(value).flatMap((resource) => {
-    const normalized = normalizeCommentResourcePayload(resource, fallback);
-    return normalized ? [normalized] : [];
-  });
-
 export const createCommentResourcePayload = (
   input: Omit<WebChatCommentResourcePayload, "id" | "label" | "tokenText"> & {
     index: number;
@@ -237,6 +203,7 @@ type ParsedCommentFootnote = {
   label: string;
   commentText: string;
   sourceUri: string;
+  selectedText?: string;
 };
 
 type ParsedAssetFootnote = {
@@ -246,18 +213,19 @@ type ParsedAssetFootnote = {
 };
 
 const COMMENT_FOOTNOTE_PATTERN =
-  /^\[\^(Comment\s+\d+)\]:\s*\[(.+?)\]\((msg:\/\/[^\s)]+)\)\s*$/u;
-const ASSET_FOOTNOTE_PATTERN =
-  /^\[\^((?:Image|Video|File)\s+\d+)\]:\s*\[!(.+?)\]\(([^)\s]+)\)\s*$/u;
+  /^\[\^(Comment\s+\d+)\]:\s*\[(.+?)\]\((msg:\/\/[^\s)]+)(?:\s+"((?:\\.|[^"])*)")?\)\s*$/u;
+const ASSET_FOOTNOTE_PATTERN = /^\[\^((?:Image|Video|File)\s+\d+)\]:\s*\[!(.+?)\]\(([^)\s]+)\)\s*$/u;
 
-export const parseCommentFootnoteDefinition = (
-  line: string,
-): ParsedCommentFootnote | null => {
+const unescapeMarkdownTitle = (value: string): string => value.replace(/\\(["\\])/gu, "$1");
+
+const escapeMarkdownTitle = (value: string): string => value.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"');
+
+export const parseCommentFootnoteDefinition = (line: string): ParsedCommentFootnote | null => {
   const match = COMMENT_FOOTNOTE_PATTERN.exec(line.trim());
   if (!match) {
     return null;
   }
-  const [, label, commentText, sourceUri] = match;
+  const [, label, commentText, sourceUri, selectedText] = match;
   if (!label || !commentText || !sourceUri) {
     return null;
   }
@@ -265,12 +233,11 @@ export const parseCommentFootnoteDefinition = (
     label,
     commentText,
     sourceUri,
+    selectedText: selectedText ? unescapeMarkdownTitle(selectedText) : undefined,
   };
 };
 
-export const parseAssetResourceDefinition = (
-  line: string,
-): ParsedAssetFootnote | null => {
+export const parseAssetResourceDefinition = (line: string): ParsedAssetFootnote | null => {
   const match = ASSET_FOOTNOTE_PATTERN.exec(line.trim());
   if (!match) {
     return null;
@@ -296,14 +263,17 @@ export const formatAssetResourceDefinition = (
 export const formatCommentResourceDefinition = (
   input: Pick<WebChatCommentResourcePayload, "label" | "commentText"> & {
     sourceUri: string;
+    selectedText?: string;
   },
-): string => `[^${input.label}]: [${input.commentText}](${input.sourceUri})`;
+): string => {
+  const title = input.selectedText?.trim() ? ` "${escapeMarkdownTitle(input.selectedText.trim())}"` : "";
+  return `[^${input.label}]: [${input.commentText}](${input.sourceUri}${title})`;
+};
 
 export const buildCommentResourceSourceUri = (
-  input: Pick<
-    WebChatCommentResourceAnchor,
-    "sourceViewKey" | "sourceLineNumber" | "sourceMessageId"
-  > & { roomId: string },
+  input: Pick<WebChatCommentResourceAnchor, "sourceViewKey" | "sourceLineNumber" | "sourceMessageId"> & {
+    roomId: string;
+  },
 ): string => {
   const suffix = `#L${input.sourceLineNumber}`;
   const base = input.sourceMessageId
@@ -311,6 +281,55 @@ export const buildCommentResourceSourceUri = (
     : `msg://${input.roomId}/${encodeURIComponent(input.sourceViewKey)}`;
   return `${base}${suffix}`;
 };
+
+const resolveCommentIdFromLabel = (label: string): string => {
+  const match = /Comment\s+(\d+)/u.exec(label);
+  return match?.[1] ? `comment-${match[1]}` : normalizeLookup(label);
+};
+
+const resolveCommentAnchorFromSourceUri = (
+  sourceUri: string,
+  selectedText: string | undefined,
+): WebChatCommentResourceAnchor => {
+  try {
+    const url = new URL(sourceUri);
+    const target = decodeURIComponent(url.pathname.replace(/^\//u, ""));
+    const lineMatch = /^#L(\d+)$/u.exec(url.hash);
+    const sourceLineNumber = lineMatch?.[1] ? Number.parseInt(lineMatch[1], 10) : 1;
+    const sourceMessageId = /^\d+$/u.test(target) ? Number.parseInt(target, 10) : undefined;
+    return {
+      sourceMessageId,
+      sourceViewKey: sourceMessageId ? `${url.hostname}:${sourceMessageId}` : target,
+      sourceLineNumber,
+      selectedText: selectedText ?? "",
+      sourceUri,
+    };
+  } catch {
+    return {
+      sourceViewKey: sourceUri,
+      sourceLineNumber: 1,
+      selectedText: selectedText ?? "",
+      sourceUri,
+    };
+  }
+};
+
+const commentFootnoteToResourceReference = (parsed: ParsedCommentFootnote): WebChatResourceReference => ({
+  id: resolveCommentIdFromLabel(parsed.label),
+  label: parsed.label,
+  tokenText: `[^${parsed.label}]`,
+  kind: "comment",
+  detailText: parsed.commentText,
+  extension: "cmt",
+  commentText: parsed.commentText,
+  commentAnchor: resolveCommentAnchorFromSourceUri(parsed.sourceUri, parsed.selectedText),
+  aliases: buildReferenceAliases({
+    label: parsed.label,
+    aliases: [parsed.commentText, parsed.selectedText].filter(
+      (value): value is string => typeof value === "string" && value.trim().length > 0,
+    ),
+  }),
+});
 
 export const mergeResourceReferences = (
   references: readonly WebChatResourceReference[],
@@ -345,19 +364,7 @@ export const resolveMessageResourceReferences = (input: {
   const attachmentReferences = (input.attachments ?? []).map((attachment, index) =>
     attachmentToResourceReference(attachment, index),
   );
-  const commentReferences = extractCommentResourcePayloads(input.metadata, {
-    sourceMessageId: input.messageId,
-    sourceViewKey: input.viewKey,
-    sourceActorId: input.senderActorId,
-    sourceActorLabel: input.from,
-  }).map((resource) => {
-    const parsed = commentDefinitionsByLabel.get(resource.label);
-    return commentResourceToReference({
-      ...resource,
-      commentText: resource.commentText || parsed?.commentText || "",
-      sourceUri: resource.sourceUri ?? parsed?.sourceUri,
-    });
-  });
+  const commentReferences = [...commentDefinitionsByLabel.values()].map(commentFootnoteToResourceReference);
   return mergeResourceReferences(attachmentReferences, commentReferences);
 };
 
@@ -377,10 +384,7 @@ const collectExistingDefinitionLabels = (content: string): Set<string> => {
   return labels;
 };
 
-const resolveCommentResourceSourceUri = (
-  resource: WebChatResourceReference,
-  roomId: string,
-): string | null => {
+const resolveCommentResourceSourceUri = (resource: WebChatResourceReference, roomId: string): string | null => {
   const anchor = resource.commentAnchor;
   if (typeof anchor?.sourceUri === "string" && anchor.sourceUri.trim().length > 0) {
     return anchor.sourceUri;
@@ -396,10 +400,7 @@ const resolveCommentResourceSourceUri = (
   });
 };
 
-const buildResourceDefinitionLine = (
-  resource: WebChatResourceReference,
-  roomId: string,
-): string | null => {
+const buildResourceDefinitionLine = (resource: WebChatResourceReference, roomId: string): string | null => {
   if (resource.kind === "comment") {
     if (!resource.commentText) {
       return null;
@@ -412,6 +413,7 @@ const buildResourceDefinitionLine = (
       label: resource.label,
       commentText: resource.commentText,
       sourceUri,
+      selectedText: resource.commentAnchor?.selectedText,
     });
   }
   if (!resource.fileName || !resource.url) {
@@ -472,10 +474,7 @@ export const serializeMessageSourceMarkdown = (input: {
 
 export const normalizeResourceReferenceQuery = (query: string): string => normalizeLookup(query);
 
-export const resourceReferenceMatchesQuery = (
-  reference: WebChatResourceReference,
-  query: string,
-): boolean => {
+export const resourceReferenceMatchesQuery = (reference: WebChatResourceReference, query: string): boolean => {
   const normalizedQuery = normalizeResourceReferenceQuery(query);
   if (normalizedQuery.length === 0) {
     return true;
