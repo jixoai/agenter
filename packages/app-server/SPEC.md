@@ -21,7 +21,7 @@
 - `session.create` / `session.start` 的 cold boot 不会自动挂 workspace、room、terminal；这些 authority 必须来自显式 durable facts。
 - 每个 runtime 固定拥有一个 principal-address root workspace：`~/.agenter/avatars/by-principal/<principalId>`。它是 avatar 的 canonical private home，不替代 dynamic workspace mounts。
 - Avatar prompt source resolution 必须优先使用 session/runtime 的 `avatarPrincipalId` canonical root；nickname alias 只用于发现和兼容迁移，不能在已知 principal 的运行时覆盖 prompt 真源。
-- app-owned assistant memory pack 与 prompt root 同轴：默认 memory roles 必须写入 `~/.agenter/avatars/by-principal/<principalId>/memory/*`，不得因为 `session.workspacePath` 或启动 cwd 是普通 project workspace 而写入 `<workspace>/.agenter/avatars/.../memory/*`。
+- app-owned assistant prompt root 与 recording surface 必须解耦：`AGENTER.mdx` 仍来自 `~/.agenter/avatars/by-principal/<principalId>/AGENTER.mdx`，shell-assistant raw recording 默认通过 NoteSystem 写入 active `AVATAR_HOME` note facts。legacy `memory/*` files 只是显式用户资产或兼容输入，不得因为 `session.workspacePath` 或启动 cwd 是普通 project workspace 而被默认创建或当成记录 API。
 - 前端或其他调用方如果要知道 runtime 当前可访问哪些 workspace，必须查询 `workspace.runtimeMounts(runtimeId)`。
 - WorkspaceSystem 是 workspace access 的唯一 authority，负责：
   - mount / detach
@@ -36,7 +36,7 @@
 - Workspace asset roots 分为：
   - public: `<workspace>/.agenter/workspace/{skills,memory,tools,archive}`
   - private: `<workspace>/.agenter/avatars/by-principal/<principalId>/{skills,memory,tools,archive}`
-- Workspace private memory roots 只表达显式 workspace overlay/artifact。它们可由 WorkspaceSystem private text asset API 管理，但不得 shadow 或替代 app-owned global Avatar identity memory pack。
+- Workspace private memory roots 只表达显式 workspace overlay/artifact。它们可由 WorkspaceSystem private text asset API 管理，但不得 shadow 或替代 app-owned global Avatar prompt root 或 NoteSystem 默认记录 surface。
 - nickname alias 只用于 discoverability：
   - global: `~/.agenter/avatars/by-nickname/<nickname> -> ../by-principal/<principalId>`
   - workspace: `<workspace>/.agenter/avatars/by-nickname/<nickname> -> ../by-principal/<principalId>`
@@ -156,6 +156,8 @@
   - 非 root workspace 只来自该 workspace 的 avatar-private `skills`，不使用 `effectivePath` 把 global skills 复制进每个 workspace group
 - skill browser preview classification 是 durable server contract：至少显式区分 `directory / text / image / audio / video / pdf / binary / unsupported`，由 server 给出，前端不得自行重猜 preview kind。
 - `previewKind` 只表达 renderer kind，不表达 preview shell 所有权：WebUI 可以把所有 kind 都交给统一的 `filePreviewer` 壳层，再在壳层内部按 `text / image / audio / video / pdf / binary / unsupported` 选择具体 renderer。
+- NoteSystem 是 raw-note recording atom：它以 Markdown/frontmatter 文件表达 `kind: note` 事实，CLI 写入保持严格冲突语义，read/search API 只暴露 typed catalog/page/search projection 与 capability state。`note` built-in skill 由 app-server package-owned skill catalog 提供，用于指导 AI 通过 `note draft/write/list/show/search` 记录和验证 raw notes，而不是把 notes 伪装成 distilled memory。
+- browser-facing NoteSystem browsing 必须走 read-only typed surface：`note.catalog`、`note.page`、`note.search` 由 app-server 基于当前 avatar `AVATAR_HOME` 派生，Studio/client-sdk 不得直接读取 `notes/*` 文件或 import `packages/app-server/src/note-system/*`。
 - 外部事实型任务的人格偏好必须落在 `AGENTER.mdx`：当事实依赖当前世界或外部网络且可能变化时，Avatar 先做简短确认，再通过 shell 或其它可观察工具查证，最后只回复查证后的结果；这里表达的是 general shell-first bias，不得把某个天气/搜索 recipe 写成唯一 workflow。
 - runtime shell guidance 必须把 `root_bash` 的 outbound network verification 明确成客观能力边界，而不是在 runtime skills 里塞满固定查询脚本。
 - system-owned skill 必须只解释本 system 的义务语义与操作风格，尤其是如何理解和处理该 system 提交的 attention items；例如 message skill 应该教 AI 何时确认、何时回复、何时不要刷屏，而不是代替 terminal / workspace / network 系统承载底层可靠性细节。

@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Self Review Evidence: complete-note-system-product-surface</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.45;
+      }
+      body {
+        margin: 0;
+        padding: 32px;
+        background: Canvas;
+        color: CanvasText;
+      }
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        display: grid;
+        gap: 24px;
+      }
+      h1,
+      h2 {
+        margin: 0;
+      }
+      section {
+        border: 1px solid color-mix(in srgb, CanvasText 16%, transparent);
+        border-radius: 8px;
+        padding: 18px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border-bottom: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        font-weight: 650;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.92em;
+      }
+      .pass {
+        color: #167c3b;
+        font-weight: 650;
+      }
+      .warn {
+        color: #9a5b00;
+        font-weight: 650;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Self Review Evidence</h1>
+        <p><code>complete-note-system-product-surface</code></p>
+      </header>
+
+      <section>
+        <h2>Command Evidence</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>Observed result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>bun test packages/app-server/test/note-system.test.ts</code></td>
+              <td class="pass">16 pass, 0 fail</td>
+            </tr>
+            <tr>
+              <td><code>bun test packages/app-server/test/trpc-router.test.ts</code></td>
+              <td class="pass">26 pass, 0 fail</td>
+            </tr>
+            <tr>
+              <td><code>bun test packages/app-server/test/runtime-skills.test.ts packages/app-server/test/runtime-skill-guidance.test.ts</code></td>
+              <td class="pass">13 pass, 0 fail</td>
+            </tr>
+            <tr>
+              <td><code>bun test packages/client-sdk/test/runtime-store.test.ts</code></td>
+              <td class="pass">89 pass, 0 fail</td>
+            </tr>
+            <tr>
+              <td><code>bun test apps/shell/test/run-shell.test.ts</code></td>
+              <td class="pass">21 pass, 0 fail</td>
+            </tr>
+            <tr>
+              <td><code>bun run --filter 'agenter-app-studio' test:unit -- src/lib/features/notes/notes-state.spec.ts src/lib/features/notes/notes-route-contract.spec.ts</code></td>
+              <td class="pass">2 files, 5 tests pass</td>
+            </tr>
+            <tr>
+              <td><code>bun test packages/app-server/test/real-note-system.integration.test.ts</code></td>
+              <td class="warn">1 provider-gate assertion pass, 1 real-provider scenario skipped because provider settings are absent</td>
+            </tr>
+            <tr>
+              <td><code>bun run typecheck</code></td>
+              <td class="pass">all workspace typecheck targets pass</td>
+            </tr>
+            <tr>
+              <td><code>bun run --filter 'agenter-app-studio' build</code></td>
+              <td class="pass">production build passes; existing Lightning CSS <code>:global</code> warnings observed</td>
+            </tr>
+            <tr>
+              <td><code>bun run openspec:vision -- validate complete-note-system-product-surface</code></td>
+              <td class="pass">change is valid</td>
+            </tr>
+            <tr>
+              <td><code>git diff --check</code></td>
+              <td class="pass">no whitespace errors</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Route / API Contract Evidence</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Surface</th>
+              <th>Evidence</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Backend</td>
+              <td><code>note.catalog</code>, <code>note.page</code>, and <code>note.search</code> covered by TRPC BDDs.</td>
+              <td class="pass">Typed backend contract verified.</td>
+            </tr>
+            <tr>
+              <td>Client SDK</td>
+              <td>runtime-store facades preserve catalog/page/search output types.</td>
+              <td class="pass">No route-local transport required.</td>
+            </tr>
+            <tr>
+              <td>Studio desktop/mobile route smoke</td>
+              <td>Opened <code>/notes</code> at desktop 1440x960 and mobile 390x844 against local dev server.</td>
+              <td class="warn">Route and nav visible; old external daemon returned controlled <code>note.catalog</code> missing-procedure error.</td>
+            </tr>
+            <tr>
+              <td>Studio source boundary</td>
+              <td>Route contract test asserts runtime-store methods are used and app-server internals are not imported.</td>
+              <td class="pass">Boundary preserved.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Skill / Prompt Evidence</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Surface</th>
+              <th>Evidence</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Note skill</td>
+              <td><code>packages/app-server/skills/note/SKILL.md</code> is generated into the built-in skill catalog and covered by skill tests.</td>
+              <td class="pass">Package-owned guidance exists.</td>
+            </tr>
+            <tr>
+              <td>Shell prompt seed</td>
+              <td>Tests assert the prompt teaches NoteSystem and omits the legacy memory role pack.</td>
+              <td class="pass">Default recording guidance migrated.</td>
+            </tr>
+            <tr>
+              <td>Shell bootstrap</td>
+              <td>Tests assert default startup seeds <code>AGENTER.mdx</code> and returns an empty memory file list.</td>
+              <td class="pass">No default memory-file creation.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Review Decision</h2>
+        <p class="pass">No research-plan or spec issue needs reopening. Proceed to final workflow check and archive.</p>
+      </section>
+    </main>
+  </body>
+</html>
