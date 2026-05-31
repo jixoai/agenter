@@ -11,11 +11,7 @@ import type {
   SessionEntry,
   WorkspacePrivateTextAssetEnsureOutput,
 } from "../src";
-import {
-  AppRuntimeClient,
-  type AppEnsureTerminalBindingInput,
-  type AppRuntimeStore,
-} from "../src";
+import { AppRuntimeClient, type AppEnsureTerminalBindingInput, type AppRuntimeStore } from "../src";
 
 const createSessionEntry = (workspacePath: string, avatar: string, name = avatar): SessionEntry => {
   const nowIso = new Date().toISOString();
@@ -143,6 +139,7 @@ class FakeAppRuntimeStore implements AppRuntimeStore {
   readonly roomGrants = new Map<string, GlobalRoomGrantEntry[]>();
   readonly privateAssets = new Map<string, WorkspacePrivateTextAssetEnsureOutput>();
   readonly avatarPromptFiles = new Map<string, { path: string; content: string; mtimeMs: number }>();
+  readonly avatarMemoryFiles = new Map<string, { path: string; content: string; created: boolean; mtimeMs: number }>();
   readonly deletedSessionIds: string[] = [];
   readonly focusTerminalCalls: string[][] = [];
   readonly focusRoomCalls: string[][] = [];
@@ -175,6 +172,15 @@ class FakeAppRuntimeStore implements AppRuntimeStore {
       ...current,
       created: false,
       content,
+      mtimeMs: Date.now(),
+    });
+  }
+
+  forceAvatarMemoryContent(avatarPrincipalId: string, relativePath: string, content: string): void {
+    this.avatarMemoryFiles.set(`~:${avatarPrincipalId}:memory:${relativePath}`, {
+      path: `/home/.agenter/avatars/by-principal/${avatarPrincipalId}/memory/${relativePath}`,
+      content,
+      created: false,
       mtimeMs: Date.now(),
     });
   }
@@ -299,6 +305,27 @@ class FakeAppRuntimeStore implements AppRuntimeStore {
       seeded: true,
       file: saved,
     };
+  }
+
+  async ensureAvatarMemoryPack(input: {
+    avatarPrincipalId: string;
+    roles: Array<{ role: string; path: string; seedContent: string }>;
+  }): Promise<Array<{ path: string; content: string; created: boolean; mtimeMs: number }>> {
+    return input.roles.map((role) => {
+      const key = `~:${input.avatarPrincipalId}:memory:${role.path}`;
+      const current = this.avatarMemoryFiles.get(key);
+      if (current) {
+        return current;
+      }
+      const created = {
+        path: `/home/.agenter/avatars/by-principal/${input.avatarPrincipalId}/memory/${role.path}`,
+        content: role.seedContent,
+        created: true,
+        mtimeMs: Date.now(),
+      };
+      this.avatarMemoryFiles.set(key, created);
+      return created;
+    });
   }
 
   async listGlobalTerminals(): Promise<GlobalTerminalEntry[]> {
@@ -655,7 +682,7 @@ describe("Feature: app runtime client", () => {
     expect(store.sessions.size).toBe(1);
   });
 
-  test("Scenario: Given a selected Avatar runtime session When the app clears it Then generic session authority removes only that runtime context", async () => {
+  test("Scenario: Given stale sessions share one Avatar principal When the app clears it Then principal authority removes every matching runtime context", async () => {
     const store = new FakeAppRuntimeStore();
     const client = new AppRuntimeClient(store);
     store.avatars.push(createAvatarEntry("review-4"));
@@ -691,33 +718,31 @@ describe("Feature: app runtime client", () => {
       seedContent: "# Existing prompt\n",
     });
     await client.ensureMemoryPackIfMissing({
-      workspacePath: "/repo",
-      avatarNickname: "review-4",
+      avatarPrincipalId: "auth:review-4",
       roles: [{ role: "memory", path: "memory.md", seedContent: "# Existing memory\n" }],
     });
 
     const cleared = await client.clearRuntimeSession({
-      workspacePath: "/repo",
-      avatarNickname: "review-4",
+      avatarPrincipalId: "auth:review-4",
     });
 
-    expect(cleared.clearedSessionIds).toEqual(["session:/repo:review-4"]);
-    expect(store.deletedSessionIds).toEqual(["session:/repo:review-4"]);
-    expect([...store.sessions.values()].map((session) => session.id)).toEqual(["session:/other-repo:review-4"]);
+    expect(cleared.clearedSessionIds).toEqual(["session:/repo:review-4", "session:/other-repo:review-4"]);
+    expect(store.deletedSessionIds).toEqual(["session:/repo:review-4", "session:/other-repo:review-4"]);
+    expect([...store.sessions.values()].map((session) => session.id)).toEqual([]);
     expect(store.avatars.map((entry) => entry.nickname)).toEqual(["review-4"]);
     expect(store.terminals.map((entry) => entry.metadata?.resourceKey)).toEqual(["shell-4:terminal-2"]);
     expect(store.rooms.map((entry) => entry.chatId)).toEqual(["room-1"]);
     expect(store.avatarPromptFiles.get("~:auth:review-4:agenter")?.content).toBe("# Existing prompt\n");
-    expect(store.privateAssets.get("/repo:review-4:memory:memory.md")?.content).toBe("# Existing memory\n");
+    expect(store.avatarMemoryFiles.get("~:auth:review-4:memory:memory.md")?.content).toBe("# Existing memory\n");
+    expect(store.privateAssets.size).toBe(0);
   });
 
-  test("Scenario: Given a missing assistant prompt and memory pack When the client ensures them Then avatar creation and seed-if-missing stay generic and preserve later edits", async () => {
+  test("Scenario: Given a missing assistant prompt and memory pack When the client ensures them Then global Avatar seed-if-missing preserves later edits", async () => {
     const store = new FakeAppRuntimeStore();
     const client = new AppRuntimeClient(store);
 
     const assistant = await client.ensureAssistant({
       appId: "shell",
-      workspacePath: "/repo",
       avatarNickname: "shell-assistant",
       displayName: "Shell Assistant",
     });
@@ -736,8 +761,7 @@ describe("Feature: app runtime client", () => {
       seedContent: "# Seeded prompt\n",
     });
     const memory = await client.ensureMemoryPackIfMissing({
-      workspacePath: "/repo",
-      avatarNickname: "shell-assistant",
+      avatarPrincipalId,
       roles: [
         {
           role: "pairing-playbook",
@@ -748,7 +772,7 @@ describe("Feature: app runtime client", () => {
     });
 
     store.forceAvatarPromptContent(avatarPrincipalId, "# User-edited prompt\n");
-    store.forcePrivateAssetContent("/repo:shell-assistant:memory:pairing-playbook.md", "# User-edited playbook\n");
+    store.forceAvatarMemoryContent(avatarPrincipalId, "pairing-playbook.md", "# User-edited playbook\n");
 
     const secondPrompt = await client.ensureAvatarPromptSeedIfMissing({
       avatarPrincipalId,
@@ -756,8 +780,7 @@ describe("Feature: app runtime client", () => {
       seedContent: "# Replacement prompt\n",
     });
     const secondMemory = await client.ensureMemoryPackIfMissing({
-      workspacePath: "/repo",
-      avatarNickname: "shell-assistant",
+      avatarPrincipalId,
       roles: [
         {
           role: "pairing-playbook",
@@ -771,9 +794,11 @@ describe("Feature: app runtime client", () => {
     expect(firstPrompt.seeded).toBe(true);
     expect(firstPrompt.file.path).toBe("/home/.agenter/avatars/by-principal/auth:shell-assistant/AGENTER.mdx");
     expect(memory[0]?.created).toBe(true);
+    expect(memory[0]?.path).toBe("/home/.agenter/avatars/by-principal/auth:shell-assistant/memory/pairing-playbook.md");
     expect(secondPrompt.seeded).toBe(false);
     expect(secondPrompt.file.content).toBe("# User-edited prompt\n");
     expect(secondMemory[0]?.content).toBe("# User-edited playbook\n");
+    expect(store.privateAssets.size).toBe(0);
   });
 
   test("Scenario: Given generic app bindings When ensuring missing terminal and room resources Then metadata keys drive creation grants and focus without Shell branches", async () => {

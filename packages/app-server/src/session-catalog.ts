@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { readSessionDocument, writeSessionDocument, type PersistedSessionStorageState } from "./session-doc";
-import { resolveWorkspaceAvatarSessionId } from "./session-identity";
+import { resolveAvatarSessionId } from "./session-identity";
 import { GLOBAL_WORKSPACE_PATH, toWorkspacePath, workspaceDisplayName } from "./workspace-target";
 
 export type SessionStatus = "stopped" | "paused" | "starting" | "running" | "error";
@@ -123,11 +123,7 @@ export class SessionCatalog {
   }
 
   findByAvatar(avatar: string): SessionMeta | undefined {
-    return this.byId.get(resolveWorkspaceAvatarSessionId(GLOBAL_WORKSPACE_PATH, avatar));
-  }
-
-  findByWorkspaceAvatar(workspacePath: string, avatar: string): SessionMeta | undefined {
-    return this.findByAvatar(avatar);
+    return this.byId.get(resolveAvatarSessionId(avatar));
   }
 
   create(input: {
@@ -140,7 +136,7 @@ export class SessionCatalog {
     storeTarget: "global" | "workspace";
   }): SessionMeta {
     const workspacePath = toWorkspacePath(input.workspacePath ?? input.cwd);
-    const id = resolveWorkspaceAvatarSessionId(workspacePath, input.avatar);
+    const id = resolveAvatarSessionId(input.avatar);
     const existing = this.byId.get(id);
     if (existing) {
       return existing.storageState === "archived" ? this.restore(existing.id) : existing;
@@ -389,7 +385,8 @@ export class SessionCatalog {
       archivedAt: session.archivedAt,
       archivedFrom: session.archivedFrom,
       sessionRoot,
-      storeTarget: (session.storeTarget as "global" | "workspace" | undefined) ?? (target === "global" ? "global" : "workspace"),
+      storeTarget:
+        (session.storeTarget as "global" | "workspace" | undefined) ?? (target === "global" ? "global" : "workspace"),
     };
   }
 
@@ -400,7 +397,7 @@ export class SessionCatalog {
     if (meta.storeTarget !== "global") {
       return false;
     }
-    return meta.id === resolveWorkspaceAvatarSessionId(GLOBAL_WORKSPACE_PATH, meta.avatar);
+    return meta.id === resolveAvatarSessionId(meta.avatar);
   }
 
   private quarantineSessionRoot(sessionRoot: string): void {

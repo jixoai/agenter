@@ -1,19 +1,19 @@
 import type {
+  AppAvatarMemoryPackEnsureOutput,
+  AppEnsureBindingResult,
+  AppRuntimeStore,
   AuthSessionOutput,
   GlobalAvatarCatalogEntry,
   GlobalRoomActorId,
   GlobalRoomEntry,
   GlobalTerminalActorId,
   GlobalTerminalEntry,
-  AppEnsureBindingResult,
-  AppRuntimeStore,
   RuntimeStore,
   SessionEntry,
-  WorkspacePrivateTextAssetEnsureOutput,
 } from "@agenter/client-sdk";
 
+import { CLI_SHELL_APP_ID, CLI_SHELL_DEFAULT_AVATAR, createCliShellAppRuntimeClient } from "./app";
 import { readCliShellManagedState, type CliShellManagedState } from "./managed";
-import { CLI_SHELL_DEFAULT_AVATAR, CLI_SHELL_APP_ID, createCliShellAppRuntimeClient } from "./app";
 import {
   SHELL_ASSISTANT_DISPLAY_NAME,
   buildShellAssistantPromptSeed,
@@ -85,7 +85,7 @@ export interface CliShellBootstrapResult {
   room: AppEnsureBindingResult<GlobalRoomEntry>;
   binding: CliShellBindingProjection;
   promptSeeded: boolean;
-  memoryFiles: WorkspacePrivateTextAssetEnsureOutput[];
+  memoryFiles: AppAvatarMemoryPackEnsureOutput;
   managed: CliShellManagedState;
 }
 
@@ -97,6 +97,15 @@ const requireSessionAvatarPrincipalId = (session: SessionEntry): NonNullable<Ses
     throw new Error(`session missing avatar principal id: ${session.id}`);
   }
   return session.avatarPrincipalId;
+};
+
+const requireAvatarPrincipalId = (
+  avatar: GlobalAvatarCatalogEntry,
+): NonNullable<GlobalAvatarCatalogEntry["avatarPrincipalId"]> => {
+  if (!avatar.avatarPrincipalId) {
+    throw new Error(`avatar missing principal id: ${avatar.nickname}`);
+  }
+  return avatar.avatarPrincipalId;
 };
 
 const toRoomActorId = (
@@ -116,7 +125,6 @@ const requireAutoLogin = async (store: CliShellStore): Promise<void> => {
 
 const resolveSelectedAvatar = async (
   store: CliShellStore,
-  workspacePath: string,
   avatarNickname: string,
   createAvatar: boolean,
 ): Promise<{ avatar: GlobalAvatarCatalogEntry; created: boolean }> => {
@@ -131,7 +139,6 @@ const resolveSelectedAvatar = async (
   }
   const avatar = await runtimeClient.ensureAssistant({
     appId: CLI_SHELL_APP_ID,
-    workspacePath,
     avatarNickname,
     displayName: avatarNickname === CLI_SHELL_DEFAULT_AVATAR ? SHELL_ASSISTANT_DISPLAY_NAME : avatarNickname,
     classify: avatarNickname === CLI_SHELL_DEFAULT_AVATAR ? "assistant" : undefined,
@@ -153,22 +160,16 @@ const resolveCliShellAvatarRuntime = async (input: {
   clearedRuntimeSessionIds: string[];
   avatarActorId: string;
   promptSeeded: boolean;
-  memoryFiles: WorkspacePrivateTextAssetEnsureOutput[];
+  memoryFiles: AppAvatarMemoryPackEnsureOutput;
 }> => {
   const runtimeClient = createCliShellAppRuntimeClient(input.store);
-  const resolvedAvatar = await resolveSelectedAvatar(
-    input.store,
-    input.workspacePath,
-    input.avatarNickname,
-    input.createAvatar === true,
-  );
+  const resolvedAvatar = await resolveSelectedAvatar(input.store, input.avatarNickname, input.createAvatar === true);
   const avatar = resolvedAvatar.avatar;
   const clearedRuntimeSessionIds =
     input.clearAvatar === true
       ? (
           await runtimeClient.clearRuntimeSession({
-            workspacePath: input.workspacePath,
-            avatarNickname: avatar.nickname,
+            avatarPrincipalId: requireAvatarPrincipalId(avatar),
           })
         ).clearedSessionIds
       : [];
@@ -181,17 +182,17 @@ const resolveCliShellAvatarRuntime = async (input: {
   const avatarActorId = requireSessionAvatarPrincipalId(session);
 
   let promptSeeded = false;
-  let memoryFiles: WorkspacePrivateTextAssetEnsureOutput[] = [];
+  let memoryFiles: AppAvatarMemoryPackEnsureOutput = [];
   if (avatar.nickname === CLI_SHELL_DEFAULT_AVATAR) {
+    const avatarPrincipalId = requireSessionAvatarPrincipalId(session);
     const prompt = await runtimeClient.ensureAvatarPromptSeedIfMissing({
-      avatarPrincipalId: requireSessionAvatarPrincipalId(session),
+      avatarPrincipalId,
       kind: "agenter",
       seedContent: buildShellAssistantPromptSeed(),
     });
     promptSeeded = prompt.seeded;
     memoryFiles = await runtimeClient.ensureMemoryPackIfMissing({
-      workspacePath: input.workspacePath,
-      avatarNickname: avatar.nickname,
+      avatarPrincipalId,
       roles: [...shellAssistantMemoryRoles],
     });
   }

@@ -1,6 +1,7 @@
 import type { AgenterClient, AgenterTransportEvent } from "./trpc-client";
 import type {
   ApiCallItem,
+  AppAvatarMemoryPackEnsureOutput,
   AttentionQueryItem,
   AuthDraftCreateOutput,
   AuthDraftDeleteOutput,
@@ -6072,6 +6073,13 @@ export class RuntimeStore {
 
   async ensureAvatarPromptSeed(input: { avatarPrincipalId: string; kind: "agenter"; seedContent: string }) {
     return await this.client.trpc.appRuntime.ensureAvatarPromptSeed.mutate(input);
+  }
+
+  async ensureAvatarMemoryPack(input: {
+    avatarPrincipalId: string;
+    roles: Array<{ role: string; path: string; seedContent: string }>;
+  }): Promise<AppAvatarMemoryPackEnsureOutput> {
+    return await this.client.trpc.appRuntime.ensureAvatarMemoryPack.mutate(input);
   }
 
   async listSettingsLayers(workspacePath: string) {

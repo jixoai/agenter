@@ -6,12 +6,15 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import { SessionCatalog } from "../src/session-catalog";
-import { resolveWorkspaceAvatarSessionId } from "../src/session-identity";
+import { resolveAvatarSessionId } from "../src/session-identity";
 
 describe("Feature: session catalog", () => {
   test("Scenario: Given create/update/delete actions When catalog mutates Then lifecycle state is managed", async () => {
     const dir = await mkdtemp(join(tmpdir(), "agenter-session-catalog-"));
-    const catalog = new SessionCatalog({ globalRoot: join(dir, "sessions"), archiveRoot: join(dir, "archive", "sessions") });
+    const catalog = new SessionCatalog({
+      globalRoot: join(dir, "sessions"),
+      archiveRoot: join(dir, "archive", "sessions"),
+    });
 
     const session = catalog.create({
       cwd: dir,
@@ -39,10 +42,35 @@ describe("Feature: session catalog", () => {
     expect(catalog.list()).toHaveLength(0);
   });
 
+  test("Scenario: Given the same Avatar is launched from two workspaces When sessions are created Then the catalog keeps one Avatar-scoped identity", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "agenter-session-catalog-avatar-"));
+    const catalog = new SessionCatalog({
+      globalRoot: join(dir, "sessions"),
+      archiveRoot: join(dir, "archive", "sessions"),
+    });
+    const firstWorkspace = join(dir, "workspace-a");
+    const secondWorkspace = join(dir, "workspace-b");
+
+    const first = catalog.create({
+      cwd: firstWorkspace,
+      avatar: "tester",
+      storeTarget: "global",
+    });
+    const second = catalog.create({
+      cwd: secondWorkspace,
+      avatar: "tester",
+      storeTarget: "global",
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(catalog.list()).toHaveLength(1);
+    expect(catalog.findByAvatar("tester")?.workspacePath).toBe(firstWorkspace);
+  });
+
   test("Scenario: Given persisted running status When catalog refreshes Then status falls back to stopped", async () => {
     const dir = await mkdtemp(join(tmpdir(), "agenter-session-catalog-refresh-"));
     const globalRoot = join(dir, "sessions");
-    const sessionId = resolveWorkspaceAvatarSessionId(dir, "tester");
+    const sessionId = resolveAvatarSessionId("tester");
     const sessionRoot = join(globalRoot, "2026", "03", "06", sessionId);
     await mkdir(sessionRoot, { recursive: true });
     await writeFile(

@@ -13,6 +13,7 @@ import type {
   GlobalTerminalGrantEntry,
   RuntimeClientState,
   SessionEntry,
+  AppAvatarMemoryPackEnsureOutput,
   WorkspacePrivateTextAssetEnsureOutput,
 } from "@agenter/client-sdk";
 
@@ -153,6 +154,7 @@ export class FakeCliShellStore implements CliShellStore {
   sentMessages: Array<{ chatId: string; text: string }> = [];
   privateAssets = new Map<string, WorkspacePrivateTextAssetEnsureOutput>();
   promptFiles = new Map<string, { path: string; content: string; mtimeMs: number }>();
+  memoryFiles = new Map<string, AppAvatarMemoryPackEnsureOutput[number]>();
   attentionQueryItems: AttentionQueryItem[] = [];
   attentionCommits: Array<{
     sessionId: string;
@@ -288,6 +290,27 @@ export class FakeCliShellStore implements CliShellStore {
     };
     this.promptFiles.set(key, file);
     return { seeded: true, file };
+  }
+
+  async ensureAvatarMemoryPack(input: {
+    avatarPrincipalId: string;
+    roles: Array<{ role: string; path: string; seedContent: string }>;
+  }): Promise<AppAvatarMemoryPackEnsureOutput> {
+    return input.roles.map((role) => {
+      const key = `~:${input.avatarPrincipalId}:memory:${role.path}`;
+      const existing = this.memoryFiles.get(key);
+      if (existing) {
+        return existing;
+      }
+      const output = {
+        path: `/home/.agenter/avatars/by-principal/${input.avatarPrincipalId}/memory/${role.path}`,
+        content: role.seedContent,
+        created: true,
+        mtimeMs: Date.now(),
+      } satisfies AppAvatarMemoryPackEnsureOutput[number];
+      this.memoryFiles.set(key, output);
+      return output;
+    });
   }
 
   async ensureWorkspacePrivateTextAsset(input: {

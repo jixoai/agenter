@@ -11,8 +11,16 @@ import {
 } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
+import type {
+  AppAttentionCommitInput,
+  AppAttentionSettleInput,
+  AppAvatarMemoryPackFile,
+  AppAvatarPromptSeedInput,
+  AppMemoryPackEnsureInput,
+  AppPrivateTextAssetEnsureInput,
+} from "@agenter/app-runtime";
 import {
   AttentionStore,
   AttentionSystem,
@@ -64,12 +72,6 @@ import {
   type MessageTranscriptPage,
 } from "@agenter/message-system";
 import { isPrincipalId, normalizePrincipalId } from "@agenter/principal-crypto";
-import type {
-  AppAttentionCommitInput,
-  AppAttentionSettleInput,
-  AppAvatarPromptSeedInput,
-  AppPrivateTextAssetEnsureInput,
-} from "@agenter/app-runtime";
 import {
   SessionDb,
   type ReversePage,
@@ -84,7 +86,7 @@ import {
   type TerminalApprovalRequestEvent,
   type TerminalApprovalRequestRecord,
   type TerminalBackendKind,
-  type TerminalComposedAppSurfaceState,
+  type TerminalComposedProductSurfaceState,
   type TerminalControlPlaneEntry,
   type TerminalGrantRecord,
   type TerminalGrantRole,
@@ -172,7 +174,7 @@ import { projectRuntimeTerminalConfigMutation, type RuntimeMessageSendResult } f
 import { SessionCatalog, type SessionMeta } from "./session-catalog";
 import { resolveSessionRoomActorId } from "./session-chat-projection";
 import { resolveSessionConfig } from "./session-config";
-import { resolveWorkspaceAvatarSessionId } from "./session-identity";
+import { resolveAvatarSessionId } from "./session-identity";
 import {
   isPersistedChatProjectionMessage,
   projectAiCallToChatCycle,
@@ -919,6 +921,21 @@ export class AppKernel {
     const principalId = normalizePrincipalId(input.avatarPrincipalId);
     const root = resolveGlobalAvatarCanonicalRoot(principalId, this.getHomeDir());
     return join(root, "AGENTER.mdx");
+  }
+
+  private resolveAvatarMemoryPackRolePath(input: { avatarPrincipalId: string; rolePath: string }): string {
+    const principalId = normalizePrincipalId(input.avatarPrincipalId);
+    const root = join(resolveGlobalAvatarCanonicalRoot(principalId, this.getHomeDir()), "memory");
+    const normalized = input.rolePath.replace(/\\/gu, "/").trim();
+    if (normalized.length === 0 || normalized === "." || normalized.startsWith("/")) {
+      throw new Error(`avatar memory role path must be relative: ${input.rolePath}`);
+    }
+    const absolutePath = resolve(root, normalized);
+    const relativeToRoot = relative(root, absolutePath);
+    if (relativeToRoot === "" || relativeToRoot.startsWith("..") || resolve(absolutePath) === resolve(root, "..")) {
+      throw new Error(`avatar memory role path escapes root: ${input.rolePath}`);
+    }
+    return absolutePath;
   }
 
   private rememberWorkspace(workspacePath: string): void {
@@ -2284,7 +2301,7 @@ export class AppKernel {
   }) {
     const workspacePath = toWorkspacePath(input.workspacePath);
     const avatar = normalizeAvatarNickname(input.avatar);
-    const runtimeId = resolveWorkspaceAvatarSessionId(workspacePath, avatar);
+    const runtimeId = resolveAvatarSessionId(avatar);
     const grants =
       input.mode === "explorer"
         ? this.workspaceSystem.listRuntimeWorkspaceGrants({
@@ -2312,7 +2329,7 @@ export class AppKernel {
   }) {
     const workspacePath = toWorkspacePath(input.workspacePath);
     const avatar = normalizeAvatarNickname(input.avatar);
-    const runtimeId = resolveWorkspaceAvatarSessionId(workspacePath, avatar);
+    const runtimeId = resolveAvatarSessionId(avatar);
     const grants =
       input.mode === "explorer"
         ? this.workspaceSystem.listRuntimeWorkspaceGrants({
@@ -2399,6 +2416,44 @@ export class AppKernel {
         mtimeMs: fileStat.mtimeMs,
       },
     };
+  }
+
+  async ensureAvatarMemoryPack(input: AppMemoryPackEnsureInput): Promise<AppAvatarMemoryPackFile[]> {
+    const results: AppAvatarMemoryPackFile[] = [];
+    for (const role of input.roles) {
+      const rolePath = this.resolveAvatarMemoryPackRolePath({
+        avatarPrincipalId: input.avatarPrincipalId,
+        rolePath: role.path,
+      });
+      try {
+        const [content, fileStat] = await Promise.all([readFile(rolePath, "utf8"), stat(rolePath)]);
+        if (fileStat.isDirectory()) {
+          throw new Error(`avatar memory role path is a directory: ${role.path}`);
+        }
+        results.push({
+          path: rolePath,
+          content,
+          created: false,
+          mtimeMs: fileStat.mtimeMs,
+        });
+        continue;
+      } catch (error) {
+        if (!this.isMissingFileError(error)) {
+          throw error;
+        }
+      }
+
+      await mkdir(resolve(rolePath, ".."), { recursive: true });
+      await writeFile(rolePath, role.seedContent, "utf8");
+      const [content, fileStat] = await Promise.all([readFile(rolePath, "utf8"), stat(rolePath)]);
+      results.push({
+        path: rolePath,
+        content,
+        created: true,
+        mtimeMs: fileStat.mtimeMs,
+      });
+    }
+    return results;
   }
 
   async execRuntimeWorkspace(input: {
@@ -2512,7 +2567,7 @@ export class AppKernel {
   }): Promise<WorkspaceWelcomeSnapshot> {
     const workspacePath = toWorkspacePath(input.workspacePath);
     const avatar = normalizeAvatarNickname(input.avatar ?? defaultAvatarNickname());
-    const sessionId = resolveWorkspaceAvatarSessionId(workspacePath, avatar);
+    const sessionId = resolveAvatarSessionId(avatar);
     const avatarPrincipal = ensureAvatarSeatPrincipal({
       workspacePath,
       avatar,
@@ -4290,7 +4345,7 @@ export class AppKernel {
 
   publishGlobalTerminalComposedSurface(input: {
     terminalId: string;
-    surface: TerminalComposedAppSurfaceState;
+    surface: TerminalComposedProductSurfaceState;
     actorId?: TerminalActorId;
     superadminActorId?: TerminalActorId;
   }) {

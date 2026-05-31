@@ -1225,7 +1225,7 @@ describe("Feature: app kernel event replay", () => {
     expect(restored.sessionRoot).toBe(join(root, "sessions", ...bucket, session.id));
   });
 
-  test("Scenario: Given the same workspace and avatar pair When launching twice Then the kernel reuses one stable session identity", async () => {
+  test("Scenario: Given the same Avatar is launched twice When the workspace is the same Then the kernel reuses one stable session identity", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenter-kernel-session-reuse-"));
     tempDirs.push(root);
     const workspace = join(root, "workspace");

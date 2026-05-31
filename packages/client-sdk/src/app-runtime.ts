@@ -14,6 +14,7 @@ import {
 
 import type {
   AttentionQueryItem,
+  AppAvatarMemoryPackEnsureOutput,
   GlobalAvatarCatalogEntry,
   GlobalRoomActorId,
   GlobalRoomEntry,
@@ -87,6 +88,7 @@ export interface AppRuntimeStore {
     seeded: boolean;
     file: { path: string; content: string; mtimeMs: number };
   }>;
+  ensureAvatarMemoryPack(input: AppMemoryPackEnsureInput): Promise<AppAvatarMemoryPackEnsureOutput>;
   listGlobalTerminals(): Promise<GlobalTerminalEntry[]>;
   listGlobalTerminalHistory(): Promise<GlobalTerminalEntry[]>;
   listGlobalTerminalIndex(): Promise<GlobalTerminalEntry[]>;
@@ -463,11 +465,7 @@ export class AppRuntimeClient {
 
   async clearRuntimeSession(input: AppRuntimeSessionClearInput): Promise<AppRuntimeSessionClearResult> {
     const sessions = await this.store.listSessions();
-    // AvatarRuntime identity is Avatar-scoped; app shell labels must not become hidden runtime axes.
-    // Workspace scope is still part of the runtime session selection to avoid clearing another workspace's live context.
-    const matches = sessions.filter(
-      (session) => session.workspacePath === input.workspacePath && session.avatar === input.avatarNickname,
-    );
+    const matches = sessions.filter((session) => session.avatarPrincipalId === input.avatarPrincipalId);
     for (const session of matches) {
       await this.store.deleteSession(session.id);
     }
@@ -501,20 +499,8 @@ export class AppRuntimeClient {
 
   async ensureMemoryPackIfMissing(
     input: AppMemoryPackEnsureInput,
-  ): Promise<WorkspacePrivateTextAssetEnsureOutput[]> {
-    const results: WorkspacePrivateTextAssetEnsureOutput[] = [];
-    for (const role of input.roles) {
-      results.push(
-        await this.store.ensureWorkspacePrivateTextAsset({
-          workspacePath: input.workspacePath,
-          avatarNickname: input.avatarNickname,
-          assetKind: "memory",
-          relativePath: role.path,
-          seedContent: role.seedContent,
-        }),
-      );
-    }
-    return results;
+  ): Promise<AppAvatarMemoryPackEnsureOutput> {
+    return await this.store.ensureAvatarMemoryPack(input);
   }
 
   async ensureTerminalBinding(

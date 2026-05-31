@@ -17,7 +17,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { ShellApp } from "../src/app/shell-app";
 import type { ShellRoomInput, ShellStatusProvider } from "../src/app/shell-app-types";
 import { OpenComposeTerminalFrameRenderable } from "../src/opencompose/terminal-frame/terminal-frame-renderable";
-import type { ShellRoomBootstrapResult } from "../src/app/bootstrap";
+import type { ShellRoomBootstrapResult } from "../src/app-runtime/bootstrap";
 import { SHELL_CLIPBOARD_TARGETS, type ShellClipboardTarget } from "../src/renderable-mux/host-copy";
 import {
   createBunPtyPaneSource,

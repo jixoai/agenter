@@ -6,11 +6,11 @@ import {
   defaultShellSettings,
   type ShellSettings,
 } from "../src/app-room/settings";
-import { bootstrapShellRoom } from "../src/app/bootstrap";
+import { bootstrapShellRoom } from "../src/app-runtime/bootstrap";
 
-import { createShellRuntimeApprovalStore } from "../src/app/approval-store";
-import { parseShellArgs } from "../src/app/argv";
-import type { ShellAppRunDependencies } from "../src/app/runtime";
+import { createShellRuntimeApprovalStore } from "../src/app-runtime/approval-store";
+import { parseShellArgs } from "../src/app-runtime/argv";
+import type { ShellAppRunDependencies } from "../src/app-runtime/runtime";
 import type { ChildLayoutNode } from "../src/renderable-mux/layout";
 import { createPaneSourceId, type PaneSource, type TerminalFrameSnapshot } from "../src/renderable-mux/pane-source";
 import { isShellMetadataOnlyArgv, runShell } from "../src/run-shell";
@@ -334,6 +334,27 @@ describe("Feature: shell app runtime bootstrap", () => {
 
     expect(store.createTerminalInputs).toHaveLength(1);
     expect(store.createTerminalInputs[0]?.profile?.gitLog).toBe("normal");
+  });
+
+  test("Scenario: Given shell starts from a project workspace When default assistant resources are ensured Then prompt and memory use the session avatar principal", async () => {
+    const store = new FakeShellStore();
+
+    await bootstrapShellRoom({
+      store,
+      workspacePath: "/repo",
+      shellName: "shell-memory",
+      avatarNickname: "shell-assistant",
+    });
+
+    expect([...store.promptFiles.keys()]).toEqual(["~:auth:shell-assistant:agenter"]);
+    expect([...store.memoryFiles.keys()].sort()).toEqual([
+      "~:auth:shell-assistant:memory:hosting-objective.md",
+      "~:auth:shell-assistant:memory:pairing-playbook.md",
+      "~:auth:shell-assistant:memory:self-evolution-log.md",
+      "~:auth:shell-assistant:memory:terminal-habits.md",
+      "~:auth:shell-assistant:memory:user-model.md",
+    ]);
+    expect([...store.privateAssets.keys()]).toEqual([]);
   });
 
   test("Scenario: Given app attach exits by terminate When the bound terminal is killed Then shell archives the bound room through public APIs", async () => {

@@ -1,19 +1,19 @@
 import type {
+  AppAvatarMemoryPackEnsureOutput,
+  AppEnsureBindingResult,
+  AppRuntimeStore,
   AuthSessionOutput,
   GlobalAvatarCatalogEntry,
   GlobalRoomActorId,
   GlobalRoomEntry,
   GlobalTerminalActorId,
   GlobalTerminalEntry,
-  AppEnsureBindingResult,
-  AppRuntimeStore,
   RuntimeStore,
   SessionEntry,
-  WorkspacePrivateTextAssetEnsureOutput,
 } from "@agenter/client-sdk";
 
+import { SHELL_APP_ID, SHELL_DEFAULT_AVATAR, createShellAppRuntimeClient } from "./app";
 import { readShellManagedState, type ShellManagedState } from "./managed";
-import { SHELL_DEFAULT_AVATAR, SHELL_APP_ID, createShellAppRuntimeClient } from "./app";
 import {
   SHELL_ASSISTANT_DISPLAY_NAME,
   buildShellAssistantPromptSeed,
@@ -85,7 +85,7 @@ export interface ShellBootstrapResult {
   room: AppEnsureBindingResult<GlobalRoomEntry>;
   binding: ShellBindingProjection;
   promptSeeded: boolean;
-  memoryFiles: WorkspacePrivateTextAssetEnsureOutput[];
+  memoryFiles: AppAvatarMemoryPackEnsureOutput;
   managed: ShellManagedState;
 }
 
@@ -97,6 +97,15 @@ const requireSessionAvatarPrincipalId = (session: SessionEntry): NonNullable<Ses
     throw new Error(`session missing avatar principal id: ${session.id}`);
   }
   return session.avatarPrincipalId;
+};
+
+const requireAvatarPrincipalId = (
+  avatar: GlobalAvatarCatalogEntry,
+): NonNullable<GlobalAvatarCatalogEntry["avatarPrincipalId"]> => {
+  if (!avatar.avatarPrincipalId) {
+    throw new Error(`avatar missing principal id: ${avatar.nickname}`);
+  }
+  return avatar.avatarPrincipalId;
 };
 
 const toRoomActorId = (
@@ -116,7 +125,6 @@ const requireAutoLogin = async (store: ShellStore): Promise<void> => {
 
 const resolveSelectedAvatar = async (
   store: ShellStore,
-  workspacePath: string,
   avatarNickname: string,
   createAvatar: boolean,
 ): Promise<{ avatar: GlobalAvatarCatalogEntry; created: boolean }> => {
@@ -131,7 +139,6 @@ const resolveSelectedAvatar = async (
   }
   const avatar = await runtimeClient.ensureAssistant({
     appId: SHELL_APP_ID,
-    workspacePath,
     avatarNickname,
     displayName: avatarNickname === SHELL_DEFAULT_AVATAR ? SHELL_ASSISTANT_DISPLAY_NAME : avatarNickname,
     classify: avatarNickname === SHELL_DEFAULT_AVATAR ? "assistant" : undefined,
@@ -153,22 +160,16 @@ const resolveShellAvatarRuntime = async (input: {
   clearedRuntimeSessionIds: string[];
   avatarActorId: string;
   promptSeeded: boolean;
-  memoryFiles: WorkspacePrivateTextAssetEnsureOutput[];
+  memoryFiles: AppAvatarMemoryPackEnsureOutput;
 }> => {
   const runtimeClient = createShellAppRuntimeClient(input.store);
-  const resolvedAvatar = await resolveSelectedAvatar(
-    input.store,
-    input.workspacePath,
-    input.avatarNickname,
-    input.createAvatar === true,
-  );
+  const resolvedAvatar = await resolveSelectedAvatar(input.store, input.avatarNickname, input.createAvatar === true);
   const avatar = resolvedAvatar.avatar;
   const clearedRuntimeSessionIds =
     input.clearAvatar === true
       ? (
           await runtimeClient.clearRuntimeSession({
-            workspacePath: input.workspacePath,
-            avatarNickname: avatar.nickname,
+            avatarPrincipalId: requireAvatarPrincipalId(avatar),
           })
         ).clearedSessionIds
       : [];
@@ -181,17 +182,17 @@ const resolveShellAvatarRuntime = async (input: {
   const avatarActorId = requireSessionAvatarPrincipalId(session);
 
   let promptSeeded = false;
-  let memoryFiles: WorkspacePrivateTextAssetEnsureOutput[] = [];
+  let memoryFiles: AppAvatarMemoryPackEnsureOutput = [];
   if (avatar.nickname === SHELL_DEFAULT_AVATAR) {
+    const avatarPrincipalId = requireSessionAvatarPrincipalId(session);
     const prompt = await runtimeClient.ensureAvatarPromptSeedIfMissing({
-      avatarPrincipalId: requireSessionAvatarPrincipalId(session),
+      avatarPrincipalId,
       kind: "agenter",
       seedContent: buildShellAssistantPromptSeed(),
     });
     promptSeeded = prompt.seeded;
     memoryFiles = await runtimeClient.ensureMemoryPackIfMissing({
-      workspacePath: input.workspacePath,
-      avatarNickname: avatar.nickname,
+      avatarPrincipalId,
       roles: [...shellAssistantMemoryRoles],
     });
   }
@@ -228,9 +229,7 @@ const buildShellBindingProjection = (input: {
   hostingContextId: input.managed.contextId,
 });
 
-export const bootstrapShellRoom = async (
-  input: ShellRoomBootstrapInput,
-): Promise<ShellRoomBootstrapResult> => {
+export const bootstrapShellRoom = async (input: ShellRoomBootstrapInput): Promise<ShellRoomBootstrapResult> => {
   input.onProgress?.("authenticating");
   await requireAutoLogin(input.store);
   const resolved = await resolveShellAvatarRuntime(input);

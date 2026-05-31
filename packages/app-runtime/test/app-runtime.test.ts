@@ -7,14 +7,17 @@ import {
   APP_HOSTING_ENABLED_SCORES,
   APP_HOSTING_SCORE_KEY,
   APP_HOSTING_USER_DISABLED_REASON,
-  buildAppBindingMetadata,
-  createLocalFirstAppSourcePolicy,
-  matchesAppBindingMetadata,
+  appAssistantEnsureInputSchema,
   appAttentionCommitInputSchema,
   appAttentionProjectionSchema,
   appAttentionSettleInputSchema,
   appCommandDescriptorSchema,
+  appMemoryPackEnsureInputSchema,
   appPrivateTextAssetEnsureInputSchema,
+  appRuntimeSessionClearInputSchema,
+  buildAppBindingMetadata,
+  createLocalFirstAppSourcePolicy,
+  matchesAppBindingMetadata,
 } from "../src";
 
 const repoRoot = join(import.meta.dir, "..", "..", "..");
@@ -135,7 +138,7 @@ describe("Feature: app runtime contracts", () => {
     expect(settled.reason).toBe("reflection_complete");
   });
 
-  test("Scenario: Given avatar-private text assets When ensuring prompt or memory seeds Then seed-if-missing targets stay generic and reusable beyond Shell", () => {
+  test("Scenario: Given explicit workspace-private text assets When ensuring an overlay Then workspace scope stays a tool surface", () => {
     const ensured = appPrivateTextAssetEnsureInputSchema.parse({
       workspacePath: "/repo",
       avatarNickname: "shell-assistant",
@@ -146,6 +149,79 @@ describe("Feature: app runtime contracts", () => {
 
     expect(ensured.assetKind).toBe("memory");
     expect(ensured.relativePath).toBe("pairing-playbook.md");
+  });
+
+  test("Scenario: Given app-owned memory pack seed input includes workspacePath When parsed Then project workspace authority is rejected", () => {
+    const parsed = appMemoryPackEnsureInputSchema.safeParse({
+      avatarPrincipalId: "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66",
+      workspacePath: "/repo",
+      avatarNickname: "shell-assistant",
+      roles: [
+        {
+          role: "pairing-playbook",
+          path: "pairing-playbook.md",
+          seedContent: "# Pairing playbook\n",
+        },
+      ],
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  test("Scenario: Given app-owned memory pack seed input uses principal identity When parsed Then role files stay global Avatar scoped", () => {
+    const parsed = appMemoryPackEnsureInputSchema.parse({
+      avatarPrincipalId: "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66",
+      roles: [
+        {
+          role: "pairing-playbook",
+          path: "pairing-playbook.md",
+          seedContent: "# Pairing playbook\n",
+        },
+      ],
+    });
+
+    expect(parsed.avatarPrincipalId).toBe("0x888bb66a5ec389d52df0c9ff3e19a61dec890a66");
+    expect(parsed.roles[0]?.path).toBe("pairing-playbook.md");
+  });
+
+  test("Scenario: Given assistant ensure input includes workspacePath When parsed Then app assistant creation rejects project authority", () => {
+    const parsed = appAssistantEnsureInputSchema.safeParse({
+      appId: "shell",
+      workspacePath: "/repo",
+      avatarNickname: "shell-assistant",
+      displayName: "Shell Assistant",
+      classify: "assistant",
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  test("Scenario: Given assistant ensure input uses Avatar catalog fields When parsed Then app assistant creation stays project independent", () => {
+    const parsed = appAssistantEnsureInputSchema.parse({
+      appId: "shell",
+      avatarNickname: "shell-assistant",
+      displayName: "Shell Assistant",
+      classify: "assistant",
+    });
+
+    expect(parsed.avatarNickname).toBe("shell-assistant");
+  });
+
+  test("Scenario: Given runtime clear input includes workspacePath and avatarNickname When parsed Then project-shaped session authority is rejected", () => {
+    const parsed = appRuntimeSessionClearInputSchema.safeParse({
+      workspacePath: "/repo",
+      avatarNickname: "shell-assistant",
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  test("Scenario: Given runtime clear input uses principal identity When parsed Then session authority is Avatar-scoped", () => {
+    const parsed = appRuntimeSessionClearInputSchema.parse({
+      avatarPrincipalId: "0x888bb66a5ec389d52df0c9ff3e19a61dec890a66",
+    });
+
+    expect(parsed.avatarPrincipalId).toBe("0x888bb66a5ec389d52df0c9ff3e19a61dec890a66");
   });
 
   test("Scenario: Given core packages are inspected When checking their source and dependencies Then Shell remains removable without a core implementation import", () => {

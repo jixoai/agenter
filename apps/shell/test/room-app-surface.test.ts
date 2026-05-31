@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { MouseEvent } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 
-import type { ShellRoomBootstrapResult } from "../src/app/bootstrap";
+import type { ShellRoomBootstrapResult } from "../src/app-runtime/bootstrap";
 import { ShellRoomAppSurface } from "../src/surfaces/shell-room-app-surface";
 
 type TestSetup = Awaited<ReturnType<typeof createTestRenderer>>;

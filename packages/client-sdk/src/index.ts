@@ -40,6 +40,7 @@ export type {
   AuthSuperadminStatusOutput,
   AvatarCreateDraftState,
   CachedResourceState,
+  AppAvatarMemoryPackEnsureOutput,
   ChatCycleItem,
   ChatListItem,
   DraftResolutionOutput,
