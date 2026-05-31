@@ -3,10 +3,14 @@ import {
   CliRenderEvents,
   createCliRenderer,
   InputRenderable,
+  MouseButton,
+  parseColor,
+  StyledText,
   TextRenderable,
   type CliRenderer,
   type KeyEvent,
   type MouseEvent,
+  type TextChunk,
 } from "@opentui/core";
 
 import { padShellRoomText } from "../app-room/room-model";
@@ -47,6 +51,19 @@ interface NavigationRegion {
   row: number;
   col: number;
   width: number;
+  rowCount: number;
+}
+
+interface RenderedNavigationItem {
+  lines: Array<{
+    plainText: string;
+    content: string | StyledText;
+  }>;
+}
+
+interface MousePressTarget {
+  step: NavigationStep;
+  index: number;
 }
 
 const readKeyEvent = (value: unknown): KeyEvent | null =>
@@ -67,6 +84,23 @@ const avatarLabel = (item: ShellNavigationAvatarItem): string => {
   return `@${item.nickname}  ${item.displayName}${classify}`;
 };
 
+const chunk = (text: string, fg: string): TextChunk => ({
+  __isChunk: true,
+  text,
+  fg: parseColor(fg),
+});
+
+const withRowPrefix = (
+  line: { plainText: string; content: string | StyledText },
+  prefix: string,
+  width: number,
+): string | StyledText => {
+  if (typeof line.content === "string") {
+    return padShellRoomText(`${prefix}${line.plainText}`, width);
+  }
+  return new StyledText([chunk(prefix, "#cbd5e1"), ...line.content.chunks]);
+};
+
 export class ShellNavigationApp {
   readonly #input: ShellNavigationAppInput;
   readonly #renderer: CliRenderer;
@@ -79,6 +113,8 @@ export class ShellNavigationApp {
   readonly #dialogTitle: TextRenderable;
   readonly #dialogStatus: TextRenderable;
   readonly #dialogInput: InputRenderable;
+  #shellItems: readonly ShellNavigationShellItem[];
+  #avatarItems: readonly ShellNavigationAvatarItem[];
   readonly #rows: TextRenderable[] = [];
   readonly #startupRenderTimers: Timer[] = [];
   #disposed = false;
@@ -93,11 +129,14 @@ export class ShellNavigationApp {
   #dialogOpen = false;
   #notice: string | null = null;
   #regions: NavigationRegion[] = [];
+  #mousePressTarget: MousePressTarget | null = null;
 
   constructor(input: ShellNavigationAppInput & { renderer: CliRenderer; ownsRenderer?: boolean }) {
     this.#input = input;
     this.#renderer = input.renderer;
     this.#ownsRenderer = input.ownsRenderer === true;
+    this.#shellItems = input.shellItems;
+    this.#avatarItems = input.avatarItems;
     this.#step = input.needsShell ? "shell" : "avatar";
     this.#shellIndex = clampIndex(input.defaultShellIndex, input.shellItems.length);
     this.#avatarIndex = clampIndex(input.defaultAvatarIndex, input.avatarItems.length);
@@ -115,6 +154,7 @@ export class ShellNavigationApp {
       borderColor: "#38bdf8",
     });
     this.#root.onMouseDown = (event) => this.#handleMouseDown(event);
+    this.#root.onMouseUp = (event) => this.#handleMouseUp(event);
     this.#title = new TextRenderable(this.#renderer, {
       id: "shell-navigation-title",
       position: "absolute",
@@ -260,8 +300,20 @@ export class ShellNavigationApp {
     this.#renderer.requestRender();
   }
 
+  updateShellItems(input: { shellItems: readonly ShellNavigationShellItem[]; defaultShellIndex?: number }): void {
+    const selectedShellName = this.#shellItems[this.#shellIndex]?.shellName ?? null;
+    this.#shellItems = input.shellItems;
+    const selectedIndex =
+      selectedShellName === null ? -1 : this.#shellItems.findIndex((item) => item.shellName === selectedShellName);
+    this.#shellIndex =
+      selectedIndex >= 0
+        ? selectedIndex
+        : clampIndex(input.defaultShellIndex ?? this.#shellIndex, this.#shellItems.length);
+    this.render("shell-items-updated");
+  }
+
   #renderRows(width: number, height: number): void {
-    const items = this.#step === "shell" ? this.#input.shellItems : this.#input.avatarItems;
+    const items = this.#step === "shell" ? this.#shellItems : this.#avatarItems;
     const selectedIndex = this.#step === "shell" ? this.#shellIndex : this.#avatarIndex;
     const title = this.#step === "shell" ? "Select Terminal" : "Select Avatar";
     const subtitle =
@@ -273,9 +325,12 @@ export class ShellNavigationApp {
     this.#subtitle.content = padShellRoomText(this.#notice ?? subtitle, contentWidth);
     this.#footer.content = padShellRoomText("↑/↓ select | Enter confirm | Esc cancel | Mouse click", contentWidth);
     const availableRows = Math.max(1, height - 6);
-    const firstIndex = Math.max(
-      0,
-      Math.min(selectedIndex - Math.floor(availableRows / 2), Math.max(0, items.length - availableRows)),
+    const rowWidth = Math.max(1, contentWidth - 2);
+    const renderedItems = items.map((item) => this.#renderItemLines(item, rowWidth));
+    const firstIndex = this.#firstVisibleIndex(
+      renderedItems.map((item) => item.lines.length),
+      selectedIndex,
+      availableRows,
     );
     while (this.#rows.length < availableRows) {
       const row = new TextRenderable(this.#renderer, {
@@ -292,40 +347,81 @@ export class ShellNavigationApp {
       this.#rows.push(row);
       this.#root.add(row);
     }
-    for (const [rowIndex, row] of this.#rows.entries()) {
-      const itemIndex = firstIndex + rowIndex;
-      const item = items[itemIndex];
-      row.top = 4 + rowIndex;
-      row.left = 2;
-      row.width = contentWidth;
-      row.visible = rowIndex < availableRows;
-      if (!item) {
-        row.content = padShellRoomText("", contentWidth);
-        row.bg = "#0f172a";
+    let rowIndex = 0;
+    for (let itemIndex = firstIndex; itemIndex < items.length && rowIndex < availableRows; itemIndex += 1) {
+      const rendered = renderedItems[itemIndex];
+      if (!rendered) {
         continue;
       }
       const selected = itemIndex === selectedIndex;
-      const label =
-        this.#step === "shell"
-          ? buildShellNavigationTerminalRow(item as ShellNavigationShellItem, Math.max(1, contentWidth - 2))
-          : {
-              plainText: avatarLabel(item as ShellNavigationAvatarItem),
-              content: avatarLabel(item as ShellNavigationAvatarItem),
-            };
-      if (typeof label.content === "string") {
-        row.content = padShellRoomText(`${selected ? ">" : " "} ${label.content}`, contentWidth);
-      } else {
-        row.content = label.content;
+      const regionRow = 4 + rowIndex;
+      let regionRowCount = 0;
+      for (const [lineIndex, line] of rendered.lines.entries()) {
+        if (rowIndex >= availableRows) {
+          break;
+        }
+        const row = this.#rows[rowIndex];
+        if (!row) {
+          break;
+        }
+        const prefix = selected && lineIndex === 0 ? "> " : "  ";
+        row.top = 4 + rowIndex;
+        row.left = 2;
+        row.width = contentWidth;
+        row.height = 1;
+        row.visible = true;
+        row.content = withRowPrefix(line, prefix, contentWidth);
+        row.fg = selected ? "#f8fafc" : "#cbd5e1";
+        row.bg = selected ? "#1e3a8a" : "#0f172a";
+        rowIndex += 1;
+        regionRowCount += 1;
       }
-      row.fg = selected ? "#f8fafc" : "#cbd5e1";
-      row.bg = selected ? "#1e3a8a" : "#0f172a";
-      this.#regions.push({
-        index: itemIndex,
-        row: Number(row.top),
-        col: Number(row.left),
-        width: contentWidth,
-      });
+      if (regionRowCount > 0) {
+        this.#regions.push({
+          index: itemIndex,
+          row: regionRow,
+          col: 2,
+          width: contentWidth,
+          rowCount: regionRowCount,
+        });
+      }
     }
+    for (; rowIndex < this.#rows.length; rowIndex += 1) {
+      const row = this.#rows[rowIndex];
+      if (!row) {
+        continue;
+      }
+      row.top = 4 + rowIndex;
+      row.left = 2;
+      row.width = contentWidth;
+      row.height = 1;
+      row.visible = rowIndex < availableRows;
+      row.content = padShellRoomText("", contentWidth);
+      row.fg = "#cbd5e1";
+      row.bg = "#0f172a";
+    }
+  }
+
+  #renderItemLines(item: ShellNavigationShellItem | ShellNavigationAvatarItem, width: number): RenderedNavigationItem {
+    if (this.#step === "shell") {
+      return buildShellNavigationTerminalRow(item as ShellNavigationShellItem, width);
+    }
+    const plainText = avatarLabel(item as ShellNavigationAvatarItem);
+    return { lines: [{ plainText, content: plainText }] };
+  }
+
+  #firstVisibleIndex(heights: readonly number[], selectedIndex: number, availableRows: number): number {
+    let firstIndex = 0;
+    let usedRows = 0;
+    for (let index = 0; index <= selectedIndex && index < heights.length; index += 1) {
+      const itemRows = Math.max(1, heights[index] ?? 1);
+      while (usedRows + itemRows > availableRows && firstIndex < index) {
+        usedRows -= Math.max(1, heights[firstIndex] ?? 1);
+        firstIndex += 1;
+      }
+      usedRows += itemRows;
+    }
+    return firstIndex;
   }
 
   #renderDialog(): void {
@@ -353,16 +449,12 @@ export class ShellNavigationApp {
   }
 
   #handleMouseDown(event: MouseEvent): void {
-    if (this.#dialogOpen) {
+    if (this.#dialogOpen || event.button !== MouseButton.LEFT) {
       return;
     }
-    const region = this.#regions.find(
-      (candidate) =>
-        Math.trunc(event.y) === candidate.row &&
-        Math.trunc(event.x) >= candidate.col &&
-        Math.trunc(event.x) < candidate.col + candidate.width,
-    );
+    const region = this.#resolveRegion(event);
     if (!region) {
+      this.#mousePressTarget = null;
       return;
     }
     event.preventDefault();
@@ -371,7 +463,37 @@ export class ShellNavigationApp {
     } else {
       this.#avatarIndex = region.index;
     }
+    this.#mousePressTarget = { step: this.#step, index: region.index };
+    this.render("mouse-select");
+  }
+
+  #handleMouseUp(event: MouseEvent): void {
+    if (this.#dialogOpen || event.button !== MouseButton.LEFT) {
+      this.#mousePressTarget = null;
+      return;
+    }
+    const pressTarget = this.#mousePressTarget;
+    this.#mousePressTarget = null;
+    const region = this.#resolveRegion(event);
+    if (!pressTarget || !region || pressTarget.step !== this.#step || pressTarget.index !== region.index) {
+      return;
+    }
+    event.preventDefault();
     void this.#confirmCurrent();
+  }
+
+  #resolveRegion(event: MouseEvent): NavigationRegion | null {
+    const y = Math.trunc(event.y);
+    const x = Math.trunc(event.x);
+    return (
+      this.#regions.find(
+        (candidate) =>
+          y >= candidate.row &&
+          y < candidate.row + candidate.rowCount &&
+          x >= candidate.col &&
+          x < candidate.col + candidate.width,
+      ) ?? null
+    );
   }
 
   #handleKeypress = (value: unknown): void => {
@@ -420,9 +542,9 @@ export class ShellNavigationApp {
 
   #moveSelection(delta: number): void {
     if (this.#step === "shell") {
-      this.#shellIndex = clampIndex(this.#shellIndex + delta, this.#input.shellItems.length);
+      this.#shellIndex = clampIndex(this.#shellIndex + delta, this.#shellItems.length);
     } else {
-      this.#avatarIndex = clampIndex(this.#avatarIndex + delta, this.#input.avatarItems.length);
+      this.#avatarIndex = clampIndex(this.#avatarIndex + delta, this.#avatarItems.length);
     }
     this.render("selection");
   }
@@ -430,7 +552,7 @@ export class ShellNavigationApp {
   async #confirmCurrent(): Promise<void> {
     this.#notice = null;
     if (this.#step === "shell") {
-      const item = this.#input.shellItems[this.#shellIndex];
+      const item = this.#shellItems[this.#shellIndex];
       if (!item) {
         return;
       }
@@ -450,7 +572,7 @@ export class ShellNavigationApp {
       this.#completeIfReady();
       return;
     }
-    const item = this.#input.avatarItems[this.#avatarIndex];
+    const item = this.#avatarItems[this.#avatarIndex];
     if (!item) {
       return;
     }

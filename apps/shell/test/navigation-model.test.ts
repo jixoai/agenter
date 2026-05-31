@@ -5,6 +5,7 @@ import type {
   GlobalTerminalEntry,
 } from "@agenter/client-sdk";
 import { describe, expect, test } from "bun:test";
+import { stringWidth } from "bun";
 
 import {
   buildShellNavigationModel,
@@ -87,15 +88,46 @@ describe("Feature: shell Select Terminal model", () => {
 
     const rendered = buildShellNavigationTerminalRow(existing!, 80);
 
-    expect(rendered.plainText).toContain("shell-7");
-    expect(rendered.plainText).toContain("running");
-    expect(rendered.plainText).toContain("dev");
-    expect(rendered.plainText).toContain("/repo");
-    expect(rendered.plainText).toContain("@AAA @BBB");
-    expect(typeof rendered.content).not.toBe("string");
+    expect(rendered.plainText).toBe("shell-7  /repo  dev  @AAA, @BBB");
+    expect(rendered.plainText).not.toContain("running");
+    expect(rendered.lines).toHaveLength(1);
+    expect(typeof rendered.lines[0]?.content).not.toBe("string");
     expect(
-      typeof rendered.content === "string" ? [] : rendered.content.chunks.map((chunk) => chunk.fg).filter(Boolean),
-    ).toHaveLength(9);
+      typeof rendered.lines[0]?.content === "string"
+        ? []
+        : rendered.lines[0]?.content.chunks.map((chunk) => chunk.fg).filter(Boolean),
+    ).toHaveLength(7);
+  });
+
+  test("Scenario: Given narrow terminal width When rendering a Terminal row Then fields wrap by field and long fields are clipped", () => {
+    const item = {
+      kind: "shell" as const,
+      shellName: "shell-7",
+      terminalId: "terminal-7",
+      title: "very-long-pty-title",
+      processPhase: "running" as const,
+      updatedAt: 7,
+      currentTitle: "very-long-pty-title",
+      currentPath: "/workspace/very/deep/project",
+      roomId: "room-7",
+      avatarNickname: "AAA",
+      peopleMentions: ["@AAA", "@BBB"],
+      rowFields: {
+        id: "shell-7",
+        pwd: "/workspace/very/deep/project",
+        title: "very-long-pty-title",
+        people: "@AAA, @BBB",
+      },
+    };
+
+    const rendered = buildShellNavigationTerminalRow(item, 14);
+
+    expect(rendered.lines.length).toBeGreaterThan(1);
+    expect(rendered.plainText).not.toContain("running");
+    expect(rendered.lines.some((line) => line.plainText.includes("..."))).toBe(true);
+    for (const line of rendered.lines) {
+      expect(stringWidth(line.plainText)).toBeLessThanOrEqual(14);
+    }
   });
 
   test("Scenario: Given unsupported legacy resource keys When building the model Then they are not treated as existing Terminal rows", async () => {

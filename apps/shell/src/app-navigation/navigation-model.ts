@@ -1,10 +1,12 @@
 import type {
   AuthSessionOutput,
+  CachedResourceState,
   GlobalAvatarCatalogEntry,
   GlobalRoomEntry,
   GlobalTerminalEntry,
 } from "@agenter/client-sdk";
 import { parseColor, StyledText, type TextChunk } from "@opentui/core";
+import { stringWidth } from "bun";
 
 import { padShellRoomText } from "../app-room/room-model";
 import type { ShellSettings } from "../app-room/settings";
@@ -17,6 +19,11 @@ export interface ShellNavigationStore {
   listGlobalTerminalIndex(): Promise<GlobalTerminalEntry[]>;
   listGlobalRooms(input?: { includeArchived?: boolean }): Promise<GlobalRoomEntry[]>;
   getAuthSession?(): Promise<AuthSessionOutput | null>;
+  getGlobalTerminalsState?(): CachedResourceState<GlobalTerminalEntry[]>;
+  getGlobalRoomsState?(): CachedResourceState<GlobalRoomEntry[]>;
+  retainGlobalTerminals?(): () => void;
+  retainGlobalRooms?(): () => void;
+  subscribe?(listener: () => void): () => void;
   hydrateGlobalAvatarCatalog(input?: { force?: boolean }): Promise<GlobalAvatarCatalogEntry[]>;
   createGlobalAvatar(input: {
     nickname: string;
@@ -49,16 +56,20 @@ export interface ShellNavigationNewShellOption {
 export type ShellNavigationShellItem = ShellNavigationShellOption | ShellNavigationNewShellOption;
 
 export interface ShellNavigationTerminalRowFields {
-  key: string;
-  status: string;
+  id: string;
+  pwd: string;
   title: string;
-  detail: string;
   people: string;
+}
+
+export interface ShellNavigationRenderedLine {
+  plainText: string;
+  content: string | StyledText;
 }
 
 export interface ShellNavigationRenderedRow {
   plainText: string;
-  content: string | StyledText;
+  lines: ShellNavigationRenderedLine[];
 }
 
 export interface ShellNavigationAvatarOption {
@@ -192,14 +203,13 @@ const rowFieldsForTerminal = (input: {
   auth: AuthSessionOutput | null | undefined;
 }): ShellNavigationTerminalRowFields => {
   const title = input.terminal.currentTitle?.trim() || input.terminal.configuredTitle?.trim() || input.shellName;
-  const detail = input.terminal.currentPath?.trim() || input.terminal.terminalId;
+  const pwd = input.terminal.currentPath?.trim() || input.terminal.terminalId;
   const peopleMentions = peopleMentionsForRoom(input.room, input.auth);
   return {
-    key: input.shellName,
-    status: input.terminal.processPhase,
+    id: input.shellName,
+    pwd,
     title,
-    detail,
-    people: peopleMentions.join(" "),
+    people: peopleMentions.join(", "),
   };
 };
 
@@ -211,30 +221,104 @@ const chunk = (text: string, fg: string): TextChunk => ({
 
 const styledRow = (chunks: TextChunk[]): StyledText => new StyledText(chunks);
 
+const toChars = (text: string): string[] => Array.from(text);
+
+const clipFieldToWidth = (text: string, width: number): string => {
+  const safeWidth = Math.max(0, Math.trunc(width));
+  if (safeWidth === 0) {
+    return "";
+  }
+  if (stringWidth(text) <= safeWidth) {
+    return text;
+  }
+  const ellipsis = "...";
+  const ellipsisWidth = stringWidth(ellipsis);
+  if (safeWidth <= ellipsisWidth) {
+    return ".".repeat(safeWidth);
+  }
+  const bodyWidth = safeWidth - ellipsisWidth;
+  let output = "";
+  let used = 0;
+  for (const char of toChars(text)) {
+    const charWidth = Math.max(1, stringWidth(char));
+    if (used + charWidth > bodyWidth) {
+      break;
+    }
+    output += char;
+    used += charWidth;
+  }
+  return `${output}${ellipsis}`;
+};
+
+interface TerminalRowField {
+  text: string;
+  fg: string;
+}
+
+const terminalRowFields = (fields: ShellNavigationTerminalRowFields, width: number): TerminalRowField[] =>
+  [
+    { text: fields.id, fg: "#38bdf8" },
+    { text: fields.pwd, fg: "#94a3b8" },
+    { text: fields.title, fg: "#f8fafc" },
+    ...(fields.people ? [{ text: fields.people, fg: "#a78bfa" }] : []),
+  ]
+    .map((field) => ({
+      ...field,
+      text: clipFieldToWidth(field.text, width),
+    }))
+    .filter((field) => field.text.length > 0);
+
+const terminalRowLines = (fields: ShellNavigationTerminalRowFields, width: number): ShellNavigationRenderedLine[] => {
+  const safeWidth = Math.max(1, Math.trunc(width));
+  const separator = "  ";
+  const separatorWidth = stringWidth(separator);
+  const lines: ShellNavigationRenderedLine[] = [];
+  let chunks: TextChunk[] = [];
+  let used = 0;
+
+  const flush = () => {
+    if (chunks.length === 0) {
+      return;
+    }
+    const plainText = chunks.map((item) => item.text).join("");
+    lines.push({ plainText, content: styledRow(chunks) });
+    chunks = [];
+    used = 0;
+  };
+
+  for (const field of terminalRowFields(fields, safeWidth)) {
+    const fieldWidth = stringWidth(field.text);
+    const needsSeparator = chunks.length > 0;
+    const nextWidth = used + (needsSeparator ? separatorWidth : 0) + fieldWidth;
+    if (needsSeparator && nextWidth > safeWidth) {
+      flush();
+    }
+    if (chunks.length > 0) {
+      chunks.push(chunk(separator, "#64748b"));
+      used += separatorWidth;
+    }
+    chunks.push(chunk(field.text, field.fg));
+    used += fieldWidth;
+  }
+  flush();
+
+  return lines.length > 0 ? lines : [{ plainText: "", content: "" }];
+};
+
 export const buildShellNavigationTerminalRow = (
   item: ShellNavigationShellItem,
   width: number,
 ): ShellNavigationRenderedRow => {
   if (item.kind === "new-shell") {
     const plainText = `+ ${item.title} (${item.shellName})`;
-    return { plainText, content: padShellRoomText(plainText, width) };
+    const content = padShellRoomText(plainText, width);
+    return { plainText, lines: [{ plainText, content }] };
   }
   const fields = item.rowFields;
-  const plainText = [fields.key, fields.status, fields.title, fields.detail, fields.people]
-    .filter((part) => part.length > 0)
-    .join("  ");
+  const lines = terminalRowLines(fields, width);
   return {
-    plainText,
-    content: styledRow([
-      chunk(fields.key, "#38bdf8"),
-      chunk("  ", "#64748b"),
-      chunk(fields.status, "#facc15"),
-      chunk("  ", "#64748b"),
-      chunk(fields.title, "#f8fafc"),
-      chunk("  ", "#64748b"),
-      chunk(fields.detail, "#94a3b8"),
-      ...(fields.people ? [chunk("  ", "#64748b"), chunk(fields.people, "#a78bfa")] : []),
-    ]),
+    plainText: lines.map((line) => line.plainText).join("\n"),
+    lines,
   };
 };
 
@@ -271,7 +355,7 @@ export const buildShellNavigationShellItems = (
       currentPath: terminal.currentPath ?? null,
       roomId: room?.chatId ?? null,
       avatarNickname: settings.startup.lastAvatarNickname ?? SHELL_DEFAULT_AVATAR,
-      peopleMentions: rowFields.people.length > 0 ? rowFields.people.split(" ") : [],
+      peopleMentions: rowFields.people.length > 0 ? rowFields.people.split(", ") : [],
       rowFields,
     };
     const existing = byShellName.get(shellName);
