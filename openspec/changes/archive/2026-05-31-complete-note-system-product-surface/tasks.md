@@ -94,4 +94,4 @@
 - [x] 9.3 If self-review changes OpenSpec artifacts or reopens tasks, commit those artifact changes before the next apply loop.
 - [x] 9.4 If the review enters a real loop, run `bun run openspec:vision -- review-state complete-note-system-product-surface` to persist iteration / recurrence state.
 - [x] 9.5 If review cannot exit normally, run `bun run openspec:vision -- handoff complete-note-system-product-surface` and commit the handoff evidence before returning to user discussion.
-- [ ] 9.6 If review exits normally, archive the change and commit the archive result.
+- [x] 9.6 If review exits normally, archive the change and commit the archive result.
