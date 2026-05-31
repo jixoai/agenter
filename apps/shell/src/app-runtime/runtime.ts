@@ -194,6 +194,7 @@ const ensureAttachSelection = async (
     createAvatar: input.args.createAvatar || selection.createAvatar,
     sessionExplicit: true,
     avatarExplicit: true,
+    ensureBindingGrants: selection.skipBindingGrantEnsure === true ? false : input.args.ensureBindingGrants,
   };
   const nextSettings: ShellSettings = {
     ...input.settings,
@@ -276,10 +277,7 @@ const buildInitialStatus = async (input: {
   };
 };
 
-const writeAttachSummary = (
-  attached: ShellRoomBootstrapResult,
-  stdout: Pick<NodeJS.WriteStream, "write">,
-): void => {
+const writeAttachSummary = (attached: ShellRoomBootstrapResult, stdout: Pick<NodeJS.WriteStream, "write">): void => {
   stdout.write(`shell attached\n`);
   stdout.write(`avatar: ${attached.avatar.nickname}\n`);
   stdout.write(`runtime: ${attached.avatar.runtimeId}\n`);
@@ -349,6 +347,7 @@ export const runShellAppAttach = async (
       shellName: selection.args.shellName,
       createAvatar: selection.args.createAvatar,
       clearAvatar: selection.args.clearAvatar,
+      ensureBindingGrants: selection.args.ensureBindingGrants,
     });
     const status = await buildInitialStatus({ store, attached, dependencies });
     const statusProvider = createAttachedStatusProvider({

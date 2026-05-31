@@ -1,4 +1,13 @@
-import type { GlobalRoomEntry, GlobalRoomMessage, GlobalRoomSnapshotOutput } from "@agenter/client-sdk";
+import type {
+  GlobalAvatarCatalogEntry,
+  GlobalRoomActorId,
+  GlobalRoomEntry,
+  GlobalRoomGrantEntry,
+  GlobalRoomMessage,
+  GlobalRoomSnapshotOutput,
+  GlobalTerminalActorId,
+  GlobalTerminalGrantEntry,
+} from "@agenter/client-sdk";
 import type {
   TerminalTransportOwnerCoordinate,
   TerminalTransportSelectionOverlay,
@@ -14,10 +23,10 @@ import { MouseButton, parseKeypress, TextAttributes } from "@opentui/core";
 import { createTestRenderer, type TestRenderer } from "@opentui/core/testing";
 import { afterEach, describe, expect, test } from "bun:test";
 
+import type { ShellRoomBootstrapResult } from "../src/app-runtime/bootstrap";
 import { ShellApp } from "../src/app/shell-app";
 import type { ShellRoomInput, ShellStatusProvider } from "../src/app/shell-app-types";
 import { OpenComposeTerminalFrameRenderable } from "../src/opencompose/terminal-frame/terminal-frame-renderable";
-import type { ShellRoomBootstrapResult } from "../src/app-runtime/bootstrap";
 import { SHELL_CLIPBOARD_TARGETS, type ShellClipboardTarget } from "../src/renderable-mux/host-copy";
 import {
   createBunPtyPaneSource,
@@ -476,6 +485,10 @@ class RecordingRoomStore implements ShellRoomSurfaceStore {
 }
 
 class RecordingAttachedRoomStore extends RecordingRoomStore {
+  avatars: GlobalAvatarCatalogEntry[] = [];
+  roomGrants: GlobalRoomGrantEntry[] = [];
+  terminalGrants: GlobalTerminalGrantEntry[] = [];
+
   subscribe(): () => void {
     return () => undefined;
   }
@@ -536,6 +549,68 @@ class RecordingAttachedRoomStore extends RecordingRoomStore {
 
   async denyGlobalTerminalRequest(): Promise<unknown> {
     return {};
+  }
+
+  async hydrateGlobalAvatarCatalog(): Promise<GlobalAvatarCatalogEntry[]> {
+    return this.avatars;
+  }
+
+  async listGlobalRoomGrants(): Promise<GlobalRoomGrantEntry[]> {
+    return this.roomGrants;
+  }
+
+  async issueGlobalRoomGrant(input: {
+    chatId: string;
+    role: "admin" | "member" | "readonly";
+    participantId: GlobalRoomActorId;
+    label?: string;
+  }): Promise<GlobalRoomGrantEntry> {
+    const grant = {
+      grantId: `room:${input.participantId}`,
+      chatId: input.chatId,
+      role: input.role,
+      participantId: input.participantId,
+      label: input.label,
+      accessToken: `room-token:${input.participantId}`,
+      createdAt: Date.now(),
+    } satisfies GlobalRoomGrantEntry;
+    this.roomGrants = this.roomGrants.filter((item) => item.participantId !== input.participantId).concat(grant);
+    return grant;
+  }
+
+  async revokeGlobalRoomGrant(input: { grantId: string }): Promise<{ ok: true }> {
+    this.roomGrants = this.roomGrants.filter((grant) => grant.grantId !== input.grantId);
+    return { ok: true };
+  }
+
+  async listGlobalTerminalGrants(): Promise<GlobalTerminalGrantEntry[]> {
+    return this.terminalGrants;
+  }
+
+  async issueGlobalTerminalGrant(input: {
+    terminalId: string;
+    role: "admin" | "writer" | "guard" | "readonly";
+    participantId: GlobalTerminalActorId;
+    label?: string;
+  }): Promise<GlobalTerminalGrantEntry> {
+    const grant = {
+      grantId: `terminal:${input.participantId}`,
+      terminalId: input.terminalId,
+      role: input.role,
+      participantId: input.participantId,
+      label: input.label,
+      accessToken: `terminal-token:${input.participantId}`,
+      createdAt: Date.now(),
+    } satisfies GlobalTerminalGrantEntry;
+    this.terminalGrants = this.terminalGrants
+      .filter((item) => item.participantId !== input.participantId)
+      .concat(grant);
+    return grant;
+  }
+
+  async revokeGlobalTerminalGrant(input: { grantId: string }): Promise<{ ok: true }> {
+    this.terminalGrants = this.terminalGrants.filter((grant) => grant.grantId !== input.grantId);
+    return { ok: true };
   }
 }
 

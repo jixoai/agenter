@@ -1,10 +1,19 @@
-import type { GlobalRoomEntry, GlobalRoomMessage } from "@agenter/client-sdk";
-import { afterEach, describe, expect, test } from "bun:test";
-import { MouseEvent } from "@opentui/core";
+import type {
+  GlobalAvatarCatalogEntry,
+  GlobalRoomActorId,
+  GlobalRoomEntry,
+  GlobalRoomGrantEntry,
+  GlobalRoomMessage,
+  GlobalTerminalActorId,
+  GlobalTerminalGrantEntry,
+} from "@agenter/client-sdk";
+import { KeyEvent, MouseEvent } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import type { ShellRoomBootstrapResult } from "../src/app-runtime/bootstrap";
 import { ShellRoomAppSurface } from "../src/surfaces/shell-room-app-surface";
+import { createAvatarEntry } from "./fake-shell-store";
 
 type TestSetup = Awaited<ReturnType<typeof createTestRenderer>>;
 
@@ -42,6 +51,9 @@ class RecordingAttachedRoomStore {
       unreadContactIds: [],
     },
   ];
+  avatars: GlobalAvatarCatalogEntry[] = [];
+  roomGrants: GlobalRoomGrantEntry[] = [];
+  terminalGrants: GlobalTerminalGrantEntry[] = [];
 
   getState() {
     return {
@@ -110,6 +122,68 @@ class RecordingAttachedRoomStore {
 
   async denyGlobalTerminalRequest(): Promise<unknown> {
     return {};
+  }
+
+  async hydrateGlobalAvatarCatalog(): Promise<GlobalAvatarCatalogEntry[]> {
+    return this.avatars;
+  }
+
+  async listGlobalRoomGrants(): Promise<GlobalRoomGrantEntry[]> {
+    return this.roomGrants;
+  }
+
+  async issueGlobalRoomGrant(input: {
+    chatId: string;
+    role: "admin" | "member" | "readonly";
+    participantId: GlobalRoomActorId;
+    label?: string;
+  }): Promise<unknown> {
+    const grant = {
+      grantId: `room:${input.participantId}`,
+      chatId: input.chatId,
+      role: input.role,
+      participantId: input.participantId,
+      label: input.label,
+      accessToken: `room-token:${input.participantId}`,
+      createdAt: Date.now(),
+    } satisfies GlobalRoomGrantEntry;
+    this.roomGrants = this.roomGrants.filter((item) => item.participantId !== input.participantId).concat(grant);
+    return grant;
+  }
+
+  async revokeGlobalRoomGrant(input: { grantId: string }): Promise<unknown> {
+    this.roomGrants = this.roomGrants.filter((grant) => grant.grantId !== input.grantId);
+    return { ok: true };
+  }
+
+  async listGlobalTerminalGrants(): Promise<GlobalTerminalGrantEntry[]> {
+    return this.terminalGrants;
+  }
+
+  async issueGlobalTerminalGrant(input: {
+    terminalId: string;
+    role: "admin" | "writer" | "guard" | "readonly";
+    participantId: GlobalTerminalActorId;
+    label?: string;
+  }): Promise<unknown> {
+    const grant = {
+      grantId: `terminal:${input.participantId}`,
+      terminalId: input.terminalId,
+      role: input.role,
+      participantId: input.participantId,
+      label: input.label,
+      accessToken: `terminal-token:${input.participantId}`,
+      createdAt: Date.now(),
+    } satisfies GlobalTerminalGrantEntry;
+    this.terminalGrants = this.terminalGrants
+      .filter((item) => item.participantId !== input.participantId)
+      .concat(grant);
+    return grant;
+  }
+
+  async revokeGlobalTerminalGrant(input: { grantId: string }): Promise<unknown> {
+    this.terminalGrants = this.terminalGrants.filter((grant) => grant.grantId !== input.grantId);
+    return { ok: true };
   }
 }
 
@@ -189,6 +263,48 @@ const waitForFrameText = async (setup: TestSetup, text: string): Promise<{ x: nu
   return null;
 };
 
+const settle = async (setup: TestSetup): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await setup.renderOnce();
+};
+
+const key = (name: string): KeyEvent =>
+  new KeyEvent({
+    name,
+    ctrl: false,
+    meta: false,
+    shift: false,
+    option: false,
+    sequence: name === "return" ? "\r" : name,
+    raw: name === "return" ? "\r" : name,
+    number: false,
+    eventType: "press",
+    source: "raw",
+  });
+
+const startRoomSurface = async (store: RecordingAttachedRoomStore): Promise<TestSetup> => {
+  setup = await createTestRenderer({ width: 64, height: 18, useMouse: true, kittyKeyboard: true });
+  surface = new ShellRoomAppSurface({
+    renderer: setup.renderer,
+    node: {
+      id: "chat",
+      sourceId: "chat",
+      sourceKind: "opentui-renderable",
+      rect: { x: 0, y: 0, width: 64, height: 18 },
+      focused: true,
+    },
+    room: {
+      store,
+      shellName: "shell-test",
+      attached: createAttachedRoom(store),
+    },
+    layoutMode: "right",
+  });
+  setup.renderer.root.add(surface.root);
+  await settle(setup);
+  return setup;
+};
+
 describe("Feature: shell Room-backed Chat surface renderer selection", () => {
   test("Scenario: Given the Room-backed Chat surface installs the renderer semantic selection plugin When transcript row mouse-down events arrive through the surface Then the surface selects the whole word on the second click", async () => {
     setup = await createTestRenderer({ width: 64, height: 18, useMouse: true, kittyKeyboard: true });
@@ -238,5 +354,64 @@ describe("Feature: shell Room-backed Chat surface renderer selection", () => {
     await setup.renderOnce();
 
     expect(setup.renderer.getSelection()?.getSelectedText()).toBe("hello");
+  });
+});
+
+describe("Feature: shell /avatar Room command panel", () => {
+  test("Scenario: Given Room composer focus When /avatar is submitted Then the panel opens and Escape returns to composer editing", async () => {
+    const store = new RecordingAttachedRoomStore();
+    store.avatars = [createAvatarEntry("AAA")];
+    const setup = await startRoomSurface(store);
+
+    await setup.mockInput.typeText("/avatar");
+    setup.mockInput.pressEnter();
+    await settle(setup);
+    await settle(setup);
+
+    expect(setup.captureCharFrame()).toContain("@AAA  room:none  terminal:none");
+
+    expect(surface?.handleKeypress(key("escape"))).toBe(true);
+    await settle(setup);
+
+    const frame = setup.captureCharFrame();
+    expect(frame).toContain("/history /avatar");
+    expect(frame).not.toContain("@AAA  room:none  terminal:none");
+  });
+
+  test("Scenario: Given the /avatar panel When adding, editing, and removing an Avatar Then it mutates only system grants", async () => {
+    const store = new RecordingAttachedRoomStore();
+    store.avatars = [createAvatarEntry("AAA")];
+    const setup = await startRoomSurface(store);
+
+    await setup.mockInput.typeText("/avatar");
+    setup.mockInput.pressEnter();
+    await settle(setup);
+    await settle(setup);
+
+    setup.mockInput.pressEnter();
+    await settle(setup);
+    await settle(setup);
+
+    expect(store.roomGrants).toMatchObject([{ chatId: "room-shell", participantId: "auth:AAA", role: "member" }]);
+    expect(store.terminalGrants).toMatchObject([
+      { terminalId: "terminal-1", participantId: "auth:AAA", role: "writer" },
+    ]);
+
+    expect(surface?.handleKeypress(key("r"))).toBe(true);
+    await settle(setup);
+    await settle(setup);
+    expect(store.roomGrants).toMatchObject([{ participantId: "auth:AAA", role: "readonly" }]);
+
+    expect(surface?.handleKeypress(key("t"))).toBe(true);
+    await settle(setup);
+    await settle(setup);
+    expect(store.terminalGrants).toMatchObject([{ participantId: "auth:AAA", role: "guard" }]);
+
+    expect(surface?.handleKeypress(key("delete"))).toBe(true);
+    await settle(setup);
+    await settle(setup);
+    expect(store.roomGrants).toEqual([]);
+    expect(store.terminalGrants).toEqual([]);
+    expect(store.avatars).toHaveLength(1);
   });
 });

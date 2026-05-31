@@ -24,6 +24,8 @@ export interface ShellHistoryPanelState {
   hasMoreBefore: boolean;
 }
 
+export type ShellComposerPanelKind = "history" | "avatar";
+
 export interface ShellConfirmPanelState {
   title: string;
   message: string;

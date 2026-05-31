@@ -1,6 +1,11 @@
 import type {
+  GlobalAvatarCatalogEntry,
+  GlobalRoomActorId,
+  GlobalRoomGrantEntry,
   GlobalRoomMessage,
+  GlobalTerminalActorId,
   GlobalTerminalApprovalRequest,
+  GlobalTerminalGrantEntry,
   HistoryPageCursor,
   RuntimeClientState,
 } from "@agenter/client-sdk";
@@ -8,7 +13,6 @@ import {
   BoxRenderable,
   CliRenderEvents,
   createCliRenderer,
-  type Renderable,
   ScrollBoxRenderable,
   SelectRenderable,
   SelectRenderableEvents,
@@ -17,28 +21,41 @@ import {
   type CliRenderer,
   type KeyEvent,
   type MouseEvent,
+  type Renderable,
   type SelectOption,
 } from "@opentui/core";
 
 import type { ShellRoomBootstrapResult } from "../app-runtime/bootstrap";
-import {
-  createShellRendererSelectionBehavior,
-  type ShellRendererSelectionBehavior,
-} from "../renderable-mux/renderer-selection";
 import { ShellButtonPressController } from "../renderable-mux/button-press-controller";
 import {
-  ShellPaneChromeController,
   resolveShellPaneChromeClick,
   shellPaneButtonLabel,
+  ShellPaneChromeController,
   shellPaneCloseAction,
-  syncShellPaneChrome,
   type ShellPaneChromeHitRegion,
   type ShellPaneTitleAction,
   type ShellPaneTitleActionId,
 } from "../renderable-mux/pane-chrome";
+import {
+  createShellRendererSelectionBehavior,
+  type ShellRendererSelectionBehavior,
+} from "../renderable-mux/renderer-selection";
 import { resolvePendingTerminalApproval } from "./approval-model";
+import {
+  buildShellAvatarPanelItems,
+  defaultShellAvatarRoomRole,
+  defaultShellAvatarTerminalRole,
+  formatShellAvatarPanelOption,
+  nextShellAvatarRoomRole,
+  nextShellAvatarTerminalRole,
+  toRoomActorId,
+  toTerminalActorId,
+  type ShellAvatarPanelItem,
+  type ShellAvatarPanelState,
+} from "./avatar-panel-model";
 import type {
   ShellComposerMode,
+  ShellComposerPanelKind,
   ShellConfirmPanelState,
   ShellHistoryItem,
   ShellHistoryPanelState,
@@ -123,6 +140,24 @@ export interface ShellRoomAppStore {
   }): Promise<GlobalTerminalApprovalRequest[]>;
   approveGlobalTerminalRequest(input: { terminalId: string; requestId: string; durationMs: number }): Promise<unknown>;
   denyGlobalTerminalRequest(input: { terminalId: string; requestId: string }): Promise<unknown>;
+  hydrateGlobalAvatarCatalog(input?: { force?: boolean }): Promise<GlobalAvatarCatalogEntry[]>;
+  listGlobalRoomGrants(input: { chatId: string; accessToken?: string }): Promise<GlobalRoomGrantEntry[]>;
+  issueGlobalRoomGrant(input: {
+    chatId: string;
+    accessToken?: string;
+    role: "admin" | "member" | "readonly";
+    participantId: GlobalRoomActorId;
+    label?: string;
+  }): Promise<unknown>;
+  revokeGlobalRoomGrant(input: { chatId: string; accessToken?: string; grantId: string }): Promise<unknown>;
+  listGlobalTerminalGrants(terminalId: string): Promise<GlobalTerminalGrantEntry[]>;
+  issueGlobalTerminalGrant(input: {
+    terminalId: string;
+    role: "admin" | "writer" | "guard" | "readonly";
+    participantId: GlobalTerminalActorId;
+    label?: string;
+  }): Promise<unknown>;
+  revokeGlobalTerminalGrant(input: { terminalId: string; grantId: string }): Promise<unknown>;
 }
 
 const ROOM_SCROLL_BOTTOM = Number.MAX_SAFE_INTEGER;
@@ -244,12 +279,19 @@ export class ShellRoomApp {
   #disposed = false;
   #hostNode: ShellRoomHostNode | null;
   #composerMode: ShellComposerMode = "textarea";
+  #panelKind: ShellComposerPanelKind | null = null;
   #textareaState: ShellTextareaState = { value: "", selection: null };
   #historyPanelState: ShellHistoryPanelState = {
     items: [],
     selectedIndex: 0,
     loading: false,
     hasMoreBefore: false,
+  };
+  #avatarPanelState: ShellAvatarPanelState = {
+    items: [],
+    selectedIndex: 0,
+    loading: false,
+    notice: null,
   };
   #historyNextBefore: HistoryPageCursor | null = null;
   #confirmState: ShellConfirmPanelState | null = null;
@@ -408,6 +450,10 @@ export class ShellRoomApp {
       options: [],
     });
     this.#historyPanel.on(SelectRenderableEvents.ITEM_SELECTED, () => {
+      if (this.#panelKind === "avatar") {
+        void this.#addSelectedAvatar();
+        return;
+      }
       this.#selectHistoryItem();
     });
     this.#confirmTitle = new TextRenderable(this.#renderer, {
@@ -724,7 +770,7 @@ export class ShellRoomApp {
   #formatStatusLine(width: number): string {
     const text =
       this.#statusNotice?.trim() ||
-      `${this.#input.shellName} room | @${this.#input.attached.avatar.nickname} | Enter send | /history | Esc/Ctrl+Q quit`;
+      `${this.#input.shellName} room | @${this.#input.attached.avatar.nickname} | Enter send | /history /avatar | Esc/Ctrl+Q quit`;
     return padShellRoomText(text, width);
   }
 
@@ -739,16 +785,22 @@ export class ShellRoomApp {
       return;
     }
     if (this.#composerMode === "panel") {
-      const options: SelectOption[] = this.#historyPanelState.items.map((item) => ({
-        name: padShellRoomText(item.text, width - 2),
-        description: item.senderLabel,
-        value: item,
-      }));
+      const options: SelectOption[] =
+        this.#panelKind === "avatar"
+          ? this.#avatarPanelState.items.map((item) => ({
+              name: padShellRoomText(formatShellAvatarPanelOption(item), width - 2),
+              description: item.displayName,
+              value: item,
+            }))
+          : this.#historyPanelState.items.map((item) => ({
+              name: padShellRoomText(item.text, width - 2),
+              description: item.senderLabel,
+              value: item,
+            }));
       this.#historyPanel.options = options;
-      this.#historyPanel.selectedIndex = Math.max(
-        0,
-        Math.min(this.#historyPanelState.selectedIndex, Math.max(0, options.length - 1)),
-      );
+      const selectedIndex =
+        this.#panelKind === "avatar" ? this.#avatarPanelState.selectedIndex : this.#historyPanelState.selectedIndex;
+      this.#historyPanel.selectedIndex = Math.max(0, Math.min(selectedIndex, Math.max(0, options.length - 1)));
       return;
     }
     if (this.#composerMode === "confirm" && this.#confirmState) {
@@ -822,12 +874,11 @@ export class ShellRoomApp {
     if (!renderable) {
       return false;
     }
-    const targetIds = new Set<string>([
-      ...this.#renderedRows.values(),
-      this.#statusLine,
-      this.#confirmTitle,
-      this.#confirmMessage,
-    ].map((target) => target.id));
+    const targetIds = new Set<string>(
+      [...this.#renderedRows.values(), this.#statusLine, this.#confirmTitle, this.#confirmMessage].map(
+        (target) => target.id,
+      ),
+    );
     let cursor: Renderable | null = renderable;
     while (cursor) {
       if (targetIds.has(cursor.id)) {
@@ -878,8 +929,10 @@ export class ShellRoomApp {
     if (this.#composerMode === "panel" && matchesShellPanelBinding(this.#keybindings, "cancel", key)) {
       key.preventDefault();
       this.#composerMode = "textarea";
+      this.#panelKind = null;
+      this.#statusNotice = null;
       this.#focusDraftLater();
-      this.render("history-cancel");
+      this.render("panel-cancel");
       return true;
     }
     if (this.#composerMode === "confirm" && matchesShellPanelBinding(this.#keybindings, "cancel", key)) {
@@ -896,8 +949,10 @@ export class ShellRoomApp {
       if (this.#composerMode === "panel") {
         key.preventDefault();
         this.#composerMode = "textarea";
+        this.#panelKind = null;
+        this.#statusNotice = null;
         this.#focusDraftLater();
-        this.render("history-cancel");
+        this.render("panel-cancel");
         return true;
       }
       if (this.#composerMode === "confirm") {
@@ -945,10 +1000,31 @@ export class ShellRoomApp {
         } else {
           this.#historyPanel.moveDown();
         }
-        this.#historyPanelState.selectedIndex = this.#historyPanel.getSelectedIndex();
-        this.render("history-nav");
+        if (this.#panelKind === "avatar") {
+          this.#avatarPanelState.selectedIndex = this.#historyPanel.getSelectedIndex();
+        } else {
+          this.#historyPanelState.selectedIndex = this.#historyPanel.getSelectedIndex();
+        }
+        this.render("panel-nav");
       }
       return true;
+    }
+    if (this.#composerMode === "panel" && this.#panelKind === "avatar") {
+      if (key.name === "backspace" || key.name === "delete") {
+        key.preventDefault();
+        void this.#removeSelectedAvatar();
+        return true;
+      }
+      if (key.name === "r") {
+        key.preventDefault();
+        void this.#cycleSelectedAvatarRoomRole();
+        return true;
+      }
+      if (key.name === "t") {
+        key.preventDefault();
+        void this.#cycleSelectedAvatarTerminalRole();
+        return true;
+      }
     }
     if (this.#composerMode === "textarea" && matchesShellTextareaBinding(this.#keybindings, "copy", key)) {
       key.preventDefault();
@@ -963,6 +1039,11 @@ export class ShellRoomApp {
     if (this.#composerMode === "textarea" && matchesShellComposerBinding(this.#keybindings, "history", key)) {
       key.preventDefault();
       void this.#openHistoryPanel();
+      return true;
+    }
+    if (this.#composerMode === "textarea" && matchesShellComposerBinding(this.#keybindings, "avatar", key)) {
+      key.preventDefault();
+      void this.#openAvatarPanel();
       return true;
     }
     if (this.#composerMode === "confirm" && key.name === "return") {
@@ -1010,6 +1091,13 @@ export class ShellRoomApp {
       this.#textareaState.value = "";
       this.#textareaState.selection = null;
       await this.#openHistoryPanel();
+      return;
+    }
+    if (resolveShellComposerSlashCommands(this.#keybindings, "avatar").includes(normalizedText)) {
+      this.#draftInput.setText("");
+      this.#textareaState.value = "";
+      this.#textareaState.selection = null;
+      await this.#openAvatarPanel();
       return;
     }
     this.#statusNotice = "sending room message...";
@@ -1070,6 +1158,7 @@ export class ShellRoomApp {
 
   async #openHistoryPanel(): Promise<void> {
     this.#composerMode = "panel";
+    this.#panelKind = "history";
     this.#historyPanelState = {
       items: [],
       selectedIndex: 0,
@@ -1100,10 +1189,164 @@ export class ShellRoomApp {
       this.render("history-ready");
     } catch (error) {
       this.#composerMode = "textarea";
+      this.#panelKind = null;
       this.#focusDraftLater();
       this.#statusNotice = `history load failed: ${error instanceof Error ? error.message : String(error)}`;
       this.render("history-error");
     }
+  }
+
+  async #openAvatarPanel(): Promise<void> {
+    this.#composerMode = "panel";
+    this.#panelKind = "avatar";
+    this.#avatarPanelState = {
+      items: [],
+      selectedIndex: 0,
+      loading: true,
+      notice: "loading avatars...",
+    };
+    this.render("avatar-open");
+    await this.#refreshAvatarPanel("avatar-ready");
+  }
+
+  async #refreshAvatarPanel(reason: string): Promise<void> {
+    try {
+      const [avatars, roomGrants, terminalGrants] = await Promise.all([
+        this.#input.store.hydrateGlobalAvatarCatalog({ force: true }),
+        this.#input.store.listGlobalRoomGrants({
+          chatId: this.#input.attached.room.entry.chatId,
+          accessToken: this.#input.attached.room.entry.accessToken,
+        }),
+        this.#input.store.listGlobalTerminalGrants(this.#input.attached.terminal.entry.terminalId),
+      ]);
+      const items = buildShellAvatarPanelItems({
+        avatars,
+        roomGrants,
+        terminalGrants,
+        excludedActorIds: [this.#input.attached.avatarActorId],
+      });
+      this.#avatarPanelState = {
+        items,
+        selectedIndex: Math.max(0, Math.min(this.#avatarPanelState.selectedIndex, Math.max(0, items.length - 1))),
+        loading: false,
+        notice: items.length === 0 ? "no avatars available" : null,
+      };
+      this.#historyPanel.focus();
+      this.#statusNotice =
+        this.#avatarPanelState.notice ??
+        "avatar panel: Enter add/update | r room role | t terminal role | Delete remove";
+      this.render(reason);
+    } catch (error) {
+      this.#composerMode = "textarea";
+      this.#panelKind = null;
+      this.#focusDraftLater();
+      this.#statusNotice = `avatar load failed: ${error instanceof Error ? error.message : String(error)}`;
+      this.render("avatar-error");
+    }
+  }
+
+  #selectedAvatarPanelItem(): ShellAvatarPanelItem | null {
+    const selected = this.#historyPanel.getSelectedOption()?.value as ShellAvatarPanelItem | undefined;
+    return selected ?? this.#avatarPanelState.items[this.#avatarPanelState.selectedIndex] ?? null;
+  }
+
+  async #addSelectedAvatar(): Promise<void> {
+    const selected = this.#selectedAvatarPanelItem();
+    if (!selected) {
+      return;
+    }
+    const roomRole = selected.roomRole ?? defaultShellAvatarRoomRole;
+    const terminalRole = selected.terminalRole ?? defaultShellAvatarTerminalRole;
+    await Promise.all([this.#syncRoomGrant(selected, roomRole), this.#syncTerminalGrant(selected, terminalRole)]);
+    this.#statusNotice = `avatar @${selected.nickname} saved`;
+    await this.#refreshAvatarPanel("avatar-add");
+  }
+
+  async #syncRoomGrant(selected: ShellAvatarPanelItem, role: "admin" | "member" | "readonly"): Promise<void> {
+    if (selected.roomGrantId && selected.roomRole === role) {
+      return;
+    }
+    if (selected.roomGrantId) {
+      await this.#input.store.revokeGlobalRoomGrant({
+        chatId: this.#input.attached.room.entry.chatId,
+        accessToken: this.#input.attached.room.entry.accessToken,
+        grantId: selected.roomGrantId,
+      });
+    }
+    await this.#input.store.issueGlobalRoomGrant({
+      chatId: this.#input.attached.room.entry.chatId,
+      accessToken: this.#input.attached.room.entry.accessToken,
+      role,
+      participantId: toRoomActorId(selected.actorId),
+      label: selected.displayName,
+    });
+  }
+
+  async #syncTerminalGrant(
+    selected: ShellAvatarPanelItem,
+    role: "admin" | "writer" | "guard" | "readonly",
+  ): Promise<void> {
+    if (selected.terminalGrantId && selected.terminalRole === role) {
+      return;
+    }
+    if (selected.terminalGrantId) {
+      await this.#input.store.revokeGlobalTerminalGrant({
+        terminalId: this.#input.attached.terminal.entry.terminalId,
+        grantId: selected.terminalGrantId,
+      });
+    }
+    await this.#input.store.issueGlobalTerminalGrant({
+      terminalId: this.#input.attached.terminal.entry.terminalId,
+      role,
+      participantId: toTerminalActorId(selected.actorId),
+      label: selected.displayName,
+    });
+  }
+
+  async #removeSelectedAvatar(): Promise<void> {
+    const selected = this.#selectedAvatarPanelItem();
+    if (!selected) {
+      return;
+    }
+    const mutations: Promise<unknown>[] = [];
+    if (selected.roomGrantId) {
+      mutations.push(
+        this.#input.store.revokeGlobalRoomGrant({
+          chatId: this.#input.attached.room.entry.chatId,
+          accessToken: this.#input.attached.room.entry.accessToken,
+          grantId: selected.roomGrantId,
+        }),
+      );
+    }
+    if (selected.terminalGrantId) {
+      mutations.push(
+        this.#input.store.revokeGlobalTerminalGrant({
+          terminalId: this.#input.attached.terminal.entry.terminalId,
+          grantId: selected.terminalGrantId,
+        }),
+      );
+    }
+    await Promise.all(mutations);
+    this.#statusNotice = `avatar @${selected.nickname} removed from this shell`;
+    await this.#refreshAvatarPanel("avatar-remove");
+  }
+
+  async #cycleSelectedAvatarRoomRole(): Promise<void> {
+    const selected = this.#selectedAvatarPanelItem();
+    if (!selected) {
+      return;
+    }
+    await this.#syncRoomGrant(selected, nextShellAvatarRoomRole(selected.roomRole));
+    await this.#refreshAvatarPanel("avatar-room-role");
+  }
+
+  async #cycleSelectedAvatarTerminalRole(): Promise<void> {
+    const selected = this.#selectedAvatarPanelItem();
+    if (!selected) {
+      return;
+    }
+    await this.#syncTerminalGrant(selected, nextShellAvatarTerminalRole(selected.terminalRole));
+    await this.#refreshAvatarPanel("avatar-terminal-role");
   }
 
   #selectHistoryItem(): void {

@@ -45,7 +45,7 @@ const createSessionEntry = (workspacePath: string, avatar: string): SessionEntry
   storeTarget: "global",
 });
 
-const createAvatarEntry = (nickname: string): GlobalAvatarCatalogEntry => ({
+export const createAvatarEntry = (nickname: string): GlobalAvatarCatalogEntry => ({
   avatarPrincipalId: `auth:${nickname}`,
   runtimeId: `runtime:${nickname}`,
   nickname,
@@ -61,7 +61,7 @@ const createAvatarEntry = (nickname: string): GlobalAvatarCatalogEntry => ({
   effectivePath: `/global/${nickname}`,
 });
 
-const createRoomEntry = (chatId: string, metadata: Record<string, unknown>, title: string): GlobalRoomEntry => ({
+export const createRoomEntry = (chatId: string, metadata: Record<string, unknown>, title: string): GlobalRoomEntry => ({
   chatId,
   kind: "room",
   title,
@@ -79,7 +79,7 @@ const createRoomEntry = (chatId: string, metadata: Record<string, unknown>, titl
   accessToken: `tok:${chatId}`,
 });
 
-const createTerminalEntry = (
+export const createTerminalEntry = (
   terminalId: string,
   metadata: Record<string, unknown> = {},
   processPhase: GlobalTerminalEntry["processPhase"] = "running",
@@ -540,7 +540,10 @@ export class FakeShellStore implements ShellStore {
       accessToken: `grant-token:${input.terminalId}:${input.participantId}`,
       createdAt: Date.now(),
     } satisfies GlobalTerminalGrantEntry;
-    this.terminalGrants.set(input.terminalId, [...(this.terminalGrants.get(input.terminalId) ?? []), grant]);
+    this.terminalGrants.set(input.terminalId, [
+      ...(this.terminalGrants.get(input.terminalId) ?? []).filter((item) => item.participantId !== input.participantId),
+      grant,
+    ]);
     return grant;
   }
 
@@ -618,8 +621,23 @@ export class FakeShellStore implements ShellStore {
       createdAt: Date.now(),
       accessToken: `grant-token:${input.chatId}`,
     } satisfies GlobalRoomGrantEntry;
-    this.roomGrants.set(input.chatId, [...(this.roomGrants.get(input.chatId) ?? []), grant]);
+    this.roomGrants.set(input.chatId, [
+      ...(this.roomGrants.get(input.chatId) ?? []).filter((item) => item.participantId !== input.participantId),
+      grant,
+    ]);
     return grant;
+  }
+
+  async revokeGlobalRoomGrant(input: {
+    chatId: string;
+    accessToken?: string;
+    grantId: string;
+  }): Promise<{ ok: boolean }> {
+    void input.accessToken;
+    const current = this.roomGrants.get(input.chatId) ?? [];
+    const next = current.filter((grant) => grant.grantId !== input.grantId);
+    this.roomGrants.set(input.chatId, next);
+    return { ok: next.length !== current.length };
   }
 
   async focusMessageChannels(input: {

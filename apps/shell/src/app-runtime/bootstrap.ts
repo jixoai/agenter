@@ -59,6 +59,7 @@ export interface ShellBootstrapInput {
   shellName: string;
   createAvatar?: boolean;
   clearAvatar?: boolean;
+  ensureBindingGrants?: boolean;
   onProgress?: (phase: ShellBootstrapProgressPhase) => void;
 }
 
@@ -108,9 +109,7 @@ const requireAvatarPrincipalId = (
   return avatar.avatarPrincipalId;
 };
 
-const toRoomActorId = (
-  avatarPrincipalId: NonNullable<GlobalAvatarCatalogEntry["avatarPrincipalId"]>,
-): GlobalRoomActorId => avatarPrincipalId as GlobalRoomActorId;
+const toRoomActorId = (avatarPrincipalId: string): GlobalRoomActorId => avatarPrincipalId as GlobalRoomActorId;
 
 const requireAutoLogin = async (store: ShellStore): Promise<void> => {
   if (store.getAuthToken?.()) {
@@ -233,6 +232,10 @@ export const bootstrapShellRoom = async (input: ShellRoomBootstrapInput): Promis
   input.onProgress?.("authenticating");
   await requireAutoLogin(input.store);
   const resolved = await resolveShellAvatarRuntime(input);
+  const ensureBindingGrants = input.ensureBindingGrants !== false;
+  const terminalParticipantId = ensureBindingGrants ? (resolved.avatarActorId as GlobalTerminalActorId) : undefined;
+  const roomParticipantId = ensureBindingGrants ? toRoomActorId(resolved.avatarActorId) : undefined;
+  const participantLabel = resolved.avatar.displayName ?? resolved.avatar.nickname;
   const terminal = await resolved.runtimeClient.ensureTerminalBinding({
     session: resolved.session,
     binding: {
@@ -241,8 +244,9 @@ export const bootstrapShellRoom = async (input: ShellRoomBootstrapInput): Promis
       resourceKind: "terminal",
       ownerSystem: "terminal-system",
     },
-    participantId: resolved.avatarActorId as GlobalTerminalActorId,
-    participantLabel: resolved.avatar.displayName ?? resolved.avatar.nickname,
+    // Existing Terminal entry chooses a binding, not a hidden room-user mutation.
+    participantId: terminalParticipantId,
+    participantLabel,
     focus: true,
     createInput: {
       processKind: "shell",
@@ -264,8 +268,8 @@ export const bootstrapShellRoom = async (input: ShellRoomBootstrapInput): Promis
       ownerSystem: "message-system",
       title: input.shellName,
     },
-    participantId: toRoomActorId(resolved.avatarActorId as NonNullable<GlobalAvatarCatalogEntry["avatarPrincipalId"]>),
-    participantLabel: resolved.avatar.displayName ?? resolved.avatar.nickname,
+    participantId: roomParticipantId,
+    participantLabel,
     grantRole: "member",
     focus: true,
   });

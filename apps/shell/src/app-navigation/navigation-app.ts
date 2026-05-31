@@ -9,12 +9,13 @@ import {
   type MouseEvent,
 } from "@opentui/core";
 
+import { padShellRoomText } from "../app-room/room-model";
 import {
+  buildShellNavigationTerminalRow,
   normalizeNewAvatarNickname,
   type ShellNavigationAvatarItem,
   type ShellNavigationShellItem,
 } from "./navigation-model";
-import { padShellRoomText } from "../app-room/room-model";
 
 export interface ShellNavigationAppInput {
   shellItems: readonly ShellNavigationShellItem[];
@@ -35,6 +36,8 @@ export interface ShellNavigationSelection {
   shellName: string;
   avatarNickname: string;
   createAvatar: boolean;
+  entryKind?: "existing-shell" | "new-shell";
+  skipBindingGrantEnsure?: boolean;
 }
 
 type NavigationStep = "shell" | "avatar";
@@ -54,15 +57,6 @@ const clampIndex = (index: number, length: number): number => {
     return 0;
   }
   return Math.max(0, Math.min(length - 1, index));
-};
-
-const shellLabel = (item: ShellNavigationShellItem): string => {
-  if (item.kind === "new-shell") {
-    return `+ ${item.title} (${item.shellName})`;
-  }
-  const title = item.currentTitle?.trim() || item.title;
-  const detail = item.currentPath?.trim() || item.terminalId;
-  return `${item.shellName}  ${item.processPhase}  ${title}  ${detail}`;
 };
 
 const avatarLabel = (item: ShellNavigationAvatarItem): string => {
@@ -93,6 +87,8 @@ export class ShellNavigationApp {
   #avatarIndex: number;
   #selectedShellName: string | null;
   #selectedAvatarNickname: string | null;
+  #selectedEntryKind: ShellNavigationSelection["entryKind"] = undefined;
+  #skipBindingGrantEnsure = false;
   #avatarWasCreated = false;
   #dialogOpen = false;
   #notice: string | null = null;
@@ -267,17 +263,20 @@ export class ShellNavigationApp {
   #renderRows(width: number, height: number): void {
     const items = this.#step === "shell" ? this.#input.shellItems : this.#input.avatarItems;
     const selectedIndex = this.#step === "shell" ? this.#shellIndex : this.#avatarIndex;
-    const title = this.#step === "shell" ? "Select Shell" : "Select Avatar";
+    const title = this.#step === "shell" ? "Select Terminal" : "Select Avatar";
     const subtitle =
       this.#step === "shell"
-        ? "Choose a live shell Shell or create the next shell-N."
+        ? "Choose a live Terminal/Room binding or create the next shell-N."
         : "Choose an Avatar or create one by nickname.";
     const contentWidth = Math.max(1, width - 5);
     this.#title.content = padShellRoomText(title, contentWidth);
     this.#subtitle.content = padShellRoomText(this.#notice ?? subtitle, contentWidth);
     this.#footer.content = padShellRoomText("↑/↓ select | Enter confirm | Esc cancel | Mouse click", contentWidth);
     const availableRows = Math.max(1, height - 6);
-    const firstIndex = Math.max(0, Math.min(selectedIndex - Math.floor(availableRows / 2), Math.max(0, items.length - availableRows)));
+    const firstIndex = Math.max(
+      0,
+      Math.min(selectedIndex - Math.floor(availableRows / 2), Math.max(0, items.length - availableRows)),
+    );
     while (this.#rows.length < availableRows) {
       const row = new TextRenderable(this.#renderer, {
         id: `shell-navigation-row-${this.#rows.length}`,
@@ -306,8 +305,18 @@ export class ShellNavigationApp {
         continue;
       }
       const selected = itemIndex === selectedIndex;
-      const label = this.#step === "shell" ? shellLabel(item as ShellNavigationShellItem) : avatarLabel(item as ShellNavigationAvatarItem);
-      row.content = padShellRoomText(`${selected ? ">" : " "} ${label}`, contentWidth);
+      const label =
+        this.#step === "shell"
+          ? buildShellNavigationTerminalRow(item as ShellNavigationShellItem, Math.max(1, contentWidth - 2))
+          : {
+              plainText: avatarLabel(item as ShellNavigationAvatarItem),
+              content: avatarLabel(item as ShellNavigationAvatarItem),
+            };
+      if (typeof label.content === "string") {
+        row.content = padShellRoomText(`${selected ? ">" : " "} ${label.content}`, contentWidth);
+      } else {
+        row.content = label.content;
+      }
       row.fg = selected ? "#f8fafc" : "#cbd5e1";
       row.bg = selected ? "#1e3a8a" : "#0f172a";
       this.#regions.push({
@@ -426,6 +435,13 @@ export class ShellNavigationApp {
         return;
       }
       this.#selectedShellName = item.shellName;
+      this.#selectedEntryKind = item.kind === "shell" ? "existing-shell" : "new-shell";
+      this.#skipBindingGrantEnsure = item.kind === "shell";
+      if (item.kind === "shell") {
+        this.#selectedAvatarNickname = this.#input.initialAvatarNickname ?? item.avatarNickname;
+        this.#completeIfReady();
+        return;
+      }
       if (this.#input.needsAvatar) {
         this.#step = "avatar";
         this.render("shell-selected");
@@ -474,6 +490,8 @@ export class ShellNavigationApp {
       shellName,
       avatarNickname,
       createAvatar: this.#avatarWasCreated,
+      entryKind: this.#selectedEntryKind,
+      skipBindingGrantEnsure: this.#skipBindingGrantEnsure,
     });
   }
 }
@@ -482,8 +500,7 @@ export const startShellNavigationApp = async (
   input: ShellNavigationAppInput,
 ): Promise<{ app: ShellNavigationApp; renderer: CliRenderer }> => {
   const renderer =
-    input.renderer ??
-    (await createCliRenderer({ exitOnCtrlC: false, useMouse: true, enableMouseMovement: true }));
+    input.renderer ?? (await createCliRenderer({ exitOnCtrlC: false, useMouse: true, enableMouseMovement: true }));
   const app = new ShellNavigationApp({
     ...input,
     renderer,

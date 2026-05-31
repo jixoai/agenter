@@ -1,13 +1,10 @@
 import type { GlobalAvatarCatalogEntry, RuntimeClientState } from "@agenter/client-sdk";
 import { describe, expect, test } from "bun:test";
 
-import {
-  defaultShellKeybindings,
-  defaultShellSettings,
-  type ShellSettings,
-} from "../src/app-room/settings";
+import { defaultShellKeybindings, defaultShellSettings, type ShellSettings } from "../src/app-room/settings";
 import { bootstrapShellRoom } from "../src/app-runtime/bootstrap";
 
+import { SHELL_APP_ID } from "../src/app-runtime/app";
 import { createShellRuntimeApprovalStore } from "../src/app-runtime/approval-store";
 import { parseShellArgs } from "../src/app-runtime/argv";
 import type { ShellAppRunDependencies } from "../src/app-runtime/runtime";
@@ -310,6 +307,60 @@ describe("Feature: shell app runtime bootstrap", () => {
 
     expect(store.createTerminalCalls).toBe(1);
     expect(output.join("")).toContain("terminal: terminal-1 (reused)");
+  });
+
+  test("Scenario: Given an existing Terminal row When selected Then bootstrap does not issue entry grants", async () => {
+    class RecordingGrantStore extends FakeShellStore {
+      terminalGrantCalls: Array<Parameters<FakeShellStore["issueGlobalTerminalGrant"]>[0]> = [];
+      roomGrantCalls: Array<Parameters<FakeShellStore["issueGlobalRoomGrant"]>[0]> = [];
+
+      async issueGlobalTerminalGrant(input: Parameters<FakeShellStore["issueGlobalTerminalGrant"]>[0]) {
+        this.terminalGrantCalls.push(input);
+        return await super.issueGlobalTerminalGrant(input);
+      }
+
+      async issueGlobalRoomGrant(input: Parameters<FakeShellStore["issueGlobalRoomGrant"]>[0]) {
+        this.roomGrantCalls.push(input);
+        return await super.issueGlobalRoomGrant(input);
+      }
+    }
+
+    const store = new RecordingGrantStore();
+    seedAvatar(store, "bangeel");
+    await store.createGlobalTerminal({
+      terminalId: "terminal-existing",
+      backend: "ghostty-native",
+      metadata: {
+        appId: SHELL_APP_ID,
+        resourceKey: "shell-5",
+        resourceKind: "terminal",
+        ownerSystem: "terminal-system",
+      },
+    });
+    await store.createGlobalRoom({
+      chatId: "room-existing",
+      metadata: {
+        appId: SHELL_APP_ID,
+        resourceKey: "shell-5",
+        resourceKind: "room",
+        ownerSystem: "message-system",
+      },
+    });
+    const dependencies = createTestDependencies({
+      store,
+      tty: true,
+      navigation: async () => ({
+        shellName: "shell-5",
+        avatarNickname: "bangeel",
+        createAvatar: false,
+        skipBindingGrantEnsure: true,
+      }),
+    });
+
+    await runShell(["bun", "agenter-shell"], dependencies);
+
+    expect(store.terminalGrantCalls).toEqual([]);
+    expect(store.roomGrantCalls).toEqual([]);
   });
 
   test("Scenario: Given shell bootstraps a app terminal When TerminalSystem creates the binding Then git-backed history is requested", async () => {

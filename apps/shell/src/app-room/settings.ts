@@ -20,15 +20,9 @@ export interface ShellKeybindings {
   panel?: Partial<Record<ShellPanelBindingAction, readonly string[]>>;
 }
 
-export type ShellTextareaBindingAction =
-  | "submit"
-  | "newline"
-  | "undo"
-  | "redo"
-  | "copy"
-  | "paste";
+export type ShellTextareaBindingAction = "submit" | "newline" | "undo" | "redo" | "copy" | "paste";
 
-export type ShellComposerBindingAction = "history";
+export type ShellComposerBindingAction = "history" | "avatar";
 
 export type ShellPanelBindingAction = "confirm" | "cancel";
 
@@ -63,6 +57,7 @@ const DEFAULT_KEYBINDINGS: ShellKeybindings = {
   },
   composer: {
     history: ["/history"],
+    avatar: ["/avatar"],
   },
   panel: {
     confirm: ["return"],
@@ -86,7 +81,9 @@ const normalizeOptionalText = (value: unknown): string | null => {
 export const defaultShellSettings = (): ShellSettings => structuredClone(DEFAULT_SETTINGS);
 export const defaultShellKeybindings = (): ShellKeybindings => structuredClone(DEFAULT_KEYBINDINGS);
 
-const resolveStoragePaths = (options?: ShellSettingsStorageOptions): {
+const resolveStoragePaths = (
+  options?: ShellSettingsStorageOptions,
+): {
   dir: string;
   settingsPath: string;
   keybindingsPath: string;
@@ -169,7 +166,7 @@ export const parseShellKeybindings = (raw: string | null | undefined): ShellKeyb
       },
       composer: {
         ...DEFAULT_KEYBINDINGS.composer,
-        ...normalizeBindingsRecord(parsed.composer, ["history"]),
+        ...normalizeBindingsRecord(parsed.composer, ["history", "avatar"]),
       },
       panel: {
         ...DEFAULT_KEYBINDINGS.panel,

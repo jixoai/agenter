@@ -56,6 +56,7 @@ export interface ShellAttachArgs extends ShellBaseAppArgs {
   readonly view: ShellView;
   readonly sessionExplicit: boolean;
   readonly avatarExplicit: boolean;
+  readonly ensureBindingGrants: boolean;
 }
 
 export interface ShellCleanupArgs {
@@ -124,7 +125,9 @@ const normalizeAvatarMention = (value: string | undefined): string | undefined =
   return nickname;
 };
 
-const parseAvatarSelection = (parsed: ShellBaseArgvParseResult): {
+const parseAvatarSelection = (
+  parsed: ShellBaseArgvParseResult,
+): {
   avatarNickname: string;
   avatarExplicit: boolean;
 } => {
@@ -197,7 +200,9 @@ const baseParser = (argv: readonly string[], env: NodeJS.ProcessEnv, scriptName 
     .version(false)
     .exitProcess(false);
 
-const toBaseAppArgs = (parsed: ShellBaseArgvParseResult): ShellBaseAppArgs & {
+const toBaseAppArgs = (
+  parsed: ShellBaseArgvParseResult,
+): ShellBaseAppArgs & {
   sessionExplicit: boolean;
   avatarExplicit: boolean;
 } => {
@@ -233,13 +238,12 @@ export const isShellMetadataOnlyAppArgv = (argv: readonly string[]): boolean => 
   return firstToken.startsWith("@") && secondToken !== undefined && metadataCommandTokens.has(secondToken);
 };
 
-export const createShellHelpText = async (argv: readonly string[], env: NodeJS.ProcessEnv = process.env): Promise<string> =>
-  await baseParser(argv, env).getHelp();
-
-export const parseShellArgs = (
+export const createShellHelpText = async (
   argv: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
-): ShellParsedArgs => {
+): Promise<string> => await baseParser(argv, env).getHelp();
+
+export const parseShellArgs = (argv: readonly string[], env: NodeJS.ProcessEnv = process.env): ShellParsedArgs => {
   const commandToken = argv[0] ?? "";
   const parsed = baseParser(argv, env).parseSync() as ShellBaseArgvParseResult;
   const base = toBaseAppArgs(parsed);
@@ -288,5 +292,6 @@ export const parseShellArgs = (
     ...base,
     command: "attach",
     view: parseViewSelection(parsed),
+    ensureBindingGrants: true,
   };
 };
