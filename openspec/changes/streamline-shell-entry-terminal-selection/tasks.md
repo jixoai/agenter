@@ -42,12 +42,12 @@
 - [x] 4.3 Run `bun run --filter 'agenter-app-shell' test` if the focused tests do not already exercise the full Shell package surface.
 - [x] 4.4 Run `bun run --filter 'agenter-app-shell' typecheck`.
 - [x] 4.5 Run `bun run openspec:vision -- validate streamline-shell-entry-terminal-selection`.
-- [ ] 4.6 Run `bun run openspec:vision -- commit-check streamline-shell-entry-terminal-selection --phase self-review` before writing review evidence.
+- [x] 4.6 Run `bun run openspec:vision -- commit-check streamline-shell-entry-terminal-selection --phase self-review` before writing review evidence.
 
 ## 5. Self-Review Loop
 
-- [ ] 5.1 Generate `review/self-review.md` comparing the final implementation against `plans/plan.md`, the specs, and the three clarified user decisions.
-- [ ] 5.2 Generate `review/self-review.html` or an equivalent structured review evidence artifact if the vision workflow requires an HTML evidence surface for this change.
+- [x] 5.1 Generate `review/self-review.md` comparing the final implementation against `plans/plan.md`, the specs, and the three clarified user decisions.
+- [x] 5.2 Generate `review/self-review.html` or an equivalent structured review evidence artifact if the vision workflow requires an HTML evidence surface for this change.
 - [ ] 5.3 If self-review reopens tasks or changes specs/tasks, commit those OpenSpec artifact updates before the next apply loop.
 - [ ] 5.4 If the review enters a real loop, run `bun run openspec:vision -- review-state streamline-shell-entry-terminal-selection` to persist iteration and recurrence state.
 - [ ] 5.5 If the review cannot exit normally, run `bun run openspec:vision -- handoff streamline-shell-entry-terminal-selection` and commit the handoff evidence before returning to user discussion.

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>streamline-shell-entry-terminal-selection self-review</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        margin: 24px;
+        color: #0f172a;
+        background: #f8fafc;
+      }
+      h1,
+      h2 {
+        margin: 0 0 12px;
+      }
+      section {
+        margin: 20px 0;
+        padding: 16px;
+        background: #fff;
+        border: 1px solid #cbd5e1;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border: 1px solid #cbd5e1;
+        padding: 8px 10px;
+        vertical-align: top;
+        text-align: left;
+      }
+      th {
+        background: #e2e8f0;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, monospace;
+      }
+      ul {
+        margin: 8px 0 0 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Vision-Driven Self Review</h1>
+    <section>
+      <h2>Review State</h2>
+      <ul>
+        <li>Change: <code>streamline-shell-entry-terminal-selection</code></li>
+        <li>Iteration: 1</li>
+        <li>Recurring issue counts: 0</li>
+        <li>Exit-condition judgment: normal exit; ready for archive</li>
+        <li>Next loop action: archive evidence commit</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Intent Alignment</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Intent point</th>
+            <th>Evidence</th>
+            <th>Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Existing Shell/Terminal entry should skip Avatar selection</td>
+            <td><code>navigation-app.test.ts</code> and <code>navigation-app.ts</code></td>
+            <td>Pass</td>
+          </tr>
+          <tr>
+            <td>New Terminal still asks for Avatar</td>
+            <td><code>navigation-app.test.ts</code></td>
+            <td>Pass</td>
+          </tr>
+          <tr>
+            <td>Existing entry must not mutate grants as a side effect</td>
+            <td><code>run-shell.test.ts</code> and <code>bootstrap.ts</code></td>
+            <td>Pass</td>
+          </tr>
+          <tr>
+            <td>Select Terminal should show structured fields and other people</td>
+            <td><code>navigation-model.test.ts</code> and <code>navigation-model.ts</code></td>
+            <td>Pass</td>
+          </tr>
+          <tr>
+            <td>/avatar should live in Room composer and manage grants</td>
+            <td><code>room-app-surface.test.ts</code> and <code>room-app.ts</code></td>
+            <td>Pass</td>
+          </tr>
+          <tr>
+            <td>Legacy ambiguity should not be silently repaired</td>
+            <td><code>navigation-model.test.ts</code> and <code>navigation-model.ts</code></td>
+            <td>Pass</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+    <section>
+      <h2>Deviations</h2>
+      <p>None observed.</p>
+    </section>
+    <section>
+      <h2>Questions</h2>
+      <p>None.</p>
+    </section>
+    <section>
+      <h2>Evidence</h2>
+      <ul>
+        <li>Command logs for focused tests, package tests, typecheck, validate, and diff check.</li>
+        <li>Commits: <code>f4d5bbba</code> and <code>41b2918c</code>.</li>
+        <li>
+          Task file updated in current context:
+          <code>openspec/changes/streamline-shell-entry-terminal-selection/tasks.md</code>.
+        </li>
+      </ul>
+    </section>
+  </body>
+</html>
