@@ -1,17 +1,14 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { releaseBundlePublishOrder } from "./release-manifest";
+
 interface PackageJson {
   name: string;
   version: string;
 }
 
-export const bundlePublishOrder = [
-  "bundle/@jixo/ghostty-native",
-  "bundle/agenter-app-shell",
-  "bundle/agenter-app-studio",
-  "bundle/agenter",
-] as const;
+export const bundlePublishOrder = releaseBundlePublishOrder;
 
 const repoRoot = resolve(import.meta.dir, "../..");
 

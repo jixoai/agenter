@@ -1,72 +1,24 @@
 import { existsSync } from "node:fs";
 import { chmod, cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { suffix } from "bun:ffi";
 
-interface PackageJson {
-  name: string;
-  version: string;
-  description?: string;
-  license?: string;
-  type?: string;
-  bin?: Record<string, string>;
-  exports?: Record<string, string>;
-  dependencies?: Record<string, string>;
-  optionalDependencies?: Record<string, string>;
-  peerDependencies?: Record<string, string>;
-  engines?: Record<string, string>;
-  publishConfig?: Record<string, string>;
-  repository?: {
-    type: string;
-    url: string;
-    directory?: string;
-  };
-}
-
-interface BundleAssetSpec {
-  from: string;
-  to: string;
-  optional?: boolean;
-}
-
-interface BundlePackageSpec {
-  sourcePackageDir: string;
-  bundlePackageDir: string;
-  entry?: string;
-  bin?: Record<string, string>;
-  exports?: Record<string, string>;
-  dependencies?: Record<string, string>;
-  optionalDependencies?: Record<string, string>;
-  peerDependencies?: Record<string, string>;
-  external?: string[];
-  assets?: BundleAssetSpec[];
-  bundledAssetsRoot?: boolean;
-}
+import {
+  createReleaseBundlePackageSpecs,
+  releaseBundleManifestFiles,
+  releaseNativeLibrarySuffix,
+  releasePublishablePackageJsonPaths,
+  releaseRepositoryUrl,
+  releaseToolchain,
+  type ReleaseBundleAssetSpec,
+  type ReleaseBundlePackageSpec,
+  type ReleasePackageJson,
+} from "./release-manifest";
 
 const repoRoot = resolve(import.meta.dir, "../..");
 const bundleRoot = join(repoRoot, "bundle");
-const releaseRepositoryUrl = "git+https://github.com/jixoai/agenter.git";
-const expectedZigVersion = "0.15.2";
-const opentuiNativePackageVersion = "0.3.0";
+const expectedZigVersion = releaseToolchain.zigVersion;
 const releaseZigRoot = `/tmp/zig-${expectedZigVersion}`;
 const releaseZigBin = join(releaseZigRoot, "zig");
-const bundleManifestFiles = [
-  "bin",
-  "dist",
-  "assets",
-  "build",
-  "native",
-  "vendor",
-  "src",
-  "README.md",
-  "termless-ghostty-native.node",
-] as const;
-const publishablePackageJsonPaths = [
-  "packages/agenter/package.json",
-  "apps/shell/package.json",
-  "apps/studio/package.json",
-  "packages/ghostty-native/package.json",
-] as const;
 
 const readJson = async <T>(path: string): Promise<T> => (await Bun.file(path).json()) as T;
 
@@ -75,7 +27,7 @@ const writeJson = async (path: string, value: unknown): Promise<void> => {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
 };
 
-const copyAsset = async (asset: BundleAssetSpec, bundlePackageDir: string): Promise<void> => {
+const copyAsset = async (asset: ReleaseBundleAssetSpec, bundlePackageDir: string): Promise<void> => {
   const from = join(repoRoot, asset.from);
   const to = join(bundlePackageDir, asset.to);
   if (existsSync(from)) {
@@ -125,7 +77,7 @@ const createBundledBinWrapper = async (input: {
       'import { dirname, resolve } from "node:path";',
       'import { fileURLToPath } from "node:url";',
       "",
-      "const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), \"..\");",
+      'const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");',
       assetRootLine,
       `await import(${JSON.stringify(`../${distImportPath.replace(/^\.\//u, "")}`)});`,
       "",
@@ -152,10 +104,10 @@ const toWrapperBin = (
   };
 };
 
-const buildBundle = async (input: BundlePackageSpec): Promise<void> => {
+const buildBundle = async (input: ReleaseBundlePackageSpec): Promise<void> => {
   const sourcePackageDir = join(repoRoot, input.sourcePackageDir);
   const bundlePackageDir = join(repoRoot, input.bundlePackageDir);
-  const sourcePkg = await readJson<PackageJson>(join(sourcePackageDir, "package.json"));
+  const sourcePkg = await readJson<ReleasePackageJson>(join(sourcePackageDir, "package.json"));
   await rm(bundlePackageDir, { recursive: true, force: true });
   await mkdir(bundlePackageDir, { recursive: true });
 
@@ -194,9 +146,7 @@ const buildBundle = async (input: BundlePackageSpec): Promise<void> => {
     type: sourcePkg.type ?? "module",
     bin: packageBin,
     exports: input.exports,
-    files: bundleManifestFiles.filter((entry) =>
-      existsSync(join(bundlePackageDir, entry)),
-    ),
+    files: releaseBundleManifestFiles.filter((entry) => existsSync(join(bundlePackageDir, entry))),
     dependencies: input.dependencies ? normalizeWorkspaceDependencies(input.dependencies) : undefined,
     optionalDependencies: input.optionalDependencies
       ? normalizeWorkspaceDependencies(input.optionalDependencies)
@@ -219,8 +169,8 @@ const readWorkspacePackageVersion = async (packageName: string): Promise<string>
   if (cached) {
     return cached;
   }
-  for (const relativePath of publishablePackageJsonPaths) {
-    const pkg = await readJson<PackageJson>(join(repoRoot, relativePath));
+  for (const relativePath of releasePublishablePackageJsonPaths) {
+    const pkg = await readJson<ReleasePackageJson>(join(repoRoot, relativePath));
     packageVersions.set(pkg.name, pkg.version);
   }
   const version = packageVersions.get(packageName);
@@ -263,7 +213,9 @@ const resolveZigArchiveName = (): string => {
   if (process.platform === "linux" && process.arch === "arm64") {
     return `zig-aarch64-linux-${expectedZigVersion}`;
   }
-  throw new Error(`automatic Zig ${expectedZigVersion} bootstrap is not configured for ${process.platform}/${process.arch}`);
+  throw new Error(
+    `automatic Zig ${expectedZigVersion} bootstrap is not configured for ${process.platform}/${process.arch}`,
+  );
 };
 
 const ensureReleaseZig = async (): Promise<string> => {
@@ -272,7 +224,13 @@ const ensureReleaseZig = async (): Promise<string> => {
   }
   const archiveName = resolveZigArchiveName();
   const archivePath = `/tmp/${archiveName}.tar.xz`;
-  await run(["curl", "-L", `https://ziglang.org/download/${expectedZigVersion}/${archiveName}.tar.xz`, "-o", archivePath]);
+  await run([
+    "curl",
+    "-L",
+    `https://ziglang.org/download/${expectedZigVersion}/${archiveName}.tar.xz`,
+    "-o",
+    archivePath,
+  ]);
   await rm(releaseZigRoot, { recursive: true, force: true });
   await run(["tar", "-xf", archivePath, "-C", "/tmp"]);
   await run(["mv", `/tmp/${archiveName}`, releaseZigRoot]);
@@ -286,67 +244,7 @@ const ensureNativeAssets = async (): Promise<void> => {
   await run(["bun", "run", "--filter", "@agenter/auth-service", "build:webauthn-ui"]);
 };
 
-export const createBundlePackageSpecs = (): BundlePackageSpec[] => [
-  {
-    sourcePackageDir: "packages/agenter",
-    bundlePackageDir: "bundle/agenter",
-    entry: "src/bin/agenter.ts",
-    bin: { agenter: "./dist/agenter.js" },
-    bundledAssetsRoot: true,
-    dependencies: {
-      "@duckdb/node-api": "^1.5.1-r.1",
-      "@jixo/ghostty-native": "workspace:*",
-      "@termless/core": "^0.6.0",
-    },
-    external: ["@duckdb/node-api", "@jixo/ghostty-native"],
-    assets: [
-      {
-        from: `packages/auth-service/native/resvg_bridge/target/release/libprofile_resvg_bridge.${suffix}`,
-        to: `assets/auth-service/native/resvg_bridge/target/release/libprofile_resvg_bridge.${suffix}`,
-      },
-      { from: "packages/auth-service/src/server/webauthn-ui", to: "assets/auth-service/webauthn-ui" },
-      { from: "packages/i18n-en/prompts", to: "assets/i18n-en/prompts" },
-      { from: "packages/i18n-en/prompts.json", to: "assets/i18n-en/prompts.json" },
-      { from: "packages/i18n-en/runtime.json", to: "assets/i18n-en/runtime.json" },
-      { from: "packages/i18n-zh-Hans/prompts", to: "assets/i18n-zh-Hans/prompts" },
-      { from: "packages/i18n-zh-Hans/prompts.json", to: "assets/i18n-zh-Hans/prompts.json" },
-      { from: "packages/i18n-zh-Hans/runtime.json", to: "assets/i18n-zh-Hans/runtime.json" },
-    ],
-  },
-  {
-    sourcePackageDir: "apps/shell",
-    bundlePackageDir: "bundle/agenter-app-shell",
-    entry: "src/bin/agenter-shell.ts",
-    bin: { "agenter-shell": "./dist/agenter-shell.js" },
-    optionalDependencies: {
-      "@opentui/core-darwin-arm64": opentuiNativePackageVersion,
-      "@opentui/core-darwin-x64": opentuiNativePackageVersion,
-      "@opentui/core-linux-arm64": opentuiNativePackageVersion,
-      "@opentui/core-linux-x64": opentuiNativePackageVersion,
-      "@opentui/core-win32-arm64": opentuiNativePackageVersion,
-      "@opentui/core-win32-x64": opentuiNativePackageVersion,
-    },
-  },
-  {
-    sourcePackageDir: "apps/studio",
-    bundlePackageDir: "bundle/agenter-app-studio",
-    entry: "src/bin/agenter-studio.ts",
-    bin: { "agenter-studio": "./dist/agenter-studio.js" },
-    bundledAssetsRoot: true,
-    assets: [{ from: "apps/studio/build", to: "assets/studio/build" }],
-  },
-  {
-    sourcePackageDir: "packages/ghostty-native",
-    bundlePackageDir: "bundle/@jixo/ghostty-native",
-    exports: { ".": "./src/index.ts" },
-    peerDependencies: { "@termless/core": "*" },
-    assets: [
-      { from: "packages/ghostty-native/README.md", to: "README.md" },
-      { from: "packages/ghostty-native/src", to: "src" },
-      { from: "packages/ghostty-native/termless-ghostty-native.node", to: "termless-ghostty-native.node" },
-    ],
-  },
-];
+export const createBundlePackageSpecs = createReleaseBundlePackageSpecs;
 
 export const buildReleaseBundles = async (): Promise<void> => {
   await rm(bundleRoot, { recursive: true, force: true });
@@ -362,7 +260,7 @@ export const buildReleaseBundles = async (): Promise<void> => {
 
   await writeFile(join(bundleRoot, ".gitignore"), "*\n!.gitignore\n");
   console.log("Release bundles written to ./bundle");
-  console.log(`Auth resvg suffix: ${suffix}`);
+  console.log(`Auth resvg suffix: ${releaseNativeLibrarySuffix}`);
 };
 
 if (import.meta.main) {

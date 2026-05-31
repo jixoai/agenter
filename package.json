@@ -1,6 +1,7 @@
 {
   "name": "agenter-workspace",
   "private": true,
+  "packageManager": "bun@1.3.14",
   "workspaces": [
     "demo",
     "apps/*",
@@ -27,8 +28,10 @@
     "format:check": "prettier --check .",
     "openspec:vision": "bun run scripts/openspec/vision-driven.ts",
     "release:build-bundles": "bun run scripts/release/build-bundles.ts",
+    "release:preflight": "bun run scripts/release/preflight.ts",
     "release:publish-bundles": "bun run scripts/release/publish-bundles.ts",
     "release:publish-bundles:dry-run": "bun run scripts/release/publish-bundles.ts --dry-run",
+    "release:verify-published": "bun run scripts/release/verify-published.ts",
     "release-packages": "bun run release:build-bundles && bun run release:publish-bundles",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",

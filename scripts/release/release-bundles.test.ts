@@ -4,6 +4,12 @@ import { join, resolve } from "node:path";
 
 import { createBundlePackageSpecs } from "./build-bundles";
 import { bundlePublishOrder } from "./publish-bundles";
+import {
+  createReleaseBundlePackageSpecs,
+  releaseBundlePublishOrder,
+  releaseRepositoryUrl,
+  releaseToolchain,
+} from "./release-manifest";
 
 const repoRoot = resolve(import.meta.dir, "../..");
 
@@ -13,6 +19,7 @@ describe("Feature: release bundle contract", () => {
   test("Scenario: Given release bundles are generated When inspecting the bundle specs Then only the public package atoms are publishable", () => {
     const specs = createBundlePackageSpecs();
 
+    expect(specs).toEqual(createReleaseBundlePackageSpecs());
     expect(specs.map((spec) => spec.bundlePackageDir)).toEqual([
       "bundle/agenter",
       "bundle/agenter-app-shell",
@@ -25,21 +32,21 @@ describe("Feature: release bundle contract", () => {
       "bundle/agenter-app-studio",
       "bundle/agenter",
     ]);
+    expect(bundlePublishOrder).toBe(releaseBundlePublishOrder);
   });
 
   test("Scenario: Given bundled bins need package-local assets When inspecting release scripts Then wrapper bins own AGENTER_BUNDLED_ASSETS_ROOT", () => {
     const specs = createBundlePackageSpecs();
-    const assetOwners = specs
-      .filter((spec) => spec.bundledAssetsRoot)
-      .map((spec) => spec.bundlePackageDir);
+    const assetOwners = specs.filter((spec) => spec.bundledAssetsRoot).map((spec) => spec.bundlePackageDir);
     const buildScript = readRepoFile("scripts/release/build-bundles.ts");
+    const manifest = readRepoFile("scripts/release/release-manifest.ts");
 
     expect(assetOwners).toEqual(["bundle/agenter", "bundle/agenter-app-studio"]);
     expect(buildScript).toContain("[name, `bin/${name}.js`]");
-    expect(buildScript).toContain("process.env.AGENTER_BUNDLED_ASSETS_ROOT = resolve(packageRoot, \"assets\")");
-    expect(buildScript).toContain("libprofile_resvg_bridge.${suffix}");
+    expect(buildScript).toContain('process.env.AGENTER_BUNDLED_ASSETS_ROOT = resolve(packageRoot, "assets")');
+    expect(manifest).toContain("libprofile_resvg_bridge.${releaseNativeLibrarySuffix}");
     expect(buildScript).toContain("await chmod(binAbsolutePath, 0o755)");
-    expect(buildScript).not.toContain('from: "packages/auth-service/native/resvg_bridge/target/release",');
+    expect(manifest).not.toContain('from: "packages/auth-service/native/resvg_bridge/target/release",');
   });
 
   test("Scenario: Given the npm CLI bundle starts daemon dependencies When inspecting the source bin Then reflect metadata is loaded before CLI imports", () => {
@@ -62,7 +69,7 @@ describe("Feature: release bundle contract", () => {
     const cliSource = readRepoFile("packages/cli/src/run-cli.ts");
 
     expect(cliSource).toContain("const resolveCurrentCliEntrypointArgv = (): string[] => {");
-    expect(cliSource).toContain('const entrypoint = process.argv[1];');
+    expect(cliSource).toContain("const entrypoint = process.argv[1];");
     expect(cliSource).toContain('return ["run", resolveCliEntryPath()];');
     expect(cliSource).toMatch(/const argv = \[\s*\.\.\.resolveCurrentCliEntrypointArgv\(\),\s*"daemon",\s*"start",/u);
     expect(cliSource).not.toContain('const argv = ["run", resolveCliEntryPath(), "daemon", "start"');
@@ -116,8 +123,10 @@ describe("Feature: release bundle contract", () => {
 
   test("Scenario: Given npm provenance validates repository identity When writing bundle package manifests Then every publishable atom points at the agenter repository", () => {
     const buildScript = readRepoFile("scripts/release/build-bundles.ts");
+    const manifest = readRepoFile("scripts/release/release-manifest.ts");
 
-    expect(buildScript).toContain('const releaseRepositoryUrl = "git+https://github.com/jixoai/agenter.git"');
+    expect(releaseRepositoryUrl).toBe("git+https://github.com/jixoai/agenter.git");
+    expect(manifest).toContain('releaseRepositoryUrl = "git+https://github.com/jixoai/agenter.git"');
     expect(buildScript).toContain("repository: {");
     expect(buildScript).toContain("url: releaseRepositoryUrl");
     expect(buildScript).toContain("directory: input.sourcePackageDir");
@@ -143,22 +152,51 @@ describe("Feature: release bundle contract", () => {
     expect(termlessCorePkg.dependencies?.["@termless/ghostty-native"]).toBeUndefined();
     expect(ghosttySpec?.assets?.map((asset) => asset.to)).toContain("termless-ghostty-native.node");
     expect(ghosttySpec?.assets?.map((asset) => asset.to)).not.toContain("build");
-    expect(ghosttySpec?.assets?.map((asset) => asset.to)).not.toContain("native/zig-out/lib/termless-ghostty-native.node");
+    expect(ghosttySpec?.assets?.map((asset) => asset.to)).not.toContain(
+      "native/zig-out/lib/termless-ghostty-native.node",
+    );
   });
 
   test("Scenario: Given GitHub trusted publishing is configured When inspecting the publish path Then npm provenance is mandatory and stale versions are skipped", () => {
     const publishScript = readRepoFile("scripts/release/publish-bundles.ts");
     const workflow = readRepoFile(".github/workflows/release.yml");
+    const packageJson = JSON.parse(readRepoFile("package.json")) as {
+      packageManager?: string;
+      scripts?: Record<string, string>;
+    };
 
-    expect(publishScript).toContain("\"--provenance\"");
+    expect(publishScript).toContain('"--provenance"');
     expect(publishScript).toContain("isPackageVersionPublished");
     expect(workflow).toContain("id-token: write");
     expect(workflow).toContain("environment: npm-release");
     expect(workflow).toContain("actions/setup-node@v4");
     expect(workflow).toContain('node-version: "24"');
+    expect(workflow).toContain(`bun-version: "${releaseToolchain.bunVersion}"`);
+    expect(workflow).not.toContain("bun-version: latest");
     expect(workflow).toContain('registry-url: "https://registry.npmjs.org"');
     expect(workflow).toContain("npm --version");
+    expect(workflow).toContain("bun run release:preflight --skip-install");
     expect(workflow).toContain("changesets/action@v1");
     expect(workflow).toContain("publish: bun run release-packages");
+    expect(workflow).toContain("steps.changesets.outputs.published == 'true'");
+    expect(workflow).toContain("bun run release:verify-published");
+    expect(packageJson.packageManager).toBe(`bun@${releaseToolchain.bunVersion}`);
+    expect(packageJson.scripts?.["release:preflight"]).toBe("bun run scripts/release/preflight.ts");
+    expect(packageJson.scripts?.["release:verify-published"]).toBe("bun run scripts/release/verify-published.ts");
+  });
+
+  test("Scenario: Given release reliability scripts run When inspecting preflight and published verification Then they reuse release manifest without extension vocabulary checks", () => {
+    const preflightScript = readRepoFile("scripts/release/preflight.ts");
+    const verifyScript = readRepoFile("scripts/release/verify-published.ts");
+
+    expect(preflightScript).toContain("releaseToolchain");
+    expect(preflightScript).toContain('["bun", "install", "--frozen-lockfile"]');
+    expect(preflightScript).toContain("release-bundles.test.ts");
+    expect(preflightScript).toContain("release:build-bundles");
+    expect(preflightScript).not.toContain("audit-app-platform-vocabulary");
+    expect(verifyScript).toContain("releaseBundlePublishOrder");
+    expect(verifyScript).toContain("npm");
+    expect(verifyScript).toContain("peerDependencies");
+    expect(verifyScript).toContain("optionalDependencies");
   });
 });
