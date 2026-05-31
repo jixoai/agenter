@@ -31,13 +31,13 @@
 - [x] 4.2 Run the targeted `@agenter/web-chat-view` tests that cover Markdown resource parsing and send serialization.
 - [x] 4.3 Run the runtime ingress regression check proving comment text reaches model-facing content through `message.content`.
 - [x] 4.4 Run `bun run openspec:vision -- validate canonicalize-web-chat-resource-markdown-storage`.
-- [ ] 4.5 Run `bun run openspec:vision -- commit-check canonicalize-web-chat-resource-markdown-storage --phase self-review` before writing final review evidence.
+- [x] 4.5 Run `bun run openspec:vision -- commit-check canonicalize-web-chat-resource-markdown-storage --phase self-review` before writing final review evidence.
 
 ## 5. Self-Review Loop
 
-- [ ] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, and tasks.
-- [ ] 5.2 Generate `review/self-review.html` as structured command/test evidence for this backend/frontend contract change.
+- [x] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, and tasks.
+- [x] 5.2 Generate `review/self-review.html` as structured command/test evidence for this backend/frontend contract change.
 - [ ] 5.3 If self-review reopens OpenSpec artifacts or tasks, commit those artifact changes before the next apply loop.
 - [ ] 5.4 If review enters a real loop, run `bun run openspec:vision -- review-state canonicalize-web-chat-resource-markdown-storage` to persist iteration / recurrence state.
 - [ ] 5.5 If review cannot exit normally, run `bun run openspec:vision -- handoff canonicalize-web-chat-resource-markdown-storage` and commit the handoff evidence before returning to user discussion.
-- [ ] 5.6 If review exits normally, run `bun run openspec:vision -- check canonicalize-web-chat-resource-markdown-storage` and decide whether to archive or return to `research-plan` with a backed-up plan revision.
+- [x] 5.6 If review exits normally, run `bun run openspec:vision -- check canonicalize-web-chat-resource-markdown-storage` and decide whether to archive or return to `research-plan` with a backed-up plan revision.

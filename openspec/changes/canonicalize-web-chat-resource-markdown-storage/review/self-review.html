@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>canonicalize-web-chat-resource-markdown-storage self review</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 32px;
+        color: #172026;
+        line-height: 1.45;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 16px 0 28px;
+      }
+      th,
+      td {
+        border: 1px solid #ccd5dd;
+        padding: 8px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #eef3f7;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.92em;
+      }
+      .pass {
+        color: #136f3a;
+        font-weight: 600;
+      }
+      .warn {
+        color: #8a5200;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Self Review: canonical WebChat Markdown Storage</h1>
+    <p>
+      The durable carrier for WebChat resource references is now raw Markdown
+      <code>message.content</code>. The backend strips WebChat resource projection metadata, and the legacy
+      <code>shell-1</code> row was repaired.
+    </p>
+    <h2>Intent Checks</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Check</th>
+          <th>Evidence</th>
+          <th>Verdict</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>App-view sends Markdown, not resource metadata</td>
+          <td><code>review-submit-markdown-contract.test.ts</code></td>
+          <td class="pass">pass</td>
+        </tr>
+        <tr>
+          <td>Backend strips forbidden WebChat metadata</td>
+          <td><code>message-system.test.ts</code> sanitizer scenario</td>
+          <td class="pass">pass</td>
+        </tr>
+        <tr>
+          <td>Legacy rows repair idempotently</td>
+          <td><code>message-system.test.ts</code> legacy repair scenario plus actual <code>shell-1</code> row</td>
+          <td class="pass">pass</td>
+        </tr>
+        <tr>
+          <td>Runtime sees comment body through content</td>
+          <td><code>session-runtime.attention-system.test.ts</code> targeted scenario</td>
+          <td class="pass">pass</td>
+        </tr>
+      </tbody>
+    </table>
+    <h2>Residual Risk</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Area</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Full WebChat unit suite</td>
+          <td class="warn">Unrelated workspace assertion failure: missing <code>packages/*/*</code>.</td>
+        </tr>
+        <tr>
+          <td>Full CLI trpc suite</td>
+          <td class="warn">Unrelated shared-room setup and profile-service icon failures remain.</td>
+        </tr>
+      </tbody>
+    </table>
+  </body>
+</html>
