@@ -6,6 +6,8 @@ import type { WorkspaceGrantRecord } from "./workspace-system";
 
 export interface RuntimeSkillWorkspaceAuthority {
   workspaceRoot: string;
+  defaultCwd: string;
+  env: Record<string, string>;
   grants: WorkspaceGrantRecord[];
 }
 

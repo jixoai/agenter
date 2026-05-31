@@ -267,6 +267,9 @@ import {
   type SettingsLayersResult,
 } from "./workspace-settings";
 import {
+  AVATAR_HOME_ENV,
+  deriveMultiWorkspaceSkillsHome,
+  parseEnvAvatarHome,
   RootWorkspaceShellWorld,
   createRootWorkspaceShellWorld,
   executeWorkspaceBash,
@@ -2295,11 +2298,30 @@ export class SessionRuntime {
   }
 
   private getRootWorkspaceSkillRoots(): string[] {
+    const skillHomeRoots = this.getRuntimeSkillHomeRoots();
+    if (skillHomeRoots.length > 0) {
+      return listRuntimeSkillMountRoots({
+        homeDir: this.getHomeDir(),
+        skillHomeRoots,
+        principalId: this.options.avatarPrincipalId,
+      });
+    }
     return listRuntimeSkillMountRoots({
       homeDir: this.getHomeDir(),
       rootWorkspacePath: this.getRootWorkspacePath(),
       principalId: this.options.avatarPrincipalId,
     });
+  }
+
+  private getRuntimeSkillHomeRoots(): string[] {
+    const workspaceGroups = this.listWorkspaceAuthorities().map((authority) => ({
+      pwd: authority.defaultCwd,
+      avatarHome: parseEnvAvatarHome(authority.mount.env[AVATAR_HOME_ENV]),
+    }));
+    if (workspaceGroups.length === 0) {
+      return [];
+    }
+    return deriveMultiWorkspaceSkillsHome({ workspaceGroups });
   }
 
   private ensureRuntimeSkillSystem(): RuntimeSkillSystem {
@@ -2310,11 +2332,14 @@ export class SessionRuntime {
       owner: this.getAvatarName(),
       homeDir: this.getHomeDir(),
       rootWorkspacePath: this.getRootWorkspacePath(),
+      resolveSkillHomeRoots: () => this.getRuntimeSkillHomeRoots(),
       principalId: this.options.avatarPrincipalId,
       fingerprintManifestPath: join(this.options.sessionRoot, "skill-system", "fingerprint-map.json"),
       listWorkspaceAuthorities: () =>
         this.listWorkspaceAuthorities().map((authority) => ({
           workspaceRoot: authority.workspaceRoot,
+          defaultCwd: authority.defaultCwd,
+          env: { ...authority.mount.env },
           grants: authority.grants,
         })),
       onIdleFlush: async (result) => {

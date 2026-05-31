@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runtimeBuiltinSkillCatalog } from "./generated/runtime-skill-catalog.generated";
@@ -48,7 +48,10 @@ export interface RuntimeSkillRecord {
 
 export interface RuntimeSkillLookupInput {
   homeDir?: string;
-  rootWorkspacePath: string;
+  rootWorkspacePath?: string;
+  skillHomeRoots?: readonly string[];
+  resolveSkillHomeRoots?: () => readonly string[];
+  writableSkillHomeRoot?: string;
   principalId?: string;
   repoRoot?: string;
 }
@@ -59,6 +62,21 @@ export interface RuntimeSkillLookupInput {
  * the Skills workbench rely on the same override law.
  */
 const RUNTIME_SKILL_VISIBLE_LAYER_ORDER = ["shared", "builtin", "global", "avatar"] as const;
+
+const normalizeRuntimeSkillSourceRoot = (path: string): string => {
+  if (!isAbsolute(path)) {
+    throw new Error(`runtime skill source root must be absolute: ${path}`);
+  }
+  return resolve(path);
+};
+
+const hasEnvSkillHomeAuthority = (
+  input: Pick<RuntimeSkillLookupInput, "skillHomeRoots" | "resolveSkillHomeRoots">,
+): boolean => input.skillHomeRoots !== undefined || input.resolveSkillHomeRoots !== undefined;
+
+const readRuntimeSkillHomeRoots = (
+  input: Pick<RuntimeSkillLookupInput, "skillHomeRoots" | "resolveSkillHomeRoots">,
+): readonly string[] => input.skillHomeRoots ?? input.resolveSkillHomeRoots?.() ?? [];
 
 const collectSkillFiles = (root: string, depth = 0): string[] => {
   if (!existsSync(root) || depth > 4) {
@@ -134,9 +152,20 @@ const readSkillRecord = (filePath: string, root: RuntimeSkillRoot): RuntimeSkill
 
 export const resolveRuntimeSkillRoots = (input: {
   homeDir?: string;
-  rootWorkspacePath: string;
+  rootWorkspacePath?: string;
+  skillHomeRoots?: readonly string[];
+  resolveSkillHomeRoots?: () => readonly string[];
 }): RuntimeSkillRoot[] => {
+  if (hasEnvSkillHomeAuthority(input)) {
+    return [...readRuntimeSkillHomeRoots(input)].map((path) => ({
+      kind: "avatar",
+      path: normalizeRuntimeSkillSourceRoot(path),
+    }));
+  }
   const homeDir = input.homeDir ?? homedir();
+  if (!input.rootWorkspacePath) {
+    throw new Error("rootWorkspacePath is required when SKILLS_HOME roots are not provided");
+  }
   return [
     {
       kind: "shared",
@@ -153,11 +182,22 @@ export const resolveRuntimeSkillRoots = (input: {
   ];
 };
 
+const resolveRuntimeSkillRootsByKind = (
+  input: RuntimeSkillLookupInput,
+  kind: RuntimeSkillWritableRootKind,
+): RuntimeSkillRoot[] => resolveRuntimeSkillRoots(input).filter((root) => root.kind === kind);
+
 export const resolveRuntimeSkillRootByKind = (
   input: RuntimeSkillLookupInput,
   kind: RuntimeSkillWritableRootKind,
 ): RuntimeSkillRoot => {
-  const match = resolveRuntimeSkillRoots(input).find((root) => root.kind === kind);
+  if (kind === "avatar" && input.writableSkillHomeRoot) {
+    return {
+      kind: "avatar",
+      path: normalizeRuntimeSkillSourceRoot(input.writableSkillHomeRoot),
+    };
+  }
+  const match = resolveRuntimeSkillRootsByKind(input, kind).at(-1);
   if (!match) {
     throw new Error(`runtime skill root not found for kind: ${kind}`);
   }
@@ -196,6 +236,8 @@ const renderBuiltinRuntimeSkillContent = (
   input: RuntimeSkillLookupInput,
 ): string => {
   const principalId = input.principalId ?? "unknown-principal";
+  const rootWorkspacePath =
+    input.rootWorkspacePath ?? readRuntimeSkillHomeRoots(input).at(-1) ?? input.homeDir ?? homedir();
   return template
     .split(/\r?\n/u)
     .flatMap((line) => {
@@ -210,7 +252,7 @@ const renderBuiltinRuntimeSkillContent = (
       }
       return [
         line
-          .replaceAll("{{runtime.root_path}}", input.rootWorkspacePath)
+          .replaceAll("{{runtime.root_path}}", rootWorkspacePath)
           .replaceAll("{{runtime.principal_id}}", principalId),
       ];
     })
@@ -264,6 +306,12 @@ export const listRuntimeSkillsInRoot = (root: RuntimeSkillRoot): RuntimeSkillRec
 };
 
 const listRuntimeSkillsByVisibleLayerOrder = (input: RuntimeSkillLookupInput): RuntimeSkillRecord[] => {
+  if (hasEnvSkillHomeAuthority(input)) {
+    return [
+      ...listBuiltinRuntimeSkills(input),
+      ...resolveRuntimeSkillRoots(input).flatMap((root) => listRuntimeSkillsInRoot(root)),
+    ];
+  }
   const runtimeRoots = new Map(resolveRuntimeSkillRoots(input).map((root) => [root.kind, root] as const));
   const skills: RuntimeSkillRecord[] = [];
 
@@ -289,7 +337,7 @@ export const listRuntimeSkillsByRootKind = (
   if (rootKind === "builtin") {
     return listBuiltinRuntimeSkills(input);
   }
-  return listRuntimeSkillsInRoot(resolveRuntimeSkillRootByKind(input, rootKind));
+  return resolveRuntimeSkillRootsByKind(input, rootKind).flatMap((root) => listRuntimeSkillsInRoot(root));
 };
 
 export const listRuntimeSkills = (input: RuntimeSkillLookupInput): RuntimeSkillRecord[] => {
@@ -327,11 +375,16 @@ export const getRuntimeSkillByName = (
   if (!normalizedName) {
     return null;
   }
-  const source = input.rootKind ? listRuntimeSkillsByVisibleLayerOrder(input) : listRuntimeSkills(input);
-  return (
-    source.find((skill) => skill.name === normalizedName && (input.rootKind ? skill.rootKind === input.rootKind : true)) ??
-    null
-  );
+  if (!input.rootKind) {
+    return listRuntimeSkills(input).find((skill) => skill.name === normalizedName) ?? null;
+  }
+  const visibleByKind = new Map<string, RuntimeSkillRecord>();
+  for (const skill of listRuntimeSkillsByVisibleLayerOrder(input)) {
+    if (skill.rootKind === input.rootKind) {
+      visibleByKind.set(skill.name, skill);
+    }
+  }
+  return visibleByKind.get(normalizedName) ?? null;
 };
 
 export const readRuntimeSkillContent = (skill: RuntimeSkillRecord | string): string =>
@@ -414,8 +467,10 @@ export const removeRuntimeSkillFile = (
 
   const roots =
     input.rootKind !== undefined
-      ? [resolveRuntimeSkillRootByKind(input, input.rootKind)]
-      : (["avatar", "global", "shared"] as const).map((kind) => resolveRuntimeSkillRootByKind(input, kind));
+      ? [...resolveRuntimeSkillRootsByKind(input, input.rootKind)].reverse()
+      : resolveRuntimeSkillRoots(input)
+          .filter((root) => root.kind !== "shared" || !hasEnvSkillHomeAuthority(input))
+          .reverse();
 
   for (const root of roots) {
     const record = findRuntimeSkillRecordInRoot(root, normalizedName);
@@ -449,6 +504,7 @@ export const buildRuntimeSkillsList = (
     "",
     "Use `skill info <skill>` to expand a skill when you need detailed instructions.",
     "`skill info` shows the real filesystem path to that skill's `SKILL.md`.",
+    "File-backed skills follow the current workspace `SKILLS_HOME` source order; later sources override earlier ones.",
     "If the skill lists sibling `references/*.md` files, inspect only the specific files you need via shell instead of loading the whole references tree.",
     "",
   ];

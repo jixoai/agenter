@@ -1203,7 +1203,7 @@ export const runtimeToolDescriptors = [
     namespace: "skill",
     name: "list",
     route: "/v1/skill/list",
-    description: "List runtime-visible skills from built-in and writable on-disk roots.",
+    description: "List runtime-visible skills from built-ins and the current workspace SKILLS_HOME source order.",
     inputSchema: emptyObjectSchema,
     examples: [{ kind: "none" }],
     handler: async (_input, handlers) => ({
@@ -1214,7 +1214,7 @@ export const runtimeToolDescriptors = [
     namespace: "skill",
     name: "search",
     route: "/v1/skill/search",
-    description: "Search runtime-visible skills by name, summary, or path.",
+    description: "Search runtime-visible skills by name, summary, or SKILLS_HOME source path.",
     inputSchema: skillSearchSchema,
     examples: [{ kind: "stdin", payload: { query: "terminal" } }, { kind: "argv", payload: { query: "message" } }],
     handler: async (input, handlers) => ({
@@ -1225,7 +1225,7 @@ export const runtimeToolDescriptors = [
     namespace: "skill",
     name: "info",
     route: "/v1/skill/info",
-    description: "Read one runtime-visible skill and return its rendered content plus real filesystem path.",
+    description: "Read one runtime-visible skill and return its rendered content plus source filesystem path.",
     inputSchema: skillInfoSchema,
     examples: [
       { kind: "stdin", payload: { name: "agenter-runtime" } },
@@ -1250,7 +1250,7 @@ export const runtimeToolDescriptors = [
     namespace: "skill",
     name: "upsert",
     route: "/v1/skill/upsert",
-    description: "Create or replace one writable runtime skill under the selected writable root.",
+    description: "Create or replace one writable runtime skill under the selected writable SKILLS_HOME source.",
     inputSchema: skillUpsertSchema,
     examples: [
       {

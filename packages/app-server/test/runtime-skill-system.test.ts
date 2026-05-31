@@ -66,6 +66,25 @@ const writeSkill = (rootWorkspacePath: string, input: { name: string; extraConfi
   return skillDir;
 };
 
+const writeSkillInSourceRoot = (skillRoot: string, input: { name: string; description: string }): string => {
+  const skillDir = join(skillRoot, input.name);
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(
+    join(skillDir, "SKILL.md"),
+    [
+      "---",
+      `name: ${input.name}`,
+      `description: ${input.description}`,
+      "---",
+      "",
+      `# ${input.name}`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  return skillDir;
+};
+
 const createGrantRecord = (workspaceRoot: string): WorkspaceGrantRecord => ({
   grantId: "grant-1",
   mountId: "mount-1",
@@ -80,15 +99,24 @@ const createSystem = (input: {
   rootWorkspacePath: string;
   homeDir?: string;
   repoRoot?: string;
+  skillHomeRoots?: readonly string[];
+  resolveSkillHomeRoots?: () => readonly string[];
   fingerprintManifestPath?: string;
   watchDebounceMs?: number;
   watchPollMs?: number;
   onIdleFlush?: (result: RuntimeSkillRefreshResult) => void;
-  listWorkspaceAuthorities?: () => Array<{ workspaceRoot: string; grants: WorkspaceGrantRecord[] }>;
+  listWorkspaceAuthorities?: () => Array<{
+    workspaceRoot: string;
+    defaultCwd: string;
+    env: Record<string, string>;
+    grants: WorkspaceGrantRecord[];
+  }>;
 }): RuntimeSkillSystem => {
   const system = new RuntimeSkillSystem({
     owner: "tester",
     rootWorkspacePath: input.rootWorkspacePath,
+    skillHomeRoots: input.skillHomeRoots,
+    resolveSkillHomeRoots: input.resolveSkillHomeRoots,
     homeDir: input.homeDir ?? input.rootWorkspacePath,
     repoRoot: input.repoRoot,
     fingerprintManifestPath: input.fingerprintManifestPath,
@@ -495,6 +523,8 @@ describe("Feature: runtime skill watcher and config surface", () => {
       listWorkspaceAuthorities: () => [
         {
           workspaceRoot: repoRoot,
+          defaultCwd: repoRoot,
+          env: {},
           grants: [createGrantRecord(repoRoot)],
         },
       ],
@@ -512,5 +542,33 @@ describe("Feature: runtime skill watcher and config surface", () => {
     expect(readFileSync(configPath, "utf8")).toContain("references/*.md");
     expect(result.skill.rootKind).toBe("builtin");
     expect(result.changedSkills.some((change) => change.changedFiles.includes(configPath))).toBeTrue();
+  });
+
+  test("Scenario: Given SKILLS_HOME sources change When runtime skill refresh runs Then the latest source order becomes authority", () => {
+    const rootWorkspacePath = createTempRoot();
+    const genericRoot = join(rootWorkspacePath, "skills");
+    const codexRoot = join(rootWorkspacePath, ".codex", "skills");
+    writeSkillInSourceRoot(genericRoot, { name: "dynamic-skill", description: "generic source" });
+    writeSkillInSourceRoot(codexRoot, { name: "dynamic-skill", description: "codex source" });
+    let skillHomeRoots: readonly string[] = [genericRoot];
+    const system = createSystem({
+      rootWorkspacePath,
+      repoRoot: rootWorkspacePath,
+      resolveSkillHomeRoots: () => skillHomeRoots,
+    });
+
+    const initial = system.refresh({ publishReminders: false });
+    expect(initial.skills.find((skill) => skill.name === "dynamic-skill")).toMatchObject({
+      summary: "generic source",
+      root: genericRoot,
+    });
+
+    skillHomeRoots = [genericRoot, codexRoot];
+    const refreshed = system.refresh({ publishReminders: false });
+
+    expect(refreshed.skills.find((skill) => skill.name === "dynamic-skill")).toMatchObject({
+      summary: "codex source",
+      root: codexRoot,
+    });
   });
 });

@@ -172,6 +172,28 @@ describe("Feature: workspace env capability projection", () => {
     expect(store.snapshotState().mounts[0]?.env[AVATAR_HOME_ENV]).toBe("/avatar/current");
   });
 
+  test("Scenario: Given a command env overlay includes AVATAR_HOME When capabilities are inspected Then it is not durable authority", () => {
+    const root = createTempRoot();
+    const store = new WorkspaceSystemStore({ filePath: join(root, "workspace-system.json") });
+    const mount = store.attachRuntime({
+      runtimeId: "runtime-a",
+      workspacePath: "/repo",
+      env: {},
+    });
+    const commandOverlay = {
+      [AVATAR_HOME_ENV]: "/avatar/private",
+    };
+
+    expect(commandOverlay[AVATAR_HOME_ENV]).toBe("/avatar/private");
+    expect(
+      store.getRuntimeWorkspaceAvatarHome({
+        runtimeId: "runtime-a",
+        runtimeWorkspaceId: mount.runtimeWorkspaceId,
+      }),
+    ).toEqual([]);
+    expect(store.snapshotState().mounts[0]?.env[AVATAR_HOME_ENV]).toBeUndefined();
+  });
+
   test("Scenario: Given a project workspace is granted When mounted Then it inherits the runtime Avatar home env", async () => {
     const root = createTempRoot();
     const workspace = join(root, "repo");

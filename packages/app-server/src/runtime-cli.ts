@@ -91,16 +91,26 @@ const renderSkillNamespaceHelp = (): string =>
 
 const renderSkillSubcommandHelp = (subcommand: string): string | null => {
   if (subcommand === "list") {
-    return ["skill list [--json]", "", "List runtime-visible skills.", ""].join("\n");
+    return [
+      "skill list [--json]",
+      "",
+      "List runtime-visible skills from the current workspace `SKILLS_HOME` source order plus built-ins.",
+      "",
+    ].join("\n");
   }
   if (subcommand === "search") {
-    return ["skill search <query> [--json]", "", "Search runtime-visible skills by free-text query.", ""].join("\n");
+    return [
+      "skill search <query> [--json]",
+      "",
+      "Search runtime-visible skills by name, summary, or `SKILLS_HOME` source path.",
+      "",
+    ].join("\n");
   }
   if (subcommand === "info") {
     return [
       "skill info <skill-name> [root-kind] [--json]",
       "",
-      "Read one runtime-visible skill and print its rendered content plus the real filesystem path.",
+      "Read one runtime-visible skill and print its rendered content plus the source filesystem path.",
       "",
     ].join("\n");
   }
@@ -116,7 +126,16 @@ const renderSkillSubcommandHelp = (subcommand: string): string | null => {
 };
 
 const renderSkillInfo = (result: RuntimeSkillInfoView): string =>
-  [`# ${result.skill.name}`, "", `Path: ${result.skill.path}`, "", result.content].join("\n");
+  [
+    `# ${result.skill.name}`,
+    "",
+    `Root kind: ${result.skill.rootKind}`,
+    `Source root: ${result.skill.root}`,
+    `Path: ${result.skill.path}`,
+    `Writable: ${result.skill.writable ? "yes" : "no"}`,
+    "",
+    result.content,
+  ].join("\n");
 
 const renderSkillConfigInfo = (result: RuntimeSkillConfigInfoView): string =>
   [

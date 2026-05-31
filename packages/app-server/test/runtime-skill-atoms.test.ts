@@ -5,7 +5,12 @@ import { join, relative } from "node:path";
 
 import { diffRuntimeSkillSnapshots } from "../src/runtime-skill-diff";
 import { buildRuntimeSkillTruthSnapshot, type RuntimeSkillDiffState } from "../src/runtime-skill-truth";
-import type { RuntimeSkillRecord, RuntimeSkillRootKind } from "../src/runtime-skills";
+import {
+  listRuntimeSkills,
+  upsertRuntimeSkillFile,
+  type RuntimeSkillRecord,
+  type RuntimeSkillRootKind,
+} from "../src/runtime-skills";
 
 const tempDirs: string[] = [];
 
@@ -39,6 +44,18 @@ const writeSkillRecord = (root: string, name: string): RuntimeSkillRecord => {
     rootKind: "avatar",
     writable: true,
   };
+};
+
+const writeSkillInSkillRoot = (skillRoot: string, name: string, description: string): string => {
+  const skillDir = join(skillRoot, name);
+  mkdirSync(skillDir, { recursive: true });
+  const skillPath = join(skillDir, "SKILL.md");
+  writeFileSync(
+    skillPath,
+    ["---", `name: ${name}`, `description: ${description}`, "---", "", `# ${name}`, ""].join("\n"),
+    "utf8",
+  );
+  return skillPath;
 };
 
 const diffState = (input: {
@@ -122,5 +139,65 @@ describe("Feature: runtime skill atom boundaries", () => {
       "/repo/packages/app-server/skills/terminal/SKILL.md",
       "/workspace/skills/terminal/SKILL.md",
     ]);
+  });
+
+  test("Scenario: Given generic and dot-agent skills with the same name When merged Then the later dot-agent source wins", () => {
+    const root = createTempRoot();
+    const genericRoot = join(root, "skills");
+    const codexRoot = join(root, ".codex", "skills");
+    writeSkillInSkillRoot(genericRoot, "build", "generic source");
+    const codexSkillPath = writeSkillInSkillRoot(codexRoot, "build", "codex source");
+
+    const skills = listRuntimeSkills({
+      repoRoot: root,
+      skillHomeRoots: [genericRoot, codexRoot],
+    });
+    const skill = skills.find((entry) => entry.name === "build");
+
+    expect(skill).toMatchObject({
+      name: "build",
+      summary: "codex source",
+      root: codexRoot,
+      rootKind: "avatar",
+    });
+    expect(skill?.path).toBe(codexSkillPath);
+  });
+
+  test("Scenario: Given SKILLS_HOME roots When runtime skills are listed Then rootWorkspacePath is not required as avatar authority", () => {
+    const root = createTempRoot();
+    const skillRoot = join(root, "skills");
+    writeSkillInSkillRoot(skillRoot, "env-skill", "from skills home");
+
+    const skills = listRuntimeSkills({
+      repoRoot: root,
+      skillHomeRoots: [skillRoot],
+    });
+
+    expect(skills.some((entry) => entry.name === "env-skill" && entry.root === skillRoot)).toBeTrue();
+  });
+
+  test("Scenario: Given multiple SKILLS_HOME roots When a skill is upserted Then the last source is the writable target", () => {
+    const root = createTempRoot();
+    const firstRoot = join(root, "skills");
+    const lastRoot = join(root, ".codex", "skills");
+
+    const skill = upsertRuntimeSkillFile({
+      repoRoot: root,
+      skillHomeRoots: [firstRoot, lastRoot],
+      name: "created-skill",
+      content: [
+        "---",
+        "name: created-skill",
+        "description: created in env source",
+        "---",
+        "",
+        "# created-skill",
+        "",
+      ].join("\n"),
+    });
+
+    expect(skill.root).toBe(lastRoot);
+    expect(skill.path).toBe(join(lastRoot, "created-skill", "SKILL.md"));
+    expect(existsSync(join(firstRoot, "created-skill", "SKILL.md"))).toBeFalse();
   });
 });

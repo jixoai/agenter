@@ -17,10 +17,10 @@
 - [x] 2.4 Add parser BDD: Scenario: Given a relative `AVATAR_HOME` entry When parsed or set Then the request is rejected before capability projection.
 - [x] 2.5 Add WorkspaceSystem BDD: Scenario: Given a workspace instance with inherited Avatar home When `getAvatarHome()` runs Then it returns normalized absolute paths.
 - [x] 2.6 Add WorkspaceSystem BDD: Scenario: Given `setAvatarHome()` is called with duplicate paths When env is persisted Then the duplicate keeps the last occurrence and canonical `;` serialization.
-- [ ] 2.7 Add capability BDD: Scenario: Given a per-command env overlay includes `AVATAR_HOME` When workspace capabilities are inspected Then the overlay does not grant durable private CLI capability.
+- [x] 2.7 Add capability BDD: Scenario: Given a per-command env overlay includes `AVATAR_HOME` When workspace capabilities are inspected Then the overlay does not grant durable private CLI capability.
 - [x] 2.8 Add skill BDD: Scenario: Given one workspace group with `PWD` and `AVATAR_HOME` When `SKILLS_HOME` is derived Then PWD roots appear before Avatar-home roots and Avatar-home conflicts win.
 - [x] 2.9 Add skill BDD: Scenario: Given empty `AVATAR_HOME` and a PWD with local skills When skill list runs Then PWD skills are visible and avatar-private roots are not invented.
-- [ ] 2.10 Add skill BDD: Scenario: Given generic and dot-agent skills with the same name When merged Then the later dot-agent source wins and the visible record reports its source path.
+- [x] 2.10 Add skill BDD: Scenario: Given generic and dot-agent skills with the same name When merged Then the later dot-agent source wins and the visible record reports its source path.
 - [x] 2.11 Add multi-workspace skill BDD: Scenario: Given two workspace groups When `SKILLS_HOME` is derived Then the order is `w1-pwd;w1-avatar-home;w2-pwd;w2-avatar-home`.
 - [ ] 2.12 Add NoteSystem BDD: Scenario: Given empty `AVATAR_HOME` When note CLI projection runs Then avatar-private note CLI is withheld.
 - [ ] 2.13 Add NoteSystem BDD: Scenario: Given non-empty `AVATAR_HOME` When a note is written Then it is stored as a note fact, not a memory projection.
@@ -43,14 +43,14 @@
 - [x] 3.4 Extend WorkspaceSystem data shape so workspace instances/mounts can persist capability env separately from exec-profile process env.
 - [x] 3.5 Add `workspace.getAvatarHome()` and `workspace.setAvatarHome(paths)` on the workspace instance API boundary.
 - [x] 3.6 Update workspace creation flows so inherited `AVATAR_HOME` is explicit and workspace instances can opt out with an empty value.
-- [ ] 3.7 Update capability projection consumers without renaming/removing `root_bash`; any root bash law cleanup must be proposed separately.
+- [x] 3.7 Update capability projection consumers without renaming/removing `root_bash`; any root bash law cleanup must be proposed separately.
 
 ## 4. SkillSystem Migration
 
-- [ ] 4.1 Replace `RuntimeSkillLookupInput.rootWorkspacePath` authority with `SKILLS_HOME` / skill source list authority.
-- [ ] 4.2 Update runtime skill merge logic so all file-backed skills follow the derived source ordering and last-wins conflict law.
-- [ ] 4.3 Keep built-in/plugin skills as explicit read-only providers merged through the same source ordering model.
-- [ ] 4.4 Update `skill list/search/info/upsert/remove/config` commands to explain and use env-derived source paths.
+- [x] 4.1 Replace `RuntimeSkillLookupInput.rootWorkspacePath` authority with `SKILLS_HOME` / skill source list authority.
+- [x] 4.2 Update runtime skill merge logic so all file-backed skills follow the derived source ordering and last-wins conflict law.
+- [x] 4.3 Keep built-in/plugin skills as explicit read-only providers merged through the same source ordering model.
+- [x] 4.4 Update `skill list/search/info/upsert/remove/config` commands to explain and use env-derived source paths.
 - [ ] 4.5 Update Skill Browser / Studio skill surfaces so visible skills report their `SKILLS_HOME` source instead of global/project grouping heuristics.
 - [ ] 4.6 Add migration notes for existing `rootWorkspacePath/skills` data so user-owned skills are not silently lost.
 
