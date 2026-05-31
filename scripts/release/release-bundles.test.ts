@@ -168,9 +168,9 @@ describe("Feature: release bundle contract", () => {
     expect(publishScript).toContain('"--provenance"');
     expect(publishScript).toContain("isPackageVersionPublished");
     expect(workflow).toContain("id-token: write");
-    expect(workflow).toContain("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24");
     expect(workflow).toContain("environment: npm-release");
-    expect(workflow).toContain("actions/setup-node@v4");
+    expect(workflow).toContain("actions/checkout@v5");
+    expect(workflow).toContain("actions/setup-node@v5");
     expect(workflow).toContain('node-version: "24"');
     expect(workflow).toContain(`bun-version: "${releaseToolchain.bunVersion}"`);
     expect(workflow).not.toContain("bun-version: latest");
