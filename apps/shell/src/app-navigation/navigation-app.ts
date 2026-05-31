@@ -3,7 +3,6 @@ import {
   CliRenderEvents,
   createCliRenderer,
   InputRenderable,
-  MouseButton,
   parseColor,
   StyledText,
   TextRenderable,
@@ -20,6 +19,8 @@ import {
   type ShellNavigationAvatarItem,
   type ShellNavigationShellItem,
 } from "./navigation-model";
+import { createBorderedContentRegionMapper } from "./screen-region";
+import { SelectableWrappedList, type SelectableWrappedListItem } from "./selectable-wrapped-list";
 
 export interface ShellNavigationAppInput {
   shellItems: readonly ShellNavigationShellItem[];
@@ -45,26 +46,6 @@ export interface ShellNavigationSelection {
 }
 
 type NavigationStep = "shell" | "avatar";
-
-interface NavigationRegion {
-  index: number;
-  row: number;
-  col: number;
-  width: number;
-  rowCount: number;
-}
-
-interface RenderedNavigationItem {
-  lines: Array<{
-    plainText: string;
-    content: string | StyledText;
-  }>;
-}
-
-interface MousePressTarget {
-  step: NavigationStep;
-  index: number;
-}
 
 const readKeyEvent = (value: unknown): KeyEvent | null =>
   typeof value === "object" && value !== null ? (value as KeyEvent) : null;
@@ -101,12 +82,6 @@ const withRowPrefix = (
   return new StyledText([chunk(prefix, "#cbd5e1"), ...line.content.chunks]);
 };
 
-const borderedChildScreenRow = (root: BoxRenderable, child: TextRenderable): number =>
-  Math.trunc(Number(root.top)) + 1 + Math.trunc(Number(child.top));
-
-const borderedChildScreenCol = (root: BoxRenderable, child: TextRenderable): number =>
-  Math.trunc(Number(root.left)) + 1 + Math.trunc(Number(child.left));
-
 export class ShellNavigationApp {
   readonly #input: ShellNavigationAppInput;
   readonly #renderer: CliRenderer;
@@ -115,13 +90,13 @@ export class ShellNavigationApp {
   readonly #title: TextRenderable;
   readonly #subtitle: TextRenderable;
   readonly #footer: TextRenderable;
+  readonly #list: SelectableWrappedList<ShellNavigationShellItem | ShellNavigationAvatarItem>;
   readonly #dialogBox: BoxRenderable;
   readonly #dialogTitle: TextRenderable;
   readonly #dialogStatus: TextRenderable;
   readonly #dialogInput: InputRenderable;
   #shellItems: readonly ShellNavigationShellItem[];
   #avatarItems: readonly ShellNavigationAvatarItem[];
-  readonly #rows: TextRenderable[] = [];
   readonly #startupRenderTimers: Timer[] = [];
   #disposed = false;
   #step: NavigationStep;
@@ -134,8 +109,6 @@ export class ShellNavigationApp {
   #avatarWasCreated = false;
   #dialogOpen = false;
   #notice: string | null = null;
-  #regions: NavigationRegion[] = [];
-  #mousePressTarget: MousePressTarget | null = null;
 
   constructor(input: ShellNavigationAppInput & { renderer: CliRenderer; ownsRenderer?: boolean }) {
     this.#input = input;
@@ -193,6 +166,23 @@ export class ShellNavigationApp {
       content: "",
       fg: "#94a3b8",
       bg: "#0f172a",
+    });
+    this.#list = new SelectableWrappedList<ShellNavigationShellItem | ShellNavigationAvatarItem>({
+      renderer: this.#renderer,
+      parent: this.#root,
+      idPrefix: "shell-navigation-row",
+      regionMapper: createBorderedContentRegionMapper(this.#root),
+      formatLine: ({ line, prefix, width }) => withRowPrefix(line, prefix, width),
+      onSelectionChange: (index) => {
+        if (this.#step === "shell") {
+          this.#shellIndex = index;
+          return;
+        }
+        this.#avatarIndex = index;
+      },
+      onConfirm: () => {
+        void this.#confirmCurrent();
+      },
     });
     this.#dialogBox = new BoxRenderable(this.#renderer, {
       id: "shell-navigation-dialog",
@@ -288,7 +278,6 @@ export class ShellNavigationApp {
     const width = Math.max(1, this.#renderer.width);
     const height = Math.max(8, this.#renderer.height);
     const contentWidth = Math.max(1, width - 5);
-    this.#regions = [];
     this.#root.width = width;
     this.#root.height = height;
     this.#title.width = contentWidth;
@@ -332,107 +321,24 @@ export class ShellNavigationApp {
     this.#footer.content = padShellRoomText("↑/↓ select | Enter confirm | Esc cancel | Mouse click", contentWidth);
     const availableRows = Math.max(1, height - 6);
     const rowWidth = Math.max(1, contentWidth - 2);
-    const renderedItems = items.map((item) => this.#renderItemLines(item, rowWidth));
-    const firstIndex = this.#firstVisibleIndex(
-      renderedItems.map((item) => item.lines.length),
+    this.#list.render({
+      items,
       selectedIndex,
+      top: 4,
+      left: 2,
+      width: contentWidth,
+      itemWidth: rowWidth,
       availableRows,
-    );
-    while (this.#rows.length < availableRows) {
-      const row = new TextRenderable(this.#renderer, {
-        id: `shell-navigation-row-${this.#rows.length}`,
-        position: "absolute",
-        top: 4 + this.#rows.length,
-        left: 2,
-        width: 1,
-        height: 1,
-        content: "",
-        fg: "#e5e7eb",
-        bg: "#0f172a",
-      });
-      this.#rows.push(row);
-      this.#root.add(row);
-    }
-    let rowIndex = 0;
-    for (let itemIndex = firstIndex; itemIndex < items.length && rowIndex < availableRows; itemIndex += 1) {
-      const rendered = renderedItems[itemIndex];
-      if (!rendered) {
-        continue;
-      }
-      const selected = itemIndex === selectedIndex;
-      let regionRow = 0;
-      let regionCol = 0;
-      let regionRowCount = 0;
-      for (const [lineIndex, line] of rendered.lines.entries()) {
-        if (rowIndex >= availableRows) {
-          break;
-        }
-        const row = this.#rows[rowIndex];
-        if (!row) {
-          break;
-        }
-        const prefix = selected && lineIndex === 0 ? "> " : "  ";
-        row.top = 4 + rowIndex;
-        row.left = 2;
-        row.width = contentWidth;
-        row.height = 1;
-        row.visible = true;
-        row.content = withRowPrefix(line, prefix, contentWidth);
-        row.fg = selected ? "#f8fafc" : "#cbd5e1";
-        row.bg = selected ? "#1e3a8a" : "#0f172a";
-        if (regionRowCount === 0) {
-          regionRow = borderedChildScreenRow(this.#root, row);
-          regionCol = borderedChildScreenCol(this.#root, row);
-        }
-        rowIndex += 1;
-        regionRowCount += 1;
-      }
-      if (regionRowCount > 0) {
-        this.#regions.push({
-          index: itemIndex,
-          row: regionRow,
-          col: regionCol,
-          width: contentWidth,
-          rowCount: regionRowCount,
-        });
-      }
-    }
-    for (; rowIndex < this.#rows.length; rowIndex += 1) {
-      const row = this.#rows[rowIndex];
-      if (!row) {
-        continue;
-      }
-      row.top = 4 + rowIndex;
-      row.left = 2;
-      row.width = contentWidth;
-      row.height = 1;
-      row.visible = rowIndex < availableRows;
-      row.content = padShellRoomText("", contentWidth);
-      row.fg = "#cbd5e1";
-      row.bg = "#0f172a";
-    }
+      renderItem: (item, itemWidth) => this.#renderItemLines(item, itemWidth),
+    });
   }
 
-  #renderItemLines(item: ShellNavigationShellItem | ShellNavigationAvatarItem, width: number): RenderedNavigationItem {
+  #renderItemLines(item: ShellNavigationShellItem | ShellNavigationAvatarItem, width: number): SelectableWrappedListItem {
     if (this.#step === "shell") {
       return buildShellNavigationTerminalRow(item as ShellNavigationShellItem, width);
     }
     const plainText = avatarLabel(item as ShellNavigationAvatarItem);
     return { lines: [{ plainText, content: plainText }] };
-  }
-
-  #firstVisibleIndex(heights: readonly number[], selectedIndex: number, availableRows: number): number {
-    let firstIndex = 0;
-    let usedRows = 0;
-    for (let index = 0; index <= selectedIndex && index < heights.length; index += 1) {
-      const itemRows = Math.max(1, heights[index] ?? 1);
-      while (usedRows + itemRows > availableRows && firstIndex < index) {
-        usedRows -= Math.max(1, heights[firstIndex] ?? 1);
-        firstIndex += 1;
-      }
-      usedRows += itemRows;
-    }
-    return firstIndex;
   }
 
   #renderDialog(): void {
@@ -460,51 +366,21 @@ export class ShellNavigationApp {
   }
 
   #handleMouseDown(event: MouseEvent): void {
-    if (this.#dialogOpen || event.button !== MouseButton.LEFT) {
+    if (this.#dialogOpen) {
+      this.#list.resetPointer();
       return;
     }
-    const region = this.#resolveRegion(event);
-    if (!region) {
-      this.#mousePressTarget = null;
-      return;
+    if (this.#list.handleMouseDown(event)) {
+      this.render("mouse-select");
     }
-    event.preventDefault();
-    if (this.#step === "shell") {
-      this.#shellIndex = region.index;
-    } else {
-      this.#avatarIndex = region.index;
-    }
-    this.#mousePressTarget = { step: this.#step, index: region.index };
-    this.render("mouse-select");
   }
 
   #handleMouseUp(event: MouseEvent): void {
-    if (this.#dialogOpen || event.button !== MouseButton.LEFT) {
-      this.#mousePressTarget = null;
+    if (this.#dialogOpen) {
+      this.#list.resetPointer();
       return;
     }
-    const pressTarget = this.#mousePressTarget;
-    this.#mousePressTarget = null;
-    const region = this.#resolveRegion(event);
-    if (!pressTarget || !region || pressTarget.step !== this.#step || pressTarget.index !== region.index) {
-      return;
-    }
-    event.preventDefault();
-    void this.#confirmCurrent();
-  }
-
-  #resolveRegion(event: MouseEvent): NavigationRegion | null {
-    const y = Math.trunc(event.y);
-    const x = Math.trunc(event.x);
-    return (
-      this.#regions.find(
-        (candidate) =>
-          y >= candidate.row &&
-          y < candidate.row + candidate.rowCount &&
-          x >= candidate.col &&
-          x < candidate.col + candidate.width,
-      ) ?? null
-    );
+    this.#list.handleMouseUp(event);
   }
 
   #handleKeypress = (value: unknown): void => {
@@ -552,12 +428,9 @@ export class ShellNavigationApp {
   }
 
   #moveSelection(delta: number): void {
-    if (this.#step === "shell") {
-      this.#shellIndex = clampIndex(this.#shellIndex + delta, this.#shellItems.length);
-    } else {
-      this.#avatarIndex = clampIndex(this.#avatarIndex + delta, this.#avatarItems.length);
+    if (this.#list.moveSelection(delta)) {
+      this.render("selection");
     }
-    this.render("selection");
   }
 
   async #confirmCurrent(): Promise<void> {
