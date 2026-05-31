@@ -7,6 +7,7 @@ import { InMemoryFs } from "just-bash";
 
 import { createNoteCommand } from "../src/note-system/cli";
 import { searchNotes } from "../src/note-system/search";
+import { listNoteCatalog, readNotePage, searchNoteCatalog } from "../src/note-system/surface";
 import {
   NOTE_DRAFT_NOTEBOOK,
   draftNotePage,
@@ -259,5 +260,94 @@ describe("Feature: NoteSystem avatar-private note projection", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("ideas/shell/cli");
     expect(readFileSync(join(avatarHome, "notes", "ideas", "shell", "cli.md"), "utf8")).toContain("CLI body.");
+  });
+
+  test("Scenario: Given notes exist under AVATAR_HOME When note catalog is requested Then notebooks sections pages and capability state are returned", () => {
+    const avatarHome = createTempRoot();
+    writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "ideas",
+      section: "shell",
+      page: "catalog",
+      body: "Catalog body.",
+      now: new Date("2026-05-31T15:30:00.000Z"),
+      sourceWorkspace: "/repo",
+    });
+
+    const catalog = listNoteCatalog({ avatarHome: [avatarHome] });
+
+    expect(catalog.capability).toEqual({
+      available: true,
+      readableRoots: [avatarHome],
+      writableRoot: avatarHome,
+    });
+    expect(catalog.totalPages).toBe(1);
+    expect(catalog.notebooks[0]?.notebook).toBe("ideas");
+    expect(catalog.notebooks[0]?.sections[0]?.section).toBe("shell");
+    expect(catalog.notebooks[0]?.sections[0]?.pages[0]).toMatchObject({
+      notebook: "ideas",
+      section: "shell",
+      page: "catalog",
+      sourceWorkspace: "/repo",
+      preview: "Catalog body.",
+    });
+  });
+
+  test("Scenario: Given a notebook section page identity When note page is requested Then metadata and Markdown body are returned", () => {
+    const avatarHome = createTempRoot();
+    writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "ideas",
+      section: "shell",
+      page: "detail",
+      body: "# Detail\n\nNote body.",
+    });
+
+    const found = readNotePage({ avatarHome: [avatarHome], notebook: "ideas", section: "shell", page: "detail" });
+    const missing = readNotePage({ avatarHome: [avatarHome], notebook: "ideas", section: "shell", page: "missing" });
+
+    expect(found.page?.body).toBe("# Detail\n\nNote body.");
+    expect(found.page?.metadata.kind).toBe("note");
+    expect(missing.capability.available).toBeTrue();
+    expect(missing.page).toBeNull();
+  });
+
+  test("Scenario: Given local notes When note search is requested Then note metadata score snippet and path are preserved", () => {
+    const avatarHome = createTempRoot();
+    writeNotePage({
+      avatarHome: [avatarHome],
+      notebook: "ideas",
+      section: "shell",
+      page: "search-api",
+      body: "Searchable capability projection note body.",
+    });
+
+    const result = searchNoteCatalog({ avatarHome: [avatarHome], query: "projection" });
+
+    expect(result.capability.available).toBeTrue();
+    expect(result.results[0]).toMatchObject({
+      notebook: "ideas",
+      section: "shell",
+      page: "search-api",
+    });
+    expect(result.results[0]?.score).toBeGreaterThan(0);
+    expect(result.results[0]?.snippet).toContain("projection");
+    expect(result.results[0]?.path).toBe(join(avatarHome, "notes", "ideas", "shell", "search-api.md"));
+  });
+
+  test("Scenario: Given empty AVATAR_HOME When note surface APIs run Then no capability is reported", () => {
+    expect(listNoteCatalog({ avatarHome: [] })).toEqual({
+      capability: { available: false, readableRoots: [], writableRoot: null },
+      notebooks: [],
+      totalPages: 0,
+    });
+    expect(readNotePage({ avatarHome: [], notebook: "ideas", section: "shell", page: "missing" })).toEqual({
+      capability: { available: false, readableRoots: [], writableRoot: null },
+      page: null,
+    });
+    expect(searchNoteCatalog({ avatarHome: [], query: "anything" })).toEqual({
+      capability: { available: false, readableRoots: [], writableRoot: null },
+      results: [],
+    });
   });
 });

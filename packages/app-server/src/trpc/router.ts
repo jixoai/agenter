@@ -203,6 +203,23 @@ const skillPreviewInputSchema = z.object({
     .max(4 * 1024 * 1024)
     .optional(),
 });
+const noteAvatarInputSchema = z.object({
+  avatarNickname: z.string().trim().min(1).optional(),
+});
+const noteIdentityInputSchema = noteAvatarInputSchema.extend({
+  notebook: z.string().trim().min(1),
+  section: z.string().trim().min(1),
+  page: z.string().trim().min(1),
+});
+const noteCatalogInputSchema = noteAvatarInputSchema
+  .extend({
+    limit: z.number().int().positive().max(1000).optional(),
+  })
+  .optional();
+const noteSearchInputSchema = noteAvatarInputSchema.extend({
+  query: z.string().trim().min(1),
+  limit: z.number().int().positive().max(1000).optional(),
+});
 const messageErrorPayloadSchema = z.object({
   title: z.string().trim().min(1).optional(),
   code: z.string().trim().min(1).optional(),
@@ -526,6 +543,17 @@ export const appRouter = t.router({
           .extend(skillPreviewInputSchema.shape),
       )
       .query(({ ctx, input }) => ctx.kernel.readSkillBrowserAvatarPreview(input)),
+  }),
+  note: t.router({
+    catalog: superadminProcedure
+      .input(noteCatalogInputSchema)
+      .query(async ({ ctx, input }) => await ctx.kernel.listNoteCatalog(input ?? {})),
+    page: superadminProcedure
+      .input(noteIdentityInputSchema)
+      .query(async ({ ctx, input }) => await ctx.kernel.readNotePage(input)),
+    search: superadminProcedure
+      .input(noteSearchInputSchema)
+      .query(async ({ ctx, input }) => await ctx.kernel.searchNoteCatalog(input)),
   }),
   session: t.router({
     list: superadminProcedure.query(({ ctx }) => ({ sessions: ctx.kernel.listSessions() })),

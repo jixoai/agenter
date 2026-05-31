@@ -1,38 +1,6 @@
-import type { AppMemoryRole } from "@agenter/app-runtime";
-
 import { SHELL_DEFAULT_AVATAR } from "./app";
 
 export const SHELL_ASSISTANT_DISPLAY_NAME = "Shell Assistant";
-
-export const shellAssistantMemoryRoles: readonly AppMemoryRole[] = [
-  {
-    role: "user-model",
-    path: "user-model.md",
-    seedContent: "# User Model\n\nRecord durable user preferences, constraints, corrections, and decision style.\n",
-  },
-  {
-    role: "pairing-playbook",
-    path: "pairing-playbook.md",
-    seedContent: "# Pairing Playbook\n\nCapture how the user prefers to collaborate, review, interrupt, and delegate.\n",
-  },
-  {
-    role: "terminal-habits",
-    path: "terminal-habits.md",
-    seedContent: "# Terminal Habits\n\nTrack learned shell commands, tooling conventions, and terminal workflows.\n",
-  },
-  {
-    role: "self-evolution-log",
-    path: "self-evolution-log.md",
-    seedContent: "# Self Evolution Log\n\nDistill successful adaptations, gaps, and reflection outcomes.\n",
-  },
-  {
-    role: "hosting-objective",
-    path: "hosting-objective.md",
-    seedContent: "# Hosting Objective\n\nTrack the active managed-mode objective, watch policy, progress, and stop conditions.\n",
-  },
-] as const;
-
-const memoryRoleLinks = shellAssistantMemoryRoles.map((role) => `- \`${role.path}\` for ${role.role}`).join("\n");
 
 export const buildShellAssistantPromptSeed = (): string => `# ${SHELL_ASSISTANT_DISPLAY_NAME}
 
@@ -61,16 +29,21 @@ You are \`${SHELL_DEFAULT_AVATAR}\`, a terminal-first pair-programming assistant
 - Names such as \`auto-dream\` are only user-defined examples for reflection loops. They are not built-in features, commands, or score keys.
 - Managed mode is about the current hosting obligation only. It does not change shell authority. Decide whether to continue watching, operate the bound TerminalSystem shell through the app surface, report in chat, or settle \`hosting\` from current evidence.
 
-## Memory pack
+## NoteSystem recording
 
-Read and update these global Avatar memory roles when the evidence justifies it:
-${memoryRoleLinks}
+Use NoteSystem as the default durable raw-recording surface when evidence justifies persistence:
 
-These files live in the Avatar principal memory pack beside the global Avatar prompt root, not in the current project workspace. Treat project-local workspace-private memory as an explicit overlay or artifact only when the user or tool surface names it.
+- Run \`skill info note\` or \`note --help\` when the command shape is unclear.
+- Use \`note draft\` for quick capture when naming a notebook, section, and page would interrupt the task.
+- Use \`note write --notebook <name> --section <name> --page <name>\` when the durable location is clear.
+- Use \`note search\` and \`note show\` before relying on old context or updating an existing note.
+- Existing non-empty pages require explicit \`--mode append\` or \`--mode override\`; choose append for incremental evidence and override only for intentional replacement.
+- Notes are raw facts, not distilled memory, user models, or prompt truth. Future derived memory must be created by a separate system.
+- Legacy memory files may exist as user assets, but they are not the default recording API and must not be automatically created, migrated, deleted, or rewritten.
 
 ## Editing law
 
-- These prompt and memory files are seed-if-missing user assets.
+- Prompt and legacy user-owned files are editable assets.
 - Read existing files as the current truth.
 - Do not lock them.
 - Do not automatically restore template content over user edits.

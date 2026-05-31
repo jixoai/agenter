@@ -14,6 +14,7 @@ import {
   type TerminalControlPlane,
 } from "@agenter/terminal-system";
 import { AppKernel, SessionDb, appRouter, createTrpcContext } from "../src";
+import { writeNotePage } from "../src/note-system/storage";
 import { UsageAnalyticsDb } from "../src/usage-analytics-db";
 import { resolveUsageAnalyticsDbPathFromAvatarRoot } from "../src/usage-analytics-paths";
 import { GLOBAL_WORKSPACE_PATH } from "../src/workspace-target";
@@ -118,6 +119,125 @@ type TestObservable<T> = {
 };
 
 describe("Feature: app-server trpc procedures", () => {
+  test("Scenario: Given avatar notes exist When NoteSystem TRPC catalog page and search are requested Then typed projections hide filesystem reads behind the backend contract", async () => {
+    const root = makeTempDir();
+    const homeDir = join(root, "home");
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir,
+    });
+    await kernel.start();
+    try {
+      const { caller } = await createRootSuperadminCaller(kernel);
+      const created = await caller.avatar.create({
+        nickname: "note-reader",
+        displayName: "Note Reader",
+      });
+      const principalId = created.avatar.avatarPrincipalId;
+      if (!principalId) {
+        throw new Error("expected created avatar principal id");
+      }
+      const avatarHome = resolveGlobalAvatarCanonicalRoot(principalId, homeDir);
+      writeNotePage({
+        avatarHome: [avatarHome],
+        notebook: "ideas",
+        section: "shell",
+        page: "typed-surface",
+        body: "Typed NoteSystem projection keeps Studio away from raw filesystem reads.",
+        now: new Date("2026-05-31T15:30:00.000Z"),
+        sourceWorkspace: "/repo",
+      });
+
+      const catalog = await caller.note.catalog({ avatarNickname: "note-reader" });
+      const page = await caller.note.page({
+        avatarNickname: "note-reader",
+        notebook: "ideas",
+        section: "shell",
+        page: "typed-surface",
+      });
+      const missingPage = await caller.note.page({
+        avatarNickname: "note-reader",
+        notebook: "ideas",
+        section: "shell",
+        page: "missing",
+      });
+      const search = await caller.note.search({
+        avatarNickname: "note-reader",
+        query: "Studio raw filesystem",
+      });
+
+      expect(catalog.avatar).toMatchObject({
+        nickname: "note-reader",
+        principalId,
+        avatarHome: [avatarHome],
+      });
+      expect(catalog.capability).toEqual({
+        available: true,
+        readableRoots: [avatarHome],
+        writableRoot: avatarHome,
+      });
+      expect(catalog.notebooks[0]?.sections[0]?.pages[0]).toMatchObject({
+        notebook: "ideas",
+        section: "shell",
+        page: "typed-surface",
+        sourceWorkspace: "/repo",
+      });
+      expect(page.page?.body).toContain("Typed NoteSystem projection");
+      expect(page.page?.metadata.kind).toBe("note");
+      expect(missingPage.page).toBeNull();
+      expect(search.results[0]).toMatchObject({
+        notebook: "ideas",
+        section: "shell",
+        page: "typed-surface",
+      });
+      expect(search.results[0]?.snippet).toContain("Studio");
+    } finally {
+      await kernel.stop();
+    }
+  });
+
+  test("Scenario: Given a missing avatar home When NoteSystem TRPC APIs run Then they report no note capability", async () => {
+    const root = makeTempDir();
+    const kernel = new AppKernel({
+      globalSessionRoot: join(root, "sessions"),
+      archiveSessionRoot: join(root, "archive", "sessions"),
+      workspacesPath: join(root, "workspaces.yaml"),
+      homeDir: join(root, "home"),
+    });
+    await kernel.start();
+    try {
+      const { caller } = await createRootSuperadminCaller(kernel);
+
+      const catalog = await caller.note.catalog({ avatarNickname: "missing-note-avatar" });
+      const page = await caller.note.page({
+        avatarNickname: "missing-note-avatar",
+        notebook: "ideas",
+        section: "shell",
+        page: "missing",
+      });
+      const search = await caller.note.search({
+        avatarNickname: "missing-note-avatar",
+        query: "anything",
+      });
+
+      expect(catalog.avatar).toMatchObject({
+        nickname: "missing-note-avatar",
+        principalId: null,
+        avatarHome: [],
+      });
+      expect(catalog.capability.available).toBeFalse();
+      expect(catalog.notebooks).toEqual([]);
+      expect(page.page).toBeNull();
+      expect(page.capability.available).toBeFalse();
+      expect(search.results).toEqual([]);
+      expect(search.capability.available).toBeFalse();
+    } finally {
+      await kernel.stop();
+    }
+  });
+
   test("Scenario: Given caller creates session When listing and deleting Then lifecycle is reflected", async () => {
     const root = makeTempDir();
     const kernel = new AppKernel({

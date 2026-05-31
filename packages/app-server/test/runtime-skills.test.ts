@@ -28,6 +28,47 @@ afterEach(() => {
 });
 
 describe("Feature: runtime built-in skills", () => {
+  test("Scenario: Given built-in runtime skills are listed When NoteSystem skill is discovered Then note appears as a package-owned skill", () => {
+    const rootWorkspacePath = createTempRoot();
+    const skills = listRuntimeSkills({
+      rootWorkspacePath,
+      homeDir: createTempRoot(),
+      principalId: "principal-test",
+    });
+    const note = skills.find((skill) => skill.name === "note");
+
+    expect(note).toBeTruthy();
+    expect(note?.path).toBe(join(repoRoot, "packages", "app-server", "skills", "note", "SKILL.md"));
+    expect(note?.summary).toContain("Record and retrieve avatar-private raw notes");
+    expect(buildRuntimeSkillsList(skills)).toContain("note");
+  });
+
+  test("Scenario: Given skill info note runs When guidance is rendered Then NoteSystem teaches strict raw-note CLI usage", () => {
+    const rootWorkspacePath = createTempRoot();
+    const skills = listRuntimeSkills({
+      rootWorkspacePath,
+      homeDir: createTempRoot(),
+      principalId: "principal-test",
+    });
+    const note = skills.find((skill) => skill.name === "note");
+    if (!note) {
+      throw new Error("expected note skill");
+    }
+
+    const content = readRuntimeSkillContent(note);
+
+    expect(content).toContain("note draft");
+    expect(content).toContain("note write --notebook <name> --section <name> --page <name>");
+    expect(content).toContain("note list");
+    expect(content).toContain("note show");
+    expect(content).toContain("note search");
+    expect(content).toContain("Notes are raw facts");
+    expect(content).toContain("Notes are not user models");
+    expect(content).toContain("--mode append");
+    expect(content).toContain("--mode override");
+    expect(content).toContain("Legacy memory files may exist");
+  });
+
   test("Scenario: Given a runtime root workspace When built-in skills are listed Then concise overviews and reference expansion stay discoverable without workspace writes", () => {
     const rootWorkspacePath = createTempRoot();
     const skills = listRuntimeSkills({

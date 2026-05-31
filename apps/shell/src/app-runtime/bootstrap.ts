@@ -14,11 +14,7 @@ import type {
 
 import { SHELL_APP_ID, SHELL_DEFAULT_AVATAR, createShellAppRuntimeClient } from "./app";
 import { readShellManagedState, type ShellManagedState } from "./managed";
-import {
-  SHELL_ASSISTANT_DISPLAY_NAME,
-  buildShellAssistantPromptSeed,
-  shellAssistantMemoryRoles,
-} from "./shell-assistant-seeds";
+import { SHELL_ASSISTANT_DISPLAY_NAME, buildShellAssistantPromptSeed } from "./shell-assistant-seeds";
 
 export type ShellAutoLoginResult =
   | { ok: true; session: { token: string } }
@@ -190,10 +186,6 @@ const resolveShellAvatarRuntime = async (input: {
       seedContent: buildShellAssistantPromptSeed(),
     });
     promptSeeded = prompt.seeded;
-    memoryFiles = await runtimeClient.ensureMemoryPackIfMissing({
-      avatarPrincipalId,
-      roles: [...shellAssistantMemoryRoles],
-    });
   }
   await runtimeClient.startRuntime(session.id);
 

@@ -157,6 +157,15 @@ import { readLocalEnvValue, resolveLocalEnvPath, writeLocalEnvValue } from "./lo
 import { repairRoomParticipantsIfNeeded } from "./message-room-participant-repair";
 import { resolveModelCapabilities } from "./model-capabilities";
 import {
+  listNoteCatalog,
+  readNotePage,
+  searchNoteCatalog,
+  type NoteAvatarContext,
+  type NoteCatalogOutput,
+  type NotePageOutput,
+  type NoteSearchOutput,
+} from "./note-system";
+import {
   settingsKindSchema,
   type AnyRuntimeEvent,
   type RuntimeEventEnvelope,
@@ -2000,6 +2009,71 @@ export class AppKernel {
       skillHomeRoots: deriveEnvSkillsHome({
         pwd: homeDir,
         avatarHome: [],
+      }),
+    };
+  }
+
+  private async resolveNoteAvatarContext(input: { avatarNickname?: string | null } = {}): Promise<NoteAvatarContext> {
+    const nickname = normalizeAvatarNickname(input.avatarNickname ?? defaultAvatarNickname());
+    const avatar = (await this.listGlobalAvatarCatalog()).find((entry) => entry.nickname === nickname) ?? null;
+    const principalId = avatar?.avatarPrincipalId ?? null;
+    const avatarHome = principalId ? [resolveGlobalAvatarCanonicalRoot(principalId, this.getHomeDir())] : [];
+    return {
+      nickname,
+      principalId,
+      avatarHome,
+    };
+  }
+
+  async listNoteCatalog(input: { avatarNickname?: string | null; limit?: number } = {}): Promise<
+    NoteCatalogOutput & {
+      avatar: NoteAvatarContext;
+    }
+  > {
+    const avatar = await this.resolveNoteAvatarContext(input);
+    return {
+      avatar,
+      ...listNoteCatalog({
+        avatarHome: avatar.avatarHome,
+        limit: input.limit,
+      }),
+    };
+  }
+
+  async readNotePage(input: {
+    avatarNickname?: string | null;
+    notebook: string;
+    section: string;
+    page: string;
+  }): Promise<
+    NotePageOutput & {
+      avatar: NoteAvatarContext;
+    }
+  > {
+    const avatar = await this.resolveNoteAvatarContext(input);
+    return {
+      avatar,
+      ...readNotePage({
+        avatarHome: avatar.avatarHome,
+        notebook: input.notebook,
+        section: input.section,
+        page: input.page,
+      }),
+    };
+  }
+
+  async searchNoteCatalog(input: { avatarNickname?: string | null; query: string; limit?: number }): Promise<
+    NoteSearchOutput & {
+      avatar: NoteAvatarContext;
+    }
+  > {
+    const avatar = await this.resolveNoteAvatarContext(input);
+    return {
+      avatar,
+      ...searchNoteCatalog({
+        avatarHome: avatar.avatarHome,
+        query: input.query,
+        limit: input.limit,
       }),
     };
   }

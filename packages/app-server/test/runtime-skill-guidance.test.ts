@@ -28,6 +28,7 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     const catalog = buildRuntimeBuiltinSkillCatalog(repoRoot);
     const message = catalog.find((entry) => entry.name === "agenter-message");
     const mcp = catalog.find((entry) => entry.name === "agenter-mcp");
+    const note = catalog.find((entry) => entry.name === "note");
     const terminal = catalog.find((entry) => entry.name === "agenter-terminal");
     const attention = catalog.find((entry) => entry.name === "agenter-attention");
 
@@ -53,6 +54,16 @@ describe("Feature: runtime skill progressive disclosure guidance", () => {
     expect(mcp?.template).toContain("project-local");
     expect(mcp?.template).toContain("autoEnable: false");
     expect(mcp?.template).not.toContain("bindingName");
+
+    expect(note?.template).toContain("note draft");
+    expect(note?.template).toContain("note write");
+    expect(note?.template).toContain("note list");
+    expect(note?.template).toContain("note show");
+    expect(note?.template).toContain("note search");
+    expect(note?.template).toContain("Notes are raw facts");
+    expect(note?.template).toContain("Notes are not user models");
+    expect(note?.template).toContain("--mode append");
+    expect(note?.template).toContain("--mode override");
 
     expect(terminal?.template).not.toContain("127.0.0.1");
     expect(terminal?.template).not.toContain("APP-URL:");

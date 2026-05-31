@@ -7,6 +7,7 @@ import { bootstrapShellRoom } from "../src/app-runtime/bootstrap";
 import { SHELL_APP_ID } from "../src/app-runtime/app";
 import { createShellRuntimeApprovalStore } from "../src/app-runtime/approval-store";
 import { parseShellArgs } from "../src/app-runtime/argv";
+import { buildShellAssistantPromptSeed } from "../src/app-runtime/shell-assistant-seeds";
 import type { ShellAppRunDependencies } from "../src/app-runtime/runtime";
 import type { ChildLayoutNode } from "../src/renderable-mux/layout";
 import { createPaneSourceId, type PaneSource, type TerminalFrameSnapshot } from "../src/renderable-mux/pane-source";
@@ -179,6 +180,22 @@ describe("Feature: shell app runtime argv", () => {
 });
 
 describe("Feature: shell app runtime bootstrap", () => {
+  test("Scenario: Given shell-assistant prompt seed is built When read Then it teaches NoteSystem recording instead of a memory role pack", () => {
+    const prompt = buildShellAssistantPromptSeed();
+
+    expect(prompt).toContain("## NoteSystem recording");
+    expect(prompt).toContain("skill info note");
+    expect(prompt).toContain("note draft");
+    expect(prompt).toContain("note write --notebook <name> --section <name> --page <name>");
+    expect(prompt).toContain("note search");
+    expect(prompt).toContain("note show");
+    expect(prompt).toContain("--mode append");
+    expect(prompt).toContain("--mode override");
+    expect(prompt).not.toContain("## Memory pack");
+    expect(prompt).not.toContain("user-model.md");
+    expect(prompt).not.toContain("hosting-objective.md");
+  });
+
   test("Scenario: Given non-TTY shell attach lacks explicit selectors When running Then shell fails before bootstrap", async () => {
     const store = new FakeShellStore();
     const dependencies = createTestDependencies({ store, tty: false });
@@ -387,7 +404,7 @@ describe("Feature: shell app runtime bootstrap", () => {
     expect(store.createTerminalInputs[0]?.profile?.gitLog).toBe("normal");
   });
 
-  test("Scenario: Given shell starts from a project workspace When default assistant resources are ensured Then prompt and memory use the session avatar principal", async () => {
+  test("Scenario: Given shell starts from a project workspace When default assistant resources are ensured Then prompt teaches NoteSystem without creating memory files", async () => {
     const store = new FakeShellStore();
 
     await bootstrapShellRoom({
@@ -398,13 +415,17 @@ describe("Feature: shell app runtime bootstrap", () => {
     });
 
     expect([...store.promptFiles.keys()]).toEqual(["~:auth:shell-assistant:agenter"]);
-    expect([...store.memoryFiles.keys()].sort()).toEqual([
-      "~:auth:shell-assistant:memory:hosting-objective.md",
-      "~:auth:shell-assistant:memory:pairing-playbook.md",
-      "~:auth:shell-assistant:memory:self-evolution-log.md",
-      "~:auth:shell-assistant:memory:terminal-habits.md",
-      "~:auth:shell-assistant:memory:user-model.md",
-    ]);
+    const prompt = [...store.promptFiles.values()][0]?.content ?? "";
+    expect(prompt).toContain("## NoteSystem recording");
+    expect(prompt).toContain("skill info note");
+    expect(prompt).toContain("note draft");
+    expect(prompt).toContain("note write --notebook <name> --section <name> --page <name>");
+    expect(prompt).toContain("note search");
+    expect(prompt).toContain("note show");
+    expect(prompt).not.toContain("## Memory pack");
+    expect(prompt).not.toContain("user-model.md");
+    expect(prompt).not.toContain("pairing-playbook.md");
+    expect([...store.memoryFiles.keys()]).toEqual([]);
     expect([...store.privateAssets.keys()]).toEqual([]);
   });
 

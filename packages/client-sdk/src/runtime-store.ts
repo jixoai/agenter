@@ -44,6 +44,9 @@ import type {
   MessageChannelGrantEntry,
   MessageSendSuccessOutput,
   ModelCallItem,
+  NoteCatalogOutput,
+  NotePageOutput,
+  NoteSearchOutput,
   NotificationSnapshotOutput,
   RuntimeAttentionDeliveryState,
   RuntimeAttentionState,
@@ -4096,6 +4099,23 @@ export class RuntimeStore {
     maxBytes?: number;
   }): Promise<SkillAvatarPreviewOutput> {
     return await this.client.trpc.skill.avatarPreview.query(input);
+  }
+
+  async listNoteCatalog(input: { avatarNickname?: string; limit?: number } = {}): Promise<NoteCatalogOutput> {
+    return await this.client.trpc.note.catalog.query(input);
+  }
+
+  async readNotePage(input: {
+    avatarNickname?: string;
+    notebook: string;
+    section: string;
+    page: string;
+  }): Promise<NotePageOutput> {
+    return await this.client.trpc.note.page.query(input);
+  }
+
+  async searchNotes(input: { avatarNickname?: string; query: string; limit?: number }): Promise<NoteSearchOutput> {
+    return await this.client.trpc.note.search.query(input);
   }
 
   async readWorkspaceCliCatalog(input: { workspacePath: string; avatar: string }): Promise<WorkspaceCliCatalogOutput> {

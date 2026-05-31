@@ -523,6 +523,14 @@ const createMockClient = (input: {
     path: string;
     maxBytes?: number;
   }) => Promise<unknown>;
+  noteCatalogQuery?: (input: { avatarNickname?: string; limit?: number }) => Promise<unknown>;
+  notePageQuery?: (input: {
+    avatarNickname?: string;
+    notebook: string;
+    section: string;
+    page: string;
+  }) => Promise<unknown>;
+  noteSearchQuery?: (input: { avatarNickname?: string; query: string; limit?: number }) => Promise<unknown>;
   authActorsQuery?: () => Promise<{
     items: Array<{
       actorId: string;
@@ -2187,6 +2195,31 @@ const createMockClient = (input: {
                   truncated: false,
                   note: null,
                 },
+        },
+      },
+      note: {
+        catalog: {
+          query: async (payload: { avatarNickname?: string; limit?: number }) =>
+            input.noteCatalogQuery
+              ? await input.noteCatalogQuery(payload)
+              : { capability: { available: false, readableRoots: [], writableRoot: null }, notebooks: [], totalPages: 0 },
+        },
+        page: {
+          query: async (payload: {
+            avatarNickname?: string;
+            notebook: string;
+            section: string;
+            page: string;
+          }) =>
+            input.notePageQuery
+              ? await input.notePageQuery(payload)
+              : { capability: { available: false, readableRoots: [], writableRoot: null }, page: null },
+        },
+        search: {
+          query: async (payload: { avatarNickname?: string; query: string; limit?: number }) =>
+            input.noteSearchQuery
+              ? await input.noteSearchQuery(payload)
+              : { capability: { available: false, readableRoots: [], writableRoot: null }, results: [] },
         },
       },
       notification: {
@@ -10969,6 +11002,125 @@ describe("Feature: runtime store synchronization", () => {
           }),
         ],
       }),
+    ]);
+  });
+
+  test("Scenario: Given NoteSystem TRPC outputs When runtime store facades are called Then catalog page and search contracts are preserved", async () => {
+    const catalogOutput = {
+      avatar: {
+        nickname: "shell-assistant",
+        principalId: "auth:shell-assistant",
+        avatarHome: ["/avatar/shell-assistant"],
+      },
+      capability: {
+        available: true,
+        readableRoots: ["/avatar/shell-assistant"],
+        writableRoot: "/avatar/shell-assistant",
+      },
+      notebooks: [
+        {
+          notebook: "ideas",
+          sections: [
+            {
+              section: "shell",
+              pages: [
+                {
+                  notebook: "ideas",
+                  section: "shell",
+                  page: "note-system",
+                  path: "/avatar/shell-assistant/notes/ideas/shell/note-system.md",
+                  id: "ideas/shell/note-system",
+                  createdAt: "2026-05-31T15:30:00.000Z",
+                  updatedAt: "2026-05-31T15:31:00.000Z",
+                  tags: [],
+                  preview: "NoteSystem contract.",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      totalPages: 1,
+    };
+    const pageOutput = {
+      avatar: catalogOutput.avatar,
+      capability: catalogOutput.capability,
+      page: {
+        identity: {
+          notebook: "ideas",
+          section: "shell",
+          page: "note-system",
+        },
+        metadata: {
+          id: "ideas/shell/note-system",
+          kind: "note" as const,
+          createdAt: "2026-05-31T15:30:00.000Z",
+          updatedAt: "2026-05-31T15:31:00.000Z",
+          notebook: "ideas",
+          section: "shell",
+          page: "note-system",
+          tags: [],
+        },
+        path: "/avatar/shell-assistant/notes/ideas/shell/note-system.md",
+        body: "NoteSystem contract.",
+      },
+    };
+    const searchOutput = {
+      avatar: catalogOutput.avatar,
+      capability: catalogOutput.capability,
+      results: [
+        {
+          notebook: "ideas",
+          section: "shell",
+          page: "note-system",
+          path: "/avatar/shell-assistant/notes/ideas/shell/note-system.md",
+          score: 1,
+          snippet: "NoteSystem contract.",
+        },
+      ],
+    };
+    const calls: unknown[] = [];
+    const store = new RuntimeStore(
+      createMockClient({
+        noteCatalogQuery: async (input) => {
+          calls.push(["catalog", input]);
+          return catalogOutput;
+        },
+        notePageQuery: async (input) => {
+          calls.push(["page", input]);
+          return pageOutput;
+        },
+        noteSearchQuery: async (input) => {
+          calls.push(["search", input]);
+          return searchOutput;
+        },
+      }),
+    );
+
+    expect(await store.listNoteCatalog({ avatarNickname: "shell-assistant", limit: 50 })).toEqual(catalogOutput);
+    expect(
+      await store.readNotePage({
+        avatarNickname: "shell-assistant",
+        notebook: "ideas",
+        section: "shell",
+        page: "note-system",
+      }),
+    ).toEqual(pageOutput);
+    expect(await store.searchNotes({ avatarNickname: "shell-assistant", query: "contract", limit: 10 })).toEqual(
+      searchOutput,
+    );
+    expect(calls).toEqual([
+      ["catalog", { avatarNickname: "shell-assistant", limit: 50 }],
+      [
+        "page",
+        {
+          avatarNickname: "shell-assistant",
+          notebook: "ideas",
+          section: "shell",
+          page: "note-system",
+        },
+      ],
+      ["search", { avatarNickname: "shell-assistant", query: "contract", limit: 10 }],
     ]);
   });
 

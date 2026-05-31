@@ -22,6 +22,54 @@ export interface NotePage {
   body: string;
 }
 
+export interface NoteCapabilityState {
+  available: boolean;
+  readableRoots: string[];
+  writableRoot: string | null;
+}
+
+export interface NoteAvatarContext {
+  nickname: string;
+  principalId: string | null;
+  avatarHome: string[];
+}
+
+export interface NotePageSummary extends NoteIdentity {
+  path: string;
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  tags: string[];
+  sourceWorkspace?: string;
+  preview: string;
+}
+
+export interface NoteSectionGroup {
+  section: string;
+  pages: NotePageSummary[];
+}
+
+export interface NoteNotebookGroup {
+  notebook: string;
+  sections: NoteSectionGroup[];
+}
+
+export interface NoteCatalogOutput {
+  capability: NoteCapabilityState;
+  notebooks: NoteNotebookGroup[];
+  totalPages: number;
+}
+
+export interface NotePageOutput {
+  capability: NoteCapabilityState;
+  page: NotePage | null;
+}
+
+export interface NoteSearchOutput {
+  capability: NoteCapabilityState;
+  results: NoteSearchResult[];
+}
+
 export interface NoteWriteInput extends NoteIdentity {
   avatarHome: readonly string[];
   body: string;

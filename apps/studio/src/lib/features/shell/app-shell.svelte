@@ -1,6 +1,7 @@
 <script lang="ts">
 	import MailIcon from '@lucide/svelte/icons/mail';
 	import FolderKanbanIcon from '@lucide/svelte/icons/folder-kanban';
+	import NotebookTextIcon from '@lucide/svelte/icons/notebook-text';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import SquareTerminalIcon from '@lucide/svelte/icons/square-terminal';
 	import BotIcon from '@lucide/svelte/icons/bot';
@@ -40,6 +41,7 @@
 	const navItems = [
 		{ href: '/avatars', label: 'Avatars', icon: BotIcon },
 		{ href: '/skills', label: 'Skills', icon: SparklesIcon },
+		{ href: '/notes', label: 'Notes', icon: NotebookTextIcon },
 		{ href: '/messages', label: 'Messages', icon: MailIcon },
 		{ href: '/workspaces', label: 'Workspaces', icon: FolderKanbanIcon },
 		{ href: '/terminals', label: 'Terminals', icon: SquareTerminalIcon },
