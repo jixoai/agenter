@@ -15,6 +15,9 @@ permissions:
   id-token: write
   pull-requests: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   release:
     name: Version or publish npm bundles
