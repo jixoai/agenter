@@ -38,6 +38,19 @@ export const startShellNavigationTui = async (input: {
   const releaseRetainers = [input.store.retainGlobalTerminals?.(), input.store.retainGlobalRooms?.()].filter(
     (release): release is () => void => typeof release === "function",
   );
+  let roomGrantRetainers: Array<() => void> = [];
+  const updateRoomGrantRetainers = (items: readonly ShellNavigationShellItem[]): void => {
+    while (roomGrantRetainers.length > 0) {
+      roomGrantRetainers.pop()?.();
+    }
+    const roomIds = [
+      ...new Set(items.flatMap((item) => (item.kind === "shell" && item.roomId ? [item.roomId] : []))),
+    ];
+    roomGrantRetainers = roomIds
+      .map((roomId) => input.store.retainGlobalRoomGrants?.(roomId))
+      .filter((release): release is () => void => typeof release === "function");
+  };
+  updateRoomGrantRetainers(shellItems);
   const readCachedShellItems = async (): Promise<{
     shellItems: readonly ShellNavigationShellItem[];
     defaultShellIndex: number;
@@ -47,13 +60,18 @@ export const startShellNavigationTui = async (input: {
       return null;
     }
     const roomsState = input.store.getGlobalRoomsState?.();
+    const rooms = roomsState?.loaded ? roomsState.data : [];
+    const roomGrantsByChatId = new Map(
+      rooms.map((room) => [room.chatId, input.store.getGlobalRoomGrantsState?.(room.chatId).data ?? []]),
+    );
     const auth = (await input.store.getAuthSession?.()) ?? null;
     const next = buildShellNavigationShellItems(
       terminalsState.data,
       settings,
       terminalsState.data,
-      roomsState?.loaded ? roomsState.data : [],
+      rooms,
       auth,
+      roomGrantsByChatId,
     );
     const currentNewShell = shellItems.find((item) => item.kind === "new-shell");
     if (currentNewShell && next.items[0]?.kind === "new-shell") {
@@ -80,6 +98,7 @@ export const startShellNavigationTui = async (input: {
       const next = await readCachedShellItems();
       if (next && !done && activeApp) {
         shellItems = next.shellItems;
+        updateRoomGrantRetainers(shellItems);
         activeApp.updateShellItems(next);
       }
     } finally {
@@ -120,6 +139,9 @@ export const startShellNavigationTui = async (input: {
     unsubscribe?.();
     while (releaseRetainers.length > 0) {
       releaseRetainers.pop()?.();
+    }
+    while (roomGrantRetainers.length > 0) {
+      roomGrantRetainers.pop()?.();
     }
     activeApp?.dispose();
   };

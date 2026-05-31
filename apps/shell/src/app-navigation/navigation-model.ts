@@ -3,6 +3,7 @@ import type {
   CachedResourceState,
   GlobalAvatarCatalogEntry,
   GlobalRoomEntry,
+  GlobalRoomGrantEntry,
   GlobalTerminalEntry,
 } from "@agenter/client-sdk";
 import { parseColor, StyledText, type TextChunk } from "@opentui/core";
@@ -21,9 +22,12 @@ export interface ShellNavigationStore {
   getAuthSession?(): Promise<AuthSessionOutput | null>;
   getGlobalTerminalsState?(): CachedResourceState<GlobalTerminalEntry[]>;
   getGlobalRoomsState?(): CachedResourceState<GlobalRoomEntry[]>;
+  getGlobalRoomGrantsState?(chatId: string): CachedResourceState<GlobalRoomGrantEntry[]>;
   retainGlobalTerminals?(): () => void;
   retainGlobalRooms?(): () => void;
+  retainGlobalRoomGrants?(chatId: string): () => void;
   subscribe?(listener: () => void): () => void;
+  listGlobalRoomGrants?(input: { chatId: string; accessToken?: string }): Promise<GlobalRoomGrantEntry[]>;
   hydrateGlobalAvatarCatalog(input?: { force?: boolean }): Promise<GlobalAvatarCatalogEntry[]>;
   createGlobalAvatar(input: {
     nickname: string;
@@ -184,27 +188,44 @@ const mentionFromParticipant = (participant: { id: string; label?: string }): st
 
 const peopleMentionsForRoom = (
   room: GlobalRoomEntry | undefined,
+  grants: readonly GlobalRoomGrantEntry[],
   auth: AuthSessionOutput | null | undefined,
 ): string[] => {
   if (!room) {
     return [];
   }
   const excluded = currentSuperadminActorId(auth);
-  return room.participants
-    .filter((participant) => participant.id !== excluded)
-    .map(mentionFromParticipant)
-    .filter((mention, index, mentions) => mentions.indexOf(mention) === index);
+  const actors: Array<{ id: string; label?: string }> = [
+    ...room.participants.map((participant) => ({ id: participant.id, label: participant.label })),
+  ];
+  for (const grant of grants) {
+    if (!grant.participantId) {
+      continue;
+    }
+    actors.push({ id: grant.participantId, label: grant.label });
+  }
+  const seen = new Set<string>();
+  const mentions: string[] = [];
+  for (const actor of actors) {
+    if (actor.id === excluded || seen.has(actor.id)) {
+      continue;
+    }
+    seen.add(actor.id);
+    mentions.push(mentionFromParticipant(actor));
+  }
+  return mentions;
 };
 
 const rowFieldsForTerminal = (input: {
   shellName: string;
   terminal: GlobalTerminalEntry;
   room: GlobalRoomEntry | undefined;
+  roomGrants: readonly GlobalRoomGrantEntry[];
   auth: AuthSessionOutput | null | undefined;
 }): ShellNavigationTerminalRowFields => {
   const title = input.terminal.currentTitle?.trim() || input.terminal.configuredTitle?.trim() || input.shellName;
   const pwd = input.terminal.currentPath?.trim() || input.terminal.terminalId;
-  const peopleMentions = peopleMentionsForRoom(input.room, input.auth);
+  const peopleMentions = peopleMentionsForRoom(input.room, input.roomGrants, input.auth);
   return {
     id: input.shellName,
     pwd,
@@ -328,6 +349,7 @@ export const buildShellNavigationShellItems = (
   allKnownTerminals: readonly GlobalTerminalEntry[] = terminals,
   rooms: readonly GlobalRoomEntry[] = [],
   auth: AuthSessionOutput | null = null,
+  roomGrantsByChatId: ReadonlyMap<string, readonly GlobalRoomGrantEntry[]> = new Map(),
 ): { items: ShellNavigationShellItem[]; defaultIndex: number } => {
   const byShellName = new Map<string, ShellNavigationShellOption>();
   const roomsByShellName = new Map<string, GlobalRoomEntry>();
@@ -343,7 +365,13 @@ export const buildShellNavigationShellItems = (
       continue;
     }
     const room = roomsByShellName.get(shellName);
-    const rowFields = rowFieldsForTerminal({ shellName, terminal, room, auth });
+    const rowFields = rowFieldsForTerminal({
+      shellName,
+      terminal,
+      room,
+      roomGrants: room ? (roomGrantsByChatId.get(room.chatId) ?? []) : [],
+      auth,
+    });
     const option: ShellNavigationShellOption = {
       kind: "shell",
       shellName,
@@ -437,6 +465,7 @@ export const buildShellNavigationModel = async (
     | "listGlobalTerminalIndex"
     | "listGlobalRooms"
     | "getAuthSession"
+    | "listGlobalRoomGrants"
     | "hydrateGlobalAvatarCatalog"
   >,
   settings: ShellSettings,
@@ -447,7 +476,20 @@ export const buildShellNavigationModel = async (
     store.hydrateGlobalAvatarCatalog({ force: true }),
   ]);
   const [rooms, auth] = await Promise.all([store.listGlobalRooms(), store.getAuthSession?.() ?? Promise.resolve(null)]);
-  const shell = buildShellNavigationShellItems(terminals, settings, terminalIndex, rooms, auth);
+  const roomGrantEntries = await Promise.all(
+    rooms.map(
+      async (room): Promise<readonly [string, readonly GlobalRoomGrantEntry[]]> => [
+        room.chatId,
+        store.listGlobalRoomGrants
+          ? await store.listGlobalRoomGrants({ chatId: room.chatId, accessToken: room.accessToken })
+          : [],
+      ],
+    ),
+  );
+  const roomGrantsByChatId = new Map<string, readonly GlobalRoomGrantEntry[]>(
+    roomGrantEntries,
+  );
+  const shell = buildShellNavigationShellItems(terminals, settings, terminalIndex, rooms, auth, roomGrantsByChatId);
   const avatar = buildShellNavigationAvatarItems(avatars);
   return {
     shellItems: shell.items,

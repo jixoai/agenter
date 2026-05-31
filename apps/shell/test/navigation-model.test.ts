@@ -2,6 +2,7 @@ import type {
   AuthSessionOutput,
   GlobalAvatarCatalogEntry,
   GlobalRoomEntry,
+  GlobalRoomGrantEntry,
   GlobalTerminalEntry,
 } from "@agenter/client-sdk";
 import { describe, expect, test } from "bun:test";
@@ -47,6 +48,21 @@ const shellRoom = (resourceKey: string): GlobalRoomEntry => ({
   ],
 });
 
+const shellRoomWithoutParticipants = (resourceKey: string): GlobalRoomEntry => ({
+  ...shellRoom(resourceKey),
+  participants: [],
+});
+
+const roomGrant = (participantId: string, label?: string): GlobalRoomGrantEntry => ({
+  grantId: `grant:${participantId}`,
+  chatId: "room-7",
+  participantId: participantId as NonNullable<GlobalRoomGrantEntry["participantId"]>,
+  label,
+  role: "member",
+  accessToken: `token:${participantId}`,
+  createdAt: 7,
+});
+
 const superadminAuth = (): AuthSessionOutput =>
   ({
     claims: {
@@ -72,6 +88,28 @@ describe("Feature: shell Select Terminal model", () => {
     expect(existing?.peopleMentions).toEqual(["@AAA", "@BBB"]);
     expect(existing?.avatarNickname).toBe("AAA");
     expect(existing?.roomId).toBe("room-7");
+  });
+
+  test("Scenario: Given room users are represented by grants When building rows Then people mentions still render", () => {
+    const settings = defaultShellSettings();
+
+    const { items } = buildShellNavigationShellItems(
+      [shellTerminal("shell-7")],
+      settings,
+      [shellTerminal("shell-7")],
+      [shellRoomWithoutParticipants("shell-7")],
+      superadminAuth(),
+      new Map([
+        [
+          "room-7",
+          [roomGrant("auth:root-superadmin", "root"), roomGrant("auth:AAA", "AAA"), roomGrant("auth:BBB", "BBB")],
+        ],
+      ]),
+    );
+
+    const existing = items.find((item) => item.kind === "shell");
+    expect(existing?.peopleMentions).toEqual(["@AAA", "@BBB"]);
+    expect(existing?.rowFields.people).toBe("@AAA, @BBB");
   });
 
   test("Scenario: Given a structured terminal row When rendered Then fields retain distinct styled chunks", () => {
