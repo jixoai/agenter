@@ -1,3 +1,4 @@
+import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, test } from "vitest";
@@ -46,6 +47,17 @@ afterEach(() => {
 });
 
 describe("Feature: Message markdown content preview", () => {
+  test("Scenario: Given a message bubble When the markdown component mounts Then it owns a readonly non-editable CodeMirror surface", () => {
+    const harness = mountMarkdownContent("Readonly bubble text");
+
+    try {
+      expect(harness.view.state.facet(EditorState.readOnly)).toBe(true);
+      expect(harness.view.state.facet(EditorView.editable)).toBe(false);
+    } finally {
+      unmount(harness.component);
+    }
+  });
+
   test("Scenario: Given a table message When the markdown component mounts Then it renders a scrollable table preview inside the bubble", () => {
     const harness = mountMarkdownContent(`| Name | Role |\n| --- | --- |\n| QAQ | owner |`);
 

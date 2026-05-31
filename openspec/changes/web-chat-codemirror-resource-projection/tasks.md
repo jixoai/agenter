@@ -1,13 +1,13 @@
-- [ ] 1.1 Confirm `plans/plan.md` records the latest user inputs verbatim and separates storage law from frontend projection law.
-- [ ] 1.2 Add delta specs for writable composer / readonly bubble CodeMirror mode ownership and shared resource-token projection.
-- [ ] 1.3 Add BDD coverage proving the composer is a real writable CodeMirror surface in browser/Storybook DOM, not only a jsdom textarea fallback.
-- [ ] 1.4 Add BDD coverage proving the readonly bubble still renders resource tokens/bar from Markdown footnotes and remains non-editable.
-- [ ] 2.1 Extract shared CodeMirror resource-token projection atoms from the bubble-only preview implementation without changing durable Markdown storage.
-- [ ] 2.2 Wire `ChatDraftEditor` to consume live resource references and decorate matching inline tokens in writable mode.
-- [ ] 2.3 Preserve composer editing behavior: typing, cursor movement, Enter submit, and completion should still work with token decorations present.
-- [ ] 2.4 Preserve readonly message behavior: footnote definitions stay hidden in bubbles, resource bar stays in-bubble, and resource activation works from token and tile.
-- [ ] 3.1 Create or upgrade a real Storybook story for the live composer and readonly bubble projection side by side.
-- [ ] 3.2 Capture before/after screenshots for desktop and iPhone 14 viewport under `.screenshot/`.
-- [ ] 3.3 Run targeted WebChat unit/Storybook DOM tests and `@agenter/web-chat-view` typecheck.
-- [ ] 3.4 Run `bun run openspec:vision -- validate web-chat-codemirror-resource-projection` and `bun run openspec:vision -- check web-chat-codemirror-resource-projection`.
-- [ ] 4.1 Write self-review with screenshot paths, command evidence, deviations, and final user walkthrough entry.
+- [x] 1.1 Confirm `plans/plan.md` records the latest user inputs verbatim and separates storage law from frontend projection law.
+- [x] 1.2 Add delta specs for writable composer / readonly bubble CodeMirror mode ownership and shared resource-token projection.
+- [x] 1.3 Add BDD coverage proving the composer is a real writable CodeMirror surface in browser/Storybook DOM, not only a jsdom textarea fallback.
+- [x] 1.4 Add BDD coverage proving the readonly bubble still renders resource tokens/bar from Markdown footnotes and remains non-editable.
+- [x] 2.1 Extract shared CodeMirror resource-token projection atoms from the bubble-only preview implementation without changing durable Markdown storage.
+- [x] 2.2 Wire `ChatDraftEditor` to consume live resource references and decorate matching inline tokens in writable mode.
+- [x] 2.3 Preserve composer editing behavior: typing, cursor movement, Enter submit, and completion should still work with token decorations present.
+- [x] 2.4 Preserve readonly message behavior: footnote definitions stay hidden in bubbles, resource bar stays in-bubble, and resource activation works from token and tile.
+- [x] 3.1 Create or upgrade a real Storybook story for the live composer and readonly bubble projection side by side.
+- [x] 3.2 Capture before/after screenshots for desktop and iPhone 14 viewport under `.screenshot/`.
+- [x] 3.3 Run targeted WebChat unit/Storybook DOM tests and `@agenter/web-chat-view` typecheck.
+- [x] 3.4 Run `bun run openspec:vision -- validate web-chat-codemirror-resource-projection` and `bun run openspec:vision -- check web-chat-codemirror-resource-projection`.
+- [x] 4.1 Write self-review with screenshot paths, command evidence, deviations, and final user walkthrough entry.

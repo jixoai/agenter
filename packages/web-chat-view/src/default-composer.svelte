@@ -28,6 +28,7 @@
     revokePendingAssetPreview,
     type PendingAsset,
   } from "./composer/pending-assets";
+  import ResourcePreviewLayer from "./resource-preview-layer.svelte";
   import {
     commentResourceToReference,
     mergeResourceReferences,
@@ -61,6 +62,9 @@
   let dragDepth = 0;
   let notice = $state<string | null>(null);
   let toolsSheetVisible = $state(false);
+  let previewingEditorResourceId = $state<string | null>(null);
+  let editorCommentDetailMode = $state<"view" | "edit">("view");
+  let editorCommentDraftValue = $state("");
 
   const composerCapabilities = $derived(
     resolveComposerCapabilities(
@@ -126,6 +130,9 @@
 
   const removePendingCommentResource = (resourceId: string): void => {
     pendingCommentResources = pendingCommentResources.filter((resource) => resource.id !== resourceId);
+    if (previewingEditorResourceId === resourceId) {
+      previewingEditorResourceId = null;
+    }
   };
 
   const updatePendingCommentResource = (resourceId: string, commentText: string): void => {
@@ -340,6 +347,41 @@
   });
 
   const commentResources = $derived(pendingCommentResources);
+  const previewingEditorResource = $derived(
+    composerCapabilities.resourceReferences.find((resource) => resource.id === previewingEditorResourceId) ?? null,
+  );
+  const previewingEditorPendingComment = $derived(
+    previewingEditorResource?.kind === "comment"
+      ? pendingCommentResources.find((resource) => resource.id === previewingEditorResource.id) ?? null
+      : null,
+  );
+  const openEditorResource = (resource: WebChatResourceReference): void => {
+    previewingEditorResourceId = resource.id;
+    if (resource.kind === "comment") {
+      editorCommentDetailMode = "view";
+      editorCommentDraftValue = resource.commentText ?? resource.detailText ?? "";
+    }
+  };
+  const finalizeEditorPendingCommentEdit = (): void => {
+    if (!previewingEditorPendingComment || editorCommentDraftValue.trim().length > 0) {
+      return;
+    }
+    removePendingCommentResource(previewingEditorPendingComment.id);
+  };
+  const saveEditorPendingCommentEdit = (): void => {
+    if (!previewingEditorPendingComment) {
+      return;
+    }
+    const trimmedDraft = editorCommentDraftValue.trim();
+    if (trimmedDraft.length === 0) {
+      finalizeEditorPendingCommentEdit();
+      previewingEditorResourceId = null;
+      return;
+    }
+    updatePendingCommentResource(previewingEditorPendingComment.id, trimmedDraft);
+    editorCommentDraftValue = trimmedDraft;
+    editorCommentDetailMode = "view";
+  };
   const hasPendingResources = $derived(pendingAssets.length > 0 || commentResources.length > 0);
   const showComposerStatus = $derived(disabled || sending);
   const toolsDisabled = $derived(
@@ -427,6 +469,7 @@
             disabled={disabled}
             submitting={sending}
             capabilities={composerCapabilities}
+            onOpenResource={openEditorResource}
             onChange={(value) => {
               draft = value;
               clearNotice();
@@ -510,6 +553,25 @@
     {/each}
   </ComposerToolSheet>
 </Messagebar>
+
+<ResourcePreviewLayer
+  resource={previewingEditorResource}
+  open={Boolean(previewingEditorResource)}
+  commentMode={editorCommentDetailMode}
+  commentEditable={Boolean(previewingEditorPendingComment)}
+  bind:commentDraftValue={editorCommentDraftValue}
+  onCommentModeChange={(next) => {
+    editorCommentDetailMode = next;
+  }}
+  onCommentSave={saveEditorPendingCommentEdit}
+  onCommentClose={finalizeEditorPendingCommentEdit}
+  onOpenChange={(next) => {
+    if (!next) {
+      finalizeEditorPendingCommentEdit();
+    }
+    previewingEditorResourceId = next ? previewingEditorResourceId : null;
+  }}
+/>
 
 <style>
   .composer-file-input {

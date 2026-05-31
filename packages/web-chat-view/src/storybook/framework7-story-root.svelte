@@ -37,8 +37,8 @@
   }
 
   .story-device {
-    width: var(--story-width);
-    height: var(--story-height);
+    width: min(var(--story-width), calc(100vw - 2rem));
+    height: min(var(--story-height), calc(100vh - 2rem));
     overflow: hidden;
     border-radius: 32px;
     background: var(--story-background);

@@ -5,19 +5,24 @@ import { Decoration, EditorView } from "@codemirror/view";
 import type { SyntaxNodeRef } from "@lezer/common";
 
 import type { WebChatResourceReference } from "../types";
-import { collectMarkdownStructuralProjectionState, type MarkdownProjectionRange } from "./message-markdown-hybrid-projection";
+import {
+  collectMarkdownStructuralProjectionState,
+  type MarkdownProjectionRange,
+} from "./message-markdown-hybrid-projection";
 import { markdownHighlightStyle, markdownPreviewTheme } from "./message-markdown-preview-theme";
 import {
   bulletDecoration,
-  inlineResourceTokenDecoration,
   orderedDecoration,
-  revealStructuralSourceEffect,
-  resourceBarDecoration,
   resolveDefinitionResourceReference,
-  resolveInlineResourceReference,
+  resourceBarDecoration,
+  revealStructuralSourceEffect,
   structuralOverlayDecoration,
   taskMarkerDecoration,
 } from "./message-markdown-preview-widgets";
+import {
+  collectInlineResourceTokenDecorations,
+  resolveInlineResourceTokenNode,
+} from "./message-markdown-resource-token-projection";
 
 const HIDDEN_TOKENS = ["HeaderMark", "EmphasisMark", "LinkMark", "URL", "HardBreak", "QuoteMark"];
 
@@ -74,10 +79,7 @@ const rangeIntersects = (left: MarkdownProjectionRange, right: MarkdownProjectio
   return left.from < right.to && left.to > right.from;
 };
 
-const mapProjectionRange = (
-  range: MarkdownProjectionRange,
-  changes: ChangeDesc,
-): MarkdownProjectionRange | null => {
+const mapProjectionRange = (range: MarkdownProjectionRange, changes: ChangeDesc): MarkdownProjectionRange | null => {
   const from = changes.mapPos(range.from, 1);
   const to = changes.mapPos(range.to, -1);
   if (to <= from) {
@@ -101,6 +103,16 @@ const buildInlineDecorations = (
       const lineTo = state.doc.lineAt(range.to);
       return { from: Math.min(lineFrom.from, lineTo.from), to: Math.max(lineFrom.to, lineTo.to) };
     });
+  decorations.push(
+    ...collectInlineResourceTokenDecorations(state, {
+      resources: resourceContext.resources,
+      tone: resourceContext.tone,
+      onOpenResource: resourceContext.onOpenResource,
+      excludedRanges: hiddenDefinitionRanges,
+      shouldRevealTokenText: (range) =>
+        selectedLines.some((selectedLine) => range.from < selectedLine.to && range.to > selectedLine.from),
+    }),
+  );
   const listStack: number[] = [];
   const blockquoteLineStarts = new Set<number>();
 
@@ -143,19 +155,11 @@ const buildInlineDecorations = (
       }
 
       if (node.name === "Link") {
-        const label = node.node.getChild("LinkLabel");
-        const labelFrom = label?.from ?? node.from;
-        const labelTo = label?.to ?? node.to;
-        const labelText = state.doc.sliceString(labelFrom, labelTo);
-        const resource = resolveInlineResourceReference(resourceContext.resources, labelText);
+        const resource = resolveInlineResourceTokenNode(state, node, resourceContext.resources);
         if (resource && !isSelectedLine) {
-          decorations.push({
-            from: node.from,
-            to: node.to,
-            decoration: inlineResourceTokenDecoration(resource, resourceContext.tone, resourceContext.onOpenResource),
-          });
           return false;
         }
+        const label = node.node.getChild("LinkLabel");
         if (label) {
           decorations.push({ from: label.from, to: label.to, decoration: linkDecoration });
         }
@@ -394,7 +398,11 @@ const structuralRevealStateField = StateField.define<readonly MarkdownProjection
 const markdownPreviewStateField = StateField.define<DecorationSet>({
   create: (state) => buildDecorationSet(state),
   update: (value, transaction) => {
-    if (transaction.docChanged || transaction.selection || transaction.effects.some((effect) => effect.is(revealStructuralSourceEffect))) {
+    if (
+      transaction.docChanged ||
+      transaction.selection ||
+      transaction.effects.some((effect) => effect.is(revealStructuralSourceEffect))
+    ) {
       return buildDecorationSet(transaction.state);
     }
     return value;

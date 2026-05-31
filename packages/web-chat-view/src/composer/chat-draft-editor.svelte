@@ -13,6 +13,11 @@
   import { EditorView, placeholder as placeholderExtension } from "@codemirror/view";
   import { onMount, untrack } from "svelte";
 
+  import {
+    markdownResourceTokenProjection,
+    refreshMarkdownResourceTokenProjectionEffect,
+  } from "../components/message-markdown-resource-token-projection";
+  import type { WebChatResourceReference } from "../types";
   import type { ResolvedWebChatComposerCapabilities } from "./composer-contract";
   import {
     COMPLETION_LIMIT,
@@ -27,6 +32,7 @@
     disabled,
     submitting,
     capabilities,
+    onOpenResource,
     onChange,
     onSubmit,
   }: {
@@ -35,6 +41,7 @@
     disabled: boolean;
     submitting: boolean;
     capabilities: ResolvedWebChatComposerCapabilities;
+    onOpenResource?: ((resource: WebChatResourceReference) => void) | undefined;
     onChange: (value: string) => void;
     onSubmit: () => void;
   } = $props();
@@ -170,6 +177,11 @@
             markdown({ codeLanguages: languages }),
             placeholderExtension(placeholder),
             EditorView.lineWrapping,
+            markdownResourceTokenProjection({
+              resolveResources: () => capabilities.resourceReferences,
+              tone: "participant",
+              onOpenResource,
+            }),
             EditorView.updateListener.of((update) => {
               if (!update.docChanged) {
                 return;
@@ -327,6 +339,18 @@
       }
       view.destroy();
     };
+  });
+
+  $effect(() => {
+    const view = editorView;
+    const resourceReferences = capabilities.resourceReferences;
+    if (!view) {
+      return;
+    }
+    void resourceReferences;
+    view.dispatch({
+      effects: refreshMarkdownResourceTokenProjectionEffect.of(null),
+    });
   });
 
   $effect(() => {
