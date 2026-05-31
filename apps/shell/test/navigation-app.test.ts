@@ -158,6 +158,43 @@ describe("Feature: shell entry navigation", () => {
     expect(frame).toContain("Select Avatar");
   });
 
+  test("Scenario: Given the visual New Terminal row is clicked When another row was selected Then hit testing honors the bordered screen coordinates", async () => {
+    const setup = await createTestRenderer({ width: 72, height: 12, useMouse: true });
+    const completed: ShellNavigationSelection[] = [];
+    const app = new ShellNavigationApp({
+      renderer: setup.renderer,
+      shellItems: [newShell, existingShell],
+      defaultShellIndex: 1,
+      needsShell: true,
+      avatarItems: [
+        {
+          kind: "avatar",
+          nickname: "AAA",
+          displayName: "AAA",
+          classify: null,
+          defaultAvatar: false,
+        },
+      ],
+      defaultAvatarIndex: 0,
+      needsAvatar: true,
+      createAvatar: async () => undefined,
+      onComplete: (selection) => {
+        completed.push(selection);
+      },
+    });
+    app.start();
+    await setup.renderOnce();
+
+    await setup.mockMouse.click(4, 5);
+    await setup.renderOnce();
+    const frame = setup.captureCharFrame();
+    app.dispose();
+    setup.renderer.destroy();
+
+    expect(completed).toEqual([]);
+    expect(frame).toContain("Select Avatar");
+  });
+
   test("Scenario: Given a wrapped Terminal row When mouse is pressed Then it only selects until click release confirms", async () => {
     const setup = await createTestRenderer({ width: 36, height: 12, useMouse: true });
     const completed: ShellNavigationSelection[] = [];

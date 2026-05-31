@@ -101,6 +101,12 @@ const withRowPrefix = (
   return new StyledText([chunk(prefix, "#cbd5e1"), ...line.content.chunks]);
 };
 
+const borderedChildScreenRow = (root: BoxRenderable, child: TextRenderable): number =>
+  Math.trunc(Number(root.top)) + 1 + Math.trunc(Number(child.top));
+
+const borderedChildScreenCol = (root: BoxRenderable, child: TextRenderable): number =>
+  Math.trunc(Number(root.left)) + 1 + Math.trunc(Number(child.left));
+
 export class ShellNavigationApp {
   readonly #input: ShellNavigationAppInput;
   readonly #renderer: CliRenderer;
@@ -354,7 +360,8 @@ export class ShellNavigationApp {
         continue;
       }
       const selected = itemIndex === selectedIndex;
-      const regionRow = 4 + rowIndex;
+      let regionRow = 0;
+      let regionCol = 0;
       let regionRowCount = 0;
       for (const [lineIndex, line] of rendered.lines.entries()) {
         if (rowIndex >= availableRows) {
@@ -373,6 +380,10 @@ export class ShellNavigationApp {
         row.content = withRowPrefix(line, prefix, contentWidth);
         row.fg = selected ? "#f8fafc" : "#cbd5e1";
         row.bg = selected ? "#1e3a8a" : "#0f172a";
+        if (regionRowCount === 0) {
+          regionRow = borderedChildScreenRow(this.#root, row);
+          regionCol = borderedChildScreenCol(this.#root, row);
+        }
         rowIndex += 1;
         regionRowCount += 1;
       }
@@ -380,7 +391,7 @@ export class ShellNavigationApp {
         this.#regions.push({
           index: itemIndex,
           row: regionRow,
-          col: 2,
+          col: regionCol,
           width: contentWidth,
           rowCount: regionRowCount,
         });
