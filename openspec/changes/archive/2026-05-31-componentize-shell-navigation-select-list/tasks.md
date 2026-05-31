@@ -37,4 +37,4 @@
 - [x] 5.1 Generate `review/self-review.md` comparing implementation against `plans/plan.md`, specs, and tasks.
 - [x] 5.2 Generate `review/self-review.html` with structured command/test evidence.
 - [x] 5.3 If self-review reopens tasks or changes specs/tasks, commit those artifact updates before the next apply loop.
-- [ ] 5.4 If review exits normally, archive the change and commit the archive result.
+- [x] 5.4 If review exits normally, archive the change and commit the archive result.
